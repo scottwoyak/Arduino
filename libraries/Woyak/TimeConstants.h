@@ -1,0 +1,18 @@
+#pragma once
+
+#define SECS_SEC (1)
+#define SECS_MIN (60 * SECS_SEC)
+#define SECS_HOUR (60 * SECS_MIN)
+#define SECS_DAY (24 * SECS_HOUR)
+#define SECS_YEAR (365 * SECS_DAY)
+
+#define MILLIS_SEC (1000)
+#define MILLIS_MIN (60 * MILLIS_SEC)
+#define MILLIS_HOUR (60 * MILLIS_MIN)
+#define MILLIS_DAY (24 * MILLIS_HOUR)
+#define SECS_YEAR (365 * MILLIS_DAY)
+
+#define MICROS_SEC (1000000)
+#define MICROS_MIN (60 * MICROS_SEC)
+#define MICROS_HOUR (60 * MICROS_MIN)
+#define MICROS_DAY (24 * MICROS_HOUR)
