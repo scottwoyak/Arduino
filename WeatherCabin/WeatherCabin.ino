@@ -1,3 +1,4 @@
+#include <DHT.h>
 #include <FeedTimer.h>
 #include <NTPClient.h>
 #include <Stopwatch.h>
@@ -11,7 +12,7 @@
 #include <AdafruitIO_WiFi.h>
 
 // temperature sensors
-#include <DallasTemperature.h>
+#include <DallasTemperatureEx.h>
 #include <OneWire.h>
 
 // our passwords not under version control
@@ -23,17 +24,23 @@ AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
 
 // Pins
 #define THERMOMETER_PIN 17
+#define DHT_PIN 18
+#define DHT_TYPE DHT22 // DHT 22  (AM2302)
+
+// humidity sensor
+DHT dht(DHT_PIN, DHT_TYPE);
 
 // OneWire bus
 OneWire oneWire(THERMOMETER_PIN);
 
 // Pass our oneWire reference to Dallas Temperature.
-DallasTemperature sensors(&oneWire);
+DallasTemperatureEx sensors(&oneWire);
 
 // set up the 'digital' feed
 AdafruitIO_Feed *tempFeed = io.feed("AirTemp");
 AdafruitIO_Feed *minTempFeed = io.feed("AirTempMin");
 AdafruitIO_Feed *maxTempFeed = io.feed("AirTempMax");
+AdafruitIO_Feed *humidityFeed = io.feed("air.humidity");
 AdafruitIO_Feed *logFeed = io.feed("Log");
 
 FeedTimer minMaxTimer(24 * 60 * 60, false);
@@ -73,8 +80,8 @@ void setup(void) {
 
   logFeed->save("Starting WeatherCabin Sketch");
 
-  // start up the library
   sensors.begin();
+  dht.begin();
 
   clock.begin();
   clock.update();
@@ -123,6 +130,13 @@ void loop(void) {
       }
     } else {
       Serial.println("Error: Could not read temperature data");
+    }
+
+    float humidity = dht.readHumidity();
+    Serial.print("Humidity: ");
+    Serial.println(humidity);
+    if (isnan(humidity) == false) {
+      humidityFeed->save(humidity);
     }
 
     delay(tempTimer.msUntilNextSave());

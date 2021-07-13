@@ -1,7 +1,6 @@
 #pragma once
 
 #include <NTPClient.h>
-#include <WiFiUdp.h>
 
 //
 // Tracks when it is time to upload feed data back to the cloud
@@ -9,7 +8,7 @@
 class FeedTimer {
 private:
   unsigned long _millisAtNextSave;
-  unsigned long _intervalMs;
+  unsigned long _intervalSecs;
   bool _first = true;
 
 public:
@@ -21,7 +20,7 @@ public:
   // the next occurs at the appropriate time
   //
   FeedTimer(unsigned long intervalSecs, bool uploadImmediately = true) {
-    this->_intervalMs = 1000 * intervalSecs;
+    this->_intervalSecs = intervalSecs;
     this->_first = uploadImmediately;
   }
 
@@ -50,7 +49,7 @@ public:
     // greater than the current time
     long desiredSecs = 0;
     while (desiredSecs <= currentSecs) {
-      desiredSecs += this->_intervalMs / 1000;
+      desiredSecs += this->_intervalSecs;
     }
 
     // figure out the millis when we need to save again
@@ -59,7 +58,7 @@ public:
   }
 
   //
-  // Returns true when it is time to do an upload. There after it will not
+  // Returns true when it is time to do an upload. Thereafter it will not
   // return true again until the interval amount of time has passed
   //
   bool ready() {
@@ -68,10 +67,10 @@ public:
       return true;
     } else {
       if (millis() > this->_millisAtNextSave) {
-        // if there was a long delay (e.g. internet out), keep
+        // if there was a long delay (e.g. internet was out), keep
         // advancing until the next update is in the future
         while (millis() > this->_millisAtNextSave) {
-          this->_millisAtNextSave += this->_intervalMs;
+          this->_millisAtNextSave += 1000*this->_intervalSecs;
         }
         return true;
       } else {

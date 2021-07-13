@@ -3,24 +3,22 @@
 #include <AdafruitIO.h>
 #include <AdafruitIO_WiFi.h>
 #include <Adafruit_SleepyDog.h>
+#include <ArduinoLowPower.h>
+#include <DHT.h>
 #include <NTPClient.h>
 #include <Stopwatch.h>
 #include <Value.h>
 #include <WiFi101.h>
 #include <WiFiUdp.h>
-#include <ArduinoLowPower.h>
 
 // Temperature Sensors
-#include <DallasTemperature.h>
+#include <DallasTemperatureEx.h>
 #include <OneWire.h>
 
 #include "WiFiSettings.h"
 #include <FeedTimer.h>
-#include <FlashErrorMsg.h>
 #include <Stopwatch.h>
 #include <WindMeter.h>
-
-FlashErrorMsg Error;
 
 // Use default pins for WiFi: 2, 4, 7, 8
 AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
@@ -28,9 +26,19 @@ AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
 // Pins
 #define LED_PIN 13
 #define WIND_PIN 17
+#define TEMPERATURE_BUS_PIN 12
+#define DHT_PIN 11
+#define DHT_TYPE DHT22 // DHT 22  (AM2302)
+
+// humidity sensor
+DHT dht(DHT_PIN, DHT_TYPE);
 
 // wind speed sensor
 WindMeter windMeter(WIND_PIN);
+
+// water temperature sensor
+OneWire oneWire(TEMPERATURE_BUS_PIN);
+DallasTemperatureEx temperatureSensor(&oneWire);
 
 // set up the Adafruit IO feeds
 AdafruitIO_Feed *testFeed = io.feed("Test");
@@ -40,6 +48,10 @@ FeedTimer mainTimer(5);
 WiFiUDP ntpUDP;
 long timeZoneCorrection = -4 * 60 * 60;
 NTPClient clock(ntpUDP, timeZoneCorrection);
+
+DeviceAddress addressSurface = {40, 254, 49, 12, 13, 0, 0, 52};
+DeviceAddress address2Foot = {40, 95, 55, 117, 208, 1, 60, 40};
+DeviceAddress address4Foot = {40, 191, 172, 117, 208, 1, 60, 198};
 
 /*
  * The setup function. We only start the sensors here
@@ -55,7 +67,6 @@ void setup(void) {
   delay(500);
 
   Serial.println("Starting Test Sketch");
-  Error.printLnIfExists();
 
   // connect to io.adafruit.com
   Serial.print("Connecting to Adafruit IO");
@@ -71,17 +82,21 @@ void setup(void) {
   Serial.println();
   Serial.println(io.statusText());
 
-  Error.sendToFeedIfExists(testFeed);
   testFeed->save("Starting Test Sketch");
 
   clock.begin();
   clock.update();
 
+  temperatureSensor.begin();
+  temperatureSensor.setResolution(12);
   mainTimer.begin(&clock);
+
+  dht.begin();
 
   // WiFi.lowPowerMode();
   WiFi.maxLowPowerMode();
 
+  temperatureSensor.printAddresses();
 }
 
 /*
@@ -105,8 +120,8 @@ void loop(void) {
   unsigned long mil = millis();
   unsigned long mic = micros();
 
-  //delay(1);
-  Serial.println("going to sleep");
+  // delay(1);
+  // Serial.println("going to sleep");
   digitalWrite(LED_BUILTIN, LOW);
   LowPower.idle(0);
   digitalWrite(LED_BUILTIN, HIGH);
@@ -126,8 +141,27 @@ void loop(void) {
   Serial.println(m0);
   */
 
+  temperatureSensor.requestTemperatures();
+  float delta = 0.1125;
+  Serial.print(temperatureSensor.getTempF(addressSurface) + 6 * delta, 5);
+  Serial.print(' ');
+  Serial.print(temperatureSensor.getTempF(address2Foot), 5);
+  Serial.print(' ');
+  Serial.print(temperatureSensor.getTempF(address4Foot) + 4 * delta, 5);
+  Serial.println(' ');
+
+  // Get humidity event and print its value.
+  float humidity = dht.readHumidity();
+  if (isnan(humidity)) {
+    Serial.println(F("Error reading humidity!"));
+  } else {
+    Serial.print(F("Humidity: "));
+    Serial.print(humidity);
+    Serial.println(F("%"));
+  }
+
   delay(5000);
-  //delay(mainTimer.msUntilNextSave());
+  // delay(mainTimer.msUntilNextSave());
   // Stopwatch s;
   // Watchdog.sleep(mainTimer.msUntilNextSave());
   // USBDevice.attach();

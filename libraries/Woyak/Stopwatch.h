@@ -41,24 +41,36 @@ public:
   double elapsedMillis() { return elapsedMicros() / 1000.0; }
   double elapsedSecs() { return elapsedMicros() / 1000000.0; }
 
-  void printlnMicros(const char *label) {
+  void printlnMicros(const char *label, bool reset = false) {
     Serial.print(label);
     Serial.print(" ");
     Serial.print(this->elapsedMicros());
     Serial.println(" micros");
+
+    if (reset) {
+      this->reset();
+    }
   }
 
-  void printlnMillis(const char *label) {
+  void printlnMillis(const char *label, bool reset = false) {
     Serial.print(label);
     Serial.print(" ");
     Serial.print(this->elapsedMillis());
     Serial.println("ms");
+
+    if (reset) {
+      this->reset();
+    }
   }
 
-  void printlnSecs(const char *label) {
+  void printlnSecs(const char *label, bool reset = false) {
     Serial.print(label);
     Serial.print(" ");
     Serial.print(this->elapsedSecs());
     Serial.println("s");
+
+    if (reset) {
+      this->reset();
+    }
   }
 };

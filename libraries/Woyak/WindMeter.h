@@ -60,7 +60,7 @@ private:
   }
 
 public:
-  WindMeter(uint8_t pin, uint8_t ledPin = 13) {
+  WindMeter(uint8_t pin, uint8_t ledPin = LED_BUILTIN) {
     this->_pin = pin;
     this->_ledPin = ledPin;
     this->_instance = this;
