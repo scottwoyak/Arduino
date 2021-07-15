@@ -7,6 +7,7 @@
 #include <Stopwatch.h>
 #include <WiFi101.h>
 #include <WiFiUdp.h>
+#include <FramValueStore.h>
 
 #include "WiFiSettings.h"
 
@@ -14,10 +15,31 @@
 AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
 
 // Pins
+#include "Adafruit_FRAM_SPI.h"
+
+/* Example code for the Adafruit SPI FRAM breakout */
+uint8_t FRAM_CS = 0;
+uint8_t FRAM_SCK = 5;
+uint8_t FRAM_MISO = 21;
+uint8_t FRAM_MOSI = 20;
+
+//Adafruit_FRAM_SPI fram = Adafruit_FRAM_SPI(FRAM_CS);  // use hardware SPI
+
+//Or use software SPI, any pins!
+FramSpiEx fram(FRAM_SCK, FRAM_MISO, FRAM_MOSI, FRAM_CS);
+
+uint16_t          addr = 0;
 
 WiFiUDP ntpUDP;
 long timeZoneCorrection = -4 * 60 * 60;
 NTPClient clock(ntpUDP, timeZoneCorrection);
+
+void t(IValueStore& store) {
+   Serial.println("setting value");
+   store.set(3.1415926);
+   Serial.println("getting value");
+   Serial.println(store.get(), 8);
+}
 
 /*
  * The setup function. We only start the sensors here
@@ -34,17 +56,35 @@ void setup(void) {
 
    Serial.println("Starting Test Sketch");
 
-   Averager a(3);
+   if (fram.begin()) {
+      Serial.println("Found SPI FRAM");
+   }
+   else {
+      Serial.println("No SPI FRAM found ... check your connections\r\n");
+      while (1);
+   }
 
-   a.set(1);
-   Serial.println(a.get());
-   a.set(2);
-   Serial.println(a.get());
-   a.set(3);
-   Serial.println(a.get());
-   a.set(4);
-   Serial.println(a.get());
+   // Read the first byte
+   uint8_t test = fram.read8(0x0);
+   Serial.print("Restarted "); Serial.print(test); Serial.println(" times");
+
+   // Test write ++
+   fram.writeEnable(true);
+   fram.write8(0x0, test + 1);
+   fram.writeEnable(false);
+
+   Serial.print("float: ");
+   Serial.println(sizeof(float));
+   Serial.print("double: ");
+   Serial.println(sizeof(double));
+
+   BasicValueStore bvs;
+   FramValueStore fvs(&fram, 100);
+
+   t(bvs);
+   t(fvs);
 }
+
 
 /*
  * Main function, get and show the temperature
