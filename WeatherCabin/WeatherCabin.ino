@@ -2,9 +2,15 @@
 #include <FeedTimer.h>
 #include <NTPClient.h>
 #include <Stopwatch.h>
-#include <Value.h>
+#include <MinMaxValue.h>
 #include <WiFi101.h>
 #include <WiFiUdp.h>
+#include <FramSpiEx.h>
+#include <ValueStoreFram.h>
+#include <DailyTimer.h>
+#include <Adafruit_SleepyDog.h>
+#include <Logger.h>
+#include <Util.h>
 
 // use the Adafruit C1500 WiFi board (via Feather M0 WiFi)
 #define USE_WINC1500
@@ -19,50 +25,74 @@
 AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
 
 // Pins
-#define DHT_PIN 18
+#define DHT_PIN 14
+
+// since we're using the WiFi board we can't use hardware SPI
+#define FRAM_CS 19
+#define FRAM_MOSI 18
+#define FRAM_MISO 17
+#define FRAM_SCK 16
 
 // temperature/humidity sensor
 #define DHT_TYPE DHT22 // DHT 22  (AM2302)
 DHT dht(DHT_PIN, DHT_TYPE);
 
-// set up the 'digital' feed
+// internet clock
+WiFiUDP ntpUDP;
+long timeZoneCorrection = -4 * 60 * 60;
+NTPClient clock(ntpUDP, timeZoneCorrection);
+
+// Adafruit IO feeds
 AdafruitIO_Feed* tempFeed = io.feed("AirTemp");
 AdafruitIO_Feed* minTempFeed = io.feed("AirTempMin");
 AdafruitIO_Feed* maxTempFeed = io.feed("AirTempMax");
 AdafruitIO_Feed* humidityFeed = io.feed("air.humidity");
 AdafruitIO_Feed* logFeed = io.feed("Log");
 
-FeedTimer minMaxTimer(24 * 60 * 60, false);
-FeedTimer tempTimer(60);
+// feed timers
+DailyTimer dailyTimer(&clock);
+FeedTimer tempTimer(&clock, 60);
 
-WiFiUDP ntpUDP;
-long timeZoneCorrection = -4 * 60 * 60;
-NTPClient clock(ntpUDP, timeZoneCorrection);
+// persistent memory
+FramSpiEx fram(FRAM_SCK, FRAM_MISO, FRAM_MOSI, FRAM_CS);
 
-Value tempF;
+// logging mechanism
+Logger Error(
+   new SerialLogHandler(),
+   new FeedLogHandler(logFeed)
+);
+
+#define ADDRESS1 100
+#define ADDRESS2 104
+
+MinMaxValue tempF(
+   new ValueStoreSimple(),
+   new ValueStoreFram(&fram, ADDRESS1),
+   new ValueStoreFram(&fram, ADDRESS2)
+);
 
 void setup(void) {
+
+   // for the Feather M0, max time is 16s. Need to call Watchdog.reset() by then
+   Watchdog.enable();
 
    // start serial port
    Serial.begin(115200);
 
-   // wait 5 seconds for the serial monitor to open
+   // wait a few seconds for the serial monitor to open
    while (millis() < 2000 && !Serial)
       ;
    delay(500);
 
    Serial.println("Starting WeatherCabin Sketch");
 
-   // connect to io.adafruit.com
-   Serial.print("Connecting to Adafruit IO");
-   io.connect();
+   // connect to the wireless
+   Util::connectToWifi(WIFI_SSID, WIFI_PASS);
+   Watchdog.reset();
 
-   // wait for a connection
-   while (io.status() < AIO_CONNECTED) {
-      Serial.print(".");
-      delay(500);
-   }
-   Serial.println();
+   // connect to io.adafruit.com
+   Util::connectToAdafruitIO(&io);
+   Watchdog.reset();
 
    // we are connected
    Serial.println(io.statusText());
@@ -70,11 +100,16 @@ void setup(void) {
 
    dht.begin();
    clock.begin();
+   clock.setUpdateInterval(24 * 60 * 60 * 1000);
    clock.update();
 
-   minMaxTimer.begin(&clock);
-   tempTimer.begin(&clock);
-   // WiFi.lowPowerMode();
+   if (fram.begin() == false) {
+      Error.println("FRAM initialization failed");
+   }
+
+   dailyTimer.begin();
+   tempTimer.begin();
+   Watchdog.reset();
 }
 
 void loop(void) {
@@ -84,7 +119,7 @@ void loop(void) {
    // function. it keeps the client connected to
    // io.adafruit.com, and processes any incoming data.
    if (io.run() != AIO_CONNECTED) {
-      Serial.println("Error: Could not reconnect to Adafruit IO");
+      Error.println("Error: Could not reconnect to Adafruit IO");
       return;
    }
 
@@ -94,7 +129,7 @@ void loop(void) {
       tempF.setValue(dhttemp);
       tempFeed->save(tempF.getValue());
 
-      if (minMaxTimer.ready()) {
+      if (dailyTimer.ready()) {
          minTempFeed->save(tempF.getMin());
          maxTempFeed->save(tempF.getMax());
          tempF.resetMinMax();
@@ -110,5 +145,8 @@ void loop(void) {
       Serial.println(humidity);
    }
 
-   delay(tempTimer.msUntilNextSave());
+   Watchdog.reset();
+
+   // don't delay longer than the watchdog - 16s!
+   delay(min(5000, tempTimer.msUntilNextSave()));
 }

@@ -3,13 +3,13 @@
 #include <ValueStore.h>
 #include <FramSpiEx.h>
 
-class FramValueStore : public IValueStore {
+class ValueStoreFram : public IValueStore {
 private:
    FramSpiEx* _fram;
    uint32_t _address = 0;
 
 public:
-   FramValueStore(FramSpiEx* fram, uint32_t address = 0) {
+   ValueStoreFram(FramSpiEx* fram, uint32_t address = 0) {
       this->_fram = fram;
       this->_address = address;
    }

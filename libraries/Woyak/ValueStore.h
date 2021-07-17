@@ -6,7 +6,7 @@ public:
    virtual void set(float value) = 0;
 };
 
-class BasicValueStore : public IValueStore {
+class ValueStoreSimple : public IValueStore {
 private:
    float _value = NAN;
 
