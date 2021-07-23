@@ -34,4 +34,12 @@ namespace Util {
       }
       Serial.println();
    }
+
+   float readVolts(uint8_t pin, uint16_t resolution = 4096) {
+      float volts = analogRead(pin);
+      volts *= 2;    // we divided by 2 with 100k resistors, so multiply back
+      volts *= 3.3;  // Multiply by 3.3V, our reference voltage
+      volts /= resolution; // convert to voltage
+      return volts;
+   }
 };

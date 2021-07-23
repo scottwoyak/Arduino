@@ -1,4 +1,4 @@
-#include <DHT.h>
+
 #include <FeedTimer.h>
 #include <NTPClient.h>
 #include <Stopwatch.h>
@@ -11,6 +11,8 @@
 #include <Adafruit_SleepyDog.h>
 #include <Logger.h>
 #include <Util.h>
+#include <Adafruit_SHT31.h>
+#include <Adafruit_BME280.h>
 
 // use the Adafruit C1500 WiFi board (via Feather M0 WiFi)
 #define USE_WINC1500
@@ -20,12 +22,12 @@
 // our passwords not under version control
 #include "WiFiSettings.h"
 
+Adafruit_SHT31 sht31 = Adafruit_SHT31();
+Adafruit_BME280 bme280;
+
 // default pins for WiFi: 2, 4, 7, 8
 // ids defined in WiFiSettings.h
 AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
-
-// Pins
-#define DHT_PIN 14
 
 // since we're using the WiFi board we can't use hardware SPI
 #define FRAM_CS 19
@@ -33,25 +35,22 @@ AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
 #define FRAM_MISO 17
 #define FRAM_SCK 16
 
-// temperature/humidity sensor
-#define DHT_TYPE DHT22 // DHT 22  (AM2302)
-DHT dht(DHT_PIN, DHT_TYPE);
-
 // internet clock
 WiFiUDP ntpUDP;
 long timeZoneCorrection = -4 * 60 * 60;
 NTPClient clock(ntpUDP, timeZoneCorrection);
 
 // Adafruit IO feeds
-AdafruitIO_Feed* tempFeed = io.feed("AirTemp");
-AdafruitIO_Feed* minTempFeed = io.feed("AirTempMin");
-AdafruitIO_Feed* maxTempFeed = io.feed("AirTempMax");
+AdafruitIO_Feed* temperatureFeed = io.feed("air.temperature");
+AdafruitIO_Feed* minTemperatureFeed = io.feed("air.temperature-min");
+AdafruitIO_Feed* maxTemperatureFeed = io.feed("air.temperature-max");
 AdafruitIO_Feed* humidityFeed = io.feed("air.humidity");
+AdafruitIO_Feed* pressureFeed = io.feed("air.barometric-pressure");
 AdafruitIO_Feed* logFeed = io.feed("Log");
 
 // feed timers
 DailyTimer dailyTimer(&clock);
-FeedTimer tempTimer(&clock, 60);
+FeedTimer feedTimer(&clock, 60);
 
 // persistent memory
 FramSpiEx fram(FRAM_SCK, FRAM_MISO, FRAM_MOSI, FRAM_CS);
@@ -65,7 +64,7 @@ Logger Error(
 #define ADDRESS1 100
 #define ADDRESS2 104
 
-MinMaxValue tempF(
+MinMaxValue temperatureMinMax(
    new ValueStoreSimple(),
    new ValueStoreFram(&fram, ADDRESS1),
    new ValueStoreFram(&fram, ADDRESS2)
@@ -74,7 +73,7 @@ MinMaxValue tempF(
 void setup(void) {
 
    // for the Feather M0, max time is 16s. Need to call Watchdog.reset() by then
-   Watchdog.enable();
+//   Watchdog.enable();
 
    // start serial port
    Serial.begin(115200);
@@ -98,7 +97,15 @@ void setup(void) {
    Serial.println(io.statusText());
    logFeed->save("Starting WeatherCabin Sketch");
 
-   dht.begin();
+   if (sht31.begin(0x44) == false) {
+      Error.println("SHT31 sensor initialization failed");
+   }
+   sht31.heater(false);
+
+   if (bme280.begin() == false) {
+      Error.println("BME280 sensor initialization failed");
+   }
+
    clock.begin();
    clock.setUpdateInterval(24 * 60 * 60 * 1000);
    clock.update();
@@ -108,8 +115,10 @@ void setup(void) {
    }
 
    dailyTimer.begin();
-   tempTimer.begin();
+   feedTimer.begin();
    Watchdog.reset();
+
+   analogReadResolution(12);
 }
 
 void loop(void) {
@@ -123,30 +132,36 @@ void loop(void) {
       return;
    }
 
-   if (tempTimer.ready()) {
+   if (feedTimer.ready()) {
 
-      float dhttemp = dht.readTemperature(true);
-      tempF.setValue(dhttemp);
-      tempFeed->save(tempF.getValue());
+      float temperature = 32 + (9.0 / 5.0) * sht31.readTemperature();
+      temperatureMinMax.setValue(temperature);
+      temperatureFeed->save(temperatureMinMax.getValue());
 
       if (dailyTimer.ready()) {
-         minTempFeed->save(tempF.getMin());
-         maxTempFeed->save(tempF.getMax());
-         tempF.resetMinMax();
+         minTemperatureFeed->save(temperatureMinMax.getMin());
+         maxTemperatureFeed->save(temperatureMinMax.getMax());
+         temperatureMinMax.resetMinMax();
       }
 
-      float humidity = dht.readHumidity();
+      float humidity = sht31.readHumidity();
       humidityFeed->save(humidity);
+
+      float pressure = bme280.readPressure();
+      pressureFeed->save(pressure);
 
       Serial.print(clock.getFormattedTime());
       Serial.print(" Temp = ");
-      Serial.print(tempF.getValue());
+      Serial.print(temperatureMinMax.getValue());
       Serial.print(" Humidity: ");
-      Serial.println(humidity);
+      Serial.print(humidity);
+      Serial.print(" Pressure: ");
+      Serial.print(pressure);
+      Serial.println();
    }
 
    Watchdog.reset();
 
    // don't delay longer than the watchdog - 16s!
-   delay(min(5000, tempTimer.msUntilNextSave()));
+   delay(min(5000, feedTimer.msUntilNextSave()));
 }

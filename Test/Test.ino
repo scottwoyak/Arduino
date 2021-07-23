@@ -1,43 +1,56 @@
-// Use the Adafruit C1500 WiFi board (via Feather M0 WiFi)
+
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SH110X.h>
+#include <Util.h>
+
+Adafruit_SH1107 display = Adafruit_SH1107(64, 128, &Wire);
+
+void setup() {
+   Serial.begin(115200);
+
+   analogReadResolution(12);
+
+   display.begin(0x3C, true); // Address 0x3C default
+
+   // Clear the buffer.
+   display.clearDisplay();
+   display.display();
+
+   display.setRotation(1);
+
+   // text display tests
+   display.setTextSize(2);
+   display.setTextColor(SH110X_WHITE);
+}
+
+void loop() {
+   display.clearDisplay();
+   display.setCursor(0, 0);
+   display.printf("Bat: %4.3f\n", Util::readVolts(PIN_A0));
+   display.printf("Out: %4.3f\n", Util::readVolts(PIN_A1));
+   display.display();
+   delay(100);
+}
+
+
+/*
+
+#include "Arduino.h"
+#include "WiFiSettings.h"
+// use the Adafruit C1500 WiFi board (via Feather M0 WiFi)
 #define USE_WINC1500
 #include <AdafruitIO.h>
 #include <AdafruitIO_WiFi.h>
-#include <Averager.h>
-#include <NTPClient.h>
-#include <Stopwatch.h>
-#include <WiFi101.h>
-#include <WiFiUdp.h>
-#include <ValueStoreFram.h>
-#include <DailyTimer.h>
 
-#include "WiFiSettings.h"
+#include <Util.h>
 
 // Use default pins for WiFi: 2, 4, 7, 8
 AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
 
-// Pins
-#include "Adafruit_FRAM_SPI.h"
+AdafruitIO_Feed* testFeed = io.feed("Test");
 
-// since we're using the WiFi board we can't use hardware SPI
-uint8_t FRAM_CS = 0;
-uint8_t FRAM_SCK = 5;
-uint8_t FRAM_MISO = 21;
-uint8_t FRAM_MOSI = 20;
-
-//Adafruit_FRAM_SPI fram = Adafruit_FRAM_SPI(FRAM_CS);  // use hardware SPI
-
-//Or use software SPI, any pins!
-FramSpiEx fram(FRAM_SCK, FRAM_MISO, FRAM_MOSI, FRAM_CS);
-
-uint16_t          addr = 0;
-
-WiFiUDP ntpUDP;
-long timeZoneCorrection = -4 * 60 * 60;
-NTPClient clock(ntpUDP, timeZoneCorrection);
-
-/*
- * The setup function. We only start the sensors here
- */
 void setup(void) {
 
    // start serial port
@@ -48,54 +61,65 @@ void setup(void) {
       ;
    delay(500);
 
+   // connect to the wireless
+   Util::connectToWifi(WIFI_SSID, WIFI_PASS);
+
+   // connect to io.adafruit.com
+   Util::connectToAdafruitIO(&io);
+
+// we are connected
+   analogReadResolution(12);
+   Serial.println(io.statusText());
+
+
+
    Serial.println("Starting Test Sketch");
 
-   /*
-   typedef enum {
-      WL_NO_SHIELD = 255,
-      WL_IDLE_STATUS = 0,
-      WL_NO_SSID_AVAIL,
-      WL_SCAN_COMPLETED,
-      WL_CONNECTED,
-      WL_CONNECT_FAILED,
-      WL_CONNECTION_LOST,
-      WL_DISCONNECTED,
-      WL_AP_LISTENING,
-      WL_AP_CONNECTED,
-      WL_AP_FAILED,
-      WL_PROVISIONING,
-      WL_PROVISIONING_FAILED
-   } wl_status_t;
-*/
+   pinMode(LED_BUILTIN, OUTPUT);
 
-   WiFi.setPins(8, 7, 4, 2);
-   int status = WL_IDLE_STATUS;
-   while (status != WL_CONNECTED) {
-      Serial.print("Attempting to connect to SSID: ");
-      Serial.println(WIFI_SSID);
-      // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
-      status = WiFi.begin(WIFI_SSID, WIFI_PASS);
 
-      // wait 10 seconds for connection:
-      delay(10000);
-   }
+   WiFi.maxLowPowerMode();
 
-   Serial.print("WiFi status: ");
-   Serial.println(WiFi.status());
-   clock.begin();
-   clock.update();
-   delay(1000);
-   Serial.println(clock.getFormattedTime());
-
-   fram.begin();
-
-   DailyTimer dt(&clock);
-   dt.ready();
 }
 
 
-/*
- * Main function, get and show the temperature
- */
 void loop(void) {
+
+   digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+
+   String str;
+   float volts = analogRead(PIN_A0);
+   volts *= 2;    // we divided by 2, so multiply back
+   volts *= 3.3;  // Multiply by 3.3V, our reference voltage
+   volts /= 4096; // convert to voltage
+   str += volts;
+
+   digitalWrite(PIN_A4, HIGH); // turn off charger
+   volts = analogRead(PIN_A0);
+   volts *= 2;    // we divided by 2, so multiply back
+   volts *= 3.3;  // Multiply by 3.3V, our reference voltage
+   volts /= 4096; // convert to voltage
+   str += "|";
+   str += volts;
+   delay(2000);
+   digitalWrite(PIN_A4, LOW); // turn on charger
+
+   volts = analogRead(PIN_A7);
+   volts *= 2;    // we divided by 2, so multiply back
+   volts *= 3.3;  // Multiply by 3.3V, our reference voltage
+   volts /= 4096; // convert to voltage
+   str += "|";
+   str += volts;
+
+   String str;
+   float volts = analogRead(A7);
+   volts *= 2;    // we divided by 2, so multiply back
+   volts *= 3.3;  // Multiply by 3.3V, our reference voltage
+   volts /= 4096; // convert to voltage
+   str += String(volts, 4);
+
+   Serial.println(str);
+   //   testFeed->save(str);
+   delay(10 * 1000);
 }
+*/

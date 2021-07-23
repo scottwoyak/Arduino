@@ -13,21 +13,17 @@ private:
    bool _first = true;
 
    void _syncWithClock() {
+      //  
+      // figure out the next save event time such that it is
+      // an even multiple, e.g. if we save every 10 minutes,
+      // we're saving at 9:00, 9:10, etc...
       //
-     // figure out the next save event time such that it is
-     // an even multiple, e.g. if we save every 10 minutes,
-     // we're saving at 9:00, 9:10, etc...
-     //
 
-     // get the current time of day in total seconds
+      // get the current time of day in total seconds
       int hours = this->_clock->getHours();
       int mins = this->_clock->getMinutes();
       int secs = this->_clock->getSeconds();
-      float currentSecs = 60 * 60 * hours + 60 * mins + secs;
-
-      // add in a fudge factor for how long it takes our arduino to get
-      // the time from the timeserver
-      currentSecs += 0.5;
+      long currentSecs = 60 * 60 * hours + 60 * mins + secs;
 
       // figure out the next round time value... the first one
       // greater than the current time
