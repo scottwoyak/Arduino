@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Arduino.h>
+
 class IValueStore {
 public:
    virtual float get() = 0;

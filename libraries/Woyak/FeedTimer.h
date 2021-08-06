@@ -39,6 +39,7 @@ private:
 
 public:
    //
+   // @param clock the internet clock
    // @param intervalSecs the time between uploads, e.g. upload every 10 secs.
    // Uploads will occur at times even with a real clock, e.g. if you request
    // every minute, it will happen on the minute, not some random second value

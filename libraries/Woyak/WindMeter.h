@@ -1,7 +1,7 @@
-#ifndef WIND_METER
-#define WIND_METER
+#define once
 
-#include "MinMaxValue.h"
+#include <RunningAverager.h>
+#include <MinMaxValue.h>
 #include <Arduino.h>
 
 class WindMeter {
@@ -68,7 +68,7 @@ private:
 
 public:
    WindMeter(uint8_t pin, uint8_t ledPin = LED_BUILTIN)
-      : _windSpeed(new Averager(3)) {
+      : _windSpeed(new RunningAverager(3)) {
       this->_pin = pin;
       this->_ledPin = ledPin;
       this->_instance = this;
@@ -113,5 +113,3 @@ public:
       interrupts();
    }
 };
-
-#endif

@@ -42,4 +42,20 @@ namespace Util {
       volts /= resolution; // convert to voltage
       return volts;
    }
+
+   float voltsToPercent(float volts) {
+      const float MAX_VOLTS = 4.23;
+      const float MIN_VOLTS = 3.5;
+      float percent = 100 * (volts - MIN_VOLTS) / (MAX_VOLTS - MIN_VOLTS);
+      percent = constrain(percent, 0, 100);
+      return percent;
+   }
+
+   float C2F(float celsius) {
+      return 32 + (9.0 / 5.0) * celsius;
+   }
+
+   float F2C(float fahrenheit) {
+      return (fahrenheit - 32) * (5.0 / 9.0);
+   }
 };

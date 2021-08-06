@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Arduino.h>
-#include <Averager.h>
 #include <ValueStore.h>
 
 class MinMaxValue {

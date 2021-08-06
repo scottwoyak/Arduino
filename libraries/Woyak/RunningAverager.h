@@ -2,14 +2,14 @@
 
 #include <ValueStore.h>
 
-class Averager : public IValueStore {
+class RunningAverager : public IValueStore {
 private:
    float* _values;
    int _index;
    int _size;
 
 public:
-   Averager(unsigned int size) {
+   RunningAverager(unsigned int size) {
       this->_values = new float[size];
       this->_size = size;
       this->_index = 0;
@@ -19,7 +19,7 @@ public:
       }
    }
 
-   ~Averager() {
+   ~RunningAverager() {
       delete[] this->_values;
    }
 

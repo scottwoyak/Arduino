@@ -7,10 +7,9 @@
 #include <WiFi101.h>
 #include <WiFiUdp.h>
 #include <Util.h>
-
-// Temperature Sensors
 #include <DallasTemperatureEx.h>
 #include <OneWire.h>
+#include <AccumulatingAverager.h>
 
 #include "WiFiSettings.h"
 #include <FeedTimer.h>
@@ -25,7 +24,7 @@ AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
 #define WIND_PIN 17
 #define BATTERY_VOLTS_PIN PIN_A0
 #define BATTERY_CHARGING_VOLTS_PIN PIN_A7
-#define SOLAR_ENABLE_PIN PIN_A1
+#define CHARGE_ENABLE_PIN PIN_A1
 
 // wind speed sensor
 WindMeter windMeter(WIND_PIN);
@@ -49,8 +48,9 @@ AdafruitIO_Feed* temp4FeetFeed = io.feed("water-temperature.4-feet");
 AdafruitIO_Feed* windMaxFeed = io.feed("wind-speed.max");
 AdafruitIO_Feed* windMinFeed = io.feed("wind-speed.min");
 AdafruitIO_Feed* windAvgFeed = io.feed("wind-speed.avg");
-AdafruitIO_Feed* windCurrentFeed = io.feed("wind-speed.now");
+AdafruitIO_Feed* windNowFeed = io.feed("wind-speed.now");
 AdafruitIO_Feed* batteryVoltsFeed = io.feed("battery.volts");
+AdafruitIO_Feed* batteryVolts2Feed = io.feed("battery.volts2");
 AdafruitIO_Feed* batteryChargingVoltsFeed = io.feed("battery.charging-volts");
 AdafruitIO_Feed* batteryPercentFeed = io.feed("battery.percent");
 AdafruitIO_Feed* logFeed = io.feed("Log");
@@ -105,6 +105,8 @@ void setup(void) {
 
    analogReadResolution(12);
 
+   pinMode(CHARGE_ENABLE_PIN, OUTPUT);
+   digitalWrite(CHARGE_ENABLE_PIN, LOW);
    windMeter.begin();
    clock.begin();
    clock.setUpdateInterval(24 * 60 * 60 * 1000);
@@ -119,7 +121,8 @@ void setup(void) {
    WiFi.maxLowPowerMode();
 }
 
-float batteryVolts = 0;
+AccumulatingAverager batteryVolts;
+AccumulatingAverager chargingVolts;
 
 /*
  * Main function, get and show the temperature
@@ -137,11 +140,12 @@ void loop(void) {
       return;
    }
 
-   if (nowTimer.ready()) {
-      windCurrentFeed->save(windMeter.getCurrent());
+   // read the voltage at the battery
+   batteryVolts.set(Util::readVolts(BATTERY_VOLTS_PIN));
+   chargingVolts.set(Util::readVolts(BATTERY_CHARGING_VOLTS_PIN));
 
-      // read the voltage at the battery
-      batteryVolts = max(Util::readVolts(BATTERY_VOLTS_PIN), batteryVolts);
+   if (nowTimer.ready()) {
+      windNowFeed->save(windMeter.getCurrent());
    }
 
    if (windFeedTimer.ready()) {
@@ -152,28 +156,25 @@ void loop(void) {
    }
 
    if (batteryFeedTimer.ready()) {
-      batteryVoltsFeed->save(batteryVolts);
+      batteryVoltsFeed->save(batteryVolts.get());
 
-      const float MAX_VOLTS = 4.17;
-      const float MIN_VOLTS = 3.5;
-      float percent = 100 * (batteryVolts - MIN_VOLTS) / (MAX_VOLTS - MIN_VOLTS);
-      percent = constrain(percent, 0, 100);
+      float percent = Util::voltsToPercent(batteryVolts.get());
       batteryPercentFeed->save(percent);
 
       // read the output volts to detect the charging volts
-      float chargingVolts = Util::readVolts(BATTERY_CHARGING_VOLTS_PIN);
-      batteryChargingVoltsFeed->save(chargingVolts);
+      batteryChargingVoltsFeed->save(chargingVolts.get());
 
       Serial.print("Volts: ");
-      Serial.print(batteryVolts);
+      Serial.print(batteryVolts.get());
       Serial.print("|");
-      Serial.print(chargingVolts);
+      Serial.print(chargingVolts.get());
       Serial.print(" ");
       Serial.print(percent);
       Serial.print("%");
       Serial.println();
 
-      batteryVolts = 0;
+      batteryVolts.reset();
+      chargingVolts.reset();
    }
 
    if (waterTempFeedTimer.ready()) {
@@ -207,5 +208,4 @@ void loop(void) {
    }
 
    Watchdog.reset();
-   delay(nowTimer.msUntilNextSave());
 }
