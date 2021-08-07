@@ -2,7 +2,8 @@
 #include <Util.h>
 #include <SPI.h>
 #include <Wire.h>
-//#include <Adafruit_GFX.h>
+#include <Adafruit_SHT31.h>
+#include <Adafruit_GFX.h>
 //#include <Adafruit_SH110X.h>
 
 #define TCAADDR 0x70
@@ -27,6 +28,10 @@ Logger Error(
    //   new DisplayLogHandler(logFeed)
 );
 
+// temperature sensors
+Adafruit_SHT31 sht35_1;
+Adafruit_SHT31 sht35_2;
+
 void setup() {
    // start serial port
    Serial.begin(115200);
@@ -36,7 +41,26 @@ void setup() {
       ;
    delay(500);
 
+   Wire.begin();
+   delay(500);
+
    Serial.println("Starting Calibration Display Sketch");
+
+   tcaselect(2);
+   if (sht35_1.begin(0x44) == false) {
+      Error.println("SHT35 (Temperature) sensor initialization failed");
+   }
+   else {
+      Serial.println("SHT35 (Temperature) sensor initialization succeeded");
+   }
+
+   tcaselect(3);
+   if (sht35_2.begin(0x44) == false) {
+      Error.println("SHT35 (Temperature) sensor initialization failed");
+   }
+   else {
+      Serial.println("SHT35 (Temperature) sensor initialization succeeded");
+   }
 
 
    /*
@@ -51,12 +75,9 @@ void setup() {
    // text display tests
    display.setTextSize(2);
    display.setTextColor(SH110X_WHITE);
-*/
+   */
 
-   Wire.begin();
-   delay(500);
-
-   Serial.begin(115200);
+   /*
    Serial.println("\nTCAScanner ready!");
 
    for (uint8_t t = 0; t < 8; t++) {
@@ -65,16 +86,18 @@ void setup() {
       delay(100);
 
       for (uint8_t addr = 0; addr <= 127; addr++) {
-         //if (addr == TCAADDR) continue; // us - the multiplexor
-         //if (addr == 0x3C) continue; // OLED display
+         if (addr == TCAADDR) continue; // us - the multiplexor
+         if (addr == 0x3C) continue; // OLED display
 
          Wire.beginTransmission(addr);
          if (!Wire.endTransmission()) {
-            Serial.print("    0x");  Serial.println(addr, HEX);
+            Serial.print("    0x");
+            Serial.println(addr, HEX);
          }
       }
    }
    Serial.println("\ndone");
+*/
 }
 
 void loop() {
@@ -87,5 +110,13 @@ void loop() {
    display.display();
 */
 
-   delay(100);
+   tcaselect(2);
+   Serial.println("SensorA");
+   Serial.println(sht35_1.readTemperature(), 3);
+   Serial.println(sht35_1.readHumidity(), 3);
+   Serial.println("SensorB");
+   Serial.println(sht35_2.readTemperature(), 3);
+   Serial.println(sht35_2.readHumidity(), 3);
+
+   delay(1000);
 }
