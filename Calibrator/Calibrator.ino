@@ -1,24 +1,9 @@
 #include <Logger.h>
 #include <Util.h>
-#include <SPI.h>
-#include <Wire.h>
 #include <Adafruit_SHT31.h>
 #include <Adafruit_GFX.h>
 //#include <Adafruit_SH110X.h>
-
-#define TCAADDR 0x70
-
-void tcaselect(uint8_t i) {
-   if (i > 7) return;
-
-   //Serial.println("beingTransmission");
-   Wire.beginTransmission(TCAADDR);
-   //Serial.println("write");
-   Wire.write(1 << i);
-   //Serial.println("done");
-   Wire.endTransmission();
-   //Serial.println("end");
-}
+#include <SPIMultiplexor.h>
 
 //Adafruit_SH1107 display = Adafruit_SH1107(64, 128, &Wire);
 
@@ -32,6 +17,8 @@ Logger Error(
 Adafruit_SHT31 sht35_1;
 Adafruit_SHT31 sht35_2;
 
+SPIMultiplexor spiMultiplexor;
+
 void setup() {
    // start serial port
    Serial.begin(115200);
@@ -41,12 +28,12 @@ void setup() {
       ;
    delay(500);
 
-   Wire.begin();
-   delay(500);
-
    Serial.println("Starting Calibration Display Sketch");
 
-   tcaselect(2);
+   spiMultiplexor.begin();
+   spiMultiplexor.scan();
+
+   spiMultiplexor.select(2);
    if (sht35_1.begin(0x44) == false) {
       Error.println("SHT35 (Temperature) sensor initialization failed");
    }
@@ -54,7 +41,7 @@ void setup() {
       Serial.println("SHT35 (Temperature) sensor initialization succeeded");
    }
 
-   tcaselect(3);
+   spiMultiplexor.select(3);
    if (sht35_2.begin(0x44) == false) {
       Error.println("SHT35 (Temperature) sensor initialization failed");
    }
@@ -76,28 +63,6 @@ void setup() {
    display.setTextSize(2);
    display.setTextColor(SH110X_WHITE);
    */
-
-   /*
-   Serial.println("\nTCAScanner ready!");
-
-   for (uint8_t t = 0; t < 8; t++) {
-      tcaselect(t);
-      Serial.print("TCA Port #"); Serial.println(t);
-      delay(100);
-
-      for (uint8_t addr = 0; addr <= 127; addr++) {
-         if (addr == TCAADDR) continue; // us - the multiplexor
-         if (addr == 0x3C) continue; // OLED display
-
-         Wire.beginTransmission(addr);
-         if (!Wire.endTransmission()) {
-            Serial.print("    0x");
-            Serial.println(addr, HEX);
-         }
-      }
-   }
-   Serial.println("\ndone");
-*/
 }
 
 void loop() {
@@ -110,13 +75,23 @@ void loop() {
    display.display();
 */
 
-   tcaselect(2);
-   Serial.println("SensorA");
-   Serial.println(sht35_1.readTemperature(), 3);
-   Serial.println(sht35_1.readHumidity(), 3);
-   Serial.println("SensorB");
-   Serial.println(sht35_2.readTemperature(), 3);
-   Serial.println(sht35_2.readHumidity(), 3);
+   Serial.println("Temperature");
+   spiMultiplexor.select(2);
+   Serial.print(Util::C2F(sht35_1.readTemperature()));
+   Serial.print("   ");
+   spiMultiplexor.select(3);
+   Serial.print(Util::C2F(sht35_2.readTemperature()));
+   Serial.print("   ");
+   Serial.println();
+
+   Serial.println("Humidity");
+   spiMultiplexor.select(2);
+   Serial.print(sht35_1.readHumidity());
+   Serial.print("%   ");
+   spiMultiplexor.select(3);
+   Serial.print(sht35_2.readHumidity());
+   Serial.print("%   ");
+   Serial.println();
 
    delay(1000);
 }
