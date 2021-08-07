@@ -44,7 +44,7 @@ namespace Util {
    }
 
    float voltsToPercent(float volts) {
-      const float MAX_VOLTS = 4.23;
+      const float MAX_VOLTS = 4.2;
       const float MIN_VOLTS = 3.5;
       float percent = 100 * (volts - MIN_VOLTS) / (MAX_VOLTS - MIN_VOLTS);
       percent = constrain(percent, 0, 100);
