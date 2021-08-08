@@ -3,12 +3,12 @@
 #include <SPI.h>
 #include <Wire.h>
 
-class SPIMultiplexor {
+class I2CMultiplexor {
 private:
    uint8_t _address;
 
 public:
-   SPIMultiplexor(uint8_t address = 0x70) {
+   I2CMultiplexor(uint8_t address = 0x70) {
       this->_address = address;
    }
 
