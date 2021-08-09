@@ -24,6 +24,10 @@ public:
          return;
       }
 
+      if (isnan(value)) {
+         return;
+      }
+
       this->_total += value;
       this->_count++;
    }
