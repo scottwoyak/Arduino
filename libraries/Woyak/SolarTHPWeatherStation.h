@@ -39,8 +39,11 @@ Adafruit_LPS35HW lps33hw;
 // Adafruit IO feeds
 AdafruitIO_Feed* temperatureFeed;
 AdafruitIO_Feed* enclosureTemperatureFeed;
-AdafruitIO_Feed* humidityFeed;
+AdafruitIO_Feed* humidityRelativeFeed;
+AdafruitIO_Feed* humidityAbsoluteFeed;
 AdafruitIO_Feed* pressureFeed;
+AdafruitIO_Feed* pressureMinFeed;
+AdafruitIO_Feed* pressureMaxFeed;
 AdafruitIO_Feed* batteryVoltsFeed;
 AdafruitIO_Feed* batteryChargingVoltsFeed;
 AdafruitIO_Feed* batteryPercentFeed;
@@ -80,8 +83,11 @@ public:
       // Adafruit IO feeds
       temperatureFeed = io.feed(this->dup(".temperature"));
       enclosureTemperatureFeed = io.feed(this->dup(".enclosure-temperature"));
-      humidityFeed = io.feed(this->dup(".humidity"));
+      humidityRelativeFeed = io.feed(this->dup(".humidity-relative"));
+      humidityAbsoluteFeed = io.feed(this->dup(".humidity-absolute"));
       pressureFeed = io.feed(this->dup(".pressure"));
+      pressureMinFeed = io.feed(this->dup(".pressure-min"));
+      pressureMaxFeed = io.feed(this->dup(".pressure-max"));
       batteryVoltsFeed = io.feed(this->dup(".battery-volts"));
       batteryChargingVoltsFeed = io.feed(this->dup(".battery-charging-volts"));
       batteryPercentFeed = io.feed(this->dup(".battery-percent"));
@@ -161,18 +167,40 @@ public:
 
       if (timer.ready()) {
 
-         // weather stats
-         temperatureFeed->save(temperature.get());
+         float tempF = temperature.get();
+         float tempC = Util::F2C(tempF);
+         float humidityRelative = humidity.get();
+         float h = (humidityRelative / 1000) * 3386.39;
+         float x = pow(2.718281828, (17.67 * tempC) / (tempC + 243.5));
+         float humidityAbsolute = (6.112 * x * h) / (273.15 + tempC);
+
+         // weather feeds
+         temperatureFeed->save(tempF);
          enclosureTemperatureFeed->save(enclosureTemperature.get());
-         humidityFeed->save(humidity.get());
+         humidityRelativeFeed->save(humidityRelative);
+         humidityAbsoluteFeed->save(humidityAbsolute);
          pressureFeed->save(pressure.get());
+         pressureMinFeed->save(pressure.getMin());
+         pressureMaxFeed->save(pressure.getMax());
 
          Serial.print("Temp: ");
          Serial.print(temperature.get());
-         Serial.print(" Humidity: ");
-         Serial.print(humidity.get());
-         Serial.print(" Pressure: ");
+         Serial.print("F");
+         Serial.println();
+
+         Serial.print("Humidity (Relative): ");
+         Serial.print(humidityRelative);
+         Serial.print("%");
+         Serial.println();
+
+         Serial.print("Humidity (Absolute): ");
+         Serial.print(humidityAbsolute);
+         Serial.print("g/m3");
+         Serial.println();
+
+         Serial.print("Pressure: ");
          Serial.print(pressure.get());
+         Serial.print("in");
          Serial.println();
 
          temperature.reset();
