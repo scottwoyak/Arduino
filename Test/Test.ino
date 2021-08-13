@@ -1,7 +1,7 @@
 
-#include "CalibratorSketch.h"
+#include "OLEDStarterSketch.h""
 
-CalibratorSketch sketch;
+OLEDStarterSketch sketch;
 
 void setup() {
    sketch.setup();
