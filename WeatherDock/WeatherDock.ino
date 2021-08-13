@@ -82,8 +82,8 @@ AccumulatingAverager chargingVolts(2, 5);
 
 // feed timers
 FeedTimer windFeedTimer(&clock, 10 * 60);
-FeedTimer waterTempFeedTimer(&clock, 5 * 60);
-FeedTimer batteryFeedTimer(&clock, 5 * 60);
+FeedTimer waterTempFeedTimer(&clock, 15 * 60);
+FeedTimer batteryFeedTimer(&clock, 10 * 60);
 FeedTimer windNowFeedTimer(&clock, 5);
 
 // logging mechanism
