@@ -1,7 +1,7 @@
 
-#include "OLEDStarterSketch.h""
+#include "OLEDSHT35Sketch.h""
 
-OLEDStarterSketch sketch;
+OLEDSHT35Sketch sketch;
 
 void setup() {
    sketch.setup();
