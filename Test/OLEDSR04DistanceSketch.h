@@ -1,9 +1,7 @@
 #include <Logger.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <Adafruit_SHT31.h>
 #include <Util.h>
-#include <RunningAverager.h>
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -17,10 +15,15 @@ Logger Error(
    //   new DisplayLogHandler(logFeed)
 );
 
-Adafruit_SHT31 sht35;
-RunningAverager volts(100);
+// Define Trig and Echo pin:
+#define trigPin 9
+#define echoPin 10
 
-class OLEDSHT35Sketch {
+// Define variables:
+long duration;
+float distance;
+
+class OLEDSR04DistanceSketch {
 public:
    void setup() {
       // start serial port
@@ -31,7 +34,7 @@ public:
          ;
       delay(500);
 
-      Serial.println("Starting My Sketch");
+      Serial.println("Starting Sketch");
 
       // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
       if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
@@ -47,30 +50,33 @@ public:
       display.setTextSize(2);
       display.setTextColor(SSD1306_WHITE);
 
-      sht35.begin(0x44);
-
-      analogReadResolution(12);
-      pinMode(PIN_A7, INPUT);
+      // Define inputs and outputs
+      pinMode(trigPin, OUTPUT);
+      pinMode(echoPin, INPUT);
    }
 
    void loop() {
 
+      // Clear the trigPin by setting it LOW:
+      digitalWrite(trigPin, LOW);
+
+      delayMicroseconds(5);
+      // Trigger the sensor by setting the trigPin high for 10 microseconds:
+      digitalWrite(trigPin, HIGH);
+      delayMicroseconds(10);
+      digitalWrite(trigPin, LOW);
+
+      // Read the echoPin. pulseIn() returns the duration (length of the pulse) in microseconds:
+      duration = pulseIn(echoPin, HIGH);
+
+      // Calculate the distance:
+      distance = duration * 0.034 / 2;
+
       display.clearDisplay();
       display.setCursor(0, 0);
 
-      display.print(Util::C2F(sht35.readTemperature()), 1);
-      display.print("F");
-      display.println();
-
-      display.print(sht35.readHumidity(), 1);
-      display.print("%");
-      display.println();
-
-      volts.set(Util::readVolts(PIN_A7));
-      display.println();
-      display.print("bat: ");
-      display.print(Util::voltsToPercent(volts.get()), 1);
-      display.print("%");
+      display.print(distance, 1);
+      display.print(" CM");
       display.println();
 
       display.display();

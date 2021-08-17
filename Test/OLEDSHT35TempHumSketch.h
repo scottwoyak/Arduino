@@ -1,6 +1,9 @@
 #include <Logger.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <Adafruit_SHT31.h>
+#include <Util.h>
+#include <RunningAverager.h>
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -14,7 +17,10 @@ Logger Error(
    //   new DisplayLogHandler(logFeed)
 );
 
-class OLEDStarterSketch {
+Adafruit_SHT31 sht35;
+RunningAverager volts(100);
+
+class OLEDSHT35Sketch {
 public:
    void setup() {
       // start serial port
@@ -40,14 +46,33 @@ public:
       // text display tests
       display.setTextSize(2);
       display.setTextColor(SSD1306_WHITE);
+
+      sht35.begin(0x44);
+
+      analogReadResolution(12);
+      pinMode(PIN_A7, INPUT);
    }
 
-   int count = 0;
    void loop() {
 
       display.clearDisplay();
       display.setCursor(0, 0);
-      display.print(count++);
+
+      display.print(Util::C2F(sht35.readTemperature()), 1);
+      display.print("F");
+      display.println();
+
+      display.print(sht35.readHumidity(), 1);
+      display.print("%");
+      display.println();
+
+      volts.set(Util::readVolts(PIN_A7));
+      display.println();
+      display.print("bat: ");
+      display.print(Util::voltsToPercent(volts.get()), 1);
+      display.print("%");
+      display.println();
+
       display.display();
    }
 };

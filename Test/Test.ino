@@ -1,7 +1,7 @@
 
-#include "OLEDSHT35Sketch.h""
+#include "OLEDSR04DistanceSketch.h""
 
-OLEDSHT35Sketch sketch;
+OLEDSR04DistanceSketch sketch;
 
 void setup() {
    sketch.setup();
