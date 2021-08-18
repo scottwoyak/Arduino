@@ -28,7 +28,7 @@ NTPClient clock(ntpUDP, timeZoneCorrection);
 AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
 
 // feed timers
-FeedTimer timer(&clock, 5 * 60);
+FeedTimer timer(&clock, 5 * 60, false);
 
 // temperature/humidity sensor
 Adafruit_SHT31 sht30;
