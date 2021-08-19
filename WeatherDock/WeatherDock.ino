@@ -54,6 +54,7 @@ I2CMultiplexor i2cMultiplexor;
 SHT35M shtSurface(&i2cMultiplexor, 2);
 SHT35M sht2Feet(&i2cMultiplexor, 3);
 SHT35M sht4Feet(&i2cMultiplexor, 4);
+SHT35M shtBottom(&i2cMultiplexor, 5);
 
 // internet clock
 WiFiUDP ntpUDP;
@@ -64,6 +65,7 @@ NTPClient clock(ntpUDP, timeZoneCorrection);
 AdafruitIO_Feed* tempSurfaceFeed = io.feed("dock.water-temperature-surface");
 AdafruitIO_Feed* temp2FeetFeed = io.feed("dock.water-temperature-2-feet");
 AdafruitIO_Feed* temp4FeetFeed = io.feed("dock.water-temperature-4-feet");
+AdafruitIO_Feed* tempBottomFeed = io.feed("dock.water-temperature-bottom");
 AdafruitIO_Feed* windMaxFeed = io.feed("dock.wind-speed-max");
 AdafruitIO_Feed* windMinFeed = io.feed("dock.wind-speed-min");
 AdafruitIO_Feed* windAvgFeed = io.feed("dock.wind-speed-avg");
@@ -71,16 +73,19 @@ AdafruitIO_Feed* windNowFeed = io.feed("dock.wind-speed-now");
 AdafruitIO_Feed* batteryVoltsFeed = io.feed("dock.battery-volts");
 AdafruitIO_Feed* batteryChargingVoltsFeed = io.feed("dock.battery-charging-volts");
 AdafruitIO_Feed* batteryPercentFeed = io.feed("dock.battery-percent");
+AdafruitIO_Feed* timeFeed = io.feed("dock.time");
 AdafruitIO_Feed* logFeed = io.feed("dock.log");
 
 // values
 AccumulatingAverager tempSurface(20, 90);
 AccumulatingAverager temp2Feet(20, 90);
 AccumulatingAverager temp4Feet(20, 90);
+AccumulatingAverager tempBottom(20, 90);
 AccumulatingAverager batteryVolts(2, 5);
 AccumulatingAverager chargingVolts(2, 5);
 
 // feed timers
+FeedTimer timeFeedTimer(&clock, 60, false);
 FeedTimer windFeedTimer(&clock, 10 * 60, false);
 FeedTimer waterTempFeedTimer(&clock, 15 * 60, false);
 FeedTimer batteryFeedTimer(&clock, 10 * 60, false);
@@ -125,27 +130,37 @@ void setup(void) {
 
    logFeed->save("Starting WeatherDock Sketch");
 
+   Serial.print("begin() temp sensors");
    i2cMultiplexor.begin();
    shtSurface.begin(0x44);
    sht2Feet.begin(0x44);
    sht4Feet.begin(0x44);
+   shtBottom.begin(0x44);
+   Serial.println(" - ok");
 
    // high resolution for voltage measurement
    pinMode(BATTERY_CHARGING_VOLTS_PIN, INPUT);
    pinMode(BATTERY_VOLTS_PIN, INPUT);
    analogReadResolution(12);
 
+   Serial.print("begin() wind meter");
    windMeter.begin();
+   Serial.println(" - ok");
+
+   Serial.print("begin() clock");
    clock.begin();
    clock.setUpdateInterval(24 * 60 * 60 * 1000);
    clock.update();
+   Serial.println(" - ok");
 
+   Serial.print("begin() feed timers");
+   timeFeedTimer.begin();
    windNowFeedTimer.begin();
    batteryFeedTimer.begin();
    windFeedTimer.begin();
    waterTempFeedTimer.begin();
+   Serial.println(" - ok");
 
-   // WiFi.lowPowerMode();
    WiFi.maxLowPowerMode();
 }
 
@@ -173,6 +188,11 @@ void loop(void) {
    tempSurface.set(Util::C2F(shtSurface.readTemperature()));
    temp2Feet.set(Util::C2F(sht2Feet.readTemperature()));
    temp4Feet.set(Util::C2F(sht4Feet.readTemperature()));
+   tempBottom.set(Util::C2F(shtBottom.readTemperature()));
+
+   if (timeFeedTimer.ready()) {
+      timeFeed->save(clock.getFormattedTime());
+   }
 
    if (windNowFeedTimer.ready()) {
       windNowFeed->save(windMeter.getCurrent());
@@ -232,14 +252,17 @@ void loop(void) {
       float tSurface = tempSurface.get();
       float t2Feet = temp2Feet.get();
       float t4Feet = temp4Feet.get();
+      float tBottom = tempBottom.get();
 
       tempSurfaceFeed->save(tSurface);
       temp2FeetFeed->save(t2Feet);
       temp4FeetFeed->save(t4Feet);
+      tempBottomFeed->save(tBottom);
 
       tempSurface.reset();
       temp2Feet.reset();
       temp4Feet.reset();
+      tempBottom.reset();
 
       Serial.println("Water Temperatures:");
       Serial.print("   Surface: ");
@@ -250,6 +273,9 @@ void loop(void) {
       Serial.println();
       Serial.print("   4 Feet: ");
       Serial.print(t4Feet);
+      Serial.println();
+      Serial.print("   Bottom: ");
+      Serial.print(tBottom);
       Serial.println();
    }
 
