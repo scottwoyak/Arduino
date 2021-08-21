@@ -10,6 +10,7 @@
 #include <Util.h>
 #include <Adafruit_SHT31.h>
 #include <AccumulatingAverager.h>
+#include <RunningAverager.h>
 #include <Adafruit_SleepyDog.h>
 #include <Adafruit_LPS35HW.h>
 
@@ -28,7 +29,10 @@ NTPClient clock(ntpUDP, timeZoneCorrection);
 AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
 
 // feed timers
-FeedTimer timer(&clock, 5 * 60, false);
+const int WEATHER_INTERVAL = 5;
+const int BATTERY_INTERVAL = 10;
+FeedTimer weatherTimer(&clock, WEATHER_INTERVAL * 60, false);
+FeedTimer batteryTimer(&clock, BATTERY_INTERVAL * 60, false);
 
 // temperature/humidity sensor
 Adafruit_SHT31 sht30;
@@ -38,6 +42,7 @@ Adafruit_LPS35HW lps33hw;
 
 // Adafruit IO feeds
 AdafruitIO_Feed* temperatureFeed;
+AdafruitIO_Feed* avgTemperatureFeed;
 AdafruitIO_Feed* enclosureTemperatureFeed;
 AdafruitIO_Feed* humidityRelativeFeed;
 AdafruitIO_Feed* humidityAbsoluteFeed;
@@ -56,6 +61,7 @@ Logger Error(
 );
 
 AccumulatingAverager temperature(-10, 110);
+RunningAverager avgTemperature(24 * 60 / WEATHER_INTERVAL); // 24 hrs of samples
 AccumulatingAverager enclosureTemperature(-10, 200);
 AccumulatingAverager humidity(0, 100);
 AccumulatingAverager pressure(27, 31);
@@ -82,6 +88,7 @@ public:
 
       // Adafruit IO feeds
       temperatureFeed = io.feed(this->dup(".temperature"));
+      avgTemperatureFeed = io.feed(this->dup(".avg-temperature"));
       enclosureTemperatureFeed = io.feed(this->dup(".enclosure-temperature"));
       humidityRelativeFeed = io.feed(this->dup(".humidity-relative"));
       humidityAbsoluteFeed = io.feed(this->dup(".humidity-absolute"));
@@ -133,7 +140,8 @@ public:
       clock.setUpdateInterval(24 * 60 * 60 * 1000);
       clock.update();
 
-      timer.begin();
+      weatherTimer.begin();
+      batteryTimer.begin();
 
       pinMode(this->_batteryVoltsPin, INPUT);
       pinMode(this->_batteryChargingVoltsPin, INPUT);
@@ -165,7 +173,7 @@ public:
       pressure.set(100 * lps33hw.readPressure() / 3386.39);
       enclosureTemperature.set(Util::C2F(lps33hw.readTemperature()));
 
-      if (timer.ready()) {
+      if (weatherTimer.ready()) {
 
          float tempF = temperature.get();
          float tempC = Util::F2C(tempF);
@@ -174,8 +182,11 @@ public:
          float x = pow(2.718281828, (17.67 * tempC) / (tempC + 243.5));
          float humidityAbsolute = (6.112 * x * h) / (273.15 + tempC);
 
+         avgTemperature.set(tempF);
+
          // weather feeds
-         temperatureFeed->save(tempF);
+         temperatureFeed->save(temperature.get());
+         avgTemperatureFeed->save(avgTemperature.get());
          enclosureTemperatureFeed->save(enclosureTemperature.get());
          humidityRelativeFeed->save(humidityRelative);
          humidityAbsoluteFeed->save(humidityAbsolute);
@@ -184,7 +195,12 @@ public:
          pressureMaxFeed->save(pressure.getMax());
 
          Serial.print("Temp: ");
-         Serial.print(temperature.get());
+         Serial.print(tempF);
+         Serial.print("F");
+         Serial.println();
+
+         Serial.print("Avg Temp: ");
+         Serial.print(avgTemperature.get());
          Serial.print("F");
          Serial.println();
 
@@ -203,10 +219,15 @@ public:
          Serial.print("in");
          Serial.println();
 
+
+
          temperature.reset();
          enclosureTemperature.reset();
          humidity.reset();
          pressure.reset();
+      }
+
+      if (batteryTimer.ready()) {
 
          // battery stats
          batteryVoltsFeed->save(batteryVolts.get());

@@ -11,12 +11,14 @@ private:
    float _maxRange;
    float _min;
    float _max;
+   float _avg;
 
 public:
    AccumulatingAverager(float minRange = -__FLT_MAX__, float maxRange = __FLT_MAX__) {
       this->_minRange = minRange;
       this->_maxRange = maxRange;
       this->reset();
+      this->_avg = NAN;
    }
 
    void set(float value) {
@@ -34,15 +36,16 @@ public:
 
       this->_total += value;
       this->_count++;
+      this->_avg = NAN;
    }
 
    float get() {
-      if (this->_count == 0) {
-         return NAN;
+      if (isnan(this->_avg)) {
+         if (this->_count > 0) {
+            this->_avg = this->_total / this->_count;
+         }
       }
-      else {
-         return this->_total / this->_count;
-      }
+      return this->_avg;
    }
 
    float getMin() {
@@ -58,5 +61,6 @@ public:
       this->_total = 0;
       this->_min = NAN;
       this->_max = NAN;
+      this->_avg = NAN;
    }
 };
