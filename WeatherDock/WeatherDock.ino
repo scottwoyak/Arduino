@@ -73,7 +73,6 @@ AdafruitIO_Feed* windNowFeed = io.feed("dock.wind-speed-now");
 AdafruitIO_Feed* batteryVoltsFeed = io.feed("dock.battery-volts");
 AdafruitIO_Feed* batteryChargingVoltsFeed = io.feed("dock.battery-charging-volts");
 AdafruitIO_Feed* batteryPercentFeed = io.feed("dock.battery-percent");
-AdafruitIO_Feed* timeFeed = io.feed("dock.time");
 AdafruitIO_Feed* logFeed = io.feed("dock.log");
 
 // values
@@ -85,7 +84,6 @@ AccumulatingAverager batteryVolts(2, 5);
 AccumulatingAverager chargingVolts(2, 5);
 
 // feed timers
-FeedTimer timeFeedTimer(&clock, 60, false);
 FeedTimer windFeedTimer(&clock, 10 * 60, false);
 FeedTimer waterTempFeedTimer(&clock, 15 * 60, false);
 FeedTimer batteryFeedTimer(&clock, 10 * 60, false);
@@ -154,7 +152,6 @@ void setup(void) {
    Serial.println(" - ok");
 
    Serial.print("begin() feed timers");
-   timeFeedTimer.begin();
    windNowFeedTimer.begin();
    batteryFeedTimer.begin();
    windFeedTimer.begin();
@@ -162,6 +159,31 @@ void setup(void) {
    Serial.println(" - ok");
 
    WiFi.maxLowPowerMode();
+
+   Watchdog.reset();
+   Serial.println("Taking Initial Measurements...");
+   delay(5000);
+   Watchdog.reset();
+
+   // read and print initial values
+   String msg;
+   msg = "Initial Values:\n";
+   msg += "  Temperatures:\n";
+   msg += "    Surface: " + String(Util::C2F(shtSurface.readTemperature())) + "\n";
+   msg += "    2 Feet: " + String(Util::C2F(sht2Feet.readTemperature())) + "\n";
+   msg += "    4 Feet: " + String(Util::C2F(sht4Feet.readTemperature())) + "\n";
+   msg += "    Bottom: " + String(Util::C2F(shtBottom.readTemperature())) + "\n";
+   msg += "  Wind Speeds:\n";
+   msg += "    Now: " + String(windMeter.getCurrent()) + "\n";
+   msg += "    Min: " + String(windMeter.getMin()) + "\n";
+   msg += "    Avg: " + String(windMeter.getAvg()) + "\n";
+   msg += "    Max: " + String(windMeter.getMax()) + "\n";
+   msg += "  Battery:\n";
+   msg += "    Volts: " + String(Util::readVolts(BATTERY_VOLTS_PIN)) + "\n";
+   msg += "    Charging: " + String(Util::readVolts(BATTERY_CHARGING_VOLTS_PIN)) + "\n";
+   Serial.println(msg);
+
+   Watchdog.reset();
 }
 
 /*
@@ -189,10 +211,6 @@ void loop(void) {
    temp2Feet.set(Util::C2F(sht2Feet.readTemperature()));
    temp4Feet.set(Util::C2F(sht4Feet.readTemperature()));
    tempBottom.set(Util::C2F(shtBottom.readTemperature()));
-
-   if (timeFeedTimer.ready()) {
-      timeFeed->save(clock.getFormattedTime());
-   }
 
    if (windNowFeedTimer.ready()) {
       windNowFeed->save(windMeter.getCurrent());
