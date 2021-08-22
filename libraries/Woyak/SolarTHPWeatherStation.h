@@ -47,8 +47,6 @@ AdafruitIO_Feed* enclosureTemperatureFeed;
 AdafruitIO_Feed* humidityRelativeFeed;
 AdafruitIO_Feed* humidityAbsoluteFeed;
 AdafruitIO_Feed* pressureFeed;
-AdafruitIO_Feed* pressureMinFeed;
-AdafruitIO_Feed* pressureMaxFeed;
 AdafruitIO_Feed* batteryVoltsFeed;
 AdafruitIO_Feed* batteryChargingVoltsFeed;
 AdafruitIO_Feed* batteryPercentFeed;
@@ -93,8 +91,6 @@ public:
       humidityRelativeFeed = io.feed(this->dup(".humidity-relative"));
       humidityAbsoluteFeed = io.feed(this->dup(".humidity-absolute"));
       pressureFeed = io.feed(this->dup(".pressure"));
-      pressureMinFeed = io.feed(this->dup(".pressure-min"));
-      pressureMaxFeed = io.feed(this->dup(".pressure-max"));
       batteryVoltsFeed = io.feed(this->dup(".battery-volts"));
       batteryChargingVoltsFeed = io.feed(this->dup(".battery-charging-volts"));
       batteryPercentFeed = io.feed(this->dup(".battery-percent"));
@@ -191,8 +187,6 @@ public:
          humidityRelativeFeed->save(humidityRelative);
          humidityAbsoluteFeed->save(humidityAbsolute);
          pressureFeed->save(pressure.get());
-         pressureMinFeed->save(pressure.getMin());
-         pressureMaxFeed->save(pressure.getMax());
 
          Serial.print("Temp: ");
          Serial.print(tempF);
