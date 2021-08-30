@@ -1,7 +1,7 @@
 #pragma once
 
-#include <SPI.h>
 #include <Wire.h>
+#include <I2C.h>
 
 class I2CMultiplexor {
 private:
@@ -17,7 +17,7 @@ public:
    }
 
    void scan() {
-      Serial.println("Scanning Ports for SPI addresses");
+      Serial.println("Scanning Ports for I2C addresses");
       for (uint8_t port = 0; port < 8; port++) {
          this->select(port);
          Serial.print("Port: ");
@@ -26,8 +26,7 @@ public:
          for (uint8_t addr = 0; addr <= 127; addr++) {
             if (addr == this->_address) continue; // us - the multiplexor
 
-            Wire.beginTransmission(addr);
-            if (!Wire.endTransmission()) {
+            if (I2C::exists(addr)) {
                Serial.print("    0x");
                Serial.println(addr, HEX);
             }
