@@ -14,6 +14,7 @@
 #include <Adafruit_SleepyDog.h>
 #include <Adafruit_LPS35HW.h>
 #include <I2C.h>
+#include <Battery.h>
 
 // use the Adafruit C1500 WiFi board (via Feather M0 WiFi)
 #define USE_WINC1500
@@ -63,8 +64,6 @@ RunningAverager avgTemperature(24 * 60 / WEATHER_INTERVAL); // 24 hrs of samples
 AccumulatingAverager enclosureTemperature(-10, 200);
 AccumulatingAverager humidity(0, 100);
 AccumulatingAverager pressure(27, 31);
-AccumulatingAverager batteryVolts(1, 5);
-AccumulatingAverager chargingVolts(1, 5);
 
 // dewPoint function NOAA
 // reference (1) : http://wahiduddin.net/calc/density_algorithms.htm
@@ -91,8 +90,7 @@ double dewPoint(double celsius, double humidity)
 class SolarTHPWeatherStation {
 private:
    String _name;
-   uint8_t _batteryVoltsPin;
-   uint8_t _batteryChargingVoltsPin;
+   Battery _battery;
    bool _pressureSensorExists = false;
 
    // feed timers
@@ -111,11 +109,10 @@ public:
       uint8_t weatherIntervalMins = WEATHER_INTERVAL
    ) :
       weatherTimer(&clock, weatherIntervalMins * 60),
-      batteryTimer(&clock, BATTERY_INTERVAL * 60)
+      batteryTimer(&clock, BATTERY_INTERVAL * 60),
+      _battery(batteryVoltsPin, batteryChargingVoltsPin)
    {
       this->_name = name;
-      this->_batteryVoltsPin = batteryVoltsPin;
-      this->_batteryChargingVoltsPin = batteryChargingVoltsPin;
 
       // Adafruit IO feeds
       temperatureFeed = io.feed(this->dup(".temperature"));
@@ -183,9 +180,7 @@ public:
       batteryTimer.begin();
       Serial.println(" - ok");
 
-      pinMode(this->_batteryVoltsPin, INPUT);
-      pinMode(this->_batteryChargingVoltsPin, INPUT);
-      analogReadResolution(12);
+      this->_battery.setup();
 
       WiFi.maxLowPowerMode();
    }
@@ -203,8 +198,7 @@ public:
          return;
       }
 
-      batteryVolts.set(Util::readVolts(this->_batteryVoltsPin));
-      chargingVolts.set(Util::readVolts(this->_batteryChargingVoltsPin));
+      this->_battery.read();
 
       temperature.set(Util::C2F(sht30.readTemperature()));
       humidity.set(sht30.readHumidity());
@@ -292,27 +286,25 @@ public:
       if (this->batteryTimer.ready()) {
 
          // battery stats
-         batteryVoltsFeed->save(batteryVolts.get());
-         batteryChargingVoltsFeed->save(chargingVolts.get());
+         batteryVoltsFeed->save(this->_battery.getBatteryVolts());
+         batteryChargingVoltsFeed->save(this->_battery.getChargingVolts());
 
-         float percent = Util::voltsToPercent(batteryVolts.get());
-         batteryPercentFeed->save(percent);
+         batteryPercentFeed->save(this->_battery.getPercent());
 
          Serial.print("Charging Volts: ");
-         Serial.print(chargingVolts.get());
+         Serial.print(this->_battery.getChargingVolts());
          Serial.println();
 
          Serial.print("Battery Volts: ");
-         Serial.print(batteryVolts.get());
+         Serial.print(this->_battery.getBatteryVolts());
          Serial.println();
 
          Serial.print("Charge Percent: ");
-         Serial.print(percent);
+         Serial.print(this->_battery.getPercent());
          Serial.print("%");
          Serial.println();
 
-         chargingVolts.reset();
-         batteryVolts.reset();
+         this->_battery.reset();
       }
    }
 };
