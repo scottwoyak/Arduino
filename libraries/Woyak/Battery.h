@@ -28,10 +28,13 @@ public:
    //
    // Initializes pins as input pins and sets analog read resolution to 12
    //
-   void setup() {
+   void begin() {
       pinMode(this->_batteryVoltsPin, INPUT);
       pinMode(this->_batteryChargingVoltsPin, INPUT);
       analogReadResolution(12);
+
+      // do an initial read
+      this->read();
    }
 
    //
@@ -48,10 +51,12 @@ public:
    // averaging functions
    //
    void reset() {
-      if (abs(this->_lastVolts - this->_batteryVolts.get()) < 0.01) {
+      // try to detect when we're fully charged and record the volts so we
+      // can properly compute 100% charge
+      if (abs(this->_lastVolts - this->_batteryVolts.get()) < 0.005) {
          this->_consecutiveUnchangedVolts++;
 
-         if (this->_consecutiveUnchangedVolts >= 3) {
+         if (this->_consecutiveUnchangedVolts >= 4 && this->_batteryVolts.get() > 4) {
             this->_fullChargeVolts = this->_batteryVolts.get();
          }
       }

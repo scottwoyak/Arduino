@@ -14,6 +14,7 @@
 #include <WindMeter.h>
 #include <Adafruit_SHT31.h>
 #include <I2CMultiplexor.h>
+#include <Battery.h>
 
 class SHT35M {
 private:
@@ -45,6 +46,9 @@ AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
 #define WIND_PIN 17
 #define BATTERY_VOLTS_PIN PIN_A0
 #define BATTERY_CHARGING_VOLTS_PIN PIN_A7
+
+// battery
+Battery battery(BATTERY_VOLTS_PIN, BATTERY_CHARGING_VOLTS_PIN);
 
 // wind speed sensor
 WindMeter windMeter(WIND_PIN);
@@ -80,8 +84,6 @@ AccumulatingAverager tempSurface(20, 90);
 AccumulatingAverager temp2Feet(20, 90);
 AccumulatingAverager temp4Feet(20, 90);
 AccumulatingAverager tempBottom(20, 90);
-AccumulatingAverager batteryVolts(2, 5);
-AccumulatingAverager chargingVolts(2, 5);
 
 // feed timers
 FeedTimer windFeedTimer(&clock, 10 * 60, false);
@@ -136,10 +138,9 @@ void setup(void) {
    shtBottom.begin(0x44);
    Serial.println(" - ok");
 
-   // high resolution for voltage measurement
-   pinMode(BATTERY_CHARGING_VOLTS_PIN, INPUT);
-   pinMode(BATTERY_VOLTS_PIN, INPUT);
-   analogReadResolution(12);
+   Serial.print("begin() battery");
+   battery.begin();
+   Serial.println(" - ok");
 
    Serial.print("begin() wind meter");
    windMeter.begin();
@@ -179,8 +180,8 @@ void setup(void) {
    msg += "    Avg: " + String(windMeter.getAvg()) + "\n";
    msg += "    Max: " + String(windMeter.getMax()) + "\n";
    msg += "  Battery:\n";
-   msg += "    Volts: " + String(Util::readVolts(BATTERY_VOLTS_PIN)) + "\n";
-   msg += "    Charging: " + String(Util::readVolts(BATTERY_CHARGING_VOLTS_PIN)) + "\n";
+   msg += "    Volts: " + String(battery.getBatteryVolts()) + "\n";
+   msg += "    Charging: " + String(battery.getChargingVolts()) + "\n";
    Serial.println(msg);
 
    Watchdog.reset();
@@ -203,8 +204,7 @@ void loop(void) {
    }
 
    // read the voltage at the battery
-   batteryVolts.set(Util::readVolts(BATTERY_VOLTS_PIN));
-   chargingVolts.set(Util::readVolts(BATTERY_CHARGING_VOLTS_PIN));
+   battery.read();
 
    // read temperatures
    tempSurface.set(Util::C2F(shtSurface.readTemperature()));
@@ -243,11 +243,10 @@ void loop(void) {
    }
 
    if (batteryFeedTimer.ready()) {
-      float bVolts = batteryVolts.get();
-      float bChargingVolts = chargingVolts.get();
+      float bVolts = battery.getBatteryVolts();
+      float bChargingVolts = battery.getChargingVolts();
       float bPercent = Util::voltsToPercent(bVolts);
-      batteryVolts.reset();
-      chargingVolts.reset();
+      battery.reset();
 
       batteryVoltsFeed->save(bVolts);
       batteryChargingVoltsFeed->save(bChargingVolts);

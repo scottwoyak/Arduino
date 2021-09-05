@@ -180,7 +180,7 @@ public:
       batteryTimer.begin();
       Serial.println(" - ok");
 
-      this->_battery.setup();
+      this->_battery.begin();
 
       WiFi.maxLowPowerMode();
    }
