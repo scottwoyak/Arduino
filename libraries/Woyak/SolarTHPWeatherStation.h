@@ -21,6 +21,9 @@
 #include <AdafruitIO.h>
 #include <AdafruitIO_WiFi.h>
 
+// function to reset an arduino at address 0;
+void(*resetFunc) (void) = 0;
+
 // internet clock
 WiFiUDP ntpUDP;
 long timeZoneCorrection = -4 * 60 * 60;
@@ -48,6 +51,7 @@ AdafruitIO_Feed* batteryVoltsFeed;
 AdafruitIO_Feed* batteryChargingVoltsFeed;
 AdafruitIO_Feed* batteryPercentFeed;
 AdafruitIO_Feed* logFeed;
+AdafruitIO_Feed* resetFeed;
 
 // logging mechanism
 Logger Error(
@@ -85,6 +89,13 @@ double dewPoint(double celsius, double humidity)
    // (2) DEWPOINT = F(Vapor Pressure)
    double T = log(VP / 0.61078); // temp var
    return (241.88 * T) / (17.558 - T);
+}
+
+
+void onReset(AdafruitIO_Data* data) {
+   if (data->toInt() == 1) {
+      resetFunc();
+   }
 }
 
 class SolarTHPWeatherStation {
@@ -126,6 +137,7 @@ public:
       batteryChargingVoltsFeed = io.feed(this->dup(".battery-charging-volts"));
       batteryPercentFeed = io.feed(this->dup(".battery-percent"));
       logFeed = io.feed(this->dup(".log"));
+      resetFeed = io.feed(this->dup(".reset"));
    }
 
    void setup() {
@@ -181,6 +193,8 @@ public:
       Serial.println(" - ok");
 
       this->_battery.begin();
+
+      resetFeed->onMessage(onReset);
 
       WiFi.maxLowPowerMode();
    }

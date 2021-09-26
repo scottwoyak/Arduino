@@ -53,7 +53,7 @@ public:
    void reset() {
       // try to detect when we're fully charged and record the volts so we
       // can properly compute 100% charge
-      if (abs(this->_lastVolts - this->_batteryVolts.get()) < 0.005) {
+      if (abs(this->_lastVolts - this->_batteryVolts.get()) < 0.01) {
          this->_consecutiveUnchangedVolts++;
 
          if (this->_consecutiveUnchangedVolts >= 4 && this->_batteryVolts.get() > 4) {
