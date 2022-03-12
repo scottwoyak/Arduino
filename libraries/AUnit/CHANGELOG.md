@@ -1,6 +1,45 @@
 # Changelog
 
 * Unreleased
+* 1.6.1 (2022-02-02)
+    * Upgrade tool chain.
+        * Arduino IDE from 1.8.13 to 1.8.19
+        * Arduino CLI from 0.14.0 to 0.19.2
+        * Arduino AVR Core from 1.8.3 to 1.8.4
+        * STM32duino from 2.0.0 to 2.2.0
+        * ESP8266 Core from 2.7.4 to 3.0.2
+        * ESP32 Core from 1.0.6 to 2.0.2
+        * Teensyduino from 1.54 to 1.56
+    * Downgrade SAMD21 boards into new "Tier 3: May work but unsupported"
+      category.
+    * This is a maintenance release. No functional change.
+* 1.6.0 (2021-11-02)
+    * Add `TestRunner::includesub(word)` and `TestRunner::excludesub(word)`
+      which includes or excludes tests based on the substring match on the
+      `word`.
+    * Call `excludeAll()` if the first filtering request is an `include()` or
+      `includesub()`.
+        * Otherwise, the first include request does not do anything.
+    * Add command line flags and arguments when compiled under EpoxyDuino.
+      See [Command Line Flags and
+      Arguments](README.md#CommandLineFlagsAndArguments) in the README.md for
+      full details. Fixes
+      [Issue#76](https://github.com/bxparks/AUnit/issues/76).
+        * `--include pattern,...`
+            * Calls `TestRunner::include(pattern)` on each `pattern` in the
+              comma-separated list.
+        * `--exclude pattern,...`
+            * Calls `TestRunner::exclude(pattern)` on each `pattern` in the
+              comma-separated list.
+        * `--includesub substring,...`
+            * Calls `TestRunner::includesub(substring)` on each `substring` in
+              the comma-separated list.
+        * `--excludesub substring,...`
+            * Calls `TestRunner::excludesub(substring)` on each `substring` in
+              the comma-separated list.
+        * `substring ...`
+            * Any remaining **space**-separated list of words are processed
+              using `TestRunner::includesub(substring)`.
 * 1.5.5 (2021-05-03)
     * Prevent accidental inclusion of `HardwareSerial` class (via the `Serial`
       global variable). Remove reference to `SERIAL_PORT_MONITOR` from
