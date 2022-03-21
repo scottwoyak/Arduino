@@ -1,4 +1,3 @@
-//#pragma once
 
 // our passwords not under version control
 #include "WiFiSettings.h"
@@ -15,14 +14,24 @@
 #include <Adafruit_BME280.h>
 #include <AccumulatingAverager.h>
 #include <RunningAverager.h>
-#include <Adafruit_SleepyDog.h>
 #include <Adafruit_LPS35HW.h>
 #include <I2C.h>
-#include <Battery.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
 #include <Adafruit_SHT31.h>
+#include <FlashStorage.h>
 
+// Create a structure that is big enough to contain a name
+// and a surname. The "valid" variable is set to "true" once
+// the structure is filled with actual data for the first time.
+typedef struct {
+   boolean valid;
+   char location[100];
+   char room[100];
+} ID;
+
+// Reserve a portion of flash memory to store a "id" and call it "flash".
+FlashStorage(flash, ID);
 
 // use the Adafruit C1500 WiFi board (via Feather M0 WiFi)
 #define USE_WINC1500
@@ -69,21 +78,26 @@ Adafruit_SH1107 display = Adafruit_SH1107(64, 128, &Wire);
 AccumulatingAverager temperature(-10, 110);
 AccumulatingAverager humidity(0, 100);
 
-const char* location;
-const char* room;
+String location;
+String room;
 
-const char* choose(const char* choice1, const char* choice2, const char* choice3) {
+const char* choose(const char* choice1, const char* choice2, const char* choice3, int timeout = -1) {
 
    display.clearDisplay();
-   display.setTextSize(2);
    display.setCursor(0, 0);
    display.println(choice1);
    display.println(choice2);
    display.println(choice3);
    display.display();
 
+   Stopwatch sw;
    const char* choice;
    while (1) {
+      if (timeout > 0 && sw.elapsedSecs() > timeout) {
+         choice = choice1;
+         break;
+      }
+
       if (digitalRead(BUTTON_A) == LOW) {
          choice = choice1;
          break;
@@ -110,6 +124,7 @@ const char* choose(const char* choice1, const char* choice2, const char* choice3
    return choice;
 }
 
+
 void setup() {
    // start serial port
    Serial.begin(115200);
@@ -132,8 +147,6 @@ void setup() {
    display.println("Starting...");
    display.display();
 
-   //Watchdog.enable(10 * 1000);
-
 
    pinMode(BUTTON_A, INPUT_PULLUP);
    pinMode(BUTTON_B, INPUT_PULLUP);
@@ -141,27 +154,51 @@ void setup() {
 
    // connect to the wireless
    Util::connectToWifi(WIFI_SSID, WIFI_PASS);
-   Watchdog.reset();
 
-   location = choose("Bragg", "Wayne", "Lake");
-   Serial.println(location);
-   room = choose("Bedroom", "LivingRoom", "Basement");
-   Serial.println(room);
-   display.setTextSize(1);
+   // Read the id from flash
+   ID id = flash.read();
 
-   String id = String("temperature.") + String(location) + String("-") + String(room);
-   id.toLowerCase();
-   temperatureFeed = io.feed(id.c_str());
-   id = String("humidity.") + String(location) + String("-") + String(room);
-   id.toLowerCase();
-   humidityFeed = io.feed(id.c_str());
+   // If this is the first run the "valid" value should be "false"...
+   if (id.valid) {
+
+      String key = String(id.location) + "-" + id.room;
+      const char* choice1 = key.c_str();
+      const char* choice2 = "New Location";
+      const char* choice3 = nullptr;
+      display.setTextSize(1);
+      if (choose(choice1, choice2, choice3, 5) == choice1)
+      {
+         location = id.location;
+         room = id.room;
+      }
+   }
+
+   if (location.length() == 0) {
+      display.setTextSize(2);
+      location = choose("Bragg", "Wayne", "Lake");
+      room = choose("Bedroom", "LivingRoom", "Basement");
+
+      // store the information in flash
+      location.toCharArray(id.location, 100);
+      room.toCharArray(id.room, 100);
+      id.valid = true;
+      flash.write(id);
+   }
+
+   // create the IO feeds
+   String key = String("temperature.") + location + String("-") + room;
+   key.toLowerCase();
+   temperatureFeed = io.feed(key.c_str());
+   key = String("humidity.") + location + String("-") + room;
+   key.toLowerCase();
+   humidityFeed = io.feed(key.c_str());
 
    // connect to io.adafruit.com
+   display.setTextSize(1);
    display.println("Connecting...");
    display.display();
    delay(10);
    Util::connectToAdafruitIO(&io);
-   Watchdog.reset();
 
    // we are connected
    Serial.println(io.statusText());
@@ -200,7 +237,6 @@ void setup() {
 }
 
 void loop() {
-   Watchdog.reset();
    clock.update();
 
    // io.run(); is required for all sketches.
