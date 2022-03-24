@@ -2,7 +2,6 @@
 // our passwords not under version control
 #include "WiFiSettings.h"
 
-
 #include <FeedTimer.h>
 #include <NTPClient.h>
 #include <Stopwatch.h>
@@ -11,15 +10,16 @@
 #include <WiFiUdp.h>
 #include <Logger.h>
 #include <Util.h>
-#include <Adafruit_BME280.h>
 #include <AccumulatingAverager.h>
 #include <RunningAverager.h>
 #include <Adafruit_LPS35HW.h>
 #include <I2C.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
-#include <Adafruit_SHT31.h>
 #include <FlashStorage.h>
+#include "TempSensor.h"
+
+#define VERSION "1.0"
 
 // Create a structure that is big enough to contain a name
 // and a surname. The "valid" variable is set to "true" once
@@ -42,9 +42,6 @@ FlashStorage(flash, ID);
 #define BUTTON_B 6
 #define BUTTON_C 5
 
-// function to reset an arduino at address 0;
-void(*resetFunc) (void) = 0;
-
 // internet clock
 WiFiUDP ntpUDP;
 long timeZoneCorrection = -4 * 60 * 60;
@@ -54,9 +51,7 @@ NTPClient clock(ntpUDP, timeZoneCorrection);
 // ids defined in WiFiSettings.h
 AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
 
-// temperature/humidity sensor
-Adafruit_BME280 bme; // I2C
-Adafruit_SHT31 sht30;
+ITempSensor* sensor;
 
 // feed intervals in mins
 const int WEATHER_INTERVAL = 1;
@@ -143,7 +138,7 @@ void setup() {
    display.setCursor(0, 0);
    display.display(); // actually display all of the above   
 
-   Serial.println("Starting Weather Sketch");
+   Serial.println("Starting Room Temperature Sketch");
    display.println("Starting...");
    display.display();
 
@@ -205,20 +200,14 @@ void setup() {
    display.println(io.statusText());
    display.display();
 
-   Serial.print("bme280.begin()");
-   if (bme.begin() == false) {
-      Error.println("BME280 (Temperature/Humidity) sensor initialization failed");
+   sensor = TempSensorFactory::create();
+   Serial.print("sensor.begin()");
+   if (sensor->begin() == false) {
+      Error.println("Temperature/Humidity sensor initialization failed");
    }
    else {
       Serial.println(" - ok");
    }
-
-   Serial.print("sht30.begin()");
-   if (sht30.begin(0x44) == false) {
-      Error.println("SHT30 (Temperature/Humidity) sensor initialization failed");
-   }
-   Serial.println(" - ok");
-
 
    Serial.print("clock.begin()");
    clock.begin();
@@ -251,23 +240,27 @@ void loop() {
    display.clearDisplay();
    display.setCursor(0, 0);
    display.setTextSize(3);
-   display.print(Util::C2F(sht30.readTemperature()), 1);
-   //   display.print(Util::C2F(bme.readTemperature()), 1);
+   display.print(Util::C2F(sensor->readTemperature()), 1);
    display.println(" F");
-   display.print(sht30.readHumidity(), 1);
-   //   display.print(Util::C2F(bme.readTemperature()), 1);
+   display.print(sensor->readHumidity(), 1);
    display.println("%");
    display.setTextSize(1);
    display.println();
    display.print(location);
    display.print("-");
    display.print(room);
+
+   const int XS = 6;
+   const int YS = 8;
+   display.setCursor(128 - 3 * XS, 64 - YS);
+   display.print(VERSION);
+
    display.display();
 
    display.display(); // actually display all of the above   
 
-   temperature.set(Util::C2F(sht30.readTemperature()));
-   humidity.set(sht30.readHumidity());
+   temperature.set(Util::C2F(sensor->readTemperature()));
+   humidity.set(sensor->readHumidity());
 
    if (weatherTimer.ready()) {
 
