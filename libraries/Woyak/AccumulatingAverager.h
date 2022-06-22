@@ -7,6 +7,7 @@ class AccumulatingAverager : public IValueStore {
 private:
    float _total;
    unsigned long _count;
+   unsigned long _badCount;
    float _minRange;
    float _maxRange;
    float _min;
@@ -14,7 +15,14 @@ private:
    float _avg;
 
 public:
-   AccumulatingAverager(float minRange = -__FLT_MAX__, float maxRange = __FLT_MAX__) {
+   AccumulatingAverager() {
+      this->_minRange = -__FLT_MAX__;
+      this->_maxRange = __FLT_MAX__;
+      this->reset();
+      this->_avg = NAN;
+   }
+
+   AccumulatingAverager(float minRange, float maxRange) {
       this->_minRange = minRange;
       this->_maxRange = maxRange;
       this->reset();
@@ -24,10 +32,12 @@ public:
    void set(float value) {
       // ignore out of range values
       if (value > this->_maxRange || value < this->_minRange) {
+         this->_badCount++;
          return;
       }
 
       if (isnan(value)) {
+         this->_badCount++;
          return;
       }
 
@@ -58,9 +68,28 @@ public:
 
    void reset() {
       this->_count = 0;
+      this->_badCount = 0;
       this->_total = 0;
       this->_min = NAN;
       this->_max = NAN;
       this->_avg = NAN;
+   }
+
+   unsigned long getCount() {
+      return this->_count;
+   }
+
+   unsigned long getBadCount() {
+      return this->_badCount;
+   }
+
+   String getValues() {
+      String msg = "";
+      msg += "  Good: " + String(this->getCount()) + "\n";
+      msg += "  Bad : " + String(this->getBadCount()) + "\n";
+      msg += "  Min : " + String(this->getMin()) + "\n";
+      msg += "  Max : " + String(this->getMax()) + "\n";
+      msg += "  Avg : " + String(this->get()) + "\n";
+      return msg;
    }
 };
