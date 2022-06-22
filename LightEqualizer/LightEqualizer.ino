@@ -1,14 +1,16 @@
 
-#include <I2C.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
-#include <hp_BH1750.h>
-#include <I2CMultiplexor.h>
+#include <Stopwatch.h>
 
+#define BUTTON_A 9
+#define BUTTON_B 6
+#define BUTTON_C 5
 
 Adafruit_SH1107 display = Adafruit_SH1107(64, 128, &Wire);
-hp_BH1750 BH1750[8];
-I2CMultiplexor multi;
+
+Stopwatch sw;
+
 
 void setup() {
    // start serial port
@@ -30,34 +32,45 @@ void setup() {
 
    Serial.println("Starting Light Sketch");
 
-   multi.begin();
+   pinMode(BUTTON_A, INPUT_PULLUP);
+   pinMode(BUTTON_B, INPUT_PULLUP);
+   pinMode(BUTTON_C, INPUT_PULLUP);
+   pinMode(10, OUTPUT);
 
-   for (int i = 0; i < 8;i++) {
-      multi.select(i);
-      bool avail = BH1750[i].begin(BH1750_TO_GROUND);
-      Serial.print(i);
-      Serial.print(": ");
-      if (avail == false) {
-         Serial.println("No Sensor");
-      }
-      else {
-         Serial.println("Sensor Found");
-      }
-   }
+   pinMode(PIN_A0, INPUT);
+   pinMode(PIN_A1, INPUT);
+   pinMode(PIN_A2, INPUT);
 }
 
 void loop() {
 
+
+   float min = 500;
+   float max = 1000;
+
+   float l1 = (analogRead(PIN_A0) - min) / (max - min);
+   l1 = constrain(l1, 0, 1);
+   float l2 = (analogRead(PIN_A1) - min) / (max - min);
+   l2 = constrain(l2, 0, 1);
+   float l3 = (analogRead(PIN_A2) - min) / (max - min);
+   l3 = constrain(l3, 0, 1);
+
+   float maxMs = 1000;
+   float minMs = 5;
+   float ms = minMs + (maxMs - minMs) * l1;
+
+   if (sw.elapsedMillis() > ms) {
+      sw.reset();
+      digitalWrite(10, digitalRead(10) == LOW);
+   }
+
+   //if (digitalRead(BUTTON_A) == LOW) {
    display.clearDisplay();
    display.setCursor(0, 0);
    display.setTextSize(2);
-
-   for (int i = 0; i < 3; i++) {
-      multi.select(i);
-      BH1750[i].start();
-      float lux = BH1750[i].getLux();
-      display.println(lux);
-   }
-
+   display.println(l1);
+   display.println(l2);
+   display.println(l3);
    display.display();
+   //}
 }
