@@ -18,8 +18,9 @@
 #include <Adafruit_SH110X.h>
 #include <FlashStorage.h>
 #include "TempSensor.h"
+#include <Adafruit_SleepyDog.h>
 
-#define VERSION "1.0"
+#define VERSION "1.2"
 
 // Create a structure that is big enough to contain a name
 // and a surname. The "valid" variable is set to "true" once
@@ -121,6 +122,7 @@ const char* choose(const char* choice1, const char* choice2, const char* choice3
 
 
 void setup() {
+
    // start serial port
    Serial.begin(115200);
 
@@ -146,9 +148,6 @@ void setup() {
    pinMode(BUTTON_A, INPUT_PULLUP);
    pinMode(BUTTON_B, INPUT_PULLUP);
    pinMode(BUTTON_C, INPUT_PULLUP);
-
-   // connect to the wireless
-   Util::connectToWifi(WIFI_SSID, WIFI_PASS);
 
    // Read the id from flash
    ID id = flash.read();
@@ -180,6 +179,14 @@ void setup() {
       flash.write(id);
    }
 
+   Watchdog.enable();
+
+   // connect to the wireless
+   display.setTextSize(1);
+   display.println("Connecting to WiFI...");
+   Util::connectToWifi(WIFI_SSID, WIFI_PASS);
+   Watchdog.reset();
+
    // create the IO feeds
    String key = String("temperature.") + location + String("-") + room;
    key.toLowerCase();
@@ -190,10 +197,11 @@ void setup() {
 
    // connect to io.adafruit.com
    display.setTextSize(1);
-   display.println("Connecting...");
+   display.println("Connecting to IO...");
    display.display();
    delay(10);
    Util::connectToAdafruitIO(&io);
+   Watchdog.reset();
 
    // we are connected
    Serial.println(io.statusText());
@@ -223,10 +231,13 @@ void setup() {
 
    display.clearDisplay();
    display.display();
+
+   digitalWrite(LED_BUILTIN, LOW);
 }
 
 void loop() {
    clock.update();
+   Watchdog.reset();
 
    // io.run(); is required for all sketches.
    // it should always be present at the top of your loop
@@ -238,26 +249,37 @@ void loop() {
    }
 
    display.clearDisplay();
-   display.setCursor(0, 0);
-   display.setTextSize(3);
-   display.print(Util::C2F(sensor->readTemperature()), 1);
-   display.println(" F");
-   display.print(sensor->readHumidity(), 1);
-   display.println("%");
-   display.setTextSize(1);
-   display.println();
-   display.print(location);
-   display.print("-");
-   display.print(room);
 
+   // char size for text size 1
    const int XS = 6;
    const int YS = 8;
+
+   if (digitalRead(BUTTON_A) == LOW) {
+      display.setCursor(0, 0);
+      display.setTextSize(3);
+      display.print(Util::C2F(sensor->readTemperature()), 1);
+      display.println(" F");
+      display.print(sensor->readHumidity(), 1);
+      display.println("%");
+      display.setTextSize(1);
+      display.println();
+      display.print(location);
+      display.print("-");
+      display.print(room);
+   }
+   else {
+      display.setTextSize(1);
+      display.setCursor(0, 64 - YS);
+      display.print(Util::C2F(sensor->readTemperature()), 1);
+      display.print(" F ");
+      display.print(sensor->readHumidity(), 1);
+      display.print("%");
+   }
+
+   display.setTextSize(1);
    display.setCursor(128 - 3 * XS, 64 - YS);
    display.print(VERSION);
-
    display.display();
-
-   display.display(); // actually display all of the above   
 
    temperature.set(Util::C2F(sensor->readTemperature()));
    humidity.set(sensor->readHumidity());
