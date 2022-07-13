@@ -1,76 +1,130 @@
 #pragma once
 
+enum StopwatchPrecision
+{
+   Micros,
+   Millis,
+};
+
 class Stopwatch {
 private:
-  unsigned long _startMicros;
-  unsigned long _elapsedMicros = 0;
-  bool _running = false;
+   StopwatchPrecision _precision;
+   unsigned long _startTicks;
+   unsigned long _elapsedTicks = 0;
+   bool _running = false;
+
+   unsigned long _ticks() {
+      if (this->_precision == StopwatchPrecision::Micros) {
+         return micros();
+      }
+      else {
+         return millis();
+      }
+   }
+
+   unsigned long _currentTicks() {
+      if (this->_running) {
+         return (this->_ticks() - this->_startTicks) + this->_elapsedTicks;
+      }
+      else {
+         return this->_elapsedTicks;
+      }
+   }
+
+   double _ticksPerMilli() {
+      if (this->_precision == StopwatchPrecision::Micros) {
+         return 1000.0;
+      }
+      else {
+         return 1.0;
+      }
+   }
 
 public:
-  Stopwatch() { Start(); }
+   /***
+    * Precision impacts the maximum length of time. If in micros, max is
+    * about 4000 seconds
+    */
+   Stopwatch(StopwatchPrecision precision = StopwatchPrecision::Micros)
+   {
+      this->_precision = precision;
+      Start();
+   }
 
-  void Start() {
-    if (this->_running == false) {
-      _running = true;
-      _startMicros = micros();
-    }
-  }
+   void Start() {
+      if (this->_running == false) {
+         _running = true;
+         _startTicks = this->_ticks();
+      }
+   }
 
-  void Stop() {
-    if (this->_running) {
-      this->_elapsedMicros += (micros() - this->_startMicros);
-      this->_running = false;
-    }
-  }
+   void Stop() {
+      if (this->_running) {
+         this->_elapsedTicks += (this->_ticks() - this->_startTicks);
+         this->_running = false;
+      }
+   }
 
-  void reset() {
-    this->_elapsedMicros = 0;
-    if (this->_running) {
-      this->_startMicros = micros();
-    }
-  }
+   void reset() {
+      this->_elapsedTicks = 0;
+      if (this->_running) {
+         this->_startTicks = micros();
+      }
+   }
 
-  unsigned long elapsedMicros() {
-    if (this->_running) {
-      return (micros() - this->_startMicros) + this->_elapsedMicros;
-    } else {
-      return this->_elapsedMicros;
-    }
-  }
+   unsigned long elapsedMicros() {
+      if (this->_precision == StopwatchPrecision::Micros) {
+         return this->_currentTicks();
+      }
+      else {
+         return 1000 * this->_currentTicks();
+      }
+   }
 
-  double elapsedMillis() { return elapsedMicros() / 1000.0; }
-  double elapsedSecs() { return elapsedMicros() / 1000000.0; }
+   double elapsedMillis()
+   {
+      if (this->_precision == StopwatchPrecision::Micros) {
+         return 1000 * this->_currentTicks();
+      }
+      else {
+         return this->_currentTicks();
+      }
+   }
 
-  void printlnMicros(const char *label, bool reset = false) {
-    Serial.print(label);
-    Serial.print(" ");
-    Serial.print(this->elapsedMicros());
-    Serial.println(" micros");
+   double elapsedSecs() {
+      return elapsedMillis() / 1000.0;
+   }
 
-    if (reset) {
-      this->reset();
-    }
-  }
+   void printlnMicros(const char* label, bool reset = false) {
+      Serial.print(label);
+      Serial.print(" ");
+      Serial.print(this->elapsedMicros());
+      Serial.println(" micros");
 
-  void printlnMillis(const char *label, bool reset = false) {
-    Serial.print(label);
-    Serial.print(" ");
-    Serial.print(this->elapsedMillis());
-    Serial.println("ms");
+      if (reset) {
+         this->reset();
+      }
+   }
 
-    if (reset) {
-      this->reset();
-    }
-  }
+   void printlnMillis(const char* label, bool reset = false) {
+      Serial.print(label);
+      Serial.print(" ");
+      Serial.print(this->elapsedMillis());
+      Serial.println("ms");
 
-  void printlnSecs(const char *label, bool reset = false) {
-    Serial.print(label);
-    Serial.print(" ");
-    Serial.print(this->elapsedSecs());
-    Serial.println("s");
+      if (reset) {
+         this->reset();
+      }
+   }
 
-    if (reset) {
-      this->reset();
-    }
-  }
+   void printlnSecs(const char* label, bool reset = false) {
+      Serial.print(label);
+      Serial.print(" ");
+      Serial.print(this->elapsedSecs());
+      Serial.println("s");
+
+      if (reset) {
+         this->reset();
+      }
+   }
 };
