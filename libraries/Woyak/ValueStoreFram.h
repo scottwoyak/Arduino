@@ -18,9 +18,10 @@ public:
       return this->_fram->readFloat(this->_address);
    }
 
-   void set(float value) {
+   boolean set(float value) {
       this->_fram->writeEnable(true);
       this->_fram->writeFloat(this->_address, value);
       this->_fram->writeEnable(false);
+      return true; // success
    }
 };

@@ -25,7 +25,7 @@ public:
       delete[] this->_values;
    }
 
-   void set(float value) {
+   boolean set(float value) {
       this->_values[this->_index] = value;
 
       this->_index++;
@@ -34,6 +34,8 @@ public:
       }
 
       this->_avg = NAN;
+
+      return true;
    }
 
    float get() {

@@ -29,16 +29,16 @@ public:
       this->_avg = NAN;
    }
 
-   void set(float value) {
+   boolean set(float value) {
       // ignore out of range values
       if (value > this->_maxRange || value < this->_minRange) {
          this->_badCount++;
-         return;
+         return false;
       }
 
       if (isnan(value)) {
          this->_badCount++;
-         return;
+         return false;
       }
 
       this->_min = isnan(this->_min) ? value : min(this->_min, value);
@@ -47,6 +47,8 @@ public:
       this->_total += value;
       this->_count++;
       this->_avg = NAN;
+
+      return true;
    }
 
    float get() {
