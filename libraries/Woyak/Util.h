@@ -13,7 +13,7 @@ namespace Util {
       int status = WiFi.begin(ssid, pass);
 
       while (status != WL_CONNECTED) {
-         // wait 10 seconds for connection:
+         // wait for connection:
          Serial.print(".");
          delay(500);
       }
