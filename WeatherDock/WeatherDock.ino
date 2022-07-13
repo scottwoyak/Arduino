@@ -50,6 +50,7 @@ AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
 #define BATTERY_VOLTS_PIN PIN_A0
 #define BATTERY_CHARGING_VOLTS_PIN PIN_A7
 #define MULTIPLEXER_RESET_PIN PIN_A1
+#define SENSOR_POWER_PIN PIN_A2
 
 // battery
 Battery battery(BATTERY_VOLTS_PIN, BATTERY_CHARGING_VOLTS_PIN);
@@ -62,6 +63,7 @@ I2CMultiplexor i2cMultiplexor;
 SHT35M shtSurface(&i2cMultiplexor, 2);
 SHT35M sht2Feet(&i2cMultiplexor, 3);
 SHT35M sht4Feet(&i2cMultiplexor, 4);
+//Adafruit_SHT31 sht2Feet;
 
 // internet clock
 WiFiUDP ntpUDP;
@@ -82,6 +84,7 @@ AdafruitIO_Feed* batteryPercentFeed = io.feed("dock.battery-percent");
 AdafruitIO_Feed* logFeed = io.feed("dock.log");
 AdafruitIO_Feed* resetFeed = io.feed("dock.reset");
 AdafruitIO_Feed* multiplexerResetFeed = io.feed("dock.multiplexer-reset");
+AdafruitIO_Feed* sensorResetFeed = io.feed("dock.sensor-reset");
 AdafruitIO_Feed* logRequestFeed = io.feed("dock.log-request");
 
 // values
@@ -94,6 +97,8 @@ FeedTimer windFeedTimer(&clock, 10 * 60, false);
 FeedTimer waterTempFeedTimer(&clock, 15 * 60, false);
 FeedTimer batteryFeedTimer(&clock, 10 * 60, false);
 FeedTimer windNowFeedTimer(&clock, 5, false);
+
+long sensorResetCount = 0;
 
 // logging mechanism
 Logger logger(
@@ -127,8 +132,11 @@ void setup(void) {
 
    Watchdog.enable(); // max = 16s
 
-   digitalWrite(MULTIPLEXER_RESET_PIN, HIGH);
    pinMode(MULTIPLEXER_RESET_PIN, OUTPUT);
+   digitalWrite(MULTIPLEXER_RESET_PIN, HIGH);
+
+   pinMode(SENSOR_POWER_PIN, OUTPUT);
+   digitalWrite(SENSOR_POWER_PIN, HIGH);
 
    // start serial port
    Serial.begin(115200);
@@ -158,6 +166,7 @@ void setup(void) {
 
    Serial.print("begin() temp sensors");
    i2cMultiplexor.begin();
+   i2cMultiplexor.scan();
    shtSurface.begin(0x44);
    sht2Feet.begin(0x44);
    sht4Feet.begin(0x44);
@@ -197,6 +206,7 @@ void setup(void) {
    // register handler callbacks
    resetFeed->onMessage(handleMessageReset);
    multiplexerResetFeed->onMessage(handleMessageMultiplexerReset);
+   sensorResetFeed->onMessage(handleMessageSensorReset);
    logRequestFeed->onMessage(handleMessageLogRequest);
 
    Watchdog.reset();
@@ -222,7 +232,8 @@ void handleMessageLogRequest(AdafruitIO_Data* data) {
 
       msg += String(tempSurface.getCount()) + "-" + String(tempSurface.getBadCount()) + ", ";
       msg += String(temp2Feet.getCount()) + "-" + String(temp2Feet.getBadCount()) + ", ";
-      msg += String(temp4Feet.getCount()) + "-" + String(temp4Feet.getBadCount());
+      msg += String(temp4Feet.getCount()) + "-" + String(temp4Feet.getBadCount()) + ", ";
+      msg += String(sensorResetCount);
       logger.println(msg);
 
       /*
@@ -275,6 +286,47 @@ void handleMessageMultiplexerReset(AdafruitIO_Data* data) {
    //sht4Feet.begin(0x44);
 }
 
+void resetSensors() {
+   digitalWrite(SENSOR_POWER_PIN, LOW);
+   delay(1000); // is this needed?
+   Watchdog.reset();
+   digitalWrite(SENSOR_POWER_PIN, HIGH);
+
+   i2cMultiplexor.begin();
+   shtSurface.begin(0x44);
+   sht2Feet.begin(0x44);
+   sht4Feet.begin(0x44);
+
+   sensorResetCount++;
+}
+
+void handleMessageSensorReset(AdafruitIO_Data* data) {
+
+   if (data->toPinLevel() == HIGH) {
+      logger.println("Resetting Sensors");
+      resetSensors();
+
+      float tSurface = Util::C2F(shtSurface.readTemperature());
+      float t2Feet = Util::C2F(sht2Feet.readTemperature());
+      float t4Feet = Util::C2F(sht4Feet.readTemperature());
+
+      Serial.println("Water Temperatures:");
+      Serial.print("   Surface: ");
+      Serial.print(tSurface);
+      Serial.println();
+      Serial.print("   2 Feet: ");
+      Serial.print(t2Feet);
+      Serial.println();
+      Serial.print("   4 Feet: ");
+      Serial.print(t4Feet);
+      Serial.println();
+
+      logger.print("Surface: " + String(tSurface));
+      logger.print("2 Feet: " + String(t2Feet));
+      logger.print("4 Feet: " + String(t4Feet));
+   }
+}
+
 /*
  * Main function, get and show the temperature
  */
@@ -298,9 +350,15 @@ void loop(void) {
    battery.read();
 
    // read temperatures
-   tempSurface.set(Util::C2F(shtSurface.readTemperature()));
-   temp2Feet.set(Util::C2F(sht2Feet.readTemperature()));
-   temp4Feet.set(Util::C2F(sht4Feet.readTemperature()));
+   if (tempSurface.set(Util::C2F(shtSurface.readTemperature())) == false) {
+      resetSensors();
+   }
+   if (temp2Feet.set(Util::C2F(sht2Feet.readTemperature())) == false) {
+      resetSensors();
+   }
+   if (temp4Feet.set(Util::C2F(sht4Feet.readTemperature())) == false) {
+      resetSensors();
+   }
 
    if (windNowFeedTimer.ready()) {
       windNowFeed->save(windMeter.getCurrent());
@@ -364,19 +422,31 @@ void loop(void) {
       temp2FeetFeed->save(t2Feet);
       temp4FeetFeed->save(t4Feet);
 
+      /*
       if (tempSurface.getBadCount() > 0) {
-         String msg = "Surface Failures: " + String(tempSurface.getCount()) + "-" + String(tempSurface.getBadCount());
+         String msg = "Surface Failures: " + String(tempSurface.getBadCount());
          logger.println(msg);
       }
 
       if (temp2Feet.getBadCount() > 0) {
-         String msg = "2 Feet Failures: " + String(temp2Feet.getCount()) + "-" + String(temp2Feet.getBadCount());
+         String msg = "2 Feet Failures: " + String(temp2Feet.getBadCount());
          logger.println(msg);
       }
 
       if (temp4Feet.getBadCount() > 0) {
-         String msg = "4 Feet Failures: " + String(temp4Feet.getCount()) + "-" + String(temp4Feet.getBadCount());
+         String msg = "4 Feet Failures: " + String(temp4Feet.getBadCount());
          logger.println(msg);
+      }
+      */
+
+      if (sensorResetCount > 0) {
+         String msg = "Failures (surface, 2', 4'): " +
+            String(tempSurface.getBadCount()) + " " +
+            String(temp2Feet.getBadCount()) + " " +
+            String(temp4Feet.getBadCount()) + " " +
+            "reset: " + String(sensorResetCount);
+
+         sensorResetCount = 0;
       }
 
       tempSurface.reset();
