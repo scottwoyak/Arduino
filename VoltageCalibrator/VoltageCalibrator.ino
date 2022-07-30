@@ -8,12 +8,9 @@
 #include <WiFi101.h>
 #include <WiFiUdp.h>
 #include <Util.h>
-#include <AccumulatingAverager.h>
 #include <RunningAverager.h>
-#include <Adafruit_LPS35HW.h>
 #include <I2C.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_SH110X.h>
 #include <Adafruit_SSD1306.h>
 
 // use the Adafruit C1500 WiFi board (via Feather M0 WiFi)
@@ -47,7 +44,7 @@ AdafruitIO_Feed* voltageFeed = io.feed("voltage");
 AdafruitIO_Feed* timeFeed = io.feed("time");
 
 // 2 line OLED display
-Adafruit_SSD1306 display = Adafruit_SSD1306(128, 32, &Wire);
+Adafruit_SSD1306 display(128, 32, &Wire);
 
 Stopwatch time(StopwatchPrecision::Millis);
 RunningAverager averageVolts(50);
