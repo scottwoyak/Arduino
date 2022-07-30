@@ -41,24 +41,28 @@ private:
    }
 
 public:
+   Stopwatch(bool start = true, StopwatchPrecision precision = StopwatchPrecision::Micros) {
+      this->_precision = precision;
+      if (start) {
+         this->start();
+      }
+   }
+
    /***
     * Precision impacts the maximum length of time. If in micros, max is
     * about 4000 seconds
     */
-   Stopwatch(StopwatchPrecision precision = StopwatchPrecision::Micros)
-   {
-      this->_precision = precision;
-      Start();
+   Stopwatch(StopwatchPrecision precision) : Stopwatch(true, precision) {
    }
 
-   void Start() {
+   void start() {
       if (this->_running == false) {
          _running = true;
          _startTicks = this->_ticks();
       }
    }
 
-   void Stop() {
+   void stop() {
       if (this->_running) {
          this->_elapsedTicks += (this->_ticks() - this->_startTicks);
          this->_running = false;
@@ -68,8 +72,12 @@ public:
    void reset() {
       this->_elapsedTicks = 0;
       if (this->_running) {
-         this->_startTicks = micros();
+         this->_startTicks = _ticks();
       }
+   }
+
+   bool isRunning() {
+      return this->_running;
    }
 
    unsigned long elapsedMicros() {
@@ -81,10 +89,9 @@ public:
       }
    }
 
-   double elapsedMillis()
-   {
+   double elapsedMillis() {
       if (this->_precision == StopwatchPrecision::Micros) {
-         return 1000 * this->_currentTicks();
+         return this->_currentTicks() / 1000.0;
       }
       else {
          return this->_currentTicks();
