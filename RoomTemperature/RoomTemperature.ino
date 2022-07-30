@@ -69,7 +69,7 @@ Logger Error(
    new SerialLogHandler()
 );
 
-Adafruit_SH1107 display = Adafruit_SH1107(64, 128, &Wire);
+Adafruit_SH1107 display(64, 128, &Wire);
 
 AccumulatingAverager temperature(-10, 110);
 AccumulatingAverager humidity(0, 100);
