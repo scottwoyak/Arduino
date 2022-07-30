@@ -2,25 +2,39 @@
 
 #include "WiFi101.h"
 #include <AdafruitIO.h>
+#include <Stopwatch.h>
 
 namespace Util {
 
-   void connectToWifi(const char* ssid, const char* pass) {
-      Serial.print("Attempting to connect to ");
+   bool connectToWifi(const char* ssid, const char* pass, ulong timeoutMs = 0) {
+      Serial.print("Connecting to ");
       Serial.print(ssid);
 
       WiFi.setPins(8, 7, 4, 2);
       int status = WiFi.begin(ssid, pass);
 
+      Stopwatch sw;
       while (status != WL_CONNECTED) {
+
+         if (timeoutMs > 0 && sw.elapsedMillis() > timeoutMs) {
+            break;
+         }
+
          // wait for connection:
          Serial.print(".");
          delay(500);
       }
       Serial.println();
 
-      Serial.print("Connected to ");
-      Serial.println(ssid);
+      if (status == WL_CONNECTED) {
+         Serial.print("Connected to ");
+         Serial.println(ssid);
+         return true;
+      }
+      else {
+         Serial.println("Connection failed");
+         return false;
+      }
    }
 
    void connectToAdafruitIO(AdafruitIO* io) {
@@ -35,9 +49,9 @@ namespace Util {
       Serial.println();
    }
 
-   float readVolts(uint8_t pin, uint16_t resolution = 4096) {
+   float readVolts(uint8_t pin, uint16_t resolution = 4096, float voltageDivider = 2) {
       float volts = analogRead(pin);
-      volts *= 2;    // we divided by 2 with 100k resistors, so multiply back
+      volts *= voltageDivider;    // compensate for voltage divider
       volts *= 3.3;  // Multiply by 3.3V, our reference voltage
       volts /= resolution; // convert to voltage
       return volts;
