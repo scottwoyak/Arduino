@@ -12,38 +12,40 @@ private:
    float _maxRange;
    float _min;
    float _max;
-   float _avg;
+   float _avg = NAN;
+   float _last = NAN;
 
 public:
    AccumulatingAverager() {
       this->_minRange = -__FLT_MAX__;
       this->_maxRange = __FLT_MAX__;
       this->reset();
-      this->_avg = NAN;
    }
 
    AccumulatingAverager(float minRange, float maxRange) {
       this->_minRange = minRange;
       this->_maxRange = maxRange;
       this->reset();
-      this->_avg = NAN;
    }
 
    boolean set(float value) {
       // ignore out of range values
       if (value > this->_maxRange || value < this->_minRange) {
          this->_badCount++;
+         this->_last = NAN;
          return false;
       }
 
       if (isnan(value)) {
          this->_badCount++;
+         this->_last = NAN;
          return false;
       }
 
       this->_min = isnan(this->_min) ? value : min(this->_min, value);
       this->_max = isnan(this->_max) ? value : max(this->_max, value);
 
+      this->_last = value;
       this->_total += value;
       this->_count++;
       this->_avg = NAN;
@@ -58,6 +60,19 @@ public:
          }
       }
       return this->_avg;
+   }
+
+   float get(bool lastValue) {
+      if (lastValue) {
+         return this->_last;
+      }
+      else {
+         return get();
+      }
+   }
+
+   float last() {
+      return this->_last;
    }
 
    float getMin() {
