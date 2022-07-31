@@ -181,14 +181,17 @@ enum OLED_Button {
 
 static void buttonAPress() {
    oledButton = OLED_Button::A;
+   oledTimer.reset();
 }
 
 static void buttonBPress() {
    oledButton = OLED_Button::B;
+   oledTimer.reset();
 }
 
 static void buttonCPress() {
    oledButton = OLED_Button::C;
+   oledTimer.reset();
 }
 
 /*
@@ -317,6 +320,7 @@ void setup(void) {
 
    // start the timer that automatically turns off the display
    oledTimer.start();
+   oledButton = OLED_Button::C;
 }
 
 void handleMessageLogRequest(AdafruitIO_Data* data) {
@@ -429,24 +433,13 @@ void loop(void) {
 
    loopTimer.stop();
 
-   if (oledButton != OLED_Button::None) {
-      oledTimer.reset();
-      oledTimer.start();
+   // turn the display on if needed
+   if (oledButton != OLED_Button::None && oledTimer.isRunning() == false) {
       display.oled_command(SH110X_DISPLAYON);
-      /*
-      if (oledTimer.isRunning()) {
-         oledTimer.stop();
-         oledTimer.reset();
-         display.oled_command(SH110X_DISPLAYOFF);
-      }
-      else {
-         oledTimer.start();
-         display.oled_command(SH110X_DISPLAYON);
-      }
-*/
+      oledTimer.start();
    }
 
-   // turn off the display if needed
+   // turn the display off if needed
    if (digitalRead(BUTTON_A) == HIGH &&
       digitalRead(BUTTON_B) == HIGH &&
       digitalRead(BUTTON_C) == HIGH &&
@@ -485,20 +478,19 @@ void loop(void) {
 
          display.display();
       }
-      else {
-         bool useLastValue = (oledButton == OLED_Button::B);
+      else if (oledButton == OLED_Button::B) {
          display.clearDisplay();
          display.setRotation(0);
          display.setCursor(0, 0);
 
-         display.println("Batt: ");
+         display.println("Battery: ");
          display.print(" ");
-         display.print(batteryVolts.get(useLastValue), 4);
+         display.print(batteryVolts.get(), 4);
          display.print(" v");
          display.println();
 
          display.print(" ");
-         display.print(batteryMilliAmps.get(useLastValue), 1);
+         display.print(batteryMilliAmps.get(), 1);
          display.print(" mA");
          display.println();
 
@@ -506,19 +498,52 @@ void loop(void) {
          display.print("Solar:");
          display.println();
          display.print(" ");
-         display.print(solarVolts.get(useLastValue), 3);
+         display.print(solarVolts.get(), 3);
+         display.print(" v");
+         display.println();
+         display.println();
+
+         display.println("Now");
+         display.print(" ");
+         display.print(batteryVolts.last(), 4);
          display.print(" v");
          display.println();
 
+         display.print(" ");
+         display.print(batteryMilliAmps.last(), 1);
+         display.print(" mA");
          display.println();
+
+         display.print(" ");
+         display.print(solarVolts.last(), 3);
+         display.print(" v");
+
+         display.display();
+      }
+      else {
+         display.clearDisplay();
+         display.setRotation(0);
+         display.setCursor(0, 0);
+
          display.print("Temp:");
          display.println();
          display.print(" ");
-         display.print(tempSurface.get(useLastValue), 1);
+         display.print(tempSurface.get(), 1);
          display.print(" F");
          display.println();
          display.print(" ");
-         display.print(tempBottom.get(useLastValue), 1);
+         display.print(tempBottom.get(), 1);
+         display.print(" F");
+         display.println();
+
+         display.print("Now:");
+         display.println();
+         display.print(" ");
+         display.print(tempSurface.last(), 1);
+         display.print(" F");
+         display.println();
+         display.print(" ");
+         display.print(tempBottom.last(), 1);
          display.print(" F");
          display.println();
 
