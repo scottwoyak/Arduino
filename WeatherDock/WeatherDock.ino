@@ -7,7 +7,7 @@
 #include <WiFi101.h>
 #include <WiFiUdp.h>
 #include <Util.h>
-#include <AccumulatingAverager.h>
+#include <TimedAverager.h>
 #include "WiFiSettings.h"
 #include <FeedTimer.h>
 #include <Logger.h>
@@ -68,6 +68,8 @@ AdafruitIO_WiFi io(IO_USERNAME, IO_KEY, WIFI_SSID, WIFI_PASS);
 
 // 4 line OLED display
 Adafruit_SH1107 display(64, 128, &Wire);
+
+// volt/current sensor
 Adafruit_INA219 ina;
 
 // Pins
@@ -113,21 +115,28 @@ AdafruitIO_Feed* resetDelayFeed = io.feed("bragg.reset-delay");
 // values
 AccumulatingAverager tempSurface(20, 90);
 AccumulatingAverager tempBottom(20, 90);
+AccumulatingAverager solarVolts;
+AccumulatingAverager batteryVolts;
+AccumulatingAverager batteryMilliAmps;
 
 // feed timers
 FeedTimer windFeedTimer(&clock, 10 * 60, false);
 FeedTimer waterTempFeedTimer(&clock, 15 * 60, false);
-FeedTimer batteryFeedTimer(&clock, 1 * 60, false);
-//FeedTimer batteryFeedTimer(&clock, 10 * 60, false);
+FeedTimer batteryFeedTimer(&clock, 10 * 60, false);
 FeedTimer windNowFeedTimer(&clock, 5, false);
 
 ulong sensorResetCount = 0;
 ulong resetDelay = 0;
 
 // logging mechanism
-Logger logger(
+Logger ioLogger(
    new SerialLogHandler(),
    new FeedLogHandler(logFeed)
+);
+
+Logger logger(
+   new SerialLogHandler(),
+   new DisplayLogHandler(&display)
 );
 
 String getValues() {
@@ -162,27 +171,24 @@ String getValues() {
 }
 
 Stopwatch oledTimer(false);
-static bool oledButton = false;
+
+enum OLED_Button {
+   A,
+   B,
+   C,
+   None
+} oledButton;
 
 static void buttonAPress() {
-   Serial.println("button press");
-   oledButton = true;
+   oledButton = OLED_Button::A;
 }
 
-void print(const char* str, bool displayNow = true) {
-   Serial.print(str);
-   display.print(str);
-   if (displayNow) {
-      display.display();
-   }
+static void buttonBPress() {
+   oledButton = OLED_Button::B;
 }
 
-void println(const char* str, bool displayNow = true) {
-   Serial.println(str);
-   display.println(str);
-   if (displayNow) {
-      display.display();
-   }
+static void buttonCPress() {
+   oledButton = OLED_Button::C;
 }
 
 /*
@@ -215,74 +221,73 @@ void setup(void) {
    display.setCursor(0, 0);
    display.display();
 
-   println("Starting");
+   logger.println("Starting");
 
    // connect to WiFi
-   println("WiFi...");
+   logger.println("WiFi...");
    if (Util::connectToWifi(WIFI_SSID, WIFI_PASS) == false) {
-      println("Failed - Restarting");
+      logger.println("Failed - Restarting");
       delay(1000000);
    }
    Watchdog.reset();
 
    // connect to io.adafruit.com
-   println("IO...");
+   logger.println("IO...");
    Util::connectToAdafruitIO(&io);
    Watchdog.reset();
 
-   display.println("Logging...");
-   display.display();
-   logger.println("Starting WeatherDock Sketch");
+   logger.println("io logging...");
+   ioLogger.println("Starting WeatherDock Sketch");
 
    //   display.clearDisplay();
    //   display.setCursor(0, 0);
 
-   println("begin");
-   print("-multi ");
+   logger.println("begin");
+   logger.print("-multi ");
    i2cMultiplexor.begin();
    i2cMultiplexor.scan();
-   println("ok");
+   logger.println("ok");
 
-   print("-surface ");
+   logger.print("-surface ");
    if (shtSurface.begin(0x44) == false) {
-      println("X");
+      logger.println("X");
    }
    else {
-      println("ok");
+      logger.println("ok");
    }
 
-   print("-bottom ");
+   logger.print("-bottom ");
    shtBottom.begin(0x44);
    if (shtBottom.begin(0x44) == false) {
-      println("X");
+      logger.println("X");
    }
    else {
-      println("ok");
+      logger.println("ok");
    }
 
-   print("-wind ");
+   logger.print("-wind ");
    windMeter.begin();
-   println("ok");
+   logger.println("ok");
 
-   print("-clock ");
+   logger.print("-clock ");
    clock.begin();
    clock.setUpdateInterval(24 * 60 * 60 * 1000);
    clock.update();
-   println("ok");
+   logger.println("ok");
 
-   print("-feeds ");
+   logger.print("-feeds ");
    windNowFeedTimer.begin();
    batteryFeedTimer.begin();
    windFeedTimer.begin();
    waterTempFeedTimer.begin();
-   println("ok");
+   logger.println("ok");
 
-   print("-ina ");
+   logger.print("-ina ");
    if (ina.begin() == false) {
-      println("X");
+      logger.println("X");
    }
    else {
-      println("ok");
+      logger.println("ok");
    }
 
    WiFi.maxLowPowerMode();
@@ -290,11 +295,11 @@ void setup(void) {
    Watchdog.reset();
 
    // read and print initial values
-   println("get values");
+   logger.println("get values");
    Serial.println(getValues());
    Watchdog.reset();
 
-   println("ready!!!");
+   logger.println("\nready!!!");
    delay(3000);
 
    // register handler callbacks
@@ -306,8 +311,9 @@ void setup(void) {
 
    Watchdog.reset();
 
-   unsigned short interrupt = digitalPinToInterrupt(BUTTON_A);
-   attachInterrupt(interrupt, buttonAPress, FALLING);
+   attachInterrupt(digitalPinToInterrupt(BUTTON_A), buttonAPress, FALLING);
+   attachInterrupt(digitalPinToInterrupt(BUTTON_B), buttonBPress, FALLING);
+   attachInterrupt(digitalPinToInterrupt(BUTTON_C), buttonCPress, FALLING);
 
    // start the timer that automatically turns off the display
    oledTimer.start();
@@ -329,7 +335,7 @@ void handleMessageLogRequest(AdafruitIO_Data* data) {
          String(tempBottom.getBadCount()) + " of " +
          String(total, 0) + " " +
          "Resets: " + String(sensorResetCount);
-      logger.println(msg);
+      ioLogger.println(msg);
       Watchdog.reset();
    }
 }
@@ -354,7 +360,7 @@ void resetSensors() {
 void handleMessageSensorReset(AdafruitIO_Data* data) {
 
    if (data->toPinLevel() == HIGH) {
-      logger.println("Resetting Sensors");
+      ioLogger.println("Resetting Sensors");
       resetSensors();
 
       float tSurface = Util::C2F(shtSurface.readTemperature());
@@ -367,8 +373,8 @@ void handleMessageSensorReset(AdafruitIO_Data* data) {
       Serial.print("   Bottom: ");
       Serial.println();
 
-      logger.print("Surface: " + String(tSurface));
-      logger.print("Bottom: " + String(tBottom));
+      ioLogger.print("Surface: " + String(tSurface));
+      ioLogger.print("Bottom: " + String(tBottom));
    }
 }
 
@@ -378,10 +384,7 @@ void handleMessageResetDelay(AdafruitIO_Data* data) {
    resetDelay = data->toLong();
 }
 
-#define NUM_SAMPLES 200
-RunningAverager solarVolts(NUM_SAMPLES);
-RunningAverager batteryVolts(NUM_SAMPLES);
-RunningAverager batteryMilliAmps(NUM_SAMPLES);
+Stopwatch loopTimer;
 
 /*
  * Main function, get and show the temperature
@@ -393,7 +396,7 @@ void loop(void) {
    // function. it keeps the client connected to
    // io.adafruit.com, and processes any incoming data.
    if (io.run() != AIO_CONNECTED) {
-      logger.println("Error: Could not reconnect to Adafruit IO");
+      ioLogger.println("Error: Could not reconnect to Adafruit IO");
       return;
    }
    // io.run() can take a little while
@@ -401,6 +404,9 @@ void loop(void) {
 
    clock.update();
    Watchdog.reset();
+
+   loopTimer.reset();
+   loopTimer.start();
 
    // read sensor values
    batteryVolts.set(ina.getBusVoltage_V());
@@ -421,8 +427,13 @@ void loop(void) {
    }
    Watchdog.reset();
 
-   if (oledButton) {
-      oledButton = false;
+   loopTimer.stop();
+
+   if (oledButton != OLED_Button::None) {
+      oledTimer.reset();
+      oledTimer.start();
+      display.oled_command(SH110X_DISPLAYON);
+      /*
       if (oledTimer.isRunning()) {
          oledTimer.stop();
          oledTimer.reset();
@@ -432,69 +443,103 @@ void loop(void) {
          oledTimer.start();
          display.oled_command(SH110X_DISPLAYON);
       }
+*/
    }
 
    // turn off the display if needed
-   if (digitalRead(BUTTON_A) == HIGH && oledTimer.elapsedMillis() > 10000) {
+   if (digitalRead(BUTTON_A) == HIGH &&
+      digitalRead(BUTTON_B) == HIGH &&
+      digitalRead(BUTTON_C) == HIGH &&
+      oledTimer.elapsedMillis() > 10 * 1000) {
       display.oled_command(SH110X_DISPLAYOFF);
+      oledButton = OLED_Button::None;
       oledTimer.stop();
       oledTimer.reset();
    }
 
    // display values if needed
    if (oledTimer.isRunning()) {
-      display.clearDisplay();
-      display.setRotation(0);
-      display.setCursor(0, 0);
+      if (oledButton == OLED_Button::C) {
+         display.clearDisplay();
+         display.setRotation(0);
+         display.setCursor(0, 0);
 
-      display.println("Batt: ");
-      display.print(" ");
-      display.print(batteryVolts.get(), 4);
-      display.print(" v");
-      display.println();
+         display.println("Loop:");
+         display.print(" ");
+         display.print(loopTimer.elapsedMillis(), 1);
+         display.print(" ms");
+         display.println();
+         display.print(" ");
+         display.print(1000 / loopTimer.elapsedMillis(), 0);
+         display.print("/s");
+         display.println();
+         display.println();
 
-      display.print(" ");
-      display.print(batteryMilliAmps.get(), 1);
-      display.print(" mA");
-      display.println();
+         display.println("WiFi: ");
+         display.print(WiFi.RSSI());
+         display.print(" dBm");
+         display.println();
 
-      display.println();
-      display.print("Solar:");
-      display.println();
-      display.print(" ");
-      display.print(solarVolts.get(), 3);
-      display.print(" v");
-      display.println();
+         display.print("IO: ");
+         display.println(io.statusText());
 
-      display.println();
-      display.print("Temp:");
-      display.println();
-      display.print(" ");
-      display.print(tempSurface.get(), 1);
-      display.print(" F");
-      display.println();
-      display.print(" ");
-      display.print(tempBottom.get(), 1);
-      display.print(" F");
-      display.println();
+         display.display();
+      }
+      else {
+         bool useLastValue = (oledButton == OLED_Button::B);
+         display.clearDisplay();
+         display.setRotation(0);
+         display.setCursor(0, 0);
 
-      display.println();
-      display.print("Wind:");
-      display.println();
-      display.print(" min: ");
-      display.print(windMeter.getMin(), 1);
-      display.println();
-      display.print(" max: ");
-      display.print(windMeter.getMax(), 1);
-      display.println();
-      display.print(" avg: ");
-      display.print(windMeter.getAvg(), 1);
-      display.println();
-      display.print(" now: ");
-      display.print(windMeter.getCurrent(), 1);
-      display.println();
+         display.println("Batt: ");
+         display.print(" ");
+         display.print(batteryVolts.get(useLastValue), 4);
+         display.print(" v");
+         display.println();
 
-      display.display();
+         display.print(" ");
+         display.print(batteryMilliAmps.get(useLastValue), 1);
+         display.print(" mA");
+         display.println();
+
+         display.println();
+         display.print("Solar:");
+         display.println();
+         display.print(" ");
+         display.print(solarVolts.get(useLastValue), 3);
+         display.print(" v");
+         display.println();
+
+         display.println();
+         display.print("Temp:");
+         display.println();
+         display.print(" ");
+         display.print(tempSurface.get(useLastValue), 1);
+         display.print(" F");
+         display.println();
+         display.print(" ");
+         display.print(tempBottom.get(useLastValue), 1);
+         display.print(" F");
+         display.println();
+
+         display.println();
+         display.print("Wind:");
+         display.println();
+         display.print(" min: ");
+         display.print(windMeter.getMin(), 1);
+         display.println();
+         display.print(" max: ");
+         display.print(windMeter.getMax(), 1);
+         display.println();
+         display.print(" avg: ");
+         display.print(windMeter.getAvg(), 1);
+         display.println();
+         display.print(" now: ");
+         display.print(windMeter.getCurrent(), 1);
+         display.println();
+
+         display.display();
+      }
    }
 
    // report values to IO
@@ -527,6 +572,11 @@ void loop(void) {
       batteryMilliAmpsFeed->save(bMilliAmps);
       batteryPercentFeed->save(bPercent);
       solarVoltsFeed->save(sVolts);
+
+      batteryVolts.reset();
+      batteryMilliAmps.reset();
+      solarVolts.reset();
+
       Watchdog.reset();
    }
 
@@ -545,12 +595,12 @@ void loop(void) {
             String(tempBottom.getBadCount()) + " of " +
             String(total, 0) + " " +
             "Resets: " + String(sensorResetCount);
-         logger.println(msg);
+         ioLogger.println(msg);
          sensorResetCount = 0;
       }
       else {
          float total = (tempSurface.getCount() + tempSurface.getBadCount());
-         logger.println("ok - " + String(total));
+         ioLogger.println("ok - " + String(total));
       }
 
       tempSurface.reset();
