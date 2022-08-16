@@ -10,6 +10,7 @@ private:
    NTPClient* _clock;
    unsigned long _millisAtNextSave;
    unsigned long _intervalSecs;
+   unsigned long _offsetSecs;
    bool _first = true;
 
    void _syncWithClock() {
@@ -31,6 +32,7 @@ private:
       while (desiredSecs <= currentSecs) {
          desiredSecs += this->_intervalSecs;
       }
+      desiredSecs += this->_offsetSecs;
 
       // figure out the millis when we need to save again
       long deltaMillis = 1000 * (desiredSecs - currentSecs);
@@ -45,16 +47,19 @@ public:
    // every minute, it will happen on the minute, not some random second value
    // @param uploadImmediately if true, a value will be uploaded right now and
    // the next occurs at the appropriate time
+   // @param offsetSecs the offset for when to upload. 0 is on the hour.
    //
    FeedTimer(
       NTPClient* clock,
       unsigned long intervalSecs,
-      bool uploadImmediately = true
+      bool uploadImmediately = true,
+      unsigned long offsetSecs = 0
    )
    {
       this->_clock = clock;
       this->_intervalSecs = intervalSecs;
       this->_first = uploadImmediately;
+      this->_offsetSecs = offsetSecs;
    }
 
    //
