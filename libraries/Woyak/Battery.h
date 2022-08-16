@@ -9,18 +9,15 @@
 class Battery {
 private:
    uint8_t _batteryVoltsPin;
-   uint8_t _batteryChargingVoltsPin;
    AccumulatingAverager _batteryVolts;
-   AccumulatingAverager _chargingVolts;
    float _lastVolts;
    uint8_t _consecutiveUnchangedVolts;
    float _fullChargeVolts;
 
 public:
-   Battery(uint8_t batteryVoltsPin, uint8_t batteryChargingVoltsPin) :
-      _batteryVolts(1, 5), _chargingVolts(1, 5) {
+   Battery(uint8_t batteryVoltsPin = 7) :
+      _batteryVolts(1, 5) {
       this->_batteryVoltsPin = batteryVoltsPin;
-      this->_batteryChargingVoltsPin = batteryChargingVoltsPin;
       this->_lastVolts = 0;
       this->_consecutiveUnchangedVolts = 0;
    }
@@ -29,8 +26,6 @@ public:
    // Initializes pins as input pins and sets analog read resolution to 12
    //
    void begin() {
-      pinMode(this->_batteryVoltsPin, INPUT);
-      pinMode(this->_batteryChargingVoltsPin, INPUT);
       analogReadResolution(12);
 
       // do an initial read
@@ -43,7 +38,6 @@ public:
    //
    void read() {
       this->_batteryVolts.set(Util::readVolts(this->_batteryVoltsPin));
-      this->_chargingVolts.set(Util::readVolts(this->_batteryChargingVoltsPin));
    }
 
    //
@@ -65,7 +59,6 @@ public:
          this->_consecutiveUnchangedVolts = 0;
       }
 
-      this->_chargingVolts.reset();
       this->_batteryVolts.reset();
    }
 
@@ -81,13 +74,6 @@ public:
    //
    float getBatteryVolts() {
       return this->_batteryVolts.get();
-   }
-
-   //
-   // Gets the volts from the charger
-   //
-   float getChargingVolts() {
-      return this->_chargingVolts.get();
    }
 
    //
