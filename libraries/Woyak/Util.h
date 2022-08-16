@@ -6,6 +6,20 @@
 
 namespace Util {
 
+   const char* WiFiStatus2Str(uint8_t status) {
+      switch (status) {
+      case WL_NO_SHIELD: return "WL_NO_SHIELD";
+      case WL_IDLE_STATUS: return "WL_IDLE_STATUS";
+      case WL_NO_SSID_AVAIL: return "WL_NO_SSID_AVAIL";
+      case WL_SCAN_COMPLETED: return "WL_SCAN_COMPLETED";
+      case WL_CONNECTED: return "WL_CONNECTED";
+      case WL_CONNECT_FAILED: return "WL_CONNECT_FAILED";
+      case WL_CONNECTION_LOST: return "WL_CONNECTION_LOST";
+      case WL_DISCONNECTED: return "WL_DISCONNECTED";
+      default: return "UNKNOWN";
+      }
+   }
+
    bool connectToWifi(const char* ssid, const char* pass, ulong timeoutMs = 0) {
       Serial.print("Connecting to ");
       Serial.print(ssid);
@@ -57,8 +71,8 @@ namespace Util {
       return volts;
    }
 
-   float voltsToPercent(float volts, float fullChargeVolts = 4.2) {
-      const float MIN_VOLTS = 3.5;
+   float voltsToPercent(float volts, float fullChargeVolts = 4.1) {
+      const float MIN_VOLTS = 3.3;
       float percent = 100 * (volts - MIN_VOLTS) / (fullChargeVolts - MIN_VOLTS);
       percent = constrain(percent, 0, 100);
       return percent;
