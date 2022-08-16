@@ -14,7 +14,6 @@
 #include <WindMeter.h>
 #include <Adafruit_SHT31.h>
 #include <I2CMultiplexor.h>
-#include <Battery.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
 #include <Adafruit_INA219.h>
@@ -47,6 +46,10 @@ public:
 
    void enable(bool flag = true) {
       this->_enabled = flag;
+   }
+
+   bool isEnabled() {
+      return this->_enabled;
    }
 
    float readTemperature() {
@@ -96,21 +99,26 @@ long timeZoneCorrection = -4 * 60 * 60;
 NTPClient clock(ntpUDP, timeZoneCorrection);
 
 // Adafruit IO feeds
-AdafruitIO_Feed* tempSurfaceFeed = io.feed("bragg.water-temperature-surface");
-AdafruitIO_Feed* tempBottomFeed = io.feed("bragg.water-temperature-bottom");
-AdafruitIO_Feed* windMaxFeed = io.feed("bragg.wind-speed-max");
-AdafruitIO_Feed* windMinFeed = io.feed("bragg.wind-speed-min");
-AdafruitIO_Feed* windAvgFeed = io.feed("bragg.wind-speed-avg");
-AdafruitIO_Feed* windNowFeed = io.feed("bragg.wind-speed-now");
-AdafruitIO_Feed* solarVoltsFeed = io.feed("bragg.solar-volts");
-AdafruitIO_Feed* batteryVoltsFeed = io.feed("bragg.battery-volts");
-AdafruitIO_Feed* batteryMilliAmpsFeed = io.feed("bragg.battery-milliamps");
-AdafruitIO_Feed* batteryPercentFeed = io.feed("bragg.battery-percent");
-AdafruitIO_Feed* logFeed = io.feed("bragg.log");
-AdafruitIO_Feed* resetFeed = io.feed("bragg.reset");
-AdafruitIO_Feed* sensorResetFeed = io.feed("bragg.sensor-reset");
-AdafruitIO_Feed* logRequestFeed = io.feed("bragg.log-request");
-AdafruitIO_Feed* resetDelayFeed = io.feed("bragg.reset-delay");
+AdafruitIO_Feed* tempSurfaceFeed = io.feed("dock.water-temperature-surface");
+AdafruitIO_Feed* tempBottomFeed = io.feed("dock.water-temperature-bottom");
+AdafruitIO_Feed* windMaxFeed = io.feed("dock.wind-speed-max");
+AdafruitIO_Feed* windMinFeed = io.feed("dock.wind-speed-min");
+AdafruitIO_Feed* windAvgFeed = io.feed("dock.wind-speed-avg");
+AdafruitIO_Feed* windNowFeed = io.feed("dock.wind-speed-now");
+AdafruitIO_Feed* solarVoltsFeed = io.feed("dock.solar-volts");
+AdafruitIO_Feed* batteryVoltsFeed = io.feed("dock.battery-volts");
+AdafruitIO_Feed* batteryMilliAmpsFeed = io.feed("dock.battery-milliamps");
+AdafruitIO_Feed* batteryPercentFeed = io.feed("dock.battery-percent");
+AdafruitIO_Feed* logFeed = io.feed("dock.log");
+
+// Action feeds
+AdafruitIO_Feed* actionResetFeed = io.feed("dock.action-reset");
+AdafruitIO_Feed* actionSensorResetFeed = io.feed("dock.action-sensor-reset");
+AdafruitIO_Feed* actionLogRequestFeed = io.feed("dock.action-log-request");
+
+// Settings feeds
+//AdafruitIO_Feed* settingsVoltsMinFeed = io.feed("dock.settings-volts-min");
+//AdafruitIO_Feed* settingsVoltsMaxFeed = io.feed("dock.settings-volts-max");
 
 // values
 AccumulatingAverager tempSurface(20, 90);
@@ -120,13 +128,12 @@ AccumulatingAverager batteryVolts;
 AccumulatingAverager batteryMilliAmps;
 
 // feed timers
-FeedTimer windFeedTimer(&clock, 10 * 60, false);
-FeedTimer waterTempFeedTimer(&clock, 15 * 60, false);
-FeedTimer batteryFeedTimer(&clock, 10 * 60, false);
+FeedTimer windFeedTimer(&clock, 10 * 60, false, 1 * 60);
+FeedTimer waterTempFeedTimer(&clock, 15 * 60, false, 2 * 60);
+FeedTimer batteryFeedTimer(&clock, 10 * 60, false, 3 * 60);
 FeedTimer windNowFeedTimer(&clock, 5, false);
 
 ulong sensorResetCount = 0;
-ulong resetDelay = 0;
 
 // logging mechanism
 Logger ioLogger(
@@ -139,36 +146,8 @@ Logger logger(
    new DisplayLogHandler(&display)
 );
 
-String getValues() {
-   // read and print initial values
-   String msg;
-   msg = "";
-   /*
-   msg += "Temperatures:\n";
-   Serial.println("Temperatures");
-   msg += "  Surface: " + String(Util::C2F(shtSurface.readTemperature())) + "\n";
-   msg += "  Bottom: " + String(Util::C2F(shtBottom.readTemperature())) + "\n";
-   Serial.println("Wind Speed");
-   msg += "Wind Speeds:\n";
-   msg += "  Now: " + String(windMeter.getCurrent()) + "\n";
-   msg += "  Min: " + String(windMeter.getMin()) + "\n";
-   msg += "  Avg: " + String(windMeter.getAvg()) + "\n";
-   msg += "  Max: " + String(windMeter.getMax()) + "\n";
-   msg += "Battery:\n";
-*/
-   Serial.println("Volts");
-   msg += "  Volts: " + String(ina.getBusVoltage_V()) + "\n";
-   Serial.println("MilliAmps");
-   msg += "  MilliAmps: " + String(ina.getCurrent_mA()) + "\n";
-   Serial.println("Solar");
-   msg += "Solar:\n";
-
-   float r1 = 22;
-   float r2 = 99.6;
-   float sVolts = Util::readVolts(SOLAR_VOLTS_PIN, 4096, (r1 + r2) / r1);
-   msg += "  Volts: " + String(sVolts) + "\n";
-   return msg;
-}
+// forward declarations
+void updateOled();
 
 Stopwatch oledTimer(false);
 
@@ -242,9 +221,6 @@ void setup(void) {
    logger.println("io logging...");
    ioLogger.println("Starting WeatherDock Sketch");
 
-   //   display.clearDisplay();
-   //   display.setCursor(0, 0);
-
    logger.println("begin");
    logger.print("-multi ");
    i2cMultiplexor.begin();
@@ -297,22 +273,15 @@ void setup(void) {
 
    Watchdog.reset();
 
-   // read and print initial values
-   logger.println("get values");
-   Serial.println(getValues());
-   Watchdog.reset();
-
+   // delay so that we can see the messages
    logger.println("\nready!!!");
    delay(3000);
-
-   // register handler callbacks
-   resetFeed->onMessage(handleMessageReset);
-   sensorResetFeed->onMessage(handleMessageSensorReset);
-   logRequestFeed->onMessage(handleMessageLogRequest);
-   resetDelayFeed->onMessage(handleMessageResetDelay);
-   //resetDelayFeed->get();
-
    Watchdog.reset();
+
+   // register callbacks
+   actionResetFeed->onMessage(handleActionReset);
+   actionSensorResetFeed->onMessage(handleActionSensorReset);
+   actionLogRequestFeed->onMessage(handleActionLogRequest);
 
    attachInterrupt(digitalPinToInterrupt(BUTTON_A), buttonAPress, FALLING);
    attachInterrupt(digitalPinToInterrupt(BUTTON_B), buttonBPress, FALLING);
@@ -323,35 +292,25 @@ void setup(void) {
    oledButton = OLED_Button::C;
 }
 
-void handleMessageLogRequest(AdafruitIO_Data* data) {
-   Serial.println("Log Request");
+void handleActionLogRequest(AdafruitIO_Data* data) {
    if (data->toPinLevel() == HIGH) {
-
-      String msg;
-
-      // log messages when failing
-      //   on / off for each sensor
-      //
-
-      float total = (tempSurface.getCount() + tempSurface.getBadCount());
-      msg = "*Failures: " +
-         String(tempSurface.getBadCount()) + " " +
-         String(tempBottom.getBadCount()) + " of " +
-         String(total, 0) + " " +
-         "Resets: " + String(sensorResetCount);
-      ioLogger.println(msg);
-      Watchdog.reset();
+      tempSurfaceFeed->save(tempSurface.get());
+      tempBottomFeed->save(tempBottom.get());
+      batteryVoltsFeed->save(batteryVolts.get());
+      batteryMilliAmpsFeed->save(batteryMilliAmps.get());
+      batteryPercentFeed->save(Util::voltsToPercent(batteryVolts.get()));
+      solarVoltsFeed->save(solarVolts.get());
    }
 }
 
-void handleMessageReset(AdafruitIO_Data* data) {
+void handleActionReset(AdafruitIO_Data* data) {
    resetFunc();
 }
 
 void resetSensors() {
 
    digitalWrite(SENSOR_POWER_PIN, LOW);
-   delay(resetDelay); // is this needed?
+   delay(10); // is this needed?
    digitalWrite(SENSOR_POWER_PIN, HIGH);
 
    i2cMultiplexor.begin();
@@ -361,7 +320,7 @@ void resetSensors() {
    sensorResetCount++;
 }
 
-void handleMessageSensorReset(AdafruitIO_Data* data) {
+void handleActionSensorReset(AdafruitIO_Data* data) {
 
    if (data->toPinLevel() == HIGH) {
       ioLogger.println("Resetting Sensors");
@@ -380,12 +339,6 @@ void handleMessageSensorReset(AdafruitIO_Data* data) {
       ioLogger.print("Surface: " + String(tSurface));
       ioLogger.print("Bottom: " + String(tBottom));
    }
-}
-
-void handleMessageResetDelay(AdafruitIO_Data* data) {
-   Serial.print("Setting reset delay to: ");
-   Serial.println(data->toLong());
-   resetDelay = data->toLong();
 }
 
 Stopwatch loopTimer;
@@ -422,17 +375,74 @@ void loop(void) {
    Watchdog.reset();
 
    // read temperatures
-   if (tempSurface.set(Util::C2F(shtSurface.readTemperature())) == false) {
-      resetSensors();
-   }
-   Watchdog.reset();
-   if (tempBottom.set(Util::C2F(shtBottom.readTemperature())) == false) {
-      resetSensors();
-   }
+   tempSurface.set(Util::C2F(shtSurface.readTemperature()));
+   tempBottom.set(Util::C2F(shtBottom.readTemperature()));
    Watchdog.reset();
 
    loopTimer.stop();
 
+   updateOled();
+
+   // report values to IO
+   if (windNowFeedTimer.ready()) {
+      windNowFeed->save(windMeter.getCurrent());
+      Watchdog.reset();
+   }
+
+   if (windFeedTimer.ready()) {
+      windMinFeed->save(windMeter.getMin());
+      windAvgFeed->save(windMeter.getAvg());
+      windMaxFeed->save(windMeter.getMax());
+      windMeter.reset();
+      Watchdog.reset();
+   }
+
+   if (batteryFeedTimer.ready()) {
+      batteryVoltsFeed->save(batteryVolts.get());
+      batteryMilliAmpsFeed->save(batteryMilliAmps.get());
+      batteryPercentFeed->save(Util::voltsToPercent(batteryVolts.get()));
+      solarVoltsFeed->save(solarVolts.get());
+
+      batteryVolts.reset();
+      batteryMilliAmps.reset();
+      solarVolts.reset();
+
+      Watchdog.reset();
+   }
+
+   if (waterTempFeedTimer.ready()) {
+
+      if (shtSurface.isEnabled() == false || shtBottom.isEnabled() == false) {
+         resetSensors();
+      }
+
+      tempSurfaceFeed->save(tempSurface.get());
+      tempBottomFeed->save(tempBottom.get());
+
+      if (sensorResetCount > 0) {
+         float total = (tempSurface.getCount() + tempSurface.getBadCount());
+         String msg = "Failures: " +
+            String(tempSurface.getBadCount()) + " " +
+            String(tempBottom.getBadCount()) + " of " +
+            String(total, 0) + " " +
+            "Resets: " + String(sensorResetCount);
+         ioLogger.println(msg);
+         sensorResetCount = 0;
+      }
+      else {
+         float total = (tempSurface.getCount() + tempSurface.getBadCount());
+         ioLogger.println("ok (no resets) - " + String(total, 0));
+      }
+
+      tempSurface.reset();
+      tempBottom.reset();
+      Watchdog.reset();
+   }
+
+   Watchdog.reset();
+}
+
+void updateOled() {
    // turn the display on if needed
    if (oledButton != OLED_Button::None && oledTimer.isRunning() == false) {
       display.oled_command(SH110X_DISPLAYON);
@@ -490,6 +500,11 @@ void loop(void) {
          display.println();
 
          display.print(" ");
+         display.print(Util::voltsToPercent(batteryVolts.get()), 1);
+         display.print(" %");
+         display.println();
+
+         display.print(" ");
          display.print(batteryMilliAmps.get(), 1);
          display.print(" mA");
          display.println();
@@ -542,7 +557,6 @@ void loop(void) {
          display.print(tempSurface.last(), 1);
          display.print(" F");
          display.println();
-         display.print(" ");
          display.print(tempBottom.last(), 1);
          display.print(" F");
          display.println();
@@ -566,72 +580,4 @@ void loop(void) {
          display.display();
       }
    }
-
-   // report values to IO
-   /*
-   if (windNowFeedTimer.ready()) {
-      windNowFeed->save(windMeter.getCurrent());
-      Watchdog.reset();
-   }
-
-   if (windFeedTimer.ready()) {
-      float windMin = windMeter.getMin();
-      float windAvg = windMeter.getAvg();
-      float windMax = windMeter.getMax();
-      windMeter.reset();
-
-      windMinFeed->save(windMin);
-      windAvgFeed->save(windAvg);
-      windMaxFeed->save(windMax);
-      Watchdog.reset();
-   }
-*/
-
-   if (batteryFeedTimer.ready()) {
-      float bVolts = batteryVolts.get();
-      float bMilliAmps = batteryMilliAmps.get();
-      float bPercent = Util::voltsToPercent(bVolts);
-      float sVolts = solarVolts.get();
-
-      batteryVoltsFeed->save(bVolts);
-      batteryMilliAmpsFeed->save(bMilliAmps);
-      batteryPercentFeed->save(bPercent);
-      solarVoltsFeed->save(sVolts);
-
-      batteryVolts.reset();
-      batteryMilliAmps.reset();
-      solarVolts.reset();
-
-      Watchdog.reset();
-   }
-
-   if (waterTempFeedTimer.ready()) {
-
-      float tSurface = tempSurface.get();
-      float tBottom = tempBottom.get();
-
-      tempSurfaceFeed->save(tSurface);
-      tempBottomFeed->save(tBottom);
-
-      if (sensorResetCount > 0) {
-         float total = (tempSurface.getCount() + tempSurface.getBadCount());
-         String msg = "Failures: " +
-            String(tempSurface.getBadCount()) + " " +
-            String(tempBottom.getBadCount()) + " of " +
-            String(total, 0) + " " +
-            "Resets: " + String(sensorResetCount);
-         ioLogger.println(msg);
-         sensorResetCount = 0;
-      }
-      else {
-         float total = (tempSurface.getCount() + tempSurface.getBadCount());
-         ioLogger.println("ok - " + String(total));
-      }
-
-      tempSurface.reset();
-      tempBottom.reset();
-      Watchdog.reset();
-   }
-
-   Watchdog.reset();
 }
