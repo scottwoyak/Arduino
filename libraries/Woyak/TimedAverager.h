@@ -13,15 +13,32 @@ private:
    ulong _bucketMs;
    Stopwatch _sw;
 
+   double _advance() {
+      // if enough time has passed, switch to the next bucket
+      double elapsed = this->_sw.elapsedMillis();
+      while (elapsed > this->_bucketMs) {
+         this->_currentBucket++;
+         if (this->_currentBucket >= this->_numBuckets) {
+            this->_currentBucket = 0;
+         }
+
+         this->_buckets[this->_currentBucket]->reset();
+         elapsed -= this->_bucketMs;
+         this->_sw.reset(elapsed);
+      }
+
+      return elapsed;
+   }
+
 public:
    TimedAverager(ulong durationMs,
       uint nBuckets = 10,
       float minRange = -__FLT_MAX__,
       float maxRange = __FLT_MAX__) {
 
-      this->_numBuckets = max(nBuckets, 1);
+      this->_numBuckets = max(nBuckets, 1) + 1;
 
-      this->_buckets = new AccumulatingAverager * [nBuckets];
+      this->_buckets = new AccumulatingAverager * [this->_numBuckets];
       for (int i = 0; i < this->_numBuckets; i++) {
          this->_buckets[i] = new AccumulatingAverager(minRange, maxRange);
       }
@@ -36,42 +53,79 @@ public:
    }
 
    boolean set(float value) {
-      // if enough time has passed, switch to the next bucket
-      if (this->_sw.elapsedMillis() > this->_bucketMs) {
-         // in a perfect world we advance to the correct bucket, but we're assuming
-         // things are all moving pretty rapidly
-         this->_currentBucket++;
-         if (this->_currentBucket >= this->_numBuckets) {
-            this->_currentBucket = 0;
-         }
+      this->_advance();
 
-         this->_buckets[this->_currentBucket]->reset();
-         this->_sw.reset();
-      }
+      /*
+      Serial.print(" storing ");
+      Serial.print(value);
+      Serial.print(" in bucket ");
+      Serial.print(this->_currentBucket);
+      Serial.print(" ");
+      Serial.print(this->_sw.elapsedMillis());
+      Serial.println();
+*/
 
       return this->_buckets[this->_currentBucket]->set(value);
    }
 
    float get() {
+      float elapsed = this->_advance();
+
       float total = 0;
       float count = 0;
 
+      uint firstBucket = this->_currentBucket + 1;
+      if (firstBucket >= this->_numBuckets) {
+         firstBucket = 0;
+      }
+
       for (uint i = 0; i < this->_numBuckets; i++) {
-         if (i == this->_currentBucket) {
-            continue;
-         }
 
          if (this->_buckets[i]->getCount() == 0) {
             continue;
          }
 
-         total += this->_buckets[i]->get();
-         count++;
+         float fraction = 1;
+         if (i == this->_currentBucket) {
+            fraction = elapsed / this->_bucketMs;
+         }
+         else if (i == firstBucket) {
+            fraction = 1 - (elapsed / this->_bucketMs);
+         }
+
+         /*
+         Serial.print("bucket: ");
+         Serial.print(i);
+         Serial.print(" value: ");
+         Serial.print(this->_buckets[i]->get());
+         Serial.print(" fraction: ");
+         Serial.print(fraction);
+         Serial.println();
+*/
+
+         total += fraction * this->_buckets[i]->get() * this->_buckets[i]->getCount();
+         count += fraction * this->_buckets[i]->getCount();
       }
 
-      float fraction = this->_sw.elapsedMillis() / this->_bucketMs;
+      /*
+      Serial.print("fraction=");
+      Serial.print(fraction);
+      Serial.print(" ");
+      Serial.print(this->_sw.elapsedMillis());
+      Serial.print(" ");
+      Serial.print(this->_bucketMs);
+      Serial.println();
       count += fraction;
       total += fraction * this->_buckets[this->_currentBucket]->get();
+*/
+
+/*
+Serial.print("total: ");
+Serial.print(total);
+Serial.print(" count: ");
+Serial.print(count);
+Serial.println();
+*/
 
       return total / count;
    }

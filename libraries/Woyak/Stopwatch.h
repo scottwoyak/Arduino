@@ -13,15 +13,6 @@ private:
    unsigned long _elapsedTicks = 0;
    bool _running = false;
 
-   unsigned long _ticks() {
-      if (this->_precision == StopwatchPrecision::Micros) {
-         return micros();
-      }
-      else {
-         return millis();
-      }
-   }
-
    unsigned long _currentTicks() {
       if (this->_running) {
          return (this->_ticks() - this->_startTicks) + this->_elapsedTicks;
@@ -31,18 +22,28 @@ private:
       }
    }
 
-   double _ticksPerMilli() {
-      if (this->_precision == StopwatchPrecision::Micros) {
-         return 1000.0;
-      }
-      else {
-         return 1.0;
-      }
-   }
+   unsigned long (*_ticks) ();
 
 public:
+   // public function for testing only. Allows us to substitute our own clock
+   // within test cases of timing code.
+   static unsigned long (*tickFunc) ();
+
    Stopwatch(bool start = true, StopwatchPrecision precision = StopwatchPrecision::Micros) {
       this->_precision = precision;
+
+      if (Stopwatch::tickFunc != nullptr) {
+         this->_ticks = Stopwatch::tickFunc;
+      }
+      else {
+         if (this->_precision == StopwatchPrecision::Micros) {
+            this->_ticks = micros;
+         }
+         else {
+            this->_ticks = millis;
+         }
+      }
+
       if (start) {
          this->start();
       }
@@ -53,6 +54,10 @@ public:
     * about 4000 seconds
     */
    Stopwatch(StopwatchPrecision precision) : Stopwatch(true, precision) {
+   }
+
+   StopwatchPrecision getPrecision() {
+      return this->_precision;
    }
 
    void start() {
@@ -69,10 +74,16 @@ public:
       }
    }
 
-   void reset() {
-      this->_elapsedTicks = 0;
+   void reset(double elapsedMillis = 0) {
+      if (this->_precision == StopwatchPrecision::Micros) {
+         this->_elapsedTicks = 1000 * elapsedMillis;
+      }
+      else {
+         this->_elapsedTicks = elapsedMillis;
+      }
+
       if (this->_running) {
-         this->_startTicks = _ticks();
+         this->_startTicks = this->_ticks();
       }
    }
 
@@ -135,3 +146,5 @@ public:
       }
    }
 };
+
+unsigned long (*Stopwatch::tickFunc) () = nullptr;
