@@ -61,9 +61,7 @@ void setup() {
    analogReadResolution(12);
 }
 
-#define DELAY 000
 void loop() {
-
 
    display.clearDisplay();
 
@@ -72,7 +70,7 @@ void loop() {
    float bMA = ina.getCurrent_mA();
 
    float r1 = 22;
-   float r2 = 99.6;
+   float r2 = 99;
    float sVolts = Util::readVolts(SOLAR_VOLTS_PIN, 4096, (r1 + r2) / r1);
 
    // record values
@@ -113,5 +111,4 @@ void loop() {
    }
 
    display.display();
-   delay(DELAY);
 }

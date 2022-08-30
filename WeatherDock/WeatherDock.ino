@@ -190,7 +190,7 @@ void setup(void) {
    // start serial port
    Serial.begin(115200);
 
-   // wait 5 seconds for the serial monitor to open
+   // wait a few seconds for the serial monitor to open
    while (millis() < 2000 && !Serial)
       ;
    delay(500);
