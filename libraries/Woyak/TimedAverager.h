@@ -13,9 +13,9 @@ private:
    ulong _bucketMs;
    Stopwatch _sw;
 
-   double _advance() {
+   float _advance() {
       // if enough time has passed, switch to the next bucket
-      double elapsed = this->_sw.elapsedMillis();
+      float elapsed = this->_sw.elapsedMillis();
       while (elapsed > this->_bucketMs) {
          this->_currentBucket++;
          if (this->_currentBucket >= this->_numBuckets) {
@@ -36,13 +36,13 @@ public:
       float minRange = -__FLT_MAX__,
       float maxRange = __FLT_MAX__) {
 
-      this->_numBuckets = max(nBuckets, 1) + 1;
+      this->_numBuckets = std::max(nBuckets, (uint)1) + 1;
 
       this->_buckets = new AccumulatingAverager * [this->_numBuckets];
       for (int i = 0; i < this->_numBuckets; i++) {
          this->_buckets[i] = new AccumulatingAverager(minRange, maxRange);
       }
-      this->_bucketMs = max(1, durationMs / nBuckets);
+      this->_bucketMs = std::max(1.0f, ((float)durationMs) / nBuckets);
    }
 
    ~TimedAverager() {
@@ -131,6 +131,8 @@ Serial.println();
    }
 
    float getMin() {
+      this->_advance();
+
       float value = __FLT_MAX__;
       for (uint i = 0; i < this->_numBuckets; i++) {
          value = min(value, this->_buckets[i]->getMin());
@@ -140,9 +142,11 @@ Serial.println();
    }
 
    float getMax() {
+      this->_advance();
+
       float value = -__FLT_MAX__;
       for (uint i = 0; i < this->_numBuckets; i++) {
-         value = max(value, this->_buckets[i]->getMin());
+         value = max(value, this->_buckets[i]->getMax());
       }
 
       return value;
@@ -155,6 +159,8 @@ Serial.println();
    }
 
    unsigned long getCount() {
+      this->_advance();
+
       ulong count = 0;
       for (uint i = 0; i < this->_numBuckets; i++) {
          count += this->_buckets[i]->getCount();
@@ -164,6 +170,8 @@ Serial.println();
    }
 
    unsigned long getBadCount() {
+      this->_advance();
+
       ulong count = 0;
       for (uint i = 0; i < this->_numBuckets; i++) {
          count += this->_buckets[i]->getBadCount();
