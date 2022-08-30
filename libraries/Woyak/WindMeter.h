@@ -43,13 +43,13 @@ private:
             }
 
             // debounce
-            if (elapsedMicros < 1000) {
+            if (elapsedMicros < 15000) {
                // false signal
                return;
             }
             else {
                // compute the speed
-               double speed = this->_computeWindSpeed(elapsedMicros, 1);
+               float speed = this->_computeWindSpeed(elapsedMicros, 1);
                this->_windSpeed.setValue(speed);
 
                // update timing values used for the average
@@ -62,7 +62,7 @@ private:
    }
 
    // the formula from the wind meter for turning rotation Hz into MPH
-   double _computeWindSpeed(unsigned long micros, unsigned long rotations) {
+   float _computeWindSpeed(unsigned long micros, unsigned long rotations) {
       return (2.7 * 1000 * 1000.0 / micros) * rotations;
    }
 
@@ -83,24 +83,26 @@ public:
       pinMode(this->_pin, INPUT_PULLDOWN);
       unsigned short interrupt = digitalPinToInterrupt(this->_pin);
       attachInterrupt(interrupt, WindMeter::interruptTick, CHANGE);
+
+      // provide an initial value of zero
+      this->_windSpeed.setValue(0);
    }
 
-   double getMin() {
+   float getMin() {
       return this->_windSpeed.getMin();
    }
-   double getMax() {
+   float getMax() {
       return this->_windSpeed.getMax();
    }
-   double getAvg() {
+   float getAvg() {
       return this->_computeWindSpeed(this->_totalMicros, this->_rotations);
    }
-   double getCurrent() {
+   float getCurrent() {
       if ((micros() - this->_lastMicros) > 10 * 1000 * 1000) {
-         return 0;
+         this->_windSpeed.setValue(0);
       }
-      else {
-         return this->_windSpeed.getValue();
-      }
+
+      return this->_windSpeed.getValue();
    }
    void reset() {
       // turn off interrupts so values are not modified
