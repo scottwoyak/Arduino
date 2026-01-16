@@ -15,6 +15,7 @@
     <File Path="libraries/Woyak/I2CMultiplexor.h" />
     <File Path="libraries/Woyak/Logger.h" />
     <File Path="libraries/Woyak/MinMaxValue.h" />
+    <File Path="libraries/Woyak/Potentiometer.h" />
     <File Path="libraries/Woyak/RunningAverager.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
     <File Path="libraries/Woyak/Stopwatch.h" />
@@ -27,6 +28,9 @@
     <File Path="libraries/Woyak/WindMeter.cpp" />
     <File Path="libraries/Woyak/WindMeter.h" />
   </Folder>
+  <Project Path="Potentiometer/Potentiometer.vcxproj" Id="c5bc2f07-d8ae-4dcf-aede-3dddf1846b20">
+    <Deploy />
+  </Project>
   <Project Path="WeatherDisplay/WeatherDisplay.vcxproj">
     <Deploy />
   </Project>
