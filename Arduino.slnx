@@ -1,0 +1,39 @@
+<Solution>
+  <Configurations>
+    <Platform Name="ARM" />
+    <Platform Name="ARM64" />
+  </Configurations>
+  <Folder Name="/Libraries/">
+    <File Path="libraries/Woyak/AccumulatingAverager.h" />
+    <File Path="libraries/Woyak/Battery.h" />
+    <File Path="libraries/Woyak/DailyTimer.h" />
+    <File Path="libraries/Woyak/DallasTemperatureEx.h" />
+    <File Path="libraries/Woyak/FeedTimer.h" />
+    <File Path="libraries/Woyak/FramSpiEx.h" />
+    <File Path="libraries/Woyak/History.h" />
+    <File Path="libraries/Woyak/I2C.h" />
+    <File Path="libraries/Woyak/I2CMultiplexor.h" />
+    <File Path="libraries/Woyak/Logger.h" />
+    <File Path="libraries/Woyak/MinMaxValue.h" />
+    <File Path="libraries/Woyak/RunningAverager.h" />
+    <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
+    <File Path="libraries/Woyak/Stopwatch.h" />
+    <File Path="libraries/Woyak/TimeConstants.h" />
+    <File Path="libraries/Woyak/TimedAverager.h" />
+    <File Path="libraries/Woyak/TimedHistogram.h" />
+    <File Path="libraries/Woyak/Util.h" />
+    <File Path="libraries/Woyak/ValueStore.h" />
+    <File Path="libraries/Woyak/ValueStoreFram.h" />
+    <File Path="libraries/Woyak/WindMeter.cpp" />
+    <File Path="libraries/Woyak/WindMeter.h" />
+  </Folder>
+  <Project Path="WeatherDisplay/WeatherDisplay.vcxproj">
+    <Deploy />
+  </Project>
+  <Project Path="WindDisplay/WindDisplay.vcxproj">
+    <Deploy />
+  </Project>
+  <Project Path="WindMonitor/WindowMonitor.vcxproj" Id="ce9936be-d88a-5df5-d934-fcbee6c84747">
+    <Deploy />
+  </Project>
+</Solution>
