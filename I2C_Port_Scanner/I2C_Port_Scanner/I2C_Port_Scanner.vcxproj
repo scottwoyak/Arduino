@@ -1,0 +1,105 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|ARM">
+      <Configuration>Debug</Configuration>
+      <Platform>ARM</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM">
+      <Configuration>Release</Configuration>
+      <Platform>ARM</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|ARM64">
+      <Configuration>Debug</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64">
+      <Configuration>Release</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <Keyword>Linux</Keyword>
+    <RootNamespace>
+    </RootNamespace>
+    <ProjectName>I2C_Port_Scanner</ProjectName>
+    <MinimumVisualStudioVersion>15.0</MinimumVisualStudioVersion>
+    <ApplicationType>Linux</ApplicationType>
+    <ApplicationTypeRevision>1.0</ApplicationTypeRevision>
+    <TargetLinuxPlatform>Generic</TargetLinuxPlatform>
+    <LinuxProjectType>{D51BCBC9-82E9-4017-911E-C93873C4EA2B}</LinuxProjectType>
+    <ProjectGuid>{0CD0E283-A3AB-D7FE-AE4F-91CEF179097C}</ProjectGuid>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros">
+    <LinuxIncludePath>c:\visualmicro\ignore</LinuxIncludePath>
+    <wiringPiIncludePath>c:\visualmicro\pi-ignore</wiringPiIncludePath>
+    <TargetOSAndVersion>Arduino</TargetOSAndVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <ImportGroup Label="ExtensionTargets" />
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">
+    <IncludePath>$(ProjectDir)..\I2C_Port_Scanner;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\hardware\samd\1.7.16\libraries\Wire;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\hardware\samd\1.7.16\libraries\Adafruit_TinyUSB_Arduino\src\arduino;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\tools\CMSIS\5.4.0\CMSIS\Core\Include;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\tools\CMSIS\5.4.0\CMSIS\DSP\Include;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\tools\CMSIS-Atmel\1.2.2\CMSIS\Device\ATMEL;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\hardware\samd\1.7.16\cores\arduino;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\hardware\samd\1.7.16\variants\feather_m0;$(ProjectDir)..\..\..\..\users\scott\appdata\local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\arm-none-eabi\include\c++\9.2.1;$(ProjectDir)..\..\..\..\users\scott\appdata\local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\arm-none-eabi\include\c++\9.2.1\arm-none-eabi\thumb\v6-m\nofp;$(ProjectDir)..\..\..\..\users\scott\appdata\local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\arm-none-eabi\include\c++\9.2.1\backward;$(ProjectDir)..\..\..\..\users\scott\appdata\local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\lib\gcc\arm-none-eabi\9.2.1\include;$(ProjectDir)..\..\..\..\users\scott\appdata\local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\lib\gcc\arm-none-eabi\9.2.1\include-fixed;$(ProjectDir)..\..\..\..\users\scott\appdata\local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\arm-none-eabi\include;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\hardware\samd\1.7.16\libraries\Wire</IncludePath>
+    <RemoteCCompileToolExe>$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\bin\arm-none-eabi-g++</RemoteCCompileToolExe>
+    <RemoteCppCompileToolExe>$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\bin\arm-none-eabi-g++</RemoteCppCompileToolExe>
+    <ValidateArchitecture>false</ValidateArchitecture>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectCapability Include="VisualMicro" />
+    <ProjectCapability Include="VisualMicroLinux" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="I2C_Port_Scanner.ino">
+      <FileType>CppCode</FileType>
+      <DeploymentContent>true</DeploymentContent>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="__vm\.I2C_Port_Scanner.vsarduino.h" />
+  </ItemGroup>
+  <PropertyGroup>
+    <DebuggerFlavor>VisualMicroDebugger</DebuggerFlavor>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\I2C_Port_Scanner;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\hardware\samd\1.7.16\libraries\Wire;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\hardware\samd\1.7.16\libraries\Adafruit_TinyUSB_Arduino\src\arduino;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\tools\CMSIS\5.4.0\CMSIS\Core\Include;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\tools\CMSIS\5.4.0\CMSIS\DSP\Include;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\tools\CMSIS-Atmel\1.2.2\CMSIS\Device\ATMEL;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\hardware\samd\1.7.16\cores\arduino;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\hardware\samd\1.7.16\variants\feather_m0;$(ProjectDir)..\..\..\..\users\scott\appdata\local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\arm-none-eabi\include\c++\9.2.1;$(ProjectDir)..\..\..\..\users\scott\appdata\local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\arm-none-eabi\include\c++\9.2.1\arm-none-eabi\thumb\v6-m\nofp;$(ProjectDir)..\..\..\..\users\scott\appdata\local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\arm-none-eabi\include\c++\9.2.1\backward;$(ProjectDir)..\..\..\..\users\scott\appdata\local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\lib\gcc\arm-none-eabi\9.2.1\include;$(ProjectDir)..\..\..\..\users\scott\appdata\local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\lib\gcc\arm-none-eabi\9.2.1\include-fixed;$(ProjectDir)..\..\..\..\users\scott\appdata\local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\arm-none-eabi\include;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\hardware\samd\1.7.16\libraries\Wire;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <GccToolChain>$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\arduino15\packages\adafruit\tools\arm-none-eabi-gcc\9-2019q4\bin\arm-none-eabi-g++</GccToolChain>
+      <CppLanguageStandard>gnu++11</CppLanguageStandard>
+      <CLanguageStandard>gnu11</CLanguageStandard>
+      <CAdditionalWarning />
+      <CppAdditionalWarning />
+      <ForcedIncludeFiles>$(ProjectDir)..\..\..\..\program files\microsoft visual studio\18\community\common7\ide\extensions\2bqx1gfn.tss\Micro Platforms\default\vm-intelli-pre.h;$(ProjectDir)..\..\..\..\Users\scott\AppData\Local\Temp\VMBuilds\I2C_Port_Scanner\adafruit_adafruit_feather_m0\Release\.vmintelli\3d73fbf8ff0b7463dc6201eeeee385ad\vm-intelli-gcc-defines.h;$(ProjectDir)..\..\..\..\program files\microsoft visual studio\18\community\common7\ide\extensions\2bqx1gfn.tss\Micro Platforms\default\vm-intelli-post.h;$(ProjectDir)__vm\.I2C_Port_Scanner.vsarduino.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <UndefineAllPreprocessorDefinitions>true</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>true</IgnoreStandardIncludePath>
+      <PreprocessorDefinitions>_VMICRO_INTELLISENSE;__SKETCH_NAME__={build.project_name};F_CPU=48000000L;ARDUINO=108010;ARDUINO_SAMD_ZERO;ARDUINO_ARCH_SAMD;ARDUINO_SAMD_ADAFRUIT;__SAMD21G18A__;ADAFRUIT_FEATHER_M0;ARM_MATH_CM0PLUS;USB_VID=0x239A;USB_PID=0x800B;USBCON;USB_CONFIG_POWER=100;USB_MANUFACTURER="Adafruit";USB_PRODUCT="Feather;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
