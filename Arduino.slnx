@@ -19,6 +19,7 @@
     <File Path="libraries/Woyak/RunningAverager.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
     <File Path="libraries/Woyak/Stopwatch.h" />
+    <File Path="libraries/Woyak/TempSensor.h" />
     <File Path="libraries/Woyak/TimeConstants.h" />
     <File Path="libraries/Woyak/TimedAverager.h" />
     <File Path="libraries/Woyak/TimedHistogram.h" />
@@ -31,7 +32,16 @@
   <Project Path="Display_SH1107/Display_SH1107.vcxproj">
     <Deploy />
   </Project>
+  <Project Path="I2C_Port_Scanner/I2C_Port_Scanner/I2C_Port_Scanner.vcxproj">
+    <Deploy />
+  </Project>
+  <Project Path="Influx_Temp_Monitor/Influx_Temp_Monitor/Influx_Temp_Monitor.vcxproj">
+    <Deploy />
+  </Project>
   <Project Path="Potentiometer/Potentiometer.vcxproj" Id="c5bc2f07-d8ae-4dcf-aede-3dddf1846b20">
+    <Deploy />
+  </Project>
+  <Project Path="Temperature_BME280/Temperature_BME280.vcxproj">
     <Deploy />
   </Project>
   <Project Path="WeatherDisplay/WeatherDisplay.vcxproj">
