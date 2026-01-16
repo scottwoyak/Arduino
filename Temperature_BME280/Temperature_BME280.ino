@@ -28,7 +28,7 @@ void setup() {
 
 void loop() {
 
-   float ttemp = Util::C2F(sensor->readTemperature());
+   float temp = sensor->readTemperatureF();
 
-   Serial.println(ttemp);
+   Serial.println(temp);
 }

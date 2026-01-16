@@ -6,8 +6,6 @@ Adafruit_SH1107 display(64, 128, &Wire);
 // The setup() function runs once each time the micro-controller starts
 void setup()
 {
-   pinMode(A0, INPUT_PULLDOWN);
-
    display.begin(0x3C, true); // Address 0x3C default
    display.setTextColor(SH110X_WHITE);
    display.setRotation(1);

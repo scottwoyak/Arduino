@@ -26,6 +26,13 @@ void setup()
    display.display();
 
    sensor = TempSensorFactory::create();
+   Serial.print("sensor.begin()");
+   if (sensor->begin() == false) {
+      Serial.println("Temperature/Humidity sensor initialization failed");
+   }
+   else {
+      Serial.println(" - ok");
+   }
 }
 
 // Add the main program code into the continuous loop() function
@@ -34,7 +41,6 @@ void loop()
    display.clearDisplay();
    display.setTextSize(2);
    display.setCursor(0, 0);
-   display.print("Scott");
-   display.print(sensor->readTemperature());
+   display.print(sensor->readTemperatureF());
    display.display();
 }

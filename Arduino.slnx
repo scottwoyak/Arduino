@@ -50,7 +50,4 @@
   <Project Path="WindDisplay/WindDisplay.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="WindMonitor/WindowMonitor.vcxproj" Id="ce9936be-d88a-5df5-d934-fcbee6c84747">
-    <Deploy />
-  </Project>
 </Solution>

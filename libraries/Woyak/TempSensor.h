@@ -1,11 +1,13 @@
 #include <I2C.h>
 #include <Adafruit_BME280.h>
 #include <Adafruit_SHT31.h>
+#include "Util.h"
 
 class ITempSensor {
 public:
    virtual bool begin() = 0;
-   virtual float readTemperature() = 0;
+   virtual float readTemperatureF() = 0;
+   virtual float readTemperatureC() = 0;
    virtual float readHumidity() = 0;
 };
 
@@ -14,7 +16,11 @@ class NullSensor : public ITempSensor {
       return true;
    }
 
-   virtual float readTemperature() {
+   virtual float readTemperatureF() {
+      return NAN;
+   }
+
+   virtual float readTemperatureC() {
       return NAN;
    }
 
@@ -31,7 +37,12 @@ public:
    virtual bool begin() {
       return bme.begin();
    }
-   virtual float readTemperature() {
+
+   virtual float readTemperatureF() {
+      return Util::C2F(bme.readTemperature());
+   }
+
+   virtual float readTemperatureC() {
       return bme.readTemperature();
    }
 
@@ -48,7 +59,12 @@ public:
    virtual bool begin() {
       return sht.begin();
    }
-   virtual float readTemperature() {
+
+   virtual float readTemperatureF() {
+      return Util::C2F(sht.readTemperature());
+   }
+
+   virtual float readTemperatureC() {
       return sht.readTemperature();
    }
 
