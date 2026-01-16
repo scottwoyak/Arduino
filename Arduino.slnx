@@ -28,6 +28,9 @@
     <File Path="libraries/Woyak/WindMeter.cpp" />
     <File Path="libraries/Woyak/WindMeter.h" />
   </Folder>
+  <Project Path="Display_SH1107/Display_SH1107.vcxproj">
+    <Deploy />
+  </Project>
   <Project Path="Potentiometer/Potentiometer.vcxproj" Id="c5bc2f07-d8ae-4dcf-aede-3dddf1846b20">
     <Deploy />
   </Project>
