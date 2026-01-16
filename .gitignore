@@ -3,3 +3,6 @@ WeatherCabin/WiFiSettings.h
 WeatherDock/WiFiSettings.h
 WeatherWoods/WiFiSettings.h
 /.vs
+/WindMonitor/__vm
+/WeatherDisplay/__vm
+/WindDisplay/__vm
