@@ -4,6 +4,7 @@
 #include <Stopwatch.h>
 #include <ValueStore.h>
 #include <limits>
+#include <algorithm>
 
 class TimedAverager : public IValueStore {
 private:

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "WiFi101.h"
-#include <AdafruitIO.h>
 #include <Stopwatch.h>
 
 namespace Util {
@@ -49,18 +48,6 @@ namespace Util {
          Serial.println("Connection failed");
          return false;
       }
-   }
-
-   void connectToAdafruitIO(AdafruitIO* io) {
-      Serial.print("Connecting to Adafruit IO");
-      io->connect();
-
-      // wait for a connection
-      while (io->status() < AIO_CONNECTED) {
-         Serial.print(".");
-         delay(500);
-      }
-      Serial.println();
    }
 
    float readVolts(uint8_t pin, uint16_t resolution = 4096, float voltageDivider = 2) {

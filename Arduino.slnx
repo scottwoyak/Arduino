@@ -44,9 +44,6 @@
   <Project Path="Temperature_BME280/Temperature_BME280.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="WeatherDisplay/WeatherDisplay.vcxproj">
-    <Deploy />
-  </Project>
   <Project Path="WindDisplay/WindDisplay.vcxproj">
     <Deploy />
   </Project>

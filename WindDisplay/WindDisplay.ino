@@ -1,5 +1,4 @@
 
-#include <Adafruit_GFX.h>    // Core graphics library
 #include <Adafruit_ST7789.h> // Hardware-specific library for ST7789
 #include <SPI.h>
 #include <TimedHistogram.h>
@@ -17,6 +16,8 @@
 #define DISPLAY_WIDTH 240
 #define DISPLAY_HEIGHT 135
 
+// if any of the TFT defines are not found, it is because the correct board
+// is not selected. Needs to be Adafruit Feather ESP32-S3
 Adafruit_ST7789 display(TFT_CS, TFT_DC, TFT_RST);
 TimedHistogram hg(0, MAX_SPEED, NUM_BINS, TOTAL_TIME);
 WindMeter windMeter(WIND_PIN);
