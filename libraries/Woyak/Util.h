@@ -1,10 +1,11 @@
 #pragma once
 
-#include "WiFi101.h"
+//#include "WiFi101.h"
 #include <Stopwatch.h>
 
 namespace Util {
 
+   /*
    const char* WiFiStatus2Str(uint8_t status) {
       switch (status) {
       case WL_NO_SHIELD: return "WL_NO_SHIELD";
@@ -49,6 +50,7 @@ namespace Util {
          return false;
       }
    }
+   */
 
    float readVolts(uint8_t pin, uint16_t resolution = 4096, float voltageDivider = 2) {
       float volts = analogRead(pin);
