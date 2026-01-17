@@ -8,6 +8,7 @@
     <File Path="libraries/Woyak/Battery.h" />
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
+    <File Path="libraries/Woyak/Feather_ESP32_S3.h" />
     <File Path="libraries/Woyak/FeedTimer.h" />
     <File Path="libraries/Woyak/FramSpiEx.h" />
     <File Path="libraries/Woyak/History.h" />
@@ -30,6 +31,12 @@
     <File Path="libraries/Woyak/WindMeter.h" />
   </Folder>
   <Project Path="Display_SH1107/Display_SH1107.vcxproj">
+    <Deploy />
+  </Project>
+  <Project Path="Display_ST7789/Display_ST7789.vcxproj">
+    <Deploy />
+  </Project>
+  <Project Path="Feather_ESP32_TFT/Feather_ESP32_TFT.vcxproj">
     <Deploy />
   </Project>
   <Project Path="I2C_Port_Scanner/I2C_Port_Scanner.vcxproj">
