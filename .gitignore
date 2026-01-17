@@ -10,3 +10,4 @@ WeatherWoods/WiFiSettings.h
 /Temperature_BME280/__vm
 /I2C_Port_Scanner/I2C_Port_Scanner/__vm
 /Influx_Temp_Monitor/Influx_Temp_Monitor/__vm
+/Display_SH1107/__vm
