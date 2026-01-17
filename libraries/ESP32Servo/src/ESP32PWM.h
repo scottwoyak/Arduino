@@ -8,12 +8,22 @@
 #ifndef LIBRARIES_ESP32SERVO_SRC_ESP32PWM_H_
 #define LIBRARIES_ESP32SERVO_SRC_ESP32PWM_H_
 #include "esp32-hal-ledc.h"
+#if defined(ARDUINO)
+	#include "Arduino.h"
+#endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+#define NUM_PWM 6
+#elif defined(CONFIG_IDF_TARGET_ESP32S2)   ||  defined(CONFIG_IDF_TARGET_ESP32S3)
+#define NUM_PWM 8
+#else 
 #define NUM_PWM 16
+#endif
+
 #define PWM_BASE_INDEX 0
 #define USABLE_ESP32_PWM (NUM_PWM-PWM_BASE_INDEX)
 #include <cstdint>
 
-#include "Arduino.h"
 class ESP32PWM {
 private:
 
@@ -25,8 +35,8 @@ private:
 	double myFreq;
 	int allocatenext(double freq);
 
-	static double _ledcSetupTimerFreq(uint8_t chan, double freq,
-			uint8_t bit_num);
+	static double _ledcSetupTimerFreq(uint8_t pin, double freq,
+		uint8_t bit_num, uint8_t channel);
 
 	bool checkFrequencyForSideEffects(double freq);
 
@@ -97,10 +107,24 @@ public:
 		return pin;
 	}
 	static bool hasPwm(int pin) {
-#if defined(ARDUINO_ESP32S2_DEV)
-		if ((pin >=1 && pin <= 21) || //20
+#if defined(CONFIG_IDF_TARGET_ESP32S2)
+		if ((pin >=1 && pin <= 21) || //21
 				(pin == 26) || //1
 				(pin >= 33 && pin <= 42)) //10
+#elif defined(CONFIG_IDF_TARGET_ESP32S3)
+		if ((pin >=1 && pin <= 21) || //20
+				(pin >= 35 && pin <= 45) || //11
+				(pin == 47) || (pin == 48)) //2
+#elif defined(CONFIG_IDF_TARGET_ESP32C3)
+		if ((pin >=0 && pin <= 10) || //11
+				(pin >= 18 && pin <= 21)) //4
+#elif defined(CONFIG_IDF_TARGET_ESP32C6)
+		if ((pin >=0 && pin <= 9) || //10
+				(pin >= 12 && pin <= 23)) //12
+#elif defined(CONFIG_IDF_TARGET_ESP32H2)
+		if ((pin >=0 && pin <= 5) || //6
+				(pin >= 8 && pin <= 14) || //7
+				(pin >= 22 && pin <= 27)) //6
 #else
 		if ((pin == 2) || //1
 				(pin == 4) || //1

@@ -99,7 +99,7 @@ class InfluxDBClient {
     // Returns true if setting was successful. Otherwise check getLastErrorMessage() for an error.
     // Example: 
     //    client.setHTTPOptions(HTTPOptions().httpReadTimeout(20000)).
-      bool setHTTPOptions(const HTTPOptions &httpOptions);
+    bool setHTTPOptions(const HTTPOptions &httpOptions);
     // Sets connection parameters for InfluxDB 2
     // Must be called before calling any method initiating a connection to server.
     // serverUrl - url of the InfluxDB 2 server (e.g. https//localhost:8086)
@@ -204,17 +204,17 @@ class InfluxDBClient {
       public:
         BatchStreamer(Batch *batch) ;
         virtual ~BatchStreamer() {};
+        // Clears pointers to start reading from beginning
+        void reset();
 
           // Stream overrides
         virtual int available() override;
 
-        virtual int availableForWrite() override;
+        virtual int availableForWrite();
 
         virtual int read() override;
-#if defined(ESP8266)        
-        virtual int read(uint8_t* buffer, size_t len) override;
-#endif
-        virtual size_t readBytes(char* buffer, size_t len) override;
+        virtual int read(uint8_t* buffer, size_t len);
+        virtual size_t readBytes(char* buffer, size_t len);
 
         virtual void flush() override {};
         virtual int peek()  override;

@@ -2,28 +2,22 @@
 /*!
   @file NMEA_build.cpp
 
-  @mainpage Adafruit Ultimate GPS Breakout
-
-  @section intro Introduction
-
   This is the Adafruit GPS library - the ultimate GPS library
   for the ultimate GPS module!
 
   Tested and works great with the Adafruit Ultimate GPS module
   using MTK33x9 chipset
-  ------> http://www.adafruit.com/products/746
+      ------> http://www.adafruit.com/products/746
+  Pick one up today at the Adafruit electronics shop
+  and help support open source hardware & software! -ada
 
   Adafruit invests time and resources providing this open source code,
   please support Adafruit and open-source hardware by purchasing
   products from Adafruit!
 
-  @section author Author
+  @author Limor Fried/Ladyada  for Adafruit Industries.
 
-  Written by Limor Fried/Ladyada for Adafruit Industries.
-
-  @section license License
-
-  BSD license, check license.txt for more information
+  @copyright BSD license, check license.txt for more information
   All text above must be included in any redistribution
 */
 /**************************************************************************/
@@ -67,6 +61,7 @@
     @param thisSource Pointer to the source name string (2 upper case)
     @param thisSentence Pointer to the sentence name string (3 upper case)
     @param ref Reference for the sentence, usually relative (R) or true (T)
+    @param noCRLF set true to disable adding CR/LF to comply with NMEA-183
     @return Pointer to sentence if successful, NULL if fails
 */
 /**************************************************************************/
@@ -570,7 +565,15 @@ char *Adafruit_GPS::build(char *nmea, const char *thisSource,
 
   addChecksum(nmea); // Successful completion
   if (!noCRLF) { // Add Carriage Return and Line Feed to comply with NMEA-183
-    sprintf(nmea, "%s\r\n", nmea);
+    size_t len = strlen(nmea);
+    char *nmeaWithCRLF =
+        (char *)malloc(len + 3); // +2 for \r\n, +1 for null terminator
+    if (nmeaWithCRLF) {
+      strcpy(nmeaWithCRLF, nmea);   // Copy original string
+      strcat(nmeaWithCRLF, "\r\n"); // Append \r\n
+      strcpy(nmea, nmeaWithCRLF);   // Copy back to original buffer
+      free(nmeaWithCRLF);           // Free the allocated memory
+    }
   }
   return nmea; // return pointer to finished product
 }
@@ -595,5 +598,22 @@ void Adafruit_GPS::addChecksum(char *buff) {
     cs ^= buff[i];
     i++;
   }
-  sprintf(buff, "%s*%02X", buff, cs);
+
+  // Calculate the needed buffer size: original length + 3 (*XX) + 1 (null
+  // terminator)
+  int neededSize = strlen(buff) + 4;
+  char *tempBuffer = (char *)malloc(neededSize);
+
+  if (tempBuffer != NULL) {
+    // Use snprintf to safely format the string with the checksum
+    snprintf(tempBuffer, neededSize, "%s*%02X", buff, cs);
+
+    // Copy the formatted string back to the original buffer
+    // Note: Make sure the original buffer is large enough to hold the new
+    // string.
+    strcpy(buff, tempBuffer);
+
+    // Free the allocated memory to avoid memory leaks
+    free(tempBuffer);
+  }
 }

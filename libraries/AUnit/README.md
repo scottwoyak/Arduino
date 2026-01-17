@@ -4,23 +4,25 @@
 
 A unit testing framework for Arduino platforms inspired by by
 [ArduinoUnit](https://github.com/mmurdoch/arduinounit) and [Google
-Test](https://github.com/google/googletest/). The unit tests usually run on the
-embedded controller which allows detection of architecture-specific problems.
-But for faster development, many unit tests can be compiled and executed
-natively on Linux or MacOS using the
-[EpoxyDuino](https://github.com/bxparks/EpoxyDuino) companion project.
+Test](https://github.com/google/googletest/). AUnit is almost a drop-in
+replacement of ArduinoUnit (v2.2) with some advantages. AUnit supports timeouts
+and test fixtures. It sometimes consumes 50% less flash memory on the AVR
+platform, and it has been tested to work on the AVR, SAMD21, STM32, ESP8266,
+ESP32 and Teensy platforms. The assertion error messages were updated in v1.7 to
+provide seamless integration with Unix tools like `vim`.
 
-AUnit is almost a drop-in replacement of ArduinoUnit with some advantages. AUnit
-supports timeouts and test fixtures. It sometimes consumes 50% less flash memory
-on the AVR platform, and it has been tested to work on the AVR, SAMD21, STM32,
-ESP8266, ESP32 and Teensy platforms. Another companion project
-[AUniter](https://github.com/bxparks/AUniter) project provides command line
-tools to verify, upload and validate the unit tests to the microcontroller,
-instead of having to go through the Arduino IDE. Both the AUniter and
-EpoxyDuino tools can be used in a continuous integration system like Jenkins,
-or with [GitHub Actions](https://github.com/features/actions).
+Originally, the AUnit tests were designed to run on the embedded controller
+itself which allows detection of architecture-specific problems. But the
+uploading, flashing, and execution process is often slow and flaky, causing the
+iteration cycle to take too much time. It is often more effective to execute the
+AUnit tests natively on a host machine (running Linux, MacOS, or FreeBSD) using
+the [EpoxyDuino](https://github.com/bxparks/EpoxyDuino) companion project. Once
+the unit tests are running on the Linux or MacOS host machine, they can be
+incorporated into a continuous integration system like
+[Jenkins](https://www.jenkins.io/) system or a cloud-based system like [GitHub
+Actions](https://github.com/features/actions).
 
-**Version**: 1.6.1 (2022-02-02)
+**Version**: 1.7.1 (2023-06-15)
 
 **Changelog**: [CHANGELOG.md](CHANGELOG.md)
 
@@ -40,6 +42,7 @@ or with [GitHub Actions](https://github.com/features/actions).
     * [Defining the Tests](#DefiningTests)
     * [Generated Class and Instance Names](#GeneratedClass)
     * [Binary Assertions](#BinaryAssertions)
+        * [Assertion Message Format](#AssertionMessageFormat)
         * [Supported Parameter Types](#SupportedParameterTypes)
         * [Parameter Types Must Match](#ParameterTypesMustMatch)
         * [Pointer Comparisons](#PointerComparisons)
@@ -77,6 +80,8 @@ or with [GitHub Actions](https://github.com/features/actions).
     * [Class Hierarchy](#ClassHierarchy)
     * [Testing Private Helper Methods](#PrivateHelperMethods)
 * [Benchmarks](#Benchmarks)
+    * [Memory Benchmark](#MemoryBenchmark)
+    * [Compared with ArduinoUnit](#CompareArduinoUnit)
 * [System Requirements](#SystemRequirements)
     * [Hardware](#Hardware)
     * [Tool Chain](#ToolChains)
@@ -247,36 +252,66 @@ The source files are organized as follows:
 
 The `examples/` directory has a number of examples:
 
-* `advanced` - how to subclass `Test` and `TestOnce` manually
-* `basic` - using the `test()` macro
-* `continuous` - using the `testing()` macro
-* `filter` - how to filter tests using `TestRunner::include()` and
-  `TestRunner::exclude()`
-* `fixture` - how to use the `testF()` macro with test fixtures
-* `meta_asserts` - how to use `assertTestXxx()` and `checkTestXxx()`
+* Basic
+    * [basic](examples/basic)
+        * using the `test()` macro
+    * [fixture](examples/fixture)
+        * how to use the `testF()` macro with test fixtures
+* Intermediate
+    * [filter](examples/filter)
+        * how to filter tests using `TestRunner::include()` and
+          `TestRunner::exclude()`
+    * [meta_asserts](examples/meta_asserts)
+        * how to use `assertTestXxx()` and `checkTestXxx()`
+* Advanced
+    * [advanced](examples/advanced/)
+        * how to subclass `Test` and `TestOnce` manually
+    * [continuous](examples/continuous)
+        * using the `testing()` macro
+* Benchmarks
+    * These are internal benchmark programs, not meant as examples (they are in
+      the `examples/` directory because of the Arduino IDE).
+    * [MemoryBenchmark](examples/MemoryBenchmark)
+        * Determines the flash and static memory consumption of AUnit for
+          various microcontroller
 
-In the `tests/` directory:
+In the `tests/` directory, there are unit tests to test the AUnit framework
+itself:
 
-* `AUnitTest` - the unit test for core `AUnit` functions,
-* `AUnitMetaTest` - the unit test for meta assertions and `extern*()` macros
-* `FilterTest` - manual tests for `include()` and `exclude()` filters
-* `SetupAndTeardownTest` - tests to verify that `setup()` and `teardown()` are
-  called properly by the finite state machine
+* [AUnitTest](tests/AUnitTest)
+    * the unit test for core `AUnit` functions
+* [AUnitMoreTest](tests/AUnitMoreTest)
+    * more tests
+* [AUnitMetaTest](tests/AUnitMetaTest)
+    * the unit test for meta assertions and `extern*()` macros
+* [CompareTest](tests/CompareTest)
+    * tests for the low-level compare functions
+* [FailingTest](tests/FailingTest)
+    * tests that are expected to fail
+* [FilterTest](tests/FilterTest)
+    * manual tests for `include()` and `exclude()` filters
+* [Print64Test](tests/Print64Test)
+    * manual tests for `include()` and `exclude()` filters
+* [SetupAndTeardownTest](tests/SetupAndTeardownTest)
+    * tests to verify that `setup()` and `teardown()` are called properly by the
+      finite state machine
+* [tests/Makefile](tests/Makefile)
+    * Runs the tests on a Linux or Mac machine using EpoxyDuino
 
-Perhaps the best way to see AUnit in action through real life examples. All my
-libraries use AUnit for testing and for continuous integration through
-EpoxyDuino. Here are some examples:
+Perhaps the best way to see AUnit in action is through real life examples. All
+my libraries use AUnit for testing and for continuous integration through
+EpoxyDuino. Here are some of my libraries:
 
 * [AceButton](https://github.com/bxparks/AceButton)
     * My first Arduino library, which originally used ArduinoUnit 2.2.
     * I kept many of the original ArduinoUnit tests for backwards compatibility
-      testing. But over time, I started to use nore AUnit features.
+      testing. But over time, I started to use more AUnit features so I'm not
+      sure if they work with ArduinoUnit anymore.
 * [AceCRC](https://github.com/bxparks/AceCRC)
 * [AceCommon](https://github.com/bxparks/AceCommon)
 * [AceRoutine](https://github.com/bxparks/AceRoutine)
 * [AceSegment](https://github.com/bxparks/AceSegment)
 * [AceSorting](https://github.com/bxparks/AceSorting)
-* [AceTimeClock](https://github.com/bxparks/AceTimeClock)
 * [AceTime](https://github.com/bxparks/AceTime)
 
 <a name="Usage"></a>
@@ -501,6 +536,35 @@ are available. These are essentially identical to ArduinoUnit:
 * `assertLessOrEqual(a, b)`
 * `assertMoreOrEqual(a, b)`
 
+<a name="AssertionMessageFormat"></a>
+#### Assertion Message Format
+
+When the assertion passes, nothing is printed by default. This can be controlled
+by the `TestRunner::setVerbosity()` method. See [Controlling
+Verbosity](#ControllingVerbosity).
+
+When the assertion fails, an error message of the following format is printed:
+
+```
+SampleTest.ino:10: Assertion failed: (2) == (1)
+```
+
+The format of the assertion failure messages was changed in v1.7 to the
+following:
+```
+{fileName}:{lineNumber}: Assertion failed: {expression}
+```
+
+This format is a widely used in many other programs, for example, the C compiler
+`gcc`, the C++ compiler `g++`, the Python 3 interpreter `python3`, `grep`, and
+the GNU Make program `make`. In particular, the
+[quickfix](https://vimhelp.org/quickfix.txt.html) feature in the `vim` text
+editor can parse this error format and jump directly to the `fileName` and
+`lineNumber` indicated by the error message. See the instructions in
+[EpoxyDuino](https://github.com/bxparks/EpoxyDuino) to see how to run unit tests
+on a Linux or MacOS machine inside the `vim` editor so that the editor jumps
+directly to the files and line numbers where the assertion failure occurred.
+
 <a name="SupportedParameterTypes"></a>
 #### Supported Parameter Types
 
@@ -527,7 +591,7 @@ following 18 combinations for their parameter types:
 * `(const __FlashStringHelper*, const String&)`
 * `(const __FlashStringHelper*, const __FlashStringHelper*)`
 
-The `assertEqual()` and `assertNotEqual()` support arbitary pointer types
+The `assertEqual()` and `assertNotEqual()` support arbitrary pointer types
 through implicit casts to `const void*`:
 
 * `(const void*, const void*)` (since v1.4)
@@ -643,7 +707,7 @@ test(voidPointer) {
 
 This test will fail with the following error message:
 ```
-Assertion failed: (aa=0x3FFFFF38) == (bb=0x3FFFFF30), file AUnitTest.ino, line 338.
+AUnitTest.ino:338: Assertion failed: (aa=0x3FFFFF38) == (bb=0x3FFFFF30).
 Test voidPointer failed.
 ```
 
@@ -659,7 +723,7 @@ test(nullPointer) {
 This will print the following:
 
 ```
-Assertion failed: (aa=0x3FFFFF58) == (nullptr=0x0), file AUnitTest.ino, line 348.
+AUnitTest.ino:348: Assertion failed: (aa=0x3FFFFF58) == (nullptr=0x0).
 Test nullPointer failed.
 ```
 
@@ -721,8 +785,8 @@ AUnit offers only the equivalent of `ASSERT_NEAR()` function:
 
 Upon failure, the error messages will look something like:
 ```
-Assertion failed: |(1.00) - (1.10)| > (0.20), file AUnitTest.ino, line 517.
-Assertion failed: |(4.00) - (1.10)| <= (0.20), file AUnitTest.ino, line 527.
+AUnitTest.ino:517: Assertion failed: |(1.00) - (1.10)| > (0.20).
+AUnitTest.ino:527: Assertion failed: |(4.00) - (1.10)| <= (0.20).
 ```
 
 Unlike Google Test where `ASSERT_NEAR()` supports only the `double` type, both
@@ -944,10 +1008,10 @@ and returns a `bool`. The execution continues even if `false`.
 The `assertTestXxx()` methods stops the unit test if the status check
 returns `false`, and prints assertion messages that look like this:
 ```
-Assertion passed: Test slow_pass is done, file AUnitTest.ino, line 366.
-Assertion passed: Test slow_pass is not failed, file AUnitTest.ino, line 372.
-Assertion passed: Test slow_skip is skipped, file AUnitTest.ino, line 448.
-Assertion passed: Test slow_skip is not timed out, file AUnitTest.ino, line 451.
+AUnitTest.ino:366: Assertion passed: Test slow_pass is done.
+AUnitTest.ino:372: Assertion passed: Test slow_pass is not failed.
+AUnitTest.ino:448: Assertion passed: Test slow_skip is skipped.
+AUnitTest.ino:451: Assertion passed: Test slow_skip is not timed out.
 ```
 (The human readable version of being `expired` will always be `timed out` or
 `not timed out` on the `Serial` output.)
@@ -966,8 +1030,7 @@ available in AUnit. Also, the assertion messages are different. ArduinoUnit
 reuses the format used by the `assertXxx()` macros, so prints something like
 the following:_
 ```
-Assertion passed: (test_slow_skip_instance.state=2) >= (Test::DONE_SKIP=2), file
-AUnitTest.ino, line 439.
+AUnitTest.ino:439: Assertion passed: (test_slow_skip_instance.state=2) >= (Test::DONE_SKIP=2).
 ```
 
 _AUnit has a separate message handler to print a customized message for the
@@ -988,10 +1051,10 @@ fails.
 
 The messages look like:
 ```
-Status passed, file AUnitTest.ino, line 360.
-Status failed, file AUnitTest.ino, line 378.
-Status skipped, file AUnitTest.ino, line 380.
-Status timed out, file AUnitTest.ino, line 391.
+AUnitTest.ino:360: Status passed.
+AUnitTest.ino:378: Status failed.
+AUnitTest.ino:380: Status skipped.
+AUnitTest.ino:391: Status timed out.
 ```
 
 The following methods on the `Test` class also set the `status` of the test, but
@@ -1242,7 +1305,7 @@ assertEquals(expected, counter);
 
 The error message (if enabled, which is the default) is:
 ```
-Assertion failed: (3) == (4), file AUnitTest.ino, line 134.
+AUnitTest.ino:134: Assertion failed: (3) == (4).
 ```
 
 Asserts with `bool` values produce customized messages, printing "true" or
@@ -1250,7 +1313,7 @@ Asserts with `bool` values produce customized messages, printing "true" or
 ```C++
 assertEquals(true, false);
 
-Assertion failed: (true) == (false), file AUnitTest.ino, line 134.
+AUnitTest.ino:134: Assertion failed: (true) == (false).
 ```
 
 Similarly, the `assertTrue()` and `assertFalse()` macros provide more customized
@@ -1259,7 +1322,7 @@ messages:
 bool ok = false;
 assertTrue(ok);
 
-Assertion failed: (false) is true, file AUnitTest.ino, line 134.
+AUnitTest.ino:134: Assertion failed: (false) is true.
 ```
 
 and
@@ -1267,7 +1330,7 @@ and
 bool ok = true;
 assertFalse(ok);
 
-Assertion failed: (true) is false, file AUnitTest.ino, line 134.
+AUnitTest.ino:134: Assertion failed: (true) is false.
 ```
 
 ***ArduinoUnit Compatibility***:
@@ -1275,7 +1338,7 @@ _ArduinoUnit captures the arguments of the `assertEqual()` macro
 and prints:_
 
 ```
-Assertion failed: (expected=3) == (counter=4), file AUnitTest.ino, line 134.
+AUnitTest.ino:134: Assertion failed: (expected=3) == (counter=4).
 ```
 
 _Each capture of the parameter string consumes flash memory space. If the unit
@@ -1297,13 +1360,20 @@ the assertion message will contain the string fragments of the arguments
 passed into the `assertXxx()` macros, like this:
 
 ```
-Assertion failed: (expected=3) == (counter=4), file AUnitTest.ino, line 134.
-Assertion failed: (ok=false) is true, file AUnitTest.ino, line 134.
+AUnitTest.ino:134: Assertion failed: (expected=3) == (counter=4).
+AUnitTest.ino:134: Assertion failed: (ok=false) is true.
+```
+
+instead of:
+
+```
+AUnitTest.ino:134: Assertion failed: (3) == (4).
+AUnitTest.ino:134: Assertion failed: (false) is true.
 ```
 
 ***ArduinoUnit Compatibility***:
-_The verbose mode produces the same messages as ArduinoUnit, at the cost of
-increased flash memory usage._
+_As of v1.7, the assertion message format is compatible with the vim editor
+and other Linux/MacOS/Unix tools, and no longer compatible with ArduinoUnit
 
 <a name="TestCaseSummary"></a>
 #### Test Case Summary
@@ -1440,9 +1510,6 @@ copied from the `AUniter/README.md` file:
     * list the available serial ports and devices
 * `$ auniter verify nano Blink.ino`
     * verify (compile) `Blink.ino` using the `env:nano` environment
-* `$ auniter verify nano,esp8266,esp32 Blink.ino`
-    * verify `Blink.ino` on 3 target environments (`env:nano`, `env:esp8266`,
-    `env:esp32`)
 * `$ auniter upload nano:/dev/ttyUSB0 Blink.ino`
     * upload `Blink.ino` to the `env:nano` target environment connected to
     `/dev/ttyUSB0`
@@ -1450,11 +1517,9 @@ copied from the `AUniter/README.md` file:
     * compile and upload `BlinkTest.ino` using the `env:nano` environment,
       upload it to the board at `/dev/ttyUSB0`, then validate the output of the
       [AUnit](https://github.com/bxparks/AUnit) unit test
-* `$ auniter test nano:USB0,esp8266:USB1,esp32:USB2 BlinkTest/ ClockTest/`
+* `$ auniter test nano:USB0 BlinkTest/ ClockTest/`
     * upload and verify the 2 unit tests (`BlinkTest/BlinkTest.ino`,
-      `ClockTest/ClockTest.ino`) on 3 target environments (`env:nano`,
-      `env:esp8266`, `env:esp32`) located at the 3 respective ports
-      (`/dev/ttyUSB0`, `/dev/ttyUSB1`, `/dev/ttyUSB2`)
+      `ClockTest/ClockTest.ino`) on the target environment (`env:nano`)
 * `$ auniter upmon nano:USB0 Blink.ino`
     * upload the `Blink.ino` sketch and monitor the serial port using a
       user-configurable terminal program (e.g. `picocom`) on `/dev/ttyUSB0`
@@ -1492,10 +1557,22 @@ For real Arduino boards, you get more reliable unit tests if you add a
 necessary, so I recommend calling this only on real Arduino boards, like this:
 ```C++
 void setup() {
-#ifdef ARDUINO
+#if ! defined(EPOXY_DUINO)
   delay(1000); // Wait for stability on some boards, otherwise garage on Serial
 #endif
+
+  Serial.begin(115200);
+  while (! Serial); // Wait until Serial is ready - Leonardo/Micro
+
+#if defined(EPOXY_DUINO)
+  Serial.setLineModeUnix(); // use Unix line terminator instead of DOS
+#endif
   ...
+}
+
+void loop() {
+  aunit::TestRunner::run();
+}
 ```
 
 **Exit() Status Code**
@@ -1845,12 +1922,49 @@ testF(TargetTest, helper) {
 ```
 
 The tricky part is that `Target.h` must have forward declarations of the various
-auto-generated AUnit test classes. And within the `Target` class itsef, the
+auto-generated AUnit test classes. And within the `Target` class itself, the
 `friend` declarations need to have a global scope `::` specifier before the name
 of the test class.
 
 <a name="Benchmarks"></a>
 ## Benchmarks
+
+<a name="MemoryBenchmark"></a>
+### MemoryBenchmark
+
+The [MemoryBenchmark](examples/MemoryBenchmark/) directory collects the flash
+and static RAM usage of the AUnit library on various microcontroller boards, and
+renders the results as tables embedded in the README.md file. Here are 2
+highlights:
+
+**Arduino Nano (8-bit)**
+
+```
++---------------------------------------------------------------------+
+| Functionality                          |  flash/  ram |       delta |
+|----------------------------------------+--------------+-------------|
+| Baseline                               |   1586/  185 |     0/    0 |
+|----------------------------------------+--------------+-------------|
+| AUnit Single Test                      |   4456/  366 |  2870/  181 |
+| AUnit Single Test Verbose              |   4500/  366 |  2914/  181 |
++---------------------------------------------------------------------+
+```
+
+**ESP8266 (32-bit)**
+
+```
++---------------------------------------------------------------------+
+| Functionality                          |  flash/  ram |       delta |
+|----------------------------------------+--------------+-------------|
+| Baseline                               | 264949/27984 |     0/    0 |
+|----------------------------------------+--------------+-------------|
+| AUnit Single Test                      | 268021/28148 |  3072/  164 |
+| AUnit Single Test Verbose              | 268081/28148 |  3132/  164 |
++---------------------------------------------------------------------+
+```
+
+<a name="CompareArduinoUnit"></a>
+### Compared to ArduinoUnit 2.2
 
 AUnit consumes as much as 65% less flash memory than ArduinoUnit 2.2 on an AVR
 platform (e.g. Arduino UNO, Nano), and 30% less flash on the Teensy-ARM platform
@@ -1893,34 +2007,52 @@ AUnit, but a savings of 30-50% seems to be common.
 <a name="Hardware"></a>
 ### Hardware
 
-The library is tested on the following boards:
+**Tier 1: Fully supported**
+
+These boards are tested on each release:
 
 * Arduino Nano clone (16 MHz ATmega328P)
 * SparkFun Pro Micro clone (16 MHz ATmega32U4)
-* SAMD21 M0 Mini board (Arduino Zero compatible, 48 MHz ARM Cortex-M0+)
+* Seeeduino XIAO M0 (SAMD21, 48 MHz ARM Cortex-M0+)
 * STM32 Blue Pill (STM32F103C8, 72 MHz ARM Cortex-M3)
+* Adafruit ItsyBitsy M4 (SAMD51, 120 MHz ARM Cortext-M4)
 * NodeMCU 1.0 (ESP-12E module, 80 MHz ESP8266)
 * WeMos D1 Mini (ESP-12E module, 80 MHz ESP8266)
 * ESP32 dev board (ESP-WROOM-32 module, 240 MHz dual core Tensilica LX6)
-* Teensy 3.2 (96 MHz ARM Cortex-M4)
 
-I will occasionally test on the following hardware as a sanity check:
+**Tier 2: Should work**
+
+These boards should work but I don't test them as often:
 
 * Arduino Pro Mini (16 MHz ATmega328P)
 * Mini Mega 2560 (Arduino Mega 2560 compatible, 16 MHz ATmega2560)
 * Teensy LC (48 MHz ARM Cortex-M0+)
+* Teensy 3.2 (96 MHz ARM Cortex-M4)
 
-The following boards are **not** supported:
+**Tier 3: May work, but not supported**
 
-* Any platform using the ArduinoCore-API
-  (https://github.com/arduino/ArduinoCore-api), such as:
-    * megaAVR (e.g. Nano Every) using ArduinoCore-megaavr
-      (https://github.com/arduino/ArduinoCore-megaavr/)
-    * SAMD21 boards (e.g. MKRZero) using ArduinoCore-samd
-      (https://github.com/arduino/ArduinoCore-samd) starting with
-      `arduino:samd` version >= 1.8.10
-    * Raspberry Pi Pico (RP2040) using Arduino-Pico
-      (https://github.com/earlephilhower/arduino-pico)
+* Other 3rd party SAMD21 and SAMD51 boards *may* work if their board software
+  uses the traditional Arduino API, instead of the
+  [ArduinoCore-API](https://github.com/arduino/ArduinoCore-api)
+
+**Tier Blacklisted**
+
+The following boards are *not* supported and are explicitly blacklisted to allow
+the compiler to print useful error messages instead of hundreds of lines of
+compiler errors:
+
+* Any platform using the
+    [ArduinoCore-API](https://github.com/arduino/ArduinoCore-api), such as:
+    * Arduino-branded megaAVR using
+      [ArduinoCore-megaavr](https://github.com/arduino/ArduinoCore-megaavr/)
+        * Nano Every
+    * Arduino-branded SAMD21 or SAMD51 boards using
+      [ArduinoCore-samd](https://github.com/arduino/ArduinoCore-samd) after
+      version >= 1.8.10
+        * MKRZero
+        * Nano 33 IoT
+    * Raspberry Pi Pico (RP2040) using
+      [Arduino-Pico](https://github.com/earlephilhower/arduino-pico)
 
 <a name="ToolChain"></a>
 ### Tool Chain
@@ -1928,15 +2060,16 @@ The following boards are **not** supported:
 This library was validated using:
 
 * [Arduino IDE 1.8.19](https://www.arduino.cc/en/Main/Software)
-* [Arduino CLI 0.19.2](https://arduino.github.io/arduino-cli)
-* [Arduino AVR Boards 1.8.4](https://github.com/arduino/ArduinoCore-avr)
+* [Arduino CLI 0.33.0](https://arduino.github.io/arduino-cli)
+* [Arduino AVR Boards 1.8.6](https://github.com/arduino/ArduinoCore-avr)
 * [Arduino SAMD Boards 1.8.9](https://github.com/arduino/ArduinoCore-samd)
+  (versions >= 1.8.10 not supported)
 * [SparkFun AVR Boards 1.1.13](https://github.com/sparkfun/Arduino_Boards)
 * [SparkFun SAMD Boards 1.8.6](https://github.com/sparkfun/Arduino_Boards)
-* [STM32duino 2.2.0](https://github.com/stm32duino/Arduino_Core_STM32)
+* [STM32duino 2.5.0](https://github.com/stm32duino/Arduino_Core_STM32)
 * [ESP8266 Arduino 3.0.2](https://github.com/esp8266/Arduino)
-* [ESP32 Arduino 2.0.2](https://github.com/espressif/arduino-esp32)
-* [Teensyduino 1.56](https://www.pjrc.com/teensy/td_download.html)
+* [ESP32 Arduino 2.0.9](https://github.com/espressif/arduino-esp32)
+* [Teensyduino 1.57](https://www.pjrc.com/teensy/td_download.html)
 
 This library is *not* compatible with:
 

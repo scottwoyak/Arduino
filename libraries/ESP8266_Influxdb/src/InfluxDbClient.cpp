@@ -144,7 +144,7 @@ void InfluxDBClient::clean() {
 }
 
 bool InfluxDBClient::setUrls() {
-    if(!_service && !init()) {
+    if(!_service) {
         return false;
     }
     INFLUXDB_CLIENT_DEBUG("[D] setUrls\n");
@@ -186,13 +186,10 @@ bool InfluxDBClient::setUrls() {
 }
 
 bool InfluxDBClient::setWriteOptions(WritePrecision precision, uint16_t batchSize, uint16_t bufferSize, uint16_t flushInterval, bool preserveConnection) {
-    if(!_service && !init()) {
-        return false;
-    }
     if(!setWriteOptions(WriteOptions().writePrecision(precision).batchSize(batchSize).bufferSize(bufferSize).flushInterval(flushInterval))) {
         return false;
     }
-    if(!setHTTPOptions(_service->getHTTPOptions().connectionReuse(preserveConnection))) {
+    if(!setHTTPOptions(_connInfo.httpOptions.connectionReuse(preserveConnection))) {
         return false;
     }
     return true;
@@ -201,7 +198,7 @@ bool InfluxDBClient::setWriteOptions(WritePrecision precision, uint16_t batchSiz
 bool InfluxDBClient::setWriteOptions(const WriteOptions & writeOptions) {
     if(_writeOptions._writePrecision != writeOptions._writePrecision) {
         _writeOptions._writePrecision = writeOptions._writePrecision;
-        if(!setUrls()) {
+        if(_service && !setUrls()) {
             return false;
         }
     }
@@ -212,7 +209,8 @@ bool InfluxDBClient::setWriteOptions(const WriteOptions & writeOptions) {
     }
     if(writeOptions._bufferSize > 0 && _writeOptions._bufferSize != writeOptions._bufferSize) {
         _writeOptions._bufferSize = writeOptions._bufferSize;
-        if(_writeOptions._bufferSize <  2*_writeOptions._batchSize) {
+        // If retrying, we need space for at least two batches
+        if(writeOptions._retryInterval && _writeOptions._bufferSize <  2*_writeOptions._batchSize) {
             _writeOptions._bufferSize = 2*_writeOptions._batchSize;
             INFLUXDB_CLIENT_DEBUG("[D] Changing buffer size to %d\n", _writeOptions._bufferSize);
         }
@@ -226,14 +224,15 @@ bool InfluxDBClient::setWriteOptions(const WriteOptions & writeOptions) {
     _writeOptions._maxRetryInterval = writeOptions._maxRetryInterval;
     _writeOptions._maxRetryAttempts = writeOptions._maxRetryAttempts;
     _writeOptions._defaultTags = writeOptions._defaultTags;
+    _writeOptions._useServerTimestamp = writeOptions._useServerTimestamp;
     return true;
 }
 
 bool InfluxDBClient::setHTTPOptions(const HTTPOptions & httpOptions) {
-    if(!_service && !init()) {
-        return false;
+    _connInfo.httpOptions = httpOptions;
+    if(_service) {
+        _service->setHTTPOptions();
     }
-    _service->setHTTPOptions(httpOptions);
     return true;
 }
 
@@ -286,10 +285,10 @@ void InfluxDBClient::reserveBuffer(int size) {
 }
 
 void InfluxDBClient::addZerosToTimestamp(Point &point, int zeroes) {
-    char *ts = point._timestamp, *s;
-    point._timestamp = new char[strlen(point._timestamp) + 1 + zeroes];
-    strcpy(point._timestamp, ts);
-    s = point._timestamp+strlen(ts);
+    char *ts = point._data->timestamp, *s;
+    point._data->timestamp = new char[strlen(point._data->timestamp) + 1 + zeroes];
+    strcpy(point._data->timestamp, ts);
+    s = point._data->timestamp+strlen(ts);
     for(int i=0;i<zeroes;i++) {
         *s++ = '0';
     }
@@ -302,17 +301,17 @@ void InfluxDBClient::checkPrecisions(Point & point) {
         if(!point.hasTime()) {
             point.setTime(_writeOptions._writePrecision);
         // Check different write precisions
-        } else if(point._tsWritePrecision != WritePrecision::NoTime && point._tsWritePrecision != _writeOptions._writePrecision) {
-            int diff = int(point._tsWritePrecision) - int(_writeOptions._writePrecision);
+        } else if(point._data->tsWritePrecision != WritePrecision::NoTime && point._data->tsWritePrecision != _writeOptions._writePrecision) {
+            int diff = int(point._data->tsWritePrecision) - int(_writeOptions._writePrecision);
             if(diff > 0) { //point has higher precision, cut 
-                point._timestamp[strlen(point._timestamp)-diff*3] = 0;
+                point._data->timestamp[strlen(point._data->timestamp)-diff*3] = 0;
             } else { //point has lower precision, add zeroes
                 addZerosToTimestamp(point, diff*-3);
             }
         }
     // check someone set WritePrecision on point and not on client. NS precision is ok, cause it is default on server
-    } else if(point.hasTime() && point._tsWritePrecision != WritePrecision::NoTime && point._tsWritePrecision != WritePrecision::NS) {
-        int diff = int(WritePrecision::NS) - int(point._tsWritePrecision);
+    } else if(point.hasTime() && point._data->tsWritePrecision != WritePrecision::NoTime && point._data->tsWritePrecision != WritePrecision::NS) {
+        int diff = int(WritePrecision::NS) - int(point._data->tsWritePrecision);
         addZerosToTimestamp(point, diff*3);
     } 
 }
@@ -531,7 +530,7 @@ void  InfluxDBClient::dropCurrentBatch() {
 }
 
 String InfluxDBClient::pointToLineProtocol(const Point& point) {
-    return point.createLineProtocol(_writeOptions._defaultTags);
+    return point.createLineProtocol(_writeOptions._defaultTags, _writeOptions._useServerTimestamp);
 }
 
 bool InfluxDBClient::validateConnection() {
@@ -578,7 +577,7 @@ int InfluxDBClient::postData(Batch *batch) {
 
     BatchStreamer *bs = new BatchStreamer(batch);
     INFLUXDB_CLIENT_DEBUG("[D] Writing to %s\n", _writeUrl.c_str());
-    INFLUXDB_CLIENT_DEBUG("[D] Sending:\n");       
+    INFLUXDB_CLIENT_DEBUG("[D] Sending %d:\n", bs->available());       
     
     if(!_service->doPOST(_writeUrl.c_str(), bs, PSTR("text/plain"), 204, nullptr)) {
         INFLUXDB_CLIENT_DEBUG("[D] error %d: %s\n", _service->getLastStatusCode(), _service->getLastErrorMessage().c_str());
@@ -724,15 +723,23 @@ int InfluxDBClient::BatchStreamer::availableForWrite() {
     return 0;
 }
 
-#if defined(ESP8266)        
+void InfluxDBClient::BatchStreamer::reset() {
+    _read = 0;
+    _pointer = 0;
+    _linePointer = 0;
+}
+
 int InfluxDBClient::BatchStreamer::read(uint8_t* buffer, size_t len) {
-    INFLUXDB_CLIENT_DEBUG("BatchStream::read %d\n", len);
+    INFLUXDB_CLIENT_DEBUG("BatchStream::read\n");
     return readBytes((char *)buffer, len);
 }
-#endif
-size_t InfluxDBClient::BatchStreamer::readBytes(char* buffer, size_t len) {
 
-    INFLUXDB_CLIENT_DEBUG("BatchStream::readBytes %d\n", len);
+size_t InfluxDBClient::BatchStreamer::readBytes(char* buffer, size_t len) {
+#if defined(ESP8266)
+    INFLUXDB_CLIENT_DEBUG("BatchStream::readBytes %d, free_heap %d, max_alloc_heap %d, heap_fragmentation  %d\n", len, ESP.getFreeHeap(), ESP.getMaxFreeBlockSize(), ESP.getHeapFragmentation());
+#elif defined(ESP32)
+    INFLUXDB_CLIENT_DEBUG("BatchStream::readBytes %d, free_heap %d, max_alloc_heap %d\n", len, ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+#endif
     unsigned int r=0;
     for(unsigned int i=0;i<len;i++) {
         if(available()) {

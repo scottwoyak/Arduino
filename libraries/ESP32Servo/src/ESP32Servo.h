@@ -64,9 +64,9 @@
 
 #ifndef ESP32_Servo_h
 #define ESP32_Servo_h
-#include "analogWrite.h"
+//#include "analogWrite.h"
 #include "ESP32PWM.h"
-#include "ESP32Tone.h"
+//#include "ESP32Tone.h"
 //Enforce only using PWM pins on the ESP32
 #define ENFORCE_PINS
 // Default Arduino Servo.h
@@ -81,8 +81,16 @@
 //#define DEFAULT_uS_LOW 400
 //#define DEFAULT_uS_HIGH 2400
 
-#define DEFAULT_TIMER_WIDTH 16
-#define DEFAULT_TIMER_WIDTH_TICKS 65536
+#ifdef ARDUINO_ESP32C3_DEV
+#define MINIMUM_TIMER_WIDTH 10
+#define MAXIMUM_TIMER_WIDTH 14
+#define DEFAULT_TIMER_WIDTH 10
+#else
+#define MINIMUM_TIMER_WIDTH 10
+#define MAXIMUM_TIMER_WIDTH 20
+#define DEFAULT_TIMER_WIDTH 10
+#endif
+#define DEFAULT_TIMER_WIDTH_TICKS 1024
 
 #define ESP32_Servo_VERSION           1     // software version of this library
 
@@ -128,8 +136,11 @@ public:
 	void detach();
 	void write(int value); // if value is < MIN_PULSE_WIDTH its treated as an angle, otherwise as pulse width in microseconds
 	void writeMicroseconds(int value);     // Write pulse width in microseconds
+	void writeTicks(int value);     // Write ticks, the smallest increment the servo can handle
+	void release();
 	int read(); // returns current pulse width as an angle between 0 and 180 degrees
 	int readMicroseconds(); // returns current pulse width in microseconds for this servo
+	int readTicks(); // returns current ticks, the smallest increment the servo can handle
 	bool attached(); // return true if this servo is attached, otherwise false
 
 	// ESP32 only functions

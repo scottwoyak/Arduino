@@ -30,7 +30,7 @@
 
 #include <Platform.h>
 #include "../src/Version.h"
-
+#include "InfluxData.h"
 
 #define INFLUXDB_CLIENT_TESTING_BAD_URL "http://127.0.0.1:999"
 
@@ -41,19 +41,22 @@ void Test::run() {
     testUtils();
     testOptions();
     testPoint();
+    testOldAPI();
     testBatch();
     testLineProtocol();
-    testEcaping();
+    testEscaping();
     testUrlEncode();
     testIsValidID();
     testFluxTypes();
     testFluxTypesSerialization();
+    testTimestampAdjustment();
+    testUseServerTimestamp();
     testFluxParserEmpty();
     testFluxParserSingleTable();
     testFluxParserNilValue();
     testFluxParserMultiTables(false);
     testFluxParserMultiTables(true);
-    testFluxParserErrorDiffentColumnsNum();
+    testFluxParserErrorDifferentColumnsNum();
     testFluxParserFluxError();
     testFluxParserInvalidDatatype();
     testFluxParserMissingDatatype();
@@ -71,7 +74,6 @@ void Test::run() {
     testLargeBatch();  
     testFailedWrites();
     testTimestamp();
-    testTimestampAdjustment();
     testRetryOnFailedConnection();
     testRetryOnFailedConnectionWithFlush();
     testNonRetry();
@@ -83,6 +85,7 @@ void Test::run() {
     testBuckets(); 
     testQueryWithParams();
     Serial.printf("Tests %s\n", failures ? "FAILED" : "SUCCEEDED");
+    serverLog(TestBase::managementUrl, String("Tests ") + (failures ? "FAILED" : "SUCCEEDED"));
 }
 
 void Test::testUtils() {
@@ -107,16 +110,10 @@ void Test::testOptions() {
     TEST_ASSERT(defWO._maxRetryInterval == 300);
     TEST_ASSERT(defWO._maxRetryAttempts == 3);
     TEST_ASSERT(defWO._defaultTags.length() == 0);
+    TEST_ASSERT(!defWO._useServerTimestamp);
 
-    //Test max batch size
-//    defWO = WriteOptions().batchSize(1<<14);
-// #if defined(ESP8266)
-//     TEST_ASSERT(defWO._batchSize == 255);
-// #elif defined(ESP32)
-//     TEST_ASSERT(defWO._batchSize == 2047);
-// #endif
 
-    defWO = WriteOptions().writePrecision(WritePrecision::NS).batchSize(32000).bufferSize(20).flushInterval(120).retryInterval(1).maxRetryInterval(20).maxRetryAttempts(5).addDefaultTag("tag1","val1").addDefaultTag("tag2","val2");
+    defWO = WriteOptions().writePrecision(WritePrecision::NS).batchSize(32000).bufferSize(20).flushInterval(120).retryInterval(1).maxRetryInterval(20).maxRetryAttempts(5).addDefaultTag("tag1","val1").addDefaultTag("tag2","val2").useServerTimestamp(true);
     TEST_ASSERT(defWO._writePrecision == WritePrecision::NS);
     TEST_ASSERT(defWO._batchSize == 32000);
     TEST_ASSERT(defWO._bufferSize == 20);
@@ -125,6 +122,7 @@ void Test::testOptions() {
     TEST_ASSERT(defWO._maxRetryInterval == 20);
     TEST_ASSERT(defWO._maxRetryAttempts == 5);
     TEST_ASSERT(defWO._defaultTags == "tag1=val1,tag2=val2");
+    TEST_ASSERT(defWO._useServerTimestamp);
 
     HTTPOptions defHO;
     TEST_ASSERT(!defHO._connectionReuse);
@@ -142,6 +140,8 @@ void Test::testOptions() {
     TEST_ASSERT(c._writeOptions._retryInterval == 5);
     TEST_ASSERT(c._writeOptions._maxRetryAttempts == 3);
     TEST_ASSERT(c._writeOptions._maxRetryInterval == 300);
+    TEST_ASSERT(c._writeOptions._defaultTags == "");
+    TEST_ASSERT(!c._writeOptions._useServerTimestamp);
     ConnectionInfo connInfo = {
             serverUrl: "http://localhost:8086", 
             bucket: "",
@@ -149,11 +149,8 @@ void Test::testOptions() {
             authToken: "my-token"
     };
     HTTPService s(&connInfo);
-    TEST_ASSERT(!s._httpOptions._connectionReuse);
-    TEST_ASSERT(s._httpOptions._httpReadTimeout == 5000);
-    // Client has no params
-    TEST_ASSERT(!c.setWriteOptions(defWO));
-    TEST_ASSERT(c.getLastErrorMessage() == "Invalid parameters");
+    TEST_ASSERT(!s.getHTTPOptions()._connectionReuse);
+    TEST_ASSERT(s.getHTTPOptions()._httpReadTimeout == 5000);
     c.setConnectionParams("http://localhost:8086","my-org","my-bucket", "my-token");
     
     TEST_ASSERT(c.setWriteOptions(defWO));
@@ -164,19 +161,21 @@ void Test::testOptions() {
     TEST_ASSERT(c._writeOptions._retryInterval == 1);
     TEST_ASSERT(c._writeOptions._maxRetryAttempts == 5);
     TEST_ASSERT(c._writeOptions._maxRetryInterval == 20);
-
+    TEST_ASSERT(c._writeOptions._defaultTags == "tag1=val1,tag2=val2");
+    TEST_ASSERT(c._writeOptions._useServerTimestamp);
     
     TEST_ASSERT(c.setHTTPOptions(defHO));
-    TEST_ASSERT(c._service->_httpOptions._connectionReuse);
-    TEST_ASSERT(c._service->_httpOptions._httpReadTimeout == 20000);
+    TEST_ASSERT(c._service == nullptr);
+    TEST_ASSERT(c._connInfo.httpOptions._connectionReuse);
+    TEST_ASSERT(c._connInfo.httpOptions._httpReadTimeout == 20000);
 
     c.setWriteOptions(WritePrecision::MS, 15, 14, 70, false);
     TEST_ASSERT(c._writeOptions._writePrecision == WritePrecision::MS);
     TEST_ASSERT(c._writeOptions._batchSize == 15);
     TEST_ASSERTM(c._writeOptions._bufferSize == 30, String(c._writeOptions._bufferSize));
     TEST_ASSERT(c._writeOptions._flushInterval == 70);
-    TEST_ASSERT(!c._service->_httpOptions._connectionReuse);
-    TEST_ASSERT(c._service->_httpOptions._httpReadTimeout == 20000);
+    TEST_ASSERT(!c._connInfo.httpOptions._connectionReuse);
+    TEST_ASSERT(c._connInfo.httpOptions._httpReadTimeout == 20000);
 
     defWO = WriteOptions().batchSize(100).bufferSize(7000);
     c.setWriteOptions(defWO);
@@ -190,8 +189,8 @@ void Test::testOptions() {
 }
 
 
-void Test::testEcaping() {
-    TEST_INIT("testEcaping");
+void Test::testEscaping() {
+    TEST_INIT("testEscaping");
 
     Point p("t\re=s\nt\t_t e\"s,t");
     p.addTag("ta=g","val=ue");
@@ -304,7 +303,7 @@ void Test::testPoint() {
     testLineTime = testLine + " " + snow + "123456789";
     line = p.toLineProtocol();
     TEST_ASSERTM(line == testLineTime, line);
-    now += 10;
+    now += 5;
     snow = "";
     snow.concat(now);
     p.setTime(snow);
@@ -353,6 +352,33 @@ void Test::testPoint() {
     TEST_ASSERT(!p.hasFields());
     p.addField("nan", (double)NAN);
     TEST_ASSERT(!p.hasFields());
+ 
+    p.addField("a",1);
+    p.addTag("t","a");
+    p.setTime();
+
+    Point p2 = p;
+    Point p3("a");
+    
+    p3 = p2;
+    String lp = p2.toLineProtocol();
+    String lp2 = p3.toLineProtocol();
+    TEST_ASSERTM(lp == lp2, lp+","+lp2);
+
+    TEST_END();
+}
+
+void Test::testOldAPI() {
+    TEST_INIT("testOldAPI");
+    InfluxData d("a"), p("b");
+    d.addValue("float", 1.1);
+    d.addValueString("string", "text");
+    d.setTimestamp(1123456789l);
+
+    p = d;
+    String lp = d.toString();
+    String lp2 = p.toString();
+    TEST_ASSERTM(lp == lp2, lp+","+lp2);
 
     TEST_END();
 }
@@ -399,6 +425,19 @@ void Test::testBatch() {
         TEST_ASSERT(buff[i++] == line[j]);
     }
     TEST_ASSERT(buff[i++] == '\n');
+    buff[0] = 0;
+    str.reset();
+    //Test Stream API
+    Stream *s  = &str;
+    TEST_ASSERT(s->available() == len*2+2);
+    TEST_ASSERT(s->readBytes(buff, len+1) == len+1);
+    TEST_ASSERT(s->available() == len+1);
+    TEST_ASSERT(s->readBytes(buff+len+1, len) == len);
+    TEST_ASSERT(s->available() == 1);
+    TEST_ASSERT(s->readBytes(buff+2*len+1, 1) == 1);
+    TEST_ASSERT(s->available() == 0);
+
+    delete [] buff;
     TEST_END();
 }
 
@@ -427,7 +466,9 @@ void Test::testLineProtocol() {
     String testLine = "test,tag1=tagvalue fieldInt=-23i,fieldBool=true,fieldFloat1=1.12,fieldFloat2=1.12345,fieldDouble1=1.12,fieldDouble2=1.12345,fieldChar=\"A\",fieldUChar=1i,fieldUInt=23i,fieldLong=123456i,fieldULong=123456i,fieldLongLong=9123456789i,fieldULongLong=9123456789i,fieldString=\"text test\"";
     TEST_ASSERTM(line == testLine, line);
 
-    client.setWriteOptions(WriteOptions().addDefaultTag("dtag","val"));
+    auto opts = WriteOptions().addDefaultTag("dtag","val");
+
+    client.setWriteOptions(opts);
 
     line = client.pointToLineProtocol(p);
     testLine = "test,dtag=val,tag1=tagvalue fieldInt=-23i,fieldBool=true,fieldFloat1=1.12,fieldFloat2=1.12345,fieldDouble1=1.12,fieldDouble2=1.12345,fieldChar=\"A\",fieldUChar=1i,fieldUInt=23i,fieldLong=123456i,fieldULong=123456i,fieldLongLong=9123456789i,fieldULongLong=9123456789i,fieldString=\"text test\"";
@@ -462,7 +503,7 @@ void Test::testLineProtocol() {
     line = client.pointToLineProtocol(p);
     TEST_ASSERTM(line == testLineTime, line);
 
-    now += 10;
+    now += 5;
     snow = "";
     snow += now;
     p.setTime(snow);
@@ -499,6 +540,12 @@ void Test::testLineProtocol() {
     TEST_ASSERT(partsCount == 3);
     TEST_ASSERT(parts[2].length() == snow.length() + 9);
     delete[] parts;
+
+    client.setWriteOptions(opts.useServerTimestamp(true));
+    line = client.pointToLineProtocol(p);
+    parts = getParts(line, ' ', partsCount);
+    TEST_ASSERT(partsCount == 2);
+    delete [] parts;
 
     TEST_END();
 }
@@ -538,13 +585,92 @@ void Test::testBasicFunction() {
     TEST_ASSERTM( count == 5, String(count) + " vs 5");  //5 points
 
     // test precision
-    for (int i = (int)WritePrecision::NoTime; i <= (int)WritePrecision::NS; i++) {
+    for (uint8_t i = (int)WritePrecision::NoTime; i <= (int)WritePrecision::NS; i++) {
         client.setWriteOptions((WritePrecision)i, 1);
         Point *p = createPoint("test1");
         p->addField("index", i);
         TEST_ASSERTM(client.writePoint(*p), String("i=") + i);
         delete p;
     }
+
+
+    TEST_END();
+    deleteAll(Test::apiUrl);
+}
+
+bool checkLinesParts(InfluxDBClient &client, size_t lineCount, int partCount) {
+    bool res = false;
+    do {
+        String query = "select";
+        FluxQueryResult q = client.query(query);
+        TEST_ASSERTM(!q.getError().length(), q.getError());
+        std::vector<String> lines = getLines(q);
+        auto count = lines.size();
+        TEST_ASSERTM( count == lineCount, String(count) + " vs " + String(lineCount));
+        for(size_t i=0;i<count;i++) {
+            int partsCount;
+            String *parts = getParts(lines[i], ',', partsCount);
+            TEST_ASSERTM(partsCount == partCount, String(i) + ":" + lines[i]); 
+            delete[] parts;
+        }
+        res = true;
+    } while(0);
+end:    
+    deleteAll(Test::apiUrl);
+    return res;
+}
+
+
+void Test::testUseServerTimestamp() {
+    TEST_INIT("testUseServerTimestamp");
+
+    InfluxDBClient client;
+    
+    TEST_ASSERT(waitServer(Test::managementUrl, true));
+
+    // test no precision, no timestamp
+    Point *p = createPoint("test1");
+
+     // Test no precision, custom timestamp
+    auto opts = WriteOptions().batchSize(1).bufferSize(10);
+    TEST_ASSERT(client.setWriteOptions(opts));
+    client.setConnectionParams(Test::apiUrl, Test::orgName, Test::bucketName, Test::token);
+    
+    TEST_ASSERT(client.writePoint(*p));
+    TEST_ASSERT(checkLinesParts(client, 1, 9));
+
+    TEST_ASSERT(client.setWriteOptions(opts.batchSize(2)));
+
+    Point *dir = new Point("dir");
+    dir->addTag("direction", "check-precision");
+    dir->addTag("precision", "no");
+    dir->addField("a","a");
+    p->setTime("1234567890");
+    TEST_ASSERT(client.writePoint(*dir));
+    delete dir;
+    TEST_ASSERT(client.writePoint(*p));
+    
+    TEST_ASSERT(checkLinesParts(client, 1, 10));
+
+    // Test writerecitions + ts
+    TEST_ASSERT(client.setWriteOptions(opts.writePrecision(WritePrecision::S)));
+
+    dir = new Point("dir");
+    dir->addTag("direction", "check-precision");
+    dir->addTag("precision", "s");
+    dir->addField("a","a");
+    TEST_ASSERT(client.writePoint(*dir));
+    TEST_ASSERT(client.writePoint(*p));
+    
+    TEST_ASSERT(checkLinesParts(client, 1, 10));
+    //test sending only precision
+    TEST_ASSERT(client.setWriteOptions(opts.useServerTimestamp(true)));
+
+    TEST_ASSERT(client.writePoint(*dir));
+    TEST_ASSERT(client.writePoint(*p));
+    delete dir;
+    delete p;
+    TEST_ASSERT(checkLinesParts(client, 1, 9));
 
     TEST_END();
     deleteAll(Test::apiUrl);
@@ -1309,11 +1435,15 @@ void Test::testTimestampAdjustment() {
     point.setTime(WritePrecision::NoTime);
     TEST_ASSERTM(!point.hasTime(), point.getTime() );
     client.checkPrecisions(point);
-    TEST_ASSERTM(point.getTime().length() == 10, point.getTime() );
+    int len = 10;
+    if(!WiFi.isConnected()) {
+        len = 1;
+    }
+    TEST_ASSERTM(point.getTime().length() == len, point.getTime() );
     // test cut
     point.setTime(WritePrecision::US);
     client.checkPrecisions(point);
-    TEST_ASSERTM(point.getTime().length() == 10, point.getTime() );
+    TEST_ASSERTM(point.getTime().length() == len, point.getTime() );
     // test extending
     client.setWriteOptions(WriteOptions().writePrecision(WritePrecision::US));
     point.setTime(WritePrecision::S);
@@ -1476,25 +1606,25 @@ void Test::testFluxTypesSerialization() {
 
     struct strTest {
         FluxBase *fb;
-        const char *json;
+        const __FlashStringHelper * json;
     };
 
     strTest tests[] = {
-        { new FluxLong("long", -2020123456), "\"long\":-2020123456" },
-        { new FluxUnsignedLong("ulong", 2020123456), "\"ulong\":2020123456" },
-        { new FluxBool("bool", false),  "\"bool\":false"},
-        { new FluxDouble("double", 28.3, 1), "\"double\":28.3"},
-        { new FluxDateTime("dateTime", FluxDatatypeDatetimeRFC3339Nano, {15,34,9,22,4,120,0,0,0}, 123456), "\"dateTime\":\"2020-05-22T09:34:15.123456Z\""},
-        { new FluxString("string", "my text", FluxDatatypeString), "\"string\":\"my text\""},
-        { new FluxDouble("double", 21328.3132213,5), "\"double\":21328.31322"}
+        { new FluxLong("long", -2020123456), F("\"long\":-2020123456") },
+        { new FluxUnsignedLong("ulong", 2020123456), F("\"ulong\":2020123456") },
+        { new FluxBool("bool", false),  F("\"bool\":false")},
+        { new FluxDouble("double", 28.3, 1), F("\"double\":28.3")},
+        { new FluxDateTime("dateTime", FluxDatatypeDatetimeRFC3339Nano, {15,34,9,22,4,120,0,0,0}, 123456), F("\"dateTime\":\"2020-05-22T09:34:15.123456Z\"")},
+        { new FluxString("string", "my text", FluxDatatypeString), F("\"string\":\"my text\"")},
+        { new FluxDouble("double", 21328.3132213,5), F("\"double\":21328.31322")},
+        { new FluxString("duration", "-1h", FluxDatatypeDuration), F("\"duration\":\"-1h\"")}
     };
 
-    for(int i=0;i<7;i++) {
+    for(int i=0;i<sizeof(tests)/sizeof(strTest);i++) {
         char *buff = tests[i].fb->jsonString();
         delete tests[i].fb;
-        String json = buff;
+        TEST_ASSERTM(String(tests[i].json).equals(buff), buff);
         delete [] buff;
-        TEST_ASSERTM(json == tests[i].json , json);
     }
 
     TEST_END();
@@ -1997,8 +2127,8 @@ void Test::testFluxParserMultiTables(bool chunked) {
     TEST_END();
 }
 
-void Test::testFluxParserErrorDiffentColumnsNum() {
-    TEST_INIT("testFluxParserErrorDiffentColumnsNum");
+void Test::testFluxParserErrorDifferentColumnsNum() {
+    TEST_INIT("testFluxParserErrorDifferentColumnsNum");
     InfluxDBClient client(Test::apiUrl, Test::orgName, Test::bucketName, Test::token);
     TEST_ASSERT(waitServer(Test::managementUrl, true));
     FluxQueryResult flux = client.query("testquery-diffNum-data");
@@ -2421,9 +2551,10 @@ void Test::testLargeBatch() {
     const char *line = "test1,SSID=Bonitoo-ng,deviceId=4288982576 temperature=17,humidity=28i";
     uint32_t free = ESP.getFreeHeap(); 
 #if defined(ESP8266)
-    int batchSize = 330;
+    int batchSize = 320;
 #elif defined(ESP32)
-    int batchSize = 2047;
+    // 2.0.4. introduces a memory hog which causes original 2048 lines cannot be sent
+    int batchSize = 1950;
 #endif
     int len =strlen(line); 
     int points = free/len;
@@ -2441,6 +2572,7 @@ void Test::testLargeBatch() {
             WS_DEBUG_RAM("Full batch");
         }
         TEST_ASSERTM(client.writeRecord(line),client.getLastErrorMessage());
+        yield();
     }
     WS_DEBUG_RAM("Data sent");
     String query = "select";

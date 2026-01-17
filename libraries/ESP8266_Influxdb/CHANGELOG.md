@@ -1,4 +1,24 @@
 # Changelog
+## 3.13.2 [2024-06-04]
+### Fixes
+- [236](https://github.com/tobiasschuerg/InfluxDB-Client-for-Arduino/pull/236) - Fix compilation problem on ESP32 Core 3.0.0
+
+## 3.13.1 [2023-03-08]
+### Fixes
+- [210](https://github.com/tobiasschuerg/InfluxDB-Client-for-Arduino/pull/210) - Allow setting of options without previously set connection params
+- [211](https://github.com/tobiasschuerg/InfluxDB-Client-for-Arduino/pull/211) - Fixed ESP32 builds using unofficial Arduino Cores
+
+##  3.13.0 [2022-10-14]
+### Features
+- [202](https://github.com/tobiasschuerg/InfluxDB-Client-for-Arduino/pull/202) - Added option to specify timestamp precision and do not send timestamp. Set using `WriteOption::useServerTimestamptrue)`.
+
+### Fixes
+- [200](https://github.com/tobiasschuerg/InfluxDB-Client-for-Arduino/pull/200) - Backward compatible compilation. Solves _marked 'override', but does not override_ errors.
+
+##  3.12.2 [2022-09-30]
+### Fixes
+- [198](https://github.com/tobiasschuerg/InfluxDB-Client-for-Arduino/pull/198) - Effective passing Point by value
+
 ##  3.12.1 [2022-08-29]
 ### Fixes
 - [193](https://github.com/tobiasschuerg/InfluxDB-Client-for-Arduino/pull/193) - Automatically adjusting point timestamp  according to the setting of write precision. 
