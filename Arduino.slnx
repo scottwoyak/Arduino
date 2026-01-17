@@ -32,10 +32,10 @@
   <Project Path="Display_SH1107/Display_SH1107.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="I2C_Port_Scanner/I2C_Port_Scanner/I2C_Port_Scanner.vcxproj">
+  <Project Path="I2C_Port_Scanner/I2C_Port_Scanner.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="Influx_Temp_Monitor/Influx_Temp_Monitor/Influx_Temp_Monitor.vcxproj">
+  <Project Path="Influx_Temp_Monitor/Influx_Temp_Monitor.vcxproj">
     <Deploy />
   </Project>
   <Project Path="Potentiometer/Potentiometer.vcxproj" Id="c5bc2f07-d8ae-4dcf-aede-3dddf1846b20">
