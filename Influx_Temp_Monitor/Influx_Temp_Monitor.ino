@@ -46,56 +46,84 @@ void setup()
    WiFi.mode(WIFI_STA);
    wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
 
-   feather.display.print("WiFi...");
-   Serial.print("WiFi...");
+   const int16_t MSG_COLOR = WHITE;
+   const int16_t OK_COLOR = YELLOW;
+   const int16_t FAILED_COLOR = ORANGE;
+   const int16_t CHAR_WIDTH = 12;
+
+   feather.display.setTextWrap(false);
+   feather.print("WiFi... ", MSG_COLOR);
    while (wifiMulti.run() != WL_CONNECTED)
    {
       Serial.print(".");
       delay(100);
    }
-   feather.display.println(" ok");
+   feather.display.setCursor(feather.display.width() - 2 * CHAR_WIDTH, feather.display.getCursorY());
+   feather.println("ok", OK_COLOR);
 
 
    // Accurate time is necessary for certificate validation and writing in batches
    // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
    // Syncing progress and the time will be printed to Serial.
-   feather.display.print("Syncing Time...");
+   feather.print("Syncing Time... ", MSG_COLOR);
    timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
-   feather.display.println(" ok");
-
+   feather.display.setCursor(feather.display.width() - 2 * CHAR_WIDTH, feather.display.getCursorY());
+   feather.println("ok", OK_COLOR);
 
    // Check server connection
-   feather.display.print("InfluxDB...");
+   feather.print("InfluxDB... ", MSG_COLOR);
 
    if (client.validateConnection())
    {
-      feather.display.println(" ok");
+      feather.display.setCursor(feather.display.width() - 2 * CHAR_WIDTH, feather.display.getCursorY());
+      feather.println("ok", OK_COLOR);
       //feather.display.println(client.getServerUrl());
    }
    else
    {
-      feather.display.println("failed");
-      feather.display.println(client.getLastErrorMessage());
+      feather.display.setCursor(feather.display.width() - 6 * CHAR_WIDTH, feather.display.getCursorY());
+      feather.println("FAILED", FAILED_COLOR);
+      feather.display.setTextSize(1);
+      feather.println(client.getLastErrorMessage(), FAILED_COLOR);
       while (1);
    }
 
-   sensor = TempSensorFactory::create();
-   feather.display.print("Sensor.begin()");
-   if (sensor->begin())
+   feather.print("Sensor... ", MSG_COLOR);
+   sensor = TempSensorFactory::create(false);
+   if (sensor->exists())
    {
-      feather.display.println(" ok");
+      feather.display.setCursor(feather.display.width() - 2 * CHAR_WIDTH, feather.display.getCursorY());
+      feather.println("ok", OK_COLOR);
+      feather.print("Sensor: ");
+      String info = sensor->info();
+      feather.display.setCursor(feather.display.width() - info.length() * CHAR_WIDTH, feather.display.getCursorY());
+      feather.println(sensor->info(), OK_COLOR);
    }
    else
    {
-      feather.display.println(" failed");
+      feather.display.setCursor(feather.display.width() - 6 * CHAR_WIDTH, feather.display.getCursorY());
+      feather.print("FAILED", FAILED_COLOR);
       while (1);
    }
 
-   delay(2000);
+   feather.print("Sensor.begin() ", MSG_COLOR);
+   if (sensor->begin())
+   {
+      feather.display.setCursor(feather.display.width() - 2 * CHAR_WIDTH, feather.display.getCursorY());
+      feather.println("ok", OK_COLOR);
+   }
+   else
+   {
+      feather.display.setCursor(feather.display.width() - 6 * CHAR_WIDTH, feather.display.getCursorY());
+      feather.println("FAILED", FAILED_COLOR);
+      while (1);
+   }
 
-   point.addTag("location", "studio");
+   delay(5000);
 
-   feather.display.fillScreen(ST77XX_BLACK);
+   point.addTag("location", "studio2");
+
+   feather.display.fillScreen(BLACK);
 }
 
 // Add the main program code into the continuous loop() function

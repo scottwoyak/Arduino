@@ -16,12 +16,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Influx_Temp_Monitor.ino" />
+    <ClCompile Include="WiFiSettings.h">
+      <Filter>Header Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="__vm\.Influx_Temp_Monitor.vsarduino.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="WiFiSettings.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
