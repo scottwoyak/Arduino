@@ -7,8 +7,8 @@
 //
 #include "Potentiometer.h"
 
-Potentiometer p(PIN_A0);
-ScaledPotentiometer p2(PIN_A0, 0, 100);
+Potentiometer p(A0);
+IntPotentiometer p2(A0, 0, 100);
 
 void setup()
 {

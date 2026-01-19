@@ -10,6 +10,7 @@
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
     <File Path="libraries/Woyak/Feather_ESP32_S3.h" />
     <File Path="libraries/Woyak/FeedTimer.h" />
+    <File Path="libraries/Woyak/FixedLengthString.h" />
     <File Path="libraries/Woyak/FramSpiEx.h" />
     <File Path="libraries/Woyak/History.h" />
     <File Path="libraries/Woyak/I2C.h" />

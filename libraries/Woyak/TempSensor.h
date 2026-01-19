@@ -221,7 +221,6 @@ public:
          }
          else
          {
-            sensor = new NullSensor();
             Serial.println("No sensor detected. Scanning I2C addressess...");
             bool found = false;
             for (int8_t address = 1; address < 127; address++)
@@ -239,6 +238,11 @@ public:
                Serial.println("No devices detected");
             }
          }
+      }
+
+      if (sensor == NULL)
+      {
+         sensor = new NullSensor();
       }
 
       return sensor;

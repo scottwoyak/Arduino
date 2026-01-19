@@ -1,22 +1,48 @@
 #pragma once
 
 #include <Adafruit_ST7789.h> // TFT display
+#include <FixedLengthString.h>
+#include <string>
 
-#define WHITE ST77XX_WHITE
-#define BLACK ST77XX_BLACK
-#define RED ST77XX_RED
-#define GREEN ST77XX_GREEN
-#define BLUE ST77XX_BLUE
-#define CYAN ST77XX_CYAN
-#define MAGENTA ST77XX_MAGENTA
-#define YELLOW ST77XX_YELLOW
-#define ORANGE ST77XX_ORANGE
+enum class Color565 : uint16_t
+{
+   WHITE = ST77XX_WHITE,
+   BLACK = ST77XX_BLACK,
+   RED = ST77XX_RED,
+   GREEN = ST77XX_GREEN,
+   BLUE = ST77XX_BLUE,
+   CYAN = ST77XX_CYAN,
+   MAGENTA = ST77XX_MAGENTA,
+   YELLOW = ST77XX_YELLOW,
+   ORANGE = ST77XX_ORANGE,
+   GRAY = 0x8430,
+};
 
 class Feather_ESP32_S3
 {
+private:
+   void _print(FixedLengthString& str, Color565 textColor, Color565 backgroundColor)
+   {
+      if (echoToSerial)
+      {
+         Serial.print(str);
+      }
+      display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
+      display.print(str);
+   }
+   void _println(FixedLengthString& str, Color565 textColor, Color565 backgroundColor)
+   {
+      _print(str, textColor, backgroundColor);
+      if (echoToSerial)
+      {
+         Serial.println();
+      }
+      display.println();
+   }
+
 public:
    Adafruit_ST7789 display;
-   bool echoToSerial = true;
+   bool echoToSerial = false;
 
    Feather_ESP32_S3() : display(TFT_CS, TFT_DC, TFT_RST)
    {
@@ -35,69 +61,142 @@ public:
 
       display.init(135, 240); // Init ST7789 240x135
       display.setRotation(3);
-      display.fillScreen(BLACK);
+      display.fillScreen((uint16_t)Color565::BLACK);
 
-      display.setTextColor(WHITE, BLACK);
+      display.setTextColor((uint16_t)Color565::WHITE, (uint16_t)Color565::BLACK);
       display.setTextSize(2);
    }
 
-   void print(const char* str, uint16_t textColor = WHITE, uint16_t backgroundColor = BLACK)
+   void clear(Color565 color = Color565::BLACK)
    {
-      if (echoToSerial)
-      {
-         Serial.print(str);
-      }
-      display.setTextColor(textColor, backgroundColor);
-      display.print(str);
+      display.fillScreen((uint16_t)Color565::BLACK);
+      display.setCursor(0, 0);
    }
 
-   void println(const char* str, uint16_t textColor = WHITE, uint16_t backgroundColor = BLACK)
+   void setCursor(int16_t x, int16_t y)
    {
-      if (echoToSerial)
-      {
-         Serial.println(str);
-      }
-      display.setTextColor(textColor, backgroundColor);
-      display.println(str);
+      display.setCursor(x, y);
+   }
+   void setCursorX(int16_t x)
+   {
+      display.setCursor(x, display.getCursorY());
+   }
+   void setCursorY(int16_t y)
+   {
+      display.setCursor(display.getCursorX(), y);
    }
 
-   void print(const String& str, uint16_t textColor = WHITE, uint16_t backgroundColor = BLACK)
+   void println()
    {
-      if (echoToSerial)
-      {
-         Serial.print(str);
-      }
-      display.setTextColor(textColor, backgroundColor);
-      display.print(str);
+      display.println();
    }
 
-   void println(const String& str, uint16_t textColor = WHITE, uint16_t backgroundColor = BLACK)
+   void print(const char* str, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
    {
-      if (echoToSerial)
-      {
-         Serial.println(str);
-      }
-      display.setTextColor(textColor, backgroundColor);
-      display.println(str);
+      print(str, 0, textColor, backgroundColor);
+   }
+   void println(const char* str, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      println(str, 0, textColor, backgroundColor);
+   }
+   void print(const char* str, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString s(str, length);
+      _print(s, textColor, backgroundColor);
+   }
+   void println(const char* str, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString s(str, length);
+      _println(s, textColor, backgroundColor);
    }
 
-   void print(double value, int numDigits = 2, uint16_t textColor = WHITE, uint16_t backgroundColor = BLACK)
+   void print(const String& str, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
    {
-      if (echoToSerial)
-      {
-         Serial.print(value, numDigits);
-      }
-      display.setTextColor(textColor, backgroundColor);
-      display.print(value, numDigits);
+      print(str, 0, textColor, backgroundColor);
+   }
+   void println(const String& str, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      println(str, 0, textColor, backgroundColor);
+   }
+   void print(const String& str, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString s(str, length);
+      _print(s, textColor, backgroundColor);
+   }
+   void println(const String& str, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString s(str, length);
+      _println(s, textColor, backgroundColor);
    }
 
-   void println(double value, int numDigits = 2, uint16_t textColor = WHITE, uint16_t backgroundColor = BLACK)
+   void print(const std::string& str, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
    {
-      if (echoToSerial)
-      {
-         Serial.println(value, numDigits);
-      }
-      display.setTextColor(textColor, backgroundColor);
-      display.print(value, numDigits);
+      FixedLengthString s(str, 0);
+      _print(s, textColor, backgroundColor);
+   }
+   void println(const std::string& str, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString s(str, 0);
+      _println(s, textColor, backgroundColor);
+   }
+   void print(const std::string& str, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString s(str, length);
+      _print(s, textColor, backgroundColor);
+   }
+   void println(const std::string& str, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString s(str, length);
+      _println(s, textColor, backgroundColor);
+   }
+
+
+
+   void print(float value, int8_t length, int8_t  precision = 2, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, precision);
+      _print(str, textColor, backgroundColor);
+   }
+
+   void println(float value, int8_t length, int8_t  precision = 2, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, precision);
+      _println(str, textColor, backgroundColor);
+   }
+
+   void print(double value, int8_t length, int8_t precision = 2, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, precision);
+      _print(str, textColor, backgroundColor);
+   }
+
+   void println(double value, int8_t length, int8_t precision = 2, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, precision);
+      _println(str, textColor, backgroundColor);
+   }
+
+   void print(int value, int8_t length, uint8_t base = 10, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, base);
+      _print(str, textColor, backgroundColor);
+   }
+
+   void println(int value, int8_t length, uint8_t base = 10, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, base);
+      _println(str, textColor, backgroundColor);
+   }
+
+   void print(long value, int8_t length, uint8_t base = 10, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, base);
+      _print(str, textColor, backgroundColor);
+   }
+
+   void println(long value, int8_t length, uint8_t base = 10, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, base);
+      _println(str, textColor, backgroundColor);
    }
 };
