@@ -49,6 +49,9 @@
   <Project Path="Potentiometer/Potentiometer.vcxproj" Id="c5bc2f07-d8ae-4dcf-aede-3dddf1846b20">
     <Deploy />
   </Project>
+  <Project Path="TemperatureDisplay/TemperatureDisplay.vcxproj">
+    <Deploy />
+  </Project>
   <Project Path="Temperature_BME280/Temperature_BME280.vcxproj">
     <Deploy />
   </Project>
