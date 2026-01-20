@@ -86,6 +86,22 @@ public:
       display.setCursor(display.getCursorX(), y);
    }
 
+   void moveCursor(int16_t deltaX, int16_t deltaY)
+   {
+      int16_t x = display.getCursorX() + deltaX;
+      int16_t y = display.getCursorY() + deltaY;
+
+      display.setCursor(x, y);
+   }
+   void moveCursorX(int16_t deltaX)
+   {
+      moveCursor(deltaX, 0);
+   }
+   void moveCursorY(int16_t deltaY)
+   {
+      moveCursor(0, deltaY);
+   }
+
    void println()
    {
       display.println();
@@ -152,6 +168,16 @@ public:
 
 
 
+   void print(float value, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, 2);
+      _print(str, textColor, backgroundColor);
+   }
+   void println(float value, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, 2);
+      _println(str, textColor, backgroundColor);
+   }
    void print(float value, uint8_t length, uint8_t  precision = 2, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
    {
       FixedLengthString str(value, length, precision);
@@ -164,25 +190,35 @@ public:
    }
    void print(float value, const char* postFix, uint8_t length, uint8_t  precision, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
    {
-      FixedLengthString str(String(value, (uint) precision) + postFix, length);
+      FixedLengthString str(String(value, (uint)precision) + postFix, length);
       _print(str, textColor, backgroundColor);
    }
    void println(float value, const char* postFix, uint8_t length, uint8_t  precision, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
    {
-      FixedLengthString str(String(value, (uint) precision) + postFix, length);
+      FixedLengthString str(String(value, (uint)precision) + postFix, length);
       _println(str, textColor, backgroundColor);
    }
    void print(float value, const char* postFix, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
    {
-      FixedLengthString str(String(value,2) + postFix, length);
+      FixedLengthString str(String(value, 2) + postFix, length);
       _print(str, textColor, backgroundColor);
    }
    void println(float value, const char* postFix, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
    {
-      FixedLengthString str(String(value,2) + postFix, length);
+      FixedLengthString str(String(value, 2) + postFix, length);
       _println(str, textColor, backgroundColor);
    }
 
+   void print(double value, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, 2);
+      _print(str, textColor, backgroundColor);
+   }
+   void println(double value, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, 2);
+      _println(str, textColor, backgroundColor);
+   }
    void print(double value, uint8_t length, uint8_t precision = 2, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
    {
       FixedLengthString str(value, length, precision);
@@ -214,6 +250,16 @@ public:
       _println(str, textColor, backgroundColor);
    }
 
+   void print(int value, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, 10);
+      _print(str, textColor, backgroundColor);
+   }
+   void println(int value, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, 10);
+      _println(str, textColor, backgroundColor);
+   }
    void print(int value, uint8_t length, uint8_t base = 10, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
    {
       FixedLengthString str(value, length, base);
@@ -245,6 +291,16 @@ public:
       _println(str, textColor, backgroundColor);
    }
 
+   void print(long value, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, 10);
+      _print(str, textColor, backgroundColor);
+   }
+   void println(long value, uint8_t length, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
+   {
+      FixedLengthString str(value, length, 10);
+      _println(str, textColor, backgroundColor);
+   }
    void print(long value, uint8_t length, uint8_t base = 10, Color565 textColor = Color565::WHITE, Color565 backgroundColor = Color565::BLACK)
    {
       FixedLengthString str(value, length, base);

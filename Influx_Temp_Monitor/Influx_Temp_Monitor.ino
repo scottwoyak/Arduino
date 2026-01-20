@@ -2,6 +2,7 @@
 #include "Potentiometer.h"
 #include "TempSensor.h"
 #include "RunningAverager.h"
+#include "Stopwatch.h"
 
 #include <WiFiMulti.h>
 WiFiMulti wifiMulti;
@@ -50,6 +51,11 @@ std::string postfixes[] =
    " 10",
 };
 
+const Color565 MSG_COLOR = Color565::WHITE;
+const Color565 OK_COLOR = Color565::YELLOW;
+const Color565 FAILED_COLOR = Color565::ORANGE;
+const uint8_t CHAR_WIDTH = 12;
+
 Feather_ESP32_S3 feather;
 IntPotentiometer roomP(A0, 0, (sizeof(rooms) / sizeof(rooms[0]) - 1));
 IntPotentiometer postfixP(A1, 0, (sizeof(postfixes) / sizeof(postfixes[0]) - 1));
@@ -59,7 +65,7 @@ Stopwatch trigger;
 RunningAverager temperature(50);
 RunningAverager humidity(50);
 
-ITempSensor* sensor;
+TempSensor sensor;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 
 // Data point
@@ -80,12 +86,6 @@ void setup()
    delay(500);
 
    feather.begin();
-
-   const Color565 MSG_COLOR = Color565::WHITE;
-   const Color565 OK_COLOR = Color565::YELLOW;
-   const Color565 FAILED_COLOR = Color565::ORANGE;
-   const uint8_t CHAR_WIDTH = 12;
-
    feather.display.setTextWrap(false);
 
    // ask for information
@@ -99,7 +99,7 @@ void setup()
 
       feather.display.setTextSize(2);
       feather.display.setCursor(0, 0);
-      feather.println("Sensor Information...\n");
+      feather.println("Sensor Information\n", Color565::CYAN);
 
       feather.println("Location:", Color565::WHITE);
       feather.setCursorX(20);
@@ -110,14 +110,12 @@ void setup()
 
       feather.println("Calibration:", Color565::WHITE);
       feather.setCursorX(20);
-      feather.println(calibrationP.read(), 5, 2, Color565::YELLOW);
+      feather.println(calibrationP.read(), 5, Color565::YELLOW);
    }
    feather.clear();
    location = rooms[roomP.read()] + postfixes[postfixP.read()];
 
-   // while starting, echo the display to serial
    feather.echoToSerial = true;
-
    feather.println("Initializing", Color565::CYAN);
 
    // Setup wifi
@@ -136,10 +134,12 @@ void setup()
    // Accurate time is necessary for certificate validation and writing in batches
    // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
    // Syncing progress and the time will be printed to Serial.
+   feather.echoToSerial = false;
    feather.print("Syncing Time... ", MSG_COLOR);
    timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
    feather.setCursorX(feather.display.width() - 2 * CHAR_WIDTH);
    feather.println("ok", OK_COLOR);
+   feather.echoToSerial = true;
 
    // Check server connection
    feather.print("InfluxDB... ", MSG_COLOR);
@@ -160,13 +160,12 @@ void setup()
    }
 
    feather.print("Sensor... ", MSG_COLOR);
-   sensor = TempSensorFactory::create(false);
-   if (sensor->exists())
+   if (sensor.begin(false))
    {
       feather.setCursorX(feather.display.width() - 2 * CHAR_WIDTH);
       feather.println("ok", OK_COLOR);
 
-      Serial.println(sensor->info());
+      Serial.println(sensor.info());
    }
    else
    {
@@ -175,21 +174,7 @@ void setup()
       while (1);
    }
 
-   feather.print("Sensor.begin() ", MSG_COLOR);
-   if (sensor->begin())
-   {
-      feather.setCursorX(feather.display.width() - 2 * CHAR_WIDTH);
-      feather.println("ok", OK_COLOR);
-   }
-   else
-   {
-      feather.setCursorX(feather.display.width() - 6 * CHAR_WIDTH);
-      feather.println("FAILED", FAILED_COLOR);
-      while (1);
-   }
-
    delay(5000);
-
 
    point.addTag("location", location.c_str());
    feather.clear();
@@ -209,8 +194,8 @@ void loop()
    point.clearFields();
 
    // Store measured value into point
-   temperature.set(sensor->readTemperatureF());
-   humidity.set(sensor->readHumidity());
+   temperature.set(sensor.readTemperatureF());
+   humidity.set(sensor.readHumidity());
 
    // Check WiFi connection and reconnect if needed
    if (wifiMulti.run() != WL_CONNECTED)

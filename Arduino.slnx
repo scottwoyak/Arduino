@@ -21,6 +21,7 @@
     <File Path="libraries/Woyak/RunningAverager.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
     <File Path="libraries/Woyak/Stopwatch.h" />
+    <File Path="libraries/Woyak/TempSensor.cpp" />
     <File Path="libraries/Woyak/TempSensor.h" />
     <File Path="libraries/Woyak/TimeConstants.h" />
     <File Path="libraries/Woyak/TimedAverager.h" />

@@ -1,8 +1,28 @@
+#pragma once
+
 #include <I2C.h>
 #include <Adafruit_BME280.h>
 #include <Adafruit_MCP9808.h>
 #include <Adafruit_SHT31.h>
 #include "Util.h"
+
+class ITempSensor;
+
+//-------------------------------------------------------------------------------------------------
+class TempSensor
+{
+private:
+   ITempSensor* _sensor = NULL;
+   ITempSensor* _create(bool print);
+
+public:
+   bool begin(bool print = true);
+   const char* info();
+   bool exists();
+   float readTemperatureF();
+   float readTemperatureC();
+   float readHumidity();
+};
 
 //-------------------------------------------------------------------------------------------------
 class ITempSensor
@@ -56,7 +76,7 @@ public:
    I2CTempSensor(const char* type, int8_t address)
    {
       _address = address;
-      _info = String(type) + "[0x" + String(address, HEX) + "]";
+      _info = String(type) + " 0x" + String(address, HEX);
    }
    virtual const char* info() { return _info.c_str(); }
    virtual bool exists() { return true; }
@@ -171,81 +191,6 @@ public:
    virtual float readHumidity()
    {
       return NAN;
-   }
-};
-
-//-------------------------------------------------------------------------------------------------
-class TempSensorFactory
-{
-public:
-   static ITempSensor* create(bool print = true)
-   {
-      if (print)
-      {
-         Serial.println("Detecting Temperature Sensor...");
-      }
-      ITempSensor* sensor = NULL;
-
-      if (sensor == NULL)
-      {
-         int8_t address = I2CTempSensor::detect(BME280_ADDRESS, 2);
-         if (address != 0)
-         {
-            sensor = new BME280Sensor(address);
-         }
-      }
-
-      if (sensor == NULL)
-      {
-         int8_t address = I2CTempSensor::detect(SHT31_DEFAULT_ADDR);
-         if (address != 0)
-         {
-            sensor = new SHT31Sensor(address);
-         }
-      }
-
-      if (sensor == NULL)
-      {
-         int8_t address = I2CTempSensor::detect(MCP9808_I2CADDR_DEFAULT, 8);
-         if (address != 0)
-         {
-            sensor = new MCP9808Sensor(3, MCP9808_I2CADDR_DEFAULT);
-         }
-      }
-
-      if (print)
-      {
-         if (sensor != NULL)
-         {
-            Serial.println(String("Found: ") + sensor->info());
-         }
-         else
-         {
-            Serial.println("No sensor detected. Scanning I2C addressess...");
-            bool found = false;
-            for (int8_t address = 1; address < 127; address++)
-            {
-               if (I2C::exists(address))
-               {
-                  found = true;
-                  Serial.print("  0x");
-                  Serial.print(address, HEX);
-                  Serial.println(": Found Device");
-               }
-            }
-            if (found == false)
-            {
-               Serial.println("No devices detected");
-            }
-         }
-      }
-
-      if (sensor == NULL)
-      {
-         sensor = new NullSensor();
-      }
-
-      return sensor;
    }
 };
 

@@ -1,10 +1,13 @@
 #include "Feather_ESP32_S3.h"
+#include "Stopwatch.h"
 #include "TempSensor.h"
 #include "RunningAverager.h"
 
+// 
+// This sketch displays the current temperature on an Arduino ESP32 Feather
+//
 Feather_ESP32_S3 feather;
-
-ITempSensor* sensor;
+TempSensor sensor;
 
 // The setup() function runs once each time the micro-controller starts
 void setup()
@@ -21,22 +24,37 @@ void setup()
    delay(500);
 
    feather.begin();
-
-   sensor = TempSensorFactory::create();
-   sensor->begin();
+   sensor.begin();
 }
+
+Stopwatch sw;
 
 void loop()
 {
-   feather.setCursor(0, 0);
+   sw.reset();
+   float temp = sensor.readTemperatureF();
+   float tempTime = sw.elapsedMillis();
 
+   sw.reset();
+   float hum = sensor.readHumidity();
+   float humTime = sw.elapsedMillis();
+
+   feather.setCursor(0, 0);
    feather.display.setTextSize(4);
-   feather.println(sensor->readTemperatureF(), " F", 8, Color565::WHITE);
-   feather.println(sensor->readHumidity(), "%", 7, Color565::WHITE);
+   feather.println(temp, " F", 8, Color565::WHITE);
+   feather.display.setTextSize(2);
+   feather.println(tempTime, " ms", 8, Color565::GRAY);
+
+   feather.moveCursorY(10);
+   feather.display.setTextSize(4);
+   feather.println(hum, "%", 7, Color565::WHITE);
+   feather.display.setTextSize(2);
+   feather.println(humTime, " ms", 8, Color565::GRAY);
+
 
    feather.display.setTextSize(2);
    feather.setCursor(0, feather.display.height() - 16);
-   feather.print(sensor->info(), Color565::GRAY);
+   feather.print(sensor.info(), Color565::CYAN);
 }
 
 
