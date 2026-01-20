@@ -99,6 +99,7 @@ void setup()
 
       feather.display.setTextSize(2);
       feather.display.setCursor(0, 0);
+      feather.println("Sensor Information...\n");
 
       feather.println("Location:", Color565::WHITE);
       feather.setCursorX(20);
@@ -196,12 +197,13 @@ void setup()
 }
 
 #define MAX_CHARS 8
+#define CHAR_H 8
+#define CHAR_W 6
 
 // Add the main program code into the continuous loop() function
 void loop()
 {
    feather.display.setTextSize(2);
-   feather.display.setCursor(feather.display.width()-(MAX_CHARS*12)/2, feather.display.height()-16);
 
    // Clear fields for reusing the point. Tags will remain the same as set above.
    point.clearFields();
@@ -216,14 +218,14 @@ void loop()
       feather.display.println("Wifi connection lost");
    }
 
-   feather.display.setTextSize(4);
-   feather.setCursor(0, 0);
-   feather.print(temperature.get(), 6);
-   feather.print(" F");
-   feather.println();
+   uint8_t x = feather.display.width() - (MAX_CHARS * 8 * CHAR_W) / 2;
+   feather.display.setCursor(x, (feather.display.height() - 2*4*CHAR_H-CHAR_H)/2);
 
-   feather.print(humidity.get(), 6);
-   feather.print("%");
+   feather.display.setTextSize(4);
+   feather.println(temperature.get(), " F", 8);
+
+   feather.setCursor(x, feather.display.getCursorY()+CHAR_H);
+   feather.println(humidity.get(), "%", 7);
 
    // Write point
    if (trigger.elapsedSecs() > 5)

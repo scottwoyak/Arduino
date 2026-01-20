@@ -37,6 +37,15 @@ public:
 
       return true;
    }
+   float getLast()
+   {
+      int index = this->_index - 1;
+      if (index < 0)
+      {
+         index = this->_size - 1;
+      }
+      return this->_values[index];
+   }
 
    float get() {
       if (isnan(this->_avg)) {
