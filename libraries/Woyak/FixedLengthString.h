@@ -35,7 +35,7 @@ private:
          // otherwise we replace it with errChar, e.g. "####"
          else
          {
-            _str.clear();
+            _str = "";
             while (_str.length() < length)
             {
                _str += errChar;

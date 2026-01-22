@@ -41,20 +41,20 @@ void loop()
 
    feather.setCursor(0, 0);
    feather.display.setTextSize(4);
-   feather.println(temp, " F", 8, Color565::WHITE);
+   feather.println(temp, " F", 8, Color::WHITE);
    feather.display.setTextSize(2);
-   feather.println(tempTime, " ms", 8, Color565::GRAY);
+   feather.println(tempTime, " ms", 8, Color::GRAY);
 
    feather.moveCursorY(10);
    feather.display.setTextSize(4);
-   feather.println(hum, "%", 7, Color565::WHITE);
+   feather.println(hum, "%", 7, Color::WHITE);
    feather.display.setTextSize(2);
-   feather.println(humTime, " ms", 8, Color565::GRAY);
+   feather.println(humTime, " ms", 8, Color::GRAY);
 
 
    feather.display.setTextSize(2);
    feather.setCursor(0, feather.display.height() - 16);
-   feather.print(sensor.info(), Color565::CYAN);
+   feather.print(sensor.info(), Color::CYAN);
 }
 
 

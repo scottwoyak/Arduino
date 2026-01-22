@@ -2,7 +2,6 @@
 
 Feather_ESP32_S3 feather;
 
-// The setup() function runs once each time the micro-controller starts
 void setup()
 {
    feather.begin();
@@ -11,7 +10,6 @@ void setup()
 long counter = 0;
 long lastMicros = micros();
 
-// Add the main program code into the continuous loop() function
 void loop()
 {
    long newMicros = micros();

@@ -51,9 +51,9 @@ std::string postfixes[] =
    " 10",
 };
 
-const Color565 MSG_COLOR = Color565::WHITE;
-const Color565 OK_COLOR = Color565::YELLOW;
-const Color565 FAILED_COLOR = Color565::ORANGE;
+const Color MSG_COLOR = Color::WHITE;
+const Color OK_COLOR = Color::YELLOW;
+const Color FAILED_COLOR = Color::ORANGE;
 const uint8_t CHAR_WIDTH = 12;
 
 Feather_ESP32_S3 feather;
@@ -99,24 +99,24 @@ void setup()
 
       feather.display.setTextSize(2);
       feather.display.setCursor(0, 0);
-      feather.println("Sensor Information\n", Color565::CYAN);
+      feather.println("Sensor Information\n", Color::CYAN);
 
-      feather.println("Location:", Color565::WHITE);
+      feather.println("Location:", Color::WHITE);
       feather.setCursorX(20);
       std::string str = rooms[roomP.read()] + postfixes[postfixP.read()];
-      feather.println(str, 20, Color565::YELLOW);
+      feather.println(str, 20, Color::YELLOW);
 
       feather.println();
 
-      feather.println("Calibration:", Color565::WHITE);
+      feather.println("Calibration:", Color::WHITE);
       feather.setCursorX(20);
-      feather.println(calibrationP.read(), 5, Color565::YELLOW);
+      feather.println(calibrationP.read(), 5, Color::YELLOW);
    }
    feather.clear();
    location = rooms[roomP.read()] + postfixes[postfixP.read()];
 
    feather.echoToSerial = true;
-   feather.println("Initializing", Color565::CYAN);
+   feather.println("Initializing", Color::CYAN);
 
    // Setup wifi
    WiFi.mode(WIFI_STA);
@@ -233,10 +233,10 @@ void loop()
 
    feather.display.setTextSize(2);
    feather.setCursor(0, feather.display.height() - 16);
-   feather.print(location.c_str(), Color565::GRAY);
+   feather.print(location.c_str(), Color::GRAY);
 
    feather.setCursorX(feather.display.width() - 12 * strlen(version));
-   feather.print(version, Color565::GRAY);
+   feather.print(version, Color::GRAY);
 }
 
 

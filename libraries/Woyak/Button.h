@@ -11,10 +11,10 @@
 class Button
 {
    uint8_t _pin;
-   uint8_t _index;
 
+   static uint8_t _index;
    static const uint8_t MAX_BUTTONS = 10;
-   static Button* _buttons[5];
+   static Button* _buttons[MAX_BUTTONS];
 
    volatile uint16_t _pressedCount = 0;
    volatile bool _isPressed = false;
@@ -67,7 +67,7 @@ public:
    {
       if (_index < MAX_BUTTONS)
       {
-         pinMode(_pin, INPUT_PULLUP);
+         //pinMode(_pin, INPUT_PULLUP);
 
          switch (_index)
          {
