@@ -6,6 +6,8 @@
   <Folder Name="/Libraries/">
     <File Path="libraries/Woyak/AccumulatingAverager.h" />
     <File Path="libraries/Woyak/Battery.h" />
+    <File Path="libraries/Woyak/Button.cpp" />
+    <File Path="libraries/Woyak/Button.h" />
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
     <File Path="libraries/Woyak/Feather_ESP32_S3.h" />
@@ -32,6 +34,9 @@
     <File Path="libraries/Woyak/WindMeter.cpp" />
     <File Path="libraries/Woyak/WindMeter.h" />
   </Folder>
+  <Project Path="ButtonDisplay/ButtonDisplay.vcxproj">
+    <Deploy />
+  </Project>
   <Project Path="Display_SH1107/Display_SH1107.vcxproj">
     <Deploy />
   </Project>
