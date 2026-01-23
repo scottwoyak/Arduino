@@ -10,7 +10,7 @@ bool TempSensor::begin(bool print)
 //------------------------------------------------------------------------------------------------
 const char* TempSensor::info()
 {
-   if (_sensor == NULL)
+   if (_sensor == nullptr)
    {
       Serial.println("No sensor created. Call begin()");
       return "No sensor created. Call begin()";
@@ -22,7 +22,7 @@ const char* TempSensor::info()
 //------------------------------------------------------------------------------------------------
 bool TempSensor::exists()
 {
-   if (_sensor == NULL)
+   if (_sensor == nullptr)
    {
       Serial.println("No sensor created. Call begin()");
       return false;
@@ -34,7 +34,7 @@ bool TempSensor::exists()
 //------------------------------------------------------------------------------------------------
 float TempSensor::readTemperatureF()
 {
-   if (_sensor == NULL)
+   if (_sensor == nullptr)
    {
       Serial.println("No sensor created. Call begin()");
       return NAN;
@@ -46,7 +46,7 @@ float TempSensor::readTemperatureF()
 //------------------------------------------------------------------------------------------------
 float TempSensor::readTemperatureC()
 {
-   if (_sensor == NULL)
+   if (_sensor == nullptr)
    {
       Serial.println("No sensor created. Call begin()");
       return NAN;
@@ -58,7 +58,7 @@ float TempSensor::readTemperatureC()
 //------------------------------------------------------------------------------------------------
 float TempSensor::readHumidity()
 {
-   if (_sensor == NULL)
+   if (_sensor == nullptr)
    {
       Serial.println("No sensor created. Call begin()");
       return NAN;
@@ -67,6 +67,75 @@ float TempSensor::readHumidity()
    return _sensor->readHumidity();
 }
 
+ITempSensor* _tryCreateHTC(bool print)
+{
+   if (print)
+   {
+      Serial.print("  Checking HTC302... ");
+   }
+
+   Adafruit_HDC302x hdc;
+   hdc.begin();
+   uint16_t id = hdc.readManufacturerID();
+
+   if (print)
+   {
+      if (id > 0)
+      {
+         Serial.print("Success. ID: ");
+         Serial.println(id);
+      }
+      else
+      {
+         Serial.println("Nope");
+      }
+   }
+
+   if (id > 0)
+   {
+      return new HDC302xSensor();
+   }
+   else
+   {
+      return nullptr;
+   }
+}
+
+ITempSensor* _tryCreateSHT4x(bool print)
+{
+   if (print)
+   {
+      Serial.print("  Checking SHT4x... ");
+   }
+
+   Adafruit_SHT4x sht;
+   sht.begin();
+   uint32_t serial = sht.readSerial();
+
+   if (print)
+   {
+      if (serial > 0)
+      {
+         Serial.print("Success. Serial: ");
+         Serial.println(serial);
+      }
+      else
+      {
+         Serial.println("Nope");
+      }
+   }
+
+   if (serial > 0)
+   {
+      return new SHT4xSensor();
+   }
+   else
+   {
+      return nullptr;
+   }
+}
+
+
 //-------------------------------------------------------------------------------------------------
 ITempSensor* TempSensor::_create(bool print)
 {
@@ -74,9 +143,10 @@ ITempSensor* TempSensor::_create(bool print)
    {
       Serial.println("Detecting Temperature Sensor...");
    }
-   ITempSensor* sensor = NULL;
 
-   if (sensor == NULL)
+   ITempSensor* sensor = nullptr;
+
+   if (sensor == nullptr)
    {
       int8_t address = I2CTempSensor::detect(BME280_ADDRESS, 2);
       if (address != 0)
@@ -85,34 +155,36 @@ ITempSensor* TempSensor::_create(bool print)
       }
    }
 
-   if (sensor == NULL)
+   if (sensor == nullptr)
    {
-      // SHT sensors all use the same address, so we need extra code to determine the version
-      int8_t address = I2CTempSensor::detect(SHT4x_DEFAULT_ADDR);
+      // Multiple sensors use 0x44 as an address
+      int8_t address = I2CTempSensor::detect(0x44);
       if (address != 0)
       {
-         Adafruit_SHT4x sht;
-         sht.begin();
-         uint32_t serial = sht.readSerial();
-
          if (print)
          {
-            Serial.print("Determining SHT version from serial number: ");
-            Serial.println(serial);
+            Serial.println("  Something found at 0x44");
          }
 
-         if (serial > 0)
+         sensor = _tryCreateHTC(print);
+
+         if (sensor == nullptr)
          {
-            sensor = new SHT4xSensor(address);
+            sensor = _tryCreateSHT4x(print);
          }
-         else
-         { 
+
+         if (sensor == nullptr)
+         {
+            if (print)
+            {
+               Serial.println("  Defaulting to SHT3x");
+            }
             sensor = new SHT31Sensor(address);
          }
       }
    }
 
-   if (sensor == NULL)
+   if (sensor == nullptr)
    {
       int8_t address = I2CTempSensor::detect(MCP9808_I2CADDR_DEFAULT, 8);
       if (address != 0)
@@ -123,7 +195,7 @@ ITempSensor* TempSensor::_create(bool print)
 
    if (print)
    {
-      if (sensor != NULL)
+      if (sensor != nullptr)
       {
          Serial.println(String("Found: ") + sensor->info());
       }
@@ -148,10 +220,12 @@ ITempSensor* TempSensor::_create(bool print)
       }
    }
 
-   if (sensor == NULL)
+   if (sensor == nullptr)
    {
       sensor = new NullSensor();
    }
 
    return sensor;
 }
+
+

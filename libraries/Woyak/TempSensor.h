@@ -5,6 +5,7 @@
 #include <Adafruit_MCP9808.h>
 #include <Adafruit_SHT31.h>
 #include <Adafruit_SHT4x.h>
+#include <Adafruit_HDC302x.h>
 #include "Util.h"
 
 class ITempSensor;
@@ -140,7 +141,7 @@ private:
    Adafruit_SHT31 sht;
 
 public:
-   SHT31Sensor(uint8_t address) : I2CTempSensor("SHT3x", address)
+   SHT31Sensor(uint8_t address = SHT31_DEFAULT_ADDR) : I2CTempSensor("SHT3x", address)
    {
    }
    virtual bool begin()
@@ -168,7 +169,7 @@ private:
    Adafruit_SHT4x sht;
 
 public:
-   SHT4xSensor(uint8_t address) : I2CTempSensor("SHT4x", address)
+   SHT4xSensor(uint8_t address = SHT4x_DEFAULT_ADDR) : I2CTempSensor("SHT4x", address)
    {
    }
    virtual bool begin()
@@ -198,6 +199,42 @@ public:
    }
 };
 
+//-------------------------------------------------------------------------------------------------
+class HDC302xSensor : public I2CTempSensor
+{
+private:
+   Adafruit_HDC302x hdc;
+
+public:
+   HDC302xSensor(uint8_t address=0x44) : I2CTempSensor("HDC302x", address)
+   {
+   }
+   virtual bool begin()
+   {
+      return hdc.begin();
+   }
+   virtual float readTemperatureF()
+   {
+      double temp;
+      double humidity;
+      hdc.readTemperatureHumidityOnDemand(temp, humidity, TRIGGERMODE_LP0);
+      return Util::C2F(temp);
+   }
+   virtual float readTemperatureC()
+   {
+      double temp;
+      double humidity;
+      hdc.readTemperatureHumidityOnDemand(temp, humidity, TRIGGERMODE_LP0);
+      return temp;
+   }
+   virtual float readHumidity()
+   {
+      double temp;
+      double humidity;
+      hdc.readTemperatureHumidityOnDemand(temp, humidity, TRIGGERMODE_LP0);
+      return humidity;
+   }
+};
 
 //-------------------------------------------------------------------------------------------------
 class MCP9808Sensor : public I2CTempSensor
