@@ -6,6 +6,7 @@ class IValueStore {
 public:
    virtual float get() = 0;
    virtual boolean set(float value) = 0;
+   virtual ~IValueStore() {};
 };
 
 class ValueStoreSimple : public IValueStore {

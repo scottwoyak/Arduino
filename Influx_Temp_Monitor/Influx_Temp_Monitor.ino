@@ -1,9 +1,10 @@
 #include "Feather_ESP32_S3.h"
 #include "Potentiometer.h"
 #include "TempSensor.h"
-#include "RunningAverager.h"
+#include "TimedAverager.h"
 #include "Stopwatch.h"
 
+#include <Preferences.h>
 #include <WiFiMulti.h>
 WiFiMulti wifiMulti;
 #define DEVICE "ESP32"
@@ -19,9 +20,11 @@ WiFiMulti wifiMulti;
 // Time zone info
 #define TZ_INFO "UTC-5"
 
-const char* version = "v0.9";
+const char* version = "v0.91";
+const int NUM_SECS = 5;
+const char* INFLUX_MEASUREMENT = "Air";
 
-std::string rooms[] =
+String rooms[] =
 {
    "Barn 1st Floor",
    "Barn 2nd Floor",
@@ -35,8 +38,9 @@ std::string rooms[] =
    "Outside",
    "Studio",
    "Sunroom",
+   "Calibration",
 };
-std::string postfixes[] =
+String postfixes[] =
 {
    "",
    " 1",
@@ -57,19 +61,80 @@ const Color FAILED_COLOR = Color::ORANGE;
 const uint8_t CHAR_WIDTH = 12;
 
 Feather_ESP32_S3 feather;
+Preferences prefs;
 IntPotentiometer roomP(A0, 0, (sizeof(rooms) / sizeof(rooms[0]) - 1));
 IntPotentiometer postfixP(A1, 0, (sizeof(postfixes) / sizeof(postfixes[0]) - 1));
 FloatPotentiometer calibrationP(A2, -1.0, 1.0, 201);
-std::string location;
+String location;
 Stopwatch trigger;
-RunningAverager temperature(50);
-RunningAverager humidity(50);
+TimedAverager temperature(1000 * NUM_SECS);
+TimedAverager humidity(1000 * NUM_SECS);
 
 TempSensor sensor;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+Point point(INFLUX_MEASUREMENT); // Influx data point
 
-// Data point
-Point point("Temperature");
+const char* LOCATION_KEY = "location"; // for preferences
+
+
+void determineLocation()
+{
+   feather.echoToSerial = false;
+   bool useSavedSettings = false;
+   prefs.begin("monitor", false);
+
+   // if a prior location was saved, ask the user if they want to use it
+   if (prefs.isKey(LOCATION_KEY))
+   {
+      useSavedSettings = true;
+      location = prefs.getString(LOCATION_KEY);
+      Stopwatch sw;
+
+      while (feather.buttonA.wasPressed() == false && sw.elapsedSecs() < 10)
+      {
+         feather.setCursor(0, 0);
+         feather.println("Use Saved Settings?", Color::CYAN);
+         feather.println();
+         feather.print("Location: ", Color::WHITE);
+         feather.println(location, Color::YELLOW);
+
+         feather.setCursor(0, feather.display.height() - 32);
+         feather.println("Press button to edit... ", Color::GRAY);
+         feather.print("Continuing in ", Color::GRAY);
+         feather.print(String((int)(10 - sw.elapsedSecs())), Color::GRAY);
+      }
+      useSavedSettings = feather.buttonA.wasPressed() == false;
+   }
+   feather.buttonA.reset();
+   feather.clear();
+
+   if (useSavedSettings == false)
+   {
+      // ask for information
+      while (feather.buttonA.wasPressed() == false)
+      {
+         feather.display.setTextSize(2);
+         feather.display.setCursor(0, 0);
+         feather.println("Sensor Information\n", Color::CYAN);
+
+         feather.println("Location:", Color::WHITE);
+         feather.setCursorX(20);
+         String str = rooms[roomP.read()] + postfixes[postfixP.read()];
+         feather.println(str, 20, Color::YELLOW);
+
+         feather.println();
+
+         feather.println("Calibration:", Color::WHITE);
+         feather.setCursorX(20);
+         feather.println(calibrationP.read(), 5, Color::YELLOW);
+      }
+
+      location = rooms[roomP.read()] + postfixes[postfixP.read()];
+   }
+
+   prefs.putString(LOCATION_KEY, location);
+   prefs.end();
+}
 
 // The setup() function runs once each time the micro-controller starts
 void setup()
@@ -88,34 +153,10 @@ void setup()
    feather.begin();
    feather.display.setTextWrap(false);
 
-   // ask for information
-   bool ready = false;
-   while (ready == false)
-   {
-      if (digitalRead(0) == LOW)
-      {
-         ready = true;
-      }
-
-      feather.display.setTextSize(2);
-      feather.display.setCursor(0, 0);
-      feather.println("Sensor Information\n", Color::CYAN);
-
-      feather.println("Location:", Color::WHITE);
-      feather.setCursorX(20);
-      std::string str = rooms[roomP.read()] + postfixes[postfixP.read()];
-      feather.println(str, 20, Color::YELLOW);
-
-      feather.println();
-
-      feather.println("Calibration:", Color::WHITE);
-      feather.setCursorX(20);
-      feather.println(calibrationP.read(), 5, Color::YELLOW);
-   }
-   feather.clear();
-   location = rooms[roomP.read()] + postfixes[postfixP.read()];
+   determineLocation();
 
    feather.echoToSerial = true;
+   feather.clear();
    feather.println("Initializing", Color::CYAN);
 
    // Setup wifi
@@ -179,6 +220,7 @@ void setup()
    point.addTag("location", location.c_str());
    feather.clear();
    feather.echoToSerial = false;
+   trigger.reset();
 }
 
 #define MAX_CHARS 8
@@ -203,17 +245,27 @@ void loop()
       feather.display.println("Wifi connection lost");
    }
 
-   uint8_t x = feather.display.width() - (MAX_CHARS * 8 * CHAR_W) / 2;
-   feather.display.setCursor(x, (feather.display.height() - 2*4*CHAR_H-CHAR_H)/2);
-
    feather.display.setTextSize(4);
-   feather.println(temperature.get(), " F", 8);
+   uint8_t x = (feather.display.width() - (MAX_CHARS * (4 * CHAR_W)));
+   float temp = temperature.get();
+   float hum = humidity.get();
 
-   feather.setCursor(x, feather.display.getCursorY()+CHAR_H);
-   feather.println(humidity.get(), "%", 7);
+   feather.display.setCursor(x, (feather.display.height() - 2 * 4 * CHAR_H - CHAR_H) / 2 - 10);
+   feather.println(temp, " F", 8);
+
+   feather.setCursor(x, feather.display.getCursorY() + CHAR_H);
+   feather.println(hum, "%", 7);
+
+   feather.display.setTextSize(2);
+   feather.setCursor(0, feather.display.height() - 16);
+   feather.print(location.c_str(), Color::GRAY);
+
+   feather.setCursorX(feather.display.width() - 12 * strlen(version));
+   feather.print(version, Color::GRAY);
+
 
    // Write point
-   if (trigger.elapsedSecs() > 5)
+   if (trigger.elapsedSecs() > NUM_SECS)
    {
       trigger.reset();
 
@@ -231,12 +283,6 @@ void loop()
       digitalWrite(BUILTIN_LED, LOW);
    }
 
-   feather.display.setTextSize(2);
-   feather.setCursor(0, feather.display.height() - 16);
-   feather.print(location.c_str(), Color::GRAY);
-
-   feather.setCursorX(feather.display.width() - 12 * strlen(version));
-   feather.print(version, Color::GRAY);
 }
 
 
