@@ -4,6 +4,7 @@
 #include <Adafruit_BME280.h>
 #include <Adafruit_MCP9808.h>
 #include <Adafruit_SHT31.h>
+#include <Adafruit_SHT4x.h>
 #include "Util.h"
 
 class ITempSensor;
@@ -139,7 +140,7 @@ private:
    Adafruit_SHT31 sht;
 
 public:
-   SHT31Sensor(uint8_t address) : I2CTempSensor("SHT31", address)
+   SHT31Sensor(uint8_t address) : I2CTempSensor("SHT3x", address)
    {
    }
    virtual bool begin()
@@ -159,6 +160,44 @@ public:
       return sht.readHumidity();
    }
 };
+
+//-------------------------------------------------------------------------------------------------
+class SHT4xSensor : public I2CTempSensor
+{
+private:
+   Adafruit_SHT4x sht;
+
+public:
+   SHT4xSensor(uint8_t address) : I2CTempSensor("SHT4x", address)
+   {
+   }
+   virtual bool begin()
+   {
+      return sht.begin();
+   }
+   virtual float readTemperatureF()
+   {
+      sensors_event_t humidity, temp;
+      sht.getEvent(&humidity, &temp);
+
+      return Util::C2F(temp.temperature);
+   }
+   virtual float readTemperatureC()
+   {
+      sensors_event_t humidity, temp;
+      sht.getEvent(&humidity, &temp);
+
+      return temp.temperature;
+   }
+   virtual float readHumidity()
+   {
+      sensors_event_t humidity, temp;
+      sht.getEvent(&humidity, &temp);
+
+      return humidity.relative_humidity;
+   }
+};
+
 
 //-------------------------------------------------------------------------------------------------
 class MCP9808Sensor : public I2CTempSensor

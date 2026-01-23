@@ -87,10 +87,28 @@ ITempSensor* TempSensor::_create(bool print)
 
    if (sensor == NULL)
    {
-      int8_t address = I2CTempSensor::detect(SHT31_DEFAULT_ADDR);
+      // SHT sensors all use the same address, so we need extra code to determine the version
+      int8_t address = I2CTempSensor::detect(SHT4x_DEFAULT_ADDR);
       if (address != 0)
       {
-         sensor = new SHT31Sensor(address);
+         Adafruit_SHT4x sht;
+         sht.begin();
+         uint32_t serial = sht.readSerial();
+
+         if (print)
+         {
+            Serial.print("Determining SHT version from serial number: ");
+            Serial.println(serial);
+         }
+
+         if (serial > 0)
+         {
+            sensor = new SHT4xSensor(address);
+         }
+         else
+         { 
+            sensor = new SHT31Sensor(address);
+         }
       }
    }
 
