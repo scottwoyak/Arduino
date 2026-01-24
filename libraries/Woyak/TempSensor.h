@@ -24,6 +24,9 @@ public:
    float readTemperatureF();
    float readTemperatureC();
    float readHumidity();
+
+   bool readsBoth();
+   void readBoth(float& tempF, float& hum);
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -36,35 +39,26 @@ public:
    virtual float readTemperatureF() = 0;
    virtual float readTemperatureC() = 0;
    virtual float readHumidity() = 0;
+
+   virtual bool readsBoth() = 0;
+   virtual void readBoth(float& tempF, float& hum)
+   {
+      tempF = readTemperatureF();
+      hum = readHumidity();
+   }
 };
 
 //-------------------------------------------------------------------------------------------------
 class NullSensor : public ITempSensor
 {
-   virtual bool exists()
-   {
-      return false;
-   }
-   virtual const char* info()
-   {
-      return "No Sensor Detected";
-   }
-   virtual bool begin()
-   {
-      return true;
-   }
-   virtual float readTemperatureF()
-   {
-      return NAN;
-   }
-   virtual float readTemperatureC()
-   {
-      return NAN;
-   }
-   virtual float readHumidity()
-   {
-      return NAN;
-   }
+   virtual bool exists() { return false; }
+   virtual const char* info() { return "No Sensor Detected"; }
+   virtual bool begin() { return true; }
+   virtual float readTemperatureF() { return NAN; }
+   virtual float readTemperatureC() { return NAN; }
+   virtual float readHumidity() { return NAN; }
+   virtual bool readsBoth() { return false; }
+   virtual void readBoth(float tempF, float hum) { tempF = hum = NAN; }
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -85,6 +79,7 @@ public:
    virtual float readTemperatureF() = 0;
    virtual float readTemperatureC() = 0;
    virtual float readHumidity() = 0;
+   virtual bool readsBoth() = 0;
 
    int8_t getAddress()
    {
@@ -116,22 +111,11 @@ public:
    BME280Sensor(uint8_t address) : I2CTempSensor("BME280", address)
    {
    }
-   virtual bool begin()
-   {
-      return _bme.begin(getAddress());
-   }
-   virtual float readTemperatureF()
-   {
-      return Util::C2F(_bme.readTemperature());
-   }
-   virtual float readTemperatureC()
-   {
-      return _bme.readTemperature();
-   }
-   virtual float readHumidity()
-   {
-      return _bme.readHumidity();
-   }
+   virtual bool begin() { return _bme.begin(getAddress()); }
+   virtual float readTemperatureF() { return Util::C2F(_bme.readTemperature()); }
+   virtual float readTemperatureC() { return _bme.readTemperature(); }
+   virtual float readHumidity() { return _bme.readHumidity(); }
+   virtual bool readsBoth() { return false; }
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -144,22 +128,11 @@ public:
    SHT31Sensor(uint8_t address = SHT31_DEFAULT_ADDR) : I2CTempSensor("SHT3x", address)
    {
    }
-   virtual bool begin()
-   {
-      return sht.begin();
-   }
-   virtual float readTemperatureF()
-   {
-      return Util::C2F(sht.readTemperature());
-   }
-   virtual float readTemperatureC()
-   {
-      return sht.readTemperature();
-   }
-   virtual float readHumidity()
-   {
-      return sht.readHumidity();
-   }
+   virtual bool begin() { return sht.begin(); }
+   virtual float readTemperatureF() { return Util::C2F(sht.readTemperature()); }
+   virtual float readTemperatureC() { return sht.readTemperature(); }
+   virtual float readHumidity() { return sht.readHumidity(); }
+   virtual bool readsBoth() { return false; }
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -197,6 +170,15 @@ public:
 
       return humidity.relative_humidity;
    }
+   virtual bool readsBoth() { return true; }
+   virtual void readBoth(float& tempF, float& hum)
+   {
+      sensors_event_t h, t;
+      sht.getEvent(&h, &t);
+
+      tempF = Util::C2F(t.temperature);
+      hum = h.relative_humidity;
+   }
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -206,7 +188,7 @@ private:
    Adafruit_HDC302x hdc;
 
 public:
-   HDC302xSensor(uint8_t address=0x44) : I2CTempSensor("HDC302x", address)
+   HDC302xSensor(uint8_t address = 0x44) : I2CTempSensor("HDC302x", address)
    {
    }
    virtual bool begin()
@@ -218,21 +200,29 @@ public:
       double temp;
       double humidity;
       hdc.readTemperatureHumidityOnDemand(temp, humidity, TRIGGERMODE_LP0);
-      return Util::C2F(temp);
+      return Util::C2F((float)temp);
    }
    virtual float readTemperatureC()
    {
       double temp;
       double humidity;
       hdc.readTemperatureHumidityOnDemand(temp, humidity, TRIGGERMODE_LP0);
-      return temp;
+      return (float)temp;
    }
    virtual float readHumidity()
    {
       double temp;
       double humidity;
       hdc.readTemperatureHumidityOnDemand(temp, humidity, TRIGGERMODE_LP0);
-      return humidity;
+      return (float)humidity;
+   }
+   virtual bool readsBoth() { return true; }
+   virtual void readBoth(float& tempF, float& hum)
+   {
+      double t, h;
+      hdc.readTemperatureHumidityOnDemand(t, h, TRIGGERMODE_LP0);
+      tempF = Util::C2F((float)t);
+      hum = (float)h;
    }
 };
 
@@ -268,5 +258,6 @@ public:
    {
       return NAN;
    }
+   virtual bool readsBoth() { return false; }
 };
 

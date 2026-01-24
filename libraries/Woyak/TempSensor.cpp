@@ -67,6 +67,30 @@ float TempSensor::readHumidity()
    return _sensor->readHumidity();
 }
 
+//------------------------------------------------------------------------------------------------
+bool TempSensor::readsBoth()
+{
+   if (_sensor == nullptr)
+   {
+      Serial.println("No sensor created. Call begin()");
+      return false;
+   }
+
+   return _sensor->readsBoth();
+}
+
+//------------------------------------------------------------------------------------------------
+void TempSensor::readBoth(float& tempF, float& hum)
+{
+   if (_sensor == nullptr)
+   {
+      Serial.println("No sensor created. Call begin()");
+      return;
+   }
+
+   _sensor->readBoth(tempF, hum);
+}
+
 ITempSensor* _tryCreateHTC(bool print)
 {
    if (print)
