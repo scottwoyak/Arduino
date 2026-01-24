@@ -1,7 +1,6 @@
 #include "Feather_ESP32_S3.h"
 #include "Stopwatch.h"
 #include "TempSensor.h"
-#include "RunningAverager.h"
 
 const char* version = "v1.0";
 
@@ -59,7 +58,6 @@ void loop()
    feather.print(humTime, " ms", 8, Color::GRAY);
    feather.print("  ");
    feather.print(humPerS, "/s", 6, Color::GRAY);
-
 
    feather.display.setTextSize(2);
    feather.setCursor(0, feather.display.height() - 16);

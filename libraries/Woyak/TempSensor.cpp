@@ -20,6 +20,30 @@ const char* TempSensor::info()
 }
 
 //------------------------------------------------------------------------------------------------
+const char* TempSensor::type()
+{
+   if (_sensor == nullptr)
+   {
+      Serial.println("No sensor created. Call begin()");
+      return "No sensor created. Call begin()";
+   }
+
+   return _sensor->type();
+}
+
+//------------------------------------------------------------------------------------------------
+uint8_t TempSensor::address()
+{
+   if (_sensor == nullptr)
+   {
+      Serial.println("No sensor created. Call begin()");
+      return 0;
+   }
+
+   return _sensor->address();
+}
+
+//------------------------------------------------------------------------------------------------
 bool TempSensor::exists()
 {
    if (_sensor == nullptr)

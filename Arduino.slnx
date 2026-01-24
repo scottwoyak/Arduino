@@ -21,6 +21,7 @@
     <File Path="libraries/Woyak/I2CMultiplexor.h" />
     <File Path="libraries/Woyak/Logger.h" />
     <File Path="libraries/Woyak/MinMaxValue.h" />
+    <File Path="libraries/Woyak/Multiplexer.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
     <File Path="libraries/Woyak/RunningAverager.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
@@ -60,6 +61,9 @@
   <Project Path="Potentiometer/Potentiometer.vcxproj" Id="c5bc2f07-d8ae-4dcf-aede-3dddf1846b20">
     <Deploy />
   </Project>
+  <Project Path="TemperatureCalibrator/TemperatureCalibrator.vcxproj">
+    <Deploy />
+  </Project>
   <Project Path="TemperatureDisplay/TemperatureDisplay.vcxproj">
     <Deploy />
   </Project>
@@ -67,6 +71,9 @@
     <Deploy />
   </Project>
   <Project Path="WindDisplay/WindDisplay.vcxproj">
+    <Deploy />
+  </Project>
+  <Project Path="WindMonitor/WindMonitor.vcxproj" Id="ce9936be-d88a-5df5-d934-fcbee6c84747">
     <Deploy />
   </Project>
 </Solution>

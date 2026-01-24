@@ -20,6 +20,8 @@ private:
 public:
    bool begin(bool print = true);
    const char* info();
+   const char* type();
+   uint8_t address();
    bool exists();
    float readTemperatureF();
    float readTemperatureC();
@@ -35,6 +37,8 @@ class ITempSensor
 public:
    virtual bool begin() = 0;
    virtual const char* info() = 0;
+   virtual const char* type() = 0;
+   virtual uint8_t address() = 0;
    virtual bool exists() = 0;
    virtual float readTemperatureF() = 0;
    virtual float readTemperatureC() = 0;
@@ -53,6 +57,8 @@ class NullSensor : public ITempSensor
 {
    virtual bool exists() { return false; }
    virtual const char* info() { return "No Sensor Detected"; }
+   virtual const char* type() { return "None"; }
+   virtual uint8_t address() { return 0; };
    virtual bool begin() { return true; }
    virtual float readTemperatureF() { return NAN; }
    virtual float readTemperatureC() { return NAN; }
@@ -65,16 +71,19 @@ class NullSensor : public ITempSensor
 class I2CTempSensor : public ITempSensor
 {
 private:
-   String _info;
+   String _type;
    int8_t _address;
 
 public:
-   I2CTempSensor(const char* type, int8_t address)
+   I2CTempSensor(const char* type, uint8_t address)
    {
+      _type = type;
       _address = address;
-      _info = String(type) + " 0x" + String(address, HEX);
    }
-   virtual const char* info() { return _info.c_str(); }
+   virtual const char* info() { return (_type + " 0x" + String(_address, HEX)).c_str(); }
+   virtual const char* type() { return _type.c_str(); }
+   virtual uint8_t address() { return _address; }
+
    virtual bool exists() { return true; }
    virtual float readTemperatureF() = 0;
    virtual float readTemperatureC() = 0;

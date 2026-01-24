@@ -160,8 +160,8 @@ Stopwatch sw;
 void loop() {
 
    float current = windMeter.getCurrent();
-   current = (MAX_SPEED / 2) * (1 + sin(millis() / 1000.0));
-   current = MAX_SPEED * (random(0, 1000000) / 1000000.0);
+   //current = (MAX_SPEED / 2) * (1 + sin(millis() / 1000.0));
+   //current = MAX_SPEED * (random(0, 1000000) / 1000000.0);
 
    history.set(current);
 
