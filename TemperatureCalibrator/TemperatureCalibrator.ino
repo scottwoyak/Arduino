@@ -4,6 +4,7 @@
 #include "TimedAverager.h"
 #include "RunningAverager.h"
 #include "Multiplexer.h"
+#include <Preferences.h>
 
 #include <WiFiMulti.h>
 WiFiMulti wifiMulti;
@@ -66,8 +67,9 @@ TimedAverager t10avg5(T10_AVERAGING_TIME);
 TimedAverager t10avg6(T10_AVERAGING_TIME);
 TimedAverager* t10avgs[] = { &t10avg1, &t10avg2, &t10avg3, &t10avg4, &t10avg5, &t10avg6 };
 
-
-Stopwatch trigger;
+Preferences prefs;
+Stopwatch influxTrigger;
+Stopwatch prefsTrigger;
 
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 
@@ -84,6 +86,21 @@ const Color OK_COLOR = Color::YELLOW;
 const Color FAILED_COLOR = Color::ORANGE;
 
 uint8_t view = 0;
+
+void printCorrectionValue(float correction, Color color)
+{
+   if (fabs(correction) < 0.01)
+   {
+      feather.print(" ");
+      correction = 0; // avoid the -0.00 case
+   }
+   else if (correction > 0)
+   {
+      feather.print("+", color);
+   }
+   feather.println(correction, 5, color);
+}
+
 
 // The setup() function runs once each time the micro-controller starts
 void setup()
@@ -103,14 +120,41 @@ void setup()
    feather.display.setRotation(0);
    feather.display.setTextWrap(false);
 
+   prefs.begin("Calibrator", false);
+   float corrections[6];
+   for (int i = 0; i < NUM_SENSORS; i++)
+   {
+      corrections[i] = prefs.getFloat((String("Sensor ") + i).c_str());
+   }
+   prefs.end();
+   feather.display.setTextSize(2);
+   feather.println("Saved", Color::WHITE);
+   feather.println("Results", Color::WHITE);
+   feather.moveCursorY(10);
+
+   for (int i = 0; i < NUM_SENSORS; i++)
+   {
+      feather.display.setTextSize(2);
+      feather.print((i + 1), 2, Color::WHITE);
+
+      feather.display.setTextSize(3);
+      printCorrectionValue(corrections[i], Color::YELLOW);
+      feather.moveCursorY(8);
+   }
+
+   while (feather.buttonA.wasPressed() == false)
+   {
+      delay(1);
+   }
+   feather.buttonA.reset();
+
    client.setWriteOptions(WriteOptions().batchSize(NUM_SENSORS).bufferSize(2 * NUM_SENSORS));
-   for (int i = 0; i < 6; i++)
+   for (int i = 0; i < NUM_SENSORS; i++)
    {
       Multiplexer::select(i);
       sensors[i]->begin();
       points[i]->addTag("location", (String("Calibration ") + (i + 1)).c_str());
    }
-   trigger.reset();
 
    feather.echoToSerial = true;
    feather.clear();
@@ -165,7 +209,11 @@ void setup()
 
    feather.clear();
    feather.echoToSerial = false;
-   trigger.reset();
+
+   prefsTrigger.reset();
+   influxTrigger.reset();
+
+   prefs.begin("calibrator", false);
 
    pinMode(BUILTIN_LED, OUTPUT);
    digitalWrite(BUILTIN_LED, LOW);
@@ -197,22 +245,22 @@ void loop()
    switch (view)
    {
    case 1:
-      feather.println("All Time Avg", Color::ORANGE);
+      feather.println("Since Start", Color::ORANGE);
       feather.moveCursorY(10);
       break;
 
    case 2:
-      feather.println("1 Min Avg", Color::ORANGE);
+      feather.println("Last 1 Min", Color::ORANGE);
       feather.moveCursorY(10);
       break;
 
    case 3:
-      feather.println("10 Min Avg", Color::ORANGE);
+      feather.println("Last 10 Min", Color::ORANGE);
       feather.moveCursorY(10);
       break;
    }
 
-   for (int i = 0; i < 6; i++)
+   for (int i = 0; i < NUM_SENSORS; i++)
    {
       Multiplexer::select(i);
       TempSensor* sensor = sensors[i];
@@ -256,16 +304,7 @@ void loop()
             }
 
             feather.display.setTextSize(2);
-            if (fabs(correction) < 0.01)
-            {
-               feather.print(" ");
-               correction = 0; // avoid the -0.00 case
-            }
-            else if (correction > 0)
-            {
-               feather.print("+", Color::YELLOW);
-            }
-            feather.println(correction, 5, Color::YELLOW);
+            printCorrectionValue(correction, Color::YELLOW);
             feather.moveCursorY(2);
 
             feather.moveCursorX(3 * 2 * 6);
@@ -279,7 +318,7 @@ void loop()
 
             feather.display.setTextSize(2);
             feather.moveCursorY(2);
-            feather.print("  ");
+            feather.print("  0x");
             feather.println(String(sensor->address(), HEX), 2, Color::CYAN);
             break;
          }
@@ -292,8 +331,22 @@ void loop()
       feather.moveCursorY(6);
    }
 
+   // ------------------------------------------- save to flash
+   if (prefsTrigger.elapsedSecs() > 10 * 60)
+   {
+      prefsTrigger.reset();
+
+      prefs.begin("Calibrator", false);
+      for (int i = 0; i < NUM_SENSORS; i++)
+      {
+         float correction = t10avgs[i]->get() - t10avgs[0]->get();
+         prefs.putFloat((String("Sensor ") + i).c_str(), correction);
+      }
+      prefs.end();
+   }
+
    // ------------------------------------------- send to INFLUX
-   if (trigger.elapsedSecs() > NUM_SECS)
+   if (influxTrigger.elapsedSecs() > NUM_SECS)
    {
       digitalWrite(BUILTIN_LED, HIGH);
 
@@ -301,7 +354,7 @@ void loop()
       Serial.println(" values collected");
       count = 0;
 
-      trigger.reset();
+      influxTrigger.reset();
 
       for (int i = 0; i < NUM_SENSORS; i++)
       {
