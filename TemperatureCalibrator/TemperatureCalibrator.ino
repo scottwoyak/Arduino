@@ -2,6 +2,7 @@
 #include "Stopwatch.h"
 #include "TempSensor.h"
 #include "TimedAverager.h"
+#include "RunningAverager.h"
 #include "Multiplexer.h"
 
 #include <WiFiMulti.h>
@@ -15,7 +16,7 @@ WiFiMulti wifiMulti;
 #include "WiFiSettings.h"
 
 // Time zone info
-#define TZ_INFO "UTC-5"
+constexpr auto TZ_INFO = "UTC-5";
 
 // 
 // This sketch displays the current temperature on an Arduino ESP32 Feather
@@ -30,7 +31,7 @@ TempSensor sensor6;
 TempSensor* sensors[] = { &sensor1, &sensor2, &sensor3, &sensor4, &sensor5, &sensor6 };
 const int NUM_SENSORS = sizeof(sensors) / sizeof(sensors[0]);
 
-#define NUM_SECS 5 
+constexpr auto NUM_SECS = 5;
 TimedAverager temp1(1000 * NUM_SECS);
 TimedAverager temp2(1000 * NUM_SECS);
 TimedAverager temp3(1000 * NUM_SECS);
@@ -38,6 +39,33 @@ TimedAverager temp4(1000 * NUM_SECS);
 TimedAverager temp5(1000 * NUM_SECS);
 TimedAverager temp6(1000 * NUM_SECS);
 TimedAverager* temps[] = { &temp1, &temp2, &temp3, &temp4, &temp5, &temp6 };
+
+AccumulatingAverager avg1;
+AccumulatingAverager avg2;
+AccumulatingAverager avg3;
+AccumulatingAverager avg4;
+AccumulatingAverager avg5;
+AccumulatingAverager avg6;
+AccumulatingAverager* avgs[] = { &avg1, &avg2, &avg3, &avg4, &avg5, &avg6 };
+
+constexpr auto T1_AVERAGING_TIME = 1 * 60 * 1000;
+TimedAverager t1avg1(T1_AVERAGING_TIME);
+TimedAverager t1avg2(T1_AVERAGING_TIME);
+TimedAverager t1avg3(T1_AVERAGING_TIME);
+TimedAverager t1avg4(T1_AVERAGING_TIME);
+TimedAverager t1avg5(T1_AVERAGING_TIME);
+TimedAverager t1avg6(T1_AVERAGING_TIME);
+TimedAverager* t1avgs[] = { &t1avg1, &t1avg2, &t1avg3, &t1avg4, &t1avg5, &t1avg6 };
+
+constexpr auto T10_AVERAGING_TIME = 10 * 60 * 1000;
+TimedAverager t10avg1(T10_AVERAGING_TIME);
+TimedAverager t10avg2(T10_AVERAGING_TIME);
+TimedAverager t10avg3(T10_AVERAGING_TIME);
+TimedAverager t10avg4(T10_AVERAGING_TIME);
+TimedAverager t10avg5(T10_AVERAGING_TIME);
+TimedAverager t10avg6(T10_AVERAGING_TIME);
+TimedAverager* t10avgs[] = { &t10avg1, &t10avg2, &t10avg3, &t10avg4, &t10avg5, &t10avg6 };
+
 
 Stopwatch trigger;
 
@@ -55,6 +83,8 @@ const Color MSG_COLOR = Color::WHITE;
 const Color OK_COLOR = Color::YELLOW;
 const Color FAILED_COLOR = Color::ORANGE;
 
+uint8_t view = 0;
+
 // The setup() function runs once each time the micro-controller starts
 void setup()
 {
@@ -71,6 +101,7 @@ void setup()
 
    feather.begin();
    feather.display.setRotation(0);
+   feather.display.setTextWrap(false);
 
    client.setWriteOptions(WriteOptions().batchSize(NUM_SENSORS).bufferSize(2 * NUM_SENSORS));
    for (int i = 0; i < 6; i++)
@@ -83,62 +114,103 @@ void setup()
 
    feather.echoToSerial = true;
    feather.clear();
-   feather.println("Initializing", Color::CYAN);
+   feather.display.setTextSize(3);
+   feather.println("Init", Color::CYAN);
+   feather.moveCursorY(10);
+
+   feather.display.setTextSize(2);
 
    // Setup wifi
    WiFi.mode(WIFI_STA);
    wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
 
-   feather.print("WiFi... ", MSG_COLOR);
+   feather.print("WiFi", MSG_COLOR);
    while (wifiMulti.run() != WL_CONNECTED)
    {
       Serial.print(".");
       delay(100);
    }
-   feather.setCursorX(feather.display.width() - 2 * 8);
+   feather.setCursorX(feather.display.width() - 2 * 2 * 8);
    feather.println("ok", OK_COLOR);
 
    // Accurate time is necessary for certificate validation and writing in batches
    // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
    // Syncing progress and the time will be printed to Serial.
    feather.echoToSerial = false;
-   feather.print("Syncing Time... ", MSG_COLOR);
+   feather.print("Time", MSG_COLOR);
    timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
-   feather.setCursorX(feather.display.width() - 2 * 8);
+   feather.setCursorX(feather.display.width() - 2 * 2 * 8);
    feather.println("ok", OK_COLOR);
    feather.echoToSerial = true;
 
    // Check server connection
-   feather.print("InfluxDB... ", MSG_COLOR);
+   feather.print("Influx", MSG_COLOR);
 
    if (client.validateConnection())
    {
-      feather.setCursorX(feather.display.width() - 2 * 8);
+      feather.setCursorX(feather.display.width() - 2 * 2 * 8);
       feather.println("ok", OK_COLOR);
       Serial.println(client.getServerUrl());
    }
    else
    {
-      feather.setCursorX(feather.display.width() - 6 * 8);
+      feather.setCursorX(feather.display.width() - 6 * 2 * 8);
       feather.println("FAILED", FAILED_COLOR);
       feather.display.setTextSize(1);
       feather.println(client.getLastErrorMessage(), FAILED_COLOR);
       while (1);
    }
 
-   delay(5000);
+   delay(1000);
 
    feather.clear();
    feather.echoToSerial = false;
    trigger.reset();
 
-   pinMode(BUILTIN_LED, HIGH);
+   pinMode(BUILTIN_LED, OUTPUT);
+   digitalWrite(BUILTIN_LED, LOW);
 }
 
+long count;
 void loop()
 {
    feather.setCursor(0, 0);
    feather.display.setTextSize(2);
+
+   if (feather.buttonA.wasPressed())
+   {
+      feather.clear();
+      feather.buttonA.reset();
+      view++;
+      if (view > 4)
+      {
+         view = 0;
+      }
+   }
+
+   count++;
+
+   // ------------------------------------------- display
+
+   // print headers
+   feather.display.setTextSize(2);
+   switch (view)
+   {
+   case 1:
+      feather.println("All Time Avg", Color::ORANGE);
+      feather.moveCursorY(10);
+      break;
+
+   case 2:
+      feather.println("1 Min Avg", Color::ORANGE);
+      feather.moveCursorY(10);
+      break;
+
+   case 3:
+      feather.println("10 Min Avg", Color::ORANGE);
+      feather.moveCursorY(10);
+      break;
+   }
 
    for (int i = 0; i < 6; i++)
    {
@@ -146,26 +218,89 @@ void loop()
       TempSensor* sensor = sensors[i];
       float temp = sensors[i]->readTemperatureF();
       temps[i]->set(temp);
+      avgs[i]->set(temp);
+      t1avgs[i]->set(temp);
+      t10avgs[i]->set(temp);
 
+      // values
+      feather.display.setTextSize(2);
       feather.print((i + 1), 2, Color::WHITE);
-
       if (sensor->exists())
       {
-         feather.println(temp, " F", 8, Color::YELLOW);
-         feather.moveCursorY(2);
-         feather.print("  ");
-         feather.println(sensor->type(), Color::GRAY);
+         switch (view)
+         {
+         case 0:
+            feather.display.setTextSize(3);
+            feather.println(temp, 6, Color::YELLOW);
+            feather.moveCursorY(8);
+            break;
+
+         case 1:
+         case 2:
+         case 3:
+         {
+            float correction;
+            switch (view)
+            {
+            case 1:
+               correction = avgs[i]->get() - avgs[0]->get();
+               break;
+
+            case 2:
+               correction = t1avgs[i]->get() - t1avgs[0]->get();
+               break;
+
+            case 3:
+               correction = t10avgs[i]->get() - t10avgs[0]->get();
+               break;
+            }
+
+            feather.display.setTextSize(2);
+            if (fabs(correction) < 0.01)
+            {
+               feather.print(" ");
+               correction = 0; // avoid the -0.00 case
+            }
+            else if (correction > 0)
+            {
+               feather.print("+", Color::YELLOW);
+            }
+            feather.println(correction, 5, Color::YELLOW);
+            feather.moveCursorY(2);
+
+            feather.moveCursorX(3 * 2 * 6);
+            feather.println(temp, " F", 8, 2, Color::CYAN);
+            break;
+         }
+
+         case 4:
+            feather.display.setTextSize(2);
+            feather.println(sensor->type(), Color::YELLOW);
+
+            feather.display.setTextSize(2);
+            feather.moveCursorY(2);
+            feather.print("  ");
+            feather.println(String(sensor->address(), HEX), 2, Color::CYAN);
+            break;
+         }
       }
       else
       {
-         feather.println("-----", Color::GRAY);
+         feather.println("-----", Color::ORANGE);
       }
 
       feather.moveCursorY(6);
    }
 
+   // ------------------------------------------- send to INFLUX
    if (trigger.elapsedSecs() > NUM_SECS)
    {
+      digitalWrite(BUILTIN_LED, HIGH);
+
+      Serial.print(count);
+      Serial.println(" values collected");
+      count = 0;
+
       trigger.reset();
 
       for (int i = 0; i < NUM_SENSORS; i++)
@@ -180,10 +315,12 @@ void loop()
                Serial.println("InfluxDB write failed: ");
                Serial.println(client.getLastErrorMessage());
             }
-            Serial.println(points[i]->toLineProtocol());
+            //Serial.println(points[i]->toLineProtocol());
          }
       }
       client.flushBuffer();
+
+      digitalWrite(BUILTIN_LED, LOW);
    }
 }
 
