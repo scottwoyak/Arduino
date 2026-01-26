@@ -54,7 +54,7 @@ void loop()
    {
       feather.display.setTextSize((uint8_t)TextSize::SMALL);
       feather.setCursor(0, feather.display.height() - CharSize::SMALL_H);
-      feather.print("Restarting in ", InfoColor);
+      feather.print("Resetting in ", InfoColor);
       feather.print((5 - sw.elapsedSecs()), "s", 4, 1, InfoColor);
    }
    else
