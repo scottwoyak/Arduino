@@ -134,15 +134,24 @@ public:
 
    void setCursor(int16_t x, int16_t y)
    {
+      if (x < 0)
+      {
+         x = _display->width() + x;
+      }
+      if (y < 0)
+      {
+         y = _display->height() + y;
+      }
+
       _display->setCursor(x, y);
    }
    void setCursorX(int16_t x)
    {
-      _display->setCursor(x, _display->getCursorY());
+      setCursor(x, _display->getCursorY());
    }
    void setCursorY(int16_t y)
    {
-      _display->setCursor(_display->getCursorX(), y);
+      setCursor(_display->getCursorX(), y);
    }
 
    void moveCursor(int16_t deltaX, int16_t deltaY)
