@@ -76,6 +76,24 @@ class ArduinoWithDisplay
 private:
    Adafruit_GFX* _display;
 
+   void _print(const char* str, Color textColor, Color backgroundColor)
+   {
+      if (echoToSerial)
+      {
+         Serial.print(str);
+      }
+      _display->setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
+      _display->print(str);
+   }
+   void _println(const char* str, Color textColor, Color backgroundColor)
+   {
+      if (echoToSerial)
+      {
+         Serial.println(str);
+      }
+      _display->setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
+      _display->println(str);
+   }
    void _print(FixedLengthString& str, Color textColor, Color backgroundColor)
    {
       if (echoToSerial)
@@ -87,12 +105,12 @@ private:
    }
    void _println(FixedLengthString& str, Color textColor, Color backgroundColor)
    {
-      _print(str, textColor, backgroundColor);
       if (echoToSerial)
       {
-         Serial.println();
+         Serial.println(str);
       }
-      _display->println();
+      _display->setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
+      _display->println(str);
    }
 
 public:
@@ -107,6 +125,11 @@ public:
    {
       _display->fillScreen((uint16_t)Color::BLACK);
       _display->setCursor(0, 0);
+   }
+
+   void setTextSize(TextSize size)
+   {
+      _display->setTextSize((uint8_t)size);
    }
 
    void setCursor(int16_t x, int16_t y)
@@ -143,13 +166,16 @@ public:
       _display->println();
    }
 
+   //
+   // ------------------------------------------- const char* variants
+   //
    void print(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      print(str, 0, textColor, backgroundColor);
+      _print(str, textColor, backgroundColor);
    }
    void println(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      println(str, 0, textColor, backgroundColor);
+      _println(str, textColor, backgroundColor);
    }
    void print(const char* str, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
@@ -162,13 +188,16 @@ public:
       _println(s, textColor, backgroundColor);
    }
 
+   //
+   // ------------------------------------------- String variants
+   //
    void print(const String& str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      print(str, 0, textColor, backgroundColor);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(const String& str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      println(str, 0, textColor, backgroundColor);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(const String& str, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
@@ -181,15 +210,16 @@ public:
       _println(s, textColor, backgroundColor);
    }
 
+   //
+   // ------------------------------------------- std::string variants
+   //
    void print(const std::string& str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString s(str, 0);
-      _print(s, textColor, backgroundColor);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(const std::string& str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString s(str, 0);
-      _println(s, textColor, backgroundColor);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(const std::string& str, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
@@ -202,7 +232,19 @@ public:
       _println(s, textColor, backgroundColor);
    }
 
-
+   //
+   // ------------------------------------------- float variants
+   //
+   void print(float value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value);
+      _print(str.c_str(), textColor, backgroundColor);
+   }
+   void println(float value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value);
+      _println(str.c_str(), textColor, backgroundColor);
+   }
    void print(float value, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
       FixedLengthString str(value, length, 2);
@@ -244,6 +286,19 @@ public:
       _println(str, textColor, backgroundColor);
    }
 
+   //
+   // ------------------------------------------- double variants
+   //
+   void print(double value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value);
+      _print(str.c_str(), textColor, backgroundColor);
+   }
+   void println(double value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value);
+      _println(str.c_str(), textColor, backgroundColor);
+   }
    void print(double value, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
       FixedLengthString str(value, length, 2);
@@ -285,6 +340,19 @@ public:
       _println(str, textColor, backgroundColor);
    }
 
+   //
+   // ------------------------------------------- int variants
+   //
+   void print(int value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value);
+      _print(str.c_str(), textColor, backgroundColor);
+   }
+   void println(int value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value);
+      _println(str.c_str(), textColor, backgroundColor);
+   }
    void print(int value, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
       FixedLengthString str(value, length, 10);
@@ -326,6 +394,19 @@ public:
       _println(str, textColor, backgroundColor);
    }
 
+   //
+   // ------------------------------------------- long variants
+   //
+   void print(long value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value);
+      _print(str.c_str(), textColor, backgroundColor);
+   }
+   void println(long value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value);
+      _println(str.c_str(), textColor, backgroundColor);
+   }
    void print(long value, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
       FixedLengthString str(value, length, 10);
