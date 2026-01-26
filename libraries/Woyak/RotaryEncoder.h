@@ -3,8 +3,6 @@
 #include "Arduino.h"
 #include "Button.h"
 
-constexpr auto DEBOUNCE_TIME = 10;
-
 //-------------------------------------------------------------------------------------------------
 class RotaryEncoder
 {
@@ -149,7 +147,7 @@ public:
 
    bool wasPressed() const
    {
-      return _button.isPressed();
+      return _button.wasPressed();
    }
 
    void reset()
