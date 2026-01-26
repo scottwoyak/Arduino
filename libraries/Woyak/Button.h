@@ -17,7 +17,6 @@ class Button
    static Button* _buttons[MAX_BUTTONS];
 
    volatile uint16_t _pressedCount = 0;
-   volatile bool _isPressed = false;
    volatile unsigned long _millis = 0;
 
    void _onRising()
@@ -67,7 +66,7 @@ public:
    {
       if (_index < MAX_BUTTONS)
       {
-         //pinMode(_pin, INPUT_PULLUP);
+         pinMode(_pin, INPUT_PULLUP);
 
          switch (_index)
          {
