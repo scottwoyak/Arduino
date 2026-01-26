@@ -19,42 +19,30 @@ class Button
    volatile uint16_t _pressedCount = 0;
    volatile unsigned long _millis = 0;
 
-   void _onRising()
-   {
-      _millis = millis();
-   }
-
-   void _onFalling()
+   void _onChange()
    {
       unsigned long now = millis();
-      if (now - _millis > 50)
+      if (digitalRead(_pin) == LOW)
       {
-         // don't use ++ for volatile vars
-         _pressedCount = _pressedCount + 1;
+         if (now - _millis > 50)
+         {
+            // don't use ++ for volatile vars
+            _pressedCount = _pressedCount + 1;
+         }
       }
       _millis = now;
    }
 
-   static void _onRising0() { _buttons[0]->_onRising(); }
-   static void _onFalling0() { _buttons[0]->_onFalling(); }
-   static void _onRising1() { _buttons[1]->_onRising(); }
-   static void _onFalling1() { _buttons[1]->_onFalling(); }
-   static void _onRising2() { _buttons[2]->_onRising(); }
-   static void _onFalling2() { _buttons[2]->_onFalling(); }
-   static void _onRising3() { _buttons[3]->_onRising(); }
-   static void _onFalling3() { _buttons[3]->_onFalling(); }
-   static void _onRising4() { _buttons[4]->_onRising(); }
-   static void _onFalling4() { _buttons[4]->_onFalling(); }
-   static void _onRising5() { _buttons[5]->_onRising(); }
-   static void _onFalling5() { _buttons[5]->_onFalling(); }
-   static void _onRising6() { _buttons[6]->_onRising(); }
-   static void _onFalling6() { _buttons[6]->_onFalling(); }
-   static void _onRising7() { _buttons[7]->_onRising(); }
-   static void _onFalling7() { _buttons[7]->_onFalling(); }
-   static void _onRising8() { _buttons[8]->_onRising(); }
-   static void _onFalling8() { _buttons[8]->_onFalling(); }
-   static void _onRising9() { _buttons[9]->_onRising(); }
-   static void _onFalling9() { _buttons[9]->_onFalling(); }
+   static void _onChange0() { _buttons[0]->_onChange(); }
+   static void _onChange1() { _buttons[1]->_onChange(); }
+   static void _onChange2() { _buttons[2]->_onChange(); }
+   static void _onChange3() { _buttons[3]->_onChange(); }
+   static void _onChange4() { _buttons[4]->_onChange(); }
+   static void _onChange5() { _buttons[5]->_onChange(); }
+   static void _onChange6() { _buttons[6]->_onChange(); }
+   static void _onChange7() { _buttons[7]->_onChange(); }
+   static void _onChange8() { _buttons[8]->_onChange(); }
+   static void _onChange9() { _buttons[9]->_onChange(); }
 
 public:
    Button(uint8_t pin)
@@ -71,53 +59,43 @@ public:
          switch (_index)
          {
          case 0:
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onRising0, RISING);
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onFalling0, FALLING);
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange0, CHANGE);
             break;
 
          case 1:
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onRising1, RISING);
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onFalling1, FALLING);
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange1, CHANGE);
             break;
 
          case 2:
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onRising2, RISING);
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onFalling2, FALLING);
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange2, CHANGE);
             break;
 
          case 3:
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onRising3, RISING);
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onFalling3, FALLING);
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange3, CHANGE);
             break;
 
          case 4:
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onRising4, RISING);
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onFalling4, FALLING);
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange4, CHANGE);
             break;
 
          case 5:
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onRising5, RISING);
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onFalling5, FALLING);
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange5, CHANGE);
             break;
 
          case 6:
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onRising6, RISING);
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onFalling6, FALLING);
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange6, CHANGE);
             break;
 
          case 7:
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onRising7, RISING);
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onFalling7, FALLING);
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange7, CHANGE);
             break;
 
          case 8:
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onRising8, RISING);
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onFalling8, FALLING);
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange8, CHANGE);
             break;
 
          case 9:
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onRising9, RISING);
-            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onFalling9, FALLING);
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange9, CHANGE);
             break;
          }
          _buttons[_index++] = this;
@@ -135,7 +113,7 @@ public:
       return _pin;
    }
 
-   bool isCurrentlyPressed() const
+   bool isPressed() const
    {
       return digitalRead(_pin) == LOW;
    }
