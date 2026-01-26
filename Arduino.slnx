@@ -19,10 +19,13 @@
     <File Path="libraries/Woyak/History.h" />
     <File Path="libraries/Woyak/I2C.h" />
     <File Path="libraries/Woyak/I2CMultiplexor.h" />
+    <File Path="libraries/Woyak/IndexedEncoder.h" />
     <File Path="libraries/Woyak/Logger.h" />
     <File Path="libraries/Woyak/MinMaxValue.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
+    <File Path="libraries/Woyak/RotaryEncoder.cpp" />
+    <File Path="libraries/Woyak/RotaryEncoder.h" />
     <File Path="libraries/Woyak/RunningAverager.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
     <File Path="libraries/Woyak/Stopwatch.h" />
@@ -58,7 +61,13 @@
   <Project Path="Influx_Temp_Monitor/Influx_Temp_Monitor.vcxproj">
     <Deploy />
   </Project>
+  <Project Path="InterruptDisplay/InterruptDisplay.vcxproj">
+    <Deploy />
+  </Project>
   <Project Path="Potentiometer/Potentiometer.vcxproj" Id="c5bc2f07-d8ae-4dcf-aede-3dddf1846b20">
+    <Deploy />
+  </Project>
+  <Project Path="RotaryEncoderDisplay/RotaryEncoderDisplay.vcxproj">
     <Deploy />
   </Project>
   <Project Path="TemperatureCalibrator/TemperatureCalibrator.vcxproj">

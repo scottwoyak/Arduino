@@ -1,5 +1,6 @@
 #include "Feather_ESP32_S3.h"
 #include "Potentiometer.h"
+#include "IndexedEncoder.h"
 #include "TempSensor.h"
 #include "TimedAverager.h"
 #include "Stopwatch.h"
@@ -20,7 +21,7 @@ WiFiMulti wifiMulti;
 // Time zone info
 #define TZ_INFO "UTC-5"
 
-const char* version = "v0.91";
+const char* version = "v0.92";
 const int NUM_SECS = 5;
 const char* INFLUX_MEASUREMENT = "Air";
 
@@ -32,17 +33,26 @@ String rooms[] =
    "Bedroom",
    "Chicken Coup",
    "Clay Studio",
+   "Closet",
    "Den",
+   "Dinning Room",
+   "Dog Shower",
+   "Entry",
+   "Family Room",
+   "Garage",
    "Kitchen",
    "Living Room",
+   "Mudroom",
+   "Nook",
    "Outside",
+   "Porch",
    "Studio",
    "Sunroom",
-   "Calibration",
+   "Workshop",
 };
 String postfixes[] =
 {
-   "",
+   "  ",
    " 1",
    " 2",
    " 3",
@@ -55,6 +65,9 @@ String postfixes[] =
    " 10",
 };
 
+constexpr auto NUM_ROOMS = sizeof(rooms) / sizeof(rooms[0]);
+constexpr auto NUM_POSTFIXES = sizeof(postfixes) / sizeof(postfixes[0]);
+
 const Color MSG_COLOR = Color::WHITE;
 const Color OK_COLOR = Color::YELLOW;
 const Color FAILED_COLOR = Color::ORANGE;
@@ -62,9 +75,7 @@ const uint8_t CHAR_WIDTH = 12;
 
 Feather_ESP32_S3 feather;
 Preferences prefs;
-IntPotentiometer roomP(A0, 0, (sizeof(rooms) / sizeof(rooms[0]) - 1));
-IntPotentiometer postfixP(A1, 0, (sizeof(postfixes) / sizeof(postfixes[0]) - 1));
-FloatPotentiometer calibrationP(A2, -1.0, 1.0, 201);
+IndexedEncoder encoder(9,6,5,NUM_ROOMS);
 String location;
 Stopwatch trigger;
 TimedAverager temperature(1000 * NUM_SECS);
@@ -76,6 +87,130 @@ Point point(INFLUX_MEASUREMENT); // Influx data point
 
 const char* LOCATION_KEY = "location"; // for preferences
 
+enum class EncoderItem
+{
+   Room,
+   Postfix,
+   Correction10s,
+   Correction100s,
+};
+EncoderItem activeItem;
+
+void getColors(EncoderItem item, Color* textColor, Color* bgColor)
+{
+   if (item == activeItem)
+   {
+      *textColor = Color::YELLOW;
+      *bgColor = Color::DARKGRAY;
+   }
+   else
+   {
+      *textColor = Color::ORANGE;
+      *bgColor = Color::BLACK;
+   }
+}
+
+void askLocation()
+{
+   int roomIndex = 0;
+   int postfixIndex = 0;
+   int correction10s = 0;
+   int correction100s = 0;
+
+   // ask for information
+   while (feather.buttonA.wasPressed() == false)
+   {
+      Color textColor;
+      Color bgColor;
+
+      switch (activeItem)
+      {
+      case EncoderItem::Room:
+         roomIndex = encoder.getIndex();
+         break;
+      case EncoderItem::Postfix:
+         postfixIndex = encoder.getIndex();
+         break;
+
+      case EncoderItem::Correction10s:
+         correction10s = encoder.getPosition();
+         break;
+
+      case EncoderItem::Correction100s:
+         correction100s = encoder.getIndex();
+         break;
+      }
+
+      feather.display.setTextSize(2);
+      feather.display.setCursor(0, 0);
+      feather.println("Sensor Information\n", Color::CYAN);
+
+      feather.println("Location:", Color::WHITE);
+      feather.setCursorX(20);
+
+      getColors(EncoderItem::Room, &textColor, &bgColor);
+      feather.print(rooms[roomIndex], textColor, bgColor);
+      getColors(EncoderItem::Postfix, &textColor, &bgColor);
+      feather.print(postfixes[postfixIndex], textColor, bgColor);
+      feather.print("          "); // to the end of the line
+      feather.println();
+
+      feather.println("Calibration:", Color::WHITE);
+      feather.setCursorX(20);
+      getColors(EncoderItem::Correction10s, &textColor, &bgColor);
+      feather.print(String(correction10s / 10.0, 1), textColor, bgColor);
+      getColors(EncoderItem::Correction100s, &textColor, &bgColor);
+      feather.print(correction100s, textColor, bgColor);
+      feather.print(" ");
+
+      if (encoder.wasPressed())
+      {
+         encoder.reset();
+
+         // advance the active item
+         switch (activeItem)
+         {
+         case EncoderItem::Room:
+            activeItem = EncoderItem::Postfix;
+            break;
+
+         case EncoderItem::Postfix:
+            activeItem = EncoderItem::Correction10s;
+            break;
+
+         case EncoderItem::Correction10s:
+            activeItem = EncoderItem::Correction100s;
+            break;
+
+         case EncoderItem::Correction100s:
+            activeItem = EncoderItem::Room;
+            break;
+         }
+
+         // configure the encoder
+         switch (activeItem)
+         {
+         case EncoderItem::Room:
+            encoder.setIndex(roomIndex, NUM_ROOMS);
+            break;
+         case EncoderItem::Postfix:
+            encoder.setIndex(postfixIndex, NUM_POSTFIXES);
+            break;
+
+         case EncoderItem::Correction10s:
+            encoder.setPosition(correction10s);
+            break;
+
+         case EncoderItem::Correction100s:
+            encoder.setIndex(correction100s, 10);
+            break;
+         }
+      }
+   }
+
+   location = rooms[roomIndex] + postfixes[postfixIndex];
+   location.trim();
+}
 
 void determineLocation()
 {
@@ -90,7 +225,7 @@ void determineLocation()
       location = prefs.getString(LOCATION_KEY);
       Stopwatch sw;
 
-      while (feather.buttonA.wasPressed() == false && sw.elapsedSecs() < 10)
+      while (feather.buttonA.wasPressed() == false && encoder.wasPressed() == false && sw.elapsedSecs() < 10)
       {
          feather.setCursor(0, 0);
          feather.println("Use Saved Settings?", Color::CYAN);
@@ -103,33 +238,15 @@ void determineLocation()
          feather.print("Continuing in ", Color::GRAY);
          feather.print(String((int)(10 - sw.elapsedSecs())), Color::GRAY);
       }
-      useSavedSettings = feather.buttonA.wasPressed() == false;
+      useSavedSettings = sw.elapsedSecs() > 10;
    }
    feather.buttonA.reset();
+   encoder.reset();
    feather.clear();
 
    if (useSavedSettings == false)
    {
-      // ask for information
-      while (feather.buttonA.wasPressed() == false)
-      {
-         feather.display.setTextSize(2);
-         feather.display.setCursor(0, 0);
-         feather.println("Sensor Information\n", Color::CYAN);
-
-         feather.println("Location:", Color::WHITE);
-         feather.setCursorX(20);
-         String str = rooms[roomP.read()] + postfixes[postfixP.read()];
-         feather.println(str, 20, Color::YELLOW);
-
-         feather.println();
-
-         feather.println("Calibration:", Color::WHITE);
-         feather.setCursorX(20);
-         feather.println(calibrationP.read(), 5, Color::YELLOW);
-      }
-
-      location = rooms[roomP.read()] + postfixes[postfixP.read()];
+      askLocation();
    }
 
    prefs.putString(LOCATION_KEY, location);
@@ -152,6 +269,7 @@ void setup()
 
    feather.begin();
    feather.display.setTextWrap(false);
+   encoder.begin();
 
    determineLocation();
 

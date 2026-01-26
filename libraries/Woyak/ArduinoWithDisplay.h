@@ -61,6 +61,7 @@ enum class Color : uint16_t
    YELLOW = 0xFFE0,
    ORANGE = 0xFC00,
    GRAY = 0x8430,
+   DARKGRAY = 0x6B4D,
 };
 #elif defined COLOR_MONOCHROME
 enum class Color : uint16_t
