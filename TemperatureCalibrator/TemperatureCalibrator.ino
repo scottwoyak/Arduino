@@ -41,22 +41,13 @@ TimedAverager temp5(1000 * NUM_SECS);
 TimedAverager temp6(1000 * NUM_SECS);
 TimedAverager* temps[] = { &temp1, &temp2, &temp3, &temp4, &temp5, &temp6 };
 
-AccumulatingAverager avg1;
-AccumulatingAverager avg2;
-AccumulatingAverager avg3;
-AccumulatingAverager avg4;
-AccumulatingAverager avg5;
-AccumulatingAverager avg6;
-AccumulatingAverager* avgs[] = { &avg1, &avg2, &avg3, &avg4, &avg5, &avg6 };
-
-constexpr auto T1_AVERAGING_TIME = 1 * 60 * 1000;
-TimedAverager t1avg1(T1_AVERAGING_TIME);
-TimedAverager t1avg2(T1_AVERAGING_TIME);
-TimedAverager t1avg3(T1_AVERAGING_TIME);
-TimedAverager t1avg4(T1_AVERAGING_TIME);
-TimedAverager t1avg5(T1_AVERAGING_TIME);
-TimedAverager t1avg6(T1_AVERAGING_TIME);
-TimedAverager* t1avgs[] = { &t1avg1, &t1avg2, &t1avg3, &t1avg4, &t1avg5, &t1avg6 };
+TimedAverager hum1(1000 * NUM_SECS);
+TimedAverager hum2(1000 * NUM_SECS);
+TimedAverager hum3(1000 * NUM_SECS);
+TimedAverager hum4(1000 * NUM_SECS);
+TimedAverager hum5(1000 * NUM_SECS);
+TimedAverager hum6(1000 * NUM_SECS);
+TimedAverager* hums[] = { &hum1, &hum2, &hum3, &hum4, &hum5, &hum6 };
 
 constexpr auto T10_AVERAGING_TIME = 10 * 60 * 1000;
 TimedAverager t10avg1(T10_AVERAGING_TIME);
@@ -86,6 +77,7 @@ const Color OK_COLOR = Color::YELLOW;
 const Color FAILED_COLOR = Color::ORANGE;
 
 uint8_t view = 0;
+constexpr auto MAX_VIEWS = 3;
 
 void printCorrectionValue(float correction, Color color)
 {
@@ -174,7 +166,7 @@ void setup()
       Serial.print(".");
       delay(100);
    }
-   feather.setCursorX(feather.display.width() - 2 * 2 * 8);
+   feather.setCursorX(-2 * 2 * 8);
    feather.println("ok", OK_COLOR);
 
    // Accurate time is necessary for certificate validation and writing in batches
@@ -183,7 +175,7 @@ void setup()
    feather.echoToSerial = false;
    feather.print("Time", MSG_COLOR);
    timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
-   feather.setCursorX(feather.display.width() - 2 * 2 * 8);
+   feather.setCursorX(-2 * 2 * 8);
    feather.println("ok", OK_COLOR);
    feather.echoToSerial = true;
 
@@ -192,13 +184,13 @@ void setup()
 
    if (client.validateConnection())
    {
-      feather.setCursorX(feather.display.width() - 2 * 2 * 8);
+      feather.setCursorX(-2 * 2 * 8);
       feather.println("ok", OK_COLOR);
       Serial.println(client.getServerUrl());
    }
    else
    {
-      feather.setCursorX(feather.display.width() - 6 * 2 * 8);
+      feather.setCursorX(-6 * 2 * 8);
       feather.println("FAILED", FAILED_COLOR);
       feather.display.setTextSize(1);
       feather.println(client.getLastErrorMessage(), FAILED_COLOR);
@@ -230,7 +222,7 @@ void loop()
       feather.clear();
       feather.buttonA.reset();
       view++;
-      if (view > 4)
+      if (view > MAX_VIEWS)
       {
          view = 0;
       }
@@ -244,18 +236,23 @@ void loop()
    feather.display.setTextSize(2);
    switch (view)
    {
+   case 0:
+      feather.println("Temperature", Color::ORANGE);
+      feather.moveCursorY(10);
+      break;
+
    case 1:
-      feather.println("Since Start", Color::ORANGE);
+      feather.println("Humidity", Color::ORANGE);
       feather.moveCursorY(10);
       break;
 
    case 2:
-      feather.println("Last 1 Min", Color::ORANGE);
+      feather.println("Corrections", Color::ORANGE);
       feather.moveCursorY(10);
       break;
 
    case 3:
-      feather.println("Last 10 Min", Color::ORANGE);
+      feather.println("Sensors", Color::ORANGE);
       feather.moveCursorY(10);
       break;
    }
@@ -264,10 +261,10 @@ void loop()
    {
       Multiplexer::select(i);
       TempSensor* sensor = sensors[i];
-      float temp = sensors[i]->readTemperatureF();
+      float temp, hum;
+      sensors[i]->readBoth(temp, hum);
       temps[i]->set(temp);
-      avgs[i]->set(temp);
-      t1avgs[i]->set(temp);
+      hums[i]->set(temp);
       t10avgs[i]->set(temp);
 
       // values
@@ -277,31 +274,21 @@ void loop()
       {
          switch (view)
          {
-         case 0:
+         case 0: // temperature
             feather.display.setTextSize(3);
             feather.println(temp, 6, Color::YELLOW);
             feather.moveCursorY(8);
             break;
 
-         case 1:
-         case 2:
-         case 3:
+         case 1: // humidity
+            feather.display.setTextSize(3);
+            feather.println(hum, "%", 6, 1, Color::YELLOW);
+            feather.moveCursorY(8);
+            break;
+
+         case 2: // temp corrections
          {
-            float correction;
-            switch (view)
-            {
-            case 1:
-               correction = avgs[i]->get() - avgs[0]->get();
-               break;
-
-            case 2:
-               correction = t1avgs[i]->get() - t1avgs[0]->get();
-               break;
-
-            case 3:
-               correction = t10avgs[i]->get() - t10avgs[0]->get();
-               break;
-            }
+            float correction = t10avgs[i]->get() - t10avgs[0]->get();
 
             feather.display.setTextSize(2);
             printCorrectionValue(correction, Color::YELLOW);
@@ -312,7 +299,7 @@ void loop()
             break;
          }
 
-         case 4:
+         case 3: // sensor info
             feather.display.setTextSize(2);
             feather.println(sensor->type(), Color::YELLOW);
 
@@ -359,7 +346,8 @@ void loop()
       for (int i = 0; i < NUM_SENSORS; i++)
       {
          points[i]->clearFields();
-         points[i]->addField("temperature", temps[i]->get());
+         points[i]->addField("temperature", temps[i]->get(), 4);
+         points[i]->addField("hum", hums[i]->get(), 2);
 
          if (sensors[i]->exists())
          {
