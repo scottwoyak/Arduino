@@ -4,8 +4,8 @@
 #include "TempSensor.h"
 #include "TimedAverager.h"
 #include "Stopwatch.h"
+#include "Adafruit_SleepyDog.h"
 
-#include <Preferences.h>
 #include <WiFiMulti.h>
 WiFiMulti wifiMulti;
 #define DEVICE "ESP32"
@@ -21,9 +21,10 @@ WiFiMulti wifiMulti;
 // Time zone info
 #define TZ_INFO "UTC-5"
 
-const char* version = "v0.92";
-const int NUM_SECS = 5;
-const char* INFLUX_MEASUREMENT = "Air";
+constexpr auto version = "v0.93";
+constexpr auto NUM_SECS = 5;
+constexpr auto INFLUX_MEASUREMENT = "Air";
+constexpr auto DISPLAY_TIMEOUT_SECS = 5 * 60;
 
 String rooms[] =
 {
@@ -48,6 +49,7 @@ String rooms[] =
    "Porch",
    "Studio",
    "Sunroom",
+   "Wayne",
    "Workshop",
 };
 String postfixes[] =
@@ -74,10 +76,10 @@ const Color FAILED_COLOR = Color::ORANGE;
 const uint8_t CHAR_WIDTH = 12;
 
 Feather_ESP32_S3 feather;
-Preferences prefs;
 IndexedEncoder encoder(9,6,5,NUM_ROOMS);
 String location;
 Stopwatch trigger;
+Stopwatch displayTimeoutTrigger;
 TimedAverager temperature(1000 * NUM_SECS);
 TimedAverager humidity(1000 * NUM_SECS);
 
@@ -216,13 +218,13 @@ void determineLocation()
 {
    feather.echoToSerial = false;
    bool useSavedSettings = false;
-   prefs.begin("monitor", false);
+   feather.preferences.begin("monitor", false);
 
    // if a prior location was saved, ask the user if they want to use it
-   if (prefs.isKey(LOCATION_KEY))
+   if (feather.preferences.isKey(LOCATION_KEY))
    {
       useSavedSettings = true;
-      location = prefs.getString(LOCATION_KEY);
+      location = feather.preferences.getString(LOCATION_KEY);
       Stopwatch sw;
 
       while (feather.buttonA.wasPressed() == false && encoder.wasPressed() == false && sw.elapsedSecs() < 10)
@@ -249,8 +251,8 @@ void determineLocation()
       askLocation();
    }
 
-   prefs.putString(LOCATION_KEY, location);
-   prefs.end();
+   feather.preferences.putString(LOCATION_KEY, location);
+   feather.preferences.end();
 }
 
 // The setup() function runs once each time the micro-controller starts
@@ -270,6 +272,7 @@ void setup()
    feather.begin();
    feather.display.setTextWrap(false);
    encoder.begin();
+   pinMode(BUILTIN_LED, OUTPUT);
 
    determineLocation();
 
@@ -339,16 +342,31 @@ void setup()
    feather.clear();
    feather.echoToSerial = false;
    trigger.reset();
+   displayTimeoutTrigger.reset();
+
+   Watchdog.enable(60 * 1000);
 }
 
 #define MAX_CHARS 8
 #define CHAR_H 8
 #define CHAR_W 6
 
+uint count = 0;
+
 // Add the main program code into the continuous loop() function
 void loop()
 {
-   feather.display.setTextSize(2);
+   Watchdog.reset();
+
+   if (feather.isDisplayOn() == false && (feather.buttonA.wasPressed() || encoder.wasPressed()))
+   {
+      displayTimeoutTrigger.reset();
+      feather.displayOn();
+      feather.buttonA.reset();
+      encoder.reset();
+   }
+
+   count++;
 
    // Clear fields for reusing the point. Tags will remain the same as set above.
    point.clearFields();
@@ -363,24 +381,42 @@ void loop()
       feather.display.println("Wifi connection lost");
    }
 
-   feather.display.setTextSize(4);
-   uint8_t x = (feather.display.width() - (MAX_CHARS * (4 * CHAR_W)));
-   float temp = temperature.get();
-   float hum = humidity.get();
+   if (feather.isDisplayOn())
+   {
+      feather.setCursor(0, 0);
+      feather.display.setTextSize(2);
+      int remainingSecs = (int) (DISPLAY_TIMEOUT_SECS - displayTimeoutTrigger.elapsedSecs());
+      int mins = remainingSecs / 60;
+      int secs = remainingSecs % 60;
+      feather.print("Display off: ", Color::GRAY);
+      feather.print(mins, Color::GRAY);
+      feather.print(":", Color::GRAY);
+      if (secs < 10)
+      {
+         feather.print("0", Color::GRAY);
+      }
+      feather.print(secs, Color::GRAY);
 
-   feather.display.setCursor(x, (feather.display.height() - 2 * 4 * CHAR_H - CHAR_H) / 2 - 10);
-   feather.println(temp, " F", 8);
 
-   feather.setCursor(x, feather.display.getCursorY() + CHAR_H);
-   feather.println(hum, "%", 7);
+      feather.display.setTextSize(4);
+      uint8_t x = (feather.display.width() - (MAX_CHARS * (4 * CHAR_W)));
+      float temp = temperature.get();
+      float hum = humidity.get();
 
-   feather.display.setTextSize(2);
-   feather.setCursor(0, feather.display.height() - 16);
-   feather.print(location.c_str(), Color::GRAY);
+      constexpr auto SPACING = CHAR_H;
+      feather.display.setCursor(x, (feather.display.height() - 2 * 4 * CHAR_H) / 2 - SPACING/2);
+      feather.println(temp, " F", 8);
 
-   feather.setCursorX(feather.display.width() - 12 * strlen(version));
-   feather.print(version, Color::GRAY);
+      feather.setCursor(x, feather.display.getCursorY() + SPACING);
+      feather.println(hum, "%", 7);
 
+      feather.display.setTextSize(2);
+      feather.setCursor(0, feather.display.height() - 16);
+      feather.print(location.c_str(), Color::GRAY);
+
+      feather.setCursorX(feather.display.width() - 12 * strlen(version));
+      feather.print(version, Color::GRAY);
+   }
 
    // Write point
    if (trigger.elapsedSecs() > NUM_SECS)
@@ -399,8 +435,17 @@ void loop()
          Serial.println(client.getLastErrorMessage());
       }
       digitalWrite(BUILTIN_LED, LOW);
+
+      Serial.print(count);
+      Serial.println(" data points collected");
+      count = 0;
    }
 
+   if (displayTimeoutTrigger.elapsedSecs() > DISPLAY_TIMEOUT_SECS && feather.isDisplayOn())
+   {
+      feather.clear();
+      feather.displayOff();
+   }
 }
 
 

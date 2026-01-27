@@ -4,7 +4,7 @@
 #include "TimedAverager.h"
 #include "RunningAverager.h"
 #include "Multiplexer.h"
-#include <Preferences.h>
+#include "Feather.h"
 
 #include <WiFiMulti.h>
 WiFiMulti wifiMulti;
@@ -22,7 +22,7 @@ constexpr auto TZ_INFO = "UTC-5";
 // 
 // This sketch displays the current temperature on an Arduino ESP32 Feather
 //
-Feather_ESP32_S3 feather;
+Feather feather;
 TempSensor sensor1;
 TempSensor sensor2;
 TempSensor sensor3;
@@ -32,7 +32,7 @@ TempSensor sensor6;
 TempSensor* sensors[] = { &sensor1, &sensor2, &sensor3, &sensor4, &sensor5, &sensor6 };
 const int NUM_SENSORS = sizeof(sensors) / sizeof(sensors[0]);
 
-constexpr auto NUM_SECS = 5;
+constexpr auto NUM_SECS = 10;
 TimedAverager temp1(1000 * NUM_SECS);
 TimedAverager temp2(1000 * NUM_SECS);
 TimedAverager temp3(1000 * NUM_SECS);
@@ -58,7 +58,6 @@ TimedAverager t10avg5(T10_AVERAGING_TIME);
 TimedAverager t10avg6(T10_AVERAGING_TIME);
 TimedAverager* t10avgs[] = { &t10avg1, &t10avg2, &t10avg3, &t10avg4, &t10avg5, &t10avg6 };
 
-Preferences prefs;
 Stopwatch influxTrigger;
 Stopwatch prefsTrigger;
 
@@ -112,17 +111,20 @@ void setup()
    feather.display.setRotation(0);
    feather.display.setTextWrap(false);
 
-   prefs.begin("Calibrator", false);
+   feather.preferences.begin("Calibrator", false);
    float corrections[6];
    for (int i = 0; i < NUM_SENSORS; i++)
    {
-      corrections[i] = prefs.getFloat((String("Sensor ") + i).c_str());
+      corrections[i] = feather.preferences.getFloat((String("Sensor ") + i).c_str());
    }
-   prefs.end();
+   feather.preferences.end();
    feather.display.setTextSize(2);
-   feather.println("Saved", Color::WHITE);
-   feather.println("Results", Color::WHITE);
-   feather.moveCursorY(10);
+   feather.display.fillRect(0, 0, feather.display.width(), 8 + 2 * (2 * 8), (uint16_t)Color::ORANGE);
+   feather.moveCursor((feather.display.width() - 5 * (2 * 6)) / 2, 4);
+   feather.println("Saved", Color::WHITE, Color::ORANGE);
+   feather.moveCursorX((feather.display.width() - 7 * (2 * 6)) / 2);
+   feather.println("Results", Color::WHITE, Color::ORANGE);
+   feather.moveCursorY(14);
 
    for (int i = 0; i < NUM_SENSORS; i++)
    {
@@ -205,7 +207,7 @@ void setup()
    prefsTrigger.reset();
    influxTrigger.reset();
 
-   prefs.begin("calibrator", false);
+   feather.preferences.begin("calibrator", false);
 
    pinMode(BUILTIN_LED, OUTPUT);
    digitalWrite(BUILTIN_LED, LOW);
@@ -330,13 +332,13 @@ void loop()
    {
       prefsTrigger.reset();
 
-      prefs.begin("Calibrator", false);
+      feather.preferences.begin("Calibrator", false);
       for (int i = 0; i < NUM_SENSORS; i++)
       {
          float correction = t10avgs[i]->get() - t10avgs[0]->get();
-         prefs.putFloat((String("Sensor ") + i).c_str(), correction);
+         feather.preferences.putFloat((String("Sensor ") + i).c_str(), correction);
       }
-      prefs.end();
+      feather.preferences.end();
    }
 
    // ------------------------------------------- send to INFLUX

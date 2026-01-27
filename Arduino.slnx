@@ -11,6 +11,7 @@
     <File Path="libraries/Woyak/Button.h" />
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
+    <File Path="libraries/Woyak/Feather.h" />
     <File Path="libraries/Woyak/Feather_ESP32_S3.h" />
     <File Path="libraries/Woyak/Feather_M0_OLED.h" />
     <File Path="libraries/Woyak/FeedTimer.h" />

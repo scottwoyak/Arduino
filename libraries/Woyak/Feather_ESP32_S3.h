@@ -39,6 +39,19 @@ public:
       buttonA.begin();
    }
 
+   void displayOn()
+   {
+      digitalWrite(TFT_BACKLITE, HIGH);
+   }
+   void displayOff()
+   {
+      digitalWrite(TFT_BACKLITE, LOW);
+   }
+   bool isDisplayOn()
+   {
+      return digitalRead(TFT_BACKLITE) == HIGH;
+   }
+
    void displayDisplay()
    {
       // nothing to do here. The TFT isn't double buffered
