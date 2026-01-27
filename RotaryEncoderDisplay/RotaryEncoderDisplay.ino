@@ -1,9 +1,9 @@
-#include "Feather_ESP32_S3.h"
+#include "Feather.h"
 #include "Stopwatch.h"
 #include "RotaryEncoder.h"
 
-Feather_ESP32_S3 feather;
-RotaryEncoder encoder(5, 6, 9);
+Feather feather;
+RotaryEncoder encoder(9, 6, 5);
 
 // The setup() function runs once each time the micro-controller starts
 void setup()
@@ -30,7 +30,15 @@ void loop()
    }
 
    feather.setCursor(0, 0);
-   feather.setTextSize(TextSize::MEDIUM);
+
+   if (feather.display.height() / CharSize::MEDIUM_H >= 5)
+   {
+      feather.setTextSize(TextSize::MEDIUM);
+   }
+   else
+   {
+      feather.setTextSize(TextSize::SMALL);
+   }
 
    feather.print("     A: ", Color::WHITE);
    feather.println(encoder.isLowA() ? "Low" : "High", 4, Color::YELLOW);
@@ -55,6 +63,8 @@ void loop()
    feather.print(encoder.getPinB(), Color::YELLOW);
    feather.print("  Button:", Color::WHITE);
    feather.println(encoder.getButtonPin(), Color::YELLOW);
+
+   feather.displayDisplay();
 }
 
 

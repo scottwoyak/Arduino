@@ -5,12 +5,14 @@
 #include <Button.h>
 #include <FixedLengthString.h>
 #include <string>
+#include <Preferences.h>
 
 class Feather_ESP32_S3 : public ArduinoWithDisplay
 {
 public:
    Adafruit_ST7789 display;
    Button buttonA;
+   Preferences preferences;
 
    Feather_ESP32_S3() : ArduinoWithDisplay(&display), display(TFT_CS, TFT_DC, TFT_RST), buttonA(0)
    {
@@ -35,5 +37,10 @@ public:
       display.setTextSize(2);
 
       buttonA.begin();
+   }
+
+   void displayDisplay()
+   {
+      // nothing to do here. The TFT isn't double buffered
    }
 };

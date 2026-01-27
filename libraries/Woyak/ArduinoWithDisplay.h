@@ -68,6 +68,15 @@ enum class Color : uint16_t
 {
    WHITE = 1,
    BLACK = 0,
+   RED = 1,
+   GREEN = 1,
+   BLUE = 1,
+   CYAN = 1,
+   MAGENTA = 1,
+   YELLOW = 1,
+   ORANGE = 1,
+   GRAY = 1,
+   DARKGRAY = 0,
 };
 #endif
 
