@@ -64,7 +64,11 @@ class NullSensor : public ITempSensor
    virtual float readTemperatureC() { return NAN; }
    virtual float readHumidity() { return NAN; }
    virtual bool readsBoth() { return false; }
-   virtual void readBoth(float tempF, float hum) { tempF = hum = NAN; }
+   virtual void readBoth(float& tempF, float& hum)
+   {
+      tempF = NAN;
+      hum = NAN;
+   }
 };
 
 //-------------------------------------------------------------------------------------------------
