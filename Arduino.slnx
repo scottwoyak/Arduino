@@ -41,6 +41,9 @@
     <File Path="libraries/Woyak/WindMeter.cpp" />
     <File Path="libraries/Woyak/WindMeter.h" />
   </Folder>
+  <Project Path="BatteryDisplay/BatteryDisplay.vcxproj">
+    <Deploy />
+  </Project>
   <Project Path="ButtonDisplay/ButtonDisplay.vcxproj">
     <Deploy />
   </Project>
