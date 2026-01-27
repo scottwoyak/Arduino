@@ -264,7 +264,7 @@ void loop()
       float temp, hum;
       sensors[i]->readBoth(temp, hum);
       temps[i]->set(temp);
-      hums[i]->set(temp);
+      hums[i]->set(hum);
       t10avgs[i]->set(temp);
 
       // values
@@ -282,7 +282,14 @@ void loop()
 
          case 1: // humidity
             feather.display.setTextSize(3);
-            feather.println(hum, "%", 6, 1, Color::YELLOW);
+            if (isnan(hum))
+            {
+               feather.println("----", 6, Color::YELLOW);
+            }
+            else
+            {
+               feather.println(hum, "%", 6, 1, Color::YELLOW);
+            }
             feather.moveCursorY(8);
             break;
 
@@ -347,7 +354,7 @@ void loop()
       {
          points[i]->clearFields();
          points[i]->addField("temperature", temps[i]->get(), 4);
-         points[i]->addField("hum", hums[i]->get(), 2);
+         points[i]->addField("humidity", hums[i]->get(), 2);
 
          if (sensors[i]->exists())
          {
