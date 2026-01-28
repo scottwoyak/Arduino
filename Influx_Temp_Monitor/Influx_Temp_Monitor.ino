@@ -19,12 +19,11 @@ WiFiMulti wifiMulti;
 #include "WiFiSettings.h"
 
 // Time zone info
-#define TZ_INFO "UTC-5"
+constexpr auto TZ_INFO = "UTC-5";
 
-constexpr auto version = "v0.93";
-constexpr auto NUM_SECS = 5;
+constexpr auto version = "v0.94";
+constexpr auto NUM_SECS = 15;
 constexpr auto INFLUX_MEASUREMENT = "Air";
-constexpr auto DISPLAY_TIMEOUT_SECS = 5 * 60;
 
 String rooms[] =
 {
@@ -70,16 +69,14 @@ String postfixes[] =
 constexpr auto NUM_ROOMS = sizeof(rooms) / sizeof(rooms[0]);
 constexpr auto NUM_POSTFIXES = sizeof(postfixes) / sizeof(postfixes[0]);
 
-const Color MSG_COLOR = Color::WHITE;
-const Color OK_COLOR = Color::YELLOW;
-const Color FAILED_COLOR = Color::ORANGE;
-const uint8_t CHAR_WIDTH = 12;
+constexpr Color MSG_COLOR = Color::WHITE;
+constexpr Color OK_COLOR = Color::YELLOW;
+constexpr Color FAILED_COLOR = Color::ORANGE;
 
 Feather_ESP32_S3 feather;
-IndexedEncoder encoder(9,6,5,NUM_ROOMS);
+IndexedEncoder encoder(9, 6, 5, NUM_ROOMS);
 String location;
 Stopwatch trigger;
-Stopwatch displayTimeoutTrigger;
 TimedAverager temperature(1000 * NUM_SECS);
 TimedAverager humidity(1000 * NUM_SECS);
 
@@ -165,9 +162,9 @@ void askLocation()
       feather.print(correction100s, textColor, bgColor);
       feather.print(" ");
 
-      if (encoder.wasPressed())
+      if (encoder.button.wasPressed())
       {
-         encoder.reset();
+         encoder.button.reset();
 
          // advance the active item
          switch (activeItem)
@@ -227,7 +224,7 @@ void determineLocation()
       location = feather.preferences.getString(LOCATION_KEY);
       Stopwatch sw;
 
-      while (feather.buttonA.wasPressed() == false && encoder.wasPressed() == false && sw.elapsedSecs() < 10)
+      while (feather.buttonA.wasPressed() == false && encoder.button.wasPressed() == false && sw.elapsedSecs() < 10)
       {
          feather.setCursor(0, 0);
          feather.println("Use Saved Settings?", Color::CYAN);
@@ -243,7 +240,7 @@ void determineLocation()
       useSavedSettings = sw.elapsedSecs() > 10;
    }
    feather.buttonA.reset();
-   encoder.reset();
+   encoder.button.reset();
    feather.clear();
 
    if (useSavedSettings == false)
@@ -279,6 +276,7 @@ void setup()
    feather.echoToSerial = true;
    feather.clear();
    feather.println("Initializing", Color::CYAN);
+   feather.moveCursorY(feather.charH()/2);
 
    // Setup wifi
    WiFi.mode(WIFI_STA);
@@ -290,8 +288,7 @@ void setup()
       Serial.print(".");
       delay(100);
    }
-   feather.setCursorX(feather.display.width() - 2 * CHAR_WIDTH);
-   feather.println("ok", OK_COLOR);
+   feather.printlnR("ok", OK_COLOR);
 
    // Accurate time is necessary for certificate validation and writing in batches
    // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
@@ -299,8 +296,7 @@ void setup()
    feather.echoToSerial = false;
    feather.print("Syncing Time... ", MSG_COLOR);
    timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
-   feather.setCursorX(feather.display.width() - 2 * CHAR_WIDTH);
-   feather.println("ok", OK_COLOR);
+   feather.printlnR("ok", OK_COLOR);
    feather.echoToSerial = true;
 
    // Check server connection
@@ -308,14 +304,12 @@ void setup()
 
    if (client.validateConnection())
    {
-      feather.setCursorX(feather.display.width() - 2 * CHAR_WIDTH);
-      feather.println("ok", OK_COLOR);
+      feather.printlnR("ok", OK_COLOR);
       Serial.println(client.getServerUrl());
    }
    else
    {
-      feather.setCursorX(feather.display.width() - 6 * CHAR_WIDTH);
-      feather.println("FAILED", FAILED_COLOR);
+      feather.printlnR("FAILED", FAILED_COLOR);
       feather.display.setTextSize(1);
       feather.println(client.getLastErrorMessage(), FAILED_COLOR);
       while (1);
@@ -324,15 +318,13 @@ void setup()
    feather.print("Sensor... ", MSG_COLOR);
    if (sensor.begin(false))
    {
-      feather.setCursorX(feather.display.width() - 2 * CHAR_WIDTH);
-      feather.println("ok", OK_COLOR);
+      feather.printlnR("ok", OK_COLOR);
 
       Serial.println(sensor.info());
    }
    else
    {
-      feather.setCursorX(feather.display.width() - 6 * CHAR_WIDTH);
-      feather.print("FAILED", FAILED_COLOR);
+      feather.printR("FAILED", FAILED_COLOR);
       while (1);
    }
 
@@ -342,14 +334,12 @@ void setup()
    feather.clear();
    feather.echoToSerial = false;
    trigger.reset();
-   displayTimeoutTrigger.reset();
+
+   encoder.setLimits(0, 20); // num steps to full brightness
+   encoder.setPosition(encoder.getMax());
 
    Watchdog.enable(60 * 1000);
 }
-
-#define MAX_CHARS 8
-#define CHAR_H 8
-#define CHAR_W 6
 
 uint count = 0;
 
@@ -358,13 +348,7 @@ void loop()
 {
    Watchdog.reset();
 
-   if (feather.isDisplayOn() == false && (feather.buttonA.wasPressed() || encoder.wasPressed()))
-   {
-      displayTimeoutTrigger.reset();
-      feather.displayOn();
-      feather.buttonA.reset();
-      encoder.reset();
-   }
+   feather.displayLevel((float)encoder.getPosition() / encoder.getMax());
 
    count++;
 
@@ -385,37 +369,26 @@ void loop()
    {
       feather.setCursor(0, 0);
       feather.display.setTextSize(2);
-      int remainingSecs = (int) (DISPLAY_TIMEOUT_SECS - displayTimeoutTrigger.elapsedSecs());
-      int mins = remainingSecs / 60;
-      int secs = remainingSecs % 60;
-      feather.print("Display off: ", Color::GRAY);
-      feather.print(mins, Color::GRAY);
-      feather.print(":", Color::GRAY);
-      if (secs < 10)
-      {
-         feather.print("0", Color::GRAY);
-      }
-      feather.print(secs, Color::GRAY);
+      feather.println("Influx Monitor", Color::YELLOW);
 
-
-      feather.display.setTextSize(4);
-      uint8_t x = (feather.display.width() - (MAX_CHARS * (4 * CHAR_W)));
       float temp = temperature.get();
       float hum = humidity.get();
 
-      constexpr auto SPACING = CHAR_H;
-      feather.display.setCursor(x, (feather.display.height() - 2 * 4 * CHAR_H) / 2 - SPACING/2);
+      feather.display.setTextSize(4);
+      constexpr auto MAX_CHARS = 8;
+      uint8_t x = (feather.display.width() - MAX_CHARS * feather.charW()) / 2;
+      constexpr auto SPACING = 8;
+      feather.display.setCursor(x, (feather.display.height() - 2 * feather.charH()) / 2 - SPACING / 2);
       feather.println(temp, " F", 8);
 
       feather.setCursor(x, feather.display.getCursorY() + SPACING);
       feather.println(hum, "%", 7);
 
       feather.display.setTextSize(2);
-      feather.setCursor(0, feather.display.height() - 16);
-      feather.print(location.c_str(), Color::GRAY);
+      feather.setCursor(0, -feather.charH());
+      feather.print(location.c_str(), Color::CYAN);
 
-      feather.setCursorX(feather.display.width() - 12 * strlen(version));
-      feather.print(version, Color::GRAY);
+      feather.printR(version, Color::GRAY);
    }
 
    // Write point
@@ -437,14 +410,8 @@ void loop()
       digitalWrite(BUILTIN_LED, LOW);
 
       Serial.print(count);
-      Serial.println(" data points collected");
+      Serial.println(" data points averaged and uploaded");
       count = 0;
-   }
-
-   if (displayTimeoutTrigger.elapsedSecs() > DISPLAY_TIMEOUT_SECS && feather.isDisplayOn())
-   {
-      feather.clear();
-      feather.displayOff();
    }
 }
 
