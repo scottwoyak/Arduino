@@ -7,6 +7,9 @@
 class RotaryEncoder
 {
 public:
+   Button button;
+
+private:
    enum class Direction
    {
       UNKNOWN,
@@ -20,10 +23,10 @@ public:
       B,
    };
 
-private:
    uint8_t _pinA;
    uint8_t _pinB;
-   Button _button;
+   long _min = std::numeric_limits<long>::min();
+   long _max = std::numeric_limits<long>::max();
 
    static RotaryEncoder* _instance;
 
@@ -58,10 +61,18 @@ private:
          // the last to go high tells us the direction.
          Direction direction = source == Source::A ? Direction::UP : Direction::DOWN;
 
+         // the direction must match the initial direction to complete the change
          if (_initialDirection == direction)
          {
-            // the direction must match the initial direction to complete the change
-            _position = _position + (direction == Direction::UP ? 1 : -1);
+            // keep the value within the limits
+            if (direction == Direction::UP && _position < _max)
+            {
+               _position = _position + 1;
+            }
+            else if (direction == Direction::DOWN && _position > _min)
+            {
+               _position = _position - 1;
+            }
          }
 
          // reset states
@@ -85,7 +96,7 @@ private:
    static void onChangeB() { _instance->_onChangeB(); }
 
 public:
-   RotaryEncoder(uint8_t pinA, uint8_t pinB, uint8_t buttonPin) : _button(buttonPin)
+   RotaryEncoder(uint8_t pinA, uint8_t pinB, uint8_t buttonPin) : button(buttonPin)
    {
       _pinA = pinA;
       _pinB = pinB;
@@ -103,7 +114,7 @@ public:
       _isLowA = digitalRead(_pinA) == LOW;
       _isLowB = digitalRead(_pinB) == LOW;
 
-      _button.begin();
+      button.begin();
    }
 
    uint8_t getPinA() const
@@ -118,7 +129,7 @@ public:
 
    uint8_t getButtonPin() const
    {
-      return _button.getPin();
+      return button.getPin();
    }
 
    bool isLowA() const
@@ -135,23 +146,25 @@ public:
    {
       return _position;
    }
+
    void setPosition(long position)
    {
       _position = position;
    }
 
-   bool isPressed() const
+   void setLimits(long min, long max)
    {
-      return _button.isPressed();
+      _min = min;
+      _max = max;
    }
 
-   bool wasPressed() const
+   long getMin() const
    {
-      return _button.wasPressed();
+      return _min;
    }
 
-   void reset()
+   long getMax() const
    {
-      _button.reset();
+      return _max;
    }
 };
