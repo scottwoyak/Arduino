@@ -8,7 +8,7 @@
 #include <Preferences.h>
 
 //
-// Annoyingling, Adafruit has a lot of nifty properties in AdafruitGFX that you can set, but not 
+// Annoyingling, Adafruit has a lot of nifty properties in Adafruit_GFX that you can set, but not 
 // get. This class is just a wrapper that exposes them
 //
 class SW_ST7789 : public Adafruit_ST7789
@@ -63,6 +63,7 @@ public:
 
       display.setTextColor((uint16_t)Color::WHITE, (uint16_t)Color::BLACK);
       display.setTextSize(2);
+      display.setTextWrap(false);
 
       buttonA.begin();
    }

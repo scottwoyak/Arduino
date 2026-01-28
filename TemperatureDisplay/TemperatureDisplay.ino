@@ -1,14 +1,17 @@
-#include "Feather_ESP32_S3.h"
+#include "Feather.h"
 #include "Stopwatch.h"
 #include "TempSensor.h"
-
-const char* version = "v1.0";
 
 // 
 // This sketch displays the current temperature on an Arduino ESP32 Feather
 //
-Feather_ESP32_S3 feather;
+Feather feather;
 TempSensor sensor;
+
+Format tempFormat("###.## F");
+Format humFormat("###.#%");
+Format rateFormat("####/s");
+Format msFormat("####.# ms");
 
 // The setup() function runs once each time the micro-controller starts
 void setup()
@@ -32,6 +35,9 @@ Stopwatch sw;
 
 void loop()
 {
+   feather.setCursor(0, 0);
+
+   // read sensor
    sw.reset();
    float temp = sensor.readTemperatureF();
    float tempTime = sw.elapsedMillis();
@@ -42,29 +48,42 @@ void loop()
    float humTime = sw.elapsedMillis();
    int16_t humPerS = round(1000 / humTime);
 
-   feather.setCursor(0, 0);
-   feather.display.setTextSize(4);
-   feather.println(temp, " F", 8, Color::WHITE);
-   feather.display.setTextSize(2);
-   feather.print(tempTime, " ms", 8, Color::GRAY);
+   // display values
+   feather.display.setTextSize(TextSize::MEDIUM);
+   if (feather.display.width() / feather.charW() > 12)
+   {
+      feather.print("Temp: ", Color::LABEL);
+   }
+   feather.println(temp, tempFormat, Color::VALUE);
+
+   feather.display.setTextSize(TextSize::SMALL);
+   feather.print(tempTime, msFormat, Color::SUB_LABEL);
    feather.print("  ");
-   feather.print(tempPerS, "/s", 6, Color::GRAY);
+   feather.print(tempPerS, rateFormat, Color::SUB_LABEL);
+   feather.println();
+   feather.moveCursorY(feather.charH() / 2);
 
-   feather.moveCursorY(26);
-   feather.setCursorX(0);
-   feather.display.setTextSize(4);
-   feather.println(hum, "%", 8, Color::WHITE);
-   feather.display.setTextSize(2);
-   feather.print(humTime, " ms", 8, Color::GRAY);
+   feather.display.setTextSize(TextSize::MEDIUM);
+   if (feather.display.width() / feather.charW() > 12)
+   {
+      feather.print(" Hum: ", Color::LABEL);
+   }
+   feather.println(hum, humFormat, Color::VALUE);
+
+   feather.display.setTextSize(TextSize::SMALL);
+   feather.print(humTime, msFormat, Color::SUB_LABEL);
    feather.print("  ");
-   feather.print(humPerS, "/s", 6, Color::GRAY);
+   feather.print(humPerS, rateFormat, Color::SUB_LABEL);
+   feather.println();
 
-   feather.display.setTextSize(2);
-   feather.setCursor(0, feather.display.height() - 16);
-   feather.print(sensor.info(), Color::CYAN);
+   feather.display.setTextSize(TextSize::SMALL);
+   feather.setCursor(0, -feather.charH());
+   feather.print(sensor.type(), Color::VALUE2);
+   feather.print(" 0x", Color::VALUE2);
+   feather.print(String(sensor.address(), HEX), Color::VALUE2);
+   feather.printR(sensor.id(), Color::VALUE2);
 
-   feather.setCursorX(feather.display.width() - 4 * 12);
-   feather.print(version, Color::GRAY);
+   feather.displayDisplay();
 }
 
 

@@ -5,9 +5,12 @@
 Feather feather;
 Adafruit_MAX17048 battery;
 
+Format percentFormat("###%");
+Format batteryVoltsFormat("#.#v");
+Format chargeRateFormat("####%/hr");
+
 void setup()
 {
-
    // start serial port
    Serial.begin(115200);
 
@@ -30,27 +33,20 @@ void loop()
    feather.setCursor(0, 0);
    feather.setTextSize(TextSize::MEDIUM);
    feather.println("Battery Info", Color::CYAN);
-   feather.moveCursorY(10);
+   feather.moveCursorY(feather.charH() / 2);
 
    feather.print("Volts: ", Color::WHITE);
-   feather.println(battery.cellVoltage(), Color::YELLOW);
-   feather.moveCursorY(4);
+   feather.println(battery.cellVoltage(), batteryVoltsFormat, Color::YELLOW);
+   feather.moveCursorY(feather.charH() / 4);
 
    feather.print("State: ", Color::WHITE);
    uint16_t x = feather.display.getCursorX();
-   feather.println(battery.cellPercent(), "%", 6, 1, Color::YELLOW);
-   feather.moveCursorY(4);
+   feather.println(battery.cellPercent(), percentFormat, Color::YELLOW);
+   feather.moveCursorY(feather.charH() / 4);
 
    feather.print(" Rate: ", Color::WHITE);
    feather.setCursorX(x);
-   feather.moveCursorY((CharSize::MEDIUM_H - CharSize::SMALL_H)/2);
+   feather.moveCursorY((CharSize::MEDIUM_H - CharSize::SMALL_H) / 2);
    feather.setTextSize(TextSize::SMALL);
-   feather.print((int) battery.chargeRate(), "%/hr", 10, Color::YELLOW);
-
-   /*
-   feather.setTextSize(TextSize::SMALL);
-
-   feather.moveCursor(5, 8);
-   feather.print("%/hr", Color::YELLOW);
-   */
+   feather.print(battery.chargeRate(), chargeRateFormat, Color::YELLOW);
 }

@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Adafruit_GFX.h> 
+#include <FixedLengthString.h>
+#include <string>
+
 // TODO add more defines for more displays and move to a separate file
 #if defined(_ADAFRUIT_ST77XXH_)
 #define COLOR_565
@@ -44,9 +48,87 @@ enum CharSize : uint8_t
    HUGE_W = TextSize::HUGE * 6,
 };
 
-#include <Adafruit_GFX.h> // TFT display
-#include <FixedLengthString.h>
-#include <string>
+class Format
+{
+public:
+   enum class Alignment
+   {
+      LEFT,
+      RIGHT,
+      CENTER
+   };
+
+   std::string prefix = "";
+   std::string postfix = "";
+   size_t length = 0;
+   Alignment alignment = Alignment::LEFT;
+   uint8_t precision = 2;
+   char errChar = '#';
+
+   Format(const char* example)
+   {
+      std::string str = example;
+
+      // extract the length
+      length = str.length();
+
+      // extract the prefix
+      while (str.length() > 0)
+      {
+         if (str[0] == '#')
+         {
+            break;
+         }
+         else
+         {
+            prefix.append(1, str[0]);
+            str.erase(0, 1);
+         }
+      }
+
+      // extract the postfix
+      while (str.length() > 0)
+      {
+         size_t pos = str.length() - 1;
+
+         if (str[pos] == '#')
+         {
+            break;
+         }
+         postfix.insert(0, 1, str[pos]);
+         str.erase(pos, 1);
+      }
+
+      // extract the precision
+      size_t pos = str.find_last_of('.');
+      precision = pos == std::string::npos ? 0 : (str.length() - 1) - pos;
+
+      /*
+      Serial.println(example);
+      Serial.print("length: ");
+      Serial.println(length);
+      Serial.print("prefix: '");
+      Serial.print(prefix.c_str());
+      Serial.println("'");
+      Serial.print("postfix: '");
+      Serial.print(postfix.c_str());
+      Serial.println("'");
+      Serial.print("precision: ");
+      Serial.println(precision);
+      */
+   }
+   Format(double min, double max, const char* postfix, uint8_t precision)
+   {
+      this->postfix = postfix;
+      this->precision = precision;
+
+      // determine the max length
+      size_t minLength = String(min, (uint)precision).length();
+      size_t maxLength = String(max, (uint)precision).length();
+      length = std::max(minLength, maxLength) + strlen(postfix);
+   }
+};
+
 
 #ifdef COLOR_565
 enum class Color : uint16_t
@@ -62,6 +144,12 @@ enum class Color : uint16_t
    ORANGE = 0xFC00,
    GRAY = 0x8430,
    DARKGRAY = 0x6B4D,
+
+   HEADING = ORANGE,
+   LABEL = WHITE,
+   VALUE = YELLOW,
+   VALUE2 = CYAN,
+   SUB_LABEL = GRAY,
 };
 #elif defined COLOR_MONOCHROME
 enum class Color : uint16_t
@@ -77,6 +165,12 @@ enum class Color : uint16_t
    ORANGE = 1,
    GRAY = 1,
    DARKGRAY = 0,
+
+   HEADING = WHITE,
+   LABEL = WHITE,
+   VALUE = WHITE,
+   VALUE2 = WHITE,
+   SUB_LABEL = WHITE,
 };
 #endif
 
@@ -312,6 +406,49 @@ public:
    {
       String str(value);
       _print(str.c_str(), textColor, backgroundColor);
+   }
+   void print(double value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      std::string str = format.prefix + String(value, (uint)format.precision).c_str() + format.postfix;
+
+      if (str.length() > format.length)
+      {
+         str.clear();
+         str.append(format.length, format.errChar);
+      }
+      else if (str.length() < format.length)
+      {
+         switch (format.alignment)
+         {
+         case Format::Alignment::LEFT:
+            str.append(format.length - str.length(), ' ');
+            break;
+
+         case Format::Alignment::RIGHT:
+         {
+            std::string pre(format.length - str.length(), ' ');
+            str = pre + str;
+         }
+         break;
+
+         case Format::Alignment::CENTER:
+         {
+            size_t fill = format.length - str.length();
+            size_t fillLeft = fill / 2;
+            size_t fillRight = fill - fillLeft;
+            std::string pre(fillLeft, ' ');
+            std::string post(fillRight, ' ');
+            str = pre + str + post;
+         }
+         break;
+         }
+      }
+      _print(str.c_str(), textColor, backgroundColor);
+   }
+   void println(double value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      print(value, format, textColor, backgroundColor);
+      println();
    }
    void println(double value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
