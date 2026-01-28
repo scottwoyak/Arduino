@@ -2,6 +2,7 @@
 
 #include "Arduino.h"
 #include "Button.h"
+#include <limits>
 
 //-------------------------------------------------------------------------------------------------
 class RotaryEncoder
