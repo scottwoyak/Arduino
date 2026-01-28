@@ -1,120 +1,7 @@
 #include "TempSensor.h"
 
-//------------------------------------------------------------------------------------------------
-bool TempSensor::begin(bool print)
-{
-   _sensor = _create(print);
-   return _sensor->begin();
-}
 
-//------------------------------------------------------------------------------------------------
-const char* TempSensor::info()
-{
-   if (_sensor == nullptr)
-   {
-      Serial.println("No sensor created. Call begin()");
-      return "No sensor created. Call begin()";
-   }
-
-   return _sensor->info();
-}
-
-//------------------------------------------------------------------------------------------------
-const char* TempSensor::type()
-{
-   if (_sensor == nullptr)
-   {
-      Serial.println("No sensor created. Call begin()");
-      return "No sensor created. Call begin()";
-   }
-
-   return _sensor->type();
-}
-
-//------------------------------------------------------------------------------------------------
-uint8_t TempSensor::address()
-{
-   if (_sensor == nullptr)
-   {
-      Serial.println("No sensor created. Call begin()");
-      return 0;
-   }
-
-   return _sensor->address();
-}
-
-//------------------------------------------------------------------------------------------------
-bool TempSensor::exists()
-{
-   if (_sensor == nullptr)
-   {
-      Serial.println("No sensor created. Call begin()");
-      return false;
-   }
-
-   return _sensor->exists();
-}
-
-//------------------------------------------------------------------------------------------------
-float TempSensor::readTemperatureF()
-{
-   if (_sensor == nullptr)
-   {
-      Serial.println("No sensor created. Call begin()");
-      return NAN;
-   }
-
-   return _sensor->readTemperatureF();
-}
-
-//------------------------------------------------------------------------------------------------
-float TempSensor::readTemperatureC()
-{
-   if (_sensor == nullptr)
-   {
-      Serial.println("No sensor created. Call begin()");
-      return NAN;
-   }
-
-   return _sensor->readTemperatureC();
-}
-
-//------------------------------------------------------------------------------------------------
-float TempSensor::readHumidity()
-{
-   if (_sensor == nullptr)
-   {
-      Serial.println("No sensor created. Call begin()");
-      return NAN;
-   }
-
-   return _sensor->readHumidity();
-}
-
-//------------------------------------------------------------------------------------------------
-bool TempSensor::readsBoth()
-{
-   if (_sensor == nullptr)
-   {
-      Serial.println("No sensor created. Call begin()");
-      return false;
-   }
-
-   return _sensor->readsBoth();
-}
-
-//------------------------------------------------------------------------------------------------
-void TempSensor::readBoth(float& tempF, float& hum)
-{
-   if (_sensor == nullptr)
-   {
-      Serial.println("No sensor created. Call begin()");
-      return;
-   }
-
-   _sensor->readBoth(tempF, hum);
-}
-
+//-------------------------------------------------------------------------------------------------
 ITempSensor* _tryCreateHTC(bool print)
 {
    if (print)
@@ -149,6 +36,7 @@ ITempSensor* _tryCreateHTC(bool print)
    }
 }
 
+//-------------------------------------------------------------------------------------------------
 ITempSensor* _tryCreateSHT4x(bool print)
 {
    if (print)
@@ -182,7 +70,6 @@ ITempSensor* _tryCreateSHT4x(bool print)
       return nullptr;
    }
 }
-
 
 //-------------------------------------------------------------------------------------------------
 ITempSensor* TempSensor::_create(bool print)
@@ -245,7 +132,7 @@ ITempSensor* TempSensor::_create(bool print)
    {
       if (sensor != nullptr)
       {
-         Serial.println(String("Found: ") + sensor->info());
+         Serial.println(String("Found: ") + sensor->type() + " at 0x" + String(sensor->address(), HEX));
       }
       else
       {

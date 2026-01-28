@@ -8,35 +8,12 @@
 #include <Adafruit_HDC302x.h>
 #include "Util.h"
 
-class ITempSensor;
-
-//-------------------------------------------------------------------------------------------------
-class TempSensor
-{
-private:
-   ITempSensor* _sensor = NULL;
-   ITempSensor* _create(bool print);
-
-public:
-   bool begin(bool print = true);
-   const char* info();
-   const char* type();
-   uint8_t address();
-   bool exists();
-   float readTemperatureF();
-   float readTemperatureC();
-   float readHumidity();
-
-   bool readsBoth();
-   void readBoth(float& tempF, float& hum);
-};
-
 //-------------------------------------------------------------------------------------------------
 class ITempSensor
 {
 public:
    virtual bool begin() = 0;
-   virtual const char* info() = 0;
+   virtual const char* id() = 0;
    virtual const char* type() = 0;
    virtual uint8_t address() = 0;
    virtual bool exists() = 0;
@@ -47,8 +24,117 @@ public:
    virtual bool readsBoth() = 0;
    virtual void readBoth(float& tempF, float& hum)
    {
+      // if the implementation doesn't provide a method, just call both functions
       tempF = readTemperatureF();
       hum = readHumidity();
+   }
+};
+
+
+//-------------------------------------------------------------------------------------------------
+class TempSensor : public ITempSensor
+{
+private:
+   // the actual sensor this class manages
+   ITempSensor* _sensor = NULL;
+   ITempSensor* _create(bool print);
+
+public:
+   bool begin() { return begin(true); }
+   bool begin(bool print)
+   {
+      _sensor = _create(print);
+      return _sensor->begin();
+   }
+   bool exists()
+   {
+      if (_sensor == nullptr)
+      {
+         Serial.println("TempSensor::exists() - No sensor created. Call begin()");
+         return false;
+      }
+
+      return _sensor->exists();
+   }
+   const char* type()
+   {
+      if (_sensor == nullptr)
+      {
+         Serial.println("TempSensor::type() - No sensor created. Call begin()");
+         return "No sensor created. Call begin()";
+      }
+
+      return _sensor->type();
+   }
+   uint8_t address()
+   {
+      if (_sensor == nullptr)
+      {
+         Serial.println("TempSensor::address() - No sensor created. Call begin()");
+         return 0;
+      }
+
+      return _sensor->address();
+   }
+   const char* id()
+   {
+      if (_sensor == nullptr)
+      {
+         Serial.println("TempSensor::id() - No sensor created. Call begin()");
+         return "No sensor created. Call begin()";
+      }
+
+      return _sensor->id();
+   }
+   float readTemperatureF()
+   {
+      if (_sensor == nullptr)
+      {
+         Serial.println("TempSensor::readTemperatureF() - No sensor created. Call begin()");
+         return NAN;
+      }
+
+      return _sensor->readTemperatureF();
+   }
+   float readTemperatureC()
+   {
+      if (_sensor == nullptr)
+      {
+         Serial.println("TempSensor::readTemperatureC() - No sensor created. Call begin()");
+         return NAN;
+      }
+
+      return _sensor->readTemperatureC();
+   }
+   float readHumidity()
+   {
+      if (_sensor == nullptr)
+      {
+         Serial.println("TempSensor::readHumidity() - No sensor created. Call begin()");
+         return NAN;
+      }
+
+      return _sensor->readHumidity();
+   }
+   bool readsBoth()
+   {
+      if (_sensor == nullptr)
+      {
+         Serial.println("TempSensor::readsBoth() - No sensor created. Call begin()");
+         return false;
+      }
+
+      return _sensor->readsBoth();
+   }
+   void readBoth(float& tempF, float& hum)
+   {
+      if (_sensor == nullptr)
+      {
+         Serial.println("TempSensor::readBoth() - No sensor created. Call begin()");
+         return;
+      }
+
+      _sensor->readBoth(tempF, hum);
    }
 };
 
@@ -56,8 +142,8 @@ public:
 class NullSensor : public ITempSensor
 {
    virtual bool exists() { return false; }
-   virtual const char* info() { return "No Sensor Detected"; }
    virtual const char* type() { return "None"; }
+   virtual const char* id() { return "??"; }
    virtual uint8_t address() { return 0; };
    virtual bool begin() { return true; }
    virtual float readTemperatureF() { return NAN; }
@@ -74,17 +160,20 @@ class NullSensor : public ITempSensor
 //-------------------------------------------------------------------------------------------------
 class I2CTempSensor : public ITempSensor
 {
-private:
+protected:
    String _type;
+   String _info;
    int8_t _address;
+   String _id = "----";
 
 public:
    I2CTempSensor(const char* type, uint8_t address)
    {
       _type = type;
       _address = address;
+      _info = _type + " 0x" + String(_address, HEX);
    }
-   virtual const char* info() { return (_type + " 0x" + String(_address, HEX)).c_str(); }
+   virtual const char* id() { return _id.c_str(); }
    virtual const char* type() { return _type.c_str(); }
    virtual uint8_t address() { return _address; }
 
@@ -94,11 +183,7 @@ public:
    virtual float readHumidity() = 0;
    virtual bool readsBoth() = 0;
 
-   int8_t getAddress()
-   {
-      return _address;
-   }
-
+   int8_t getAddress() { return _address; }
 
    static int8_t detect(int8_t baseAddress, int8_t numAddresses = 1)
    {
@@ -160,7 +245,15 @@ public:
    }
    virtual bool begin()
    {
-      return sht.begin();
+      if (sht.begin())
+      {
+         _id = sht.readSerial();
+         return true;
+      }
+      else
+      {
+         return false;
+      }
    }
    virtual float readTemperatureF()
    {
@@ -206,7 +299,17 @@ public:
    }
    virtual bool begin()
    {
-      return hdc.begin();
+      if (hdc.begin())
+      {
+         uint8_t id;
+         hdc.readNISTID(&id);
+         _id = String(id);
+         return true;
+      }
+      else
+      {
+         return false;
+      }
    }
    virtual float readTemperatureF()
    {
@@ -255,22 +358,10 @@ public:
       //  3    0.0625°C    250 ms
       mcp.setResolution(resolution);
    }
-   virtual bool begin()
-   {
-      return mcp.begin(getAddress());
-   }
-   virtual float readTemperatureF()
-   {
-      return mcp.readTempF();
-   }
-   virtual float readTemperatureC()
-   {
-      return mcp.readTempF();
-   }
-   virtual float readHumidity()
-   {
-      return NAN;
-   }
+   virtual bool begin() { return mcp.begin(getAddress()); }
+   virtual float readTemperatureF() { return mcp.readTempF(); }
+   virtual float readTemperatureC() { return mcp.readTempF(); }
+   virtual float readHumidity() { return NAN; }
    virtual bool readsBoth() { return false; }
 };
 
