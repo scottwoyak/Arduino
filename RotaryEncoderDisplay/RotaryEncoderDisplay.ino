@@ -23,9 +23,9 @@ void setup()
 
 void loop()
 {
-   if (encoder.wasPressed())
+   if (encoder.button.wasPressed())
    {
-      encoder.reset();
+      encoder.button.reset();
       encoder.setPosition(0);
    }
 
@@ -53,7 +53,7 @@ void loop()
    feather.moveCursorY(2);
 
    feather.print("Button: ", Color::WHITE);
-   feather.println(encoder.isPressed()?"True" : "False", 5, Color::YELLOW);
+   feather.println(encoder.button.isPressed()?"True" : "False", 5, Color::YELLOW);
 
    feather.setCursorY(-CharSize::SMALL_H);
    feather.setTextSize(TextSize::SMALL);
