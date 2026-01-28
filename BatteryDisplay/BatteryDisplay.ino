@@ -5,7 +5,8 @@
 Feather feather;
 Adafruit_MAX17048 battery;
 
-void setup() {
+void setup()
+{
 
    // start serial port
    Serial.begin(115200);
@@ -24,7 +25,8 @@ void setup() {
    }
 }
 
-void loop() {
+void loop()
+{
    feather.setCursor(0, 0);
    feather.setTextSize(TextSize::MEDIUM);
    feather.println("Battery Info", Color::CYAN);
@@ -35,14 +37,20 @@ void loop() {
    feather.moveCursorY(4);
 
    feather.print("State: ", Color::WHITE);
+   uint16_t x = feather.display.getCursorX();
    feather.println(battery.cellPercent(), "%", 6, 1, Color::YELLOW);
    feather.moveCursorY(4);
 
-   feather.print("Rate:  ", Color::WHITE);
-   uint16_t x = feather.display.getCursorX();
-   feather.print((int) (10*battery.chargeRate()), 3, Color::YELLOW);
+   feather.print(" Rate: ", Color::WHITE);
+   feather.setCursorX(x);
+   feather.moveCursorY((CharSize::MEDIUM_H - CharSize::SMALL_H)/2);
    feather.setTextSize(TextSize::SMALL);
-   //feather.moveCursorX(x);
+   feather.print((int) battery.chargeRate(), "%/hr", 10, Color::YELLOW);
+
+   /*
+   feather.setTextSize(TextSize::SMALL);
+
    feather.moveCursor(5, 8);
    feather.print("%/hr", Color::YELLOW);
+   */
 }
