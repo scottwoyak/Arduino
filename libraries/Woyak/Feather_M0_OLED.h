@@ -5,6 +5,30 @@
 #include <Button.h>
 #include <FlashStorage.h>
 
+//
+// Annoyingling, Adafruit has a lot of nifty properties in Adafruit_GFX that you can set, but not 
+// get. This class is just a wrapper that exposes them
+//
+class SW_SH1107 : public Adafruit_SH1107
+{
+public:
+   SW_SH1107(uint16_t w, uint16_t h, TwoWire* twi = &Wire) : Adafruit_SH1107(w, h, twi)
+   {
+   }
+
+   uint8_t charW()
+   {
+      // 6 is the baseline character width that is scaled for larger text
+      return 6 * textsize_x;
+   }
+
+   uint8_t charH()
+   {
+      // 8 is the baseline character width that is scaled for larger text
+      return 8 * textsize_y;
+   }
+};
+
 
 // Create a structure for storing data
 typedef struct
@@ -105,7 +129,7 @@ class PreferencesFlash
 class Feather_M0_OLED : public ArduinoWithDisplay
 {
 public:
-   Adafruit_SH1107 display;
+   SW_SH1107 display;
    Button buttonA;
    Button buttonB;
    Button buttonC;
@@ -132,4 +156,27 @@ public:
    {
       display.display();
    }
+
+   uint8_t charW()
+   {
+      return display.charW();
+   }
+
+   uint8_t charH()
+   {
+      return display.charH();
+   }
+
+   void printR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      setCursorX(-strlen(str) * charW());
+      print(str, textColor, backgroundColor);
+   }
+
+   void printlnR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      setCursorX(-strlen(str) * charW());
+      println(str, textColor, backgroundColor);
+   }
+
 };
