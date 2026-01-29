@@ -75,8 +75,10 @@ TimedAverager* havgs[] = {
    new TimedAverager(AVERAGING_TIME),
 };
 
-Format tempFormat("###.## F");
+Format tempFormat("###.##F");
+Format temp2Format("###.#");
 Format humFormat("###.#%");
+Format hum2Format("###.#");
 Format correctionFormat("+#.##");
 
 
@@ -93,12 +95,8 @@ Point point5("Air");
 Point point6("Air");
 Point* points[] = { &point1,&point2,&point3,&point4,&point5,&point6 };
 
-const Color MSG_COLOR = Color::WHITE;
-const Color OK_COLOR = Color::YELLOW;
-const Color FAILED_COLOR = Color::ORANGE;
-
 uint8_t view = 0;
-constexpr auto NUM_VIEWS = 4;
+constexpr auto NUM_VIEWS = 6;
 
 // The setup() function runs once each time the micro-controller starts
 void setup()
@@ -132,16 +130,16 @@ void setup()
    feather.display.setCursor(0, 0);
    feather.display.setTextSize(2);
    feather.display.fillRect(0, 0, feather.display.width(), 3 * feather.charH(), (uint16_t)Color::ORANGE);
-   feather.moveCursor((feather.display.width() - 5 * feather.charW()) / 2, feather.charH() / 2);
-   feather.println("Saved", Color::WHITE, Color::ORANGE);
-   feather.moveCursorX((feather.display.width() - 9 * feather.charW()) / 2);
-   feather.println("T Factors", Color::WHITE, Color::ORANGE);
+   feather.moveCursorY(feather.charH() / 2);
+   feather.printlnC("Temp", Color::WHITE, Color::ORANGE);
+   feather.printlnC("Deltas", Color::WHITE, Color::ORANGE);
    feather.moveCursorY(14);
 
    for (int i = 0; i < NUM_SENSORS; i++)
    {
       feather.display.setTextSize(2);
       feather.print((i + 1), Color::LABEL);
+      feather.moveCursorX(10);
 
       feather.display.setTextSize(3);
       feather.println(tcorrections[i], correctionFormat, Color::VALUE);
@@ -158,19 +156,19 @@ void setup()
    feather.display.setCursor(0, 0);
    feather.display.setTextSize(2);
    feather.display.fillRect(0, 0, feather.display.width(), 3 * feather.charH(), (uint16_t)Color::ORANGE);
-   feather.moveCursor((feather.display.width() - 5 * feather.charW()) / 2, feather.charH() / 2);
-   feather.println("Saved", Color::WHITE, Color::ORANGE);
-   feather.moveCursorX((feather.display.width() - 9 * feather.charW()) / 2);
-   feather.println("H Factors", Color::WHITE, Color::ORANGE);
+   feather.moveCursorY(feather.charH() / 2);
+   feather.printlnC("Humidity", Color::WHITE, Color::ORANGE);
+   feather.printlnC("Deltas", Color::WHITE, Color::ORANGE);
    feather.moveCursorY(14);
 
    for (int i = 0; i < NUM_SENSORS; i++)
    {
       feather.display.setTextSize(2);
-      feather.print((i + 1), Color::WHITE);
+      feather.print((i + 1), Color::LABEL);
+      feather.moveCursorX(10);
 
       feather.display.setTextSize(3);
-      feather.println(hcorrections[i], correctionFormat, Color::YELLOW);
+      feather.println(hcorrections[i], correctionFormat, Color::VALUE);
       feather.moveCursorY(2);
    }
 
@@ -192,7 +190,7 @@ void setup()
    feather.echoToSerial = true;
    feather.clear();
    feather.display.setTextSize(3);
-   feather.println("Init", Color::CYAN);
+   feather.println("Init", Color::HEADING);
    feather.moveCursorY(10);
 
    feather.display.setTextSize(2);
@@ -201,40 +199,40 @@ void setup()
    WiFi.mode(WIFI_STA);
    wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
 
-   feather.print("WiFi", MSG_COLOR);
+   feather.print("WiFi", Color::LABEL);
    while (wifiMulti.run() != WL_CONNECTED)
    {
       Serial.print(".");
       delay(100);
    }
    feather.setCursorX(-2 * 2 * 8);
-   feather.println("ok", OK_COLOR);
+   feather.println("ok", Color::VALUE);
 
    // Accurate time is necessary for certificate validation and writing in batches
    // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
    // Syncing progress and the time will be printed to Serial.
    feather.echoToSerial = false;
-   feather.print("Time", MSG_COLOR);
+   feather.print("Time", Color::LABEL);
    timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
    feather.setCursorX(-2 * 2 * 8);
-   feather.println("ok", OK_COLOR);
+   feather.println("ok", Color::VALUE);
    feather.echoToSerial = true;
 
    // Check server connection
-   feather.print("Influx", MSG_COLOR);
+   feather.print("Influx", Color::LABEL);
 
    if (client.validateConnection())
    {
       feather.setCursorX(-2 * 2 * 8);
-      feather.println("ok", OK_COLOR);
+      feather.println("ok", Color::VALUE);
       Serial.println(client.getServerUrl());
    }
    else
    {
       feather.setCursorX(-6 * 2 * 8);
-      feather.println("FAILED", FAILED_COLOR);
+      feather.println("FAILED", Color::RED);
       feather.display.setTextSize(1);
-      feather.println(client.getLastErrorMessage(), FAILED_COLOR);
+      feather.println(client.getLastErrorMessage(), Color::RED);
       while (1);
    }
 
@@ -263,10 +261,7 @@ void loop()
       feather.clear();
       feather.buttonA.reset();
       view++;
-      if (view > NUM_VIEWS)
-      {
-         view = 0;
-      }
+      view = view % NUM_VIEWS;
    }
 
    count++;
@@ -278,23 +273,27 @@ void loop()
    switch (view)
    {
    case 0:
-      feather.println("Temperature", Color::ORANGE);
+      feather.println("Temperature", Color::HEADING);
       break;
 
    case 1:
-      feather.println("Humidity", Color::ORANGE);
+      feather.println("Humidity", Color::HEADING);
       break;
 
    case 2:
-      feather.println("T Factors", Color::ORANGE);
+      feather.println("Temp Deltas", Color::HEADING);
       break;
 
    case 3:
-      feather.println("H Factors", Color::ORANGE);
+      feather.println("Hum Deltas", Color::HEADING);
       break;
 
    case 4:
-      feather.println("Sensors", Color::ORANGE);
+      feather.println("Sensors 1/2", Color::HEADING);
+      break;
+
+   case 5:
+      feather.println("Sensors 2/2", Color::HEADING);
       break;
    }
    feather.moveCursorY(10);
@@ -312,70 +311,92 @@ void loop()
 
       // values
       feather.display.setTextSize(2);
-      feather.print((i + 1), Color::WHITE);
+
       if (sensor->exists())
       {
          switch (view)
          {
          case 0: // temperature
+            feather.print((i + 1), Color::LABEL);
             feather.moveCursorX(feather.charW() / 2);
             feather.display.setTextSize(3);
-            feather.println(temp, 6, Color::YELLOW);
+            feather.println(temp, tempFormat, Color::VALUE);
             feather.moveCursorY(8);
             break;
 
          case 1: // humidity
+            feather.print((i + 1), Color::LABEL);
             feather.moveCursorX(feather.charW() / 2);
             feather.display.setTextSize(3);
             if (isnan(hum))
             {
-               feather.println("----", 6, Color::YELLOW);
+               feather.println("----", Color::VALUE);
             }
             else
             {
-               feather.println(hum, humFormat, Color::YELLOW);
+               feather.println(hum, humFormat, Color::VALUE);
             }
             feather.moveCursorY(8);
             break;
 
-         case 2: // temp corrections
+         case 2: // temp deltas
          {
-            float correction = tavgs[i]->get() - tavgs[0]->get();
+            feather.print((i + 1), Color::LABEL);
 
+            float correction = tavgs[i]->get() - tavgs[0]->get();
+            feather.moveCursorX(feather.charW() / 2);
             feather.display.setTextSize(2);
-            feather.print(correction, correctionFormat, Color::YELLOW);
-            feather.println(temp, tempFormat, Color::CYAN);
+            feather.print(correction, correctionFormat, Color::VALUE);
+            feather.moveCursorX(feather.charW() / 2);
+            feather.println(temp, temp2Format, Color::VALUE2);
             feather.moveCursorY(2);
             break;
          }
 
-         case 3: // hum corrections
+         case 3: // hum deltas
          {
-            float correction = havgs[i]->get() - havgs[0]->get();
+            feather.print((i + 1), Color::LABEL);
 
+            float correction = havgs[i]->get() - havgs[0]->get();
             feather.display.setTextSize(2);
-            feather.print(correction, correctionFormat, Color::YELLOW);
-            feather.println(temp, tempFormat, Color::CYAN);
+            feather.moveCursorX(feather.charW() / 2);
+            feather.print(correction, correctionFormat, Color::VALUE);
+            feather.moveCursorX(feather.charW() / 2);
+            feather.println(hum, hum2Format, Color::VALUE2);
             feather.moveCursorY(2);
             break;
          }
 
          case 4: // sensor info
+         case 5:
+
+            if (i < 3 && view != 4)
+            {
+               continue;
+            }
+
+            if (i >= 3 && view != 5)
+            {
+               continue;
+            }
+
+            feather.print((i + 1), Color::LABEL);
             feather.moveCursorX(feather.charW() / 2);
             feather.display.setTextSize(2);
-            feather.println(sensor->type(), Color::YELLOW);
+            int16_t x = feather.display.getCursorX();
 
-            feather.moveCursorY(2);
-            feather.print("  0x", Color::CYAN);
-            feather.print(String(sensor->address(), HEX), Color::CYAN);
-            feather.print(" ");
-            feather.println(sensor->id(), Color::WHITE);
+            feather.println(sensor->type(), Color::VALUE);
+            feather.moveCursor(x, 3);
+            feather.print("0x", Color::VALUE2);
+            feather.println(sensor->address(), HEX, Color::VALUE2);
+            feather.moveCursor(x, 3);
+            feather.println(sensor->id(), Color::GREEN);
             break;
          }
       }
       else
       {
-         feather.println("-----", Color::ORANGE);
+         feather.println("-----", Color::GRAY);
       }
 
       feather.moveCursorY(6);

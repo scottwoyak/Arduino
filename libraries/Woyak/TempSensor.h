@@ -43,6 +43,7 @@ public:
    bool begin() { return begin(true); }
    bool begin(bool print)
    {
+      Wire.begin();
       _sensor = _create(print);
       return _sensor->begin();
    }
@@ -303,6 +304,9 @@ public:
       {
          uint8_t id[8];
          hdc.readNISTID(id);
+
+         /* not sure what these all map to, but the last 4 seem to repeat among chips */
+         /*
          Serial.println(id[0]);
          Serial.println(id[1]);
          Serial.println(id[2]);
@@ -310,7 +314,17 @@ public:
          Serial.println(id[4]);
          Serial.println(id[5]);
          Serial.println(id[6]);
-         _id = String(id[0]);
+         Serial.println(id[7]);
+         */
+
+         uint32_t fullId =
+            ((uint64_t)id[0] << 24) |
+            ((uint64_t)id[1] << 16) |
+            ((uint64_t)id[2] << 8) |
+            ((uint64_t)id[3]);
+
+         _id = String(fullId);
+
          return true;
       }
       else

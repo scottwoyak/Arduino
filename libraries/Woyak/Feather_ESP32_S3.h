@@ -108,10 +108,20 @@ public:
       setCursorX(-strlen(str) * charW());
       print(str, textColor, backgroundColor);
    }
-
    void printlnR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      setCursorX(-strlen(str) * charW());
-      println(str, textColor, backgroundColor);
+      printR(str, textColor, backgroundColor);
+      println();
+   }
+
+   void printC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      setCursorX((display.width() - strlen(str) * charW())/2);
+      print(str, textColor, backgroundColor);
+   }
+   void printlnC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      printC(str, textColor, backgroundColor);
+      println();
    }
 };

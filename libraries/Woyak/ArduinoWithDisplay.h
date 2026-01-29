@@ -180,6 +180,10 @@ public:
 
    void println()
    {
+      if (echoToSerial)
+      {
+         Serial.println();
+      }
       _display->println();
    }
 
@@ -330,6 +334,16 @@ public:
       String str(value);
       _println(str.c_str(), textColor, backgroundColor);
    }
+   void print(uint8_t value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value, base);
+      _print(str.c_str(), textColor, backgroundColor);
+   }
+   void println(uint8_t value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value, base);
+      _println(str.c_str(), textColor, backgroundColor);
+   }
    void print(uint8_t value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
@@ -354,6 +368,16 @@ public:
       String str(value);
       _println(str.c_str(), textColor, backgroundColor);
    }
+   void print(int value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value, base);
+      _print(str.c_str(), textColor, backgroundColor);
+   }
+   void println(int value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value, base);
+      _println(str.c_str(), textColor, backgroundColor);
+   }
    void print(int value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
@@ -376,6 +400,16 @@ public:
    void println(long value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
       String str(value);
+      _println(str.c_str(), textColor, backgroundColor);
+   }
+   void print(long value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value, base);
+      _print(str.c_str(), textColor, backgroundColor);
+   }
+   void println(long value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value, base);
       _println(str.c_str(), textColor, backgroundColor);
    }
    void print(long value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)

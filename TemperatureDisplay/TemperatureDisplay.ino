@@ -77,11 +77,13 @@ void loop()
    feather.println();
 
    feather.display.setTextSize(TextSize::SMALL);
-   feather.setCursor(0, -feather.charH());
+   feather.setCursor(0, -2*feather.charH());
+   feather.print("Type: ", Color::LABEL);
    feather.print(sensor.type(), Color::VALUE2);
    feather.print(" 0x", Color::VALUE2);
-   feather.print(String(sensor.address(), HEX), Color::VALUE2);
-   feather.printR(sensor.id(), Color::VALUE2);
+   feather.println(sensor.address(), HEX, Color::VALUE2);
+   feather.print("  ID: ", Color::LABEL);
+   feather.print(sensor.id(), Color::VALUE2);
 
    feather.displayDisplay();
 }

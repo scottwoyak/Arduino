@@ -108,11 +108,6 @@ public:
          valueStr += String(value, (uint)precision).c_str();
       }
 
-      Serial.print("---------- valueStr |");
-      Serial.print(valueStr.c_str());
-      Serial.print("|");
-      Serial.println();
-
       // build the desired full string
       std::string str = prefix + valueStr + postfix;
 

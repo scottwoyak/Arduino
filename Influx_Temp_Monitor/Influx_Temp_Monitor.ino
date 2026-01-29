@@ -74,10 +74,6 @@ String postfixes[] =
 constexpr auto NUM_ROOMS = sizeof(rooms) / sizeof(rooms[0]);
 constexpr auto NUM_POSTFIXES = sizeof(postfixes) / sizeof(postfixes[0]);
 
-constexpr Color MSG_COLOR = Color::WHITE;
-constexpr Color OK_COLOR = Color::YELLOW;
-constexpr Color FAILED_COLOR = Color::ORANGE;
-
 Feather_ESP32_S3 feather;
 IndexedEncoder encoder(9, 6, 5, NUM_ROOMS);
 String location;
@@ -147,9 +143,9 @@ void askLocation()
 
       feather.display.setTextSize(2);
       feather.display.setCursor(0, 0);
-      feather.println("Sensor Information\n", Color::CYAN);
+      feather.println("Sensor Information\n", Color::HEADING);
 
-      feather.println("Location:", Color::WHITE);
+      feather.println("Location:", Color::LABEL);
       feather.setCursorX(20);
 
       getColors(EncoderItem::Room, &textColor, &bgColor);
@@ -159,7 +155,7 @@ void askLocation()
       feather.print("          "); // to the end of the line
       feather.println();
 
-      feather.println("Calibration:", Color::WHITE);
+      feather.println("Calibration:", Color::LABEL);
       feather.setCursorX(20);
       getColors(EncoderItem::Correction10s, &textColor, &bgColor);
       feather.print(String(correction10s / 10.0, 1), textColor, bgColor);
@@ -232,10 +228,10 @@ void determineLocation()
       while (feather.buttonA.wasPressed() == false && encoder.button.wasPressed() == false && sw.elapsedSecs() < 10)
       {
          feather.setCursor(0, 0);
-         feather.println("Use Saved Settings?", Color::CYAN);
+         feather.println("Use Saved Settings?", Color::HEADING);
          feather.println();
-         feather.print("Location: ", Color::WHITE);
-         feather.println(location, Color::YELLOW);
+         feather.print("Location: ", Color::LABEL);
+         feather.println(location, Color::VALUE);
 
          feather.setCursor(0, feather.display.height() - 32);
          feather.println("Press button to edit... ", Color::GRAY);
@@ -271,50 +267,50 @@ void setup()
 
    feather.echoToSerial = true;
    feather.clear();
-   feather.println("Initializing", Color::CYAN);
+   feather.println("Initializing", Color::HEADING);
    feather.moveCursorY(feather.charH()/2);
 
    // Setup wifi
    WiFi.mode(WIFI_STA);
    wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
 
-   feather.print("WiFi... ", MSG_COLOR);
+   feather.print("WiFi... ", Color::LABEL);
    while (wifiMulti.run() != WL_CONNECTED)
    {
       Serial.print(".");
       delay(100);
    }
-   feather.printlnR("ok", OK_COLOR);
+   feather.printlnR("ok", Color::VALUE);
 
    // Accurate time is necessary for certificate validation and writing in batches
    // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
    // Syncing progress and the time will be printed to Serial.
    feather.echoToSerial = false;
-   feather.print("Syncing Time... ", MSG_COLOR);
+   feather.print("Syncing Time... ", Color::LABEL);
    timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
-   feather.printlnR("ok", OK_COLOR);
+   feather.printlnR("ok", Color::VALUE);
    feather.echoToSerial = true;
 
    // Check server connection
-   feather.print("InfluxDB... ", MSG_COLOR);
+   feather.print("InfluxDB... ", Color::LABEL);
 
    if (client.validateConnection())
    {
-      feather.printlnR("ok", OK_COLOR);
+      feather.printlnR("ok", Color::VALUE);
       Serial.println(client.getServerUrl());
    }
    else
    {
-      feather.printlnR("FAILED", FAILED_COLOR);
+      feather.printlnR("FAILED", Color::RED);
       feather.display.setTextSize(1);
-      feather.println(client.getLastErrorMessage(), FAILED_COLOR);
+      feather.println(client.getLastErrorMessage(), Color::RED);
       while (1);
    }
 
-   feather.print("Sensor... ", MSG_COLOR);
+   feather.print("Sensor... ", Color::LABEL);
    if (sensor.begin(false))
    {
-      feather.printlnR("ok", OK_COLOR);
+      feather.printlnR("ok", Color::VALUE);
 
       SerialX::println("   Type: ", sensor.type());
       SerialX::println("   Address: ", sensor.address());
@@ -322,7 +318,7 @@ void setup()
    }
    else
    {
-      feather.printR("FAILED", FAILED_COLOR);
+      feather.printR("FAILED", Color::RED);
       while (1);
    }
 
