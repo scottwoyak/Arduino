@@ -301,9 +301,16 @@ public:
    {
       if (hdc.begin())
       {
-         uint8_t id;
-         hdc.readNISTID(&id);
-         _id = String(id);
+         uint8_t id[8];
+         hdc.readNISTID(id);
+         Serial.println(id[0]);
+         Serial.println(id[1]);
+         Serial.println(id[2]);
+         Serial.println(id[3]);
+         Serial.println(id[4]);
+         Serial.println(id[5]);
+         Serial.println(id[6]);
+         _id = String(id[0]);
          return true;
       }
       else

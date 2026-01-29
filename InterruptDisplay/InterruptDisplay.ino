@@ -1,5 +1,6 @@
 
 #include "Feather.h"
+#include "SerialX.h"
 
 Feather feather;
 
@@ -20,9 +21,12 @@ const char* choices[] = {
 int choice = 0;
 int NUM_CHOICES = sizeof(choices) / sizeof(choices[0]);
 
+Format pinFormat("##");
+Format countFormat("###");
+
 void setup()
 {
-   Serial.begin(115200);
+   SerialX::begin();
    feather.begin();
 
    attachInterrupt(digitalPinToInterrupt(pin), onInterrupt, RISING);
@@ -51,7 +55,8 @@ void loop()
    feather.setCursor(0, 0);
 
    feather.setTextSize(TextSize::SMALL);
-   feather.println("Press the button to switch types");
+   feather.display.setTextWrap(true);
+   feather.println("Press the button to switch types", Color::HEADING);
    feather.println();
 
    if (feather.buttonA.wasPressed())
@@ -70,10 +75,10 @@ void loop()
 
    feather.setTextSize(TextSize::MEDIUM);
    feather.print("Pin: ");
-   feather.println(pin, 2, ValueColor);
+   feather.println(pin, pinFormat, Color::VALUE);
    feather.print(choices[choice]);
    feather.print(": ");
-   feather.println(count, 6, ValueColor);
+   feather.println(count, countFormat, Color::VALUE);
 
 #if defined(ADAFRUIT_FEATHER_M0)
    feather.display.display();

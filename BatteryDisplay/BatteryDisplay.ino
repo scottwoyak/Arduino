@@ -5,8 +5,8 @@
 Feather feather;
 Adafruit_MAX17048 battery;
 
-Format percentFormat("###%");
 Format batteryVoltsFormat("#.#v");
+Format percentFormat("###%");
 Format chargeRateFormat("####%/hr");
 
 void setup()
@@ -32,7 +32,7 @@ void loop()
 {
    feather.setCursor(0, 0);
    feather.setTextSize(TextSize::MEDIUM);
-   feather.println("Battery Info", Color::CYAN);
+   feather.println("Battery Info", Color::HEADING);
    feather.moveCursorY(feather.charH() / 2);
 
    feather.print("Volts: ", Color::WHITE);

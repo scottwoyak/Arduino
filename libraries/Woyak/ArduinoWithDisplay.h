@@ -1,14 +1,14 @@
 #pragma once
 
 #include <Adafruit_GFX.h> 
-#include <FixedLengthString.h>
+#include <Format.h>
 #include <string>
 
 // TODO add more defines for more displays and move to a separate file
 #if defined(_ADAFRUIT_ST77XXH_)
 #define COLOR_565
 
-#define BUTTON_A 0
+constexpr auto BUTTON_A = 0;
 
 enum TextSize : uint8_t
 {
@@ -47,88 +47,6 @@ enum CharSize : uint8_t
    LARGE_W = TextSize::LARGE * 6,
    HUGE_W = TextSize::HUGE * 6,
 };
-
-class Format
-{
-public:
-   enum class Alignment
-   {
-      LEFT,
-      RIGHT,
-      CENTER
-   };
-
-   std::string prefix = "";
-   std::string postfix = "";
-   size_t length = 0;
-   Alignment alignment = Alignment::LEFT;
-   uint8_t precision = 2;
-   char errChar = '#';
-
-   Format(const char* example)
-   {
-      std::string str = example;
-
-      // extract the length
-      length = str.length();
-
-      // extract the prefix
-      while (str.length() > 0)
-      {
-         if (str[0] == '#')
-         {
-            break;
-         }
-         else
-         {
-            prefix.append(1, str[0]);
-            str.erase(0, 1);
-         }
-      }
-
-      // extract the postfix
-      while (str.length() > 0)
-      {
-         size_t pos = str.length() - 1;
-
-         if (str[pos] == '#')
-         {
-            break;
-         }
-         postfix.insert(0, 1, str[pos]);
-         str.erase(pos, 1);
-      }
-
-      // extract the precision
-      size_t pos = str.find_last_of('.');
-      precision = pos == std::string::npos ? 0 : (str.length() - 1) - pos;
-
-      /*
-      Serial.println(example);
-      Serial.print("length: ");
-      Serial.println(length);
-      Serial.print("prefix: '");
-      Serial.print(prefix.c_str());
-      Serial.println("'");
-      Serial.print("postfix: '");
-      Serial.print(postfix.c_str());
-      Serial.println("'");
-      Serial.print("precision: ");
-      Serial.println(precision);
-      */
-   }
-   Format(double min, double max, const char* postfix, uint8_t precision)
-   {
-      this->postfix = postfix;
-      this->precision = precision;
-
-      // determine the max length
-      size_t minLength = String(min, (uint)precision).length();
-      size_t maxLength = String(max, (uint)precision).length();
-      length = std::max(minLength, maxLength) + strlen(postfix);
-   }
-};
-
 
 #ifdef COLOR_565
 enum class Color : uint16_t
@@ -198,24 +116,6 @@ private:
       _display->setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
       _display->println(str);
    }
-   void _print(FixedLengthString& str, Color textColor, Color backgroundColor)
-   {
-      if (echoToSerial)
-      {
-         Serial.print(str);
-      }
-      _display->setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
-      _display->print(str);
-   }
-   void _println(FixedLengthString& str, Color textColor, Color backgroundColor)
-   {
-      if (echoToSerial)
-      {
-         Serial.println(str);
-      }
-      _display->setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
-      _display->println(str);
-   }
 
 public:
    bool echoToSerial = false;
@@ -234,6 +134,10 @@ public:
    void setTextSize(TextSize size)
    {
       _display->setTextSize((uint8_t)size);
+   }
+   void setTextSize(uint8_t size)
+   {
+      _display->setTextSize(size);
    }
 
    void setCursor(int16_t x, int16_t y)
@@ -290,15 +194,15 @@ public:
    {
       _println(str, textColor, backgroundColor);
    }
-   void print(const char* str, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(const char* str, Format format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString s(str, length);
-      _print(s, textColor, backgroundColor);
+      std::string s = format.toString(str);
+      _print(s.c_str(), textColor, backgroundColor);
    }
-   void println(const char* str, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(const char* str, Format format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString s(str, length);
-      _println(s, textColor, backgroundColor);
+      print(str, format, textColor, backgroundColor);
+      println();
    }
 
    //
@@ -312,15 +216,15 @@ public:
    {
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(const String& str, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(String& str, Format format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString s(str, length);
-      _print(s, textColor, backgroundColor);
+      std::string s = format.toString(str);
+      _print(s.c_str(), textColor, backgroundColor);
    }
-   void println(const String& str, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(String& str, Format format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString s(str, length);
-      _println(s, textColor, backgroundColor);
+      print(str, format, textColor, backgroundColor);
+      println();
    }
 
    //
@@ -334,15 +238,15 @@ public:
    {
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(const std::string& str, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(const std::string& str, Format format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString s(str, length);
-      _print(s, textColor, backgroundColor);
+      std::string s = format.toString(str);
+      _print(s.c_str(), textColor, backgroundColor);
    }
-   void println(const std::string& str, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(const std::string& str, Format format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString s(str, length);
-      _println(s, textColor, backgroundColor);
+      print(str, format, textColor, backgroundColor);
+      println();
    }
 
    //
@@ -358,45 +262,25 @@ public:
       String str(value);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(float value, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(float value, uint precision, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString str(value, length, 2);
-      _print(str, textColor, backgroundColor);
+      String str(value, precision);
+      _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(float value, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(float value, uint precision, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString str(value, length, 2);
-      _println(str, textColor, backgroundColor);
+      String str(value, precision);
+      _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(float value, uint8_t length, uint8_t  precision = 2, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(float value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString str(value, length, precision);
-      _print(str, textColor, backgroundColor);
+      std::string str = format.toString(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(float value, uint8_t length, uint8_t  precision = 2, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(float value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString str(value, length, precision);
-      _println(str, textColor, backgroundColor);
-   }
-   void print(float value, const char* postFix, uint8_t length, uint8_t  precision, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value, (uint)precision) + postFix, length);
-      _print(str, textColor, backgroundColor);
-   }
-   void println(float value, const char* postFix, uint8_t length, uint8_t  precision, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value, (uint)precision) + postFix, length);
-      _println(str, textColor, backgroundColor);
-   }
-   void print(float value, const char* postFix, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value, 2) + postFix, length);
-      _print(str, textColor, backgroundColor);
-   }
-   void println(float value, const char* postFix, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value, 2) + postFix, length);
-      _println(str, textColor, backgroundColor);
+      print(value, format, textColor, backgroundColor);
+      println();
    }
 
    //
@@ -407,42 +291,24 @@ public:
       String str(value);
       _print(str.c_str(), textColor, backgroundColor);
    }
+   void println(double value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value);
+      _println(str.c_str(), textColor, backgroundColor);
+   }
+   void print(double value, uint precision, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value, precision);
+      _print(str.c_str(), textColor, backgroundColor);
+   }
+   void println(double value, uint precision, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value, precision);
+      _println(str.c_str(), textColor, backgroundColor);
+   }
    void print(double value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      std::string str = format.prefix + String(value, (uint)format.precision).c_str() + format.postfix;
-
-      if (str.length() > format.length)
-      {
-         str.clear();
-         str.append(format.length, format.errChar);
-      }
-      else if (str.length() < format.length)
-      {
-         switch (format.alignment)
-         {
-         case Format::Alignment::LEFT:
-            str.append(format.length - str.length(), ' ');
-            break;
-
-         case Format::Alignment::RIGHT:
-         {
-            std::string pre(format.length - str.length(), ' ');
-            str = pre + str;
-         }
-         break;
-
-         case Format::Alignment::CENTER:
-         {
-            size_t fill = format.length - str.length();
-            size_t fillLeft = fill / 2;
-            size_t fillRight = fill - fillLeft;
-            std::string pre(fillLeft, ' ');
-            std::string post(fillRight, ' ');
-            str = pre + str + post;
-         }
-         break;
-         }
-      }
+      std::string str = format.toString(value);
       _print(str.c_str(), textColor, backgroundColor);
    }
    void println(double value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
@@ -450,50 +316,29 @@ public:
       print(value, format, textColor, backgroundColor);
       println();
    }
-   void println(double value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+
+   //
+   // ------------------------------------------- uint8_t variants
+   //
+   void print(uint8_t value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value);
+      _print(str.c_str(), textColor, backgroundColor);
+   }
+   void println(uint8_t value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
       String str(value);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(double value, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(uint8_t value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString str(value, length, 2);
-      _print(str, textColor, backgroundColor);
+      std::string str = format.toString(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(double value, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(uint8_t value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString str(value, length, 2);
-      _println(str, textColor, backgroundColor);
-   }
-   void print(double value, uint8_t length, uint8_t precision = 2, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(value, length, precision);
-      _print(str, textColor, backgroundColor);
-   }
-   void println(double value, uint8_t length, uint8_t precision = 2, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(value, length, precision);
-      _println(str, textColor, backgroundColor);
-   }
-   void print(double value, const char* postFix, uint8_t length, uint8_t  precision, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value, (uint)precision) + postFix, length);
-      _print(str, textColor, backgroundColor);
-   }
-   void println(double value, const char* postFix, uint8_t length, uint8_t  precision, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value, (uint)precision) + postFix, length);
-      _println(str, textColor, backgroundColor);
-   }
-   void print(double value, const char* postFix, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value) + postFix, length);
-      _print(str, textColor, backgroundColor);
-   }
-   void println(double value, const char* postFix, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value) + postFix, length);
-      _println(str, textColor, backgroundColor);
+      print(value, format, textColor, backgroundColor);
+      println();
    }
 
    //
@@ -509,45 +354,15 @@ public:
       String str(value);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(int value, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(int value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString str(value, length, 10);
-      _print(str, textColor, backgroundColor);
+      std::string str = format.toString(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(int value, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(int value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString str(value, length, 10);
-      _println(str, textColor, backgroundColor);
-   }
-   void print(int value, uint8_t length, uint8_t base = 10, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(value, length, base);
-      _print(str, textColor, backgroundColor);
-   }
-   void println(int value, uint8_t length, uint8_t base = 10, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(value, length, base);
-      _println(str, textColor, backgroundColor);
-   }
-   void print(int value, const char* postFix, uint8_t length, uint8_t  base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value, base) + postFix, length);
-      _print(str, textColor, backgroundColor);
-   }
-   void println(int value, const char* postFix, uint8_t length, uint8_t  base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value, base) + postFix, length);
-      _println(str, textColor, backgroundColor);
-   }
-   void print(int value, const char* postFix, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value) + postFix, length);
-      _print(str, textColor, backgroundColor);
-   }
-   void println(int value, const char* postFix, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value) + postFix, length);
-      _println(str, textColor, backgroundColor);
+      print(value, format, textColor, backgroundColor);
+      println();
    }
 
    //
@@ -563,44 +378,14 @@ public:
       String str(value);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(long value, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(long value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString str(value, length, 10);
-      _print(str, textColor, backgroundColor);
+      std::string str = format.toString(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(long value, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(long value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      FixedLengthString str(value, length, 10);
-      _println(str, textColor, backgroundColor);
-   }
-   void print(long value, uint8_t length, uint8_t base = 10, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(value, length, base);
-      _print(str, textColor, backgroundColor);
-   }
-   void println(long value, uint8_t length, uint8_t base = 10, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(value, length, base);
-      _println(str, textColor, backgroundColor);
-   }
-   void print(long value, const char* postFix, uint8_t length, uint8_t  base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value, base) + postFix, length);
-      _print(str, textColor, backgroundColor);
-   }
-   void println(long value, const char* postFix, uint8_t length, uint8_t  base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value, base) + postFix, length);
-      _println(str, textColor, backgroundColor);
-   }
-   void print(long value, const char* postFix, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value) + postFix, length);
-      _print(str, textColor, backgroundColor);
-   }
-   void println(long value, const char* postFix, uint8_t length, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      FixedLengthString str(String(value) + postFix, length);
-      _println(str, textColor, backgroundColor);
+      print(value, format, textColor, backgroundColor);
+      println();
    }
 };

@@ -10,6 +10,10 @@ uint16_t lastCount = 0;
 Button button(6);
 //Button& button = feather.buttonA;
 
+Format pinFormat("##");
+Format boolFormat(5);
+Format timeFormat("##.#s");
+
 void setup()
 {
    Serial.begin(115200);
@@ -28,14 +32,14 @@ void loop()
    feather.setTextSize(TextSize::MEDIUM);
    feather.setCursor(0, 0);
 
-   feather.print("Pin: ");
-   feather.println(button.getPin(), 2, ValueColor);
-   feather.print(" Is: ");
-   feather.println(button.isPressed() ? "True" : "False", 5, ValueColor);
-   feather.print("Was: ");
-   feather.println(button.wasPressed() ? "True" : "False", 5, ValueColor);
-   feather.print("  #: ");
-   feather.println(button.getPressedCount(), 2, ValueColor);
+   feather.print("Pin: ", Color::LABEL);
+   feather.println(button.getPin(), pinFormat, Color::VALUE);
+   feather.print(" Is: ", Color::LABEL);
+   feather.println(button.isPressed() ? "True" : "False", boolFormat, Color::VALUE);
+   feather.print("Was: ", Color::LABEL);
+   feather.println(button.wasPressed() ? "True" : "False", boolFormat, Color::VALUE);
+   feather.print("  #: ", Color::LABEL);
+   feather.println(button.getPressedCount(), Color::VALUE);
 
    if (lastCount != button.getPressedCount())
    {
@@ -54,8 +58,8 @@ void loop()
    {
       feather.display.setTextSize((uint8_t)TextSize::SMALL);
       feather.setCursor(0, feather.display.height() - CharSize::SMALL_H);
-      feather.print("Resetting in ", InfoColor);
-      feather.print((5 - sw.elapsedSecs()), "s", 4, 1, InfoColor);
+      feather.print("Resetting in ", Color::SUB_LABEL);
+      feather.print((5 - sw.elapsedSecs()), timeFormat, Color::SUB_LABEL);
    }
    else
    {

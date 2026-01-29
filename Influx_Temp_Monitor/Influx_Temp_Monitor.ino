@@ -5,6 +5,7 @@
 #include "TimedAverager.h"
 #include "Stopwatch.h"
 #include "Adafruit_SleepyDog.h"
+#include "SerialX.h"
 
 #include <WiFiMulti.h>
 WiFiMulti wifiMulti;
@@ -17,6 +18,10 @@ WiFiMulti wifiMulti;
 
 // for WIFI_SSID and WIFI_PASSWORD
 #include "WiFiSettings.h"
+
+
+Format humFormat("##.#%");
+Format tempFormat("###.## F");
 
 // Time zone info
 constexpr auto TZ_INFO = "UTC-5";
@@ -255,16 +260,7 @@ void determineLocation()
 // The setup() function runs once each time the micro-controller starts
 void setup()
 {
-   Wire.begin();
-
-   // start serial port
-   Serial.begin(115200);
-
-   // wait a few seconds for the serial monitor to open
-   while (millis() < 2000 && !Serial)
-   {
-   };
-   delay(500);
+   SerialX::begin();
 
    feather.begin();
    feather.display.setTextWrap(false);
@@ -320,7 +316,9 @@ void setup()
    {
       feather.printlnR("ok", OK_COLOR);
 
-      Serial.println(sensor.info());
+      SerialX::println("   Type: ", sensor.type());
+      SerialX::println("   Address: ", sensor.address());
+      SerialX::println("   ID: ", sensor.id());
    }
    else
    {
@@ -369,7 +367,7 @@ void loop()
    {
       feather.setCursor(0, 0);
       feather.display.setTextSize(2);
-      feather.println("Influx Monitor", Color::YELLOW);
+      feather.println("Influx Monitor", Color::HEADING);
 
       float temp = temperature.get();
       float hum = humidity.get();
@@ -379,16 +377,16 @@ void loop()
       uint8_t x = (feather.display.width() - MAX_CHARS * feather.charW()) / 2;
       constexpr auto SPACING = 8;
       feather.display.setCursor(x, (feather.display.height() - 2 * feather.charH()) / 2 - SPACING / 2);
-      feather.println(temp, " F", 8);
+      feather.println(temp, tempFormat);
 
       feather.setCursor(x, feather.display.getCursorY() + SPACING);
-      feather.println(hum, "%", 7);
+      feather.println(hum, humFormat);
 
       feather.display.setTextSize(2);
       feather.setCursor(0, -feather.charH());
       feather.print(location.c_str(), Color::CYAN);
 
-      feather.printR(version, Color::GRAY);
+      feather.printR(version, Color::SUB_LABEL);
    }
 
    // Write point

@@ -3,7 +3,6 @@
 #include <Adafruit_ST7789.h> // TFT display
 #include <ArduinoWithDisplay.h>
 #include <Button.h>
-#include <FixedLengthString.h>
 #include <string>
 #include <Preferences.h>
 
