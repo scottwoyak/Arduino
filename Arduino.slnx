@@ -66,6 +66,9 @@
   <Project Path="I2C_Port_Scanner/I2C_Port_Scanner.vcxproj">
     <Deploy />
   </Project>
+  <Project Path="INA219Display/INA219Display.vcxproj">
+    <Deploy />
+  </Project>
   <Project Path="Influx_Temp_Monitor/Influx_Temp_Monitor.vcxproj">
     <Deploy />
   </Project>
