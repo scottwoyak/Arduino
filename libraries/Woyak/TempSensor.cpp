@@ -1,5 +1,27 @@
 #include "TempSensor.h"
 
+struct CorrectionFactor
+{
+   std::string id;
+   float tempF;
+   float hum;
+};
+
+constexpr CorrectionFactor CORRECTIONS[] = {
+"2003674483",  0.000,  0.000, // reference sensor
+"3060770163",  0.107, -0.540,
+"2978522483",  0.037, -0.601,
+"2000135539", -0.061,  0.048,
+"2977408371",  0.300, -0.101,
+"3029116275", -0.020, -0.600,
+"3045565811",  0.067, -0.140,
+"3011618163", -0.124, -1.063,
+"3060245875",  0.096, -1.394,
+"2000135539",  0.073, -0.011,
+"3008996723", -0.081, -0.579,
+};
+
+constexpr auto NUM_CORRECTIONS = 0;// sizeof(CORRECTIONS) / sizeof(CORRECTIONS[0]);
 
 //-------------------------------------------------------------------------------------------------
 ITempSensor* _tryCreateHTC(bool print)
@@ -15,10 +37,9 @@ ITempSensor* _tryCreateHTC(bool print)
 
    if (print)
    {
-      if (id > 0)
+      if (id == 0x3000)
       {
-         Serial.print("Success. ID: ");
-         Serial.println(id);
+         Serial.print("Success");
       }
       else
       {
@@ -151,6 +172,20 @@ ITempSensor* TempSensor::_create(bool print)
          if (found == false)
          {
             Serial.println("No devices detected");
+         }
+      }
+   }
+
+   if (sensor != nullptr)
+   {
+      sensor->begin();
+      std::string id = sensor->id();
+      for (int i = 0; i < NUM_CORRECTIONS; i++)
+      {
+         if (id == CORRECTIONS[i].id)
+         {
+            tempCorrectionF = CORRECTIONS[i].tempF;
+            humCorrection = CORRECTIONS[i].hum;
          }
       }
    }

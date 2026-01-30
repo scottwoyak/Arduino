@@ -5,6 +5,7 @@
 #include "RunningAverager.h"
 #include "Multiplexer.h"
 #include "Feather.h"
+#include "SerialX.h"
 
 #include <WiFiMulti.h>
 WiFiMulti wifiMulti;
@@ -98,33 +99,35 @@ Point* points[] = { &point1,&point2,&point3,&point4,&point5,&point6 };
 uint8_t view = 0;
 constexpr auto NUM_VIEWS = 6;
 
-// The setup() function runs once each time the micro-controller starts
-void setup()
+void displaySavedInfo()
 {
-   Wire.begin();
-
-   // start serial port
-   Serial.begin(115200);
-
-   // wait a few seconds for the serial monitor to open
-   while (millis() < 2000 && !Serial)
-   {
-   };
-   delay(500);
-
-   feather.begin();
-   feather.display.setRotation(0);
-
    // load saved correction factors
    feather.preferences.begin("Calibrator", false);
    float tcorrections[6];
    float hcorrections[6];
+   std::string ids[6];
+
    for (int i = 0; i < NUM_SENSORS; i++)
    {
       tcorrections[i] = feather.preferences.getFloat((String("Temp ") + i).c_str());
       hcorrections[i] = feather.preferences.getFloat((String("Hum ") + i).c_str());
+      ids[i] = feather.preferences.getString((String("ID ") + i).c_str()).c_str();
    }
    feather.preferences.end();
+
+   // print saved factors for easy paste into TempSensor.cpp
+   Serial.println("Copy this data to TempSensor.cpp");
+   for (int i = 0; i < NUM_SENSORS; i++)
+   {
+      Serial.print("\"");
+      Serial.print(ids[i].c_str());
+      Serial.print("\", ");
+      Serial.print(-tcorrections[i], 3);
+      Serial.print(", ");
+      Serial.print(-hcorrections[i], 3);
+      Serial.print(", ");
+      Serial.println();
+   }
 
    // display saved temperature factors
    feather.display.setCursor(0, 0);
@@ -177,16 +180,19 @@ void setup()
       delay(1);
    }
    feather.buttonA.reset();
+}
 
+void setup()
+{
+   Wire.begin();
+   SerialX::begin();
+
+   feather.begin();
+   feather.display.setRotation(0);
+
+   displaySavedInfo();
 
    client.setWriteOptions(WriteOptions().batchSize(NUM_SENSORS).bufferSize(2 * NUM_SENSORS));
-   for (int i = 0; i < NUM_SENSORS; i++)
-   {
-      Multiplexer::select(i);
-      sensors[i]->begin();
-      points[i]->addTag("location", (String("Calibration ") + (i + 1)).c_str());
-   }
-
    feather.echoToSerial = true;
    feather.clear();
    feather.display.setTextSize(3);
@@ -194,6 +200,21 @@ void setup()
    feather.moveCursorY(10);
 
    feather.display.setTextSize(2);
+
+   feather.preferences.begin("Calibrator", false);
+   for (int i = 0; i < NUM_SENSORS; i++)
+   {
+      Multiplexer::select(i);
+      sensors[i]->begin();
+
+      // clear out corrections
+      sensors[i]->tempCorrectionF = 0;
+      sensors[i]->humCorrection = 0;
+
+      points[i]->addTag("location", (String("Calibration ") + (i + 1)).c_str());
+      feather.preferences.putString((String("ID ") + i).c_str(), sensors[i]->id());
+   }
+   feather.preferences.end();
 
    // Setup wifi
    WiFi.mode(WIFI_STA);
@@ -431,9 +452,15 @@ void loop()
 
       for (int i = 0; i < NUM_SENSORS; i++)
       {
+         float tDelta = tavgs[i]->get() - tavgs[0]->get();
+         float hDelta = havgs[i]->get() - havgs[0]->get();
          points[i]->clearFields();
-         points[i]->addField("temperature", temps[i]->get(), 4);
+         points[i]->addField("temperature", temps[i]->get(), 3);
          points[i]->addField("humidity", hums[i]->get(), 2);
+         points[i]->addField("tDelta", tDelta, 3);
+         points[i]->addField("hDelta", hDelta, 2);
+         points[i]->addField("tCorrected", temps[i]->get() - tDelta, 3);
+         points[i]->addField("hCorrected", hums[i]->get() - hDelta, 2);
 
          if (sensors[i]->exists())
          {

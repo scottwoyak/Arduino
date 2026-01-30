@@ -26,7 +26,7 @@ Format tempFormat("###.## F");
 // Time zone info
 constexpr auto TZ_INFO = "UTC-5";
 
-constexpr auto version = "v0.94";
+constexpr auto version = "v0.95";
 constexpr auto NUM_SECS = 15;
 constexpr auto INFLUX_MEASUREMENT = "Air";
 
@@ -225,7 +225,8 @@ void determineLocation()
       location = feather.preferences.getString(LOCATION_KEY);
       Stopwatch sw;
 
-      while (feather.buttonA.wasPressed() == false && encoder.button.wasPressed() == false && sw.elapsedSecs() < 10)
+      constexpr auto WAIT_TIME_S = 5;
+      while (feather.buttonA.wasPressed() == false && encoder.button.wasPressed() == false && sw.elapsedSecs() < WAIT_TIME_S)
       {
          feather.setCursor(0, 0);
          feather.println("Use Saved Settings?", Color::HEADING);
@@ -238,7 +239,7 @@ void determineLocation()
          feather.print("Continuing in ", Color::GRAY);
          feather.print(String((int)(10 - sw.elapsedSecs())), Color::GRAY);
       }
-      useSavedSettings = sw.elapsedSecs() > 10;
+      useSavedSettings = sw.elapsedSecs() > WAIT_TIME_S;
    }
    feather.buttonA.reset();
    encoder.button.reset();
@@ -256,6 +257,7 @@ void determineLocation()
 // The setup() function runs once each time the micro-controller starts
 void setup()
 {
+   Wire.begin();
    SerialX::begin();
 
    feather.begin();
@@ -269,6 +271,21 @@ void setup()
    feather.clear();
    feather.println("Initializing", Color::HEADING);
    feather.moveCursorY(feather.charH()/2);
+
+   feather.print("Sensor... ", Color::LABEL);
+   if (sensor.begin(true))
+   {
+      feather.printlnR("ok", Color::VALUE);
+
+      SerialX::println("   Type: ", sensor.type());
+      SerialX::println("   Address: ", sensor.address());
+      SerialX::println("   ID: ", sensor.id());
+   }
+   else
+   {
+      feather.printR("FAILED", Color::RED);
+      while (1);
+   }
 
    // Setup wifi
    WiFi.mode(WIFI_STA);
@@ -304,21 +321,6 @@ void setup()
       feather.printlnR("FAILED", Color::RED);
       feather.display.setTextSize(1);
       feather.println(client.getLastErrorMessage(), Color::RED);
-      while (1);
-   }
-
-   feather.print("Sensor... ", Color::LABEL);
-   if (sensor.begin(false))
-   {
-      feather.printlnR("ok", Color::VALUE);
-
-      SerialX::println("   Type: ", sensor.type());
-      SerialX::println("   Address: ", sensor.address());
-      SerialX::println("   ID: ", sensor.id());
-   }
-   else
-   {
-      feather.printR("FAILED", Color::RED);
       while (1);
    }
 
@@ -363,7 +365,9 @@ void loop()
    {
       feather.setCursor(0, 0);
       feather.display.setTextSize(2);
-      feather.println("Influx Monitor", Color::HEADING);
+      feather.print("Influx", Color::HEADING);
+      feather.printR(sensor.type(), Color::GRAY);
+      feather.println();
 
       float temp = temperature.get();
       float hum = humidity.get();
@@ -373,10 +377,10 @@ void loop()
       uint8_t x = (feather.display.width() - MAX_CHARS * feather.charW()) / 2;
       constexpr auto SPACING = 8;
       feather.display.setCursor(x, (feather.display.height() - 2 * feather.charH()) / 2 - SPACING / 2);
-      feather.println(temp, tempFormat);
+      feather.println(temp, tempFormat, Color::VALUE);
 
       feather.setCursor(x, feather.display.getCursorY() + SPACING);
-      feather.println(hum, humFormat);
+      feather.println(hum, humFormat, Color::VALUE);
 
       feather.display.setTextSize(2);
       feather.setCursor(0, -feather.charH());

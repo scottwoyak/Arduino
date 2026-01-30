@@ -7,6 +7,7 @@
 #include <Adafruit_SHT4x.h>
 #include <Adafruit_HDC302x.h>
 #include "Util.h"
+#include <string>
 
 //-------------------------------------------------------------------------------------------------
 class ITempSensor
@@ -20,16 +21,9 @@ public:
    virtual float readTemperatureF() = 0;
    virtual float readTemperatureC() = 0;
    virtual float readHumidity() = 0;
-
    virtual bool readsBoth() = 0;
-   virtual void readBoth(float& tempF, float& hum)
-   {
-      // if the implementation doesn't provide a method, just call both functions
-      tempF = readTemperatureF();
-      hum = readHumidity();
-   }
+   virtual void readBoth(float& tempF, float& hum) = 0;
 };
-
 
 //-------------------------------------------------------------------------------------------------
 class TempSensor : public ITempSensor
@@ -40,6 +34,9 @@ private:
    ITempSensor* _create(bool print);
 
 public:
+   float tempCorrectionF = 0;
+   float humCorrection = 0;
+
    bool begin() { return begin(true); }
    bool begin(bool print)
    {
@@ -95,7 +92,7 @@ public:
          return NAN;
       }
 
-      return _sensor->readTemperatureF();
+      return _sensor->readTemperatureF() + tempCorrectionF;
    }
    float readTemperatureC()
    {
@@ -105,7 +102,7 @@ public:
          return NAN;
       }
 
-      return _sensor->readTemperatureC();
+      return _sensor->readTemperatureC() + Util::F2C(tempCorrectionF);
    }
    float readHumidity()
    {
@@ -115,7 +112,7 @@ public:
          return NAN;
       }
 
-      return _sensor->readHumidity();
+      return _sensor->readHumidity() + humCorrection;
    }
    bool readsBoth()
    {
@@ -136,6 +133,8 @@ public:
       }
 
       _sensor->readBoth(tempF, hum);
+      tempF += tempCorrectionF;
+      hum += humCorrection;
    }
 };
 
@@ -215,6 +214,7 @@ public:
    virtual float readTemperatureC() { return _bme.readTemperature(); }
    virtual float readHumidity() { return _bme.readHumidity(); }
    virtual bool readsBoth() { return false; }
+   virtual void readBoth(float& tempF, float& hum) { tempF = readTemperatureF(); hum = readHumidity(); }
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -232,6 +232,7 @@ public:
    virtual float readTemperatureC() { return sht.readTemperature(); }
    virtual float readHumidity() { return sht.readHumidity(); }
    virtual bool readsBoth() { return false; }
+   virtual void readBoth(float& tempF, float& hum) { tempF = readTemperatureF(); hum = readHumidity(); }
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -302,35 +303,38 @@ public:
    {
       if (hdc.begin())
       {
-         uint8_t id[8];
-         hdc.readNISTID(id);
-
-         /* not sure what these all map to, but the last 4 seem to repeat among chips */
-         /*
-         Serial.println(id[0]);
-         Serial.println(id[1]);
-         Serial.println(id[2]);
-         Serial.println(id[3]);
-         Serial.println(id[4]);
-         Serial.println(id[5]);
-         Serial.println(id[6]);
-         Serial.println(id[7]);
-         */
-
-         uint32_t fullId =
-            ((uint64_t)id[0] << 24) |
-            ((uint64_t)id[1] << 16) |
-            ((uint64_t)id[2] << 8) |
-            ((uint64_t)id[3]);
-
-         _id = String(fullId);
-
+         _id = String(readId(hdc));
          return true;
       }
       else
       {
          return false;
       }
+   }
+   static uint64_t readId(Adafruit_HDC302x& hdc)
+   {
+      uint8_t id[8];
+      hdc.readNISTID(id);
+
+      /* not sure what these all map to, but the last 4 seem to repeat among chips */
+      /*
+      Serial.println(id[0]);
+      Serial.println(id[1]);
+      Serial.println(id[2]);
+      Serial.println(id[3]);
+      Serial.println(id[4]);
+      Serial.println(id[5]);
+      Serial.println(id[6]);
+      Serial.println(id[7]);
+      */
+
+      uint32_t fullId =
+         ((uint32_t)id[0] << 24) |
+         ((uint32_t)id[1] << 16) |
+         ((uint32_t)id[2] << 8) |
+         ((uint32_t)id[3]);
+
+      return fullId;
    }
    virtual float readTemperatureF()
    {
@@ -384,5 +388,6 @@ public:
    virtual float readTemperatureC() { return mcp.readTempF(); }
    virtual float readHumidity() { return NAN; }
    virtual bool readsBoth() { return false; }
+   virtual void readBoth(float& tempF, float& hum) { tempF = readTemperatureF(); hum = readHumidity(); }
 };
 
