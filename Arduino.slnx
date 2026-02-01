@@ -21,6 +21,7 @@
     <File Path="libraries/Woyak/I2C.h" />
     <File Path="libraries/Woyak/I2CMultiplexor.h" />
     <File Path="libraries/Woyak/IndexedEncoder.h" />
+    <File Path="libraries/Woyak/Influx.h" />
     <File Path="libraries/Woyak/Logger.h" />
     <File Path="libraries/Woyak/MinMaxValue.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
@@ -79,6 +80,9 @@
     <Deploy />
   </Project>
   <Project Path="RotaryEncoderDisplay/RotaryEncoderDisplay.vcxproj">
+    <Deploy />
+  </Project>
+  <Project Path="Solar_Monitor/Solar_Monitor.vcxproj">
     <Deploy />
   </Project>
   <Project Path="TemperatureCalibrator/TemperatureCalibrator.vcxproj">
