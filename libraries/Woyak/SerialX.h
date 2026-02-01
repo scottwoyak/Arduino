@@ -57,6 +57,16 @@ public:
       print(str, value, base);
       Serial.println();
    };
+   static void print(const char* str, unsigned long value, int base = 10)
+   {
+      Serial.print(str);
+      Serial.print(value, base);
+   }
+   static void println(const char* str, unsigned long value, int base = 10)
+   {
+      print(str, value, base);
+      Serial.println();
+   };
    static void print(const char* str, double value, int precision=2)
    {
       Serial.print(str);

@@ -1,19 +1,11 @@
 #include "Feather_ESP32_S3.h"
-#include "Potentiometer.h"
 #include "IndexedEncoder.h"
 #include "TempSensor.h"
 #include "TimedAverager.h"
 #include "Stopwatch.h"
 #include "Adafruit_SleepyDog.h"
 #include "SerialX.h"
-
-#include <WiFiMulti.h>
-WiFiMulti wifiMulti;
-#define DEVICE "ESP32"
-
-#include <InfluxDbClient.h>
-#include <InfluxDbCloud.h>
-
+#include "Influx.h"
 #include <string>
 
 // for WIFI_SSID and WIFI_PASSWORD
@@ -23,12 +15,7 @@ WiFiMulti wifiMulti;
 Format humFormat("##.#%");
 Format tempFormat("###.## F");
 
-// Time zone info
-constexpr auto TZ_INFO = "UTC-5";
-
-constexpr auto version = "v0.95";
-constexpr auto NUM_SECS = 15;
-constexpr auto INFLUX_MEASUREMENT = "Air";
+constexpr auto version = "v0.96";
 
 String rooms[] =
 {
@@ -36,7 +23,7 @@ String rooms[] =
    "Barn 2nd Floor",
    "Bathroom",
    "Bedroom",
-   "Chicken Coup",
+   "Chicken Coop",
    "Clay Studio",
    "Closet",
    "Den",
@@ -77,13 +64,15 @@ constexpr auto NUM_POSTFIXES = sizeof(postfixes) / sizeof(postfixes[0]);
 Feather_ESP32_S3 feather;
 IndexedEncoder encoder(9, 6, 5, NUM_ROOMS);
 String location;
-Stopwatch trigger;
-TimedAverager temperature(1000 * NUM_SECS);
-TimedAverager humidity(1000 * NUM_SECS);
 
 TempSensor sensor;
+
+constexpr auto INFLUX_MEASUREMENT = "Air";
+constexpr auto INFLUX_INTERVAL_S = 15;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-Point point(INFLUX_MEASUREMENT); // Influx data point
+TimedPoint point(INFLUX_INTERVAL_S, INFLUX_MEASUREMENT); // Influx data point
+Field* tempField = point.addTimeAveragedField("temperature", 3);
+Field* humField = point.addTimeAveragedField("humidity", 2);
 
 const char* LOCATION_KEY = "location"; // for preferences
 
@@ -91,8 +80,6 @@ enum class EncoderItem
 {
    Room,
    Postfix,
-   Correction10s,
-   Correction100s,
 };
 EncoderItem activeItem;
 
@@ -114,8 +101,6 @@ void askLocation()
 {
    int roomIndex = 0;
    int postfixIndex = 0;
-   int correction10s = 0;
-   int correction100s = 0;
 
    // ask for information
    while (feather.buttonA.wasPressed() == false)
@@ -130,14 +115,6 @@ void askLocation()
          break;
       case EncoderItem::Postfix:
          postfixIndex = encoder.getIndex();
-         break;
-
-      case EncoderItem::Correction10s:
-         correction10s = encoder.getPosition();
-         break;
-
-      case EncoderItem::Correction100s:
-         correction100s = encoder.getIndex();
          break;
       }
 
@@ -155,14 +132,6 @@ void askLocation()
       feather.print("          "); // to the end of the line
       feather.println();
 
-      feather.println("Calibration:", Color::LABEL);
-      feather.setCursorX(20);
-      getColors(EncoderItem::Correction10s, &textColor, &bgColor);
-      feather.print(String(correction10s / 10.0, 1), textColor, bgColor);
-      getColors(EncoderItem::Correction100s, &textColor, &bgColor);
-      feather.print(correction100s, textColor, bgColor);
-      feather.print(" ");
-
       if (encoder.button.wasPressed())
       {
          encoder.button.reset();
@@ -175,14 +144,6 @@ void askLocation()
             break;
 
          case EncoderItem::Postfix:
-            activeItem = EncoderItem::Correction10s;
-            break;
-
-         case EncoderItem::Correction10s:
-            activeItem = EncoderItem::Correction100s;
-            break;
-
-         case EncoderItem::Correction100s:
             activeItem = EncoderItem::Room;
             break;
          }
@@ -195,14 +156,6 @@ void askLocation()
             break;
          case EncoderItem::Postfix:
             encoder.setIndex(postfixIndex, NUM_POSTFIXES);
-            break;
-
-         case EncoderItem::Correction10s:
-            encoder.setPosition(correction10s);
-            break;
-
-         case EncoderItem::Correction100s:
-            encoder.setIndex(correction100s, 10);
             break;
          }
       }
@@ -237,7 +190,7 @@ void determineLocation()
          feather.setCursor(0, feather.display.height() - 32);
          feather.println("Press button to edit... ", Color::GRAY);
          feather.print("Continuing in ", Color::GRAY);
-         feather.print(String((int)(10 - sw.elapsedSecs())), Color::GRAY);
+         feather.print(String((int)(WAIT_TIME_S - sw.elapsedSecs())), Color::GRAY);
       }
       useSavedSettings = sw.elapsedSecs() > WAIT_TIME_S;
    }
@@ -287,49 +240,14 @@ void setup()
       while (1);
    }
 
-   // Setup wifi
-   WiFi.mode(WIFI_STA);
-   wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
-
-   feather.print("WiFi... ", Color::LABEL);
-   while (wifiMulti.run() != WL_CONNECTED)
-   {
-      Serial.print(".");
-      delay(100);
-   }
-   feather.printlnR("ok", Color::VALUE);
-
-   // Accurate time is necessary for certificate validation and writing in batches
-   // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
-   // Syncing progress and the time will be printed to Serial.
-   feather.echoToSerial = false;
-   feather.print("Syncing Time... ", Color::LABEL);
-   timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
-   feather.printlnR("ok", Color::VALUE);
-   feather.echoToSerial = true;
-
-   // Check server connection
-   feather.print("InfluxDB... ", Color::LABEL);
-
-   if (client.validateConnection())
-   {
-      feather.printlnR("ok", Color::VALUE);
-      Serial.println(client.getServerUrl());
-   }
-   else
-   {
-      feather.printlnR("FAILED", Color::RED);
-      feather.display.setTextSize(1);
-      feather.println(client.getLastErrorMessage(), Color::RED);
-      while (1);
-   }
+   Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client);
 
    delay(5000);
 
-   point.addTag("location", location.c_str());
+   point.addTag("location", location);
+
    feather.clear();
    feather.echoToSerial = false;
-   trigger.reset();
 
    encoder.setLimits(0, 20); // num steps to full brightness
    encoder.setPosition(encoder.getMax());
@@ -348,12 +266,9 @@ void loop()
 
    count++;
 
-   // Clear fields for reusing the point. Tags will remain the same as set above.
-   point.clearFields();
-
    // Store measured value into point
-   temperature.set(sensor.readTemperatureF());
-   humidity.set(sensor.readHumidity());
+   tempField->set(sensor.readTemperatureF());
+   humField->set(sensor.readHumidity());
 
    // Check WiFi connection and reconnect if needed
    if (wifiMulti.run() != WL_CONNECTED)
@@ -369,8 +284,8 @@ void loop()
       feather.printR(sensor.type(), Color::GRAY);
       feather.println();
 
-      float temp = temperature.get();
-      float hum = humidity.get();
+      float temp = tempField->get();
+      float hum = humField->get();
 
       feather.display.setTextSize(4);
       constexpr auto MAX_CHARS = 8;
@@ -390,17 +305,10 @@ void loop()
    }
 
    // Write point
-   if (trigger.elapsedSecs() > NUM_SECS)
+   if (point.ready())
    {
-      trigger.reset();
-
-      point.addField("temperature", temperature.get());
-      point.addField("humidity", humidity.get());
-      // Print what are we exactly writing
-      //Serial.println(point.toLineProtocol());
-
       digitalWrite(BUILTIN_LED, HIGH);
-      if (!client.writePoint(point))
+      if (point.post(&client)==false)
       {
          Serial.println("InfluxDB write failed: ");
          Serial.println(client.getLastErrorMessage());

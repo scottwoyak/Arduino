@@ -62,6 +62,7 @@ enum class Color : uint16_t
    ORANGE = 0xFC00,
    GRAY = 0x8430,
    DARKGRAY = 0x6B4D,
+   PINK = 0xFD9C,
 
    HEADING = ORANGE,
    LABEL = WHITE,
