@@ -13,7 +13,7 @@ Adafruit_INA219 sensor2(0x41); // A0 shorted
 Format voltsFormat("#.## v");
 Format currentFormat("####.# mA");
 Format percentFormat("###.#%");
-Format mAhFormat("####.# mAh");
+Format mAhFormat("+####.# mAh");
 
 TimedAverager displayBatteryVolts(1000);
 TimedAverager displayBatterymA(1000);
@@ -48,7 +48,7 @@ void setup()
       Serial.println("Battery INA219 Not Found");
       feather.setTextSize(3);
       feather.display.fillScreen((uint16_t)Color::RED);
-      feather.moveCursorY(feather.display.height() / 2 - feather.charH());
+      feather.setCursor(0, feather.display.height() / 2 - feather.charH());
       feather.printlnC("Battery INA219", Color::WHITE, Color::RED);
       feather.printlnC("Not Found", Color::WHITE, Color::RED);
       while (1);
@@ -61,7 +61,7 @@ void setup()
       Serial.println("INA219 (2) Not Found");
       feather.setTextSize(3);
       feather.display.fillScreen((uint16_t)Color::RED);
-      feather.moveCursorY(feather.display.height() / 2 - feather.charH());
+      feather.setCursor(0, feather.display.height() / 2 - feather.charH());
       feather.printlnC("Solar INA219", Color::WHITE, Color::RED);
       feather.printlnC("Not Found", Color::WHITE, Color::RED);
       while (1);
@@ -108,7 +108,7 @@ void loop()
    solarmAField->set(nowSolarmA);
 
    Color color;
-   feather.print(" Battery: ", Color::HEADING);
+   feather.print(" Battery: ", Color::HEADING2);
    if (displayBatterymA.get() > 0)
    {
       color = Color::GREEN;
@@ -130,12 +130,12 @@ void loop()
    feather.println(std::abs(displayBatterymA.get()), currentFormat, color);
    feather.moveCursorY(1);
 
-   feather.print("     mAh: ", Color::LABEL);
-   feather.println(mAh, mAhFormat, color);
+   feather.print("     mAh:", Color::LABEL);
+   feather.println(mAh, mAhFormat, Color::VALUE);
 
 
    feather.moveCursorY(feather.charH() / 2);
-   feather.println("   Solar: ", Color::HEADING);
+   feather.println("   Solar: ", Color::HEADING2);
    feather.moveCursorY(2);
 
    feather.print("   Volts: ", Color::LABEL);
