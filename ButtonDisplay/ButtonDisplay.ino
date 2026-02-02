@@ -7,8 +7,8 @@ Feather feather;
 Stopwatch sw(false);
 uint16_t lastCount = 0;
 
-Button button(6);
-//Button& button = feather.buttonA;
+//Button button(6);
+Button& button = feather.buttonA;
 
 Format pinFormat("##");
 Format boolFormat(5);

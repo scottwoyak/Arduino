@@ -65,6 +65,7 @@ enum class Color : uint16_t
    PINK = 0xFD9C,
 
    HEADING = ORANGE,
+   HEADING2 = CYAN,
    LABEL = WHITE,
    VALUE = YELLOW,
    VALUE2 = CYAN,
@@ -86,6 +87,7 @@ enum class Color : uint16_t
    DARKGRAY = 0,
 
    HEADING = WHITE,
+   HEADING2 = WHITE,
    LABEL = WHITE,
    VALUE = WHITE,
    VALUE2 = WHITE,
@@ -419,6 +421,40 @@ public:
       _print(str.c_str(), textColor, backgroundColor);
    }
    void println(long value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      print(value, format, textColor, backgroundColor);
+      println();
+   }
+
+   //
+   // ------------------------------------------- unsigned long variants
+   //
+   void print(unsigned long value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value);
+      _print(str.c_str(), textColor, backgroundColor);
+   }
+   void println(unsigned long value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value);
+      _println(str.c_str(), textColor, backgroundColor);
+   }
+   void print(unsigned long value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value, base);
+      _print(str.c_str(), textColor, backgroundColor);
+   }
+   void println(unsigned long value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      String str(value, base);
+      _println(str.c_str(), textColor, backgroundColor);
+   }
+   void print(unsigned long value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      std::string str = format.toString(value);
+      _print(str.c_str(), textColor, backgroundColor);
+   }
+   void println(unsigned long value, Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
       print(value, format, textColor, backgroundColor);
       println();

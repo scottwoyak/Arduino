@@ -9,6 +9,8 @@
     <File Path="libraries/Woyak/Battery.h" />
     <File Path="libraries/Woyak/Button.cpp" />
     <File Path="libraries/Woyak/Button.h" />
+    <File Path="libraries/Woyak/Counter.cpp" />
+    <File Path="libraries/Woyak/Counter.h" />
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
     <File Path="libraries/Woyak/Feather.h" />
@@ -49,6 +51,9 @@
   <Project Path="ButtonDisplay/ButtonDisplay.vcxproj">
     <Deploy />
   </Project>
+  <Project Path="Counter_Display/Counter_Display.vcxproj">
+    <Deploy />
+  </Project>
   <Project Path="Display_SH1107/Display_SH1107.vcxproj">
     <Deploy />
   </Project>
@@ -70,10 +75,10 @@
   <Project Path="INA219Display/INA219Display.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="Influx_Temp_Monitor/Influx_Temp_Monitor.vcxproj">
+  <Project Path="InterruptDisplay/InterruptDisplay.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="InterruptDisplay/InterruptDisplay.vcxproj">
+  <Project Path="Pin_Display/Pin_Display.vcxproj">
     <Deploy />
   </Project>
   <Project Path="Potentiometer/Potentiometer.vcxproj" Id="c5bc2f07-d8ae-4dcf-aede-3dddf1846b20">
@@ -89,6 +94,9 @@
     <Deploy />
   </Project>
   <Project Path="TemperatureDisplay/TemperatureDisplay.vcxproj">
+    <Deploy />
+  </Project>
+  <Project Path="Temp_Monitor/Temp_Monitor.vcxproj">
     <Deploy />
   </Project>
   <Project Path="WindDisplay/WindDisplay.vcxproj">
