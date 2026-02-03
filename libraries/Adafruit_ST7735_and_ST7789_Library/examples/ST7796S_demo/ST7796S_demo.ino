@@ -8,7 +8,7 @@
 // Define display pin connections
 #define TFT_CS        10
 #define TFT_RST        9 // Or set to -1 and connect to Arduino RESET pin
-#define TFT_DC         8
+#define TFT_DC         6
 
 // Initialize the display
 Adafruit_ST7796S display(TFT_CS, TFT_DC, TFT_RST);
@@ -22,6 +22,8 @@ void setup() {
   Serial.begin(115200);
   Serial.println("ST7796S graphics demo");
 
+pinMode(5, OUTPUT);
+digitalWrite(5, HIGH);
   display.init(320, 480, 0, 0, ST7796S_RGB);
 
   display.fillScreen(0); // Clear screen
