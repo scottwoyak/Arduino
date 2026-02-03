@@ -39,7 +39,7 @@ void setup()
 void loop()
 {
    feather.setCursor(0, 0);
-   feather.setTextSize(TextSize::SMALL);
+   feather.setTextSize(2);
 
    //feather.println("INA219 Sensor", Color::HEADING);
    mA.set(sensor.getCurrent_mA());

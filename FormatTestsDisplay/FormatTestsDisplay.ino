@@ -89,8 +89,7 @@ void loop()
    if (feather.buttonA.wasPressed())
    {
       view++;
-      feather.buttonA.reset();
-      feather.clear();
+      feather.clearDisplay();
    }
    else
    {

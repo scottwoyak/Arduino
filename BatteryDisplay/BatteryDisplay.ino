@@ -24,7 +24,7 @@ void setup()
 void loop()
 {
    feather.setCursor(0, 0);
-   feather.setTextSize(TextSize::MEDIUM);
+   feather.setTextSize(3);
    feather.println("Battery Info", Color::HEADING);
    feather.moveCursorY(feather.charH() / 4);
 
@@ -38,7 +38,7 @@ void loop()
    feather.moveCursorY(feather.charH() / 4);
 
    feather.print(" Rate: ", Color::LABEL);
-   feather.setTextSize(TextSize::SMALL);
+   feather.setTextSize(2);
    feather.setCursorX(x);
    float chargeRate = battery.chargeRate();
    feather.println(chargeRate, chargeRateFormat, Color::VALUE);

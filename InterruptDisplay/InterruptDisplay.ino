@@ -54,15 +54,13 @@ void loop()
 {
    feather.setCursor(0, 0);
 
-   feather.setTextSize(TextSize::SMALL);
+   feather.setTextSize(2);
    feather.display.setTextWrap(true);
    feather.println("Press the button to switch types", Color::HEADING);
    feather.println();
 
    if (feather.buttonA.wasPressed())
    {
-      feather.buttonA.reset();
-
       choice++;
       if (choice >= NUM_CHOICES)
       {
@@ -73,16 +71,14 @@ void loop()
       attachInterrupt();
    }
 
-   feather.setTextSize(TextSize::MEDIUM);
+   feather.setTextSize(3);
    feather.print("Pin: ");
    feather.println(pin, pinFormat, Color::VALUE);
    feather.print(choices[choice]);
    feather.print(": ");
    feather.println(count, countFormat, Color::VALUE);
 
-#if defined(ADAFRUIT_FEATHER_M0)
-   feather.display.display();
-#endif
+   feather.displayDisplay();
 }
 
 

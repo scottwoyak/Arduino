@@ -133,8 +133,6 @@ void askLocation()
 
       if (encoder.button.wasPressed())
       {
-         encoder.button.reset();
-
          // advance the active item
          switch (activeItem)
          {
@@ -195,7 +193,7 @@ void determineLocation()
    }
    feather.buttonA.reset();
    encoder.button.reset();
-   feather.clear();
+   feather.clearDisplay();
 
    if (useSavedSettings == false)
    {
@@ -220,7 +218,7 @@ void setup()
    determineLocation();
 
    feather.echoToSerial = true;
-   feather.clear();
+   feather.clearDisplay();
    feather.println("Initializing", Color::HEADING);
    feather.moveCursorY(feather.charH()/2);
 
@@ -245,7 +243,7 @@ void setup()
 
    point.addTag("location", location);
 
-   feather.clear();
+   feather.clearDisplay();
    feather.echoToSerial = false;
 
    encoder.setLimits(0, 20); // num steps to full brightness

@@ -303,7 +303,9 @@ public:
    {
       if (hdc.begin())
       {
-         _id = String(readId(hdc));
+         uint64_t id = readId(hdc);
+         std::string str = std::to_string(id);
+         _id = str.c_str();
          return true;
       }
       else

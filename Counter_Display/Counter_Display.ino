@@ -56,7 +56,6 @@ void loop()
    if (feather.buttonA.wasPressed())
    {
       minSpan = 0;
-      feather.buttonA.reset();
       counter.reset();
    }
 }

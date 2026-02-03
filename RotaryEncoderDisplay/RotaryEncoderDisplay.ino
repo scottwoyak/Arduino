@@ -22,20 +22,11 @@ void loop()
 {
    if (encoder.button.wasPressed())
    {
-      encoder.button.reset();
       encoder.setPosition(0);
    }
 
    feather.setCursor(0, 0);
-
-   if (feather.display.height() / CharSize::MEDIUM_H >= 5)
-   {
-      feather.setTextSize(TextSize::MEDIUM);
-   }
-   else
-   {
-      feather.setTextSize(TextSize::SMALL);
-   }
+   feather.setTextSize(3);
 
    feather.print("     A: ", Color::LABEL);
    feather.println(encoder.isLowA() ? "Low" : "High", highLowFormat, Color::VALUE);
@@ -52,8 +43,8 @@ void loop()
    feather.print("Button: ", Color::LABEL);
    feather.println(encoder.button.isPressed()?"True" : "False", boolFormat, Color::VALUE);
 
-   feather.setCursorY(-CharSize::SMALL_H);
-   feather.setTextSize(TextSize::SMALL);
+   feather.setTextSize(2);
+   feather.setCursorY(-feather.charH());
    feather.print("A:", Color::LABEL);
    feather.print(encoder.getPinA(), Color::VALUE);
    feather.print("  B:", Color::LABEL);

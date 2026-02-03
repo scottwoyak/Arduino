@@ -153,7 +153,6 @@ void displaySavedInfo()
    {
       delay(1);
    }
-   feather.buttonA.reset();
 
    // display saved humidity factors
    feather.display.setCursor(0, 0);
@@ -179,7 +178,6 @@ void displaySavedInfo()
    {
       delay(1);
    }
-   feather.buttonA.reset();
 }
 
 void setup()
@@ -194,7 +192,7 @@ void setup()
 
    client.setWriteOptions(WriteOptions().batchSize(NUM_SENSORS).bufferSize(2 * NUM_SENSORS));
    feather.echoToSerial = true;
-   feather.clear();
+   feather.clearDisplay();
    feather.display.setTextSize(3);
    feather.println("Init", Color::HEADING);
    feather.moveCursorY(10);
@@ -259,7 +257,7 @@ void setup()
 
    delay(1000);
 
-   feather.clear();
+   feather.clearDisplay();
    feather.echoToSerial = false;
 
    prefsTrigger.reset();
@@ -279,8 +277,7 @@ void loop()
 
    if (feather.buttonA.wasPressed())
    {
-      feather.clear();
-      feather.buttonA.reset();
+      feather.clearDisplay();
       view++;
       view = view % NUM_VIEWS;
    }

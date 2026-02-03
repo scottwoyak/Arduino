@@ -5,53 +5,18 @@
 #include <string>
 #include "Color.h"
 
-
-// TODO add more defines for more displays and move to a separate file
-#if defined(_ADAFRUIT_ST77XXH_)
-
-constexpr auto BUTTON_A = 0;
-
-enum TextSize : uint8_t
+class Adafruit_GFX_wInfo
 {
-   TINY = 1,
-   SMALL = 2,
-   MEDIUM = 3,
-   LARGE = 4,
-   HUGE = 5,
-};
-
-#elif defined(_Adafruit_GRAYOLED_H_)
-
-enum TextSize : uint8_t
-{
-   TINY = 1,
-   SMALL = 1,
-   MEDIUM = 2,
-   LARGE = 2,
-   HUGE = 3,
-};
-
-#endif
-
-enum CharSize : uint8_t
-{
-   TINY_H = TextSize::TINY * 8,
-   SMALL_H = TextSize::SMALL * 8,
-   MEDIUM_H = TextSize::MEDIUM * 8,
-   LARGE_H = TextSize::LARGE * 8,
-   HUGE_H = TextSize::HUGE * 8,
-
-   TINY_W = TextSize::TINY * 6,
-   SMALL_W = TextSize::SMALL * 6,
-   MEDIUM_W = TextSize::MEDIUM * 6,
-   LARGE_W = TextSize::LARGE * 6,
-   HUGE_W = TextSize::HUGE * 6,
+public:
+   virtual uint8_t charW() = 0;
+   virtual uint8_t charH() = 0;
 };
 
 class ArduinoWithDisplay
 {
 private:
    Adafruit_GFX* _display;
+   Adafruit_GFX_wInfo* _displayInfo;
 
    void _print(const char* str, Color textColor, Color backgroundColor)
    {
@@ -75,24 +40,21 @@ private:
 public:
    bool echoToSerial = false;
 
-   ArduinoWithDisplay(Adafruit_GFX* display)
+   ArduinoWithDisplay(Adafruit_GFX* display, Adafruit_GFX_wInfo* displayInfo)
    {
       _display = display;
+      _displayInfo = displayInfo;
    }
 
-   void clear(Color color = Color::BLACK)
+   virtual void clearDisplay(Color color = Color::BLACK)
    {
       _display->fillScreen((uint16_t)Color::BLACK);
       _display->setCursor(0, 0);
    }
 
-   void setTextSize(TextSize size)
-   {
-      _display->setTextSize((uint8_t)size);
-   }
    void setTextSize(uint8_t size)
    {
-      _display->setTextSize(size);
+      _display->setTextSize((uint8_t)size);
    }
 
    void setCursor(int16_t x, int16_t y)
@@ -140,6 +102,37 @@ public:
          Serial.println();
       }
       _display->println();
+   }
+
+   uint8_t charW()
+   {
+      return _displayInfo->charW();
+   }
+   uint8_t charH()
+   {
+      return _displayInfo->charH();
+   }
+
+   void printR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      setCursorX(-strlen(str) * charW());
+      print(str, textColor, backgroundColor);
+   }
+   void printlnR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      printR(str, textColor, backgroundColor);
+      println();
+   }
+
+   void printC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      setCursorX((_display->width() - strlen(str) * charW()) / 2);
+      print(str, textColor, backgroundColor);
+   }
+   void printlnC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      printC(str, textColor, backgroundColor);
+      println();
    }
 
    //

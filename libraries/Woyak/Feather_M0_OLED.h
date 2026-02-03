@@ -9,7 +9,7 @@
 // Annoyingling, Adafruit has a lot of nifty properties in Adafruit_GFX that you can set, but not 
 // get. This class is just a wrapper that exposes them
 //
-class SW_SH1107 : public Adafruit_SH1107
+class SW_SH1107 : public Adafruit_SH1107, public Adafruit_GFX_wInfo
 {
 public:
    SW_SH1107(uint16_t w, uint16_t h, TwoWire* twi = &Wire) : Adafruit_SH1107(w, h, twi)
@@ -135,7 +135,7 @@ public:
    Button buttonC;
    PreferencesFlash preferences;
 
-   Feather_M0_OLED() : ArduinoWithDisplay(&display), display(64, 128, &Wire), buttonA(9), buttonB(6), buttonC(5)
+   Feather_M0_OLED() : ArduinoWithDisplay(&display, &display), display(64, 128, &Wire), buttonA(9), buttonB(6), buttonC(5)
    {
    }
 
@@ -152,40 +152,13 @@ public:
       display.display();
    }
 
+   virtual void clearDisplay()
+   {
+      display.clearDisplay();
+      display.setCursor(0, 0);
+   }
    void displayDisplay()
    {
       display.display();
-   }
-
-   uint8_t charW()
-   {
-      return display.charW();
-   }
-
-   uint8_t charH()
-   {
-      return display.charH();
-   }
-
-   void printR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      setCursorX(-strlen(str) * charW());
-      print(str, textColor, backgroundColor);
-   }
-   void printlnR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      printR(str, textColor, backgroundColor);
-      println();
-   }
-
-   void printC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      setCursorX((display.width() - strlen(str) * charW()) / 2);
-      print(str, textColor, backgroundColor);
-   }
-   void printlnC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      printC(str, textColor, backgroundColor);
-      println();
    }
 };

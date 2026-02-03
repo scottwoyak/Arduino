@@ -49,34 +49,34 @@ void loop()
    int16_t humPerS = round(1000 / humTime);
 
    // display values
-   feather.display.setTextSize(TextSize::MEDIUM);
+   feather.display.setTextSize(3);
    if (feather.display.width() / feather.charW() > 12)
    {
       feather.print("Temp: ", Color::LABEL);
    }
    feather.println(temp, tempFormat, Color::VALUE);
 
-   feather.display.setTextSize(TextSize::SMALL);
+   feather.display.setTextSize(2);
    feather.print(tempTime, msFormat, Color::SUB_LABEL);
    feather.print("  ");
    feather.print(tempPerS, rateFormat, Color::SUB_LABEL);
    feather.println();
    feather.moveCursorY(feather.charH() / 2);
 
-   feather.display.setTextSize(TextSize::MEDIUM);
+   feather.display.setTextSize(3);
    if (feather.display.width() / feather.charW() > 12)
    {
       feather.print(" Hum: ", Color::LABEL);
    }
    feather.println(hum, humFormat, Color::VALUE);
 
-   feather.display.setTextSize(TextSize::SMALL);
+   feather.display.setTextSize(2);
    feather.print(humTime, msFormat, Color::SUB_LABEL);
    feather.print("  ");
    feather.print(humPerS, rateFormat, Color::SUB_LABEL);
    feather.println();
 
-   feather.display.setTextSize(TextSize::SMALL);
+   feather.display.setTextSize(2);
    feather.setCursor(0, -2*feather.charH() + feather.charH()/4);
    feather.print("Type: ", Color::LABEL);
    feather.print(sensor.type(), Color::VALUE2);

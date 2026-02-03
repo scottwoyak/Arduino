@@ -10,7 +10,7 @@
 // Annoyingling, Adafruit has a lot of nifty properties in Adafruit_GFX that you can set, but not 
 // get. This class is just a wrapper that exposes them
 //
-class SW_ST7789 : public Adafruit_ST7789
+class SW_ST7789 : public Adafruit_ST7789, public Adafruit_GFX_wInfo
 {
 public:
    SW_ST7789(int8_t cs, int8_t dc, int8_t mosi, int8_t sclk, int8_t rst = -1) : Adafruit_ST7789(cs, dc, mosi, sclk, rst)
@@ -41,7 +41,7 @@ public:
    Button buttonA;
    Preferences preferences;
 
-   Feather_ESP32_S3() : ArduinoWithDisplay(&display), display(TFT_CS, TFT_DC, TFT_RST), buttonA(0)
+   Feather_ESP32_S3() : ArduinoWithDisplay(&display, &display), display(TFT_CS, TFT_DC, TFT_RST), buttonA(0)
    {
    }
 
@@ -91,37 +91,5 @@ public:
    void displayDisplay()
    {
       // nothing to do here. The TFT isn't double buffered
-   }
-
-   uint8_t charW()
-   {
-      return display.charW();
-   }
-
-   uint8_t charH()
-   {
-      return display.charH();
-   }
-
-   void printR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      setCursorX(-strlen(str) * charW());
-      print(str, textColor, backgroundColor);
-   }
-   void printlnR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      printR(str, textColor, backgroundColor);
-      println();
-   }
-
-   void printC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      setCursorX((display.width() - strlen(str) * charW())/2);
-      print(str, textColor, backgroundColor);
-   }
-   void printlnC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
-   {
-      printC(str, textColor, backgroundColor);
-      println();
    }
 };

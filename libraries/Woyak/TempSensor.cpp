@@ -2,7 +2,7 @@
 
 struct CorrectionFactor
 {
-   std::string id;
+   const char* id;
    float tempF;
    float hum;
 };

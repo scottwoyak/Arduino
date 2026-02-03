@@ -30,7 +30,7 @@ void loop()
       sw.start();
    }
 
-   feather.setTextSize(TextSize::MEDIUM);
+   feather.setTextSize(3);
    feather.setCursor(0, 0);
 
    feather.print("Pin: ", Color::LABEL);
@@ -57,15 +57,15 @@ void loop()
 
    if (sw.isRunning())
    {
-      feather.display.setTextSize((uint8_t)TextSize::SMALL);
-      feather.setCursor(0, feather.display.height() - CharSize::SMALL_H);
+      feather.display.setTextSize(2);
+      feather.setCursor(0, feather.display.height() - feather.charH());
       feather.print("Resetting in ", Color::SUB_LABEL);
       feather.print((5 - sw.elapsedSecs()), timeFormat, Color::SUB_LABEL);
    }
    else
    {
       // cover up the time remaining msg
-      feather.display.fillRect(0, feather.display.height() - CharSize::SMALL_H, feather.display.width(), CharSize::SMALL_H, (uint16_t)Color::BLACK);
+      feather.display.fillRect(0, feather.display.height() - feather.charH(), feather.display.width(), feather.charH(), (uint16_t)Color::BLACK);
    }
 
 #if defined(ADAFRUIT_FEATHER_M0)

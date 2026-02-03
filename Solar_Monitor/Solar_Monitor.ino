@@ -5,6 +5,7 @@
 #include "TimedAverager.h"
 #include "Influx.h"
 #include "WiFiSettings.h"
+#include "Util.h"
 
 Feather feather;
 Adafruit_INA219 sensor1(0x40);
@@ -38,7 +39,7 @@ void setup()
    SerialX::begin();
 
    feather.echoToSerial = true;
-   feather.clear();
+   feather.clearDisplay();
    feather.println("Initializing", Color::HEADING);
    feather.moveCursorY(feather.charH() / 2);
 
@@ -70,7 +71,7 @@ void setup()
 
    Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client);
 
-   feather.clear();
+   feather.clearDisplay();
    feather.echoToSerial = false;
 }
 
@@ -79,6 +80,11 @@ double mAh = 0;
 
 void loop()
 {
+   if (feather.buttonA.wasPressed())
+   {
+      mAh = 0;
+   }
+
    feather.setCursor(0, 0);
    feather.setTextSize(2);
 
@@ -107,18 +113,10 @@ void loop()
    solarVoltsField->set(nowSolarVolts);
    solarmAField->set(nowSolarmA);
 
-   Color color;
+   constexpr Color DRAINING_COLOR = (Color)Util::to565(255, 150, 150);
+   constexpr Color CHARGING_COLOR = (Color)Util::to565(100, 255, 100);
    feather.print(" Battery: ", Color::HEADING2);
-   if (displayBatterymA.get() > 0)
-   {
-      color = Color::GREEN;
-      feather.print("Charging", color);
-   }
-   else
-   {
-      color = Color::RED;
-      feather.print("Draining", color);
-   }
+   feather.print("Charging", displayBatterymA.get() > 0 ? CHARGING_COLOR : DRAINING_COLOR);
    feather.println();
    feather.moveCursorY(2);
 
@@ -127,11 +125,11 @@ void loop()
    feather.moveCursorY(1);
 
    feather.print(" Current: ", Color::LABEL);
-   feather.println(std::abs(displayBatterymA.get()), currentFormat, color);
+   feather.println(std::abs(displayBatterymA.get()), currentFormat, displayBatterymA.get() > 0 ? CHARGING_COLOR : DRAINING_COLOR);
    feather.moveCursorY(1);
 
    feather.print("     mAh:", Color::LABEL);
-   feather.println(mAh, mAhFormat, Color::VALUE);
+   feather.println(mAh, mAhFormat, mAh > 0 ? CHARGING_COLOR : DRAINING_COLOR);
 
 
    feather.moveCursorY(feather.charH() / 2);
