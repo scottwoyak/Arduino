@@ -11,7 +11,7 @@
 class Button
 {
 public:
-   bool autoReset;
+   bool autoReset = true;
 
 private:
    uint8_t _pin;

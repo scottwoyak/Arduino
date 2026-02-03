@@ -60,6 +60,20 @@ namespace Influx
          while (1);
       }
    }
+
+   void startInit(Feather* feather)
+   {
+      feather->echoToSerial = true;
+      feather->clearDisplay();
+      feather->println("Initializing", Color::HEADING);
+      feather->moveCursorY(feather->charH() / 2);
+   }
+
+   void endInit(Feather* feather)
+   {
+      feather->echoToSerial = false;
+      feather->clearDisplay();
+   }
 }
 
 //-------------------------------------------------------------------------------------------------

@@ -5,8 +5,7 @@
 
 Feather feather;
 
-//Counter counter(0);
-Counter counter(5);
+Counter counter(0);
 double minSpan = 0;
 
 Format countFormat("######");

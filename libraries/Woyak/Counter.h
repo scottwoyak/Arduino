@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Arduino.h"
+#include "Util.h"
 
 //-------------------------------------------------------------------------------------------------
 //
@@ -120,17 +121,7 @@ public:
    unsigned long span() const
    {
       noInterrupts();
-      long span = 0;
-      if (_micros < _lastMicros)
-      {
-         // an overflow condition and _micros has wrapped around
-         span = (LONG_MAX - _micros) + _lastMicros;
-      }
-      else
-      {
-         span = _micros - _lastMicros;
-
-      }
+      long span = Util::getSpan(_lastMicros, _micros);
       interrupts();
       return span;
    }

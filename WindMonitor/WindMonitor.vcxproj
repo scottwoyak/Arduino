@@ -74,12 +74,6 @@
     <ProjectCapability Include="VisualMicroLinux" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="WindMonitor.ino">
-      <FileType>CppCode</FileType>
-      <DeploymentContent>true</DeploymentContent>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="__vm\.WindMonitor.vsarduino.h" />
     <ClInclude Include="__vm\.WindowMonitor.vsarduino.h" />
   </ItemGroup>

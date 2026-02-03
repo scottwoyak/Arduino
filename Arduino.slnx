@@ -44,6 +44,7 @@
     <File Path="libraries/Woyak/Util.h" />
     <File Path="libraries/Woyak/ValueStore.h" />
     <File Path="libraries/Woyak/ValueStoreFram.h" />
+    <File Path="libraries/Woyak/WiFiSettings.h" />
     <File Path="libraries/Woyak/WindMeter.cpp" />
     <File Path="libraries/Woyak/WindMeter.h" />
   </Folder>
@@ -111,6 +112,9 @@
     <Deploy />
   </Project>
   <Project Path="WindMonitor/WindMonitor.vcxproj" Id="ce9936be-d88a-5df5-d934-fcbee6c84747">
+    <Deploy />
+  </Project>
+  <Project Path="Wind_Monitor/Wind_Monitor.vcxproj">
     <Deploy />
   </Project>
 </Solution>

@@ -38,10 +38,7 @@ void setup()
    feather.begin();
    SerialX::begin();
 
-   feather.echoToSerial = true;
-   feather.clearDisplay();
-   feather.println("Initializing", Color::HEADING);
-   feather.moveCursorY(feather.charH() / 2);
+   Influx::startInit(&feather);
 
    feather.print("Battery INA219... ", Color::LABEL);
    if (!sensor1.begin())
@@ -71,8 +68,7 @@ void setup()
 
    Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client);
 
-   feather.clearDisplay();
-   feather.echoToSerial = false;
+   Influx::endInit(&feather);
 }
 
 unsigned long lastMicros = 0;
