@@ -19,6 +19,7 @@ void setup()
    Serial.begin(115200);
    feather.begin();
    button.begin();
+   button.autoReset = false;
 }
 
 void loop()

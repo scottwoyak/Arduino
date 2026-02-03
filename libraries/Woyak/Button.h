@@ -10,6 +10,10 @@
 //-------------------------------------------------------------------------------------------------
 class Button
 {
+public:
+   bool autoReset;
+
+private:
    uint8_t _pin;
 
    static uint8_t _index;
@@ -118,9 +122,17 @@ public:
       return digitalRead(_pin) == LOW;
    }
 
-   bool wasPressed() const
+   bool wasPressed() 
    {
-      return _pressedCount > 0;
+      noInterrupts();
+      bool pressed = _pressedCount > 0;
+      if (autoReset)
+      {
+         _pressedCount = 0;
+      }
+      interrupts();
+
+      return pressed;
    }
 
    void reset()
