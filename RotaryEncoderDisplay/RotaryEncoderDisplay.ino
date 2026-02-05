@@ -6,7 +6,7 @@
 Feather feather;
 RotaryEncoder encoder(9, 6, 5);
 
-Format posFormat("+###");
+Format posFormat("+######");
 Format boolFormat(5);
 Format highLowFormat(4);
 
