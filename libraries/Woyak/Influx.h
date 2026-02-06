@@ -19,9 +19,9 @@ constexpr auto TZ_INFO = "UTC-5";
 //-------------------------------------------------------------------------------------------------
 namespace Influx
 {
-   void begin(Feather* feather, const char* wifiSSID, const char* wifiPassword, InfluxDBClient* client)
+   void begin(ArduinoWithDisplay* arduino, const char* wifiSSID, const char* wifiPassword, InfluxDBClient* client)
    {
-      feather->print("WiFi... ", Color::LABEL);
+      arduino->print("WiFi... ", Color::LABEL);
 
       // Setup wifi
       WiFi.mode(WIFI_STA);
@@ -32,47 +32,46 @@ namespace Influx
          Serial.print(".");
          delay(100);
       }
-      feather->printlnR("ok", Color::VALUE);
+      arduino->printlnR("ok", Color::VALUE);
 
       // Accurate time is necessary for certificate validation and writing in batches
       // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
       // Syncing progress and the time will be printed to Serial.
-      bool oldEcho = feather->echoToSerial;
-      feather->echoToSerial = false; // timeSync prints to Serial
-      feather->print("Syncing Time... ", Color::LABEL);
+      bool oldEcho = arduino->echoToSerial;
+      arduino->echoToSerial = false; // timeSync prints to Serial
+      arduino->print("Syncing Time... ", Color::LABEL);
       timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
-      feather->printlnR("ok", Color::VALUE);
-      feather->echoToSerial = oldEcho;
+      arduino->printlnR("ok", Color::VALUE);
+      arduino->echoToSerial = oldEcho;
 
       // Check server connection
-      feather->print("Influx... ", Color::LABEL);
+      arduino->print("Influx... ", Color::LABEL);
 
       if (client->validateConnection())
       {
-         feather->printlnR("ok", Color::VALUE);
+         arduino->printlnR("ok", Color::VALUE);
          Serial.println(client->getServerUrl());
       }
       else
       {
-         feather->printlnR("FAILED", Color::RED);
-         feather->display.setTextSize(1);
-         feather->println(client->getLastErrorMessage(), Color::RED);
+         arduino->printlnR("FAILED", Color::RED);
+         arduino->println(client->getLastErrorMessage(), Color::RED);
          while (1);
       }
    }
 
-   void startInit(Feather* feather)
+   void startInit(ArduinoWithDisplay* arduino)
    {
-      feather->echoToSerial = true;
-      feather->clearDisplay();
-      feather->println("Initializing", Color::HEADING);
-      feather->moveCursorY(feather->charH() / 2);
+      arduino->echoToSerial = true;
+      arduino->clearDisplay();
+      arduino->println("Initializing", Color::HEADING);
+      arduino->moveCursorY(arduino->charH() / 2);
    }
 
-   void endInit(Feather* feather)
+   void endInit(ArduinoWithDisplay* arduino)
    {
-      feather->echoToSerial = false;
-      feather->clearDisplay();
+      arduino->echoToSerial = false;
+      arduino->clearDisplay();
    }
 }
 
@@ -243,7 +242,7 @@ public:
       return _sw.elapsedSecs() > _seconds;
    }
 
-   bool post(InfluxDBClient* client)
+   bool post(InfluxDBClient* client, bool writeToSerial=false)
    {
       // restart the timer
       _sw.reset();
@@ -258,7 +257,10 @@ public:
          _point.addField(field->getName().c_str(), field->get(), field->getDecimalPlaces());
       }
 
-      //Serial.println(_point.toLineProtocol());
+      if (writeToSerial)
+      {
+         Serial.println(_point.toLineProtocol());
+      }
 
       // send to Influx
       return client->writePoint(_point);

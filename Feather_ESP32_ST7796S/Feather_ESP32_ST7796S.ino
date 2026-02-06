@@ -3,8 +3,8 @@
 
 constexpr auto PIN_BACKLITE = 5;
 constexpr auto PIN_DC = 6;
-constexpr auto PIN_RST = 9;
-constexpr auto PIN_CS = 10;
+constexpr auto PIN_RST = -1;
+constexpr auto PIN_CS = 9;
 Feather_ESP32_S3_ST7796S feather(PIN_CS, PIN_DC, PIN_RST, PIN_BACKLITE);
 
 void setup()

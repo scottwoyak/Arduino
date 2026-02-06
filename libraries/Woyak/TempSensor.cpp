@@ -39,7 +39,7 @@ ITempSensor* _tryCreateHTC(bool print)
    {
       if (id == 0x3000)
       {
-         Serial.print("Success");
+         Serial.println("Success");
       }
       else
       {
@@ -153,7 +153,7 @@ ITempSensor* TempSensor::_create(bool print)
    {
       if (sensor != nullptr)
       {
-         Serial.println(String("Found: ") + sensor->type() + " at 0x" + String(sensor->address(), HEX));
+         Serial.println(String("  Found: ") + sensor->type() + " at 0x" + String(sensor->address(), HEX));
       }
       else
       {

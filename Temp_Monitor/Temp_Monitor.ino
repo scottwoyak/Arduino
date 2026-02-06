@@ -8,8 +8,7 @@
 #include "Influx.h"
 #include <string>
 
-// for WIFI_SSID and WIFI_PASSWORD
-#include "WiFiSettings.h"
+#include "WiFiSettings.h" // for WIFI_SSID and WIFI_PASSWORD
 
 Format humFormat("##.#%");
 Format tempFormat("###.## F");
@@ -73,7 +72,7 @@ TimedPoint point(INFLUX_INTERVAL_S, INFLUX_MEASUREMENT); // Influx data point
 Field* tempField = point.addTimeAveragedField("temperature", 3);
 Field* humField = point.addTimeAveragedField("humidity", 2);
 
-const char* LOCATION_KEY = "location"; // for preferences
+const char* LOCATION_KEY = "location";
 
 enum class EncoderItem
 {
@@ -204,7 +203,6 @@ void determineLocation()
    feather.preferences.end();
 }
 
-// The setup() function runs once each time the micro-controller starts
 void setup()
 {
    Wire.begin();
@@ -254,7 +252,6 @@ void setup()
 
 uint count = 0;
 
-// Add the main program code into the continuous loop() function
 void loop()
 {
    Watchdog.reset();
