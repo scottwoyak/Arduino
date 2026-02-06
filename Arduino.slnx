@@ -108,6 +108,9 @@
   <Project Path="Temp_Monitor/Temp_Monitor.vcxproj">
     <Deploy />
   </Project>
+  <Project Path="Temp_Monitor_Battery/Temp_Monitor_Battery.vcxproj">
+    <Deploy />
+  </Project>
   <Project Path="WindDisplay/WindDisplay.vcxproj">
     <Deploy />
   </Project>
