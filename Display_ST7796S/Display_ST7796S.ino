@@ -12,19 +12,14 @@ Adafruit_ST7796S display(PIN_CS, PIN_DC, PIN_RST);
 void setup()
 {
    // initialize TFT
-   pinMode(PIN_TFT_BACKLITE, OUTPUT);
-   digitalWrite(PIN_TFT_BACKLITE, HIGH);
-
-   // turn on the TFT / I2C power supply
-   pinMode(TFT_I2C_POWER, OUTPUT);
-   digitalWrite(TFT_I2C_POWER, HIGH);
-   delay(10);
-
    display.init(320, 480, 0, 0, ST7796S_BGR);
    display.setRotation(0);
    display.invertDisplay(true);
    display.fillScreen(ST77XX_BLACK);
    display.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+
+   pinMode(PIN_TFT_BACKLITE, OUTPUT);
+   digitalWrite(PIN_TFT_BACKLITE, HIGH);
 }
 
 unsigned long counter = 0;
