@@ -136,7 +136,11 @@ Serial.println();
 
       float value = __FLT_MAX__;
       for (uint i = 0; i < this->_numBuckets; i++) {
-         value = min(value, this->_buckets[i]->getMin());
+         float bucketMin = this->_buckets[i]->getMin();
+         if (!isnan(bucketMin))
+         {
+            value = min(value, bucketMin);
+         }
       }
 
       return value;
@@ -147,7 +151,11 @@ Serial.println();
 
       float value = -__FLT_MAX__;
       for (uint i = 0; i < this->_numBuckets; i++) {
-         value = max(value, this->_buckets[i]->getMax());
+         float bucketMax = this->_buckets[i]->getMax();
+         if (!isnan(bucketMax))
+         {
+            value = max(value, bucketMax);
+         }
       }
 
       return value;
