@@ -6,6 +6,7 @@
   <Folder Name="/Libraries/">
     <File Path="libraries/Woyak/AccumulatingAverager.h" />
     <File Path="libraries/Woyak/ArduinoWithDisplay.h" />
+    <File Path="libraries/Woyak/Bar.h" />
     <File Path="libraries/Woyak/Battery.h" />
     <File Path="libraries/Woyak/Button.cpp" />
     <File Path="libraries/Woyak/Button.h" />
@@ -114,7 +115,7 @@
   <Project Path="WindDisplay/WindDisplay.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="WindMonitor/WindMonitor.vcxproj" Id="ce9936be-d88a-5df5-d934-fcbee6c84747">
+  <Project Path="Wind_Display/Wind_Display.vcxproj">
     <Deploy />
   </Project>
   <Project Path="Wind_Monitor/Wind_Monitor.vcxproj">
