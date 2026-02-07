@@ -157,10 +157,10 @@ void loop()
 
    feather.setTextSize(2);
 
-   constexpr Color DRAINING_COLOR = (Color)Util::to565(255, 100, 100);
-   constexpr Color CHARGING_COLOR = (Color)Util::to565(100, 255, 100);
+   Color DRAINING_COLOR = (Color)Color565::fromRGB(255, 100, 100);
+   Color CHARGING_COLOR = (Color)Color565::fromRGB(100, 255, 100);
    feather.print("Battery: ", Color::HEADING2);
-   if (displayBatterymA.get() > 0)
+   if (displayBatterymA.get() >= 0)
    {
       feather.println("Charging", CHARGING_COLOR);
    }
@@ -168,7 +168,6 @@ void loop()
    {
       feather.println("Draining", DRAINING_COLOR);
    }
-   feather.println();
    feather.moveCursorY(2);
 
    feather.print("   Volts: ", Color::LABEL);
