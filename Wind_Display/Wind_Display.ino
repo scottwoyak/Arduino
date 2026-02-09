@@ -4,6 +4,7 @@
 #include "TimedAverager.h"
 #include "TimedHistogramChart.h"
 #include "WindMeter.h"
+#include "Slider.h"
 #include "MultiBar.h"
 #include "BarChart.h"
 
@@ -37,9 +38,12 @@ RollingBarChart rollingChart(GRAPH_RECT, GRAPH_RANGE, Green2, Color::BLACK);
 constexpr uint16_t HISTOGRAM_DURATION_S = 10*60;
 constexpr uint8_t HISTOGRAM_NUM_BINS = 80;
 constexpr RangeF CHART_RANGE = { 0, 30 };
-constexpr uint8_t VALUES_AXIS_HEIGHT = 16 + 5;
+constexpr uint8_t VALUES_AXIS_HEIGHT = 16 + 6;
 constexpr Rect16 CHART_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT - VALUES_AXIS_HEIGHT);
 TimedHistogramChart histogramChart(CHART_RECT, CHART_RANGE, HISTOGRAM_NUM_BINS, HISTOGRAM_DURATION_S * 1000, Green2, Color::BLACK);
+
+constexpr Rect16 SLIDER_RECT(0, DISPLAY_HEIGHT - VALUES_AXIS_HEIGHT+2, DISPLAY_WIDTH, 3);
+HorizontalSlider slider(SLIDER_RECT, CHART_RANGE, Color::WHITE, Color::BLACK);
 
 enum class Mode
 {
@@ -76,6 +80,7 @@ void loop()
    multiBar.set(speed);
    rollingChart.set(speed);
    histogramChart.set(speed);
+   slider.set(speed);
 
    // display values
    feather.setCursor(0, 0);
@@ -150,25 +155,32 @@ void displayHistogram()
    if (range.max < 5)
    {
       histogramChart.setVisibleRange(RangeF(0, 5));
+      slider.setRange(RangeF(0, 5));
    }
    else if (range.max < 10)
    {
       histogramChart.setVisibleRange(RangeF(0, 10));
+      slider.setRange(RangeF(0, 10));
    }
    else if (range.max < 15)
    {
       histogramChart.setVisibleRange(RangeF(0, 15));
+      slider.setRange(RangeF(0, 15));
    }
    else if (range.max < 20)
    {
       histogramChart.setVisibleRange(RangeF(0, 20));
+      slider.setRange(RangeF(0, 20));
    }
    else
    {
       histogramChart.setVisibleRange(RangeF(0, 30));
+      slider.setRange(RangeF(0, 30));
    }
 
    histogramChart.draw(&feather.display);
+   slider.draw(&feather.display);
+
    feather.setTextSize(2);
    feather.setCursor(0, -15);
 
@@ -176,6 +188,6 @@ void displayHistogram()
    feather.print(displayRange.min, AxisValueL, Color::GRAY);
    feather.printC((displayRange.min + displayRange.max)/2, AxisValueL, Color::GRAY);
    feather.printR(displayRange.max, AxisValueR, Color::GRAY);
-   uint16_t y = feather.display.height() - VALUES_AXIS_HEIGHT + 1;
+   uint16_t y = DISPLAY_HEIGHT - VALUES_AXIS_HEIGHT + 1;
    feather.display.drawLine(0, y, feather.display.width(), y, (uint16_t)Color::GRAY);
 }
