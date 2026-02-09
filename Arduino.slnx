@@ -7,6 +7,7 @@
     <File Path="libraries/Woyak/AccumulatingAverager.h" />
     <File Path="libraries/Woyak/ArduinoWithDisplay.h" />
     <File Path="libraries/Woyak/Bar.h" />
+    <File Path="libraries/Woyak/BarChart.h" />
     <File Path="libraries/Woyak/Battery.h" />
     <File Path="libraries/Woyak/Button.cpp" />
     <File Path="libraries/Woyak/Button.h" />
@@ -29,6 +30,7 @@
     <File Path="libraries/Woyak/Influx.h" />
     <File Path="libraries/Woyak/Logger.h" />
     <File Path="libraries/Woyak/MinMaxValue.h" />
+    <File Path="libraries/Woyak/MultiBar.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
     <File Path="libraries/Woyak/RotaryEncoder.cpp" />
@@ -37,11 +39,13 @@
     <File Path="libraries/Woyak/SerialX.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
     <File Path="libraries/Woyak/Stopwatch.h" />
+    <File Path="libraries/Woyak/Structs.h" />
     <File Path="libraries/Woyak/TempSensor.cpp" />
     <File Path="libraries/Woyak/TempSensor.h" />
     <File Path="libraries/Woyak/TimeConstants.h" />
     <File Path="libraries/Woyak/TimedAverager.h" />
     <File Path="libraries/Woyak/TimedHistogram.h" />
+    <File Path="libraries/Woyak/TimedHistogramChart.h" />
     <File Path="libraries/Woyak/Util.h" />
     <File Path="libraries/Woyak/ValueStore.h" />
     <File Path="libraries/Woyak/ValueStoreFram.h" />
@@ -110,9 +114,6 @@
     <Deploy />
   </Project>
   <Project Path="Temp_Monitor_Battery/Temp_Monitor_Battery.vcxproj">
-    <Deploy />
-  </Project>
-  <Project Path="WindDisplay/WindDisplay.vcxproj">
     <Deploy />
   </Project>
   <Project Path="Wind_Display/Wind_Display.vcxproj">

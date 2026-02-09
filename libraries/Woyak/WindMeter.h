@@ -17,30 +17,39 @@ private:
    uint8_t _ledPin;
    volatile unsigned long _micros = 0;
    volatile unsigned long _lastMicros = 0;
+   volatile uint8_t _ticks = 0;
 
    void tick()
    {
-      if (micros() - this->_micros < 1000)
+      // equivalent of 100 mph
+      if (micros() - this->_micros < 1901)
       {
          return;
       }
 
-      // update the led to match the pin
-      int val = digitalRead(this->_pin);
-      digitalWrite(this->_ledPin, val);
+      _lastMicros = _micros;
+      _micros = micros();
+      _ticks = _ticks + 1;
 
-      if (val == HIGH)
+      // update the led to match the pin
+      if (_ticks == 1)
+      { 
+         digitalWrite(this->_ledPin, LOW);
+      }
+      else if (_ticks >= 20)
       {
-         _lastMicros = _micros;
-         _micros = micros();
+         _ticks = 0;
+         digitalWrite(this->_ledPin, HIGH);
       }
    }
 
    // the formula from the wind meter for turning rotation Hz into MPH
+   /*
    float _computeWindSpeed(unsigned long micros, unsigned long rotations)
    {
       return (2.7 * 1000 * 1000.0 / micros) * rotations;
    }
+   */
 
 public:
    WindMeter(uint8_t pin, uint8_t ledPin = LED_BUILTIN)
@@ -58,7 +67,7 @@ public:
 
       // create the interrupt for monitoring the pin change
       pinMode(this->_pin, INPUT_PULLUP);
-      attachInterrupt(digitalPinToInterrupt(this->_pin), WindMeter::interruptTick, CHANGE);
+      attachInterrupt(digitalPinToInterrupt(this->_pin), WindMeter::interruptTick, RISING);
    }
 
    float getSpeed()
@@ -72,6 +81,8 @@ public:
       interrupts();
 
       // wind speed formula is 1 rotation/s = 1.7 ms/s
+      // 0.1 mph = 1901400 micros
+      // 100 mph = 1901 micros
       if (micros() - lastMicros > 1901400) // less than 0.1 mph
       {
          return 0.0;
@@ -88,6 +99,7 @@ public:
       }
    }
 
+   /*
    unsigned long getLastMicros()
    {
       unsigned long lastMicros;
@@ -96,4 +108,5 @@ public:
       interrupts();
       return lastMicros;
    }
+   */
 };

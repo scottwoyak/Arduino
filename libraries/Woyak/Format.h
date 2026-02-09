@@ -32,8 +32,9 @@ public:
    }
 
    //----------------------------------------------------------------------------------------------
-   Format(const char* format)
+   Format(const char* format, Alignment alignment=Alignment::LEFT)
    {
+      alignment = alignment;
       std::string str = format;
 
       // extract the length
@@ -78,7 +79,7 @@ public:
    }
 
    //----------------------------------------------------------------------------------------------
-   std::string toString(double value)
+   std::string toString(double value) const
    {
       std::string valueStr;
 
@@ -115,19 +116,19 @@ public:
    }
 
    //----------------------------------------------------------------------------------------------
-   std::string toString(String value)
+   std::string toString(String value) const
    {
       return toString(value.c_str());
    }
 
    //----------------------------------------------------------------------------------------------
-   std::string toString(std::string value)
+   std::string toString(std::string value) const
    {
       return toString(value.c_str());
    }
 
    //----------------------------------------------------------------------------------------------
-   std::string toString(const char* value)
+   std::string toString(const char* value) const
    {
       std::string str = value;
 

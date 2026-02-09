@@ -157,8 +157,8 @@ void loop()
 
    feather.setTextSize(2);
 
-   Color DRAINING_COLOR = (Color)Color565::fromRGB(255, 100, 100);
-   Color CHARGING_COLOR = (Color)Color565::fromRGB(100, 255, 100);
+   Color DRAINING_COLOR = Color565::fromRGB(255, 100, 100);
+   Color CHARGING_COLOR = Color565::fromRGB(100, 255, 100);
    feather.print("Battery: ", Color::HEADING2);
    if (displayBatterymA.get() >= 0)
    {
