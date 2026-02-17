@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="RotaryEncoderDisplay.ino" />
+    <ClCompile Include="INA219_Display.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.RotaryEncoderDisplay.vsarduino.h">
+    <ClInclude Include="__vm\.INA219_Display.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

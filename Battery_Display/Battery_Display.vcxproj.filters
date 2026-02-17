@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="BatteryDisplay.ino" />
+    <ClCompile Include="Battery_Display.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.BatteryDisplay.vsarduino.h">
+    <ClInclude Include="__vm\.Battery_Display.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

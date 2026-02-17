@@ -17,7 +17,7 @@ private:
    uint8_t _pin;
 
    static uint8_t _index;
-   static const uint8_t MAX_BUTTONS = 10;
+   static const uint8_t MAX_BUTTONS = 20;
    static Button* _buttons[MAX_BUTTONS];
 
    volatile uint16_t _pressedCount = 0;
@@ -47,6 +47,16 @@ private:
    static void _onChange7() { _buttons[7]->_onChange(); }
    static void _onChange8() { _buttons[8]->_onChange(); }
    static void _onChange9() { _buttons[9]->_onChange(); }
+   static void _onChange10() { _buttons[10]->_onChange(); }
+   static void _onChange11() { _buttons[11]->_onChange(); }
+   static void _onChange12() { _buttons[12]->_onChange(); }
+   static void _onChange13() { _buttons[13]->_onChange(); }
+   static void _onChange14() { _buttons[14]->_onChange(); }
+   static void _onChange15() { _buttons[15]->_onChange(); }
+   static void _onChange16() { _buttons[16]->_onChange(); }
+   static void _onChange17() { _buttons[17]->_onChange(); }
+   static void _onChange18() { _buttons[18]->_onChange(); }
+   static void _onChange19() { _buttons[19]->_onChange(); }
 
 public:
    Button(uint8_t pin)
@@ -101,7 +111,39 @@ public:
          case 9:
             attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange9, CHANGE);
             break;
+         case 10:
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange10, CHANGE);
+            break;
+         case 11:
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange11, CHANGE);
+            break;
+         case 12:
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange12, CHANGE);
+            break;
+         case 13:
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange13, CHANGE);
+            break;
+         case 14:
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange14, CHANGE);
+            break;
+         case 15:
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange15, CHANGE);
+            break;
+         case 16:
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange16, CHANGE);
+            break;
+         case 17:
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange17, CHANGE);
+            break;
+         case 18:
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange18, CHANGE);
+            break;
+         case 19:
+            attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange19, CHANGE);
+            break;
          }
+
+
          _buttons[_index++] = this;
          return true;
       }
@@ -109,7 +151,6 @@ public:
       {
          return false;
       }
-
    }
 
    uint8_t getPin() const
@@ -122,7 +163,7 @@ public:
       return digitalRead(_pin) == LOW;
    }
 
-   bool wasPressed() 
+   bool wasPressed()
    {
       noInterrupts();
       bool pressed = _pressedCount > 0;

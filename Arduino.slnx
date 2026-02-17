@@ -37,7 +37,6 @@
     <File Path="libraries/Woyak/RotaryEncoder.h" />
     <File Path="libraries/Woyak/RunningAverager.h" />
     <File Path="libraries/Woyak/SerialX.h" />
-    <File Path="libraries/Woyak/Slider.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
     <File Path="libraries/Woyak/Stopwatch.h" />
     <File Path="libraries/Woyak/Structs.h" />
@@ -54,15 +53,13 @@
     <File Path="libraries/Woyak/WindMeter.cpp" />
     <File Path="libraries/Woyak/WindMeter.h" />
   </Folder>
-  <Folder Name="/Tests/">
-    <Project Path="Tests/TimedAveragerTests/TimedAveragerTests.vcxproj">
-      <Deploy />
-    </Project>
-  </Folder>
-  <Project Path="BatteryDisplay/BatteryDisplay.vcxproj">
+  <Project Path="Battery_Display/Battery_Display.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="ButtonDisplay/ButtonDisplay.vcxproj">
+  <Project Path="Buttons_Display/Buttons_Display.vcxproj">
+    <Deploy />
+  </Project>
+  <Project Path="Button_Display/Button_Display.vcxproj">
     <Deploy />
   </Project>
   <Project Path="Counter_Display/Counter_Display.vcxproj">
@@ -86,19 +83,16 @@
   <Project Path="Feather_M0_OLED/Feather_M0_OLED.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="FormatTestsDisplay/FormatTestsDisplay.vcxproj">
+  <Project Path="Format_Display/Format_Display.vcxproj">
     <Deploy />
   </Project>
   <Project Path="I2C_Port_Scanner/I2C_Port_Scanner.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="INA219Display/INA219Display.vcxproj">
+  <Project Path="INA219_Display/INA219_Display.vcxproj">
     <Deploy />
   </Project>
   <Project Path="InterruptDisplay/InterruptDisplay.vcxproj">
-    <Deploy />
-  </Project>
-  <Project Path="Interrupt_Display/Interrupt_Display.vcxproj">
     <Deploy />
   </Project>
   <Project Path="Pin_Display/Pin_Display.vcxproj">
@@ -107,28 +101,22 @@
   <Project Path="Potentiometer/Potentiometer.vcxproj" Id="c5bc2f07-d8ae-4dcf-aede-3dddf1846b20">
     <Deploy />
   </Project>
-  <Project Path="RotaryEncoderDisplay/RotaryEncoderDisplay.vcxproj">
+  <Project Path="RotaryEncoder_Display/RotaryEncoder_Display.vcxproj">
     <Deploy />
   </Project>
   <Project Path="Solar_Monitor/Solar_Monitor.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="Streamer_Display/Streamer_Display.vcxproj">
-    <Deploy />
-  </Project>
   <Project Path="TemperatureCalibrator/TemperatureCalibrator.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="TemperatureDisplay/TemperatureDisplay.vcxproj">
+  <Project Path="Temp_Display/Temp_Display.vcxproj">
     <Deploy />
   </Project>
   <Project Path="Temp_Monitor/Temp_Monitor.vcxproj">
     <Deploy />
   </Project>
   <Project Path="Temp_Monitor_Battery/Temp_Monitor_Battery.vcxproj">
-    <Deploy />
-  </Project>
-  <Project Path="Tests/StopwatchTests/StopwatchTests.vcxproj">
     <Deploy />
   </Project>
   <Project Path="Wind_Display/Wind_Display.vcxproj">
