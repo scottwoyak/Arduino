@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="InterruptDisplay.ino" />
+    <ClCompile Include="Interrupt_Display.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.InterruptDisplay.vsarduino.h">
+    <ClInclude Include="__vm\.Interrupt_Display.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
