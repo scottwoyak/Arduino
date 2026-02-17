@@ -112,12 +112,18 @@ test(shouldBeStoppedIfResetWhileStopped) {
    assertEqual(sw.isRunning(), false);
 }
 
-
 void setup() {
    Serial.begin(115200);
-   while (!Serial);
+   while (!Serial)
+   {
+      delay(10);
+   }
+
+   delay(1000);
+   Serial.println("setup()");
 }
 
 void loop() {
+   //Serial.println("loop()");
    aunit::TestRunner::run();
 }
