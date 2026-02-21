@@ -306,6 +306,9 @@ void loop()
       {
          Serial.println("InfluxDB write failed: ");
          Serial.println(client.getLastErrorMessage());
+
+         // sleep for 60 seconds (reboot upon wake up)
+         feather.deepSleep(60);
       }
       digitalWrite(BUILTIN_LED, LOW);
 
