@@ -19,6 +19,10 @@ constexpr CorrectionFactor CORRECTIONS[] = {
 "3060245875",  0.096, -1.394,
 "2000135539",  0.073, -0.011,
 "3008996723", -0.081, -0.579,
+"337756392",   0.286, -0.627, // Lake SHT4X
+"246251566",   0.202, -4.932, // Lake SHT4X
+"290643347",   0.195, -5.611, // Lake SHT4X
+"290634094",  -0.038, -5.420, // Lake SHT4X
 };
 
 constexpr auto NUM_CORRECTIONS = 0;// sizeof(CORRECTIONS) / sizeof(CORRECTIONS[0]);
