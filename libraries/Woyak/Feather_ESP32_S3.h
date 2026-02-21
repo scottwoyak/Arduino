@@ -88,8 +88,9 @@ public:
       analogWrite(TFT_BACKLITE, pwm);
    }
 
-   void displayDisplay()
+   void deepSleep(float seconds)
    {
-      // nothing to do here. The TFT isn't double buffered
+      esp_sleep_enable_timer_wakeup(seconds * 1000000); 
+      esp_deep_sleep_start();
    }
 };
