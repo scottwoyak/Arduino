@@ -8,7 +8,7 @@
 
 #include "WiFiSettings.h" // for WIFI_SSID and WIFI_PASSWORD
 
-constexpr auto version = "v0.90";
+constexpr auto version = "v0.91";
 
 
 Feather_ESP32_S3 feather;
@@ -30,8 +30,8 @@ void goToSleep()
    SerialX::println();
    delay(100); // let serial finish
 
-   esp_sleep_enable_timer_wakeup(60 * 1000000); // 60 sec
-   esp_deep_sleep_start();
+   // sleep for 60 seconds (reboot upon wake up)
+   feather.deepSleep(60);
 }
 
 void setup()
