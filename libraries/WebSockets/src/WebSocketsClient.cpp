@@ -95,8 +95,6 @@ void WebSocketsClient::begin(const char * host, uint16_t port, const char * url,
     _lastConnectionFail = 0;
     _lastHeaderSent     = 0;
 
-    Serial.println("Scott was here");
-    DEBUG_WEBSOCKETS("Woyak was here");
     DEBUG_WEBSOCKETS("[WS-Client] Websocket Version: " WEBSOCKETS_VERSION "\n");
 }
 
