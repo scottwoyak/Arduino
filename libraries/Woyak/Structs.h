@@ -20,3 +20,9 @@ struct Rect16
    uint16_t height;
 };
 
+struct Point16
+{
+   uint16_t x;
+   uint16_t y;
+};
+
