@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Streamer_Display.ino" />
+    <ClCompile Include="Telemetry_Publisher_Display.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.Streamer_Display.vsarduino.h">
+    <ClInclude Include="__vm\.Telemetry_Publisher_Display.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

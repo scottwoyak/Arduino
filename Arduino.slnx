@@ -29,10 +29,11 @@
     <File Path="libraries/Woyak/IndexedEncoder.h" />
     <File Path="libraries/Woyak/Influx.h" />
     <File Path="libraries/Woyak/Logger.h" />
-    <File Path="libraries/Woyak/MinMaxValue.h" />
     <File Path="libraries/Woyak/MultiBar.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
+    <File Path="libraries/Woyak/RateTracker.h" />
+    <File Path="libraries/Woyak/RollingMicros.h" />
     <File Path="libraries/Woyak/RotaryEncoder.cpp" />
     <File Path="libraries/Woyak/RotaryEncoder.h" />
     <File Path="libraries/Woyak/RunningAverager.h" />
@@ -107,7 +108,10 @@
   <Project Path="Solar_Monitor/Solar_Monitor.vcxproj">
     <Deploy />
   </Project>
-  <Project Path="Streamer_Display/Streamer_Display.vcxproj">
+  <Project Path="Telemetry_Publisher_Display/Telemetry_Publisher_Display.vcxproj">
+    <Deploy />
+  </Project>
+  <Project Path="Telemetry_Subscriber_Display/Telemetry_Subscriber_Display.vcxproj">
     <Deploy />
   </Project>
   <Project Path="TemperatureCalibrator/TemperatureCalibrator.vcxproj">
