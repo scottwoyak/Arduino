@@ -4,6 +4,7 @@
 #include <Format.h>
 #include <string>
 #include "Color.h"
+#include "Structs.h"
 
 class Adafruit_GFX_wInfo
 {
@@ -93,6 +94,14 @@ public:
    void moveCursorY(int16_t deltaY)
    {
       moveCursor(0, deltaY);
+   }
+   Point16 getCursor()
+   {
+      return Point16(_display->getCursorX(), _display->getCursorY());
+   }
+   void setCursor(Point16 pt)
+   {
+      setCursor(pt.x, pt.y);
    }
 
    void println()
