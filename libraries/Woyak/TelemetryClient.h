@@ -5,18 +5,26 @@
 
 WebSocketsClient webSocket;
 
-typedef std::function<void()> WebSocketOnConnectedFunc;
-typedef std::function<void()> WebSocketOnDisconnectedFunc;
-typedef std::function<void(uint8_t* payload, size_t length)> WebSocketOnTextFunc;
+typedef std::function<void()> TelemetryOnConnectedFunc;
+typedef std::function<void()> TelemetryOnDisconnectedFunc;
+typedef std::function<void(std::string)> TelemetryOnTextFunc;
+typedef std::function<void(std::string)> TelemetryOnErrorFunc;
+typedef std::function<void()> TelemetryOnStartedFunc;
 
 //-------------------------------------------------------------------------------------------------
 class TelemetryClient
 {
 private:
+   std::string _serverVersion = "";
+   std::string _status = "";
+   std::string _topic;
+
    // callbacks for our user
-   WebSocketOnConnectedFunc _onConnectedFunc = nullptr;
-   WebSocketOnDisconnectedFunc _onDisconnectedFunc = nullptr;
-   WebSocketOnTextFunc _onTextFunc = nullptr;
+   TelemetryOnConnectedFunc _onConnectedFunc = nullptr;
+   TelemetryOnDisconnectedFunc _onDisconnectedFunc = nullptr;
+   TelemetryOnTextFunc _onTextFunc = nullptr;
+   TelemetryOnErrorFunc _onErrorFunc = nullptr;
+   TelemetryOnStartedFunc _onStartedFunc = nullptr;
 
    // static instance for handling callbacks from WebSocketClient
    static TelemetryClient* _instance;
@@ -29,15 +37,15 @@ private:
 protected:
    virtual void _onDisconnected() = 0;
    virtual void _onConnected() = 0;
-   virtual void _onText(uint8_t* payload, size_t length) = 0;
+   virtual void _onText(std::string) {};
    virtual void _onLoop() {};
+   virtual void _onStarted() {};
 
    void _onEvent(WStype_t type, uint8_t* payload, size_t length)
    {
       switch (type)
       {
       case WStype_DISCONNECTED:
-         Serial.print("[WS] Disconnected!\n");
          _onDisconnected();
          if (_onDisconnectedFunc)
          {
@@ -46,7 +54,6 @@ protected:
          break;
 
       case WStype_CONNECTED:
-         Serial.print("[WS] Connected!\n");
          _onConnected();
          if (_onConnectedFunc)
          {
@@ -55,19 +62,59 @@ protected:
          break;
 
       case WStype_TEXT:
+      {
          //Serial.println((const char*)payload);
-         _onText(payload, length);
-         if (_onTextFunc)
+         std::string str = (const char*)payload;
+
+         if (_serverVersion.length() == 0)
          {
-            _onTextFunc(payload, length);
+            // the first message received is a simple greeting with the server version
+
+            // strip off the initial part "TelemetryServer v###"
+            _serverVersion = str.substr(std::string("TelemetryServer v").length());
+            Serial.print("Server Version: ");
+            Serial.println(_serverVersion.c_str());
          }
-         break;
+         else if (_status.length() == 0)
+         {
+            // the second message is a response to the subscribe/publish request
+            _status = str;
+            if (str.starts_with("ERR"))
+            {
+               Serial.print("Start failure: ");
+               Serial.println(str.c_str());
+               if (_onErrorFunc)
+               {
+                  _onErrorFunc(str);
+               }
+            }
+            else
+            {
+               Serial.println("Started");
+               _onStarted();
+               if (_onStartedFunc)
+               {
+                  _onStartedFunc();
+               }
+            }
+         }
+         else
+         {
+            _onText(str);
+            if (_onTextFunc)
+            {
+               _onTextFunc(str);
+            }
+         }
+      }
+      break;
 
       case WStype_BIN:
          Serial.printf("[WS] Got Binary data\n");
          break;
 
       case WStype_PONG:
+         Serial.printf("[WS] Pong\n");
          break;
 
       default:
@@ -78,14 +125,30 @@ protected:
    }
 
 public:
-   TelemetryClient()
+   TelemetryClient(std::string topic)
    {
       _instance = this;
+      _topic = topic;
+   }
+
+   std::string getTopic()
+   {
+      return _topic;
    }
 
    bool isConnected()
    {
       return webSocket.isConnected();
+   }
+
+   std::string getServerVersion()
+   {
+      return _serverVersion;
+   }
+
+   std::string getStatus()
+   {
+      return _status;
    }
 
    void begin(const char* webSocketServerHost, uint16_t webSocketServerPort, const char* webSocketPath)
@@ -102,13 +165,19 @@ public:
       webSocket.loop();
    }
 
-   void setCallbacks(WebSocketOnConnectedFunc connectedFunc = nullptr,
-      WebSocketOnDisconnectedFunc disconnectedFunc = nullptr,
-      WebSocketOnTextFunc textFunc = nullptr)
+   void setCallbacks(
+      TelemetryOnConnectedFunc onConnectedFunc = nullptr,
+      TelemetryOnDisconnectedFunc onDisconnectedFunc = nullptr,
+      TelemetryOnTextFunc onTextFunc = nullptr,
+      TelemetryOnErrorFunc onErrFunc = nullptr,
+      TelemetryOnStartedFunc onStartedFunc = nullptr
+   )
    {
-      _onConnectedFunc = connectedFunc;
-      _onDisconnectedFunc = disconnectedFunc;
-      _onTextFunc = textFunc;
+      _onConnectedFunc = onConnectedFunc;
+      _onDisconnectedFunc = onDisconnectedFunc;
+      _onTextFunc = onTextFunc;
+      _onErrorFunc = onErrFunc;
+      _onStartedFunc = onStartedFunc;
    }
 };
 
@@ -116,10 +185,9 @@ public:
 class TelemetryPublisher : public TelemetryClient
 {
 private:
-   String _topic;
    uint8_t _decimalPlaces;
    float _value = NAN;
-   String _lastValue = "";
+   std::string _lastValue = "";
    bool _ready = false;
 
    virtual void _onDisconnected()
@@ -130,12 +198,18 @@ private:
 
    virtual void _onConnected()
    {
-      // TODO use the provided topic
-      // subscribe
-      webSocket.sendTXT("Publish ArduinoTest");
+      // initialize
+      std::string cmd = "Publish " + getTopic();
+      webSocket.sendTXT(cmd.c_str());
    }
 
-   virtual void _onText(uint8_t* payload, size_t length)
+   virtual void _onText(std::string payload)
+   {
+      // the 'ok' response from us sending a value
+      _ready = true;
+   }
+
+   virtual void _onStarted()
    {
       _ready = true;
    }
@@ -146,19 +220,18 @@ private:
       {
          String value(_value, (unsigned int)_decimalPlaces);
 
-         if (value != _lastValue)
+         if (value != _lastValue.c_str())
          {
             webSocket.sendTXT(value.c_str());
-            _lastValue = value;
+            _lastValue = value.c_str();
             _ready = false;
          }
       }
    }
 
 public:
-   TelemetryPublisher(String topic, uint8_t decimalPlaces)
+   TelemetryPublisher(std::string topic, uint8_t decimalPlaces) : TelemetryClient(topic)
    {
-      _topic = topic;
       _decimalPlaces = decimalPlaces;
    }
 
@@ -174,7 +247,6 @@ class TelemetrySubscriber : public TelemetryClient
 {
 private:
    float _value = NAN;
-   String _topic;
 
    virtual void _onDisconnected()
    {
@@ -183,17 +255,18 @@ private:
    virtual void _onConnected()
    {
       // subscribe
-      webSocket.sendTXT("Subscribe ArduinoTest");
+      std::string cmd = "Subscribe " + getTopic();
+      webSocket.sendTXT(cmd.c_str());
 
       // request the first value
       webSocket.sendTXT("get");
    }
 
-   virtual void _onText(uint8_t* payload, size_t length)
+   virtual void _onText(std::string payload)
    {
       try
       {
-         _value = std::stof((const char*)payload);
+         _value = std::stof(payload);
       }
       catch (const std::exception& e)
       {
@@ -205,9 +278,8 @@ private:
    }
 
 public:
-   TelemetrySubscriber(String topic)
+   TelemetrySubscriber(std::string topic) : TelemetryClient(topic)
    {
-      _topic = topic;
    }
 
    float getValue()

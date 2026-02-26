@@ -18,16 +18,13 @@ constexpr uint16_t webSocketServerPort = 5029;    // Port the server is listenin
 const char* webSocketPath = "/";                  // WebSocket path, typically "/"
 
 WiFiMulti WiFiMulti;
-Stopwatch sw;
+Stopwatch sw(false);
 RollingRateTracker rate;
 Point16 ratePos;
 
 Format rateFormat("###/s");
 
 // forward declarations
-void onConnected();
-void onDisconnected();
-void onText(uint8_t* payload, size_t length);
 TelemetryPublisher client("ArduinoTest", 3);
 
 
@@ -61,29 +58,63 @@ void setup()
 
    feather.print("WebSocket...", Color::LABEL);
 
-   client.setCallbacks(onConnected, onDisconnected, onText);
+   client.setCallbacks(onConnected, onDisconnected, onText, onError, onStarted);
    client.begin(webSocketServerHost, webSocketServerPort, webSocketPath);
 }
 
 void onConnected()
 {
-   feather.printlnR("OK", Color::VALUE);
-   feather.clearDisplay();
-   rate.reset();
-   sw.start();
+   Serial.println("Connected");
 }
 
 void onDisconnected()
 {
-   Serial.println("onDisconnected()");
+   Serial.println("Disconnected");
    delay(1000); // time for Serial to print
    Util::reset();
 }
 
-void onText(uint8_t* payload, size_t length)
+void onText(std::string payload)
 {
    rate.tick();
 }
+
+void onError(std::string msg)
+{
+   feather.setTextSize(2);
+   feather.clearDisplay();
+   feather.display.setTextWrap(true);
+   feather.println(msg, Color::RED);
+   Util::reset(10);
+}
+
+void onStarted()
+{
+   // print the last ok for the WebSocket
+   feather.printlnR("OK", Color::VALUE);
+   delay(1000); // so the user can see the message
+
+   // display the GUI
+   feather.clearDisplay();
+   feather.setCursor(0, 0);
+   feather.setTextSize(3);
+   feather.println("Publisher", Color::HEADING);
+
+   feather.setTextSize(2);
+   feather.moveCursorY(feather.charH() / 2);
+
+   feather.print(" Topic: ", Color::LABEL);
+   feather.println(client.getTopic(), Color::VALUE);
+   feather.moveCursorY(1);
+
+   feather.print("  Rate: ", Color::LABEL);
+   ratePos = feather.getCursor();
+   feather.println("---", Color::VALUE);
+
+   rate.reset();
+   sw.start();
+}
+
 
 void loop()
 {
@@ -91,24 +122,6 @@ void loop()
    client.setValue(value);
 
    client.loop(); // Continuously poll for events and maintain connection
-
-   if (rate.getCount() == 0)
-   {
-      feather.setCursor(0, 0);
-      feather.setTextSize(3);
-      feather.println("Publisher", Color::HEADING);
-
-      feather.setTextSize(2);
-      feather.moveCursorY(feather.charH() / 2);
-
-      feather.print(" Topic: ", Color::LABEL);
-      feather.println("ArduinoTest", Color::VALUE);
-      feather.moveCursorY(1);
-
-      feather.print("  Rate: ", Color::LABEL);
-      ratePos = feather.getCursor();
-      feather.println("---", Color::VALUE);
-   }
 
    if (sw.elapsedMillis() > 1000)
    {

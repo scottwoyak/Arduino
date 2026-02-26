@@ -91,8 +91,10 @@ public:
       }
    }
 
-   static void reset()
+   static void reset(float delaySecs=0)
    {
+      delay(1000 * delaySecs);
+
       // TODO this is for the ESP32 which complains about the standard resetFunc() method of reset. We'll
       // need other techniques for different boards.
       ESP.restart();
