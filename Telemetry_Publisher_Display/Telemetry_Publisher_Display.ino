@@ -9,6 +9,7 @@
 #include "WiFiSettings.h"
 #include "Stopwatch.h"
 #include "RateTracker.h"
+#include "TelemetryClient.h"
 
 Feather feather;
 
@@ -17,63 +18,24 @@ constexpr uint16_t webSocketServerPort = 5029;    // Port the server is listenin
 const char* webSocketPath = "/";                  // WebSocket path, typically "/"
 
 WiFiMulti WiFiMulti;
-WebSocketsClient webSocket;
-bool ready = false;
 Stopwatch sw;
 RollingRateTracker rate;
 Point16 ratePos;
 
 Format rateFormat("###/s");
 
-void(*resetFunc) (void) = 0;
+// forward declarations
+void onConnected();
+void onDisconnected();
+void onText(uint8_t* payload, size_t length);
+TelemetryPublisher client(onConnected, onDisconnected, onText);
+
 
 float getValue()
 {
    constexpr ulong period = 2 * 1000 * 1000;
    float x = 2 * std::numbers::pi * (((float)(micros() % period)) / period);
    return sin(x);
-}
-
-void webSocketEvent(WStype_t type, uint8_t* payload, size_t length)
-{
-   switch (type)
-   {
-   case WStype_DISCONNECTED:
-      Serial.printf("[WS] Disconnected!\n");
-      resetFunc();
-      break;
-   case WStype_CONNECTED:
-      Serial.println("[WS] Connected");
-      if (rate.getCount() == 0)
-      {
-         feather.printlnR("OK", Color::VALUE);
-         delay(1000);
-         feather.clearDisplay();
-      }
-      rate.reset();
-      webSocket.sendTXT("Publish ArduinoTest");
-      break;
-
-   case WStype_TEXT:
-      Serial.println((const char*)payload);
-      if (strcmp((const char*)payload, "ok") || strcmp((const char*) payload, "\n"))
-      {
-         ready = true;
-      }
-      break;
-
-   case WStype_BIN:
-      Serial.printf("[WS] Got Binary data\n");
-      break;
-
-   case WStype_PONG:
-      break;
-
-   default:
-      Serial.print("Unhandled Socket Event Type: ");
-      Serial.println(type);
-      break;
-   }
 }
 
 void setup()
@@ -98,18 +60,35 @@ void setup()
 
 
    feather.print("WebSocket...", Color::LABEL);
-   webSocket.begin(webSocketServerHost, webSocketServerPort, webSocketPath);
+   client.begin(webSocketServerHost, webSocketServerPort, webSocketPath);
+}
 
-   // Assign event handler
-   webSocket.onEvent(webSocketEvent);
+void onConnected()
+{
+   feather.printlnR("OK", Color::VALUE);
+   feather.clearDisplay();
+   rate.reset();
+   sw.start();
+}
 
-   // Set up ping/pong
-   webSocket.setReconnectInterval(5000);
+void onDisconnected()
+{
+   Serial.println("onDisconnected()");
+   delay(1000); // time for Serial to print
+   Util::reset();
+}
+
+void onText(uint8_t* payload, size_t length)
+{
+   rate.tick();
 }
 
 void loop()
 {
-   webSocket.loop(); // Continuously poll for events and maintain connection
+   float value = getValue();
+   client.setValue(value, 3);
+
+   client.loop(); // Continuously poll for events and maintain connection
 
    if (rate.getCount() == 0)
    {
@@ -129,19 +108,10 @@ void loop()
       feather.println("---", Color::VALUE);
    }
 
-   if (ready)
+   if (sw.elapsedMillis() > 1000)
    {
-      rate.tick();
-
-      if (sw.elapsedMillis() > 1000)
-      {
-         feather.setCursor(ratePos);
-         feather.println(rate.getRate(), rateFormat, Color::VALUE);
-         sw.reset();
-      }
-
-      float value = getValue();
-      webSocket.sendTXT(String(value, 3).c_str());
-      ready = false;
+      feather.setCursor(ratePos);
+      feather.println(rate.getRate(), rateFormat, Color::VALUE);
+      sw.reset();
    }
 }

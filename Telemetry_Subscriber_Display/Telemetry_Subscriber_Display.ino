@@ -18,15 +18,14 @@ constexpr uint16_t webSocketServerPort = 5029;    // Port the server is listenin
 const char* webSocketPath = "/";                  // WebSocket path, typically "/"
 
 
-// forward declarations
-void onConnected();
-void onDisconnected();
-
 WiFiMulti WiFiMulti;
 Stopwatch sw;
 RollingRateTracker rate;
 Point16 ratePos;
 
+// forward declarations
+void onConnected();
+void onDisconnected();
 TelemetrySubscriber client(onConnected, onDisconnected);
 
 Format rateFormat("###/s");

@@ -7,14 +7,18 @@ WebSocketsClient webSocket;
 
 typedef std::function<void()> WebSocketConnectedFunc;
 typedef std::function<void()> WebSocketDisconnectedFunc;
+typedef std::function<void(uint8_t* payload, size_t length)> WebSocketOnTextFunc;
 
 //-------------------------------------------------------------------------------------------------
 class TelemetryClient
 {
 private:
+   // callbacks for our user
    WebSocketConnectedFunc _onConnectedFunc;
    WebSocketDisconnectedFunc _onDisconnectedFunc;
+   WebSocketOnTextFunc _onTextFunc;
 
+   // static instance for handling callbacks from WebSocketClient
    static TelemetryClient* _instance;
 
    static void webSocketSubscriberEvent(WStype_t type, uint8_t* payload, size_t length)
@@ -26,6 +30,7 @@ protected:
    virtual void _onDisconnected() = 0;
    virtual void _onConnected() = 0;
    virtual void _onText(uint8_t* payload, size_t length) = 0;
+   virtual void _onLoop() {};
 
    void _onEvent(WStype_t type, uint8_t* payload, size_t length)
    {
@@ -46,6 +51,10 @@ protected:
       case WStype_TEXT:
          //Serial.println((const char*)payload);
          _onText(payload, length);
+         if (_onTextFunc)
+         {
+            _onTextFunc(payload, length);
+         }
          break;
 
       case WStype_BIN:
@@ -63,10 +72,12 @@ protected:
    }
 
 public:
-   TelemetryClient(WebSocketConnectedFunc connectedFunc, WebSocketDisconnectedFunc disconnectedFunc)
+   TelemetryClient(WebSocketConnectedFunc connectedFunc, WebSocketDisconnectedFunc disconnectedFunc, WebSocketOnTextFunc textFunc=nullptr)
    {
       _onConnectedFunc = connectedFunc;
       _onDisconnectedFunc = disconnectedFunc;
+      _onTextFunc = textFunc;
+
       _instance = this;
    }
 
@@ -81,16 +92,61 @@ public:
 
       // Assign event handler
       webSocket.onEvent(webSocketSubscriberEvent);
-
-      // Set up ping/pong
-      webSocket.setReconnectInterval(5000);
    }
 
    void loop()
    {
+      _onLoop();
       webSocket.loop();
    }
 };
+
+//-------------------------------------------------------------------------------------------------
+class TelemetryPublisher : public TelemetryClient
+{
+private:
+   String _value = "";
+   String _lastValue = "";
+   bool _ready = false;
+
+   virtual void _onDisconnected()
+   {
+      _ready = false;
+   }
+
+   virtual void _onConnected()
+   {
+      // subscribe
+      webSocket.sendTXT("Publish ArduinoTest");
+   }
+
+   virtual void _onText(uint8_t* payload, size_t length)
+   {
+      _ready = true;
+   }
+
+   virtual void _onLoop()
+   {
+      if (_ready && _value != _lastValue)
+      {
+         webSocket.sendTXT(_value.c_str());
+         _ready = false;
+      }
+   }
+
+public:
+   TelemetryPublisher(WebSocketConnectedFunc connectedFunc, 
+                      WebSocketDisconnectedFunc disconnectedFunc,
+                      WebSocketOnTextFunc textFunc) : TelemetryClient(connectedFunc, disconnectedFunc, textFunc)
+   {
+   }
+
+   void setValue(float value, uint8_t decimalPlaces)
+   {
+      _value = String(value, (unsigned int) decimalPlaces);
+   }
+};
+
 
 //-------------------------------------------------------------------------------------------------
 class TelemetrySubscriber : public TelemetryClient
@@ -113,7 +169,14 @@ private:
 
    virtual void _onText(uint8_t* payload, size_t length)
    {
-      _value = std::stof((const char*)payload);
+      try
+      {
+         _value = std::stof((const char*)payload);
+      }
+      catch (const std::exception& e)
+      {
+         _value = NAN;
+      }
 
       // request the next value
       webSocket.sendTXT("get");
