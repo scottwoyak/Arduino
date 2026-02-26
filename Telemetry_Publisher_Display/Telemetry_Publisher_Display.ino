@@ -28,7 +28,7 @@ Format rateFormat("###/s");
 void onConnected();
 void onDisconnected();
 void onText(uint8_t* payload, size_t length);
-TelemetryPublisher client(onConnected, onDisconnected, onText);
+TelemetryPublisher client("ArduinoTest", 3);
 
 
 float getValue()
@@ -60,6 +60,8 @@ void setup()
 
 
    feather.print("WebSocket...", Color::LABEL);
+
+   client.setCallbacks(onConnected, onDisconnected, onText);
    client.begin(webSocketServerHost, webSocketServerPort, webSocketPath);
 }
 
@@ -86,7 +88,7 @@ void onText(uint8_t* payload, size_t length)
 void loop()
 {
    float value = getValue();
-   client.setValue(value, 3);
+   client.setValue(value);
 
    client.loop(); // Continuously poll for events and maintain connection
 

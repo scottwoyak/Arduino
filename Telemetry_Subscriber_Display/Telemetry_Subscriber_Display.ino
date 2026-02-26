@@ -26,7 +26,7 @@ Point16 ratePos;
 // forward declarations
 void onConnected();
 void onDisconnected();
-TelemetrySubscriber client(onConnected, onDisconnected);
+TelemetrySubscriber client("ArduinoTest");
 
 Format rateFormat("###/s");
 
@@ -51,6 +51,9 @@ void setup()
    feather.moveCursorY(1);
 
    feather.print("WebSocket...", Color::LABEL);
+
+
+   client.setCallbacks(onConnected, onDisconnected);
    client.begin(webSocketServerHost, webSocketServerPort, webSocketPath);
 }
 
@@ -95,12 +98,12 @@ void loop()
    {
       lastValue = client.getValue();
       rate.tick();
+   }
 
-      if (sw.elapsedMillis() > 1000)
-      {
-         feather.setCursor(ratePos);
-         feather.println(rate.getRate(), rateFormat, Color::VALUE);
-         sw.reset();
-      }
+   if (sw.elapsedMillis() > 1000)
+   {
+      feather.setCursor(ratePos);
+      feather.println(rate.getRate(), rateFormat, Color::VALUE);
+      sw.reset();
    }
 }

@@ -5,8 +5,8 @@
 
 WebSocketsClient webSocket;
 
-typedef std::function<void()> WebSocketConnectedFunc;
-typedef std::function<void()> WebSocketDisconnectedFunc;
+typedef std::function<void()> WebSocketOnConnectedFunc;
+typedef std::function<void()> WebSocketOnDisconnectedFunc;
 typedef std::function<void(uint8_t* payload, size_t length)> WebSocketOnTextFunc;
 
 //-------------------------------------------------------------------------------------------------
@@ -14,9 +14,9 @@ class TelemetryClient
 {
 private:
    // callbacks for our user
-   WebSocketConnectedFunc _onConnectedFunc;
-   WebSocketDisconnectedFunc _onDisconnectedFunc;
-   WebSocketOnTextFunc _onTextFunc;
+   WebSocketOnConnectedFunc _onConnectedFunc = nullptr;
+   WebSocketOnDisconnectedFunc _onDisconnectedFunc = nullptr;
+   WebSocketOnTextFunc _onTextFunc = nullptr;
 
    // static instance for handling callbacks from WebSocketClient
    static TelemetryClient* _instance;
@@ -39,13 +39,19 @@ protected:
       case WStype_DISCONNECTED:
          Serial.print("[WS] Disconnected!\n");
          _onDisconnected();
-         _onDisconnectedFunc();
+         if (_onDisconnectedFunc)
+         {
+            _onDisconnectedFunc();
+         }
          break;
 
       case WStype_CONNECTED:
          Serial.print("[WS] Connected!\n");
          _onConnected();
-         _onConnectedFunc();
+         if (_onConnectedFunc)
+         {
+            _onConnectedFunc();
+         }
          break;
 
       case WStype_TEXT:
@@ -72,12 +78,8 @@ protected:
    }
 
 public:
-   TelemetryClient(WebSocketConnectedFunc connectedFunc, WebSocketDisconnectedFunc disconnectedFunc, WebSocketOnTextFunc textFunc=nullptr)
+   TelemetryClient()
    {
-      _onConnectedFunc = connectedFunc;
-      _onDisconnectedFunc = disconnectedFunc;
-      _onTextFunc = textFunc;
-
       _instance = this;
    }
 
@@ -99,23 +101,36 @@ public:
       _onLoop();
       webSocket.loop();
    }
+
+   void setCallbacks(WebSocketOnConnectedFunc connectedFunc = nullptr,
+      WebSocketOnDisconnectedFunc disconnectedFunc = nullptr,
+      WebSocketOnTextFunc textFunc = nullptr)
+   {
+      _onConnectedFunc = connectedFunc;
+      _onDisconnectedFunc = disconnectedFunc;
+      _onTextFunc = textFunc;
+   }
 };
 
 //-------------------------------------------------------------------------------------------------
 class TelemetryPublisher : public TelemetryClient
 {
 private:
-   String _value = "";
+   String _topic;
+   uint8_t _decimalPlaces;
+   float _value = NAN;
    String _lastValue = "";
    bool _ready = false;
 
    virtual void _onDisconnected()
    {
       _ready = false;
+      _lastValue = "";
    }
 
    virtual void _onConnected()
    {
+      // TODO use the provided topic
       // subscribe
       webSocket.sendTXT("Publish ArduinoTest");
    }
@@ -127,23 +142,29 @@ private:
 
    virtual void _onLoop()
    {
-      if (_ready && _value != _lastValue)
+      if (_ready)
       {
-         webSocket.sendTXT(_value.c_str());
-         _ready = false;
+         String value(_value, (unsigned int)_decimalPlaces);
+
+         if (value != _lastValue)
+         {
+            webSocket.sendTXT(value.c_str());
+            _lastValue = value;
+            _ready = false;
+         }
       }
    }
 
 public:
-   TelemetryPublisher(WebSocketConnectedFunc connectedFunc, 
-                      WebSocketDisconnectedFunc disconnectedFunc,
-                      WebSocketOnTextFunc textFunc) : TelemetryClient(connectedFunc, disconnectedFunc, textFunc)
+   TelemetryPublisher(String topic, uint8_t decimalPlaces)
    {
+      _topic = topic;
+      _decimalPlaces = decimalPlaces;
    }
 
-   void setValue(float value, uint8_t decimalPlaces)
+   void setValue(float value)
    {
-      _value = String(value, (unsigned int) decimalPlaces);
+      _value = value;
    }
 };
 
@@ -153,6 +174,7 @@ class TelemetrySubscriber : public TelemetryClient
 {
 private:
    float _value = NAN;
+   String _topic;
 
    virtual void _onDisconnected()
    {
@@ -183,8 +205,9 @@ private:
    }
 
 public:
-   TelemetrySubscriber(WebSocketConnectedFunc connectedFunc, WebSocketDisconnectedFunc disconnectedFunc) : TelemetryClient(connectedFunc, disconnectedFunc)
+   TelemetrySubscriber(String topic)
    {
+      _topic = topic;
    }
 
    float getValue()
