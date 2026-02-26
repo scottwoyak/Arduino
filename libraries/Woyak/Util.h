@@ -90,4 +90,11 @@ public:
          return (ULONG_MAX - start) + end + 1;
       }
    }
+
+   static void reset()
+   {
+      // TODO this is for the ESP32 which complains about the standard resetFunc() method of reset. We'll
+      // need other techniques for different boards.
+      ESP.restart();
+   }
 };
