@@ -1,4 +1,5 @@
 
+
 #include <WiFi.h>
 #include <WiFiMulti.h>
 #include <WiFiClientSecure.h>
@@ -8,15 +9,16 @@
 #include "WiFiSettings.h"
 #include "Stopwatch.h"
 #include "RateTracker.h"
+#include "Url.h"
 
 #include <TelemetryClient.h>
 
 Feather feather;
 
-const char* webSocketServerHost = "192.168.1.43"; // e.g., "192.168.1.100" or "example.com"
-constexpr uint16_t webSocketServerPort = 5029;    // Port the server is listening on
-const char* webSocketPath = "/";                  // WebSocket path, typically "/"
-
+//constexpr auto HOST = TELEMETRY_LOCAL_HOST;
+//constexpr auto PORT = TELEMETRY_LOCAL_PORT;
+constexpr auto HOST = TELEMETRY_REMOTE_HOST;
+constexpr auto PORT = TELEMETRY_REMOTE_PORT;
 
 WiFiMulti WiFiMulti;
 Stopwatch sw(false);
@@ -51,7 +53,7 @@ void setup()
    feather.print("WebSocket...", Color::LABEL);
 
    client.setCallbacks(onConnected, onDisconnected, nullptr, onError, onStarted);
-   client.begin(webSocketServerHost, webSocketServerPort, webSocketPath);
+   client.beginSSL(HOST, PORT);
 }
 
 void onConnected()
@@ -86,17 +88,35 @@ void onStarted()
    feather.setCursor(0, 0);
    feather.setTextSize(3);
    feather.println("Subscriber", Color::HEADING);
+   feather.moveCursorY(4);
 
    feather.setTextSize(2);
-   feather.moveCursorY(feather.charH() / 2);
-
-   feather.print(" Topic: ", Color::LABEL);
+   feather.print("Topic: ", Color::LABEL);
    feather.println(client.getTopic(), Color::VALUE);
    feather.moveCursorY(1);
 
-   feather.print("  Rate: ", Color::LABEL);
+   feather.print(" Rate: ", Color::LABEL);
    ratePos = feather.getCursor();
    feather.println("---", Color::VALUE);
+   feather.moveCursorY(1);
+
+   Url url(client.getUrl().c_str());
+   feather.print(" Host: ", Color::LABEL);
+   feather.display.setTextWrap(true);
+   feather.println(url.getHost(), Color::VALUE2);
+   feather.moveCursorY(1);
+
+   feather.print(" Port: ", Color::LABEL);
+   feather.println(url.getPort(), Color::VALUE2);
+   feather.moveCursorY(1);
+
+   feather.print(" Schm: ", Color::LABEL);
+   feather.println(url.getScheme() + "://", Color::VALUE2);
+   feather.moveCursorY(1);
+
+   feather.print(" Path: ", Color::LABEL);
+   feather.println(url.getPath(), Color::VALUE2);
+   feather.moveCursorY(1);
 
    sw.start();
 }
@@ -115,8 +135,8 @@ void loop()
 
    if (sw.elapsedMillis() > 1000)
    {
-      Serial.println(client.getStatus().c_str());
       feather.setCursor(ratePos);
+      feather.setTextSize(2);
       feather.println(rate.getRate(), rateFormat, Color::VALUE);
       sw.reset();
    }

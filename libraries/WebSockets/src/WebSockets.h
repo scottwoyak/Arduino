@@ -50,7 +50,7 @@
         DEBUG_ESP_PORT.flush();             \
     }
 #else
-// #define DEBUG_WEBSOCKETS(...) os_printf( __VA_ARGS__ )
+ // SAW #define DEBUG_WEBSOCKETS(...) Serial.printf( __VA_ARGS__ )
 #endif
 #endif
 

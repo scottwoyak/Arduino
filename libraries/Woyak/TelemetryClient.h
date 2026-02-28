@@ -136,6 +136,11 @@ public:
       return _topic;
    }
 
+   std::string getUrl()
+   {
+      return webSocket.getUrl().c_str();
+   }
+
    bool isConnected()
    {
       return webSocket.isConnected();
@@ -151,11 +156,15 @@ public:
       return _status;
    }
 
-   void begin(const char* webSocketServerHost, uint16_t webSocketServerPort, const char* webSocketPath)
+   void begin(const char* webSocketServerHost, uint16_t webSocketServerPort, const char* webSocketPath="/ws")
    {
       webSocket.begin(webSocketServerHost, webSocketServerPort, webSocketPath);
+      webSocket.onEvent(webSocketSubscriberEvent);
+   }
 
-      // Assign event handler
+   void beginSSL(const char* webSocketServerHost, uint16_t webSocketServerPort, const char* webSocketPath="/ws")
+   {
+      webSocket.beginSSL(webSocketServerHost, webSocketServerPort, webSocketPath);
       webSocket.onEvent(webSocketSubscriberEvent);
    }
 

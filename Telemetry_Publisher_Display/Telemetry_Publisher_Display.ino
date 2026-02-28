@@ -13,9 +13,21 @@
 
 Feather feather;
 
+/*
+const char* webSocketServerHost = "telemetry-server-d7mmu.ondigitalocean.app"; // e.g., "192.168.1.100" or "example.com"
+constexpr uint16_t webSocketServerPort = 443;    // Port the server is listening on
+const char* webSocketPath = "/ws";                  // WebSocket path, typically "/"
+*/
+
+const char* webSocketServerHost = "192.168.1.43"; // e.g., "192.168.1.100" or "example.com"
+constexpr uint16_t webSocketServerPort = 7289;    // Port the server is listening on
+const char* webSocketPath = "/ws";                  // WebSocket path, typically "/"
+
+/*
 const char* webSocketServerHost = "192.168.1.43"; // e.g., "192.168.1.100" or "example.com"
 constexpr uint16_t webSocketServerPort = 5029;    // Port the server is listening on
 const char* webSocketPath = "/";                  // WebSocket path, typically "/"
+*/
 
 WiFiMulti WiFiMulti;
 Stopwatch sw(false);
@@ -59,7 +71,7 @@ void setup()
    feather.print("WebSocket...", Color::LABEL);
 
    client.setCallbacks(onConnected, onDisconnected, onText, onError, onStarted);
-   client.begin(webSocketServerHost, webSocketServerPort, webSocketPath);
+   client.beginSSL(webSocketServerHost, webSocketServerPort, webSocketPath);
 }
 
 void onConnected()

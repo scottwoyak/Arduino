@@ -48,6 +48,7 @@
     <File Path="libraries/Woyak/TimedAverager.h" />
     <File Path="libraries/Woyak/TimedHistogram.h" />
     <File Path="libraries/Woyak/TimedHistogramChart.h" />
+    <File Path="libraries/Woyak/Url.h" />
     <File Path="libraries/Woyak/Util.h" />
     <File Path="libraries/Woyak/ValueStore.h" />
     <File Path="libraries/Woyak/ValueStoreFram.h" />
