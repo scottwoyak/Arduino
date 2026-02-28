@@ -18,6 +18,7 @@ private:
    std::string _serverVersion = "";
    std::string _status = "";
    std::string _topic;
+   bool _started = false;
 
    // callbacks for our user
    TelemetryOnConnectedFunc _onConnectedFunc = nullptr;
@@ -91,6 +92,7 @@ protected:
             else
             {
                Serial.println("Started");
+               _started = true;
                _onStarted();
                if (_onStartedFunc)
                {
@@ -139,6 +141,11 @@ public:
    std::string getUrl()
    {
       return webSocket.getUrl().c_str();
+   }
+
+   bool isStarted()
+   {
+      return _started;
    }
 
    bool isConnected()

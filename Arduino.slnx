@@ -140,4 +140,10 @@
   <Project Path="Wind_Monitor/Wind_Monitor.vcxproj">
     <Deploy />
   </Project>
+  <Project Path="Wind_Publisher/Wind_Publisher.vcxproj">
+    <Deploy />
+  </Project>
+  <Project Path="Wind_Subscriber_Display/Wind_Subscriber_Display.vcxproj">
+    <Deploy />
+  </Project>
 </Solution>

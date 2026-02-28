@@ -1,10 +1,7 @@
 
 
-#include <WiFi.h>
-#include <WiFiMulti.h>
-#include <WiFiClientSecure.h>
-
 #include "Feather.h"
+#include <WiFiMulti.h>
 #include "SerialX.h"
 #include "WiFiSettings.h"
 #include "Stopwatch.h"
@@ -24,8 +21,6 @@ WiFiMulti WiFiMulti;
 Stopwatch sw(false);
 RollingRateTracker rate;
 Point16 ratePos;
-
-// forward declarations
 TelemetrySubscriber client("Tests/Sin1");
 
 Format rateFormat("###/s");
