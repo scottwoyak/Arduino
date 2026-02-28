@@ -10,24 +10,14 @@
 #include "Stopwatch.h"
 #include "RateTracker.h"
 #include "TelemetryClient.h"
+#include "Url.h"
 
 Feather feather;
 
-/*
-const char* webSocketServerHost = "telemetry-server-d7mmu.ondigitalocean.app"; // e.g., "192.168.1.100" or "example.com"
-constexpr uint16_t webSocketServerPort = 443;    // Port the server is listening on
-const char* webSocketPath = "/ws";                  // WebSocket path, typically "/"
-*/
-
-const char* webSocketServerHost = "192.168.1.43"; // e.g., "192.168.1.100" or "example.com"
-constexpr uint16_t webSocketServerPort = 7289;    // Port the server is listening on
-const char* webSocketPath = "/ws";                  // WebSocket path, typically "/"
-
-/*
-const char* webSocketServerHost = "192.168.1.43"; // e.g., "192.168.1.100" or "example.com"
-constexpr uint16_t webSocketServerPort = 5029;    // Port the server is listening on
-const char* webSocketPath = "/";                  // WebSocket path, typically "/"
-*/
+//constexpr auto HOST = TELEMETRY_LOCAL_HOST;
+//constexpr auto PORT = TELEMETRY_LOCAL_PORT;
+constexpr auto HOST = TELEMETRY_REMOTE_HOST;
+constexpr auto PORT = TELEMETRY_REMOTE_PORT;
 
 WiFiMulti WiFiMulti;
 Stopwatch sw(false);
@@ -56,6 +46,10 @@ void setup()
    WiFiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
 
    feather.setTextSize(2);
+   feather.setCursorY(-feather.charH());
+   feather.println("Publisher", Color::GRAY);
+
+   feather.setCursor(0, 0);
    feather.println("Initializing", Color::HEADING2);
    feather.moveCursorY(4);
 
@@ -67,11 +61,10 @@ void setup()
    feather.printlnR("OK", Color::VALUE);
    feather.moveCursorY(1);
 
-
    feather.print("WebSocket...", Color::LABEL);
 
    client.setCallbacks(onConnected, onDisconnected, onText, onError, onStarted);
-   client.beginSSL(webSocketServerHost, webSocketServerPort, webSocketPath);
+   client.beginSSL(HOST, PORT);
 }
 
 void onConnected()
@@ -111,22 +104,39 @@ void onStarted()
    feather.setCursor(0, 0);
    feather.setTextSize(3);
    feather.println("Publisher", Color::HEADING);
+   feather.moveCursorY(4);
 
    feather.setTextSize(2);
-   feather.moveCursorY(feather.charH() / 2);
-
-   feather.print(" Topic: ", Color::LABEL);
+   feather.print("Topic: ", Color::LABEL);
    feather.println(client.getTopic(), Color::VALUE);
    feather.moveCursorY(1);
 
-   feather.print("  Rate: ", Color::LABEL);
+   feather.print(" Rate: ", Color::LABEL);
    ratePos = feather.getCursor();
    feather.println("---", Color::VALUE);
+   feather.moveCursorY(1);
+
+   Url url(client.getUrl().c_str());
+   feather.print(" Host: ", Color::LABEL);
+   feather.display.setTextWrap(true);
+   feather.println(url.getHost(), Color::VALUE2);
+   feather.moveCursorY(1);
+
+   feather.print(" Port: ", Color::LABEL);
+   feather.println(url.getPort(), Color::VALUE2);
+   feather.moveCursorY(1);
+
+   feather.print(" Schm: ", Color::LABEL);
+   feather.println(url.getScheme() + "://", Color::VALUE2);
+   feather.moveCursorY(1);
+
+   feather.print(" Path: ", Color::LABEL);
+   feather.println(url.getPath(), Color::VALUE2);
+   feather.moveCursorY(1);
 
    rate.reset();
    sw.start();
 }
-
 
 void loop()
 {

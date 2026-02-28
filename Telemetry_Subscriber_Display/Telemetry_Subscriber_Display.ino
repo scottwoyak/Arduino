@@ -39,6 +39,9 @@ void setup()
    WiFiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
 
    feather.setTextSize(2);
+   feather.setCursorY(-feather.charH());
+   feather.println("Subscriber", Color::GRAY);
+
    feather.println("Initializing", Color::HEADING2);
    feather.moveCursorY(4);
 
