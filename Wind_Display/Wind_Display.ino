@@ -7,9 +7,12 @@
 #include "Slider.h"
 #include "MultiBar.h"
 #include "BarChart.h"
+#include "RateTracker.h"
 
 Feather feather;
 WindMeter wind(A5);
+RollingRateTracker refreshRate(100);
+Stopwatch sw;
 
 constexpr uint16_t WIND_AVERAGE_DURATION_S = 10 * 60;
 constexpr uint8_t WIND_AVERAGE_INTERVAL_S = 10;     
@@ -70,10 +73,14 @@ void setup()
    wind.begin();
 
    delay(1000); // provide time for the wind meter to get a reading
+
+   sw.reset();
 }
 
 void loop()
 {
+   refreshRate.tick();
+
    // get values
    float speed = wind.getSpeed();
    windAverager.set(speed);
@@ -115,6 +122,12 @@ void loop()
 
    default:
       break;
+   }
+
+   if (sw.elapsedSecs() > 1)
+   {
+      Serial.println(refreshRate.getRate());
+      sw.reset();
    }
 }
 
