@@ -1,3 +1,5 @@
+// undefine to use the remote server
+//#define TELEMETRY_LOCAL
 
 #include "Feather.h"
 #include <WiFiMulti.h>
@@ -5,31 +7,18 @@
 #include "WiFiSettings.h"
 #include "Stopwatch.h"
 #include "RateTracker.h"
-#include "TelemetryClient.h"
 #include "Url.h"
 
+#include <TelemetryClient.h>
+
 Feather feather;
-
-//constexpr auto HOST = TELEMETRY_LOCAL_HOST;
-//constexpr auto PORT = TELEMETRY_LOCAL_PORT;
-constexpr auto HOST = TELEMETRY_REMOTE_HOST;
-constexpr auto PORT = TELEMETRY_REMOTE_PORT;
-
-WiFiMulti WiFiMulti;
+WiFiMulti wifi;
 Stopwatch sw(false);
 RollingRateTracker rate;
 Point16 ratePos;
+TelemetrySubscriber client("Tests/Sin1");
 
 Format rateFormat("###/s");
-TelemetryPublisher client("ArduinoTest", 3);
-
-
-float getValue()
-{
-   constexpr ulong period = 2 * 1000 * 1000;
-   float x = 2 * std::numbers::pi * (((float)(micros() % period)) / period);
-   return sin(x);
-}
 
 void setup()
 {
@@ -37,18 +26,18 @@ void setup()
    feather.begin();
 
    // Connect to WiFi
-   WiFiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
+   wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
 
    feather.setTextSize(2);
    feather.setCursorY(-feather.charH());
-   feather.println("Publisher", Color::GRAY);
+   feather.echoToSerial = true;
+   feather.println("Subscriber", Color::GRAY);
 
-   feather.setCursor(0, 0);
    feather.println("Initializing", Color::HEADING2);
    feather.moveCursorY(4);
 
    feather.print("WiFi...", Color::LABEL);
-   while (WiFiMulti.run() != WL_CONNECTED)
+   while (wifi.run() != WL_CONNECTED)
    {
       feather.print(".", Color::LABEL);
    }
@@ -57,8 +46,8 @@ void setup()
 
    feather.print("WebSocket...", Color::LABEL);
 
-   client.setCallbacks(onConnected, onDisconnected, onText, onError, onStarted);
-   client.beginSSL(HOST, PORT);
+   client.setCallbacks(onConnected, onDisconnected, nullptr, onError, onStarted);
+   client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
 }
 
 void onConnected()
@@ -71,11 +60,6 @@ void onDisconnected()
    Serial.println("Disconnected");
    delay(1000); // time for Serial to print
    Util::reset();
-}
-
-void onText(std::string payload)
-{
-   rate.tick();
 }
 
 void onError(std::string msg)
@@ -97,7 +81,7 @@ void onStarted()
    feather.clearDisplay();
    feather.setCursor(0, 0);
    feather.setTextSize(3);
-   feather.println("Publisher", Color::HEADING);
+   feather.println("Subscriber", Color::HEADING);
    feather.moveCursorY(4);
 
    feather.setTextSize(2);
@@ -128,20 +112,25 @@ void onStarted()
    feather.println(url.getPath(), Color::VALUE2);
    feather.moveCursorY(1);
 
-   rate.reset();
    sw.start();
 }
 
+
+float lastValue = NAN;
 void loop()
 {
-   float value = getValue();
-   client.setValue(value);
-
    client.loop(); // Continuously poll for events and maintain connection
+
+   if (std::isnan(client.getValue()) == false && client.getValue() != lastValue)
+   {
+      lastValue = client.getValue();
+      rate.tick();
+   }
 
    if (sw.elapsedMillis() > 1000)
    {
       feather.setCursor(ratePos);
+      feather.setTextSize(2);
       feather.println(rate.getRate(), rateFormat, Color::VALUE);
       sw.reset();
    }

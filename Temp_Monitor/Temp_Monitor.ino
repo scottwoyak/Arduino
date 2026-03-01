@@ -38,6 +38,7 @@ String rooms[] =
    "Porch",
    "Studio",
    "Sunroom",
+   "Water",
    "Wayne",
    "Workshop",
 };
