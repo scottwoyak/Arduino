@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="StopwatchTests.ino" />
+    <ClCompile Include="Stopwatch_Tests.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.StopwatchTests.vsarduino.h">
+    <ClInclude Include="__vm\.Stopwatch_Tests.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

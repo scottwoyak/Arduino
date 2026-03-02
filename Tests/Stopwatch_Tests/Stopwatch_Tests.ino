@@ -116,7 +116,7 @@ void setup() {
    Serial.begin(115200);
    while (!Serial)
    {
-      delay(10);
+      delay(100);
    }
 
    delay(1000);
@@ -124,6 +124,5 @@ void setup() {
 }
 
 void loop() {
-   //Serial.println("loop()");
    aunit::TestRunner::run();
 }

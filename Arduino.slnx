@@ -56,6 +56,14 @@
     <File Path="libraries/Woyak/WindMeter.cpp" />
     <File Path="libraries/Woyak/WindMeter.h" />
   </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="Tests/Stopwatch_Tests/Stopwatch_Tests.vcxproj">
+      <Deploy />
+    </Project>
+    <Project Path="Tests/TimedAverager_Tests/TimedAverager_Tests.vcxproj">
+      <Deploy />
+    </Project>
+  </Folder>
   <Project Path="Battery_Display/Battery_Display.vcxproj">
     <Deploy />
   </Project>
@@ -126,12 +134,6 @@
     <Deploy />
   </Project>
   <Project Path="Temp_Monitor_Battery/Temp_Monitor_Battery.vcxproj">
-    <Deploy />
-  </Project>
-  <Project Path="Tests/StopwatchTests/StopwatchTests.vcxproj">
-    <Deploy />
-  </Project>
-  <Project Path="Tests/TimedAveragerTests/TimedAveragerTests.vcxproj">
     <Deploy />
   </Project>
   <Project Path="Wind_Display/Wind_Display.vcxproj">
