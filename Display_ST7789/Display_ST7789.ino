@@ -38,9 +38,10 @@ void loop()
    display.setTextSize(4);
    display.setCursor(0, 0);
    display.print(counter++);
+
    display.setTextSize(2);
    display.setCursor(0, display.height() - 16);
-   display.print(fps);
+   display.print(fps, 1);
    display.print(" fps ");
 
    lastMicros = newMicros;

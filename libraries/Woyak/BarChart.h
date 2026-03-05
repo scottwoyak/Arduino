@@ -56,7 +56,7 @@ public:
       delete _bars;
    }
 
-   void draw(Adafruit_GFX* display, float values[])
+   void draw(TFT_eSPI* display, float values[])
    {
       for (uint i = _visibleBars.min; i <= _visibleBars.max; i++)
       {
@@ -130,7 +130,7 @@ public:
       _bars[_numBars - 1]->set(value);
    }
 
-   void draw(Adafruit_GFX* display)
+   void draw(TFT_eSPI* display)
    {
       for (uint i = 0; i < _numBars; i++)
       {

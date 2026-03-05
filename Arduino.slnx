@@ -82,6 +82,9 @@
   <Project Path="Display_ST7789/Display_ST7789.vcxproj">
     <Deploy />
   </Project>
+  <Project Path="Display_ST7789_eSPI/Display_ST7789_eSPI.vcxproj">
+    <Deploy />
+  </Project>
   <Project Path="Display_ST7796S/Display_ST7796S.vcxproj">
     <Deploy />
   </Project>
@@ -134,6 +137,9 @@
     <Deploy />
   </Project>
   <Project Path="Temp_Monitor_Battery/Temp_Monitor_Battery.vcxproj">
+    <Deploy />
+  </Project>
+  <Project Path="TFT/TFT/TFT.vcxproj">
     <Deploy />
   </Project>
   <Project Path="Wind_Display/Wind_Display.vcxproj">

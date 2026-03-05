@@ -1,47 +1,20 @@
 #pragma once
 
-#include <Adafruit_ST7789.h> // TFT display
 #include <ArduinoWithDisplay.h>
 #include <Button.h>
 #include <string>
 #include <Preferences.h>
 
-//
-// Annoyingling, Adafruit has a lot of nifty properties in Adafruit_GFX that you can set, but not 
-// get. This class is just a wrapper that exposes them
-//
-class SW_ST7789 : public Adafruit_ST7789, public Adafruit_GFX_wInfo
-{
-public:
-   SW_ST7789(int8_t cs, int8_t dc, int8_t mosi, int8_t sclk, int8_t rst = -1) : Adafruit_ST7789(cs, dc, mosi, sclk, rst)
-   {
-   }
-
-   SW_ST7789(int8_t cs, int8_t dc, int8_t rst) : Adafruit_ST7789(cs, dc, rst)
-   {
-   }
-
-   uint8_t charW()
-   {
-      // 6 is the baseline character width that is scaled for larger text
-      return 6 * textsize_x;
-   }
-
-   uint8_t charH()
-   {
-      // 8 is the baseline character width that is scaled for larger text
-      return 8 * textsize_y;
-   }
-};
+#include <TFT_eSPI.h>
 
 class Feather_ESP32_S3 : public ArduinoWithDisplay
 {
 public:
-   SW_ST7789 display;
+   TFT_eSPI display;
    Button buttonA;
    Preferences preferences;
 
-   Feather_ESP32_S3() : ArduinoWithDisplay(&display, &display), display(TFT_CS, TFT_DC, TFT_RST), buttonA(0)
+   Feather_ESP32_S3() : ArduinoWithDisplay(&display), display(), buttonA(0)
    {
    }
 
@@ -56,8 +29,8 @@ public:
       digitalWrite(TFT_I2C_POWER, HIGH);
       delay(10);
 
-      display.init(135, 240); // Init ST7789 240x135
-      display.setRotation(3);
+      display.init();
+      display.setRotation(1);
       display.fillScreen((uint16_t)Color::BLACK);
 
       display.setTextColor((uint16_t)Color::WHITE, (uint16_t)Color::BLACK);

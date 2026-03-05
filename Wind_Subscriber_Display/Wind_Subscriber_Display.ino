@@ -116,7 +116,8 @@ void onError(std::string msg)
    feather.setTextSize(2);
    feather.clearDisplay();
    feather.display.setTextWrap(true);
-   feather.println(msg, Color::RED);
+   feather.println(msg, Color::WHITE, Color::RED);
+   while (1);
    Util::reset(10);
 }
 

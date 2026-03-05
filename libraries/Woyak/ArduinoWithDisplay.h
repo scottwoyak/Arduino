@@ -1,23 +1,15 @@
 #pragma once
 
-#include <Adafruit_GFX.h> 
+#include "TFT_eSPI.h"
 #include <Format.h>
 #include <string>
 #include "Color.h"
 #include "Structs.h"
 
-class Adafruit_GFX_wInfo
-{
-public:
-   virtual uint8_t charW() = 0;
-   virtual uint8_t charH() = 0;
-};
-
 class ArduinoWithDisplay
 {
 private:
-   Adafruit_GFX* _display;
-   Adafruit_GFX_wInfo* _displayInfo;
+   TFT_eSPI* _display;
 
    void _print(const char* str, Color textColor, Color backgroundColor)
    {
@@ -41,10 +33,9 @@ private:
 public:
    bool echoToSerial = false;
 
-   ArduinoWithDisplay(Adafruit_GFX* display, Adafruit_GFX_wInfo* displayInfo)
+   ArduinoWithDisplay(TFT_eSPI* display)
    {
       _display = display;
-      _displayInfo = displayInfo;
    }
 
    virtual void clearDisplay(Color color = Color::BLACK)
@@ -115,11 +106,11 @@ public:
 
    uint8_t charW()
    {
-      return _displayInfo->charW();
+      return (6.0/8) * _display->fontHeight();
    }
    uint8_t charH()
    {
-      return _displayInfo->charH();
+      return _display->fontHeight();
    }
 
    //
