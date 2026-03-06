@@ -6,19 +6,43 @@
 #include "Color.h"
 #include "Structs.h"
 
+#include "Fonts/RobotoMonoRegular08.h"
+#include "Fonts/RobotoMonoRegular16.h"
+#include "Fonts/RobotoMonoRegular24.h"
+#include "Fonts/RobotoMonoRegular32.h"
+#include "Fonts/RobotoMonoRegular40.h"
+#include "Fonts/RobotoMonoRegular48.h"
+#include "Fonts/RobotoMonoRegular56.h"
+#include "Fonts/RobotoMonoRegular64.h"
+
+#include "Fonts/RobotoRegular08.h"
+#include "Fonts/RobotoRegular16.h"
+#include "Fonts/RobotoRegular24.h"
+#include "Fonts/RobotoRegular32.h"
+#include "Fonts/RobotoRegular40.h"
+#include "Fonts/RobotoRegular48.h"
+#include "Fonts/RobotoRegular56.h"
+#include "Fonts/RobotoRegular64.h"
+
+enum DisplayRotation
+{
+   PORTRAIT = 0,
+   LANDSCAPE = 1,
+   PORTRAIT_FLIP = 2,
+   LANDSCAPE_FLIP = 3,
+};
+
 class ArduinoWithDisplay
 {
 private:
-   TFT_eSPI* _display;
-
    void _print(const char* str, Color textColor, Color backgroundColor)
    {
       if (echoToSerial)
       {
          Serial.print(str);
       }
-      _display->setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
-      _display->print(str);
+      display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor, true);
+      display.print(str);
    }
    void _println(const char* str, Color textColor, Color backgroundColor)
    {
@@ -26,57 +50,255 @@ private:
       {
          Serial.println(str);
       }
-      _display->setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
-      _display->println(str);
+      display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor, true);
+      display.println(str);
    }
 
 public:
+   TFT_eSPI display;
    bool echoToSerial = false;
 
-   ArduinoWithDisplay(TFT_eSPI* display)
+   ArduinoWithDisplay()
    {
-      _display = display;
    }
+
+   uint16_t width()
+   {
+      return display.width();
+   }
+
+   uint16_t height()
+   {
+      return display.height();
+   }
+
+   uint8_t charH()
+   {
+      return display.fontHeight();
+   }
+
+   void setRotation(DisplayRotation rotation)
+   {
+      display.setRotation((uint8_t)rotation);
+   }  
 
    virtual void clearDisplay(Color color = Color::BLACK)
    {
-      _display->fillScreen((uint16_t)Color::BLACK);
-      _display->setCursor(0, 0);
+      display.fillScreen((uint16_t)color);
+      display.setCursor(0, 0);
    }
 
-   void setTextSize(uint8_t size)
+   void printFontMetrics()
    {
-      _display->setTextSize((uint8_t)size);
+      Serial.println("---------------------------------------------------------------");
+      Serial.print("TextSize: ");
+      Serial.println(display.textsize);
+      Serial.print("gFont.gCount: ");
+      Serial.println(display.gFont.gCount);
+      Serial.print("gFont.yAdvance: ");
+      Serial.println(display.gFont.yAdvance);
+      Serial.print("gFont.ascent: ");
+      Serial.println(display.gFont.ascent);
+      Serial.print("gFont.descent: ");
+      Serial.println(display.gFont.descent);
+      Serial.print("gFont.maxAscent: ");
+      Serial.println(display.gFont.maxAscent);
+      Serial.print("gFont.maxDescent: ");
+      Serial.println(display.gFont.maxDescent);
+
+      for (uint16_t i = 0; i < display.gFont.gCount; i++)
+      {
+         Serial.print(i);
+         Serial.print(" '");
+         if (display.gUnicode[i] < 256)
+         {
+            Serial.print((char) display.gUnicode[i]);
+         }
+         Serial.print("'");
+         Serial.print("\t");
+         Serial.print(" gxAdvance:");
+         Serial.print(display.gxAdvance[i]);
+         Serial.print("\t");
+         Serial.print(" gdX:");
+         Serial.print(display.gdX[i]);
+         Serial.print("\t");
+         Serial.print(" gWidth:");
+         Serial.print(display.gWidth[i]);
+         Serial.print("\t");
+         Serial.print(" gdY:");
+         Serial.print(display.gdY[i]);
+         Serial.print("\t");
+         Serial.print(" gHeight:");
+         Serial.print(display.gHeight[i]);
+
+         Serial.println();
+      }
+   }
+
+   void setTextSize(uint8_t size, bool mono=true)
+   {
+      display.setTextSize(size);
+
+      if (mono)
+      {
+         switch (size)
+         {
+         case 0:
+         case 1:
+            display.loadFont(RobotoMonoRegular08);
+            break;
+
+         case 2:
+            display.loadFont(RobotoMonoRegular16);
+            break;
+
+         case 3:
+            display.loadFont(RobotoMonoRegular24);
+            break;
+
+         case 4:
+            display.loadFont(RobotoMonoRegular32);
+            break;
+
+         case 5:
+            display.loadFont(RobotoMonoRegular40);
+            break;
+
+         case 6:
+            display.loadFont(RobotoMonoRegular48);
+            break;
+
+         case 7:
+            display.loadFont(RobotoMonoRegular56);
+            break;
+
+         case 8:
+            display.loadFont(RobotoMonoRegular64);
+            break;
+
+         default:
+            display.loadFont(RobotoMonoRegular24);
+         }
+      }
+      else
+      {
+         switch (size)
+         {
+         case 0:
+         case 1:
+            display.loadFont(RobotoRegular08);
+            break;
+
+         case 2:
+            display.loadFont(RobotoRegular16);
+            break;
+
+         case 3:
+            display.loadFont(RobotoRegular24);
+            break;
+
+         case 4:
+            display.loadFont(RobotoRegular32);
+            break;
+
+         case 5:
+            display.loadFont(RobotoRegular40);
+            break;
+
+         case 6:
+            display.loadFont(RobotoRegular48);
+            break;
+
+         case 7:
+            display.loadFont(RobotoRegular56);
+            break;
+
+         case 8:
+            display.loadFont(RobotoRegular64);
+            break;
+
+         default:
+            display.loadFont(RobotoRegular24);
+         }
+      }
+
+      //printFontMetrics();
+
+      // correct for the use of negative values for descents
+      if (((int16_t)display.gFont.maxDescent) < 0)
+      {
+         display.gFont.maxDescent = -((int16_t) display.gFont.maxDescent);
+         display.gFont.yAdvance = display.gFont.maxAscent + display.gFont.maxDescent;
+      }
+      if (display.gFont.descent < 0)
+      {
+         display.gFont.descent = -display.gFont.descent;
+      }
+
+      // if we're making this a monospaced font, adjust each characters dimensions
+      if (mono)
+      {
+         // get the max char width and make them all the same
+         uint8_t maxAdvance = 0;
+         for (uint16_t i = 0; i < display.gFont.gCount; i++)
+         {
+            maxAdvance = std::max(maxAdvance, display.gxAdvance[i]);
+         }
+
+         for (uint16_t i = 0; i < display.gFont.gCount; i++)
+         {
+            display.gxAdvance[i] = maxAdvance;
+            display.gdX[i] = (maxAdvance - display.gWidth[i])/2;
+         }
+
+         // TFT_eSPI guesses at the space width. Make it the monospace value
+         display.gFont.spaceWidth = maxAdvance;
+      }
+   }
+
+   void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, Color color)
+   {
+      if (x < 0)
+      {
+         x = display.width() + x;
+      }
+      if (y < 0)
+      {
+         y = display.height() + y;
+      }
+
+      display.fillRect(x, y, w, h, (uint16_t) color);
+
    }
 
    void setCursor(int16_t x, int16_t y)
    {
       if (x < 0)
       {
-         x = _display->width() + x;
+         x = display.width() + x;
       }
       if (y < 0)
       {
-         y = _display->height() + y;
+         y = display.height() + y;
       }
 
-      _display->setCursor(x, y);
+      display.setCursor(x, y);
    }
    void setCursorX(int16_t x)
    {
-      setCursor(x, _display->getCursorY());
+      setCursor(x, display.getCursorY());
    }
    void setCursorY(int16_t y)
    {
-      setCursor(_display->getCursorX(), y);
+      setCursor(display.getCursorX(), y);
    }
 
    void moveCursor(int16_t deltaX, int16_t deltaY)
    {
-      int16_t x = _display->getCursorX() + deltaX;
-      int16_t y = _display->getCursorY() + deltaY;
+      int16_t x = display.getCursorX() + deltaX;
+      int16_t y = display.getCursorY() + deltaY;
 
-      _display->setCursor(x, y);
+      display.setCursor(x, y);
    }
    void moveCursorX(int16_t deltaX)
    {
@@ -88,7 +310,7 @@ public:
    }
    Point16 getCursor()
    {
-      return Point16(_display->getCursorX(), _display->getCursorY());
+      return Point16(display.getCursorX(), display.getCursorY());
    }
    void setCursor(Point16 pt)
    {
@@ -101,16 +323,7 @@ public:
       {
          Serial.println();
       }
-      _display->println();
-   }
-
-   uint8_t charW()
-   {
-      return (6.0/8) * _display->fontHeight();
-   }
-   uint8_t charH()
-   {
-      return _display->fontHeight();
+      display.println();
    }
 
    //
@@ -118,7 +331,8 @@ public:
    //
    void printR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      setCursorX(-strlen(str) * charW());
+      uint16_t len = display.textWidth(str);
+      setCursorX(-len);
       print(str, textColor, backgroundColor);
    }
    void printlnR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
@@ -141,7 +355,8 @@ public:
    //
    void printC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-      setCursorX((_display->width() - strlen(str) * charW()) / 2);
+      uint16_t len = display.textWidth(str);
+      setCursorX((display.width() - len) / 2);
       print(str, textColor, backgroundColor);
    }
    void printlnC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)

@@ -5,32 +5,20 @@
 #include <string>
 #include <Preferences.h>
 
-#include <TFT_eSPI.h>
-
 class Feather_ESP32_S3 : public ArduinoWithDisplay
 {
 public:
-   TFT_eSPI display;
    Button buttonA;
    Preferences preferences;
 
-   Feather_ESP32_S3() : ArduinoWithDisplay(&display), display(), buttonA(0)
+   Feather_ESP32_S3() : ArduinoWithDisplay(), buttonA(0)
    {
    }
 
    void begin()
    {
-      // initialize TFT
-      pinMode(TFT_BACKLITE, OUTPUT);
-      digitalWrite(TFT_BACKLITE, HIGH);
-
-      // turn on the TFT / I2C power supply
-      pinMode(TFT_I2C_POWER, OUTPUT);
-      digitalWrite(TFT_I2C_POWER, HIGH);
-      delay(10);
-
       display.init();
-      display.setRotation(1);
+      display.setRotation(DisplayRotation::LANDSCAPE);
       display.fillScreen((uint16_t)Color::BLACK);
 
       display.setTextColor((uint16_t)Color::WHITE, (uint16_t)Color::BLACK);

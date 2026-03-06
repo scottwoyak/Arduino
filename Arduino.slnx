@@ -97,6 +97,9 @@
   <Project Path="Feather_M0_OLED/Feather_M0_OLED.vcxproj">
     <Deploy />
   </Project>
+  <Project Path="Font_Display/Font_Display.vcxproj">
+    <Deploy />
+  </Project>
   <Project Path="Format_Display/Format_Display.vcxproj">
     <Deploy />
   </Project>
@@ -137,9 +140,6 @@
     <Deploy />
   </Project>
   <Project Path="Temp_Monitor_Battery/Temp_Monitor_Battery.vcxproj">
-    <Deploy />
-  </Project>
-  <Project Path="TFT/TFT/TFT.vcxproj">
     <Deploy />
   </Project>
   <Project Path="Wind_Display/Wind_Display.vcxproj">

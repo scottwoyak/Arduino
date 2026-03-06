@@ -49,7 +49,7 @@ void setup()
 
    SerialX::begin();
    feather.begin();
-   feather.display.setRotation(2);
+   feather.setRotation(DisplayOrientation::PORTRAIT);
 
    for (int i = 0; i < NUM_BUTTONS; i++)
    {
@@ -103,15 +103,15 @@ void loop()
 
    if (sw.isRunning())
    {
-      feather.display.setTextSize(2);
-      feather.setCursor(0, feather.display.height() - feather.charH());
+      feather.setTextSize(2);
+      feather.setCursor(0, -feather.charH());
       feather.print("Reset: ", Color::SUB_LABEL);
       feather.print((5 - sw.elapsedSecs()), timeFormat, Color::SUB_LABEL);
    }
    else
    {
       // cover up the time remaining msg
-      feather.display.fillRect(0, feather.display.height() - feather.charH(), feather.display.width(), feather.charH(), (uint16_t)Color::BLACK);
+      feather.fillRect(0, -feather.charH(), feather.width(), feather.charH(), Color::BLACK);
    }
 }
 

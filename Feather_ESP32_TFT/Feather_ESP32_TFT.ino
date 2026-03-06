@@ -18,18 +18,17 @@ void loop()
    // note: this display isn't double buffered. Past contents are not cleared,
    // but text characters overwrite past content. That's why there is an extra
    // space after "fps" - some rates are over 100 and some are 2 digits.
-   feather.setTextSize(4);
+   feather.setTextSize(5);
    feather.setCursor(0, 0);
    feather.println(counter++, Color::VALUE);
    feather.moveCursorY(feather.charH() / 4);
 
-   feather.setTextSize(2);
+   feather.setTextSize(3);
    feather.print("ButtonA: ", Color::LABEL);
    feather.println(feather.buttonA.isPressed() ? "TRUE " : "FALSE", Color::VALUE);
 
-   feather.setTextSize(2);
    feather.setCursor(0, -feather.charH());
-   feather.print(fps);
+   feather.print(fps, 1);
    feather.print(" fps ");
 
    lastMicros = newMicros;
