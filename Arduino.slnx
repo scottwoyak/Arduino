@@ -1,5 +1,6 @@
 <Solution>
   <Configurations>
+    <Platform Name="Any CPU" />
     <Platform Name="ARM" />
     <Platform Name="ARM64" />
   </Configurations>
@@ -58,100 +59,134 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/Stopwatch_Tests/Stopwatch_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
     <Project Path="Tests/TimedAverager_Tests/TimedAverager_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
   </Folder>
   <Project Path="Battery_Display/Battery_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Buttons_Display/Buttons_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Button_Display/Button_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Counter_Display/Counter_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Display_SH1107/Display_SH1107.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Display_ST7789/Display_ST7789.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Display_ST7789_eSPI/Display_ST7789_eSPI.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Display_ST7796S/Display_ST7796S.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Feather_ESP32_ST7796S/Feather_ESP32_ST7796S.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Feather_ESP32_TFT/Feather_ESP32_TFT.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Feather_M0_OLED/Feather_M0_OLED.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Font_Display/Font_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Format_Display/Format_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="I2C_Port_Scanner/I2C_Port_Scanner.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="INA219_Display/INA219_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="InterruptDisplay/InterruptDisplay.vcxproj">
-    <Deploy />
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Build Solution="*|Any CPU" Project="false" />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
   </Project>
   <Project Path="Pin_Display/Pin_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Potentiometer/Potentiometer.vcxproj" Id="c5bc2f07-d8ae-4dcf-aede-3dddf1846b20">
     <Deploy />
   </Project>
   <Project Path="Publisher_Display/Publisher_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="RotaryEncoder_Display/RotaryEncoder_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="SmoothFontCreator/SmoothFontCreator.csproj" Id="8eb42b88-3644-48a5-95dc-592c930a65f6" />
   <Project Path="Solar_Monitor/Solar_Monitor.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Subscriber_Display/Subscriber_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="TemperatureCalibrator/TemperatureCalibrator.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Temp_Display/Temp_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Temp_Monitor/Temp_Monitor.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Temp_Monitor_Battery/Temp_Monitor_Battery.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Wind_Display/Wind_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Wind_Monitor/Wind_Monitor.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Wind_Publisher/Wind_Publisher.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Wind_Subscriber_Display/Wind_Subscriber_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
 </Solution>
