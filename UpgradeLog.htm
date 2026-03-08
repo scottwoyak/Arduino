@@ -1,0 +1,307 @@
+﻿<!DOCTYPE html>
+<!-- saved from url=(0014)about:internet -->
+ <html xmlns:msxsl="urn:schemas-microsoft-com:xslt"><head><meta content="en-us" http-equiv="Content-Language" /><meta content="text/html; charset=utf-16" http-equiv="Content-Type" /><title _locID="ConversionReport0">
+          Migration Report
+        </title><style> 
+                    /* Body style, for the entire document */
+                    body
+                    {
+                        background: #F3F3F4;
+                        color: #1E1E1F;
+                        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+                        padding: 0;
+                        margin: 0;
+                    }
+
+                    /* Header1 style, used for the main title */
+                    h1
+                    {
+                        padding: 10px 0px 10px 10px;
+                        font-size: 21pt;
+                        background-color: #E2E2E2;
+                        border-bottom: 1px #C1C1C2 solid; 
+                        color: #201F20;
+                        margin: 0;
+                        font-weight: normal;
+                    }
+
+                    /* Header2 style, used for "Overview" and other sections */
+                    h2
+                    {
+                        font-size: 18pt;
+                        font-weight: normal;
+                        padding: 15px 0 5px 0;
+                        margin: 0;
+                    }
+
+                    /* Header3 style, used for sub-sections, such as project name */
+                    h3
+                    {
+                        font-weight: normal;
+                        font-size: 15pt;
+                        margin: 0;
+                        padding: 15px 0 5px 0;
+                        background-color: transparent;
+                    }
+
+                    /* Color all hyperlinks one color */
+                    a
+                    {
+                        color: #1382CE;
+                    }
+
+                    /* Table styles */ 
+                    table
+                    {
+                        border-spacing: 0 0;
+                        border-collapse: collapse;
+                        font-size: 10pt;
+                    }
+
+                    table th
+                    {
+                        background: #E7E7E8;
+                        text-align: left;
+                        text-decoration: none;
+                        font-weight: normal;
+                        padding: 3px 6px 3px 6px;
+                    }
+
+                    table td
+                    {
+                        vertical-align: top;
+                        padding: 3px 6px 5px 5px;
+                        margin: 0px;
+                        border: 1px solid #E7E7E8;
+                        background: #F7F7F8;
+                    }
+
+                    /* Local link is a style for hyperlinks that link to file:/// content, there are lots so color them as 'normal' text until the user mouse overs */
+                    .localLink
+                    {
+                        color: #1E1E1F;
+                        background: #EEEEED;
+                        text-decoration: none;
+                    }
+
+                    .localLink:hover
+                    {
+                        color: #1382CE;
+                        background: #FFFF99;
+                        text-decoration: none;
+                    }
+
+                    /* Center text, used in the over views cells that contain message level counts */ 
+                    .textCentered
+                    {
+                        text-align: center;
+                    }
+
+                    /* The message cells in message tables should take up all avaliable space */
+                    .messageCell
+                    {
+                        width: 100%;
+                    }
+
+                    /* Padding around the content after the h1 */ 
+                    #content 
+                    {
+	                    padding: 0px 12px 12px 12px; 
+                    }
+
+                    /* The overview table expands to width, with a max width of 97% */ 
+                    #overview table
+                    {
+                        width: auto;
+                        max-width: 75%; 
+                    }
+
+                    /* The messages tables are always 97% width */
+                    #messages table
+                    {
+                        width: 97%;
+                    }
+
+                    /* All Icons */
+                    .IconSuccessEncoded, .IconInfoEncoded, .IconWarningEncoded, .IconErrorEncoded
+                    {
+                        min-width:18px;
+                        min-height:18px; 
+                        background-repeat:no-repeat;
+                        background-position:center;
+                    }
+
+                    /* Success icon encoded */
+                    .IconSuccessEncoded
+                    {
+                        /* Note: Do not delete the comment below. It is used to verify the correctness of the encoded image resource below before the product is released */
+                        /* [---XsltValidateInternal-Base64EncodedImage:IconSuccess#Begin#background-image: url(data:image/png;base64,#Separator#);#End#] */
+                        background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAA7EAAAOxAGVKw4bAAABcElEQVR4Xq2TsUsCURzHv15g8ZJcBWlyiYYgCIWcb9DFRRwMW5TA2c0/QEFwFkxxUQdxVlBwCYWOi6IhWgQhBLHJUCkhLr/BW8S7gvrAg+N+v8/v+x68Z8MGy+XSCyABQAXgBgHGALoASkIIDWSLeLBetdHryMjd5IxQPWT4rn1c/P7+xxp72Cs9m5SZ0Bq2vPnbPFafK2zDvmNHypdC0BPkLlQhxJsCAhQoZwdZU5mwxh720qGo8MzTxTTKZDPCx2HoVzp6lz0Q9tKhyx0kGs8Ny+TkWRKk8lCROwEduhyg9l/6lunOPSfmH3NUH6uQ0KHLAe7JYvJjevm+DAMGJHToKtigE+vwvIidxLamb8IBY9e+C5LiXREkfho3TSd06HJA13/oh6T51MTsfQbHrsMynQ5dDihFjiK8JJAU9AKIWTp76dCVN7HWHrajmUEGvyF9nkbAE6gLIS7kTUyuf2gscLoJrElZo/Mvj+nPz/kLTmfnEwP3tB0AAAAASUVORK5CYII=);
+                    }
+
+                    /* Information icon encoded */
+                    .IconInfoEncoded
+                    {
+                        /* Note: Do not delete the comment below. It is used to verify the correctness of the encoded image resource below before the product is released */
+                        /* [---XsltValidateInternal-Base64EncodedImage:IconInformation#Begin#background-image: url(data:image/png;base64,#Separator#);#End#] */
+                        background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABHElEQVR4Xs2TsUoDQRRF7wwoziokjZUKadInhdhukR9YP8DMX1hYW+QvdsXa/QHBbcXC7W0CamWTQnclFutceIQJwwaWNLlwm5k5d94M76mmaeCrrmsLYOocY12FcxZFUeozCqKqqgYA8uevv1H6VuPxcwlfk5N92KHBxfFeCSAxxswlYAW/Xr989x/mv9gkhtyMDhcAxgzRsp7flj8B/HF1RsMXq+NZMkopaHe7lbKxQUEIGbKsYNoGn969060hZBkQex/W8oRQwsQaW2o3Ago2SVcJUzAgY3N0lTCZZm+zPS8HB51gMmS1DEYyOz9acKO1D8JWTlafKIMxdhvlfdyT94Vv5h7P8Ky7nQzACmhvKq3zk3PjW9asz9D/1oigecsioooAAAAASUVORK5CYII=);
+                    }
+
+                    /* Warning icon encoded */
+                    .IconWarningEncoded
+                    {
+                        /* Note: Do not delete the comment below. It is used to verify the correctness of the encoded image resource below before the product is released */
+                        /* [---XsltValidateInternal-Base64EncodedImage:IconWarning#Begin#background-image: url(data:image/png;base64,#Separator#);#End#] */
+                        background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAx0lEQVR4XpWSMQ7CMAxFf4xAyBMLCxMrO8dhaBcuwdCJS3RJBw7SA/QGTCxdWJgiQYWKXJWKIXHIlyw5lqr34tQgEOdcBsCOx5yZK3hCCKdYXneQkh4pEfqzLfu+wVDSyyzFoJjfz9NB+pAF+eizx2Vruts0k15mPgvS6GYvpVtQhB61IB/dk6AF6fS4Ben0uIX5odtFe8Q/eW1KvFeH4e8khT6+gm5B+t3juyDt7n0jpe+CANTd+oTUjN/U3yVaABnSUjFz/gFq44JaVSCXeQAAAABJRU5ErkJggg==);
+                    }
+
+                    /* Error icon encoded */
+                    .IconErrorEncoded
+                    {
+                        /* Note: Do not delete the comment below. It is used to verify the correctness of the encoded image resource below before the product is released */
+                        /* [---XsltValidateInternal-Base64EncodedImage:IconError#Begin#background-image: url(data:image/png;base64,#Separator#);#End#] */
+                        background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABQElEQVR4XqWTvUoEQRCE6wYPZUA80AfwAQz23uCMjA7MDRQEIzPBVEyNTQUFIw00vcQTTMzuAh/AxEQQT8HF/3G/oGGnEUGuoNnd6qoZuqltyKEsyzVJq5I6rnUp6SjGeGhESikzzlc1eL7opfuVbrqbU1Zw9NCgtQMaZpY0eNnaaL2fHusvTK5vKu7sjSS1Y4y3QUA6K3e3Mau5UFDyMP7tYF9o8cAHZv68vipoIJg971PZIZ5HiwdvYGGvFVFHmGmZ2MxwmQYPXubPl9Up0tfoMQGetXd6mRbvhBw+boZ6WF7Mbv1+GsHRk0fQmPAH1GfmZirbCfDJ61tw3Px8/8pZsPAG4jlVhcPgZ7adwNWBB68lkRQWFiTgFlbnLY3DGGM7izIJIyT/jjIvEJw6fdJTc6krDzh6aMwMP9bvDH4ADSsa9uSWVJkAAAAASUVORK5CYII=);
+                    }
+                 </style><script type="text/javascript" language="javascript"> 
+          
+            // Startup 
+            // Hook up the the loaded event for the document/window, to linkify the document content
+            var startupFunction = function() { linkifyElement("messages"); };
+            
+            if(window.attachEvent)
+            {
+              window.attachEvent('onload', startupFunction);
+            }
+            else if (window.addEventListener) 
+            {
+              window.addEventListener('load', startupFunction, false);
+            }
+            else 
+            {
+              document.addEventListener('load', startupFunction, false);
+            } 
+            
+            // Toggles the visibility of table rows with the specified name 
+            function toggleTableRowsByName(name)
+            {
+               var allRows = document.getElementsByTagName('tr');
+               for (i=0; i < allRows.length; i++)
+               {
+                  var currentName = allRows[i].getAttribute('name');
+                  if(!!currentName && currentName.indexOf(name) == 0)
+                  {
+                      var isVisible = allRows[i].style.display == ''; 
+                      isVisible ? allRows[i].style.display = 'none' : allRows[i].style.display = '';
+                  }
+               }
+            }
+            
+            function scrollToFirstVisibleRow(name) 
+            {
+               var allRows = document.getElementsByTagName('tr');
+               for (i=0; i < allRows.length; i++)
+               {
+                  var currentName = allRows[i].getAttribute('name');
+                  var isVisible = allRows[i].style.display == ''; 
+                  if(!!currentName && currentName.indexOf(name) == 0 && isVisible)
+                  {
+                     allRows[i].scrollIntoView(true); 
+                     return true; 
+                  }
+               }
+               
+               return false;
+            }
+            
+            // Linkifies the specified text content, replaces candidate links with html links 
+            function linkify(text)
+            {
+                 if(!text || 0 === text.length)
+                 {
+                     return text; 
+                 }
+
+                 // Find http, https and ftp links and replace them with hyper links 
+                 var urlLink = /(http|https|ftp)\:\/\/[a-zA-Z0-9\-\.]+(:[a-zA-Z0-9]*)?\/?([a-zA-Z0-9\-\._\?\,\/\\\+&%\$#\=~;\{\}])*/gi;
+                 
+                 return text.replace(urlLink, '<a href="$&">$&</a>') ;
+            }
+            
+            // Linkifies the specified element by ID
+            function linkifyElement(id)
+            {
+                var element = document.getElementById(id);
+                if(!!element)
+                {
+                  element.innerHTML = linkify(element.innerHTML); 
+                }
+            }
+            
+            function ToggleMessageVisibility(projectName)
+            {
+              if(!projectName || 0 === projectName.length)
+              {
+                return; 
+              }
+              
+              toggleTableRowsByName("MessageRowClass" + projectName);
+              toggleTableRowsByName('MessageRowHeaderShow' + projectName);
+              toggleTableRowsByName('MessageRowHeaderHide' + projectName); 
+            }
+            
+            function ScrollToFirstVisibleMessage(projectName)
+            {
+              if(!projectName || 0 === projectName.length)
+              {
+                return; 
+              }
+              
+              // First try the 'Show messages' row
+              if(!scrollToFirstVisibleRow('MessageRowHeaderShow' + projectName))
+              {
+                // Failed to find a visible row for 'Show messages', try an actual message row 
+                scrollToFirstVisibleRow('MessageRowClass' + projectName); 
+              }
+            }
+           </script></head><body><h1 _locID="ConversionReport">
+          Migration Report - </h1><div id="content"><h2 _locID="OverviewTitle">Overview</h2><div id="overview"><table><tr><th></th><th _locID="ProjectTableHeader">Project</th><th _locID="PathTableHeader">Path</th><th _locID="ErrorsTableHeader">Errors</th><th _locID="WarningsTableHeader">Warnings</th><th _locID="MessagesTableHeader">Messages</th></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Battery_Display">Battery_Display</a></strong></td><td>Battery_Display\Battery_Display.vcxproj</td><td class="textCentered"><a href="#Battery_DisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Button_Display">Button_Display</a></strong></td><td>Button_Display\Button_Display.vcxproj</td><td class="textCentered"><a href="#Button_DisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Buttons_Display">Buttons_Display</a></strong></td><td>Buttons_Display\Buttons_Display.vcxproj</td><td class="textCentered"><a href="#Buttons_DisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Counter_Display">Counter_Display</a></strong></td><td>Counter_Display\Counter_Display.vcxproj</td><td class="textCentered"><a href="#Counter_DisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Display_SH1107">Display_SH1107</a></strong></td><td>Display_SH1107\Display_SH1107.vcxproj</td><td class="textCentered"><a href="#Display_SH1107Error">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Display_ST7789">Display_ST7789</a></strong></td><td>Display_ST7789\Display_ST7789.vcxproj</td><td class="textCentered"><a href="#Display_ST7789Error">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Display_ST7789_eSPI">Display_ST7789_eSPI</a></strong></td><td>Display_ST7789_eSPI\Display_ST7789_eSPI.vcxproj</td><td class="textCentered"><a href="#Display_ST7789_eSPIError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Display_ST7796S">Display_ST7796S</a></strong></td><td>Display_ST7796S\Display_ST7796S.vcxproj</td><td class="textCentered"><a href="#Display_ST7796SError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Feather_ESP32_ST7796S">Feather_ESP32_ST7796S</a></strong></td><td>Feather_ESP32_ST7796S\Feather_ESP32_ST7796S.vcxproj</td><td class="textCentered"><a href="#Feather_ESP32_ST7796SError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Feather_ESP32_TFT">Feather_ESP32_TFT</a></strong></td><td>Feather_ESP32_TFT\Feather_ESP32_TFT.vcxproj</td><td class="textCentered"><a href="#Feather_ESP32_TFTError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Feather_M0_OLED">Feather_M0_OLED</a></strong></td><td>Feather_M0_OLED\Feather_M0_OLED.vcxproj</td><td class="textCentered"><a href="#Feather_M0_OLEDError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Font_Display">Font_Display</a></strong></td><td>Font_Display\Font_Display.vcxproj</td><td class="textCentered"><a href="#Font_DisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Format_Display">Format_Display</a></strong></td><td>Format_Display\Format_Display.vcxproj</td><td class="textCentered"><a href="#Format_DisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#I2C_Port_Scanner">I2C_Port_Scanner</a></strong></td><td>I2C_Port_Scanner\I2C_Port_Scanner.vcxproj</td><td class="textCentered"><a href="#I2C_Port_ScannerError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#INA219_Display">INA219_Display</a></strong></td><td>INA219_Display\INA219_Display.vcxproj</td><td class="textCentered"><a href="#INA219_DisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#InterruptDisplay">InterruptDisplay</a></strong></td><td>InterruptDisplay\InterruptDisplay.vcxproj</td><td class="textCentered"><a href="#InterruptDisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Pin_Display">Pin_Display</a></strong></td><td>Pin_Display\Pin_Display.vcxproj</td><td class="textCentered"><a href="#Pin_DisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Potentiometer">Potentiometer</a></strong></td><td>Potentiometer\Potentiometer.vcxproj</td><td class="textCentered"><a href="#PotentiometerError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Publisher_Display">Publisher_Display</a></strong></td><td>Publisher_Display\Publisher_Display.vcxproj</td><td class="textCentered"><a href="#Publisher_DisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#RotaryEncoder_Display">RotaryEncoder_Display</a></strong></td><td>RotaryEncoder_Display\RotaryEncoder_Display.vcxproj</td><td class="textCentered"><a href="#RotaryEncoder_DisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Solar_Monitor">Solar_Monitor</a></strong></td><td>Solar_Monitor\Solar_Monitor.vcxproj</td><td class="textCentered"><a href="#Solar_MonitorError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Stopwatch_Tests">Stopwatch_Tests</a></strong></td><td>Tests\Stopwatch_Tests\Stopwatch_Tests.vcxproj</td><td class="textCentered"><a href="#Stopwatch_TestsError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Subscriber_Display">Subscriber_Display</a></strong></td><td>Subscriber_Display\Subscriber_Display.vcxproj</td><td class="textCentered"><a href="#Subscriber_DisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Temp_Display">Temp_Display</a></strong></td><td>Temp_Display\Temp_Display.vcxproj</td><td class="textCentered"><a href="#Temp_DisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Temp_Monitor">Temp_Monitor</a></strong></td><td>Temp_Monitor\Temp_Monitor.vcxproj</td><td class="textCentered"><a href="#Temp_MonitorError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Temp_Monitor_Battery">Temp_Monitor_Battery</a></strong></td><td>Temp_Monitor_Battery\Temp_Monitor_Battery.vcxproj</td><td class="textCentered"><a href="#Temp_Monitor_BatteryError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#TemperatureCalibrator">TemperatureCalibrator</a></strong></td><td>TemperatureCalibrator\TemperatureCalibrator.vcxproj</td><td class="textCentered"><a href="#TemperatureCalibratorError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#TimedAverager_Tests">TimedAverager_Tests</a></strong></td><td>Tests\TimedAverager_Tests\TimedAverager_Tests.vcxproj</td><td class="textCentered"><a href="#TimedAverager_TestsError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Wind_Display">Wind_Display</a></strong></td><td>Wind_Display\Wind_Display.vcxproj</td><td class="textCentered"><a href="#Wind_DisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Wind_Monitor">Wind_Monitor</a></strong></td><td>Wind_Monitor\Wind_Monitor.vcxproj</td><td class="textCentered"><a href="#Wind_MonitorError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Wind_Publisher">Wind_Publisher</a></strong></td><td>Wind_Publisher\Wind_Publisher.vcxproj</td><td class="textCentered"><a href="#Wind_PublisherError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconErrorEncoded" /><td><strong><a href="#Wind_Subscriber_Display">Wind_Subscriber_Display</a></strong></td><td>Wind_Subscriber_Display\Wind_Subscriber_Display.vcxproj</td><td class="textCentered"><a href="#Wind_Subscriber_DisplayError">1</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconSuccessEncoded" /><td><strong><a href="#Libraries">Libraries</a></strong></td><td>Libraries</td><td class="textCentered"><a>0</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconSuccessEncoded" /><td><strong><a href="#SmoothFontCreator">SmoothFontCreator</a></strong></td><td>SmoothFontCreator\SmoothFontCreator.csproj</td><td class="textCentered"><a>0</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconSuccessEncoded" /><td><strong><a href="#Tests">Tests</a></strong></td><td>Tests</td><td class="textCentered"><a>0</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#">0</a></td></tr><tr><td class="IconSuccessEncoded" /><td><strong><a href="#Solution"><span _locID="OverviewSolutionSpan">Solution</span></a></strong></td><td>Arduino.slnx</td><td class="textCentered"><a>0</a></td><td class="textCentered"><a>0</a></td><td class="textCentered"><a href="#" onclick="ScrollToFirstVisibleMessage('Solution'); return false;">1</a></td></tr></table></div><h2 _locID="SolutionAndProjectsTitle">Solution and projects</h2><div id="messages"><a name="Battery_Display" /><h3>Battery_Display</h3><table><tr id="Battery_DisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassBattery_Display"><td class="IconErrorEncoded"><a name="Battery_DisplayError" /></td><td class="messageCell"><strong>Battery_Display\Battery_Display.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Button_Display" /><h3>Button_Display</h3><table><tr id="Button_DisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassButton_Display"><td class="IconErrorEncoded"><a name="Button_DisplayError" /></td><td class="messageCell"><strong>Button_Display\Button_Display.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Buttons_Display" /><h3>Buttons_Display</h3><table><tr id="Buttons_DisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassButtons_Display"><td class="IconErrorEncoded"><a name="Buttons_DisplayError" /></td><td class="messageCell"><strong>Buttons_Display\Buttons_Display.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Counter_Display" /><h3>Counter_Display</h3><table><tr id="Counter_DisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassCounter_Display"><td class="IconErrorEncoded"><a name="Counter_DisplayError" /></td><td class="messageCell"><strong>Counter_Display\Counter_Display.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Display_SH1107" /><h3>Display_SH1107</h3><table><tr id="Display_SH1107HeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassDisplay_SH1107"><td class="IconErrorEncoded"><a name="Display_SH1107Error" /></td><td class="messageCell"><strong>Display_SH1107\Display_SH1107.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Display_ST7789" /><h3>Display_ST7789</h3><table><tr id="Display_ST7789HeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassDisplay_ST7789"><td class="IconErrorEncoded"><a name="Display_ST7789Error" /></td><td class="messageCell"><strong>Display_ST7789\Display_ST7789.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Display_ST7789_eSPI" /><h3>Display_ST7789_eSPI</h3><table><tr id="Display_ST7789_eSPIHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassDisplay_ST7789_eSPI"><td class="IconErrorEncoded"><a name="Display_ST7789_eSPIError" /></td><td class="messageCell"><strong>Display_ST7789_eSPI\Display_ST7789_eSPI.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Display_ST7796S" /><h3>Display_ST7796S</h3><table><tr id="Display_ST7796SHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassDisplay_ST7796S"><td class="IconErrorEncoded"><a name="Display_ST7796SError" /></td><td class="messageCell"><strong>Display_ST7796S\Display_ST7796S.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Feather_ESP32_ST7796S" /><h3>Feather_ESP32_ST7796S</h3><table><tr id="Feather_ESP32_ST7796SHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassFeather_ESP32_ST7796S"><td class="IconErrorEncoded"><a name="Feather_ESP32_ST7796SError" /></td><td class="messageCell"><strong>Feather_ESP32_ST7796S\Feather_ESP32_ST7796S.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Feather_ESP32_TFT" /><h3>Feather_ESP32_TFT</h3><table><tr id="Feather_ESP32_TFTHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassFeather_ESP32_TFT"><td class="IconErrorEncoded"><a name="Feather_ESP32_TFTError" /></td><td class="messageCell"><strong>Feather_ESP32_TFT\Feather_ESP32_TFT.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Feather_M0_OLED" /><h3>Feather_M0_OLED</h3><table><tr id="Feather_M0_OLEDHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassFeather_M0_OLED"><td class="IconErrorEncoded"><a name="Feather_M0_OLEDError" /></td><td class="messageCell"><strong>Feather_M0_OLED\Feather_M0_OLED.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Font_Display" /><h3>Font_Display</h3><table><tr id="Font_DisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassFont_Display"><td class="IconErrorEncoded"><a name="Font_DisplayError" /></td><td class="messageCell"><strong>Font_Display\Font_Display.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Format_Display" /><h3>Format_Display</h3><table><tr id="Format_DisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassFormat_Display"><td class="IconErrorEncoded"><a name="Format_DisplayError" /></td><td class="messageCell"><strong>Format_Display\Format_Display.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="I2C_Port_Scanner" /><h3>I2C_Port_Scanner</h3><table><tr id="I2C_Port_ScannerHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassI2C_Port_Scanner"><td class="IconErrorEncoded"><a name="I2C_Port_ScannerError" /></td><td class="messageCell"><strong>I2C_Port_Scanner\I2C_Port_Scanner.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="INA219_Display" /><h3>INA219_Display</h3><table><tr id="INA219_DisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassINA219_Display"><td class="IconErrorEncoded"><a name="INA219_DisplayError" /></td><td class="messageCell"><strong>INA219_Display\INA219_Display.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="InterruptDisplay" /><h3>InterruptDisplay</h3><table><tr id="InterruptDisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassInterruptDisplay"><td class="IconErrorEncoded"><a name="InterruptDisplayError" /></td><td class="messageCell"><strong>InterruptDisplay\InterruptDisplay.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Pin_Display" /><h3>Pin_Display</h3><table><tr id="Pin_DisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassPin_Display"><td class="IconErrorEncoded"><a name="Pin_DisplayError" /></td><td class="messageCell"><strong>Pin_Display\Pin_Display.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Potentiometer" /><h3>Potentiometer</h3><table><tr id="PotentiometerHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassPotentiometer"><td class="IconErrorEncoded"><a name="PotentiometerError" /></td><td class="messageCell"><strong>Potentiometer\Potentiometer.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Publisher_Display" /><h3>Publisher_Display</h3><table><tr id="Publisher_DisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassPublisher_Display"><td class="IconErrorEncoded"><a name="Publisher_DisplayError" /></td><td class="messageCell"><strong>Publisher_Display\Publisher_Display.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="RotaryEncoder_Display" /><h3>RotaryEncoder_Display</h3><table><tr id="RotaryEncoder_DisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassRotaryEncoder_Display"><td class="IconErrorEncoded"><a name="RotaryEncoder_DisplayError" /></td><td class="messageCell"><strong>RotaryEncoder_Display\RotaryEncoder_Display.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Solar_Monitor" /><h3>Solar_Monitor</h3><table><tr id="Solar_MonitorHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassSolar_Monitor"><td class="IconErrorEncoded"><a name="Solar_MonitorError" /></td><td class="messageCell"><strong>Solar_Monitor\Solar_Monitor.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Stopwatch_Tests" /><h3>Stopwatch_Tests</h3><table><tr id="Stopwatch_TestsHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassStopwatch_Tests"><td class="IconErrorEncoded"><a name="Stopwatch_TestsError" /></td><td class="messageCell"><strong>Tests\Stopwatch_Tests\Stopwatch_Tests.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Subscriber_Display" /><h3>Subscriber_Display</h3><table><tr id="Subscriber_DisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassSubscriber_Display"><td class="IconErrorEncoded"><a name="Subscriber_DisplayError" /></td><td class="messageCell"><strong>Subscriber_Display\Subscriber_Display.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Temp_Display" /><h3>Temp_Display</h3><table><tr id="Temp_DisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassTemp_Display"><td class="IconErrorEncoded"><a name="Temp_DisplayError" /></td><td class="messageCell"><strong>Temp_Display\Temp_Display.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Temp_Monitor" /><h3>Temp_Monitor</h3><table><tr id="Temp_MonitorHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassTemp_Monitor"><td class="IconErrorEncoded"><a name="Temp_MonitorError" /></td><td class="messageCell"><strong>Temp_Monitor\Temp_Monitor.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Temp_Monitor_Battery" /><h3>Temp_Monitor_Battery</h3><table><tr id="Temp_Monitor_BatteryHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassTemp_Monitor_Battery"><td class="IconErrorEncoded"><a name="Temp_Monitor_BatteryError" /></td><td class="messageCell"><strong>Temp_Monitor_Battery\Temp_Monitor_Battery.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="TemperatureCalibrator" /><h3>TemperatureCalibrator</h3><table><tr id="TemperatureCalibratorHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassTemperatureCalibrator"><td class="IconErrorEncoded"><a name="TemperatureCalibratorError" /></td><td class="messageCell"><strong>TemperatureCalibrator\TemperatureCalibrator.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="TimedAverager_Tests" /><h3>TimedAverager_Tests</h3><table><tr id="TimedAverager_TestsHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassTimedAverager_Tests"><td class="IconErrorEncoded"><a name="TimedAverager_TestsError" /></td><td class="messageCell"><strong>Tests\TimedAverager_Tests\TimedAverager_Tests.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Wind_Display" /><h3>Wind_Display</h3><table><tr id="Wind_DisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassWind_Display"><td class="IconErrorEncoded"><a name="Wind_DisplayError" /></td><td class="messageCell"><strong>Wind_Display\Wind_Display.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Wind_Monitor" /><h3>Wind_Monitor</h3><table><tr id="Wind_MonitorHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassWind_Monitor"><td class="IconErrorEncoded"><a name="Wind_MonitorError" /></td><td class="messageCell"><strong>Wind_Monitor\Wind_Monitor.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Wind_Publisher" /><h3>Wind_Publisher</h3><table><tr id="Wind_PublisherHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassWind_Publisher"><td class="IconErrorEncoded"><a name="Wind_PublisherError" /></td><td class="messageCell"><strong>Wind_Publisher\Wind_Publisher.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Wind_Subscriber_Display" /><h3>Wind_Subscriber_Display</h3><table><tr id="Wind_Subscriber_DisplayHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="ErrorRowClassWind_Subscriber_Display"><td class="IconErrorEncoded"><a name="Wind_Subscriber_DisplayError" /></td><td class="messageCell"><strong>Wind_Subscriber_Display\Wind_Subscriber_Display.vcxproj:
+        </strong><span>The application which this project type is based on was not found. Please try this link for further information: 8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942</span></td></tr></table><a name="Libraries" /><h3>Libraries</h3><table><tr id="LibrariesHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr><td class="IconInfoEncoded" /><td class="messageCell" _locID="NoMessagesRow">Libraries logged no messages.
+                  </td></tr></table><a name="SmoothFontCreator" /><h3>SmoothFontCreator</h3><table><tr id="SmoothFontCreatorHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr><td class="IconInfoEncoded" /><td class="messageCell" _locID="NoMessagesRow">SmoothFontCreator logged no messages.
+                  </td></tr></table><a name="Tests" /><h3>Tests</h3><table><tr id="TestsHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr><td class="IconInfoEncoded" /><td class="messageCell" _locID="NoMessagesRow">Tests logged no messages.
+                  </td></tr></table><a name="Solution" /><h3 _locID="ProjectDisplayNameHeader">Solution</h3><table><tr id="SolutionHeaderRow"><th></th><th class="messageCell" _locID="MessageTableHeader">Message</th></tr><tr name="MessageRowHeaderShowSolution"><td class="IconInfoEncoded" /><td class="messageCell"><a _locID="ShowAdditionalMessages" href="#" name="SolutionMessage" onclick="ToggleMessageVisibility('Solution'); return false;">
+          Show 1 additional messages
+        </a></td></tr><tr name="MessageRowClassSolution" style="display: none"><td class="IconInfoEncoded"><a name="SolutionMessage" /></td><td class="messageCell"><strong>Arduino.slnx:
+        </strong><span>The solution file does not require migration.</span></td></tr><tr style="display: none" name="MessageRowHeaderHideSolution"><td class="IconInfoEncoded" /><td class="messageCell"><a _locID="HideAdditionalMessages" href="#" name="SolutionMessage" onclick="ToggleMessageVisibility('Solution'); return false;">
+          Hide 1 additional messages
+        </a></td></tr></table></div></div></body></html>

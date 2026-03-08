@@ -34,6 +34,7 @@ class ActualMetrics
 
    public ActualMetrics(Bitmap b)
    {
+      Stopwatch sw = Stopwatch.StartNew();
       for (uint x = 0; x < b.Width; x++)
       {
          for (uint y = 0; y < b.Height; y++)
@@ -49,6 +50,8 @@ class ActualMetrics
             }
          }
       }
+
+      Debug.WriteLine($"Actual Metrics Computation Time: {sw.ElapsedMilliseconds}ms");
 
       Debug.WriteLine($"Cell Size: {CellMetric.Width}px X {CellMetric.Height}px");
       Debug.WriteLine($"Char Size: {CharMetric.Width}px X {CharMetric.Height}px");
@@ -149,49 +152,19 @@ public partial class MainForm : Form
 
    private void PrintFontMetrics(Font font, Graphics g)
    {
-      float heightEm = font.FontFamily.GetEmHeight(FontStyle.Regular);
-      float ascentEm = font.FontFamily.GetCellAscent(FontStyle.Regular);
-      float descentEm = font.FontFamily.GetCellDescent(FontStyle.Regular);
-      float lineSpacingEm = font.FontFamily.GetLineSpacing(FontStyle.Regular);
-
-      float heightPx = font.GetHeight(g);
-      //float heightPx = font.Height;
-      //float widthPx = TextRenderer.MeasureText("0", font).Width;
-      float widthPx = TextRenderer.MeasureText("0", font, new Size(1000, 1000), TextFormatFlags.NoPadding).Width;
-      float ascentPx = (ascentEm / lineSpacingEm) * heightPx;
-      float descentPx = (descentEm / lineSpacingEm) * heightPx;
-      float lineSpacingPx = (heightPx / heightEm) * lineSpacingEm;
+      GdiMetrics gdiMetrics = new(font, g);
 
       Debug.WriteLine($"{font.FontFamily.GetName(0)}, {font.SizeInPoints}pt");
-
       Debug.WriteLine($"font.Size: {font.Size}");
       Debug.WriteLine($"font.Height: {font.Height}");
       Debug.WriteLine($"font.GetHeight(Graphics): {font.GetHeight(g)}");
+      Debug.WriteLine("");
 
-      /*
-      Debug.WriteLine($"fontFamily.GetEmHeight(): {font.FontFamily.GetEmHeight(FontStyle.Regular)}");
-      Debug.WriteLine($"fontFamily.GetCellAscent(): {font.FontFamily.GetCellAscent(FontStyle.Regular)}");
-      Debug.WriteLine($"fontFamily.GetCellDescent(): {font.FontFamily.GetCellDescent(FontStyle.Regular)}");
-      Debug.WriteLine($"fontFamily.GetLineSpacing(): {font.FontFamily.GetLineSpacing(FontStyle.Regular)}");
-      Debug.WriteLine("");
-      */
-
-      Debug.WriteLine($"Height: {heightPx}px");
-      Debug.WriteLine($"Width: {widthPx}px");
-      Debug.WriteLine("");
-      /*
-      Debug.WriteLine($"Height: {heightEm}em");
-      Debug.WriteLine($"Ascent: {ascentEm}em");
-      Debug.WriteLine($"Descent: {descentEm}em");
-      Debug.WriteLine($"LineSpacing: {lineSpacingEm}em");
-      Debug.WriteLine("");
-      */
-      Debug.WriteLine($"Height: {heightPx}px");
-      Debug.WriteLine($"Ascent: {ascentPx}px");
-      Debug.WriteLine($"Descent: {descentPx}px");
-      Debug.WriteLine($"LineSpacing: {lineSpacingPx}px");
-      Debug.WriteLine("");
-      Debug.WriteLine($"Panel Size: {CharPanel.Width}px X {CharPanel.Height}px");
+      Debug.WriteLine($"Height: {gdiMetrics.Height}px");
+      Debug.WriteLine($"Width: {gdiMetrics.Width}px");
+      Debug.WriteLine($"Ascent: {gdiMetrics.Ascent}px");
+      Debug.WriteLine($"Descent: {gdiMetrics.Descent}px");
+      Debug.WriteLine($"LineSpacing: {gdiMetrics.LineSpacing}px");
    }
 
    private void AllCharsPanel_Paint(object sender, PaintEventArgs e)
@@ -280,26 +253,23 @@ public partial class MainForm : Form
       e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
       TextRenderer.DrawText(e.Graphics, TestCharsTextBox.Text, font, new Point(0, 0), Color.White, Color.Black, TextFormatFlags.NoPadding);
 
-
-      //float heightEm = font.FontFamily.GetEmHeight(FontStyle.Regular);
-      float ascentEm = font.FontFamily.GetCellAscent(FontStyle.Regular);
-      float descentEm = font.FontFamily.GetCellDescent(FontStyle.Regular);
-      float lineSpacingEm = font.FontFamily.GetLineSpacing(FontStyle.Regular);
-
-      float heightPx = font.GetHeight(e.Graphics);
-      float ascentPx = (ascentEm / lineSpacingEm) * heightPx;
-      float descentPx = (descentEm / lineSpacingEm) * heightPx;
-
-      float top = heightPx - font.Size;
-      float baseline = ascentPx;
-      float bottom = ascentPx + descentPx;
+      GdiMetrics gdiMetrics = new(font, e.Graphics);
+      float top = gdiMetrics.Top;
+      float baseline = gdiMetrics.Baseline;
+      float bottom = gdiMetrics.Bottom;
+      Pen topPen = new(Color.Pink, 1);
+      Pen baselinePen = new(Color.LightCoral, 1);
+      Pen bottomPen = new(Color.Cyan, 1);
+      topPen.DashStyle = DashStyle.Dot;
+      baselinePen.DashStyle = DashStyle.Dot;
+      bottomPen.DashStyle = DashStyle.Dot;
 
       for (int i = 0; i < 8; i++)
       {
          float start = i * (bottom);
-         e.Graphics.DrawLine(new Pen(Color.Purple, 1), 0, start + top, MetricsPanel.Width, start + top);
-         e.Graphics.DrawLine(new Pen(Color.LightCoral, 1), 0, start + baseline, MetricsPanel.Width, start + baseline);
-         e.Graphics.DrawLine(new Pen(Color.Cyan, 1), 0, start + bottom, MetricsPanel.Width, start + bottom);
+         e.Graphics.DrawLine(topPen, 0, start + top, MetricsPanel.Width, start + top);
+         e.Graphics.DrawLine(baselinePen, 0, start + baseline, MetricsPanel.Width, start + baseline);
+         e.Graphics.DrawLine(bottomPen, 0, start + bottom, MetricsPanel.Width, start + bottom);
       }
    }
 }
