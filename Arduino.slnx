@@ -133,6 +133,10 @@
     <Deploy Solution="*|ARM" />
     <Deploy Solution="*|ARM64" />
   </Project>
+  <Project Path="Lake_Temp_Monitor/Lake_Temp_Monitor.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Pin_Display/Pin_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
