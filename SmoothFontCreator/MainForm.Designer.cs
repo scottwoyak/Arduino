@@ -30,6 +30,9 @@ partial class MainForm
    {
       tabControl1 = new TabControl();
       tabPage1 = new TabPage();
+      MsgLabel = new Label();
+      HexLabel = new Label();
+      ASCIILabel = new Label();
       TestCharTextBox = new TextBox();
       TestCharsTextBox = new TextBox();
       FontComboBox = new ComboBox();
@@ -37,8 +40,6 @@ partial class MainForm
       CharPanel = new Panel();
       AllCharsPanel = new Panel();
       tabPage2 = new TabPage();
-      ASCIILabel = new Label();
-      HexLabel = new Label();
       tabControl1.SuspendLayout();
       tabPage1.SuspendLayout();
       SuspendLayout();
@@ -56,6 +57,7 @@ partial class MainForm
       // 
       // tabPage1
       // 
+      tabPage1.Controls.Add(MsgLabel);
       tabPage1.Controls.Add(HexLabel);
       tabPage1.Controls.Add(ASCIILabel);
       tabPage1.Controls.Add(TestCharTextBox);
@@ -72,6 +74,33 @@ partial class MainForm
       tabPage1.Text = "tabPage1";
       tabPage1.UseVisualStyleBackColor = true;
       // 
+      // MsgLabel
+      // 
+      MsgLabel.AutoSize = true;
+      MsgLabel.Location = new Point(1303, 749);
+      MsgLabel.Name = "MsgLabel";
+      MsgLabel.Size = new Size(47, 25);
+      MsgLabel.TabIndex = 8;
+      MsgLabel.Text = "msg";
+      // 
+      // HexLabel
+      // 
+      HexLabel.AutoSize = true;
+      HexLabel.Location = new Point(1350, 457);
+      HexLabel.Name = "HexLabel";
+      HexLabel.Size = new Size(59, 25);
+      HexLabel.TabIndex = 7;
+      HexLabel.Text = "label1";
+      // 
+      // ASCIILabel
+      // 
+      ASCIILabel.AutoSize = true;
+      ASCIILabel.Location = new Point(1350, 408);
+      ASCIILabel.Name = "ASCIILabel";
+      ASCIILabel.Size = new Size(59, 25);
+      ASCIILabel.TabIndex = 6;
+      ASCIILabel.Text = "label1";
+      // 
       // TestCharTextBox
       // 
       TestCharTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -79,6 +108,7 @@ partial class MainForm
       TestCharTextBox.Name = "TestCharTextBox";
       TestCharTextBox.Size = new Size(150, 31);
       TestCharTextBox.TabIndex = 5;
+      TestCharTextBox.Text = "0";
       // 
       // TestCharsTextBox
       // 
@@ -136,24 +166,6 @@ partial class MainForm
       tabPage2.Text = "tabPage2";
       tabPage2.UseVisualStyleBackColor = true;
       // 
-      // ASCIILabel
-      // 
-      ASCIILabel.AutoSize = true;
-      ASCIILabel.Location = new Point(1350, 408);
-      ASCIILabel.Name = "ASCIILabel";
-      ASCIILabel.Size = new Size(59, 25);
-      ASCIILabel.TabIndex = 6;
-      ASCIILabel.Text = "label1";
-      // 
-      // HexLabel
-      // 
-      HexLabel.AutoSize = true;
-      HexLabel.Location = new Point(1350, 457);
-      HexLabel.Name = "HexLabel";
-      HexLabel.Size = new Size(59, 25);
-      HexLabel.TabIndex = 7;
-      HexLabel.Text = "label1";
-      // 
       // MainForm
       // 
       AutoScaleDimensions = new SizeF(10F, 25F);
@@ -181,4 +193,5 @@ partial class MainForm
    private TextBox TestCharTextBox;
    private Label HexLabel;
    private Label ASCIILabel;
+   private Label MsgLabel;
 }

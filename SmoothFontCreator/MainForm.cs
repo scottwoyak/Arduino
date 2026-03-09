@@ -1,136 +1,8 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
 
 namespace SmoothFontCreator;
-
-class Metric
-{
-   public uint xMin = uint.MaxValue;
-   public uint xMax = uint.MinValue;
-   public uint yMin = uint.MaxValue;
-   public uint yMax = uint.MinValue;
-   public uint Width => xMax - xMin;
-   public uint Height => yMax - yMin;
-
-   public void update(uint x, uint y)
-   {
-      xMin = uint.Min(xMin, x);
-      xMax = uint.Max(xMax, x);
-      yMin = uint.Min(yMin, y);
-      yMax = uint.Max(yMax, y);
-   }
-}
-
-class ActualMetrics
-{
-   public Metric CellMetric = new();
-   public Metric CharMetric = new();
-
-   public float Height => CharMetric.Height;
-   public float Width => CharMetric.Width;
-   public float LineSpacing => CellMetric.Height;
-   public float Top => CharMetric.yMin - CellMetric.yMin;
-   public float Bottom => Top + Height;
-
-   public ActualMetrics(Bitmap b)
-   {
-      Stopwatch sw = Stopwatch.StartNew();
-
-      /*
-      for (uint x = 0; x < b.Width; x++)
-      {
-         for (uint y = 0; y < b.Height; y++)
-         {
-            Color pixelColor = b.GetPixel((int)x, (int)y);
-            if (pixelColor.A != 0)
-            {
-               CellMetric.update(x, y);
-               if (pixelColor.ToArgb() != Color.Black.ToArgb())
-               {
-                  CharMetric.update(x, y);
-               }
-            }
-         }
-      }
-      */
-
-      Rectangle rect = new(0, 0, b.Width, b.Height);
-      BitmapData bmpData = b.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
-
-      // Get address of the first scan line
-      IntPtr ptr = bmpData.Scan0;
-
-      // Calculate total bytes; Stride handles row padding
-      int bytes = Math.Abs(bmpData.Stride) * b.Height;
-      byte[] argbValues = new byte[bytes];
-
-      // Copy RGB values to array
-      Marshal.Copy(ptr, argbValues, 0, bytes);
-
-      // scan pixel data (ARGB format)
-      for (uint x = 0; x < b.Width; x++)
-      {
-         for (uint y = 0; y < b.Height; y++)
-         {
-            int index = (int)(y * bmpData.Stride + x * 4); // 4 bytes per pixel (ARGB)
-            byte A = argbValues[index + 3];
-            byte R = argbValues[index + 2];
-            byte G = argbValues[index + 1];
-            byte B = argbValues[index + 0];
-            Color pixelColor = Color.FromArgb(A, R, G, B);
-
-            if (pixelColor.A != 0)
-            {
-               CellMetric.update(x, y);
-               if (pixelColor.ToArgb() != Color.Black.ToArgb())
-               {
-                  CharMetric.update(x, y);
-               }
-            }
-         }
-      }
-
-      b.UnlockBits(bmpData); // Mandatory
-
-      Console.WriteLine($"Metrics Computation Time: {sw.ElapsedMilliseconds}ms");
-
-      Debug.WriteLine($"Bitmap Size: {b.Width}px X {b.Height}px");
-      Debug.WriteLine($"Cell Size: {CellMetric.Width}px X {CellMetric.Height}px");
-      Debug.WriteLine($"Char Size: {CharMetric.Width}px X {CharMetric.Height}px");
-   }
-}
-
-class GdiMetrics
-{
-   public float Height;
-   public float Width;
-   public float Ascent;
-   public float Descent;
-   public float LineSpacing;
-   public float Top;
-   public float Baseline;
-   public float Bottom;
-
-   public GdiMetrics(Font font, Graphics g)
-   {
-      float heightEm = font.FontFamily.GetEmHeight(FontStyle.Regular);
-      float ascentEm = font.FontFamily.GetCellAscent(FontStyle.Regular);
-      float descentEm = font.FontFamily.GetCellDescent(FontStyle.Regular);
-      float lineSpacingEm = font.FontFamily.GetLineSpacing(FontStyle.Regular);
-
-      Height = font.GetHeight(g);
-      Width = TextRenderer.MeasureText("0", font, new Size(1000, 1000), TextFormatFlags.NoPadding).Width;
-      Ascent = (ascentEm / lineSpacingEm) * Height;
-      Descent = (descentEm / lineSpacingEm) * Height;
-      LineSpacing = (Height / heightEm) * lineSpacingEm;
-
-      Top = Height - font.Size;
-      Baseline = Ascent;
-      Bottom = Ascent + Descent;
-   }
-}
 
 public partial class MainForm : Form
 {
@@ -158,6 +30,10 @@ public partial class MainForm : Form
       };
 
       CharPanel.MouseWheel += CharPanel_MouseWheel;
+      CharPanel.MouseClick += (s, e) =>
+      {
+         CharPanel.Invalidate();
+      };
    }
 
    private void CharPanel_MouseWheel(object sender, MouseEventArgs e)
@@ -254,7 +130,8 @@ public partial class MainForm : Form
 
          e.Graphics.DrawImage(bitmap, new Point(0, 0));
 
-         ActualMetrics computedMetrics = new(bitmap);
+         ActualMetrics actualMetrics = new(bitmap);
+         MsgLabel.Text = actualMetrics.ElapsedMs.ToString("0.0ms");
 
          // draw what Windows reports on the left
          GdiMetrics gdiMetrics = new GdiMetrics(font, g);
@@ -272,8 +149,8 @@ public partial class MainForm : Form
          e.Graphics.DrawLine(baselinePen, x1, pt.Y + gdiMetrics.Baseline, x2, pt.Y + gdiMetrics.Baseline);
          e.Graphics.DrawLine(bottomPen, x1, pt.Y + gdiMetrics.Bottom, x2, pt.Y + gdiMetrics.Bottom);
 
-         float top = pt.Y + computedMetrics.Top;
-         float bottom = pt.Y + computedMetrics.Bottom;
+         float top = pt.Y + actualMetrics.Top;
+         float bottom = pt.Y + actualMetrics.Bottom;
          x1 = CharPanel.Width / 2;
          x2 = CharPanel.Width;
 
