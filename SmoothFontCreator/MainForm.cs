@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 
 namespace SmoothFontCreator;
 
@@ -35,6 +37,8 @@ class ActualMetrics
    public ActualMetrics(Bitmap b)
    {
       Stopwatch sw = Stopwatch.StartNew();
+
+      /*
       for (uint x = 0; x < b.Width; x++)
       {
          for (uint y = 0; y < b.Height; y++)
@@ -50,9 +54,49 @@ class ActualMetrics
             }
          }
       }
+      */
 
-      Debug.WriteLine($"Actual Metrics Computation Time: {sw.ElapsedMilliseconds}ms");
+      Rectangle rect = new(0, 0, b.Width, b.Height);
+      BitmapData bmpData = b.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
 
+      // Get address of the first scan line
+      IntPtr ptr = bmpData.Scan0;
+
+      // Calculate total bytes; Stride handles row padding
+      int bytes = Math.Abs(bmpData.Stride) * b.Height;
+      byte[] argbValues = new byte[bytes];
+
+      // Copy RGB values to array
+      Marshal.Copy(ptr, argbValues, 0, bytes);
+
+      // scan pixel data (ARGB format)
+      for (uint x = 0; x < b.Width; x++)
+      {
+         for (uint y = 0; y < b.Height; y++)
+         {
+            int index = (int)(y * bmpData.Stride + x * 4); // 4 bytes per pixel (ARGB)
+            byte A = argbValues[index + 3];
+            byte R = argbValues[index + 2];
+            byte G = argbValues[index + 1];
+            byte B = argbValues[index + 0];
+            Color pixelColor = Color.FromArgb(A, R, G, B);
+
+            if (pixelColor.A != 0)
+            {
+               CellMetric.update(x, y);
+               if (pixelColor.ToArgb() != Color.Black.ToArgb())
+               {
+                  CharMetric.update(x, y);
+               }
+            }
+         }
+      }
+
+      b.UnlockBits(bmpData); // Mandatory
+
+      Console.WriteLine($"Metrics Computation Time: {sw.ElapsedMilliseconds}ms");
+
+      Debug.WriteLine($"Bitmap Size: {b.Width}px X {b.Height}px");
       Debug.WriteLine($"Cell Size: {CellMetric.Width}px X {CellMetric.Height}px");
       Debug.WriteLine($"Char Size: {CharMetric.Width}px X {CharMetric.Height}px");
    }
@@ -118,7 +162,7 @@ public partial class MainForm : Form
 
    private void CharPanel_MouseWheel(object sender, MouseEventArgs e)
    {
-      char c  = TestCharTextBox.Text.Length > 0 ? TestCharTextBox.Text[0] : 'A';
+      char c = TestCharTextBox.Text.Length > 0 ? TestCharTextBox.Text[0] : 'A';
       if (e.Delta > 0)
       {
          c--;
@@ -129,11 +173,11 @@ public partial class MainForm : Form
       }
       if (c < 0x20)
       {
-         c = (char) 0x7E;
+         c = (char)0x7E;
       }
       else if (c > 0x7E)
       {
-         c = (char) 0x20;
+         c = (char)0x20;
       }
 
       TestCharTextBox.Text = c.ToString();
@@ -187,7 +231,7 @@ public partial class MainForm : Form
    {
       if (TestCharTextBox.Text.Length > 0)
       {
-         using Bitmap bitmap = new(CharPanel.Width, CharPanel.Height);
+         using Bitmap bitmap = new(CharPanel.Width, CharPanel.Height, PixelFormat.Format32bppArgb);
          Graphics g = Graphics.FromImage(bitmap);
          g.Clear(Color.Transparent);
 
@@ -205,10 +249,10 @@ public partial class MainForm : Form
          float widthPx = TextRenderer.MeasureText(testChar, font, new Size(1000, 1000), TextFormatFlags.NoPadding).Width;
 
          g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-         Point pt = new((int) (CharPanel.Width - widthPx)/2, (int) (CharPanel.Height-heightPx)/2);
+         Point pt = new((int)(CharPanel.Width - widthPx) / 2, (int)(CharPanel.Height - heightPx) / 2);
          TextRenderer.DrawText(g, testChar, font, pt, Color.White, Color.Black, TextFormatFlags.NoPadding);
 
-         e.Graphics.DrawImage(bitmap, new Point(0,0));
+         e.Graphics.DrawImage(bitmap, new Point(0, 0));
 
          ActualMetrics computedMetrics = new(bitmap);
 
@@ -223,7 +267,7 @@ public partial class MainForm : Form
          bottomPen.DashStyle = DashStyle.Dot;
 
          float x1 = 0;
-         float x2 = CharPanel.Width/2;
+         float x2 = CharPanel.Width / 2;
          e.Graphics.DrawLine(topPen, x1, pt.Y + gdiMetrics.Top, x2, pt.Y + gdiMetrics.Top);
          e.Graphics.DrawLine(baselinePen, x1, pt.Y + gdiMetrics.Baseline, x2, pt.Y + gdiMetrics.Baseline);
          e.Graphics.DrawLine(bottomPen, x1, pt.Y + gdiMetrics.Bottom, x2, pt.Y + gdiMetrics.Bottom);
