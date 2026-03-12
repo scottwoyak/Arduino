@@ -40,6 +40,7 @@ partial class MainForm
       CharPanel = new Panel();
       AllCharsPanel = new Panel();
       tabPage2 = new TabPage();
+      button1 = new Button();
       tabControl1.SuspendLayout();
       tabPage1.SuspendLayout();
       SuspendLayout();
@@ -57,6 +58,7 @@ partial class MainForm
       // 
       // tabPage1
       // 
+      tabPage1.Controls.Add(button1);
       tabPage1.Controls.Add(MsgLabel);
       tabPage1.Controls.Add(HexLabel);
       tabPage1.Controls.Add(ASCIILabel);
@@ -166,6 +168,16 @@ partial class MainForm
       tabPage2.Text = "tabPage2";
       tabPage2.UseVisualStyleBackColor = true;
       // 
+      // button1
+      // 
+      button1.Location = new Point(1283, 607);
+      button1.Name = "button1";
+      button1.Size = new Size(112, 34);
+      button1.TabIndex = 9;
+      button1.Text = "button1";
+      button1.UseVisualStyleBackColor = true;
+      button1.Click += button1_Click;
+      // 
       // MainForm
       // 
       AutoScaleDimensions = new SizeF(10F, 25F);
@@ -194,4 +206,5 @@ partial class MainForm
    private Label HexLabel;
    private Label ASCIILabel;
    private Label MsgLabel;
+   private Button button1;
 }

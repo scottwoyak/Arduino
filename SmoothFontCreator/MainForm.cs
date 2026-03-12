@@ -193,4 +193,26 @@ public partial class MainForm : Form
          e.Graphics.DrawLine(bottomPen, 0, start + bottom, MetricsPanel.Width, start + bottom);
       }
    }
+
+   private void button1_Click(object sender, EventArgs e)
+   {
+      byte[] bytes = File.ReadAllBytes(@"C:\SourceCode\Arduino\SmoothFontCreator\Roboto32.vlw");
+
+      Stopwatch sw = Stopwatch.StartNew();
+      VLWContent content = new(bytes);
+
+      Debug.WriteLine($"Bytes read in {sw.Elapsed.TotalMilliseconds} ms");
+
+      sw.Restart();
+      byte[] outBytes = content.ToByteArray();
+      Debug.WriteLine($"Bytes created in {sw.Elapsed.TotalMilliseconds} ms");
+
+      for (int i = 0; i < bytes.Length; i++)
+      {
+         if (bytes[i] != outBytes[i])
+         {
+            Debugger.Break();
+         }
+      }
+   }
 }
