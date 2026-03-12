@@ -18,15 +18,13 @@ constexpr auto version = "v0.90";
 Feather feather;
 
 I2CMultiplexor multi;
-TempSensor sensorSurface;
-TempSensor sensorBottom;
-TempSensor sensor3;
-TempSensor sensor4;
 
 constexpr auto INFLUX_MEASUREMENT = "Air";
-constexpr auto INFLUX_INTERVAL_S = 15;
+constexpr auto INFLUX_INTERVAL_S = 15; // log data to InfluxDB every this many seconds
+constexpr auto WATCHDOG_INTERVAL_S = 60; // reboot if we haven't logged data for this many seconds
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 
+/*
 TimedPoint pointSurface(INFLUX_INTERVAL_S, INFLUX_MEASUREMENT);
 TimedPoint pointBottom(INFLUX_INTERVAL_S, INFLUX_MEASUREMENT);
 TimedPoint point3(INFLUX_INTERVAL_S, INFLUX_MEASUREMENT);
@@ -41,17 +39,29 @@ Field* humSurfaceField = pointSurface.addTimeAveragedField("humidity", 2);
 Field* humBottomField = pointBottom.addTimeAveragedField("humidity", 2);
 Field* hum3Field = point3.addTimeAveragedField("humidity", 2);
 Field* hum4Field = point4.addTimeAveragedField("humidity", 2);
-
+*/
 
 constexpr uint8_t NUM_SENSORS = 4;
-TempSensor* sensors[] = { &sensorSurface, &sensorBottom, &sensor3, &sensor4 };
-TimedPoint* points[] = { &pointSurface, &pointBottom, &point3, &point4 };
-Field* tempFields[] = { tempSurfaceField, tempBottomField, temp3Field, temp4Field };
-Field* humFields[] = { humSurfaceField, humBottomField, hum3Field, hum4Field };
+TempSensor* sensors[NUM_SENSORS];
+TimedPoint* points[NUM_SENSORS];
+Field* tempFields[NUM_SENSORS];
+Field* humFields[NUM_SENSORS];
 uint8_t sensorPorts[] = { 2, 3, 4, 5 };
 
 void setup()
 {
+   // if we can't startup after 5 minutes, reboot and try again
+   Watchdog.enable(5 * 60 * 1000);
+
+   // create all the objects
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   {
+      sensors[i] = new TempSensor();
+      points[i] = new TimedPoint(INFLUX_INTERVAL_S, INFLUX_MEASUREMENT);
+      tempFields[i] = points[i]->addTimeAveragedField("temperature", 3);
+      humFields[i] = points[i]->addTimeAveragedField("humidity", 2);
+   }
+
    Wire.begin();
    SerialX::begin();
 
@@ -69,17 +79,20 @@ void setup()
    feather.print("Sensors... ", Color::LABEL);
    for (int i = 0; i < NUM_SENSORS; i++)
    {
+      SerialX::println();
+      SerialX::println("Sensor ", i);
       multi.select(sensorPorts[i]);
       if (sensors[i]->begin(true))
       {
-         SerialX::println("   Type: ", sensors[i]->type());
-         SerialX::println("   Address: ", sensors[i]->address());
-         SerialX::println("   ID: ", sensors[i]->id());
+         SerialX::println("         Type: ", sensors[i]->type());
+         SerialX::println("      Address: ", sensors[i]->address());
+         SerialX::println("           ID: ", sensors[i]->id());
+         SerialX::println("   Correction: ", sensors[i]->tempCorrectionF);
       }
       else
       {
-         feather.printR("FAILED", Color::RED);
-         while (1);
+         // TODO null out this sensor
+         SerialX::println("FAILED");
       }
    }
    feather.printlnR("ok", Color::VALUE);
@@ -87,15 +100,15 @@ void setup()
 
    Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client);
 
-   delay(5000);
-
-   pointSurface.addTag("location", "Surface");
-   pointBottom.addTag("location", "Bottom");
+   points[0]->addTag("location", "Water 1"); // Surface
+   points[1]->addTag("location", "Water 2"); // Bottom
+   points[2]->addTag("location", "3 Feet"); // Bottom
+   points[3]->addTag("location", "Deep"); // Bottom
 
    feather.clearDisplay();
    feather.echoToSerial = false;
 
-   Watchdog.enable(80 * 1000);
+   Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
 }
 
 void loop()
@@ -105,9 +118,12 @@ void loop()
    // Store measured value into point
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      multi.select(sensorPorts[i]);
-      tempFields[i]->set(sensors[i]->readTemperatureF());
-      humFields[i]->set(sensors[i]->readHumidity());
+      if (sensors[i]->exists())
+      {
+         multi.select(sensorPorts[i]);
+         tempFields[i]->set(sensors[i]->readTemperatureF());
+         humFields[i]->set(sensors[i]->readHumidity());
+      }
    }
 
    // Check WiFi connection and reconnect if needed
@@ -124,37 +140,49 @@ void loop()
    feather.setTextSize(3);
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      float temp = tempFields[i]->get();
-      float hum = humFields[i]->get();
+      if (sensors[i]->exists())
+      {
+         float temp = tempFields[i]->get();
+         float hum = humFields[i]->get();
 
-      feather.print(temp, tempFormat, Color::VALUE);
-      feather.printR(hum, humFormat, Color::VALUE);
-      feather.println();
+         feather.print(temp, tempFormat, Color::VALUE);
+         feather.printR(hum, humFormat, Color::VALUE);
+         feather.println();
+      }
+      else
+      {
+         feather.print("----", Color::VALUE);
+         feather.printR("----", Color::VALUE);
+         feather.println();
+      }
    }
 
    feather.setTextSize(2);
    feather.printR(version, Color::SUB_LABEL);
 
    // Write point
-   if (pointSurface.ready())
+   if (points[0]->ready())
    {
       digitalWrite(BUILTIN_LED, HIGH);
 
       bool failed = false;
       for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
-         if (points[i]->post(&client) == false)
+         if (sensors[i]->exists())
          {
-            failed = true;
-            Serial.println("InfluxDB write failed: ");
-            Serial.println(client.getLastErrorMessage());
+            if (points[i]->post(&client) == false)
+            {
+               failed = true;
+               Serial.println("InfluxDB write failed: ");
+               Serial.println(client.getLastErrorMessage());
+            }
          }
       }
 
       if (failed)
       {
-         // sleep for 60 seconds (reboot upon wake up)
-         feather.deepSleep(60);
+         // sleep for 10 seconds (reboot upon wake up)
+         feather.deepSleep(10);
       }
 
       digitalWrite(BUILTIN_LED, LOW);
