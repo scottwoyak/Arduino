@@ -25,7 +25,7 @@ constexpr CorrectionFactor CORRECTIONS[] = {
 "290634094",  -0.038, -5.420, // Lake SHT4X
 };
 
-constexpr auto NUM_CORRECTIONS = 0;// sizeof(CORRECTIONS) / sizeof(CORRECTIONS[0]);
+constexpr auto NUM_CORRECTIONS = sizeof(CORRECTIONS) / sizeof(CORRECTIONS[0]);
 
 //-------------------------------------------------------------------------------------------------
 ITempSensor* _tryCreateHTC(bool print)
