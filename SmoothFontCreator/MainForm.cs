@@ -7,14 +7,15 @@ public partial class MainForm : Form
 {
    private ObservedMetrics _allCharsObservedMetrics;
    private Dictionary<char, ObservedMetrics> _charMetrics = [];
+   private Bitmap _largeBitmap;
 
    public MainForm()
    {
       InitializeComponent();
 
+      FontComboBox.Items.Add("Roboto Mono");
       FontComboBox.Items.Add("Arial");
       FontComboBox.Items.Add("Times New Roman");
-      FontComboBox.Items.Add("Roboto Mono");
       FontComboBox.Items.Add("Roboto");
       FontComboBox.SelectedIndex = 0;
       FontComboBox.SelectedValueChanged += FontComboBox_SelectedValueChanged;
@@ -22,15 +23,13 @@ public partial class MainForm : Form
 
       CharPanel.Paint += CharPanel_Paint;
       AllCharsPanel.Paint += AllCharsPanel_Paint;
-      MetricsPanel.Paint += MetricsPanel_Paint;
       CharPreviewPanel.Paint += CharPreviewPanel_Paint;
 
-      TestCharsTextBox.TextChanged += (s, e) =>
-      {
-         MetricsPanel.Invalidate();
-      };
-
       CharPanel.MouseWheel += CharPanel_MouseWheel;
+      CharPreviewPanel.MouseWheel += CharPanel_MouseWheel;
+
+
+
 
       _UpdateMetrics();
    }
@@ -77,7 +76,15 @@ public partial class MainForm : Form
          _allCharsObservedMetrics.Expand(charMetrics);
       }
 
-      Debug.WriteLine($"{sw.ElapsedMilliseconds}ms");
+      Debug.WriteLine($"Font Metrics Collected in {sw.ElapsedMilliseconds}ms");
+      Debug.WriteLine($"   Requested fontSizePx: {fontSizePx}");
+      Debug.WriteLine($"   font.Size: {font.Size}");
+      Debug.WriteLine($"   font.SizeInPoints: {font.SizeInPoints}");
+      Debug.WriteLine($"   font.Height: {font.Height}");
+      Debug.WriteLine($"   font.GetHeight: {font.GetHeight()}");
+      Debug.WriteLine($"   Observed Metrics for all chars:");
+      Debug.WriteLine($"      CharRect: {_allCharsObservedMetrics.CharRectString}");
+      Debug.WriteLine($"      CellRect: {_allCharsObservedMetrics.CellRectString}");
    }
 
    private void CharPanel_MouseWheel(object sender, MouseEventArgs e)
@@ -102,6 +109,11 @@ public partial class MainForm : Form
 
       TestCharTextBox.Text = c.ToString();
 
+      ObservedMetrics m = _charMetrics[c];
+      Debug.WriteLine($"'{c}' {((int)c).ToString("X")}");
+      Debug.WriteLine($"   CharRect: {m.CharRectString}");
+      Debug.WriteLine($"   CellRect: {m.CellRectString}");
+
       CharPanel.Invalidate();
       CharPreviewPanel.Invalidate();
    }
@@ -113,7 +125,6 @@ public partial class MainForm : Form
       CharPanel.Invalidate();
       CharPreviewPanel.Invalidate();
       AllCharsPanel.Invalidate();
-      MetricsPanel.Invalidate();
    }
 
    private void AllCharsPanel_Paint(object sender, PaintEventArgs e)
@@ -133,7 +144,7 @@ public partial class MainForm : Form
 
    private void CharPanel_Paint(object sender, PaintEventArgs e)
    {
-      if (TestCharTextBox.Text.Length == 0)
+      if (TestCharTextBox.Text.Length == 0 || TestCharTextBox.Text[0] == ' ')
       {
          return;
       }
@@ -171,7 +182,7 @@ public partial class MainForm : Form
       Color topColor = Color.Pink;
       Color baselineColor = Color.LightGreen;
       Color bottomColor = Color.LightCyan;
-      Color allCharsColor = Color.LightYellow;
+      Color allCharsColor = Color.Yellow;
       Color oneCharColor = Color.LightCoral;
 
       using Pen startEndPen = new Pen(startEndColor);
@@ -214,10 +225,10 @@ public partial class MainForm : Form
       x1 = CharPanel.Width / 2;
       x2 = CharPanel.Width;
 
-      float allCellTop = _allCharsObservedMetrics.CellRect.Top;
-      float allCharTop = _allCharsObservedMetrics.CharRect.Top;
-      float allCharBottom = _allCharsObservedMetrics.CharRect.Bottom;
-      float allCellBottom = _allCharsObservedMetrics.CellRect.Bottom;
+      float allCellTop = (float) _allCharsObservedMetrics.CellTop;
+      float allCharTop = (float) _allCharsObservedMetrics.CharTop;
+      float allCharBottom = (float) _allCharsObservedMetrics.CharBottom;
+      float allCellBottom = (float) _allCharsObservedMetrics.CellBottom;
 
       e.Graphics.DrawLine(startEndPen, x1, allCellTop, x2, allCellTop);
       e.Graphics.DrawLine(startEndPen, x1, allCellBottom, x2, allCellBottom);
@@ -232,12 +243,44 @@ public partial class MainForm : Form
       // draw lines for just this char
       x2 -= 0.2f * CharPanel.Width;
       ObservedMetrics oneCharObservedMetrics = _charMetrics[TestCharTextBox.Text[0]];
-      float oneCharTop = oneCharObservedMetrics.CharRect.Top;
-      float oneCharBottom = oneCharObservedMetrics.CharRect.Bottom;
+      float oneCharTop = (float) oneCharObservedMetrics.CharTop;
+      float oneCharBottom = (float) oneCharObservedMetrics.CharBottom;
       e.Graphics.DrawLine(oneCharPen, x1, oneCharTop, x2, oneCharTop);
       e.Graphics.DrawLine(oneCharPen, x1, oneCharBottom, x2, oneCharBottom);
 
+      float y1 = 0;
+      float y2 = CharPanel.Height;
+      float allCharsLeft = (float) _allCharsObservedMetrics.CharLeft;
+      float allCharsRight = (float) _allCharsObservedMetrics.CharRight;
+      float allCellsLeft = (float) _allCharsObservedMetrics.CellLeft;
+      float allCellsRight = (float) _allCharsObservedMetrics.CellRight;
+      float oneCharLeft = (float) oneCharObservedMetrics.CharLeft;
+      float oneCharRight = (float) oneCharObservedMetrics.CharRight;
+      e.Graphics.DrawLine(startEndPen, allCellsLeft, y1, allCellsLeft, y2);
+      e.Graphics.DrawLine(startEndPen, allCellsRight, y1, allCellsRight, y2);
+      e.Graphics.DrawLine(allCharsPen, allCharsLeft, y1, allCharsLeft, y2);
+      e.Graphics.DrawLine(allCharsPen, allCharsRight, y1, allCharsRight, y2);
+      e.Graphics.DrawLine(oneCharPen, oneCharLeft, y1, oneCharLeft, y2);
+      e.Graphics.DrawLine(oneCharPen, oneCharRight, y1, oneCharRight, y2);
+
       Debug.WriteLine($"CharPanel Paint: {sw.Elapsed.TotalMilliseconds}");
+   }
+
+   private void _fillCheckerboard(Bitmap bitmap)
+   {
+      for (int x = 0; x < bitmap.Width; x++)
+      {
+         for (int y = 0; y < bitmap.Height; y++)
+         {
+            Color c = bitmap.GetPixel(x, y);
+
+            if (c.A == 0)
+            {
+               int level = ((x + y) % 2 == 0) ? 60 : 80;
+               bitmap.SetPixel(x, y, Color.FromArgb(255, level, 0, 0));
+            }
+         }
+      }
    }
 
    private void CharPreviewPanel_Paint(object sender, PaintEventArgs e)
@@ -247,141 +290,80 @@ public partial class MainForm : Form
          return;
       }
 
-      if (int.TryParse(DesiredHeightTextBox.Text, out int fontSizePx) == false)
+      if (int.TryParse(DesiredHeightTextBox.Text, out int targetFontSizePx) == false)
       {
          return;
       }
 
       FontFamily fontFamily = new FontFamily(FontComboBox.Text);
+      char testChar = TestCharTextBox.Text[0];
+      double aspectRatio = _charMetrics[testChar].CellWidth / _allCharsObservedMetrics.CharHeight;
 
-      // create a very large font and then scale it down to what we want to display
-      using Bitmap largeBitmap = new Bitmap(2048, 2048);
+      //
+      // Step 1 - draw the character to a bitmap of height 2048
+      //
+
+      // create a font such that all characters fit the height of the large bitmap
+      int largeHeight = 2048;
+      int largeWidth = (int)Math.Ceiling(aspectRatio * largeHeight);
+      Bitmap largeBitmap = new Bitmap(largeWidth, largeHeight);
       using Graphics largeGraphics = Graphics.FromImage(largeBitmap);
+      _largeBitmap = largeBitmap;
 
-      // figure out the font size needed to fill the bitmap
-      float scaledCharsHeight = _allCharsObservedMetrics.CharRect.Height/_allCharsObservedMetrics.Font.Size;
-      float scaledTopMargin = (_allCharsObservedMetrics.CharRect.Top - _allCharsObservedMetrics.CellRect.Top) /_allCharsObservedMetrics.Font.GetHeight();
-
-      float neededFontSizePx = 2048*scaledCharsHeight;
-      float topMargin = scaledTopMargin * neededFontSizePx;
+      double largeFontSizePx = _allCharsObservedMetrics.RealPxToFontSizePx(largeHeight);
 
       Font font = new Font(
          fontFamily,
-         neededFontSizePx,
+         (float)largeFontSizePx,
          FontStyle.Regular,
          GraphicsUnit.Pixel);
 
-      string testChar = TestCharTextBox.Text.Substring(0, 1);
-      /*
-      float heightPx = font.GetHeight(e.Graphics);
-      float widthPx = TextRenderer.MeasureText(testChar, font, new Size(10000, 10000), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width;
-      */
+      //double charWidthPx = _charMetrics[testChar].WidthPxForFontSizePx(largeFontSizePx);
+      double leftMarginPx = _charMetrics[testChar].LeftMarginPxForFontSizePx(largeFontSizePx);
+      double largeTopMarginPx = _allCharsObservedMetrics.TopMarginPxForFontSizePx(largeFontSizePx);
 
-      //Point pt = new((int)(CharPanel.Width - widthPx) / 2, (int)(CharPanel.Height - heightPx) / 2);
-      Point pt = new(0, (int)-topMargin);
-      //Point pt = new(0, 0);
-      largeGraphics.DrawPreciseString(testChar, font, pt, Color.White, Color.Black);
-      ObservedMetrics om = new(largeBitmap, font);
-      //largeGraphics.Clear(Color.Black);
+      // draw the character
+      //largeGraphics.Clear(Color.Yellow); // so we can detect problems - all yellow should get covered up
+      Point pt = new(0, (int)-largeTopMarginPx); // offset the top
+      largeGraphics.DrawPreciseString(testChar, font, pt, Color.White, Color.Transparent);
 
-      // scale the full bitmap down to the smaller one
+      //
+      // Scale the larger bitmap to the smaller one
+      //
       int smallHeightPx = int.Parse(DesiredHeightTextBox.Text);
-      int smallWidthPx = smallHeightPx; // (int)Math.Ceiling(fontSizePx * ((float)_allCharsObservedMetrics.CharMetric.Width / _allCharsObservedMetrics.CharMetric.Height));
+      int smallWidthPx = (int)Math.Ceiling(aspectRatio * smallHeightPx);
       using Bitmap smallBitmap = new Bitmap(smallWidthPx, smallHeightPx);
       using Graphics smallGraphics = Graphics.FromImage(smallBitmap);
 
-      smallGraphics.InterpolationMode = InterpolationMode.Default;
+      Debug.WriteLine($"AR: {aspectRatio}");
+      Debug.WriteLine($"Large Bitmap: {largeBitmap.Width}x{largeBitmap.Height} AR:{(float)largeBitmap.Width / largeBitmap.Height}");
+      Debug.WriteLine($"Small Bitmap: {smallBitmap.Width}x{smallBitmap.Height} AR:{(float)smallBitmap.Width / smallBitmap.Height}");
+
+      //smallGraphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+      smallGraphics.InterpolationMode = InterpolationMode.Bilinear;
+      //smallGraphics.InterpolationMode = InterpolationMode.Low;
       Rectangle srcRect = new(0, 0, largeBitmap.Width, largeBitmap.Height);
       Rectangle dstRect = new(0, 0, smallBitmap.Width, smallBitmap.Height);
-      smallGraphics.Clear(Color.Pink);
+
+      //smallGraphics.Clear(Color.Pink); // so we can detect problems - all pink should get covered up
       smallGraphics.DrawImage(largeBitmap, dstRect, srcRect, GraphicsUnit.Pixel);
+
+      // fill the background with a checkerboard pattern to make it easier to see the edges of the character
+      _fillCheckerboard(smallBitmap);
 
       // draw the bitmap to the preview char panel
       //e.Graphics.DrawImageUnscaled(smallBitmap, 10, 10);
       e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
-      srcRect = new(0, 0, smallBitmap.Width, smallBitmap.Height);
-      dstRect = new(0, 0, (int)(CharPreviewPanel.Height * ((float)smallBitmap.Width / smallBitmap.Height)), CharPreviewPanel.Height);
+      srcRect = new(-1, -1, smallBitmap.Width+2, smallBitmap.Height+2);
+
+      float pixelSize = CharPreviewPanel.Height / (float) smallBitmap.Height;
+      int x = (int)((CharPreviewPanel.Width - pixelSize*smallBitmap.Width) / 2.0);
+      int y = (int)((CharPreviewPanel.Height - pixelSize*smallBitmap.Height) / 2.0);
+      int w = (int) (smallBitmap.Width * pixelSize);
+      int h = (int) (smallBitmap.Height * pixelSize);
+      dstRect = new(x, y, w, h);
+      //dstRect = new(x, y, (int)(CharPreviewPanel.Height * ((float)smallBitmap.Width / smallBitmap.Height)), CharPreviewPanel.Height);
       e.Graphics.DrawImage(smallBitmap, dstRect, srcRect, GraphicsUnit.Pixel);
-
-      /*
-      ObservedSize singleMetrics = ObservedMetrics.ForChar(fontFamily, TestCharTextBox.Text[0]);
-
-      // first draw a bitmap in the desired size
-      int heightPx = fontSizePx;
-      int widthPx = (int)Math.Ceiling(fontSizePx * (_allCharsObservedSize.CharRect.Width / _allCharsObservedSize.CharRect.Height));
-
-      using Bitmap bitmap = new(widthPx, heightPx);
-      using Graphics graphics = Graphics.FromImage(bitmap);
-
-      float fontSizePt = (float)(fontSizePx / _allCharsObservedSize.CellRect.Height);
-
-      Font font = new Font(
-         fontFamily,
-         fontSizePt,
-         FontStyle.Regular,
-         GraphicsUnit.Pixel);
-
-      graphics.Clear(Color.Transparent);
-
-      // fill the background with a checkerboard pattern to make it easier to see the edges of the character
-      for (int x = 0; x < bitmap.Width; x++)
-      {
-         for (int y = 0; y < bitmap.Height; y++)
-         {
-            if ((x + y) % 2 == 0)
-            {
-               bitmap.SetPixel(x, y, Color.FromArgb(10, 255, 255, 255)); // light gray
-            }
-         }
-      }
-
-      double cellWidthPx = fontSizePx * singleMetrics.CellRect.Width;
-      double cellHeightPx = fontSizePx * singleMetrics.CellRect.Height;
-      double topMargin = Math.Round(fontSizePx * (_allCharsObservedSize.CharRect.Top - _allCharsObservedSize.CellRect.Top));
-      Point topLeft = new((int)((bitmap.Width - cellWidthPx) / 2), (int)-topMargin);
-
-      Debug.WriteLine($"Adjusting to draw char at ({topLeft.X},{topLeft.Y})");
-      graphics.DrawPreciseString(TestCharTextBox.Text, font, topLeft, Color.White, Color.Transparent);
-
-      // then draw the bitmap to the preview char panel
-      e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
-      Rectangle srcRect = new(0, 0, bitmap.Width, bitmap.Height);
-      Rectangle dstRect = new(0, 0, (int)(CharPreviewPanel.Height * ((float)bitmap.Width / bitmap.Height)), CharPreviewPanel.Height);
-      e.Graphics.DrawImage(bitmap, dstRect, srcRect, GraphicsUnit.Pixel);
-      */
-   }
-
-   private void MetricsPanel_Paint(object sender, PaintEventArgs e)
-   {
-      FontFamily fontFamily = new FontFamily(FontComboBox.Text);
-      Font font = new Font(
-         fontFamily,
-         128,
-         FontStyle.Regular,
-         GraphicsUnit.Pixel);
-
-
-
-      e.Graphics.DrawPreciseString(TestCharsTextBox.Text, font, new Point(0, 0), Color.White, Color.Black);
-
-      GdiMetrics gdiMetrics = font.GetGdiMetrics();
-      float top = gdiMetrics.TopPx;
-      float baseline = gdiMetrics.BaselinePx;
-      float bottom = gdiMetrics.BottomPx;
-      Pen topPen = new(Color.Pink, 1);
-      Pen baselinePen = new(Color.LightCoral, 1);
-      Pen bottomPen = new(Color.Cyan, 1);
-      topPen.DashStyle = DashStyle.Dot;
-      baselinePen.DashStyle = DashStyle.Dot;
-      bottomPen.DashStyle = DashStyle.Dot;
-
-      for (int i = 0; i < 8; i++)
-      {
-         float start = i * (bottom);
-         e.Graphics.DrawLine(topPen, 0, start + top, MetricsPanel.Width, start + top);
-         e.Graphics.DrawLine(baselinePen, 0, start + baseline, MetricsPanel.Width, start + baseline);
-         e.Graphics.DrawLine(bottomPen, 0, start + bottom, MetricsPanel.Width, start + bottom);
-      }
    }
 
    private void button1_Click(object sender, EventArgs e)
@@ -426,6 +408,15 @@ public partial class MainForm : Form
    {
       CharPanel.Invalidate();
       CharPreviewPanel.Invalidate();
+
+      if (TestCharTextBox.Text.Length != 1)
+      {
+         HexLabel.Text = "----";
+      }
+      else
+      {
+         HexLabel.Text = "0x" + ((int)TestCharTextBox.Text[0]).ToString("X");
+      }
    }
 
    class CharMax
@@ -507,6 +498,32 @@ public partial class MainForm : Form
       Debug.WriteLine($"Lowest char: '{lowestChar.chars}' {lowestChar.value}");
       Debug.WriteLine($"Leftist char: '{leftistChar.chars}' {leftistChar.value}");
       Debug.WriteLine($"Rightist char: '{rightestChar.chars}' {rightestChar.value}");
+      */
+   }
+
+   private void panel1_Paint(object sender, PaintEventArgs e)
+   {
+      if (_largeBitmap != null)
+      {
+         e.Graphics.DrawImage(_largeBitmap, new Point(0, 0));
+      }
+
+      /*
+      FontFamily fontFamily = new FontFamily(FontComboBox.Text);
+      char testChar = TestCharTextBox.Text[0];
+
+      // figure out the font size needed to fill the bitmap
+      double fontSizePx = _allCharsObservedMetrics.RealPxToFontSizePx(panel1.Height);
+      double topMargin = _allCharsObservedMetrics.TopMarginPxForFontSizePx(fontSizePx);
+
+      Font font = new Font(
+         fontFamily,
+         (float) fontSizePx,
+         FontStyle.Regular,
+         GraphicsUnit.Pixel);
+
+      Point pt = new(0, (int)-topMargin);
+      e.Graphics.DrawPreciseString(testChar, font, pt, Color.White, Color.Transparent);
       */
    }
 }

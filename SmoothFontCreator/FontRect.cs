@@ -10,6 +10,7 @@ public class FontRect
    public int Width => Right - Left+1;
    public int Height => Bottom - Top+1;
 
+   public double AspectRatio => ((float)Width) / Height;
 
    public void Update(int x, int y)
    {
@@ -25,5 +26,10 @@ public class FontRect
       Right = int.Max(Right, other.Right);
       Top = int.Min(Top, other.Top);
       Bottom = int.Max(Bottom, other.Bottom);
+   }
+
+   public override string ToString()
+   {
+      return $"W:{Width}, H:{Height}, L:{Left}, R:{Right}, T:{Top}, B:{Bottom}";
    }
 }

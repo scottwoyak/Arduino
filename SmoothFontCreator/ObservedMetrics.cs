@@ -6,12 +6,26 @@ namespace SmoothFontCreator;
 
 public class ObservedMetrics
 {
-   public Font Font;
-   public FontRect CellRect = new();
-   public FontRect CharRect = new();
+   private FontRect CellRect = new();
+   private FontRect CharRect = new();
+   public Font Font { get; private set; }
 
+   public double CellHeight => CellRect.Height;
+   public double CellWidth => CellRect.Width;
+   public double CellLeft => CellRect.Left;
+   public double CellRight => CellRect.Right;
+   public double CellTop => CellRect.Top;
+   public double CellBottom => CellRect.Bottom;
+   public String CellRectString => CellRect.ToString();
 
-   public double ElapsedMs { get; private set; }
+   public double CharHeight => CharRect.Height;
+   public double CharWidth => CharRect.Width;
+   public double CharLeft => CharRect.Left;
+   public double CharRight => CharRect.Right;
+   public double CharTop => CharRect.Top;
+   public double CharBottom => CharRect.Bottom;
+   public String CharRectString => CharRect.ToString();
+
 
    public ObservedMetrics(Font font)
    {
@@ -24,8 +38,28 @@ public class ObservedMetrics
       _scan(b);
    }
 
+   public double RealPxToFontSizePx(double desiredHeightPx)
+   {
+      return desiredHeightPx * ((double) Font.Size / CharRect.Height);
+   }
+
+   public double TopMarginPxForFontSizePx(double fontSizePx)
+   {
+      return (CharRect.Top - CellRect.Top) * (fontSizePx / Font.Size);
+   }
+
+   public double LeftMarginPxForFontSizePx(double fontSizePx)
+   {
+      return (CharRect.Left - CellRect.Left) * (fontSizePx / Font.Size);
+   }
+
+   public double WidthPxForFontSizePx(double fontSizePx)
+   {
+      return CharRect.Width * (fontSizePx / Font.Size);
+   }
+
    private void _scan(Bitmap b)
-   { 
+   {
       Stopwatch sw = Stopwatch.StartNew();
 
       Rectangle rect = new(0, 0, b.Width, b.Height);
@@ -84,8 +118,6 @@ public class ObservedMetrics
       }
 
       b.UnlockBits(bmpData); // Mandatory
-
-      ElapsedMs = sw.Elapsed.TotalMilliseconds;
    }
 
    public void Expand(ObservedMetrics other)
@@ -93,78 +125,4 @@ public class ObservedMetrics
       CellRect.Intersect(other.CellRect);
       CharRect.Intersect(other.CharRect);
    }
-
-   /*
-   public static ObservedMetrics FromBitmap(Bitmap b)
-   {
-      return new ObservedMetrics(b);
-   }
-
-   public static ObservedSize ForAllChars(FontFamily fontFamily)
-   {
-      // first figure out the font size that will fill the pixel height
-      Font font = new Font(
-         fontFamily,
-         100,
-         FontStyle.Regular,
-         GraphicsUnit.Pixel);
-
-      const int testSizePx = 1000;
-      using Bitmap bitmap = new(testSizePx, testSizePx);
-      using Graphics graphics = Graphics.FromImage(bitmap);
-      float heightPx = font.GetHeight(graphics);
-      float pxSize = 0.8f*100 * testSizePx / heightPx;
-
-      // now write all the chars to the bitmap and observe the metrics
-      font = new Font(
-         fontFamily,
-         pxSize,
-         FontStyle.Regular,
-         GraphicsUnit.Pixel);
-
-      graphics.Clear(Color.Transparent);
-      Point pt = new((int)(0.1 * testSizePx), (int)(0.1 * testSizePx)); // provide an offset to we can capture content outside of the cell
-      for (char c = (char)0x21; c < 0x7e; c++)
-      {
-         graphics.DrawPreciseString(c.ToString(), font, pt, Color.White, Color.Black);
-      }
-
-      ObservedMetrics observedMetrics = new(bitmap);
-
-      // scale everything to 0-1
-      return new ObservedSize(observedMetrics,(int) (bitmap.Height));
-   }
-
-   public static ObservedSize ForChar(FontFamily fontFamily, char c)
-   {
-      // first figure out the font size that will fill the pixel height
-      Font font = new Font(
-         fontFamily,
-         100,
-         FontStyle.Regular,
-         GraphicsUnit.Pixel);
-
-      const int testSizePx = 1000;
-      using Bitmap bitmap = new(testSizePx, testSizePx);
-      using Graphics bitmapGraphics = Graphics.FromImage(bitmap);
-      float heightPx = font.GetHeight(bitmapGraphics);
-      float pxSize = 0.8f* 100 * testSizePx / heightPx;
-
-      // now write all the chars to the bitmap and observe the metrics
-      font = new Font(
-         fontFamily,
-         pxSize,
-         FontStyle.Regular,
-         GraphicsUnit.Pixel);
-
-      bitmapGraphics.Clear(Color.Transparent);
-      Point pt = new((int)(0.1 * testSizePx), (int)(0.1 * testSizePx)); // provide an offset to we can capture content outside of the cell
-      bitmapGraphics.DrawPreciseString(c.ToString(), font, pt, Color.White, Color.Black);
-
-      ObservedMetrics observedMetrics = new(bitmap);
-
-      // scale everything to 0-1
-      return new ObservedSize(observedMetrics, testSizePx);
-   }
-   */
 }

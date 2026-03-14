@@ -30,6 +30,7 @@ partial class MainForm
    {
       tabControl1 = new TabControl();
       tabPage1 = new TabPage();
+      HexLabel = new Label();
       button2 = new Button();
       label8 = new Label();
       MonospaceCheckBox = new CheckBox();
@@ -49,12 +50,13 @@ partial class MainForm
       TestCharTextBox = new TextBox();
       TestCharsTextBox = new TextBox();
       FontComboBox = new ComboBox();
-      MetricsPanel = new Panel();
       CharPanel = new Panel();
       AllCharsPanel = new Panel();
       tabPage2 = new TabPage();
+      panel1 = new Panel();
       tabControl1.SuspendLayout();
       tabPage1.SuspendLayout();
+      tabPage2.SuspendLayout();
       SuspendLayout();
       // 
       // tabControl1
@@ -65,11 +67,12 @@ partial class MainForm
       tabControl1.Location = new Point(12, 12);
       tabControl1.Name = "tabControl1";
       tabControl1.SelectedIndex = 0;
-      tabControl1.Size = new Size(1826, 1577);
+      tabControl1.Size = new Size(1826, 977);
       tabControl1.TabIndex = 0;
       // 
       // tabPage1
       // 
+      tabPage1.Controls.Add(HexLabel);
       tabPage1.Controls.Add(button2);
       tabPage1.Controls.Add(label8);
       tabPage1.Controls.Add(MonospaceCheckBox);
@@ -89,16 +92,25 @@ partial class MainForm
       tabPage1.Controls.Add(TestCharTextBox);
       tabPage1.Controls.Add(TestCharsTextBox);
       tabPage1.Controls.Add(FontComboBox);
-      tabPage1.Controls.Add(MetricsPanel);
       tabPage1.Controls.Add(CharPanel);
       tabPage1.Controls.Add(AllCharsPanel);
       tabPage1.Location = new Point(4, 34);
       tabPage1.Name = "tabPage1";
       tabPage1.Padding = new Padding(3);
-      tabPage1.Size = new Size(1818, 1539);
+      tabPage1.Size = new Size(1818, 939);
       tabPage1.TabIndex = 0;
       tabPage1.Text = "tabPage1";
       tabPage1.UseVisualStyleBackColor = true;
+      // 
+      // HexLabel
+      // 
+      HexLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      HexLabel.AutoSize = true;
+      HexLabel.Location = new Point(1760, 363);
+      HexLabel.Name = "HexLabel";
+      HexLabel.Size = new Size(50, 25);
+      HexLabel.TabIndex = 18;
+      HexLabel.Text = "0x00";
       // 
       // button2
       // 
@@ -166,7 +178,7 @@ partial class MainForm
       DesiredHeightTextBox.Name = "DesiredHeightTextBox";
       DesiredHeightTextBox.Size = new Size(94, 31);
       DesiredHeightTextBox.TabIndex = 12;
-      DesiredHeightTextBox.Text = "20";
+      DesiredHeightTextBox.Text = "16";
       DesiredHeightTextBox.TextChanged += DesiredHeightTextBox_TextChanged;
       // 
       // label1
@@ -265,7 +277,7 @@ partial class MainForm
       TestCharTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       TestCharTextBox.Location = new Point(1668, 360);
       TestCharTextBox.Name = "TestCharTextBox";
-      TestCharTextBox.Size = new Size(144, 31);
+      TestCharTextBox.Size = new Size(81, 31);
       TestCharTextBox.TabIndex = 5;
       TestCharTextBox.Text = "$";
       TestCharTextBox.TextChanged += TestCharTextBox_TextChanged;
@@ -289,15 +301,6 @@ partial class MainForm
       FontComboBox.Size = new Size(275, 33);
       FontComboBox.TabIndex = 3;
       // 
-      // MetricsPanel
-      // 
-      MetricsPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-      MetricsPanel.BackColor = Color.Black;
-      MetricsPanel.Location = new Point(7, 940);
-      MetricsPanel.Name = "MetricsPanel";
-      MetricsPanel.Size = new Size(915, 711);
-      MetricsPanel.TabIndex = 2;
-      // 
       // CharPanel
       // 
       CharPanel.BackColor = Color.DimGray;
@@ -317,6 +320,7 @@ partial class MainForm
       // 
       // tabPage2
       // 
+      tabPage2.Controls.Add(panel1);
       tabPage2.Location = new Point(4, 34);
       tabPage2.Name = "tabPage2";
       tabPage2.Padding = new Padding(3);
@@ -325,17 +329,28 @@ partial class MainForm
       tabPage2.Text = "tabPage2";
       tabPage2.UseVisualStyleBackColor = true;
       // 
+      // panel1
+      // 
+      panel1.AutoScroll = true;
+      panel1.BackColor = Color.DimGray;
+      panel1.Location = new Point(6, 6);
+      panel1.Name = "panel1";
+      panel1.Size = new Size(2048, 2048);
+      panel1.TabIndex = 0;
+      panel1.Paint += panel1_Paint;
+      // 
       // MainForm
       // 
       AutoScaleDimensions = new SizeF(10F, 25F);
       AutoScaleMode = AutoScaleMode.Font;
-      ClientSize = new Size(1850, 1601);
+      ClientSize = new Size(1850, 1001);
       Controls.Add(tabControl1);
       Name = "MainForm";
       Text = "Smooth Font Creator for TFT_eSPI";
       tabControl1.ResumeLayout(false);
       tabPage1.ResumeLayout(false);
       tabPage1.PerformLayout();
+      tabPage2.ResumeLayout(false);
       ResumeLayout(false);
    }
 
@@ -346,7 +361,6 @@ partial class MainForm
    private TabPage tabPage2;
    private Panel AllCharsPanel;
    private Panel CharPanel;
-   private Panel MetricsPanel;
    private ComboBox FontComboBox;
    private TextBox TestCharsTextBox;
    private TextBox TestCharTextBox;
@@ -366,4 +380,6 @@ partial class MainForm
    private Label label8;
    private CheckBox MonospaceCheckBox;
    private Button button2;
+   private Label HexLabel;
+   private Panel panel1;
 }

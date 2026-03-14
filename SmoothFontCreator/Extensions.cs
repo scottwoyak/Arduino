@@ -12,6 +12,10 @@ public static class GraphicsExtensions
       graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
       TextRenderer.DrawText(graphics, str, font, pt, fgColor, bgColor, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
    }
+   public static void DrawPreciseString(this Graphics graphics, char c, Font font, Point pt, Color fgColor, Color bgColor)
+   {
+      graphics.DrawPreciseString(c.ToString(), font, pt, fgColor, bgColor);
+   }
 
    public static GdiMetrics GetGdiMetrics(this Font font)
    {
