@@ -3,29 +3,29 @@ namespace SmoothFontCreator;
 
 public class FontRect
 {
-   public int Left = int.MaxValue;
-   public int Right = 0;
-   public int Top = int.MaxValue;
-   public int Bottom = 0;
-   public int Width => Right - Left+1;
-   public int Height => Bottom - Top+1;
+   public double Left = double.MaxValue;
+   public double Right = 0;
+   public double Top = double.MaxValue;
+   public double Bottom = 0;
+   public double Width => Right - Left + 1;
+   public double Height => Bottom - Top + 1;
 
    public double AspectRatio => ((float)Width) / Height;
 
    public void Update(int x, int y)
    {
-      Left = int.Min(Left, x);
-      Right = int.Max(Right, x);
-      Top = int.Min(Top, y);
-      Bottom = int.Max(Bottom, y);
+      Left = double.Min(Left, x);
+      Right = double.Max(Right, x);
+      Top = double.Min(Top, y);
+      Bottom = double.Max(Bottom, y);
    }
 
    public void Intersect(FontRect other)
    {
-      Left = int.Min(Left, other.Left);
-      Right = int.Max(Right, other.Right);
-      Top = int.Min(Top, other.Top);
-      Bottom = int.Max(Bottom, other.Bottom);
+      Left = double.Min(Left, other.Left);
+      Right = double.Max(Right, other.Right);
+      Top = double.Min(Top, other.Top);
+      Bottom = double.Max(Bottom, other.Bottom);
    }
 
    public override string ToString()

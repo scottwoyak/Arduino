@@ -16,7 +16,6 @@ public class ObservedMetrics
    public double CellRight => CellRect.Right;
    public double CellTop => CellRect.Top;
    public double CellBottom => CellRect.Bottom;
-   public String CellRectString => CellRect.ToString();
 
    public double CharHeight => CharRect.Height;
    public double CharWidth => CharRect.Width;
@@ -24,8 +23,14 @@ public class ObservedMetrics
    public double CharRight => CharRect.Right;
    public double CharTop => CharRect.Top;
    public double CharBottom => CharRect.Bottom;
-   public String CharRectString => CharRect.ToString();
 
+   public double TopMargin => CharRect.Top - CellRect.Top;
+   public double BottomMargin => CellRect.Bottom - CharRect.Bottom;
+   public double LeftMargin => CharRect.Left - CellRect.Left;
+   public double RightMargin => CellRect.Right - CharRect.Right;
+
+   public String CellRectString => CellRect.ToString();
+   public String CharRectString => CharRect.ToString();
 
    public ObservedMetrics(Font font)
    {
@@ -43,6 +48,7 @@ public class ObservedMetrics
       return desiredHeightPx * ((double) Font.Size / CharRect.Height);
    }
 
+   /*
    public double TopMarginPxForFontSizePx(double fontSizePx)
    {
       return (CharRect.Top - CellRect.Top) * (fontSizePx / Font.Size);
@@ -57,6 +63,7 @@ public class ObservedMetrics
    {
       return CharRect.Width * (fontSizePx / Font.Size);
    }
+   */
 
    private void _scan(Bitmap b)
    {
@@ -124,5 +131,25 @@ public class ObservedMetrics
    {
       CellRect.Intersect(other.CellRect);
       CharRect.Intersect(other.CharRect);
+   }
+
+   public ObservedMetrics WithCharHeight(double desiredCharHeight)
+   {
+      double scaleFactor = desiredCharHeight / CharHeight;
+
+      Font scaledFont = new Font(Font.FontFamily, (float) (scaleFactor * Font.GetHeight()), GraphicsUnit.Pixel);
+      ObservedMetrics scaledMetrics = new(scaledFont);
+
+      scaledMetrics.CharRect.Left = scaleFactor * CharRect.Left;
+      scaledMetrics.CharRect.Right = scaleFactor * CharRect.Right;
+      scaledMetrics.CharRect.Top = scaleFactor * CharRect.Top;
+      scaledMetrics.CharRect.Bottom = scaleFactor * CharRect.Bottom;
+
+      scaledMetrics.CellRect.Left = scaleFactor * CellRect.Left;
+      scaledMetrics.CellRect.Right = scaleFactor * CellRect.Right;
+      scaledMetrics.CellRect.Top = scaleFactor * CellRect.Top;
+      scaledMetrics.CellRect.Bottom = scaleFactor * CellRect.Bottom;
+
+      return scaledMetrics;
    }
 }

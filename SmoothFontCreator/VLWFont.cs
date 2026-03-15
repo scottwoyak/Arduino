@@ -1,8 +1,5 @@
-﻿using System;
-using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.Diagnostics.Tracing;
-using System.Reflection.Metadata.Ecma335;
+﻿using System.Buffers.Binary;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace SmoothFontCreator;
@@ -11,6 +8,8 @@ public class ByteReader
 {
    private int _index = 0;
    private byte[] _data;
+
+   public long RemainingBytes => _data.Length - _index;
 
    public ByteReader(byte[] data)
    {
@@ -83,27 +82,30 @@ public class ByteWriter
 }
 
 
-public class Glyph
+public class VLWGlyph
 {
    public Int32 uChar;
    public Int32 Height;
    public Int32 Width;
    public Int32 gxAdvance;
-   public Int32 dY;
-   public Int32 dX;
+   public Int32 gdY;
+   public Int32 gdX;
    public Int32 padding = 0;
    public Bitmap Bitmap;
 }
 
-public class VLWContent
+public class VLWFont
 {
-   // header
-   public UInt32 Version { get; internal set; }
+   public UInt32 Version { get; internal set; } = 11;
    public UInt32 FontSizePx { get; internal set; }
-   public UInt32 Ascent { get; internal set; }
-   public UInt32 Descent { get; internal set; }
+   public Int32 Ascent { get; internal set; }
+   public Int32 Descent { get; internal set; }
 
-   List<Glyph> Glyphs = [];
+   public String FontName { get; internal set; } = "";
+   public String PostscriptName { get; internal set; } = "";
+   public bool AntiAliased { get; internal set; } = true;
+
+   public Dictionary<Int32, VLWGlyph> Glyphs = [];
 
    private void _load(byte[] data)
    {
@@ -112,48 +114,71 @@ public class VLWContent
       Version = reader.UInt32();
       FontSizePx = reader.UInt32();
       reader.UInt32(); // deprecated mboxY value
-      Ascent = reader.UInt32();
-      Descent = reader.UInt32();
+      Ascent = reader.Int32();
+      Descent = reader.Int32();
 
       for (int i = 0; i < gCount; i++)
       {
-         Glyph g = new();
+         VLWGlyph g = new();
          g.uChar = reader.Int32();
          g.Height = reader.Int32();
          g.Width = reader.Int32();
          g.gxAdvance = reader.Int32();
-         g.dY = reader.Int32();
-         g.dX = reader.Int32();
+         g.gdY = reader.Int32();
+         g.gdX = reader.Int32();
          g.padding = reader.Int32();
-         Glyphs.Add(g);
+         Glyphs.Add(g.uChar, g);
       }
 
-      for (int i = 0; i < gCount; i++)
+      foreach (VLWGlyph g in Glyphs.Values)
       {
-         Glyph g = Glyphs[i];
-
          if (g.Width > 0 && g.Height > 0)
          {
             g.Bitmap = new Bitmap(g.Width, g.Height);
 
-            for (int x = 0; x < g.Width; x++)
+            for (int y = 0; y < g.Height; y++)
             {
-               for (int y = 0; y < g.Height; y++)
+               for (int x = 0; x < g.Width; x++)
                {
                   byte alpha = reader.Byte();
                   g.Bitmap.SetPixel(x, y, Color.FromArgb(alpha, 255, 255, 255));
+                  //g.Bitmap.SetPixel(x, y, Color.FromArgb(255, alpha, alpha, alpha));
                }
             }
          }
       }
+
+      if (reader.RemainingBytes > 0)
+      {
+         byte nameLength = reader.Byte();
+         for (int i = 0; i < nameLength; i++)
+         {
+            FontName += (char)reader.Byte();
+         }
+         reader.Byte(); // \0 string termination
+
+         byte postscriptNameLength = reader.Byte();
+         for (int i = 0; i < postscriptNameLength; i++)
+         {
+            PostscriptName += (char)reader.Byte();
+         }
+         reader.Byte(); // \0 string termination
+
+         AntiAliased = reader.Byte() > 0;
+      }
    }
 
-   public VLWContent(byte[] data)
+   public VLWFont()
+   {
+
+   }
+
+   public VLWFont(byte[] data)
    {
       _load(data);
    }
 
-   public VLWContent(string vlwFile)
+   public VLWFont(string vlwFile)
    {
       _load(File.ReadAllBytes(vlwFile));
    }
@@ -169,18 +194,18 @@ public class VLWContent
       writer.Add(Ascent);
       writer.Add(Descent);
 
-      foreach (Glyph g in Glyphs)
+      foreach (VLWGlyph g in Glyphs.Values)
       {
          writer.Add(g.uChar);
          writer.Add(g.Height);
          writer.Add(g.Width);
          writer.Add(g.gxAdvance);
-         writer.Add(g.dY);
-         writer.Add(g.dX);
+         writer.Add(g.gdY);
+         writer.Add(g.gdX);
          writer.Add(g.padding);
       }
 
-      foreach (Glyph g in Glyphs)
+      foreach (VLWGlyph g in Glyphs.Values)
       {
          if (g.Bitmap != null)
          {
@@ -196,8 +221,29 @@ public class VLWContent
 
    }
 
-   public void SaveAsSmoothFont()
+   public void SaveAsSmoothFont(string filePath)
    {
+      StringBuilder sb = new();
 
+      sb.Append("#pragma once\n");
+      sb.Append("\n");
+      sb.Append("const uint8_t Scott[] PROGMEM = {\n");
+
+      byte[] data = ToByteArray();
+      for (int i = 0; i < data.Length; i++)
+      {
+         sb.Append(data[i].ToHex());
+         sb.Append(", ");
+
+         if ((i + 1) % 16 == 0)
+         {
+            sb.Append('\n');
+         }
+      }
+
+      sb.Append('\n');
+      sb.Append("};");
+
+      File.WriteAllText(filePath, sb.ToString());
    }
 }

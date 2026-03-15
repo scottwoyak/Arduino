@@ -5,6 +5,9 @@ namespace SmoothFontCreator;
 
 public partial class MainForm : Form
 {
+   Color GlyphBgColorDark = Color.FromArgb(255, 60, 0, 0);
+   Color GlyphBgColorLight = Color.FromArgb(255, 80, 0, 0);
+
    private ObservedMetrics _allCharsObservedMetrics;
    private Dictionary<char, ObservedMetrics> _charMetrics = [];
    private Bitmap _largeBitmap;
@@ -13,10 +16,10 @@ public partial class MainForm : Form
    {
       InitializeComponent();
 
-      FontComboBox.Items.Add("Roboto Mono");
       FontComboBox.Items.Add("Arial");
       FontComboBox.Items.Add("Times New Roman");
       FontComboBox.Items.Add("Roboto");
+      FontComboBox.Items.Add("Roboto Mono");
       FontComboBox.SelectedIndex = 0;
       FontComboBox.SelectedValueChanged += FontComboBox_SelectedValueChanged;
 
@@ -122,6 +125,8 @@ public partial class MainForm : Form
    {
       _UpdateMetrics();
 
+      float oldSize = TestCharsTextBox.Font.Size;
+      TestCharsTextBox.Font = new Font(FontComboBox.Text, oldSize);
       CharPanel.Invalidate();
       CharPreviewPanel.Invalidate();
       AllCharsPanel.Invalidate();
@@ -137,7 +142,7 @@ public partial class MainForm : Form
          FontStyle.Regular,
          GraphicsUnit.Pixel);
 
-      string chars = "abcdefghijklmnopqrstuvwxyz\nABCDEFGHIJKLMNOPQRSTUVWXYZ\n0123456789!@#$%^&*()_+-=~`[]{}|;:'\",.<>/?";
+      string chars = TestCharsTextBox.Text;
 
       e.Graphics.DrawPreciseString(chars, font, new Point(0, 0), Color.White, Color.Transparent);
    }
@@ -225,10 +230,10 @@ public partial class MainForm : Form
       x1 = CharPanel.Width / 2;
       x2 = CharPanel.Width;
 
-      float allCellTop = (float) _allCharsObservedMetrics.CellTop;
-      float allCharTop = (float) _allCharsObservedMetrics.CharTop;
-      float allCharBottom = (float) _allCharsObservedMetrics.CharBottom;
-      float allCellBottom = (float) _allCharsObservedMetrics.CellBottom;
+      float allCellTop = (float)_allCharsObservedMetrics.CellTop;
+      float allCharTop = (float)_allCharsObservedMetrics.CharTop;
+      float allCharBottom = (float)_allCharsObservedMetrics.CharBottom;
+      float allCellBottom = (float)_allCharsObservedMetrics.CellBottom;
 
       e.Graphics.DrawLine(startEndPen, x1, allCellTop, x2, allCellTop);
       e.Graphics.DrawLine(startEndPen, x1, allCellBottom, x2, allCellBottom);
@@ -243,19 +248,19 @@ public partial class MainForm : Form
       // draw lines for just this char
       x2 -= 0.2f * CharPanel.Width;
       ObservedMetrics oneCharObservedMetrics = _charMetrics[TestCharTextBox.Text[0]];
-      float oneCharTop = (float) oneCharObservedMetrics.CharTop;
-      float oneCharBottom = (float) oneCharObservedMetrics.CharBottom;
+      float oneCharTop = (float)oneCharObservedMetrics.CharTop;
+      float oneCharBottom = (float)oneCharObservedMetrics.CharBottom;
       e.Graphics.DrawLine(oneCharPen, x1, oneCharTop, x2, oneCharTop);
       e.Graphics.DrawLine(oneCharPen, x1, oneCharBottom, x2, oneCharBottom);
 
       float y1 = 0;
       float y2 = CharPanel.Height;
-      float allCharsLeft = (float) _allCharsObservedMetrics.CharLeft;
-      float allCharsRight = (float) _allCharsObservedMetrics.CharRight;
-      float allCellsLeft = (float) _allCharsObservedMetrics.CellLeft;
-      float allCellsRight = (float) _allCharsObservedMetrics.CellRight;
-      float oneCharLeft = (float) oneCharObservedMetrics.CharLeft;
-      float oneCharRight = (float) oneCharObservedMetrics.CharRight;
+      float allCharsLeft = (float)_allCharsObservedMetrics.CharLeft;
+      float allCharsRight = (float)_allCharsObservedMetrics.CharRight;
+      float allCellsLeft = (float)_allCharsObservedMetrics.CellLeft;
+      float allCellsRight = (float)_allCharsObservedMetrics.CellRight;
+      float oneCharLeft = (float)oneCharObservedMetrics.CharLeft;
+      float oneCharRight = (float)oneCharObservedMetrics.CharRight;
       e.Graphics.DrawLine(startEndPen, allCellsLeft, y1, allCellsLeft, y2);
       e.Graphics.DrawLine(startEndPen, allCellsRight, y1, allCellsRight, y2);
       e.Graphics.DrawLine(allCharsPen, allCharsLeft, y1, allCharsLeft, y2);
@@ -276,41 +281,27 @@ public partial class MainForm : Form
 
             if (c.A == 0)
             {
-               int level = ((x + y) % 2 == 0) ? 60 : 80;
-               bitmap.SetPixel(x, y, Color.FromArgb(255, level, 0, 0));
+               bitmap.SetPixel(x, y, ((x + y) % 2 == 0) ? GlyphBgColorDark : GlyphBgColorLight);
             }
          }
       }
    }
 
-   private void CharPreviewPanel_Paint(object sender, PaintEventArgs e)
+   private Bitmap _createGlyph(FontFamily fontFamily, uint charHeightPx, char c)
    {
-      if (TestCharTextBox.Text.Length == 0)
-      {
-         return;
-      }
-
-      if (int.TryParse(DesiredHeightTextBox.Text, out int targetFontSizePx) == false)
-      {
-         return;
-      }
-
-      FontFamily fontFamily = new FontFamily(FontComboBox.Text);
-      char testChar = TestCharTextBox.Text[0];
-      double aspectRatio = _charMetrics[testChar].CellWidth / _allCharsObservedMetrics.CharHeight;
+      double aspectRatio = _charMetrics[c].CellWidth / _allCharsObservedMetrics.CharHeight;
 
       //
       // Step 1 - draw the character to a bitmap of height 2048
       //
 
       // create a font such that all characters fit the height of the large bitmap
-      int largeHeight = 2048;
-      int largeWidth = (int)Math.Ceiling(aspectRatio * largeHeight);
-      Bitmap largeBitmap = new Bitmap(largeWidth, largeHeight);
+      int largeHeightPx = 2048;
+      int largeWidthPx = (int)Math.Ceiling(aspectRatio * largeHeightPx);
+      using Bitmap largeBitmap = new Bitmap(largeWidthPx, largeHeightPx);
       using Graphics largeGraphics = Graphics.FromImage(largeBitmap);
-      _largeBitmap = largeBitmap;
 
-      double largeFontSizePx = _allCharsObservedMetrics.RealPxToFontSizePx(largeHeight);
+      double largeFontSizePx = _allCharsObservedMetrics.RealPxToFontSizePx(largeHeightPx);
 
       Font font = new Font(
          fontFamily,
@@ -318,23 +309,22 @@ public partial class MainForm : Form
          FontStyle.Regular,
          GraphicsUnit.Pixel);
 
-      //double charWidthPx = _charMetrics[testChar].WidthPxForFontSizePx(largeFontSizePx);
-      double leftMarginPx = _charMetrics[testChar].LeftMarginPxForFontSizePx(largeFontSizePx);
-      double largeTopMarginPx = _allCharsObservedMetrics.TopMarginPxForFontSizePx(largeFontSizePx);
+      ObservedMetrics largeCharMetrics = _allCharsObservedMetrics.WithCharHeight(largeHeightPx);
+      double largeTopMarginPx = largeCharMetrics.TopMargin;
 
       // draw the character
-      //largeGraphics.Clear(Color.Yellow); // so we can detect problems - all yellow should get covered up
       Point pt = new(0, (int)-largeTopMarginPx); // offset the top
-      largeGraphics.DrawPreciseString(testChar, font, pt, Color.White, Color.Transparent);
+      largeGraphics.DrawPreciseString(c, font, pt, Color.White, Color.Transparent);
 
       //
       // Scale the larger bitmap to the smaller one
       //
       int smallHeightPx = int.Parse(DesiredHeightTextBox.Text);
       int smallWidthPx = (int)Math.Ceiling(aspectRatio * smallHeightPx);
-      using Bitmap smallBitmap = new Bitmap(smallWidthPx, smallHeightPx);
+      Bitmap smallBitmap = new Bitmap(smallWidthPx, smallHeightPx);
       using Graphics smallGraphics = Graphics.FromImage(smallBitmap);
 
+      Debug.WriteLine($"'{c}' {c.ToHex()}");
       Debug.WriteLine($"AR: {aspectRatio}");
       Debug.WriteLine($"Large Bitmap: {largeBitmap.Width}x{largeBitmap.Height} AR:{(float)largeBitmap.Width / largeBitmap.Height}");
       Debug.WriteLine($"Small Bitmap: {smallBitmap.Width}x{smallBitmap.Height} AR:{(float)smallBitmap.Width / smallBitmap.Height}");
@@ -348,45 +338,44 @@ public partial class MainForm : Form
       //smallGraphics.Clear(Color.Pink); // so we can detect problems - all pink should get covered up
       smallGraphics.DrawImage(largeBitmap, dstRect, srcRect, GraphicsUnit.Pixel);
 
+      return smallBitmap;
+   }
+
+   private void CharPreviewPanel_Paint(object sender, PaintEventArgs e)
+   {
+      if (TestCharTextBox.Text.Length == 0)
+      {
+         return;
+      }
+
+      if (uint.TryParse(DesiredHeightTextBox.Text, out uint targetFontSizePx) == false)
+      {
+         return;
+      }
+
+      FontFamily fontFamily = new FontFamily(FontComboBox.Text);
+      char testChar = TestCharTextBox.Text[0];
+      double aspectRatio = _charMetrics[testChar].CellWidth / _allCharsObservedMetrics.CharHeight;
+
+
+      Bitmap smallBitmap = _createGlyph(fontFamily, targetFontSizePx, testChar);
+
       // fill the background with a checkerboard pattern to make it easier to see the edges of the character
       _fillCheckerboard(smallBitmap);
 
       // draw the bitmap to the preview char panel
       //e.Graphics.DrawImageUnscaled(smallBitmap, 10, 10);
       e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
-      srcRect = new(-1, -1, smallBitmap.Width+2, smallBitmap.Height+2);
+      Rectangle srcRect = new(-1, -1, smallBitmap.Width + 2, smallBitmap.Height + 2);
 
-      float pixelSize = CharPreviewPanel.Height / (float) smallBitmap.Height;
-      int x = (int)((CharPreviewPanel.Width - pixelSize*smallBitmap.Width) / 2.0);
-      int y = (int)((CharPreviewPanel.Height - pixelSize*smallBitmap.Height) / 2.0);
-      int w = (int) (smallBitmap.Width * pixelSize);
-      int h = (int) (smallBitmap.Height * pixelSize);
-      dstRect = new(x, y, w, h);
+      float pixelSize = CharPreviewPanel.Height / (float)smallBitmap.Height;
+      int x = (int)((CharPreviewPanel.Width - pixelSize * smallBitmap.Width) / 2.0);
+      int y = (int)((CharPreviewPanel.Height - pixelSize * smallBitmap.Height) / 2.0);
+      int w = (int)(smallBitmap.Width * pixelSize);
+      int h = (int)(smallBitmap.Height * pixelSize);
+      Rectangle dstRect = new(x, y, w, h);
       //dstRect = new(x, y, (int)(CharPreviewPanel.Height * ((float)smallBitmap.Width / smallBitmap.Height)), CharPreviewPanel.Height);
       e.Graphics.DrawImage(smallBitmap, dstRect, srcRect, GraphicsUnit.Pixel);
-   }
-
-   private void button1_Click(object sender, EventArgs e)
-   {
-      /*
-      byte[] bytes = File.ReadAllBytes(@"C:\SourceCode\Arduino\SmoothFontCreator\Roboto32.vlw");
-
-      // process a byte stream
-      VLWContent content = new(bytes);
-
-      // create a byte stream
-      byte[] outBytes = content.ToByteArray();
-
-      // do a check to make sure they're the same
-      for (int i = 0; i < bytes.Length; i++)
-      {
-         if (bytes[i] != outBytes[i])
-         {
-            Debugger.Break();
-         }
-      }
-      */
-
    }
 
 
@@ -507,23 +496,127 @@ public partial class MainForm : Form
       {
          e.Graphics.DrawImage(_largeBitmap, new Point(0, 0));
       }
+   }
 
+   private void SaveButton_Click(object sender, EventArgs e)
+   {
       /*
-      FontFamily fontFamily = new FontFamily(FontComboBox.Text);
-      char testChar = TestCharTextBox.Text[0];
+      byte[] bytes = File.ReadAllBytes(@"C:\SourceCode\Arduino\SmoothFontCreator\Roboto32.vlw");
 
-      // figure out the font size needed to fill the bitmap
-      double fontSizePx = _allCharsObservedMetrics.RealPxToFontSizePx(panel1.Height);
-      double topMargin = _allCharsObservedMetrics.TopMarginPxForFontSizePx(fontSizePx);
-
-      Font font = new Font(
-         fontFamily,
-         (float) fontSizePx,
-         FontStyle.Regular,
-         GraphicsUnit.Pixel);
-
-      Point pt = new(0, (int)-topMargin);
-      e.Graphics.DrawPreciseString(testChar, font, pt, Color.White, Color.Transparent);
+      // process a byte stream
+      VLWContent content = new(bytes);
       */
+
+      if (uint.TryParse(DesiredHeightTextBox.Text, out uint targetCharHeightPx) == false)
+      {
+         return;
+      }
+      FontFamily fontFamily = new FontFamily(FontComboBox.Text);
+
+      VLWFont vlw = new();
+      vlw.Ascent = (int)targetCharHeightPx / 2;
+      vlw.Descent = (int)(targetCharHeightPx - vlw.Ascent);
+      vlw.FontSizePx = targetCharHeightPx;
+
+      for (char c = (char)0x21; c < 0x7F; c++)
+      {
+         ObservedMetrics charMetrics = _charMetrics[c].WithCharHeight(targetCharHeightPx);
+         //ObservedMetrics charMetrics = _allCharsObservedMetrics.WithCharHeight(targetCharHeightPx);
+
+         VLWGlyph glyph = new();
+         glyph.uChar = c;
+         glyph.Bitmap = _createGlyph(fontFamily, targetCharHeightPx, c);
+
+         glyph.gdX = 0;
+         glyph.gdY = 0;
+         glyph.Width = glyph.Bitmap.Width;
+         glyph.Height = glyph.Bitmap.Height;
+         glyph.gxAdvance = glyph.Bitmap.Height;
+
+         vlw.Glyphs.Add(c, glyph);
+
+         /*
+         glyph.dX = (int) Math.Ceiling(charMetrics.LeftMargin);
+         glyph.dY = (int) Math.Ceiling(charMetrics.TopMargin);
+         glyph.Width = (int)Math.Ceiling(charMetrics.CharWidth);
+         glyph.Height = (int) Math.Ceiling(charMetrics.CharHeight);
+         glyph.gxAdvance = (int) Math.Ceiling(charMetrics.CharWidth);
+         */
+      }
+
+      vlw.SaveAsSmoothFont(@"C:\SourceCode\Arduino\libraries\Woyak\Fonts\Scott.h");
+   }
+
+   private void VLWPreviewPanel_Paint(object sender, PaintEventArgs e)
+   {
+      VLWFont font = new(@"C:\SourceCode\Arduino\SmoothFontCreator\Roboto32.vlw");
+
+      // create the bitmap that we will display
+      using Bitmap bitmap = new(VLWPreviewPanel.Width, VLWPreviewPanel.Height);
+      using Graphics graphics = Graphics.FromImage(bitmap);
+
+      String str = VLWTextBox.Text;
+
+      int x = 0;
+      int y = 0;
+      for (int i = 0; i < str.Length; i++)
+      {
+         char c = str[i];
+
+         switch (c)
+         {
+            case '\n':
+               y += (font.Ascent + Math.Abs(font.Descent));
+               x = 0;
+               break;
+
+            case '\r':
+               break;
+
+            default:
+               {
+                  VLWGlyph glyph = font.Glyphs[c];
+                  if (glyph.Bitmap != null) // space char
+                  {
+                     int gx = x + glyph.gdX;
+                     int gy = y + font.Ascent - glyph.gdY;
+                     if (showGlyphsCheckBox.Checked)
+                     {
+                        graphics.FillRectangle(new SolidBrush(GlyphBgColorLight), gx, gy, glyph.Bitmap.Width, glyph.Bitmap.Height);
+                     }
+                     graphics.DrawImageUnscaled(glyph.Bitmap, gx, gy);
+                  }
+                  x += glyph.gxAdvance;
+               }
+               break;
+         }
+      }
+
+      e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
+      Rectangle srcRect = new(-1, -1, bitmap.Width + 2, bitmap.Height + 2);
+
+      int pixelSize = (int)magnificationUpDown.Value;
+      Rectangle dstRect = new(0, 0, bitmap.Width * pixelSize, bitmap.Height * pixelSize);
+      e.Graphics.DrawImage(bitmap, dstRect, srcRect, GraphicsUnit.Pixel);
+   }
+
+   private void VLWTextBox_TextChanged(object sender, EventArgs e)
+   {
+      VLWPreviewPanel.Invalidate();
+   }
+
+   private void showGlyphsCheckBox_CheckedChanged(object sender, EventArgs e)
+   {
+      VLWPreviewPanel.Invalidate();
+   }
+
+   private void magnificationUpDown_ValueChanged(object sender, EventArgs e)
+   {
+      VLWPreviewPanel.Invalidate();
+   }
+
+   private void TestCharsTextBox_TextChanged(object sender, EventArgs e)
+   {
+      AllCharsPanel.Invalidate();
    }
 }

@@ -22,6 +22,28 @@ public static class GraphicsExtensions
       return new GdiMetrics(font);
    }
 
+   public static String ToHex(this int i)
+   {
+      if (i < 16)
+      {
+         return "0x0" + i.ToString("X");
+      }
+      else
+      {
+         return "0x" + i.ToString("X");
+      }
+   }
+
+   public static String ToHex(this char c)
+   {
+      return ((int)c).ToHex();
+   }
+
+   public static String ToHex(this byte b)
+   {
+      return ((int)b).ToHex();
+   }
+
    /*
    public static ObservedMetrics GetObservedMetrics(this Font font, char c)
    {
