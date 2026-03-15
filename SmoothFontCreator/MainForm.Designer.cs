@@ -30,12 +30,13 @@ partial class MainForm
    {
       tabControl1 = new TabControl();
       tabPage1 = new TabPage();
+      VLFCharPanel = new Panel();
       TrueTypeExampleLabel = new Label();
       HexLabel = new Label();
-      CharPreviewPanel = new Panel();
+      GlyphCharPanel = new Panel();
       label5 = new Label();
       TestCharTextBox = new TextBox();
-      CharPanel = new Panel();
+      TrueTypeCharPanel = new Panel();
       tabPage2 = new TabPage();
       panel1 = new Panel();
       tabPage3 = new TabPage();
@@ -61,6 +62,7 @@ partial class MainForm
       FontComboBox = new ComboBox();
       label10 = new Label();
       fontSizesTextBox = new TextBox();
+      statusTextBox = new TextBox();
       tabControl1.SuspendLayout();
       tabPage1.SuspendLayout();
       tabPage2.SuspendLayout();
@@ -85,12 +87,13 @@ partial class MainForm
       // 
       // tabPage1
       // 
+      tabPage1.Controls.Add(VLFCharPanel);
       tabPage1.Controls.Add(TrueTypeExampleLabel);
       tabPage1.Controls.Add(HexLabel);
-      tabPage1.Controls.Add(CharPreviewPanel);
+      tabPage1.Controls.Add(GlyphCharPanel);
       tabPage1.Controls.Add(label5);
       tabPage1.Controls.Add(TestCharTextBox);
-      tabPage1.Controls.Add(CharPanel);
+      tabPage1.Controls.Add(TrueTypeCharPanel);
       tabPage1.Location = new Point(4, 34);
       tabPage1.Name = "tabPage1";
       tabPage1.Padding = new Padding(6);
@@ -98,6 +101,15 @@ partial class MainForm
       tabPage1.TabIndex = 0;
       tabPage1.Text = "True Type";
       tabPage1.UseVisualStyleBackColor = true;
+      // 
+      // VLFCharPanel
+      // 
+      VLFCharPanel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      VLFCharPanel.BackColor = Color.DimGray;
+      VLFCharPanel.Location = new Point(1103, 223);
+      VLFCharPanel.Name = "VLFCharPanel";
+      VLFCharPanel.Size = new Size(425, 670);
+      VLFCharPanel.TabIndex = 3;
       // 
       // TrueTypeExampleLabel
       // 
@@ -122,14 +134,14 @@ partial class MainForm
       HexLabel.TabIndex = 18;
       HexLabel.Text = "0x00";
       // 
-      // CharPreviewPanel
+      // GlyphCharPanel
       // 
-      CharPreviewPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-      CharPreviewPanel.BackColor = Color.DimGray;
-      CharPreviewPanel.Location = new Point(616, 223);
-      CharPreviewPanel.Name = "CharPreviewPanel";
-      CharPreviewPanel.Size = new Size(912, 707);
-      CharPreviewPanel.TabIndex = 2;
+      GlyphCharPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+      GlyphCharPanel.BackColor = Color.DimGray;
+      GlyphCharPanel.Location = new Point(616, 223);
+      GlyphCharPanel.Name = "GlyphCharPanel";
+      GlyphCharPanel.Size = new Size(481, 670);
+      GlyphCharPanel.TabIndex = 2;
       // 
       // label5
       // 
@@ -151,13 +163,13 @@ partial class MainForm
       TestCharTextBox.Text = "$";
       TestCharTextBox.TextChanged += TestCharTextBox_TextChanged;
       // 
-      // CharPanel
+      // TrueTypeCharPanel
       // 
-      CharPanel.BackColor = Color.DimGray;
-      CharPanel.Location = new Point(9, 223);
-      CharPanel.Name = "CharPanel";
-      CharPanel.Size = new Size(601, 670);
-      CharPanel.TabIndex = 1;
+      TrueTypeCharPanel.BackColor = Color.DimGray;
+      TrueTypeCharPanel.Location = new Point(9, 223);
+      TrueTypeCharPanel.Name = "TrueTypeCharPanel";
+      TrueTypeCharPanel.Size = new Size(601, 670);
+      TrueTypeCharPanel.TabIndex = 1;
       // 
       // tabPage2
       // 
@@ -420,11 +432,21 @@ partial class MainForm
       fontSizesTextBox.TabIndex = 22;
       fontSizesTextBox.Text = "8,16,24,32,40,48,56,64";
       // 
+      // statusTextBox
+      // 
+      statusTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+      statusTextBox.Location = new Point(1563, 639);
+      statusTextBox.Multiline = true;
+      statusTextBox.Name = "statusTextBox";
+      statusTextBox.Size = new Size(275, 273);
+      statusTextBox.TabIndex = 23;
+      // 
       // MainForm
       // 
       AutoScaleDimensions = new SizeF(10F, 25F);
       AutoScaleMode = AutoScaleMode.Font;
       ClientSize = new Size(1850, 1001);
+      Controls.Add(statusTextBox);
       Controls.Add(fontSizesTextBox);
       Controls.Add(label10);
       Controls.Add(charHeightUpDown);
@@ -463,7 +485,7 @@ partial class MainForm
    private TabControl tabControl1;
    private TabPage tabPage1;
    private TabPage tabPage2;
-   private Panel CharPanel;
+   private Panel TrueTypeCharPanel;
    private ComboBox FontComboBox;
    private TextBox TestCharTextBox;
    private Label label6;
@@ -476,7 +498,7 @@ partial class MainForm
    private Label label3;
    private Label label2;
    private Label label5;
-   private Panel CharPreviewPanel;
+   private Panel GlyphCharPanel;
    private Label label8;
    private CheckBox MonospaceCheckBox;
    private Label HexLabel;
@@ -493,4 +515,6 @@ partial class MainForm
    private NumericUpDown charHeightUpDown;
    private Label label10;
    private TextBox fontSizesTextBox;
+   private Panel VLFCharPanel;
+   private TextBox statusTextBox;
 }

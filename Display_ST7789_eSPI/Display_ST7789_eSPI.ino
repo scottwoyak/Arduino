@@ -1,7 +1,7 @@
 
 #include <TFT_eSPI.h>
 
-#include <Scott.h>
+#include <Scott24.h>
 
 TFT_eSPI tft;
 
@@ -47,7 +47,7 @@ void loop()
    // functions (drawNumber, drawFloat) to manually align digits
    //
 
-   tft.loadFont(Scott);
+   tft.loadFont(Scott24);
    tft.setTextColor(TFT_WHITE, TFT_BLACK, true);
    tft.drawNumber(random(999), 0, 0);
 
