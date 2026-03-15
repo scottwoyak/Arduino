@@ -30,6 +30,7 @@ partial class MainForm
    {
       tabControl1 = new TabControl();
       tabPage1 = new TabPage();
+      TrueTypeExampleLabel = new Label();
       HexLabel = new Label();
       button2 = new Button();
       label8 = new Label();
@@ -48,10 +49,8 @@ partial class MainForm
       label5 = new Label();
       label7 = new Label();
       TestCharTextBox = new TextBox();
-      TestCharsTextBox = new TextBox();
       FontComboBox = new ComboBox();
       CharPanel = new Panel();
-      AllCharsPanel = new Panel();
       tabPage2 = new TabPage();
       panel1 = new Panel();
       tabPage3 = new TabPage();
@@ -85,6 +84,7 @@ partial class MainForm
       // 
       // tabPage1
       // 
+      tabPage1.Controls.Add(TrueTypeExampleLabel);
       tabPage1.Controls.Add(HexLabel);
       tabPage1.Controls.Add(button2);
       tabPage1.Controls.Add(label8);
@@ -103,10 +103,8 @@ partial class MainForm
       tabPage1.Controls.Add(label5);
       tabPage1.Controls.Add(label7);
       tabPage1.Controls.Add(TestCharTextBox);
-      tabPage1.Controls.Add(TestCharsTextBox);
       tabPage1.Controls.Add(FontComboBox);
       tabPage1.Controls.Add(CharPanel);
-      tabPage1.Controls.Add(AllCharsPanel);
       tabPage1.Location = new Point(4, 34);
       tabPage1.Name = "tabPage1";
       tabPage1.Padding = new Padding(6);
@@ -114,6 +112,19 @@ partial class MainForm
       tabPage1.TabIndex = 0;
       tabPage1.Text = "True Type";
       tabPage1.UseVisualStyleBackColor = true;
+      // 
+      // TrueTypeExampleLabel
+      // 
+      TrueTypeExampleLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+      TrueTypeExampleLabel.BackColor = Color.Black;
+      TrueTypeExampleLabel.Font = new Font("Cascadia Mono", 18F, FontStyle.Regular, GraphicsUnit.Point, 0);
+      TrueTypeExampleLabel.ForeColor = Color.White;
+      TrueTypeExampleLabel.Location = new Point(9, 9);
+      TrueTypeExampleLabel.Name = "TrueTypeExampleLabel";
+      TrueTypeExampleLabel.Size = new Size(1519, 211);
+      TrueTypeExampleLabel.TabIndex = 19;
+      TrueTypeExampleLabel.Text = "abcdefghijklmnopqrstuvwxyz\r\nABCDEFGHIJKLMNOPQRSTUVWXYZ\r\n0123456789!@#$%^&*()_+-=~`[]{}|;:'\\\",.<>/?";
+      TrueTypeExampleLabel.TextAlign = ContentAlignment.MiddleCenter;
       // 
       // HexLabel
       // 
@@ -295,19 +306,6 @@ partial class MainForm
       TestCharTextBox.Text = "$";
       TestCharTextBox.TextChanged += TestCharTextBox_TextChanged;
       // 
-      // TestCharsTextBox
-      // 
-      TestCharsTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      TestCharsTextBox.BackColor = Color.Black;
-      TestCharsTextBox.ForeColor = Color.White;
-      TestCharsTextBox.Location = new Point(616, 9);
-      TestCharsTextBox.Multiline = true;
-      TestCharsTextBox.Name = "TestCharsTextBox";
-      TestCharsTextBox.Size = new Size(912, 211);
-      TestCharsTextBox.TabIndex = 4;
-      TestCharsTextBox.Text = "abcdefghijklmnopqrstuvwxyz\r\nABCDEFGHIJKLMNOPQRSTUVWXYZ\r\n0123456789!@#$%^&*()_+-=~`[]{}|;:'\\\",.<>/?";
-      TestCharsTextBox.TextChanged += TestCharsTextBox_TextChanged;
-      // 
       // FontComboBox
       // 
       FontComboBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -324,15 +322,6 @@ partial class MainForm
       CharPanel.Name = "CharPanel";
       CharPanel.Size = new Size(601, 707);
       CharPanel.TabIndex = 1;
-      // 
-      // AllCharsPanel
-      // 
-      AllCharsPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-      AllCharsPanel.BackColor = Color.Black;
-      AllCharsPanel.Location = new Point(9, 9);
-      AllCharsPanel.Name = "AllCharsPanel";
-      AllCharsPanel.Size = new Size(601, 211);
-      AllCharsPanel.TabIndex = 0;
       // 
       // tabPage2
       // 
@@ -471,10 +460,8 @@ partial class MainForm
    private TabControl tabControl1;
    private TabPage tabPage1;
    private TabPage tabPage2;
-   private Panel AllCharsPanel;
    private Panel CharPanel;
    private ComboBox FontComboBox;
-   private TextBox TestCharsTextBox;
    private TextBox TestCharTextBox;
    private Label label6;
    private Label label7;
@@ -502,4 +489,5 @@ partial class MainForm
    private CheckBox showGlyphsCheckBox;
    private Label label9;
    private NumericUpDown magnificationUpDown;
+   private Label TrueTypeExampleLabel;
 }

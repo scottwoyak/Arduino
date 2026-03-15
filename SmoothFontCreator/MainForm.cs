@@ -25,7 +25,6 @@ public partial class MainForm : Form
 
 
       CharPanel.Paint += CharPanel_Paint;
-      AllCharsPanel.Paint += AllCharsPanel_Paint;
       CharPreviewPanel.Paint += CharPreviewPanel_Paint;
 
       CharPanel.MouseWheel += CharPanel_MouseWheel;
@@ -34,6 +33,7 @@ public partial class MainForm : Form
 
 
 
+      _UpdateTrueTypeExample();
       _UpdateMetrics();
    }
 
@@ -121,30 +121,19 @@ public partial class MainForm : Form
       CharPreviewPanel.Invalidate();
    }
 
+   private void _UpdateTrueTypeExample()
+   {
+      float oldSize = TrueTypeExampleLabel.Font.Size;
+      TrueTypeExampleLabel.Font = new Font(FontComboBox.Text, oldSize);
+   }
+
    private void FontComboBox_SelectedValueChanged(object sender, EventArgs e)
    {
       _UpdateMetrics();
+      _UpdateTrueTypeExample();
 
-      float oldSize = TestCharsTextBox.Font.Size;
-      TestCharsTextBox.Font = new Font(FontComboBox.Text, oldSize);
       CharPanel.Invalidate();
       CharPreviewPanel.Invalidate();
-      AllCharsPanel.Invalidate();
-   }
-
-   private void AllCharsPanel_Paint(object sender, PaintEventArgs e)
-   {
-      FontFamily fontFamily = new FontFamily(FontComboBox.Text);
-
-      Font font = new Font(
-         fontFamily,
-         32,
-         FontStyle.Regular,
-         GraphicsUnit.Pixel);
-
-      string chars = TestCharsTextBox.Text;
-
-      e.Graphics.DrawPreciseString(chars, font, new Point(0, 0), Color.White, Color.Transparent);
    }
 
    private void CharPanel_Paint(object sender, PaintEventArgs e)
@@ -219,7 +208,7 @@ public partial class MainForm : Form
       e.Graphics.DrawLine(bottomPen, x1, bottom, x2, bottom);
       e.Graphics.DrawLine(startEndPen, x1, end, x2, end);
 
-      using Font f = new Font("Arial", 10);
+      using Font f = new Font("Arial", 8);
       e.Graphics.DrawString("START", f, new SolidBrush(startEndColor), new PointF(0, start));
       e.Graphics.DrawString("TOP", f, new SolidBrush(topColor), new PointF(0, top));
       e.Graphics.DrawString("BASELINE", f, new SolidBrush(baselineColor), new PointF(0, baseline));
@@ -613,10 +602,5 @@ public partial class MainForm : Form
    private void magnificationUpDown_ValueChanged(object sender, EventArgs e)
    {
       VLWPreviewPanel.Invalidate();
-   }
-
-   private void TestCharsTextBox_TextChanged(object sender, EventArgs e)
-   {
-      AllCharsPanel.Invalidate();
    }
 }
