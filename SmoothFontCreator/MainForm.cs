@@ -11,6 +11,7 @@ public partial class MainForm : Form
    private ObservedMetrics _allCharsObservedMetrics;
    private Dictionary<char, ObservedMetrics> _charMetrics = [];
    private Bitmap _largeBitmap;
+   private VLWFont _vlwFont = new(@"C:\SourceCode\Arduino\SmoothFontCreator\Roboto32.vlw");
 
    public MainForm()
    {
@@ -35,6 +36,7 @@ public partial class MainForm : Form
 
       _UpdateTrueTypeExample();
       _UpdateMetrics();
+      _createFont();
    }
 
    private void _UpdateMetrics()
@@ -131,6 +133,7 @@ public partial class MainForm : Form
    {
       _UpdateMetrics();
       _UpdateTrueTypeExample();
+      _createFont();
 
       CharPanel.Invalidate();
       CharPreviewPanel.Invalidate();
@@ -308,7 +311,7 @@ public partial class MainForm : Form
       //
       // Scale the larger bitmap to the smaller one
       //
-      int smallHeightPx = int.Parse(DesiredHeightTextBox.Text);
+      int smallHeightPx = int.Parse(charHeightUpDown.Text);
       int smallWidthPx = (int)Math.Ceiling(aspectRatio * smallHeightPx);
       Bitmap smallBitmap = new Bitmap(smallWidthPx, smallHeightPx);
       using Graphics smallGraphics = Graphics.FromImage(smallBitmap);
@@ -330,6 +333,52 @@ public partial class MainForm : Form
       return smallBitmap;
    }
 
+   private void _createFont()
+   {
+      FontFamily fontFamily = new FontFamily(FontComboBox.Text);
+      uint targetCharHeightPx = (uint)charHeightUpDown.Value;
+
+      _vlwFont = _createFont(fontFamily, targetCharHeightPx);
+
+      VLWPreviewPanel.Invalidate();
+   }
+
+   private VLWFont _createFont(FontFamily fontFamily, uint targetCharHeightPx)
+   {
+      VLWFont vlw = new();
+      vlw.Ascent = (uint)targetCharHeightPx / 2;
+      vlw.Descent = (int)(targetCharHeightPx - vlw.Ascent);
+      vlw.FontSizePx = targetCharHeightPx;
+
+      for (char c = (char)0x21; c < 0x7F; c++)
+      {
+         ObservedMetrics charMetrics = _charMetrics[c].WithCharHeight(targetCharHeightPx);
+         //ObservedMetrics charMetrics = _allCharsObservedMetrics.WithCharHeight(targetCharHeightPx);
+
+         VLWGlyph glyph = new();
+         glyph.uChar = c;
+         glyph.Bitmap = _createGlyph(fontFamily, targetCharHeightPx, c);
+
+         glyph.gdX = 0;
+         glyph.gdY = 0;
+         glyph.Width = glyph.Bitmap.Width;
+         glyph.Height = glyph.Bitmap.Height;
+         glyph.gxAdvance = glyph.Bitmap.Height;
+
+         vlw.Glyphs.Add(c, glyph);
+
+         /*
+         glyph.dX = (int) Math.Ceiling(charMetrics.LeftMargin);
+         glyph.dY = (int) Math.Ceiling(charMetrics.TopMargin);
+         glyph.Width = (int)Math.Ceiling(charMetrics.CharWidth);
+         glyph.Height = (int) Math.Ceiling(charMetrics.CharHeight);
+         glyph.gxAdvance = (int) Math.Ceiling(charMetrics.CharWidth);
+         */
+      }
+
+      return vlw;
+   }
+
    private void CharPreviewPanel_Paint(object sender, PaintEventArgs e)
    {
       if (TestCharTextBox.Text.Length == 0)
@@ -337,17 +386,14 @@ public partial class MainForm : Form
          return;
       }
 
-      if (uint.TryParse(DesiredHeightTextBox.Text, out uint targetFontSizePx) == false)
-      {
-         return;
-      }
+      uint targetCharHeightPx = (uint)charHeightUpDown.Value;
 
       FontFamily fontFamily = new FontFamily(FontComboBox.Text);
       char testChar = TestCharTextBox.Text[0];
       double aspectRatio = _charMetrics[testChar].CellWidth / _allCharsObservedMetrics.CharHeight;
 
 
-      Bitmap smallBitmap = _createGlyph(fontFamily, targetFontSizePx, testChar);
+      Bitmap smallBitmap = _createGlyph(fontFamily, targetCharHeightPx, testChar);
 
       // fill the background with a checkerboard pattern to make it easier to see the edges of the character
       _fillCheckerboard(smallBitmap);
@@ -365,21 +411,6 @@ public partial class MainForm : Form
       Rectangle dstRect = new(x, y, w, h);
       //dstRect = new(x, y, (int)(CharPreviewPanel.Height * ((float)smallBitmap.Width / smallBitmap.Height)), CharPreviewPanel.Height);
       e.Graphics.DrawImage(smallBitmap, dstRect, srcRect, GraphicsUnit.Pixel);
-   }
-
-
-   private void DesiredHeightTextBox_TextChanged(object sender, EventArgs e)
-   {
-      if (int.TryParse(DesiredHeightTextBox.Text, out int fontSizePx))
-      {
-         /*
-         FontFamily fontFamily = new FontFamily(FontComboBox.Text);
-         ObservedSize metrics = ObservedMetrics.ForAllChars(fontFamily);
-         ComputedWidthTextBox.Text = (fontSizePx * metrics.CharRect.Width).ToString();
-         */
-
-         CharPreviewPanel.Invalidate();
-      }
    }
 
    private void TestCharTextBox_TextChanged(object sender, EventArgs e)
@@ -496,50 +527,24 @@ public partial class MainForm : Form
       VLWContent content = new(bytes);
       */
 
-      if (uint.TryParse(DesiredHeightTextBox.Text, out uint targetCharHeightPx) == false)
+      string[] fontSizes = fontSizesTextBox.Text.Split(new char[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+
+      foreach (string fontSize in fontSizes)
       {
-         return;
-      }
-      FontFamily fontFamily = new FontFamily(FontComboBox.Text);
-
-      VLWFont vlw = new();
-      vlw.Ascent = (int)targetCharHeightPx / 2;
-      vlw.Descent = (int)(targetCharHeightPx - vlw.Ascent);
-      vlw.FontSizePx = targetCharHeightPx;
-
-      for (char c = (char)0x21; c < 0x7F; c++)
-      {
-         ObservedMetrics charMetrics = _charMetrics[c].WithCharHeight(targetCharHeightPx);
-         //ObservedMetrics charMetrics = _allCharsObservedMetrics.WithCharHeight(targetCharHeightPx);
-
-         VLWGlyph glyph = new();
-         glyph.uChar = c;
-         glyph.Bitmap = _createGlyph(fontFamily, targetCharHeightPx, c);
-
-         glyph.gdX = 0;
-         glyph.gdY = 0;
-         glyph.Width = glyph.Bitmap.Width;
-         glyph.Height = glyph.Bitmap.Height;
-         glyph.gxAdvance = glyph.Bitmap.Height;
-
-         vlw.Glyphs.Add(c, glyph);
-
-         /*
-         glyph.dX = (int) Math.Ceiling(charMetrics.LeftMargin);
-         glyph.dY = (int) Math.Ceiling(charMetrics.TopMargin);
-         glyph.Width = (int)Math.Ceiling(charMetrics.CharWidth);
-         glyph.Height = (int) Math.Ceiling(charMetrics.CharHeight);
-         glyph.gxAdvance = (int) Math.Ceiling(charMetrics.CharWidth);
-         */
+         if (uint.TryParse(fontSize, out uint size))
+         {
+            FontFamily fontFamily = new FontFamily(FontComboBox.Text);
+            VLWFont font = _createFont(fontFamily, size);
+            font.SaveAsSmoothFont(@"C:\SourceCode\Arduino\libraries\Woyak", "Scott" + size);
+            _vlwFont.SaveAsSmoothFont(@"C:\SourceCode\Arduino\libraries\Woyak", "Scott");
+         }
       }
 
-      vlw.SaveAsSmoothFont(@"C:\SourceCode\Arduino\libraries\Woyak\Fonts\Scott.h");
+      MessageBox.Show("Files Created");
    }
 
    private void VLWPreviewPanel_Paint(object sender, PaintEventArgs e)
    {
-      VLWFont font = new(@"C:\SourceCode\Arduino\SmoothFontCreator\Roboto32.vlw");
-
       // create the bitmap that we will display
       using Bitmap bitmap = new(VLWPreviewPanel.Width, VLWPreviewPanel.Height);
       using Graphics graphics = Graphics.FromImage(bitmap);
@@ -555,20 +560,32 @@ public partial class MainForm : Form
          switch (c)
          {
             case '\n':
-               y += (font.Ascent + Math.Abs(font.Descent));
+               y += (int)_vlwFont.Height;
                x = 0;
                break;
 
             case '\r':
                break;
 
+            case ' ':
+               {
+                  if (_vlwFont.Glyphs.TryGetValue(' ', out VLWGlyph? glyph))
+                  {
+                     x += glyph.gxAdvance;
+                  }
+                  else
+                  {
+                     x += (int)_vlwFont.Height;
+                  }
+               }
+               break;
             default:
                {
-                  VLWGlyph glyph = font.Glyphs[c];
+                  VLWGlyph glyph = _vlwFont.Glyphs[c];
                   if (glyph.Bitmap != null) // space char
                   {
                      int gx = x + glyph.gdX;
-                     int gy = y + font.Ascent - glyph.gdY;
+                     int gy = (int)(y + _vlwFont.Ascent - glyph.gdY);
                      if (showGlyphsCheckBox.Checked)
                      {
                         graphics.FillRectangle(new SolidBrush(GlyphBgColorLight), gx, gy, glyph.Bitmap.Width, glyph.Bitmap.Height);
@@ -602,5 +619,11 @@ public partial class MainForm : Form
    private void magnificationUpDown_ValueChanged(object sender, EventArgs e)
    {
       VLWPreviewPanel.Invalidate();
+   }
+
+   private void charHeightUpDown_ValueChanged(object sender, EventArgs e)
+   {
+      CharPreviewPanel.Invalidate();
+      _createFont();
    }
 }

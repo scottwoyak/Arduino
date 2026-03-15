@@ -1,8 +1,7 @@
 
 #include <TFT_eSPI.h>
 
-#include "OxygenMono-Regular-32.h"
-#include "OxygenMono-Regular-16.h"
+#include <Scott.h>
 
 TFT_eSPI tft;
 
@@ -15,7 +14,6 @@ void setup()
    tft.setTextColor(TFT_WHITE, TFT_BLACK);
 }
 
-long counter = 0;
 long lastMicros = micros();
 
 // Add the main program code into the continuous loop() function
@@ -31,7 +29,7 @@ void loop()
 
    // this code is for drawing the traditional Adafruit style block fonts
    tft.setTextSize(4);
-   tft.print(counter++);
+   tft.print(random(999));
 
    tft.setTextSize(2);
    tft.setCursor(0, tft.height() - 16);
@@ -49,11 +47,11 @@ void loop()
    // functions (drawNumber, drawFloat) to manually align digits
    //
 
-   tft.loadFont(OxygenMonoRegular32);
+   tft.loadFont(Scott);
    tft.setTextColor(TFT_WHITE, TFT_BLACK, true);
-   tft.drawNumber(counter++, 0, 0);
+   tft.drawNumber(random(999), 0, 0);
 
-   tft.loadFont(OxygenMonoRegular16);
+   //tft.loadFont(Scott);
    tft.setCursor(0, tft.height() - tft.fontHeight());
    tft.drawFloat(fps, 1, tft.getCursorX(), tft.getCursorY());
    tft.print(" fps  ");
