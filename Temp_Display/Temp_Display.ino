@@ -1,5 +1,6 @@
 #include "Feather.h"
 #include "Stopwatch.h"
+
 #include "TempSensor.h"
 
 // 
@@ -7,6 +8,9 @@
 //
 Feather feather;
 TempSensor sensor;
+
+// create this define to use a DS18B20 sensor. If not defined, one of the I2C sensors will be auto detected
+#define ONE_WIRE_PIN 5
 
 Format tempFormat("###.## F");
 Format humFormat("###.#%");
@@ -28,7 +32,12 @@ void setup()
    delay(500);
 
    feather.begin();
+
+#ifdef ONE_WIRE_PIN
+   sensor.begin(5, true);
+#else
    sensor.begin();
+#endif
 }
 
 Stopwatch sw;

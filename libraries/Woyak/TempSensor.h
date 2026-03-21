@@ -1,28 +1,60 @@
 #pragma once
 
-#include <I2C.h>
-#include <Adafruit_BME280.h>
-#include <Adafruit_MCP9808.h>
-#include <Adafruit_SHT31.h>
-#include <Adafruit_SHT4x.h>
-#include <Adafruit_HDC302x.h>
-#include "Util.h"
-#include <string>
+#include <I2CTempSensor.h>
+#include <ITempSensor.h>
+
+// sensor types
+#include <BME280TempSensor.h>
+#include <DS18B20TempSensor.h>
+#include <HDC302xTempSensor.h>
+#include <MCP9808TempSensor.h>
+#include <SHT3xTempSensor.h>
+#include <SHT4xTempSensor.h>
+
+struct CorrectionFactor
+{
+   const char* id;
+   float tempF;
+   float hum;
+};
+
+constexpr CorrectionFactor CORRECTIONS[] = {
+"2003674483",  0.000,  0.000, // reference sensor
+"3060770163",  0.107, -0.540,
+"2978522483",  0.037, -0.601,
+"2000135539", -0.061,  0.048,
+"2977408371",  0.300, -0.101,
+"3029116275", -0.020, -0.600,
+"3045565811",  0.067, -0.140,
+"3011618163", -0.124, -1.063,
+"3060245875",  0.096, -1.394,
+"2000135539",  0.073, -0.011,
+"3008996723", -0.081, -0.579,
+"337756392",   0.286, -0.627, // Lake SHT4X
+"246251566",   0.202, -4.932, // Lake SHT4X
+"290643347",   0.195, -5.611, // Lake SHT4X
+"290634094",  -0.038, -5.420, // Lake SHT4X
+};
+
+constexpr auto NUM_CORRECTIONS = sizeof(CORRECTIONS) / sizeof(CORRECTIONS[0]);
 
 //-------------------------------------------------------------------------------------------------
-class ITempSensor
+class NullSensor : public ITempSensor
 {
-public:
-   virtual bool begin() = 0;
-   virtual const char* id() = 0;
-   virtual const char* type() = 0;
-   virtual uint8_t address() = 0;
-   virtual bool exists() = 0;
-   virtual float readTemperatureF() = 0;
-   virtual float readTemperatureC() = 0;
-   virtual float readHumidity() = 0;
-   virtual bool readsBoth() = 0;
-   virtual void readBoth(float& tempF, float& hum) = 0;
+   virtual bool exists() { return false; }
+   virtual const char* type() { return "None"; }
+   virtual const char* id() { return "??"; }
+   virtual uint8_t address() { return 0; };
+   virtual bool begin() { return true; }
+   virtual float readTemperatureF() { return NAN; }
+   virtual float readTemperatureC() { return NAN; }
+   virtual float readHumidity() { return NAN; }
+   virtual bool readsBoth() { return false; }
+   virtual void readBoth(float& tempF, float& hum)
+   {
+      tempF = NAN;
+      hum = NAN;
+   }
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -31,19 +63,140 @@ class TempSensor : public ITempSensor
 private:
    // the actual sensor this class manages
    ITempSensor* _sensor = NULL;
-   ITempSensor* _create(bool print);
+   ITempSensor* _create(bool print)
+   {
+      if (print) Serial.println("Detecting Temperature Sensor...");
+
+      ITempSensor* sensor = nullptr;
+
+      if (sensor == nullptr)
+      {
+         int8_t address = I2CTempSensor::detect(BME280_ADDRESS, 2);
+         if (address != 0)
+         {
+            sensor = new BME280TempSensor(address);
+         }
+      }
+
+      if (sensor == nullptr)
+      {
+         // Multiple sensors use 0x44 as an address
+         int8_t address = I2CTempSensor::detect(0x44);
+         if (address != 0)
+         {
+            if (print) Serial.println("  Something found at 0x44");
+
+            if (print) Serial.print("  Checking HDC302x... ");
+            sensor = HDC302xTempSensor::tryCreate();
+
+            if (sensor != nullptr)
+            {
+               if (print) Serial.print("Success");
+            }
+            else
+            {
+               if (print) Serial.print("Nope");
+               if (print) Serial.print("  Checking SHT4x... ");
+               sensor = SHT4xTempSensor::tryCreate();
+
+               if (sensor != nullptr)
+               {
+                  if (print) Serial.print("Success");
+               }
+               else
+               {
+                  if (print) Serial.print("Nope");
+               }
+            }
+
+            if (sensor == nullptr)
+            {
+               if (print) Serial.println("  Defaulting to SHT3x");
+               sensor = new SHT3xTempSensor(address);
+            }
+         }
+      }
+
+      if (sensor == nullptr)
+      {
+         int8_t address = I2CTempSensor::detect(MCP9808_I2CADDR_DEFAULT, 8);
+         if (address != 0)
+         {
+            sensor = new MCP9808TempSensor(3, MCP9808_I2CADDR_DEFAULT);
+         }
+      }
+
+      if (print)
+      {
+         if (sensor != nullptr)
+         {
+            Serial.println(String("  Found: ") + sensor->type() + " at 0x" + String(sensor->address(), HEX));
+         }
+         else
+         {
+            Serial.println("No sensor detected.");
+            Serial.println("Scanning I2C addressess...");
+            bool found = false;
+            for (int8_t address = 1; address < 127; address++)
+            {
+               if (I2C::exists(address))
+               {
+                  found = true;
+                  Serial.print("  0x");
+                  Serial.print(address, HEX);
+                  Serial.println(": Found Device");
+               }
+            }
+            if (found == false)
+            {
+               Serial.println("No devices detected");
+            }
+         }
+      }
+
+      if (sensor != nullptr)
+      {
+         sensor->begin();
+         std::string id = sensor->id();
+         for (int i = 0; i < NUM_CORRECTIONS; i++)
+         {
+            if (id == CORRECTIONS[i].id)
+            {
+               _tempCorrectionF = CORRECTIONS[i].tempF;
+               _humCorrection = CORRECTIONS[i].hum;
+            }
+         }
+      }
+
+      if (sensor == nullptr)
+      {
+         sensor = new NullSensor();
+      }
+
+      return sensor;
+   }
+
+   float _tempCorrectionF = 0;
+   float _humCorrection = 0;
 
 public:
-   float tempCorrectionF = 0;
-   float humCorrection = 0;
 
-   bool begin() { return begin(true); }
+   bool begin() { return begin(true); } // needed to implement ITempSensor
    bool begin(bool print)
    {
       Wire.begin();
       _sensor = _create(print);
       return _sensor->begin();
    }
+
+   bool begin(uint8_t oneWirePin, bool print)
+   {
+      if (print) Serial.println("Creating DS18B20 sensor.");
+      _sensor = new DS18B20TempSensor(oneWirePin);
+      return _sensor->begin();
+   }
+
+
    bool exists()
    {
       if (_sensor == nullptr)
@@ -92,7 +245,7 @@ public:
          return NAN;
       }
 
-      return _sensor->readTemperatureF() + tempCorrectionF;
+      return _sensor->readTemperatureF() + _tempCorrectionF;
    }
    float readTemperatureC()
    {
@@ -102,7 +255,7 @@ public:
          return NAN;
       }
 
-      return _sensor->readTemperatureC() + Util::F2C(tempCorrectionF);
+      return _sensor->readTemperatureC() + Util::F2C(_tempCorrectionF);
    }
    float readHumidity()
    {
@@ -112,7 +265,7 @@ public:
          return NAN;
       }
 
-      return _sensor->readHumidity() + humCorrection;
+      return _sensor->readHumidity() + _humCorrection;
    }
    bool readsBoth()
    {
@@ -133,263 +286,12 @@ public:
       }
 
       _sensor->readBoth(tempF, hum);
-      tempF += tempCorrectionF;
-      hum += humCorrection;
+      tempF += _tempCorrectionF;
+      hum += _humCorrection;
    }
 };
 
-//-------------------------------------------------------------------------------------------------
-class NullSensor : public ITempSensor
-{
-   virtual bool exists() { return false; }
-   virtual const char* type() { return "None"; }
-   virtual const char* id() { return "??"; }
-   virtual uint8_t address() { return 0; };
-   virtual bool begin() { return true; }
-   virtual float readTemperatureF() { return NAN; }
-   virtual float readTemperatureC() { return NAN; }
-   virtual float readHumidity() { return NAN; }
-   virtual bool readsBoth() { return false; }
-   virtual void readBoth(float& tempF, float& hum)
-   {
-      tempF = NAN;
-      hum = NAN;
-   }
-};
 
-//-------------------------------------------------------------------------------------------------
-class I2CTempSensor : public ITempSensor
-{
-protected:
-   String _type;
-   String _info;
-   int8_t _address;
-   String _id = "----";
 
-public:
-   I2CTempSensor(const char* type, uint8_t address)
-   {
-      _type = type;
-      _address = address;
-      _info = _type + " 0x" + String(_address, HEX);
-   }
-   virtual const char* id() { return _id.c_str(); }
-   virtual const char* type() { return _type.c_str(); }
-   virtual uint8_t address() { return _address; }
 
-   virtual bool exists() { return true; }
-   virtual float readTemperatureF() = 0;
-   virtual float readTemperatureC() = 0;
-   virtual float readHumidity() = 0;
-   virtual bool readsBoth() = 0;
-
-   int8_t getAddress() { return _address; }
-
-   static int8_t detect(int8_t baseAddress, int8_t numAddresses = 1)
-   {
-      for (int8_t i = 0; i < numAddresses; i++)
-      {
-         if (I2C::exists(baseAddress + i))
-         {
-            return baseAddress + i;
-         }
-      }
-
-      return 0;
-   }
-};
-
-//-------------------------------------------------------------------------------------------------
-class BME280Sensor : public I2CTempSensor
-{
-private:
-   Adafruit_BME280 _bme;
-
-public:
-   BME280Sensor(uint8_t address) : I2CTempSensor("BME280", address)
-   {
-   }
-   virtual bool begin() { return _bme.begin(getAddress()); }
-   virtual float readTemperatureF() { return Util::C2F(_bme.readTemperature()); }
-   virtual float readTemperatureC() { return _bme.readTemperature(); }
-   virtual float readHumidity() { return _bme.readHumidity(); }
-   virtual bool readsBoth() { return false; }
-   virtual void readBoth(float& tempF, float& hum) { tempF = readTemperatureF(); hum = readHumidity(); }
-};
-
-//-------------------------------------------------------------------------------------------------
-class SHT31Sensor : public I2CTempSensor
-{
-private:
-   Adafruit_SHT31 sht;
-
-public:
-   SHT31Sensor(uint8_t address = SHT31_DEFAULT_ADDR) : I2CTempSensor("SHT3x", address)
-   {
-   }
-   virtual bool begin() { return sht.begin(); }
-   virtual float readTemperatureF() { return Util::C2F(sht.readTemperature()); }
-   virtual float readTemperatureC() { return sht.readTemperature(); }
-   virtual float readHumidity() { return sht.readHumidity(); }
-   virtual bool readsBoth() { return false; }
-   virtual void readBoth(float& tempF, float& hum) { tempF = readTemperatureF(); hum = readHumidity(); }
-};
-
-//-------------------------------------------------------------------------------------------------
-class SHT4xSensor : public I2CTempSensor
-{
-private:
-   Adafruit_SHT4x sht;
-
-public:
-   SHT4xSensor(uint8_t address = SHT4x_DEFAULT_ADDR) : I2CTempSensor("SHT4x", address)
-   {
-   }
-   virtual bool begin()
-   {
-      if (sht.begin())
-      {
-         _id = sht.readSerial();
-         return true;
-      }
-      else
-      {
-         return false;
-      }
-   }
-   virtual float readTemperatureF()
-   {
-      sensors_event_t humidity, temp;
-      sht.getEvent(&humidity, &temp);
-
-      return Util::C2F(temp.temperature);
-   }
-   virtual float readTemperatureC()
-   {
-      sensors_event_t humidity, temp;
-      sht.getEvent(&humidity, &temp);
-
-      return temp.temperature;
-   }
-   virtual float readHumidity()
-   {
-      sensors_event_t humidity, temp;
-      sht.getEvent(&humidity, &temp);
-
-      return humidity.relative_humidity;
-   }
-   virtual bool readsBoth() { return true; }
-   virtual void readBoth(float& tempF, float& hum)
-   {
-      sensors_event_t h, t;
-      sht.getEvent(&h, &t);
-
-      tempF = Util::C2F(t.temperature);
-      hum = h.relative_humidity;
-   }
-};
-
-//-------------------------------------------------------------------------------------------------
-class HDC302xSensor : public I2CTempSensor
-{
-private:
-   Adafruit_HDC302x hdc;
-
-public:
-   HDC302xSensor(uint8_t address = 0x44) : I2CTempSensor("HDC302x", address)
-   {
-   }
-   virtual bool begin()
-   {
-      if (hdc.begin())
-      {
-         uint64_t id = readId(hdc);
-         std::string str = std::to_string(id);
-         _id = str.c_str();
-         return true;
-      }
-      else
-      {
-         return false;
-      }
-   }
-   static uint64_t readId(Adafruit_HDC302x& hdc)
-   {
-      uint8_t id[8];
-      hdc.readNISTID(id);
-
-      /* not sure what these all map to, but the last 4 seem to repeat among chips */
-      /*
-      Serial.println(id[0]);
-      Serial.println(id[1]);
-      Serial.println(id[2]);
-      Serial.println(id[3]);
-      Serial.println(id[4]);
-      Serial.println(id[5]);
-      Serial.println(id[6]);
-      Serial.println(id[7]);
-      */
-
-      uint32_t fullId =
-         ((uint32_t)id[0] << 24) |
-         ((uint32_t)id[1] << 16) |
-         ((uint32_t)id[2] << 8) |
-         ((uint32_t)id[3]);
-
-      return fullId;
-   }
-   virtual float readTemperatureF()
-   {
-      double temp;
-      double humidity;
-      hdc.readTemperatureHumidityOnDemand(temp, humidity, TRIGGERMODE_LP0);
-      return Util::C2F((float)temp);
-   }
-   virtual float readTemperatureC()
-   {
-      double temp;
-      double humidity;
-      hdc.readTemperatureHumidityOnDemand(temp, humidity, TRIGGERMODE_LP0);
-      return (float)temp;
-   }
-   virtual float readHumidity()
-   {
-      double temp;
-      double humidity;
-      hdc.readTemperatureHumidityOnDemand(temp, humidity, TRIGGERMODE_LP0);
-      return (float)humidity;
-   }
-   virtual bool readsBoth() { return true; }
-   virtual void readBoth(float& tempF, float& hum)
-   {
-      double t, h;
-      hdc.readTemperatureHumidityOnDemand(t, h, TRIGGERMODE_LP0);
-      tempF = Util::C2F((float)t);
-      hum = (float)h;
-   }
-};
-
-//-------------------------------------------------------------------------------------------------
-class MCP9808Sensor : public I2CTempSensor
-{
-private:
-   Adafruit_MCP9808 mcp;
-
-public:
-   MCP9808Sensor(uint8_t resolution, uint8_t address) : I2CTempSensor("MCP9808", address)
-   {
-      // Mode Resolution SampleTime
-      //  0    0.5°C       30 ms
-      //  1    0.25°C      65 ms
-      //  2    0.125°C     130 ms
-      //  3    0.0625°C    250 ms
-      mcp.setResolution(resolution);
-   }
-   virtual bool begin() { return mcp.begin(getAddress()); }
-   virtual float readTemperatureF() { return mcp.readTempF(); }
-   virtual float readTemperatureC() { return mcp.readTempF(); }
-   virtual float readHumidity() { return NAN; }
-   virtual bool readsBoth() { return false; }
-   virtual void readBoth(float& tempF, float& hum) { tempF = readTemperatureF(); hum = readHumidity(); }
-};
 

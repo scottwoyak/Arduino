@@ -77,6 +77,13 @@ public:
       return display.fontHeight();
    }
 
+   uint8_t charW()
+   {
+      // if monospaced, all chars return the same width. If not, '0' is an average width
+      // and will be the same for all digits
+      return display.textWidth("0");
+   }
+
    void setRotation(DisplayRotation rotation)
    {
       display.setRotation((uint8_t)rotation);

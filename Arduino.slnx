@@ -10,6 +10,7 @@
     <File Path="libraries/Woyak/Bar.h" />
     <File Path="libraries/Woyak/BarChart.h" />
     <File Path="libraries/Woyak/Battery.h" />
+    <File Path="libraries/Woyak/BME280TempSensor.h" />
     <File Path="libraries/Woyak/Button.cpp" />
     <File Path="libraries/Woyak/Button.h" />
     <File Path="libraries/Woyak/Color.h" />
@@ -17,6 +18,7 @@
     <File Path="libraries/Woyak/Counter.h" />
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
+    <File Path="libraries/Woyak/DS18B20TempSensor.h" />
     <File Path="libraries/Woyak/Feather.h" />
     <File Path="libraries/Woyak/Feather_ESP32_S3.h" />
     <File Path="libraries/Woyak/Feather_ESP32_S3_ST7796S.h" />
@@ -24,12 +26,16 @@
     <File Path="libraries/Woyak/FeedTimer.h" />
     <File Path="libraries/Woyak/Format.h" />
     <File Path="libraries/Woyak/FramSpiEx.h" />
+    <File Path="libraries/Woyak/HDC302XTempSensor.h" />
     <File Path="libraries/Woyak/History.h" />
     <File Path="libraries/Woyak/I2C.h" />
     <File Path="libraries/Woyak/I2CMultiplexor.h" />
+    <File Path="libraries/Woyak/I2CTempSensor.h" />
     <File Path="libraries/Woyak/IndexedEncoder.h" />
     <File Path="libraries/Woyak/Influx.h" />
+    <File Path="libraries/Woyak/ITempSensor.h" />
     <File Path="libraries/Woyak/Logger.h" />
+    <File Path="libraries/Woyak/MCP9808TempSensor.h" />
     <File Path="libraries/Woyak/MultiBar.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
@@ -39,11 +45,12 @@
     <File Path="libraries/Woyak/RotaryEncoder.h" />
     <File Path="libraries/Woyak/RunningAverager.h" />
     <File Path="libraries/Woyak/SerialX.h" />
+    <File Path="libraries/Woyak/SHT3xTempSensor.h" />
+    <File Path="libraries/Woyak/SHT4xTempSensor.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
     <File Path="libraries/Woyak/Stopwatch.h" />
     <File Path="libraries/Woyak/Structs.h" />
     <File Path="libraries/Woyak/TelemetryClient.h" />
-    <File Path="libraries/Woyak/TempSensor.cpp" />
     <File Path="libraries/Woyak/TempSensor.h" />
     <File Path="libraries/Woyak/TimeConstants.h" />
     <File Path="libraries/Woyak/TimedAverager.h" />
