@@ -29,6 +29,8 @@ public class VLWFont
 
    public Dictionary<Int32, VLWGlyph> Glyphs = [];
 
+   public int NumChars => Glyphs.Count;
+
    private void _load(byte[] data)
    {
       ByteReader reader = new(data);

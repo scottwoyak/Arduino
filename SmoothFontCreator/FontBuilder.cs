@@ -6,18 +6,24 @@ namespace SmoothFontCreator;
 
 public class FontBuilder
 {
+   private Bitmap _largeBitmap = new Bitmap(1024, 1024);
+   private Graphics _largeGraphics;
    private ObservedMetrics _allCharsObservedMetrics;
    private Dictionary<char, ObservedMetrics> _charMetrics = [];
 
    public FontFamily FontFamily { get; private set; } = new FontFamily("Arial");
 
+   public FontStyle FontStyle { get; private set; } = FontStyle.Regular;
+
    private FontBuilder()
    {
+      _largeGraphics = Graphics.FromImage(_largeBitmap);
    }
 
-   private void SetFontFamily(string fontFamilyName)
+   private void SetFontFamily(string fontFamilyName, FontStyle fontStyle)
    {
       FontFamily = new FontFamily(fontFamilyName);
+      FontStyle = fontStyle;
 
       Stopwatch sw = Stopwatch.StartNew();
 
@@ -30,7 +36,7 @@ public class FontBuilder
       Font font = new Font(
          FontFamily,
          fontSizePx,
-         FontStyle.Regular,
+         FontStyle.Italic,
          GraphicsUnit.Pixel);
       _allCharsObservedMetrics = new(font);
 
@@ -39,7 +45,7 @@ public class FontBuilder
       Point pt;
 
       // then draw all the charcters and measure again
-      for (char c = (char)0x20; c < (char)0x7F; c++)
+      for (char c = (char)0x21; c < (char)0x7F; c++)
       {
          //Debug.WriteLine($"Building '{c}' {c.ToHex()}");
          bitmapGraphics.Clear(Color.Transparent);
@@ -68,6 +74,65 @@ public class FontBuilder
 
    public Bitmap CreateGlyph(uint charHeightPx, char c)
    {
+      Stopwatch sw = Stopwatch.StartNew();
+      Stopwatch sw2 = Stopwatch.StartNew();
+
+      double aspectRatio = _charMetrics[c].CellWidth / _allCharsObservedMetrics.CharHeight;
+
+      //
+      // Step 1 - draw the character to a bitmap of height 2048
+      //
+
+      // create a font such that all characters fit the height of the large bitmap
+      double largeFontSizePx = _allCharsObservedMetrics.RealPxToFontSizePx(_largeBitmap.Height);
+
+      Font font = new Font(
+         FontFamily,
+         (float)largeFontSizePx,
+         FontStyle,
+         GraphicsUnit.Pixel);
+
+      ObservedMetrics largeCharMetrics = _allCharsObservedMetrics.WithCharHeight(_largeBitmap.Height);
+      double largeTopMarginPx = largeCharMetrics.TopMargin;
+
+      //Debug.WriteLine($"Setup: {sw.Elapsed.TotalMilliseconds} ms"); sw.Restart();
+
+      // draw the character
+      _largeGraphics.Clear(Color.Transparent);
+      //Debug.WriteLine($"Clear: {sw.Elapsed.TotalMilliseconds} ms"); sw.Restart();
+
+      Point pt = new(0, (int)-largeTopMarginPx); // offset the top
+      _largeGraphics.DrawPreciseString(c, font, pt, Color.White, Color.Transparent);
+
+      //Debug.WriteLine($"Draw: {sw.Elapsed.TotalMilliseconds} ms"); sw.Restart();
+
+      //
+      // Scale the larger bitmap to the smaller one
+      //
+      int smallHeightPx = (int)charHeightPx;
+      int smallWidthPx = (int)Math.Ceiling(aspectRatio * smallHeightPx);
+      Bitmap smallBitmap = new Bitmap(smallWidthPx, smallHeightPx);
+      using Graphics smallGraphics = Graphics.FromImage(smallBitmap);
+
+      //Debug.WriteLine($"Create small bm: {sw.Elapsed.TotalMilliseconds} ms"); sw.Restart();
+
+
+      //smallGraphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+      smallGraphics.InterpolationMode = InterpolationMode.Bilinear;
+      //smallGraphics.InterpolationMode = InterpolationMode.Low;
+      Rectangle srcRect = new(0, 0, (int)Math.Ceiling(aspectRatio * _largeBitmap.Height), _largeBitmap.Height);
+      Rectangle dstRect = new(0, 0, smallBitmap.Width, smallBitmap.Height);
+
+      //smallGraphics.Clear(Color.Pink); // so we can detect problems - all pink should get covered up
+      smallGraphics.DrawImage(_largeBitmap, dstRect, srcRect, GraphicsUnit.Pixel);
+      //Debug.WriteLine($"Scale: {sw.Elapsed.TotalMilliseconds} ms"); sw.Restart();
+      //Debug.WriteLine($"Total: {sw2.Elapsed.TotalMilliseconds} ms\n");
+
+      return smallBitmap;
+   }
+
+   public Bitmap xCreateGlyph(uint charHeightPx, char c)
+   {
       double aspectRatio = _charMetrics[c].CellWidth / _allCharsObservedMetrics.CharHeight;
 
       //
@@ -85,7 +150,7 @@ public class FontBuilder
       Font font = new Font(
          FontFamily,
          (float)largeFontSizePx,
-         FontStyle.Regular,
+         FontStyle,
          GraphicsUnit.Pixel);
 
       ObservedMetrics largeCharMetrics = _allCharsObservedMetrics.WithCharHeight(largeHeightPx);
@@ -98,7 +163,7 @@ public class FontBuilder
       //
       // Scale the larger bitmap to the smaller one
       //
-      int smallHeightPx = (int) charHeightPx;
+      int smallHeightPx = (int)charHeightPx;
       int smallWidthPx = (int)Math.Ceiling(aspectRatio * smallHeightPx);
       Bitmap smallBitmap = new Bitmap(smallWidthPx, smallHeightPx);
       using Graphics smallGraphics = Graphics.FromImage(smallBitmap);
@@ -159,10 +224,10 @@ public class FontBuilder
    }
 
 
-   public static FontBuilder ForFontFamily(string fontFamily)
+   public static FontBuilder ForFontFamily(string fontFamily, FontStyle fontStyle)
    {
       FontBuilder builder = new FontBuilder();
-      builder.SetFontFamily(fontFamily);
+      builder.SetFontFamily(fontFamily, fontStyle);
       return builder;
    }
 }

@@ -30,8 +30,8 @@ partial class MainForm
    {
       tabControl1 = new TabControl();
       tabPage1 = new TabPage();
-      VLFCharPanel = new Panel();
-      TrueTypeExampleLabel = new Label();
+      PreviewPanel = new Panel();
+      PreviewTextBox = new TextBox();
       HexLabel = new Label();
       GlyphCharPanel = new Panel();
       label5 = new Label();
@@ -41,12 +41,10 @@ partial class MainForm
       panel1 = new Panel();
       tabPage3 = new TabPage();
       groupBox2 = new GroupBox();
-      VLWTextBox = new TextBox();
       groupBox1 = new GroupBox();
       label9 = new Label();
       magnificationUpDown = new NumericUpDown();
       showGlyphsCheckBox = new CheckBox();
-      VLWPreviewPanel = new Panel();
       charHeightUpDown = new NumericUpDown();
       label8 = new Label();
       MonospaceCheckBox = new CheckBox();
@@ -63,11 +61,14 @@ partial class MainForm
       label10 = new Label();
       fontSizesTextBox = new TextBox();
       statusTextBox = new TextBox();
+      italicCheckBox = new CheckBox();
+      testButton1 = new Button();
+      testButton2 = new Button();
+      testButton3 = new Button();
       tabControl1.SuspendLayout();
       tabPage1.SuspendLayout();
       tabPage2.SuspendLayout();
       tabPage3.SuspendLayout();
-      groupBox2.SuspendLayout();
       groupBox1.SuspendLayout();
       ((System.ComponentModel.ISupportInitialize)magnificationUpDown).BeginInit();
       ((System.ComponentModel.ISupportInitialize)charHeightUpDown).BeginInit();
@@ -87,8 +88,8 @@ partial class MainForm
       // 
       // tabPage1
       // 
-      tabPage1.Controls.Add(VLFCharPanel);
-      tabPage1.Controls.Add(TrueTypeExampleLabel);
+      tabPage1.Controls.Add(PreviewPanel);
+      tabPage1.Controls.Add(PreviewTextBox);
       tabPage1.Controls.Add(HexLabel);
       tabPage1.Controls.Add(GlyphCharPanel);
       tabPage1.Controls.Add(label5);
@@ -102,27 +103,28 @@ partial class MainForm
       tabPage1.Text = "True Type";
       tabPage1.UseVisualStyleBackColor = true;
       // 
-      // VLFCharPanel
+      // PreviewPanel
       // 
-      VLFCharPanel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      VLFCharPanel.BackColor = Color.DimGray;
-      VLFCharPanel.Location = new Point(1103, 223);
-      VLFCharPanel.Name = "VLFCharPanel";
-      VLFCharPanel.Size = new Size(425, 670);
-      VLFCharPanel.TabIndex = 3;
+      PreviewPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+      PreviewPanel.BackColor = Color.Black;
+      PreviewPanel.Location = new Point(616, 9);
+      PreviewPanel.Name = "PreviewPanel";
+      PreviewPanel.Size = new Size(912, 208);
+      PreviewPanel.TabIndex = 20;
+      PreviewPanel.Paint += PreviewPanel_Paint;
       // 
-      // TrueTypeExampleLabel
+      // PreviewTextBox
       // 
-      TrueTypeExampleLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-      TrueTypeExampleLabel.BackColor = Color.Black;
-      TrueTypeExampleLabel.Font = new Font("Cascadia Mono", 18F, FontStyle.Regular, GraphicsUnit.Point, 0);
-      TrueTypeExampleLabel.ForeColor = Color.White;
-      TrueTypeExampleLabel.Location = new Point(9, 9);
-      TrueTypeExampleLabel.Name = "TrueTypeExampleLabel";
-      TrueTypeExampleLabel.Size = new Size(1519, 211);
-      TrueTypeExampleLabel.TabIndex = 19;
-      TrueTypeExampleLabel.Text = "abcdefghijklmnopqrstuvwxyz\r\nABCDEFGHIJKLMNOPQRSTUVWXYZ\r\n0123456789!@#$%^&*()_+-=~`[]{}|;:'\\\",.<>/?";
-      TrueTypeExampleLabel.TextAlign = ContentAlignment.MiddleCenter;
+      PreviewTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+      PreviewTextBox.BackColor = Color.Black;
+      PreviewTextBox.Font = new Font("Segoe UI", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
+      PreviewTextBox.ForeColor = SystemColors.Window;
+      PreviewTextBox.Location = new Point(9, 9);
+      PreviewTextBox.Multiline = true;
+      PreviewTextBox.Name = "PreviewTextBox";
+      PreviewTextBox.Size = new Size(601, 208);
+      PreviewTextBox.TabIndex = 19;
+      PreviewTextBox.Text = "Enter text to display here\r\n\r\n0123456789\r\nABCDEFGHIJKLMNOPQRSTUVWXYZ\r\nabcdefghijklmnopqrstuvwxyz";
       // 
       // HexLabel
       // 
@@ -140,7 +142,7 @@ partial class MainForm
       GlyphCharPanel.BackColor = Color.DimGray;
       GlyphCharPanel.Location = new Point(616, 223);
       GlyphCharPanel.Name = "GlyphCharPanel";
-      GlyphCharPanel.Size = new Size(481, 670);
+      GlyphCharPanel.Size = new Size(912, 670);
       GlyphCharPanel.TabIndex = 2;
       // 
       // label5
@@ -207,7 +209,6 @@ partial class MainForm
       // groupBox2
       // 
       groupBox2.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-      groupBox2.Controls.Add(VLWTextBox);
       groupBox2.Location = new Point(9, 9);
       groupBox2.Name = "groupBox2";
       groupBox2.Padding = new Padding(6);
@@ -216,24 +217,12 @@ partial class MainForm
       groupBox2.TabStop = false;
       groupBox2.Text = "Text";
       // 
-      // VLWTextBox
-      // 
-      VLWTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-      VLWTextBox.Location = new Point(9, 33);
-      VLWTextBox.Multiline = true;
-      VLWTextBox.Name = "VLWTextBox";
-      VLWTextBox.Size = new Size(1501, 321);
-      VLWTextBox.TabIndex = 0;
-      VLWTextBox.Text = "Enter text to display here\r\n\r\n0123456789\r\nABCDEFGHIJKLMNOPQRSTUVWXYZ\r\nabcdefghijklmnopqrstuvwxyz";
-      VLWTextBox.TextChanged += VLWTextBox_TextChanged;
-      // 
       // groupBox1
       // 
       groupBox1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
       groupBox1.Controls.Add(label9);
       groupBox1.Controls.Add(magnificationUpDown);
       groupBox1.Controls.Add(showGlyphsCheckBox);
-      groupBox1.Controls.Add(VLWPreviewPanel);
       groupBox1.Location = new Point(9, 378);
       groupBox1.Name = "groupBox1";
       groupBox1.Padding = new Padding(6);
@@ -274,16 +263,6 @@ partial class MainForm
       showGlyphsCheckBox.Text = "Show Glyphs";
       showGlyphsCheckBox.UseVisualStyleBackColor = true;
       showGlyphsCheckBox.CheckedChanged += showGlyphsCheckBox_CheckedChanged;
-      // 
-      // VLWPreviewPanel
-      // 
-      VLWPreviewPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-      VLWPreviewPanel.BackColor = Color.Black;
-      VLWPreviewPanel.Location = new Point(9, 33);
-      VLWPreviewPanel.Name = "VLWPreviewPanel";
-      VLWPreviewPanel.Size = new Size(1501, 474);
-      VLWPreviewPanel.TabIndex = 0;
-      VLWPreviewPanel.Paint += VLWPreviewPanel_Paint;
       // 
       // charHeightUpDown
       // 
@@ -352,7 +331,7 @@ partial class MainForm
       SaveButton.Name = "SaveButton";
       SaveButton.Size = new Size(112, 34);
       SaveButton.TabIndex = 9;
-      SaveButton.Text = "Save VLW";
+      SaveButton.Text = "Download";
       SaveButton.UseVisualStyleBackColor = true;
       SaveButton.Click += SaveButton_Click;
       // 
@@ -441,11 +420,57 @@ partial class MainForm
       statusTextBox.Size = new Size(275, 273);
       statusTextBox.TabIndex = 23;
       // 
+      // italicCheckBox
+      // 
+      italicCheckBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      italicCheckBox.AutoSize = true;
+      italicCheckBox.Location = new Point(1601, 158);
+      italicCheckBox.Name = "italicCheckBox";
+      italicCheckBox.Size = new Size(74, 29);
+      italicCheckBox.TabIndex = 24;
+      italicCheckBox.Text = "Italic";
+      italicCheckBox.UseVisualStyleBackColor = true;
+      italicCheckBox.CheckedChanged += italicCheckBox_CheckedChanged;
+      // 
+      // testButton1
+      // 
+      testButton1.Location = new Point(1563, 554);
+      testButton1.Name = "testButton1";
+      testButton1.Size = new Size(87, 79);
+      testButton1.TabIndex = 25;
+      testButton1.Text = "Observe";
+      testButton1.UseVisualStyleBackColor = true;
+      testButton1.Click += testObserveButton_Click;
+      // 
+      // testButton2
+      // 
+      testButton2.Location = new Point(1656, 554);
+      testButton2.Name = "testButton2";
+      testButton2.Size = new Size(89, 79);
+      testButton2.TabIndex = 25;
+      testButton2.Text = "Glyph";
+      testButton2.UseVisualStyleBackColor = true;
+      testButton2.Click += testGlyphButton_Click;
+      // 
+      // testButton3
+      // 
+      testButton3.Location = new Point(1751, 554);
+      testButton3.Name = "testButton3";
+      testButton3.Size = new Size(87, 79);
+      testButton3.TabIndex = 25;
+      testButton3.Text = "Font";
+      testButton3.UseVisualStyleBackColor = true;
+      testButton3.Click += testFontButton_Click;
+      // 
       // MainForm
       // 
       AutoScaleDimensions = new SizeF(10F, 25F);
       AutoScaleMode = AutoScaleMode.Font;
       ClientSize = new Size(1850, 1001);
+      Controls.Add(testButton3);
+      Controls.Add(testButton2);
+      Controls.Add(testButton1);
+      Controls.Add(italicCheckBox);
       Controls.Add(statusTextBox);
       Controls.Add(fontSizesTextBox);
       Controls.Add(label10);
@@ -470,8 +495,6 @@ partial class MainForm
       tabPage1.PerformLayout();
       tabPage2.ResumeLayout(false);
       tabPage3.ResumeLayout(false);
-      groupBox2.ResumeLayout(false);
-      groupBox2.PerformLayout();
       groupBox1.ResumeLayout(false);
       groupBox1.PerformLayout();
       ((System.ComponentModel.ISupportInitialize)magnificationUpDown).EndInit();
@@ -505,16 +528,18 @@ partial class MainForm
    private Panel panel1;
    private TabPage tabPage3;
    private GroupBox groupBox2;
-   private TextBox VLWTextBox;
    private GroupBox groupBox1;
-   private Panel VLWPreviewPanel;
    private CheckBox showGlyphsCheckBox;
    private Label label9;
    private NumericUpDown magnificationUpDown;
-   private Label TrueTypeExampleLabel;
    private NumericUpDown charHeightUpDown;
    private Label label10;
    private TextBox fontSizesTextBox;
-   private Panel VLFCharPanel;
    private TextBox statusTextBox;
+   private CheckBox italicCheckBox;
+   private Panel PreviewPanel;
+   private TextBox PreviewTextBox;
+   private Button testButton1;
+   private Button testButton2;
+   private Button testButton3;
 }
