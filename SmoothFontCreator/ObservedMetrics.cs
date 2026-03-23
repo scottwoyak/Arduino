@@ -381,7 +381,11 @@ public class ObservedMetrics
    public ObservedMetrics WithCharHeight(double desiredCharHeight)
    {
       double scaleFactor = desiredCharHeight / CharHeight;
+      return this.WithScaleFactor(scaleFactor);
+   }
 
+   public ObservedMetrics WithScaleFactor(double scaleFactor)
+   {
       Font scaledFont = new Font(Font.FontFamily, (float)(scaleFactor * Font.GetHeight()), GraphicsUnit.Pixel);
       ObservedMetrics scaledMetrics = new(scaledFont);
 

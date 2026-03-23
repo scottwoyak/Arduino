@@ -11,7 +11,7 @@ public class VLWGlyph
    public Int32 gdY;
    public Int32 gdX;
    public Int32 padding = 0;
-   public Bitmap? Bitmap;
+   public Bitmap Bitmap;
 }
 
 public class VLWFont
