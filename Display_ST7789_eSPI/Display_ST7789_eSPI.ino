@@ -1,7 +1,8 @@
 
 #include <TFT_eSPI.h>
 
-#include <Scott24.h>
+#include <Scott16.h>
+#include <Scott32.h>
 
 TFT_eSPI tft;
 
@@ -29,7 +30,9 @@ void loop()
 
    // this code is for drawing the traditional Adafruit style block fonts
    tft.setTextSize(4);
-   tft.print(random(999));
+   tft.println(random(9999));
+   tft.println(random(9999));
+   tft.println(random(9999));
 
    tft.setTextSize(2);
    tft.setCursor(0, tft.height() - 16);
@@ -47,11 +50,13 @@ void loop()
    // functions (drawNumber, drawFloat) to manually align digits
    //
 
-   tft.loadFont(Scott24);
+   tft.loadFont(Scott32);
    tft.setTextColor(TFT_WHITE, TFT_BLACK, true);
-   tft.drawNumber(random(999), 0, 0);
+   tft.println(random(9999));
+   tft.println(random(9999));
+   tft.println(random(9999));
 
-   //tft.loadFont(Scott);
+   tft.loadFont(Scott16);
    tft.setCursor(0, tft.height() - tft.fontHeight());
    tft.drawFloat(fps, 1, tft.getCursorX(), tft.getCursorY());
    tft.print(" fps  ");

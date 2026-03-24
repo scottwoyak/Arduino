@@ -13,6 +13,19 @@ public partial class MainForm : Form
    private VLWFont _vlwFont = new(@"C:\SourceCode\Arduino\SmoothFontCreator\Roboto32.vlw");
    private FontBuilder _builder;
 
+   private FontBuilderOptions FontBuilderOptions
+   {
+      get
+      {
+         return new FontBuilderOptions()
+         {
+            Monospaced = monospaceCheckBox.Checked,
+            Spacing = (int)SpacingUpDown.Value,
+         };
+      }
+   }
+
+
    public MainForm()
    {
       InitializeComponent();
@@ -56,7 +69,7 @@ public partial class MainForm : Form
       using Bitmap bitmap = new(TrueTypeCharPanel.Width, TrueTypeCharPanel.Height);
       using Graphics bitmapGraphics = Graphics.FromImage(bitmap);
 
-      float fontSizePx = (float)Math.Round(FontUtil.LineSpacingPxToFontSizePx(fontFamily, bitmapGraphics, 0.8f * TrueTypeCharPanel.Height));
+      float fontSizePx = (float)Math.Round(FontUtil.LineSpacingPxToFontSizePx(fontFamily, _getFontStyle(), bitmapGraphics, 0.8f * TrueTypeCharPanel.Height));
 
       Font font = new Font(
          fontFamily,
@@ -92,7 +105,7 @@ public partial class MainForm : Form
       using Bitmap bitmap = new(TrueTypeCharPanel.Width, TrueTypeCharPanel.Height);
       using Graphics bitmapGraphics = Graphics.FromImage(bitmap);
 
-      float fontSizePx = (float)Math.Round(FontUtil.LineSpacingPxToFontSizePx(fontFamily, bitmapGraphics, 0.8f * TrueTypeCharPanel.Height));
+      float fontSizePx = (float)Math.Round(FontUtil.LineSpacingPxToFontSizePx(fontFamily, _getFontStyle(), bitmapGraphics, 0.8f * TrueTypeCharPanel.Height));
 
       Font font = new Font(
          fontFamily,
@@ -144,6 +157,8 @@ public partial class MainForm : Form
       TrueTypeCharPanel.Invalidate();
       GlyphCharPanel.Invalidate();
 
+      ascentTextBox.Text = _vlwFont.Ascent + " px";
+      descentTextBox.Text = _vlwFont.Descent + " px";
 
       char c = TestCharTextBox.Text[0];
       if (TestCharTextBox.Text.Length != 1)
@@ -209,7 +224,7 @@ public partial class MainForm : Form
 
       FontFamily fontFamily = new(FontComboBox.Text);
 
-      float fontSizePx = (float)Math.Round(FontUtil.LineSpacingPxToFontSizePx(fontFamily, e.Graphics, 0.8f * TrueTypeCharPanel.Height));
+      float fontSizePx = (float)Math.Round(FontUtil.LineSpacingPxToFontSizePx(fontFamily, _getFontStyle(), e.Graphics, 0.8f * TrueTypeCharPanel.Height));
 
       Font font = new Font(
          fontFamily,
@@ -218,10 +233,10 @@ public partial class MainForm : Form
          GraphicsUnit.Pixel);
 
       string testChar = TestCharTextBox.Text.Substring(0, 1);
-      float heightPx = font.GetHeight(e.Graphics);
-      float widthPx = TextRenderer.MeasureText(testChar, font, new Size(1000, 1000), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width;
+      float cellHeightPx = font.GetHeight(e.Graphics);
+      float cellWidthPx = TextRenderer.MeasureText(testChar, font, new Size(1000, 1000), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width;
 
-      Point pt = new((int)(TrueTypeCharPanel.Width - widthPx) / 2, (int)(TrueTypeCharPanel.Height - heightPx) / 2);
+      Point pt = new((int)(TrueTypeCharPanel.Width - cellWidthPx) / 2, (int)(TrueTypeCharPanel.Height - cellHeightPx) / 2);
       e.Graphics.DrawPreciseString(testChar, font, pt, Color.White, Color.Black);
 
       // draw a circle at the source point for the character
@@ -341,13 +356,7 @@ public partial class MainForm : Form
    {
       uint targetCharHeightPx = (uint)charHeightUpDown.Value;
 
-      bool monospace = monospaceCheckBox.Checked;
-      bool digit = digitCheckBox.Checked;
-
-      _vlwFont = _builder.CreateFont(targetCharHeightPx, monospace);
-
-      ascentTextBox.Text = _vlwFont.Ascent + " px";
-      descentTextBox.Text = _vlwFont.Descent + " px";
+      _vlwFont = _builder.CreateFont(targetCharHeightPx, FontBuilderOptions);
 
       PreviewPanel.Invalidate();
    }
@@ -363,7 +372,7 @@ public partial class MainForm : Form
 
       if (_vlwFont.Glyphs.TryGetValue(c, out VLWGlyph? glyph))
       {
-         using Bitmap smallBitmap = (Bitmap) glyph.Bitmap.Clone();
+         using Bitmap smallBitmap = (Bitmap)glyph.Bitmap.Clone();
 
          // fill the background with a checkerboard pattern to make it easier to see the edges of the character
          _fillCheckerboard(smallBitmap);
@@ -435,31 +444,28 @@ public partial class MainForm : Form
 
    private void panel1_Paint(object sender, PaintEventArgs e)
    {
+      _builder.UpdateLargeBitmap(TestCharTextBox.Text[0]);
       e.Graphics.DrawImageUnscaled(_builder.LargeBitmap, new Point(0, 0));
+      e.Graphics.DrawRectangle(Pens.White, new Rectangle(new Point(0, 0), _builder.LargeBitmap.Size));
+
+      //      e.Graphics.DrawImageUnscaled(_builder.xBitmap, new Point(0, 0));
+      //      e.Graphics.DrawRectangle(Pens.White, new Rectangle(new Point(0,0), _builder.xBitmap.Size));
    }
 
    private void SaveButton_Click(object sender, EventArgs e)
    {
-      /*
-      byte[] bytes = File.ReadAllBytes(@"C:\SourceCode\Arduino\SmoothFontCreator\Roboto32.vlw");
-
-      // process a byte stream
-      VLWContent content = new(bytes);
-      */
-
       string[] fontSizes = fontSizesTextBox.Text.Split(new char[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
 
       foreach (string fontSize in fontSizes)
       {
          if (uint.TryParse(fontSize, out uint size))
          {
-            VLWFont font = _builder.CreateFont(size, monospaceCheckBox.Checked);
+            VLWFont font = _builder.CreateFont(size, FontBuilderOptions);
             font.SaveAsSmoothFont(@"C:\SourceCode\Arduino\libraries\Woyak", "Scott" + size);
-            _vlwFont.SaveAsSmoothFont(@"C:\SourceCode\Arduino\libraries\Woyak", "Scott");
          }
       }
 
-      MessageBox.Show("Files Created");
+      MessageBox.Show($"{fontSizes.Length} Files Created");
    }
 
    private void PreviewPanel_Paint(object sender, PaintEventArgs e)
@@ -470,25 +476,19 @@ public partial class MainForm : Form
 
       String str = PreviewTextBox.Text;
 
-      int lineCount = 0;
-      int charCount = 0;
-      Brush brush1 = new SolidBrush(Red2);
-      Brush brush2 = new SolidBrush(Red3);
+      Brush glyphBrush = new SolidBrush(Red3);
 
       int x = 0;
       int y = 0;
       for (int i = 0; i < str.Length; i++)
       {
          char c = str[i];
-         charCount++;
 
          switch (c)
          {
             case '\n':
                y += (int)_vlwFont.Height;
                x = 0;
-               lineCount++;
-               charCount = 0;
                break;
 
             case '\r':
@@ -515,9 +515,7 @@ public partial class MainForm : Form
                      int gy = (int)(y + _vlwFont.Ascent - glyph.gdY);
                      if (showGlyphsCheckBox.Checked)
                      {
-                        bool odd = (lineCount + charCount) % 2 == 0;
-                        Brush brush = odd ? brush1 : brush2;
-                        graphics.FillRectangle(brush, gx, gy, glyph.Bitmap.Width, glyph.Bitmap.Height);
+                        graphics.FillRectangle(glyphBrush, gx, gy, glyph.Bitmap.Width, glyph.Bitmap.Height);
                      }
                      graphics.DrawImageUnscaled(glyph.Bitmap, gx, gy);
                   }
@@ -556,11 +554,6 @@ public partial class MainForm : Form
       _createFont();
    }
 
-   private void VLFCharPanel_Paint(object sender, PaintEventArgs e)
-   {
-
-   }
-
    private void testObserveButton_Click(object sender, EventArgs e)
    {
       FontFamily fontFamily = new FontFamily(FontComboBox.Text);
@@ -568,7 +561,7 @@ public partial class MainForm : Form
       using Bitmap bitmap = new(TrueTypeCharPanel.Width, TrueTypeCharPanel.Height);
       using Graphics bitmapGraphics = Graphics.FromImage(bitmap);
 
-      float fontSizePx = (float)Math.Round(FontUtil.LineSpacingPxToFontSizePx(fontFamily, bitmapGraphics, 0.8f * TrueTypeCharPanel.Height));
+      float fontSizePx = (float)Math.Round(FontUtil.LineSpacingPxToFontSizePx(fontFamily, _getFontStyle(), bitmapGraphics, 0.8f * TrueTypeCharPanel.Height));
 
       Font font = new Font(
          fontFamily,
@@ -613,7 +606,7 @@ public partial class MainForm : Form
       const int numTrials = 20;
       for (int i = 0; i < numTrials; i++)
       {
-         _builder.CreateGlyph(targetCharHeightPx, c);
+         _builder.CreateGlyph(c, targetCharHeightPx, FontBuilderOptions);
       }
       double ms = sw.Elapsed.TotalMilliseconds;
 
@@ -630,7 +623,7 @@ public partial class MainForm : Form
       VLWFont? font = null;
       for (int i = 0; i < numTrials; i++)
       {
-         font = _builder.CreateFont(targetCharHeightPx, monospaceCheckBox.Checked);
+         font = _builder.CreateFont(targetCharHeightPx, FontBuilderOptions);
       }
       double ms = sw.Elapsed.TotalMilliseconds;
 
@@ -664,4 +657,21 @@ public partial class MainForm : Form
    {
       _resetAll();
    }
+
+   private void SpacingUpDown_ValueChanged(object sender, EventArgs e)
+   {
+      _resetAll();
+   }
+
+   private void button1_Click(object sender, EventArgs e)
+   {
+      byte[] bytes = File.ReadAllBytes(@"C:\SourceCode\Arduino\SmoothFontCreator\Roboto32.vlw");
+      _vlwFont = new(bytes);
+
+      _displayCurrentChar();
+      PreviewPanel.Invalidate();
+      TrueTypeCharPanel.Invalidate();
+      GlyphCharPanel.Invalidate();
+   }
+
 }

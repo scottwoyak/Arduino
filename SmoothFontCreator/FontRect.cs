@@ -7,8 +7,8 @@ public class FontRect
    public double Right = 0;
    public double Top = double.MaxValue;
    public double Bottom = 0;
-   public double Width => Right - Left + 1;
-   public double Height => Bottom - Top + 1;
+   public double Width = 0;
+   public double Height = 0;
 
    public double AspectRatio => ((float)Width) / Height;
 
@@ -18,6 +18,8 @@ public class FontRect
       Right = double.Max(Right, x);
       Top = double.Min(Top, y);
       Bottom = double.Max(Bottom, y);
+      Width = Right - Left + 1;
+      Height = Bottom - Top + 1;
    }
 
    public void Intersect(FontRect other)
@@ -26,6 +28,8 @@ public class FontRect
       Right = double.Max(Right, other.Right);
       Top = double.Min(Top, other.Top);
       Bottom = double.Max(Bottom, other.Bottom);
+      Width = Right - Left + 1;
+      Height = Bottom - Top + 1;
    }
 
    public override string ToString()

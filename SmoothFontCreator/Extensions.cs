@@ -10,7 +10,8 @@ public static class GraphicsExtensions
    public static void DrawPreciseString(this Graphics graphics, string str, Font font, Point pt, Color fgColor, Color bgColor)
    {
       graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-      TextRenderer.DrawText(graphics, str, font, pt, fgColor, bgColor, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+      TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoClipping;
+      TextRenderer.DrawText(graphics, str, font, pt, fgColor, bgColor, flags);
    }
    public static void DrawPreciseString(this Graphics graphics, char c, Font font, Point pt, Color fgColor, Color bgColor)
    {

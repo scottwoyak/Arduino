@@ -4,9 +4,9 @@ namespace SmoothFontCreator;
 
 public class FontUtil
 {
-   public static float LineSpacingPxToFontSizePt(FontFamily fontFamily, Graphics graphics, float desiredLineSpacingPx)
+   public static float LineSpacingPxToFontSizePt(FontFamily fontFamily, FontStyle fontStyle, Graphics graphics, float desiredLineSpacingPx)
    {
-      using Font font = new( fontFamily, 100, FontStyle.Regular, GraphicsUnit.Pixel);
+      using Font font = new( fontFamily, 100, fontStyle, GraphicsUnit.Pixel);
 
       float heightPx = font.GetHeight(graphics);
       float heightEm = font.FontFamily.GetEmHeight(FontStyle.Regular);
@@ -16,9 +16,9 @@ public class FontUtil
       return desiredLineSpacingPx * (font.SizeInPoints / lineSpacingPx);
    }
 
-   public static float LineSpacingPxToFontSizePx(FontFamily fontFamily, Graphics graphics, float desiredLineSpacingPx)
+   public static float LineSpacingPxToFontSizePx(FontFamily fontFamily, FontStyle fontStyle, Graphics graphics, float desiredLineSpacingPx)
    {
-      using Font font = new(fontFamily, 100, FontStyle.Regular, GraphicsUnit.Pixel);
+      using Font font = new(fontFamily, 100, fontStyle, GraphicsUnit.Pixel);
 
       float heightPx = font.GetHeight(graphics);
       float heightEm = font.FontFamily.GetEmHeight(FontStyle.Regular);

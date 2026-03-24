@@ -60,6 +60,10 @@ public class VLWFont
          {
             g.Bitmap = reader.Bitmap(g.Width, g.Height);
          }
+         else
+         {
+            g.Bitmap = new Bitmap(1, 1);
+         }
       }
 
       if (reader.RemainingBytes > 0)

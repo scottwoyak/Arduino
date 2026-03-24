@@ -1,13 +1,16 @@
 ﻿
-using System.Diagnostics;
-using System.Drawing.Drawing2D;
-
 namespace SmoothFontCreator;
+
+public class FontBuilderOptions
+{
+   public bool Monospaced = false;
+   public int Spacing = 0;
+}
 
 public class FontBuilder
 {
-   //private Bitmap _largeBitmap = new Bitmap(2048, 2048);
-   private Bitmap _largeBitmap = new Bitmap(1024, 1024);
+   const int Size = 1024;
+   private Bitmap _largeBitmap = new Bitmap(Size, Size);
    private Graphics _largeGraphics;
    private ObservedMetrics _allCharsMetrics;
    private Dictionary<char, ObservedMetrics> _charMetrics = [];
@@ -20,153 +23,167 @@ public class FontBuilder
 
    private FontBuilder(string fontFamilyName, FontStyle fontStyle)
    {
-      _largeGraphics = Graphics.FromImage(_largeBitmap);
-
       FontFamily = new FontFamily(fontFamilyName);
       FontStyle = fontStyle;
 
-      Stopwatch sw = Stopwatch.StartNew();
+      // do a first pass analysis at an arbitraily large size
+      const int size = 1024;
+      using Bitmap bitmap = new Bitmap(size, size);
+      using Graphics graphics = Graphics.FromImage(bitmap);
 
-      int testSize = 1*1024; // TODO does this need to be this large?
-      using Bitmap bitmap = new(testSize, testSize);
-      using Graphics bitmapGraphics = Graphics.FromImage(bitmap);
-
-      float fontSizePx = (float)Math.Round(FontUtil.LineSpacingPxToFontSizePx(FontFamily, bitmapGraphics, testSize));
-
-      Font font = new Font(
-         FontFamily,
-         fontSizePx,
-         fontStyle,
-         GraphicsUnit.Pixel);
+      // create a font that will fill our bitmap
+      float fontSizePx = (float)Math.Ceiling(FontUtil.LineSpacingPxToFontSizePx(FontFamily, FontStyle, graphics, bitmap.Height));
+      Font font = new Font(FontFamily, fontSizePx, fontStyle, GraphicsUnit.Pixel);
       _allCharsMetrics = new(font);
 
-      float heightPx = font.GetHeight();
-      float widthPx;
-      Point pt;
+      Point pt = new(0, 0);
 
-      // TODO optimize this the way we did in the GUI by drawing backgrounds and then chars
-
-      // then draw all the charcters and measure again
+      // draw and measure each character
       for (char c = (char)0x21; c < (char)0x7F; c++)
       {
-         //Debug.WriteLine($"Building '{c}' {c.ToHex()}");
-         bitmapGraphics.Clear(Color.Transparent);
+         graphics.Clear(Color.Transparent);
+         graphics.DrawPreciseString(c, font, pt, Color.White, Color.Black);
 
-         widthPx = TextRenderer.MeasureText(c.ToString(), font, new Size(1000, 1000), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width;
-         pt = new((int)(bitmap.Width - widthPx) / 2, 0);
-         bitmapGraphics.DrawPreciseString(c.ToString(), font, pt, Color.White, Color.Black);
-         ObservedMetrics charMetrics = new(bitmap, font);
-         if (c == 'a')
-         {
-
-         }
-         _charMetrics[c] = charMetrics;
-
-         _allCharsMetrics.Expand(charMetrics);
+         _charMetrics[c] = new ObservedMetrics(bitmap, font); ;
+         _allCharsMetrics.Expand(_charMetrics[c]);
       }
 
-      /*
-      Debug.WriteLine($"Font Metrics Collected in {sw.ElapsedMilliseconds}ms");
-      Debug.WriteLine($"   Requested fontSizePx: {fontSizePx}");
-      Debug.WriteLine($"   font.Size: {font.Size}");
-      Debug.WriteLine($"   font.SizeInPoints: {font.SizeInPoints}");
-      Debug.WriteLine($"   font.Height: {font.Height}");
-      Debug.WriteLine($"   font.GetHeight: {font.GetHeight()}");
-      Debug.WriteLine($"   Observed Metrics for all chars:");
-      Debug.WriteLine($"      CharRect: {_allCharsObservedMetrics.CharRectString}");
-      Debug.WriteLine($"      CellRect: {_allCharsObservedMetrics.CellRectString}");
-      */
+      // based on what we discovered, create the bitmap that we'll use to create the font
+      _largeBitmap = new Bitmap((int)_allCharsMetrics.CharWidth, (int)_allCharsMetrics.CharHeight);
+      _largeGraphics = Graphics.FromImage(_largeBitmap);
    }
 
-   public Bitmap CreateGlyph(uint charHeightPx, char c)
+   public void UpdateLargeBitmap(char c)
    {
-      double aspectRatio = _charMetrics[c].CellWidth / _allCharsMetrics.CharHeight;
+      _updateLargeBitmap(c);
+   }
 
-      //
-      // Step 1 - draw the character to a large bitmap
-      //
-
-      // create a font such that all characters fit the height of the large bitmap
-      double largeFontSizePx = _allCharsMetrics.RealPxToFontSizePx(_largeBitmap.Height);
-
-      Font font = new Font(
-         FontFamily,
-         (float)largeFontSizePx,
-         FontStyle,
-         GraphicsUnit.Pixel);
-
-      ObservedMetrics largeCharMetrics = _allCharsMetrics.WithCharHeight(_largeBitmap.Height);
-      double largeTopMarginPx = largeCharMetrics.TopMargin;
-
-      // draw the character
+   private void _updateLargeBitmap(char c)
+   {
       _largeGraphics.Clear(Color.Transparent);
 
-      Point pt = new(0, (int)-largeTopMarginPx); // offset the top so that the tallest character is draw on the first row
-      _largeGraphics.DrawPreciseString(c, font, pt, Color.White, Color.Transparent);
+      ObservedMetrics metrics = _charMetrics[c];
+
+      // TODO optimize this so that symmetric characters like '0' are drawn equally on each side
+      // draw the character against the top and left
+      Point pt = new((int)-Math.Floor(metrics.LeftMargin), (int)-Math.Floor(metrics.TopMargin));
+      //_largeGraphics.DrawPreciseString(c, metrics.Font, pt, Color.Yellow, Color.Green);
+      _largeGraphics.DrawPreciseString(c, metrics.Font, pt, Color.White, Color.Transparent);
+   }
+
+   private void _Scale(Bitmap largeBitmap, Rectangle srcRect, Bitmap smallBitmap, double ratio)
+   {
+      using DirectBitmap large = new(largeBitmap, true, srcRect);
+      using DirectBitmap small = new(smallBitmap, false);
+
+      float ratioF = (float)ratio;
+      float offset = -(ratioF * smallBitmap.Width - srcRect.Width) / 2;
+      for (int y = 0; y < small.Height; y++)
+      {
+         for (int x = 0; x < small.Width; x++)
+         {
+            // for each pixel in the small bitmap, sum the contents of the associated
+            // pixels in the large bitmap
+
+            if (Profiler.C == '0' && x == 0 && y == 17)
+            {
+
+            }
+
+            RectangleF rect = new RectangleF(x * ratioF + offset, y * ratioF, ratioF, ratioF);
+
+            Color c = large.GetPixel(rect);
+            small.SetPixel(x, y, c);
+         }
+      }
+   }
+
+   public VLWGlyph CreateGlyph(char c, uint charHeightPx, FontBuilderOptions options)
+   {
+      ObservedMetrics allCharsMetrics = _allCharsMetrics.WithCharHeight(charHeightPx);
+      return _CreateGlyph(c, charHeightPx, options, allCharsMetrics);
+   }
+
+   private VLWGlyph _CreateGlyph(char c, uint charHeightPx, FontBuilderOptions options, ObservedMetrics allCharsMetrics)
+   {
+      Profiler.C = c;
+
+      double scaleFactor = allCharsMetrics.CellHeight / _allCharsMetrics.CellHeight;
+      ObservedMetrics thisCharMetrics = _charMetrics[c].WithScaleFactor(scaleFactor);
+
+      VLWGlyph glyph = new();
+      glyph.uChar = c;
 
       //
-      // Scale the larger bitmap to the smaller one
+      // Step 1 - Draw the character to a large bitmap
       //
-      int smallHeightPx = (int)charHeightPx;
-      int smallWidthPx = (int)Math.Ceiling(aspectRatio * smallHeightPx);
+      _updateLargeBitmap(c);
+
+      ObservedMetrics charMetrics = _charMetrics[c];
+
+      //
+      // Step 2 - Scale the larger bitmap to the smaller one
+      //
+      int smallWidthPx = (int)Math.Ceiling(scaleFactor * charMetrics.CharWidth);
+      int smallHeightPx = (int)Math.Ceiling(scaleFactor * charMetrics.CharHeight);
       Bitmap smallBitmap = new Bitmap(smallWidthPx, smallHeightPx);
       using Graphics smallGraphics = Graphics.FromImage(smallBitmap);
 
-      //smallGraphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-      smallGraphics.InterpolationMode = InterpolationMode.Bilinear;
-      //smallGraphics.InterpolationMode = InterpolationMode.Low;
-      Rectangle srcRect = new(0, 0, (int)Math.Ceiling(aspectRatio * _largeBitmap.Height), _largeBitmap.Height);
-      Rectangle dstRect = new(0, 0, smallBitmap.Width, smallBitmap.Height);
+#if USE_GDI
+      double ratio = 1 / scaleFactor;
+      //smallGraphics.InterpolationMode = InterpolationMode.Bilinear;
+      //smallGraphics.InterpolationMode = InterpolationMode.HighQualityBilinear;
+      smallGraphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+      float offset = (float) (smallBitmap.Width - charMetrics.CharWidth/ratio) / 2;
+      Rectangle srcRect = new(0, 0, (int) Math.Ceiling(charMetrics.CharWidth), (int) Math.Ceiling(charMetrics.CharHeight));
+      RectangleF dstRect = new(offset, 0, smallBitmap.Width, smallBitmap.Height);
+      //smallGraphics.DrawImage(_largeBitmap, dstRect, srcRect, GraphicsUnit.Pixel);
+#else
+      double ratio = 1 / scaleFactor;
+      Rectangle srcRect = new(0, 0, (int)Math.Ceiling(charMetrics.CharWidth), (int)Math.Ceiling(charMetrics.CharHeight));
+      _Scale(_largeBitmap, srcRect, smallBitmap, ratio);
+#endif
 
-      //smallGraphics.Clear(Color.Pink); // so we can detect problems - all pink should get covered up
-      smallGraphics.DrawImage(_largeBitmap, dstRect, srcRect, GraphicsUnit.Pixel);
+      glyph.Bitmap = smallBitmap;
 
-      return smallBitmap;
+      // use GDI to get the baseline
+      GdiMetrics gdiMetrics = new GdiMetrics(thisCharMetrics.Font);
+
+      glyph.gdY = (int)Math.Ceiling(gdiMetrics.BaselinePx - thisCharMetrics.CharTop);
+      glyph.Width = glyph.Bitmap.Width;
+      glyph.Height = glyph.Bitmap.Height;
+
+      if (options.Monospaced)
+      {
+         glyph.gxAdvance = (int)Math.Ceiling(allCharsMetrics.CellWidth) + options.Spacing;
+         glyph.gdX = (int)((glyph.gxAdvance - thisCharMetrics.CellWidth) / 2.0);
+      }
+      else
+      {
+         glyph.gxAdvance = glyph.Bitmap.Width + options.Spacing;
+         glyph.gdX = 0;
+      }
+
+      return glyph;
    }
 
-   public VLWFont CreateFont(uint charHeightPx, bool monospaced)
+   public VLWFont CreateFont(uint charHeightPx, FontBuilderOptions options)
    {
       VLWFont vlw = new();
 
       ObservedMetrics allCharsMetrics = _allCharsMetrics.WithCharHeight(charHeightPx);
-      double scaleFactor = allCharsMetrics.CellHeight / _allCharsMetrics.CellHeight;
-      ObservedMetrics oMetrics = _charMetrics['o'].WithScaleFactor(scaleFactor);
 
-      vlw.Ascent = 0;
-      //vlw.Ascent = (uint)(oMetrics.CharBottom - allCharsMetrics.CharTop);
+      // use GDI to get the baseline
+      GdiMetrics gdiMetrics = new GdiMetrics(allCharsMetrics.Font);
+
+      vlw.Ascent = (uint)Math.Ceiling(gdiMetrics.AscentPx - allCharsMetrics.TopMargin);
       vlw.Descent = (int)(charHeightPx - vlw.Ascent);
       vlw.FontSizePx = charHeightPx;
 
       for (char c = (char)0x21; c < 0x7F; c++)
       {
-         ObservedMetrics thisCharMetrics = _charMetrics[c].WithScaleFactor(scaleFactor);
-
-         VLWGlyph glyph = new();
-         glyph.uChar = c;
-         glyph.Bitmap = CreateGlyph(charHeightPx, c);
-
-
+         VLWGlyph glyph = _CreateGlyph(c, charHeightPx, options, allCharsMetrics);
          vlw.Glyphs.Add(c, glyph);
-
-         if (monospaced)
-         {
-            glyph.gxAdvance = (int)Math.Ceiling(allCharsMetrics.CellWidth);
-
-            glyph.gdX = (int)((allCharsMetrics.CellWidth - thisCharMetrics.CellWidth) / 2.0);
-            glyph.gdY = 0;
-            //glyph.gdY = (int)Math.Ceiling(allCharsMetrics.TopMargin + allCharsMetrics.CellTop);
-            glyph.Width = glyph.Bitmap.Width;
-            glyph.Height = glyph.Bitmap.Height;
-         }
-         else
-         {
-            glyph.gdX = 0; // (int)Math.Ceiling(thisCharMetrics.LeftMargin);
-            glyph.gdY = 0; // (int)Math.Ceiling(thisCharMetrics.TopMargin);
-            glyph.Width = (int)Math.Floor(thisCharMetrics.CharWidth);
-            glyph.Height = (int)Math.Ceiling(thisCharMetrics.CharHeight);
-            glyph.gxAdvance = (int)Math.Floor(thisCharMetrics.CellWidth);
-            glyph.gxAdvance = glyph.Bitmap.Width; // (int)Math.Floor(thisCharMetrics.CellWidth);
-         }
       }
 
       return vlw;

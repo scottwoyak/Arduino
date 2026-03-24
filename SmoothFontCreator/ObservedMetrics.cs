@@ -74,71 +74,79 @@ public class ObservedMetrics
       return count;
    }
 
-   private uint _OptimizedScan(BitmapData bmpData, byte[] argbValues)
+   private void _ScanForCellBounds(BitmapData bmpData, byte[] argbValues)
    {
-      uint count = 0;
-
-      // first do a scan to find the cell bounds
-      int xM = bmpData.Width / 2;
-      int yM = bmpData.Height / 2;
-
       // left and right
-      for (int x = 0; x < bmpData.Width; x++)
-      {
-         int index = yM * bmpData.Stride + x * 4; // 4 bytes per pixel (ARGB)
-         byte A = argbValues[index + 3];
-         count++;
 
-         if (A != 0)
+      // test at the top, middle and bottom
+      int[] yTests = { 0, bmpData.Height / 2, bmpData.Height - 1 };
+
+      bool found = false;
+      foreach (int yT in yTests)
+      {
+         for (int x = 0; x < bmpData.Width; x++)
          {
-            CellRect.Update(x, yM);
-            break;
+            int index = yT * bmpData.Stride + x * 4; // 4 bytes per pixel (ARGB)
+            byte A = argbValues[index + 3];
+
+            if (A != 0)
+            {
+               CellRect.Update(x, yT);
+               found = true;
+               break;
+            }
          }
-      }
 
-      for (int x = bmpData.Width - 1; x > CellRect.Left; x--)
-      {
-         int index = yM * bmpData.Stride + x * 4; // 4 bytes per pixel (ARGB)
-         byte A = argbValues[index + 3];
-         count++;
-
-         if (A != 0)
+         if (found)
          {
-            CellRect.Update(x, yM);
+            for (int x = bmpData.Width - 1; x > CellRect.Left; x--)
+            {
+               int index = yT * bmpData.Stride + x * 4; // 4 bytes per pixel (ARGB)
+               byte A = argbValues[index + 3];
+
+               if (A != 0)
+               {
+                  CellRect.Update(x, yT);
+                  break;
+               }
+            }
+         }
+
+         if (found)
+         {
             break;
          }
       }
 
       // top and bottom
+      int xT = (int) (CellRect.Left + CellRect.Right)/2;
       for (int y = 0; y < bmpData.Height; y++)
       {
-         int index = y * bmpData.Stride + xM * 4; // 4 bytes per pixel (ARGB)
+         int index = y * bmpData.Stride + xT * 4; // 4 bytes per pixel (ARGB)
          byte A = argbValues[index + 3];
-         count++;
 
          if (A != 0)
          {
-            CellRect.Update(xM, y);
+            CellRect.Update(xT, y);
             break;
          }
       }
 
       for (int y = bmpData.Height - 1; y > CellRect.Top; y--)
       {
-         int index = y * bmpData.Stride + xM * 4; // 4 bytes per pixel (ARGB)
+         int index = y * bmpData.Stride + xT * 4; // 4 bytes per pixel (ARGB)
          byte A = argbValues[index + 3];
-         count++;
 
          if (A != 0)
          {
-            CellRect.Update(xM, y);
+            CellRect.Update(xT, y);
             break;
          }
       }
+   }
 
-
-      // then do scan lines
-
+   private void _ScanForCharBounds(BitmapData bmpData, byte[] argbValues)
+   {
       // top to bottom
       bool found = false;
       for (int y = (int)CellRect.Top; y <= CellRect.Bottom && found == false; y++)
@@ -146,7 +154,6 @@ public class ObservedMetrics
          for (int x = (int)CellRect.Left; x <= CellRect.Right && found == false; x++)
          {
             int index = y * bmpData.Stride + x * 4; // 4 bytes per pixel (ARGB)
-            count++;
 
             byte R = argbValues[index + 2];
             if (R != 0)
@@ -156,7 +163,7 @@ public class ObservedMetrics
             }
          }
       }
-      
+
       // bottom to top
       found = false;
       for (int y = (int)CellRect.Bottom; y >= CellRect.Top && found == false; y--)
@@ -164,7 +171,6 @@ public class ObservedMetrics
          for (int x = (int)CellRect.Left; x <= CellRect.Right && found == false; x++)
          {
             int index = y * bmpData.Stride + x * 4; // 4 bytes per pixel (ARGB)
-            count++;
 
             byte R = argbValues[index + 2];
             if (R != 0)
@@ -182,7 +188,6 @@ public class ObservedMetrics
          for (int y = (int)CellRect.Top; y <= CellRect.Bottom && found == false; y++)
          {
             int index = y * bmpData.Stride + x * 4; // 4 bytes per pixel (ARGB)
-            count++;
 
             byte R = argbValues[index + 2];
             if (R != 0)
@@ -200,7 +205,6 @@ public class ObservedMetrics
          for (int y = (int)CellRect.Top; y <= CellRect.Bottom && found == false; y++)
          {
             int index = y * bmpData.Stride + x * 4; // 4 bytes per pixel (ARGB)
-            count++;
 
             byte R = argbValues[index + 2];
             if (R != 0)
@@ -210,140 +214,15 @@ public class ObservedMetrics
             }
          }
       }
-
-      return count;
    }
 
-
-   private uint _OptimizedScan2(BitmapData bmpData, byte[] argbValues)
+   private void _OptimizedScan(BitmapData bmpData, byte[] argbValues)
    {
-      // first do a scan to find the cell bounds by using a single line in the middle
+      // first scan for the cell boundaries
+      _ScanForCellBounds(bmpData, argbValues);
 
-      // then do scan lines
-      uint count = 0;
-
-      bool done = false;
-
-      // top to bottom
-      for (int y = 0; y < bmpData.Height; y++)
-      {
-         for (int x = 0; x < bmpData.Width; x++)
-         {
-            int index = y * bmpData.Stride + x * 4; // 4 bytes per pixel (ARGB)
-            byte A = argbValues[index + 3];
-            count++;
-
-            if (A != 0)
-            {
-               CellRect.Update(x, y);
-
-               byte R = argbValues[index + 2];
-               if (R != 0)
-               {
-                  CharRect.Update(x, y);
-                  done = true;
-                  break;
-               }
-            }
-         }
-
-         if (done == true)
-         {
-            break;
-         }
-      }
-
-      // bottom to top
-      done = false;
-      for (int y = bmpData.Height - 1; y > CharRect.Bottom; y--)
-      {
-         for (int x = 0; x < bmpData.Width; x++)
-         {
-            int index = y * bmpData.Stride + x * 4; // 4 bytes per pixel (ARGB)
-            byte A = argbValues[index + 3];
-            count++;
-
-            if (A != 0)
-            {
-               CellRect.Update(x, y);
-
-               byte R = argbValues[index + 2];
-               if (R != 0)
-               {
-                  CharRect.Update(x, y);
-                  done = true;
-                  break;
-               }
-            }
-         }
-
-         if (done == true)
-         {
-            break;
-         }
-      }
-
-      // left to right
-      done = false;
-      for (int x = bmpData.Width - 1; x >= 0; x--)
-      {
-         for (int y = (int)CharRect.Top; y < CharRect.Bottom; y++)
-         {
-            int index = y * bmpData.Stride + x * 4; // 4 bytes per pixel (ARGB)
-            byte A = argbValues[index + 3];
-            count++;
-
-            if (A != 0)
-            {
-               CellRect.Update(x, y);
-
-               byte R = argbValues[index + 2];
-               if (R != 0)
-               {
-                  CharRect.Update(x, y);
-                  done = true;
-                  break;
-               }
-            }
-         }
-
-         if (done == true)
-         {
-            break;
-         }
-      }
-
-      // right to left
-      done = false;
-      for (int x = 0; x < bmpData.Width; x++)
-      {
-         for (int y = (int)CharRect.Top; y < CharRect.Bottom; y++)
-         {
-            int index = y * bmpData.Stride + x * 4; // 4 bytes per pixel (ARGB)
-            byte A = argbValues[index + 3];
-            count++;
-
-            if (A != 0)
-            {
-               CellRect.Update(x, y);
-
-               byte R = argbValues[index + 2];
-               if (R != 0)
-               {
-                  CharRect.Update(x, y);
-                  done = true;
-                  break;
-               }
-            }
-         }
-
-         if (done == true)
-         {
-            break;
-         }
-      }
-
-      return count;
+      // then scan for the char bounds within the cell
+      _ScanForCharBounds(bmpData, argbValues);
    }
 
    private void _scan(Bitmap b)
@@ -355,19 +234,14 @@ public class ObservedMetrics
       IntPtr ptr = bmpData.Scan0;
 
       // Calculate total bytes; Stride handles row padding
-      int bytes = Math.Abs(bmpData.Stride) * b.Height;
+      int bytes = Math.Abs(bmpData.Stride) * bmpData.Height;
       byte[] argbValues = new byte[bytes];
 
       // Copy RGB values to array
       Marshal.Copy(ptr, argbValues, 0, bytes);
 
       //uint count = _FullScan(bmpData, argbValues);
-      uint count = _OptimizedScan(bmpData, argbValues);
-
-      //Debug.WriteLine($"{count} comparisons");
-      //Debug.WriteLine($"  Bitmap: {bmpData.Width} {bmpData.Height}");
-      //Debug.WriteLine($"  Cell: {CellRect}");
-      //Debug.WriteLine($"  Char: {CharRect}");
+      _OptimizedScan(bmpData, argbValues);
 
       b.UnlockBits(bmpData); // Mandatory
    }
@@ -386,19 +260,29 @@ public class ObservedMetrics
 
    public ObservedMetrics WithScaleFactor(double scaleFactor)
    {
-      Font scaledFont = new Font(Font.FontFamily, (float)(scaleFactor * Font.GetHeight()), GraphicsUnit.Pixel);
+      //Font scaledFont = new Font(Font.FontFamily, (float)(scaleFactor * Font.GetHeight()), Font.Style, GraphicsUnit.Pixel);
+      Font scaledFont = new Font(Font.FontFamily, (float)(scaleFactor * Font.Size), Font.Style, GraphicsUnit.Pixel);
       ObservedMetrics scaledMetrics = new(scaledFont);
 
       scaledMetrics.CharRect.Left = scaleFactor * CharRect.Left;
       scaledMetrics.CharRect.Right = scaleFactor * CharRect.Right;
       scaledMetrics.CharRect.Top = scaleFactor * CharRect.Top;
       scaledMetrics.CharRect.Bottom = scaleFactor * CharRect.Bottom;
+      scaledMetrics.CharRect.Width = scaleFactor * CharRect.Width;
+      scaledMetrics.CharRect.Height = scaleFactor * CharRect.Height;
 
       scaledMetrics.CellRect.Left = scaleFactor * CellRect.Left;
       scaledMetrics.CellRect.Right = scaleFactor * CellRect.Right;
       scaledMetrics.CellRect.Top = scaleFactor * CellRect.Top;
       scaledMetrics.CellRect.Bottom = scaleFactor * CellRect.Bottom;
+      scaledMetrics.CellRect.Width = scaleFactor * CellRect.Width;
+      scaledMetrics.CellRect.Height = scaleFactor * CellRect.Height;
 
       return scaledMetrics;
+   }
+
+   public double computeScaleFactor(int desiredCharHeight)
+   {
+      return desiredCharHeight / CharHeight;
    }
 }

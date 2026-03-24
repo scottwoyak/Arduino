@@ -82,6 +82,10 @@ partial class MainForm
       groupBox4 = new GroupBox();
       label14 = new Label();
       digitCheckBox = new CheckBox();
+      label6 = new Label();
+      label3 = new Label();
+      SpacingUpDown = new NumericUpDown();
+      button1 = new Button();
       tabControl1.SuspendLayout();
       tabPage1.SuspendLayout();
       groupBox6.SuspendLayout();
@@ -91,6 +95,7 @@ partial class MainForm
       ((System.ComponentModel.ISupportInitialize)charHeightUpDown).BeginInit();
       groupBox3.SuspendLayout();
       groupBox4.SuspendLayout();
+      ((System.ComponentModel.ISupportInitialize)SpacingUpDown).BeginInit();
       SuspendLayout();
       // 
       // tabControl1
@@ -123,11 +128,12 @@ partial class MainForm
       tabPage1.Padding = new Padding(6);
       tabPage1.Size = new Size(2108, 1161);
       tabPage1.TabIndex = 0;
-      tabPage1.Text = "True Type";
+      tabPage1.Text = "Preview";
       tabPage1.UseVisualStyleBackColor = true;
       // 
       // groupBox6
       // 
+      groupBox6.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
       groupBox6.Controls.Add(label19);
       groupBox6.Controls.Add(widthTextBox);
       groupBox6.Controls.Add(label22);
@@ -251,6 +257,7 @@ partial class MainForm
       // 
       // groupBox5
       // 
+      groupBox5.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
       groupBox5.Controls.Add(ascentTextBox);
       groupBox5.Controls.Add(descentTextBox);
       groupBox5.Controls.Add(label15);
@@ -391,7 +398,7 @@ partial class MainForm
       TestCharTextBox.Name = "TestCharTextBox";
       TestCharTextBox.Size = new Size(38, 31);
       TestCharTextBox.TabIndex = 5;
-      TestCharTextBox.Text = "$";
+      TestCharTextBox.Text = "0";
       TestCharTextBox.TextChanged += TestCharTextBox_TextChanged;
       // 
       // TrueTypeCharPanel
@@ -420,7 +427,7 @@ partial class MainForm
       panel1.BackColor = Color.DimGray;
       panel1.Location = new Point(9, 9);
       panel1.Name = "panel1";
-      panel1.Size = new Size(1242, 921);
+      panel1.Size = new Size(2090, 1143);
       panel1.TabIndex = 0;
       panel1.Paint += panel1_Paint;
       // 
@@ -630,7 +637,10 @@ partial class MainForm
       groupBox4.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       groupBox4.Controls.Add(label14);
       groupBox4.Controls.Add(digitCheckBox);
+      groupBox4.Controls.Add(label6);
       groupBox4.Controls.Add(label4);
+      groupBox4.Controls.Add(label3);
+      groupBox4.Controls.Add(SpacingUpDown);
       groupBox4.Controls.Add(label7);
       groupBox4.Controls.Add(charHeightUpDown);
       groupBox4.Controls.Add(label8);
@@ -646,7 +656,7 @@ partial class MainForm
       // 
       label14.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label14.AutoSize = true;
-      label14.Location = new Point(16, 87);
+      label14.Location = new Point(71, 87);
       label14.Name = "label14";
       label14.Size = new Size(54, 25);
       label14.TabIndex = 22;
@@ -663,6 +673,47 @@ partial class MainForm
       digitCheckBox.UseVisualStyleBackColor = true;
       digitCheckBox.CheckedChanged += digitCheckBox_CheckedChanged;
       // 
+      // label6
+      // 
+      label6.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label6.AutoSize = true;
+      label6.Location = new Point(234, 119);
+      label6.Name = "label6";
+      label6.Size = new Size(31, 25);
+      label6.TabIndex = 7;
+      label6.Text = "px";
+      // 
+      // label3
+      // 
+      label3.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label3.AutoSize = true;
+      label3.Location = new Point(46, 119);
+      label3.Name = "label3";
+      label3.Size = new Size(79, 25);
+      label3.TabIndex = 6;
+      label3.Text = "Spacing:";
+      // 
+      // SpacingUpDown
+      // 
+      SpacingUpDown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      SpacingUpDown.Location = new Point(134, 117);
+      SpacingUpDown.Name = "SpacingUpDown";
+      SpacingUpDown.Size = new Size(94, 31);
+      SpacingUpDown.TabIndex = 20;
+      SpacingUpDown.Value = new decimal(new int[] { 1, 0, 0, 0 });
+      SpacingUpDown.ValueChanged += SpacingUpDown_ValueChanged;
+      // 
+      // button1
+      // 
+      button1.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+      button1.Location = new Point(2197, 625);
+      button1.Name = "button1";
+      button1.Size = new Size(265, 46);
+      button1.TabIndex = 25;
+      button1.Text = "Load Roboto32.vlw";
+      button1.UseVisualStyleBackColor = true;
+      button1.Click += button1_Click;
+      // 
       // MainForm
       // 
       AutoScaleDimensions = new SizeF(10F, 25F);
@@ -672,6 +723,7 @@ partial class MainForm
       Controls.Add(groupBox3);
       Controls.Add(testButton3);
       Controls.Add(testButton2);
+      Controls.Add(button1);
       Controls.Add(testButton1);
       Controls.Add(statusTextBox);
       Controls.Add(fontSizesTextBox);
@@ -694,6 +746,7 @@ partial class MainForm
       groupBox3.PerformLayout();
       groupBox4.ResumeLayout(false);
       groupBox4.PerformLayout();
+      ((System.ComponentModel.ISupportInitialize)SpacingUpDown).EndInit();
       ResumeLayout(false);
       PerformLayout();
    }
@@ -754,4 +807,11 @@ partial class MainForm
    private TextBox descentTextBox;
    private GroupBox groupBox6;
    private GroupBox groupBox5;
+   private Button button1;
+   private Label label6;
+   private Label label2;
+   private Label label3;
+   private Label label1;
+   private NumericUpDown SpacingUpDown;
+   private NumericUpDown numericUpDown1;
 }
