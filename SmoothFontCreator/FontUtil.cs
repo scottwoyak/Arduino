@@ -27,6 +27,13 @@ public class FontUtil
 
       return desiredLineSpacingPx * (font.Size / lineSpacingPx);
    }
+   public static float LineSpacingPxToFontSizePx2(FontFamily fontFamily, FontStyle fontStyle, Graphics graphics, float desiredLineSpacingPx)
+   {
+      using Font font = new(fontFamily, 100, fontStyle, GraphicsUnit.Pixel);
+
+      float heightPx = font.GetHeight(graphics);
+      return desiredLineSpacingPx * (100 / heightPx);
+   }
 
    /*
    public static void DrawText(Graphics graphics, string str, Font font, Point pt, Color fgColor, Color bgColor)

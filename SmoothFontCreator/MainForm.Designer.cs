@@ -30,11 +30,19 @@ partial class MainForm
    {
       tabControl1 = new TabControl();
       tabPage1 = new TabPage();
+      PreviewTextBox = new TextBox();
+      groupBox9 = new GroupBox();
+      VLWCharPanel = new Panel();
+      groupBox5 = new GroupBox();
+      vlwAscentTextBox = new TextBox();
+      vlwDescentTextBox = new TextBox();
+      label15 = new Label();
+      label16 = new Label();
       groupBox6 = new GroupBox();
       label19 = new Label();
-      widthTextBox = new TextBox();
+      vlwWidthTextBox = new TextBox();
       label22 = new Label();
-      heightTextBox = new TextBox();
+      vlwHeightTextBox = new TextBox();
       label21 = new Label();
       gdXTextBox = new TextBox();
       label20 = new Label();
@@ -43,59 +51,77 @@ partial class MainForm
       label18 = new Label();
       paddingTextBox = new TextBox();
       label17 = new Label();
-      groupBox5 = new GroupBox();
-      ascentTextBox = new TextBox();
-      descentTextBox = new TextBox();
-      label15 = new Label();
-      label16 = new Label();
+      groupBox8 = new GroupBox();
+      groupBox2 = new GroupBox();
+      label25 = new Label();
+      ttDescentLabel = new Label();
+      label1 = new Label();
+      ttAscentLabel = new Label();
+      ttLineSpacingTextBox = new TextBox();
+      ttDescentTextBox = new TextBox();
+      ttHeightTextBox = new TextBox();
+      ttAscentTextBox = new TextBox();
+      groupBox7 = new GroupBox();
+      label24 = new Label();
+      label2 = new Label();
+      label23 = new Label();
+      label31 = new Label();
+      ttCharWidthTextBox = new TextBox();
+      ttCharHeightTextBox = new TextBox();
+      ttCellWidthTextBox = new TextBox();
       label9 = new Label();
-      PreviewPanel = new Panel();
-      magnificationUpDown = new NumericUpDown();
-      PreviewTextBox = new TextBox();
-      showGlyphsCheckBox = new CheckBox();
+      ttCellHeightTextBox = new TextBox();
+      label37 = new Label();
+      TrueTypeCharPanel = new Panel();
+      label29 = new Label();
+      label28 = new Label();
+      label27 = new Label();
+      TrueTypePreviewPanel = new Panel();
+      VLWPreviewPanel = new Panel();
       HexLabel = new Label();
-      GlyphCharPanel = new Panel();
       label5 = new Label();
       TestCharTextBox = new TextBox();
-      TrueTypeCharPanel = new Panel();
       tabPage2 = new TabPage();
       panel1 = new Panel();
+      groupBox4 = new GroupBox();
+      label14 = new Label();
+      digitCheckBox = new CheckBox();
+      label6 = new Label();
+      label4 = new Label();
+      label3 = new Label();
+      SpacingUpDown = new NumericUpDown();
+      label7 = new Label();
       charHeightUpDown = new NumericUpDown();
       label8 = new Label();
       monospaceCheckBox = new CheckBox();
-      SaveButton = new Button();
-      label4 = new Label();
-      label7 = new Label();
-      FontComboBox = new ComboBox();
-      label10 = new Label();
-      fontSizesTextBox = new TextBox();
-      statusTextBox = new TextBox();
-      italicCheckBox = new CheckBox();
-      testButton1 = new Button();
-      testButton2 = new Button();
-      testButton3 = new Button();
       groupBox3 = new GroupBox();
       label13 = new Label();
       label12 = new Label();
       label11 = new Label();
       boldCheckBox = new CheckBox();
-      groupBox4 = new GroupBox();
-      label14 = new Label();
-      digitCheckBox = new CheckBox();
-      label6 = new Label();
-      label3 = new Label();
-      SpacingUpDown = new NumericUpDown();
+      FontComboBox = new ComboBox();
+      italicCheckBox = new CheckBox();
+      SaveButton = new Button();
+      label10 = new Label();
+      fontSizesTextBox = new TextBox();
+      statusTextBox = new TextBox();
+      testButton1 = new Button();
+      testButton2 = new Button();
+      testButton3 = new Button();
       button1 = new Button();
       tabControl1.SuspendLayout();
       tabPage1.SuspendLayout();
-      groupBox6.SuspendLayout();
+      groupBox9.SuspendLayout();
       groupBox5.SuspendLayout();
-      ((System.ComponentModel.ISupportInitialize)magnificationUpDown).BeginInit();
+      groupBox6.SuspendLayout();
+      groupBox8.SuspendLayout();
+      groupBox2.SuspendLayout();
+      groupBox7.SuspendLayout();
       tabPage2.SuspendLayout();
-      ((System.ComponentModel.ISupportInitialize)charHeightUpDown).BeginInit();
-      groupBox3.SuspendLayout();
       groupBox4.SuspendLayout();
       ((System.ComponentModel.ISupportInitialize)SpacingUpDown).BeginInit();
+      ((System.ComponentModel.ISupportInitialize)charHeightUpDown).BeginInit();
+      groupBox3.SuspendLayout();
       SuspendLayout();
       // 
       // tabControl1
@@ -106,38 +132,121 @@ partial class MainForm
       tabControl1.Location = new Point(12, 12);
       tabControl1.Name = "tabControl1";
       tabControl1.SelectedIndex = 0;
-      tabControl1.Size = new Size(2116, 1199);
+      tabControl1.Size = new Size(2293, 1199);
       tabControl1.TabIndex = 0;
       // 
       // tabPage1
       // 
-      tabPage1.Controls.Add(groupBox6);
-      tabPage1.Controls.Add(groupBox5);
-      tabPage1.Controls.Add(label9);
-      tabPage1.Controls.Add(PreviewPanel);
-      tabPage1.Controls.Add(magnificationUpDown);
       tabPage1.Controls.Add(PreviewTextBox);
-      tabPage1.Controls.Add(showGlyphsCheckBox);
+      tabPage1.Controls.Add(groupBox9);
+      tabPage1.Controls.Add(groupBox8);
+      tabPage1.Controls.Add(label29);
+      tabPage1.Controls.Add(label28);
+      tabPage1.Controls.Add(label27);
+      tabPage1.Controls.Add(TrueTypePreviewPanel);
+      tabPage1.Controls.Add(VLWPreviewPanel);
       tabPage1.Controls.Add(HexLabel);
-      tabPage1.Controls.Add(GlyphCharPanel);
       tabPage1.Controls.Add(label5);
       tabPage1.Controls.Add(TestCharTextBox);
-      tabPage1.Controls.Add(TrueTypeCharPanel);
       tabPage1.Location = new Point(4, 34);
       tabPage1.Name = "tabPage1";
       tabPage1.Padding = new Padding(6);
-      tabPage1.Size = new Size(2108, 1161);
+      tabPage1.Size = new Size(2285, 1161);
       tabPage1.TabIndex = 0;
       tabPage1.Text = "Preview";
       tabPage1.UseVisualStyleBackColor = true;
       // 
+      // PreviewTextBox
+      // 
+      PreviewTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
+      PreviewTextBox.Font = new Font("Segoe UI", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
+      PreviewTextBox.Location = new Point(15, 48);
+      PreviewTextBox.Multiline = true;
+      PreviewTextBox.Name = "PreviewTextBox";
+      PreviewTextBox.Size = new Size(536, 392);
+      PreviewTextBox.TabIndex = 19;
+      PreviewTextBox.Text = "$@0123456789\r\nABCDEFGHIJKLMNOPQRSTUVWXYZ\r\nabcdefghijklmnopqrstuvwxyz";
+      PreviewTextBox.TextChanged += PreviewTextBox_TextChanged;
+      // 
+      // groupBox9
+      // 
+      groupBox9.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+      groupBox9.Controls.Add(VLWCharPanel);
+      groupBox9.Controls.Add(groupBox5);
+      groupBox9.Controls.Add(groupBox6);
+      groupBox9.Location = new Point(895, 446);
+      groupBox9.Name = "groupBox9";
+      groupBox9.Size = new Size(1381, 669);
+      groupBox9.TabIndex = 29;
+      groupBox9.TabStop = false;
+      groupBox9.Text = "Generated VLW";
+      // 
+      // VLWCharPanel
+      // 
+      VLWCharPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+      VLWCharPanel.BackColor = Color.DimGray;
+      VLWCharPanel.Location = new Point(6, 30);
+      VLWCharPanel.Name = "VLWCharPanel";
+      VLWCharPanel.Size = new Size(699, 633);
+      VLWCharPanel.TabIndex = 2;
+      // 
+      // groupBox5
+      // 
+      groupBox5.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      groupBox5.Controls.Add(vlwAscentTextBox);
+      groupBox5.Controls.Add(vlwDescentTextBox);
+      groupBox5.Controls.Add(label15);
+      groupBox5.Controls.Add(label16);
+      groupBox5.Location = new Point(711, 30);
+      groupBox5.Name = "groupBox5";
+      groupBox5.Size = new Size(263, 116);
+      groupBox5.TabIndex = 22;
+      groupBox5.TabStop = false;
+      groupBox5.Text = "Font";
+      // 
+      // vlwAscentTextBox
+      // 
+      vlwAscentTextBox.Location = new Point(119, 30);
+      vlwAscentTextBox.Name = "vlwAscentTextBox";
+      vlwAscentTextBox.ReadOnly = true;
+      vlwAscentTextBox.Size = new Size(108, 31);
+      vlwAscentTextBox.TabIndex = 13;
+      // 
+      // vlwDescentTextBox
+      // 
+      vlwDescentTextBox.Location = new Point(119, 67);
+      vlwDescentTextBox.Name = "vlwDescentTextBox";
+      vlwDescentTextBox.ReadOnly = true;
+      vlwDescentTextBox.Size = new Size(108, 31);
+      vlwDescentTextBox.TabIndex = 13;
+      // 
+      // label15
+      // 
+      label15.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label15.AutoSize = true;
+      label15.Location = new Point(44, 33);
+      label15.Name = "label15";
+      label15.Size = new Size(69, 25);
+      label15.TabIndex = 10;
+      label15.Text = "Ascent:";
+      // 
+      // label16
+      // 
+      label16.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label16.AutoSize = true;
+      label16.Location = new Point(34, 70);
+      label16.Name = "label16";
+      label16.Size = new Size(79, 25);
+      label16.TabIndex = 10;
+      label16.Text = "Descent:";
+      // 
       // groupBox6
       // 
-      groupBox6.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+      groupBox6.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       groupBox6.Controls.Add(label19);
-      groupBox6.Controls.Add(widthTextBox);
+      groupBox6.Controls.Add(vlwWidthTextBox);
       groupBox6.Controls.Add(label22);
-      groupBox6.Controls.Add(heightTextBox);
+      groupBox6.Controls.Add(vlwHeightTextBox);
       groupBox6.Controls.Add(label21);
       groupBox6.Controls.Add(gdXTextBox);
       groupBox6.Controls.Add(label20);
@@ -146,15 +255,16 @@ partial class MainForm
       groupBox6.Controls.Add(label18);
       groupBox6.Controls.Add(paddingTextBox);
       groupBox6.Controls.Add(label17);
-      groupBox6.Location = new Point(1342, 601);
+      groupBox6.Location = new Point(711, 152);
       groupBox6.Name = "groupBox6";
-      groupBox6.Size = new Size(263, 288);
+      groupBox6.Size = new Size(263, 275);
       groupBox6.TabIndex = 23;
       groupBox6.TabStop = false;
-      groupBox6.Text = "VLF Glyph";
+      groupBox6.Text = "Glyph";
       // 
       // label19
       // 
+      label19.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label19.AutoSize = true;
       label19.Location = new Point(59, 44);
       label19.Name = "label19";
@@ -162,16 +272,17 @@ partial class MainForm
       label19.TabIndex = 21;
       label19.Text = "Width:";
       // 
-      // widthTextBox
+      // vlwWidthTextBox
       // 
-      widthTextBox.Location = new Point(129, 41);
-      widthTextBox.Name = "widthTextBox";
-      widthTextBox.ReadOnly = true;
-      widthTextBox.Size = new Size(108, 31);
-      widthTextBox.TabIndex = 13;
+      vlwWidthTextBox.Location = new Point(129, 41);
+      vlwWidthTextBox.Name = "vlwWidthTextBox";
+      vlwWidthTextBox.ReadOnly = true;
+      vlwWidthTextBox.Size = new Size(108, 31);
+      vlwWidthTextBox.TabIndex = 13;
       // 
       // label22
       // 
+      label22.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label22.AutoSize = true;
       label22.Location = new Point(44, 229);
       label22.Name = "label22";
@@ -179,16 +290,17 @@ partial class MainForm
       label22.TabIndex = 21;
       label22.Text = "Padding:";
       // 
-      // heightTextBox
+      // vlwHeightTextBox
       // 
-      heightTextBox.Location = new Point(129, 78);
-      heightTextBox.Name = "heightTextBox";
-      heightTextBox.ReadOnly = true;
-      heightTextBox.Size = new Size(108, 31);
-      heightTextBox.TabIndex = 13;
+      vlwHeightTextBox.Location = new Point(129, 78);
+      vlwHeightTextBox.Name = "vlwHeightTextBox";
+      vlwHeightTextBox.ReadOnly = true;
+      vlwHeightTextBox.Size = new Size(108, 31);
+      vlwHeightTextBox.TabIndex = 13;
       // 
       // label21
       // 
+      label21.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label21.AutoSize = true;
       label21.Location = new Point(21, 192);
       label21.Name = "label21";
@@ -206,6 +318,7 @@ partial class MainForm
       // 
       // label20
       // 
+      label20.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label20.AutoSize = true;
       label20.Location = new Point(54, 81);
       label20.Name = "label20";
@@ -231,6 +344,7 @@ partial class MainForm
       // 
       // label18
       // 
+      label18.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label18.AutoSize = true;
       label18.Location = new Point(75, 155);
       label18.Name = "label18";
@@ -248,6 +362,7 @@ partial class MainForm
       // 
       // label17
       // 
+      label17.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label17.AutoSize = true;
       label17.Location = new Point(75, 118);
       label17.Name = "label17";
@@ -255,112 +370,286 @@ partial class MainForm
       label17.TabIndex = 10;
       label17.Text = "gdX:";
       // 
-      // groupBox5
+      // groupBox8
       // 
-      groupBox5.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      groupBox5.Controls.Add(ascentTextBox);
-      groupBox5.Controls.Add(descentTextBox);
-      groupBox5.Controls.Add(label15);
-      groupBox5.Controls.Add(label16);
-      groupBox5.Location = new Point(1342, 445);
-      groupBox5.Name = "groupBox5";
-      groupBox5.Size = new Size(263, 150);
-      groupBox5.TabIndex = 22;
-      groupBox5.TabStop = false;
-      groupBox5.Text = "VLF Font";
+      groupBox8.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+      groupBox8.Controls.Add(groupBox2);
+      groupBox8.Controls.Add(groupBox7);
+      groupBox8.Controls.Add(TrueTypeCharPanel);
+      groupBox8.Location = new Point(9, 446);
+      groupBox8.Name = "groupBox8";
+      groupBox8.Size = new Size(880, 669);
+      groupBox8.TabIndex = 28;
+      groupBox8.TabStop = false;
+      groupBox8.Text = "TrueType";
       // 
-      // ascentTextBox
+      // groupBox2
       // 
-      ascentTextBox.Location = new Point(119, 30);
-      ascentTextBox.Name = "ascentTextBox";
-      ascentTextBox.ReadOnly = true;
-      ascentTextBox.Size = new Size(108, 31);
-      ascentTextBox.TabIndex = 13;
+      groupBox2.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      groupBox2.Controls.Add(label25);
+      groupBox2.Controls.Add(ttDescentLabel);
+      groupBox2.Controls.Add(label1);
+      groupBox2.Controls.Add(ttAscentLabel);
+      groupBox2.Controls.Add(ttLineSpacingTextBox);
+      groupBox2.Controls.Add(ttDescentTextBox);
+      groupBox2.Controls.Add(ttHeightTextBox);
+      groupBox2.Controls.Add(ttAscentTextBox);
+      groupBox2.Location = new Point(610, 30);
+      groupBox2.Name = "groupBox2";
+      groupBox2.Size = new Size(263, 268);
+      groupBox2.TabIndex = 23;
+      groupBox2.TabStop = false;
+      groupBox2.Text = "Font";
       // 
-      // descentTextBox
+      // label25
       // 
-      descentTextBox.Location = new Point(119, 67);
-      descentTextBox.Name = "descentTextBox";
-      descentTextBox.ReadOnly = true;
-      descentTextBox.Size = new Size(108, 31);
-      descentTextBox.TabIndex = 13;
+      label25.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label25.AutoSize = true;
+      label25.Location = new Point(7, 151);
+      label25.Name = "label25";
+      label25.Size = new Size(115, 25);
+      label25.TabIndex = 21;
+      label25.Text = "Line Spacing:";
+      label25.TextAlign = ContentAlignment.TopRight;
       // 
-      // label15
+      // ttDescentLabel
       // 
-      label15.AutoSize = true;
-      label15.Location = new Point(44, 33);
-      label15.Name = "label15";
-      label15.Size = new Size(69, 25);
-      label15.TabIndex = 10;
-      label15.Text = "Ascent:";
+      ttDescentLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      ttDescentLabel.AutoSize = true;
+      ttDescentLabel.Location = new Point(43, 114);
+      ttDescentLabel.Name = "ttDescentLabel";
+      ttDescentLabel.Size = new Size(79, 25);
+      ttDescentLabel.TabIndex = 21;
+      ttDescentLabel.Text = "Descent:";
+      ttDescentLabel.TextAlign = ContentAlignment.TopRight;
       // 
-      // label16
+      // label1
       // 
-      label16.AutoSize = true;
-      label16.Location = new Point(34, 70);
-      label16.Name = "label16";
-      label16.Size = new Size(79, 25);
-      label16.TabIndex = 10;
-      label16.Text = "Descent:";
+      label1.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label1.AutoSize = true;
+      label1.Location = new Point(53, 40);
+      label1.Name = "label1";
+      label1.Size = new Size(69, 25);
+      label1.TabIndex = 21;
+      label1.Text = "Height:";
+      label1.TextAlign = ContentAlignment.TopRight;
+      // 
+      // ttAscentLabel
+      // 
+      ttAscentLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      ttAscentLabel.AutoSize = true;
+      ttAscentLabel.Location = new Point(53, 77);
+      ttAscentLabel.Name = "ttAscentLabel";
+      ttAscentLabel.Size = new Size(69, 25);
+      ttAscentLabel.TabIndex = 21;
+      ttAscentLabel.Text = "Ascent:";
+      ttAscentLabel.TextAlign = ContentAlignment.TopRight;
+      // 
+      // ttLineSpacingTextBox
+      // 
+      ttLineSpacingTextBox.Location = new Point(128, 148);
+      ttLineSpacingTextBox.Name = "ttLineSpacingTextBox";
+      ttLineSpacingTextBox.ReadOnly = true;
+      ttLineSpacingTextBox.Size = new Size(108, 31);
+      ttLineSpacingTextBox.TabIndex = 13;
+      // 
+      // ttDescentTextBox
+      // 
+      ttDescentTextBox.Location = new Point(128, 111);
+      ttDescentTextBox.Name = "ttDescentTextBox";
+      ttDescentTextBox.ReadOnly = true;
+      ttDescentTextBox.Size = new Size(108, 31);
+      ttDescentTextBox.TabIndex = 13;
+      // 
+      // ttHeightTextBox
+      // 
+      ttHeightTextBox.Location = new Point(128, 37);
+      ttHeightTextBox.Name = "ttHeightTextBox";
+      ttHeightTextBox.ReadOnly = true;
+      ttHeightTextBox.Size = new Size(108, 31);
+      ttHeightTextBox.TabIndex = 13;
+      // 
+      // ttAscentTextBox
+      // 
+      ttAscentTextBox.Location = new Point(128, 74);
+      ttAscentTextBox.Name = "ttAscentTextBox";
+      ttAscentTextBox.ReadOnly = true;
+      ttAscentTextBox.Size = new Size(108, 31);
+      ttAscentTextBox.TabIndex = 13;
+      // 
+      // groupBox7
+      // 
+      groupBox7.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      groupBox7.Controls.Add(label24);
+      groupBox7.Controls.Add(label2);
+      groupBox7.Controls.Add(label23);
+      groupBox7.Controls.Add(label31);
+      groupBox7.Controls.Add(ttCharWidthTextBox);
+      groupBox7.Controls.Add(ttCharHeightTextBox);
+      groupBox7.Controls.Add(ttCellWidthTextBox);
+      groupBox7.Controls.Add(label9);
+      groupBox7.Controls.Add(ttCellHeightTextBox);
+      groupBox7.Controls.Add(label37);
+      groupBox7.Location = new Point(610, 341);
+      groupBox7.Name = "groupBox7";
+      groupBox7.Size = new Size(263, 322);
+      groupBox7.TabIndex = 23;
+      groupBox7.TabStop = false;
+      groupBox7.Text = "Glyph";
+      // 
+      // label24
+      // 
+      label24.AutoSize = true;
+      label24.Font = new Font("Segoe UI", 9F, FontStyle.Bold, GraphicsUnit.Point, 0);
+      label24.Location = new Point(31, 193);
+      label24.Name = "label24";
+      label24.Size = new Size(51, 25);
+      label24.TabIndex = 21;
+      label24.Text = "Char";
+      label24.TextAlign = ContentAlignment.TopRight;
+      // 
+      // label2
+      // 
+      label2.AutoSize = true;
+      label2.Font = new Font("Segoe UI", 9F, FontStyle.Bold, GraphicsUnit.Point, 0);
+      label2.Location = new Point(39, 44);
+      label2.Name = "label2";
+      label2.Size = new Size(43, 25);
+      label2.TabIndex = 21;
+      label2.Text = "Cell";
+      label2.TextAlign = ContentAlignment.TopRight;
+      // 
+      // label23
+      // 
+      label23.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label23.AutoSize = true;
+      label23.Location = new Point(55, 218);
+      label23.Name = "label23";
+      label23.Size = new Size(64, 25);
+      label23.TabIndex = 21;
+      label23.Text = "Width:";
+      label23.TextAlign = ContentAlignment.TopRight;
+      // 
+      // label31
+      // 
+      label31.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label31.AutoSize = true;
+      label31.Location = new Point(55, 82);
+      label31.Name = "label31";
+      label31.Size = new Size(64, 25);
+      label31.TabIndex = 21;
+      label31.Text = "Width:";
+      label31.TextAlign = ContentAlignment.TopRight;
+      // 
+      // ttCharWidthTextBox
+      // 
+      ttCharWidthTextBox.Location = new Point(125, 215);
+      ttCharWidthTextBox.Name = "ttCharWidthTextBox";
+      ttCharWidthTextBox.ReadOnly = true;
+      ttCharWidthTextBox.Size = new Size(108, 31);
+      ttCharWidthTextBox.TabIndex = 13;
+      // 
+      // ttCharHeightTextBox
+      // 
+      ttCharHeightTextBox.Location = new Point(125, 252);
+      ttCharHeightTextBox.Name = "ttCharHeightTextBox";
+      ttCharHeightTextBox.ReadOnly = true;
+      ttCharHeightTextBox.Size = new Size(108, 31);
+      ttCharHeightTextBox.TabIndex = 13;
+      // 
+      // ttCellWidthTextBox
+      // 
+      ttCellWidthTextBox.Location = new Point(125, 79);
+      ttCellWidthTextBox.Name = "ttCellWidthTextBox";
+      ttCellWidthTextBox.ReadOnly = true;
+      ttCellWidthTextBox.Size = new Size(108, 31);
+      ttCellWidthTextBox.TabIndex = 13;
       // 
       // label9
       // 
-      label9.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+      label9.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label9.AutoSize = true;
-      label9.Location = new Point(825, 411);
+      label9.Location = new Point(50, 255);
       label9.Name = "label9";
-      label9.Size = new Size(120, 25);
-      label9.TabIndex = 6;
-      label9.Text = "Magnification";
+      label9.Size = new Size(69, 25);
+      label9.TabIndex = 21;
+      label9.Text = "Height:";
+      label9.TextAlign = ContentAlignment.TopRight;
       // 
-      // PreviewPanel
+      // ttCellHeightTextBox
       // 
-      PreviewPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-      PreviewPanel.BackColor = Color.Black;
-      PreviewPanel.Location = new Point(616, 9);
-      PreviewPanel.Name = "PreviewPanel";
-      PreviewPanel.Size = new Size(1483, 394);
-      PreviewPanel.TabIndex = 20;
-      PreviewPanel.Paint += PreviewPanel_Paint;
+      ttCellHeightTextBox.Location = new Point(125, 116);
+      ttCellHeightTextBox.Name = "ttCellHeightTextBox";
+      ttCellHeightTextBox.ReadOnly = true;
+      ttCellHeightTextBox.Size = new Size(108, 31);
+      ttCellHeightTextBox.TabIndex = 13;
       // 
-      // magnificationUpDown
+      // label37
       // 
-      magnificationUpDown.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-      magnificationUpDown.Location = new Point(951, 409);
-      magnificationUpDown.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
-      magnificationUpDown.Name = "magnificationUpDown";
-      magnificationUpDown.Size = new Size(68, 31);
-      magnificationUpDown.TabIndex = 5;
-      magnificationUpDown.Value = new decimal(new int[] { 2, 0, 0, 0 });
-      magnificationUpDown.ValueChanged += magnificationUpDown_ValueChanged;
+      label37.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label37.AutoSize = true;
+      label37.Location = new Point(50, 119);
+      label37.Name = "label37";
+      label37.Size = new Size(69, 25);
+      label37.TabIndex = 21;
+      label37.Text = "Height:";
+      label37.TextAlign = ContentAlignment.TopRight;
       // 
-      // PreviewTextBox
+      // TrueTypeCharPanel
       // 
-      PreviewTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
-      PreviewTextBox.BackColor = Color.Black;
-      PreviewTextBox.Font = new Font("Segoe UI", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
-      PreviewTextBox.ForeColor = SystemColors.Window;
-      PreviewTextBox.Location = new Point(9, 9);
-      PreviewTextBox.Multiline = true;
-      PreviewTextBox.Name = "PreviewTextBox";
-      PreviewTextBox.Size = new Size(601, 430);
-      PreviewTextBox.TabIndex = 19;
-      PreviewTextBox.Text = "$@0123456789\r\nABCDEFGHIJKLMNOPQRSTUVWXYZ\r\nabcdefghijklmnopqrstuvwxyz";
-      PreviewTextBox.TextChanged += PreviewTextBox_TextChanged;
+      TrueTypeCharPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+      TrueTypeCharPanel.BackColor = Color.DimGray;
+      TrueTypeCharPanel.Location = new Point(6, 30);
+      TrueTypeCharPanel.Name = "TrueTypeCharPanel";
+      TrueTypeCharPanel.Size = new Size(598, 633);
+      TrueTypeCharPanel.TabIndex = 1;
       // 
-      // showGlyphsCheckBox
+      // label29
       // 
-      showGlyphsCheckBox.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-      showGlyphsCheckBox.AutoSize = true;
-      showGlyphsCheckBox.Checked = true;
-      showGlyphsCheckBox.CheckState = CheckState.Checked;
-      showGlyphsCheckBox.Location = new Point(616, 410);
-      showGlyphsCheckBox.Name = "showGlyphsCheckBox";
-      showGlyphsCheckBox.Size = new Size(141, 29);
-      showGlyphsCheckBox.TabIndex = 4;
-      showGlyphsCheckBox.Text = "Show Glyphs";
-      showGlyphsCheckBox.UseVisualStyleBackColor = true;
-      showGlyphsCheckBox.CheckedChanged += showGlyphsCheckBox_CheckedChanged;
+      label29.AutoSize = true;
+      label29.Location = new Point(15, 20);
+      label29.Name = "label29";
+      label29.Size = new Size(107, 25);
+      label29.TabIndex = 10;
+      label29.Text = "Preview Text";
+      // 
+      // label28
+      // 
+      label28.AutoSize = true;
+      label28.Location = new Point(1347, 20);
+      label28.Name = "label28";
+      label28.Size = new Size(47, 25);
+      label28.TabIndex = 10;
+      label28.Text = "VLW";
+      // 
+      // label27
+      // 
+      label27.AutoSize = true;
+      label27.Location = new Point(557, 20);
+      label27.Name = "label27";
+      label27.Size = new Size(81, 25);
+      label27.TabIndex = 10;
+      label27.Text = "TrueType";
+      // 
+      // TrueTypePreviewPanel
+      // 
+      TrueTypePreviewPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
+      TrueTypePreviewPanel.BackColor = Color.Black;
+      TrueTypePreviewPanel.Location = new Point(557, 48);
+      TrueTypePreviewPanel.Name = "TrueTypePreviewPanel";
+      TrueTypePreviewPanel.Size = new Size(784, 392);
+      TrueTypePreviewPanel.TabIndex = 20;
+      TrueTypePreviewPanel.Paint += TrueTypePreviewPanel_Paint;
+      // 
+      // VLWPreviewPanel
+      // 
+      VLWPreviewPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+      VLWPreviewPanel.BackColor = Color.Black;
+      VLWPreviewPanel.Location = new Point(1347, 48);
+      VLWPreviewPanel.Name = "VLWPreviewPanel";
+      VLWPreviewPanel.Size = new Size(929, 392);
+      VLWPreviewPanel.TabIndex = 20;
+      VLWPreviewPanel.Paint += VLWPreviewPanel_Paint;
       // 
       // HexLabel
       // 
@@ -371,15 +660,6 @@ partial class MainForm
       HexLabel.Size = new Size(50, 25);
       HexLabel.TabIndex = 18;
       HexLabel.Text = "0x00";
-      // 
-      // GlyphCharPanel
-      // 
-      GlyphCharPanel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-      GlyphCharPanel.BackColor = Color.DimGray;
-      GlyphCharPanel.Location = new Point(616, 445);
-      GlyphCharPanel.Name = "GlyphCharPanel";
-      GlyphCharPanel.Size = new Size(720, 670);
-      GlyphCharPanel.TabIndex = 2;
       // 
       // label5
       // 
@@ -401,22 +681,13 @@ partial class MainForm
       TestCharTextBox.Text = "0";
       TestCharTextBox.TextChanged += TestCharTextBox_TextChanged;
       // 
-      // TrueTypeCharPanel
-      // 
-      TrueTypeCharPanel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-      TrueTypeCharPanel.BackColor = Color.DimGray;
-      TrueTypeCharPanel.Location = new Point(9, 445);
-      TrueTypeCharPanel.Name = "TrueTypeCharPanel";
-      TrueTypeCharPanel.Size = new Size(601, 670);
-      TrueTypeCharPanel.TabIndex = 1;
-      // 
       // tabPage2
       // 
       tabPage2.Controls.Add(panel1);
       tabPage2.Location = new Point(4, 34);
       tabPage2.Name = "tabPage2";
       tabPage2.Padding = new Padding(6);
-      tabPage2.Size = new Size(2108, 1161);
+      tabPage2.Size = new Size(2285, 1161);
       tabPage2.TabIndex = 1;
       tabPage2.Text = "Full Char";
       tabPage2.UseVisualStyleBackColor = true;
@@ -427,14 +698,105 @@ partial class MainForm
       panel1.BackColor = Color.DimGray;
       panel1.Location = new Point(9, 9);
       panel1.Name = "panel1";
-      panel1.Size = new Size(2090, 1143);
+      panel1.Size = new Size(1597, 1143);
       panel1.TabIndex = 0;
       panel1.Paint += panel1_Paint;
+      // 
+      // groupBox4
+      // 
+      groupBox4.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      groupBox4.Controls.Add(label14);
+      groupBox4.Controls.Add(digitCheckBox);
+      groupBox4.Controls.Add(label6);
+      groupBox4.Controls.Add(label4);
+      groupBox4.Controls.Add(label3);
+      groupBox4.Controls.Add(SpacingUpDown);
+      groupBox4.Controls.Add(label7);
+      groupBox4.Controls.Add(charHeightUpDown);
+      groupBox4.Controls.Add(label8);
+      groupBox4.Controls.Add(monospaceCheckBox);
+      groupBox4.Location = new Point(2311, 189);
+      groupBox4.Name = "groupBox4";
+      groupBox4.Size = new Size(334, 372);
+      groupBox4.TabIndex = 27;
+      groupBox4.TabStop = false;
+      groupBox4.Text = "Options";
+      // 
+      // label14
+      // 
+      label14.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label14.AutoSize = true;
+      label14.Location = new Point(128, 87);
+      label14.Name = "label14";
+      label14.Size = new Size(54, 25);
+      label14.TabIndex = 22;
+      label14.Text = "Digit:";
+      // 
+      // digitCheckBox
+      // 
+      digitCheckBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      digitCheckBox.AutoSize = true;
+      digitCheckBox.Location = new Point(191, 90);
+      digitCheckBox.Name = "digitCheckBox";
+      digitCheckBox.Size = new Size(22, 21);
+      digitCheckBox.TabIndex = 21;
+      digitCheckBox.UseVisualStyleBackColor = true;
+      digitCheckBox.CheckedChanged += digitCheckBox_CheckedChanged;
+      // 
+      // label6
+      // 
+      label6.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label6.AutoSize = true;
+      label6.Location = new Point(291, 119);
+      label6.Name = "label6";
+      label6.Size = new Size(31, 25);
+      label6.TabIndex = 7;
+      label6.Text = "px";
+      // 
+      // label4
+      // 
+      label4.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label4.AutoSize = true;
+      label4.Location = new Point(288, 27);
+      label4.Name = "label4";
+      label4.Size = new Size(31, 25);
+      label4.TabIndex = 7;
+      label4.Text = "px";
+      // 
+      // label3
+      // 
+      label3.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label3.AutoSize = true;
+      label3.Location = new Point(103, 119);
+      label3.Name = "label3";
+      label3.Size = new Size(79, 25);
+      label3.TabIndex = 6;
+      label3.Text = "Spacing:";
+      // 
+      // SpacingUpDown
+      // 
+      SpacingUpDown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      SpacingUpDown.Location = new Point(191, 117);
+      SpacingUpDown.Name = "SpacingUpDown";
+      SpacingUpDown.Size = new Size(94, 31);
+      SpacingUpDown.TabIndex = 20;
+      SpacingUpDown.Value = new decimal(new int[] { 1, 0, 0, 0 });
+      SpacingUpDown.ValueChanged += SpacingUpDown_ValueChanged;
+      // 
+      // label7
+      // 
+      label7.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label7.AutoSize = true;
+      label7.Location = new Point(113, 27);
+      label7.Name = "label7";
+      label7.Size = new Size(69, 25);
+      label7.TabIndex = 6;
+      label7.Text = "Height:";
       // 
       // charHeightUpDown
       // 
       charHeightUpDown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      charHeightUpDown.Location = new Point(131, 25);
+      charHeightUpDown.Location = new Point(188, 25);
       charHeightUpDown.Minimum = new decimal(new int[] { 8, 0, 0, 0 });
       charHeightUpDown.Name = "charHeightUpDown";
       charHeightUpDown.Size = new Size(94, 31);
@@ -446,7 +808,7 @@ partial class MainForm
       // 
       label8.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label8.AutoSize = true;
-      label8.Location = new Point(16, 59);
+      label8.Location = new Point(73, 59);
       label8.Name = "label8";
       label8.Size = new Size(109, 25);
       label8.TabIndex = 16;
@@ -456,124 +818,12 @@ partial class MainForm
       // 
       monospaceCheckBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       monospaceCheckBox.AutoSize = true;
-      monospaceCheckBox.Location = new Point(134, 62);
+      monospaceCheckBox.Location = new Point(191, 62);
       monospaceCheckBox.Name = "monospaceCheckBox";
       monospaceCheckBox.Size = new Size(22, 21);
       monospaceCheckBox.TabIndex = 15;
       monospaceCheckBox.UseVisualStyleBackColor = true;
       monospaceCheckBox.CheckedChanged += monospaceCheckBox_CheckedChanged;
-      // 
-      // SaveButton
-      // 
-      SaveButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      SaveButton.Location = new Point(2356, 1177);
-      SaveButton.Name = "SaveButton";
-      SaveButton.Size = new Size(112, 34);
-      SaveButton.TabIndex = 9;
-      SaveButton.Text = "Download";
-      SaveButton.UseVisualStyleBackColor = true;
-      SaveButton.Click += SaveButton_Click;
-      // 
-      // label4
-      // 
-      label4.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      label4.AutoSize = true;
-      label4.Location = new Point(231, 27);
-      label4.Name = "label4";
-      label4.Size = new Size(31, 25);
-      label4.TabIndex = 7;
-      label4.Text = "px";
-      // 
-      // label7
-      // 
-      label7.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      label7.AutoSize = true;
-      label7.Location = new Point(56, 27);
-      label7.Name = "label7";
-      label7.Size = new Size(69, 25);
-      label7.TabIndex = 6;
-      label7.Text = "Height:";
-      // 
-      // FontComboBox
-      // 
-      FontComboBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      FontComboBox.FormattingEnabled = true;
-      FontComboBox.Location = new Point(131, 30);
-      FontComboBox.Name = "FontComboBox";
-      FontComboBox.Size = new Size(197, 33);
-      FontComboBox.TabIndex = 3;
-      // 
-      // label10
-      // 
-      label10.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      label10.AutoSize = true;
-      label10.Location = new Point(2197, 1143);
-      label10.Name = "label10";
-      label10.Size = new Size(130, 25);
-      label10.TabIndex = 21;
-      label10.Text = "Font Sizes (px):";
-      // 
-      // fontSizesTextBox
-      // 
-      fontSizesTextBox.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      fontSizesTextBox.Location = new Point(2333, 1140);
-      fontSizesTextBox.Name = "fontSizesTextBox";
-      fontSizesTextBox.Size = new Size(135, 31);
-      fontSizesTextBox.TabIndex = 22;
-      fontSizesTextBox.Text = "8,16,24,32,40,48,56,64";
-      // 
-      // statusTextBox
-      // 
-      statusTextBox.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      statusTextBox.Location = new Point(2193, 861);
-      statusTextBox.Multiline = true;
-      statusTextBox.Name = "statusTextBox";
-      statusTextBox.Size = new Size(275, 273);
-      statusTextBox.TabIndex = 23;
-      // 
-      // italicCheckBox
-      // 
-      italicCheckBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      italicCheckBox.AutoSize = true;
-      italicCheckBox.Location = new Point(131, 99);
-      italicCheckBox.Name = "italicCheckBox";
-      italicCheckBox.Size = new Size(22, 21);
-      italicCheckBox.TabIndex = 24;
-      italicCheckBox.UseVisualStyleBackColor = true;
-      italicCheckBox.CheckedChanged += italicCheckBox_CheckedChanged;
-      // 
-      // testButton1
-      // 
-      testButton1.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      testButton1.Location = new Point(2193, 776);
-      testButton1.Name = "testButton1";
-      testButton1.Size = new Size(87, 79);
-      testButton1.TabIndex = 25;
-      testButton1.Text = "Observe";
-      testButton1.UseVisualStyleBackColor = true;
-      testButton1.Click += testObserveButton_Click;
-      // 
-      // testButton2
-      // 
-      testButton2.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      testButton2.Location = new Point(2286, 776);
-      testButton2.Name = "testButton2";
-      testButton2.Size = new Size(89, 79);
-      testButton2.TabIndex = 25;
-      testButton2.Text = "Glyph";
-      testButton2.UseVisualStyleBackColor = true;
-      testButton2.Click += testGlyphButton_Click;
-      // 
-      // testButton3
-      // 
-      testButton3.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      testButton3.Location = new Point(2381, 776);
-      testButton3.Name = "testButton3";
-      testButton3.Size = new Size(87, 79);
-      testButton3.TabIndex = 25;
-      testButton3.Text = "Font";
-      testButton3.UseVisualStyleBackColor = true;
-      testButton3.Click += testFontButton_Click;
       // 
       // groupBox3
       // 
@@ -584,7 +834,7 @@ partial class MainForm
       groupBox3.Controls.Add(boldCheckBox);
       groupBox3.Controls.Add(FontComboBox);
       groupBox3.Controls.Add(italicCheckBox);
-      groupBox3.Location = new Point(2134, 46);
+      groupBox3.Location = new Point(2311, 46);
       groupBox3.Name = "groupBox3";
       groupBox3.Size = new Size(334, 137);
       groupBox3.TabIndex = 26;
@@ -632,81 +882,102 @@ partial class MainForm
       boldCheckBox.UseVisualStyleBackColor = true;
       boldCheckBox.CheckedChanged += boldCheckBox_CheckedChanged;
       // 
-      // groupBox4
+      // FontComboBox
       // 
-      groupBox4.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      groupBox4.Controls.Add(label14);
-      groupBox4.Controls.Add(digitCheckBox);
-      groupBox4.Controls.Add(label6);
-      groupBox4.Controls.Add(label4);
-      groupBox4.Controls.Add(label3);
-      groupBox4.Controls.Add(SpacingUpDown);
-      groupBox4.Controls.Add(label7);
-      groupBox4.Controls.Add(charHeightUpDown);
-      groupBox4.Controls.Add(label8);
-      groupBox4.Controls.Add(monospaceCheckBox);
-      groupBox4.Location = new Point(2134, 189);
-      groupBox4.Name = "groupBox4";
-      groupBox4.Size = new Size(334, 190);
-      groupBox4.TabIndex = 27;
-      groupBox4.TabStop = false;
-      groupBox4.Text = "VLF Font";
+      FontComboBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      FontComboBox.FormattingEnabled = true;
+      FontComboBox.Location = new Point(131, 30);
+      FontComboBox.Name = "FontComboBox";
+      FontComboBox.Size = new Size(197, 33);
+      FontComboBox.TabIndex = 3;
       // 
-      // label14
+      // italicCheckBox
       // 
-      label14.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      label14.AutoSize = true;
-      label14.Location = new Point(71, 87);
-      label14.Name = "label14";
-      label14.Size = new Size(54, 25);
-      label14.TabIndex = 22;
-      label14.Text = "Digit:";
+      italicCheckBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      italicCheckBox.AutoSize = true;
+      italicCheckBox.Location = new Point(131, 99);
+      italicCheckBox.Name = "italicCheckBox";
+      italicCheckBox.Size = new Size(22, 21);
+      italicCheckBox.TabIndex = 24;
+      italicCheckBox.UseVisualStyleBackColor = true;
+      italicCheckBox.CheckedChanged += italicCheckBox_CheckedChanged;
       // 
-      // digitCheckBox
+      // SaveButton
       // 
-      digitCheckBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      digitCheckBox.AutoSize = true;
-      digitCheckBox.Location = new Point(134, 90);
-      digitCheckBox.Name = "digitCheckBox";
-      digitCheckBox.Size = new Size(22, 21);
-      digitCheckBox.TabIndex = 21;
-      digitCheckBox.UseVisualStyleBackColor = true;
-      digitCheckBox.CheckedChanged += digitCheckBox_CheckedChanged;
+      SaveButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+      SaveButton.Location = new Point(2533, 1177);
+      SaveButton.Name = "SaveButton";
+      SaveButton.Size = new Size(112, 34);
+      SaveButton.TabIndex = 9;
+      SaveButton.Text = "Download";
+      SaveButton.UseVisualStyleBackColor = true;
+      SaveButton.Click += SaveButton_Click;
       // 
-      // label6
+      // label10
       // 
-      label6.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      label6.AutoSize = true;
-      label6.Location = new Point(234, 119);
-      label6.Name = "label6";
-      label6.Size = new Size(31, 25);
-      label6.TabIndex = 7;
-      label6.Text = "px";
+      label10.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+      label10.AutoSize = true;
+      label10.Location = new Point(2374, 1143);
+      label10.Name = "label10";
+      label10.Size = new Size(130, 25);
+      label10.TabIndex = 21;
+      label10.Text = "Font Sizes (px):";
       // 
-      // label3
+      // fontSizesTextBox
       // 
-      label3.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      label3.AutoSize = true;
-      label3.Location = new Point(46, 119);
-      label3.Name = "label3";
-      label3.Size = new Size(79, 25);
-      label3.TabIndex = 6;
-      label3.Text = "Spacing:";
+      fontSizesTextBox.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+      fontSizesTextBox.Location = new Point(2510, 1140);
+      fontSizesTextBox.Name = "fontSizesTextBox";
+      fontSizesTextBox.Size = new Size(135, 31);
+      fontSizesTextBox.TabIndex = 22;
+      fontSizesTextBox.Text = "8,16,24,32,40,48,56,64";
       // 
-      // SpacingUpDown
+      // statusTextBox
       // 
-      SpacingUpDown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      SpacingUpDown.Location = new Point(134, 117);
-      SpacingUpDown.Name = "SpacingUpDown";
-      SpacingUpDown.Size = new Size(94, 31);
-      SpacingUpDown.TabIndex = 20;
-      SpacingUpDown.Value = new decimal(new int[] { 1, 0, 0, 0 });
-      SpacingUpDown.ValueChanged += SpacingUpDown_ValueChanged;
+      statusTextBox.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+      statusTextBox.Location = new Point(2370, 861);
+      statusTextBox.Multiline = true;
+      statusTextBox.Name = "statusTextBox";
+      statusTextBox.Size = new Size(275, 273);
+      statusTextBox.TabIndex = 23;
+      // 
+      // testButton1
+      // 
+      testButton1.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+      testButton1.Location = new Point(2370, 776);
+      testButton1.Name = "testButton1";
+      testButton1.Size = new Size(87, 79);
+      testButton1.TabIndex = 25;
+      testButton1.Text = "Observe";
+      testButton1.UseVisualStyleBackColor = true;
+      testButton1.Click += testObserveButton_Click;
+      // 
+      // testButton2
+      // 
+      testButton2.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+      testButton2.Location = new Point(2463, 776);
+      testButton2.Name = "testButton2";
+      testButton2.Size = new Size(89, 79);
+      testButton2.TabIndex = 25;
+      testButton2.Text = "Glyph";
+      testButton2.UseVisualStyleBackColor = true;
+      testButton2.Click += testGlyphButton_Click;
+      // 
+      // testButton3
+      // 
+      testButton3.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+      testButton3.Location = new Point(2558, 776);
+      testButton3.Name = "testButton3";
+      testButton3.Size = new Size(87, 79);
+      testButton3.TabIndex = 25;
+      testButton3.Text = "Font";
+      testButton3.UseVisualStyleBackColor = true;
+      testButton3.Click += testFontButton_Click;
       // 
       // button1
       // 
       button1.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      button1.Location = new Point(2197, 625);
+      button1.Location = new Point(2382, 724);
       button1.Name = "button1";
       button1.Size = new Size(265, 46);
       button1.TabIndex = 25;
@@ -718,10 +989,10 @@ partial class MainForm
       // 
       AutoScaleDimensions = new SizeF(10F, 25F);
       AutoScaleMode = AutoScaleMode.Font;
-      ClientSize = new Size(2480, 1223);
+      ClientSize = new Size(2657, 1223);
       Controls.Add(groupBox4);
-      Controls.Add(groupBox3);
       Controls.Add(testButton3);
+      Controls.Add(groupBox3);
       Controls.Add(testButton2);
       Controls.Add(button1);
       Controls.Add(testButton1);
@@ -735,18 +1006,23 @@ partial class MainForm
       tabControl1.ResumeLayout(false);
       tabPage1.ResumeLayout(false);
       tabPage1.PerformLayout();
-      groupBox6.ResumeLayout(false);
-      groupBox6.PerformLayout();
+      groupBox9.ResumeLayout(false);
       groupBox5.ResumeLayout(false);
       groupBox5.PerformLayout();
-      ((System.ComponentModel.ISupportInitialize)magnificationUpDown).EndInit();
+      groupBox6.ResumeLayout(false);
+      groupBox6.PerformLayout();
+      groupBox8.ResumeLayout(false);
+      groupBox2.ResumeLayout(false);
+      groupBox2.PerformLayout();
+      groupBox7.ResumeLayout(false);
+      groupBox7.PerformLayout();
       tabPage2.ResumeLayout(false);
-      ((System.ComponentModel.ISupportInitialize)charHeightUpDown).EndInit();
-      groupBox3.ResumeLayout(false);
-      groupBox3.PerformLayout();
       groupBox4.ResumeLayout(false);
       groupBox4.PerformLayout();
       ((System.ComponentModel.ISupportInitialize)SpacingUpDown).EndInit();
+      ((System.ComponentModel.ISupportInitialize)charHeightUpDown).EndInit();
+      groupBox3.ResumeLayout(false);
+      groupBox3.PerformLayout();
       ResumeLayout(false);
       PerformLayout();
    }
@@ -763,7 +1039,7 @@ partial class MainForm
    private Button SaveButton;
    private Label label4;
    private Label label5;
-   private Panel GlyphCharPanel;
+   private Panel VLWCharPanel;
    private Label label8;
    private CheckBox monospaceCheckBox;
    private Label HexLabel;
@@ -773,7 +1049,7 @@ partial class MainForm
    private TextBox fontSizesTextBox;
    private TextBox statusTextBox;
    private CheckBox italicCheckBox;
-   private Panel PreviewPanel;
+   private Panel VLWPreviewPanel;
    private TextBox PreviewTextBox;
    private Button testButton1;
    private Button testButton2;
@@ -786,11 +1062,8 @@ partial class MainForm
    private GroupBox groupBox4;
    private Label label14;
    private CheckBox digitCheckBox;
-   private Label label9;
-   private NumericUpDown magnificationUpDown;
-   private CheckBox showGlyphsCheckBox;
    private Label label15;
-   private TextBox ascentTextBox;
+   private TextBox vlwAscentTextBox;
    private Label label17;
    private Label label16;
    private Label label21;
@@ -802,9 +1075,9 @@ partial class MainForm
    private TextBox gxAdvanceTextBox;
    private TextBox gdYTextBox;
    private TextBox gdXTextBox;
-   private TextBox heightTextBox;
-   private TextBox widthTextBox;
-   private TextBox descentTextBox;
+   private TextBox vlwHeightTextBox;
+   private TextBox vlwWidthTextBox;
+   private TextBox vlwDescentTextBox;
    private GroupBox groupBox6;
    private GroupBox groupBox5;
    private Button button1;
@@ -814,4 +1087,28 @@ partial class MainForm
    private Label label1;
    private NumericUpDown SpacingUpDown;
    private NumericUpDown numericUpDown1;
+   private Panel TrueTypePreviewPanel;
+   private GroupBox groupBox7;
+   private Label label31;
+   private TextBox ttCellWidthTextBox;
+   private TextBox ttCellHeightTextBox;
+   private Label label37;
+   private GroupBox groupBox2;
+   private Label ttDescentLabel;
+   private Label ttAscentLabel;
+   private TextBox ttDescentTextBox;
+   private TextBox ttAscentTextBox;
+   private TextBox ttHeightTextBox;
+   private Label label24;
+   private Label label23;
+   private TextBox ttCharWidthTextBox;
+   private TextBox ttCharHeightTextBox;
+   private Label label9;
+   private GroupBox groupBox8;
+   private GroupBox groupBox9;
+   private Label label25;
+   private TextBox ttLineSpacingTextBox;
+   private Label label28;
+   private Label label27;
+   private Label label29;
 }

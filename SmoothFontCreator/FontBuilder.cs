@@ -71,26 +71,23 @@ public class FontBuilder
       _largeGraphics.DrawPreciseString(c, metrics.Font, pt, Color.White, Color.Transparent);
    }
 
-   private void _Scale(Bitmap largeBitmap, Rectangle srcRect, Bitmap smallBitmap, double ratio)
+   private void _Scale(Bitmap largeBitmap, Rectangle srcRect, Bitmap smallBitmap, double ratio, double xOffset, double yOffset)
    {
       using DirectBitmap large = new(largeBitmap, true, srcRect);
       using DirectBitmap small = new(smallBitmap, false);
 
-      float ratioF = (float)ratio;
-      float offset = -(ratioF * smallBitmap.Width - srcRect.Width) / 2;
       for (int y = 0; y < small.Height; y++)
       {
          for (int x = 0; x < small.Width; x++)
          {
             // for each pixel in the small bitmap, sum the contents of the associated
             // pixels in the large bitmap
-
-            if (Profiler.C == '0' && x == 0 && y == 17)
-            {
-
-            }
-
-            RectangleF rect = new RectangleF(x * ratioF + offset, y * ratioF, ratioF, ratioF);
+            RectangleF rect = new RectangleF(
+               (float) (x * ratio + xOffset), 
+               (float) (y * ratio + yOffset), 
+               (float) ratio, 
+               (float) ratio
+               );
 
             Color c = large.GetPixel(rect);
             small.SetPixel(x, y, c);
@@ -141,7 +138,9 @@ public class FontBuilder
 #else
       double ratio = 1 / scaleFactor;
       Rectangle srcRect = new(0, 0, (int)Math.Ceiling(charMetrics.CharWidth), (int)Math.Ceiling(charMetrics.CharHeight));
-      _Scale(_largeBitmap, srcRect, smallBitmap, ratio);
+      double xOffset = -(ratio * smallBitmap.Width - srcRect.Width) / 2;
+      double yOffset = -ratio * (thisCharMetrics.CharBottom - thisCharMetrics.Baseline);
+      _Scale(_largeBitmap, srcRect, smallBitmap, ratio, xOffset, 0);
 #endif
 
       glyph.Bitmap = smallBitmap;
@@ -149,7 +148,7 @@ public class FontBuilder
       // use GDI to get the baseline
       GdiMetrics gdiMetrics = new GdiMetrics(thisCharMetrics.Font);
 
-      glyph.gdY = (int)Math.Ceiling(gdiMetrics.BaselinePx - thisCharMetrics.CharTop);
+      glyph.gdY = (int)Math.Round(gdiMetrics.BaselinePx - thisCharMetrics.CharTop);
       glyph.Width = glyph.Bitmap.Width;
       glyph.Height = glyph.Bitmap.Height;
 

@@ -29,6 +29,16 @@ public class ObservedMetrics
    public double LeftMargin => CharRect.Left - CellRect.Left;
    public double RightMargin => CellRect.Right - CharRect.Right;
 
+
+   public double Baseline
+   {
+      get
+      {
+         GdiMetrics metrics = new GdiMetrics(Font);
+         return metrics.BaselinePx;
+      }
+   }
+
    public String CellRectString => CellRect.ToString();
    public String CharRectString => CharRect.ToString();
 

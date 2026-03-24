@@ -9,7 +9,6 @@ public class GdiMetrics
    public float AscentPx { get; }
    public float DescentPx { get; }
    public float LineSpacingPx { get; }
-   public float TopPx { get; }
    public float BaselinePx { get; }
    public float BottomPx { get; }
 
@@ -29,7 +28,6 @@ public class GdiMetrics
       DescentPx = (descentEm / lineSpacingEm) * HeightPx;
       LineSpacingPx = (HeightPx / heightEm) * lineSpacingEm;
 
-      TopPx = HeightPx - font.Size;
       BaselinePx = AscentPx;
       BottomPx = AscentPx + DescentPx;
    }

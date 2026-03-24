@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 
 namespace SmoothFontCreator;
 
@@ -8,6 +9,7 @@ public partial class MainForm : Form
    Color Red1 = Color.FromArgb(255, 60, 0, 0);
    Color Red2 = Color.FromArgb(255, 80, 0, 0);
    Color Red3 = Color.FromArgb(255, 110, 0, 0);
+   int _magnification = 2;
 
    private ObservedMetrics _allCharsMetrics;
    private VLWFont _vlwFont = new(@"C:\SourceCode\Arduino\SmoothFontCreator\Roboto32.vlw");
@@ -39,10 +41,12 @@ public partial class MainForm : Form
 
 
       TrueTypeCharPanel.Paint += TrueTypeCharPanel_Paint;
-      GlyphCharPanel.Paint += GlyphPanel_Paint;
+      VLWCharPanel.Paint += GlyphPanel_Paint;
 
       TrueTypeCharPanel.MouseWheel += OnMouseWheel;
-      GlyphCharPanel.MouseWheel += OnMouseWheel;
+      VLWCharPanel.MouseWheel += OnMouseWheel;
+      VLWPreviewPanel.MouseWheel += PreviewPanel_MouseWheel;
+      TrueTypePreviewPanel.MouseWheel += PreviewPanel_MouseWheel;
 
 
       _builder = FontBuilder.ForFontFamily(FontComboBox.Text, _getFontStyle());
@@ -51,6 +55,27 @@ public partial class MainForm : Form
       _UpdateAllCharsMetrics();
       _createFont();
       _displayCurrentChar();
+   }
+
+   private void PreviewPanel_MouseWheel(object? sender, MouseEventArgs e)
+   {
+      if (e.Delta > 0)
+      {
+         if (_magnification < 100)
+         {
+            _magnification++;
+         }
+      }
+      else if (e.Delta < 0)
+      {
+         if (_magnification > 1)
+         {
+            _magnification--;
+         }
+      }
+
+      VLWPreviewPanel.Invalidate();
+      TrueTypePreviewPanel.Invalidate();
    }
 
    private FontStyle _getFontStyle()
@@ -155,22 +180,33 @@ public partial class MainForm : Form
    private void _displayCurrentChar()
    {
       TrueTypeCharPanel.Invalidate();
-      GlyphCharPanel.Invalidate();
+      VLWCharPanel.Invalidate();
 
-      ascentTextBox.Text = _vlwFont.Ascent + " px";
-      descentTextBox.Text = _vlwFont.Descent + " px";
+      vlwAscentTextBox.Text = _vlwFont.Ascent + " px";
+      vlwDescentTextBox.Text = _vlwFont.Descent + " px";
+
+      GdiMetrics gdiMetrics = new(_allCharsMetrics.Font);
+      ttAscentTextBox.Text = (gdiMetrics.AscentPx/gdiMetrics.HeightPx).ToString("0.000");
+      ttDescentTextBox.Text = (gdiMetrics.DescentPx / gdiMetrics.HeightPx).ToString("0.000");
+      ttHeightTextBox.Text = (gdiMetrics.HeightPx / gdiMetrics.HeightPx).ToString("0.000");
+      ttLineSpacingTextBox.Text = (gdiMetrics.LineSpacingPx / gdiMetrics.HeightPx).ToString("0.000");
 
       char c = TestCharTextBox.Text[0];
       if (TestCharTextBox.Text.Length != 1)
       {
          HexLabel.Text = "----";
 
-         widthTextBox.Text = "--";
-         heightTextBox.Text = "--";
+         vlwWidthTextBox.Text = "--";
+         vlwHeightTextBox.Text = "--";
          gxAdvanceTextBox.Text = "--";
          gdXTextBox.Text = "--";
          gdYTextBox.Text = "--";
          paddingTextBox.Text = "--";
+
+         ttCellWidthTextBox.Text = "--";
+         ttCellHeightTextBox.Text = "--";
+         ttCharWidthTextBox.Text = "--";
+         ttCharHeightTextBox.Text = "--";
       }
       else
       {
@@ -178,21 +214,32 @@ public partial class MainForm : Form
 
          if (_vlwFont.Glyphs.TryGetValue(c, out VLWGlyph? glyph))
          {
-            widthTextBox.Text = glyph.Width + " px";
-            heightTextBox.Text = glyph.Height + " px";
+            vlwWidthTextBox.Text = glyph.Width + " px";
+            vlwHeightTextBox.Text = glyph.Height + " px";
             gxAdvanceTextBox.Text = glyph.gxAdvance + " px";
             gdXTextBox.Text = glyph.gdX + " px";
             gdYTextBox.Text = glyph.gdY + " px";
             paddingTextBox.Text = glyph.padding + " px";
+
+            ObservedMetrics charMetrics = _getCharMetrics();
+            ttCellWidthTextBox.Text = (charMetrics.CellWidth / gdiMetrics.HeightPx).ToString("0.000");
+            ttCellHeightTextBox.Text = (charMetrics.CellHeight / gdiMetrics.HeightPx).ToString("0.000");
+            ttCharWidthTextBox.Text = (charMetrics.CharWidth / gdiMetrics.HeightPx).ToString("0.000");
+            ttCharHeightTextBox.Text = (charMetrics.CharHeight / gdiMetrics.HeightPx).ToString("0.000");
          }
          else
          {
-            widthTextBox.Text = "--";
-            heightTextBox.Text = "--";
+            vlwWidthTextBox.Text = "--";
+            vlwHeightTextBox.Text = "--";
             gxAdvanceTextBox.Text = "--";
             gdXTextBox.Text = "--";
             gdYTextBox.Text = "--";
             paddingTextBox.Text = "--";
+
+            ttCellWidthTextBox.Text = "--";
+            ttCellHeightTextBox.Text = "--";
+            ttCharWidthTextBox.Text = "--";
+            ttCharHeightTextBox.Text = "--";
          }
       }
    }
@@ -212,7 +259,7 @@ public partial class MainForm : Form
       _displayCurrentChar();
 
       TrueTypeCharPanel.Invalidate();
-      GlyphCharPanel.Invalidate();
+      VLWCharPanel.Invalidate();
    }
 
    private void TrueTypeCharPanel_Paint(object sender, PaintEventArgs e)
@@ -275,22 +322,19 @@ public partial class MainForm : Form
 
       e.Graphics.SmoothingMode = SmoothingMode.None; // so that dashes are displayed
       float start = pt.Y;
-      float top = pt.Y + gdiMetrics.TopPx;
       float baseline = pt.Y + gdiMetrics.BaselinePx;
       float bottom = pt.Y + gdiMetrics.BottomPx;
       float end = pt.Y + gdiMetrics.LineSpacingPx;
       e.Graphics.DrawLine(startEndPen, x1, start, x2, start);
-      e.Graphics.DrawLine(topPen, x1, top, x2, top);
       e.Graphics.DrawLine(baselinePen, x1, baseline, x2, baseline);
       e.Graphics.DrawLine(bottomPen, x1, bottom, x2, bottom);
       e.Graphics.DrawLine(startEndPen, x1, end, x2, end);
 
       using Font f = new Font("Arial", 8);
-      e.Graphics.DrawString("START", f, new SolidBrush(startEndColor), new PointF(0, start));
-      e.Graphics.DrawString("TOP", f, new SolidBrush(topColor), new PointF(0, top));
+      e.Graphics.DrawString("ASCENT", f, new SolidBrush(startEndColor), new PointF(0, start));
       e.Graphics.DrawString("BASELINE", f, new SolidBrush(baselineColor), new PointF(0, baseline));
-      e.Graphics.DrawString("BOTTOM", f, new SolidBrush(bottomColor), new PointF(0, bottom));
-      e.Graphics.DrawString("END (NEXT LINE)", f, new SolidBrush(startEndColor), new PointF(0, end));
+      e.Graphics.DrawString("DESCENT", f, new SolidBrush(bottomColor), new PointF(0, bottom));
+      e.Graphics.DrawString("LINE SPACING", f, new SolidBrush(startEndColor), new PointF(0, end));
 
       // draw what we observed on the right
       x1 = TrueTypeCharPanel.Width / 2;
@@ -358,7 +402,8 @@ public partial class MainForm : Form
 
       _vlwFont = _builder.CreateFont(targetCharHeightPx, FontBuilderOptions);
 
-      PreviewPanel.Invalidate();
+      VLWPreviewPanel.Invalidate();
+      TrueTypePreviewPanel.Invalidate();
    }
 
    private void GlyphPanel_Paint(object sender, PaintEventArgs e)
@@ -382,9 +427,9 @@ public partial class MainForm : Form
          e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
          Rectangle srcRect = new(-1, -1, smallBitmap.Width + 2, smallBitmap.Height + 2);
 
-         float pixelSize = GlyphCharPanel.Height / (float)smallBitmap.Height;
-         int x = (int)((GlyphCharPanel.Width - pixelSize * smallBitmap.Width) / 2.0);
-         int y = (int)((GlyphCharPanel.Height - pixelSize * smallBitmap.Height) / 2.0);
+         float pixelSize = VLWCharPanel.Height / (float)smallBitmap.Height;
+         int x = (int)((VLWCharPanel.Width - pixelSize * smallBitmap.Width) / 2.0);
+         int y = (int)((VLWCharPanel.Height - pixelSize * smallBitmap.Height) / 2.0);
          int w = (int)(smallBitmap.Width * pixelSize);
          int h = (int)(smallBitmap.Height * pixelSize);
          Rectangle dstRect = new(x, y, w, h);
@@ -468,89 +513,28 @@ public partial class MainForm : Form
       MessageBox.Show($"{fontSizes.Length} Files Created");
    }
 
-   private void PreviewPanel_Paint(object sender, PaintEventArgs e)
-   {
-      // create the bitmap that we will display
-      using Bitmap bitmap = new(PreviewPanel.Width, PreviewPanel.Height);
-      using Graphics graphics = Graphics.FromImage(bitmap);
-
-      String str = PreviewTextBox.Text;
-
-      Brush glyphBrush = new SolidBrush(Red3);
-
-      int x = 0;
-      int y = 0;
-      for (int i = 0; i < str.Length; i++)
-      {
-         char c = str[i];
-
-         switch (c)
-         {
-            case '\n':
-               y += (int)_vlwFont.Height;
-               x = 0;
-               break;
-
-            case '\r':
-               break;
-
-            case ' ':
-               {
-                  if (_vlwFont.Glyphs.TryGetValue(' ', out VLWGlyph? glyph))
-                  {
-                     x += glyph.gxAdvance;
-                  }
-                  else
-                  {
-                     x += (int)_vlwFont.Height;
-                  }
-               }
-               break;
-            default:
-               {
-                  VLWGlyph glyph = _vlwFont.Glyphs[c];
-                  if (glyph.Bitmap != null) // space char
-                  {
-                     int gx = x + glyph.gdX;
-                     int gy = (int)(y + _vlwFont.Ascent - glyph.gdY);
-                     if (showGlyphsCheckBox.Checked)
-                     {
-                        graphics.FillRectangle(glyphBrush, gx, gy, glyph.Bitmap.Width, glyph.Bitmap.Height);
-                     }
-                     graphics.DrawImageUnscaled(glyph.Bitmap, gx, gy);
-                  }
-                  x += glyph.gxAdvance;
-               }
-               break;
-         }
-      }
-
-      e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
-      Rectangle srcRect = new(-1, -1, bitmap.Width + 2, bitmap.Height + 2);
-
-      int pixelSize = (int)magnificationUpDown.Value;
-      Rectangle dstRect = new(0, 0, bitmap.Width * pixelSize, bitmap.Height * pixelSize);
-      e.Graphics.DrawImage(bitmap, dstRect, srcRect, GraphicsUnit.Pixel);
-   }
 
    private void PreviewTextBox_TextChanged(object sender, EventArgs e)
    {
-      PreviewPanel.Invalidate();
+      VLWPreviewPanel.Invalidate();
+      TrueTypePreviewPanel.Invalidate();
    }
 
    private void showGlyphsCheckBox_CheckedChanged(object sender, EventArgs e)
    {
-      PreviewPanel.Invalidate();
+      VLWPreviewPanel.Invalidate();
+      TrueTypePreviewPanel.Invalidate();
    }
 
    private void magnificationUpDown_ValueChanged(object sender, EventArgs e)
    {
-      PreviewPanel.Invalidate();
+      VLWPreviewPanel.Invalidate();
+      TrueTypePreviewPanel.Invalidate();
    }
 
    private void charHeightUpDown_ValueChanged(object sender, EventArgs e)
    {
-      GlyphCharPanel.Invalidate();
+      VLWCharPanel.Invalidate();
       _createFont();
    }
 
@@ -669,9 +653,115 @@ public partial class MainForm : Form
       _vlwFont = new(bytes);
 
       _displayCurrentChar();
-      PreviewPanel.Invalidate();
+      VLWPreviewPanel.Invalidate();
+      TrueTypePreviewPanel.Invalidate();
       TrueTypeCharPanel.Invalidate();
-      GlyphCharPanel.Invalidate();
+      VLWCharPanel.Invalidate();
    }
 
+   private void VLWPreviewPanel_Paint(object sender, PaintEventArgs e)
+   {
+      // create the bitmap that we will display
+      using Bitmap bitmap = new(VLWPreviewPanel.Width, VLWPreviewPanel.Height);
+      using Graphics graphics = Graphics.FromImage(bitmap);
+
+      int height = (int)charHeightUpDown.Value;
+      using Pen pen = new Pen(Color.Red);
+      pen.DashStyle = DashStyle.Dot;
+      e.Graphics.SmoothingMode = SmoothingMode.None;
+      for (int i = 0; i < 5; i++)
+      {
+         e.Graphics.DrawLine(pen, 0, (i + 1) * _magnification * height, bitmap.Width, (i + 1) * _magnification * height);
+      }
+
+      String str = PreviewTextBox.Text;
+
+      Brush glyphBrush = new SolidBrush(Red3);
+
+      int x = 0;
+      int y = 0;
+      for (int i = 0; i < str.Length; i++)
+      {
+         char c = str[i];
+
+         switch (c)
+         {
+            case '\n':
+               y += (int)_vlwFont.Height;
+               x = 0;
+               break;
+
+            case '\r':
+               break;
+
+            case ' ':
+               {
+                  if (_vlwFont.Glyphs.TryGetValue(' ', out VLWGlyph? glyph))
+                  {
+                     x += glyph.gxAdvance;
+                  }
+                  else
+                  {
+                     x += (int)_vlwFont.Height;
+                  }
+               }
+               break;
+            default:
+               {
+                  VLWGlyph glyph = _vlwFont.Glyphs[c];
+                  if (glyph.Bitmap != null) // space char
+                  {
+                     int gx = x + glyph.gdX;
+                     int gy = (int)(y + _vlwFont.Ascent - glyph.gdY);
+                     graphics.DrawImageUnscaled(glyph.Bitmap, gx, gy);
+                  }
+                  x += glyph.gxAdvance;
+               }
+               break;
+         }
+      }
+
+      e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
+      Rectangle srcRect = new(-1, -1, bitmap.Width + 2, bitmap.Height + 2);
+
+      Rectangle dstRect = new(0, 0, bitmap.Width * _magnification, bitmap.Height * _magnification);
+      e.Graphics.DrawImage(bitmap, dstRect, srcRect, GraphicsUnit.Pixel);
+   }
+
+   private void TrueTypePreviewPanel_Paint(object sender, PaintEventArgs e)
+   {
+      // create the bitmap that we will display
+      using Bitmap bitmap = new(TrueTypePreviewPanel.Width, TrueTypePreviewPanel.Height);
+      using Graphics graphics = Graphics.FromImage(bitmap);
+
+      String str = PreviewTextBox.Text;
+
+      FontFamily fontFamily = new FontFamily(FontComboBox.Text);
+      int height = (int)charHeightUpDown.Value;
+      float fontSizePx = FontUtil.LineSpacingPxToFontSizePx2(fontFamily, _getFontStyle(), graphics, height);
+      Font font = new Font(
+         fontFamily,
+         fontSizePx,
+         _getFontStyle(),
+         GraphicsUnit.Pixel);
+      graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+      //graphics.Clear(Color.Black);
+      graphics.DrawString(str, font, Brushes.White, new Point(0, 0));
+
+
+      using Pen pen = new Pen(Color.Red);
+      pen.DashStyle = DashStyle.Dot;
+      e.Graphics.SmoothingMode = SmoothingMode.None;
+      for (int i = 0; i < 5; i++)
+      {
+         e.Graphics.DrawLine(pen, 0, (i + 1) * _magnification * height, bitmap.Width, (i + 1) * _magnification * height);
+      }
+
+
+      e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
+      Rectangle srcRect = new(-1, -1, bitmap.Width + 2, bitmap.Height + 2);
+
+      Rectangle dstRect = new(0, 0, bitmap.Width * _magnification, bitmap.Height * _magnification);
+      e.Graphics.DrawImage(bitmap, dstRect, srcRect, GraphicsUnit.Pixel);
+   }
 }
