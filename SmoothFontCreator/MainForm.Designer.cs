@@ -41,6 +41,11 @@ partial class MainForm
       vlwDescentTextBox = new TextBox();
       label15 = new Label();
       label16 = new Label();
+      groupBox1 = new GroupBox();
+      label14 = new Label();
+      vlwCellWidthTextBox = new TextBox();
+      vlwCellHeightTextBox = new TextBox();
+      label38 = new Label();
       groupBox6 = new GroupBox();
       label19 = new Label();
       vlwWidthTextBox = new TextBox();
@@ -127,6 +132,7 @@ partial class MainForm
       tabPage1.SuspendLayout();
       groupBox9.SuspendLayout();
       groupBox5.SuspendLayout();
+      groupBox1.SuspendLayout();
       groupBox6.SuspendLayout();
       groupBox8.SuspendLayout();
       groupBox2.SuspendLayout();
@@ -221,6 +227,7 @@ partial class MainForm
       groupBox9.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
       groupBox9.Controls.Add(VLWCharPanel);
       groupBox9.Controls.Add(groupBox5);
+      groupBox9.Controls.Add(groupBox1);
       groupBox9.Controls.Add(groupBox6);
       groupBox9.Location = new Point(999, 446);
       groupBox9.Name = "groupBox9";
@@ -237,6 +244,7 @@ partial class MainForm
       VLWCharPanel.Name = "VLWCharPanel";
       VLWCharPanel.Size = new Size(595, 633);
       VLWCharPanel.TabIndex = 2;
+      VLWCharPanel.Paint += VLWCharPanel_Paint;
       // 
       // groupBox5
       // 
@@ -287,6 +295,56 @@ partial class MainForm
       label16.Size = new Size(79, 25);
       label16.TabIndex = 10;
       label16.Text = "Descent:";
+      // 
+      // groupBox1
+      // 
+      groupBox1.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      groupBox1.Controls.Add(label14);
+      groupBox1.Controls.Add(vlwCellWidthTextBox);
+      groupBox1.Controls.Add(vlwCellHeightTextBox);
+      groupBox1.Controls.Add(label38);
+      groupBox1.Location = new Point(607, 433);
+      groupBox1.Name = "groupBox1";
+      groupBox1.Size = new Size(263, 143);
+      groupBox1.TabIndex = 23;
+      groupBox1.TabStop = false;
+      groupBox1.Text = "Cell";
+      // 
+      // label14
+      // 
+      label14.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label14.AutoSize = true;
+      label14.Location = new Point(59, 44);
+      label14.Name = "label14";
+      label14.Size = new Size(64, 25);
+      label14.TabIndex = 21;
+      label14.Text = "Width:";
+      // 
+      // vlwCellWidthTextBox
+      // 
+      vlwCellWidthTextBox.Location = new Point(129, 41);
+      vlwCellWidthTextBox.Name = "vlwCellWidthTextBox";
+      vlwCellWidthTextBox.ReadOnly = true;
+      vlwCellWidthTextBox.Size = new Size(108, 31);
+      vlwCellWidthTextBox.TabIndex = 13;
+      // 
+      // vlwCellHeightTextBox
+      // 
+      vlwCellHeightTextBox.Location = new Point(129, 78);
+      vlwCellHeightTextBox.Name = "vlwCellHeightTextBox";
+      vlwCellHeightTextBox.ReadOnly = true;
+      vlwCellHeightTextBox.Size = new Size(108, 31);
+      vlwCellHeightTextBox.TabIndex = 13;
+      // 
+      // label38
+      // 
+      label38.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label38.AutoSize = true;
+      label38.Location = new Point(54, 81);
+      label38.Name = "label38";
+      label38.Size = new Size(69, 25);
+      label38.TabIndex = 21;
+      label38.Text = "Height:";
       // 
       // groupBox6
       // 
@@ -672,6 +730,7 @@ partial class MainForm
       TrueTypeCharPanel.Name = "TrueTypeCharPanel";
       TrueTypeCharPanel.Size = new Size(702, 633);
       TrueTypeCharPanel.TabIndex = 1;
+      TrueTypeCharPanel.Paint += TrueTypeCharPanel_Paint;
       // 
       // label29
       // 
@@ -708,7 +767,7 @@ partial class MainForm
       TrueTypeTextPanel.Name = "TrueTypeTextPanel";
       TrueTypeTextPanel.Size = new Size(784, 357);
       TrueTypeTextPanel.TabIndex = 20;
-      TrueTypeTextPanel.Paint += TrueTypePreviewPanel_Paint;
+      TrueTypeTextPanel.Paint += TrueTypeTextPanel_Paint;
       // 
       // VLWTextPanel
       // 
@@ -718,7 +777,7 @@ partial class MainForm
       VLWTextPanel.Name = "VLWTextPanel";
       VLWTextPanel.Size = new Size(929, 357);
       VLWTextPanel.TabIndex = 20;
-      VLWTextPanel.Paint += VLWPreviewPanel_Paint;
+      VLWTextPanel.Paint += VLWTextPanel_Paint;
       // 
       // HexLabel
       // 
@@ -1189,6 +1248,8 @@ partial class MainForm
       groupBox9.ResumeLayout(false);
       groupBox5.ResumeLayout(false);
       groupBox5.PerformLayout();
+      groupBox1.ResumeLayout(false);
+      groupBox1.PerformLayout();
       groupBox6.ResumeLayout(false);
       groupBox6.PerformLayout();
       groupBox8.ResumeLayout(false);
@@ -1306,4 +1367,9 @@ partial class MainForm
    private RadioButton scaleToAspectRatioRadioButton;
    private RadioButton noScalingRadioButton;
    private Label noScalingLabel;
+   private GroupBox groupBox1;
+   private Label label14;
+   private TextBox vlwCellWidthTextBox;
+   private TextBox vlwCellHeightTextBox;
+   private Label label38;
 }

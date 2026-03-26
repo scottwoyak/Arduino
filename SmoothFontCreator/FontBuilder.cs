@@ -104,12 +104,7 @@ public class FontBuilder
       }
    }
 
-   public VLWGlyph CreateGlyph(char c, uint cellHeightPx, FontBuilderOptions options)
-   {
-      return _CreateGlyph(c, cellHeightPx, options);
-   }
-
-   private VLWGlyph _CreateGlyph(char c, uint cellHeightPx, FontBuilderOptions options)
+   private VLWGlyph _CreateGlyph(VLWFont font, char c, uint cellHeightPx, FontBuilderOptions options)
    {
       Profiler.C = c;
 
@@ -118,7 +113,7 @@ public class FontBuilder
       ObservedMetrics thisCharMetrics = _charMetrics[c].WithScaleFactor(scaleFactor);
       ObservedMetrics zeroCharMetrics = _charMetrics['0'].WithScaleFactor(scaleFactor);
 
-      VLWGlyph glyph = new();
+      VLWGlyph glyph = new(font);
       glyph.uChar = c;
 
       //
@@ -212,7 +207,7 @@ public class FontBuilder
 
       for (char c = (char)0x21; c < 0x7F; c++)
       {
-         VLWGlyph glyph = _CreateGlyph(c, charHeightPx - options.VerticalPadding, options);
+         VLWGlyph glyph = _CreateGlyph(vlw, c, charHeightPx - options.VerticalPadding, options);
 
          // sometimes rounding errors lead to the image being outside the cell.
          // This check brings things back

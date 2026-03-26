@@ -57,9 +57,6 @@ public partial class MainForm : Form
       FontComboBox.SelectedValueChanged += FontComboBox_SelectedValueChanged;
 
 
-      TrueTypeCharPanel.Paint += TrueTypeCharPanel_Paint;
-      VLWCharPanel.Paint += GlyphPanel_Paint;
-
       TrueTypeCharPanel.MouseWheel += OnMouseWheel;
       VLWCharPanel.MouseWheel += OnMouseWheel;
       VLWTextPanel.MouseWheel += PreviewPanel_MouseWheel;
@@ -220,6 +217,8 @@ public partial class MainForm : Form
          gdXTextBox.Text = "--";
          gdYTextBox.Text = "--";
          paddingTextBox.Text = "--";
+         vlwCellWidthTextBox.Text = "--";
+         vlwCellHeightTextBox.Text = "--";
 
          ttCharHeightTextBox.Text = "--";
          ttCellWidthTextBox.Text = "--";
@@ -238,6 +237,8 @@ public partial class MainForm : Form
             gdXTextBox.Text = glyph.gdX + " px";
             gdYTextBox.Text = glyph.gdY + " px";
             paddingTextBox.Text = glyph.padding + " px";
+            vlwCellWidthTextBox.Text = glyph.CellWidth +  " px";
+            vlwCellHeightTextBox.Text = glyph.CellHeight + " px";
 
             ObservedMetrics charMetrics = _getCharMetrics();
             ttCellWidthTextBox.Text = (charMetrics.CellWidth / gdiMetrics.HeightPx).ToString("0.000");
@@ -253,6 +254,8 @@ public partial class MainForm : Form
             gdXTextBox.Text = "--";
             gdYTextBox.Text = "--";
             paddingTextBox.Text = "--";
+            vlwCellWidthTextBox.Text = "--";
+            vlwCellHeightTextBox.Text = "--";
 
             ttCellWidthTextBox.Text = "--";
             ttCellHeightTextBox.Text = "--";
@@ -440,7 +443,7 @@ public partial class MainForm : Form
       TrueTypeTextPanel.Invalidate();
    }
 
-   private void GlyphPanel_Paint(object sender, PaintEventArgs e)
+   private void VLWCharPanel_Paint(object sender, PaintEventArgs e)
    {
       if (TestCharTextBox.Text.Length == 0)
       {
@@ -617,6 +620,7 @@ public partial class MainForm : Form
 
    private void testGlyphButton_Click(object sender, EventArgs e)
    {
+      /*
       Stopwatch sw = Stopwatch.StartNew();
       uint targetCharHeightPx = (uint)cellHeightUpDown.Value;
       char c = TestCharTextBox.Text[0];
@@ -631,6 +635,7 @@ public partial class MainForm : Form
       statusTextBox.Clear();
       statusTextBox.Text += $"Profile for char height {targetCharHeightPx}\r\n";
       statusTextBox.Text += $"{(ms / numTrials).ToString("0.0")} ms\r\n";
+      */
    }
 
    private void testFontButton_Click(object sender, EventArgs e)
@@ -719,7 +724,7 @@ public partial class MainForm : Form
       }
 
    }
-   private void VLWPreviewPanel_Paint(object sender, PaintEventArgs e)
+   private void VLWTextPanel_Paint(object sender, PaintEventArgs e)
    {
       // create the bitmap that we will display
       using Bitmap bitmap = new(VLWTextPanel.Width, VLWTextPanel.Height);
@@ -788,7 +793,7 @@ public partial class MainForm : Form
       e.Graphics.DrawImage(bitmap, dstRect, srcRect, GraphicsUnit.Pixel);
    }
 
-   private void TrueTypePreviewPanel_Paint(object sender, PaintEventArgs e)
+   private void TrueTypeTextPanel_Paint(object sender, PaintEventArgs e)
    {
       // create the bitmap that we will display
       using Bitmap bitmap = new(TrueTypeTextPanel.Width, TrueTypeTextPanel.Height);

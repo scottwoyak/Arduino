@@ -12,6 +12,17 @@ public class VLWGlyph
    public Int32 gdX;
    public Int32 padding = 0;
    public Bitmap Bitmap;
+   public VLWFont Font { get; }
+
+   public UInt32 Ascent => Font.Ascent;
+   public Int32 Descent => Font.Descent;
+   public Int32 CellWidth => gxAdvance;
+   public UInt32 CellHeight => Font.Height;
+
+   public VLWGlyph(VLWFont font)
+   {
+      this.Font = font;
+   }
 }
 
 public class VLWFont
@@ -19,7 +30,7 @@ public class VLWFont
    public UInt32 Version { get; internal set; } = 11;
    public UInt32 FontSizePx { get; internal set; }
    public UInt32 Ascent { get; internal set; }
-   public Int32 Descent { get; internal set; } // sometime the descent is saved as a negative value
+   public Int32 Descent { get; internal set; } // sometimes the descent is saved as a negative value
 
    public UInt32 Height => (UInt32)(Ascent + Math.Abs(Descent));
 
@@ -43,7 +54,7 @@ public class VLWFont
 
       for (int i = 0; i < gCount; i++)
       {
-         VLWGlyph g = new();
+         VLWGlyph g = new(this);
          g.uChar = reader.Int32();
          g.Height = reader.Int32();
          g.Width = reader.Int32();
