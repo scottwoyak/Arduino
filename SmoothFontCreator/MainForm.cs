@@ -23,7 +23,8 @@ public partial class MainForm : Form
          return new FontBuilderOptions()
          {
             Monospaced = monospaceCheckBox.Checked,
-            Spacing = (int)SpacingUpDown.Value,
+            HorizontalPadding = (uint)horizontalPaddingUpDown.Value,
+            VerticalPadding = (uint)verticalPaddingUpDown.Value,
          };
       }
    }
@@ -46,8 +47,8 @@ public partial class MainForm : Form
 
       TrueTypeCharPanel.MouseWheel += OnMouseWheel;
       VLWCharPanel.MouseWheel += OnMouseWheel;
-      VLWPreviewPanel.MouseWheel += PreviewPanel_MouseWheel;
-      TrueTypePreviewPanel.MouseWheel += PreviewPanel_MouseWheel;
+      VLWTextPanel.MouseWheel += PreviewPanel_MouseWheel;
+      TrueTypeTextPanel.MouseWheel += PreviewPanel_MouseWheel;
 
 
       _builder = FontBuilder.ForFontFamily(FontComboBox.Text, _getFontStyle());
@@ -56,6 +57,8 @@ public partial class MainForm : Form
       _UpdateAllCharsMetrics();
       _createFont();
       _displayCurrentChar();
+
+      magnificationLabel.Text = _magnification.ToString() + "X";
    }
 
    private void PreviewPanel_MouseWheel(object? sender, MouseEventArgs e)
@@ -75,8 +78,9 @@ public partial class MainForm : Form
          }
       }
 
-      VLWPreviewPanel.Invalidate();
-      TrueTypePreviewPanel.Invalidate();
+      magnificationLabel.Text = _magnification.ToString() + "X";
+      VLWTextPanel.Invalidate();
+      TrueTypeTextPanel.Invalidate();
    }
 
    private FontStyle _getFontStyle()
@@ -413,8 +417,8 @@ public partial class MainForm : Form
 
       _vlwFont = _builder.CreateFont(targetCharHeightPx, FontBuilderOptions);
 
-      VLWPreviewPanel.Invalidate();
-      TrueTypePreviewPanel.Invalidate();
+      VLWTextPanel.Invalidate();
+      TrueTypeTextPanel.Invalidate();
    }
 
    private void GlyphPanel_Paint(object sender, PaintEventArgs e)
@@ -527,20 +531,20 @@ public partial class MainForm : Form
 
    private void PreviewTextBox_TextChanged(object sender, EventArgs e)
    {
-      VLWPreviewPanel.Invalidate();
-      TrueTypePreviewPanel.Invalidate();
+      VLWTextPanel.Invalidate();
+      TrueTypeTextPanel.Invalidate();
    }
 
    private void showGlyphsCheckBox_CheckedChanged(object sender, EventArgs e)
    {
-      VLWPreviewPanel.Invalidate();
-      TrueTypePreviewPanel.Invalidate();
+      VLWTextPanel.Invalidate();
+      TrueTypeTextPanel.Invalidate();
    }
 
    private void magnificationUpDown_ValueChanged(object sender, EventArgs e)
    {
-      VLWPreviewPanel.Invalidate();
-      TrueTypePreviewPanel.Invalidate();
+      VLWTextPanel.Invalidate();
+      TrueTypeTextPanel.Invalidate();
    }
 
    private void charHeightUpDown_ValueChanged(object sender, EventArgs e)
@@ -664,8 +668,8 @@ public partial class MainForm : Form
       _vlwFont = new(bytes);
 
       _displayCurrentChar();
-      VLWPreviewPanel.Invalidate();
-      TrueTypePreviewPanel.Invalidate();
+      VLWTextPanel.Invalidate();
+      TrueTypeTextPanel.Invalidate();
       TrueTypeCharPanel.Invalidate();
       VLWCharPanel.Invalidate();
    }
@@ -694,10 +698,13 @@ public partial class MainForm : Form
    private void VLWPreviewPanel_Paint(object sender, PaintEventArgs e)
    {
       // create the bitmap that we will display
-      using Bitmap bitmap = new(VLWPreviewPanel.Width, VLWPreviewPanel.Height);
+      using Bitmap bitmap = new(VLWTextPanel.Width, VLWTextPanel.Height);
       using Graphics graphics = Graphics.FromImage(bitmap);
 
-      _DrawLines(bitmap, (int)cellHeightUpDown.Value);
+      if (showLineSeparatorsCheckBox.Checked)
+      {
+         _DrawLines(bitmap, (int)cellHeightUpDown.Value);
+      }
 
       String str = PreviewTextBox.Text;
 
@@ -760,10 +767,13 @@ public partial class MainForm : Form
    private void TrueTypePreviewPanel_Paint(object sender, PaintEventArgs e)
    {
       // create the bitmap that we will display
-      using Bitmap bitmap = new(TrueTypePreviewPanel.Width, TrueTypePreviewPanel.Height);
+      using Bitmap bitmap = new(TrueTypeTextPanel.Width, TrueTypeTextPanel.Height);
       using Graphics graphics = Graphics.FromImage(bitmap);
 
-      _DrawLines(bitmap, (int)cellHeightUpDown.Value);
+      if (showLineSeparatorsCheckBox.Checked)
+      {
+         _DrawLines(bitmap, (int)cellHeightUpDown.Value);
+      }
 
       String str = PreviewTextBox.Text;
 
@@ -784,5 +794,11 @@ public partial class MainForm : Form
       RectangleF srcRect = new(-0.5f, -0.5f, bitmap.Width + 1, bitmap.Height + 1);
       RectangleF dstRect = new(-0.5f, -0.5f, bitmap.Width * _magnification + 1, bitmap.Height * _magnification + 1);
       e.Graphics.DrawImage(bitmap, dstRect, srcRect, GraphicsUnit.Pixel);
+   }
+
+   private void showLineSeparatorsCheckBox_CheckedChanged(object sender, EventArgs e)
+   {
+      TrueTypeTextPanel.Invalidate();
+      VLWTextPanel.Invalidate();
    }
 }

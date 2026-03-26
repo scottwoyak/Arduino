@@ -30,6 +30,7 @@ partial class MainForm
    {
       tabControl1 = new TabControl();
       tabPage1 = new TabPage();
+      showLineSeparatorsCheckBox = new CheckBox();
       PreviewTextBox = new TextBox();
       groupBox9 = new GroupBox();
       VLWCharPanel = new Panel();
@@ -78,8 +79,8 @@ partial class MainForm
       label29 = new Label();
       label28 = new Label();
       label27 = new Label();
-      TrueTypePreviewPanel = new Panel();
-      VLWPreviewPanel = new Panel();
+      TrueTypeTextPanel = new Panel();
+      VLWTextPanel = new Panel();
       HexLabel = new Label();
       label5 = new Label();
       TestCharTextBox = new TextBox();
@@ -88,10 +89,13 @@ partial class MainForm
       groupBox4 = new GroupBox();
       label14 = new Label();
       digitCheckBox = new CheckBox();
+      label32 = new Label();
       label6 = new Label();
       label4 = new Label();
+      label30 = new Label();
       label3 = new Label();
-      SpacingUpDown = new NumericUpDown();
+      verticalPaddingUpDown = new NumericUpDown();
+      horizontalPaddingUpDown = new NumericUpDown();
       label7 = new Label();
       cellHeightUpDown = new NumericUpDown();
       label8 = new Label();
@@ -111,6 +115,8 @@ partial class MainForm
       testButton2 = new Button();
       testButton3 = new Button();
       button1 = new Button();
+      label33 = new Label();
+      magnificationLabel = new Label();
       tabControl1.SuspendLayout();
       tabPage1.SuspendLayout();
       groupBox9.SuspendLayout();
@@ -121,7 +127,8 @@ partial class MainForm
       groupBox7.SuspendLayout();
       tabPage2.SuspendLayout();
       groupBox4.SuspendLayout();
-      ((System.ComponentModel.ISupportInitialize)SpacingUpDown).BeginInit();
+      ((System.ComponentModel.ISupportInitialize)verticalPaddingUpDown).BeginInit();
+      ((System.ComponentModel.ISupportInitialize)horizontalPaddingUpDown).BeginInit();
       ((System.ComponentModel.ISupportInitialize)cellHeightUpDown).BeginInit();
       groupBox3.SuspendLayout();
       SuspendLayout();
@@ -139,14 +146,17 @@ partial class MainForm
       // 
       // tabPage1
       // 
+      tabPage1.Controls.Add(magnificationLabel);
+      tabPage1.Controls.Add(label33);
+      tabPage1.Controls.Add(showLineSeparatorsCheckBox);
       tabPage1.Controls.Add(PreviewTextBox);
       tabPage1.Controls.Add(groupBox9);
       tabPage1.Controls.Add(groupBox8);
       tabPage1.Controls.Add(label29);
       tabPage1.Controls.Add(label28);
       tabPage1.Controls.Add(label27);
-      tabPage1.Controls.Add(TrueTypePreviewPanel);
-      tabPage1.Controls.Add(VLWPreviewPanel);
+      tabPage1.Controls.Add(TrueTypeTextPanel);
+      tabPage1.Controls.Add(VLWTextPanel);
       tabPage1.Controls.Add(HexLabel);
       tabPage1.Controls.Add(label5);
       tabPage1.Controls.Add(TestCharTextBox);
@@ -158,6 +168,17 @@ partial class MainForm
       tabPage1.Text = "Preview";
       tabPage1.UseVisualStyleBackColor = true;
       // 
+      // showLineSeparatorsCheckBox
+      // 
+      showLineSeparatorsCheckBox.AutoSize = true;
+      showLineSeparatorsCheckBox.Location = new Point(560, 411);
+      showLineSeparatorsCheckBox.Name = "showLineSeparatorsCheckBox";
+      showLineSeparatorsCheckBox.Size = new Size(208, 29);
+      showLineSeparatorsCheckBox.TabIndex = 30;
+      showLineSeparatorsCheckBox.Text = "Show Line Separators";
+      showLineSeparatorsCheckBox.UseVisualStyleBackColor = true;
+      showLineSeparatorsCheckBox.CheckedChanged += showLineSeparatorsCheckBox_CheckedChanged;
+      // 
       // PreviewTextBox
       // 
       PreviewTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
@@ -167,7 +188,7 @@ partial class MainForm
       PreviewTextBox.Name = "PreviewTextBox";
       PreviewTextBox.Size = new Size(536, 392);
       PreviewTextBox.TabIndex = 19;
-      PreviewTextBox.Text = "g $@0123456789\r\ng ABCDEFGHIJKLMNOPQRSTUVWXYZ\r\ng abcdefghijklmnopqrstuvwxyz\r\ng\r\ng\r\ng\r\ng\r\ng\r\ng";
+      PreviewTextBox.Text = "0123456789+-=/<>\r\n(){}[]_/?<>,.!|@#$%^&*~\r\nABCDEFGHIJKLMNOPQRSTUVWXYZ\r\nabcdefghijklmnopqrstuvwxyz\r\n";
       PreviewTextBox.TextChanged += PreviewTextBox_TextChanged;
       // 
       // groupBox9
@@ -654,25 +675,25 @@ partial class MainForm
       label27.TabIndex = 10;
       label27.Text = "TrueType";
       // 
-      // TrueTypePreviewPanel
+      // TrueTypeTextPanel
       // 
-      TrueTypePreviewPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
-      TrueTypePreviewPanel.BackColor = Color.Black;
-      TrueTypePreviewPanel.Location = new Point(557, 48);
-      TrueTypePreviewPanel.Name = "TrueTypePreviewPanel";
-      TrueTypePreviewPanel.Size = new Size(784, 392);
-      TrueTypePreviewPanel.TabIndex = 20;
-      TrueTypePreviewPanel.Paint += TrueTypePreviewPanel_Paint;
+      TrueTypeTextPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
+      TrueTypeTextPanel.BackColor = Color.Black;
+      TrueTypeTextPanel.Location = new Point(557, 48);
+      TrueTypeTextPanel.Name = "TrueTypeTextPanel";
+      TrueTypeTextPanel.Size = new Size(784, 357);
+      TrueTypeTextPanel.TabIndex = 20;
+      TrueTypeTextPanel.Paint += TrueTypePreviewPanel_Paint;
       // 
-      // VLWPreviewPanel
+      // VLWTextPanel
       // 
-      VLWPreviewPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-      VLWPreviewPanel.BackColor = Color.Black;
-      VLWPreviewPanel.Location = new Point(1347, 48);
-      VLWPreviewPanel.Name = "VLWPreviewPanel";
-      VLWPreviewPanel.Size = new Size(929, 392);
-      VLWPreviewPanel.TabIndex = 20;
-      VLWPreviewPanel.Paint += VLWPreviewPanel_Paint;
+      VLWTextPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+      VLWTextPanel.BackColor = Color.Black;
+      VLWTextPanel.Location = new Point(1347, 48);
+      VLWTextPanel.Name = "VLWTextPanel";
+      VLWTextPanel.Size = new Size(929, 357);
+      VLWTextPanel.TabIndex = 20;
+      VLWTextPanel.Paint += VLWPreviewPanel_Paint;
       // 
       // HexLabel
       // 
@@ -730,10 +751,13 @@ partial class MainForm
       groupBox4.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       groupBox4.Controls.Add(label14);
       groupBox4.Controls.Add(digitCheckBox);
+      groupBox4.Controls.Add(label32);
       groupBox4.Controls.Add(label6);
       groupBox4.Controls.Add(label4);
+      groupBox4.Controls.Add(label30);
       groupBox4.Controls.Add(label3);
-      groupBox4.Controls.Add(SpacingUpDown);
+      groupBox4.Controls.Add(verticalPaddingUpDown);
+      groupBox4.Controls.Add(horizontalPaddingUpDown);
       groupBox4.Controls.Add(label7);
       groupBox4.Controls.Add(cellHeightUpDown);
       groupBox4.Controls.Add(label8);
@@ -749,7 +773,7 @@ partial class MainForm
       // 
       label14.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label14.AutoSize = true;
-      label14.Location = new Point(128, 87);
+      label14.Location = new Point(131, 87);
       label14.Name = "label14";
       label14.Size = new Size(54, 25);
       label14.TabIndex = 22;
@@ -766,6 +790,16 @@ partial class MainForm
       digitCheckBox.UseVisualStyleBackColor = true;
       digitCheckBox.CheckedChanged += digitCheckBox_CheckedChanged;
       // 
+      // label32
+      // 
+      label32.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label32.AutoSize = true;
+      label32.Location = new Point(291, 156);
+      label32.Name = "label32";
+      label32.Size = new Size(31, 25);
+      label32.TabIndex = 7;
+      label32.Text = "px";
+      // 
       // label6
       // 
       label6.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -780,37 +814,56 @@ partial class MainForm
       // 
       label4.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label4.AutoSize = true;
-      label4.Location = new Point(288, 27);
+      label4.Location = new Point(294, 27);
       label4.Name = "label4";
       label4.Size = new Size(31, 25);
       label4.TabIndex = 7;
       label4.Text = "px";
       // 
+      // label30
+      // 
+      label30.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label30.AutoSize = true;
+      label30.Location = new Point(43, 156);
+      label30.Name = "label30";
+      label30.Size = new Size(142, 25);
+      label30.TabIndex = 6;
+      label30.Text = "Vertical Padding:";
+      // 
       // label3
       // 
       label3.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label3.AutoSize = true;
-      label3.Location = new Point(103, 119);
+      label3.Location = new Point(17, 119);
       label3.Name = "label3";
-      label3.Size = new Size(79, 25);
+      label3.Size = new Size(168, 25);
       label3.TabIndex = 6;
-      label3.Text = "Spacing:";
+      label3.Text = "Horizontal Padding:";
       // 
-      // SpacingUpDown
+      // verticalPaddingUpDown
       // 
-      SpacingUpDown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      SpacingUpDown.Location = new Point(191, 117);
-      SpacingUpDown.Name = "SpacingUpDown";
-      SpacingUpDown.Size = new Size(94, 31);
-      SpacingUpDown.TabIndex = 20;
-      SpacingUpDown.Value = new decimal(new int[] { 1, 0, 0, 0 });
-      SpacingUpDown.ValueChanged += SpacingUpDown_ValueChanged;
+      verticalPaddingUpDown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      verticalPaddingUpDown.Location = new Point(191, 154);
+      verticalPaddingUpDown.Name = "verticalPaddingUpDown";
+      verticalPaddingUpDown.Size = new Size(94, 31);
+      verticalPaddingUpDown.TabIndex = 20;
+      verticalPaddingUpDown.ValueChanged += SpacingUpDown_ValueChanged;
+      // 
+      // horizontalPaddingUpDown
+      // 
+      horizontalPaddingUpDown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      horizontalPaddingUpDown.Location = new Point(191, 117);
+      horizontalPaddingUpDown.Name = "horizontalPaddingUpDown";
+      horizontalPaddingUpDown.Size = new Size(94, 31);
+      horizontalPaddingUpDown.TabIndex = 20;
+      horizontalPaddingUpDown.Value = new decimal(new int[] { 1, 0, 0, 0 });
+      horizontalPaddingUpDown.ValueChanged += SpacingUpDown_ValueChanged;
       // 
       // label7
       // 
       label7.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label7.AutoSize = true;
-      label7.Location = new Point(113, 27);
+      label7.Location = new Point(116, 27);
       label7.Name = "label7";
       label7.Size = new Size(69, 25);
       label7.TabIndex = 6;
@@ -819,7 +872,7 @@ partial class MainForm
       // cellHeightUpDown
       // 
       cellHeightUpDown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      cellHeightUpDown.Location = new Point(188, 25);
+      cellHeightUpDown.Location = new Point(191, 25);
       cellHeightUpDown.Minimum = new decimal(new int[] { 8, 0, 0, 0 });
       cellHeightUpDown.Name = "cellHeightUpDown";
       cellHeightUpDown.Size = new Size(94, 31);
@@ -831,7 +884,7 @@ partial class MainForm
       // 
       label8.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label8.AutoSize = true;
-      label8.Location = new Point(73, 59);
+      label8.Location = new Point(76, 59);
       label8.Name = "label8";
       label8.Size = new Size(109, 25);
       label8.TabIndex = 16;
@@ -1008,6 +1061,24 @@ partial class MainForm
       button1.UseVisualStyleBackColor = true;
       button1.Click += button1_Click;
       // 
+      // label33
+      // 
+      label33.AutoSize = true;
+      label33.Location = new Point(1153, 412);
+      label33.Name = "label33";
+      label33.Size = new Size(124, 25);
+      label33.TabIndex = 31;
+      label33.Text = "Magnification:";
+      // 
+      // magnificationLabel
+      // 
+      magnificationLabel.AutoSize = true;
+      magnificationLabel.Location = new Point(1282, 412);
+      magnificationLabel.Name = "magnificationLabel";
+      magnificationLabel.Size = new Size(34, 25);
+      magnificationLabel.TabIndex = 32;
+      magnificationLabel.Text = "#X";
+      // 
       // MainForm
       // 
       AutoScaleDimensions = new SizeF(10F, 25F);
@@ -1042,7 +1113,8 @@ partial class MainForm
       tabPage2.ResumeLayout(false);
       groupBox4.ResumeLayout(false);
       groupBox4.PerformLayout();
-      ((System.ComponentModel.ISupportInitialize)SpacingUpDown).EndInit();
+      ((System.ComponentModel.ISupportInitialize)verticalPaddingUpDown).EndInit();
+      ((System.ComponentModel.ISupportInitialize)horizontalPaddingUpDown).EndInit();
       ((System.ComponentModel.ISupportInitialize)cellHeightUpDown).EndInit();
       groupBox3.ResumeLayout(false);
       groupBox3.PerformLayout();
@@ -1072,7 +1144,7 @@ partial class MainForm
    private TextBox fontSizesTextBox;
    private TextBox statusTextBox;
    private CheckBox italicCheckBox;
-   private Panel VLWPreviewPanel;
+   private Panel VLWTextPanel;
    private TextBox PreviewTextBox;
    private Button testButton1;
    private Button testButton2;
@@ -1108,9 +1180,9 @@ partial class MainForm
    private Label label2;
    private Label label3;
    private Label label1;
-   private NumericUpDown SpacingUpDown;
+   private NumericUpDown horizontalPaddingUpDown;
    private NumericUpDown numericUpDown1;
-   private Panel TrueTypePreviewPanel;
+   private Panel TrueTypeTextPanel;
    private GroupBox groupBox7;
    private Label label31;
    private TextBox ttCellWidthTextBox;
@@ -1136,4 +1208,10 @@ partial class MainForm
    private Label label29;
    private Label label26;
    private TextBox ttSizeTextBox;
+   private Label label32;
+   private Label label30;
+   private NumericUpDown verticalPaddingUpDown;
+   private CheckBox showLineSeparatorsCheckBox;
+   private Label magnificationLabel;
+   private Label label33;
 }

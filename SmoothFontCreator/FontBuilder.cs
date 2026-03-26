@@ -4,7 +4,8 @@ namespace SmoothFontCreator;
 public class FontBuilderOptions
 {
    public bool Monospaced = false;
-   public int Spacing = 0;
+   public uint HorizontalPadding = 0;
+   public uint VerticalPadding = 0;
 }
 
 public class FontBuilder
@@ -97,15 +98,15 @@ public class FontBuilder
 
    public VLWGlyph CreateGlyph(char c, uint charHeightPx, FontBuilderOptions options)
    {
-      ObservedMetrics allCharsMetrics = _allCharsMetrics.WithCharHeight(charHeightPx);
-      return _CreateGlyph(c, charHeightPx, options, allCharsMetrics);
+      return _CreateGlyph(c, charHeightPx, options);
    }
 
-   private VLWGlyph _CreateGlyph(char c, uint charHeightPx, FontBuilderOptions options, ObservedMetrics allCharsMetrics)
+   private VLWGlyph _CreateGlyph(char c, uint charHeightPx, FontBuilderOptions options)
    {
       Profiler.C = c;
 
-      double scaleFactor = allCharsMetrics.CellHeight / _allCharsMetrics.CellHeight;
+      ObservedMetrics smallCharsMetrics = _allCharsMetrics.WithCharHeight(charHeightPx - options.VerticalPadding);
+      double scaleFactor = smallCharsMetrics.CellHeight / _allCharsMetrics.CellHeight;
       ObservedMetrics thisCharMetrics = _charMetrics[c].WithScaleFactor(scaleFactor);
 
       VLWGlyph glyph = new();
@@ -148,18 +149,18 @@ public class FontBuilder
       // use GDI to get the baseline
       GdiMetrics gdiMetrics = new GdiMetrics(thisCharMetrics.Font);
 
-      glyph.gdY = (int)Math.Round(gdiMetrics.BaselinePx - thisCharMetrics.CharTop);
+      glyph.gdY = (int)Math.Round(gdiMetrics.BaselinePx - thisCharMetrics.CharTop - options.VerticalPadding);
       glyph.Width = glyph.Bitmap.Width;
       glyph.Height = glyph.Bitmap.Height;
 
       if (options.Monospaced)
       {
-         glyph.gxAdvance = (int)Math.Ceiling(allCharsMetrics.CellWidth) + options.Spacing;
+         glyph.gxAdvance = (int)Math.Ceiling(smallCharsMetrics.CellWidth + options.HorizontalPadding);
          glyph.gdX = (int)((glyph.gxAdvance - thisCharMetrics.CellWidth) / 2.0);
       }
       else
       {
-         glyph.gxAdvance = glyph.Bitmap.Width + options.Spacing;
+         glyph.gxAdvance = (int) (glyph.Bitmap.Width + options.HorizontalPadding);
          glyph.gdX = 0;
       }
 
@@ -170,18 +171,18 @@ public class FontBuilder
    {
       VLWFont vlw = new();
 
-      ObservedMetrics allCharsMetrics = _allCharsMetrics.WithCharHeight(charHeightPx);
+      ObservedMetrics smallCharsMetrics = _allCharsMetrics.WithCharHeight(charHeightPx - options.VerticalPadding);
 
       // use GDI to get the baseline
-      GdiMetrics gdiMetrics = new GdiMetrics(allCharsMetrics.Font);
+      GdiMetrics gdiMetrics = new GdiMetrics(smallCharsMetrics.Font);
 
-      vlw.Ascent = (uint)Math.Floor(gdiMetrics.AscentPx - allCharsMetrics.TopMargin);
+      vlw.Ascent = (uint)Math.Floor(gdiMetrics.AscentPx - smallCharsMetrics.TopMargin + options.VerticalPadding);
       vlw.Descent = (int)(charHeightPx - vlw.Ascent);
       vlw.FontSizePx = charHeightPx;
 
       for (char c = (char)0x21; c < 0x7F; c++)
       {
-         VLWGlyph glyph = _CreateGlyph(c, charHeightPx, options, allCharsMetrics);
+         VLWGlyph glyph = _CreateGlyph(c, charHeightPx-options.VerticalPadding, options);
 
          // sometimes rounding errors lead to the image being outside the cell.
          // This check brings things back
