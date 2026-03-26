@@ -124,8 +124,6 @@ partial class MainForm
       label10 = new Label();
       fontSizesTextBox = new TextBox();
       statusTextBox = new TextBox();
-      testButton1 = new Button();
-      testButton2 = new Button();
       testButton3 = new Button();
       button1 = new Button();
       tabControl1.SuspendLayout();
@@ -1180,28 +1178,6 @@ partial class MainForm
       statusTextBox.Size = new Size(275, 273);
       statusTextBox.TabIndex = 23;
       // 
-      // testButton1
-      // 
-      testButton1.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      testButton1.Location = new Point(2370, 776);
-      testButton1.Name = "testButton1";
-      testButton1.Size = new Size(87, 79);
-      testButton1.TabIndex = 25;
-      testButton1.Text = "Observe";
-      testButton1.UseVisualStyleBackColor = true;
-      testButton1.Click += testObserveButton_Click;
-      // 
-      // testButton2
-      // 
-      testButton2.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      testButton2.Location = new Point(2463, 776);
-      testButton2.Name = "testButton2";
-      testButton2.Size = new Size(89, 79);
-      testButton2.TabIndex = 25;
-      testButton2.Text = "Glyph";
-      testButton2.UseVisualStyleBackColor = true;
-      testButton2.Click += testGlyphButton_Click;
-      // 
       // testButton3
       // 
       testButton3.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
@@ -1232,9 +1208,7 @@ partial class MainForm
       Controls.Add(groupBox4);
       Controls.Add(testButton3);
       Controls.Add(groupBox3);
-      Controls.Add(testButton2);
       Controls.Add(button1);
-      Controls.Add(testButton1);
       Controls.Add(statusTextBox);
       Controls.Add(fontSizesTextBox);
       Controls.Add(label10);
@@ -1294,8 +1268,6 @@ partial class MainForm
    private CheckBox italicCheckBox;
    private Panel VLWTextPanel;
    private TextBox PreviewTextBox;
-   private Button testButton1;
-   private Button testButton2;
    private Button testButton3;
    private GroupBox groupBox3;
    private Label label13;

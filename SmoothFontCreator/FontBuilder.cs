@@ -137,11 +137,7 @@ public class FontBuilder
 
          case MonospaceMode.ScaleToAspectRatio:
             {
-               if (c == 'A' && options.MonospaceMode == MonospaceMode.ScaleToAspectRatio)
-               {
-
-               }
-               double s = Math.Max(1, (int)Math.Ceiling(options.AspectRatio * smallHeightPx - options.HorizontalPadding));
+               double s = Math.Max(1, (int)Math.Ceiling(options.AspectRatio * cellHeightPx - options.HorizontalPadding));
                if (s < smallWidthPx)
                {
                   compression = s/smallWidthPx;
@@ -185,7 +181,7 @@ public class FontBuilder
 
          case MonospaceMode.ScaleToAspectRatio:
             glyph.gxAdvance = (int)Math.Ceiling(options.AspectRatio * cellHeightPx);
-            glyph.gdX = Math.Max(0, (int)((glyph.gxAdvance - compression*thisCharMetrics.CellWidth) / 2.0));
+            glyph.gdX = Math.Max(0, (int)((glyph.gxAdvance - glyph.Width) / 2.0));
             break;
       }
 

@@ -16,7 +16,7 @@ public class VLWGlyph
 
    public UInt32 Ascent => Font.Ascent;
    public Int32 Descent => Font.Descent;
-   public Int32 CellWidth => gxAdvance;
+   public UInt32 CellWidth => (UInt32) gxAdvance;
    public UInt32 CellHeight => Font.Height;
 
    public VLWGlyph(VLWFont font)

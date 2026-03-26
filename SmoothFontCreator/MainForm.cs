@@ -32,7 +32,7 @@ public partial class MainForm : Form
             if (scaleToAspectRatioRadioButton.Checked)
             {
                options.MonospaceMode = MonospaceMode.ScaleToAspectRatio;
-               options.AspectRatio = (double) aspectRatioUpDown.Value;
+               options.AspectRatio = (double)aspectRatioUpDown.Value;
             }
          }
          else
@@ -237,7 +237,7 @@ public partial class MainForm : Form
             gdXTextBox.Text = glyph.gdX + " px";
             gdYTextBox.Text = glyph.gdY + " px";
             paddingTextBox.Text = glyph.padding + " px";
-            vlwCellWidthTextBox.Text = glyph.CellWidth +  " px";
+            vlwCellWidthTextBox.Text = glyph.CellWidth + " px";
             vlwCellHeightTextBox.Text = glyph.CellHeight + " px";
 
             ObservedMetrics charMetrics = _getCharMetrics();
@@ -423,12 +423,7 @@ public partial class MainForm : Form
       {
          for (int y = 0; y < bitmap.Height; y++)
          {
-            Color c = bitmap.GetPixel(x, y);
-
-            if (c.A == 0)
-            {
-               bitmap.SetPixel(x, y, ((x + y) % 2 == 0) ? Red1 : Red2);
-            }
+            bitmap.SetPixel(x, y, ((x + y) % 2 == 0) ? Red1 : Red2);
          }
       }
    }
@@ -454,23 +449,34 @@ public partial class MainForm : Form
 
       if (_vlwFont.Glyphs.TryGetValue(c, out VLWGlyph? glyph))
       {
-         using Bitmap smallBitmap = (Bitmap)glyph.Bitmap.Clone();
+         using Bitmap cellBitmap = new((int)glyph.CellWidth, (int)glyph.CellHeight);
+         using Graphics cellGraphics = Graphics.FromImage(cellBitmap);
+         cellGraphics.Clear(Color.Black);
+
+         using Bitmap glyphBitmap = new Bitmap(glyph.Bitmap.Width, glyph.Bitmap.Height);
+         using Graphics glyphGraphics = Graphics.FromImage(glyphBitmap);
 
          // fill the background with a checkerboard pattern to make it easier to see the edges of the character
-         _fillCheckerboard(smallBitmap);
+         _fillCheckerboard(glyphBitmap);
 
-         // draw the bitmap to the preview char panel
+         // then overlay the glyph
+         glyphGraphics.DrawImageUnscaled(glyph.Bitmap, 0, 0);
+
+         // draw the glyph on the cell
+         cellGraphics.DrawImageUnscaled(glyphBitmap, glyph.gdX, (int)glyph.Ascent - glyph.gdY);
+
+         // draw the cell scaled to the preview char panel
          e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
-         //RectangleF srcRect = new(-0.5f, -0.5f, smallBitmap.Width + 0.5f, smallBitmap.Height + 0.5f);
-         RectangleF srcRect = new(-0.5f, -0.5f, smallBitmap.Width + 1, smallBitmap.Height + 1);
+         RectangleF srcRect = new(-0.5f, -0.5f, cellBitmap.Width + 1, cellBitmap.Height + 1);
 
-         float pixelSize = 0.8f * VLWCharPanel.Height / (float)smallBitmap.Height;
-         int x = (int)((VLWCharPanel.Width - pixelSize * smallBitmap.Width) / 2.0);
-         int y = (int)((VLWCharPanel.Height - pixelSize * smallBitmap.Height) / 2.0);
-         int w = (int)(smallBitmap.Width * pixelSize);
-         int h = (int)(smallBitmap.Height * pixelSize);
+         float pixelSize = 0.8f * VLWCharPanel.Height / (float)cellBitmap.Height;
+         int x = (int)((VLWCharPanel.Width - pixelSize * cellBitmap.Width) / 2.0);
+         int y = (int)((VLWCharPanel.Height - pixelSize * cellBitmap.Height) / 2.0);
+         int w = (int)(cellBitmap.Width * pixelSize);
+         int h = (int)(cellBitmap.Height * pixelSize);
          Rectangle dstRect = new(x, y, w, h);
-         e.Graphics.DrawImage(smallBitmap, dstRect, srcRect, GraphicsUnit.Pixel);
+
+         e.Graphics.DrawImage(cellBitmap, dstRect, srcRect, GraphicsUnit.Pixel);
       }
    }
 
@@ -519,7 +525,6 @@ public partial class MainForm : Form
             {
                chars = chars + c;
             }
-
          }
       }
    }
@@ -573,69 +578,6 @@ public partial class MainForm : Form
    {
       VLWCharPanel.Invalidate();
       _createFont();
-   }
-
-   private void testObserveButton_Click(object sender, EventArgs e)
-   {
-      FontFamily fontFamily = new FontFamily(FontComboBox.Text);
-
-      using Bitmap bitmap = new(TrueTypeCharPanel.Width, TrueTypeCharPanel.Height);
-      using Graphics bitmapGraphics = Graphics.FromImage(bitmap);
-
-      float fontSizePx = FontUtil.GetFontSizePxForCellHeightPx(fontFamily, _getFontStyle(), 0.8f * TrueTypeCharPanel.Height);
-
-      Font font = new Font(
-         fontFamily,
-         fontSizePx,
-         _getFontStyle(),
-         GraphicsUnit.Pixel);
-
-      float heightPx = font.GetHeight();
-
-      // draw the designated character
-      char c = TestCharTextBox.Text[0];
-      float widthPx = TextRenderer.MeasureText(c.ToString(), font, new Size(1000, 1000), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width;
-      Point pt = new((int)(TrueTypeCharPanel.Width - widthPx) / 2, (int)(TrueTypeCharPanel.Height - heightPx) / 2);
-      bitmapGraphics.DrawPreciseString(c.ToString(), font, pt, Color.White, Color.Black);
-
-      Stopwatch sw = Stopwatch.StartNew();
-      ObservedMetrics? om = null;
-      const int numTrials = 500;
-      for (int i = 0; i < numTrials; i++)
-      {
-         om = new(bitmap, font);
-      }
-      double ms = sw.Elapsed.TotalMilliseconds;
-
-      statusTextBox.Clear();
-      statusTextBox.Text += $"Profile for '{c}'\r\n";
-      statusTextBox.Text += $"  Bitmap\t{bitmap.Width} {bitmap.Height}\r\n";
-      statusTextBox.Text += $"  Cell:\t{om.CellWidth} {om.CellHeight}\r\n";
-      statusTextBox.Text += $"\t{om.CellLeft} {om.CellRight} {om.CellTop} {om.CellBottom}\r\n";
-      statusTextBox.Text += $"  Char:\t{om.CharWidth} {om.CharHeight}\r\n";
-      statusTextBox.Text += $"\t{om.CharLeft} {om.CharRight} {om.CharTop} {om.CharBottom}\r\n";
-      statusTextBox.Text += $"{(ms / numTrials).ToString("0.000")} ms\r\n";
-   }
-
-
-   private void testGlyphButton_Click(object sender, EventArgs e)
-   {
-      /*
-      Stopwatch sw = Stopwatch.StartNew();
-      uint targetCharHeightPx = (uint)cellHeightUpDown.Value;
-      char c = TestCharTextBox.Text[0];
-
-      const int numTrials = 20;
-      for (int i = 0; i < numTrials; i++)
-      {
-         _builder.CreateGlyph(c, targetCharHeightPx, FontBuilderOptions);
-      }
-      double ms = sw.Elapsed.TotalMilliseconds;
-
-      statusTextBox.Clear();
-      statusTextBox.Text += $"Profile for char height {targetCharHeightPx}\r\n";
-      statusTextBox.Text += $"{(ms / numTrials).ToString("0.0")} ms\r\n";
-      */
    }
 
    private void testFontButton_Click(object sender, EventArgs e)
