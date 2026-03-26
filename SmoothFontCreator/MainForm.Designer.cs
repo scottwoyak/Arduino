@@ -30,6 +30,8 @@ partial class MainForm
    {
       tabControl1 = new TabControl();
       tabPage1 = new TabPage();
+      magnificationLabel = new Label();
+      label33 = new Label();
       showLineSeparatorsCheckBox = new CheckBox();
       PreviewTextBox = new TextBox();
       groupBox9 = new GroupBox();
@@ -87,13 +89,19 @@ partial class MainForm
       tabPage2 = new TabPage();
       panel1 = new Panel();
       groupBox4 = new GroupBox();
-      label14 = new Label();
-      digitCheckBox = new CheckBox();
+      scaleToAspectRatioRadioButton = new RadioButton();
+      noScalingRadioButton = new RadioButton();
+      scaleToZeroRadioButton = new RadioButton();
+      scaleToAspectRatioLabel = new Label();
+      label35 = new Label();
+      noScalingLabel = new Label();
+      scaleToZeroLabel = new Label();
       label32 = new Label();
       label6 = new Label();
       label4 = new Label();
       label30 = new Label();
       label3 = new Label();
+      aspectRatioUpDown = new NumericUpDown();
       verticalPaddingUpDown = new NumericUpDown();
       horizontalPaddingUpDown = new NumericUpDown();
       label7 = new Label();
@@ -115,8 +123,6 @@ partial class MainForm
       testButton2 = new Button();
       testButton3 = new Button();
       button1 = new Button();
-      label33 = new Label();
-      magnificationLabel = new Label();
       tabControl1.SuspendLayout();
       tabPage1.SuspendLayout();
       groupBox9.SuspendLayout();
@@ -127,6 +133,7 @@ partial class MainForm
       groupBox7.SuspendLayout();
       tabPage2.SuspendLayout();
       groupBox4.SuspendLayout();
+      ((System.ComponentModel.ISupportInitialize)aspectRatioUpDown).BeginInit();
       ((System.ComponentModel.ISupportInitialize)verticalPaddingUpDown).BeginInit();
       ((System.ComponentModel.ISupportInitialize)horizontalPaddingUpDown).BeginInit();
       ((System.ComponentModel.ISupportInitialize)cellHeightUpDown).BeginInit();
@@ -167,6 +174,24 @@ partial class MainForm
       tabPage1.TabIndex = 0;
       tabPage1.Text = "Preview";
       tabPage1.UseVisualStyleBackColor = true;
+      // 
+      // magnificationLabel
+      // 
+      magnificationLabel.AutoSize = true;
+      magnificationLabel.Location = new Point(1282, 412);
+      magnificationLabel.Name = "magnificationLabel";
+      magnificationLabel.Size = new Size(34, 25);
+      magnificationLabel.TabIndex = 32;
+      magnificationLabel.Text = "#X";
+      // 
+      // label33
+      // 
+      label33.AutoSize = true;
+      label33.Location = new Point(1153, 412);
+      label33.Name = "label33";
+      label33.Size = new Size(124, 25);
+      label33.TabIndex = 31;
+      label33.Text = "Magnification:";
       // 
       // showLineSeparatorsCheckBox
       // 
@@ -749,13 +774,19 @@ partial class MainForm
       // groupBox4
       // 
       groupBox4.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      groupBox4.Controls.Add(label14);
-      groupBox4.Controls.Add(digitCheckBox);
+      groupBox4.Controls.Add(scaleToAspectRatioRadioButton);
+      groupBox4.Controls.Add(noScalingRadioButton);
+      groupBox4.Controls.Add(scaleToZeroRadioButton);
+      groupBox4.Controls.Add(scaleToAspectRatioLabel);
+      groupBox4.Controls.Add(label35);
+      groupBox4.Controls.Add(noScalingLabel);
+      groupBox4.Controls.Add(scaleToZeroLabel);
       groupBox4.Controls.Add(label32);
       groupBox4.Controls.Add(label6);
       groupBox4.Controls.Add(label4);
       groupBox4.Controls.Add(label30);
       groupBox4.Controls.Add(label3);
+      groupBox4.Controls.Add(aspectRatioUpDown);
       groupBox4.Controls.Add(verticalPaddingUpDown);
       groupBox4.Controls.Add(horizontalPaddingUpDown);
       groupBox4.Controls.Add(label7);
@@ -764,37 +795,96 @@ partial class MainForm
       groupBox4.Controls.Add(monospaceCheckBox);
       groupBox4.Location = new Point(2311, 189);
       groupBox4.Name = "groupBox4";
-      groupBox4.Size = new Size(334, 372);
+      groupBox4.Size = new Size(334, 512);
       groupBox4.TabIndex = 27;
       groupBox4.TabStop = false;
       groupBox4.Text = "Options";
       // 
-      // label14
+      // scaleToAspectRatioRadioButton
       // 
-      label14.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      label14.AutoSize = true;
-      label14.Location = new Point(131, 87);
-      label14.Name = "label14";
-      label14.Size = new Size(54, 25);
-      label14.TabIndex = 22;
-      label14.Text = "Digit:";
+      scaleToAspectRatioRadioButton.AutoSize = true;
+      scaleToAspectRatioRadioButton.Checked = true;
+      scaleToAspectRatioRadioButton.Location = new Point(192, 388);
+      scaleToAspectRatioRadioButton.Name = "scaleToAspectRatioRadioButton";
+      scaleToAspectRatioRadioButton.Size = new Size(21, 20);
+      scaleToAspectRatioRadioButton.TabIndex = 23;
+      scaleToAspectRatioRadioButton.TabStop = true;
+      scaleToAspectRatioRadioButton.UseVisualStyleBackColor = true;
+      scaleToAspectRatioRadioButton.CheckedChanged += monospaceRadioButton_CheckedChanged;
       // 
-      // digitCheckBox
+      // noScalingRadioButton
       // 
-      digitCheckBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      digitCheckBox.AutoSize = true;
-      digitCheckBox.Location = new Point(191, 90);
-      digitCheckBox.Name = "digitCheckBox";
-      digitCheckBox.Size = new Size(22, 21);
-      digitCheckBox.TabIndex = 21;
-      digitCheckBox.UseVisualStyleBackColor = true;
-      digitCheckBox.CheckedChanged += digitCheckBox_CheckedChanged;
+      noScalingRadioButton.AutoSize = true;
+      noScalingRadioButton.Location = new Point(191, 305);
+      noScalingRadioButton.Name = "noScalingRadioButton";
+      noScalingRadioButton.Size = new Size(21, 20);
+      noScalingRadioButton.TabIndex = 23;
+      noScalingRadioButton.UseVisualStyleBackColor = true;
+      noScalingRadioButton.CheckedChanged += monospaceRadioButton_CheckedChanged;
+      // 
+      // scaleToZeroRadioButton
+      // 
+      scaleToZeroRadioButton.AutoSize = true;
+      scaleToZeroRadioButton.Location = new Point(191, 345);
+      scaleToZeroRadioButton.Name = "scaleToZeroRadioButton";
+      scaleToZeroRadioButton.Size = new Size(21, 20);
+      scaleToZeroRadioButton.TabIndex = 23;
+      scaleToZeroRadioButton.UseVisualStyleBackColor = true;
+      scaleToZeroRadioButton.CheckedChanged += monospaceRadioButton_CheckedChanged;
+      // 
+      // scaleToAspectRatioLabel
+      // 
+      scaleToAspectRatioLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      scaleToAspectRatioLabel.AutoSize = true;
+      scaleToAspectRatioLabel.Enabled = false;
+      scaleToAspectRatioLabel.Location = new Point(73, 386);
+      scaleToAspectRatioLabel.Name = "scaleToAspectRatioLabel";
+      scaleToAspectRatioLabel.Size = new Size(112, 25);
+      scaleToAspectRatioLabel.TabIndex = 22;
+      scaleToAspectRatioLabel.Text = "Aspect Ratio";
+      scaleToAspectRatioLabel.TextAlign = ContentAlignment.TopRight;
+      // 
+      // label35
+      // 
+      label35.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label35.AutoSize = true;
+      label35.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold, GraphicsUnit.Point, 0);
+      label35.Location = new Point(17, 269);
+      label35.Name = "label35";
+      label35.Size = new Size(153, 25);
+      label35.TabIndex = 22;
+      label35.Text = "Character Widths";
+      label35.TextAlign = ContentAlignment.TopRight;
+      // 
+      // noScalingLabel
+      // 
+      noScalingLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      noScalingLabel.AutoSize = true;
+      noScalingLabel.Enabled = false;
+      noScalingLabel.Location = new Point(88, 303);
+      noScalingLabel.Name = "noScalingLabel";
+      noScalingLabel.Size = new Size(97, 25);
+      noScalingLabel.TabIndex = 22;
+      noScalingLabel.Text = "No Scaling";
+      noScalingLabel.TextAlign = ContentAlignment.TopRight;
+      // 
+      // scaleToZeroLabel
+      // 
+      scaleToZeroLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      scaleToZeroLabel.AutoSize = true;
+      scaleToZeroLabel.Enabled = false;
+      scaleToZeroLabel.Location = new Point(77, 343);
+      scaleToZeroLabel.Name = "scaleToZeroLabel";
+      scaleToZeroLabel.Size = new Size(108, 25);
+      scaleToZeroLabel.TabIndex = 22;
+      scaleToZeroLabel.Text = "Scaled to '0'";
+      scaleToZeroLabel.TextAlign = ContentAlignment.TopRight;
       // 
       // label32
       // 
       label32.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label32.AutoSize = true;
-      label32.Location = new Point(291, 156);
+      label32.Location = new Point(291, 101);
       label32.Name = "label32";
       label32.Size = new Size(31, 25);
       label32.TabIndex = 7;
@@ -804,7 +894,7 @@ partial class MainForm
       // 
       label6.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label6.AutoSize = true;
-      label6.Location = new Point(291, 119);
+      label6.Location = new Point(291, 64);
       label6.Name = "label6";
       label6.Size = new Size(31, 25);
       label6.TabIndex = 7;
@@ -824,7 +914,7 @@ partial class MainForm
       // 
       label30.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label30.AutoSize = true;
-      label30.Location = new Point(43, 156);
+      label30.Location = new Point(43, 101);
       label30.Name = "label30";
       label30.Size = new Size(142, 25);
       label30.TabIndex = 6;
@@ -834,16 +924,30 @@ partial class MainForm
       // 
       label3.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label3.AutoSize = true;
-      label3.Location = new Point(17, 119);
+      label3.Location = new Point(17, 64);
       label3.Name = "label3";
       label3.Size = new Size(168, 25);
       label3.TabIndex = 6;
       label3.Text = "Horizontal Padding:";
       // 
+      // aspectRatioUpDown
+      // 
+      aspectRatioUpDown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      aspectRatioUpDown.DecimalPlaces = 2;
+      aspectRatioUpDown.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
+      aspectRatioUpDown.Location = new Point(228, 384);
+      aspectRatioUpDown.Maximum = new decimal(new int[] { 15, 0, 0, 65536 });
+      aspectRatioUpDown.Minimum = new decimal(new int[] { 5, 0, 0, 65536 });
+      aspectRatioUpDown.Name = "aspectRatioUpDown";
+      aspectRatioUpDown.Size = new Size(77, 31);
+      aspectRatioUpDown.TabIndex = 20;
+      aspectRatioUpDown.Value = new decimal(new int[] { 75, 0, 0, 131072 });
+      aspectRatioUpDown.ValueChanged += AspectRatioUpDown_ValueChanged;
+      // 
       // verticalPaddingUpDown
       // 
       verticalPaddingUpDown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      verticalPaddingUpDown.Location = new Point(191, 154);
+      verticalPaddingUpDown.Location = new Point(191, 99);
       verticalPaddingUpDown.Name = "verticalPaddingUpDown";
       verticalPaddingUpDown.Size = new Size(94, 31);
       verticalPaddingUpDown.TabIndex = 20;
@@ -852,7 +956,7 @@ partial class MainForm
       // horizontalPaddingUpDown
       // 
       horizontalPaddingUpDown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      horizontalPaddingUpDown.Location = new Point(191, 117);
+      horizontalPaddingUpDown.Location = new Point(191, 62);
       horizontalPaddingUpDown.Name = "horizontalPaddingUpDown";
       horizontalPaddingUpDown.Size = new Size(94, 31);
       horizontalPaddingUpDown.TabIndex = 20;
@@ -884,7 +988,7 @@ partial class MainForm
       // 
       label8.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label8.AutoSize = true;
-      label8.Location = new Point(76, 59);
+      label8.Location = new Point(76, 220);
       label8.Name = "label8";
       label8.Size = new Size(109, 25);
       label8.TabIndex = 16;
@@ -894,7 +998,7 @@ partial class MainForm
       // 
       monospaceCheckBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       monospaceCheckBox.AutoSize = true;
-      monospaceCheckBox.Location = new Point(191, 62);
+      monospaceCheckBox.Location = new Point(191, 223);
       monospaceCheckBox.Name = "monospaceCheckBox";
       monospaceCheckBox.Size = new Size(22, 21);
       monospaceCheckBox.TabIndex = 15;
@@ -1061,24 +1165,6 @@ partial class MainForm
       button1.UseVisualStyleBackColor = true;
       button1.Click += button1_Click;
       // 
-      // label33
-      // 
-      label33.AutoSize = true;
-      label33.Location = new Point(1153, 412);
-      label33.Name = "label33";
-      label33.Size = new Size(124, 25);
-      label33.TabIndex = 31;
-      label33.Text = "Magnification:";
-      // 
-      // magnificationLabel
-      // 
-      magnificationLabel.AutoSize = true;
-      magnificationLabel.Location = new Point(1282, 412);
-      magnificationLabel.Name = "magnificationLabel";
-      magnificationLabel.Size = new Size(34, 25);
-      magnificationLabel.TabIndex = 32;
-      magnificationLabel.Text = "#X";
-      // 
       // MainForm
       // 
       AutoScaleDimensions = new SizeF(10F, 25F);
@@ -1113,6 +1199,7 @@ partial class MainForm
       tabPage2.ResumeLayout(false);
       groupBox4.ResumeLayout(false);
       groupBox4.PerformLayout();
+      ((System.ComponentModel.ISupportInitialize)aspectRatioUpDown).EndInit();
       ((System.ComponentModel.ISupportInitialize)verticalPaddingUpDown).EndInit();
       ((System.ComponentModel.ISupportInitialize)horizontalPaddingUpDown).EndInit();
       ((System.ComponentModel.ISupportInitialize)cellHeightUpDown).EndInit();
@@ -1155,8 +1242,6 @@ partial class MainForm
    private Label label11;
    private CheckBox boldCheckBox;
    private GroupBox groupBox4;
-   private Label label14;
-   private CheckBox digitCheckBox;
    private Label label15;
    private TextBox vlwAscentTextBox;
    private Label label17;
@@ -1181,7 +1266,7 @@ partial class MainForm
    private Label label3;
    private Label label1;
    private NumericUpDown horizontalPaddingUpDown;
-   private NumericUpDown numericUpDown1;
+   private NumericUpDown aspectRatioUpDown;
    private Panel TrueTypeTextPanel;
    private GroupBox groupBox7;
    private Label label31;
@@ -1214,4 +1299,11 @@ partial class MainForm
    private CheckBox showLineSeparatorsCheckBox;
    private Label magnificationLabel;
    private Label label33;
+   private Label scaleToZeroLabel;
+   private Label scaleToAspectRatioLabel;
+   private Label label35;
+   private RadioButton scaleToZeroRadioButton;
+   private RadioButton scaleToAspectRatioRadioButton;
+   private RadioButton noScalingRadioButton;
+   private Label noScalingLabel;
 }

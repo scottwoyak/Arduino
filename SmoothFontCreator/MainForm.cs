@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
-using System.Windows.Forms.VisualStyles;
 
 namespace SmoothFontCreator;
 
@@ -20,12 +19,28 @@ public partial class MainForm : Form
    {
       get
       {
-         return new FontBuilderOptions()
+         FontBuilderOptions options = new()
          {
-            Monospaced = monospaceCheckBox.Checked,
             HorizontalPadding = (uint)horizontalPaddingUpDown.Value,
             VerticalPadding = (uint)verticalPaddingUpDown.Value,
          };
+
+         if (monospaceCheckBox.Checked)
+         {
+            options.MonospaceMode = MonospaceMode.NoScaling;
+
+            if (scaleToAspectRatioRadioButton.Checked)
+            {
+               options.MonospaceMode = MonospaceMode.ScaleToAspectRatio;
+               options.AspectRatio = (double) aspectRatioUpDown.Value;
+            }
+         }
+         else
+         {
+            options.MonospaceMode = MonospaceMode.None;
+         }
+
+         return options;
       }
    }
 
@@ -53,10 +68,7 @@ public partial class MainForm : Form
 
       _builder = FontBuilder.ForFontFamily(FontComboBox.Text, _getFontStyle());
 
-      _UpdatePreviewTextboxFont();
-      _UpdateAllCharsMetrics();
-      _createFont();
-      _displayCurrentChar();
+      _resetAll();
 
       magnificationLabel.Text = _magnification.ToString() + "X";
    }
@@ -266,6 +278,14 @@ public partial class MainForm : Form
 
       TrueTypeCharPanel.Invalidate();
       VLWCharPanel.Invalidate();
+
+      noScalingLabel.Enabled = monospaceCheckBox.Checked;
+      noScalingRadioButton.Enabled = monospaceCheckBox.Checked;
+      scaleToZeroLabel.Enabled = monospaceCheckBox.Checked;
+      scaleToZeroRadioButton.Enabled = monospaceCheckBox.Checked;
+      scaleToAspectRatioLabel.Enabled = monospaceCheckBox.Checked;
+      scaleToAspectRatioRadioButton.Enabled = monospaceCheckBox.Checked;
+      aspectRatioUpDown.Enabled = monospaceCheckBox.Checked && scaleToAspectRatioRadioButton.Checked;
    }
 
    private void TrueTypeCharPanel_Paint(object sender, PaintEventArgs e)
@@ -360,7 +380,6 @@ public partial class MainForm : Form
       ObservedMetrics charMetrics = _getCharMetrics();
 
       // draw lines for just this char
-      x2 -= 0.2f * TrueTypeCharPanel.Width;
       int thisCharTop = (int)charMetrics.CharTop;
       int thisCharBottom = (int)charMetrics.CharBottom;
       e.Graphics.DrawLine(thisCharPen, x1, thisCharTop, x2, thisCharTop);
@@ -662,6 +681,11 @@ public partial class MainForm : Form
       _resetAll();
    }
 
+   private void AspectRatioUpDown_ValueChanged(object sender, EventArgs e)
+   {
+      _resetAll();
+   }
+
    private void button1_Click(object sender, EventArgs e)
    {
       byte[] bytes = File.ReadAllBytes(@"C:\SourceCode\Arduino\SmoothFontCreator\Roboto32.vlw");
@@ -800,5 +824,10 @@ public partial class MainForm : Form
    {
       TrueTypeTextPanel.Invalidate();
       VLWTextPanel.Invalidate();
+   }
+
+   private void monospaceRadioButton_CheckedChanged(object sender, EventArgs e)
+   {
+      _resetAll();
    }
 }

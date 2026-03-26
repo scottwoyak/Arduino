@@ -1,11 +1,19 @@
 ﻿
 namespace SmoothFontCreator;
 
+public enum MonospaceMode
+{
+   None,
+   NoScaling,
+   ScaleToAspectRatio,
+}
+
 public class FontBuilderOptions
 {
-   public bool Monospaced = false;
+   public MonospaceMode MonospaceMode = MonospaceMode.None;
    public uint HorizontalPadding = 0;
    public uint VerticalPadding = 0;
+   public double AspectRatio = 1;
 }
 
 public class FontBuilder
@@ -72,7 +80,7 @@ public class FontBuilder
       _largeGraphics.DrawPreciseString(c, metrics.Font, pt, Color.White, Color.Transparent);
    }
 
-   private void _Scale(Bitmap largeBitmap, Rectangle srcRect, Bitmap smallBitmap, double ratio, double xOffset, double yOffset)
+   private void _Scale(Bitmap largeBitmap, Rectangle srcRect, Bitmap smallBitmap, double xRatio, double yRatio, double xOffset, double yOffset)
    {
       using DirectBitmap large = new(largeBitmap, true, srcRect);
       using DirectBitmap small = new(smallBitmap, false);
@@ -84,10 +92,10 @@ public class FontBuilder
             // for each pixel in the small bitmap, sum the contents of the associated
             // pixels in the large bitmap
             RectangleF rect = new RectangleF(
-               (float) (x * ratio + xOffset), 
-               (float) (y * ratio + yOffset), 
-               (float) ratio, 
-               (float) ratio
+               (float)(x * xRatio + xOffset),
+               (float)(y * yRatio + yOffset),
+               (float)xRatio,
+               (float)yRatio
                );
 
             Color c = large.GetPixel(rect);
@@ -96,18 +104,19 @@ public class FontBuilder
       }
    }
 
-   public VLWGlyph CreateGlyph(char c, uint charHeightPx, FontBuilderOptions options)
+   public VLWGlyph CreateGlyph(char c, uint cellHeightPx, FontBuilderOptions options)
    {
-      return _CreateGlyph(c, charHeightPx, options);
+      return _CreateGlyph(c, cellHeightPx, options);
    }
 
-   private VLWGlyph _CreateGlyph(char c, uint charHeightPx, FontBuilderOptions options)
+   private VLWGlyph _CreateGlyph(char c, uint cellHeightPx, FontBuilderOptions options)
    {
       Profiler.C = c;
 
-      ObservedMetrics smallCharsMetrics = _allCharsMetrics.WithCharHeight(charHeightPx - options.VerticalPadding);
+      ObservedMetrics smallCharsMetrics = _allCharsMetrics.WithCharHeight(cellHeightPx - options.VerticalPadding);
       double scaleFactor = smallCharsMetrics.CellHeight / _allCharsMetrics.CellHeight;
       ObservedMetrics thisCharMetrics = _charMetrics[c].WithScaleFactor(scaleFactor);
+      ObservedMetrics zeroCharMetrics = _charMetrics['0'].WithScaleFactor(scaleFactor);
 
       VLWGlyph glyph = new();
       glyph.uChar = c;
@@ -124,44 +133,65 @@ public class FontBuilder
       //
       int smallWidthPx = (int)Math.Ceiling(scaleFactor * charMetrics.CharWidth);
       int smallHeightPx = (int)Math.Ceiling(scaleFactor * charMetrics.CharHeight);
+      double compression = 1;
+      switch (options.MonospaceMode)
+      {
+         case MonospaceMode.None:
+         case MonospaceMode.NoScaling:
+            break;
+
+         case MonospaceMode.ScaleToAspectRatio:
+            {
+               if (c == 'A' && options.MonospaceMode == MonospaceMode.ScaleToAspectRatio)
+               {
+
+               }
+               double s = Math.Max(1, (int)Math.Ceiling(options.AspectRatio * smallHeightPx - options.HorizontalPadding));
+               if (s < smallWidthPx)
+               {
+                  compression = s/smallWidthPx;
+                  smallWidthPx = (int)s;
+               }
+            }
+            break;
+      }
+
       Bitmap smallBitmap = new Bitmap(smallWidthPx, smallHeightPx);
       using Graphics smallGraphics = Graphics.FromImage(smallBitmap);
 
-#if USE_GDI
-      double ratio = 1 / scaleFactor;
-      //smallGraphics.InterpolationMode = InterpolationMode.Bilinear;
-      //smallGraphics.InterpolationMode = InterpolationMode.HighQualityBilinear;
-      smallGraphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-      float offset = (float) (smallBitmap.Width - charMetrics.CharWidth/ratio) / 2;
-      Rectangle srcRect = new(0, 0, (int) Math.Ceiling(charMetrics.CharWidth), (int) Math.Ceiling(charMetrics.CharHeight));
-      RectangleF dstRect = new(offset, 0, smallBitmap.Width, smallBitmap.Height);
-      //smallGraphics.DrawImage(_largeBitmap, dstRect, srcRect, GraphicsUnit.Pixel);
-#else
-      double ratio = 1 / scaleFactor;
+      double yRatio = 1 / scaleFactor;
+      double xRatio = (1 / scaleFactor)/compression;
       Rectangle srcRect = new(0, 0, (int)Math.Ceiling(charMetrics.CharWidth), (int)Math.Ceiling(charMetrics.CharHeight));
-      double xOffset = -(ratio * smallBitmap.Width - srcRect.Width) / 2;
-      double yOffset = -ratio * (thisCharMetrics.CharBottom - thisCharMetrics.Baseline);
-      _Scale(_largeBitmap, srcRect, smallBitmap, ratio, xOffset, 0);
-#endif
+      double xOffset = -(xRatio * smallBitmap.Width - srcRect.Width) / 2;
+      _Scale(_largeBitmap, srcRect, smallBitmap, xRatio, yRatio, xOffset, 0);
 
       glyph.Bitmap = smallBitmap;
 
-      // use GDI to get the baseline
-      GdiMetrics gdiMetrics = new GdiMetrics(thisCharMetrics.Font);
-
-      glyph.gdY = (int)Math.Round(gdiMetrics.BaselinePx - thisCharMetrics.CharTop - options.VerticalPadding);
+      //
+      // compute the various values for the glyph
+      //
       glyph.Width = glyph.Bitmap.Width;
       glyph.Height = glyph.Bitmap.Height;
 
-      if (options.Monospaced)
+      GdiMetrics gdiMetrics = new GdiMetrics(thisCharMetrics.Font);
+      glyph.gdY = (int)Math.Round(gdiMetrics.BaselinePx - thisCharMetrics.CharTop - options.VerticalPadding);
+
+      switch (options.MonospaceMode)
       {
-         glyph.gxAdvance = (int)Math.Ceiling(smallCharsMetrics.CellWidth + options.HorizontalPadding);
-         glyph.gdX = (int)((glyph.gxAdvance - thisCharMetrics.CellWidth) / 2.0);
-      }
-      else
-      {
-         glyph.gxAdvance = (int) (glyph.Bitmap.Width + options.HorizontalPadding);
-         glyph.gdX = 0;
+         case MonospaceMode.None:
+            glyph.gxAdvance = (int)(glyph.Bitmap.Width + options.HorizontalPadding);
+            glyph.gdX = 0;
+            break;
+
+         case MonospaceMode.NoScaling:
+            glyph.gxAdvance = (int)Math.Ceiling(smallCharsMetrics.CellWidth + options.HorizontalPadding);
+            glyph.gdX = (int)((glyph.gxAdvance - thisCharMetrics.CellWidth) / 2.0);
+            break;
+
+         case MonospaceMode.ScaleToAspectRatio:
+            glyph.gxAdvance = (int)Math.Ceiling(options.AspectRatio * cellHeightPx);
+            glyph.gdX = Math.Max(0, (int)((glyph.gxAdvance - compression*thisCharMetrics.CellWidth) / 2.0));
+            break;
       }
 
       return glyph;
@@ -182,13 +212,13 @@ public class FontBuilder
 
       for (char c = (char)0x21; c < 0x7F; c++)
       {
-         VLWGlyph glyph = _CreateGlyph(c, charHeightPx-options.VerticalPadding, options);
+         VLWGlyph glyph = _CreateGlyph(c, charHeightPx - options.VerticalPadding, options);
 
          // sometimes rounding errors lead to the image being outside the cell.
          // This check brings things back
          if (vlw.Ascent - glyph.gdY + glyph.Bitmap.Height > charHeightPx)
          {
-            glyph.gdY = (int) (vlw.Ascent + glyph.Bitmap.Height - charHeightPx);
+            glyph.gdY = (int)(vlw.Ascent + glyph.Bitmap.Height - charHeightPx);
          }
          vlw.Glyphs.Add(c, glyph);
       }
