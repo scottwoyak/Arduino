@@ -1,9 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Runtime.CompilerServices;
-using System.Text;
-
+﻿
 namespace SmoothFontCreator;
+
+public enum LabelAlignment
+{
+   Left,
+   Right,
+};
+
 
 public static class GraphicsExtensions
 {
@@ -16,6 +19,20 @@ public static class GraphicsExtensions
    public static void DrawPreciseString(this Graphics graphics, char c, Font font, Point pt, Color fgColor, Color bgColor)
    {
       graphics.DrawPreciseString(c.ToString(), font, pt, fgColor, bgColor);
+   }
+
+   public static void DrawLabel(this Graphics graphics, string str, Font font, PointF pt, Color fgColor, Color bgColor, LabelAlignment alignment= LabelAlignment.Left)
+   {
+      SizeF size = graphics.MeasureString(str, font);
+
+      pt.Y -= size.Height / 2;
+      if (alignment == LabelAlignment.Right)
+      {
+         pt.X -= size.Width;
+      }
+
+      graphics.FillRectangle(new SolidBrush(bgColor), new RectangleF(pt, size));
+      graphics.DrawString(str, font, new SolidBrush(fgColor), pt);
    }
 
    public static GdiMetrics GetGdiMetrics(this Font font)

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
+using System.Windows.Forms.VisualStyles;
 
 namespace SmoothFontCreator;
 
@@ -94,7 +95,7 @@ public partial class MainForm : Form
       using Bitmap bitmap = new(TrueTypeCharPanel.Width, TrueTypeCharPanel.Height);
       using Graphics bitmapGraphics = Graphics.FromImage(bitmap);
 
-      float fontSizePx = (float)Math.Round(FontUtil.LineSpacingPxToFontSizePx(fontFamily, _getFontStyle(), bitmapGraphics, 0.8f * TrueTypeCharPanel.Height));
+      float fontSizePx = FontUtil.GetFontSizePxForCellHeightPx(fontFamily, _getFontStyle(), 0.8f * TrueTypeCharPanel.Height);
 
       Font font = new Font(
          fontFamily,
@@ -130,7 +131,7 @@ public partial class MainForm : Form
       using Bitmap bitmap = new(TrueTypeCharPanel.Width, TrueTypeCharPanel.Height);
       using Graphics bitmapGraphics = Graphics.FromImage(bitmap);
 
-      float fontSizePx = (float)Math.Round(FontUtil.LineSpacingPxToFontSizePx(fontFamily, _getFontStyle(), bitmapGraphics, 0.8f * TrueTypeCharPanel.Height));
+      float fontSizePx = FontUtil.GetFontSizePxForCellHeightPx(fontFamily, _getFontStyle(), 0.8f * TrueTypeCharPanel.Height);
 
       Font font = new Font(
          fontFamily,
@@ -186,9 +187,10 @@ public partial class MainForm : Form
       vlwDescentTextBox.Text = _vlwFont.Descent + " px";
 
       GdiMetrics gdiMetrics = new(_allCharsMetrics.Font);
-      ttAscentTextBox.Text = (gdiMetrics.AscentPx/gdiMetrics.HeightPx).ToString("0.000");
-      ttDescentTextBox.Text = (gdiMetrics.DescentPx / gdiMetrics.HeightPx).ToString("0.000");
       ttHeightTextBox.Text = (gdiMetrics.HeightPx / gdiMetrics.HeightPx).ToString("0.000");
+      ttSizeTextBox.Text = (gdiMetrics.SizePx / gdiMetrics.HeightPx).ToString("0.000");
+      ttAscentTextBox.Text = (gdiMetrics.AscentPx / gdiMetrics.HeightPx).ToString("0.000");
+      ttDescentTextBox.Text = (gdiMetrics.DescentPx / gdiMetrics.HeightPx).ToString("0.000");
       ttLineSpacingTextBox.Text = (gdiMetrics.LineSpacingPx / gdiMetrics.HeightPx).ToString("0.000");
 
       char c = TestCharTextBox.Text[0];
@@ -203,10 +205,10 @@ public partial class MainForm : Form
          gdYTextBox.Text = "--";
          paddingTextBox.Text = "--";
 
+         ttCharHeightTextBox.Text = "--";
          ttCellWidthTextBox.Text = "--";
          ttCellHeightTextBox.Text = "--";
          ttCharWidthTextBox.Text = "--";
-         ttCharHeightTextBox.Text = "--";
       }
       else
       {
@@ -271,7 +273,7 @@ public partial class MainForm : Form
 
       FontFamily fontFamily = new(FontComboBox.Text);
 
-      float fontSizePx = (float)Math.Round(FontUtil.LineSpacingPxToFontSizePx(fontFamily, _getFontStyle(), e.Graphics, 0.8f * TrueTypeCharPanel.Height));
+      float fontSizePx = FontUtil.GetFontSizePxForCellHeightPx(fontFamily, _getFontStyle(), 0.8f * TrueTypeCharPanel.Height);
 
       Font font = new Font(
          fontFamily,
@@ -281,7 +283,8 @@ public partial class MainForm : Form
 
       string testChar = TestCharTextBox.Text.Substring(0, 1);
       float cellHeightPx = font.GetHeight(e.Graphics);
-      float cellWidthPx = TextRenderer.MeasureText(testChar, font, new Size(1000, 1000), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width;
+      Size cellSizePx = TextRenderer.MeasureText(testChar, font, new Size(1000, 1000), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+      float cellWidthPx = cellSizePx.Width;
 
       Point pt = new((int)(TrueTypeCharPanel.Width - cellWidthPx) / 2, (int)(TrueTypeCharPanel.Height - cellHeightPx) / 2);
       e.Graphics.DrawPreciseString(testChar, font, pt, Color.White, Color.Black);
@@ -293,67 +296,62 @@ public partial class MainForm : Form
       radius = 3;
       e.Graphics.FillEllipse(new SolidBrush(Color.HotPink), pt.X - radius / 2, pt.Y - radius / 2, radius, radius);
 
+      //
       // draw GDI metrics on the left
+      //
       GdiMetrics gdiMetrics = font.GetGdiMetrics();
 
-      Color startEndColor = Color.White;
-      Color topColor = Color.Pink;
+      Color cellsColor = Color.White;
+      Color ascentColor = Color.Pink;
       Color baselineColor = Color.LightGreen;
-      Color bottomColor = Color.LightCyan;
+      Color descentColor = Color.Cyan;
+      Color heightColor = Color.Violet;
       Color allCharsColor = Color.Yellow;
-      Color thisCharColor = Color.Red;
+      Color thisCharColor = Color.Orange;
 
-      using Pen startEndPen = new Pen(startEndColor);
-      using Pen topPen = new(topColor);
+      using Pen startEndPen = new Pen(cellsColor);
+      using Pen ascentPen = new(ascentColor);
       using Pen baselinePen = new(baselineColor);
-      using Pen bottomPen = new(bottomColor);
+      using Pen descentPen = new(descentColor);
+      using Pen heightPen = new(heightColor);
       using Pen allCharsPen = new(allCharsColor);
-      using Pen oneCharPen = new(thisCharColor);
+      using Pen thisCharPen = new(thisCharColor);
 
       startEndPen.DashStyle = DashStyle.Dot;
-      topPen.DashStyle = DashStyle.Dot;
+      ascentPen.DashStyle = DashStyle.Dot;
       baselinePen.DashStyle = DashStyle.Dot;
-      bottomPen.DashStyle = DashStyle.Dot;
+      descentPen.DashStyle = DashStyle.Dot;
       allCharsPen.DashStyle = DashStyle.Dot;
-      oneCharPen.DashStyle = DashStyle.Dot;
+      thisCharPen.DashStyle = DashStyle.Dot;
 
       float x1 = 0;
       float x2 = TrueTypeCharPanel.Width / 2;
 
       e.Graphics.SmoothingMode = SmoothingMode.None; // so that dashes are displayed
-      float start = pt.Y;
+      float ascent = pt.Y + gdiMetrics.BaselinePx - gdiMetrics.AscentPx;
       float baseline = pt.Y + gdiMetrics.BaselinePx;
-      float bottom = pt.Y + gdiMetrics.BottomPx;
-      float end = pt.Y + gdiMetrics.LineSpacingPx;
-      e.Graphics.DrawLine(startEndPen, x1, start, x2, start);
+      float descent = pt.Y + gdiMetrics.BaselinePx + gdiMetrics.DescentPx;
+      float height = pt.Y + gdiMetrics.HeightPx;
+      e.Graphics.DrawLine(ascentPen, x1, ascent, x2, ascent);
       e.Graphics.DrawLine(baselinePen, x1, baseline, x2, baseline);
-      e.Graphics.DrawLine(bottomPen, x1, bottom, x2, bottom);
-      e.Graphics.DrawLine(startEndPen, x1, end, x2, end);
+      e.Graphics.DrawLine(descentPen, x1, descent, x2, descent);
+      e.Graphics.DrawLine(heightPen, x1, height, x2, height);
 
-      using Font f = new Font("Arial", 8);
-      e.Graphics.DrawString("ASCENT", f, new SolidBrush(startEndColor), new PointF(0, start));
-      e.Graphics.DrawString("BASELINE", f, new SolidBrush(baselineColor), new PointF(0, baseline));
-      e.Graphics.DrawString("DESCENT", f, new SolidBrush(bottomColor), new PointF(0, bottom));
-      e.Graphics.DrawString("LINE SPACING", f, new SolidBrush(startEndColor), new PointF(0, end));
-
+      //
       // draw what we observed on the right
+      //
       x1 = TrueTypeCharPanel.Width / 2;
       x2 = TrueTypeCharPanel.Width;
 
       float allCellTop = (float)_allCharsMetrics.CellTop;
-      float allCharTop = (float)_allCharsMetrics.CharTop;
-      float allCharBottom = (float)_allCharsMetrics.CharBottom;
-      float allCellBottom = (float)_allCharsMetrics.CellBottom;
+      float allCharsTop = (float)_allCharsMetrics.CharTop;
+      float allCharsBottom = (float)_allCharsMetrics.CharBottom;
+      float allCellsBottom = (float)_allCharsMetrics.CellBottom;
 
       e.Graphics.DrawLine(startEndPen, x1, allCellTop, x2, allCellTop);
-      e.Graphics.DrawLine(startEndPen, x1, allCellBottom, x2, allCellBottom);
-      e.Graphics.DrawLine(allCharsPen, x1, allCharTop, x2, allCharTop);
-      e.Graphics.DrawLine(allCharsPen, x1, allCharBottom, x2, allCharBottom);
-
-      StringFormat format = new() { Alignment = StringAlignment.Far };
-      int lastX = TrueTypeCharPanel.Width - 1;
-      e.Graphics.DrawString("All CELLS", f, new SolidBrush(startEndColor), new PointF(lastX, allCellTop), format);
-      e.Graphics.DrawString("ALL CHARS", f, new SolidBrush(allCharsColor), new PointF(lastX, allCharTop), format);
+      e.Graphics.DrawLine(startEndPen, x1, allCellsBottom, x2, allCellsBottom);
+      e.Graphics.DrawLine(allCharsPen, x1, allCharsTop, x2, allCharsTop);
+      e.Graphics.DrawLine(allCharsPen, x1, allCharsBottom, x2, allCharsBottom);
 
       ObservedMetrics charMetrics = _getCharMetrics();
 
@@ -361,8 +359,8 @@ public partial class MainForm : Form
       x2 -= 0.2f * TrueTypeCharPanel.Width;
       int thisCharTop = (int)charMetrics.CharTop;
       int thisCharBottom = (int)charMetrics.CharBottom;
-      e.Graphics.DrawLine(oneCharPen, x1, thisCharTop, x2, thisCharTop);
-      e.Graphics.DrawLine(oneCharPen, x1, thisCharBottom, x2, thisCharBottom);
+      e.Graphics.DrawLine(thisCharPen, x1, thisCharTop, x2, thisCharTop);
+      e.Graphics.DrawLine(thisCharPen, x1, thisCharBottom, x2, thisCharBottom);
 
       int y1 = 0;
       int y2 = TrueTypeCharPanel.Height;
@@ -376,8 +374,21 @@ public partial class MainForm : Form
       e.Graphics.DrawLine(startEndPen, allCellsRight, y1, allCellsRight, y2);
       e.Graphics.DrawLine(allCharsPen, allCharsLeft, y1, allCharsLeft, y2);
       e.Graphics.DrawLine(allCharsPen, allCharsRight, y1, allCharsRight, y2);
-      e.Graphics.DrawLine(oneCharPen, thisCharLeft, y1, thisCharLeft, y2);
-      e.Graphics.DrawLine(oneCharPen, thisCharRight, y1, thisCharRight, y2);
+      e.Graphics.DrawLine(thisCharPen, thisCharLeft, y1, thisCharLeft, y2);
+      e.Graphics.DrawLine(thisCharPen, thisCharRight, y1, thisCharRight, y2);
+
+      // draw labels last so that they cover up dashed lines
+      e.Graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+      using Font f = new Font("Arial", 8);
+      e.Graphics.DrawLabel("ASCENT", f, new PointF(0, ascent), ascentColor, Color.DimGray);
+      e.Graphics.DrawLabel("BASELINE", f, new PointF(0, baseline), baselineColor, Color.DimGray);
+      e.Graphics.DrawLabel("DESCENT", f, new PointF(0, descent), descentColor, Color.DimGray);
+      e.Graphics.DrawLabel("HEIGHT", f, new PointF(0, height), heightColor, Color.DimGray);
+
+      int lastX = TrueTypeCharPanel.Width - 1;
+      e.Graphics.DrawLabel("All CELLS", f, new PointF(lastX, allCellTop), cellsColor, Color.DimGray, LabelAlignment.Right);
+      e.Graphics.DrawLabel("ALL CHARS", f, new PointF(lastX, allCharsTop), allCharsColor, Color.DimGray, LabelAlignment.Right);
+      e.Graphics.DrawLabel("THIS CHAR", f, new PointF(lastX, thisCharTop), thisCharColor, Color.DimGray, LabelAlignment.Right);
    }
 
    private void _fillCheckerboard(Bitmap bitmap)
@@ -398,7 +409,7 @@ public partial class MainForm : Form
 
    private void _createFont()
    {
-      uint targetCharHeightPx = (uint)charHeightUpDown.Value;
+      uint targetCharHeightPx = (uint)cellHeightUpDown.Value;
 
       _vlwFont = _builder.CreateFont(targetCharHeightPx, FontBuilderOptions);
 
@@ -423,11 +434,11 @@ public partial class MainForm : Form
          _fillCheckerboard(smallBitmap);
 
          // draw the bitmap to the preview char panel
-         //e.Graphics.DrawImageUnscaled(smallBitmap, 10, 10);
          e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
-         Rectangle srcRect = new(-1, -1, smallBitmap.Width + 2, smallBitmap.Height + 2);
+         //RectangleF srcRect = new(-0.5f, -0.5f, smallBitmap.Width + 0.5f, smallBitmap.Height + 0.5f);
+         RectangleF srcRect = new(-0.5f, -0.5f, smallBitmap.Width + 1, smallBitmap.Height + 1);
 
-         float pixelSize = VLWCharPanel.Height / (float)smallBitmap.Height;
+         float pixelSize = 0.8f * VLWCharPanel.Height / (float)smallBitmap.Height;
          int x = (int)((VLWCharPanel.Width - pixelSize * smallBitmap.Width) / 2.0);
          int y = (int)((VLWCharPanel.Height - pixelSize * smallBitmap.Height) / 2.0);
          int w = (int)(smallBitmap.Width * pixelSize);
@@ -545,7 +556,7 @@ public partial class MainForm : Form
       using Bitmap bitmap = new(TrueTypeCharPanel.Width, TrueTypeCharPanel.Height);
       using Graphics bitmapGraphics = Graphics.FromImage(bitmap);
 
-      float fontSizePx = (float)Math.Round(FontUtil.LineSpacingPxToFontSizePx(fontFamily, _getFontStyle(), bitmapGraphics, 0.8f * TrueTypeCharPanel.Height));
+      float fontSizePx = FontUtil.GetFontSizePxForCellHeightPx(fontFamily, _getFontStyle(), 0.8f * TrueTypeCharPanel.Height);
 
       Font font = new Font(
          fontFamily,
@@ -584,7 +595,7 @@ public partial class MainForm : Form
    private void testGlyphButton_Click(object sender, EventArgs e)
    {
       Stopwatch sw = Stopwatch.StartNew();
-      uint targetCharHeightPx = (uint)charHeightUpDown.Value;
+      uint targetCharHeightPx = (uint)cellHeightUpDown.Value;
       char c = TestCharTextBox.Text[0];
 
       const int numTrials = 20;
@@ -603,7 +614,7 @@ public partial class MainForm : Form
    {
       Stopwatch sw = Stopwatch.StartNew();
       const int numTrials = 1;
-      uint targetCharHeightPx = (uint)charHeightUpDown.Value;
+      uint targetCharHeightPx = (uint)cellHeightUpDown.Value;
       VLWFont? font = null;
       for (int i = 0; i < numTrials; i++)
       {
@@ -659,20 +670,34 @@ public partial class MainForm : Form
       VLWCharPanel.Invalidate();
    }
 
+   private void _DrawLines(Bitmap bitmap, int lineHeight)
+   {
+      using Graphics graphics = Graphics.FromImage(bitmap);
+
+      using Pen pen = new Pen(Color.Red);
+      pen.DashStyle = DashStyle.Dot;
+      graphics.SmoothingMode = SmoothingMode.None;
+      int line = 1;
+      while (true)
+      {
+         float yL = line * lineHeight;
+
+         if (yL > bitmap.Height)
+         {
+            break;
+         }
+         graphics.DrawLine(pen, 0, yL, bitmap.Width, yL);
+         line++;
+      }
+
+   }
    private void VLWPreviewPanel_Paint(object sender, PaintEventArgs e)
    {
       // create the bitmap that we will display
       using Bitmap bitmap = new(VLWPreviewPanel.Width, VLWPreviewPanel.Height);
       using Graphics graphics = Graphics.FromImage(bitmap);
 
-      int height = (int)charHeightUpDown.Value;
-      using Pen pen = new Pen(Color.Red);
-      pen.DashStyle = DashStyle.Dot;
-      e.Graphics.SmoothingMode = SmoothingMode.None;
-      for (int i = 0; i < 5; i++)
-      {
-         e.Graphics.DrawLine(pen, 0, (i + 1) * _magnification * height, bitmap.Width, (i + 1) * _magnification * height);
-      }
+      _DrawLines(bitmap, (int)cellHeightUpDown.Value);
 
       String str = PreviewTextBox.Text;
 
@@ -711,8 +736,13 @@ public partial class MainForm : Form
                   VLWGlyph glyph = _vlwFont.Glyphs[c];
                   if (glyph.Bitmap != null) // space char
                   {
+                     if (c == '$')
+                     {
+
+                     }
                      int gx = x + glyph.gdX;
                      int gy = (int)(y + _vlwFont.Ascent - glyph.gdY);
+                     //graphics.FillRectangle(Brushes.Green, new RectangleF(new Point(gx, gy), glyph.Bitmap.Size));
                      graphics.DrawImageUnscaled(glyph.Bitmap, gx, gy);
                   }
                   x += glyph.gxAdvance;
@@ -722,9 +752,8 @@ public partial class MainForm : Form
       }
 
       e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
-      Rectangle srcRect = new(-1, -1, bitmap.Width + 2, bitmap.Height + 2);
-
-      Rectangle dstRect = new(0, 0, bitmap.Width * _magnification, bitmap.Height * _magnification);
+      RectangleF srcRect = new(-0.5f, -0.5f, bitmap.Width + 1, bitmap.Height + 1);
+      RectangleF dstRect = new(-0.5f, -0.5f, bitmap.Width * _magnification + 1, bitmap.Height * _magnification + 1);
       e.Graphics.DrawImage(bitmap, dstRect, srcRect, GraphicsUnit.Pixel);
    }
 
@@ -734,11 +763,13 @@ public partial class MainForm : Form
       using Bitmap bitmap = new(TrueTypePreviewPanel.Width, TrueTypePreviewPanel.Height);
       using Graphics graphics = Graphics.FromImage(bitmap);
 
+      _DrawLines(bitmap, (int)cellHeightUpDown.Value);
+
       String str = PreviewTextBox.Text;
 
       FontFamily fontFamily = new FontFamily(FontComboBox.Text);
-      int height = (int)charHeightUpDown.Value;
-      float fontSizePx = FontUtil.LineSpacingPxToFontSizePx2(fontFamily, _getFontStyle(), graphics, height);
+      int height = (int)cellHeightUpDown.Value;
+      float fontSizePx = FontUtil.GetFontSizePxForCellHeightPx(fontFamily, _getFontStyle(), height);
       Font font = new Font(
          fontFamily,
          fontSizePx,
@@ -749,19 +780,9 @@ public partial class MainForm : Form
       graphics.DrawString(str, font, Brushes.White, new Point(0, 0));
 
 
-      using Pen pen = new Pen(Color.Red);
-      pen.DashStyle = DashStyle.Dot;
-      e.Graphics.SmoothingMode = SmoothingMode.None;
-      for (int i = 0; i < 5; i++)
-      {
-         e.Graphics.DrawLine(pen, 0, (i + 1) * _magnification * height, bitmap.Width, (i + 1) * _magnification * height);
-      }
-
-
       e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
-      Rectangle srcRect = new(-1, -1, bitmap.Width + 2, bitmap.Height + 2);
-
-      Rectangle dstRect = new(0, 0, bitmap.Width * _magnification, bitmap.Height * _magnification);
+      RectangleF srcRect = new(-0.5f, -0.5f, bitmap.Width + 1, bitmap.Height + 1);
+      RectangleF dstRect = new(-0.5f, -0.5f, bitmap.Width * _magnification + 1, bitmap.Height * _magnification + 1);
       e.Graphics.DrawImage(bitmap, dstRect, srcRect, GraphicsUnit.Pixel);
    }
 }

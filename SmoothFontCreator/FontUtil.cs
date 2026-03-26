@@ -4,42 +4,25 @@ namespace SmoothFontCreator;
 
 public class FontUtil
 {
-   public static float LineSpacingPxToFontSizePt(FontFamily fontFamily, FontStyle fontStyle, Graphics graphics, float desiredLineSpacingPx)
+   //
+   // Measuring windows fonts is a bit of a mystery. If you print a string, the background (cell)
+   // is pretty close to the value of the Ascent + Descent, but can be a few percent larger. That
+   // actual font size requested is an unknown actual value. This function tells you what the
+   // needed font size is to create a font with the desired cell height.
+   public static float GetFontSizePxForCellHeightPx(
+      FontFamily fontFamily, 
+      FontStyle fontStyle, 
+      float desiredCellHeightPx)
    {
-      using Font font = new( fontFamily, 100, fontStyle, GraphicsUnit.Pixel);
+      // create a dummy font
+      float dummyFontSize = 100; // doesn't reall matter what value is used
+      using Font font = new(fontFamily, dummyFontSize, fontStyle, GraphicsUnit.Pixel);
 
-      float heightPx = font.GetHeight(graphics);
-      float heightEm = font.FontFamily.GetEmHeight(FontStyle.Regular);
-      float lineSpacingEm = font.FontFamily.GetLineSpacing(FontStyle.Regular);
-      float lineSpacingPx = (heightPx / heightEm) * lineSpacingEm;
+      // see what GDI reports to us
+      GdiMetrics gdiMetrics = new(font);
+      float approxCellHeightPx = gdiMetrics.AscentPx + gdiMetrics.DescentPx;
 
-      return desiredLineSpacingPx * (font.SizeInPoints / lineSpacingPx);
+      // return the scaled value
+      return desiredCellHeightPx * (dummyFontSize / font.GetHeight());
    }
-
-   public static float LineSpacingPxToFontSizePx(FontFamily fontFamily, FontStyle fontStyle, Graphics graphics, float desiredLineSpacingPx)
-   {
-      using Font font = new(fontFamily, 100, fontStyle, GraphicsUnit.Pixel);
-
-      float heightPx = font.GetHeight(graphics);
-      float heightEm = font.FontFamily.GetEmHeight(FontStyle.Regular);
-      float lineSpacingEm = font.FontFamily.GetLineSpacing(FontStyle.Regular);
-      float lineSpacingPx = (heightPx / heightEm) * lineSpacingEm;
-
-      return desiredLineSpacingPx * (font.Size / lineSpacingPx);
-   }
-   public static float LineSpacingPxToFontSizePx2(FontFamily fontFamily, FontStyle fontStyle, Graphics graphics, float desiredLineSpacingPx)
-   {
-      using Font font = new(fontFamily, 100, fontStyle, GraphicsUnit.Pixel);
-
-      float heightPx = font.GetHeight(graphics);
-      return desiredLineSpacingPx * (100 / heightPx);
-   }
-
-   /*
-   public static void DrawText(Graphics graphics, string str, Font font, Point pt, Color fgColor, Color bgColor)
-   {
-      graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-      TextRenderer.DrawText(graphics, str, font, pt, fgColor, bgColor, TextFormatFlags.NoPadding|TextFormatFlags.NoPrefix);
-   }
-   */
 }

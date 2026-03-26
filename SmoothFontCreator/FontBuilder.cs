@@ -32,7 +32,7 @@ public class FontBuilder
       using Graphics graphics = Graphics.FromImage(bitmap);
 
       // create a font that will fill our bitmap
-      float fontSizePx = (float)Math.Ceiling(FontUtil.LineSpacingPxToFontSizePx(FontFamily, FontStyle, graphics, bitmap.Height));
+      float fontSizePx = (float)Math.Ceiling(FontUtil.GetFontSizePxForCellHeightPx(FontFamily, FontStyle, bitmap.Height));
       Font font = new Font(FontFamily, fontSizePx, fontStyle, GraphicsUnit.Pixel);
       _allCharsMetrics = new(font);
 
@@ -175,13 +175,20 @@ public class FontBuilder
       // use GDI to get the baseline
       GdiMetrics gdiMetrics = new GdiMetrics(allCharsMetrics.Font);
 
-      vlw.Ascent = (uint)Math.Ceiling(gdiMetrics.AscentPx - allCharsMetrics.TopMargin);
+      vlw.Ascent = (uint)Math.Floor(gdiMetrics.AscentPx - allCharsMetrics.TopMargin);
       vlw.Descent = (int)(charHeightPx - vlw.Ascent);
       vlw.FontSizePx = charHeightPx;
 
       for (char c = (char)0x21; c < 0x7F; c++)
       {
          VLWGlyph glyph = _CreateGlyph(c, charHeightPx, options, allCharsMetrics);
+
+         // sometimes rounding errors lead to the image being outside the cell.
+         // This check brings things back
+         if (vlw.Ascent - glyph.gdY + glyph.Bitmap.Height > charHeightPx)
+         {
+            glyph.gdY = (int) (vlw.Ascent + glyph.Bitmap.Height - charHeightPx);
+         }
          vlw.Glyphs.Add(c, glyph);
       }
 

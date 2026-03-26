@@ -55,10 +55,12 @@ partial class MainForm
       groupBox2 = new GroupBox();
       label25 = new Label();
       ttDescentLabel = new Label();
+      label26 = new Label();
       label1 = new Label();
       ttAscentLabel = new Label();
       ttLineSpacingTextBox = new TextBox();
       ttDescentTextBox = new TextBox();
+      ttSizeTextBox = new TextBox();
       ttHeightTextBox = new TextBox();
       ttAscentTextBox = new TextBox();
       groupBox7 = new GroupBox();
@@ -91,7 +93,7 @@ partial class MainForm
       label3 = new Label();
       SpacingUpDown = new NumericUpDown();
       label7 = new Label();
-      charHeightUpDown = new NumericUpDown();
+      cellHeightUpDown = new NumericUpDown();
       label8 = new Label();
       monospaceCheckBox = new CheckBox();
       groupBox3 = new GroupBox();
@@ -120,7 +122,7 @@ partial class MainForm
       tabPage2.SuspendLayout();
       groupBox4.SuspendLayout();
       ((System.ComponentModel.ISupportInitialize)SpacingUpDown).BeginInit();
-      ((System.ComponentModel.ISupportInitialize)charHeightUpDown).BeginInit();
+      ((System.ComponentModel.ISupportInitialize)cellHeightUpDown).BeginInit();
       groupBox3.SuspendLayout();
       SuspendLayout();
       // 
@@ -165,7 +167,7 @@ partial class MainForm
       PreviewTextBox.Name = "PreviewTextBox";
       PreviewTextBox.Size = new Size(536, 392);
       PreviewTextBox.TabIndex = 19;
-      PreviewTextBox.Text = "$@0123456789\r\nABCDEFGHIJKLMNOPQRSTUVWXYZ\r\nabcdefghijklmnopqrstuvwxyz";
+      PreviewTextBox.Text = "g $@0123456789\r\ng ABCDEFGHIJKLMNOPQRSTUVWXYZ\r\ng abcdefghijklmnopqrstuvwxyz\r\ng\r\ng\r\ng\r\ng\r\ng\r\ng";
       PreviewTextBox.TextChanged += PreviewTextBox_TextChanged;
       // 
       // groupBox9
@@ -174,9 +176,9 @@ partial class MainForm
       groupBox9.Controls.Add(VLWCharPanel);
       groupBox9.Controls.Add(groupBox5);
       groupBox9.Controls.Add(groupBox6);
-      groupBox9.Location = new Point(895, 446);
+      groupBox9.Location = new Point(999, 446);
       groupBox9.Name = "groupBox9";
-      groupBox9.Size = new Size(1381, 669);
+      groupBox9.Size = new Size(1277, 669);
       groupBox9.TabIndex = 29;
       groupBox9.TabStop = false;
       groupBox9.Text = "Generated VLW";
@@ -187,7 +189,7 @@ partial class MainForm
       VLWCharPanel.BackColor = Color.DimGray;
       VLWCharPanel.Location = new Point(6, 30);
       VLWCharPanel.Name = "VLWCharPanel";
-      VLWCharPanel.Size = new Size(699, 633);
+      VLWCharPanel.Size = new Size(595, 633);
       VLWCharPanel.TabIndex = 2;
       // 
       // groupBox5
@@ -197,7 +199,7 @@ partial class MainForm
       groupBox5.Controls.Add(vlwDescentTextBox);
       groupBox5.Controls.Add(label15);
       groupBox5.Controls.Add(label16);
-      groupBox5.Location = new Point(711, 30);
+      groupBox5.Location = new Point(607, 30);
       groupBox5.Name = "groupBox5";
       groupBox5.Size = new Size(263, 116);
       groupBox5.TabIndex = 22;
@@ -255,7 +257,7 @@ partial class MainForm
       groupBox6.Controls.Add(label18);
       groupBox6.Controls.Add(paddingTextBox);
       groupBox6.Controls.Add(label17);
-      groupBox6.Location = new Point(711, 152);
+      groupBox6.Location = new Point(607, 152);
       groupBox6.Name = "groupBox6";
       groupBox6.Size = new Size(263, 275);
       groupBox6.TabIndex = 23;
@@ -378,7 +380,7 @@ partial class MainForm
       groupBox8.Controls.Add(TrueTypeCharPanel);
       groupBox8.Location = new Point(9, 446);
       groupBox8.Name = "groupBox8";
-      groupBox8.Size = new Size(880, 669);
+      groupBox8.Size = new Size(984, 669);
       groupBox8.TabIndex = 28;
       groupBox8.TabStop = false;
       groupBox8.Text = "TrueType";
@@ -388,24 +390,26 @@ partial class MainForm
       groupBox2.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       groupBox2.Controls.Add(label25);
       groupBox2.Controls.Add(ttDescentLabel);
+      groupBox2.Controls.Add(label26);
       groupBox2.Controls.Add(label1);
       groupBox2.Controls.Add(ttAscentLabel);
       groupBox2.Controls.Add(ttLineSpacingTextBox);
       groupBox2.Controls.Add(ttDescentTextBox);
+      groupBox2.Controls.Add(ttSizeTextBox);
       groupBox2.Controls.Add(ttHeightTextBox);
       groupBox2.Controls.Add(ttAscentTextBox);
-      groupBox2.Location = new Point(610, 30);
+      groupBox2.Location = new Point(714, 30);
       groupBox2.Name = "groupBox2";
-      groupBox2.Size = new Size(263, 268);
+      groupBox2.Size = new Size(263, 248);
       groupBox2.TabIndex = 23;
       groupBox2.TabStop = false;
-      groupBox2.Text = "Font";
+      groupBox2.Text = "What GDI Reports";
       // 
       // label25
       // 
       label25.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       label25.AutoSize = true;
-      label25.Location = new Point(7, 151);
+      label25.Location = new Point(4, 188);
       label25.Name = "label25";
       label25.Size = new Size(115, 25);
       label25.TabIndex = 21;
@@ -416,12 +420,23 @@ partial class MainForm
       // 
       ttDescentLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       ttDescentLabel.AutoSize = true;
-      ttDescentLabel.Location = new Point(43, 114);
+      ttDescentLabel.Location = new Point(40, 151);
       ttDescentLabel.Name = "ttDescentLabel";
       ttDescentLabel.Size = new Size(79, 25);
       ttDescentLabel.TabIndex = 21;
       ttDescentLabel.Text = "Descent:";
       ttDescentLabel.TextAlign = ContentAlignment.TopRight;
+      // 
+      // label26
+      // 
+      label26.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      label26.AutoSize = true;
+      label26.Location = new Point(72, 77);
+      label26.Name = "label26";
+      label26.Size = new Size(47, 25);
+      label26.TabIndex = 21;
+      label26.Text = "Size:";
+      label26.TextAlign = ContentAlignment.TopRight;
       // 
       // label1
       // 
@@ -438,7 +453,7 @@ partial class MainForm
       // 
       ttAscentLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
       ttAscentLabel.AutoSize = true;
-      ttAscentLabel.Location = new Point(53, 77);
+      ttAscentLabel.Location = new Point(50, 114);
       ttAscentLabel.Name = "ttAscentLabel";
       ttAscentLabel.Size = new Size(69, 25);
       ttAscentLabel.TabIndex = 21;
@@ -447,7 +462,7 @@ partial class MainForm
       // 
       // ttLineSpacingTextBox
       // 
-      ttLineSpacingTextBox.Location = new Point(128, 148);
+      ttLineSpacingTextBox.Location = new Point(125, 185);
       ttLineSpacingTextBox.Name = "ttLineSpacingTextBox";
       ttLineSpacingTextBox.ReadOnly = true;
       ttLineSpacingTextBox.Size = new Size(108, 31);
@@ -455,11 +470,19 @@ partial class MainForm
       // 
       // ttDescentTextBox
       // 
-      ttDescentTextBox.Location = new Point(128, 111);
+      ttDescentTextBox.Location = new Point(125, 148);
       ttDescentTextBox.Name = "ttDescentTextBox";
       ttDescentTextBox.ReadOnly = true;
       ttDescentTextBox.Size = new Size(108, 31);
       ttDescentTextBox.TabIndex = 13;
+      // 
+      // ttSizeTextBox
+      // 
+      ttSizeTextBox.Location = new Point(128, 74);
+      ttSizeTextBox.Name = "ttSizeTextBox";
+      ttSizeTextBox.ReadOnly = true;
+      ttSizeTextBox.Size = new Size(108, 31);
+      ttSizeTextBox.TabIndex = 13;
       // 
       // ttHeightTextBox
       // 
@@ -471,7 +494,7 @@ partial class MainForm
       // 
       // ttAscentTextBox
       // 
-      ttAscentTextBox.Location = new Point(128, 74);
+      ttAscentTextBox.Location = new Point(125, 111);
       ttAscentTextBox.Name = "ttAscentTextBox";
       ttAscentTextBox.ReadOnly = true;
       ttAscentTextBox.Size = new Size(108, 31);
@@ -490,12 +513,12 @@ partial class MainForm
       groupBox7.Controls.Add(label9);
       groupBox7.Controls.Add(ttCellHeightTextBox);
       groupBox7.Controls.Add(label37);
-      groupBox7.Location = new Point(610, 341);
+      groupBox7.Location = new Point(714, 284);
       groupBox7.Name = "groupBox7";
       groupBox7.Size = new Size(263, 322);
       groupBox7.TabIndex = 23;
       groupBox7.TabStop = false;
-      groupBox7.Text = "Glyph";
+      groupBox7.Text = "What We Measure";
       // 
       // label24
       // 
@@ -601,7 +624,7 @@ partial class MainForm
       TrueTypeCharPanel.BackColor = Color.DimGray;
       TrueTypeCharPanel.Location = new Point(6, 30);
       TrueTypeCharPanel.Name = "TrueTypeCharPanel";
-      TrueTypeCharPanel.Size = new Size(598, 633);
+      TrueTypeCharPanel.Size = new Size(702, 633);
       TrueTypeCharPanel.TabIndex = 1;
       // 
       // label29
@@ -712,7 +735,7 @@ partial class MainForm
       groupBox4.Controls.Add(label3);
       groupBox4.Controls.Add(SpacingUpDown);
       groupBox4.Controls.Add(label7);
-      groupBox4.Controls.Add(charHeightUpDown);
+      groupBox4.Controls.Add(cellHeightUpDown);
       groupBox4.Controls.Add(label8);
       groupBox4.Controls.Add(monospaceCheckBox);
       groupBox4.Location = new Point(2311, 189);
@@ -793,16 +816,16 @@ partial class MainForm
       label7.TabIndex = 6;
       label7.Text = "Height:";
       // 
-      // charHeightUpDown
+      // cellHeightUpDown
       // 
-      charHeightUpDown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      charHeightUpDown.Location = new Point(188, 25);
-      charHeightUpDown.Minimum = new decimal(new int[] { 8, 0, 0, 0 });
-      charHeightUpDown.Name = "charHeightUpDown";
-      charHeightUpDown.Size = new Size(94, 31);
-      charHeightUpDown.TabIndex = 20;
-      charHeightUpDown.Value = new decimal(new int[] { 32, 0, 0, 0 });
-      charHeightUpDown.ValueChanged += charHeightUpDown_ValueChanged;
+      cellHeightUpDown.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      cellHeightUpDown.Location = new Point(188, 25);
+      cellHeightUpDown.Minimum = new decimal(new int[] { 8, 0, 0, 0 });
+      cellHeightUpDown.Name = "cellHeightUpDown";
+      cellHeightUpDown.Size = new Size(94, 31);
+      cellHeightUpDown.TabIndex = 20;
+      cellHeightUpDown.Value = new decimal(new int[] { 32, 0, 0, 0 });
+      cellHeightUpDown.ValueChanged += charHeightUpDown_ValueChanged;
       // 
       // label8
       // 
@@ -1020,7 +1043,7 @@ partial class MainForm
       groupBox4.ResumeLayout(false);
       groupBox4.PerformLayout();
       ((System.ComponentModel.ISupportInitialize)SpacingUpDown).EndInit();
-      ((System.ComponentModel.ISupportInitialize)charHeightUpDown).EndInit();
+      ((System.ComponentModel.ISupportInitialize)cellHeightUpDown).EndInit();
       groupBox3.ResumeLayout(false);
       groupBox3.PerformLayout();
       ResumeLayout(false);
@@ -1044,7 +1067,7 @@ partial class MainForm
    private CheckBox monospaceCheckBox;
    private Label HexLabel;
    private Panel panel1;
-   private NumericUpDown charHeightUpDown;
+   private NumericUpDown cellHeightUpDown;
    private Label label10;
    private TextBox fontSizesTextBox;
    private TextBox statusTextBox;
@@ -1111,4 +1134,6 @@ partial class MainForm
    private Label label28;
    private Label label27;
    private Label label29;
+   private Label label26;
+   private TextBox ttSizeTextBox;
 }
