@@ -1,4 +1,6 @@
 ﻿
+using System.Windows.Forms.Design.Behavior;
+
 namespace SmoothFontCreator;
 
 public enum MonospaceMode
@@ -22,7 +24,7 @@ public class FontBuilder
    private Bitmap _largeBitmap = new Bitmap(Size, Size);
    private Graphics _largeGraphics;
    private ObservedMetrics _allCharsMetrics;
-   private Dictionary<char, ObservedMetrics> _charMetrics = [];
+   public Dictionary<char, ObservedMetrics> CharMetrics = [];
 
    public Bitmap LargeBitmap => _largeBitmap;
 
@@ -53,8 +55,8 @@ public class FontBuilder
          graphics.Clear(Color.Transparent);
          graphics.DrawPreciseString(c, font, pt, Color.White, Color.Black);
 
-         _charMetrics[c] = new ObservedMetrics(bitmap, font); ;
-         _allCharsMetrics.Expand(_charMetrics[c]);
+         CharMetrics[c] = new ObservedMetrics(bitmap, font); ;
+         _allCharsMetrics.Expand(CharMetrics[c]);
       }
 
       // based on what we discovered, create the bitmap that we'll use to create the font
@@ -71,7 +73,7 @@ public class FontBuilder
    {
       _largeGraphics.Clear(Color.Transparent);
 
-      ObservedMetrics metrics = _charMetrics[c];
+      ObservedMetrics metrics = CharMetrics[c];
 
       // TODO optimize this so that symmetric characters like '0' are drawn equally on each side
       // draw the character against the top and left
@@ -110,8 +112,8 @@ public class FontBuilder
 
       ObservedMetrics smallCharsMetrics = _allCharsMetrics.WithCharHeight(cellHeightPx - options.VerticalPadding);
       double scaleFactor = smallCharsMetrics.CellHeight / _allCharsMetrics.CellHeight;
-      ObservedMetrics thisCharMetrics = _charMetrics[c].WithScaleFactor(scaleFactor);
-      ObservedMetrics zeroCharMetrics = _charMetrics['0'].WithScaleFactor(scaleFactor);
+      ObservedMetrics thisCharMetrics = CharMetrics[c].WithScaleFactor(scaleFactor);
+      ObservedMetrics zeroCharMetrics = CharMetrics['0'].WithScaleFactor(scaleFactor);
 
       /*
       if (c >= '0' && c <= '9')
@@ -128,7 +130,7 @@ public class FontBuilder
       //
       _updateLargeBitmap(c);
 
-      ObservedMetrics charMetrics = _charMetrics[c];
+      ObservedMetrics charMetrics = CharMetrics[c];
 
       //
       // Step 2 - Scale the larger bitmap to the smaller one

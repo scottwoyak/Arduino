@@ -58,32 +58,6 @@ public class ObservedMetrics
       return desiredHeightPx * ((double)Font.Size / CharRect.Height);
    }
 
-   private uint _FullScan(BitmapData bmpData, byte[] argbValues)
-   {
-      uint count = 0;
-      for (int y = 0; y < bmpData.Height; y++)
-      {
-         for (int x = 0; x < bmpData.Width; x++)
-         {
-            int index = y * bmpData.Stride + x * 4; // 4 bytes per pixel (ARGB)
-            byte A = argbValues[index + 3];
-            count++;
-
-            if (A != 0)
-            {
-               CellRect.Update(x, y);
-
-               byte R = argbValues[index + 2];
-               if (R != 0)
-               {
-                  CharRect.Update(x, y);
-               }
-            }
-         }
-      }
-      return count;
-   }
-
    private void _ScanForCellBounds(BitmapData bmpData, byte[] argbValues)
    {
       // left and right

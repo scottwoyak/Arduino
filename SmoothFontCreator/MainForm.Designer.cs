@@ -41,6 +41,10 @@ partial class MainForm
       PreviewTextBox = new TextBox();
       label29 = new Label();
       CharsTabPage = new TabPage();
+      highestTextBox = new TextBox();
+      lowestTextBox = new TextBox();
+      widestTextBox = new TextBox();
+      tallestTextBox = new TextBox();
       tableLayoutPanel2 = new TableLayoutPanel();
       groupBox9 = new GroupBox();
       VLWCharPanel = new Panel();
@@ -93,6 +97,10 @@ partial class MainForm
       TrueTypeCharPanel = new Panel();
       CharTextBox = new TextBox();
       HexLabel = new Label();
+      label42 = new Label();
+      label41 = new Label();
+      label40 = new Label();
+      label39 = new Label();
       label5 = new Label();
       tabPage2 = new TabPage();
       panel1 = new Panel();
@@ -290,9 +298,17 @@ partial class MainForm
       // 
       // CharsTabPage
       // 
+      CharsTabPage.Controls.Add(highestTextBox);
+      CharsTabPage.Controls.Add(lowestTextBox);
+      CharsTabPage.Controls.Add(widestTextBox);
+      CharsTabPage.Controls.Add(tallestTextBox);
       CharsTabPage.Controls.Add(tableLayoutPanel2);
       CharsTabPage.Controls.Add(CharTextBox);
       CharsTabPage.Controls.Add(HexLabel);
+      CharsTabPage.Controls.Add(label42);
+      CharsTabPage.Controls.Add(label41);
+      CharsTabPage.Controls.Add(label40);
+      CharsTabPage.Controls.Add(label39);
       CharsTabPage.Controls.Add(label5);
       CharsTabPage.Location = new Point(4, 34);
       CharsTabPage.Name = "CharsTabPage";
@@ -302,6 +318,38 @@ partial class MainForm
       CharsTabPage.Text = "Characters";
       CharsTabPage.UseVisualStyleBackColor = true;
       // 
+      // highestTextBox
+      // 
+      highestTextBox.Location = new Point(92, 125);
+      highestTextBox.Name = "highestTextBox";
+      highestTextBox.ReadOnly = true;
+      highestTextBox.Size = new Size(1302, 31);
+      highestTextBox.TabIndex = 13;
+      // 
+      // lowestTextBox
+      // 
+      lowestTextBox.Location = new Point(92, 88);
+      lowestTextBox.Name = "lowestTextBox";
+      lowestTextBox.ReadOnly = true;
+      lowestTextBox.Size = new Size(1304, 31);
+      lowestTextBox.TabIndex = 13;
+      // 
+      // widestTextBox
+      // 
+      widestTextBox.Location = new Point(92, 50);
+      widestTextBox.Name = "widestTextBox";
+      widestTextBox.ReadOnly = true;
+      widestTextBox.Size = new Size(1302, 31);
+      widestTextBox.TabIndex = 13;
+      // 
+      // tallestTextBox
+      // 
+      tallestTextBox.Location = new Point(92, 13);
+      tallestTextBox.Name = "tallestTextBox";
+      tallestTextBox.ReadOnly = true;
+      tallestTextBox.Size = new Size(1302, 31);
+      tallestTextBox.TabIndex = 13;
+      // 
       // tableLayoutPanel2
       // 
       tableLayoutPanel2.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
@@ -310,11 +358,11 @@ partial class MainForm
       tableLayoutPanel2.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
       tableLayoutPanel2.Controls.Add(groupBox9, 1, 0);
       tableLayoutPanel2.Controls.Add(groupBox8, 0, 0);
-      tableLayoutPanel2.Location = new Point(9, 44);
+      tableLayoutPanel2.Location = new Point(9, 219);
       tableLayoutPanel2.Name = "tableLayoutPanel2";
       tableLayoutPanel2.RowCount = 1;
       tableLayoutPanel2.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
-      tableLayoutPanel2.Size = new Size(1383, 846);
+      tableLayoutPanel2.Size = new Size(1383, 671);
       tableLayoutPanel2.TabIndex = 39;
       // 
       // groupBox9
@@ -326,7 +374,7 @@ partial class MainForm
       groupBox9.Controls.Add(groupBox6);
       groupBox9.Location = new Point(694, 3);
       groupBox9.Name = "groupBox9";
-      groupBox9.Size = new Size(686, 840);
+      groupBox9.Size = new Size(686, 665);
       groupBox9.TabIndex = 29;
       groupBox9.TabStop = false;
       groupBox9.Text = "Generated VLW";
@@ -337,7 +385,7 @@ partial class MainForm
       VLWCharPanel.BackColor = Color.DimGray;
       VLWCharPanel.Location = new Point(6, 30);
       VLWCharPanel.Name = "VLWCharPanel";
-      VLWCharPanel.Size = new Size(405, 804);
+      VLWCharPanel.Size = new Size(405, 629);
       VLWCharPanel.TabIndex = 2;
       VLWCharPanel.Paint += VLWCharPanel_Paint;
       // 
@@ -579,7 +627,7 @@ partial class MainForm
       groupBox8.Controls.Add(TrueTypeCharPanel);
       groupBox8.Location = new Point(3, 3);
       groupBox8.Name = "groupBox8";
-      groupBox8.Size = new Size(685, 840);
+      groupBox8.Size = new Size(685, 665);
       groupBox8.TabIndex = 28;
       groupBox8.TabStop = false;
       groupBox8.Text = "TrueType";
@@ -823,13 +871,13 @@ partial class MainForm
       TrueTypeCharPanel.BackColor = Color.DimGray;
       TrueTypeCharPanel.Location = new Point(6, 30);
       TrueTypeCharPanel.Name = "TrueTypeCharPanel";
-      TrueTypeCharPanel.Size = new Size(403, 804);
+      TrueTypeCharPanel.Size = new Size(403, 629);
       TrueTypeCharPanel.TabIndex = 1;
       TrueTypeCharPanel.Paint += TrueTypeCharPanel_Paint;
       // 
       // CharTextBox
       // 
-      CharTextBox.Location = new Point(136, 7);
+      CharTextBox.Location = new Point(141, 182);
       CharTextBox.Name = "CharTextBox";
       CharTextBox.Size = new Size(38, 31);
       CharTextBox.TabIndex = 5;
@@ -839,16 +887,52 @@ partial class MainForm
       // HexLabel
       // 
       HexLabel.AutoSize = true;
-      HexLabel.Location = new Point(180, 10);
+      HexLabel.Location = new Point(185, 185);
       HexLabel.Name = "HexLabel";
       HexLabel.Size = new Size(50, 25);
       HexLabel.TabIndex = 18;
       HexLabel.Text = "0x00";
       // 
+      // label42
+      // 
+      label42.AutoSize = true;
+      label42.Location = new Point(13, 128);
+      label42.Name = "label42";
+      label42.Size = new Size(73, 25);
+      label42.TabIndex = 6;
+      label42.Text = "Highest";
+      // 
+      // label41
+      // 
+      label41.AutoSize = true;
+      label41.Location = new Point(19, 91);
+      label41.Name = "label41";
+      label41.Size = new Size(67, 25);
+      label41.TabIndex = 6;
+      label41.Text = "Lowest";
+      // 
+      // label40
+      // 
+      label40.AutoSize = true;
+      label40.Location = new Point(19, 53);
+      label40.Name = "label40";
+      label40.Size = new Size(67, 25);
+      label40.TabIndex = 6;
+      label40.Text = "Widest";
+      // 
+      // label39
+      // 
+      label39.AutoSize = true;
+      label39.Location = new Point(27, 16);
+      label39.Name = "label39";
+      label39.Size = new Size(59, 25);
+      label39.TabIndex = 6;
+      label39.Text = "Tallest";
+      // 
       // label5
       // 
       label5.AutoSize = true;
-      label5.Location = new Point(13, 10);
+      label5.Location = new Point(18, 185);
       label5.Name = "label5";
       label5.Size = new Size(117, 25);
       label5.TabIndex = 6;
@@ -1021,7 +1105,7 @@ partial class MainForm
       aspectRatioUpDown.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
       aspectRatioUpDown.Location = new Point(228, 392);
       aspectRatioUpDown.Maximum = new decimal(new int[] { 15, 0, 0, 65536 });
-      aspectRatioUpDown.Minimum = new decimal(new int[] { 5, 0, 0, 65536 });
+      aspectRatioUpDown.Minimum = new decimal(new int[] { 2, 0, 0, 65536 });
       aspectRatioUpDown.Name = "aspectRatioUpDown";
       aspectRatioUpDown.Size = new Size(77, 31);
       aspectRatioUpDown.TabIndex = 20;
@@ -1435,4 +1519,12 @@ partial class MainForm
    private Panel VLWTextPanel;
    private TableLayoutPanel tableLayoutPanel1;
    private TableLayoutPanel tableLayoutPanel2;
+   private Label label39;
+   private TextBox tallestTextBox;
+   private Label label40;
+   private TextBox highestTextBox;
+   private TextBox lowestTextBox;
+   private TextBox widestTextBox;
+   private Label label42;
+   private Label label41;
 }

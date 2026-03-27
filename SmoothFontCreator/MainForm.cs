@@ -271,6 +271,25 @@ public partial class MainForm : Form
       PreviewTextBox.Font = new Font(FontComboBox.Text, oldSize, _getFontStyle());
    }
 
+   private string _AsAscending(Func<KeyValuePair<char, ObservedMetrics>, double> keySelector)
+   {
+      string str = "";
+      foreach (KeyValuePair<char, ObservedMetrics> pair in _builder.CharMetrics.OrderBy(keySelector))
+      {
+         str += pair.Key.ToString();
+      }
+      return str;
+   }
+   private string _AsDescending(Func<KeyValuePair<char, ObservedMetrics>, double> keySelector)
+   {
+      string str = "";
+      foreach (KeyValuePair<char, ObservedMetrics> pair in _builder.CharMetrics.OrderByDescending(keySelector))
+      {
+         str += pair.Key.ToString();
+      }
+      return str;
+   }
+
    private void _resetAll()
    {
       _builder = FontBuilder.ForFontFamily(FontComboBox.Text, _getFontStyle());
@@ -287,6 +306,12 @@ public partial class MainForm : Form
       scaleToAspectRatioLabel.Enabled = monospaceCheckBox.Checked;
       scaleToAspectRatioRadioButton.Enabled = monospaceCheckBox.Checked;
       aspectRatioUpDown.Enabled = monospaceCheckBox.Checked && scaleToAspectRatioRadioButton.Checked;
+
+      // update sorted chars
+      tallestTextBox.Text = _AsDescending(pair => pair.Value.CharHeight);
+      widestTextBox.Text = _AsDescending(pair => pair.Value.CharWidth);
+      highestTextBox.Text = _AsAscending(pair => pair.Value.CharTop);
+      lowestTextBox.Text = _AsDescending(pair => pair.Value.CharBottom);
    }
 
    private void TrueTypeCharPanel_Paint(object sender, PaintEventArgs e)
@@ -574,8 +599,7 @@ public partial class MainForm : Form
 
    private void charHeightUpDown_ValueChanged(object sender, EventArgs e)
    {
-      VLWCharPanel.Invalidate();
-      _createFont();
+      _resetAll();
    }
 
    private void testFontButton_Click(object sender, EventArgs e)
