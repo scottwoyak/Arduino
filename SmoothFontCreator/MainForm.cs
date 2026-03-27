@@ -32,7 +32,7 @@ public partial class MainForm : Form
 
             if (scaleToAspectRatioRadioButton.Checked)
             {
-               options.MonospaceMode = MonospaceMode.ScaleToAspectRatio;
+               options.MonospaceMode = MonospaceMode.AspectRatio;
                options.AspectRatio = (double)aspectRatioUpDown.Value;
             }
          }
@@ -207,7 +207,6 @@ public partial class MainForm : Form
       ttDescentTextBox.Text = (gdiMetrics.DescentPx / gdiMetrics.HeightPx).ToString("0.000");
       ttLineSpacingTextBox.Text = (gdiMetrics.LineSpacingPx / gdiMetrics.HeightPx).ToString("0.000");
 
-      char c = CharTextBox.Text[0];
       if (CharTextBox.Text.Length != 1)
       {
          HexLabel.Text = "----";
@@ -228,6 +227,7 @@ public partial class MainForm : Form
       }
       else
       {
+         char c = CharTextBox.Text[0];
          HexLabel.Text = "0x" + ((int)c).ToString("X");
 
          if (_vlwFont.Glyphs.TryGetValue(c, out VLWGlyph? glyph))
@@ -313,6 +313,17 @@ public partial class MainForm : Form
       widestTextBox.Text = _AsDescending(pair => pair.Value.CharWidth);
       highestTextBox.Text = _AsAscending(pair => pair.Value.CharTop);
       lowestTextBox.Text = _AsDescending(pair => pair.Value.CharBottom);
+
+      if (this.FontBuilderOptions.MonospaceMode == MonospaceMode.AspectRatio)
+      {
+         int h = (int) cellHeightUpDown.Value;
+         int w = (int) Math.Ceiling(this.FontBuilderOptions.AspectRatio * h);
+         exampleSizeLabel.Text = w.ToString() + "x" + h.ToString() + " px";
+      }
+      else
+      {
+         exampleSizeLabel.Text = "";
+      }
    }
 
    private void TrueTypeCharPanel_Paint(object sender, PaintEventArgs e)
@@ -571,8 +582,14 @@ public partial class MainForm : Form
       {
          if (uint.TryParse(fontSize, out uint size))
          {
-            VLWFont font = _builder.CreateFont(size, FontBuilderOptions);
-            font.SaveAsSmoothFont(@"C:\SourceCode\Arduino\libraries\Woyak", "Scott" + size);
+            FontBuilderOptions options = FontBuilderOptions;
+            VLWFont font = _builder.CreateFont(size, options);
+            string notes =
+               $"Font: {_builder.FontFamily}\n" +
+               $"Font Style: {_builder.FontStyle}\n" +
+               $"Height (px): {fontSize}\n" +
+               options.ToString();
+            font.SaveAsSmoothFont(@"C:\SourceCode\Arduino\libraries\Woyak", "Scott" + size, notes);
          }
       }
 

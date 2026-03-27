@@ -1,11 +1,13 @@
 ﻿
+using System.Diagnostics;
+
 namespace SmoothFontCreator;
 
 public enum MonospaceMode
 {
    None,
    NoScaling,
-   ScaleToAspectRatio,
+   AspectRatio,
 }
 
 public class FontBuilderOptions
@@ -15,6 +17,16 @@ public class FontBuilderOptions
    public uint VerticalPadding = 0;
    public double AspectRatio = 1;
    public bool MakeDigitsMonospace = false;
+
+   public override string ToString()
+   {
+      return
+         $"Horizontal Padding: {HorizontalPadding}\n" +
+         $"Vertical Padding: {VerticalPadding}\n" +
+         $"Monospace Mode: {MonospaceMode}\n" +
+         (MonospaceMode == MonospaceMode.AspectRatio ? $"Aspect Ratio: {AspectRatio}\n" : "") +
+         $"Make Digits Monospace: {MakeDigitsMonospace}\n";
+   }
 }
 
 public class FontBuilder
@@ -37,8 +49,7 @@ public class FontBuilder
       FontStyle = fontStyle;
 
       // do a first pass analysis at an arbitraily large size
-      const int size = 1024;
-      using Bitmap bitmap = new Bitmap(size, size);
+      using Bitmap bitmap = new Bitmap(Size, Size);
       using Graphics graphics = Graphics.FromImage(bitmap);
 
       // create a font that will fill our bitmap
@@ -112,14 +123,14 @@ public class FontBuilder
       return _digits.IndexOf(c) != -1;
    }
 
-   private double _GetMaxDigitWidth()
+   private double _GetMaxDigitCellWidth()
    {
-      double charWidth = 0;
+      double cellWidth = 0;
       foreach (char c in _digits)
       {
-         charWidth = Math.Max(charWidth, CharMetrics[c].CharWidth);
+         cellWidth = Math.Max(cellWidth, CharMetrics[c].CellWidth);
       }
-      return charWidth;
+      return cellWidth;
    }
 
    private VLWGlyph _CreateGlyph(VLWFont font, char c, uint cellHeightPx, FontBuilderOptions options)
@@ -145,14 +156,8 @@ public class FontBuilder
       //
 
       // rounding can chop off some content, but it elimates very lightly shaded edges
-      int smallWidthPx = (int)Math.Round(scaleFactor * charMetrics.CharWidth);
-      int smallHeightPx = (int)Math.Round(scaleFactor * charMetrics.CharHeight);
-
-      if (options.MakeDigitsMonospace && _IsDigit(c))
-      {
-         // TODO cache the max value
-         smallWidthPx = (int)Math.Round(scaleFactor * _GetMaxDigitWidth());
-      }
+      int smallWidthPx = (int)Math.Round(thisCharMetrics.CharWidth);
+      int smallHeightPx = (int)Math.Round(thisCharMetrics.CharHeight);
 
       double compression = 1;
       switch (options.MonospaceMode)
@@ -161,7 +166,7 @@ public class FontBuilder
          case MonospaceMode.NoScaling:
             break;
 
-         case MonospaceMode.ScaleToAspectRatio:
+         case MonospaceMode.AspectRatio:
             {
                double s = Math.Max(1, (int)Math.Round(options.AspectRatio * cellHeightPx - options.HorizontalPadding));
                if (s < smallWidthPx)
@@ -197,16 +202,22 @@ public class FontBuilder
       switch (options.MonospaceMode)
       {
          case MonospaceMode.None:
-            glyph.gxAdvance = (int)(glyph.Bitmap.Width + options.HorizontalPadding);
-            glyph.gdX = 0;
+            double cellWidth = thisCharMetrics.CellWidth;
+            if (options.MakeDigitsMonospace && _IsDigit(c))
+            {
+               // TODO cache the max value
+               cellWidth = Math.Round(scaleFactor * _GetMaxDigitCellWidth());
+            }
+            glyph.gxAdvance = (int)Math.Round(cellWidth + options.HorizontalPadding);
+            glyph.gdX = (int)((glyph.gxAdvance - thisCharMetrics.CharWidth) / 2.0);
             break;
 
          case MonospaceMode.NoScaling:
-            glyph.gxAdvance = (int)Math.Ceiling(smallCharsMetrics.CellWidth + options.HorizontalPadding);
-            glyph.gdX = (int)((glyph.gxAdvance - thisCharMetrics.CellWidth) / 2.0);
+            glyph.gxAdvance = (int)Math.Round(smallCharsMetrics.CellWidth + options.HorizontalPadding);
+            glyph.gdX = (int)((glyph.gxAdvance - thisCharMetrics.CharWidth) / 2.0);
             break;
 
-         case MonospaceMode.ScaleToAspectRatio:
+         case MonospaceMode.AspectRatio:
             glyph.gxAdvance = (int)Math.Ceiling(options.AspectRatio * cellHeightPx);
             glyph.gdX = Math.Max(0, (int)((glyph.gxAdvance - glyph.Width) / 2.0));
             break;

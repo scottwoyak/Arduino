@@ -10,6 +10,8 @@ public class ObservedMetrics
    private FontRect CharRect = new();
    public Font Font { get; private set; }
 
+   public Size SourceSize { get; private set; }
+
    public double CellHeight => CellRect.Height;
    public double CellWidth => CellRect.Width;
    public double CellLeft => CellRect.Left;
@@ -50,6 +52,7 @@ public class ObservedMetrics
    public ObservedMetrics(Bitmap b, Font font)
    {
       Font = font;
+      SourceSize = b.Size;
       _scan(b);
    }
 
@@ -234,6 +237,40 @@ public class ObservedMetrics
    {
       CellRect.Intersect(other.CellRect);
       CharRect.Intersect(other.CharRect);
+   }
+
+   public ObservedMetrics Normalize()
+   {
+      double scaleFactor = 1 / CellRect.Height;
+
+      CharRect.Left *= scaleFactor;
+      CharRect.Right *= scaleFactor;
+      CharRect.Top *= scaleFactor;
+      CharRect.Bottom *= scaleFactor;
+      CharRect.Width *= scaleFactor;
+      CharRect.Height *= scaleFactor;
+
+      CellRect.Left *= scaleFactor;
+      CellRect.Right *= scaleFactor;
+      CellRect.Top *= scaleFactor;
+      CellRect.Bottom *= scaleFactor;
+      CellRect.Width *= scaleFactor;
+      CellRect.Height *= scaleFactor;
+
+      double deltaX = -CellRect.Left;
+      double deltaY = -CellRect.Top;
+
+      CharRect.Left += deltaX;
+      CharRect.Right += deltaX;
+      CharRect.Top += deltaY;
+      CharRect.Bottom += deltaY;
+
+      CellRect.Left += deltaX;
+      CellRect.Right += deltaX;
+      CellRect.Top += deltaY;
+      CellRect.Bottom += deltaY;
+
+      return this;
    }
 
    public ObservedMetrics WithCharHeight(double desiredCharHeight)

@@ -138,6 +138,7 @@ partial class MainForm
       testButton3 = new Button();
       button1 = new Button();
       button2 = new Button();
+      exampleSizeLabel = new Label();
       tabControl1.SuspendLayout();
       TextTabPage.SuspendLayout();
       tableLayoutPanel1.SuspendLayout();
@@ -966,6 +967,7 @@ partial class MainForm
       groupBox4.Controls.Add(scaleToAspectRatioLabel);
       groupBox4.Controls.Add(label35);
       groupBox4.Controls.Add(noScalingLabel);
+      groupBox4.Controls.Add(exampleSizeLabel);
       groupBox4.Controls.Add(label32);
       groupBox4.Controls.Add(label6);
       groupBox4.Controls.Add(label4);
@@ -982,7 +984,7 @@ partial class MainForm
       groupBox4.Controls.Add(monospaceCheckBox);
       groupBox4.Location = new Point(1433, 189);
       groupBox4.Name = "groupBox4";
-      groupBox4.Size = new Size(334, 446);
+      groupBox4.Size = new Size(334, 501);
       groupBox4.TabIndex = 27;
       groupBox4.TabStop = false;
       groupBox4.Text = "Options";
@@ -1303,16 +1305,16 @@ partial class MainForm
       // statusTextBox
       // 
       statusTextBox.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      statusTextBox.Location = new Point(1492, 774);
+      statusTextBox.Location = new Point(1492, 849);
       statusTextBox.Multiline = true;
       statusTextBox.Name = "statusTextBox";
-      statusTextBox.Size = new Size(275, 166);
+      statusTextBox.Size = new Size(275, 91);
       statusTextBox.TabIndex = 23;
       // 
       // testButton3
       // 
       testButton3.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      testButton3.Location = new Point(1682, 683);
+      testButton3.Location = new Point(1682, 761);
       testButton3.Name = "testButton3";
       testButton3.Size = new Size(87, 79);
       testButton3.TabIndex = 25;
@@ -1323,7 +1325,7 @@ partial class MainForm
       // button1
       // 
       button1.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      button1.Location = new Point(1521, 716);
+      button1.Location = new Point(1521, 794);
       button1.Name = "button1";
       button1.Size = new Size(155, 46);
       button1.TabIndex = 25;
@@ -1334,13 +1336,23 @@ partial class MainForm
       // button2
       // 
       button2.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      button2.Location = new Point(1521, 664);
+      button2.Location = new Point(1521, 742);
       button2.Name = "button2";
       button2.Size = new Size(155, 46);
       button2.TabIndex = 25;
       button2.Text = "Arial32.vlw";
       button2.UseVisualStyleBackColor = true;
       button2.Click += ArialButton_Click;
+      // 
+      // exampleSizeLabel
+      // 
+      exampleSizeLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      exampleSizeLabel.AutoSize = true;
+      exampleSizeLabel.Location = new Point(228, 428);
+      exampleSizeLabel.Name = "exampleSizeLabel";
+      exampleSizeLabel.Size = new Size(42, 25);
+      exampleSizeLabel.TabIndex = 7;
+      exampleSizeLabel.Text = "#x#";
       // 
       // MainForm
       // 
@@ -1503,4 +1515,5 @@ partial class MainForm
    private TextBox widestTextBox;
    private Label label42;
    private Label label41;
+   private Label exampleSizeLabel;
 }
