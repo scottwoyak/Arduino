@@ -121,9 +121,7 @@ partial class MainForm
       label7 = new Label();
       cellHeightUpDown = new NumericUpDown();
       label36 = new Label();
-      label34 = new Label();
-      checkBox2 = new CheckBox();
-      checkBox1 = new CheckBox();
+      monospaceDigitsCheckBox = new CheckBox();
       label8 = new Label();
       monospaceCheckBox = new CheckBox();
       groupBox3 = new GroupBox();
@@ -170,7 +168,7 @@ partial class MainForm
       tabControl1.Location = new Point(12, 12);
       tabControl1.Name = "tabControl1";
       tabControl1.SelectedIndex = 0;
-      tabControl1.Size = new Size(1415, 941);
+      tabControl1.Size = new Size(1415, 1005);
       tabControl1.TabIndex = 0;
       // 
       // TextTabPage
@@ -184,7 +182,7 @@ partial class MainForm
       TextTabPage.Location = new Point(4, 34);
       TextTabPage.Name = "TextTabPage";
       TextTabPage.Padding = new Padding(10);
-      TextTabPage.Size = new Size(1407, 903);
+      TextTabPage.Size = new Size(1407, 967);
       TextTabPage.TabIndex = 0;
       TextTabPage.Text = "Text";
       // 
@@ -286,6 +284,7 @@ partial class MainForm
       PreviewTextBox.Size = new Size(1295, 198);
       PreviewTextBox.TabIndex = 36;
       PreviewTextBox.Text = "0123456789+-=/<>\r\n(){}[]_/?<>,.!|@#$%^&*~\r\nABCDEFGHIJKLMNOPQRSTUVWXYZ\r\nabcdefghijklmnopqrstuvwxyz\r\n";
+      PreviewTextBox.TextChanged += PreviewTextBox_TextChanged;
       // 
       // label29
       // 
@@ -313,7 +312,7 @@ partial class MainForm
       CharsTabPage.Location = new Point(4, 34);
       CharsTabPage.Name = "CharsTabPage";
       CharsTabPage.Padding = new Padding(10);
-      CharsTabPage.Size = new Size(1407, 903);
+      CharsTabPage.Size = new Size(1407, 967);
       CharsTabPage.TabIndex = 0;
       CharsTabPage.Text = "Characters";
       CharsTabPage.UseVisualStyleBackColor = true;
@@ -362,7 +361,7 @@ partial class MainForm
       tableLayoutPanel2.Name = "tableLayoutPanel2";
       tableLayoutPanel2.RowCount = 1;
       tableLayoutPanel2.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
-      tableLayoutPanel2.Size = new Size(1383, 671);
+      tableLayoutPanel2.Size = new Size(1383, 735);
       tableLayoutPanel2.TabIndex = 39;
       // 
       // groupBox9
@@ -374,7 +373,7 @@ partial class MainForm
       groupBox9.Controls.Add(groupBox6);
       groupBox9.Location = new Point(694, 3);
       groupBox9.Name = "groupBox9";
-      groupBox9.Size = new Size(686, 665);
+      groupBox9.Size = new Size(686, 729);
       groupBox9.TabIndex = 29;
       groupBox9.TabStop = false;
       groupBox9.Text = "Generated VLW";
@@ -385,7 +384,7 @@ partial class MainForm
       VLWCharPanel.BackColor = Color.DimGray;
       VLWCharPanel.Location = new Point(6, 30);
       VLWCharPanel.Name = "VLWCharPanel";
-      VLWCharPanel.Size = new Size(405, 629);
+      VLWCharPanel.Size = new Size(405, 693);
       VLWCharPanel.TabIndex = 2;
       VLWCharPanel.Paint += VLWCharPanel_Paint;
       // 
@@ -627,7 +626,7 @@ partial class MainForm
       groupBox8.Controls.Add(TrueTypeCharPanel);
       groupBox8.Location = new Point(3, 3);
       groupBox8.Name = "groupBox8";
-      groupBox8.Size = new Size(685, 665);
+      groupBox8.Size = new Size(685, 729);
       groupBox8.TabIndex = 28;
       groupBox8.TabStop = false;
       groupBox8.Text = "TrueType";
@@ -871,7 +870,7 @@ partial class MainForm
       TrueTypeCharPanel.BackColor = Color.DimGray;
       TrueTypeCharPanel.Location = new Point(6, 30);
       TrueTypeCharPanel.Name = "TrueTypeCharPanel";
-      TrueTypeCharPanel.Size = new Size(403, 629);
+      TrueTypeCharPanel.Size = new Size(403, 693);
       TrueTypeCharPanel.TabIndex = 1;
       TrueTypeCharPanel.Paint += TrueTypeCharPanel_Paint;
       // 
@@ -944,7 +943,7 @@ partial class MainForm
       tabPage2.Location = new Point(4, 34);
       tabPage2.Name = "tabPage2";
       tabPage2.Padding = new Padding(6);
-      tabPage2.Size = new Size(1407, 903);
+      tabPage2.Size = new Size(1407, 967);
       tabPage2.TabIndex = 1;
       tabPage2.Text = "Full Char";
       tabPage2.UseVisualStyleBackColor = true;
@@ -978,14 +977,12 @@ partial class MainForm
       groupBox4.Controls.Add(label7);
       groupBox4.Controls.Add(cellHeightUpDown);
       groupBox4.Controls.Add(label36);
-      groupBox4.Controls.Add(label34);
-      groupBox4.Controls.Add(checkBox2);
-      groupBox4.Controls.Add(checkBox1);
+      groupBox4.Controls.Add(monospaceDigitsCheckBox);
       groupBox4.Controls.Add(label8);
       groupBox4.Controls.Add(monospaceCheckBox);
       groupBox4.Location = new Point(1433, 189);
       groupBox4.Name = "groupBox4";
-      groupBox4.Size = new Size(334, 512);
+      groupBox4.Size = new Size(334, 446);
       groupBox4.TabIndex = 27;
       groupBox4.TabStop = false;
       groupBox4.Text = "Options";
@@ -1155,44 +1152,25 @@ partial class MainForm
       // label36
       // 
       label36.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      label36.AutoSize = true;
-      label36.Location = new Point(-19, 180);
+      label36.Location = new Point(63, 141);
       label36.Name = "label36";
-      label36.Size = new Size(204, 25);
+      label36.Size = new Size(122, 58);
       label36.TabIndex = 16;
       label36.Text = "Make Digits Monospace";
+      label36.TextAlign = ContentAlignment.TopRight;
       // 
-      // label34
+      // monospaceDigitsCheckBox
       // 
-      label34.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      label34.AutoSize = true;
-      label34.Location = new Point(22, 142);
-      label34.Name = "label34";
-      label34.Size = new Size(163, 25);
-      label34.TabIndex = 16;
-      label34.Text = "Increase Digit Sizes";
-      // 
-      // checkBox2
-      // 
-      checkBox2.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      checkBox2.AutoSize = true;
-      checkBox2.Location = new Point(191, 183);
-      checkBox2.Name = "checkBox2";
-      checkBox2.Size = new Size(22, 21);
-      checkBox2.TabIndex = 15;
-      checkBox2.UseVisualStyleBackColor = true;
-      checkBox2.CheckedChanged += monospaceCheckBox_CheckedChanged;
-      // 
-      // checkBox1
-      // 
-      checkBox1.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-      checkBox1.AutoSize = true;
-      checkBox1.Location = new Point(192, 145);
-      checkBox1.Name = "checkBox1";
-      checkBox1.Size = new Size(22, 21);
-      checkBox1.TabIndex = 15;
-      checkBox1.UseVisualStyleBackColor = true;
-      checkBox1.CheckedChanged += monospaceCheckBox_CheckedChanged;
+      monospaceDigitsCheckBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+      monospaceDigitsCheckBox.AutoSize = true;
+      monospaceDigitsCheckBox.Checked = true;
+      monospaceDigitsCheckBox.CheckState = CheckState.Checked;
+      monospaceDigitsCheckBox.Location = new Point(191, 155);
+      monospaceDigitsCheckBox.Name = "monospaceDigitsCheckBox";
+      monospaceDigitsCheckBox.Size = new Size(22, 21);
+      monospaceDigitsCheckBox.TabIndex = 15;
+      monospaceDigitsCheckBox.UseVisualStyleBackColor = true;
+      monospaceDigitsCheckBox.CheckedChanged += monospaceDigitsCheckBox_CheckedChanged;
       // 
       // label8
       // 
@@ -1295,7 +1273,7 @@ partial class MainForm
       // SaveButton
       // 
       SaveButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      SaveButton.Location = new Point(1655, 919);
+      SaveButton.Location = new Point(1655, 983);
       SaveButton.Name = "SaveButton";
       SaveButton.Size = new Size(112, 34);
       SaveButton.TabIndex = 9;
@@ -1307,7 +1285,7 @@ partial class MainForm
       // 
       label10.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
       label10.AutoSize = true;
-      label10.Location = new Point(1496, 885);
+      label10.Location = new Point(1496, 949);
       label10.Name = "label10";
       label10.Size = new Size(130, 25);
       label10.TabIndex = 21;
@@ -1316,7 +1294,7 @@ partial class MainForm
       // fontSizesTextBox
       // 
       fontSizesTextBox.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      fontSizesTextBox.Location = new Point(1632, 882);
+      fontSizesTextBox.Location = new Point(1632, 946);
       fontSizesTextBox.Name = "fontSizesTextBox";
       fontSizesTextBox.Size = new Size(135, 31);
       fontSizesTextBox.TabIndex = 22;
@@ -1325,16 +1303,16 @@ partial class MainForm
       // statusTextBox
       // 
       statusTextBox.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      statusTextBox.Location = new Point(1492, 603);
+      statusTextBox.Location = new Point(1492, 774);
       statusTextBox.Multiline = true;
       statusTextBox.Name = "statusTextBox";
-      statusTextBox.Size = new Size(275, 273);
+      statusTextBox.Size = new Size(275, 166);
       statusTextBox.TabIndex = 23;
       // 
       // testButton3
       // 
       testButton3.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      testButton3.Location = new Point(1680, 518);
+      testButton3.Location = new Point(1682, 683);
       testButton3.Name = "testButton3";
       testButton3.Size = new Size(87, 79);
       testButton3.TabIndex = 25;
@@ -1345,7 +1323,7 @@ partial class MainForm
       // button1
       // 
       button1.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      button1.Location = new Point(1614, 466);
+      button1.Location = new Point(1521, 716);
       button1.Name = "button1";
       button1.Size = new Size(155, 46);
       button1.TabIndex = 25;
@@ -1356,7 +1334,7 @@ partial class MainForm
       // button2
       // 
       button2.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-      button2.Location = new Point(1455, 467);
+      button2.Location = new Point(1521, 664);
       button2.Name = "button2";
       button2.Size = new Size(155, 46);
       button2.TabIndex = 25;
@@ -1368,7 +1346,7 @@ partial class MainForm
       // 
       AutoScaleDimensions = new SizeF(10F, 25F);
       AutoScaleMode = AutoScaleMode.Font;
-      ClientSize = new Size(1779, 965);
+      ClientSize = new Size(1779, 1029);
       Controls.Add(groupBox4);
       Controls.Add(testButton3);
       Controls.Add(groupBox3);
@@ -1451,9 +1429,7 @@ partial class MainForm
    private RadioButton noScalingRadioButton;
    private Label noScalingLabel;
    private Label label36;
-   private Label label34;
-   private CheckBox checkBox1;
-   private CheckBox checkBox2;
+   private CheckBox monospaceDigitsCheckBox;
    private Button button2;
    private TextBox CharTextBox;
    private GroupBox groupBox9;

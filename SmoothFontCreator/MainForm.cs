@@ -23,6 +23,7 @@ public partial class MainForm : Form
          {
             HorizontalPadding = (uint)horizontalPaddingUpDown.Value,
             VerticalPadding = (uint)verticalPaddingUpDown.Value,
+            MakeDigitsMonospace = monospaceDigitsCheckBox.Checked,
          };
 
          if (monospaceCheckBox.Checked)
@@ -641,6 +642,11 @@ public partial class MainForm : Form
    }
 
    private void monospaceCheckBox_CheckedChanged(object sender, EventArgs e)
+   {
+      _resetAll();
+   }
+
+   private void monospaceDigitsCheckBox_CheckedChanged(object sender, EventArgs e)
    {
       _resetAll();
    }

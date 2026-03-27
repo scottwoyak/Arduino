@@ -1,6 +1,4 @@
 ﻿
-using System.Windows.Forms.Design.Behavior;
-
 namespace SmoothFontCreator;
 
 public enum MonospaceMode
@@ -16,6 +14,7 @@ public class FontBuilderOptions
    public uint HorizontalPadding = 0;
    public uint VerticalPadding = 0;
    public double AspectRatio = 1;
+   public bool MakeDigitsMonospace = false;
 }
 
 public class FontBuilder
@@ -106,6 +105,23 @@ public class FontBuilder
       }
    }
 
+   private string _digits = "0123456789.+-=/";
+
+   private bool _IsDigit(char c)
+   {
+      return _digits.IndexOf(c) != -1;
+   }
+
+   private double _GetMaxDigitWidth()
+   {
+      double charWidth = 0;
+      foreach (char c in _digits)
+      {
+         charWidth = Math.Max(charWidth, CharMetrics[c].CharWidth);
+      }
+      return charWidth;
+   }
+
    private VLWGlyph _CreateGlyph(VLWFont font, char c, uint cellHeightPx, FontBuilderOptions options)
    {
       Profiler.C = c;
@@ -113,14 +129,6 @@ public class FontBuilder
       ObservedMetrics smallCharsMetrics = _allCharsMetrics.WithCharHeight(cellHeightPx - options.VerticalPadding);
       double scaleFactor = smallCharsMetrics.CellHeight / _allCharsMetrics.CellHeight;
       ObservedMetrics thisCharMetrics = CharMetrics[c].WithScaleFactor(scaleFactor);
-      ObservedMetrics zeroCharMetrics = CharMetrics['0'].WithScaleFactor(scaleFactor);
-
-      /*
-      if (c >= '0' && c <= '9')
-      {
-         scaleFactor *= 1.1;
-      }
-      */
 
       VLWGlyph glyph = new(font);
       glyph.uChar = c;
@@ -135,8 +143,17 @@ public class FontBuilder
       //
       // Step 2 - Scale the larger bitmap to the smaller one
       //
-      int smallWidthPx = (int)Math.Ceiling(scaleFactor * charMetrics.CharWidth);
-      int smallHeightPx = (int)Math.Ceiling(scaleFactor * charMetrics.CharHeight);
+
+      // rounding can chop off some content, but it elimates very lightly shaded edges
+      int smallWidthPx = (int)Math.Round(scaleFactor * charMetrics.CharWidth);
+      int smallHeightPx = (int)Math.Round(scaleFactor * charMetrics.CharHeight);
+
+      if (options.MakeDigitsMonospace && _IsDigit(c))
+      {
+         // TODO cache the max value
+         smallWidthPx = (int)Math.Round(scaleFactor * _GetMaxDigitWidth());
+      }
+
       double compression = 1;
       switch (options.MonospaceMode)
       {
@@ -146,10 +163,10 @@ public class FontBuilder
 
          case MonospaceMode.ScaleToAspectRatio:
             {
-               double s = Math.Max(1, (int)Math.Ceiling(options.AspectRatio * cellHeightPx - options.HorizontalPadding));
+               double s = Math.Max(1, (int)Math.Round(options.AspectRatio * cellHeightPx - options.HorizontalPadding));
                if (s < smallWidthPx)
                {
-                  compression = s/smallWidthPx;
+                  compression = s / smallWidthPx;
                   smallWidthPx = (int)s;
                }
             }
@@ -160,7 +177,8 @@ public class FontBuilder
       using Graphics smallGraphics = Graphics.FromImage(smallBitmap);
 
       double yRatio = 1 / scaleFactor;
-      double xRatio = (1 / scaleFactor)/compression;
+      double xRatio = (1 / scaleFactor) / compression;
+
       Rectangle srcRect = new(0, 0, (int)Math.Ceiling(charMetrics.CharWidth), (int)Math.Ceiling(charMetrics.CharHeight));
       double xOffset = -(xRatio * smallBitmap.Width - srcRect.Width) / 2;
       _Scale(_largeBitmap, srcRect, smallBitmap, xRatio, yRatio, xOffset, 0);
