@@ -113,6 +113,13 @@ public class FontBuilder
       ObservedMetrics thisCharMetrics = _charMetrics[c].WithScaleFactor(scaleFactor);
       ObservedMetrics zeroCharMetrics = _charMetrics['0'].WithScaleFactor(scaleFactor);
 
+      /*
+      if (c >= '0' && c <= '9')
+      {
+         scaleFactor *= 1.1;
+      }
+      */
+
       VLWGlyph glyph = new(font);
       glyph.uChar = c;
 

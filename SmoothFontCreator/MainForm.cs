@@ -155,7 +155,7 @@ public partial class MainForm : Form
       float heightPx = font.GetHeight();
 
       // draw the designated character
-      char c = TestCharTextBox.Text[0];
+      char c = CharTextBox.Text[0];
       float widthPx = TextRenderer.MeasureText(c.ToString(), font, new Size(1000, 1000), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width;
       Point pt = new((int)(bitmap.Width - widthPx) / 2, (int)(bitmap.Height - heightPx) / 2);
       bitmapGraphics.DrawPreciseString(c.ToString(), font, pt, Color.White, Color.Black);
@@ -165,7 +165,7 @@ public partial class MainForm : Form
 
    private void OnMouseWheel(object sender, MouseEventArgs e)
    {
-      char c = TestCharTextBox.Text.Length > 0 ? TestCharTextBox.Text[0] : 'A';
+      char c = CharTextBox.Text.Length > 0 ? CharTextBox.Text[0] : 'A';
       if (e.Delta > 0)
       {
          c--;
@@ -183,10 +183,10 @@ public partial class MainForm : Form
          c = (char)0x20;
       }
 
-      TestCharTextBox.Text = c.ToString();
+      CharTextBox.Text = c.ToString();
    }
 
-   private void TestCharTextBox_TextChanged(object sender, EventArgs e)
+   private void CharTextBox_TextChanged(object sender, EventArgs e)
    {
       _displayCurrentChar();
    }
@@ -206,8 +206,8 @@ public partial class MainForm : Form
       ttDescentTextBox.Text = (gdiMetrics.DescentPx / gdiMetrics.HeightPx).ToString("0.000");
       ttLineSpacingTextBox.Text = (gdiMetrics.LineSpacingPx / gdiMetrics.HeightPx).ToString("0.000");
 
-      char c = TestCharTextBox.Text[0];
-      if (TestCharTextBox.Text.Length != 1)
+      char c = CharTextBox.Text[0];
+      if (CharTextBox.Text.Length != 1)
       {
          HexLabel.Text = "----";
 
@@ -284,8 +284,6 @@ public partial class MainForm : Form
 
       noScalingLabel.Enabled = monospaceCheckBox.Checked;
       noScalingRadioButton.Enabled = monospaceCheckBox.Checked;
-      scaleToZeroLabel.Enabled = monospaceCheckBox.Checked;
-      scaleToZeroRadioButton.Enabled = monospaceCheckBox.Checked;
       scaleToAspectRatioLabel.Enabled = monospaceCheckBox.Checked;
       scaleToAspectRatioRadioButton.Enabled = monospaceCheckBox.Checked;
       aspectRatioUpDown.Enabled = monospaceCheckBox.Checked && scaleToAspectRatioRadioButton.Checked;
@@ -293,7 +291,7 @@ public partial class MainForm : Form
 
    private void TrueTypeCharPanel_Paint(object sender, PaintEventArgs e)
    {
-      if (TestCharTextBox.Text.Length == 0 || TestCharTextBox.Text[0] == ' ')
+      if (CharTextBox.Text.Length == 0 || CharTextBox.Text[0] == ' ')
       {
          return;
       }
@@ -308,7 +306,7 @@ public partial class MainForm : Form
          _getFontStyle(),
          GraphicsUnit.Pixel);
 
-      string testChar = TestCharTextBox.Text.Substring(0, 1);
+      string testChar = CharTextBox.Text.Substring(0, 1);
       float cellHeightPx = font.GetHeight(e.Graphics);
       Size cellSizePx = TextRenderer.MeasureText(testChar, font, new Size(1000, 1000), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
       float cellWidthPx = cellSizePx.Width;
@@ -358,7 +356,7 @@ public partial class MainForm : Form
       float ascent = pt.Y + gdiMetrics.BaselinePx - gdiMetrics.AscentPx;
       float baseline = pt.Y + gdiMetrics.BaselinePx;
       float descent = pt.Y + gdiMetrics.BaselinePx + gdiMetrics.DescentPx;
-      float height = pt.Y + gdiMetrics.HeightPx;
+      float height = pt.Y + gdiMetrics.LineSpacingPx - gdiMetrics.HeightPx;
       e.Graphics.DrawLine(ascentPen, x1, ascent, x2, ascent);
       e.Graphics.DrawLine(baselinePen, x1, baseline, x2, baseline);
       e.Graphics.DrawLine(descentPen, x1, descent, x2, descent);
@@ -440,12 +438,12 @@ public partial class MainForm : Form
 
    private void VLWCharPanel_Paint(object sender, PaintEventArgs e)
    {
-      if (TestCharTextBox.Text.Length == 0)
+      if (CharTextBox.Text.Length == 0)
       {
          return;
       }
 
-      char c = TestCharTextBox.Text[0];
+      char c = CharTextBox.Text[0];
 
       if (_vlwFont.Glyphs.TryGetValue(c, out VLWGlyph? glyph))
       {
@@ -531,7 +529,7 @@ public partial class MainForm : Form
 
    private void panel1_Paint(object sender, PaintEventArgs e)
    {
-      _builder.UpdateLargeBitmap(TestCharTextBox.Text[0]);
+      _builder.UpdateLargeBitmap(CharTextBox.Text[0]);
       e.Graphics.DrawImageUnscaled(_builder.LargeBitmap, new Point(0, 0));
       e.Graphics.DrawRectangle(Pens.White, new Rectangle(new Point(0, 0), _builder.LargeBitmap.Size));
 
@@ -633,9 +631,20 @@ public partial class MainForm : Form
       _resetAll();
    }
 
-   private void button1_Click(object sender, EventArgs e)
+   private void RobotoButton_Click(object sender, EventArgs e)
    {
       byte[] bytes = File.ReadAllBytes(@"C:\SourceCode\Arduino\SmoothFontCreator\Roboto32.vlw");
+      _vlwFont = new(bytes);
+
+      _displayCurrentChar();
+      VLWTextPanel.Invalidate();
+      TrueTypeTextPanel.Invalidate();
+      TrueTypeCharPanel.Invalidate();
+      VLWCharPanel.Invalidate();
+   }
+   private void ArialButton_Click(object sender, EventArgs e)
+   {
+      byte[] bytes = File.ReadAllBytes(@"C:\SourceCode\Arduino\SmoothFontCreator\Arial32.vlw");
       _vlwFont = new(bytes);
 
       _displayCurrentChar();
@@ -767,14 +776,14 @@ public partial class MainForm : Form
       e.Graphics.DrawImage(bitmap, dstRect, srcRect, GraphicsUnit.Pixel);
    }
 
+   private void monospaceRadioButton_CheckedChanged(object sender, EventArgs e)
+   {
+      _resetAll();
+   }
+
    private void showLineSeparatorsCheckBox_CheckedChanged(object sender, EventArgs e)
    {
       TrueTypeTextPanel.Invalidate();
       VLWTextPanel.Invalidate();
-   }
-
-   private void monospaceRadioButton_CheckedChanged(object sender, EventArgs e)
-   {
-      _resetAll();
    }
 }
