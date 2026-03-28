@@ -35,6 +35,15 @@ public static class GraphicsExtensions
       graphics.DrawString(str, font, new SolidBrush(fgColor), pt);
    }
 
+   public static bool IsBold(this FontStyle fontStyle)
+   {
+      return (fontStyle & FontStyle.Bold) != 0;
+   }
+   public static bool IsItalic(this FontStyle fontStyle)
+   {
+      return (fontStyle & FontStyle.Italic) != 0;
+   }
+
    public static GdiMetrics GetGdiMetrics(this Font font)
    {
       return new GdiMetrics(font);

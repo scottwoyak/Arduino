@@ -6,23 +6,8 @@
 #include "Color.h"
 #include "Structs.h"
 
-#include "Fonts/RobotoMonoRegular08.h"
-#include "Fonts/RobotoMonoRegular16.h"
-#include "Fonts/RobotoMonoRegular24.h"
-#include "Fonts/RobotoMonoRegular32.h"
-#include "Fonts/RobotoMonoRegular40.h"
-#include "Fonts/RobotoMonoRegular48.h"
-#include "Fonts/RobotoMonoRegular56.h"
-#include "Fonts/RobotoMonoRegular64.h"
-
-#include "Fonts/RobotoRegular08.h"
-#include "Fonts/RobotoRegular16.h"
-#include "Fonts/RobotoRegular24.h"
-#include "Fonts/RobotoRegular32.h"
-#include "Fonts/RobotoRegular40.h"
-#include "Fonts/RobotoRegular48.h"
-#include "Fonts/RobotoRegular56.h"
-#include "Fonts/RobotoRegular64.h"
+#include "Fonts/RobotoMonoBold.h"
+#include "Fonts/Roboto.h"
 
 enum DisplayRotation
 {
@@ -146,87 +131,14 @@ public:
    {
       display.setTextSize(size);
 
+      size = constrain(size,0, 7);
       if (mono)
       {
-         switch (size)
-         {
-         case 0:
-         case 1:
-            display.loadFont(RobotoMonoRegular08);
-            break;
-
-         case 2:
-            display.loadFont(RobotoMonoRegular16);
-            break;
-
-         case 3:
-            display.loadFont(RobotoMonoRegular24);
-            break;
-
-         case 4:
-            display.loadFont(RobotoMonoRegular32);
-            break;
-
-         case 5:
-            display.loadFont(RobotoMonoRegular40);
-            break;
-
-         case 6:
-            display.loadFont(RobotoMonoRegular48);
-            break;
-
-         case 7:
-            display.loadFont(RobotoMonoRegular56);
-            break;
-
-         case 8:
-            display.loadFont(RobotoMonoRegular64);
-            break;
-
-         default:
-            display.loadFont(RobotoMonoRegular24);
-         }
+         display.loadFont(RobotoMonoBold[size]);
       }
       else
       {
-         switch (size)
-         {
-         case 0:
-         case 1:
-            display.loadFont(RobotoRegular08);
-            break;
-
-         case 2:
-            display.loadFont(RobotoRegular16);
-            break;
-
-         case 3:
-            display.loadFont(RobotoRegular24);
-            break;
-
-         case 4:
-            display.loadFont(RobotoRegular32);
-            break;
-
-         case 5:
-            display.loadFont(RobotoRegular40);
-            break;
-
-         case 6:
-            display.loadFont(RobotoRegular48);
-            break;
-
-         case 7:
-            display.loadFont(RobotoRegular56);
-            break;
-
-         case 8:
-            display.loadFont(RobotoRegular64);
-            break;
-
-         default:
-            display.loadFont(RobotoRegular24);
-         }
+            display.loadFont(Roboto[size]);
       }
 
       //printFontMetrics();
