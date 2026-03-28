@@ -227,6 +227,14 @@ public:
 
       return _sensor->address();
    }
+   float tempCorrectionF()
+   {
+      return _tempCorrectionF;
+   }
+   float humidityCorrection()
+   {
+      return _humCorrection;
+   }
    const char* id()
    {
       if (_sensor == nullptr)

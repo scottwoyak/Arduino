@@ -87,7 +87,7 @@ void setup()
          SerialX::println("         Type: ", sensors[i]->type());
          SerialX::println("      Address: ", sensors[i]->address());
          SerialX::println("           ID: ", sensors[i]->id());
-         SerialX::println("   Correction: ", sensors[i]->tempCorrectionF);
+         SerialX::println("   Correction: ", sensors[i]->tempCorrectionF());
       }
       else
       {
