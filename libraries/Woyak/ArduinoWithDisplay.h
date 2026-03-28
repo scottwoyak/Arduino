@@ -66,7 +66,16 @@ public:
    {
       // if monospaced, all chars return the same width. If not, '0' is an average width
       // and will be the same for all digits
-      return display.textWidth("0");
+      uint16_t gNum;
+      display.getUnicodeIndex(0x30, &gNum);
+      return display.gxAdvance[gNum];
+
+      // Note: textWidth returns the gxAdvance value for all characters of a string except
+      // the last character which only returns gdX+glyphWidth for a more pixel perfect
+      // width calculation. This means that when asking for the width of a single character,
+      // you don't get the full advance and thus the need for us to manually compute the
+      // value above.
+      //return display.textWidth("0");
    }
 
    void setRotation(DisplayRotation rotation)
