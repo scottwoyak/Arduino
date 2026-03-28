@@ -145,8 +145,7 @@ void loop()
    feather.setTextSize(3);
 
    feather.print("Wind", Color::HEADING);
-   feather.setCursorX(-feather.charW() * speedFormat.length); // right align the speed
-   feather.println(speed, speedFormat, Color::VALUE);
+   feather.printR(speed, speedFormat, Color::VALUE);
    feather.moveCursorY(4);
 
    if (feather.buttonA.wasPressed())
