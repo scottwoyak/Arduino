@@ -1,19 +1,20 @@
 #include "Feather.h"
 #include "TempSensor.h"
 #include "TimedAverager.h"
-#include "Stopwatch.h"
 #include "Adafruit_SleepyDog.h"
 #include "SerialX.h"
 #include "Influx.h"
 #include <string>
-#include "I2CMultiplexor.h"
+#include <I2CMultiplexor.h>
+#include <CountdownTimer.h>
 
 #include "WiFiSettings.h"
 
 Format humFormat("##.#%");
 Format tempFormat("###.## F");
+Format countdownFormat("##");
 
-constexpr auto version = "v0.90";
+constexpr auto version = "v0.91";
 
 Feather feather;
 
@@ -24,29 +25,15 @@ constexpr auto INFLUX_INTERVAL_S = 15; // log data to InfluxDB every this many s
 constexpr auto WATCHDOG_INTERVAL_S = 60; // reboot if we haven't logged data for this many seconds
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 
-/*
-TimedPoint pointSurface(INFLUX_INTERVAL_S, INFLUX_MEASUREMENT);
-TimedPoint pointBottom(INFLUX_INTERVAL_S, INFLUX_MEASUREMENT);
-TimedPoint point3(INFLUX_INTERVAL_S, INFLUX_MEASUREMENT);
-TimedPoint point4(INFLUX_INTERVAL_S, INFLUX_MEASUREMENT);
-
-Field* tempSurfaceField = pointSurface.addTimeAveragedField("temperature", 3);
-Field* tempBottomField = pointBottom.addTimeAveragedField("temperature", 3);
-Field* temp3Field = point3.addTimeAveragedField("temperature", 3);
-Field* temp4Field = point4.addTimeAveragedField("temperature", 3);
-
-Field* humSurfaceField = pointSurface.addTimeAveragedField("humidity", 2);
-Field* humBottomField = pointBottom.addTimeAveragedField("humidity", 2);
-Field* hum3Field = point3.addTimeAveragedField("humidity", 2);
-Field* hum4Field = point4.addTimeAveragedField("humidity", 2);
-*/
-
 constexpr uint8_t NUM_SENSORS = 4;
 TempSensor* sensors[NUM_SENSORS];
 TimedPoint* points[NUM_SENSORS];
 Field* tempFields[NUM_SENSORS];
 Field* humFields[NUM_SENSORS];
-uint8_t sensorPorts[] = { 2, 3, 4, 5 };
+uint8_t sensorPorts[] = { 0, 1, 2, 3 };
+
+constexpr float DISPLAY_TIMEOUT_S = 60;
+CountdownTimer timer(DISPLAY_TIMEOUT_S);
 
 void setup()
 {
@@ -113,7 +100,19 @@ void setup()
 
 void loop()
 {
-   Watchdog.reset();
+   if (feather.buttonA.wasPressed())
+   {
+      timer.reset();
+   }
+
+   if (timer.isExpired())
+   {
+      feather.displayOff();
+   }
+   else
+   {
+      feather.displayOn();
+   }
 
    // Store measured value into point
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
@@ -129,12 +128,14 @@ void loop()
    // Check WiFi connection and reconnect if needed
    if (wifiMulti.run() != WL_CONNECTED)
    {
-      feather.println("Wifi connection lost");
+      feather.println("WiFi connection lost");
+      Serial.println("WiFi connection lost");
+      Util::reset(10);
    }
 
    feather.setCursor(0, 0);
-   feather.display.setTextSize(2);
-   feather.print("Influx", Color::HEADING);
+   feather.setTextSize(3);
+   feather.print("Influx Lake Temp", Color::HEADING);
    feather.println();
 
    feather.setTextSize(3);
@@ -158,9 +159,13 @@ void loop()
    }
 
    feather.setTextSize(2);
+   feather.setCursorY(-feather.charH());
+   feather.print(ceilf(timer.remainingS()), countdownFormat, Color::SUB_LABEL);
    feather.printR(version, Color::SUB_LABEL);
 
    // Write point
+   Watchdog.reset();
+   /*
    if (points[0]->ready())
    {
       digitalWrite(BUILTIN_LED, HIGH);
@@ -176,17 +181,17 @@ void loop()
                Serial.println("InfluxDB write failed: ");
                Serial.println(client.getLastErrorMessage());
             }
+            else
+            {
+               // only reset the Watchdog if we've had a successful write
+               Watchdog.reset();
+            }
          }
-      }
-
-      if (failed)
-      {
-         // sleep for 10 seconds (reboot upon wake up)
-         feather.deepSleep(10);
       }
 
       digitalWrite(BUILTIN_LED, LOW);
    }
+      */
 }
 
 
