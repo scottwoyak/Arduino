@@ -15,9 +15,9 @@ RollingRateTracker refreshRate(100);
 Stopwatch sw;
 
 constexpr uint16_t WIND_AVERAGE_DURATION_S = 10 * 60;
-constexpr uint8_t WIND_AVERAGE_INTERVAL_S = 10;     
+constexpr uint8_t WIND_AVERAGE_INTERVAL_S = 10;
 constexpr uint8_t WIND_AVERAGE_BINS = WIND_AVERAGE_DURATION_S / WIND_AVERAGE_INTERVAL_S;
-TimedAverager windAverager(WIND_AVERAGE_DURATION_S*1000, WIND_AVERAGE_BINS);
+TimedAverager windAverager(WIND_AVERAGE_DURATION_S * 1000, WIND_AVERAGE_BINS);
 
 Format speedFormat("##.# mph");
 
@@ -38,14 +38,14 @@ constexpr RangeF GRAPH_RANGE = { 0, 30 };
 constexpr Rect16 GRAPH_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT);
 RollingBarChart rollingChart(GRAPH_RECT, GRAPH_RANGE, Green2, Color::BLACK);
 
-constexpr uint16_t HISTOGRAM_DURATION_S = 10*60;
+constexpr uint16_t HISTOGRAM_DURATION_S = 10 * 60;
 constexpr uint8_t HISTOGRAM_NUM_BINS = 80;
 constexpr RangeF CHART_RANGE = { 0, 30 };
 constexpr uint8_t VALUES_AXIS_HEIGHT = 16 + 6;
 constexpr Rect16 CHART_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT - VALUES_AXIS_HEIGHT);
 TimedHistogramChart histogramChart(CHART_RECT, CHART_RANGE, HISTOGRAM_NUM_BINS, HISTOGRAM_DURATION_S * 1000, Green2, Color::BLACK);
 
-constexpr Rect16 SLIDER_RECT(0, DISPLAY_HEIGHT - VALUES_AXIS_HEIGHT+2, DISPLAY_WIDTH, 3);
+constexpr Rect16 SLIDER_RECT(0, DISPLAY_HEIGHT - VALUES_AXIS_HEIGHT + 2, DISPLAY_WIDTH, 3);
 HorizontalSlider slider(SLIDER_RECT, CHART_RANGE, Color::WHITE, Color::BLACK);
 
 enum class Mode
@@ -198,7 +198,7 @@ void displayHistogram()
 
    RangeF displayRange = histogramChart.getVisibleRange();
    feather.print(displayRange.min, AxisValueL, Color::GRAY);
-   feather.printC((displayRange.min + displayRange.max)/2, AxisValueL, Color::GRAY);
+   feather.printC((displayRange.min + displayRange.max) / 2, AxisValueL, Color::GRAY);
    feather.printR(displayRange.max, AxisValueR, Color::GRAY);
    uint16_t y = DISPLAY_HEIGHT - VALUES_AXIS_HEIGHT + 1;
    feather.display.drawLine(0, y, feather.display.width(), y, (uint16_t)Color::GRAY);
