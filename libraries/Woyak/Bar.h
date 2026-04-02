@@ -21,8 +21,8 @@ public:
    {
       _rect = rect;
       _range = range;
-      _lastValue = NAN;
-      _value = NAN;
+      _lastValue = 0;
+      _value = 0;
       _barColor = barColor;
       _backgroundColor = backgroundColor;
    }

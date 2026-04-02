@@ -14,6 +14,7 @@
     <File Path="libraries/Woyak/Button.cpp" />
     <File Path="libraries/Woyak/Button.h" />
     <File Path="libraries/Woyak/Color.h" />
+    <File Path="libraries/Woyak/CountdownTimer.h" />
     <File Path="libraries/Woyak/Counter.cpp" />
     <File Path="libraries/Woyak/Counter.h" />
     <File Path="libraries/Woyak/DailyTimer.h" />
@@ -34,6 +35,7 @@
     <File Path="libraries/Woyak/IndexedEncoder.h" />
     <File Path="libraries/Woyak/Influx.h" />
     <File Path="libraries/Woyak/ITempSensor.h" />
+    <File Path="libraries/Woyak/Latch.h" />
     <File Path="libraries/Woyak/Logger.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
     <File Path="libraries/Woyak/MultiBar.h" />
@@ -140,6 +142,10 @@
     <Deploy Solution="*|ARM" />
     <Deploy Solution="*|ARM64" />
   </Project>
+  <Project Path="Interrupt_Debugger/Interrupt_Debugger.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Lake_Temp_Monitor/Lake_Temp_Monitor.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -193,6 +199,10 @@
     <Deploy />
   </Project>
   <Project Path="Wind_Publisher/Wind_Publisher.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Wind_Publisher_Display/Wind_Publisher_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
