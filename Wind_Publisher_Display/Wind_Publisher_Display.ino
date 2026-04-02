@@ -1,6 +1,6 @@
 
 // undefine to use the remote server
-//#define TELEMETRY_LOCAL
+#define TELEMETRY_LOCAL
 
 #include <WiFi.h>
 #include <WiFiMulti.h>
