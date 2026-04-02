@@ -10,7 +10,7 @@ Feather feather;
 TempSensor sensor;
 
 // create this define to use a DS18B20 sensor. If not defined, one of the I2C sensors will be auto detected
-#define ONE_WIRE_PIN 5
+//#define ONE_WIRE_PIN 5
 
 Format tempFormat("###.## F");
 Format humFormat("###.#%");
@@ -58,34 +58,34 @@ void loop()
    int16_t humPerS = round(1000 / humTime);
 
    // display values
-   feather.display.setTextSize(3);
+   feather.setTextSize(3);
    if (feather.display.width() / feather.charW() > 12)
    {
       feather.print("Temp: ", Color::LABEL);
    }
    feather.println(temp, tempFormat, Color::VALUE);
 
-   feather.display.setTextSize(2);
+   feather.setTextSize(2);
    feather.print(tempTime, msFormat, Color::SUB_LABEL);
    feather.print("  ");
    feather.print(tempPerS, rateFormat, Color::SUB_LABEL);
    feather.println();
    feather.moveCursorY(feather.charH() / 2);
 
-   feather.display.setTextSize(3);
+   feather.setTextSize(3);
    if (feather.display.width() / feather.charW() > 12)
    {
       feather.print(" Hum: ", Color::LABEL);
    }
    feather.println(hum, humFormat, Color::VALUE);
 
-   feather.display.setTextSize(2);
+   feather.setTextSize(2);
    feather.print(humTime, msFormat, Color::SUB_LABEL);
    feather.print("  ");
    feather.print(humPerS, rateFormat, Color::SUB_LABEL);
    feather.println();
 
-   feather.display.setTextSize(2);
+   feather.setTextSize(2);
    feather.setCursor(0, -2*feather.charH() + 1);
    feather.print("Type: ", Color::LABEL);
    feather.print(sensor.type(), Color::VALUE2);
