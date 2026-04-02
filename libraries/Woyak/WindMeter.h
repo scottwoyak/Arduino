@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Arduino.h"
+#include "Latch.h"
 #include "Util.h"
 
 class WindMeter
@@ -15,31 +16,32 @@ private:
 
    uint8_t _pin;
    uint8_t _ledPin;
-   volatile unsigned long _micros = 0;
-   volatile unsigned long _lastMicros = 0;
+   volatile Latch _latch;
    volatile uint8_t _ticks = 0;
 
    void tick()
    {
-      // equivalent of 100 mph
-      if (micros() - this->_micros < 1901)
+      // debounce
+      if (_latch.settled() == false)
       {
          return;
       }
 
-      _lastMicros = _micros;
-      _micros = micros();
-      _ticks = _ticks + 1;
-
-      // update the led to match the pin
-      if (_ticks == 1)
-      { 
-         digitalWrite(this->_ledPin, LOW);
-      }
-      else if (_ticks >= 20)
+      if (_latch.setState(digitalRead(_pin)))
       {
-         _ticks = 0;
-         digitalWrite(this->_ledPin, HIGH);
+         // if a state change occurred, track the ticks
+         _ticks = _ticks + 1;
+
+         // update the led to match the pin
+         if (_ticks == 1)
+         {
+            digitalWrite(this->_ledPin, LOW);
+         }
+         else if (_ticks >= 20)
+         {
+            _ticks = 0;
+            digitalWrite(this->_ledPin, HIGH);
+         }
       }
    }
 
@@ -67,29 +69,26 @@ public:
 
       // create the interrupt for monitoring the pin change
       pinMode(this->_pin, INPUT_PULLUP);
-      attachInterrupt(digitalPinToInterrupt(this->_pin), WindMeter::interruptTick, RISING);
+      attachInterrupt(digitalPinToInterrupt(this->_pin), WindMeter::interruptTick, CHANGE);
    }
 
    float getSpeed()
    {
-      unsigned long span;
-      unsigned long lastMicros;
-
       noInterrupts();
-      span = Util::getSpan(this->_lastMicros, this->_micros);
-      lastMicros = this->_lastMicros;
+      unsigned long period = _latch.getPeriod();
+      unsigned long microsSinceLastTick = _latch.getMicrosSinceLastTick();
       interrupts();
 
       // wind speed formula is 1 rotation/s = 1.7 ms/s
       // 0.1 mph = 1901400 micros
       // 100 mph = 1901 micros
-      if (micros() - lastMicros > 1901400) // less than 0.1 mph
+      if (microsSinceLastTick > 1901400) // less than 0.1 mph
       {
          return 0.0;
       }
       else
       {
-         return 190140.0 / span;
+         return 190140.0 / period;
          /*
          double rotPerS = 1000000.0 / (20 * span);
          double mPerS = 1.7 * rotPerS;
@@ -98,15 +97,4 @@ public:
          */
       }
    }
-
-   /*
-   unsigned long getLastMicros()
-   {
-      unsigned long lastMicros;
-      noInterrupts();
-      lastMicros = this->_lastMicros;
-      interrupts();
-      return lastMicros;
-   }
-   */
 };
