@@ -235,6 +235,14 @@ public:
    {
       return _humCorrection;
    }
+   void setTempCorrectionF(float correction)
+   {
+      _tempCorrectionF = correction;
+   }
+   void setHumidityCorrection(float correction)
+   {
+      _humCorrection = correction;
+   }
    const char* id()
    {
       if (_sensor == nullptr)

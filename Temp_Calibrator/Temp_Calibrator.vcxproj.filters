@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="TemperatureCalibrator.ino" />
+    <ClCompile Include="Temp_Calibrator.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.TemperatureCalibrator.vsarduino.h">
+    <ClInclude Include="__vm\.Temp_Calibrator.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
