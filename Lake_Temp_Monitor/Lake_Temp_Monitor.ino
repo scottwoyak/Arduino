@@ -53,10 +53,13 @@ void setup()
    SerialX::begin();
 
    feather.begin();
+   feather.setRotation(DisplayRotation::PORTRAIT);
+   feather.setTextSize(2);
    feather.display.setTextWrap(false);
    pinMode(BUILTIN_LED, OUTPUT);
 
    feather.echoToSerial = true;
+   feather.display.setRotation(2);
    feather.clearDisplay();
    feather.println("Initializing", Color::HEADING);
    feather.moveCursorY(feather.charH() / 2);
@@ -89,8 +92,8 @@ void setup()
 
    points[0]->addTag("location", "Water 1"); // Surface
    points[1]->addTag("location", "Water 2"); // Bottom
-   points[2]->addTag("location", "3 Feet"); // Bottom
-   points[3]->addTag("location", "Deep"); // Bottom
+   points[2]->addTag("location", "Water 3"); // Bottom
+   points[3]->addTag("location", "Water 4"); // Bottom
 
    feather.clearDisplay();
    feather.echoToSerial = false;
@@ -134,8 +137,8 @@ void loop()
    }
 
    feather.setCursor(0, 0);
-   feather.setTextSize(3);
-   feather.print("Influx Lake Temp", Color::HEADING);
+   feather.setTextSize(2);
+   feather.print("Lake Temp", Color::HEADING);
    feather.println();
 
    feather.setTextSize(3);
@@ -146,15 +149,19 @@ void loop()
          float temp = tempFields[i]->get();
          float hum = humFields[i]->get();
 
-         feather.print(temp, tempFormat, Color::VALUE);
-         feather.printR(hum, humFormat, Color::VALUE);
-         feather.println();
+         feather.setTextSize(4);
+         feather.println(temp, tempFormat, Color::VALUE);
+         feather.setTextSize(2);
+         feather.println(hum, humFormat, Color::WHITE);
+         feather.moveCursorY(feather.charH() / 2);
       }
       else
       {
-         feather.print("----", Color::VALUE);
-         feather.printR("----", Color::VALUE);
-         feather.println();
+         feather.setTextSize(3);
+         feather.println("----", Color::GRAY);
+         feather.setTextSize(2);
+         feather.println("----", Color::GRAY);
+         feather.moveCursorY(feather.charH() / 2);
       }
    }
 
@@ -164,8 +171,6 @@ void loop()
    feather.printR(version, Color::SUB_LABEL);
 
    // Write point
-   Watchdog.reset();
-   /*
    if (points[0]->ready())
    {
       digitalWrite(BUILTIN_LED, HIGH);
@@ -191,7 +196,6 @@ void loop()
 
       digitalWrite(BUILTIN_LED, LOW);
    }
-      */
 }
 
 

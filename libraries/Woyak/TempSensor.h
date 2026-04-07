@@ -2,6 +2,7 @@
 
 #include <I2CTempSensor.h>
 #include <ITempSensor.h>
+#include <TempSensorCallibration.h>
 
 // sensor types
 #include <BME280TempSensor.h>
@@ -10,33 +11,6 @@
 #include <MCP9808TempSensor.h>
 #include <SHT3xTempSensor.h>
 #include <SHT4xTempSensor.h>
-
-struct CorrectionFactor
-{
-   const char* id;
-   float tempF;
-   float hum;
-};
-
-constexpr CorrectionFactor CORRECTIONS[] = {
-"2003674483",  0.000,  0.000, // reference sensor
-"3060770163",  0.107, -0.540,
-"2978522483",  0.037, -0.601,
-"2000135539", -0.061,  0.048,
-"2977408371",  0.300, -0.101,
-"3029116275", -0.020, -0.600,
-"3045565811",  0.067, -0.140,
-"3011618163", -0.124, -1.063,
-"3060245875",  0.096, -1.394,
-"2000135539",  0.073, -0.011,
-"3008996723", -0.081, -0.579,
-"337756392",   0.286, -0.627, // Lake SHT4X
-"246251566",   0.202, -4.932, // Lake SHT4X
-"290643347",   0.195, -5.611, // Lake SHT4X
-"290634094",  -0.038, -5.420, // Lake SHT4X
-};
-
-constexpr auto NUM_CORRECTIONS = sizeof(CORRECTIONS) / sizeof(CORRECTIONS[0]);
 
 //-------------------------------------------------------------------------------------------------
 class NullSensor : public ITempSensor

@@ -35,45 +35,52 @@ TempSensor* sensors[] =
 };
 const int NUM_SENSORS = sizeof(sensors) / sizeof(sensors[0]);
 
-constexpr auto NUM_SECS = 10;
+// The amount of time we use to get an average "current" reading. This
+// is used to report the current temperature to Influx
+constexpr auto CURRENT_AVG_S = 20;
+
+// The amount of time we use to get a reading used for computing correction factors
+constexpr auto CORRECTION_AVG_S = 10 * 60;
+
+// How often we send data to Influx
+constexpr auto INFLUX_INTERVAL_S = 10;
 
 TimedAverager* temps[] =
 {
-   new TimedAverager(1000 * NUM_SECS),
-   new TimedAverager(1000 * NUM_SECS),
-   new TimedAverager(1000 * NUM_SECS),
-   new TimedAverager(1000 * NUM_SECS),
-   new TimedAverager(1000 * NUM_SECS),
-   new TimedAverager(1000 * NUM_SECS),
+   new TimedAverager(1000 * CURRENT_AVG_S),
+   new TimedAverager(1000 * CURRENT_AVG_S),
+   new TimedAverager(1000 * CURRENT_AVG_S),
+   new TimedAverager(1000 * CURRENT_AVG_S),
+   new TimedAverager(1000 * CURRENT_AVG_S),
+   new TimedAverager(1000 * CURRENT_AVG_S),
 };
 
 TimedAverager* hums[] =
 {
-   new TimedAverager(1000 * NUM_SECS),
-   new TimedAverager(1000 * NUM_SECS),
-   new TimedAverager(1000 * NUM_SECS),
-   new TimedAverager(1000 * NUM_SECS),
-   new TimedAverager(1000 * NUM_SECS),
-   new TimedAverager(1000 * NUM_SECS),
+   new TimedAverager(1000 * CURRENT_AVG_S),
+   new TimedAverager(1000 * CURRENT_AVG_S),
+   new TimedAverager(1000 * CURRENT_AVG_S),
+   new TimedAverager(1000 * CURRENT_AVG_S),
+   new TimedAverager(1000 * CURRENT_AVG_S),
+   new TimedAverager(1000 * CURRENT_AVG_S),
 };
 
-constexpr auto AVERAGING_TIME = 10 * 60 * 1000;
 TimedAverager* tavgs[] = {
-   new TimedAverager(AVERAGING_TIME),
-   new TimedAverager(AVERAGING_TIME),
-   new TimedAverager(AVERAGING_TIME),
-   new TimedAverager(AVERAGING_TIME),
-   new TimedAverager(AVERAGING_TIME),
-   new TimedAverager(AVERAGING_TIME),
+   new TimedAverager(1000*CORRECTION_AVG_S),
+   new TimedAverager(1000 * CORRECTION_AVG_S),
+   new TimedAverager(1000 * CORRECTION_AVG_S),
+   new TimedAverager(1000 * CORRECTION_AVG_S),
+   new TimedAverager(1000 * CORRECTION_AVG_S),
+   new TimedAverager(1000 * CORRECTION_AVG_S),
 };
 
 TimedAverager* havgs[] = {
-   new TimedAverager(AVERAGING_TIME),
-   new TimedAverager(AVERAGING_TIME),
-   new TimedAverager(AVERAGING_TIME),
-   new TimedAverager(AVERAGING_TIME),
-   new TimedAverager(AVERAGING_TIME),
-   new TimedAverager(AVERAGING_TIME),
+   new TimedAverager(1000 * CORRECTION_AVG_S),
+   new TimedAverager(1000 * CORRECTION_AVG_S),
+   new TimedAverager(1000 * CORRECTION_AVG_S),
+   new TimedAverager(1000 * CORRECTION_AVG_S),
+   new TimedAverager(1000 * CORRECTION_AVG_S),
+   new TimedAverager(1000 * CORRECTION_AVG_S),
 };
 
 Format tempFormat("###.## F");
@@ -98,6 +105,23 @@ Point* points[] = { &point1,&point2,&point3,&point4,&point5,&point6 };
 uint8_t view = 0;
 constexpr auto NUM_VIEWS = 4;
 
+void printCalibrationCodeToSerial(std::string ids[], float tcorrections[], float hcorrections[])
+{
+   // print saved factors for easy paste into TempSensor.cpp
+   Serial.println("Copy this data to libraries\\Woyak\\TempSensorCallibration.h");
+   for (int i = 0; i < NUM_SENSORS; i++)
+   {
+      Serial.print("\"");
+      Serial.print(ids[i].c_str());
+      Serial.print("\", ");
+      Serial.print(-tcorrections[i], 3);
+      Serial.print(", ");
+      Serial.print(-hcorrections[i], 3);
+      Serial.print(", ");
+      Serial.println();
+   }
+}
+
 void displaySavedInfo()
 {
    // load saved correction factors
@@ -114,19 +138,7 @@ void displaySavedInfo()
    }
    feather.preferences.end();
 
-   // print saved factors for easy paste into TempSensor.cpp
-   Serial.println("Copy this data to TempSensor.cpp");
-   for (int i = 0; i < NUM_SENSORS; i++)
-   {
-      Serial.print("\"");
-      Serial.print(ids[i].c_str());
-      Serial.print("\", ");
-      Serial.print(-tcorrections[i], 3);
-      Serial.print(", ");
-      Serial.print(-hcorrections[i], 3);
-      Serial.print(", ");
-      Serial.println();
-   }
+   printCalibrationCodeToSerial(ids, tcorrections, hcorrections);
 
    // display saved temperature factors
    feather.display.setCursor(0, 0);
@@ -157,6 +169,9 @@ void displaySavedInfo()
    {
       delay(1);
    }
+
+   // print again in case the user didn't have serial open the first time
+   printCalibrationCodeToSerial(ids, tcorrections, hcorrections);
 
    // display saved humidity factors
    feather.display.setCursor(0, 0);
@@ -278,6 +293,30 @@ void setup()
    digitalWrite(BUILTIN_LED, LOW);
 }
 
+// This is the baseline value used to calibrate the other sensors. It can
+// either be one of the sensors, or the average of all the sensors.
+float getBaseline(TimedAverager* values[])
+{
+   float sum = 0;
+   int count = 0;
+   for (int i = 0; i < NUM_SENSORS; i++)
+   {
+      if (isnan(values[i]->get()) == false)
+      {
+         sum += values[i]->get();
+         count++;
+      }
+   }
+   if (count > 0)
+   {
+      return sum / count;
+   }
+   else
+   {
+      return NAN;
+   }
+}
+
 long count;
 void loop()
 {
@@ -336,7 +375,7 @@ void loop()
          if (sensor->exists())
          {
             feather.print(temp, tempFormat, Color::VALUE);
-            float correction = tavgs[i]->get() - tavgs[0]->get();
+            float correction = tavgs[i]->get() - getBaseline(tavgs);
             feather.setCursor(x, feather.getCursor().y + feather.charH() - 3);
             feather.setTextSize(2);
             feather.print(temp - correction, temp2Format, Color::GRAY);
@@ -360,7 +399,7 @@ void loop()
          if (sensor->exists())
          {
             feather.print(hum, humFormat, Color::VALUE);
-            float correction = havgs[i]->get() - havgs[0]->get();
+            float correction = havgs[i]->get() - getBaseline(havgs);
             feather.setCursor(x, feather.getCursor().y + feather.charH() - 3);
             feather.setTextSize(2);
             feather.print(hum - correction, humFormat, Color::GRAY);
@@ -412,10 +451,12 @@ void loop()
       prefsTrigger.reset();
 
       feather.preferences.begin("Calibrator", false);
+      float baselineT = getBaseline(tavgs);
+      float baselineH = getBaseline(havgs);
       for (int i = 0; i < NUM_SENSORS; i++)
       {
-         float tcorrection = tavgs[i]->get() - tavgs[0]->get();
-         float hcorrection = havgs[i]->get() - havgs[0]->get();
+         float tcorrection = tavgs[i]->get() - baselineT;
+         float hcorrection = havgs[i]->get() - baselineH;
          feather.preferences.putFloat((String("Temp ") + i).c_str(), tcorrection);
          feather.preferences.putFloat((String("Hum ") + i).c_str(), hcorrection);
       }
@@ -423,7 +464,7 @@ void loop()
    }
 
    // ------------------------------------------- send to INFLUX
-   if (influxTrigger.elapsedSecs() > NUM_SECS)
+   if (influxTrigger.elapsedSecs() > INFLUX_INTERVAL_S)
    {
       digitalWrite(BUILTIN_LED, HIGH);
 
@@ -435,15 +476,30 @@ void loop()
 
       for (int i = 0; i < NUM_SENSORS; i++)
       {
-         float tDelta = tavgs[i]->get() - tavgs[0]->get();
-         float hDelta = havgs[i]->get() - havgs[0]->get();
+         float tDelta = tavgs[i]->get() - getBaseline(tavgs);
+         float hDelta = havgs[i]->get() - getBaseline(havgs);
+         float tCorrected = temps[i]->get() - tDelta;
+         float hCorrected = hums[i]->get() - hDelta;
+         float tCorrectedDelta = tCorrected - getBaseline(temps);
+         float hCorrectedDelta = hCorrected - getBaseline(hums);
          points[i]->clearFields();
+         // the current readings
          points[i]->addField("temperature", temps[i]->get(), 3);
          points[i]->addField("humidity", hums[i]->get(), 2);
-         points[i]->addField("tDelta", tDelta, 3);
-         points[i]->addField("hDelta", hDelta, 2);
-         points[i]->addField("tCorrected", temps[i]->get() - tDelta, 3);
-         points[i]->addField("hCorrected", hums[i]->get() - hDelta, 2);
+
+         // the deltas from the baseline
+         points[i]->addField("tDelta", tDelta, 4);
+         points[i]->addField("hDelta", hDelta, 3);
+
+         // the current readings using the correction factors. Once these
+         // stop changing, the correction factors have converged
+         points[i]->addField("tCorrected", tCorrected, 3);
+         points[i]->addField("hCorrected", hCorrected, 2);
+
+         // the deltas of the corrected readings. The closer these are to
+         // zero, the less variation that exists between sensors
+         points[i]->addField("tCorrectedDelta", tCorrectedDelta, 4);
+         points[i]->addField("hCorrectedDelta", hCorrectedDelta, 3);
 
          if (sensors[i]->exists())
          {

@@ -3,6 +3,7 @@
 #include <Adafruit_HDC302x.h>
 #include <I2CTempSensor.h>
 #include <Util.h>
+#include <string>
 
 
 //-------------------------------------------------------------------------------------------------
