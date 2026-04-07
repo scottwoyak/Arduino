@@ -1,35 +1,29 @@
 
-// undefine to use the remote server
-//#define TELEMETRY_LOCAL
+//
+// Wind Publisher for Waveshare S3 Zero
+//
 
-#include <WiFi.h>
 #include <WiFiMulti.h>
-#include <WiFiClientSecure.h>
-
-#include <WebSocketsClient.h>
 #include "SerialX.h"
 #include "WiFiSettings.h"
-#include "RateTracker.h"
 #include "TelemetryClient.h"
 #include "Url.h"
 #include "WindMeter.h"
 
 WiFiMulti wifi;
-RollingRateTracker rate(10);
-TelemetryPublisher client("Wind/Studio", 3);
-WindMeter wind(A5);
 
-float getValue()
-{
-   constexpr ulong period = 2 * 1000 * 1000;
-   float x = 2 * std::numbers::pi * (((float)(micros() % period)) / period);
-   return sin(x);
-}
+constexpr auto NUM_DECIMALS = 2;
+TelemetryPublisher client("Wind/Studio", NUM_DECIMALS);
+
+constexpr auto WIND_PIN = 1;
+WindMeter wind(WIND_PIN, 0);
 
 void setup()
 {
    SerialX::begin();
    wind.begin();
+
+   pinMode(LED_BUILTIN, OUTPUT);
 
    // Connect to WiFi
    wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
@@ -43,7 +37,7 @@ void setup()
    }
    Serial.println("OK");
 
-   client.setCallbacks(onConnected, onDisconnected, onText, onError, onStarted);
+   client.setCallbacks(onConnected, onDisconnected, nullptr, onError, nullptr);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
 }
 
@@ -59,23 +53,21 @@ void onDisconnected()
    Util::reset();
 }
 
-void onText(std::string payload)
-{
-   rate.tick();
-}
-
 void onError(std::string msg)
 {
+   Serial.print("Error: ");
+   Serial.println(msg.c_str());
    Util::reset();
-}
-
-void onStarted()
-{
-   rate.reset();
 }
 
 void loop()
 {
+   // Waveshare crashes if we set the LED value in the interrupt, so we manually do it
+   rgbLedWrite(LED_BUILTIN, wind.ledState() ? 255 : 0, 0, 0);
+
+   // without a delay, the waveshare crashes
+   delay(1);
+
    float speed = wind.getSpeed();
    client.setValue(speed);
    client.loop(); // Continuously poll for events and maintain connection

@@ -54,6 +54,7 @@
     <File Path="libraries/Woyak/Structs.h" />
     <File Path="libraries/Woyak/TelemetryClient.h" />
     <File Path="libraries/Woyak/TempSensor.h" />
+    <File Path="libraries/Woyak/TempSensorCallibration.h" />
     <File Path="libraries/Woyak/TimeConstants.h" />
     <File Path="libraries/Woyak/TimedAverager.h" />
     <File Path="libraries/Woyak/TimedHistogram.h" />
@@ -174,7 +175,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="TemperatureCalibrator/TemperatureCalibrator.vcxproj">
+  <Project Path="Temp_Calibrator/Temp_Calibrator.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -198,11 +199,11 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Wind_Publisher/Wind_Publisher.vcxproj">
+  <Project Path="Wind_Publisher_Display/Wind_Publisher_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Wind_Publisher_Display/Wind_Publisher_Display.vcxproj">
+  <Project Path="Wind_Publisher_Waveshare_S3_Zero/Wind_Publisher_Waveshare_S3_Zero.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

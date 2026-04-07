@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Wind_Publisher.ino" />
+    <ClCompile Include="Wind_Publisher_Waveshare_S3_Zero.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.Wind_Publisher.vsarduino.h">
+    <ClInclude Include="__vm\.Wind_Publisher_Waveshare_S3_Zero.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
