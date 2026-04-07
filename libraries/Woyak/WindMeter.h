@@ -18,6 +18,7 @@ private:
    uint8_t _ledPin;
    volatile Latch _latch;
    volatile uint8_t _ticks = 0;
+   volatile bool _ledState = false;
 
    void tick()
    {
@@ -35,12 +36,20 @@ private:
          // update the led to match the pin
          if (_ticks == 1)
          {
-            digitalWrite(this->_ledPin, LOW);
+            if (_ledPin > 0)
+            {
+               digitalWrite(this->_ledPin, LOW);
+            }
+            _ledState = false;
          }
          else if (_ticks >= 20)
          {
             _ticks = 0;
-            digitalWrite(this->_ledPin, HIGH);
+            if (_ledPin > 0)
+            {
+               digitalWrite(this->_ledPin, HIGH);
+            }
+            _ledState = true;
          }
       }
    }
@@ -64,8 +73,11 @@ public:
    void begin()
    {
       // set up the led pin
-      pinMode(this->_ledPin, OUTPUT);
-      digitalWrite(this->_ledPin, LOW);
+      if (_ledPin > 0)
+      {
+         pinMode(this->_ledPin, OUTPUT);
+         digitalWrite(this->_ledPin, LOW);
+      }
 
       // create the interrupt for monitoring the pin change
       pinMode(this->_pin, INPUT_PULLUP);
@@ -96,5 +108,10 @@ public:
          return mph;
          */
       }
+   }
+
+   bool ledState()
+   {
+      return _ledState;
    }
 };
