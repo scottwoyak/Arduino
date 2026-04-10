@@ -97,7 +97,7 @@ void setup()
 
    feather.print("WebSocket...", Color::LABEL);
 
-   client.setCallbacks(nullptr, onDisconnected, nullptr, onError, onStarted);
+   client.setCallbacks(nullptr, onDisconnected, nullptr, nullptr, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
 
 

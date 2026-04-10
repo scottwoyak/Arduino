@@ -64,7 +64,7 @@ void setup()
 
    feather.print("WebSocket...", Color::LABEL);
 
-   client.setCallbacks(onConnected, onDisconnected, onText, onError, onStarted);
+   client.setCallbacks(onConnected, onDisconnected, nullptr, onReceivedText, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
 }
 
@@ -80,7 +80,7 @@ void onDisconnected()
    Util::reset();
 }
 
-void onText(std::string payload)
+void onReceivedText(std::string payload)
 {
    rate.tick();
 }
