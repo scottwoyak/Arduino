@@ -32,6 +32,13 @@ Field* tempFields[NUM_SENSORS];
 Field* humFields[NUM_SENSORS];
 uint8_t sensorPorts[] = { 0, 1, 2, 3 };
 
+const char* locations[] = {
+   "Water 1",
+   "Water 2",
+   "Water 3",
+   "Water 4",
+};
+
 constexpr float DISPLAY_TIMEOUT_S = 60;
 CountdownTimer timer(DISPLAY_TIMEOUT_S);
 
@@ -70,14 +77,16 @@ void setup()
    for (int i = 0; i < NUM_SENSORS; i++)
    {
       SerialX::println();
-      SerialX::println("Sensor ", i);
+      SerialX::print("Sensor ", i);
+      SerialX::print(": ");
+      SerialX::println(locations[i]);
       multi.select(sensorPorts[i]);
       if (sensors[i]->begin(true))
       {
          SerialX::println("         Type: ", sensors[i]->type());
          SerialX::println("      Address: ", sensors[i]->address());
          SerialX::println("           ID: ", sensors[i]->id());
-         SerialX::println("   Correction: ", sensors[i]->tempCorrectionF());
+         SerialX::println("   Correction: ", sensors[i]->tempCorrectionF(), 3);
       }
       else
       {
@@ -90,10 +99,10 @@ void setup()
 
    Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client);
 
-   points[0]->addTag("location", "Water 1"); // Surface
-   points[1]->addTag("location", "Water 2"); // Bottom
-   points[2]->addTag("location", "Water 3"); // Bottom
-   points[3]->addTag("location", "Water 4"); // Bottom
+   for (int i = 0; i < NUM_SENSORS; i++)
+   {
+      points[i]->addTag("location", locations[i]);
+   }
 
    feather.clearDisplay();
    feather.echoToSerial = false;
@@ -175,14 +184,12 @@ void loop()
    {
       digitalWrite(BUILTIN_LED, HIGH);
 
-      bool failed = false;
       for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
          if (sensors[i]->exists())
          {
             if (points[i]->post(&client) == false)
             {
-               failed = true;
                Serial.println("InfluxDB write failed: ");
                Serial.println(client.getLastErrorMessage());
             }

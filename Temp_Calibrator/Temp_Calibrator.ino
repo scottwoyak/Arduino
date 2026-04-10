@@ -105,8 +105,22 @@ Point* points[] = { &point1,&point2,&point3,&point4,&point5,&point6 };
 uint8_t view = 0;
 constexpr auto NUM_VIEWS = 4;
 
-void printCalibrationCodeToSerial(std::string ids[], float tcorrections[], float hcorrections[])
+void printCalibrationCodeToSerial()
 {
+   // load saved correction factors
+   feather.preferences.begin("Calibrator", false);
+   float tcorrections[6];
+   float hcorrections[6];
+   std::string ids[6];
+
+   for (int i = 0; i < NUM_SENSORS; i++)
+   {
+      tcorrections[i] = feather.preferences.getFloat((String("Temp ") + i).c_str());
+      hcorrections[i] = feather.preferences.getFloat((String("Hum ") + i).c_str());
+      ids[i] = feather.preferences.getString((String("ID ") + i).c_str()).c_str();
+   }
+   feather.preferences.end();
+
    // print saved factors for easy paste into TempSensor.cpp
    Serial.println("Copy this data to libraries\\Woyak\\TempSensorCallibration.h");
    for (int i = 0; i < NUM_SENSORS; i++)
@@ -138,7 +152,7 @@ void displaySavedInfo()
    }
    feather.preferences.end();
 
-   printCalibrationCodeToSerial(ids, tcorrections, hcorrections);
+   printCalibrationCodeToSerial();
 
    // display saved temperature factors
    feather.display.setCursor(0, 0);
@@ -165,13 +179,14 @@ void displaySavedInfo()
       feather.moveCursorY(feather.charH() / 4);
    }
 
-   while (feather.buttonA.wasPressed() == false)
+   Stopwatch sw;
+   while (feather.buttonA.wasPressed() == false && sw.elapsedSecs() < 60)
    {
       delay(1);
    }
 
    // print again in case the user didn't have serial open the first time
-   printCalibrationCodeToSerial(ids, tcorrections, hcorrections);
+   printCalibrationCodeToSerial();
 
    // display saved humidity factors
    feather.display.setCursor(0, 0);
@@ -198,7 +213,7 @@ void displaySavedInfo()
       feather.moveCursorY(feather.charH() / 4);
    }
 
-   while (feather.buttonA.wasPressed() == false)
+   while (feather.buttonA.wasPressed() == false && sw.elapsedSecs() < 60)
    {
       delay(1);
    }
@@ -461,6 +476,8 @@ void loop()
          feather.preferences.putFloat((String("Hum ") + i).c_str(), hcorrection);
       }
       feather.preferences.end();
+
+      printCalibrationCodeToSerial();
    }
 
    // ------------------------------------------- send to INFLUX

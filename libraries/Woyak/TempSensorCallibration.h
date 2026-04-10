@@ -23,10 +23,18 @@ constexpr CorrectionFactor CORRECTIONS[] = {
 "246251566",   0.202, -4.932,
 "290643347",   0.195, -5.611,
 "290634094",  -0.038, -5.420,
-"186780455",  -0.042,  0.622, // Lake SHT4X
-"186772275",   0.022,  0.435, // Lake SHT4X
-"350023307",  -0.004,  0.204, // Lake SHT4X
-"186780459",   0.023, -1.261, // Lake SHT4X
+// From Water Testing
+"186780459",  -0.005, -1.313, // Lake SHT4X Water 1
+"186772275",   0.053,  0.143, // Lake SHT4X Water 2
+"350023307",  -0.034,  0.590, // Lake SHT4X Water 3
+"186780455",  -0.014,  0.580, // Lake SHT4X Water 4
+/* From Air Testing
+"186780459",  -0.008, -1.261, // Lake SHT4X Water 1
+"186772275",   0.005,  0.435, // Lake SHT4X Water 2
+"350023307",  -0.021,  0.204, // Lake SHT4X Water 3
+"186780455",   0.025,  0.622, // Lake SHT4X Water 4
+*/
+
 };
 
 constexpr auto NUM_CORRECTIONS = sizeof(CORRECTIONS) / sizeof(CORRECTIONS[0]);
