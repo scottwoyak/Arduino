@@ -1,5 +1,7 @@
 #pragma once
 
+
+
 #include <WebSocketsClient.h>
 #include <Util.h>
 
@@ -7,7 +9,8 @@ WebSocketsClient webSocket;
 
 typedef std::function<void()> TelemetryOnConnectedFunc;
 typedef std::function<void()> TelemetryOnDisconnectedFunc;
-typedef std::function<void(std::string)> TelemetryOnTextFunc;
+typedef std::function<void(std::string)> TelemetryOnReceiveTextFunc;
+typedef std::function<void(std::string)> TelemetryOnSendTextFunc;
 typedef std::function<void(std::string)> TelemetryOnErrorFunc;
 typedef std::function<void()> TelemetryOnStartedFunc;
 
@@ -23,7 +26,8 @@ private:
    // callbacks for our user
    TelemetryOnConnectedFunc _onConnectedFunc = nullptr;
    TelemetryOnDisconnectedFunc _onDisconnectedFunc = nullptr;
-   TelemetryOnTextFunc _onTextFunc = nullptr;
+   TelemetryOnSendTextFunc _onSendTextFunc = nullptr;
+   TelemetryOnReceiveTextFunc _onReceiveTextFunc = nullptr;
    TelemetryOnErrorFunc _onErrorFunc = nullptr;
    TelemetryOnStartedFunc _onStartedFunc = nullptr;
 
@@ -41,6 +45,15 @@ protected:
    virtual void _onText(std::string) {};
    virtual void _onLoop() {};
    virtual void _onStarted() {};
+
+   void _sendText(std::string text)
+   {
+      webSocket.sendTXT(text.c_str());
+      if (_onSendTextFunc)
+      {
+         _onSendTextFunc(text);
+      }
+   }
 
    void _onEvent(WStype_t type, uint8_t* payload, size_t length)
    {
@@ -103,9 +116,9 @@ protected:
          else
          {
             _onText(str);
-            if (_onTextFunc)
+            if (_onReceiveTextFunc)
             {
-               _onTextFunc(str);
+               _onReceiveTextFunc(str);
             }
          }
       }
@@ -182,16 +195,18 @@ public:
    }
 
    void setCallbacks(
-      TelemetryOnConnectedFunc onConnectedFunc = nullptr,
-      TelemetryOnDisconnectedFunc onDisconnectedFunc = nullptr,
-      TelemetryOnTextFunc onTextFunc = nullptr,
-      TelemetryOnErrorFunc onErrFunc = nullptr,
-      TelemetryOnStartedFunc onStartedFunc = nullptr
+      TelemetryOnConnectedFunc onConnectedFunc,
+      TelemetryOnDisconnectedFunc onDisconnectedFunc,
+      TelemetryOnSendTextFunc onSendTextFunc,
+      TelemetryOnReceiveTextFunc onReceiveTextFunc,
+      TelemetryOnErrorFunc onErrFunc,
+      TelemetryOnStartedFunc onStartedFunc
    )
    {
       _onConnectedFunc = onConnectedFunc;
       _onDisconnectedFunc = onDisconnectedFunc;
-      _onTextFunc = onTextFunc;
+      _onSendTextFunc = onSendTextFunc;
+      _onReceiveTextFunc = onReceiveTextFunc;
       _onErrorFunc = onErrFunc;
       _onStartedFunc = onStartedFunc;
    }
@@ -216,7 +231,7 @@ private:
    {
       // initialize
       std::string cmd = "Publish " + getTopic();
-      webSocket.sendTXT(cmd.c_str());
+      _sendText(cmd.c_str());
    }
 
    virtual void _onText(std::string payload)
@@ -238,7 +253,7 @@ private:
 
          if (value != _lastValue.c_str())
          {
-            webSocket.sendTXT(value.c_str());
+            _sendText(value.c_str());
             _lastValue = value.c_str();
             _ready = false;
          }
@@ -272,10 +287,10 @@ private:
    {
       // subscribe
       std::string cmd = "Subscribe " + getTopic();
-      webSocket.sendTXT(cmd.c_str());
+      _sendText(cmd.c_str());
 
       // request the first value
-      webSocket.sendTXT("get");
+      _sendText("get");
    }
 
    virtual void _onText(std::string payload)
@@ -290,7 +305,7 @@ private:
       }
 
       // request the next value
-      webSocket.sendTXT("get");
+      _sendText("get");
    }
 
 public:

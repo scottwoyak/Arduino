@@ -40,7 +40,7 @@ void setup()
    Serial.println("OK");
 
    rgbLedWrite(LED_BUILTIN, 0, 255, 0); // green while connecting to the server
-   client.setCallbacks(onConnected, onDisconnected, nullptr, onError, nullptr);
+   client.setCallbacks(onConnected, onDisconnected, onSendText, onReceiveText, onError, nullptr);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
    delay(1000); // just to show the LED
 }
@@ -65,6 +65,33 @@ void onError(std::string msg)
    Serial.println(msg.c_str());
    delay(1000); // time for Serial to print and LED to show
    Util::reset();
+}
+
+void replaceAll(std::string& str, const std::string& from, const std::string& to)
+{
+   if (from.empty()) return;
+   size_t start_pos = 0;
+   while ((start_pos = str.find(from, start_pos)) != std::string::npos)
+   {
+      str.replace(start_pos, from.length(), to);
+      start_pos += to.length(); // Move past the new replacement
+   }
+}
+
+void onSendText(std::string msg)
+{
+   Serial.print(">>> ");
+   replaceAll(msg, "\n", "\\n");
+   msg = '"' + msg + '"';
+   Serial.println(msg.c_str());
+}
+
+void onReceiveText(std::string msg)
+{
+   Serial.print("<<< ");
+   replaceAll(msg, "\n", "\\n");
+   msg = '"' + msg + '"';
+   Serial.println(msg.c_str());
 }
 
 void loop()
