@@ -36,6 +36,7 @@
     <File Path="libraries/Woyak/Influx.h" />
     <File Path="libraries/Woyak/ITempSensor.h" />
     <File Path="libraries/Woyak/Latch.h" />
+    <File Path="libraries/Woyak/Led.h" />
     <File Path="libraries/Woyak/Logger.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
     <File Path="libraries/Woyak/MultiBar.h" />
@@ -148,6 +149,10 @@
     <Deploy />
   </Project>
   <Project Path="Lake_Temp_Monitor/Lake_Temp_Monitor.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Led/Led.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
