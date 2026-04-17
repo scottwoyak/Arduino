@@ -165,7 +165,7 @@ public:
 
    bool begin(uint8_t oneWirePin, bool print)
    {
-      if (print) Serial.println("Creating DS18B20 sensor.");
+      if (print) Serial.println("Creating DS18B20 sensor");
       _sensor = new DS18B20TempSensor(oneWirePin);
       return _sensor->begin();
    }

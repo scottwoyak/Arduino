@@ -9,8 +9,8 @@
 Feather feather;
 TempSensor sensor;
 
-// create this define to use a DS18B20 sensor. If not defined, one of the I2C sensors will be auto detected
-//#define ONE_WIRE_PIN 5
+// use this define to use a DS18B20 sensor. If not defined, one of the I2C sensors will be auto detected
+#define ONE_WIRE_PIN 5
 
 Format tempFormat("###.## F");
 Format humFormat("###.#%");
@@ -34,10 +34,22 @@ void setup()
    feather.begin();
 
 #ifdef ONE_WIRE_PIN
-   sensor.begin(5, true);
+   sensor.begin(ONE_WIRE_PIN, true);
 #else
    sensor.begin();
 #endif
+
+   if (sensor.exists() == false)
+   {
+      Serial.println("No sensor detected");
+   }
+   else
+   {
+      Serial.println("Sensor:");
+      Serial.println("  Type: " + String(sensor.type()));
+      Serial.println("  ID: " + String(sensor.id()));
+      Serial.println("  Address: 0x" + String(sensor.address(), HEX));
+   }
 }
 
 Stopwatch sw;
