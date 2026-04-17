@@ -22,7 +22,7 @@ public:
    virtual bool begin()
    {
       _sensors.begin();
-      _sensors.setResolution(9);
+      _sensors.setResolution(12);
       return true;
    }
 
@@ -48,12 +48,14 @@ public:
    virtual float readTemperatureF()
    {
       _sensors.requestTemperaturesByIndex(0);
-      return _sensors.getTempFByIndex(0);
+      float value = _sensors.getTempFByIndex(0);
+      return (value == (float)DEVICE_DISCONNECTED_F) ? NAN : value;
    }
    virtual float readTemperatureC()
    {
       _sensors.requestTemperaturesByIndex(0);
-      return _sensors.getTempCByIndex(0);
+      float value = _sensors.getTempCByIndex(0);
+      return (value == (float)DEVICE_DISCONNECTED_C) ? NAN : value;
    }
 
    virtual float readHumidity() { return NAN; }
