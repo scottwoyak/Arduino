@@ -94,6 +94,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="DallasTemperature_Display/DallasTemperature_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Display_SH1107/Display_SH1107.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
