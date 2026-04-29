@@ -14,7 +14,7 @@ Format humFormat("##.#%");
 Format tempFormat("###.## F");
 Format countdownFormat("##");
 
-constexpr auto version = "v0.91";
+constexpr auto version = "v1.0";
 
 Feather feather;
 
@@ -33,14 +33,11 @@ Field* humFields[NUM_SENSORS];
 uint8_t sensorPorts[] = { 0, 1, 2, 3 };
 
 const char* locations[] = {
-   "Water 1",
-   "Water 2",
-   "Water 3",
-   "Water 4",
+   "Surface",
+   "3 Feet",
+   "Bottom",
+   "Deep",
 };
-
-constexpr float DISPLAY_TIMEOUT_S = 60;
-CountdownTimer timer(DISPLAY_TIMEOUT_S);
 
 void setup()
 {
@@ -112,18 +109,11 @@ void setup()
 
 void loop()
 {
-   if (feather.buttonA.wasPressed())
+   // reboot once a day
+   if (millis() > 24 * 60 * 60 * 1000)
    {
-      timer.reset();
-   }
-
-   if (timer.isExpired())
-   {
-      feather.displayOff();
-   }
-   else
-   {
-      feather.displayOn();
+      Serial.println("Rebooting after 24 hours of uptime");
+      Util::reset();
    }
 
    // Store measured value into point
@@ -161,7 +151,9 @@ void loop()
          feather.setTextSize(4);
          feather.println(temp, tempFormat, Color::VALUE);
          feather.setTextSize(2);
-         feather.println(hum, humFormat, Color::WHITE);
+         feather.print(hum, humFormat, Color::WHITE);
+         feather.printR(locations[i], Color::SUB_LABEL);
+         feather.println();
          feather.moveCursorY(feather.charH() / 2);
       }
       else
@@ -175,8 +167,7 @@ void loop()
    }
 
    feather.setTextSize(2);
-   feather.setCursorY(-feather.charH());
-   feather.print(ceilf(timer.remainingS()), countdownFormat, Color::SUB_LABEL);
+   feather.setCursorY(0);
    feather.printR(version, Color::SUB_LABEL);
 
    // Write point

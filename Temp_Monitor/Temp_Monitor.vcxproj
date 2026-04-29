@@ -128,7 +128,7 @@
   </ImportGroup>
   <ProjectExtensions>
     <VisualStudio>
-      <UserProperties arduino.upload.port="COM26" config.Debug.customdebug_esp32_adafruit_feather_esp32s3_tft_debugger_type="universal" />
+      <UserProperties arduino.upload.port="COM70" config.Debug.customdebug_esp32_adafruit_feather_esp32s3_tft_debugger_type="universal" />
     </VisualStudio>
   </ProjectExtensions>
 </Project>
