@@ -10,7 +10,7 @@ Feather feather;
 TempSensor sensor;
 
 // use this define to use a DS18B20 sensor. If not defined, one of the I2C sensors will be auto detected
-#define ONE_WIRE_PIN 5
+//#define ONE_WIRE_PIN 5
 
 Format tempFormat("###.## F");
 Format humFormat("###.#%");
