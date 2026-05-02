@@ -1,8 +1,9 @@
 #pragma once
 
-#include "Arduino.h"
-#include "Latch.h"
-#include "Util.h"
+#include <Arduino.h>
+#include <Latch.h>
+#include <Util.h>
+#include <Adafruit_NeoPixel.h>
 
 //
 // This class manages a LED where the user turns it on and off
@@ -21,24 +22,27 @@ public:
       _pin = pin;
    }
 
-   void begin()
+   virtual void begin()
    {
-      pinMode(_pin, OUTPUT);
-      digitalWrite(_pin, LOW);
+      if (_pin > 0)
+      {
+         pinMode(_pin, OUTPUT);
+         digitalWrite(_pin, LOW);
+      }
    }
 
-   bool isOn()
+   virtual bool isOn()
    {
       return _isOn;
    }
 
-   void turnOn()
+   virtual void turnOn()
    {
       analogWrite(_pin, _level);
       _isOn = _level > 0;
    }
 
-   void turnOff()
+   virtual void turnOff()
    {
       analogWrite(_pin, 0);
       _isOn = false;
@@ -49,19 +53,19 @@ public:
       _blinkIntervalMs = blinkIntervalMs;
    }
 
-   void setLevel(uint8_t level)
+   virtual void setLevel(uint8_t level)
    {
       _level = constrain(level, 0, 255);
       analogWrite(this->_pin, _level);
    }
 
-   void setLevel(float level)
+   virtual void setLevel(float level)
    {
       _level = constrain(255 * level, 0, 255);
       analogWrite(_pin, _level);
    }
 
-   void loop()
+   virtual void loop()
    {
       if (_blinkIntervalMs > 0)
       {
@@ -106,5 +110,51 @@ public:
       {
          xTimerStart(_timerHandle, 0); // Start the timer
       }
+   }
+};
+
+class NeoPixelLed : public Led
+{
+private:
+   Adafruit_NeoPixel _pixels;
+
+public:
+   NeoPixelLed(uint16_t numPixels, int8_t pin, neoPixelType type) : Led(0), _pixels(numPixels, pin, type)
+   {
+   }
+
+   virtual void begin()
+   {
+      _pixels.begin();
+      _pixels.show(); // Initialize all pixels to 'off'
+   }
+
+   virtual void setLevel(uint8_t level)
+   {
+      _pixels.setBrightness(level);
+   }
+
+   virtual void setLevel(float level)
+   {
+      _pixels.setBrightness(constrain(255 * level, 0, 255));
+      _pixels.show();
+   }
+
+   virtual void turnOn()
+   {
+      _pixels.setPixelColor(0, _pixels.getPixelColor(0));
+      _pixels.show();
+   }
+
+   virtual void turnOff()
+   {
+      _pixels.setPixelColor(0, 0, 0, 0);
+      _pixels.show();
+   }
+
+   void setColor(uint8_t r, uint8_t g, uint8_t b)
+   {
+      _pixels.setPixelColor(0, r, g, b);
+      _pixels.show();
    }
 };

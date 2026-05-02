@@ -4,14 +4,16 @@
 #include <Button.h>
 #include <string>
 #include <Preferences.h>
+#include <Led.h>
 
 class Feather_ESP32_S3 : public ArduinoWithDisplay
 {
 public:
    Button buttonA;
    Preferences preferences;
+   NeoPixelLed neoPixel;
 
-   Feather_ESP32_S3() : ArduinoWithDisplay(), buttonA(0)
+   Feather_ESP32_S3() : ArduinoWithDisplay(), buttonA(0), neoPixel(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800)
    {
    }
 
