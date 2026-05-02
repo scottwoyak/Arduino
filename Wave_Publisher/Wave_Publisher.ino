@@ -5,6 +5,7 @@
 #include "WiFiSettings.h"
 #include "TelemetryClient.h"
 #include "Url.h"
+#include <Stopwatch.h>
 
 Feather feather;
 constexpr uint8_t TRIGGER_PIN = 6;
@@ -16,7 +17,7 @@ Format distFormatIn("###.## in");
 WiFiMulti wifi;
 
 constexpr auto NUM_DECIMALS = 1;
-TelemetryPublisher client("Waves/Lake", NUM_DECIMALS);
+TelemetryPublisher client("Waves/Lake2", NUM_DECIMALS);
 
 void setup()
 {
@@ -88,6 +89,8 @@ void onReceiveText(std::string msg)
    Serial.println(msg.c_str());
 }
 
+Stopwatch sw;
+
 void loop()
 {
    if (client.isStarted())
@@ -102,7 +105,8 @@ void loop()
       long durationMicros = pulseIn(ECHO_PIN, HIGH);
       float distance = durationMicros * 0.034 / 2;
 
-      delay(100);
+      // avoid echos
+      delayMicroseconds(durationMicros);
 
       client.setValue(distance);
 
@@ -110,6 +114,9 @@ void loop()
       feather.setCursor(0, 0);
       feather.println(distance, distFormatCm, Color::VALUE);
       feather.println(distance * (1/2.54), distFormatIn, Color::VALUE);
+
+      Serial.println(sw.elapsedMillis() + String(" ms"));
+      sw.reset();
    }
    else
    {
