@@ -73,6 +73,44 @@ namespace Influx
       arduino->echoToSerial = false;
       arduino->clearDisplay();
    }
+
+   void begin(const char* wifiSSID, const char* wifiPassword, InfluxDBClient* client)
+   {
+      Serial.println("WiFi... ");
+
+      // Setup wifi
+      WiFi.mode(WIFI_STA);
+      wifiMulti.addAP(wifiSSID, wifiPassword);
+
+      while (wifiMulti.run() != WL_CONNECTED)
+      {
+         Serial.print(".");
+         delay(100);
+      }
+      Serial.println("ok");
+
+      // Accurate time is necessary for certificate validation and writing in batches
+      // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
+      // Syncing progress and the time will be printed to Serial.
+      Serial.print("Syncing Time... ");
+      timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
+      Serial.println("ok");
+
+      // Check server connection
+      Serial.print("Influx... ");
+
+      if (client->validateConnection())
+      {
+         Serial.println("ok");
+         Serial.println(client->getServerUrl());
+      }
+      else
+      {
+         Serial.println("FAILED");
+         Serial.println(client->getLastErrorMessage());
+         while (1);
+      }
+   }
 }
 
 //-------------------------------------------------------------------------------------------------
