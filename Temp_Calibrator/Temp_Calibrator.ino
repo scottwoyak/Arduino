@@ -219,6 +219,43 @@ void displaySavedInfo()
    }
 }
 
+void waitForButtonPress()
+{
+   feather.clearDisplay();
+
+   while (feather.buttonA.wasPressed() == false)
+   {
+      feather.setCursor(0, 0);
+      feather.setTextSize(3);
+
+      for (int i = 0; i < NUM_SENSORS; i++)
+      {
+         Multiplexer::select(i);
+         TempSensor* sensor = sensors[i];
+         float temp, hum;
+         sensors[i]->readBoth(temp, hum);
+         feather.print((i + 1), Color::LABEL);
+         feather.moveCursorX(feather.charW() / 2);
+         if (sensor->exists())
+         {
+            feather.println(temp, tempFormat, Color::VALUE);
+         }
+         else
+         {
+            feather.println("-----", Color::GRAY);
+         }
+      }
+
+      feather.setTextSize(2);
+      feather.setCursorY(feather.height() - 2*feather.charH());
+      feather.println("Press button", Color::GRAY);
+      feather.print("to begin", Color::GRAY);
+   }
+
+
+
+}
+
 void setup()
 {
    Wire.begin();
@@ -230,11 +267,6 @@ void setup()
    displaySavedInfo();
 
    client.setWriteOptions(WriteOptions().batchSize(NUM_SENSORS).bufferSize(2 * NUM_SENSORS));
-   feather.echoToSerial = true;
-   feather.clearDisplay();
-   feather.setTextSize(3);
-   feather.println("Init", Color::HEADING);
-   feather.moveCursorY(10);
 
    feather.setTextSize(3);
 
@@ -252,6 +284,14 @@ void setup()
       feather.preferences.putString((String("ID ") + i).c_str(), sensors[i]->id());
    }
    feather.preferences.end();
+
+   waitForButtonPress();
+
+   feather.echoToSerial = true;
+   feather.clearDisplay();
+   feather.setTextSize(3);
+   feather.println("Init", Color::HEADING);
+   feather.moveCursorY(10);
 
    // Setup wifi
    WiFi.mode(WIFI_STA);
