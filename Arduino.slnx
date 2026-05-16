@@ -20,6 +20,7 @@
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
     <File Path="libraries/Woyak/DS18B20TempSensor.h" />
+    <File Path="libraries/Woyak/ESP32TempSensor.h" />
     <File Path="libraries/Woyak/Feather.h" />
     <File Path="libraries/Woyak/Feather_ESP32_S3.h" />
     <File Path="libraries/Woyak/Feather_ESP32_S3_ST7796S.h" />
@@ -51,6 +52,7 @@
     <File Path="libraries/Woyak/SHT3xTempSensor.h" />
     <File Path="libraries/Woyak/SHT4xTempSensor.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
+    <File Path="libraries/Woyak/Status.h" />
     <File Path="libraries/Woyak/Stopwatch.h" />
     <File Path="libraries/Woyak/Structs.h" />
     <File Path="libraries/Woyak/TelemetryClient.h" />
@@ -138,6 +140,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="I2C_Port_Scanner_Zero/I2C_Port_Scanner_Zero.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="INA219_Display/INA219_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -165,6 +171,10 @@
     <Deploy />
   </Project>
   <Project Path="Led_Status/Led_Status.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Multi_Temp_Monitor/Multi_Temp_Monitor.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

@@ -128,20 +128,6 @@ private:
          }
       }
 
-      if (sensor != nullptr)
-      {
-         sensor->begin();
-         std::string id = sensor->id();
-         for (int i = 0; i < NUM_CORRECTIONS; i++)
-         {
-            if (id == CORRECTIONS[i].id)
-            {
-               _tempCorrectionF = CORRECTIONS[i].tempF;
-               _humCorrection = CORRECTIONS[i].hum;
-            }
-         }
-      }
-
       if (sensor == nullptr)
       {
          sensor = new NullSensor();
@@ -158,9 +144,29 @@ public:
    bool begin() { return begin(true); } // needed to implement ITempSensor
    bool begin(bool print)
    {
-      Wire.begin();
       _sensor = _create(print);
-      return _sensor->begin();
+
+      bool status = false;
+      if (_sensor != nullptr)
+      {
+         status = _sensor->begin();
+
+         if (status != false)
+         {
+            std::string id = _sensor->id();
+            for (int i = 0; i < NUM_CORRECTIONS; i++)
+            {
+               if (id == CORRECTIONS[i].id)
+               {
+                  _tempCorrectionF = CORRECTIONS[i].tempF;
+                  _humCorrection = CORRECTIONS[i].hum;
+                  break;
+               }
+            }
+         }
+      }
+
+      return status;
    }
 
    bool begin(uint8_t oneWirePin, bool print)
@@ -170,6 +176,12 @@ public:
       return _sensor->begin();
    }
 
+   bool begin(ITempSensor* sensor, bool print)
+   {
+      if (print) Serial.println("Using provided sensor");
+      _sensor = sensor;
+      return _sensor->begin();
+   }
 
    bool exists()
    {

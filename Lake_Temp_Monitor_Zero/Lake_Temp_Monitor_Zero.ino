@@ -6,6 +6,8 @@
 #include <string>
 #include <I2CMultiplexor.h>
 #include <CountdownTimer.h>
+#include <ESP32TempSensor.h>
+#include <Status.h>
 
 #include "WiFiSettings.h"
 
@@ -27,7 +29,17 @@ TempSensor* sensors[NUM_SENSORS];
 TimedPoint* points[NUM_SENSORS];
 Field* tempFields[NUM_SENSORS];
 Field* humFields[NUM_SENSORS];
-uint8_t sensorPorts[] = { 0, 1, 2, 3, 4 };
+uint8_t sensorPorts[] = { 1, 2, 3, 0, 4 };
+
+constexpr auto I2C_SCL = 7;
+constexpr auto I2C_SDA = 8;
+
+constexpr auto BLUE_LED_PIN = 3;
+constexpr auto GREEN_LED_PIN = 4;
+constexpr auto RED_LED_PIN = 6;
+
+LedStatus status(BLUE_LED_PIN, GREEN_LED_PIN);
+Led redLed(RED_LED_PIN);
 
 const char* locations[] = {
    "Baseline Surface",
@@ -51,12 +63,15 @@ void setup()
       humFields[i] = points[i]->addTimeAveragedField("humidity", 2);
    }
 
-   Wire.begin();
    SerialX::begin();
 
    SerialX::println("Initializing");
 
-   multi.begin();
+   // Initialize I2C with custom pins
+   Wire.begin(I2C_SDA, I2C_SCL);
+
+   status.begin();
+   redLed.begin();
 
    SerialX::print("Sensors... ");
    for (int i = 0; i < NUM_SENSORS; i++)
@@ -65,8 +80,19 @@ void setup()
       SerialX::print("Sensor ", i);
       SerialX::print(": ");
       SerialX::println(locations[i]);
-      multi.select(sensorPorts[i]);
-      if (sensors[i]->begin(true))
+
+      bool status;
+      if (i == NUM_SENSORS - 1)
+      {
+         status = sensors[i]->begin(new ESP32TempSensor(), true);
+      }
+      else
+      {
+         multi.select(sensorPorts[i]);
+         status = sensors[i]->begin(true);
+      }
+
+      if (status)
       {
          SerialX::println("         Type: ", sensors[i]->type());
          SerialX::println("      Address: ", sensors[i]->address());
@@ -81,16 +107,12 @@ void setup()
    }
    SerialX::println("ok");
 
-
-   Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client);
+   Influx::begin(&status, WIFI_SSID, WIFI_PASSWORD, &client);
 
    for (int i = 0; i < NUM_SENSORS; i++)
    {
       points[i]->addTag("location", locations[i]);
    }
-
-   feather.clearDisplay();
-   feather.echoToSerial = false;
 
    Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
 }
@@ -103,6 +125,8 @@ void loop()
       Serial.println("Rebooting after 24 hours of uptime");
       Util::reset();
    }
+
+   redLed.turnOff(); // turned on when uploading data
 
    // Store measured value into point
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
@@ -118,30 +142,30 @@ void loop()
    // Check WiFi connection and reconnect if needed
    if (wifiMulti.run() != WL_CONNECTED)
    {
-      feather.println("WiFi connection lost");
       Serial.println("WiFi connection lost");
       Util::reset(10);
    }
 
    // Write point
-   if (points[0]->ready())
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      digitalWrite(BUILTIN_LED, HIGH);
-
-      for (uint8_t i = 0; i < NUM_SENSORS; i++)
+      if (sensors[i]->exists() == false)
       {
-         if (sensors[i]->exists())
+         continue;
+      }
+
+      if (points[i]->ready())
+      {
+         redLed.turnOn();
+         if (points[i]->post(&client, true) == false)
          {
-            if (points[i]->post(&client) == false)
-            {
-               Serial.println("InfluxDB write failed: ");
-               Serial.println(client.getLastErrorMessage());
-            }
-            else
-            {
-               // only reset the Watchdog if we've had a successful write
-               Watchdog.reset();
-            }
+            Serial.println("InfluxDB write failed: ");
+            Serial.println(client.getLastErrorMessage());
+         }
+         else
+         {
+            // only reset the Watchdog if we've had a successful write
+            Watchdog.reset();
          }
       }
    }

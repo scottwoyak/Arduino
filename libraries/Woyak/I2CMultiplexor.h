@@ -12,10 +12,6 @@ public:
       this->_address = address;
    }
 
-   void begin() {
-      Wire.begin();
-   }
-
    void scan() {
       Serial.println("Scanning Ports for I2C addresses");
       for (uint8_t port = 0; port < 8; port++) {

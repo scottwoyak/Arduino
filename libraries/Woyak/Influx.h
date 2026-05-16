@@ -8,6 +8,8 @@ constexpr auto DEVICE = "ESP32";
 #include <TimedAverager.h>
 #include <InfluxDbClient.h>
 #include <InfluxDbCloud.h>
+#include <ArduinoWithDisplay.h>
+#include <Status.h>
 
 // Time zone info
 constexpr auto TZ_INFO = "UTC-5";
@@ -60,23 +62,11 @@ namespace Influx
       }
    }
 
-   void startInit(ArduinoWithDisplay* arduino)
-   {
-      arduino->echoToSerial = true;
-      arduino->clearDisplay();
-      arduino->println("Initializing", Color::HEADING);
-      arduino->moveCursorY(arduino->charH() / 2);
-   }
-
-   void endInit(ArduinoWithDisplay* arduino)
-   {
-      arduino->echoToSerial = false;
-      arduino->clearDisplay();
-   }
-
-   void begin(const char* wifiSSID, const char* wifiPassword, InfluxDBClient* client)
+   void begin(IStatus* status, const char* wifiSSID, const char* wifiPassword, InfluxDBClient* client)
    {
       Serial.println("WiFi... ");
+
+      status->setStatus(Status::WIFI_CONNECTING);
 
       // Setup wifi
       WiFi.mode(WIFI_STA);
@@ -88,6 +78,8 @@ namespace Influx
          delay(100);
       }
       Serial.println("ok");
+
+      status->setStatus(Status::WEB_CONNECTING);
 
       // Accurate time is necessary for certificate validation and writing in batches
       // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
@@ -103,6 +95,7 @@ namespace Influx
       {
          Serial.println("ok");
          Serial.println(client->getServerUrl());
+         status->setStatus(Status::READY);
       }
       else
       {
