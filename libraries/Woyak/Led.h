@@ -6,15 +6,25 @@
 #include <Adafruit_NeoPixel.h>
 
 //
-// This class manages a LED where the user turns it on and off
+// This class manages a LED that is programmatically turned on and off
 //
 class BasicLed
 {
-private:
+protected:
    uint8_t _pin;
-   uint8_t _blinkIntervalMs = 0;
+   uint16_t _blinkIntervalMs = 0;
    uint8_t _level = 255;
-   bool _isOn = false;
+   unsigned long _blinkStart = 0;
+
+   virtual void _on()
+   {
+      analogWrite(_pin, _level);
+   }
+
+   virtual void _off()
+   {
+      analogWrite(_pin, 0);
+   }
 
 public:
    BasicLed(uint8_t pin)
@@ -31,51 +41,50 @@ public:
       }
    }
 
-   virtual bool isOn()
-   {
-      return _isOn;
-   }
-
    virtual void turnOn()
    {
-      analogWrite(_pin, _level);
-      _isOn = _level > 0;
+      //Serial.println("----- Turning On " + String(_pin));
+      _blinkIntervalMs = 0; // no blinking
+      _on();
    }
 
    virtual void turnOff()
    {
-      analogWrite(_pin, 0);
-      _isOn = false;
+      //Serial.println("----- Turning Off " + String(_pin));
+      _blinkIntervalMs = 0;
+      _off();
    }
 
-   void setBlinkInterval(uint16_t blinkIntervalMs)
+   void blink(uint16_t blinkIntervalMs)
    {
+      // no idea why this is needed, but without it, all the leds blink
+      delayMicroseconds(50);
+
+      _blinkStart = millis();
       _blinkIntervalMs = blinkIntervalMs;
    }
 
    virtual void setLevel(uint8_t level)
    {
       _level = constrain(level, 0, 255);
-      analogWrite(this->_pin, _level);
    }
 
    virtual void setLevel(float level)
    {
       _level = constrain(255 * level, 0, 255);
-      analogWrite(_pin, _level);
    }
 
    virtual void loop()
    {
       if (_blinkIntervalMs > 0)
       {
-         if (millis() % (2 * _blinkIntervalMs) < _blinkIntervalMs)
+         if ((millis() - _blinkStart) % (2 * _blinkIntervalMs) < _blinkIntervalMs)
          {
-            turnOn();
+            _on();
          }
          else
          {
-            turnOff();
+            _off();
          }
       }
    }
@@ -87,7 +96,6 @@ public:
 class Led : public BasicLed
 {
 private:
-   TimerHandle_t _timerHandle = nullptr;
 
    static void _timerCallback(TimerHandle_t xTimer)
    {
@@ -95,24 +103,34 @@ private:
       led->loop();
    }
 
+   void _startTimer()
+   {
+      TimerHandle_t timerHandle = xTimerCreate(
+         "BlinkTimer",     // only used for debugging
+         pdMS_TO_TICKS(1), // tick interval in ms
+         pdTRUE,           // auto-reload
+         this,             // user data
+         _timerCallback);  // callback function
+
+      if (timerHandle != nullptr)
+      {
+         xTimerStart(timerHandle, 0); // Start the timer
+      }
+   }
+
 public:
    Led(uint8_t pin) : BasicLed(pin)
-   {
-   }
+   {}
 
    void begin()
    {
       BasicLed::begin();
 
-      _timerHandle = xTimerCreate("BlinkTimer", pdMS_TO_TICKS(1), pdTRUE, this, _timerCallback);
-
-      if (_timerHandle != nullptr)
-      {
-         xTimerStart(_timerHandle, 0); // Start the timer
-      }
+      _startTimer();
    }
 };
 
+// TODO blinking doesn't work with NeoPixels. When _pixels.show() is called, it kills the timer
 class NeoPixelLed : public Led
 {
 private:
@@ -120,41 +138,31 @@ private:
 
 public:
    NeoPixelLed(uint16_t numPixels, int8_t pin, neoPixelType type) : Led(0), _pixels(numPixels, pin, type)
-   {
-   }
+   {}
 
    virtual void begin()
    {
+      Led::begin();
+
       _pixels.begin();
-      _pixels.show(); // Initialize all pixels to 'off'
-   }
-
-   virtual void setLevel(uint8_t level)
-   {
-      _pixels.setBrightness(level);
-   }
-
-   virtual void setLevel(float level)
-   {
-      _pixels.setBrightness(constrain(255 * level, 0, 255));
+      _pixels.setBrightness(0);
       _pixels.show();
    }
 
-   virtual void turnOn()
+   virtual void _on() override
    {
-      _pixels.setPixelColor(0, _pixels.getPixelColor(0));
+      _pixels.setBrightness(_level);
       _pixels.show();
    }
 
-   virtual void turnOff()
+   virtual void _off() override
    {
-      _pixels.setPixelColor(0, 0, 0, 0);
+      _pixels.setBrightness(0);
       _pixels.show();
    }
 
    void setColor(uint8_t r, uint8_t g, uint8_t b)
    {
       _pixels.setPixelColor(0, r, g, b);
-      _pixels.show();
    }
 };

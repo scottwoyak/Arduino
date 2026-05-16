@@ -1,36 +1,30 @@
-#include "Led.h"
+#include <Status.h>
 
-Led ledBlue(3);
-Led ledGreen(6);
-Led ledRed(4);
+constexpr auto BLUE_LED_PIN = 2;
+constexpr auto GREEN_LED_PIN = 3;
+constexpr auto RED_LED_PIN = 4;
+constexpr auto WHITE_LED_PIN = 5;
+constexpr auto NEO_LED_PIN = 21;
+
+LedStatus status(WHITE_LED_PIN, BLUE_LED_PIN, GREEN_LED_PIN);
+//NeoLedStatus status(NEO_LED_PIN);
 
 void setup()
 {
-   ledBlue.begin();
-   ledGreen.begin();
-   ledRed.begin();
-
-ledRed.turnOn();
-
-/*
-   ledGreen.setLevel(0.5f);
-
-   ledBlue.setBlinkInterval(500);
-   delay(2000);
-
-   ledBlue.setBlinkInterval(0);
-   ledGreen.setBlinkInterval(500);
-   delay(2000);
-
-
-   ledGreen.setBlinkInterval(0);
-
-
-   ledRed.setBlinkInterval(100);
-*/
+   status.begin();
 }
 
-// the loop function runs over and over again until power down or reset
 void loop()
 {
+   status.setStatus(Status::NONE);
+   delay(1200);
+
+   status.setStatus(Status::WIFI_CONNECTING);
+   delay(2200);
+
+   status.setStatus(Status::WEB_CONNECTING);
+   delay(2000);
+
+   status.setStatus(Status::READY);
+   delay(5000);
 }
