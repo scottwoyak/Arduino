@@ -136,6 +136,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="I2C_Multiplexor_Scanner/I2C_Multiplexor_Scanner.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="I2C_Port_Scanner/I2C_Port_Scanner.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
