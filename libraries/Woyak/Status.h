@@ -30,7 +30,10 @@ private:
 public:
    LedStatus(uint8_t powerPin, uint8_t wifiPin, uint8_t webPin) : _powerLed(powerPin), _wifiLed(wifiPin), _webLed(webPin)
    {
-      _webLed.setLevel(0.15f);
+      // equalize the brightness of the leds, since they may be different colors
+      _powerLed.setLevel(0.30f); // white
+      _wifiLed.setLevel(1.0f);   // blue
+      _webLed.setLevel(0.20f);   // green
    }
 
    void begin() override
@@ -98,17 +101,24 @@ public:
       switch (status)
       {
       case Status::NONE:
+         _neo.turnOff();
+         break;
+
+      case Status::STARTED:
          _neo.setColor(255, 255, 255);
          _neo.turnOn();
          break;
+
       case Status::WIFI_CONNECTING:
          _neo.setColor(0, 0, 255);
          _neo.blink(BLINK_INTERVAL_MS);
          break;
+
       case Status::WEB_CONNECTING:
          _neo.setColor(0, 255, 0);
          _neo.blink(BLINK_INTERVAL_MS);
          break;
+
       case Status::READY:
          _neo.setColor(0, 255, 0);
          _neo.turnOn();
