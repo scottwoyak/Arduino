@@ -29,24 +29,25 @@ TempSensor* sensors[NUM_SENSORS];
 TimedPoint* points[NUM_SENSORS];
 Field* tempFields[NUM_SENSORS];
 Field* humFields[NUM_SENSORS];
-uint8_t sensorPorts[] = { 1, 2, 3, 0, 4 };
+uint8_t sensorPorts[] = { 0, 1, 2, 3, 4 }; // last port not used - directly talks to ESP32
 
-constexpr auto I2C_SCL = 7;
-constexpr auto I2C_SDA = 8;
+constexpr auto I2C_SCL = 8;
+constexpr auto I2C_SDA = 7;
 
-constexpr auto BLUE_LED_PIN = 3;
-constexpr auto GREEN_LED_PIN = 4;
-constexpr auto RED_LED_PIN = 6;
+constexpr auto BLUE_LED_PIN = 2;
+constexpr auto GREEN_LED_PIN = 3;
+constexpr auto RED_LED_PIN = 4;
+constexpr auto WHITE_LED_PIN = 5;
 
-LedStatus status(BLUE_LED_PIN, GREEN_LED_PIN);
+LedStatus status(WHITE_LED_PIN, BLUE_LED_PIN, GREEN_LED_PIN);
 Led redLed(RED_LED_PIN);
 
 const char* locations[] = {
-   "Baseline Surface",
-   "Baseline 3 Feet",
-   "Baseline Bottom",
-   "Baseline Enclosure",
-   "Baseline CPU",
+   "New Surface",
+   "New 3 Feet",
+   "New Bottom",
+   "New Enclosure",
+   "New CPU",
 };
 
 void setup()
@@ -113,6 +114,9 @@ void setup()
    {
       points[i]->addTag("location", locations[i]);
    }
+
+   // keep things cool
+   setCpuFrequencyMhz(80);
 
    Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
 }
