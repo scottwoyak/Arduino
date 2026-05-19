@@ -8,7 +8,12 @@ constexpr auto NUM_MULTIPLEXOR_PORTS = 8;
 
 void setup()
 {
+#if defined WAVESHARE_ESP32S3_ZERO
+#pragma message "Detected Waveshare ESP32-S3-Zero"
    Wire.begin(I2C_SDA, I2C_SCL);
+#else
+   Wire.begin();
+#endif
 
    Serial.begin(115200);
    while (!Serial)
