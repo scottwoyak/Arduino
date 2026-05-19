@@ -66,7 +66,7 @@ TimedAverager* hums[] =
 };
 
 TimedAverager* tavgs[] = {
-   new TimedAverager(1000*CORRECTION_AVG_S),
+   new TimedAverager(1000 * CORRECTION_AVG_S),
    new TimedAverager(1000 * CORRECTION_AVG_S),
    new TimedAverager(1000 * CORRECTION_AVG_S),
    new TimedAverager(1000 * CORRECTION_AVG_S),
@@ -247,7 +247,7 @@ void waitForButtonPress()
       }
 
       feather.setTextSize(2);
-      feather.setCursorY(feather.height() - 2*feather.charH());
+      feather.setCursorY(feather.height() - 2 * feather.charH());
       feather.println("Press button", Color::GRAY);
       feather.print("to begin", Color::GRAY);
    }
