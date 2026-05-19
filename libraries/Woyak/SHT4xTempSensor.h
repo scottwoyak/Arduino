@@ -12,8 +12,8 @@ private:
 
 public:
    SHT4xTempSensor(uint8_t address = SHT4x_DEFAULT_ADDR) : I2CTempSensor("SHT4x", address)
-   {
-   }
+   {}
+
    virtual bool begin()
    {
       if (sht.begin())
@@ -29,32 +29,53 @@ public:
    virtual float readTemperatureF()
    {
       sensors_event_t humidity, temp;
-      sht.getEvent(&humidity, &temp);
-
-      return Util::C2F(temp.temperature);
+      if (sht.getEvent(&humidity, &temp))
+      {
+         return Util::C2F(temp.temperature);
+      }
+      else
+      {
+         return NAN;
+      }
    }
    virtual float readTemperatureC()
    {
       sensors_event_t humidity, temp;
-      sht.getEvent(&humidity, &temp);
-
-      return temp.temperature;
+      if (sht.getEvent(&humidity, &temp))
+      {
+         return temp.temperature;
+      }
+      else
+      {
+         return NAN;
+      }
    }
    virtual float readHumidity()
    {
       sensors_event_t humidity, temp;
-      sht.getEvent(&humidity, &temp);
-
-      return humidity.relative_humidity;
+      if (sht.getEvent(&humidity, &temp))
+      {
+         return humidity.relative_humidity;
+      }
+      else
+      {
+         return NAN;
+      }
    }
    virtual bool readsBoth() { return true; }
    virtual void readBoth(float& tempF, float& hum)
    {
       sensors_event_t h, t;
-      sht.getEvent(&h, &t);
-
-      tempF = Util::C2F(t.temperature);
-      hum = h.relative_humidity;
+      if (sht.getEvent(&h, &t))
+      {
+         tempF = Util::C2F(t.temperature);
+         hum = h.relative_humidity;
+      }
+      else
+      {
+         tempF = NAN;
+         hum = NAN;
+      }
    }
 
    static SHT4xTempSensor* tryCreate()
