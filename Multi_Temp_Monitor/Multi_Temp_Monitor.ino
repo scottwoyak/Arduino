@@ -64,8 +64,6 @@ void setup()
    feather.println("Initializing", Color::HEADING);
    feather.moveCursorY(feather.charH() / 2);
 
-   multi.begin();
-
    feather.print("Sensors... ", Color::LABEL);
    for (int i = 0; i < NUM_SENSORS; i++)
    {
