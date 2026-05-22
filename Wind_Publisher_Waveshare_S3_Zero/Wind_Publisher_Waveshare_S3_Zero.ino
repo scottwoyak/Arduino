@@ -1,28 +1,39 @@
 
 //
-// Wind Publisher for Waveshare S3 Zero
+// Wind Publisher
 //
 
 #include <WiFiMulti.h>
-#include "SerialX.h"
-#include "WiFiSettings.h"
-#include "TelemetryClient.h"
-#include "Url.h"
-#include "WindMeter.h"
+#include <SerialX.h>
+#include <WiFiSettings.h>
+#include <TelemetryClient.h>
+#include <Url.h>
+#include <WindMeter.h>
+#include <Status.h>
 
 WiFiMulti wifi;
 
-constexpr auto NUM_DECIMALS = 2;
-TelemetryPublisher client("Wind/Studio", NUM_DECIMALS);
+constexpr uint8_t NUM_DECIMALS = 2;
+TelemetryPublisher client("Wind/Lake", NUM_DECIMALS);
 
-constexpr auto WIND_PIN = 1;
+constexpr uint8_t WIND_PIN = 13;
 WindMeter wind(WIND_PIN, 0);
+
+constexpr auto WHITE_LED_PIN = 10;
+constexpr auto BLUE_LED_PIN = 9;
+constexpr auto GREEN_LED_PIN = 8;
+constexpr auto RED_LED_PIN = 7;
+
+LedStatus status(WHITE_LED_PIN, BLUE_LED_PIN, GREEN_LED_PIN);
+
+Led redLed(7);
 
 void setup()
 {
-   pinMode(LED_BUILTIN, OUTPUT);
-   rgbLedWrite(LED_BUILTIN, 255, 255, 255);
-   delay(1000); // just to show the LED
+   status.begin();
+   redLed.begin();
+
+   status.setStatus(Status::STARTED);
 
    SerialX::begin();
    Serial.println("Wind Publisher");
@@ -30,7 +41,7 @@ void setup()
    wind.begin();
 
    // Connect to WiFi
-   rgbLedWrite(LED_BUILTIN, 0, 0, 255); // blue while connecting to WiFi
+   status.setStatus(Status::WIFI_CONNECTING);
    wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
    Serial.print("WiFi...");
    while (wifi.run() != WL_CONNECTED)
@@ -39,20 +50,21 @@ void setup()
    }
    Serial.println("OK");
 
-   rgbLedWrite(LED_BUILTIN, 0, 255, 0); // green while connecting to the server
+   status.setStatus(Status::WEB_CONNECTING);
    client.setCallbacks(onConnected, onDisconnected, onSendText, onReceiveText, onError, nullptr);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
-   delay(1000); // just to show the LED
+
+   setCpuFrequencyMhz(80); // keep things cool  
 }
 
 void onConnected()
 {
    Serial.println("Connected");
+   status.setStatus(Status::READY);
 }
 
 void onDisconnected()
 {
-   rgbLedWrite(LED_BUILTIN, 255, 0, 0); // red on error
    Serial.println("Disconnected");
    delay(1000); // time for Serial to print and LED to show
    Util::reset();
@@ -60,7 +72,6 @@ void onDisconnected()
 
 void onError(std::string msg)
 {
-   rgbLedWrite(LED_BUILTIN, 255, 0, 0); // red on error
    Serial.print("Error: ");
    Serial.println(msg.c_str());
    delay(1000); // time for Serial to print and LED to show
@@ -101,12 +112,11 @@ void loop()
       // Waveshare crashes if we set the LED value in the interrupt, so we manually do it
       if (wind.ledState())
       {
-         // orange
-         rgbLedWrite(LED_BUILTIN, 255, 165, 0);
+         redLed.turnOn();
       }
       else
       {
-         digitalWrite(LED_BUILTIN, LOW);
+         redLed.turnOff();
       }
 
       // without a delay, the waveshare crashes
