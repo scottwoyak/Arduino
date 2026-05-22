@@ -1,3 +1,4 @@
+
 #include <WiFiMulti.h>
 #include "SerialX.h"
 #include "WiFiSettings.h"
@@ -5,8 +6,12 @@
 #include "Url.h"
 #include <Stopwatch.h>
 
+Feather feather;
 constexpr uint8_t TRIGGER_PIN = 6;
 constexpr uint8_t ECHO_PIN = 5;
+
+Format distFormatCm("###.## cm");
+Format distFormatIn("###.## in");
 
 WiFiMulti wifi;
 
@@ -15,8 +20,9 @@ TelemetryPublisher client("Waves/Lake", NUM_DECIMALS);
 
 void setup()
 {
+   feather.begin();
    SerialX::begin();
-   Serial.println("Wave Publisher");
+   Serial.println("Wave Publisher Display");
 
    pinMode(TRIGGER_PIN, OUTPUT);
    pinMode(ECHO_PIN, INPUT);
@@ -96,17 +102,26 @@ void loop()
       digitalWrite(TRIGGER_PIN, LOW);
 
       long durationMicros = pulseIn(ECHO_PIN, HIGH);
-      float distanceCM = durationMicros * 0.034 / 2;
-      float distanceIN = distanceCM * (1 / 2.54);
-      client.setValue(distanceCM);
+      float distance = durationMicros * 0.034 / 2;
 
       // avoid echos
-      delayMicroseconds(2 * durationMicros);
+      delayMicroseconds(durationMicros);
 
-      Serial.print("Distance: " + String(distanceCM) + " cm   " + String(distanceIN) + " in   ");
-      Serial.println(sw.elapsedMillis() + String(" ms = ") + String(1000.0 / sw.elapsedMillis()) + " per sec");
+      client.setValue(distance);
+
+      feather.setTextSize(5);
+      feather.setCursor(0, 0);
+      feather.println(distance, distFormatCm, Color::VALUE);
+      feather.println(distance * (1/2.54), distFormatIn, Color::VALUE);
+
+      Serial.println(sw.elapsedMillis() + String(" ms"));
       sw.reset();
-
+   }
+   else
+   {
+      feather.setTextSize(3);
+      feather.setCursor(0, 0);
+      feather.println("Not Connected", Color::WHITE);
    }
 
    client.loop(); // Continuously poll for events and maintain connection
