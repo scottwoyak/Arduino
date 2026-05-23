@@ -82,8 +82,6 @@ void onReceiveText(std::string msg)
    Serial.println(msg.c_str());
 }
 
-Stopwatch sw;
-
 void loop()
 {
    if (client.isStarted())
@@ -101,12 +99,9 @@ void loop()
       client.setValue(distanceCM);
 
       // avoid echos
-      delayMicroseconds(2 * durationMicros);
+      delay(50);
 
-      Serial.print("Distance: " + String(distanceCM) + " cm   " + String(distanceIN) + " in   ");
-      Serial.println(sw.elapsedMillis() + String(" ms = ") + String(1000.0 / sw.elapsedMillis()) + " per sec");
-      sw.reset();
-
+      Serial.println("Distance: " + String(distanceCM) + " cm   " + String(distanceIN) + " in   ");
    }
 
    client.loop(); // Continuously poll for events and maintain connection
