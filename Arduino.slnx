@@ -112,6 +112,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Display_ST7789_LovyanGFX/Display_ST7789_LovyanGFX.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Display_ST7796S/Display_ST7796S.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

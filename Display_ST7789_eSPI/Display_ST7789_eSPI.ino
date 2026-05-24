@@ -25,7 +25,7 @@ void loop()
 
    tft.setCursor(0, 0);
 
-//#define OLD_FONTS
+#define OLD_FONTS
 #ifdef OLD_FONTS
 
    // this code is for drawing the traditional Adafruit style block fonts
