@@ -1,18 +1,20 @@
 
 #include <TFT_eSPI.h>
+#include <RunningAverager.h>
 
 #include <Scott16.h>
 #include <Scott32.h>
 
-TFT_eSPI tft;
+TFT_eSPI display;
+RunningAverager fps(100);
 
 // The setup() function runs once each time the micro-controller starts
 void setup()
 {
-   tft.init();
-   tft.setRotation(1);
-   tft.fillScreen(TFT_BLACK);
-   tft.setTextColor(TFT_WHITE, TFT_BLACK);
+   display.init();
+   display.setRotation(1);
+   display.fillScreen(TFT_BLACK);
+   display.setTextColor(TFT_WHITE, TFT_BLACK);
 }
 
 long lastMicros = micros();
@@ -21,23 +23,21 @@ long lastMicros = micros();
 void loop()
 {
    unsigned long newMicros = micros();
-   float fps = 1000000.0 / (newMicros - lastMicros);
+   fps.set(1000000.0 / (newMicros - lastMicros));
 
-   tft.setCursor(0, 0);
+   display.setCursor(0, 0);
 
-#define OLD_FONTS
+//#define OLD_FONTS
 #ifdef OLD_FONTS
 
    // this code is for drawing the traditional Adafruit style block fonts
-   tft.setTextSize(4);
-   tft.println(random(9999));
-   tft.println(random(9999));
-   tft.println(random(9999));
+   display.setTextSize(4);
+   display.println(random(9999));
+   display.println(random(9999));
+   display.println(random(9999));
 
-   tft.setTextSize(2);
-   tft.setCursor(0, tft.height() - 16);
-   tft.print(fps, 1);
-   tft.print(" fps ");
+   display.setTextSize(2);
+   display.setCursor(0, display.height() - 16);
 
 #else
 
@@ -50,18 +50,20 @@ void loop()
    // functions (drawNumber, drawFloat) to manually align digits
    //
 
-   tft.loadFont(Scott32);
-   tft.setTextColor(TFT_WHITE, TFT_BLACK, true);
-   tft.println(random(9999));
-   tft.println(random(9999));
-   tft.println(random(9999));
+   display.loadFont(Scott32);
+   display.setTextColor(TFT_WHITE, TFT_BLACK, true);
+   display.println(random(9999));
+   display.println(random(9999));
+   display.println(random(9999));
 
-   tft.loadFont(Scott16);
-   tft.setCursor(0, tft.height() - tft.fontHeight());
-   tft.drawFloat(fps, 1, tft.getCursorX(), tft.getCursorY());
-   tft.print(" fps  ");
+   display.loadFont(Scott16);
+   display.setCursor(0, display.height() - display.fontHeight());
 
 #endif
+
+   display.print("FPS: ");
+   display.print(fps.get(), 1);
+   display.print("  "); // erase any remaining characters from previous loop
 
    lastMicros = newMicros;
 }

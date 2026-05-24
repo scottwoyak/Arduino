@@ -1,8 +1,10 @@
 #include <Adafruit_ST7789.h> // TFT display
+#include <RunningAverager.h>
 
 // if any of the TFT defines are not found, it is because the correct board
 // is not selected. Needs to be Adafruit Feather ESP32-S3
 Adafruit_ST7789 display(TFT_CS, TFT_DC, TFT_RST);
+RunningAverager fps(100);
 
 // The setup() function runs once each time the micro-controller starts
 void setup()
@@ -29,7 +31,7 @@ long lastMicros = micros();
 void loop()
 {
    long newMicros = micros();
-   double fps = 1000000.0 / (newMicros - lastMicros);
+   fps.set(1000000.0 / (newMicros - lastMicros));
 
    display.setTextSize(4);
    display.setCursor(0, 0);
@@ -39,7 +41,7 @@ void loop()
 
    display.setTextSize(2);
    display.setCursor(0, display.height() - 16);
-   display.print(fps, 1);
+   display.print(fps.get(), 1);
    display.print(" fps ");
 
    lastMicros = newMicros;

@@ -1,6 +1,8 @@
-#include "Feather_ESP32_S3.h"
+#include <Feather_ESP32_S3.h>
+#include <RunningAverager.h>
 
 Feather_ESP32_S3 feather;
+RunningAverager fps(100);
 
 void setup()
 {
@@ -13,7 +15,7 @@ long lastMicros = micros();
 void loop()
 {
    long newMicros = micros();
-   double fps = 1000000.0 / (newMicros - lastMicros);
+   fps.set(1000000.0 / (newMicros - lastMicros));
 
    // note: this display isn't double buffered. Past contents are not cleared,
    // but text characters overwrite past content. That's why there is an extra
@@ -28,7 +30,7 @@ void loop()
    feather.println(feather.buttonA.isPressed() ? "TRUE " : "FALSE", Color::VALUE);
 
    feather.setCursor(0, -feather.charH());
-   feather.print(fps, 1);
+   feather.print(fps.get(), 1);
    feather.print(" fps ");
 
    lastMicros = newMicros;
