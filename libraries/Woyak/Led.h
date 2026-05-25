@@ -157,11 +157,16 @@ public:
    {
       if (_isOn)
       {
+         // normalize rgb levels to total 1
+         float r = _redLevel / (_redLevel + _greenLevel + _blueLevel);
+         float g = _greenLevel / (_redLevel + _greenLevel + _blueLevel);
+         float b = _blueLevel / (_redLevel + _greenLevel + _blueLevel);
+
          Serial.println("Setting: "
-            + String(_level * _redLevel) + " " + String(_level * _greenLevel) + " " + String(_level * _blueLevel));
-         analogWrite(_redPin, _level * _redLevel);
-         analogWrite(_greenPin, _level * _greenLevel);
-         analogWrite(_bluePin, _level * _blueLevel);
+            + String(_level * r) + " " + String(_level * g) + " " + String(_level * b));
+         analogWrite(_redPin, _level * r);
+         analogWrite(_greenPin, _level * g);
+         analogWrite(_bluePin, _level * b);
       }
       else
       {

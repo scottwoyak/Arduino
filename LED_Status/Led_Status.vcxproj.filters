@@ -15,11 +15,11 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Status.ino" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="__vm\.Led_Status.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="LED_Status.ino" />
   </ItemGroup>
 </Project>
