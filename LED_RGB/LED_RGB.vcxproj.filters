@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="LED.ino" />
+    <ClCompile Include="LED_RGB.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.Led.vsarduino.h">
+    <ClInclude Include="__vm\.LED_RGB.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

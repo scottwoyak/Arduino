@@ -8,26 +8,29 @@
 //
 // This class manages a LED that is programmatically turned on and off
 //
-class BasicLed
+class BasicLED
 {
 protected:
    uint8_t _pin;
    uint16_t _blinkIntervalMs = 0;
    uint8_t _level = 255;
+   bool _isOn = false;
    unsigned long _blinkStart = 0;
 
-   virtual void _on()
+   virtual void _apply()
    {
-      analogWrite(_pin, _level);
-   }
-
-   virtual void _off()
-   {
-      analogWrite(_pin, 0);
+      if (_isOn)
+      {
+         analogWrite(_pin, _level);
+      }
+      else
+      {
+         analogWrite(_pin, 0);
+      }
    }
 
 public:
-   BasicLed(uint8_t pin)
+   BasicLED(uint8_t pin)
    {
       _pin = pin;
    }
@@ -43,16 +46,16 @@ public:
 
    virtual void turnOn()
    {
-      //Serial.println("----- Turning On " + String(_pin));
+      _isOn = true;
       _blinkIntervalMs = 0; // no blinking
-      _on();
+      _apply();
    }
 
    virtual void turnOff()
    {
-      //Serial.println("----- Turning Off " + String(_pin));
+      _isOn = false;
       _blinkIntervalMs = 0;
-      _off();
+      _apply();
    }
 
    void blink(uint16_t blinkIntervalMs)
@@ -78,14 +81,8 @@ public:
    {
       if (_blinkIntervalMs > 0)
       {
-         if ((millis() - _blinkStart) % (2 * _blinkIntervalMs) < _blinkIntervalMs)
-         {
-            _on();
-         }
-         else
-         {
-            _off();
-         }
+         _isOn = ((millis() - _blinkStart) % (2 * _blinkIntervalMs) < _blinkIntervalMs);
+         _apply();
       }
    }
 };
@@ -93,13 +90,13 @@ public:
 //
 // This class uses an ESP32 software timer to manage the led. The user doesn't have to call loop()
 //
-class Led : public BasicLed
+class LED : public BasicLED
 {
 private:
 
    static void _timerCallback(TimerHandle_t xTimer)
    {
-      Led* led = static_cast<Led*>(pvTimerGetTimerID(xTimer));
+      LED* led = static_cast<LED*>(pvTimerGetTimerID(xTimer));
       led->loop();
    }
 
@@ -119,50 +116,67 @@ private:
    }
 
 public:
-   Led(uint8_t pin) : BasicLed(pin)
+   LED(uint8_t pin) : BasicLED(pin)
    {}
 
    void begin()
    {
-      BasicLed::begin();
+      BasicLED::begin();
 
       _startTimer();
    }
 };
 
-// TODO blinking doesn't work with NeoPixels. When _pixels.show() is called, it kills the timer
-class NeoPixelLed : public Led
+class RGBLED : public LED
 {
 private:
-   Adafruit_NeoPixel _pixels;
+   uint8_t _redPin;
+   uint8_t _greenPin;
+   uint8_t _bluePin;
+
+   float _redLevel = 1.0f;
+   float _greenLevel = 1.0f;
+   float _blueLevel = 1.0f;
 
 public:
-   NeoPixelLed(uint16_t numPixels, int8_t pin, neoPixelType type) : Led(0), _pixels(numPixels, pin, type)
+   RGBLED(uint8_t redPin, uint8_t greenPin, uint8_t bluePin) : LED(0), _redPin(redPin), _greenPin(greenPin), _bluePin(bluePin)
    {}
 
-   virtual void begin()
+   virtual void begin() override
    {
-      Led::begin();
-
-      _pixels.begin();
-      _pixels.setBrightness(0);
-      _pixels.show();
+      LED::begin();
+      pinMode(_redPin, OUTPUT);
+      digitalWrite(_redPin, LOW);
+      pinMode(_greenPin, OUTPUT);
+      digitalWrite(_greenPin, LOW);
+      pinMode(_bluePin, OUTPUT);
+      digitalWrite(_bluePin, LOW);
    }
 
-   virtual void _on() override
+   virtual void _apply() override
    {
-      _pixels.setBrightness(_level);
-      _pixels.show();
+      if (_isOn)
+      {
+         Serial.println("Setting: "
+            + String(_level * _redLevel) + " " + String(_level * _greenLevel) + " " + String(_level * _blueLevel));
+         analogWrite(_redPin, _level * _redLevel);
+         analogWrite(_greenPin, _level * _greenLevel);
+         analogWrite(_bluePin, _level * _blueLevel);
+      }
+      else
+      {
+         Serial.println("Turning off");
+         analogWrite(_redPin, 0);
+         analogWrite(_greenPin, 0);
+         analogWrite(_bluePin, 0);
+      }
    }
 
-   virtual void _off() override
+   void setColor(float redLevel, float greenLevel, float blueLevel)
    {
-      _pixels.setBrightness(0);
-      _pixels.show();
-   }
-
-   void setColor(uint8_t r, uint8_t g, uint8_t b)
-   {
-      _pixels.setPixelColor(0, r, g, b);
+      _redLevel = constrain(redLevel, 0.0f, 1.0f);
+      _greenLevel = constrain(greenLevel, 0.0f, 1.0f);
+      _blueLevel = constrain(blueLevel, 0.0f, 1.0f);
+      _apply();
    }
 };

@@ -1,6 +1,6 @@
-#include "Led.h"
+#include <LED.h>
 
-Led led(BUILTIN_LED);
+LED led(BUILTIN_LED);
 
 void setup()
 {
@@ -8,7 +8,6 @@ void setup()
    led.blink(200);
 }
 
-// the loop function runs over and over again until power down or reset
 void loop()
 {
 }

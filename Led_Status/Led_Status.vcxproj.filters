@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Led_Status.ino" />
+    <ClCompile Include="Status.ino" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="__vm\.Led_Status.vsarduino.h">

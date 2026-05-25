@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Led.h"
+#include <LED.h>
 
 constexpr auto BLINK_INTERVAL_MS = 300;
 
@@ -23,9 +23,9 @@ public:
 class LedStatus : public IStatus
 {
 private:
-   Led _powerLed;
-   Led _wifiLed;
-   Led _webLed;
+   LED _powerLed;
+   LED _wifiLed;
+   LED _webLed;
 
 public:
    LedStatus(uint8_t powerPin, uint8_t wifiPin, uint8_t webPin) : _powerLed(powerPin), _wifiLed(wifiPin), _webLed(webPin)
@@ -81,18 +81,18 @@ public:
    }
 };
 
-class NeoLedStatus : public IStatus
+class RGBLEDStatus : public IStatus
 {
 private:
-   NeoPixelLed _neo;
+   RGBLED _led;
 
 public:
-   NeoLedStatus(uint8_t neoPin) : _neo(1, neoPin, NEO_RGB + NEO_KHZ800)
+   RGBLEDStatus(uint8_t redPin, uint8_t greenPin, uint8_t bluePin) : _led(redPin, greenPin, bluePin)
    {}
 
    void begin() override
    {
-      _neo.begin();
+      _led.begin();
       setStatus(Status::NONE);
    }
 
@@ -101,27 +101,27 @@ public:
       switch (status)
       {
       case Status::NONE:
-         _neo.turnOff();
+         _led.turnOff();
          break;
 
       case Status::STARTED:
-         _neo.setColor(255, 255, 255);
-         _neo.turnOn();
+         _led.setColor(1.0f, 1.0f, 1.0f);
+         _led.turnOn();
          break;
 
       case Status::WIFI_CONNECTING:
-         _neo.setColor(0, 0, 255);
-         _neo.blink(BLINK_INTERVAL_MS);
+         _led.setColor(0.0f, 0.0f, 1.0f);
+         _led.blink(BLINK_INTERVAL_MS);
          break;
 
       case Status::WEB_CONNECTING:
-         _neo.setColor(0, 255, 0);
-         _neo.blink(BLINK_INTERVAL_MS);
+         _led.setColor(0.0f, 1.0f, 0.0f);
+         _led.blink(BLINK_INTERVAL_MS);
          break;
 
       case Status::READY:
-         _neo.setColor(0, 255, 0);
-         _neo.turnOn();
+         _led.setColor(0.0f, 1.0f, 0.0f);
+         _led.turnOn();
          break;
       }
    }

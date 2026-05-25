@@ -178,6 +178,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="LED_RGB/LED_RGB.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Led_Status/Led_Status.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
