@@ -18,7 +18,7 @@ Feather feather;
 WiFiMulti wifi;
 RollingRateTracker refreshRate(100);
 Stopwatch sw;
-TelemetrySubscriber client("Wind/Studio");
+TelemetrySubscriber client("Wind/Lake");
 
 constexpr uint16_t WIND_AVERAGE_DURATION_S = 10 * 60;
 constexpr uint8_t WIND_AVERAGE_INTERVAL_S = 10;     
