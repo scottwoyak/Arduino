@@ -188,7 +188,6 @@ public:
 
 constexpr uint8_t NUM_LEDS = 1;
 
-// TODO blinking doesn't work with NeoPixels. When _pixels.show() is called, it kills the timer
 class NeoPixelLed : public LED
 {
 private:
@@ -203,7 +202,11 @@ public:
    virtual void begin() override
    {
       LED::begin();
+#if defined ARDUINO_WAVESHARE_ESP32_S3_ZERO
+      FastLED.addLeds<WS2812B, 21, RGB>(_leds, NUM_LEDS);
+#else
       FastLED.addLeds<NEOPIXEL, PIN_NEOPIXEL>(_leds, NUM_LEDS);
+#endif
    }
 
    virtual void _apply() override
