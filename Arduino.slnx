@@ -60,6 +60,7 @@
     <File Path="libraries/Woyak/TempSensorCallibration.h" />
     <File Path="libraries/Woyak/TimeConstants.h" />
     <File Path="libraries/Woyak/TimedAverager.h" />
+    <File Path="libraries/Woyak/TimedBin.h" />
     <File Path="libraries/Woyak/TimedHistogram.h" />
     <File Path="libraries/Woyak/TimedHistogramChart.h" />
     <File Path="libraries/Woyak/Url.h" />
@@ -76,6 +77,10 @@
       <Deploy />
     </Project>
     <Project Path="Tests/TimedAverager_Tests/TimedAverager_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
+    <Project Path="Tests/TimedBin_Tests/TimedBin_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
@@ -174,7 +179,15 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="LED/LED.vcxproj">
+  <Project Path="Led/Led.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="LED_FastLED/LED_FastLED.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="LED_NeoPixel/LED_NeoPixel.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

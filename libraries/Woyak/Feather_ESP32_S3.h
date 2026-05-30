@@ -13,7 +13,7 @@ public:
    Preferences preferences;
    NeoPixelLed neoPixel;
 
-   Feather_ESP32_S3() : ArduinoWithDisplay(), buttonA(0), neoPixel(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800)
+   Feather_ESP32_S3() : ArduinoWithDisplay(), buttonA(0)
    {
    }
 
@@ -28,6 +28,7 @@ public:
       display.setTextWrap(false);
 
       buttonA.begin();
+      neoPixel.begin();
    }
 
    void displayOn()
