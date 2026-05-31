@@ -91,6 +91,11 @@ public:
       }
    }
 
+   static unsigned long microsSince(unsigned long start)
+   {
+	  return getSpan(start, micros());
+   }
+
    static void reset(float delaySecs=0)
    {
       delay(1000 * delaySecs);
