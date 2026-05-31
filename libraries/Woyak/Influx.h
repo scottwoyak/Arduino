@@ -81,7 +81,11 @@ namespace Influx
 	  }
    }
 
-   void begin(IStatus* status, const char* wifiSSID, const char* wifiPassword, InfluxDBClient* client)
+   void begin(
+	  const char* wifiSSID, 
+	  const char* wifiPassword, 
+	  InfluxDBClient* client, 
+	  IStatus* status)
    {
 	  Serial.println("WiFi... ");
 

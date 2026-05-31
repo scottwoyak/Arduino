@@ -9,26 +9,26 @@
 class TimedBin
 {
 private:
-   uint* _bins;
-   uint _numBins;
-   ulong _binStartTimeMicros;
-   ulong _binDurationMicros;
+   uint* _subBins;
+   uint _numSubBins;
+   ulong _currentSubBinStartTimeMicros;
+   ulong _subBinDurationMicros;
    uint _index;
-   uint _transitionBin;
+   uint _transitionSubBin;
    unsigned long (*_micros) ();
 
    void _advanceIfNeeded()
    {
-	  while (Util::getSpan(_binStartTimeMicros, _micros()) > _binDurationMicros)
+	  while (Util::getSpan(_currentSubBinStartTimeMicros, _micros()) > _subBinDurationMicros)
 	  {
-		 _binStartTimeMicros += _binDurationMicros;
+		 _currentSubBinStartTimeMicros += _subBinDurationMicros;
 		 _index++;
-		 if (_index >= _numBins)
+		 if (_index >= _numSubBins)
 		 {
 			_index = 0;
 		 }
-		 _transitionBin = _bins[_index];
-		 _bins[_index] = 0;
+		 _transitionSubBin = _subBins[_index];
+		 _subBins[_index] = 0;
 	  }
    }
 
@@ -37,17 +37,17 @@ public:
    // within test cases of timing code.
    static unsigned long (*microsFunc) ();
 
-   TimedBin(ulong durationMs, uint numBins)
+   TimedBin(ulong durationMs, uint numSubBins=10)
    {
-	  _numBins = numBins;
-	  _bins = new uint[numBins];
-	  for (uint i = 0; i < _numBins; i++)
+	  _numSubBins = numSubBins;
+	  _subBins = new uint[numSubBins];
+	  for (uint i = 0; i < _numSubBins; i++)
 	  {
-		 _bins[i] = 0;
+		 _subBins[i] = 0;
 	  }
-	  _binDurationMicros = (1000 * durationMs) / numBins;
+	  _subBinDurationMicros = (1000 * durationMs) / numSubBins;
 	  _index = 0;
-	  _transitionBin = 0;
+	  _transitionSubBin = 0;
 	  if (microsFunc != nullptr)
 	  {
 		 _micros = microsFunc;
@@ -56,23 +56,23 @@ public:
 	  {
 		 _micros = micros;
 	  }
-	  _binStartTimeMicros = _micros();
+	  _currentSubBinStartTimeMicros = _micros();
    }
 
    ~TimedBin()
    {
-	  delete[] _bins;
+	  delete[] _subBins;
    }
 
    void begin()
    {
-	  _binStartTimeMicros = _micros();
+	  _currentSubBinStartTimeMicros = _micros();
    }
 
    void add()
    {
 	  _advanceIfNeeded();
-	  _bins[_index]++;
+	  _subBins[_index]++;
    }
 
    uint getCount()
@@ -80,12 +80,12 @@ public:
 	  _advanceIfNeeded();
 
 	  uint count = 0;
-	  for (uint i = 0; i < _numBins; i++)
+	  for (uint i = 0; i < _numSubBins; i++)
 	  {
-		 count += _bins[i];
+		 count += _subBins[i];
 	  }
-	  float partial = 1.0f - ((float)Util::getSpan(_binStartTimeMicros, _micros())) / _binDurationMicros;
-	  count += std::roundf(partial * _transitionBin);
+	  float partial = 1.0f - ((float)Util::getSpan(_currentSubBinStartTimeMicros, _micros())) / _subBinDurationMicros;
+	  count += std::roundf(partial * _transitionSubBin);
 
 	  return count;
    }
@@ -95,25 +95,25 @@ public:
    {
 	  if (binIndex == -1)
 	  {
-		 return _transitionBin;
+		 return _transitionSubBin;
 	  }
 	  else
 	  {
-		 return _bins[binIndex];
+		 return _subBins[binIndex];
 	  }
    }
 
    void println() {
 	  Serial.println("TimedBin: ");
-	  Serial.println("  Num Bins: " + String(_numBins));
-	  Serial.println("  Time / Bin (ms): " + String(_binDurationMicros / 1000.0));
-	  Serial.println("  Total Time (ms): " + String(_binDurationMicros * _numBins / 1000.0) + " ms");
+	  Serial.println("  Num Sub Bins: " + String(_numSubBins));
+	  Serial.println("  Time / Bin (ms): " + String(_subBinDurationMicros / 1000.0));
+	  Serial.println("  Total Time (ms): " + String(_subBinDurationMicros * _numSubBins / 1000.0) + " ms");
 	  Serial.println("  Bin Counts:");
-	  for (uint i = 0; i < _numBins; i++)
+	  for (uint i = 0; i < _numSubBins; i++)
 	  {
-		 Serial.println("    Bin[" + String(i) + "]: " + String(_bins[i]));
+		 Serial.println("    Bin[" + String(i) + "]: " + String(_subBins[i]));
 	  }
-	  Serial.println("    Transition Bin: " + String(_transitionBin));
+	  Serial.println("    Transition Bin: " + String(_transitionSubBin));
    }
 };
 

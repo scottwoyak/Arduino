@@ -200,4 +200,11 @@ public:
 		 break;
 	  }
    }
+
+   // for custom notifications
+   void setStatus(float r, float g, float b)
+   {
+	  _led->setColor(r, g, b);
+	  _led->turnOn();
+   }
 };
