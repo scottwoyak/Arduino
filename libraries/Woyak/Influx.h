@@ -21,88 +21,107 @@ constexpr auto TZ_INFO = "UTC-5";
 //-------------------------------------------------------------------------------------------------
 namespace Influx
 {
-   void begin(ArduinoWithDisplay* arduino, const char* wifiSSID, const char* wifiPassword, InfluxDBClient* client)
+   void begin(
+	  ArduinoWithDisplay* arduino,
+	  const char* wifiSSID,
+	  const char* wifiPassword,
+	  InfluxDBClient* client,
+	  IStatus* status = nullptr
+   )
    {
-      arduino->print("WiFi... ", Color::LABEL);
+	  arduino->print("WiFi... ", Color::LABEL);
+	  if (status)
+	  {
+		 status->setStatus(Status::WIFI_CONNECTING);
+	  }
 
-      // Setup wifi
-      WiFi.mode(WIFI_STA);
-      wifiMulti.addAP(wifiSSID, wifiPassword);
+	  // Setup wifi
+	  WiFi.mode(WIFI_STA);
+	  wifiMulti.addAP(wifiSSID, wifiPassword);
 
-      while (wifiMulti.run() != WL_CONNECTED)
-      {
-         Serial.print(".");
-         delay(100);
-      }
-      arduino->printlnR("ok", Color::VALUE);
+	  while (wifiMulti.run() != WL_CONNECTED)
+	  {
+		 Serial.print(".");
+		 delay(100);
+	  }
+	  arduino->printlnR("ok", Color::VALUE);
 
-      // Accurate time is necessary for certificate validation and writing in batches
-      // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
-      // Syncing progress and the time will be printed to Serial.
-      bool oldEcho = arduino->echoToSerial;
-      arduino->echoToSerial = false; // timeSync prints to Serial
-      arduino->print("Syncing Time... ", Color::LABEL);
-      timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
-      arduino->printlnR("ok", Color::VALUE);
-      arduino->echoToSerial = oldEcho;
+	  if (status)
+	  {
+		 status->setStatus(Status::WEB_CONNECTING);
+	  }
 
-      // Check server connection
-      arduino->print("Influx... ", Color::LABEL);
+	  // Accurate time is necessary for certificate validation and writing in batches
+	  // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
+	  // Syncing progress and the time will be printed to Serial.
+	  bool oldEcho = arduino->echoToSerial;
+	  arduino->echoToSerial = false; // timeSync prints to Serial
+	  arduino->print("Syncing Time... ", Color::LABEL);
+	  timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
+	  arduino->printlnR("ok", Color::VALUE);
+	  arduino->echoToSerial = oldEcho;
 
-      if (client->validateConnection())
-      {
-         arduino->printlnR("ok", Color::VALUE);
-         Serial.println(client->getServerUrl());
-      }
-      else
-      {
-         arduino->printlnR("FAILED", Color::RED);
-         arduino->println(client->getLastErrorMessage(), Color::RED);
-         while (1);
-      }
+	  // Check server connection
+	  arduino->print("Influx... ", Color::LABEL);
+
+	  if (client->validateConnection())
+	  {
+		 arduino->printlnR("ok", Color::VALUE);
+		 Serial.println(client->getServerUrl());
+		 if (status)
+		 {
+			status->setStatus(Status::READY);
+		 }
+	  }
+	  else
+	  {
+		 arduino->printlnR("FAILED", Color::RED);
+		 arduino->println(client->getLastErrorMessage(), Color::RED);
+		 while (1);
+	  }
    }
 
    void begin(IStatus* status, const char* wifiSSID, const char* wifiPassword, InfluxDBClient* client)
    {
-      Serial.println("WiFi... ");
+	  Serial.println("WiFi... ");
 
-      status->setStatus(Status::WIFI_CONNECTING);
+	  status->setStatus(Status::WIFI_CONNECTING);
 
-      // Setup wifi
-      WiFi.mode(WIFI_STA);
-      wifiMulti.addAP(wifiSSID, wifiPassword);
+	  // Setup wifi
+	  WiFi.mode(WIFI_STA);
+	  wifiMulti.addAP(wifiSSID, wifiPassword);
 
-      while (wifiMulti.run() != WL_CONNECTED)
-      {
-         Serial.print(".");
-         delay(100);
-      }
-      Serial.println("ok");
+	  while (wifiMulti.run() != WL_CONNECTED)
+	  {
+		 Serial.print(".");
+		 delay(100);
+	  }
+	  Serial.println("ok");
 
-      status->setStatus(Status::WEB_CONNECTING);
+	  status->setStatus(Status::WEB_CONNECTING);
 
-      // Accurate time is necessary for certificate validation and writing in batches
-      // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
-      // Syncing progress and the time will be printed to Serial.
-      Serial.print("Syncing Time... ");
-      timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
-      Serial.println("ok");
+	  // Accurate time is necessary for certificate validation and writing in batches
+	  // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
+	  // Syncing progress and the time will be printed to Serial.
+	  Serial.print("Syncing Time... ");
+	  timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
+	  Serial.println("ok");
 
-      // Check server connection
-      Serial.print("Influx... ");
+	  // Check server connection
+	  Serial.print("Influx... ");
 
-      if (client->validateConnection())
-      {
-         Serial.println("ok");
-         Serial.println(client->getServerUrl());
-         status->setStatus(Status::READY);
-      }
-      else
-      {
-         Serial.println("FAILED");
-         Serial.println(client->getLastErrorMessage());
-         while (1);
-      }
+	  if (client->validateConnection())
+	  {
+		 Serial.println("ok");
+		 Serial.println(client->getServerUrl());
+		 status->setStatus(Status::READY);
+	  }
+	  else
+	  {
+		 Serial.println("FAILED");
+		 Serial.println(client->getLastErrorMessage());
+		 while (1);
+	  }
    }
 }
 
@@ -120,8 +139,8 @@ private:
 public:
    Field(std::string name, uint8_t decimalPlaces)
    {
-      _name = name;
-      _decimalPlaces = decimalPlaces;
+	  _name = name;
+	  _decimalPlaces = decimalPlaces;
    }
 
    virtual ~Field()
@@ -130,12 +149,12 @@ public:
 
    std::string getName()
    {
-      return _name;
+	  return _name;
    }
 
    uint8_t getDecimalPlaces()
    {
-      return _decimalPlaces;
+	  return _decimalPlaces;
    }
 
    virtual void set(float value) = 0;
@@ -165,12 +184,12 @@ public:
 
    void set(float value)
    {
-      _value = value;
+	  _value = value;
    }
 
    float get()
    {
-      return _value;
+	  return _value;
    }
 };
 
@@ -187,22 +206,22 @@ private:
 public:
    TimeAveragedField(float seconds, std::string name, uint8_t decimalPlaces) : Field(name, decimalPlaces)
    {
-      _averager = new TimedAverager(1000 * seconds);
+	  _averager = new TimedAverager(1000 * seconds);
    }
 
    ~TimeAveragedField()
    {
-      delete _averager;
+	  delete _averager;
    }
 
    void set(float value)
    {
-      _averager->set(value);
+	  _averager->set(value);
    }
 
    float get()
    {
-      return _averager->get();
+	  return _averager->get();
    }
 };
 
@@ -222,78 +241,78 @@ private:
 public:
    TimedPoint(float seconds, const char* measurement) : _point(measurement), _sw(false)
    {
-      _seconds = seconds;
+	  _seconds = seconds;
    }
 
    TimedPoint(float seconds, const char* measurement, std::vector<std::pair<const char*, const char*>> tags) : _point(measurement)
    {
-      _seconds = seconds;
+	  _seconds = seconds;
 
-      for (int i = 0; i < tags.size(); i++)
-      {
-         _point.addTag(tags[i].first, tags[i].second);
-      }
+	  for (int i = 0; i < tags.size(); i++)
+	  {
+		 _point.addTag(tags[i].first, tags[i].second);
+	  }
    }
 
    ~TimedPoint()
    {
-      for (size_t i = 0; i < _fields.size(); i++)
-      {
-         delete _fields[i];
-      }
+	  for (size_t i = 0; i < _fields.size(); i++)
+	  {
+		 delete _fields[i];
+	  }
    }
 
    void addTag(const String& name, String value)
    {
-      _point.addTag(name, value);
-   }  
+	  _point.addTag(name, value);
+   }
 
    Field* addValueField(std::string name, uint8_t decimalPlaces)
    {
-      Field* field = new ValueField(name, decimalPlaces);
-      _fields.push_back(field);
-      return field;
+	  Field* field = new ValueField(name, decimalPlaces);
+	  _fields.push_back(field);
+	  return field;
    }
 
    Field* addTimeAveragedField(std::string name, uint8_t decimalPlaces)
    {
-      Field* field = new TimeAveragedField(_seconds, name, decimalPlaces);
-      _fields.push_back(field);
-      return field;
+	  Field* field = new TimeAveragedField(_seconds, name, decimalPlaces);
+	  _fields.push_back(field);
+	  return field;
    }
 
    bool ready()
    {
-      // if this is the first time this function has been called, start the timer
-      if (_sw.isRunning() == false)
-      {
-         _sw.start();
-      }
+	  // if this is the first time this function has been called, start the timer
+	  if (_sw.isRunning() == false)
+	  {
+		 _sw.start();
+	  }
 
-      return _sw.elapsedSecs() > _seconds;
+	  return _sw.elapsedSecs() > _seconds;
    }
 
-   bool post(InfluxDBClient* client, bool writeToSerial=false)
+   bool post(InfluxDBClient* client, bool writeToSerial = false)
    {
-      // restart the timer
-      _sw.reset();
+	  // restart the timer
+	  _sw.reset();
 
-      // clear out the old values
-      _point.clearFields();
+	  // clear out the old values
+	  _point.clearFields();
 
-      // populate new values
-      for (size_t i = 0; i < _fields.size(); i++)
-      {
-         Field* field = _fields[i];
-         _point.addField(field->getName().c_str(), field->get(), field->getDecimalPlaces());
-      }
+	  // populate new values
+	  for (size_t i = 0; i < _fields.size(); i++)
+	  {
+		 Field* field = _fields[i];
+		 _point.addField(field->getName().c_str(), field->get(), field->getDecimalPlaces());
+	  }
 
-      if (writeToSerial)
-      {
-         Serial.println(_point.toLineProtocol());
-      }
+	  if (writeToSerial)
+	  {
+		 Serial.println(_point.toLineProtocol());
+	  }
 
-      // send to Influx
-      return client->writePoint(_point);
+	  // send to Influx
+	  return client->writePoint(_point);
    }
 };

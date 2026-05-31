@@ -7,6 +7,7 @@
 #include "SerialX.h"
 #include "Influx.h"
 #include <string>
+#include <Status.h>
 
 #include "WiFiSettings.h" // for WIFI_SSID and WIFI_PASSWORD
 
@@ -16,7 +17,8 @@ Format tempFormat("###.## F");
 constexpr auto version = "v0.96";
 
 Feather_ESP32_S3 feather;
-String location = "Test 2";
+NeoPixelStatus status(&feather.neoPixel);
+String location = "Cabin";
 
 TempSensor sensor;
 
@@ -36,8 +38,8 @@ void setup()
    feather.display.setTextWrap(false);
    pinMode(BUILTIN_LED, OUTPUT);
 
-   feather.neoPixel.setColor(255, 255, 255);
-   feather.neoPixel.turnOn();
+   status.begin();
+   status.setLevel(0.05f);
 
    feather.echoToSerial = true;
    feather.clearDisplay();
@@ -59,19 +61,14 @@ void setup()
       while (1);
    }
 
-   feather.neoPixel.setColor(0, 0, 255);
-   feather.neoPixel.setBlinkInterval(200);
-   Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client);
+   Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client, &status);
 
-   delay(5000);
+   delay(1000);
 
    point.addTag("location", location);
 
    feather.clearDisplay();
    feather.echoToSerial = false;
-
-
-   feather.neoPixel.setColor(10, 10, 10);
 
    Watchdog.enable(60 * 1000);
 }

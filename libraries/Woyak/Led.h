@@ -4,6 +4,8 @@
 #include <Util.h>
 #include <FastLed.h>
 
+// TODO - standardize when changes are applied - e.g. right now color is immediate but level is not
+
 //
 // This class manages a LED that is programmatically turned on and off
 //
@@ -188,13 +190,13 @@ public:
 
 constexpr uint8_t NUM_LEDS = 1;
 
-class NeoPixelLed : public LED
+class NeoPixelLED : public LED
 {
 private:
    CRGB _leds[NUM_LEDS];
 
 public:
-   NeoPixelLed() 
+   NeoPixelLED() 
    {
 	  _leds[0] = CRGB::Black; // start with the led off
    }
