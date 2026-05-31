@@ -11,6 +11,7 @@
 #include <Timer.h>
 #include <TimedBin.h>
 #include <Influx.h>
+#include <ESP32TempSensor.h>
 
 WiFiMulti wifi;
 
@@ -18,10 +19,11 @@ constexpr uint8_t NUM_DECIMALS = 2;
 
 constexpr uint8_t WIND_PIN = 1;
 WindMeter wind(WIND_PIN, 0);
+ESP32TempSensor cpuTemp;
 
 NeoPixelStatus status;
 
-constexpr auto DURATION_MS = 60 * 1000;
+constexpr auto SAMPLING_DURATION_MS = 3* 60 * 1000;
 constexpr auto MAX_SPEED = 60;
 constexpr auto SPEED_INCREMENTS = 0.1;
 constexpr uint NUM_BINS = (MAX_SPEED / SPEED_INCREMENTS);
@@ -38,12 +40,14 @@ Field* wind30Field = point.addValueField("wind30", 1);
 Field* wind50Field = point.addValueField("wind50", 1);
 Field* wind70Field = point.addValueField("wind70", 1);
 Field* wind90Field = point.addValueField("wind90", 1);
+Field* gustsField = point.addValueField("gusts", 1);
+Field* cpuTempField = point.addValueField("cpuTemperature", 1);
 
 void setup()
 {
    for (int i = 0; i < NUM_BINS; i++)
    {
-	  speedBins[i] = new TimedBin(DURATION_MS);
+	  speedBins[i] = new TimedBin(SAMPLING_DURATION_MS);
    }
 
    status.begin();
@@ -60,6 +64,27 @@ void setup()
    setCpuFrequencyMhz(80); // keep things cool  
 }
 
+float getValueForPercentile(float targetPercentile)
+{
+   // TODO cache this value
+   uint totalPoints = 0;
+   for (int i = 0; i < NUM_BINS; i++)
+   {
+      totalPoints += speedBins[i]->getCount();
+   }
+
+   uint points = 0;
+   for (int i = 0; i < NUM_BINS; i++)
+   {
+      float nextPercent = ((float)(points + speedBins[i]->getCount())) / totalPoints;
+
+      if (nextPercent >= targetPercentile)
+      {
+         return i / 10.0f;
+      }
+      points += speedBins[i]->getCount();
+   }
+}
 
 void loop()
 {
@@ -81,53 +106,19 @@ void loop()
       float speed = wind.getSpeed();
       uint index = std::min((uint)(10*speed), NUM_BINS - 1);
       speedBins[index]->add();
-
-      Serial.println("Storing: " + String(speed) + ": " + String(index));
    }
 
    // Write point
    if (point.ready())
    {
-      // compute all the metrics
-      uint totalPoints = 0;
-      for (int i = 0; i < NUM_BINS; i++)
-      {
-         totalPoints += speedBins[i]->getCount();
-      }
-      Serial.println("Total Points: " + String(totalPoints));
+      wind10Field->set(getValueForPercentile(0.1));
+      wind30Field->set(getValueForPercentile(0.3));
+      wind50Field->set(getValueForPercentile(0.5));
+      wind70Field->set(getValueForPercentile(0.7));
+      wind90Field->set(getValueForPercentile(0.9));
+      gustsField->set(wind90Field->get() - wind10Field->get());
+      cpuTempField->set(cpuTemp.readTemperatureF());
 
-      uint points = 0;
-      for (int i = 0; i < NUM_BINS; i++)
-      {
-         float currentPercent = ((float) points)/totalPoints;
-         float nextPercent = ((float) (points + speedBins[i]->getCount())) / totalPoints;
-         if (i < 150)
-         {
-            Serial.println(String(i) + " Current: " + String(currentPercent) + " Next: " + String(nextPercent));
-         }
-
-         if (currentPercent <= 0.1 && nextPercent > 0.1)
-         {
-            wind10Field->set(i/10.0f);
-         }
-         if (currentPercent <= 0.3 && nextPercent > 0.3)
-         {
-            wind30Field->set(i / 10.0f);
-         }
-         if (currentPercent <= 0.5 && nextPercent > 0.5)
-         {
-            wind50Field->set(i / 10.0f);
-         }
-         if (currentPercent <= 0.7 && nextPercent > 0.7)
-         {
-            wind70Field->set(i / 10.0f);
-         }
-         if (currentPercent <= 0.9 && nextPercent > 0.9)
-         {
-            wind90Field->set(i / 10.0f);
-         }
-         points += speedBins[i]->getCount();
-      }
 
       status.setStatus(1.0f, 0.5f, 0);
       if (point.post(&client, true) == false)
