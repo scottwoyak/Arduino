@@ -280,11 +280,11 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Wind_Publisher_Display/Wind_Publisher_Display.vcxproj">
+  <Project Path="Wind_Publisher/Wind_Publisher.vcxproj" Id="186959f5-b577-1198-e42b-9b18a512c68a">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Wind_Publisher_Waveshare_S3_Zero/Wind_Publisher_Waveshare_S3_Zero.vcxproj">
+  <Project Path="Wind_Publisher_Display/Wind_Publisher_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
