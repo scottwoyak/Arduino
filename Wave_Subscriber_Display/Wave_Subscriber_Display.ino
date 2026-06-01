@@ -10,12 +10,14 @@
 #include "BarChart.h"
 #include "RateTracker.h"
 #include "TelemetryClient.h"
+#include "RunningAverager.h"
 
 Feather feather;
 WiFiMulti wifi;
 RollingRateTracker refreshRate(100);
 Stopwatch sw;
 TelemetrySubscriber client("Waves/Lake");
+RunningAverager waterLevel(500);
 
 Format heightFormat("###.# cm");
 
@@ -24,7 +26,7 @@ constexpr uint16_t DISPLAY_WIDTH = 240;
 constexpr uint16_t HEADER_HEIGHT = 3 * 8 + 4; // one line of text size 3 plus padding
 
 Color LakeBlue = Color565::fromRGB(0, 0, 255);
-constexpr RangeF ROLLING_RANGE = { 120, 160 };
+constexpr RangeF ROLLING_RANGE = { 0, 40 };
 //constexpr RangeF ROLLING_RANGE = { 0, 150 };
 constexpr Rect16 ROLLING_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT);
 RollingBarChart rollingChart(ROLLING_RECT, ROLLING_RANGE, LakeBlue, Color::BLACK);
@@ -49,7 +51,7 @@ void setup()
    feather.print("WiFi...", Color::LABEL);
    while (wifi.run() != WL_CONNECTED)
    {
-      feather.print(".", Color::LABEL);
+	  feather.print(".", Color::LABEL);
    }
    feather.printlnR("OK", Color::VALUE);
    feather.moveCursorY(1);
@@ -90,7 +92,7 @@ void loop()
 
    if (client.isStarted() == false)
    {
-      return;
+	  return;
    }
 
    refreshRate.tick();
@@ -100,28 +102,31 @@ void loop()
 
    if (isnan(height))
    {
-      height = 0;
+	  height = 0;
    }
 
-   rollingChart.set(height);
+   waterLevel.set(height);
+
+   float delta = height - waterLevel.get();
+   rollingChart.set((ROLLING_RANGE.min + ROLLING_RANGE.max) / 2.0 + delta);
 
    // display values
    feather.setCursor(0, 0);
    feather.setTextSize(3);
 
    feather.setTextSize(2);
-   feather.print(client.getTopic(), Color::HEADING);  
+   feather.print(client.getTopic(), Color::HEADING);
    feather.setTextSize(3);
-   feather.printR(height, heightFormat, Color::VALUE);
+   feather.printR(delta, heightFormat, Color::VALUE);
    feather.moveCursorY(4);
 
    rollingChart.draw(&feather.display);
 
    if (sw.elapsedSecs() > 1)
    {
-      Serial.println(refreshRate.getRate());
-      Serial.println(height);
-      sw.reset();
+	  Serial.println(refreshRate.getRate());
+	  Serial.println(height);
+	  sw.reset();
    }
 }
 
