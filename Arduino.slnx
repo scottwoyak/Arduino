@@ -172,7 +172,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Lake_Temp_Monitor/Lake_Temp_Monitor.vcxproj">
+  <Project Path="Lake_Temp_Monitor_Display/Lake_Temp_Monitor.vcxproj" Id="8fc697c1-7c67-8d79-6773-392348333c10">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

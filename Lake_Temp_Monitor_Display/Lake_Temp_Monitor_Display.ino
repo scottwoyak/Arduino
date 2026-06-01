@@ -7,6 +7,7 @@
 #include <string>
 #include <I2CMultiplexor.h>
 #include <CountdownTimer.h>
+#include <Timer.h>
 
 #include "WiFiSettings.h"
 
@@ -24,10 +25,11 @@ constexpr auto INFLUX_MEASUREMENT = "Air";
 constexpr auto INFLUX_INTERVAL_S = 15; // log data to InfluxDB every this many seconds
 constexpr auto WATCHDOG_INTERVAL_S = 60; // reboot if we haven't logged data for this many seconds
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
 constexpr uint8_t NUM_SENSORS = 4;
 TempSensor* sensors[NUM_SENSORS];
-TimedPoint* points[NUM_SENSORS];
+SimplePoint* points[NUM_SENSORS];
 Field* tempFields[NUM_SENSORS];
 Field* humFields[NUM_SENSORS];
 uint8_t sensorPorts[] = { 0, 1, 2, 3 };
@@ -48,9 +50,9 @@ void setup()
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       sensors[i] = new TempSensor();
-      points[i] = new TimedPoint(INFLUX_INTERVAL_S, INFLUX_MEASUREMENT);
-      tempFields[i] = points[i]->addTimeAveragedField("temperature", 3);
-      humFields[i] = points[i]->addTimeAveragedField("humidity", 2);
+      points[i] = new SimplePoint(INFLUX_MEASUREMENT);
+      tempFields[i] = points[i]->addTimeAveragedField(INFLUX_INTERVAL_S, "temperature", 3);
+      humFields[i] = points[i]->addTimeAveragedField(INFLUX_INTERVAL_S, "humidity", 2);
    }
 
    Wire.begin();
@@ -67,8 +69,6 @@ void setup()
    feather.clearDisplay();
    feather.println("Initializing", Color::HEADING);
    feather.moveCursorY(feather.charH() / 2);
-
-   multi.begin();
 
    feather.print("Sensors... ", Color::LABEL);
    for (int i = 0; i < NUM_SENSORS; i++)
@@ -171,7 +171,7 @@ void loop()
    feather.printR(version, Color::SUB_LABEL);
 
    // Write point
-   if (points[0]->ready())
+   if (influxTimer.ready())
    {
       digitalWrite(BUILTIN_LED, HIGH);
 

@@ -333,7 +333,7 @@ public:
    {
    }
 
-   TimedPoint(const char* measurement, std::vector<std::pair<const char*, const char*>> tags) : _point(measurement)
+   SimplePoint(const char* measurement, std::vector<std::pair<const char*, const char*>> tags) : _point(measurement)
    {
 	  for (int i = 0; i < tags.size(); i++)
 	  {
@@ -341,7 +341,7 @@ public:
 	  }
    }
 
-   ~TimedPoint()
+   ~SimplePoint()
    {
 	  for (size_t i = 0; i < _fields.size(); i++)
 	  {

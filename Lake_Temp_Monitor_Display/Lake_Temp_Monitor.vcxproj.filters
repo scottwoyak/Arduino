@@ -15,10 +15,13 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Lake_Temp_Monitor.ino" />
+    <ClCompile Include="Lake_Temp_Monitor_Display.ino" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="__vm\.Lake_Temp_Monitor.vsarduino.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="__vm\.Lake_Temp_Monitor_Display.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
