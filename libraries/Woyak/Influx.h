@@ -229,6 +229,7 @@ public:
    }
 };
 
+/*
 //-------------------------------------------------------------------------------------------------
 //
 // TimedPoint class
@@ -319,4 +320,73 @@ public:
 	  // send to Influx
 	  return client->writePoint(_point);
    }
+   */
+
+class SimplePoint
+{
+private:
+   Point _point;
+   std::vector<Field*> _fields;
+
+public:
+   SimplePoint(const char* measurement) : _point(measurement)
+   {
+   }
+
+   TimedPoint(const char* measurement, std::vector<std::pair<const char*, const char*>> tags) : _point(measurement)
+   {
+	  for (int i = 0; i < tags.size(); i++)
+	  {
+		 _point.addTag(tags[i].first, tags[i].second);
+	  }
+   }
+
+   ~TimedPoint()
+   {
+	  for (size_t i = 0; i < _fields.size(); i++)
+	  {
+		 delete _fields[i];
+	  }
+   }
+
+   void addTag(const String& name, String value)
+   {
+	  _point.addTag(name, value);
+   }
+
+   Field* addValueField(std::string name, uint8_t decimalPlaces)
+   {
+	  Field* field = new ValueField(name, decimalPlaces);
+	  _fields.push_back(field);
+	  return field;
+   }
+
+   Field* addTimeAveragedField(float seconds, std::string name, uint8_t decimalPlaces)
+   {
+	  Field* field = new TimeAveragedField(seconds, name, decimalPlaces);
+	  _fields.push_back(field);
+	  return field;
+   }
+
+   bool post(InfluxDBClient* client, bool writeToSerial = false)
+   {
+	  // clear out the old values
+	  _point.clearFields();
+
+	  // populate new values
+	  for (size_t i = 0; i < _fields.size(); i++)
+	  {
+		 Field* field = _fields[i];
+		 _point.addField(field->getName().c_str(), field->get(), field->getDecimalPlaces());
+	  }
+
+	  if (writeToSerial)
+	  {
+		 Serial.println(_point.toLineProtocol());
+	  }
+
+	  // send to Influx
+	  return client->writePoint(_point);
+   }
+
 };
