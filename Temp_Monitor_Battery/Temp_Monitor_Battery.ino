@@ -17,8 +17,8 @@ Adafruit_MAX17048 battery;
 
 constexpr auto INFLUX_INTERVAL_S = 60;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-TimedPoint airPoint(INFLUX_INTERVAL_S, "Air"); // Influx data point
-TimedPoint powerPoint(INFLUX_INTERVAL_S, "Power"); // Influx data point
+SimplePoint airPoint("Air"); // Influx data point
+SimplePoint powerPoint("Power"); // Influx data point
 Field* tempField = airPoint.addValueField("temperature", 2);
 Field* humField = airPoint.addValueField("humidity", 2);
 Field* voltsField = powerPoint.addValueField("volts", 2);
@@ -31,7 +31,7 @@ void goToSleep()
    delay(100); // let serial finish
 
    // sleep for 60 seconds (reboot upon wake up)
-   feather.deepSleep(60);
+   feather.deepSleep(INFLUX_INTERVAL_S);
 }
 
 void setup()

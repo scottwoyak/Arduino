@@ -8,6 +8,7 @@
 #include "Influx.h"
 #include <string>
 #include <Status.h>
+#include <Timer.h>
 
 #include "WiFiSettings.h" // for WIFI_SSID and WIFI_PASSWORD
 
@@ -25,9 +26,10 @@ TempSensor sensor;
 constexpr auto INFLUX_MEASUREMENT = "Air";
 constexpr auto INFLUX_INTERVAL_S = 15;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-TimedPoint point(INFLUX_INTERVAL_S, INFLUX_MEASUREMENT); // Influx data point
-Field* tempField = point.addTimeAveragedField("temperature", 3);
-Field* humField = point.addTimeAveragedField("humidity", 2);
+SimplePoint point(INFLUX_MEASUREMENT); // Influx data point
+Field* tempField = point.addTimeAveragedField(INFLUX_INTERVAL_S, "temperature", 3);
+Field* humField = point.addTimeAveragedField(INFLUX_INTERVAL_S, "humidity", 2);
+Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
 void setup()
 {
@@ -49,16 +51,16 @@ void setup()
    feather.print("Sensor... ", Color::LABEL);
    if (sensor.begin(true))
    {
-      feather.printlnR("ok", Color::VALUE);
+	  feather.printlnR("ok", Color::VALUE);
 
-      SerialX::println("   Type: ", sensor.type());
-      SerialX::println("   Address: ", sensor.address());
-      SerialX::println("   ID: ", sensor.id());
+	  SerialX::println("   Type: ", sensor.type());
+	  SerialX::println("   Address: ", sensor.address());
+	  SerialX::println("   ID: ", sensor.id());
    }
    else
    {
-      feather.printR("FAILED", Color::RED);
-      while (1);
+	  feather.printR("FAILED", Color::RED);
+	  while (1);
    }
 
    Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client, &status);
@@ -88,7 +90,7 @@ void loop()
    // Check WiFi connection and reconnect if needed
    if (wifiMulti.run() != WL_CONNECTED)
    {
-      feather.println("Wifi connection lost");
+	  feather.println("Wifi connection lost");
    }
 
    feather.setCursor(0, 0);
@@ -117,17 +119,17 @@ void loop()
    feather.printR(version, Color::SUB_LABEL);
 
    // Write point
-   if (point.ready())
+   if (influxTimer.ready())
    {
-      digitalWrite(BUILTIN_LED, HIGH);
-      if (point.post(&client) == false)
-      {
-         // sleep for 60 seconds (reboot upon wake up)
-         feather.deepSleep(60);
-      }
-      digitalWrite(BUILTIN_LED, LOW);
+	  digitalWrite(BUILTIN_LED, HIGH);
+	  if (point.post(&client) == false)
+	  {
+		 // sleep for 60 seconds (reboot upon wake up)
+		 feather.deepSleep(60);
+	  }
+	  digitalWrite(BUILTIN_LED, LOW);
 
-      count = 0;
+	  count = 0;
    }
 }
 
