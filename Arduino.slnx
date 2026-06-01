@@ -200,6 +200,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Memory_Usage/Memory_Usage.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Multi_Temp_Monitor/Multi_Temp_Monitor.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

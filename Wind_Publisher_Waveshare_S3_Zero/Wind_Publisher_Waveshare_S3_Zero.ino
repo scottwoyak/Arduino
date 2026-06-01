@@ -26,7 +26,7 @@ constexpr auto RED_LED_PIN = 7;
 
 LedStatus status(WHITE_LED_PIN, BLUE_LED_PIN, GREEN_LED_PIN);
 
-Led redLed(7);
+LED redLed(RED_LED_PIN);
 
 void setup()
 {
