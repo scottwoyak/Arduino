@@ -24,7 +24,8 @@ constexpr uint16_t DISPLAY_WIDTH = 240;
 constexpr uint16_t HEADER_HEIGHT = 3 * 8 + 4; // one line of text size 3 plus padding
 
 Color LakeBlue = Color565::fromRGB(0, 0, 255);
-constexpr RangeF ROLLING_RANGE = { 0, 150 };
+constexpr RangeF ROLLING_RANGE = { 120, 160 };
+//constexpr RangeF ROLLING_RANGE = { 0, 150 };
 constexpr Rect16 ROLLING_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT);
 RollingBarChart rollingChart(ROLLING_RECT, ROLLING_RANGE, LakeBlue, Color::BLACK);
 
@@ -95,11 +96,11 @@ void loop()
    refreshRate.tick();
 
    // get value measured from the bottom of the graph
-   float height = ROLLING_RANGE.max - client.getValue();
+   float height = 180 - client.getValue();
 
    if (isnan(height))
    {
-      height = ROLLING_RANGE.max;
+      height = 0;
    }
 
    rollingChart.set(height);
