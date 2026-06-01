@@ -8,6 +8,7 @@
 #include <CountdownTimer.h>
 #include <ESP32TempSensor.h>
 #include <Status.h>
+#include <Timer.h>
 
 #include "WiFiSettings.h"
 
@@ -23,10 +24,11 @@ constexpr auto INFLUX_MEASUREMENT = "Air";
 constexpr auto INFLUX_INTERVAL_S = 15; // log data to InfluxDB every this many seconds
 constexpr auto WATCHDOG_INTERVAL_S = 60; // reboot if we haven't logged data for this many seconds
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
 constexpr uint8_t NUM_SENSORS = 5;
 TempSensor* sensors[NUM_SENSORS];
-TimedPoint* points[NUM_SENSORS];
+SimplePoint* points[NUM_SENSORS];
 Field* tempFields[NUM_SENSORS];
 Field* humFields[NUM_SENSORS];
 uint8_t sensorPorts[] = { 0, 1, 2, 3, 4 }; // last port not used - directly talks to ESP32
@@ -40,7 +42,7 @@ constexpr auto RED_LED_PIN = 4;
 constexpr auto WHITE_LED_PIN = 5;
 
 LedStatus status(WHITE_LED_PIN, BLUE_LED_PIN, GREEN_LED_PIN);
-Led redLed(RED_LED_PIN);
+LED redLed(RED_LED_PIN);
 
 const char* locations[] = {
    "New Surface",
@@ -59,9 +61,9 @@ void setup()
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       sensors[i] = new TempSensor();
-      points[i] = new TimedPoint(INFLUX_INTERVAL_S, INFLUX_MEASUREMENT);
-      tempFields[i] = points[i]->addTimeAveragedField("temperature", 3);
-      humFields[i] = points[i]->addTimeAveragedField("humidity", 2);
+      points[i] = new SimplePoint(INFLUX_MEASUREMENT);
+      tempFields[i] = points[i]->addTimeAveragedField(INFLUX_INTERVAL_S, "temperature", 3);
+      humFields[i] = points[i]->addTimeAveragedField(INFLUX_INTERVAL_S, "humidity", 2);
    }
 
    SerialX::begin();
@@ -108,7 +110,7 @@ void setup()
    }
    SerialX::println("ok");
 
-   Influx::begin(&status, WIFI_SSID, WIFI_PASSWORD, &client);
+   Influx::begin(WIFI_SSID, WIFI_PASSWORD, &client, &status);
 
    for (int i = 0; i < NUM_SENSORS; i++)
    {
@@ -158,7 +160,7 @@ void loop()
          continue;
       }
 
-      if (points[i]->ready())
+      if (influxTimer.ready())
       {
          redLed.turnOn();
          if (points[i]->post(&client, true) == false)
