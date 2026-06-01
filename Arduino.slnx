@@ -154,7 +154,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="I2C_Port_Scanner_Zero/I2C_Port_Scanner_Zero.vcxproj">
+  <Project Path="I2C_Port_Scanner_Display/I2C_Port_Scanner_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -162,13 +162,11 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="InterruptDisplay/InterruptDisplay.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Build Solution="*|Any CPU" Project="false" />
-    <Deploy Solution="*|ARM" />
-    <Deploy Solution="*|ARM64" />
-  </Project>
   <Project Path="Interrupt_Debugger/Interrupt_Debugger.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Interrupt_Display/Interrupt_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -204,7 +202,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Multi_Temp_Monitor/Multi_Temp_Monitor.vcxproj">
+  <Project Path="Multi_Temp_Monitor_Display/Multi_Temp_Monitor_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -236,7 +234,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Temp_Calibrator/Temp_Calibrator.vcxproj">
+  <Project Path="Temp_Calibrator_Display/Temp_Calibrator_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
