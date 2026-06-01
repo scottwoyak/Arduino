@@ -23,18 +23,21 @@ ESP32TempSensor cpuTemp;
 
 NeoPixelStatus status;
 
-constexpr auto SAMPLING_DURATION_MS = 3* 60 * 1000;
+constexpr auto BIN_DURATION_MS = 3* 60 * 1000;
+constexpr auto INFLUX_UPLOAD_INTERVAL_S = 15;
+constexpr auto DATA_COLLECTION_INTERVAL_MS = 100;
+
 constexpr auto MAX_SPEED = 60;
 constexpr auto SPEED_INCREMENTS = 0.1;
 constexpr uint NUM_BINS = (MAX_SPEED / SPEED_INCREMENTS);
 
 TimedBin* speedBins[NUM_BINS];
-Timer timer(100);
+Timer binCaptureTimer(DATA_COLLECTION_INTERVAL_MS);
 
 constexpr auto INFLUX_MEASUREMENT = "Air";
-constexpr auto INFLUX_INTERVAL_S = 15;
+Timer uploadTimer(1000 * INFLUX_UPLOAD_INTERVAL_S);
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-TimedPoint point(INFLUX_INTERVAL_S, INFLUX_MEASUREMENT); // Influx data point
+SimplePoint point(INFLUX_MEASUREMENT); // Influx data point
 Field* wind10Field = point.addValueField("wind10", 1);
 Field* wind30Field = point.addValueField("wind30", 1);
 Field* wind50Field = point.addValueField("wind50", 1);
@@ -101,7 +104,7 @@ void loop()
    // without a delay, the waveshare crashes
    delay(1);
 
-   if (timer.ready())
+   if (binCaptureTimer.ready())
    {
       float speed = wind.getSpeed();
       uint index = std::min((uint)(10*speed), NUM_BINS - 1);
@@ -109,7 +112,7 @@ void loop()
    }
 
    // Write point
-   if (point.ready())
+   if (uploadTimer.ready())
    {
       wind10Field->set(getValueForPercentile(0.1));
       wind30Field->set(getValueForPercentile(0.3));
