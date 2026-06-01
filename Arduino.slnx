@@ -266,7 +266,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Wind_Publisher_Waveshare_S3_Zero/Wind_Publisher_Waveshare_S3_Zero.vcxproj">
+  <Project Path="Wind_Publisher/Wind_Publisher.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
