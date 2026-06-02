@@ -7,6 +7,7 @@
   <Folder Name="/Libraries/">
     <File Path="libraries/Woyak/AccumulatingAverager.h" />
     <File Path="libraries/Woyak/ArduinoWithDisplay.h" />
+    <File Path="libraries/Woyak/Average.h" />
     <File Path="libraries/Woyak/Bar.h" />
     <File Path="libraries/Woyak/BarChart.h" />
     <File Path="libraries/Woyak/Battery.h" />
@@ -73,6 +74,10 @@
     <File Path="libraries/Woyak/WindMeter.h" />
   </Folder>
   <Folder Name="/Tests/">
+    <Project Path="Tests/Average_Tests/Average_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
     <Project Path="Tests/Stopwatch_Tests/Stopwatch_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
