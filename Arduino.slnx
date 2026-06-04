@@ -91,6 +91,10 @@
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
+    <Project Path="Tests/Util_Tests/Util_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
   </Folder>
   <Project Path="Battery_Display/Battery_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
