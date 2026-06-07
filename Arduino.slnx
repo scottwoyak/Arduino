@@ -39,6 +39,8 @@
     <File Path="libraries/Woyak/ITempSensor.h" />
     <File Path="libraries/Woyak/Latch.h" />
     <File Path="libraries/Woyak/Led.h" />
+    <File Path="libraries/Woyak/LGFXUtil.h" />
+    <File Path="libraries/Woyak/LGX_FeatherESP32_S3_TFT.h" />
     <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
     <File Path="libraries/Woyak/Logger.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
@@ -79,6 +81,10 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/Average_Tests/Average_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
+    <Project Path="Tests/StdDev_Tests/StdDev_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
@@ -238,6 +244,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Serial/Serial.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="SmoothFontCreator/SmoothFontCreator.csproj" Id="8eb42b88-3644-48a5-95dc-592c930a65f6" />
   <Project Path="Solar_Monitor/Solar_Monitor.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
@@ -268,10 +278,6 @@
     <Deploy />
   </Project>
   <Project Path="Temp_Monitor_Display/Temp_Monitor_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="Tests/StdDev_Tests/StdDev_Tests.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

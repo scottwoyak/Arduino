@@ -5,14 +5,16 @@ class SerialX
 public:
    static void begin()
    {
+	  uint32_t start = millis();
+
       // start serial port
       Serial.begin(115200);
 
       // wait a few seconds for the serial monitor to open
-      while (millis() < 2000 && !Serial)
+      while ((millis() - start) < 2000 && !Serial)
       {
       };
-      delay(500);
+	  uint32_t now = millis();
    }
 
    static void print(const char* str1=nullptr, const char* str2 = nullptr, const char* str3 = nullptr)
