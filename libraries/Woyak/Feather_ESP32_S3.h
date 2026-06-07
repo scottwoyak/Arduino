@@ -5,6 +5,7 @@
 #include <string>
 #include <Preferences.h>
 #include <LED.h>
+#include <LGFXUtil.h>
 
 class Feather_ESP32_S3 : public ArduinoWithDisplay
 {
@@ -17,9 +18,11 @@ public:
    {
    }
 
+
    void begin()
    {
       display.init();
+
       display.setRotation(DisplayRotation::LANDSCAPE);
       display.fillScreen((uint16_t)Color::BLACK);
 
