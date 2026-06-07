@@ -2,23 +2,29 @@
 // undefine to use the remote server
 //#define TELEMETRY_LOCAL
 
-#include "Feather.h"
+#include <Feather.h>
 #include <WiFiMulti.h>
-#include "SerialX.h"
-#include "WiFiSettings.h"
-#include "Stopwatch.h"
-#include "RateTracker.h"
-#include "TelemetryClient.h"
-#include "Url.h"
+#include <SerialX.h>
+#include <WiFiSettings.h>
+#include <Stopwatch.h>
+#include <RateTracker.h>
+#include <TelemetryClient.h>
+#include <Url.h>
+#include <Timer.h>
+
+constexpr auto topic = "Test";
 
 Feather feather;
 WiFiMulti wifi;
 Stopwatch sw(false);
-RollingRateTracker rate;
+Timer publishTimer(100);
+
+
+RollingRateTracker rate(100);
 Point16 ratePos;
 
 Format rateFormat("###/s");
-TelemetryPublisher client("ArduinoTest", 3);
+TelemetryPublisher client(topic, 3);
 
 
 float getValue()
@@ -47,14 +53,13 @@ void setup()
    feather.print("WiFi...", Color::LABEL);
    while (wifi.run() != WL_CONNECTED)
    {
-      feather.print(".", Color::LABEL);
+	  feather.print(".", Color::LABEL);
    }
    feather.printlnR("OK", Color::VALUE);
-   feather.moveCursorY(1);
 
    feather.print("WebSocket...", Color::LABEL);
 
-   client.setCallbacks(onConnected, onDisconnected, onText, onError, onStarted);
+   client.setCallbacks(onConnected, onDisconnected, nullptr, onText, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
 }
 
@@ -100,19 +105,17 @@ void onStarted()
    feather.setTextSize(2);
    feather.print("Topic: ", Color::LABEL);
    feather.println(client.getTopic(), Color::VALUE);
-   feather.moveCursorY(1);
-
-   feather.print(" Rate: ", Color::LABEL);
-   ratePos = feather.getCursor();
-   feather.println("---", Color::VALUE);
-   feather.moveCursorY(1);
 
    Url url(client.getUrl().c_str());
    feather.print(" Host: ", Color::LABEL);
    feather.display.setTextWrap(true);
    feather.println(url.getHost(), Color::VALUE2);
-   feather.moveCursorY(1);
 
+   feather.print("Rate: ", Color::LABEL);
+   ratePos = feather.getCursor();
+   feather.println("---", Color::VALUE);
+
+   /*
    feather.print(" Port: ", Color::LABEL);
    feather.println(url.getPort(), Color::VALUE2);
    feather.moveCursorY(1);
@@ -124,6 +127,7 @@ void onStarted()
    feather.print(" Path: ", Color::LABEL);
    feather.println(url.getPath(), Color::VALUE2);
    feather.moveCursorY(1);
+   */
 
    rate.reset();
    sw.start();
@@ -131,15 +135,18 @@ void onStarted()
 
 void loop()
 {
-   float value = getValue();
-   client.setValue(value);
+   if (publishTimer.ready())
+   {
+	  float value = getValue();
+	  client.setValue(value);
+   }
 
    client.loop(); // Continuously poll for events and maintain connection
 
    if (sw.elapsedMillis() > 1000)
    {
-      feather.setCursor(ratePos);
-      feather.println(rate.getRate(), rateFormat, Color::VALUE);
-      sw.reset();
+	  feather.setCursor(ratePos);
+	  feather.println(rate.getRate(), rateFormat, Color::VALUE);
+	  sw.reset();
    }
 }
