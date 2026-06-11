@@ -18,8 +18,8 @@ public:
             Serial.printf("  pin_mosi:          %d\n", b_cfg.pin_mosi);
             Serial.printf("  pin_miso:          %d\n", b_cfg.pin_miso);
             Serial.printf("  pin_dc:            %d\n", b_cfg.pin_dc);
-            Serial.printf("  Write Freq:        %d MHz\n", b_cfg.freq_write / 1000000);
-            Serial.printf("  Read Freq:         %d MHz\n", b_cfg.freq_read / 1000000);
+            Serial.printf("  Write Freq:        %d MHz\n", (int) (b_cfg.freq_write / 1000000));
+            Serial.printf("  Read Freq:         %d MHz\n", (int) (b_cfg.freq_read / 1000000));
          }
 
          // 2. Fetch the structural panel configuration copy
