@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Structs.h"
-#include <TFT_eSPI.h> 
+#include <Structs.h>
+#include <LovyanGFX.hpp>
 
 //-------------------------------------------------------------------------------------------------
 class Bar
@@ -14,7 +14,7 @@ protected:
    Color _barColor;
    Color _backgroundColor;
 
-   virtual void _draw(TFT_eSPI* display) = 0;
+   virtual void _draw(LGFX* display) = 0;
 
 public:
    Bar(Rect16 rect, RangeF range, Color barColor, Color backgroundColor)
@@ -44,7 +44,7 @@ public:
       return _rect;
    }
 
-   void draw(TFT_eSPI* display)
+   void draw(LGFX* display)
    {
       if (isnan(_value))
       {
@@ -78,7 +78,7 @@ public:
 class HorizontalBar : public Bar
 {
 protected:
-   void _draw(TFT_eSPI* display)
+   void _draw(LGFX* display)
    {
       if (isnan(_lastValue))
       {
@@ -117,7 +117,7 @@ public:
 class VerticalBar : public Bar
 {
 protected:
-   void _draw(TFT_eSPI* display)
+   void _draw(LGFX* display)
    {
       if (isnan(_lastValue))
       {
