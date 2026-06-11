@@ -56,7 +56,7 @@ public:
       delete _bars;
    }
 
-   void draw(TFT_eSPI* display, float values[])
+   void draw(LGFX* display, float values[])
    {
       for (uint i = _visibleBars.min; i <= _visibleBars.max; i++)
       {
@@ -130,7 +130,7 @@ public:
       _bars[_numBars - 1]->set(value);
    }
 
-   void draw(TFT_eSPI* display)
+   void draw(LGFX* display)
    {
       for (uint i = 0; i < _numBars; i++)
       {

@@ -7,7 +7,7 @@
 class WindMeter
 {
 private:
-   static WindMeter* _instance;
+   static inline WindMeter* _instance;
    static void interruptTick()
    {
       // call the function on the class

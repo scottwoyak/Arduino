@@ -1,20 +1,31 @@
 #include <WiFiMulti.h>
-#include "SerialX.h"
-#include "WiFiSettings.h"
-#include "TelemetryClient.h"
-#include "Url.h"
+#include <SerialX.h>
+#include <WiFiSettings.h>
+#include <TelemetryClient.h>
+#include <Url.h>
+#include <Status.h>
 #include <Stopwatch.h>
+#include <Timer.h>
 
 constexpr uint8_t TRIGGER_PIN = 6;
 constexpr uint8_t ECHO_PIN = 5;
 
 WiFiMulti wifi;
+NeoPixelStatus status;
 
 constexpr auto NUM_DECIMALS = 1;
-TelemetryPublisher client("Waves/Lake", NUM_DECIMALS);
+//TelemetryPublisher client("Waves/Lake", NUM_DECIMALS);
+TelemetryPublisher client("Waves/Test", NUM_DECIMALS);
+
+Stopwatch restartSW;
+Timer publishTimer(100); // 10 per sec
 
 void setup()
 {
+   status.begin();
+   status.setStatus(Status::STARTED);
+   delay(1000);
+
    SerialX::begin();
    Serial.println("Wave Publisher");
 
@@ -22,17 +33,20 @@ void setup()
    pinMode(ECHO_PIN, INPUT);
 
    // Connect to WiFi
+   status.setStatus(Status::WIFI_CONNECTING);
    wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
    Serial.print("WiFi...");
    while (wifi.run() != WL_CONNECTED)
    {
-      Serial.print(".");
+	  Serial.print(".");
    }
    Serial.println("OK");
 
-   client.setCallbacks(onConnected, onDisconnected, onSendText, onReceiveText, onError, nullptr);
+   status.setStatus(Status::WEB_CONNECTING);
+   client.setCallbacks(onConnected, onDisconnected, onSendText, onReceiveText, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
-   delay(1000); // just to show the LED
+
+   setCpuFrequencyMhz(80);
 }
 
 void onConnected()
@@ -61,8 +75,8 @@ void replaceAll(std::string& str, const std::string& from, const std::string& to
    size_t start_pos = 0;
    while ((start_pos = str.find(from, start_pos)) != std::string::npos)
    {
-      str.replace(start_pos, from.length(), to);
-      start_pos += to.length(); // Move past the new replacement
+	  str.replace(start_pos, from.length(), to);
+	  start_pos += to.length(); // Move past the new replacement
    }
 }
 
@@ -82,26 +96,43 @@ void onReceiveText(std::string msg)
    Serial.println(msg.c_str());
 }
 
+void onStarted()
+{
+   status.setStatus(Status::READY);
+}
+
+float measure()
+{
+   digitalWrite(TRIGGER_PIN, LOW);
+   delayMicroseconds(2);
+
+   digitalWrite(TRIGGER_PIN, HIGH);
+   delayMicroseconds(10);
+   digitalWrite(TRIGGER_PIN, LOW);
+
+   long durationMicros = pulseIn(ECHO_PIN, HIGH);
+   float distanceCM = durationMicros * 0.034 / 2;
+   float distanceIN = distanceCM / 2.54;
+   Serial.println("Distance: " + String(distanceCM) + " cm   " + String(distanceIN) + " in   ");
+
+   // avoid echos - less than 100 to allow for 10/s 
+   delay(80);
+
+   return distanceCM;
+}
+
 void loop()
 {
-   if (client.isStarted())
+   // restart every 24 hours to play it safe
+   if (restartSW.elapsedSecs() > 24 * 60 * 60)
    {
-      digitalWrite(TRIGGER_PIN, LOW);
-      delayMicroseconds(2);
+	  Util::reset();
+   }
 
-      digitalWrite(TRIGGER_PIN, HIGH);
-      delayMicroseconds(10);
-      digitalWrite(TRIGGER_PIN, LOW);
-
-      long durationMicros = pulseIn(ECHO_PIN, HIGH);
-      float distanceCM = durationMicros * 0.034 / 2;
-      float distanceIN = distanceCM * (1 / 2.54);
-      client.setValue(distanceCM);
-
-      // avoid echos
-      delay(50);
-
-      Serial.println("Distance: " + String(distanceCM) + " cm   " + String(distanceIN) + " in   ");
+   if (client.isStarted() && publishTimer.ready())
+   {
+	  float distanceCM = measure();
+	  client.setValue(distanceCM);
    }
 
    client.loop(); // Continuously poll for events and maintain connection

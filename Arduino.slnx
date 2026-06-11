@@ -7,10 +7,12 @@
   <Folder Name="/Libraries/">
     <File Path="libraries/Woyak/AccumulatingAverager.h" />
     <File Path="libraries/Woyak/ArduinoWithDisplay.h" />
+    <File Path="libraries/Woyak/Average.h" />
     <File Path="libraries/Woyak/Bar.h" />
     <File Path="libraries/Woyak/BarChart.h" />
     <File Path="libraries/Woyak/Battery.h" />
     <File Path="libraries/Woyak/BME280TempSensor.h" />
+    <File Path="libraries/Woyak/BufferedTimeSeries.h" />
     <File Path="libraries/Woyak/Button.cpp" />
     <File Path="libraries/Woyak/Button.h" />
     <File Path="libraries/Woyak/Color.h" />
@@ -38,6 +40,9 @@
     <File Path="libraries/Woyak/ITempSensor.h" />
     <File Path="libraries/Woyak/Latch.h" />
     <File Path="libraries/Woyak/Led.h" />
+    <File Path="libraries/Woyak/LGFXUtil.h" />
+    <File Path="libraries/Woyak/LGX_FeatherESP32_S3_TFT.h" />
+    <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
     <File Path="libraries/Woyak/Logger.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
     <File Path="libraries/Woyak/MultiBar.h" />
@@ -53,6 +58,7 @@
     <File Path="libraries/Woyak/SHT4xTempSensor.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
     <File Path="libraries/Woyak/Status.h" />
+    <File Path="libraries/Woyak/StdDev.h" />
     <File Path="libraries/Woyak/Stopwatch.h" />
     <File Path="libraries/Woyak/Structs.h" />
     <File Path="libraries/Woyak/TelemetryClient.h" />
@@ -60,22 +66,46 @@
     <File Path="libraries/Woyak/TempSensorCallibration.h" />
     <File Path="libraries/Woyak/TimeConstants.h" />
     <File Path="libraries/Woyak/TimedAverager.h" />
+    <File Path="libraries/Woyak/TimedBin.h" />
     <File Path="libraries/Woyak/TimedHistogram.h" />
     <File Path="libraries/Woyak/TimedHistogramChart.h" />
+    <File Path="libraries/Woyak/Timer.h" />
     <File Path="libraries/Woyak/Url.h" />
     <File Path="libraries/Woyak/Util.h" />
     <File Path="libraries/Woyak/ValueStore.h" />
     <File Path="libraries/Woyak/ValueStoreFram.h" />
     <File Path="libraries/Woyak/WiFiSettings.h" />
-    <File Path="libraries/Woyak/WindMeter.cpp" />
     <File Path="libraries/Woyak/WindMeter.h" />
   </Folder>
+  <Folder Name="/Libraries/LGX/">
+    <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
+  </Folder>
   <Folder Name="/Tests/">
+    <Project Path="Tests/Average_Tests/Average_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
+    <Project Path="Tests/BufferedTimeSeries_Tests/BufferedTimeSeries_Tests.vcxproj" Id="a8d4f2c1-9b34-4e5f-8123-123456789abc">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
+    <Project Path="Tests/StdDev_Tests/StdDev_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
     <Project Path="Tests/Stopwatch_Tests/Stopwatch_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
     <Project Path="Tests/TimedAverager_Tests/TimedAverager_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
+    <Project Path="Tests/TimedBin_Tests/TimedBin_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
+    <Project Path="Tests/Util_Tests/Util_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
@@ -97,6 +127,10 @@
     <Deploy />
   </Project>
   <Project Path="DallasTemperature_Display/DallasTemperature_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Display_HosyondESP32-32E/Display_HosyondESP32-32E.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -148,7 +182,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="I2C_Port_Scanner_Zero/I2C_Port_Scanner_Zero.vcxproj">
+  <Project Path="I2C_Port_Scanner_Display/I2C_Port_Scanner_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -156,13 +190,11 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="InterruptDisplay/InterruptDisplay.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Build Solution="*|Any CPU" Project="false" />
-    <Deploy Solution="*|ARM" />
-    <Deploy Solution="*|ARM64" />
-  </Project>
   <Project Path="Interrupt_Debugger/Interrupt_Debugger.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Interrupt_Display/Interrupt_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -170,11 +202,19 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Lake_Temp_Monitor_Zero/Lake_Temp_Monitor_Zero.vcxproj">
+  <Project Path="Lake_Temp_Monitor_Display/Lake_Temp_Monitor_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="LED/LED.vcxproj">
+  <Project Path="Led/Led.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="LED_FastLED/LED_FastLED.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="LED_NeoPixel/LED_NeoPixel.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -186,7 +226,11 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Multi_Temp_Monitor/Multi_Temp_Monitor.vcxproj">
+  <Project Path="Memory_Usage/Memory_Usage.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Multi_Temp_Monitor_Display/Multi_Temp_Monitor_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -205,6 +249,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Serial/Serial.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="SmoothFontCreator/SmoothFontCreator.csproj" Id="8eb42b88-3644-48a5-95dc-592c930a65f6" />
   <Project Path="Solar_Monitor/Solar_Monitor.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
@@ -218,7 +266,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Temp_Calibrator/Temp_Calibrator.vcxproj">
+  <Project Path="Temp_Calibrator_Display/Temp_Calibrator_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -234,7 +282,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Temp_Monitor_Manual/Temp_Monitor_Manual.vcxproj">
+  <Project Path="Temp_Monitor_Display/Temp_Monitor_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -262,11 +310,11 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Wind_Publisher_Display/Wind_Publisher_Display.vcxproj">
+  <Project Path="Wind_Publisher/Wind_Publisher.vcxproj" Id="186959f5-b577-1198-e42b-9b18a512c68a">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Wind_Publisher_Waveshare_S3_Zero/Wind_Publisher_Waveshare_S3_Zero.vcxproj">
+  <Project Path="Wind_Publisher_Display/Wind_Publisher_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

@@ -11,12 +11,17 @@
 
 #include <TelemetryClient.h>
 
+//constexpr auto topic = "Waves/Lake";
+constexpr auto topic = "Test";
+
 Feather feather;
 WiFiMulti wifi;
 Stopwatch sw(false);
-RollingRateTracker rate;
-Point16 ratePos;
-TelemetrySubscriber client("Tests/Sin1");
+RollingRateTracker queryRate(100); // rate that we get values from the server
+RollingRateTracker changeRate(100); // the rate of changed values, presumable how often the publisher sends them
+Point16 queryRatePos;
+Point16 changeRatePos;
+TelemetrySubscriber client(topic);
 
 Format rateFormat("###/s");
 
@@ -46,7 +51,7 @@ void setup()
 
    feather.print("WebSocket...", Color::LABEL);
 
-   client.setCallbacks(onConnected, onDisconnected, nullptr, onError, onStarted);
+   client.setCallbacks(onConnected, onDisconnected, nullptr, onReceiveText, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
 }
 
@@ -87,19 +92,21 @@ void onStarted()
    feather.setTextSize(2);
    feather.print("Topic: ", Color::LABEL);
    feather.println(client.getTopic(), Color::VALUE);
-   feather.moveCursorY(1);
-
-   feather.print(" Rate: ", Color::LABEL);
-   ratePos = feather.getCursor();
-   feather.println("---", Color::VALUE);
-   feather.moveCursorY(1);
 
    Url url(client.getUrl().c_str());
-   feather.print(" Host: ", Color::LABEL);
+   feather.print("Host: ", Color::LABEL);
    feather.display.setTextWrap(true);
    feather.println(url.getHost(), Color::VALUE2);
-   feather.moveCursorY(1);
 
+   feather.print("Query Rate: ", Color::LABEL);
+   queryRatePos = feather.getCursor();
+   feather.println("---", Color::VALUE);
+
+   feather.print("Change Rate: ", Color::LABEL);
+   changeRatePos = feather.getCursor();
+   feather.println("---", Color::VALUE);
+
+   /*
    feather.print(" Port: ", Color::LABEL);
    feather.println(url.getPort(), Color::VALUE2);
    feather.moveCursorY(1);
@@ -111,8 +118,14 @@ void onStarted()
    feather.print(" Path: ", Color::LABEL);
    feather.println(url.getPath(), Color::VALUE2);
    feather.moveCursorY(1);
+   */
 
    sw.start();
+}
+
+void onReceiveText(std::string msg)
+{
+   queryRate.tick();
 }
 
 
@@ -124,14 +137,19 @@ void loop()
    if (std::isnan(client.getValue()) == false && client.getValue() != lastValue)
    {
       lastValue = client.getValue();
-      rate.tick();
+      Serial.println(lastValue);
+      changeRate.tick();
    }
 
    if (sw.elapsedMillis() > 1000)
    {
-      feather.setCursor(ratePos);
       feather.setTextSize(2);
-      feather.println(rate.getRate(), rateFormat, Color::VALUE);
+
+      feather.setCursor(queryRatePos);
+      feather.println(queryRate.getRate(), rateFormat, Color::VALUE);
+
+      feather.setCursor(changeRatePos);
+      feather.println(changeRate.getRate(), rateFormat, Color::VALUE);
       sw.reset();
    }
 }

@@ -78,17 +78,22 @@ public:
       return (fahrenheit - 32) * (5.0 / 9.0);
    }
 
+   /// <summary>
+   /// Calculates elapsed time between two clock readings, handling wraparound.
+   /// Uses unsigned arithmetic: if end &lt; start (clock wrapped), the result
+   /// is still correct due to modulo 2^32 arithmetic.
+   /// </summary>
+   /// <param name="start">Start timestamp from micros() or millis()</param>
+   /// <param name="end">End timestamp from micros() or millis()</param>
+   /// <returns>Elapsed time in the same units as the input timestamps</returns>
    static unsigned long getSpan(unsigned long start, unsigned long end)
    {
-      if (end >= start)
-      {
-         return end - start;
-      }
-      else
-      {
-         // end has rolled over
-         return (ULONG_MAX - start) + end + 1;
-      }
+      return end - start;
+   }
+
+   static unsigned long microsSince(unsigned long start)
+   {
+	  return getSpan(start, micros());
    }
 
    static void reset(float delaySecs=0)

@@ -4,22 +4,25 @@
 #include <Button.h>
 #include <string>
 #include <Preferences.h>
-#include <Led.h>
+#include <LED.h>
+#include <LGFXUtil.h>
 
 class Feather_ESP32_S3 : public ArduinoWithDisplay
 {
 public:
    Button buttonA;
    Preferences preferences;
-   NeoPixelLed neoPixel;
+   NeoPixelLED neoPixel;
 
-   Feather_ESP32_S3() : ArduinoWithDisplay(), buttonA(0), neoPixel(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800)
+   Feather_ESP32_S3() : ArduinoWithDisplay(), buttonA(0)
    {
    }
+
 
    void begin()
    {
       display.init();
+
       display.setRotation(DisplayRotation::LANDSCAPE);
       display.fillScreen((uint16_t)Color::BLACK);
 
@@ -28,6 +31,7 @@ public:
       display.setTextWrap(false);
 
       buttonA.begin();
+      neoPixel.begin();
    }
 
    void displayOn()

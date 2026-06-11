@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Arduino.h>
-#include <Latch.h>
 #include <Util.h>
-#include <Adafruit_NeoPixel.h>
+#include <FastLed.h>
+
+// TODO - standardize when changes are applied - e.g. right now color is immediate but level is not
 
 //
 // This class manages a LED that is programmatically turned on and off
@@ -81,8 +82,12 @@ public:
    {
       if (_blinkIntervalMs > 0)
       {
-         _isOn = ((millis() - _blinkStart) % (2 * _blinkIntervalMs) < _blinkIntervalMs);
-         _apply();
+		 bool newIsOn = ((millis() - _blinkStart) % (2 * _blinkIntervalMs) < _blinkIntervalMs);
+		 if (newIsOn != _isOn)
+		 {
+			_isOn = newIsOn;
+			_apply();
+		 }
       }
    }
 };
@@ -116,7 +121,7 @@ private:
    }
 
 public:
-   LED(uint8_t pin) : BasicLED(pin)
+   LED(uint8_t pin=0) : BasicLED(pin)
    {}
 
    void begin()
@@ -139,7 +144,7 @@ private:
    float _blueLevel = 1.0f;
 
 public:
-   RGBLED(uint8_t redPin, uint8_t greenPin, uint8_t bluePin) : LED(0), _redPin(redPin), _greenPin(greenPin), _bluePin(bluePin)
+   RGBLED(uint8_t redPin, uint8_t greenPin, uint8_t bluePin) : _redPin(redPin), _greenPin(greenPin), _bluePin(bluePin)
    {}
 
    virtual void begin() override
@@ -162,15 +167,12 @@ public:
          float g = _greenLevel / (_redLevel + _greenLevel + _blueLevel);
          float b = _blueLevel / (_redLevel + _greenLevel + _blueLevel);
 
-         Serial.println("Setting: "
-            + String(_level * r) + " " + String(_level * g) + " " + String(_level * b));
          analogWrite(_redPin, _level * r);
          analogWrite(_greenPin, _level * g);
          analogWrite(_bluePin, _level * b);
       }
       else
       {
-         Serial.println("Turning off");
          analogWrite(_redPin, 0);
          analogWrite(_greenPin, 0);
          analogWrite(_bluePin, 0);
@@ -182,6 +184,57 @@ public:
       _redLevel = constrain(redLevel, 0.0f, 1.0f);
       _greenLevel = constrain(greenLevel, 0.0f, 1.0f);
       _blueLevel = constrain(blueLevel, 0.0f, 1.0f);
+      _apply();
+   }
+};
+
+constexpr uint8_t NUM_LEDS = 1;
+
+class NeoPixelLED : public LED
+{
+private:
+   CRGB _leds[NUM_LEDS];
+
+public:
+   NeoPixelLED() 
+   {
+	  _leds[0] = CRGB::Black; // start with the led off
+   }
+
+   virtual void begin() override
+   {
+      LED::begin();
+#if defined ARDUINO_WAVESHARE_ESP32_S3_ZERO
+      FastLED.addLeds<WS2812B, 21, RGB>(_leds, NUM_LEDS);
+#else
+      FastLED.addLeds<NEOPIXEL, PIN_NEOPIXEL>(_leds, NUM_LEDS);
+#endif
+   }
+
+   virtual void _apply() override
+   {
+      if (_isOn)
+      {
+         FastLED.setBrightness(_level);
+      }
+      else
+      {
+         FastLED.setBrightness(0);
+      }
+      FastLED.show();
+   }
+
+   void setColor(float redLevel, float greenLevel, float blueLevel)
+   {
+	  uint8_t r = constrain(255 * redLevel, 0, 255);
+	  uint8_t g = constrain(255 * greenLevel, 0, 255);
+	  uint8_t b = constrain(255 * blueLevel, 0, 255);
+	  setColor(r, g, b);
+   }
+
+   void setColor(uint8_t r, uint8_t g, uint8_t b)
+   {
+      _leds[0] = CRGB(r,g,b);
       _apply();
    }
 };
