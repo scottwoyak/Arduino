@@ -14,7 +14,6 @@ public:
       while ((millis() - start) < 2000 && !Serial)
       {
       };
-	  uint32_t now = millis();
    }
 
    static void print(const char* str1=nullptr, const char* str2 = nullptr, const char* str3 = nullptr)

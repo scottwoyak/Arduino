@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Util.h>
+
 /// <summary>
 /// Base template for timers - maintains cadence (does not drift)
 /// </summary>

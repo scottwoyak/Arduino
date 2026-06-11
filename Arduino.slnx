@@ -105,6 +105,10 @@
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
+    <Project Path="Tests/Timer_Tests/Timer_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
     <Project Path="Tests/Util_Tests/Util_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
