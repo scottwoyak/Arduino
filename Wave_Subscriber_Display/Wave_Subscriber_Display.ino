@@ -3,21 +3,27 @@
 
 #include <WiFiMulti.h>
 
-#include "Feather.h"
-#include "SerialX.h"
-#include "WiFiSettings.h"
-#include "TimedAverager.h"
-#include "BarChart.h"
-#include "RateTracker.h"
-#include "TelemetryClient.h"
-#include "RunningAverager.h"
+#include <Feather.h>
+#include <SerialX.h>
+#include <WiFiSettings.h>
+#include <TimedAverager.h>
+#include <BarChart.h>
+#include <RateTracker.h>
+#include <TelemetryClient.h>
+#include <RunningAverager.h>
+#include <BufferedTimeSeries.h>
+#include <Timer.h>
 
 Feather feather;
 WiFiMulti wifi;
 RollingRateTracker refreshRate(100);
 Stopwatch sw;
 TelemetrySubscriber client("Waves/Lake");
-RunningAverager waterLevel(500);
+RunningAverager sensorReadings(500);
+constexpr auto BUFFER_TIME_WINDOW_MS = 2000;
+constexpr auto BUFFER_RESOLUTION_MS = 100;
+BufferedTimeSeries waveHeight(BUFFER_TIME_WINDOW_MS, BUFFER_RESOLUTION_MS);
+Timer bufferTimer(BUFFER_RESOLUTION_MS);
 
 Format heightFormat("###.# cm");
 
@@ -27,7 +33,6 @@ constexpr uint16_t HEADER_HEIGHT = 3 * 8 + 4; // one line of text size 3 plus pa
 
 Color LakeBlue = Color565::fromRGB(0, 0, 255);
 constexpr RangeF ROLLING_RANGE = { 0, 40 };
-//constexpr RangeF ROLLING_RANGE = { 0, 150 };
 constexpr Rect16 ROLLING_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT);
 RollingBarChart rollingChart(ROLLING_RECT, ROLLING_RANGE, LakeBlue, Color::BLACK);
 
@@ -86,6 +91,8 @@ void onDisconnected()
    Util::reset();
 }
 
+float lastDelta = 0;
+
 void loop()
 {
    client.loop();
@@ -95,20 +102,33 @@ void loop()
 	  return;
    }
 
-   refreshRate.tick();
-
    // get value measured from the bottom of the graph
-   float height = 180 - client.getValue();
+   float sensorReading = client.getValue();
 
-   if (isnan(height))
+   if (bufferTimer.ready())
    {
-	  height = 0;
+	  if (isnan(sensorReading))
+	  {
+		 return;
+	  }
+
+	  sensorReadings.set(sensorReading);
+	  float avgSensorReading = sensorReadings.get();
+
+	  float delta = avgSensorReading - sensorReading;
+	  if (fabs(delta - lastDelta) < 5)
+	  {
+		 waveHeight.set(delta);
+		 lastDelta = delta;
+	  }
    }
 
-   waterLevel.set(height);
+   if (waveHeight.ready() == false)
+   {
+	  return;
+   }
 
-   float delta = height - waterLevel.get();
-   rollingChart.set((ROLLING_RANGE.min + ROLLING_RANGE.max) / 2.0 + delta);
+   rollingChart.set((ROLLING_RANGE.min + ROLLING_RANGE.max) / 2.0 + waveHeight.get());
 
    // display values
    feather.setCursor(0, 0);
@@ -117,15 +137,17 @@ void loop()
    feather.setTextSize(2);
    feather.print(client.getTopic(), Color::HEADING);
    feather.setTextSize(3);
-   feather.printR(delta, heightFormat, Color::VALUE);
+   feather.printR(waveHeight.get(), heightFormat, Color::VALUE);
    feather.moveCursorY(4);
 
+   refreshRate.tick();
    rollingChart.draw(&feather.display);
 
    if (sw.elapsedSecs() > 1)
    {
-	  Serial.println(refreshRate.getRate());
-	  Serial.println(height);
+	  Serial.println(String("Rate: ") + String(refreshRate.getRate()) + " data pts per sec");
+	  Serial.println(String("Sensor Reading: ") + String(sensorReading));
+	  Serial.println(String("Wave Height: ") + String(waveHeight.get()));
 	  sw.reset();
    }
 }
