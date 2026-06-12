@@ -70,6 +70,7 @@
     <File Path="libraries/Woyak/TimedHistogram.h" />
     <File Path="libraries/Woyak/TimedHistogramChart.h" />
     <File Path="libraries/Woyak/Timer.h" />
+    <File Path="libraries/Woyak/Units.h" />
     <File Path="libraries/Woyak/Url.h" />
     <File Path="libraries/Woyak/Util.h" />
     <File Path="libraries/Woyak/ValueStore.h" />
@@ -231,6 +232,10 @@
     <Deploy />
   </Project>
   <Project Path="Memory_Usage/Memory_Usage.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="MS5837_Display/MS5837_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
