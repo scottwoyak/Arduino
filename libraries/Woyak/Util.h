@@ -68,16 +68,6 @@ public:
       return percent;
    }
 
-   static float C2F(float celsius)
-   {
-      return 32 + (9.0 / 5.0) * celsius;
-   }
-
-   static float F2C(float fahrenheit)
-   {
-      return (fahrenheit - 32) * (5.0 / 9.0);
-   }
-
    /// <summary>
    /// Calculates elapsed time between two clock readings, handling wraparound.
    /// Uses unsigned arithmetic: if end &lt; start (clock wrapped), the result

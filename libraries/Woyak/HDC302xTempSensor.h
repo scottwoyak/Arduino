@@ -2,7 +2,7 @@
 
 #include <Adafruit_HDC302x.h>
 #include <I2CTempSensor.h>
-#include <Util.h>
+#include <Units.h>
 #include <string>
 
 
@@ -64,7 +64,7 @@ public:
       double temp;
       double humidity;
       _hdc.readTemperatureHumidityOnDemand(temp, humidity, TRIGGERMODE_LP0);
-      return Util::C2F((float)temp);
+      return Units::C2F((float)temp);
    }
    virtual float readTemperatureC()
    {
@@ -85,7 +85,7 @@ public:
    {
       double t, h;
       _hdc.readTemperatureHumidityOnDemand(t, h, TRIGGERMODE_LP0);
-      tempF = Util::C2F((float)t);
+      tempF = Units::C2F((float)t);
       hum = (float)h;
    }
 

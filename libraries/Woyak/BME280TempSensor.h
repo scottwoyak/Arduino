@@ -2,7 +2,7 @@
 
 #include <I2CTempSensor.h>
 #include <Adafruit_BME280.h>
-#include <Util.h>
+#include <Units.h>
 
 //-------------------------------------------------------------------------------------------------
 class BME280TempSensor : public I2CTempSensor
@@ -15,7 +15,7 @@ public:
    {
    }
    virtual bool begin() { return _bme.begin(getAddress()); }
-   virtual float readTemperatureF() { return Util::C2F(_bme.readTemperature()); }
+   virtual float readTemperatureF() { return Units::C2F(_bme.readTemperature()); }
    virtual float readTemperatureC() { return _bme.readTemperature(); }
    virtual float readHumidity() { return _bme.readHumidity(); }
    virtual bool readsBoth() { return false; }

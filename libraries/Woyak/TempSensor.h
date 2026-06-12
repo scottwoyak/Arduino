@@ -257,7 +257,7 @@ public:
          return NAN;
       }
 
-      return _sensor->readTemperatureC() + Util::F2C(_tempCorrectionF);
+      return _sensor->readTemperatureC() + Units::F2C(_tempCorrectionF);
    }
    float readHumidity()
    {

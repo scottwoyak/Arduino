@@ -2,7 +2,7 @@
 
 #include <I2CTempSensor.h>
 #include <Adafruit_SHT4x.h>
-#include <Util.h>
+#include <Units.h>
 
 //-------------------------------------------------------------------------------------------------
 class SHT4xTempSensor : public I2CTempSensor
@@ -31,7 +31,7 @@ public:
       sensors_event_t humidity, temp;
       if (sht.getEvent(&humidity, &temp))
       {
-         return Util::C2F(temp.temperature);
+         return Units::C2F(temp.temperature);
       }
       else
       {
@@ -68,7 +68,7 @@ public:
       sensors_event_t h, t;
       if (sht.getEvent(&h, &t))
       {
-         tempF = Util::C2F(t.temperature);
+         tempF = Units::C2F(t.temperature);
          hum = h.relative_humidity;
       }
       else
