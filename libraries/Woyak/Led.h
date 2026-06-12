@@ -36,6 +36,8 @@ public:
       _pin = pin;
    }
 
+   virtual ~BasicLED() {}
+
    virtual void begin()
    {
       if (_pin > 0)

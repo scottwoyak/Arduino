@@ -1,25 +1,22 @@
 #include "Feather_ESP32_S3.h"
-#include "IndexedEncoder.h"
 #include "TempSensor.h"
-#include "TimedAverager.h"
-#include "Stopwatch.h"
 #include "Adafruit_SleepyDog.h"
 #include "SerialX.h"
 #include "Influx.h"
 #include <string>
-#include <Status.h>
 #include <Timer.h>
 
 #include "WiFiSettings.h" // for WIFI_SSID and WIFI_PASSWORD
 
+constexpr const char* location = "StudioTable";
+
 Format humFormat("##.#%");
 Format tempFormat("###.## F");
 
-constexpr auto version = "v0.96";
+constexpr auto version = "v1.0";
 
 Feather_ESP32_S3 feather;
 NeoPixelStatus status(&feather.neoPixel);
-String location = "Cabin";
 
 TempSensor sensor;
 
@@ -45,22 +42,26 @@ void setup()
 
    feather.echoToSerial = true;
    feather.clearDisplay();
+   feather.setTextSize(2);
    feather.println("Initializing", Color::HEADING);
    feather.moveCursorY(feather.charH() / 2);
+
+   feather.print("Loc: ", Color::LABEL);
+   feather.printlnR(location, Color::VALUE);
 
    feather.print("Sensor... ", Color::LABEL);
    if (sensor.begin(true))
    {
-	  feather.printlnR("ok", Color::VALUE);
+      feather.printlnR("ok", Color::VALUE);
 
-	  SerialX::println("   Type: ", sensor.type());
-	  SerialX::println("   Address: ", sensor.address());
-	  SerialX::println("   ID: ", sensor.id());
+      SerialX::println("   Type: ", sensor.type());
+      SerialX::println("   Address: ", sensor.address());
+      SerialX::println("   ID: ", sensor.id());
    }
    else
    {
-	  feather.printR("FAILED", Color::RED);
-	  while (1);
+      feather.printR("FAILED", Color::RED);
+      while (1);
    }
 
    Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client, &status);
@@ -90,7 +91,7 @@ void loop()
    // Check WiFi connection and reconnect if needed
    if (wifiMulti.run() != WL_CONNECTED)
    {
-	  feather.println("Wifi connection lost");
+      feather.println("Wifi connection lost");
    }
 
    feather.setCursor(0, 0);
@@ -114,23 +115,26 @@ void loop()
 
    feather.setTextSize(2);
    feather.setCursor(0, -feather.charH());
-   feather.print(location.c_str(), Color::CYAN);
+   feather.print(location, Color::CYAN);
 
    feather.printR(version, Color::SUB_LABEL);
 
    // Write point
    if (influxTimer.ready())
    {
-	  digitalWrite(BUILTIN_LED, HIGH);
-	  if (point.post(&client) == false)
-	  {
-		 // sleep for 60 seconds (reboot upon wake up)
-		 feather.deepSleep(60);
-	  }
-	  digitalWrite(BUILTIN_LED, LOW);
+      digitalWrite(BUILTIN_LED, HIGH);
+      if (point.post(&client) == false)
+      {
+         // sleep for 60 seconds (reboot upon wake up)
+         feather.deepSleep(60);
+      }
+      digitalWrite(BUILTIN_LED, LOW);
 
-	  count = 0;
+      count = 0;
    }
+
+   // reading the sensor too often can actually cause it to heat up and produce inaccurate readings
+   delay(500);
 }
 
 
