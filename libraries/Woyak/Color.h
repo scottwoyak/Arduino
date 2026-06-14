@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Adafruit_GFX.h> 
-#include <Format.h>
 #include <string>
 
 #if defined(_Adafruit_GRAYOLED_H_)

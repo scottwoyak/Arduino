@@ -14,7 +14,7 @@ protected:
    Color _color;
    Color _backgroundColor;
 
-   virtual void _draw(TFT_eSPI* display) = 0;
+   virtual void _draw(LGFX* display) = 0;
 
 public:
    Slider(Rect16 rect, RangeF range, Color color, Color backgroundColor)
@@ -55,7 +55,7 @@ public:
       return _rect;
    }
 
-   void draw(TFT_eSPI* display)
+   void draw(LGFX* display)
    {
       if (isnan(_value))
       {
@@ -89,7 +89,7 @@ public:
 class HorizontalSlider : public Slider
 {
 protected:
-   void _draw(TFT_eSPI* display)
+   void _draw(LGFX* display)
    {
       if (isnan(_lastValue))
       {

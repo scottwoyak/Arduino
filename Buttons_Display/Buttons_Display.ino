@@ -49,7 +49,7 @@ void setup()
 
    SerialX::begin();
    feather.begin();
-   feather.setRotation(DisplayOrientation::PORTRAIT);
+   feather.setRotation(DisplayRotation::PORTRAIT);
 
    for (int i = 0; i < NUM_BUTTONS; i++)
    {

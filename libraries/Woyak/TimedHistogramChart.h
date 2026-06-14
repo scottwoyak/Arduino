@@ -37,7 +37,7 @@ public:
       _histogram.set(value);
    }
 
-   void draw(TFT_eSPI* display)
+   void draw(LGFX* display)
    {
       _histogram.get(_values);
       _chart.draw(display, _values);

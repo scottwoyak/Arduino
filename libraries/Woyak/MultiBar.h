@@ -47,7 +47,7 @@ public:
       }
    }
 
-   void draw(TFT_eSPI* display)
+   void draw(LGFX* display)
    {
       for (uint i = 0; i < _numBars; i++)
       {
