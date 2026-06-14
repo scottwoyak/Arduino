@@ -51,8 +51,6 @@ void loop()
    feather.print(encoder.getPinB(), Color::VALUE);
    feather.print("  Button:", Color::LABEL);
    feather.println(encoder.getButtonPin(), Color::VALUE);
-
-   feather.displayDisplay();
 }
 
 

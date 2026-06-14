@@ -50,7 +50,7 @@ void setup()
 {
    for (int i = 0; i < NUM_BINS; i++)
    {
-	  speedBins[i] = new TimedBin(SAMPLING_DURATION_MS);
+	  speedBins[i] = new TimedBin(BIN_DURATION_MS);
    }
 
    status.begin();

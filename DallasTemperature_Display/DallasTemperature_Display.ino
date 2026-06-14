@@ -3,6 +3,7 @@
 //
 
 #include <Feather.h>
+#include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <Stopwatch.h>

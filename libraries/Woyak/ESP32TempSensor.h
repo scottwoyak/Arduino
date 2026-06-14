@@ -28,7 +28,7 @@ public:
    }
    virtual float readTemperatureF() 
    { 
-      return Util::C2F(readTemperatureC()); 
+      return Units::C2F(readTemperatureC()); 
    }
    virtual float readTemperatureC() 
    { 
