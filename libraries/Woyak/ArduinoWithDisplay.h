@@ -22,23 +22,23 @@ class ArduinoWithDisplay
 private:
    void _print(const char* str, Color textColor, Color backgroundColor)
    {
-	  if (echoToSerial)
-	  {
-		 Serial.print(str);
-	  }
-	  // SAW display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor, true);
-	  display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
-	  display.print(str);
+      if (echoToSerial)
+      {
+         Serial.print(str);
+      }
+      // SAW display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor, true);
+      display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
+      display.print(str);
    }
    void _println(const char* str, Color textColor, Color backgroundColor)
    {
-	  if (echoToSerial)
-	  {
-		 Serial.println(str);
-	  }
-	  // SAW display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor, true);
-	  display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
-	  display.println(str);
+      if (echoToSerial)
+      {
+         Serial.println(str);
+      }
+      // SAW display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor, true);
+      display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
+      display.println(str);
    }
 
 
@@ -47,223 +47,210 @@ public:
    bool echoToSerial = false;
 
    ArduinoWithDisplay()
-   {
-   }
+   {}
 
    uint16_t width()
    {
-	  return display.width();
+      return display.width();
    }
 
    uint16_t height()
    {
-	  return display.height();
+      return display.height();
    }
 
    uint8_t charH()
    {
-	  return display.fontHeight();
+      return display.fontHeight();
    }
 
    uint8_t charW()
    {
-	  /*
-	  // if monospaced, all chars return the same width. If not, '0' is an average width
-	  // and will be the same for all digits
-	  uint16_t gNum;
-	  display.getUnicodeIndex(0x30, &gNum);
-	  return display.gxAdvance[gNum];
-	  */
+      // if monospaced, all chars return the same width. If not, '0' is an average width
+      // and will be the same for all digits
+      const lgfx::v1::VLWfont* font = (const lgfx::v1::VLWfont*) display.getFont();
+      uint16_t gNum;
+      font->getUnicodeIndex(0x30, &gNum);
+      return font->gxAdvance[gNum];
 
-	  // Note: textWidth returns the gxAdvance value for all characters of a string except
-	  // the last character which only returns gdX+glyphWidth for a more pixel perfect
-	  // width calculation. This means that when asking for the width of a single character,
-	  // you don't get the full advance and thus the need for us to manually compute the
-	  // value above.
-	  return display.textWidth("0");
+      // Note: textWidth returns the gxAdvance value for all characters of a string except
+      // the last character which only returns gdX+glyphWidth for a more pixel perfect
+      // width calculation. This means that when asking for the width of a single character,
+      // you don't get the full advance and thus the need for us to manually compute the
+      // value above.
+      //return display.textWidth("0");
    }
 
    void setRotation(DisplayRotation rotation)
    {
-	  display.setRotation((uint8_t)rotation);
+      display.setRotation((uint8_t)rotation);
    }
 
    virtual void clearDisplay(Color color = Color::BLACK)
    {
-	  display.fillScreen((uint16_t)color);
-	  display.setCursor(0, 0);
+      display.fillScreen((uint16_t)color);
+      display.setCursor(0, 0);
    }
 
    void printFontMetrics()
    {
-	  /*
-	  Serial.println("---------------------------------------------------------------");
-	  Serial.print("TextSize: ");
-	  Serial.println(display.textsize);
-	  Serial.print("gFont.gCount: ");
-	  Serial.println(display.gFont.gCount);
-	  Serial.print("gFont.yAdvance: ");
-	  Serial.println(display.gFont.yAdvance);
-	  Serial.print("gFont.ascent: ");
-	  Serial.println(display.gFont.ascent);
-	  Serial.print("gFont.descent: ");
-	  Serial.println(display.gFont.descent);
-	  Serial.print("gFont.maxAscent: ");
-	  Serial.println(display.gFont.maxAscent);
-	  Serial.print("gFont.maxDescent: ");
-	  Serial.println(display.gFont.maxDescent);
+      const lgfx::v1::VLWfont* font = (const lgfx::v1::VLWfont*) display.getFont();
 
-	  for (uint16_t i = 0; i < display.gFont.gCount; i++)
-	  {
-		 Serial.print(i);
-		 Serial.print(" '");
-		 if (display.gUnicode[i] < 256)
-		 {
-			Serial.print((char)display.gUnicode[i]);
-		 }
-		 Serial.print("'");
-		 Serial.print("\t");
-		 Serial.print(" gxAdvance:");
-		 Serial.print(display.gxAdvance[i]);
-		 Serial.print("\t");
-		 Serial.print(" gdX:");
-		 Serial.print(display.gdX[i]);
-		 Serial.print("\t");
-		 Serial.print(" gWidth:");
-		 Serial.print(display.gWidth[i]);
-		 Serial.print("\t");
-		 Serial.print(" gdY:");
-		 Serial.print(display.gdY[i]);
-		 Serial.print("\t");
-		 Serial.print(" gHeight:");
-		 Serial.print(display.gHeight[i]);
+      Serial.println("---------------------------------------------------------------");
+      Serial.print("font->gCount: ");
+      Serial.println(font->gCount);
+      Serial.print("font->yAdvance: ");
+      Serial.println(font->yAdvance);
+      Serial.print("font->ascent: ");
+      Serial.println(font->ascent);
+      Serial.print("font->descent: ");
+      Serial.println(font->descent);
+      Serial.print("font->maxAscent: ");
+      Serial.println(font->maxAscent);
+      Serial.print("font->maxDescent: ");
+      Serial.println(font->maxDescent);
 
-		 Serial.println();
-	  }
-	  */
+      for (uint16_t i = 0; i < font->gCount; i++)
+      {
+         Serial.print(i);
+         Serial.print(" '");
+         if (font->gUnicode[i] < 256)
+         {
+            Serial.print((char)font->gUnicode[i]);
+         }
+         Serial.print("'");
+         Serial.print("\t");
+         Serial.print(" gxAdvance:");
+         Serial.print(font->gxAdvance[i]);
+         Serial.print("\t");
+         Serial.print(" gdX:");
+         Serial.print(font->gdX[i]);
+         Serial.print("\t");
+         Serial.print(" gWidth:");
+         Serial.print(font->gWidth[i]);
+
+         Serial.println();
+      }
    }
 
    void setTextSize(uint8_t size, bool mono = true)
    {
-	  // TODO LGFX applies this value for custom fonts, so we need to set it to 1.
-	  display.setTextSize(1);
+      // LGFX uses setTextSize to set a scaling factor. We instead load a properly
+      // sized font. Make sure to set the scaling factor back to 1
+      display.setTextSize(1);
 
-	  size = constrain(size, 0, 7);
-	  if (mono)
-	  {
-		 display.loadFont(RobotoMonoBold[size]);
-	  }
-	  else
-	  {
-		 display.loadFont(Roboto[size]);
-	  }
+      size = constrain(size, 0, 7);
+      if (mono)
+      {
+         display.loadFont(RobotoMonoBold[size]);
+         //display.loadFont(Roboto[size]); // uncomment this to see if we can force a proportional font to be monospace
+      }
+      else
+      {
+         display.loadFont(Roboto[size]);
+      }
 
-	  //printFontMetrics();
+      //printFontMetrics();
 
-	  /* SAW
-	  // correct for the use of negative values for descents
-	  if (((int16_t)display.gFont.maxDescent) < 0)
-	  {
-		 display.gFont.maxDescent = -((int16_t)display.gFont.maxDescent);
-		 display.gFont.yAdvance = display.gFont.maxAscent + display.gFont.maxDescent;
-	  }
-	  if (display.gFont.descent < 0)
-	  {
-		 display.gFont.descent = -display.gFont.descent;
-	  }
-	  */
+      // if we're making this a monospaced font, adjust each characters dimensions
+      if (mono)
+      {
+         // this is unsafe code - we are accessing an internal LGFX data structure
+         // and modifying it
+         lgfx::v1::VLWfont* font = (lgfx::v1::VLWfont*)(display.getFont());
 
-	  // if we're making this a monospaced font, adjust each characters dimensions
-	  /*
-	  if (mono)
-	  {
-		 // get the max char width and make them all the same
-		 uint8_t maxAdvance = 0;
-		 for (uint16_t i = 0; i < display.gFont.gCount; i++)
-		 {
-			maxAdvance = std::max(maxAdvance, display.gxAdvance[i]);
-		 }
+         // get the max char width and make them all the same
+         uint8_t maxAdvance = 0;
+         for (uint16_t i = 0; i < font->gCount; i++)
+         {
+            maxAdvance = std::max(maxAdvance, font->gxAdvance[i]);
+         }
 
-		 for (uint16_t i = 0; i < display.gFont.gCount; i++)
-		 {
-			display.gxAdvance[i] = maxAdvance;
-			display.gdX[i] = (maxAdvance - display.gWidth[i])/2;
-		 }
+         // TODO LGFX doesn't actually use any of these values. I think it gets the values
+         // from the data structure each time. We need to implement our own IFont class
+         // that derives from VLWfont and overrides updateFontMetric(), I think
+         /*
+         for (uint16_t i = 0; i < font->gCount; i++)
+         {
+            font->gxAdvance[i] = maxAdvance;
+            font->gdX[i] = (maxAdvance - font->gWidth[i]) / 2;
+            font->gWidth[i] = maxAdvance;
+         }
+         */
 
-		 // TFT_eSPI guesses at the space width. Make it the monospace value
-		 display.gFont.spaceWidth = maxAdvance;
-	  }
-	  */
+         // TFT_eSPI & LGFX guess at the space width. Make it the monospace value
+         font->spaceWidth = maxAdvance;
+      }
    }
 
    void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, Color color)
    {
-	  if (x < 0)
-	  {
-		 x = display.width() + x;
-	  }
-	  if (y < 0)
-	  {
-		 y = display.height() + y;
-	  }
+      if (x < 0)
+      {
+         x = display.width() + x;
+      }
+      if (y < 0)
+      {
+         y = display.height() + y;
+      }
 
-	  display.fillRect(x, y, w, h, (uint16_t)color);
+      display.fillRect(x, y, w, h, (uint16_t)color);
 
    }
 
    void setCursor(int16_t x, int16_t y)
    {
-	  if (x < 0)
-	  {
-		 x = display.width() + x;
-	  }
-	  if (y < 0)
-	  {
-		 y = display.height() + y;
-	  }
+      if (x < 0)
+      {
+         x = display.width() + x;
+      }
+      if (y < 0)
+      {
+         y = display.height() + y;
+      }
 
-	  display.setCursor(x, y);
+      display.setCursor(x, y);
    }
    void setCursorX(int16_t x)
    {
-	  setCursor(x, display.getCursorY());
+      setCursor(x, display.getCursorY());
    }
    void setCursorY(int16_t y)
    {
-	  setCursor(display.getCursorX(), y);
+      setCursor(display.getCursorX(), y);
    }
 
    void moveCursor(int16_t deltaX, int16_t deltaY)
    {
-	  int16_t x = display.getCursorX() + deltaX;
-	  int16_t y = display.getCursorY() + deltaY;
+      int16_t x = display.getCursorX() + deltaX;
+      int16_t y = display.getCursorY() + deltaY;
 
-	  display.setCursor(x, y);
+      display.setCursor(x, y);
    }
    void moveCursorX(int16_t deltaX)
    {
-	  moveCursor(deltaX, 0);
+      moveCursor(deltaX, 0);
    }
    void moveCursorY(int16_t deltaY)
    {
-	  moveCursor(0, deltaY);
+      moveCursor(0, deltaY);
    }
    Point16 getCursor()
    {
-	  return Point16(display.getCursorX(), display.getCursorY());
+      return Point16(display.getCursorX(), display.getCursorY());
    }
    void setCursor(Point16 pt)
    {
-	  setCursor(pt.x, pt.y);
+      setCursor(pt.x, pt.y);
    }
 
    void println()
    {
-	  if (echoToSerial)
-	  {
-		 Serial.println();
-	  }
-	  display.println();
+      if (echoToSerial)
+      {
+         Serial.println();
+      }
+      display.println();
    }
 
    //
@@ -271,22 +258,22 @@ public:
    //
    void printR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  uint16_t len = display.textWidth(str);
-	  setCursorX(-len);
-	  print(str, textColor, backgroundColor);
+      uint16_t len = display.textWidth(str);
+      setCursorX(-len);
+      print(str, textColor, backgroundColor);
    }
    void printlnR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  printR(str, textColor, backgroundColor);
-	  println();
+      printR(str, textColor, backgroundColor);
+      println();
    }
    void printR(std::string str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  printR(str.c_str(), textColor, backgroundColor);
+      printR(str.c_str(), textColor, backgroundColor);
    }
    void printlnR(std::string str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  printlnR(str.c_str(), textColor, backgroundColor);
+      printlnR(str.c_str(), textColor, backgroundColor);
    }
 
 
@@ -295,22 +282,22 @@ public:
    //
    void printC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  uint16_t len = display.textWidth(str);
-	  setCursorX((display.width() - len) / 2);
-	  print(str, textColor, backgroundColor);
+      uint16_t len = display.textWidth(str);
+      setCursorX((display.width() - len) / 2);
+      print(str, textColor, backgroundColor);
    }
    void printlnC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  printC(str, textColor, backgroundColor);
-	  println();
+      printC(str, textColor, backgroundColor);
+      println();
    }
    void printC(std::string str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  printC(str.c_str(), textColor, backgroundColor);
+      printC(str.c_str(), textColor, backgroundColor);
    }
    void printlnC(std::string str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  printlnC(str.c_str(), textColor, backgroundColor);
+      printlnC(str.c_str(), textColor, backgroundColor);
    }
 
    //
@@ -318,21 +305,21 @@ public:
    //
    void print(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  _print(str, textColor, backgroundColor);
+      _print(str, textColor, backgroundColor);
    }
    void println(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  _println(str, textColor, backgroundColor);
+      _println(str, textColor, backgroundColor);
    }
    void print(const char* str, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string s = format.toString(str);
-	  _print(s.c_str(), textColor, backgroundColor);
+      std::string s = format.toString(str);
+      _print(s.c_str(), textColor, backgroundColor);
    }
    void println(const char* str, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  print(str, format, textColor, backgroundColor);
-	  println();
+      print(str, format, textColor, backgroundColor);
+      println();
    }
 
    //
@@ -340,21 +327,21 @@ public:
    //
    void print(const String& str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  _print(str.c_str(), textColor, backgroundColor);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(const String& str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  _println(str.c_str(), textColor, backgroundColor);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(String& str, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string s = format.toString(str);
-	  _print(s.c_str(), textColor, backgroundColor);
+      std::string s = format.toString(str);
+      _print(s.c_str(), textColor, backgroundColor);
    }
    void println(String& str, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  print(str, format, textColor, backgroundColor);
-	  println();
+      print(str, format, textColor, backgroundColor);
+      println();
    }
 
    //
@@ -362,21 +349,21 @@ public:
    //
    void print(const std::string& str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  _print(str.c_str(), textColor, backgroundColor);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(const std::string& str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  _println(str.c_str(), textColor, backgroundColor);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(const std::string& str, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string s = format.toString(str);
-	  _print(s.c_str(), textColor, backgroundColor);
+      std::string s = format.toString(str);
+      _print(s.c_str(), textColor, backgroundColor);
    }
    void println(const std::string& str, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  print(str, format, textColor, backgroundColor);
-	  println();
+      print(str, format, textColor, backgroundColor);
+      println();
    }
 
    //
@@ -384,53 +371,53 @@ public:
    //
    void print(float value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value);
-	  _print(str.c_str(), textColor, backgroundColor);
+      String str(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(float value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value);
-	  _println(str.c_str(), textColor, backgroundColor);
+      String str(value);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(float value, uint precision, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value, precision);
-	  _print(str.c_str(), textColor, backgroundColor);
+      String str(value, precision);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(float value, uint precision, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value, precision);
-	  _println(str.c_str(), textColor, backgroundColor);
+      String str(value, precision);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(float value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string str = format.toString(value);
-	  _print(str.c_str(), textColor, backgroundColor);
+      std::string str = format.toString(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(float value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  print(value, format, textColor, backgroundColor);
-	  println();
+      print(value, format, textColor, backgroundColor);
+      println();
    }
    void printR(float value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string str = format.toString(value);
-	  printR(str.c_str(), textColor, backgroundColor);
+      std::string str = format.toString(value);
+      printR(str.c_str(), textColor, backgroundColor);
    }
    void printlnR(float value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string str = format.toString(value);
-	  printlnR(str.c_str(), textColor, backgroundColor);
+      std::string str = format.toString(value);
+      printlnR(str.c_str(), textColor, backgroundColor);
    }
    void printC(float value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string str = format.toString(value);
-	  printC(str.c_str(), textColor, backgroundColor);
+      std::string str = format.toString(value);
+      printC(str.c_str(), textColor, backgroundColor);
    }
    void printlnC(float value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string str = format.toString(value);
-	  printlnC(str.c_str(), textColor, backgroundColor);
+      std::string str = format.toString(value);
+      printlnC(str.c_str(), textColor, backgroundColor);
    }
 
    //
@@ -438,53 +425,53 @@ public:
    //
    void print(double value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value);
-	  _print(str.c_str(), textColor, backgroundColor);
+      String str(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(double value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value);
-	  _println(str.c_str(), textColor, backgroundColor);
+      String str(value);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(double value, uint precision, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value, precision);
-	  _print(str.c_str(), textColor, backgroundColor);
+      String str(value, precision);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(double value, uint precision, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value, precision);
-	  _println(str.c_str(), textColor, backgroundColor);
+      String str(value, precision);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(double value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string str = format.toString(value);
-	  _print(str.c_str(), textColor, backgroundColor);
+      std::string str = format.toString(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(double value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  print(value, format, textColor, backgroundColor);
-	  println();
+      print(value, format, textColor, backgroundColor);
+      println();
    }
    void printR(double value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string str = format.toString(value);
-	  printR(str.c_str(), textColor, backgroundColor);
+      std::string str = format.toString(value);
+      printR(str.c_str(), textColor, backgroundColor);
    }
    void printlnR(double value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string str = format.toString(value);
-	  printlnR(str.c_str(), textColor, backgroundColor);
+      std::string str = format.toString(value);
+      printlnR(str.c_str(), textColor, backgroundColor);
    }
    void printC(double value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string str = format.toString(value);
-	  printC(str.c_str(), textColor, backgroundColor);
+      std::string str = format.toString(value);
+      printC(str.c_str(), textColor, backgroundColor);
    }
    void printlnC(double value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string str = format.toString(value);
-	  printlnC(str.c_str(), textColor, backgroundColor);
+      std::string str = format.toString(value);
+      printlnC(str.c_str(), textColor, backgroundColor);
    }
 
    //
@@ -492,33 +479,33 @@ public:
    //
    void print(uint8_t value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value);
-	  _print(str.c_str(), textColor, backgroundColor);
+      String str(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(uint8_t value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value);
-	  _println(str.c_str(), textColor, backgroundColor);
+      String str(value);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(uint8_t value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value, base);
-	  _print(str.c_str(), textColor, backgroundColor);
+      String str(value, base);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(uint8_t value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value, base);
-	  _println(str.c_str(), textColor, backgroundColor);
+      String str(value, base);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(uint8_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string str = format.toString(value);
-	  _print(str.c_str(), textColor, backgroundColor);
+      std::string str = format.toString(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(uint8_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  print(value, format, textColor, backgroundColor);
-	  println();
+      print(value, format, textColor, backgroundColor);
+      println();
    }
 
    //
@@ -526,33 +513,33 @@ public:
    //
    void print(int value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value);
-	  _print(str.c_str(), textColor, backgroundColor);
+      String str(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(int value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value);
-	  _println(str.c_str(), textColor, backgroundColor);
+      String str(value);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(int value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value, base);
-	  _print(str.c_str(), textColor, backgroundColor);
+      String str(value, base);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(int value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value, base);
-	  _println(str.c_str(), textColor, backgroundColor);
+      String str(value, base);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(int value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string str = format.toString(value);
-	  _print(str.c_str(), textColor, backgroundColor);
+      std::string str = format.toString(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(int value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  print(value, format, textColor, backgroundColor);
-	  println();
+      print(value, format, textColor, backgroundColor);
+      println();
    }
 
    //
@@ -560,33 +547,33 @@ public:
    //
    void print(long value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value);
-	  _print(str.c_str(), textColor, backgroundColor);
+      String str(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(long value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value);
-	  _println(str.c_str(), textColor, backgroundColor);
+      String str(value);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(long value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value, base);
-	  _print(str.c_str(), textColor, backgroundColor);
+      String str(value, base);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(long value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value, base);
-	  _println(str.c_str(), textColor, backgroundColor);
+      String str(value, base);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(long value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string str = format.toString(value);
-	  _print(str.c_str(), textColor, backgroundColor);
+      std::string str = format.toString(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(long value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  print(value, format, textColor, backgroundColor);
-	  println();
+      print(value, format, textColor, backgroundColor);
+      println();
    }
 
    //
@@ -594,32 +581,32 @@ public:
    //
    void print(unsigned long value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value);
-	  _print(str.c_str(), textColor, backgroundColor);
+      String str(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(unsigned long value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value);
-	  _println(str.c_str(), textColor, backgroundColor);
+      String str(value);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(unsigned long value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value, base);
-	  _print(str.c_str(), textColor, backgroundColor);
+      String str(value, base);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(unsigned long value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  String str(value, base);
-	  _println(str.c_str(), textColor, backgroundColor);
+      String str(value, base);
+      _println(str.c_str(), textColor, backgroundColor);
    }
    void print(unsigned long value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  std::string str = format.toString(value);
-	  _print(str.c_str(), textColor, backgroundColor);
+      std::string str = format.toString(value);
+      _print(str.c_str(), textColor, backgroundColor);
    }
    void println(unsigned long value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
-	  print(value, format, textColor, backgroundColor);
-	  println();
+      print(value, format, textColor, backgroundColor);
+      println();
    }
 };

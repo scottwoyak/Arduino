@@ -39,19 +39,21 @@ void printRange(uint8_t min, uint8_t max)
 
 void computeMetrics(FontMetrics* m, bool print = false)
 {
+   const lgfx::v1::VLWfont* font = (const lgfx::v1::VLWfont*) feather.display.getFont();
+
    m->minAdvance = 255;
    m->maxAdvance = 0;
    m->minWidth = 255;
    m->maxWidth = 0;
-   m->height = feather.display.gFont.yAdvance;
-   for (uint16_t i = 0; i < feather.display.gFont.gCount; i++)
+   m->height = font->yAdvance;
+   for (uint16_t i = 0; i < font->gCount; i++)
    {
-      m->minAdvance = std::min(m->minAdvance, feather.display.gxAdvance[i]);
-      m->maxAdvance = std::max(m->maxAdvance, feather.display.gxAdvance[i]);
-      m->minWidth = std::min(m->minWidth, feather.display.gWidth[i]);
-      m->maxWidth = std::max(m->maxWidth, feather.display.gWidth[i]);
+      m->minAdvance = std::min(m->minAdvance, font->gxAdvance[i]);
+      m->maxAdvance = std::max(m->maxAdvance, font->gxAdvance[i]);
+      m->minWidth = std::min(m->minWidth, font->gWidth[i]);
+      m->maxWidth = std::max(m->maxWidth, font->gWidth[i]);
 
-      char c = feather.display.gUnicode[i] < 256 ? (char)feather.display.gUnicode[i] : '\0';
+      char c = font->gUnicode[i] < 256 ? (char)font->gUnicode[i] : '\0';
       m->printMinWidth = std::min(m->printMinWidth, (uint8_t)feather.display.textWidth(String(c)));
       m->printMaxWidth = std::max(m->printMaxWidth, (uint8_t)feather.display.textWidth(String(c)));
 
@@ -64,15 +66,15 @@ void computeMetrics(FontMetrics* m, bool print = false)
          Serial.print("\t");
 
          Serial.print(" gxAdvance:");
-         Serial.print(feather.display.gxAdvance[i]);
+         Serial.print(font->gxAdvance[i]);
          Serial.print("\t");
 
          Serial.print(" gdX:");
-         Serial.print(feather.display.gdX[i]);
+         Serial.print(font->gdX[i]);
          Serial.print("\t");
 
          Serial.print(" gWidth:");
-         Serial.print(feather.display.gWidth[i]);
+         Serial.print(font->gWidth[i]);
          Serial.print("\t");
 
          Serial.print(" textwidth():");
