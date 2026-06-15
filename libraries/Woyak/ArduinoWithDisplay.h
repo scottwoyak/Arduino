@@ -17,7 +17,13 @@ enum DisplayRotation
    LANDSCAPE_FLIP = 3,
 };
 
-class ArduinoWithDisplay
+class Arduino
+{
+public:
+   virtual void begin() = 0;
+};
+
+class ArduinoWithDisplay : Arduino
 {
 private:
    void _print(const char* str, Color textColor, Color backgroundColor)
@@ -26,7 +32,7 @@ private:
       {
          Serial.print(str);
       }
-      // SAW display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor, true);
+
       display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
       display.print(str);
    }
@@ -36,7 +42,7 @@ private:
       {
          Serial.println(str);
       }
-      // SAW display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor, true);
+
       display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
       display.println(str);
    }
@@ -48,6 +54,19 @@ public:
 
    ArduinoWithDisplay()
    {}
+
+   void begin() override
+   {
+      display.init();
+
+      display.setRotation(DisplayRotation::LANDSCAPE);
+      display.fillScreen((uint16_t)Color::BLACK);
+
+      display.setTextColor((uint16_t)Color::WHITE, (uint16_t)Color::BLACK);
+      display.setTextSize(2);
+      display.setTextWrap(false);
+      display.setBrightness(255);
+   }
 
    uint16_t width()
    {

@@ -21,14 +21,7 @@ public:
 
    void begin()
    {
-      display.init();
-
-      display.setRotation(DisplayRotation::LANDSCAPE);
-      display.fillScreen((uint16_t)Color::BLACK);
-
-      display.setTextColor((uint16_t)Color::WHITE, (uint16_t)Color::BLACK);
-      display.setTextSize(2);
-      display.setTextWrap(false);
+      ArduinoWithDisplay::begin();
 
       buttonA.begin();
       neoPixel.begin();
