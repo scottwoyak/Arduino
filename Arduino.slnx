@@ -15,7 +15,8 @@
     <File Path="libraries/Woyak/BufferedTimeSeries.h" />
     <File Path="libraries/Woyak/Button.cpp" />
     <File Path="libraries/Woyak/Button.h" />
-    <File Path="libraries/Woyak/CapacitySensor.h" />
+    <File Path="libraries/Woyak/CapacitorDepthSensor.h" />
+    <File Path="libraries/Woyak/CapacitorSensor.h" />
     <File Path="libraries/Woyak/Color.h" />
     <File Path="libraries/Woyak/CountdownTimer.h" />
     <File Path="libraries/Woyak/Counter.cpp" />
@@ -128,7 +129,11 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Capacity_Display/Capacity_Display.vcxproj">
+  <Project Path="CapacitorDepth_Display/CapacitorDepth_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Capacitor_Display/Capacitor_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

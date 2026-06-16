@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <CapacitySensor.h>
+#include <CapacitorSensor.h>
 #include <Feather.h>
 #include <RateTracker.h>
 #include <RunningAverager.h>
@@ -12,14 +12,14 @@ Format rateFormat("#### per/s");
 RunningAverager chargeTime10(10);
 RunningAverager chargeTime100(100);
 RunningAverager chargeTime1000(1000);
-Timer displayTimer(500);
+Timer displayTimer(200);
 RollingRateTracker rate(500);
 
 // Hardware Pin Assignments
 const int CHARGE_PIN = 5;
 const int SENSE_PIN = 6;
 
-CapacitySensor sensor(CHARGE_PIN, SENSE_PIN);
+CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN);
 
 void setup()
 {

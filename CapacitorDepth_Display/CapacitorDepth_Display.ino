@@ -1,0 +1,54 @@
+#include <Arduino.h>
+#include <CapacitorDepthSensor.h>
+#include <Feather.h>
+#include <RateTracker.h>
+#include <RunningAverager.h>
+#include <Timer.h>
+
+Feather feather;
+Format depthFormat("###.# cm");
+Format rateFormat("#### per/s");
+
+Timer displayTimer(100);
+RollingRateTracker rate(500);
+
+// Hardware Pin Assignments
+const int CHARGE_PIN = 5;
+const int SENSE_PIN = 6;
+
+constexpr auto ZERO_CHARGE_TIME = 128.3;
+constexpr auto FULL_CHARGE_TIME = 295;
+constexpr auto FULL_DEPTH = 30;
+
+CapacitorDepthSensor sensor(CHARGE_PIN, SENSE_PIN, ZERO_CHARGE_TIME, FULL_CHARGE_TIME, FULL_DEPTH);
+
+void setup()
+{
+   feather.begin();
+   sensor.begin();
+}
+
+void loop()
+{
+   if (sensor.loop())
+   {
+      rate.tick();
+   }
+
+   if (displayTimer.ready())
+   {
+      float depth = sensor.getDepth();
+
+      feather.setCursor(0, 0);
+      feather.setTextSize(2);
+      feather.println("Capacitor Depth Sensor", Color::HEADING);
+      feather.moveCursorY(10);
+
+      feather.setTextSize(5);
+      feather.println(depth, depthFormat, Color::VALUE);
+
+      feather.setTextSize(3);
+      feather.setCursorY(feather.height() - feather.charH());
+      feather.printlnR(rate.getRate(), rateFormat, Color::SUB_LABEL);
+   }
+}

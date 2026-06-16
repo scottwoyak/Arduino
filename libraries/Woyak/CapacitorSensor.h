@@ -1,6 +1,6 @@
 #pragma once
 
-class CapacitySensor
+class CapacitorSensor
 {
 private:
    // State Management Flags
@@ -21,11 +21,11 @@ private:
    volatile uint64_t _endTime = 0;
    volatile uint64_t _chargeTimeUs = 0;
 
-   static inline CapacitySensor* _instance;
+   static inline CapacitorSensor* _instance;
 
    static void _onPinRising()
    {
-      CapacitySensor::_instance->_onCharged();
+      CapacitorSensor::_instance->_onCharged();
    }
 
    void _onCharged()
@@ -39,7 +39,7 @@ private:
    }
 
 public:
-   CapacitySensor(uint8_t chargePin, uint8_t sensePin)
+   CapacitorSensor(uint8_t chargePin, uint8_t sensePin)
    {
       _chargePin = chargePin;
       _sensePin = sensePin;
@@ -80,7 +80,7 @@ public:
 
       case DISCHARGING:
          // Give the bars 500 microseconds to completely empty their electrical charge
-         if (esp_timer_get_time() - _startTime > 500)
+         if (esp_timer_get_time() - _startTime > 5000)
          {
             // Step B: CRITICAL ORDER OF OPERATIONS
             // 1. Send electrical wave down the resistor FIRST

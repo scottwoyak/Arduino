@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Capacity_Display.ino" />
+    <ClCompile Include="CapacitorDepth_Display.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.Capacity_Display.vsarduino.h">
+    <ClInclude Include="__vm\.CapacitorDepth_Display.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
