@@ -1,13 +1,13 @@
 #include <Arduino.h>
 #include <SevenSegment.h>
-#include <RateTracker.h>
+#include <RollingRate.h>
 #include <Timer.h>
 
 // Module connection pins (Digital Pins)
 #define CLK 41
 #define DIO 42
 
-RateTracker rate;
+RollingRate rate;
 Timer timer(1000);
 
 SevenSegment display(CLK, DIO);
@@ -34,6 +34,6 @@ void loop()
 
    if (timer.ready())
    {
-      Serial.println("Rate: " + String(rate.getRate()) + " per sec");
+      Serial.println("Rate: " + String(rate.get()) + " per sec");
    }
 }

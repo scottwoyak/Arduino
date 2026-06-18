@@ -7,7 +7,7 @@
 #include <SerialX.h>
 #include <WiFiSettings.h>
 #include <Stopwatch.h>
-#include <RateTracker.h>
+#include <RollingRate.h>
 #include <TelemetryClient.h>
 #include <Url.h>
 #include <Timer.h>
@@ -20,7 +20,7 @@ Stopwatch sw(false);
 Timer publishTimer(100);
 
 
-RollingRateTracker rate(100);
+RollingRate rate(100);
 Point16 ratePos;
 
 Format rateFormat("###/s");
@@ -146,7 +146,7 @@ void loop()
    if (sw.elapsedMillis() > 1000)
    {
 	  feather.setCursor(ratePos);
-	  feather.println(rate.getRate(), rateFormat, Color::VALUE);
+	  feather.println(rate.get(), rateFormat, Color::VALUE);
 	  sw.reset();
    }
 }

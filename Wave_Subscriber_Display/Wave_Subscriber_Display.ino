@@ -8,7 +8,7 @@
 #include <WiFiSettings.h>
 #include <TimedAverager.h>
 #include <BarChart.h>
-#include <RateTracker.h>
+#include <RollingRate.h>
 #include <TelemetryClient.h>
 #include <RollingAverage.h>
 #include <BufferedTimeSeries.h>
@@ -16,7 +16,7 @@
 
 Feather feather;
 WiFiMulti wifi;
-RollingRateTracker refreshRate(100);
+RollingRate refreshRate(100);
 Stopwatch sw;
 TelemetrySubscriber client("Waves/Lake");
 RollingAverage sensorReadings(500);
@@ -145,7 +145,7 @@ void loop()
 
    if (sw.elapsedSecs() > 1)
    {
-	  Serial.println(String("Rate: ") + String(refreshRate.getRate()) + " data pts per sec");
+	  Serial.println(String("Rate: ") + String(refreshRate.get()) + " data pts per sec");
 	  Serial.println(String("Sensor Reading: ") + String(sensorReading));
 	  Serial.println(String("Wave Height: ") + String(waveHeight.get()));
 	  sw.reset();

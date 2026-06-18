@@ -6,7 +6,7 @@
 #include "SerialX.h"
 #include "WiFiSettings.h"
 #include "Stopwatch.h"
-#include "RateTracker.h"
+#include "RollingRate.h"
 #include "Url.h"
 
 #include <TelemetryClient.h>
@@ -17,8 +17,8 @@ constexpr auto topic = "Test";
 Feather feather;
 WiFiMulti wifi;
 Stopwatch sw(false);
-RollingRateTracker queryRate(100); // rate that we get values from the server
-RollingRateTracker changeRate(100); // the rate of changed values, presumable how often the publisher sends them
+RollingRate queryRate(100); // rate that we get values from the server
+RollingRate changeRate(100); // the rate of changed values, presumable how often the publisher sends them
 Point16 queryRatePos;
 Point16 changeRatePos;
 TelemetrySubscriber client(topic);
@@ -146,10 +146,10 @@ void loop()
       feather.setTextSize(2);
 
       feather.setCursor(queryRatePos);
-      feather.println(queryRate.getRate(), rateFormat, Color::VALUE);
+      feather.println(queryRate.get(), rateFormat, Color::VALUE);
 
       feather.setCursor(changeRatePos);
-      feather.println(changeRate.getRate(), rateFormat, Color::VALUE);
+      feather.println(changeRate.get(), rateFormat, Color::VALUE);
       sw.reset();
    }
 }

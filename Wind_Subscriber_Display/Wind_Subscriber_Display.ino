@@ -11,12 +11,12 @@
 #include "Slider.h"
 #include "MultiBar.h"
 #include "BarChart.h"
-#include "RateTracker.h"
+#include "RollingRate.h"
 #include "TelemetryClient.h"
 
 Feather feather;
 WiFiMulti wifi;
-RollingRateTracker refreshRate(100);
+RollingRate refreshRate(100);
 Stopwatch sw;
 TelemetrySubscriber client("Wind/Lake");
 
@@ -180,7 +180,7 @@ void loop()
 
    if (sw.elapsedSecs() > 1)
    {
-      Serial.println(refreshRate.getRate());
+      Serial.println(refreshRate.get());
       Serial.println(speed);
       sw.reset();
    }

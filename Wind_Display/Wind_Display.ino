@@ -7,11 +7,11 @@
 #include "Slider.h"
 #include "MultiBar.h"
 #include "BarChart.h"
-#include "RateTracker.h"
+#include "RollingRate.h"
 
 Feather feather;
 WindMeter wind(A5);
-RollingRateTracker refreshRate(100);
+RollingRate refreshRate(100);
 Stopwatch sw;
 
 constexpr uint16_t WIND_AVERAGE_DURATION_S = 10 * 60;
@@ -125,7 +125,7 @@ void loop()
 
    if (sw.elapsedSecs() > 1)
    {
-      Serial.println(refreshRate.getRate());
+      Serial.println(refreshRate.get());
       sw.reset();
    }
 }

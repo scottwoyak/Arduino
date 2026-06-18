@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <CapacitorDepthSensor.h>
 #include <Feather.h>
-#include <RateTracker.h>
+#include <RollingRate.h>
 #include <RollingAverage.h>
 #include <Timer.h>
 
@@ -10,7 +10,7 @@ Format depthFormat("###.# cm");
 Format rateFormat("#### per/s");
 
 Timer displayTimer(100);
-RollingRateTracker rate(500);
+RollingRate rate(500);
 
 // Hardware Pin Assignments
 const int CHARGE_PIN = 5;
@@ -49,6 +49,6 @@ void loop()
 
       feather.setTextSize(3);
       feather.setCursorY(feather.height() - feather.charH());
-      feather.printlnR(rate.getRate(), rateFormat, Color::SUB_LABEL);
+      feather.printlnR(rate.get(), rateFormat, Color::SUB_LABEL);
    }
 }

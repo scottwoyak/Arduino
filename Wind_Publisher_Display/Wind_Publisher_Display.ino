@@ -11,7 +11,7 @@
 #include "SerialX.h"
 #include "WiFiSettings.h"
 #include "Stopwatch.h"
-#include "RateTracker.h"
+#include "RollingRate.h"
 #include "TelemetryClient.h"
 #include "Url.h"
 #include "WindMeter.h"
@@ -20,7 +20,7 @@ Feather feather;
 
 WiFiMulti wifi;
 Stopwatch sw(false);
-RollingRateTracker rate(10);
+RollingRate rate(10);
 Point16 ratePos;
 Point16 speedPos;
 
@@ -142,7 +142,7 @@ void loop()
    if (client.isStarted() && sw.elapsedMillis() > 1000)
    {
       feather.setCursor(ratePos);
-      feather.println(rate.getRate(), rateFormat, Color::VALUE);
+      feather.println(rate.get(), rateFormat, Color::VALUE);
       sw.reset();
    }
 
