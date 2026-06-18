@@ -5,7 +5,6 @@
     <Platform Name="ARM64" />
   </Configurations>
   <Folder Name="/Libraries/">
-    <File Path="libraries/Woyak/AccumulatingAverager.h" />
     <File Path="libraries/Woyak/ArduinoWithDisplay.h" />
     <File Path="libraries/Woyak/Average.h" />
     <File Path="libraries/Woyak/Bar.h" />

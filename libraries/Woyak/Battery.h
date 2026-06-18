@@ -1,6 +1,6 @@
 #pragma once
 
-#include <AccumulatingAverager.h>
+#include <RollingAverage.h>
 #include <Util.h>
 
 //
@@ -9,7 +9,7 @@
 class Battery {
 private:
    uint8_t _batteryVoltsPin;
-   AccumulatingAverager _batteryVolts;
+   RollingAverage _batteryVolts(10);
    float _lastVolts;
    uint8_t _consecutiveUnchangedVolts;
    float _fullChargeVolts;
@@ -40,11 +40,7 @@ public:
       this->_batteryVolts.set(Util::readVolts(this->_batteryVoltsPin));
    }
 
-   //
-   // Once a measurement time has elapsed, call this function to reset the
-   // averaging functions
-   //
-   void reset() {
+   void updateFullChargeEstimate() {
       // try to detect when we're fully charged and record the volts so we
       // can properly compute 100% charge
       if (abs(this->_lastVolts - this->_batteryVolts.get()) < 0.01) {
@@ -58,8 +54,6 @@ public:
          this->_lastVolts = this->_batteryVolts.get();
          this->_consecutiveUnchangedVolts = 0;
       }
-
-      this->_batteryVolts.reset();
    }
 
    //

@@ -1,25 +1,28 @@
 #pragma once
 
-#include <AccumulatingAverager.h>
+#include <Average.h>
 #include <Stopwatch.h>
-#include <ValueStore.h>
 #include <limits>
 #include <algorithm>
 
-class TimedAverager : public IValueStore {
+class TimedAverager
+{
 private:
-   AccumulatingAverager** _buckets;
+   Average** _buckets;
    uint _numBuckets;
    uint _currentBucket = 0;
    ulong _bucketMs;
    Stopwatch _sw;
 
-   float _advance() {
+   float _advance()
+   {
       // if enough time has passed, switch to the next bucket
       float elapsed = this->_sw.elapsedMillis();
-      while (elapsed > this->_bucketMs) {
+      while (elapsed > this->_bucketMs)
+      {
          this->_currentBucket++;
-         if (this->_currentBucket >= this->_numBuckets) {
+         if (this->_currentBucket >= this->_numBuckets)
+         {
             this->_currentBucket = 0;
          }
 
@@ -33,27 +36,29 @@ private:
 
 public:
    TimedAverager(ulong durationMs,
-      uint nBuckets = 10,
-      float minRange = -__FLT_MAX__,
-      float maxRange = __FLT_MAX__) {
-
+      uint nBuckets = 10)
+   {
       this->_numBuckets = std::max(nBuckets, (uint)1) + 1;
 
-      this->_buckets = new AccumulatingAverager * [this->_numBuckets];
-      for (int i = 0; i < this->_numBuckets; i++) {
-         this->_buckets[i] = new AccumulatingAverager(minRange, maxRange);
+      this->_buckets = new Average * [this->_numBuckets];
+      for (int i = 0; i < this->_numBuckets; i++)
+      {
+         this->_buckets[i] = new Average();
       }
       this->_bucketMs = std::max(1.0f, ((float)durationMs) / nBuckets);
    }
 
-   ~TimedAverager() {
-      for (int i = 0; i < this->_numBuckets; i++) {
+   ~TimedAverager()
+   {
+      for (int i = 0; i < this->_numBuckets; i++)
+      {
          delete this->_buckets[i];
       }
       delete this->_buckets;
    }
 
-   boolean set(float value) {
+   void set(float value)
+   {
       this->_advance();
 
       /*
@@ -66,31 +71,37 @@ public:
       Serial.println();
 */
 
-      return this->_buckets[this->_currentBucket]->set(value);
+      this->_buckets[this->_currentBucket]->add(value);
    }
 
-   float get() {
+   float get()
+   {
       float elapsed = this->_advance();
 
       float total = 0;
       float count = 0;
 
       uint firstBucket = this->_currentBucket + 1;
-      if (firstBucket >= this->_numBuckets) {
+      if (firstBucket >= this->_numBuckets)
+      {
          firstBucket = 0;
       }
 
-      for (uint i = 0; i < this->_numBuckets; i++) {
+      for (uint i = 0; i < this->_numBuckets; i++)
+      {
 
-         if (this->_buckets[i]->getCount() == 0) {
+         if (this->_buckets[i]->count() == 0)
+         {
             continue;
          }
 
          float fraction = 1;
-         if (i == this->_currentBucket) {
+         if (i == this->_currentBucket)
+         {
             fraction = elapsed / this->_bucketMs;
          }
-         else if (i == firstBucket) {
+         else if (i == firstBucket)
+         {
             fraction = 1 - (elapsed / this->_bucketMs);
          }
 
@@ -104,8 +115,8 @@ public:
          Serial.println();
 */
 
-         total += fraction * this->_buckets[i]->get() * this->_buckets[i]->getCount();
-         count += fraction * this->_buckets[i]->getCount();
+         total += fraction * this->_buckets[i]->get() * this->_buckets[i]->count();
+         count += fraction * this->_buckets[i]->count();
       }
 
       /*
@@ -131,69 +142,34 @@ Serial.println();
       return total / count;
    }
 
-   float getMin() {
-      this->_advance();
-
-      float value = __FLT_MAX__;
-      for (uint i = 0; i < this->_numBuckets; i++) {
-         float bucketMin = this->_buckets[i]->getMin();
-         if (!isnan(bucketMin))
-         {
-            value = min(value, bucketMin);
-         }
-      }
-
-      return value;
-   }
-
-   float getMax() {
-      this->_advance();
-
-      float value = -__FLT_MAX__;
-      for (uint i = 0; i < this->_numBuckets; i++) {
-         float bucketMax = this->_buckets[i]->getMax();
-         if (!isnan(bucketMax))
-         {
-            value = max(value, bucketMax);
-         }
-      }
-
-      return value;
-   }
-
-   void reset() {
-      for (uint i = 0; i < this->_numBuckets; i++) {
+   void reset()
+   {
+      for (uint i = 0; i < this->_numBuckets; i++)
+      {
          this->_buckets[i]->reset();
       }
    }
 
-   unsigned long getCount() {
+   unsigned long count()
+   {
       this->_advance();
 
       ulong count = 0;
-      for (uint i = 0; i < this->_numBuckets; i++) {
-         count += this->_buckets[i]->getCount();
+      for (uint i = 0; i < this->_numBuckets; i++)
+      {
+         count += this->_buckets[i]->count();
       }
 
       return count;
    }
 
-   unsigned long getBadCount() {
-      this->_advance();
-
-      ulong count = 0;
-      for (uint i = 0; i < this->_numBuckets; i++) {
-         count += this->_buckets[i]->getBadCount();
-      }
-
-      return count;
-   }
-
-   uint numBuckets() {
+   uint numBuckets()
+   {
       return this->_numBuckets;
    }
 
-   uint currentBucket() {
+   uint currentBucket()
+   {
       return this->_currentBucket;
    }
 };

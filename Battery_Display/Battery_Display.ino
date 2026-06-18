@@ -14,9 +14,10 @@ void setup()
 {
    SerialX::begin();
    feather.begin();
+   Wire.begin();
    while (battery.begin() == false)
    {
-      Serial.print("Looking for battery");
+      Serial.println("Looking for battery");
       delay(1000);
    }
 }
