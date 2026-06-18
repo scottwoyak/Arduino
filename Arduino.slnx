@@ -132,6 +132,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="CapacitorCalibration_Display/CapacitorCalibration_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="CapacitorDepth_Display/CapacitorDepth_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -279,6 +283,14 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="SevenSegment/SevenSegment.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Seven_Segment/Seven_Segment.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="SmoothFontCreator/SmoothFontCreator.csproj" Id="8eb42b88-3644-48a5-95dc-592c930a65f6" />
   <Project Path="Solar_Monitor/Solar_Monitor.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
@@ -305,6 +317,10 @@
     <Deploy />
   </Project>
   <Project Path="Temp_Monitor_Display/Temp_Monitor_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="TM1637_Seven_Segment/TM1637_Seven_Segment.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
