@@ -140,6 +140,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Capacitor_Calibration_Display/Capacitor_Calibration_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Capacitor_Display/Capacitor_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
