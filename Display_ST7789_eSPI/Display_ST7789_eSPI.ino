@@ -1,12 +1,12 @@
 
 #include <TFT_eSPI.h>
-#include <RunningAverager.h>
+#include <RollingAverage.h>
 
 #include <Scott16.h>
 #include <Scott32.h>
 
 TFT_eSPI display;
-RunningAverager fps(100);
+RollingAverage fps(100);
 
 // The setup() function runs once each time the micro-controller starts
 void setup()

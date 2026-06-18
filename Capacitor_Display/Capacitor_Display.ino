@@ -2,16 +2,16 @@
 #include <CapacitorSensor.h>
 #include <Feather.h>
 #include <RateTracker.h>
-#include <RunningAverager.h>
+#include <RollingAverage.h>
 #include <Timer.h>
 
 Feather feather;
 Format timeFormat("###.# us");
 Format rateFormat("#### per/s");
 
-RunningAverager chargeTime10(10);
-RunningAverager chargeTime100(100);
-RunningAverager chargeTime1000(1000);
+RollingAverage chargeTime10(10);
+RollingAverage chargeTime100(100);
+RollingAverage chargeTime1000(1000);
 Timer displayTimer(200);
 RollingRateTracker rate(500);
 

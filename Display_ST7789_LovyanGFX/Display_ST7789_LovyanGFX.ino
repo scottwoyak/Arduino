@@ -3,10 +3,10 @@
 
 #include <Scott16.h>
 #include <Scott32.h>
-#include <RunningAverager.h>
+#include <RollingAverage.h>
 
 LGFX display;
-RunningAverager fps(100);
+RollingAverage fps(100);
 
 void setup()
 {

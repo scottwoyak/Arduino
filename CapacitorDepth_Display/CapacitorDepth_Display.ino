@@ -2,7 +2,7 @@
 #include <CapacitorDepthSensor.h>
 #include <Feather.h>
 #include <RateTracker.h>
-#include <RunningAverager.h>
+#include <RollingAverage.h>
 #include <Timer.h>
 
 Feather feather;
