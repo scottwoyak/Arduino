@@ -628,4 +628,32 @@ public:
       print(value, format, textColor, backgroundColor);
       println();
    }
+
+   //
+   // ------------------------------------------- size_t variants
+   //
+   void print(size_t value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      print((unsigned long)value, textColor, backgroundColor);
+   }
+   void println(size_t value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      println((unsigned long)value, textColor, backgroundColor);
+   }
+   void print(size_t value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      print((unsigned long)value, base, textColor, backgroundColor);
+   }
+   void println(size_t value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      println((unsigned long)value, base, textColor, backgroundColor);
+   }
+   void print(size_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      print((unsigned long)value, format, textColor, backgroundColor);
+   }
+   void println(size_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      println((unsigned long)value, format, textColor, backgroundColor);
+   }
 };

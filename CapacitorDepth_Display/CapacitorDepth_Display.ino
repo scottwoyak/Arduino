@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <CapacitorDepthSensor.h>
 #include <Feather.h>
-#include <RollingRate.h>
 #include <RollingAverage.h>
 #include <Timer.h>
 
@@ -10,7 +9,6 @@ Format depthFormat("###.# cm");
 Format rateFormat("#### per/s");
 
 Timer displayTimer(100);
-RollingRate rate(500);
 
 // Hardware Pin Assignments
 const int CHARGE_PIN = 5;
@@ -30,11 +28,6 @@ void setup()
 
 void loop()
 {
-   if (sensor.loop())
-   {
-      rate.tick();
-   }
-
    if (displayTimer.ready())
    {
       float depth = sensor.getDepth();
@@ -49,6 +42,6 @@ void loop()
 
       feather.setTextSize(3);
       feather.setCursorY(feather.height() - feather.charH());
-      feather.printlnR(rate.get(), rateFormat, Color::SUB_LABEL);
+      feather.printlnR(sensor.rate(), rateFormat, Color::SUB_LABEL);
    }
 }

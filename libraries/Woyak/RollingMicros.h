@@ -13,11 +13,43 @@ private:
    uint16_t _index = 0;
    bool _wrap = false;
 
+   unsigned long _excludedMicros = 0;
+   unsigned long _excludeStartMicros = 0;
+   bool _excluding = false;
+
+   unsigned long (*_ticks) ();
+
+   unsigned long _effectiveMicros()
+   {
+      unsigned long now = _ticks();
+      unsigned long excluded = _excludedMicros;
+
+      if (_excluding)
+      {
+         excluded += Util::getSpan(_excludeStartMicros, now);
+      }
+
+      return now - excluded;
+   }
+
 public:
+   // public function for testing only. Allows us to substitute our own clock
+   // within test cases of timing code.
+   static unsigned long (*tickFunc) ();
+
    RollingMicros(uint16_t numSamples=500)
    {
       _numSamples = numSamples;
       _micros = new unsigned long[numSamples];
+
+      if (RollingMicros::tickFunc != nullptr)
+      {
+         _ticks = RollingMicros::tickFunc;
+      }
+      else
+      {
+         _ticks = micros;
+      }
    }
 
    ~RollingMicros()
@@ -27,7 +59,7 @@ public:
 
    void tick()
    {
-      _micros[_index] = micros();
+      _micros[_index] = _effectiveMicros();
 
       _index++;
       if (_index == _numSamples)
@@ -41,6 +73,27 @@ public:
    {
       _wrap = false;
       _index = 0;
+      _excludedMicros = 0;
+      _excludeStartMicros = 0;
+      _excluding = false;
+   }
+
+   void pause()
+   {
+      if (!_excluding)
+      {
+         _excluding = true;
+         _excludeStartMicros = _ticks();
+      }
+   }
+
+   void resume()
+   {
+      if (_excluding)
+      {
+         _excludedMicros += Util::getSpan(_excludeStartMicros, _ticks());
+         _excluding = false;
+      }
    }
 
    unsigned long getFirstMicros()
@@ -104,3 +157,5 @@ public:
       }
    }
 };
+
+unsigned long (*RollingMicros::tickFunc) () = nullptr;

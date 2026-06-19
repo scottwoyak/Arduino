@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <CapacitorSensor.h>
 #include <Feather.h>
-#include <RollingRate.h>
 #include <RollingAverage.h>
 #include <Timer.h>
 
@@ -13,7 +12,6 @@ RollingAverage chargeTime10(10);
 RollingAverage chargeTime100(100);
 RollingAverage chargeTime1000(1000);
 Timer displayTimer(200);
-RollingRate rate(500);
 
 // Hardware Pin Assignments
 const int CHARGE_PIN = 5;
@@ -29,10 +27,9 @@ void setup()
 
 void loop()
 {
-   if (sensor.loop())
+   if (sensor.hasChanged())
    {
-      rate.tick();
-      uint32_t chargeTime = sensor.chargeTimeUs();
+      uint32_t chargeTime = sensor.chargeTimeMicros();
       chargeTime10.set(chargeTime);
       chargeTime100.set(chargeTime);
       chargeTime1000.set(chargeTime);
@@ -56,6 +53,6 @@ void loop()
 
       feather.setTextSize(2);
       feather.setCursorY(feather.height() - feather.charH());
-      feather.printlnR(rate.get(), rateFormat, Color::SUB_LABEL);
+      feather.printlnR(sensor.rate(), rateFormat, Color::SUB_LABEL);
    }
 }

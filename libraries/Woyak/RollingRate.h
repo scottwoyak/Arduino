@@ -22,6 +22,16 @@ public:
       _rMicros.reset();
    }
 
+   void pause()
+   {
+      _rMicros.pause();
+   }
+
+   void resume()
+   {
+      _rMicros.resume();
+   }
+
    float get()
    {
       float secs = _rMicros.getElapsedSeconds();

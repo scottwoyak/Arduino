@@ -25,6 +25,7 @@ enum class Color : uint16_t
    LABEL = WHITE,
    VALUE = WHITE,
    VALUE2 = WHITE,
+   VALUE3 = WHITE,
    SUB_LABEL = WHITE,
 };
 
@@ -52,6 +53,7 @@ enum class Color : uint16_t
    LABEL = WHITE,
    VALUE = YELLOW,
    VALUE2 = CYAN,
+   VALUE3 = GREEN,
    SUB_LABEL = GRAY,
 };
 
