@@ -1,8 +1,8 @@
 #include <Feather_ESP32_S3.h>
-#include <RollingAverage.h>
+#include <RollingStats.h>
 
 Feather_ESP32_S3 feather;
-RollingAverage fps(100);
+RollingStats fps(100);
 
 void setup()
 {

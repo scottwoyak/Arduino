@@ -10,7 +10,7 @@
 #include <Util.h>
 #include <Adafruit_SHT31.h>
 #include <AccumulatingAverager.h>
-#include <RollingAverage.h>
+#include <RollingStats.h>
 #include <Adafruit_SleepyDog.h>
 #include <Adafruit_LPS35HW.h>
 #include <I2C.h>
@@ -64,7 +64,7 @@ const int WEATHER_INTERVAL = 10;
 const int BATTERY_INTERVAL = 15;
 
 AccumulatingAverager temperature(-10, 110);
-RollingAverage avgTemperature(24 * 60 / WEATHER_INTERVAL); // 24 hrs of samples
+RollingStats avgTemperature(24 * 60 / WEATHER_INTERVAL); // 24 hrs of samples
 AccumulatingAverager enclosureTemperature(-10, 200);
 AccumulatingAverager humidity(0, 100);
 AccumulatingAverager pressure(27, 31);

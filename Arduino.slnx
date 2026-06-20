@@ -6,7 +6,6 @@
   </Configurations>
   <Folder Name="/Libraries/">
     <File Path="libraries/Woyak/ArduinoWithDisplay.h" />
-    <File Path="libraries/Woyak/Average.h" />
     <File Path="libraries/Woyak/Bar.h" />
     <File Path="libraries/Woyak/BarChart.h" />
     <File Path="libraries/Woyak/Battery.h" />
@@ -49,7 +48,6 @@
     <File Path="libraries/Woyak/MultiBar.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
-    <File Path="libraries/Woyak/RollingAverage.h" />
     <File Path="libraries/Woyak/RollingMicros.h" />
     <File Path="libraries/Woyak/RollingRate.h" />
     <File Path="libraries/Woyak/RollingStats.h" />
@@ -59,6 +57,7 @@
     <File Path="libraries/Woyak/SHT3xTempSensor.h" />
     <File Path="libraries/Woyak/SHT4xTempSensor.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
+    <File Path="libraries/Woyak/Stats.h" />
     <File Path="libraries/Woyak/Status.h" />
     <File Path="libraries/Woyak/StdDev.h" />
     <File Path="libraries/Woyak/Stopwatch.h" />
@@ -67,10 +66,10 @@
     <File Path="libraries/Woyak/TempSensor.h" />
     <File Path="libraries/Woyak/TempSensorCallibration.h" />
     <File Path="libraries/Woyak/TimeConstants.h" />
-    <File Path="libraries/Woyak/TimedAverager.h" />
     <File Path="libraries/Woyak/TimedBin.h" />
     <File Path="libraries/Woyak/TimedHistogram.h" />
     <File Path="libraries/Woyak/TimedHistogramChart.h" />
+    <File Path="libraries/Woyak/TimedStats.h" />
     <File Path="libraries/Woyak/Timer.h" />
     <File Path="libraries/Woyak/Units.h" />
     <File Path="libraries/Woyak/Url.h" />
@@ -84,15 +83,7 @@
     <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
   </Folder>
   <Folder Name="/Tests/">
-    <Project Path="Tests/Average_Tests/Average_Tests.vcxproj">
-      <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
-    </Project>
     <Project Path="Tests/BufferedTimeSeries_Tests/BufferedTimeSeries_Tests.vcxproj" Id="a8d4f2c1-9b34-4e5f-8123-123456789abc">
-      <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
-    </Project>
-    <Project Path="Tests/RollingAverage_Tests/RollingAverage_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
@@ -108,6 +99,10 @@
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
+    <Project Path="Tests/Stats_Tests/Stats_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
     <Project Path="Tests/StdDev_Tests/StdDev_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
@@ -116,11 +111,11 @@
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
-    <Project Path="Tests/TimedAverager_Tests/TimedAverager_Tests.vcxproj">
+    <Project Path="Tests/TimedBin_Tests/TimedBin_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
-    <Project Path="Tests/TimedBin_Tests/TimedBin_Tests.vcxproj">
+    <Project Path="Tests/TimedStats_Tests/TimedStats_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>

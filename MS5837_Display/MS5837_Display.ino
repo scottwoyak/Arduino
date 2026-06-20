@@ -2,7 +2,7 @@
 #include "Stopwatch.h"
 #include <MS5837.h>
 #include <Units.h>
-#include <RollingAverage.h>
+#include <RollingStats.h>
 
 
 // 
@@ -17,9 +17,9 @@ Format altitudeFormat("####.# ft");
 Format rateFormat("####/s");
 
 constexpr auto NUM_SAMPLES = 20;
-RollingAverage temp(NUM_SAMPLES);
-RollingAverage depth(NUM_SAMPLES);
-RollingAverage altitude(NUM_SAMPLES);
+RollingStats temp(NUM_SAMPLES);
+RollingStats depth(NUM_SAMPLES);
+RollingStats altitude(NUM_SAMPLES);
 
 // The setup() function runs once each time the micro-controller starts
 void setup()

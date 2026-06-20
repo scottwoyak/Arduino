@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <CapacitorDepthSensor.h>
 #include <Feather.h>
-#include <RollingAverage.h>
+#include <RollingStats.h>
 #include <Timer.h>
 
 Feather feather;

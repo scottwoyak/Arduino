@@ -1,11 +1,11 @@
 
 #include <AUnit.h>
-#include <Average.h>
+#include <Stats.h>
 #include <cmath>
 
 test(shouldComputeAverages)
 {
-   Average avg;
+   Stats avg;
 
    avg.add(1);
    avg.add(2);
@@ -13,11 +13,13 @@ test(shouldComputeAverages)
 
    assertEqual(2.0, avg.get());
    assertEqual(3u, avg.count());
+   assertEqual(1.0, avg.min());
+   assertEqual(3.0, avg.max());
 }
 
 test(shouldResetToEmpty)
 {
-   Average avg;
+   Stats avg;
 
    avg.add(1);
    avg.add(2);
@@ -28,20 +30,24 @@ test(shouldResetToEmpty)
    avg.reset();
 
    assertTrue(isnan(avg.get()));
+   assertTrue(isnan(avg.min()));
+   assertTrue(isnan(avg.max()));
    assertEqual(0u, avg.count());
 }
 
 test(shouldStartAsNAN)
 {
-   Average avg;
+   Stats avg;
 
    assertTrue(isnan(avg.get()));
+   assertTrue(isnan(avg.min()));
+   assertTrue(isnan(avg.max()));
    assertEqual(0u, avg.count());
 }
 
 test(shouldRemoveValues)
 {
-   Average avg;
+   Stats avg;
 
    avg.add(1);
    avg.add(2);
@@ -53,11 +59,13 @@ test(shouldRemoveValues)
    avg.remove(1);
    assertEqual(2.5, avg.get());
    assertEqual(2u, avg.count());
+   assertTrue(isnan(avg.min()));
+   assertTrue(isnan(avg.max()));
 }
 
 test(shouldNotAllowMoreValueToBeRemovedThanHaveBeenAdded)
 {
-   Average avg;
+   Stats avg;
 
    avg.add(1);
    avg.add(2);
@@ -80,7 +88,7 @@ test(shouldNotAllowMoreValueToBeRemovedThanHaveBeenAdded)
 
 test(shouldIgnoreNANValues)
 {
-   Average avg;
+   Stats avg;
 
    avg.add(1);
    avg.add(2);
@@ -100,7 +108,7 @@ test(shouldIgnoreNANValues)
 
 test(shouldIgnoreInfiniteValues)
 {
-   Average avg;
+   Stats avg;
 
    avg.add(1);
    avg.add(2);
@@ -127,7 +135,7 @@ test(shouldIgnoreInfiniteValues)
 
 test(shouldNotChangeWhenRemovingFromEmpty)
 {
-   Average avg;
+   Stats avg;
 
    avg.remove(1.0f);
    assertTrue(isnan(avg.get()));
@@ -136,7 +144,7 @@ test(shouldNotChangeWhenRemovingFromEmpty)
 
 test(roundTripStability)
 {
-   Average avg;
+   Stats avg;
 
    for (int i = 1; i <= 10; ++i) avg.add(i);
 

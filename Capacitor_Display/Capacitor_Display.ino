@@ -1,16 +1,16 @@
 #include <Arduino.h>
 #include <CapacitorSensor.h>
 #include <Feather.h>
-#include <RollingAverage.h>
+#include <RollingStats.h>
 #include <Timer.h>
 
 Feather feather;
 Format timeFormat("###.# us");
 Format rateFormat("#### per/s");
 
-RollingAverage chargeTime10(10);
-RollingAverage chargeTime100(100);
-RollingAverage chargeTime1000(1000);
+RollingStats chargeTime10(10);
+RollingStats chargeTime100(100);
+RollingStats chargeTime1000(1000);
 Timer displayTimer(200);
 
 // Hardware Pin Assignments
@@ -44,11 +44,11 @@ void loop()
 
       feather.setTextSize(3);
       feather.print("  10: ", Color::LABEL);
-      feather.println(chargeTime10.get(), timeFormat, Color::VALUE);
+      feather.println(chargeTime10.average(), timeFormat, Color::VALUE);
       feather.print(" 100: ", Color::LABEL);
-      feather.println(chargeTime100.get(), timeFormat, Color::VALUE);
+      feather.println(chargeTime100.average(), timeFormat, Color::VALUE);
       feather.print("1000: ", Color::LABEL);
-      feather.println(chargeTime1000.get(), timeFormat, Color::VALUE);
+      feather.println(chargeTime1000.average(), timeFormat, Color::VALUE);
       feather.println();
 
       feather.setTextSize(2);

@@ -1,14 +1,14 @@
 #pragma once
 
-#include <Average.h>
+#include <Stats.h>
 #include <Stopwatch.h>
 #include <limits>
 #include <algorithm>
 
-class TimedAverager
+class TimedStats
 {
 private:
-   Average** _buckets;
+   Stats** _buckets;
    uint _numBuckets;
    uint _currentBucket = 0;
    ulong _bucketMs;
@@ -35,20 +35,20 @@ private:
    }
 
 public:
-   TimedAverager(ulong durationMs,
+   TimedStats(ulong durationMs,
       uint nBuckets = 10)
    {
       this->_numBuckets = std::max(nBuckets, (uint)1) + 1;
 
-      this->_buckets = new Average * [this->_numBuckets];
+      this->_buckets = new Stats * [this->_numBuckets];
       for (int i = 0; i < this->_numBuckets; i++)
       {
-         this->_buckets[i] = new Average();
+         this->_buckets[i] = new Stats();
       }
       this->_bucketMs = std::max(1.0f, ((float)durationMs) / nBuckets);
    }
 
-   ~TimedAverager()
+   ~TimedStats()
    {
       for (int i = 0; i < this->_numBuckets; i++)
       {

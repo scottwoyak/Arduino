@@ -1,10 +1,10 @@
 #include <Adafruit_ST7789.h> // TFT display
-#include <RollingAverage.h>
+#include <RollingStats.h>
 
 // if any of the TFT defines are not found, it is because the correct board
 // is not selected. Needs to be Adafruit Feather ESP32-S3
 Adafruit_ST7789 display(TFT_CS, TFT_DC, TFT_RST);
-RollingAverage fps(100);
+RollingStats fps(100);
 
 // The setup() function runs once each time the micro-controller starts
 void setup()

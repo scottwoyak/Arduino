@@ -8,7 +8,7 @@
 #include <WiFi101.h>
 #include <WiFiUdp.h>
 #include <Util.h>
-#include <RollingAverage.h>
+#include <RollingStats.h>
 #include <I2C.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -47,7 +47,7 @@ AdafruitIO_Feed* timeFeed = io.feed("time");
 Adafruit_SSD1306 display(128, 32, &Wire);
 
 Stopwatch time(StopwatchPrecision::Millis);
-RollingAverage averageVolts(50);
+RollingStats averageVolts(50);
 
 void setup() {
 

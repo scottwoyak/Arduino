@@ -2,7 +2,7 @@
 #include "Stopwatch.h"
 #include "TempSensor.h"
 #include "TimedAverager.h"
-#include "RollingAverage.h"
+#include "RollingStats.h"
 #include "Multiplexer.h"
 #include "Feather.h"
 #include "SerialX.h"

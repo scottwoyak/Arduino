@@ -11,7 +11,7 @@
 #include <Logger.h>
 #include <Util.h>
 #include <AccumulatingAverager.h>
-#include <RollingAverage.h>
+#include <RollingStats.h>
 #include <Adafruit_LPS35HW.h>
 #include <I2C.h>
 #include <Adafruit_GFX.h>

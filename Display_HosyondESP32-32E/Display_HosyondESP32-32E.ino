@@ -2,10 +2,10 @@
 
 #include <Scott16.h>
 #include <Scott32.h>
-#include <RollingAverage.h>
+#include <RollingStats.h>
 
 LGFX display;
-RollingAverage fps(100);
+RollingStats fps(100);
 
 void setup()
 {

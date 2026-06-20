@@ -18,13 +18,13 @@ private:
    size_t _size;
    size_t _count;
    float _sum;
-   float _low;
-   float _high;
+   float _min;
+   float _max;
 
-   void _recomputeLowHigh()
+   void _recomputeMinMax()
    {
-      _low = NAN;
-      _high = NAN;
+      _min = NAN;
+      _max = NAN;
 
       if (_count == 0)
       {
@@ -39,14 +39,14 @@ private:
             continue;
          }
 
-         if (isnan(_low) || value < _low)
+         if (isnan(_min) || value < _min)
          {
-            _low = value;
+            _min = value;
          }
 
-         if (isnan(_high) || value > _high)
+         if (isnan(_max) || value > _max)
          {
-            _high = value;
+            _max = value;
          }
       }
    }
@@ -63,8 +63,8 @@ public:
       _size = size;
       _count = 0;
       _sum = 0;
-      _low = NAN;
-      _high = NAN;
+      _min = NAN;
+      _max = NAN;
 
       if (_size > 0)
       {
@@ -135,7 +135,7 @@ public:
          _index = 0;
       }
 
-      _recomputeLowHigh();
+      _recomputeMinMax();
       return true;
    }
 
@@ -147,8 +147,8 @@ public:
       _index = 0;
       _count = 0;
       _sum = 0;
-      _low = NAN;
-      _high = NAN;
+      _min = NAN;
+      _max = NAN;
 
       for (size_t i = 0; i < _size; i++)
       {
@@ -174,8 +174,8 @@ public:
       _index = 0;
       _count = 0;
       _sum = 0;
-      _low = NAN;
-      _high = NAN;
+      _min = NAN;
+      _max = NAN;
 
       if (_size > 0)
       {
@@ -203,12 +203,21 @@ public:
    }
 
    /// <summary>
+   /// Gets the most recently inserted value.
+   /// </summary>
+   /// <returns>The last value, or NaN when size is zero.</returns>
+   float getLast() const
+   {
+      return last();
+   }
+
+   /// <summary>
    /// Gets the rolling minimum value.
    /// </summary>
    /// <returns>Minimum finite value, or NaN if no finite values exist.</returns>
    float min() const
    {
-      return _low;
+      return _min;
    }
 
    /// <summary>
@@ -217,7 +226,7 @@ public:
    /// <returns>Maximum finite value, or NaN if no finite values exist.</returns>
    float max() const
    {
-      return _high;
+      return _max;
    }
 
    /// <summary>
@@ -226,12 +235,12 @@ public:
    /// <returns>Max-minus-min range, or NaN if no finite values exist.</returns>
    float range() const
    {
-      if (!isfinite(_low) || !isfinite(_high))
+      if (!isfinite(_min) || !isfinite(_max))
       {
          return NAN;
       }
 
-      return _high - _low;
+      return _max - _min;
    }
 
    /// <summary>
@@ -244,51 +253,12 @@ public:
    }
 
    /// <summary>
-   /// Gets the rolling median value.
+   /// Gets the rolling average value.
    /// </summary>
-   /// <returns>Median finite value, or NaN if no finite values exist.</returns>
-   float median() const
+   /// <returns>Average finite value, or NaN if no finite values exist.</returns>
+   float get() const
    {
-      if (_count == 0)
-      {
-         return NAN;
-      }
-
-      float* finiteValues = new float[_count];
-      size_t n = 0;
-      for (size_t i = 0; i < _size; i++)
-      {
-         float value = _values[i];
-         if (isfinite(value))
-         {
-            finiteValues[n++] = value;
-         }
-      }
-
-      for (size_t i = 1; i < n; i++)
-      {
-         float key = finiteValues[i];
-         size_t j = i;
-         while (j > 0 && finiteValues[j - 1] > key)
-         {
-            finiteValues[j] = finiteValues[j - 1];
-            j--;
-         }
-         finiteValues[j] = key;
-      }
-
-      float median;
-      if ((n % 2) == 1)
-      {
-         median = finiteValues[n / 2];
-      }
-      else
-      {
-         median = (finiteValues[(n / 2) - 1] + finiteValues[n / 2]) / 2.0f;
-      }
-
-      delete[] finiteValues;
-      return median;
+      return average();
    }
 
    /// <summary>

@@ -3,7 +3,7 @@
 #include "Adafruit_MAX1704X.h"
 #include "Adafruit_INA219.h"
 #include "SerialX.h"
-#include "RollingAverage.h"
+#include "RollingStats.h"
 
 Feather feather;
 Adafruit_MAX17048 battery;
@@ -14,9 +14,9 @@ Format mvoltsFormat("+##.#mV");
 Format currentFormat("+####.#mA");
 Format percentFormat("###.#%");
 
-RollingAverage busVolts(100);
-RollingAverage shuntVolts(100);
-RollingAverage mA(100);
+RollingStats busVolts(100);
+RollingStats shuntVolts(100);
+RollingStats mA(100);
 
 void setup()
 {

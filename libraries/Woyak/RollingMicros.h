@@ -2,9 +2,10 @@
 
 #include <Util.h>
 
-//
-// Class for tracking a continuous stream of values
-//
+/// <summary>
+/// Tracks a continuous stream of microsecond timing values in a circular buffer.
+/// Supports pausing/resuming to exclude time spans from measurements.
+/// </summary>
 class RollingMicros 
 {
 private:
@@ -17,8 +18,12 @@ private:
    unsigned long _excludeStartMicros = 0;
    bool _excluding = false;
 
-   unsigned long (*_ticks) ();
+   unsigned long (*_ticks)();
 
+   /// <summary>
+   /// Calculates the current effective time, accounting for any paused intervals.
+   /// </summary>
+   /// <returns>Effective microseconds elapsed since tracking began.</returns>
    unsigned long _effectiveMicros()
    {
       unsigned long now = _ticks();
@@ -33,11 +38,17 @@ private:
    }
 
 public:
-   // public function for testing only. Allows us to substitute our own clock
-   // within test cases of timing code.
-   static unsigned long (*tickFunc) ();
+   /// <summary>
+   /// Function pointer for injecting a custom time source (used in testing).
+   /// If set, this function will be used instead of the default micros() clock.
+   /// </summary>
+   static unsigned long (*tickFunc)();
 
-   RollingMicros(uint16_t numSamples=500)
+   /// <summary>
+   /// Initializes a new RollingMicros tracker.
+   /// </summary>
+   /// <param name="numSamples">Maximum number of time samples to store. Defaults to 500.</param>
+   RollingMicros(uint16_t numSamples = 500)
    {
       _numSamples = numSamples;
       _micros = new unsigned long[numSamples];
@@ -52,11 +63,17 @@ public:
       }
    }
 
+   /// <summary>
+   /// Destructor that frees the internal sample buffer.
+   /// </summary>
    ~RollingMicros()
    {
       delete[] _micros;
    }
 
+   /// <summary>
+   /// Records a new sample at the current time (accounting for paused intervals).
+   /// </summary>
    void tick()
    {
       _micros[_index] = _effectiveMicros();
@@ -69,6 +86,9 @@ public:
       }
    }
 
+   /// <summary>
+   /// Clears all state, preparing the tracker for a new measurement cycle.
+   /// </summary>
    void reset()
    {
       _wrap = false;
@@ -78,6 +98,9 @@ public:
       _excluding = false;
    }
 
+   /// <summary>
+   /// Begins excluding time from effective measurements (e.g., during inactive periods).
+   /// </summary>
    void pause()
    {
       if (!_excluding)
@@ -87,6 +110,9 @@ public:
       }
    }
 
+   /// <summary>
+   /// Stops excluding time and accounts for the paused interval.
+   /// </summary>
    void resume()
    {
       if (_excluding)
@@ -96,10 +122,19 @@ public:
       }
    }
 
+   /// <summary>
+   /// Gets the timestamp of the oldest sample currently in the buffer.
+   /// </summary>
+   /// <returns>Microseconds of the first sample, or 0 if no samples have been recorded.</returns>
    unsigned long getFirstMicros()
    {
+      if (getCount() == 0)
+      {
+         return 0;
+      }
+
       uint16_t firstIndex;
-      
+
       if (_wrap)
       {
          firstIndex = _index;
@@ -112,6 +147,10 @@ public:
       return _micros[firstIndex];
    }
 
+   /// <summary>
+   /// Gets the timestamp of the most recent sample in the buffer.
+   /// </summary>
+   /// <returns>Microseconds of the last sample, or 0 if no samples have been recorded.</returns>
    unsigned long getLastMicros()
    {
       uint16_t lastIndex;
@@ -124,7 +163,7 @@ public:
       {
          if (_index == 0)
          {
-            return 0; // tick has not yet been called
+            return 0;
          }
          else
          {
@@ -135,16 +174,28 @@ public:
       return _micros[lastIndex];
    }
 
+   /// <summary>
+   /// Gets the elapsed time between the oldest and newest samples.
+   /// </summary>
+   /// <returns>Effective microseconds elapsed, accounting for any paused intervals.</returns>
    unsigned long getElapsedMicros()
    {
       return Util::getSpan(getFirstMicros(), getLastMicros());
    }
 
+   /// <summary>
+   /// Gets the elapsed time between the oldest and newest samples in seconds.
+   /// </summary>
+   /// <returns>Effective seconds elapsed, accounting for any paused intervals.</returns>
    float getElapsedSeconds()
    {
       return getElapsedMicros() / (1000 * 1000.0);
    }
 
+   /// <summary>
+   /// Gets the number of samples currently stored in the buffer.
+   /// </summary>
+   /// <returns>Count of recorded samples (0 to numSamples).</returns>
    uint16_t getCount()
    {
       if (_wrap)

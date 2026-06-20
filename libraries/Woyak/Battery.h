@@ -1,6 +1,6 @@
 #pragma once
 
-#include <RollingAverage.h>
+#include <RollingStats.h>
 #include <Util.h>
 
 //
@@ -9,7 +9,7 @@
 class Battery {
 private:
    uint8_t _batteryVoltsPin;
-   RollingAverage _batteryVolts(10);
+   RollingStats _batteryVolts(10);
    float _lastVolts;
    uint8_t _consecutiveUnchangedVolts;
    float _fullChargeVolts;

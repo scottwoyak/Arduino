@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <CapacitorDepthSensor.h>
 #include <Feather.h>
-#include <RollingStats.h>
+#include <TimedStats.h>
 #include <Timer.h>
 
 Feather feather;
@@ -24,15 +24,10 @@ constexpr uint16_t TEST_EMPTY_DELAY_MAX_US = 200;
 constexpr uint16_t TEST_EMPTY_DELAY_STEP_US = 10;
 constexpr float TEST_EMPTY_DELAY_STEP_GROWTH = 1.1f;
 constexpr unsigned long TEST_DURATION_MS = 2000;
-constexpr unsigned long TEST_DISPLAYED_STATS_WINDOW_MS = TEST_DURATION_MS / 2;
-constexpr size_t TEST_DISPLAYED_SAMPLE_COUNT_RAW = (size_t)(TEST_DISPLAYED_STATS_WINDOW_MS / DISPLAY_INTERVAL_MS);
-constexpr size_t TEST_DISPLAYED_SAMPLE_COUNT = (TEST_DISPLAYED_SAMPLE_COUNT_RAW > 0) ? TEST_DISPLAYED_SAMPLE_COUNT_RAW : 1;
-
-constexpr size_t RAW_SENSOR_STATS_SIZES[] = { 10, 20, 50, 100, 200, 500 };
-constexpr size_t RAW_SENSOR_STATS_SIZE_COUNT = sizeof(RAW_SENSOR_STATS_SIZES) / sizeof(RAW_SENSOR_STATS_SIZES[0]);
+constexpr unsigned long TEST_STATS_WINDOW_MS = TEST_DURATION_MS / 2;
 
 Timer displayTimer(DISPLAY_INTERVAL_MS);
-RollingStats rawSensorStats(RAW_SENSOR_STATS_SIZES[0]);
+TimedStats rawSensorStats(TEST_STATS_WINDOW_MS);
 
 // Hardware Pin Assignments
 const int CHARGE_PIN = 5;
@@ -40,15 +35,14 @@ const int SENSE_PIN = 6;
 
 CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN);
 
-// Rolling stats for displayed (smoothed) value over a fixed time window
-RollingStats displayedStats(DISPLAYED_SAMPLE_COUNT);
+// Timed stats for displayed (smoothed) value over a fixed time window
+TimedStats displayedStats(DISPLAYED_STATS_WINDOW_MS);
 
 bool testRunning = false;
 uint16_t currentTestDelayUs = TEST_EMPTY_DELAY_MIN_US;
 uint16_t currentTestStepUs = TEST_EMPTY_DELAY_STEP_US;
 unsigned long currentTestStartMs = 0;
 size_t currentTestNumber = 0;
-size_t currentRawSensorStatsSizeIndex = 0;
 
 size_t calculateDelayTestCount()
 {
@@ -74,7 +68,7 @@ size_t calculateDelayTestCount()
 }
 
 const size_t DELAY_TEST_COUNT = calculateDelayTestCount();
-const size_t TOTAL_TESTS = DELAY_TEST_COUNT * RAW_SENSOR_STATS_SIZE_COUNT;
+const size_t TOTAL_TESTS = DELAY_TEST_COUNT;
 
 void resetTestStats()
 {
@@ -95,17 +89,13 @@ void resetDelaySweep()
 void startDelayTest()
 {
    testRunning = true;
-   currentRawSensorStatsSizeIndex = 0;
-   rawSensorStats.resize(RAW_SENSOR_STATS_SIZES[currentRawSensorStatsSizeIndex]);
-   displayedStats.resize(TEST_DISPLAYED_SAMPLE_COUNT);
+   rawSensorStats.setDurationMs(TEST_STATS_WINDOW_MS);
+   displayedStats.setDurationMs(TEST_STATS_WINDOW_MS);
    currentTestNumber = 1;
    resetDelaySweep();
 
    Serial.println();
    Serial.println("Discharge Delay, Raw Rate, Effective Rate, Variance");
-   Serial.print("\nNumber of Samples Averaged: ");
-   Serial.print(rawSensorStats.size());
-   Serial.println();
 
    feather.clearDisplay();
 }
@@ -129,17 +119,6 @@ void setupNextDelayTest()
    currentTestStartMs = millis();
 }
 
-void setupNextStatsSizeTest()
-{
-   currentRawSensorStatsSizeIndex++;
-   rawSensorStats.resize(RAW_SENSOR_STATS_SIZES[currentRawSensorStatsSizeIndex]);
-   currentTestNumber++;
-   resetDelaySweep();
-   Serial.print("\nNumber of Samples Averaged: ");
-   Serial.print(rawSensorStats.size());
-   Serial.println();
-}
-
 void completeCurrentDelayTest()
 {
    float rawRate = sensor.rate();
@@ -158,25 +137,18 @@ void completeCurrentDelayTest()
    Serial.print(" in");
    Serial.println();
 
-   if (currentTestDelayUs >= TEST_EMPTY_DELAY_MAX_US)
+   if (currentTestDelayUs < TEST_EMPTY_DELAY_MAX_US)
    {
-      if (currentRawSensorStatsSizeIndex + 1 >= RAW_SENSOR_STATS_SIZE_COUNT)
-      {
-         testRunning = false;
-         sensor.setDischargeDelayMicros(500);
-         rawSensorStats.resize(100);
-         displayedStats.resize(DISPLAYED_SAMPLE_COUNT);
-         Serial.println("Testing Complete");
-         feather.clearDisplay();
-      }
-      else
-      {
-         setupNextStatsSizeTest();
-      }
+      setupNextDelayTest();
    }
    else
    {
-      setupNextDelayTest();
+      testRunning = false;
+      sensor.setDischargeDelayMicros(500);
+      rawSensorStats.setDurationMs(DISPLAYED_STATS_WINDOW_MS);
+      displayedStats.setDurationMs(DISPLAYED_STATS_WINDOW_MS);
+      Serial.println("Testing Complete");
+      feather.clearDisplay();
    }
 }
 
@@ -210,7 +182,7 @@ void loop()
 
    if (displayTimer.ready())
    {
-      float displayedValue = rawSensorStats.average();
+      float displayedValue = rawSensorStats.get();
       displayedStats.set(displayedValue);
 
       feather.setCursor(0, 0);
@@ -240,6 +212,10 @@ void loop()
 
       feather.print("     Empty Time: ", Color::LABEL);
       feather.print(sensor.dischargeDelayMicros(), dischargeDelayMicrosFormat, Color::VALUE2);
+      feather.println();
+
+      feather.print("   Window (ms): ", Color::LABEL);
+      feather.print(rawSensorStats.durationMs(), Color::VALUE2);
       feather.println();
 
       feather.print("    Num Samples: ", Color::LABEL);

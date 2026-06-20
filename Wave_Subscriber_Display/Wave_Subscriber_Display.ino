@@ -10,7 +10,7 @@
 #include <BarChart.h>
 #include <RollingRate.h>
 #include <TelemetryClient.h>
-#include <RollingAverage.h>
+#include <RollingStats.h>
 #include <BufferedTimeSeries.h>
 #include <Timer.h>
 
@@ -19,7 +19,7 @@ WiFiMulti wifi;
 RollingRate refreshRate(100);
 Stopwatch sw;
 TelemetrySubscriber client("Waves/Lake");
-RollingAverage sensorReadings(500);
+RollingStats sensorReadings(500);
 constexpr auto BUFFER_TIME_WINDOW_MS = 2000;
 constexpr auto BUFFER_RESOLUTION_MS = 100;
 BufferedTimeSeries waveHeight(BUFFER_TIME_WINDOW_MS, BUFFER_RESOLUTION_MS);

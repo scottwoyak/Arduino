@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="RollingAverage_Tests.ino" />
+    <ClCompile Include="TimedStats_Tests.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.RollingAverage_Tests.vsarduino.h">
+    <ClInclude Include="__vm\.TimedStats_Tests.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
