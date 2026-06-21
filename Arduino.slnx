@@ -54,6 +54,7 @@
     <File Path="libraries/Woyak/RotaryEncoder.cpp" />
     <File Path="libraries/Woyak/RotaryEncoder.h" />
     <File Path="libraries/Woyak/SerialX.h" />
+    <File Path="libraries/Woyak/SevenSegment.h" />
     <File Path="libraries/Woyak/SHT3xTempSensor.h" />
     <File Path="libraries/Woyak/SHT4xTempSensor.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
@@ -295,6 +296,14 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Seven_Segment_TM1637/Seven_Segment_TM1637.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Seven_Segment_VK16K33/Seven_Segment_VK16K33.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="SmoothFontCreator/SmoothFontCreator.csproj" Id="8eb42b88-3644-48a5-95dc-592c930a65f6" />
   <Project Path="Solar_Monitor/Solar_Monitor.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
@@ -321,10 +330,6 @@
     <Deploy />
   </Project>
   <Project Path="Temp_Monitor_Display/Temp_Monitor_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="TM1637_Seven_Segment/TM1637_Seven_Segment.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

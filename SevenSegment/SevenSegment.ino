@@ -1,21 +1,25 @@
 #include <Arduino.h>
 #include <SevenSegment.h>
 #include <RollingRate.h>
+#include <SerialX.h>
 #include <Timer.h>
-
-// Module connection pins (Digital Pins)
-#define CLK 41
-#define DIO 42
 
 RollingRate rate;
 Timer timer(1000);
 
-SevenSegment display(CLK, DIO);
+ISevenSegment* display = nullptr;
 
 void setup()
 {
-   Serial.begin(115200);
-   display.setBrightness(7);
+   SerialX::begin();
+   Wire.begin();
+
+   display = SevenSegmentFactory::create();
+   if (display != nullptr)
+   {
+      display->begin();
+      display->setBrightness(1.0f);
+   }
 }
 
 int count = -100;
@@ -24,7 +28,10 @@ void loop()
 {
    rate.tick();
 
-   display.display(count / 10.0f, 1);
+   if (display != nullptr)
+   {
+      display->print(count / 10.0f, 1);
+   }
    count++;
 
    if (count == 10000)

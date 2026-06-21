@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="TM1637_Seven_Segment.ino" />
+    <ClCompile Include="Seven_Segment_TM1637.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.TM1637_Seven_Segment.vsarduino.h">
+    <ClInclude Include="__vm\.Seven_Segment_TM1637.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
