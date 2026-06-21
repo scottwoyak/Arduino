@@ -6,7 +6,6 @@
 /// @example Pintest.ino
 
 #include <FastLED.h>
-#include <fl/stl/stdio.h>
 
 char fullstrBuffer[64];
 
@@ -91,10 +90,11 @@ if(portRef == (void*)&GPIO3_DR) { return "GPIO3_DR"; }
 #ifdef GPIO4_DR
 if(portRef == (void*)&GPIO4_DR) { return "GPIO4_DR"; }
 #endif
-  fl::snprintf(fullstrBuffer, sizeof(fullstrBuffer), "Unknown: %zx", (size_t)portRef);
+  String unknown_str = "Unknown: " + String((size_t)portRef, HEX);
+	strncpy(fullstrBuffer, unknown_str.c_str(), unknown_str.length());
+	fullstrBuffer[sizeof(fullstrBuffer)-1] = '\0';
 	return fullstrBuffer;
 }
-
 
 template<uint8_t PIN> void CheckPin()
 {

@@ -1,4 +1,3 @@
-// @filter: (mem is large)
 /// @file    UIHelpTest.ino
 /// @brief   Test example for UIHelp component
 /// @example UIHelpTest.ino

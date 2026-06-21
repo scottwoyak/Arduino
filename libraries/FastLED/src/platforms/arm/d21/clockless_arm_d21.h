@@ -1,36 +1,15 @@
-// IWYU pragma: private
-
 #ifndef __INC_CLOCKLESS_ARM_D21
 #define __INC_CLOCKLESS_ARM_D21
 
-#include "platforms/arm/common/m0clockless.h"
-#include "fl/chipsets/timing_traits.h"
+#include "../common/m0clockless.h"
+#include "fl/namespace.h"
 #include "eorder.h"
-#include "fastled_delay.h"
-#include "fl/stl/noexcept.h"
-namespace fl {
-#define FL_CLOCKLESS_CONTROLLER_DEFINED 1
 
-/// @brief ARM D21 (SAMD21) Clockless LED Controller
-/// @tparam DATA_PIN Pin number for data line output
-/// @tparam TIMING ChipsetTiming structure containing T1, T2, T3, and RESET values
-/// @tparam RGB_ORDER Color order (RGB, GRB, etc.)
-/// @tparam XTRA0 Additional parameter for platform-specific needs
-/// @tparam FLIP Flip the output bit order if true
-/// @tparam WAIT_TIME Wait time between updates in microseconds
-///
-/// Example usage with named timing constant:
-/// @code
-///   ClocklessController<5, TIMING_WS2812_800KHZ, GRB> controller;
-/// @endcode
-template <u8 DATA_PIN, typename TIMING, EOrder RGB_ORDER = RGB, int XTRA0 = 0, bool FLIP = false, int WAIT_TIME = 280>
+FASTLED_NAMESPACE_BEGIN
+#define FASTLED_HAS_CLOCKLESS 1
+
+template <uint8_t DATA_PIN, int T1, int T2, int T3, EOrder RGB_ORDER = RGB, int XTRA0 = 0, bool FLIP = false, int WAIT_TIME = 280>
 class ClocklessController : public CPixelLEDController<RGB_ORDER> {
-    // Extract timing values from struct and convert from nanoseconds to clock cycles
-    // Formula: cycles = (nanoseconds * CPU_MHz + 500) / 1000
-    // The +500 provides rounding to nearest integer
-    static constexpr u32 T1 = (TIMING::T1 * (F_CPU / 1000000UL) + 500) / 1000;
-    static constexpr u32 T2 = (TIMING::T2 * (F_CPU / 1000000UL) + 500) / 1000;
-    static constexpr u32 T3 = (TIMING::T3 * (F_CPU / 1000000UL) + 500) / 1000;
     typedef typename FastPinBB<DATA_PIN>::port_ptr_t data_ptr_t;
     typedef typename FastPinBB<DATA_PIN>::port_t data_t;
 
@@ -39,15 +18,15 @@ class ClocklessController : public CPixelLEDController<RGB_ORDER> {
     CMinWait<WAIT_TIME> mWait;
 
 public:
-    virtual void init() FL_NOEXCEPT {
+    virtual void init() {
         FastPinBB<DATA_PIN>::setOutput();
         mPinMask = FastPinBB<DATA_PIN>::mask();
         mPort = FastPinBB<DATA_PIN>::port();
     }
 
-    virtual u16 getMaxRefreshRate() const { return 400; }
+    virtual uint16_t getMaxRefreshRate() const { return 400; }
 
-    virtual void showPixels(PixelController<RGB_ORDER> & pixels) FL_NOEXCEPT {
+    virtual void showPixels(PixelController<RGB_ORDER> & pixels) {
         mWait.wait();
         cli();
         if(!showRGBInternal(pixels)) {
@@ -60,7 +39,7 @@ public:
 
     // This method is made static to force making register Y available to use for data on AVR - if the method is non-static, then
     // gcc will use register Y for the this pointer.
-    static u32 showRGBInternal(PixelController<RGB_ORDER> pixels) FL_NOEXCEPT {
+    static uint32_t showRGBInternal(PixelController<RGB_ORDER> pixels) {
         if (pixels.size() == 0) {
             return 1;   // nonzero means success
         }
@@ -77,9 +56,12 @@ public:
         data.adj = pixels.mAdvance;
 
         typename FastPin<DATA_PIN>::port_ptr_t portBase = FastPin<DATA_PIN>::port();
-        return showLedData<8,4,TIMING,RGB_ORDER, WAIT_TIME>(portBase, FastPin<DATA_PIN>::mask(), pixels.mData, pixels.mLen, &data);
+        return showLedData<8,4,T1,T2,T3,RGB_ORDER, WAIT_TIME>(portBase, FastPin<DATA_PIN>::mask(), pixels.mData, pixels.mLen, &data);
     }
 
 };
-}  // namespace fl
+
+FASTLED_NAMESPACE_END
+
+
 #endif // __INC_CLOCKLESS_ARM_D21

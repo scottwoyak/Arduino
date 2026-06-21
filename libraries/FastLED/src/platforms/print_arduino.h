@@ -1,9 +1,8 @@
 #pragma once
-#include "fl/stl/noexcept.h"
 
 namespace fl {
 
-inline void print_arduino(const char* str) FL_NOEXCEPT {
+inline void print_arduino(const char* str) {
     if (!str) return;
     
     // Generic Arduino platforms and final fallback
@@ -17,7 +16,7 @@ inline void print_arduino(const char* str) FL_NOEXCEPT {
     // This prevents crashes on platforms where Serial isn't initialized
 }
 
-inline void println_arduino(const char* str) FL_NOEXCEPT {
+inline void println_arduino(const char* str) {
     if (!str) return;
     print_arduino(str);
     print_arduino("\n");

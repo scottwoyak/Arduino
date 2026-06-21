@@ -182,13 +182,15 @@ The following Emscripten flags are required in `build_flags.toml`:
 # Export callback functions for JavaScript
 "-sEXPORTED_FUNCTIONS=[..., '_js_fetch_success_callback', '_js_fetch_error_callback']"
 
-# Threading support for background worker execution
+# Threading support for async operations
 "-pthread"
-"-sUSE_PTHREADS=1"
+"-sUSE_PTHREADS=1" 
 "-sPROXY_TO_PTHREAD"
-```
 
-**Note**: Asyncify flags are NOT required. FastLED WASM uses dedicated Web Workers (PROXY_TO_PTHREAD) for background execution, providing true threading without Asyncify's async emulation. Asyncify was removed in 2025-01 to reduce binary size (44.4% reduction) and fix audio reactive mode issues.
+# Asyncify for async function support
+"-sASYNCIFY=1"
+"-sASYNCIFY_EXPORTS=['_main','_extern_setup','_extern_loop']"
+```
 
 ### Browser Requirements
 
@@ -198,7 +200,7 @@ The following Emscripten flags are required in `build_flags.toml`:
 
 ## Example Projects
 
-- **`examples/Asio/Client/Client.ino`**: Comprehensive network testing with multiple fetch scenarios
+- **`examples/NetTest/NetTest.ino`**: Comprehensive network testing with multiple fetch scenarios
 
 ## Platform Support
 

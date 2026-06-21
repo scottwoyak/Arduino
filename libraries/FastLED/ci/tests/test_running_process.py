@@ -5,17 +5,16 @@ This test executes a trivial Python command via `uv run python -c` and verifies:
 - The streamed output contains the expected line
 """
 
-import subprocess
+from __future__ import annotations
+
 import time
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import List, Union
 
-import pytest
-from running_process import EndOfStream, RunningProcess
+from ci.util.running_process import EndOfStream, RunningProcess
 
 
-@pytest.mark.serial
 class TestRunningProcess(unittest.TestCase):
     def test_sanity(self: "TestRunningProcess") -> None:
         """Run a trivial command and validate output streaming and exit code.
@@ -38,14 +37,15 @@ class TestRunningProcess(unittest.TestCase):
             check=False,
             auto_run=True,
             timeout=30,
+            enable_stack_trace=True,
             on_complete=None,
             output_formatter=None,
         )
 
-        captured_lines: list[str] = []
+        captured_lines: List[str] = []
 
         while True:
-            out: Any = rp.get_next_line_non_blocking()
+            out: Union[str, EndOfStream, None] = rp.get_next_line_non_blocking()
             if isinstance(out, EndOfStream):
                 break
             if isinstance(out, str):
@@ -53,7 +53,7 @@ class TestRunningProcess(unittest.TestCase):
             else:
                 time.sleep(0.01)
 
-        rc: Any = rp.wait()
+        rc: int = rp.wait()
         self.assertEqual(rc, 0)
 
         combined: str = "\n".join(captured_lines).strip()
@@ -76,19 +76,20 @@ class TestRunningProcess(unittest.TestCase):
             check=False,
             auto_run=True,
             timeout=10,
+            enable_stack_trace=False,
             on_complete=None,
             output_formatter=None,
         )
 
-        iter_lines: list[str] = []
-        with rp.line_iter(timeout=60) as it:
+        iter_lines: List[str] = []
+        with rp.line_iter(timeout=5) as it:
             for ln in it:
                 # Should always be a string, never None
                 self.assertIsInstance(ln, str)
                 iter_lines.append(ln)
 
         # Process should have finished; ensure exit success
-        rc: Any = rp.wait()
+        rc: int = rp.wait()
         self.assertEqual(rc, 0)
         self.assertEqual(iter_lines, ["a", "b", "c"])
 
@@ -110,7 +111,6 @@ class _UpperFormatter:
         self.end_called = True
 
 
-@pytest.mark.serial
 class TestRunningProcessAdditional(unittest.TestCase):
     def test_timeout_and_kill(self: "TestRunningProcessAdditional") -> None:
         """Process exceeding timeout should be killed and raise TimeoutError."""
@@ -129,6 +129,7 @@ class TestRunningProcessAdditional(unittest.TestCase):
             check=False,
             auto_run=True,
             timeout=1,
+            enable_stack_trace=True,
             on_complete=None,
             output_formatter=None,
         )
@@ -144,7 +145,7 @@ class TestRunningProcessAdditional(unittest.TestCase):
         end_seen: bool = False
         deadline: float = time.time() + 2.0
         while time.time() < deadline:
-            nxt: Any = rp.get_next_line_non_blocking()
+            nxt: Union[str, EndOfStream, None] = rp.get_next_line_non_blocking()
             if isinstance(nxt, EndOfStream):
                 end_seen = True
                 break
@@ -169,26 +170,22 @@ class TestRunningProcessAdditional(unittest.TestCase):
             cwd=Path(".").absolute(),
             check=False,
             auto_run=True,
-            timeout=30,  # Increased from 10 to match test_sanity; uv startup can be slow in CI
+            timeout=10,
+            enable_stack_trace=False,
             on_complete=None,
             output_formatter=formatter,
         )
 
-        # Drain transformed lines from the streaming API. In running-process v3,
-        # the output_formatter is a render-time view applied by get_next_line*;
-        # the raw `rp.stdout` capture is untouched.
-        captured: list[str] = []
+        # Drain output (optional; accumulated_output records lines regardless)
         while True:
-            line: Any = rp.get_next_line_non_blocking()
+            line: Union[str, EndOfStream, None] = rp.get_next_line_non_blocking()
             if isinstance(line, EndOfStream):
                 break
             if line is None:
                 time.sleep(0.005)
                 continue
-            if isinstance(line, str):
-                captured.append(line)
 
-        rc: Any = rp.wait()
+        rc: int = rp.wait()
         self.assertEqual(rc, 0)
 
         # Verify formatter begin/end were called
@@ -196,67 +193,13 @@ class TestRunningProcessAdditional(unittest.TestCase):
         self.assertTrue(formatter.end_called)
 
         # Verify transformed, non-empty lines only
-        output_text = "\n".join(captured).strip()
+        output_text: str = rp.stdout.strip()
         # Should contain HELLO and WORLD, but not an empty line
         self.assertIn("HELLO", output_text)
         self.assertIn("WORLD", output_text)
-        # Ensure no blank-only lines exist in streamed output
+        # Ensure no blank-only lines exist in accumulated output
         for ln in output_text.split("\n"):
             self.assertTrue(len(ln.strip()) > 0)
-
-    def test_capture_output_keeps_legacy_combined_stdout_by_default(
-        self: "TestRunningProcessAdditional",
-    ) -> None:
-        """Default capture_output preserves legacy merged-stdout behavior."""
-
-        command: list[str] = [
-            "uv",
-            "run",
-            "python",
-            "-c",
-            "import sys; print('out'); print('err', file=sys.stderr)",
-        ]
-
-        result = RunningProcess.run(
-            command,
-            cwd=Path(".").absolute(),
-            check=False,
-            timeout=30,
-            capture_output=True,
-            text=True,
-        )
-
-        self.assertEqual(result.returncode, 0)
-        self.assertIsNone(result.stderr)
-        merged_lines = (result.stdout or "").splitlines()
-        self.assertEqual(sorted(merged_lines), ["err", "out"])
-
-    def test_capture_output_can_split_stdout_and_stderr_when_requested(
-        self: "TestRunningProcessAdditional",
-    ) -> None:
-        """Callers can opt into true split-stream capture via stderr=PIPE."""
-
-        command: list[str] = [
-            "uv",
-            "run",
-            "python",
-            "-c",
-            "import sys; print('out'); print('err', file=sys.stderr)",
-        ]
-
-        result = RunningProcess.run(
-            command,
-            cwd=Path(".").absolute(),
-            check=False,
-            timeout=30,
-            capture_output=True,
-            text=True,
-            stderr=subprocess.PIPE,
-        )
-
-        self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, "out")
-        self.assertEqual(result.stderr, "err")
 
 
 if __name__ == "__main__":

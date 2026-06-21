@@ -6,9 +6,12 @@
 /*
 Legacy header. Prefer to use fl/hsv.h instead.
 */
-#include "fl/gfx/hsv.h"
-// Backward compatibility: bring fl::hsv8 into global namespace as CHSV
-using CHSV = fl::hsv8;
+#include "fl/hsv.h"
+#include "fl/namespace.h"
+
+
+
+using fl::CHSV;
 using fl::HSVHue;
 using fl::HUE_RED;
 using fl::HUE_ORANGE;

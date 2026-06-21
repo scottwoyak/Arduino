@@ -1,48 +1,41 @@
 #!/usr/bin/env python3
 import subprocess
 import sys
-from typing import Any
+from pathlib import Path
+from typing import Any, List
 
-from running_process import RunningProcess
-
+from ci.util.running_process import RunningProcess
 from ci.util.test_types import TestArgs
 
 
 def build_cpp_test_command(args: TestArgs) -> str:
     """Build the C++ test command based on arguments"""
-    # Use test.py with appropriate flags for C++ testing via Meson
-    cmd_list = ["uv", "run", "python", "test.py"]
-
-    # Always run C++ tests (unit tests)
-    cmd_list.append("--unit")
+    cmd_list = ["uv", "run", "python", "-m", "ci.compiler.cpp_test_run"]
 
     if args.clang:
-        # Note: Meson uses clang-tool-chain's Clang, so --clang flag still applies
         cmd_list.append("--clang")
 
     if args.test:
-        # Pass specific test name
+        cmd_list.append("--test")
         cmd_list.append(args.test)
-
     if args.clean:
         cmd_list.append("--clean")
-
     if args.verbose:
-        cmd_list.append("--verbose")
-
+        cmd_list.append("--verbose")  # Always pass verbose flag when enabled
     if args.show_compile:
-        cmd_list.append("--show-compile")
-
+        cmd_list.append("--show-compile")  # Pass show-compile flag
     if args.show_link:
-        cmd_list.append("--show-link")
-
+        cmd_list.append("--show-link")  # Pass show-link flag
     if args.check:
         cmd_list.append("--check")
+
+    if args.no_unity:
+        cmd_list.append("--no-unity")
 
     return subprocess.list2cmdline(cmd_list)
 
 
-def make_pio_check_cmd() -> list[str]:
+def make_pio_check_cmd() -> List[str]:
     """Create the PlatformIO check command"""
     return [
         "pio",
@@ -68,12 +61,11 @@ def make_compile_uno_test_process(enable_stack_trace: bool = True) -> RunningPro
         "--examples",
         "Blink",
         "--no-interactive",
-        "--local",
     ]
-    return RunningProcess(cmd, auto_run=True)
+    return RunningProcess(cmd, auto_run=True, enable_stack_trace=enable_stack_trace)
 
 
-def run_command(cmd: list[str], **kwargs: Any) -> None:
+def run_command(cmd: List[str], **kwargs: Any) -> None:
     """Run a command and handle errors"""
     try:
         subprocess.run(cmd, check=True, **kwargs)

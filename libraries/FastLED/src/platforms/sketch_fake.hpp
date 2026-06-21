@@ -1,18 +1,13 @@
-
 // Shared fallback implementation for Arduino examples that require specific platforms
 // This file provides a common fallback for examples that won't compile on all platforms
 
-// ok no namespace fl
-// IWYU pragma: begin_keep
-#include <FastLED.h>  // ok include
-#include "fl/stl/noexcept.h"
-// IWYU pragma: end_keep
+#include <FastLED.h>
 
 #define NUM_LEDS 60
 
 CRGB leds[NUM_LEDS];
 
-void setup() FL_NOEXCEPT {
+void setup() {
     Serial.begin(9600);
     Serial.println("Platform-specific example - running in fallback mode");
     Serial.println("This example requires specific hardware/libraries not available on this platform");
@@ -22,9 +17,9 @@ void setup() FL_NOEXCEPT {
     FastLED.setBrightness(60);
 }
 
-void loop() FL_NOEXCEPT {
+void loop() {
     // Simple rainbow animation for fallback
-    static fl::u8 hue = 0; // okay static in header
+    static uint8_t hue = 0;
     fill_rainbow(leds, NUM_LEDS, hue, 255/NUM_LEDS);
     FastLED.show();
     delay(50);

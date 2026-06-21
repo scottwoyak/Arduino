@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Work in progress to generate doxygen via a script instead of a GitHub action.
 """
@@ -9,11 +8,9 @@ import shutil
 import subprocess
 import warnings
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
-from download import download  # type: ignore[import-untyped]
-
-from ci.util.global_interrupt_handler import handle_keyboard_interrupt
+from download import download  # type: ignore
 
 
 # Configs
@@ -61,7 +58,7 @@ def run(
     return stdout.strip()
 
 
-def get_git_info() -> tuple[str, str]:
+def get_git_info() -> Tuple[str, str]:
     release_tag = os.environ.get("RELEASE_TAG", "")
 
     try:
@@ -168,9 +165,6 @@ def main() -> None:
     try:
         dot_version = run("dot -V", check=False)
         print(f"Graphviz detected: {dot_version}")
-    except KeyboardInterrupt as ki:
-        handle_keyboard_interrupt(ki)
-        raise
     except Exception:
         warnings.warn(
             "Graphviz (dot) not found in PATH. Diagrams may not be generated."

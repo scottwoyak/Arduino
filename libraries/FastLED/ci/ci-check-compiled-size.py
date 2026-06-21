@@ -7,7 +7,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, List, Match, Optional
 
 
 HERE = Path(__file__).resolve().parent
@@ -17,7 +17,7 @@ IS_GITHUB = "GITHUB_ACTIONS" in os.environ
 
 
 def run_command(
-    cmd_list: list[str],
+    cmd_list: List[str],
     capture_output: bool = True,
     shell: bool = False,
     check: Optional[bool] = None,
@@ -87,16 +87,7 @@ def main():
             run_command(cmd_list, shell=True, capture_output=False, check=True)
 
     output = run_command(
-        [
-            "uv",
-            "run",
-            "-m",
-            "ci.compiled_size",
-            "--board",
-            args.board,
-            "--example",
-            args.example,
-        ],
+        ["uv", "run", "-m", "ci.compiled_size", "--board", args.board],
         capture_output=True,
     )
     size_match = re.search(r": *(\d+)", output)  # type: ignore
@@ -106,12 +97,11 @@ def main():
         print(f"Output: {output}")
         sys.exit(1)
 
-    size_str = size_match.group(1)  # type: ignore[misc]
-    assert isinstance(size_str, str), "Size group must be a string"
+    size_str = size_match.group(1)  # type: ignore
     if not size_str:
         print("Error: Size group is empty")
         sys.exit(1)
-    size = int(size_str)
+    size = int(size_str)  # type: ignore
 
     if args.max_size is not None and args.max_size > 0:
         max_size = args.max_size

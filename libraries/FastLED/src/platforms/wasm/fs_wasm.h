@@ -1,34 +1,30 @@
 #pragma once
 
-// IWYU pragma: private
-
-#include "fl/stl/stdint.h"
-// IWYU pragma: begin_keep
+#include "fl/stdint.h"
 #include <string>
-// IWYU pragma: end_keep
 
-#include "fl/system/file_system.h"
-#include "fl/stl/memory.h"
-#include "fl/stl/span.h"
-#include "fl/stl/noexcept.h"
+#include "fl/file_system.h"
+#include "fl/namespace.h"
+#include "fl/memory.h"
+#include "fl/span.h"
 
 namespace fl {
 
-FsImplPtr make_sdcard_filesystem(int cs_pin) FL_NOEXCEPT;
+FsImplPtr make_sdcard_filesystem(int cs_pin);
 
 }
 
 extern "C" {
 // Called from the browser side, this is intended to create a file
 // at the given path with the given data. You can only do this once.
-bool jsInjectFile(const char *path, const fl::u8 *data, size_t len) FL_NOEXCEPT;
+bool jsInjectFile(const char *path, const uint8_t *data, size_t len);
 
 // Declare a file with the given path and length. Then jsAppendFile can
 // be called to fill in the data later.
-bool jsDeclareFile(const char *path, size_t len) FL_NOEXCEPT;
+bool jsDeclareFile(const char *path, size_t len);
 
 // After a file is declared, it can be appended with more data.
-bool jsAppendFile(const char *path, const fl::u8 *data, size_t len) FL_NOEXCEPT;
+bool jsAppendFile(const char *path, const uint8_t *data, size_t len);
 
-void fastled_declare_files(const char* jsonStr) FL_NOEXCEPT;
+void fastled_declare_files(const char* jsonStr);
 } // extern "C"

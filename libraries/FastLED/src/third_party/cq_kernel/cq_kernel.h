@@ -15,7 +15,7 @@
 #ifndef CQ_KERNEL_H
 #define CQ_KERNEL_H
 
-#include "fl/math/math.h"
+#include <math.h>
 #include "_kiss_fft_guts.h"
 #include "kiss_fftr.h"
 

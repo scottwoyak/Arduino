@@ -1,14 +1,10 @@
 #pragma once
 
-// IWYU pragma: private
+#ifdef FASTLED_HAS_NETWORKING && 0
+#ifdef _WIN32
 
-#include "platforms/win/is_win.h"  // IWYU pragma: keep
-
-#ifdef FASTLED_HAS_NETWORKING
-#ifdef FL_IS_WIN
-
-#include "fl/stl/string.h"
-#include "fl/stl/stdint.h"
+#include "fl/string.h"
+#include "fl/stdint.h"
 
 // Essential Windows header isolation
 #ifndef WIN32_LEAN_AND_MEAN
@@ -25,13 +21,8 @@
 #endif
 
 // Minimal Windows includes for type definitions
-// IWYU pragma: begin_keep
-// IWYU pragma: begin_exports
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include "fl/stl/noexcept.h"
-// IWYU pragma: end_exports
-// IWYU pragma: end_keep
 
 namespace fl {
 
@@ -124,53 +115,53 @@ using in_port_t = unsigned short;    // Same as USHORT
 // Helper Functions for Windows Socket Normalization
 //=============================================================================
 
-bool initialize_winsock() FL_NOEXCEPT;
-void cleanup_winsock() FL_NOEXCEPT;
-int translate_windows_error(int wsa_error) FL_NOEXCEPT;
+bool initialize_winsock();
+void cleanup_winsock();
+int translate_windows_error(int wsa_error);
 
 //=============================================================================
 // Normalized POSIX-Style Socket API Functions
 //=============================================================================
 
 // Core Socket Operations
-int socket(int domain, int type, int protocol) FL_NOEXCEPT;
-int socketpair(int domain, int type, int protocol, int sv[2]) FL_NOEXCEPT;
+int socket(int domain, int type, int protocol);
+int socketpair(int domain, int type, int protocol, int sv[2]);
 
 // Addressing
-int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) FL_NOEXCEPT;
-int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) FL_NOEXCEPT;
-int listen(int sockfd, int backlog) FL_NOEXCEPT;
-int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) FL_NOEXCEPT;
+int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+int listen(int sockfd, int backlog);
+int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 
 // Data Transfer
-ssize_t send(int sockfd, const void *buf, size_t len, int flags) FL_NOEXCEPT;
-ssize_t recv(int sockfd, void *buf, size_t len, int flags) FL_NOEXCEPT;
+ssize_t send(int sockfd, const void *buf, size_t len, int flags);
+ssize_t recv(int sockfd, void *buf, size_t len, int flags);
 ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
-               const struct sockaddr *dest_addr, socklen_t addrlen) FL_NOEXCEPT;
+               const struct sockaddr *dest_addr, socklen_t addrlen);
 ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
-                 struct sockaddr *src_addr, socklen_t *addrlen) FL_NOEXCEPT;
+                 struct sockaddr *src_addr, socklen_t *addrlen);
 
 // Connection Teardown
-int shutdown(int sockfd, int how) FL_NOEXCEPT;
-int close(int fd) FL_NOEXCEPT;
+int shutdown(int sockfd, int how);
+int close(int fd);
 
 // Socket Options
-int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen) FL_NOEXCEPT;
-int getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *optlen) FL_NOEXCEPT;
+int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen);
+int getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *optlen);
 
 // Address Information
-int getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen) FL_NOEXCEPT;
-int getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen) FL_NOEXCEPT;
+int getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+int getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 
 // Address Resolution
-int inet_pton(int af, const char *src, void *dst) FL_NOEXCEPT;
-const char* inet_ntop(int af, const void *src, char *dst, socklen_t size) FL_NOEXCEPT;
+int inet_pton(int af, const char *src, void *dst);
+const char* inet_ntop(int af, const void *src, char *dst, socklen_t size);
 
 // fcntl emulation for non-blocking sockets
-int fcntl(int fd, int cmd, ...) FL_NOEXCEPT;
+int fcntl(int fd, int cmd, ...);
 
 // Error handling
-int get_errno() FL_NOEXCEPT;
+int get_errno();
 
 // WASM CONSTRAINTS: The following functions are blocking calls and are 
 // DISALLOWED and NOT AVAILABLE on WASM due to proxying limitations:
@@ -183,9 +174,6 @@ int get_errno() FL_NOEXCEPT;
 // POSIX errno constants for Windows
 #ifndef EWOULDBLOCK
 #define EWOULDBLOCK     WSAEWOULDBLOCK
-#endif
-#ifndef EAGAIN
-#define EAGAIN          WSAEWOULDBLOCK  // On Windows, EAGAIN == EWOULDBLOCK
 #endif
 #ifndef ECONNREFUSED
 #define ECONNREFUSED    WSAECONNREFUSED
@@ -217,5 +205,5 @@ int get_errno() FL_NOEXCEPT;
 
 } // namespace fl
 
-#endif // FL_IS_WIN
+#endif // _WIN32
 #endif // FASTLED_HAS_NETWORKING 

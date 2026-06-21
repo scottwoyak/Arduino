@@ -1,23 +1,15 @@
 #pragma once
 
-// IWYU pragma: private
-
-#include "fl/system/fastled.h"
-#include "fl/stl/noexcept.h"
+#include "FastLED.h"
 
 namespace fl {
-static void stub_compile_tests() FL_NOEXCEPT {
+static void stub_compile_tests() {
 #if FASTLED_USE_PROGMEM != 0
 #error "FASTLED_USE_PROGMEM should be 0 for stub platforms"
 #endif
 
-#if !defined(SKETCH_HAS_LARGE_MEMORY_OVERRIDDEN)
-#if SKETCH_HAS_LARGE_MEMORY != 1
-#error "SKETCH_HAS_LARGE_MEMORY should be 1 for stub platforms"
-#endif
-#if SKETCH_HAS_HUGE_MEMORY != 1
-#error "SKETCH_HAS_HUGE_MEMORY should be 1 for stub platforms"
-#endif
+#if SKETCH_HAS_LOTS_OF_MEMORY != 1
+#error "SKETCH_HAS_LOTS_OF_MEMORY should be 1 for stub platforms"
 #endif
 
 #if FASTLED_ALLOW_INTERRUPTS != 1

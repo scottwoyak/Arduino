@@ -4,8 +4,7 @@
 #define __INC_CONTROLLER_H
 
 /// @file controller.h
-/// @deprecated This header is deprecated. Use cpixel_ledcontroller.h directly
-/// for LED controller definitions and pixel control functionality.
+/// deprecated: base definitions used by led controllers for writing out led data
 
 #include "cpixel_ledcontroller.h"
 

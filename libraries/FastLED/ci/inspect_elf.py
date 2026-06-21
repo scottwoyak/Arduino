@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 
 from ci.util.elf import dump_symbol_sizes
-from ci.util.global_interrupt_handler import handle_keyboard_interrupt
 
 
 HERE = Path(__file__).resolve().parent
@@ -57,19 +56,7 @@ def main() -> int:
     board_dir = board_dirs[which]
     board = board_dir.name
 
-    # Find build_info.json (try example-specific files first, then generic)
-    build_info_files = list(board_dir.glob("build_info_*.json"))
-    if build_info_files:
-        # Prefer example-specific files
-        build_info_json = build_info_files[0]
-    else:
-        # Fall back to generic build_info.json
-        build_info_json = board_dir / "build_info.json"
-
-    if not build_info_json.exists():
-        print(f"Error: No build_info*.json found in {board_dir}")
-        return 1
-
+    build_info_json = board_dir / "build_info.json"
     build_info = json.loads(build_info_json.read_text())
     board_info = build_info.get(board) or build_info[next(iter(build_info))]
 
@@ -81,9 +68,6 @@ def main() -> int:
         nm_path = Path(board_info["aliases"]["nm"])
         symbol_sizes = dump_symbol_sizes(nm_path, cpp_filt_path, firmware_path)
         print(symbol_sizes)
-    except KeyboardInterrupt as ki:
-        handle_keyboard_interrupt(ki)
-        raise
     except Exception as e:
         print(f"Error while dumping symbol sizes: {e}")
 

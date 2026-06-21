@@ -16,8 +16,8 @@ The `src/` directory contains the classic FastLED public API (`FastLED.h`), the 
   - [Core foundation: `fl/`](#core-foundation-fl)
   - [Effects and graphics: `fx/`](#effects-and-graphics-fx)
   - [Platforms and HAL: `platforms/`](#platforms-and-hal-platforms)
-  - [Sensors and input: `fl/sensors/`](#sensors-and-input-sensors)
-  - [Fonts: `fl/font/`](#fonts-flfont)
+  - [Sensors and input: `sensors/`](#sensors-and-input-sensors)
+  - [Fonts and assets: `fonts/`](#fonts-and-assets-fonts)
   - [Third‑party and shims: `third_party/`](#third-party-and-shims-third_party)
 - [Quick Usage Examples](#quick-usage-examples)
   - [Classic strip setup](#classic-strip-setup)
@@ -44,8 +44,8 @@ The `src/` directory contains the classic FastLED public API (`FastLED.h`), the 
 - `fl/`: cross‑platform foundation (containers, math, graphics primitives, async, JSON)
 - `fx/`: effect/graphics utilities and 1D/2D composition helpers
 - `platforms/`: hardware abstraction layers (AVR, ARM, ESP, POSIX, STUB, WASM, etc.)
-- `fl/sensors/`: basic input components (buttons, digital pins)
-- `fl/font/`: TrueType and bitmap font support for text rendering
+- `sensors/`: basic input components (buttons, digital pins)
+- `fonts/`: built‑in bitmap fonts for overlays
 - `third_party/`: vendored minimal headers and compatibility glue
 
 If you are writing Arduino‑style sketches, include `FastLED.h`. For advanced/host builds or portable C++, prefer including only what you use from `fl/` and related subsystems.
@@ -53,7 +53,7 @@ If you are writing Arduino‑style sketches, include `FastLED.h`. For advanced/h
 ### Include policy
 
 - Sketches: `#include <FastLED.h>` for the canonical API
-- Advanced C++ (host, tests, platforms): include targeted headers (e.g., `"fl/stl/vector.h"`, `"fl/downscale.h"`, `"fx/frame.h"`)
+- Advanced C++ (host, tests, platforms): include targeted headers (e.g., `"fl/vector.h"`, `"fl/downscale.h"`, `"fx/frame.h"`)
 - Prefer `fl::` facilities to keep portability across compilers and embedded targets. See `src/fl/README.md` for the full `fl::` guide.
 
 ---
@@ -81,15 +81,13 @@ If you are writing Arduino‑style sketches, include `FastLED.h`. For advanced/h
 - Target backends and shims for AVR, ARM, ESP, POSIX, STUB (for tests), WASM, etc.
 - Shared code for JSON UI, timing, and platform integrations
 
-### Sensors and input: `fl/sensors/`
+### Sensors and input: `sensors/`
 
 - Minimal input primitives (e.g., `button`, `digital_pin`) intended for demos and portable logic
 
-### Fonts: `fl/font/`
+### Fonts and assets: `fonts/`
 
-- TrueType font rendering support (`truetype.h`)
-- Bitmap console fonts (e.g., `console_font_4x6`, `console_font_5x8`) for text overlays in demos/tests
-- See `src/fl/font/README.md` for detailed documentation and BETA status warnings
+- Small bitmap fonts (e.g., `console_font_4x6`) to draw text overlays in demos/tests
 
 ### Third‑party and shims: `third_party/`
 
@@ -124,7 +122,7 @@ void loop() {
 
 ```cpp
 #include <FastLED.h>
-#include "fl/gfx/leds.h"
+#include "fl/leds.h"
 #include "fl/xymap.h"
 
 constexpr uint16_t WIDTH  = 16;
@@ -173,7 +171,7 @@ void render_frame() {
 
 ```cpp
 #include <FastLED.h>
-#include "fl/ui/ui.h"
+#include "fl/ui.h"
 
 UISlider brightness("Brightness", 128, 0, 255);
 UICheckbox enabled("Enabled", true);

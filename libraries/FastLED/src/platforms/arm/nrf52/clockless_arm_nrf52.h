@@ -1,22 +1,12 @@
-// IWYU pragma: private
-
 #ifndef __INC_CLOCKLESS_ARM_NRF52
 #define __INC_CLOCKLESS_ARM_NRF52
 
-#include "platforms/arm/nrf52/is_nrf52.h"
+#if defined(NRF52_SERIES)
 
-#if defined(FL_IS_NRF52)
 
-#include "fl/chipsets/timing_traits.h"
+//FASTLED_NAMESPACE_BEGIN
 
-#include "fastled_delay.h"
-
-#include "eorder.h"
-#include "fl/stl/noexcept.h"
-#include "fl/stl/static_assert.h"
-namespace fl {
-
-#define FL_CLOCKLESS_CONTROLLER_DEFINED 1
+#define FASTLED_HAS_CLOCKLESS 1
 #define FASTLED_NRF52_MAXIMUM_PIXELS_PER_STRING 144 // TODO: Figure out how to safely let this be calller-defined....
 
 // nRF52810 has a single PWM peripheral (PWM0)
@@ -25,50 +15,40 @@ namespace fl {
 // NOTE: Update platforms.cpp in root of FastLED library if this changes
 #define FASTLED_NRF52_PWM_ID 0
 
-extern u32 isrCount;
+extern uint32_t isrCount;
 
 
-template <u8 _DATA_PIN, typename TIMING, EOrder _RGB_ORDER = RGB, int _XTRA0 = 0, bool _FLIP = false, int _WAIT_TIME_MICROSECONDS = 10>
+template <uint8_t _DATA_PIN, int _T1, int _T2, int _T3, EOrder _RGB_ORDER = RGB, int _XTRA0 = 0, bool _FLIP = false, int _WAIT_TIME_MICROSECONDS = 10>
 class ClocklessController : public CPixelLEDController<_RGB_ORDER> {
-    // Convert nanoseconds to PWM cycles at 16MHz (CLOCKLESS_FREQUENCY)
-    // Formula: cycles = (nanoseconds * PWM_MHz + 500) / 1000
-    // The +500 provides rounding to nearest integer
-    static constexpr int _T1 = (TIMING::T1 * (CLOCKLESS_FREQUENCY / 1000000UL) + 500) / 1000;
-    static constexpr int _T2 = (TIMING::T2 * (CLOCKLESS_FREQUENCY / 1000000UL) + 500) / 1000;
-    static constexpr int _T3 = (TIMING::T3 * (CLOCKLESS_FREQUENCY / 1000000UL) + 500) / 1000;
-
-    FL_STATIC_ASSERT(FASTLED_NRF52_MAXIMUM_PIXELS_PER_STRING > 0, "Maximum string length must be positive value (FASTLED_NRF52_MAXIMUM_PIXELS_PER_STRING)");
-    FL_STATIC_ASSERT(_T1         >             0 , "negative values are not allowed");
-    FL_STATIC_ASSERT(_T2         >             0 , "negative values are not allowed");
-    FL_STATIC_ASSERT(_T3         >             0 , "negative values are not allowed");
-    FL_STATIC_ASSERT(_T1         <  (0x8000u-2u), "_T1 must fit in 15 bits");
-    FL_STATIC_ASSERT(_T2         <  (0x8000u-2u), "_T2 must fit in 15 bits");
-    FL_STATIC_ASSERT(_T3         <  (0x8000u-2u), "_T3 must fit in 15 bits");
-    FL_STATIC_ASSERT(_T1         <  (0x8000u-2u), "_T0H must fit in 15 bits");
-    FL_STATIC_ASSERT(_T1+_T2     <  (0x8000u-2u), "_T1H must fit in 15 bits");
-    FL_STATIC_ASSERT(_T1+_T2+_T3 <  (0x8000u-2u), "_TOP must fit in 15 bits");
-    FL_STATIC_ASSERT(_T1+_T2+_T3 <= PWM_COUNTERTOP_COUNTERTOP_Msk, "_TOP too large for peripheral");
+    static_assert(FASTLED_NRF52_MAXIMUM_PIXELS_PER_STRING > 0, "Maximum string length must be positive value (FASTLED_NRF52_MAXIMUM_PIXELS_PER_STRING)");
+    static_assert(_T1         >             0 , "negative values are not allowed");
+    static_assert(_T2         >             0 , "negative values are not allowed");
+    static_assert(_T3         >             0 , "negative values are not allowed");
+    static_assert(_T1         <  (0x8000u-2u), "_T1 must fit in 15 bits");
+    static_assert(_T2         <  (0x8000u-2u), "_T2 must fit in 15 bits");
+    static_assert(_T3         <  (0x8000u-2u), "_T3 must fit in 15 bits");
+    static_assert(_T1         <  (0x8000u-2u), "_T0H must fit in 15 bits");
+    static_assert(_T1+_T2     <  (0x8000u-2u), "_T1H must fit in 15 bits");
+    static_assert(_T1+_T2+_T3 <  (0x8000u-2u), "_TOP must fit in 15 bits");
+    static_assert(_T1+_T2+_T3 <= PWM_COUNTERTOP_COUNTERTOP_Msk, "_TOP too large for peripheral");
 
 private:
     static const bool     _INITIALIZE_PIN_HIGH = (_FLIP ? 1 : 0);
-    static const u16 _POLARITY_BIT        = (_FLIP ? 0 : 0x8000);
+    static const uint16_t _POLARITY_BIT        = (_FLIP ? 0 : 0x8000);
 
-    // Buffer sized for maximum (RGBW = 4 bytes), runtime determines actual bytes used
-    static const u8  _BITS_PER_PIXEL_RGB  = (8 + _XTRA0) * 3;
-    static const u8  _BITS_PER_PIXEL_RGBW = (8 + _XTRA0) * 4;
-    static const u8  _BITS_PER_PIXEL_MAX  = (8 + _XTRA0) * 4; // Size for RGBW (maximum)
-    static const u16 _PWM_BUFFER_COUNT = (_BITS_PER_PIXEL_MAX * FASTLED_NRF52_MAXIMUM_PIXELS_PER_STRING);
-    static const u16 _T0H = ((u16)(_T1        ));
-    static const u16 _T1H = ((u16)(_T1+_T2    ));
-    static const u16 _TOP = ((u16)(_T1+_T2+_T3));
+    static const uint8_t  _BITS_PER_PIXEL   = (8 + _XTRA0) * 3; // NOTE: 3 means RGB only...
+    static const uint16_t _PWM_BUFFER_COUNT = (_BITS_PER_PIXEL * FASTLED_NRF52_MAXIMUM_PIXELS_PER_STRING);
+    static const uint8_t  _T0H = ((uint16_t)(_T1        ));
+    static const uint8_t  _T1H = ((uint16_t)(_T1+_T2    ));
+    static const uint8_t  _TOP = ((uint16_t)(_T1+_T2+_T3));
 
     // may as well be static, as can only attach one LED string per _DATA_PIN....
-    static u16 s_SequenceBuffer[_PWM_BUFFER_COUNT];
-    static u16 s_SequenceBufferValidElements;
-    static volatile u32 s_SequenceBufferInUse;
+    static uint16_t s_SequenceBuffer[_PWM_BUFFER_COUNT];
+    static uint16_t s_SequenceBufferValidElements;
+    static volatile uint32_t s_SequenceBufferInUse;
     static CMinWait<_WAIT_TIME_MICROSECONDS> mWait;  // ensure data has time to latch
 
-    FASTLED_NRF52_INLINE_ATTRIBUTE static void startPwmPlayback_InitializePinState() FL_NOEXCEPT {
+    FASTLED_NRF52_INLINE_ATTRIBUTE static void startPwmPlayback_InitializePinState() {
         FastPin<_DATA_PIN>::setOutput();
         if (_INITIALIZE_PIN_HIGH) {
             FastPin<_DATA_PIN>::hi();
@@ -76,7 +56,7 @@ private:
             FastPin<_DATA_PIN>::lo();
         }
     }
-    FASTLED_NRF52_INLINE_ATTRIBUTE static void startPwmPlayback_InitializePwmInstance(NRF_PWM_Type * pwm) FL_NOEXCEPT {
+    FASTLED_NRF52_INLINE_ATTRIBUTE static void startPwmPlayback_InitializePwmInstance(NRF_PWM_Type * pwm) {
 
         // Pins must be set before enabling the peripheral
         pwm->PSEL.OUT[0] = FastPin<_DATA_PIN>::nrf_pin();
@@ -99,7 +79,7 @@ private:
         nrf_pwm_event_clear(pwm, NRF_PWM_EVENT_PWMPERIODEND);
         nrf_pwm_event_clear(pwm, NRF_PWM_EVENT_LOOPSDONE);
     }
-    FASTLED_NRF52_INLINE_ATTRIBUTE static void startPwmPlayback_ConfigurePwmSequence(NRF_PWM_Type * pwm) FL_NOEXCEPT {
+    FASTLED_NRF52_INLINE_ATTRIBUTE static void startPwmPlayback_ConfigurePwmSequence(NRF_PWM_Type * pwm) {
         // config is easy, using SEQ0, no loops...
         nrf_pwm_sequence_t sequenceConfig;
         sequenceConfig.values.p_common = &(s_SequenceBuffer[0]);
@@ -111,10 +91,10 @@ private:
         nrf_pwm_loop_set(pwm, 0);
 
     }
-    FASTLED_NRF52_INLINE_ATTRIBUTE static void startPwmPlayback_EnableInterruptsAndShortcuts(NRF_PWM_Type * pwm) FL_NOEXCEPT {
+    FASTLED_NRF52_INLINE_ATTRIBUTE static void startPwmPlayback_EnableInterruptsAndShortcuts(NRF_PWM_Type * pwm) {
         IRQn_Type irqn = PWM_Arbiter<FASTLED_NRF52_PWM_ID>::getIRQn();
         // TODO: check API results...
-        u32 result;
+        uint32_t result;
 
         result = sd_nvic_SetPriority(irqn, configMAX_SYSCALL_INTERRUPT_PRIORITY);
         (void)result;
@@ -122,7 +102,7 @@ private:
         (void)result;
 
         // shortcuts prevent (up to) 4-cycle delay from interrupt handler to next action
-        u32 shortsToEnable = 0;
+        uint32_t shortsToEnable = 0;
         shortsToEnable |= NRF_PWM_SHORT_SEQEND0_STOP_MASK;        ///< SEQEND[0] --> STOP task.
         shortsToEnable |= NRF_PWM_SHORT_SEQEND1_STOP_MASK;        ///< SEQEND[1] --> STOP task.
         //shortsToEnable |= NRF_PWM_SHORT_LOOPSDONE_SEQSTART0_MASK; ///< LOOPSDONE --> SEQSTART[0] task.
@@ -131,7 +111,7 @@ private:
         nrf_pwm_shorts_set(pwm, shortsToEnable);
 
         // mark which events should cause interrupts...
-        u32 interruptsToEnable = 0;
+        uint32_t interruptsToEnable = 0;
         interruptsToEnable |= NRF_PWM_INT_SEQEND0_MASK;
         interruptsToEnable |= NRF_PWM_INT_SEQEND1_MASK;
         interruptsToEnable |= NRF_PWM_INT_LOOPSDONE_MASK;
@@ -139,24 +119,24 @@ private:
         nrf_pwm_int_set(pwm, interruptsToEnable);
 
     }
-    FASTLED_NRF52_INLINE_ATTRIBUTE static void startPwmPlayback_StartTask(NRF_PWM_Type * pwm) FL_NOEXCEPT {
+    FASTLED_NRF52_INLINE_ATTRIBUTE static void startPwmPlayback_StartTask(NRF_PWM_Type * pwm) {
         nrf_pwm_task_trigger(pwm, NRF_PWM_TASK_SEQSTART0);
     }
-    FASTLED_NRF52_INLINE_ATTRIBUTE static void spinAcquireSequenceBuffer() FL_NOEXCEPT {
+    FASTLED_NRF52_INLINE_ATTRIBUTE static void spinAcquireSequenceBuffer() {
         while (!tryAcquireSequenceBuffer());
     }
-    FASTLED_NRF52_INLINE_ATTRIBUTE static bool tryAcquireSequenceBuffer() FL_NOEXCEPT {
+    FASTLED_NRF52_INLINE_ATTRIBUTE static bool tryAcquireSequenceBuffer() {
         return __sync_bool_compare_and_swap(&s_SequenceBufferInUse, 0, 1);
     }
-    FASTLED_NRF52_INLINE_ATTRIBUTE static void releaseSequenceBuffer() FL_NOEXCEPT {
-        u32 tmp = __sync_val_compare_and_swap(&s_SequenceBufferInUse, 1, 0);
+    FASTLED_NRF52_INLINE_ATTRIBUTE static void releaseSequenceBuffer() {
+        uint32_t tmp = __sync_val_compare_and_swap(&s_SequenceBufferInUse, 1, 0);
         if (tmp != 1) {
             // TODO: Error / Assert / log ?
         }
     }
 
 public:
-    static void isr_handler() FL_NOEXCEPT {
+    static void isr_handler() {
         NRF_PWM_Type * pwm = PWM_Arbiter<FASTLED_NRF52_PWM_ID>::getPWM();
         IRQn_Type irqn = PWM_Arbiter<FASTLED_NRF52_PWM_ID>::getIRQn();
 
@@ -177,14 +157,14 @@ public:
             // disable the PWM instance
             nrf_pwm_disable(pwm);
             // may take up to 4 cycles for writes to propagate (APB bus @ 16MHz)
-            asm __volatile__ ( "NOP; NOP; NOP; NOP;" ) FL_NOEXCEPT;
+            asm __volatile__ ( "NOP; NOP; NOP; NOP;" );
             // release the PWM arbiter to be re-used by another LED string
             PWM_Arbiter<FASTLED_NRF52_PWM_ID>::releaseFromIsr();
         }
     }
 
 
-    virtual void init() FL_NOEXCEPT {
+    virtual void init() {
         FASTLED_NRF52_DEBUGPRINT("Clockless Timings:\n");
         FASTLED_NRF52_DEBUGPRINT("    T0H == %d", _T0H);
         FASTLED_NRF52_DEBUGPRINT("    T1H == %d", _T1H);
@@ -195,87 +175,89 @@ public:
         mWait.mark();
 
     }
-    virtual u16 getMaxRefreshRate() const { return 800; }
+    virtual uint16_t getMaxRefreshRate() const { return 800; }
 
-    virtual void showPixels(PixelController<_RGB_ORDER> & pixels) FL_NOEXCEPT {
+    virtual void showPixels(PixelController<_RGB_ORDER> & pixels) {
         // wait for the only sequence buffer to become available
         spinAcquireSequenceBuffer();
-        Rgbw rgbw = this->getRgbw();
-        prepareSequenceBuffers(pixels, rgbw);
+        prepareSequenceBuffers(pixels);
         // ensure any prior data had time to latch
         mWait.wait();
         startPwmPlayback(s_SequenceBufferValidElements);
         return;
     }
 
-    template<u8 _BIT>
-    FASTLED_NRF52_INLINE_ATTRIBUTE static void WriteBitToSequence(u8 byte, u16 * e) FL_NOEXCEPT {
+    template<uint8_t _BIT>
+    FASTLED_NRF52_INLINE_ATTRIBUTE static void WriteBitToSequence(uint8_t byte, uint16_t * e) {
         *e = _POLARITY_BIT | (((byte & (1u << _BIT)) == 0) ? _T0H : _T1H);
     }
-
-    FASTLED_NRF52_INLINE_ATTRIBUTE static void WriteByteToSequence(u8 byte, u16 * & e) FL_NOEXCEPT {
-        WriteBitToSequence<7>(byte, e); ++e;
-        WriteBitToSequence<6>(byte, e); ++e;
-        WriteBitToSequence<5>(byte, e); ++e;
-        WriteBitToSequence<4>(byte, e); ++e;
-        WriteBitToSequence<3>(byte, e); ++e;
-        WriteBitToSequence<2>(byte, e); ++e;
-        WriteBitToSequence<1>(byte, e); ++e;
-        WriteBitToSequence<0>(byte, e); ++e;
-        if (_XTRA0 > 0) {
-            for (int i = 0; i < _XTRA0; ++i) {
-                WriteBitToSequence<0>(0, e); ++e;
-            }
-        }
-    }
-    FASTLED_NRF52_INLINE_ATTRIBUTE static void prepareSequenceBuffers(PixelController<_RGB_ORDER> & pixels, Rgbw rgbw) FL_NOEXCEPT {
+    FASTLED_NRF52_INLINE_ATTRIBUTE static void prepareSequenceBuffers(PixelController<_RGB_ORDER> & pixels) {
         s_SequenceBufferValidElements = 0;
-        i32    remainingSequenceElements = _PWM_BUFFER_COUNT;
-        u16 * e = s_SequenceBuffer;
-
-        // Detect RGBW mode using pattern from STM32/RP2040 drivers
-        const bool is_rgbw = rgbw.active();
-        const u8 bits_per_pixel = is_rgbw ? _BITS_PER_PIXEL_RGBW : _BITS_PER_PIXEL_RGB;
-
-        u32 size_needed = pixels.size(); // count of pixels
-        size_needed *= (8 + _XTRA0);          // bits per byte
-        size_needed *= (is_rgbw ? 4 : 3);     // bytes per pixel (3 for RGB, 4 for RGBW)
+        int32_t    remainingSequenceElements = _PWM_BUFFER_COUNT;
+        uint16_t * e = s_SequenceBuffer;
+        uint32_t size_needed = pixels.size(); // count of pixels
+        size_needed *= (8 + _XTRA0);          // bits per pixel
+        size_needed *= 2;                     // each bit takes two bytes
 
         if (size_needed > _PWM_BUFFER_COUNT) {
             // TODO: assert()?
             return;
         }
 
-        while (pixels.has(1) && (remainingSequenceElements >= bits_per_pixel)) {
-            if (is_rgbw) {
-                // RGBW mode: load and write 4 bytes
-                u8 b0, b1, b2, b3;
-                pixels.loadAndScaleRGBW(rgbw, &b0, &b1, &b2, &b3);
-
-                WriteByteToSequence(b0, e) FL_NOEXCEPT;
-                WriteByteToSequence(b1, e) FL_NOEXCEPT;
-                WriteByteToSequence(b2, e) FL_NOEXCEPT;
-                WriteByteToSequence(b3, e) FL_NOEXCEPT;
-            } else {
-                // RGB mode: load and write 3 bytes
-                u8 b0 = pixels.loadAndScale0();
-                WriteByteToSequence(b0, e) FL_NOEXCEPT;
-                u8 b1 = pixels.loadAndScale1();
-                WriteByteToSequence(b1, e) FL_NOEXCEPT;
-                u8 b2 = pixels.loadAndScale2();
-                WriteByteToSequence(b2, e) FL_NOEXCEPT;
+        while (pixels.has(1) && (remainingSequenceElements >= _BITS_PER_PIXEL)) {
+            uint8_t b0 = pixels.loadAndScale0();
+            WriteBitToSequence<7>(b0, e); ++e;
+            WriteBitToSequence<6>(b0, e); ++e;
+            WriteBitToSequence<5>(b0, e); ++e;
+            WriteBitToSequence<4>(b0, e); ++e;
+            WriteBitToSequence<3>(b0, e); ++e;
+            WriteBitToSequence<2>(b0, e); ++e;
+            WriteBitToSequence<1>(b0, e); ++e;
+            WriteBitToSequence<0>(b0, e); ++e;
+            if (_XTRA0 > 0) {
+                for (int i = 0; i < _XTRA0; ++i) {
+                    WriteBitToSequence<0>(0,e); ++e;
+                }
+            }
+            uint8_t b1 = pixels.loadAndScale1();
+            WriteBitToSequence<7>(b1, e); ++e;
+            WriteBitToSequence<6>(b1, e); ++e;
+            WriteBitToSequence<5>(b1, e); ++e;
+            WriteBitToSequence<4>(b1, e); ++e;
+            WriteBitToSequence<3>(b1, e); ++e;
+            WriteBitToSequence<2>(b1, e); ++e;
+            WriteBitToSequence<1>(b1, e); ++e;
+            WriteBitToSequence<0>(b1, e); ++e;
+            if (_XTRA0 > 0) {
+                for (int i = 0; i < _XTRA0; ++i) {
+                    WriteBitToSequence<0>(0,e); ++e;
+                }
+            }
+            uint8_t b2 = pixels.loadAndScale2();
+            WriteBitToSequence<7>(b2, e); ++e;
+            WriteBitToSequence<6>(b2, e); ++e;
+            WriteBitToSequence<5>(b2, e); ++e;
+            WriteBitToSequence<4>(b2, e); ++e;
+            WriteBitToSequence<3>(b2, e); ++e;
+            WriteBitToSequence<2>(b2, e); ++e;
+            WriteBitToSequence<1>(b2, e); ++e;
+            WriteBitToSequence<0>(b2, e); ++e;
+            if (_XTRA0 > 0) {
+                for (int i = 0; i < _XTRA0; ++i) {
+                    WriteBitToSequence<0>(0,e); ++e;
+                }
             }
 
             // advance pixel and sequence pointers
-            s_SequenceBufferValidElements += bits_per_pixel;
-            remainingSequenceElements     -= bits_per_pixel;
+            s_SequenceBufferValidElements += _BITS_PER_PIXEL;
+            remainingSequenceElements     -= _BITS_PER_PIXEL;
             pixels.advanceData();
             pixels.stepDithering();
         }
     }
 
 
-    FASTLED_NRF52_INLINE_ATTRIBUTE static void startPwmPlayback(u16 bytesToSend) FL_NOEXCEPT {
+    FASTLED_NRF52_INLINE_ATTRIBUTE static void startPwmPlayback(uint16_t bytesToSend) {
         PWM_Arbiter<FASTLED_NRF52_PWM_ID>::acquire(isr_handler);
         NRF_PWM_Type * pwm = PWM_Arbiter<FASTLED_NRF52_PWM_ID>::getPWM();
 
@@ -292,31 +274,41 @@ public:
 
 
 #if 0
-    FASTLED_NRF52_INLINE_ATTRIBUTE static u16* getRawSequenceBuffer() { return s_SequenceBuffer; }
-    FASTLED_NRF52_INLINE_ATTRIBUTE static u16 getRawSequenceBufferSize() { return _PWM_BUFFER_COUNT; }
-    FASTLED_NRF52_INLINE_ATTRIBUTE static u16 getSequenceBufferInUse() { return s_SequenceBufferInUse; }
-    FASTLED_NRF52_INLINE_ATTRIBUTE static void sendRawSequenceBuffer(u16 bytesToSend) FL_NOEXCEPT {
+    FASTLED_NRF52_INLINE_ATTRIBUTE static uint16_t* getRawSequenceBuffer() { return s_SequenceBuffer; }
+    FASTLED_NRF52_INLINE_ATTRIBUTE static uint16_t getRawSequenceBufferSize() { return _PWM_BUFFER_COUNT; }
+    FASTLED_NRF52_INLINE_ATTRIBUTE static uint16_t getSequenceBufferInUse() { return s_SequenceBufferInUse; }
+    FASTLED_NRF52_INLINE_ATTRIBUTE static void sendRawSequenceBuffer(uint16_t bytesToSend) {
         mWait.wait(); // ensure min time between updates
         startPwmPlayback(bytesToSend);
     }
-    FASTLED_NRF52_INLINE_ATTRIBUTE static void sendRawBytes(u8 * arrayOfBytes, u16 bytesToSend) FL_NOEXCEPT {
+    FASTLED_NRF52_INLINE_ATTRIBUTE static void sendRawBytes(uint8_t * arrayOfBytes, uint16_t bytesToSend) {
         // wait for sequence buffer to be available
         while (s_SequenceBufferInUse != 0);
 
         s_SequenceBufferValidElements = 0;
-        i32    remainingSequenceElements = _PWM_BUFFER_COUNT;
-        u16 * e           = s_SequenceBuffer;
-        u8  * nextByte    = arrayOfBytes;
-        const u8 bits_per_byte = 8 + _XTRA0;
-        for (u16 bytesRemain = bytesToSend;
-            (remainingSequenceElements >= bits_per_byte) && (bytesRemain > 0);
+        int32_t    remainingSequenceElements = _PWM_BUFFER_COUNT;
+        uint16_t * e           = s_SequenceBuffer;
+        uint8_t  * nextByte    = arrayOfBytes;
+        for (uint16_t bytesRemain = bytesToSend;
+            (remainingSequenceElements >= 8) && (bytesRemain > 0);
             --bytesRemain,
-            remainingSequenceElements     -= bits_per_byte,
-            s_SequenceBufferValidElements += bits_per_byte
+            remainingSequenceElements     -= 8,
+            s_SequenceBufferValidElements += 8
             ) {
-            u8 b = *nextByte;
-            WriteByteToSequence(b, e) FL_NOEXCEPT;
-            ++nextByte;
+            uint8_t b = *nextByte;
+            WriteBitToSequence<7,false>(b, e); ++e;
+            WriteBitToSequence<6,false>(b, e); ++e;
+            WriteBitToSequence<5,false>(b, e); ++e;
+            WriteBitToSequence<4,false>(b, e); ++e;
+            WriteBitToSequence<3,false>(b, e); ++e;
+            WriteBitToSequence<2,false>(b, e); ++e;
+            WriteBitToSequence<1,false>(b, e); ++e;
+            WriteBitToSequence<0,false>(b, e); ++e;
+            if (_XTRA0 > 0) {
+                for (int i = 0; i < _XTRA0; ++i) {
+                    WriteBitToSequence<0,_FLIP>(0,e); ++e;
+                }
+            }
         }
         mWait.wait(); // ensure min time between updates
 
@@ -326,14 +318,14 @@ public:
 
 };
 
-template <u8 _DATA_PIN, typename TIMING, EOrder _RGB_ORDER, int _XTRA0, bool _FLIP, int _WAIT_TIME_MICROSECONDS>
-u16 ClocklessController<_DATA_PIN, TIMING, _RGB_ORDER, _XTRA0, _FLIP, _WAIT_TIME_MICROSECONDS>::s_SequenceBufferValidElements = 0;
-template <u8 _DATA_PIN, typename TIMING, EOrder _RGB_ORDER, int _XTRA0, bool _FLIP, int _WAIT_TIME_MICROSECONDS>
-u32 volatile ClocklessController<_DATA_PIN, TIMING, _RGB_ORDER, _XTRA0, _FLIP, _WAIT_TIME_MICROSECONDS>::s_SequenceBufferInUse = 0;
-template <u8 _DATA_PIN, typename TIMING, EOrder _RGB_ORDER, int _XTRA0, bool _FLIP, int _WAIT_TIME_MICROSECONDS>
-u16 ClocklessController<_DATA_PIN, TIMING, _RGB_ORDER, _XTRA0, _FLIP, _WAIT_TIME_MICROSECONDS>::s_SequenceBuffer[_PWM_BUFFER_COUNT];
-template <u8 _DATA_PIN, typename TIMING, EOrder _RGB_ORDER, int _XTRA0, bool _FLIP, int _WAIT_TIME_MICROSECONDS>
-CMinWait<_WAIT_TIME_MICROSECONDS> ClocklessController<_DATA_PIN, TIMING, _RGB_ORDER, _XTRA0, _FLIP, _WAIT_TIME_MICROSECONDS>::mWait;
+template <uint8_t _DATA_PIN, int _T1, int _T2, int _T3, EOrder _RGB_ORDER, int _XTRA0, bool _FLIP, int _WAIT_TIME_MICROSECONDS>
+uint16_t ClocklessController<_DATA_PIN, _T1, _T2, _T3, _RGB_ORDER, _XTRA0, _FLIP, _WAIT_TIME_MICROSECONDS>::s_SequenceBufferValidElements = 0;
+template <uint8_t _DATA_PIN, int _T1, int _T2, int _T3, EOrder _RGB_ORDER, int _XTRA0, bool _FLIP, int _WAIT_TIME_MICROSECONDS>
+uint32_t volatile ClocklessController<_DATA_PIN, _T1, _T2, _T3, _RGB_ORDER, _XTRA0, _FLIP, _WAIT_TIME_MICROSECONDS>::s_SequenceBufferInUse = 0;
+template <uint8_t _DATA_PIN, int _T1, int _T2, int _T3, EOrder _RGB_ORDER, int _XTRA0, bool _FLIP, int _WAIT_TIME_MICROSECONDS>
+uint16_t ClocklessController<_DATA_PIN, _T1, _T2, _T3, _RGB_ORDER, _XTRA0, _FLIP, _WAIT_TIME_MICROSECONDS>::s_SequenceBuffer[_PWM_BUFFER_COUNT];
+template <uint8_t _DATA_PIN, int _T1, int _T2, int _T3, EOrder _RGB_ORDER, int _XTRA0, bool _FLIP, int _WAIT_TIME_MICROSECONDS>
+CMinWait<_WAIT_TIME_MICROSECONDS> ClocklessController<_DATA_PIN, _T1, _T2, _T3, _RGB_ORDER, _XTRA0, _FLIP, _WAIT_TIME_MICROSECONDS>::mWait;
 
 /* nrf_pwm solution
 // 
@@ -392,6 +384,7 @@ CMinWait<_WAIT_TIME_MICROSECONDS> ClocklessController<_DATA_PIN, TIMING, _RGB_OR
 //         color correction, dithering, etc. ....
 */
 
-}  // namespace fl
-#endif // FL_IS_NRF52
+//FASTLED_NAMESPACE_END
+
+#endif // NRF52_SERIES
 #endif // __INC_CLOCKLESS_ARM_NRF52

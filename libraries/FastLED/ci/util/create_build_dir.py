@@ -1,6 +1,3 @@
-from ci.util.global_interrupt_handler import handle_keyboard_interrupt
-
-
 # pyright: reportUnknownMemberType=false
 """
 Create build directory for project.
@@ -13,9 +10,9 @@ import subprocess
 import time
 import warnings
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict
 
-from ci.boards import Board
+from ci.boards import Board  # type: ignore
 from ci.util.locked_print import locked_print
 
 
@@ -44,11 +41,11 @@ def _install_global_package(package: str) -> None:
     locked_print(f"*** Finished installing {package} ***")
 
 
-def insert_tool_aliases(meta_json: dict[str, dict[str, Any]]) -> None:
+def insert_tool_aliases(meta_json: Dict[str, Dict[str, Any]]) -> None:
     for board in meta_json.keys():
-        aliases: dict[str, Optional[str]] = {}
+        aliases: dict[str, str | None] = {}
         cc_path_value = meta_json[board].get("cc_path")
-        resolved_cc_path: Optional[Path] = None
+        resolved_cc_path: Path | None = None
         if cc_path_value:
             try:
                 candidate = Path(str(cc_path_value))
@@ -62,14 +59,11 @@ def insert_tool_aliases(meta_json: dict[str, dict[str, Any]]) -> None:
                     )
                     if which_result:
                         resolved_cc_path = Path(which_result)
-            except KeyboardInterrupt as ki:
-                handle_keyboard_interrupt(ki)
-                raise
             except Exception:
                 resolved_cc_path = None
 
         # Try to infer toolchain bin directory and prefix from either CC or GDB path
-        tool_bin_dir: Optional[Path] = None
+        tool_bin_dir: Path | None = None
         tool_prefix: str = ""
         tool_suffix: str = ""
 
@@ -101,9 +95,6 @@ def insert_tool_aliases(meta_json: dict[str, dict[str, Any]]) -> None:
                             gdb_base.split("gdb")[0] if "gdb" in gdb_base else ""
                         )
                         tool_suffix = gdb_path.suffix
-                except KeyboardInterrupt as ki:
-                    handle_keyboard_interrupt(ki)
-                    raise
                 except Exception:
                     pass
 
@@ -149,9 +140,6 @@ def remove_readonly(func: Callable[..., Any], path: str, _: Any) -> None:
     else:
         try:
             os.chmod(path, 0o777)
-        except KeyboardInterrupt as ki:
-            handle_keyboard_interrupt(ki)
-            raise
         except Exception:
             print(f"Error removing readonly attribute from {path}")
 
@@ -202,9 +190,6 @@ def robust_rmtree(path: Path, max_retries: int, delay: float) -> bool:
             # Wait before retrying
             time.sleep(delay * (2**attempt))  # Exponential backoff
 
-        except KeyboardInterrupt as ki:
-            handle_keyboard_interrupt(ki)
-            raise
         except Exception as e:
             locked_print(f"Unexpected error removing directory {path}: {e}")
             return False
@@ -249,9 +234,6 @@ def safe_file_removal(file_path: Path, max_retries: int) -> bool:
 
             time.sleep(0.1 * (attempt + 1))
 
-        except KeyboardInterrupt as ki:
-            handle_keyboard_interrupt(ki)
-            raise
         except Exception as e:
             locked_print(f"Unexpected error removing file {file_path}: {e}")
             return False
@@ -262,13 +244,13 @@ def safe_file_removal(file_path: Path, max_retries: int) -> bool:
 def create_build_dir(
     board: Board,
     defines: list[str],
-    customsdk: Optional[str],
+    customsdk: str | None,
     no_install_deps: bool,
     extra_packages: list[str],
-    build_dir: Optional[str],
-    board_dir: Optional[str],
-    build_flags: Optional[list[str]],
-    extra_scripts: Optional[str],
+    build_dir: str | None,
+    board_dir: str | None,
+    build_flags: list[str] | None,
+    extra_scripts: str | None,
 ) -> tuple[bool, str]:
     """Create the build directory for the given board."""
     import threading
@@ -297,9 +279,6 @@ def create_build_dir(
         locked_print(
             f"[Thread {thread_id}] Successfully created build directory: {builddir}"
         )
-    except KeyboardInterrupt as ki:
-        handle_keyboard_interrupt(ki)
-        raise
     except Exception as e:
         locked_print(
             f"[Thread {thread_id}] Error creating build directory {builddir}: {e}"
@@ -352,9 +331,6 @@ def create_build_dir(
             locked_print(
                 f"[Thread {thread_id}] Successfully copied board directory to {dst_dir}"
             )
-        except KeyboardInterrupt as ki:
-            handle_keyboard_interrupt(ki)
-            raise
         except Exception as e:
             locked_print(f"[Thread {thread_id}] Error copying board directory: {e}")
             return False, f"Failed to copy board directory: {e}"
@@ -402,12 +378,126 @@ def create_build_dir(
     if no_install_deps:
         cmd_list.append("--no-install-dependencies")
 
+    # Add CCACHE configuration script
+    ccache_script = builddir / "ccache_config.py"
+    if not ccache_script.exists():
+        locked_print(
+            f"[Thread {thread_id}] Creating CCACHE configuration script at {ccache_script}"
+        )
+        with open(ccache_script, "w") as f:
+            f.write(
+                '''"""Configure CCACHE for PlatformIO builds."""
+
+import os
+import platform
+import subprocess
+from pathlib import Path
+
+Import("env")
+
+def is_ccache_available():
+    """Check if ccache is available in the system."""
+    try:
+        subprocess.run(["ccache", "--version"], capture_output=True, check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+def get_ccache_path():
+    """Get the full path to ccache executable."""
+    if platform.system() == "Windows":
+        # On Windows, look in chocolatey's bin directory
+        ccache_paths = [
+            "C:\\ProgramData\\chocolatey\\bin\\ccache.exe",
+            os.path.expanduser("~\\scoop\\shims\\ccache.exe")
+        ]
+        for path in ccache_paths:
+            if os.path.exists(path):
+                return path
+    else:
+        # On Unix-like systems, use which to find ccache
+        try:
+            return subprocess.check_output(["which", "ccache"]).decode().strip()
+        except subprocess.CalledProcessError:
+            pass
+    return None
+
+def configure_ccache(env):
+    """Configure CCACHE for the build environment."""
+    if not is_ccache_available():
+        print("CCACHE is not available. Skipping CCACHE configuration.")
+        return
+
+    ccache_path = get_ccache_path()
+    if not ccache_path:
+        print("Could not find CCACHE executable. Skipping CCACHE configuration.")
+        return
+
+    print(f"Found CCACHE at: {ccache_path}")
+
+    # Set up CCACHE environment variables if not already set
+    if "CCACHE_DIR" not in os.environ:
+        # STRICT: PROJECT_DIR must be explicitly set - NO fallbacks allowed
+        project_dir_for_ccache = env.get("PROJECT_DIR")
+        if not project_dir_for_ccache:
+            raise RuntimeError(
+                "CRITICAL: PROJECT_DIR environment variable is required for CCACHE_DIR setup. "
+                "Please set PROJECT_DIR to the project root directory."
+            )
+        ccache_dir = os.path.join(project_dir_for_ccache, ".ccache")
+        os.environ["CCACHE_DIR"] = ccache_dir
+        Path(ccache_dir).mkdir(parents=True, exist_ok=True)
+
+    # Configure CCACHE for this build
+    # STRICT: PROJECT_DIR must be explicitly set - NO fallbacks allowed
+    project_dir = env.get("PROJECT_DIR")
+    if not project_dir:
+        raise RuntimeError(
+            "CRITICAL: PROJECT_DIR environment variable is required but not set. "
+            "Please set PROJECT_DIR to the project root directory."
+        )
+    os.environ["CCACHE_BASEDIR"] = project_dir
+    os.environ["CCACHE_COMPRESS"] = "true"
+    os.environ["CCACHE_COMPRESSLEVEL"] = "6"
+    os.environ["CCACHE_MAXSIZE"] = "400M"
+
+    # Wrap compiler commands with ccache
+    # STRICT: CC and CXX must be explicitly set - NO fallbacks allowed
+    original_cc = env.get("CC")
+    if not original_cc:
+        raise RuntimeError(
+            "CRITICAL: CC environment variable is required but not set. "
+            "Please set CC to the C compiler path (e.g., gcc, clang)."
+        )
+    original_cxx = env.get("CXX")
+    if not original_cxx:
+        raise RuntimeError(
+            "CRITICAL: CXX environment variable is required but not set. "
+            "Please set CXX to the C++ compiler path (e.g., g++, clang++)."
+        )
+
+    # Don't wrap if already wrapped
+    if "ccache" not in original_cc:
+        env.Replace(
+            CC=f"{ccache_path} {original_cc}",
+            CXX=f"{ccache_path} {original_cxx}",
+        )
+        print(f"Wrapped CC: {env.get('CC')}")
+        print(f"Wrapped CXX: {env.get('CXX')}")
+
+    # Show CCACHE stats
+    subprocess.run([ccache_path, "--show-stats"], check=False)
+
+configure_ccache(env)'''
+            )
+
     # Get absolute paths for scripts
     project_root = Path.cwd()
     ci_flags_script = (project_root / "ci" / "ci-flags.py").resolve().as_posix()
+    ccache_script = (builddir / "ccache_config.py").resolve().as_posix()
 
     # Create a list of scripts with pre: prefix
-    script_list = [f"pre:{ci_flags_script}"]
+    script_list = [f"pre:{ci_flags_script}", f"pre:{ccache_script}"]
 
     # Add any additional scripts
     if extra_scripts:
@@ -455,9 +545,6 @@ def create_build_dir(
             with open(platformio_ini_path, "r") as f:
                 ini_contents = f.read()
                 locked_print(f"\n\n{ini_contents}\n\n")
-        except KeyboardInterrupt as ki:
-            handle_keyboard_interrupt(ki)
-            raise
         except Exception as e:
             locked_print(f"Error reading {platformio_ini_path}: {e}")
         locked_print(f"*** End of {platformio_ini_path} contents ***\n")
@@ -494,9 +581,6 @@ def create_build_dir(
             formatted = json.dumps(data, indent=4, sort_keys=True)
             with open(matadata_json, "w") as f:
                 f.write(formatted)
-        except KeyboardInterrupt as ki:
-            handle_keyboard_interrupt(ki)
-            raise
         except Exception:
             with open(matadata_json, "w") as f:
                 f.write(stdout)

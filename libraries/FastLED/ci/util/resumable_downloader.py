@@ -1,6 +1,9 @@
 """Resumable HTTP downloader with chunked download support and automatic retry."""
 
 import _thread
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Optional
 
@@ -51,7 +54,7 @@ class ResumableDownloader:
                 self._download_range(url, file_path, start_byte, total_size)
                 print(f"SUCCESS: Download completed successfully: {file_path}")
                 return
-            except (urllib.error.URLError, ConnectionError, OSError):
+            except (urllib.error.URLError, ConnectionError, OSError) as e:
                 retry_count += 1
                 current_size = file_path.stat().st_size if file_path.exists() else 0
 

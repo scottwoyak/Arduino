@@ -1,21 +1,44 @@
 #pragma once
 
-// IWYU pragma: private
-
-#include "platforms/wasm/is_wasm.h"
-#ifndef FL_IS_WASM
+#ifndef __EMSCRIPTEN__
 #error "This file should only be included in an Emscripten build"
 #endif
 
-// Include hardware SPI implementation (for APA102/dotstar chipsets)
-#include "platforms/stub/fastspi_stub_generic.h"
+#include "fl/vector.h"
+#include "fl/stdint.h"
+#include "platforms/wasm/engine_listener.h"
+#include "fl/namespace.h"
 
-// Include channel-based SPI controller for WASM platform (for WS2812 over SPI)
-#include "platforms/wasm/spi_channel_wasm.h"
+#define FASTLED_ALL_PINS_HARDWARE_SPI
+
+
+FASTLED_NAMESPACE_BEGIN
+class CLEDController;
+FASTLED_NAMESPACE_END
 
 namespace fl {
 
-// Compatibility typedef for existing WASM code
-using WasmSpiOutput = ClocklessSPI<0, TIMING_WS2812_800KHZ>;
+
+class WasmSpiOutput : public fl::EngineEvents::Listener {
+  public:
+    WasmSpiOutput();
+    ~WasmSpiOutput();
+    void select();
+    void init();
+    void waitFully();
+    void release();
+    void writeByte(uint8_t byte);
+    void writeWord(uint16_t word);
+
+  private:
+    CLEDController *tryFindOwner();
+    void onEndShowLeds() override;
+
+    int mId = -1; // Deferred initialization
+    fl::vector<uint8_t> mRgb;
+};
+
+// Compatibility alias
+typedef WasmSpiOutput StubSPIOutput;
 
 } // namespace fl

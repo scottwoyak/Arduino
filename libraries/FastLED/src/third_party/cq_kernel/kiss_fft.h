@@ -9,22 +9,15 @@
 #ifndef KISS_FFT_H
 #define KISS_FFT_H
 
-#include "fl/stl/cstdlib.h"
-#include "fl/stl/stdio.h"
-#include "fl/stl/stdint.h"
-#include "fl/math/math.h"
-#include "fl/stl/string.h"
-#include "fl/stl/malloc.h"
-#include "fft_precision.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include "fl/stdint.h"
+#include <math.h>
+#include <string.h>
 
-// Configure FIXED_POINT based on precision mode
-#if FASTLED_FFT_PRECISION == FASTLED_FFT_FIXED16
-    #define FIXED_POINT 1
-#elif FASTLED_FFT_PRECISION == FASTLED_FFT_FLOAT
-    // No FIXED_POINT for float mode
-#elif FASTLED_FFT_PRECISION == FASTLED_FFT_DOUBLE
-    // No FIXED_POINT for double mode
-#endif
+
+// Always use fixed point.
+#define FIXED_POINT 1
 
 // WROVER and WROOM have 4MB of PSRAM or more.
 #if KISS_FFT_USE_ESP32_PSRAM
@@ -56,28 +49,23 @@ extern "C" {
 # define kiss_fft_scalar __m128
 #define KISS_FFT_MALLOC(nbytes) _mm_malloc(nbytes,16)
 #define KISS_FFT_FREE _mm_free
-#else
-#define KISS_FFT_MALLOC(nbytes) fl::malloc(nbytes)
-#define KISS_FFT_FREE(ptr) fl::free(ptr)
+#else	
+#define KISS_FFT_MALLOC malloc
+#define KISS_FFT_FREE free
 #endif	
 
 
 #ifdef FIXED_POINT
+#include <sys/types.h>	
 # if (FIXED_POINT == 32)
 #  define kiss_fft_scalar int32_t
-# else
+# else	
 #  define kiss_fft_scalar int16_t
 # endif
 #else
 # ifndef kiss_fft_scalar
-// Use precision-aware float type from fft_precision.h
-#  if FASTLED_FFT_PRECISION == FASTLED_FFT_FLOAT
+/*  default is float */
 #   define kiss_fft_scalar float
-#  elif FASTLED_FFT_PRECISION == FASTLED_FFT_DOUBLE
-#   define kiss_fft_scalar double
-#  else
-#   define kiss_fft_scalar float  // default fallback
-#  endif
 # endif
 #endif
 

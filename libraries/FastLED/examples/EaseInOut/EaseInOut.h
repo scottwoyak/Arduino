@@ -9,8 +9,10 @@
 /// 4. When the compiler is done a web page will open.
 
 #include <FastLED.h>
-#include "fl/math/ease.h"
-#include "fl/gfx/leds.h"
+#include "fl/ease.h"
+#include "fl/leds.h"
+
+using namespace fl;
 
 // Matrix configuration
 #define MATRIX_WIDTH 100
@@ -25,16 +27,16 @@
 #define MATRIX_SERPENTINE true
 
 // Use LedsXY for splat rendering instead of regular CRGB array
-fl::LedsXY<MATRIX_WIDTH, MATRIX_HEIGHT> leds;
+LedsXY<MATRIX_WIDTH, MATRIX_HEIGHT> leds;
 
 // Create XYMap for serpentine 100x100 matrix
-fl::XYMap xyMap = fl::XYMap::constructSerpentine(MATRIX_WIDTH, MATRIX_HEIGHT);
+XYMap xyMap = XYMap::constructSerpentine(MATRIX_WIDTH, MATRIX_HEIGHT);
 
-fl::UITitle title("EaseInOut");
-fl::UIDescription description("Use the xPosition slider to see the ease function curve. Use the Ease Type dropdown to select different easing functions. Use the 16-bit checkbox to toggle between 16-bit (checked) and 8-bit (unchecked) precision.");
+UITitle title("EaseInOut");
+UIDescription description("Use the xPosition slider to see the ease function curve. Use the Ease Type dropdown to select different easing functions. Use the 16-bit checkbox to toggle between 16-bit (checked) and 8-bit (unchecked) precision.");
 
 // UI Controls
-fl::UISlider xPosition("xPosition", 0.0f, 0.0f, 1.0f, 0.01f);
+UISlider xPosition("xPosition", 0.0f, 0.0f, 1.0f, 0.01f);
 
 // Create dropdown with descriptive ease function names
 fl::string easeOptions[] = {
@@ -49,25 +51,25 @@ fl::string easeOptions[] = {
     "Out Sine", 
     "In-Out Sine"
 };
-fl::UIDropdown easeTypeDropdown("Ease Type", easeOptions);
+UIDropdown easeTypeDropdown("Ease Type", easeOptions);
 
-fl::UICheckbox use16Bit("16-bit", true); // Default checked for 16-bit precision
+UICheckbox use16Bit("16-bit", true); // Default checked for 16-bit precision
 
-fl::EaseType getEaseType(int value) {
+EaseType getEaseType(int value) {
     switch (value) {
-        case 0: return fl::EaseType::EASE_NONE;
-        case 1: return fl::EaseType::EASE_IN_QUAD;
-        case 2: return fl::EaseType::EASE_OUT_QUAD;
-        case 3: return fl::EaseType::EASE_IN_OUT_QUAD;
-        case 4: return fl::EaseType::EASE_IN_CUBIC;
-        case 5: return fl::EaseType::EASE_OUT_CUBIC;
-        case 6: return fl::EaseType::EASE_IN_OUT_CUBIC;
-        case 7: return fl::EaseType::EASE_IN_SINE;
-        case 8: return fl::EaseType::EASE_OUT_SINE;
-        case 9: return fl::EaseType::EASE_IN_OUT_SINE;
+        case 0: return EASE_NONE;
+        case 1: return EASE_IN_QUAD;
+        case 2: return EASE_OUT_QUAD;
+        case 3: return EASE_IN_OUT_QUAD;
+        case 4: return EASE_IN_CUBIC;
+        case 5: return EASE_OUT_CUBIC;
+        case 6: return EASE_IN_OUT_CUBIC;
+        case 7: return EASE_IN_SINE;
+        case 8: return EASE_OUT_SINE;
+        case 9: return EASE_IN_OUT_SINE;
     }
     FL_ASSERT(false, "Invalid ease type");
-    return fl::EaseType::EASE_IN_OUT_QUAD;
+    return EASE_IN_OUT_QUAD;
 }
 
 void setup() {
@@ -103,7 +105,7 @@ void loop() {
     uint8_t x = map(sliderValue * 1000, 0, 1000, 0, MATRIX_WIDTH - 1);
 
     // Get the selected ease type using the dropdown index
-    fl::EaseType selectedEaseType = getEaseType(easeTypeDropdown.as_int());
+    EaseType selectedEaseType = getEaseType(easeTypeDropdown.as_int());
     
     uint8_t y;
     if (use16Bit.value()) {
@@ -120,7 +122,7 @@ void loop() {
 
     // Draw white dot at the calculated position using splat rendering
     if (x < MATRIX_WIDTH && y < MATRIX_HEIGHT) {
-        leds(x, y) = fl::CRGB::White;
+        leds(x, y) = CRGB::White;
     }
 
     FastLED.show();

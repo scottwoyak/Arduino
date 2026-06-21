@@ -10,13 +10,14 @@ most portion being the bottom.
 
 
 
-#include "fl/stl/assert.h"
-#include "fl/math/screenmap.h"
-#include "fl/log/log.h"
+#include "fl/assert.h"
+#include "fl/screenmap.h"
+#include "fl/warn.h"
 #include "noise.h"
 #include <FastLED.h>
-// #include "fl::vec3.h"
+// #include "vec3.h"
 
+using namespace fl;
 
 // Power management settings
 #define VOLTS 5
@@ -34,8 +35,8 @@ most portion being the bottom.
 // #define CM_BETWEEN_LEDS 1.0 // 1cm between LEDs
 // #define CM_LED_DIAMETER 0.5 // 0.5cm LED diameter
 
-fl::UITitle festivalStickTitle("Festival Stick - Classic Version");
-fl::UIDescription festivalStickDescription(
+UITitle festivalStickTitle("Festival Stick - Classic Version");
+UIDescription festivalStickDescription(
     "Take a wooden walking stick, wrap dense LEDs around it like a corkscrew. Super simple but very awesome looking. "
     "This classic version uses 3D Perlin noise to create organic, flowing patterns around the cylindrical surface. "
     "Assumes dense 144 LEDs/meter (288 total LEDs).");
@@ -47,13 +48,13 @@ fl::UIDescription festivalStickDescription(
 // UIHelp physicalBuildHelp("Building Your Festival Stick");
 
 
-fl::UISlider ledsScale("Leds scale", 0.1f, 0.1f, 1.0f, 0.01f);
-fl::UIButton button("Button");
+UISlider ledsScale("Leds scale", 0.1f, 0.1f, 1.0f, 0.01f);
+UIButton button("Button");
 
 // Adding a brightness slider
-fl::UISlider brightness("Brightness", 16, 0, 255, 1); // Brightness from 0 to 255
+UISlider brightness("Brightness", 16, 0, 255, 1); // Brightness from 0 to 255
 
-fl::CRGB leds[NUM_LEDS];
+CRGB leds[NUM_LEDS];
 
 
 // fl::vector<vec3f>
@@ -70,10 +71,10 @@ fl::vector<vec3f> makeCorkScrew(corkscrew_args args = corkscrew_args()) {
     float width_cm = args.width_cm;
 
     const float circumference = leds_per_turn;
-    const float radius = circumference / (2.0 * FL_PI);      // radius in mm
-    const float angle_per_led = 2.0 * FL_PI / leds_per_turn; // degrees per LED
+    const float radius = circumference / (2.0 * PI);      // radius in mm
+    const float angle_per_led = 2.0 * PI / leds_per_turn; // degrees per LED
     const float total_angle_radians = angle_per_led * num_leds;
-    const float total_turns = total_angle_radians / (2.0 * FL_PI); // total turns
+    const float total_turns = total_angle_radians / (2.0 * PI); // total turns
     const float height_per_turn_cm = width_cm; // 10cm height per turn
     const float height_per_led =
         height_per_turn_cm /
@@ -86,11 +87,11 @@ fl::vector<vec3f> makeCorkScrew(corkscrew_args args = corkscrew_args()) {
         float height = (i / leds_per_turn) * height_per_turn_cm; // height in cm
 
         // Calculate the x, y, z coordinates for the corkscrew
-        float x = radius * fl::cos(angle); // x coordinate
-        float z = radius * fl::sin(angle); // y coordinate
+        float x = radius * cos(angle); // x coordinate
+        float z = radius * sin(angle); // y coordinate
         float y = height;              // z coordinate
 
-        // Store the 3D coordinates in the fl::vector
+        // Store the 3D coordinates in the vector
         vec3f led_position(x, y, z);
         // screenMap.set(i, led_position);
         out.push_back(led_position);
@@ -100,7 +101,7 @@ fl::vector<vec3f> makeCorkScrew(corkscrew_args args = corkscrew_args()) {
 
 
 fl::ScreenMap makeScreenMap(corkscrew_args args = corkscrew_args()) {
-    // Create a fl::ScreenMap for the corkscrew
+    // Create a ScreenMap for the corkscrew
     fl::vector<vec2f> points(args.num_leds);
 
     int num_leds = args.num_leds;
@@ -109,8 +110,8 @@ fl::ScreenMap makeScreenMap(corkscrew_args args = corkscrew_args()) {
 
 
     const float circumference = leds_per_turn;
-    const float radius = circumference / (2.0 * FL_PI);      // radius in mm
-    const float angle_per_led = 2.0 * FL_PI / leds_per_turn; // degrees per LED
+    const float radius = circumference / (2.0 * PI);      // radius in mm
+    const float angle_per_led = 2.0 * PI / leds_per_turn; // degrees per LED
     const float height_per_turn_cm = width_cm; // 10cm height per turn
     const float height_per_led =
         height_per_turn_cm /
@@ -123,16 +124,16 @@ fl::ScreenMap makeScreenMap(corkscrew_args args = corkscrew_args()) {
         float r = radius + 10 + i * height_per_led; // height in cm
 
         // Calculate the x, y coordinates for the corkscrew
-        float x = r * fl::cos(angle); // x coordinate
-        float y = r * fl::sin(angle); // y coordinate
+        float x = r * cos(angle); // x coordinate
+        float y = r * sin(angle); // y coordinate
 
-        // Store the 2D coordinates in the fl::vector
+        // Store the 2D coordinates in the vector
         points[i] = vec2f(x, y);
     }
 
-    FL_WARN("Creating fl::ScreenMap with:\n" << points);
+    FASTLED_WARN("Creating ScreenMap with:\n" << points);
 
-    // Create a fl::ScreenMap from the points
+    // Create a ScreenMap from the points
     fl::ScreenMap screenMap(points.data(), num_leds, .5);
     return screenMap;
 }
@@ -161,7 +162,7 @@ void setup() {
     digitalWrite(PIN_GRND, LOW); // Set ground pin to low
     button.addRealButton(Button(PIN_BUTTON));
     screenMap = makeScreenMap(args);
-    //screenMap = fl::ScreenMap::Circle(NUM_LEDS, 1.5f, 0.5f, 1.0f);
+    //screenMap = ScreenMap::Circle(NUM_LEDS, 1.5f, 0.5f, 1.0f);
     auto controller = addController();
     // Set the screen map for the controller
     controller->setScreenMap(screenMap);
@@ -175,13 +176,13 @@ void setup() {
     FastLED.setMaxPowerInVoltsAndMilliamps(VOLTS, MAX_AMPS * 1000);
     // set brightness 8
     FastLED.setBrightness(brightness.as_int());
-    button.onChanged([](fl::UIButton& but) {
+    button.onChanged([](UIButton& but) {
         // This function is called when the button is pressed
         // If the button is pressed, show the generative pattern
         if (but.isPressed()) {
-            FL_WARN("Button pressed");
+            FASTLED_WARN("Button pressed");
         } else {
-            FL_WARN("NOT Button pressed");
+            FASTLED_WARN("NOT Button pressed");
         }
     });
 
@@ -207,7 +208,7 @@ void showGenerative(uint32_t now) {
         // Create a hue that changes with position and time
         uint8_t sat = int32_t((x * 10 + y * 5 + now / 5)) % 256;
         // Set the color
-        leds[i] = fl::CHSV(170, sat, fl::clamp(255- sat, 64, 255));
+        leds[i] = CHSV(170, sat, fl::clamp(255- sat, 64, 255));
     }
 }
 

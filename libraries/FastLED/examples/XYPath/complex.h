@@ -16,19 +16,20 @@ all the UI elements you see below.
 #include <Arduino.h>
 #include <FastLED.h>
 
-#include "fl/gfx/draw_visitor.h"
-#include "fl/math/math.h"
-#include "fl/gfx/raster.h"
-#include "fl/math/time_alpha.h"
-#include "fl/ui/ui.h"
-#include "fl/gfx/xypath.h"
-#include "fl/fx/time.h"
+#include "fl/draw_visitor.h"
+#include "fl/math_macros.h"
+#include "fl/raster.h"
+#include "fl/time_alpha.h"
+#include "fl/ui.h"
+#include "fl/xypath.h"
+#include "fx/time.h"
 
 // Sketch.
 #include "src/wave.h"
 #include "src/xypaths.h"
 
-#include "fl/stl/cstring.h"
+#include "fl/memfill.h"
+using namespace fl;
 
 #define HEIGHT 64
 #define WIDTH 64
@@ -36,22 +37,22 @@ all the UI elements you see below.
 #define IS_SERPINTINE true
 #define TIME_ANIMATION 1000 // ms
 
-fl::CRGB leds[NUM_LEDS];
+CRGB leds[NUM_LEDS];
 
-fl::XYMap xyMap(WIDTH, HEIGHT, IS_SERPINTINE);
-// fl::XYPathPtr shape = XYPath::NewRosePath(WIDTH, HEIGHT);
+XYMap xyMap(WIDTH, HEIGHT, IS_SERPINTINE);
+// XYPathPtr shape = XYPath::NewRosePath(WIDTH, HEIGHT);
 
 // Speed up writing to the super sampled waveFx by writing
 // to a raster. This will allow duplicate writes to be removed.
 
-fl::WaveEffect wave_fx; // init in setup().
-fl::vector<fl::XYPathPtr> shapes = CreateXYPaths(WIDTH, HEIGHT);
+WaveEffect wave_fx; // init in setup().
+fl::vector<XYPathPtr> shapes = CreateXYPaths(WIDTH, HEIGHT);
 
 
-fl::XYRaster raster(WIDTH, HEIGHT);
-fl::TimeWarp time_warp;
+XYRaster raster(WIDTH, HEIGHT);
+TimeWarp time_warp;
 
-fl::XYPathPtr getShape(int which) {
+XYPathPtr getShape(int which) {
     int len = shapes.size();
     which = which % len;
     if (which < 0) {
@@ -61,20 +62,19 @@ fl::XYPathPtr getShape(int which) {
 }
 
 //////////////////// UI Section /////////////////////////////
-fl::UITitle title("XYPath Demo");
-fl::UIDescription description("Use a path on the WaveFx");
-fl::UIButton trigger("Trigger");
-fl::UISlider whichShape("Which Shape", 0.0f, 0.0f, shapes.size() - 1, 1.0f);
-fl::UICheckbox useWaveFx("Use WaveFX", true);
-fl::UISlider transition("Transition", 0.0f, 0.0f, 1.0f, 0.01f);
+UITitle title("XYPath Demo");
+UIDescription description("Use a path on the WaveFx");
+UIButton trigger("Trigger");
+UISlider whichShape("Which Shape", 0.0f, 0.0f, shapes.size() - 1, 1.0f);
+UICheckbox useWaveFx("Use WaveFX", true);
+UISlider transition("Transition", 0.0f, 0.0f, 1.0f, 0.01f);
 
-fl::UISlider scale("Scale", 1.0f, 0.0f, 1.0f, 0.01f);
-fl::UISlider speed("Speed", 1.0f, -20.0f, 20.0f, 0.01f);
-fl::UISlider numberOfSteps("Number of Steps", 32.0f, 1.0f, 100.0f, 1.0f);
-fl::UISlider maxAnimation("Max Animation", 1.0f, 5.0f, 20.0f, 1.f);
-fl::UICheckbox isotropicStencil("Isotropic stencil (rounder ripples)", false);
+UISlider scale("Scale", 1.0f, 0.0f, 1.0f, 0.01f);
+UISlider speed("Speed", 1.0f, -20.0f, 20.0f, 0.01f);
+UISlider numberOfSteps("Number of Steps", 32.0f, 1.0f, 100.0f, 1.0f);
+UISlider maxAnimation("Max Animation", 1.0f, 5.0f, 20.0f, 1.f);
 
-fl::TimeClampedTransition shapeProgress(TIME_ANIMATION);
+TimeClampedTransition shapeProgress(TIME_ANIMATION);
 
 void setupUiCallbacks() {
     speed.onChanged([](float value) { time_warp.setSpeed(speed.value()); });
@@ -83,13 +83,13 @@ void setupUiCallbacks() {
 
     trigger.onChanged([]() {
         // shapeProgress.trigger(millis());
-        FL_WARN("Trigger pressed");
+        FASTLED_WARN("Trigger pressed");
     });
     useWaveFx.onChanged([](bool on) {
         if (on) {
-            FL_WARN("WaveFX enabled");
+            FASTLED_WARN("WaveFX enabled");
         } else {
-            FL_WARN("WaveFX disabled");
+            FASTLED_WARN("WaveFX disabled");
         }
     });
 }
@@ -113,7 +113,7 @@ float getAnimationTime(uint32_t now) {
     return pointf + transition.value();
 }
 
-void clearLeds() { fl::memset(leds, 0, NUM_LEDS * sizeof(fl::CRGB)); }
+void clearLeds() { fl::memfill(leds, 0, NUM_LEDS * sizeof(CRGB)); }
 
 void loop() {
     // Your code here
@@ -121,18 +121,11 @@ void loop() {
     const uint32_t now = millis();
     uint32_t now_warped = time_warp.update(now);
 
-    // Apply UI stencil choice to both wave layers.
-    const fl::LaplacianStencil stencil = isotropicStencil
-        ? fl::LaplacianStencil::NinePointIsotropic
-        : fl::LaplacianStencil::FivePoint;
-    wave_fx.wave_fx_low->setStencil(stencil);
-    wave_fx.wave_fx_high->setStencil(stencil);
-
     auto shape = getShape(whichShape.as<int>());
     shape->setScale(scale.value());
 
     float curr_alpha = getAnimationTime(now_warped);
-    static float s_prev_alpha = 0.0f; // okay static in header
+    static float s_prev_alpha = 0.0f;
 
     // unconditionally apply the circle.
     if (trigger) {
@@ -140,13 +133,13 @@ void loop() {
         time_warp.reset(now);
         now_warped = time_warp.update(now);
         shapeProgress.trigger(now_warped);
-        FL_WARN("Transition triggered on " << shape->name());
+        FASTLED_WARN("Transition triggered on " << shape->name());
         curr_alpha = getAnimationTime(now_warped);
         s_prev_alpha = curr_alpha;
     }
 
-    // FL_WARN("Current alpha: " << curr_alpha);
-    // FL_WARN("maxAnimation: " << maxAnimation.value());
+    // FASTLED_WARN("Current alpha: " << curr_alpha);
+    // FASTLED_WARN("maxAnimation: " << maxAnimation.value());
 
     const bool is_active =
         true || curr_alpha < maxAnimation.value() && curr_alpha > 0.0f;
@@ -155,15 +148,15 @@ void loop() {
     static uint32_t frame = 0;
     frame++;
     clearLeds();
-    const fl::CRGB purple = fl::CRGB(255, 0, 255);
+    const CRGB purple = CRGB(255, 0, 255);
     const int number_of_steps = numberOfSteps.value();
     raster.reset();
     // float factor = s_prev_alpha;  // 0->1.f
-    // factor = fl::min(factor/4.0f, 0.05f);
+    // factor = MIN(factor/4.0f, 0.05f);
 
     float diff = curr_alpha - s_prev_alpha;
     diff *= 1.0f;
-    float factor = fl::max(s_prev_alpha - diff, 0.f);
+    float factor = MAX(s_prev_alpha - diff, 0.f);
 
     for (int i = 0; i < number_of_steps; ++i) {
         float a =
@@ -183,7 +176,7 @@ void loop() {
         if (!is_active) {
             alpha = 0;
         }
-        fl::Tile2x2_u8 subpixel = shape->at_subpixel(a);
+        Tile2x2_u8 subpixel = shape->at_subpixel(a);
         subpixel.scale(alpha);
         // subpixels.push_back(subpixel);
         raster.rasterize(subpixel);
@@ -193,7 +186,7 @@ void loop() {
 
 
     if (useWaveFx && is_active) {
-        fl::DrawRasterToWaveSimulator draw_wave_fx(&wave_fx);
+        DrawRasterToWaveSimulator draw_wave_fx(&wave_fx);
         raster.draw(xyMap, draw_wave_fx);
     } else {
         raster.draw(purple, xyMap, leds);
@@ -202,16 +195,16 @@ void loop() {
     int first = xyMap(1, 1);
     int last = xyMap(WIDTH - 2, HEIGHT - 2);
 
-    leds[first] = fl::CRGB(255, 0, 0);
-    leds[last] = fl::CRGB(0, 255, 0);
+    leds[first] = CRGB(255, 0, 0);
+    leds[last] = CRGB(0, 255, 0);
     if (useWaveFx) {
-        // fxBlend.draw(fl::Fx::DrawContext(now, leds));
-        wave_fx.draw(fl::Fx::DrawContext(now, leds));
+        // fxBlend.draw(Fx::DrawContext(now, leds));
+        wave_fx.draw(Fx::DrawContext(now, leds));
     }
 
     EVERY_N_SECONDS(1) {
         uint32_t frame_time = millis() - now;
-        FL_WARN("Frame time: " << frame_time << "ms");
+        FASTLED_WARN("Frame time: " << frame_time << "ms");
     }
 
     FastLED.show();

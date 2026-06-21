@@ -1,6 +1,3 @@
-from ci.util.global_interrupt_handler import handle_keyboard_interrupt
-
-
 #!/usr/bin/env python3
 """
 FastLED Web Scraper Utility
@@ -13,8 +10,6 @@ import argparse
 import subprocess
 import sys
 from pathlib import Path
-
-from running_process import RunningProcess
 
 
 def run_scraper(
@@ -35,11 +30,11 @@ def run_scraper(
     try:
         # For now, just run the existing script
         # In the future, this could be enhanced to pass parameters
-        result = RunningProcess.run(
+        result = subprocess.run(
             [sys.executable, str(script_path)],
-            cwd=None,
             check=False,
-            timeout=300,
+            capture_output=True,
+            text=True,
         )
 
         if result.returncode == 0:
@@ -47,13 +42,11 @@ def run_scraper(
             print(result.stdout)
         else:
             print("❌ Scraping failed!")
-            print("Output:", result.stdout)
+            print("STDOUT:", result.stdout)
+            print("STDERR:", result.stderr)
 
         return result.returncode
 
-    except KeyboardInterrupt as ki:
-        handle_keyboard_interrupt(ki)
-        raise
     except Exception as e:
         print(f"Error running scraper: {e}", file=sys.stderr)
         return 1

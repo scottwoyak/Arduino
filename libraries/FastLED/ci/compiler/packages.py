@@ -1,6 +1,3 @@
-from ci.util.global_interrupt_handler import handle_keyboard_interrupt
-
-
 """
 Enhanced Arduino Package Index Implementation with Pydantic
 
@@ -16,24 +13,28 @@ Key Features:
 - Checksum validation and error handling
 """
 
+import asyncio
 import hashlib
 import json
+import shutil
 import sys
 import tarfile
 import zipfile
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Dict, List, Optional, Set, Union
+from urllib.parse import urlparse
 from urllib.request import urlopen
 
 import httpx
 from pydantic import (
     BaseModel,
-    ConfigDict,
     EmailStr,
     Field,
     HttpUrl,
     ValidationError,
     field_validator,
+    model_validator,
 )
 
 
@@ -64,18 +65,17 @@ class Help(BaseModel):
 
     online: HttpUrl = Field(description="URL to online help resources")
 
-    model_config = ConfigDict(
-        json_schema_extra={
+    class Config:
+        schema_extra = {
             "example": {"online": "https://github.com/espressif/arduino-esp32"}
         }
-    )
 
 
 class Board(BaseModel):
     """Board information with complete properties"""
 
     name: str = Field(min_length=1, max_length=200, description="Board display name")
-    properties: dict[str, Any] = Field(
+    properties: Dict[str, Any] = Field(
         default_factory=dict, description="Board configuration properties"
     )
 
@@ -87,8 +87,8 @@ class Board(BaseModel):
             raise ValueError("Board name cannot be empty or whitespace")
         return v.strip()
 
-    model_config = ConfigDict(
-        json_schema_extra={
+    class Config:
+        schema_extra = {
             "example": {
                 "name": "ESP32 Dev Module",
                 "properties": {
@@ -98,7 +98,6 @@ class Board(BaseModel):
                 },
             }
         }
-    )
 
 
 class ToolDependency(BaseModel):
@@ -119,15 +118,14 @@ class ToolDependency(BaseModel):
         # Allow flexible versioning (semantic, date-based, etc.)
         return v.strip()
 
-    model_config = ConfigDict(
-        json_schema_extra={
+    class Config:
+        schema_extra = {
             "example": {
                 "packager": "esp32",
                 "name": "xtensa-esp32-elf-gcc",
                 "version": "esp-2021r2-patch5-8.4.0",
             }
         }
-    )
 
 
 class Platform(BaseModel):
@@ -147,10 +145,10 @@ class Platform(BaseModel):
         pattern=r"^SHA-256:[a-fA-F0-9]{64}$", description="SHA-256 checksum"
     )
     size_mb: float = Field(gt=0, alias="size", description="Archive size in megabytes")
-    boards: list[Board] = Field(
+    boards: List[Board] = Field(
         default_factory=lambda: [], description="Supported boards"
     )
-    tool_dependencies: list[ToolDependency] = Field(
+    tool_dependencies: List[ToolDependency] = Field(
         default_factory=lambda: [],
         alias="toolsDependencies",
         description="Required tool dependencies",
@@ -167,7 +165,7 @@ class Platform(BaseModel):
 
     @field_validator("size_mb", mode="before")
     @classmethod
-    def convert_size_from_bytes(cls, v: str | int | float) -> float:
+    def convert_size_from_bytes(cls, v: Union[str, int, float]) -> float:
         """Convert size from bytes to megabytes if needed"""
         if isinstance(v, str):
             try:
@@ -192,9 +190,9 @@ class Platform(BaseModel):
             )
         return v
 
-    model_config = ConfigDict(
-        populate_by_name=True,
-        json_schema_extra={
+    class Config:
+        allow_population_by_field_name = True
+        schema_extra: Dict[str, Any] = {
             "example": {
                 "name": "ESP32 Arduino",
                 "architecture": "esp32",
@@ -207,8 +205,7 @@ class Platform(BaseModel):
                 "boards": [],
                 "toolsDependencies": [],
             }
-        },
-    )
+        }
 
 
 class SystemDownload(BaseModel):
@@ -226,7 +223,7 @@ class SystemDownload(BaseModel):
 
     @field_validator("size_mb", mode="before")
     @classmethod
-    def convert_size_from_bytes(cls, v: str | int | float) -> float:
+    def convert_size_from_bytes(cls, v: Union[str, int, float]) -> float:
         """Convert size from bytes to megabytes if needed"""
         if isinstance(v, str):
             try:
@@ -249,9 +246,9 @@ class SystemDownload(BaseModel):
             raise ValueError("Host identifier cannot be empty")
         return v.strip()
 
-    model_config = ConfigDict(
-        populate_by_name=True,
-        json_schema_extra={
+    class Config:
+        allow_population_by_field_name = True
+        schema_extra = {
             "example": {
                 "host": "x86_64-pc-linux-gnu",
                 "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-2021r2-patch5/xtensa-esp32-elf-gcc8_4_0-esp-2021r2-patch5-linux-amd64.tar.gz",
@@ -259,8 +256,7 @@ class SystemDownload(BaseModel):
                 "checksum": "SHA-256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
                 "size": "150000000",
             }
-        },
-    )
+        }
 
 
 class Tool(BaseModel):
@@ -268,13 +264,13 @@ class Tool(BaseModel):
 
     name: str = Field(pattern=r"^[a-zA-Z0-9_.-]+$", description="Tool name")
     version: str = Field(min_length=1, description="Tool version")
-    systems: list[SystemDownload] = Field(
+    systems: List[SystemDownload] = Field(
         min_length=1, description="System-specific downloads"
     )
 
     @field_validator("systems")
     @classmethod
-    def validate_unique_systems(cls, v: list[SystemDownload]) -> list[SystemDownload]:
+    def validate_unique_systems(cls, v: List[SystemDownload]) -> List[SystemDownload]:
         """Ensure no duplicate host systems"""
         hosts = [system.host for system in v]
         if len(hosts) != len(set(hosts)):
@@ -288,12 +284,12 @@ class Tool(BaseModel):
                 return system
         return None
 
-    def get_compatible_systems(self) -> list[str]:
+    def get_compatible_systems(self) -> List[str]:
         """Get list of compatible host systems"""
         return [system.host for system in self.systems]
 
-    model_config = ConfigDict(
-        json_schema_extra={
+    class Config:
+        schema_extra = {
             "example": {
                 "name": "xtensa-esp32-elf-gcc",
                 "version": "esp-2021r2-patch5-8.4.0",
@@ -308,7 +304,6 @@ class Tool(BaseModel):
                 ],
             }
         }
-    )
 
 
 class Package(BaseModel):
@@ -321,16 +316,16 @@ class Package(BaseModel):
     website_url: HttpUrl = Field(alias="websiteURL", description="Package website URL")
     email: EmailStr = Field(description="Maintainer contact email")
     help: Help = Field(description="Help and documentation links")
-    platforms: list[Platform] = Field(
+    platforms: List[Platform] = Field(
         default_factory=lambda: [], description="Available platforms"
     )
-    tools: list[Tool] = Field(default_factory=lambda: [], description="Available tools")
+    tools: List[Tool] = Field(default_factory=lambda: [], description="Available tools")
 
     @field_validator("platforms")
     @classmethod
-    def validate_unique_platforms(cls, v: list[Platform]) -> list[Platform]:
+    def validate_unique_platforms(cls, v: List[Platform]) -> List[Platform]:
         """Ensure no duplicate platform architecture/version combinations"""
-        seen: set[tuple[str, str]] = set()
+        seen: Set[tuple[str, str]] = set()
         for platform in v:
             key = (platform.architecture, platform.version)
             if key in seen:
@@ -342,9 +337,9 @@ class Package(BaseModel):
 
     @field_validator("tools")
     @classmethod
-    def validate_unique_tools(cls, v: list[Tool]) -> list[Tool]:
+    def validate_unique_tools(cls, v: List[Tool]) -> List[Tool]:
         """Ensure no duplicate tool name/version combinations"""
-        seen: set[tuple[str, str]] = set()
+        seen: Set[tuple[str, str]] = set()
         for tool in v:
             key = (tool.name, tool.version)
             if key in seen:
@@ -378,9 +373,9 @@ class Package(BaseModel):
         # Simple version sorting - can be enhanced with proper semver parsing
         return sorted(versions)[-1]
 
-    model_config = ConfigDict(
-        populate_by_name=True,
-        json_schema_extra={
+    class Config:
+        allow_population_by_field_name = True
+        schema_extra: Dict[str, Any] = {
             "example": {
                 "name": "esp32",
                 "maintainer": "Espressif Systems",
@@ -390,18 +385,17 @@ class Package(BaseModel):
                 "platforms": [],
                 "tools": [],
             }
-        },
-    )
+        }
 
 
 class PackageIndex(BaseModel):
     """Root package index containing multiple packages"""
 
-    packages: list[Package] = Field(min_length=1, description="Available packages")
+    packages: List[Package] = Field(min_length=1, description="Available packages")
 
     @field_validator("packages")
     @classmethod
-    def validate_unique_packages(cls, v: list[Package]) -> list[Package]:
+    def validate_unique_packages(cls, v: List[Package]) -> List[Package]:
         """Ensure no duplicate package names"""
         names = [pkg.name for pkg in v]
         if len(names) != len(set(names)):
@@ -415,16 +409,16 @@ class PackageIndex(BaseModel):
                 return package
         return None
 
-    def get_all_platforms(self) -> list[Platform]:
+    def get_all_platforms(self) -> List[Platform]:
         """Get all platforms from all packages"""
-        platforms: list[Platform] = []
+        platforms: List[Platform] = []
         for package in self.packages:
             platforms.extend(package.platforms)
         return platforms
 
-    def get_all_tools(self) -> list[Tool]:
+    def get_all_tools(self) -> List[Tool]:
         """Get all tools from all packages"""
-        tools: list[Tool] = []
+        tools: List[Tool] = []
         for package in self.packages:
             tools.extend(package.tools)
         return tools
@@ -460,9 +454,6 @@ class PackageIndexParser:
 
             return self.parse_package_index(json_str)
 
-        except KeyboardInterrupt as ki:
-            handle_keyboard_interrupt(ki)
-            raise
         except Exception as e:
             raise PackageParsingError(f"Error fetching package index from {url}: {e}")
 
@@ -477,9 +468,6 @@ class PackageIndexParser:
 
             return self.parse_package_index(json_str)
 
-        except KeyboardInterrupt as ki:
-            handle_keyboard_interrupt(ki)
-            raise
         except Exception as e:
             raise PackageParsingError(f"Error fetching package index from {url}: {e}")
 
@@ -491,7 +479,7 @@ class PackageManagerConfig(BaseModel):
     """Configuration for package manager with validation"""
 
     cache_dir: Path = Field(default_factory=lambda: Path.home() / ".arduino_packages")
-    sources: list[HttpUrl] = Field(
+    sources: List[HttpUrl] = Field(
         default_factory=lambda: [], description="Package index URLs"
     )
     timeout: int = Field(
@@ -513,9 +501,9 @@ class PackageManagerConfig(BaseModel):
             raise ValueError(f"Cache path exists but is not a directory: {v}")
         return v
 
-    model_config = ConfigDict(
-        validate_assignment=True,
-        json_schema_extra={
+    class Config:
+        validate_assignment = True
+        schema_extra = {
             "example": {
                 "cache_dir": "~/.arduino_packages",
                 "sources": [
@@ -526,8 +514,7 @@ class PackageManagerConfig(BaseModel):
                 "verify_checksums": True,
                 "allow_insecure": False,
             }
-        },
-    )
+        }
 
 
 # Utility Functions for Enhanced Functionality
@@ -571,9 +558,6 @@ def extract_archive(archive_path: Path, extract_to: Path) -> bool:
 
         return True
 
-    except KeyboardInterrupt as ki:
-        handle_keyboard_interrupt(ki)
-        raise
     except Exception as e:
         print(f"Error extracting archive {archive_path}: {e}")
         return False
@@ -631,7 +615,7 @@ def display_package_info(package: Package) -> None:
 
 def display_validation_summary(package_index: PackageIndex) -> None:
     """Display validation summary for the package index"""
-    print("\n✅ VALIDATION SUMMARY")
+    print(f"\n✅ VALIDATION SUMMARY")
     print(f"   📦 Total packages: {len(package_index.packages)}")
 
     total_platforms = sum(len(pkg.platforms) for pkg in package_index.packages)
@@ -647,7 +631,7 @@ def display_validation_summary(package_index: PackageIndex) -> None:
     print(f"   💾 Total boards: {total_boards}")
 
     # Show architectures
-    architectures: set[str] = set()
+    architectures: Set[str] = set()
     for pkg in package_index.packages:
         for platform in pkg.platforms:
             architectures.add(platform.architecture)
@@ -678,9 +662,6 @@ def demo_esp32_parsing() -> Optional[PackageIndex]:
     except PackageParsingError as e:
         print(f"❌ Package parsing error: {e}")
         sys.exit(1)
-    except KeyboardInterrupt as ki:
-        handle_keyboard_interrupt(ki)
-        raise
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
         sys.exit(1)
@@ -691,7 +672,7 @@ def demo_model_validation() -> None:
     print("\n🧪 TESTING PYDANTIC MODEL VALIDATION")
 
     # Define valid platform data
-    valid_platform_data: dict[str, Any] = {
+    valid_platform_data: Dict[str, Any] = {
         "name": "ESP32 Arduino",
         "architecture": "esp32",
         "version": "2.0.5",
@@ -751,7 +732,7 @@ def main() -> None:
 
         # Interactive options
         try:
-            print("\n📋 AVAILABLE OPTIONS:")
+            print(f"\n📋 AVAILABLE OPTIONS:")
             print("1. Show detailed tools information")
             print("2. Search for specific architecture")
             print("3. Exit")
@@ -791,14 +772,10 @@ def main() -> None:
             else:
                 print("👋 Goodbye!")
 
-        except KeyboardInterrupt as ki:
-            handle_keyboard_interrupt(ki)
-            raise
+        except KeyboardInterrupt:
             print("\n👋 Interrupted by user")
 
-    except KeyboardInterrupt as ki:
-        handle_keyboard_interrupt(ki)
-        raise
+    except KeyboardInterrupt:
         print("\n👋 Interrupted by user")
         sys.exit(1)
 

@@ -1,6 +1,3 @@
-from ci.util.global_interrupt_handler import handle_keyboard_interrupt
-
-
 """
 Comprehensive tests for enhanced Arduino package index implementation with Pydantic
 
@@ -8,7 +5,8 @@ Tests all Pydantic models, validation rules, parsing functionality, and error ha
 """
 
 import json
-from typing import Any
+from pathlib import Path
+from typing import Any, Dict
 
 import pytest
 from pydantic import ValidationError
@@ -17,10 +15,15 @@ from pydantic import ValidationError
 from ci.compiler.packages import (
     Board,
     Help,
+    Package,
+    PackageIndex,
     PackageIndexParser,
+    PackageManagerConfig,
     PackageParsingError,
     Platform,
     SystemDownload,
+    Tool,
+    ToolDependency,
     format_size,
 )
 
@@ -28,13 +31,13 @@ from ci.compiler.packages import (
 class TestHelp:
     """Test Help model validation"""
 
-    def test_valid_help(self) -> None:
+    def test_valid_help(self):
         """Test valid help creation"""
         help_data = {"online": "https://github.com/espressif/arduino-esp32"}
         help_obj = Help(**help_data)  # type: ignore
         assert str(help_obj.online) == "https://github.com/espressif/arduino-esp32"
 
-    def test_invalid_url(self) -> None:
+    def test_invalid_url(self):
         """Test invalid URL validation"""
         with pytest.raises(ValidationError):
             Help(online="not-a-valid-url")  # type: ignore
@@ -43,7 +46,7 @@ class TestHelp:
 class TestBoard:
     """Test Board model validation"""
 
-    def test_valid_board(self) -> None:
+    def test_valid_board(self):
         """Test valid board creation"""
         board_data = {
             "name": "ESP32 Dev Module",
@@ -56,12 +59,12 @@ class TestBoard:
         assert board.name == "ESP32 Dev Module"
         assert board.properties["upload.tool"] == "esptool_py"
 
-    def test_empty_name_validation(self) -> None:
+    def test_empty_name_validation(self):
         """Test empty name validation"""
         with pytest.raises(ValidationError):
             Board(name="", properties={})
 
-    def test_name_trimming(self) -> None:
+    def test_name_trimming(self):
         """Test name trimming functionality"""
         board = Board(name="  ESP32 Dev Module  ", properties={})
         assert board.name == "ESP32 Dev Module"
@@ -70,7 +73,7 @@ class TestBoard:
 class TestSystemDownload:
     """Test SystemDownload model validation"""
 
-    def test_size_conversion_from_string(self) -> None:
+    def test_size_conversion_from_string(self):
         """Test size conversion from string bytes to MB"""
         system = SystemDownload(
             host="test-host",
@@ -81,7 +84,7 @@ class TestSystemDownload:
         )
         assert abs(system.size_mb - 50.0) < 0.1  # Should be ~50 MB
 
-    def test_invalid_checksum_format(self) -> None:
+    def test_invalid_checksum_format(self):
         """Test invalid checksum format validation"""
         with pytest.raises(ValidationError):
             SystemDownload(
@@ -96,9 +99,9 @@ class TestSystemDownload:
 class TestPlatform:
     """Test Platform model validation"""
 
-    def test_valid_platform(self) -> None:
+    def test_valid_platform(self):
         """Test valid platform creation"""
-        platform_data: dict[str, Any] = {
+        platform_data: Dict[str, Any] = {
             "name": "ESP32 Arduino",
             "architecture": "esp32",
             "version": "2.0.5",
@@ -116,7 +119,7 @@ class TestPlatform:
         assert platform.architecture == "esp32"
         assert platform.size_mb == 50000000 / (1024 * 1024)
 
-    def test_invalid_archive_extension(self) -> None:
+    def test_invalid_archive_extension(self):
         """Test invalid archive extension validation"""
         with pytest.raises(ValidationError):
             Platform(
@@ -137,9 +140,9 @@ class TestPlatform:
 class TestPackageIndexParser:
     """Test PackageIndexParser functionality"""
 
-    def test_parse_valid_json(self) -> None:
+    def test_parse_valid_json(self):
         """Test parsing valid package index JSON"""
-        valid_json: dict[str, Any] = {
+        valid_json: Dict[str, Any] = {
             "packages": [
                 {
                     "name": "test",
@@ -158,7 +161,7 @@ class TestPackageIndexParser:
         assert len(package_index.packages) == 1
         assert package_index.packages[0].name == "test"
 
-    def test_parse_invalid_json(self) -> None:
+    def test_parse_invalid_json(self):
         """Test parsing invalid JSON"""
         parser = PackageIndexParser()
 
@@ -169,7 +172,7 @@ class TestPackageIndexParser:
 class TestUtilityFunctions:
     """Test utility functions"""
 
-    def test_format_size(self) -> None:
+    def test_format_size(self):
         """Test size formatting function"""
         # Test KB
         assert format_size(0.5) == "512.0 KB"
@@ -186,7 +189,7 @@ class TestUtilityFunctions:
 class TestRealDataParsing:
     """Test with real ESP32 package index data (if network available)"""
 
-    def test_esp32_package_parsing(self) -> None:
+    def test_esp32_package_parsing(self):
         """Test parsing real ESP32 package index"""
         ESP32_URL = "https://espressif.github.io/arduino-esp32/package_esp32_index.json"
 
@@ -202,14 +205,11 @@ class TestRealDataParsing:
             assert len(esp32_package.platforms) > 0
             assert len(esp32_package.tools) > 0
 
-            print("✅ Successfully parsed ESP32 package index:")
+            print(f"✅ Successfully parsed ESP32 package index:")
             print(f"   📦 Packages: {len(package_index.packages)}")
             print(f"   🛠️  Platforms: {len(esp32_package.platforms)}")
             print(f"   🔧 Tools: {len(esp32_package.tools)}")
 
-        except KeyboardInterrupt as ki:
-            handle_keyboard_interrupt(ki)
-            raise
         except Exception as e:
             # Skip if network not available
             pytest.skip(f"Network test skipped: {e}")

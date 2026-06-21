@@ -12,26 +12,23 @@
 
 #pragma once
 
-// IWYU pragma: private
-
-#include "fl/stl/stdint.h"
+#include <stdint.h>
 
 // Include Silicon Labs EMLIB GPIO for direct register access
-// IWYU pragma: begin_keep
-#include <em_gpio.h>
-#include <em_cmu.h>
-// IWYU pragma: end_keep
+#include "em_gpio.h"
+#include "em_cmu.h"
 
-#include "led_sysdefs.h"
-#include "fl/stl/compiler_control.h"
-#include "fl/system/fastpin_base.h"
-#include "fl/stl/noexcept.h"
-namespace fl {
+#include "fl/force_inline.h"
+#include "fl/namespace.h"
+#include "fl/unused.h"
+
+FASTLED_NAMESPACE_BEGIN
+
 /// Forward declaration of base FastPin template
-template<u8 PIN> class FastPin;
+template<uint8_t PIN> class FastPin;
 
 /// Initialize GPIO clock (required for Silicon Labs EFM32/EFR32 devices)
-void _mgm240_gpio_init() FL_NOEXCEPT;
+void _mgm240_gpio_init();
 
 /// @brief GPIO port accessor structures
 /// These provide compile-time port resolution for template-based FastPin operations
@@ -56,35 +53,35 @@ struct __generated_struct_GPIO_PORT_D {
 /// @tparam _PORT_STRUCT Port accessor structure (e.g., __generated_struct_GPIO_PORT_A)
 /// @tparam _PORT_NUMBER Port number (0=A, 1=B, 2=C, 3=D)
 /// @tparam _PIN_NUMBER Pin number within the port (0-7 typically)
-template<u32 _MASK, typename _PORT_STRUCT, u8 _PORT_NUMBER, u8 _PIN_NUMBER> class _ARMPIN : public ValidPinBase {
+template<uint32_t _MASK, typename _PORT_STRUCT, uint8_t _PORT_NUMBER, uint8_t _PIN_NUMBER> class _ARMPIN {
 public:
-    typedef volatile u32 * port_ptr_t;
-    typedef u32 port_t;
+    typedef volatile uint32_t * port_ptr_t;
+    typedef uint32_t port_t;
 
     /// Configure pin as push-pull output
-    FASTLED_FORCE_INLINE static void setOutput() FL_NOEXCEPT {
+    FASTLED_FORCE_INLINE static void setOutput() {
         _mgm240_gpio_init();
-        GPIO_PinModeSet(_PORT_STRUCT::port(), _PIN_NUMBER, gpioModePushPull, 0) FL_NOEXCEPT;
+        GPIO_PinModeSet(_PORT_STRUCT::port(), _PIN_NUMBER, gpioModePushPull, 0);
     }
 
     /// Configure pin as input
-    FASTLED_FORCE_INLINE static void setInput() FL_NOEXCEPT {
+    FASTLED_FORCE_INLINE static void setInput() {
         _mgm240_gpio_init();
-        GPIO_PinModeSet(_PORT_STRUCT::port(), _PIN_NUMBER, gpioModeInput, 0) FL_NOEXCEPT;
+        GPIO_PinModeSet(_PORT_STRUCT::port(), _PIN_NUMBER, gpioModeInput, 0);
     }
 
     /// Set pin output high
-    FASTLED_FORCE_INLINE static void hi() FL_NOEXCEPT {
-        GPIO_PinOutSet(_PORT_STRUCT::port(), _PIN_NUMBER) FL_NOEXCEPT;
+    FASTLED_FORCE_INLINE static void hi() {
+        GPIO_PinOutSet(_PORT_STRUCT::port(), _PIN_NUMBER);
     }
 
     /// Set pin output low
-    FASTLED_FORCE_INLINE static void lo() FL_NOEXCEPT {
-        GPIO_PinOutClear(_PORT_STRUCT::port(), _PIN_NUMBER) FL_NOEXCEPT;
+    FASTLED_FORCE_INLINE static void lo() {
+        GPIO_PinOutClear(_PORT_STRUCT::port(), _PIN_NUMBER);
     }
 
     /// Set pin output based on value (non-zero = high, zero = low)
-    FASTLED_FORCE_INLINE static void set(port_t val) FL_NOEXCEPT {
+    FASTLED_FORCE_INLINE static void set(port_t val) {
         if(val) hi(); else lo();
     }
 
@@ -92,8 +89,8 @@ public:
     FASTLED_FORCE_INLINE static void strobe() { toggle(); toggle(); }
 
     /// Toggle pin output state
-    FASTLED_FORCE_INLINE static void toggle() FL_NOEXCEPT {
-        GPIO_PinOutToggle(_PORT_STRUCT::port(), _PIN_NUMBER) FL_NOEXCEPT;
+    FASTLED_FORCE_INLINE static void toggle() {
+        GPIO_PinOutToggle(_PORT_STRUCT::port(), _PIN_NUMBER);
     }
 
     /// Set pin high (port parameter ignored for compatibility)
@@ -103,32 +100,32 @@ public:
     FASTLED_FORCE_INLINE static void lo(port_ptr_t port) { FL_UNUSED(port); lo(); }
 
     /// Get port value with this pin set high
-    FASTLED_FORCE_INLINE static port_t hival() FL_NOEXCEPT {
+    FASTLED_FORCE_INLINE static port_t hival() {
         return GPIO_PortOutGet(_PORT_STRUCT::port()) | _MASK;
     }
 
     /// Get port value with this pin set low
-    FASTLED_FORCE_INLINE static port_t loval() FL_NOEXCEPT {
+    FASTLED_FORCE_INLINE static port_t loval() {
         return GPIO_PortOutGet(_PORT_STRUCT::port()) & ~_MASK;
     }
 
     /// Get pointer to GPIO port output register (for direct port manipulation)
-    FASTLED_FORCE_INLINE static port_ptr_t port() FL_NOEXCEPT {
+    FASTLED_FORCE_INLINE static port_ptr_t port() {
         return &(GPIO->P[_PORT_STRUCT::port()].DOUT);
     }
 
     /// Get pointer to atomic SET register for race-free high operations
-    FASTLED_FORCE_INLINE static port_ptr_t sport() FL_NOEXCEPT {
+    FASTLED_FORCE_INLINE static port_ptr_t sport() {
         return &(GPIO->P[_PORT_STRUCT::port()].DOUTSET);
     }
 
     /// Get pointer to atomic CLEAR register for race-free low operations
-    FASTLED_FORCE_INLINE static port_ptr_t cport() FL_NOEXCEPT {
+    FASTLED_FORCE_INLINE static port_ptr_t cport() {
         return &(GPIO->P[_PORT_STRUCT::port()].DOUTCLR);
     }
 
     /// Fast port write operation (used by timing-critical code)
-    FASTLED_FORCE_INLINE static void fastset(port_ptr_t port, port_t val) FL_NOEXCEPT {
+    FASTLED_FORCE_INLINE static void fastset(port_ptr_t port, port_t val) {
         *port = val;
     }
 
@@ -136,7 +133,7 @@ public:
     FASTLED_FORCE_INLINE static port_t mask() { return _MASK; }
 
     /// Read pin input state
-    FASTLED_FORCE_INLINE static bool isset() FL_NOEXCEPT {
+    FASTLED_FORCE_INLINE static bool isset() {
         return GPIO_PinInGet(_PORT_STRUCT::port(), _PIN_NUMBER) != 0;
     }
 };
@@ -191,4 +188,5 @@ _FL_DEFPIN(24, 2, D, (1 << 2));   // D24 - PD02
 _FL_DEFPIN(25, 3, D, (1 << 3));   // D25 - PD03
 
 #define HAS_HARDWARE_PIN_SUPPORT
-}  // namespace fl
+
+FASTLED_NAMESPACE_END

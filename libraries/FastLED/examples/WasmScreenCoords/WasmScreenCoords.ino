@@ -1,5 +1,3 @@
-// @filter: (mem is large)
-
 /// @file    WasmScreenCoords.ino
 /// @brief   Demonstrates screen coordinate mapping for web display
 /// @example WasmScreenCoords.ino
@@ -16,13 +14,13 @@
 
 #ifdef __EMSCRIPTEN__
 
-#include "fl/stl/vector.h"
+#include "fl/vector.h"
 
 
-#include "fl/stl/json.h"
-#include "fl/stl/span.h"
-#include "fl/math/screenmap.h"
-#include "fl/math/math.h"
+#include "fl/json.h"
+#include "fl/slice.h"
+#include "fl/screenmap.h"
+#include "fl/math_macros.h"
 
 using fl::vec2f;
 using fl::vector;

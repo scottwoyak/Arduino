@@ -1,17 +1,23 @@
 #pragma once
-#include "fl/stl/noexcept.h"
 
-// IWYU pragma: private
+#include <string>
 
 namespace fl {
 
 /**
  * Async-aware UI component update function
  * Updates UI components from JavaScript with JSON data using async patterns.
- *
- * @param jsonStr JSON string containing UI component updates (null-terminated)
+ * 
+ * This function now supports async operations and provides better error handling.
+ * When called from JavaScript via Asyncify-enabled WASM, it can handle both
+ * synchronous and asynchronous UI update operations.
+ * 
+ * @param jsonStr JSON string containing UI component updates
+ * 
+ * Note: This function may be called from async JavaScript contexts and
+ * includes comprehensive error handling for async operations.
  */
-void jsUpdateUiComponents(const char* jsonStr) FL_NOEXCEPT;
+void jsUpdateUiComponents(const std::string &jsonStr);
 
 /**
  * Async-aware WASM UI system initializer
@@ -23,6 +29,6 @@ void jsUpdateUiComponents(const char* jsonStr) FL_NOEXCEPT;
  * Note: This function is safe to call multiple times and includes
  * comprehensive exception handling for async initialization scenarios.
  */
-void ensureWasmUiSystemInitialized() FL_NOEXCEPT;
+void ensureWasmUiSystemInitialized();
 
 } // namespace fl

@@ -1,6 +1,7 @@
 #pragma once
 
-// IWYU pragma: private
+#include <stdint.h>
+#include <stddef.h>
 
 namespace fl {
     // On AVR: int is 16-bit, long is 32-bit — match stdint sizes manually
@@ -10,9 +11,7 @@ namespace fl {
     typedef unsigned long u32;
     typedef long long i64;
     typedef unsigned long long u64;
-    // AVR is 8-bit: pointers are 16-bit
-    typedef unsigned int size;   // size_t equivalent (16-bit on AVR)
-    typedef unsigned int uptr;   // uintptr_t equivalent (16-bit on AVR)
-    typedef int iptr;            // intptr_t equivalent (16-bit on AVR)
-    typedef int ptrdiff;         // ptrdiff_t equivalent (16-bit on AVR)
+    // Use standard types directly to ensure exact compatibility
+    typedef size_t size;
+    typedef uintptr_t uptr;
 }

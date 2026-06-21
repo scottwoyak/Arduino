@@ -12,22 +12,23 @@
 
 
 #include <FastLED.h>
-#include "fl/fx/2d/noisepalette.h"
-#include "fl/stl/json.h"
-#include "fl/stl/span.h"
-#include "fl/fx/fx_engine.h"
+#include "fx/2d/noisepalette.h"
+#include "fl/json.h"
+#include "fl/slice.h"
+#include "fx/fx_engine.h"
 
-#include "fl/fx/2d/animartrix.hpp"
-#include "fl/ui/ui.h"
+#include "fx/2d/animartrix.hpp"
+#include "fl/ui.h"
 
+using namespace fl;
 
 
 #define LED_PIN 3
 #define BRIGHTNESS 96
 #define COLOR_ORDER GRB
 
-#define MATRIX_WIDTH 32
-#define MATRIX_HEIGHT 32
+#define MATRIX_WIDTH 100
+#define MATRIX_HEIGHT 100
 #define GRID_SERPENTINE false
 
 #define NUM_LEDS (MATRIX_WIDTH * MATRIX_HEIGHT)
@@ -41,7 +42,7 @@
 // if this example code seems daunting.
 //
 //
-// The basic setup here is that for each frame, we generate a new fl::array of
+// The basic setup here is that for each frame, we generate a new array of
 // 'noise' data, and then map it onto the LED matrix through a color palette.
 //
 // Periodically, the color palette is changed, and new noise-generation
@@ -70,40 +71,40 @@
 #define SPEED 30
 
 // This is our frame buffer
-fl::CRGB leds[NUM_LEDS];
+CRGB leds[NUM_LEDS];
 
-// We use an fl::XYMap because it will produce the correct fl::ScreenMap for the
+// We use an XYMap because it will produce the correct ScreenMap for the
 // web display.
-fl::XYMap xyMap = fl::XYMap::constructRectangularGrid(MATRIX_WIDTH, MATRIX_HEIGHT);
-fl::NoisePalette noisePalette = fl::NoisePalette(xyMap);
+XYMap xyMap = XYMap::constructRectangularGrid(MATRIX_WIDTH, MATRIX_HEIGHT);
+NoisePalette noisePalette = NoisePalette(xyMap);
 
-fl::UITitle title("FastLED Wasm Demo");
-fl::UIDescription description("This example combines two features of FastLED to produce a remarkable range of effects from a relatively small amount of code.  This example combines FastLED's color palette lookup functions with FastLED's Perlin noise generator, and the combination is extremely powerful");
+UITitle title("FastLED Wasm Demo");
+UIDescription description("This example combines two features of FastLED to produce a remarkable range of effects from a relatively small amount of code.  This example combines FastLED's color palette lookup functions with FastLED's Perlin noise generator, and the combination is extremely powerful");
 
 
 // These UI elements are dynamic when using the FastLED web compiler.
 // When deployed to a real device these elements will always be the default value.
-fl::UISlider brightness("Brightness", 255, 0, 255);
-fl::UICheckbox isOff("Off", false);
-fl::UISlider speed("Noise - Speed", 15, 1, 50);
-fl::UICheckbox changePallete("Noise - Auto Palette", true);
-fl::UISlider changePalletTime("Noise - Time until next random Palette", 5, 1, 100);
-fl::UISlider scale( "Noise - Scale", 20, 1, 100);
-fl::UIButton changePalette("Noise - Next Palette");
-fl::UIButton changeFx("Switch between Noise & fl::Animartrix");
-UINumberField fxIndex("fl::Animartrix - index", 0, 0, static_cast<int>(fl::AnimartrixAnim::NUM_ANIMATIONS));
-fl::UISlider timeSpeed("Time Speed", 1, -10, 10, .1);
+UISlider brightness("Brightness", 255, 0, 255);
+UICheckbox isOff("Off", false);
+UISlider speed("Noise - Speed", 15, 1, 50);
+UICheckbox changePallete("Noise - Auto Palette", true);
+UISlider changePalletTime("Noise - Time until next random Palette", 5, 1, 100);
+UISlider scale( "Noise - Scale", 20, 1, 100);
+UIButton changePalette("Noise - Next Palette");
+UIButton changeFx("Switch between Noise & Animartrix");
+UINumberField fxIndex("Animartrix - index", 0, 0, NUM_ANIMATIONS);
+UISlider timeSpeed("Time Speed", 1, -10, 10, .1);
 
-// Group related UI elements using fl::UIGroup template multi-argument constructor
-fl::UIGroup noiseControls("Noise Controls", speed, changePallete, changePalletTime, scale, changePalette);
-fl::UIGroup animartrixControls("fl::Animartrix Controls", fxIndex, changeFx);
-fl::UIGroup displayControls("Display Controls", brightness, isOff, timeSpeed);
+// Group related UI elements using UIGroup template multi-argument constructor
+UIGroup noiseControls("Noise Controls", speed, changePallete, changePalletTime, scale, changePalette);
+UIGroup animartrixControls("Animartrix Controls", fxIndex, changeFx);
+UIGroup displayControls("Display Controls", brightness, isOff, timeSpeed);
 
-// fl::Animartrix is a visualizer.
-fl::Animartrix animartrix(xyMap, fl::AnimartrixAnim::POLAR_WAVES);
+// Animartrix is a visualizer.
+Animartrix animartrix(xyMap, POLAR_WAVES);
 
-// fl::FxEngine allows nice things like switching between visualizers.
-fl::FxEngine fxEngine(NUM_LEDS);
+// FxEngine allows nice things like switching between visualizers.
+FxEngine fxEngine(NUM_LEDS);
 
 void setup() {
     Serial.begin(115200);
@@ -121,7 +122,7 @@ void setup() {
 }
 
 void loop() {
-    uint32_t now = fl::millis();
+    uint32_t now = millis();
     FastLED.setBrightness(!isOff ? brightness.as<uint8_t>() : 0);
     noisePalette.setSpeed(speed);
     noisePalette.setScale(scale);

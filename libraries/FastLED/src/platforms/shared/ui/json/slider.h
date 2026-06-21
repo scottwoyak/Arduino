@@ -1,14 +1,11 @@
 #pragma once
 
-// IWYU pragma: private
-
-#include "fl/system/engine_events.h"
-#include "fl/stl/string.h"
+#include "fl/engine_events.h"
+#include "fl/str.h"
 #include "platforms/shared/ui/json/ui_internal.h"
-#include "fl/math/math.h"
-#include "fl/stl/json.h"
-#include "fl/stl/shared_ptr.h" // For fl::shared_ptr
-#include "fl/stl/noexcept.h"
+#include "fl/math_macros.h"
+#include "fl/json.h"
+#include "fl/ptr.h" // For fl::shared_ptr
 
 namespace fl {
 
@@ -18,27 +15,27 @@ class JsonUiSliderInternal;
 class JsonSliderImpl {
   public:
     JsonSliderImpl(const fl::string &name, float value, float min, float max,
-                 float step = -1) FL_NOEXCEPT;
+                 float step = -1);
     ~JsonSliderImpl();
-    JsonSliderImpl &Group(const fl::string &name) FL_NOEXCEPT;
+    JsonSliderImpl &Group(const fl::string &name);
 
-    const fl::string &name() const FL_NOEXCEPT;
-    void toJson(fl::json &json) const FL_NOEXCEPT;
-    float value() const FL_NOEXCEPT;
-    float value_normalized() const FL_NOEXCEPT;
-    float getMax() const FL_NOEXCEPT;
-    float getMin() const FL_NOEXCEPT;
-    void setValue(float value) FL_NOEXCEPT;
-    fl::string groupName() const FL_NOEXCEPT;
+    const fl::string &name() const;
+    void toJson(fl::Json &json) const;
+    float value() const;
+    float value_normalized() const;
+    float getMax() const;
+    float getMin() const;
+    void setValue(float value);
+    const fl::string &groupName() const;
     
     // Method to allow parent UIElement class to set the group
-    void setGroup(const fl::string &groupName) FL_NOEXCEPT;
+    void setGroup(const fl::string &groupName);
 
-    int id() const FL_NOEXCEPT;
+    int id() const;
 
-    int as_int() const FL_NOEXCEPT;
-    JsonSliderImpl &operator=(float value) FL_NOEXCEPT;
-    JsonSliderImpl &operator=(int value) FL_NOEXCEPT;
+    int as_int() const;
+    JsonSliderImpl &operator=(float value);
+    JsonSliderImpl &operator=(int value);
 
   private:
     // Change to use the specific internal implementation

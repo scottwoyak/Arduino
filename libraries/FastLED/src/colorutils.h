@@ -3,7 +3,7 @@
 /*
 Legacy header. Prefer to use fl/colorutils.h instead since
 */
-#include "fl/gfx/colorutils.h"
+#include "fl/colorutils.h"
 
 using fl::fadeLightBy;
 using fl::fade_video;
@@ -38,7 +38,6 @@ using fl::TGradientDirectionCode;
 using fl::TBlendType;
 using fl::ColorFromPalette;
 using fl::ColorFromPaletteExtended;
-using fl::ColorFromPaletteHD;
 using fl::fill_palette;
 using fl::fill_gradient;
 using fl::fill_rainbow;
@@ -116,16 +115,16 @@ using fl::LINEARBLEND_NOWRAP;
 /// `DEFINE_GRADIENT_PALETTE` macro, this is taken of automatically.
 ///
 /// TProgmemRGBGradientPalette_byte must remain in the global namespace.
-FL_DISABLE_WARNING_PUSH
-FL_DISABLE_WARNING(pedantic)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
 
 #define DEFINE_GRADIENT_PALETTE(X) \
-  FL_ALIGN_PROGMEM(4) \
+  FL_ALIGN_PROGMEM \
   extern const TProgmemRGBGradientPalette_byte X[] FL_PROGMEM =
 
 /// Forward-declaration macro for DEFINE_GRADIENT_PALETTE(X)
 #define DECLARE_GRADIENT_PALETTE(X) \
-  FL_ALIGN_PROGMEM(4) \
+  FL_ALIGN_PROGMEM \
   extern const TProgmemRGBGradientPalette_byte X[] FL_PROGMEM
 
-FL_DISABLE_WARNING_POP
+#pragma GCC diagnostic pop

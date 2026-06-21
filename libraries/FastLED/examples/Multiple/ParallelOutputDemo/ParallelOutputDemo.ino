@@ -1,10 +1,10 @@
-// @filter: (platform is teensy) and (memory is large)
-
 /// @file    ParallelOutputDemo.ino
 /// @brief   ParallelOutputDemo example with platform detection
 /// @example ParallelOutputDemo.ino
 
-// FastLED.h must be included first to trigger precompiled headers for FastLED's build system
-#include "FastLED.h"
-
+// Platform detection logic
+#if defined(CORE_TEENSY) && defined(TEENSYDUINO) && defined(HAS_PORTDC)
 #include "ParallelOutputDemo.h"
+#else
+#include "platforms/sketch_fake.hpp"
+#endif

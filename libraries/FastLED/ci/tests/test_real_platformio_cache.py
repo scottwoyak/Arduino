@@ -4,6 +4,7 @@ Real test for PlatformIO cache functionality - no mocks.
 Downloads actual ESP32 platform, caches it, and verifies transformation.
 """
 
+import shutil
 import unittest
 from pathlib import Path
 
@@ -47,7 +48,7 @@ class TestRealPlatformIOCache(unittest.TestCase):
         if self.platformio_ini.exists():
             self.platformio_ini.unlink()
 
-    def test_real_esp32_platform_download_and_transform(self) -> None:
+    def test_real_esp32_platform_download_and_transform(self):
         """Test with real ESP32 platform download - no mocks."""
         # Create simple platformio.ini with real ESP32 platform URL
         platformio_ini_content = PLATFORMIO_INI_TEMPLATE.format(
@@ -86,7 +87,7 @@ class TestRealPlatformIOCache(unittest.TestCase):
 
         # Verify original URL was replaced
         self.assertNotIn(ESP32_PLATFORM_URL, final_content)
-        print("✅ Original URL removed from platformio.ini")
+        print(f"✅ Original URL removed from platformio.ini")
 
         # Verify file URLs or paths are present (should be 2 occurrences)
         import platform
@@ -133,7 +134,7 @@ class TestRealPlatformIOCache(unittest.TestCase):
             # Look for the specific artifact.zip file
             artifact_zip = artifact_dir / "artifact.zip"
             self.assertTrue(artifact_zip.exists())
-            print("✅ Platform zip cached: artifact.zip")
+            print(f"✅ Platform zip cached: artifact.zip")
 
             # Check extracted directory exists
             extracted_dir = artifact_dir / "extracted"
@@ -143,7 +144,7 @@ class TestRealPlatformIOCache(unittest.TestCase):
             # Verify platform.json exists in extracted content
             platform_json_files = list(extracted_dir.rglob("platform.json"))
             self.assertGreater(len(platform_json_files), 0)
-            print("✅ Platform extracted with valid platform.json")
+            print(f"✅ Platform extracted with valid platform.json")
 
             # Checksums were removed from the system
             print("✅ No checksum verification (removed by design)")
@@ -154,7 +155,7 @@ class TestRealPlatformIOCache(unittest.TestCase):
                 len(lock_files), 0
             )  # Lock files may not exist after completion
             print(
-                "✅ Lock mechanism used (lock files may be cleaned up after completion)"
+                f"✅ Lock mechanism used (lock files may be cleaned up after completion)"
             )
 
         print("\n📋 Final transformed platformio.ini:")
@@ -162,7 +163,7 @@ class TestRealPlatformIOCache(unittest.TestCase):
             if "platform =" in line:
                 print(f"  {line}")
 
-        print("\n📊 Cache statistics:")
+        print(f"\n📊 Cache statistics:")
         print(f"  Cache directory: {self.cache_dir}")
         # Get the first artifact directory
         first_artifact_dir = artifact_dirs[0]

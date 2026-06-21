@@ -1,26 +1,19 @@
-from ci.util.global_interrupt_handler import handle_keyboard_interrupt
-
-
 #!/usr/bin/env python3
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
-"""RunningProcessGroup - Unified process execution management for FastLED CI.
-
-IMPORTANT: Always use flush=True with print() statements to prevent stdout buffering issues
-when output is piped to other processes (e.g., codeup, CI tools). Python switches from line-buffered
-to fully-buffered mode when stdout is not a TTY, which can cause multi-second delays in output.
-"""
+"""RunningProcessGroup - Unified process execution management for FastLED CI."""
 
 import os
 import subprocess
 import sys
+import threading
 import time
+import traceback
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Optional, cast
+from typing import Dict, List, Optional, cast
 
-from running_process import RunningProcess
-
+from ci.util.running_process import RunningProcess
 from ci.util.test_exceptions import (
     TestExecutionFailedException,
     TestFailureInfo,
@@ -38,16 +31,6 @@ from ci.util.test_runner import (
     _handle_stuck_processes,
     extract_error_snippet,
 )
-
-
-def _get_output_lines(proc: RunningProcess) -> list[str]:
-    """Convert process stdout to a list of lines for extract_error_snippet."""
-    output = proc.stdout
-    if isinstance(output, bytes):
-        output = output.decode("utf-8", errors="replace")
-    if not output:
-        return []
-    return output.splitlines()
 
 
 class ExecutionMode(Enum):
@@ -81,7 +64,7 @@ class GroupStatus:
     """Status information for all processes in a group."""
 
     group_name: str
-    processes: list[ProcessStatus]
+    processes: List[ProcessStatus]
     total_processes: int
     completed_processes: int
     failed_processes: int
@@ -115,7 +98,7 @@ class RunningProcessGroup:
 
     def __init__(
         self,
-        processes: Optional[list[RunningProcess]] = None,
+        processes: Optional[List[RunningProcess]] = None,
         config: Optional[ProcessExecutionConfig] = None,
         name: str = "ProcessGroup",
     ):
@@ -129,11 +112,11 @@ class RunningProcessGroup:
         self.processes = processes or []
         self.config = config or ProcessExecutionConfig()
         self.name = name
-        self._dependencies: dict[RunningProcess, list[RunningProcess]] = {}
+        self._dependencies: Dict[RunningProcess, List[RunningProcess]] = {}
 
         # Status tracking
-        self._process_start_times: dict[RunningProcess, datetime] = {}
-        self._process_last_output: dict[RunningProcess, str] = {}
+        self._process_start_times: Dict[RunningProcess, datetime] = {}
+        self._process_last_output: Dict[RunningProcess, str] = {}
         self._status_monitoring_active: bool = False
 
     def add_process(self, process: RunningProcess) -> None:
@@ -163,7 +146,7 @@ class RunningProcessGroup:
             self._dependencies[process] = []
         self._dependencies[process].append(depends_on)
 
-    def add_sequential_chain(self, processes: list[RunningProcess]) -> None:
+    def add_sequential_chain(self, processes: List[RunningProcess]) -> None:
         """Add processes that must run in sequence.
 
         Args:
@@ -176,7 +159,7 @@ class RunningProcessGroup:
         for i in range(1, len(processes)):
             self.add_dependency(processes[i], processes[i - 1])
 
-    def run(self) -> list[ProcessTiming]:
+    def run(self) -> List[ProcessTiming]:
         """Execute all processes according to the configuration.
 
         Returns:
@@ -185,10 +168,7 @@ class RunningProcessGroup:
         if not self.processes:
             return []
 
-        # Simplified message - avoid technical jargon like "process group"
-        # Just show the group name if it's user-friendly, otherwise skip
-        if self.name and self.name != "TestProcesses":
-            print(f"Running {self.name}...", flush=True)
+        print(f"Running process group: {self.name}")
 
         if self.config.execution_mode == ExecutionMode.PARALLEL:
             return self._run_parallel()
@@ -199,13 +179,13 @@ class RunningProcessGroup:
         else:
             raise ValueError(f"Unknown execution mode: {self.config.execution_mode}")
 
-    def _run_parallel(self) -> list[ProcessTiming]:
+    def _run_parallel(self) -> List[ProcessTiming]:
         """Execute processes in parallel (based on test_runner._run_processes_parallel)."""
         if not self.processes:
             return []
 
         # Create a shared output handler for formatting
-        ProcessOutputHandler(verbose=self.config.verbose)
+        output_handler = ProcessOutputHandler(verbose=self.config.verbose)
 
         # Configure Windows console for UTF-8 output if needed
         if os.name == "nt":  # Windows
@@ -223,40 +203,10 @@ class RunningProcessGroup:
         for proc in self.processes:
             cmd_str = proc.get_command_str()
             if proc.proc is None:  # Only start if not already running
-                proc.start()
-                # Create user-friendly display message
-                display_msg = cmd_str
-                if "meson_example_runner" in cmd_str:
-                    # Extract example names from command (after the .py script)
-                    parts = cmd_str.split()
-                    examples: list[str] = []
-                    found_script = False
-                    for p in parts:
-                        if "meson_example_runner" in p:
-                            found_script = True
-                            continue
-                        if not found_script:
-                            continue
-                        # Skip flags
-                        if p.startswith("-"):
-                            continue
-                        examples.append(p)
-                    if examples:
-                        display_msg = f"Compiling: {', '.join(examples)}"
-                    else:
-                        display_msg = "Compiling examples"
-                elif "ci/util/" in cmd_str:
-                    display_msg = cmd_str.split("ci/util/")[-1]
-                elif "ci\\" in cmd_str or "ci/" in cmd_str:
-                    # Extract just the script name
-                    parts = cmd_str.replace("\\", "/").split("/")
-                    for i, part in enumerate(parts):
-                        if part in ("ci", "util") and i + 1 < len(parts):
-                            display_msg = "/".join(parts[i:])
-                            break
-                print(f"{display_msg}", flush=True)
+                proc.run()
+                print(f"Started: {cmd_str}")
             else:
-                print(f"  Already running: {cmd_str}", flush=True)
+                print(f"Process already running: {cmd_str}")
 
         # Monitor all processes for output and completion
         active_processes = self.processes.copy()
@@ -265,12 +215,12 @@ class RunningProcessGroup:
         runner_timeouts: list[int] = [
             p.timeout for p in self.processes if p.timeout is not None
         ]
-        global_timeout: Optional[int] = self.config.timeout_seconds
+        global_timeout: int | None = self.config.timeout_seconds
         if global_timeout is None and runner_timeouts:
             global_timeout = max(runner_timeouts) + 60  # Add 1 minute buffer
 
         # Track last activity time for each process to detect stuck processes
-        {proc: time.time() for proc in active_processes}
+        last_activity_time = {proc: time.time() for proc in active_processes}
         stuck_process_timeout = self.config.stuck_timeout_seconds
 
         # Track failed processes for proper error reporting
@@ -280,7 +230,7 @@ class RunningProcessGroup:
         ] = []  # Processes that failed with non-zero exit code
 
         # Track completed processes for timing summary
-        completed_timings: list[ProcessTiming] = []
+        completed_timings: List[ProcessTiming] = []
 
         # Create thread-based stuck process monitor if enabled
         stuck_monitor = None
@@ -301,12 +251,9 @@ class RunningProcessGroup:
             while active_processes:
                 # Check global timeout
                 if time_expired():
-                    print(
-                        f"\nGlobal timeout reached after {global_timeout} seconds",
-                        flush=True,
-                    )
-                    print("\033[91m###### ERROR ######\033[0m", flush=True)
-                    print("Tests failed due to global timeout", flush=True)
+                    print(f"\nGlobal timeout reached after {global_timeout} seconds")
+                    print("\033[91m###### ERROR ######\033[0m")
+                    print("Tests failed due to global timeout")
                     failures: list[TestFailureInfo] = []
                     for p in active_processes:
                         failed_processes.append(
@@ -340,8 +287,7 @@ class RunningProcessGroup:
                             len(exit_failed_processes) + len(failed_processes)
                         ) >= self.config.max_failures_before_abort:
                             print(
-                                f"\nExceeded failure threshold ({self.config.max_failures_before_abort}). Aborting remaining tests.",
-                                flush=True,
+                                f"\nExceeded failure threshold ({self.config.max_failures_before_abort}). Aborting remaining tests."
                             )
                             # Kill any remaining active processes
                             for p in active_processes:
@@ -367,31 +313,25 @@ class RunningProcessGroup:
                 if not any_activity:
                     time.sleep(0.01)
 
-        except KeyboardInterrupt:
-            # Kill all active child processes on interrupt
-            for proc in active_processes:
-                proc.kill()
-            handle_keyboard_interrupt(KeyboardInterrupt())
-            raise
         finally:
             # Clean up monitoring
             if stuck_monitor:
-                stuck_monitor.shutdown()
+                for proc in self.processes:
+                    stuck_monitor.stop_monitoring(proc)
             self._status_monitoring_active = False
 
         # Check for processes that failed with non-zero exit codes
         if exit_failed_processes:
-            print("\n\033[91m###### ERROR ######\033[0m", flush=True)
+            print(f"\n\033[91m###### ERROR ######\033[0m")
             print(
-                f"Tests failed due to {len(exit_failed_processes)} process(es) with non-zero exit codes:",
-                flush=True,
+                f"Tests failed due to {len(exit_failed_processes)} process(es) with non-zero exit codes:"
             )
             for proc, exit_code in exit_failed_processes:
-                print(f"  - {proc.command} (exit code {exit_code})", flush=True)
+                print(f"  - {proc.command} (exit code {exit_code})")
             failures: list[TestFailureInfo] = []
             for proc, exit_code in exit_failed_processes:
                 # Extract error snippet from process output
-                error_snippet = extract_error_snippet(_get_output_lines(proc))
+                error_snippet = extract_error_snippet(proc.accumulated_output)
 
                 failures.append(
                     TestFailureInfo(
@@ -406,14 +346,11 @@ class RunningProcessGroup:
 
         # Check for failed processes (killed due to timeout/stuck)
         if failed_processes:
-            print("\n\033[91m###### ERROR ######\033[0m", flush=True)
-            print(
-                f"Tests failed due to {len(failed_processes)} killed process(es):",
-                flush=True,
-            )
+            print(f"\n\033[91m###### ERROR ######\033[0m")
+            print(f"Tests failed due to {len(failed_processes)} killed process(es):")
             for cmd in failed_processes:
-                print(f"  - {cmd}", flush=True)
-            print("Processes were killed due to timeout/stuck detection", flush=True)
+                print(f"  - {cmd}")
+            print("Processes were killed due to timeout/stuck detection")
             failures: list[TestFailureInfo] = []
             for cmd in failed_processes:
                 failures.append(
@@ -487,10 +424,9 @@ class RunningProcessGroup:
         if cached:
             return cached
 
-        # Fall back to stdout output
-        lines = _get_output_lines(process)
-        if lines:
-            last_line = lines[-1].strip()
+        # Fall back to accumulated output
+        if process.accumulated_output:
+            last_line = process.accumulated_output[-1].strip()
             self._process_last_output[process] = last_line
             return last_line
 
@@ -502,9 +438,8 @@ class RunningProcessGroup:
 
     def _update_process_output(self, process: RunningProcess) -> None:
         """Update cached last output line for a process."""
-        lines = _get_output_lines(process)
-        if lines:
-            last_line = lines[-1].strip()
+        if process.accumulated_output:
+            last_line = process.accumulated_output[-1].strip()
             self._process_last_output[process] = last_line
 
     def _handle_stuck_processes(
@@ -528,7 +463,7 @@ class RunningProcessGroup:
         failures: list[TestFailureInfo] = []
 
         for proc, exit_code in exit_failed_processes:
-            error_snippet = extract_error_snippet(_get_output_lines(proc))
+            error_snippet = extract_error_snippet(proc.accumulated_output)
             failures.append(
                 TestFailureInfo(
                     test_name=_extract_test_name(proc.command),
@@ -561,7 +496,7 @@ class RunningProcessGroup:
         active_processes: list[RunningProcess],
         exit_failed_processes: list[tuple[RunningProcess, int]],
         failed_processes: list[str],
-        completed_timings: list[ProcessTiming],
+        completed_timings: List[ProcessTiming],
         stuck_monitor: Optional[ProcessStuckMonitor],
     ) -> bool:
         """Process active tests, return True if any activity occurred."""
@@ -581,7 +516,7 @@ class RunningProcessGroup:
             if proc.finished:
                 any_activity = True
                 # Get the exit code to check for failure
-                exit_code = cast(int, proc.wait())
+                exit_code = proc.wait()
 
                 # Process completed, remove from active list
                 active_processes.remove(proc)
@@ -600,10 +535,7 @@ class RunningProcessGroup:
 
                 # Check for non-zero exit code (failure)
                 if exit_code != 0:
-                    print(
-                        f"Process failed with exit code {exit_code}: {proc.command}",
-                        flush=True,
-                    )
+                    print(f"Process failed with exit code {exit_code}: {proc.command}")
                     exit_failed_processes.append((proc, exit_code))
                     # Early abort if we reached the failure threshold
                     if (
@@ -626,25 +558,25 @@ class RunningProcessGroup:
 
         return any_activity
 
-    def _run_sequential(self) -> list[ProcessTiming]:
+    def _run_sequential(self) -> List[ProcessTiming]:
         """Execute processes in sequence."""
-        completed_timings: list[ProcessTiming] = []
+        completed_timings: List[ProcessTiming] = []
 
         # Enable status monitoring
         self._status_monitoring_active = True
         try:
             for process in self.processes:
-                print(f"Running: {process.get_command_str()}", flush=True)
+                print(f"Running: {process.get_command_str()}")
 
                 # Track process start time
                 self._track_process_start(process)
 
                 # Start the process if not already running
                 if process.proc is None:
-                    process.start()
+                    process.run()
 
                 try:
-                    exit_code = cast(int, process.wait())
+                    exit_code = process.wait()
 
                     # Collect timing data
                     if process.duration is not None:
@@ -658,7 +590,7 @@ class RunningProcessGroup:
                     # Check for failure
                     if exit_code != 0:
                         error_snippet = extract_error_snippet(
-                            _get_output_lines(process)
+                            process.accumulated_output
                         )
                         failure = TestFailureInfo(
                             test_name=_extract_test_name(process.command),
@@ -671,9 +603,6 @@ class RunningProcessGroup:
                             f"Process failed with exit code {exit_code}", [failure]
                         )
 
-                except KeyboardInterrupt as ki:
-                    handle_keyboard_interrupt(ki)
-                    raise
                 except Exception as e:
                     print(f"Process failed: {process.get_command_str()} - {e}")
                     raise
@@ -682,9 +611,9 @@ class RunningProcessGroup:
 
         return completed_timings
 
-    def _run_with_dependencies(self) -> list[ProcessTiming]:
+    def _run_with_dependencies(self) -> List[ProcessTiming]:
         """Execute processes respecting dependency order."""
-        completed_timings: list[ProcessTiming] = []
+        completed_timings: List[ProcessTiming] = []
         completed_processes: set[RunningProcess] = set()
         remaining_processes = self.processes.copy()
 
@@ -710,17 +639,17 @@ class RunningProcessGroup:
 
                 # Run the first ready process
                 process = ready_processes[0]
-                print(f"Running: {process.get_command_str()}", flush=True)
+                print(f"Running: {process.get_command_str()}")
 
                 # Track process start time
                 self._track_process_start(process)
 
                 # Start the process if not already running
                 if process.proc is None:
-                    process.start()
+                    process.run()
 
                 try:
-                    exit_code = cast(int, process.wait())
+                    exit_code = process.wait()
 
                     # Collect timing data
                     if process.duration is not None:
@@ -738,7 +667,7 @@ class RunningProcessGroup:
                     # Check for failure
                     if exit_code != 0:
                         error_snippet = extract_error_snippet(
-                            _get_output_lines(process)
+                            process.accumulated_output
                         )
                         failure = TestFailureInfo(
                             test_name=_extract_test_name(process.command),
@@ -751,9 +680,6 @@ class RunningProcessGroup:
                             f"Process failed with exit code {exit_code}", [failure]
                         )
 
-                except KeyboardInterrupt as ki:
-                    handle_keyboard_interrupt(ki)
-                    raise
                 except Exception as e:
                     print(f"Process failed: {process.get_command_str()} - {e}")
                     raise

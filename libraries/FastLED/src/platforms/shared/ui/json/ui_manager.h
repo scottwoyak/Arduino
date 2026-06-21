@@ -1,61 +1,58 @@
 #pragma once
 
-// IWYU pragma: private
+#include "fl/singleton.h"
 
-#include "fl/stl/singleton.h"
+#include "fl/map.h"
+#include "fl/memory.h"
+#include "fl/set.h"
+#include "fl/engine_events.h"
 
-#include "fl/stl/map.h"
-#include "fl/stl/memory.h"
-#include "fl/stl/set.h"
-#include "fl/system/engine_events.h"
-
-#include "fl/stl/json.h"
-#include "fl/stl/json.h"
-#include "fl/stl/function.h"
+#include "fl/json.h"
+#include "fl/json.h"
+#include "fl/function.h"
 #include "platforms/shared/ui/json/ui_internal.h"
-#include "fl/stl/noexcept.h"
 
 namespace fl {
 
 class JsonUiManager : fl::EngineEvents::Listener {
   public:
     using Callback = fl::function<void(const char *)>;
-    JsonUiManager(Callback updateJs) FL_NOEXCEPT;
+    JsonUiManager(Callback updateJs);
     ~JsonUiManager();
 
-    void addComponent(fl::weak_ptr<JsonUiInternal> component) FL_NOEXCEPT;
-    void removeComponent(fl::weak_ptr<JsonUiInternal> component) FL_NOEXCEPT;
+    void addComponent(fl::weak_ptr<JsonUiInternal> component);
+    void removeComponent(fl::weak_ptr<JsonUiInternal> component);
 
     // Force immediate processing of any pending updates (for testing)
-    void processPendingUpdates() FL_NOEXCEPT;
+    void processPendingUpdates();
 
     // Internal representation.
-    void updateUiComponents(const char *jsonStr) FL_NOEXCEPT;
-    void executeUiUpdates(const fl::json &doc) FL_NOEXCEPT;
+    void updateUiComponents(const char *jsonStr);
+    void executeUiUpdates(const fl::Json &doc);
 
-    void resetCallback(Callback updateJs) FL_NOEXCEPT {
+    void resetCallback(Callback updateJs) {
       mUpdateJs = updateJs;
     }
 
-    JsonUiInternalPtr findUiComponent(const char* id_or_name) FL_NOEXCEPT;
+    JsonUiInternalPtr findUiComponent(const char* id_or_name);
 
 
   private:
     
     typedef fl::VectorSet<fl::weak_ptr<JsonUiInternal>> JsonUIRefSet;
 
-    void onEndFrame() FL_NOEXCEPT override;
+    void onEndFrame() override;
 
-    fl::vector<JsonUiInternalPtr> getComponents() FL_NOEXCEPT;
-    void toJson(fl::json &json) FL_NOEXCEPT;
-    JsonUiInternalPtr findUiComponent(const fl::string& idStr) FL_NOEXCEPT;
+    fl::vector<JsonUiInternalPtr> getComponents();
+    void toJson(fl::Json &json);
+    JsonUiInternalPtr findUiComponent(const fl::string& idStr);
 
     Callback mUpdateJs;
     JsonUIRefSet mComponents;
     fl::mutex mMutex;
 
     bool mItemsAdded = false;
-    fl::json mPendingJsonUpdate;
+    fl::Json mPendingJsonUpdate;
     bool mHasPendingUpdate = false;
 };
 

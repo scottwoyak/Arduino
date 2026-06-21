@@ -1,21 +1,16 @@
-// IWYU pragma: private
-
 /// @file clockless.cpp
 /// Implementation of IAdafruitNeoPixelDriver
 /// 
 /// This file contains the actual Adafruit_NeoPixel integration, keeping the
 /// dependency isolated from header files to avoid PlatformIO LDF issues.
 
-// IWYU pragma: begin_keep
 #include <Adafruit_NeoPixel.h>
-// IWYU pragma: end_keep
 
 
-#include "fl/stl/unique_ptr.h"
-#include "fl/stl/memory.h"
+#include "fl/unique_ptr.h"
+#include "fl/memory.h"
 #include "pixel_iterator.h"
 #include "platforms/adafruit/driver.h"
-#include "fl/stl/noexcept.h"
 
 namespace fl {
 
@@ -32,14 +27,14 @@ public:
     
     ~AdafruitNeoPixelDriverImpl() override = default;
     
-    void init(int dataPin) FL_NOEXCEPT override {
+    void init(int dataPin) override {
         if (!mInitialized) {
             mDataPin = dataPin;
             mInitialized = true;
         }
     }
     
-    void showPixels(PixelIterator& pixelIterator) FL_NOEXCEPT override {
+    void showPixels(PixelIterator& pixelIterator) override {
         if (!mInitialized) {
             return;
         }
@@ -49,7 +44,7 @@ public:
         auto rgbw = pixelIterator.get_rgbw();
         
         // Determine the appropriate NeoPixel type based on RGBW mode
-        u16 neoPixelType = NEO_KHZ800;
+        uint16_t neoPixelType = NEO_KHZ800;
         if (rgbw.active()) {
             neoPixelType |= NEO_RGBW;  // RGBW mode
         } else {
@@ -70,7 +65,7 @@ public:
         if (rgbw.active()) {
             // RGBW mode
             for (int i = 0; pixelIterator.has(1); ++i) {
-                u8 r, g, b, w;
+                fl::u8 r, g, b, w;
                 pixelIterator.loadAndScaleRGBW(&r, &g, &b, &w);
                 mNeoPixel->setPixelColor(i, r, g, b, w);
                 pixelIterator.advanceData();
@@ -78,7 +73,7 @@ public:
         } else {
             // RGB mode
             for (int i = 0; pixelIterator.has(1); ++i) {
-                u8 r, g, b;
+                fl::u8 r, g, b;
                 pixelIterator.loadAndScaleRGB(&r, &g, &b);
                 mNeoPixel->setPixelColor(i, r, g, b);
                 pixelIterator.advanceData();
@@ -91,7 +86,7 @@ public:
 };
 
 // Static factory method implementation
-fl::unique_ptr<IAdafruitNeoPixelDriver> IAdafruitNeoPixelDriver::create() FL_NOEXCEPT {
+fl::unique_ptr<IAdafruitNeoPixelDriver> IAdafruitNeoPixelDriver::create() {
     return fl::make_unique<AdafruitNeoPixelDriverImpl>();
 }
 
