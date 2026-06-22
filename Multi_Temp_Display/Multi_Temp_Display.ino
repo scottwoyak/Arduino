@@ -42,20 +42,25 @@ void setup()
    feather.print("Sensors... ", Color::LABEL);
    for (int i = 0; i < NUM_SENSORS; i++)
    {
-      SerialX::println();
-      SerialX::println("Sensor ", i);
+      Serial.println();
+      Serial.print("Sensor ");
+      Serial.println(i);
       multi.select(i);
       if (sensors[i]->begin(true))
       {
-         SerialX::println("         Type: ", sensors[i]->type());
-         SerialX::println("      Address: ", sensors[i]->address());
-         SerialX::println("           ID: ", sensors[i]->id());
-         SerialX::println("   Correction: ", sensors[i]->tempCorrectionF(), 3);
+         Serial.print("         Type: ");
+         Serial.println(sensors[i]->type());
+         Serial.print("      Address: ");
+         Serial.println(sensors[i]->address());
+         Serial.print("           ID: ");
+         Serial.println(sensors[i]->id());
+         Serial.print("   Correction: ");
+         Serial.println(sensors[i]->tempCorrectionF(), 3);
       }
       else
       {
          // TODO null out this sensor
-         SerialX::println("FAILED");
+         Serial.println("FAILED");
       }
    }
    feather.printlnR("ok", Color::VALUE);

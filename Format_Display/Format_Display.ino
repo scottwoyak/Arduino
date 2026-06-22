@@ -20,13 +20,30 @@ constexpr auto NUM_VIEWS = 7;
 
 void toSerial(const char* format, Format& f)
 {
-   SerialX::println("Format '", format, "'");
-   SerialX::println("    precision: ", String(f.precision).c_str());
-   SerialX::println("       prefix: '", f.prefix.c_str(), "'");
-   SerialX::println("      postfix: '", f.postfix.c_str(), "'");
-   SerialX::println("      errChar: ", String(f.errChar).c_str());
-   SerialX::println("  includePlus: ", f.includePlus ? "true" : "false");
-   SerialX::println("       length: ", String(f.length).c_str());
+   Serial.print("Format '");
+   Serial.print(format);
+   Serial.println("'");
+
+   Serial.print("    precision: ");
+   Serial.println(f.precision);
+
+   Serial.print("       prefix: '");
+   Serial.print(f.prefix.c_str());
+   Serial.println("'");
+
+   Serial.print("      postfix: '");
+   Serial.print(f.postfix.c_str());
+   Serial.println("'");
+
+   Serial.print("      errChar: ");
+   Serial.println(f.errChar);
+
+   Serial.print("  includePlus: ");
+   Serial.println(f.includePlus ? "true" : "false");
+
+   Serial.print("       length: ");
+   Serial.println(f.length);
+
    const char* alignment = "unknown";
    switch (f.alignment)
    {
@@ -42,8 +59,10 @@ void toSerial(const char* format, Format& f)
       alignment = "Right";
       break;
    }
-   SerialX::println("    alignment: ", alignment);
-   SerialX::println();
+
+   Serial.print("    alignment: ");
+   Serial.println(alignment);
+   Serial.println();
 }
 void println(const char* format, double value)
 {

@@ -1,81 +1,35 @@
 #pragma once
 
-class SerialX
+namespace SerialX
 {
-public:
-   static void begin()
-   {
-	  uint32_t start = millis();
+	/// <summary>
+	/// Default serial baud rate.
+	/// </summary>
+	constexpr uint32_t DEFAULT_BAUD = 115200;
 
-      // start serial port
-      Serial.begin(115200);
+	/// <summary>
+	/// Default time to wait for a serial monitor connection in milliseconds.
+	/// </summary>
+	constexpr uint32_t DEFAULT_TIMEOUT_MS = 500;
 
-      // wait a few seconds for the serial monitor to open
-      while ((millis() - start) < 2000 && !Serial)
-      {
-      };
-   }
+	/// <summary>
+	/// Initializes the serial port and waits briefly for a monitor connection.
+	/// </summary>
+	/// <param name="baud">The serial baud rate.</param>
+	/// <param name="timeoutMs">The maximum wait time for a serial connection in milliseconds. Use 0 to skip waiting.</param>
+	inline void begin(uint32_t baud = DEFAULT_BAUD, uint32_t timeoutMs = DEFAULT_TIMEOUT_MS)
+	{
+		Serial.begin(baud);
 
-   static void print(const char* str1=nullptr, const char* str2 = nullptr, const char* str3 = nullptr)
-   {
-      if (str1 != nullptr)
-      {
-         Serial.print(str1);
-      }
-      if (str2 != nullptr)
-      {
-         Serial.print(str2);
-      }
-      if (str3 != nullptr)
-      {
-         Serial.print(str3);
-      }
-   }
-   static void println(const char* str1=nullptr, const char* str2 = nullptr, const char* str3 = nullptr)
-   {
-      print(str1, str2, str3);
-      Serial.println();
-   };
+		if (timeoutMs == 0)
+		{
+			return;
+		}
 
-
-   static void print(const char* str, int value, int base = 10)
-   {
-      Serial.print(str);
-      Serial.print(value, base);
-   }
-   static void println(const char* str, int value, int base = 10)
-   {
-      print(str, value, base);
-      Serial.println();
-   };
-   static void print(const char* str, long value, int base = 10)
-   {
-      Serial.print(str);
-      Serial.print(value, base);
-   }
-   static void println(const char* str, long value, int base = 10)
-   {
-      print(str, value, base);
-      Serial.println();
-   };
-   static void print(const char* str, unsigned long value, int base = 10)
-   {
-      Serial.print(str);
-      Serial.print(value, base);
-   }
-   static void println(const char* str, unsigned long value, int base = 10)
-   {
-      print(str, value, base);
-      Serial.println();
-   };
-   static void print(const char* str, double value, int precision=2)
-   {
-      Serial.print(str);
-      Serial.print(value, precision);
-   }
-   static void println(const char* str, double value, int precision=2)
-   {
-      print(str, value, precision);
-      Serial.println();
-   };
-};
+		const uint32_t start = millis();
+		while (!Serial && (millis() - start) < timeoutMs)
+		{
+			delay(1);
+		}
+	}
+}

@@ -54,9 +54,12 @@ void setup()
    {
       feather.printlnR("ok", Color::VALUE);
 
-      SerialX::println("   Type: ", sensor.type());
-      SerialX::println("   Address: ", sensor.address());
-      SerialX::println("   ID: ", sensor.id());
+      Serial.print("   Type: ");
+      Serial.println(sensor.type());
+      Serial.print("   Address: ");
+      Serial.println(sensor.address());
+      Serial.print("   ID: ");
+      Serial.println(sensor.id());
    }
    else
    {

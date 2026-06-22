@@ -25,9 +25,9 @@ Field* voltsField = powerPoint.addValueField("volts", 2);
 
 void goToSleep()
 {
-   SerialX::println("Going to sleep for 60 seconds...");
-   SerialX::println();
-   SerialX::println();
+   Serial.println("Going to sleep for 60 seconds...");
+   Serial.println();
+   Serial.println();
    delay(100); // let serial finish
 
    // sleep for 60 seconds (reboot upon wake up)
@@ -38,7 +38,7 @@ void setup()
 {
    Wire.begin();
    SerialX::begin();
-   SerialX::println("Initializing... ");
+   Serial.println("Initializing... ");
 
    feather.begin();
    pinMode(BUILTIN_LED, OUTPUT);
@@ -53,22 +53,22 @@ void setup()
    feather.print("Sensor... ");
    if (sensor.begin(true))
    {
-      SerialX::println("ok");
+      Serial.println("ok");
    }
    else
    {
-      SerialX::print("FAILED");
+      Serial.print("FAILED");
       goToSleep();
    }
 
    feather.print("Battery... ");
    if (battery.begin())
    {
-      SerialX::println("ok");
+      Serial.println("ok");
    }
    else
    {
-      SerialX::print("FAILED");
+      Serial.print("FAILED");
       goToSleep();
    }
 
@@ -91,7 +91,7 @@ void loop()
    voltsField->set(battery.cellVoltage());
 
    // Write points
-   SerialX::println("Writing data points...");
+   Serial.println("Writing data points...");
    if (airPoint.post(&client, true)==false)
    {
       Serial.println("InfluxDB write failed: ");

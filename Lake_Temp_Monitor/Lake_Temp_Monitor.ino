@@ -68,7 +68,7 @@ void setup()
 
    SerialX::begin();
 
-   SerialX::println("Initializing");
+   Serial.println("Initializing");
 
    // Initialize I2C with custom pins
    Wire.begin(I2C_SDA, I2C_SCL);
@@ -76,13 +76,14 @@ void setup()
    status.begin();
    redLed.begin();
 
-   SerialX::print("Sensors... ");
+   Serial.print("Sensors... ");
    for (int i = 0; i < NUM_SENSORS; i++)
    {
-      SerialX::println();
-      SerialX::print("Sensor ", i);
-      SerialX::print(": ");
-      SerialX::println(locations[i]);
+      Serial.println();
+      Serial.print("Sensor ");
+      Serial.print(i);
+      Serial.print(": ");
+      Serial.println(locations[i]);
 
       bool status;
       if (i == NUM_SENSORS - 1)
@@ -97,18 +98,22 @@ void setup()
 
       if (status)
       {
-         SerialX::println("         Type: ", sensors[i]->type());
-         SerialX::println("      Address: ", sensors[i]->address());
-         SerialX::println("           ID: ", sensors[i]->id());
-         SerialX::println("   Correction: ", sensors[i]->tempCorrectionF(), 3);
+         Serial.print("         Type: ");
+         Serial.println(sensors[i]->type());
+         Serial.print("      Address: ");
+         Serial.println(sensors[i]->address());
+         Serial.print("           ID: ");
+         Serial.println(sensors[i]->id());
+         Serial.print("   Correction: ");
+         Serial.println(sensors[i]->tempCorrectionF(), 3);
       }
       else
       {
          // TODO null out this sensor
-         SerialX::println("FAILED");
+         Serial.println("FAILED");
       }
    }
-   SerialX::println("ok");
+   Serial.println("ok");
 
    Influx::begin(WIFI_SSID, WIFI_PASSWORD, &client, &status);
 
