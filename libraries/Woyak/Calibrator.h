@@ -307,10 +307,14 @@ private:
    /// <summary>
    /// Records a sample if enough time has elapsed since the last sample.
    /// Samples are recorded at intervals of historyMs / 10, up to 100 samples.
+   /// When multiple sensors are updated within the same timestamp, later sensor updates
+   /// are merged into the most recently recorded snapshot.
    /// </summary>
    void _recordSample(uint8_t sensorIndex, float value)
    {
-      ulong currentTimeMs = millis();
+      // Use TimedStats::tickFunc if available, otherwise fall back to millis()
+      unsigned long (*ticksFunc)() = TimedStats::tickFunc != nullptr ? TimedStats::tickFunc : millis;
+      ulong currentTimeMs = ticksFunc();
 
       // Check if we should record a sample (only check for sensor 0 to avoid redundant checks)
       if (sensorIndex == 0 && (currentTimeMs - _lastSampleTimeMs >= _sampleIntervalMs))
@@ -327,6 +331,15 @@ private:
 
             _sampleCount++;
          }
+
+         return;
+      }
+
+      // If a sample was just recorded at this same timestamp, update this sensor's value
+      // so sequential sensor writes in the same tick are captured in the same snapshot.
+      if (_sampleCount > 0 && currentTimeMs == _lastSampleTimeMs)
+      {
+         _samples[sensorIndex][_sampleCount - 1] = _measurements[sensorIndex]->average();
       }
    }
 };
