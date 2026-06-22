@@ -1,7 +1,7 @@
 
 #include "Feather.h"
 #include "SerialX.h"
-#include "TimedAverager.h"
+#include "TimedStats.h"
 #include "TimedHistogramChart.h"
 #include "WindMeter.h"
 #include "Slider.h"
@@ -17,7 +17,7 @@ Stopwatch sw;
 constexpr uint16_t WIND_AVERAGE_DURATION_S = 10 * 60;
 constexpr uint8_t WIND_AVERAGE_INTERVAL_S = 10;
 constexpr uint8_t WIND_AVERAGE_BINS = WIND_AVERAGE_DURATION_S / WIND_AVERAGE_INTERVAL_S;
-TimedAverager windAverager(WIND_AVERAGE_DURATION_S * 1000, WIND_AVERAGE_BINS);
+TimedStats windAverager(WIND_AVERAGE_DURATION_S * 1000, WIND_AVERAGE_BINS);
 
 Format speedFormat("##.# mph");
 

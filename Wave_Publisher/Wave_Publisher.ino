@@ -1,4 +1,4 @@
-#include <WiFiMulti.h>
+#include <WiFi.h>
 #include <SerialX.h>
 #include <WiFiSettings.h>
 #include <TelemetryClient.h>
@@ -10,7 +10,6 @@
 constexpr uint8_t TRIGGER_PIN = 6;
 constexpr uint8_t ECHO_PIN = 5;
 
-WiFiMulti wifi;
 NeoPixelStatus status;
 
 constexpr auto NUM_DECIMALS = 1;
@@ -32,15 +31,15 @@ void setup()
    pinMode(TRIGGER_PIN, OUTPUT);
    pinMode(ECHO_PIN, INPUT);
 
-   // Connect to WiFi
-   status.setStatus(Status::WIFI_CONNECTING);
-   wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
-   Serial.print("WiFi...");
-   while (wifi.run() != WL_CONNECTED)
-   {
-	  Serial.print(".");
-   }
-   Serial.println("OK");
+	// Connect to WiFi
+	status.setStatus(Status::WIFI_CONNECTING);
+	WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+	Serial.print("WiFi...");
+	while (WiFi.status() != WL_CONNECTED)
+	{
+	 Serial.print(".");
+	}
+	Serial.println("OK");
 
    status.setStatus(Status::WEB_CONNECTING);
    client.setCallbacks(onConnected, onDisconnected, onSendText, onReceiveText, onError, onStarted);

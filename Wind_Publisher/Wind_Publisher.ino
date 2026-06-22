@@ -3,15 +3,13 @@
 // Wind Publisher
 //
 
-#include <WiFiMulti.h>
+#include <WiFi.h>
 #include <SerialX.h>
 #include <WiFiSettings.h>
 #include <TelemetryClient.h>
 #include <Url.h>
 #include <WindMeter.h>
 #include <Status.h>
-
-WiFiMulti wifi;
 
 constexpr uint8_t NUM_DECIMALS = 2;
 TelemetryPublisher client("Wind/Lake", NUM_DECIMALS);
@@ -42,9 +40,9 @@ void setup()
 
    // Connect to WiFi
    status.setStatus(Status::WIFI_CONNECTING);
-   wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
+   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
    Serial.print("WiFi...");
-   while (wifi.run() != WL_CONNECTED)
+   while (WiFi.status() != WL_CONNECTED)
    {
       Serial.print(".");
    }

@@ -1,12 +1,12 @@
 // undefine to use the remote server
 //#define TELEMETRY_LOCAL
 
-#include <WiFiMulti.h>
+#include <WiFi.h>
 
 #include "Feather.h"
 #include "SerialX.h"
 #include "WiFiSettings.h"
-#include "TimedAverager.h"
+#include "TimedStats.h"
 #include "TimedHistogramChart.h"
 #include "Slider.h"
 #include "MultiBar.h"
@@ -15,7 +15,6 @@
 #include "TelemetryClient.h"
 
 Feather feather;
-WiFiMulti wifi;
 RollingRate refreshRate(100);
 Stopwatch sw;
 TelemetrySubscriber client("Wind/Lake");
@@ -23,7 +22,7 @@ TelemetrySubscriber client("Wind/Lake");
 constexpr uint16_t WIND_AVERAGE_DURATION_S = 10 * 60;
 constexpr uint8_t WIND_AVERAGE_INTERVAL_S = 10;     
 constexpr uint8_t WIND_AVERAGE_BINS = WIND_AVERAGE_DURATION_S / WIND_AVERAGE_INTERVAL_S;
-TimedAverager windAverager(WIND_AVERAGE_DURATION_S*1000, WIND_AVERAGE_BINS);
+TimedStats windAverager(WIND_AVERAGE_DURATION_S*1000, WIND_AVERAGE_BINS);
 
 Format speedFormat("##.# mph");
 
@@ -78,7 +77,7 @@ void setup()
    feather.begin();
 
    // Connect to WiFi
-   wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
+   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
    feather.setTextSize(2);
    feather.setCursorY(-feather.charH());
@@ -88,7 +87,7 @@ void setup()
    feather.moveCursorY(4);
 
    feather.print("WiFi...", Color::LABEL);
-   while (wifi.run() != WL_CONNECTED)
+   while (WiFi.status() != WL_CONNECTED)
    {
       feather.print(".", Color::LABEL);
    }

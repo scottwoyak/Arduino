@@ -2,7 +2,7 @@
 //#define TELEMETRY_LOCAL
 
 #include "Feather.h"
-#include <WiFiMulti.h>
+#include <WiFi.h>
 #include "SerialX.h"
 #include "WiFiSettings.h"
 #include "Stopwatch.h"
@@ -15,7 +15,6 @@
 constexpr auto topic = "Test";
 
 Feather feather;
-WiFiMulti wifi;
 Stopwatch sw(false);
 RollingRate queryRate(100); // rate that we get values from the server
 RollingRate changeRate(100); // the rate of changed values, presumable how often the publisher sends them
@@ -31,7 +30,7 @@ void setup()
    feather.begin();
 
    // Connect to WiFi
-   wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
+   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
    feather.setTextSize(2);
    feather.setCursorY(-feather.charH());
@@ -42,7 +41,7 @@ void setup()
    feather.moveCursorY(4);
 
    feather.print("WiFi...", Color::LABEL);
-   while (wifi.run() != WL_CONNECTED)
+   while (WiFi.status() != WL_CONNECTED)
    {
       feather.print(".", Color::LABEL);
    }

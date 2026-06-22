@@ -4,7 +4,7 @@
 #include <WiFi101.h>
 #include <WiFiUdp.h>
 #include <Util.h>
-#include <TimedAverager.h>
+#include <TimedStats.h>
 #include <I2C.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
@@ -25,9 +25,9 @@
 Adafruit_SH1107 display(64, 128, &Wire);
 Adafruit_INA219 ina;
 
-TimedAverager solarVolts(30000);
-TimedAverager batteryVolts(30000);
-TimedAverager batteryMilliAmps(10000);
+TimedStats solarVolts(30000);
+TimedStats batteryVolts(30000);
+TimedStats batteryMilliAmps(10000);
 
 void setup() {
 

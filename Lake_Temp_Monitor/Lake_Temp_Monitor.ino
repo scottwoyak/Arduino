@@ -1,5 +1,5 @@
 #include "TempSensor.h"
-#include "TimedAverager.h"
+#include "TimedStats.h"
 #include "Adafruit_SleepyDog.h"
 #include "SerialX.h"
 #include "Influx.h"
@@ -151,7 +151,7 @@ void loop()
    }
 
    // Check WiFi connection and reconnect if needed
-   if (wifiMulti.run() != WL_CONNECTED)
+   if (WiFi.status() != WL_CONNECTED)
    {
       Serial.println("WiFi connection lost");
       Util::reset(10);

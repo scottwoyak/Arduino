@@ -3,7 +3,7 @@
 //#define TELEMETRY_LOCAL
 
 #include <Feather.h>
-#include <WiFiMulti.h>
+#include <WiFi.h>
 #include <SerialX.h>
 #include <WiFiSettings.h>
 #include <Stopwatch.h>
@@ -15,7 +15,6 @@
 constexpr auto topic = "Test";
 
 Feather feather;
-WiFiMulti wifi;
 Stopwatch sw(false);
 Timer publishTimer(100);
 
@@ -40,7 +39,7 @@ void setup()
    feather.begin();
 
    // Connect to WiFi
-   wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
+   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
    feather.setTextSize(2);
    feather.setCursorY(-feather.charH());
@@ -50,12 +49,12 @@ void setup()
    feather.println("Initializing", Color::HEADING2);
    feather.moveCursorY(4);
 
-   feather.print("WiFi...", Color::LABEL);
-   while (wifi.run() != WL_CONNECTED)
-   {
+	feather.print("WiFi...", Color::LABEL);
+	while (WiFi.status() != WL_CONNECTED)
+	{
 	  feather.print(".", Color::LABEL);
-   }
-   feather.printlnR("OK", Color::VALUE);
+	}
+	feather.printlnR("OK", Color::VALUE);
 
    feather.print("WebSocket...", Color::LABEL);
 

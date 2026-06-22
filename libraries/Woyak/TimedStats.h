@@ -11,7 +11,7 @@
 /// </summary>
 /// <remarks>
 /// This class keeps one extra bucket to blend the boundary between the oldest
-/// and newest time slices, similar to TimedAverager behavior.
+/// and newest time slices so the rolling window transitions smoothly.
 /// </remarks>
 class TimedStats
 {
@@ -65,11 +65,11 @@ public:
    /// <param name="nBuckets">Number of time buckets (plus one blending bucket).</param>
    TimedStats(ulong durationMs, uint nBuckets = 10)
    {
-      uint normalizedBuckets = std::max(nBuckets, (uint)1);
+      uint normalizedBuckets = std::max(nBuckets, static_cast<uint>(1));
 
       _numBuckets = normalizedBuckets + 1;
-      _durationMs = std::max((ulong)1, durationMs);
-      _bucketMs = std::max((ulong)1, (ulong)((float)_durationMs / normalizedBuckets));
+      _durationMs = std::max(durationMs, static_cast<ulong>(1));
+      _bucketMs = std::max(static_cast<ulong>(1), static_cast<ulong>(static_cast<float>(_durationMs) / normalizedBuckets));
 
       _buckets = new Stats*[_numBuckets];
       for (uint i = 0; i < _numBuckets; i++)
@@ -77,15 +77,7 @@ public:
          _buckets[i] = new Stats();
       }
 
-      if (TimedStats::tickFunc != nullptr)
-      {
-         _ticks = TimedStats::tickFunc;
-      }
-      else
-      {
-         _ticks = millis;
-      }
-
+      _ticks = tickFunc != nullptr ? tickFunc : millis;
       _startTicks = _ticks();
       _elapsedTicks = 0;
    }
@@ -176,7 +168,7 @@ public:
          }
 
          float bucketMin = _buckets[i]->min();
-         if (isnan(low) || bucketMin < low)
+         if (std::isnan(low) || bucketMin < low)
          {
             low = bucketMin;
          }
@@ -202,7 +194,7 @@ public:
          }
 
          float bucketMax = _buckets[i]->max();
-         if (isnan(high) || bucketMax > high)
+         if (std::isnan(high) || bucketMax > high)
          {
             high = bucketMax;
          }
@@ -234,8 +226,8 @@ public:
    /// <param name="durationMs">New total duration in milliseconds.</param>
    void setDurationMs(ulong durationMs)
    {
-      _durationMs = std::max((ulong)1, durationMs);
-      _bucketMs = std::max((ulong)1, (ulong)((float)_durationMs / (_numBuckets - 1)));
+      _durationMs = std::max(durationMs, static_cast<ulong>(1));
+      _bucketMs = std::max(static_cast<ulong>(1), static_cast<ulong>(static_cast<float>(_durationMs) / (_numBuckets - 1)));
       reset();
    }
 
@@ -284,7 +276,7 @@ public:
    /// Gets the number of allocated buckets.
    /// </summary>
    /// <returns>Bucket count (includes blending bucket).</returns>
-   uint numBuckets()
+   uint numBuckets() const
    {
       return _numBuckets;
    }
@@ -293,7 +285,7 @@ public:
    /// Gets the current active bucket index.
    /// </summary>
    /// <returns>Zero-based active bucket index.</returns>
-   uint currentBucket()
+   uint currentBucket() const
    {
       return _currentBucket;
    }

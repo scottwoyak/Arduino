@@ -1,14 +1,13 @@
 #include "Feather_ESP32_S3.h"
 #include "Stopwatch.h"
 #include "TempSensor.h"
-#include "TimedAverager.h"
+#include "TimedStats.h"
 #include "RollingStats.h"
 #include "Multiplexer.h"
 #include "Feather.h"
 #include "SerialX.h"
 
-#include <WiFiMulti.h>
-WiFiMulti wifiMulti;
+#include <WiFi.h>
 #define DEVICE "ESP32"
 
 #include <InfluxDbClient.h>
@@ -45,42 +44,42 @@ constexpr auto CORRECTION_AVG_S = 10 * 60;
 // How often we send data to Influx
 constexpr auto INFLUX_INTERVAL_S = 10;
 
-TimedAverager* temps[] =
+TimedStats* temps[] =
 {
-   new TimedAverager(1000 * CURRENT_AVG_S),
-   new TimedAverager(1000 * CURRENT_AVG_S),
-   new TimedAverager(1000 * CURRENT_AVG_S),
-   new TimedAverager(1000 * CURRENT_AVG_S),
-   new TimedAverager(1000 * CURRENT_AVG_S),
-   new TimedAverager(1000 * CURRENT_AVG_S),
+   new TimedStats(1000 * CURRENT_AVG_S),
+   new TimedStats(1000 * CURRENT_AVG_S),
+   new TimedStats(1000 * CURRENT_AVG_S),
+   new TimedStats(1000 * CURRENT_AVG_S),
+   new TimedStats(1000 * CURRENT_AVG_S),
+   new TimedStats(1000 * CURRENT_AVG_S),
 };
 
-TimedAverager* hums[] =
+TimedStats* hums[] =
 {
-   new TimedAverager(1000 * CURRENT_AVG_S),
-   new TimedAverager(1000 * CURRENT_AVG_S),
-   new TimedAverager(1000 * CURRENT_AVG_S),
-   new TimedAverager(1000 * CURRENT_AVG_S),
-   new TimedAverager(1000 * CURRENT_AVG_S),
-   new TimedAverager(1000 * CURRENT_AVG_S),
+   new TimedStats(1000 * CURRENT_AVG_S),
+   new TimedStats(1000 * CURRENT_AVG_S),
+   new TimedStats(1000 * CURRENT_AVG_S),
+   new TimedStats(1000 * CURRENT_AVG_S),
+   new TimedStats(1000 * CURRENT_AVG_S),
+   new TimedStats(1000 * CURRENT_AVG_S),
 };
 
-TimedAverager* tavgs[] = {
-   new TimedAverager(1000 * CORRECTION_AVG_S),
-   new TimedAverager(1000 * CORRECTION_AVG_S),
-   new TimedAverager(1000 * CORRECTION_AVG_S),
-   new TimedAverager(1000 * CORRECTION_AVG_S),
-   new TimedAverager(1000 * CORRECTION_AVG_S),
-   new TimedAverager(1000 * CORRECTION_AVG_S),
+TimedStats* tavgs[] = {
+   new TimedStats(1000 * CORRECTION_AVG_S),
+   new TimedStats(1000 * CORRECTION_AVG_S),
+   new TimedStats(1000 * CORRECTION_AVG_S),
+   new TimedStats(1000 * CORRECTION_AVG_S),
+   new TimedStats(1000 * CORRECTION_AVG_S),
+   new TimedStats(1000 * CORRECTION_AVG_S),
 };
 
-TimedAverager* havgs[] = {
-   new TimedAverager(1000 * CORRECTION_AVG_S),
-   new TimedAverager(1000 * CORRECTION_AVG_S),
-   new TimedAverager(1000 * CORRECTION_AVG_S),
-   new TimedAverager(1000 * CORRECTION_AVG_S),
-   new TimedAverager(1000 * CORRECTION_AVG_S),
-   new TimedAverager(1000 * CORRECTION_AVG_S),
+TimedStats* havgs[] = {
+   new TimedStats(1000 * CORRECTION_AVG_S),
+   new TimedStats(1000 * CORRECTION_AVG_S),
+   new TimedStats(1000 * CORRECTION_AVG_S),
+   new TimedStats(1000 * CORRECTION_AVG_S),
+   new TimedStats(1000 * CORRECTION_AVG_S),
+   new TimedStats(1000 * CORRECTION_AVG_S),
 };
 
 Format tempFormat("###.## F");
@@ -295,10 +294,10 @@ void setup()
 
    // Setup wifi
    WiFi.mode(WIFI_STA);
-   wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
+   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
    feather.print("WiFi", Color::LABEL);
-   while (wifiMulti.run() != WL_CONNECTED)
+   while (WiFi.status() != WL_CONNECTED)
    {
       Serial.print(".");
       delay(100);
@@ -350,7 +349,7 @@ void setup()
 
 // This is the baseline value used to calibrate the other sensors. It can
 // either be one of the sensors, or the average of all the sensors.
-float getBaseline(TimedAverager* values[])
+float getBaseline(TimedStats* values[])
 {
    float sum = 0;
    int count = 0;

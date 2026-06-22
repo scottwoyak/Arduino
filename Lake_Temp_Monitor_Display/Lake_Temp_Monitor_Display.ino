@@ -1,6 +1,6 @@
 #include "Feather.h"
 #include "TempSensor.h"
-#include "TimedAverager.h"
+#include "TimedStats.h"
 #include "Adafruit_SleepyDog.h"
 #include "SerialX.h"
 #include "Influx.h"

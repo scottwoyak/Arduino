@@ -17,11 +17,13 @@
 Format tempFormat("###.## F");
 
 constexpr uint8_t NUM_SENSORS = 8;
+
 constexpr uint8_t INFLUX_TEMP_DECIMAL_PLACES = 3;
 constexpr uint8_t INFLUX_HUMIDITY_DECIMAL_PLACES = 2;
 constexpr uint8_t SERIAL_TEMP_DECIMAL_PLACES = 2;
 constexpr uint8_t SENSOR_CORRECTION_DECIMAL_PLACES = 3;
 constexpr uint8_t WIFI_RESET_DELAY_S = 10;
+constexpr uint16_t SENSOR_READ_INTERVAL_MS = 500;
 constexpr auto INFLUX_MEASUREMENT = "Air";
 constexpr auto INFLUX_INTERVAL_S = 15;
 constexpr auto INFLUX_TEMPERATURE_FIELD_NAME = "temperature";
@@ -31,6 +33,7 @@ Feather feather;
 NeoPixelStatus status(&feather.neoPixel);
 I2CMultiplexor multi;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+Timer sensorTimer(SENSOR_READ_INTERVAL_MS);
 Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
 TempSensor* sensors[NUM_SENSORS];
@@ -38,7 +41,7 @@ SimplePoint* points[NUM_SENSORS];
 Field* tempFields[NUM_SENSORS];
 Field* humFields[NUM_SENSORS];
 
-const char* locations[] = {
+const char* locations[NUM_SENSORS] = {
    "Test 1",
    "Test 2",
    "Test 3",
@@ -124,16 +127,19 @@ void loop()
       lastShowType = showType;
    }
 
-   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   if (sensorTimer.ready())
    {
-      if (!sensors[i]->exists())
+      for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
-         continue;
-      }
+         if (!sensors[i]->exists())
+         {
+            continue;
+         }
 
-      multi.select(i);
-      tempFields[i]->set(sensors[i]->readTemperatureF());
-      humFields[i]->set(sensors[i]->readHumidity());
+         multi.select(i);
+         tempFields[i]->set(sensors[i]->readTemperatureF());
+         humFields[i]->set(sensors[i]->readHumidity());
+      }
    }
 
    if (WiFi.status() != WL_CONNECTED)
@@ -144,7 +150,7 @@ void loop()
    }
 
    feather.setCursor(0, 0);
-   feather.setTextSize(3);
+   feather.setTextSize(2);
    feather.print("Multi Monitor", Color::HEADING);
    feather.println();
    feather.moveCursorY(feather.charH() / 3);
@@ -162,14 +168,13 @@ void loop()
          continue;
       }
 
-      multi.select(i);
       if (showType)
       {
          feather.println(sensors[i]->type(), Color::VALUE);
       }
       else
       {
-         float temp = sensors[i]->readTemperatureF();
+         float temp = tempFields[i]->get();
          feather.println(temp, tempFormat, Color::VALUE);
          Serial.print(i);
          Serial.print(": ");

@@ -3,7 +3,6 @@
 // Wind Monitor
 //
 
-#include <WiFiMulti.h>
 #include <SerialX.h>
 #include <WiFiSettings.h>
 #include <WindMeter.h>
@@ -12,8 +11,6 @@
 #include <TimedBin.h>
 #include <Influx.h>
 #include <ESP32TempSensor.h>
-
-WiFiMulti wifi;
 
 constexpr uint8_t NUM_DECIMALS = 2;
 

@@ -2,7 +2,7 @@
 #include "Feather_ESP32_S3_ST7796S.h"
 #include "Adafruit_INA219.h"
 #include "SerialX.h"
-#include "TimedAverager.h"
+#include "TimedStats.h"
 #include "Influx.h"
 #include "WiFiSettings.h"
 #include "Util.h"
@@ -23,12 +23,12 @@ Format percentFormat("###.#%");
 Format mAhFormat("+####.## mAh");
 Format mAhFormat2("####.## mAh");
 
-TimedAverager displayBatteryVolts(1000);
-TimedAverager displayBatterymA(1000);
-TimedAverager displaySolarVolts(1000);
-TimedAverager displaySolarmA(1000);
-TimedAverager displayLoadVolts(1000);
-TimedAverager displayLoadmA(1000);
+TimedStats displayBatteryVolts(1000);
+TimedStats displayBatterymA(1000);
+TimedStats displaySolarVolts(1000);
+TimedStats displaySolarmA(1000);
+TimedStats displayLoadVolts(1000);
+TimedStats displayLoadmA(1000);
 
 constexpr auto INFLUX_MEASUREMENT = "Power";
 constexpr auto INFLUX_INTERVAL_S = 10;

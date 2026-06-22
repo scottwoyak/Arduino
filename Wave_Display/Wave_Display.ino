@@ -1,6 +1,5 @@
 #include <Feather.h>
 
-#include <WiFiMulti.h>
 #include "SerialX.h"
 #include "WiFiSettings.h"
 #include <Stopwatch.h>

@@ -1,6 +1,6 @@
 
 #include <Feather.h>
-#include <WiFiMulti.h>
+#include <WiFi.h>
 #include <SerialX.h>
 #include <WiFiSettings.h>
 #include <TelemetryClient.h>
@@ -13,8 +13,6 @@ constexpr uint8_t ECHO_PIN = 5;
 
 Format distFormatCm("###.## cm");
 Format distFormatIn("###.## in");
-
-WiFiMulti wifi;
 
 constexpr auto NUM_DECIMALS = 1;
 TelemetryPublisher client("Waves/Lake", NUM_DECIMALS);
@@ -29,9 +27,9 @@ void setup()
    pinMode(ECHO_PIN, INPUT);
 
    // Connect to WiFi
-   wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
+   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
    Serial.print("WiFi...");
-   while (wifi.run() != WL_CONNECTED)
+   while (WiFi.status() != WL_CONNECTED)
    {
       Serial.print(".");
    }

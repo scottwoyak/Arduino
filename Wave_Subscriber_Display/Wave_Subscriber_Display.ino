@@ -1,12 +1,12 @@
 // undefine to use the remote server
 //#define TELEMETRY_LOCAL
 
-#include <WiFiMulti.h>
+#include <WiFi.h>
 
 #include <Feather.h>
 #include <SerialX.h>
 #include <WiFiSettings.h>
-#include <TimedAverager.h>
+#include <TimedStats.h>
 #include <BarChart.h>
 #include <RollingRate.h>
 #include <TelemetryClient.h>
@@ -15,7 +15,6 @@
 #include <Timer.h>
 
 Feather feather;
-WiFiMulti wifi;
 RollingRate refreshRate(100);
 Stopwatch sw;
 TelemetrySubscriber client("Waves/Lake");
@@ -44,7 +43,7 @@ void setup()
    feather.begin();
 
    // Connect to WiFi
-   wifi.addAP(WIFI_SSID, WIFI_PASSWORD);
+   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
    feather.setTextSize(2);
    feather.setCursorY(-feather.charH());
@@ -53,12 +52,12 @@ void setup()
    feather.println("Initializing", Color::HEADING2);
    feather.moveCursorY(4);
 
-   feather.print("WiFi...", Color::LABEL);
-   while (wifi.run() != WL_CONNECTED)
-   {
+	feather.print("WiFi...", Color::LABEL);
+	while (WiFi.status() != WL_CONNECTED)
+	{
 	  feather.print(".", Color::LABEL);
-   }
-   feather.printlnR("OK", Color::VALUE);
+	}
+	feather.printlnR("OK", Color::VALUE);
    feather.moveCursorY(1);
 
    feather.print("WebSocket...", Color::LABEL);
