@@ -45,6 +45,7 @@
     <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
     <File Path="libraries/Woyak/Logger.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
+    <File Path="libraries/Woyak/MS5837TempSensor.h" />
     <File Path="libraries/Woyak/MultiBar.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
@@ -217,10 +218,6 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="I2C_Port_Scanner_Display/I2C_Port_Scanner_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
   <Project Path="INA219_Display/INA219_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -266,6 +263,10 @@
     <Deploy />
   </Project>
   <Project Path="MS5837_Display/MS5837_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Multi_Temp_Display/Multi_Temp_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

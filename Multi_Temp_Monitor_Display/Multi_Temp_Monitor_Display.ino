@@ -5,14 +5,12 @@
 #include "Influx.h"
 #include <string>
 #include <I2CMultiplexor.h>
-#include <CountdownTimer.h>
 #include <Timer.h>
 
 #include <WiFiSettings.h>
 
 Format humFormat("##.#%");
 Format tempFormat("###.## F");
-Format countdownFormat("##");
 
 constexpr auto version = "v1.0";
 
@@ -43,6 +41,9 @@ const char* locations[] = {
 
 void setup()
 {
+   Wire.begin();
+   SerialX::begin();
+
    // create all the objects
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
@@ -51,9 +52,6 @@ void setup()
       tempFields[i] = points[i]->addTimeAveragedField(INFLUX_INTERVAL_S, "temperature", 3);
       humFields[i] = points[i]->addTimeAveragedField(INFLUX_INTERVAL_S, "humidity", 2);
    }
-
-   Wire.begin();
-   SerialX::begin();
 
    feather.begin();
    feather.setRotation(DisplayRotation::PORTRAIT);
