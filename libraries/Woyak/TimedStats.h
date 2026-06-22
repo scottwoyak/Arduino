@@ -109,7 +109,7 @@ public:
    /// Gets the weighted average across active buckets.
    /// </summary>
    /// <returns>Weighted average, or NaN when no values exist.</returns>
-   float get()
+   float average()
    {
       float elapsed = _advance();
 

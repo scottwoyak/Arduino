@@ -182,7 +182,7 @@ void loop()
 
    if (displayTimer.ready())
    {
-      float displayedValue = rawSensorStats.get();
+      float displayedValue = rawSensorStats.average();
       displayedStats.set(displayedValue);
 
       feather.setCursor(0, 0);

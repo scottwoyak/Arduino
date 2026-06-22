@@ -110,8 +110,8 @@ void loop()
    feather.printR(sensor.type(), Color::GRAY);
    feather.println();
 
-   float temp = tempField->get();
-   float hum = humField->get();
+   float temp = tempField->average();
+   float hum = humField->average();
    uint8_t x = (feather.display.width() - MAX_CHARS * feather.charW()) / 2;
 
    feather.setTextSize(TEXT_SIZE_LARGE);

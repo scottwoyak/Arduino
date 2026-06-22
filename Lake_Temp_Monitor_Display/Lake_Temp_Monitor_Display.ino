@@ -150,8 +150,8 @@ void loop()
    {
       if (sensors[i]->exists())
       {
-         float temp = tempFields[i]->get();
-         float hum = humFields[i]->get();
+         float temp = tempFields[i]->average();
+         float hum = humFields[i]->average();
 
          feather.setTextSize(4);
          feather.println(temp, tempFormat, Color::VALUE);

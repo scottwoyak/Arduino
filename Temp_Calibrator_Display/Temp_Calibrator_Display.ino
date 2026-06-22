@@ -1,4 +1,3 @@
-#include "Feather_ESP32_S3.h"
 #include "Stopwatch.h"
 #include "TempSensor.h"
 #include "TimedStats.h"
@@ -6,18 +5,8 @@
 #include "Multiplexer.h"
 #include "Feather.h"
 #include "SerialX.h"
-
-#include <WiFi.h>
-#define DEVICE "ESP32"
-
-#include <InfluxDbClient.h>
-#include <InfluxDbCloud.h>
-
-// for WIFI_SSID and WIFI_PASSWORD
-#include "WiFiSettings.h"
-
-// Time zone info
-constexpr auto TZ_INFO = "UTC-5";
+#include "Influx.h"
+#include "Calibrator.h"
 
 // 
 // This sketch displays the current temperature on an Arduino ESP32 Feather
@@ -64,23 +53,9 @@ TimedStats* hums[] =
    new TimedStats(1000 * CURRENT_AVG_S),
 };
 
-TimedStats* tavgs[] = {
-   new TimedStats(1000 * CORRECTION_AVG_S),
-   new TimedStats(1000 * CORRECTION_AVG_S),
-   new TimedStats(1000 * CORRECTION_AVG_S),
-   new TimedStats(1000 * CORRECTION_AVG_S),
-   new TimedStats(1000 * CORRECTION_AVG_S),
-   new TimedStats(1000 * CORRECTION_AVG_S),
-};
-
-TimedStats* havgs[] = {
-   new TimedStats(1000 * CORRECTION_AVG_S),
-   new TimedStats(1000 * CORRECTION_AVG_S),
-   new TimedStats(1000 * CORRECTION_AVG_S),
-   new TimedStats(1000 * CORRECTION_AVG_S),
-   new TimedStats(1000 * CORRECTION_AVG_S),
-   new TimedStats(1000 * CORRECTION_AVG_S),
-};
+// Calibrators for temperature and humidity corrections
+Calibrator* tempCalibrator = new Calibrator(NUM_SENSORS, 1000 * CORRECTION_AVG_S, Calibrator::BaselineMode::AVERAGE);
+Calibrator* humCalibrator = new Calibrator(NUM_SENSORS, 1000 * CORRECTION_AVG_S, Calibrator::BaselineMode::AVERAGE);
 
 Format tempFormat("###.## F");
 Format temp2Format("###.##");
@@ -154,9 +129,9 @@ void displaySavedInfo()
    printCalibrationCodeToSerial();
 
    // display saved temperature factors
-   feather.display.setCursor(0, 0);
+   feather.setCursor(0, 0);
    feather.setTextSize(3);
-   feather.display.fillRect(0, 0, feather.display.width(), 2.5 * feather.charH(), (uint16_t)Color::ORANGE);
+   feather.fillRect(0, 0, feather.width(), 2.5 * feather.charH(), (uint16_t)Color::ORANGE);
    feather.moveCursorY((0.5) * feather.charH() / 2);
    feather.printlnC("Temp", Color::WHITE, Color::ORANGE);
    feather.printlnC("Deltas", Color::WHITE, Color::ORANGE);
@@ -188,8 +163,8 @@ void displaySavedInfo()
    printCalibrationCodeToSerial();
 
    // display saved humidity factors
-   feather.display.setCursor(0, 0);
-   feather.display.fillRect(0, 0, feather.display.width(), 2.5 * feather.charH(), (uint16_t)Color::ORANGE);
+   feather.setCursor(0, 0);
+   feather.fillRect(0, 0, feather.width(), 2.5 * feather.charH(), (uint16_t)Color::ORANGE);
    feather.moveCursorY((0.5) * feather.charH() / 2);
    feather.printlnC("Humidity", Color::WHITE, Color::ORANGE);
    feather.printlnC("Deltas", Color::WHITE, Color::ORANGE);
@@ -261,7 +236,7 @@ void setup()
    SerialX::begin();
 
    feather.begin();
-   feather.display.setRotation(0);
+   feather.setRotation(DisplayRotation::PORTRAIT);
 
    displaySavedInfo();
 
@@ -292,46 +267,7 @@ void setup()
    feather.println("Init", Color::HEADING);
    feather.moveCursorY(10);
 
-   // Setup wifi
-   WiFi.mode(WIFI_STA);
-   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-   feather.print("WiFi", Color::LABEL);
-   while (WiFi.status() != WL_CONNECTED)
-   {
-      Serial.print(".");
-      delay(100);
-   }
-   feather.setCursorX(-2 * 2 * 8);
-   feather.println("ok", Color::VALUE);
-
-   // Accurate time is necessary for certificate validation and writing in batches
-   // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
-   // Syncing progress and the time will be printed to Serial.
-   feather.echoToSerial = false;
-   feather.print("Time", Color::LABEL);
-   timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
-   feather.setCursorX(-2 * 2 * 8);
-   feather.println("ok", Color::VALUE);
-   feather.echoToSerial = true;
-
-   // Check server connection
-   feather.print("Influx", Color::LABEL);
-
-   if (client.validateConnection())
-   {
-      feather.setCursorX(-2 * 2 * 8);
-      feather.println("ok", Color::VALUE);
-      Serial.println(client.getServerUrl());
-   }
-   else
-   {
-      feather.setCursorX(-6 * 2 * 8);
-      feather.println("FAILED", Color::RED);
-      feather.setTextSize(1);
-      feather.println(client.getLastErrorMessage(), Color::RED);
-      while (1);
-   }
+   Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client);
 
    delay(1000);
 
@@ -347,29 +283,7 @@ void setup()
    digitalWrite(BUILTIN_LED, LOW);
 }
 
-// This is the baseline value used to calibrate the other sensors. It can
-// either be one of the sensors, or the average of all the sensors.
-float getBaseline(TimedStats* values[])
-{
-   float sum = 0;
-   int count = 0;
-   for (int i = 0; i < NUM_SENSORS; i++)
-   {
-      if (isnan(values[i]->get()) == false)
-      {
-         sum += values[i]->get();
-         count++;
-      }
-   }
-   if (count > 0)
-   {
-      return sum / count;
-   }
-   else
-   {
-      return NAN;
-   }
-}
+
 
 long count;
 void loop()
@@ -413,8 +327,8 @@ void loop()
       sensors[i]->readBoth(temp, hum);
       temps[i]->set(temp);
       hums[i]->set(hum);
-      tavgs[i]->set(temp);
-      havgs[i]->set(hum);
+      tempCalibrator->set(i, temp);
+      humCalibrator->set(i, hum);
 
       // values
       feather.setTextSize(3);
@@ -425,11 +339,11 @@ void loop()
       {
          feather.print((i + 1), Color::LABEL);
          feather.moveCursorX(feather.charW() / 2);
-         int x = feather.display.getCursorX();
+         int x = feather.getCursorX();
          if (sensor->exists())
          {
             feather.print(temp, tempFormat, Color::VALUE);
-            float correction = tavgs[i]->get() - getBaseline(tavgs);
+            float correction = tempCalibrator->computeCorrection(i);
             feather.setCursor(x, feather.getCursor().y + feather.charH() - 3);
             feather.setTextSize(2);
             feather.print(temp - correction, temp2Format, Color::GRAY);
@@ -448,12 +362,12 @@ void loop()
       case 1: // humidity
       {
          feather.print((i + 1), Color::LABEL);
-         int x = feather.display.getCursorX();
+         int x = feather.getCursorX();
          feather.moveCursorX(feather.charW() / 2);
          if (sensor->exists())
          {
             feather.print(hum, humFormat, Color::VALUE);
-            float correction = havgs[i]->get() - getBaseline(havgs);
+            float correction = humCalibrator->computeCorrection(i);
             feather.setCursor(x, feather.getCursor().y + feather.charH() - 3);
             feather.setTextSize(2);
             feather.print(hum - correction, humFormat, Color::GRAY);
@@ -485,7 +399,7 @@ void loop()
          feather.print((i + 1), Color::LABEL);
          feather.moveCursorX(feather.charW() / 2);
          feather.setTextSize(2);
-         int16_t x = feather.display.getCursorX();
+         int16_t x = feather.getCursorX();
 
          feather.println(sensor->type(), Color::VALUE);
          feather.moveCursor(x, 3);
@@ -504,15 +418,14 @@ void loop()
    {
       prefsTrigger.reset();
 
+      tempCalibrator->computeAllCorrections();
+      humCalibrator->computeAllCorrections();
+
       feather.preferences.begin("Calibrator", false);
-      float baselineT = getBaseline(tavgs);
-      float baselineH = getBaseline(havgs);
       for (int i = 0; i < NUM_SENSORS; i++)
       {
-         float tcorrection = tavgs[i]->get() - baselineT;
-         float hcorrection = havgs[i]->get() - baselineH;
-         feather.preferences.putFloat((String("Temp ") + i).c_str(), tcorrection);
-         feather.preferences.putFloat((String("Hum ") + i).c_str(), hcorrection);
+         feather.preferences.putFloat((String("Temp ") + i).c_str(), tempCalibrator->getCorrection(i));
+         feather.preferences.putFloat((String("Hum ") + i).c_str(), humCalibrator->getCorrection(i));
       }
       feather.preferences.end();
 
@@ -532,16 +445,35 @@ void loop()
 
       for (int i = 0; i < NUM_SENSORS; i++)
       {
-         float tDelta = tavgs[i]->get() - getBaseline(tavgs);
-         float hDelta = havgs[i]->get() - getBaseline(havgs);
-         float tCorrected = temps[i]->get() - tDelta;
-         float hCorrected = hums[i]->get() - hDelta;
-         float tCorrectedDelta = tCorrected - getBaseline(temps);
-         float hCorrectedDelta = hCorrected - getBaseline(hums);
+         float tDelta = tempCalibrator->computeCorrection(i);
+         float hDelta = humCalibrator->computeCorrection(i);
+         float tCorrected = temps[i]->average() - tDelta;
+         float hCorrected = hums[i]->average() - hDelta;
+
+         // Temporarily compute baseline for corrected readings
+         float tCorrectedDelta = 0;
+         float hCorrectedDelta = 0;
+         for (int j = 0; j < NUM_SENSORS; j++)
+         {
+            float tc = temps[j]->average() - (tempCalibrator->computeCorrection(j));
+            float hc = hums[j]->average() - (humCalibrator->computeCorrection(j));
+            tCorrectedDelta += !std::isnan(tc) ? tc : 0;
+            hCorrectedDelta += !std::isnan(hc) ? hc : 0;
+         }
+         int count = 0;
+         for (int j = 0; j < NUM_SENSORS; j++)
+         {
+            if (!std::isnan(temps[j]->average())) count++;
+         }
+         tCorrectedDelta = (count > 0) ? (tCorrectedDelta / count) : NAN;
+         hCorrectedDelta = (count > 0) ? (hCorrectedDelta / count) : NAN;
+         tCorrectedDelta = tCorrected - tCorrectedDelta;
+         hCorrectedDelta = hCorrected - hCorrectedDelta;
+
          points[i]->clearFields();
          // the current readings
-         points[i]->addField("temperature", temps[i]->get(), 3);
-         points[i]->addField("humidity", hums[i]->get(), 2);
+         points[i]->addField("temperature", temps[i]->average(), 3);
+         points[i]->addField("humidity", hums[i]->average(), 2);
 
          // the deltas from the baseline
          points[i]->addField("tDelta", tDelta, 4);

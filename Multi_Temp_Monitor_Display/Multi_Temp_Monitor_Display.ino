@@ -1,3 +1,5 @@
+#include <FastLED.h>
+
 //-------------------------------------------------------------------------------------------------
 //
 // Displays temperatures from up to 8 I2C-multiplexed sensors and uploads readings to InfluxDB.

@@ -116,7 +116,7 @@ void loop()
       wind50Field->set(getValueForPercentile(0.5));
       wind70Field->set(getValueForPercentile(0.7));
       wind90Field->set(getValueForPercentile(0.9));
-      gustsField->set(wind90Field->get() - wind10Field->get());
+      gustsField->set(wind90Field->average() - wind10Field->average());
       cpuTempField->set(cpuTemp.readTemperatureF());
 
 

@@ -13,6 +13,7 @@
     <File Path="libraries/Woyak/BufferedTimeSeries.h" />
     <File Path="libraries/Woyak/Button.cpp" />
     <File Path="libraries/Woyak/Button.h" />
+    <File Path="libraries/Woyak/Calibrator.h" />
     <File Path="libraries/Woyak/CapacitorDepthSensor.h" />
     <File Path="libraries/Woyak/CapacitorSensor.h" />
     <File Path="libraries/Woyak/Color.h" />
@@ -43,7 +44,6 @@
     <File Path="libraries/Woyak/LGFXUtil.h" />
     <File Path="libraries/Woyak/LGX_FeatherESP32_S3_TFT.h" />
     <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
-    <File Path="libraries/Woyak/Logger.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
     <File Path="libraries/Woyak/MS5837TempSensor.h" />
     <File Path="libraries/Woyak/MultiBar.h" />
@@ -86,6 +86,10 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/BufferedTimeSeries_Tests/BufferedTimeSeries_Tests.vcxproj" Id="a8d4f2c1-9b34-4e5f-8123-123456789abc">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
+    <Project Path="Tests/Calibrator_Tests/Calibrator_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
