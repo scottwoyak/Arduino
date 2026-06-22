@@ -19,6 +19,9 @@ public:
       _address = address;
       _info = _type + " 0x" + String(_address, HEX);
    }
+
+   virtual ~I2CTempSensor() {}
+
    virtual const char* id() { return _id.c_str(); }
    virtual const char* type() { return _type.c_str(); }
    virtual uint8_t address() { return _address; }

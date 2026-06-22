@@ -1,17 +1,14 @@
 #pragma once
 
-#include <WiFiMulti.h>
-WiFiMulti wifiMulti;
-constexpr auto DEVICE = "ESP32";
+#include <WiFi.h>
 
+#include <ArduinoWithDisplay.h>
 #include <Feather.h>
-#include <TimedAverager.h>
 #include <InfluxDbClient.h>
 #include <InfluxDbCloud.h>
-#include <ArduinoWithDisplay.h>
 #include <Status.h>
+#include <TimedStats.h>
 
-// Time zone info
 constexpr auto TZ_INFO = "UTC-5";
 
 //-------------------------------------------------------------------------------------------------
@@ -28,7 +25,7 @@ namespace Influx
 	  InfluxDBClient* client,
 	  IStatus* status = nullptr
    )
-   {
+	{
 	  arduino->print("WiFi... ", Color::LABEL);
 	  if (status)
 	  {
@@ -37,9 +34,9 @@ namespace Influx
 
 	  // Setup wifi
 	  WiFi.mode(WIFI_STA);
-	  wifiMulti.addAP(wifiSSID, wifiPassword);
+	  WiFi.begin(wifiSSID, wifiPassword);
 
-	  while (wifiMulti.run() != WL_CONNECTED)
+	  while (WiFi.status() != WL_CONNECTED)
 	  {
 		 Serial.print(".");
 		 delay(100);
@@ -86,16 +83,16 @@ namespace Influx
 	  const char* wifiPassword, 
 	  InfluxDBClient* client, 
 	  IStatus* status)
-   {
+	{
 	  Serial.println("WiFi... ");
 
 	  status->setStatus(Status::WIFI_CONNECTING);
 
 	  // Setup wifi
 	  WiFi.mode(WIFI_STA);
-	  wifiMulti.addAP(wifiSSID, wifiPassword);
+	  WiFi.begin(wifiSSID, wifiPassword);
 
-	  while (wifiMulti.run() != WL_CONNECTED)
+	  while (WiFi.status() != WL_CONNECTED)
 	  {
 		 Serial.print(".");
 		 delay(100);
@@ -131,7 +128,7 @@ namespace Influx
 
 //-------------------------------------------------------------------------------------------------
 //
-// Field abstract base class
+// Represents a named numeric field that can store or compute a value for an Influx point.
 //
 //-------------------------------------------------------------------------------------------------
 class Field
@@ -168,160 +165,69 @@ public:
 
 //-------------------------------------------------------------------------------------------------
 //
-// ValueField class
+// Stores the most recent value assigned to a field without any time-based aggregation.
 //
 //-------------------------------------------------------------------------------------------------
 class ValueField : public Field
 {
 private:
-   float _value = NAN;
+	float _value = NAN;
 
 public:
+	ValueField(std::string name, uint8_t decimalPlaces) : Field(name, decimalPlaces)
+	{
+	}
 
-   ValueField(std::string name, uint8_t decimalPlaces) : Field(name, decimalPlaces)
-   {
-   }
+	~ValueField() override = default;
 
-   virtual ~ValueField()
-   {
-   }
+	void set(float value) override
+	{
+		_value = value;
+	}
 
-   void set(float value)
-   {
-	  _value = value;
-   }
-
-   float get()
-   {
-	  return _value;
-   }
+	float get() override
+	{
+		return _value;
+	}
 };
 
 //-------------------------------------------------------------------------------------------------
 //
-// TimedAveragedField class
+// Tracks a time-windowed average for a field using TimedStats over the configured duration.
 //
 //-------------------------------------------------------------------------------------------------
 class TimeAveragedField : public Field
 {
 private:
-   TimedAverager* _averager;
+	TimedStats* _stats;
 
 public:
-   TimeAveragedField(float seconds, std::string name, uint8_t decimalPlaces) : Field(name, decimalPlaces)
-   {
-	  _averager = new TimedAverager(1000 * seconds);
-   }
+	TimeAveragedField(float seconds, std::string name, uint8_t decimalPlaces) : Field(name, decimalPlaces)
+	{
+		_stats = new TimedStats(1000 * seconds);
+	}
 
-   ~TimeAveragedField()
-   {
-	  delete _averager;
-   }
+	~TimeAveragedField() override
+	{
+		delete _stats;
+	}
 
-   void set(float value)
-   {
-	  _averager->set(value);
-   }
+	void set(float value) override
+	{
+		_stats->set(value);
+	}
 
-   float get()
-   {
-	  return _averager->get();
-   }
+	float get() override
+	{
+		return _stats->get();
+	}
 };
 
-/*
 //-------------------------------------------------------------------------------------------------
 //
-// TimedPoint class
+// Builds and posts an Influx point from a collection of field helpers and optional tags.
 //
 //-------------------------------------------------------------------------------------------------
-class TimedPoint
-{
-private:
-   Point _point;
-   Stopwatch _sw;
-   float _seconds;
-   std::vector<Field*> _fields;
-
-public:
-   TimedPoint(float seconds, const char* measurement) : _point(measurement), _sw(false)
-   {
-	  _seconds = seconds;
-   }
-
-   TimedPoint(float seconds, const char* measurement, std::vector<std::pair<const char*, const char*>> tags) : _point(measurement)
-   {
-	  _seconds = seconds;
-
-	  for (int i = 0; i < tags.size(); i++)
-	  {
-		 _point.addTag(tags[i].first, tags[i].second);
-	  }
-   }
-
-   ~TimedPoint()
-   {
-	  for (size_t i = 0; i < _fields.size(); i++)
-	  {
-		 delete _fields[i];
-	  }
-   }
-
-   void addTag(const String& name, String value)
-   {
-	  _point.addTag(name, value);
-   }
-
-   Field* addValueField(std::string name, uint8_t decimalPlaces)
-   {
-	  Field* field = new ValueField(name, decimalPlaces);
-	  _fields.push_back(field);
-	  return field;
-   }
-
-   Field* addTimeAveragedField(std::string name, uint8_t decimalPlaces)
-   {
-	  Field* field = new TimeAveragedField(_seconds, name, decimalPlaces);
-	  _fields.push_back(field);
-	  return field;
-   }
-
-   bool ready()
-   {
-	  // if this is the first time this function has been called, start the timer
-	  if (_sw.isRunning() == false)
-	  {
-		 _sw.start();
-	  }
-
-	  return _sw.elapsedSecs() > _seconds;
-   }
-
-   bool post(InfluxDBClient* client, bool writeToSerial = false)
-   {
-	  // restart the timer
-	  _sw.reset();
-
-	  // clear out the old values
-	  _point.clearFields();
-
-	  // populate new values
-	  for (size_t i = 0; i < _fields.size(); i++)
-	  {
-		 Field* field = _fields[i];
-		 _point.addField(field->getName().c_str(), field->get(), field->getDecimalPlaces());
-	  }
-
-	  if (writeToSerial)
-	  {
-		 Serial.println(_point.toLineProtocol());
-	  }
-
-	  // send to Influx
-	  return client->writePoint(_point);
-   }
-   */
-
 class SimplePoint
 {
 private:
@@ -333,21 +239,21 @@ public:
    {
    }
 
-   SimplePoint(const char* measurement, std::vector<std::pair<const char*, const char*>> tags) : _point(measurement)
-   {
-	  for (int i = 0; i < tags.size(); i++)
-	  {
-		 _point.addTag(tags[i].first, tags[i].second);
-	  }
-   }
+	SimplePoint(const char* measurement, std::vector<std::pair<const char*, const char*>> tags) : _point(measurement)
+	{
+		for (size_t i = 0; i < tags.size(); i++)
+		{
+			_point.addTag(tags[i].first, tags[i].second);
+		}
+	}
 
-   ~SimplePoint()
-   {
-	  for (size_t i = 0; i < _fields.size(); i++)
-	  {
-		 delete _fields[i];
-	  }
-   }
+	~SimplePoint()
+	{
+		for (size_t i = 0; i < _fields.size(); i++)
+		{
+			delete _fields[i];
+		}
+	}
 
    void addTag(const String& name, String value)
    {

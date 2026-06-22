@@ -133,7 +133,7 @@ void loop()
    }
 
    // Check WiFi connection and reconnect if needed
-   if (wifiMulti.run() != WL_CONNECTED)
+   if (WiFi.status() != WL_CONNECTED)
    {
       feather.println("WiFi connection lost");
       Serial.println("WiFi connection lost");
