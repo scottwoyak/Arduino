@@ -6,6 +6,7 @@
 - When cleaning up code, add IntelliSense-style XML documentation comments to constructors and public methods where appropriate, as well as to other methods where appropriate. Apply proper include bracket style: use quotes ("...") for Woyak library headers and local project headers, and use angle brackets (<...>) for third-party/installed libraries like LovyanGFX, WiFi, InfluxDbClient, Timer, etc.
 - Prefer keeping initialization code in setup() rather than extracting it into separate helper functions.
 - Do not make changes in libraries outside of the Woyak library; third-party libraries should remain untouched.
+- Start non-constant private and protected class members with underscores; private and protected constants should not start with underscores.
 
 ## Sketch Header Comments
 - For sketch header comments, omit a separate sketch title line; use only summary lines between blank comment lines, and keep divider dashes ending at column 99.

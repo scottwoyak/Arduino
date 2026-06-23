@@ -219,7 +219,7 @@ public:
 
 	float get() override
 	{
-		return _stats->get();
+		return _stats->average();
 	}
 };
 

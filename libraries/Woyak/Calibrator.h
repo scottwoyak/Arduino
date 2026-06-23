@@ -2,13 +2,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdint.h>
 
 #include "TimedStats.h"
 
 /// <summary>
 /// Manages sensor calibration by collecting measurements and computing correction factors.
 /// Assumes all sensors should read equal values and computes per-sensor offsets to align readings.
-/// Also records historical samples at regular intervals for convergence analysis.
 /// </summary>
 class Calibrator
 {
@@ -22,33 +22,12 @@ public:
       FIRST_SENSOR  ///< Use first sensor as baseline reference
    };
 
-   /// <summary>
-   /// Statistics result for a sensor against correction factors.
-   /// </summary>
-   struct SensorStats
-   {
-      float minCorrected;
-      float maxCorrected;
-      float rangeCorrected;
-      float avgCorrected;
-      int sampleCount;
-   };
-
 private:
    static constexpr uint8_t MAX_SENSORS = 8;
-   static constexpr uint8_t MAX_SAMPLES = 100;
-   static constexpr uint8_t SAMPLE_INTERVAL_DIVISOR = 10;  // Sample every historyMs / 10
 
-   uint8_t _numSensors;
-   TimedStats** _measurements;
-   float* _corrections;
-   BaselineMode _baselineMode;
-   ulong _sampleIntervalMs;
-   ulong _lastSampleTimeMs;
-
-   // Historical samples: [sensorIndex][sampleIndex]
-   float** _samples;
-   uint8_t _sampleCount;
+   uint8_t _numSensors = 0;
+   TimedStats** _measurements = nullptr;
+   BaselineMode _baselineMode = BaselineMode::AVERAGE;
 
    /// <summary>
    /// Computes the baseline according to the configured mode.
@@ -61,7 +40,6 @@ private:
          return _measurements[0]->average();
       }
 
-      // AVERAGE mode
       float sum = 0.0f;
       int count = 0;
 
@@ -78,32 +56,53 @@ private:
       return (count > 0) ? (sum / count) : NAN;
    }
 
+   /// <summary>
+   /// Computes and returns the correction factor for a sensor.
+   /// Correction = (baseline - sensorValue), so applying this offset makes the sensor read baseline.
+   /// </summary>
+   /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
+   /// <returns>Correction factor, or NaN if measurement unavailable.</returns>
+   float _computeCorrection(uint8_t sensorIndex) const
+   {
+      if (sensorIndex >= _numSensors)
+         return NAN;
+
+      float baseline = _getBaseline();
+      float measurement = _measurements[sensorIndex]->average();
+
+      if (std::isnan(baseline) || std::isnan(measurement))
+         return NAN;
+
+      return baseline - measurement;
+   }
+
 public:
    /// <summary>
    /// Constructs a Calibrator for the specified number of sensors.
    /// </summary>
    /// <param name="numSensors">Number of sensors (1-8).</param>
-   /// <param name="historyMs">History window in milliseconds for collecting measurements.</param>
+   /// <param name="durationMs">Duration window in milliseconds for collecting measurements.</param>
    /// <param name="mode">Baseline computation mode (default: AVERAGE).</param>
-   Calibrator(uint8_t numSensors, ulong historyMs, BaselineMode mode = BaselineMode::AVERAGE)
-      : _numSensors(std::min(numSensors, MAX_SENSORS)), _baselineMode(mode), 
-        _sampleIntervalMs(historyMs / SAMPLE_INTERVAL_DIVISOR), _lastSampleTimeMs(0), _sampleCount(0)
+   Calibrator(uint8_t numSensors, ulong durationMs, BaselineMode mode = BaselineMode::AVERAGE)
+      : _numSensors(std::min(numSensors, MAX_SENSORS)), _baselineMode(mode)
    {
       _measurements = new TimedStats*[_numSensors];
-      _corrections = new float[_numSensors];
-      _samples = new float*[_numSensors];
 
       for (uint8_t i = 0; i < _numSensors; i++)
       {
-         _measurements[i] = new TimedStats(historyMs);
-         _corrections[i] = 0.0f;
-         _samples[i] = new float[MAX_SAMPLES];
-         for (uint8_t j = 0; j < MAX_SAMPLES; j++)
-         {
-            _samples[i][j] = NAN;
-         }
+         _measurements[i] = new TimedStats(durationMs);
       }
    }
+
+   /// <summary>
+   /// Calibrator is non-copyable.
+   /// </summary>
+   Calibrator(const Calibrator&) = delete;
+
+   /// <summary>
+   /// Calibrator is non-assignable.
+   /// </summary>
+   Calibrator& operator=(const Calibrator&) = delete;
 
    /// <summary>
    /// Destructs the Calibrator and releases all resources.
@@ -113,11 +112,8 @@ public:
       for (uint8_t i = 0; i < _numSensors; i++)
       {
          delete _measurements[i];
-         delete[] _samples[i];
       }
       delete[] _measurements;
-      delete[] _corrections;
-      delete[] _samples;
    }
 
    /// <summary>
@@ -130,7 +126,6 @@ public:
       if (sensorIndex < _numSensors && !std::isnan(value))
       {
          _measurements[sensorIndex]->set(value);
-         _recordSample(sensorIndex, value);
       }
    }
 
@@ -148,7 +143,7 @@ public:
    /// </summary>
    /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
    /// <returns>Averaged measurement, or NaN if unavailable.</returns>
-   float getMeasurement(uint8_t sensorIndex) const
+   float getAverage(uint8_t sensorIndex) const
    {
       if (sensorIndex >= _numSensors)
          return NAN;
@@ -166,73 +161,36 @@ public:
    }
 
    /// <summary>
-   /// Computes and returns the correction factor for a sensor.
-   /// Correction = (baseline - sensorValue), so applying this offset makes the sensor read baseline.
+   /// Gets the current correction factor for a sensor.
    /// </summary>
    /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
-   /// <returns>Correction factor, or NaN if measurement unavailable.</returns>
-   float computeCorrection(uint8_t sensorIndex) const
-   {
-      if (sensorIndex >= _numSensors)
-         return NAN;
-
-      float baseline = _getBaseline();
-      float measurement = _measurements[sensorIndex]->average();
-
-      if (std::isnan(baseline) || std::isnan(measurement))
-         return NAN;
-
-      return baseline - measurement;
-   }
-
-   /// <summary>
-   /// Computes and stores the correction factors for all sensors.
-   /// </summary>
-   void computeAllCorrections()
-   {
-      for (uint8_t i = 0; i < _numSensors; i++)
-      {
-         _corrections[i] = computeCorrection(i);
-      }
-   }
-
-   /// <summary>
-   /// Gets the stored correction factor for a sensor.
-   /// </summary>
-   /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
-   /// <returns>Stored correction factor, or 0 if not computed.</returns>
+   /// <returns>Correction factor, or 0 if unavailable.</returns>
    float getCorrection(uint8_t sensorIndex) const
    {
       if (sensorIndex >= _numSensors)
          return 0.0f;
 
-      return _corrections[sensorIndex];
+      float correction = _computeCorrection(sensorIndex);
+      return std::isnan(correction) ? 0.0f : correction;
    }
 
    /// <summary>
-   /// Resets all measurements, corrections, and historical samples.
+   /// Resets all measurements.
    /// </summary>
    void reset()
    {
       for (uint8_t i = 0; i < _numSensors; i++)
       {
          _measurements[i]->reset();
-         _corrections[i] = 0.0f;
-         for (uint8_t j = 0; j < MAX_SAMPLES; j++)
-         {
-            _samples[i][j] = NAN;
-         }
       }
-      _sampleCount = 0;
-      _lastSampleTimeMs = 0;
    }
 
    /// <summary>
-   /// Gets the history window duration in milliseconds.
+   /// Gets the duration window in milliseconds.
    /// </summary>
    /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
-   /// <returns>History duration in milliseconds.</returns>
-   ulong getHistoryMs(uint8_t sensorIndex) const
+   /// <returns>Duration in milliseconds.</returns>
+   ulong getDurationMs(uint8_t sensorIndex) const
    {
       if (sensorIndex >= _numSensors)
          return 0;
@@ -241,105 +199,15 @@ public:
    }
 
    /// <summary>
-   /// Gets the number of historical samples recorded so far.
-   /// </summary>
-   /// <returns>Number of samples (0-100).</returns>
-   uint8_t getSampleCount() const
-   {
-      return _sampleCount;
-   }
-
-   /// <summary>
-   /// Gets statistics of historical samples with correction factors applied.
+   /// Gets the underlying timed statistics object for a sensor.
    /// </summary>
    /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
-   /// <returns>SensorStats structure with min, max, range, and average of corrected values.</returns>
-   SensorStats getStats(uint8_t sensorIndex) const
+   /// <returns>TimedStats object for the sensor, or nullptr if index is invalid.</returns>
+   TimedStats* getStats(uint8_t sensorIndex) const
    {
-      SensorStats stats;
-      stats.minCorrected = NAN;
-      stats.maxCorrected = NAN;
-      stats.rangeCorrected = NAN;
-      stats.avgCorrected = NAN;
-      stats.sampleCount = 0;
-
       if (sensorIndex >= _numSensors)
-         return stats;
+         return nullptr;
 
-      float correction = _corrections[sensorIndex];
-      float sum = 0.0f;
-      int validCount = 0;
-
-      for (uint8_t i = 0; i < _sampleCount; i++)
-      {
-         float sample = _samples[sensorIndex][i];
-         if (!std::isnan(sample))
-         {
-            float corrected = sample + correction;
-
-            if (validCount == 0)
-            {
-               stats.minCorrected = corrected;
-               stats.maxCorrected = corrected;
-            }
-            else
-            {
-               stats.minCorrected = std::min(stats.minCorrected, corrected);
-               stats.maxCorrected = std::max(stats.maxCorrected, corrected);
-            }
-
-            sum += corrected;
-            validCount++;
-         }
-      }
-
-      if (validCount > 0)
-      {
-         stats.avgCorrected = sum / validCount;
-         stats.rangeCorrected = stats.maxCorrected - stats.minCorrected;
-         stats.sampleCount = validCount;
-      }
-
-      return stats;
-   }
-
-private:
-   /// <summary>
-   /// Records a sample if enough time has elapsed since the last sample.
-   /// Samples are recorded at intervals of historyMs / 10, up to 100 samples.
-   /// When multiple sensors are updated within the same timestamp, later sensor updates
-   /// are merged into the most recently recorded snapshot.
-   /// </summary>
-   void _recordSample(uint8_t sensorIndex, float value)
-   {
-      // Use TimedStats::tickFunc if available, otherwise fall back to millis()
-      unsigned long (*ticksFunc)() = TimedStats::tickFunc != nullptr ? TimedStats::tickFunc : millis;
-      ulong currentTimeMs = ticksFunc();
-
-      // Check if we should record a sample (only check for sensor 0 to avoid redundant checks)
-      if (sensorIndex == 0 && (currentTimeMs - _lastSampleTimeMs >= _sampleIntervalMs))
-      {
-         if (_sampleCount < MAX_SAMPLES)
-         {
-            _lastSampleTimeMs = currentTimeMs;
-
-            // Record current measurement for all sensors
-            for (uint8_t i = 0; i < _numSensors; i++)
-            {
-               _samples[i][_sampleCount] = _measurements[i]->average();
-            }
-
-            _sampleCount++;
-         }
-
-         return;
-      }
-
-      // If a sample was just recorded at this same timestamp, update this sensor's value
-      // so sequential sensor writes in the same tick are captured in the same snapshot.
-      if (_sampleCount > 0 && currentTimeMs == _lastSampleTimeMs)
-      {
-         _samples[sensorIndex][_sampleCount - 1] = _measurements[sensorIndex]->average();
-      }
+      return _measurements[sensorIndex];
    }
 };

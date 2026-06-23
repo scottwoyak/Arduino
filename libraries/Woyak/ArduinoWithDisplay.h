@@ -254,6 +254,14 @@ public:
    {
       moveCursor(0, deltaY);
    }
+   int16_t getCursorX()
+   {
+      return display.getCursorX();
+   }
+   int16_t getCursorY()
+   {
+      return display.getCursorY();
+   }
    Point16 getCursor()
    {
       return Point16(display.getCursorX(), display.getCursorY());
