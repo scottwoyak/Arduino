@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Arduino.h>
-#include <stddef.h>
+#include "RollingValues.h"
+#include "Stats.h"
 
 /// <summary>
 /// Stores a fixed window of recent values and exposes rolling statistics.
@@ -13,27 +14,24 @@
 class RollingStats
 {
 private:
-   float* _values;
-   size_t _index;
-   size_t _size;
-   size_t _count;
-   float _sum;
-   float _min;
-   float _max;
+   RollingValues _values;
+   Stats _stats;
+   mutable float _min = NAN;
+   mutable float _max = NAN;
 
-   void _recomputeMinMax()
+   void _recomputeMinMax() const
    {
       _min = NAN;
       _max = NAN;
 
-      if (_count == 0)
+      if (_values.count() == 0)
       {
          return;
       }
 
-      for (size_t i = 0; i < _size; i++)
+      for (size_t i = 0; i < _values.count(); i++)
       {
-         float value = _values[i];
+         float value = _values.get(i);
          if (!isfinite(value))
          {
             continue;
@@ -57,23 +55,8 @@ public:
    /// </summary>
    /// <param name="size">Number of samples retained in the rolling window.</param>
    explicit RollingStats(size_t size)
+      : _values(size)
    {
-      _values = nullptr;
-      _index = 0;
-      _size = size;
-      _count = 0;
-      _sum = 0;
-      _min = NAN;
-      _max = NAN;
-
-      if (_size > 0)
-      {
-         _values = new float[_size];
-         for (size_t i = 0; i < _size; i++)
-         {
-            _values[i] = NAN;
-         }
-      }
    }
 
    /// <summary>
@@ -87,20 +70,12 @@ public:
    RollingStats& operator=(const RollingStats&) = delete;
 
    /// <summary>
-   /// Releases allocated sample storage.
+   /// Gets the capacity of the rolling window.
    /// </summary>
-   ~RollingStats()
-   {
-      delete[] _values;
-   }
-
-   /// <summary>
-   /// Gets the number of samples being used in the rolling window.
-   /// </summary>
-   /// <returns>The number of samples in the rolling window.</returns>
+   /// <returns>The number of samples the window can hold.</returns>
    size_t size() const
    {
-      return _size;
+      return _values.size();
    }
 
    /// <summary>
@@ -110,32 +85,19 @@ public:
    /// <returns>True when value is added; false when size is zero.</returns>
    boolean set(float value)
    {
-      if (_size == 0)
+      if (_values.size() == 0)
       {
          return false;
       }
 
-      float oldValue = _values[_index];
-      if (isfinite(oldValue))
+      float removed;
+      if (_values.set(value, &removed))
       {
-         _sum -= oldValue;
-         _count--;
+         _stats.remove(removed);
       }
 
-      _values[_index] = value;
-      if (isfinite(value))
-      {
-         _sum += value;
-         _count++;
-      }
-
-      _index++;
-      if (_index >= _size)
-      {
-         _index = 0;
-      }
-
-      _recomputeMinMax();
+      _stats.add(value);
+      _min = NAN;
       return true;
    }
 
@@ -144,71 +106,23 @@ public:
    /// </summary>
    void reset()
    {
-      _index = 0;
-      _count = 0;
-      _sum = 0;
+      _values.reset();
+      _stats.reset();
       _min = NAN;
-      _max = NAN;
-
-      for (size_t i = 0; i < _size; i++)
-      {
-         _values[i] = NAN;
-      }
-   }
-
-   /// <summary>
-   /// Resizes the rolling window and clears existing samples.
-   /// </summary>
-   /// <param name="size">New number of samples retained in the rolling window.</param>
-   void resize(size_t size)
-   {
-      if (size == _size)
-      {
-         reset();
-         return;
-      }
-
-      delete[] _values;
-      _values = nullptr;
-      _size = size;
-      _index = 0;
-      _count = 0;
-      _sum = 0;
-      _min = NAN;
-      _max = NAN;
-
-      if (_size > 0)
-      {
-         _values = new float[_size];
-         for (size_t i = 0; i < _size; i++)
-         {
-            _values[i] = NAN;
-         }
-      }
    }
 
    /// <summary>
    /// Gets the most recently inserted value.
    /// </summary>
-   /// <returns>The last value, or NaN when size is zero.</returns>
+   /// <returns>The last value, or NaN when the buffer is empty or nothing has been set.</returns>
    float last() const
    {
-      if (_size == 0)
+      if (_values.count() == 0)
       {
          return NAN;
       }
 
-      size_t lastIndex = (_index == 0) ? (_size - 1) : (_index - 1);
-      return _values[lastIndex];
-   }
-
-   /// <summary>
-   /// Gets the most recently inserted value.
-   /// </summary>
-   /// <returns>The last value, or NaN when size is zero.</returns>
-   float getLast() const
-   {
-      return last();
+      return _values.get(0);
    }
 
    /// <summary>
@@ -217,6 +131,11 @@ public:
    /// <returns>Minimum finite value, or NaN if no finite values exist.</returns>
    float min() const
    {
+      if (isnan(_min))
+      {
+         _recomputeMinMax();
+      }
+
       return _min;
    }
 
@@ -226,6 +145,11 @@ public:
    /// <returns>Maximum finite value, or NaN if no finite values exist.</returns>
    float max() const
    {
+      if (isnan(_min))
+      {
+         _recomputeMinMax();
+      }
+
       return _max;
    }
 
@@ -235,6 +159,11 @@ public:
    /// <returns>Max-minus-min range, or NaN if no finite values exist.</returns>
    float range() const
    {
+      if (isnan(_min))
+      {
+         _recomputeMinMax();
+      }
+
       if (!isfinite(_min) || !isfinite(_max))
       {
          return NAN;
@@ -249,13 +178,13 @@ public:
    /// <returns>Average finite value, or NaN if no finite values exist.</returns>
    float average() const
    {
-      return (_count > 0) ? (_sum / _count) : NAN;
+      return _stats.get();
    }
 
    /// <summary>
    /// Gets the rolling average value.
    /// </summary>
-   /// <returns>Average finite value, or NaN if no finite values exist.</returns>
+   /// <returns>Average of finite values, or NaN if no finite values exist.</returns>
    float get() const
    {
       return average();
@@ -267,6 +196,6 @@ public:
    /// <returns>Number of finite values contributing to statistics.</returns>
    size_t count() const
    {
-      return _count;
+      return _stats.count();
    }
 };

@@ -32,7 +32,7 @@
     <File Path="libraries/Woyak/Format.h" />
     <File Path="libraries/Woyak/FramSpiEx.h" />
     <File Path="libraries/Woyak/HDC302XTempSensor.h" />
-    <File Path="libraries/Woyak/History.h" />
+    <File Path="libraries/Woyak/RollingValues.h" />
     <File Path="libraries/Woyak/I2C.h" />
     <File Path="libraries/Woyak/I2CMultiplexor.h" />
     <File Path="libraries/Woyak/I2CTempSensor.h" />
@@ -102,6 +102,14 @@
       <Deploy />
     </Project>
     <Project Path="Tests/RollingStats_Tests/RollingStats_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
+    <Project Path="Tests/RollingStdDev_Tests/RollingStdDev_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
+    <Project Path="Tests/RollingValues_Tests/RollingValues_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
@@ -293,6 +301,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Sensor_Noise_Display/Sensor_Noise_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Serial/Serial.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -375,3 +387,4 @@
     <Deploy />
   </Project>
 </Solution>
+

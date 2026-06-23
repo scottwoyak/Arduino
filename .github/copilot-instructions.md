@@ -7,9 +7,11 @@
 - Prefer keeping initialization code in setup() rather than extracting it into separate helper functions.
 - Do not make changes in libraries outside of the Woyak library; third-party libraries should remain untouched.
 - Start non-constant private and protected class members with underscores; private and protected constants should not start with underscores.
+- Use brace-on-new-line formatting style: place opening '{' on a new line.
 
 ## Sketch Header Comments
 - For sketch header comments, omit a separate sketch title line; use only summary lines between blank comment lines, and keep divider dashes ending at column 99.
 
 ## Arduino File Guidelines
 - For .ino files, do not add comments on setup() and loop(); include a formatted top-of-file summary header only, using divider lines that end at column 99, a blank comment line before/after summary text, and no separate sketch title line.
+- When creating new Arduino test sketches, only create the .ino file. Do not create .vcxproj project files or modify the .slnx solution file. The user imports new projects into the solution via Visual Micro themselves.
