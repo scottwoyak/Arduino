@@ -1,8 +1,8 @@
 #include <Arduino.h>
-#include <CapacitorSensor.h>
-#include <Feather.h>
-#include <RollingStats.h>
-#include <Timer.h>
+#include "CapacitorSensor.h"
+#include "Feather.h"
+#include "RollingStats.h"
+#include "Timer.h"
 
 Feather feather;
 Format timeFormat("###.# us");

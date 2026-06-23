@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include <ValueStore.h>
+#include "ValueStore.h"
 
 class MinMaxValue {
 private:

@@ -1,8 +1,8 @@
 #include <Arduino.h>
-#include <SevenSegment.h>
-#include <RollingRate.h>
-#include <SerialX.h>
-#include <Timer.h>
+#include "SevenSegment.h"
+#include "RollingRate.h"
+#include "SerialX.h"
+#include "Timer.h"
 
 RollingRate rate;
 Timer timer(1000);

@@ -1,20 +1,20 @@
 #pragma once
 
-#include <FeedTimer.h>
+#include "FeedTimer.h"
 #include <NTPClient.h>
-#include <Stopwatch.h>
-#include <MinMaxValue.h>
+#include "Stopwatch.h"
+#include "MinMaxValue.h"
 #include <WiFi101.h>
 #include <WiFiUdp.h>
 #include <Logger.h>
-#include <Util.h>
+#include "Util.h"
 #include <Adafruit_SHT31.h>
 #include <AccumulatingAverager.h>
-#include <RollingStats.h>
+#include "RollingStats.h"
 #include <Adafruit_SleepyDog.h>
 #include <Adafruit_LPS35HW.h>
-#include <I2C.h>
-#include <Battery.h>
+#include "I2C.h"
+#include "Battery.h"
 
 // use the Adafruit C1500 WiFi board (via Feather M0 WiFi)
 #define USE_WINC1500

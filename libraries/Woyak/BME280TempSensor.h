@@ -1,8 +1,8 @@
 #pragma once
 
-#include <I2CTempSensor.h>
+#include "I2CTempSensor.h"
 #include <Adafruit_BME280.h>
-#include <Units.h>
+#include "Units.h"
 
 //-------------------------------------------------------------------------------------------------
 class BME280TempSensor : public I2CTempSensor

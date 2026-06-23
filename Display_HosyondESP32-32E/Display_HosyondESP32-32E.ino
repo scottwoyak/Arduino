@@ -1,8 +1,8 @@
-#include <LGX_HosyondESP32-32E.h>
+#include "LGX_HosyondESP32-32E.h"
 
-#include <Scott16.h>
-#include <Scott32.h>
-#include <RollingStats.h>
+#include "Scott16.h"
+#include "Scott32.h"
+#include "RollingStats.h"
 
 LGFX display;
 RollingStats fps(100);

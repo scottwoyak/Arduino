@@ -1,6 +1,6 @@
 #include <AUnit.h>
-#include <Timer.h>
-#include <Util.h>
+#include "Timer.h"
+#include "Util.h"
 
 unsigned int _mockTicks = 0;
 unsigned long mockTime()

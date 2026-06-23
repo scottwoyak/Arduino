@@ -1,7 +1,7 @@
 #pragma once
 
 #include <esp_timer.h>
-#include <RollingRate.h>
+#include "RollingRate.h"
 
 /// <summary>
 /// Provides interrupt-driven capacitor charge-time measurements using timer callbacks

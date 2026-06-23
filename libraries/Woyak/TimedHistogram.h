@@ -1,6 +1,6 @@
 #pragma once
 
-#include <TimedStats.h>
+#include "TimedStats.h"
 
 /// <summary>
 /// Tracks histogram data over a time window using binned statistics.

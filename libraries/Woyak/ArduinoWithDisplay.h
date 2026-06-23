@@ -1,7 +1,7 @@
 #pragma once
 
-#include <LGX_FeatherESP32_S3_TFT.h>
-#include <Format.h>
+#include "LGX_FeatherESP32_S3_TFT.h"
+#include "Format.h"
 #include <string>
 #include "Color.h"
 #include "Structs.h"

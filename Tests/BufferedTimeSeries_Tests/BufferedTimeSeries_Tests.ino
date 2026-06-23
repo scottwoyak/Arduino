@@ -1,5 +1,5 @@
 #include <AUnit.h>
-#include <BufferedTimeSeries.h>
+#include "BufferedTimeSeries.h"
 #include <cmath>
 
 using namespace aunit;

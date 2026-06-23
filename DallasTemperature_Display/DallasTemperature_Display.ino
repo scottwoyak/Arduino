@@ -2,11 +2,11 @@
 // Sketch for DS18B20 temperature sensor display on a Feather TFT ESP32 S3.
 //
 
-#include <Feather.h>
+#include "Feather.h"
 #include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include <Stopwatch.h>
+#include "Stopwatch.h"
 
 #define ONE_WIRE_PIN 5
 

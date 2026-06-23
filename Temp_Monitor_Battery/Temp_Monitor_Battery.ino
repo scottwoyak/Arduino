@@ -1,12 +1,12 @@
 #include "Feather_ESP32_S3.h"
 #include "TempSensor.h"
-#include "Adafruit_SleepyDog.h"
-#include "Adafruit_MAX1704x.h"
+#include <Adafruit_SleepyDog.h>
+#include <Adafruit_MAX1704x.h>
 #include "SerialX.h"
 #include "Influx.h"
 
 
-#include "WiFiSettings.h" // for WIFI_SSID and WIFI_PASSWORD
+#include "WiFiSettings.h"
 
 constexpr auto version = "v0.91";
 

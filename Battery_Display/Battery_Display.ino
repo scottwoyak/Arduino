@@ -1,6 +1,6 @@
 
 #include "Feather.h"
-#include "Adafruit_MAX1704X.h"
+#include <Adafruit_MAX1704X.h>
 #include "SerialX.h"
 
 Feather feather;

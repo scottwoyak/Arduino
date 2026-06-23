@@ -1,4 +1,4 @@
-#include <Adafruit_ST7796S.h> // TFT display
+#include <Adafruit_ST7796S.h>
 
 // if any of the TFT defines are not found, it is because the correct board
 // is not selected. Needs to be Adafruit Feather ESP32-S3

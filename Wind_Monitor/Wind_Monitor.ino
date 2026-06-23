@@ -3,14 +3,14 @@
 // Wind Monitor
 //
 
-#include <SerialX.h>
-#include <WiFiSettings.h>
-#include <WindMeter.h>
-#include <Status.h>
-#include <Timer.h>
-#include <TimedBin.h>
-#include <Influx.h>
-#include <ESP32TempSensor.h>
+#include "SerialX.h"
+#include "WiFiSettings.h"
+#include "WindMeter.h"
+#include "Status.h"
+#include "Timer.h"
+#include "TimedBin.h"
+#include "Influx.h"
+#include "ESP32TempSensor.h"
 
 constexpr uint8_t NUM_DECIMALS = 2;
 

@@ -1,13 +1,13 @@
 #include "Feather.h"
 #include "TempSensor.h"
 #include "TimedStats.h"
-#include "Adafruit_SleepyDog.h"
+#include <Adafruit_SleepyDog.h>
 #include "SerialX.h"
 #include "Influx.h"
 #include <string>
-#include <I2CMultiplexor.h>
-#include <CountdownTimer.h>
-#include <Timer.h>
+#include "I2CMultiplexor.h"
+#include "CountdownTimer.h"
+#include "Timer.h"
 
 #include "WiFiSettings.h"
 

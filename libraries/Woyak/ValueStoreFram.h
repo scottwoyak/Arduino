@@ -1,7 +1,7 @@
 #pragma once
 
-#include <ValueStore.h>
-#include <FramSpiEx.h>
+#include "ValueStore.h"
+#include "FramSpiEx.h"
 
 class ValueStoreFram : public IValueStore {
 private:

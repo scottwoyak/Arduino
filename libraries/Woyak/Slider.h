@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Structs.h"
-#include <TFT_eSPI.h> 
+#include <TFT_eSPI.h>
 
 //-------------------------------------------------------------------------------------------------
 class Slider

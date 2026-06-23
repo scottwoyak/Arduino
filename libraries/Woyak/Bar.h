@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Structs.h>
+#include "Structs.h"
 #include <LovyanGFX.hpp>
 
 //-------------------------------------------------------------------------------------------------

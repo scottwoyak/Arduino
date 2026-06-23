@@ -1,6 +1,6 @@
 
 #include <AUnit.h>
-#include <Util.h>
+#include "Util.h"
 #include <cstdint>
 
 test(shouldGetSpan)

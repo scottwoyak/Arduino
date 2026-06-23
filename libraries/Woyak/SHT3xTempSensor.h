@@ -1,6 +1,6 @@
 #pragma once
 
-#include <I2CTempSensor.h>
+#include "I2CTempSensor.h"
 #include <Adafruit_SHT31.h>
 
 //-------------------------------------------------------------------------------------------------

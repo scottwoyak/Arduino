@@ -1,6 +1,6 @@
 
-#include <Feather.h>
-#include <SerialX.h>
+#include "Feather.h"
+#include "SerialX.h"
 
 Feather feather;
 

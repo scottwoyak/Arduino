@@ -1,5 +1,5 @@
 #include <AUnit.h>
-#include "StdDev.h" 
+#include "StdDev.h"
 
 // Test 1: Verify the default uninitialized state outputs NAN
 test(StdDevTest, uninitializedStateReturnsNan)

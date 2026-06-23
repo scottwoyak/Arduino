@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Adafruit_ST7796S.h> // TFT display
-#include <ArduinoWithDisplay.h>
-#include <Button.h>
+#include <Adafruit_ST7796S.h>
+#include "ArduinoWithDisplay.h"
+#include "Button.h"
 #include <string>
 #include <Preferences.h>
 

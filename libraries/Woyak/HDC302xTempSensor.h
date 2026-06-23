@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Adafruit_HDC302x.h>
-#include <I2CTempSensor.h>
-#include <Units.h>
+#include "I2CTempSensor.h"
+#include "Units.h"
 #include <string>
 
 

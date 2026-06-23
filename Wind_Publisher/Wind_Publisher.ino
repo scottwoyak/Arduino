@@ -4,12 +4,12 @@
 //
 
 #include <WiFi.h>
-#include <SerialX.h>
-#include <WiFiSettings.h>
-#include <TelemetryClient.h>
-#include <Url.h>
-#include <WindMeter.h>
-#include <Status.h>
+#include "SerialX.h"
+#include "WiFiSettings.h"
+#include "TelemetryClient.h"
+#include "Url.h"
+#include "WindMeter.h"
+#include "Status.h"
 
 constexpr uint8_t NUM_DECIMALS = 2;
 TelemetryPublisher client("Wind/Lake", NUM_DECIMALS);

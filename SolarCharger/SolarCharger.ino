@@ -1,11 +1,11 @@
 
-#include <FeedTimer.h>
+#include "FeedTimer.h"
 #include <NTPClient.h>
 #include <WiFi101.h>
 #include <WiFiUdp.h>
-#include <Util.h>
-#include <TimedStats.h>
-#include <I2C.h>
+#include "Util.h"
+#include "TimedStats.h"
+#include "I2C.h"
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
 #include <Adafruit_INA219.h>

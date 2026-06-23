@@ -1,7 +1,7 @@
 #pragma once
 
-#include <I2C.h>
-#include <ITempSensor.h>
+#include "I2C.h"
+#include "ITempSensor.h"
 
 //-------------------------------------------------------------------------------------------------
 class I2CTempSensor : public ITempSensor

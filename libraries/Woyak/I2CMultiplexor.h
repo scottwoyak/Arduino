@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Wire.h>
-#include <I2C.h>
+#include "I2C.h"
 
 class I2CMultiplexor {
 private:

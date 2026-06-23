@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Color.h>
-#include <LED.h>
+#include "Color.h"
+#include "LED.h"
 
 /// <summary>
 /// Blink interval used for animated status indicators.

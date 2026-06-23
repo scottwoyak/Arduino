@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ITempSensor.h>
+#include "ITempSensor.h"
 #include <driver/temperature_sensor.h>
 
 //-------------------------------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 
 #include "Feather.h"
-#include "Adafruit_MAX1704X.h"
-#include "Adafruit_INA219.h"
+#include <Adafruit_MAX1704X.h>
+#include <Adafruit_INA219.h>
 #include "SerialX.h"
 #include "RollingStats.h"
 

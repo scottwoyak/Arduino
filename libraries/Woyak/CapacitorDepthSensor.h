@@ -1,6 +1,6 @@
 #pragma once
 
-#include <CapacitorSensor.h>
+#include "CapacitorSensor.h"
 
 /// <summary>
 /// Converts capacitor charge timing into a depth value using linear interpolation.

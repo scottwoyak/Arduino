@@ -2,14 +2,14 @@
 // our passwords not under version control
 #include "WiFiSettings.h"
 
-#include <FeedTimer.h>
+#include "FeedTimer.h"
 #include <NTPClient.h>
-#include <Stopwatch.h>
+#include "Stopwatch.h"
 #include <WiFi101.h>
 #include <WiFiUdp.h>
-#include <Util.h>
-#include <RollingStats.h>
-#include <I2C.h>
+#include "Util.h"
+#include "RollingStats.h"
+#include "I2C.h"
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 

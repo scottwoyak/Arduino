@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Arduino.h"
+#include <Arduino.h>
 #include "Util.h"
 
 constexpr uint DEBOUNCE_TIME = 100;

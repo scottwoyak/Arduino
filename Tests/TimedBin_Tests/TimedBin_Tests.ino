@@ -1,6 +1,6 @@
 
 #include <AUnit.h>
-#include <TimedBin.h>
+#include "TimedBin.h"
 
 // mock timing for TimedBin
 unsigned long _mockMicros;

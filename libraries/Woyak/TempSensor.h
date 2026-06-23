@@ -1,17 +1,17 @@
 #pragma once
 
-#include <I2CTempSensor.h>
-#include <ITempSensor.h>
-#include <TempSensorCallibration.h>
+#include "I2CTempSensor.h"
+#include "ITempSensor.h"
+#include "TempSensorCallibration.h"
 
 // sensor types
-#include <BME280TempSensor.h>
-#include <DS18B20TempSensor.h>
-#include <HDC302xTempSensor.h>
-#include <MCP9808TempSensor.h>
-#include <MS5837TempSensor.h>
-#include <SHT3xTempSensor.h>
-#include <SHT4xTempSensor.h>
+#include "BME280TempSensor.h"
+#include "DS18B20TempSensor.h"
+#include "HDC302xTempSensor.h"
+#include "MCP9808TempSensor.h"
+#include "MS5837TempSensor.h"
+#include "SHT3xTempSensor.h"
+#include "SHT4xTempSensor.h"
 
 //-------------------------------------------------------------------------------------------------
 /// <summary>

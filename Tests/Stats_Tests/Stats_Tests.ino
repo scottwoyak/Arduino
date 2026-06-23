@@ -1,6 +1,6 @@
 
 #include <AUnit.h>
-#include <Stats.h>
+#include "Stats.h"
 #include <cmath>
 
 test(shouldComputeAverages)

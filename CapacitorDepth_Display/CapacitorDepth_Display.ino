@@ -1,8 +1,8 @@
 #include <Arduino.h>
-#include <CapacitorDepthSensor.h>
-#include <Feather.h>
-#include <RollingStats.h>
-#include <Timer.h>
+#include "CapacitorDepthSensor.h"
+#include "Feather.h"
+#include "RollingStats.h"
+#include "Timer.h"
 
 Feather feather;
 Format depthFormat("###.# cm");

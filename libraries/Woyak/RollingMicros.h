@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Util.h>
+#include "Util.h"
 
 /// <summary>
 /// Tracks a continuous stream of microsecond timing values in a circular buffer.

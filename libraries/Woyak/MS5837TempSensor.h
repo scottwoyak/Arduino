@@ -1,8 +1,8 @@
 #pragma once
 
-#include <I2CTempSensor.h>
+#include "I2CTempSensor.h"
 #include <MS5837.h>
-#include <Units.h>
+#include "Units.h"
 
 //-------------------------------------------------------------------------------------------------
 class MS5837TempSensor : public I2CTempSensor

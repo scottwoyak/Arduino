@@ -8,7 +8,7 @@
 #include "Influx.h"
 #include "Calibrator.h"
 #include "RollingStats.h"
-#include "Wire.h"
+#include <Wire.h>
 
 // 
 // This sketch calibrates and displays temperature readings on an Arduino ESP32 Feather

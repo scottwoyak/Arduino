@@ -6,10 +6,10 @@
 //-------------------------------------------------------------------------------------------------
 #include "Feather_ESP32_S3.h"
 #include "TempSensor.h"
-#include "Adafruit_SleepyDog.h"
+#include <Adafruit_SleepyDog.h>
 #include "SerialX.h"
 #include "Influx.h"
-#include <Timer.h>
+#include "Timer.h"
 
 #include "WiFiSettings.h"
 

@@ -1,5 +1,5 @@
-#include <Adafruit_ST7789.h> // TFT display
-#include <RollingStats.h>
+#include <Adafruit_ST7789.h>
+#include "RollingStats.h"
 
 // if any of the TFT defines are not found, it is because the correct board
 // is not selected. Needs to be Adafruit Feather ESP32-S3

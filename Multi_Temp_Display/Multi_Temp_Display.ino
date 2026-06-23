@@ -7,7 +7,7 @@
 #include "Feather.h"
 #include "TempSensor.h"
 #include "SerialX.h"
-#include <I2CMultiplexor.h>
+#include "I2CMultiplexor.h"
 
 Format tempFormat("###.## F");
 

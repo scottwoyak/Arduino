@@ -1,6 +1,6 @@
 
 #include <AUnit.h>
-#include <RollingRate.h>
+#include "RollingRate.h"
 
 unsigned long ticks;
 unsigned long getTicks()

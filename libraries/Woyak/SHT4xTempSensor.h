@@ -1,8 +1,8 @@
 #pragma once
 
-#include <I2CTempSensor.h>
+#include "I2CTempSensor.h"
 #include <Adafruit_SHT4x.h>
-#include <Units.h>
+#include "Units.h"
 
 //-------------------------------------------------------------------------------------------------
 class SHT4xTempSensor : public I2CTempSensor

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DallasTemperature.h>
-#include <ITempSensor.h>
+#include "ITempSensor.h"
 
 class DS18B20TempSensor : public ITempSensor
 {

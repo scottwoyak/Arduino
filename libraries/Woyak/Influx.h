@@ -2,12 +2,12 @@
 
 #include <WiFi.h>
 
-#include <ArduinoWithDisplay.h>
-#include <Feather.h>
+#include "ArduinoWithDisplay.h"
+#include "Feather.h"
 #include <InfluxDbClient.h>
 #include <InfluxDbCloud.h>
-#include <Status.h>
-#include <TimedStats.h>
+#include "Status.h"
+#include "TimedStats.h"
 
 constexpr auto TZ_INFO = "UTC-5";
 

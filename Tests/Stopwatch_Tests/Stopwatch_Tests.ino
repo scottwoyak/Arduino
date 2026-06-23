@@ -1,5 +1,5 @@
 #include <AUnit.h>
-#include <Stopwatch.h>
+#include "Stopwatch.h"
 
 // mock timing for Stopwatch
 unsigned long ticks;

@@ -1,9 +1,9 @@
 #define LGFX_AUTODETECT
 #include <LovyanGFX.h>
 
-#include <Scott16.h>
-#include <Scott32.h>
-#include <RollingStats.h>
+#include "Scott16.h"
+#include "Scott32.h"
+#include "RollingStats.h"
 
 LGFX display;
 RollingStats fps(100);

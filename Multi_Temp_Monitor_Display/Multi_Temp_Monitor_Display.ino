@@ -11,10 +11,10 @@
 #include "SerialX.h"
 #include "Influx.h"
 #include "Status.h"
-#include <I2CMultiplexor.h>
-#include <Timer.h>
+#include "I2CMultiplexor.h"
+#include "Timer.h"
 
-#include <WiFiSettings.h>
+#include "WiFiSettings.h"
 
 Format tempFormat("###.## F");
 

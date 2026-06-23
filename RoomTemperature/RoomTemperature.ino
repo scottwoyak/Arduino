@@ -2,18 +2,18 @@
 // our passwords not under version control
 #include "WiFiSettings.h"
 
-#include <FeedTimer.h>
+#include "FeedTimer.h"
 #include <NTPClient.h>
-#include <Stopwatch.h>
-#include <MinMaxValue.h>
+#include "Stopwatch.h"
+#include "MinMaxValue.h"
 #include <WiFi101.h>
 #include <WiFiUdp.h>
 #include <Logger.h>
-#include <Util.h>
+#include "Util.h"
 #include <AccumulatingAverager.h>
-#include <RollingStats.h>
+#include "RollingStats.h"
 #include <Adafruit_LPS35HW.h>
-#include <I2C.h>
+#include "I2C.h"
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
 #include <FlashStorage.h>

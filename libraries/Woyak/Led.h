@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include <Util.h>
+#include "Util.h"
 #include <FastLed.h>
 
 // TODO - standardize when changes are applied - e.g. right now color is immediate but level is not

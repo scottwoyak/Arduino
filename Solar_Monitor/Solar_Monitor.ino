@@ -1,6 +1,6 @@
 
 #include "Feather_ESP32_S3_ST7796S.h"
-#include "Adafruit_INA219.h"
+#include <Adafruit_INA219.h>
 #include "SerialX.h"
 #include "TimedStats.h"
 #include "Influx.h"

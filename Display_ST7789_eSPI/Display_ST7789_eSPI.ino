@@ -1,9 +1,9 @@
 
 #include <TFT_eSPI.h>
-#include <RollingStats.h>
+#include "RollingStats.h"
 
-#include <Scott16.h>
-#include <Scott32.h>
+#include "Scott16.h"
+#include "Scott32.h"
 
 TFT_eSPI display;
 RollingStats fps(100);

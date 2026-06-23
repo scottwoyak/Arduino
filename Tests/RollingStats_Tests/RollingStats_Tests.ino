@@ -1,5 +1,5 @@
 #include <AUnit.h>
-#include <RollingStats.h>
+#include "RollingStats.h"
 
 test(shouldStartEmpty)
 {

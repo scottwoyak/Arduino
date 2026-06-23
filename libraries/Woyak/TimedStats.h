@@ -4,7 +4,7 @@
 #include <cmath>
 #include <limits>
 
-#include <Stats.h>
+#include "Stats.h"
 
 /// <summary>
 /// Tracks time-windowed statistics by storing values in rotating time buckets.

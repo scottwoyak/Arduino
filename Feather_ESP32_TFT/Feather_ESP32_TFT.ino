@@ -1,5 +1,5 @@
-#include <Feather_ESP32_S3.h>
-#include <RollingStats.h>
+#include "Feather_ESP32_S3.h"
+#include "RollingStats.h"
 
 Feather_ESP32_S3 feather;
 RollingStats fps(100);
