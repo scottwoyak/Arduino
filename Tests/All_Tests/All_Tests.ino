@@ -1,0 +1,26 @@
+#include <AUnit.h>
+#include "../BufferedTimeSeries_Tests/BufferedTimeSeries_Tests.h"
+#include "../Calibrator_Tests/Calibrator_Tests.h"
+#include "../RollingMicros_Tests/RollingMicros_Tests.h"
+#include "../RollingRate_Tests/RollingRate_Tests.h"
+#include "../RollingStats_Tests/RollingStats_Tests.h"
+#include "../RollingStdDev_Tests/RollingStdDev_Tests.h"
+#include "../RollingValues_Tests/RollingValues_Tests.h"
+#include "../Stats_Tests/Stats_Tests.h"
+#include "../StdDev_Tests/StdDev_Tests.h"
+#include "../Stopwatch_Tests/Stopwatch_Tests.h"
+#include "../TimedBin_Tests/TimedBin_Tests.h"
+#include "../TimedStats_Tests/TimedStats_Tests.h"
+#include "../Timer_Tests/Timer_Tests.h"
+#include "../Util_Tests/Util_Tests.h"
+
+void setup()
+{
+   Serial.begin(115200);
+   while (!Serial);
+}
+
+void loop()
+{
+   aunit::TestRunner::run();
+}

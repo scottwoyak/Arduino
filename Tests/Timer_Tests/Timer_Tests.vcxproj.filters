@@ -18,6 +18,9 @@
     <ClInclude Include="__vm\.Timer_Tests.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Timer_Tests.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Timer_Tests.ino" />

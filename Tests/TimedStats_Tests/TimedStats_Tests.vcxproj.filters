@@ -21,5 +21,8 @@
     <ClInclude Include="__vm\.TimedStats_Tests.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="TimedStats_Tests.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

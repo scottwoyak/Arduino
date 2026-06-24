@@ -80,6 +80,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="RollingMicros_Tests.h" />
     <ClInclude Include="__vm\.RollingMicros_Tests.vsarduino.h" />
   </ItemGroup>
   <PropertyGroup>

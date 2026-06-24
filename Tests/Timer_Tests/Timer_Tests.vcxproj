@@ -74,6 +74,7 @@
     <ProjectCapability Include="VisualMicroLinux" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Timer_Tests.h" />
     <ClInclude Include="__vm\.Timer_Tests.vsarduino.h" />
   </ItemGroup>
   <ItemGroup>

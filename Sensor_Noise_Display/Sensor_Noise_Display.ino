@@ -1,9 +1,8 @@
 #include "Feather.h"
 #include "Stopwatch.h"
 #include "SerialX.h"
-#include "TempSensor.h"
+#include "CapacitorSensor.h"
 #include "RollingStats.h"
-#include "I2C.h"
 
 //
 // This sketch continuously reads sensor temperature, shows rolling averages
@@ -78,8 +77,11 @@ public:
    }
 };
 
+constexpr uint8_t CHARGE_PIN = 5;
+constexpr uint8_t SENSE_PIN = 6;
+
 Feather feather;
-TempSensor sensor;
+CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN);
 Stopwatch sw;
 Test tests[] =
 {
@@ -93,11 +95,10 @@ uint32_t sampleCount = 0;
 
 Format valueFormat("###.##");
 Format sigmaFormat("##.###");
-Format rateFormat("####/s", Format::Alignment::RIGHT);
+Format rateFormat("#####/s", Format::Alignment::RIGHT);
 
 void setup()
 {
-   Wire.begin();
    SerialX::begin(115200, 1000);
    feather.begin();
 
@@ -106,7 +107,7 @@ void setup()
 
 float readSensor()
 {
-   return sensor.readTemperatureF();
+   return (float)sensor.chargeTimeMicros();
 }
 
 void loop()

@@ -80,6 +80,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="BufferedTimeSeries_Tests.h" />
     <ClInclude Include="__vm\.BufferedTimeSeries_Tests.vsarduino.h" />
   </ItemGroup>
   <PropertyGroup>

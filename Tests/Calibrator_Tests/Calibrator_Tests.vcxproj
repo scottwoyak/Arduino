@@ -80,6 +80,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Calibrator_Tests.h" />
     <ClInclude Include="__vm\.Calibrator_Tests.vsarduino.h" />
   </ItemGroup>
   <PropertyGroup>
