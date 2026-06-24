@@ -109,11 +109,48 @@ public:
    }
 
    /// <summary>
+   /// Alias for get().
+   /// </summary>
+   /// <returns>The population standard deviation, or NaN if no finite values exist.</returns>
+   float sigma() const
+   {
+      return get();
+   }
+
+   /// <summary>
+   /// Alias for get().
+   /// </summary>
+   /// <returns>The population standard deviation, or NaN if no finite values exist.</returns>
+   float stdDev() const
+   {
+      return get();
+   }
+
+   /// <summary>
    /// Gets the count of finite values currently in the window.
    /// </summary>
    /// <returns>Number of finite values contributing to statistics.</returns>
    size_t count() const
    {
       return _stdDev.count();
+   }
+
+   /// <summary>
+   /// Calculates the required sample count for the current rolling standard deviation.
+   /// </summary>
+   /// <param name="tolerance">Allowed error tolerance.</param>
+   /// <param name="zScore">Z-score multiplier (defaults to 95% confidence).</param>
+   /// <returns>Required sample count, or 0 when inputs are invalid.</returns>
+   size_t requiredSamples(float tolerance, float zScore = 1.96f) const
+   {
+      float sigma = get();
+      if (!isfinite(sigma) || tolerance <= 0 || !isfinite(zScore) || zScore <= 0)
+      {
+         return 0;
+      }
+
+      float n = (zScore * sigma) / tolerance;
+      n *= n;
+      return (size_t)ceilf(n);
    }
 };

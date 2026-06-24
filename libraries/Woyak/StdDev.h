@@ -100,6 +100,43 @@ public:
    }
 
    /// <summary>
+   /// Alias for get().
+   /// </summary>
+   /// <returns>The population standard deviation, or NAN if no data points have been added.</returns>
+   float sigma() const
+   {
+      return get();
+   }
+
+   /// <summary>
+   /// Alias for get().
+   /// </summary>
+   /// <returns>The population standard deviation, or NAN if no data points have been added.</returns>
+   float stdDev() const
+   {
+      return get();
+   }
+
+   /// <summary>
+   /// Calculates required samples using the current tracked standard deviation.
+   /// </summary>
+   /// <param name="tolerance">Allowed error tolerance.</param>
+   /// <param name="zScore">Z-score multiplier (defaults to 95% confidence).</param>
+   /// <returns>Required sample count, or 0 when inputs are invalid.</returns>
+   size_t requiredSamples(float tolerance, float zScore = 1.96f) const
+   {
+      float sigma = get();
+      if (!isfinite(sigma) || tolerance <= 0 || !isfinite(zScore) || zScore <= 0)
+      {
+         return 0;
+      }
+
+      float n = (zScore * sigma) / tolerance;
+      n *= n;
+      return (size_t)ceilf(n);
+   }
+
+   /// <summary>
    /// Resets the internal state, clearing out all tracked history and setting metrics back to NAN.
    /// </summary>
    void reset()
