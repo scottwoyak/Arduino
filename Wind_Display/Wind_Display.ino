@@ -19,7 +19,7 @@ constexpr uint8_t WIND_AVERAGE_INTERVAL_S = 10;
 constexpr uint8_t WIND_AVERAGE_BINS = WIND_AVERAGE_DURATION_S / WIND_AVERAGE_INTERVAL_S;
 TimedStats windAverager(WIND_AVERAGE_DURATION_S * 1000, WIND_AVERAGE_BINS);
 
-Format speedFormat("##.# mph");
+Format speedFormat("##.# mph", Format::Alignment::RIGHT);
 
 constexpr uint16_t DISPLAY_HEIGHT = 135;
 constexpr uint16_t DISPLAY_WIDTH = 240;
@@ -65,8 +65,6 @@ Mode operator++(Mode& mode, int)
 void setup()
 {
    mode = Mode::Histogram;
-
-   speedFormat.alignment = Format::Alignment::RIGHT;
 
    SerialX::begin();
    feather.begin();

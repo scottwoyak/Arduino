@@ -39,14 +39,12 @@ String labels[] = {
 
 constexpr uint NUM_BUTTONS = sizeof(buttons) / sizeof(buttons[0]);
 
-Format pinFormat(3);
+Format pinFormat(3, Format::Alignment::RIGHT);
 Format valueFormat(4);
 Format timeFormat("##.#s");
 
 void setup()
 {
-   pinFormat.alignment = Format::Alignment::RIGHT;
-
    SerialX::begin();
    feather.begin();
    feather.setRotation(DisplayRotation::PORTRAIT);

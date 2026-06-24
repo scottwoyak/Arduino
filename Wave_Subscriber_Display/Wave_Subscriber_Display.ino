@@ -24,7 +24,7 @@ constexpr auto BUFFER_RESOLUTION_MS = 100;
 BufferedTimeSeries waveHeight(BUFFER_TIME_WINDOW_MS, BUFFER_RESOLUTION_MS);
 Timer bufferTimer(BUFFER_RESOLUTION_MS);
 
-Format heightFormat("###.# cm");
+Format heightFormat("###.# cm", Format::Alignment::RIGHT);
 
 constexpr uint16_t DISPLAY_HEIGHT = 135;
 constexpr uint16_t DISPLAY_WIDTH = 240;
@@ -37,8 +37,6 @@ RollingBarChart rollingChart(ROLLING_RECT, ROLLING_RANGE, LakeBlue, Color::BLACK
 
 void setup()
 {
-   heightFormat.alignment = Format::Alignment::RIGHT;
-
    SerialX::begin();
    feather.begin();
 

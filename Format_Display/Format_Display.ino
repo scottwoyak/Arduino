@@ -25,27 +25,27 @@ void toSerial(const char* format, Format& f)
    Serial.println("'");
 
    Serial.print("    precision: ");
-   Serial.println(f.precision);
+   Serial.println(f.precision());
 
    Serial.print("       prefix: '");
-   Serial.print(f.prefix.c_str());
+   Serial.print(f.prefix().c_str());
    Serial.println("'");
 
    Serial.print("      postfix: '");
-   Serial.print(f.postfix.c_str());
+   Serial.print(f.postfix().c_str());
    Serial.println("'");
 
    Serial.print("      errChar: ");
-   Serial.println(f.errChar);
+   Serial.println(f.errChar());
 
    Serial.print("  includePlus: ");
-   Serial.println(f.includePlus ? "true" : "false");
+   Serial.println(f.includePlus() ? "true" : "false");
 
    Serial.print("       length: ");
-   Serial.println(f.length);
+   Serial.println(f.length());
 
    const char* alignment = "unknown";
-   switch (f.alignment)
+   switch (f.alignment())
    {
    case Format::Alignment::LEFT:
       alignment = "Left";
@@ -86,8 +86,7 @@ void println(const char* format, size_t length, double value)
 {
    feather.print(format, Color::LABEL, Color::DARKGRAY);
    feather.setCursorX(feather.display.width() / 2);
-   Format f(format);
-   f.length = length;
+   Format f(format, length);
    toSerial(format, f);
    feather.println(value, f, Color::VALUE, Color::DARKGRAY);
 }
@@ -96,8 +95,7 @@ void println(const char* format, Format::Alignment alignment, double value)
 {
    feather.print(format, Color::LABEL, Color::DARKGRAY);
    feather.setCursorX(feather.display.width() / 2);
-   Format f(format);
-   f.alignment = alignment;
+   Format f(format, alignment);
    toSerial(format, f);
    feather.println(value, f, Color::VALUE, Color::DARKGRAY);
 }
