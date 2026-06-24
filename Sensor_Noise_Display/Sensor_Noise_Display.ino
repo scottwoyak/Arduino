@@ -1,8 +1,16 @@
 #include "Feather.h"
-#include "Stopwatch.h"
 #include "SerialX.h"
-#include "CapacitorSensor.h"
 #include "RollingStats.h"
+#include "RollingRate.h"
+#include "Timer.h"
+
+#define SENSOR_MODE_CAPACITOR 1
+
+#if SENSOR_MODE_CAPACITOR
+#include "CapacitorSensor.h"
+#else
+#include "TempSensor.h"
+#endif
 
 //
 // This sketch continuously reads sensor temperature, shows rolling averages
@@ -77,12 +85,19 @@ public:
    }
 };
 
+#if SENSOR_MODE_CAPACITOR
 constexpr uint8_t CHARGE_PIN = 5;
 constexpr uint8_t SENSE_PIN = 6;
+#endif
 
 Feather feather;
-CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN);
-Stopwatch sw;
+#if SENSOR_MODE_CAPACITOR
+CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN, 500);
+#else
+TempSensor sensor;
+RollingRate sampleRate(200);
+#endif
+Timer displayTimer(100);
 Test tests[] =
 {
    { "  N1", 1 },
@@ -95,7 +110,7 @@ uint32_t sampleCount = 0;
 
 Format valueFormat("###.##");
 Format sigmaFormat("##.###");
-Format rateFormat("#####/s", Format::Alignment::RIGHT);
+Format rateFormat("####/s", Format::Alignment::RIGHT);
 
 void setup()
 {
@@ -107,17 +122,29 @@ void setup()
 
 float readSensor()
 {
+#if SENSOR_MODE_CAPACITOR
    return (float)sensor.chargeTimeMicros();
+#else
+   return sensor.readTemperatureF();
+#endif
+}
+
+float readSensorRate()
+{
+#if SENSOR_MODE_CAPACITOR
+   return sensor.rate();
+#else
+   return sampleRate.get();
+#endif
 }
 
 void loop()
 {
-   sw.reset();
    float value = readSensor();
-   float elapsedMs = sw.elapsedMillis();
-   uint16_t samplesPerSecond = elapsedMs > 0 ? (uint16_t)round(1000.0f / elapsedMs) : 0;
 
-   feather.setCursor(0, 0);
+#if !SENSOR_MODE_CAPACITOR
+   sampleRate.tick();
+#endif
 
    sampleCount++;
    for (uint8_t i = 0; i < NUM_TESTS; i++)
@@ -125,6 +152,15 @@ void loop()
       tests[i].set(value);
    }
 
+   if (!displayTimer.ready())
+   {
+      return;
+   }
+
+   float sensorRate = readSensorRate();
+   uint16_t samplesPerSecond = isfinite(sensorRate) ? (uint16_t)round(sensorRate) : 0;
+
+   feather.setCursor(0, 0);
    feather.setTextSize(3);
    feather.println("Sensor Noise", Color::HEADING);
    feather.moveCursorY(2);
