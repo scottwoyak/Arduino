@@ -83,9 +83,9 @@ public:
    {
       std::string valueStr;
 
-      // avoid the -0.00 result
-      double v = value * std::pow(10, precision);
-      if (std::fabs(v) < 1)
+      // avoid the -0.00 result, but only when the value would round to zero
+      const double epsilon = 0.5 / std::pow(10.0, precision);
+      if (std::fabs(value) < epsilon)
       {
          if (includePlus)
          {

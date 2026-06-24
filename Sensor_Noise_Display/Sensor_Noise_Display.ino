@@ -48,6 +48,9 @@ void setup()
    feather.begin();
 
    sensor.begin();
+   Serial.println("XXXXX");
+   Serial.println(0.01, 2);
+   Serial.println(toleranceFormat.toString(0.01).c_str());
 }
 
 void loop()
@@ -64,7 +67,7 @@ void loop()
 
    feather.setCursor(0, 0);
    feather.setTextSize(3);
-   feather.println("Noise Calculations", Color::HEADING);
+   feather.println("Sensor Noise", Color::HEADING);
    feather.moveCursorY(5);
    uint16_t y = feather.getCursorY();
 
