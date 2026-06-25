@@ -11,7 +11,7 @@
 - Start non-constant private and protected class members with underscores; private and protected constants should not start with underscores.
 - Use brace-on-new-line formatting style: place opening '{' on a new line.
 - Avoid calling clearDisplay every loop iteration in sketches because it causes visible screen flicker; only clear when needed (e.g., mode changes).
-- Never use display text size 1 in sketches; it is too small to read. Use size 2 or larger.
+- Never use display text size 1 in sketches; use size 2 or larger for better readability.
 - Use "micros" instead of "us" in names and identifiers.
 - Always use the Timer class when waiting for something.
 
@@ -21,3 +21,4 @@
 ## Arduino File Guidelines
 - For .ino files, do not add comments on setup() and loop(); include a formatted top-of-file summary header only, using divider lines that end at column 99, a blank comment line before/after summary text, and no separate sketch title line.
 - When creating new Arduino test sketches, only create the .ino file. Do not create .vcxproj project files or modify the .slnx solution file. The user imports new projects into the solution via Visual Micro themselves.
+- When adding new test projects, always include them in Tests/All_Tests/All_Tests.ino so they run in the aggregate test project.

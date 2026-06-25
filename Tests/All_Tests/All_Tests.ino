@@ -1,6 +1,7 @@
 #include <AUnit.h>
 #include "../BufferedTimeSeries_Tests/BufferedTimeSeries_Tests.h"
 #include "../Calibrator_Tests/Calibrator_Tests.h"
+#include "../Histogram_Tests/Histogram_Tests.h"
 #include "../RollingMicros_Tests/RollingMicros_Tests.h"
 #include "../RollingRate_Tests/RollingRate_Tests.h"
 #include "../RollingStats_Tests/RollingStats_Tests.h"

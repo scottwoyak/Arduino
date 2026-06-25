@@ -74,11 +74,27 @@ namespace SerialX
 	}
 
 	/// <summary>
+	/// Prints a signed integer with explicit numeric base and optional left space padding.
+	/// </summary>
+	inline size_t print(long value, uint8_t base, size_t width)
+	{
+		return print(String(value, base), width);
+	}
+
+	/// <summary>
 	/// Prints an unsigned integer with optional left space padding.
 	/// </summary>
 	inline size_t print(unsigned long value, size_t width = 0)
 	{
 		return print(String(value), width);
+	}
+
+	/// <summary>
+	/// Prints an unsigned integer with explicit numeric base and optional left space padding.
+	/// </summary>
+	inline size_t print(unsigned long value, uint8_t base, size_t width)
+	{
+		return print(String(value, base), width);
 	}
 
 	/// <summary>
@@ -90,11 +106,27 @@ namespace SerialX
 	}
 
 	/// <summary>
+	/// Prints a floating-point number with explicit decimal places and optional left space padding.
+	/// </summary>
+	inline size_t print(float value, uint8_t decimals, size_t width)
+	{
+		return print(String(value, (unsigned int)decimals), width);
+	}
+
+	/// <summary>
 	/// Prints a signed integer line with optional left space padding.
 	/// </summary>
 	inline size_t println(long value, size_t width = 0)
 	{
 		return println(String(value), width);
+	}
+
+	/// <summary>
+	/// Prints a signed integer line with explicit numeric base and optional left space padding.
+	/// </summary>
+	inline size_t println(long value, uint8_t base, size_t width)
+	{
+		return println(String(value, base), width);
 	}
 
 	/// <summary>
@@ -106,10 +138,26 @@ namespace SerialX
 	}
 
 	/// <summary>
+	/// Prints an unsigned integer line with explicit numeric base and optional left space padding.
+	/// </summary>
+	inline size_t println(unsigned long value, uint8_t base, size_t width)
+	{
+		return println(String(value, base), width);
+	}
+
+	/// <summary>
 	/// Prints a floating-point number line with optional left space padding.
 	/// </summary>
 	inline size_t println(float value, size_t width = 0)
 	{
 		return println(String(value), width);
+	}
+
+	/// <summary>
+	/// Prints a floating-point number line with explicit decimal places and optional left space padding.
+	/// </summary>
+	inline size_t println(float value, uint8_t decimals, size_t width)
+	{
+		return println(String(value, (unsigned int)decimals), width);
 	}
 }

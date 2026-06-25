@@ -33,6 +33,7 @@
     <File Path="libraries/Woyak/FramSpiEx.h" />
     <File Path="libraries/Woyak/HDC302XTempSensor.h" />
     <File Path="libraries/Woyak/RollingValues.h" />
+    <File Path="libraries/Woyak/Histogram.h" />
     <File Path="libraries/Woyak/I2C.h" />
     <File Path="libraries/Woyak/I2CMultiplexor.h" />
     <File Path="libraries/Woyak/I2CTempSensor.h" />
@@ -90,6 +91,10 @@
       <Deploy />
     </Project>
     <Project Path="Tests/Calibrator_Tests/Calibrator_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
+    <Project Path="Tests/Histogram_Tests/Histogram_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
@@ -298,6 +303,10 @@
     <Deploy />
   </Project>
   <Project Path="RotaryEncoder_Display/RotaryEncoder_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Sensor_Capture_Display/Sensor_Capture_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
