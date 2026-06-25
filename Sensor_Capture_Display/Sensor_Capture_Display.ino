@@ -20,6 +20,8 @@ constexpr unsigned long SAMPLE_DURATION_MS = 10000;
 constexpr size_t MAX_SAMPLES = 10000;
 // Number of bins used for value and interval histograms.
 constexpr size_t HISTOGRAM_BINS = 20;
+// Significant digits used for chart min/max labels on the Feather display.
+constexpr uint8_t CHART_MIN_MAX_SIGNIFICANT_DIGITS = 3;
 // Delay between serial dump rows to avoid overwhelming the serial link.
 constexpr unsigned long PRINT_INTERVAL_MS = 2;
 
@@ -67,6 +69,30 @@ bool sampleAvailable()
 #else
    return true;
 #endif
+}
+
+String toSignificantString(float value, uint8_t significantDigits)
+{
+   if (!isfinite(value))
+   {
+      return "n/a";
+   }
+
+   if (value == 0.0f)
+   {
+      return "0";
+   }
+
+   float absValue = fabsf(value);
+   int exponent = (int)floorf(log10f(absValue));
+   int decimals = (int)significantDigits - 1 - exponent;
+   if (decimals <= 0)
+   {
+      long truncated = (long)value;
+      return String(truncated);
+   }
+
+   return String(value, (unsigned int)decimals);
 }
 
 void printStatsRow(const char* label, const Stats& stats, const StdDev& stddev, uint8_t decimals)
@@ -218,8 +244,8 @@ void drawHistogramOnFeather(const char* title, const Histogram<HISTOGRAM_BINS>& 
    String maxLabel = "n/a";
    if (histogram.count() > 0)
    {
-      minLabel = String(histogram.min(), 1);
-      maxLabel = String(histogram.max(), 1);
+      minLabel = toSignificantString(histogram.min(), CHART_MIN_MAX_SIGNIFICANT_DIGITS);
+      maxLabel = toSignificantString(histogram.max(), CHART_MIN_MAX_SIGNIFICANT_DIGITS);
    }
 
    feather.setCursor(sectionLeft, chartBottom + 1);
@@ -243,10 +269,14 @@ void renderHistogramsOnFeather()
    buildValueHistogram(valueHistogram);
    buildIntervalHistogram(intervalHistogram);
 
+   feather.setTextSize(3);
+   feather.setCursor(0, 0);
+   feather.println("Results", Color::HEADING);
+
    feather.setTextSize(2);
-   int16_t top = 0;
+   int16_t top = feather.getCursorY() + 2;
    int16_t messageHeight = feather.charH() + 2;
-   int16_t availableHeight = (int16_t)feather.height() - messageHeight;
+   int16_t availableHeight = (int16_t)feather.height() - top - messageHeight;
    int16_t totalWidth = (int16_t)feather.width();
    int16_t gap = 4;
    int16_t columnWidth = (totalWidth - gap) / 2;
@@ -254,9 +284,9 @@ void renderHistogramsOnFeather()
    int16_t rightX = leftX + columnWidth + gap;
 
    drawHistogramOnFeather("Value", valueHistogram, leftX, columnWidth, top, availableHeight, Color::VALUE2);
-   drawHistogramOnFeather("Sample Micros", intervalHistogram, rightX, columnWidth, top, availableHeight, Color::VALUE3);
+   drawHistogramOnFeather("Micros", intervalHistogram, rightX, columnWidth, top, availableHeight, Color::VALUE3);
 
-   feather.setCursor(0, availableHeight + 1);
+   feather.setCursor(0, top + availableHeight + 1);
    feather.println("Button A to dump to Serial", Color::GRAY);
 }
 
