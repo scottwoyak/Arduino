@@ -23,6 +23,7 @@ private:
 
    static constexpr uint64_t CHARGE_TIMEOUT_US = 200000;
    static constexpr uint16_t RATE_SAMPLES = 500;
+   static constexpr uint8_t EVENT_QUEUE_SIZE = 32;
 
    uint8_t _chargePin;
    uint8_t _sensePin;
@@ -30,8 +31,15 @@ private:
 
    volatile State _state = State::IDLE;
    volatile uint64_t _chargeStartTimeMicros = 0;
-   volatile uint64_t _chargeTimeMicros = 0;
+   volatile uint64_t _latestChargeTimeMicros = 0;
    volatile bool _hasChanged = false;
+
+   volatile uint64_t _queuedChargeTimesMicros[EVENT_QUEUE_SIZE] = { 0 };
+   volatile uint64_t _queuedChargeEndTimesMicros[EVENT_QUEUE_SIZE] = { 0 };
+   volatile uint8_t _queueHead = 0;
+   volatile uint8_t _queueTail = 0;
+   volatile uint8_t _queueCount = 0;
+   volatile uint32_t _droppedQueuedEvents = 0;
 
    RollingRate _rawSensorRate;
 
@@ -117,8 +125,24 @@ private:
       }
 
       uint64_t chargeEndTimeMicros = esp_timer_get_time();
-      _chargeTimeMicros = chargeEndTimeMicros - _chargeStartTimeMicros;
+      uint64_t chargeTimeMicros = chargeEndTimeMicros - _chargeStartTimeMicros;
+      _latestChargeTimeMicros = chargeTimeMicros;
       _hasChanged = true;
+
+      _queuedChargeTimesMicros[_queueHead] = chargeTimeMicros;
+      _queuedChargeEndTimesMicros[_queueHead] = chargeEndTimeMicros;
+      _queueHead = static_cast<uint8_t>((_queueHead + 1) % EVENT_QUEUE_SIZE);
+
+      if (_queueCount < EVENT_QUEUE_SIZE)
+      {
+         _queueCount = static_cast<uint8_t>(_queueCount + 1);
+      }
+      else
+      {
+         _queueTail = static_cast<uint8_t>((_queueTail + 1) % EVENT_QUEUE_SIZE);
+         _droppedQueuedEvents = _droppedQueuedEvents + 1;
+      }
+
       _rawSensorRate.tick();
 
       detachInterrupt(digitalPinToInterrupt(_sensePin));
@@ -142,7 +166,12 @@ public:
       _sensePin = sensePin;
       _dischargeDelayMicros = dischargeDelayMicros;
       _instance = this;
+      _latestChargeTimeMicros = 0;
       _hasChanged = false;
+      _queueHead = 0;
+      _queueTail = 0;
+      _queueCount = 0;
+      _droppedQueuedEvents = 0;
    }
 
    /// <summary>
@@ -169,7 +198,43 @@ public:
    /// <returns>The most recent charge time in microseconds.</returns>
    uint32_t chargeTimeMicros() const
    {
-      return static_cast<uint32_t>(_chargeTimeMicros);
+      return static_cast<uint32_t>(_latestChargeTimeMicros);
+   }
+
+   /// <summary>
+   /// Gets and consumes the next queued measurement if available.
+   /// </summary>
+   /// <param name="chargeTimeMicros">Output for queued charge time in microseconds.</param>
+   /// <param name="chargeEndMicros">Output for queued charge completion timestamp in microseconds.</param>
+   /// <returns>True when a queued measurement was consumed; otherwise false.</returns>
+   bool tryDequeue(uint32_t& chargeTimeMicros, uint64_t& chargeEndMicros)
+   {
+      noInterrupts();
+      if (_queueCount == 0)
+      {
+         interrupts();
+         return false;
+      }
+
+      uint8_t tail = _queueTail;
+      chargeTimeMicros = static_cast<uint32_t>(_queuedChargeTimesMicros[tail]);
+      chargeEndMicros = _queuedChargeEndTimesMicros[tail];
+      _queueTail = static_cast<uint8_t>((_queueTail + 1) % EVENT_QUEUE_SIZE);
+      _queueCount = static_cast<uint8_t>(_queueCount - 1);
+      interrupts();
+
+      return true;
+   }
+
+   /// <summary>
+   /// Gets and consumes the next queued measurement if available.
+   /// </summary>
+   /// <param name="chargeTimeMicros">Output for queued charge time in microseconds.</param>
+   /// <returns>True when a queued measurement was consumed; otherwise false.</returns>
+   bool tryDequeue(uint32_t& chargeTimeMicros)
+   {
+      uint64_t ignoredEndMicros = 0;
+      return tryDequeue(chargeTimeMicros, ignoredEndMicros);
    }
 
    /// <summary>
@@ -181,6 +246,22 @@ public:
       bool hasChanged = _hasChanged;
       _hasChanged = false;
       return hasChanged;
+   }
+
+   /// <summary>
+   /// Gets the number of queued measurements waiting to be consumed.
+   /// </summary>
+   uint8_t queuedCount() const
+   {
+      return _queueCount;
+   }
+
+   /// <summary>
+   /// Gets the number of events dropped because the queue was full.
+   /// </summary>
+   uint32_t droppedQueuedEvents() const
+   {
+      return _droppedQueuedEvents;
    }
 
    /// <summary>
@@ -199,6 +280,10 @@ public:
    {
       _rawSensorRate.reset();
       _hasChanged = false;
+      _queueHead = 0;
+      _queueTail = 0;
+      _queueCount = 0;
+      _droppedQueuedEvents = 0;
    }
 
    /// <summary>
@@ -275,17 +360,16 @@ public:
    /// </summary>
    void loop()
    {
-      if (!_sensor.hasChanged())
+      uint32_t chargeTime = 0;
+      while (_sensor.tryDequeue(chargeTime))
       {
-         return;
-      }
+         _stats.set(static_cast<float>(chargeTime));
 
-      _stats.set(static_cast<float>(_sensor.chargeTimeMicros()));
-
-      float avg = _stats.average();
-      if (isfinite(avg))
-      {
-         _averageStats.set(avg);
+         float avg = _stats.average();
+         if (isfinite(avg))
+         {
+            _averageStats.set(avg);
+         }
       }
    }
 

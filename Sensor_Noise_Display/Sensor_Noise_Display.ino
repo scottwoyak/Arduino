@@ -1,3 +1,20 @@
+// -------------------------------------------------------------------------------------------------
+// Sensor_Noise_Display
+//
+// This sketch characterizes sensor noise over multiple rolling windows and shows both serial and
+// on-device summaries of stability. It continuously ingests sensor readings, tracks rolling average
+// and standard deviation behavior, and reports rate/variation metrics for several sample sizes.
+//
+// Behavior summary:
+// - Reads capacitor sensor events from a queue (or direct temperature reads in temp mode).
+// - Tracks per-window rolling statistics (N1, N10, N100, N500 by default).
+// - Periodically prints a serial table with sensor-level and rolling-window noise metrics.
+// - Continuously updates Feather display with effective rate, average, stddev, and average range.
+//
+// Notes:
+// - Capacitor mode is the default and uses tryDequeue() so burst events are not collapsed.
+// - Display and serial refresh are timer-driven to avoid over-updating output paths.
+// -------------------------------------------------------------------------------------------------
 #include "Feather.h"
 #include "SerialX.h"
 #include "RollingStats.h"
@@ -197,6 +214,18 @@ float readSensorRate()
    return sampleRate.get();
 }
 
+void processSensorValue(float value)
+{
+   serialSensorStats.add(value);
+   serialSensorStdDev.add(value);
+
+   sampleCount++;
+   for (uint8_t i = 0; i < NUM_TESTS; i++)
+   {
+      tests[i].set(value);
+   }
+}
+
 void printSerialHeader()
 {
    Serial.println();
@@ -322,26 +351,33 @@ void printSerialValues(uint16_t samplesPerSecond)
 
 void loop()
 {
+   bool receivedSample = false;
+
 #if SENSOR_MODE_CAPACITOR
-   if (!sensor.hasChanged())
+   uint32_t chargeTime = 0;
+   while (sensor.tryDequeue(chargeTime))
    {
-      return;
+      receivedSample = true;
+      sampleRate.tick();
+      sampleRate.pause();
+
+      processSensorValue((float)chargeTime);
+
+      sampleRate.resume();
    }
-#endif
-
+#else
    sampleRate.tick();
-
-   float value = readSensor();
-
    sampleRate.pause();
 
-   serialSensorStats.add(value);
-   serialSensorStdDev.add(value);
+   processSensorValue(readSensor());
 
-   sampleCount++;
-   for (uint8_t i = 0; i < NUM_TESTS; i++)
+   sampleRate.resume();
+   receivedSample = true;
+#endif
+
+   if (!receivedSample)
    {
-      tests[i].set(value);
+      return;
    }
 
    if (serialTimer.ready())
@@ -353,7 +389,6 @@ void loop()
 
    if (!displayTimer.ready())
    {
-      sampleRate.resume();
       return;
    }
 
@@ -419,6 +454,4 @@ void loop()
    feather.print("Samples: ", Color::GRAY);
    feather.print(sampleCount, Color::GRAY);
    feather.printR(samplesPerSecond, rateFormat, Color::GRAY);
-
-   sampleRate.resume();
 }

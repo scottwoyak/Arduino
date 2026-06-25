@@ -27,9 +27,9 @@ void setup()
 
 void loop()
 {
-   if (sensor.hasChanged())
+   uint32_t chargeTime = 0;
+   while (sensor.tryDequeue(chargeTime))
    {
-      uint32_t chargeTime = sensor.chargeTimeMicros();
       chargeTime10.set(chargeTime);
       chargeTime100.set(chargeTime);
       chargeTime1000.set(chargeTime);

@@ -1,3 +1,24 @@
+// -------------------------------------------------------------------------------------------------
+// Sensor_Capture_Display
+//
+// This sketch captures high-rate sensor data for a fixed run window (or until a max sample count is
+// reached), stores each accepted data point in RAM, and reports both serial and on-device summaries.
+//
+// Capture flow:
+// 1) Initialize display/serial/sensor and allow a brief sensor warm-up period.
+// 2) Treat the first finite sample as a timing baseline (not stored), then store each subsequent
+//    sample with its interval (micros since the previous accepted sample).
+// 3) Stop when MAX_SAMPLES are stored or SAMPLE_DURATION_MS expires.
+//
+// Output flow:
+// - Serial summary includes run metrics, value stats, interval stats, and two histograms.
+// - Feather display renders side-by-side value and interval histograms with min/max labels.
+// - Button A triggers a paced serial dump of stored points (index, interval micros, value).
+//
+// Sensor modes:
+// - Capacitor mode (default) consumes queued sensor events from CapacitorSensor.
+// - Temperature mode reads directly per loop iteration.
+// -------------------------------------------------------------------------------------------------
 #include "Feather.h"
 #include "SerialX.h"
 #include "Histogram.h"
@@ -42,8 +63,15 @@ TempSensor sensor;
 #endif
 
 Feather feather;
-float samples[MAX_SAMPLES];
-unsigned long sampleTimesMicros[MAX_SAMPLES];
+
+class DataPoint
+{
+public:
+   float value;
+   unsigned long micros;
+};
+
+DataPoint samples[MAX_SAMPLES];
 size_t sampleCount = 0;
 
 Timer captureTimer(SAMPLE_DURATION_MS);
@@ -52,6 +80,9 @@ Timer printTimer(PRINT_INTERVAL_MS);
 bool captureComplete = false;
 bool dumpInProgress = false;
 size_t dumpIndex = 0;
+
+unsigned long sampleStartMicros = 0;
+bool hasAcceptedValue = false;
 
 float readSensor()
 {
@@ -62,13 +93,28 @@ float readSensor()
 #endif
 }
 
-bool sampleAvailable()
+void processSample(float value, unsigned long sampleEndMicros)
 {
-#if SENSOR_MODE_CAPACITOR
-   return sensor.hasChanged();
-#else
-   return true;
-#endif
+   if (!isfinite(value))
+   {
+      sampleStartMicros = sampleEndMicros;
+      return;
+   }
+
+   if (!hasAcceptedValue)
+   {
+      // Use the first accepted value only as baseline; start storing from the second.
+      hasAcceptedValue = true;
+      sampleStartMicros = sampleEndMicros;
+      return;
+   }
+
+   unsigned long intervalMicros = sampleEndMicros - sampleStartMicros;
+
+   samples[sampleCount].value = value;
+   samples[sampleCount].micros = intervalMicros;
+   sampleCount++;
+   sampleStartMicros = sampleEndMicros;
 }
 
 String toSignificantString(float value, uint8_t significantDigits)
@@ -109,7 +155,7 @@ void printStatsRow(const char* label, const Stats& stats, const StdDev& stddev, 
    SerialX::println(range, decimals, 12);
 }
 
-void printHistogramBins(const char* title, const char* unit, const Histogram<HISTOGRAM_BINS>& histogram, uint8_t decimals)
+void printHistogramBins(const char* title, const Histogram<HISTOGRAM_BINS>& histogram, uint8_t decimals)
 {
    if (histogram.count() == 0)
    {
@@ -142,50 +188,25 @@ void printHistogramBins(const char* title, const char* unit, const Histogram<HIS
       SerialX::println((unsigned long)histogram.bin(i), 10);
    }
 
-   if (unit != nullptr)
-   {
-      SerialX::print("Unit", 12);
-      SerialX::println(String(unit), 12);
-   }
+   SerialX::print("Total Samples", 24);
+   SerialX::println((unsigned long)histogram.count(), 10);
 
    Serial.println();
-}
-
-void printHistogram(const char* title, const char* unit, const float* values, size_t count, uint8_t decimals)
-{
-   Histogram<HISTOGRAM_BINS> histogram;
-   for (size_t i = 0; i < count; i++)
-   {
-      histogram.add(values[i]);
-   }
-
-   printHistogramBins(title, unit, histogram, decimals);
-}
-
-void printIntervalHistogram(uint8_t decimals)
-{
-   Histogram<HISTOGRAM_BINS> histogram;
-   for (size_t i = 1; i < sampleCount; i++)
-   {
-      histogram.add((float)(sampleTimesMicros[i] - sampleTimesMicros[i - 1]));
-   }
-
-   printHistogramBins("Sample Interval Histogram (us)", "us", histogram, decimals);
 }
 
 void buildValueHistogram(Histogram<HISTOGRAM_BINS>& histogram)
 {
    for (size_t i = 0; i < sampleCount; i++)
    {
-      histogram.add(samples[i]);
+      histogram.add(samples[i].value);
    }
 }
 
 void buildIntervalHistogram(Histogram<HISTOGRAM_BINS>& histogram)
 {
-   for (size_t i = 1; i < sampleCount; i++)
+   for (size_t i = 0; i < sampleCount; i++)
    {
-      histogram.add((float)(sampleTimesMicros[i] - sampleTimesMicros[i - 1]));
+      histogram.add((float)samples[i].micros);
    }
 }
 
@@ -283,7 +304,7 @@ void renderHistogramsOnFeather()
    int16_t leftX = 0;
    int16_t rightX = leftX + columnWidth + gap;
 
-   drawHistogramOnFeather("Value", valueHistogram, leftX, columnWidth, top, availableHeight, Color::VALUE2);
+   drawHistogramOnFeather("Values", valueHistogram, leftX, columnWidth, top, availableHeight, Color::VALUE2);
    drawHistogramOnFeather("Micros", intervalHistogram, rightX, columnWidth, top, availableHeight, Color::VALUE3);
 
    feather.setCursor(0, top + availableHeight + 1);
@@ -297,30 +318,28 @@ void printCaptureSummary()
 
    for (size_t i = 0; i < sampleCount; i++)
    {
-      valueStats.add(samples[i]);
-      valueStdDev.add(samples[i]);
+      valueStats.add(samples[i].value);
+      valueStdDev.add(samples[i].value);
    }
 
    Stats intervalStats;
    StdDev intervalStdDev;
 
-   for (size_t i = 1; i < sampleCount; i++)
+   unsigned long captureSpanMicros = 0;
+   for (size_t i = 0; i < sampleCount; i++)
    {
-      unsigned long dtMicros = sampleTimesMicros[i] - sampleTimesMicros[i - 1];
+      unsigned long dtMicros = samples[i].micros;
+      captureSpanMicros += dtMicros;
       intervalStats.add((float)dtMicros);
       intervalStdDev.add((float)dtMicros);
    }
 
    float overallRateHz = NAN;
    float captureSpanMs = NAN;
-   if (sampleCount > 1)
+   if ((sampleCount > 0) && (captureSpanMicros > 0))
    {
-      unsigned long captureSpanMicros = sampleTimesMicros[sampleCount - 1] - sampleTimesMicros[0];
-      if (captureSpanMicros > 0)
-      {
-         captureSpanMs = captureSpanMicros / 1000.0f;
-         overallRateHz = ((sampleCount - 1) * 1000000.0f) / captureSpanMicros;
-      }
+      captureSpanMs = captureSpanMicros / 1000.0f;
+      overallRateHz = (sampleCount * 1000000.0f) / captureSpanMicros;
    }
 
    long overallRatePerSec = isfinite(overallRateHz) ? lroundf(overallRateHz) : 0;
@@ -349,8 +368,12 @@ void printCaptureSummary()
    Serial.println();
 
    String valueHistogramTitle = String("Sensor Value Histogram (") + SENSOR_VALUE_UNIT + ")";
-   printHistogram(valueHistogramTitle.c_str(), SENSOR_VALUE_UNIT, samples, sampleCount, 3);
-   printIntervalHistogram(2);
+   Histogram<HISTOGRAM_BINS> valueHistogram;
+   Histogram<HISTOGRAM_BINS> intervalHistogram;
+   buildValueHistogram(valueHistogram);
+   buildIntervalHistogram(intervalHistogram);
+   printHistogramBins(valueHistogramTitle.c_str(), valueHistogram, 3);
+   printHistogramBins("Sample Interval Histogram (us)", intervalHistogram, 2);
 }
 
 void updateDisplay()
@@ -407,12 +430,16 @@ void startDump()
 
 void setup()
 {
-   SerialX::begin(115200, 1000);
+   SerialX::begin(115200, 2000);
    feather.begin();
    sensor.begin();
 
    updateDisplay();
    Serial.println("Sampling started...");
+
+   // give the sensor some time to stabilize before starting the capture. Especially
+   // important for the capacitor sensor.
+   delay(100);
 }
 
 void loop()
@@ -423,12 +450,22 @@ void loop()
       {
          finishCapture();
       }
-      else if (sampleAvailable())
+      #if SENSOR_MODE_CAPACITOR
+      else
       {
-         samples[sampleCount] = readSensor();
-         sampleTimesMicros[sampleCount] = micros();
-         sampleCount++;
+         uint32_t queuedChargeMicros = 0;
+         uint64_t queuedEndMicros = 0;
+         while (!captureComplete && (sampleCount < MAX_SAMPLES) && sensor.tryDequeue(queuedChargeMicros, queuedEndMicros))
+         {
+            processSample((float)queuedChargeMicros, (unsigned long)queuedEndMicros);
+         }
       }
+#else
+      else
+      {
+         processSample(readSensor(), micros());
+      }
+#endif
    }
 
    if (captureComplete && feather.buttonA.wasPressed() && !dumpInProgress)
@@ -440,15 +477,11 @@ void loop()
    {
       if (dumpIndex < sampleCount)
       {
-         unsigned long deltaMicros = 0;
-         if (dumpIndex > 0)
-         {
-            deltaMicros = sampleTimesMicros[dumpIndex] - sampleTimesMicros[dumpIndex - 1];
-         }
+         unsigned long deltaMicros = samples[dumpIndex].micros;
 
          SerialX::print((unsigned long)dumpIndex, 8);
          SerialX::print(deltaMicros, 12);
-         SerialX::println(samples[dumpIndex], 3, 12);
+         SerialX::println(samples[dumpIndex].value, 3, 12);
          dumpIndex++;
       }
       else

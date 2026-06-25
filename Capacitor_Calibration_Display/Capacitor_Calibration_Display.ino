@@ -1,3 +1,24 @@
+// -------------------------------------------------------------------------------------------------
+// Capacitor_Calibration_Display
+//
+// This sketch tunes capacitor sensor timing settings and visualizes stability/rate behavior on-device.
+// It supports two primary modes:
+//
+// 1) Normal monitoring mode
+//    - Continuously updates rolling capacitor statistics.
+//    - Displays discharge delay, buffer size, average charge time, variation, raw rate, effective rate,
+//      and estimated possible level error (inches).
+//
+// 2) Delay sweep calibration mode (Button A)
+//    - Runs a discharge-delay sweep for multiple target effective output rates.
+//    - For each sweep point, first estimates raw sensor rate, chooses a buffer size to match target
+//      effective rate, then measures stability for TEST_DURATION_MS.
+//    - Prints a serial table with each test result and restores defaults when complete.
+//
+// Startup behavior:
+// - Performs a short submerged-delta calibration period to estimate full-range charge delta used by the
+//   possible-error calculation.
+// -------------------------------------------------------------------------------------------------
 #include <Arduino.h>
 #include "CapacitorDepthSensor.h"
 #include "Feather.h"
@@ -48,9 +69,9 @@ constexpr size_t MAX_TARGET_BUFFER_SIZE = 500;
 
 Timer displayTimer(DISPLAY_INTERVAL_MS);
 
-// Hardware Pin Assignments
-const int CHARGE_PIN = 5;
-const int SENSE_PIN = 6;
+// Hardware pin assignments.
+constexpr uint8_t CHARGE_PIN = 5;
+constexpr uint8_t SENSE_PIN = 6;
 
 RollingCapacitiveSensor sensor(CHARGE_PIN, SENSE_PIN, DEFAULT_ROLLING_BUFFER_SIZE, DEFAULT_DISCHARGE_DELAY_MICROS);
 float submergedDeltaChargeTimeMicros = NAN;
