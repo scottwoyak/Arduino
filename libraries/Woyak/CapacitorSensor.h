@@ -2,6 +2,7 @@
 
 #include <esp_timer.h>
 #include "RollingRate.h"
+#include "RollingStats.h"
 
 /// <summary>
 /// Provides interrupt-driven capacitor charge-time measurements using timer callbacks
@@ -10,6 +11,9 @@
 class CapacitorSensor
 {
 private:
+   /// <summary>
+   /// Internal measurement state machine.
+   /// </summary>
    enum State
    {
       IDLE,
@@ -18,6 +22,7 @@ private:
    };
 
    static constexpr uint64_t CHARGE_TIMEOUT_US = 200000;
+   static constexpr uint16_t RATE_SAMPLES = 500;
 
    uint8_t _chargePin;
    uint8_t _sensePin;
@@ -37,17 +42,26 @@ private:
 
    static void _onPinRising()
    {
-      CapacitorSensor::_instance->_onCharged();
+      if (_instance != nullptr)
+      {
+         _instance->_onCharged();
+      }
    }
 
    static void _onDischargeElapsed(void*)
    {
-      CapacitorSensor::_instance->_startCharging();
+      if (_instance != nullptr)
+      {
+         _instance->_startCharging();
+      }
    }
 
    static void _onChargeTimeout(void*)
    {
-      CapacitorSensor::_instance->_handleChargeTimeout();
+      if (_instance != nullptr)
+      {
+         _instance->_handleChargeTimeout();
+      }
    }
 
    void _startDischarging()
@@ -121,9 +135,8 @@ public:
    /// <param name="chargePin">GPIO pin used to apply charge to the sensor.</param>
    /// <param name="sensePin">GPIO pin used to detect charge threshold crossing.</param>
    /// <param name="dischargeDelayMicros">Discharge delay in microseconds before charging starts.</param>
-   /// <param name="rateSamples">Rolling window size used for rate calculations.</param>
-   CapacitorSensor(uint8_t chargePin, uint8_t sensePin, uint16_t dischargeDelayMicros = 5000, uint16_t rateSamples = 500)
-      : _rawSensorRate(rateSamples)
+   CapacitorSensor(uint8_t chargePin, uint8_t sensePin, uint16_t dischargeDelayMicros = 500)
+      : _rawSensorRate(RATE_SAMPLES)
    {
       _chargePin = chargePin;
       _sensePin = sensePin;
@@ -156,7 +169,7 @@ public:
    /// <returns>The most recent charge time in microseconds.</returns>
    uint32_t chargeTimeMicros() const
    {
-      return (uint32_t)_chargeTimeMicros;
+      return static_cast<uint32_t>(_chargeTimeMicros);
    }
 
    /// <summary>
@@ -165,21 +178,9 @@ public:
    /// <returns>True when a new measurement is available; otherwise false.</returns>
    bool hasChanged()
    {
-      if (_hasChanged)
-      {
-         _hasChanged = false;
-         return true;
-      }
-
-      return false;
-   }
-
-   /// <summary>
-   /// Resets the rolling sample-rate tracker.
-   /// </summary>
-   void resetRate()
-   {
-      _rawSensorRate.reset();
+      bool hasChanged = _hasChanged;
+      _hasChanged = false;
+      return hasChanged;
    }
 
    /// <summary>
@@ -189,6 +190,15 @@ public:
    float rate()
    {
       return _rawSensorRate.get();
+   }
+
+   /// <summary>
+   /// Resets rolling rate state and clears pending change flags.
+   /// </summary>
+   void resetRate()
+   {
+      _rawSensorRate.reset();
+      _hasChanged = false;
    }
 
    /// <summary>
@@ -215,5 +225,195 @@ public:
       esp_timer_create(&timeoutArgs, &_timeoutTimer);
 
       _startDischarging();
+   }
+};
+
+/// <summary>
+/// Wraps a CapacitorSensor with rolling statistics for charge-time measurements.
+/// </summary>
+/// <remarks>
+/// Call loop() frequently from the sketch loop to consume newly captured samples
+/// and update rolling statistics.
+/// </remarks>
+class RollingCapacitiveSensor
+{
+private:
+   CapacitorSensor _sensor;
+   RollingStats _stats;
+   RollingStats _averageStats;
+
+public:
+   /// <summary>
+   /// Initializes a rolling capacitor sensor wrapper.
+   /// </summary>
+   /// <param name="chargePin">GPIO pin used to apply charge to the sensor.</param>
+   /// <param name="sensePin">GPIO pin used to detect charge threshold crossing.</param>
+   /// <param name="rollingBufferSize">Rolling sample window size for statistics.</param>
+   /// <param name="dischargeDelayMicros">Discharge delay in microseconds before charging starts.</param>
+   RollingCapacitiveSensor(
+      uint8_t chargePin,
+      uint8_t sensePin,
+      size_t rollingBufferSize,
+      uint16_t dischargeDelayMicros = 500)
+      : _sensor(chargePin, sensePin, dischargeDelayMicros),
+      _stats(rollingBufferSize),
+      _averageStats(rollingBufferSize)
+   {
+   }
+
+   /// <summary>
+   /// Configures GPIO and timer resources, then starts measurement cycling.
+   /// </summary>
+   void begin()
+   {
+      _sensor.begin();
+   }
+
+   /// <summary>
+   /// Consumes new sensor measurements and updates the rolling statistics.
+   /// Must be called frequently from the sketch loop.
+   /// </summary>
+   void loop()
+   {
+      if (!_sensor.hasChanged())
+      {
+         return;
+      }
+
+      _stats.set(static_cast<float>(_sensor.chargeTimeMicros()));
+
+      float avg = _stats.average();
+      if (isfinite(avg))
+      {
+         _averageStats.set(avg);
+      }
+   }
+
+   /// <summary>
+   /// Sets the discharge delay before each charge cycle.
+   /// </summary>
+   /// <param name="dischargeDelayMicros">Discharge delay in microseconds.</param>
+   void setDischargeDelayMicros(uint16_t dischargeDelayMicros)
+   {
+      _sensor.setDischargeDelayMicros(dischargeDelayMicros);
+   }
+
+   /// <summary>
+   /// Gets the configured discharge delay.
+   /// </summary>
+   /// <returns>The discharge delay in microseconds.</returns>
+   uint16_t dischargeDelayMicros() const
+   {
+      return _sensor.dischargeDelayMicros();
+   }
+
+   /// <summary>
+   /// Gets the latest raw charge time measurement.
+   /// </summary>
+   /// <returns>The most recent charge time in microseconds.</returns>
+   uint32_t chargeTimeMicros() const
+   {
+      return _sensor.chargeTimeMicros();
+   }
+
+   /// <summary>
+   /// Gets the rolling average charge time, or NAN if the buffer is not yet full.
+   /// </summary>
+   /// <returns>Average charge time in microseconds, or NAN if insufficient data.</returns>
+   float average() const
+   {
+      if (_stats.count() < _stats.size())
+      {
+         return NAN;
+      }
+      return _stats.average();
+   }
+
+   /// <summary>
+   /// Resets rolling statistics and optionally updates the discharge delay and buffer size.
+   /// </summary>
+   /// <param name="dischargeDelayMicros">New discharge delay in microseconds, or 0 to keep the current value.</param>
+   /// <param name="rollingBufferSize">New rolling buffer size, or 0 to keep the current value.</param>
+   void reset(uint16_t dischargeDelayMicros = 0, size_t rollingBufferSize = 0)
+   {
+      if (dischargeDelayMicros != 0)
+      {
+         _sensor.setDischargeDelayMicros(dischargeDelayMicros);
+      }
+
+      _sensor.resetRate();
+      _stats.reset(rollingBufferSize);
+      _averageStats.reset(rollingBufferSize);
+   }
+
+   /// <summary>
+   /// Gets the rolling minimum charge time.
+   /// </summary>
+   /// <returns>Minimum charge time in microseconds.</returns>
+   float min() const
+   {
+      return _stats.min();
+   }
+
+   /// <summary>
+   /// Gets the rolling maximum charge time.
+   /// </summary>
+   /// <returns>Maximum charge time in microseconds.</returns>
+   float max() const
+   {
+      return _stats.max();
+   }
+
+   /// <summary>
+   /// Gets max-minus-min across the rolling raw charge-time window, or NAN if the buffer is not yet full.
+   /// </summary>
+   /// <returns>Range in microseconds, or NAN if insufficient data.</returns>
+   float range() const
+   {
+      if (_stats.count() < _stats.size())
+      {
+         return NAN;
+      }
+      return _stats.range();
+   }
+
+   /// <summary>
+   /// Gets max-minus-min across the rolling history of average values, or NAN if the buffer is not yet full.
+   /// </summary>
+   /// <returns>Range of rolling averages in microseconds, or NAN if insufficient data.</returns>
+   float averageRange() const
+   {
+      if (_stats.count() < _stats.size())
+      {
+         return NAN;
+      }
+      return _averageStats.range();
+   }
+
+   /// <summary>
+   /// Gets the number of finite values currently in the rolling window.
+   /// </summary>
+   /// <returns>Current rolling sample count.</returns>
+   size_t count() const
+   {
+      return _stats.count();
+   }
+
+   /// <summary>
+   /// Gets the configured rolling buffer size.
+   /// </summary>
+   /// <returns>Rolling buffer capacity.</returns>
+   size_t bufferSize() const
+   {
+      return _stats.size();
+   }
+
+   /// <summary>
+   /// Gets the rolling raw sensor sample rate.
+   /// </summary>
+   /// <returns>Samples per second over the configured sensor rate window.</returns>
+   float rate()
+   {
+      return _sensor.rate();
    }
 };

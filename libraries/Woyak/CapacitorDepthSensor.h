@@ -72,14 +72,6 @@ public:
    }
 
    /// <summary>
-   /// Resets the sensor rate tracking window.
-   /// </summary>
-   void resetRate()
-   {
-      _sensor.resetRate();
-   }
-
-   /// <summary>
    /// Gets the sensor sample rate in samples per second.
    /// </summary>
    /// <returns>The current rolling sample rate.</returns>

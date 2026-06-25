@@ -12,6 +12,7 @@
 - Use brace-on-new-line formatting style: place opening '{' on a new line.
 - Avoid calling clearDisplay every loop iteration in sketches because it causes visible screen flicker; only clear when needed (e.g., mode changes).
 - Never use display text size 1 in sketches; it is too small to read. Use size 2 or larger.
+- Use "micros" instead of "us" in names and identifiers.
 
 ## Sketch Header Comments
 - For sketch header comments, omit a separate sketch title line; use only summary lines between blank comment lines, and keep divider dashes ending at column 99.

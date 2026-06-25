@@ -104,11 +104,18 @@ public:
    /// <summary>
    /// Clears the rolling window and statistics.
    /// </summary>
-   void reset()
+   /// <param name="size">New window size, or 0 to keep the current size.</param>
+   void reset(size_t size = 0)
    {
+      if (size != 0)
+      {
+         _values.resize(size);
+      }
+
       _values.reset();
       _stats.reset();
       _min = NAN;
+      _max = NAN;
    }
 
    /// <summary>
