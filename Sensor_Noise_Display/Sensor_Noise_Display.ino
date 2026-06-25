@@ -1,7 +1,10 @@
 #include "Feather.h"
 #include "SerialX.h"
 #include "RollingStats.h"
+#include "RollingStdDev.h"
 #include "RollingRate.h"
+#include "Stats.h"
+#include "StdDev.h"
 #include "Timer.h"
 
 #define SENSOR_MODE_CAPACITOR 1
@@ -13,25 +16,33 @@
 #endif
 
 //
-// This sketch continuously reads sensor temperature, shows rolling averages
-// for multiple sample windows and displays the range of recent average values 
-// for each window.
+// This sketch continuously reads sensor values, shows rolling averages
+// for multiple sample windows, and reports variability metrics.
 //
+#if SENSOR_MODE_CAPACITOR
+constexpr size_t NUM_ROLLING_SAMPLES_FOR_DISPLAYED_VALUE_RANGE = 5000;
+#else
 constexpr size_t NUM_ROLLING_SAMPLES_FOR_DISPLAYED_VALUE_RANGE = 100;
+#endif
+
+constexpr uint16_t SAMPLE_RATE_WINDOW_SIZE = 200;
+constexpr unsigned long DISPLAY_INTERVAL_MS = 100;
+constexpr unsigned long SERIAL_PRINT_INTERVAL_MS = 5000;
 
 class Test
 {
 private:
    const char* _label = "";
    RollingStats _stats;
-   RollingStats _averageValues = RollingStats(NUM_ROLLING_SAMPLES_FOR_DISPLAYED_VALUE_RANGE);
+   RollingStdDev _averageStdDev = RollingStdDev(NUM_ROLLING_SAMPLES_FOR_DISPLAYED_VALUE_RANGE);
+   RollingStats _averageRange = RollingStats(NUM_ROLLING_SAMPLES_FOR_DISPLAYED_VALUE_RANGE);
+   RollingStats _stdDevRange = RollingStats(NUM_ROLLING_SAMPLES_FOR_DISPLAYED_VALUE_RANGE);
    uint32_t _samplesCollected = 0;
 
 public:
    Test(const char* label, size_t sampleSize)
       : _label(label), _stats(sampleSize)
-   {
-   }
+   {}
 
    void set(float value)
    {
@@ -49,7 +60,14 @@ public:
          return;
       }
 
-      _averageValues.set(avg);
+      _averageStdDev.set(avg);
+      _averageRange.set(avg);
+
+      float sigma = _averageStdDev.get();
+      if (isfinite(sigma))
+      {
+         _stdDevRange.set(sigma);
+      }
    }
 
    const char* label() const
@@ -62,28 +80,67 @@ public:
       return _stats.average();
    }
 
-   bool isRangeReady() const
+   size_t sampleSize() const
+   {
+      return _stats.size();
+   }
+
+   bool enoughSamplesCollected() const
    {
       return _samplesCollected >= _stats.size();
    }
 
-   float range() const
+   float stdDev() const
    {
-      if (!isRangeReady())
+      if (!enoughSamplesCollected())
       {
          return NAN;
       }
 
-      return _averageValues.max() - _averageValues.min();
+      return _averageStdDev.get();
    }
 
-   void reset()
+   float avgRange() const
    {
-      _stats.reset();
-      _averageValues.reset();
-      _samplesCollected = 0;
+      if (!enoughSamplesCollected())
+      {
+         return NAN;
+      }
+
+      return _averageRange.range();
    }
-};
+
+   float stdDevRange() const
+   {
+      if (!enoughSamplesCollected())
+      {
+         return NAN;
+      }
+
+      return _stdDevRange.range();
+   }
+
+   float averageMin() const
+   {
+      return enoughSamplesCollected() ? _averageRange.min() : NAN;
+   }
+
+   float averageMax() const
+   {
+      return enoughSamplesCollected() ? _averageRange.max() : NAN;
+   }
+
+   float stdDevMin() const
+   {
+      return enoughSamplesCollected() ? _stdDevRange.min() : NAN;
+   }
+
+   float stdDevMax() const
+   {
+      return enoughSamplesCollected() ? _stdDevRange.max() : NAN;
+   }
+
+   };
 
 #if SENSOR_MODE_CAPACITOR
 constexpr uint8_t CHARGE_PIN = 5;
@@ -92,12 +149,13 @@ constexpr uint8_t SENSE_PIN = 6;
 
 Feather feather;
 #if SENSOR_MODE_CAPACITOR
-CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN, 500);
+CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN, 350);
 #else
 TempSensor sensor;
-RollingRate sampleRate(200);
 #endif
-Timer displayTimer(100);
+RollingRate sampleRate(SAMPLE_RATE_WINDOW_SIZE);
+Timer displayTimer(DISPLAY_INTERVAL_MS);
+Timer serialTimer(SERIAL_PRINT_INTERVAL_MS);
 Test tests[] =
 {
    { "  N1", 1 },
@@ -107,9 +165,14 @@ Test tests[] =
 };
 constexpr uint8_t NUM_TESTS = sizeof(tests) / sizeof(tests[0]);
 uint32_t sampleCount = 0;
+Stats serialSensorStats;
+StdDev serialSensorStdDev;
 
-Format valueFormat("###.##");
-Format sigmaFormat("##.###");
+Format windowFormat(4, Format::Alignment::RIGHT);
+Format valueFormat("###.#", Format::Alignment::RIGHT);
+Format sigmaFormat("##.##", Format::Alignment::RIGHT);
+Format rangeFormat("##.#", Format::Alignment::RIGHT);
+Format effectiveRateFormat("####", Format::Alignment::RIGHT);
 Format rateFormat("####/s", Format::Alignment::RIGHT);
 
 void setup()
@@ -131,20 +194,149 @@ float readSensor()
 
 float readSensorRate()
 {
-#if SENSOR_MODE_CAPACITOR
-   return sensor.rate();
-#else
    return sampleRate.get();
-#endif
+}
+
+void printSerialHeader()
+{
+   Serial.println();
+   SerialX::print("Test", 8);
+   SerialX::print("Rate", 10);
+
+   SerialX::print("Sensor", 10);
+   SerialX::print("Range", 10);
+   SerialX::print("Min", 10);
+   SerialX::print("Max", 10);
+   SerialX::print("  ", 4);
+
+   SerialX::print("Avg", 10);
+   SerialX::print("Range", 10);
+   SerialX::print("Min", 10);
+   SerialX::print("Max", 10);
+   SerialX::print("  ", 4);
+
+   SerialX::print("StdDev", 10);
+   SerialX::print("Range", 10);
+   SerialX::print("Min", 10);
+   SerialX::println("Max", 10);
+
+   SerialX::print("----", 8);
+   SerialX::print("--------", 10);
+
+   SerialX::print("--------", 10);
+   SerialX::print("--------", 10);
+   SerialX::print("--------", 10);
+   SerialX::print("--------", 10);
+   SerialX::print("  ", 4);
+
+   SerialX::print("--------", 10);
+   SerialX::print("--------", 10);
+   SerialX::print("--------", 10);
+   SerialX::print("--------", 10);
+   SerialX::print("  ", 4);
+
+   SerialX::print("--------", 10);
+   SerialX::print("--------", 10);
+   SerialX::print("--------", 10);
+   SerialX::println("--------", 10);
+}
+
+void printSerialValues(uint16_t samplesPerSecond)
+{
+   printSerialHeader();
+
+   String sensorRate = String(samplesPerSecond) + "/s";
+
+   float sensorAvg = serialSensorStats.get();
+   float sensorMin = serialSensorStats.min();
+   float sensorMax = serialSensorStats.max();
+   float sensorRange = (isfinite(sensorMin) && isfinite(sensorMax)) ? (sensorMax - sensorMin) : NAN;
+   float sensorStdDev = serialSensorStdDev.get();
+
+   SerialX::print("Sensor", 8);
+   SerialX::print(sensorRate, 10);
+   SerialX::print(isfinite(sensorAvg) ? String(sensorAvg, 2) : "----", 10);
+   SerialX::print(isfinite(sensorRange) ? String(sensorRange, 3) : "----", 10);
+   SerialX::print(isfinite(sensorMin) ? String(sensorMin, 3) : "----", 10);
+   SerialX::print(isfinite(sensorMax) ? String(sensorMax, 3) : "----", 10);
+   SerialX::print("  ", 4);
+   SerialX::print(isfinite(sensorAvg) ? String(sensorAvg, 2) : "----", 10);
+   SerialX::print(isfinite(sensorRange) ? String(sensorRange, 3) : "----", 10);
+   SerialX::print(isfinite(sensorMin) ? String(sensorMin, 3) : "----", 10);
+   SerialX::print(isfinite(sensorMax) ? String(sensorMax, 3) : "----", 10);
+   SerialX::print("  ", 4);
+   SerialX::print(isfinite(sensorStdDev) ? String(sensorStdDev, 3) : "----", 10);
+   SerialX::print("----", 10);
+   SerialX::print("----", 10);
+   SerialX::println("----", 10);
+
+   for (uint8_t i = 0; i < NUM_TESTS; i++)
+   {
+      SerialX::print(tests[i].label(), 8);
+
+      float effectiveRateValue = (tests[i].sampleSize() > 0)
+         ? ((float)samplesPerSecond / tests[i].sampleSize())
+         : NAN;
+      String effectiveRate = isfinite(effectiveRateValue)
+         ? (String((int)round(effectiveRateValue)) + "/s")
+         : "----";
+      SerialX::print(effectiveRate, 10);
+
+      SerialX::print("----", 10);
+      SerialX::print("----", 10);
+      SerialX::print("----", 10);
+      SerialX::print("----", 10);
+      SerialX::print("  ", 4);
+
+      if (tests[i].enoughSamplesCollected())
+      {
+         SerialX::print(String(tests[i].average(), 2), 10);
+         SerialX::print(String(tests[i].avgRange(), 3), 10);
+         SerialX::print(String(tests[i].averageMin(), 3), 10);
+         SerialX::print(String(tests[i].averageMax(), 3), 10);
+         SerialX::print("  ", 4);
+
+         SerialX::print(String(tests[i].stdDev(), 3), 10);
+         SerialX::print(String(tests[i].stdDevRange(), 3), 10);
+         SerialX::print(String(tests[i].stdDevMin(), 3), 10);
+         SerialX::println(String(tests[i].stdDevMax(), 3), 10);
+      }
+      else
+      {
+         SerialX::print("----", 10);
+         SerialX::print("----", 10);
+         SerialX::print("----", 10);
+         SerialX::print("----", 10);
+         SerialX::print("  ", 4);
+
+         SerialX::print("----", 10);
+         SerialX::print("----", 10);
+         SerialX::print("----", 10);
+         SerialX::println("----", 10);
+      }
+   }
+
+   serialSensorStats.reset();
+   serialSensorStdDev.reset();
 }
 
 void loop()
 {
+#if SENSOR_MODE_CAPACITOR
+   if (!sensor.hasChanged())
+   {
+      return;
+   }
+#endif
+
+   sampleRate.tick();
+
    float value = readSensor();
 
-#if !SENSOR_MODE_CAPACITOR
-   sampleRate.tick();
-#endif
+   sampleRate.pause();
+
+   serialSensorStats.add(value);
+   serialSensorStdDev.add(value);
 
    sampleCount++;
    for (uint8_t i = 0; i < NUM_TESTS; i++)
@@ -152,40 +344,81 @@ void loop()
       tests[i].set(value);
    }
 
-   if (!displayTimer.ready())
+   if (serialTimer.ready())
    {
-      return;
+      float sensorRate = readSensorRate();
+      uint16_t samplesPerSecond = isfinite(sensorRate) ? (uint16_t)round(sensorRate) : 0;
+      printSerialValues(samplesPerSecond);
    }
 
-   float sensorRate = readSensorRate();
-   uint16_t samplesPerSecond = isfinite(sensorRate) ? (uint16_t)round(sensorRate) : 0;
+   if (!displayTimer.ready())
+   {
+      sampleRate.resume();
+      return;
+   }
 
    feather.setCursor(0, 0);
    feather.setTextSize(3);
    feather.println("Sensor Noise", Color::HEADING);
    feather.moveCursorY(2);
 
+   feather.setTextSize(2);
+   float sensorRate = readSensorRate();
+
+   feather.print("Num", windowFormat, Color::WHITE);
+   feather.print(" ", Color::WHITE);
+   feather.print("Rate", effectiveRateFormat, Color::WHITE);
+   feather.print(" ", Color::WHITE);
+   feather.print("Avg", valueFormat, Color::WHITE);
+   feather.print(" ", Color::WHITE);
+   feather.print("Std", sigmaFormat, Color::WHITE);
+   feather.print(" ", Color::WHITE);
+   feather.println("Rng", rangeFormat, Color::WHITE);
+
    for (uint8_t i = 0; i < NUM_TESTS; i++)
    {
-      feather.print(tests[i].label(), Color::LABEL);
+      feather.print(tests[i].label(), windowFormat, Color::LABEL);
       feather.print(" ", Color::LABEL);
 
-      feather.print(tests[i].average(), valueFormat, Color::VALUE);
-      feather.print(" ");
-      if (tests[i].isRangeReady())
+      float effectiveRate = (tests[i].sampleSize() > 0)
+         ? (sensorRate / tests[i].sampleSize())
+         : NAN;
+
+      if (isfinite(effectiveRate))
       {
-         feather.println(tests[i].range(), sigmaFormat, Color::VALUE2);
+         feather.print(effectiveRate, effectiveRateFormat, Color::VALUE);
       }
       else
       {
+         feather.print("---", Color::GRAY);
+      }
+      feather.print(" ");
+
+      if (tests[i].enoughSamplesCollected())
+      {
+         feather.print(tests[i].average(), valueFormat, Color::VALUE2);
+         feather.print(" ");
+         feather.print(tests[i].stdDev(), sigmaFormat, Color::VALUE3);
+         feather.print(" ");
+         feather.println(tests[i].avgRange(), rangeFormat, Color::VALUE3);
+      }
+      else
+      {
+         feather.print("-----", Color::GRAY);
+         feather.print(" ", Color::GRAY);
+         feather.print("-----", Color::GRAY);
+         feather.print(" ", Color::GRAY);
          feather.println("----", Color::GRAY);
       }
-      feather.moveCursorY(-4);
    }
+
+   uint16_t samplesPerSecond = isfinite(sensorRate) ? (uint16_t)round(sensorRate) : 0;
 
    feather.setTextSize(2);
    feather.setCursorY(-feather.charH());
    feather.print("Samples: ", Color::GRAY);
    feather.print(sampleCount, Color::GRAY);
    feather.printR(samplesPerSecond, rateFormat, Color::GRAY);
+
+   sampleRate.resume();
 }
