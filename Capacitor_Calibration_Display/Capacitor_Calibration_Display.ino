@@ -5,7 +5,7 @@
 #include "Timer.h"
 
 Feather feather;
-Format chargeFormat("###.# us");
+Format chargeFormat("####.# us");
 Format effectiveRateFormat("###/s");
 Format rawRateFormat("######/s");
 Format rangeFormat("##.# us");
@@ -22,20 +22,25 @@ constexpr uint16_t DEFAULT_DISCHARGE_DELAY_MICROS = 200;
 // Test Sweep Parameters
 // 
 // Duration of each measured test phase before writing a result row.
-constexpr unsigned long TEST_DURATION_MS = 2000;
-// Target effective output rate in Hz (raw rate / buffer size).
-constexpr float TARGET_EFFECTIVE_RATE = 30.0f;
+constexpr unsigned long TEST_DURATION_MS = 5000;
+// Target effective output rates in Hz (raw rate / buffer size).
+constexpr float TARGET_EFFECTIVE_RATES[] = { 10.0f, 20.0f, 30.0f };
+constexpr size_t TARGET_EFFECTIVE_RATE_COUNT = sizeof(TARGET_EFFECTIVE_RATES) / sizeof(TARGET_EFFECTIVE_RATES[0]);
 // First discharge delay value in the sweep.
-constexpr uint16_t TEST_DISCHARGE_DELAY_MIN_MICROS = 10;
+constexpr uint16_t TEST_DISCHARGE_DELAY_MIN_MICROS = 100;
 // Final discharge delay value in the sweep.
-constexpr uint16_t TEST_DISCHARGE_DELAY_MAX_MICROS = 500;
+constexpr uint16_t TEST_DISCHARGE_DELAY_MAX_MICROS = 1000;
 // Starting step size for the discharge delay sweep.
 constexpr uint16_t TEST_DISCHARGE_DELAY_STEP_MICROS = 10;
 // Multiplier used to gradually increase the sweep step size.
-constexpr float TEST_DISCHARGE_DELAY_STEP_GROWTH = 1.1f;
+constexpr float TEST_DISCHARGE_DELAY_STEP_GROWTH = 1.5f;
 
 // Samples collected in the estimation phase before choosing buffer size.
 constexpr size_t RAW_RATE_SAMPLE_COUNT = 100;
+// Startup calibration duration to estimate submerged delta charge time.
+constexpr unsigned long SUBMERGED_DELTA_CALIBRATION_DURATION_MS = 1000;
+// Length of the sensor in inches.
+constexpr float SENSOR_LENGTH_INCHES = 60.0f;
 // Minimum allowed computed buffer size.
 constexpr size_t MIN_TARGET_BUFFER_SIZE = 1;
 // Maximum allowed computed buffer size.
@@ -48,6 +53,17 @@ const int CHARGE_PIN = 5;
 const int SENSE_PIN = 6;
 
 RollingCapacitiveSensor sensor(CHARGE_PIN, SENSE_PIN, DEFAULT_ROLLING_BUFFER_SIZE, DEFAULT_DISCHARGE_DELAY_MICROS);
+float submergedDeltaChargeTimeMicros = NAN;
+
+float calculatePossibleError(float chargeVariationMicros)
+{
+   if (!isfinite(chargeVariationMicros) || !isfinite(submergedDeltaChargeTimeMicros) || submergedDeltaChargeTimeMicros <= 0.0f)
+   {
+      return NAN;
+   }
+
+   return (chargeVariationMicros / submergedDeltaChargeTimeMicros) * SENSOR_LENGTH_INCHES;
+}
 
 size_t calculateDelayTestCount()
 {
@@ -73,7 +89,7 @@ size_t calculateDelayTestCount()
 }
 
 const size_t DELAY_TEST_COUNT = calculateDelayTestCount();
-const size_t TOTAL_TESTS = DELAY_TEST_COUNT;
+const size_t TOTAL_TESTS = DELAY_TEST_COUNT * TARGET_EFFECTIVE_RATE_COUNT;
 
 enum class TestPhase
 {
@@ -92,7 +108,11 @@ private:
    uint16_t _currentStepMicros = TEST_DISCHARGE_DELAY_STEP_MICROS;
    unsigned long _currentTestStartMs = 0;
    size_t _currentTestNumber = 0;
+   size_t _currentTargetRateIndex = 0;
+   float _currentTargetEffectiveRate = TARGET_EFFECTIVE_RATES[0];
    float _estimatedRawRate = NAN;
+   float _measuredAverageMin = NAN;
+   float _measuredAverageMax = NAN;
 
    size_t _calculateTargetBufferSize(float rawRate)
    {
@@ -101,7 +121,7 @@ private:
          return DEFAULT_ROLLING_BUFFER_SIZE;
       }
 
-      float targetBufferSize = rawRate / TARGET_EFFECTIVE_RATE;
+      float targetBufferSize = rawRate / _currentTargetEffectiveRate;
       if (targetBufferSize < MIN_TARGET_BUFFER_SIZE)
       {
          targetBufferSize = MIN_TARGET_BUFFER_SIZE;
@@ -119,6 +139,8 @@ private:
    {
       _phase = TestPhase::CollectingRawRate;
       _currentBufferSize = RAW_RATE_SAMPLE_COUNT;
+      _measuredAverageMin = NAN;
+      _measuredAverageMax = NAN;
       _sensor.reset(_currentDischargeDelayMicros, RAW_RATE_SAMPLE_COUNT);
       _currentTestStartMs = millis();
    }
@@ -140,22 +162,69 @@ private:
       _beginDelayTestIteration();
    }
 
+   void _setupNextTargetRate()
+   {
+      _currentTargetRateIndex++;
+      _currentTargetEffectiveRate = TARGET_EFFECTIVE_RATES[_currentTargetRateIndex];
+      _currentDischargeDelayMicros = TEST_DISCHARGE_DELAY_MIN_MICROS;
+      _currentStepMicros = TEST_DISCHARGE_DELAY_STEP_MICROS;
+      _currentTestNumber++;
+      _beginDelayTestIteration();
+   }
+
    void _completeCurrentDelayTest()
    {
       float rawRate = _sensor.rate();
       float effectiveRate = (_sensor.bufferSize() > 0) ? (rawRate / _sensor.bufferSize()) : 0;
-      float possibleError = _sensor.averageRange() / 65.0f * 60.0f;
 
+      float measuredAverageRange = NAN;
+      if (isfinite(_measuredAverageMin) && isfinite(_measuredAverageMax))
+      {
+         measuredAverageRange = _measuredAverageMax - _measuredAverageMin;
+      }
+
+      float possibleError = calculatePossibleError(measuredAverageRange);
+
+      float avgChargeTime = _sensor.average();
+
+      SerialX::print(String((int)round(_currentTargetEffectiveRate)) + " hz", 10);
       SerialX::print(String((unsigned long)_sensor.dischargeDelayMicros()) + " us", 12);
+      if (isfinite(avgChargeTime))
+      {
+         SerialX::print(String(avgChargeTime, 1) + " us", 12);
+      }
+      else
+      {
+         SerialX::print("----", 12);
+      }
+      if (isfinite(measuredAverageRange))
+      {
+         SerialX::print(String(measuredAverageRange, 2) + " us", 12);
+      }
+      else
+      {
+         SerialX::print("----", 12);
+      }
       SerialX::print((unsigned long)_sensor.bufferSize(), 8);
       SerialX::print(String((int)round(_estimatedRawRate)) + "/s", 10);
       SerialX::print(String((int)round(rawRate)) + "/s", 10);
       SerialX::print(String((int)round(effectiveRate)) + "/s", 11);
-      SerialX::println(String(possibleError, 2) + " in", 10);
+      if (isfinite(possibleError))
+      {
+         SerialX::println(String(possibleError, 2) + " in", 10);
+      }
+      else
+      {
+         SerialX::println("----", 10);
+      }
 
       if (_currentDischargeDelayMicros < TEST_DISCHARGE_DELAY_MAX_MICROS)
       {
          _setupNextDelayTest();
+      }
+      else if (_currentTargetRateIndex + 1 < TARGET_EFFECTIVE_RATE_COUNT)
+      {
+         _setupNextTargetRate();
       }
       else
       {
@@ -176,29 +245,38 @@ public:
    {
       _running = true;
       _currentTestNumber = 1;
+      _currentTargetRateIndex = 0;
+      _currentTargetEffectiveRate = TARGET_EFFECTIVE_RATES[_currentTargetRateIndex];
       _currentDischargeDelayMicros = TEST_DISCHARGE_DELAY_MIN_MICROS;
       _currentStepMicros = TEST_DISCHARGE_DELAY_STEP_MICROS;
 
       Serial.println();
-      Serial.print("Testing... ");
-      Serial.print("Target Effective Rate: ");
-      Serial.println(TARGET_EFFECTIVE_RATE, 0);
+      Serial.println("Testing... Target Effective Rates: 10, 20, 30 hz");
       Serial.println();
 
+      SerialX::print("Target", 10);
       SerialX::print("Discharge", 12);
+      SerialX::print("Avg", 12);
+      SerialX::print("Variation", 12);
       SerialX::print("Buffer", 8);
       SerialX::print("Est Raw", 10);
       SerialX::print("Raw", 10);
       SerialX::print("Effective", 11);
       SerialX::println("Possible", 10);
 
+      SerialX::print("Rate", 10);
       SerialX::print("Delay", 12);
+      SerialX::print("Charge", 12);
+      SerialX::print("Charge", 12);
       SerialX::print("Size", 8);
       SerialX::print("Rate", 10);
       SerialX::print("Rate", 10);
       SerialX::print("Rate", 11);
       SerialX::println("Error", 10);
 
+      SerialX::print("--------", 10);
+      SerialX::print("----------", 12);
+      SerialX::print("----------", 12);
       SerialX::print("----------", 12);
       SerialX::print("------", 8);
       SerialX::print("--------", 10);
@@ -225,12 +303,31 @@ public:
             _currentBufferSize = _calculateTargetBufferSize(_estimatedRawRate);
             _sensor.reset(_currentDischargeDelayMicros, _currentBufferSize);
             _phase = TestPhase::MeasuringEffectiveRate;
+            _measuredAverageMin = NAN;
+            _measuredAverageMax = NAN;
             _currentTestStartMs = millis();
          }
       }
-      else if (millis() - _currentTestStartMs >= TEST_DURATION_MS)
+      else
       {
-         _completeCurrentDelayTest();
+         float average = _sensor.average();
+         if (isfinite(average))
+         {
+            if (!isfinite(_measuredAverageMin) || average < _measuredAverageMin)
+            {
+               _measuredAverageMin = average;
+            }
+
+            if (!isfinite(_measuredAverageMax) || average > _measuredAverageMax)
+            {
+               _measuredAverageMax = average;
+            }
+         }
+
+         if (millis() - _currentTestStartMs >= TEST_DURATION_MS)
+         {
+            _completeCurrentDelayTest();
+         }
       }
    }
 
@@ -247,11 +344,29 @@ public:
 
 DelaySweepTestLoop delaySweepTestLoop(sensor);
 
+void runSubmergedDeltaCalibration()
+{
+   sensor.reset(DEFAULT_DISCHARGE_DELAY_MICROS, DEFAULT_ROLLING_BUFFER_SIZE);
+
+   Timer calibrationTimer(SUBMERGED_DELTA_CALIBRATION_DURATION_MS);
+   while (!calibrationTimer.ready())
+   {
+      sensor.loop();
+   }
+
+   float measuredChargeTime = sensor.average();
+   if (isfinite(measuredChargeTime) && measuredChargeTime > 0.0f)
+   {
+      submergedDeltaChargeTimeMicros = measuredChargeTime;
+   }
+}
+
 void setup()
 {
    SerialX::begin();
    feather.begin();
    sensor.begin();
+   runSubmergedDeltaCalibration();
 }
 
 void loop()
@@ -282,6 +397,9 @@ void loop()
 
       feather.setTextSize(2);
 
+      float effectiveRate = (sensor.bufferSize() > 0) ? (sensor.rate() / sensor.bufferSize()) : 0;
+      float avgRange = sensor.averageRange();
+
       feather.print(" Discharge Time: ", Color::LABEL);
       feather.print(sensor.dischargeDelayMicros(), chargeFormat, Color::VALUE2);
       feather.println();
@@ -290,32 +408,29 @@ void loop()
       feather.print(sensor.bufferSize(), Color::VALUE2);
       feather.println();
 
-      feather.print("Avg Charge Time: ", Color::LABEL);
-      feather.print(sensor.average(), chargeFormat, Color::VALUE);
-      feather.println();
+      if (!delaySweepTestLoop.running())
+      {
+         feather.print("Avg Charge Time: ", Color::LABEL);
+         feather.print(sensor.average(), chargeFormat, Color::VALUE);
+         feather.println();
 
-      feather.print("      Variation: ", Color::LABEL);
-      feather.print(sensor.averageRange(), rangeFormat, Color::VALUE);
-      feather.println();
+         feather.print("      Variation: ", Color::LABEL);
+         feather.print(sensor.averageRange(), rangeFormat, Color::VALUE);
+         feather.println();
 
-      feather.print("       Raw Rate: ", Color::LABEL);
-      feather.print(sensor.rate(), rawRateFormat, Color::VALUE);
-      feather.println();
+         feather.print("       Raw Rate: ", Color::LABEL);
+         feather.print(sensor.rate(), rawRateFormat, Color::VALUE);
+         feather.println();
+      }
 
-      float effectiveRate = (sensor.bufferSize() > 0) ? (sensor.rate() / sensor.bufferSize()) : 0;
       feather.print(" Effective Rate: ", Color::LABEL);
       feather.print(effectiveRate, effectiveRateFormat, Color::VALUE3);
       feather.println();
 
-      // if we assume the charge time doubles when the capacitor is fully submerged,
-      // then we can estimate errors as follows:
-      constexpr auto DELTA_CHARGE_TIME_MICROS = 65.0f; // empirically observed difference in charge time between empty and full   
-      constexpr auto SENSOR_LENGTH = 60.0f; // length of the sensor in inches
       feather.print(" Possible Error: ", Color::LABEL);
-      float avgRange = sensor.averageRange();
-      if (isfinite(avgRange))
+      float possibleError = calculatePossibleError(avgRange);
+      if (isfinite(possibleError))
       {
-         float possibleError = (avgRange / DELTA_CHARGE_TIME_MICROS) * SENSOR_LENGTH;
          feather.print(possibleError, errorFormat, Color::VALUE3);
       }
       else
