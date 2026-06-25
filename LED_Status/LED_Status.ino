@@ -1,8 +1,8 @@
 #include "Status.h"
 
-constexpr uint8_t RED_PIN = 9;
-constexpr uint8_t GREEN_PIN = 6;
-constexpr uint8_t BLUE_PIN = 5;
+constexpr uint8_t RED_PIN = 1;
+constexpr uint8_t GREEN_PIN = 2;
+constexpr uint8_t BLUE_PIN = 3;
 
 RGBLEDStatus status(RED_PIN, GREEN_PIN, BLUE_PIN);
 
