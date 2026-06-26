@@ -4,8 +4,8 @@
 #include "Stopwatch.h"
 
 // mock timing for Stopwatch
-uint64_t stopwatchTestTicks;
-uint64_t getStopwatchTestTicks() {
+uint32_t stopwatchTestTicks;
+uint32_t getStopwatchTestTicks() {
    return stopwatchTestTicks;
 }
 
