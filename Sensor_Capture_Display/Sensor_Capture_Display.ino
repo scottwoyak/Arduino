@@ -52,16 +52,83 @@ constexpr uint8_t CHARGE_PIN = 5;
 constexpr uint8_t SENSE_PIN = 6;
 // Charge-time threshold used by CapacitorSensor change detection.
 constexpr uint16_t CAPACITOR_CHANGE_THRESHOLD_US = 350;
-// Unit label used in summaries and chart labeling for capacitor mode.
-constexpr const char* SENSOR_VALUE_UNIT = "us";
-CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN, CAPACITOR_CHANGE_THRESHOLD_US);
-#else
-// Unit label used in summaries and chart labeling for temperature mode.
-constexpr const char* SENSOR_VALUE_UNIT = "F";
-TempSensor sensor;
 #endif
 
 Feather feather;
+
+/// <summary>
+/// Encapsulates sensor-mode-specific behavior for capacitor and temperature capture modes.
+/// </summary>
+class TestSensor
+{
+private:
+#if SENSOR_MODE_CAPACITOR
+   CapacitorSensor _sensor;
+#else
+   TempSensor _sensor;
+#endif
+
+public:
+   /// <summary>
+   /// Initializes the underlying sensor instance for the configured mode.
+   /// </summary>
+   TestSensor()
+#if SENSOR_MODE_CAPACITOR
+      : _sensor(CHARGE_PIN, SENSE_PIN, CAPACITOR_CHANGE_THRESHOLD_US)
+#endif
+   {
+   }
+
+   /// <summary>
+   /// Starts the underlying sensor.
+   /// </summary>
+   void begin()
+   {
+      _sensor.begin();
+   }
+
+   /// <summary>
+   /// Gets the display/summary unit string for the active sensor mode.
+   /// </summary>
+   /// <returns>The unit string for sensor values.</returns>
+   const char* unit() const
+   {
+#if SENSOR_MODE_CAPACITOR
+      return "us";
+#else
+      return "F";
+#endif
+   }
+
+   /// <summary>
+   /// Processes available samples for the active sensor mode.
+   /// </summary>
+   /// <param name="maxSamples">Maximum number of samples to process in this call.</param>
+   /// <param name="sampleHandler">Callback invoked for each sample value and sample-end micros timestamp.</param>
+   void processSamples(size_t maxSamples, void (*sampleHandler)(float, unsigned long))
+   {
+#if SENSOR_MODE_CAPACITOR
+      float queuedChargeMicros = 0;
+      uint64_t queuedEndMicros = 0;
+
+      size_t processed = 0;
+      while ((processed < maxSamples) && _sensor.tryDequeue(queuedChargeMicros, queuedEndMicros))
+      {
+         sampleHandler(queuedChargeMicros, (unsigned long)queuedEndMicros);
+         processed++;
+      }
+#else
+      if (maxSamples == 0)
+      {
+         return;
+      }
+
+      sampleHandler(_sensor.readTemperatureF(), micros());
+#endif
+   }
+};
+
+TestSensor testSensor;
 
 class DataPoint
 {
@@ -82,15 +149,6 @@ size_t dumpIndex = 0;
 
 unsigned long sampleStartMicros = 0;
 bool hasAcceptedValue = false;
-
-float readSensor()
-{
-#if SENSOR_MODE_CAPACITOR
-   return (float)sensor.chargeTimeMicros();
-#else
-   return sensor.readTemperatureF();
-#endif
-}
 
 void processSample(float value, unsigned long sampleEndMicros)
 {
@@ -140,15 +198,13 @@ String toSignificantString(float value, uint8_t significantDigits)
    return String(value, (unsigned int)decimals);
 }
 
-void printStatsRow(const char* label, const Stats& stats, uint8_t decimals)
+void printStatsRow(const char* label, float average, float stdDev, float minValue, float maxValue, uint8_t decimals)
 {
-   float minValue = stats.min();
-   float maxValue = stats.max();
    float range = (isfinite(minValue) && isfinite(maxValue)) ? (maxValue - minValue) : NAN;
 
    SerialX::print(String(label), 20);
-   SerialX::print(stats.get(), decimals, 12);
-   SerialX::print(stats.stdDev(), decimals, 12);
+   SerialX::print(average, decimals, 12);
+   SerialX::print(stdDev, decimals, 12);
    SerialX::print(minValue, decimals, 12);
    SerialX::print(maxValue, decimals, 12);
    SerialX::println(range, decimals, 12);
@@ -312,33 +368,98 @@ void renderHistogramsOnFeather()
 
 void printCaptureSummary()
 {
-   Stats valueStats;
+   double valueSum = 0.0;
+   double valueSumSquares = 0.0;
+   float valueMin = NAN;
+   float valueMax = NAN;
+   size_t valueCount = 0;
+
+   double intervalSum = 0.0;
+   double intervalSumSquares = 0.0;
+   float intervalMin = NAN;
+   float intervalMax = NAN;
+   size_t intervalCount = 0;
+
+   uint64_t captureSpanMicros = 0;
 
    for (size_t i = 0; i < sampleCount; i++)
    {
-      valueStats.add(samples[i].value);
+      float value = samples[i].value;
+      if (isfinite(value))
+      {
+         valueSum += value;
+         valueSumSquares += static_cast<double>(value) * static_cast<double>(value);
+
+         if (valueCount == 0)
+         {
+            valueMin = value;
+            valueMax = value;
+         }
+         else
+         {
+            valueMin = min(valueMin, value);
+            valueMax = max(valueMax, value);
+         }
+
+         valueCount++;
+      }
+
+      unsigned long dtMicros = samples[i].micros;
+      float interval = static_cast<float>(dtMicros);
+      if (isfinite(interval))
+      {
+         intervalSum += interval;
+         intervalSumSquares += static_cast<double>(interval) * static_cast<double>(interval);
+
+         if (intervalCount == 0)
+         {
+            intervalMin = interval;
+            intervalMax = interval;
+         }
+         else
+         {
+            intervalMin = min(intervalMin, interval);
+            intervalMax = max(intervalMax, interval);
+         }
+
+         intervalCount++;
+      }
+
+      captureSpanMicros += static_cast<uint64_t>(dtMicros);
    }
 
-   Stats intervalStats;
-
-   unsigned long captureSpanMicros = 0;
-   for (size_t i = 0; i < sampleCount; i++)
+   float valueAvg = NAN;
+   float valueStdDev = NAN;
+   if (valueCount > 0)
    {
-      unsigned long dtMicros = samples[i].micros;
-      captureSpanMicros += dtMicros;
-      intervalStats.add((float)dtMicros);
+      const double count = static_cast<double>(valueCount);
+      const double mean = valueSum / count;
+      const double variance = max(0.0, (valueSumSquares / count) - (mean * mean));
+      valueAvg = static_cast<float>(mean);
+      valueStdDev = static_cast<float>(sqrt(variance));
+   }
+
+   float intervalAvg = NAN;
+   float intervalStdDev = NAN;
+   if (intervalCount > 0)
+   {
+      const double count = static_cast<double>(intervalCount);
+      const double mean = intervalSum / count;
+      const double variance = max(0.0, (intervalSumSquares / count) - (mean * mean));
+      intervalAvg = static_cast<float>(mean);
+      intervalStdDev = static_cast<float>(sqrt(variance));
    }
 
    float overallRateHz = NAN;
    float captureSpanMs = NAN;
    if ((sampleCount > 0) && (captureSpanMicros > 0))
    {
-      captureSpanMs = captureSpanMicros / 1000.0f;
-      overallRateHz = (sampleCount * 1000000.0f) / captureSpanMicros;
+      captureSpanMs = static_cast<float>(captureSpanMicros / 1000.0);
+      overallRateHz = static_cast<float>((static_cast<double>(sampleCount) * 1000000.0) / static_cast<double>(captureSpanMicros));
    }
 
    long overallRatePerSec = isfinite(overallRateHz) ? lroundf(overallRateHz) : 0;
-   String sensorMetric = String("Sensor value (") + SENSOR_VALUE_UNIT + ")";
+   String sensorMetric = String("Sensor value (") + testSensor.unit() + ")";
 
    Serial.println();
    Serial.println("Capture Summary");
@@ -358,11 +479,11 @@ void printCaptureSummary()
    SerialX::print("Min", 12);
    SerialX::print("Max", 12);
    SerialX::println("Range", 12);
-   printStatsRow(sensorMetric.c_str(), valueStats, 3);
-   printStatsRow("Sample interval (us)", intervalStats, 2);
+   printStatsRow(sensorMetric.c_str(), valueAvg, valueStdDev, valueMin, valueMax, 3);
+   printStatsRow("Sample interval (us)", intervalAvg, intervalStdDev, intervalMin, intervalMax, 2);
    Serial.println();
 
-   String valueHistogramTitle = String("Sensor Value Histogram (") + SENSOR_VALUE_UNIT + ")";
+   String valueHistogramTitle = String("Sensor Value Histogram (") + testSensor.unit() + ")";
    Histogram<HISTOGRAM_BINS> valueHistogram;
    Histogram<HISTOGRAM_BINS> intervalHistogram;
    buildValueHistogram(valueHistogram);
@@ -427,7 +548,7 @@ void setup()
 {
    SerialX::begin(115200, 2000);
    feather.begin();
-   sensor.begin();
+   testSensor.begin();
 
    updateDisplay();
    Serial.println("Sampling started...");
@@ -445,22 +566,11 @@ void loop()
       {
          finishCapture();
       }
-      #if SENSOR_MODE_CAPACITOR
       else
       {
-         uint32_t queuedChargeMicros = 0;
-         uint64_t queuedEndMicros = 0;
-         while (!captureComplete && (sampleCount < MAX_SAMPLES) && sensor.tryDequeue(queuedChargeMicros, queuedEndMicros))
-         {
-            processSample((float)queuedChargeMicros, (unsigned long)queuedEndMicros);
-         }
+         size_t samplesRemaining = MAX_SAMPLES - sampleCount;
+         testSensor.processSamples(samplesRemaining, processSample);
       }
-#else
-      else
-      {
-         processSample(readSensor(), micros());
-      }
-#endif
    }
 
    if (captureComplete && feather.buttonA.wasPressed() && !dumpInProgress)

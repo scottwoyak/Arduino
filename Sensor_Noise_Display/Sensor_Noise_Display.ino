@@ -349,14 +349,14 @@ void loop()
    bool receivedSample = false;
 
 #if SENSOR_MODE_CAPACITOR
-   uint32_t chargeTime = 0;
+   float chargeTime = 0;
    while (sensor.tryDequeue(chargeTime))
    {
       receivedSample = true;
       sampleRate.tick();
       sampleRate.pause();
 
-      processSensorValue((float)chargeTime);
+      processSensorValue(chargeTime);
 
       sampleRate.resume();
    }

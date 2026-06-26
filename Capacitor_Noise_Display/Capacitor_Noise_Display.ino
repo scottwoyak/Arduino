@@ -46,10 +46,10 @@ void setup()
 
 void loop()
 {
-   uint32_t chargeTimeMicros = 0;
+   float chargeTimeMicros = 0;
    while (sensor.tryDequeue(chargeTimeMicros))
    {
-      stats.set((float)chargeTimeMicros);
+      stats.set(chargeTimeMicros);
    }
 
    if (!displayTimer.ready())

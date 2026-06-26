@@ -31,11 +31,11 @@ private:
    uint16_t _dischargeDelayMicros;
 
    volatile State _state = State::IDLE;
-   volatile uint64_t _chargeStartTicks = 0;
-   volatile uint64_t _latestChargeTimeMicros = 0;
+   volatile uint32_t _chargeStartTicks = 0;
+   volatile float _latestChargeTimeMicros = 0;
    volatile bool _hasChanged = false;
 
-   volatile uint64_t _queuedChargeTimesMicros[EVENT_QUEUE_SIZE] = { 0 };
+   volatile float _queuedChargeTimesMicros[EVENT_QUEUE_SIZE] = { 0 };
    volatile uint64_t _queuedChargeEndTimesMicros[EVENT_QUEUE_SIZE] = { 0 };
    volatile uint8_t _queueHead = 0;
    volatile uint8_t _queueTail = 0;
@@ -125,9 +125,9 @@ private:
          return;
       }
 
-      uint64_t chargeEndTicks = Tick::now();
-      uint64_t chargeTimeMicros = static_cast<uint64_t>(Tick::elapsedMicros(_chargeStartTicks, chargeEndTicks));
-      uint64_t chargeEndTimeMicros = chargeEndTicks;
+      uint32_t chargeEndTicks = Tick::now();
+      float chargeTimeMicros = static_cast<float>(Tick::elapsedMicros(_chargeStartTicks, chargeEndTicks));
+      uint64_t chargeEndTimeMicros = static_cast<uint64_t>(micros());
       _latestChargeTimeMicros = chargeTimeMicros;
       _hasChanged = true;
 
@@ -198,9 +198,9 @@ public:
    /// Gets the latest charge time measurement.
    /// </summary>
    /// <returns>The most recent charge time in microseconds.</returns>
-   uint32_t chargeTimeMicros() const
+   float chargeTimeMicros() const
    {
-      return static_cast<uint32_t>(_latestChargeTimeMicros);
+      return _latestChargeTimeMicros;
    }
 
    /// <summary>
@@ -209,7 +209,7 @@ public:
    /// <param name="chargeTimeMicros">Output for queued charge time in microseconds.</param>
    /// <param name="chargeEndMicros">Output for queued charge completion timestamp in microseconds.</param>
    /// <returns>True when a queued measurement was consumed; otherwise false.</returns>
-   bool tryDequeue(uint32_t& chargeTimeMicros, uint64_t& chargeEndMicros)
+   bool tryDequeue(float& chargeTimeMicros, uint64_t& chargeEndMicros)
    {
       noInterrupts();
       if (_queueCount == 0)
@@ -219,7 +219,7 @@ public:
       }
 
       uint8_t tail = _queueTail;
-      chargeTimeMicros = static_cast<uint32_t>(_queuedChargeTimesMicros[tail]);
+      chargeTimeMicros = _queuedChargeTimesMicros[tail];
       chargeEndMicros = _queuedChargeEndTimesMicros[tail];
       _queueTail = static_cast<uint8_t>((_queueTail + 1) % EVENT_QUEUE_SIZE);
       _queueCount = static_cast<uint8_t>(_queueCount - 1);
@@ -233,7 +233,7 @@ public:
    /// </summary>
    /// <param name="chargeTimeMicros">Output for queued charge time in microseconds.</param>
    /// <returns>True when a queued measurement was consumed; otherwise false.</returns>
-   bool tryDequeue(uint32_t& chargeTimeMicros)
+   bool tryDequeue(float& chargeTimeMicros)
    {
       uint64_t ignoredEndMicros = 0;
       return tryDequeue(chargeTimeMicros, ignoredEndMicros);
@@ -362,10 +362,10 @@ public:
    /// </summary>
    void loop()
    {
-      uint32_t chargeTime = 0;
+      float chargeTime = 0;
       while (_sensor.tryDequeue(chargeTime))
       {
-         _stats.set(static_cast<float>(chargeTime));
+         _stats.set(chargeTime);
 
          float avg = _stats.average();
          if (isfinite(avg))
@@ -397,7 +397,7 @@ public:
    /// Gets the latest raw charge time measurement.
    /// </summary>
    /// <returns>The most recent charge time in microseconds.</returns>
-   uint32_t chargeTimeMicros() const
+   float chargeTimeMicros() const
    {
       return _sensor.chargeTimeMicros();
    }

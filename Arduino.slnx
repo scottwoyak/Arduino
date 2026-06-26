@@ -133,6 +133,10 @@
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
+    <Project Path="Tests/Tick_Tests/Tick_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
     <Project Path="Tests/TimedBin_Tests/TimedBin_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
@@ -303,6 +307,7 @@
     <Deploy />
   </Project>
   <Project Path="Potentiometer/Potentiometer.vcxproj" Id="c5bc2f07-d8ae-4dcf-aede-3dddf1846b20">
+    <Platform Solution="Release|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
   <Project Path="Publisher_Display/Publisher_Display.vcxproj">

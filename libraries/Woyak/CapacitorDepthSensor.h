@@ -57,7 +57,7 @@ public:
    /// Returns the raw measured charge time in microseconds.
    /// </summary>
    /// <returns>The latest charge time measurement.</returns>
-   uint32_t chargeTimeMicros() const
+   float chargeTimeMicros() const
    {
       return _sensor.chargeTimeMicros();
    }

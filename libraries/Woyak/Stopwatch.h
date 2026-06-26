@@ -27,7 +27,7 @@ enum StopwatchPrecision
 /// <summary>
 /// Represents a function that returns monotonically increasing timer ticks.
 /// </summary>
-using StopwatchTickSource = uint64_t (*)();
+using StopwatchTickSource = uint32_t (*)();
 
 /// <summary>
 /// Lightweight stopwatch for elapsed-time measurement.
@@ -43,22 +43,22 @@ private:
    static constexpr double MICROS_PER_MILLI = 1000.0;
    static constexpr double MILLIS_PER_SEC = 1000.0;
 
-   static uint64_t _microsTicks()
+   static uint32_t _microsTicks()
    {
-      return static_cast<uint64_t>(micros());
+      return micros();
    }
 
-   static uint64_t _millisTicks()
+   static uint32_t _millisTicks()
    {
-      return static_cast<uint64_t>(millis());
+      return millis();
    }
 
    StopwatchPrecision _precision = StopwatchPrecision::Micros;
-   uint64_t _startTicks = 0;
-   uint64_t _elapsedTicks = 0;
+   uint32_t _startTicks = 0;
+   uint32_t _elapsedTicks = 0;
    bool _running = false;
 
-   uint64_t _currentTicks() const
+   uint32_t _currentTicks() const
    {
       if (_running)
       {
@@ -70,17 +70,17 @@ private:
 
    StopwatchTickSource _ticks = nullptr;
 
-   uint64_t _ticksFromMillis(double elapsedMillis) const
+   uint32_t _ticksFromMillis(double elapsedMillis) const
    {
       if (_precision == StopwatchPrecision::Micros || _precision == StopwatchPrecision::Ticks)
       {
-         return static_cast<uint64_t>(elapsedMillis * MICROS_PER_MILLI);
+         return static_cast<uint32_t>(elapsedMillis * MICROS_PER_MILLI);
       }
 
-      return static_cast<uint64_t>(elapsedMillis);
+      return static_cast<uint32_t>(elapsedMillis);
    }
 
-   unsigned long _ticksToMicros(uint64_t ticks) const
+   unsigned long _ticksToMicros(uint32_t ticks) const
    {
       if (_precision == StopwatchPrecision::Micros)
       {
@@ -95,7 +95,7 @@ private:
       return static_cast<unsigned long>(Tick::elapsedMicros(0, ticks));
    }
 
-   double _ticksToMillis(uint64_t ticks) const
+   double _ticksToMillis(uint32_t ticks) const
    {
       if (_precision == StopwatchPrecision::Micros)
       {

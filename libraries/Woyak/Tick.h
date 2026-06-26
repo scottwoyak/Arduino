@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 #if defined(ARDUINO_ARCH_ESP32)
-#include <esp_timer.h>
+#include <esp_cpu.h>
 #endif
 
 class Tick
@@ -10,37 +10,70 @@ class Tick
 private:
    static constexpr double MICROS_PER_MILLI = 1000.0;
 
+#if defined(ARDUINO_ARCH_ESP32)
+   /// <summary>
+   /// Gets the current CPU frequency in cycles per microsecond.
+   /// </summary>
+   static uint32_t _cyclesPerMicro()
+   {
+      return static_cast<uint32_t>(getCpuFrequencyMhz());
+   }
+#endif
+
 public:
-   static uint64_t now()
+   /// <summary>
+   /// Gets the current raw tick value.
+   /// On ESP32 this returns the CPU cycle counter.
+   /// </summary>
+   static uint32_t now()
    {
 #if defined(ARDUINO_ARCH_ESP32)
-      return static_cast<uint64_t>(esp_timer_get_time());
+      return esp_cpu_get_cycle_count();
 #else
-      return static_cast<uint64_t>(micros());
+      return micros();
 #endif
    }
 
-   static uint64_t span(uint64_t start, uint64_t end)
+   /// <summary>
+   /// Gets the number of ticks elapsed between two raw tick values.
+   /// </summary>
+   static uint32_t span(uint32_t start, uint32_t end)
    {
-      return end - start;
+      return (end >= start) ? (end - start) : (0xFFFFFFFFU - start + end + 1);
    }
 
-   static double elapsedMicros(uint64_t start, uint64_t end)
+   /// <summary>
+   /// Converts elapsed ticks to microseconds.
+   /// </summary>
+   static double elapsedMicros(uint32_t start, uint32_t end)
    {
+#if defined(ARDUINO_ARCH_ESP32)
+      return static_cast<double>(span(start, end)) / static_cast<double>(_cyclesPerMicro());
+#else
       return static_cast<double>(span(start, end));
+#endif
    }
 
-   static double elapsedMicros(uint64_t start)
+   /// <summary>
+   /// Converts elapsed ticks from the provided start value to now into microseconds.
+   /// </summary>
+   static double elapsedMicros(uint32_t start)
    {
       return elapsedMicros(start, now());
    }
 
-   static double elapsedMillis(uint64_t start, uint64_t end)
+   /// <summary>
+   /// Converts elapsed ticks to milliseconds.
+   /// </summary>
+   static double elapsedMillis(uint32_t start, uint32_t end)
    {
       return elapsedMicros(start, end) / MICROS_PER_MILLI;
    }
 
-   static double elapsedMillis(uint64_t start)
+   /// <summary>
+   /// Converts elapsed ticks from the provided start value to now into milliseconds.
+   /// </summary>
+   static double elapsedMillis(uint32_t start)
    {
       return elapsedMillis(start, now());
    }

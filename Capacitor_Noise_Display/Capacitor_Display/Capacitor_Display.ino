@@ -27,7 +27,7 @@ void setup()
 
 void loop()
 {
-   uint32_t chargeTime = 0;
+   float chargeTime = 0;
    while (sensor.tryDequeue(chargeTime))
    {
       chargeTime10.set(chargeTime);
