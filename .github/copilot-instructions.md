@@ -15,6 +15,8 @@
 - Never use display text size 1 in sketches; use size 2 or larger for better readability.
 - Use "micros" instead of "us" in names and identifiers.
 - Always use the Timer class when waiting for something.
+- Prefer explicit, clearly listed overload variants over complex template metaprogramming (e.g., avoid typename std::enable_if unless templates are simple and clearly useful).
+- Do not use WINDOW terminology for time durations; use alternatives like SAMPLE_TIME instead.
 
 ## Sketch Header Comments
 - For sketch header comments, omit a separate sketch title line; use only summary lines between blank comment lines, and keep divider dashes ending at column 99.

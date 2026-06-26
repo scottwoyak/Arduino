@@ -281,6 +281,34 @@ public:
    }
 
    //
+   // ------------------------------------------- labeled print variants
+   //
+   template<typename TValue>
+   void print(const char* label, const TValue& value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      print(label, Color::LABEL, backgroundColor);
+      print(value, valueColor, backgroundColor);
+   }
+   template<typename TValue>
+   void println(const char* label, const TValue& value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      print(label, value, valueColor, backgroundColor);
+      println();
+   }
+   template<typename TValue>
+   void print(const char* label, const TValue& value, const Format& format, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      print(label, Color::LABEL, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   template<typename TValue>
+   void println(const char* label, const TValue& value, const Format& format, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      print(label, value, format, valueColor, backgroundColor);
+      println();
+   }
+
+   //
    // ------------------------------------------- printR variants
    //
    void printR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
