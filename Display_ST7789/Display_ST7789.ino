@@ -1,10 +1,10 @@
 #include <Adafruit_ST7789.h>
-#include "RollingStats.h"
+#include "RollingRate.h"
 
 // if any of the TFT defines are not found, it is because the correct board
 // is not selected. Needs to be Adafruit Feather ESP32-S3
 Adafruit_ST7789 display(TFT_CS, TFT_DC, TFT_RST);
-RollingStats fps(100);
+RollingRate fps(100);
 
 // The setup() function runs once each time the micro-controller starts
 void setup()
@@ -25,13 +25,11 @@ void setup()
    display.setTextSize(2);
 }
 
-long lastMicros = micros();
 
 // Add the main program code into the continuous loop() function
 void loop()
 {
-   long newMicros = micros();
-   fps.set(1000000.0 / (newMicros - lastMicros));
+   fps.tick();
 
    display.setTextSize(4);
    display.setCursor(0, 0);
@@ -44,5 +42,4 @@ void loop()
    display.print(fps.get(), 1);
    display.print(" fps ");
 
-   lastMicros = newMicros;
 }

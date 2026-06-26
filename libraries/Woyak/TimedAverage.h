@@ -1,28 +1,26 @@
 #pragma once
 
+#include <Arduino.h>
 #include <algorithm>
 #include <cmath>
 
-#include "Stats.h"
-#include "TimedAverage.h"
-
 /// <summary>
-/// Tracks time-windowed statistics by storing values in rotating time buckets.
+/// Tracks time-windowed averages by storing values in rotating time buckets.
 /// </summary>
 /// <remarks>
 /// This class keeps one extra bucket to blend the boundary between the oldest
 /// and newest time slices so the rolling window transitions smoothly.
 /// </remarks>
 template<unsigned long (*TimeFunc)() = millis>
-class TimedStatsBase
+class TimedAverageBase
 {
 private:
-   Stats** _buckets = nullptr;
+   float* _bucketSums = nullptr;
+   size_t* _bucketCounts = nullptr;
    uint _numBuckets = 0;
    uint _currentBucket = 0;
    ulong _durationMs = 1;
    ulong _bucketMs = 1;
-   TimedAverageBase<TimeFunc> _squares;
 
    unsigned long _startTicks = 0;
    float _elapsedTicks = 0;
@@ -44,7 +42,8 @@ private:
             _currentBucket = 0;
          }
 
-         _buckets[_currentBucket]->reset();
+         _bucketSums[_currentBucket] = 0.0f;
+         _bucketCounts[_currentBucket] = 0;
          elapsed -= _bucketMs;
       }
 
@@ -53,14 +52,22 @@ private:
       return elapsed;
    }
 
+   void _clearBuckets()
+   {
+      for (uint i = 0; i < _numBuckets; i++)
+      {
+         _bucketSums[i] = 0.0f;
+         _bucketCounts[i] = 0;
+      }
+   }
+
 public:
    /// <summary>
-   /// Initializes timed statistics for a duration divided into buckets.
+   /// Initializes timed averages for a duration divided into buckets.
    /// </summary>
    /// <param name="durationMs">Total duration in milliseconds.</param>
    /// <param name="nBuckets">Number of time buckets (plus one blending bucket).</param>
-   TimedStatsBase(ulong durationMs, uint nBuckets = 10)
-      : _squares(durationMs, nBuckets)
+   TimedAverageBase(ulong durationMs, uint nBuckets = 10)
    {
       uint normalizedBuckets = std::max(nBuckets, static_cast<uint>(1));
 
@@ -68,11 +75,9 @@ public:
       _durationMs = std::max(durationMs, static_cast<ulong>(1));
       _bucketMs = std::max(static_cast<ulong>(1), static_cast<ulong>(static_cast<float>(_durationMs) / normalizedBuckets));
 
-      _buckets = new Stats*[_numBuckets];
-      for (uint i = 0; i < _numBuckets; i++)
-      {
-         _buckets[i] = new Stats();
-      }
+      _bucketSums = new float[_numBuckets];
+      _bucketCounts = new size_t[_numBuckets];
+      _clearBuckets();
 
       _startTicks = TimeFunc();
       _elapsedTicks = 0;
@@ -81,15 +86,14 @@ public:
    /// <summary>
    /// Releases all bucket storage.
    /// </summary>
-   ~TimedStatsBase()
+   ~TimedAverageBase()
    {
-      for (uint i = 0; i < _numBuckets; i++)
-      {
-         delete _buckets[i];
-      }
-
-      delete[] _buckets;
+      delete[] _bucketSums;
+      delete[] _bucketCounts;
    }
+
+   TimedAverageBase(const TimedAverageBase&) = delete;
+   TimedAverageBase& operator=(const TimedAverageBase&) = delete;
 
    /// <summary>
    /// Adds a value to the current active bucket.
@@ -98,8 +102,11 @@ public:
    void set(float value)
    {
       _advance();
-      _buckets[_currentBucket]->add(value);
-      _squares.set(value * value);
+      if (isfinite(value))
+      {
+         _bucketSums[_currentBucket] += value;
+         _bucketCounts[_currentBucket]++;
+      }
    }
 
    /// <summary>
@@ -121,7 +128,7 @@ public:
 
       for (uint i = 0; i < _numBuckets; i++)
       {
-         if (_buckets[i]->count() == 0)
+         if (_bucketCounts[i] == 0)
          {
             continue;
          }
@@ -136,8 +143,8 @@ public:
             fraction = 1 - (elapsed / _bucketMs);
          }
 
-         total += fraction * _buckets[i]->get() * _buckets[i]->count();
-         count += fraction * _buckets[i]->count();
+         total += fraction * _bucketSums[i];
+         count += fraction * _bucketCounts[i];
       }
 
       if (count == 0)
@@ -149,94 +156,12 @@ public:
    }
 
    /// <summary>
-   /// Gets the minimum value across active buckets.
+   /// Gets the weighted average across active buckets.
    /// </summary>
-   /// <returns>Minimum value, or NaN when no values exist.</returns>
-   float min()
+   /// <returns>Weighted average, or NaN when no values exist.</returns>
+   float get()
    {
-      _advance();
-
-      float low = NAN;
-      for (uint i = 0; i < _numBuckets; i++)
-      {
-         if (_buckets[i]->count() == 0)
-         {
-            continue;
-         }
-
-         float bucketMin = _buckets[i]->min();
-         if (std::isnan(low) || bucketMin < low)
-         {
-            low = bucketMin;
-         }
-      }
-
-      return low;
-   }
-
-   /// <summary>
-   /// Gets the maximum value across active buckets.
-   /// </summary>
-   /// <returns>Maximum value, or NaN when no values exist.</returns>
-   float max()
-   {
-      _advance();
-
-      float high = NAN;
-      for (uint i = 0; i < _numBuckets; i++)
-      {
-         if (_buckets[i]->count() == 0)
-         {
-            continue;
-         }
-
-         float bucketMax = _buckets[i]->max();
-         if (std::isnan(high) || bucketMax > high)
-         {
-            high = bucketMax;
-         }
-      }
-
-      return high;
-   }
-
-   /// <summary>
-   /// Gets max-minus-min across active buckets.
-   /// </summary>
-   /// <returns>Range value, or NaN when no values exist.</returns>
-   float range()
-   {
-      float low = min();
-      float high = max();
-
-      if (!isfinite(low) || !isfinite(high))
-      {
-         return NAN;
-      }
-
-      return high - low;
-   }
-
-   /// <summary>
-   /// Gets the population standard deviation across active buckets.
-   /// </summary>
-   /// <returns>Standard deviation, or NaN when no values exist.</returns>
-   float stdDev()
-   {
-      float avg = average();
-      float avgSquares = _squares.average();
-      if (!isfinite(avg) || !isfinite(avgSquares))
-      {
-         return NAN;
-      }
-
-      float variance = avgSquares - (avg * avg);
-      if (variance < 0.0f)
-      {
-         variance = 0.0f;
-      }
-
-      return sqrtf(variance);
+      return average();
    }
 
    /// <summary>
@@ -247,7 +172,6 @@ public:
    {
       _durationMs = std::max(durationMs, static_cast<ulong>(1));
       _bucketMs = std::max(static_cast<ulong>(1), static_cast<ulong>(static_cast<float>(_durationMs) / (_numBuckets - 1)));
-      _squares.setDurationMs(durationMs);
       reset();
    }
 
@@ -265,12 +189,7 @@ public:
    /// </summary>
    void reset()
    {
-      for (uint i = 0; i < _numBuckets; i++)
-      {
-         _buckets[i]->reset();
-      }
-
-      _squares.reset();
+      _clearBuckets();
       _currentBucket = 0;
       _startTicks = TimeFunc();
       _elapsedTicks = 0;
@@ -287,7 +206,7 @@ public:
       size_t totalCount = 0;
       for (uint i = 0; i < _numBuckets; i++)
       {
-         totalCount += _buckets[i]->count();
+         totalCount += _bucketCounts[i];
       }
 
       return totalCount;
@@ -312,4 +231,4 @@ public:
    }
 };
 
-using TimedStats = TimedStatsBase<millis>;
+using TimedAverage = TimedAverageBase<millis>;

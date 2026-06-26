@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Arduino.h>
+
 enum StopwatchPrecision
 {
    Micros,
@@ -13,13 +15,12 @@ private:
    unsigned long _elapsedTicks = 0;
    bool _running = false;
 
-   unsigned long _currentTicks() {
-      if (this->_running) {
-         return (this->_ticks() - this->_startTicks) + this->_elapsedTicks;
+   unsigned long _currentTicks() const {
+      if (_running) {
+         return (_ticks() - _startTicks) + _elapsedTicks;
       }
-      else {
-         return this->_elapsedTicks;
-      }
+
+      return _elapsedTicks;
    }
 
    unsigned long (*_ticks) ();
@@ -56,8 +57,8 @@ public:
    Stopwatch(StopwatchPrecision precision) : Stopwatch(true, precision) {
    }
 
-   StopwatchPrecision getPrecision() {
-      return this->_precision;
+   StopwatchPrecision getPrecision() const {
+      return _precision;
    }
 
    void start() {
@@ -87,29 +88,27 @@ public:
       }
    }
 
-   bool isRunning() {
-      return this->_running;
+   bool isRunning() const {
+      return _running;
    }
 
-   unsigned long elapsedMicros() {
-      if (this->_precision == StopwatchPrecision::Micros) {
-         return this->_currentTicks();
+   unsigned long elapsedMicros() const {
+      if (_precision == StopwatchPrecision::Micros) {
+         return _currentTicks();
       }
-      else {
-         return 1000 * this->_currentTicks();
-      }
+
+      return 1000 * _currentTicks();
    }
 
-   double elapsedMillis() {
-      if (this->_precision == StopwatchPrecision::Micros) {
-         return this->_currentTicks() / 1000.0;
+   double elapsedMillis() const {
+      if (_precision == StopwatchPrecision::Micros) {
+         return _currentTicks() / 1000.0;
       }
-      else {
-         return this->_currentTicks();
-      }
+
+      return _currentTicks();
    }
 
-   double elapsedSecs() {
+   double elapsedSecs() const {
       return elapsedMillis() / 1000.0;
    }
 

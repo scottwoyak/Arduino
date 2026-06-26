@@ -4,7 +4,7 @@
 #include "Stats.h"
 #include <cmath>
 
-test(shouldComputeAverages)
+test(StatsTest, Stats_shouldComputeAverages)
 {
    Stats avg;
 
@@ -18,7 +18,27 @@ test(shouldComputeAverages)
    assertEqual(3.0, avg.max());
 }
 
-test(shouldResetToEmpty)
+test(StatsTest, Stats_shouldComputeStandardDeviation)
+{
+   Stats stats;
+
+   stats.add(2);
+   stats.add(4);
+   stats.add(4);
+   stats.add(4);
+   stats.add(5);
+   stats.add(5);
+   stats.add(7);
+   stats.add(9);
+
+   assertEqual(5.0, stats.get());
+   assertEqual(8u, stats.count());
+   assertNear(4.0, stats.variance(), 0.0001);
+   assertNear(2.0, stats.stdDev(), 0.0001);
+   assertNear(2.0, stats.sigma(), 0.0001);
+}
+
+test(StatsTest, Stats_shouldResetToEmpty)
 {
    Stats avg;
 
@@ -36,7 +56,7 @@ test(shouldResetToEmpty)
    assertEqual(0u, avg.count());
 }
 
-test(shouldStartAsNAN)
+test(StatsTest, Stats_shouldStartAsNAN)
 {
    Stats avg;
 
@@ -46,7 +66,7 @@ test(shouldStartAsNAN)
    assertEqual(0u, avg.count());
 }
 
-test(shouldRemoveValues)
+test(StatsTest, Stats_shouldRemoveValues)
 {
    Stats avg;
 
@@ -64,7 +84,7 @@ test(shouldRemoveValues)
    assertTrue(isnan(avg.max()));
 }
 
-test(shouldNotAllowMoreValueToBeRemovedThanHaveBeenAdded)
+test(StatsTest, Stats_shouldNotAllowMoreValueToBeRemovedThanHaveBeenAdded)
 {
    Stats avg;
 
@@ -86,7 +106,7 @@ test(shouldNotAllowMoreValueToBeRemovedThanHaveBeenAdded)
    assertEqual(0u, avg.count());
 }
 
-test(Stats_shouldIgnoreNANValues)
+test(StatsTest, Stats_shouldIgnoreNANValues)
 {
    Stats avg;
 
@@ -106,7 +126,7 @@ test(Stats_shouldIgnoreNANValues)
    assertEqual(3u, avg.count());
 }
 
-test(shouldIgnoreInfiniteValues)
+test(StatsTest, Stats_shouldIgnoreInfiniteValues)
 {
    Stats avg;
 
@@ -133,7 +153,7 @@ test(shouldIgnoreInfiniteValues)
    assertEqual(2u, avg.count());
 }
 
-test(shouldNotChangeWhenRemovingFromEmpty)
+test(StatsTest, Stats_shouldNotChangeWhenRemovingFromEmpty)
 {
    Stats avg;
 
@@ -142,7 +162,7 @@ test(shouldNotChangeWhenRemovingFromEmpty)
    assertEqual(0u, avg.count());
 }
 
-test(roundTripStability)
+test(StatsTest, Stats_roundTripStability)
 {
    Stats avg;
 

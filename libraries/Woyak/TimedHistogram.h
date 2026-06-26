@@ -9,10 +9,11 @@
 /// This class divides a value range into equally-sized bins and maintains
 /// time-windowed statistics for each bin using TimedStats.
 /// </remarks>
-class TimedHistogram 
+template<unsigned long (*TimeFunc)() = millis>
+class TimedHistogramBase
 {
 private:
-   TimedStats** _bins;
+   TimedStatsBase<TimeFunc>** _bins;
    uint _numBins;
    RangeF _range;
 
@@ -23,22 +24,22 @@ public:
    /// <param name="range">The min/max value range to histogram.</param>
    /// <param name="numBins">The number of bins to divide the range into.</param>
    /// <param name="ms">The time window duration in milliseconds.</param>
-   TimedHistogram(RangeF range, uint numBins, uint ms)
+   TimedHistogramBase(RangeF range, uint numBins, uint ms)
    {
       _range = range;
       _numBins = numBins;
-      _bins = new TimedStats*[numBins];
+      _bins = new TimedStatsBase<TimeFunc>*[numBins];
 
-      for (uint i = 0; i < numBins; i++) 
+      for (uint i = 0; i < numBins; i++)
       {
-         _bins[i] = new TimedStats(ms);
+         _bins[i] = new TimedStatsBase<TimeFunc>(ms);
       }
    }
 
    /// <summary>
    /// Releases all bin resources.
    /// </summary>
-   ~TimedHistogram()
+   ~TimedHistogramBase()
    {
       for (uint i = 0; i < _numBins; i++)
       {
@@ -63,7 +64,7 @@ public:
    float min() const
    {
       float value = __FLT_MAX__;
-      for (uint i = 0; i < _numBins; i++) 
+      for (uint i = 0; i < _numBins; i++)
       {
          value = std::min(value, _bins[i]->min());
       }
@@ -92,12 +93,11 @@ public:
    /// <param name="value">The value to record. NaN values are ignored.</param>
    void set(float value)
    {
-      if (isnan(value)) 
+      if (isnan(value))
       {
          return;
       }
 
-      // figure out which bin
       uint bin = floor((value - _range.min) / (_range.max - _range.min) * _numBins);
 
       bin = std::min(bin, _numBins - 1);
@@ -150,7 +150,6 @@ public:
          }
       }
 
-      // if no bins had values, use the full range
       if (firstBin == -1)
       {
          firstBin = 0;
@@ -181,8 +180,10 @@ public:
    RangeF getBinRange(uint16_t bin) const
    {
       float span = (_range.max - _range.min) / _numBins;
-      float min = _range.min + ((float) bin / _numBins) * (_range.max - _range.min);
+      float min = _range.min + ((float)bin / _numBins) * (_range.max - _range.min);
       float max = min + span;
       return RangeF(min, max);
    }
 };
+
+using TimedHistogram = TimedHistogramBase<millis>;

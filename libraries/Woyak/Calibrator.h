@@ -10,7 +10,8 @@
 /// Manages sensor calibration by collecting measurements and computing correction factors.
 /// Assumes all sensors should read equal values and computes per-sensor offsets to align readings.
 /// </summary>
-class Calibrator
+template<unsigned long (*TimeFunc)() = millis>
+class CalibratorBase
 {
 public:
    /// <summary>
@@ -26,7 +27,7 @@ private:
    static constexpr uint8_t MAX_SENSORS = 8;
 
    uint8_t _numSensors = 0;
-   TimedStats** _measurements = nullptr;
+   TimedStatsBase<TimeFunc>** _measurements = nullptr;
    BaselineMode _baselineMode = BaselineMode::AVERAGE;
 
    /// <summary>
@@ -83,31 +84,31 @@ public:
    /// <param name="numSensors">Number of sensors (1-8).</param>
    /// <param name="durationMs">Duration window in milliseconds for collecting measurements.</param>
    /// <param name="mode">Baseline computation mode (default: AVERAGE).</param>
-   Calibrator(uint8_t numSensors, ulong durationMs, BaselineMode mode = BaselineMode::AVERAGE)
+    CalibratorBase(uint8_t numSensors, ulong durationMs, BaselineMode mode = BaselineMode::AVERAGE)
       : _numSensors(std::min(numSensors, MAX_SENSORS)), _baselineMode(mode)
    {
-      _measurements = new TimedStats*[_numSensors];
+      _measurements = new TimedStatsBase<TimeFunc>*[_numSensors];
 
       for (uint8_t i = 0; i < _numSensors; i++)
       {
-         _measurements[i] = new TimedStats(durationMs);
+         _measurements[i] = new TimedStatsBase<TimeFunc>(durationMs);
       }
    }
 
    /// <summary>
    /// Calibrator is non-copyable.
    /// </summary>
-   Calibrator(const Calibrator&) = delete;
+   CalibratorBase(const CalibratorBase&) = delete;
 
    /// <summary>
    /// Calibrator is non-assignable.
    /// </summary>
-   Calibrator& operator=(const Calibrator&) = delete;
+   CalibratorBase& operator=(const CalibratorBase&) = delete;
 
    /// <summary>
    /// Destructs the Calibrator and releases all resources.
    /// </summary>
-   ~Calibrator()
+   ~CalibratorBase()
    {
       for (uint8_t i = 0; i < _numSensors; i++)
       {
@@ -198,16 +199,18 @@ public:
       return _measurements[sensorIndex]->durationMs();
    }
 
-   /// <summary>
-   /// Gets the underlying timed statistics object for a sensor.
-   /// </summary>
-   /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
-   /// <returns>TimedStats object for the sensor, or nullptr if index is invalid.</returns>
-   TimedStats* getStats(uint8_t sensorIndex) const
-   {
-      if (sensorIndex >= _numSensors)
-         return nullptr;
+       /// <summary>
+       /// Gets the underlying timed statistics object for a sensor.
+       /// </summary>
+       /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
+       /// <returns>TimedStats object for the sensor, or nullptr if index is invalid.</returns>
+       TimedStatsBase<TimeFunc>* getStats(uint8_t sensorIndex) const
+       {
+          if (sensorIndex >= _numSensors)
+             return nullptr;
 
-      return _measurements[sensorIndex];
-   }
-};
+          return _measurements[sensorIndex];
+       }
+   };
+
+   using Calibrator = CalibratorBase<millis>;

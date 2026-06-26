@@ -10,35 +10,36 @@ unsigned long getCalibratorTestTicks()
    return calibratorTestTicks;
 }
 
-// Mock TimedStats::tickFunc for testing
+using CalibratorMock = CalibratorBase<getCalibratorTestTicks>;
+using TimedStatsMock = TimedStatsBase<getCalibratorTestTicks>;
+
 void setupCalibratorTest()
 {
    calibratorTestTicks = 0;
-   TimedStats::tickFunc = getCalibratorTestTicks;
 }
 
-test(shouldInitializeWithCorrectNumberOfSensors)
+test(CalibratorTest, shouldInitializeWithCorrectNumberOfSensors)
 {
    setupCalibratorTest();
-   Calibrator calibrator(3, 1000);
+   CalibratorMock calibrator(3, 1000);
 
    assertEqual(3, calibrator.getNumSensors());
    assertTrue(isnan(calibrator.getBaseline()));
 }
 
-test(shouldStartWithZeroCorrections)
+test(CalibratorTest, shouldStartWithZeroCorrections)
 {
    setupCalibratorTest();
-   Calibrator calibrator(2, 1000);
+   CalibratorMock calibrator(2, 1000);
 
    assertEqual(0.0f, calibrator.getCorrection(0));
    assertEqual(0.0f, calibrator.getCorrection(1));
 }
 
-test(shouldAddMeasurementsAndComputeAverageBaseline)
+test(CalibratorTest, shouldAddMeasurementsAndComputeAverageBaseline)
 {
    setupCalibratorTest();
-   Calibrator calibrator(2, 1000);
+   CalibratorMock calibrator(2, 1000);
 
    // Add measurements
    calibratorTestTicks = 100;
@@ -54,10 +55,10 @@ test(shouldAddMeasurementsAndComputeAverageBaseline)
    assertNear(105.0f, baseline, 0.1f);  // (100+110+101+109)/4 = 105
 }
 
-test(shouldComputeCorrectionFactors)
+test(CalibratorTest, shouldComputeCorrectionFactors)
 {
    setupCalibratorTest();
-   Calibrator calibrator(2, 1000);
+   CalibratorMock calibrator(2, 1000);
 
    // Add measurements
    calibratorTestTicks = 100;
@@ -78,10 +79,10 @@ test(shouldComputeCorrectionFactors)
    assertNear(-4.5f, correction1, 0.1f);
 }
 
-test(shouldStoreCorrectionFactorsAfterCompute)
+test(CalibratorTest, shouldStoreCorrectionFactorsAfterCompute)
 {
    setupCalibratorTest();
-   Calibrator calibrator(2, 1000);
+   CalibratorMock calibrator(2, 1000);
 
    calibratorTestTicks = 100;
    calibrator.set(0, 100.0f);
@@ -95,10 +96,10 @@ test(shouldStoreCorrectionFactorsAfterCompute)
    assertTrue(stored1 < 0);
 }
 
-test(shouldRespectFirstSensorBaselineMode)
+test(CalibratorTest, shouldRespectFirstSensorBaselineMode)
 {
    setupCalibratorTest();
-   Calibrator calibrator(3, 1000, Calibrator::BaselineMode::FIRST_SENSOR);
+   CalibratorMock calibrator(3, 1000, CalibratorMock::BaselineMode::FIRST_SENSOR);
 
    calibratorTestTicks = 100;
    calibrator.set(0, 100.0f);
@@ -110,10 +111,10 @@ test(shouldRespectFirstSensorBaselineMode)
    assertNear(100.0f, baseline, 0.1f);
 }
 
-test(shouldComputeStatsFromHistoricalSamples)
+test(CalibratorTest, shouldComputeStatsFromHistoricalSamples)
 {
    setupCalibratorTest();
-   Calibrator calibrator(2, 1000);
+   CalibratorMock calibrator(2, 1000);
 
    // Add measurements at regular intervals
    calibratorTestTicks = 100;
@@ -129,7 +130,7 @@ test(shouldComputeStatsFromHistoricalSamples)
    calibrator.set(1, 109.0f);
 
    // Get timed stats for sensor 0
-   TimedStats* stats0 = calibrator.getStats(0);
+   TimedStatsMock* stats0 = calibrator.getStats(0);
 
    assertTrue(stats0 != nullptr);
    float min0 = stats0->min();
@@ -140,10 +141,10 @@ test(shouldComputeStatsFromHistoricalSamples)
    assertNear(stats0->range(), max0 - min0, 0.0001f);
 }
 
-test(shouldResetAllData)
+test(CalibratorTest, shouldResetAllData)
 {
    setupCalibratorTest();
-   Calibrator calibrator(2, 1000);
+   CalibratorMock calibrator(2, 1000);
 
    calibratorTestTicks = 100;
    calibrator.set(0, 100.0f);
@@ -154,7 +155,7 @@ test(shouldResetAllData)
    calibrator.set(1, 109.0f);
 
    // Verify data exists
-   TimedStats* stats0 = calibrator.getStats(0);
+   TimedStatsMock* stats0 = calibrator.getStats(0);
    assertTrue(stats0 != nullptr);
    assertTrue(stats0->count() > 0);
    assertTrue(calibrator.getCorrection(0) != 0);
@@ -169,10 +170,10 @@ test(shouldResetAllData)
    assertTrue(isnan(calibrator.getBaseline()));
 }
 
-test(Calibrator_shouldIgnoreNaNValues)
+test(CalibratorTest, Calibrator_shouldIgnoreNaNValues)
 {
    setupCalibratorTest();
-   Calibrator calibrator(2, 1000);
+   CalibratorMock calibrator(2, 1000);
 
    calibratorTestTicks = 100;
    calibrator.set(0, 100.0f);
@@ -183,15 +184,15 @@ test(Calibrator_shouldIgnoreNaNValues)
    calibrator.set(1, 109.0f);
 
    // Should only have valid samples
-   TimedStats* stats1 = calibrator.getStats(1);
+   TimedStatsMock* stats1 = calibrator.getStats(1);
    assertTrue(stats1 != nullptr);
    assertEqual(1, static_cast<int>(stats1->count()));  // Only one valid sample
 }
 
-test(shouldReturnNaNForInvalidSensorIndex)
+test(CalibratorTest, shouldReturnNaNForInvalidSensorIndex)
 {
    setupCalibratorTest();
-   Calibrator calibrator(2, 1000);
+   CalibratorMock calibrator(2, 1000);
 
    calibratorTestTicks = 100;
    calibrator.set(0, 100.0f);
@@ -201,10 +202,10 @@ test(shouldReturnNaNForInvalidSensorIndex)
    assertEqual(0.0f, calibrator.getCorrection(2));  // Invalid index
 }
 
-test(shouldComputeCorrectStatsWithCorrections)
+test(CalibratorTest, shouldComputeCorrectStatsWithCorrections)
 {
    setupCalibratorTest();
-   Calibrator calibrator(2, 1000);
+   CalibratorMock calibrator(2, 1000);
 
    // Create a scenario where sensors have offset
    calibratorTestTicks = 100;
@@ -220,8 +221,8 @@ test(shouldComputeCorrectStatsWithCorrections)
    // correction[1] = 105 - 110 = -5
 
    // After applying corrections, both sensors should read ~105
-   TimedStats* stats0 = calibrator.getStats(0);
-   TimedStats* stats1 = calibrator.getStats(1);
+   TimedStatsMock* stats0 = calibrator.getStats(0);
+   TimedStatsMock* stats1 = calibrator.getStats(1);
 
    assertTrue(stats0 != nullptr);
    assertTrue(stats1 != nullptr);

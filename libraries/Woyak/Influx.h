@@ -7,7 +7,7 @@
 #include <InfluxDbClient.h>
 #include <InfluxDbCloud.h>
 #include "Status.h"
-#include "TimedStats.h"
+#include "TimedAverage.h"
 
 constexpr auto TZ_INFO = "UTC-5";
 
@@ -193,18 +193,18 @@ public:
 
 //-------------------------------------------------------------------------------------------------
 //
-// Tracks a time-windowed average for a field using TimedStats over the configured duration.
+// Tracks a time-windowed average for a field using TimedAverage over the configured duration.
 //
 //-------------------------------------------------------------------------------------------------
 class TimeAveragedField : public Field
 {
 private:
-	TimedStats* _stats;
+	TimedAverage* _stats;
 
 public:
 	TimeAveragedField(float seconds, std::string name, uint8_t decimalPlaces) : Field(name, decimalPlaces)
 	{
-		_stats = new TimedStats(1000 * seconds);
+		_stats = new TimedAverage(1000 * seconds);
 	}
 
 	~TimeAveragedField() override

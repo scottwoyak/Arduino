@@ -9,23 +9,23 @@ unsigned long getStopwatchTestTicks() {
    return stopwatchTestTicks;
 }
 
-test(shouldBeRunningWhenInstantiated) {
+test(StopwatchTest, shouldBeRunningWhenInstantiated) {
    Stopwatch sw;
    assertEqual(sw.isRunning(), true);
 }
 
-test(shouldBeAbleInstantiateStopped) {
+test(StopwatchTest, shouldBeAbleInstantiateStopped) {
    Stopwatch sw(false);
    assertEqual(sw.isRunning(), false);
    assertEqual(sw.elapsedMicros(), 0UL);
 }
 
-test(defaultPrecisionShouldBeMicros) {
+test(StopwatchTest, defaultPrecisionShouldBeMicros) {
    Stopwatch sw;
    assertEqual(sw.getPrecision(), StopwatchPrecision::Micros);
 }
 
-test(shouldTrackTimeMicros) {
+test(StopwatchTest, shouldTrackTimeMicros) {
    Stopwatch::tickFunc = getStopwatchTestTicks;
    Stopwatch sw(false);
    Stopwatch::tickFunc = nullptr;
@@ -39,7 +39,7 @@ test(shouldTrackTimeMicros) {
    assertEqual(sw.elapsedSecs(), 0.001234);
 }
 
-test(shouldTrackTimeMillis) {
+test(StopwatchTest, shouldTrackTimeMillis) {
    Stopwatch::tickFunc = getStopwatchTestTicks;
    Stopwatch sw(false, StopwatchPrecision::Millis);
    Stopwatch::tickFunc = nullptr;
@@ -53,7 +53,7 @@ test(shouldTrackTimeMillis) {
    assertEqual(sw.elapsedSecs(), 1.234);
 }
 
-test(shouldBeAbleToStop) {
+test(StopwatchTest, shouldBeAbleToStop) {
    Stopwatch sw;
    assertEqual(sw.isRunning(), true);
    unsigned long t1 = sw.elapsedMicros();
@@ -66,7 +66,7 @@ test(shouldBeAbleToStop) {
    assertEqual(sw.elapsedMicros(), t2);
 }
 
-test(shouldBeAbleToResume) {
+test(StopwatchTest, shouldBeAbleToResume) {
    Stopwatch sw;
    assertEqual(sw.isRunning(), true);
    sw.stop();
@@ -77,7 +77,7 @@ test(shouldBeAbleToResume) {
    assertLess(t, sw.elapsedMicros());
 }
 
-test(shouldBeAbleToReset) {
+test(StopwatchTest, shouldBeAbleToReset) {
    Stopwatch sw;
    delay(1);
    unsigned long t = sw.elapsedMicros();
@@ -86,7 +86,7 @@ test(shouldBeAbleToReset) {
    assertLess(sw.elapsedMicros(), t);
 }
 
-test(shouldBeAbleToResetToNonZeroValueMillis) {
+test(StopwatchTest, shouldBeAbleToResetToNonZeroValueMillis) {
    Stopwatch sw;
    delay(10);
    sw.stop();
@@ -94,7 +94,7 @@ test(shouldBeAbleToResetToNonZeroValueMillis) {
    assertEqual(sw.elapsedMillis(), 1234.0);
 }
 
-test(shouldBeAbleToResetToNonZeroValueMicros) {
+test(StopwatchTest, shouldBeAbleToResetToNonZeroValueMicros) {
    Stopwatch sw(StopwatchPrecision::Millis);
    delay(10);
    sw.stop();
@@ -102,19 +102,19 @@ test(shouldBeAbleToResetToNonZeroValueMicros) {
    assertEqual(sw.elapsedMillis(), 1234.0);
 }
 
-test(shouldBeRunningIfResetWhileRunning) {
+test(StopwatchTest, shouldBeRunningIfResetWhileRunning) {
    Stopwatch sw;
    sw.reset();
    assertEqual(sw.isRunning(), true);
 }
 
-test(shouldBeStoppedIfResetWhileStopped) {
+test(StopwatchTest, shouldBeStoppedIfResetWhileStopped) {
    Stopwatch sw(false);
    sw.reset();
    assertEqual(sw.isRunning(), false);
 }
 
-test(shouldIgnoreRepeatedStartCallsWhileRunning) {
+test(StopwatchTest, shouldIgnoreRepeatedStartCallsWhileRunning) {
    Stopwatch::tickFunc = getStopwatchTestTicks;
    Stopwatch sw(false);
    Stopwatch::tickFunc = nullptr;

@@ -9,7 +9,7 @@ unsigned long getRollingMicrosTestTicks()
    return rollingMicrosTestTicks;
 }
 
-test(RollingMicros_shouldStartEmpty)
+test(RollingMicrosTest, RollingMicros_shouldStartEmpty)
 {
    RollingMicros::tickFunc = getRollingMicrosTestTicks;
    RollingMicros rm(5);
@@ -20,7 +20,7 @@ test(RollingMicros_shouldStartEmpty)
    assertEqual((unsigned long)0, rm.getElapsedMicros());
 }
 
-test(shouldTrackTicksAndElapsedMicros)
+test(RollingMicrosTest, shouldTrackTicksAndElapsedMicros)
 {
    RollingMicros::tickFunc = getRollingMicrosTestTicks;
    RollingMicros rm(5);
@@ -35,7 +35,7 @@ test(shouldTrackTicksAndElapsedMicros)
    assertEqual((unsigned long)1000, rm.getElapsedMicros());
 }
 
-test(shouldWrapCountAtWindowSize)
+test(RollingMicrosTest, shouldWrapCountAtWindowSize)
 {
    RollingMicros::tickFunc = getRollingMicrosTestTicks;
    RollingMicros rm(3);
@@ -53,7 +53,7 @@ test(shouldWrapCountAtWindowSize)
    assertEqual((uint16_t)3, rm.getCount());
 }
 
-test(resetShouldClearState)
+test(RollingMicrosTest, resetShouldClearState)
 {
    RollingMicros::tickFunc = getRollingMicrosTestTicks;
    RollingMicros rm(4);
@@ -73,7 +73,7 @@ test(resetShouldClearState)
    assertEqual((unsigned long)0, rm.getElapsedMicros());
 }
 
-test(shouldExcludeTimeBetweenPauseAndResume)
+test(RollingMicrosTest, shouldExcludeTimeBetweenPauseAndResume)
 {
    RollingMicros::tickFunc = getRollingMicrosTestTicks;
    RollingMicros rm(5);
@@ -96,7 +96,7 @@ test(shouldExcludeTimeBetweenPauseAndResume)
    assertEqual((unsigned long)3000, rm.getElapsedMicros());
 }
 
-test(shouldExposeFirstAndLastMicros)
+test(RollingMicrosTest, shouldExposeFirstAndLastMicros)
 {
    RollingMicros::tickFunc = getRollingMicrosTestTicks;
    RollingMicros rm(5);

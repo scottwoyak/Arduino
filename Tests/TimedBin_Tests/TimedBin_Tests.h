@@ -25,7 +25,7 @@ void loadTimedBinTestEntries(TimedBin* bin, uint microsForEntries[], uint numEnt
    }
 }
 
-test(shouldComputeTotals)
+test(TimedBinTest, shouldComputeTotals)
 {
    setupTimedBinTest();
 
@@ -56,7 +56,7 @@ test(shouldComputeTotals)
 
 }
 
-test(shouldUtilizeMultipleBins)
+test(TimedBinTest, shouldUtilizeMultipleBins)
 {
    setupTimedBinTest();
 
@@ -86,7 +86,7 @@ test(shouldUtilizeMultipleBins)
    assertEqual(0u, bin.getBinCount(-1));
 }
 
-test(shouldAdvanceBins)
+test(TimedBinTest, shouldAdvanceBins)
 {
    setupTimedBinTest();
 
@@ -114,7 +114,7 @@ test(shouldAdvanceBins)
 }
 
 // should zero out bins as they transition
-test(shouldZeroOutBins)
+test(TimedBinTest, shouldZeroOutBins)
 {
    setupTimedBinTest();
 
@@ -160,7 +160,7 @@ test(shouldZeroOutBins)
 }
 
 // should smoothly transition between bins as time advances
-test(shouldSmoothlyTransitionBins)
+test(TimedBinTest, shouldSmoothlyTransitionBins)
 {
    setupTimedBinTest();
 
@@ -208,7 +208,7 @@ test(shouldSmoothlyTransitionBins)
    assertEqual(0u, bin.getCount());
 }
 
-test(shouldHonorBeginAsNewStartTime)
+test(TimedBinTest, shouldHonorBeginAsNewStartTime)
 {
    setupTimedBinTest();
 

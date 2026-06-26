@@ -7,8 +7,7 @@
 // Data flow:
 // - CapacitorSensor events are consumed from the queue via tryDequeue() so intermediate readings are
 //   not collapsed.
-// - TimedStats tracks rolling average/range/count over the last WINDOW_MS.
-// - TimedStdDev tracks rolling standard deviation over the same window.
+// - TimedStats tracks rolling average/range/count/stddev over the last WINDOW_MS.
 //
 // Display flow:
 // - GUI refreshes every DISPLAY_INTERVAL_MS (100ms).
@@ -19,7 +18,6 @@
 #include "CapacitorSensor.h"
 #include "Feather.h"
 #include "TimedStats.h"
-#include "../libraries/Woyak/TimedStdDev.h"
 #include "Timer.h"
 
 constexpr uint16_t DISPLAY_INTERVAL_MS = 100;
@@ -34,7 +32,6 @@ CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN, DISCHARGE_DELAY_MICROS);
 Timer displayTimer(DISPLAY_INTERVAL_MS);
 
 TimedStats windowStats(WINDOW_MS);
-TimedStdDev windowStdDev(WINDOW_MS);
 
 Format valueFormat("###.# us", Format::Alignment::RIGHT);
 Format rangeFormat("###.# us", Format::Alignment::RIGHT);
@@ -54,7 +51,6 @@ void loop()
    {
       float value = (float)chargeTimeMicros;
       windowStats.set(value);
-      windowStdDev.set(value);
    }
 
    if (!displayTimer.ready())
@@ -66,7 +62,7 @@ void loop()
    float rng = windowStats.range();
    size_t count = windowStats.count();
 
-   float sd = windowStdDev.get();
+   float sd = windowStats.stdDev();
 
    feather.setCursor(0, 0);
    feather.setTextSize(3);

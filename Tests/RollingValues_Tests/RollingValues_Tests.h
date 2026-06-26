@@ -3,7 +3,7 @@
 #include <AUnit.h>
 #include "RollingValues.h"
 
-test(rollingValuesShouldReturnFalseWhenSizeIsZero)
+test(RollingValuesTest, rollingValuesShouldReturnFalseWhenSizeIsZero)
 {
    RollingValues values(0);
    float removed = 123.0f;
@@ -14,7 +14,7 @@ test(rollingValuesShouldReturnFalseWhenSizeIsZero)
    assertEqual(123.0f, removed);
 }
 
-test(rollingValuesShouldNotReportRemovedBeforeFirstWrap)
+test(RollingValuesTest, rollingValuesShouldNotReportRemovedBeforeFirstWrap)
 {
    RollingValues values(3);
    float removed = 999.0f;
@@ -33,7 +33,7 @@ test(rollingValuesShouldNotReportRemovedBeforeFirstWrap)
    assertNear(1.0f, values.get(2), 0.0001f);
 }
 
-test(rollingValuesShouldReportRemovedAfterWrap)
+test(RollingValuesTest, rollingValuesShouldReportRemovedAfterWrap)
 {
    RollingValues values(3);
    float removed = NAN;
@@ -51,7 +51,7 @@ test(rollingValuesShouldReportRemovedAfterWrap)
    assertNear(2.0f, values.get(2), 0.0001f);
 }
 
-test(rollingValuesShouldAllowIgnoringRemovedPointer)
+test(RollingValuesTest, rollingValuesShouldAllowIgnoringRemovedPointer)
 {
    RollingValues values(2);
 
@@ -63,7 +63,7 @@ test(rollingValuesShouldAllowIgnoringRemovedPointer)
    assertNear(20.0f, values.get(1), 0.0001f);
 }
 
-test(rollingValuesShouldResetToInitialValues)
+test(RollingValuesTest, rollingValuesShouldResetToInitialValues)
 {
    RollingValues values(3, 7.5f);
 
@@ -79,7 +79,7 @@ test(rollingValuesShouldResetToInitialValues)
    assertNear(7.5f, values.get(2), 0.0001f);
 }
 
-test(rollingValuesShouldResizeAndClearState)
+test(RollingValuesTest, rollingValuesShouldResizeAndClearState)
 {
    RollingValues values(2, -1.0f);
 

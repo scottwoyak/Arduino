@@ -1,90 +1,66 @@
 #pragma once
 
 #include <AUnit.h>
-#include "RollingStats.h"
+#include "RollingAverage.h"
 
-test(RollingStats_shouldStartEmpty)
+test(RollingStatsTest, RollingAverage_shouldStartEmpty)
 {
-   RollingStats stats(3);
+   RollingAverage average(3);
 
-   assertTrue(isnan(stats.min()));
-   assertTrue(isnan(stats.max()));
-   assertTrue(isnan(stats.average()));
-   assertTrue(isnan(stats.range()));
-   assertEqual((size_t)0, stats.count());
+   assertTrue(isnan(average.get()));
+   assertEqual((size_t)0, average.count());
+   assertTrue(isnan(average.last()));
 }
 
-test(shouldTrackBasicStats)
+test(RollingStatsTest, shouldTrackBasicAverage)
 {
-   RollingStats stats(3);
+   RollingAverage average(3);
 
-   stats.set(1.0f);
-   stats.set(2.0f);
-   stats.set(3.0f);
+   average.set(1.0f);
+   average.set(2.0f);
+   average.set(3.0f);
 
-   assertNear(1.0f, stats.min(), 0.0001f);
-   assertNear(3.0f, stats.max(), 0.0001f);
-   assertNear(2.0f, stats.average(), 0.0001f);
-   assertNear(2.0f, stats.range(), 0.0001f);
-   assertEqual((size_t)3, stats.count());
+   assertNear(2.0f, average.get(), 0.0001f);
+   assertEqual((size_t)3, average.count());
+   assertNear(3.0f, average.last(), 0.0001f);
 }
 
-test(shouldRollWindow)
+test(RollingStatsTest, shouldRollWindow)
 {
-   RollingStats stats(3);
+   RollingAverage average(3);
 
-   stats.set(1.0f);
-   stats.set(2.0f);
-   stats.set(3.0f);
-   stats.set(4.0f); // window now [4,2,3]
+   average.set(1.0f);
+   average.set(2.0f);
+   average.set(3.0f);
+   average.set(4.0f); // window now [4,2,3]
 
-   assertNear(2.0f, stats.min(), 0.0001f);
-   assertNear(4.0f, stats.max(), 0.0001f);
-   assertNear(3.0f, stats.average(), 0.0001f);
-   assertNear(2.0f, stats.range(), 0.0001f);
-   assertEqual((size_t)3, stats.count());
+   assertNear(3.0f, average.get(), 0.0001f);
+   assertEqual((size_t)3, average.count());
+   assertNear(4.0f, average.last(), 0.0001f);
 }
 
-test(RollingStats_shouldIgnoreNonFiniteValues)
+test(RollingStatsTest, RollingAverage_shouldIgnoreNonFiniteValues)
 {
-   RollingStats stats(3);
+   RollingAverage average(3);
 
-   stats.set(1.0f);
-   stats.set(INFINITY);
-   stats.set(NAN);
+   average.set(1.0f);
+   average.set(INFINITY);
+   average.set(NAN);
 
-   assertNear(1.0f, stats.min(), 0.0001f);
-   assertNear(1.0f, stats.max(), 0.0001f);
-   assertNear(1.0f, stats.average(), 0.0001f);
-   assertNear(0.0f, stats.range(), 0.0001f);
-   assertEqual((size_t)1, stats.count());
+   assertNear(1.0f, average.get(), 0.0001f);
+   assertEqual((size_t)1, average.count());
+   assertTrue(isnan(average.last()));
 }
 
-test(rollingStatsShouldExposeLastValue)
+test(RollingStatsTest, rollingAverageShouldResetState)
 {
-   RollingStats stats(3);
+   RollingAverage average(3);
 
-   stats.set(1.0f);
-   stats.set(2.0f);
-   stats.set(3.0f);
-   assertNear(3.0f, stats.last(), 0.0001f);
+   average.set(1.0f);
+   average.set(2.0f);
+   average.reset();
 
-   stats.set(4.0f);
-   assertNear(4.0f, stats.last(), 0.0001f);
-}
-
-test(rollingStatsShouldResetState)
-{
-   RollingStats stats(3);
-
-   stats.set(1.0f);
-   stats.set(2.0f);
-   stats.reset();
-
-   assertEqual((size_t)0, stats.count());
-   assertTrue(isnan(stats.min()));
-   assertTrue(isnan(stats.max()));
-   assertTrue(isnan(stats.average()));
-   assertTrue(isnan(stats.range()));
-   assertTrue(isnan(stats.last()));
+   assertEqual((size_t)0, average.count());
+   assertTrue(isnan(average.get()));
+   assertTrue(isnan(average.last()));
 }

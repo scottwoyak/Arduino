@@ -1,8 +1,8 @@
 #include "Feather_ESP32_S3.h"
-#include "RollingStats.h"
+#include "RollingRate.h"
 
 Feather_ESP32_S3 feather;
-RollingStats fps(100);
+RollingRate fps(100);
 
 void setup()
 {
@@ -10,12 +10,10 @@ void setup()
 }
 
 long counter = 0;
-long lastMicros = micros();
 
 void loop()
 {
-   long newMicros = micros();
-   fps.set(1000000.0 / (newMicros - lastMicros));
+   fps.tick();
 
    // note: this display isn't double buffered. Past contents are not cleared,
    // but text characters overwrite past content. That's why there is an extra
@@ -33,5 +31,4 @@ void loop()
    feather.print(fps.get(), 1);
    feather.print(" fps ");
 
-   lastMicros = newMicros;
 }

@@ -23,7 +23,6 @@
 #include "SerialX.h"
 #include "Histogram.h"
 #include "Stats.h"
-#include "StdDev.h"
 #include "Timer.h"
 
 // Selects capacitor-mode sampling (1) or temperature-mode sampling (0).
@@ -141,7 +140,7 @@ String toSignificantString(float value, uint8_t significantDigits)
    return String(value, (unsigned int)decimals);
 }
 
-void printStatsRow(const char* label, const Stats& stats, const StdDev& stddev, uint8_t decimals)
+void printStatsRow(const char* label, const Stats& stats, uint8_t decimals)
 {
    float minValue = stats.min();
    float maxValue = stats.max();
@@ -149,7 +148,7 @@ void printStatsRow(const char* label, const Stats& stats, const StdDev& stddev, 
 
    SerialX::print(String(label), 20);
    SerialX::print(stats.get(), decimals, 12);
-   SerialX::print(stddev.get(), decimals, 12);
+   SerialX::print(stats.stdDev(), decimals, 12);
    SerialX::print(minValue, decimals, 12);
    SerialX::print(maxValue, decimals, 12);
    SerialX::println(range, decimals, 12);
@@ -314,16 +313,13 @@ void renderHistogramsOnFeather()
 void printCaptureSummary()
 {
    Stats valueStats;
-   StdDev valueStdDev;
 
    for (size_t i = 0; i < sampleCount; i++)
    {
       valueStats.add(samples[i].value);
-      valueStdDev.add(samples[i].value);
    }
 
    Stats intervalStats;
-   StdDev intervalStdDev;
 
    unsigned long captureSpanMicros = 0;
    for (size_t i = 0; i < sampleCount; i++)
@@ -331,7 +327,6 @@ void printCaptureSummary()
       unsigned long dtMicros = samples[i].micros;
       captureSpanMicros += dtMicros;
       intervalStats.add((float)dtMicros);
-      intervalStdDev.add((float)dtMicros);
    }
 
    float overallRateHz = NAN;
@@ -363,8 +358,8 @@ void printCaptureSummary()
    SerialX::print("Min", 12);
    SerialX::print("Max", 12);
    SerialX::println("Range", 12);
-   printStatsRow(sensorMetric.c_str(), valueStats, valueStdDev, 3);
-   printStatsRow("Sample interval (us)", intervalStats, intervalStdDev, 2);
+   printStatsRow(sensorMetric.c_str(), valueStats, 3);
+   printStatsRow("Sample interval (us)", intervalStats, 2);
    Serial.println();
 
    String valueHistogramTitle = String("Sensor Value Histogram (") + SENSOR_VALUE_UNIT + ")";

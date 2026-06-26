@@ -3,23 +3,21 @@
 
 #include "Scott16.h"
 #include "Scott32.h"
-#include "RollingStats.h"
+#include "RollingRate.h"
 
 LGFX display;
-RollingStats fps(100);
+RollingRate fps(100);
 
 void setup()
 {
    display.init();
 }
 
-long lastMicros = micros();
 
 // Add the main program code into the continuous loop() function
 void loop()
 {
-   unsigned long newMicros = micros();
-   fps.set(1000000.0 / (newMicros - lastMicros));
+   fps.tick();
 
    display.setCursor(0, 0);
 
@@ -54,5 +52,4 @@ void loop()
    display.print(fps.get(),1);
    display.print("  "); // erase any remaining characters from previous loop
 
-   lastMicros = newMicros;
 }

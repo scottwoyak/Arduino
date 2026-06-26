@@ -9,7 +9,7 @@ unsigned long getRollingRateTestTicks()
    return rollingRateTestTicks;
 }
 
-test(shouldStartAtZeroRate)
+test(RollingRateTest, shouldStartAtZeroRate)
 {
    RollingMicros::tickFunc = getRollingRateTestTicks;
    RollingRate rate(5);
@@ -19,7 +19,7 @@ test(shouldStartAtZeroRate)
    assertEqual((uint16_t)0, rate.getCount());
 }
 
-test(shouldIncreaseCountWithTicks)
+test(RollingRateTest, shouldIncreaseCountWithTicks)
 {
    RollingMicros::tickFunc = getRollingRateTestTicks;
    RollingRate rate(5);
@@ -35,7 +35,7 @@ test(shouldIncreaseCountWithTicks)
    assertEqual((uint16_t)3, rate.getCount());
 }
 
-test(shouldComputeExpectedRate)
+test(RollingRateTest, shouldComputeExpectedRate)
 {
    RollingMicros::tickFunc = getRollingRateTestTicks;
    RollingRate rate(10);
@@ -51,7 +51,7 @@ test(shouldComputeExpectedRate)
    assertNear(15.0f, rate.get(), 0.001f); // 3 ticks / 0.2 sec
 }
 
-test(resetShouldClearCountAndRate)
+test(RollingRateTest, resetShouldClearCountAndRate)
 {
    RollingMicros::tickFunc = getRollingRateTestTicks;
    RollingRate rate(10);
@@ -71,7 +71,7 @@ test(resetShouldClearCountAndRate)
    assertEqual((uint16_t)0, rate.getCount());
 }
 
-test(excludingDisplayTimeShouldIncreaseMeasuredRate)
+test(RollingRateTest, excludingDisplayTimeShouldIncreaseMeasuredRate)
 {
    RollingMicros::tickFunc = getRollingRateTestTicks;
    RollingRate baseline(10);
@@ -103,7 +103,7 @@ test(excludingDisplayTimeShouldIncreaseMeasuredRate)
    assertMore(excludedRate, baseRate);
 }
 
-test(shouldReturnZeroRateWhenOnlyOneTickHasOccurred)
+test(RollingRateTest, shouldReturnZeroRateWhenOnlyOneTickHasOccurred)
 {
    RollingMicros::tickFunc = getRollingRateTestTicks;
    RollingRate rate(5);

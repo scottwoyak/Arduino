@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "RollingAverage.h"
 #include "RollingValues.h"
 #include "Stats.h"
 
@@ -15,6 +16,7 @@ class RollingStats
 {
 private:
    RollingValues _values;
+   RollingAverage _average;
    Stats _stats;
    mutable float _min = NAN;
    mutable float _max = NAN;
@@ -55,7 +57,7 @@ public:
    /// </summary>
    /// <param name="size">Number of samples retained in the rolling window.</param>
    explicit RollingStats(size_t size)
-      : _values(size)
+      : _values(size), _average(size)
    {
    }
 
@@ -85,19 +87,15 @@ public:
    /// <returns>True when value is added; false when size is zero.</returns>
    boolean set(float value)
    {
-      if (_values.size() == 0)
+      if (!_average.set(value))
       {
          return false;
       }
 
-      float removed;
-      if (_values.set(value, &removed))
-      {
-         _stats.remove(removed);
-      }
-
+      _values.set(value);
       _stats.add(value);
       _min = NAN;
+      _max = NAN;
       return true;
    }
 
@@ -110,9 +108,11 @@ public:
       if (size != 0)
       {
          _values.resize(size);
+         _average.reset(size);
       }
 
       _values.reset();
+      _average.reset();
       _stats.reset();
       _min = NAN;
       _max = NAN;
@@ -185,7 +185,7 @@ public:
    /// <returns>Average finite value, or NaN if no finite values exist.</returns>
    float average() const
    {
-      return _stats.get();
+      return _average.get();
    }
 
    /// <summary>
@@ -198,11 +198,29 @@ public:
    }
 
    /// <summary>
+   /// Gets the rolling population standard deviation.
+   /// </summary>
+   /// <returns>Population standard deviation, or NaN if no finite values exist.</returns>
+   float stdDev() const
+   {
+      return _stats.stdDev();
+   }
+
+   /// <summary>
+   /// Alias for stdDev().
+   /// </summary>
+   /// <returns>Population standard deviation, or NaN if no finite values exist.</returns>
+   float sigma() const
+   {
+      return stdDev();
+   }
+
+   /// <summary>
    /// Gets the count of finite values in the current window.
    /// </summary>
    /// <returns>Number of finite values contributing to statistics.</returns>
    size_t count() const
    {
-      return _stats.count();
+      return _average.count();
    }
 };

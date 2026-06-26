@@ -22,7 +22,7 @@ TelemetrySubscriber client("Wind/Lake");
 constexpr uint16_t WIND_AVERAGE_DURATION_S = 10 * 60;
 constexpr uint8_t WIND_AVERAGE_INTERVAL_S = 10;     
 constexpr uint8_t WIND_AVERAGE_BINS = WIND_AVERAGE_DURATION_S / WIND_AVERAGE_INTERVAL_S;
-TimedStats windAverager(WIND_AVERAGE_DURATION_S*1000, WIND_AVERAGE_BINS);
+TimedStats windStats(WIND_AVERAGE_DURATION_S*1000, WIND_AVERAGE_BINS);
 
 Format speedFormat("##.# mph", Format::Alignment::RIGHT);
 
@@ -135,7 +135,7 @@ void loop()
 
    // get values
    float speed = client.getValue();
-   windAverager.set(speed);
+   windStats.set(speed);
    multiBar.set(speed);
    rollingChart.set(speed);
    histogramChart.set(speed);
@@ -190,15 +190,15 @@ void displayMultiBar(float speed)
    feather.moveCursorY(1);
 
    feather.print("Min: ", Color::LABEL);
-   feather.println(windAverager.getMin(), speedFormat, Color::VALUE);
+   feather.println(windStats.min(), speedFormat, Color::VALUE);
    feather.moveCursorY(1);
 
    feather.print("Max: ", Color::LABEL);
-   feather.println(windAverager.getMax(), speedFormat, Color::VALUE);
+   feather.println(windStats.max(), speedFormat, Color::VALUE);
    feather.moveCursorY(1);
 
    feather.print("Avg: ", Color::LABEL);
-   feather.println(windAverager.get(), speedFormat, Color::VALUE);
+   feather.println(windStats.average(), speedFormat, Color::VALUE);
 
    // display bar
    multiBar.draw(&feather.display);

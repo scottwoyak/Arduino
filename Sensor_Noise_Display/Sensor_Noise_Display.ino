@@ -18,10 +18,8 @@
 #include "Feather.h"
 #include "SerialX.h"
 #include "RollingStats.h"
-#include "RollingStdDev.h"
 #include "RollingRate.h"
 #include "Stats.h"
-#include "StdDev.h"
 #include "Timer.h"
 
 #define SENSOR_MODE_CAPACITOR 1
@@ -51,7 +49,7 @@ class Test
 private:
    const char* _label = "";
    RollingStats _stats;
-   RollingStdDev _averageStdDev = RollingStdDev(NUM_ROLLING_SAMPLES_FOR_DISPLAYED_VALUE_RANGE);
+   RollingStats _averageStdDev = RollingStats(NUM_ROLLING_SAMPLES_FOR_DISPLAYED_VALUE_RANGE);
    RollingStats _averageRange = RollingStats(NUM_ROLLING_SAMPLES_FOR_DISPLAYED_VALUE_RANGE);
    RollingStats _stdDevRange = RollingStats(NUM_ROLLING_SAMPLES_FOR_DISPLAYED_VALUE_RANGE);
    uint32_t _samplesCollected = 0;
@@ -80,7 +78,7 @@ public:
       _averageStdDev.set(avg);
       _averageRange.set(avg);
 
-      float sigma = _averageStdDev.get();
+      float sigma = _averageStdDev.stdDev();
       if (isfinite(sigma))
       {
          _stdDevRange.set(sigma);
@@ -114,7 +112,7 @@ public:
          return NAN;
       }
 
-      return _averageStdDev.get();
+      return _averageStdDev.stdDev();
    }
 
    float avgRange() const
@@ -183,7 +181,6 @@ Test tests[] =
 constexpr uint8_t NUM_TESTS = sizeof(tests) / sizeof(tests[0]);
 uint32_t sampleCount = 0;
 Stats serialSensorStats;
-StdDev serialSensorStdDev;
 
 Format windowFormat(4, Format::Alignment::RIGHT);
 Format valueFormat("###.#", Format::Alignment::RIGHT);
@@ -217,7 +214,6 @@ float readSensorRate()
 void processSensorValue(float value)
 {
    serialSensorStats.add(value);
-   serialSensorStdDev.add(value);
 
    sampleCount++;
    for (uint8_t i = 0; i < NUM_TESTS; i++)
@@ -280,7 +276,7 @@ void printSerialValues(uint16_t samplesPerSecond)
    float sensorMin = serialSensorStats.min();
    float sensorMax = serialSensorStats.max();
    float sensorRange = (isfinite(sensorMin) && isfinite(sensorMax)) ? (sensorMax - sensorMin) : NAN;
-   float sensorStdDev = serialSensorStdDev.get();
+   float sensorStdDev = serialSensorStats.stdDev();
 
    SerialX::print("Sensor", 8);
    SerialX::print(sensorRate, 10);
@@ -346,7 +342,6 @@ void printSerialValues(uint16_t samplesPerSecond)
    }
 
    serialSensorStats.reset();
-   serialSensorStdDev.reset();
 }
 
 void loop()

@@ -50,6 +50,7 @@
     <File Path="libraries/Woyak/MultiBar.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
+    <File Path="libraries/Woyak/RollingAverage.h" />
     <File Path="libraries/Woyak/RollingMicros.h" />
     <File Path="libraries/Woyak/RollingRate.h" />
     <File Path="libraries/Woyak/RollingStats.h" />
@@ -62,13 +63,13 @@
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
     <File Path="libraries/Woyak/Stats.h" />
     <File Path="libraries/Woyak/Status.h" />
-    <File Path="libraries/Woyak/StdDev.h" />
     <File Path="libraries/Woyak/Stopwatch.h" />
     <File Path="libraries/Woyak/Structs.h" />
     <File Path="libraries/Woyak/TelemetryClient.h" />
     <File Path="libraries/Woyak/TempSensor.h" />
     <File Path="libraries/Woyak/TempSensorCallibration.h" />
     <File Path="libraries/Woyak/TimeConstants.h" />
+    <File Path="libraries/Woyak/TimedAverage.h" />
     <File Path="libraries/Woyak/TimedBin.h" />
     <File Path="libraries/Woyak/TimedHistogram.h" />
     <File Path="libraries/Woyak/TimedHistogramChart.h" />
@@ -86,6 +87,10 @@
     <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
   </Folder>
   <Folder Name="/Tests/">
+    <Project Path="Tests/All_Tests/All_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
     <Project Path="Tests/BufferedTimeSeries_Tests/BufferedTimeSeries_Tests.vcxproj" Id="a8d4f2c1-9b34-4e5f-8123-123456789abc">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
@@ -119,10 +124,6 @@
       <Deploy />
     </Project>
     <Project Path="Tests/Stats_Tests/Stats_Tests.vcxproj">
-      <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
-    </Project>
-    <Project Path="Tests/StdDev_Tests/StdDev_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
@@ -360,10 +361,6 @@
     <Deploy />
   </Project>
   <Project Path="Temp_Monitor_Display/Temp_Monitor_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="Tests/All_Tests/All_Tests.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

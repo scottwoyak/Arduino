@@ -4,7 +4,7 @@
 #include "Util.h"
 #include <cstdint>
 
-test(shouldGetSpan)
+test(UtilTest, shouldGetSpan)
 {
    uint32_t start = 1000;
    uint32_t end = 1500;
@@ -14,7 +14,7 @@ test(shouldGetSpan)
    assertEqual((uint32_t)500, span);
 }
 
-test(shouldGetSpanWithWrapping)
+test(UtilTest, shouldGetSpanWithWrapping)
 {
    uint32_t start = UINT32_MAX;
    uint32_t end = 10;
@@ -24,7 +24,7 @@ test(shouldGetSpanWithWrapping)
    assertEqual((uint32_t)11, span);
 }
 
-test(shouldReturnZeroWhenStartEqualsEnd)
+test(UtilTest, shouldReturnZeroWhenStartEqualsEnd)
 {
    uint32_t start = 1000;
    uint32_t end = 1000;
@@ -34,7 +34,7 @@ test(shouldReturnZeroWhenStartEqualsEnd)
    assertEqual((uint32_t)0, span);
 }
 
-test(shouldHandleMaximumSpanWithoutWrapping)
+test(UtilTest, shouldHandleMaximumSpanWithoutWrapping)
 {
    uint32_t start = 0;
    uint32_t end = UINT32_MAX;
@@ -44,7 +44,7 @@ test(shouldHandleMaximumSpanWithoutWrapping)
    assertEqual(UINT32_MAX, span);
 }
 
-test(shouldHandleSmallWraparound)
+test(UtilTest, shouldHandleSmallWraparound)
 {
    uint32_t start = 4294967294UL;
    uint32_t end = 0;
@@ -54,7 +54,7 @@ test(shouldHandleSmallWraparound)
    assertEqual((uint32_t)2, span);
 }
 
-test(shouldHandleWraparoundAtBoundary)
+test(UtilTest, shouldHandleWraparoundAtBoundary)
 {
    uint32_t start = UINT32_MAX;
    uint32_t end = 0;
@@ -64,7 +64,7 @@ test(shouldHandleWraparoundAtBoundary)
    assertEqual((uint32_t)1, span);
 }
 
-test(shouldHandleLargeWraparound)
+test(UtilTest, shouldHandleLargeWraparound)
 {
    uint32_t start = 100;
    uint32_t end = 99;

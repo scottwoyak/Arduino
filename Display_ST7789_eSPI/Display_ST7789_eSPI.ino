@@ -1,12 +1,12 @@
 
 #include <TFT_eSPI.h>
-#include "RollingStats.h"
+#include "RollingRate.h"
 
 #include "Scott16.h"
 #include "Scott32.h"
 
 TFT_eSPI display;
-RollingStats fps(100);
+RollingRate fps;
 
 // The setup() function runs once each time the micro-controller starts
 void setup()
@@ -14,16 +14,13 @@ void setup()
    display.init();
    display.setRotation(1);
    display.fillScreen(TFT_BLACK);
-   display.setTextColor(TFT_WHITE, TFT_BLACK);
 }
 
-long lastMicros = micros();
 
 // Add the main program code into the continuous loop() function
 void loop()
 {
-   unsigned long newMicros = micros();
-   fps.set(1000000.0 / (newMicros - lastMicros));
+   fps.tick();
 
    display.setCursor(0, 0);
 
@@ -51,7 +48,6 @@ void loop()
    //
 
    display.loadFont(Scott32);
-   display.setTextColor(TFT_WHITE, TFT_BLACK, true);
    display.println(random(9999));
    display.println(random(9999));
    display.println(random(9999));
@@ -65,5 +61,4 @@ void loop()
    display.print(fps.get(), 1);
    display.print("  "); // erase any remaining characters from previous loop
 
-   lastMicros = newMicros;
 }

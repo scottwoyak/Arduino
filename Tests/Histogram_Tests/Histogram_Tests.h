@@ -4,7 +4,7 @@
 #include "Stats.h"
 #include <cmath>
 
-test(shouldComputeAverages)
+test(HistogramTest, shouldComputeAverages)
 {
    Stats avg;
 
@@ -18,7 +18,7 @@ test(shouldComputeAverages)
    assertEqual(3.0, avg.max());
 }
 
-test(shouldResetToEmpty)
+test(HistogramTest, shouldResetToEmpty)
 {
    Stats avg;
 
@@ -36,7 +36,7 @@ test(shouldResetToEmpty)
    assertEqual(0u, avg.count());
 }
 
-test(shouldStartAsNAN)
+test(HistogramTest, shouldStartAsNAN)
 {
    Stats avg;
 
@@ -46,7 +46,7 @@ test(shouldStartAsNAN)
    assertEqual(0u, avg.count());
 }
 
-test(shouldRemoveValues)
+test(HistogramTest, shouldRemoveValues)
 {
    Stats avg;
 
@@ -64,7 +64,7 @@ test(shouldRemoveValues)
    assertTrue(isnan(avg.max()));
 }
 
-test(shouldNotAllowMoreValueToBeRemovedThanHaveBeenAdded)
+test(HistogramTest, shouldNotAllowMoreValueToBeRemovedThanHaveBeenAdded)
 {
    Stats avg;
 
@@ -86,7 +86,7 @@ test(shouldNotAllowMoreValueToBeRemovedThanHaveBeenAdded)
    assertEqual(0u, avg.count());
 }
 
-test(Stats_shouldIgnoreNANValues)
+test(HistogramTest, Stats_shouldIgnoreNANValues)
 {
    Stats avg;
 
@@ -106,7 +106,7 @@ test(Stats_shouldIgnoreNANValues)
    assertEqual(3u, avg.count());
 }
 
-test(shouldIgnoreInfiniteValues)
+test(HistogramTest, shouldIgnoreInfiniteValues)
 {
    Stats avg;
 
@@ -133,7 +133,7 @@ test(shouldIgnoreInfiniteValues)
    assertEqual(2u, avg.count());
 }
 
-test(shouldNotChangeWhenRemovingFromEmpty)
+test(HistogramTest, shouldNotChangeWhenRemovingFromEmpty)
 {
    Stats avg;
 
@@ -142,7 +142,7 @@ test(shouldNotChangeWhenRemovingFromEmpty)
    assertEqual(0u, avg.count());
 }
 
-test(roundTripStability)
+test(HistogramTest, roundTripStability)
 {
    Stats avg;
 

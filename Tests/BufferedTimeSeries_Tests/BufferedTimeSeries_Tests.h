@@ -6,7 +6,7 @@
 
 using namespace aunit;
 
-test(shouldInterpolateMidpoint)
+test(BufferedTimeSeriesTest, shouldInterpolateMidpoint)
 {
    // window 200ms, resolution 50ms
    BufferedTimeSeries ts(200, 50);
@@ -28,7 +28,7 @@ test(shouldInterpolateMidpoint)
    assertTrue(diff < 2.0f);
 }
 
-test(shouldReturnNaNWhenTargetOutsideRange)
+test(BufferedTimeSeriesTest, shouldReturnNaNWhenTargetOutsideRange)
 {
    BufferedTimeSeries ts(200, 50);
 
@@ -40,7 +40,7 @@ test(shouldReturnNaNWhenTargetOutsideRange)
 }
 
 // New separate tests: empty buffer should return NaN; expired samples should result in NaN.
-test(shouldReturnNaNWhenEmpty)
+test(BufferedTimeSeriesTest, shouldReturnNaNWhenEmpty)
 {
    BufferedTimeSeries ts(200, 50);
 
@@ -48,7 +48,7 @@ test(shouldReturnNaNWhenEmpty)
    assertTrue(std::isnan(vEmpty));
 }
 
-test(shouldReturnNaNAfterExpired)
+test(BufferedTimeSeriesTest, shouldReturnNaNAfterExpired)
 {
    BufferedTimeSeries ts(200, 50);
 

@@ -74,13 +74,6 @@
     <ProjectCapability Include="VisualMicroLinux" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="RollingStdDev_Tests.ino">
-      <FileType>CppCode</FileType>
-      <DeploymentContent>true</DeploymentContent>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="RollingStdDev_Tests.h" />
     <ClInclude Include="__vm\.RollingStdDev_Tests.vsarduino.h" />
   </ItemGroup>
   <PropertyGroup>

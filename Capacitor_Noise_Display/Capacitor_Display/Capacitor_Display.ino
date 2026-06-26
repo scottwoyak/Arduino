@@ -1,16 +1,16 @@
 #include <Arduino.h>
 #include "CapacitorSensor.h"
 #include "Feather.h"
-#include "RollingStats.h"
+#include "RollingAverage.h"
 #include "Timer.h"
 
 Feather feather;
 Format timeFormat("###.# us");
 Format rateFormat("#### per/s");
 
-RollingStats chargeTime10(10);
-RollingStats chargeTime100(100);
-RollingStats chargeTime1000(1000);
+RollingAverage chargeTime10(10);
+RollingAverage chargeTime100(100);
+RollingAverage chargeTime1000(1000);
 Timer displayTimer(200);
 
 // Hardware Pin Assignments
