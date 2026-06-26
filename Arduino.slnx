@@ -69,6 +69,7 @@
     <File Path="libraries/Woyak/TelemetryClient.h" />
     <File Path="libraries/Woyak/TempSensor.h" />
     <File Path="libraries/Woyak/TempSensorCallibration.h" />
+    <File Path="libraries/Woyak/Tick.h" />
     <File Path="libraries/Woyak/TimeConstants.h" />
     <File Path="libraries/Woyak/TimedAverage.h" />
     <File Path="libraries/Woyak/TimedBin.h" />

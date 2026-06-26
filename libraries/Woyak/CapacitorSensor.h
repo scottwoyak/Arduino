@@ -3,6 +3,7 @@
 #include <esp_timer.h>
 #include "RollingRate.h"
 #include "RollingStats.h"
+#include "Tick.h"
 
 /// <summary>
 /// Provides interrupt-driven capacitor charge-time measurements using timer callbacks
@@ -30,7 +31,7 @@ private:
    uint16_t _dischargeDelayMicros;
 
    volatile State _state = State::IDLE;
-   volatile uint64_t _chargeStartTimeMicros = 0;
+   volatile uint64_t _chargeStartTicks = 0;
    volatile uint64_t _latestChargeTimeMicros = 0;
    volatile bool _hasChanged = false;
 
@@ -64,15 +65,15 @@ private:
       }
    }
 
-   static void _onChargeTimeout(void*)
-   {
-      if (_instance != nullptr)
-      {
-         _instance->_handleChargeTimeout();
-      }
-   }
+       static void _onChargeTimeout(void*)
+       {
+          if (_instance != nullptr)
+          {
+             _instance->_handleChargeTimeout();
+          }
+       }
 
-   void _startDischarging()
+       void _startDischarging()
    {
       detachInterrupt(digitalPinToInterrupt(_sensePin));
 
@@ -81,7 +82,7 @@ private:
       digitalWrite(_sensePin, LOW);
 
       _state = DISCHARGING;
-      _chargeStartTimeMicros = esp_timer_get_time();
+      _chargeStartTicks = Tick::now();
 
       esp_timer_stop(_dischargeTimer);
       esp_timer_start_once(_dischargeTimer, _dischargeDelayMicros);
@@ -95,7 +96,7 @@ private:
       }
 
       digitalWrite(_chargePin, HIGH);
-      _chargeStartTimeMicros = esp_timer_get_time();
+      _chargeStartTicks = Tick::now();
       _state = CHARGING;
 
       pinMode(_sensePin, INPUT);
@@ -124,8 +125,9 @@ private:
          return;
       }
 
-      uint64_t chargeEndTimeMicros = esp_timer_get_time();
-      uint64_t chargeTimeMicros = chargeEndTimeMicros - _chargeStartTimeMicros;
+      uint64_t chargeEndTicks = Tick::now();
+      uint64_t chargeTimeMicros = static_cast<uint64_t>(Tick::elapsedMicros(_chargeStartTicks, chargeEndTicks));
+      uint64_t chargeEndTimeMicros = chargeEndTicks;
       _latestChargeTimeMicros = chargeTimeMicros;
       _hasChanged = true;
 

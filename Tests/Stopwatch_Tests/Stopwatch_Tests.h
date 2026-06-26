@@ -4,8 +4,8 @@
 #include "Stopwatch.h"
 
 // mock timing for Stopwatch
-unsigned long stopwatchTestTicks;
-unsigned long getStopwatchTestTicks() {
+uint64_t stopwatchTestTicks;
+uint64_t getStopwatchTestTicks() {
    return stopwatchTestTicks;
 }
 
@@ -26,9 +26,7 @@ test(StopwatchTest, defaultPrecisionShouldBeMicros) {
 }
 
 test(StopwatchTest, shouldTrackTimeMicros) {
-   Stopwatch::tickFunc = getStopwatchTestTicks;
-   Stopwatch sw(false);
-   Stopwatch::tickFunc = nullptr;
+   StopwatchT<getStopwatchTestTicks> sw(false);
 
    stopwatchTestTicks = 0;
    sw.start();
@@ -40,9 +38,7 @@ test(StopwatchTest, shouldTrackTimeMicros) {
 }
 
 test(StopwatchTest, shouldTrackTimeMillis) {
-   Stopwatch::tickFunc = getStopwatchTestTicks;
-   Stopwatch sw(false, StopwatchPrecision::Millis);
-   Stopwatch::tickFunc = nullptr;
+   StopwatchT<getStopwatchTestTicks> sw(false, StopwatchPrecision::Millis);
 
    stopwatchTestTicks = 0;
    sw.start();
@@ -115,9 +111,7 @@ test(StopwatchTest, shouldBeStoppedIfResetWhileStopped) {
 }
 
 test(StopwatchTest, shouldIgnoreRepeatedStartCallsWhileRunning) {
-   Stopwatch::tickFunc = getStopwatchTestTicks;
-   Stopwatch sw(false);
-   Stopwatch::tickFunc = nullptr;
+   StopwatchT<getStopwatchTestTicks> sw(false);
 
    stopwatchTestTicks = 0;
    sw.start();

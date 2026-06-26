@@ -2,7 +2,7 @@
 
 ## Project Guidelines
 - User prefers Visual Studio XML documentation comments (/// <summary>, <param>, <returns>) for class and method documentation. When cleaning up code files, add Visual Studio style comments (///) before classes, methods, and properties. These are XML documentation comments used for IntelliSense. Example: /// <summary>Brief description</summary>
-- When the user asks for 'cleanup', include Visual Studio-style XML documentation updates as part of the cleanup pass.
+- When the user asks for 'cleanup', include Visual Studio-style XML documentation updates as part of the cleanup pass. Additionally, add Visual Studio style comments during code cleanup.
 - When cleaning up non-testing sketches, always add a detailed description comment block at the top of the sketch.
 - Do not automatically run tests; only run tests when explicitly requested.
 - When cleaning up code, add IntelliSense-style XML documentation comments to constructors and public methods where appropriate, as well as to other methods where appropriate. Apply proper include bracket style: use quotes ("...") for Woyak library headers and local project headers, and use angle brackets (<...>) for third-party/installed libraries like LovyanGFX, WiFi, InfluxDbClient, Timer, etc.
