@@ -1,12 +1,11 @@
 #include "Feather.h"
-#include "Stopwatch.h"
 #include <MS5837.h>
 #include "Units.h"
+#include "Rate.h"
 #include "RollingStats.h"
 
-
-// 
-// This sketch displays the current temperature on an Arduino ESP32 Feather
+//
+// This sketch displays temperature, depth, and altitude from an MS5837 sensor.
 //
 Feather feather;
 MS5837 sensor;
@@ -16,10 +15,11 @@ Format depthFormat("##.## in");
 Format altitudeFormat("####.# ft");
 Format rateFormat("####/s");
 
-constexpr auto NUM_SAMPLES = 20;
+constexpr uint16_t NUM_SAMPLES = 20;
 RollingStats temp(NUM_SAMPLES);
 RollingStats depth(NUM_SAMPLES);
 RollingStats altitude(NUM_SAMPLES);
+Rate rate;
 
 // The setup() function runs once each time the micro-controller starts
 void setup()
@@ -32,7 +32,7 @@ void setup()
    // wait a few seconds for the serial monitor to open
    while (millis() < 2000 && !Serial)
    {
-   };
+   }
 
    feather.begin();
 
@@ -40,28 +40,24 @@ void setup()
    {
       Serial.println("Sensor failed to initialize");
       delay(1000);
-   };
+   }
 
    sensor.setModel(MS5837::MS5837_02BA);
    //sensor.setModel(MS5837::MS5837_30BA);
    sensor.setFluidDensity(997); // kg/m^3 (fresh water)
 }
 
-Stopwatch sw;
-
 void loop()
 {
    feather.setCursor(0, 0);
 
    // read sensor
-   sw.reset();
+   rate.start();
    sensor.read();
+   rate.stop();
    temp.set(Units::C2F(sensor.temperature()));
    depth.set(Units::M2IN(sensor.depth()));
    altitude.set(Units::M2FT(sensor.altitude()));
-
-   float time = sw.elapsedMillis();
-   int16_t rate = round(1000 / time);
 
    // display values
    feather.setTextSize(3);
@@ -73,7 +69,7 @@ void loop()
    feather.setTextSize(2);
    feather.setCursor(0, -feather.charH() + 1);
    feather.print("Rate: ", Color::GRAY);
-   feather.println(rate, rateFormat, Color::GRAY);
+   feather.println(rate.get(), rateFormat, Color::GRAY);
 }
 
 

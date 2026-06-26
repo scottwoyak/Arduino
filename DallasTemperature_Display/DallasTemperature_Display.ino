@@ -6,7 +6,7 @@
 #include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include "Stopwatch.h"
+#include "Rate.h"
 
 #define ONE_WIRE_PIN 5
 
@@ -20,6 +20,8 @@ Format tempFormat("####.## F");
 Format timeFormat("####.# ms");
 Format rateFormat("####/s");
 Format resolutionFormat("##");
+
+Rate rate;
 
 // The setup() function runs once each time the micro-controller starts
 void setup()
@@ -52,17 +54,18 @@ void loop()
    feather.setCursor(0, 0);
 
    // read sensor
-   Stopwatch sw;
+   rate.start();
    sensors.requestTemperatures();
    float temp = sensors.getTempFByIndex(0);
-   float elapsedMs = sw.elapsedMillis();
+   rate.stop();
+   float elapsedMs = rate.elapsedMicros() / 1000.0f;
 
    // display values
    feather.setTextSize(3);
    feather.println("Temp: ", temp, tempFormat);
    feather.println("Resolution: ", sensors.getResolution(), resolutionFormat);
    feather.println("Time: ", elapsedMs, timeFormat);
-   feather.println("Rate: ", 1000.0/elapsedMs, rateFormat);
+   feather.println("Rate: ", rate.get(), rateFormat);
 
    feather.setTextSize(2);
    feather.setCursorY(-2*feather.charH());

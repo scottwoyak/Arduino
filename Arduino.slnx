@@ -50,6 +50,7 @@
     <File Path="libraries/Woyak/MultiBar.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
+    <File Path="libraries/Woyak/Rate.h" />
     <File Path="libraries/Woyak/RollingAverage.h" />
     <File Path="libraries/Woyak/RollingMicros.h" />
     <File Path="libraries/Woyak/RollingRate.h" />

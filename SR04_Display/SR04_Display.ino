@@ -1,5 +1,5 @@
 #include "Feather.h"
-#include "Stopwatch.h"
+#include "Rate.h"
 
 Feather feather;
 constexpr uint8_t TRIGGER_PIN = 6;
@@ -7,6 +7,8 @@ constexpr uint8_t ECHO_PIN = 5;
 
 Format distFormat("###.## cm");
 Format rateFormat("####/s");
+
+Rate rate;
 
 // The setup() function runs once each time the micro-controller starts
 void setup()
@@ -26,11 +28,9 @@ void setup()
    pinMode(ECHO_PIN, INPUT);
 }
 
-Stopwatch sw;
-
 void loop()
 {
-   sw.reset();
+   rate.start();
    digitalWrite(TRIGGER_PIN, LOW);
    delayMicroseconds(2);
 
@@ -39,7 +39,8 @@ void loop()
    digitalWrite(TRIGGER_PIN, LOW);
 
    long durationMicros = pulseIn(ECHO_PIN, HIGH);
-   float timeMs = sw.elapsedMillis();
+   rate.stop();
+   float timeMs = rate.elapsedMicros() / 1000.0f;
    float distance = durationMicros * 0.034 / 2;
 
 
@@ -58,7 +59,7 @@ void loop()
 
    feather.setTextSize(3);
    feather.setCursorY(-feather.charH());
-   feather.println(1000 / timeMs, rateFormat, Color::SUB_LABEL);
+   feather.println(rate.get(), rateFormat, Color::SUB_LABEL);
    /*
    feather.setTextSize(2);
    feather.print(tempTime, msFormat, Color::SUB_LABEL);
@@ -82,14 +83,12 @@ void loop()
 
    feather.setTextSize(2);
    feather.setCursor(0, -2*feather.charH() + 1);
-   feather.print("Type: ", Color::LABEL);
-   feather.print(sensor.type(), Color::VALUE2);
+   feather.print("Type: ", sensor.type(), Color::VALUE2);
    feather.print(" 0x", Color::VALUE2);
    feather.println(sensor.address(), HEX, Color::VALUE2);
 
    feather.moveCursorY(1);
-   feather.print("  ID: ", Color::LABEL);
-   feather.print(sensor.id(), Color::VALUE2);
+   feather.println("  ID: ", sensor.id(), Color::VALUE2);
    */
 }
 

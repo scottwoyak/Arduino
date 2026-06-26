@@ -2,7 +2,7 @@
 
 #include "SerialX.h"
 #include "WiFiSettings.h"
-#include "Stopwatch.h"
+#include "Rate.h"
 
 Feather feather;
 constexpr uint8_t TRIGGER_PIN = 6;
@@ -24,10 +24,11 @@ void setup()
 }
 
 
-Stopwatch sw;
+Rate rate;
 
 void loop()
 {
+   rate.start();
    digitalWrite(TRIGGER_PIN, LOW);
    delayMicroseconds(2);
 
@@ -41,6 +42,7 @@ void loop()
 
    // avoid echos
    delayMicroseconds(2*durationMicros);
+   rate.stop();
 
    feather.setTextSize(5);
    feather.setCursor(0, 0);
@@ -48,6 +50,5 @@ void loop()
    feather.println(distanceIN, distFormatIn, Color::VALUE);
 
    Serial.print("Distance: " + String(distanceCM) + " cm   " + String(distanceIN) + " in   ");
-   Serial.println(sw.elapsedMillis() + String(" ms = ") + String(1000.0 / sw.elapsedMillis()) + " per sec");
-   sw.reset();
+   Serial.println(String(rate.elapsedMicros() / 1000.0f) + " ms = " + String(rate.get()) + " per sec");
 }

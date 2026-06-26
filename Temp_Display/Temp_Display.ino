@@ -1,5 +1,5 @@
 #include "Feather.h"
-#include "Stopwatch.h"
+#include "Rate.h"
 
 #include "TempSensor.h"
 
@@ -16,6 +16,9 @@ Format tempFormat("###.## F");
 Format humFormat("###.#%");
 Format rateFormat("####/s");
 Format msFormat("####.# ms");
+
+Rate tempRate;
+Rate humRate;
 
 // The setup() function runs once each time the micro-controller starts
 void setup()
@@ -52,22 +55,20 @@ void setup()
    }
 }
 
-Stopwatch sw;
-
 void loop()
 {
    feather.setCursor(0, 0);
 
    // read sensor
-   sw.reset();
+   tempRate.start();
    float temp = sensor.readTemperatureF();
-   float tempTime = sw.elapsedMillis();
-   int16_t tempPerS = round(1000 / tempTime);
+   tempRate.stop();
+   float tempTime = tempRate.elapsedMicros() / 1000.0f;
 
-   sw.reset();
+   humRate.start();
    float hum = sensor.readHumidity();
-   float humTime = sw.elapsedMillis();
-   int16_t humPerS = round(1000 / humTime);
+   humRate.stop();
+   float humTime = humRate.elapsedMicros() / 1000.0f;
 
    // display values
    feather.setTextSize(3);
@@ -80,7 +81,7 @@ void loop()
    feather.setTextSize(2);
    feather.print(tempTime, msFormat, Color::SUB_LABEL);
    feather.print("  ");
-   feather.print(tempPerS, rateFormat, Color::SUB_LABEL);
+   feather.print(tempRate.get(), rateFormat, Color::SUB_LABEL);
    feather.println();
    feather.moveCursorY(feather.charH() / 2);
 
@@ -94,19 +95,17 @@ void loop()
    feather.setTextSize(2);
    feather.print(humTime, msFormat, Color::SUB_LABEL);
    feather.print("  ");
-   feather.print(humPerS, rateFormat, Color::SUB_LABEL);
+   feather.print(humRate.get(), rateFormat, Color::SUB_LABEL);
    feather.println();
 
    feather.setTextSize(2);
    feather.setCursor(0, -2*feather.charH() + 1);
-   feather.print("Type: ", Color::LABEL);
-   feather.print(sensor.type(), Color::VALUE2);
+   feather.print("Type: ", sensor.type(), Color::VALUE2);
    feather.print(" 0x", Color::VALUE2);
    feather.println(sensor.address(), HEX, Color::VALUE2);
 
    feather.moveCursorY(1);
-   feather.print("  ID: ", Color::LABEL);
-   feather.print(sensor.id(), Color::VALUE2);
+   feather.println("  ID: ", sensor.id(), Color::VALUE2);
 }
 
 
