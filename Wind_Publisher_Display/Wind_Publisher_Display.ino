@@ -106,24 +106,22 @@ void onStarted()
    feather.moveCursorY(8);
 
    feather.setTextSize(2);
-   feather.print("Topic: ", Color::LABEL);
-   feather.println(client.getTopic(), Color::VALUE);
+   feather.println("Topic: ", client.getTopic());
    feather.moveCursorY(1);
 
-   feather.print(" Rate: ", Color::LABEL);
+   feather.print(" Rate: ", "---");
    ratePos = feather.getCursor();
-   feather.println("---", Color::VALUE);
+   feather.println();
    feather.moveCursorY(1);
 
-   feather.print("Speed: ", Color::LABEL);
+   feather.print("Speed: ", "---");
    speedPos = feather.getCursor();
-   feather.println("---", Color::VALUE);
+   feather.println();
    feather.moveCursorY(1);
 
    Url url(client.getUrl().c_str());
-   feather.print(" Host: ", Color::LABEL);
    feather.display.setTextWrap(true);
-   feather.println(url.getHost(), Color::VALUE2);
+   feather.println(" Host: ", url.getHost(), Color::VALUE2);
    feather.moveCursorY(1);
 
    rate.reset();

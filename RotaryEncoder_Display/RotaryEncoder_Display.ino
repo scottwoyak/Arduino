@@ -28,29 +28,22 @@ void loop()
    feather.setCursor(0, 0);
    feather.setTextSize(3);
 
-   feather.print("     A: ", Color::LABEL);
-   feather.println(encoder.isLowA() ? "Low" : "High", highLowFormat, Color::VALUE);
+   feather.println("     A: ", encoder.isLowA() ? "Low" : "High", highLowFormat);
    feather.moveCursorY(2);
 
-   feather.print("     B: ", Color::LABEL);
-   feather.println(encoder.isLowB() ? "Low" : "High", highLowFormat, Color::VALUE);
+   feather.println("     B: ", encoder.isLowB() ? "Low" : "High", highLowFormat);
    feather.moveCursorY(2);
 
-   feather.print("   Pos:", Color::LABEL);
-   feather.println(encoder.getPosition(), posFormat, Color::VALUE);
+   feather.println("   Pos:", encoder.getPosition(), posFormat);
    feather.moveCursorY(2);
 
-   feather.print("Button: ", Color::LABEL);
-   feather.println(encoder.button.isPressed()?"True" : "False", boolFormat, Color::VALUE);
+   feather.println("Button: ", encoder.button.isPressed()?"True" : "False", boolFormat);
 
    feather.setTextSize(2);
    feather.setCursorY(-feather.charH());
-   feather.print("A:", Color::LABEL);
-   feather.print(encoder.getPinA(), Color::VALUE);
-   feather.print("  B:", Color::LABEL);
-   feather.print(encoder.getPinB(), Color::VALUE);
-   feather.print("  Button:", Color::LABEL);
-   feather.println(encoder.getButtonPin(), Color::VALUE);
+   feather.print("A:", encoder.getPinA());
+   feather.print("  B:", encoder.getPinB());
+   feather.println("  Button:", encoder.getButtonPin());
 }
 
 

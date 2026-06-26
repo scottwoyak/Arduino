@@ -170,16 +170,13 @@ void loop()
    }
    feather.moveCursorY(2);
 
-   feather.print("   Volts: ", Color::LABEL);
-   feather.println(displayBatteryVolts.get(), voltsFormat, Color::VALUE);
+   feather.println("   Volts: ", displayBatteryVolts.get(), voltsFormat);
    feather.moveCursorY(1);
 
-   feather.print(" Current: ", Color::LABEL);
-   feather.println(std::abs(displayBatterymA.get()), currentFormat, displayBatterymA.get() > 0 ? CHARGING_COLOR : DRAINING_COLOR);
+   feather.println(" Current: ", std::abs(displayBatterymA.get()), currentFormat, displayBatterymA.get() > 0 ? CHARGING_COLOR : DRAINING_COLOR);
    feather.moveCursorY(1);
 
-   feather.print("     mAh:", Color::LABEL);
-   feather.println(batterymAh, mAhFormat, batterymAh > 0 ? CHARGING_COLOR : DRAINING_COLOR);
+   feather.println("     mAh:", batterymAh, mAhFormat, batterymAh > 0 ? CHARGING_COLOR : DRAINING_COLOR);
 
 
    feather.moveCursorY(feather.charH());
@@ -187,28 +184,23 @@ void loop()
    feather.println();
    feather.moveCursorY(2);
 
-   feather.print("   Volts: ", Color::LABEL);
-   feather.println(displayLoadVolts.get(), voltsFormat, Color::VALUE);
+   feather.println("   Volts: ", displayLoadVolts.get(), voltsFormat);
    feather.moveCursorY(1);
 
-   feather.print(" Current: ", Color::LABEL);
-   feather.println(std::abs(displayLoadmA.get()), currentFormat, Color::VALUE);
+   feather.println(" Current: ", std::abs(displayLoadmA.get()), currentFormat);
    feather.moveCursorY(1);
 
-   feather.print("     mAh: ", Color::LABEL);
-   feather.println(loadmAh, mAhFormat2, Color::VALUE);
+   feather.println("     mAh: ", loadmAh, mAhFormat2);
 
 
    feather.moveCursorY(feather.charH());
    feather.println("Solar", Color::HEADING2);
    feather.moveCursorY(2);
 
-   feather.print("   Volts: ", Color::LABEL);
-   feather.println(displaySolarVolts.get(), voltsFormat, Color::VALUE);
+   feather.println("   Volts: ", displaySolarVolts.get(), voltsFormat);
    feather.moveCursorY(1);
 
-   feather.print(" Current: ", Color::LABEL);
-   feather.println(displaySolarmA.get(), currentFormat, Color::VALUE);
+   feather.println(" Current: ", displaySolarmA.get(), currentFormat);
 
    if (batteryPoint.ready())
    {

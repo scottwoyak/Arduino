@@ -29,20 +29,18 @@ void loop()
    feather.println("Battery Info", Color::HEADING);
    feather.moveCursorY(feather.charH() / 4);
 
-   feather.print("Volts: ", Color::LABEL);
-   feather.println(battery.cellVoltage(), batteryVoltsFormat, Color::VALUE);
+   feather.println("Volts: ", battery.cellVoltage(), batteryVoltsFormat);
    feather.moveCursorY(feather.charH() / 4);
 
-   feather.print("State: ", Color::LABEL);
+   feather.print("State: ", battery.cellPercent(), percentFormat);
    uint16_t x = feather.display.getCursorX();
-   feather.println(battery.cellPercent(), percentFormat, Color::VALUE);
+   feather.println();
    feather.moveCursorY(feather.charH() / 4);
 
-   feather.print(" Rate: ", Color::LABEL);
    feather.setTextSize(2);
    feather.setCursorX(x);
    float chargeRate = battery.chargeRate();
-   feather.println(chargeRate, chargeRateFormat, Color::VALUE);
+   feather.println(" Rate: ", chargeRate, chargeRateFormat);
    feather.setCursorX(x);
 
    if (fabs(chargeRate) >= 1)

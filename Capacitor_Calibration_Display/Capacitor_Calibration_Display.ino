@@ -421,32 +421,17 @@ void loop()
       float effectiveRate = (sensor.bufferSize() > 0) ? (sensor.rate() / sensor.bufferSize()) : 0;
       float avgRange = sensor.averageRange();
 
-      feather.print(" Discharge Time: ", Color::LABEL);
-      feather.print(sensor.dischargeDelayMicros(), chargeFormat, Color::VALUE2);
-      feather.println();
-
-      feather.print("    Buffer Size: ", Color::LABEL);
-      feather.print(sensor.bufferSize(), Color::VALUE2);
-      feather.println();
+      feather.println(" Discharge Time: ", sensor.dischargeDelayMicros(), chargeFormat, Color::VALUE2);
+      feather.println("    Buffer Size: ", sensor.bufferSize(), Color::VALUE2);
 
       if (!delaySweepTestLoop.running())
       {
-         feather.print("Avg Charge Time: ", Color::LABEL);
-         feather.print(sensor.average(), chargeFormat, Color::VALUE);
-         feather.println();
-
-         feather.print("      Variation: ", Color::LABEL);
-         feather.print(sensor.averageRange(), rangeFormat, Color::VALUE);
-         feather.println();
-
-         feather.print("       Raw Rate: ", Color::LABEL);
-         feather.print(sensor.rate(), rawRateFormat, Color::VALUE);
-         feather.println();
+         feather.println("Avg Charge Time: ", sensor.average(), chargeFormat);
+         feather.println("      Variation: ", sensor.averageRange(), rangeFormat);
+         feather.println("       Raw Rate: ", sensor.rate(), rawRateFormat);
       }
 
-      feather.print(" Effective Rate: ", Color::LABEL);
-      feather.print(effectiveRate, effectiveRateFormat, Color::VALUE3);
-      feather.println();
+      feather.println(" Effective Rate: ", effectiveRate, effectiveRateFormat, Color::VALUE3);
 
       feather.print(" Possible Error: ", Color::LABEL);
       float possibleError = calculatePossibleError(avgRange);

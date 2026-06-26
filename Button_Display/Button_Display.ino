@@ -33,14 +33,10 @@ void loop()
    feather.setTextSize(3);
    feather.setCursor(0, 0);
 
-   feather.print("Pin: ", Color::LABEL);
-   feather.println(button.getPin(), pinFormat, Color::VALUE);
-   feather.print(" Is: ", Color::LABEL);
-   feather.println(button.isPressed() ? "True" : "False", boolFormat, Color::VALUE);
-   feather.print("Was: ", Color::LABEL);
-   feather.println(button.wasPressed() ? "True" : "False", boolFormat, Color::VALUE);
-   feather.print("  #: ", Color::LABEL);
-   feather.println(button.getPressedCount(), Color::VALUE);
+   feather.println("Pin: ", button.getPin(), pinFormat);
+   feather.println(" Is: ", button.isPressed() ? "True" : "False", boolFormat);
+   feather.println("Was: ", button.wasPressed() ? "True" : "False", boolFormat);
+   feather.println("  #: ", button.getPressedCount());
 
    if (lastCount != button.getPressedCount())
    {

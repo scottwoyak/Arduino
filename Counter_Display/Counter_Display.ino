@@ -30,16 +30,13 @@ void loop()
    feather.moveCursorY(feather.charH() / 2);
 
    feather.setTextSize(2);
-   feather.print("  Pin: ", Color::LABEL);
-   feather.println(counter.getPin(), Color::VALUE);
+   feather.println("  Pin: ", counter.getPin());
    feather.moveCursorY(2);
 
-   feather.print("Count: ", Color::LABEL);
-   feather.println(counter.count(), countFormat, Color::VALUE);
+   feather.println("Count: ", counter.count(), countFormat);
    feather.moveCursorY(2);
 
-   feather.print(" Span: ", Color::LABEL);
-   feather.println(span, spanFormat, Color::VALUE);
+   feather.println(" Span: ", span, spanFormat);
    feather.moveCursorY(2);
 
    feather.print("  Min: ", Color::LABEL);

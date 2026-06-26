@@ -43,12 +43,9 @@ void loop()
       feather.moveCursorY(10);
 
       feather.setTextSize(3);
-      feather.print("  10: ", Color::LABEL);
-      feather.println(chargeTime10.average(), timeFormat, Color::VALUE);
-      feather.print(" 100: ", Color::LABEL);
-      feather.println(chargeTime100.average(), timeFormat, Color::VALUE);
-      feather.print("1000: ", Color::LABEL);
-      feather.println(chargeTime1000.average(), timeFormat, Color::VALUE);
+      feather.println("  10: ", chargeTime10.average(), timeFormat);
+      feather.println(" 100: ", chargeTime100.average(), timeFormat);
+      feather.println("1000: ", chargeTime1000.average(), timeFormat);
       feather.println();
 
       feather.setTextSize(2);

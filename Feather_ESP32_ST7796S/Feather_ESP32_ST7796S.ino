@@ -29,8 +29,7 @@ void loop()
    feather.moveCursorY(feather.charH() / 4);
 
    feather.setTextSize(3);
-   feather.print("ButtonA: ", Color::LABEL);
-   feather.println(feather.buttonA.isPressed() ? "TRUE " : "FALSE", Color::VALUE);
+   feather.println("ButtonA: ", feather.buttonA.isPressed() ? "TRUE " : "FALSE");
 
    feather.setTextSize(2);
    feather.setCursor(0, -feather.charH());

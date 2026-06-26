@@ -134,16 +134,13 @@ void displayMultiBar(float speed)
    feather.println("Last 10 Minutes...", Color::LABEL);
    feather.moveCursorY(1);
 
-   feather.print("Min: ", Color::LABEL);
-   feather.println(windStats.min(), speedFormat, Color::VALUE);
+   feather.println("Min: ", windStats.min(), speedFormat);
    feather.moveCursorY(1);
 
-   feather.print("Max: ", Color::LABEL);
-   feather.println(windStats.max(), speedFormat, Color::VALUE);
+   feather.println("Max: ", windStats.max(), speedFormat);
    feather.moveCursorY(1);
 
-   feather.print("Avg: ", Color::LABEL);
-   feather.println(windStats.average(), speedFormat, Color::VALUE);
+   feather.println("Avg: ", windStats.average(), speedFormat);
 
    // display bar
    multiBar.draw(&feather.display);

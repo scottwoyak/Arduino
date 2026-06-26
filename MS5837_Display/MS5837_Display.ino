@@ -65,12 +65,9 @@ void loop()
 
    // display values
    feather.setTextSize(3);
-   feather.print("Temp: ", Color::LABEL);
-   feather.println(temp.get(), tempFormat, Color::VALUE);
-   feather.print("Depth: ", Color::LABEL);
-   feather.println(depth.get(), depthFormat, Color::VALUE);
-   feather.print("Alt: ", Color::LABEL);
-   feather.println(altitude.get(), altitudeFormat, Color::VALUE);
+   feather.println("Temp: ", temp.get(), tempFormat);
+   feather.println("Depth: ", depth.get(), depthFormat);
+   feather.println("Alt: ", altitude.get(), altitudeFormat);
 
    // display timing
    feather.setTextSize(2);

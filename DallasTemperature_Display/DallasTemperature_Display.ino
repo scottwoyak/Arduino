@@ -59,17 +59,10 @@ void loop()
 
    // display values
    feather.setTextSize(3);
-   feather.print("Temp: ", Color::LABEL);
-   feather.println(temp, tempFormat, Color::VALUE);
-
-   feather.print("Resolution: ", Color::LABEL);
-   feather.println(sensors.getResolution(), resolutionFormat, Color::VALUE);
-
-   feather.print("Time: ", Color::LABEL);
-   feather.println(elapsedMs, timeFormat, Color::VALUE);
-
-   feather.print("Rate: ", Color::LABEL);
-   feather.println(1000.0/elapsedMs, rateFormat, Color::VALUE);
+   feather.println("Temp: ", temp, tempFormat);
+   feather.println("Resolution: ", sensors.getResolution(), resolutionFormat);
+   feather.println("Time: ", elapsedMs, timeFormat);
+   feather.println("Rate: ", 1000.0/elapsedMs, rateFormat);
 
    feather.setTextSize(2);
    feather.setCursorY(-2*feather.charH());
