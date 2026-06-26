@@ -12,11 +12,16 @@ private:
 
 #if defined(ARDUINO_ARCH_ESP32)
    /// <summary>
-   /// Gets the current CPU frequency in cycles per microsecond.
+   /// Gets CPU cycles per microsecond using compile-time CPU frequency.
+   /// Avoids runtime frequency API calls in timing hot paths.
    /// </summary>
    static uint32_t _cyclesPerMicro()
    {
-      return static_cast<uint32_t>(getCpuFrequencyMhz());
+#if defined(F_CPU)
+      return static_cast<uint32_t>(F_CPU / 1000000UL);
+#else
+      return 240U;
+#endif
    }
 #endif
 

@@ -32,6 +32,7 @@ private:
 
    volatile State _state = State::IDLE;
    volatile uint32_t _chargeStartTicks = 0;
+   volatile bool _chargeStartPending = false;
    volatile float _latestChargeTimeMicros = 0;
    volatile bool _hasChanged = false;
 
@@ -61,7 +62,7 @@ private:
    {
       if (_instance != nullptr)
       {
-         _instance->_startCharging();
+         _instance->_chargeStartPending = true;
       }
    }
 
@@ -82,7 +83,7 @@ private:
       digitalWrite(_sensePin, LOW);
 
       _state = DISCHARGING;
-      _chargeStartTicks = Tick::now();
+      _chargeStartPending = false;
 
       esp_timer_stop(_dischargeTimer);
       esp_timer_start_once(_dischargeTimer, _dischargeDelayMicros);
@@ -95,6 +96,7 @@ private:
          return;
       }
 
+      _chargeStartPending = false;
       digitalWrite(_chargePin, HIGH);
       _chargeStartTicks = Tick::now();
       _state = CHARGING;
@@ -116,6 +118,21 @@ private:
       detachInterrupt(digitalPinToInterrupt(_sensePin));
       _state = IDLE;
       _startDischarging();
+   }
+
+   void _servicePendingChargeStart()
+   {
+      if (!_chargeStartPending)
+      {
+         return;
+      }
+
+      if (_state != DISCHARGING)
+      {
+         return;
+      }
+
+      _startCharging();
    }
 
    void _onCharged()
@@ -168,6 +185,7 @@ public:
       _sensePin = sensePin;
       _dischargeDelayMicros = dischargeDelayMicros;
       _instance = this;
+      _chargeStartPending = false;
       _latestChargeTimeMicros = 0;
       _hasChanged = false;
       _queueHead = 0;
@@ -211,6 +229,8 @@ public:
    /// <returns>True when a queued measurement was consumed; otherwise false.</returns>
    bool tryDequeue(float& chargeTimeMicros, uint64_t& chargeEndMicros)
    {
+      _servicePendingChargeStart();
+
       noInterrupts();
       if (_queueCount == 0)
       {
@@ -240,11 +260,21 @@ public:
    }
 
    /// <summary>
+   /// Services deferred start requests on the caller's execution context.
+   /// </summary>
+   void loop()
+   {
+      _servicePendingChargeStart();
+   }
+
+   /// <summary>
    /// Indicates whether a new measurement has been captured since the last check.
    /// </summary>
    /// <returns>True when a new measurement is available; otherwise false.</returns>
    bool hasChanged()
    {
+      _servicePendingChargeStart();
+
       bool hasChanged = _hasChanged;
       _hasChanged = false;
       return hasChanged;
@@ -362,6 +392,8 @@ public:
    /// </summary>
    void loop()
    {
+      _sensor.loop();
+
       float chargeTime = 0;
       while (_sensor.tryDequeue(chargeTime))
       {

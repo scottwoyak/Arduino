@@ -37,13 +37,15 @@
 // Total sampling window duration before capture auto-completes.
 constexpr unsigned long SAMPLE_DURATION_MS = 10000;
 // Maximum number of samples stored in RAM during a run.
-constexpr size_t MAX_SAMPLES = 10000;
+constexpr size_t MAX_SAMPLES = 100;
 // Number of bins used for value and interval histograms.
 constexpr size_t HISTOGRAM_BINS = 20;
 // Significant digits used for chart min/max labels on the Feather display.
 constexpr uint8_t CHART_MIN_MAX_SIGNIFICANT_DIGITS = 3;
 // Delay between serial dump rows to avoid overwhelming the serial link.
 constexpr unsigned long PRINT_INTERVAL_MS = 2;
+// Delay after capture completion before auto-starting the serial dump.
+constexpr unsigned long AUTO_DUMP_DELAY_MS = 2000;
 
 #if SENSOR_MODE_CAPACITOR
 // Digital pin used to charge the capacitor-based sensor.
@@ -142,9 +144,11 @@ size_t sampleCount = 0;
 
 Timer captureTimer(SAMPLE_DURATION_MS);
 Timer printTimer(PRINT_INTERVAL_MS);
+Timer autoDumpTimer(AUTO_DUMP_DELAY_MS);
 
 bool captureComplete = false;
 bool dumpInProgress = false;
+bool autoDumpPending = false;
 size_t dumpIndex = 0;
 
 unsigned long sampleStartMicros = 0;
@@ -520,6 +524,8 @@ void finishCapture()
    }
 
    captureComplete = true;
+   autoDumpTimer = Timer(AUTO_DUMP_DELAY_MS);
+   autoDumpPending = true;
    printCaptureSummary();
    renderHistogramsOnFeather();
 }
@@ -573,8 +579,15 @@ void loop()
       }
    }
 
+   if (captureComplete && autoDumpPending && !dumpInProgress && autoDumpTimer.ready())
+   {
+      autoDumpPending = false;
+      startDump();
+   }
+
    if (captureComplete && feather.buttonA.wasPressed() && !dumpInProgress)
    {
+      autoDumpPending = false;
       startDump();
    }
 
