@@ -119,6 +119,11 @@ void loop()
       gustsField->set(wind90Field->average() - wind10Field->average());
       cpuTempField->set(cpuTemp.readTemperatureF());
 
+      // Ensure WiFi is connected before attempting to post
+      if (!Influx::ensureWifiConnected(&status))
+      {
+         Util::reset(60);
+      }
 
       status.setStatus(1.0f, 0.5f, 0);
       if (point.post(&client, true) == false)

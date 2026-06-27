@@ -8,6 +8,7 @@
 #include <InfluxDbCloud.h>
 #include "Status.h"
 #include "TimedAverage.h"
+#include "Timer.h"
 
 constexpr auto TZ_INFO = "UTC-5";
 
@@ -18,13 +19,73 @@ constexpr auto TZ_INFO = "UTC-5";
 //-------------------------------------------------------------------------------------------------
 namespace Influx
 {
-   void begin(
+   bool reconnectWifi(const char* wifiSSID, const char* wifiPassword, IStatus* status)
+   {
+      if (WiFi.status() == WL_CONNECTED)
+      {
+         return true;
+      }
+
+      if (status)
+      {
+         status->setStatus(Status::WIFI_CONNECTING);
+      }
+
+      WiFi.mode(WIFI_STA);
+      WiFi.reconnect();
+      WiFi.begin(wifiSSID, wifiPassword);
+
+      TimerSecs reconnectTimer(10);
+      while (WiFi.status() != WL_CONNECTED && !reconnectTimer.ready())
+      {
+         Serial.print(".");
+         delay(100);
+      }
+
+		return WiFi.status() == WL_CONNECTED;
+	}
+
+	bool ensureWifiConnected(IStatus* status = nullptr)
+	{
+		if (WiFi.status() == WL_CONNECTED)
+		{
+			return true;
+		}
+
+		if (status)
+		{
+			status->setStatus(Status::WIFI_CONNECTING);
+		}
+
+		WiFi.mode(WIFI_STA);
+		WiFi.reconnect();
+
+		TimerSecs reconnectTimer(10);
+		TimerMillis statusUpdateTimer(200); // Update status every 200ms for visual feedback during reconnect
+		while (WiFi.status() != WL_CONNECTED && !reconnectTimer.ready())
+		{
+			Serial.print(".");
+
+			// Provide visual feedback by toggling status during reconnect attempts
+			if (status && statusUpdateTimer.ready())
+			{
+				status->setStatus(Status::WIFI_CONNECTING);
+				statusUpdateTimer.reset();
+			}
+
+			delay(100);
+		}
+
+		return WiFi.status() == WL_CONNECTED;
+	}
+
+	void begin(
 	  ArduinoWithDisplay* arduino,
 	  const char* wifiSSID,
 	  const char* wifiPassword,
 	  InfluxDBClient* client,
 	  IStatus* status = nullptr
-   )
+	)
 	{
 	  arduino->print("WiFi... ", Color::LABEL);
 	  if (status)
@@ -32,14 +93,11 @@ namespace Influx
 		 status->setStatus(Status::WIFI_CONNECTING);
 	  }
 
-	  // Setup wifi
-	  WiFi.mode(WIFI_STA);
-	  WiFi.begin(wifiSSID, wifiPassword);
-
-	  while (WiFi.status() != WL_CONNECTED)
+	  if (!reconnectWifi(wifiSSID, wifiPassword, status))
 	  {
-		 Serial.print(".");
-		 delay(100);
+		 arduino->printlnR("FAILED", Color::RED);
+		 arduino->println("WiFi reconnect failed", Color::RED);
+		 while (1);
 	  }
 	  arduino->printlnR("ok", Color::VALUE);
 
@@ -78,28 +136,31 @@ namespace Influx
 	  }
    }
 
-   void begin(
+	void begin(
 	  const char* wifiSSID, 
 	  const char* wifiPassword, 
 	  InfluxDBClient* client, 
-	  IStatus* status)
+	  IStatus* status = nullptr)
 	{
 	  Serial.println("WiFi... ");
 
-	  status->setStatus(Status::WIFI_CONNECTING);
-
-	  // Setup wifi
-	  WiFi.mode(WIFI_STA);
-	  WiFi.begin(wifiSSID, wifiPassword);
-
-	  while (WiFi.status() != WL_CONNECTED)
+	  if (status)
 	  {
-		 Serial.print(".");
-		 delay(100);
+		 status->setStatus(Status::WIFI_CONNECTING);
+	  }
+
+	  if (!reconnectWifi(wifiSSID, wifiPassword, status))
+	  {
+		 Serial.println("FAILED");
+		 Serial.println("WiFi reconnect failed");
+		 while (1);
 	  }
 	  Serial.println("ok");
 
-	  status->setStatus(Status::WEB_CONNECTING);
+	  if (status)
+	  {
+		 status->setStatus(Status::WEB_CONNECTING);
+	  }
 
 	  // Accurate time is necessary for certificate validation and writing in batches
 	  // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
@@ -115,7 +176,10 @@ namespace Influx
 	  {
 		 Serial.println("ok");
 		 Serial.println(client->getServerUrl());
-		 status->setStatus(Status::READY);
+		 if (status)
+		 {
+			 status->setStatus(Status::READY);
+		 }
 	  }
 	  else
 	  {
@@ -123,7 +187,7 @@ namespace Influx
 		 Serial.println(client->getLastErrorMessage());
 		 while (1);
 	  }
-   }
+	}
 }
 
 //-------------------------------------------------------------------------------------------------

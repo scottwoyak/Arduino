@@ -151,9 +151,9 @@ void loop()
    }
 
    // Check WiFi connection and reconnect if needed
-   if (WiFi.status() != WL_CONNECTED)
+   if (!Influx::ensureWifiConnected(&status))
    {
-      Serial.println("WiFi connection lost");
+      Serial.println("WiFi reconnection failed, resetting");
       Util::reset(10);
    }
 

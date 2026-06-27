@@ -204,34 +204,58 @@ void loop()
 
    if (batteryPoint.ready())
    {
-      digitalWrite(BUILTIN_LED, HIGH);
-      if (batteryPoint.post(&client, true) == false)
+      // Ensure WiFi is connected before attempting to post
+      if (!Influx::ensureWifiConnected())
       {
-         Serial.println("InfluxDB write failed: ");
-         Serial.println(client.getLastErrorMessage());
+         Serial.println("WiFi reconnection failed");
       }
-      digitalWrite(BUILTIN_LED, LOW);
+      else
+      {
+         digitalWrite(BUILTIN_LED, HIGH);
+         if (batteryPoint.post(&client, true) == false)
+         {
+            Serial.println("InfluxDB write failed: ");
+            Serial.println(client.getLastErrorMessage());
+         }
+         digitalWrite(BUILTIN_LED, LOW);
+      }
    }
 
    if (solarPoint.ready())
    {
-      digitalWrite(BUILTIN_LED, HIGH);
-      if (solarPoint.post(&client, true) == false)
+      // Ensure WiFi is connected before attempting to post
+      if (!Influx::ensureWifiConnected())
       {
-         Serial.println("InfluxDB write failed: ");
-         Serial.println(client.getLastErrorMessage());
+         Serial.println("WiFi reconnection failed");
       }
-      digitalWrite(BUILTIN_LED, LOW);
+      else
+      {
+         digitalWrite(BUILTIN_LED, HIGH);
+         if (solarPoint.post(&client, true) == false)
+         {
+            Serial.println("InfluxDB write failed: ");
+            Serial.println(client.getLastErrorMessage());
+         }
+         digitalWrite(BUILTIN_LED, LOW);
+      }
    }
 
    if (loadPoint.ready())
    {
-      digitalWrite(BUILTIN_LED, HIGH);
-      if (loadPoint.post(&client, true) == false)
+      // Ensure WiFi is connected before attempting to post
+      if (!Influx::ensureWifiConnected())
       {
-         Serial.println("InfluxDB write failed: ");
-         Serial.println(client.getLastErrorMessage());
+         Serial.println("WiFi reconnection failed");
       }
-      digitalWrite(BUILTIN_LED, LOW);
+      else
+      {
+         digitalWrite(BUILTIN_LED, HIGH);
+         if (loadPoint.post(&client, true) == false)
+         {
+            Serial.println("InfluxDB write failed: ");
+            Serial.println(client.getLastErrorMessage());
+         }
+         digitalWrite(BUILTIN_LED, LOW);
+      }
    }
 }
