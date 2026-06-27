@@ -169,3 +169,6 @@ public:
       return _max;
    }
 };
+
+// Static member initialization
+RotaryEncoder* RotaryEncoder::_instance;

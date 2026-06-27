@@ -124,3 +124,7 @@ public:
       return span;
    }
 };
+
+// Static member initialization
+Counter* Counter::_counters[Counter::MAX_COUNTERS] = {};
+uint8_t Counter::_index = 0;
