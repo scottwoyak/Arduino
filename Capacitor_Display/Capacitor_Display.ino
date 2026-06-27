@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "CapacitorSensor.h"
+#include "CapacitorCalibrationSensor.h"
 #include "Feather.h"
 #include "RollingStats.h"
 #include "Timer.h"
@@ -17,7 +17,7 @@ Timer displayTimer(200);
 const int CHARGE_PIN = 5;
 const int SENSE_PIN = 6;
 
-CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN);
+CapacitorCalibrationSensor sensor(CHARGE_PIN, SENSE_PIN);
 
 void setup()
 {

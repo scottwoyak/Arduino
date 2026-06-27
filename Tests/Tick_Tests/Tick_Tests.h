@@ -3,6 +3,9 @@
 #include <AUnit.h>
 #include "Tick.h"
 
+namespace TickTests
+{
+
 /// <summary>
 /// Verifies Tick elapsed-micros conversion aligns with Arduino micros() delta.
 /// </summary>
@@ -103,3 +106,5 @@ test(TickTest, elapsedMicrosAndMillisShouldBeConsistent)
 
    assertNear((float) (tickMicros / 1000.0), (float) tickMillis, 0.25f);
 }
+
+} // namespace TickTests

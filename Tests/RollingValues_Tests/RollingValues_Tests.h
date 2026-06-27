@@ -3,6 +3,9 @@
 #include <AUnit.h>
 #include "RollingValues.h"
 
+namespace RollingValuesTests
+{
+
 test(RollingValuesTest, rollingValuesShouldReturnFalseWhenSizeIsZero)
 {
    RollingValues values(0);
@@ -97,3 +100,5 @@ test(RollingValuesTest, rollingValuesShouldResizeAndClearState)
    assertNear(8.0f, values.get(0), 0.0001f);
    assertNear(-1.0f, values.get(1), 0.0001f);
 }
+
+} // namespace RollingValuesTests

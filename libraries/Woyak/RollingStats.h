@@ -92,7 +92,13 @@ public:
          return false;
       }
 
-      _values.set(value);
+      float removed = NAN;
+      bool hadRemoved = _values.set(value, &removed);
+      if (hadRemoved)
+      {
+         _stats.remove(removed);
+      }
+
       _stats.add(value);
       _min = NAN;
       _max = NAN;

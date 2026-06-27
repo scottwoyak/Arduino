@@ -63,15 +63,6 @@ public:
    }
 
    /// <summary>
-   /// Indicates whether a new raw measurement has been captured since the last check.
-   /// </summary>
-   /// <returns>True when a new measurement is available; otherwise false.</returns>
-   bool hasChanged()
-   {
-      return _sensor.hasChanged();
-   }
-
-   /// <summary>
    /// Gets the sensor sample rate in samples per second.
    /// </summary>
    /// <returns>The current rolling sample rate.</returns>

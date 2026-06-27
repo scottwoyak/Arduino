@@ -3,6 +3,9 @@
 #include <AUnit.h>
 #include "RollingMicros.h"
 
+namespace RollingMicrosTests
+{
+
 unsigned long rollingMicrosTestTicks;
 unsigned long getRollingMicrosTestTicks()
 {
@@ -111,3 +114,5 @@ test(RollingMicrosTest, shouldExposeFirstAndLastMicros)
    assertEqual((unsigned long)250, rm.getLastMicros());
    assertEqual((unsigned long)150, rm.getElapsedMicros());
 }
+
+} // namespace RollingMicrosTests

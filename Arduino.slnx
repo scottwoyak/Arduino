@@ -13,7 +13,8 @@
     <File Path="libraries/Woyak/BufferedTimeSeries.h" />
     <File Path="libraries/Woyak/Button.cpp" />
     <File Path="libraries/Woyak/Button.h" />
-    <File Path="libraries/Woyak/Calibrator.h" />
+    <File Path="libraries/Woyak/TempCalibrator.h" />
+    <File Path="libraries/Woyak/CapacitorCalibrationSensor.h" />
     <File Path="libraries/Woyak/CapacitorDepthSensor.h" />
     <File Path="libraries/Woyak/CapacitorSensor.h" />
     <File Path="libraries/Woyak/Color.h" />
@@ -57,6 +58,9 @@
     <File Path="libraries/Woyak/RollingStats.h" />
     <File Path="libraries/Woyak/RotaryEncoder.cpp" />
     <File Path="libraries/Woyak/RotaryEncoder.h" />
+    <File Path="libraries/Woyak/SensorCapture.h" />
+    <File Path="libraries/Woyak/SensorCaptureAnalysis.h" />
+    <File Path="libraries/Woyak/SensorCaptureOutput.h" />
     <File Path="libraries/Woyak/SerialX.h" />
     <File Path="libraries/Woyak/SevenSegment.h" />
     <File Path="libraries/Woyak/SHT3xTempSensor.h" />
@@ -69,6 +73,7 @@
     <File Path="libraries/Woyak/TelemetryClient.h" />
     <File Path="libraries/Woyak/TempSensor.h" />
     <File Path="libraries/Woyak/TempSensorCallibration.h" />
+    <File Path="libraries/Woyak/TestSensor.h" />
     <File Path="libraries/Woyak/Tick.h" />
     <File Path="libraries/Woyak/TimeConstants.h" />
     <File Path="libraries/Woyak/TimedAverage.h" />
@@ -97,11 +102,11 @@
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
-    <Project Path="Tests/Calibrator_Tests/Calibrator_Tests.vcxproj">
+    <Project Path="Tests/Histogram_Tests/Histogram_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
-    <Project Path="Tests/Histogram_Tests/Histogram_Tests.vcxproj">
+    <Project Path="Tests/RollingAverage_Tests/RollingAverage_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
@@ -133,7 +138,15 @@
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
+    <Project Path="Tests/TempCalibrator_Tests/TempCalibrator_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
     <Project Path="Tests/Tick_Tests/Tick_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
+    <Project Path="Tests/TimedAverage_Tests/TimedAverage_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
@@ -175,10 +188,6 @@
     <Deploy />
   </Project>
   <Project Path="Capacitor_Display/Capacitor_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="Capacitor_Noise_Display/Capacitor_Noise_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -315,6 +324,10 @@
     <Deploy />
   </Project>
   <Project Path="RotaryEncoder_Display/RotaryEncoder_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Sensor_Averaging_Calibration_Display/Sensor_Averaging_Calibration_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

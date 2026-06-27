@@ -4,6 +4,9 @@
 #include "Timer.h"
 #include "Util.h"
 
+namespace TimerTests
+{
+
 unsigned long timerTestTicks = 0;
 
 unsigned long timerTestTime()
@@ -134,3 +137,5 @@ test(TimerTest, TimeSecs_ShouldSupportMillis)
    timerTestTicks += 250;
    assertTrue(timer.ready());
 }
+
+} // namespace TimerTests

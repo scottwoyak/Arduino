@@ -213,4 +213,4 @@ public:
        }
    };
 
-   using Calibrator = CalibratorBase<millis>;
+   using TempCalibrator = CalibratorBase<millis>;

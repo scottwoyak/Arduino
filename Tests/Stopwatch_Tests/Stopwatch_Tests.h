@@ -3,6 +3,9 @@
 #include <AUnit.h>
 #include "Stopwatch.h"
 
+namespace StopwatchTests
+{
+
 // mock timing for Stopwatch
 uint32_t stopwatchTestTicks;
 uint32_t getStopwatchTestTicks() {
@@ -121,3 +124,5 @@ test(StopwatchTest, shouldIgnoreRepeatedStartCallsWhileRunning) {
 
    assertEqual((unsigned long)2000, sw.elapsedMicros());
 }
+
+} // namespace StopwatchTests

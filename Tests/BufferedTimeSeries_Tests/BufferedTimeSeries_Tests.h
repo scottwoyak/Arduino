@@ -4,6 +4,8 @@
 #include "BufferedTimeSeries.h"
 #include <cmath>
 
+namespace BufferedTimeSeriesTests
+{
 using namespace aunit;
 
 test(BufferedTimeSeriesTest, shouldInterpolateMidpoint)
@@ -58,3 +60,5 @@ test(BufferedTimeSeriesTest, shouldReturnNaNAfterExpired)
    float vExpired = ts.get();
    assertTrue(std::isnan(vExpired));
 }
+
+} // namespace BufferedTimeSeriesTests

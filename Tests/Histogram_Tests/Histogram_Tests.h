@@ -4,6 +4,9 @@
 #include "Stats.h"
 #include <cmath>
 
+namespace HistogramTests
+{
+
 test(HistogramTest, shouldComputeAverages)
 {
    Stats avg;
@@ -160,3 +163,5 @@ test(HistogramTest, roundTripStability)
    assertEqual(saved, avg.get());
    assertEqual(savedCount, avg.count());
 }
+
+} // namespace HistogramTests

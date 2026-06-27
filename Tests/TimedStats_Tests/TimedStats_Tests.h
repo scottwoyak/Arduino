@@ -1,8 +1,10 @@
 #pragma once
 
 #include <AUnit.h>
-#include "TimedAverage.h"
+#include "TimedStats.h"
 
+namespace TimedStatsTests
+{
 unsigned long timedStatsTestTicks;
 
 unsigned long getTimedStatsTestTicks()
@@ -10,114 +12,109 @@ unsigned long getTimedStatsTestTicks()
    return timedStatsTestTicks;
 }
 
-using TimedAverageMock = TimedAverageBase<getTimedStatsTestTicks>;
+using TimedStatsMock = TimedStatsBase<getTimedStatsTestTicks>;
 
 void setupTimedStatsTest()
 {
    timedStatsTestTicks = 0;
 }
 
-test(TimedStatsTest, TimedAverage_shouldStartEmpty)
+test(TimedStatsTest, timedStatsRangeShouldIgnoreNearlyExpiredSingleSampleBucket)
 {
    setupTimedStatsTest();
-   TimedAverageMock average(1000);
-
-   assertTrue(isnan(average.average()));
-   assertEqual((size_t)0, average.count());
-}
-
-test(TimedStatsTest, shouldTrackAverageWithinWindow)
-{
-   setupTimedStatsTest();
-   TimedAverageMock average(1000);
-
-   timedStatsTestTicks = 100;
-   average.set(1.0f);
-   timedStatsTestTicks = 200;
-   average.set(2.0f);
-   timedStatsTestTicks = 300;
-   average.set(3.0f);
-
-   assertNear(2.0f, average.average(), 0.0001f);
-   assertEqual((size_t)3, average.count());
-}
-
-test(TimedStatsTest, shouldExpireOldSamplesByTime)
-{
-   setupTimedStatsTest();
-   TimedAverageMock average(1000);
+   TimedStatsMock stats(1000, 10);
 
    timedStatsTestTicks = 0;
-   average.set(1.0f);
-   timedStatsTestTicks = 500;
-   average.set(2.0f);
-   timedStatsTestTicks = 1000;
-   average.set(3.0f);
-
-   timedStatsTestTicks = 1400;
-
-   assertNear(2.5f, average.average(), 0.0001f);
-   assertEqual((size_t)2, average.count());
-}
-
-test(TimedStatsTest, TimedAverage_shouldIgnoreNonFiniteValues)
-{
-   setupTimedStatsTest();
-   TimedAverageMock average(1000);
+   stats.set(2000.0f);
 
    timedStatsTestTicks = 100;
-   average.set(1.0f);
+   stats.set(60.0f);
    timedStatsTestTicks = 200;
-   average.set(INFINITY);
+   stats.set(60.0f);
    timedStatsTestTicks = 300;
-   average.set(NAN);
+   stats.set(60.0f);
+   timedStatsTestTicks = 400;
+   stats.set(60.0f);
+   timedStatsTestTicks = 500;
+   stats.set(60.0f);
+   timedStatsTestTicks = 600;
+   stats.set(60.0f);
+   timedStatsTestTicks = 700;
+   stats.set(60.0f);
+   timedStatsTestTicks = 800;
+   stats.set(60.0f);
+   timedStatsTestTicks = 900;
+   stats.set(60.0f);
 
-   assertNear(1.0f, average.average(), 0.0001f);
-   assertEqual((size_t)1, average.count());
+   timedStatsTestTicks = 999;
+
+   assertNear(60.0f, stats.average(), 0.5f);
+   assertNear(0.0f, stats.range(), 0.001f);
+   assertNear(0.0f, stats.stdDev(), 0.001f);
 }
 
-test(TimedStatsTest, shouldResetWhenDurationChanges)
+test(TimedStatsTest, timedStatsCountShouldNotOvercountBlendBucket)
 {
    setupTimedStatsTest();
-   TimedAverageMock average(1000);
+   TimedStatsMock stats(1000, 10);
 
-   timedStatsTestTicks = 100;
-   average.set(1.0f);
-   timedStatsTestTicks = 200;
-   average.set(2.0f);
+   for (uint16_t i = 0; i <= 110; i++)
+   {
+      timedStatsTestTicks = i * 10;
+      stats.set(60.0f);
+   }
 
-   assertEqual((size_t)2, average.count());
+   timedStatsTestTicks = 1100;
 
-   average.setDurationMs(2000);
-
-   assertEqual((unsigned long)2000, average.durationMs());
-   assertEqual((size_t)0, average.count());
-   assertTrue(isnan(average.average()));
+   size_t count = stats.count();
+   assertTrue(count <= 100);
 }
 
-test(TimedStatsTest, shouldClampDurationToAtLeastOneMillisecond)
+test(TimedStatsTest, timedStatsRangeShouldIgnorePartiallyIncludedOutlierBucket)
 {
    setupTimedStatsTest();
-   TimedAverageMock average(1000);
+   TimedStatsMock stats(1000, 10);
 
-   average.setDurationMs(0);
+   for (uint16_t t = 0; t < 100; t += 10)
+   {
+      timedStatsTestTicks = t;
+      stats.set(1900.0f);
+   }
 
-   assertEqual((unsigned long)1, average.durationMs());
+   for (uint16_t t = 100; t <= 1090; t += 10)
+   {
+      timedStatsTestTicks = t;
+      stats.set(60.0f);
+   }
+
+   timedStatsTestTicks = 1099;
+
+   assertNear(60.0f, stats.average(), 0.5f);
+   assertNear(0.0f, stats.range(), 0.001f);
+   assertNear(0.0f, stats.stdDev(), 0.001f);
 }
 
-test(TimedStatsTest, shouldResetClearsStateWithoutChangingDuration)
+test(TimedStatsTest, timedStatsRangeShouldStayBoundedAcrossBoundaryTransitions)
 {
    setupTimedStatsTest();
-   TimedAverageMock average(1000);
+   TimedStatsMock stats(1000, 10);
 
-   timedStatsTestTicks = 100;
-   average.set(1.0f);
-   timedStatsTestTicks = 200;
-   average.set(2.0f);
+   // Seed one outlier sample, then continue with stable values.
+   timedStatsTestTicks = 0;
+   stats.set(1800.0f);
 
-   average.reset();
+   for (uint16_t t = 10; t <= 3000; t += 10)
+   {
+      timedStatsTestTicks = t;
+      stats.set(59.5f);
 
-   assertEqual((unsigned long)1000, average.durationMs());
-   assertEqual((size_t)0, average.count());
-   assertTrue(isnan(average.average()));
+      // Once the outlier is fully out of the 1s window, range should remain small.
+      if (t >= 1200)
+      {
+         float range = stats.range();
+         assertTrue(range < 1.0f);
+      }
+   }
 }
+
+} // namespace TimedStatsTests

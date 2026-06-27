@@ -4,6 +4,9 @@
 #include "Util.h"
 #include <cstdint>
 
+namespace UtilTests
+{
+
 test(UtilTest, shouldGetSpan)
 {
    uint32_t start = 1000;
@@ -73,3 +76,5 @@ test(UtilTest, shouldHandleLargeWraparound)
 
    assertEqual(UINT32_MAX, span);
 }
+
+} // namespace UtilTests

@@ -20,8 +20,9 @@
 //   possible-error calculation.
 // -------------------------------------------------------------------------------------------------
 #include <Arduino.h>
-#include "CapacitorDepthSensor.h"
+#include "CapacitorCalibrationSensor.h"
 #include "Feather.h"
+#include "RollingStats.h"
 #include "SerialX.h"
 #include "Timer.h"
 
@@ -73,7 +74,106 @@ Timer displayTimer(DISPLAY_INTERVAL_MS);
 constexpr uint8_t CHARGE_PIN = 5;
 constexpr uint8_t SENSE_PIN = 6;
 
-RollingCapacitiveSensor sensor(CHARGE_PIN, SENSE_PIN, DEFAULT_ROLLING_BUFFER_SIZE, DEFAULT_DISCHARGE_DELAY_MICROS);
+class CalibrationSweepSensor
+{
+private:
+   CapacitorCalibrationSensor _sensor;
+   RollingStats _stats;
+   RollingStats _averageStats;
+
+public:
+   CalibrationSweepSensor(
+      uint8_t chargePin,
+      uint8_t sensePin,
+      size_t rollingBufferSize,
+      uint16_t dischargeDelayMicros)
+      : _sensor(chargePin, sensePin, dischargeDelayMicros),
+      _stats(rollingBufferSize),
+      _averageStats(rollingBufferSize)
+   {
+   }
+
+   void begin()
+   {
+      _sensor.begin();
+   }
+
+   void loop()
+   {
+      _sensor.loop();
+
+      float chargeTime = 0;
+      while (_sensor.tryDequeue(chargeTime))
+      {
+         _stats.set(chargeTime);
+
+         float avg = _stats.average();
+         if (isfinite(avg))
+         {
+            _averageStats.set(avg);
+         }
+      }
+   }
+
+   void setDischargeDelayMicros(uint16_t dischargeDelayMicros)
+   {
+      _sensor.setDischargeDelayMicros(dischargeDelayMicros);
+   }
+
+   uint16_t dischargeDelayMicros() const
+   {
+      return _sensor.dischargeDelayMicros();
+   }
+
+   float average() const
+   {
+      if (_stats.count() < _stats.size())
+      {
+         return NAN;
+      }
+
+      return _stats.average();
+   }
+
+   float averageRange() const
+   {
+      if (_stats.count() < _stats.size())
+      {
+         return NAN;
+      }
+
+      return _averageStats.range();
+   }
+
+   void reset(uint16_t dischargeDelayMicros = 0, size_t rollingBufferSize = 0)
+   {
+      if (dischargeDelayMicros != 0)
+      {
+         _sensor.setDischargeDelayMicros(dischargeDelayMicros);
+      }
+
+      _sensor.resetRate();
+      _stats.reset(rollingBufferSize);
+      _averageStats.reset(rollingBufferSize);
+   }
+
+   size_t count() const
+   {
+      return _stats.count();
+   }
+
+   size_t bufferSize() const
+   {
+      return _stats.size();
+   }
+
+   float rate()
+   {
+      return _sensor.rate();
+   }
+};
+
+CalibrationSweepSensor calibrationSensor(CHARGE_PIN, SENSE_PIN, DEFAULT_ROLLING_BUFFER_SIZE, DEFAULT_DISCHARGE_DELAY_MICROS);
 float submergedDeltaChargeTimeMicros = NAN;
 
 float calculatePossibleError(float chargeVariationMicros)
@@ -121,7 +221,7 @@ enum class TestPhase
 class DelaySweepTestLoop
 {
 private:
-   RollingCapacitiveSensor& _sensor;
+   CalibrationSweepSensor& _sensor;
    bool _running = false;
    TestPhase _phase = TestPhase::CollectingRawRate;
    size_t _currentBufferSize = DEFAULT_ROLLING_BUFFER_SIZE;
@@ -258,7 +358,7 @@ private:
    }
 
 public:
-   explicit DelaySweepTestLoop(RollingCapacitiveSensor& sensor)
+   explicit DelaySweepTestLoop(CalibrationSweepSensor& sensor)
       : _sensor(sensor)
    {}
 
@@ -363,19 +463,19 @@ public:
    }
 };
 
-DelaySweepTestLoop delaySweepTestLoop(sensor);
+DelaySweepTestLoop delaySweepTestLoop(calibrationSensor);
 
 void runSubmergedDeltaCalibration()
 {
-   sensor.reset(DEFAULT_DISCHARGE_DELAY_MICROS, DEFAULT_ROLLING_BUFFER_SIZE);
+   calibrationSensor.reset(DEFAULT_DISCHARGE_DELAY_MICROS, DEFAULT_ROLLING_BUFFER_SIZE);
 
    Timer calibrationTimer(SUBMERGED_DELTA_CALIBRATION_DURATION_MS);
    while (!calibrationTimer.ready())
    {
-      sensor.loop();
+      calibrationSensor.loop();
    }
 
-   float measuredChargeTime = sensor.average();
+   float measuredChargeTime = calibrationSensor.average();
    if (isfinite(measuredChargeTime) && measuredChargeTime > 0.0f)
    {
       submergedDeltaChargeTimeMicros = measuredChargeTime;
@@ -386,7 +486,7 @@ void setup()
 {
    SerialX::begin();
    feather.begin();
-   sensor.begin();
+   calibrationSensor.begin();
    runSubmergedDeltaCalibration();
 }
 
@@ -397,7 +497,7 @@ void loop()
       delaySweepTestLoop.start();
    }
 
-   sensor.loop();
+   calibrationSensor.loop();
    delaySweepTestLoop.update();
 
    if (displayTimer.ready())
@@ -418,17 +518,17 @@ void loop()
 
       feather.setTextSize(2);
 
-      float effectiveRate = (sensor.bufferSize() > 0) ? (sensor.rate() / sensor.bufferSize()) : 0;
-      float avgRange = sensor.averageRange();
+      float effectiveRate = (calibrationSensor.bufferSize() > 0) ? (calibrationSensor.rate() / calibrationSensor.bufferSize()) : 0;
+      float avgRange = calibrationSensor.averageRange();
 
-      feather.println(" Discharge Time: ", sensor.dischargeDelayMicros(), chargeFormat, Color::VALUE2);
-      feather.println("    Buffer Size: ", sensor.bufferSize(), Color::VALUE2);
+      feather.println(" Discharge Time: ", calibrationSensor.dischargeDelayMicros(), chargeFormat, Color::VALUE2);
+      feather.println("    Buffer Size: ", calibrationSensor.bufferSize(), Color::VALUE2);
 
       if (!delaySweepTestLoop.running())
       {
-         feather.println("Avg Charge Time: ", sensor.average(), chargeFormat);
-         feather.println("      Variation: ", sensor.averageRange(), rangeFormat);
-         feather.println("       Raw Rate: ", sensor.rate(), rawRateFormat);
+         feather.println("Avg Charge Time: ", calibrationSensor.average(), chargeFormat);
+         feather.println("      Variation: ", calibrationSensor.averageRange(), rangeFormat);
+         feather.println("       Raw Rate: ", calibrationSensor.rate(), rawRateFormat);
       }
 
       feather.println(" Effective Rate: ", effectiveRate, effectiveRateFormat, Color::VALUE3);

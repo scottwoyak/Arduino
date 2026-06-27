@@ -3,6 +3,9 @@
 #include <AUnit.h>
 #include "RollingAverage.h"
 
+namespace RollingStdDevTests
+{
+
 test(RollingStatsTest, RollingAverage_shouldStartEmpty)
 {
    RollingAverage average(3);
@@ -64,3 +67,5 @@ test(RollingStatsTest, rollingAverageShouldResetState)
    assertTrue(isnan(average.get()));
    assertTrue(isnan(average.last()));
 }
+
+} // namespace RollingStdDevTests

@@ -23,7 +23,6 @@
 #include "SensorCaptureAnalysis.h"
 #include "SensorCaptureOutput.h"
 #include "SerialX.h"
-#include "Timer.h"
 #include "../libraries/Woyak/TestSensor.h"
 
 #define SENSOR_TYPE_CAPACITOR 1
@@ -42,15 +41,15 @@ constexpr size_t MAX_SAMPLES = 1000;
 constexpr size_t HISTOGRAM_BINS = 20;
 // Significant digits used for chart min/max labels on the Feather display.
 constexpr uint8_t CHART_MIN_MAX_SIGNIFICANT_DIGITS = 3;
-// Delay between serial dump rows to avoid overwhelming the serial link.
-constexpr unsigned long PRINT_INTERVAL_MS = 2;
 // Maximum allowed delta between consecutive samples to consider them stable.
 constexpr float STABILITY_DELTA_US = 0.25f;
 // Number of consecutive stable samples required before capture storage begins.
-constexpr size_t STABILITY_REQUIRED_SAMPLES = 5;
+constexpr size_t STABILITY_REQUIRED_SAMPLES = 10;
 
-constexpr size_t ANALYSIS_WINDOW_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
-constexpr size_t ANALYSIS_WINDOW_COUNT = sizeof(ANALYSIS_WINDOW_SIZES) / sizeof(ANALYSIS_WINDOW_SIZES[0]);
+constexpr size_t SAMPLE_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
+constexpr size_t NUM_SAMPLE_SIZES = sizeof(SAMPLE_SIZES) / sizeof(SAMPLE_SIZES[0]);
+
+Feather feather;
 
 #if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
 // Digital pin used to charge the capacitor-based sensor.
@@ -59,12 +58,9 @@ constexpr uint8_t CHARGE_PIN = 5;
 constexpr uint8_t SENSE_PIN = 6;
 // Discharge delay before each capacitor charge cycle.
 constexpr uint16_t DISCHARGE_DELAY_MICROS = 350;
-#endif
-
-Feather feather;
-
-#if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-CapacitorTestSensor testSensor(CHARGE_PIN, SENSE_PIN, DISCHARGE_DELAY_MICROS);
+// Internal rolling-average window size used by CapacitorSensor.
+constexpr size_t SENSOR_AVERAGE_SAMPLES = 1;
+CapacitorTestSensor testSensor(CHARGE_PIN, SENSE_PIN, DISCHARGE_DELAY_MICROS, SENSOR_AVERAGE_SAMPLES);
 #elif SENSOR_TYPE == SENSOR_TYPE_TEMP
 TempTestSensor testSensor;
 #else
@@ -116,7 +112,7 @@ void drawHistogramOnFeather(const char* title, const Histogram<HISTOGRAM_BINS>& 
 }
 
 /// <summary>
-/// Renders the capture histogram summary on the Feather display.
+/// Renders histogram and N/range analysis table on the Feather display.
 /// </summary>
 void renderHistogramsOnFeather()
 {
@@ -124,20 +120,88 @@ void renderHistogramsOnFeather()
 
    Histogram<HISTOGRAM_BINS> valueHistogram;
    buildValueHistogram(valueHistogram);
-
-   feather.setTextSize(3);
-   feather.setCursor(0, 0);
-   feather.println("Results", Color::HEADING);
+   SensorCaptureAnalysis analysis(sensorCapture);
 
    feather.setTextSize(2);
-   int16_t top = feather.getCursorY() + 2;
+   feather.setCursor(0, 0);
+   String headerText = String((unsigned long)sensorCapture.count()) + " Samples";
+   feather.println(headerText.c_str(), Color::HEADING);
+
+   int16_t top = feather.getCursorY();
    int16_t messageHeight = feather.charH() + 2;
    int16_t availableHeight = (int16_t)feather.height() - top - messageHeight;
    int16_t totalWidth = (int16_t)feather.width();
+   constexpr int16_t sectionGap = 5;
+   constexpr int16_t tableWidth = 140;
+   int16_t leftWidth = totalWidth - sectionGap - tableWidth;
+   int16_t x = leftWidth + sectionGap;
 
-   drawHistogramOnFeather("Values", valueHistogram, 0, totalWidth, top, availableHeight, Color::VALUE2);
+   drawHistogramOnFeather("", valueHistogram, 0, leftWidth, top, availableHeight, Color::VALUE2);
 
-   feather.setCursor(0, top + availableHeight + 1);
+   feather.setTextSize(2);
+   Format numSamplesFormat("####", Format::Alignment::RIGHT);
+   Format stdDevFormat("##.##", 6, Format::Alignment::RIGHT);
+   Format hzFormat(" ####", Format::Alignment::RIGHT);
+
+   auto computeEffectiveRateHz = [](size_t sampleSize) -> float
+   {
+      return (sampleSize > 0) ? (1000.0f / static_cast<float>(sampleSize * SAMPLE_INTERVAL_MS)) : NAN;
+   };
+
+   float rawAvg = NAN;
+   float rawStdDev = NAN;
+   float rawMin = NAN;
+   float rawMax = NAN;
+   size_t rawCount = 0;
+   analysis.computeBasicStats(rawAvg, rawStdDev, rawMin, rawMax, rawCount);
+
+   feather.setCursor(x, 0);
+   feather.println("   N  Sigma   Hz", Color::VALUE3);
+
+   feather.setCursorX(x);
+   if ((rawCount > 0) && isfinite(rawStdDev))
+   {
+      feather.print(" Raw", Color::LABEL);
+      feather.print(rawStdDev, stdDevFormat, Color::VALUE2);
+      feather.println(computeEffectiveRateHz(1), hzFormat, Color::VALUE2);
+   }
+   else
+   {
+      feather.println(" Raw   n/a   n/a", Color::GRAY);
+   }
+
+   constexpr size_t SAMPLE_SIZE[] = { 10, 20, 50, 100 };
+   for (size_t i = 0; i < (sizeof(SAMPLE_SIZE) / sizeof(SAMPLE_SIZE[0])); i++)
+   {
+      feather.moveCursorY(-1);
+      size_t sampleSize = SAMPLE_SIZE[i];
+      float effectiveRateHz = computeEffectiveRateHz(sampleSize);
+
+      float avgRange = NAN;
+      float avgStdDev = NAN;
+      size_t averageCount = 0;
+      analysis.computeAverageSeriesStats(
+         sampleSize,
+         avgRange,
+         avgStdDev,
+         averageCount);
+
+      feather.setCursorX(x);
+      if ((averageCount > 0) && isfinite(avgStdDev))
+      {
+         feather.print(sampleSize, numSamplesFormat, Color::LABEL);
+         feather.print(avgStdDev, stdDevFormat, Color::VALUE);
+         feather.println(effectiveRateHz, hzFormat, Color::VALUE);
+      }
+      else
+      {
+         std::string rowText = numSamplesFormat.toString((double)sampleSize) + "   n/a   n/a";
+         feather.println(rowText, Color::GRAY);
+      }
+   }
+
+   feather.setTextSize(2);
+   feather.setCursor(0, -feather.charH());
    feather.println("Button A to dump to Serial", Color::GRAY);
 }
 
@@ -160,7 +224,7 @@ void printCaptureSummary()
       valueMax,
       valueCount);
 
-   String sensorMetric = String("Sensor value (") + testSensor.unit() + ")";
+   float valueRange = analysis.computeRange(valueMin, valueMax);
 
    Serial.println();
    Serial.println("Capture Summary");
@@ -170,15 +234,16 @@ void printCaptureSummary()
    SerialX::println((float)SAMPLE_DURATION_MS, 3, 20);
    SerialX::print("Samples", 20);
    SerialX::println((unsigned long)sensorCapture.count(), 20);
-   Serial.println();
-
-   SerialX::print("Metric", 20);
-   SerialX::print("Avg", 12);
-   SerialX::print("StdDev", 12);
-   SerialX::print("Min", 12);
-   SerialX::print("Max", 12);
-   SerialX::println("Range", 12);
-   SensorCaptureOutput::printStatsRow(sensorMetric.c_str(), valueAvg, valueStdDev, valueMin, valueMax, 3);
+   SerialX::print("Sensor Avg", 20);
+   SerialX::println(valueAvg, 3, 20);
+   SerialX::print("Sensor StdDev", 20);
+   SerialX::println(valueStdDev, 3, 20);
+   SerialX::print("Sensor Min", 20);
+   SerialX::println(valueMin, 3, 20);
+   SerialX::print("Sensor Max", 20);
+   SerialX::println(valueMax, 3, 20);
+   SerialX::print("Sensor Range", 20);
+   SerialX::println(valueRange, 3, 20);
    Serial.println();
 
    String valueHistogramTitle = String("Sensor Value Histogram (") + testSensor.unit() + ")";
@@ -192,67 +257,48 @@ void printCaptureSummary()
 /// <summary>
 /// Prints post-capture block-average analysis for configured sample sizes.
 /// </summary>
-void printWindowAnalysis()
+void printAveragingAnalysis()
 {
-   float rawAvg = NAN;
-   float rawStdDev = NAN;
-   float rawMin = NAN;
-   float rawMax = NAN;
-   size_t rawCount = 0;
-   SensorCaptureAnalysis analysis(sensorCapture);
-   analysis.computeBasicStats(
-      rawAvg,
-      rawStdDev,
-      rawMin,
-      rawMax,
-      rawCount);
-   float rawRange = analysis.computeRange(rawMin, rawMax);
+   Serial.println("Averaging Analysis");
 
-   Serial.println("Window Analysis");
-   SerialX::print("Raw N", 10);
-   SerialX::print("Raw Range", 12);
-   SerialX::println("Raw StdDev", 12);
-   SerialX::print((unsigned long)rawCount, 10);
-   SerialX::print(rawRange, 3, 12);
-   SerialX::println(rawStdDev, 3, 12);
-   Serial.println();
-
-   SerialX::print("N", 8);
-   SerialX::print("Rate", 10);
+   SerialX::print("Size", 8);
    SerialX::print("Range", 12);
-   SerialX::println("StdDev", 12);
+   SerialX::print("StdDev", 12);
+   SerialX::println("Resulting Rate", 14);
 
    SerialX::print("-", 8);
-   SerialX::print("----", 10);
    SerialX::print("---------", 12);
-   SerialX::println("------", 12);
+   SerialX::print("------", 12);
+   SerialX::println("--------------", 14);
 
-   for (size_t analysisIndex = 0; analysisIndex < ANALYSIS_WINDOW_COUNT; analysisIndex++)
+   for (size_t analysisIndex = 0; analysisIndex < NUM_SAMPLE_SIZES; analysisIndex++)
    {
-      size_t windowSize = ANALYSIS_WINDOW_SIZES[analysisIndex];
-      float effectiveRate = (windowSize > 0) ? (1000.0f / static_cast<float>(windowSize * SAMPLE_INTERVAL_MS)) : NAN;
+      size_t sampleSize = SAMPLE_SIZES[analysisIndex];
+      float effectiveRate = (sampleSize > 0) ? (1000.0f / static_cast<float>(sampleSize * SAMPLE_INTERVAL_MS)) : NAN;
 
       float avgRange = NAN;
       float avgStdDev = NAN;
       size_t averageCount = 0;
+      SensorCaptureAnalysis analysis(sensorCapture);
       analysis.computeAverageSeriesStats(
-         windowSize,
+         sampleSize,
          avgRange,
          avgStdDev,
          averageCount);
 
-      SerialX::print((unsigned long)windowSize, 8);
-      SerialX::print(isfinite(effectiveRate) ? String(effectiveRate, 1) + "/s" : "n/a", 10);
+      SerialX::print((unsigned long)sampleSize, 8);
       if (averageCount == 0)
       {
          SerialX::print("n/a", 12);
-         SerialX::println("n/a", 12);
+         SerialX::print("n/a", 12);
       }
       else
       {
          SerialX::print(avgRange, 3, 12);
-         SerialX::println(avgStdDev, 3, 12);
+         SerialX::print(avgStdDev, 3, 12);
       }
+
+      SerialX::println(isfinite(effectiveRate) ? String(effectiveRate, 1) + "/s" : "n/a", 14);
    }
 
    Serial.println();
@@ -301,7 +347,7 @@ void finishCapture()
 
    captureFinalized = true;
    printCaptureSummary();
-   printWindowAnalysis();
+   printAveragingAnalysis();
    renderHistogramsOnFeather();
 }
 
@@ -320,21 +366,10 @@ void setup()
 void loop()
 {
    SensorCaptureState states = sensorCapture.update();
-   if ((states & SENSOR_CAPTURE_STATE_CAPTURE_STARTED) != 0)
-   {
-      Serial.println("Sampling started...");
-      updateDisplay();
-   }
 
    if (sensorCapture.readyForValue())
    {
       SensorCaptureState valueStates = sensorCapture.addValue(testSensor.readValue());
-      if ((valueStates & SENSOR_CAPTURE_STATE_STABILIZED) != 0)
-      {
-         Serial.println("Stabilized. Capturing values...");
-         updateDisplay();
-      }
-
       if ((valueStates & SENSOR_CAPTURE_STATE_COMPLETED) != 0)
       {
          finishCapture();
@@ -348,6 +383,6 @@ void loop()
 
    if (sensorCapture.isCaptureComplete() && feather.buttonA.wasPressed())
    {
-      sensorCapture.dumpToSerial(PRINT_INTERVAL_MS);
+      sensorCapture.dumpToSerial();
    }
 }

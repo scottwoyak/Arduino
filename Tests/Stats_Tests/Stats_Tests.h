@@ -4,6 +4,9 @@
 #include "Stats.h"
 #include <cmath>
 
+namespace StatsTests
+{
+
 test(StatsTest, Stats_shouldComputeAverages)
 {
    Stats avg;
@@ -180,3 +183,5 @@ test(StatsTest, Stats_roundTripStability)
    assertEqual(saved, avg.get());
    assertEqual(savedCount, avg.count());
 }
+
+} // namespace StatsTests

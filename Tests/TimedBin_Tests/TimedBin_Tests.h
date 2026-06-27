@@ -3,6 +3,9 @@
 #include <AUnit.h>
 #include "TimedBin.h"
 
+namespace TimedBinTests
+{
+
 // mock timing for TimedBin
 unsigned long timedBinTestMockMicros;
 static unsigned long getTimedBinTestMockMicros()
@@ -230,3 +233,5 @@ test(TimedBinTest, shouldHonorBeginAsNewStartTime)
    assertEqual(0u, bin.getBinCount(3));
    assertEqual(0u, bin.getBinCount(4));
 }
+
+} // namespace TimedBinTests

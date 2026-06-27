@@ -6,7 +6,7 @@
 #include "Feather.h"
 #include "SerialX.h"
 #include "Influx.h"
-#include "Calibrator.h"
+#include "TempCalibrator.h"
 #include "RollingStats.h"
 #include <Wire.h>
 
@@ -47,7 +47,7 @@ constexpr auto CORRECTION_AVG_S = 60;
 constexpr auto INFLUX_INTERVAL_S = 10;
 
 // Calibrator for temperature corrections
-Calibrator calibrator(NUM_SENSORS, 1000 * CORRECTION_AVG_S, Calibrator::BaselineMode::FIRST_SENSOR);
+TempCalibrator calibrator(NUM_SENSORS, 1000 * CORRECTION_AVG_S, TempCalibrator::BaselineMode::FIRST_SENSOR);
 
 Format tempFormat("###.## F");
 Format correctionFormat("+#.##");

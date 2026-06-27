@@ -3,6 +3,9 @@
 #include <AUnit.h>
 #include "RollingRate.h"
 
+namespace RollingRateTests
+{
+
 unsigned long rollingRateTestTicks;
 unsigned long getRollingRateTestTicks()
 {
@@ -115,3 +118,5 @@ test(RollingRateTest, shouldReturnZeroRateWhenOnlyOneTickHasOccurred)
    assertEqual((uint16_t)1, rate.getCount());
    assertNear(0.0f, rate.get(), 0.0001f);
 }
+
+} // namespace RollingRateTests

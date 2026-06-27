@@ -307,6 +307,58 @@ public:
       print(label, value, format, valueColor, backgroundColor);
       println();
    }
+   template<typename TValue>
+   void printR(const char* label, const TValue& value, const Format& format, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      std::string valueText = format.toString(value);
+      std::string rowText = std::string(label) + valueText;
+      uint16_t len = display.textWidth(rowText.c_str());
+      setCursorX(-len);
+      print(label, Color::LABEL, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   template<typename TValue>
+   void printlnR(const char* label, const TValue& value, const Format& format, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      printR(label, value, format, valueColor, backgroundColor);
+      println();
+   }
+   template<typename TValue>
+   void printR(const char* label, const Format& format, const TValue& value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      printR(label, value, format, valueColor, backgroundColor);
+   }
+   template<typename TValue>
+   void printlnR(const char* label, const Format& format, const TValue& value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      printlnR(label, value, format, valueColor, backgroundColor);
+   }
+   template<typename TValue>
+   void printC(const char* label, const TValue& value, const Format& format, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      std::string valueText = format.toString(value);
+      std::string rowText = std::string(label) + valueText;
+      uint16_t len = display.textWidth(rowText.c_str());
+      setCursorX((display.width() - len) / 2);
+      print(label, Color::LABEL, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   template<typename TValue>
+   void printlnC(const char* label, const TValue& value, const Format& format, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      printC(label, value, format, valueColor, backgroundColor);
+      println();
+   }
+   template<typename TValue>
+   void printC(const char* label, const Format& format, const TValue& value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      printC(label, value, format, valueColor, backgroundColor);
+   }
+   template<typename TValue>
+   void printlnC(const char* label, const Format& format, const TValue& value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      printlnC(label, value, format, valueColor, backgroundColor);
+   }
 
    //
    // ------------------------------------------- printR variants
