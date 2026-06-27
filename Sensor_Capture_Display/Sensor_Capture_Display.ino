@@ -44,8 +44,8 @@ constexpr size_t HISTOGRAM_BINS = 20;
 constexpr uint8_t CHART_MIN_MAX_SIGNIFICANT_DIGITS = 3;
 // Delay between serial dump rows to avoid overwhelming the serial link.
 constexpr unsigned long PRINT_INTERVAL_MS = 2;
-// Maximum allowed delta between consecutive samples to consider them stable.
-constexpr float STABILITY_DELTA_US = 0.25f;
+// Allowed stabilization delta as a fraction of average signal level (0.25 at ~65 average => ~0.385%).
+constexpr float STABILITY_DELTA_PERCENT = 0.00385f;
 // Number of consecutive stable samples required before capture storage begins.
 constexpr size_t STABILITY_REQUIRED_SAMPLES = 5;
 
@@ -76,7 +76,7 @@ SensorCapture sensorCapture(
    WARM_UP_MS,
    SAMPLE_DURATION_MS,
    SAMPLE_INTERVAL_MS,
-   STABILITY_DELTA_US,
+   STABILITY_DELTA_PERCENT,
    STABILITY_REQUIRED_SAMPLES);
 
 bool captureFinalized = false;
@@ -181,6 +181,12 @@ void printCaptureSummary()
    SensorCaptureOutput::printStatsRow(sensorMetric.c_str(), valueAvg, valueStdDev, valueMin, valueMax, 3);
    Serial.println();
 
+   if ((sensorCapture.count() == 0) && !sensorCapture.isCaptureStabilized())
+   {
+      sensorCapture.printStabilizationDiagnosticsToSerial(3);
+      Serial.println();
+   }
+
    String valueHistogramTitle = String("Sensor Value Histogram (") + testSensor.unit() + ")";
    Histogram<HISTOGRAM_BINS> valueHistogram;
    buildValueHistogram(valueHistogram);
@@ -271,16 +277,8 @@ void updateDisplay()
    feather.setTextSize(2);
    if (!sensorCapture.isCaptureComplete())
    {
-      if (!sensorCapture.isCaptureStabilized())
-      {
-         feather.println("Stabilizing...", Color::VALUE);
-         feather.println("Monitor Serial", Color::LABEL);
-      }
-      else
-      {
-         feather.println("Collecting data", Color::VALUE);
-         feather.println("Monitor Serial", Color::LABEL);
-      }
+      feather.println("Collecting data", Color::VALUE);
+      feather.println("Monitor Serial", Color::LABEL);
    }
    else
    {
@@ -329,12 +327,6 @@ void loop()
    if (sensorCapture.readyForValue())
    {
       SensorCaptureState valueStates = sensorCapture.addValue(testSensor.readValue());
-      if ((valueStates & SENSOR_CAPTURE_STATE_STABILIZED) != 0)
-      {
-         Serial.println("Stabilized. Capturing values...");
-         updateDisplay();
-      }
-
       if ((valueStates & SENSOR_CAPTURE_STATE_COMPLETED) != 0)
       {
          finishCapture();

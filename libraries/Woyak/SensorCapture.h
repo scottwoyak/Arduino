@@ -29,8 +29,9 @@ private:
    Timer _samplingTimer;
 
    size_t _numValues;
-   float _stabilityDelta;
+   float _stabilityDeltaPercent;
    size_t _stabilityRequiredValues;
+   bool _stabilizationEnabled;
 
    float* _values;
    size_t _valueIndex;
@@ -41,12 +42,22 @@ private:
 
    float _lastValue;
    size_t _stableValueCount;
+   size_t _maxStableValueCount;
+   size_t _stabilityComparisons;
+   float _lastStabilityDelta;
+   float _lastAllowedDelta;
+   float _lastAverageMagnitude;
 
    void resetStabilizationState()
    {
-      _captureStabilized = false;
+      _captureStabilized = !_stabilizationEnabled;
       _lastValue = NAN;
       _stableValueCount = 0;
+      _maxStableValueCount = 0;
+      _stabilityComparisons = 0;
+      _lastStabilityDelta = NAN;
+      _lastAllowedDelta = NAN;
+      _lastAverageMagnitude = NAN;
    }
 
    bool hasValues() const
@@ -62,22 +73,25 @@ public:
    /// <param name="warmUpMs">Warm-up delay before value collection can start.</param>
    /// <param name="captureDurationMs">Maximum capture duration in milliseconds.</param>
    /// <param name="samplingIntervalMs">Collection interval in milliseconds.</param>
-   /// <param name="stabilityDelta">Maximum allowed delta between consecutive values for stability.</param>
+   /// <param name="stabilityDeltaPercent">Allowed delta as a fraction of average consecutive value magnitude (for example, 0.004 = 0.4%).</param>
    /// <param name="stabilityRequiredValues">Consecutive stable value count required before storage starts.</param>
+   /// <param name="stabilizationEnabled">When false, values are stored immediately after warm-up without stabilization gating.</param>
    SensorCapture(
       size_t maxValues,
       unsigned long warmUpMs,
       unsigned long captureDurationMs,
       unsigned long samplingIntervalMs,
-      float stabilityDelta,
-      size_t stabilityRequiredValues)
+      float stabilityDeltaPercent,
+      size_t stabilityRequiredValues,
+      bool stabilizationEnabled = true)
       : _warmUpTimer(warmUpMs),
       _captureTimer(captureDurationMs),
       _samplingTimer(samplingIntervalMs)
    {
       _numValues = maxValues;
-      _stabilityDelta = stabilityDelta;
+      _stabilityDeltaPercent = stabilityDeltaPercent;
       _stabilityRequiredValues = stabilityRequiredValues;
+      _stabilizationEnabled = stabilizationEnabled;
       _values = (_numValues > 0) ? new float[_numValues] : nullptr;
       startWarmUp();
    }
@@ -174,11 +188,18 @@ public:
          }
 
          float delta = fabsf(value - _lastValue);
+         float averageMagnitude = (fabsf(value) + fabsf(_lastValue)) / 2.0f;
+         float allowedDelta = averageMagnitude * _stabilityDeltaPercent;
+         _lastStabilityDelta = delta;
+         _lastAllowedDelta = allowedDelta;
+         _lastAverageMagnitude = averageMagnitude;
+         _stabilityComparisons++;
          _lastValue = value;
 
-         if (delta <= _stabilityDelta)
+         if (delta <= allowedDelta)
          {
             _stableValueCount++;
+            _maxStableValueCount = max(_maxStableValueCount, _stableValueCount);
          }
          else
          {
@@ -345,6 +366,42 @@ public:
    }
 
    /// <summary>
+   /// Prints stabilization diagnostics when capture did not stabilize.
+   /// </summary>
+   /// <param name="decimals">Decimal precision for floating-point values.</param>
+   void printStabilizationDiagnosticsToSerial(uint8_t decimals = 3) const
+   {
+      if (_captureStabilized)
+      {
+         return;
+      }
+
+      Serial.println("Stabilization not reached");
+      SerialX::print("Stable needed", 20);
+      SerialX::println((unsigned long)_stabilityRequiredValues, 20);
+      SerialX::print("Stable max", 20);
+      SerialX::println((unsigned long)_maxStableValueCount, 20);
+      SerialX::print("Checks", 20);
+      SerialX::println((unsigned long)_stabilityComparisons, 20);
+      SerialX::print("Delta %", 20);
+      SerialX::println(_stabilityDeltaPercent * 100.0f, 2, 20);
+
+      if (_stabilityComparisons > 0)
+      {
+         SerialX::print("Last avg", 20);
+         SerialX::println(_lastAverageMagnitude, decimals, 20);
+         SerialX::print("Last delta", 20);
+         SerialX::println(_lastStabilityDelta, decimals, 20);
+         SerialX::print("Last allowed", 20);
+         SerialX::println(_lastAllowedDelta, decimals, 20);
+      }
+      else
+      {
+         Serial.println("No stabilization comparisons were evaluated.");
+      }
+   }
+
+   /// <summary>
    /// Indicates whether capture is complete.
    /// </summary>
    /// <returns>True when finished by duration or capacity.</returns>
@@ -353,4 +410,4 @@ public:
       return _captureComplete;
    }
 
-   };
+     };

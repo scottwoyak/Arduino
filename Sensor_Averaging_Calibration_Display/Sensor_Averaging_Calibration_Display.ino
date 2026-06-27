@@ -41,10 +41,12 @@ constexpr size_t MAX_SAMPLES = 1000;
 constexpr size_t HISTOGRAM_BINS = 20;
 // Significant digits used for chart min/max labels on the Feather display.
 constexpr uint8_t CHART_MIN_MAX_SIGNIFICANT_DIGITS = 3;
-// Maximum allowed delta between consecutive samples to consider them stable.
-constexpr float STABILITY_DELTA_US = 0.25f;
+// Allowed stabilization delta as a fraction of average signal level (0.25 at ~65 average => ~0.385%).
+constexpr float STABILITY_DELTA_PERCENT = 0.01f;
 // Number of consecutive stable samples required before capture storage begins.
 constexpr size_t STABILITY_REQUIRED_SAMPLES = 10;
+// Enables or disables stabilization gating before values are stored.
+constexpr bool STABILIZATION_ENABLED = true;
 
 constexpr size_t SAMPLE_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
 constexpr size_t NUM_SAMPLE_SIZES = sizeof(SAMPLE_SIZES) / sizeof(SAMPLE_SIZES[0]);
@@ -72,8 +74,9 @@ SensorCapture sensorCapture(
    WARM_UP_MS,
    SAMPLE_DURATION_MS,
    SAMPLE_INTERVAL_MS,
-   STABILITY_DELTA_US,
-   STABILITY_REQUIRED_SAMPLES);
+   STABILITY_DELTA_PERCENT,
+   STABILITY_REQUIRED_SAMPLES,
+   STABILIZATION_ENABLED);
 
 bool captureFinalized = false;
 
@@ -246,6 +249,12 @@ void printCaptureSummary()
    SerialX::println(valueRange, 3, 20);
    Serial.println();
 
+   if ((sensorCapture.count() == 0) && !sensorCapture.isCaptureStabilized())
+   {
+      sensorCapture.printStabilizationDiagnosticsToSerial(3);
+      Serial.println();
+   }
+
    String valueHistogramTitle = String("Sensor Value Histogram (") + testSensor.unit() + ")";
    Histogram<HISTOGRAM_BINS> valueHistogram;
    buildValueHistogram(valueHistogram);
@@ -317,16 +326,8 @@ void updateDisplay()
    feather.setTextSize(2);
    if (!sensorCapture.isCaptureComplete())
    {
-      if (!sensorCapture.isCaptureStabilized())
-      {
-         feather.println("Stabilizing...", Color::VALUE);
-         feather.println("Monitor Serial", Color::LABEL);
-      }
-      else
-      {
-         feather.println("Collecting data", Color::VALUE);
-         feather.println("Monitor Serial", Color::LABEL);
-      }
+      feather.println("Collecting data", Color::VALUE);
+      feather.println("Monitor Serial", Color::LABEL);
    }
    else
    {
