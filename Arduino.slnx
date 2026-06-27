@@ -59,8 +59,8 @@
     <File Path="libraries/Woyak/RotaryEncoder.cpp" />
     <File Path="libraries/Woyak/RotaryEncoder.h" />
     <File Path="libraries/Woyak/SensorCapture.h" />
-    <File Path="libraries/Woyak/SensorCaptureAnalysis.h" />
     <File Path="libraries/Woyak/SensorCaptureOutput.h" />
+    <File Path="libraries/Woyak/SensorCaptureStats.h" />
     <File Path="libraries/Woyak/SerialX.h" />
     <File Path="libraries/Woyak/SevenSegment.h" />
     <File Path="libraries/Woyak/SHT3xTempSensor.h" />
@@ -327,11 +327,11 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Sensor_Averaging_Calibration_Display/Sensor_Averaging_Calibration_Display.vcxproj">
+  <Project Path="SensorCapture_Serial/SensorCapture_Serial.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Sensor_Capture_Display/Sensor_Capture_Display.vcxproj">
+  <Project Path="Sensor_Averaging_Calibration_Display/Sensor_Averaging_Calibration_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

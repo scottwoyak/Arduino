@@ -14,7 +14,6 @@
 
 #include <Arduino.h>
 #include "Feather.h"
-#include "SensorCaptureAnalysis.h"
 #include "SerialX.h"
 #include "TimedStats.h"
 #include "Timer.h"
@@ -101,7 +100,7 @@ void printSerialValues(float avg, float rng, float sd, size_t count)
       serialHeaderPrinted = true;
    }
 
-   SerialX::print((unsigned long)count, 18);
+   SerialX::print(count, 18);
    SerialX::print(avg, 3, 12);
    SerialX::print(rng, 3, 12);
    SerialX::println(sd, 3, 12);
@@ -135,9 +134,7 @@ void loop()
    float avg = stats.average();
    float minValue = stats.min();
    float maxValue = stats.max();
-   float rangeValue[] = { minValue, maxValue };
-   SensorCaptureAnalysis analysis(rangeValue, 2);
-   float rng = analysis.computeRange(minValue, maxValue);
+   float rng = (isfinite(minValue) && isfinite(maxValue)) ? (maxValue - minValue) : NAN;
    size_t count = stats.count();
    size_t maxSamplesPerWindow = SAMPLE_TIME_MS / SAMPLE_INTERVAL_MS;
    count = min(count, maxSamplesPerWindow);

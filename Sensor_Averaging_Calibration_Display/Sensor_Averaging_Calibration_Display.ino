@@ -20,10 +20,10 @@
 #include "Feather.h"
 #include "Histogram.h"
 #include "SensorCapture.h"
-#include "SensorCaptureAnalysis.h"
+#include "SensorCaptureStats.h"
 #include "SensorCaptureOutput.h"
 #include "SerialX.h"
-#include "../libraries/Woyak/TestSensor.h"
+#include "TestSensor.h"
 
 #define SENSOR_TYPE_CAPACITOR 1
 #define SENSOR_TYPE_TEMP 2
@@ -81,16 +81,6 @@ SensorCapture sensorCapture(
 bool captureFinalized = false;
 
 /// <summary>
-/// Builds a value histogram from captured samples.
-/// </summary>
-/// <param name="histogram">Histogram instance to populate.</param>
-void buildValueHistogram(Histogram<HISTOGRAM_BINS>& histogram)
-{
-   SensorCaptureAnalysis analysis(sensorCapture);
-   analysis.buildHistogram(histogram);
-}
-
-/// <summary>
 /// Draws a histogram panel on the Feather display.
 /// </summary>
 /// <param name="title">Panel title.</param>
@@ -122,12 +112,12 @@ void renderHistogramsOnFeather()
    feather.clearDisplay();
 
    Histogram<HISTOGRAM_BINS> valueHistogram;
-   buildValueHistogram(valueHistogram);
-   SensorCaptureAnalysis analysis(sensorCapture);
+   SensorCaptureStats analysis(sensorCapture);
+   analysis.buildHistogram(valueHistogram);
 
    feather.setTextSize(2);
    feather.setCursor(0, 0);
-   String headerText = String((unsigned long)sensorCapture.count()) + " Samples";
+   String headerText = String(sensorCapture.count()) + " Samples";
    feather.println(headerText.c_str(), Color::HEADING);
 
    int16_t top = feather.getCursorY();
@@ -213,41 +203,7 @@ void renderHistogramsOnFeather()
 /// </summary>
 void printCaptureSummary()
 {
-   float valueAvg = NAN;
-   float valueStdDev = NAN;
-   float valueMin = NAN;
-   float valueMax = NAN;
-   size_t valueCount = 0;
-
-   SensorCaptureAnalysis analysis(sensorCapture);
-   analysis.computeBasicStats(
-      valueAvg,
-      valueStdDev,
-      valueMin,
-      valueMax,
-      valueCount);
-
-   float valueRange = analysis.computeRange(valueMin, valueMax);
-
-   Serial.println();
-   Serial.println("Capture Summary");
-   SerialX::print("Metric", 20);
-   SerialX::println("Value", 20);
-   SerialX::print("Capture ms", 20);
-   SerialX::println((float)SAMPLE_DURATION_MS, 3, 20);
-   SerialX::print("Samples", 20);
-   SerialX::println((unsigned long)sensorCapture.count(), 20);
-   SerialX::print("Sensor Avg", 20);
-   SerialX::println(valueAvg, 3, 20);
-   SerialX::print("Sensor StdDev", 20);
-   SerialX::println(valueStdDev, 3, 20);
-   SerialX::print("Sensor Min", 20);
-   SerialX::println(valueMin, 3, 20);
-   SerialX::print("Sensor Max", 20);
-   SerialX::println(valueMax, 3, 20);
-   SerialX::print("Sensor Range", 20);
-   SerialX::println(valueRange, 3, 20);
-   Serial.println();
+   SensorCaptureOutput::printCaptureSummary(sensorCapture, SAMPLE_DURATION_MS, 3);
 
    if ((sensorCapture.count() == 0) && !sensorCapture.isCaptureStabilized())
    {
@@ -256,9 +212,7 @@ void printCaptureSummary()
    }
 
    String valueHistogramTitle = String("Sensor Value Histogram (") + testSensor.unit() + ")";
-   Histogram<HISTOGRAM_BINS> valueHistogram;
-   buildValueHistogram(valueHistogram);
-   SensorCaptureOutput::printHistogramBins(valueHistogramTitle.c_str(), valueHistogram, 3);
+   SensorCaptureOutput::printHistogramBins(valueHistogramTitle.c_str(), sensorCapture, HISTOGRAM_BINS, 3);
 
    sensorCapture.printFirstAndLastToSerial(10, 3);
 }
@@ -269,6 +223,8 @@ void printCaptureSummary()
 void printAveragingAnalysis()
 {
    Serial.println("Averaging Analysis");
+
+   SensorCaptureStats analysis(sensorCapture);
 
    SerialX::print("Size", 8);
    SerialX::print("Range", 12);
@@ -288,14 +244,13 @@ void printAveragingAnalysis()
       float avgRange = NAN;
       float avgStdDev = NAN;
       size_t averageCount = 0;
-      SensorCaptureAnalysis analysis(sensorCapture);
       analysis.computeAverageSeriesStats(
-         sampleSize,
-         avgRange,
-         avgStdDev,
-         averageCount);
+          sampleSize,
+          avgRange,
+          avgStdDev,
+          averageCount);
 
-      SerialX::print((unsigned long)sampleSize, 8);
+      SerialX::print(sampleSize, 8);
       if (averageCount == 0)
       {
          SerialX::print("n/a", 12);

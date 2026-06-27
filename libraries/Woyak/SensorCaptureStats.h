@@ -12,7 +12,7 @@
 /// <summary>
 /// Provides reusable statistics and histogram analysis helpers for captured sensor values.
 /// </summary>
-class SensorCaptureAnalysis
+class SensorCaptureStats
 {
 private:
    const float* _values;
@@ -20,21 +20,21 @@ private:
 
 public:
    /// <summary>
-   /// Initializes analysis over a fixed value buffer.
+   /// Initializes stats over a fixed value buffer.
    /// </summary>
    /// <param name="values">Read-only value buffer.</param>
    /// <param name="valueCount">Number of values available in the buffer.</param>
-   SensorCaptureAnalysis(const float* values, size_t valueCount)
+   SensorCaptureStats(const float* values, size_t valueCount)
    {
       _values = values;
       _valueCount = valueCount;
    }
 
    /// <summary>
-   /// Initializes analysis from a SensorCapture instance.
+   /// Initializes stats from a SensorCapture instance.
    /// </summary>
    /// <param name="capture">Capture containing values to analyze.</param>
-   SensorCaptureAnalysis(const SensorCapture& capture)
+   SensorCaptureStats(const SensorCapture& capture)
    {
       _values = capture.values();
       _valueCount = capture.count();
