@@ -11,7 +11,6 @@
     <File Path="libraries/Woyak/Battery.h" />
     <File Path="libraries/Woyak/BME280TempSensor.h" />
     <File Path="libraries/Woyak/BufferedTimeSeries.h" />
-    <File Path="libraries/Woyak/Button.cpp" />
     <File Path="libraries/Woyak/Button.h" />
     <File Path="libraries/Woyak/TempCalibrator.h" />
     <File Path="libraries/Woyak/CapacitorCalibrationSensor.h" />
@@ -19,7 +18,6 @@
     <File Path="libraries/Woyak/CapacitorSensor.h" />
     <File Path="libraries/Woyak/Color.h" />
     <File Path="libraries/Woyak/CountdownTimer.h" />
-    <File Path="libraries/Woyak/Counter.cpp" />
     <File Path="libraries/Woyak/Counter.h" />
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
@@ -56,7 +54,6 @@
     <File Path="libraries/Woyak/RollingMicros.h" />
     <File Path="libraries/Woyak/RollingRate.h" />
     <File Path="libraries/Woyak/RollingStats.h" />
-    <File Path="libraries/Woyak/RotaryEncoder.cpp" />
     <File Path="libraries/Woyak/RotaryEncoder.h" />
     <File Path="libraries/Woyak/SensorCapture.h" />
     <File Path="libraries/Woyak/SensorCaptureOutput.h" />

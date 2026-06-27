@@ -12,13 +12,16 @@
 
 constexpr auto TZ_INFO = "UTC-5";
 
-//-------------------------------------------------------------------------------------------------
-//
-// General Influx functions
-//
-//-------------------------------------------------------------------------------------------------
+/// <summary>
+/// InfluxDB integration and WiFi management utilities.
+/// </summary>
 namespace Influx
 {
+   /// <summary>Reconnects to WiFi with provided credentials and optional status updates.</summary>
+   /// <param name="wifiSSID">WiFi network SSID</param>
+   /// <param name="wifiPassword">WiFi network password</param>
+   /// <param name="status">Optional status indicator to update during connection attempts</param>
+   /// <returns>True if connected to WiFi, false if connection failed or timed out</returns>
    bool reconnectWifi(const char* wifiSSID, const char* wifiPassword, IStatus* status)
    {
       if (WiFi.status() == WL_CONNECTED)
@@ -45,6 +48,9 @@ namespace Influx
 		return WiFi.status() == WL_CONNECTED;
 	}
 
+	/// <summary>Ensures device is connected to WiFi, reconnecting if necessary.</summary>
+	/// <param name="status">Optional status indicator to update with WiFi connection state</param>
+	/// <returns>True if connected to WiFi, false otherwise</returns>
 	bool ensureWifiConnected(IStatus* status = nullptr)
 	{
 		if (WiFi.status() == WL_CONNECTED)

@@ -2,6 +2,7 @@
 
 ## Project Guidelines
 - User prefers Visual Studio XML documentation comments (/// <summary>, <param>, <returns>) for class and method documentation. When cleaning up code files, add Visual Studio style comments (///) before classes, methods, and properties. These are XML documentation comments used for IntelliSense. Example: /// <summary>Brief description</summary>
+- When documenting namespace functions and class static methods with XML documentation comments, always include complete parameter documentation with <param> tags and return value documentation with <returns> tags, even for simple inline functions. This provides full IntelliSense support. Example: /// <summary>Convert C to F.</summary> /// <param name="celsius">Temperature in Celsius</param> /// <returns>Temperature in Fahrenheit</returns>
 - When the user asks for 'cleanup', include Visual Studio-style XML documentation updates as part of the cleanup pass. Additionally, add Visual Studio style comments during code cleanup.
 - When cleaning up non-testing sketches, always add a detailed description comment block at the top of the sketch.
 - Do not automatically run tests; only run tests when explicitly requested.

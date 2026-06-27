@@ -61,29 +61,58 @@ enum class Color : uint16_t
 
 namespace Color565
 {
+   /// <summary>
+   /// Converts RGB color components to 565-bit color format.
+   /// </summary>
+   /// <param name="red">Red component (0-255)</param>
+   /// <param name="green">Green component (0-255)</param>
+   /// <param name="blue">Blue component (0-255)</param>
+   /// <returns>Color in 565 format</returns>
    Color fromRGB(uint8_t red, uint8_t green, uint8_t blue)
    {
       return (Color) (((red & 0xF8) << 8) | ((green & 0xFC) << 3) | (blue >> 3));
    }
 
+   /// <summary>Extracts red component (0-255) from 565-bit color.</summary>
+   /// <param name="color">Color value (16-bit)</param>
+   /// <returns>Red component (0-255)</returns>
    uint8_t getR(uint16_t color) 
    { 
       return (uint8_t) (255*((color >> 11) & 0x1F)/31.0); 
    }
+
+   /// <summary>Extracts red component (0-255) from Color.</summary>
    uint8_t getR(Color color) { return getR((uint16_t)color); }
 
+   /// <summary>Extracts green component (0-255) from 565-bit color.</summary>
+   /// <param name="color">Color value (16-bit)</param>
+   /// <returns>Green component (0-255)</returns>
    uint8_t getG(uint16_t color) 
    { 
       return (uint8_t) (255*((color >> 5) & 0x3F)/63.0); 
    }
+
+   /// <summary>Extracts green component (0-255) from Color.</summary>
    uint8_t getG(Color color) { return getG((uint16_t)color); }
 
+   /// <summary>Extracts blue component (0-255) from 565-bit color.</summary>
+   /// <param name="color">Color value (16-bit)</param>
+   /// <returns>Blue component (0-255)</returns>
    uint8_t getB(uint16_t color) 
    { 
       return (uint8_t)(255 * ((color & 0x1F) / 31.0));
    }
+
+   /// <summary>Extracts blue component (0-255) from Color.</summary>
    uint8_t getB(Color color) { return getB((uint16_t)color); }
 
+   /// <summary>
+   /// Blends two 565-bit colors using linear interpolation.
+   /// </summary>
+   /// <param name="c1">First color</param>
+   /// <param name="c2">Second color</param>
+   /// <param name="ratio">Blend ratio (0.0=c1, 1.0=c2)</param>
+   /// <returns>Blended color</returns>
    Color blend(uint16_t c1, uint16_t c2, float ratio)
    {
       uint8_t r = constrain(getR(c1) + ratio * ((int16_t)getR(c2) - getR(c1)), 0, 255);
@@ -92,9 +121,17 @@ namespace Color565
       return fromRGB(r, g, b);
    }
 
-
+   /// <summary>Blends two Color values using linear interpolation.</summary>
+   /// <param name="c1">First color</param>
+   /// <param name="c2">Second color</param>
+   /// <param name="ratio">Blend ratio (0.0=c1, 1.0=c2)</param>
+   /// <returns>Blended color</returns>
    Color blend(Color c1, Color c2, float ratio) { return blend((uint16_t)c1, (uint16_t)c2, ratio); }
+
+   /// <summary>Blends color values using linear interpolation (overload variants).</summary>
    Color blend(uint16_t c1, Color c2, float ratio) { return blend((uint16_t)c1, (uint16_t)c2, ratio); }
+
+   /// <summary>Blends color values using linear interpolation (overload variants).</summary>
    Color blend(Color c1, uint16_t c2, float ratio) { return blend((uint16_t)c1, (uint16_t)c2, ratio); }
 
    void print(Color color)

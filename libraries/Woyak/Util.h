@@ -2,6 +2,9 @@
 
 #include <Arduino.h>
 
+/// <summary>
+/// Utility functions for common operations.
+/// </summary>
 class Util
 {
 
@@ -53,6 +56,13 @@ class Util
    */
 
 public:
+   /// <summary>
+   /// Reads ADC input and converts to voltage accounting for voltage divider.
+   /// </summary>
+   /// <param name="pin">Analog input pin</param>
+   /// <param name="resolution">ADC resolution in counts (ESP32: 4096, others: 1024)</param>
+   /// <param name="voltageDivider">Voltage divider ratio (e.g., 2.0 for 2:1 divider)</param>
+   /// <returns>Voltage in volts</returns>
    static float readVolts(uint8_t pin, uint16_t resolution = 4096, float voltageDivider = 2.0f)
    {
       float volts = analogRead(pin);
@@ -62,6 +72,16 @@ public:
       return volts;
    }
 
+   /// <summary>
+   /// Converts battery voltage to charge percentage.
+   /// </summary>
+   /// <param name="volts">Battery voltage</param>
+   /// <param name="fullChargeVolts">Voltage when fully charged (e.g., 4.1V for Li-Ion)</param>
+   /// <returns>Charge percentage 0-100%</returns>
+   /// <remarks>
+   /// Uses linear interpolation between MIN_VOLTS (3.3V) and fullChargeVolts.
+   /// Result is clamped to 0-100%.
+   /// </remarks>
    static float voltsToPercent(float volts, float fullChargeVolts = 4.1f)
    {
       const float MIN_VOLTS = 3.3f;
@@ -78,22 +98,36 @@ public:
    /// <param name="start">Start timestamp from micros() or millis()</param>
    /// <param name="end">End timestamp from micros() or millis()</param>
    /// <returns>Elapsed time in the same units as the input timestamps</returns>
-   static unsigned long getSpan(unsigned long start, unsigned long end)
-   {
-      return end - start;
-   }
+	static unsigned long getSpan(unsigned long start, unsigned long end)
+	{
+		return end - start;
+	}
 
+	/// <summary>
+	/// Calculates microseconds elapsed since the given starting time.
+	/// </summary>
+	/// <param name="start">Starting timestamp from a prior micros() call</param>
+	/// <returns>Microseconds elapsed</returns>
 	static unsigned long microsSince(unsigned long start)
 	{
 		return getSpan(start, micros());
 	}
 
+	/// <summary>
+	/// Resets the device after an optional delay.
+	/// </summary>
+	/// <param name="delaySecs">Seconds to delay before reset (default 0.0)</param>
+	/// <remarks>
+	/// Calls ESP.restart() for ESP32. Behavior may differ on other boards.
+	/// This function does not return.
+	/// </remarks>
 	static void reset(float delaySecs = 0.0f)
 	{
 		delay(static_cast<unsigned long>(1000.0f * delaySecs));
 
-      // TODO this is for the ESP32 which complains about the standard resetFunc() method of reset. We'll
-      // need other techniques for different boards.
-      ESP.restart();
-   }
+		// TODO this is for the ESP32 which complains about the standard resetFunc() method of reset. We'll
+		// need other techniques for different boards.
+		ESP.restart();
+	}
+
 };

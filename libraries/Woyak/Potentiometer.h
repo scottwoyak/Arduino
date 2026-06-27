@@ -11,12 +11,15 @@
 
 #include <Arduino.h>
 
-//-------------------------------------------------------------------------------------------------
-//
-// Smooths out response from a potentiometer when a number of steps is provided. When this
-// happens, the potentiometer only records a value when the change has met a threshold
-//
-//-------------------------------------------------------------------------------------------------
+/// <summary>
+/// Smooths potentiometer readings and quantizes them to discrete steps.
+/// </summary>
+/// <remarks>
+/// Reduces noise from analog inputs by only recording values when changes exceed a threshold.
+/// Automatically quantizes readings to a specified number of discrete steps, useful for
+/// menu navigation and parameter selection. The threshold is automatically calculated based
+/// on the step size and analog resolution.
+/// </remarks>
 class Potentiometer
 {
    uint16_t _lastRead = 0;
@@ -24,6 +27,11 @@ class Potentiometer
    uint8_t _pin;
 
 public:
+   /// <summary>
+   /// Constructs a Potentiometer on the specified analog pin.
+   /// </summary>
+   /// <param name="pin">Analog pin connected to the potentiometer</param>
+   /// <param name="numValues">Number of discrete steps to quantize to (default is full resolution)</param>
    Potentiometer(uint8_t pin, uint16_t numValues = MAX_ANALOG_VALUES)
    {
       _pin = pin;
@@ -32,11 +40,23 @@ public:
       pinMode(pin, INPUT);
    }
 
+   /// <summary>
+   /// Gets the GPIO pin number for this potentiometer.
+   /// </summary>
+   /// <returns>Analog pin number</returns>
    uint8_t getPin()
    {
       return _pin;
    }
 
+   /// <summary>
+   /// Reads and smooths the potentiometer value.
+   /// </summary>
+   /// <returns>Quantized analog reading (0 to MAX_ANALOG_VALUES-1)</returns>
+   /// <remarks>
+   /// Only updates when the change exceeds the calculated threshold, reducing noise.
+   /// Returns the last stable reading if the new reading is too close to the previous value.
+   /// </remarks>
    float read()
    {
       uint16_t newRead = ::analogRead(_pin);

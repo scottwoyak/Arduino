@@ -4,10 +4,20 @@
 #include "Button.h"
 #include <limits>
 
-//-------------------------------------------------------------------------------------------------
+/// <summary>
+/// Rotary encoder with integral pushbutton.
+/// </summary>
+/// <remarks>
+/// Detects clockwise/counter-clockwise rotation using quadrature encoding and maintains
+/// a position counter. Includes a built-in button for user interaction. Supports optional
+/// min/max position limits. Uses interrupts for reliable detection of fast rotations.
+/// </remarks>
 class RotaryEncoder
 {
 public:
+   /// <summary>
+   /// Integral button on the rotary encoder shaft.
+   /// </summary>
    Button button;
 
 private:
@@ -97,6 +107,12 @@ private:
    static void onChangeB() { _instance->_onChangeB(); }
 
 public:
+   /// <summary>
+   /// Constructs a RotaryEncoder with the specified pins.
+   /// </summary>
+   /// <param name="pinA">GPIO pin for phase A</param>
+   /// <param name="pinB">GPIO pin for phase B</param>
+   /// <param name="buttonPin">GPIO pin for the pushbutton</param>
    RotaryEncoder(uint8_t pinA, uint8_t pinB, uint8_t buttonPin) : button(buttonPin)
    {
       _pinA = pinA;
@@ -104,6 +120,13 @@ public:
       _instance = this;
    }
 
+   /// <summary>
+   /// Initializes encoder pins and interrupt handlers.
+   /// </summary>
+   /// <remarks>
+   /// Configures phase A and B pins with pull-ups and CHANGE interrupts.
+   /// Also initializes the integral button. Call once during setup().
+   /// </remarks>
    void begin()
    {
       pinMode(_pinA, INPUT_PULLUP);
@@ -118,52 +141,69 @@ public:
       button.begin();
    }
 
+   /// <summary>Gets the phase A pin number.</summary>
    uint8_t getPinA() const
    {
       return _pinA;
    }
 
+   /// <summary>Gets the phase B pin number.</summary>
    uint8_t getPinB() const
    {
       return _pinB;
    }
 
+   /// <summary>Gets the button pin number.</summary>
    uint8_t getButtonPin() const
    {
       return button.getPin();
    }
 
+   /// <summary>Gets the current state of phase A pin.</summary>
    bool isLowA() const
    {
       return _isLowA;
    }
 
+   /// <summary>Gets the current state of phase B pin.</summary>
    bool isLowB() const
    {
       return _isLowB;
    }
 
+   /// <summary>Gets the current rotation position.</summary>
+   /// <returns>Position counter (incremented on clockwise, decremented on counter-clockwise)</returns>
    long getPosition() const
    {
       return _position;
    }
 
+   /// <summary>Sets the rotation position.</summary>
+   /// <param name="position">New position value</param>
    void setPosition(long position)
    {
       _position = position;
    }
 
+   /// <summary>Sets the min/max position limits.</summary>
+   /// <param name="min">Minimum allowed position</param>
+   /// <param name="max">Maximum allowed position</param>
+   /// <remarks>
+   /// Position will be clamped to this range during rotation.
+   /// </remarks>
    void setLimits(long min, long max)
    {
       _min = min;
       _max = max;
    }
 
+   /// <summary>Gets the minimum position limit.</summary>
    long getMin() const
    {
       return _min;
    }
 
+   /// <summary>Gets the maximum position limit.</summary>
    long getMax() const
    {
       return _max;

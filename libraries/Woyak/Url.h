@@ -2,6 +2,13 @@
 
 #include <Arduino.h>
 
+/// <summary>
+/// Parses and provides access to URL components.
+/// </summary>
+/// <remarks>
+/// Breaks a URL into its components: scheme, host, port, path, query, and fragment.
+/// Automatically infers default ports based on scheme (443 for https/wss, 80 otherwise).
+/// </remarks>
 class Url
 {
 private:
@@ -13,7 +20,10 @@ private:
    String _fragment;
 
 public:
-   // Constructor to parse a URL string
+   /// <summary>
+   /// Constructs a Url by parsing the specified URL string.
+   /// </summary>
+   /// <param name="url">A complete or partial URL string</param>
    explicit Url(String url)
    {
       int protocolEnd = url.indexOf("://");
@@ -61,11 +71,21 @@ public:
       }
    }
 
-   // Getter functions for URL components
+   /// <summary>Gets the URL scheme (e.g., "http", "https", "ws", "wss").</summary>
    String getScheme() const { return _scheme; }
+
+   /// <summary>Gets the hostname or IP address.</summary>
    String getHost() const { return _host; }
+
+   /// <summary>Gets the port number.</summary>
    String getPort() const { return _port; }
+
+   /// <summary>Gets the path component (always starts with '/').</summary>
    String getPath() const { return _path; }
+
+   /// <summary>Gets the query string (without leading '?').</summary>
    String getQuery() const { return _query; }
+
+   /// <summary>Gets the fragment identifier (without leading '#').</summary>
    String getFragment() const { return _fragment; }
 };

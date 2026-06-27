@@ -2,9 +2,14 @@
 
 #include <NTPClient.h>
 
-//
-// Tracks when it is time to upload feed data back to the cloud
-//
+/// <summary>
+/// Timer that triggers at regular intervals synchronized to absolute clock times.
+/// </summary>
+/// <remarks>
+/// Ensures uploads occur at predictable times (e.g., on the minute, every 10 minutes)
+/// rather than arbitrary intervals. Useful for data collection aligned with calendar/clock times.
+/// Requires an NTPClient for synchronization.
+/// </remarks>
 class FeedTimer
 {
 private:
@@ -14,22 +19,22 @@ private:
    unsigned long _offsetSecs;
    bool _first = true;
 
+   /// <summary>
+   /// Synchronizes the next save time with the network clock.
+   /// </summary>
+   /// <remarks>
+   /// Calculates when the next interval-aligned event should occur based on
+   /// the current time of day from the NTPClient.
+   /// </remarks>
    void _syncWithClock()
    {
-      //  
-      // figure out the next save event time such that it is
-      // an even multiple, e.g. if we save every 10 minutes,
-      // we're saving at 9:00, 9:10, etc...
-      //
-
-      // get the current time of day in total seconds
+      // Get the current time of day in total seconds
       int hours = _clock->getHours();
       int mins = _clock->getMinutes();
       int secs = _clock->getSeconds();
       long currentSecs = 60 * 60 * hours + 60 * mins + secs;
 
-      // figure out the next round time value... the first one
-      // greater than the current time
+      // Figure out the next round time value (aligned to interval boundaries)
       long desiredSecs = 0;
       while (desiredSecs <= currentSecs)
       {
@@ -37,21 +42,19 @@ private:
       }
       desiredSecs += _offsetSecs;
 
-      // figure out the millis when we need to save again
+      // Calculate the milliseconds until the next aligned time
       long deltaMillis = 1000 * (desiredSecs - currentSecs);
       _millisAtNextSave = millis() + deltaMillis;
    }
 
 public:
-   //
-   // @param clock the internet clock
-   // @param intervalSecs the time between uploads, e.g. upload every 10 secs.
-   // Uploads will occur at times even with a real clock, e.g. if you request
-   // every minute, it will happen on the minute, not some random second value
-   // @param uploadImmediately if true, a value will be uploaded right now and
-   // the next occurs at the appropriate time
-   // @param offsetSecs the offset for when to upload. 0 is on the hour.
-   //
+   /// <summary>
+   /// Constructs a FeedTimer with the specified interval and offset.
+   /// </summary>
+   /// <param name="clock">Pointer to an NTPClient for time reference</param>
+   /// <param name="intervalSecs">Interval between uploads in seconds (e.g., 60 for every minute, 600 for every 10 minutes)</param>
+   /// <param name="uploadImmediately">If true, trigger immediately; otherwise wait for next interval</param>
+   /// <param name="offsetSecs">Offset in seconds within the interval (0 is on the hour, etc.)</param>
    FeedTimer(
       NTPClient* clock,
       unsigned long intervalSecs,
@@ -64,18 +67,21 @@ public:
       _offsetSecs = offsetSecs;
    }
 
-   //
-   // Sets things up
-   //
+   /// <summary>
+   /// Initializes the timer by synchronizing with the network clock.
+   /// </summary>
    void begin()
    {
       _syncWithClock();
    }
 
-   //
-   // Returns true when it is time to do an upload. Thereafter it will not
-   // return true again until the interval amount of time has passed
-   //
+   /// <summary>
+   /// Checks if it is time to perform the next upload.
+   /// </summary>
+   /// <returns>true if upload is due; false otherwise</returns>
+   /// <remarks>
+   /// When true is returned, the next trigger time is automatically calculated.
+   /// </remarks>
    bool ready()
    {
       if (_first)
@@ -93,6 +99,10 @@ public:
       return false;
    }
 
+   /// <summary>
+   /// Gets the milliseconds remaining until the next upload.
+   /// </summary>
+   /// <returns>Milliseconds until next save, or 0 if past due</returns>
    unsigned long msUntilNextSave()
    {
       unsigned long now = millis();

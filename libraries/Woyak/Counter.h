@@ -3,12 +3,14 @@
 #include <Arduino.h>
 #include "Util.h"
 
-//-------------------------------------------------------------------------------------------------
-//
-// Counts the number of times a pin goes low and the time between
-// Set the pin to LOW to trigger.
-//
-//-------------------------------------------------------------------------------------------------
+/// <summary>
+/// Interrupt-driven pulse counter with period measurement.
+/// </summary>
+/// <remarks>
+/// Counts falling-edge transitions on an input pin and tracks the time between pulses
+/// for frequency/period determination. Supports up to 10 simultaneous counters using
+/// hardware interrupts. Pins should be pulled HIGH (active-low pulses).
+/// </remarks>
 class Counter
 {
    uint8_t _pin;
@@ -40,11 +42,23 @@ class Counter
    static void _onLow9() { _counters[9]->_onLow(); }
 
 public:
+   /// <summary>
+   /// Constructs a Counter for the specified input pin.
+   /// </summary>
+   /// <param name="pin">GPIO pin that will receive pulse signals</param>
    Counter(uint8_t pin)
    {
       _pin = pin;
    }
 
+   /// <summary>
+   /// Initializes the counter with interrupt handler and begins counting pulses.
+   /// </summary>
+   /// <returns>True if initialization succeeded, false if max counter limit reached</returns>
+   /// <remarks>
+   /// Configures the pin as INPUT_PULLUP and attaches a FALLING edge interrupt.
+   /// Must be called once during setup(). Up to 10 counters can be initialized per device.
+   /// </remarks>
    bool begin()
    {
       if (_index >= MAX_COUNTERS)
@@ -101,21 +115,40 @@ public:
       return true;
    }
 
+   /// <summary>
+   /// Gets the GPIO pin number for this counter.
+   /// </summary>
+   /// <returns>Configured input pin</returns>
    uint8_t getPin() const
    {
       return _pin;
    }
 
+   /// <summary>
+   /// Resets the pulse counter to zero.
+   /// </summary>
    void reset()
    {
       _count = 0;
    }
 
+   /// <summary>
+   /// Gets the total number of pulses counted.
+   /// </summary>
+   /// <returns>Accumulated pulse count</returns>
    unsigned long count() const
    {
       return _count;
    }
 
+   /// <summary>
+   /// Gets the time span (in microseconds) between the last two pulses.
+   /// </summary>
+   /// <returns>Duration in microseconds between latest and previous pulse edge</returns>
+   /// <remarks>
+   /// Can be used to calculate frequency or detect missing pulses. Temporarily disables
+   /// interrupts for a safe read of volatile timing variables.
+   /// </remarks>
    unsigned long span() const
    {
       noInterrupts();
