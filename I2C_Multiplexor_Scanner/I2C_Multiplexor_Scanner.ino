@@ -1,23 +1,40 @@
+/// <summary>
+/// I2C bus scanner with multiplexor port support.
+/// </summary>
+/// <remarks>
+/// Scans all 8 ports of a TCA9548A I2C multiplexor (default address 0x70) and reports
+/// devices detected on each port. Useful for systems using I2C multiplexing to connect
+/// multiple sensors to the same I2C bus. Automatically detects Waveshare ESP32-S3 Zero
+/// hardware and configures I2C accordingly. Rescans every 5 seconds.
+/// 
+/// Hardware: Arduino with TCA9548A I2C multiplexor and multiple I2C devices on different ports.
+/// </remarks>
 
+#include <Arduino.h>
 #include <Wire.h>
 
-constexpr auto I2C_SCL = 8;
-constexpr auto I2C_SDA = 7;
+constexpr uint8_t I2C_SDA = 7;
+constexpr uint8_t I2C_SCL = 8;
 
-constexpr auto NUM_MULTIPLEXOR_PORTS = 8;
+constexpr uint8_t MULTIPLEXOR_ADDR = 0x70;   // Default TCA9548A address
+constexpr uint8_t NUM_MULTIPLEXOR_PORTS = 8;
+
+constexpr uint8_t I2C_MIN_ADDR = 1;
+constexpr uint8_t I2C_MAX_ADDR = 127;
+constexpr unsigned long SCAN_INTERVAL_MS = 5000;
 
 void setup()
 {
+   SerialX::begin();
+
 #if defined ARDUINO_WAVESHARE_ESP32_S3_ZERO
-#pragma message "Detected Waveshare ESP32-S3-Zero"
+   #pragma message "Detected Waveshare ESP32-S3-Zero"
    Wire.begin(I2C_SDA, I2C_SCL);
 #else
    Wire.begin();
 #endif
 
-   Serial.begin(115200);
-   while (!Serial)
-      delay(10);
+   Serial.println("I2C Multiplexor Scanner - Ready");
 }
 
 void loop()
@@ -25,23 +42,24 @@ void loop()
    byte error, address;
    int nDevices;
 
-   Serial.println("Scanning...");
+   Serial.println("Scanning I2C multiplexor ports...");
 
+   // Scan each port of the multiplexor
    for (uint8_t port = 0; port < NUM_MULTIPLEXOR_PORTS; port++)
    {
-      Wire.beginTransmission(0x70); // default address of the multiplexor
-      Wire.write(1 << port);        // select this port
+      // Select port on the multiplexor
+      Wire.beginTransmission(MULTIPLEXOR_ADDR);
+      Wire.write(1 << port);
       Wire.endTransmission();
 
       Serial.print("Port ");
       Serial.print(port);
 
       nDevices = 0;
-      for (address = 1; address < 127; address++)
+
+      // Scan this port for devices
+      for (address = I2C_MIN_ADDR; address < I2C_MAX_ADDR; address++)
       {
-         // The i2c_scanner uses the return value of
-         // the Write.endTransmisstion to see if
-         // a device did acknowledge to the address.
          Wire.beginTransmission(address);
          error = Wire.endTransmission();
 
@@ -66,6 +84,7 @@ void loop()
             Serial.println(address, HEX);
          }
       }
+
       if (nDevices == 0)
       {
          Serial.println(" No I2C devices found");
@@ -76,5 +95,5 @@ void loop()
       }
    }
 
-   delay(5000);           // wait 5 seconds for next scan
+   delay(SCAN_INTERVAL_MS);  // Wait before next scan
 }

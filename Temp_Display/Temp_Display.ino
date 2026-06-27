@@ -1,54 +1,59 @@
+/// <summary>
+/// Temperature and humidity sensor display for Feather displays.
+/// </summary>
+/// <remarks>
+/// Continuously reads temperature and humidity from an I2C sensor or DS18B20 one-wire sensor
+/// and displays the values along with read timing metrics on a TFT display.
+/// 
+/// Configurable for DS18B20 via ONE_WIRE_PIN define, otherwise auto-detects I2C sensors.
+/// Hardware: Feather ESP32 with TFT display and temperature/humidity sensor.
+/// </remarks>
+
+#include <Wire.h>
+#include <Arduino.h>
+
 #include "Feather.h"
 #include "Rate.h"
-
 #include "TempSensor.h"
 
-// 
-// This sketch displays the current temperature on an Arduino ESP32 Feather
-//
+// Uncomment to use DS18B20 sensor instead of I2C auto-detection
+// #define ONE_WIRE_PIN 5
+
+constexpr auto NUM_DECIMALS = 1;
+
 Feather feather;
 TempSensor sensor;
-
-// use this define to use a DS18B20 sensor. If not defined, one of the I2C sensors will be auto detected
-//#define ONE_WIRE_PIN 5
 
 Format tempFormat("###.## F");
 Format humFormat("###.#%");
 Format rateFormat("####/s");
 Format msFormat("####.# ms");
 
-Rate tempRate;
-Rate humRate;
+Rate tempRate;  // Timer for temperature read performance
+Rate humRate;   // Timer for humidity read performance
 
-// The setup() function runs once each time the micro-controller starts
 void setup()
 {
+   SerialX::begin();
+
    Wire.begin();
-
-   // start serial port
-   Serial.begin(115200);
-
-   // wait a few seconds for the serial monitor to open
-   while (millis() < 2000 && !Serial)
-   {
-   };
-   delay(500);
-
    feather.begin();
 
-#ifdef ONE_WIRE_PIN
-   sensor.begin(ONE_WIRE_PIN, true);
-#else
-   sensor.begin();
-#endif
+   // Initialize temperature sensor
+   #ifdef ONE_WIRE_PIN
+      sensor.begin(ONE_WIRE_PIN, true);
+   #else
+      sensor.begin();  // Auto-detect I2C sensor
+   #endif
 
-   if (sensor.exists() == false)
+   // Log sensor info
+   if (!sensor.exists())
    {
-      Serial.println("No sensor detected");
+      Serial.println("Error: No temperature sensor detected");
    }
    else
    {
-      Serial.println("Sensor:");
+      Serial.println("Temperature Sensor Detected:");
       Serial.println("  Type: " + String(sensor.type()));
       Serial.println("  ID: " + String(sensor.id()));
       Serial.println("  Address: 0x" + String(sensor.address(), HEX));
@@ -59,18 +64,19 @@ void loop()
 {
    feather.setCursor(0, 0);
 
-   // read sensor
+   // Read temperature with timing
    tempRate.start();
    float temp = sensor.readTemperatureF();
    tempRate.stop();
    float tempTime = tempRate.elapsedMicros() / 1000.0f;
 
+   // Read humidity with timing
    humRate.start();
    float hum = sensor.readHumidity();
    humRate.stop();
    float humTime = humRate.elapsedMicros() / 1000.0f;
 
-   // display values
+   // Display temperature value
    feather.setTextSize(3);
    if (feather.display.width() / feather.charW() > 12)
    {
@@ -78,6 +84,7 @@ void loop()
    }
    feather.println(temp, tempFormat, Color::VALUE);
 
+   // Display temperature read metrics
    feather.setTextSize(2);
    feather.print(tempTime, msFormat, Color::SUB_LABEL);
    feather.print("  ");
@@ -85,6 +92,7 @@ void loop()
    feather.println();
    feather.moveCursorY(feather.charH() / 2);
 
+   // Display humidity value
    feather.setTextSize(3);
    if (feather.display.width() / feather.charW() > 12)
    {
@@ -92,14 +100,16 @@ void loop()
    }
    feather.println(hum, humFormat, Color::VALUE);
 
+   // Display humidity read metrics
    feather.setTextSize(2);
    feather.print(humTime, msFormat, Color::SUB_LABEL);
    feather.print("  ");
    feather.print(humRate.get(), rateFormat, Color::SUB_LABEL);
    feather.println();
 
+   // Display sensor information in corner
    feather.setTextSize(2);
-   feather.setCursor(0, -2*feather.charH() + 1);
+   feather.setCursor(0, -2 * feather.charH() + 1);
    feather.print("Type: ", sensor.type(), Color::VALUE2);
    feather.print(" 0x", Color::VALUE2);
    feather.println(sensor.address(), HEX, Color::VALUE2);
@@ -107,5 +117,3 @@ void loop()
    feather.moveCursorY(1);
    feather.println("  ID: ", sensor.id(), Color::VALUE2);
 }
-
-

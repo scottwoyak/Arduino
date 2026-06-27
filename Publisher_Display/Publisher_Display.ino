@@ -1,76 +1,67 @@
+/// <summary>
+/// Telemetry data publisher with display feedback.
+/// </summary>
+/// <remarks>
+/// Publishes sinusoidal test data to a telemetry server via WebSocket connection.
+/// Displays connection status, topic, host, and message rate on a TFT display.
+/// Implements callback-based event handling for connection lifecycle and data flow.
+/// 
+/// Uncomment TELEMETRY_LOCAL to use a local telemetry server instead of the remote.
+/// Hardware: Feather ESP32 with WiFi and TFT display.
+/// </remarks>
 
-// undefine to use the remote server
-//#define TELEMETRY_LOCAL
+// Uncomment to use local telemetry server instead of remote
+// #define TELEMETRY_LOCAL
+
+#include <Arduino.h>
+#include <WiFi.h>
+#include <cmath>
+#include <numbers>
 
 #include "Feather.h"
-#include <WiFi.h>
-#include "SerialX.h"
-#include "WiFiSettings.h"
-#include "Stopwatch.h"
 #include "RollingRate.h"
+#include "SerialX.h"
+#include "Stopwatch.h"
 #include "TelemetryClient.h"
-#include "Url.h"
 #include "Timer.h"
+#include "Url.h"
 
-constexpr auto topic = "Test";
+#include "WiFiSettings.h"
+
+constexpr const char* TELEMETRY_TOPIC = "Test";
+constexpr unsigned long PUBLISH_INTERVAL_MS = 100;
+constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
+constexpr unsigned long SINUSOID_PERIOD_US = 2000000;
 
 Feather feather;
 Stopwatch sw(false);
-Timer publishTimer(100);
-
-
+Timer publishTimer(PUBLISH_INTERVAL_MS);
 RollingRate rate(100);
+
+TelemetryPublisher client(TELEMETRY_TOPIC, 3);
 Point16 ratePos;
 
 Format rateFormat("###/s");
-TelemetryPublisher client(topic, 3);
 
-
+/// <summary>
+/// Generates a sinusoidal test value for publishing.
+/// </summary>
+/// <returns>Sine value oscillating between -1 and 1 with a fixed period</returns>
 float getValue()
 {
-   constexpr ulong period = 2 * 1000 * 1000;
-   float x = 2 * std::numbers::pi * (((float)(micros() % period)) / period);
-   return sin(x);
-}
-
-void setup()
-{
-   SerialX::begin();
-   feather.begin();
-
-   // Connect to WiFi
-   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-   feather.setTextSize(2);
-   feather.setCursorY(-feather.charH());
-   feather.println("Publisher", Color::GRAY);
-
-   feather.setCursor(0, 0);
-   feather.println("Initializing", Color::HEADING2);
-   feather.moveCursorY(4);
-
-	feather.print("WiFi...", Color::LABEL);
-	while (WiFi.status() != WL_CONNECTED)
-	{
-	  feather.print(".", Color::LABEL);
-	}
-	feather.printlnR("OK", Color::VALUE);
-
-   feather.print("WebSocket...", Color::LABEL);
-
-   client.setCallbacks(onConnected, onDisconnected, nullptr, onText, onError, onStarted);
-   client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
+   float x = 2 * std::numbers::pi * (((float)(micros() % SINUSOID_PERIOD_US)) / SINUSOID_PERIOD_US);
+   return std::sin(x);
 }
 
 void onConnected()
 {
-   Serial.println("Connected");
+   Serial.println("Telemetry: WebSocket Connected");
 }
 
 void onDisconnected()
 {
-   Serial.println("Disconnected");
-   delay(1000); // time for Serial to print
+   Serial.println("Telemetry: WebSocket Disconnected");
+   delay(1000);
    Util::reset();
 }
 
@@ -85,16 +76,15 @@ void onError(std::string msg)
    feather.clearDisplay();
    feather.display.setTextWrap(true);
    feather.println(msg, Color::RED);
+   Serial.println("Telemetry Error: " + String(msg.c_str()));
    Util::reset(10);
 }
 
 void onStarted()
 {
-   // print the last ok for the WebSocket
    feather.printlnR("OK", Color::VALUE);
-   delay(1000); // so the user can see the message
+   delay(1000);
 
-   // display the GUI
    feather.clearDisplay();
    feather.setCursor(0, 0);
    feather.setTextSize(3);
@@ -112,38 +102,52 @@ void onStarted()
    ratePos = feather.getCursor();
    feather.println();
 
-   /*
-   feather.print(" Port: ", Color::LABEL);
-   feather.println(url.getPort(), Color::VALUE2);
-   feather.moveCursorY(1);
-
-   feather.print(" Schm: ", Color::LABEL);
-   feather.println(url.getScheme() + "://", Color::VALUE2);
-   feather.moveCursorY(1);
-
-   feather.print(" Path: ", Color::LABEL);
-   feather.println(url.getPath(), Color::VALUE2);
-   feather.moveCursorY(1);
-   */
-
    rate.reset();
    sw.start();
+}
+
+void setup()
+{
+   SerialX::begin();
+   feather.begin();
+
+   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+   feather.setTextSize(2);
+   feather.setCursorY(-feather.charH());
+   feather.println("Publisher", Color::GRAY);
+
+   feather.setCursor(0, 0);
+   feather.println("Initializing", Color::HEADING2);
+   feather.moveCursorY(4);
+
+   feather.print("WiFi...", Color::LABEL);
+   while (WiFi.status() != WL_CONNECTED)
+   {
+      feather.print(".", Color::LABEL);
+   }
+   feather.printlnR("OK", Color::VALUE);
+
+   feather.print("WebSocket...", Color::LABEL);
+
+   client.setCallbacks(onConnected, onDisconnected, nullptr, onText, onError, onStarted);
+   client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
 }
 
 void loop()
 {
    if (publishTimer.ready())
    {
-	  float value = getValue();
-	  client.setValue(value);
+      float value = getValue();
+      client.setValue(value);
    }
 
-   client.loop(); // Continuously poll for events and maintain connection
+   client.loop();
 
-   if (sw.elapsedMillis() > 1000)
+   if (sw.elapsedMillis() > RATE_UPDATE_INTERVAL_MS)
    {
-	  feather.setCursor(ratePos);
-	  feather.println(rate.get(), rateFormat, Color::VALUE);
-	  sw.reset();
+      feather.setCursor(ratePos);
+      feather.println(rate.get(), rateFormat, Color::VALUE);
+      sw.reset();
    }
 }

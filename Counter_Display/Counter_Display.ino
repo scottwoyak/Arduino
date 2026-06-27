@@ -1,10 +1,20 @@
+/// <summary>
+/// Counter input display with timing metrics.
+/// </summary>
+/// <remarks>
+/// Displays pulse count and time span between pulses from a digital input pin.
+/// Tracks minimum pulse span since last reset. Button A resets metrics.
+/// 
+/// Hardware: Feather ESP32 with TFT display and counter input on GPIO pin.
+/// </remarks>
 
+#include <Arduino.h>
+
+#include "Counter.h"
 #include "Feather.h"
 #include "SerialX.h"
-#include "Counter.h"
 
 Feather feather;
-
 Counter counter(0);
 double minSpan = 0;
 

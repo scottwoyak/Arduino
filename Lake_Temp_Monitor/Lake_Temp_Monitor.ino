@@ -1,50 +1,60 @@
-#include "TempSensor.h"
-#include "TimedStats.h"
+/// <summary>
+/// Lake water temperature monitoring station with multi-sensor support.
+/// </summary>
+/// <remarks>
+/// Monitors temperature and humidity at 5 different locations in a lake using I2C multiplexing.
+/// Logs readings to InfluxDB at configurable intervals. Includes watchdog for automatic reset
+/// on communication failures and daily reboot to manage long-term stability.
+/// 
+/// Hardware: ESP32 with I2C multiplexor, 5 temperature/humidity sensors, status LEDs.
+/// </remarks>
+
+#include <Arduino.h>
 #include <Adafruit_SleepyDog.h>
-#include "SerialX.h"
-#include "Influx.h"
 #include <string>
-#include "I2CMultiplexor.h"
+
 #include "CountdownTimer.h"
 #include "ESP32TempSensor.h"
+#include "I2CMultiplexor.h"
+#include "Influx.h"
+#include "SerialX.h"
 #include "Status.h"
+#include "TempSensor.h"
 #include "Timer.h"
+#include "TimedStats.h"
 
 #include "WiFiSettings.h"
 
+constexpr auto VERSION = "v1.0";
+
+// Influx database settings
+constexpr auto INFLUX_MEASUREMENT = "Air";
+constexpr auto INFLUX_INTERVAL_S = 15;       // Log data to InfluxDB every N seconds
+constexpr auto WATCHDOG_INTERVAL_S = 60;     // Reboot if no successful log in N seconds
+constexpr auto WATCHDOG_STARTUP_MS = 5 * 60 * 1000;  // Reboot if startup fails in N ms
+constexpr auto REBOOT_INTERVAL_MS = 24 * 60 * 60 * 1000;  // Daily reboot for stability
+
+// Sensor configuration
+constexpr uint8_t NUM_SENSORS = 5;
+constexpr uint8_t SENSOR_PORTS[] = {0, 1, 2, 3, 4};  // Last port directly talks to ESP32
+
+// I2C pins (custom configuration)
+constexpr auto I2C_SCL = 8;
+constexpr auto I2C_SDA = 7;
+
+// LED pins
+constexpr auto WHITE_LED_PIN = 5;
+constexpr auto BLUE_LED_PIN = 2;
+constexpr auto GREEN_LED_PIN = 3;
+constexpr auto RED_LED_PIN = 4;
+
+// Format strings for display
 Format humFormat("##.#%");
 Format tempFormat("###.## F");
 Format countdownFormat("##");
 
-constexpr auto version = "v1.0";
-
-I2CMultiplexor multi;
-
-constexpr auto INFLUX_MEASUREMENT = "Air";
-constexpr auto INFLUX_INTERVAL_S = 15; // log data to InfluxDB every this many seconds
-constexpr auto WATCHDOG_INTERVAL_S = 60; // reboot if we haven't logged data for this many seconds
-InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-Timer influxTimer(INFLUX_INTERVAL_S * 1000);
-
-constexpr uint8_t NUM_SENSORS = 5;
-TempSensor* sensors[NUM_SENSORS];
-SimplePoint* points[NUM_SENSORS];
-Field* tempFields[NUM_SENSORS];
-Field* humFields[NUM_SENSORS];
-uint8_t sensorPorts[] = { 0, 1, 2, 3, 4 }; // last port not used - directly talks to ESP32
-
-constexpr auto I2C_SCL = 8;
-constexpr auto I2C_SDA = 7;
-
-constexpr auto BLUE_LED_PIN = 2;
-constexpr auto GREEN_LED_PIN = 3;
-constexpr auto RED_LED_PIN = 4;
-constexpr auto WHITE_LED_PIN = 5;
-
-LedStatus status(WHITE_LED_PIN, BLUE_LED_PIN, GREEN_LED_PIN);
-LED redLed(RED_LED_PIN);
-
-const char* locations[] = {
+// Sensor location names
+const char* SENSOR_LOCATIONS[] = {
    "New Surface",
    "New 3 Feet",
    "New Bottom",
@@ -52,12 +62,29 @@ const char* locations[] = {
    "New CPU",
 };
 
+I2CMultiplexor multi;
+InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+Timer influxTimer(INFLUX_INTERVAL_S * 1000);
+
+// Sensor arrays
+TempSensor* sensors[NUM_SENSORS];
+SimplePoint* points[NUM_SENSORS];
+Field* tempFields[NUM_SENSORS];
+Field* humFields[NUM_SENSORS];
+
+// Status indicators
+LedStatus status(WHITE_LED_PIN, BLUE_LED_PIN, GREEN_LED_PIN);
+LED redLed(RED_LED_PIN);
+
+/// <summary>
+/// Initializes all hardware, sensors, I2C communication, and InfluxDB connection.
+/// </summary>
 void setup()
 {
-   // if we can't startup after 5 minutes, reboot and try again
-   Watchdog.enable(5 * 60 * 1000);
+   // Enable watchdog for startup supervision (5 minutes)
+   Watchdog.enable(WATCHDOG_STARTUP_MS);
 
-   // create all the objects
+   // Create sensor objects and data structures
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       sensors[i] = new TempSensor();
@@ -67,8 +94,7 @@ void setup()
    }
 
    SerialX::begin();
-
-   Serial.println("Initializing");
+   Serial.println("Initializing Lake Temperature Monitor");
 
    // Initialize I2C with custom pins
    Wire.begin(I2C_SDA, I2C_SCL);
@@ -76,106 +102,113 @@ void setup()
    status.begin();
    redLed.begin();
 
-   Serial.print("Sensors... ");
-   for (int i = 0; i < NUM_SENSORS; i++)
+   // Initialize and detect all sensors
+   Serial.println("Detecting sensors...");
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      Serial.println();
-      Serial.print("Sensor ");
+      Serial.print("  Sensor ");
       Serial.print(i);
-      Serial.print(": ");
-      Serial.println(locations[i]);
+      Serial.print(" (");
+      Serial.print(SENSOR_LOCATIONS[i]);
+      Serial.print(")... ");
 
-      bool status;
+      bool sensorFound;
       if (i == NUM_SENSORS - 1)
       {
-         status = sensors[i]->begin(new ESP32TempSensor(), true);
+         // Last sensor is built-in ESP32 CPU temperature
+         sensorFound = sensors[i]->begin(new ESP32TempSensor(), true);
       }
       else
       {
-         multi.select(sensorPorts[i]);
-         status = sensors[i]->begin(true);
+         // Other sensors on I2C multiplexor
+         multi.select(SENSOR_PORTS[i]);
+         sensorFound = sensors[i]->begin(true);
       }
 
-      if (status)
+      if (sensorFound)
       {
-         Serial.print("         Type: ");
-         Serial.println(sensors[i]->type());
-         Serial.print("      Address: ");
-         Serial.println(sensors[i]->address());
-         Serial.print("           ID: ");
-         Serial.println(sensors[i]->id());
-         Serial.print("   Correction: ");
-         Serial.println(sensors[i]->tempCorrectionF(), 3);
+         Serial.print("OK - ");
+         Serial.print(sensors[i]->type());
+         Serial.print(" (0x");
+         Serial.print(sensors[i]->address(), HEX);
+         Serial.println(")");
       }
       else
       {
-         // TODO null out this sensor
-         Serial.println("FAILED");
+         Serial.println("NOT FOUND");
       }
    }
-   Serial.println("ok");
 
+   // Initialize InfluxDB connection
    Influx::begin(WIFI_SSID, WIFI_PASSWORD, &client, &status);
 
-   for (int i = 0; i < NUM_SENSORS; i++)
+   // Tag each data point with its location
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      points[i]->addTag("location", locations[i]);
+      points[i]->addTag("location", SENSOR_LOCATIONS[i]);
    }
 
-   // keep things cool
+   // Reduce CPU frequency for lower power consumption
    setCpuFrequencyMhz(80);
 
+   // Enable watchdog for operation (60 seconds between successful logs)
    Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
 }
 
+/// <summary>
+/// Main monitoring loop: reads sensors, checks connectivity, and logs to InfluxDB.
+/// </summary>
 void loop()
 {
-   // reboot once a day
-   if (millis() > 24 * 60 * 60 * 1000)
+   // Perform daily reboot for long-term stability
+   if (millis() > REBOOT_INTERVAL_MS)
    {
-      Serial.println("Rebooting after 24 hours of uptime");
+      Serial.println("Performing scheduled 24-hour reboot");
       Util::reset();
    }
 
-   redLed.turnOff(); // turned on when uploading data
+   redLed.turnOff();  // Turn off activity LED (turned on during data upload)
 
-   // Store measured value into point
+   // Read temperature and humidity from all available sensors
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       if (sensors[i]->exists())
       {
-         multi.select(sensorPorts[i]);
+         multi.select(SENSOR_PORTS[i]);
          tempFields[i]->set(sensors[i]->readTemperatureF());
          humFields[i]->set(sensors[i]->readHumidity());
       }
    }
 
-   // Check WiFi connection and reconnect if needed
+   // Ensure WiFi connectivity
    if (!Influx::ensureWifiConnected(&status))
    {
-      Serial.println("WiFi reconnection failed, resetting");
+      Serial.println("WiFi reconnection failed, performing reset");
       Util::reset(10);
    }
 
-   // Write point
-   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   // Upload data points to InfluxDB at configured interval
+   if (influxTimer.ready())
    {
-      if (sensors[i]->exists() == false)
+      for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
-         continue;
-      }
-
-      if (influxTimer.ready())
-      {
-         redLed.turnOn();
-         if (points[i]->post(&client, true) == false)
+         if (!sensors[i]->exists())
          {
-            Serial.println("InfluxDB write failed: ");
+            continue;  // Skip sensors that weren't detected
+         }
+
+         redLed.turnOn();  // Indicate data transmission activity
+
+         if (!points[i]->post(&client, true))
+         {
+            Serial.print("InfluxDB write failed for sensor ");
+            Serial.print(i);
+            Serial.print(": ");
             Serial.println(client.getLastErrorMessage());
          }
          else
          {
-            // only reset the Watchdog if we've had a successful write
+            // Only reset watchdog on successful write
             Watchdog.reset();
          }
       }

@@ -1,14 +1,27 @@
+/// <summary>
+/// RGB LED color cycle demonstration.
+/// </summary>
+/// <remarks>
+/// Cycles through primary and secondary colors on an RGB LED at 1-second intervals.
+/// Demonstrates basic RGB LED control with PWM pins.
+/// 
+/// Colors tested: Red, Yellow, Green, Cyan, Blue, Magenta, White.
+/// Hardware: ESP32 with common-cathode RGB LED on PWM pins.
+/// </remarks>
+
+#include <Arduino.h>
+
 #include "LED.h"
-#include "Stopwatch.h"
 #include "SerialX.h"
+#include "Stopwatch.h"
 
 constexpr uint8_t RED_PIN = 1;
 constexpr uint8_t GREEN_PIN = 2;
 constexpr uint8_t BLUE_PIN = 3;
 
-Stopwatch sw;
+constexpr unsigned long COLOR_CYCLE_INTERVAL_MS = 1000;  // Change color every second
 
-enum class Color
+enum class ColorMode
 {
    Red,
    Yellow,
@@ -18,58 +31,70 @@ enum class Color
    Magenta,
    White,
    Count,
-} mode;
+};
 
-Color operator++(Color& color, int)
+/// <summary>
+/// Post-increment operator for color cycling.
+/// </summary>
+ColorMode operator++(ColorMode& color, int)
 {
-   color = static_cast<Color>((static_cast<int>(color) + 1) % static_cast<int>(Color::Count));
+   color = static_cast<ColorMode>((static_cast<int>(color) + 1) % static_cast<int>(ColorMode::Count));
    return color;
 }
 
-Color color = Color::Red;
-
+Stopwatch sw;
+ColorMode currentColor = ColorMode::Red;
 RGBLED led(RED_PIN, GREEN_PIN, BLUE_PIN);
 
 void setup()
 {
-   Serial.begin(115200);
    SerialX::begin();
 
    led.begin();
    led.turnOn();
+
+   Serial.println("RGB LED - Color Cycle Demonstration");
 }
 
 void loop()
 {
-   if (sw.elapsedMillis() > 1000)
+   // Change color every COLOR_CYCLE_INTERVAL_MS milliseconds
+   if (sw.elapsedMillis() > COLOR_CYCLE_INTERVAL_MS)
    {
       sw.reset();
-      color++;
+      currentColor++;
    }
 
-   switch (color)
+   // Set LED color based on current mode
+   switch (currentColor)
    {
-   case Color::Red:
-      led.setColor(1.0f, 0.0f, 0.0f);
-      break;
-   case Color::Yellow:
-      led.setColor(1.0f, 1.0f, 0.0f);
-      break;
-   case Color::Green:
-      led.setColor(0.0f, 1.0f, 0.0f);
-      break;
-   case Color::Cyan:
-      led.setColor(0.0f, 1.0f, 1.0f);
-      break;
-   case Color::Blue:
-      led.setColor(0.0f, 0.0f, 1.0f);
-      break;
-   case Color::Magenta:
-      led.setColor(1.0f, 0.0f, 1.0f);
-      break;
-   case Color::White:
-      led.setColor(1.0f, 1.0f, 1.0f);
-      break;
+      case ColorMode::Red:
+         led.setColor(1.0f, 0.0f, 0.0f);
+         break;
+
+      case ColorMode::Yellow:
+         led.setColor(1.0f, 1.0f, 0.0f);
+         break;
+
+      case ColorMode::Green:
+         led.setColor(0.0f, 1.0f, 0.0f);
+         break;
+
+      case ColorMode::Cyan:
+         led.setColor(0.0f, 1.0f, 1.0f);
+         break;
+
+      case ColorMode::Blue:
+         led.setColor(0.0f, 0.0f, 1.0f);
+         break;
+
+      case ColorMode::Magenta:
+         led.setColor(1.0f, 0.0f, 1.0f);
+         break;
+
+      case ColorMode::White:
+         led.setColor(1.0f, 1.0f, 1.0f);
+         break;
    }
 
    delay(1000);

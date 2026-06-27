@@ -1,135 +1,186 @@
+/// <summary>
+/// Wind speed monitoring station with percentile analysis and InfluxDB logging.
+/// </summary>
+/// <remarks>
+/// Measures wind speed over configurable collection intervals, bins the data into
+/// speed ranges, and calculates percentiles (10th, 30th, 50th, 70th, 90th) for analysis.
+/// Computes gust metrics as the difference between 90th and 10th percentiles.
+/// Logs measurements to InfluxDB at regular intervals.
+/// 
+/// Hardware: ESP32 with anemometer input, NeoPixel status LED.
+/// </remarks>
 
-//
-// Wind Monitor
-//
+#include <Arduino.h>
+#include <cmath>
 
+#include "ESP32TempSensor.h"
+#include "Influx.h"
 #include "SerialX.h"
-#include "WiFiSettings.h"
-#include "WindMeter.h"
 #include "Status.h"
 #include "Timer.h"
 #include "TimedBin.h"
-#include "Influx.h"
-#include "ESP32TempSensor.h"
+#include "WindMeter.h"
 
+#include "WiFiSettings.h"
+
+// Wind sensor setup
+constexpr auto WIND_SENSOR_PIN = 1;
+constexpr auto MAX_WIND_SPEED = 60;       // mph
+constexpr auto WIND_SPEED_INCREMENT = 0.1f;  // Speed bin resolution
+
+// Data collection timing
+constexpr auto BIN_DURATION_MS = 3 * 60 * 1000;        // Bin duration (3 minutes)
+constexpr auto DATA_COLLECTION_INTERVAL_MS = 100;      // Sampling interval
+constexpr auto INFLUX_UPLOAD_INTERVAL_S = 15;          // Upload to InfluxDB every N seconds
+
+// InfluxDB settings
+constexpr auto INFLUX_MEASUREMENT = "Air";
+constexpr auto NUM_PERCENTILES = 5;                     // Track 5 percentiles
+constexpr uint16_t NUM_SPEED_BINS = (MAX_WIND_SPEED / WIND_SPEED_INCREMENT);
+
+// Display precision
 constexpr uint8_t NUM_DECIMALS = 2;
 
-constexpr uint8_t WIND_PIN = 1;
-WindMeter wind(WIND_PIN, 0);
+WindMeter wind(WIND_SENSOR_PIN, 0);
 ESP32TempSensor cpuTemp;
-
 NeoPixelStatus status;
 
-constexpr auto BIN_DURATION_MS = 3* 60 * 1000;
-constexpr auto INFLUX_UPLOAD_INTERVAL_S = 15;
-constexpr auto DATA_COLLECTION_INTERVAL_MS = 100;
-
-constexpr auto MAX_SPEED = 60;
-constexpr auto SPEED_INCREMENTS = 0.1;
-constexpr uint NUM_BINS = (MAX_SPEED / SPEED_INCREMENTS);
-
-TimedBin* speedBins[NUM_BINS];
+// Speed distribution bins for percentile calculation
+TimedBin* speedBins[NUM_SPEED_BINS];
 Timer binCaptureTimer(DATA_COLLECTION_INTERVAL_MS);
 
-constexpr auto INFLUX_MEASUREMENT = "Air";
-Timer uploadTimer(1000 * INFLUX_UPLOAD_INTERVAL_S);
+// InfluxDB client and data point
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-SimplePoint point(INFLUX_MEASUREMENT); // Influx data point
-Field* wind10Field = point.addValueField("wind10", 1);
-Field* wind30Field = point.addValueField("wind30", 1);
-Field* wind50Field = point.addValueField("wind50", 1);
-Field* wind70Field = point.addValueField("wind70", 1);
-Field* wind90Field = point.addValueField("wind90", 1);
-Field* gustsField = point.addValueField("gusts", 1);
-Field* cpuTempField = point.addValueField("cpuTemperature", 1);
+Timer uploadTimer(1000 * INFLUX_UPLOAD_INTERVAL_S);
+SimplePoint point(INFLUX_MEASUREMENT);
+
+// Field references for InfluxDB data
+Field* wind10Field = point.addValueField("wind10", 1);   // 10th percentile
+Field* wind30Field = point.addValueField("wind30", 1);   // 30th percentile
+Field* wind50Field = point.addValueField("wind50", 1);   // 50th percentile (median)
+Field* wind70Field = point.addValueField("wind70", 1);   // 70th percentile
+Field* wind90Field = point.addValueField("wind90", 1);   // 90th percentile
+Field* gustsField = point.addValueField("gusts", 1);     // Gust metric (90th - 10th)
+Field* cpuTempField = point.addValueField("cpuTemperature", 1);  // CPU temperature
 
 void setup()
 {
-   for (int i = 0; i < NUM_BINS; i++)
+   SerialX::begin();
+   Serial.println("Wind Monitor - Initializing");
+
+   // Create speed distribution bins
+   for (uint16_t i = 0; i < NUM_SPEED_BINS; i++)
    {
-	  speedBins[i] = new TimedBin(BIN_DURATION_MS);
+      speedBins[i] = new TimedBin(BIN_DURATION_MS);
    }
 
    status.begin();
-
    Influx::begin(WIFI_SSID, WIFI_PASSWORD, &client, &status);
-
    status.setStatus(Status::STARTED);
-
-   SerialX::begin();
-   Serial.println("Wind Monitor");
 
    wind.begin();
 
-   setCpuFrequencyMhz(80); // keep things cool  
+   // Reduce CPU frequency for lower power consumption
+   setCpuFrequencyMhz(80);
+
+   Serial.println("Wind Monitor - Ready");
 }
 
+/// <summary>
+/// Calculates the wind speed at the specified percentile.
+/// </summary>
+/// <param name="targetPercentile">Percentile to calculate (0.0 - 1.0, where 0.5 is median)</param>
+/// <returns>Wind speed in mph at the given percentile</returns>
+/// <remarks>
+/// Iterates through speed bins, accumulating counts until the target percentile is reached.
+/// Returns 0 if no data available.
+/// </remarks>
 float getValueForPercentile(float targetPercentile)
 {
-   // TODO cache this value
-   uint totalPoints = 0;
-   for (int i = 0; i < NUM_BINS; i++)
+   uint32_t totalPoints = 0;
+   for (uint16_t i = 0; i < NUM_SPEED_BINS; i++)
    {
       totalPoints += speedBins[i]->getCount();
    }
 
-   uint points = 0;
-   for (int i = 0; i < NUM_BINS; i++)
+   // Handle empty data
+   if (totalPoints == 0)
    {
-      float nextPercent = ((float)(points + speedBins[i]->getCount())) / totalPoints;
+      return 0.0f;
+   }
+
+   uint32_t points = 0;
+   for (uint16_t i = 0; i < NUM_SPEED_BINS; i++)
+   {
+      float nextPercent = static_cast<float>(points + speedBins[i]->getCount()) / totalPoints;
 
       if (nextPercent >= targetPercentile)
       {
-         return i / 10.0f;
+         return i * WIND_SPEED_INCREMENT;
       }
+
       points += speedBins[i]->getCount();
    }
+
+   return 0.0f;
 }
 
 void loop()
 {
-   // Waveshare crashes if we set the LED value in the interrupt, so we manually do it
+   // Update LED status based on wind sensor activity
+   // Note: Must be done in loop (not interrupt) to avoid NeoPixel driver crashes
    if (wind.ledState())
    {
-      status.setStatus(1.0f, 0, 0);
+      status.setStatus(1.0f, 0.0f, 0.0f);  // Red LED for active measurement
    }
    else
    {
       status.setStatus(Status::READY);
    }
 
-   // without a delay, the waveshare crashes
+   // Small delay to prevent watchdog timeout
    delay(1);
 
+   // Collect wind speed samples at regular intervals
    if (binCaptureTimer.ready())
    {
       float speed = wind.getSpeed();
-      uint index = std::min((uint)(10*speed), NUM_BINS - 1);
+      uint16_t index = std::min(static_cast<uint16_t>(speed * 10), NUM_SPEED_BINS - 1);
       speedBins[index]->add();
    }
 
-   // Write point
+   // Calculate percentiles and upload to InfluxDB at configured interval
    if (uploadTimer.ready())
    {
-      wind10Field->set(getValueForPercentile(0.1));
-      wind30Field->set(getValueForPercentile(0.3));
-      wind50Field->set(getValueForPercentile(0.5));
-      wind70Field->set(getValueForPercentile(0.7));
-      wind90Field->set(getValueForPercentile(0.9));
+      // Calculate wind speed percentiles
+      wind10Field->set(getValueForPercentile(0.1f));
+      wind30Field->set(getValueForPercentile(0.3f));
+      wind50Field->set(getValueForPercentile(0.5f));
+      wind70Field->set(getValueForPercentile(0.7f));
+      wind90Field->set(getValueForPercentile(0.9f));
+
+      // Calculate gust metric (difference between 90th and 10th percentiles)
       gustsField->set(wind90Field->average() - wind10Field->average());
+
+      // Read and log CPU temperature
       cpuTempField->set(cpuTemp.readTemperatureF());
 
-      // Ensure WiFi is connected before attempting to post
+      // Ensure WiFi connectivity before upload
       if (!Influx::ensureWifiConnected(&status))
       {
+         Serial.println("WiFi reconnection failed, resetting");
          Util::reset(60);
       }
 
-      status.setStatus(1.0f, 0.5f, 0);
-      if (point.post(&client, true) == false)
+      // Upload data point to InfluxDB
+      status.setStatus(1.0f, 0.5f, 0.0f);  // Yellow LED during upload
+
+      if (!point.post(&client, true))
       {
+         Serial.println("InfluxDB upload failed, resetting");
          Util::reset(60);
       }
+
       status.setStatus(Status::READY);
    }
 }

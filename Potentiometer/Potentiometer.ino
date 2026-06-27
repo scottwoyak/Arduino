@@ -1,31 +1,34 @@
-//
-// Example to demonstrate the usage of a potentiometer
-// 
-// o Potentiometer is connected to A0
-// o Values are printed to serial output and demonstrate jitter and
-//   how the class can remove it.
-//
+/// <summary>
+/// Potentiometer input reading example with jitter filtering.
+/// </summary>
+/// <remarks>
+/// Demonstrates reading analog potentiometer values with and without jitter filtering.
+/// Outputs both raw float values and mapped integer values to serial console.
+/// Shows the difference between filtered and unfiltered analog readings.
+/// 
+/// Hardware: Arduino with 10k potentiometer on analog pin A0.
+/// </remarks>
+
+#include <Arduino.h>
+
 #include "Potentiometer.h"
+#include "SerialX.h"
 
 Potentiometer p(A0);
 IntPotentiometer p2(A0, 0, 100);
 
 void setup()
 {
-   // start serial port
-   Serial.begin(115200);
+   SerialX::begin();
 
-   // wait a few seconds for the serial monitor to open
-   while (millis() < 2000 && !Serial)
-      ;
-   delay(500);
+   Serial.println("Potentiometer Reader - Ready");
+   Serial.println("Raw Value   Mapped Value (0-100)");
 }
 
-// the loop function runs over and over again until power down or reset
 void loop()
 {
    Serial.print(p.read());
-   Serial.print(" ");
+   Serial.print("   ");
    Serial.print(p2.read());
    Serial.println();
 }
