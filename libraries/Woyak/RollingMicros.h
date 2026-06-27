@@ -6,7 +6,7 @@
 /// Tracks a continuous stream of microsecond timing values in a circular buffer.
 /// Supports pausing/resuming to exclude time spans from measurements.
 /// </summary>
-class RollingMicros 
+class RollingMicros
 {
 private:
    unsigned long* _micros;
@@ -24,7 +24,7 @@ private:
    /// Calculates the current effective time, accounting for any paused intervals.
    /// </summary>
    /// <returns>Effective microseconds elapsed since tracking began.</returns>
-   unsigned long _effectiveMicros()
+   unsigned long _effectiveMicros() const
    {
       unsigned long now = _ticks();
       unsigned long excluded = _excludedMicros;
@@ -48,10 +48,10 @@ public:
    /// Initializes a new RollingMicros tracker.
    /// </summary>
    /// <param name="numSamples">Maximum number of time samples to store. Defaults to 500.</param>
-   RollingMicros(uint16_t numSamples = 500)
+   explicit RollingMicros(uint16_t numSamples = 500)
    {
-      _numSamples = numSamples;
-      _micros = new unsigned long[numSamples];
+      _numSamples = (numSamples == 0) ? 1 : numSamples;
+      _micros = new unsigned long[_numSamples];
 
       if (RollingMicros::tickFunc != nullptr)
       {
@@ -126,7 +126,7 @@ public:
    /// Gets the timestamp of the oldest sample currently in the buffer.
    /// </summary>
    /// <returns>Microseconds of the first sample, or 0 if no samples have been recorded.</returns>
-   unsigned long getFirstMicros()
+   unsigned long getFirstMicros() const
    {
       if (getCount() == 0)
       {
@@ -151,7 +151,7 @@ public:
    /// Gets the timestamp of the most recent sample in the buffer.
    /// </summary>
    /// <returns>Microseconds of the last sample, or 0 if no samples have been recorded.</returns>
-   unsigned long getLastMicros()
+   unsigned long getLastMicros() const
    {
       uint16_t lastIndex;
 
@@ -178,7 +178,7 @@ public:
    /// Gets the elapsed time between the oldest and newest samples.
    /// </summary>
    /// <returns>Effective microseconds elapsed, accounting for any paused intervals.</returns>
-   unsigned long getElapsedMicros()
+   unsigned long getElapsedMicros() const
    {
       return Util::getSpan(getFirstMicros(), getLastMicros());
    }
@@ -187,16 +187,16 @@ public:
    /// Gets the elapsed time between the oldest and newest samples in seconds.
    /// </summary>
    /// <returns>Effective seconds elapsed, accounting for any paused intervals.</returns>
-   float getElapsedSeconds()
+   float getElapsedSeconds() const
    {
-      return getElapsedMicros() / (1000 * 1000.0);
+      return getElapsedMicros() / 1000000.0f;
    }
 
    /// <summary>
    /// Gets the number of samples currently stored in the buffer.
    /// </summary>
    /// <returns>Count of recorded samples (0 to numSamples).</returns>
-   uint16_t getCount()
+   uint16_t getCount() const
    {
       if (_wrap)
       {
@@ -209,4 +209,4 @@ public:
    }
 };
 
-unsigned long (*RollingMicros::tickFunc) () = nullptr;
+unsigned long (*RollingMicros::tickFunc)() = nullptr;

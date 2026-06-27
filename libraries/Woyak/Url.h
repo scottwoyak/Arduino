@@ -1,6 +1,6 @@
 #pragma once
 
-#include <regex>
+#include <Arduino.h>
 
 class Url
 {
@@ -14,7 +14,7 @@ private:
 
 public:
    // Constructor to parse a URL string
-   Url(String url)
+   explicit Url(String url)
    {
       int protocolEnd = url.indexOf("://");
       if (protocolEnd != -1)
@@ -41,7 +41,7 @@ public:
       else
       {
          _host = hostPort;
-         _port = (_scheme == "https" || _scheme== "wss") ? 443 : 80; // Default ports
+         _port = (_scheme == "https" || _scheme == "wss") ? 443 : 80; // Default ports
       }
 
       int queryStart = url.indexOf('?');

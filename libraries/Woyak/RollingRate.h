@@ -8,7 +8,8 @@ private:
    RollingMicros _rMicros;
 
 public:
-   RollingRate(uint16_t numSamples=500) : _rMicros(numSamples)
+   explicit RollingRate(uint16_t numSamples = 500)
+      : _rMicros(numSamples)
    {
    }
 
@@ -39,13 +40,11 @@ public:
       {
          return 0;
       }
-      else
-      {
-         return _rMicros.getCount() / _rMicros.getElapsedSeconds();
-      }
+
+      return _rMicros.getCount() / secs;
    }
 
-   uint16_t getCount()
+   uint16_t getCount() const
    {
       return _rMicros.getCount();
    }

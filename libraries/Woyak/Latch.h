@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include "Util.h"
 
-constexpr uint DEBOUNCE_TIME = 100;
+constexpr unsigned long DEBOUNCE_TIME_MICROS = 100;
 
 class Latch
 {
@@ -16,7 +16,7 @@ private:
 public:
    bool settled() volatile
    {
-      return Util::getSpan(_microsAtStateChange, micros()) > DEBOUNCE_TIME;
+      return Util::getSpan(_microsAtStateChange, micros()) > DEBOUNCE_TIME_MICROS;
    }
 
    bool setState(int state) volatile
@@ -24,7 +24,7 @@ public:
       unsigned long newMicros = micros();
 
       // debounce
-      if (micros() - _microsAtStateChange < DEBOUNCE_TIME)
+      if (Util::getSpan(_microsAtStateChange, newMicros) < DEBOUNCE_TIME_MICROS)
       {
          return false;
       }
@@ -59,6 +59,6 @@ public:
 
    unsigned long getMicrosSinceLastTick() volatile
    {
-      return Util::getSpan(this->_lastHighMicros, micros());
+      return Util::getSpan(_lastHighMicros, micros());
    }
 };

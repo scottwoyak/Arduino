@@ -47,15 +47,18 @@ public:
 
    bool begin()
    {
-      if (_index < MAX_COUNTERS)
+      if (_index >= MAX_COUNTERS)
       {
-         pinMode(_pin, INPUT_PULLUP);
+         return false;
+      }
 
-         switch (_index)
-         {
-         case 0:
-            attachInterrupt(digitalPinToInterrupt(_pin), Counter::_onLow0, FALLING);
-            break;
+      pinMode(_pin, INPUT_PULLUP);
+
+      switch (_index)
+      {
+      case 0:
+         attachInterrupt(digitalPinToInterrupt(_pin), Counter::_onLow0, FALLING);
+         break;
 
          case 1:
             attachInterrupt(digitalPinToInterrupt(_pin), Counter::_onLow1, FALLING);
@@ -93,14 +96,9 @@ public:
             attachInterrupt(digitalPinToInterrupt(_pin), Counter::_onLow9, FALLING);
             break;
          }
-         _counters[_index++] = this;
-         return true;
-      }
-      else
-      {
-         return false;
-      }
 
+      _counters[_index++] = this;
+      return true;
    }
 
    uint8_t getPin() const
@@ -121,7 +119,7 @@ public:
    unsigned long span() const
    {
       noInterrupts();
-      long span = Util::getSpan(_lastMicros, _micros);
+      unsigned long span = Util::getSpan(_lastMicros, _micros);
       interrupts();
       return span;
    }

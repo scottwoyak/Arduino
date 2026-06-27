@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Arduino.h>
+
 class Util
 {
 
@@ -51,20 +53,20 @@ class Util
    */
 
 public:
-   static float readVolts(uint8_t pin, uint16_t resolution = 4096, float voltageDivider = 2)
+   static float readVolts(uint8_t pin, uint16_t resolution = 4096, float voltageDivider = 2.0f)
    {
       float volts = analogRead(pin);
-      volts *= voltageDivider;    // compensate for voltage divider
-      volts *= 3.3;  // Multiply by 3.3V, our reference voltage
+      volts *= voltageDivider; // compensate for voltage divider
+      volts *= 3.3f; // multiply by 3.3V, our reference voltage
       volts /= resolution; // convert to voltage
       return volts;
    }
 
-   static float voltsToPercent(float volts, float fullChargeVolts = 4.1)
+   static float voltsToPercent(float volts, float fullChargeVolts = 4.1f)
    {
-      const float MIN_VOLTS = 3.3;
-      float percent = 100 * (volts - MIN_VOLTS) / (fullChargeVolts - MIN_VOLTS);
-      percent = constrain(percent, 0, 100);
+      const float MIN_VOLTS = 3.3f;
+      float percent = 100.0f * (volts - MIN_VOLTS) / (fullChargeVolts - MIN_VOLTS);
+      percent = constrain(percent, 0.0f, 100.0f);
       return percent;
    }
 
@@ -83,12 +85,12 @@ public:
 
 	static unsigned long microsSince(unsigned long start)
 	{
-	  return getSpan(start, micros());
+		return getSpan(start, micros());
 	}
 
-	static void reset(float delaySecs=0)
-   {
-      delay(1000 * delaySecs);
+	static void reset(float delaySecs = 0.0f)
+	{
+		delay(static_cast<unsigned long>(1000.0f * delaySecs));
 
       // TODO this is for the ESP32 which complains about the standard resetFunc() method of reset. We'll
       // need other techniques for different boards.

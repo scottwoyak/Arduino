@@ -134,29 +134,29 @@ namespace Influx
 class Field
 {
 private:
-   std::string _name;
-   uint8_t _decimalPlaces;
+	std::string _name;
+	uint8_t _decimalPlaces;
 
 public:
-   Field(std::string name, uint8_t decimalPlaces)
-   {
+	Field(const std::string& name, uint8_t decimalPlaces)
+	{
 	  _name = name;
 	  _decimalPlaces = decimalPlaces;
-   }
+	}
 
    virtual ~Field()
    {
    }
 
-   std::string getName()
-   {
+	const std::string& getName() const
+	{
 	  return _name;
-   }
+	}
 
-   uint8_t getDecimalPlaces()
-   {
+	uint8_t getDecimalPlaces() const
+	{
 	  return _decimalPlaces;
-   }
+	}
 
    virtual void set(float value) = 0;
 
@@ -174,7 +174,7 @@ private:
 	float _value = NAN;
 
 public:
-	ValueField(std::string name, uint8_t decimalPlaces) : Field(name, decimalPlaces)
+	ValueField(const std::string& name, uint8_t decimalPlaces) : Field(name, decimalPlaces)
 	{
 	}
 
@@ -199,27 +199,25 @@ public:
 class TimeAveragedField : public Field
 {
 private:
-	TimedAverage* _stats;
+	TimedAverage _stats;
 
 public:
-	TimeAveragedField(float seconds, std::string name, uint8_t decimalPlaces) : Field(name, decimalPlaces)
+	TimeAveragedField(float seconds, const std::string& name, uint8_t decimalPlaces)
+		: Field(name, decimalPlaces),
+		_stats(1000 * seconds)
 	{
-		_stats = new TimedAverage(1000 * seconds);
 	}
 
-	~TimeAveragedField() override
-	{
-		delete _stats;
-	}
+	~TimeAveragedField() override = default;
 
 	void set(float value) override
 	{
-		_stats->set(value);
+		_stats.set(value);
 	}
 
 	float get() override
 	{
-		return _stats->average();
+		return _stats.average();
 	}
 };
 
@@ -239,19 +237,19 @@ public:
    {
    }
 
-	SimplePoint(const char* measurement, std::vector<std::pair<const char*, const char*>> tags) : _point(measurement)
+	SimplePoint(const char* measurement, const std::vector<std::pair<const char*, const char*>>& tags) : _point(measurement)
 	{
-		for (size_t i = 0; i < tags.size(); i++)
+		for (const auto& tag : tags)
 		{
-			_point.addTag(tags[i].first, tags[i].second);
+			_point.addTag(tag.first, tag.second);
 		}
 	}
 
 	~SimplePoint()
 	{
-		for (size_t i = 0; i < _fields.size(); i++)
+		for (Field* field : _fields)
 		{
-			delete _fields[i];
+			delete field;
 		}
 	}
 
@@ -260,19 +258,19 @@ public:
 	  _point.addTag(name, value);
    }
 
-   Field* addValueField(std::string name, uint8_t decimalPlaces)
-   {
+	Field* addValueField(const std::string& name, uint8_t decimalPlaces)
+	{
 	  Field* field = new ValueField(name, decimalPlaces);
 	  _fields.push_back(field);
 	  return field;
-   }
+	}
 
-   Field* addTimeAveragedField(float seconds, std::string name, uint8_t decimalPlaces)
-   {
+	Field* addTimeAveragedField(float seconds, const std::string& name, uint8_t decimalPlaces)
+	{
 	  Field* field = new TimeAveragedField(seconds, name, decimalPlaces);
 	  _fields.push_back(field);
 	  return field;
-   }
+	}
 
    bool post(InfluxDBClient* client, bool writeToSerial = false)
    {
@@ -280,9 +278,8 @@ public:
 	  _point.clearFields();
 
 	  // populate new values
-	  for (size_t i = 0; i < _fields.size(); i++)
+	  for (Field* field : _fields)
 	  {
-		 Field* field = _fields[i];
 		 _point.addField(field->getName().c_str(), field->get(), field->getDecimalPlaces());
 	  }
 

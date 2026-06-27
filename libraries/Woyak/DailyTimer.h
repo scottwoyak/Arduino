@@ -2,32 +2,37 @@
 
 #include <NTPClient.h>
 
-class DailyTimer {
+class DailyTimer
+{
 private:
    NTPClient* _clock;
    int _lastSavedDay;
 
-   int _getDay() {
-      return this->_clock->getEpochTime() / (24 * 60 * 60);
+   int _getDay() const
+   {
+      return _clock->getEpochTime() / (24 * 60 * 60);
    }
 
 public:
-   DailyTimer(NTPClient* clock) {
-      this->_clock = clock;
+   explicit DailyTimer(NTPClient* clock)
+   {
+      _clock = clock;
    }
 
-   void begin() {
-      this->_lastSavedDay = this->_getDay();
+   void begin()
+   {
+      _lastSavedDay = _getDay();
    }
 
-   bool ready() {
-      int today = this->_getDay();
-      if (today != this->_lastSavedDay) {
-         this->_lastSavedDay = today;
+   bool ready()
+   {
+      int today = _getDay();
+      if (today != _lastSavedDay)
+      {
+         _lastSavedDay = today;
          return true;
       }
-      else {
-         return false;
-      }
+
+      return false;
    }
 };

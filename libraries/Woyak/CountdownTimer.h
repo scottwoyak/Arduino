@@ -1,16 +1,21 @@
+#pragma once
+
 #include "Stopwatch.h"
 
-class CountdownTimer {
+class CountdownTimer
+{
    Stopwatch _sw;
    unsigned long _timerMs;
 
 public:
-   CountdownTimer(unsigned long durationMs) : _sw(StopwatchPrecision::Millis)
+   explicit CountdownTimer(unsigned long durationMs)
+      : _sw(StopwatchPrecision::Millis)
    {
       _timerMs = durationMs;
    }
 
-   CountdownTimer(float durationS) : CountdownTimer((unsigned long)(1000 * durationS))
+   explicit CountdownTimer(float durationS)
+      : CountdownTimer(static_cast<unsigned long>(1000.0f * durationS))
    {
    }
 
@@ -19,24 +24,22 @@ public:
       _sw.reset();
    }
 
-   unsigned long remainingMs()
+   unsigned long remainingMs() const
    {
       if (isExpired())
       {
          return 0;
       }
-      else
-      {
-         return ceil(_timerMs - _sw.elapsedMillis());
-      }
+
+      return static_cast<unsigned long>(ceil(_timerMs - _sw.elapsedMillis()));
    }
 
-   double remainingS()
+   double remainingS() const
    {
       return remainingMs() / 1000.0;
    }
 
-   bool isExpired()
+   bool isExpired() const
    {
       return _sw.elapsedMillis() > _timerMs;
    }

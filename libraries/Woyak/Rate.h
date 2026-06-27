@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Arduino.h>
+#include <cmath>
+
 #include "Stopwatch.h"
 
 /// <summary>
@@ -34,7 +36,7 @@ public:
 
    float get() const
    {
-      if (!isfinite(_elapsedMicros) || _elapsedMicros <= 0)
+      if (!std::isfinite(_elapsedMicros) || _elapsedMicros <= 0)
       {
          return NAN;
       }

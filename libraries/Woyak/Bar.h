@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Color.h"
 #include "Structs.h"
 #include <LovyanGFX.hpp>
 
@@ -27,9 +28,9 @@ public:
       _backgroundColor = backgroundColor;
    }
 
-   virtual ~Bar() {}
+   virtual ~Bar() = default;
 
-   float get()
+   float get() const
    {
       return _value;
    }
@@ -39,7 +40,7 @@ public:
       _value = value;
    }
 
-   Rect16 getRect()
+   Rect16 getRect() const
    {
       return _rect;
    }
@@ -61,7 +62,7 @@ public:
       }
    }
 
-   void reset(float lastValue=NAN)
+   void reset(float lastValue = NAN)
    {
       _lastValue = lastValue;
    }

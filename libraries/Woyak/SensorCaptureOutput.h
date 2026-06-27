@@ -58,7 +58,7 @@ public:
    {
       float range = (isfinite(minValue) && isfinite(maxValue)) ? (maxValue - minValue) : NAN;
 
-      SerialX::print(String(label), 20);
+      SerialX::print(label, 20);
       SerialX::print(average, decimals, 12);
       SerialX::print(stdDev, decimals, 12);
       SerialX::print(minValue, decimals, 12);
@@ -175,13 +175,13 @@ public:
 
          SerialX::print(startValue, decimals, 12);
          SerialX::print(endValue, decimals, 12);
-         SerialX::print((unsigned long)binCount, 10);
+         SerialX::print(binCount, 10);
          Serial.print(' ');
          Serial.println(barText);
       }
 
       SerialX::print("Total Samples", 24);
-      SerialX::println((unsigned long)histogram.count(), 10);
+      SerialX::println(histogram.count(), 10);
       Serial.println();
    }
 
@@ -205,7 +205,7 @@ public:
       default:
          Serial.println(title);
          Serial.print("Unsupported bin count: ");
-         Serial.println((unsigned long)binCount);
+         Serial.println(binCount);
          Serial.println();
          break;
       }

@@ -3,7 +3,8 @@
 #include <Arduino.h>
 #include "ValueStore.h"
 
-class MinMaxValue {
+class MinMaxValue
+{
 private:
    IValueStore* _min;
    IValueStore* _max;
@@ -12,62 +13,81 @@ private:
 public:
    MinMaxValue(IValueStore* value = nullptr, IValueStore* min = nullptr, IValueStore* max = nullptr)
    {
-      if (value == nullptr) {
+      if (value == nullptr)
+      {
          value = new ValueStoreSimple();
       }
-      if (min == nullptr) {
+      if (min == nullptr)
+      {
          min = new ValueStoreSimple();
       }
-      if (max == nullptr) {
+      if (max == nullptr)
+      {
          max = new ValueStoreSimple();
       }
 
-      this->_value = value;
-      this->_min = min;
-      this->_max = max;
+      _value = value;
+      _min = min;
+      _max = max;
    }
 
-   virtual ~MinMaxValue() {
-      delete this->_value;
-      delete this->_min;
-      delete this->_max;
+   virtual ~MinMaxValue()
+   {
+      delete _value;
+      delete _min;
+      delete _max;
    }
 
-   void resetMinMax() {
+   void resetMinMax()
+   {
       // reset by using the current value as the new min/max
-      this->_min->set(this->_value->get());
-      this->_max->set(this->_value->get());
+      float value = _value->get();
+      _min->set(value);
+      _max->set(value);
    }
 
-   void setValue(float value) {
+   void setValue(float value)
+   {
       // store the value
-      this->_value->set(value);
+      _value->set(value);
 
       // get the value - store mechanism may manipulate it, e.g. average of last 5 values
-      value = this->_value->get();
+      value = _value->get();
 
       // update min/max values
-      if (isnan(this->_min->get())) {
-         this->_min->set(value);
+      float minValue = _min->get();
+      if (isnan(minValue))
+      {
+         _min->set(value);
       }
-      else {
-         this->_min->set(min(value, this->_min->get()));
+      else
+      {
+         _min->set(min(value, minValue));
       }
-      if (isnan(this->_max->get())) {
-         this->_max->set(value);
+
+      float maxValue = _max->get();
+      if (isnan(maxValue))
+      {
+         _max->set(value);
       }
-      else {
-         this->_max->set(max(value, this->_max->get()));
+      else
+      {
+         _max->set(max(value, maxValue));
       }
    }
 
-   float getMin() {
-      return this->_min->get();
+   float getMin()
+   {
+      return _min->get();
    }
-   float getMax() {
-      return this->_max->get();
+
+   float getMax()
+   {
+      return _max->get();
    }
-   float getValue() {
-      return this->_value->get();
+
+   float getValue()
+   {
+      return _value->get();
    }
 };

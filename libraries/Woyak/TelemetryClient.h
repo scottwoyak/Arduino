@@ -1,18 +1,18 @@
 #pragma once
 
-
+#include <functional>
+#include <string>
 
 #include <WebSocketsClient.h>
-#include "Util.h"
 
 WebSocketsClient webSocket;
 
-typedef std::function<void()> TelemetryOnConnectedFunc;
-typedef std::function<void()> TelemetryOnDisconnectedFunc;
-typedef std::function<void(std::string)> TelemetryOnReceiveTextFunc;
-typedef std::function<void(std::string)> TelemetryOnSendTextFunc;
-typedef std::function<void(std::string)> TelemetryOnErrorFunc;
-typedef std::function<void()> TelemetryOnStartedFunc;
+using TelemetryOnConnectedFunc = std::function<void()>;
+using TelemetryOnDisconnectedFunc = std::function<void()>;
+using TelemetryOnReceiveTextFunc = std::function<void(const std::string&)>;
+using TelemetryOnSendTextFunc = std::function<void(const std::string&)>;
+using TelemetryOnErrorFunc = std::function<void(const std::string&)>;
+using TelemetryOnStartedFunc = std::function<void()>;
 
 //-------------------------------------------------------------------------------------------------
 class TelemetryClient
@@ -42,11 +42,11 @@ private:
 protected:
    virtual void _onDisconnected() = 0;
    virtual void _onConnected() = 0;
-   virtual void _onText(std::string) {};
+   virtual void _onText(const std::string&) {};
    virtual void _onLoop() {};
    virtual void _onStarted() {};
 
-   void _sendText(std::string text)
+   void _sendText(const std::string& text)
    {
       webSocket.sendTXT(text.c_str());
       if (_onSendTextFunc)
@@ -140,38 +140,38 @@ protected:
    }
 
 public:
-   TelemetryClient(std::string topic)
+   explicit TelemetryClient(const std::string& topic)
    {
       _instance = this;
       _topic = topic;
    }
 
-   std::string getTopic()
+   const std::string& getTopic() const
    {
       return _topic;
    }
 
-   std::string getUrl()
+   std::string getUrl() const
    {
       return webSocket.getUrl().c_str();
    }
 
-   bool isStarted()
+   bool isStarted() const
    {
       return _started;
    }
 
-   bool isConnected()
+   bool isConnected() const
    {
       return webSocket.isConnected();
    }
 
-   std::string getServerVersion()
+   const std::string& getServerVersion() const
    {
       return _serverVersion;
    }
 
-   std::string getStatus()
+   const std::string& getStatus() const
    {
       return _status;
    }
@@ -231,12 +231,13 @@ private:
    {
       // initialize
       std::string cmd = "Publish " + getTopic();
-      _sendText(cmd.c_str());
+      _sendText(cmd);
    }
 
-   virtual void _onText(std::string payload)
+   virtual void _onText(const std::string& payload)
    {
       // the 'ok' response from us sending a value
+      (void)payload;
       _ready = true;
    }
 
@@ -261,7 +262,7 @@ private:
    }
 
 public:
-   TelemetryPublisher(std::string topic, uint8_t decimalPlaces) : TelemetryClient(topic)
+   TelemetryPublisher(const std::string& topic, uint8_t decimalPlaces) : TelemetryClient(topic)
    {
       _decimalPlaces = decimalPlaces;
    }
@@ -293,7 +294,7 @@ private:
       _sendText("get");
    }
 
-   virtual void _onText(std::string payload)
+   virtual void _onText(const std::string& payload)
    {
       try
       {
@@ -309,7 +310,7 @@ private:
    }
 
 public:
-   TelemetrySubscriber(std::string topic) : TelemetryClient(topic)
+   TelemetrySubscriber(const std::string& topic) : TelemetryClient(topic)
    {
    }
 

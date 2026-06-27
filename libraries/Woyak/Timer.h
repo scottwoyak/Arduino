@@ -43,7 +43,8 @@ public:
 		unsigned long now = TimeFunc();
 		unsigned long span = Util::getSpan(_startTime, now);
 
-		if (span >= _durationTime) {
+		if (span >= _durationTime)
+		{
 			unsigned long intervals = span / _durationTime;
 			_startTime += intervals * _durationTime;
 			return true;
@@ -118,7 +119,7 @@ public:
 	/// </summary>
 	/// <param name="durationSecs">Duration in seconds (float)</param>
 	explicit TimerSecs(float durationSecs)
-		: TimerBase((unsigned long)(durationSecs * 1000.0f)) {}
+		: TimerBase(static_cast<unsigned long>(durationSecs * 1000.0f)) {}
 
 	/// <summary>
 	/// Returns the remaining time until the next interval elapses.

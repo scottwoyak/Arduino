@@ -1,9 +1,13 @@
 #pragma once
 
+#include <Arduino.h>
+
 //-------------------------------------------------------------------------------------------------
 class ITempSensor
 {
 public:
+   virtual ~ITempSensor() = default;
+
    virtual bool begin() = 0;
    virtual const char* id() = 0;
    virtual const char* type() = 0;

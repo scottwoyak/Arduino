@@ -66,9 +66,12 @@ public:
 
    bool begin()
    {
-      if (_index < MAX_BUTTONS)
+      if (_index >= MAX_BUTTONS)
       {
-         pinMode(_pin, INPUT_PULLUP);
+         return false;
+      }
+
+      pinMode(_pin, INPUT_PULLUP);
 
          switch (_index)
          {
@@ -143,15 +146,9 @@ public:
             break;
          }
 
-
-         _buttons[_index++] = this;
-         return true;
-      }
-      else
-      {
-         return false;
-      }
-   }
+            _buttons[_index++] = this;
+            return true;
+         }
 
    uint8_t getPin() const
    {

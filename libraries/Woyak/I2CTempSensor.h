@@ -13,26 +13,26 @@ protected:
    String _id = "----";
 
 public:
-   I2CTempSensor(const char* type, uint8_t address)
+   explicit I2CTempSensor(const char* type, uint8_t address)
    {
       _type = type;
       _address = address;
       _info = _type + " 0x" + String(_address, HEX);
    }
 
-   virtual ~I2CTempSensor() {}
+   ~I2CTempSensor() override = default;
 
-   virtual const char* id() { return _id.c_str(); }
-   virtual const char* type() { return _type.c_str(); }
-   virtual uint8_t address() { return _address; }
+   const char* id() override { return _id.c_str(); }
+   const char* type() override { return _type.c_str(); }
+   uint8_t address() override { return _address; }
 
-   virtual bool exists() { return true; }
+   bool exists() override { return true; }
    virtual float readTemperatureF() = 0;
    virtual float readTemperatureC() = 0;
    virtual float readHumidity() = 0;
    virtual bool readsBoth() = 0;
 
-   int8_t getAddress() { return _address; }
+   int8_t getAddress() const { return _address; }
 
    static int8_t detect(int8_t baseAddress, int8_t numAddresses = 1)
    {

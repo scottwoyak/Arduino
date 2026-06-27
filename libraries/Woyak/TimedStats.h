@@ -19,8 +19,8 @@ private:
    Stats** _buckets = nullptr;
    uint _numBuckets = 0;
    uint _currentBucket = 0;
-   ulong _durationMs = 1;
-   ulong _bucketMs = 1;
+   unsigned long _durationMs = 1;
+   unsigned long _bucketMs = 1;
    unsigned long _startTicks = 0;
    float _elapsedTicks = 0;
 
@@ -150,13 +150,13 @@ public:
    /// </summary>
    /// <param name="durationMs">Total duration in milliseconds.</param>
    /// <param name="nBuckets">Number of time buckets (plus one blending bucket).</param>
-   TimedStatsBase(ulong durationMs, uint nBuckets = 20)
+   TimedStatsBase(unsigned long durationMs, uint nBuckets = 20)
    {
       uint normalizedBuckets = std::max(nBuckets, static_cast<uint>(1));
 
       _numBuckets = normalizedBuckets + 1;
-      _durationMs = std::max(durationMs, static_cast<ulong>(1));
-      _bucketMs = std::max(static_cast<ulong>(1), static_cast<ulong>(static_cast<float>(_durationMs) / normalizedBuckets));
+      _durationMs = std::max(durationMs, static_cast<unsigned long>(1));
+      _bucketMs = std::max(static_cast<unsigned long>(1), static_cast<unsigned long>(static_cast<float>(_durationMs) / normalizedBuckets));
 
       _buckets = new Stats*[_numBuckets];
       for (uint i = 0; i < _numBuckets; i++)
@@ -355,14 +355,14 @@ public:
             continue;
          }
 
-         float fraction = 1;
+         float fraction = 1.0f;
          if (i == _currentBucket)
          {
             fraction = elapsed / _bucketMs;
          }
          else if (i == firstBucket)
          {
-            fraction = 1 - (elapsed / _bucketMs);
+            fraction = 1.0f - (elapsed / _bucketMs);
          }
 
          if (fraction < 0.5f)
@@ -447,14 +447,14 @@ public:
                continue;
             }
 
-            float fraction = 1;
+            float fraction = 1.0f;
             if (i == _currentBucket)
             {
                fraction = elapsed / _bucketMs;
             }
             else if (i == firstBucket)
             {
-               fraction = 1 - (elapsed / _bucketMs);
+               fraction = 1.0f - (elapsed / _bucketMs);
             }
 
             if (fraction < 0.5f)
@@ -524,10 +524,10 @@ public:
    /// Sets the tracked time duration and clears existing bucket data.
    /// </summary>
    /// <param name="durationMs">New total duration in milliseconds.</param>
-   void setDurationMs(ulong durationMs)
+   void setDurationMs(unsigned long durationMs)
    {
-      _durationMs = std::max(durationMs, static_cast<ulong>(1));
-      _bucketMs = std::max(static_cast<ulong>(1), static_cast<ulong>(static_cast<float>(_durationMs) / (_numBuckets - 1)));
+      _durationMs = std::max(durationMs, static_cast<unsigned long>(1));
+      _bucketMs = std::max(static_cast<unsigned long>(1), static_cast<unsigned long>(static_cast<float>(_durationMs) / (_numBuckets - 1)));
       reset();
    }
 
@@ -535,7 +535,7 @@ public:
    /// Gets the configured duration in milliseconds.
    /// </summary>
    /// <returns>Total tracked duration in milliseconds.</returns>
-   ulong durationMs() const
+   unsigned long durationMs() const
    {
       return _durationMs;
    }

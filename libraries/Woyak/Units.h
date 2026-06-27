@@ -2,33 +2,33 @@
 
 namespace Units
 {
-   float C2F(float celsius)
+   inline float C2F(float celsius)
    {
-      return 32 + (9.0 / 5.0) * celsius;
+      return 32.0f + (9.0f / 5.0f) * celsius;
    }
 
-   float F2C(float fahrenheit)
+   inline float F2C(float fahrenheit)
    {
-      return (fahrenheit - 32) * (5.0 / 9.0);
+      return (fahrenheit - 32.0f) * (5.0f / 9.0f);
    }
 
-   float M2FT(float meters)
+   inline float M2FT(float meters)
    {
-      return meters * 3.28084;
+      return meters * 3.28084f;
    }
 
-   float FT2M(float feet)
+   inline float FT2M(float feet)
    {
-      return feet / 3.28084;
+      return feet / 3.28084f;
    }
 
-   float M2IN(float meters)
+   inline float M2IN(float meters)
    {
-      return meters * 39.3701;
+      return meters * 39.3701f;
    }
 
-   float IN2M(float inches)
+   inline float IN2M(float inches)
    {
-      return inches / 39.3701;
+      return inches / 39.3701f;
    }
 };

@@ -84,7 +84,7 @@ public:
    /// <param name="numSensors">Number of sensors (1-8).</param>
    /// <param name="durationMs">Duration window in milliseconds for collecting measurements.</param>
    /// <param name="mode">Baseline computation mode (default: AVERAGE).</param>
-    CalibratorBase(uint8_t numSensors, ulong durationMs, BaselineMode mode = BaselineMode::AVERAGE)
+   CalibratorBase(uint8_t numSensors, unsigned long durationMs, BaselineMode mode = BaselineMode::AVERAGE)
       : _numSensors(std::min(numSensors, MAX_SENSORS)), _baselineMode(mode)
    {
       _measurements = new TimedStatsBase<TimeFunc>*[_numSensors];
@@ -191,26 +191,30 @@ public:
    /// </summary>
    /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
    /// <returns>Duration in milliseconds.</returns>
-   ulong getDurationMs(uint8_t sensorIndex) const
+   unsigned long getDurationMs(uint8_t sensorIndex) const
    {
       if (sensorIndex >= _numSensors)
+      {
          return 0;
+      }
 
       return _measurements[sensorIndex]->durationMs();
    }
 
-       /// <summary>
-       /// Gets the underlying timed statistics object for a sensor.
-       /// </summary>
-       /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
-       /// <returns>TimedStats object for the sensor, or nullptr if index is invalid.</returns>
-       TimedStatsBase<TimeFunc>* getStats(uint8_t sensorIndex) const
-       {
-          if (sensorIndex >= _numSensors)
-             return nullptr;
+   /// <summary>
+   /// Gets the underlying timed statistics object for a sensor.
+   /// </summary>
+   /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
+   /// <returns>TimedStats object for the sensor, or nullptr if index is invalid.</returns>
+   TimedStatsBase<TimeFunc>* getStats(uint8_t sensorIndex) const
+   {
+      if (sensorIndex >= _numSensors)
+      {
+         return nullptr;
+      }
 
-          return _measurements[sensorIndex];
-       }
-   };
+      return _measurements[sensorIndex];
+   }
+};
 
-   using TempCalibrator = CalibratorBase<millis>;
+using TempCalibrator = CalibratorBase<millis>;

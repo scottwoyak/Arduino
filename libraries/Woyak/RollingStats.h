@@ -85,7 +85,7 @@ public:
    /// </summary>
    /// <param name="value">Value to append.</param>
    /// <returns>True when value is added; false when size is zero.</returns>
-   boolean set(float value)
+   bool set(float value)
    {
       if (!_average.set(value))
       {

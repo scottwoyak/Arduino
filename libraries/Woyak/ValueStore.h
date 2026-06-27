@@ -2,18 +2,35 @@
 
 #include <Arduino.h>
 
-class IValueStore {
+/// <summary>
+/// Defines a simple floating-point value store contract.
+/// </summary>
+class IValueStore
+{
 public:
+   virtual ~IValueStore() = default;
+
    virtual float get() = 0;
-   virtual boolean set(float value) = 0;
-   virtual ~IValueStore() {};
+   virtual bool set(float value) = 0;
 };
 
-class ValueStoreSimple : public IValueStore {
+/// <summary>
+/// In-memory implementation of <see cref="IValueStore"/>.
+/// </summary>
+class ValueStoreSimple : public IValueStore
+{
 private:
    float _value = NAN;
 
 public:
-   virtual float get() { return this->_value; }
-   virtual boolean set(float value) { this->_value = value; return true; }
+   float get() override
+   {
+      return _value;
+   }
+
+   bool set(float value) override
+   {
+      _value = value;
+      return true;
+   }
 };

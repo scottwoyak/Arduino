@@ -284,7 +284,7 @@ public:
 
       for (size_t i = 0; i < _valueIndex; i++)
       {
-         SerialX::print((unsigned long)i, 8);
+         SerialX::print(i, 8);
          SerialX::println(_values[i], decimals, 12);
 
          if ((lineDelayMs > 0) && (i + 1 < _valueIndex))
@@ -320,7 +320,7 @@ public:
 
       for (size_t i = 0; i < firstCount; i++)
       {
-         SerialX::print((unsigned long)i, 8);
+         SerialX::print(i, 8);
          SerialX::println(_values[i], decimals, 12);
       }
 
@@ -331,7 +331,7 @@ public:
 
       for (size_t i = tailStart; i < _valueIndex; i++)
       {
-         SerialX::print((unsigned long)i, 8);
+         SerialX::print(i, 8);
          SerialX::println(_values[i], decimals, 12);
       }
 
