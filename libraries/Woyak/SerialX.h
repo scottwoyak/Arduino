@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <limits.h>
 
 namespace SerialX
 {
@@ -66,6 +67,22 @@ namespace SerialX
 	}
 
 	/// <summary>
+	/// Prints a C-string with optional left space padding.
+	/// </summary>
+	inline size_t print(const char* text, size_t width = 0)
+	{
+		return print(String(text), width);
+	}
+
+	/// <summary>
+	/// Prints a C-string line with optional left space padding.
+	/// </summary>
+	inline size_t println(const char* text, size_t width = 0)
+	{
+		return println(String(text), width);
+	}
+
+	/// <summary>
 	/// Prints a signed integer with optional left space padding.
 	/// </summary>
 	inline size_t print(long value, size_t width = 0)
@@ -79,6 +96,14 @@ namespace SerialX
 	inline size_t print(long value, uint8_t base, size_t width)
 	{
 		return print(String(value, base), width);
+	}
+
+	/// <summary>
+	/// Prints an int with optional left space padding.
+	/// </summary>
+	inline size_t print(int value, size_t width = 0)
+	{
+		return print((long)value, width);
 	}
 
 	/// <summary>
@@ -98,6 +123,24 @@ namespace SerialX
 	}
 
 	/// <summary>
+	/// Prints a size_t value with optional left space padding.
+	/// </summary>
+	inline size_t print(size_t value, size_t width = 0)
+	{
+		return print((unsigned long)value, width);
+	}
+
+#if UINT_MAX != SIZE_MAX
+	/// <summary>
+	/// Prints an unsigned int with optional left space padding.
+	/// </summary>
+	inline size_t print(unsigned int value, size_t width = 0)
+	{
+		return print((unsigned long)value, width);
+	}
+#endif
+
+	/// <summary>
 	/// Prints a floating-point number with optional left space padding.
 	/// </summary>
 	inline size_t print(float value, size_t width = 0)
@@ -109,6 +152,22 @@ namespace SerialX
 	/// Prints a floating-point number with explicit decimal places and optional left space padding.
 	/// </summary>
 	inline size_t print(float value, uint8_t decimals, size_t width)
+	{
+		return print(String(value, (unsigned int)decimals), width);
+	}
+
+	/// <summary>
+	/// Prints a double-precision number with optional left space padding.
+	/// </summary>
+	inline size_t print(double value, size_t width = 0)
+	{
+		return print(String(value), width);
+	}
+
+	/// <summary>
+	/// Prints a double-precision number with explicit decimal places and optional left space padding.
+	/// </summary>
+	inline size_t print(double value, uint8_t decimals, size_t width)
 	{
 		return print(String(value, (unsigned int)decimals), width);
 	}
@@ -130,6 +189,14 @@ namespace SerialX
 	}
 
 	/// <summary>
+	/// Prints an int line with optional left space padding.
+	/// </summary>
+	inline size_t println(int value, size_t width = 0)
+	{
+		return println((long)value, width);
+	}
+
+	/// <summary>
 	/// Prints an unsigned integer line with optional left space padding.
 	/// </summary>
 	inline size_t println(unsigned long value, size_t width = 0)
@@ -146,6 +213,24 @@ namespace SerialX
 	}
 
 	/// <summary>
+	/// Prints a size_t line with optional left space padding.
+	/// </summary>
+	inline size_t println(size_t value, size_t width = 0)
+	{
+		return println((unsigned long)value, width);
+	}
+
+#if UINT_MAX != SIZE_MAX
+	/// <summary>
+	/// Prints an unsigned int line with optional left space padding.
+	/// </summary>
+	inline size_t println(unsigned int value, size_t width = 0)
+	{
+		return println((unsigned long)value, width);
+	}
+#endif
+
+	/// <summary>
 	/// Prints a floating-point number line with optional left space padding.
 	/// </summary>
 	inline size_t println(float value, size_t width = 0)
@@ -157,6 +242,22 @@ namespace SerialX
 	/// Prints a floating-point number line with explicit decimal places and optional left space padding.
 	/// </summary>
 	inline size_t println(float value, uint8_t decimals, size_t width)
+	{
+		return println(String(value, (unsigned int)decimals), width);
+	}
+
+	/// <summary>
+	/// Prints a double-precision line with optional left space padding.
+	/// </summary>
+	inline size_t println(double value, size_t width = 0)
+	{
+		return println(String(value), width);
+	}
+
+	/// <summary>
+	/// Prints a double-precision line with explicit decimal places and optional left space padding.
+	/// </summary>
+	inline size_t println(double value, uint8_t decimals, size_t width)
 	{
 		return println(String(value, (unsigned int)decimals), width);
 	}
