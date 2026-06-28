@@ -10,9 +10,12 @@
 #include "RollingStats.h"
 #include <Wire.h>
 
-// 
-// This sketch calibrates and displays temperature readings on an Arduino ESP32 Feather
+//-------------------------------------------------------------------------------------------------
 //
+// Calibrates and displays temperature readings for 8 multiplexed sensors, then uploads
+// raw/corrected values and calibration deltas to InfluxDB.
+//
+//-------------------------------------------------------------------------------------------------
 Feather feather;
 NeoPixelStatus status(&feather.neoPixel);
 constexpr uint8_t NUM_SENSORS = 8;
@@ -45,17 +48,21 @@ constexpr auto CORRECTION_AVG_S = 60;
 
 // How often we send data to Influx
 constexpr auto INFLUX_INTERVAL_S = 10;
+constexpr auto PREFS_INTERVAL_S = 60;
+constexpr auto SAVED_INFO_WAIT_S = 60;
+constexpr auto WIFI_RESET_DELAY_S = 10;
 
 // Calibrator for temperature corrections
 TempCalibrator calibrator(NUM_SENSORS, 1000 * CORRECTION_AVG_S, TempCalibrator::BaselineMode::FIRST_SENSOR);
 
 Format tempFormat("###.## F");
-Format correctionFormat("+#.##");
+Format correctionFormat("+#.###");
 
 TimerSecs influxTrigger(INFLUX_INTERVAL_S);
-TimerSecs prefsTrigger(60);
+TimerSecs prefsTrigger(PREFS_INTERVAL_S);
 
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+Influx influx(WIFI_SSID, WIFI_PASSWORD, &client, &status);
 
 Point points[] =
 {
@@ -138,7 +145,7 @@ void displaySavedInfo()
       }
    }
 
-   TimerSecs waitTimer(60);
+   TimerSecs waitTimer(SAVED_INFO_WAIT_S);
    while (feather.buttonA.wasPressed() == false && !waitTimer.ready())
    {
       delay(1);
@@ -188,8 +195,8 @@ void waitForButtonPress()
 
 void setup()
 {
-   Wire.begin();
    SerialX::begin();
+   Wire.begin();
 
    feather.begin();
    feather.setRotation(DisplayRotation::PORTRAIT);
@@ -236,7 +243,10 @@ void setup()
    feather.moveCursorY(10);
 
    feather.setTextSize(2);
-   Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client, &status);
+   if (!influx.begin(&feather))
+   {
+      Util::reset(WIFI_RESET_DELAY_S);
+   }
 
    delay(1000);
 
@@ -322,7 +332,6 @@ void loop()
       }
    }
 
-
    // ------------------------------------------- save to flash
    if (prefsTrigger.ready())
    {
@@ -339,50 +348,64 @@ void loop()
    // ------------------------------------------- send to INFLUX
    if (influxTrigger.ready())
    {
-      digitalWrite(BUILTIN_LED, HIGH);
-
-      Serial.print(count);
-      Serial.println(" values collected");
-      count = 0;
-
-      float baseline = calibrator.getBaseline();
-
-      for (int i = 0; i < NUM_SENSORS; i++)
+      if (influx.ensureWiFiConnected())
       {
-         float temperature = currentTemps[i].average();
-         if (!sensors[i].exists() || std::isnan(temperature))
+         digitalWrite(BUILTIN_LED, HIGH);
+
+         Serial.print(count);
+         Serial.println(" values collected");
+         count = 0;
+
+         bool writeFailed = false;
+         float baseline = calibrator.getBaseline();
+
+         for (int i = 0; i < NUM_SENSORS; i++)
          {
-            continue;
+            float temperature = currentTemps[i].average();
+            if (!sensors[i].exists() || std::isnan(temperature))
+            {
+               continue;
+            }
+
+            float tDelta = calibrator.getCorrection(i);
+            float tCorrected = temperature + tDelta;
+            float tCorrectedDelta = std::isnan(baseline) ? NAN : (tCorrected - baseline);
+
+            points[i].clearFields();
+            // the current readings
+            points[i].addField("temperature", temperature, 3);
+
+            // the deltas from the baseline
+            points[i].addField("tDelta", tDelta, 4);
+
+            // the current readings using the correction factors. Once these
+            // stop changing, the correction factors have converged
+            points[i].addField("tCorrected", tCorrected, 3);
+
+            // corrected delta from baseline
+            points[i].addField("tCorrectedDelta", tCorrectedDelta, 4);
+
+            if (!client.writePoint(points[i]))
+            {
+               writeFailed = true;
+               break;
+            }
+            //Serial.println(points[i].toLineProtocol());
          }
 
-         float tDelta = calibrator.getCorrection(i);
-         float tCorrected = temperature + tDelta;
-         float tCorrectedDelta = std::isnan(baseline) ? NAN : (tCorrected - baseline);
+         if (!writeFailed && !client.isBufferEmpty())
+         {
+            writeFailed = !client.flushBuffer();
+         }
 
-         points[i].clearFields();
-         // the current readings
-         points[i].addField("temperature", temperature, 3);
-
-         // the deltas from the baseline
-         points[i].addField("tDelta", tDelta, 4);
-
-         // the current readings using the correction factors. Once these
-         // stop changing, the correction factors have converged
-         points[i].addField("tCorrected", tCorrected, 3);
-
-         // corrected delta from baseline
-         points[i].addField("tCorrectedDelta", tCorrectedDelta, 4);
-
-         if (!client.writePoint(points[i]))
+         if (writeFailed)
          {
             Serial.println("InfluxDB write failed: ");
             Serial.println(client.getLastErrorMessage());
          }
-         //Serial.println(points[i].toLineProtocol());
-      }
-      client.flushBuffer();
 
-      digitalWrite(BUILTIN_LED, LOW);
+         digitalWrite(BUILTIN_LED, LOW);
+      }
    }
 }
 

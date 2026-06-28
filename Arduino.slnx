@@ -85,6 +85,7 @@
     <File Path="libraries/Woyak/ValueStore.h" />
     <File Path="libraries/Woyak/ValueStoreFram.h" />
     <File Path="libraries/Woyak/WiFiSettings.h" />
+    <File Path="libraries/Woyak/WiFiX.h" />
     <File Path="libraries/Woyak/WindMeter.h" />
   </Folder>
   <Folder Name="/Libraries/LGX/">

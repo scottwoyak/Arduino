@@ -5,18 +5,16 @@
 #include "SerialX.h"
 #include "Influx.h"
 
-
 #include "WiFiSettings.h"
-
-constexpr auto version = "v0.91";
-
 
 Feather_ESP32_S3 feather;
 TempSensor sensor;
 Adafruit_MAX17048 battery;
 
 constexpr auto INFLUX_INTERVAL_S = 60;
+constexpr auto WATCHDOG_TIMEOUT_MS = 60 * 1000;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
 SimplePoint airPoint("Air"); // Influx data point
 SimplePoint powerPoint("Power"); // Influx data point
 Field* tempField = airPoint.addValueField("temperature", 2);
@@ -36,8 +34,8 @@ void goToSleep()
 
 void setup()
 {
-   Wire.begin();
    SerialX::begin();
+   Wire.begin();
    Serial.println("Initializing... ");
 
    feather.begin();
@@ -72,12 +70,15 @@ void setup()
       goToSleep();
    }
 
-   Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client);
+   if (!influx.begin(&feather))
+   {
+      goToSleep();
+   }
 
    airPoint.addTag("location", "Test");
    powerPoint.addTag("location", "Test");
 
-   Watchdog.enable(60 * 1000);
+   Watchdog.enable(WATCHDOG_TIMEOUT_MS);
 }
 
 // Add the main program code into the continuous loop() function
@@ -90,9 +91,14 @@ void loop()
    humField->set(sensor.readHumidity());
    voltsField->set(battery.cellVoltage());
 
+   if (!influx.ensureWiFiConnected())
+   {
+      goToSleep();
+   }
+
    // Write points
    Serial.println("Writing data points...");
-   if (airPoint.post(&client, true)==false)
+   if (!airPoint.post(&client, true))
    {
       Serial.println("InfluxDB write failed: ");
       Serial.println(client.getLastErrorMessage());

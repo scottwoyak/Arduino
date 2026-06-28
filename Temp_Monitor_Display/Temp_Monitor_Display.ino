@@ -19,6 +19,7 @@ constexpr auto INFLUX_MEASUREMENT = "Air";
 constexpr auto INFLUX_INTERVAL_S = 15;
 constexpr auto SENSOR_INTERVAL_MS = 250;
 constexpr auto WATCHDOG_INTERVAL_MS = 60 * 1000;
+constexpr auto WIFI_RESET_DELAY_S = 10;
 constexpr auto MAX_CHARS = 8;
 constexpr auto SPACING = 8;
 constexpr auto SENSOR_POST_FAILURE_SLEEP_S = 60;
@@ -34,6 +35,7 @@ Feather_ESP32_S3 feather;
 NeoPixelStatus status(&feather.neoPixel);
 TempSensor sensor;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+Influx influx(WIFI_SSID, WIFI_PASSWORD, &client, &status);
 SimplePoint point(INFLUX_MEASUREMENT);
 Field* tempField = point.addTimeAveragedField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
 Field* humField = point.addTimeAveragedField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
@@ -42,8 +44,8 @@ Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
 void setup()
 {
-   Wire.begin();
    SerialX::begin();
+   Wire.begin();
 
    feather.begin();
    feather.display.setTextWrap(false);
@@ -74,10 +76,13 @@ void setup()
    else
    {
       feather.printR("FAILED", Color::RED);
-      while (1);
+      Util::reset(WIFI_RESET_DELAY_S);
    }
 
-   Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client, &status);
+   if (!influx.begin(&feather))
+   {
+      Util::reset(WIFI_RESET_DELAY_S);
+   }
 
    delay(1000);
 
@@ -99,9 +104,10 @@ void loop()
       humField->set(sensor.readHumidity());
    }
 
-   if (WiFi.status() != WL_CONNECTED)
+   if (!influx.ensureWiFiConnected())
    {
-      feather.println("Wifi connection lost");
+      feather.println("WiFi connection lost");
+      Util::reset(WIFI_RESET_DELAY_S);
    }
 
    feather.setCursor(0, 0);
@@ -110,8 +116,8 @@ void loop()
    feather.printR(sensor.type(), Color::GRAY);
    feather.println();
 
-   float temp = tempField->average();
-   float hum = humField->average();
+   float temp = tempField->get();
+   float hum = humField->get();
    uint8_t x = (feather.display.width() - MAX_CHARS * feather.charW()) / 2;
 
    feather.setTextSize(TEXT_SIZE_LARGE);

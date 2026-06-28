@@ -9,192 +9,187 @@
 #include "Status.h"
 #include "TimedAverage.h"
 #include "Timer.h"
+#include "WiFiX.h"
 
 constexpr auto TZ_INFO = "UTC-5";
 
 /// <summary>
-/// InfluxDB integration and WiFi management utilities.
+/// InfluxDB integration service that manages WiFi connectivity and Influx initialization.
 /// </summary>
-namespace Influx
+class Influx
 {
-   /// <summary>Reconnects to WiFi with provided credentials and optional status updates.</summary>
-   /// <param name="wifiSSID">WiFi network SSID</param>
-   /// <param name="wifiPassword">WiFi network password</param>
-   /// <param name="status">Optional status indicator to update during connection attempts</param>
-   /// <returns>True if connected to WiFi, false if connection failed or timed out</returns>
-   bool reconnectWifi(const char* wifiSSID, const char* wifiPassword, IStatus* status)
-   {
-      if (WiFi.status() == WL_CONNECTED)
-      {
-         return true;
-      }
+private:
+	const char* _wifiSSID;
+	const char* _wifiPassword;
+	InfluxDBClient* _client;
+	IStatus* _status;
 
-      if (status)
-      {
-         status->setStatus(Status::WIFI_CONNECTING);
-      }
-
-      WiFi.mode(WIFI_STA);
-      WiFi.reconnect();
-      WiFi.begin(wifiSSID, wifiPassword);
-
-      TimerSecs reconnectTimer(10);
-      while (WiFi.status() != WL_CONNECTED && !reconnectTimer.ready())
-      {
-         Serial.print(".");
-         delay(100);
-      }
-
-		return WiFi.status() == WL_CONNECTED;
+public:
+	/// <summary>
+	/// Creates an Influx service with credentials, client, and optional status indicator.
+	/// </summary>
+	/// <param name="wifiSSID">WiFi network SSID</param>
+	/// <param name="wifiPassword">WiFi network password</param>
+	/// <param name="client">InfluxDB client instance</param>
+	/// <param name="status">Optional status indicator instance</param>
+	Influx(const char* wifiSSID, const char* wifiPassword, InfluxDBClient* client, IStatus* status = nullptr)
+	{
+		_wifiSSID = wifiSSID;
+		_wifiPassword = wifiPassword;
+		_client = client;
+		_status = status;
 	}
 
-	/// <summary>Ensures device is connected to WiFi, reconnecting if necessary.</summary>
-	/// <param name="status">Optional status indicator to update with WiFi connection state</param>
-	/// <returns>True if connected to WiFi, false otherwise</returns>
-	bool ensureWifiConnected(IStatus* status = nullptr)
+	/// <summary>
+	/// Attempts a WiFi connection using configured credentials.
+	/// </summary>
+	/// <returns>True when connected, otherwise false</returns>
+	bool connectWiFi()
 	{
 		if (WiFi.status() == WL_CONNECTED)
 		{
 			return true;
 		}
 
-		if (status)
+		if (_status)
 		{
-			status->setStatus(Status::WIFI_CONNECTING);
+			_status->setStatus(Status::WIFI_CONNECTING);
 		}
 
-		WiFi.mode(WIFI_STA);
-		WiFi.reconnect();
-
-		TimerSecs reconnectTimer(10);
-		TimerMillis statusUpdateTimer(200); // Update status every 200ms for visual feedback during reconnect
-		while (WiFi.status() != WL_CONNECTED && !reconnectTimer.ready())
+		bool isConnected = WiFiX::connect(_wifiSSID, _wifiPassword, 10000);
+		if (_status && isConnected)
 		{
-			Serial.print(".");
+			_status->setStatus(Status::READY);
+		}
 
-			// Provide visual feedback by toggling status during reconnect attempts
-			if (status && statusUpdateTimer.ready())
+		return isConnected;
+	}
+
+	/// <summary>
+	/// Ensures WiFi is connected, reconnecting when needed.
+	/// </summary>
+	/// <returns>True when connected, otherwise false</returns>
+	bool ensureWiFiConnected()
+	{
+		if (WiFi.status() == WL_CONNECTED)
+		{
+			return true;
+		}
+
+		return connectWiFi();
+	}
+
+	/// <summary>
+	/// Initializes WiFi/time/Influx connection with display progress output.
+	/// </summary>
+	/// <param name="arduino">Display-capable Arduino wrapper used for progress UI</param>
+	/// <returns>True when initialization succeeds</returns>
+	bool begin(ArduinoWithDisplay* arduino)
+	{
+		arduino->print("WiFi... ", Color::LABEL);
+		if (!connectWiFi())
+		{
+			arduino->printlnR("FAILED", Color::RED);
+			arduino->println("WiFi connect failed", Color::RED);
+			return false;
+		}
+		arduino->printlnR("ok", Color::VALUE);
+
+		if (_status)
+		{
+			_status->setStatus(Status::WEB_CONNECTING);
+		}
+
+		bool oldEcho = arduino->echoToSerial;
+		arduino->echoToSerial = false;
+		arduino->print("Syncing Time... ", Color::LABEL);
+		timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
+		arduino->printlnR("ok", Color::VALUE);
+		arduino->echoToSerial = oldEcho;
+
+		arduino->print("Influx... ", Color::LABEL);
+		if (_client->validateConnection())
+		{
+			arduino->printlnR("ok", Color::VALUE);
+			Serial.println(_client->getServerUrl());
+			if (_status)
 			{
-				status->setStatus(Status::WIFI_CONNECTING);
-				statusUpdateTimer.reset();
+				_status->setStatus(Status::READY);
 			}
-
-			delay(100);
+			return true;
 		}
 
-		return WiFi.status() == WL_CONNECTED;
+		arduino->printlnR("FAILED", Color::RED);
+		arduino->println(_client->getLastErrorMessage(), Color::RED);
+		return false;
 	}
 
-	void begin(
-	  ArduinoWithDisplay* arduino,
-	  const char* wifiSSID,
-	  const char* wifiPassword,
-	  InfluxDBClient* client,
-	  IStatus* status = nullptr
-	)
+	/// <summary>
+	/// Initializes WiFi/time/Influx connection with Serial progress output.
+	/// </summary>
+	/// <returns>True when initialization succeeds</returns>
+	bool begin()
 	{
-	  arduino->print("WiFi... ", Color::LABEL);
-	  if (status)
-	  {
-		 status->setStatus(Status::WIFI_CONNECTING);
-	  }
+		Serial.println("WiFi... ");
+		if (!connectWiFi())
+		{
+			Serial.println("FAILED");
+			Serial.println("WiFi connect failed");
+			return false;
+		}
+		Serial.println("ok");
 
-	  if (!reconnectWifi(wifiSSID, wifiPassword, status))
-	  {
-		 arduino->printlnR("FAILED", Color::RED);
-		 arduino->println("WiFi reconnect failed", Color::RED);
-		 while (1);
-	  }
-	  arduino->printlnR("ok", Color::VALUE);
+		if (_status)
+		{
+			_status->setStatus(Status::WEB_CONNECTING);
+		}
 
-	  if (status)
-	  {
-		 status->setStatus(Status::WEB_CONNECTING);
-	  }
+		Serial.print("Syncing Time... ");
+		timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
+		Serial.println("ok");
 
-	  // Accurate time is necessary for certificate validation and writing in batches
-	  // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
-	  // Syncing progress and the time will be printed to Serial.
-	  bool oldEcho = arduino->echoToSerial;
-	  arduino->echoToSerial = false; // timeSync prints to Serial
-	  arduino->print("Syncing Time... ", Color::LABEL);
-	  timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
-	  arduino->printlnR("ok", Color::VALUE);
-	  arduino->echoToSerial = oldEcho;
+		Serial.print("Influx... ");
+		if (_client->validateConnection())
+		{
+			Serial.println("ok");
+			Serial.println(_client->getServerUrl());
+			if (_status)
+			{
+				_status->setStatus(Status::READY);
+			}
+			return true;
+		}
 
-	  // Check server connection
-	  arduino->print("Influx... ", Color::LABEL);
-
-	  if (client->validateConnection())
-	  {
-		 arduino->printlnR("ok", Color::VALUE);
-		 Serial.println(client->getServerUrl());
-		 if (status)
-		 {
-			status->setStatus(Status::READY);
-		 }
-	  }
-	  else
-	  {
-		 arduino->printlnR("FAILED", Color::RED);
-		 arduino->println(client->getLastErrorMessage(), Color::RED);
-		 while (1);
-	  }
-   }
-
-	void begin(
-	  const char* wifiSSID, 
-	  const char* wifiPassword, 
-	  InfluxDBClient* client, 
-	  IStatus* status = nullptr)
-	{
-	  Serial.println("WiFi... ");
-
-	  if (status)
-	  {
-		 status->setStatus(Status::WIFI_CONNECTING);
-	  }
-
-	  if (!reconnectWifi(wifiSSID, wifiPassword, status))
-	  {
-		 Serial.println("FAILED");
-		 Serial.println("WiFi reconnect failed");
-		 while (1);
-	  }
-	  Serial.println("ok");
-
-	  if (status)
-	  {
-		 status->setStatus(Status::WEB_CONNECTING);
-	  }
-
-	  // Accurate time is necessary for certificate validation and writing in batches
-	  // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
-	  // Syncing progress and the time will be printed to Serial.
-	  Serial.print("Syncing Time... ");
-	  timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
-	  Serial.println("ok");
-
-	  // Check server connection
-	  Serial.print("Influx... ");
-
-	  if (client->validateConnection())
-	  {
-		 Serial.println("ok");
-		 Serial.println(client->getServerUrl());
-		 if (status)
-		 {
-			 status->setStatus(Status::READY);
-		 }
-	  }
-	  else
-	  {
-		 Serial.println("FAILED");
-		 Serial.println(client->getLastErrorMessage());
-		 while (1);
-	  }
+		Serial.println("FAILED");
+		Serial.println(_client->getLastErrorMessage());
+		return false;
 	}
-}
+
+	/// <summary>
+	/// Displays common initialization header content on display-equipped sketches.
+	/// </summary>
+	/// <param name="arduino">Display-capable Arduino wrapper</param>
+	/// <returns>None</returns>
+	static void startInit(ArduinoWithDisplay* arduino)
+	{
+		arduino->echoToSerial = true;
+		arduino->clearDisplay();
+		arduino->setTextSize(2);
+		arduino->println("Initializing", Color::HEADING);
+		arduino->moveCursorY(arduino->charH() / 2);
+	}
+
+	/// <summary>
+	/// Restores display/serial state after initialization UI.
+	/// </summary>
+	/// <param name="arduino">Display-capable Arduino wrapper</param>
+	/// <returns>None</returns>
+	static void endInit(ArduinoWithDisplay* arduino)
+	{
+		arduino->clearDisplay();
+		arduino->echoToSerial = false;
+	}
+};
 
 //-------------------------------------------------------------------------------------------------
 //

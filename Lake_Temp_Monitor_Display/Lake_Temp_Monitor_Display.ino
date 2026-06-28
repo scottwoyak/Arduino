@@ -1,19 +1,15 @@
 #include "Feather.h"
 #include "TempSensor.h"
-#include "TimedStats.h"
 #include <Adafruit_SleepyDog.h>
 #include "SerialX.h"
 #include "Influx.h"
-#include <string>
 #include "I2CMultiplexor.h"
-#include "CountdownTimer.h"
 #include "Timer.h"
 
 #include "WiFiSettings.h"
 
 Format humFormat("##.#%");
 Format tempFormat("###.## F");
-Format countdownFormat("##");
 
 constexpr auto version = "v1.0";
 
@@ -24,7 +20,9 @@ I2CMultiplexor multi;
 constexpr auto INFLUX_MEASUREMENT = "Air";
 constexpr auto INFLUX_INTERVAL_S = 15; // log data to InfluxDB every this many seconds
 constexpr auto WATCHDOG_INTERVAL_S = 60; // reboot if we haven't logged data for this many seconds
+constexpr auto WIFI_RESET_DELAY_S = 10;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
 Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
 constexpr uint8_t NUM_SENSORS = 4;
@@ -55,8 +53,8 @@ void setup()
       humFields[i] = points[i]->addTimeAveragedField(INFLUX_INTERVAL_S, "humidity", 2);
    }
 
-   Wire.begin();
    SerialX::begin();
+   Wire.begin();
 
    feather.begin();
    feather.setRotation(DisplayRotation::PORTRAIT);
@@ -99,7 +97,10 @@ void setup()
    feather.printlnR("ok", Color::VALUE);
 
 
-   Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client);
+   if (!influx.begin(&feather))
+   {
+      Util::reset(WIFI_RESET_DELAY_S);
+   }
 
    for (int i = 0; i < NUM_SENSORS; i++)
    {
@@ -133,11 +134,11 @@ void loop()
    }
 
    // Check WiFi connection and reconnect if needed
-   if (WiFi.status() != WL_CONNECTED)
+   if (!influx.ensureWiFiConnected())
    {
       feather.println("WiFi connection lost");
       Serial.println("WiFi connection lost");
-      Util::reset(10);
+      Util::reset(WIFI_RESET_DELAY_S);
    }
 
    feather.setCursor(0, 0);
@@ -178,6 +179,12 @@ void loop()
    // Write point
    if (influxTimer.ready())
    {
+      if (!influx.ensureWiFiConnected())
+      {
+         Serial.println("WiFi connection lost");
+         Util::reset(WIFI_RESET_DELAY_S);
+      }
+
       digitalWrite(BUILTIN_LED, HIGH);
 
       for (uint8_t i = 0; i < NUM_SENSORS; i++)

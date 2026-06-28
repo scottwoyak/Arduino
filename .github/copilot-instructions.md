@@ -30,3 +30,4 @@
 - When creating new Arduino projects or sketches, do not add them to the Visual Studio solution file; user will manage solution entries manually.
 - When creating new Arduino test sketches, only create the .ino file. Do not create .vcxproj project files or modify the .slnx solution file. The user imports new projects into the solution via Visual Micro themselves.
 - When adding new test projects, always include them in Tests/All_Tests/All_Tests.ino so they run in the aggregate test project.
+- Keep section comments in the style `// ----------- COMMENT` during cleanup rather than removing them.

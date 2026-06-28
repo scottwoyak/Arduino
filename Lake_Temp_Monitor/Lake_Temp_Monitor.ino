@@ -11,9 +11,7 @@
 
 #include <Arduino.h>
 #include <Adafruit_SleepyDog.h>
-#include <string>
 
-#include "CountdownTimer.h"
 #include "ESP32TempSensor.h"
 #include "I2CMultiplexor.h"
 #include "Influx.h"
@@ -21,11 +19,8 @@
 #include "Status.h"
 #include "TempSensor.h"
 #include "Timer.h"
-#include "TimedStats.h"
 
 #include "WiFiSettings.h"
-
-constexpr auto VERSION = "v1.0";
 
 // Influx database settings
 constexpr auto INFLUX_MEASUREMENT = "Air";
@@ -33,6 +28,7 @@ constexpr auto INFLUX_INTERVAL_S = 15;       // Log data to InfluxDB every N sec
 constexpr auto WATCHDOG_INTERVAL_S = 60;     // Reboot if no successful log in N seconds
 constexpr auto WATCHDOG_STARTUP_MS = 5 * 60 * 1000;  // Reboot if startup fails in N ms
 constexpr auto REBOOT_INTERVAL_MS = 24 * 60 * 60 * 1000;  // Daily reboot for stability
+constexpr auto WIFI_RESET_DELAY_S = 10;
 
 // Sensor configuration
 constexpr uint8_t NUM_SENSORS = 5;
@@ -47,11 +43,6 @@ constexpr auto WHITE_LED_PIN = 5;
 constexpr auto BLUE_LED_PIN = 2;
 constexpr auto GREEN_LED_PIN = 3;
 constexpr auto RED_LED_PIN = 4;
-
-// Format strings for display
-Format humFormat("##.#%");
-Format tempFormat("###.## F");
-Format countdownFormat("##");
 
 // Sensor location names
 const char* SENSOR_LOCATIONS[] = {
@@ -75,6 +66,7 @@ Field* humFields[NUM_SENSORS];
 // Status indicators
 LedStatus status(WHITE_LED_PIN, BLUE_LED_PIN, GREEN_LED_PIN);
 LED redLed(RED_LED_PIN);
+Influx influx(WIFI_SSID, WIFI_PASSWORD, &client, &status);
 
 /// <summary>
 /// Initializes all hardware, sensors, I2C communication, and InfluxDB connection.
@@ -140,7 +132,10 @@ void setup()
    }
 
    // Initialize InfluxDB connection
-   Influx::begin(WIFI_SSID, WIFI_PASSWORD, &client, &status);
+   if (!influx.begin())
+   {
+      Util::reset(WIFI_RESET_DELAY_S);
+   }
 
    // Tag each data point with its location
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
@@ -181,10 +176,10 @@ void loop()
    }
 
    // Ensure WiFi connectivity
-   if (!Influx::ensureWifiConnected(&status))
+   if (!influx.ensureWiFiConnected())
    {
       Serial.println("WiFi reconnection failed, performing reset");
-      Util::reset(10);
+      Util::reset(WIFI_RESET_DELAY_S);
    }
 
    // Upload data points to InfluxDB at configured interval

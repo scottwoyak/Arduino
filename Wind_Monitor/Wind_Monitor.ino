@@ -35,11 +35,8 @@ constexpr auto INFLUX_UPLOAD_INTERVAL_S = 15;          // Upload to InfluxDB eve
 
 // InfluxDB settings
 constexpr auto INFLUX_MEASUREMENT = "Air";
-constexpr auto NUM_PERCENTILES = 5;                     // Track 5 percentiles
 constexpr uint16_t NUM_SPEED_BINS = (MAX_WIND_SPEED / WIND_SPEED_INCREMENT);
-
-// Display precision
-constexpr uint8_t NUM_DECIMALS = 2;
+constexpr auto WIFI_RESET_DELAY_S = 60;
 
 WindMeter wind(WIND_SENSOR_PIN, 0);
 ESP32TempSensor cpuTemp;
@@ -51,6 +48,7 @@ Timer binCaptureTimer(DATA_COLLECTION_INTERVAL_MS);
 
 // InfluxDB client and data point
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+Influx influx(WIFI_SSID, WIFI_PASSWORD, &client, &status);
 Timer uploadTimer(1000 * INFLUX_UPLOAD_INTERVAL_S);
 SimplePoint point(INFLUX_MEASUREMENT);
 
@@ -75,7 +73,10 @@ void setup()
    }
 
    status.begin();
-   Influx::begin(WIFI_SSID, WIFI_PASSWORD, &client, &status);
+   if (!influx.begin())
+   {
+      Util::reset(WIFI_RESET_DELAY_S);
+   }
    status.setStatus(Status::STARTED);
 
    wind.begin();
@@ -145,7 +146,8 @@ void loop()
    if (binCaptureTimer.ready())
    {
       float speed = wind.getSpeed();
-      uint16_t index = std::min(static_cast<uint16_t>(speed * 10), NUM_SPEED_BINS - 1);
+      uint16_t index = static_cast<uint16_t>(speed * 10);
+      index = min(index, static_cast<uint16_t>(NUM_SPEED_BINS - 1));
       speedBins[index]->add();
    }
 
@@ -160,16 +162,16 @@ void loop()
       wind90Field->set(getValueForPercentile(0.9f));
 
       // Calculate gust metric (difference between 90th and 10th percentiles)
-      gustsField->set(wind90Field->average() - wind10Field->average());
+      gustsField->set(wind90Field->get() - wind10Field->get());
 
       // Read and log CPU temperature
       cpuTempField->set(cpuTemp.readTemperatureF());
 
       // Ensure WiFi connectivity before upload
-      if (!Influx::ensureWifiConnected(&status))
+      if (!influx.ensureWiFiConnected())
       {
          Serial.println("WiFi reconnection failed, resetting");
-         Util::reset(60);
+         Util::reset(WIFI_RESET_DELAY_S);
       }
 
       // Upload data point to InfluxDB
@@ -178,7 +180,7 @@ void loop()
       if (!point.post(&client, true))
       {
          Serial.println("InfluxDB upload failed, resetting");
-         Util::reset(60);
+         Util::reset(WIFI_RESET_DELAY_S);
       }
 
       status.setStatus(Status::READY);

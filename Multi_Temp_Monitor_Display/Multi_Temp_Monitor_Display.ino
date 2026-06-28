@@ -1,5 +1,3 @@
-#include <FastLED.h>
-
 //-------------------------------------------------------------------------------------------------
 //
 // Displays temperatures from up to 8 I2C-multiplexed sensors and uploads readings to InfluxDB.
@@ -35,6 +33,7 @@ Feather feather;
 NeoPixelStatus status(&feather.neoPixel);
 I2CMultiplexor multi;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+Influx influx(WIFI_SSID, WIFI_PASSWORD, &client, &status);
 Timer sensorTimer(SENSOR_READ_INTERVAL_MS);
 Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
@@ -56,8 +55,8 @@ const char* locations[NUM_SENSORS] = {
 
 void setup()
 {
-   Wire.begin();
    SerialX::begin();
+   Wire.begin();
 
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
@@ -112,7 +111,10 @@ void setup()
    feather.printlnR("ok", Color::VALUE);
 
    client.setWriteOptions(WriteOptions().batchSize(NUM_SENSORS).bufferSize(NUM_SENSORS).flushInterval(INFLUX_INTERVAL_S + 1));
-   Influx::begin(&feather, WIFI_SSID, WIFI_PASSWORD, &client, &status);
+   if (!influx.begin(&feather))
+   {
+      Util::reset(WIFI_RESET_DELAY_S);
+   }
 
    feather.clearDisplay();
    feather.echoToSerial = false;
@@ -144,7 +146,7 @@ void loop()
       }
    }
 
-   if (WiFi.status() != WL_CONNECTED)
+   if (!influx.ensureWiFiConnected())
    {
       feather.println("WiFi connection lost");
       Serial.println("WiFi connection lost");
