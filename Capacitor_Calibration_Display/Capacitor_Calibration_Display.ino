@@ -71,8 +71,14 @@ constexpr size_t MAX_TARGET_BUFFER_SIZE = 500;
 Timer displayTimer(DISPLAY_INTERVAL_MS);
 
 // Hardware pin assignments.
-constexpr uint8_t CHARGE_PIN = 5;
-constexpr uint8_t SENSE_PIN = 6;
+constexpr uint8_t SENSE_PIN = 5;
+constexpr uint8_t CHARGE_PIN_1M = 6;
+constexpr uint8_t CHARGE_PIN_470K = 9;
+constexpr uint8_t CHARGE_PIN_100K = 10;
+constexpr uint8_t CHARGE_PIN_47K = 11;
+
+
+constexpr uint8_t CHARGE_PIN = CHARGE_PIN_1M;
 
 class CalibrationSweepSensor
 {

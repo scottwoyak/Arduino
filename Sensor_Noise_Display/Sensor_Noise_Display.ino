@@ -28,9 +28,9 @@ constexpr uint16_t SAMPLE_INTERVAL_MS = 10;
 constexpr uint16_t DISPLAY_INTERVAL_MS = static_cast<uint16_t>(1.5f * SAMPLE_TIME_MS);
 
 #if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-constexpr uint8_t CHARGE_PIN = 5;
-constexpr uint8_t SENSE_PIN = 6;
-constexpr uint16_t DISCHARGE_DELAY_MICROS = 350;
+constexpr uint8_t CHARGE_PIN = 9;
+constexpr uint8_t SENSE_PIN = 5;
+constexpr uint16_t DISCHARGE_DELAY_MICROS = 500;
 #endif
 
 Feather feather;

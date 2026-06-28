@@ -55,9 +55,9 @@ Feather feather;
 
 #if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
 // Digital pin used to charge the capacitor-based sensor.
-constexpr uint8_t CHARGE_PIN = 5;
+constexpr uint8_t CHARGE_PIN = 6;
 // Digital pin used to read/discharge the capacitor-based sensor.
-constexpr uint8_t SENSE_PIN = 6;
+constexpr uint8_t SENSE_PIN = 5;
 // Discharge delay before each capacitor charge cycle.
 constexpr uint16_t DISCHARGE_DELAY_MICROS = 350;
 // Internal rolling-average window size used by CapacitorSensor.

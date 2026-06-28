@@ -11,8 +11,8 @@ Format rateFormat("#### per/s");
 Timer displayTimer(100);
 
 // Hardware Pin Assignments
-const int CHARGE_PIN = 5;
-const int SENSE_PIN = 6;
+const int CHARGE_PIN = 6;
+const int SENSE_PIN = 5;
 
 constexpr auto ZERO_CHARGE_TIME = 128.3;
 constexpr auto FULL_CHARGE_TIME = 295;

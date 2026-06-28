@@ -1,55 +1,61 @@
 #include <Arduino.h>
-#include "CapacitorCalibrationSensor.h"
+#include "CapacitorSensor.h"
 #include "Feather.h"
-#include "RollingStats.h"
 #include "Timer.h"
 
 Feather feather;
-Format timeFormat("###.# us");
-Format rateFormat("#### per/s");
+Format chargeTimeFormat("###.# us");
+Format rateFormat("Raw Sensor Rate #### per/s");
 
-RollingStats chargeTime10(10);
-RollingStats chargeTime100(100);
-RollingStats chargeTime1000(1000);
-Timer displayTimer(200);
+constexpr uint16_t DISPLAY_REFRESH_MS = 100;
+constexpr uint8_t HEADER_TEXT_SIZE = 3;
+constexpr uint8_t VALUE_TEXT_SIZE = 5;
+constexpr uint8_t FOOTER_TEXT_SIZE = 2;
 
-// Hardware Pin Assignments
-const int CHARGE_PIN = 5;
-const int SENSE_PIN = 6;
+Timer displayRefreshTimer(DISPLAY_REFRESH_MS);
 
-CapacitorCalibrationSensor sensor(CHARGE_PIN, SENSE_PIN);
+constexpr uint8_t CHARGE_PIN = 6;
+constexpr uint8_t SENSE_PIN = 5;
+
+CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN);
+
+int16_t valueY = 0;
+int16_t footerY = 0;
 
 void setup()
 {
    feather.begin();
    sensor.begin();
+
+   feather.setTextSize(HEADER_TEXT_SIZE);
+   int16_t headerCharH = feather.charH();
+
+   feather.setTextSize(VALUE_TEXT_SIZE);
+   int16_t valueCharH = feather.charH();
+
+   feather.setTextSize(FOOTER_TEXT_SIZE);
+   int16_t footerCharH = feather.charH();
+
+   footerY = feather.height() - footerCharH;
+   valueY = headerCharH + (footerY - headerCharH - valueCharH) / 2;
 }
 
 void loop()
 {
-   float chargeTime = 0;
-   while (sensor.tryDequeue(chargeTime))
-   {
-      chargeTime10.set(chargeTime);
-      chargeTime100.set(chargeTime);
-      chargeTime1000.set(chargeTime);
-   }
+   float chargeTime = sensor.chargeTimeMicros();
 
-   if (displayTimer.ready())
+   if (displayRefreshTimer.ready())
    {
       feather.setCursor(0, 0);
-      feather.setTextSize(2);
-      feather.println("Charge Time: (avg of N)", Color::HEADING);
-      feather.moveCursorY(10);
+      feather.setTextSize(HEADER_TEXT_SIZE);
+      feather.println("Capacitor", Color::HEADING);
 
-      feather.setTextSize(3);
-      feather.println("  10: ", chargeTime10.average(), timeFormat);
-      feather.println(" 100: ", chargeTime100.average(), timeFormat);
-      feather.println("1000: ", chargeTime1000.average(), timeFormat);
-      feather.println();
+      feather.setTextSize(VALUE_TEXT_SIZE);
+      feather.setCursorY(valueY);
+      feather.printlnC(chargeTime, chargeTimeFormat, Color::VALUE);
 
-      feather.setTextSize(2);
-      feather.setCursorY(feather.height() - feather.charH());
+      feather.setTextSize(FOOTER_TEXT_SIZE);
+      feather.setCursorY(footerY);
       feather.printlnR(sensor.rate(), rateFormat, Color::SUB_LABEL);
    }
 }
