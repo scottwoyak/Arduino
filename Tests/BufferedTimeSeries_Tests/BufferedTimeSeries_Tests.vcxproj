@@ -70,9 +70,7 @@
     <ValidateArchitecture>false</ValidateArchitecture>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectCapability Include="VisualMicro" />
-    <ProjectCapability Include="VisualMicroLinux" />
-  </ItemGroup>
+    <ProjectCapability Include="VisualMicro" />  </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BufferedTimeSeries_Tests.ino">
       <FileType>CppCode</FileType>

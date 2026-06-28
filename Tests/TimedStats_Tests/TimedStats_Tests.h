@@ -48,12 +48,12 @@ test(TimedStatsTest, timedStatsRangeShouldIgnoreNearlyExpiredSingleSampleBucket)
 
    timedStatsTestTicks = 999;
 
-   assertNear(60.0f, stats.average(), 0.5f);
-   assertNear(0.0f, stats.range(), 0.001f);
-   assertNear(0.0f, stats.stdDev(), 0.001f);
+   assertEqual(60.0f, stats.average());
+   assertEqual(0.0f, stats.range());
+   assertEqual(0.0f, stats.stdDev());
 }
 
-test(TimedStatsTest, timedStatsCountShouldNotOvercountBlendBucket)
+test(TimedStatsTest, timedStatsCountShouldMatchExpectedWindowSampleCount)
 {
    setupTimedStatsTest();
    TimedStatsMock stats(1000, 10);
@@ -67,7 +67,7 @@ test(TimedStatsTest, timedStatsCountShouldNotOvercountBlendBucket)
    timedStatsTestTicks = 1100;
 
    size_t count = stats.count();
-   assertTrue(count <= 100);
+   assertEqual(static_cast<size_t>(100), count);
 }
 
 test(TimedStatsTest, timedStatsRangeShouldIgnorePartiallyIncludedOutlierBucket)
@@ -89,9 +89,9 @@ test(TimedStatsTest, timedStatsRangeShouldIgnorePartiallyIncludedOutlierBucket)
 
    timedStatsTestTicks = 1099;
 
-   assertNear(60.0f, stats.average(), 0.5f);
-   assertNear(0.0f, stats.range(), 0.001f);
-   assertNear(0.0f, stats.stdDev(), 0.001f);
+   assertEqual(60.0f, stats.average());
+   assertEqual(0.0f, stats.range());
+   assertEqual(0.0f, stats.stdDev());
 }
 
 test(TimedStatsTest, timedStatsRangeShouldStayBoundedAcrossBoundaryTransitions)
@@ -108,11 +108,10 @@ test(TimedStatsTest, timedStatsRangeShouldStayBoundedAcrossBoundaryTransitions)
       timedStatsTestTicks = t;
       stats.set(59.5f);
 
-      // Once the outlier is fully out of the 1s window, range should remain small.
+      // Once the outlier is fully out of the 1s window, range should remain exactly zero.
       if (t >= 1200)
       {
-         float range = stats.range();
-         assertTrue(range < 1.0f);
+         assertEqual(0.0f, stats.range());
       }
    }
 }

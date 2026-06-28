@@ -6,6 +6,7 @@
 - When the user asks for 'cleanup', include Visual Studio-style XML documentation updates as part of the cleanup pass. Additionally, add Visual Studio style comments during code cleanup.
 - When cleaning up non-testing sketches, always add a detailed description comment block at the top of the sketch.
 - Do not automatically run tests; only run tests when explicitly requested.
+- Do not run build/test commands that require VisualMicro context when operating outside Visual Studio VisualMicro pipeline; rely on user-run VisualMicro builds instead.
 - When cleaning up code, add IntelliSense-style XML documentation comments to constructors and public methods where appropriate, as well as to other methods where appropriate. Apply proper include bracket style: use quotes ("...") for Woyak library headers and local project headers, and use angle brackets (<...>) for third-party/installed libraries like LovyanGFX, WiFi, InfluxDbClient, Timer, etc.
 - Prefer keeping initialization code in setup() rather than extracting it into separate helper functions.
 - Prefer assigning values in constructor bodies instead of initializer lists by default, but use initializer lists when required for correctness or when members lack default constructors.
@@ -18,9 +19,11 @@
 - Use "micros" instead of "us" in names and identifiers.
 - Always use the Timer class when waiting for something.
 - Prefer explicit, clearly listed overload variants over complex template metaprogramming (e.g., avoid typename std::enable_if unless templates are simple and clearly useful).
-- Do not use WINDOW terminology for time durations; use alternatives like SAMPLE_TIME instead.
+- Use SPAN or SAMPLE_TIME for timing-related names; avoid the term WINDOW except for GUI concepts.
 - In display row rendering, prefer using labeled printlnR overloads instead of building full concatenated row strings for numeric values; use default value colors unless a specific color is requested.
 - When addressing data quality issues, prefer root-cause stabilization logic over fixed sample-skipping heuristics.
+- Avoid unnecessary casts when calling formatted display methods like printlnC for methods that return float, such as chargeTimeMicros().
+- For mock-timer-based deterministic tests, prefer exact equality assertions (assertEqual) over range-style boolean checks when expected values are deterministic.
 
 ## Sketch Header Comments
 - For sketch header comments, omit a separate sketch title line; use only summary lines between blank comment lines, and keep divider dashes ending at column 99.
@@ -29,5 +32,5 @@
 - For .ino files, do not add comments on setup() and loop(); include a formatted top-of-file summary header only, using divider lines that end at column 99, a blank comment line before/after summary text, and no separate sketch title line.
 - When creating new Arduino projects or sketches, do not add them to the Visual Studio solution file; user will manage solution entries manually.
 - When creating new Arduino test sketches, only create the .ino file. Do not create .vcxproj project files or modify the .slnx solution file. The user imports new projects into the solution via Visual Micro themselves.
-- When adding new test projects, always include them in Tests/All_Tests/All_Tests.ino so they run in the aggregate test project.
+- When adding new test projects, always include them in Tests/All_Tests/All_T_tests.ino so they run in the aggregate test project.
 - Keep section comments in the style `// ----------- COMMENT` during cleanup rather than removing them.

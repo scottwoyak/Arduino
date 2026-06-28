@@ -132,7 +132,7 @@ test(TimerTest, TimeSecs_ShouldSupportMillis)
    timerTestTicks += 250;
 
    assertFalse(timer.ready());
-   assertNear(0.25f, timer.remaining(), 0.0001f);
+   assertEqual(0.25f, timer.remaining());
 
    timerTestTicks += 250;
    assertTrue(timer.ready());

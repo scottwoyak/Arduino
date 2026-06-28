@@ -41,7 +41,7 @@ test(TimedAverageTest, shouldTrackAverageWithinWindow)
    timedAverageTestTicks = 300;
    average.set(3.0f);
 
-   assertNear(2.0f, average.average(), 0.0001f);
+   assertEqual(2.0f, average.average());
    assertEqual((size_t)3, average.count());
 }
 
@@ -59,7 +59,7 @@ test(TimedAverageTest, shouldExpireOldSamplesByTime)
 
    timedAverageTestTicks = 1400;
 
-   assertNear(2.5f, average.average(), 0.0001f);
+   assertEqual(2.5f, average.average());
    assertEqual((size_t)2, average.count());
 }
 
@@ -75,7 +75,7 @@ test(TimedAverageTest, shouldIgnoreNonFiniteValues)
    timedAverageTestTicks = 300;
    average.set(NAN);
 
-   assertNear(1.0f, average.average(), 0.0001f);
+   assertEqual(1.0f, average.average());
    assertEqual((size_t)1, average.count());
 }
 

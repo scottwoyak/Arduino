@@ -2,7 +2,5 @@
 /.vs
 /**/__vm
 /**/*.vcxproj.user
-/FontCreater/bin
-/FontCreater/obj
-/SmoothFontCreator/bin
-/SmoothFontCreator/obj
+/**/obj/
+/**/bin/

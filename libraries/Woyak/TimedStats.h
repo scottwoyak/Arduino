@@ -107,6 +107,37 @@ private:
 
       if (usedCoreBuckets)
       {
+         auto accumulateBucket = [&](uint bucketIndex, float fraction)
+         {
+            size_t bucketCount = _buckets[bucketIndex]->count();
+            if (bucketCount == 0)
+            {
+               return;
+            }
+
+            float weightedBucketCount = fraction * static_cast<float>(bucketCount);
+            if (weightedBucketCount < 1.0f)
+            {
+               return;
+            }
+
+            float bucketMean = _buckets[bucketIndex]->get();
+            float bucketVariance = _buckets[bucketIndex]->variance();
+            float bucketSumSquares = static_cast<float>(bucketCount) * (bucketVariance + (bucketMean * bucketMean));
+
+            weightedCount += weightedBucketCount;
+            weightedSum += fraction * bucketMean * static_cast<float>(bucketCount);
+            weightedSumSquares += fraction * bucketSumSquares;
+         };
+
+         accumulateBucket(_currentBucket, elapsedFraction);
+         accumulateBucket(firstBoundaryBucket, 1.0f - elapsedFraction);
+
+         if (_buckets[firstBoundaryBucket]->count() > 0)
+         {
+            accumulateBucket(secondBoundaryBucket, 1.0f);
+         }
+
          return;
       }
 
