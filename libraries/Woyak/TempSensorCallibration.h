@@ -34,6 +34,12 @@ constexpr CorrectionFactor CORRECTIONS[] = {
 "189592967",  0.077, 0.156,
 "347252678", -0.048, 0.033,
 "189584276", -0.029, -0.188, 
+
+// 6mm potted SHT4X
+"301394176", 0.000, 0.000,  // baseline
+"301394080", 0.025, 0.000,  // 1
+"235442571", -0.021, 0.000, // 2
+"235442600", -0.021, 0.000, // 3
 };
 
 constexpr auto NUM_CORRECTIONS = sizeof(CORRECTIONS) / sizeof(CORRECTIONS[0]);

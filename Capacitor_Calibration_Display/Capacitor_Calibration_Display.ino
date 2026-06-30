@@ -15,6 +15,7 @@
 // ----------- Display
 Feather feather;
 Format chargeFormat("####.# us");
+Format deferredFormat("#### us");
 Format effectiveRateFormat("###/s");
 Format sampleRateFormat("######/s");
 constexpr size_t DISPLAY_INTERVAL_MS = 100;
@@ -22,11 +23,14 @@ Timer displayTimer(DISPLAY_INTERVAL_MS);
 
 // ----------- Test Sweep Parameters
 constexpr size_t STATS_SAMPLE_COUNT = 1000;
-constexpr float TARGET_EFFECTIVE_RATES[] = { 10.0f, 20.0f, 30.0f };
+constexpr float TARGET_EFFECTIVE_RATES[] = { 15.0f, 30.0f, 50.0f };
 constexpr size_t TARGET_EFFECTIVE_RATE_COUNT = sizeof(TARGET_EFFECTIVE_RATES) / sizeof(TARGET_EFFECTIVE_RATES[0]);
 
-constexpr uint16_t TEST_DISCHARGE_DELAYS[] = { 100, 200, 500, 1000 };
+constexpr uint16_t TEST_DISCHARGE_DELAYS[] = { 100, 200, 300 };
 constexpr size_t TEST_DISCHARGE_DELAY_COUNT = sizeof(TEST_DISCHARGE_DELAYS) / sizeof(TEST_DISCHARGE_DELAYS[0]);
+
+constexpr uint32_t TEST_DEFERRED_PROCESSING_PERIODS[] = { 500, 750, 1000 };
+constexpr size_t TEST_DEFERRED_PROCESSING_PERIOD_COUNT = sizeof(TEST_DEFERRED_PROCESSING_PERIODS) / sizeof(TEST_DEFERRED_PROCESSING_PERIODS[0]);
 
 constexpr size_t MIN_TARGET_BUFFER_SIZE = 1;
 constexpr size_t MAX_TARGET_BUFFER_SIZE = 500;
@@ -85,6 +89,8 @@ struct TestCase
    float targetEffectiveRate = NAN;
    /// <summary>Discharge delay in microseconds for this test.</summary>
    uint16_t dischargeDelayMicros = 0;
+   /// <summary>Deferred processing period in microseconds for this test.</summary>
+   uint32_t deferredProcessingPeriodMicros = 0;
 };
 
 /// <summary>Result data from a single test run.</summary>
@@ -96,6 +102,8 @@ struct TestRunResult
    float targetEffectiveRate = NAN;
    /// <summary>Discharge delay used for this test.</summary>
    uint16_t dischargeDelayMicros = 0;
+   /// <summary>Deferred processing period used for this test.</summary>
+   uint32_t deferredProcessingPeriodMicros = 0;
    /// <summary>Average charge time measured during test.</summary>
    float averageChargeTimeMicros = NAN;
    /// <summary>Min-to-max variation in rolling average during test.</summary>
@@ -127,15 +135,18 @@ public:
    /// <summary>Execute a single test run with the specified parameters.</summary>
    /// <param name="targetEffectiveRate">Target effective output rate in Hz</param>
    /// <param name="dischargeDelayMicros">Discharge delay in microseconds</param>
+   /// <param name="deferredProcessingPeriodMicros">Deferred processing period in microseconds</param>
    /// <returns>Test result data structure</returns>
-   TestRunResult run(float targetEffectiveRate, uint16_t dischargeDelayMicros)
+   TestRunResult run(float targetEffectiveRate, uint16_t dischargeDelayMicros, uint32_t deferredProcessingPeriodMicros)
    {
       TestRunResult result;
       result.targetEffectiveRate = targetEffectiveRate;
       result.dischargeDelayMicros = dischargeDelayMicros;
+      result.deferredProcessingPeriodMicros = deferredProcessingPeriodMicros;
 
       // Stabilize the sensor at the new discharge delay, then read the rate
       _sensor.setDischargeDelayMicros(dischargeDelayMicros);
+      _sensor.setDeferredProcessingPeriodMicros(deferredProcessingPeriodMicros);
       delay(100);
 
       float rawRate = _sensor.rate();
@@ -152,31 +163,33 @@ public:
       float measuredAverageMax = NAN;
       size_t sampleCount = 0;
 
-      float lastChargeTime = _sensor.chargeTimeMicros();
-      Timer sampleTimer(1);
+      uint32_t lastCounter = _sensor.counter();
       while (sampleCount < STATS_SAMPLE_COUNT)
       {
-         if (sampleTimer.ready())
+         uint32_t counter = _sensor.counter();
+         if (counter == lastCounter)
          {
-            float chargeTime = _sensor.chargeTimeMicros();
-            if (chargeTime != lastChargeTime && isfinite(chargeTime))
+            continue;
+         }
+
+         lastCounter = counter;
+         float chargeTime = _sensor.chargeTimeMicros();
+         if (isfinite(chargeTime))
+         {
+            stats.set(chargeTime);
+            sampleCount++;
+
+            float average = stats.average();
+            if (isfinite(average))
             {
-               lastChargeTime = chargeTime;
-               stats.set(chargeTime);
-               sampleCount++;
-
-               float average = stats.average();
-               if (isfinite(average))
+               if (!isfinite(measuredAverageMin) || average < measuredAverageMin)
                {
-                  if (!isfinite(measuredAverageMin) || average < measuredAverageMin)
-                  {
-                     measuredAverageMin = average;
-                  }
+                  measuredAverageMin = average;
+               }
 
-                  if (!isfinite(measuredAverageMax) || average > measuredAverageMax)
-                  {
-                     measuredAverageMax = average;
-                  }
+               if (!isfinite(measuredAverageMax) || average > measuredAverageMax)
+               {
+                  measuredAverageMax = average;
                }
             }
          }
@@ -194,6 +207,7 @@ public:
       result.effectiveRateHz = (result.bufferSize > 0) ? (finalRawRate / result.bufferSize) : 0;
 
       _sensor.setBufferSize(CapacitorSensor::DEFAULT_BUFFER_SIZE);
+      _sensor.setDeferredProcessingPeriodMicros(CapacitorSensor::DEFAULT_DEFERRED_PROCESSING_PERIOD_MICROS);
 
       return result;
    }
@@ -229,7 +243,7 @@ private:
 struct TestCaseParameters
 {
    /// <summary>Array of test case parameters.</summary>
-   TestCase cases[TEST_DISCHARGE_DELAY_COUNT * TARGET_EFFECTIVE_RATE_COUNT];
+   TestCase cases[TEST_DISCHARGE_DELAY_COUNT * TEST_DEFERRED_PROCESSING_PERIOD_COUNT * TARGET_EFFECTIVE_RATE_COUNT];
    /// <summary>Number of test cases.</summary>
    size_t count = 0;
 };
@@ -251,9 +265,15 @@ void setup()
       {
          uint16_t delayMicros = TEST_DISCHARGE_DELAYS[delayIndex];
 
-         testParameters.cases[caseIndex].targetEffectiveRate = targetRate;
-         testParameters.cases[caseIndex].dischargeDelayMicros = delayMicros;
-         caseIndex++;
+         for (size_t deferredIndex = 0; deferredIndex < TEST_DEFERRED_PROCESSING_PERIOD_COUNT; deferredIndex++)
+         {
+            uint32_t deferredProcessingPeriodMicros = TEST_DEFERRED_PROCESSING_PERIODS[deferredIndex];
+
+            testParameters.cases[caseIndex].targetEffectiveRate = targetRate;
+            testParameters.cases[caseIndex].dischargeDelayMicros = delayMicros;
+            testParameters.cases[caseIndex].deferredProcessingPeriodMicros = deferredProcessingPeriodMicros;
+            caseIndex++;
+         }
       }
    }
 
@@ -302,7 +322,7 @@ void printBestConfigurations(TestRunResult* results, size_t count)
       float targetRate = TARGET_EFFECTIVE_RATES[rateIndex];
 
       // Collect indices of results matching this target rate
-      size_t indices[RESISTOR_OPTION_COUNT * TEST_DISCHARGE_DELAY_COUNT];
+      size_t indices[RESISTOR_OPTION_COUNT * TEST_DISCHARGE_DELAY_COUNT * TEST_DEFERRED_PROCESSING_PERIOD_COUNT];
       size_t indexCount = 0;
       for (size_t i = 0; i < count; i++)
       {
@@ -346,11 +366,13 @@ void printBestConfigurations(TestRunResult* results, size_t count)
       SerialX::print("Resistor", 10);
       SerialX::print("Buffer", 8);
       SerialX::print("Discharge", 12);
+      SerialX::print("Deferred", 12);
       SerialX::println("StdDev %", 10);
 
       SerialX::print("----", 8);
       SerialX::print("--------", 10);
       SerialX::print("------", 8);
+      SerialX::print("----------", 12);
       SerialX::print("----------", 12);
       SerialX::println("--------", 10);
 
@@ -362,6 +384,7 @@ void printBestConfigurations(TestRunResult* results, size_t count)
          SerialX::print(r.resistorLabel ? r.resistorLabel : "?", 10);
          SerialX::print((unsigned long)r.bufferSize, 8);
          SerialX::print(String((unsigned long)r.dischargeDelayMicros) + " us", 12);
+         SerialX::print(String((unsigned long)r.deferredProcessingPeriodMicros) + " us", 12);
          if (isfinite(r.chargeStdDevMicros) && isfinite(r.averageChargeTimeMicros) && r.averageChargeTimeMicros != 0.0f)
          {
             float pct = (r.chargeStdDevMicros / r.averageChargeTimeMicros) * 100.0f;
@@ -384,7 +407,7 @@ void loop()
       Serial.println("Starting tests...");
       Serial.println();
 
-      const size_t MAX_RESULTS = RESISTOR_OPTION_COUNT * TEST_DISCHARGE_DELAY_COUNT * TARGET_EFFECTIVE_RATE_COUNT;
+      const size_t MAX_RESULTS = RESISTOR_OPTION_COUNT * TEST_DISCHARGE_DELAY_COUNT * TEST_DEFERRED_PROCESSING_PERIOD_COUNT * TARGET_EFFECTIVE_RATE_COUNT;
       TestRunResult allResults[MAX_RESULTS];
       size_t allResultCount = 0;
 
@@ -393,19 +416,23 @@ void loop()
       SerialX::print("Target", 10);
       SerialX::print("Buffer", 8);
       SerialX::print("Discharge", 12);
+      SerialX::print("Deferred", 12);
       SerialX::print("Avg", 12);
       SerialX::print("StdDev", 12);
       SerialX::print("StdDev", 10);
       SerialX::print("Sample", 10);
+      SerialX::print("Raw", 10);
       SerialX::println("Effective", 11);
 
       SerialX::print("Value", 10);
       SerialX::print("Rate", 10);
       SerialX::print("Size", 8);
       SerialX::print("Delay", 12);
+      SerialX::print("Period", 12);
       SerialX::print("Charge", 12);
       SerialX::print("Charge", 12);
       SerialX::print("%", 10);
+      SerialX::print("Rate", 10);
       SerialX::print("Rate", 10);
       SerialX::println("Rate", 11);
 
@@ -415,6 +442,8 @@ void loop()
       SerialX::print("----------", 12);
       SerialX::print("----------", 12);
       SerialX::print("----------", 12);
+      SerialX::print("----------", 12);
+      SerialX::print("--------", 10);
       SerialX::print("--------", 10);
       SerialX::print("--------", 10);
       SerialX::println("---------", 11);
@@ -438,14 +467,21 @@ void loop()
             feather.setCursor(0, 0);
             feather.setTextSize(2);
             feather.println("Running Tests...", Color::HEADING);
+            feather.moveCursorY(-2);
             feather.println("    Resistor: ", resistor.label, Color::VALUE);
+            feather.moveCursorY(-2);
             feather.println("       Delay: ", testCase.dischargeDelayMicros, chargeFormat, Color::VALUE);
+            feather.moveCursorY(-2);
+            feather.println("    Deferred: ", testCase.deferredProcessingPeriodMicros, deferredFormat, Color::VALUE);
+            feather.moveCursorY(-2);
             feather.println("      Target: ", String((int)round(testCase.targetEffectiveRate)) + "/s", Color::VALUE);
+            feather.moveCursorY(-2);
             feather.println("        Test: ", String(currentTest) + "/" + String(totalTests), Color::VALUE);
+            feather.moveCursorY(-2);
 
             // Run the test
             TestRun testRun(capacitorSensor);
-            TestRunResult result = testRun.run(testCase.targetEffectiveRate, testCase.dischargeDelayMicros);
+            TestRunResult result = testRun.run(testCase.targetEffectiveRate, testCase.dischargeDelayMicros, testCase.deferredProcessingPeriodMicros);
             result.resistorLabel = resistor.label;
             allResults[allResultCount++] = result;
 
@@ -454,6 +490,7 @@ void loop()
             SerialX::print(String((int)round(result.targetEffectiveRate)) + " hz", 10);
             SerialX::print((unsigned long)result.bufferSize, 8);
             SerialX::print(String((unsigned long)result.dischargeDelayMicros) + " us", 12);
+            SerialX::print(String((unsigned long)result.deferredProcessingPeriodMicros) + " us", 12);
             if (isfinite(result.averageChargeTimeMicros))
             {
                SerialX::print(String(result.averageChargeTimeMicros, 1) + " us", 12);
@@ -480,6 +517,7 @@ void loop()
                SerialX::print("----", 10);
             }
             SerialX::print(String((int)round(result.rawRateHz)) + "/s", 10);
+            SerialX::print(String((int)round(capacitorSensor.rate())) + "/s", 10);
             SerialX::println(String((int)round(result.effectiveRateHz)) + "/s", 11);
 
             // Yield to allow display and other updates
@@ -504,11 +542,13 @@ void loop()
             }
          }
          capacitorSensor.setDischargeDelayMicros(best->dischargeDelayMicros);
+         capacitorSensor.setDeferredProcessingPeriodMicros(best->deferredProcessingPeriodMicros);
          capacitorSensor.setBufferSize(best->bufferSize);
       }
       else
       {
          capacitorSensor.setChargePin(RESISTOR_OPTIONS[0].chargePin);
+         capacitorSensor.setDeferredProcessingPeriodMicros(CapacitorSensor::DEFAULT_DEFERRED_PROCESSING_PERIOD_MICROS);
       }
    }
 
@@ -517,18 +557,27 @@ void loop()
       feather.setCursor(0, 0);
       feather.setTextSize(3);
       feather.println("Capacitor Tuning", Color::HEADING);
+      feather.moveCursorY(-2);
 
       feather.setTextSize(2);
       feather.println("       Resistor: ", resistorLabel(capacitorSensor.chargePin()), Color::VALUE);
+      feather.moveCursorY(-2);
       feather.println(" Discharge Time: ", capacitorSensor.dischargeDelayMicros(), chargeFormat, Color::VALUE);
+      feather.moveCursorY(-2);
+      feather.println("      Deferred: ", capacitorSensor.deferredProcessingPeriodMicros(), deferredFormat, Color::VALUE);
+      feather.moveCursorY(-2);
       feather.println("    Buffer Size: ", (int)capacitorSensor.bufferSize(), Color::VALUE);
+      feather.moveCursorY(-2);
 
       float rawRate = capacitorSensor.rate();
       float effectiveRate = (capacitorSensor.bufferSize() > 0) ? (rawRate / (float)capacitorSensor.bufferSize()) : 0;
 
       feather.println("Avg Charge Time: ", capacitorSensor.chargeTimeMicros(), chargeFormat, Color::VALUE3);
+      feather.moveCursorY(-2);
       feather.println("    Sample Rate: ", (int)round(rawRate), sampleRateFormat, Color::VALUE2);
+      feather.moveCursorY(-2);
       feather.println(" Effective Rate: ", effectiveRate, effectiveRateFormat, Color::VALUE2);
+      feather.moveCursorY(-2);
    }
 }
 

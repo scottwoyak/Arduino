@@ -32,6 +32,7 @@ private:
    uint8_t _chargePin;
    uint8_t _sensePin;
    uint16_t _dischargeDelayMicros;
+   uint32_t _deferredProcessingPeriodMicros;
 
    // ----------- Core State
    portMUX_TYPE _mux = SPINLOCK_INITIALIZER;
@@ -39,6 +40,7 @@ private:
    volatile int64_t _chargeStartMicros = 0;
    volatile int64_t _chargeEndMicros = 0;
    volatile bool _measurementComplete = false;
+   uint32_t _counter = 0;
    bool _started = false;
 
    // ----------- Analysis
@@ -77,14 +79,20 @@ private:
    static void _onDischargeElapsed(void* arg)
    {
       CapacitorSensor* self = static_cast<CapacitorSensor*>(arg);
-      if (self != nullptr) { self->_startCharging(); }
+      if (self != nullptr)
+      {
+         self->_startCharging();
+      }
    }
 
    /// <summary>Timer callback: charge exceeded timeout; restart cycle.</summary>
    static void _onChargeTimeout(void* arg)
    {
       CapacitorSensor* self = static_cast<CapacitorSensor*>(arg);
-      if (self != nullptr) { self->_handleChargeTimeout(); }
+      if (self != nullptr)
+      {
+         self->_handleChargeTimeout();
+      }
    }
 
    /// <summary>Periodic timer callback: process a completed measurement if one is ready.</summary>
@@ -134,7 +142,10 @@ private:
       }
       portEXIT_CRITICAL(&_mux);
 
-      if (!beginCharge) return;
+      if (!beginCharge)
+      {
+         return;
+      }
 
       // 1. Arm timeout timer
       portENTER_CRITICAL(&_mux);
@@ -185,7 +196,10 @@ private:
       }
       portEXIT_CRITICAL(&_mux);
 
-      if (!timeoutValid) return;
+      if (!timeoutValid)
+      {
+         return;
+      }
 
       // Ensure interrupt is disabled on timeout
       gpio_intr_disable(static_cast<gpio_num_t>(_sensePin));
@@ -206,6 +220,7 @@ private:
       start = _chargeStartMicros;
       end = _chargeEndMicros;
       _measurementComplete = false;
+      _counter++;
       esp_timer_stop(_timeoutTimer);
       portEXIT_CRITICAL(&_mux);
 
@@ -228,9 +243,13 @@ private:
    /// <summary>Start the deferred processing timer and begin the first discharge cycle.</summary>
    void start()
    {
-      if (_started) return;
+      if (_started)
+      {
+         return;
+      }
+
       _started = true;
-      esp_timer_start_periodic(_deferredProcessingTimer, 1000);
+      esp_timer_start_periodic(_deferredProcessingTimer, _deferredProcessingPeriodMicros);
       _startDischarging();
    }
 
@@ -255,7 +274,13 @@ private:
    }
 
 public:
+   /// <summary>Default discharge hold time in microseconds.</summary>
    static constexpr uint16_t DEFAULT_DISCHARGE_DELAY_MICROS = 200;
+
+   /// <summary>Default deferred processing period in microseconds.</summary>
+   static constexpr uint32_t DEFAULT_DEFERRED_PROCESSING_PERIOD_MICROS = 500;
+
+   /// <summary>Default rolling average window size.</summary>
    static constexpr size_t DEFAULT_BUFFER_SIZE = 30;
 
    /// <summary>Construct and configure a capacitor sensor. Only one instance may exist at a time.</summary>
@@ -271,12 +296,17 @@ public:
       : _average(averageSamples),
       _rawSensorRate(RATE_SAMPLES)
    {
-      if (_instanceExists) { abort(); }
-      _instanceExists = true;
+     if (_instanceExists)
+     {
+        abort();
+     }
+
+     _instanceExists = true;
 
       _chargePin = chargePin;
       _sensePin = sensePin;
       _dischargeDelayMicros = dischargeDelayMicros;
+      _deferredProcessingPeriodMicros = DEFAULT_DEFERRED_PROCESSING_PERIOD_MICROS;
       _isrContext = this;
    }
 
@@ -333,7 +363,10 @@ public:
    /// <param name="chargePin">New output pin to drive the charge resistor</param>
    void setChargePin(uint8_t chargePin)
    {
-      if (_chargePin == chargePin) return;
+      if (_chargePin == chargePin)
+      {
+         return;
+      }
 
       bool wasStarted = _started;
       if (wasStarted) stop();
@@ -367,25 +400,82 @@ public:
 
    /// <summary>Get the raw sensor sample rate.</summary>
    /// <returns>Samples per second</returns>
-   float rate() { return _rawSensorRate.get(); }
+   float rate()
+   {
+      return _rawSensorRate.get();
+   }
+
+   /// <summary>Get the processed measurement counter.</summary>
+   /// <returns>Monotonic count of processed measurements</returns>
+   uint32_t counter()
+   {
+      portENTER_CRITICAL(&_mux);
+      uint32_t val = _counter;
+      portEXIT_CRITICAL(&_mux);
+      return val;
+   }
 
    /// <summary>Set the discharge hold time.</summary>
    /// <param name="dischargeDelayMicros">Discharge hold time in microseconds</param>
-   void setDischargeDelayMicros(uint16_t dischargeDelayMicros) { _dischargeDelayMicros = dischargeDelayMicros; }
+   void setDischargeDelayMicros(uint16_t dischargeDelayMicros)
+   {
+      _dischargeDelayMicros = dischargeDelayMicros;
+   }
 
    /// <summary>Get the current discharge hold time in microseconds.</summary>
    /// <returns>Discharge delay in microseconds</returns>
-   uint16_t dischargeDelayMicros() const { return _dischargeDelayMicros; }
+   uint16_t dischargeDelayMicros() const
+   {
+      return _dischargeDelayMicros;
+   }
+
+   /// <summary>Set the deferred processing period.</summary>
+   /// <param name="deferredProcessingPeriodMicros">Processing period in microseconds (minimum 1)</param>
+   void setDeferredProcessingPeriodMicros(uint32_t deferredProcessingPeriodMicros)
+   {
+      if (deferredProcessingPeriodMicros == 0)
+      {
+         deferredProcessingPeriodMicros = 1;
+      }
+
+      bool isStarted = false;
+      portENTER_CRITICAL(&_mux);
+      _deferredProcessingPeriodMicros = deferredProcessingPeriodMicros;
+      isStarted = _started;
+      portEXIT_CRITICAL(&_mux);
+
+      if (isStarted && _deferredProcessingTimer != nullptr)
+      {
+         esp_timer_stop(_deferredProcessingTimer);
+         esp_timer_start_periodic(_deferredProcessingTimer, _deferredProcessingPeriodMicros);
+      }
+   }
+
+   /// <summary>Get the current deferred processing period in microseconds.</summary>
+   /// <returns>Deferred processing period in microseconds</returns>
+   uint32_t deferredProcessingPeriodMicros() const
+   {
+      return _deferredProcessingPeriodMicros;
+   }
 
    /// <summary>Resize the rolling average buffer, clearing all existing samples.</summary>
    /// <param name="size">New buffer size</param>
-   void setBufferSize(size_t size) { _average.reset(size); }
+   void setBufferSize(size_t size)
+   {
+      _average.reset(size);
+   }
 
    /// <summary>Get the current rolling average buffer size.</summary>
    /// <returns>Number of samples in the rolling window</returns>
-   size_t bufferSize() const { return _average.size(); }
+   size_t bufferSize() const
+   {
+      return _average.size();
+   }
 
    /// <summary>Get the active charge pin.</summary>
    /// <returns>Charge pin number</returns>
-   uint8_t chargePin() const { return _chargePin; }
+   uint8_t chargePin() const
+   {
+      return _chargePin;
+   }
 };
