@@ -1,4 +1,3 @@
-// -------------------------------------------------------------------------------------------------
 //
 // Captures finite sensor values for a fixed run window (or until the sample cap is reached), stores
 // them in RAM, and reports serial/display summaries plus an optional serial dump.
@@ -16,7 +15,7 @@
 // Sensor modes:
 // - Capacitor mode (default) reads from CapacitorSensor.
 // - Temperature mode reads directly per loop iteration.
-// -------------------------------------------------------------------------------------------------
+//
 #include "Feather.h"
 #include "Histogram.h"
 #include "SensorCapture.h"
@@ -29,23 +28,14 @@
 #define SENSOR_TYPE_TEMP 2
 #define SENSOR_TYPE SENSOR_TYPE_CAPACITOR
 
-// Warm-up delay before capture starts.
 constexpr unsigned long WARM_UP_MS = 100;
-// Total sampling window duration before capture auto-completes.
 constexpr unsigned long SAMPLE_DURATION_MS = 10000;
-// Sampling interval controlled by timer (one sample per interval).
 constexpr unsigned long SAMPLE_INTERVAL_MS = 1;
-// Maximum number of samples stored in RAM during a run.
 constexpr size_t MAX_SAMPLES = 1000;
-// Number of bins used for the value histogram.
 constexpr size_t HISTOGRAM_BINS = 20;
-// Significant digits used for chart min/max labels on the Feather display.
 constexpr uint8_t CHART_MIN_MAX_SIGNIFICANT_DIGITS = 3;
-// Allowed stabilization delta as a fraction of average signal level.
 constexpr float STABILITY_DELTA_PERCENT = 0.1f;
-// Number of consecutive stable samples required before capture storage begins.
 constexpr size_t STABILITY_REQUIRED_SAMPLES = 10;
-// Enables or disables stabilization gating before values are stored.
 constexpr bool STABILIZATION_ENABLED = true;
 
 constexpr size_t SAMPLE_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
@@ -54,18 +44,14 @@ constexpr size_t NUM_SAMPLE_SIZES = sizeof(SAMPLE_SIZES) / sizeof(SAMPLE_SIZES[0
 Feather feather;
 
 #if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-// Hardware pin assignments.
 constexpr uint8_t SENSE_PIN = 5;
 constexpr uint8_t CHARGE_PIN_1M = 6;
 constexpr uint8_t CHARGE_PIN_470K = 9;
 constexpr uint8_t CHARGE_PIN_100K = 10;
 constexpr uint8_t CHARGE_PIN_47K = 11;
 
-// Select which resistor charge pin to use.
-constexpr uint8_t CHARGE_PIN = CHARGE_PIN_47K;
-// Discharge delay before each capacitor charge cycle.
+constexpr uint8_t CHARGE_PIN = CHARGE_PIN_1M;
 constexpr uint16_t DISCHARGE_DELAY_MICROS = 350;
-// Internal rolling-average window size used by CapacitorSensor.
 constexpr size_t SENSOR_AVERAGE_SAMPLES = 1;
 CapacitorTestSensor testSensor(CHARGE_PIN, SENSE_PIN, DISCHARGE_DELAY_MICROS, SENSOR_AVERAGE_SAMPLES);
 #elif SENSOR_TYPE == SENSOR_TYPE_TEMP
@@ -85,16 +71,9 @@ SensorCapture sensorCapture(
 
 bool captureFinalized = false;
 
-/// <summary>
-/// Draws a histogram panel on the Feather display.
-/// </summary>
-/// <param name="title">Panel title.</param>
-/// <param name="histogram">Histogram to render.</param>
-/// <param name="sectionLeft">Left X coordinate of the panel.</param>
-/// <param name="sectionWidth">Panel width in pixels.</param>
-/// <param name="sectionTop">Top Y coordinate of the panel.</param>
-/// <param name="sectionHeight">Panel height in pixels.</param>
-/// <param name="barColor">Color used for bars and labels.</param>
+//
+// Draws a histogram panel on the Feather display.
+//
 void drawHistogramOnFeather(const char* title, const Histogram<HISTOGRAM_BINS>& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor)
 {
    SensorCaptureOutput::drawHistogramOnFeather(
@@ -109,9 +88,9 @@ void drawHistogramOnFeather(const char* title, const Histogram<HISTOGRAM_BINS>& 
       CHART_MIN_MAX_SIGNIFICANT_DIGITS);
 }
 
-/// <summary>
-/// Renders histogram and N/range analysis table on the Feather display.
-/// </summary>
+//
+// Renders histogram and N/range analysis table on the Feather display.
+//
 void renderHistogramsOnFeather()
 {
    feather.clearDisplay();
@@ -211,9 +190,9 @@ void renderHistogramsOnFeather()
    feather.println("Button A to dump to Serial", Color::GRAY);
 }
 
-/// <summary>
-/// Computes and prints capture statistics and histogram data to Serial.
-/// </summary>
+//
+// Computes and prints capture statistics and histogram data to Serial.
+//
 void printCaptureSummary()
 {
    SensorCaptureOutput::printCaptureSummary(sensorCapture, SAMPLE_DURATION_MS, 3);
@@ -230,22 +209,22 @@ void printCaptureSummary()
    sensorCapture.printFirstAndLastToSerial(10, 3);
 }
 
-/// <summary>
-/// Prints post-capture block-average analysis for configured sample sizes.
-/// </summary>
+//
+// Prints post-capture block-average analysis for configured sample sizes.
+//
 void printAveragingAnalysis()
 {
    Serial.println("Averaging Analysis");
 
    SensorCaptureStats analysis(sensorCapture);
 
-   SerialX::print("Size", 8);
+   SerialX::print("Num Samples", 14);
    SerialX::print("Range", 12);
    SerialX::print("StdDev", 12);
    SerialX::print("StdDev%", 12);
    SerialX::println("Eff Rate", 10);
 
-   SerialX::print("----", 8);
+   SerialX::print("-----------", 14);
    SerialX::print("-----", 12);
    SerialX::print("------", 12);
    SerialX::print("-------", 12);
@@ -268,7 +247,7 @@ void printAveragingAnalysis()
          avgStdDevPercent = (avgStdDev / fabsf(avgMean)) * 100.0f;
       }
 
-      SerialX::print(sampleSize, 8);
+      SerialX::print(sampleSize, 14);
       if (averageCount == 0)
       {
          SerialX::print("n/a", 12);
@@ -288,9 +267,9 @@ void printAveragingAnalysis()
    Serial.println();
 }
 
-/// <summary>
-/// Updates the status text shown on the Feather display.
-/// </summary>
+//
+// Updates the status text shown on the Feather display.
+//
 void updateDisplay()
 {
    feather.setCursor(0, 0);
@@ -311,9 +290,9 @@ void updateDisplay()
    }
 }
 
-/// <summary>
-/// Finalizes capture and prints summaries.
-/// </summary>
+//
+// Finalizes capture and prints summaries.
+//
 void finishCapture()
 {
    if (captureFinalized)

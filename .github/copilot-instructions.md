@@ -2,7 +2,7 @@
 
 ## Project Guidelines
 - User prefers Visual Studio XML documentation comments (/// <summary>, <param>, <returns>) for class and method documentation. When cleaning up code files, add Visual Studio style comments (///) before classes, methods, and properties. These are XML documentation comments used for IntelliSense. Example: /// <summary>Brief description</summary>
-- When documenting classes with XML comments, add an extra blank comment line (///) before and after the class documentation. Example: /// <summary>Class description</summary> /// class MyClass
+- When documenting classes with XML comments, add an extra blank comment line (///) before and after the class documentation block. Example: /// \n/// <summary>Class description</summary>\n///\nclass MyClass
 - When documenting namespace functions and class static methods with XML documentation comments, always include complete parameter documentation with <param> tags and return value documentation with <returns> tags, even for simple inline functions. This provides full IntelliSense support. Example: /// <summary>Convert C to F.</summary> /// <param name="celsius">Temperature in Celsius</param> /// <returns>Temperature in Fahrenheit</returns>
 - When the user asks for 'cleanup', apply it to the currently displayed/open file from IDE context and include Visual Studio-style XML documentation updates as part of the cleanup pass. Preserve inline comments during cleanup; do not remove existing inline comments.
 - When cleaning up non-testing sketches, always add a detailed description comment block at the top of the sketch using XML documentation comment style instead of dashed header blocks.
@@ -25,6 +25,7 @@
 - Avoid unnecessary casts when calling formatted display methods like printlnC for methods that return float, such as chargeTimeMicros().
 - For mock-timer-based deterministic tests, prefer exact equality assertions (assertEqual) over range-style boolean checks when expected values are deterministic.
 - When asked to compile an Arduino sketch, build only the current sketch/project, not the entire solution.
+- Optimize code and suggestions for the ESP32-S3 platform, including using ESP32-specific APIs like gpio_isr_handler_add(), esp_timer, and IRAM_ATTR for ISR functions, and other ESP32-S3 features.
 
 ## Arduino File Guidelines
 - For .ino files, use regular // comments for sketch-level documentation at the top of the file. Format as: blank comment line, then summary line, blank comment line, then detailed description, and a final blank comment line at the bottom. Example:
