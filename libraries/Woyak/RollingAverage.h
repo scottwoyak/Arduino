@@ -4,7 +4,7 @@
 #include "RollingValues.h"
 
 /// <summary>
-/// Stores a fixed window of recent values and exposes rolling averages.
+/// Stores a fixed window of recent float values and exposes rolling averages.
 /// </summary>
 /// <remarks>
 /// Non-finite values (NaN and +/-infinity) are ignored for average calculations.

@@ -3,15 +3,17 @@
 #include <Arduino.h>
 
 /// <summary>
-/// Stores a fixed-size rolling set of float values in a circular buffer.
+/// Stores a fixed-size rolling set of values in a circular buffer.
 /// </summary>
-class RollingValues
+/// <typeparam name="T">The numeric type of values to store.</typeparam>
+template<typename T = float>
+class RollingValuesT
 {
 private:
    size_t _index = 0;
-   float* _values;
+   T* _values;
    size_t _size;
-   float _initialValue = 0.0f;
+   T _initialValue = T(0);
    bool _isFull = false;
 
 public:
@@ -20,8 +22,8 @@ public:
    /// </summary>
    /// <param name="size">The number of values to retain.</param>
    /// <param name="initialValue">The value to fill empty slots with. Defaults to 0.</param>
-   explicit RollingValues(size_t size, float initialValue = 0.0f)
-      : _values(new float[size]), _size(size), _initialValue(initialValue)
+   explicit RollingValuesT(size_t size, T initialValue = T(0))
+      : _values(new T[size]), _size(size), _initialValue(initialValue)
    {
       for (size_t i = 0; i < _size; i++)
       {
@@ -29,13 +31,13 @@ public:
       }
    }
 
-   RollingValues(const RollingValues&) = delete;
-   RollingValues& operator=(const RollingValues&) = delete;
+   RollingValuesT(const RollingValuesT&) = delete;
+   RollingValuesT& operator=(const RollingValuesT&) = delete;
 
    /// <summary>
    /// Releases the allocated buffer.
    /// </summary>
-   ~RollingValues()
+   ~RollingValuesT()
    {
       delete[] _values;
    }
@@ -62,7 +64,7 @@ public:
    /// <param name="value">The value to store.</param>
    /// <param name="removed">Optional pointer that receives the overwritten value when true is returned.</param>
    /// <returns>True when a prior value was overwritten; otherwise false.</returns>
-   bool set(float value, float* removed = nullptr)
+   bool set(T value, T* removed = nullptr)
    {
       if (_size == 0)
       {
@@ -91,12 +93,12 @@ public:
    /// Gets a value relative to the current index.
    /// </summary>
    /// <param name="index">0 for latest value, 1 for previous, and so on.</param>
-   /// <returns>The requested value, or NaN when the buffer is empty.</returns>
-   float get(size_t index) const
+   /// <returns>The requested value, or default-constructed value when the buffer is empty.</returns>
+   T get(size_t index) const
    {
       if (_size == 0)
       {
-         return NAN;
+         return T(0);
       }
 
       int i = static_cast<int>(_index) - static_cast<int>(index);
@@ -138,10 +140,15 @@ public:
       _size = size;
       _index = 0;
       _isFull = false;
-      _values = new float[_size];
+      _values = new T[_size];
       for (size_t i = 0; i < _size; i++)
       {
          _values[i] = _initialValue;
       }
    }
 };
+
+/// <summary>
+/// Convenience alias for RollingValuesT using float type.
+/// </summary>
+using RollingValues = RollingValuesT<float>;
