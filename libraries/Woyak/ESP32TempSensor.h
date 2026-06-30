@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ITempSensor.h"
+#include "Units.h"
 #include <driver/temperature_sensor.h>
 
 /// <summary>
@@ -14,6 +15,7 @@
 class ESP32TempSensor : public ITempSensor
 {
 private:
+   /// <summary>Handle to the ESP32 temperature sensor driver.</summary>
    temperature_sensor_handle_t _tempHandle = NULL;
 
 public:
@@ -35,9 +37,9 @@ public:
    virtual bool exists() { return true; }
 
    /// <summary>
-   /// Initializes the ESP32 temperature sensor for reading.
+   /// Initializes the ESP32 temperature sensor for reading with a range of 20°C to 100°C.
    /// </summary>
-   /// <returns>True if initialization succeeded</returns>
+   /// <returns>True if initialization succeeded; false otherwise.</returns>
    virtual bool begin()
    { 
       // Initialize the sensor and evaluate your expected temp range (e.g., 20°C to 100°C)
@@ -73,4 +75,3 @@ public:
    /// <summary>Reads temperature; humidity always NaN.</summary>
    virtual void readBoth(float& tempF, float& hum) { tempF = readTemperatureF(); hum = readHumidity(); }
 };
-

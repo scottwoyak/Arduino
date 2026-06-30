@@ -1,131 +1,123 @@
 #pragma once
 
-#include <Adafruit_SH110X.h>
 #include "ArduinoWithDisplay.h"
 #include "Button.h"
+#include <Adafruit_SH110X.h>
 #include <FlashStorage.h>
 
-//
-// Annoyingling, Adafruit has a lot of nifty properties in Adafruit_GFX that you can set, but not 
-// get. This class is just a wrapper that exposes them
-//
+/// <summary>
+/// SH1107 wrapper that exposes Adafruit_GFX display metrics.
+/// </summary>
 class SW_SH1107 : public Adafruit_SH1107, public Adafruit_GFX_wInfo
 {
 public:
+   /// <summary>
+   /// Initializes an SH1107 display instance.
+   /// </summary>
+   /// <param name="w">Display width in pixels.</param>
+   /// <param name="h">Display height in pixels.</param>
+   /// <param name="twi">I2C bus instance.</param>
    SW_SH1107(uint16_t w, uint16_t h, TwoWire* twi = &Wire) : Adafruit_SH1107(w, h, twi)
    {
    }
 
+   /// <summary>
+   /// Gets the current character width in pixels.
+   /// </summary>
+   /// <returns>Character width in pixels.</returns>
    uint8_t charW()
    {
-      // 6 is the baseline character width that is scaled for larger text
       return 6 * textsize_x;
    }
 
+   /// <summary>
+   /// Gets the current character height in pixels.
+   /// </summary>
+   /// <returns>Character height in pixels.</returns>
    uint8_t charH()
    {
-      // 8 is the baseline character width that is scaled for larger text
       return 8 * textsize_y;
    }
 };
 
-
-// Create a structure for storing data
-typedef struct
+/// <summary>
+/// Minimal flash-backed data for preference emulation.
+/// </summary>
+struct FlashData
 {
    boolean valid;
-   char json[100]; // TODO turn this into a more complete json structure
-} FlashData;
+   char json[100];
+};
 
-// Reserve a portion of flash memory to store a "id" and call it "flash".
 FlashStorage(flash, FlashData);
 
+/// <summary>
+/// Lightweight Preferences-compatible wrapper using FlashStorage.
+/// </summary>
 class PreferencesFlash
 {
+private:
    FlashData data;
 
+public:
+   /// <summary>
+   /// Loads persisted data from flash.
+   /// </summary>
+   /// <returns>Always true.</returns>
    bool begin(const char* name, bool readOnly = false)
    {
-      // Read from flash
+      (void)name;
+      (void)readOnly;
       data = flash.read();
       return true;
    }
+
+   /// <summary>
+   /// Persists current data to flash.
+   /// </summary>
    void end()
    {
       flash.write(data);
    }
 
+   /// <summary>
+   /// Checks whether a value has been stored.
+   /// </summary>
    bool isKey(const char* key)
    {
+      (void)key;
       return data.valid;
    }
+
+   /// <summary>
+   /// Stores a string value.
+   /// </summary>
    size_t putString(const char* key, String value)
    {
-      // store the information in flash
+      (void)key;
       value.toCharArray(data.json, 100);
       data.valid = true;
       return 0;
    }
+
+   /// <summary>
+   /// Reads a stored string value.
+   /// </summary>
    String getString(const char* key, String defaultValue = String())
    {
-      // If not initialized, valid will be false
+      (void)key;
       if (data.valid)
       {
          return data.json;
       }
-      else
-      {
-         return "";
-      }
+
+      return defaultValue;
    }
-
-   /*
-        bool begin(const char * name, bool readOnly=false);
-        void end();
-
-        bool clear();
-        bool remove(const char * key);
-
-        size_t putChar(const char* key, int8_t value);
-        size_t putUChar(const char* key, uint8_t value);
-        size_t putShort(const char* key, int16_t value);
-        size_t putUShort(const char* key, uint16_t value);
-        size_t putInt(const char* key, int32_t value);
-        size_t putUInt(const char* key, uint32_t value);
-        size_t putLong(const char* key, int32_t value);
-        size_t putULong(const char* key, uint32_t value);
-        size_t putLong64(const char* key, int64_t value);
-        size_t putULong64(const char* key, uint64_t value);
-        size_t putFloat(const char* key, float_t value);
-        size_t putDouble(const char* key, double_t value);
-        size_t putBool(const char* key, bool value);
-        size_t putString(const char* key, const char* value);
-        size_t putString(const char* key, String value);
-        size_t putBytes(const char* key, const void* buf, size_t len);
-
-        bool isKey(const char* key);
-        PreferenceType getType(const char* key);
-        int8_t getChar(const char* key, int8_t defaultValue = 0);
-        uint8_t getUChar(const char* key, uint8_t defaultValue = 0);
-        int16_t getShort(const char* key, int16_t defaultValue = 0);
-        uint16_t getUShort(const char* key, uint16_t defaultValue = 0);
-        int32_t getInt(const char* key, int32_t defaultValue = 0);
-        uint32_t getUInt(const char* key, uint32_t defaultValue = 0);
-        int32_t getLong(const char* key, int32_t defaultValue = 0);
-        uint32_t getULong(const char* key, uint32_t defaultValue = 0);
-        int64_t getLong64(const char* key, int64_t defaultValue = 0);
-        uint64_t getULong64(const char* key, uint64_t defaultValue = 0);
-        float_t getFloat(const char* key, float_t defaultValue = NAN);
-        double_t getDouble(const char* key, double_t defaultValue = NAN);
-        bool getBool(const char* key, bool defaultValue = false);
-        size_t getString(const char* key, char* value, size_t maxLen);
-        String getString(const char* key, String defaultValue = String());
-        size_t getBytesLength(const char* key);
-        size_t getBytes(const char* key, void * buf, size_t maxLen);
-        size_t freeEntries();
-   */
 };
 
+/// <summary>
+/// Feather M0 OLED board wrapper with buttons and flash-backed preferences.
+/// </summary>
 class Feather_M0_OLED : public ArduinoWithDisplay
 {
 public:
@@ -139,24 +131,34 @@ public:
    {
    }
 
+   /// <summary>
+   /// Initializes buttons and display hardware.
+   /// </summary>
    void begin()
    {
       buttonA.begin();
       buttonB.begin();
       buttonC.begin();
 
-      display.begin(0x3C, true); // Address 0x3C default
+      display.begin(0x3C, true);
       display.setTextColor((uint16_t)Color::WHITE);
       display.setRotation(1);
       display.clearDisplay();
       display.display();
    }
 
+   /// <summary>
+   /// Clears the display and resets the cursor to (0,0).
+   /// </summary>
    virtual void clearDisplay()
    {
       display.clearDisplay();
       display.setCursor(0, 0);
    }
+
+   /// <summary>
+   /// Flushes buffered display changes to the panel.
+   /// </summary>
    void displayDisplay()
    {
       display.display();

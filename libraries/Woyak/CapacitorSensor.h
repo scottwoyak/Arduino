@@ -5,6 +5,7 @@
 #include "RollingRate.h"
 #include "Tick.h"
 
+///
 /// <summary>
 /// Provides simplified capacitor measurements as a rolling average charge time.
 /// </summary>
@@ -12,6 +13,7 @@
 /// This implementation is self-contained and intentionally does not expose queued
 /// per-measurement access.
 /// </remarks>
+/// 
 class CapacitorSensor
 {
 private:
@@ -216,6 +218,55 @@ public:
    }
 
    /// <summary>
+   /// Updates the GPIO pin used to charge the sensor.
+   /// </summary>
+   /// <param name="chargePin">GPIO pin used to apply charge to the sensor.</param>
+   void setChargePin(uint8_t chargePin)
+   {
+      if (_chargePin == chargePin)
+      {
+         return;
+      }
+
+      bool wasStarted = _started;
+      if (wasStarted)
+      {
+         digitalWrite(_chargePin, LOW);
+         pinMode(_chargePin, INPUT);
+      }
+
+      _chargePin = chargePin;
+      _rawSensorRate.reset();
+      _latestAverageMicros = NAN;
+
+      if (wasStarted)
+      {
+         pinMode(_chargePin, OUTPUT);
+         digitalWrite(_chargePin, LOW);
+         _state = IDLE;
+         _startDischarging();
+      }
+   }
+
+   /// <summary>
+   /// Gets the configured charge GPIO pin.
+   /// </summary>
+   /// <returns>The GPIO pin used to apply charge to the sensor.</returns>
+   uint8_t chargePin() const
+   {
+      return _chargePin;
+   }
+
+   /// <summary>
+   /// Gets the configured sense GPIO pin.
+   /// </summary>
+   /// <returns>The GPIO pin used to detect charge threshold crossing.</returns>
+   uint8_t sensePin() const
+   {
+      return _sensePin;
+   }
+
+   /// <summary>
    /// Sets the discharge delay before each charge cycle. Resets rate tracking.
    /// </summary>
    /// <param name="dischargeDelayMicros">Discharge delay in microseconds.</param>
@@ -264,6 +315,5 @@ public:
       _servicePendingChargeStart();
       return _rawSensorRate.get();
    }
-
-   };
+};
 

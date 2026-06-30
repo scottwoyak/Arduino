@@ -1,8 +1,10 @@
-// -------------------------------------------------------------------------------------------------
 //
 // Capacitor sensor tuner: displays real-time measurements and runs calibration tests on Button A.
 //
-// -------------------------------------------------------------------------------------------------
+// Monitors capacitor charge time and raw sampling rate in real-time. Button A executes a full
+// calibration sweep across different discharge delays and target effective rates, outputting
+// results to serial for analysis.
+//
 #include <Arduino.h>
 #include "CapacitorSensor.h"
 #include "Feather.h"
@@ -10,62 +12,39 @@
 #include "SerialX.h"
 #include "Timer.h"
 
-/// <summary>Feather display instance.</summary>
 Feather feather;
-/// <summary>Display formatter for charge time values.</summary>
 Format chargeFormat("####.# us");
-/// <summary>Display formatter for effective rate values.</summary>
 Format effectiveRateFormat("###/s");
-/// <summary>Display formatter for raw rate values.</summary>
 Format rawRateFormat("######/s");
 
-/// <summary>Milliseconds between display refreshes.</summary>
 constexpr size_t DISPLAY_INTERVAL_MS = 100;
 
-/// <summary>Default rolling buffer size for normal monitoring mode.</summary>
 constexpr size_t DEFAULT_ROLLING_BUFFER_SIZE = 300;
-/// <summary>Default discharge delay in microseconds for normal monitoring mode.</summary>
 constexpr uint16_t DEFAULT_DISCHARGE_DELAY_MICROS = 200;
 
 // ----------- Test Sweep Parameters
-/// <summary>Duration of each test measurement phase in milliseconds.</summary>
 constexpr unsigned long TEST_DURATION_MS = 2000;
-/// <summary>Target effective output rates in Hz for calibration sweep.</summary>
 constexpr float TARGET_EFFECTIVE_RATES[] = { 10.0f, 20.0f, 30.0f };
-/// <summary>Number of target effective rates in the sweep.</summary>
 constexpr size_t TARGET_EFFECTIVE_RATE_COUNT = sizeof(TARGET_EFFECTIVE_RATES) / sizeof(TARGET_EFFECTIVE_RATES[0]);
 
-/// <summary>Discharge delay values to test in microseconds.</summary>
 constexpr uint16_t TEST_DISCHARGE_DELAYS[] = { 100, 200, 500, 1000 };
-/// <summary>Number of discharge delay values to test.</summary>
 constexpr size_t TEST_DISCHARGE_DELAY_COUNT = sizeof(TEST_DISCHARGE_DELAYS) / sizeof(TEST_DISCHARGE_DELAYS[0]);
 
-/// <summary>Number of samples to collect for raw rate estimation.</summary>
 constexpr size_t RAW_RATE_SAMPLE_COUNT = 100;
-/// <summary>Minimum allowed computed buffer size.</summary>
 constexpr size_t MIN_TARGET_BUFFER_SIZE = 1;
-/// <summary>Maximum allowed computed buffer size.</summary>
 constexpr size_t MAX_TARGET_BUFFER_SIZE = 500;
 
-/// <summary>Timer for display refresh intervals.</summary>
 Timer displayTimer(DISPLAY_INTERVAL_MS);
 
 // ----------- Hardware Pin Assignments
-/// <summary>Sense pin for capacitor measurements.</summary>
 constexpr uint8_t SENSE_PIN = 5;
-/// <summary>Charge pin with 1M resistor.</summary>
 constexpr uint8_t CHARGE_PIN_1M = 6;
-/// <summary>Charge pin with 470K resistor.</summary>
 constexpr uint8_t CHARGE_PIN_470K = 9;
-/// <summary>Charge pin with 100K resistor.</summary>
 constexpr uint8_t CHARGE_PIN_100K = 10;
-/// <summary>Charge pin with 47K resistor.</summary>
 constexpr uint8_t CHARGE_PIN_47K = 11;
 
-/// <summary>Selected charge pin for this build.</summary>
-constexpr uint8_t CHARGE_PIN = CHARGE_PIN_1M;
+constexpr uint8_t CHARGE_PIN = CHARGE_PIN_1M;  // Selected charge pin for this build
 
-/// <summary>Direct capacitor sensor for normal monitoring mode.</summary>
 CapacitorSensor capacitorSensor(CHARGE_PIN, SENSE_PIN, DEFAULT_DISCHARGE_DELAY_MICROS, DEFAULT_ROLLING_BUFFER_SIZE);
 
 /// <summary>Total number of test cases (delay count × rate count).</summary>
@@ -227,10 +206,8 @@ struct TestCaseParameters
    size_t count = 0;
 };
 
-/// <summary>Global storage for test case parameters.</summary>
 TestCaseParameters testParameters;
 
-/// <summary>Arduino setup function. Pre-computes all test cases during initialization.</summary>
 void setup()
 {
    SerialX::begin();
@@ -257,7 +234,6 @@ void setup()
    testParameters.count = caseIndex;
 }
 
-/// <summary>Arduino loop function. Handles button input and executes tests on demand.</summary>
 void loop()
 {
    // Button A pressed: execute all tests

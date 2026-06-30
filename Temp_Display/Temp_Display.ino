@@ -1,25 +1,24 @@
 /// <summary>
-/// Temperature and humidity sensor display for Feather displays.
+/// Temperature and humidity display for Feather boards.
 /// </summary>
 /// <remarks>
-/// Continuously reads temperature and humidity from an I2C sensor or DS18B20 one-wire sensor
-/// and displays the values along with read timing metrics on a TFT display.
-/// 
-/// Configurable for DS18B20 via ONE_WIRE_PIN define, otherwise auto-detects I2C sensors.
-/// Hardware: Feather ESP32 with TFT display and temperature/humidity sensor.
+/// Continuously reads a connected sensor and shows temperature, humidity, read duration,
+/// and read rate on the display.
+///
+/// Define ONE_WIRE_PIN to use a DS18B20 sensor; otherwise an I2C temperature/humidity
+/// sensor is auto-detected. Hardware: Feather display board with supported sensor.
 /// </remarks>
 
-#include <Wire.h>
 #include <Arduino.h>
+#include <Wire.h>
 
 #include "Feather.h"
 #include "Rate.h"
+#include "SerialX.h"
 #include "TempSensor.h"
 
 // Uncomment to use DS18B20 sensor instead of I2C auto-detection
 // #define ONE_WIRE_PIN 5
-
-constexpr auto NUM_DECIMALS = 1;
 
 Feather feather;
 TempSensor sensor;

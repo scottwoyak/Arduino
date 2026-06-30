@@ -1,13 +1,10 @@
-/// <summary>
-/// Lake water temperature monitoring station with multi-sensor support.
-/// </summary>
-/// <remarks>
-/// Monitors temperature and humidity at 5 different locations in a lake using I2C multiplexing.
-/// Logs readings to InfluxDB at configurable intervals. Includes watchdog for automatic reset
-/// on communication failures and daily reboot to manage long-term stability.
-/// 
-/// Hardware: ESP32 with I2C multiplexor, 5 temperature/humidity sensors, status LEDs.
-/// </remarks>
+//
+// Lake water temperature monitoring station with multi-sensor support.
+//
+// Monitors temperature and humidity at 5 different locations in a lake using I2C multiplexing.
+// Logs readings to InfluxDB at configurable intervals. Includes watchdog for automatic reset
+// on communication failures and daily reboot to manage long-term stability.
+//
 
 #include <Arduino.h>
 #include <Adafruit_SleepyDog.h>
@@ -68,9 +65,6 @@ LedStatus status(WHITE_LED_PIN, BLUE_LED_PIN, GREEN_LED_PIN);
 LED redLed(RED_LED_PIN);
 Influx influx(WIFI_SSID, WIFI_PASSWORD, &client, &status);
 
-/// <summary>
-/// Initializes all hardware, sensors, I2C communication, and InfluxDB connection.
-/// </summary>
 void setup()
 {
    // Enable watchdog for startup supervision (5 minutes)
@@ -150,9 +144,6 @@ void setup()
    Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
 }
 
-/// <summary>
-/// Main monitoring loop: reads sensors, checks connectivity, and logs to InfluxDB.
-/// </summary>
 void loop()
 {
    // Perform daily reboot for long-term stability

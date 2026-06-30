@@ -1,3 +1,13 @@
+//
+// Lake temperature monitor with display and InfluxDB logging.
+//
+// Reads temperature and humidity from four sensors at different water depths (surface,
+// 3 feet, bottom, deep) via I2C multiplexor and displays them on a Feather display.
+// Logs readings to InfluxDB every 15 seconds with automatic WiFi reconnection and
+// watchdog reboot safety. Reboots daily and after 5 minutes of startup initialization
+// failure.
+//
+
 #include "Feather.h"
 #include "TempSensor.h"
 #include <Adafruit_SleepyDog.h>
@@ -5,6 +15,7 @@
 #include "Influx.h"
 #include "I2CMultiplexor.h"
 #include "Timer.h"
+#include "Util.h"
 
 #include "WiFiSettings.h"
 
@@ -14,23 +25,25 @@ Format tempFormat("###.## F");
 constexpr auto version = "v1.0";
 
 Feather feather;
-
 I2CMultiplexor multi;
 
 constexpr auto INFLUX_MEASUREMENT = "Air";
-constexpr auto INFLUX_INTERVAL_S = 15; // log data to InfluxDB every this many seconds
-constexpr auto WATCHDOG_INTERVAL_S = 60; // reboot if we haven't logged data for this many seconds
+constexpr auto INFLUX_INTERVAL_S = 15;
+constexpr auto WATCHDOG_INTERVAL_S = 60;
 constexpr auto WIFI_RESET_DELAY_S = 10;
+
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
 Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
 constexpr uint8_t NUM_SENSORS = 4;
+
 TempSensor* sensors[NUM_SENSORS];
 SimplePoint* points[NUM_SENSORS];
 Field* tempFields[NUM_SENSORS];
 Field* humFields[NUM_SENSORS];
-uint8_t sensorPorts[] = { 0, 1, 2, 3 };
+
+uint8_t sensorPorts[] = { 0, 1, 2, 3 };  // Surface, 3 feet, bottom, deep
 
 const char* locations[] = {
    "Surface",
@@ -41,10 +54,10 @@ const char* locations[] = {
 
 void setup()
 {
-   // if we can't startup after 5 minutes, reboot and try again
+   // If we can't startup after 5 minutes, reboot and try again
    Watchdog.enable(5 * 60 * 1000);
 
-   // create all the objects
+   // Create all the objects
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       sensors[i] = new TempSensor();
@@ -90,12 +103,12 @@ void setup()
       }
       else
       {
-         // TODO null out this sensor
+         delete sensors[i];
+         sensors[i] = nullptr;
          Serial.println("FAILED");
       }
    }
    feather.printlnR("ok", Color::VALUE);
-
 
    if (!influx.begin(&feather))
    {
@@ -115,7 +128,7 @@ void setup()
 
 void loop()
 {
-   // reboot once a day
+   // Reboot once a day
    if (millis() > 24 * 60 * 60 * 1000)
    {
       Serial.println("Rebooting after 24 hours of uptime");
@@ -151,8 +164,8 @@ void loop()
    {
       if (sensors[i]->exists())
       {
-         float temp = tempFields[i]->average();
-         float hum = humFields[i]->average();
+         float temp = tempFields[i]->get();
+         float hum = humFields[i]->get();
 
          feather.setTextSize(4);
          feather.println(temp, tempFormat, Color::VALUE);
@@ -198,7 +211,7 @@ void loop()
             }
             else
             {
-               // only reset the Watchdog if we've had a successful write
+               // Only reset the Watchdog if we've had a successful write
                Watchdog.reset();
             }
          }
@@ -207,5 +220,3 @@ void loop()
       digitalWrite(BUILTIN_LED, LOW);
    }
 }
-
-

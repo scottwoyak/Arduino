@@ -1,28 +1,40 @@
-// undefine to use the remote server
+/// <summary>
+/// Subscribes to lake wave telemetry and renders a smoothed wave-height bar chart.
+/// </summary>
+/// <remarks>
+/// Connects over WiFi/WebSocket, receives wave sensor values, applies short-term smoothing,
+/// and draws real-time height updates on the display. Periodic serial diagnostics are logged
+/// using a Timer-based interval.
+/// </remarks>
+
+// Undefine to use the remote server.
 //#define TELEMETRY_LOCAL
 
 #include <WiFi.h>
 
-#include "Feather.h"
-#include "SerialX.h"
-#include "WiFiSettings.h"
-#include "TimedStats.h"
 #include "BarChart.h"
-#include "RollingRate.h"
-#include "TelemetryClient.h"
-#include "RollingStats.h"
 #include "BufferedTimeSeries.h"
+#include "Feather.h"
+#include "RollingRate.h"
+#include "RollingStats.h"
+#include "SerialX.h"
+#include "TelemetryClient.h"
 #include "Timer.h"
+#include "Util.h"
+#include "WiFiSettings.h"
 
 Feather feather;
 RollingRate refreshRate(100);
-Stopwatch sw;
 TelemetrySubscriber client("Waves/Lake");
 RollingStats sensorReadings(500);
-constexpr auto BUFFER_TIME_WINDOW_MS = 2000;
-constexpr auto BUFFER_RESOLUTION_MS = 100;
-BufferedTimeSeries waveHeight(BUFFER_TIME_WINDOW_MS, BUFFER_RESOLUTION_MS);
+
+constexpr unsigned long LOG_INTERVAL_MS = 1000;
+constexpr unsigned long BUFFER_TIME_SPAN_MS = 2000;
+constexpr unsigned long BUFFER_RESOLUTION_MS = 100;
+
+BufferedTimeSeries waveHeight(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
 Timer bufferTimer(BUFFER_RESOLUTION_MS);
+Timer logTimer(LOG_INTERVAL_MS);
 
 Format heightFormat("###.# cm", Format::Alignment::RIGHT);
 
@@ -45,28 +57,25 @@ void setup()
 
    feather.setTextSize(2);
    feather.setCursorY(-feather.charH());
-   feather.println("Wave Subscriber", Color::GRAY);
+	feather.println("Wave Subscriber", Color::GRAY);
 
-   feather.println("Initializing", Color::HEADING2);
-   feather.moveCursorY(4);
+	feather.println("Initializing", Color::HEADING2);
+	feather.moveCursorY(4);
 
 	feather.print("WiFi...", Color::LABEL);
 	while (WiFi.status() != WL_CONNECTED)
 	{
-	  feather.print(".", Color::LABEL);
+		feather.print(".", Color::LABEL);
 	}
 	feather.printlnR("OK", Color::VALUE);
-   feather.moveCursorY(1);
+	feather.moveCursorY(1);
 
    feather.print("WebSocket...", Color::LABEL);
 
    client.setCallbacks(nullptr, onDisconnected, nullptr, nullptr, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
 
-
    delay(1000); // provide time for the wind meter to get a reading
-
-   sw.reset();
 }
 
 void onStarted()
@@ -92,60 +101,58 @@ float lastDelta = 0;
 
 void loop()
 {
-   client.loop();
+	client.loop();
 
-   if (client.isStarted() == false)
-   {
-	  return;
-   }
+	if (client.isStarted() == false)
+	{
+		return;
+	}
 
-   // get value measured from the bottom of the graph
-   float sensorReading = client.getValue();
+	// get value measured from the bottom of the graph
+	float sensorReading = client.getValue();
 
-   if (bufferTimer.ready())
-   {
-	  if (isnan(sensorReading))
-	  {
-		 return;
-	  }
+	if (bufferTimer.ready())
+	{
+		if (isnan(sensorReading))
+		{
+			return;
+		}
 
-	  sensorReadings.set(sensorReading);
-	  float avgSensorReading = sensorReadings.get();
+		sensorReadings.set(sensorReading);
+		float avgSensorReading = sensorReadings.get();
 
-	  float delta = avgSensorReading - sensorReading;
-	  if (fabs(delta - lastDelta) < 5)
-	  {
-		 waveHeight.set(delta);
-		 lastDelta = delta;
-	  }
-   }
+		float delta = avgSensorReading - sensorReading;
+		if (fabs(delta - lastDelta) < 5)
+		{
+			waveHeight.set(delta);
+			lastDelta = delta;
+		}
+	}
 
-   if (waveHeight.ready() == false)
-   {
-	  return;
-   }
+	if (waveHeight.ready() == false)
+	{
+		return;
+	}
 
-   rollingChart.set((ROLLING_RANGE.min + ROLLING_RANGE.max) / 2.0 + waveHeight.get());
+	rollingChart.set((ROLLING_RANGE.min + ROLLING_RANGE.max) / 2.0 + waveHeight.get());
 
-   // display values
-   feather.setCursor(0, 0);
-   feather.setTextSize(3);
+	// display values
+	feather.setCursor(0, 0);
+	feather.setTextSize(3);
 
-   feather.setTextSize(2);
-   feather.print(client.getTopic(), Color::HEADING);
-   feather.setTextSize(3);
-   feather.printR(waveHeight.get(), heightFormat, Color::VALUE);
-   feather.moveCursorY(4);
+	feather.setTextSize(2);
+	feather.print(client.getTopic(), Color::HEADING);
+	feather.setTextSize(3);
+	feather.printR(waveHeight.get(), heightFormat, Color::VALUE);
+	feather.moveCursorY(4);
 
-   refreshRate.tick();
-   rollingChart.draw(&feather.display);
+	refreshRate.tick();
+	rollingChart.draw(&feather.display);
 
-   if (sw.elapsedSecs() > 1)
-   {
-	  Serial.println(String("Rate: ") + String(refreshRate.get()) + " data pts per sec");
-	  Serial.println(String("Sensor Reading: ") + String(sensorReading));
-	  Serial.println(String("Wave Height: ") + String(waveHeight.get()));
-	  sw.reset();
-   }
+	if (logTimer.ready())
+	{
+		Serial.println(String("Rate: ") + String(refreshRate.get()) + " data pts per sec");
+		Serial.println(String("Sensor Reading: ") + String(sensorReading));
+		Serial.println(String("Wave Height: ") + String(waveHeight.get()));
+	}
 }
-

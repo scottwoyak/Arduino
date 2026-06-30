@@ -1,22 +1,20 @@
-/// <summary>
-/// I2C bus scanner with multiplexor port support.
-/// </summary>
-/// <remarks>
-/// Scans all 8 ports of a TCA9548A I2C multiplexor (default address 0x70) and reports
-/// devices detected on each port. Useful for systems using I2C multiplexing to connect
-/// multiple sensors to the same I2C bus. Automatically detects Waveshare ESP32-S3 Zero
-/// hardware and configures I2C accordingly. Rescans every 5 seconds.
-/// 
-/// Hardware: Arduino with TCA9548A I2C multiplexor and multiple I2C devices on different ports.
-/// </remarks>
+//
+// I2C bus scanner with multiplexor port support.
+//
+// Scans all 8 ports of a TCA9548A I2C multiplexor (default address 0x70) and reports
+// devices detected on each port. Useful for systems using I2C multiplexing to connect
+// multiple sensors to the same I2C bus. Automatically detects Waveshare ESP32-S3 Zero
+// hardware and configures I2C accordingly. Rescans every 5 seconds.
+//
 
 #include <Arduino.h>
 #include <Wire.h>
+#include "SerialX.h"
 
 constexpr uint8_t I2C_SDA = 7;
 constexpr uint8_t I2C_SCL = 8;
 
-constexpr uint8_t MULTIPLEXOR_ADDR = 0x70;   // Default TCA9548A address
+constexpr uint8_t MULTIPLEXOR_ADDR = 0x70;  // Default TCA9548A address
 constexpr uint8_t NUM_MULTIPLEXOR_PORTS = 8;
 
 constexpr uint8_t I2C_MIN_ADDR = 1;
@@ -33,6 +31,17 @@ void setup()
 #else
    Wire.begin();
 #endif
+
+   // Test for multiplexor presence
+   Wire.beginTransmission(MULTIPLEXOR_ADDR);
+   if (Wire.endTransmission() != 0)
+   {
+      Serial.println("ERROR: I2C multiplexor not found at address 0x70");
+      while (true)
+      {
+         delay(100);
+      }
+   }
 
    Serial.println("I2C Multiplexor Scanner - Ready");
 }
@@ -51,6 +60,8 @@ void loop()
       Wire.beginTransmission(MULTIPLEXOR_ADDR);
       Wire.write(1 << port);
       Wire.endTransmission();
+
+      delay(10);  // Allow time for port switching
 
       Serial.print("Port ");
       Serial.print(port);

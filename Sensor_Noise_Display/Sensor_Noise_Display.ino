@@ -1,16 +1,10 @@
-// -------------------------------------------------------------------------------------------------
 //
-// Continuously samples either a capacitor sensor or temperature sensor and displays/prints noise
-// metrics over SAMPLE_TIME_MS using TimedStats.
+// Continuously samples either a capacitor sensor or temperature sensor and displays noise metrics.
 //
-// Data flow:
-// - Active sensor is sampled every SAMPLE_INTERVAL_MS.
-// - TimedStats tracks average/range/count/stddev over the last SAMPLE_TIME_MS.
+// Active sensor is sampled every SAMPLE_INTERVAL_MS. TimedStats tracks average, range, count,
+// and standard deviation over the last SAMPLE_TIME_MS (sliding window). Display refreshes every
+// DISPLAY_INTERVAL_MS showing all metrics plus raw sensor rate.
 //
-// Display flow:
-// - GUI refreshes every DISPLAY_INTERVAL_MS.
-// - Screen shows Avg, Range, StdDev, sample count, and raw sensor rate.
-// -------------------------------------------------------------------------------------------------
 
 #include <Arduino.h>
 #include "Feather.h"
@@ -61,9 +55,6 @@ Format stdDevPercentFormat("##.##%", 7);
 Format countFormat("######");
 Format rateFormat("####/s");
 
-/// <summary>
-/// Prints a one-time serial legend describing the active sampling period statistics.
-/// </summary>
 void printSerialSummary()
 {
    unsigned long expectedSamples = SAMPLE_TIME_MS / SAMPLE_INTERVAL_MS;
@@ -81,10 +72,6 @@ void printSerialSummary()
    Serial.println(String("- StdDev(") + sensorUnit + "): population standard deviation in active period");
 }
 
-/// <summary>
-/// Prints a periodic serial row containing the latest timed statistics.
-/// </summary>
-/// <param name="timedStats">Timed statistics source.</param>
 void printSerialValues(TimedStats& timedStats)
 {
    String sensorUnit = sensor.unit();
@@ -186,15 +173,15 @@ void loop()
       feather.println("     Rate: n/a", Color::GRAY);
    }
 
-       #if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-           if (feather.buttonA.wasPressed() && sensor.supportsChargePinRotation())
-           {
-              sensor.rotateChargePin();
-              stats.reset();
-              serialHeaderPrinted = false;
-              serialRowsPrinted = 0;
-              Serial.println();
-              Serial.println(String("Switched charge resistor to ") + sensor.chargePinLabel());
-           }
-       #endif
-       }
+#if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
+   if (feather.buttonA.wasPressed() && sensor.supportsChargePinRotation())
+   {
+      sensor.rotateChargePin();
+      stats.reset();
+      serialHeaderPrinted = false;
+      serialRowsPrinted = 0;
+      Serial.println();
+      Serial.println(String("Switched charge resistor to ") + sensor.chargePinLabel());
+   }
+#endif
+}
