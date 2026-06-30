@@ -116,14 +116,10 @@ void printWindowAnalysis()
       size_t windowSize = ANALYSIS_WINDOW_SIZES[analysisIndex];
       float effectiveRate = (windowSize > 0) ? (1000.0f / static_cast<float>(windowSize * SAMPLE_INTERVAL_MS)) : NAN;
 
-      float avgRange = NAN;
-      float avgStdDev = NAN;
-      size_t averageCount = 0;
-      analysis.computeAverageSeriesStats(
-         windowSize,
-         avgRange,
-         avgStdDev,
-         averageCount);
+      Stats avgSeriesStats = analysis.computeAverageSeriesStats(windowSize);
+      float avgRange = analysis.computeRange(avgSeriesStats.min(), avgSeriesStats.max());
+      float avgStdDev = avgSeriesStats.stdDev();
+      size_t averageCount = avgSeriesStats.count();
 
       SerialX::print(windowSize, 8);
       SerialX::print(isfinite(effectiveRate) ? String(effectiveRate, 1) + "/s" : "n/a", 10);

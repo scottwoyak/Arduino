@@ -52,63 +52,17 @@ public:
    /// <summary>
    /// Computes average, population standard deviation, minimum, and maximum for finite values.
    /// </summary>
-   /// <param name="averageOut">Output average value.</param>
-   /// <param name="stdDevOut">Output population standard deviation.</param>
-   /// <param name="minOut">Output minimum value.</param>
-   /// <param name="maxOut">Output maximum value.</param>
-   /// <param name="finiteCountOut">Output finite value count used in calculations.</param>
-   void computeBasicStats(
-      float& averageOut,
-      float& stdDevOut,
-      float& minOut,
-      float& maxOut,
-      size_t& finiteCountOut) const
+   /// <returns>Stats object populated from finite captured values.</returns>
+   Stats computeBasicStats() const
    {
-      double valueSum = 0.0;
-      double valueSumSquares = 0.0;
-      float valueMin = NAN;
-      float valueMax = NAN;
-      size_t finiteValueCount = 0;
+      Stats stats;
 
       for (size_t i = 0; i < _valueCount; i++)
       {
-         float value = _values[i];
-         if (!isfinite(value))
-         {
-            continue;
-         }
-
-         valueSum += value;
-         valueSumSquares += static_cast<double>(value) * static_cast<double>(value);
-
-         if (finiteValueCount == 0)
-         {
-            valueMin = value;
-            valueMax = value;
-         }
-         else
-         {
-            valueMin = min(valueMin, value);
-            valueMax = max(valueMax, value);
-         }
-
-         finiteValueCount++;
+         stats.add(_values[i]);
       }
 
-      averageOut = NAN;
-      stdDevOut = NAN;
-      minOut = valueMin;
-      maxOut = valueMax;
-      finiteCountOut = finiteValueCount;
-
-      if (finiteValueCount > 0)
-      {
-         const double count = static_cast<double>(finiteValueCount);
-         const double mean = valueSum / count;
-         const double variance = max(0.0, (valueSumSquares / count) - (mean * mean));
-         averageOut = static_cast<float>(mean);
-         stdDevOut = static_cast<float>(sqrt(variance));
-      }
+      return stats;
    }
 
    /// <summary>
@@ -145,26 +99,17 @@ public:
    /// Computes statistics of the moving-average series for a given window size.
    /// </summary>
    /// <param name="windowSize">Moving-average window size (N).</param>
-   /// <param name="rangeOut">Output range of the moving-average series.</param>
-   /// <param name="stdDevOut">Output standard deviation of the moving-average series.</param>
-   /// <param name="countOut">Output number of average points evaluated.</param>
-   void computeAverageSeriesStats(
-      size_t windowSize,
-      float& rangeOut,
-      float& stdDevOut,
-      size_t& countOut) const
+   /// <returns>Stats object over the moving-average series for the requested window.</returns>
+   Stats computeAverageSeriesStats(size_t windowSize) const
    {
-      rangeOut = NAN;
-      stdDevOut = NAN;
-      countOut = 0;
+      Stats averageStats;
 
       if ((windowSize == 0) || (_valueCount < windowSize))
       {
-         return;
+         return averageStats;
       }
 
       RollingAverage blockAverage(windowSize);
-      Stats averageStats;
 
       for (size_t valueIndex = 0; valueIndex < _valueCount; valueIndex++)
       {
@@ -176,10 +121,6 @@ public:
          }
       }
 
-      countOut = averageStats.count();
-      float avgMin = averageStats.min();
-      float avgMax = averageStats.max();
-      rangeOut = computeRange(avgMin, avgMax);
-      stdDevOut = averageStats.stdDev();
+      return averageStats;
    }
 };

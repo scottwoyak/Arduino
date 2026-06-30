@@ -74,20 +74,13 @@ public:
    /// <param name="decimals">Decimal precision for printed floating-point values.</param>
    static void printCaptureSummary(const SensorCapture& capture, unsigned long captureDurationMs, uint8_t decimals = 3)
    {
-      float valueAvg = NAN;
-      float valueStdDev = NAN;
-      float valueMin = NAN;
-      float valueMax = NAN;
-      size_t valueCount = 0;
-
       SensorCaptureStats analysis(capture);
-      analysis.computeBasicStats(
-         valueAvg,
-         valueStdDev,
-         valueMin,
-         valueMax,
-         valueCount);
+      Stats basicStats = analysis.computeBasicStats();
 
+      float valueAvg = basicStats.get();
+      float valueStdDev = basicStats.stdDev();
+      float valueMin = basicStats.min();
+      float valueMax = basicStats.max();
       float valueRange = analysis.computeRange(valueMin, valueMax);
 
       Serial.println();

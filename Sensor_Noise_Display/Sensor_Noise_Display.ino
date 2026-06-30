@@ -28,15 +28,21 @@ constexpr uint16_t SAMPLE_INTERVAL_MS = 10;
 constexpr uint16_t DISPLAY_INTERVAL_MS = static_cast<uint16_t>(1.5f * SAMPLE_TIME_MS);
 
 #if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-constexpr uint8_t CHARGE_PIN = 9;
 constexpr uint8_t SENSE_PIN = 5;
+constexpr uint8_t CHARGE_PIN_1M = 6;
+constexpr uint8_t CHARGE_PIN_470K = 9;
+constexpr uint8_t CHARGE_PIN_100K = 10;
+constexpr uint8_t CHARGE_PIN_47K = 11;
+constexpr uint8_t CHARGE_PINS[] = { CHARGE_PIN_1M, CHARGE_PIN_470K, CHARGE_PIN_100K, CHARGE_PIN_47K };
+constexpr const char* CHARGE_PIN_LABELS[] = { "1M", "470K", "100K", "47K" };
+constexpr size_t CHARGE_PIN_COUNT = sizeof(CHARGE_PINS) / sizeof(CHARGE_PINS[0]);
 constexpr uint16_t DISCHARGE_DELAY_MICROS = 500;
 #endif
 
 Feather feather;
 
 #if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-CapacitorTestSensor sensor(CHARGE_PIN, SENSE_PIN, DISCHARGE_DELAY_MICROS);
+CapacitorTestSensor sensor(CHARGE_PINS, CHARGE_PIN_LABELS, CHARGE_PIN_COUNT, SENSE_PIN, DISCHARGE_DELAY_MICROS);
 #elif SENSOR_TYPE == SENSOR_TYPE_TEMP
 TempTestSensor sensor;
 #else
@@ -48,14 +54,15 @@ TimedStats stats(SAMPLE_TIME_MS);
 bool serialHeaderPrinted = false;
 uint16_t serialRowsPrinted = 0;
 
-Format valueFormat("###.#", Format::Alignment::RIGHT);
-Format rangeFormat("###.#", Format::Alignment::RIGHT);
-Format stdDevFormat("##.##", Format::Alignment::RIGHT);
-Format countFormat("#####", Format::Alignment::RIGHT);
-Format rateFormat("####/s", Format::Alignment::RIGHT);
+Format valueFormat("####.#");
+Format rangeFormat("####.#");
+Format stdDevFormat("####.##");
+Format stdDevPercentFormat("##.##%", 7);
+Format countFormat("######");
+Format rateFormat("####/s");
 
 /// <summary>
-/// Prints a one-time serial legend describing the active sampling and stats window.
+/// Prints a one-time serial legend describing the active sampling period statistics.
 /// </summary>
 void printSerialSummary()
 {
@@ -64,46 +71,56 @@ void printSerialSummary()
 
    Serial.println();
    Serial.println("Serial Metrics Summary");
-   SerialX::println(String("- Sampling source: ") + sensor.sourceDescription(), 0);
+   SerialX::println("- Sampling source: active sensor", 0);
    SerialX::println(String("- Data points are collected every: ") + SAMPLE_INTERVAL_MS + " ms", 0);
-   SerialX::println(String("- Stats are averaged over: ") + SAMPLE_TIME_MS + " ms (sliding window)", 0);
-   SerialX::println(String("- Expected samples per full window: ~") + expectedSamples, 0);
-   Serial.println("- Num Samples: finite samples currently retained in the active stats window");
-   Serial.println(String("- Avg(") + sensorUnit + "): mean of samples in the active stats window");
-   Serial.println(String("- Range(") + sensorUnit + "): max-min of samples in the active stats window");
-   Serial.println(String("- StdDev(") + sensorUnit + "): population standard deviation in active window");
+   SerialX::println(String("- Stats are averaged over: ") + SAMPLE_TIME_MS + " ms (sliding period)", 0);
+   SerialX::println(String("- Expected samples per full period: ~") + expectedSamples, 0);
+   Serial.println("- Num Samples: finite samples currently retained in the active stats period");
+   Serial.println(String("- Avg(") + sensorUnit + "): mean of samples in the active stats period");
+   Serial.println(String("- Range(") + sensorUnit + "): max-min of samples in the active stats period");
+   Serial.println(String("- StdDev(") + sensorUnit + "): population standard deviation in active period");
 }
 
 /// <summary>
-/// Prints a periodic serial row containing the latest windowed statistics.
+/// Prints a periodic serial row containing the latest timed statistics.
 /// </summary>
-/// <param name="avg">Window average value.</param>
-/// <param name="rng">Window range value.</param>
-/// <param name="sd">Window standard deviation value.</param>
-/// <param name="count">Finite sample count in the active window.</param>
-void printSerialValues(float avg, float rng, float sd, size_t count)
+/// <param name="timedStats">Timed statistics source.</param>
+void printSerialValues(TimedStats& timedStats)
 {
    String sensorUnit = sensor.unit();
+
+   float avg = timedStats.average();
+   float minValue = timedStats.min();
+   float maxValue = timedStats.max();
+   float rng = (isfinite(minValue) && isfinite(maxValue)) ? (maxValue - minValue) : NAN;
+   size_t count = timedStats.count();
+   size_t maxSamplesPerPeriod = SAMPLE_TIME_MS / SAMPLE_INTERVAL_MS;
+   count = min(count, maxSamplesPerPeriod);
+   float sd = timedStats.stdDev();
+   float sdPercent = (isfinite(avg) && (fabsf(avg) > 0.0f) && isfinite(sd)) ? ((sd / fabsf(avg)) * 100.0f) : NAN;
 
    if (!serialHeaderPrinted || (serialRowsPrinted % 25 == 0))
    {
       Serial.println();
-      SerialX::print("Num Samples", 18);
+      SerialX::print("Num Samples", 14);
       SerialX::print(String("Avg(") + sensorUnit + ")", 12);
       SerialX::print(String("Range(") + sensorUnit + ")", 12);
-      SerialX::println(String("StdDev(") + sensorUnit + ")", 12);
+      SerialX::print(String("StdDev(") + sensorUnit + ")", 12);
+      SerialX::println("StdDev%", 10);
 
-      SerialX::print("-----------", 18);
+      SerialX::print("-----------", 14);
       SerialX::print("-------", 12);
       SerialX::print("---------", 12);
-      SerialX::println("------", 12);
+      SerialX::print("------", 12);
+      SerialX::println("-------", 10);
       serialHeaderPrinted = true;
    }
 
-   SerialX::print(count, 18);
+   SerialX::print(count, 14);
    SerialX::print(avg, 3, 12);
    SerialX::print(rng, 3, 12);
-   SerialX::println(sd, 3, 12);
+   SerialX::print(sd, 3, 12);
+   SerialX::println(isfinite(sdPercent) ? String(sdPercent, 2) + "%" : "n/a", 10);
    serialRowsPrinted++;
 }
 
@@ -136,30 +153,48 @@ void loop()
    float maxValue = stats.max();
    float rng = (isfinite(minValue) && isfinite(maxValue)) ? (maxValue - minValue) : NAN;
    size_t count = stats.count();
-   size_t maxSamplesPerWindow = SAMPLE_TIME_MS / SAMPLE_INTERVAL_MS;
-   count = min(count, maxSamplesPerWindow);
+   size_t maxSamplesPerPeriod = SAMPLE_TIME_MS / SAMPLE_INTERVAL_MS;
+   count = min(count, maxSamplesPerPeriod);
    float sd = stats.stdDev();
+   float sdPercent = (isfinite(avg) && (fabsf(avg) > 0.0f) && isfinite(sd)) ? ((sd / fabsf(avg)) * 100.0f) : NAN;
 
-   printSerialValues(avg, rng, sd, count);
+   printSerialValues(stats);
 
    feather.setCursor(0, 0);
    feather.setTextSize(3);
-   feather.println(sensor.title(), Color::HEADING);
+   feather.println("Sensor Noise", Color::HEADING);
    feather.moveCursorY(6);
 
-   feather.println("   Avg: ", avg, valueFormat);
-   feather.println(" Range: ", rng, rangeFormat);
-   feather.println("StdDev: ", sd, stdDevFormat);
-   feather.println("     N: ", count, countFormat);
+   feather.setTextSize(2);
+#if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
+   feather.print("        Res: ", Color::LABEL);
+   feather.println(sensor.chargePinLabel(), Color::VALUE2);
+#endif
+   feather.println("        Avg: ", avg, valueFormat);
+   feather.println("      Range: ", rng, rangeFormat);
+   feather.println("     StdDev: ", sd, stdDevFormat);
+   feather.println("    StdDev%: ", sdPercent, stdDevPercentFormat);
+   feather.println("          N: ", count, countFormat);
 
    float rawRate = sensor.rawRate();
-   feather.print("  Rate: ", Color::GRAY);
    if (isfinite(rawRate))
    {
-      feather.println(rawRate, rateFormat, Color::GRAY);
+      feather.println("     Rate: ", rawRate, rateFormat, Color::GRAY);
    }
    else
    {
-      feather.println(" n/a", Color::GRAY);
+      feather.println("     Rate: n/a", Color::GRAY);
    }
-}
+
+       #if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
+           if (feather.buttonA.wasPressed() && sensor.supportsChargePinRotation())
+           {
+              sensor.rotateChargePin();
+              stats.reset();
+              serialHeaderPrinted = false;
+              serialRowsPrinted = 0;
+              Serial.println();
+              Serial.println(String("Switched charge resistor to ") + sensor.chargePinLabel());
+           }
+       #endif
+       }

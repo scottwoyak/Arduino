@@ -41,8 +41,8 @@ constexpr size_t MAX_SAMPLES = 1000;
 constexpr size_t HISTOGRAM_BINS = 20;
 // Significant digits used for chart min/max labels on the Feather display.
 constexpr uint8_t CHART_MIN_MAX_SIGNIFICANT_DIGITS = 3;
-// Allowed stabilization delta as a fraction of average signal level (0.25 at ~65 average => ~0.385%).
-constexpr float STABILITY_DELTA_PERCENT = 0.01f;
+// Allowed stabilization delta as a fraction of average signal level.
+constexpr float STABILITY_DELTA_PERCENT = 0.1f;
 // Number of consecutive stable samples required before capture storage begins.
 constexpr size_t STABILITY_REQUIRED_SAMPLES = 10;
 // Enables or disables stabilization gating before values are stored.
@@ -54,10 +54,15 @@ constexpr size_t NUM_SAMPLE_SIZES = sizeof(SAMPLE_SIZES) / sizeof(SAMPLE_SIZES[0
 Feather feather;
 
 #if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-// Digital pin used to charge the capacitor-based sensor.
-constexpr uint8_t CHARGE_PIN = 6;
-// Digital pin used to read/discharge the capacitor-based sensor.
+// Hardware pin assignments.
 constexpr uint8_t SENSE_PIN = 5;
+constexpr uint8_t CHARGE_PIN_1M = 6;
+constexpr uint8_t CHARGE_PIN_470K = 9;
+constexpr uint8_t CHARGE_PIN_100K = 10;
+constexpr uint8_t CHARGE_PIN_47K = 11;
+
+// Select which resistor charge pin to use.
+constexpr uint8_t CHARGE_PIN = CHARGE_PIN_47K;
 // Discharge delay before each capacitor charge cycle.
 constexpr uint16_t DISCHARGE_DELAY_MICROS = 350;
 // Internal rolling-average window size used by CapacitorSensor.
@@ -133,7 +138,7 @@ void renderHistogramsOnFeather()
 
    feather.setTextSize(2);
    Format numSamplesFormat("####", Format::Alignment::RIGHT);
-   Format stdDevFormat("##.##", 6, Format::Alignment::RIGHT);
+   Format sigmaPercentFormat("##.##%", 6, Format::Alignment::RIGHT);
    Format hzFormat(" ####", Format::Alignment::RIGHT);
 
    auto computeEffectiveRateHz = [](size_t sampleSize) -> float
@@ -141,21 +146,27 @@ void renderHistogramsOnFeather()
       return (sampleSize > 0) ? (1000.0f / static_cast<float>(sampleSize * SAMPLE_INTERVAL_MS)) : NAN;
    };
 
-   float rawAvg = NAN;
-   float rawStdDev = NAN;
-   float rawMin = NAN;
-   float rawMax = NAN;
-   size_t rawCount = 0;
-   analysis.computeBasicStats(rawAvg, rawStdDev, rawMin, rawMax, rawCount);
+   Stats rawStats = analysis.computeBasicStats();
+   float rawAvg = rawStats.get();
+   float rawStdDev = rawStats.stdDev();
+   float rawMin = rawStats.min();
+   float rawMax = rawStats.max();
+   size_t rawCount = rawStats.count();
 
    feather.setCursor(x, 0);
-   feather.println("   N  Sigma   Hz", Color::VALUE3);
+   feather.println("   N Sigma%   Hz", Color::VALUE3);
 
    feather.setCursorX(x);
-   if ((rawCount > 0) && isfinite(rawStdDev))
+   float rawSigmaPercent = NAN;
+   if (isfinite(rawAvg) && (fabsf(rawAvg) > 0.0f) && isfinite(rawStdDev))
+   {
+      rawSigmaPercent = (rawStdDev / fabsf(rawAvg)) * 100.0f;
+   }
+
+   if ((rawCount > 0) && isfinite(rawSigmaPercent))
    {
       feather.print(" Raw", Color::LABEL);
-      feather.print(rawStdDev, stdDevFormat, Color::VALUE2);
+      feather.print(rawSigmaPercent, sigmaPercentFormat, Color::VALUE2);
       feather.println(computeEffectiveRateHz(1), hzFormat, Color::VALUE2);
    }
    else
@@ -170,20 +181,22 @@ void renderHistogramsOnFeather()
       size_t sampleSize = SAMPLE_SIZE[i];
       float effectiveRateHz = computeEffectiveRateHz(sampleSize);
 
-      float avgRange = NAN;
-      float avgStdDev = NAN;
-      size_t averageCount = 0;
-      analysis.computeAverageSeriesStats(
-         sampleSize,
-         avgRange,
-         avgStdDev,
-         averageCount);
+      Stats avgSeriesStats = analysis.computeAverageSeriesStats(sampleSize);
+      float avgMean = avgSeriesStats.get();
+      float avgStdDev = avgSeriesStats.stdDev();
+      size_t averageCount = avgSeriesStats.count();
+
+      float avgSigmaPercent = NAN;
+      if (isfinite(avgMean) && (fabsf(avgMean) > 0.0f) && isfinite(avgStdDev))
+      {
+         avgSigmaPercent = (avgStdDev / fabsf(avgMean)) * 100.0f;
+      }
 
       feather.setCursorX(x);
-      if ((averageCount > 0) && isfinite(avgStdDev))
+      if ((averageCount > 0) && isfinite(avgSigmaPercent))
       {
          feather.print(sampleSize, numSamplesFormat, Color::LABEL);
-         feather.print(avgStdDev, stdDevFormat, Color::VALUE);
+         feather.print(avgSigmaPercent, sigmaPercentFormat, Color::VALUE);
          feather.println(effectiveRateHz, hzFormat, Color::VALUE);
       }
       else
@@ -229,30 +242,36 @@ void printAveragingAnalysis()
    SerialX::print("Size", 8);
    SerialX::print("Range", 12);
    SerialX::print("StdDev", 12);
-   SerialX::println("Resulting Rate", 14);
+   SerialX::print("StdDev%", 12);
+   SerialX::println("Eff Rate", 10);
 
-   SerialX::print("-", 8);
-   SerialX::print("---------", 12);
+   SerialX::print("----", 8);
+   SerialX::print("-----", 12);
    SerialX::print("------", 12);
-   SerialX::println("--------------", 14);
+   SerialX::print("-------", 12);
+   SerialX::println("--------", 10);
 
    for (size_t analysisIndex = 0; analysisIndex < NUM_SAMPLE_SIZES; analysisIndex++)
    {
       size_t sampleSize = SAMPLE_SIZES[analysisIndex];
       float effectiveRate = (sampleSize > 0) ? (1000.0f / static_cast<float>(sampleSize * SAMPLE_INTERVAL_MS)) : NAN;
 
-      float avgRange = NAN;
-      float avgStdDev = NAN;
-      size_t averageCount = 0;
-      analysis.computeAverageSeriesStats(
-          sampleSize,
-          avgRange,
-          avgStdDev,
-          averageCount);
+      Stats avgSeriesStats = analysis.computeAverageSeriesStats(sampleSize);
+      float avgRange = analysis.computeRange(avgSeriesStats.min(), avgSeriesStats.max());
+      float avgStdDev = avgSeriesStats.stdDev();
+      float avgMean = avgSeriesStats.get();
+      size_t averageCount = avgSeriesStats.count();
+
+      float avgStdDevPercent = NAN;
+      if (isfinite(avgMean) && (fabsf(avgMean) > 0.0f) && isfinite(avgStdDev))
+      {
+         avgStdDevPercent = (avgStdDev / fabsf(avgMean)) * 100.0f;
+      }
 
       SerialX::print(sampleSize, 8);
       if (averageCount == 0)
       {
+         SerialX::print("n/a", 12);
          SerialX::print("n/a", 12);
          SerialX::print("n/a", 12);
       }
@@ -260,9 +279,10 @@ void printAveragingAnalysis()
       {
          SerialX::print(avgRange, 3, 12);
          SerialX::print(avgStdDev, 3, 12);
+         SerialX::print(isfinite(avgStdDevPercent) ? String(avgStdDevPercent, 2) + "%" : "n/a", 12);
       }
 
-      SerialX::println(isfinite(effectiveRate) ? String(effectiveRate, 1) + "/s" : "n/a", 14);
+      SerialX::println(isfinite(effectiveRate) ? String(effectiveRate, 1) + "/s" : "n/a", 10);
    }
 
    Serial.println();

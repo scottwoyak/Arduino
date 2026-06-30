@@ -13,7 +13,6 @@
     <File Path="libraries/Woyak/BufferedTimeSeries.h" />
     <File Path="libraries/Woyak/Button.h" />
     <File Path="libraries/Woyak/TempCalibrator.h" />
-    <File Path="libraries/Woyak/CapacitorCalibrationSensor.h" />
     <File Path="libraries/Woyak/CapacitorDepthSensor.h" />
     <File Path="libraries/Woyak/CapacitorSensor.h" />
     <File Path="libraries/Woyak/Color.h" />
@@ -353,7 +352,6 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="SmoothFontCreator/SmoothFontCreator.csproj" Id="8eb42b88-3644-48a5-95dc-592c930a65f6" />
   <Project Path="Solar_Monitor/Solar_Monitor.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

@@ -10,8 +10,7 @@
 /// </summary>
 /// <remarks>
 /// This implementation is self-contained and intentionally does not expose queued
-/// per-measurement access. Use <see cref="CapacitorCalibrationSensor"/> when
-/// full raw event capture is required.
+/// per-measurement access.
 /// </remarks>
 class CapacitorSensor
 {
@@ -103,7 +102,7 @@ private:
       esp_timer_start_once(_timeoutTimer, CHARGE_TIMEOUT_US);
    }
 
-    void _handleChargeTimeout()
+   void _handleChargeTimeout()
    {
       if (_state != CHARGING)
       {
@@ -217,12 +216,14 @@ public:
    }
 
    /// <summary>
-   /// Sets the discharge delay before each charge cycle.
+   /// Sets the discharge delay before each charge cycle. Resets rate tracking.
    /// </summary>
    /// <param name="dischargeDelayMicros">Discharge delay in microseconds.</param>
    void setDischargeDelayMicros(uint16_t dischargeDelayMicros)
    {
       _dischargeDelayMicros = dischargeDelayMicros;
+      _rawSensorRate.reset();
+      _latestAverageMicros = NAN;
    }
 
    /// <summary>
@@ -264,13 +265,5 @@ public:
       return _rawSensorRate.get();
    }
 
-   /// <summary>
-   /// Resets rolling rate and average state.
-   /// </summary>
-   void resetRate()
-   {
-      _rawSensorRate.reset();
-      _latestAverageMicros = NAN;
-   }
-};
+   };
 

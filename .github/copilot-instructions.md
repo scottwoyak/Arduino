@@ -24,6 +24,7 @@
 - When addressing data quality issues, prefer root-cause stabilization logic over fixed sample-skipping heuristics.
 - Avoid unnecessary casts when calling formatted display methods like printlnC for methods that return float, such as chargeTimeMicros().
 - For mock-timer-based deterministic tests, prefer exact equality assertions (assertEqual) over range-style boolean checks when expected values are deterministic.
+- When asked to compile an Arduino sketch, build only the current sketch/project, not the entire solution.
 
 ## Sketch Header Comments
 - For sketch header comments, omit a separate sketch title line; use only summary lines between blank comment lines, and keep divider dashes ending at column 99.
