@@ -26,6 +26,7 @@
 - For mock-timer-based deterministic tests, prefer exact equality assertions (assertEqual) over range-style boolean checks when expected values are deterministic.
 - When asked to compile an Arduino sketch, build only the current sketch/project, not the entire solution.
 - Optimize code and suggestions for the ESP32-S3 platform, including using ESP32-specific APIs like gpio_isr_handler_add(), esp_timer, and IRAM_ATTR for ISR functions, and other ESP32-S3 features.
+- When determining which sketch a command applies to, always use the latest IDESTATE current file from the user's message as authoritative.
 
 ## Arduino File Guidelines
 - For .ino files, use regular // comments for sketch-level documentation at the top of the file. Format as: blank comment line, then summary line, blank comment line, then detailed description, and a final blank comment line at the bottom. Example:

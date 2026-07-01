@@ -2,6 +2,14 @@
 // Captures finite sensor values for a fixed run window (or until the sample cap is reached), stores
 // them in RAM, and reports serial/display summaries plus an optional serial dump.
 //
+// Detailed behavior:
+// - The sketch is designed for repeatable calibration runs where sampling duration, interval, and
+//   maximum sample count are controlled by constants near the top of the file.
+// - A warm-up phase runs first so startup transients do not skew the captured dataset.
+// - Sampling is driven by SensorCapture timing (default 1 ms cadence), and only finite values are
+//   retained in RAM.
+// - Capture ends automatically when either SAMPLE_DURATION_MS elapses or MAX_SAMPLES is reached.
+//
 // Capture flow:
 // 1) Initialize display, serial, and sensor, then allow a brief warm-up period.
 // 2) Use a 1 ms timer to collect at most one sample per interval and store finite values in RAM.
@@ -9,12 +17,18 @@
 //
 // Output flow:
 // - Serial summary includes run metrics, value stats, and a value histogram.
-// - Feather display renders a value histogram with min/max labels.
+// - Feather display renders a value histogram with min/max labels plus Sigma%/effective-rate rows
+//   for multiple averaging window sizes.
 // - Button A triggers a paced serial dump of stored points (index, value).
 //
 // Sensor modes:
-// - Capacitor mode (default) reads from CapacitorSensor.
-// - Temperature mode reads directly per loop iteration.
+// - Capacitor mode reads from CapacitorSensor.
+// - Temperature mode reads from TempSensor.
+//
+// Typical usage:
+// - Select SENSOR_TYPE at compile time.
+// - Flash the sketch and allow warm-up/capture to complete.
+// - Review serial + display outputs to compare stability (StdDev%, range) across averaging sizes.
 //
 #include "Feather.h"
 #include "Histogram.h"
@@ -22,11 +36,13 @@
 #include "SensorCaptureStats.h"
 #include "SensorCaptureOutput.h"
 #include "SerialX.h"
-#include "TestSensor.h"
+#include <Wire.h>
+#include "CapacitorSensor.h"
+#include "TempSensor.h"
 
 #define SENSOR_TYPE_CAPACITOR 1
 #define SENSOR_TYPE_TEMP 2
-#define SENSOR_TYPE SENSOR_TYPE_CAPACITOR
+#define SENSOR_TYPE SENSOR_TYPE_TEMP
 
 constexpr unsigned long WARM_UP_MS = 100;
 constexpr unsigned long SAMPLE_DURATION_MS = 10000;
@@ -53,9 +69,11 @@ constexpr uint8_t CHARGE_PIN_47K = 11;
 constexpr uint8_t CHARGE_PIN = CHARGE_PIN_1M;
 constexpr uint16_t DISCHARGE_DELAY_MICROS = 350;
 constexpr size_t SENSOR_AVERAGE_SAMPLES = 1;
-CapacitorTestSensor testSensor(CHARGE_PIN, SENSE_PIN, DISCHARGE_DELAY_MICROS, SENSOR_AVERAGE_SAMPLES);
+constexpr const char* SENSOR_UNIT = "us";
+CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN, DISCHARGE_DELAY_MICROS, SENSOR_AVERAGE_SAMPLES);
 #elif SENSOR_TYPE == SENSOR_TYPE_TEMP
-TempTestSensor testSensor;
+constexpr const char* SENSOR_UNIT = "F";
+TempSensor sensor;
 #else
 #error "Invalid SENSOR_TYPE. Use SENSOR_TYPE_CAPACITOR or SENSOR_TYPE_TEMP."
 #endif
@@ -128,8 +146,6 @@ void renderHistogramsOnFeather()
    Stats rawStats = analysis.computeBasicStats();
    float rawAvg = rawStats.get();
    float rawStdDev = rawStats.stdDev();
-   float rawMin = rawStats.min();
-   float rawMax = rawStats.max();
    size_t rawCount = rawStats.count();
 
    feather.setCursor(x, 0);
@@ -203,7 +219,7 @@ void printCaptureSummary()
       Serial.println();
    }
 
-   String valueHistogramTitle = String("Sensor Value Histogram (") + testSensor.unit() + ")";
+   String valueHistogramTitle = String("Sensor Value Histogram (") + SENSOR_UNIT + ")";
    SensorCaptureOutput::printHistogramBins(valueHistogramTitle.c_str(), sensorCapture, HISTOGRAM_BINS, 3);
 
    sensorCapture.printFirstAndLastToSerial(10, 3);
@@ -309,8 +325,14 @@ void finishCapture()
 void setup()
 {
    SerialX::begin(115200, 2000);
+   Wire.begin();
    feather.begin();
-   testSensor.begin();
+
+#if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
+   sensor.begin();
+#else
+   sensor.begin();
+#endif
 
    sensorCapture.startWarmUp();
 
@@ -322,9 +344,14 @@ void loop()
 {
    SensorCaptureState states = sensorCapture.update();
 
-   if (sensorCapture.readyForValue())
-   {
-      SensorCaptureState valueStates = sensorCapture.addValue(testSensor.readValue());
+       if (sensorCapture.readyForValue())
+       {
+   #if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
+          float sensorValue = sensor.chargeTimeMicros();
+   #else
+          float sensorValue = sensor.readTemperatureF();
+   #endif
+          SensorCaptureState valueStates = sensorCapture.addValue(sensorValue);
       if ((valueStates & SENSOR_CAPTURE_STATE_COMPLETED) != 0)
       {
          finishCapture();

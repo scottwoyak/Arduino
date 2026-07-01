@@ -15,13 +15,15 @@
 //
 // Sensor modes:
 // - Capacitor mode (default) reads from CapacitorSensor.
-// - Temperature mode reads directly per loop iteration.
+// - Temperature mode reads from TempSensor.
 // -------------------------------------------------------------------------------------------------
 #include "SensorCapture.h"
 #include "SensorCaptureStats.h"
 #include "SensorCaptureOutput.h"
 #include "SerialX.h"
-#include "TestSensor.h"
+#include <Wire.h>
+#include "CapacitorSensor.h"
+#include "TempSensor.h"
 
 #define SENSOR_TYPE_CAPACITOR 1
 #define SENSOR_TYPE_TEMP 2
@@ -57,9 +59,11 @@ constexpr uint16_t DISCHARGE_DELAY_MICROS = 350;
 #endif
 
 #if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-CapacitorTestSensor testSensor(CHARGE_PIN, SENSE_PIN, DISCHARGE_DELAY_MICROS);
+constexpr const char* SENSOR_UNIT = "us";
+CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN, DISCHARGE_DELAY_MICROS);
 #elif SENSOR_TYPE == SENSOR_TYPE_TEMP
-TempTestSensor testSensor;
+constexpr const char* SENSOR_UNIT = "F";
+TempSensor sensor;
 #else
 #error "Invalid SENSOR_TYPE. Use SENSOR_TYPE_CAPACITOR or SENSOR_TYPE_TEMP."
 #endif
@@ -87,7 +91,7 @@ void printCaptureSummary()
       Serial.println();
    }
 
-   String valueHistogramTitle = String("Sensor Value Histogram (") + testSensor.unit() + ")";
+   String valueHistogramTitle = String("Sensor Value Histogram (") + SENSOR_UNIT + ")";
    SensorCaptureOutput::printHistogramBins(valueHistogramTitle.c_str(), sensorCapture, HISTOGRAM_BINS, 3);
 }
 
@@ -157,7 +161,8 @@ void finishCapture()
 void setup()
 {
    SerialX::begin(115200, 2000);
-   testSensor.begin();
+   Wire.begin();
+   sensor.begin();
 
    sensorCapture.startWarmUp();
 
@@ -172,9 +177,14 @@ void loop()
       Serial.println("Sampling started...");
    }
 
-   if (sensorCapture.readyForValue())
-   {
-      SensorCaptureState valueStates = sensorCapture.addValue(testSensor.readValue());
+       if (sensorCapture.readyForValue())
+       {
+   #if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
+          float sensorValue = sensor.chargeTimeMicros();
+   #else
+          float sensorValue = sensor.readTemperatureF();
+   #endif
+          SensorCaptureState valueStates = sensorCapture.addValue(sensorValue);
       if ((valueStates & SENSOR_CAPTURE_STATE_COMPLETED) != 0)
       {
          finishCapture();

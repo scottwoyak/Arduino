@@ -1,4 +1,33 @@
-
+// -------------------------------------------------------------------------------------------------
+//
+// Calibrates and displays temperature readings for 8 multiplexed sensors, then uploads
+// raw/corrected values and calibration deltas to InfluxDB.
+//
+// Detailed behavior:
+// - On startup, previously saved calibration deltas are loaded from Preferences, displayed,
+//   and printed to Serial in copy/paste format for TempSensorCallibration.h updates.
+// - The sketch probes all 8 multiplexer channels, initializes each TempSensor, and tracks
+//   detected sensor count to optimize InfluxDB batch settings.
+// - Button A starts live calibration display cycling between 3 views:
+//   1) Raw Temps (timed average)
+//   2) Corrected (timed average + correction)
+//   3) Correction (current computed delta)
+//
+// Calibration and persistence flow:
+// - TempCalibrator computes per-sensor timed averages and correction values relative to baseline.
+// - The same timed-average source is used for display, correction flow, and Influx writes.
+// - Correction factors are periodically saved to Preferences and echoed to Serial.
+//
+// Telemetry flow:
+// - At fixed intervals, the sketch publishes per-sensor raw/corrected values and deltas
+//   to InfluxDB (with Wi-Fi reconnect handling and buffered flush).
+//
+// Typical usage:
+// - Power on and review saved deltas.
+// - Press Button A to begin live calibration.
+// - Leave the system running until corrections stabilize, then copy printed values for code use.
+//
+// -------------------------------------------------------------------------------------------------
 #include "WiFiSettings.h"
 #include "Timer.h"
 #include "TempSensor.h"
@@ -7,15 +36,8 @@
 #include "SerialX.h"
 #include "Influx.h"
 #include "TempCalibrator.h"
-#include "RollingStats.h"
 #include <Wire.h>
 
-//-------------------------------------------------------------------------------------------------
-//
-// Calibrates and displays temperature readings for 8 multiplexed sensors, then uploads
-// raw/corrected values and calibration deltas to InfluxDB.
-//
-//-------------------------------------------------------------------------------------------------
 Feather feather;
 NeoPixelStatus status(&feather.neoPixel);
 constexpr uint8_t NUM_SENSORS = 8;
@@ -30,21 +52,10 @@ TempSensor sensors[] =
    TempSensor(),
    TempSensor(),
 };
-constexpr uint8_t NUM_SAMPLES = 10;
-RollingStats currentTemps[NUM_SENSORS] =
-{
-   RollingStats(NUM_SAMPLES),
-   RollingStats(NUM_SAMPLES),
-   RollingStats(NUM_SAMPLES),
-   RollingStats(NUM_SAMPLES),
-   RollingStats(NUM_SAMPLES),
-   RollingStats(NUM_SAMPLES),
-   RollingStats(NUM_SAMPLES),
-   RollingStats(NUM_SAMPLES),
-};
 
-// The amount of time we use to get a reading used for computing correction factors
+// The averaging window used for computing correction factors
 constexpr auto CORRECTION_AVG_S = 60;
+constexpr unsigned long CORRECTION_AVG_MS = 1000UL * CORRECTION_AVG_S;
 
 // How often we send data to Influx
 constexpr auto INFLUX_INTERVAL_S = 10;
@@ -52,8 +63,8 @@ constexpr auto PREFS_INTERVAL_S = 60;
 constexpr auto SAVED_INFO_WAIT_S = 60;
 constexpr auto WIFI_RESET_DELAY_S = 10;
 
-// Calibrator for temperature corrections
-TempCalibrator calibrator(NUM_SENSORS, 1000 * CORRECTION_AVG_S, TempCalibrator::BaselineMode::FIRST_SENSOR);
+// Calibrator for temperature corrections and timed averages
+TempCalibrator calibrator(NUM_SENSORS, CORRECTION_AVG_MS, TempCalibrator::BaselineMode::FIRST_SENSOR);
 
 Format tempFormat("###.## F");
 Format correctionFormat("+#.###");
@@ -93,8 +104,9 @@ void printCalibrationCodeToSerial()
    }
    feather.preferences.end();
 
-   // print saved factors for easy paste into TempSensor.cpp
+   // print saved factors for easy paste into TempSensorCallibration.h
    Serial.println("Copy this data to libraries\\Woyak\\TempSensorCallibration.h");
+   Serial.println(String("Based on averaging data points over the last ") + CORRECTION_AVG_S + " seconds, here are the calibration factors:");
    for (int i = 0; i < NUM_SENSORS; i++)
    {
       Serial.print("\"");
@@ -141,7 +153,7 @@ void displaySavedInfo()
       }
       else
       {
-         feather.println(tcorrections[i], correctionFormat, Color::VALUE);
+         feather.println(-tcorrections[i], correctionFormat, Color::VALUE);
       }
    }
 
@@ -265,8 +277,7 @@ void loop()
    if (feather.buttonA.wasPressed())
    {
       feather.clearDisplay();
-      view++;
-      view = view % NUM_VIEWS;
+      view = (view + 1) % NUM_VIEWS;
    }
 
    count++;
@@ -290,39 +301,38 @@ void loop()
    }
    feather.moveCursorY(10);
 
+   feather.setTextSize(3);
    for (int i = 0; i < NUM_SENSORS; i++)
    {
       Multiplexer::select(i);
       TempSensor& sensor = sensors[i];
       bool sensorExists = sensor.exists();
-      float temp = NAN;
       if (sensorExists)
       {
-         temp = sensor.readTemperatureF();
+         float temp = sensor.readTemperatureF();
          calibrator.set(i, temp);
-         currentTemps[i].set(temp);
       }
 
       // values
-      feather.setTextSize(3);
-
       feather.print((i + 1), Color::LABEL);
       feather.moveCursorX(feather.charW() / 2);
       if (sensorExists)
       {
          float correction = calibrator.getCorrection(i);
+         float displayCorrection = -correction;
+         float timedAverage = calibrator.getAverage(i);
          switch (view)
          {
          case 0:
-            feather.println(temp, tempFormat, Color::VALUE);
+            feather.println(timedAverage, tempFormat, Color::VALUE);
             break;
 
          case 1:
-            feather.println(currentTemps[i].average() + correction, tempFormat, Color::VALUE);
+            feather.println(timedAverage + correction, tempFormat, Color::VALUE);
             break;
 
          case 2:
-            feather.println(correction, correctionFormat, Color::VALUE);
+            feather.println(displayCorrection, correctionFormat, Color::VALUE);
             break;
          }
       }
@@ -352,6 +362,7 @@ void loop()
       {
          digitalWrite(BUILTIN_LED, HIGH);
 
+         Serial.print("Uploading to InfluxDB... ");
          Serial.print(count);
          Serial.println(" values collected");
          count = 0;
@@ -361,14 +372,14 @@ void loop()
 
          for (int i = 0; i < NUM_SENSORS; i++)
          {
-            float temperature = currentTemps[i].average();
+            float temperature = calibrator.getAverage(i);
             if (!sensors[i].exists() || std::isnan(temperature))
             {
                continue;
             }
 
-            float tDelta = calibrator.getCorrection(i);
-            float tCorrected = temperature + tDelta;
+            float tDelta = -calibrator.getCorrection(i);
+            float tCorrected = temperature - tDelta;
             float tCorrectedDelta = std::isnan(baseline) ? NAN : (tCorrected - baseline);
 
             points[i].clearFields();
@@ -390,7 +401,6 @@ void loop()
                writeFailed = true;
                break;
             }
-            //Serial.println(points[i].toLineProtocol());
          }
 
          if (!writeFailed && !client.isBufferEmpty())

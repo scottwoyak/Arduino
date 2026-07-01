@@ -300,6 +300,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="MS5837_Depth_Display/MS5837_Depth_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="MS5837_Display/MS5837_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -329,10 +333,6 @@
     <Deploy />
   </Project>
   <Project Path="SensorCapture_Serial/SensorCapture_Serial.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="Sensor_Averaging_Calibration_Display/Sensor_Averaging_Calibration_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
