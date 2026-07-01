@@ -1,9 +1,33 @@
 //
 // Capacitor sensor tuner: displays real-time measurements and runs calibration tests on Button A.
 //
-// Monitors capacitor charge time and sample rate in real-time. Button A executes a full
-// calibration sweep across every resistor value (charge pin), and for each one sweeps the
-// discharge delays and target effective rates, outputting results to serial for analysis.
+// Detailed behavior:
+// - This sketch combines live monitoring with an automated calibration sweep for CapacitorSensor.
+// - During normal runtime, the display shows active resistor selection, discharge delay, deferred
+//   processing period, buffer size, average charge time, sample rate, and effective output rate.
+// - Pressing Button A starts a full test matrix sweep and prints per-test rows to Serial in a
+//   fixed-width table for easier comparison and copy/paste analysis.
+//
+// Calibration sweep dimensions:
+// - Resistor / charge pin options (e.g., 1M, 470K, 100K, 47K).
+// - Discharge delay values (microseconds).
+// - Deferred processing period values (microseconds).
+// - Target effective output rates (samples per second).
+//
+// For each test case:
+// - The sensor is configured (discharge delay + deferred period + buffer size).
+// - A fixed number of samples is captured.
+// - Stats are computed: average charge time, variation, StdDev, raw rate, and effective rate.
+// - Results are printed immediately, then ranked later by lowest StdDev % per target rate.
+//
+// Post-run behavior:
+// - A "best configurations" summary is printed for each target rate.
+// - The best configuration for 30/s is automatically applied for continued live viewing.
+//
+// Typical usage:
+// - Let the live display stabilize.
+// - Press Button A to run calibration.
+// - Use serial rankings to choose resistor/delay/deferred-period combinations for your deployment.
 //
 #include <Arduino.h>
 #include "CapacitorSensor.h"
@@ -25,6 +49,7 @@ Timer displayTimer(DISPLAY_INTERVAL_MS);
 constexpr size_t STATS_SAMPLE_COUNT = 1000;
 constexpr float TARGET_EFFECTIVE_RATES[] = { 15.0f, 30.0f, 50.0f };
 constexpr size_t TARGET_EFFECTIVE_RATE_COUNT = sizeof(TARGET_EFFECTIVE_RATES) / sizeof(TARGET_EFFECTIVE_RATES[0]);
+constexpr float PRIMARY_TARGET_EFFECTIVE_RATE = 30.0f;
 
 constexpr uint16_t TEST_DISCHARGE_DELAYS[] = { 100, 200, 300 };
 constexpr size_t TEST_DISCHARGE_DELAY_COUNT = sizeof(TEST_DISCHARGE_DELAYS) / sizeof(TEST_DISCHARGE_DELAYS[0]);
@@ -360,7 +385,7 @@ void printBestConfigurations(TestRunResult* results, size_t count)
       Serial.println();
       Serial.print("  Target: ");
       Serial.print((int)round(targetRate));
-      Serial.println(" hz");
+      Serial.println("/s");
 
       SerialX::print("Rank", 8);
       SerialX::print("Resistor", 10);
@@ -487,7 +512,7 @@ void loop()
 
             // Print result immediately after test completes
             SerialX::print(resistor.label, 10);
-            SerialX::print(String((int)round(result.targetEffectiveRate)) + " hz", 10);
+            SerialX::print(String((int)round(result.targetEffectiveRate)) + "/s", 10);
             SerialX::print((unsigned long)result.bufferSize, 8);
             SerialX::print(String((unsigned long)result.dischargeDelayMicros) + " us", 12);
             SerialX::print(String((unsigned long)result.deferredProcessingPeriodMicros) + " us", 12);
@@ -530,7 +555,7 @@ void loop()
       Serial.println("Testing Complete");
 
       // Apply the best configuration for the primary target rate
-      const TestRunResult* best = findBestResult(allResults, allResultCount, 30.0f);
+      const TestRunResult* best = findBestResult(allResults, allResultCount, PRIMARY_TARGET_EFFECTIVE_RATE);
       if (best != nullptr)
       {
          for (size_t i = 0; i < RESISTOR_OPTION_COUNT; i++)
