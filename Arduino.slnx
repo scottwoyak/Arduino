@@ -57,6 +57,7 @@
     <File Path="libraries/Woyak/SensorCapture.h" />
     <File Path="libraries/Woyak/SensorCaptureOutput.h" />
     <File Path="libraries/Woyak/SensorCaptureStats.h" />
+    <File Path="libraries/Woyak/SerialTable.h" />
     <File Path="libraries/Woyak/SerialX.h" />
     <File Path="libraries/Woyak/SevenSegment.h" />
     <File Path="libraries/Woyak/SHT3xTempSensor.h" />

@@ -12,6 +12,7 @@
 #include "Feather.h"
 #include "TempSensor.h"
 #include "SerialX.h"
+#include "SerialTable.h"
 #include "TimedAverage.h"
 #include "Timer.h"
 #include <Wire.h>
@@ -34,8 +35,16 @@ Format rateFormat("###.#", 7, Format::Alignment::RIGHT);
 Format tempFormat("###.##", 7, Format::Alignment::RIGHT);
 Format deltaFormat("+#.##", 7, Format::Alignment::RIGHT);
 
+const char RESULT_TABLE_TITLE[] = "Self Heating Test Results";
+const SerialTable::Column RESULT_TABLE_COLUMNS[] = {
+   { "Rate(/s)", 12 },
+   { "Temp(F)", 10 },
+   { "Delta(F)", 10 },
+};
+const size_t RESULT_TABLE_COLUMN_COUNT = sizeof(RESULT_TABLE_COLUMNS) / sizeof(RESULT_TABLE_COLUMNS[0]);
+SerialTable resultTable(RESULT_TABLE_TITLE, RESULT_TABLE_COLUMNS, RESULT_TABLE_COLUMN_COUNT);
+
 int16_t nextDisplayRowY = 0;
-bool serialTableStarted = false;
 
 class TestCase
 {
@@ -246,25 +255,7 @@ public:
 TestCase testCase(sensor);
 TestRunner testRunner;
 
-void startSerialTable()
-{
-   if (serialTableStarted)
-   {
-      return;
-   }
-
-   Serial.println();
-   Serial.println("Self Heating Test Results");
-   SerialX::print("Rate(/s)", 12);
-   SerialX::print("Temp(F)", 10);
-   SerialX::println("Delta(F)", 10);
-   SerialX::print("--------", 12);
-   SerialX::print("-------", 10);
-   SerialX::println("--------", 10);
-   serialTableStarted = true;
-}
-
-void appendDisplayResultRow(size_t index)
+void appendDisplayResultRow(float rate, float temp, float delta)
 {
    if ((nextDisplayRowY + feather.charH()) > feather.height())
    {
@@ -274,22 +265,15 @@ void appendDisplayResultRow(size_t index)
    feather.setTextSize(2);
 
    feather.setCursor(RATE_COL_X, nextDisplayRowY);
-   feather.print(testRunner.resultRate(index), rateFormat, Color::VALUE);
+   feather.print(rate, rateFormat, Color::VALUE);
 
    feather.setCursor(TEMP_COL_X, nextDisplayRowY);
-   feather.print(testRunner.resultTemp(index), tempFormat, Color::VALUE2);
+   feather.print(temp, tempFormat, Color::VALUE2);
 
    feather.setCursor(DELTA_COL_X, nextDisplayRowY);
-   feather.println(testRunner.resultDelta(index), deltaFormat, Color::VALUE3);
+   feather.println(delta, deltaFormat, Color::VALUE3);
 
    nextDisplayRowY = feather.getCursorY();
-}
-
-void appendSerialResultRow(size_t index)
-{
-   SerialX::print(testRunner.resultRate(index), 2, 12);
-   SerialX::print(testRunner.resultTemp(index), 2, 10);
-   SerialX::println(testRunner.resultDelta(index), 2, 10);
 }
 
 void drawRunHeader(float initialTempF)
@@ -334,8 +318,7 @@ void finalizeDisplayRun()
 
 void startTestRun()
 {
-   serialTableStarted = false;
-   startSerialTable();
+   resultTable.printHeader();
 
    testRunner.start();
    drawRunHeader(testRunner.baselineTempF());
@@ -377,8 +360,15 @@ void loop()
    if (testRunner.hasPendingResult())
    {
       size_t index = testRunner.pendingResultIndex();
-      appendSerialResultRow(index);
-      appendDisplayResultRow(index);
+      float rate = testRunner.resultRate(index);
+      float temp = testRunner.resultTemp(index);
+      float delta = testRunner.resultDelta(index);
+
+      resultTable.printRow(
+         SerialTable::fixed(rate, 2),
+         SerialTable::fixed(temp, 2),
+         SerialTable::fixed(delta, 2));
+      appendDisplayResultRow(rate, temp, delta);
       testRunner.clearPendingResult();
 
       if (testRunner.isComplete())
