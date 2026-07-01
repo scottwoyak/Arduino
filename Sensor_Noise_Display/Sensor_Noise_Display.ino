@@ -1,98 +1,82 @@
 //
-// Continuously samples either a capacitor sensor or temperature sensor and displays noise metrics.
+// Continuously samples a temperature sensor and displays short-window noise metrics.
 //
-// Active sensor is sampled every SAMPLE_INTERVAL_MS. TimedStats tracks average, range, count,
-// and standard deviation over the last SAMPLE_TIME_MS (sliding window). Display refreshes every
-// DISPLAY_INTERVAL_MS showing all metrics plus raw sensor rate.
+// Detailed behavior:
+// - Sampling runs continuously (each loop iteration) and finite temperature readings are pushed
+//   into TimedStats.
+// - TimedStats maintains a sliding window of SAMPLE_TIME_MS and computes Avg, Range, StdDev,
+//   and StdDev% from values currently retained in that window.
+// - Display refreshes at DISPLAY_INTERVAL_MS and renders a compact single-column summary:
+//   Sample Time, Samples (count), Avg, Range, and StdDev with percent.
+// - Serial metrics are throttled to SERIAL_PRINT_INTERVAL_MS so monitoring remains readable.
+//
+// Startup diagnostics:
+// - Initializes Wire/Feather/TempSensor.
+// - If the sensor fails to initialize or first read is invalid, an I2C scan is printed to Serial.
+//
+// Typical usage:
+// - Run the sketch with the target temperature sensor connected.
+// - Let readings settle, then watch StdDev/StdDev% to evaluate sensor noise stability.
 //
 
 #include <Arduino.h>
+#include <Wire.h>
 #include "Feather.h"
 #include "SerialX.h"
 #include "TimedStats.h"
 #include "Timer.h"
-#include "TestSensor.h"
-
-#define SENSOR_TYPE_CAPACITOR 1
-#define SENSOR_TYPE_TEMP 2
-#define SENSOR_TYPE SENSOR_TYPE_CAPACITOR
+#include "TempSensor.h"
+#include "I2C.h"
 
 constexpr uint16_t SAMPLE_TIME_MS = 1000;
-constexpr uint16_t SAMPLE_INTERVAL_MS = 10;
-constexpr uint16_t DISPLAY_INTERVAL_MS = static_cast<uint16_t>(1.5f * SAMPLE_TIME_MS);
-
-#if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-constexpr uint8_t SENSE_PIN = 5;
-constexpr uint8_t CHARGE_PIN_1M = 6;
-constexpr uint8_t CHARGE_PIN_470K = 9;
-constexpr uint8_t CHARGE_PIN_100K = 10;
-constexpr uint8_t CHARGE_PIN_47K = 11;
-constexpr uint8_t CHARGE_PINS[] = { CHARGE_PIN_1M, CHARGE_PIN_470K, CHARGE_PIN_100K, CHARGE_PIN_47K };
-constexpr const char* CHARGE_PIN_LABELS[] = { "1M", "470K", "100K", "47K" };
-constexpr size_t CHARGE_PIN_COUNT = sizeof(CHARGE_PINS) / sizeof(CHARGE_PINS[0]);
-constexpr uint16_t DISCHARGE_DELAY_MICROS = 500;
-#endif
+constexpr uint16_t DISPLAY_INTERVAL_MS = 200;
+constexpr uint16_t SERIAL_PRINT_INTERVAL_MS = 5000;
 
 Feather feather;
-
-#if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-CapacitorTestSensor sensor(CHARGE_PINS, CHARGE_PIN_LABELS, CHARGE_PIN_COUNT, SENSE_PIN, DISCHARGE_DELAY_MICROS);
-#elif SENSOR_TYPE == SENSOR_TYPE_TEMP
-TempTestSensor sensor;
-#else
-#error "Invalid SENSOR_TYPE. Use SENSOR_TYPE_CAPACITOR or SENSOR_TYPE_TEMP."
-#endif
-Timer sampleTimer(SAMPLE_INTERVAL_MS);
+TempSensor sensor;
 Timer displayTimer(DISPLAY_INTERVAL_MS);
+Timer serialPrintTimer(SERIAL_PRINT_INTERVAL_MS);
 TimedStats stats(SAMPLE_TIME_MS);
 bool serialHeaderPrinted = false;
 uint16_t serialRowsPrinted = 0;
 
-Format valueFormat("####.#");
-Format rangeFormat("####.#");
+Format valueFormat("####.##");
+Format rangeFormat("###.##");
 Format stdDevFormat("####.##");
 Format stdDevPercentFormat("##.##%", 7);
 Format countFormat("######");
-Format rateFormat("####/s");
+Format sampleTimeFormat("#### ms");
 
 void printSerialSummary()
 {
-   unsigned long expectedSamples = SAMPLE_TIME_MS / SAMPLE_INTERVAL_MS;
-   String sensorUnit = sensor.unit();
-
    Serial.println();
    Serial.println("Serial Metrics Summary");
    SerialX::println("- Sampling source: active sensor", 0);
-   SerialX::println(String("- Data points are collected every: ") + SAMPLE_INTERVAL_MS + " ms", 0);
+   SerialX::println("- Data points are collected continuously", 0);
    SerialX::println(String("- Stats are averaged over: ") + SAMPLE_TIME_MS + " ms (sliding period)", 0);
-   SerialX::println(String("- Expected samples per full period: ~") + expectedSamples, 0);
    Serial.println("- Num Samples: finite samples currently retained in the active stats period");
-   Serial.println(String("- Avg(") + sensorUnit + "): mean of samples in the active stats period");
-   Serial.println(String("- Range(") + sensorUnit + "): max-min of samples in the active stats period");
-   Serial.println(String("- StdDev(") + sensorUnit + "): population standard deviation in active period");
+   Serial.println("- Avg: mean of samples in the active stats period");
+   Serial.println("- Range: max-min of samples in the active stats period");
+   Serial.println("- StdDev: population standard deviation in active period");
 }
 
 void printSerialValues(TimedStats& timedStats)
 {
-   String sensorUnit = sensor.unit();
-
    float avg = timedStats.average();
    float minValue = timedStats.min();
    float maxValue = timedStats.max();
    float rng = (isfinite(minValue) && isfinite(maxValue)) ? (maxValue - minValue) : NAN;
    size_t count = timedStats.count();
-   size_t maxSamplesPerPeriod = SAMPLE_TIME_MS / SAMPLE_INTERVAL_MS;
-   count = min(count, maxSamplesPerPeriod);
    float sd = timedStats.stdDev();
    float sdPercent = (isfinite(avg) && (fabsf(avg) > 0.0f) && isfinite(sd)) ? ((sd / fabsf(avg)) * 100.0f) : NAN;
 
-   if (!serialHeaderPrinted || (serialRowsPrinted % 25 == 0))
+   if (!serialHeaderPrinted || (serialRowsPrinted % 10 == 0))
    {
       Serial.println();
       SerialX::print("Num Samples", 14);
-      SerialX::print(String("Avg(") + sensorUnit + ")", 12);
-      SerialX::print(String("Range(") + sensorUnit + ")", 12);
-      SerialX::print(String("StdDev(") + sensorUnit + ")", 12);
+      SerialX::print("Avg", 12);
+      SerialX::print("Range", 12);
+      SerialX::print("StdDev", 12);
       SerialX::println("StdDev%", 10);
 
       SerialX::print("-----------", 14);
@@ -114,20 +98,34 @@ void printSerialValues(TimedStats& timedStats)
 void setup()
 {
    SerialX::begin();
+   Wire.begin();
    feather.begin();
-   sensor.begin();
+
+   bool sensorReady = sensor.begin();
    printSerialSummary();
+
+   if (!sensorReady)
+   {
+      Serial.println("Temperature sensor initialization failed.");
+      Serial.println("I2C scan:");
+      I2C::scan();
+   }
+
+   float firstValue = sensor.readTemperatureF();
+   if (!isfinite(firstValue))
+   {
+      Serial.println("Temperature sensor did not return a valid value.");
+      Serial.println("I2C scan:");
+      I2C::scan();
+   }
 }
 
 void loop()
 {
-   if (sampleTimer.ready())
+   float sensorValue = sensor.readTemperatureF();
+   if (isfinite(sensorValue))
    {
-      float sensorValue = sensor.readValue();
-      if (isfinite(sensorValue))
-      {
-         stats.set(sensorValue);
-      }
+      stats.set(sensorValue);
    }
 
    if (!displayTimer.ready())
@@ -140,48 +138,61 @@ void loop()
    float maxValue = stats.max();
    float rng = (isfinite(minValue) && isfinite(maxValue)) ? (maxValue - minValue) : NAN;
    size_t count = stats.count();
-   size_t maxSamplesPerPeriod = SAMPLE_TIME_MS / SAMPLE_INTERVAL_MS;
-   count = min(count, maxSamplesPerPeriod);
    float sd = stats.stdDev();
    float sdPercent = (isfinite(avg) && (fabsf(avg) > 0.0f) && isfinite(sd)) ? ((sd / fabsf(avg)) * 100.0f) : NAN;
 
-   printSerialValues(stats);
+   if (serialPrintTimer.ready())
+   {
+      printSerialValues(stats);
+   }
 
    feather.setCursor(0, 0);
    feather.setTextSize(3);
    feather.println("Sensor Noise", Color::HEADING);
-   feather.moveCursorY(6);
+   feather.moveCursorY(5);
 
    feather.setTextSize(2);
-#if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-   feather.print("        Res: ", Color::LABEL);
-   feather.println(sensor.chargePinLabel(), Color::VALUE2);
-#endif
-   feather.println("        Avg: ", avg, valueFormat);
-   feather.println("      Range: ", rng, rangeFormat);
-   feather.println("     StdDev: ", sd, stdDevFormat);
-   feather.println("    StdDev%: ", sdPercent, stdDevPercentFormat);
-   feather.println("          N: ", count, countFormat);
+   int16_t sectionTop = feather.getCursorY();
+   int16_t rowHeight = feather.charH();
 
-   float rawRate = sensor.rawRate();
-   if (isfinite(rawRate))
+   feather.setCursor(0, sectionTop);
+   feather.println("Sampling Time: ", SAMPLE_TIME_MS, sampleTimeFormat, Color::VALUE);
+
+   feather.setCursor(0, sectionTop + rowHeight);
+   feather.println("      Samples: ", count, countFormat, Color::VALUE2);
+
+   if (count == 0 || !isfinite(avg))
    {
-      feather.println("     Rate: ", rawRate, rateFormat, Color::GRAY);
+      feather.setCursor(0, sectionTop + (rowHeight * 2));
+      feather.println("  No valid data", Color::RED);
+      feather.setCursor(0, sectionTop + (rowHeight * 3));
+      feather.println("  Check sensor", Color::VALUE2);
+      feather.setCursor(0, sectionTop + (rowHeight * 4));
+      feather.println("  and I2C wiring", Color::VALUE2);
+      return;
+   }
+
+   feather.setCursor(0, sectionTop + (rowHeight * 2));
+   feather.println("          Avg: ", avg, valueFormat, Color::VALUE2);
+
+   feather.setCursor(0, sectionTop + (rowHeight * 3));
+   feather.println("        Range: ", rng, rangeFormat, Color::VALUE2);
+
+   feather.setCursor(0, sectionTop + (rowHeight * 4));
+   feather.print("       StdDev: ", Color::LABEL);
+
+   String stdDevValue = String(stdDevFormat.toString(sd).c_str());
+   stdDevValue.trim();
+
+   if (isfinite(sdPercent))
+   {
+      String sdPercentValue = String(stdDevPercentFormat.toString(sdPercent).c_str());
+      sdPercentValue.trim();
+      feather.println(stdDevValue + ", " + sdPercentValue, Color::VALUE2);
    }
    else
    {
-      feather.println("     Rate: n/a", Color::GRAY);
+      feather.println(stdDevValue + ", n/a", Color::VALUE2);
    }
-
-#if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-   if (feather.buttonA.wasPressed() && sensor.supportsChargePinRotation())
-   {
-      sensor.rotateChargePin();
-      stats.reset();
-      serialHeaderPrinted = false;
-      serialRowsPrinted = 0;
-      Serial.println();
-      Serial.println(String("Switched charge resistor to ") + sensor.chargePinLabel());
-   }
-#endif
 }
+
