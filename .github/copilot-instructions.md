@@ -5,7 +5,8 @@
 - When documenting classes with XML comments, add an extra blank comment line (///) before and after the class documentation block. Example: /// \n/// <summary>Class description</summary>\n///\nclass MyClass
 - When documenting namespace functions and class static methods with XML documentation comments, always include complete parameter documentation with <param> tags and return value documentation with <returns> tags, even for simple inline functions. This provides full IntelliSense support. Example: /// <summary>Convert C to F.</summary> /// <param name="celsius">Temperature in Celsius</param> /// <returns>Temperature in Fahrenheit</returns>
 - When the user asks for 'cleanup', apply it to the currently displayed/open file from IDE context and include Visual Studio-style XML documentation updates as part of the cleanup pass. Preserve inline comments during cleanup; do not remove existing inline comments.
-- When cleaning up non-testing sketches, always add a detailed description comment block at the top of the sketch using XML documentation comment style instead of dashed header blocks. When the user requests cleanup on Arduino sketches, add/expand a detailed top-of-file sketch comment block describing behavior, flow, outputs, and usage.
+- Before answering each user request, first read and follow the latest IDESTATE context, especially the current file, as authoritative.
+- When cleaning up non-testing sketches, add/expand a detailed top-of-file sketch comment block describing behavior, flow, outputs, and usage. Do not use dashed separator blocks.
 - Do not automatically run tests; only run tests when explicitly requested.
 - Do not run build/test commands that require VisualMicro context when operating outside Visual Studio VisualMicro pipeline; rely on user-run VisualMicro builds instead.
 - When cleaning up code, add IntelliSense-style XML documentation comments to constructors and public methods where appropriate, as well as to other methods where appropriate. Apply proper include bracket style: use quotes ("...") for Woyak library headers and local project headers, and use angle brackets (<...>) for third-party/installed libraries like LovyanGFX, WiFi, and InfluxDbClient.
@@ -39,5 +40,5 @@
 - For .ino files, do not add comments on setup() and loop() unless explicitly requested.
 - When creating new Arduino projects or sketches, do not add them to the Visual Studio solution file; user will manage solution entries manually.
 - When creating new Arduino test sketches, only create the .ino file. Do not create .vcxproj project files or modify the .slnx solution file. The user imports new projects into the solution via Visual Micro themselves.
-- When adding new test projects, always include them in Tests/All_Tests/All_T_tests.ino so they run in the aggregate test project.
+- When adding new test projects, always include them in Tests/All_Tests/All_Tests.ino so they run in the aggregate test project.
 - Keep section comments in the style `// ----------- COMMENT` during cleanup rather than removing them.

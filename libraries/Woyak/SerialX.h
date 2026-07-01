@@ -13,7 +13,7 @@ namespace SerialX
 	/// <summary>
 	/// Default time to wait for a serial monitor connection in milliseconds.
 	/// </summary>
-	constexpr uint32_t DEFAULT_TIMEOUT_MS = 1000;
+	constexpr uint32_t DEFAULT_TIMEOUT_MS = 2000;
 
 	/// <summary>
 	/// Initializes the serial port and waits briefly for a monitor connection.

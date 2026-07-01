@@ -1,33 +1,17 @@
-// -------------------------------------------------------------------------------------------------
 //
-// Calibrates and displays temperature readings for 8 multiplexed sensors, then uploads
-// raw/corrected values and calibration deltas to InfluxDB.
+// Calibrates and displays temperature readings for 8 multiplexed sensors and uploads calibration telemetry.
 //
-// Detailed behavior:
-// - On startup, previously saved calibration deltas are loaded from Preferences, displayed,
-//   and printed to Serial in copy/paste format for TempSensorCallibration.h updates.
-// - The sketch probes all 8 multiplexer channels, initializes each TempSensor, and tracks
-//   detected sensor count to optimize InfluxDB batch settings.
-// - Button A starts live calibration display cycling between 3 views:
-//   1) Raw Temps (timed average)
-//   2) Corrected (timed average + correction)
-//   3) Correction (current computed delta)
+// On startup, saved calibration deltas are loaded from Preferences, displayed, and printed to Serial
+// in copy/paste format for TempSensorCallibration.h updates. The sketch probes all 8 multiplexer
+// channels, initializes each TempSensor, and tracks detected sensor count for InfluxDB batching.
 //
-// Calibration and persistence flow:
-// - TempCalibrator computes per-sensor timed averages and correction values relative to baseline.
-// - The same timed-average source is used for display, correction flow, and Influx writes.
-// - Correction factors are periodically saved to Preferences and echoed to Serial.
+// Button A starts live calibration display cycling between Raw Temps (timed average), Corrected
+// (timed average + correction), and Correction (current computed delta). Correction factors are
+// periodically saved to Preferences and telemetry is written to InfluxDB with reconnect and buffering.
 //
-// Telemetry flow:
-// - At fixed intervals, the sketch publishes per-sensor raw/corrected values and deltas
-//   to InfluxDB (with Wi-Fi reconnect handling and buffered flush).
+// Typical usage: power on and review saved deltas, press Button A to begin live calibration,
+// then wait for corrections to stabilize and copy printed values for code use.
 //
-// Typical usage:
-// - Power on and review saved deltas.
-// - Press Button A to begin live calibration.
-// - Leave the system running until corrections stabilize, then copy printed values for code use.
-//
-// -------------------------------------------------------------------------------------------------
 #include "WiFiSettings.h"
 #include "Timer.h"
 #include "TempSensor.h"
@@ -62,6 +46,10 @@ constexpr auto INFLUX_INTERVAL_S = 10;
 constexpr auto PREFS_INTERVAL_S = 60;
 constexpr auto SAVED_INFO_WAIT_S = 60;
 constexpr auto WIFI_RESET_DELAY_S = 10;
+
+constexpr const char* CALIBRATOR_PREFS_NAMESPACE = "Calibrator";
+constexpr const char* TEMP_KEY_PREFIX = "Temp ";
+constexpr const char* ID_KEY_PREFIX = "ID ";
 
 // Calibrator for temperature corrections and timed averages
 TempCalibrator calibrator(NUM_SENSORS, SAMPLING_DURATION_S * 1000UL, TempCalibrator::BaselineMode::FIRST_SENSOR);
@@ -124,26 +112,26 @@ View view = View::RawTemps;
 void printCalibrationCodeToSerial()
 {
    // load saved correction factors
-   feather.preferences.begin("Calibrator", false);
-   float tcorrections[NUM_SENSORS];
+   feather.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
+   float tempCorrections[NUM_SENSORS];
    std::string ids[NUM_SENSORS];
 
-   for (int i = 0; i < NUM_SENSORS; i++)
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      tcorrections[i] = feather.preferences.getFloat((String("Temp ") + i).c_str());
-      ids[i] = feather.preferences.getString((String("ID ") + i).c_str()).c_str();
+      tempCorrections[i] = feather.preferences.getFloat((String(TEMP_KEY_PREFIX) + i).c_str());
+      ids[i] = feather.preferences.getString((String(ID_KEY_PREFIX) + i).c_str()).c_str();
    }
    feather.preferences.end();
 
    // print saved factors for easy paste into TempSensorCallibration.h
    Serial.println("Copy this data to libraries\\Woyak\\TempSensorCallibration.h");
    Serial.println(String("Based on averaging data points over the last ") + SAMPLING_DURATION_S + " seconds, here are the calibration factors:");
-   for (int i = 0; i < NUM_SENSORS; i++)
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       Serial.print("\"");
       Serial.print(ids[i].c_str());
       Serial.print("\", ");
-      Serial.print(-tcorrections[i], 3);
+      Serial.print(tempCorrections[i], 3);
       Serial.print(", 0.000,");
       Serial.println();
    }
@@ -152,12 +140,12 @@ void printCalibrationCodeToSerial()
 void displaySavedInfo()
 {
    // load saved correction factors
-   feather.preferences.begin("Calibrator", false);
-   float tcorrections[NUM_SENSORS];
+   feather.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
+   float tempCorrections[NUM_SENSORS];
 
-   for (int i = 0; i < NUM_SENSORS; i++)
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      tcorrections[i] = feather.preferences.getFloat((String("Temp ") + i).c_str());
+      tempCorrections[i] = feather.preferences.getFloat((String(TEMP_KEY_PREFIX) + i).c_str());
    }
    feather.preferences.end();
 
@@ -173,23 +161,23 @@ void displaySavedInfo()
    feather.moveCursorY(feather.charH() / 2);
 
    feather.setTextSize(3);
-   for (int i = 0; i < NUM_SENSORS; i++)
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       feather.print((i + 1), Color::LABEL);
       feather.moveCursorX(10);
 
-      if (isnan(tcorrections[i]))
+      if (isnan(tempCorrections[i]))
       {
          feather.println("-----", Color::GRAY);
       }
       else
       {
-         feather.println(-tcorrections[i], correctionFormat, Color::VALUE);
+         feather.println(tempCorrections[i], correctionFormat, Color::VALUE);
       }
    }
 
    TimerSecs waitTimer(SAVED_INFO_WAIT_S);
-   while (feather.buttonA.wasPressed() == false && !waitTimer.ready())
+   while (!feather.buttonA.wasPressed() && !waitTimer.ready())
    {
       delay(1);
    }
@@ -202,7 +190,7 @@ void waitForButtonPress()
 {
    feather.clearDisplay();
 
-   while (feather.buttonA.wasPressed() == false)
+   while (!feather.buttonA.wasPressed())
    {
       feather.setCursor(0, 0);
       feather.setTextSize(3);
@@ -250,9 +238,9 @@ void setup()
 
    feather.setTextSize(3);
 
-   feather.preferences.begin("Calibrator", false);
+   feather.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
    uint8_t detectedSensorCount = 0;
-   for (int i = 0; i < NUM_SENSORS; i++)
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       Multiplexer::select(i);
       TempSensor& sensor = sensors[i];
@@ -268,7 +256,7 @@ void setup()
       sensor.setTempCorrectionF(0);
 
       points[i].addTag("location", (String("Calibration ") + (i + 1)).c_str());
-      feather.preferences.putString((String("ID ") + i).c_str(), sensorExists ? sensor.id() : "");
+      feather.preferences.putString((String(ID_KEY_PREFIX) + i).c_str(), sensorExists ? sensor.id() : "");
    }
    feather.preferences.end();
 
@@ -355,7 +343,6 @@ void loop()
          if (sensorExists)
          {
             float correction = calibrator.getCorrection(i);
-            float displayCorrection = -correction;
             float timedAverage = calibrator.getAverage(i);
             switch (view)
             {
@@ -368,7 +355,7 @@ void loop()
                break;
 
             case View::Correction:
-               feather.println(displayCorrection, correctionFormat, Color::VALUE);
+               feather.println(correction, correctionFormat, Color::VALUE);
                break;
             }
          }
@@ -382,10 +369,10 @@ void loop()
    // ------------------------------------------- save to flash
    if (prefsTrigger.ready())
    {
-      feather.preferences.begin("Calibrator", false);
-      for (int i = 0; i < NUM_SENSORS; i++)
+      feather.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
+      for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
-         feather.preferences.putFloat((String("Temp ") + i).c_str(), calibrator.getCorrection(i));
+         feather.preferences.putFloat((String(TEMP_KEY_PREFIX) + i).c_str(), calibrator.getCorrection(i));
       }
       feather.preferences.end();
 
@@ -415,8 +402,8 @@ void loop()
                continue;
             }
 
-            float tDelta = -calibrator.getCorrection(i);
-            float tCorrected = temperature - tDelta;
+            float tDelta = calibrator.getCorrection(i);
+            float tCorrected = temperature + tDelta;
             float tCorrectedDelta = std::isnan(baseline) ? NAN : (tCorrected - baseline);
 
             points[i].clearFields();

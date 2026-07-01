@@ -1,9 +1,27 @@
-//-------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------
 //
 // Displays temperatures from up to 8 I2C-multiplexed sensors and uploads readings to InfluxDB.
-// Hold button A to show sensor type instead of temperature for each sensor index.
+// Hold Button A to show sensor type instead of temperature for each sensor index.
 //
-//-------------------------------------------------------------------------------------------------
+// Detailed behavior:
+// - Initializes up to 8 TempSensor instances behind an I2C multiplexer and tracks each sensor's
+//   location metadata for telemetry tagging.
+// - Reads temperature/humidity on SENSOR_READ_INTERVAL_MS cadence and feeds time-averaged fields.
+// - Uses a 60-second averaging window for displayed/uploaded values while keeping upload cadence
+//   at INFLUX_INTERVAL_S.
+// - Renders either averaged temperature values or sensor type labels (Button A held) on display.
+//
+// Telemetry flow:
+// - Each sensor maps to a SimplePoint with averaged temperature/humidity fields.
+// - On each upload interval, all active sensor points are posted, then client buffer is flushed.
+// - Wi-Fi connectivity is monitored continuously and triggers reset on loss.
+//
+// Typical usage:
+// - Start sketch and verify detected sensors in Serial startup output.
+// - Let averages settle (up to 60 seconds) before using displayed values for decisions.
+// - Monitor Influx stream for per-location averaged temperature/humidity values.
+//
+// -------------------------------------------------------------------------------------------------
 #include "Feather.h"
 #include "TempSensor.h"
 #include "SerialX.h"
@@ -20,12 +38,12 @@ constexpr uint8_t NUM_SENSORS = 8;
 
 constexpr uint8_t INFLUX_TEMP_DECIMAL_PLACES = 3;
 constexpr uint8_t INFLUX_HUMIDITY_DECIMAL_PLACES = 2;
-constexpr uint8_t SERIAL_TEMP_DECIMAL_PLACES = 2;
 constexpr uint8_t SENSOR_CORRECTION_DECIMAL_PLACES = 3;
 constexpr uint8_t WIFI_RESET_DELAY_S = 10;
 constexpr uint16_t SENSOR_READ_INTERVAL_MS = 500;
 constexpr auto INFLUX_MEASUREMENT = "Air";
 constexpr auto INFLUX_INTERVAL_S = 15;
+constexpr auto AVERAGE_WINDOW_S = 60;
 constexpr auto INFLUX_TEMPERATURE_FIELD_NAME = "temperature";
 constexpr auto INFLUX_HUMIDITY_FIELD_NAME = "humidity";
 
@@ -62,8 +80,8 @@ void setup()
    {
       sensors[i] = new TempSensor();
       points[i] = new SimplePoint(INFLUX_MEASUREMENT);
-      tempFields[i] = points[i]->addTimeAveragedField(INFLUX_INTERVAL_S, INFLUX_TEMPERATURE_FIELD_NAME, INFLUX_TEMP_DECIMAL_PLACES);
-      humFields[i] = points[i]->addTimeAveragedField(INFLUX_INTERVAL_S, INFLUX_HUMIDITY_FIELD_NAME, INFLUX_HUMIDITY_DECIMAL_PLACES);
+      tempFields[i] = points[i]->addTimeAveragedField(AVERAGE_WINDOW_S, INFLUX_TEMPERATURE_FIELD_NAME, INFLUX_TEMP_DECIMAL_PLACES);
+      humFields[i] = points[i]->addTimeAveragedField(AVERAGE_WINDOW_S, INFLUX_HUMIDITY_FIELD_NAME, INFLUX_HUMIDITY_DECIMAL_PLACES);
       points[i]->addTag("location", locations[i]);
    }
 
@@ -93,14 +111,21 @@ void setup()
       multi.select(i);
       if (sensors[i]->begin(true))
       {
-         Serial.print("         Type: ");
-         Serial.println(sensors[i]->type());
-         Serial.print("      Address: ");
-         Serial.println(sensors[i]->address());
-         Serial.print("           ID: ");
-         Serial.println(sensors[i]->id());
-         Serial.print("   Correction: ");
-         Serial.println(sensors[i]->tempCorrectionF(), SENSOR_CORRECTION_DECIMAL_PLACES);
+         if (!sensors[i]->exists())
+         {
+            Serial.println("Sensor not detected");
+         }
+         else
+         {
+            Serial.print("         Type: ");
+            Serial.println(sensors[i]->type());
+            Serial.print("      Address: ");
+            Serial.println(sensors[i]->address());
+            Serial.print("           ID: ");
+            Serial.println(sensors[i]->id());
+            Serial.print("   Correction: ");
+            Serial.println(sensors[i]->tempCorrectionF(), SENSOR_CORRECTION_DECIMAL_PLACES);
+         }
       }
       else
       {
@@ -180,9 +205,6 @@ void loop()
       {
          float temp = tempFields[i]->get();
          feather.println(temp, tempFormat, Color::VALUE);
-         Serial.print(i);
-         Serial.print(": ");
-         Serial.println(temp, SERIAL_TEMP_DECIMAL_PLACES);
       }
    }
 

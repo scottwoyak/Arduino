@@ -13,10 +13,13 @@
 #include "SHT3xTempSensor.h"
 #include "SHT4xTempSensor.h"
 
-//-------------------------------------------------------------------------------------------------
+#include <string>
+
+///
 /// <summary>
 /// Null-object temperature sensor used when no physical sensor is detected.
 /// </summary>
+///
 class NullSensor : public ITempSensor
 {
 public:
@@ -36,11 +39,12 @@ public:
    }
 };
 
-//-------------------------------------------------------------------------------------------------
+///
 /// <summary>
 /// Detects and wraps a concrete temperature sensor implementation.
 /// Applies optional calibration offsets to returned readings.
 /// </summary>
+///
 class TempSensor : public ITempSensor
 {
 private:
@@ -233,7 +237,7 @@ public:
    /// Indicates whether the active sensor is available.
    /// </summary>
    /// <returns>True when a backing sensor exists and reports available; otherwise false.</returns>
-   bool exists()
+   bool exists() override
    {
       if (_sensor == nullptr)
       {
@@ -247,7 +251,7 @@ public:
    /// Gets the detected sensor type name.
    /// </summary>
    /// <returns>Sensor type string, or an error message when no sensor is initialized.</returns>
-   const char* type()
+   const char* type() override
    {
       if (_sensor == nullptr)
       {
@@ -261,7 +265,7 @@ public:
    /// Gets the active sensor I2C address when applicable.
    /// </summary>
    /// <returns>The sensor address, or 0 when no sensor is initialized.</returns>
-   uint8_t address()
+   uint8_t address() override
    {
       if (_sensor == nullptr)
       {
@@ -310,7 +314,7 @@ public:
    /// Gets the unique identifier for the active sensor when available.
    /// </summary>
    /// <returns>Sensor ID string, or an error message when no sensor is initialized.</returns>
-   const char* id()
+   const char* id() override
    {
       if (_sensor == nullptr)
       {
@@ -324,7 +328,7 @@ public:
    /// Reads temperature in Fahrenheit from the active sensor.
    /// </summary>
    /// <returns>Temperature in Fahrenheit with correction applied, or NaN when unavailable.</returns>
-   float readTemperatureF()
+   float readTemperatureF() override
    {
       if (_sensor == nullptr)
       {
@@ -338,7 +342,7 @@ public:
    /// Reads temperature in Celsius from the active sensor.
    /// </summary>
    /// <returns>Temperature in Celsius with correction applied, or NaN when unavailable.</returns>
-   float readTemperatureC()
+   float readTemperatureC() override
    {
       if (_sensor == nullptr)
       {
@@ -353,7 +357,7 @@ public:
    /// Reads relative humidity from the active sensor.
    /// </summary>
    /// <returns>Humidity with correction applied, or NaN when unavailable.</returns>
-   float readHumidity()
+   float readHumidity() override
    {
       if (_sensor == nullptr)
       {
@@ -367,7 +371,7 @@ public:
    /// Indicates whether the active sensor can return temperature and humidity together.
    /// </summary>
    /// <returns>True when combined readings are supported; otherwise false.</returns>
-   bool readsBoth()
+   bool readsBoth() override
    {
       if (_sensor == nullptr)
       {
@@ -383,7 +387,7 @@ public:
    /// </summary>
    /// <param name="tempF">Receives the Fahrenheit temperature reading.</param>
    /// <param name="hum">Receives the humidity reading.</param>
-   void readBoth(float& tempF, float& hum)
+   void readBoth(float& tempF, float& hum) override
    {
       if (_sensor == nullptr)
       {
@@ -396,8 +400,4 @@ public:
       hum += _humCorrection;
    }
 };
-
-
-
-
 
