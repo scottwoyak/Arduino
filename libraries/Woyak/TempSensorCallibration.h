@@ -40,6 +40,13 @@ constexpr CorrectionFactor CORRECTIONS[] = {
 "301394080", -0.041,  0.000, // 1
 "235442571",  0.013,  0.000, // 2
 "235442600",  0.004,  0.000, // 3
+
+/*
+"301394176",  0.000,  0.000, // baseline
+"301394080", -0.027,  0.000, // 1
+"235442571",  0.034,  0.000, // 2
+"235442600",  0.016,  0.000, // 3
+*/
 };
 
 constexpr auto NUM_CORRECTIONS = sizeof(CORRECTIONS) / sizeof(CORRECTIONS[0]);

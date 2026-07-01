@@ -336,6 +336,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Sensor_Averaging_Display/Sensor_Averaging_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Sensor_Noise_Display/Sensor_Noise_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -381,6 +385,10 @@
     <Deploy />
   </Project>
   <Project Path="Temp_Monitor_Display/Temp_Monitor_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Temp_Self_Heating_Display/Temp_Self_Heating_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

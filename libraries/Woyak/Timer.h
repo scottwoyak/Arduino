@@ -31,6 +31,14 @@ public:
 	}
 
 	/// <summary>
+	/// Resets the timer start point to the current time.
+	/// </summary>
+	void reset()
+	{
+		_startTime = TimeFunc();
+	}
+
+	/// <summary>
 	/// Checks if the timer interval has elapsed.
 	/// </summary>
 	/// <returns>true if interval has elapsed; false otherwise</returns>
@@ -40,6 +48,12 @@ public:
 	/// </remarks>
 	bool ready()
 	{
+		if (_durationTime == 0)
+		{
+			_startTime = TimeFunc();
+			return true;
+		}
+
 		unsigned long now = TimeFunc();
 		unsigned long span = Util::getSpan(_startTime, now);
 
@@ -58,6 +72,11 @@ public:
 	/// <returns>Remaining time in time units, or 0 if expired</returns>
 	unsigned long remaining() const
 	{
+		if (_durationTime == 0)
+		{
+			return 0;
+		}
+
 		unsigned long now = TimeFunc();
 		unsigned long span = Util::getSpan(_startTime, now);
 		return (span >= _durationTime) ? 0 : (_durationTime - span);

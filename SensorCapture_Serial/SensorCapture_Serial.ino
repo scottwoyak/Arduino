@@ -4,77 +4,49 @@
 // them in RAM, and reports serial summaries plus an automatic serial dump.
 //
 // Capture flow:
-// 1) Initialize serial and sensor, then allow a brief warm-up period.
-// 2) Use a 1 ms timer to collect at most one sample per interval and store finite values in RAM.
-// 3) Stop when MAX_SAMPLES are stored or SAMPLE_DURATION_MS expires.
+// 1) Initialize serial and sensor, then start sampling immediately.
+// 2) Sample at up to MAX_SAMPLING_RATE and store finite values in RAM.
+// 3) Stop when MAX_SAMPLES are stored or MAX_SAMPLE_DURATION_S expires.
 //
 // Output flow:
-// - Serial summary includes run metrics, value stats, stabilization diagnostics, and a value histogram.
+// - Serial summary includes run metrics, value stats, and a value histogram.
 // - Post-capture window analysis prints effective rate/range/stddev by averaging window size.
 // - Stored points are dumped to serial automatically after capture completes.
 //
-// Sensor modes:
-// - Capacitor mode (default) reads from CapacitorSensor.
-// - Temperature mode reads from TempSensor.
+// Sensor mode:
+// - Reads from TempSensor.
 // -------------------------------------------------------------------------------------------------
 #include "SensorCapture.h"
 #include "SensorCaptureStats.h"
 #include "SensorCaptureOutput.h"
 #include "SerialX.h"
 #include <Wire.h>
-#include "CapacitorSensor.h"
 #include "TempSensor.h"
 
-#define SENSOR_TYPE_CAPACITOR 1
-#define SENSOR_TYPE_TEMP 2
-#define SENSOR_TYPE SENSOR_TYPE_CAPACITOR
-
-// Warm-up delay before capture starts.
-constexpr unsigned long WARM_UP_MS = 100;
 // Total sampling window duration before capture auto-completes.
-constexpr unsigned long SAMPLE_DURATION_MS = 10000;
-// Sampling interval controlled by timer (one sample per interval).
-constexpr unsigned long SAMPLE_INTERVAL_MS = 1;
+constexpr unsigned long MAX_SAMPLE_DURATION_S = 30;
+// Maximum sampling rate (samples per second).
+constexpr unsigned long MAX_SAMPLING_RATE = 10;
 // Maximum number of samples stored in RAM during a run.
 constexpr size_t MAX_SAMPLES = 1000;
 // Number of bins used for the value histogram.
 constexpr size_t HISTOGRAM_BINS = 20;
 // Delay between serial dump rows to avoid overwhelming the serial link.
 constexpr unsigned long PRINT_INTERVAL_MS = 2;
-// Allowed stabilization delta as a fraction of average signal level.
-constexpr float STABILITY_DELTA_PERCENT = 0.01f;
-// Number of consecutive stable samples required before capture storage begins.
-constexpr size_t STABILITY_REQUIRED_SAMPLES = 5;
 
 constexpr size_t ANALYSIS_WINDOW_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
 constexpr size_t ANALYSIS_WINDOW_COUNT = sizeof(ANALYSIS_WINDOW_SIZES) / sizeof(ANALYSIS_WINDOW_SIZES[0]);
 
-#if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-// Digital pin used to charge the capacitor-based sensor.
-constexpr uint8_t CHARGE_PIN = 6;
-// Digital pin used to read/discharge the capacitor-based sensor.
-constexpr uint8_t SENSE_PIN = 5;
-// Discharge delay before each capacitor charge cycle.
-constexpr uint16_t DISCHARGE_DELAY_MICROS = 350;
-#endif
-
-#if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-constexpr const char* SENSOR_UNIT = "us";
-CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN, DISCHARGE_DELAY_MICROS);
-#elif SENSOR_TYPE == SENSOR_TYPE_TEMP
-constexpr const char* SENSOR_UNIT = "F";
 TempSensor sensor;
-#else
-#error "Invalid SENSOR_TYPE. Use SENSOR_TYPE_CAPACITOR or SENSOR_TYPE_TEMP."
-#endif
 
 SensorCapture sensorCapture(
    MAX_SAMPLES,
-   WARM_UP_MS,
-   SAMPLE_DURATION_MS,
-   SAMPLE_INTERVAL_MS,
-   STABILITY_DELTA_PERCENT,
-   STABILITY_REQUIRED_SAMPLES);
+   0,
+   MAX_SAMPLE_DURATION_S * 1000UL,
+   (MAX_SAMPLING_RATE == 0) ? 1UL : ((1000UL / MAX_SAMPLING_RATE) == 0 ? 1UL : (1000UL / MAX_SAMPLING_RATE)),
+   0.0f,
+   0,
+   false);
 
 bool captureFinalized = false;
 
@@ -83,16 +55,9 @@ bool captureFinalized = false;
 /// </summary>
 void printCaptureSummary()
 {
-   SensorCaptureOutput::printCaptureSummary(sensorCapture, SAMPLE_DURATION_MS, 3);
+   SensorCaptureOutput::printCaptureSummary(sensorCapture, MAX_SAMPLE_DURATION_S * 1000UL, 3);
 
-   if ((sensorCapture.count() == 0) && !sensorCapture.isCaptureStabilized())
-   {
-      sensorCapture.printStabilizationDiagnosticsToSerial(3);
-      Serial.println();
-   }
-
-   String valueHistogramTitle = String("Sensor Value Histogram (") + SENSOR_UNIT + ")";
-   SensorCaptureOutput::printHistogramBins(valueHistogramTitle.c_str(), sensorCapture, HISTOGRAM_BINS, 3);
+   SensorCaptureOutput::printHistogramBins("Sensor Value Histogram", sensorCapture, HISTOGRAM_BINS, 3);
 }
 
 /// <summary>
@@ -118,7 +83,7 @@ void printWindowAnalysis()
    for (size_t analysisIndex = 0; analysisIndex < ANALYSIS_WINDOW_COUNT; analysisIndex++)
    {
       size_t windowSize = ANALYSIS_WINDOW_SIZES[analysisIndex];
-      float effectiveRate = (windowSize > 0) ? (1000.0f / static_cast<float>(windowSize * SAMPLE_INTERVAL_MS)) : NAN;
+      float effectiveRate = (windowSize > 0) ? (static_cast<float>(MAX_SAMPLING_RATE) / static_cast<float>(windowSize)) : NAN;
 
       Stats avgSeriesStats = analysis.computeAverageSeriesStats(windowSize);
       float avgRange = analysis.computeRange(avgSeriesStats.min(), avgSeriesStats.max());
@@ -164,9 +129,7 @@ void setup()
    Wire.begin();
    sensor.begin();
 
-   sensorCapture.startWarmUp();
-
-   Serial.println("Warm-up started...");
+   Serial.println("Capture started...");
 }
 
 void loop()
@@ -177,14 +140,10 @@ void loop()
       Serial.println("Sampling started...");
    }
 
-       if (sensorCapture.readyForValue())
-       {
-   #if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-          float sensorValue = sensor.chargeTimeMicros();
-   #else
-          float sensorValue = sensor.readTemperatureF();
-   #endif
-          SensorCaptureState valueStates = sensorCapture.addValue(sensorValue);
+   if (sensorCapture.readyForValue())
+   {
+      float sensorValue = sensor.readTemperatureF();
+      SensorCaptureState valueStates = sensorCapture.addValue(sensorValue);
       if ((valueStates & SENSOR_CAPTURE_STATE_COMPLETED) != 0)
       {
          finishCapture();

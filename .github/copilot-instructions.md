@@ -16,14 +16,15 @@
 - Start non-constant private and protected class members with underscores; private and protected constants should not start with underscores.
 - Use brace-on-new-line formatting style: place opening '{' on a new line.
 - Avoid calling clearDisplay every loop iteration in sketches because it causes visible screen flicker; only clear when needed (e.g., mode changes).
-- Never use display text size 1 in sketches; use size 2 or larger for better readability.
+- Never use display text size 1 in sketches; use size 2 or larger for better readability. Only use text-size constants if that size is used in many places; otherwise, inline the size value.
+- For numeric values, pass numeric types directly to print/println overloads (no manual String conversion); use a single Format rule that allows format patterns (e.g., ###/s) or numeric width for alignment while keeping numeric inputs numeric.
 - Use "micros" instead of "us" in names and identifiers.
 - Always use the Timer class when waiting for something.
 - Prefer explicit, clearly listed overload variants over complex template metaprogramming (e.g., avoid typename std::enable_if unless templates are simple and clearly useful).
 - Use SPAN or SAMPLE_TIME for timing-related names; avoid the term WINDOW except for GUI concepts.
 - In display row rendering, prefer using labeled printlnR overloads instead of building full concatenated row strings for numeric values; use default value colors unless a specific color is requested.
+- For display header alignment in this sketch, prefer explicit space-padded header strings (e.g., "    Rate") instead of using a Format object.
 - When addressing data quality issues, prefer root-cause stabilization logic over fixed sample-skipping heuristics.
-- Avoid unnecessary casts when calling formatted display methods like printlnC for methods that return float, such as chargeTimeMicros().
 - For mock-timer-based deterministic tests, prefer exact equality assertions (assertEqual) over range-style boolean checks when expected values are deterministic.
 - When asked to compile an Arduino sketch, build only the current sketch/project, not the entire solution.
 - Optimize code and suggestions for the ESP32-S3 platform, including using ESP32-specific APIs like gpio_isr_handler_add(), esp_timer, and IRAM_ATTR for ISR functions, and other ESP32-S3 features.

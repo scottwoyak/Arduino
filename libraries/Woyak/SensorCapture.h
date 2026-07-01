@@ -112,6 +112,7 @@ public:
       _valueIndex = 0;
       _captureStarted = false;
       _captureComplete = false;
+      _warmUpTimer.reset();
       resetStabilizationState();
    }
 
@@ -133,6 +134,8 @@ public:
          if (_warmUpTimer.ready())
          {
             _captureStarted = true;
+            _captureTimer.reset();
+            _samplingTimer.reset();
             resetStabilizationState();
             states = static_cast<SensorCaptureState>(states | SENSOR_CAPTURE_STATE_CAPTURE_STARTED);
          }

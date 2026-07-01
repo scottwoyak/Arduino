@@ -8,12 +8,12 @@
 // - A warm-up phase runs first so startup transients do not skew the captured dataset.
 // - Sampling is driven by SensorCapture timing (default 1 ms cadence), and only finite values are
 //   retained in RAM.
-// - Capture ends automatically when either SAMPLE_DURATION_MS elapses or MAX_SAMPLES is reached.
+// - Capture ends automatically when either SAMPLING_DURATION_S elapses or MAX_SAMPLES is reached.
 //
 // Capture flow:
 // 1) Initialize display, serial, and sensor, then allow a brief warm-up period.
 // 2) Use a 1 ms timer to collect at most one sample per interval and store finite values in RAM.
-// 3) Stop when MAX_SAMPLES are stored or SAMPLE_DURATION_MS expires.
+// 3) Stop when MAX_SAMPLES are stored or SAMPLING_DURATION_S expires.
 //
 // Output flow:
 // - Serial summary includes run metrics, value stats, and a value histogram.
@@ -21,12 +21,10 @@
 //   for multiple averaging window sizes.
 // - Button A triggers a paced serial dump of stored points (index, value).
 //
-// Sensor modes:
-// - Capacitor mode reads from CapacitorSensor.
-// - Temperature mode reads from TempSensor.
+// Sensor mode:
+// - Reads from TempSensor in Fahrenheit.
 //
 // Typical usage:
-// - Select SENSOR_TYPE at compile time.
 // - Flash the sketch and allow warm-up/capture to complete.
 // - Review serial + display outputs to compare stability (StdDev%, range) across averaging sizes.
 //
@@ -37,55 +35,62 @@
 #include "SensorCaptureOutput.h"
 #include "SerialX.h"
 #include <Wire.h>
-#include "CapacitorSensor.h"
 #include "TempSensor.h"
 
-#define SENSOR_TYPE_CAPACITOR 1
-#define SENSOR_TYPE_TEMP 2
-#define SENSOR_TYPE SENSOR_TYPE_TEMP
-
-constexpr unsigned long WARM_UP_MS = 100;
-constexpr unsigned long SAMPLE_DURATION_MS = 10000;
-constexpr unsigned long SAMPLE_INTERVAL_MS = 1;
+constexpr float WARM_UP_S = 2.0f;
+constexpr unsigned long SAMPLING_DURATION_S = 10;
+constexpr unsigned long MAX_SAMPLE_RATE = 1000;
+constexpr unsigned long SAMPLE_INTERVAL_MS =
+   (MAX_SAMPLE_RATE == 0) ? 1UL :
+   ((1000UL / MAX_SAMPLE_RATE) == 0 ? 1UL : (1000UL / MAX_SAMPLE_RATE));
 constexpr size_t MAX_SAMPLES = 1000;
 constexpr size_t HISTOGRAM_BINS = 20;
 constexpr uint8_t CHART_MIN_MAX_SIGNIFICANT_DIGITS = 3;
-constexpr float STABILITY_DELTA_PERCENT = 0.1f;
-constexpr size_t STABILITY_REQUIRED_SAMPLES = 10;
-constexpr bool STABILIZATION_ENABLED = true;
 
-constexpr size_t SAMPLE_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
-constexpr size_t NUM_SAMPLE_SIZES = sizeof(SAMPLE_SIZES) / sizeof(SAMPLE_SIZES[0]);
+constexpr size_t BUFFER_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
+constexpr size_t NUM_BUFFER_SIZES = sizeof(BUFFER_SIZES) / sizeof(BUFFER_SIZES[0]);
 
 Feather feather;
 
-#if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-constexpr uint8_t SENSE_PIN = 5;
-constexpr uint8_t CHARGE_PIN_1M = 6;
-constexpr uint8_t CHARGE_PIN_470K = 9;
-constexpr uint8_t CHARGE_PIN_100K = 10;
-constexpr uint8_t CHARGE_PIN_47K = 11;
+/// <summary>
+/// Sensor adapter used by this sketch so sensor-specific code is isolated in one place.
+/// </summary>
+class TestSensor
+{
+private:
+   TempSensor _sensor;
 
-constexpr uint8_t CHARGE_PIN = CHARGE_PIN_1M;
-constexpr uint16_t DISCHARGE_DELAY_MICROS = 350;
-constexpr size_t SENSOR_AVERAGE_SAMPLES = 1;
-constexpr const char* SENSOR_UNIT = "us";
-CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN, DISCHARGE_DELAY_MICROS, SENSOR_AVERAGE_SAMPLES);
-#elif SENSOR_TYPE == SENSOR_TYPE_TEMP
-constexpr const char* SENSOR_UNIT = "F";
-TempSensor sensor;
-#else
-#error "Invalid SENSOR_TYPE. Use SENSOR_TYPE_CAPACITOR or SENSOR_TYPE_TEMP."
-#endif
+public:
+   /// <summary>
+   /// Initializes the underlying temperature sensor.
+   /// </summary>
+   /// <returns>True when sensor initialization succeeds; otherwise false.</returns>
+   bool begin()
+   {
+      return _sensor.begin();
+   }
+
+   /// <summary>
+   /// Reads the current sensor value used by the capture pipeline.
+   /// </summary>
+   /// <returns>Temperature in Fahrenheit, or NaN when unavailable.</returns>
+   float readValue()
+   {
+      return _sensor.readTemperatureF();
+   }
+
+   };
+
+TestSensor sensor;
 
 SensorCapture sensorCapture(
    MAX_SAMPLES,
-   WARM_UP_MS,
-   SAMPLE_DURATION_MS,
+   static_cast<unsigned long>(WARM_UP_S * 1000.0f),
+   SAMPLING_DURATION_S * 1000UL,
    SAMPLE_INTERVAL_MS,
-   STABILITY_DELTA_PERCENT,
-   STABILITY_REQUIRED_SAMPLES,
-   STABILIZATION_ENABLED);
+   0.0f,
+   0,
+   false);
 
 bool captureFinalized = false;
 
@@ -140,7 +145,7 @@ void renderHistogramsOnFeather()
 
    auto computeEffectiveRateHz = [](size_t sampleSize) -> float
    {
-      return (sampleSize > 0) ? (1000.0f / static_cast<float>(sampleSize * SAMPLE_INTERVAL_MS)) : NAN;
+      return (sampleSize > 0) ? (static_cast<float>(MAX_SAMPLE_RATE) / static_cast<float>(sampleSize)) : NAN;
    };
 
    Stats rawStats = analysis.computeBasicStats();
@@ -169,11 +174,11 @@ void renderHistogramsOnFeather()
       feather.println(" Raw   n/a   n/a", Color::GRAY);
    }
 
-   constexpr size_t SAMPLE_SIZE[] = { 10, 20, 50, 100 };
-   for (size_t i = 0; i < (sizeof(SAMPLE_SIZE) / sizeof(SAMPLE_SIZE[0])); i++)
+   constexpr size_t BUFFER_SIZE_FOR_DISPLAY[] = { 10, 20, 50, 100 };
+   for (size_t i = 0; i < (sizeof(BUFFER_SIZE_FOR_DISPLAY) / sizeof(BUFFER_SIZE_FOR_DISPLAY[0])); i++)
    {
       feather.moveCursorY(-1);
-      size_t sampleSize = SAMPLE_SIZE[i];
+      size_t sampleSize = BUFFER_SIZE_FOR_DISPLAY[i];
       float effectiveRateHz = computeEffectiveRateHz(sampleSize);
 
       Stats avgSeriesStats = analysis.computeAverageSeriesStats(sampleSize);
@@ -211,16 +216,9 @@ void renderHistogramsOnFeather()
 //
 void printCaptureSummary()
 {
-   SensorCaptureOutput::printCaptureSummary(sensorCapture, SAMPLE_DURATION_MS, 3);
+   SensorCaptureOutput::printCaptureSummary(sensorCapture, SAMPLING_DURATION_S * 1000UL, 3);
 
-   if ((sensorCapture.count() == 0) && !sensorCapture.isCaptureStabilized())
-   {
-      sensorCapture.printStabilizationDiagnosticsToSerial(3);
-      Serial.println();
-   }
-
-   String valueHistogramTitle = String("Sensor Value Histogram (") + SENSOR_UNIT + ")";
-   SensorCaptureOutput::printHistogramBins(valueHistogramTitle.c_str(), sensorCapture, HISTOGRAM_BINS, 3);
+   SensorCaptureOutput::printHistogramBins("Sensor Value Histogram", sensorCapture, HISTOGRAM_BINS, 3);
 
    sensorCapture.printFirstAndLastToSerial(10, 3);
 }
@@ -246,10 +244,10 @@ void printAveragingAnalysis()
    SerialX::print("-------", 12);
    SerialX::println("--------", 10);
 
-   for (size_t analysisIndex = 0; analysisIndex < NUM_SAMPLE_SIZES; analysisIndex++)
+   for (size_t analysisIndex = 0; analysisIndex < NUM_BUFFER_SIZES; analysisIndex++)
    {
-      size_t sampleSize = SAMPLE_SIZES[analysisIndex];
-      float effectiveRate = (sampleSize > 0) ? (1000.0f / static_cast<float>(sampleSize * SAMPLE_INTERVAL_MS)) : NAN;
+      size_t sampleSize = BUFFER_SIZES[analysisIndex];
+      float effectiveRate = (sampleSize > 0) ? (static_cast<float>(MAX_SAMPLE_RATE) / static_cast<float>(sampleSize)) : NAN;
 
       Stats avgSeriesStats = analysis.computeAverageSeriesStats(sampleSize);
       float avgRange = analysis.computeRange(avgSeriesStats.min(), avgSeriesStats.max());
@@ -290,7 +288,7 @@ void updateDisplay()
 {
    feather.setCursor(0, 0);
    feather.setTextSize(3);
-   feather.println("Sensor Capture", Color::HEADING);
+   feather.println("Sensor Averaging", Color::HEADING);
    feather.moveCursorY(10);
 
    feather.setTextSize(2);
@@ -328,30 +326,21 @@ void setup()
    Wire.begin();
    feather.begin();
 
-#if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
    sensor.begin();
-#else
-   sensor.begin();
-#endif
-
    sensorCapture.startWarmUp();
 
    updateDisplay();
-   Serial.println("Warm-up started...");
+   Serial.println("Capture started...");
 }
 
 void loop()
 {
    SensorCaptureState states = sensorCapture.update();
 
-       if (sensorCapture.readyForValue())
-       {
-   #if SENSOR_TYPE == SENSOR_TYPE_CAPACITOR
-          float sensorValue = sensor.chargeTimeMicros();
-   #else
-          float sensorValue = sensor.readTemperatureF();
-   #endif
-          SensorCaptureState valueStates = sensorCapture.addValue(sensorValue);
+   if (sensorCapture.readyForValue())
+   {
+      float sensorValue = sensor.readValue();
+      SensorCaptureState valueStates = sensorCapture.addValue(sensorValue);
       if ((valueStates & SENSOR_CAPTURE_STATE_COMPLETED) != 0)
       {
          finishCapture();
