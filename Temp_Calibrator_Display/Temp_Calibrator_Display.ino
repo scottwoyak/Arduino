@@ -54,21 +54,22 @@ TempSensor sensors[] =
 };
 
 // The averaging window used for computing correction factors
-constexpr auto CORRECTION_AVG_S = 60;
-constexpr unsigned long CORRECTION_AVG_MS = 1000UL * CORRECTION_AVG_S;
+constexpr unsigned long SAMPLING_DURATION_S = 60;
 
-// How often we send data to Influx
+// Sensor and telemetry timing
+constexpr uint16_t SAMPLING_INTERVAL_MS = 100;
 constexpr auto INFLUX_INTERVAL_S = 10;
 constexpr auto PREFS_INTERVAL_S = 60;
 constexpr auto SAVED_INFO_WAIT_S = 60;
 constexpr auto WIFI_RESET_DELAY_S = 10;
 
 // Calibrator for temperature corrections and timed averages
-TempCalibrator calibrator(NUM_SENSORS, CORRECTION_AVG_MS, TempCalibrator::BaselineMode::FIRST_SENSOR);
+TempCalibrator calibrator(NUM_SENSORS, SAMPLING_DURATION_S * 1000UL, TempCalibrator::BaselineMode::FIRST_SENSOR);
 
 Format tempFormat("###.## F");
 Format correctionFormat("+#.###");
 
+Timer sensorReadTrigger(SAMPLING_INTERVAL_MS);
 TimerSecs influxTrigger(INFLUX_INTERVAL_S);
 TimerSecs prefsTrigger(PREFS_INTERVAL_S);
 
@@ -87,8 +88,38 @@ Point points[] =
    Point("Air"),
 };
 
-uint8_t view = 0;
-constexpr uint8_t NUM_VIEWS = 3;
+enum class View : uint8_t
+{
+   RawTemps = 0,
+   Corrected,
+   Correction,
+};
+
+inline View& operator++(View& view)
+{
+   switch (view)
+   {
+   case View::RawTemps:
+      view = View::Corrected;
+      break;
+   case View::Corrected:
+      view = View::Correction;
+      break;
+   default:
+      view = View::RawTemps;
+      break;
+   }
+   return view;
+}
+
+inline View operator++(View& view, int)
+{
+   View previous = view;
+   ++view;
+   return previous;
+}
+
+View view = View::RawTemps;
 
 void printCalibrationCodeToSerial()
 {
@@ -106,7 +137,7 @@ void printCalibrationCodeToSerial()
 
    // print saved factors for easy paste into TempSensorCallibration.h
    Serial.println("Copy this data to libraries\\Woyak\\TempSensorCallibration.h");
-   Serial.println(String("Based on averaging data points over the last ") + CORRECTION_AVG_S + " seconds, here are the calibration factors:");
+   Serial.println(String("Based on averaging data points over the last ") + SAMPLING_DURATION_S + " seconds, here are the calibration factors:");
    for (int i = 0; i < NUM_SENSORS; i++)
    {
       Serial.print("\"");
@@ -272,73 +303,79 @@ void setup()
 long count = 0;
 void loop()
 {
-   feather.setCursor(0, 0);
-
    if (feather.buttonA.wasPressed())
    {
       feather.clearDisplay();
-      view = (view + 1) % NUM_VIEWS;
+      view++;
    }
 
-   count++;
-
-   // ------------------------------------------- display
-
-   feather.setTextSize(2);
-   switch (view)
+   // ------------------------------------------- sample + display
+   if (sensorReadTrigger.ready())
    {
-   case 0:
-      feather.println("Raw Temps", Color::HEADING);
-      break;
-
-   case 1:
-      feather.println("Corrected", Color::HEADING);
-      break;
-
-   case 2:
-      feather.println("Correction", Color::HEADING);
-      break;
-   }
-   feather.moveCursorY(10);
-
-   feather.setTextSize(3);
-   for (int i = 0; i < NUM_SENSORS; i++)
-   {
-      Multiplexer::select(i);
-      TempSensor& sensor = sensors[i];
-      bool sensorExists = sensor.exists();
-      if (sensorExists)
+      for (int i = 0; i < NUM_SENSORS; i++)
       {
-         float temp = sensor.readTemperatureF();
-         calibrator.set(i, temp);
-      }
-
-      // values
-      feather.print((i + 1), Color::LABEL);
-      feather.moveCursorX(feather.charW() / 2);
-      if (sensorExists)
-      {
-         float correction = calibrator.getCorrection(i);
-         float displayCorrection = -correction;
-         float timedAverage = calibrator.getAverage(i);
-         switch (view)
+         Multiplexer::select(i);
+         TempSensor& sensor = sensors[i];
+         if (sensor.exists())
          {
-         case 0:
-            feather.println(timedAverage, tempFormat, Color::VALUE);
-            break;
-
-         case 1:
-            feather.println(timedAverage + correction, tempFormat, Color::VALUE);
-            break;
-
-         case 2:
-            feather.println(displayCorrection, correctionFormat, Color::VALUE);
-            break;
+            float temp = sensor.readTemperatureF();
+            calibrator.set(i, temp);
+            count++;
          }
       }
-      else
+
+      feather.setCursor(0, 0);
+      feather.setTextSize(2);
+      switch (view)
       {
-         feather.println("-----", Color::GRAY);
+      case View::RawTemps:
+         feather.println("Raw Temps", Color::HEADING);
+         break;
+
+      case View::Corrected:
+         feather.println("Corrected", Color::HEADING);
+         break;
+
+      case View::Correction:
+         feather.println("Correction", Color::HEADING);
+         break;
+      }
+      feather.moveCursorY(10);
+
+      feather.setTextSize(3);
+      for (int i = 0; i < NUM_SENSORS; i++)
+      {
+         Multiplexer::select(i);
+         TempSensor& sensor = sensors[i];
+         bool sensorExists = sensor.exists();
+
+         // values
+         feather.print((i + 1), Color::LABEL);
+         feather.moveCursorX(feather.charW() / 2);
+         if (sensorExists)
+         {
+            float correction = calibrator.getCorrection(i);
+            float displayCorrection = -correction;
+            float timedAverage = calibrator.getAverage(i);
+            switch (view)
+            {
+            case View::RawTemps:
+               feather.println(timedAverage, tempFormat, Color::VALUE);
+               break;
+
+            case View::Corrected:
+               feather.println(timedAverage + correction, tempFormat, Color::VALUE);
+               break;
+
+            case View::Correction:
+               feather.println(displayCorrection, correctionFormat, Color::VALUE);
+               break;
+            }
+         }
+         else
+         {
+            feather.println("-----", Color::GRAY);
+         }
       }
    }
 
@@ -412,6 +449,10 @@ void loop()
          {
             Serial.println("InfluxDB write failed: ");
             Serial.println(client.getLastErrorMessage());
+         }
+         else
+         {
+            printCalibrationCodeToSerial();
          }
 
          digitalWrite(BUILTIN_LED, LOW);
