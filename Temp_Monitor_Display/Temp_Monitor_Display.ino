@@ -1,9 +1,25 @@
-//-------------------------------------------------------------------------------------------------
 //
-// Displays the current temperature and humidity, samples the sensor every 500 ms,
-// and periodically uploads averaged readings to InfluxDB.
+// Displays current temperature and humidity, samples sensor readings on a fixed interval,
+// and periodically uploads averaged values to InfluxDB.
 //
-//-------------------------------------------------------------------------------------------------
+// Behavior:
+// - Initializes display, sensor, status LED, watchdog, and InfluxDB client.
+// - Samples temperature and humidity every SENSOR_INTERVAL_MS and stores values in
+//   time-averaged fields for upload.
+// - Continuously renders the latest averaged temperature/humidity values to the display.
+// - Verifies Wi-Fi connectivity during runtime and resets the device if connectivity is lost.
+// - Posts telemetry to InfluxDB every INFLUX_INTERVAL_S seconds.
+//
+// Failure handling:
+// - If sensor initialization fails at startup, the device resets after a short delay.
+// - If Influx initialization fails at startup, the device resets after a short delay.
+// - If runtime post to Influx fails, the device enters deep sleep for
+//   SENSOR_POST_FAILURE_SLEEP_S seconds before retrying.
+//
+// Usage:
+// - Power on and allow initialization to complete.
+// - Observe live values on the display and periodic telemetry uploads in InfluxDB.
+//
 #include "Feather_ESP32_S3.h"
 #include "TempSensor.h"
 #include <Adafruit_SleepyDog.h>
@@ -142,5 +158,3 @@ void loop()
       digitalWrite(BUILTIN_LED, LOW);
    }
 }
-
-
