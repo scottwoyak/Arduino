@@ -4,7 +4,6 @@
 #include <math.h>
 #include <stddef.h>
 
-#include "Histogram.h"
 #include "RollingAverage.h"
 #include "SensorCapture.h"
 #include "Stats.h"
@@ -79,20 +78,6 @@ public:
       }
 
       return maxValue - minValue;
-   }
-
-   /// <summary>
-   /// Populates a histogram from captured values.
-   /// </summary>
-   /// <typeparam name="BIN_COUNT">Histogram bin count.</typeparam>
-   /// <param name="histogram">Histogram instance to populate.</param>
-   template<size_t BIN_COUNT>
-   void buildHistogram(Histogram<BIN_COUNT>& histogram) const
-   {
-      for (size_t i = 0; i < _valueCount; i++)
-      {
-         histogram.add(_values[i]);
-      }
    }
 
    /// <summary>

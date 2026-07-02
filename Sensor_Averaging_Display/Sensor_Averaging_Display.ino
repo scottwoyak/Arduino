@@ -85,19 +85,15 @@ TestSensor sensor;
 
 SensorCapture sensorCapture(
    MAX_SAMPLES,
-   static_cast<unsigned long>(WARM_UP_S * 1000.0f),
    SAMPLING_DURATION_S * 1000UL,
-   SAMPLE_INTERVAL_MS,
-   0.0f,
-   0,
-   false);
+   SAMPLE_INTERVAL_MS);
 
 bool captureFinalized = false;
 
 //
 // Draws a histogram panel on the Feather display.
 //
-void drawHistogramOnFeather(const char* title, const Histogram<HISTOGRAM_BINS>& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor)
+void drawHistogramOnFeather(const char* title, const Histogram& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor)
 {
    SensorCaptureOutput::drawHistogramOnFeather(
       feather,
@@ -118,9 +114,8 @@ void renderHistogramsOnFeather()
 {
    feather.clearDisplay();
 
-   Histogram<HISTOGRAM_BINS> valueHistogram;
+   Histogram valueHistogram(sensorCapture.values(), sensorCapture.count(), HISTOGRAM_BINS);
    SensorCaptureStats analysis(sensorCapture);
-   analysis.buildHistogram(valueHistogram);
 
    feather.setTextSize(2);
    feather.setCursor(0, 0);
@@ -327,7 +322,7 @@ void setup()
    feather.begin();
 
    sensor.begin();
-   sensorCapture.startWarmUp();
+   sensorCapture.reset();
 
    updateDisplay();
    Serial.println("Capture started...");

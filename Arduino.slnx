@@ -333,11 +333,11 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="SensorCapture_Serial/SensorCapture_Serial.vcxproj">
+  <Project Path="Sensor_Averaging_Display/Sensor_Averaging_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Sensor_Averaging_Display/Sensor_Averaging_Display.vcxproj">
+  <Project Path="Sensor_Capture_Display/Sensor_Capture_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

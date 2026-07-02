@@ -29,6 +29,7 @@
 - When asked to compile an Arduino sketch, build only the current sketch/project, not the entire solution.
 - Optimize code and suggestions for the ESP32-S3 platform, including using ESP32-specific APIs like gpio_isr_handler_add(), esp_timer, and IRAM_ATTR for ISR functions, and other ESP32-S3 features.
 - When determining which sketch a command applies to, always use the latest IDESTATE current file from the user's message as authoritative.
+- Always format serial tables with SerialTable class.
 
 ## Arduino File Guidelines
 - For .ino files, use regular // comments for sketch-level documentation at the top of the file. Format as: blank comment line, then summary line, blank comment line, then detailed description, and a final blank comment line at the bottom. Example:
@@ -46,3 +47,4 @@
 - Prefer helper print methods to be split into print and println variants instead of using an endLine boolean parameter.
 - Include documentation comments when cleaning up utility code.
 - Prefer x++ over ++x for increment operations.
+- In display updates, prefer using Format objects for values instead of ad-hoc string/print formatting.

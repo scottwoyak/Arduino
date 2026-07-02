@@ -267,12 +267,10 @@ namespace SerialX
 	/// <summary>
 	/// Prints histogram bin ranges and counts to Serial.
 	/// </summary>
-	/// <typeparam name="BIN_COUNT">Histogram bin count.</typeparam>
 	/// <param name="title">Histogram section title.</param>
 	/// <param name="histogram">Histogram values to print.</param>
 	/// <param name="decimals">Decimal precision for bin edges.</param>
-	template<size_t BIN_COUNT>
-	inline void printHistogramBins(const char* title, const Histogram<BIN_COUNT>& histogram, uint8_t decimals)
+	inline void printHistogramBins(const char* title, const Histogram& histogram, uint8_t decimals)
 	{
 		if (histogram.count() == 0)
 		{
@@ -303,8 +301,8 @@ namespace SerialX
 
 		for (size_t i = 0; i < histogram.bins(); i++)
 		{
-			float startValue = minValue + (span * i) / histogram.bins();
-			float endValue = minValue + (span * (i + 1)) / histogram.bins();
+			float startValue = minValue + (span * static_cast<float>(i)) / static_cast<float>(histogram.bins());
+			float endValue = minValue + (span * static_cast<float>(i + 1)) / static_cast<float>(histogram.bins());
 			if (i == histogram.bins() - 1)
 			{
 				endValue = maxValue;

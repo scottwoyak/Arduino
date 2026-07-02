@@ -105,17 +105,13 @@ public:
    /// <summary>
    /// Builds and prints histogram bin ranges and counts to Serial.
    /// </summary>
-   /// <typeparam name="BIN_COUNT">Histogram bin count.</typeparam>
    /// <param name="title">Histogram section title.</param>
    /// <param name="capture">Capture source used to build histogram bins.</param>
+   /// <param name="binCount">Histogram bin count.</param>
    /// <param name="decimals">Decimal precision for bin edges.</param>
-   template<size_t BIN_COUNT>
-   static void printHistogramBinsForCount(const char* title, const SensorCapture& capture, uint8_t decimals)
+   static void printHistogramBins(const char* title, const SensorCapture& capture, size_t binCount, uint8_t decimals)
    {
-      Histogram<BIN_COUNT> histogram;
-      SensorCaptureStats analysis(capture);
-      analysis.buildHistogram(histogram);
-
+      Histogram histogram(capture.values(), capture.count(), binCount);
       SerialX::printHistogramBins(title, histogram, decimals);
    }
 
@@ -124,31 +120,18 @@ public:
    /// </summary>
    /// <param name="title">Histogram section title.</param>
    /// <param name="capture">Capture source used to build histogram bins.</param>
-   /// <param name="binCount">Histogram bin count.</param>
+   /// <param name="minBinCount">Minimum histogram bin count.</param>
+   /// <param name="maxBinCount">Maximum histogram bin count.</param>
    /// <param name="decimals">Decimal precision for bin edges.</param>
-   static void printHistogramBins(const char* title, const SensorCapture& capture, size_t binCount, uint8_t decimals)
+   static void printHistogramBins(const char* title, const SensorCapture& capture, size_t minBinCount, size_t maxBinCount, uint8_t decimals)
    {
-      switch (binCount)
-      {
-      case 5: printHistogramBinsForCount<5>(title, capture, decimals); break;
-      case 10: printHistogramBinsForCount<10>(title, capture, decimals); break;
-      case 20: printHistogramBinsForCount<20>(title, capture, decimals); break;
-      case 30: printHistogramBinsForCount<30>(title, capture, decimals); break;
-      case 40: printHistogramBinsForCount<40>(title, capture, decimals); break;
-      case 50: printHistogramBinsForCount<50>(title, capture, decimals); break;
-      default:
-         Serial.println(title);
-         Serial.print("Unsupported bin count: ");
-         Serial.println(binCount);
-         Serial.println();
-         break;
-      }
+      Histogram histogram(capture.values(), capture.count(), minBinCount, maxBinCount);
+      SerialX::printHistogramBins(title, histogram, decimals);
    }
 
    /// <summary>
    /// Draws a histogram panel on the Feather display.
    /// </summary>
-   /// <typeparam name="BIN_COUNT">Histogram bin count.</typeparam>
    /// <param name="feather">Display driver.</param>
    /// <param name="title">Panel title.</param>
    /// <param name="histogram">Histogram to render.</param>
@@ -158,11 +141,10 @@ public:
    /// <param name="sectionHeight">Panel height in pixels.</param>
    /// <param name="barColor">Color used for bars and labels.</param>
    /// <param name="labelSignificantDigits">Significant digits used for min/max labels.</param>
-   template<size_t BIN_COUNT>
    static void drawHistogramOnFeather(
       Feather& feather,
       const char* title,
-      const Histogram<BIN_COUNT>& histogram,
+      const Histogram& histogram,
       int16_t sectionLeft,
       int16_t sectionWidth,
       int16_t sectionTop,
