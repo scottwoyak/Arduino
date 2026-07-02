@@ -2,6 +2,10 @@
 
 #include "Color.h"
 #include "Structs.h"
+
+#ifndef LGFX_AUTODETECT
+#define LGFX_AUTODETECT
+#endif
 #include <LovyanGFX.hpp>
 
 //-------------------------------------------------------------------------------------------------

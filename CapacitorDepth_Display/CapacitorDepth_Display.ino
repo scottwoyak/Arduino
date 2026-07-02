@@ -1,6 +1,7 @@
 #include <Arduino.h>
-#include "CapacitorDepthSensor.h"
 #include "Feather.h"
+#include "Bar.h"
+#include "CapacitorDepthSensor.h"
 #include "RollingStats.h"
 #include "Timer.h"
 
@@ -8,15 +9,15 @@ Feather feather;
 Format depthFormat("###.# cm");
 Format rateFormat("#### per/s");
 
-constexpr unsigned long DISPLAY_UPDATE_MS = 100;
+constexpr unsigned long DISPLAY_UPDATE_MS = 50;
+constexpr uint16_t LEVEL_BAR_WIDTH_PX = 10;
 Timer displayTimer(DISPLAY_UPDATE_MS);
 
 // Hardware Pin Assignments
-const int CHARGE_PIN = 11;
+const int CHARGE_PIN = 10;
 const int SENSE_PIN = 5;
 
 constexpr uint16_t SENSOR_DISCHARGE_DELAY_US = 200;
-constexpr uint32_t SENSOR_DEFERRED_PERIOD_US = 500;
 constexpr size_t SENSOR_BUFFER_SIZE = 100;
 
 constexpr auto DEFAULT_ZERO_CHARGE_TIME = 128.3f;
@@ -36,6 +37,7 @@ enum class CalibrationState : uint8_t
 };
 
 CapacitorDepthSensor sensor(CHARGE_PIN, SENSE_PIN, DEFAULT_ZERO_CHARGE_TIME, DEFAULT_HALF_CHARGE_TIME, FULL_DEPTH);
+VerticalBar* levelBar = nullptr;
 CalibrationState calibrationState = CalibrationState::None;
 CalibrationState lastRenderedCalibrationState = CalibrationState::None;
 bool displayNeedsClear = true;
@@ -86,7 +88,14 @@ void renderDepthDisplay()
 
    feather.setTextSize(3);
    feather.setCursorY(feather.height() - feather.charH());
-   feather.printlnR(sensor.rate(), rateFormat, Color::SUB_LABEL);
+   feather.println(sensor.rate(), rateFormat, Color::SUB_LABEL);
+
+   if (levelBar != nullptr)
+   {
+      float clampedDepth = constrain(depth, 0.0f, FULL_DEPTH);
+      levelBar->set(clampedDepth);
+      levelBar->draw(&feather.display);
+   }
 }
 
 void setup()
@@ -94,8 +103,10 @@ void setup()
    feather.begin();
    sensor.begin();
    sensor.setDischargeDelayMicros(SENSOR_DISCHARGE_DELAY_US);
-   sensor.setDeferredProcessingPeriodMicros(SENSOR_DEFERRED_PERIOD_US);
    sensor.setBufferSize(SENSOR_BUFFER_SIZE);
+   Rect16 levelBarRect(feather.width() - LEVEL_BAR_WIDTH_PX, 0, LEVEL_BAR_WIDTH_PX, feather.height());
+   levelBar = new VerticalBar(levelBarRect, RangeF(0.0f, FULL_DEPTH), Color::BLUE, Color::BLACK);
+   levelBar->reset(NAN);
    loadCalibration();
 }
 
@@ -131,7 +142,10 @@ void loop()
    {
       if (displayNeedsClear || (lastRenderedCalibrationState != calibrationState))
       {
-         feather.clearDisplay();
+         if (levelBar != nullptr)
+         {
+            levelBar->reset(NAN);
+         }
          displayNeedsClear = false;
          lastRenderedCalibrationState = calibrationState;
       }
