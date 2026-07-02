@@ -9,7 +9,7 @@
 //
 // Output flow:
 // - Display shows live progress during capture, including elapsed seconds.
-// - After capture, button A cycles display modes: summary, histogram, post warm-up histogram, and warm-up plot.
+// - After capture, button A cycles display modes: summary, histogram, post warm-up histogram, and scatter plot.
 // - Serial summary includes run metrics, value stats, histogram bins, and warm-up analysis.
 // - Stored points are dumped to serial automatically after capture completes.
 //
@@ -22,7 +22,6 @@
 #include "SensorCaptureOutput.h"
 #include "SerialX.h"
 #include "SerialTable.h"
-#include "RollingStats.h"
 #include <Wire.h>
 #include <math.h>
 #include "TempSensor.h"
@@ -37,9 +36,7 @@ constexpr unsigned long SAMPLE_INTERVAL_MS =
 constexpr unsigned long PRINT_INTERVAL_MS = 2;
 constexpr unsigned long DISPLAY_UPDATE_INTERVAL_MS = 200;
 // Number of samples used for each side of the warm-up comparison (start segment vs end segment).
-constexpr size_t WARMUP_SEGMENT_SAMPLE_COUNT = 100;
-constexpr size_t ROLLING_MIN_MAX_BUFFER_SIZE = 25;
-constexpr size_t ROLLING_MIN_MAX_POINTS = 200;
+constexpr size_t STARTUP_SAMPLE_COUNT = 100;
 
 constexpr size_t SAMPLING_RATES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
 constexpr size_t SAMPLING_RATE_COUNT = sizeof(SAMPLING_RATES) / sizeof(SAMPLING_RATES[0]);
@@ -64,22 +61,12 @@ const SerialTable::Column WARMUP_TABLE_COLUMNS[] = {
 const size_t WARMUP_TABLE_COLUMN_COUNT = sizeof(WARMUP_TABLE_COLUMNS) / sizeof(WARMUP_TABLE_COLUMNS[0]);
 SerialTable warmupTable(WARMUP_TABLE_TITLE, WARMUP_TABLE_COLUMNS, WARMUP_TABLE_COLUMN_COUNT);
 
-const char ROLLING_MIN_MAX_TABLE_TITLE[] = "Rolling Min/Max Table";
-const SerialTable::Column ROLLING_MIN_MAX_TABLE_COLUMNS[] = {
-   { "Index", 8 },
-   { "Min", 12 },
-   { "Max", 12 },
-   { "Span", 12 },
-};
-const size_t ROLLING_MIN_MAX_TABLE_COLUMN_COUNT = sizeof(ROLLING_MIN_MAX_TABLE_COLUMNS) / sizeof(ROLLING_MIN_MAX_TABLE_COLUMNS[0]);
-SerialTable rollingMinMaxTable(ROLLING_MIN_MAX_TABLE_TITLE, ROLLING_MIN_MAX_TABLE_COLUMNS, ROLLING_MIN_MAX_TABLE_COLUMN_COUNT);
-
 enum class DisplayMode : uint8_t
 {
    Summary = 0,
    Histogram,
    PostWarmupHistogram,
-   WarmupPlot,
+   ScatterPlot,
    Count
 };
 
@@ -107,12 +94,6 @@ Stats warmupEndStats;
 bool warmupHasComparison = false;
 size_t postWarmupStartIndex = 0;
 bool postWarmupReady = false;
-float warmupRollingMinPlot[ROLLING_MIN_MAX_POINTS];
-float warmupRollingMaxPlot[ROLLING_MIN_MAX_POINTS];
-size_t warmupRollingPointCount = 0;
-float warmupPlotYMin = NAN;
-float warmupPlotYMax = NAN;
-bool warmupPlotReady = false;
 
 /// <summary>
 /// Draws the summary display mode after capture completion.
@@ -163,7 +144,7 @@ void renderDisplayPostWarmupHistogram()
    }
 
    int16_t top = feather.getCursorY();
-   int16_t h = feather.height() - top - feather.charH() - 2;
+   int16_t h = feather.height() - top - 2;
    drawDisplayHistogramForRange(postWarmupStartIndex, top, h);
 }
 
@@ -178,102 +159,153 @@ void renderDisplayHistogram()
    feather.println("Histogram", Color::HEADING);
 
    int16_t top = feather.getCursorY();
-   int16_t h = feather.height() - top - feather.charH() - 2;
+   int16_t h = feather.height() - top - 2;
    drawDisplayHistogramForRange(0, top, h);
 }
 
 /// <summary>
-/// Draws warm-up comparison and trend display mode after capture completion.
+/// Draws a compact x-y scatter plot for all captured samples.
 /// </summary>
-void renderDisplayWarmupPlot()
-{
-   feather.clearDisplay();
-   feather.setTextSize(3);
-   feather.setCursor(0, 0);
-   feather.println("Warm-up Plot", Color::HEADING);
-
-   size_t totalCount = sensorCapture.count();
-   if (!warmupPlotReady || (totalCount < 2) || !isfinite(warmupPlotYMin) || !isfinite(warmupPlotYMax))
+void renderDisplayScatterPlot()
    {
-      feather.setTextSize(2);
-      feather.println("Not enough data", Color::LABEL);
-      return;
-   }
+      feather.clearDisplay();
+      feather.setTextSize(3);
+      feather.setCursor(0, 0);
+      feather.println("Scatter Plot", Color::HEADING);
 
-   int16_t chartLeft = 0;
-   int16_t chartTop = feather.getCursorY();
-   int16_t footerHeight = 2;
-   int16_t chartHeight = feather.height() - chartTop - footerHeight - 2;
-   int16_t chartWidth = feather.width();
-
-   if (chartHeight < 20 || chartWidth < 20)
-   {
-      feather.setTextSize(2);
-      feather.println("Plot area too small", Color::LABEL);
-      return;
-   }
-
-   float ySpan = warmupPlotYMax - warmupPlotYMin;
-   if (ySpan <= 0.0f)
-   {
-      ySpan = 1.0f;
-   }
-
-   feather.fillRect(chartLeft, chartTop, chartWidth, chartHeight, Color::BLACK);
-   feather.fillRect(chartLeft, chartTop + chartHeight - 1, chartWidth, 1, Color::DARKGRAY);
-   feather.fillRect(chartLeft, chartTop, 1, chartHeight, Color::DARKGRAY);
-
-   size_t xBins = static_cast<size_t>(chartWidth);
-   for (size_t x = 0; x < xBins; x++)
-   {
-      size_t startIndex = (x * totalCount) / xBins;
-      size_t endIndex = ((x + 1) * totalCount) / xBins;
-      if (endIndex <= startIndex)
+      size_t totalCount = sensorCapture.count();
+      if (totalCount < 2)
       {
-         endIndex = min(totalCount, startIndex + 1);
+         feather.setTextSize(2);
+         feather.println("Not enough data", Color::LABEL);
+         return;
       }
 
-      float minValue = sensorCapture[startIndex];
-      float maxValue = sensorCapture[startIndex];
-      for (size_t i = startIndex + 1; i < endIndex; i++)
+      float plotYMin = sensorCapture[0];
+      float plotYMax = sensorCapture[0];
+      for (size_t i = 1; i < totalCount; i++)
       {
          float value = sensorCapture[i];
-         minValue = min(minValue, value);
-         maxValue = max(maxValue, value);
+         plotYMin = min(plotYMin, value);
+         plotYMax = max(plotYMax, value);
       }
 
-      int16_t minY = chartTop + static_cast<int16_t>((warmupPlotYMax - minValue) * static_cast<float>(chartHeight - 1) / ySpan);
-      int16_t maxY = chartTop + static_cast<int16_t>((warmupPlotYMax - maxValue) * static_cast<float>(chartHeight - 1) / ySpan);
+      if (!isfinite(plotYMin) || !isfinite(plotYMax))
+      {
+         feather.setTextSize(2);
+         feather.println("Not enough data", Color::LABEL);
+         return;
+      }
 
-      if (minY < chartTop) minY = chartTop;
-      if (minY >= (chartTop + chartHeight)) minY = chartTop + chartHeight - 1;
-      if (maxY < chartTop) maxY = chartTop;
-      if (maxY >= (chartTop + chartHeight)) maxY = chartTop + chartHeight - 1;
+      int16_t chartLeft = 0;
+      int16_t chartTop = feather.getCursorY();
+      feather.setTextSize(2);
+      int16_t footerHeight = feather.charH() + 2;
+      int16_t chartHeight = feather.height() - chartTop - footerHeight - 2;
+      int16_t chartWidth = feather.width();
 
-      feather.fillRect(chartLeft + static_cast<int16_t>(x), minY, 1, 1, Color::VALUE2);
-      feather.fillRect(chartLeft + static_cast<int16_t>(x), maxY, 1, 1, Color::VALUE3);
+      if (chartHeight < 20 || chartWidth < 20)
+      {
+         feather.setTextSize(2);
+         feather.println("Plot area too small", Color::LABEL);
+         return;
+      }
+
+      float ySpan = plotYMax - plotYMin;
+      if (ySpan <= 0.0f)
+      {
+         ySpan = 1.0f;
+      }
+
+      feather.fillRect(chartLeft, chartTop, chartWidth, chartHeight, Color::BLACK);
+      feather.fillRect(chartLeft, chartTop + chartHeight - 1, chartWidth, 1, Color::DARKGRAY);
+      feather.fillRect(chartLeft, chartTop, 1, chartHeight, Color::DARKGRAY);
+
+      size_t pixelCount = static_cast<size_t>(chartWidth) * static_cast<size_t>(chartHeight);
+      uint8_t* density = new uint8_t[pixelCount];
+      if (density == nullptr)
+      {
+         feather.setTextSize(2);
+         feather.println("Memory unavailable", Color::LABEL);
+         return;
+      }
+
+      for (size_t i = 0; i < pixelCount; i++)
+      {
+         density[i] = 0;
+      }
+
+      uint8_t maxDensity = 0;
+      for (size_t sampleIndex = 0; sampleIndex < totalCount; sampleIndex++)
+      {
+         int16_t x = chartLeft + static_cast<int16_t>((sampleIndex * static_cast<size_t>(chartWidth - 1)) / max(static_cast<size_t>(1), totalCount - 1));
+         float value = sensorCapture[sampleIndex];
+         int16_t y = chartTop + static_cast<int16_t>((plotYMax - value) * static_cast<float>(chartHeight - 1) / ySpan);
+
+         if (y < chartTop) y = chartTop;
+         if (y >= (chartTop + chartHeight)) y = chartTop + chartHeight - 1;
+
+         size_t densityIndex = static_cast<size_t>(y - chartTop) * static_cast<size_t>(chartWidth) + static_cast<size_t>(x - chartLeft);
+         if (density[densityIndex] < 255)
+         {
+            density[densityIndex]++;
+         }
+
+         if (density[densityIndex] > maxDensity)
+         {
+            maxDensity = density[densityIndex];
+         }
+      }
+
+      for (int16_t y = 0; y < chartHeight; y++)
+      {
+         for (int16_t x = 0; x < chartWidth; x++)
+         {
+            size_t densityIndex = static_cast<size_t>(y) * static_cast<size_t>(chartWidth) + static_cast<size_t>(x);
+            uint8_t value = density[densityIndex];
+            if (value == 0)
+            {
+               continue;
+            }
+
+            float ratio = 0.0f;
+            if (maxDensity > 0)
+            {
+               ratio = static_cast<float>(value) / static_cast<float>(maxDensity);
+            }
+
+            Color color = Color565::blend(Color565::fromRGB(0, 128, 0), Color::GREEN, ratio);
+            feather.fillRect(chartLeft + x, chartTop + y, 1, 1, color);
+         }
+      }
+
+      delete[] density;
+
+      feather.setTextSize(2);
+      feather.setCursor(chartLeft, chartTop);
+      feather.print(plotYMax, 2, Color::LABEL);
+
+      feather.setCursor(chartLeft, chartTop + chartHeight - feather.charH());
+      feather.print(plotYMin, 2, Color::LABEL);
+
+      feather.setCursor(chartLeft, chartTop + chartHeight + 1);
+      feather.print("0", Color::LABEL);
+
+      String xMaxLabel = String(static_cast<unsigned long>(totalCount - 1));
+      int16_t xMaxX = chartLeft + chartWidth - static_cast<int16_t>(xMaxLabel.length() * feather.charW());
+      if (xMaxX < chartLeft)
+      {
+         xMaxX = chartLeft;
+      }
+      feather.setCursor(xMaxX, chartTop + chartHeight + 1);
+      feather.print(xMaxLabel, Color::LABEL);
    }
 
-   feather.setTextSize(2);
-   feather.setCursor(chartLeft, chartTop);
-   feather.print(warmupPlotYMax, 2, Color::LABEL);
-
-   feather.setCursor(chartLeft, chartTop + chartHeight - feather.charH());
-   feather.print(warmupPlotYMin, 2, Color::LABEL);
-
-   feather.setCursor(chartLeft, chartTop + chartHeight + 1);
-   feather.print("0", Color::LABEL);
-
-   feather.setCursor(chartLeft + chartWidth - (3 * feather.charW()), chartTop + chartHeight + 1);
-   feather.print(static_cast<unsigned long>(totalCount - 1), Color::LABEL);
-
-   }
-
-/// <summary>
-/// Updates on-screen capture progress and post-capture display modes.
-/// Refresh is throttled to DISPLAY_UPDATE_INTERVAL_MS unless forceRefresh is true.
-/// </summary>
-void updateDisplayProgress(bool forceRefresh = false)
+   /// <summary>
+   /// Updates on-screen capture progress and post-capture display modes.
+   /// Refresh is throttled to DISPLAY_UPDATE_INTERVAL_MS unless forceRefresh is true.
+   /// </summary>
+   void updateDisplayProgress(bool forceRefresh = false)
 {
    unsigned long nowMs = millis();
    if (!forceRefresh && ((nowMs - lastDisplayRefreshMs) < DISPLAY_UPDATE_INTERVAL_MS))
@@ -296,9 +328,9 @@ void updateDisplayProgress(bool forceRefresh = false)
       case DisplayMode::PostWarmupHistogram:
          renderDisplayPostWarmupHistogram();
          break;
-      case DisplayMode::WarmupPlot:
+      case DisplayMode::ScatterPlot:
       default:
-         renderDisplayWarmupPlot();
+         renderDisplayScatterPlot();
          break;
       }
       return;
@@ -398,10 +430,6 @@ void printWarmupAnalysis()
    warmupHasComparison = false;
    postWarmupReady = false;
    postWarmupStartIndex = 0;
-   warmupPlotReady = false;
-   warmupRollingPointCount = 0;
-   warmupPlotYMin = NAN;
-   warmupPlotYMax = NAN;
 
    size_t totalCount = sensorCapture.count();
    if (totalCount < 2)
@@ -412,7 +440,7 @@ void printWarmupAnalysis()
       return;
    }
 
-   size_t segmentSize = min(WARMUP_SEGMENT_SAMPLE_COUNT, totalCount / 2);
+   size_t segmentSize = min(STARTUP_SAMPLE_COUNT, totalCount / 2);
    if (segmentSize == 0)
    {
       Serial.println("Warm-up Stability Analysis");
@@ -447,76 +475,9 @@ void printWarmupAnalysis()
    warmupTable.printRow("Range", SerialTable::fixed(startRange, 3), SerialTable::fixed(endRange, 3), SerialTable::fixed(endRange - startRange, 3));
    warmupTable.printRow("StdDev", SerialTable::fixed(startStdDev, 3), SerialTable::fixed(endStdDev, 3), SerialTable::fixed(endStdDev - startStdDev, 3));
 
-   bool endMoreStable = isfinite(startStdDev) && isfinite(endStdDev) && (endStdDev < startStdDev);
-   Serial.print("End more stable: ");
-   Serial.println(endMoreStable ? "yes" : "no");
-   Serial.println();
-
-       size_t bufferSize = min(ROLLING_MIN_MAX_BUFFER_SIZE, totalCount);
-       RollingStats rolling(bufferSize);
-       size_t stride = max(static_cast<size_t>(1), totalCount / ROLLING_MIN_MAX_POINTS);
-
-       size_t pointCount = 0;
-       for (size_t i = 0; i < totalCount; i++)
-       {
-          rolling.set(sensorCapture[i]);
-          bool emitPoint = ((i + 1) >= bufferSize) && ((((i + 1) % stride) == 0) || (i + 1 == totalCount));
-          if (!emitPoint || (pointCount >= ROLLING_MIN_MAX_POINTS))
-          {
-             continue;
-          }
-
-          warmupRollingMinPlot[pointCount] = rolling.min();
-          warmupRollingMaxPlot[pointCount] = rolling.max();
-          pointCount++;
-       }
-
-       if (pointCount == 0)
-       {
-          Serial.println("Rolling Min/Max Table");
-          Serial.println("Not enough data for rolling table");
-          Serial.println();
-          return;
-       }
-
-       float yMin = warmupRollingMinPlot[0];
-       float yMax = warmupRollingMaxPlot[0];
-       for (size_t i = 1; i < pointCount; i++)
-       {
-          float pairMin = std::min(warmupRollingMinPlot[i], warmupRollingMaxPlot[i]);
-          float pairMax = std::max(warmupRollingMinPlot[i], warmupRollingMaxPlot[i]);
-          yMin = std::min(yMin, pairMin);
-          yMax = std::max(yMax, pairMax);
-       }
-
-       if (!isfinite(yMin) || !isfinite(yMax))
-       {
-          Serial.println("Rolling Min/Max Table");
-          Serial.println("Table unavailable");
-          Serial.println();
-          return;
-       }
-
-       warmupRollingPointCount = pointCount;
-       warmupPlotYMin = yMin;
-       warmupPlotYMax = yMax;
-       warmupPlotReady = true;
-
-       rollingMinMaxTable.printHeader();
-
-       for (size_t i = 0; i < pointCount; i++)
-       {
-          float minValue = warmupRollingMinPlot[i];
-          float maxValue = warmupRollingMaxPlot[i];
-          float spanValue = maxValue - minValue;
-
-          rollingMinMaxTable.printRow(
-             i,
-             SerialTable::fixed(minValue, 3),
-             SerialTable::fixed(maxValue, 3),
-             SerialTable::fixed(spanValue, 3));
-       }
-
+       bool endMoreStable = isfinite(startStdDev) && isfinite(endStdDev) && (endStdDev < startStdDev);
+       Serial.print("End more stable: ");
+       Serial.println(endMoreStable ? "yes" : "no");
        Serial.println();
    }
 
