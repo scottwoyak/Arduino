@@ -13,7 +13,7 @@
 - Prefer keeping initialization code in setup() rather than extracting it into separate helper functions.
 - Initialization precedence: (1) Prefer class-level member initialization for fixed defaults, (2) use constructor body assignment for runtime/config-dependent values, (3) use initializer lists only when required for correctness (e.g., references, const members, or members without default constructors). When no default is needed, leave the member declaration without an initializer.
 - Do not make changes in libraries outside of the Woyak library; third-party libraries should remain untouched.
-- Start non-constant private and protected class members with underscores; private and protected constants should not start with underscores.
+- Start non-constant private and protected class members with underscores; private and protected constants should not start with underscores. Private functions should also start with underscores and be declared before public functions.
 - Use brace-on-new-line formatting style: place opening '{' on a new line.
 - Avoid calling clearDisplay every loop iteration in sketches because it causes visible screen flicker; only clear when needed (e.g., mode changes).
 - Never use display text size 1 in sketches; use size 2 or larger for better readability. Only use text-size constants if that size is used in many places; otherwise, inline the size value.
@@ -43,3 +43,6 @@
 - When creating new Arduino test sketches, only create the .ino file. Do not create .vcxproj project files or modify the .slnx solution file. The user imports new projects into the solution via Visual Micro themselves.
 - When adding new test projects, always include them in Tests/All_Tests/All_Tests.ino so they run in the aggregate test project.
 - Keep section comments in the style `// ----------- COMMENT` during cleanup rather than removing them.
+- Prefer helper print methods to be split into print and println variants instead of using an endLine boolean parameter.
+- Include documentation comments when cleaning up utility code.
+- Prefer x++ over ++x for increment operations.

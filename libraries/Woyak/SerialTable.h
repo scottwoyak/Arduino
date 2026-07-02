@@ -32,20 +32,101 @@ private:
    const Column* _columns = nullptr;
    size_t _columnCount = 0;
 
+   /// <summary>
+   /// Returns true when table metadata is available for printing.
+   /// </summary>
+   bool _isConfigured() const
+   {
+      return (_columns != nullptr) && (_columnCount > 0);
+   }
+
+   /// <summary>
+   /// Base case for recursive row value printing.
+   /// </summary>
+   void _printValues(size_t&) const
+   {
+   }
+
+   /// <summary>
+   /// Recursively prints row values using column widths.
+   /// </summary>
+   template<typename T, typename... Rest>
+   void _printValues(size_t& index, const T& value, const Rest&... rest) const
+   {
+      if (index >= _columnCount)
+      {
+         return;
+      }
+
+      if (index + 1 >= _columnCount)
+      {
+         _printlnValue(value, _columns[index].width);
+         index++;
+         return;
+      }
+
+      _printValue(value, _columns[index].width);
+      index++;
+      _printValues(index, rest...);
+   }
+
+   /// <summary>
+   /// Prints a fixed-decimal floating-point value.
+   /// </summary>
+   static void _printValue(const FixedFloat& value, size_t width)
+   {
+      SerialX::print(value.value, value.decimals, width);
+   }
+
+   /// <summary>
+   /// Prints a fixed-decimal floating-point value and ends the line.
+   /// </summary>
+   static void _printlnValue(const FixedFloat& value, size_t width)
+   {
+      SerialX::println(value.value, value.decimals, width);
+   }
+
+   /// <summary>
+   /// Prints a value with width-based alignment.
+   /// </summary>
+   template<typename T>
+   static void _printValue(const T& value, size_t width)
+   {
+      SerialX::print(value, width);
+   }
+
+   /// <summary>
+   /// Prints a value with width-based alignment and ends the line.
+   /// </summary>
+   template<typename T>
+   static void _printlnValue(const T& value, size_t width)
+   {
+      SerialX::println(value, width);
+   }
+
 public:
-   SerialTable(const char* title, const Column* columns, size_t columnCount)
+   /// <summary>
+   /// Creates a serial table with title and fixed-width column metadata.
+   /// </summary>
+   explicit SerialTable(const char* title, const Column* columns, size_t columnCount)
       : _title(title), _columns(columns), _columnCount(columnCount)
    {
    }
 
+   /// <summary>
+   /// Wraps a float with a fixed decimal precision for table output.
+   /// </summary>
    static FixedFloat fixed(float value, uint8_t decimals)
    {
       return FixedFloat{ value, decimals };
    }
 
+   /// <summary>
+   /// Prints the title, column header row, and divider row.
+   /// </summary>
    void printHeader() const
    {
-      if (_columns == nullptr || _columnCount == 0)
+      if (!_isConfigured())
       {
          return;
       }
@@ -56,110 +137,53 @@ public:
          Serial.println(_title);
       }
 
-      for (size_t i = 0; i < _columnCount; i++)
+      size_t lastIndex = _columnCount - 1;
+      for (size_t i = 0; i < lastIndex; i++)
       {
-         if (i + 1 < _columnCount)
-         {
-            SerialX::print(_columns[i].title, _columns[i].width);
-         }
-         else
-         {
-            SerialX::println(_columns[i].title, _columns[i].width);
-         }
+         _printValue(_columns[i].title, _columns[i].width);
       }
+      _printlnValue(_columns[lastIndex].title, _columns[lastIndex].width);
 
       printDivider();
    }
 
+   /// <summary>
+   /// Prints a divider row based on column widths.
+   /// </summary>
    void printDivider() const
    {
-      if (_columns == nullptr || _columnCount == 0)
+      if (!_isConfigured())
       {
          return;
       }
 
       for (size_t i = 0; i < _columnCount; i++)
       {
-         String dashes;
-         dashes.reserve(_columns[i].width);
          for (size_t j = 0; j < _columns[i].width; j++)
          {
-            dashes += '-';
-         }
-
-         if (i + 1 < _columnCount)
-         {
-            SerialX::print(dashes, _columns[i].width);
-         }
-         else
-         {
-            SerialX::println(dashes, _columns[i].width);
+            Serial.print('-');
          }
       }
+      Serial.println();
    }
 
+   /// <summary>
+   /// Prints one row of values using configured columns.
+   /// </summary>
    template<typename... Args>
    void printRow(const Args&... values) const
    {
-      if (_columns == nullptr || _columnCount == 0)
+      if (!_isConfigured())
       {
          return;
       }
 
       size_t index = 0;
-      printValues(index, values...);
+      _printValues(index, values...);
 
       if (index < _columnCount)
       {
          Serial.println();
-      }
-   }
-
-private:
-   void printValues(size_t&) const
-   {
-   }
-
-   template<typename T, typename... Rest>
-   void printValues(size_t& index, const T& value, const Rest&... rest) const
-   {
-      if (index >= _columnCount)
-      {
-         return;
-      }
-
-      bool endLine = (index + 1 >= _columnCount);
-      printValue(value, _columns[index].width, endLine);
-      index++;
-
-      if (!endLine)
-      {
-         printValues(index, rest...);
-      }
-   }
-
-   static void printValue(const FixedFloat& value, size_t width, bool endLine)
-   {
-      if (endLine)
-      {
-         SerialX::println(value.value, value.decimals, width);
-      }
-      else
-      {
-         SerialX::print(value.value, value.decimals, width);
-      }
-   }
-
-   template<typename T>
-   static void printValue(const T& value, size_t width, bool endLine)
-   {
-      if (endLine)
-      {
-         SerialX::println(value, width);
-      }
-      else
-      {
-         SerialX::print(value, width);
       }
    }
 };

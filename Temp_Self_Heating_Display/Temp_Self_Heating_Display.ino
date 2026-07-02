@@ -3,10 +3,10 @@
 // recording the temperature where each rate level stops trending upward.
 //
 // Behavior:
-// - Takes one initial temperature measurement and displays it.
-// - Starts at 5 samples/second and collects readings with a 2-second timed rolling average.
-// - Ends the current rate step when the timed rolling average no longer increases.
-// - Records that step temperature, doubles the target rate, and repeats.
+// - Runs an initial 2 samples/second test to establish the baseline temperature.
+// - Uses fixed target rates: 2, 5, 10, 20, 30, 50, and 100 samples/second.
+// - Ends each rate test when the timed rolling average no longer increases.
+// - Records that test temperature and computes delta from the 2/s baseline.
 // - Stops when achieved sampling rate can no longer keep up with target.
 //
 #include "Feather.h"
@@ -17,13 +17,15 @@
 #include "Timer.h"
 #include <Wire.h>
 
-constexpr unsigned long INITIAL_SAMPLE_RATE = 5;
+constexpr unsigned long TARGET_SAMPLE_RATES[] = { 2UL, 5UL, 10UL, 20UL, 30UL, 50UL, 100UL };
+constexpr size_t TARGET_SAMPLE_RATE_COUNT = sizeof(TARGET_SAMPLE_RATES) / sizeof(TARGET_SAMPLE_RATES[0]);
+
 constexpr float ROLLING_BUFFER_SPAN_S = 2.0f;
 constexpr unsigned long ROLLING_BUFFER_SPAN_MS = static_cast<unsigned long>(ROLLING_BUFFER_SPAN_S * 1000.0f);
 constexpr float NO_INCREASE_EPSILON_F = 0.0001f;
 constexpr float MIN_RATE_RATIO = 0.90f;
 constexpr unsigned long MAX_CASE_DURATION_MS = 30000UL;
-constexpr size_t MAX_RESULTS = 12;
+constexpr size_t MAX_RESULTS = TARGET_SAMPLE_RATE_COUNT;
 
 constexpr int16_t RATE_COL_X = 0;
 constexpr int16_t TEMP_COL_X = 86;
@@ -142,11 +144,10 @@ class TestRunner
 {
 private:
    TestCase* _testCase = nullptr;
-   TempSensor* _sensor = nullptr;
 
    float _baselineTempF = NAN;
    bool _complete = true;
-   unsigned long _currentSampleRate = INITIAL_SAMPLE_RATE;
+   size_t _currentRateIndex = 0;
 
    size_t _resultCount = 0;
    float _resultTemps[MAX_RESULTS] = { NAN };
@@ -154,25 +155,24 @@ private:
    int _pendingResultIndex = -1;
 
 public:
-   void begin(TestCase& testCase, TempSensor& sensor)
+   void begin(TestCase& testCase, TempSensor&)
    {
       _testCase = &testCase;
-      _sensor = &sensor;
    }
 
    void start()
    {
-      if (_testCase == nullptr || _sensor == nullptr)
+      if (_testCase == nullptr)
       {
          return;
       }
 
       _complete = false;
-      _baselineTempF = _sensor->readTemperatureF();
-      _currentSampleRate = INITIAL_SAMPLE_RATE;
+      _baselineTempF = NAN;
+      _currentRateIndex = 0;
       _resultCount = 0;
       _pendingResultIndex = -1;
-      _testCase->start(_currentSampleRate);
+      _testCase->start(TARGET_SAMPLE_RATES[_currentRateIndex]);
    }
 
    void loop()
@@ -196,22 +196,34 @@ public:
       {
          _resultRates[_resultCount] = achievedRate;
          _resultTemps[_resultCount] = temp;
+
+         if (_resultCount == 0)
+         {
+            _baselineTempF = temp;
+         }
+
          _pendingResultIndex = static_cast<int>(_resultCount);
          _resultCount++;
       }
 
-      if (!isfinite(achievedRate) || (achievedRate < (static_cast<float>(_currentSampleRate) * MIN_RATE_RATIO)))
+      unsigned long targetRate = TARGET_SAMPLE_RATES[_currentRateIndex];
+      if (!isfinite(achievedRate) || (achievedRate < (static_cast<float>(targetRate) * MIN_RATE_RATIO)))
       {
          _complete = true;
          return;
       }
 
-      _currentSampleRate *= 2UL;
-      _testCase->start(_currentSampleRate);
+      if ((_currentRateIndex + 1) >= TARGET_SAMPLE_RATE_COUNT)
+      {
+         _complete = true;
+         return;
+      }
+
+      _currentRateIndex++;
+      _testCase->start(TARGET_SAMPLE_RATES[_currentRateIndex]);
    }
 
    bool isComplete() const { return _complete; }
-   float baselineTempF() const { return _baselineTempF; }
 
    bool hasPendingResult() const
    {
@@ -248,6 +260,11 @@ public:
 
    float resultDelta(size_t index) const
    {
+      if (!isfinite(_baselineTempF))
+      {
+         return NAN;
+      }
+
       return resultTemp(index) - _baselineTempF;
    }
 };
@@ -276,15 +293,12 @@ void appendDisplayResultRow(float rate, float temp, float delta)
    nextDisplayRowY = feather.getCursorY();
 }
 
-void drawRunHeader(float initialTempF)
+void drawRunHeader()
 {
    feather.setTextSize(3);
    feather.clearDisplay();
    feather.println("Self Heating Test", Color::HEADING);
    feather.setTextSize(2);
-
-   feather.print("Initial: ", Color::LABEL);
-   feather.println(initialTempF, 2, Color::VALUE2);
 
    int16_t headerY = feather.getCursorY();
    feather.setCursor(RATE_COL_X, headerY);
@@ -321,7 +335,7 @@ void startTestRun()
    resultTable.printHeader();
 
    testRunner.start();
-   drawRunHeader(testRunner.baselineTempF());
+   drawRunHeader();
 }
 
 void setup()
@@ -374,6 +388,7 @@ void loop()
       if (testRunner.isComplete())
       {
          finalizeDisplayRun();
+         Serial.println("Self Heating Test complete");
       }
    }
 }
