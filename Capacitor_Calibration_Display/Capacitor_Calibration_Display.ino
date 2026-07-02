@@ -33,6 +33,7 @@
 #include "CapacitorSensor.h"
 #include "Feather.h"
 #include "RollingStats.h"
+#include "SerialTable.h"
 #include "SerialX.h"
 #include "Timer.h"
 
@@ -46,8 +47,11 @@ constexpr size_t DISPLAY_INTERVAL_MS = 100;
 Timer displayTimer(DISPLAY_INTERVAL_MS);
 
 // ----------- Test Sweep Parameters
-constexpr size_t STATS_SAMPLE_COUNT = 1000;
+constexpr size_t STATS_SAMPLE_COUNT = 250;
 constexpr float TARGET_EFFECTIVE_RATES[] = { 15.0f, 30.0f, 50.0f };
+constexpr float SAMPLE_TIMEOUT_MULTIPLIER = 1.5f;
+constexpr uint32_t MIN_SAMPLE_TIMEOUT_MS = 3000;
+constexpr uint32_t MAX_SAMPLE_TIMEOUT_MS = 15000;
 constexpr size_t TARGET_EFFECTIVE_RATE_COUNT = sizeof(TARGET_EFFECTIVE_RATES) / sizeof(TARGET_EFFECTIVE_RATES[0]);
 constexpr float PRIMARY_TARGET_EFFECTIVE_RATE = 30.0f;
 
@@ -84,6 +88,14 @@ constexpr ResistorOption RESISTOR_OPTIONS[] = {
    { CHARGE_PIN_47K, "47K" },
 };
 constexpr size_t RESISTOR_OPTION_COUNT = sizeof(RESISTOR_OPTIONS) / sizeof(RESISTOR_OPTIONS[0]);
+constexpr size_t MAX_TEST_RESULTS = RESISTOR_OPTION_COUNT * TEST_DISCHARGE_DELAY_COUNT * TEST_DEFERRED_PROCESSING_PERIOD_COUNT * TARGET_EFFECTIVE_RATE_COUNT;
+
+const char PREF_NAMESPACE[] = "cap_tune";
+const char PREF_VALID_KEY[] = "valid";
+const char PREF_CHARGE_PIN_KEY[] = "cpin";
+const char PREF_DISCHARGE_KEY[] = "dly";
+const char PREF_DEFERRED_KEY[] = "def";
+const char PREF_BUFFER_KEY[] = "buf";
 
 // Forward declarations for types used in function signatures
 struct TestCase;
@@ -105,7 +117,61 @@ const char* resistorLabel(uint8_t chargePin)
    return "?";
 }
 
+bool isKnownChargePin(uint8_t chargePin)
+{
+   for (size_t i = 0; i < RESISTOR_OPTION_COUNT; i++)
+   {
+      if (RESISTOR_OPTIONS[i].chargePin == chargePin)
+      {
+         return true;
+      }
+   }
+
+   return false;
+}
+
+uint8_t chargePinFromResistorLabel(const char* label)
+{
+   if (label == nullptr)
+   {
+      return RESISTOR_OPTIONS[0].chargePin;
+   }
+
+   for (size_t i = 0; i < RESISTOR_OPTION_COUNT; i++)
+   {
+      if (strcmp(RESISTOR_OPTIONS[i].label, label) == 0)
+      {
+         return RESISTOR_OPTIONS[i].chargePin;
+      }
+   }
+
+   return RESISTOR_OPTIONS[0].chargePin;
+}
+
 CapacitorSensor capacitorSensor(RESISTOR_OPTIONS[0].chargePin, SENSE_PIN);
+
+void applyConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, uint32_t deferredProcessingPeriodMicros, size_t bufferSize)
+{
+   capacitorSensor.setChargePin(chargePin);
+   capacitorSensor.setDischargeDelayMicros(dischargeDelayMicros);
+   capacitorSensor.setDeferredProcessingPeriodMicros(deferredProcessingPeriodMicros);
+   capacitorSensor.setBufferSize(bufferSize > 0 ? bufferSize : CapacitorSensor::DEFAULT_BUFFER_SIZE);
+}
+
+void saveBestConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, uint32_t deferredProcessingPeriodMicros, size_t bufferSize)
+{
+   feather.preferences.begin(PREF_NAMESPACE, false);
+   feather.preferences.putBool(PREF_VALID_KEY, true);
+   feather.preferences.putUChar(PREF_CHARGE_PIN_KEY, chargePin);
+   feather.preferences.putUShort(PREF_DISCHARGE_KEY, dischargeDelayMicros);
+   feather.preferences.putUInt(PREF_DEFERRED_KEY, deferredProcessingPeriodMicros);
+   feather.preferences.putUInt(PREF_BUFFER_KEY, (uint32_t)bufferSize);
+   feather.preferences.end();
+}
+
+void loadBestConfiguration()
+{
+}
 
 /// <summary>Parameters for a single test case.</summary>
 struct TestCase
@@ -423,6 +489,265 @@ void printBestConfigurations(TestRunResult* results, size_t count)
    }
 }
 
+void printAggregateRow(SerialTable& table, const char* label, const Stats& avgStats, const Stats& stdDevStats)
+{
+   if (avgStats.count() == 0)
+   {
+      return;
+   }
+
+   float rangeMicros = avgStats.max() - avgStats.min();
+   table.printRow(
+      label,
+      SerialTable::fixed(avgStats.get(), 3),
+      SerialTable::fixed(stdDevStats.get(), 3),
+      SerialTable::fixed(rangeMicros, 3));
+}
+
+void printAggregateByResistor(const TestRunResult* results, size_t count)
+{
+   const SerialTable::Column columns[] = {
+      { "Value", 14 },
+      { "Avg(us)", 12 },
+      { "StdDev(us)", 12 },
+      { "Range(us)", 12 },
+   };
+   SerialTable table("By Resistor", columns, sizeof(columns) / sizeof(columns[0]));
+   table.printHeader();
+
+   for (size_t resistorIndex = 0; resistorIndex < RESISTOR_OPTION_COUNT; resistorIndex++)
+   {
+      Stats avgStats;
+      Stats stdDevStats;
+      for (size_t i = 0; i < count; i++)
+      {
+         const TestRunResult& r = results[i];
+         if (r.resistorLabel == nullptr || strcmp(r.resistorLabel, RESISTOR_OPTIONS[resistorIndex].label) != 0)
+         {
+            continue;
+         }
+
+         if (isfinite(r.averageChargeTimeMicros))
+         {
+            avgStats.add(r.averageChargeTimeMicros);
+         }
+         if (isfinite(r.chargeStdDevMicros))
+         {
+            stdDevStats.add(r.chargeStdDevMicros);
+         }
+      }
+
+      printAggregateRow(table, RESISTOR_OPTIONS[resistorIndex].label, avgStats, stdDevStats);
+   }
+
+   Serial.println();
+}
+
+void printAggregateByTargetRate(const TestRunResult* results, size_t count)
+{
+   const SerialTable::Column columns[] = {
+      { "Value", 14 },
+      { "Avg(us)", 12 },
+      { "StdDev(us)", 12 },
+      { "Range(us)", 12 },
+   };
+   SerialTable table("By Target Rate", columns, sizeof(columns) / sizeof(columns[0]));
+   table.printHeader();
+
+   for (size_t rateIndex = 0; rateIndex < TARGET_EFFECTIVE_RATE_COUNT; rateIndex++)
+   {
+      float targetRate = TARGET_EFFECTIVE_RATES[rateIndex];
+      Stats avgStats;
+      Stats stdDevStats;
+
+      for (size_t i = 0; i < count; i++)
+      {
+         const TestRunResult& r = results[i];
+         if (!isfinite(r.targetEffectiveRate) || fabs(r.targetEffectiveRate - targetRate) >= 0.01f)
+         {
+            continue;
+         }
+
+         if (isfinite(r.averageChargeTimeMicros))
+         {
+            avgStats.add(r.averageChargeTimeMicros);
+         }
+         if (isfinite(r.chargeStdDevMicros))
+         {
+            stdDevStats.add(r.chargeStdDevMicros);
+         }
+      }
+
+      char label[16] = "";
+      snprintf(label, sizeof(label), "%d/s", (int)round(targetRate));
+      printAggregateRow(table, label, avgStats, stdDevStats);
+   }
+
+   Serial.println();
+}
+
+void printAggregateByBufferSize(const TestRunResult* results, size_t count)
+{
+   const SerialTable::Column columns[] = {
+      { "Value", 14 },
+      { "Avg(us)", 12 },
+      { "StdDev(us)", 12 },
+      { "Range(us)", 12 },
+   };
+   SerialTable table("By Buffer Size", columns, sizeof(columns) / sizeof(columns[0]));
+   table.printHeader();
+
+   size_t uniqueBufferSizes[MAX_TEST_RESULTS];
+   size_t uniqueCount = 0;
+   for (size_t i = 0; i < count; i++)
+   {
+      size_t value = results[i].bufferSize;
+      bool exists = false;
+      for (size_t j = 0; j < uniqueCount; j++)
+      {
+         if (uniqueBufferSizes[j] == value)
+         {
+            exists = true;
+            break;
+         }
+      }
+
+      if (!exists && uniqueCount < MAX_TEST_RESULTS)
+      {
+         uniqueBufferSizes[uniqueCount++] = value;
+      }
+   }
+
+   for (size_t u = 0; u < uniqueCount; u++)
+   {
+      size_t bufferSize = uniqueBufferSizes[u];
+      Stats avgStats;
+      Stats stdDevStats;
+
+      for (size_t i = 0; i < count; i++)
+      {
+         const TestRunResult& r = results[i];
+         if (r.bufferSize != bufferSize)
+         {
+            continue;
+         }
+
+         if (isfinite(r.averageChargeTimeMicros))
+         {
+            avgStats.add(r.averageChargeTimeMicros);
+         }
+         if (isfinite(r.chargeStdDevMicros))
+         {
+            stdDevStats.add(r.chargeStdDevMicros);
+         }
+      }
+
+      char label[16] = "";
+      snprintf(label, sizeof(label), "%lu", (unsigned long)bufferSize);
+      printAggregateRow(table, label, avgStats, stdDevStats);
+   }
+
+   Serial.println();
+}
+
+void printAggregateByDischargeDelay(const TestRunResult* results, size_t count)
+{
+   const SerialTable::Column columns[] = {
+      { "Value", 14 },
+      { "Avg(us)", 12 },
+      { "StdDev(us)", 12 },
+      { "Range(us)", 12 },
+   };
+   SerialTable table("By Discharge Delay", columns, sizeof(columns) / sizeof(columns[0]));
+   table.printHeader();
+
+   for (size_t delayIndex = 0; delayIndex < TEST_DISCHARGE_DELAY_COUNT; delayIndex++)
+   {
+      uint16_t delayMicros = TEST_DISCHARGE_DELAYS[delayIndex];
+      Stats avgStats;
+      Stats stdDevStats;
+
+      for (size_t i = 0; i < count; i++)
+      {
+         const TestRunResult& r = results[i];
+         if (r.dischargeDelayMicros != delayMicros)
+         {
+            continue;
+         }
+
+         if (isfinite(r.averageChargeTimeMicros))
+         {
+            avgStats.add(r.averageChargeTimeMicros);
+         }
+         if (isfinite(r.chargeStdDevMicros))
+         {
+            stdDevStats.add(r.chargeStdDevMicros);
+         }
+      }
+
+      char label[16] = "";
+      snprintf(label, sizeof(label), "%lu us", (unsigned long)delayMicros);
+      printAggregateRow(table, label, avgStats, stdDevStats);
+   }
+
+   Serial.println();
+}
+
+void printAggregateByDeferredPeriod(const TestRunResult* results, size_t count)
+{
+   const SerialTable::Column columns[] = {
+      { "Value", 14 },
+      { "Avg(us)", 12 },
+      { "StdDev(us)", 12 },
+      { "Range(us)", 12 },
+   };
+   SerialTable table("By Deferred Period", columns, sizeof(columns) / sizeof(columns[0]));
+   table.printHeader();
+
+   for (size_t deferredIndex = 0; deferredIndex < TEST_DEFERRED_PROCESSING_PERIOD_COUNT; deferredIndex++)
+   {
+      uint32_t deferredPeriodMicros = TEST_DEFERRED_PROCESSING_PERIODS[deferredIndex];
+      Stats avgStats;
+      Stats stdDevStats;
+
+      for (size_t i = 0; i < count; i++)
+      {
+         const TestRunResult& r = results[i];
+         if (r.deferredProcessingPeriodMicros != deferredPeriodMicros)
+         {
+            continue;
+         }
+
+         if (isfinite(r.averageChargeTimeMicros))
+         {
+            avgStats.add(r.averageChargeTimeMicros);
+         }
+         if (isfinite(r.chargeStdDevMicros))
+         {
+            stdDevStats.add(r.chargeStdDevMicros);
+         }
+      }
+
+      char label[16] = "";
+      snprintf(label, sizeof(label), "%lu us", (unsigned long)deferredPeriodMicros);
+      printAggregateRow(table, label, avgStats, stdDevStats);
+   }
+
+   Serial.println();
+}
+
+void printAggregateStatistics(const TestRunResult* results, size_t count)
+{
+   Serial.println();
+   Serial.println("------- Aggregate Statistics -------");
+
+   printAggregateByResistor(results, count);
+   printAggregateByTargetRate(results, count);
+   printAggregateByBufferSize(results, count);
+   printAggregateByDischargeDelay(results, count);
+   printAggregateByDeferredPeriod(results, count);
+}
+
 void loop()
 {
    // Button A pressed: execute all tests
@@ -432,8 +757,7 @@ void loop()
       Serial.println("Starting tests...");
       Serial.println();
 
-      const size_t MAX_RESULTS = RESISTOR_OPTION_COUNT * TEST_DISCHARGE_DELAY_COUNT * TEST_DEFERRED_PROCESSING_PERIOD_COUNT * TARGET_EFFECTIVE_RATE_COUNT;
-      TestRunResult allResults[MAX_RESULTS];
+      TestRunResult allResults[MAX_TEST_RESULTS];
       size_t allResultCount = 0;
 
       // Print results header once
@@ -479,13 +803,11 @@ void loop()
       // Outer loop: test every resistor value (charge pin)
       for (size_t resistorIndex = 0; resistorIndex < RESISTOR_OPTION_COUNT; resistorIndex++)
       {
-         const ResistorOption& resistor = RESISTOR_OPTIONS[resistorIndex];
-         capacitorSensor.setChargePin(resistor.chargePin);
+         capacitorSensor.setChargePin(RESISTOR_OPTIONS[resistorIndex].chargePin);
 
          // Execute all test cases for this resistor value
          for (size_t i = 0; i < testParameters.count; i++)
          {
-            const TestCase& testCase = testParameters.cases[i];
             size_t currentTest = resistorIndex * testParameters.count + i + 1;
 
             // Update display with current test parameters and progress
@@ -493,25 +815,38 @@ void loop()
             feather.setTextSize(2);
             feather.println("Running Tests...", Color::HEADING);
             feather.moveCursorY(-2);
-            feather.println("    Resistor: ", resistor.label, Color::VALUE);
+            feather.println("    Resistor: ", RESISTOR_OPTIONS[resistorIndex].label, Color::VALUE);
             feather.moveCursorY(-2);
-            feather.println("       Delay: ", testCase.dischargeDelayMicros, chargeFormat, Color::VALUE);
+            feather.println("       Delay: ", testParameters.cases[i].dischargeDelayMicros, chargeFormat, Color::VALUE);
             feather.moveCursorY(-2);
-            feather.println("    Deferred: ", testCase.deferredProcessingPeriodMicros, deferredFormat, Color::VALUE);
+            feather.println("    Deferred: ", testParameters.cases[i].deferredProcessingPeriodMicros, deferredFormat, Color::VALUE);
             feather.moveCursorY(-2);
-            feather.println("      Target: ", String((int)round(testCase.targetEffectiveRate)) + "/s", Color::VALUE);
+            feather.println("      Target: ", String((int)round(testParameters.cases[i].targetEffectiveRate)) + "/s", Color::VALUE);
             feather.moveCursorY(-2);
-            feather.println("        Test: ", String(currentTest) + "/" + String(totalTests), Color::VALUE);
+            feather.println("        Test: ", String(currentTest) + "/" + String(totalTests), Color::VALUE2);
             feather.moveCursorY(-2);
 
             // Run the test
+            Serial.print("Running test ");
+            Serial.print(currentTest);
+            Serial.print("/");
+            Serial.print(totalTests);
+            Serial.print(" (R=");
+            Serial.print(RESISTOR_OPTIONS[resistorIndex].label);
+            Serial.print(", T=");
+            Serial.print((int)round(testParameters.cases[i].targetEffectiveRate));
+            Serial.println("/s)");
+
             TestRun testRun(capacitorSensor);
-            TestRunResult result = testRun.run(testCase.targetEffectiveRate, testCase.dischargeDelayMicros, testCase.deferredProcessingPeriodMicros);
-            result.resistorLabel = resistor.label;
+            TestRunResult result = testRun.run(
+               testParameters.cases[i].targetEffectiveRate,
+               testParameters.cases[i].dischargeDelayMicros,
+               testParameters.cases[i].deferredProcessingPeriodMicros);
+            result.resistorLabel = RESISTOR_OPTIONS[resistorIndex].label;
             allResults[allResultCount++] = result;
 
             // Print result immediately after test completes
-            SerialX::print(resistor.label, 10);
+            SerialX::print(RESISTOR_OPTIONS[resistorIndex].label, 10);
             SerialX::print(String((int)round(result.targetEffectiveRate)) + "/s", 10);
             SerialX::print((unsigned long)result.bufferSize, 8);
             SerialX::print(String((unsigned long)result.dischargeDelayMicros) + " us", 12);
@@ -551,29 +886,33 @@ void loop()
       }
 
       printBestConfigurations(allResults, allResultCount);
+      printAggregateStatistics(allResults, allResultCount);
       Serial.println();
       Serial.println("Testing Complete");
 
-      // Apply the best configuration for the primary target rate
+      // Apply and persist the best configuration for the primary target rate
       const TestRunResult* best = findBestResult(allResults, allResultCount, PRIMARY_TARGET_EFFECTIVE_RATE);
       if (best != nullptr)
       {
-         for (size_t i = 0; i < RESISTOR_OPTION_COUNT; i++)
-         {
-            if (RESISTOR_OPTIONS[i].label == best->resistorLabel)
-            {
-               capacitorSensor.setChargePin(RESISTOR_OPTIONS[i].chargePin);
-               break;
-            }
-         }
-         capacitorSensor.setDischargeDelayMicros(best->dischargeDelayMicros);
-         capacitorSensor.setDeferredProcessingPeriodMicros(best->deferredProcessingPeriodMicros);
-         capacitorSensor.setBufferSize(best->bufferSize);
+         uint8_t bestChargePin = chargePinFromResistorLabel(best->resistorLabel);
+         applyConfiguration(
+            bestChargePin,
+            best->dischargeDelayMicros,
+            best->deferredProcessingPeriodMicros,
+            best->bufferSize);
+         saveBestConfiguration(
+            bestChargePin,
+            best->dischargeDelayMicros,
+            best->deferredProcessingPeriodMicros,
+            best->bufferSize);
       }
       else
       {
-         capacitorSensor.setChargePin(RESISTOR_OPTIONS[0].chargePin);
-         capacitorSensor.setDeferredProcessingPeriodMicros(CapacitorSensor::DEFAULT_DEFERRED_PROCESSING_PERIOD_MICROS);
+         applyConfiguration(
+            RESISTOR_OPTIONS[0].chargePin,
+            CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS,
+            CapacitorSensor::DEFAULT_DEFERRED_PROCESSING_PERIOD_MICROS,
+            CapacitorSensor::DEFAULT_BUFFER_SIZE);
       }
    }
 
