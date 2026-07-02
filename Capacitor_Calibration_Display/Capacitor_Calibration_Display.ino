@@ -47,11 +47,8 @@ constexpr size_t DISPLAY_INTERVAL_MS = 100;
 Timer displayTimer(DISPLAY_INTERVAL_MS);
 
 // ----------- Test Sweep Parameters
-constexpr size_t STATS_SAMPLE_COUNT = 250;
+constexpr size_t STATS_SAMPLE_COUNT = 1000;
 constexpr float TARGET_EFFECTIVE_RATES[] = { 15.0f, 30.0f, 50.0f };
-constexpr float SAMPLE_TIMEOUT_MULTIPLIER = 1.5f;
-constexpr uint32_t MIN_SAMPLE_TIMEOUT_MS = 3000;
-constexpr uint32_t MAX_SAMPLE_TIMEOUT_MS = 15000;
 constexpr size_t TARGET_EFFECTIVE_RATE_COUNT = sizeof(TARGET_EFFECTIVE_RATES) / sizeof(TARGET_EFFECTIVE_RATES[0]);
 constexpr float PRIMARY_TARGET_EFFECTIVE_RATE = 30.0f;
 
@@ -93,7 +90,6 @@ const char PREF_NAMESPACE[] = "cap_tune";
 const char PREF_VALID_KEY[] = "valid";
 const char PREF_CHARGE_PIN_KEY[] = "cpin";
 const char PREF_DISCHARGE_KEY[] = "dly";
-const char PREF_DEFERRED_KEY[] = "def";
 const char PREF_BUFFER_KEY[] = "buf";
 
 // Forward declarations for types used in function signatures
@@ -157,19 +153,63 @@ void applyConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, uint32
    capacitorSensor.setBufferSize(bufferSize > 0 ? bufferSize : CapacitorSensor::DEFAULT_BUFFER_SIZE);
 }
 
-void saveBestConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, uint32_t deferredProcessingPeriodMicros, size_t bufferSize)
+void saveBestConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, size_t bufferSize)
 {
    feather.preferences.begin(PREF_NAMESPACE, false);
    feather.preferences.putBool(PREF_VALID_KEY, true);
    feather.preferences.putUChar(PREF_CHARGE_PIN_KEY, chargePin);
    feather.preferences.putUShort(PREF_DISCHARGE_KEY, dischargeDelayMicros);
-   feather.preferences.putUInt(PREF_DEFERRED_KEY, deferredProcessingPeriodMicros);
    feather.preferences.putUInt(PREF_BUFFER_KEY, (uint32_t)bufferSize);
    feather.preferences.end();
 }
 
 void loadBestConfiguration()
 {
+   if (capacitorSensor.counter() == 0 || !isfinite(capacitorSensor.chargeTimeMicros()) || capacitorSensor.rate() <= 0.0f)
+   {
+      Serial.println("Saved config not applied: sensor is not ready yet.");
+      return;
+   }
+
+   feather.preferences.begin(PREF_NAMESPACE, true);
+   bool hasBest = feather.preferences.getBool(PREF_VALID_KEY, false);
+   uint8_t chargePin = feather.preferences.getUChar(PREF_CHARGE_PIN_KEY, RESISTOR_OPTIONS[0].chargePin);
+   uint16_t dischargeDelayMicros = feather.preferences.getUShort(PREF_DISCHARGE_KEY, CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS);
+   uint32_t bufferSize = feather.preferences.getUInt(PREF_BUFFER_KEY, CapacitorSensor::DEFAULT_BUFFER_SIZE);
+   feather.preferences.end();
+
+   if (!hasBest)
+   {
+      Serial.println("No saved best configuration found.");
+      return;
+   }
+
+   if (!isKnownChargePin(chargePin))
+   {
+      chargePin = RESISTOR_OPTIONS[0].chargePin;
+   }
+   if (dischargeDelayMicros == 0)
+   {
+      dischargeDelayMicros = CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS;
+   }
+   if (bufferSize < MIN_TARGET_BUFFER_SIZE || bufferSize > MAX_TARGET_BUFFER_SIZE)
+   {
+      bufferSize = CapacitorSensor::DEFAULT_BUFFER_SIZE;
+   }
+
+   applyConfiguration(chargePin, dischargeDelayMicros, FIXED_DEFERRED_PROCESSING_PERIOD_MICROS, (size_t)bufferSize);
+
+    const SerialTable::Column columns[] = {
+      { "Field", 18 },
+      { "Value", 24 },
+   };
+   SerialTable table("Loaded Saved Best Configuration", columns, sizeof(columns) / sizeof(columns[0]));
+   table.printHeader();
+   table.printRow("Resistor Value", String(resistorLabel(chargePin)) + " (Pin " + String((unsigned long)chargePin) + ")");
+   table.printRow("Discharge Delay", String((unsigned long)dischargeDelayMicros) + " us");
+   table.printRow("Buffer Size", (unsigned long)bufferSize);
+   table.printRow("Deferred Period", String((unsigned long)FIXED_DEFERRED_PROCESSING_PERIOD_MICROS) + " us");
+   Serial.println();
 }
 
 /// <summary>Parameters for a single test case.</summary>
@@ -443,36 +483,37 @@ void printBestConfigurations(TestRunResult* results, size_t count)
       Serial.print((int)round(targetRate));
       Serial.println("/s");
 
-      SerialX::print("Rank", 8);
-      SerialX::print("Resistor", 10);
-      SerialX::print("Buffer", 8);
-      SerialX::print("Discharge", 12);
-      SerialX::println("StdDev %", 10);
-
-      SerialX::print("----", 8);
-      SerialX::print("--------", 10);
-      SerialX::print("------", 8);
-      SerialX::print("----------", 12);
-      SerialX::println("--------", 10);
+      const SerialTable::Column columns[] = {
+         { "Rank", 8 },
+         { "Resistor (Pin)", 18 },
+         { "Buffer", 8 },
+         { "Discharge", 12 },
+         { "StdDev %", 10 },
+      };
+      SerialTable table("Best Configurations", columns, sizeof(columns) / sizeof(columns[0]));
+      table.printHeader();
 
       size_t printCount = (indexCount < 3) ? indexCount : 3;
       for (size_t rank = 0; rank < printCount; rank++)
       {
          const TestRunResult& r = results[indices[rank]];
-         SerialX::print((unsigned long)(rank + 1), 8);
-         SerialX::print(r.resistorLabel ? r.resistorLabel : "?", 10);
-         SerialX::print((unsigned long)r.bufferSize, 8);
-         SerialX::print(String((unsigned long)r.dischargeDelayMicros) + " us", 12);
+         uint8_t resistorPin = chargePinFromResistorLabel(r.resistorLabel);
+         String stdDevPct = "----";
          if (isfinite(r.chargeStdDevMicros) && isfinite(r.averageChargeTimeMicros) && r.averageChargeTimeMicros != 0.0f)
          {
             float pct = (r.chargeStdDevMicros / r.averageChargeTimeMicros) * 100.0f;
-            SerialX::println(String(pct, 2) + " %", 10);
+            stdDevPct = String(pct, 2) + " %";
          }
-         else
-         {
-            SerialX::println("----", 10);
-         }
+
+         table.printRow(
+            (unsigned long)(rank + 1),
+            String(r.resistorLabel ? r.resistorLabel : "?") + " (" + String((unsigned long)resistorPin) + ")",
+            (unsigned long)r.bufferSize,
+            String((unsigned long)r.dischargeDelayMicros) + " us",
+            stdDevPct);
       }
+
+      Serial.println();
    }
 }
 
@@ -718,6 +759,15 @@ void printAggregateStatistics(const TestRunResult* results, size_t count)
 
 void loop()
 {
+   if (Serial.available() > 0)
+   {
+      char command = (char)Serial.read();
+      if (command == 'L' || command == 'l')
+      {
+         loadBestConfiguration();
+      }
+   }
+
    // Button A pressed: execute all tests
    if (feather.buttonA.wasPressed())
    {
@@ -728,39 +778,19 @@ void loop()
       TestRunResult allResults[MAX_TEST_RESULTS];
       size_t allResultCount = 0;
 
-      // Print results header once
-      SerialX::print("Resistor", 10);
-      SerialX::print("Target", 10);
-      SerialX::print("Buffer", 8);
-      SerialX::print("Discharge", 12);
-      SerialX::print("Avg", 12);
-      SerialX::print("StdDev", 12);
-      SerialX::print("StdDev", 10);
-      SerialX::print("Sample", 10);
-      SerialX::print("Raw", 10);
-      SerialX::println("Effective", 11);
-
-      SerialX::print("Value", 10);
-      SerialX::print("Rate", 10);
-      SerialX::print("Size", 8);
-      SerialX::print("Delay", 12);
-      SerialX::print("Charge", 12);
-      SerialX::print("Charge", 12);
-      SerialX::print("%", 10);
-      SerialX::print("Rate", 10);
-      SerialX::print("Rate", 10);
-      SerialX::println("Rate", 11);
-
-      SerialX::print("--------", 10);
-      SerialX::print("--------", 10);
-      SerialX::print("------", 8);
-      SerialX::print("----------", 12);
-      SerialX::print("----------", 12);
-      SerialX::print("----------", 12);
-      SerialX::print("--------", 10);
-      SerialX::print("--------", 10);
-      SerialX::print("--------", 10);
-      SerialX::println("---------", 11);
+      const SerialTable::Column resultColumns[] = {
+         { "Resistor", 10 },
+         { "Target", 10 },
+         { "Buffer", 8 },
+         { "Discharge", 12 },
+         { "Avg(us)", 12 },
+         { "Range(us)", 12 },
+         { "StdDev %", 10 },
+         { "Raw", 10 },
+         { "Effective", 11 },
+      };
+      SerialTable resultsTable("Test Results", resultColumns, sizeof(resultColumns) / sizeof(resultColumns[0]));
+      resultsTable.printHeader();
 
       const size_t totalTests = RESISTOR_OPTION_COUNT * testParameters.count;
       feather.clearDisplay();
@@ -797,46 +827,33 @@ void loop()
             allResults[allResultCount++] = result;
 
             // Print result immediately after test completes
-            SerialX::print(RESISTOR_OPTIONS[resistorIndex].label, 10);
-            SerialX::print(String((int)round(result.targetEffectiveRate)) + "/s", 10);
-            SerialX::print((unsigned long)result.bufferSize, 8);
-            SerialX::print(String((unsigned long)result.dischargeDelayMicros) + " us", 12);
-            if (isfinite(result.averageChargeTimeMicros))
-            {
-               SerialX::print(String(result.averageChargeTimeMicros, 1) + " us", 12);
-            }
-            else
-            {
-               SerialX::print("----", 12);
-            }
-            if (isfinite(result.chargeTimeVariationMicros))
-            {
-               SerialX::print(String(result.chargeTimeVariationMicros, 2) + " us", 12);
-            }
-            else
-            {
-               SerialX::print("----", 12);
-            }
+            String avgText = isfinite(result.averageChargeTimeMicros) ? String(result.averageChargeTimeMicros, 1) + " us" : "----";
+            String rangeText = isfinite(result.chargeTimeVariationMicros) ? String(result.chargeTimeVariationMicros, 2) + " us" : "----";
+            String stdDevPctText = "----";
             if (isfinite(result.chargeStdDevMicros) && isfinite(result.averageChargeTimeMicros) && result.averageChargeTimeMicros != 0.0f)
             {
                float chargeStdDevPercent = (result.chargeStdDevMicros / result.averageChargeTimeMicros) * 100.0f;
-               SerialX::print(String(chargeStdDevPercent, 2) + " %", 10);
+               stdDevPctText = String(chargeStdDevPercent, 2) + " %";
             }
-            else
-            {
-               SerialX::print("----", 10);
-            }
-            SerialX::print(String((int)round(result.rawRateHz)) + "/s", 10);
-            SerialX::print(String((int)round(capacitorSensor.rate())) + "/s", 10);
-            SerialX::println(String((int)round(result.effectiveRateHz)) + "/s", 11);
+
+            resultsTable.printRow(
+               RESISTOR_OPTIONS[resistorIndex].label,
+               String((int)round(result.targetEffectiveRate)) + "/s",
+               (unsigned long)result.bufferSize,
+               String((unsigned long)result.dischargeDelayMicros) + " us",
+               avgText,
+               rangeText,
+               stdDevPctText,
+               String((int)round(result.rawRateHz)) + "/s",
+               String((int)round(result.effectiveRateHz)) + "/s");
 
             // Yield to allow display and other updates
             delay(10);
          }
       }
 
-      printBestConfigurations(allResults, allResultCount);
       printAggregateStatistics(allResults, allResultCount);
+      printBestConfigurations(allResults, allResultCount);
       Serial.println();
       Serial.println("Testing Complete");
 
@@ -853,7 +870,6 @@ void loop()
          saveBestConfiguration(
             bestChargePin,
             best->dischargeDelayMicros,
-            best->deferredProcessingPeriodMicros,
             best->bufferSize);
       }
       else
@@ -864,7 +880,8 @@ void loop()
             FIXED_DEFERRED_PROCESSING_PERIOD_MICROS,
             CapacitorSensor::DEFAULT_BUFFER_SIZE);
       }
-   }
+
+      }
 
    if (displayTimer.ready())
    {

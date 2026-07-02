@@ -8,7 +8,7 @@
 class CapacitorDepthSensor
 {
 private:
-   CapacitorSensor _sensor;
+   CapacitorSensor* _sensor;
    float _zeroTime;
    float _fullTime;
    float _fullDepth;
@@ -27,11 +27,17 @@ public:
       uint8_t sensePin,
       float zeroTime,
       float fullTime,
-      float fullDepth) : _sensor(chargePin, sensePin)
+      float fullDepth)
    {
+      _sensor = new CapacitorSensor(chargePin, sensePin);
       _zeroTime = zeroTime;
       _fullTime = fullTime;
       _fullDepth = fullDepth;
+   }
+
+   ~CapacitorDepthSensor()
+   {
+      delete _sensor;
    }
 
    /// <summary>
@@ -40,8 +46,14 @@ public:
    /// <returns>The interpolated depth value.</returns>
    float getDepth()
    {
-      float chargeTime = _sensor.chargeTimeMicros();
-      float depth = _fullDepth * ((chargeTime - _zeroTime) / (_fullTime - _zeroTime));
+      float span = _fullTime - _zeroTime;
+      if (span == 0.0f)
+      {
+         return 0.0f;
+      }
+
+      float chargeTime = _sensor->chargeTimeMicros();
+      float depth = _fullDepth * ((chargeTime - _zeroTime) / span);
       return depth;
    }
 
@@ -50,16 +62,54 @@ public:
    /// </summary>
    void begin()
    {
-      _sensor.begin();
+      _sensor->begin();
    }
 
    /// <summary>
    /// Returns the raw measured charge time in microseconds.
    /// </summary>
    /// <returns>The latest charge time measurement.</returns>
-   float chargeTimeMicros() const
+   float chargeTimeMicros()
    {
-      return _sensor.chargeTimeMicros();
+      return _sensor->chargeTimeMicros();
+   }
+
+   /// <summary>
+   /// Updates depth calibration points.
+   /// </summary>
+   /// <param name="zeroTime">Charge time measured at zero depth.</param>
+   /// <param name="fullTime">Charge time measured at full depth.</param>
+   void setCalibration(float zeroTime, float fullTime)
+   {
+      _zeroTime = zeroTime;
+      _fullTime = fullTime;
+   }
+
+   /// <summary>
+   /// Sets the capacitor sensor discharge delay in microseconds.
+   /// </summary>
+   /// <param name="dischargeDelayMicros">Discharge delay in microseconds.</param>
+   void setDischargeDelayMicros(uint16_t dischargeDelayMicros)
+   {
+      _sensor->setDischargeDelayMicros(dischargeDelayMicros);
+   }
+
+   /// <summary>
+   /// Sets the deferred processing period in microseconds.
+   /// </summary>
+   /// <param name="deferredProcessingPeriodMicros">Deferred processing period in microseconds.</param>
+   void setDeferredProcessingPeriodMicros(uint32_t deferredProcessingPeriodMicros)
+   {
+      _sensor->setDeferredProcessingPeriodMicros(deferredProcessingPeriodMicros);
+   }
+
+   /// <summary>
+   /// Sets the rolling average buffer size.
+   /// </summary>
+   /// <param name="bufferSize">Buffer size for averaging.</param>
+   void setBufferSize(size_t bufferSize)
+   {
+      _sensor->setBufferSize(bufferSize);
    }
 
    /// <summary>
@@ -68,6 +118,6 @@ public:
    /// <returns>The current rolling sample rate.</returns>
    float rate()
    {
-      return _sensor.rate();
+      return _sensor->rate();
    }
 };

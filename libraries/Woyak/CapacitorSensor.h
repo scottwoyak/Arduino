@@ -398,6 +398,13 @@ public:
       return val;
    }
 
+   /// <summary>Get the latest rolling-average charge time.</summary>
+   /// <returns>Charge time in microseconds, or NaN when no measurement is available</returns>
+   float chargeTimeMicros() const
+   {
+      return const_cast<CapacitorSensor*>(this)->chargeTimeMicros();
+   }
+
    /// <summary>Get the raw sensor sample rate.</summary>
    /// <returns>Samples per second</returns>
    float rate()
