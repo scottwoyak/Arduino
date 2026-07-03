@@ -137,6 +137,35 @@ private:
       }
    }
 
+   float _axisPrecisionScale() const
+   {
+      float scale = 1.0f;
+      const uint8_t precision = _minMaxFormat.precision();
+      for (uint8_t i = 0; i < precision; i++)
+      {
+         scale *= 10.0f;
+      }
+      return scale;
+   }
+
+   float _roundDownToAxisPrecision(float value) const
+   {
+      const float scale = _axisPrecisionScale();
+      return floorf(value * scale) / scale;
+   }
+
+   float _roundUpToAxisPrecision(float value) const
+   {
+      const float scale = _axisPrecisionScale();
+      return ceilf(value * scale) / scale;
+   }
+
+   float _axisPrecisionEpsilon() const
+   {
+      const float scale = _axisPrecisionScale();
+      return 0.5f / scale;
+   }
+
    float _alignToSensorStep(float value) const
    {
       if (_minValueStep <= 0.0f)
@@ -160,6 +189,31 @@ private:
          _density[densityIndex]++;
       }
       _lastAddedSamples++;
+   }
+
+   float _clampToPlotRange(float value, float plotMin, float plotMax) const
+   {
+      if (value < plotMin)
+      {
+         return plotMin;
+      }
+      if (value > plotMax)
+      {
+         return plotMax;
+      }
+      return value;
+   }
+
+   int16_t _xForAgeMs(unsigned long ageMs, int16_t chartWidth) const
+   {
+      if (_historyMs <= 1UL || chartWidth <= 1)
+      {
+         return chartWidth - 1;
+      }
+
+      unsigned long boundedAgeMs = min(ageMs, _historyMs - 1UL);
+      int16_t x = static_cast<int16_t>(((_historyMs - 1UL - boundedAgeMs) * static_cast<unsigned long>(chartWidth - 1)) / (_historyMs - 1UL));
+      return constrain(x, 0, chartWidth - 1);
    }
 
    void _addDensityForValue(int16_t x, float value, float plotMax, float valuePerPixel, float pixelsPerStep, int16_t chartWidth, int16_t chartHeight)
@@ -353,9 +407,12 @@ public:
             maxValue = max(maxValue, value);
          }
 
+         minValue = _roundDownToAxisPrecision(minValue);
+         maxValue = _roundUpToAxisPrecision(maxValue);
+
          const unsigned long nowMs = millis();
          const bool sameChart = _hasDensityFrame && _densityChartWidth == chartWidth && _densityChartHeight == chartHeight;
-         const float rangeEpsilon = (_minValueStep > 0.0f) ? (_minValueStep * 0.5f) : 0.001f;
+         const float rangeEpsilon = _axisPrecisionEpsilon();
          const bool rangeChanged = _hasDensityFrame
             && (fabsf(minValue - _densityMinValue) > rangeEpsilon || fabsf(maxValue - _densityMaxValue) > rangeEpsilon);
          const bool rebuildDensity = !_hasDensityFrame || !sameChart || rangeChanged;
@@ -389,19 +446,8 @@ public:
                   value = _alignToSensorStep(value);
                }
 
-               if (value < plotMin)
-               {
-                  value = plotMin;
-               }
-               else if (value > plotMax)
-               {
-                  value = plotMax;
-               }
-
-               unsigned long boundedAgeMs = min(_sampleAgesMs[i], _historyMs - 1UL);
-               int16_t x = static_cast<int16_t>(((_historyMs - 1UL - boundedAgeMs) * static_cast<unsigned long>(chartWidth - 1)) / (_historyMs - 1UL));
-               x = constrain(x, 0, chartWidth - 1);
-
+               value = _clampToPlotRange(value, plotMin, plotMax);
+               int16_t x = _xForAgeMs(_sampleAgesMs[i], chartWidth);
                _addDensityForValue(x, value, plotMax, valuePerPixel, pixelsPerStep, chartWidth, chartHeight);
             }
          }
@@ -452,19 +498,8 @@ public:
                   value = _alignToSensorStep(value);
                }
 
-               if (value < plotMin)
-               {
-                  value = plotMin;
-               }
-               else if (value > plotMax)
-               {
-                  value = plotMax;
-               }
-
-               unsigned long boundedAgeMs = min(ageMs, _historyMs - 1UL);
-               int16_t x = static_cast<int16_t>(((_historyMs - 1UL - boundedAgeMs) * static_cast<unsigned long>(chartWidth - 1)) / (_historyMs - 1UL));
-               x = constrain(x, 0, chartWidth - 1);
-
+               value = _clampToPlotRange(value, plotMin, plotMax);
+               int16_t x = _xForAgeMs(ageMs, chartWidth);
                _addDensityForValue(x, value, plotMax, valuePerPixel, pixelsPerStep, chartWidth, chartHeight);
             }
          }

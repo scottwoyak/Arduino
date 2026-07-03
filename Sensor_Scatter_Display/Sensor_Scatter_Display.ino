@@ -27,6 +27,7 @@ constexpr uint16_t SAMPLE_INTERVAL_MS = 0;
 constexpr uint16_t DISPLAY_INTERVAL_MS = 100;
 constexpr uint16_t SERIAL_INTERVAL_MS = 5000;
 constexpr unsigned long SAMPLE_PERIOD_S = 60;
+constexpr unsigned long HISTOGRAM_PERIOD_S = 6;
 constexpr uint16_t BIN_COUNT = 40;
 constexpr float SHT45_TEMP_RESOLUTION_F = 0.0049f;
 
@@ -44,7 +45,7 @@ enum class DisplayMode : uint8_t { Scatter, Histogram };
 Format sampleRateFormat("###/s", Format::Alignment::RIGHT);
 
 TimedScatterPlot scatterPlot(feather, samples, SAMPLE_PERIOD_S * 1000UL, 0.0f);
-TimedHistogram histogram(feather, samples, BIN_COUNT, SAMPLE_PERIOD_S * 100UL, SHT45_TEMP_RESOLUTION_F);
+TimedHistogram histogram(feather, samples, BIN_COUNT, HISTOGRAM_PERIOD_S * 1000UL, SHT45_TEMP_RESOLUTION_F);
 
 DisplayMode displayMode = DisplayMode::Scatter;
 
