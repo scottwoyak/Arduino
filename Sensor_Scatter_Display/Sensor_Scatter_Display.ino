@@ -21,6 +21,7 @@
 #include "RollingRate.h"
 #include "TimedScatterPlot.h"
 #include "TimedHistogram.h"
+#include "TimedHistogramPlot.h"
 #include "TimedValues.h"
 
 constexpr uint16_t SAMPLE_INTERVAL_MS = 0;
@@ -45,7 +46,8 @@ enum class DisplayMode : uint8_t { Scatter, Histogram };
 Format sampleRateFormat("###/s", Format::Alignment::RIGHT);
 
 TimedScatterPlot scatterPlot(feather, samples, SAMPLE_PERIOD_S * 1000UL, 0.0f);
-TimedHistogram histogram(feather, samples, BIN_COUNT, HISTOGRAM_PERIOD_S * 1000UL, SHT45_TEMP_RESOLUTION_F);
+TimedHistogram histogram(BIN_COUNT, HISTOGRAM_PERIOD_S * 1000UL, SHT45_TEMP_RESOLUTION_F);
+TimedHistogramPlot histogramPlot(feather, histogram, samples);
 
 DisplayMode displayMode = DisplayMode::Scatter;
 
@@ -90,7 +92,7 @@ void loop()
 	  drawHeader();
 	  if (displayMode == DisplayMode::Histogram)
 	  {
-		 histogram.reset();
+		 histogramPlot.reset();
 	  }
    }
 
@@ -116,7 +118,7 @@ void loop()
 	  }
 	  else
 	  {
-		 histogram.render();
+		 histogramPlot.render();
 	  }
    }
 

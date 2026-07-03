@@ -80,6 +80,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="TimedValues_Tests.h" />
     <ClInclude Include="__vm\.TimedValues_Tests.vsarduino.h" />
   </ItemGroup>
   <PropertyGroup>
