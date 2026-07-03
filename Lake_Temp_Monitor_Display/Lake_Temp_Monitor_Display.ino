@@ -39,9 +39,9 @@ Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 constexpr uint8_t NUM_SENSORS = 4;
 
 TempSensor* sensors[NUM_SENSORS];
-SimplePoint* points[NUM_SENSORS];
-Field* tempFields[NUM_SENSORS];
-Field* humFields[NUM_SENSORS];
+InfluxPoint* points[NUM_SENSORS];
+InfluxField* tempFields[NUM_SENSORS];
+InfluxField* humFields[NUM_SENSORS];
 
 uint8_t sensorPorts[] = { 0, 1, 2, 3 };  // Surface, 3 feet, bottom, deep
 
@@ -61,7 +61,7 @@ void setup()
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       sensors[i] = new TempSensor();
-      points[i] = new SimplePoint(INFLUX_MEASUREMENT);
+      points[i] = new InfluxPoint(INFLUX_MEASUREMENT);
       tempFields[i] = points[i]->addTimeAveragedField(INFLUX_INTERVAL_S, "temperature", 3);
       humFields[i] = points[i]->addTimeAveragedField(INFLUX_INTERVAL_S, "humidity", 2);
    }

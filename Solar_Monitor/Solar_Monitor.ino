@@ -53,20 +53,20 @@ InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKE
 Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
 
 // Data point definitions for InfluxDB
-SimplePoint batteryPoint(INFLUX_MEASUREMENT, {{"item", "Battery"}});
-SimplePoint solarPoint(INFLUX_MEASUREMENT, {{"item", "Solar"}});
-SimplePoint loadPoint(INFLUX_MEASUREMENT, {{"item", "Load"}});
+InfluxPoint batteryPoint(INFLUX_MEASUREMENT, {{"item", "Battery"}});
+InfluxPoint solarPoint(INFLUX_MEASUREMENT, {{"item", "Solar"}});
+InfluxPoint loadPoint(INFLUX_MEASUREMENT, {{"item", "Load"}});
 Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
 // Field references for data points
-Field* batteryVoltsField = batteryPoint.addTimeAveragedField("volts", 3);
-Field* batterymAField = batteryPoint.addTimeAveragedField("mA", 1);
-Field* batterymAhField = batteryPoint.addValueField("mAh", 1);
-Field* solarVoltsField = solarPoint.addTimeAveragedField("volts", 3);
-Field* solarmAField = solarPoint.addTimeAveragedField("mA", 1);
-Field* loadVoltsField = loadPoint.addTimeAveragedField("volts", 3);
-Field* loadmAField = loadPoint.addTimeAveragedField("mA", 1);
-Field* loadmAhField = loadPoint.addValueField("mAh", 1);
+InfluxField* batteryVoltsField = batteryPoint.addTimeAveragedField("volts", 3);
+InfluxField* batterymAField = batteryPoint.addTimeAveragedField("mA", 1);
+InfluxField* batterymAhField = batteryPoint.addValueField("mAh", 1);
+InfluxField* solarVoltsField = solarPoint.addTimeAveragedField("volts", 3);
+InfluxField* solarmAField = solarPoint.addTimeAveragedField("mA", 1);
+InfluxField* loadVoltsField = loadPoint.addTimeAveragedField("volts", 3);
+InfluxField* loadmAField = loadPoint.addTimeAveragedField("mA", 1);
+InfluxField* loadmAhField = loadPoint.addValueField("mAh", 1);
 
 // Display smoothing/averaging
 TimedAverage displayBatteryVolts(1000);
@@ -129,9 +129,9 @@ void updateChargeAccumulators(float batterymA, float loadmA)
 /// <summary>
 /// Posts a data point to InfluxDB with WiFi retry.
 /// </summary>
-/// <param name="point">SimplePoint to post</param>
+/// <param name="point">InfluxPoint to post</param>
 /// <param name="pointName">Name of point for logging</param>
-void postDataPoint(SimplePoint& point, const char* pointName)
+void postDataPoint(InfluxPoint& point, const char* pointName)
 {
    if (!influx.ensureWiFiConnected())
    {

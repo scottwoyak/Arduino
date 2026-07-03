@@ -12,7 +12,7 @@
 // - Renders either averaged temperature values or sensor type labels (Button A held) on display.
 //
 // Telemetry flow:
-// - Each sensor maps to a SimplePoint with averaged temperature/humidity fields.
+// - Each sensor maps to an InfluxPoint with averaged temperature/humidity fields.
 // - On each upload interval, all active sensor points are posted, then client buffer is flushed.
 // - Wi-Fi connectivity is monitored continuously and triggers reset on loss.
 //
@@ -56,9 +56,9 @@ Timer sensorTimer(SENSOR_READ_INTERVAL_MS);
 Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
 TempSensor* sensors[NUM_SENSORS];
-SimplePoint* points[NUM_SENSORS];
-Field* tempFields[NUM_SENSORS];
-Field* humFields[NUM_SENSORS];
+InfluxPoint* points[NUM_SENSORS];
+InfluxField* tempFields[NUM_SENSORS];
+InfluxField* humFields[NUM_SENSORS];
 
 const char* locations[NUM_SENSORS] = {
    "Test 1",
@@ -79,7 +79,7 @@ void setup()
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       sensors[i] = new TempSensor();
-      points[i] = new SimplePoint(INFLUX_MEASUREMENT);
+      points[i] = new InfluxPoint(INFLUX_MEASUREMENT);
       tempFields[i] = points[i]->addTimeAveragedField(AVERAGE_WINDOW_S, INFLUX_TEMPERATURE_FIELD_NAME, INFLUX_TEMP_DECIMAL_PLACES);
       humFields[i] = points[i]->addTimeAveragedField(AVERAGE_WINDOW_S, INFLUX_HUMIDITY_FIELD_NAME, INFLUX_HUMIDITY_DECIMAL_PLACES);
       points[i]->addTag("location", locations[i]);

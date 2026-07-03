@@ -15,11 +15,11 @@ constexpr auto INFLUX_INTERVAL_S = 60;
 constexpr auto WATCHDOG_TIMEOUT_MS = 60 * 1000;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
-SimplePoint airPoint("Air"); // Influx data point
-SimplePoint powerPoint("Power"); // Influx data point
-Field* tempField = airPoint.addValueField("temperature", 2);
-Field* humField = airPoint.addValueField("humidity", 2);
-Field* voltsField = powerPoint.addValueField("volts", 2);
+InfluxPoint airPoint("Air"); // Influx data point
+InfluxPoint powerPoint("Power"); // Influx data point
+InfluxField* tempField = airPoint.addValueField("temperature", 2);
+InfluxField* humField = airPoint.addValueField("humidity", 2);
+InfluxField* voltsField = powerPoint.addValueField("volts", 2);
 
 void goToSleep()
 {

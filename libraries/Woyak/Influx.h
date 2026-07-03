@@ -1,11 +1,10 @@
-#pragma once
-
-#include <WiFi.h>
+﻿#pragma once
 
 #include "ArduinoWithDisplay.h"
 #include "Feather.h"
 #include <InfluxDbClient.h>
 #include <InfluxDbCloud.h>
+#include <cmath>
 #include "Status.h"
 #include "TimedAverage.h"
 #include "Timer.h"
@@ -13,15 +12,21 @@
 
 constexpr auto TZ_INFO = "UTC-5";
 
+///
 /// <summary>
 /// InfluxDB integration service that manages WiFi connectivity and Influx initialization.
 /// </summary>
+///
 class Influx
 {
 private:
-	const char* _wifiSSID;
-	const char* _wifiPassword;
+	/// <summary>WiFi connection manager initialized with the access point credentials.</summary>
+	WiFiX _wifiX;
+
+	/// <summary>InfluxDB client used for time sync validation and data writes.</summary>
 	InfluxDBClient* _client;
+
+	/// <summary>Optional status LED indicator; nullptr if not used.</summary>
 	IStatus* _status;
 
 public:
@@ -33,9 +38,8 @@ public:
 	/// <param name="client">InfluxDB client instance</param>
 	/// <param name="status">Optional status indicator instance</param>
 	Influx(const char* wifiSSID, const char* wifiPassword, InfluxDBClient* client, IStatus* status = nullptr)
+		: _wifiX(wifiSSID, wifiPassword)
 	{
-		_wifiSSID = wifiSSID;
-		_wifiPassword = wifiPassword;
 		_client = client;
 		_status = status;
 	}
@@ -56,7 +60,7 @@ public:
 			_status->setStatus(Status::WIFI_CONNECTING);
 		}
 
-		bool isConnected = WiFiX::connect(_wifiSSID, _wifiPassword, 10000);
+		bool isConnected = _wifiX.connect();
 		if (_status && isConnected)
 		{
 			_status->setStatus(Status::READY);
@@ -90,7 +94,7 @@ public:
 		if (!connectWiFi())
 		{
 			arduino->printlnR("FAILED", Color::RED);
-			arduino->println("WiFi connect failed", Color::RED);
+			arduino->println(String("WiFi connect failed: ") + WiFiX::statusString(), Color::RED);
 			return false;
 		}
 		arduino->printlnR("ok", Color::VALUE);
@@ -134,7 +138,8 @@ public:
 		if (!connectWiFi())
 		{
 			Serial.println("FAILED");
-			Serial.println("WiFi connect failed");
+			Serial.print("WiFi connect failed: ");
+			Serial.println(WiFiX::statusString());
 			return false;
 		}
 		Serial.println("ok");
@@ -191,170 +196,285 @@ public:
 	}
 };
 
-//-------------------------------------------------------------------------------------------------
-//
-// Represents a named numeric field that can store or compute a value for an Influx point.
-//
-//-------------------------------------------------------------------------------------------------
-class Field
+///
+/// <summary>
+/// Abstract named numeric field that can store or compute a value for an Influx point.
+/// </summary>
+///
+class InfluxField
 {
 private:
-	std::string _name;
-	uint8_t _decimalPlaces;
+   /// <summary>Field name used as the Influx field key.</summary>
+   std::string _name;
+
+   /// <summary>Number of decimal places used when writing the value to Influx.</summary>
+   uint8_t _decimalPlaces;
 
 public:
-	Field(const std::string& name, uint8_t decimalPlaces)
-	{
-	  _name = name;
-	  _decimalPlaces = decimalPlaces;
-	}
-
-   virtual ~Field()
+   /// <summary>
+   /// Creates a field with a name and decimal place precision.
+   /// </summary>
+   /// <param name="name">Field name</param>
+   /// <param name="decimalPlaces">Number of decimal places for the value</param>
+   InfluxField(const std::string& name, uint8_t decimalPlaces)
    {
+      _name = name;
+      _decimalPlaces = decimalPlaces;
    }
 
-	const std::string& getName() const
-	{
-	  return _name;
-	}
+   virtual ~InfluxField() = default;
 
-	uint8_t getDecimalPlaces() const
-	{
-	  return _decimalPlaces;
-	}
+   /// <summary>
+   /// Returns the field name.
+   /// </summary>
+   /// <returns>Field name string</returns>
+   const std::string& getName() const
+   {
+      return _name;
+   }
 
+   /// <summary>
+   /// Returns the number of decimal places for this field.
+   /// </summary>
+   /// <returns>Decimal place count</returns>
+   uint8_t getDecimalPlaces() const
+   {
+      return _decimalPlaces;
+   }
+
+   /// <summary>
+   /// Sets the current value of the field.
+   /// </summary>
+   /// <param name="value">Value to set</param>
    virtual void set(float value) = 0;
 
+   /// <summary>
+   /// Returns the current value of the field.
+   /// </summary>
+   /// <returns>Current field value</returns>
    virtual float get() = 0;
 };
 
-//-------------------------------------------------------------------------------------------------
-//
-// Stores the most recent value assigned to a field without any time-based aggregation.
-//
-//-------------------------------------------------------------------------------------------------
-class ValueField : public Field
+///
+/// <summary>
+/// Field that stores the most recent assigned value without time-based aggregation.
+/// </summary>
+///
+class InfluxValueField : public InfluxField
 {
 private:
-	float _value = NAN;
+   /// <summary>Most recently assigned value.</summary>
+   float _value = NAN;
 
 public:
-	ValueField(const std::string& name, uint8_t decimalPlaces) : Field(name, decimalPlaces)
-	{
-	}
+   /// <summary>
+   /// Creates an InfluxValueField with a name and decimal place precision.
+   /// </summary>
+   /// <param name="name">Field name</param>
+   /// <param name="decimalPlaces">Number of decimal places for the value</param>
+   InfluxValueField(const std::string& name, uint8_t decimalPlaces) : InfluxField(name, decimalPlaces)
+   {
+   }
 
-	~ValueField() override = default;
+   ~InfluxValueField() override = default;
 
-	void set(float value) override
-	{
-		_value = value;
-	}
+   /// <summary>
+   /// Sets the current field value.
+   /// </summary>
+   /// <param name="value">Value to assign</param>
+   void set(float value) override
+   {
+      _value = value;
+   }
 
-	float get() override
-	{
-		return _value;
-	}
+   /// <summary>
+   /// Returns the current field value.
+   /// </summary>
+   /// <returns>Most recently assigned value</returns>
+   float get() override
+   {
+      return _value;
+   }
 };
 
-//-------------------------------------------------------------------------------------------------
-//
-// Tracks a time-windowed average for a field using TimedAverage over the configured duration.
-//
-//-------------------------------------------------------------------------------------------------
-class TimeAveragedField : public Field
+///
+/// <summary>
+/// Field that tracks a time-windowed average using TimedAverage over the configured duration.
+/// </summary>
+///
+class InfluxTimeAveragedField : public InfluxField
 {
 private:
-	TimedAverage _stats;
+   /// <summary>Rolling time-windowed average accumulator.</summary>
+   TimedAverage _stats;
 
 public:
-	TimeAveragedField(float seconds, const std::string& name, uint8_t decimalPlaces)
-		: Field(name, decimalPlaces),
-		_stats(1000 * seconds)
-	{
-	}
+   /// <summary>
+   /// Creates an InfluxTimeAveragedField with a time window, name, and decimal place precision.
+   /// </summary>
+   /// <param name="seconds">Duration of the averaging window in seconds</param>
+   /// <param name="name">Field name</param>
+   /// <param name="decimalPlaces">Number of decimal places for the value</param>
+   InfluxTimeAveragedField(float seconds, const std::string& name, uint8_t decimalPlaces)
+      : InfluxField(name, decimalPlaces),
+        _stats(1000 * seconds)
+   {
+   }
 
-	~TimeAveragedField() override = default;
+   ~InfluxTimeAveragedField() override = default;
 
-	void set(float value) override
-	{
-		_stats.set(value);
-	}
+   /// <summary>
+   /// Adds a sample to the rolling time-averaged field.
+   /// </summary>
+   /// <param name="value">Sample value to add</param>
+   void set(float value) override
+   {
+      _stats.set(value);
+   }
 
-	float get() override
-	{
-		return _stats.average();
-	}
+   /// <summary>
+   /// Returns the current rolling average value.
+   /// </summary>
+   /// <returns>Current average over the configured time window</returns>
+   float get() override
+   {
+      return _stats.average();
+   }
 };
 
-//-------------------------------------------------------------------------------------------------
-//
-// Builds and posts an Influx point from a collection of field helpers and optional tags.
-//
-//-------------------------------------------------------------------------------------------------
-class SimplePoint
+///
+/// <summary>
+/// Builds and posts an Influx point from a collection of field helpers and optional tags.
+/// </summary>
+///
+class InfluxPoint
 {
 private:
+   /// <summary>Underlying Influx point being populated and posted.</summary>
    Point _point;
-   std::vector<Field*> _fields;
+
+   /// <summary>Owned collection of fields contributing values to each post.</summary>
+   std::vector<InfluxField*> _fields;
+
+   InfluxPoint(const InfluxPoint&) = delete;
+   InfluxPoint& operator=(const InfluxPoint&) = delete;
 
 public:
-   SimplePoint(const char* measurement) : _point(measurement)
+   /// <summary>
+   /// Creates an InfluxPoint for the given measurement name.
+   /// </summary>
+   /// <param name="measurement">Influx measurement name</param>
+   InfluxPoint(const char* measurement) : _point(measurement)
    {
    }
 
-	SimplePoint(const char* measurement, const std::vector<std::pair<const char*, const char*>>& tags) : _point(measurement)
-	{
-		for (const auto& tag : tags)
-		{
-			_point.addTag(tag.first, tag.second);
-		}
-	}
-
-	~SimplePoint()
-	{
-		for (Field* field : _fields)
-		{
-			delete field;
-		}
-	}
-
-   void addTag(const String& name, String value)
+   /// <summary>
+   /// Creates an InfluxPoint for the given measurement name with initial tags.
+   /// </summary>
+   /// <param name="measurement">Influx measurement name</param>
+   /// <param name="tags">Key/value pairs to attach as Influx tags</param>
+   InfluxPoint(const char* measurement, const std::vector<std::pair<const char*, const char*>>& tags) : _point(measurement)
    {
-	  _point.addTag(name, value);
+      for (const auto& tag : tags)
+      {
+         _point.addTag(tag.first, tag.second);
+      }
    }
 
-	Field* addValueField(const std::string& name, uint8_t decimalPlaces)
-	{
-	  Field* field = new ValueField(name, decimalPlaces);
-	  _fields.push_back(field);
-	  return field;
-	}
+   ~InfluxPoint()
+   {
+      for (InfluxField* field : _fields)
+      {
+         delete field;
+      }
+   }
 
-	Field* addTimeAveragedField(float seconds, const std::string& name, uint8_t decimalPlaces)
-	{
-	  Field* field = new TimeAveragedField(seconds, name, decimalPlaces);
-	  _fields.push_back(field);
-	  return field;
-	}
+   /// <summary>
+   /// Adds a tag to the Influx point.
+   /// </summary>
+   /// <param name="name">Tag name</param>
+   /// <param name="value">Tag value</param>
+   void addTag(const String& name, const String& value)
+   {
+      _point.addTag(name, value);
+   }
 
+   /// <summary>
+   /// Adds a value field that stores the most recent assigned value.
+   /// </summary>
+   /// <param name="name">Field name</param>
+   /// <param name="decimalPlaces">Number of decimal places for the value</param>
+   /// <returns>Pointer to the created field</returns>
+   InfluxField* addValueField(const std::string& name, uint8_t decimalPlaces)
+   {
+      InfluxField* field = new InfluxValueField(name, decimalPlaces);
+      _fields.push_back(field);
+      return field;
+   }
+
+   /// <summary>
+   /// Adds a time-averaged field that accumulates a rolling average over the given window.
+   /// </summary>
+   /// <param name="seconds">Duration of the averaging window in seconds</param>
+   /// <param name="name">Field name</param>
+   /// <param name="decimalPlaces">Number of decimal places for the value</param>
+   /// <returns>Pointer to the created field</returns>
+   InfluxField* addTimeAveragedField(float seconds, const std::string& name, uint8_t decimalPlaces)
+   {
+      InfluxField* field = new InfluxTimeAveragedField(seconds, name, decimalPlaces);
+      _fields.push_back(field);
+      return field;
+   }
+
+   /// <summary>
+   /// Populates and posts the Influx point with current field values.
+   /// </summary>
+   /// <param name="client">InfluxDB client to write to</param>
+   /// <param name="writeToSerial">If true, also prints the line protocol to Serial</param>
+   /// <returns>True if the write succeeded; otherwise false</returns>
    bool post(InfluxDBClient* client, bool writeToSerial = false)
    {
-	  // clear out the old values
-	  _point.clearFields();
+      if (client == nullptr)
+      {
+         Serial.println("InfluxDB write failed: client is null");
+         return false;
+      }
 
-	  // populate new values
-	  for (Field* field : _fields)
-	  {
-		 _point.addField(field->getName().c_str(), field->get(), field->getDecimalPlaces());
-	  }
+      // clear out the old values
+      _point.clearFields();
 
-	  if (writeToSerial)
-	  {
-		 Serial.println(_point.toLineProtocol());
-	  }
+      // populate new values, skipping invalid entries
+      size_t validFieldCount = 0;
+      for (InfluxField* field : _fields)
+      {
+         const float value = field->get();
+         if (std::isnan(value) || std::isinf(value))
+         {
+            continue;
+         }
 
-	  // send to Influx
-	  return client->writePoint(_point);
+         _point.addField(field->getName().c_str(), value, field->getDecimalPlaces());
+         validFieldCount++;
+      }
+
+      if (validFieldCount == 0)
+      {
+         Serial.println("InfluxDB write failed: no valid field values to post");
+         return false;
+      }
+
+      if (writeToSerial)
+      {
+         Serial.println(_point.toLineProtocol());
+      }
+
+      if (client->writePoint(_point))
+      {
+         return true;
+      }
+
+      Serial.print("InfluxDB write failed: ");
+      Serial.println(client->getLastErrorMessage());
+      return false;
    }
-
 };

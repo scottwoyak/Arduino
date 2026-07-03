@@ -50,16 +50,16 @@ Timer binCaptureTimer(DATA_COLLECTION_INTERVAL_MS);
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 Influx influx(WIFI_SSID, WIFI_PASSWORD, &client, &status);
 Timer uploadTimer(1000 * INFLUX_UPLOAD_INTERVAL_S);
-SimplePoint point(INFLUX_MEASUREMENT);
+InfluxPoint point(INFLUX_MEASUREMENT);
 
 // Field references for InfluxDB data
-Field* wind10Field = point.addValueField("wind10", 1);   // 10th percentile
-Field* wind30Field = point.addValueField("wind30", 1);   // 30th percentile
-Field* wind50Field = point.addValueField("wind50", 1);   // 50th percentile (median)
-Field* wind70Field = point.addValueField("wind70", 1);   // 70th percentile
-Field* wind90Field = point.addValueField("wind90", 1);   // 90th percentile
-Field* gustsField = point.addValueField("gusts", 1);     // Gust metric (90th - 10th)
-Field* cpuTempField = point.addValueField("cpuTemperature", 1);  // CPU temperature
+InfluxField* wind10Field = point.addValueField("wind10", 1);   // 10th percentile
+InfluxField* wind30Field = point.addValueField("wind30", 1);   // 30th percentile
+InfluxField* wind50Field = point.addValueField("wind50", 1);   // 50th percentile (median)
+InfluxField* wind70Field = point.addValueField("wind70", 1);   // 70th percentile
+InfluxField* wind90Field = point.addValueField("wind90", 1);   // 90th percentile
+InfluxField* gustsField = point.addValueField("gusts", 1);     // Gust metric (90th - 10th)
+InfluxField* cpuTempField = point.addValueField("cpuTemperature", 1);  // CPU temperature
 
 void setup()
 {

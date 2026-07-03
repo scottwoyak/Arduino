@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Arduino.h>
-#include <WiFi.h>
+#include <WiFiMulti.h>
 
+///
 /// <summary>
-/// Simple WiFi utility methods for connecting and reconnecting.
+/// WiFi utility for connecting and reconnecting to a single access point using WiFiMulti.
 /// </summary>
+///
 class WiFiX
 {
 public:
@@ -20,42 +22,81 @@ private:
    /// </summary>
    static constexpr uint32_t CHECK_INTERVAL_MS = 100;
 
+   /// <summary>Underlying WiFiMulti instance used for connection management.</summary>
+   WiFiMulti _wifiMulti;
+
+   /// <summary>Registered access point SSID.</summary>
+   const char* _wifiSSID;
+
+   /// <summary>Registered access point password.</summary>
+   const char* _wifiPassword;
+
+   /// <summary>True after WiFi mode and AP have been configured on first connect.</summary>
+   bool _initialized = false;
+
+   /// <summary>
+   /// Returns a human-readable label for a WiFi status code.
+   /// </summary>
+   /// <param name="status">wl_status_t value to describe</param>
+   /// <returns>Status description string</returns>
+   static const char* _statusString(uint8_t status)
+   {
+      switch (status)
+      {
+         case WL_IDLE_STATUS:     return "idle";
+         case WL_NO_SSID_AVAIL:   return "SSID not found";
+         case WL_SCAN_COMPLETED:  return "scan completed";
+         case WL_CONNECTED:       return "connected";
+         case WL_CONNECT_FAILED:  return "connect failed";
+         case WL_CONNECTION_LOST: return "connection lost";
+         case WL_DISCONNECTED:    return "disconnected";
+         default:                 return "unknown";
+      }
+   }
+
 public:
 
    /// <summary>
-   /// Starts a station-mode WiFi connection attempt.
+   /// Returns a human-readable string for the current WiFi connection status.
+   /// </summary>
+   /// <returns>Status description string</returns>
+   static const char* statusString()
+   {
+      return _statusString(WiFi.status());
+   }
+
+   /// <summary>
+   /// Creates a WiFiX instance and registers the access point credentials.
    /// </summary>
    /// <param name="wifiSSID">WiFi network SSID</param>
    /// <param name="wifiPassword">WiFi network password</param>
-   /// <returns>None</returns>
-   static void begin(const char* wifiSSID, const char* wifiPassword)
+   WiFiX(const char* wifiSSID, const char* wifiPassword)
    {
-      WiFi.mode(WIFI_STA);
-      WiFi.reconnect();
-      WiFi.begin(wifiSSID, wifiPassword);
+      _wifiSSID = wifiSSID;
+      _wifiPassword = wifiPassword;
    }
 
    /// <summary>
    /// Connects to WiFi and waits for completion.
    /// </summary>
-   /// <param name="wifiSSID">WiFi network SSID</param>
-   /// <param name="wifiPassword">WiFi network password</param>
    /// <param name="timeoutMs">Maximum time to wait for connection in milliseconds</param>
    /// <returns>True when connected; otherwise false</returns>
-   static bool connect(
-      const char* wifiSSID,
-      const char* wifiPassword,
-      uint32_t timeoutMs = DEFAULT_TIMEOUT_MS)
+   bool connect(uint32_t timeoutMs = DEFAULT_TIMEOUT_MS)
    {
       if (WiFi.status() == WL_CONNECTED)
       {
          return true;
       }
 
-      begin(wifiSSID, wifiPassword);
+      if (!_initialized)
+      {
+         WiFi.mode(WIFI_STA);
+         _wifiMulti.addAP(_wifiSSID, _wifiPassword);
+         _initialized = true;
+      }
 
       const uint32_t start = millis();
-      while (WiFi.status() != WL_CONNECTED && (millis() - start) < timeoutMs)
+      while (_wifiMulti.run() != WL_CONNECTED && (millis() - start) < timeoutMs)
       {
          Serial.print(".");
          delay(CHECK_INTERVAL_MS);
@@ -67,20 +108,15 @@ public:
    /// <summary>
    /// Ensures WiFi is connected, reconnecting if needed.
    /// </summary>
-   /// <param name="wifiSSID">WiFi network SSID</param>
-   /// <param name="wifiPassword">WiFi network password</param>
    /// <param name="timeoutMs">Maximum time to wait for reconnection in milliseconds</param>
    /// <returns>True when connected; otherwise false</returns>
-   static bool ensureConnected(
-      const char* wifiSSID,
-      const char* wifiPassword,
-      uint32_t timeoutMs = DEFAULT_TIMEOUT_MS)
+   bool ensureConnected(uint32_t timeoutMs = DEFAULT_TIMEOUT_MS)
    {
       if (WiFi.status() == WL_CONNECTED)
       {
          return true;
       }
 
-      return connect(wifiSSID, wifiPassword, timeoutMs);
+      return connect(timeoutMs);
    }
 };
