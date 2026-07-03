@@ -77,7 +77,9 @@
     <File Path="libraries/Woyak/TimedBin.h" />
     <File Path="libraries/Woyak/TimedHistogram.h" />
     <File Path="libraries/Woyak/TimedHistogramChart.h" />
+    <File Path="libraries/Woyak/TimedScatterPlot.h" />
     <File Path="libraries/Woyak/TimedStats.h" />
+    <File Path="libraries/Woyak/TimedValues.h" />
     <File Path="libraries/Woyak/Timer.h" />
     <File Path="libraries/Woyak/Units.h" />
     <File Path="libraries/Woyak/Url.h" />
@@ -153,6 +155,10 @@
       <Deploy />
     </Project>
     <Project Path="Tests/TimedStats_Tests/TimedStats_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
+    <Project Path="Tests/TimedValues_Tests/TimedValues_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
@@ -342,6 +348,10 @@
     <Deploy />
   </Project>
   <Project Path="Sensor_Noise_Display/Sensor_Noise_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Sensor_Scatter_Display/Sensor_Scatter_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

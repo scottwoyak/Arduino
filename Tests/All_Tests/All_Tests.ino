@@ -13,6 +13,7 @@
 #include "../TimedAverage_Tests/TimedAverage_Tests.h"
 #include "../TimedBin_Tests/TimedBin_Tests.h"
 #include "../TimedStats_Tests/TimedStats_Tests.h"
+#include "../TimedValues_Tests/TimedValues_Tests.h"
 #include "../Timer_Tests/Timer_Tests.h"
 #include "../Util_Tests/Util_Tests.h"
 

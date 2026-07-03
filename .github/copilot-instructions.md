@@ -8,7 +8,7 @@
 - Before answering each user request, first read and follow the latest IDESTATE context, especially the current file, as authoritative.
 - When cleaning up non-testing sketches, add/expand a detailed top-of-file sketch comment block describing behavior, flow, outputs, and usage. Do not use dashed separator blocks.
 - Do not automatically run tests; only run tests when explicitly requested.
-- Do not run build/test commands that require VisualMicro context when operating outside Visual Studio VisualMicro pipeline; rely on user-run VisualMicro builds instead.
+- Do not run build/test commands that require VisualMicro context when operating outside Visual Studio VisualMicro pipeline; rely on user-run VisualMicro builds instead. User prefers not to run full solution builds in this workflow; ask them before any compile/run action and rely on user-provided serial output for runtime measurements.
 - When cleaning up code, add IntelliSense-style XML documentation comments to constructors and public methods where appropriate, as well as to other methods where appropriate. Apply proper include bracket style: use quotes ("...") for Woyak library headers and local project headers, and use angle brackets (<...>) for third-party/installed libraries like LovyanGFX, WiFi, and InfluxDbClient.
 - Prefer keeping initialization code in setup() rather than extracting it into separate helper functions.
 - Initialization precedence: (1) Prefer class-level member initialization for fixed defaults, (2) use constructor body assignment for runtime/config-dependent values, (3) use initializer lists only when required for correctness (e.g., references, const members, or members without default constructors). When no default is needed, leave the member declaration without an initializer.
@@ -21,7 +21,7 @@
 - Use "micros" instead of "us" in names and identifiers.
 - Always use the Timer class when waiting for something.
 - Prefer explicit, clearly listed overload variants over complex template metaprogramming (e.g., avoid typename std::enable_if unless templates are simple and clearly useful).
-- Use SPAN or SAMPLE_TIME for timing-related names; avoid the term WINDOW except for GUI concepts.
+- Use SPAN or SAMPLE_TIME for timing-related names; prefer seconds-based timing variable names like SAMPLE_PERIOD_S instead of window-style names like DISPLAY_HISTORY_SECONDS.
 - In display row rendering, prefer using labeled printlnR overloads instead of building full concatenated row strings for numeric values; use default value colors unless a specific color is requested.
 - For display header alignment in this sketch, prefer explicit space-padded header strings (e.g., "    Rate") instead of using a Format object.
 - When addressing data quality issues, prefer root-cause stabilization logic over fixed sample-skipping heuristics.

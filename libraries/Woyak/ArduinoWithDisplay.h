@@ -250,6 +250,24 @@ public:
 
    }
 
+   /// <summary>Draws a pixel with the specified color, supporting negative coordinates as offsets from the far edge.</summary>
+   /// <param name="x">X coordinate; negative values offset from right edge.</param>
+   /// <param name="y">Y coordinate; negative values offset from bottom edge.</param>
+   /// <param name="color">Pixel color.</param>
+   void drawPixel(int16_t x, int16_t y, Color color)
+   {
+      if (x < 0)
+      {
+         x = display.width() + x;
+      }
+      if (y < 0)
+      {
+         y = display.height() + y;
+      }
+
+      display.drawPixel(x, y, (uint16_t)color);
+   }
+
    /// <summary>Sets the cursor position, supporting negative coordinates as offsets from the far edge.</summary>
    /// <param name="x">X coordinate; negative values offset from right edge.</param>
    /// <param name="y">Y coordinate; negative values offset from bottom edge.</param>
