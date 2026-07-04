@@ -32,8 +32,9 @@
 #include "Histogram.h"
 #include "SensorCapture.h"
 #include "SensorCaptureStats.h"
-#include "SensorCaptureOutput.h"
 #include "SerialX.h"
+#include "SerialHistogram.h"
+#include "HistogramPlot.h"
 #include <Wire.h>
 #include "TestSensor.h"
 
@@ -65,16 +66,14 @@ bool captureFinalized = false;
 //
 void drawHistogramOnFeather(const char* title, const Histogram& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor)
 {
-   SensorCaptureOutput::drawHistogramOnFeather(
-      feather,
-      title,
-      histogram,
-      sectionLeft,
-      sectionWidth,
-      sectionTop,
-      sectionHeight,
-      barColor,
-      CHART_MIN_MAX_SIGNIFICANT_DIGITS);
+   feather.setTextSize(2);
+   feather.setCursor(sectionLeft, sectionTop);
+   feather.println(title, Color::LABEL);
+
+   int16_t chartTop = feather.getCursorY() + 1;
+   int16_t adjustedHeight = sectionHeight - (chartTop - sectionTop);
+   HistogramPlot plot(feather, histogram, sectionLeft, sectionWidth, chartTop, adjustedHeight, barColor, CHART_MIN_MAX_SIGNIFICANT_DIGITS);
+   plot.render();
 }
 
 //
@@ -181,9 +180,35 @@ void renderHistogramsOnFeather()
 //
 void printCaptureSummary()
 {
-   SensorCaptureOutput::printCaptureSummary(sensorCapture, SAMPLING_DURATION_S * 1000UL, 3);
+   SensorCaptureStats analysis(sensorCapture);
+   Stats basicStats = analysis.computeBasicStats();
 
-   SensorCaptureOutput::printHistogramBins("Sensor Value Histogram", sensorCapture, HISTOGRAM_BINS, 3);
+   float valueAvg = basicStats.get();
+   float valueStdDev = basicStats.stdDev();
+   float valueMin = basicStats.min();
+   float valueMax = basicStats.max();
+   float valueRange = analysis.computeRange(valueMin, valueMax);
+
+   Serial.println();
+   Serial.println("Capture Summary");
+   SerialX::print("Capture ms", 20);
+   SerialX::println(SAMPLING_DURATION_S * 1000UL, 20);
+   SerialX::print("Samples", 20);
+   SerialX::println(sensorCapture.count(), 20);
+   SerialX::print("Sensor Avg", 20);
+   SerialX::println(valueAvg, 3, 20);
+   SerialX::print("Sensor StdDev", 20);
+   SerialX::println(valueStdDev, 3, 20);
+   SerialX::print("Sensor Min", 20);
+   SerialX::println(valueMin, 3, 20);
+   SerialX::print("Sensor Max", 20);
+   SerialX::println(valueMax, 3, 20);
+   SerialX::print("Sensor Range", 20);
+   SerialX::println(valueRange, 3, 20);
+   Serial.println();
+
+   Histogram histogram(sensorCapture.values(), sensorCapture.count(), HISTOGRAM_BINS);
+   SerialHistogram::print("Sensor Value Histogram", histogram, 3);
 
    sensorCapture.printFirstAndLastToSerial(10, 3);
 }

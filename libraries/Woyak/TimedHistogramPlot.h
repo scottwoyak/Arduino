@@ -3,6 +3,7 @@
 #include "TimedHistogram.h"
 #include "Feather.h"
 #include "TimedValues.h"
+#include "Util.h"
 
 template<unsigned long (*TimeFunc)() = millis>
 class TimedHistogramPlotBase
@@ -19,8 +20,8 @@ private:
    float _previousMax = NAN;
    float _previousSampleRangeSeconds = NAN;
    unsigned long _lastRenderMs = 0;
-   Format _minMaxFormat = Format("##.#", Format::Alignment::RIGHT);
    Format _sampleRangeFormat = Format("##.#s", Format::Alignment::CENTER);
+   static constexpr uint8_t MIN_MAX_SIGNIFICANT_DIGITS = 3;
 
    bool _allocateRenderState()
    {
@@ -135,15 +136,18 @@ private:
 	  if (snapshot.minValue != _previousMin || snapshot.maxValue != _previousMax || snapshot.sampleRangeSeconds != _previousSampleRangeSeconds)
 	  {
 		 int16_t labelY = chartBottom + 2;
-		 int16_t labelW = static_cast<int16_t>(_minMaxFormat.length() * _feather.charW());
 		 int16_t rangeLabelW = static_cast<int16_t>(_sampleRangeFormat.length() * _feather.charW());
 		 int16_t rangeX = (chartWidth - rangeLabelW) / 2;
 
-		 _feather.setCursor(0, labelY);
-		 _feather.print(snapshot.minValue, _minMaxFormat, Color::LABEL);
+		 String minLabel = Util::toSignificantString(snapshot.minValue, MIN_MAX_SIGNIFICANT_DIGITS);
+		 String maxLabel = Util::toSignificantString(snapshot.maxValue, MIN_MAX_SIGNIFICANT_DIGITS);
 
-		 _feather.setCursor(chartWidth - labelW, labelY);
-		 _feather.print(snapshot.maxValue, _minMaxFormat, Color::LABEL);
+		 _feather.setCursor(0, labelY);
+		 _feather.print(minLabel, Color::LABEL);
+
+		 int16_t maxLabelX = chartWidth - static_cast<int16_t>(maxLabel.length() * _feather.charW());
+		 _feather.setCursor(maxLabelX, labelY);
+		 _feather.print(maxLabel, Color::LABEL);
 
 		 if (isfinite(snapshot.sampleRangeSeconds))
 		 {
@@ -167,13 +171,6 @@ public:
    ~TimedHistogramPlotBase()
    {
 	  delete[] _previousBarHeights;
-   }
-
-   void setMinMaxFormat(const Format& format)
-   {
-	  _minMaxFormat = format;
-	  _previousMin = NAN;
-	  _previousMax = NAN;
    }
 
    void setSampleRangeFormat(const Format& format)

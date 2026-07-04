@@ -6,9 +6,13 @@
 #include "Feather.h"
 #include "TimedValues.h"
 
+///
 /// <summary>
-/// Renders a shaded scatter plot from a TimedValues buffer.
+/// Renders a shaded scatter plot from a TimedValues buffer with time-windowed history.
+/// Points are displayed with density shading to show sample concentration.
+/// Incremental rendering updates only changed pixels for efficiency.
 /// </summary>
+///
 class TimedScatterPlot
 {
 private:
@@ -19,6 +23,8 @@ private:
    unsigned long _historyMs;
    float _minValueStep = 0.0f;
 
+   int16_t* _previousBarHeights = nullptr;
+   uint _previousRenderedBins = 0;
    float* _sampleValues = nullptr;
    unsigned long* _sampleAgesMs = nullptr;
    size_t _sampleCapacity = 0;
@@ -44,6 +50,11 @@ private:
    unsigned long _lastDensityUpdateMs = 0;
    unsigned long _pendingShiftMs = 0;
 
+   /// <summary>
+   /// Ensures sample value and age buffers are allocated with sufficient capacity.
+   /// </summary>
+   /// <param name="capacity">Required capacity in elements.</param>
+   /// <returns>True if allocation succeeded or was already sufficient; false on failure.</returns>
    bool _ensureSampleBuffers(size_t capacity)
    {
       if (capacity <= _sampleCapacity)
@@ -99,6 +110,14 @@ private:
       return true;
    }
 
+   /// <summary>
+   /// Clears pixels that have changed from their previous color to black.
+   /// Used during incremental rendering updates.
+   /// </summary>
+   /// <param name="chartLeft">Left x-coordinate of the chart area.</param>
+   /// <param name="chartTop">Top y-coordinate of the chart area.</param>
+   /// <param name="chartWidth">Width in pixels of the chart area.</param>
+   /// <param name="chartHeight">Height in pixels of the chart area.</param>
    void _clearChangedPixels(int16_t chartLeft, int16_t chartTop, int16_t chartWidth, int16_t chartHeight)
    {
       if (_previousPixels == nullptr)
@@ -121,6 +140,12 @@ private:
       }
    }
 
+   /// <summary>
+   /// Shifts density array left by the specified pixel count.
+   /// </summary>
+   /// <param name="chartWidth">Width in pixels of the chart area.</param>
+   /// <param name="chartHeight">Height in pixels of the chart area.</param>
+   /// <param name="shiftPixels">Number of pixels to shift left.</param>
    void _shiftDensityLeft(int16_t chartWidth, int16_t chartHeight, int16_t shiftPixels)
    {
       if (shiftPixels <= 0 || shiftPixels >= chartWidth)
@@ -148,24 +173,43 @@ private:
       return scale;
    }
 
+   /// <summary>
+   /// Rounds a value down to the axis label precision.
+   /// </summary>
+   /// <param name="value">Value to round.</param>
+   /// <returns>Value rounded down to axis precision.</returns>
    float _roundDownToAxisPrecision(float value) const
    {
       const float scale = _axisPrecisionScale();
       return floorf(value * scale) / scale;
    }
 
+   /// <summary>
+   /// Rounds a value up to the axis label precision.
+   /// </summary>
+   /// <param name="value">Value to round.</param>
+   /// <returns>Value rounded up to axis precision.</returns>
    float _roundUpToAxisPrecision(float value) const
    {
       const float scale = _axisPrecisionScale();
       return ceilf(value * scale) / scale;
    }
 
+   /// <summary>
+   /// Computes the epsilon (smallest meaningful difference) for the axis precision.
+   /// </summary>
+   /// <returns>Epsilon value at the axis precision level.</returns>
    float _axisPrecisionEpsilon() const
    {
       const float scale = _axisPrecisionScale();
       return 0.5f / scale;
    }
 
+   /// <summary>
+   /// Aligns a value to the sensor step size if one is configured.
+   /// </summary>
+   /// <param name="value">Value to align.</param>
+   /// <returns>Value aligned to sensor step size, or original value if step is not configured.</returns>
    float _alignToSensorStep(float value) const
    {
       if (_minValueStep <= 0.0f)
@@ -176,6 +220,13 @@ private:
       return roundf(value / _minValueStep) * _minValueStep;
    }
 
+   /// <summary>
+   /// Increments density at a single pixel location.
+   /// </summary>
+   /// <param name="x">Pixel x-coordinate within the chart.</param>
+   /// <param name="y">Pixel y-coordinate within the chart.</param>
+   /// <param name="chartWidth">Width in pixels of the chart area.</param>
+   /// <param name="chartHeight">Height in pixels of the chart area.</param>
    void _addDensityPixel(int16_t x, int16_t y, int16_t chartWidth, int16_t chartHeight)
    {
       if (x < 0 || x >= chartWidth || y < 0 || y >= chartHeight)
@@ -191,6 +242,13 @@ private:
       _lastAddedSamples++;
    }
 
+   /// <summary>
+   /// Clamps a value to the specified plot range.
+   /// </summary>
+   /// <param name="value">Value to clamp.</param>
+   /// <param name="plotMin">Minimum value in the plot range.</param>
+   /// <param name="plotMax">Maximum value in the plot range.</param>
+   /// <returns>Clamped value.</returns>
    float _clampToPlotRange(float value, float plotMin, float plotMax) const
    {
       if (value < plotMin)
@@ -204,6 +262,12 @@ private:
       return value;
    }
 
+   /// <summary>
+   /// Converts an age in milliseconds to an x-coordinate on the chart.
+   /// </summary>
+   /// <param name="ageMs">Age of the sample in milliseconds.</param>
+   /// <param name="chartWidth">Width in pixels of the chart area.</param>
+   /// <returns>X-coordinate for the sample (newer samples on the right).</returns>
    int16_t _xForAgeMs(unsigned long ageMs, int16_t chartWidth) const
    {
       if (_historyMs <= 1UL || chartWidth <= 1)
@@ -216,6 +280,17 @@ private:
       return constrain(x, 0, chartWidth - 1);
    }
 
+   /// <summary>
+   /// Adds density pixels for a sample value at a given x-coordinate.
+   /// Spans multiple pixels if the sensor resolution is coarser than pixel resolution.
+   /// </summary>
+   /// <param name="x">X-coordinate on the chart.</param>
+   /// <param name="value">Sample value to plot.</param>
+   /// <param name="plotMax">Maximum value in the plot range.</param>
+   /// <param name="valuePerPixel">Y-axis scale (value units per pixel).</param>
+   /// <param name="pixelsPerStep">Width of each sensor step in pixels.</param>
+   /// <param name="chartWidth">Width in pixels of the chart area.</param>
+   /// <param name="chartHeight">Height in pixels of the chart area.</param>
    void _addDensityForValue(int16_t x, float value, float plotMax, float valuePerPixel, float pixelsPerStep, int16_t chartWidth, int16_t chartHeight)
    {
       if (valuePerPixel <= 0.0f)
@@ -244,7 +319,13 @@ private:
 public:
    /// <summary>
    /// Creates a timed scatter plot renderer using default formats.
+   /// Default min/max format shows one decimal place right-aligned.
+   /// Default sample range format shows one decimal place with 's' suffix, center-aligned.
    /// </summary>
+   /// <param name="feather">Reference to the Feather display interface.</param>
+   /// <param name="samples">Reference to the TimedValues buffer containing samples.</param>
+   /// <param name="historyMs">Time window in milliseconds for the visible history.</param>
+   /// <param name="minValueStep">Optional sensor resolution step size (0.0 for no alignment, default 0.0).</param>
    TimedScatterPlot(Feather& feather, TimedValues& samples, unsigned long historyMs, float minValueStep = 0.0f)
       : TimedScatterPlot(feather, samples, historyMs, Format("##.#", Format::Alignment::RIGHT), Format("##.#s", Format::Alignment::CENTER), minValueStep)
    {}
@@ -276,23 +357,36 @@ public:
    }
 
    /// <summary>
-   /// Updates the visible time span.
+   /// Updates the visible time span in milliseconds.
    /// </summary>
+   /// <param name="historyMs">Time window in milliseconds to display.</param>
    void setHistoryMs(unsigned long historyMs)
    {
       _historyMs = (historyMs == 0) ? 1 : historyMs;
    }
 
+   /// <summary>
+   /// Sets a custom format for axis min/max labels.
+   /// </summary>
+   /// <param name="format">Format object defining precision and alignment.</param>
    void setMinMaxFormat(const Format& format)
    {
       _minMaxFormat = format;
    }
 
+   /// <summary>
+   /// Sets a custom format for the sample range time display.
+   /// </summary>
+   /// <param name="format">Format object defining precision and alignment.</param>
    void setSampleRangeFormat(const Format& format)
    {
       _sampleRangeFormat = format;
    }
 
+   /// <summary>
+   /// Gets the time in microseconds of the last render operation.
+   /// </summary>
+   /// <returns>Time elapsed during last render in microseconds.</returns>
    unsigned long lastRenderMicros() const
    {
       return _lastRenderMicros;

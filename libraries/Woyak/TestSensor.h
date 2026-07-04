@@ -59,7 +59,7 @@ namespace TestSensorConfig
    static constexpr float SIN_NOISE_MEAN = 0.0f;
    static constexpr float SIN_NOISE_AMPLITUDE = 1.0f;
    static constexpr float SIN_NOISE_PERIOD_S = 10.0f;
-   static constexpr float SIN_NOISE_STDDEV = 0.75f;
+   static constexpr float SIN_NOISE_STDDEV = 2.0f;
 
    // ----- ms5837 pressure sensor
    static const uint8_t MS5837_MODEL = MS5837::MS5837_02BA;

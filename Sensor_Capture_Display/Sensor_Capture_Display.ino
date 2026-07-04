@@ -14,51 +14,63 @@
 // - Stored points are dumped to serial automatically after capture completes.
 //
 // Sensor mode:
-// - Reads from TempSensor.
+// - Reads from TestSensor (configurable via TestSensor.h using alias).
 //
 #include "Feather.h"
 #include "SensorCapture.h"
 #include "SensorCaptureStats.h"
-#include "SensorCaptureOutput.h"
 #include "SerialX.h"
 #include "SerialTable.h"
-#include <Wire.h>
+#include "SerialHistogram.h"
+#include "HistogramPlot.h"
+#include "DisplayTable.h"
+#include "ScatterPlot.h"
 #include <math.h>
-#include "TempSensor.h"
+#include "TestSensor.h"
 
 constexpr unsigned long MAX_SAMPLING_RATE_PER_SEC = 100;
+// ----- capture configuration
 constexpr size_t MAX_SAMPLES = 5000;
 constexpr unsigned long MAX_CAPTURE_TIME_S = 120;
+
+// ----- histogram display
 constexpr size_t MIN_HISTOGRAM_BINS = 5;
 constexpr size_t MAX_HISTOGRAM_BINS = 50;
-constexpr unsigned long SAMPLE_INTERVAL_MS =
-   ((1000UL / MAX_SAMPLING_RATE_PER_SEC) == 0 ? 1UL : (1000UL / MAX_SAMPLING_RATE_PER_SEC));
+
+// ----- serial output
 constexpr unsigned long PRINT_INTERVAL_MS = 2;
-constexpr unsigned long DISPLAY_UPDATE_INTERVAL_MS = 200;
+
+// ----- display refresh
+constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 5;
+
+// ----- warm-up analysis
 // Number of samples used for each side of the warm-up comparison (start segment vs end segment).
 constexpr size_t STARTUP_SAMPLE_COUNT = 100;
 
+// ----- sampling rate analysis
 constexpr size_t SAMPLING_RATES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
 constexpr size_t SAMPLING_RATE_COUNT = sizeof(SAMPLING_RATES) / sizeof(SAMPLING_RATES[0]);
 
-const char ANALYSIS_TABLE_TITLE[] = "Sample Analysis";
+// ----- analysis table
+constexpr const char* ANALYSIS_TABLE_TITLE = "Sample Analysis";
 const SerialTable::Column ANALYSIS_TABLE_COLUMNS[] = {
    { "N", 8 },
    { "Rate", 10 },
    { "Range", 12 },
    { "StdDev", 12 },
 };
-const size_t ANALYSIS_TABLE_COLUMN_COUNT = sizeof(ANALYSIS_TABLE_COLUMNS) / sizeof(ANALYSIS_TABLE_COLUMNS[0]);
+constexpr size_t ANALYSIS_TABLE_COLUMN_COUNT = sizeof(ANALYSIS_TABLE_COLUMNS) / sizeof(ANALYSIS_TABLE_COLUMNS[0]);
 SerialTable analysisTable(ANALYSIS_TABLE_TITLE, ANALYSIS_TABLE_COLUMNS, ANALYSIS_TABLE_COLUMN_COUNT);
 
-const char WARMUP_TABLE_TITLE[] = "Warm-up Stability Analysis";
+// ----- warm-up analysis table
+constexpr const char* WARMUP_TABLE_TITLE = "Warm-up Stability Analysis";
 const SerialTable::Column WARMUP_TABLE_COLUMNS[] = {
    { "Metric", 12 },
    { "Start", 12 },
    { "End", 12 },
    { "Delta", 12 },
 };
-const size_t WARMUP_TABLE_COLUMN_COUNT = sizeof(WARMUP_TABLE_COLUMNS) / sizeof(WARMUP_TABLE_COLUMNS[0]);
+constexpr size_t WARMUP_TABLE_COLUMN_COUNT = sizeof(WARMUP_TABLE_COLUMNS) / sizeof(WARMUP_TABLE_COLUMNS[0]);
 SerialTable warmupTable(WARMUP_TABLE_TITLE, WARMUP_TABLE_COLUMNS, WARMUP_TABLE_COLUMN_COUNT);
 
 enum class DisplayMode : uint8_t
@@ -77,23 +89,54 @@ DisplayMode& operator++(DisplayMode& mode)
 }
 
 Feather feather;
-TempSensor sensor;
-Format progressPercentFormat("###%", 6, Format::Alignment::RIGHT);
+TestSensor sensor;
+Format progressPercentFormat("###%", 6, Format::Alignment::LEFT);
+Format samplesFormat("#####", 5, Format::Alignment::LEFT);
+Format collectingSamplesFormat("#####/5000", 10, Format::Alignment::LEFT);
+Format timeFormat("###", 3, Format::Alignment::LEFT);
+Format collectingTimeFormat("###/120s", 8, Format::Alignment::LEFT);
+Format statsFormat("######.##", 9, Format::Alignment::LEFT);
+Format rateFormat("#####", 5, Format::Alignment::LEFT);
 
 SensorCapture sensorCapture(
    MAX_SAMPLES,
    MAX_CAPTURE_TIME_S * 1000UL,
-   SAMPLE_INTERVAL_MS);
+   ((1000UL / MAX_SAMPLING_RATE_PER_SEC) == 0 ? 1UL : (1000UL / MAX_SAMPLING_RATE_PER_SEC)));
 
 bool captureFinalized = false;
 unsigned long captureStartMs = 0;
 unsigned long lastDisplayRefreshMs = 0;
 DisplayMode displayMode = DisplayMode::Summary;
-Stats warmupStartStats;
-Stats warmupEndStats;
-bool warmupHasComparison = false;
 size_t postWarmupStartIndex = 0;
 bool postWarmupReady = false;
+
+// Display tables
+DisplayTable summaryTable(&feather, 0, 0);
+DisplayTable collectingTable(&feather, 0, 0);
+
+/// <summary>
+/// Initializes display tables used by summary and collecting screens.
+/// </summary>
+void initializeDisplayTables()
+{
+   feather.setTextSize(3);
+   int16_t summaryTableY = feather.charH();
+
+   feather.setTextSize(2);
+   int16_t collectingTableY = summaryTableY + feather.charH();
+
+   summaryTable = DisplayTable(&feather, 0, summaryTableY);
+   summaryTable.addRow("Samples", samplesFormat, Color::LABEL, Color::VALUE);
+   summaryTable.addRow("Time", timeFormat, Color::LABEL, Color::VALUE);
+   summaryTable.addRow("Rate", rateFormat, Color::LABEL, Color::VALUE);
+   summaryTable.addRow("Avg", statsFormat, Color::LABEL, Color::VALUE2);
+   summaryTable.addRow("Std", statsFormat, Color::LABEL, Color::VALUE3);
+
+   collectingTable = DisplayTable(&feather, 0, collectingTableY);
+   collectingTable.addRow("Samples", collectingSamplesFormat, Color::LABEL, Color::VALUE);
+   collectingTable.addRow("Time", collectingTimeFormat, Color::LABEL, Color::VALUE);
+   collectingTable.addRow("Progress", progressPercentFormat, Color::LABEL, Color::VALUE);
+}
 
 /// <summary>
 /// Draws the summary display mode after capture completion.
@@ -105,25 +148,38 @@ void renderDisplaySummary()
    feather.setCursor(0, 0);
    feather.println("Capture Summary", Color::HEADING);
 
-   feather.setTextSize(2);
-   feather.print("Samples: ", Color::LABEL);
-   feather.println(static_cast<unsigned long>(sensorCapture.count()), Color::VALUE);
+   unsigned long captureTimeMs = millis() - captureStartMs;
+   unsigned long captureTimeSec = captureTimeMs / 1000UL;
+   size_t sampleCount = sensorCapture.count();
+   float samplesPerSecond = (captureTimeMs > 0) ? (sampleCount * 1000.0f / captureTimeMs) : 0.0f;
 
    SensorCaptureStats analysis(sensorCapture);
    Stats basicStats = analysis.computeBasicStats();
-   feather.print("Avg: ", Color::LABEL);
-   feather.println(basicStats.get(), 2, Color::VALUE2);
-   feather.print("Std: ", Color::LABEL);
-   feather.println(basicStats.stdDev(), 3, Color::VALUE3);
+
+   feather.setTextSize(2);
+   summaryTable.setValue(0, static_cast<unsigned long>(sampleCount));
+   summaryTable.setValue(1, captureTimeSec);
+   summaryTable.setValue(2, samplesPerSecond);
+   summaryTable.setValue(3, basicStats.get());
+   summaryTable.setValue(4, basicStats.stdDev());
+
+   summaryTable.draw();
 }
 
+/// <summary>
+/// Draws a histogram for a selected capture value range.
+/// </summary>
+/// <param name="startIndex">First sample index to include.</param>
+/// <param name="top">Top Y coordinate of the histogram area.</param>
+/// <param name="height">Histogram drawing height in pixels.</param>
 void drawDisplayHistogramForRange(size_t startIndex, int16_t top, int16_t height)
 {
    const float* values = sensorCapture.values() + startIndex;
    size_t valueCount = sensorCapture.count() - startIndex;
    Histogram histogram(values, valueCount, MIN_HISTOGRAM_BINS, MAX_HISTOGRAM_BINS);
 
-   SensorCaptureOutput::drawHistogramOnFeather(feather, "", histogram, 0, feather.width(), top, height, Color::VALUE2, 3);
+   HistogramPlot plot(feather, histogram, 0, feather.width(), top, height, Color::VALUE2, 3);
+   plot.render();
 }
 
 /// <summary>
@@ -167,148 +223,46 @@ void renderDisplayHistogram()
 /// Draws a compact x-y scatter plot for all captured samples.
 /// </summary>
 void renderDisplayScatterPlot()
+{
+   feather.clearDisplay();
+   feather.setTextSize(3);
+   feather.setCursor(0, 0);
+   feather.println("Scatter Plot", Color::HEADING);
+
+   size_t totalCount = sensorCapture.count();
+   if (totalCount < 2)
    {
-      feather.clearDisplay();
-      feather.setTextSize(3);
-      feather.setCursor(0, 0);
-      feather.println("Scatter Plot", Color::HEADING);
-
-      size_t totalCount = sensorCapture.count();
-      if (totalCount < 2)
-      {
-         feather.setTextSize(2);
-         feather.println("Not enough data", Color::LABEL);
-         return;
-      }
-
-      float plotYMin = sensorCapture[0];
-      float plotYMax = sensorCapture[0];
-      for (size_t i = 1; i < totalCount; i++)
-      {
-         float value = sensorCapture[i];
-         plotYMin = min(plotYMin, value);
-         plotYMax = max(plotYMax, value);
-      }
-
-      if (!isfinite(plotYMin) || !isfinite(plotYMax))
-      {
-         feather.setTextSize(2);
-         feather.println("Not enough data", Color::LABEL);
-         return;
-      }
-
-      int16_t chartLeft = 0;
-      int16_t chartTop = feather.getCursorY();
       feather.setTextSize(2);
-      int16_t footerHeight = feather.charH() + 2;
-      int16_t chartHeight = feather.height() - chartTop - footerHeight - 2;
-      int16_t chartWidth = feather.width();
-
-      if (chartHeight < 20 || chartWidth < 20)
-      {
-         feather.setTextSize(2);
-         feather.println("Plot area too small", Color::LABEL);
-         return;
-      }
-
-      float ySpan = plotYMax - plotYMin;
-      if (ySpan <= 0.0f)
-      {
-         ySpan = 1.0f;
-      }
-
-      feather.fillRect(chartLeft, chartTop, chartWidth, chartHeight, Color::BLACK);
-      feather.fillRect(chartLeft, chartTop + chartHeight - 1, chartWidth, 1, Color::DARKGRAY);
-      feather.fillRect(chartLeft, chartTop, 1, chartHeight, Color::DARKGRAY);
-
-      size_t pixelCount = static_cast<size_t>(chartWidth) * static_cast<size_t>(chartHeight);
-      uint8_t* density = new uint8_t[pixelCount];
-      if (density == nullptr)
-      {
-         feather.setTextSize(2);
-         feather.println("Memory unavailable", Color::LABEL);
-         return;
-      }
-
-      for (size_t i = 0; i < pixelCount; i++)
-      {
-         density[i] = 0;
-      }
-
-      uint8_t maxDensity = 0;
-      for (size_t sampleIndex = 0; sampleIndex < totalCount; sampleIndex++)
-      {
-         int16_t x = chartLeft + static_cast<int16_t>((sampleIndex * static_cast<size_t>(chartWidth - 1)) / max(static_cast<size_t>(1), totalCount - 1));
-         float value = sensorCapture[sampleIndex];
-         int16_t y = chartTop + static_cast<int16_t>((plotYMax - value) * static_cast<float>(chartHeight - 1) / ySpan);
-
-         if (y < chartTop) y = chartTop;
-         if (y >= (chartTop + chartHeight)) y = chartTop + chartHeight - 1;
-
-         size_t densityIndex = static_cast<size_t>(y - chartTop) * static_cast<size_t>(chartWidth) + static_cast<size_t>(x - chartLeft);
-         if (density[densityIndex] < 255)
-         {
-            density[densityIndex]++;
-         }
-
-         if (density[densityIndex] > maxDensity)
-         {
-            maxDensity = density[densityIndex];
-         }
-      }
-
-      for (int16_t y = 0; y < chartHeight; y++)
-      {
-         for (int16_t x = 0; x < chartWidth; x++)
-         {
-            size_t densityIndex = static_cast<size_t>(y) * static_cast<size_t>(chartWidth) + static_cast<size_t>(x);
-            uint8_t value = density[densityIndex];
-            if (value == 0)
-            {
-               continue;
-            }
-
-            float ratio = 0.0f;
-            if (maxDensity > 0)
-            {
-               ratio = static_cast<float>(value) / static_cast<float>(maxDensity);
-            }
-
-            Color color = Color565::blend(Color565::fromRGB(0, 128, 0), Color::GREEN, ratio);
-            feather.fillRect(chartLeft + x, chartTop + y, 1, 1, color);
-         }
-      }
-
-      delete[] density;
-
-      feather.setTextSize(2);
-      feather.setCursor(chartLeft, chartTop);
-      feather.print(plotYMax, 2, Color::LABEL);
-
-      feather.setCursor(chartLeft, chartTop + chartHeight - feather.charH());
-      feather.print(plotYMin, 2, Color::LABEL);
-
-      feather.setCursor(chartLeft, chartTop + chartHeight + 1);
-      feather.print("0", Color::LABEL);
-
-      String xMaxLabel = String(static_cast<unsigned long>(totalCount - 1));
-      int16_t xMaxX = chartLeft + chartWidth - static_cast<int16_t>(xMaxLabel.length() * feather.charW());
-      if (xMaxX < chartLeft)
-      {
-         xMaxX = chartLeft;
-      }
-      feather.setCursor(xMaxX, chartTop + chartHeight + 1);
-      feather.print(xMaxLabel, Color::LABEL);
+      feather.println("Not enough data", Color::LABEL);
+      return;
    }
+
+   feather.setTextSize(2);
+   int16_t plotTop = feather.getCursorY();
+   int16_t footerHeight = feather.charH() + 2;
+   int16_t plotHeight = feather.height() - plotTop - footerHeight - 2;
+   int16_t plotWidth = feather.width();
+
+   if (plotHeight < 20 || plotWidth < 20)
+   {
+      feather.setTextSize(2);
+      feather.println("Plot area too small", Color::LABEL);
+      return;
+   }
+
+   ScatterPlot plot(&feather, 0, plotTop, plotWidth, plotHeight);
+   plot.render(sensorCapture.values(), totalCount);
+}
 
    /// <summary>
    /// Updates on-screen capture progress and post-capture display modes.
-   /// Refresh is throttled to DISPLAY_UPDATE_INTERVAL_MS unless forceRefresh is true.
+   /// Refresh is throttled to DISPLAY_UPDATE_RATE_PER_SEC unless forceRefresh is true.
    /// </summary>
    void updateDisplayProgress(bool forceRefresh = false)
-{
-   unsigned long nowMs = millis();
-   if (!forceRefresh && ((nowMs - lastDisplayRefreshMs) < DISPLAY_UPDATE_INTERVAL_MS))
+   {
+      unsigned long nowMs = millis();
+   unsigned long displayUpdateIntervalMs = (DISPLAY_UPDATE_RATE_PER_SEC == 0) ? 0 : (1000UL / DISPLAY_UPDATE_RATE_PER_SEC);
+   if (!forceRefresh && ((nowMs - lastDisplayRefreshMs) < displayUpdateIntervalMs))
    {
       return;
    }
@@ -338,56 +292,76 @@ void renderDisplayScatterPlot()
 
    feather.setTextSize(3);
    feather.setCursor(0, 0);
-   feather.print("Sensor Capture      ", Color::HEADING);
+   feather.print("Sensor Capture", Color::HEADING);
 
    feather.setTextSize(2);
-   int16_t y = feather.charH() * 2;
-
-   feather.setCursor(0, y);
-   feather.print("Collecting...      ", Color::VALUE);
 
    size_t count = sensorCapture.count();
-   y += feather.charH();
-   feather.setCursor(0, y);
-   feather.print("Samples: ", Color::LABEL);
-   feather.print(static_cast<unsigned long>(count));
-   feather.print("/");
-   feather.print(static_cast<unsigned long>(MAX_SAMPLES));
-
+   unsigned long countUL = static_cast<unsigned long>(count);
    unsigned long elapsedSeconds = (nowMs - captureStartMs) / 1000UL;
    if (elapsedSeconds > MAX_CAPTURE_TIME_S)
    {
       elapsedSeconds = MAX_CAPTURE_TIME_S;
    }
 
-   feather.print(" (");
-   feather.print(elapsedSeconds);
-   feather.print("/");
-   feather.print(MAX_CAPTURE_TIME_S);
-   feather.print("s)   ");
+   float samplePercent = (MAX_SAMPLES > 0) ? ((countUL * 100.0f) / MAX_SAMPLES) : 0.0f;
+   float timePercent = (MAX_CAPTURE_TIME_S > 0) ? ((elapsedSeconds * 100.0f) / MAX_CAPTURE_TIME_S) : 0.0f;
 
-   unsigned long samplePercent = (MAX_SAMPLES > 0) ? ((static_cast<unsigned long>(count) * 100UL) / static_cast<unsigned long>(MAX_SAMPLES)) : 0UL;
-   unsigned long timePercent = (MAX_CAPTURE_TIME_S > 0) ? ((elapsedSeconds * 100UL) / MAX_CAPTURE_TIME_S) : 0UL;
-   unsigned long progressPercent = max(samplePercent, timePercent);
-   if (progressPercent > 100UL)
+   // Determine which metric is determining the end of collection
+   bool samplesAreLimiting = (samplePercent >= timePercent);
+
+   // Set sample values
+   Color sampleColor = samplesAreLimiting ? Color::VALUE : Color::GRAY;
+   collectingTable.setValue(0, countUL, sampleColor);
+
+   // Set time values
+   Color timeColor = !samplesAreLimiting ? Color::VALUE : Color::GRAY;
+   collectingTable.setValue(1, elapsedSeconds, timeColor);
+
+   float progressPercent = max(samplePercent, timePercent);
+   if (progressPercent > 100.0f)
    {
-      progressPercent = 100UL;
+      progressPercent = 100.0f;
    }
 
-   y += feather.charH();
-   feather.setCursor(0, y);
-   feather.print("Progress: ", Color::LABEL);
-   feather.print(static_cast<float>(progressPercent), progressPercentFormat, Color::VALUE);
+   collectingTable.setValue(2, progressPercent, Color::VALUE);
+   collectingTable.draw();
 }
 
 /// <summary>
-/// Computes and prints capture statistics and histogram data to Serial.
+/// Computes and prints capture statistics to Serial.
 /// </summary>
 void printCaptureSummary()
 {
-   SensorCaptureOutput::printCaptureSummary(sensorCapture, MAX_CAPTURE_TIME_S * 1000UL, 3);
+   SensorCaptureStats analysis(sensorCapture);
+   Stats basicStats = analysis.computeBasicStats();
 
-   SensorCaptureOutput::printHistogramBins("Sensor Value Histogram", sensorCapture, MIN_HISTOGRAM_BINS, MAX_HISTOGRAM_BINS, 3);
+   float valueAvg = basicStats.get();
+   float valueStdDev = basicStats.stdDev();
+   float valueMin = basicStats.min();
+   float valueMax = basicStats.max();
+   float valueRange = analysis.computeRange(valueMin, valueMax);
+
+   Serial.println();
+   Serial.println("Capture Summary");
+   SerialX::print("Capture ms", 20);
+   SerialX::println(MAX_CAPTURE_TIME_S * 1000UL, 20);
+   SerialX::print("Samples", 20);
+   SerialX::println(sensorCapture.count(), 20);
+   SerialX::print("Sensor Avg", 20);
+   SerialX::println(valueAvg, 3, 20);
+   SerialX::print("Sensor StdDev", 20);
+   SerialX::println(valueStdDev, 3, 20);
+   SerialX::print("Sensor Min", 20);
+   SerialX::println(valueMin, 3, 20);
+   SerialX::print("Sensor Max", 20);
+   SerialX::println(valueMax, 3, 20);
+   SerialX::print("Sensor Range", 20);
+   SerialX::println(valueRange, 3, 20);
+   Serial.println();
+
+   Histogram histogram(sensorCapture.values(), sensorCapture.count(), MIN_HISTOGRAM_BINS, MAX_HISTOGRAM_BINS);
+   SerialHistogram::print("Sensor Value Histogram", histogram, 3);
 }
 
 /// <summary>
@@ -427,7 +401,6 @@ void printSamplingRateAnalysis()
 /// </summary>
 void printWarmupAnalysis()
 {
-   warmupHasComparison = false;
    postWarmupReady = false;
    postWarmupStartIndex = 0;
 
@@ -457,9 +430,6 @@ void printWarmupAnalysis()
       endStats.add(sensorCapture[totalCount - segmentSize + i]);
    }
 
-   warmupStartStats = startStats;
-   warmupEndStats = endStats;
-   warmupHasComparison = true;
    postWarmupStartIndex = segmentSize;
    postWarmupReady = (postWarmupStartIndex < totalCount);
 
@@ -475,11 +445,11 @@ void printWarmupAnalysis()
    warmupTable.printRow("Range", SerialTable::fixed(startRange, 3), SerialTable::fixed(endRange, 3), SerialTable::fixed(endRange - startRange, 3));
    warmupTable.printRow("StdDev", SerialTable::fixed(startStdDev, 3), SerialTable::fixed(endStdDev, 3), SerialTable::fixed(endStdDev - startStdDev, 3));
 
-       bool endMoreStable = isfinite(startStdDev) && isfinite(endStdDev) && (endStdDev < startStdDev);
-       Serial.print("End more stable: ");
-       Serial.println(endMoreStable ? "yes" : "no");
-       Serial.println();
-   }
+   bool endMoreStable = isfinite(startStdDev) && isfinite(endStdDev) && (endStdDev < startStdDev);
+   Serial.print("End more stable: ");
+   Serial.println(endMoreStable ? "yes" : "no");
+   Serial.println();
+}
 
 /// <summary>
 /// Finalizes capture and prints summaries.
@@ -507,6 +477,7 @@ void setup()
    feather.begin();
    feather.clearDisplay();
    sensor.begin();
+   initializeDisplayTables();
 
    captureStartMs = millis();
    updateDisplayProgress(true);
@@ -520,7 +491,7 @@ void loop()
 
    if (sensorCapture.readyForValue())
    {
-      float sensorValue = sensor.readTemperatureF();
+      float sensorValue = sensor.get();
       valueStates = sensorCapture.addValue(sensorValue);
 
       if ((valueStates & SENSOR_CAPTURE_STATE_VALUE_STORED) != 0)
@@ -536,7 +507,7 @@ void loop()
 
    if (captureFinalized && feather.buttonA.wasPressed())
    {
-      ++displayMode;
+      displayMode++;
       updateDisplayProgress(true);
    }
 }

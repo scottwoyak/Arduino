@@ -49,3 +49,5 @@
 - Include documentation comments when cleaning up utility code.
 - Prefer x++ over ++x for increment operations.
 - In display updates, prefer using Format objects for values instead of ad-hoc string/print formatting.
+- When defining string constants, prefer const char* to const char VAR[] (array style). Use pointer style for string literals.
+- Use constexpr for all compile-time constants (scalar values, string literals, sizeof calculations). Reserve const only for runtime-initialized values or types that cannot be constexpr (like complex struct arrays). Maintain consistency throughout a file—avoid mixing constexpr and const for similar constant declarations.

@@ -114,6 +114,36 @@ public:
 	}
 
 	/// <summary>
+	/// Formats a floating-point value to a target number of significant digits.
+	/// </summary>
+	/// <param name="value">Value to format.</param>
+	/// <param name="significantDigits">Number of significant digits to preserve.</param>
+	/// <returns>Formatted numeric text, or "n/a" for non-finite input.</returns>
+	static String toSignificantString(float value, uint8_t significantDigits)
+	{
+		if (!isfinite(value))
+		{
+			return "n/a";
+		}
+
+		if (value == 0.0f)
+		{
+			return "0";
+		}
+
+		float absValue = fabsf(value);
+		int exponent = static_cast<int>(floorf(log10f(absValue)));
+		int decimals = static_cast<int>(significantDigits) - 1 - exponent;
+		if (decimals <= 0)
+		{
+			long truncated = static_cast<long>(value);
+			return String(truncated);
+		}
+
+		return String(value, static_cast<unsigned int>(decimals));
+	}
+
+	/// <summary>
 	/// Resets the device after an optional delay.
 	/// </summary>
 	/// <param name="delaySecs">Seconds to delay before reset (default 0.0)</param>
