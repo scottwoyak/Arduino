@@ -90,10 +90,6 @@ void loop()
 	  displayMode = (displayMode == DisplayMode::Scatter) ? DisplayMode::Histogram : DisplayMode::Scatter;
 	  feather.clearDisplay();
 	  drawHeader();
-	  if (displayMode == DisplayMode::Histogram)
-	  {
-		 histogramPlot.reset();
-	  }
    }
 
    if (sampleTimer.ready())

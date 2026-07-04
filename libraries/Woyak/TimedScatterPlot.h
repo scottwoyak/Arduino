@@ -304,9 +304,9 @@ public:
    }
 
     unsigned long lastDisplayMicros() const
-   {
-      return _lastDisplayMicros;
-   }
+    {
+       return _lastDisplayMicros;
+    }
 
    int16_t lastShiftPixels() const
    {
@@ -411,11 +411,16 @@ public:
          maxValue = _roundUpToAxisPrecision(maxValue);
 
          const unsigned long nowMs = millis();
+         const unsigned long msPerPixel = (_historyMs > 1UL)
+            ? std::max<unsigned long>(1UL, (_historyMs - 1UL) / static_cast<unsigned long>(std::max<int16_t>(1, chartWidth - 1)))
+            : 1UL;
+
          const bool sameChart = _hasDensityFrame && _densityChartWidth == chartWidth && _densityChartHeight == chartHeight;
          const float rangeEpsilon = _axisPrecisionEpsilon();
          const bool rangeChanged = _hasDensityFrame
             && (fabsf(minValue - _densityMinValue) > rangeEpsilon || fabsf(maxValue - _densityMaxValue) > rangeEpsilon);
-         const bool rebuildDensity = !_hasDensityFrame || !sameChart || rangeChanged;
+         const bool staleDensity = _hasDensityFrame && ((nowMs - _lastDensityUpdateMs) > msPerPixel);
+         const bool rebuildDensity = !_hasDensityFrame || !sameChart || rangeChanged || staleDensity;
 
          float plotMin = rebuildDensity ? minValue : _densityMinValue;
          float plotMax = rebuildDensity ? maxValue : _densityMaxValue;
@@ -437,6 +442,10 @@ public:
             _lastRebuiltDensity = true;
             _pendingShiftMs = 0;
             memset(_density, 0, _pixelCapacity);
+            for (size_t i = 0; i < _pixelCapacity; i++)
+            {
+               _previousPixels[i] = static_cast<uint16_t>(Color::BLACK);
+            }
 
             for (size_t i = 0; i < valueCount; i++)
             {
@@ -455,10 +464,6 @@ public:
          {
             const unsigned long elapsedMs = nowMs - _lastDensityUpdateMs;
             _pendingShiftMs += elapsedMs;
-
-            const unsigned long msPerPixel = (_historyMs > 1UL)
-               ? std::max<unsigned long>(1UL, (_historyMs - 1UL) / static_cast<unsigned long>(std::max<int16_t>(1, chartWidth - 1)))
-               : 1UL;
 
             int16_t shiftPixels = static_cast<int16_t>(_pendingShiftMs / msPerPixel);
             if (shiftPixels > 1)

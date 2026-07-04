@@ -6,10 +6,10 @@
 /// Interrupt-driven button press detector with debouncing.
 /// </summary>
 /// <remarks>
-/// Monitors button presses using hardware interrupts and debounces using a 50ms threshold.
-/// Press events are tracked in a counter that can be polled or auto-reset. Supports up to 
-/// 20 simultaneous button instances. Buttons should be wired to pull LOW on press
-/// (active-low), with internal pull-ups enabled.
+/// Monitors button presses using hardware interrupts and debounces with a minimum
+/// interval between accepted presses. Press events are tracked in a counter that can be
+/// polled or auto-reset. Supports up to 20 simultaneous button instances. Buttons should
+/// be wired to pull LOW on press (active-low), with internal pull-ups enabled.
 /// </remarks>
 class Button
 {
@@ -27,7 +27,8 @@ private:
    static Button* _buttons[MAX_BUTTONS];
 
    volatile uint16_t _pressedCount = 0;
-   volatile unsigned long _millis = 0;
+   volatile unsigned long _lastPressMillis = 0;
+   volatile bool _pressedState = false;
 
    /// <summary>
    /// Interrupt service routine for button state changes.
@@ -35,15 +36,18 @@ private:
    void _onChange()
    {
       unsigned long now = millis();
-      if (digitalRead(_pin) == LOW)
+      bool isPressedNow = (digitalRead(_pin) == LOW);
+      if (isPressedNow && !_pressedState)
       {
-         if (now - _millis > 50)
+         if (now - _lastPressMillis >= minPressIntervalMs)
          {
             // don't use ++ for volatile vars
             _pressedCount = _pressedCount + 1;
+            _lastPressMillis = now;
          }
       }
-      _millis = now;
+
+      _pressedState = isPressedNow;
    }
 
    static void _onChange0() { _buttons[0]->_onChange(); }
@@ -69,6 +73,11 @@ private:
 
 public:
    /// <summary>
+   /// Minimum time between accepted button press events.
+   /// </summary>
+   uint16_t minPressIntervalMs = 100;
+
+   /// <summary>
    /// Constructs a Button on the specified GPIO pin.
    /// </summary>
    /// <param name="pin">GPIO pin number for the button</param>
@@ -93,6 +102,7 @@ public:
       }
 
       pinMode(_pin, INPUT_PULLUP);
+      _pressedState = (digitalRead(_pin) == LOW);
 
       switch (_index)
       {

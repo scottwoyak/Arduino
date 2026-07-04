@@ -11,11 +11,14 @@ private:
    Feather& _feather;
    TimedHistogramBase<TimeFunc>& _histogram;
    TimedValuesBase<float, TimeFunc>& _samples;
+   static constexpr unsigned long STALE_RENDER_GAP_MS = 250;
+
    int16_t* _previousBarHeights = nullptr;
    uint _previousRenderedBins = 0;
    float _previousMin = NAN;
    float _previousMax = NAN;
    float _previousSampleRangeSeconds = NAN;
+   unsigned long _lastRenderMs = 0;
    Format _minMaxFormat = Format("##.#", Format::Alignment::RIGHT);
    Format _sampleRangeFormat = Format("##.#s", Format::Alignment::CENTER);
 
@@ -188,6 +191,16 @@ public:
 		 return;
 	  }
 
+	  const unsigned long nowMs = TimeFunc();
+	  const bool staleRender = (_lastRenderMs != 0) && ((nowMs - _lastRenderMs) > STALE_RENDER_GAP_MS);
+	  if (staleRender)
+	  {
+		 _previousRenderedBins = 0;
+		 _previousMin = NAN;
+		 _previousMax = NAN;
+		 _previousSampleRangeSeconds = NAN;
+	  }
+
 	  TimedHistogramSnapshot snapshot = _histogram.capture(_samples);
 	  if (!_histogram.computeNormalizedBins(snapshot))
 	  {
@@ -197,23 +210,9 @@ public:
 	  }
 
 	  _renderBars(snapshot);
+	  _lastRenderMs = nowMs;
    }
 
-   void reset()
-   {
-	  _histogram.reset();
-	  if (_previousBarHeights != nullptr)
-	  {
-		 for (uint i = 0; i < _histogram.getNumBinsX(); i++)
-		 {
-			_previousBarHeights[i] = -1;
-		 }
-	  }
-	  _previousRenderedBins = 0;
-	  _previousMin = NAN;
-	  _previousMax = NAN;
-	  _previousSampleRangeSeconds = NAN;
-   }
-};
+   };
 
 using TimedHistogramPlot = TimedHistogramPlotBase<millis>;
