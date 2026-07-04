@@ -17,6 +17,7 @@
 
 #include "Feather.h"
 #include "SerialX.h"
+#include "SerialTable.h"
 #include "TimedStats.h"
 #include "Timer.h"
 #include "TestSensor.h"
@@ -75,6 +76,15 @@ Format stdDevFormat("####.##");
 Format stdDevPercentFormat("##.##%", 7);
 Format countFormat("######");
 Format sampleTimeFormat("#### ms");
+
+constexpr SerialTable::Column SERIAL_COLUMNS[] = {
+   { "Num Samples", 14 },
+   { "Avg", 12 },
+   { "Range", 12 },
+   { "StdDev", 12 },
+   { "StdDev%", 10 },
+};
+SerialTable serialTable(nullptr, SERIAL_COLUMNS, sizeof(SERIAL_COLUMNS) / sizeof(SERIAL_COLUMNS[0]));
 
 TimedScatterPlot scatterPlot(feather, samples, SCATTER_HISTORY_PERIOD_S * 1000UL, 0.0f);
 TimedHistogram histogram(HISTOGRAM_BIN_COUNT, HISTOGRAM_HISTORY_PERIOD_S * 1000UL, SENSOR_VALUE_RESOLUTION_F);
@@ -135,25 +145,17 @@ void printSerialValues(TimedStats& timedStats)
    if (!serialHeaderPrinted || (serialRowsPrinted % 10 == 0))
    {
       Serial.println();
-      SerialX::print("Num Samples", 14);
-      SerialX::print("Avg", 12);
-      SerialX::print("Range", 12);
-      SerialX::print("StdDev", 12);
-      SerialX::println("StdDev%", 10);
-
-      SerialX::print("-----------", 14);
-      SerialX::print("-------", 12);
-      SerialX::print("---------", 12);
-      SerialX::print("------", 12);
-      SerialX::println("-------", 10);
+      serialTable.printHeader();
       serialHeaderPrinted = true;
    }
 
-   SerialX::print(count, 14);
-   SerialX::print(avg, 3, 12);
-   SerialX::print(rng, 3, 12);
-   SerialX::print(sd, 3, 12);
-   SerialX::println(isfinite(sdPercent) ? String(sdPercent, 2) + "%" : "n/a", 10);
+   serialTable.printRow(
+      count,
+      SerialTable::fixed(avg, 3),
+      SerialTable::fixed(rng, 3),
+      SerialTable::fixed(sd, 3),
+      isfinite(sdPercent) ? String(sdPercent, 2) + "%" : "n/a");
+
    serialRowsPrinted++;
 }
 
