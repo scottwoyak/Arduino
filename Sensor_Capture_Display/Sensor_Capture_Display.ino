@@ -82,21 +82,15 @@ enum class DisplayMode : uint8_t
    Count
 };
 
-DisplayMode& operator++(DisplayMode& mode)
-{
-   mode = static_cast<DisplayMode>((static_cast<uint8_t>(mode) + 1U) % static_cast<uint8_t>(DisplayMode::Count));
-   return mode;
-}
-
 Feather feather;
 TestSensor sensor;
-Format progressPercentFormat("###%", 6, Format::Alignment::LEFT);
-Format samplesFormat("#####", 5, Format::Alignment::LEFT);
-Format collectingSamplesFormat("#####/5000", 10, Format::Alignment::LEFT);
-Format timeFormat("###", 3, Format::Alignment::LEFT);
-Format collectingTimeFormat("###/120s", 8, Format::Alignment::LEFT);
-Format statsFormat("######.##", 9, Format::Alignment::LEFT);
-Format rateFormat("#####", 5, Format::Alignment::LEFT);
+Format progressPercentFormat("###%", Format::Alignment::LEFT);
+Format samplesFormat("#####", Format::Alignment::LEFT);
+Format collectingSamplesFormat("#####/5000", Format::Alignment::LEFT);
+Format timeFormat("###", Format::Alignment::LEFT);
+Format collectingTimeFormat("###/120s", Format::Alignment::LEFT);
+Format statsFormat("######.##", Format::Alignment::LEFT);
+Format rateFormat("#####", Format::Alignment::LEFT);
 
 SensorCapture sensorCapture(
    MAX_SAMPLES,
@@ -109,6 +103,12 @@ unsigned long lastDisplayRefreshMs = 0;
 DisplayMode displayMode = DisplayMode::Summary;
 size_t postWarmupStartIndex = 0;
 bool postWarmupReady = false;
+
+bool serialDumpStarted = false;
+bool serialDumpComplete = false;
+size_t serialDumpIndex = 0;
+size_t serialDumpCount = 0;
+unsigned long lastSerialDumpMs = 0;
 
 // Display tables
 DisplayTable summaryTable(&feather, 0, 0);
@@ -123,7 +123,7 @@ void initializeDisplayTables()
    int16_t summaryTableY = feather.charH();
 
    feather.setTextSize(2);
-   int16_t collectingTableY = summaryTableY + feather.charH();
+   int16_t collectingTableY = summaryTableY;
 
    summaryTable = DisplayTable(&feather, 0, summaryTableY);
    summaryTable.addRow("Samples", samplesFormat, Color::LABEL, Color::VALUE);
@@ -451,6 +451,53 @@ void printWarmupAnalysis()
    Serial.println();
 }
 
+void startSerialDump()
+{
+   serialDumpStarted = true;
+   serialDumpComplete = false;
+   serialDumpIndex = 0;
+   serialDumpCount = sensorCapture.count();
+   lastSerialDumpMs = 0;
+
+   if (serialDumpCount == 0)
+   {
+      Serial.println("No values captured");
+      serialDumpComplete = true;
+      return;
+   }
+
+   Serial.println("Dump start");
+   SerialX::print("Index", 8);
+   SerialX::println("Value", 12);
+   SerialX::print("-----", 8);
+   SerialX::println("-----------", 12);
+}
+
+void updateSerialDump()
+{
+   if (!serialDumpStarted || serialDumpComplete)
+   {
+      return;
+   }
+
+   unsigned long nowMs = millis();
+   if ((PRINT_INTERVAL_MS > 0) && (lastSerialDumpMs != 0) && ((nowMs - lastSerialDumpMs) < PRINT_INTERVAL_MS))
+   {
+      return;
+   }
+
+   SerialX::print(serialDumpIndex, 8);
+   SerialX::println(sensorCapture[serialDumpIndex], 3, 12);
+   serialDumpIndex++;
+   lastSerialDumpMs = nowMs;
+
+   if (serialDumpIndex >= serialDumpCount)
+   {
+      Serial.println("Dump complete");
+      serialDumpComplete = true;
+   }
+}
+
 /// <summary>
 /// Finalizes capture and prints summaries.
 /// </summary>
@@ -467,7 +514,7 @@ void finishCapture()
    printSamplingRateAnalysis();
    printWarmupAnalysis();
    updateDisplayProgress(true);
-   sensorCapture.dumpToSerial(PRINT_INTERVAL_MS);
+   startSerialDump();
 }
 
 void setup()
@@ -505,9 +552,11 @@ void loop()
       finishCapture();
    }
 
+   updateSerialDump();
+
    if (captureFinalized && feather.buttonA.wasPressed())
    {
-      displayMode++;
+      displayMode = static_cast<DisplayMode>((static_cast<uint8_t>(displayMode) + 1U) % static_cast<uint8_t>(DisplayMode::Count));
       updateDisplayProgress(true);
    }
 }

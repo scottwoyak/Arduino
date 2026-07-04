@@ -279,7 +279,6 @@ void updateDisplay()
    feather.setCursor(0, 0);
    feather.setTextSize(3);
    feather.println("Sensor Averaging", Color::HEADING);
-   feather.moveCursorY(10);
 
    feather.setTextSize(2);
    if (!sensorCapture.isCaptureComplete())

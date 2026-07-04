@@ -17,7 +17,7 @@
 - Use brace-on-new-line formatting style: place opening '{' on a new line.
 - Avoid calling clearDisplay every loop iteration in sketches because it causes visible screen flicker; only clear when needed (e.g., mode changes).
 - Never use display text size 1 in sketches; use size 2 or larger for better readability. Only use text-size constants if that size is used in many places; otherwise, inline the size value.
-- For numeric values, pass numeric types directly to print/println overloads (no manual String conversion); use a single Format rule that allows format patterns (e.g., ###/s) or numeric width for alignment while keeping numeric inputs numeric.
+- For numeric values, pass numeric types directly to print/println overloads (no manual String conversion); use a single Format rule that allows format patterns (e.g., ###/s) or numeric width for alignment while keeping numeric inputs numeric. Only specify explicit Format length when it is actually needed; otherwise, rely on the format string to determine width.
 - Use "micros" instead of "us" in names and identifiers.
 - Always use the Timer class when waiting for something.
 - Prefer explicit, clearly listed overload variants over complex template metaprogramming (e.g., avoid typename std::enable_if unless templates are simple and clearly useful).
