@@ -1,45 +1,74 @@
 //
-// Continuously samples a temperature sensor and displays short-window noise metrics.
+// Combined sensor visualization sketch with three display modes: Scatter, Histogram, and Noise.
+// Press button A to cycle display modes.
 //
 // Detailed behavior:
-// - Sampling runs continuously (each loop iteration) and finite temperature readings are pushed
-//   into TimedStats.
-// - TimedStats maintains a sliding window of SAMPLE_TIME_MS and computes Avg, Range, StdDev,
-//   and StdDev% from values currently retained in that window.
-// - Display refreshes at DISPLAY_INTERVAL_MS and renders a compact single-column summary:
-//   Sample Time, Samples (count), Avg, Range, and StdDev with percent.
-// - Serial metrics are throttled to SERIAL_PRINT_INTERVAL_MS so monitoring remains readable.
-//
-// Startup diagnostics:
-// - Initializes Wire/Feather/TempSensor.
-// - If the sensor fails to initialize or first read is invalid, an I2C scan is printed to Serial.
-//
-// Typical usage:
-// - Run the sketch with the target temperature sensor connected.
-// - Let readings settle, then watch StdDev/StdDev% to evaluate sensor noise stability.
+// - Sampling runs continuously and finite readings are stored in both TimedValues (for scatter/histogram)
+//   and TimedStats (for rolling noise metrics).
+// - Scatter mode shows a rolling timed plot.
+// - Histogram mode shows rolling value distribution.
+// - Noise mode shows Sample Time, Samples, Avg, Range, StdDev, and StdDev%.
+// - Serial output uses the Sensor_Noise metrics table at SERIAL_PRINT_INTERVAL_MS.
 //
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <math.h>
+
 #include "Feather.h"
 #include "SerialX.h"
 #include "TimedStats.h"
 #include "Timer.h"
 #include "TestSensor.h"
 #include "I2C.h"
+#include "RollingRate.h"
+#include "TimedScatterPlot.h"
+#include "TimedHistogram.h"
+#include "TimedHistogramPlot.h"
+#include "TimedValues.h"
 
-constexpr uint16_t SAMPLE_TIME_MS = 1000;
-constexpr uint16_t DISPLAY_INTERVAL_MS = 200;
+// ----------- Rates
+constexpr uint16_t SENSOR_SAMPLE_RATE_PER_SEC = 0;
+constexpr uint16_t DISPLAY_RATE_PER_SEC = 10;
+
+// ----------- Intervals
 constexpr uint16_t SERIAL_PRINT_INTERVAL_MS = 5000;
+
+// ----------- History Windows
+constexpr unsigned long SCATTER_HISTORY_PERIOD_S = 60;
+constexpr unsigned long HISTOGRAM_HISTORY_PERIOD_S = 6;
+constexpr unsigned long NOISE_HISTORY_S = 1;
+
+// ----------- Histogram Settings
+constexpr uint16_t HISTOGRAM_BIN_COUNT = 40;
+constexpr float SENSOR_VALUE_RESOLUTION_F = 0.0049f;
 
 Feather feather;
 TestSensor sensor;
-Timer displayTimer(DISPLAY_INTERVAL_MS);
+Timer sampleTimer(
+   (SENSOR_SAMPLE_RATE_PER_SEC == 0) ? 0 :
+   ((1000U / SENSOR_SAMPLE_RATE_PER_SEC) == 0 ? 1 : (1000U / SENSOR_SAMPLE_RATE_PER_SEC)));
+Timer displayTimer(
+   (DISPLAY_RATE_PER_SEC == 0) ? 0 :
+   ((1000U / DISPLAY_RATE_PER_SEC) == 0 ? 1 : (1000U / DISPLAY_RATE_PER_SEC)));
 Timer serialPrintTimer(SERIAL_PRINT_INTERVAL_MS);
-TimedStats stats(SAMPLE_TIME_MS);
+RollingRate sampleRate;
+TimedValues samples(SCATTER_HISTORY_PERIOD_S * 1000UL, 256);
+TimedStats stats(NOISE_HISTORY_S * 1000UL);
+
 bool serialHeaderPrinted = false;
 uint16_t serialRowsPrinted = 0;
 
+enum class DisplayMode : uint8_t
+{
+   Scatter,
+   Histogram,
+   Noise,
+};
+
+DisplayMode displayMode = DisplayMode::Scatter;
+
+Format sampleRateFormat("###/s", Format::Alignment::RIGHT);
 Format valueFormat("####.##");
 Format rangeFormat("###.##");
 Format stdDevFormat("####.##");
@@ -47,13 +76,46 @@ Format stdDevPercentFormat("##.##%", 7);
 Format countFormat("######");
 Format sampleTimeFormat("#### ms");
 
+TimedScatterPlot scatterPlot(feather, samples, SCATTER_HISTORY_PERIOD_S * 1000UL, 0.0f);
+TimedHistogram histogram(HISTOGRAM_BIN_COUNT, HISTOGRAM_HISTORY_PERIOD_S * 1000UL, SENSOR_VALUE_RESOLUTION_F);
+TimedHistogramPlot histogramPlot(feather, histogram, samples);
+
+void addSample(float value)
+{
+   sampleRate.tick();
+   samples.set(value);
+   stats.set(value);
+}
+
+void drawHeader()
+{
+   feather.setTextSize(2);
+   feather.setCursor(0, 0);
+
+   switch (displayMode)
+   {
+   case DisplayMode::Scatter:
+      feather.println("Sensor Scatter", Color::HEADING);
+      break;
+
+   case DisplayMode::Histogram:
+      feather.println("Histogram", Color::HEADING);
+      break;
+
+   case DisplayMode::Noise:
+   default:
+      feather.println("Sensor Noise", Color::HEADING);
+      break;
+   }
+}
+
 void printSerialSummary()
 {
    Serial.println();
    Serial.println("Serial Metrics Summary");
    SerialX::println("- Sampling source: active sensor", 0);
    SerialX::println("- Data points are collected continuously", 0);
-   SerialX::println(String("- Stats are averaged over: ") + SAMPLE_TIME_MS + " ms (sliding period)", 0);
+   SerialX::println(String("- Stats are averaged over: ") + (NOISE_HISTORY_S * 1000UL) + " ms (sliding period)", 0);
    Serial.println("- Num Samples: finite samples currently retained in the active stats period");
    Serial.println("- Avg: mean of samples in the active stats period");
    Serial.println("- Range: max-min of samples in the active stats period");
@@ -95,44 +157,8 @@ void printSerialValues(TimedStats& timedStats)
    serialRowsPrinted++;
 }
 
-void setup()
+void renderNoiseView()
 {
-   SerialX::begin();
-   Wire.begin();
-   feather.begin();
-
-   bool sensorReady = sensor.begin();
-   printSerialSummary();
-
-   if (!sensorReady)
-   {
-      Serial.println("Temperature sensor initialization failed.");
-      Serial.println("I2C scan:");
-      I2C::scan();
-   }
-
-   float firstValue = sensor.get();
-   if (!isfinite(firstValue))
-   {
-      Serial.println("Temperature sensor did not return a valid value.");
-      Serial.println("I2C scan:");
-      I2C::scan();
-   }
-}
-
-void loop()
-{
-   float sensorValue = sensor.get();
-   if (isfinite(sensorValue))
-   {
-      stats.set(sensorValue);
-   }
-
-   if (!displayTimer.ready())
-   {
-      return;
-   }
-
    float avg = stats.average();
    float minValue = stats.min();
    float maxValue = stats.max();
@@ -141,22 +167,12 @@ void loop()
    float sd = stats.stdDev();
    float sdPercent = (isfinite(avg) && (fabsf(avg) > 0.0f) && isfinite(sd)) ? ((sd / fabsf(avg)) * 100.0f) : NAN;
 
-   if (serialPrintTimer.ready())
-   {
-      printSerialValues(stats);
-   }
-
-   feather.setCursor(0, 0);
-   feather.setTextSize(3);
-   feather.println("Sensor Noise", Color::HEADING);
-   feather.moveCursorY(5);
-
    feather.setTextSize(2);
-   int16_t sectionTop = feather.getCursorY();
+   int16_t sectionTop = feather.charH() + 5;
    int16_t rowHeight = feather.charH();
 
    feather.setCursor(0, sectionTop);
-   feather.println("Sampling Time: ", SAMPLE_TIME_MS, sampleTimeFormat, Color::VALUE);
+   feather.println("Sampling Time: ", NOISE_HISTORY_S * 1000UL, sampleTimeFormat, Color::VALUE);
 
    feather.setCursor(0, sectionTop + rowHeight);
    feather.println("      Samples: ", count, countFormat, Color::VALUE2);
@@ -193,6 +209,99 @@ void loop()
    else
    {
       feather.println(stdDevValue + ", n/a", Color::VALUE2);
+   }
+}
+
+void setup()
+{
+   SerialX::begin();
+   Wire.begin();
+   feather.begin();
+
+   feather.clearDisplay();
+   drawHeader();
+
+   bool sensorReady = sensor.begin();
+   printSerialSummary();
+
+   if (!sensorReady)
+   {
+      Serial.println("Temperature sensor initialization failed.");
+      Serial.println("I2C scan:");
+      I2C::scan();
+   }
+
+   float firstValue = sensor.get();
+   if (!isfinite(firstValue))
+   {
+      Serial.println("Temperature sensor did not return a valid value.");
+      Serial.println("I2C scan:");
+      I2C::scan();
+   }
+}
+
+void loop()
+{
+   if (feather.buttonA.wasPressed())
+   {
+      switch (displayMode)
+      {
+      case DisplayMode::Scatter:
+         displayMode = DisplayMode::Histogram;
+         break;
+
+      case DisplayMode::Histogram:
+         displayMode = DisplayMode::Noise;
+         break;
+
+      case DisplayMode::Noise:
+      default:
+         displayMode = DisplayMode::Scatter;
+         break;
+      }
+
+      feather.clearDisplay();
+      drawHeader();
+   }
+
+   if (sampleTimer.ready())
+   {
+      const float value = sensor.get();
+      if (isfinite(value))
+      {
+         addSample(value);
+      }
+   }
+
+   if (serialPrintTimer.ready())
+   {
+      printSerialValues(stats);
+   }
+
+   const bool shouldRender = (displayMode == DisplayMode::Scatter) || displayTimer.ready();
+   if (!shouldRender)
+   {
+      return;
+   }
+
+   feather.setTextSize(2);
+   feather.setCursor(0, 0);
+   feather.printR("", sampleRate.get(), sampleRateFormat, Color::GRAY);
+
+   switch (displayMode)
+   {
+   case DisplayMode::Scatter:
+      scatterPlot.render();
+      break;
+
+   case DisplayMode::Histogram:
+      histogramPlot.render();
+      break;
+
+   case DisplayMode::Noise:
+   default:
+      renderNoiseView();
+      break;
    }
 }
 

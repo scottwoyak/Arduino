@@ -356,10 +356,6 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Sensor_Scatter_Display/Sensor_Scatter_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
   <Project Path="Serial/Serial.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
