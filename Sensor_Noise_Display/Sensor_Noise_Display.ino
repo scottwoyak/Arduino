@@ -25,7 +25,7 @@
 #include "SerialX.h"
 #include "TimedStats.h"
 #include "Timer.h"
-#include "TempSensor.h"
+#include "TestSensor.h"
 #include "I2C.h"
 
 constexpr uint16_t SAMPLE_TIME_MS = 1000;
@@ -33,7 +33,7 @@ constexpr uint16_t DISPLAY_INTERVAL_MS = 200;
 constexpr uint16_t SERIAL_PRINT_INTERVAL_MS = 5000;
 
 Feather feather;
-TempSensor sensor;
+TestSensor sensor;
 Timer displayTimer(DISPLAY_INTERVAL_MS);
 Timer serialPrintTimer(SERIAL_PRINT_INTERVAL_MS);
 TimedStats stats(SAMPLE_TIME_MS);
@@ -111,7 +111,7 @@ void setup()
       I2C::scan();
    }
 
-   float firstValue = sensor.readTemperatureF();
+   float firstValue = sensor.get();
    if (!isfinite(firstValue))
    {
       Serial.println("Temperature sensor did not return a valid value.");
@@ -122,7 +122,7 @@ void setup()
 
 void loop()
 {
-   float sensorValue = sensor.readTemperatureF();
+   float sensorValue = sensor.get();
    if (isfinite(sensorValue))
    {
       stats.set(sensorValue);

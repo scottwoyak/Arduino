@@ -35,7 +35,7 @@
 #include "SensorCaptureOutput.h"
 #include "SerialX.h"
 #include <Wire.h>
-#include "TempSensor.h"
+#include "TestSensor.h"
 
 constexpr float WARM_UP_S = 2.0f;
 constexpr unsigned long SAMPLING_DURATION_S = 10;
@@ -51,36 +51,6 @@ constexpr size_t BUFFER_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
 constexpr size_t NUM_BUFFER_SIZES = sizeof(BUFFER_SIZES) / sizeof(BUFFER_SIZES[0]);
 
 Feather feather;
-
-/// <summary>
-/// Sensor adapter used by this sketch so sensor-specific code is isolated in one place.
-/// </summary>
-class TestSensor
-{
-private:
-   TempSensor _sensor;
-
-public:
-   /// <summary>
-   /// Initializes the underlying temperature sensor.
-   /// </summary>
-   /// <returns>True when sensor initialization succeeds; otherwise false.</returns>
-   bool begin()
-   {
-      return _sensor.begin();
-   }
-
-   /// <summary>
-   /// Reads the current sensor value used by the capture pipeline.
-   /// </summary>
-   /// <returns>Temperature in Fahrenheit, or NaN when unavailable.</returns>
-   float readValue()
-   {
-      return _sensor.readTemperatureF();
-   }
-
-   };
-
 TestSensor sensor;
 
 SensorCapture sensorCapture(
@@ -334,7 +304,7 @@ void loop()
 
    if (sensorCapture.readyForValue())
    {
-      float sensorValue = sensor.readValue();
+      float sensorValue = sensor.get();
       SensorCaptureState valueStates = sensorCapture.addValue(sensorValue);
       if ((valueStates & SENSOR_CAPTURE_STATE_COMPLETED) != 0)
       {

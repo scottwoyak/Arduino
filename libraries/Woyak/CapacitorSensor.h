@@ -1,6 +1,11 @@
 #pragma once
 
 #include <Arduino.h>
+
+#if !defined(ARDUINO_ARCH_ESP32)
+#error "CapacitorSensor is only supported on ESP32 targets."
+#endif
+
 #include <esp_timer.h>
 #include <driver/gpio.h>
 #include "soc/soc.h"

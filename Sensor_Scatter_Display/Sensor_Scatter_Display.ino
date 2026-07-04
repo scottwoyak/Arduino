@@ -16,7 +16,7 @@
 
 #include "Feather.h"
 #include "SerialX.h"
-#include "TempSensor.h"
+#include "TestSensor.h"
 #include "Timer.h"
 #include "RollingRate.h"
 #include "TimedScatterPlot.h"
@@ -33,7 +33,7 @@ constexpr uint16_t BIN_COUNT = 40;
 constexpr float SHT45_TEMP_RESOLUTION_F = 0.0049f;
 
 Feather feather;
-TempSensor sensor;
+TestSensor sensor;
 Timer sampleTimer(SAMPLE_INTERVAL_MS);
 Timer displayTimer(DISPLAY_INTERVAL_MS);
 Timer serialTimer(SERIAL_INTERVAL_MS);
@@ -98,7 +98,7 @@ void loop()
 
    if (sampleTimer.ready())
    {
-	  const float value = sensor.readTemperatureF();
+	  const float value = sensor.get();
 	  if (isfinite(value))
 	  {
 		 addSample(value);
