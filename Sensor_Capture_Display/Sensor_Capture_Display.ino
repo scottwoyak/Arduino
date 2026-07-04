@@ -87,10 +87,11 @@ TestSensor sensor;
 Format progressPercentFormat("###%", Format::Alignment::LEFT);
 Format samplesFormat("#####", Format::Alignment::LEFT);
 Format collectingSamplesFormat("#####/5000", Format::Alignment::LEFT);
-Format timeFormat("###", Format::Alignment::LEFT);
+Format timeFormat("###s", Format::Alignment::LEFT);
 Format collectingTimeFormat("###/120s", Format::Alignment::LEFT);
 Format statsFormat("######.##", Format::Alignment::LEFT);
-Format rateFormat("#####", Format::Alignment::LEFT);
+Format stdDevPercentFormat("###.##%", Format::Alignment::LEFT);
+Format rateFormat("#####/s", Format::Alignment::LEFT);
 
 SensorCapture sensorCapture(
    MAX_SAMPLES,
@@ -130,7 +131,8 @@ void initializeDisplayTables()
    summaryTable.addRow("Time", timeFormat, Color::LABEL, Color::VALUE);
    summaryTable.addRow("Rate", rateFormat, Color::LABEL, Color::VALUE);
    summaryTable.addRow("Avg", statsFormat, Color::LABEL, Color::VALUE2);
-   summaryTable.addRow("Std", statsFormat, Color::LABEL, Color::VALUE3);
+   summaryTable.addRow("StdDev", statsFormat, Color::LABEL, Color::VALUE3);
+   summaryTable.addRow("StdDev%", stdDevPercentFormat, Color::LABEL, Color::VALUE3);
 
    collectingTable = DisplayTable(&feather, 0, collectingTableY);
    collectingTable.addRow("Samples", collectingSamplesFormat, Color::LABEL, Color::VALUE);
@@ -155,13 +157,21 @@ void renderDisplaySummary()
 
    SensorCaptureStats analysis(sensorCapture);
    Stats basicStats = analysis.computeBasicStats();
+   float stdDevPercent = NAN;
+   float avg = basicStats.get();
+   float stdDev = basicStats.stdDev();
+   if (isfinite(avg) && (fabsf(avg) > 0.0f) && isfinite(stdDev))
+   {
+      stdDevPercent = (stdDev / fabsf(avg)) * 100.0f;
+   }
 
    feather.setTextSize(2);
    summaryTable.setValue(0, static_cast<unsigned long>(sampleCount));
    summaryTable.setValue(1, captureTimeSec);
    summaryTable.setValue(2, samplesPerSecond);
-   summaryTable.setValue(3, basicStats.get());
-   summaryTable.setValue(4, basicStats.stdDev());
+   summaryTable.setValue(3, avg);
+   summaryTable.setValue(4, stdDev);
+   summaryTable.setValue(5, isfinite(stdDevPercent) ? String(stdDevPercent, 2) + "%" : "n/a");
 
    summaryTable.draw();
 }
@@ -341,17 +351,28 @@ void printCaptureSummary()
    float valueMin = basicStats.min();
    float valueMax = basicStats.max();
    float valueRange = analysis.computeRange(valueMin, valueMax);
+   float valueStdDevPercent = NAN;
+   if (isfinite(valueAvg) && (fabsf(valueAvg) > 0.0f) && isfinite(valueStdDev))
+   {
+      valueStdDevPercent = (valueStdDev / fabsf(valueAvg)) * 100.0f;
+   }
+   unsigned long captureTimeMs = millis() - captureStartMs;
+   float samplesPerSecond = (captureTimeMs > 0) ? (sensorCapture.count() * 1000.0f / captureTimeMs) : 0.0f;
 
    Serial.println();
    Serial.println("Capture Summary");
-   SerialX::print("Capture ms", 20);
-   SerialX::println(MAX_CAPTURE_TIME_S * 1000UL, 20);
+   SerialX::print("Capture Time", 20);
+   SerialX::println(String(captureTimeMs) + " ms", 20);
    SerialX::print("Samples", 20);
    SerialX::println(sensorCapture.count(), 20);
+   SerialX::print("Rate", 20);
+   SerialX::println(String(samplesPerSecond, 1) + "/s", 20);
    SerialX::print("Sensor Avg", 20);
    SerialX::println(valueAvg, 3, 20);
    SerialX::print("Sensor StdDev", 20);
    SerialX::println(valueStdDev, 3, 20);
+   SerialX::print("Sensor StdDev%", 20);
+   SerialX::println(isfinite(valueStdDevPercent) ? String(valueStdDevPercent, 2) + "%" : "n/a", 20);
    SerialX::print("Sensor Min", 20);
    SerialX::println(valueMin, 3, 20);
    SerialX::print("Sensor Max", 20);
