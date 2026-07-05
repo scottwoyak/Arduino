@@ -25,5 +25,6 @@ using Arduino = Feather_ESP32_S3;
 using Arduino = Waveshare_ESP32_S3_Zero;
 
 #define ARDUINO_LED_SUPPORTED
+#define ARDUINO_PREFERENCES_SUPPORTED
 
 #endif

@@ -2,6 +2,7 @@
 
 #include "ArduinoBase.h"
 #include "LED.h"
+#include <Preferences.h>
 
 ///
 /// <summary>
@@ -18,6 +19,13 @@ public:
    /// </summary>
    ///
    NeoPixelLED neoPixel;
+
+   ///
+   /// <summary>
+   /// Non-volatile key/value storage backed by the ESP32 NVS partition.
+   /// </summary>
+   ///
+   Preferences preferences;
 
    ///
    /// <summary>
