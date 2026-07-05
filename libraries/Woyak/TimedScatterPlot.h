@@ -536,10 +536,6 @@ public:
             _lastRebuiltDensity = true;
             _pendingShiftMs = 0;
             memset(_density, 0, _pixelCapacity);
-            for (size_t i = 0; i < _pixelCapacity; i++)
-            {
-               _previousPixels[i] = static_cast<uint16_t>(Color::BLACK);
-            }
 
             for (size_t i = 0; i < valueCount; i++)
             {
