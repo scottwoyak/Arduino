@@ -5,6 +5,12 @@
 #include "Color.h"
 #include <vector>
 
+///
+/// <summary>
+/// A utility class to display a formatted key-value table on an Arduino display.
+/// Allows adding rows with specific formats and updating values dynamimcally.
+/// </summary>
+///
 class DisplayTable
 {
 private:
@@ -29,13 +35,29 @@ private:
    int16_t _labelWidth;
 
 public:
+   ///
+   /// <summary>
+   /// Initializes a new instance of the DisplayTable class.
+   /// </summary>
+   /// <param name="display">The display interface to draw onto.</param>
+   /// <param name="x">The X coordinate for the top-left corner of the table.</param>
+   /// <param name="y">The Y coordinate for the top-left corner of the table.</param>
+   ///
    DisplayTable(ArduinoWithDisplay* display, int16_t x, int16_t y)
       : _display(display), _x(x), _y(y), _labelWidth(0)
    {
    }
 
-   void addRow(const char* label, const Format& format,
-               Color labelColor = Color::LABEL, Color valueColor = Color::VALUE)
+   ///
+   /// <summary>
+   /// Adds a new row to the table.
+   /// </summary>
+   /// <param name="label">The text label for the row.</param>
+   /// <param name="format">The formatter to apply to the row's value.</param>
+   /// <param name="labelColor">The color to draw the label text (default: Color::LABEL).</param>
+   /// <param name="valueColor">The color to draw the value text (default: Color::VALUE).</param>
+   ///
+   void addRow(const char* label, const Format& format, Color labelColor = Color::LABEL, Color valueColor = Color::VALUE)
    {
       _rows.emplace_back(label, &format, labelColor, valueColor);
       int16_t labelLen = strlen(label) + 2;
@@ -45,8 +67,15 @@ public:
       }
    }
 
-   template <typename TValue>
-   void setValue(size_t rowIndex, const TValue& value, Color valueColor = Color::VALUE)
+   ///
+   /// <summary>
+   /// Updates the value of an existing row in the table.
+   /// </summary>
+   /// <param name="rowIndex">The zero-based index of the row to update.</param>
+   /// <param name="value">The new double value to display.</param>
+   /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
+   ///
+   void updateValue(size_t rowIndex, double value, Color valueColor = Color::VALUE)
    {
       if (rowIndex < _rows.size())
       {
@@ -55,6 +84,130 @@ public:
       }
    }
 
+   ///
+   /// <summary>
+   /// Updates the value of an existing row in the table.
+   /// </summary>
+   /// <param name="rowIndex">The zero-based index of the row to update.</param>
+   /// <param name="value">The new float value to display.</param>
+   /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
+   ///
+   void updateValue(size_t rowIndex, float value, Color valueColor = Color::VALUE)
+   {
+      if (rowIndex < _rows.size())
+      {
+         _rows[rowIndex].value = _rows[rowIndex].format->toString(value).c_str();
+         _rows[rowIndex].valueColor = valueColor;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Updates the value of an existing row in the table.
+   /// </summary>
+   /// <param name="rowIndex">The zero-based index of the row to update.</param>
+   /// <param name="value">The new int value to display.</param>
+   /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
+   ///
+   void updateValue(size_t rowIndex, int value, Color valueColor = Color::VALUE)
+   {
+      if (rowIndex < _rows.size())
+      {
+         _rows[rowIndex].value = _rows[rowIndex].format->toString(value).c_str();
+         _rows[rowIndex].valueColor = valueColor;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Updates the value of an existing row in the table.
+   /// </summary>
+   /// <param name="rowIndex">The zero-based index of the row to update.</param>
+   /// <param name="value">The new unsigned long value to display.</param>
+   /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
+   ///
+   void updateValue(size_t rowIndex, unsigned long value, Color valueColor = Color::VALUE)
+   {
+      if (rowIndex < _rows.size())
+      {
+         _rows[rowIndex].value = _rows[rowIndex].format->toString(value).c_str();
+         _rows[rowIndex].valueColor = valueColor;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Updates the value of an existing row in the table.
+   /// </summary>
+   /// <param name="rowIndex">The zero-based index of the row to update.</param>
+   /// <param name="value">The new size_t value to display.</param>
+   /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
+   ///
+   void updateValue(size_t rowIndex, size_t value, Color valueColor = Color::VALUE)
+   {
+      if (rowIndex < _rows.size())
+      {
+         _rows[rowIndex].value = _rows[rowIndex].format->toString(value).c_str();
+         _rows[rowIndex].valueColor = valueColor;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Updates the value of an existing row in the table.
+   /// </summary>
+   /// <param name="rowIndex">The zero-based index of the row to update.</param>
+   /// <param name="value">The new String value to display.</param>
+   /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
+   ///
+   void updateValue(size_t rowIndex, const String& value, Color valueColor = Color::VALUE)
+   {
+      if (rowIndex < _rows.size())
+      {
+         _rows[rowIndex].value = _rows[rowIndex].format->toString(value).c_str();
+         _rows[rowIndex].valueColor = valueColor;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Updates the value of an existing row in the table.
+   /// </summary>
+   /// <param name="rowIndex">The zero-based index of the row to update.</param>
+   /// <param name="value">The new std::string value to display.</param>
+   /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
+   ///
+   void updateValue(size_t rowIndex, const std::string& value, Color valueColor = Color::VALUE)
+   {
+      if (rowIndex < _rows.size())
+      {
+         _rows[rowIndex].value = _rows[rowIndex].format->toString(value).c_str();
+         _rows[rowIndex].valueColor = valueColor;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Updates the value of an existing row in the table.
+   /// </summary>
+   /// <param name="rowIndex">The zero-based index of the row to update.</param>
+   /// <param name="value">The new character array value to display.</param>
+   /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
+   ///
+   void updateValue(size_t rowIndex, const char* value, Color valueColor = Color::VALUE)
+   {
+      if (rowIndex < _rows.size())
+      {
+         _rows[rowIndex].value = _rows[rowIndex].format->toString(value).c_str();
+         _rows[rowIndex].valueColor = valueColor;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Draws the table onto the configured display, applying labels and formatted values.
+   /// </summary>
+   ///
    void draw()
    {
       if (_display == nullptr)

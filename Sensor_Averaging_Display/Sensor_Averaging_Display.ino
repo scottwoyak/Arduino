@@ -1,25 +1,26 @@
 //
+// Sensor Averaging Display Capture Sketch.
+//
 // Captures finite sensor values for a fixed run window (or until the sample cap is reached), stores
-// them in RAM, and reports serial/display summaries plus an optional serial dump.
+// them in RAM, and reports serial/display summaries.
 //
 // Detailed behavior:
 // - The sketch is designed for repeatable calibration runs where sampling duration, interval, and
 //   maximum sample count are controlled by constants near the top of the file.
-// - A warm-up phase runs first so startup transients do not skew the captured dataset.
 // - Sampling is driven by SensorCapture timing (default 1 ms cadence), and only finite values are
 //   retained in RAM.
 // - Capture ends automatically when either SAMPLING_DURATION_S elapses or MAX_SAMPLES is reached.
 //
 // Capture flow:
-// 1) Initialize display, serial, and sensor, then allow a brief warm-up period.
+// 1) Initialize display, serial, and sensor.
 // 2) Use a 1 ms timer to collect at most one sample per interval and store finite values in RAM.
 // 3) Stop when MAX_SAMPLES are stored or SAMPLING_DURATION_S expires.
 //
 // Output flow:
 // - Serial summary includes run metrics, value stats, and a value histogram.
-// - Feather display renders a value histogram with min/max labels plus Sigma%/effective-rate rows
-//   for multiple averaging window sizes.
-// - Button A triggers a paced serial dump of stored points (index, value).
+// - While collecting, Feather display shows live capture progress.
+// - After capture, Feather display renders a value histogram with min/max labels plus
+//   Sigma%/effective-rate rows for multiple averaging window sizes.
 //
 // Sensor mode:
 // - Reads from TempSensor in Fahrenheit.
@@ -27,7 +28,8 @@
 // Typical usage:
 // - Flash the sketch and allow warm-up/capture to complete.
 // - Review serial + display outputs to compare stability (StdDev%, range) across averaging sizes.
-//
+// 
+
 #include "Feather.h"
 #include "Histogram.h"
 #include "SensorCapture.h"
@@ -35,10 +37,10 @@
 #include "SerialX.h"
 #include "SerialHistogram.h"
 #include "HistogramPlot.h"
+#include "DisplayTable.h"
 #include <Wire.h>
 #include "TestSensor.h"
 
-constexpr float WARM_UP_S = 2.0f;
 constexpr unsigned long SAMPLING_DURATION_S = 10;
 constexpr unsigned long MAX_SAMPLE_RATE = 1000;
 constexpr unsigned long SAMPLE_INTERVAL_MS =
@@ -47,12 +49,16 @@ constexpr unsigned long SAMPLE_INTERVAL_MS =
 constexpr size_t MAX_SAMPLES = 1000;
 constexpr size_t HISTOGRAM_BINS = 20;
 constexpr uint8_t CHART_MIN_MAX_SIGNIFICANT_DIGITS = 3;
+constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 5;
 
 constexpr size_t BUFFER_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
 constexpr size_t NUM_BUFFER_SIZES = sizeof(BUFFER_SIZES) / sizeof(BUFFER_SIZES[0]);
 
 Feather feather;
 TestSensor sensor;
+Format progressPercentFormat("###%", Format::Alignment::LEFT);
+Format collectingSamplesFormat("####/1000", Format::Alignment::LEFT);
+Format collectingTimeFormat("##/10s", Format::Alignment::LEFT);
 
 SensorCapture sensorCapture(
    MAX_SAMPLES,
@@ -60,6 +66,10 @@ SensorCapture sensorCapture(
    SAMPLE_INTERVAL_MS);
 
 bool captureFinalized = false;
+unsigned long captureStartMs = 0;
+unsigned long lastDisplayRefreshMs = 0;
+bool collectingViewInitialized = false;
+DisplayTable collectingTable(&feather, 0, 0);
 
 //
 // Draws a histogram panel on the Feather display.
@@ -104,7 +114,7 @@ void renderHistogramsOnFeather()
 
    feather.setTextSize(2);
    Format numSamplesFormat("####", Format::Alignment::RIGHT);
-   Format sigmaPercentFormat("##.##%", 6, Format::Alignment::RIGHT);
+   Format sigmaPercentFormat("###.##%", Format::Alignment::RIGHT);
    Format hzFormat(" ####", Format::Alignment::RIGHT);
 
    auto computeEffectiveRateHz = [](size_t sampleSize) -> float
@@ -169,10 +179,6 @@ void renderHistogramsOnFeather()
          feather.println(rowText, Color::GRAY);
       }
    }
-
-   feather.setTextSize(2);
-   feather.setCursor(0, -feather.charH());
-   feather.println("Button A to dump to Serial", Color::GRAY);
 }
 
 //
@@ -188,6 +194,11 @@ void printCaptureSummary()
    float valueMin = basicStats.min();
    float valueMax = basicStats.max();
    float valueRange = analysis.computeRange(valueMin, valueMax);
+   float valueStdDevPercent = NAN;
+   if (isfinite(valueAvg) && (fabsf(valueAvg) > 0.0f) && isfinite(valueStdDev))
+   {
+      valueStdDevPercent = (valueStdDev / fabsf(valueAvg)) * 100.0f;
+   }
 
    Serial.println();
    Serial.println("Capture Summary");
@@ -195,15 +206,17 @@ void printCaptureSummary()
    SerialX::println(SAMPLING_DURATION_S * 1000UL, 20);
    SerialX::print("Samples", 20);
    SerialX::println(sensorCapture.count(), 20);
-   SerialX::print("Sensor Avg", 20);
+   SerialX::print("Avg", 20);
    SerialX::println(valueAvg, 3, 20);
-   SerialX::print("Sensor StdDev", 20);
+   SerialX::print("StdDev", 20);
    SerialX::println(valueStdDev, 3, 20);
-   SerialX::print("Sensor Min", 20);
+   SerialX::print("StdDev%", 20);
+   SerialX::println(isfinite(valueStdDevPercent) ? String(valueStdDevPercent, 2) + "%" : "n/a", 20);
+   SerialX::print("Min", 20);
    SerialX::println(valueMin, 3, 20);
-   SerialX::print("Sensor Max", 20);
+   SerialX::print("Max", 20);
    SerialX::println(valueMax, 3, 20);
-   SerialX::print("Sensor Range", 20);
+   SerialX::print("Range", 20);
    SerialX::println(valueRange, 3, 20);
    Serial.println();
 
@@ -222,17 +235,17 @@ void printAveragingAnalysis()
 
    SensorCaptureStats analysis(sensorCapture);
 
-   SerialX::print("Num Samples", 14);
-   SerialX::print("Range", 12);
-   SerialX::print("StdDev", 12);
-   SerialX::print("StdDev%", 12);
-   SerialX::println("Eff Rate", 10);
+   SerialX::print("Num Samples", 12);
+   SerialX::print("Range", 10);
+   SerialX::print("StdDev", 10);
+   SerialX::print("StdDev%", 10);
+   SerialX::println("Eff Rate", 8);
 
-   SerialX::print("-----------", 14);
-   SerialX::print("-----", 12);
-   SerialX::print("------", 12);
-   SerialX::print("-------", 12);
-   SerialX::println("--------", 10);
+   SerialX::print("-----------", 12);
+   SerialX::print("-----", 10);
+   SerialX::print("------", 10);
+   SerialX::print("-------", 10);
+   SerialX::println("--------", 8);
 
    for (size_t analysisIndex = 0; analysisIndex < NUM_BUFFER_SIZES; analysisIndex++)
    {
@@ -251,46 +264,96 @@ void printAveragingAnalysis()
          avgStdDevPercent = (avgStdDev / fabsf(avgMean)) * 100.0f;
       }
 
-      SerialX::print(sampleSize, 14);
+      SerialX::print(sampleSize, 12);
       if (averageCount == 0)
       {
-         SerialX::print("n/a", 12);
-         SerialX::print("n/a", 12);
-         SerialX::print("n/a", 12);
+         SerialX::print("n/a", 10);
+         SerialX::print("n/a", 10);
+         SerialX::print("n/a", 10);
       }
       else
       {
-         SerialX::print(avgRange, 3, 12);
-         SerialX::print(avgStdDev, 3, 12);
-         SerialX::print(isfinite(avgStdDevPercent) ? String(avgStdDevPercent, 2) + "%" : "n/a", 12);
+         SerialX::print(avgRange, 3, 10);
+         SerialX::print(avgStdDev, 3, 10);
+         SerialX::print(isfinite(avgStdDevPercent) ? String(avgStdDevPercent, 2) + "%" : "n/a", 10);
       }
 
-      SerialX::println(isfinite(effectiveRate) ? String(effectiveRate, 1) + "/s" : "n/a", 10);
+      SerialX::println(isfinite(effectiveRate) ? String(effectiveRate, 1) + "/s" : "n/a", 8);
    }
 
    Serial.println();
 }
 
-//
-// Updates the status text shown on the Feather display.
-//
-void updateDisplay()
+void initializeCollectingTable()
 {
-   feather.setCursor(0, 0);
    feather.setTextSize(3);
-   feather.println("Sensor Averaging", Color::HEADING);
+   int16_t collectingTableY = feather.charH();
 
    feather.setTextSize(2);
-   if (!sensorCapture.isCaptureComplete())
+   collectingTableY += feather.charH();
+
+   collectingTable = DisplayTable(&feather, 0, collectingTableY);
+   collectingTable.addRow("Samples", collectingSamplesFormat, Color::LABEL, Color::VALUE);
+   collectingTable.addRow("Time", collectingTimeFormat, Color::LABEL, Color::VALUE);
+   collectingTable.addRow("Progress", progressPercentFormat, Color::LABEL, Color::VALUE);
+}
+
+//
+// Updates collecting status text shown on the Feather display.
+// Refresh is throttled to DISPLAY_UPDATE_RATE_PER_SEC unless forceRefresh is true.
+//
+void updateDisplay(bool forceRefresh = false)
+{
+   if (sensorCapture.isCaptureComplete())
    {
+      return;
+   }
+
+   unsigned long nowMs = millis();
+   unsigned long displayUpdateIntervalMs = (DISPLAY_UPDATE_RATE_PER_SEC == 0) ? 0 : (1000UL / DISPLAY_UPDATE_RATE_PER_SEC);
+   if (!forceRefresh && ((nowMs - lastDisplayRefreshMs) < displayUpdateIntervalMs))
+   {
+      return;
+   }
+
+   lastDisplayRefreshMs = nowMs;
+
+   if (forceRefresh || !collectingViewInitialized)
+   {
+      feather.clearDisplay();
+      feather.setCursor(0, 0);
+      feather.setTextSize(3);
+      feather.println("Sensor Averaging", Color::HEADING);
+
+      feather.setTextSize(2);
       feather.println("Collecting data", Color::VALUE);
-      feather.println("Monitor Serial", Color::LABEL);
+      collectingViewInitialized = true;
    }
-   else
+
+   size_t count = sensorCapture.count();
+   unsigned long elapsedSeconds = (nowMs - captureStartMs) / 1000UL;
+   if (elapsedSeconds > SAMPLING_DURATION_S)
    {
-      feather.println("Run complete", Color::VALUE);
-      feather.println("Press A to dump", Color::SUB_LABEL);
+      elapsedSeconds = SAMPLING_DURATION_S;
    }
+
+   float samplePercent = (MAX_SAMPLES > 0) ? ((static_cast<unsigned long>(count) * 100.0f) / MAX_SAMPLES) : 0.0f;
+   float timePercent = (SAMPLING_DURATION_S > 0) ? ((elapsedSeconds * 100.0f) / SAMPLING_DURATION_S) : 0.0f;
+   bool samplesAreLimiting = (samplePercent >= timePercent);
+
+   Color sampleColor = samplesAreLimiting ? Color::VALUE : Color::GRAY;
+   Color timeColor = !samplesAreLimiting ? Color::VALUE : Color::GRAY;
+
+   float progressPercent = max(samplePercent, timePercent);
+   if (progressPercent > 100.0f)
+   {
+      progressPercent = 100.0f;
+   }
+
+   collectingTable.updateValue(0, count, sampleColor);
+   collectingTable.updateValue(1, elapsedSeconds, timeColor);
+   collectingTable.updateValue(2, progressPercent, Color::VALUE);
+   collectingTable.draw();
 }
 
 //
@@ -317,19 +380,28 @@ void setup()
 
    sensor.begin();
    sensorCapture.reset();
+   initializeCollectingTable();
 
-   updateDisplay();
+   captureStartMs = millis();
+   updateDisplay(true);
    Serial.println("Capture started...");
 }
 
 void loop()
 {
    SensorCaptureState states = sensorCapture.update();
+   SensorCaptureState valueStates = SENSOR_CAPTURE_STATE_NONE;
 
    if (sensorCapture.readyForValue())
    {
       float sensorValue = sensor.get();
-      SensorCaptureState valueStates = sensorCapture.addValue(sensorValue);
+      valueStates = sensorCapture.addValue(sensorValue);
+
+      if ((valueStates & SENSOR_CAPTURE_STATE_VALUE_STORED) != 0)
+      {
+         updateDisplay();
+      }
+
       if ((valueStates & SENSOR_CAPTURE_STATE_COMPLETED) != 0)
       {
          finishCapture();
@@ -339,10 +411,5 @@ void loop()
    if ((states & SENSOR_CAPTURE_STATE_COMPLETED) != 0)
    {
       finishCapture();
-   }
-
-   if (sensorCapture.isCaptureComplete() && feather.buttonA.wasPressed())
-   {
-      sensorCapture.dumpToSerial();
    }
 }

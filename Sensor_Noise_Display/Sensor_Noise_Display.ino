@@ -1,15 +1,15 @@
 //
 // Combined sensor visualization sketch with three display modes: Scatter, Histogram, and Noise.
-// Press button A to cycle display modes.
 //
 // Detailed behavior:
+// - Press button A to cycle display modes.
 // - Sampling runs continuously and finite readings are stored in both TimedValues (for scatter/histogram)
 //   and TimedStats (for rolling noise metrics).
 // - Scatter mode shows a rolling timed plot.
 // - Histogram mode shows rolling value distribution.
 // - Noise mode shows Sample Time, Samples, Avg, Range, StdDev, and StdDev%.
 // - Serial output uses the Sensor_Noise metrics table at SERIAL_PRINT_INTERVAL_MS.
-//
+// 
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -29,14 +29,14 @@
 #include "TimedValues.h"
 
 // ----------- Rates
-constexpr uint16_t SENSOR_SAMPLE_RATE_PER_SEC = 0;
+constexpr uint16_t SENSOR_SAMPLE_RATE_PER_SEC = 100;
 constexpr uint16_t DISPLAY_RATE_PER_SEC = 10;
 
 // ----------- Intervals
 constexpr uint16_t SERIAL_PRINT_INTERVAL_MS = 5000;
 
 // ----------- History Windows
-constexpr unsigned long SCATTER_HISTORY_PERIOD_S = 60;
+constexpr unsigned long SCATTER_HISTORY_PERIOD_S = 30;
 constexpr unsigned long HISTOGRAM_HISTORY_PERIOD_S = 6;
 constexpr unsigned long NOISE_HISTORY_S = 1;
 

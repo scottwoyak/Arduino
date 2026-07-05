@@ -654,10 +654,13 @@ public:
       _feather.fillRect(chartLeft, chartTop + chartHeight - 1, chartWidth, 1, Color::DARKGRAY);
       _feather.fillRect(chartLeft, chartTop, 1, chartHeight, Color::DARKGRAY);
 
+      String axisMaxLabel = Util::toSignificantString(axisMaxValue, 3);
+      String axisMinLabel = Util::toSignificantString(axisMinValue, 3);
+
       _feather.setCursor(0, chartTop);
-      _feather.print(axisMaxValue, _minMaxFormat, Color::LABEL);
+      _feather.print(axisMaxLabel, Color::LABEL);
       _feather.setCursor(0, chartTop + chartHeight - _feather.charH());
-      _feather.print(axisMinValue, _minMaxFormat, Color::LABEL);
+      _feather.print(axisMinLabel, Color::LABEL);
 
       if (isfinite(sampleRangeSeconds))
       {

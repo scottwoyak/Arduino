@@ -90,7 +90,7 @@ Format collectingSamplesFormat("#####/5000", Format::Alignment::LEFT);
 Format timeFormat("###s", Format::Alignment::LEFT);
 Format collectingTimeFormat("###/120s", Format::Alignment::LEFT);
 Format statsFormat("######.##", Format::Alignment::LEFT);
-Format stdDevPercentFormat("###.##%", Format::Alignment::LEFT);
+Format stdDevPercentFormat("##.##%", Format::Alignment::LEFT);
 Format rateFormat("#####/s", Format::Alignment::LEFT);
 
 SensorCapture sensorCapture(
@@ -166,12 +166,12 @@ void renderDisplaySummary()
    }
 
    feather.setTextSize(2);
-   summaryTable.setValue(0, static_cast<unsigned long>(sampleCount));
-   summaryTable.setValue(1, captureTimeSec);
-   summaryTable.setValue(2, samplesPerSecond);
-   summaryTable.setValue(3, avg);
-   summaryTable.setValue(4, stdDev);
-   summaryTable.setValue(5, isfinite(stdDevPercent) ? String(stdDevPercent, 2) + "%" : "n/a");
+   summaryTable.updateValue(0, static_cast<unsigned long>(sampleCount));
+   summaryTable.updateValue(1, captureTimeSec);
+   summaryTable.updateValue(2, samplesPerSecond);
+   summaryTable.updateValue(3, avg);
+   summaryTable.updateValue(4, stdDev);
+   summaryTable.updateValue(5, isfinite(stdDevPercent) ? String(stdDevPercent, 2) + "%" : "n/a");
 
    summaryTable.draw();
 }
@@ -265,17 +265,16 @@ void renderDisplayScatterPlot()
 }
 
    /// <summary>
-   /// Updates on-screen capture progress and post-capture display modes.
-   /// Refresh is throttled to DISPLAY_UPDATE_RATE_PER_SEC unless forceRefresh is true.
+   /// Updates the progress and capture display.
    /// </summary>
    void updateDisplayProgress(bool forceRefresh = false)
    {
       unsigned long nowMs = millis();
-   unsigned long displayUpdateIntervalMs = (DISPLAY_UPDATE_RATE_PER_SEC == 0) ? 0 : (1000UL / DISPLAY_UPDATE_RATE_PER_SEC);
-   if (!forceRefresh && ((nowMs - lastDisplayRefreshMs) < displayUpdateIntervalMs))
-   {
-      return;
-   }
+      unsigned long displayUpdateIntervalMs = (DISPLAY_UPDATE_RATE_PER_SEC == 0) ? 0 : (1000UL / DISPLAY_UPDATE_RATE_PER_SEC);
+      if (!forceRefresh && ((nowMs - lastDisplayRefreshMs) < displayUpdateIntervalMs))
+      {
+         return;
+      }
 
    lastDisplayRefreshMs = nowMs;
 
@@ -307,26 +306,24 @@ void renderDisplayScatterPlot()
    feather.setTextSize(2);
 
    size_t count = sensorCapture.count();
-   unsigned long countUL = static_cast<unsigned long>(count);
    unsigned long elapsedSeconds = (nowMs - captureStartMs) / 1000UL;
    if (elapsedSeconds > MAX_CAPTURE_TIME_S)
    {
       elapsedSeconds = MAX_CAPTURE_TIME_S;
    }
 
-   float samplePercent = (MAX_SAMPLES > 0) ? ((countUL * 100.0f) / MAX_SAMPLES) : 0.0f;
+   float samplePercent = (MAX_SAMPLES > 0) ? ((static_cast<unsigned long>(count) * 100.0f) / MAX_SAMPLES) : 0.0f;
    float timePercent = (MAX_CAPTURE_TIME_S > 0) ? ((elapsedSeconds * 100.0f) / MAX_CAPTURE_TIME_S) : 0.0f;
 
-   // Determine which metric is determining the end of collection
    bool samplesAreLimiting = (samplePercent >= timePercent);
 
    // Set sample values
    Color sampleColor = samplesAreLimiting ? Color::VALUE : Color::GRAY;
-   collectingTable.setValue(0, countUL, sampleColor);
+   collectingTable.updateValue(0, count, sampleColor);
 
    // Set time values
    Color timeColor = !samplesAreLimiting ? Color::VALUE : Color::GRAY;
-   collectingTable.setValue(1, elapsedSeconds, timeColor);
+   collectingTable.updateValue(1, elapsedSeconds, timeColor);
 
    float progressPercent = max(samplePercent, timePercent);
    if (progressPercent > 100.0f)
@@ -334,7 +331,7 @@ void renderDisplayScatterPlot()
       progressPercent = 100.0f;
    }
 
-   collectingTable.setValue(2, progressPercent, Color::VALUE);
+   collectingTable.updateValue(2, progressPercent, Color::VALUE);
    collectingTable.draw();
 }
 
