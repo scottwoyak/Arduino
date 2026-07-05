@@ -1,26 +1,28 @@
-/// <summary>
-/// Capacitor sensor tuner: displays real-time measurements and runs calibration tests on Button A.
-/// </summary>
-/// <remarks>
-/// Combines live monitoring with an automated calibration sweep for CapacitorSensor. During normal
-/// runtime, the display shows active resistor selection, discharge delay, deferred processing period,
-/// buffer size, average charge time, sample rate, and effective output rate. Pressing Button A starts
-/// a full test matrix sweep and prints per-test rows to Serial in a fixed-width table for easier
-/// comparison and copy/paste analysis.
-/// 
-/// The calibration sweep covers resistor/charge pin options (e.g., 1M, 470K, 100K, 47K), discharge
-/// delay values (microseconds), and target effective output rates (samples per second); the deferred
-/// processing period is fixed at 500 microseconds. For each test case, the sensor is configured
-/// (discharge delay + deferred period + buffer size), a fixed number of samples is captured, and
-/// stats are computed (average charge time, variation, StdDev, raw rate, and effective rate); results
-/// are printed immediately, then ranked later by lowest StdDev % per target rate.
-/// 
-/// After the sweep, a "best configurations" summary is printed for each target rate, and the best
-/// configuration for 30/s is automatically applied for continued live viewing.
-/// 
-/// Typical usage: let the live display stabilize, press Button A to run calibration, then use the
-/// serial rankings to choose resistor/delay combinations for your deployment.
-/// </remarks>
+//
+// Capacitor sensor tuner: displays real-time measurements and runs calibration tests on Button A.
+//
+// Combines live monitoring with an automated calibration sweep for CapacitorSensor. During normal
+// runtime, the display shows active resistor selection, discharge delay, deferred processing period,
+// buffer size, average charge time, sample rate, and effective output rate.
+//
+// Calibration sweep (Button A):
+// - Covers resistor/charge pin options (e.g., 1M, 470K, 100K, 47K), discharge delay values
+//   (microseconds), and target effective output rates (samples per second); the deferred processing
+//   period is fixed at 500 microseconds.
+// - For each test case, the sensor is configured (discharge delay + deferred period + buffer size), a
+//   fixed number of samples is captured, and stats are computed (average charge time, variation,
+//   StdDev, raw rate, and effective rate).
+// - Results are printed immediately to Serial in a fixed-width table, then ranked later by lowest
+//   StdDev % per target rate.
+// - After the sweep, a "best configurations" summary is printed for each target rate, and the best
+//   configuration for 30/s is automatically applied and persisted for continued live viewing.
+//
+// Serial commands:
+// - Send 'L' to reload and apply the last saved best configuration.
+//
+// Typical usage: let the live display stabilize, press Button A to run calibration, then use the
+// serial rankings to choose resistor/delay combinations for your deployment.
+//
 
 #include <Arduino.h>
 #include "CapacitorSensor.h"
@@ -90,6 +92,7 @@ constexpr ResistorOption RESISTOR_OPTIONS[] = {
 constexpr size_t RESISTOR_OPTION_COUNT = sizeof(RESISTOR_OPTIONS) / sizeof(RESISTOR_OPTIONS[0]);
 constexpr size_t MAX_TEST_RESULTS = RESISTOR_OPTION_COUNT * TEST_DISCHARGE_DELAY_COUNT * TARGET_EFFECTIVE_RATE_COUNT;
 
+// ----------- Preferences Keys
 const char PREF_NAMESPACE[] = "cap_tune";
 const char PREF_VALID_KEY[] = "valid";
 const char PREF_CHARGE_PIN_KEY[] = "cpin";
@@ -116,6 +119,9 @@ const char* resistorLabel(uint8_t chargePin)
    return "?";
 }
 
+/// <summary>Check whether a charge pin matches one of the configured resistor options.</summary>
+/// <param name="chargePin">Charge pin to check</param>
+/// <returns>True if the pin is a known resistor option</returns>
 bool isKnownChargePin(uint8_t chargePin)
 {
    for (size_t i = 0; i < RESISTOR_OPTION_COUNT; i++)
@@ -129,6 +135,9 @@ bool isKnownChargePin(uint8_t chargePin)
    return false;
 }
 
+/// <summary>Look up the charge pin for a resistor value label.</summary>
+/// <param name="label">Resistor value label to look up</param>
+/// <returns>Matching charge pin, or the first resistor option's pin when the label is unknown</returns>
 uint8_t chargePinFromResistorLabel(const char* label)
 {
    if (label == nullptr)
@@ -149,6 +158,11 @@ uint8_t chargePinFromResistorLabel(const char* label)
 
 CapacitorSensor capacitorSensor(RESISTOR_OPTIONS[0].chargePin, SENSE_PIN);
 
+/// <summary>Applies a resistor/discharge/buffer configuration to the capacitor sensor.</summary>
+/// <param name="chargePin">Charge pin to select</param>
+/// <param name="dischargeDelayMicros">Discharge delay in microseconds</param>
+/// <param name="deferredProcessingPeriodMicros">Deferred processing period in microseconds</param>
+/// <param name="bufferSize">Rolling average buffer size (falls back to the sensor default when zero)</param>
 void applyConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, uint32_t deferredProcessingPeriodMicros, size_t bufferSize)
 {
    capacitorSensor.setChargePin(chargePin);
@@ -157,6 +171,10 @@ void applyConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, uint32
    capacitorSensor.setBufferSize(bufferSize > 0 ? bufferSize : CapacitorSensor::DEFAULT_BUFFER_SIZE);
 }
 
+/// <summary>Persists the best-known configuration to Preferences.</summary>
+/// <param name="chargePin">Charge pin to save</param>
+/// <param name="dischargeDelayMicros">Discharge delay in microseconds to save</param>
+/// <param name="bufferSize">Rolling average buffer size to save</param>
 void saveBestConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, size_t bufferSize)
 {
    arduino.preferences.begin(PREF_NAMESPACE, false);
@@ -167,6 +185,9 @@ void saveBestConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, siz
    arduino.preferences.end();
 }
 
+/// <summary>
+/// Loads the best-known configuration from Preferences and applies it, printing a summary to Serial.
+/// </summary>
 void loadBestConfiguration()
 {
    if (capacitorSensor.counter() == 0 || !isfinite(capacitorSensor.chargeTimeMicros()) || capacitorSensor.rate() <= 0.0f)
@@ -203,7 +224,7 @@ void loadBestConfiguration()
 
    applyConfiguration(chargePin, dischargeDelayMicros, FIXED_DEFERRED_PROCESSING_PERIOD_MICROS, (size_t)bufferSize);
 
-    const SerialTable::Column columns[] = {
+   const SerialTable::Column columns[] = {
       { "Field", 18 },
       { "Value", 24 },
    };
@@ -521,6 +542,11 @@ void printBestConfigurations(TestRunResult* results, size_t count)
    }
 }
 
+/// <summary>Prints a single aggregate statistics row if any samples were collected.</summary>
+/// <param name="table">Table to print the row to</param>
+/// <param name="label">Row label</param>
+/// <param name="avgStats">Aggregated average-charge-time statistics</param>
+/// <param name="stdDevStats">Aggregated StdDev statistics</param>
 void printAggregateRow(SerialTable& table, const char* label, const Stats& avgStats, const Stats& stdDevStats)
 {
    if (avgStats.count() == 0)
@@ -536,6 +562,9 @@ void printAggregateRow(SerialTable& table, const char* label, const Stats& avgSt
       SerialTable::fixed(rangeMicros, 3));
 }
 
+/// <summary>Prints aggregate charge-time statistics grouped by resistor value.</summary>
+/// <param name="results">Array of all test results</param>
+/// <param name="count">Number of results in the array</param>
 void printAggregateByResistor(const TestRunResult* results, size_t count)
 {
    const SerialTable::Column columns[] = {
@@ -575,6 +604,9 @@ void printAggregateByResistor(const TestRunResult* results, size_t count)
    Serial.println();
 }
 
+/// <summary>Prints aggregate charge-time statistics grouped by target effective rate.</summary>
+/// <param name="results">Array of all test results</param>
+/// <param name="count">Number of results in the array</param>
 void printAggregateByTargetRate(const TestRunResult* results, size_t count)
 {
    const SerialTable::Column columns[] = {
@@ -618,6 +650,9 @@ void printAggregateByTargetRate(const TestRunResult* results, size_t count)
    Serial.println();
 }
 
+/// <summary>Prints aggregate charge-time statistics grouped into buffer-size buckets.</summary>
+/// <param name="results">Array of all test results</param>
+/// <param name="count">Number of results in the array</param>
 void printAggregateByBufferSize(const TestRunResult* results, size_t count)
 {
    const SerialTable::Column columns[] = {
@@ -707,6 +742,9 @@ void printAggregateByBufferSize(const TestRunResult* results, size_t count)
    Serial.println();
 }
 
+/// <summary>Prints aggregate charge-time statistics grouped by discharge delay.</summary>
+/// <param name="results">Array of all test results</param>
+/// <param name="count">Number of results in the array</param>
 void printAggregateByDischargeDelay(const TestRunResult* results, size_t count)
 {
    const SerialTable::Column columns[] = {
@@ -750,6 +788,9 @@ void printAggregateByDischargeDelay(const TestRunResult* results, size_t count)
    Serial.println();
 }
 
+/// <summary>Prints all aggregate statistics groupings (by resistor, target rate, buffer size, and discharge delay).</summary>
+/// <param name="results">Array of all test results</param>
+/// <param name="count">Number of results in the array</param>
 void printAggregateStatistics(const TestRunResult* results, size_t count)
 {
    Serial.println();
@@ -884,8 +925,7 @@ void loop()
             FIXED_DEFERRED_PROCESSING_PERIOD_MICROS,
             CapacitorSensor::DEFAULT_BUFFER_SIZE);
       }
-
-      }
+   }
 
    if (displayTimer.ready())
    {
