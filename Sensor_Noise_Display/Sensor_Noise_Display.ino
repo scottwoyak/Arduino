@@ -1,13 +1,14 @@
-/// <summary>
-/// Combined sensor visualization sketch with three display modes: Scatter, Histogram, and Noise.
-/// </summary>
-/// <remarks>
-/// Press Button A to cycle display modes. Sampling runs continuously and finite readings are stored
-/// in both TimedValues (for scatter/histogram) and TimedStats (for rolling noise metrics). Scatter
-/// mode shows a rolling timed plot, Histogram mode shows rolling value distribution, and Noise mode
-/// shows Sample Time, Samples, Avg, Range, StdDev, and StdDev%. Serial output uses the Sensor_Noise
-/// metrics table at SERIAL_PRINT_INTERVAL_MS.
-/// </remarks>
+//
+// Combined sensor visualization sketch with three display modes: Scatter, Histogram, and Noise.
+//
+// Press Button A to cycle display modes. Sampling runs continuously and finite readings are stored
+// in both TimedValues (for scatter/histogram) and TimedStats (for rolling noise metrics).
+// - Scatter mode shows a rolling timed plot of recent values.
+// - Histogram mode shows the rolling value distribution.
+// - Noise mode shows Sample Time, Samples, Avg, Range, StdDev, and StdDev%.
+//
+// Serial output prints a Sensor_Noise metrics table every SERIAL_PRINT_INTERVAL_MS.
+//
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -33,33 +34,37 @@
 #include "TimedHistogramPlot.h"
 #include "TimedValues.h"
 
-// ----------- Rates
-constexpr uint16_t SENSOR_SAMPLE_RATE_PER_SEC = 100;
-constexpr uint16_t DISPLAY_RATE_PER_SEC = 10;
-
-// ----------- Intervals
-constexpr uint16_t SERIAL_PRINT_INTERVAL_MS = 5000;
+// ----------- The Board
+Arduino arduino;
+TestSensor sensor;
 
 // ----------- History Windows
 constexpr unsigned long SCATTER_HISTORY_PERIOD_S = 30;
 constexpr unsigned long HISTOGRAM_HISTORY_PERIOD_S = 6;
 constexpr unsigned long NOISE_HISTORY_S = 1;
-
-// ----------- Histogram Settings
-constexpr uint16_t HISTOGRAM_BIN_COUNT = 40;
-constexpr float SENSOR_VALUE_RESOLUTION_F = 0.0049f;
-
-Arduino arduino;
-TestSensor sensor;
-RateTimer sampleTimer(SENSOR_SAMPLE_RATE_PER_SEC);
-RateTimer displayTimer(DISPLAY_RATE_PER_SEC);
-Timer serialPrintTimer(SERIAL_PRINT_INTERVAL_MS);
-RollingRate sampleRate;
 TimedValues samples(SCATTER_HISTORY_PERIOD_S * 1000UL, 256);
 TimedStats stats(NOISE_HISTORY_S * 1000UL);
 
-bool serialHeaderPrinted = false;
-uint16_t serialRowsPrinted = 0;
+// ----------- Sampling
+constexpr uint16_t SENSOR_SAMPLE_RATE_PER_SEC = 100;
+RateTimer sampleTimer(SENSOR_SAMPLE_RATE_PER_SEC);
+RollingRate sampleRate;
+
+// ----------- Display Items
+constexpr uint16_t DISPLAY_RATE_PER_SEC = 10;
+constexpr uint16_t HISTOGRAM_BIN_COUNT = 40;
+constexpr float SENSOR_VALUE_RESOLUTION_F = 0.0049f;
+RateTimer displayTimer(DISPLAY_RATE_PER_SEC);
+Format sampleRateFormat("###/s", Format::Alignment::RIGHT);
+Format valueFormat("####.##");
+Format rangeFormat("###.##");
+Format stdDevFormat("####.##");
+Format stdDevPercentFormat("##.##%", 7);
+Format countFormat("######");
+Format sampleTimeFormat("#### ms");
+TimedScatterPlot scatterPlot(&arduino, samples, SCATTER_HISTORY_PERIOD_S * 1000UL, 0.0f);
+TimedHistogram histogram(HISTOGRAM_BIN_COUNT, HISTOGRAM_HISTORY_PERIOD_S * 1000UL, SENSOR_VALUE_RESOLUTION_F);
+TimedHistogramPlot histogramPlot(&arduino, histogram, samples);
 
 enum class DisplayMode : uint8_t
 {
@@ -70,14 +75,11 @@ enum class DisplayMode : uint8_t
 
 DisplayMode displayMode = DisplayMode::Scatter;
 
-Format sampleRateFormat("###/s", Format::Alignment::RIGHT);
-Format valueFormat("####.##");
-Format rangeFormat("###.##");
-Format stdDevFormat("####.##");
-Format stdDevPercentFormat("##.##%", 7);
-Format countFormat("######");
-Format sampleTimeFormat("#### ms");
-
+// ----------- Serial Output
+constexpr uint16_t SERIAL_PRINT_INTERVAL_MS = 5000;
+Timer serialPrintTimer(SERIAL_PRINT_INTERVAL_MS);
+bool serialHeaderPrinted = false;
+uint16_t serialRowsPrinted = 0;
 constexpr SerialTable::Column SERIAL_COLUMNS[] = {
    { "Num Samples", 14 },
    { "Avg", 12 },
@@ -86,10 +88,6 @@ constexpr SerialTable::Column SERIAL_COLUMNS[] = {
    { "StdDev%", 10 },
 };
 SerialTable serialTable(nullptr, SERIAL_COLUMNS, sizeof(SERIAL_COLUMNS) / sizeof(SERIAL_COLUMNS[0]));
-
-TimedScatterPlot scatterPlot(&arduino, samples, SCATTER_HISTORY_PERIOD_S * 1000UL, 0.0f);
-TimedHistogram histogram(HISTOGRAM_BIN_COUNT, HISTOGRAM_HISTORY_PERIOD_S * 1000UL, SENSOR_VALUE_RESOLUTION_F);
-TimedHistogramPlot histogramPlot(&arduino, histogram, samples);
 
 void addSample(float value)
 {
@@ -124,9 +122,9 @@ void printSerialSummary()
 {
    Serial.println();
    Serial.println("Serial Metrics Summary");
-   SerialX::println("- Sampling source: active sensor", 0);
-   SerialX::println("- Data points are collected continuously", 0);
-   SerialX::println(String("- Stats are averaged over: ") + (NOISE_HISTORY_S * 1000UL) + " ms (sliding period)", 0);
+   Serial.println("- Sampling source: active sensor");
+   Serial.println("- Data points are collected continuously");
+   Serial.println(String("- Stats are averaged over: ") + (NOISE_HISTORY_S * 1000UL) + " ms (sliding period)");
    Serial.println("- Num Samples: finite samples currently retained in the active stats period");
    Serial.println("- Avg: mean of samples in the active stats period");
    Serial.println("- Range: max-min of samples in the active stats period");
