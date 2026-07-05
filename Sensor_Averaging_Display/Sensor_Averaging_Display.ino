@@ -1,26 +1,27 @@
-/// <summary>
-/// Sensor Averaging Display Capture Sketch.
-/// </summary>
-/// <remarks>
-/// Captures finite sensor values for a fixed run window (or until the sample cap is reached), stores
-/// them in RAM, and reports serial/display summaries. The sketch is designed for repeatable
-/// calibration runs where sampling duration, interval, and maximum sample count are controlled by
-/// constants near the top of the file. Sampling is driven by SensorCapture timing (default 1 ms
-/// cadence), and only finite values are retained in RAM; capture ends automatically when either
-/// SAMPLING_DURATION_S elapses or MAX_SAMPLES is reached.
-/// 
-/// Capture flow: initialize display, serial, and sensor; use a 1 ms timer to collect at most one
-/// sample per interval and store finite values in RAM; stop when MAX_SAMPLES are stored or
-/// SAMPLING_DURATION_S expires.
-/// 
-/// Output flow: the serial summary includes run metrics, value stats, and a value histogram. While
-/// collecting, the Feather display shows live capture progress; after capture, it renders a value
-/// histogram with min/max labels plus Sigma%/effective-rate rows for multiple averaging window sizes.
-/// Sensor mode reads from TempSensor in Fahrenheit.
-/// 
-/// Typical usage: flash the sketch and allow warm-up/capture to complete, then review serial +
-/// display outputs to compare stability (StdDev%, range) across averaging sizes.
-/// </remarks>
+//
+// Captures finite sensor values for a fixed run window (or until the sample cap is reached), stores
+// them in RAM, and reports serial/display summaries.
+//
+// The sketch is designed for repeatable calibration runs where sampling duration, interval, and
+// maximum sample count are controlled by constants near the top of the file.
+//
+// Capture flow:
+// 1) Initialize display, serial, and sensor.
+// 2) Sample at up to MAX_SAMPLE_RATE_PER_SEC and store finite values in RAM.
+// 3) Stop when MAX_SAMPLES are stored or SAMPLING_DURATION_S elapses.
+//
+// Output flow:
+// - While collecting, the Feather display shows live capture progress.
+// - After capture, the display renders a value histogram with min/max labels plus Sigma%/effective-rate
+//   rows for multiple averaging window sizes.
+// - Serial summary includes run metrics, value stats, and a value histogram.
+//
+// Sensor mode:
+// - Reads from TestSensor (configurable via TestSensor.h using alias).
+//
+// Typical usage: flash the sketch and allow warm-up/capture to complete, then review serial and
+// display outputs to compare stability (StdDev%, range) across averaging sizes.
+//
 
 #include "ArduinoBoard.h"
 
@@ -39,39 +40,49 @@
 #include <Wire.h>
 #include "TestSensor.h"
 
-constexpr unsigned long SAMPLING_DURATION_S = 10;
-constexpr unsigned long MAX_SAMPLE_RATE = 1000;
-constexpr unsigned long SAMPLE_INTERVAL_MS =
-   (MAX_SAMPLE_RATE == 0) ? 1UL :
-   ((1000UL / MAX_SAMPLE_RATE) == 0 ? 1UL : (1000UL / MAX_SAMPLE_RATE));
-constexpr size_t MAX_SAMPLES = 1000;
-constexpr size_t HISTOGRAM_BINS = 20;
-constexpr uint8_t CHART_MIN_MAX_SIGNIFICANT_DIGITS = 3;
-constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 5;
-
-constexpr size_t BUFFER_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
-constexpr size_t NUM_BUFFER_SIZES = sizeof(BUFFER_SIZES) / sizeof(BUFFER_SIZES[0]);
-
+// ----------- The Board
 Arduino arduino;
 TestSensor sensor;
-Format progressPercentFormat("###%", Format::Alignment::LEFT);
-Format collectingSamplesFormat("####/1000", Format::Alignment::LEFT);
-Format collectingTimeFormat("##/10s", Format::Alignment::LEFT);
 
+// ----------- Capture Settings
+constexpr unsigned long SAMPLING_DURATION_S = 10;
+constexpr unsigned long MAX_SAMPLE_RATE_PER_SEC = 1000;
+constexpr unsigned long SAMPLE_INTERVAL_MS =
+   (MAX_SAMPLE_RATE_PER_SEC == 0) ? 1UL :
+   ((1000UL / MAX_SAMPLE_RATE_PER_SEC) == 0 ? 1UL : (1000UL / MAX_SAMPLE_RATE_PER_SEC));
+constexpr size_t MAX_SAMPLES = 1000;
 SensorCapture sensorCapture(
    MAX_SAMPLES,
    SAMPLING_DURATION_S * 1000UL,
    SAMPLE_INTERVAL_MS);
-
 bool captureFinalized = false;
 unsigned long captureStartMs = 0;
+
+// ----------- Display Items
+constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 5;
 RateTimer displayRefreshTimer(DISPLAY_UPDATE_RATE_PER_SEC);
 bool collectingViewInitialized = false;
+Format progressPercentFormat("###%", Format::Alignment::LEFT);
+Format collectingSamplesFormat("####/1000", Format::Alignment::LEFT);
+Format collectingTimeFormat("##/10s", Format::Alignment::LEFT);
 DisplayTable collectingTable(&arduino, 0, 0);
 
-//
-// Draws a histogram panel on the Feather display.
-//
+// ----------- Analysis Settings
+constexpr size_t HISTOGRAM_BINS = 20;
+constexpr uint8_t CHART_MIN_MAX_SIGNIFICANT_DIGITS = 3;
+constexpr size_t BUFFER_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
+constexpr size_t NUM_BUFFER_SIZES = sizeof(BUFFER_SIZES) / sizeof(BUFFER_SIZES[0]);
+
+/// <summary>
+/// Draws a histogram panel on the Feather display.
+/// </summary>
+/// <param name="title">Title text drawn above the panel, or empty for none.</param>
+/// <param name="histogram">Histogram data to render.</param>
+/// <param name="sectionLeft">Left X coordinate of the panel.</param>
+/// <param name="sectionWidth">Width of the panel in pixels.</param>
+/// <param name="sectionTop">Top Y coordinate of the panel.</param>
+/// <param name="sectionHeight">Height of the panel in pixels.</param>
+/// <param name="barColor">Color used to draw histogram bars.</param>
 void drawHistogramOnFeather(const char* title, const Histogram& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor)
 {
    arduino.setTextSize(2);
@@ -84,9 +95,9 @@ void drawHistogramOnFeather(const char* title, const Histogram& histogram, int16
    plot.render();
 }
 
-//
-// Renders histogram and N/range analysis table on the Feather display.
-//
+/// <summary>
+/// Renders histogram and N/range analysis table on the Feather display.
+/// </summary>
 void renderHistogramsOnFeather()
 {
    arduino.clearDisplay();
@@ -117,7 +128,7 @@ void renderHistogramsOnFeather()
 
    auto computeEffectiveRateHz = [](size_t sampleSize) -> float
    {
-      return (sampleSize > 0) ? (static_cast<float>(MAX_SAMPLE_RATE) / static_cast<float>(sampleSize)) : NAN;
+      return (sampleSize > 0) ? (static_cast<float>(MAX_SAMPLE_RATE_PER_SEC) / static_cast<float>(sampleSize)) : NAN;
    };
 
    Stats rawStats = analysis.computeBasicStats();
@@ -179,9 +190,9 @@ void renderHistogramsOnFeather()
    }
 }
 
-//
-// Computes and prints capture statistics and histogram data to Serial.
-//
+/// <summary>
+/// Computes and prints capture statistics and histogram data to Serial.
+/// </summary>
 void printCaptureSummary()
 {
    SensorCaptureStats analysis(sensorCapture);
@@ -224,9 +235,9 @@ void printCaptureSummary()
    sensorCapture.printFirstAndLastToSerial(10, 3);
 }
 
-//
-// Prints post-capture block-average analysis for configured sample sizes.
-//
+/// <summary>
+/// Prints post-capture block-average analysis for configured sample sizes.
+/// </summary>
 void printAveragingAnalysis()
 {
    Serial.println("Averaging Analysis");
@@ -248,7 +259,7 @@ void printAveragingAnalysis()
    for (size_t analysisIndex = 0; analysisIndex < NUM_BUFFER_SIZES; analysisIndex++)
    {
       size_t sampleSize = BUFFER_SIZES[analysisIndex];
-      float effectiveRate = (sampleSize > 0) ? (static_cast<float>(MAX_SAMPLE_RATE) / static_cast<float>(sampleSize)) : NAN;
+      float effectiveRate = (sampleSize > 0) ? (static_cast<float>(MAX_SAMPLE_RATE_PER_SEC) / static_cast<float>(sampleSize)) : NAN;
 
       Stats avgSeriesStats = analysis.computeAverageSeriesStats(sampleSize);
       float avgRange = analysis.computeRange(avgSeriesStats.min(), avgSeriesStats.max());
@@ -282,6 +293,9 @@ void printAveragingAnalysis()
    Serial.println();
 }
 
+/// <summary>
+/// Initializes the display table used by the collecting-progress screen.
+/// </summary>
 void initializeCollectingTable()
 {
    arduino.setTextSize(3);
@@ -296,10 +310,11 @@ void initializeCollectingTable()
    collectingTable.addRow("Progress", progressPercentFormat, Color::LABEL, Color::VALUE);
 }
 
-//
-// Updates collecting status text shown on the Feather display.
-// Refresh is throttled to DISPLAY_UPDATE_RATE_PER_SEC unless forceRefresh is true.
-//
+/// <summary>
+/// Updates collecting status text shown on the Feather display.
+/// Refresh is throttled to DISPLAY_UPDATE_RATE_PER_SEC unless forceRefresh is true.
+/// </summary>
+/// <param name="forceRefresh">When true, bypasses the refresh-rate throttle and redraws immediately.</param>
 void updateDisplay(bool forceRefresh = false)
 {
    if (sensorCapture.isCaptureComplete())
@@ -355,9 +370,9 @@ void updateDisplay(bool forceRefresh = false)
    collectingTable.draw();
 }
 
-//
-// Finalizes capture and prints summaries.
-//
+/// <summary>
+/// Finalizes capture and prints summaries.
+/// </summary>
 void finishCapture()
 {
    if (captureFinalized)
