@@ -11,7 +11,12 @@
 
 #include <Arduino.h>
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "Rate.h"
 #include "SerialX.h"
 
@@ -20,7 +25,7 @@ constexpr uint8_t ECHO_PIN = 5;
 
 constexpr float CM_PER_MICROSECOND = 0.034f / 2.0f;  // Speed of sound conversion
 
-Feather feather;
+Arduino arduino;
 Rate rate;
 
 Format distFormat("###.## cm");
@@ -30,7 +35,7 @@ void setup()
 {
    SerialX::begin();
 
-   feather.begin();
+   arduino.begin();
 
    pinMode(TRIGGER_PIN, OUTPUT);
    pinMode(ECHO_PIN, INPUT);
@@ -65,12 +70,12 @@ void loop()
    Serial.println("Time: " + String(timeMs) + " ms");
 
    // Display distance value
-   feather.setCursor(0, 0);
-   feather.setTextSize(5);
-   feather.println(distance, distFormat, Color::VALUE);
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(5);
+   arduino.println(distance, distFormat, Color::VALUE);
 
    // Display measurement rate
-   feather.setTextSize(3);
-   feather.setCursorY(-feather.charH());
-   feather.println(rate.get(), rateFormat, Color::SUB_LABEL);
+   arduino.setTextSize(3);
+   arduino.setCursorY(-arduino.charH());
+   arduino.println(rate.get(), rateFormat, Color::SUB_LABEL);
 }

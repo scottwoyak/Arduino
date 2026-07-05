@@ -13,12 +13,17 @@
 #include <Wire.h>
 #include <Adafruit_MAX1704X.h>
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "SerialX.h"
 
 constexpr float MIN_CHARGE_RATE_FOR_STATUS = 1.0f;  // %/hour threshold for showing charge state
 
-Feather feather;
+Arduino arduino;
 Adafruit_MAX17048 battery;
 
 Format batteryVoltsFormat("#.#v");
@@ -28,7 +33,7 @@ Format chargeRateFormat("+###%/hr");
 void setup()
 {
    SerialX::begin();
-   feather.begin();
+   arduino.begin();
    Wire.begin();
 
    // Wait for battery fuel gauge to initialize
@@ -43,34 +48,34 @@ void setup()
 
 void loop()
 {
-   feather.setCursor(0, 0);
-   feather.setTextSize(3);
-   feather.println("Battery Info", Color::HEADING);
-   feather.moveCursorY(feather.charH() / 4);
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(3);
+   arduino.println("Battery Info", Color::HEADING);
+   arduino.moveCursorY(arduino.charH() / 4);
 
    // Display battery voltage
-   feather.println("Volts: ", battery.cellVoltage(), batteryVoltsFormat);
-   feather.moveCursorY(feather.charH() / 4);
+   arduino.println("Volts: ", battery.cellVoltage(), batteryVoltsFormat);
+   arduino.moveCursorY(arduino.charH() / 4);
 
    // Display charge percentage
-   feather.print("State: ", battery.cellPercent(), percentFormat);
-   uint16_t x = feather.display.getCursorX();
-   feather.println();
-   feather.moveCursorY(feather.charH() / 4);
+   arduino.print("State: ", battery.cellPercent(), percentFormat);
+   uint16_t x = arduino.display.getCursorX();
+   arduino.println();
+   arduino.moveCursorY(arduino.charH() / 4);
 
    // Display charge rate and status
-   feather.setTextSize(2);
-   feather.setCursorX(x);
+   arduino.setTextSize(2);
+   arduino.setCursorX(x);
    float chargeRate = battery.chargeRate();
-   feather.println(" Rate: ", chargeRate, chargeRateFormat);
-   feather.setCursorX(x);
+   arduino.println(" Rate: ", chargeRate, chargeRateFormat);
+   arduino.setCursorX(x);
 
    if (fabs(chargeRate) >= MIN_CHARGE_RATE_FOR_STATUS)
    {
-      feather.println(chargeRate > 0 ? "Charging" : "Draining", Color::VALUE2);
+      arduino.println(chargeRate > 0 ? "Charging" : "Draining", Color::VALUE2);
    }
    else
    {
-      feather.println("        ");  // Clear line
+      arduino.println("        ");  // Clear line
    }
 }

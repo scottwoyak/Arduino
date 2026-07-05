@@ -29,6 +29,11 @@ cpp_new_line_before_open_brace_lambda = true
 cpp_indent_braces = false
 cpp_indent_case_labels = true
 
+# Exception to Allman style above: empty-bodied functions (including constructors with
+# nothing to execute) collapse `{}` onto the same line as the declaration,
+# e.g. `ArduinoWithDisplay() {}` in libraries/Woyak/ArduinoWithDisplay.h.
+cpp_new_line_close_brace_same_line_empty_function = true
+
 # MSBuild project files
 [*.{vcxproj,vcxproj.filters,props,targets}]
 indent_style = space

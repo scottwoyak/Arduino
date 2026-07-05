@@ -7,10 +7,15 @@
 
 #include <Arduino.h>
 #include "CapacitorSensor.h"
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "Timer.h"
 
-Feather feather;
+Arduino arduino;
 Format chargeTimeFormat("###.# us");
 Format rateFormat("Raw Sensor Rate #### per/s");
 
@@ -26,22 +31,22 @@ int16_t valueY = 0;
 
 void setup()
 {
-   feather.begin();
+   arduino.begin();
    sensor.begin();
 
-   feather.setTextSize(3);
-   int16_t headerCharH = feather.charH();
+   arduino.setTextSize(3);
+   int16_t headerCharH = arduino.charH();
 
-   feather.setTextSize(2);
-   int16_t subheaderCharH = feather.charH();
+   arduino.setTextSize(2);
+   int16_t subheaderCharH = arduino.charH();
 
-   feather.setTextSize(5);
-   int16_t valueCharH = feather.charH();
+   arduino.setTextSize(5);
+   int16_t valueCharH = arduino.charH();
 
-   feather.setTextSize(2);
-   int16_t footerCharH = feather.charH();
+   arduino.setTextSize(2);
+   int16_t footerCharH = arduino.charH();
 
-   int16_t footerTopY = feather.height() - footerCharH;
+   int16_t footerTopY = arduino.height() - footerCharH;
    int16_t contentTopY = headerCharH + subheaderCharH;
    valueY = contentTopY + (footerTopY - contentTopY - valueCharH) / 2;
 }
@@ -52,19 +57,19 @@ void loop()
 
    if (displayRefreshTimer.ready())
    {
-      feather.setCursor(0, 0);
-      feather.setTextSize(3);
-      feather.println("Capacitor", Color::HEADING);
+      arduino.setCursor(0, 0);
+      arduino.setTextSize(3);
+      arduino.println("Capacitor", Color::HEADING);
 
-      feather.setTextSize(2);
-      feather.println("Charge Time", Color::LABEL);
+      arduino.setTextSize(2);
+      arduino.println("Charge Time", Color::LABEL);
 
-      feather.setTextSize(5);
-      feather.setCursorY(valueY);
-      feather.printlnC(chargeTime, chargeTimeFormat, Color::VALUE);
+      arduino.setTextSize(5);
+      arduino.setCursorY(valueY);
+      arduino.printlnC(chargeTime, chargeTimeFormat, Color::VALUE);
 
-      feather.setTextSize(2);
-      feather.setCursorY(-feather.charH());
-      feather.printlnR(sensor.rate(), rateFormat, Color::SUB_LABEL);
+      arduino.setTextSize(2);
+      arduino.setCursorY(-arduino.charH());
+      arduino.printlnR(sensor.rate(), rateFormat, Color::SUB_LABEL);
    }
 }

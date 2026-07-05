@@ -11,10 +11,18 @@
 #include <Arduino.h>
 
 #include "Counter.h"
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "SerialX.h"
 
-Feather feather;
+Arduino arduino;
 Counter counter(0);
 double minSpan = 0;
 
@@ -24,42 +32,42 @@ Format spanFormat("#######.## ms");
 void setup()
 {
    SerialX::begin();
-   feather.begin();
+   arduino.begin();
    counter.begin();
 }
 
 void loop()
 {
-   feather.setCursor(0, 0);
-   feather.setTextSize(3);
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(3);
 
    double span = counter.span() / 1000.0;
    minSpan = min(span, minSpan == 0 ? span : minSpan);
 
-   feather.println("Counter", Color::HEADING);
-   feather.moveCursorY(feather.charH() / 2);
+   arduino.println("Counter", Color::HEADING);
+   arduino.moveCursorY(arduino.charH() / 2);
 
-   feather.setTextSize(2);
-   feather.println("  Pin: ", counter.getPin());
-   feather.moveCursorY(2);
+   arduino.setTextSize(2);
+   arduino.println("  Pin: ", counter.getPin());
+   arduino.moveCursorY(2);
 
-   feather.println("Count: ", counter.count(), countFormat);
-   feather.moveCursorY(2);
+   arduino.println("Count: ", counter.count(), countFormat);
+   arduino.moveCursorY(2);
 
-   feather.println(" Span: ", span, spanFormat);
-   feather.moveCursorY(2);
+   arduino.println(" Span: ", span, spanFormat);
+   arduino.moveCursorY(2);
 
-   feather.print("  Min: ", Color::LABEL);
+   arduino.print("  Min: ", Color::LABEL);
    if (minSpan == 0)
    {
-      feather.print("----", Color::GRAY);
+      arduino.print("----", Color::GRAY);
    }
    else
    {
-      feather.print(minSpan, spanFormat, Color::VALUE);
+      arduino.print(minSpan, spanFormat, Color::VALUE);
    }
 
-   if (feather.buttonA.wasPressed())
+   if (arduino.buttonA.wasPressed())
    {
       minSpan = 0;
       counter.reset();

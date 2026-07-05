@@ -1,44 +1,48 @@
-//
-// Capacitor sensor tuner: displays real-time measurements and runs calibration tests on Button A.
-//
-// Detailed behavior:
-// - This sketch combines live monitoring with an automated calibration sweep for CapacitorSensor.
-// - During normal runtime, the display shows active resistor selection, discharge delay, deferred
-//   processing period, buffer size, average charge time, sample rate, and effective output rate.
-// - Pressing Button A starts a full test matrix sweep and prints per-test rows to Serial in a
-//   fixed-width table for easier comparison and copy/paste analysis.
-//
-// Calibration sweep dimensions:
-// - Resistor / charge pin options (e.g., 1M, 470K, 100K, 47K).
-// - Discharge delay values (microseconds).
-// - Target effective output rates (samples per second).
-// - Deferred processing period is fixed at 500 microseconds.
-//
-// For each test case:
-// - The sensor is configured (discharge delay + deferred period + buffer size).
-// - A fixed number of samples is captured.
-// - Stats are computed: average charge time, variation, StdDev, raw rate, and effective rate.
-// - Results are printed immediately, then ranked later by lowest StdDev % per target rate.
-//
-// Post-run behavior:
-// - A "best configurations" summary is printed for each target rate.
-// - The best configuration for 30/s is automatically applied for continued live viewing.
-//
-// Typical usage:
-// - Let the live display stabilize.
-// - Press Button A to run calibration.
-// - Use serial rankings to choose resistor/delay combinations for your deployment.
-//
+/// <summary>
+/// Capacitor sensor tuner: displays real-time measurements and runs calibration tests on Button A.
+/// </summary>
+/// <remarks>
+/// Combines live monitoring with an automated calibration sweep for CapacitorSensor. During normal
+/// runtime, the display shows active resistor selection, discharge delay, deferred processing period,
+/// buffer size, average charge time, sample rate, and effective output rate. Pressing Button A starts
+/// a full test matrix sweep and prints per-test rows to Serial in a fixed-width table for easier
+/// comparison and copy/paste analysis.
+/// 
+/// The calibration sweep covers resistor/charge pin options (e.g., 1M, 470K, 100K, 47K), discharge
+/// delay values (microseconds), and target effective output rates (samples per second); the deferred
+/// processing period is fixed at 500 microseconds. For each test case, the sensor is configured
+/// (discharge delay + deferred period + buffer size), a fixed number of samples is captured, and
+/// stats are computed (average charge time, variation, StdDev, raw rate, and effective rate); results
+/// are printed immediately, then ranked later by lowest StdDev % per target rate.
+/// 
+/// After the sweep, a "best configurations" summary is printed for each target rate, and the best
+/// configuration for 30/s is automatically applied for continued live viewing.
+/// 
+/// Typical usage: let the live display stabilize, press Button A to run calibration, then use the
+/// serial rankings to choose resistor/delay combinations for your deployment.
+/// </remarks>
+
 #include <Arduino.h>
 #include "CapacitorSensor.h"
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_PREFERENCES_SUPPORTED
+#error "This sketch requires a board with Preferences support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "RollingStats.h"
 #include "SerialTable.h"
 #include "SerialX.h"
 #include "Timer.h"
 
 // ----------- Display
-Feather feather;
+Arduino arduino;
 Format chargeFormat("####.# us");
 Format deferredFormat("#### us");
 Format effectiveRateFormat("###/s");
@@ -155,12 +159,12 @@ void applyConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, uint32
 
 void saveBestConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, size_t bufferSize)
 {
-   feather.preferences.begin(PREF_NAMESPACE, false);
-   feather.preferences.putBool(PREF_VALID_KEY, true);
-   feather.preferences.putUChar(PREF_CHARGE_PIN_KEY, chargePin);
-   feather.preferences.putUShort(PREF_DISCHARGE_KEY, dischargeDelayMicros);
-   feather.preferences.putUInt(PREF_BUFFER_KEY, (uint32_t)bufferSize);
-   feather.preferences.end();
+   arduino.preferences.begin(PREF_NAMESPACE, false);
+   arduino.preferences.putBool(PREF_VALID_KEY, true);
+   arduino.preferences.putUChar(PREF_CHARGE_PIN_KEY, chargePin);
+   arduino.preferences.putUShort(PREF_DISCHARGE_KEY, dischargeDelayMicros);
+   arduino.preferences.putUInt(PREF_BUFFER_KEY, (uint32_t)bufferSize);
+   arduino.preferences.end();
 }
 
 void loadBestConfiguration()
@@ -171,12 +175,12 @@ void loadBestConfiguration()
       return;
    }
 
-   feather.preferences.begin(PREF_NAMESPACE, true);
-   bool hasBest = feather.preferences.getBool(PREF_VALID_KEY, false);
-   uint8_t chargePin = feather.preferences.getUChar(PREF_CHARGE_PIN_KEY, RESISTOR_OPTIONS[0].chargePin);
-   uint16_t dischargeDelayMicros = feather.preferences.getUShort(PREF_DISCHARGE_KEY, CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS);
-   uint32_t bufferSize = feather.preferences.getUInt(PREF_BUFFER_KEY, CapacitorSensor::DEFAULT_BUFFER_SIZE);
-   feather.preferences.end();
+   arduino.preferences.begin(PREF_NAMESPACE, true);
+   bool hasBest = arduino.preferences.getBool(PREF_VALID_KEY, false);
+   uint8_t chargePin = arduino.preferences.getUChar(PREF_CHARGE_PIN_KEY, RESISTOR_OPTIONS[0].chargePin);
+   uint16_t dischargeDelayMicros = arduino.preferences.getUShort(PREF_DISCHARGE_KEY, CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS);
+   uint32_t bufferSize = arduino.preferences.getUInt(PREF_BUFFER_KEY, CapacitorSensor::DEFAULT_BUFFER_SIZE);
+   arduino.preferences.end();
 
    if (!hasBest)
    {
@@ -380,7 +384,7 @@ TestCaseParameters testParameters;
 void setup()
 {
    SerialX::begin();
-   feather.begin();
+   arduino.begin();
    capacitorSensor.begin();
 
    size_t caseIndex = 0;
@@ -769,7 +773,7 @@ void loop()
    }
 
    // Button A pressed: execute all tests
-   if (feather.buttonA.wasPressed())
+   if (arduino.buttonA.wasPressed())
    {
       Serial.println();
       Serial.println("Starting tests...");
@@ -793,7 +797,7 @@ void loop()
       resultsTable.printHeader();
 
       const size_t totalTests = RESISTOR_OPTION_COUNT * testParameters.count;
-      feather.clearDisplay();
+      arduino.clearDisplay();
 
       // Outer loop: test every resistor value (charge pin)
       for (size_t resistorIndex = 0; resistorIndex < RESISTOR_OPTION_COUNT; resistorIndex++)
@@ -806,18 +810,18 @@ void loop()
             size_t currentTest = resistorIndex * testParameters.count + i + 1;
 
             // Update display with current test parameters and progress
-            feather.setCursor(0, 0);
-            feather.setTextSize(2);
-            feather.println("Running Tests...", Color::HEADING);
-            feather.moveCursorY(-2);
-            feather.println("    Resistor: ", RESISTOR_OPTIONS[resistorIndex].label, Color::VALUE);
-            feather.moveCursorY(-2);
-            feather.println("       Delay: ", testParameters.cases[i].dischargeDelayMicros, chargeFormat, Color::VALUE);
-            feather.moveCursorY(-2);
-            feather.println("      Target: ", String((int)round(testParameters.cases[i].targetEffectiveRate)) + "/s", Color::VALUE);
-            feather.moveCursorY(-2);
-            feather.println("        Test: ", String(currentTest) + "/" + String(totalTests), Color::VALUE2);
-            feather.moveCursorY(-2);
+            arduino.setCursor(0, 0);
+            arduino.setTextSize(2);
+            arduino.println("Running Tests...", Color::HEADING);
+            arduino.moveCursorY(-2);
+            arduino.println("    Resistor: ", RESISTOR_OPTIONS[resistorIndex].label, Color::VALUE);
+            arduino.moveCursorY(-2);
+            arduino.println("       Delay: ", testParameters.cases[i].dischargeDelayMicros, chargeFormat, Color::VALUE);
+            arduino.moveCursorY(-2);
+            arduino.println("      Target: ", String((int)round(testParameters.cases[i].targetEffectiveRate)) + "/s", Color::VALUE);
+            arduino.moveCursorY(-2);
+            arduino.println("        Test: ", String(currentTest) + "/" + String(totalTests), Color::VALUE2);
+            arduino.moveCursorY(-2);
 
             TestRun testRun(capacitorSensor);
             TestRunResult result = testRun.run(
@@ -885,28 +889,28 @@ void loop()
 
    if (displayTimer.ready())
    {
-      feather.setCursor(0, 0);
-      feather.setTextSize(3);
-      feather.println("Capacitor Tuning", Color::HEADING);
-      feather.moveCursorY(-2);
+      arduino.setCursor(0, 0);
+      arduino.setTextSize(3);
+      arduino.println("Capacitor Tuning", Color::HEADING);
+      arduino.moveCursorY(-2);
 
-      feather.setTextSize(2);
-      feather.println("       Resistor: ", resistorLabel(capacitorSensor.chargePin()), Color::VALUE);
-      feather.moveCursorY(-2);
-      feather.println(" Discharge Time: ", capacitorSensor.dischargeDelayMicros(), chargeFormat, Color::VALUE);
-      feather.moveCursorY(-2);
-      feather.println("    Buffer Size: ", (int)capacitorSensor.bufferSize(), Color::VALUE);
-      feather.moveCursorY(-2);
+      arduino.setTextSize(2);
+      arduino.println("       Resistor: ", resistorLabel(capacitorSensor.chargePin()), Color::VALUE);
+      arduino.moveCursorY(-2);
+      arduino.println(" Discharge Time: ", capacitorSensor.dischargeDelayMicros(), chargeFormat, Color::VALUE);
+      arduino.moveCursorY(-2);
+      arduino.println("    Buffer Size: ", (int)capacitorSensor.bufferSize(), Color::VALUE);
+      arduino.moveCursorY(-2);
 
       float rawRate = capacitorSensor.rate();
       float effectiveRate = (capacitorSensor.bufferSize() > 0) ? (rawRate / (float)capacitorSensor.bufferSize()) : 0;
 
-      feather.println("Avg Charge Time: ", capacitorSensor.chargeTimeMicros(), chargeFormat, Color::VALUE3);
-      feather.moveCursorY(-2);
-      feather.println("    Sample Rate: ", (int)round(rawRate), sampleRateFormat, Color::VALUE2);
-      feather.moveCursorY(-2);
-      feather.println(" Effective Rate: ", effectiveRate, effectiveRateFormat, Color::VALUE2);
-      feather.moveCursorY(-2);
+      arduino.println("Avg Charge Time: ", capacitorSensor.chargeTimeMicros(), chargeFormat, Color::VALUE3);
+      arduino.moveCursorY(-2);
+      arduino.println("    Sample Rate: ", (int)round(rawRate), sampleRateFormat, Color::VALUE2);
+      arduino.moveCursorY(-2);
+      arduino.println(" Effective Rate: ", effectiveRate, effectiveRateFormat, Color::VALUE2);
+      arduino.moveCursorY(-2);
    }
 }
 

@@ -16,14 +16,28 @@
 #include "Timer.h"
 #include "TempSensor.h"
 #include "Multiplexer.h"
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_LED_SUPPORTED
+#error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
+#endif
+#ifndef ARDUINO_PREFERENCES_SUPPORTED
+#error "This sketch requires a board with Preferences support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "SerialX.h"
 #include "Influx.h"
 #include "TempCalibrator.h"
 #include <Wire.h>
 
-Feather feather;
-NeoPixelStatus status(&feather.neoPixel);
+Arduino arduino;
+NeoPixelStatus status(&arduino.neoPixel);
 constexpr uint8_t NUM_SENSORS = 8;
 TempSensor sensors[] =
 {
@@ -112,16 +126,16 @@ View view = View::RawTemps;
 void printCalibrationCodeToSerial()
 {
    // load saved correction factors
-   feather.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
+   arduino.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
    float tempCorrections[NUM_SENSORS];
    std::string ids[NUM_SENSORS];
 
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      tempCorrections[i] = feather.preferences.getFloat((String(TEMP_KEY_PREFIX) + i).c_str());
-      ids[i] = feather.preferences.getString((String(ID_KEY_PREFIX) + i).c_str()).c_str();
+      tempCorrections[i] = arduino.preferences.getFloat((String(TEMP_KEY_PREFIX) + i).c_str());
+      ids[i] = arduino.preferences.getString((String(ID_KEY_PREFIX) + i).c_str()).c_str();
    }
-   feather.preferences.end();
+   arduino.preferences.end();
 
    // print saved factors for easy paste into TempSensorCallibration.h
    Serial.println("Copy this data to libraries\\Woyak\\TempSensorCallibration.h");
@@ -140,44 +154,44 @@ void printCalibrationCodeToSerial()
 void displaySavedInfo()
 {
    // load saved correction factors
-   feather.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
+   arduino.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
    float tempCorrections[NUM_SENSORS];
 
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      tempCorrections[i] = feather.preferences.getFloat((String(TEMP_KEY_PREFIX) + i).c_str());
+      tempCorrections[i] = arduino.preferences.getFloat((String(TEMP_KEY_PREFIX) + i).c_str());
    }
-   feather.preferences.end();
+   arduino.preferences.end();
 
    printCalibrationCodeToSerial();
 
    // display saved temperature factors
-   feather.setCursor(0, 0);
-   feather.setTextSize(2);
-   feather.fillRect(0, 0, feather.width(), 2.5 * feather.charH(), Color::ORANGE);
-   feather.moveCursorY((0.5) * feather.charH() / 2);
-   feather.printlnC("Temp", Color::WHITE, Color::ORANGE);
-   feather.printlnC("Deltas", Color::WHITE, Color::ORANGE);
-   feather.moveCursorY(feather.charH() / 2);
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(2);
+   arduino.fillRect(0, 0, arduino.width(), 2.5 * arduino.charH(), Color::ORANGE);
+   arduino.moveCursorY((0.5) * arduino.charH() / 2);
+   arduino.printlnC("Temp", Color::WHITE, Color::ORANGE);
+   arduino.printlnC("Deltas", Color::WHITE, Color::ORANGE);
+   arduino.moveCursorY(arduino.charH() / 2);
 
-   feather.setTextSize(3);
+   arduino.setTextSize(3);
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      feather.print((i + 1), Color::LABEL);
-      feather.moveCursorX(10);
+      arduino.print((i + 1), Color::LABEL);
+      arduino.moveCursorX(10);
 
       if (isnan(tempCorrections[i]))
       {
-         feather.println("-----", Color::GRAY);
+         arduino.println("-----", Color::GRAY);
       }
       else
       {
-         feather.println(tempCorrections[i], correctionFormat, Color::VALUE);
+         arduino.println(tempCorrections[i], correctionFormat, Color::VALUE);
       }
    }
 
    TimerSecs waitTimer(SAVED_INFO_WAIT_S);
-   while (!feather.buttonA.wasPressed() && !waitTimer.ready())
+   while (!arduino.buttonA.wasPressed() && !waitTimer.ready())
    {
       delay(1);
    }
@@ -188,12 +202,12 @@ void displaySavedInfo()
 
 void waitForButtonPress()
 {
-   feather.clearDisplay();
+   arduino.clearDisplay();
 
-   while (!feather.buttonA.wasPressed())
+   while (!arduino.buttonA.wasPressed())
    {
-      feather.setCursor(0, 0);
-      feather.setTextSize(3);
+      arduino.setCursor(0, 0);
+      arduino.setTextSize(3);
 
       for (int i = 0; i < NUM_SENSORS; i++)
       {
@@ -205,22 +219,22 @@ void waitForButtonPress()
          {
             temp = sensor.readTemperatureF();
          }
-         feather.print((i + 1), Color::LABEL);
-         feather.moveCursorX(feather.charW() / 2);
+         arduino.print((i + 1), Color::LABEL);
+         arduino.moveCursorX(arduino.charW() / 2);
          if (sensorExists)
          {
-            feather.println(temp, tempFormat, Color::VALUE);
+            arduino.println(temp, tempFormat, Color::VALUE);
          }
          else
          {
-            feather.println("-----", Color::GRAY);
+            arduino.println("-----", Color::GRAY);
          }
       }
 
-      feather.setTextSize(2);
-      feather.setCursorY(feather.height() - 2 * feather.charH());
-      feather.println("Press button", Color::GRAY);
-      feather.print("to begin", Color::GRAY);
+      arduino.setTextSize(2);
+      arduino.setCursorY(arduino.height() - 2 * arduino.charH());
+      arduino.println("Press button", Color::GRAY);
+      arduino.print("to begin", Color::GRAY);
    }
 }
 
@@ -229,16 +243,16 @@ void setup()
    SerialX::begin();
    Wire.begin();
 
-   feather.begin();
-   feather.setRotation(DisplayRotation::PORTRAIT);
+   arduino.begin();
+   arduino.setRotation(DisplayRotation::PORTRAIT);
 
    status.begin();
 
    displaySavedInfo();
 
-   feather.setTextSize(3);
+   arduino.setTextSize(3);
 
-   feather.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
+   arduino.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
    uint8_t detectedSensorCount = 0;
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
@@ -256,9 +270,9 @@ void setup()
       sensor.setTempCorrectionF(0);
 
       points[i].addTag("location", (String("Calibration ") + (i + 1)).c_str());
-      feather.preferences.putString((String(ID_KEY_PREFIX) + i).c_str(), sensorExists ? sensor.id() : "");
+      arduino.preferences.putString((String(ID_KEY_PREFIX) + i).c_str(), sensorExists ? sensor.id() : "");
    }
-   feather.preferences.end();
+   arduino.preferences.end();
 
    uint8_t batchSize = std::max((uint8_t)1, detectedSensorCount);
    client.setWriteOptions(WriteOptions().batchSize(batchSize).bufferSize(2 * batchSize));
@@ -267,22 +281,22 @@ void setup()
 
    waitForButtonPress();
 
-   feather.echoToSerial = true;
-   feather.clearDisplay();
-   feather.setTextSize(3);
-   feather.println("Init", Color::HEADING);
-   feather.moveCursorY(10);
+   arduino.echoToSerial = true;
+   arduino.clearDisplay();
+   arduino.setTextSize(3);
+   arduino.println("Init", Color::HEADING);
+   arduino.moveCursorY(10);
 
-   feather.setTextSize(2);
-   if (!influx.begin(&feather))
+   arduino.setTextSize(2);
+   if (!influx.begin(&arduino))
    {
       Util::reset(WIFI_RESET_DELAY_S);
    }
 
    delay(1000);
 
-   feather.clearDisplay();
-   feather.echoToSerial = false;
+   arduino.clearDisplay();
+   arduino.echoToSerial = false;
 
    pinMode(BUILTIN_LED, OUTPUT);
    digitalWrite(BUILTIN_LED, LOW);
@@ -291,9 +305,9 @@ void setup()
 long count = 0;
 void loop()
 {
-   if (feather.buttonA.wasPressed())
+   if (arduino.buttonA.wasPressed())
    {
-      feather.clearDisplay();
+      arduino.clearDisplay();
       view++;
    }
 
@@ -312,25 +326,25 @@ void loop()
          }
       }
 
-      feather.setCursor(0, 0);
-      feather.setTextSize(2);
+      arduino.setCursor(0, 0);
+      arduino.setTextSize(2);
       switch (view)
       {
       case View::RawTemps:
-         feather.println("Raw Temps", Color::HEADING);
+         arduino.println("Raw Temps", Color::HEADING);
          break;
 
       case View::Corrected:
-         feather.println("Corrected", Color::HEADING);
+         arduino.println("Corrected", Color::HEADING);
          break;
 
       case View::Correction:
-         feather.println("Correction", Color::HEADING);
+         arduino.println("Correction", Color::HEADING);
          break;
       }
-      feather.moveCursorY(10);
+      arduino.moveCursorY(10);
 
-      feather.setTextSize(3);
+      arduino.setTextSize(3);
       for (int i = 0; i < NUM_SENSORS; i++)
       {
          Multiplexer::select(i);
@@ -338,8 +352,8 @@ void loop()
          bool sensorExists = sensor.exists();
 
          // values
-         feather.print((i + 1), Color::LABEL);
-         feather.moveCursorX(feather.charW() / 2);
+         arduino.print((i + 1), Color::LABEL);
+         arduino.moveCursorX(arduino.charW() / 2);
          if (sensorExists)
          {
             float correction = calibrator.getCorrection(i);
@@ -347,21 +361,21 @@ void loop()
             switch (view)
             {
             case View::RawTemps:
-               feather.println(timedAverage, tempFormat, Color::VALUE);
+               arduino.println(timedAverage, tempFormat, Color::VALUE);
                break;
 
             case View::Corrected:
-               feather.println(timedAverage + correction, tempFormat, Color::VALUE);
+               arduino.println(timedAverage + correction, tempFormat, Color::VALUE);
                break;
 
             case View::Correction:
-               feather.println(correction, correctionFormat, Color::VALUE);
+               arduino.println(correction, correctionFormat, Color::VALUE);
                break;
             }
          }
          else
          {
-            feather.println("-----", Color::GRAY);
+            arduino.println("-----", Color::GRAY);
          }
       }
    }
@@ -369,12 +383,12 @@ void loop()
    // ------------------------------------------- save to flash
    if (prefsTrigger.ready())
    {
-      feather.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
+      arduino.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
       for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
-         feather.preferences.putFloat((String(TEMP_KEY_PREFIX) + i).c_str(), calibrator.getCorrection(i));
+         arduino.preferences.putFloat((String(TEMP_KEY_PREFIX) + i).c_str(), calibrator.getCorrection(i));
       }
-      feather.preferences.end();
+      arduino.preferences.end();
 
       printCalibrationCodeToSerial();
    }

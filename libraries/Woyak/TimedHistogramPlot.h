@@ -1,7 +1,7 @@
 #pragma once
 
 #include "TimedHistogram.h"
-#include "Feather.h"
+#include "ArduinoWithDisplay.h"
 #include "TimedValues.h"
 #include "Util.h"
 
@@ -9,7 +9,7 @@ template<unsigned long (*TimeFunc)() = millis>
 class TimedHistogramPlotBase
 {
 private:
-   Feather& _feather;
+   ArduinoWithDisplay* _feather;
    TimedHistogramBase<TimeFunc>& _histogram;
    TimedValuesBase<float, TimeFunc>& _samples;
    static constexpr unsigned long STALE_RENDER_GAP_MS = 250;
@@ -49,13 +49,13 @@ private:
 
    void _renderBars(const TimedHistogramSnapshot& snapshot)
    {
-     _feather.setTextSize(2);
-     _feather.display.startWrite();
+     _feather->setTextSize(2);
+     _feather->display.startWrite();
 
-     const int16_t width = _feather.width();
-     const int16_t height = _feather.height();
-     const int16_t infoHeight = _feather.charH();
-     const int16_t labelHeight = _feather.charH() + 2;
+     const int16_t width = _feather->width();
+     const int16_t height = _feather->height();
+     const int16_t infoHeight = _feather->charH();
+     const int16_t labelHeight = _feather->charH() + 2;
      const int16_t chartTop = infoHeight + 2;
      const int16_t chartBottom = height - labelHeight;
      const int16_t chartHeight = chartBottom - chartTop;
@@ -63,8 +63,8 @@ private:
 
      if (chartWidth < 2 || chartHeight < 2)
      {
-       _feather.println("Plot area too small", Color::LABEL);
-       _feather.display.endWrite();
+       _feather->println("Plot area too small", Color::LABEL);
+       _feather->display.endWrite();
        return;
      }
 
@@ -76,7 +76,7 @@ private:
 
      if (_previousRenderedBins != renderedBins)
      {
-       _feather.fillRect(0, chartTop, chartWidth, chartHeight, Color::BLACK);
+       _feather->fillRect(0, chartTop, chartWidth, chartHeight, Color::BLACK);
        for (uint i = 0; i < _histogram.getNumBinsX(); i++)
        {
          _previousBarHeights[i] = 0;
@@ -93,11 +93,11 @@ private:
          {
             int16_t x0 = static_cast<int16_t>((static_cast<int32_t>(i) * chartWidth) / renderedBins);
             int16_t x1 = static_cast<int16_t>((static_cast<int32_t>(i + 1) * chartWidth) / renderedBins);
-            _feather.fillRect(x0, chartBottom - prevH, std::max<int16_t>(1, x1 - x0), prevH, Color::BLACK);
+            _feather->fillRect(x0, chartBottom - prevH, std::max<int16_t>(1, x1 - x0), prevH, Color::BLACK);
             _previousBarHeights[i] = 0;
          }
        }
-       _feather.display.endWrite();
+       _feather->display.endWrite();
        return;
      }
 
@@ -123,38 +123,38 @@ private:
        {
          if (barHeight > prevH)
          {
-            _feather.fillRect(x0, chartBottom - barHeight, barWidth, barHeight - prevH, Color::GREEN);
+            _feather->fillRect(x0, chartBottom - barHeight, barWidth, barHeight - prevH, Color::GREEN);
          }
          else
          {
-            _feather.fillRect(x0, chartBottom - prevH, barWidth, prevH - barHeight, Color::BLACK);
+            _feather->fillRect(x0, chartBottom - prevH, barWidth, prevH - barHeight, Color::BLACK);
          }
          _previousBarHeights[i] = barHeight;
        }
      }
 
-     _feather.fillRect(0, chartBottom, chartWidth, 1, Color::DARKGRAY);
+     _feather->fillRect(0, chartBottom, chartWidth, 1, Color::DARKGRAY);
 
      if (snapshot.minValue != _previousMin || snapshot.maxValue != _previousMax || snapshot.sampleRangeSeconds != _previousSampleRangeSeconds)
      {
        int16_t labelY = chartBottom + 2;
-       int16_t rangeLabelW = static_cast<int16_t>(_sampleRangeFormat.length() * _feather.charW());
+       int16_t rangeLabelW = static_cast<int16_t>(_sampleRangeFormat.length() * _feather->charW());
        int16_t rangeX = (chartWidth - rangeLabelW) / 2;
 
        String minLabel = Util::toSignificantString(snapshot.minValue, MIN_MAX_SIGNIFICANT_DIGITS);
        String maxLabel = Util::toSignificantString(snapshot.maxValue, MIN_MAX_SIGNIFICANT_DIGITS);
 
-       _feather.setCursor(0, labelY);
-       _feather.print(minLabel, Color::LABEL);
+       _feather->setCursor(0, labelY);
+       _feather->print(minLabel, Color::LABEL);
 
-       int16_t maxLabelX = chartWidth - static_cast<int16_t>(maxLabel.length() * _feather.charW());
-       _feather.setCursor(maxLabelX, labelY);
-       _feather.print(maxLabel, Color::LABEL);
+       int16_t maxLabelX = chartWidth - static_cast<int16_t>(maxLabel.length() * _feather->charW());
+       _feather->setCursor(maxLabelX, labelY);
+       _feather->print(maxLabel, Color::LABEL);
 
        if (isfinite(snapshot.sampleRangeSeconds))
        {
-         _feather.setCursor(rangeX, labelY);
-         _feather.print(snapshot.sampleRangeSeconds, _sampleRangeFormat, Color::LABEL);
+         _feather->setCursor(rangeX, labelY);
+         _feather->print(snapshot.sampleRangeSeconds, _sampleRangeFormat, Color::LABEL);
        }
 
        _previousMin = snapshot.minValue;
@@ -162,11 +162,11 @@ private:
        _previousSampleRangeSeconds = snapshot.sampleRangeSeconds;
      }
 
-     _feather.display.endWrite();
+     _feather->display.endWrite();
    }
 
 public:
-   TimedHistogramPlotBase(Feather& feather, TimedHistogramBase<TimeFunc>& histogram, TimedValuesBase<float, TimeFunc>& samples)
+   TimedHistogramPlotBase(ArduinoWithDisplay* feather, TimedHistogramBase<TimeFunc>& histogram, TimedValuesBase<float, TimeFunc>& samples)
      : _feather(feather), _histogram(histogram), _samples(samples)
    {}
 
@@ -185,8 +185,8 @@ public:
    {
      if (!_allocateRenderState())
      {
-       _feather.setTextSize(2);
-       _feather.println("Memory unavailable", Color::LABEL);
+       _feather->setTextSize(2);
+       _feather->println("Memory unavailable", Color::LABEL);
        return;
      }
 
@@ -203,8 +203,8 @@ public:
      TimedHistogramSnapshot snapshot = _histogram.capture(_samples);
      if (!_histogram.computeNormalizedBins(snapshot))
      {
-       _feather.setTextSize(2);
-       _feather.println("Memory unavailable", Color::LABEL);
+       _feather->setTextSize(2);
+       _feather->println("Memory unavailable", Color::LABEL);
        return;
      }
 

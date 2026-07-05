@@ -1,5 +1,13 @@
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "SerialX.h"
 #include "TimedStats.h"
 #include "TimedHistogramChart.h"
@@ -9,7 +17,7 @@
 #include "BarChart.h"
 #include "RollingRate.h"
 
-Feather feather;
+Arduino arduino;
 WindMeter wind(A5);
 RollingRate refreshRate(100);
 Stopwatch sw;
@@ -67,7 +75,7 @@ void setup()
    mode = Mode::Histogram;
 
    SerialX::begin();
-   feather.begin();
+   arduino.begin();
    wind.begin();
 
    delay(1000); // provide time for the wind meter to get a reading
@@ -88,18 +96,18 @@ void loop()
    slider.set(speed);
 
    // display values
-   feather.setCursor(0, 0);
-   feather.setTextSize(3);
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(3);
 
-   feather.print("Wind", Color::HEADING);
-   feather.printlnR(speed, speedFormat, Color::VALUE);
-   feather.moveCursorY(4);
+   arduino.print("Wind", Color::HEADING);
+   arduino.printlnR(speed, speedFormat, Color::VALUE);
+   arduino.moveCursorY(4);
 
-   if (feather.buttonA.wasPressed())
+   if (arduino.buttonA.wasPressed())
    {
       mode++;
 
-      feather.display.fillRect(0, feather.display.getCursorY(), feather.display.width(), feather.display.height() - feather.display.getCursorY(), (uint16_t)Color::BLACK);
+      arduino.display.fillRect(0, arduino.display.getCursorY(), arduino.display.width(), arduino.display.height() - arduino.display.getCursorY(), (uint16_t)Color::BLACK);
       multiBar.reset();
       rollingChart.reset();
       histogramChart.reset();
@@ -130,25 +138,25 @@ void loop()
 
 void displayMultiBar(float speed)
 {
-   feather.setTextSize(2);
-   feather.println("Last 10 Minutes...", Color::LABEL);
-   feather.moveCursorY(1);
+   arduino.setTextSize(2);
+   arduino.println("Last 10 Minutes...", Color::LABEL);
+   arduino.moveCursorY(1);
 
-   feather.println("Min: ", windStats.min(), speedFormat);
-   feather.moveCursorY(1);
+   arduino.println("Min: ", windStats.min(), speedFormat);
+   arduino.moveCursorY(1);
 
-   feather.println("Max: ", windStats.max(), speedFormat);
-   feather.moveCursorY(1);
+   arduino.println("Max: ", windStats.max(), speedFormat);
+   arduino.moveCursorY(1);
 
-   feather.println("Avg: ", windStats.average(), speedFormat);
+   arduino.println("Avg: ", windStats.average(), speedFormat);
 
    // display bar
-   multiBar.draw(&feather.display);
+   multiBar.draw(&arduino.display);
 }
 
 void displayRollingChart(float speed)
 {
-   rollingChart.draw(&feather.display);
+   rollingChart.draw(&arduino.display);
 }
 
 Format AxisValueL("##.#", Format::Alignment::LEFT);
@@ -185,16 +193,16 @@ void displayHistogram()
       slider.setRange(RangeF(0, 30));
    }
 
-   histogramChart.draw(&feather.display);
-   slider.draw(&feather.display);
+   histogramChart.draw(&arduino.display);
+   slider.draw(&arduino.display);
 
-   feather.setTextSize(2);
-   feather.setCursor(0, -15);
+   arduino.setTextSize(2);
+   arduino.setCursor(0, -15);
 
    RangeF displayRange = histogramChart.getVisibleRange();
-   feather.print(displayRange.min, AxisValueL, Color::GRAY);
-   feather.printC((displayRange.min + displayRange.max) / 2, AxisValueL, Color::GRAY);
-   feather.printR(displayRange.max, AxisValueR, Color::GRAY);
+   arduino.print(displayRange.min, AxisValueL, Color::GRAY);
+   arduino.printC((displayRange.min + displayRange.max) / 2, AxisValueL, Color::GRAY);
+   arduino.printR(displayRange.max, AxisValueR, Color::GRAY);
    uint16_t y = DISPLAY_HEIGHT - VALUES_AXIS_HEIGHT + 1;
-   feather.display.drawLine(0, y, feather.display.width(), y, (uint16_t)Color::GRAY);
+   arduino.display.drawLine(0, y, arduino.display.width(), y, (uint16_t)Color::GRAY);
 }

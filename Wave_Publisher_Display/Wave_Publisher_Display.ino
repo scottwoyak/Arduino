@@ -1,5 +1,10 @@
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include <WiFi.h>
 #include "SerialX.h"
 #include "WiFiSettings.h"
@@ -7,7 +12,7 @@
 #include "Url.h"
 #include "Stopwatch.h"
 
-Feather feather;
+Arduino arduino;
 constexpr uint8_t TRIGGER_PIN = 6;
 constexpr uint8_t ECHO_PIN = 5;
 
@@ -19,7 +24,7 @@ TelemetryPublisher client("Waves/Lake", NUM_DECIMALS);
 
 void setup()
 {
-   feather.begin();
+   arduino.begin();
    SerialX::begin();
    Serial.println("Wave Publisher Display");
 
@@ -108,19 +113,19 @@ void loop()
 
       client.setValue(distance);
 
-      feather.setTextSize(5);
-      feather.setCursor(0, 0);
-      feather.println(distance, distFormatCm, Color::VALUE);
-      feather.println(distance * (1/2.54), distFormatIn, Color::VALUE);
+      arduino.setTextSize(5);
+      arduino.setCursor(0, 0);
+      arduino.println(distance, distFormatCm, Color::VALUE);
+      arduino.println(distance * (1/2.54), distFormatIn, Color::VALUE);
 
       Serial.println(sw.elapsedMillis() + String(" ms"));
       sw.reset();
    }
    else
    {
-      feather.setTextSize(3);
-      feather.setCursor(0, 0);
-      feather.println("Not Connected", Color::WHITE);
+      arduino.setTextSize(3);
+      arduino.setCursor(0, 0);
+      arduino.println("Not Connected", Color::WHITE);
    }
 
    client.loop(); // Continuously poll for events and maintain connection

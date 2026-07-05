@@ -9,7 +9,15 @@
 // - Records that test temperature and computes delta from the 2/s baseline.
 // - Stops when achieved sampling rate can no longer keep up with target.
 //
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "TempSensor.h"
 #include "SerialX.h"
 #include "SerialTable.h"
@@ -31,7 +39,7 @@ constexpr int16_t RATE_COL_X = 0;
 constexpr int16_t TEMP_COL_X = 86;
 constexpr int16_t DELTA_COL_X = 172;
 
-Feather feather;
+Arduino arduino;
 TempSensor sensor;
 Format rateFormat("###.#", 7, Format::Alignment::RIGHT);
 Format tempFormat("###.##", 7, Format::Alignment::RIGHT);
@@ -274,59 +282,59 @@ TestRunner testRunner;
 
 void appendDisplayResultRow(float rate, float temp, float delta)
 {
-   if ((nextDisplayRowY + feather.charH()) > feather.height())
+   if ((nextDisplayRowY + arduino.charH()) > arduino.height())
    {
       return;
    }
 
-   feather.setTextSize(2);
+   arduino.setTextSize(2);
 
-   feather.setCursor(RATE_COL_X, nextDisplayRowY);
-   feather.print(rate, rateFormat, Color::VALUE);
+   arduino.setCursor(RATE_COL_X, nextDisplayRowY);
+   arduino.print(rate, rateFormat, Color::VALUE);
 
-   feather.setCursor(TEMP_COL_X, nextDisplayRowY);
-   feather.print(temp, tempFormat, Color::VALUE2);
+   arduino.setCursor(TEMP_COL_X, nextDisplayRowY);
+   arduino.print(temp, tempFormat, Color::VALUE2);
 
-   feather.setCursor(DELTA_COL_X, nextDisplayRowY);
-   feather.println(delta, deltaFormat, Color::VALUE3);
+   arduino.setCursor(DELTA_COL_X, nextDisplayRowY);
+   arduino.println(delta, deltaFormat, Color::VALUE3);
 
-   nextDisplayRowY = feather.getCursorY();
+   nextDisplayRowY = arduino.getCursorY();
 }
 
 void drawRunHeader()
 {
-   feather.setTextSize(3);
-   feather.clearDisplay();
-   feather.println("Self Heating Test", Color::HEADING);
-   feather.setTextSize(2);
+   arduino.setTextSize(3);
+   arduino.clearDisplay();
+   arduino.println("Self Heating Test", Color::HEADING);
+   arduino.setTextSize(2);
 
-   int16_t headerY = feather.getCursorY();
-   feather.setCursor(RATE_COL_X, headerY);
-   feather.print("   Rate", Color::LABEL);
-   feather.setCursor(TEMP_COL_X, headerY);
-   feather.print("   Temp", Color::LABEL);
-   feather.setCursor(DELTA_COL_X, headerY);
-   feather.print("  Delta", Color::LABEL);
-   feather.println();
+   int16_t headerY = arduino.getCursorY();
+   arduino.setCursor(RATE_COL_X, headerY);
+   arduino.print("   Rate", Color::LABEL);
+   arduino.setCursor(TEMP_COL_X, headerY);
+   arduino.print("   Temp", Color::LABEL);
+   arduino.setCursor(DELTA_COL_X, headerY);
+   arduino.print("  Delta", Color::LABEL);
+   arduino.println();
 
-   nextDisplayRowY = feather.getCursorY();
+   nextDisplayRowY = arduino.getCursorY();
 }
 
 void finalizeDisplayRun()
 {
-   if ((nextDisplayRowY + feather.charH()) <= feather.height())
+   if ((nextDisplayRowY + arduino.charH()) <= arduino.height())
    {
-      feather.setTextSize(2);
-      feather.setCursor(0, nextDisplayRowY);
-      feather.println("Done", Color::HEADING);
-      nextDisplayRowY = feather.getCursorY();
+      arduino.setTextSize(2);
+      arduino.setCursor(0, nextDisplayRowY);
+      arduino.println("Done", Color::HEADING);
+      nextDisplayRowY = arduino.getCursorY();
    }
 
-   if ((nextDisplayRowY + feather.charH()) <= feather.height())
+   if ((nextDisplayRowY + arduino.charH()) <= arduino.height())
    {
-      feather.setCursor(0, nextDisplayRowY);
-      feather.println("Press A to rerun", Color::LABEL);
-      nextDisplayRowY = feather.getCursorY();
+      arduino.setCursor(0, nextDisplayRowY);
+      arduino.println("Press A to rerun", Color::LABEL);
+      nextDisplayRowY = arduino.getCursorY();
    }
 }
 
@@ -343,13 +351,13 @@ void setup()
    SerialX::begin();
    Wire.begin();
 
-   feather.begin();
+   arduino.begin();
 
    if (!sensor.begin())
    {
-      feather.setTextSize(3);
-      feather.clearDisplay();
-      feather.println("Sensor FAILED", Color::RED);
+      arduino.setTextSize(3);
+      arduino.clearDisplay();
+      arduino.println("Sensor FAILED", Color::RED);
       Serial.println("Sensor initialization failed");
       return;
    }
@@ -362,7 +370,7 @@ void loop()
 {
    if (testRunner.isComplete())
    {
-      if (feather.buttonA.wasPressed())
+      if (arduino.buttonA.wasPressed())
       {
          startTestRun();
       }

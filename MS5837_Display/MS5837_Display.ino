@@ -1,4 +1,9 @@
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include <MS5837.h>
 #include "Units.h"
 #include "Rate.h"
@@ -7,7 +12,7 @@
 //
 // This sketch displays temperature, depth, and altitude from an MS5837 sensor.
 //
-Feather feather;
+Arduino arduino;
 MS5837 sensor;
 
 Format tempFormat("###.## F");
@@ -34,7 +39,7 @@ void setup()
    {
    }
 
-   feather.begin();
+   arduino.begin();
 
    while (!sensor.init())
    {
@@ -49,7 +54,7 @@ void setup()
 
 void loop()
 {
-   feather.setCursor(0, 0);
+   arduino.setCursor(0, 0);
 
    // read sensor
    rate.start();
@@ -60,16 +65,16 @@ void loop()
    altitude.set(Units::M2FT(sensor.altitude()));
 
    // display values
-   feather.setTextSize(3);
-   feather.println("Temp: ", temp.get(), tempFormat);
-   feather.println("Depth: ", depth.get(), depthFormat);
-   feather.println("Alt: ", altitude.get(), altitudeFormat);
+   arduino.setTextSize(3);
+   arduino.println("Temp: ", temp.get(), tempFormat);
+   arduino.println("Depth: ", depth.get(), depthFormat);
+   arduino.println("Alt: ", altitude.get(), altitudeFormat);
 
    // display timing
-   feather.setTextSize(2);
-   feather.setCursor(0, -feather.charH() + 1);
-   feather.print("Rate: ", Color::GRAY);
-   feather.println(rate.get(), rateFormat, Color::GRAY);
+   arduino.setTextSize(2);
+   arduino.setCursor(0, -arduino.charH() + 1);
+   arduino.print("Rate: ", Color::GRAY);
+   arduino.println(rate.get(), rateFormat, Color::GRAY);
 }
 
 

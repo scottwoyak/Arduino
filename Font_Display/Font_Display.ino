@@ -1,7 +1,14 @@
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
 
-Feather feather;
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
+Arduino arduino;
 
 uint8_t textSize = 1;
 
@@ -20,26 +27,26 @@ struct FontMetrics
 void setup()
 {
    Serial.begin(115200);
-   feather.begin();
+   arduino.begin();
 }
 
 void printRange(uint8_t min, uint8_t max)
 {
    if (min == max)
    {
-      feather.print(min, Color::VALUE);
+      arduino.print(min, Color::VALUE);
    }
    else
    {
-      feather.print(min, Color::VALUE);
-      feather.print("-", Color::VALUE);
-      feather.print(max, Color::VALUE);
+      arduino.print(min, Color::VALUE);
+      arduino.print("-", Color::VALUE);
+      arduino.print(max, Color::VALUE);
    }
 }
 
 void computeMetrics(FontMetrics* m, bool print = false)
 {
-   const lgfx::v1::VLWfont* font = (const lgfx::v1::VLWfont*) feather.display.getFont();
+   const lgfx::v1::VLWfont* font = (const lgfx::v1::VLWfont*) arduino.display.getFont();
 
    m->minAdvance = 255;
    m->maxAdvance = 0;
@@ -54,8 +61,8 @@ void computeMetrics(FontMetrics* m, bool print = false)
       m->maxWidth = std::max(m->maxWidth, font->gWidth[i]);
 
       char c = font->gUnicode[i] < 256 ? (char)font->gUnicode[i] : '\0';
-      m->printMinWidth = std::min(m->printMinWidth, (uint8_t)feather.display.textWidth(String(c)));
-      m->printMaxWidth = std::max(m->printMaxWidth, (uint8_t)feather.display.textWidth(String(c)));
+      m->printMinWidth = std::min(m->printMinWidth, (uint8_t)arduino.display.textWidth(String(c)));
+      m->printMaxWidth = std::max(m->printMaxWidth, (uint8_t)arduino.display.textWidth(String(c)));
 
       if (print)
       {
@@ -78,7 +85,7 @@ void computeMetrics(FontMetrics* m, bool print = false)
          Serial.print("\t");
 
          Serial.print(" textwidth():");
-         Serial.print(feather.display.textWidth(String(c)));
+         Serial.print(arduino.display.textWidth(String(c)));
          Serial.println();
       }
    }
@@ -117,9 +124,9 @@ bool hasChanged = true;
 bool mono = true;
 void loop()
 {
-   if (feather.buttonA.wasPressed())
+   if (arduino.buttonA.wasPressed())
    {
-      feather.clearDisplay();
+      arduino.clearDisplay();
       textSize++;
       if (textSize > 7)
       {
@@ -132,35 +139,35 @@ void loop()
    if (hasChanged)
    {
       hasChanged = false;
-      feather.setTextSize(textSize, mono);
+      arduino.setTextSize(textSize, mono);
       FontMetrics fm;
       computeMetrics(&fm, true);
 
-      feather.setCursor(0, 0);
-      feather.setTextSize(3, mono);
-      uint16_t lineHeight = feather.charH();
-      feather.print("Size: ", Color::LABEL);
-      feather.print(textSize, Color::LABEL);
-      feather.print(" ", Color::LABEL);
-      feather.print(fm.height, Color::VALUE);
-      feather.print("px, ", Color::VALUE);
-      feather.print(mono ? "mono" : "prop", Color::VALUE);
-      feather.println();
+      arduino.setCursor(0, 0);
+      arduino.setTextSize(3, mono);
+      uint16_t lineHeight = arduino.charH();
+      arduino.print("Size: ", Color::LABEL);
+      arduino.print(textSize, Color::LABEL);
+      arduino.print(" ", Color::LABEL);
+      arduino.print(fm.height, Color::VALUE);
+      arduino.print("px, ", Color::VALUE);
+      arduino.print(mono ? "mono" : "prop", Color::VALUE);
+      arduino.println();
 
-      feather.setTextSize(textSize, mono);
+      arduino.setTextSize(textSize, mono);
       uint16_t top = lineHeight;
-      uint16_t bottom = feather.height() - 2 * lineHeight;
-      feather.setCursor(0, top + (bottom - top - feather.charH()) / 2.0);
-      feather.printlnC("ABC.xyz", Color::ORANGE);
+      uint16_t bottom = arduino.height() - 2 * lineHeight;
+      arduino.setCursor(0, top + (bottom - top - arduino.charH()) / 2.0);
+      arduino.printlnC("ABC.xyz", Color::ORANGE);
 
-      feather.setCursor(0, bottom);
-      feather.setTextSize(3, mono);
+      arduino.setCursor(0, bottom);
+      arduino.setTextSize(3, mono);
 
-      feather.print("  xAdvance: ", Color::LABEL);
+      arduino.print("  xAdvance: ", Color::LABEL);
       printRange(fm.minAdvance, fm.maxAdvance);
-      feather.println();
+      arduino.println();
 
-      feather.print("Char Width: ", Color::LABEL);
+      arduino.print("Char Width: ", Color::LABEL);
       printRange(fm.minWidth, fm.maxWidth);
    }
 }

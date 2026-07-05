@@ -16,7 +16,15 @@
 // Sensor mode:
 // - Reads from TestSensor (configurable via TestSensor.h using alias).
 //
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "SensorCapture.h"
 #include "SensorCaptureStats.h"
 #include "SerialX.h"
@@ -82,7 +90,7 @@ enum class DisplayMode : uint8_t
    Count
 };
 
-Feather feather;
+Arduino arduino;
 TestSensor sensor;
 Format progressPercentFormat("###%", Format::Alignment::LEFT);
 Format samplesFormat("#####", Format::Alignment::LEFT);
@@ -112,21 +120,21 @@ size_t serialDumpCount = 0;
 unsigned long lastSerialDumpMs = 0;
 
 // Display tables
-DisplayTable summaryTable(&feather, 0, 0);
-DisplayTable collectingTable(&feather, 0, 0);
+DisplayTable summaryTable(&arduino, 0, 0);
+DisplayTable collectingTable(&arduino, 0, 0);
 
 /// <summary>
 /// Initializes display tables used by summary and collecting screens.
 /// </summary>
 void initializeDisplayTables()
 {
-   feather.setTextSize(3);
-   int16_t summaryTableY = feather.charH();
+   arduino.setTextSize(3);
+   int16_t summaryTableY = arduino.charH();
 
-   feather.setTextSize(2);
+   arduino.setTextSize(2);
    int16_t collectingTableY = summaryTableY;
 
-   summaryTable = DisplayTable(&feather, 0, summaryTableY);
+   summaryTable = DisplayTable(&arduino, 0, summaryTableY);
    summaryTable.addRow("Samples", samplesFormat, Color::LABEL, Color::VALUE);
    summaryTable.addRow("Time", timeFormat, Color::LABEL, Color::VALUE);
    summaryTable.addRow("Rate", rateFormat, Color::LABEL, Color::VALUE);
@@ -134,7 +142,7 @@ void initializeDisplayTables()
    summaryTable.addRow("StdDev", statsFormat, Color::LABEL, Color::VALUE3);
    summaryTable.addRow("StdDev%", stdDevPercentFormat, Color::LABEL, Color::VALUE3);
 
-   collectingTable = DisplayTable(&feather, 0, collectingTableY);
+   collectingTable = DisplayTable(&arduino, 0, collectingTableY);
    collectingTable.addRow("Samples", collectingSamplesFormat, Color::LABEL, Color::VALUE);
    collectingTable.addRow("Time", collectingTimeFormat, Color::LABEL, Color::VALUE);
    collectingTable.addRow("Progress", progressPercentFormat, Color::LABEL, Color::VALUE);
@@ -145,10 +153,10 @@ void initializeDisplayTables()
 /// </summary>
 void renderDisplaySummary()
 {
-   feather.clearDisplay();
-   feather.setTextSize(3);
-   feather.setCursor(0, 0);
-   feather.println("Capture Summary", Color::HEADING);
+   arduino.clearDisplay();
+   arduino.setTextSize(3);
+   arduino.setCursor(0, 0);
+   arduino.println("Capture Summary", Color::HEADING);
 
    unsigned long captureTimeMs = millis() - captureStartMs;
    unsigned long captureTimeSec = captureTimeMs / 1000UL;
@@ -165,7 +173,7 @@ void renderDisplaySummary()
       stdDevPercent = (stdDev / fabsf(avg)) * 100.0f;
    }
 
-   feather.setTextSize(2);
+   arduino.setTextSize(2);
    summaryTable.updateValue(0, static_cast<unsigned long>(sampleCount));
    summaryTable.updateValue(1, captureTimeSec);
    summaryTable.updateValue(2, samplesPerSecond);
@@ -188,7 +196,7 @@ void drawDisplayHistogramForRange(size_t startIndex, int16_t top, int16_t height
    size_t valueCount = sensorCapture.count() - startIndex;
    Histogram histogram(values, valueCount, MIN_HISTOGRAM_BINS, MAX_HISTOGRAM_BINS);
 
-   HistogramPlot plot(feather, histogram, 0, feather.width(), top, height, Color::VALUE2, 3);
+   HistogramPlot plot(&arduino, histogram, 0, arduino.width(), top, height, Color::VALUE2, 3);
    plot.render();
 }
 
@@ -197,20 +205,20 @@ void drawDisplayHistogramForRange(size_t startIndex, int16_t top, int16_t height
 /// </summary>
 void renderDisplayPostWarmupHistogram()
 {
-   feather.clearDisplay();
-   feather.setTextSize(3);
-   feather.setCursor(0, 0);
-   feather.println("Post Warm-up", Color::HEADING);
+   arduino.clearDisplay();
+   arduino.setTextSize(3);
+   arduino.setCursor(0, 0);
+   arduino.println("Post Warm-up", Color::HEADING);
 
    if (!postWarmupReady || (postWarmupStartIndex >= sensorCapture.count()))
    {
-      feather.setTextSize(2);
-      feather.println("Not enough data", Color::LABEL);
+      arduino.setTextSize(2);
+      arduino.println("Not enough data", Color::LABEL);
       return;
    }
 
-   int16_t top = feather.getCursorY();
-   int16_t h = feather.height() - top - 2;
+   int16_t top = arduino.getCursorY();
+   int16_t h = arduino.height() - top - 2;
    drawDisplayHistogramForRange(postWarmupStartIndex, top, h);
 }
 
@@ -219,13 +227,13 @@ void renderDisplayPostWarmupHistogram()
 /// </summary>
 void renderDisplayHistogram()
 {
-   feather.clearDisplay();
-   feather.setTextSize(3);
-   feather.setCursor(0, 0);
-   feather.println("Histogram", Color::HEADING);
+   arduino.clearDisplay();
+   arduino.setTextSize(3);
+   arduino.setCursor(0, 0);
+   arduino.println("Histogram", Color::HEADING);
 
-   int16_t top = feather.getCursorY();
-   int16_t h = feather.height() - top - 2;
+   int16_t top = arduino.getCursorY();
+   int16_t h = arduino.height() - top - 2;
    drawDisplayHistogramForRange(0, top, h);
 }
 
@@ -234,33 +242,33 @@ void renderDisplayHistogram()
 /// </summary>
 void renderDisplayScatterPlot()
 {
-   feather.clearDisplay();
-   feather.setTextSize(3);
-   feather.setCursor(0, 0);
-   feather.println("Scatter Plot", Color::HEADING);
+   arduino.clearDisplay();
+   arduino.setTextSize(3);
+   arduino.setCursor(0, 0);
+   arduino.println("Scatter Plot", Color::HEADING);
 
    size_t totalCount = sensorCapture.count();
    if (totalCount < 2)
    {
-      feather.setTextSize(2);
-      feather.println("Not enough data", Color::LABEL);
+      arduino.setTextSize(2);
+      arduino.println("Not enough data", Color::LABEL);
       return;
    }
 
-   feather.setTextSize(2);
-   int16_t plotTop = feather.getCursorY();
-   int16_t footerHeight = feather.charH() + 2;
-   int16_t plotHeight = feather.height() - plotTop - footerHeight - 2;
-   int16_t plotWidth = feather.width();
+   arduino.setTextSize(2);
+   int16_t plotTop = arduino.getCursorY();
+   int16_t footerHeight = arduino.charH() + 2;
+   int16_t plotHeight = arduino.height() - plotTop - footerHeight - 2;
+   int16_t plotWidth = arduino.width();
 
    if (plotHeight < 20 || plotWidth < 20)
    {
-      feather.setTextSize(2);
-      feather.println("Plot area too small", Color::LABEL);
+      arduino.setTextSize(2);
+      arduino.println("Plot area too small", Color::LABEL);
       return;
    }
 
-   ScatterPlot plot(&feather, 0, plotTop, plotWidth, plotHeight);
+   ScatterPlot plot(&arduino, 0, plotTop, plotWidth, plotHeight);
    plot.render(sensorCapture.values(), totalCount);
 }
 
@@ -299,11 +307,11 @@ void renderDisplayScatterPlot()
       return;
    }
 
-   feather.setTextSize(3);
-   feather.setCursor(0, 0);
-   feather.print("Sensor Capture", Color::HEADING);
+   arduino.setTextSize(3);
+   arduino.setCursor(0, 0);
+   arduino.print("Sensor Capture", Color::HEADING);
 
-   feather.setTextSize(2);
+   arduino.setTextSize(2);
 
    size_t count = sensorCapture.count();
    unsigned long elapsedSeconds = (nowMs - captureStartMs) / 1000UL;
@@ -539,8 +547,8 @@ void setup()
 {
    SerialX::begin(115200, 2000);
    Wire.begin();
-   feather.begin();
-   feather.clearDisplay();
+   arduino.begin();
+   arduino.clearDisplay();
    sensor.begin();
    initializeDisplayTables();
 
@@ -572,7 +580,7 @@ void loop()
 
    updateSerialDump();
 
-   if (captureFinalized && feather.buttonA.wasPressed())
+   if (captureFinalized && arduino.buttonA.wasPressed())
    {
       displayMode = static_cast<DisplayMode>((static_cast<uint8_t>(displayMode) + 1U) % static_cast<uint8_t>(DisplayMode::Count));
       updateDisplayProgress(true);

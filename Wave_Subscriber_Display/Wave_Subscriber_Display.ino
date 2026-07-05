@@ -14,7 +14,12 @@
 
 #include "BarChart.h"
 #include "BufferedTimeSeries.h"
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "RollingRate.h"
 #include "RollingStats.h"
 #include "SerialX.h"
@@ -23,7 +28,7 @@
 #include "Util.h"
 #include "WiFiSettings.h"
 
-Feather feather;
+Arduino arduino;
 RollingRate refreshRate(100);
 TelemetrySubscriber client("Waves/Lake");
 RollingStats sensorReadings(500);
@@ -50,27 +55,27 @@ RollingBarChart rollingChart(ROLLING_RECT, ROLLING_RANGE, LakeBlue, Color::BLACK
 void setup()
 {
    SerialX::begin();
-   feather.begin();
+   arduino.begin();
 
    // Connect to WiFi
    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-   feather.setTextSize(2);
-   feather.setCursorY(-feather.charH());
-	feather.println("Wave Subscriber", Color::GRAY);
+   arduino.setTextSize(2);
+   arduino.setCursorY(-arduino.charH());
+	arduino.println("Wave Subscriber", Color::GRAY);
 
-	feather.println("Initializing", Color::HEADING2);
-	feather.moveCursorY(4);
+	arduino.println("Initializing", Color::HEADING2);
+	arduino.moveCursorY(4);
 
-	feather.print("WiFi...", Color::LABEL);
+	arduino.print("WiFi...", Color::LABEL);
 	while (WiFi.status() != WL_CONNECTED)
 	{
-		feather.print(".", Color::LABEL);
+		arduino.print(".", Color::LABEL);
 	}
-	feather.printlnR("OK", Color::VALUE);
-	feather.moveCursorY(1);
+	arduino.printlnR("OK", Color::VALUE);
+	arduino.moveCursorY(1);
 
-   feather.print("WebSocket...", Color::LABEL);
+   arduino.print("WebSocket...", Color::LABEL);
 
    client.setCallbacks(nullptr, onDisconnected, nullptr, nullptr, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
@@ -80,15 +85,15 @@ void setup()
 
 void onStarted()
 {
-   feather.clearDisplay();
+   arduino.clearDisplay();
 }
 
 void onError(std::string msg)
 {
-   feather.setTextSize(2);
-   feather.clearDisplay();
-   feather.display.setTextWrap(true);
-   feather.println(msg, Color::WHITE, Color::RED);
+   arduino.setTextSize(2);
+   arduino.clearDisplay();
+   arduino.display.setTextWrap(true);
+   arduino.println(msg, Color::WHITE, Color::RED);
    Util::reset(10);
 }
 
@@ -137,17 +142,17 @@ void loop()
 	rollingChart.set((ROLLING_RANGE.min + ROLLING_RANGE.max) / 2.0 + waveHeight.get());
 
 	// display values
-	feather.setCursor(0, 0);
-	feather.setTextSize(3);
+	arduino.setCursor(0, 0);
+	arduino.setTextSize(3);
 
-	feather.setTextSize(2);
-	feather.print(client.getTopic(), Color::HEADING);
-	feather.setTextSize(3);
-	feather.printR(waveHeight.get(), heightFormat, Color::VALUE);
-	feather.moveCursorY(4);
+	arduino.setTextSize(2);
+	arduino.print(client.getTopic(), Color::HEADING);
+	arduino.setTextSize(3);
+	arduino.printR(waveHeight.get(), heightFormat, Color::VALUE);
+	arduino.moveCursorY(4);
 
 	refreshRate.tick();
-	rollingChart.draw(&feather.display);
+	rollingChart.draw(&arduino.display);
 
 	if (logTimer.ready())
 	{

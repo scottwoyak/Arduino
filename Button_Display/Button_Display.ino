@@ -1,14 +1,22 @@
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "Stopwatch.h"
 
-Feather feather;
+Arduino arduino;
 
 Stopwatch sw(false);
 uint16_t lastCount = 0;
 
 //Button button(6);
-Button& button = feather.buttonA;
+Button& button = arduino.buttonA;
 
 Format pinFormat("##");
 Format boolFormat(5);
@@ -17,7 +25,7 @@ Format timeFormat("##.#s");
 void setup()
 {
    Serial.begin(115200);
-   feather.begin();
+   arduino.begin();
    button.begin();
    button.autoReset = false;
 }
@@ -30,13 +38,13 @@ void loop()
       sw.start();
    }
 
-   feather.setTextSize(3);
-   feather.setCursor(0, 0);
+   arduino.setTextSize(3);
+   arduino.setCursor(0, 0);
 
-   feather.println("Pin: ", button.getPin(), pinFormat);
-   feather.println(" Is: ", button.isPressed() ? "True" : "False", boolFormat);
-   feather.println("Was: ", button.wasPressed() ? "True" : "False", boolFormat);
-   feather.println("  #: ", button.getPressedCount());
+   arduino.println("Pin: ", button.getPin(), pinFormat);
+   arduino.println(" Is: ", button.isPressed() ? "True" : "False", boolFormat);
+   arduino.println("Was: ", button.wasPressed() ? "True" : "False", boolFormat);
+   arduino.println("  #: ", button.getPressedCount());
 
    if (lastCount != button.getPressedCount())
    {
@@ -53,20 +61,16 @@ void loop()
 
    if (sw.isRunning())
    {
-      feather.display.setTextSize(2);
-      feather.setCursor(0, feather.display.height() - feather.charH());
-      feather.print("Resetting in ", Color::SUB_LABEL);
-      feather.print((5 - sw.elapsedSecs()), timeFormat, Color::SUB_LABEL);
+      arduino.display.setTextSize(2);
+      arduino.setCursor(0, arduino.display.height() - arduino.charH());
+      arduino.print("Resetting in ", Color::SUB_LABEL);
+      arduino.print((5 - sw.elapsedSecs()), timeFormat, Color::SUB_LABEL);
    }
    else
    {
       // cover up the time remaining msg
-      feather.display.fillRect(0, feather.display.height() - feather.charH(), feather.display.width(), feather.charH(), (uint16_t)Color::BLACK);
+      arduino.display.fillRect(0, arduino.display.height() - arduino.charH(), arduino.display.width(), arduino.charH(), (uint16_t)Color::BLACK);
    }
-
-#if defined(ADAFRUIT_FEATHER_M0)
-   feather.display.display();
-#endif
 }
 
 

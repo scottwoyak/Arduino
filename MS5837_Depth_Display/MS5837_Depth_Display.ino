@@ -1,28 +1,30 @@
-//
-// Displays MS5837 water depth delta in centimeters relative to startup level.
-//
-// Detailed behavior:
-// - Initializes the I2C bus, Feather display, and MS5837 pressure sensor.
-// - Retries sensor initialization until successful, showing a visible error message on display.
-// - Uses fresh-water density for depth conversion and stores startup depth as the zero reference.
-// - Continuously reads depth and displays delta depth (currentDepthCm - baselineDepthCm).
-//
-// Display output:
-// - Title row: "Water Delta".
-// - Baseline row: fixed "Baseline: 0 cm" reference.
-// - Main value row: signed depth delta in centimeters.
-//
-// Typical usage:
-// - Place sensor at reference water level, then power/reset the board.
-// - The startup reading becomes 0 cm.
-// - Observe positive/negative delta values as the water level moves from that reference.
-//
+/// <summary>
+/// Displays MS5837 water depth delta in centimeters relative to startup level.
+/// </summary>
+/// <remarks>
+/// Initializes the I2C bus, Feather display, and MS5837 pressure sensor, retrying sensor
+/// initialization until successful and showing a visible error message on display in the meantime.
+/// Uses fresh-water density for depth conversion and stores startup depth as the zero reference,
+/// then continuously reads depth and displays delta depth (currentDepthCm - baselineDepthCm).
+/// 
+/// Display output: the title row reads "Water Delta", the baseline row shows the fixed
+/// "Baseline: 0 cm" reference, and the main value row shows the signed depth delta in centimeters.
+/// 
+/// Typical usage: place the sensor at the reference water level, then power/reset the board so the
+/// startup reading becomes 0 cm; observe positive/negative delta values as the water level moves
+/// from that reference.
+/// </remarks>
+
 #include <Arduino.h>
 #include <Wire.h>
 #include <MS5837.h>
-#include "Feather.h"
+#include "ArduinoBoard.h"
 
-Feather feather;
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
+Arduino arduino;
 MS5837 sensor;
 
 Format deltaDepthFormat("####.## cm");
@@ -37,13 +39,13 @@ void setup()
 {
    Wire.begin();
    Serial.begin(115200);
-   feather.begin();
+   arduino.begin();
 
    while (!sensor.init())
    {
-      feather.setCursor(0, 0);
-      feather.setTextSize(2);
-      feather.println("MS5837 init failed", Color::RED);
+      arduino.setCursor(0, 0);
+      arduino.setTextSize(2);
+      arduino.println("MS5837 init failed", Color::RED);
       delay(1000);
    }
 
@@ -61,15 +63,15 @@ void loop()
    float currentDepthCm = sensor.depth() * METERS_TO_CENTIMETERS;
    float deltaDepthCm = currentDepthCm - baselineDepthCm;
 
-   feather.setCursor(0, 0);
-   feather.setTextSize(3);
-   feather.println("Water Delta", Color::HEADING);
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(3);
+   arduino.println("Water Delta", Color::HEADING);
 
-   feather.setTextSize(2);
-   feather.println("Baseline: 0 cm", Color::LABEL);
+   arduino.setTextSize(2);
+   arduino.println("Baseline: 0 cm", Color::LABEL);
 
-   feather.setTextSize(5);
-   feather.printlnC(deltaDepthCm, deltaDepthFormat, Color::VALUE);
+   arduino.setTextSize(5);
+   arduino.printlnC(deltaDepthCm, deltaDepthFormat, Color::VALUE);
 
    delay(DISPLAY_REFRESH_DELAY_MS);
 }

@@ -10,7 +10,12 @@
 
 #include <Arduino.h>
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_LED_SUPPORTED
+#error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
+#endif
+
 #include "LED.h"
 #include "Stopwatch.h"
 
@@ -21,17 +26,17 @@ constexpr float BLUE_INTENSITY = 0.0f;
 constexpr float BRIGHTNESS_LEVEL = 0.1f;
 constexpr unsigned long BLINK_INTERVAL_MS = 500;
 
-Feather feather;
+Arduino arduino;
 
 void setup()
 {
    Serial.begin(115200);
-   feather.begin();
+   arduino.begin();
 
    // Configure NeoPixel: red color, 10% brightness, blink at 500ms
-   feather.neoPixel.setColor(RED_INTENSITY, GREEN_INTENSITY, BLUE_INTENSITY);
-   feather.neoPixel.setLevel(BRIGHTNESS_LEVEL);
-   feather.neoPixel.blink(BLINK_INTERVAL_MS);
+   arduino.neoPixel.setColor(RED_INTENSITY, GREEN_INTENSITY, BLUE_INTENSITY);
+   arduino.neoPixel.setLevel(BRIGHTNESS_LEVEL);
+   arduino.neoPixel.blink(BLINK_INTERVAL_MS);
 }
 
 void loop()

@@ -2,7 +2,15 @@
 // Sketch for DS18B20 temperature sensor display on a Feather TFT ESP32 S3.
 //
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
@@ -10,7 +18,7 @@
 
 #define ONE_WIRE_PIN 5
 
-Feather feather;
+Arduino arduino;
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature sensors(&oneWire);
 
@@ -37,21 +45,21 @@ void setup()
    };
    delay(500);
 
-   feather.begin();
+   arduino.begin();
 
    sensors.begin();
 }
 
 void loop()
 {
-   if (feather.buttonA.wasPressed())
+   if (arduino.buttonA.wasPressed())
    {
       uint8_t resolution = sensors.getResolution();
       resolution = (resolution == 12) ? 9 : resolution + 1;
       sensors.setResolution(resolution);
    }
 
-   feather.setCursor(0, 0);
+   arduino.setCursor(0, 0);
 
    // read sensor
    rate.start();
@@ -61,16 +69,16 @@ void loop()
    float elapsedMs = rate.elapsedMicros() / 1000.0f;
 
    // display values
-   feather.setTextSize(3);
-   feather.println("Temp: ", temp, tempFormat);
-   feather.println("Resolution: ", sensors.getResolution(), resolutionFormat);
-   feather.println("Time: ", elapsedMs, timeFormat);
-   feather.println("Rate: ", rate.get(), rateFormat);
+   arduino.setTextSize(3);
+   arduino.println("Temp: ", temp, tempFormat);
+   arduino.println("Resolution: ", sensors.getResolution(), resolutionFormat);
+   arduino.println("Time: ", elapsedMs, timeFormat);
+   arduino.println("Rate: ", rate.get(), rateFormat);
 
-   feather.setTextSize(2);
-   feather.setCursorY(-2*feather.charH());
-   feather.println("Press button A", Color::SUB_LABEL);
-   feather.println("to change resolution", Color::SUB_LABEL);
+   arduino.setTextSize(2);
+   arduino.setCursorY(-2*arduino.charH());
+   arduino.println("Press button A", Color::SUB_LABEL);
+   arduino.println("to change resolution", Color::SUB_LABEL);
 }
 
 

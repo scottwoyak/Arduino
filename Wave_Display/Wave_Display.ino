@@ -11,7 +11,12 @@
 
 #include <Arduino.h>
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "Rate.h"
 #include "SerialX.h"
 
@@ -24,14 +29,14 @@ constexpr uint8_t NUM_DECIMALS = 1;
 constexpr float CM_PER_MICROSECOND = 0.034f / 2.0f;  // Speed of sound conversion factor
 constexpr float INCH_PER_CM = 1.0f / 2.54f;          // Centimeter to inch conversion
 
-Feather feather;
+Arduino arduino;
 Format distFormatCm("###.## cm");
 Format distFormatIn("###.## in");
 Rate rate;
 
 void setup()
 {
-   feather.begin();
+   arduino.begin();
    SerialX::begin();
    Serial.println("Wave Display - Initializing");
 
@@ -63,10 +68,10 @@ void loop()
    rate.stop();
 
    // Display distance values on TFT
-   feather.setTextSize(5);
-   feather.setCursor(0, 0);
-   feather.println(distanceCM, distFormatCm, Color::VALUE);
-   feather.println(distanceIN, distFormatIn, Color::VALUE);
+   arduino.setTextSize(5);
+   arduino.setCursor(0, 0);
+   arduino.println(distanceCM, distFormatCm, Color::VALUE);
+   arduino.println(distanceIN, distFormatIn, Color::VALUE);
 
    // Log measurement and performance metrics
    float elapsedMS = rate.elapsedMicros() / 1000.0f;

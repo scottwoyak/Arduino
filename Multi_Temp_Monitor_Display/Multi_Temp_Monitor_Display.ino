@@ -1,28 +1,35 @@
-// -------------------------------------------------------------------------------------------------
-//
-// Displays temperatures from up to 8 I2C-multiplexed sensors and uploads readings to InfluxDB.
-// Hold Button A to show sensor type instead of temperature for each sensor index.
-//
-// Detailed behavior:
-// - Initializes up to 8 TempSensor instances behind an I2C multiplexer and tracks each sensor's
-//   location metadata for telemetry tagging.
-// - Reads temperature/humidity on SENSOR_READ_INTERVAL_MS cadence and feeds time-averaged fields.
-// - Uses a 60-second averaging window for displayed/uploaded values while keeping upload cadence
-//   at INFLUX_INTERVAL_S.
-// - Renders either averaged temperature values or sensor type labels (Button A held) on display.
-//
-// Telemetry flow:
-// - Each sensor maps to an InfluxPoint with averaged temperature/humidity fields.
-// - On each upload interval, all active sensor points are posted, then client buffer is flushed.
-// - Wi-Fi connectivity is monitored continuously and triggers reset on loss.
-//
-// Typical usage:
-// - Start sketch and verify detected sensors in Serial startup output.
-// - Let averages settle (up to 60 seconds) before using displayed values for decisions.
-// - Monitor Influx stream for per-location averaged temperature/humidity values.
-//
-// -------------------------------------------------------------------------------------------------
-#include "Feather.h"
+/// <summary>
+/// Displays temperatures from up to 8 I2C-multiplexed sensors and uploads readings to InfluxDB.
+/// Hold Button A to show sensor type instead of temperature for each sensor index.
+/// </summary>
+/// <remarks>
+/// Initializes up to 8 TempSensor instances behind an I2C multiplexer and tracks each sensor's
+/// location metadata for telemetry tagging. Reads temperature/humidity on SENSOR_READ_INTERVAL_MS
+/// cadence and feeds time-averaged fields, using a 60-second averaging window for displayed/uploaded
+/// values while keeping upload cadence at INFLUX_INTERVAL_S. Renders either averaged temperature
+/// values or sensor type labels (Button A held) on display.
+/// 
+/// Telemetry flow: each sensor maps to an InfluxPoint with averaged temperature/humidity fields. On
+/// each upload interval, all active sensor points are posted, then the client buffer is flushed.
+/// Wi-Fi connectivity is monitored continuously and triggers reset on loss.
+/// 
+/// Typical usage: start the sketch and verify detected sensors in Serial startup output, let averages
+/// settle (up to 60 seconds) before using displayed values for decisions, then monitor the Influx
+/// stream for per-location averaged temperature/humidity values.
+/// </remarks>
+
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_LED_SUPPORTED
+#error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
+#endif
+
 #include "TempSensor.h"
 #include "SerialX.h"
 #include "Influx.h"
@@ -47,8 +54,8 @@ constexpr auto AVERAGE_WINDOW_S = 60;
 constexpr auto INFLUX_TEMPERATURE_FIELD_NAME = "temperature";
 constexpr auto INFLUX_HUMIDITY_FIELD_NAME = "humidity";
 
-Feather feather;
-NeoPixelStatus status(&feather.neoPixel);
+Arduino arduino;
+NeoPixelStatus status(&arduino.neoPixel);
 I2CMultiplexor multi;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 Influx influx(WIFI_SSID, WIFI_PASSWORD, &client, &status);
@@ -85,21 +92,21 @@ void setup()
       points[i]->addTag("location", locations[i]);
    }
 
-   feather.begin();
-   feather.setRotation(DisplayRotation::PORTRAIT);
-   feather.setTextSize(2);
-   feather.display.setTextWrap(false);
+   arduino.begin();
+   arduino.setRotation(DisplayRotation::PORTRAIT);
+   arduino.setTextSize(2);
+   arduino.display.setTextWrap(false);
    pinMode(BUILTIN_LED, OUTPUT);
 
    status.begin();
    status.setStatus(Status::STARTED);
 
-   feather.echoToSerial = true;
-   feather.clearDisplay();
-   feather.println("Initializing", Color::HEADING);
-   feather.moveCursorY(feather.charH() / 2);
+   arduino.echoToSerial = true;
+   arduino.clearDisplay();
+   arduino.println("Initializing", Color::HEADING);
+   arduino.moveCursorY(arduino.charH() / 2);
 
-   feather.print("Sensors... ", Color::LABEL);
+   arduino.print("Sensors... ", Color::LABEL);
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       Serial.println();
@@ -133,26 +140,26 @@ void setup()
          Serial.println("FAILED");
       }
    }
-   feather.printlnR("ok", Color::VALUE);
+   arduino.printlnR("ok", Color::VALUE);
 
    client.setWriteOptions(WriteOptions().batchSize(NUM_SENSORS).bufferSize(NUM_SENSORS).flushInterval(INFLUX_INTERVAL_S + 1));
-   if (!influx.begin(&feather))
+   if (!influx.begin(&arduino))
    {
       Util::reset(WIFI_RESET_DELAY_S);
    }
 
-   feather.clearDisplay();
-   feather.echoToSerial = false;
+   arduino.clearDisplay();
+   arduino.echoToSerial = false;
 }
 
 void loop()
 {
-   const bool showType = feather.buttonA.isPressed();
+   const bool showType = arduino.buttonA.isPressed();
    static bool lastShowType = showType;
 
    if (showType != lastShowType)
    {
-      feather.clearDisplay();
+      arduino.clearDisplay();
       lastShowType = showType;
    }
 
@@ -173,38 +180,38 @@ void loop()
 
    if (!influx.ensureWiFiConnected())
    {
-      feather.println("WiFi connection lost");
+      arduino.println("WiFi connection lost");
       Serial.println("WiFi connection lost");
       Util::reset(WIFI_RESET_DELAY_S);
    }
 
-   feather.setCursor(0, 0);
-   feather.setTextSize(2);
-   feather.print("Multi Monitor", Color::HEADING);
-   feather.println();
-   feather.moveCursorY(feather.charH() / 3);
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(2);
+   arduino.print("Multi Monitor", Color::HEADING);
+   arduino.println();
+   arduino.moveCursorY(arduino.charH() / 3);
 
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      feather.setTextSize(2);
-      feather.print(i, Color::GRAY);
-      feather.print(" ");
-      feather.setTextSize(3);
+      arduino.setTextSize(2);
+      arduino.print(i, Color::GRAY);
+      arduino.print(" ");
+      arduino.setTextSize(3);
 
       if (!sensors[i]->exists())
       {
-         feather.println("----", Color::GRAY);
+         arduino.println("----", Color::GRAY);
          continue;
       }
 
       if (showType)
       {
-         feather.println(sensors[i]->type(), Color::VALUE);
+         arduino.println(sensors[i]->type(), Color::VALUE);
       }
       else
       {
          float temp = tempFields[i]->get();
-         feather.println(temp, tempFormat, Color::VALUE);
+         arduino.println(temp, tempFormat, Color::VALUE);
       }
    }
 

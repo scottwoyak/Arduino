@@ -1,21 +1,26 @@
-//
-// Combined sensor visualization sketch with three display modes: Scatter, Histogram, and Noise.
-//
-// Detailed behavior:
-// - Press button A to cycle display modes.
-// - Sampling runs continuously and finite readings are stored in both TimedValues (for scatter/histogram)
-//   and TimedStats (for rolling noise metrics).
-// - Scatter mode shows a rolling timed plot.
-// - Histogram mode shows rolling value distribution.
-// - Noise mode shows Sample Time, Samples, Avg, Range, StdDev, and StdDev%.
-// - Serial output uses the Sensor_Noise metrics table at SERIAL_PRINT_INTERVAL_MS.
-// 
+/// <summary>
+/// Combined sensor visualization sketch with three display modes: Scatter, Histogram, and Noise.
+/// </summary>
+/// <remarks>
+/// Press Button A to cycle display modes. Sampling runs continuously and finite readings are stored
+/// in both TimedValues (for scatter/histogram) and TimedStats (for rolling noise metrics). Scatter
+/// mode shows a rolling timed plot, Histogram mode shows rolling value distribution, and Noise mode
+/// shows Sample Time, Samples, Avg, Range, StdDev, and StdDev%. Serial output uses the Sensor_Noise
+/// metrics table at SERIAL_PRINT_INTERVAL_MS.
+/// </remarks>
 
 #include <Arduino.h>
 #include <Wire.h>
 #include <math.h>
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
 #include "SerialX.h"
 #include "SerialTable.h"
 #include "TimedStats.h"
@@ -44,7 +49,7 @@ constexpr unsigned long NOISE_HISTORY_S = 1;
 constexpr uint16_t HISTOGRAM_BIN_COUNT = 40;
 constexpr float SENSOR_VALUE_RESOLUTION_F = 0.0049f;
 
-Feather feather;
+Arduino arduino;
 TestSensor sensor;
 Timer sampleTimer(
    (SENSOR_SAMPLE_RATE_PER_SEC == 0) ? 0 :
@@ -86,9 +91,9 @@ constexpr SerialTable::Column SERIAL_COLUMNS[] = {
 };
 SerialTable serialTable(nullptr, SERIAL_COLUMNS, sizeof(SERIAL_COLUMNS) / sizeof(SERIAL_COLUMNS[0]));
 
-TimedScatterPlot scatterPlot(feather, samples, SCATTER_HISTORY_PERIOD_S * 1000UL, 0.0f);
+TimedScatterPlot scatterPlot(&arduino, samples, SCATTER_HISTORY_PERIOD_S * 1000UL, 0.0f);
 TimedHistogram histogram(HISTOGRAM_BIN_COUNT, HISTOGRAM_HISTORY_PERIOD_S * 1000UL, SENSOR_VALUE_RESOLUTION_F);
-TimedHistogramPlot histogramPlot(feather, histogram, samples);
+TimedHistogramPlot histogramPlot(&arduino, histogram, samples);
 
 void addSample(float value)
 {
@@ -99,22 +104,22 @@ void addSample(float value)
 
 void drawHeader()
 {
-   feather.setTextSize(2);
-   feather.setCursor(0, 0);
+   arduino.setTextSize(2);
+   arduino.setCursor(0, 0);
 
    switch (displayMode)
    {
    case DisplayMode::Scatter:
-      feather.println("Sensor Scatter", Color::HEADING);
+      arduino.println("Sensor Scatter", Color::HEADING);
       break;
 
    case DisplayMode::Histogram:
-      feather.println("Histogram", Color::HEADING);
+      arduino.println("Histogram", Color::HEADING);
       break;
 
    case DisplayMode::Noise:
    default:
-      feather.println("Sensor Noise", Color::HEADING);
+      arduino.println("Sensor Noise", Color::HEADING);
       break;
    }
 }
@@ -169,35 +174,35 @@ void renderNoiseView()
    float sd = stats.stdDev();
    float sdPercent = (isfinite(avg) && (fabsf(avg) > 0.0f) && isfinite(sd)) ? ((sd / fabsf(avg)) * 100.0f) : NAN;
 
-   feather.setTextSize(2);
-   int16_t sectionTop = feather.charH() + 5;
-   int16_t rowHeight = feather.charH();
+   arduino.setTextSize(2);
+   int16_t sectionTop = arduino.charH() + 5;
+   int16_t rowHeight = arduino.charH();
 
-   feather.setCursor(0, sectionTop);
-   feather.println("Sampling Time: ", NOISE_HISTORY_S * 1000UL, sampleTimeFormat, Color::VALUE);
+   arduino.setCursor(0, sectionTop);
+   arduino.println("Sampling Time: ", NOISE_HISTORY_S * 1000UL, sampleTimeFormat, Color::VALUE);
 
-   feather.setCursor(0, sectionTop + rowHeight);
-   feather.println("      Samples: ", count, countFormat, Color::VALUE2);
+   arduino.setCursor(0, sectionTop + rowHeight);
+   arduino.println("      Samples: ", count, countFormat, Color::VALUE2);
 
    if (count == 0 || !isfinite(avg))
    {
-      feather.setCursor(0, sectionTop + (rowHeight * 2));
-      feather.println("  No valid data", Color::RED);
-      feather.setCursor(0, sectionTop + (rowHeight * 3));
-      feather.println("  Check sensor", Color::VALUE2);
-      feather.setCursor(0, sectionTop + (rowHeight * 4));
-      feather.println("  and I2C wiring", Color::VALUE2);
+      arduino.setCursor(0, sectionTop + (rowHeight * 2));
+      arduino.println("  No valid data", Color::RED);
+      arduino.setCursor(0, sectionTop + (rowHeight * 3));
+      arduino.println("  Check sensor", Color::VALUE2);
+      arduino.setCursor(0, sectionTop + (rowHeight * 4));
+      arduino.println("  and I2C wiring", Color::VALUE2);
       return;
    }
 
-   feather.setCursor(0, sectionTop + (rowHeight * 2));
-   feather.println("          Avg: ", avg, valueFormat, Color::VALUE2);
+   arduino.setCursor(0, sectionTop + (rowHeight * 2));
+   arduino.println("          Avg: ", avg, valueFormat, Color::VALUE2);
 
-   feather.setCursor(0, sectionTop + (rowHeight * 3));
-   feather.println("        Range: ", rng, rangeFormat, Color::VALUE2);
+   arduino.setCursor(0, sectionTop + (rowHeight * 3));
+   arduino.println("        Range: ", rng, rangeFormat, Color::VALUE2);
 
-   feather.setCursor(0, sectionTop + (rowHeight * 4));
-   feather.print("       StdDev: ", Color::LABEL);
+   arduino.setCursor(0, sectionTop + (rowHeight * 4));
+   arduino.print("       StdDev: ", Color::LABEL);
 
    String stdDevValue = String(stdDevFormat.toString(sd).c_str());
    stdDevValue.trim();
@@ -206,11 +211,11 @@ void renderNoiseView()
    {
       String sdPercentValue = String(stdDevPercentFormat.toString(sdPercent).c_str());
       sdPercentValue.trim();
-      feather.println(stdDevValue + ", " + sdPercentValue, Color::VALUE2);
+      arduino.println(stdDevValue + ", " + sdPercentValue, Color::VALUE2);
    }
    else
    {
-      feather.println(stdDevValue + ", n/a", Color::VALUE2);
+      arduino.println(stdDevValue + ", n/a", Color::VALUE2);
    }
 }
 
@@ -218,9 +223,9 @@ void setup()
 {
    SerialX::begin();
    Wire.begin();
-   feather.begin();
+   arduino.begin();
 
-   feather.clearDisplay();
+   arduino.clearDisplay();
    drawHeader();
 
    bool sensorReady = sensor.begin();
@@ -244,7 +249,7 @@ void setup()
 
 void loop()
 {
-   if (feather.buttonA.wasPressed())
+   if (arduino.buttonA.wasPressed())
    {
       switch (displayMode)
       {
@@ -262,7 +267,7 @@ void loop()
          break;
       }
 
-      feather.clearDisplay();
+      arduino.clearDisplay();
       drawHeader();
    }
 
@@ -286,9 +291,9 @@ void loop()
       return;
    }
 
-   feather.setTextSize(2);
-   feather.setCursor(0, 0);
-   feather.printR("", sampleRate.get(), sampleRateFormat, Color::GRAY);
+   arduino.setTextSize(2);
+   arduino.setCursor(0, 0);
+   arduino.printR("", sampleRate.get(), sampleRateFormat, Color::GRAY);
 
    switch (displayMode)
    {

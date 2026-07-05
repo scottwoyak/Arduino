@@ -1,4 +1,9 @@
-#include "Feather_ESP32_S3.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "TempSensor.h"
 #include <Adafruit_SleepyDog.h>
 #include <Adafruit_MAX1704x.h>
@@ -7,7 +12,7 @@
 
 #include "WiFiSettings.h"
 
-Feather_ESP32_S3 feather;
+Arduino arduino;
 TempSensor sensor;
 Adafruit_MAX17048 battery;
 
@@ -29,7 +34,7 @@ void goToSleep()
    delay(100); // let serial finish
 
    // sleep for 60 seconds (reboot upon wake up)
-   feather.deepSleep(INFLUX_INTERVAL_S);
+   arduino.deepSleep(INFLUX_INTERVAL_S);
 }
 
 void setup()
@@ -38,7 +43,7 @@ void setup()
    Wire.begin();
    Serial.println("Initializing... ");
 
-   feather.begin();
+   arduino.begin();
    pinMode(BUILTIN_LED, OUTPUT);
    digitalWrite(BUILTIN_LED, HIGH);
 
@@ -48,7 +53,7 @@ void setup()
    pinMode(TFT_BACKLITE, OUTPUT);
    digitalWrite(TFT_BACKLITE, LOW);
 
-   feather.print("Sensor... ");
+   arduino.print("Sensor... ");
    if (sensor.begin(true))
    {
       Serial.println("ok");
@@ -59,7 +64,7 @@ void setup()
       goToSleep();
    }
 
-   feather.print("Battery... ");
+   arduino.print("Battery... ");
    if (battery.begin())
    {
       Serial.println("ok");
@@ -70,7 +75,7 @@ void setup()
       goToSleep();
    }
 
-   if (!influx.begin(&feather))
+   if (!influx.begin(&arduino))
    {
       goToSleep();
    }

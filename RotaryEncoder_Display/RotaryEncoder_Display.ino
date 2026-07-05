@@ -10,12 +10,17 @@
 
 #include <Arduino.h>
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "RotaryEncoder.h"
 #include "SerialX.h"
 #include "Stopwatch.h"
 
-Feather feather;
+Arduino arduino;
 RotaryEncoder encoder(9, 6, 5);
 
 Format posFormat("+######");
@@ -25,7 +30,7 @@ Format highLowFormat("4");
 void setup()
 {
    SerialX::begin();
-   feather.begin();
+   arduino.begin();
    encoder.begin();
 }
 
@@ -37,28 +42,28 @@ void loop()
       encoder.setPosition(0);
    }
 
-   feather.setCursor(0, 0);
-   feather.setTextSize(3);
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(3);
 
    // Display pin A state
-   feather.println("     A: ", encoder.isLowA() ? "Low" : "High", highLowFormat);
-   feather.moveCursorY(2);
+   arduino.println("     A: ", encoder.isLowA() ? "Low" : "High", highLowFormat);
+   arduino.moveCursorY(2);
 
    // Display pin B state
-   feather.println("     B: ", encoder.isLowB() ? "Low" : "High", highLowFormat);
-   feather.moveCursorY(2);
+   arduino.println("     B: ", encoder.isLowB() ? "Low" : "High", highLowFormat);
+   arduino.moveCursorY(2);
 
    // Display current position
-   feather.println("   Pos:", encoder.getPosition(), posFormat);
-   feather.moveCursorY(2);
+   arduino.println("   Pos:", encoder.getPosition(), posFormat);
+   arduino.moveCursorY(2);
 
    // Display button state
-   feather.println("Button: ", encoder.button.isPressed() ? "True" : "False", boolFormat);
+   arduino.println("Button: ", encoder.button.isPressed() ? "True" : "False", boolFormat);
 
    // Display pin configuration
-   feather.setTextSize(2);
-   feather.setCursorY(-feather.charH());
-   feather.print("A:", encoder.getPinA());
-   feather.print("  B:", encoder.getPinB());
-   feather.println("  Button:", encoder.getButtonPin());
+   arduino.setTextSize(2);
+   arduino.setCursorY(-arduino.charH());
+   arduino.print("A:", encoder.getPinA());
+   arduino.print("  B:", encoder.getPinB());
+   arduino.println("  Button:", encoder.getButtonPin());
 }

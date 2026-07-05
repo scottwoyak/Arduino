@@ -3,7 +3,7 @@
 #include <new>
 #include <Arduino.h>
 
-#include "Feather.h"
+#include "ArduinoWithDisplay.h"
 #include "TimedValues.h"
 #include "Util.h"
 
@@ -17,7 +17,7 @@
 class TimedScatterPlot
 {
 private:
-   Feather& _feather;
+   ArduinoWithDisplay* _feather;
    TimedValues& _samples;
    Format _minMaxFormat;
    Format _sampleRangeFormat;
@@ -136,7 +136,7 @@ private:
 
          int16_t x = chartLeft + static_cast<int16_t>(i % static_cast<size_t>(chartWidth));
          int16_t y = chartTop + static_cast<int16_t>(i / static_cast<size_t>(chartWidth));
-         _feather.display.writePixel(x, y, static_cast<uint16_t>(Color::BLACK));
+         _feather->display.writePixel(x, y, static_cast<uint16_t>(Color::BLACK));
          _previousPixels[i] = static_cast<uint16_t>(Color::BLACK);
       }
    }
@@ -323,18 +323,18 @@ public:
    /// Default min/max format shows one decimal place right-aligned.
    /// Default sample range format shows one decimal place with 's' suffix, center-aligned.
    /// </summary>
-   /// <param name="feather">Reference to the Feather display interface.</param>
+   /// <param name="feather">Pointer to the display interface.</param>
    /// <param name="samples">Reference to the TimedValues buffer containing samples.</param>
    /// <param name="historyMs">Time window in milliseconds for the visible history.</param>
    /// <param name="minValueStep">Optional sensor resolution step size (0.0 for no alignment, default 0.0).</param>
-   TimedScatterPlot(Feather& feather, TimedValues& samples, unsigned long historyMs, float minValueStep = 0.0f)
+   TimedScatterPlot(ArduinoWithDisplay* feather, TimedValues& samples, unsigned long historyMs, float minValueStep = 0.0f)
       : TimedScatterPlot(feather, samples, historyMs, Format("##.#", Format::Alignment::RIGHT), Format("##.#s", Format::Alignment::CENTER), minValueStep)
    {}
 
    /// <summary>
    /// Creates a timed scatter plot renderer with custom formats.
    /// </summary>
-   TimedScatterPlot(Feather& feather, TimedValues& samples, unsigned long historyMs, const Format& minMaxFormat, const Format& sampleRangeFormat, float minValueStep = 0.0f)
+   TimedScatterPlot(ArduinoWithDisplay* feather, TimedValues& samples, unsigned long historyMs, const Format& minMaxFormat, const Format& sampleRangeFormat, float minValueStep = 0.0f)
       : _feather(feather), _samples(samples), _minMaxFormat(minMaxFormat), _sampleRangeFormat(sampleRangeFormat), _historyMs(historyMs), _minValueStep(minValueStep)
    {
       if (_historyMs == 0)
@@ -430,24 +430,24 @@ public:
    {
       const unsigned long frameStartMicros = micros();
 
-      _feather.setTextSize(2);
+      _feather->setTextSize(2);
 
-      const int16_t width = _feather.width();
-      const int16_t height = _feather.height();
-      const int16_t infoHeight = _feather.charH();
-      const int16_t labelWidth = static_cast<int16_t>(_minMaxFormat.length() * _feather.charW());
-      const int16_t chartLeft = labelWidth + _feather.charW();
+      const int16_t width = _feather->width();
+      const int16_t height = _feather->height();
+      const int16_t infoHeight = _feather->charH();
+      const int16_t labelWidth = static_cast<int16_t>(_minMaxFormat.length() * _feather->charW());
+      const int16_t chartLeft = labelWidth + _feather->charW();
       const int16_t chartTop = infoHeight + 2;
       const int16_t chartWidth = width - chartLeft - 1;
-      const int16_t rangeLineHeight = _feather.charH() + 2;
+      const int16_t rangeLineHeight = _feather->charH() + 2;
       const int16_t chartHeight = height - chartTop - rangeLineHeight;
 
       if (chartWidth < 2 || chartHeight < 2)
       {
          const unsigned long displayStartMicros = micros();
-         _feather.display.startWrite();
-         _feather.println("Plot area too small", Color::LABEL);
-         _feather.display.endWrite();
+         _feather->display.startWrite();
+         _feather->println("Plot area too small", Color::LABEL);
+         _feather->display.endWrite();
          _lastDisplayMicros = micros() - displayStartMicros;
          _lastRenderMicros = micros() - frameStartMicros;
          _lastComputeMicros = _lastRenderMicros - _lastDisplayMicros;
@@ -457,9 +457,9 @@ public:
       if (!_ensureSampleBuffers(_samples.size()))
       {
          const unsigned long displayStartMicros = micros();
-         _feather.display.startWrite();
-         _feather.println("Memory unavailable", Color::LABEL);
-         _feather.display.endWrite();
+         _feather->display.startWrite();
+         _feather->println("Memory unavailable", Color::LABEL);
+         _feather->display.endWrite();
          _lastDisplayMicros = micros() - displayStartMicros;
          _lastRenderMicros = micros() - frameStartMicros;
          _lastComputeMicros = _lastRenderMicros - _lastDisplayMicros;
@@ -471,9 +471,9 @@ public:
       if (!_ensurePixelBuffers(static_cast<size_t>(chartWidth) * static_cast<size_t>(chartHeight)))
       {
          const unsigned long displayStartMicros = micros();
-         _feather.display.startWrite();
-         _feather.println("Memory unavailable", Color::LABEL);
-         _feather.display.endWrite();
+         _feather->display.startWrite();
+         _feather->println("Memory unavailable", Color::LABEL);
+         _feather->display.endWrite();
          _lastDisplayMicros = micros() - displayStartMicros;
          _lastRenderMicros = micros() - frameStartMicros;
          _lastComputeMicros = _lastRenderMicros - _lastDisplayMicros;
@@ -617,14 +617,14 @@ public:
 
       const unsigned long displayStartMicros = micros();
 
-      _feather.display.startWrite();
+      _feather->display.startWrite();
 
       if (valueCount == 0)
       {
          _hasDensityFrame = false;
          _pendingShiftMs = 0;
          _clearChangedPixels(chartLeft, chartTop, chartWidth, chartHeight);
-         _feather.display.endWrite();
+         _feather->display.endWrite();
          _lastDisplayMicros = micros() - displayStartMicros;
          _lastRenderMicros = micros() - frameStartMicros;
          _lastComputeMicros = _lastRenderMicros - _lastDisplayMicros;
@@ -644,29 +644,29 @@ public:
 
          int16_t x = chartLeft + static_cast<int16_t>(i % static_cast<size_t>(chartWidth));
          int16_t y = chartTop + static_cast<int16_t>(i / static_cast<size_t>(chartWidth));
-         _feather.display.writePixel(x, y, newColor);
+         _feather->display.writePixel(x, y, newColor);
          _previousPixels[i] = newColor;
       }
 
-      _feather.fillRect(chartLeft, chartTop + chartHeight - 1, chartWidth, 1, Color::DARKGRAY);
-      _feather.fillRect(chartLeft, chartTop, 1, chartHeight, Color::DARKGRAY);
+      _feather->fillRect(chartLeft, chartTop + chartHeight - 1, chartWidth, 1, Color::DARKGRAY);
+      _feather->fillRect(chartLeft, chartTop, 1, chartHeight, Color::DARKGRAY);
 
       String axisMaxLabel = Util::toSignificantString(axisMaxValue, 3);
       String axisMinLabel = Util::toSignificantString(axisMinValue, 3);
 
-      _feather.setCursor(0, chartTop);
-      _feather.print(axisMaxLabel, Color::LABEL);
-      _feather.setCursor(0, chartTop + chartHeight - _feather.charH());
-      _feather.print(axisMinLabel, Color::LABEL);
+      _feather->setCursor(0, chartTop);
+      _feather->print(axisMaxLabel, Color::LABEL);
+      _feather->setCursor(0, chartTop + chartHeight - _feather->charH());
+      _feather->print(axisMinLabel, Color::LABEL);
 
       if (isfinite(sampleRangeSeconds))
       {
-         int16_t sampleRangeX = chartLeft + (chartWidth - static_cast<int16_t>(_sampleRangeFormat.length() * _feather.charW())) / 2;
-         _feather.setCursor(sampleRangeX, chartTop + chartHeight + 1);
-         _feather.print(sampleRangeSeconds, _sampleRangeFormat, Color::LABEL);
+         int16_t sampleRangeX = chartLeft + (chartWidth - static_cast<int16_t>(_sampleRangeFormat.length() * _feather->charW())) / 2;
+         _feather->setCursor(sampleRangeX, chartTop + chartHeight + 1);
+         _feather->print(sampleRangeSeconds, _sampleRangeFormat, Color::LABEL);
       }
 
-      _feather.display.endWrite();
+      _feather->display.endWrite();
 
       _lastDisplayMicros = micros() - displayStartMicros;
       _lastRenderMicros = micros() - frameStartMicros;

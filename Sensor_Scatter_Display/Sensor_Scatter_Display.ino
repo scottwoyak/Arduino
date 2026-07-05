@@ -14,7 +14,15 @@
 #include <Wire.h>
 #include <math.h>
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "SerialX.h"
 #include "TestSensor.h"
 #include "Timer.h"
@@ -32,7 +40,7 @@ constexpr unsigned long HISTOGRAM_PERIOD_S = 6;
 constexpr uint16_t BIN_COUNT = 40;
 constexpr float SHT45_TEMP_RESOLUTION_F = 0.0049f;
 
-Feather feather;
+Arduino arduino;
 TestSensor sensor;
 Timer sampleTimer(SAMPLE_INTERVAL_MS);
 Timer displayTimer(DISPLAY_INTERVAL_MS);
@@ -45,9 +53,9 @@ enum class DisplayMode : uint8_t { Scatter, Histogram };
 
 Format sampleRateFormat("###/s", Format::Alignment::RIGHT);
 
-TimedScatterPlot scatterPlot(feather, samples, SAMPLE_PERIOD_S * 1000UL, 0.0f);
+TimedScatterPlot scatterPlot(&arduino, samples, SAMPLE_PERIOD_S * 1000UL, 0.0f);
 TimedHistogram histogram(BIN_COUNT, HISTOGRAM_PERIOD_S * 1000UL, SHT45_TEMP_RESOLUTION_F);
-TimedHistogramPlot histogramPlot(feather, histogram, samples);
+TimedHistogramPlot histogramPlot(&arduino, histogram, samples);
 
 DisplayMode displayMode = DisplayMode::Scatter;
 
@@ -59,25 +67,25 @@ void addSample(float value)
 
 void drawHeader()
 {
-   feather.setTextSize(2);
-   feather.setCursor(0, 0);
-   feather.println(displayMode == DisplayMode::Scatter ? "Sensor Scatter" : "Histogram", Color::HEADING);
+   arduino.setTextSize(2);
+   arduino.setCursor(0, 0);
+   arduino.println(displayMode == DisplayMode::Scatter ? "Sensor Scatter" : "Histogram", Color::HEADING);
 }
 
 void setup()
 {
    SerialX::begin();
    Wire.begin();
-   feather.begin();
+   arduino.begin();
 
-   feather.clearDisplay();
+   arduino.clearDisplay();
    drawHeader();
 
    if (!sensor.begin())
    {
-	  feather.setTextSize(2);
-	  feather.setCursor(0, 0);
-	  feather.println("Sensor init failed", Color::RED);
+	  arduino.setTextSize(2);
+	  arduino.setCursor(0, 0);
+	  arduino.println("Sensor init failed", Color::RED);
 	  Serial.println("Sensor initialization failed.");
 	  return;
    }
@@ -85,10 +93,10 @@ void setup()
 
 void loop()
 {
-   if (feather.buttonA.wasPressed())
+   if (arduino.buttonA.wasPressed())
    {
 	  displayMode = (displayMode == DisplayMode::Scatter) ? DisplayMode::Histogram : DisplayMode::Scatter;
-	  feather.clearDisplay();
+	  arduino.clearDisplay();
 	  drawHeader();
    }
 
@@ -104,9 +112,9 @@ void loop()
    const bool shouldRender = (displayMode == DisplayMode::Scatter) || displayTimer.ready();
    if (shouldRender)
    {
-	  feather.setTextSize(2);
-	  feather.setCursor(0, 0);
-	  feather.printR("", sampleRate.get(), sampleRateFormat, Color::GRAY);
+	  arduino.setTextSize(2);
+	  arduino.setCursor(0, 0);
+	  arduino.printR("", sampleRate.get(), sampleRateFormat, Color::GRAY);
 
 	  if (displayMode == DisplayMode::Scatter)
 	  {

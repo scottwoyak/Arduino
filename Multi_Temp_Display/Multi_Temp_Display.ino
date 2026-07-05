@@ -4,14 +4,22 @@
 // Hold button A to show sensor type instead of temperature.
 //
 //-------------------------------------------------------------------------------------------------
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "TempSensor.h"
 #include "SerialX.h"
 #include "I2CMultiplexor.h"
 
 Format tempFormat("###.## F");
 
-Feather feather;
+Arduino arduino;
 I2CMultiplexor multi;
 
 constexpr uint8_t NUM_SENSORS = 8;
@@ -54,67 +62,67 @@ void setup()
       sensors[i] = new TempSensor();
    }
 
-   feather.begin();
-   feather.setRotation(DisplayRotation::PORTRAIT);
-   feather.setTextSize(INDEX_TEXT_SIZE);
-   feather.display.setTextWrap(false);
+   arduino.begin();
+   arduino.setRotation(DisplayRotation::PORTRAIT);
+   arduino.setTextSize(INDEX_TEXT_SIZE);
+   arduino.display.setTextWrap(false);
    pinMode(BUILTIN_LED, OUTPUT);
 
-   feather.echoToSerial = true;
-   feather.clearDisplay();
-   feather.println("Initializing", Color::HEADING);
-   feather.moveCursorY(feather.charH() / 2);
+   arduino.echoToSerial = true;
+   arduino.clearDisplay();
+   arduino.println("Initializing", Color::HEADING);
+   arduino.moveCursorY(arduino.charH() / 2);
 
-   feather.print("Sensors... ", Color::LABEL);
+   arduino.print("Sensors... ", Color::LABEL);
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       printSensorInitInfo(i);
    }
-   feather.printlnR("ok", Color::VALUE);
+   arduino.printlnR("ok", Color::VALUE);
 
-   feather.clearDisplay();
-   feather.echoToSerial = false;
+   arduino.clearDisplay();
+   arduino.echoToSerial = false;
 }
 
 void loop()
 {
-   const bool showType = feather.buttonA.isPressed();
+   const bool showType = arduino.buttonA.isPressed();
    static bool lastShowType = showType;
 
    if (showType != lastShowType)
    {
-      feather.clearDisplay();
+      arduino.clearDisplay();
       lastShowType = showType;
    }
 
-   feather.setCursor(0, 0);
-   feather.setTextSize(TITLE_TEXT_SIZE);
-   feather.print("MultiTemp", Color::HEADING);
-   feather.println();
-   feather.moveCursorY(feather.charH() / 3);
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(TITLE_TEXT_SIZE);
+   arduino.print("MultiTemp", Color::HEADING);
+   arduino.println();
+   arduino.moveCursorY(arduino.charH() / 3);
 
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      feather.setTextSize(INDEX_TEXT_SIZE);
-      feather.print(i, Color::GRAY);
-      feather.print(" ");
-      feather.setTextSize(VALUE_TEXT_SIZE);
+      arduino.setTextSize(INDEX_TEXT_SIZE);
+      arduino.print(i, Color::GRAY);
+      arduino.print(" ");
+      arduino.setTextSize(VALUE_TEXT_SIZE);
 
       if (!sensors[i]->exists())
       {
-         feather.println("----", Color::GRAY);
+         arduino.println("----", Color::GRAY);
          continue;
       }
 
       multi.select(i);
       if (showType)
       {
-         feather.println(sensors[i]->type(), Color::VALUE);
+         arduino.println(sensors[i]->type(), Color::VALUE);
       }
       else
       {
          float temp = sensors[i]->readTemperatureF();
-         feather.println(temp, tempFormat, Color::VALUE);
+         arduino.println(temp, tempFormat, Color::VALUE);
          Serial.print(i);
          Serial.print(": ");
          Serial.println(temp, 2);

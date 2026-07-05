@@ -1,36 +1,33 @@
-//
-// Sensor Averaging Display Capture Sketch.
-//
-// Captures finite sensor values for a fixed run window (or until the sample cap is reached), stores
-// them in RAM, and reports serial/display summaries.
-//
-// Detailed behavior:
-// - The sketch is designed for repeatable calibration runs where sampling duration, interval, and
-//   maximum sample count are controlled by constants near the top of the file.
-// - Sampling is driven by SensorCapture timing (default 1 ms cadence), and only finite values are
-//   retained in RAM.
-// - Capture ends automatically when either SAMPLING_DURATION_S elapses or MAX_SAMPLES is reached.
-//
-// Capture flow:
-// 1) Initialize display, serial, and sensor.
-// 2) Use a 1 ms timer to collect at most one sample per interval and store finite values in RAM.
-// 3) Stop when MAX_SAMPLES are stored or SAMPLING_DURATION_S expires.
-//
-// Output flow:
-// - Serial summary includes run metrics, value stats, and a value histogram.
-// - While collecting, Feather display shows live capture progress.
-// - After capture, Feather display renders a value histogram with min/max labels plus
-//   Sigma%/effective-rate rows for multiple averaging window sizes.
-//
-// Sensor mode:
-// - Reads from TempSensor in Fahrenheit.
-//
-// Typical usage:
-// - Flash the sketch and allow warm-up/capture to complete.
-// - Review serial + display outputs to compare stability (StdDev%, range) across averaging sizes.
-// 
+/// <summary>
+/// Sensor Averaging Display Capture Sketch.
+/// </summary>
+/// <remarks>
+/// Captures finite sensor values for a fixed run window (or until the sample cap is reached), stores
+/// them in RAM, and reports serial/display summaries. The sketch is designed for repeatable
+/// calibration runs where sampling duration, interval, and maximum sample count are controlled by
+/// constants near the top of the file. Sampling is driven by SensorCapture timing (default 1 ms
+/// cadence), and only finite values are retained in RAM; capture ends automatically when either
+/// SAMPLING_DURATION_S elapses or MAX_SAMPLES is reached.
+/// 
+/// Capture flow: initialize display, serial, and sensor; use a 1 ms timer to collect at most one
+/// sample per interval and store finite values in RAM; stop when MAX_SAMPLES are stored or
+/// SAMPLING_DURATION_S expires.
+/// 
+/// Output flow: the serial summary includes run metrics, value stats, and a value histogram. While
+/// collecting, the Feather display shows live capture progress; after capture, it renders a value
+/// histogram with min/max labels plus Sigma%/effective-rate rows for multiple averaging window sizes.
+/// Sensor mode reads from TempSensor in Fahrenheit.
+/// 
+/// Typical usage: flash the sketch and allow warm-up/capture to complete, then review serial +
+/// display outputs to compare stability (StdDev%, range) across averaging sizes.
+/// </remarks>
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "Histogram.h"
 #include "SensorCapture.h"
 #include "SensorCaptureStats.h"
@@ -54,7 +51,7 @@ constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 5;
 constexpr size_t BUFFER_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
 constexpr size_t NUM_BUFFER_SIZES = sizeof(BUFFER_SIZES) / sizeof(BUFFER_SIZES[0]);
 
-Feather feather;
+Arduino arduino;
 TestSensor sensor;
 Format progressPercentFormat("###%", Format::Alignment::LEFT);
 Format collectingSamplesFormat("####/1000", Format::Alignment::LEFT);
@@ -69,20 +66,20 @@ bool captureFinalized = false;
 unsigned long captureStartMs = 0;
 unsigned long lastDisplayRefreshMs = 0;
 bool collectingViewInitialized = false;
-DisplayTable collectingTable(&feather, 0, 0);
+DisplayTable collectingTable(&arduino, 0, 0);
 
 //
 // Draws a histogram panel on the Feather display.
 //
 void drawHistogramOnFeather(const char* title, const Histogram& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor)
 {
-   feather.setTextSize(2);
-   feather.setCursor(sectionLeft, sectionTop);
-   feather.println(title, Color::LABEL);
+   arduino.setTextSize(2);
+   arduino.setCursor(sectionLeft, sectionTop);
+   arduino.println(title, Color::LABEL);
 
-   int16_t chartTop = feather.getCursorY() + 1;
+   int16_t chartTop = arduino.getCursorY() + 1;
    int16_t adjustedHeight = sectionHeight - (chartTop - sectionTop);
-   HistogramPlot plot(feather, histogram, sectionLeft, sectionWidth, chartTop, adjustedHeight, barColor, CHART_MIN_MAX_SIGNIFICANT_DIGITS);
+   HistogramPlot plot(&arduino, histogram, sectionLeft, sectionWidth, chartTop, adjustedHeight, barColor, CHART_MIN_MAX_SIGNIFICANT_DIGITS);
    plot.render();
 }
 
@@ -91,20 +88,20 @@ void drawHistogramOnFeather(const char* title, const Histogram& histogram, int16
 //
 void renderHistogramsOnFeather()
 {
-   feather.clearDisplay();
+   arduino.clearDisplay();
 
    Histogram valueHistogram(sensorCapture.values(), sensorCapture.count(), HISTOGRAM_BINS);
    SensorCaptureStats analysis(sensorCapture);
 
-   feather.setTextSize(2);
-   feather.setCursor(0, 0);
+   arduino.setTextSize(2);
+   arduino.setCursor(0, 0);
    String headerText = String(sensorCapture.count()) + " Samples";
-   feather.println(headerText.c_str(), Color::HEADING);
+   arduino.println(headerText.c_str(), Color::HEADING);
 
-   int16_t top = feather.getCursorY();
-   int16_t messageHeight = feather.charH() + 2;
-   int16_t availableHeight = (int16_t)feather.height() - top - messageHeight;
-   int16_t totalWidth = (int16_t)feather.width();
+   int16_t top = arduino.getCursorY();
+   int16_t messageHeight = arduino.charH() + 2;
+   int16_t availableHeight = (int16_t)arduino.height() - top - messageHeight;
+   int16_t totalWidth = (int16_t)arduino.width();
    constexpr int16_t sectionGap = 5;
    constexpr int16_t tableWidth = 140;
    int16_t leftWidth = totalWidth - sectionGap - tableWidth;
@@ -112,7 +109,7 @@ void renderHistogramsOnFeather()
 
    drawHistogramOnFeather("", valueHistogram, 0, leftWidth, top, availableHeight, Color::VALUE2);
 
-   feather.setTextSize(2);
+   arduino.setTextSize(2);
    Format numSamplesFormat("####", Format::Alignment::RIGHT);
    Format sigmaPercentFormat("###.##%", Format::Alignment::RIGHT);
    Format hzFormat(" ####", Format::Alignment::RIGHT);
@@ -127,10 +124,10 @@ void renderHistogramsOnFeather()
    float rawStdDev = rawStats.stdDev();
    size_t rawCount = rawStats.count();
 
-   feather.setCursor(x, 0);
-   feather.println("   N Sigma%   Hz", Color::VALUE3);
+   arduino.setCursor(x, 0);
+   arduino.println("   N Sigma%   Hz", Color::VALUE3);
 
-   feather.setCursorX(x);
+   arduino.setCursorX(x);
    float rawSigmaPercent = NAN;
    if (isfinite(rawAvg) && (fabsf(rawAvg) > 0.0f) && isfinite(rawStdDev))
    {
@@ -139,19 +136,19 @@ void renderHistogramsOnFeather()
 
    if ((rawCount > 0) && isfinite(rawSigmaPercent))
    {
-      feather.print(" Raw", Color::LABEL);
-      feather.print(rawSigmaPercent, sigmaPercentFormat, Color::VALUE2);
-      feather.println(computeEffectiveRateHz(1), hzFormat, Color::VALUE2);
+      arduino.print(" Raw", Color::LABEL);
+      arduino.print(rawSigmaPercent, sigmaPercentFormat, Color::VALUE2);
+      arduino.println(computeEffectiveRateHz(1), hzFormat, Color::VALUE2);
    }
    else
    {
-      feather.println(" Raw   n/a   n/a", Color::GRAY);
+      arduino.println(" Raw   n/a   n/a", Color::GRAY);
    }
 
    constexpr size_t BUFFER_SIZE_FOR_DISPLAY[] = { 10, 20, 50, 100 };
    for (size_t i = 0; i < (sizeof(BUFFER_SIZE_FOR_DISPLAY) / sizeof(BUFFER_SIZE_FOR_DISPLAY[0])); i++)
    {
-      feather.moveCursorY(-1);
+      arduino.moveCursorY(-1);
       size_t sampleSize = BUFFER_SIZE_FOR_DISPLAY[i];
       float effectiveRateHz = computeEffectiveRateHz(sampleSize);
 
@@ -166,17 +163,17 @@ void renderHistogramsOnFeather()
          avgSigmaPercent = (avgStdDev / fabsf(avgMean)) * 100.0f;
       }
 
-      feather.setCursorX(x);
+      arduino.setCursorX(x);
       if ((averageCount > 0) && isfinite(avgSigmaPercent))
       {
-         feather.print(sampleSize, numSamplesFormat, Color::LABEL);
-         feather.print(avgSigmaPercent, sigmaPercentFormat, Color::VALUE);
-         feather.println(effectiveRateHz, hzFormat, Color::VALUE);
+         arduino.print(sampleSize, numSamplesFormat, Color::LABEL);
+         arduino.print(avgSigmaPercent, sigmaPercentFormat, Color::VALUE);
+         arduino.println(effectiveRateHz, hzFormat, Color::VALUE);
       }
       else
       {
          std::string rowText = numSamplesFormat.toString((double)sampleSize) + "   n/a   n/a";
-         feather.println(rowText, Color::GRAY);
+         arduino.println(rowText, Color::GRAY);
       }
    }
 }
@@ -286,13 +283,13 @@ void printAveragingAnalysis()
 
 void initializeCollectingTable()
 {
-   feather.setTextSize(3);
-   int16_t collectingTableY = feather.charH();
+   arduino.setTextSize(3);
+   int16_t collectingTableY = arduino.charH();
 
-   feather.setTextSize(2);
-   collectingTableY += feather.charH();
+   arduino.setTextSize(2);
+   collectingTableY += arduino.charH();
 
-   collectingTable = DisplayTable(&feather, 0, collectingTableY);
+   collectingTable = DisplayTable(&arduino, 0, collectingTableY);
    collectingTable.addRow("Samples", collectingSamplesFormat, Color::LABEL, Color::VALUE);
    collectingTable.addRow("Time", collectingTimeFormat, Color::LABEL, Color::VALUE);
    collectingTable.addRow("Progress", progressPercentFormat, Color::LABEL, Color::VALUE);
@@ -320,13 +317,13 @@ void updateDisplay(bool forceRefresh = false)
 
    if (forceRefresh || !collectingViewInitialized)
    {
-      feather.clearDisplay();
-      feather.setCursor(0, 0);
-      feather.setTextSize(3);
-      feather.println("Sensor Averaging", Color::HEADING);
+      arduino.clearDisplay();
+      arduino.setCursor(0, 0);
+      arduino.setTextSize(3);
+      arduino.println("Sensor Averaging", Color::HEADING);
 
-      feather.setTextSize(2);
-      feather.println("Collecting data", Color::VALUE);
+      arduino.setTextSize(2);
+      arduino.println("Collecting data", Color::VALUE);
       collectingViewInitialized = true;
    }
 
@@ -376,7 +373,7 @@ void setup()
 {
    SerialX::begin(115200, 2000);
    Wire.begin();
-   feather.begin();
+   arduino.begin();
 
    sensor.begin();
    sensorCapture.reset();

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Histogram.h"
-#include "Feather.h"
+#include "ArduinoWithDisplay.h"
 #include "Util.h"
 
 ///
@@ -14,7 +14,7 @@
 class HistogramPlot
 {
 private:
-    Feather& _feather;
+    ArduinoWithDisplay* _feather;
     const Histogram& _histogram;
     int16_t _sectionLeft;
     int16_t _sectionWidth;
@@ -60,17 +60,17 @@ private:
    /// </summary>
    void _renderBars()
    {
-      _feather.setTextSize(2);
-      _feather.display.startWrite();
+      _feather->setTextSize(2);
+      _feather->display.startWrite();
 
       int16_t chartTop = _sectionTop;
-      int16_t labelHeight = _feather.charH() + 2;
+      int16_t labelHeight = _feather->charH() + 2;
       int16_t chartBottom = _sectionTop + _sectionHeight - labelHeight;
       int16_t chartHeight = chartBottom - chartTop;
 
       if (chartHeight <= 2 || _sectionWidth <= 8)
       {
-        _feather.display.endWrite();
+        _feather->display.endWrite();
         return;
       }
 
@@ -99,47 +99,47 @@ private:
           {
             if (barHeight > prevH)
             {
-               _feather.fillRect(x0, chartBottom - barHeight, barWidth, barHeight - prevH, _barColor);
+               _feather->fillRect(x0, chartBottom - barHeight, barWidth, barHeight - prevH, _barColor);
             }
             else
             {
-               _feather.fillRect(x0, chartBottom - prevH, barWidth, prevH - barHeight, Color::BLACK);
+               _feather->fillRect(x0, chartBottom - prevH, barWidth, prevH - barHeight, Color::BLACK);
             }
             _previousBarHeights[i] = barHeight;
           }
         }
       }
 
-      _feather.fillRect(_sectionLeft, chartBottom - 1, _sectionWidth, 1, Color::DARKGRAY);
+      _feather->fillRect(_sectionLeft, chartBottom - 1, _sectionWidth, 1, Color::DARKGRAY);
 
       if (_histogram.count() > 0 && (_histogram.min() != _previousMin || _histogram.max() != _previousMax))
       {
         String minLabel = Util::toSignificantString(_histogram.min(), _labelSignificantDigits);
         String maxLabel = Util::toSignificantString(_histogram.max(), _labelSignificantDigits);
 
-        _feather.setCursor(_sectionLeft, chartBottom + 1);
-        _feather.print(minLabel, _barColor);
+        _feather->setCursor(_sectionLeft, chartBottom + 1);
+        _feather->print(minLabel, _barColor);
 
-        int16_t maxLabelX = _sectionLeft + _sectionWidth - static_cast<int16_t>(maxLabel.length() * _feather.charW());
+        int16_t maxLabelX = _sectionLeft + _sectionWidth - static_cast<int16_t>(maxLabel.length() * _feather->charW());
         if (maxLabelX < _sectionLeft)
         {
           maxLabelX = _sectionLeft;
         }
-        _feather.setCursor(maxLabelX, chartBottom + 1);
-        _feather.print(maxLabel, _barColor);
+        _feather->setCursor(maxLabelX, chartBottom + 1);
+        _feather->print(maxLabel, _barColor);
 
         _previousMin = _histogram.min();
         _previousMax = _histogram.max();
       }
 
-      _feather.display.endWrite();
+      _feather->display.endWrite();
    }
 
 public:
    /// <summary>
    /// Constructs a histogram plot renderer.
    /// </summary>
-   /// <param name="feather">Reference to the Feather display interface.</param>
+   /// <param name="feather">Pointer to the display interface.</param>
    /// <param name="histogram">Reference to the histogram to render.</param>
    /// <param name="sectionLeft">Left x-coordinate of the histogram panel.</param>
    /// <param name="sectionWidth">Width in pixels of the histogram panel.</param>
@@ -147,7 +147,7 @@ public:
    /// <param name="sectionHeight">Height in pixels of the histogram panel.</param>
    /// <param name="barColor">Color to use for histogram bars.</param>
    /// <param name="labelSignificantDigits">Number of significant digits for min/max labels.</param>
-   HistogramPlot(Feather& feather, const Histogram& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor, uint8_t labelSignificantDigits)
+   HistogramPlot(ArduinoWithDisplay* feather, const Histogram& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor, uint8_t labelSignificantDigits)
       : _feather(feather), _histogram(histogram), _sectionLeft(sectionLeft), _sectionWidth(sectionWidth), _sectionTop(sectionTop), _sectionHeight(sectionHeight), _barColor(barColor), _labelSignificantDigits(labelSignificantDigits)
    {
    }
@@ -168,8 +168,8 @@ public:
    {
       if (!_allocateRenderState())
       {
-        _feather.setTextSize(2);
-        _feather.println("Memory unavailable", Color::LABEL);
+        _feather->setTextSize(2);
+        _feather->println("Memory unavailable", Color::LABEL);
         return;
       }
 

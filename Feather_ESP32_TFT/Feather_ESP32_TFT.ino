@@ -1,12 +1,20 @@
-#include "Feather_ESP32_S3.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "RollingRate.h"
 
-Feather_ESP32_S3 feather;
+Arduino arduino;
 RollingRate fps(100);
 
 void setup()
 {
-   feather.begin();
+   arduino.begin();
 }
 
 long counter = 0;
@@ -18,16 +26,16 @@ void loop()
    // note: this display isn't double buffered. Past contents are not cleared,
    // but text characters overwrite past content. That's why there is an extra
    // space after "fps" - some rates are over 100 and some are 2 digits.
-   feather.setTextSize(5);
-   feather.setCursor(0, 0);
-   feather.println(counter++, Color::VALUE);
-   feather.moveCursorY(feather.charH() / 4);
+   arduino.setTextSize(5);
+   arduino.setCursor(0, 0);
+   arduino.println(counter++, Color::VALUE);
+   arduino.moveCursorY(arduino.charH() / 4);
 
-   feather.setTextSize(3);
-   feather.println("ButtonA: ", feather.buttonA.isPressed() ? "TRUE " : "FALSE");
+   arduino.setTextSize(3);
+   arduino.println("ButtonA: ", arduino.buttonA.isPressed() ? "TRUE " : "FALSE");
 
-   feather.setCursor(0, -feather.charH());
-   feather.print(fps.get(), 1);
-   feather.print(" fps ");
+   arduino.setCursor(0, -arduino.charH());
+   arduino.print(fps.get(), 1);
+   arduino.print(" fps ");
 
 }

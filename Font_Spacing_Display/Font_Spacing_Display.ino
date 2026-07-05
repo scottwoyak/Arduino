@@ -1,29 +1,37 @@
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "SerialX.h"
 
-Feather feather;
+Arduino arduino;
 constexpr auto TEXT_SIZE = 5;
 
 void setup()
 {
    SerialX::begin();
-   feather.begin();
+   arduino.begin();
 
 
    Serial.println("MONOSPACED");
-   feather.setTextSize(TEXT_SIZE, true);
+   arduino.setTextSize(TEXT_SIZE, true);
    printCharWidths();
 
    Serial.println("PROPORTIONAL");
-   feather.setTextSize(TEXT_SIZE, false);
+   arduino.setTextSize(TEXT_SIZE, false);
    printCharWidths();
 }
 
 void printCharWidths()
 {
    // unsafe cast
-   const lgfx::v1::VLWfont* font = (const lgfx::v1::VLWfont*)feather.display.getFont();
+   const lgfx::v1::VLWfont* font = (const lgfx::v1::VLWfont*)arduino.display.getFont();
 
    for (uint16_t i = 0; i < font->gCount; i++)
    {
@@ -47,7 +55,7 @@ void printCharWidths()
       Serial.print("\t");
 
       Serial.print(" textwidth():");
-      Serial.print(feather.display.textWidth(String(c)));
+      Serial.print(arduino.display.textWidth(String(c)));
       Serial.println();
    }
 }
@@ -60,24 +68,24 @@ void colorPrintln(const char* str)
    std::vector<int> charPositions;
    for (int i = 0; i < strlen(str); i++)
    {
-      feather.print(String(str[i]), Color::WHITE, c1);
-      charPositions.push_back(feather.display.getCursorX());
+      arduino.print(String(str[i]), Color::WHITE, c1);
+      charPositions.push_back(arduino.display.getCursorX());
       std::swap(c1, c2);
    }
-   feather.println();
+   arduino.println();
 
    c1 = Color::YELLOW;
    c2 = Color::CYAN;
-   feather.setTextSize(2, false);
+   arduino.setTextSize(2, false);
    for (size_t i = 0; i < charPositions.size(); i++)
    {
       int charW = charPositions[i] - (i > 0 ? charPositions[i - 1] : 0);
-      feather.print(charW, c1);
+      arduino.print(charW, c1);
       std::swap(c1, c2);
-      feather.print(" ");
+      arduino.print(" ");
    }
 
-   feather.println();
+   arduino.println();
 }
 
 std::vector<const char*> TEST_STRINGS = {
@@ -91,7 +99,7 @@ int strIndex = 0;
 
 void loop()
 {
-   if (feather.buttonA.wasPressed())
+   if (arduino.buttonA.wasPressed())
    {
       strIndex++;
       if (strIndex == TEST_STRINGS.size())
@@ -99,15 +107,15 @@ void loop()
          strIndex = 0;
       }
 
-      feather.clearDisplay();
+      arduino.clearDisplay();
    }
 
-   feather.setCursor(0, 0);
-   feather.setTextSize(TEXT_SIZE, true);
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(TEXT_SIZE, true);
    colorPrintln(TEST_STRINGS[strIndex]);
-   feather.moveCursorY(10);
+   arduino.moveCursorY(10);
 
-   feather.setTextSize(TEXT_SIZE, false);
+   arduino.setTextSize(TEXT_SIZE, false);
    colorPrintln(TEST_STRINGS[strIndex]);
 }
 

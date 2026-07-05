@@ -1,10 +1,10 @@
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
 #include "SerialX.h"
 #include "Stopwatch.h"
 #include "Util.h"
 
-Feather feather;
+Arduino arduino;
 
 constexpr uint8_t PIN = A5;
 constexpr uint8_t TRIGGER_PIN = 5;
@@ -228,7 +228,7 @@ int lastState = LOW;
 void setup()
 {
    SerialX::begin();
-   feather.begin();
+   arduino.begin();
 
    pinMode(BUILTIN_LED, OUTPUT);
    pinMode(TRIGGER_PIN, OUTPUT);

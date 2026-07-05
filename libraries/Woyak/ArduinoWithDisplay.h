@@ -2,6 +2,7 @@
 
 #include <string>
 
+#include "ArduinoBase.h"
 #include "Color.h"
 #include "Format.h"
 #include "Fonts/Roboto.h"
@@ -24,26 +25,10 @@ enum DisplayRotation
 
 ///
 /// <summary>
-/// Base class for Arduino platforms.
-/// </summary>
-///
-class Arduino
-{
-public:
-   ///
-   /// <summary>
-   /// Initialize the Arduino platform.
-   /// </summary>
-   ///
-   virtual void begin() = 0;
-};
-
-///
-/// <summary>
 /// Arduino platform with integrated display support for graphics and text rendering.
 /// </summary>
 ///
-class ArduinoWithDisplay : public Arduino
+class ArduinoWithDisplay : public ArduinoBase
 {
 private:
    void _print(const char* str, Color textColor, Color backgroundColor)
@@ -100,8 +85,7 @@ public:
    /// Initializes a new instance of the ArduinoWithDisplay class.
    /// </summary>
    ///
-   ArduinoWithDisplay()
-   {}
+   ArduinoWithDisplay() {}
 
    ///
    /// <summary>

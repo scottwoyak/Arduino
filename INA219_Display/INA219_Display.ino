@@ -1,11 +1,16 @@
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include <Adafruit_MAX1704X.h>
 #include <Adafruit_INA219.h>
 #include "SerialX.h"
 #include "RollingAverage.h"
 
-Feather feather;
+Arduino arduino;
 Adafruit_MAX17048 battery;
 Adafruit_INA219 sensor;
 
@@ -28,7 +33,7 @@ void setup()
       while (1);
    }
 
-   feather.begin();
+   arduino.begin();
    while (battery.begin() == false)
    {
       Serial.print("Looking for battery");
@@ -38,38 +43,38 @@ void setup()
 
 void loop()
 {
-   feather.setCursor(0, 0);
-   feather.setTextSize(2);
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(2);
 
-   //feather.println("INA219 Sensor", Color::HEADING);
+   //arduino.println("INA219 Sensor", Color::HEADING);
    mA.set(sensor.getCurrent_mA());
    busVolts.set(sensor.getBusVoltage_V());
    shuntVolts.set(sensor.getShuntVoltage_mV());
 
-   feather.print("    BusV: ", Color::WHITE);
-   feather.moveCursor(feather.charW() / 2, feather.charH() / 4);
-   feather.println(sensor.getBusVoltage_V(), voltsFormat, Color::VALUE);
+   arduino.print("    BusV: ", Color::WHITE);
+   arduino.moveCursor(arduino.charW() / 2, arduino.charH() / 4);
+   arduino.println(sensor.getBusVoltage_V(), voltsFormat, Color::VALUE);
 
-   feather.print("  ShuntV:", Color::WHITE);
-   feather.moveCursor(feather.charW() / 2, feather.charH() / 4);
-   feather.println(sensor.getShuntVoltage_mV(), mvoltsFormat, Color::VALUE);
+   arduino.print("  ShuntV:", Color::WHITE);
+   arduino.moveCursor(arduino.charW() / 2, arduino.charH() / 4);
+   arduino.println(sensor.getShuntVoltage_mV(), mvoltsFormat, Color::VALUE);
 
-   feather.print("   LoadV: ", Color::WHITE);
-   feather.moveCursor(feather.charW() / 2, feather.charH() / 4);
-   feather.println(busVolts.get() + shuntVolts.get() / 1000, voltsFormat, Color::VALUE);
+   arduino.print("   LoadV: ", Color::WHITE);
+   arduino.moveCursor(arduino.charW() / 2, arduino.charH() / 4);
+   arduino.println(busVolts.get() + shuntVolts.get() / 1000, voltsFormat, Color::VALUE);
 
-   feather.print(" Current:", Color::WHITE);
-   feather.moveCursor(feather.charW() / 2, feather.charH() / 4);
-   feather.println(mA.get(), currentFormat, Color::VALUE);
+   arduino.print(" Current:", Color::WHITE);
+   arduino.moveCursor(arduino.charW() / 2, arduino.charH() / 4);
+   arduino.println(mA.get(), currentFormat, Color::VALUE);
 
-   //feather.println("Battery Sensor", Color::HEADING);
-   feather.moveCursorY(10);
+   //arduino.println("Battery Sensor", Color::HEADING);
+   arduino.moveCursorY(10);
 
-   feather.print("   Volts: ", Color::WHITE);
-   feather.moveCursor(feather.charW() / 2, feather.charH() / 4);
-   feather.println(battery.cellVoltage(), voltsFormat, Color::VALUE2);
+   arduino.print("   Volts: ", Color::WHITE);
+   arduino.moveCursor(arduino.charW() / 2, arduino.charH() / 4);
+   arduino.println(battery.cellVoltage(), voltsFormat, Color::VALUE2);
 
-   feather.print("   State: ", Color::WHITE);
-   feather.moveCursor(feather.charW() / 2, feather.charH() / 4);
-   feather.println(battery.cellPercent(), percentFormat, Color::VALUE2);
+   arduino.print("   State: ", Color::WHITE);
+   arduino.moveCursor(arduino.charW() / 2, arduino.charH() / 4);
+   arduino.println(battery.cellPercent(), percentFormat, Color::VALUE2);
 }

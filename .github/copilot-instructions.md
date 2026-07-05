@@ -9,12 +9,13 @@
 - When asked to compile an Arduino sketch, build only the current sketch/project, not the entire solution.
 - When creating new Arduino projects or sketches, do not add them to the Visual Studio solution file; user will manage solution entries manually.
 - When creating new Arduino test sketches, only create the `.ino` file. Do not create `.vcxproj` project files or modify the `.slnx` solution file. The user imports new projects into the solution via Visual Micro themselves.
+- Do not edit `.sln`/`.slnx` solution files (or other files) that are currently open in the IDE, per the active IDESTATE context; ask the user to close them first or make the change manually.
 - When adding new test projects, always include them in `Tests/All_Tests/All_Tests.ino` so they run in the aggregate test project.
 - When asked for a recommendation, offer solutions and ask the user what to do instead of automatically implementing one.
 
 ## General Coding Conventions
 - Do not make changes in libraries outside of the Woyak library; third-party libraries should remain untouched.
-- Use brace-on-new-line formatting style (Allman): place opening `{` on a new line. This is also enforced via `.editorconfig`/Visual Studio C++ formatting options.
+- Formatting (indentation, brace placement/Allman style, empty-bodied function braces like `ArduinoWithDisplay() {}` in `libraries/Woyak/ArduinoWithDisplay.h`) is defined authoritatively in `.editorconfig` and enforced via Visual Studio's C++ formatting engine. Apply `.editorconfig` during cleanup passes instead of restating these values here.
 - Start non-constant private and protected class members with underscores; private and protected constants should not start with underscores. Private functions should also start with underscores and be declared before public functions.
 - Apply proper include bracket style: use quotes (`"..."`) for Woyak library headers and local project headers, and use angle brackets (`<...>`) for third-party/installed libraries like LovyanGFX, WiFi, and InfluxDbClient.
 - Prefer keeping initialization code in `setup()` rather than extracting it into separate helper functions.
@@ -37,6 +38,7 @@
 - For mock-timer-based deterministic tests, prefer exact equality assertions (`assertEqual`) over range-style boolean checks when expected values are deterministic.
 - Optimize code and suggestions for the ESP32-S3 platform, including using ESP32-specific APIs like `gpio_isr_handler_add()`, `esp_timer`, and `IRAM_ATTR` for ISR functions, and other ESP32-S3 features.
 - Always format serial tables with the `SerialTable` class.
+- Prefer using pointers instead of references for parameters/members where a choice exists.
 
 ## Documentation Comment Style
 - User prefers Visual Studio XML documentation comments (`/// <summary>`, `<param>`, `<returns>`) for class and method documentation. These are XML documentation comments used for IntelliSense.
@@ -75,7 +77,7 @@
 - Keep section comments in the style `// ----------- COMMENT` where they already exist (e.g. grouping overloads by type in library headers); do not remove them during cleanup.
 
 ## Code Cleanup Requests
-When the user asks for 'cleanup' (with no other file specified), apply it to the currently displayed/open file from IDE context (provided in the `IDESTATE CONTEXT`). A cleanup pass means bringing the file in line with all the conventions in this document, plus the rules below.
+When the user asks for 'cleanup' (with no other file specified), apply it to the currently displayed/open file from IDE context (provided in the `IDESTATE CONTEXT`). A cleanup pass means bringing the file in line with all the conventions in this document, plus the rules below. Always read `.editorconfig` as part of a cleanup pass and apply its settings (indentation, brace placement, empty-bodied function braces, etc.) as the authoritative source for formatting; this document intentionally defers to `.editorconfig` for those specifics rather than duplicating them, and focuses instead on naming, documentation, and code-organization conventions.
 
 ### Non-Negotiable Preservation Rules
 - Preserve inline comments and commented-out code exactly as-is; do not remove or "clean up" commented-out code during a cleanup pass, even if it looks unused or obsolete.
@@ -100,7 +102,7 @@ When the user asks for 'cleanup' (with no other file specified), apply it to the
 #include <Adafruit_INA219.h>
 
 // Local library headers (from libraries/Woyak)
-#include "Feather.h"
+#include "Feather_ESP32_S3.h"
 #include "Status.h"
 #include "TempSensor.h"
 #include "Timer.h"
@@ -112,7 +114,7 @@ constexpr auto VERSION = "v1.0";
 constexpr auto SENSOR_COUNT = 5;
 constexpr uint16_t BAUD_RATE = 115200;
 
-Feather feather;
+Feather_ESP32_S3 feather;
 TempSensor sensor;
 
 void setup()
@@ -167,10 +169,8 @@ float helperFunction(float param1)
 - **Format objects**: Create them inline (e.g., `Format tempFormat("###.## F");`), do NOT break out format strings into separate `constexpr const char*` constants.
 
 #### 4. Formatting
-- Check and fix code formatting (such as indentation inconsistencies) to ensure it matches the rest of the file or project.
-- Use 3 spaces for indentation (consistent with `.editorconfig` and the existing codebase).
+- Apply the formatting rules defined in `.editorconfig` (indentation, brace placement, empty-bodied function braces) as the authoritative source for a cleanup pass; read `.editorconfig` and match its settings rather than relying on values restated here.
 - One blank line between function definitions (but no extra blank lines within a tightly grouped set of near-identical overloads unless separating distinct groups).
-- Brace-on-new-line (Allman) style, consistent throughout.
 - Consistent spacing around operators.
 
 #### 5. Code Quality
@@ -192,7 +192,7 @@ float helperFunction(float param1)
 #include <Arduino.h>
 #include "Status.h"
 #include <string>
-#include "Feather.h"
+#include "Feather_ESP32_S3.h"
 ```
 
 **After:**
@@ -200,7 +200,7 @@ float helperFunction(float param1)
 #include <Arduino.h>
 #include <string>
 
-#include "Feather.h"
+#include "Feather_ESP32_S3.h"
 #include "Status.h"
 ```
 

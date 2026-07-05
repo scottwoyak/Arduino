@@ -8,7 +8,12 @@
 // failure.
 //
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "TempSensor.h"
 #include <Adafruit_SleepyDog.h>
 #include "SerialX.h"
@@ -24,7 +29,7 @@ Format tempFormat("###.## F");
 
 constexpr auto version = "v1.0";
 
-Feather feather;
+Arduino arduino;
 I2CMultiplexor multi;
 
 constexpr auto INFLUX_MEASUREMENT = "Air";
@@ -69,19 +74,19 @@ void setup()
    SerialX::begin();
    Wire.begin();
 
-   feather.begin();
-   feather.setRotation(DisplayRotation::PORTRAIT);
-   feather.setTextSize(2);
-   feather.display.setTextWrap(false);
+   arduino.begin();
+   arduino.setRotation(DisplayRotation::PORTRAIT);
+   arduino.setTextSize(2);
+   arduino.display.setTextWrap(false);
    pinMode(BUILTIN_LED, OUTPUT);
 
-   feather.echoToSerial = true;
-   feather.display.setRotation(2);
-   feather.clearDisplay();
-   feather.println("Initializing", Color::HEADING);
-   feather.moveCursorY(feather.charH() / 2);
+   arduino.echoToSerial = true;
+   arduino.display.setRotation(2);
+   arduino.clearDisplay();
+   arduino.println("Initializing", Color::HEADING);
+   arduino.moveCursorY(arduino.charH() / 2);
 
-   feather.print("Sensors... ", Color::LABEL);
+   arduino.print("Sensors... ", Color::LABEL);
    for (int i = 0; i < NUM_SENSORS; i++)
    {
       Serial.println();
@@ -108,9 +113,9 @@ void setup()
          Serial.println("FAILED");
       }
    }
-   feather.printlnR("ok", Color::VALUE);
+   arduino.printlnR("ok", Color::VALUE);
 
-   if (!influx.begin(&feather))
+   if (!influx.begin(&arduino))
    {
       Util::reset(WIFI_RESET_DELAY_S);
    }
@@ -120,8 +125,8 @@ void setup()
       points[i]->addTag("location", locations[i]);
    }
 
-   feather.clearDisplay();
-   feather.echoToSerial = false;
+   arduino.clearDisplay();
+   arduino.echoToSerial = false;
 
    Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
 }
@@ -149,17 +154,17 @@ void loop()
    // Check WiFi connection and reconnect if needed
    if (!influx.ensureWiFiConnected())
    {
-      feather.println("WiFi connection lost");
+      arduino.println("WiFi connection lost");
       Serial.println("WiFi connection lost");
       Util::reset(WIFI_RESET_DELAY_S);
    }
 
-   feather.setCursor(0, 0);
-   feather.setTextSize(2);
-   feather.print("Lake Temp", Color::HEADING);
-   feather.println();
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(2);
+   arduino.print("Lake Temp", Color::HEADING);
+   arduino.println();
 
-   feather.setTextSize(3);
+   arduino.setTextSize(3);
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       if (sensors[i]->exists())
@@ -167,27 +172,27 @@ void loop()
          float temp = tempFields[i]->get();
          float hum = humFields[i]->get();
 
-         feather.setTextSize(4);
-         feather.println(temp, tempFormat, Color::VALUE);
-         feather.setTextSize(2);
-         feather.print(hum, humFormat, Color::WHITE);
-         feather.printR(locations[i], Color::SUB_LABEL);
-         feather.println();
-         feather.moveCursorY(feather.charH() / 2);
+         arduino.setTextSize(4);
+         arduino.println(temp, tempFormat, Color::VALUE);
+         arduino.setTextSize(2);
+         arduino.print(hum, humFormat, Color::WHITE);
+         arduino.printR(locations[i], Color::SUB_LABEL);
+         arduino.println();
+         arduino.moveCursorY(arduino.charH() / 2);
       }
       else
       {
-         feather.setTextSize(3);
-         feather.println("----", Color::GRAY);
-         feather.setTextSize(2);
-         feather.println("----", Color::GRAY);
-         feather.moveCursorY(feather.charH() / 2);
+         arduino.setTextSize(3);
+         arduino.println("----", Color::GRAY);
+         arduino.setTextSize(2);
+         arduino.println("----", Color::GRAY);
+         arduino.moveCursorY(arduino.charH() / 2);
       }
    }
 
-   feather.setTextSize(2);
-   feather.setCursorY(0);
-   feather.printR(version, Color::SUB_LABEL);
+   arduino.setTextSize(2);
+   arduino.setCursorY(0);
+   arduino.printR(version, Color::SUB_LABEL);
 
    // Write point
    if (influxTimer.ready())

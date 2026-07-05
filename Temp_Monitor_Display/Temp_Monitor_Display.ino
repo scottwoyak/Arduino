@@ -27,7 +27,15 @@
 // - Power on and allow initialization to complete.
 // - Observe live values on the display and periodic telemetry uploads in InfluxDB.
 //
-#include "Feather_ESP32_S3.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_LED_SUPPORTED
+#error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
+#endif
+
 #include "TempSensor.h"
 #include <Adafruit_SleepyDog.h>
 #include "SerialX.h"
@@ -53,8 +61,8 @@ constexpr uint8_t INFLUX_HUMIDITY_DECIMAL_PLACES = 2;
 Format humFormat("##.#%");
 Format tempFormat("###.## F");
 
-Feather_ESP32_S3 feather;
-NeoPixelStatus status(&feather.neoPixel);
+Arduino arduino;
+NeoPixelStatus status(&arduino.neoPixel);
 TempSensor sensor;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 Influx influx(WIFI_SSID, WIFI_PASSWORD, &client, &status);
@@ -69,24 +77,24 @@ void setup()
    SerialX::begin();
    Wire.begin();
 
-   feather.begin();
+   arduino.begin();
    pinMode(BUILTIN_LED, OUTPUT);
 
    status.begin();
 
-   feather.echoToSerial = true;
-   feather.clearDisplay();
-   feather.setTextSize(TEXT_SIZE_SMALL);
-   feather.println("Initializing", Color::HEADING);
-   feather.moveCursorY(feather.charH() / 2);
+   arduino.echoToSerial = true;
+   arduino.clearDisplay();
+   arduino.setTextSize(TEXT_SIZE_SMALL);
+   arduino.println("Initializing", Color::HEADING);
+   arduino.moveCursorY(arduino.charH() / 2);
 
-   feather.print("Loc: ", Color::LABEL);
-   feather.printlnR(location, Color::VALUE);
+   arduino.print("Loc: ", Color::LABEL);
+   arduino.printlnR(location, Color::VALUE);
 
-   feather.print("Sensor... ", Color::LABEL);
+   arduino.print("Sensor... ", Color::LABEL);
    if (sensor.begin(true))
    {
-      feather.printlnR("ok", Color::VALUE);
+      arduino.printlnR("ok", Color::VALUE);
       Serial.print("   Type: ");
       Serial.println(sensor.type());
       Serial.print("   Address: ");
@@ -96,11 +104,11 @@ void setup()
    }
    else
    {
-      feather.printR("FAILED", Color::RED);
+      arduino.printR("FAILED", Color::RED);
       Util::reset(RESET_DELAY_S);
    }
 
-   if (!influx.begin(&feather))
+   if (!influx.begin(&arduino))
    {
       Util::reset(RESET_DELAY_S);
    }
@@ -109,8 +117,8 @@ void setup()
 
    point.addTag("location", location);
 
-   feather.clearDisplay();
-   feather.echoToSerial = false;
+   arduino.clearDisplay();
+   arduino.echoToSerial = false;
 
    Watchdog.enable(WATCHDOG_INTERVAL_MS);
 }
@@ -127,39 +135,39 @@ void loop()
 
    if (!influx.ensureWiFiConnected())
    {
-      feather.clearDisplay();
-      feather.println("WiFi connection lost", Color::RED);
+      arduino.clearDisplay();
+      arduino.println("WiFi connection lost", Color::RED);
       Util::reset(RESET_DELAY_S);
    }
 
-   feather.setCursor(0, 0);
-   feather.setTextSize(TEXT_SIZE_SMALL);
-   feather.print("Influx", Color::HEADING);
-   feather.printR(sensor.type(), Color::GRAY);
-   feather.println();
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(TEXT_SIZE_SMALL);
+   arduino.print("Influx", Color::HEADING);
+   arduino.printR(sensor.type(), Color::GRAY);
+   arduino.println();
 
    float temp = tempField->get();
    float hum = humField->get();
-   uint8_t x = (feather.width() - MAX_CHARS * feather.charW()) / 2;
+   uint8_t x = (arduino.width() - MAX_CHARS * arduino.charW()) / 2;
 
-   feather.setTextSize(4);
-   feather.setCursor(x, (feather.height() - 2 * feather.charH()) / 2 - SPACING / 2);
-   feather.println(temp, tempFormat, Color::VALUE);
+   arduino.setTextSize(4);
+   arduino.setCursor(x, (arduino.height() - 2 * arduino.charH()) / 2 - SPACING / 2);
+   arduino.println(temp, tempFormat, Color::VALUE);
 
-   feather.setCursor(x, feather.getCursorY() + SPACING);
-   feather.println(hum, humFormat, Color::VALUE);
+   arduino.setCursor(x, arduino.getCursorY() + SPACING);
+   arduino.println(hum, humFormat, Color::VALUE);
 
-   feather.setTextSize(TEXT_SIZE_SMALL);
-   feather.setCursor(0, -feather.charH());
-   feather.print(location, Color::CYAN);
-   feather.printR(version, Color::SUB_LABEL);
+   arduino.setTextSize(TEXT_SIZE_SMALL);
+   arduino.setCursor(0, -arduino.charH());
+   arduino.print(location, Color::CYAN);
+   arduino.printR(version, Color::SUB_LABEL);
 
    if (influxTimer.ready())
    {
       digitalWrite(BUILTIN_LED, HIGH);
       if (!point.post(&client))
       {
-         feather.deepSleep(SENSOR_POST_FAILURE_SLEEP_S);
+         arduino.deepSleep(SENSOR_POST_FAILURE_SLEEP_S);
       }
       digitalWrite(BUILTIN_LED, LOW);
    }

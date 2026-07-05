@@ -1,7 +1,6 @@
 #pragma once
 
 #include "ArduinoWithDisplay.h"
-#include "Feather.h"
 #include <InfluxDbClient.h>
 #include <InfluxDbCloud.h>
 #include <cmath>

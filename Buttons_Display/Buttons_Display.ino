@@ -11,11 +11,16 @@
 
 #include <Arduino.h>
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "SerialX.h"
 #include "Stopwatch.h"
 
-Feather feather;
+Arduino arduino;
 Stopwatch sw(false);
 
 Button* buttons[] = {
@@ -46,8 +51,8 @@ Format timeFormat("##.#s");
 void setup()
 {
    SerialX::begin();
-   feather.begin();
-   feather.setRotation(DisplayRotation::PORTRAIT);
+   arduino.begin();
+   arduino.setRotation(DisplayRotation::PORTRAIT);
 
    for (int i = 0; i < NUM_BUTTONS; i++)
    {
@@ -70,24 +75,24 @@ void loop()
    }
 
    // Display button states
-   feather.setTextSize(2);
-   feather.setCursor(0, 0);
+   arduino.setTextSize(2);
+   arduino.setCursor(0, 0);
 
-   feather.print("Pin ", Color::LABEL);
-   feather.print("Is  ", Color::LABEL);
-   feather.print("Was ", Color::LABEL);
-   feather.println();
-   feather.moveCursorY(2);
+   arduino.print("Pin ", Color::LABEL);
+   arduino.print("Is  ", Color::LABEL);
+   arduino.print("Was ", Color::LABEL);
+   arduino.println();
+   arduino.moveCursorY(2);
 
    for (int i = 0; i < NUM_BUTTONS; i++)
    {
       Button* button = buttons[i];
-      feather.print(labels[i], pinFormat, Color::VALUE);
-      feather.print(" ");
-      feather.print(button->isPressed() ? "Yes" : "No", valueFormat, button->isPressed() ? Color::VALUE2 : Color::DARKGRAY);
-      feather.print(button->wasPressed() ? "Yes" : "No", valueFormat, button->wasPressed() ? Color::VALUE2 : Color::DARKGRAY);
-      feather.println();
-      feather.moveCursorY(1);
+      arduino.print(labels[i], pinFormat, Color::VALUE);
+      arduino.print(" ");
+      arduino.print(button->isPressed() ? "Yes" : "No", valueFormat, button->isPressed() ? Color::VALUE2 : Color::DARKGRAY);
+      arduino.print(button->wasPressed() ? "Yes" : "No", valueFormat, button->wasPressed() ? Color::VALUE2 : Color::DARKGRAY);
+      arduino.println();
+      arduino.moveCursorY(1);
    }
 
    // Auto-reset after 5 seconds of activity
@@ -105,14 +110,14 @@ void loop()
    // Display reset countdown
    if (sw.isRunning())
    {
-      feather.setTextSize(2);
-      feather.setCursor(0, -feather.charH());
-      feather.print("Reset: ", Color::SUB_LABEL);
-      feather.print((5 - sw.elapsedSecs()), timeFormat, Color::SUB_LABEL);
+      arduino.setTextSize(2);
+      arduino.setCursor(0, -arduino.charH());
+      arduino.print("Reset: ", Color::SUB_LABEL);
+      arduino.print((5 - sw.elapsedSecs()), timeFormat, Color::SUB_LABEL);
    }
    else
    {
       // Clear the countdown line
-      feather.fillRect(0, -feather.charH(), feather.width(), feather.charH(), Color::BLACK);
+      arduino.fillRect(0, -arduino.charH(), arduino.width(), arduino.charH(), Color::BLACK);
    }
 }

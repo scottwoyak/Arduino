@@ -1,8 +1,16 @@
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_BUTTON_SUPPORTED
+#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "SerialX.h"
 
-Feather feather;
+Arduino arduino;
 
 constexpr uint8_t risingPin = A3;
 constexpr uint8_t fallingPin = A4;
@@ -37,7 +45,7 @@ Format countFormat("#######");
 void setup()
 {
    SerialX::begin();
-   feather.begin();
+   arduino.begin();
 
    pinMode(risingPin, INPUT_PULLUP);
    pinMode(fallingPin, INPUT_PULLUP);
@@ -50,9 +58,9 @@ void setup()
 
 void loop()
 {
-   feather.setCursor(0, 0);
+   arduino.setCursor(0, 0);
 
-   if (feather.buttonA.wasPressed())
+   if (arduino.buttonA.wasPressed())
    {
       noInterrupts();
       risingCount = 0;
@@ -61,29 +69,29 @@ void loop()
       interrupts();
    }
 
-   feather.setTextSize(3);
-   feather.println("Interrupts", Color::HEADING);
-   feather.moveCursorY(feather.charH() / 2);
+   arduino.setTextSize(3);
+   arduino.println("Interrupts", Color::HEADING);
+   arduino.moveCursorY(arduino.charH() / 2);
 
-   feather.setTextSize(2);
-   feather.print(" Rising ", Color::LABEL);
-   feather.print(risingPin, pinFormat, Color::LABEL);
-   feather.println(risingCount, countFormat, Color::VALUE);
-   feather.moveCursorY(1);
+   arduino.setTextSize(2);
+   arduino.print(" Rising ", Color::LABEL);
+   arduino.print(risingPin, pinFormat, Color::LABEL);
+   arduino.println(risingCount, countFormat, Color::VALUE);
+   arduino.moveCursorY(1);
 
-   feather.print("Falling ", Color::LABEL);
-   feather.print(fallingPin, pinFormat, Color::LABEL);
-   feather.println(fallingCount, countFormat, Color::VALUE);
-   feather.moveCursorY(1);
+   arduino.print("Falling ", Color::LABEL);
+   arduino.print(fallingPin, pinFormat, Color::LABEL);
+   arduino.println(fallingCount, countFormat, Color::VALUE);
+   arduino.moveCursorY(1);
 
-   feather.print(" Change ", Color::LABEL);
-   feather.print(changePin, pinFormat, Color::LABEL);
-   feather.println(changeCount, countFormat, Color::VALUE);
-   feather.moveCursorY(1);
+   arduino.print(" Change ", Color::LABEL);
+   arduino.print(changePin, pinFormat, Color::LABEL);
+   arduino.println(changeCount, countFormat, Color::VALUE);
+   arduino.moveCursorY(1);
 
-   feather.print((float)fallingCount / risingCount);
-   feather.print("  ");
-   feather.print((float)changeCount / risingCount);
+   arduino.print((float)fallingCount / risingCount);
+   arduino.print("  ");
+   arduino.print((float)changeCount / risingCount);
 }
 
 

@@ -4,3 +4,4 @@
 /**/*.vcxproj.user
 /**/obj/
 /**/bin/
+/.tmp.driveupload

@@ -12,7 +12,12 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "Rate.h"
 #include "SerialX.h"
 #include "TempSensor.h"
@@ -20,7 +25,7 @@
 // Uncomment to use DS18B20 sensor instead of I2C auto-detection
 // #define ONE_WIRE_PIN 5
 
-Feather feather;
+Arduino arduino;
 TempSensor sensor;
 
 Format tempFormat("###.## F");
@@ -36,7 +41,7 @@ void setup()
    SerialX::begin();
 
    Wire.begin();
-   feather.begin();
+   arduino.begin();
 
    // Initialize temperature sensor
    #ifdef ONE_WIRE_PIN
@@ -61,7 +66,7 @@ void setup()
 
 void loop()
 {
-   feather.setCursor(0, 0);
+   arduino.setCursor(0, 0);
 
    // Read temperature with timing
    tempRate.start();
@@ -76,43 +81,43 @@ void loop()
    float humTime = humRate.elapsedMicros() / 1000.0f;
 
    // Display temperature value
-   feather.setTextSize(3);
-   if (feather.display.width() / feather.charW() > 12)
+   arduino.setTextSize(3);
+   if (arduino.display.width() / arduino.charW() > 12)
    {
-      feather.print("Temp: ", Color::LABEL);
+      arduino.print("Temp: ", Color::LABEL);
    }
-   feather.println(temp, tempFormat, Color::VALUE);
+   arduino.println(temp, tempFormat, Color::VALUE);
 
    // Display temperature read metrics
-   feather.setTextSize(2);
-   feather.print(tempTime, msFormat, Color::SUB_LABEL);
-   feather.print("  ");
-   feather.print(tempRate.get(), rateFormat, Color::SUB_LABEL);
-   feather.println();
-   feather.moveCursorY(feather.charH() / 2);
+   arduino.setTextSize(2);
+   arduino.print(tempTime, msFormat, Color::SUB_LABEL);
+   arduino.print("  ");
+   arduino.print(tempRate.get(), rateFormat, Color::SUB_LABEL);
+   arduino.println();
+   arduino.moveCursorY(arduino.charH() / 2);
 
    // Display humidity value
-   feather.setTextSize(3);
-   if (feather.display.width() / feather.charW() > 12)
+   arduino.setTextSize(3);
+   if (arduino.display.width() / arduino.charW() > 12)
    {
-      feather.print(" Hum: ", Color::LABEL);
+      arduino.print(" Hum: ", Color::LABEL);
    }
-   feather.println(hum, humFormat, Color::VALUE);
+   arduino.println(hum, humFormat, Color::VALUE);
 
    // Display humidity read metrics
-   feather.setTextSize(2);
-   feather.print(humTime, msFormat, Color::SUB_LABEL);
-   feather.print("  ");
-   feather.print(humRate.get(), rateFormat, Color::SUB_LABEL);
-   feather.println();
+   arduino.setTextSize(2);
+   arduino.print(humTime, msFormat, Color::SUB_LABEL);
+   arduino.print("  ");
+   arduino.print(humRate.get(), rateFormat, Color::SUB_LABEL);
+   arduino.println();
 
    // Display sensor information in corner
-   feather.setTextSize(2);
-   feather.setCursor(0, -2 * feather.charH() + 1);
-   feather.print("Type: ", sensor.type(), Color::VALUE2);
-   feather.print(" 0x", Color::VALUE2);
-   feather.println(sensor.address(), HEX, Color::VALUE2);
+   arduino.setTextSize(2);
+   arduino.setCursor(0, -2 * arduino.charH() + 1);
+   arduino.print("Type: ", sensor.type(), Color::VALUE2);
+   arduino.print(" 0x", Color::VALUE2);
+   arduino.println(sensor.address(), HEX, Color::VALUE2);
 
-   feather.moveCursorY(1);
-   feather.println("  ID: ", sensor.id(), Color::VALUE2);
+   arduino.moveCursorY(1);
+   arduino.println("  ID: ", sensor.id(), Color::VALUE2);
 }

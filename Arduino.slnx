@@ -5,6 +5,8 @@
     <Platform Name="ARM64" />
   </Configurations>
   <Folder Name="/Libraries/">
+    <File Path="libraries/Woyak/ArduinoBase.h" />
+    <File Path="libraries/Woyak/ArduinoBoard.h" />
     <File Path="libraries/Woyak/ArduinoWithDisplay.h" />
     <File Path="libraries/Woyak/Bar.h" />
     <File Path="libraries/Woyak/BarChart.h" />
@@ -90,6 +92,7 @@
     <File Path="libraries/Woyak/Util.h" />
     <File Path="libraries/Woyak/ValueStore.h" />
     <File Path="libraries/Woyak/ValueStoreFram.h" />
+    <File Path="libraries/Woyak/Waveshare_ESP32_S3_Zero.h" />
     <File Path="libraries/Woyak/WiFiSettings.h" />
     <File Path="libraries/Woyak/WiFiX.h" />
     <File Path="libraries/Woyak/WindMeter.h" />
@@ -183,6 +186,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Board/Board.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Buttons_Display/Buttons_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -236,10 +243,6 @@
     <Deploy />
   </Project>
   <Project Path="Display_ST7796S/Display_ST7796S.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="Feather_ESP32_ST7796S/Feather_ESP32_ST7796S.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

@@ -18,7 +18,12 @@
 #include <cmath>
 #include <numbers>
 
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "RollingRate.h"
 #include "SerialX.h"
 #include "Stopwatch.h"
@@ -33,7 +38,7 @@ constexpr unsigned long PUBLISH_INTERVAL_MS = 100;
 constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
 constexpr unsigned long SINUSOID_PERIOD_US = 2000000;
 
-Feather feather;
+Arduino arduino;
 Stopwatch sw(false);
 Timer publishTimer(PUBLISH_INTERVAL_MS);
 RollingRate rate(100);
@@ -72,35 +77,35 @@ void onText(std::string payload)
 
 void onError(std::string msg)
 {
-   feather.setTextSize(2);
-   feather.clearDisplay();
-   feather.display.setTextWrap(true);
-   feather.println(msg, Color::RED);
+   arduino.setTextSize(2);
+   arduino.clearDisplay();
+   arduino.display.setTextWrap(true);
+   arduino.println(msg, Color::RED);
    Serial.println("Telemetry Error: " + String(msg.c_str()));
    Util::reset(10);
 }
 
 void onStarted()
 {
-   feather.printlnR("OK", Color::VALUE);
+   arduino.printlnR("OK", Color::VALUE);
    delay(1000);
 
-   feather.clearDisplay();
-   feather.setCursor(0, 0);
-   feather.setTextSize(3);
-   feather.println("Publisher", Color::HEADING);
-   feather.moveCursorY(4);
+   arduino.clearDisplay();
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(3);
+   arduino.println("Publisher", Color::HEADING);
+   arduino.moveCursorY(4);
 
-   feather.setTextSize(2);
-   feather.println("Topic: ", client.getTopic());
+   arduino.setTextSize(2);
+   arduino.println("Topic: ", client.getTopic());
 
    Url url(client.getUrl().c_str());
-   feather.display.setTextWrap(true);
-   feather.println(" Host: ", url.getHost(), Color::VALUE2);
+   arduino.display.setTextWrap(true);
+   arduino.println(" Host: ", url.getHost(), Color::VALUE2);
 
-   feather.print("Rate: ", "---");
-   ratePos = feather.getCursor();
-   feather.println();
+   arduino.print("Rate: ", "---");
+   ratePos = arduino.getCursor();
+   arduino.println();
 
    rate.reset();
    sw.start();
@@ -109,26 +114,26 @@ void onStarted()
 void setup()
 {
    SerialX::begin();
-   feather.begin();
+   arduino.begin();
 
    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-   feather.setTextSize(2);
-   feather.setCursorY(-feather.charH());
-   feather.println("Publisher", Color::GRAY);
+   arduino.setTextSize(2);
+   arduino.setCursorY(-arduino.charH());
+   arduino.println("Publisher", Color::GRAY);
 
-   feather.setCursor(0, 0);
-   feather.println("Initializing", Color::HEADING2);
-   feather.moveCursorY(4);
+   arduino.setCursor(0, 0);
+   arduino.println("Initializing", Color::HEADING2);
+   arduino.moveCursorY(4);
 
-   feather.print("WiFi...", Color::LABEL);
+   arduino.print("WiFi...", Color::LABEL);
    while (WiFi.status() != WL_CONNECTED)
    {
-      feather.print(".", Color::LABEL);
+      arduino.print(".", Color::LABEL);
    }
-   feather.printlnR("OK", Color::VALUE);
+   arduino.printlnR("OK", Color::VALUE);
 
-   feather.print("WebSocket...", Color::LABEL);
+   arduino.print("WebSocket...", Color::LABEL);
 
    client.setCallbacks(onConnected, onDisconnected, nullptr, onText, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
@@ -146,8 +151,8 @@ void loop()
 
    if (sw.elapsedMillis() > RATE_UPDATE_INTERVAL_MS)
    {
-      feather.setCursor(ratePos);
-      feather.println(rate.get(), rateFormat, Color::VALUE);
+      arduino.setCursor(ratePos);
+      arduino.println(rate.get(), rateFormat, Color::VALUE);
       sw.reset();
    }
 }

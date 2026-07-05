@@ -6,7 +6,12 @@
 #include <WiFiClientSecure.h>
 
 #include <WebSocketsClient.h>
-#include "Feather.h"
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
 #include "SerialX.h"
 #include "WiFiSettings.h"
 #include "Stopwatch.h"
@@ -15,7 +20,7 @@
 #include "Url.h"
 #include "WindMeter.h"
 
-Feather feather;
+Arduino arduino;
 
 Stopwatch sw(false);
 RollingRate rate(10);
@@ -38,29 +43,29 @@ float getValue()
 void setup()
 {
    SerialX::begin();
-   feather.begin();
+   arduino.begin();
    wind.begin();
 
    // Connect to WiFi
    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-   feather.setTextSize(2);
-   feather.setCursorY(-feather.charH());
-   feather.println("Wind Publisher", Color::GRAY);
+   arduino.setTextSize(2);
+   arduino.setCursorY(-arduino.charH());
+   arduino.println("Wind Publisher", Color::GRAY);
 
-   feather.setCursor(0, 0);
-   feather.println("Initializing", Color::HEADING2);
-   feather.moveCursorY(4);
+   arduino.setCursor(0, 0);
+   arduino.println("Initializing", Color::HEADING2);
+   arduino.moveCursorY(4);
 
-   feather.print("WiFi...", Color::LABEL);
+   arduino.print("WiFi...", Color::LABEL);
    while (WiFi.status() != WL_CONNECTED)
    {
-      feather.print(".", Color::LABEL);
+      arduino.print(".", Color::LABEL);
    }
-   feather.printlnR("OK", Color::VALUE);
-   feather.moveCursorY(1);
+   arduino.printlnR("OK", Color::VALUE);
+   arduino.moveCursorY(1);
 
-   feather.print("WebSocket...", Color::LABEL);
+   arduino.print("WebSocket...", Color::LABEL);
 
    client.setCallbacks(onConnected, onDisconnected, nullptr, onReceivedText, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
@@ -85,44 +90,44 @@ void onReceivedText(std::string payload)
 
 void onError(std::string msg)
 {
-   feather.setTextSize(2);
-   feather.clearDisplay();
-   feather.display.setTextWrap(true);
-   feather.println(msg, Color::RED);
+   arduino.setTextSize(2);
+   arduino.clearDisplay();
+   arduino.display.setTextWrap(true);
+   arduino.println(msg, Color::RED);
    Util::reset(10);
 }
 
 void onStarted()
 {
    // print the last ok for the WebSocket
-   feather.printlnR("OK", Color::VALUE);
+   arduino.printlnR("OK", Color::VALUE);
    delay(1000); // so the user can see the message
 
    // display the GUI
-   feather.clearDisplay();
-   feather.setCursor(0, 0);
-   feather.setTextSize(2);
-   feather.println("Wind Publisher", Color::HEADING);
-   feather.moveCursorY(8);
+   arduino.clearDisplay();
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(2);
+   arduino.println("Wind Publisher", Color::HEADING);
+   arduino.moveCursorY(8);
 
-   feather.setTextSize(2);
-   feather.println("Topic: ", client.getTopic());
-   feather.moveCursorY(1);
+   arduino.setTextSize(2);
+   arduino.println("Topic: ", client.getTopic());
+   arduino.moveCursorY(1);
 
-   feather.print(" Rate: ", "---");
-   ratePos = feather.getCursor();
-   feather.println();
-   feather.moveCursorY(1);
+   arduino.print(" Rate: ", "---");
+   ratePos = arduino.getCursor();
+   arduino.println();
+   arduino.moveCursorY(1);
 
-   feather.print("Speed: ", "---");
-   speedPos = feather.getCursor();
-   feather.println();
-   feather.moveCursorY(1);
+   arduino.print("Speed: ", "---");
+   speedPos = arduino.getCursor();
+   arduino.println();
+   arduino.moveCursorY(1);
 
    Url url(client.getUrl().c_str());
-   feather.display.setTextWrap(true);
-   feather.println(" Host: ", url.getHost(), Color::VALUE2);
-   feather.moveCursorY(1);
+   arduino.display.setTextWrap(true);
+   arduino.println(" Host: ", url.getHost(), Color::VALUE2);
+   arduino.moveCursorY(1);
 
    rate.reset();
    sw.start();
@@ -137,12 +142,12 @@ void loop()
 
    if (client.isStarted() && sw.elapsedMillis() > 1000)
    {
-      feather.setCursor(ratePos);
-      feather.println(rate.get(), rateFormat, Color::VALUE);
+      arduino.setCursor(ratePos);
+      arduino.println(rate.get(), rateFormat, Color::VALUE);
       sw.reset();
    }
 
-   feather.setCursor(speedPos);
-   feather.println(speed, speedFormat, Color::VALUE);
+   arduino.setCursor(speedPos);
+   arduino.println(speed, speedFormat, Color::VALUE);
 
 }
