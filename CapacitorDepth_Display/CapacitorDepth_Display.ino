@@ -1,13 +1,14 @@
-/// <summary>
-/// Displays capacitor-based water depth, sample rate, and a vertical level bar on a Feather display.
-/// </summary>
-/// <remarks>
-/// Converts a rolling-average capacitor charge time into depth via CapacitorDepthSensor, using a
-/// two-point (zero-depth and half-depth) calibration that is persisted with Preferences and reloaded
-/// at startup. Pressing Button A starts a calibration sequence: the first press captures the zero-depth
-/// (in air) charge time, the second press captures the half-depth charge time, after which the new
-/// calibration is saved and normal depth display resumes.
-/// </remarks>
+//
+// Displays capacitor-based water depth, raw and effective sample rates, and a vertical level bar on a Feather display.
+//
+// Converts a rolling-average capacitor charge time into depth via CapacitorDepthSensor, using a
+// two-point (zero-depth and half-depth) calibration that is persisted with Preferences and reloaded
+// at startup.
+//
+// Calibration flow (Button A):
+// - 1st press: captures the zero-depth (in air) charge time.
+// - 2nd press: captures the half-depth charge time, saves the calibration, and resumes normal display.
+//
 
 #include <Arduino.h>
 #include "ArduinoBoard.h"
@@ -26,34 +27,29 @@
 #include "CapacitorDepthSensor.h"
 #include "Timer.h"
 
-// ----------- Display
-Arduino arduino;
-Format depthFormat("###.# cm");
-Format rateFormat("####/s");
-Format effectiveRateFormat("####/s");
-constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 20;
-constexpr uint16_t LEVEL_BAR_WIDTH_PX = 10;
-Timer displayTimer(
-   (DISPLAY_UPDATE_RATE_PER_SEC == 0) ? 0 :
-   ((1000U / DISPLAY_UPDATE_RATE_PER_SEC) == 0 ? 1 : (1000U / DISPLAY_UPDATE_RATE_PER_SEC)));
-
 // ----------- Pins
 constexpr uint8_t CHARGE_PIN = 10;
 constexpr uint8_t SENSE_PIN = 5;
 
-// ----------- Sensor Setup
-constexpr uint16_t SENSOR_DISCHARGE_DELAY_US = 200;
-constexpr size_t SENSOR_BUFFER_SIZE = 100;
+// ----------- The Board
+Arduino arduino;
 
-// Fallback calibration (charge time in microseconds) used until the user calibrates via Button A;
-// the calibrated values are then persisted to Preferences and reloaded at startup.
+// ----------- Display Items
+Format depthFormat("###.# in");
+Format rateFormat("####/s");
+constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 20;
+constexpr uint16_t LEVEL_BAR_WIDTH_PX = 10;
+Timer displayTimer(1000U / DISPLAY_UPDATE_RATE_PER_SEC);
+VerticalBar* levelBar = nullptr;
+
+// ----------- Sensor
 constexpr auto DEFAULT_ZERO_CHARGE_TIME = 128.3f;
 constexpr auto DEFAULT_HALF_CHARGE_TIME = 295.0f;
-
-// Physical depth range: HALF_DEPTH_INCHES is the reference depth used to collect the half-depth
-// calibration point, and FULL_DEPTH is the resulting total measurable depth range.
-constexpr auto HALF_DEPTH_INCHES = 18.0f;
-constexpr auto FULL_DEPTH = HALF_DEPTH_INCHES * 2.0f;
+constexpr auto FULL_DEPTH_INCHES = 36.0f;
+constexpr auto HALF_DEPTH_INCHES = FULL_DEPTH_INCHES / 2.0f;
+constexpr uint16_t SENSOR_DISCHARGE_DELAY_US = 200;
+constexpr size_t SENSOR_BUFFER_SIZE = 100;
+CapacitorDepthSensor sensor(CHARGE_PIN, SENSE_PIN, DEFAULT_ZERO_CHARGE_TIME, DEFAULT_HALF_CHARGE_TIME, FULL_DEPTH_INCHES);
 
 // ----------- Preferences Keys
 constexpr const char* PREF_NAMESPACE = "cap_depth";
@@ -72,8 +68,7 @@ enum class CalibrationState : uint8_t
    WaitHalf
 };
 
-CapacitorDepthSensor sensor(CHARGE_PIN, SENSE_PIN, DEFAULT_ZERO_CHARGE_TIME, DEFAULT_HALF_CHARGE_TIME, FULL_DEPTH);
-VerticalBar* levelBar = nullptr;
+// ------------ Sketch Variables
 CalibrationState calibrationState = CalibrationState::None;
 CalibrationState lastRenderedCalibrationState = CalibrationState::None;
 bool displayNeedsClear = true;
@@ -151,13 +146,13 @@ void renderDepthDisplay()
 
    arduino.setTextSize(3);
    arduino.setCursorY(arduino.height() - (arduino.charH() * 2));
-   arduino.println(effectiveRate, effectiveRateFormat, Color::VALUE2);
+   arduino.println(effectiveRate, rateFormat, Color::VALUE2);
    arduino.moveCursorY(-2);
    arduino.println(rawRate, rateFormat, Color::SUB_LABEL);
 
    if (levelBar != nullptr)
    {
-      float clampedDepth = constrain(depth, 0.0f, FULL_DEPTH);
+      float clampedDepth = constrain(depth, 0.0f, FULL_DEPTH_INCHES);
       levelBar->set(clampedDepth);
       levelBar->draw(&arduino.display);
    }
@@ -170,7 +165,7 @@ void setup()
    sensor.setDischargeDelayMicros(SENSOR_DISCHARGE_DELAY_US);
    sensor.setBufferSize(SENSOR_BUFFER_SIZE);
    Rect16 levelBarRect(arduino.width() - LEVEL_BAR_WIDTH_PX, 0, LEVEL_BAR_WIDTH_PX, arduino.height());
-   levelBar = new VerticalBar(levelBarRect, RangeF(0.0f, FULL_DEPTH), Color::BLUE, Color::BLACK);
+   levelBar = new VerticalBar(levelBarRect, RangeF(0.0f, FULL_DEPTH_INCHES), Color::BLUE, Color::BLACK);
    levelBar->reset(NAN);
    loadCalibration();
 }
@@ -218,15 +213,15 @@ void loop()
       if (calibrationState == CalibrationState::WaitAir)
       {
          renderCalibrationPrompt("Press A when", "sensor is in air");
-         return;
       }
-
-      if (calibrationState == CalibrationState::WaitHalf)
+      else if (calibrationState == CalibrationState::WaitHalf)
       {
-         renderCalibrationPrompt("Press A at", "half depth (18in)");
-         return;
+         static const String halfDepthPrompt = "half depth (" + String((int)HALF_DEPTH_INCHES) + "in)";
+         renderCalibrationPrompt("Press A at", halfDepthPrompt.c_str());
       }
-
-      renderDepthDisplay();
+      else
+      {
+         renderDepthDisplay();
+      }
    }
 }

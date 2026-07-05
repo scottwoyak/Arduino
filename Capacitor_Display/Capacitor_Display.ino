@@ -6,27 +6,32 @@
 //
 
 #include <Arduino.h>
-#include "CapacitorSensor.h"
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
 
+#include "CapacitorSensor.h"
 #include "Timer.h"
 
-Arduino arduino;
-Format chargeTimeFormat("###.# us");
-Format rateFormat("Raw Sensor Rate #### per/s");
-
-constexpr uint16_t DISPLAY_REFRESH_MS = 100;
-Timer displayRefreshTimer(DISPLAY_REFRESH_MS);
-
+// ----------- Pins
 constexpr uint8_t CHARGE_PIN = 6;
 constexpr uint8_t SENSE_PIN = 5;
 
+// ----------- The Board
+Arduino arduino;
+
+// ----------- Display Items
+Format chargeTimeFormat("###.# us");
+Format rateFormat("Raw Sensor Rate #### per/s");
+constexpr uint16_t DISPLAY_REFRESH_MS = 100;
+Timer displayRefreshTimer(DISPLAY_REFRESH_MS);
+
+// ----------- Sensor
 CapacitorSensor sensor(CHARGE_PIN, SENSE_PIN);
 
+// ----------- Sketch Variables
 int16_t valueY = 0;
 
 void setup()
@@ -53,10 +58,10 @@ void setup()
 
 void loop()
 {
-   float chargeTime = sensor.chargeTimeMicros();
-
    if (displayRefreshTimer.ready())
    {
+      float chargeTime = sensor.chargeTimeMicros();
+
       arduino.setCursor(0, 0);
       arduino.setTextSize(3);
       arduino.println("Capacitor", Color::HEADING);
