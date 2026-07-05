@@ -1,0 +1,45 @@
+# EditorConfig is awesome: https://EditorConfig.org
+# This is the only EditorConfig file for the repo. A single, consistent style is
+# applied everywhere, including vendored third-party code under libraries/
+# (Adafruit_*, FastLED, LovyanGFX, AUnit, ArduinoJson, etc.) rather than
+# maintaining per-folder exceptions.
+root = true
+
+# Defaults for all files
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# C/C++ source: Arduino sketches (*.ino) and headers, everywhere in the repo.
+[*.{ino,cpp,h,hpp}]
+indent_style = space
+indent_size = 3
+
+# Brace style: Allman (open brace on its own line), enforced via Visual Studio's
+# C++ formatting options rather than EditorConfig alone.
+cpp_new_line_before_open_brace_namespace = true
+cpp_new_line_before_open_brace_type = true
+cpp_new_line_before_open_brace_function = true
+cpp_new_line_before_open_brace_block = true
+cpp_new_line_before_open_brace_lambda = true
+cpp_indent_braces = false
+cpp_indent_case_labels = true
+
+# Exception to Allman style above: empty-bodied functions (including constructors with
+# nothing to execute) collapse `{}` onto the same line as the declaration,
+# e.g. `ArduinoWithDisplay() {}` in libraries/Woyak/ArduinoWithDisplay.h.
+cpp_new_line_close_brace_same_line_empty_function = true
+
+# MSBuild project files
+[*.{vcxproj,vcxproj.filters,props,targets}]
+indent_style = space
+indent_size = 2
+
+[*.sln]
+indent_style = tab
+
+[*.{json,yml,yaml}]
+indent_style = space
+indent_size = 2

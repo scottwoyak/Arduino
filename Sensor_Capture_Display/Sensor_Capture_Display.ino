@@ -27,6 +27,7 @@
 
 #include "SensorCapture.h"
 #include "SensorCaptureStats.h"
+#include "Timer.h"
 #include "SerialX.h"
 #include "SerialTable.h"
 #include "SerialHistogram.h"
@@ -108,7 +109,7 @@ SensorCapture sensorCapture(
 
 bool captureFinalized = false;
 unsigned long captureStartMs = 0;
-unsigned long lastDisplayRefreshMs = 0;
+RateTimer displayRefreshTimer(DISPLAY_UPDATE_RATE_PER_SEC);
 DisplayMode displayMode = DisplayMode::Summary;
 size_t postWarmupStartIndex = 0;
 bool postWarmupReady = false;
@@ -278,13 +279,14 @@ void renderDisplayScatterPlot()
    void updateDisplayProgress(bool forceRefresh = false)
    {
       unsigned long nowMs = millis();
-      unsigned long displayUpdateIntervalMs = (DISPLAY_UPDATE_RATE_PER_SEC == 0) ? 0 : (1000UL / DISPLAY_UPDATE_RATE_PER_SEC);
-      if (!forceRefresh && ((nowMs - lastDisplayRefreshMs) < displayUpdateIntervalMs))
+      if (forceRefresh)
+      {
+         displayRefreshTimer.reset();
+      }
+      else if (!displayRefreshTimer.ready())
       {
          return;
       }
-
-   lastDisplayRefreshMs = nowMs;
 
    if (sensorCapture.isCaptureComplete())
    {

@@ -51,12 +51,8 @@ constexpr float SENSOR_VALUE_RESOLUTION_F = 0.0049f;
 
 Arduino arduino;
 TestSensor sensor;
-Timer sampleTimer(
-   (SENSOR_SAMPLE_RATE_PER_SEC == 0) ? 0 :
-   ((1000U / SENSOR_SAMPLE_RATE_PER_SEC) == 0 ? 1 : (1000U / SENSOR_SAMPLE_RATE_PER_SEC)));
-Timer displayTimer(
-   (DISPLAY_RATE_PER_SEC == 0) ? 0 :
-   ((1000U / DISPLAY_RATE_PER_SEC) == 0 ? 1 : (1000U / DISPLAY_RATE_PER_SEC)));
+RateTimer sampleTimer(SENSOR_SAMPLE_RATE_PER_SEC);
+RateTimer displayTimer(DISPLAY_RATE_PER_SEC);
 Timer serialPrintTimer(SERIAL_PRINT_INTERVAL_MS);
 RollingRate sampleRate;
 TimedValues samples(SCATTER_HISTORY_PERIOD_S * 1000UL, 256);

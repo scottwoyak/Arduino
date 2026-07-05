@@ -39,7 +39,7 @@ Format depthFormat("###.# in");
 Format rateFormat("####/s");
 constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 20;
 constexpr uint16_t LEVEL_BAR_WIDTH_PX = 10;
-Timer displayTimer(1000U / DISPLAY_UPDATE_RATE_PER_SEC);
+RateTimer displayTimer(DISPLAY_UPDATE_RATE_PER_SEC);
 VerticalBar* levelBar = nullptr;
 
 // ----------- Sensor

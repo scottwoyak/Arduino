@@ -31,6 +31,7 @@
 #include "Histogram.h"
 #include "SensorCapture.h"
 #include "SensorCaptureStats.h"
+#include "Timer.h"
 #include "SerialX.h"
 #include "SerialHistogram.h"
 #include "HistogramPlot.h"
@@ -64,7 +65,7 @@ SensorCapture sensorCapture(
 
 bool captureFinalized = false;
 unsigned long captureStartMs = 0;
-unsigned long lastDisplayRefreshMs = 0;
+RateTimer displayRefreshTimer(DISPLAY_UPDATE_RATE_PER_SEC);
 bool collectingViewInitialized = false;
 DisplayTable collectingTable(&arduino, 0, 0);
 
@@ -307,13 +308,14 @@ void updateDisplay(bool forceRefresh = false)
    }
 
    unsigned long nowMs = millis();
-   unsigned long displayUpdateIntervalMs = (DISPLAY_UPDATE_RATE_PER_SEC == 0) ? 0 : (1000UL / DISPLAY_UPDATE_RATE_PER_SEC);
-   if (!forceRefresh && ((nowMs - lastDisplayRefreshMs) < displayUpdateIntervalMs))
+   if (forceRefresh)
+   {
+      displayRefreshTimer.reset();
+   }
+   else if (!displayRefreshTimer.ready())
    {
       return;
    }
-
-   lastDisplayRefreshMs = nowMs;
 
    if (forceRefresh || !collectingViewInitialized)
    {
