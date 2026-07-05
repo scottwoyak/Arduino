@@ -8,47 +8,83 @@
 #endif
 #include <LovyanGFX.hpp>
 
-//-------------------------------------------------------------------------------------------------
+///
+/// <summary>
+/// Base class for a graphical bar indicator that renders a value within a range.
+/// </summary>
+///
 class Bar
 {
 protected:
    Rect16 _rect;
    RangeF _range;
-   float _lastValue;
-   float _value;
+   float _lastValue = 0;
+   float _value = 0;
    Color _barColor;
    Color _backgroundColor;
 
    virtual void _draw(LGFX* display) = 0;
 
 public:
+   ///
+   /// <summary>
+   /// Initializes a new instance of the Bar class.
+   /// </summary>
+   /// <param name="rect">Bounding rectangle of the bar.</param>
+   /// <param name="range">Value range mapped across the bar.</param>
+   /// <param name="barColor">Color used to render the filled portion of the bar.</param>
+   /// <param name="backgroundColor">Color used to render the unfilled portion of the bar.</param>
+   ///
    Bar(Rect16 rect, RangeF range, Color barColor, Color backgroundColor)
    {
       _rect = rect;
       _range = range;
-      _lastValue = 0;
-      _value = 0;
       _barColor = barColor;
       _backgroundColor = backgroundColor;
    }
 
    virtual ~Bar() = default;
 
+   ///
+   /// <summary>
+   /// Gets the current value.
+   /// </summary>
+   /// <returns>The current value.</returns>
+   ///
    float get() const
    {
       return _value;
    }
 
+   ///
+   /// <summary>
+   /// Sets the current value to display.
+   /// </summary>
+   /// <param name="value">The new value.</param>
+   ///
    void set(float value)
    {
       _value = value;
    }
 
+   ///
+   /// <summary>
+   /// Gets the bounding rectangle of the bar.
+   /// </summary>
+   /// <returns>The bounding rectangle.</returns>
+   ///
    Rect16 getRect() const
    {
       return _rect;
    }
 
+   ///
+   /// <summary>
+   /// Draws the bar, redrawing only the changed portion since the last draw. If the value is NAN,
+   /// the entire bar area is filled with red to indicate an invalid reading.
+   /// </summary>
+   /// <param name="display">Display to draw to.</param>
+   ///
    void draw(LGFX* display)
    {
       if (isnan(_value))
@@ -66,11 +102,23 @@ public:
       }
    }
 
+   ///
+   /// <summary>
+   /// Resets the last-drawn value so the next draw call performs a full redraw.
+   /// </summary>
+   /// <param name="lastValue">Value to treat as the last-drawn value; defaults to NAN to force a full redraw.</param>
+   ///
    void reset(float lastValue = NAN)
    {
       _lastValue = lastValue;
    }
 
+   ///
+   /// <summary>
+   /// Sets the bounding rectangle of the bar and resets it for a full redraw.
+   /// </summary>
+   /// <param name="rect">The new bounding rectangle.</param>
+   ///
    void setRect(Rect16 rect)
    {
       _rect = rect;
@@ -78,8 +126,11 @@ public:
    }
 };
 
-
-//-------------------------------------------------------------------------------------------------
+///
+/// <summary>
+/// Bar that fills horizontally from left to right based on the current value.
+/// </summary>
+///
 class HorizontalBar : public Bar
 {
 protected:
@@ -113,12 +164,25 @@ protected:
    }
 
 public:
+   ///
+   /// <summary>
+   /// Initializes a new instance of the HorizontalBar class.
+   /// </summary>
+   /// <param name="rect">Bounding rectangle of the bar.</param>
+   /// <param name="range">Value range mapped across the bar width.</param>
+   /// <param name="barColor">Color used to render the filled portion of the bar.</param>
+   /// <param name="backgroundColor">Color used to render the unfilled portion of the bar.</param>
+   ///
    HorizontalBar(Rect16 rect, RangeF range, Color barColor, Color backgroundColor) : Bar(rect, range, barColor, backgroundColor)
    {
    }
 };
 
-//-------------------------------------------------------------------------------------------------
+///
+/// <summary>
+/// Bar that fills vertically from bottom to top based on the current value.
+/// </summary>
+///
 class VerticalBar : public Bar
 {
 protected:
@@ -151,6 +215,15 @@ protected:
    }
 
 public:
+   ///
+   /// <summary>
+   /// Initializes a new instance of the VerticalBar class.
+   /// </summary>
+   /// <param name="rect">Bounding rectangle of the bar.</param>
+   /// <param name="range">Value range mapped across the bar height.</param>
+   /// <param name="barColor">Color used to render the filled portion of the bar.</param>
+   /// <param name="backgroundColor">Color used to render the unfilled portion of the bar.</param>
+   ///
    VerticalBar(Rect16 rect, RangeF range, Color barColor, Color backgroundColor) : Bar(rect, range, barColor, backgroundColor)
    {
    }
