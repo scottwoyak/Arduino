@@ -113,6 +113,16 @@ public:
 
       return defaultValue;
    }
+
+   /// <summary>
+   /// Removes a stored key.
+   /// </summary>
+   bool remove(const char* key)
+   {
+      (void)key;
+      data.valid = false;
+      return true;
+   }
 };
 
 /// <summary>

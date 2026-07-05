@@ -88,7 +88,7 @@ public:
    /// <param name="initialCapacity">The initial number of values that can be retained before growing.</param>
    explicit TimedValuesBase(unsigned long durationMs, size_t initialCapacity = 16)
    {
-	  _durationMs = std::max(durationMs, static_cast<unsigned long>(1));
+	  _durationMs = std::max(durationMs, 1UL);
 	  _capacity = std::max(initialCapacity, static_cast<size_t>(1));
 	  _entries = new Entry[_capacity];
    }
@@ -222,7 +222,7 @@ public:
    /// <param name="durationMs">The new time window in milliseconds.</param>
    void setDurationMs(unsigned long durationMs)
    {
-	  _durationMs = std::max(durationMs, static_cast<unsigned long>(1));
+	  _durationMs = std::max(durationMs, 1UL);
 	  reset();
    }
 

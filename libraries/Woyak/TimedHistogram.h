@@ -5,6 +5,7 @@
 #include "Structs.h"
 #include "TimedStats.h"
 #include "TimedValues.h"
+#include "Util.h"
 
 struct TimedHistogramSnapshot
 {
@@ -51,6 +52,8 @@ private:
       _binValues = new (std::nothrow) float[_numBins];
       if (_binValues == nullptr)
       {
+         Util::setHaltReason("OOM allocating binValues in TimedHistogram");
+         Util::reset();
          return false;
       }
 
@@ -73,8 +76,8 @@ private:
       unsigned long* nextAges = new (std::nothrow) unsigned long[capacity];
       if (nextValues == nullptr || nextAges == nullptr)
       {
-         delete[] nextValues;
-         delete[] nextAges;
+         Util::setHaltReason("OOM allocating sample buffers in TimedHistogram");
+         Util::reset();
          return false;
       }
 
@@ -122,13 +125,26 @@ public:
    {
       _range = range;
       _numBins = numBins;
-      _durationMs = std::max(static_cast<unsigned long>(1), static_cast<unsigned long>(ms));
+      _durationMs = std::max(1UL, static_cast<unsigned long>(ms));
       _minBinWidth = minBinWidth;
-      _bins = new TimedStatsBase<TimeFunc>*[numBins];
+      _bins = new (std::nothrow) TimedStatsBase<TimeFunc>*[numBins];
+
+      if (_bins == nullptr)
+      {
+         Util::setHaltReason("OOM allocating bins in TimedHistogram");
+         Util::reset();
+         return;
+      }
 
       for (uint i = 0; i < numBins; i++)
       {
-         _bins[i] = new TimedStatsBase<TimeFunc>(_durationMs);
+         _bins[i] = new (std::nothrow) TimedStatsBase<TimeFunc>(_durationMs);
+         if (_bins[i] == nullptr)
+         {
+            Util::setHaltReason("OOM allocating TimedStatsBase in TimedHistogram");
+            Util::reset();
+            return;
+         }
       }
    }
 
@@ -197,12 +213,10 @@ public:
          return;
       }
 
-      uint bin = floor((value - _range.min) / (_range.max - _range.min) * _numBins);
+      int bin = static_cast<int>(floor((value - _range.min) / (_range.max - _range.min) * _numBins));
+      bin = std::max(0, std::min(bin, static_cast<int>(_numBins - 1)));
 
-      bin = std::min(bin, _numBins - 1);
-      bin = std::max(bin, 0u);
-
-      _bins[bin]->set(value);
+      _bins[static_cast<uint>(bin)]->set(value);
    }
 
    /// <summary>
@@ -238,13 +252,12 @@ public:
 
       for (uint i = 0; i < _numBins; i++)
       {
-         if (firstBin == -1 && _bins[i]->count() > 0)
-         {
-            firstBin = i;
-         }
-
          if (_bins[i]->count() > 0)
          {
+            if (firstBin == -1)
+            {
+               firstBin = i;
+            }
             lastBin = i;
          }
       }
@@ -359,16 +372,16 @@ public:
    }
 
     bool computeNormalizedBins(const TimedHistogramSnapshot& snapshot)
-   {
-      if (!_allocateComputeBuffers())
-      {
-         return false;
-      }
+    {
+       if (!_allocateComputeBuffers())
+       {
+          return false;
+       }
 
-      for (uint i = 0; i < _numBins; i++)
-      {
-         _binValues[i] = 0.0f;
-      }
+       for (uint i = 0; i < _numBins; i++)
+       {
+          _binValues[i] = 0.0f;
+       }
 
       if (snapshot.valueCount == 0)
       {

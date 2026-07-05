@@ -102,6 +102,8 @@ public:
       uint8_t* density = new (std::nothrow) uint8_t[pixelCount];
       if (density == nullptr)
       {
+         Util::setHaltReason("OOM allocating density array in ScatterPlot");
+         Util::reset();
          return;
       }
       memset(density, 0, pixelCount);

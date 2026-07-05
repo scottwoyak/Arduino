@@ -5,6 +5,7 @@
 
 #include "Feather.h"
 #include "TimedValues.h"
+#include "Util.h"
 
 ///
 /// <summary>
@@ -66,8 +67,8 @@ private:
       unsigned long* sampleAgesMs = new (std::nothrow) unsigned long[capacity];
       if (sampleValues == nullptr || sampleAgesMs == nullptr)
       {
-         delete[] sampleValues;
-         delete[] sampleAgesMs;
+         Util::setHaltReason("OOM allocating sample buffers in TimedScatterPlot");
+         Util::reset();
          return false;
       }
 
@@ -90,8 +91,8 @@ private:
       uint16_t* previousPixels = new (std::nothrow) uint16_t[capacity];
       if (density == nullptr || previousPixels == nullptr)
       {
-         delete[] density;
-         delete[] previousPixels;
+         Util::setHaltReason("OOM allocating pixel buffers in TimedScatterPlot");
+         Util::reset();
          return false;
       }
 

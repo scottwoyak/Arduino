@@ -32,7 +32,7 @@
 - For numeric values, pass numeric types directly to print/println overloads (no manual String conversion); use a single `Format` rule that allows format patterns (e.g., `###/s`) or numeric width for alignment while keeping numeric inputs numeric. Only specify explicit `Format` length when it is actually needed; otherwise, rely on the format string to determine width.
 - Use `micros` instead of `us` in names and identifiers.
 - Always use the `Timer` class when waiting for something.
-- Prefer explicit, clearly listed overload variants over complex template metaprogramming (e.g., avoid `typename std::enable_if` unless templates are simple and clearly useful).
+- Prefer explicit, clearly listed overload variants over complex template metaprogramming (e.g., avoid `typename std::enable_if` unless templates are simple and clearly useful). User prefers to not use template functions.
 - Use `SPAN` or `SAMPLE_TIME` for timing-related names; prefer seconds-based timing variable names like `SAMPLE_PERIOD_S` instead of window-style names like `DISPLAY_HISTORY_SECONDS`.
 - Prefer expressing timing as rate when value is >= 1 per second, but use interval constants when effective rate is < 1 per second.
 - In display row rendering, prefer using labeled `printlnR` overloads instead of building full concatenated row strings for numeric values; use default value colors unless a specific color is requested.

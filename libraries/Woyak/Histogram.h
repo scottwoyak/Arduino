@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstddef>
 #include <stdint.h>
+#include <new>
+#include "Util.h"
 
 /// <summary>
 /// Represents a batch-built histogram for floating-point values.
@@ -61,17 +63,15 @@ private:
          return false;
       }
 
-      _bins = new uint32_t[_binCount];
+      _bins = new (std::nothrow) uint32_t[_binCount];
       if (_bins == nullptr)
       {
-         _binCount = 0;
+         Util::setHaltReason("OOM allocating bins in Histogram");
+         Util::reset();
          return false;
       }
 
-      for (size_t i = 0; i < _binCount; i++)
-      {
-         _bins[i] = 0;
-      }
+      memset(_bins, 0, _binCount * sizeof(uint32_t));
 
       return true;
    }
@@ -207,9 +207,11 @@ public:
          return minBinCount;
       }
 
-      float* sorted = new float[finiteCount];
+      float* sorted = new (std::nothrow) float[finiteCount];
       if (sorted == nullptr)
       {
+         Util::setHaltReason("OOM allocating sorted buffer in Histogram");
+         Util::reset();
          return minBinCount;
       }
 

@@ -186,8 +186,8 @@ public:
       uint normalizedBuckets = std::max(nBuckets, static_cast<uint>(1));
 
       _numBuckets = normalizedBuckets + 1;
-      _durationMs = std::max(durationMs, static_cast<unsigned long>(1));
-      _bucketMs = std::max(static_cast<unsigned long>(1), static_cast<unsigned long>(static_cast<float>(_durationMs) / normalizedBuckets));
+      _durationMs = std::max(durationMs, 1UL);
+      _bucketMs = std::max(1UL, static_cast<unsigned long>(static_cast<float>(_durationMs) / normalizedBuckets));
 
       _buckets = new Stats*[_numBuckets];
       for (uint i = 0; i < _numBuckets; i++)
@@ -557,8 +557,8 @@ public:
    /// <param name="durationMs">New total duration in milliseconds.</param>
    void setDurationMs(unsigned long durationMs)
    {
-      _durationMs = std::max(durationMs, static_cast<unsigned long>(1));
-      _bucketMs = std::max(static_cast<unsigned long>(1), static_cast<unsigned long>(static_cast<float>(_durationMs) / (_numBuckets - 1)));
+      _durationMs = std::max(durationMs, 1UL);
+      _bucketMs = std::max(1UL, static_cast<unsigned long>(static_cast<float>(_durationMs) / (_numBuckets - 1)));
       reset();
    }
 

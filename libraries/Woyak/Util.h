@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <Preferences.h>
 
 /// <summary>
 /// Utility functions for common operations.
@@ -158,6 +159,38 @@ public:
 		// TODO this is for the ESP32 which complains about the standard resetFunc() method of reset. We'll
 		// need other techniques for different boards.
 		ESP.restart();
+	}
+
+	/// <summary>
+	/// Saves a halt reason to a preferences object.
+	/// </summary>
+	static void setHaltReason(const String& reason)
+	{
+		Preferences preferences;
+		preferences.begin("Woyak", false);
+		preferences.putString("halt", reason);
+		preferences.end();
+	}
+
+	/// <summary>
+	/// Checks for a previous halt reason in a preferences object and prints it to Serial if found.
+	/// </summary>
+	static void checkHaltReason()
+	{
+		Preferences preferences;
+		preferences.begin("Woyak", false);
+		// Note: Not all implementation of Preferences have isKey, but ESP32 and PreferencesFlash do.
+		if (preferences.isKey("halt"))
+		{
+			String reason = preferences.getString("halt", "");
+			if (reason.length() > 0)
+			{
+				Serial.print("Previous halt reason: ");
+				Serial.println(reason);
+			}
+			preferences.remove("halt");
+		}
+		preferences.end();
 	}
 
 };

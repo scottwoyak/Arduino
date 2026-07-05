@@ -79,9 +79,9 @@ test(TimedValuesTest, snapshotShouldReturnNewestFirstWithAges)
    assertEqual(3.0f, snapshotValues[0]);
    assertEqual(2.0f, snapshotValues[1]);
    assertEqual(1.0f, snapshotValues[2]);
-   assertEqual(static_cast<unsigned long>(50), snapshotAges[0]);
-   assertEqual(static_cast<unsigned long>(100), snapshotAges[1]);
-   assertEqual(static_cast<unsigned long>(200), snapshotAges[2]);
+   assertEqual(50UL, snapshotAges[0]);
+   assertEqual(100UL, snapshotAges[1]);
+   assertEqual(200UL, snapshotAges[2]);
 }
 
 test(TimedValuesTest, shouldResetAndChangeDuration)
@@ -103,7 +103,7 @@ test(TimedValuesTest, shouldResetAndChangeDuration)
    values.set(50.0f);
    values.setDurationMs(25);
 
-   assertEqual(static_cast<unsigned long>(25), values.durationMs());
+   assertEqual(25UL, values.durationMs());
    assertEqual(static_cast<size_t>(0), values.count());
 }
 
@@ -128,8 +128,8 @@ test(TimedValuesTest, ageOutOfRangeShouldReturnDuration)
    values.set(1.0f);
    timedValuesTestTicks = 20;
 
-   assertEqual(static_cast<unsigned long>(10), values.ageMs(0));
-   assertEqual(static_cast<unsigned long>(250), values.ageMs(1));
+   assertEqual(10UL, values.ageMs(0));
+   assertEqual(250UL, values.ageMs(1));
 }
 
 test(TimedValuesTest, snapshotShouldHonorMaxCount)
@@ -153,8 +153,8 @@ test(TimedValuesTest, snapshotShouldHonorMaxCount)
    assertEqual(static_cast<size_t>(2), copied);
    assertEqual(3.0f, snapshotValues[0]);
    assertEqual(2.0f, snapshotValues[1]);
-   assertEqual(static_cast<unsigned long>(10), snapshotAges[0]);
-   assertEqual(static_cast<unsigned long>(20), snapshotAges[1]);
+   assertEqual(10UL, snapshotAges[0]);
+   assertEqual(20UL, snapshotAges[1]);
 }
 
 test(TimedValuesTest, shouldGrowCapacityWhenFull)
@@ -178,10 +178,10 @@ test(TimedValuesTest, constructorAndDurationShouldClampToAtLeastOneMs)
    setupTimedValuesTest();
 
    TimedValuesMock values(0, 1);
-   assertEqual(static_cast<unsigned long>(1), values.durationMs());
+   assertEqual(1UL, values.durationMs());
 
    values.setDurationMs(0);
-   assertEqual(static_cast<unsigned long>(1), values.durationMs());
+   assertEqual(1UL, values.durationMs());
 }
 
 } // namespace TimedValuesTests
