@@ -7,7 +7,8 @@
 
 Feather feather;
 Format depthFormat("###.# cm");
-Format rateFormat("#### per/s");
+Format rateFormat("####/s");
+Format effectiveRateFormat("####/s");
 
 constexpr unsigned long DISPLAY_UPDATE_MS = 50;
 constexpr uint16_t LEVEL_BAR_WIDTH_PX = 10;
@@ -86,9 +87,14 @@ void renderDepthDisplay()
    feather.setTextSize(5);
    feather.println(depth, depthFormat, Color::VALUE);
 
+   float rawRate = sensor.rate();
+   float effectiveRate = (sensor.bufferSize() > 0) ? (rawRate / (float)sensor.bufferSize()) : 0.0f;
+
    feather.setTextSize(3);
-   feather.setCursorY(feather.height() - feather.charH());
-   feather.println(sensor.rate(), rateFormat, Color::SUB_LABEL);
+   feather.setCursorY(feather.height() - (feather.charH() * 2));
+   feather.println(effectiveRate, effectiveRateFormat, Color::VALUE2);
+   feather.moveCursorY(-2);
+   feather.println(rawRate, rateFormat, Color::SUB_LABEL);
 
    if (levelBar != nullptr)
    {

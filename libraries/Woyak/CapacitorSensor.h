@@ -237,9 +237,8 @@ private:
 
          portENTER_CRITICAL(&_mux);
          _latestAverageMicros = _average.get();
-         portEXIT_CRITICAL(&_mux);
-
          _rawSensorRate.tick();
+         portEXIT_CRITICAL(&_mux);
       }
 
       _startDischarging();
@@ -377,13 +376,14 @@ public:
       if (wasStarted) stop();
 
       _chargePin = chargePin;
-      _rawSensorRate.reset();
-      _average.reset();
 
       portENTER_CRITICAL(&_mux);
+      _rawSensorRate.reset();
       _latestAverageMicros = NAN;
       _chargeEndMicros = 0;
       portEXIT_CRITICAL(&_mux);
+
+      _average.reset();
 
       if (wasStarted)
       {
@@ -414,7 +414,10 @@ public:
    /// <returns>Samples per second</returns>
    float rate()
    {
-      return _rawSensorRate.get();
+      portENTER_CRITICAL(&_mux);
+      float val = _rawSensorRate.get();
+      portEXIT_CRITICAL(&_mux);
+      return val;
    }
 
    /// <summary>Get the processed measurement counter.</summary>

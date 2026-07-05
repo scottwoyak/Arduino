@@ -25,9 +25,9 @@
 - Prefer `x++` over `++x` for increment operations.
 - Avoid calling `clearDisplay` every loop iteration in sketches because it causes visible screen flicker; only clear when needed (e.g., mode changes).
 - Never use display text size 1 in sketches; use size 2 or larger for better readability. Only use text-size constants if that size is used in many places; otherwise, inline the size value.
-- For numeric values, pass numeric types directly to print/println overloads (no manual String conversion); use a single `Format` rule that allows format patterns (e.g., `###/s`) or numeric width for alignment while keeping numeric inputs numeric. Only specify explicit `Format` length when it is actually needed; otherwise, rely on the format string to determine width.
+- For numeric values, pass numeric types directly to print/println overloads (no manual String conversion); use a single `Format` rule that allows format patterns (e.g., `###/s`) or numeric width for alignment while keeping numeric inputs numeric. Only specify explicit `Format` length when it is actually needed; otherwise, rely on the format string to determine width. User prefers rate labels formatted as `"/s"` instead of `" per/s"` in display Format strings.
 - In display updates, prefer using `Format` objects for values instead of ad-hoc string/print formatting.
-- In display row rendering, prefer using labeled `printlnR` overloads instead of building full concatenated row strings for numeric values; use default value colors unless a specific color is requested.
+- In display row rendering, prefer labeled `printlnR` overloads instead of building full concatenated row strings for numeric values; use default value colors unless a specific color is requested.
 - For display header alignment in this sketch, prefer explicit space-padded header strings (e.g., `"    Rate"`) instead of using a `Format` object.
 - Use `micros` instead of `us` in names and identifiers.
 - Always use the `Timer` class when waiting for something.

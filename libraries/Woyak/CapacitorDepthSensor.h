@@ -113,6 +113,15 @@ public:
    }
 
    /// <summary>
+   /// Gets the rolling average buffer size.
+   /// </summary>
+   /// <returns>Current buffer size.</returns>
+   size_t bufferSize()
+   {
+      return _sensor->bufferSize();
+   }
+
+   /// <summary>
    /// Gets the sensor sample rate in samples per second.
    /// </summary>
    /// <returns>The current rolling sample rate.</returns>
