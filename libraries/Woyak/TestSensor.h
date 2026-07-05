@@ -5,8 +5,10 @@
 #include <MS5837.h>
 
 #include "TempSensor.h"
+#include "ESP32TempSensor.h"
 #include "CapacitorSensor.h"
 
+class ESP32TempTestSensor;
 class TempSensorTestSensor;
 class ConstantTestSensor;
 class RandomTestSensor;
@@ -17,7 +19,8 @@ class MS5837PressureTestSensor;
 class CapacitiveTestSensor;
 
 // One-line sensor source switch used by all sketches.
-using TestSensor = SinWithNormalNoiseTestSensor;
+using TestSensor = ESP32TempTestSensor;
+// using TestSensor = SinWithNormalNoiseTestSensor;
 // using TestSensor = TempSensorTestSensor;
 // using TestSensor = ConstantTestSensor;
 // using TestSensor = RandomTestSensor;
@@ -228,6 +231,40 @@ public:
    /// Reads one temperature sample in Fahrenheit.
    /// </summary>
    /// <returns>The measured temperature in Fahrenheit.</returns>
+   float get() override
+   {
+      return _sensor.readTemperatureF();
+   }
+};
+
+///
+/// <summary>
+/// Uses the internal ESP32 CPU temperature sensor.
+/// </summary>
+///
+class ESP32TempTestSensor : public ITestSensor
+{
+private:
+   ESP32TempSensor _sensor;
+
+public:
+   ///
+   /// <summary>
+   /// Initializes the internal ESP32 temperature sensor.
+   /// </summary>
+   /// <returns>True when sensor initialization succeeds; otherwise false.</returns>
+   ///
+   bool begin() override
+   {
+      return _sensor.begin();
+   }
+
+   ///
+   /// <summary>
+   /// Reads one temperature sample in Fahrenheit.
+   /// </summary>
+   /// <returns>The internal CPU measured temperature in Fahrenheit.</returns>
+   ///
    float get() override
    {
       return _sensor.readTemperatureF();
