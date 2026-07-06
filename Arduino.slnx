@@ -60,7 +60,6 @@
     <File Path="libraries/Woyak/RotaryEncoder.h" />
     <File Path="libraries/Woyak/ScatterPlot.h" />
     <File Path="libraries/Woyak/SensorCapture.h" />
-    <File Path="libraries/Woyak/SensorCaptureStats.h" />
     <File Path="libraries/Woyak/SerialHistogram.h" />
     <File Path="libraries/Woyak/SerialTable.h" />
     <File Path="libraries/Woyak/SerialX.h" />

@@ -31,7 +31,6 @@
 
 #include "Histogram.h"
 #include "SensorCapture.h"
-#include "SensorCaptureStats.h"
 #include "Timer.h"
 #include "SerialX.h"
 #include "SerialHistogram.h"
@@ -103,7 +102,6 @@ void renderHistogramsOnFeather()
    arduino.clearDisplay();
 
    Histogram valueHistogram(sensorCapture.values(), sensorCapture.count(), HISTOGRAM_BINS);
-   SensorCaptureStats analysis(sensorCapture);
 
    arduino.setTextSize(2);
    arduino.setCursor(0, 0);
@@ -131,7 +129,7 @@ void renderHistogramsOnFeather()
       return (sampleSize > 0) ? (static_cast<float>(MAX_SAMPLE_RATE_PER_SEC) / static_cast<float>(sampleSize)) : NAN;
    };
 
-   Stats rawStats = analysis.computeBasicStats();
+   Stats rawStats = sensorCapture.computeBasicStats();
    float rawAvg = rawStats.get();
    float rawStdDev = rawStats.stdDev();
    size_t rawCount = rawStats.count();
@@ -164,7 +162,7 @@ void renderHistogramsOnFeather()
       size_t sampleSize = BUFFER_SIZE_FOR_DISPLAY[i];
       float effectiveRateHz = computeEffectiveRateHz(sampleSize);
 
-      Stats avgSeriesStats = analysis.computeAverageSeriesStats(sampleSize);
+      Stats avgSeriesStats = sensorCapture.computeAverageSeriesStats(sampleSize);
       float avgMean = avgSeriesStats.get();
       float avgStdDev = avgSeriesStats.stdDev();
       size_t averageCount = avgSeriesStats.count();
@@ -195,14 +193,13 @@ void renderHistogramsOnFeather()
 /// </summary>
 void printCaptureSummary()
 {
-   SensorCaptureStats analysis(sensorCapture);
-   Stats basicStats = analysis.computeBasicStats();
+   Stats basicStats = sensorCapture.computeBasicStats();
 
    float valueAvg = basicStats.get();
    float valueStdDev = basicStats.stdDev();
    float valueMin = basicStats.min();
    float valueMax = basicStats.max();
-   float valueRange = analysis.computeRange(valueMin, valueMax);
+   float valueRange = SensorCapture::computeRange(valueMin, valueMax);
    float valueStdDevPercent = NAN;
    if (isfinite(valueAvg) && (fabsf(valueAvg) > 0.0f) && isfinite(valueStdDev))
    {
@@ -242,8 +239,6 @@ void printAveragingAnalysis()
 {
    Serial.println("Averaging Analysis");
 
-   SensorCaptureStats analysis(sensorCapture);
-
    SerialX::print("Num Samples", 12);
    SerialX::print("Range", 10);
    SerialX::print("StdDev", 10);
@@ -261,8 +256,8 @@ void printAveragingAnalysis()
       size_t sampleSize = BUFFER_SIZES[analysisIndex];
       float effectiveRate = (sampleSize > 0) ? (static_cast<float>(MAX_SAMPLE_RATE_PER_SEC) / static_cast<float>(sampleSize)) : NAN;
 
-      Stats avgSeriesStats = analysis.computeAverageSeriesStats(sampleSize);
-      float avgRange = analysis.computeRange(avgSeriesStats.min(), avgSeriesStats.max());
+      Stats avgSeriesStats = sensorCapture.computeAverageSeriesStats(sampleSize);
+      float avgRange = SensorCapture::computeRange(avgSeriesStats.min(), avgSeriesStats.max());
       float avgStdDev = avgSeriesStats.stdDev();
       float avgMean = avgSeriesStats.get();
       size_t averageCount = avgSeriesStats.count();

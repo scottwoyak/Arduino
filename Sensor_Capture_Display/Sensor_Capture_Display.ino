@@ -26,7 +26,6 @@
 #endif
 
 #include "SensorCapture.h"
-#include "SensorCaptureStats.h"
 #include "Timer.h"
 #include "SerialX.h"
 #include "SerialTable.h"
@@ -164,8 +163,7 @@ void renderDisplaySummary()
    size_t sampleCount = sensorCapture.count();
    float samplesPerSecond = (captureTimeMs > 0) ? (sampleCount * 1000.0f / captureTimeMs) : 0.0f;
 
-   SensorCaptureStats analysis(sensorCapture);
-   Stats basicStats = analysis.computeBasicStats();
+   Stats basicStats = sensorCapture.computeBasicStats();
    float stdDevPercent = NAN;
    float avg = basicStats.get();
    float stdDev = basicStats.stdDev();
@@ -350,14 +348,13 @@ void renderDisplayScatterPlot()
 /// </summary>
 void printCaptureSummary()
 {
-   SensorCaptureStats analysis(sensorCapture);
-   Stats basicStats = analysis.computeBasicStats();
+   Stats basicStats = sensorCapture.computeBasicStats();
 
    float valueAvg = basicStats.get();
    float valueStdDev = basicStats.stdDev();
    float valueMin = basicStats.min();
    float valueMax = basicStats.max();
-   float valueRange = analysis.computeRange(valueMin, valueMax);
+   float valueRange = SensorCapture::computeRange(valueMin, valueMax);
    float valueStdDevPercent = NAN;
    if (isfinite(valueAvg) && (fabsf(valueAvg) > 0.0f) && isfinite(valueStdDev))
    {
@@ -397,7 +394,6 @@ void printCaptureSummary()
 /// </summary>
 void printSamplingRateAnalysis()
 {
-   SensorCaptureStats analysis(sensorCapture);
    analysisTable.printHeader();
 
    for (size_t samplingRateIndex = 0; samplingRateIndex < SAMPLING_RATE_COUNT; samplingRateIndex++)
@@ -405,8 +401,8 @@ void printSamplingRateAnalysis()
       size_t samplingRate = SAMPLING_RATES[samplingRateIndex];
       float effectiveRate = (samplingRate > 0) ? (static_cast<float>(MAX_SAMPLING_RATE_PER_SEC) / static_cast<float>(samplingRate)) : NAN;
 
-      Stats avgSeriesStats = analysis.computeAverageSeriesStats(samplingRate);
-      float avgRange = analysis.computeRange(avgSeriesStats.min(), avgSeriesStats.max());
+      Stats avgSeriesStats = sensorCapture.computeAverageSeriesStats(samplingRate);
+      float avgRange = SensorCapture::computeRange(avgSeriesStats.min(), avgSeriesStats.max());
       float avgStdDev = avgSeriesStats.stdDev();
       size_t averageCount = avgSeriesStats.count();
 

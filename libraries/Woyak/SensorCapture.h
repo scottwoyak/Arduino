@@ -3,7 +3,9 @@
 #include <Arduino.h>
 #include <stdint.h>
 
+#include "RollingAverage.h"
 #include "SerialX.h"
+#include "Stats.h"
 #include "Timer.h"
 
 ///
@@ -281,5 +283,72 @@ public:
    bool isCaptureComplete() const
    {
       return _captureComplete;
+   }
+
+   ///
+   /// <summary>
+   /// Computes average, population standard deviation, minimum, and maximum for finite captured values.
+   /// </summary>
+   /// <returns>Stats object populated from finite captured values.</returns>
+   ///
+   Stats computeBasicStats() const
+   {
+      Stats stats;
+
+      for (size_t i = 0; i < _valueIndex; i++)
+      {
+         stats.add(_values[i]);
+      }
+
+      return stats;
+   }
+
+   ///
+   /// <summary>
+   /// Computes statistics of the moving-average series for a given window size.
+   /// </summary>
+   /// <param name="windowSize">Moving-average window size (N).</param>
+   /// <returns>Stats object over the moving-average series for the requested window.</returns>
+   ///
+   Stats computeAverageSeriesStats(size_t windowSize) const
+   {
+      Stats averageStats;
+
+      if ((windowSize == 0) || (_valueIndex < windowSize))
+      {
+         return averageStats;
+      }
+
+      RollingAverage blockAverage(windowSize);
+
+      for (size_t valueIndex = 0; valueIndex < _valueIndex; valueIndex++)
+      {
+         blockAverage.set(_values[valueIndex]);
+
+         if (blockAverage.count() == windowSize)
+         {
+            averageStats.add(blockAverage.average());
+         }
+      }
+
+      return averageStats;
+   }
+
+   ///
+   /// <summary>
+   /// Computes min/max range for finite inputs.
+   /// </summary>
+   /// <param name="minValue">Minimum value.</param>
+   /// <param name="maxValue">Maximum value.</param>
+   /// <returns>Range (max-min), or NaN when either bound is non-finite.</returns>
+   ///
+   static float computeRange(float minValue, float maxValue)
+   {
+      if (!isfinite(minValue) || !isfinite(maxValue))
+      {
+         return NAN;
+      }
+
+      return maxValue - minValue;
    }
 };
