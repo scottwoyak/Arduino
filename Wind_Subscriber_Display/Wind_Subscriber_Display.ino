@@ -19,6 +19,7 @@
 #include "Slider.h"
 #include "MultiBar.h"
 #include "BarChart.h"
+#include "MovingBarChart.h"
 #include "RollingRate.h"
 #include "TelemetryClient.h"
 
@@ -49,7 +50,7 @@ MultiHorizontalBar multiBar(BAR_RECT, MULTIBAR_RANGE, NUM_BARS, c1, c2, Color::B
 Color Green2 = Color565::fromRGB(0, 200, 0);
 constexpr RangeF GRAPH_RANGE = { 0, 30 };
 constexpr Rect16 GRAPH_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT);
-RollingBarChart rollingChart(GRAPH_RECT, GRAPH_RANGE, Green2, Color::BLACK);
+MovingBarChart rollingChart(GRAPH_RECT, GRAPH_RANGE, Green2, Color::BLACK);
 
 constexpr uint16_t HISTOGRAM_DURATION_S = 10*60;
 constexpr uint8_t HISTOGRAM_NUM_BINS = 80;

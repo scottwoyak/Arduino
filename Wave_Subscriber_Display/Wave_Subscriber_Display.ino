@@ -13,6 +13,7 @@
 #include <WiFi.h>
 
 #include "BarChart.h"
+#include "MovingBarChart.h"
 #include "BufferedTimeSeries.h"
 #include "ArduinoBoard.h"
 
@@ -50,7 +51,7 @@ constexpr uint16_t HEADER_HEIGHT = 3 * 8 + 4; // one line of text size 3 plus pa
 Color LakeBlue = Color565::fromRGB(0, 0, 255);
 constexpr RangeF ROLLING_RANGE = { 0, 40 };
 constexpr Rect16 ROLLING_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT);
-RollingBarChart rollingChart(ROLLING_RECT, ROLLING_RANGE, LakeBlue, Color::BLACK);
+MovingBarChart rollingChart(ROLLING_RECT, ROLLING_RANGE, LakeBlue, Color::BLACK);
 
 void setup()
 {

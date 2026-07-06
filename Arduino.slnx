@@ -48,6 +48,7 @@
     <File Path="libraries/Woyak/LGX_FeatherESP32_S3_TFT.h" />
     <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
+    <File Path="libraries/Woyak/MovingBarChart.h" />
     <File Path="libraries/Woyak/MS5837TempSensor.h" />
     <File Path="libraries/Woyak/MultiBar.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
@@ -405,7 +406,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Temp_Self_Heating_Display/Temp_Self_Heating_Display.vcxproj">
+  <Project Path="Temp_Warm_Up_Display/Temp_Warm_Up_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
