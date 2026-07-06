@@ -5,8 +5,6 @@ void setup()
 {
    Serial.begin(115200);
    while (!Serial);
-
-   TimedBin::microsFunc = getTimedBinTestMockMicros;
 }
 
 void loop()

@@ -3,7 +3,7 @@
 #include <new>
 #include <algorithm>
 #include "Structs.h"
-#include "TimedStats.h"
+#include "TimedBin.h"
 #include "TimedValues.h"
 #include "Util.h"
 
@@ -17,18 +17,18 @@ struct TimedHistogramSnapshot
 };
 
 /// <summary>
-/// Tracks histogram data over a time window using binned statistics.
+/// Tracks histogram data over a time window using binned counts.
 /// </summary>
 /// <remarks>
 /// This class divides a value range into equally-sized bins and maintains
-/// time-windowed statistics for each bin using TimedStats.
+/// a time-windowed count for each bin using TimedBin.
 /// Rendering is handled by TimedHistogramPlot.
 /// </remarks>
 template<unsigned long (*TimeFunc)() = millis>
 class TimedHistogramBase
 {
 private:
-   TimedStatsBase<TimeFunc>** _bins;
+   TimedBinBase<TimeFunc>** _bins;
    uint _numBins;
    RangeF _range;
    unsigned long _durationMs = 1;
@@ -127,7 +127,7 @@ public:
       _numBins = numBins;
       _durationMs = std::max(1UL, static_cast<unsigned long>(ms));
       _minBinWidth = minBinWidth;
-      _bins = new (std::nothrow) TimedStatsBase<TimeFunc>*[numBins];
+      _bins = new (std::nothrow) TimedBinBase<TimeFunc>*[numBins];
 
       if (_bins == nullptr)
       {
@@ -138,10 +138,10 @@ public:
 
       for (uint i = 0; i < numBins; i++)
       {
-         _bins[i] = new (std::nothrow) TimedStatsBase<TimeFunc>(_durationMs);
+         _bins[i] = new (std::nothrow) TimedBinBase<TimeFunc>(_durationMs);
          if (_bins[i] == nullptr)
          {
-            Util::setHaltReason("OOM allocating TimedStatsBase in TimedHistogram");
+            Util::setHaltReason("OOM allocating TimedBinBase in TimedHistogram");
             Util::reset();
             return;
          }
@@ -173,36 +173,6 @@ public:
    }
 
    /// <summary>
-   /// Gets the minimum value across all bins.
-   /// </summary>
-   /// <returns>The minimum value, or NaN if no values exist.</returns>
-   float min() const
-   {
-      float value = __FLT_MAX__;
-      for (uint i = 0; i < _numBins; i++)
-      {
-         value = std::min(value, _bins[i]->min());
-      }
-
-      return value;
-   }
-
-   /// <summary>
-   /// Gets the maximum value across all bins.
-   /// </summary>
-   /// <returns>The maximum value, or NaN if no values exist.</returns>
-   float max() const
-   {
-      float value = -__FLT_MAX__;
-      for (uint i = 0; i < _numBins; i++)
-      {
-         value = std::max(value, _bins[i]->max());
-      }
-
-      return value;
-   }
-
-   /// <summary>
    /// Records a value in the appropriate bin.
    /// </summary>
    /// <param name="value">The value to record. NaN values are ignored.</param>
@@ -216,7 +186,7 @@ public:
       int bin = static_cast<int>(floor((value - _range.min) / (_range.max - _range.min) * _numBins));
       bin = std::max(0, std::min(bin, static_cast<int>(_numBins - 1)));
 
-      _bins[static_cast<uint>(bin)]->set(value);
+      _bins[static_cast<uint>(bin)]->add();
    }
 
    /// <summary>
@@ -228,7 +198,7 @@ public:
       float maxValue = 0;
       for (uint i = 0; i < _numBins; i++)
       {
-         values[i] = _bins[i]->count();
+         values[i] = _bins[i]->getCount();
          maxValue = std::max(maxValue, values[i]);
       }
 
@@ -252,7 +222,7 @@ public:
 
       for (uint i = 0; i < _numBins; i++)
       {
-         if (_bins[i]->count() > 0)
+         if (_bins[i]->getCount() > 0)
          {
             if (firstBin == -1)
             {
@@ -305,7 +275,7 @@ public:
       size_t total = 0;
       for (uint i = 0; i < _numBins; i++)
       {
-         total += _bins[i]->count();
+         total += _bins[i]->getCount();
       }
       return total;
    }

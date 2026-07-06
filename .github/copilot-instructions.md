@@ -39,6 +39,7 @@
 - Optimize code and suggestions for the ESP32-S3 platform, including using ESP32-specific APIs like `gpio_isr_handler_add()`, `esp_timer`, and `IRAM_ATTR` for ISR functions, and other ESP32-S3 features.
 - Always format serial tables with the `SerialTable` class.
 - Prefer using pointers instead of references for parameters/members where a choice exists.
+- Prefer explicit-width integer types (uint8_t, uint16_t, uint32_t, uint64_t) over platform-dependent types like uint/unsigned int for new and cleaned-up code.
 
 ## Documentation Comment Style
 - User prefers Visual Studio XML documentation comments (`/// <summary>`, `<param>`, `<returns>`) for class and method documentation. These are XML documentation comments used for IntelliSense.

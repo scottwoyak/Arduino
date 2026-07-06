@@ -13,13 +13,14 @@ static unsigned long getTimedBinTestMockMicros()
    return timedBinTestMockMicros;
 }
 
+using TimedBinMock = TimedBinBase<getTimedBinTestMockMicros>;
+
 void setupTimedBinTest()
 {
    timedBinTestMockMicros = 0;
-   TimedBin::microsFunc = getTimedBinTestMockMicros;
 }
 
-void loadTimedBinTestEntries(TimedBin* bin, uint microsForEntries[], uint numEntries)
+void loadTimedBinTestEntries(TimedBinMock* bin, uint microsForEntries[], uint numEntries)
 {
    for (int i = 0; i < numEntries; i++)
    {
@@ -45,7 +46,7 @@ test(TimedBinTest, shouldComputeTotals)
 
    constexpr auto DURATION_MS = 50;
    constexpr auto NUM_BINS = 5;
-   TimedBin bin(DURATION_MS, NUM_BINS);
+   TimedBinMock bin(DURATION_MS, NUM_BINS);
 
    loadTimedBinTestEntries(&bin, microsForEntries, numEntries);
 
@@ -76,7 +77,7 @@ test(TimedBinTest, shouldUtilizeMultipleBins)
 
    constexpr auto DURATION_MS = 50;
    constexpr auto NUM_BINS = 5;
-   TimedBin bin(DURATION_MS, NUM_BINS);
+   TimedBinMock bin(DURATION_MS, NUM_BINS);
 
    loadTimedBinTestEntries(&bin, microsForEntries, numEntries);
 
@@ -103,7 +104,7 @@ test(TimedBinTest, shouldAdvanceBins)
 
    constexpr auto DURATION_MS = 50;
    constexpr auto NUM_BINS = 5;
-   TimedBin bin(DURATION_MS, NUM_BINS);
+   TimedBinMock bin(DURATION_MS, NUM_BINS);
 
    loadTimedBinTestEntries(&bin, microsForEntries, numEntries);
 
@@ -134,7 +135,7 @@ test(TimedBinTest, shouldZeroOutBins)
 
    constexpr auto DURATION_MS = 50;
    constexpr auto NUM_BINS = 5;
-   TimedBin bin(DURATION_MS, NUM_BINS);
+   TimedBinMock bin(DURATION_MS, NUM_BINS);
 
    // first fill each bin
    loadTimedBinTestEntries(&bin, microsForEntries, numEntries);
@@ -180,7 +181,7 @@ test(TimedBinTest, shouldSmoothlyTransitionBins)
 
    constexpr auto DURATION_MS = 50;
    constexpr auto NUM_BINS = 5;
-   TimedBin bin(DURATION_MS, NUM_BINS);
+   TimedBinMock bin(DURATION_MS, NUM_BINS);
 
    // fill bins
    loadTimedBinTestEntries(&bin, microsForEntries, numEntries);
@@ -217,7 +218,7 @@ test(TimedBinTest, shouldHonorBeginAsNewStartTime)
 
    constexpr auto DURATION_MS = 50;
    constexpr auto NUM_BINS = 5;
-   TimedBin bin(DURATION_MS, NUM_BINS);
+   TimedBinMock bin(DURATION_MS, NUM_BINS);
 
    timedBinTestMockMicros = 0;
    bin.add();
