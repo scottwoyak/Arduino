@@ -29,7 +29,7 @@
 - For numeric values, pass numeric types directly to print/println overloads (no manual String conversion); use a single `Format` rule that allows format patterns (e.g., `###/s`) or numeric width for alignment while keeping numeric inputs numeric. Only specify explicit `Format` length when it is actually needed; otherwise, rely on the format string to determine width. User prefers rate labels formatted as `"/s"` instead of `" per/s"` in display Format strings.
 - In display updates, prefer using `Format` objects for values instead of ad-hoc string/print formatting.
 - In display row rendering, prefer labeled `printlnR` overloads instead of building full concatenated row strings for numeric values; use default value colors unless a specific color is requested.
-- For display header alignment in this sketch, prefer explicit space-padded header strings (e.g., `"    Rate"`) instead of using a `Format` object.
+- For display header alignment, prefer explicit space-padded header strings (e.g., `"    Rate"`) instead of using a `Format` object.
 - Use `micros` instead of `us` in names and identifiers.
 - Always use the `Timer` class when waiting for something.
 - Use `SPAN` or `SAMPLE_TIME` for timing-related names; prefer seconds-based timing variable names like `SAMPLE_PERIOD_S` instead of names using `WINDOWS` like `DISPLAY_WINDOW_SECONDS`.
@@ -40,6 +40,7 @@
 - Always format serial tables with the `SerialTable` class.
 - Prefer using pointers instead of references for parameters/members where a choice exists.
 - Prefer explicit-width integer types (uint8_t, uint16_t, uint32_t, uint64_t) over platform-dependent types like uint/unsigned int for new and cleaned-up code.
+- For array "count" constants (e.g. an array named TARGET_SAMPLE_RATES), name the corresponding count constant with a NUM_ prefix followed by a plural noun (e.g. NUM_TARGET_SAMPLES) rather than an _COUNT suffix.
 
 ## Documentation Comment Style
 - User prefers Visual Studio XML documentation comments (`/// <summary>`, `<param>`, `<returns>`) for class and method documentation. These are XML documentation comments used for IntelliSense.
@@ -64,21 +65,20 @@
   ```
 - A wrapped `/// <summary>` doc-comment block needs a blank line before it, separating it from the previous sibling declaration (e.g. between documented enum members), UNLESS it immediately follows a scope-opener (`{`), an access specifier (`public:`/`private:`/`protected:`), or a `// -----------` section-header comment.
 - Do NOT add per-member doc comments to enum values whose names are self-evident (e.g. `PORTRAIT`, `LANDSCAPE`). Only add a single wrapped `///` XML summary comment on the enum declaration itself.
-- For `.ino` sketch files, use a top-of-file XML doc block with `<summary>` and `<remarks>` (no leading/trailing blank `///` wrapper lines needed here, unlike class/method docs). Format as:
+- For `.ino` sketch files, use a top-of-file `//` line-comment block (not XML `///` doc comments) describing what the sketch does, with blank `//` lines separating sections. Format as:
   ```cpp
-  /// <summary>
-  /// Brief description of what this sketch does.
-  /// </summary>
-  /// <remarks>
-  /// Optional longer description of the sketch's purpose, key features,
-  /// hardware setup, etc.
-  /// </remarks>
+  //
+  // Brief description of what this sketch does.
+  //
+  // Optional longer description of the sketch's purpose, key features,
+  // hardware setup, etc.
+  //
   ```
 - Do not add XML docs for `setup()` or `loop()` functions unless explicitly requested; they're self-explanatory.
 - Keep section comments in the style `// ----------- COMMENT` where they already exist (e.g. grouping overloads by type in library headers); do not remove them during cleanup.
 
 ## Code Cleanup Requests
-When the user asks for 'cleanup' (with no other file specified), apply it to the currently displayed/open file from IDE context (provided in the `IDESTATE CONTEXT`). A cleanup pass means bringing the file in line with all the conventions in this document, plus the rules below. Always read `.editorconfig` as part of a cleanup pass and apply its settings (indentation, brace placement, empty-bodied function braces, etc.) as the authoritative source for formatting; this document intentionally defers to `.editorconfig` for those specifics rather than duplicating them, and focuses instead on naming, documentation, and code-organization conventions.
+When the user asks for 'cleanup' (with no other file specified), apply it to the currently displayed/open file from IDE context (provided in the `IDESTATE CONTEXT`). A cleanup pass means bringing the file in line with all the conventions, plus the rules below. Always read `.editorconfig` as part of a cleanup pass and apply its settings (indentation, brace placement, empty-bodied function braces, etc.) as the authoritative source for formatting; this document intentionally defers to `.editorconfig` for those specifics rather than duplicating them, and focuses instead on naming, documentation, and code-organization conventions.
 
 ### Non-Negotiable Preservation Rules
 - Preserve inline comments and commented-out code exactly as-is; do not remove or "clean up" commented-out code during a cleanup pass, even if it looks unused or obsolete.
@@ -87,13 +87,12 @@ When the user asks for 'cleanup' (with no other file specified), apply it to the
 
 ### File Structure Template (.ino sketches)
 ```cpp
-/// <summary>
-/// Brief description of what this sketch does.
-/// </summary>
-/// <remarks>
-/// Optional longer description of the sketch's purpose, key features,
-/// hardware setup, etc.
-/// </remarks>
+//
+// Brief description of what this sketch does.
+//
+// Optional longer description of the sketch's purpose, key features,
+// hardware setup, etc.
+//
 
 // System/standard library headers
 #include <Arduino.h>
@@ -154,7 +153,7 @@ float helperFunction(float param1)
 - Add missing includes for used types.
 
 #### 2. Documentation
-- Add file-level XML documentation (`<summary>` and `<remarks>`) for non-testing sketches describing behavior, flow, outputs, and usage. Do not use dashed separator blocks for this top-of-file block.
+- Add a file-level `//` line-comment header block (not XML doc comments) for non-testing sketches describing behavior, flow, outputs, and usage; separate sections with blank `//` lines. Do not use dashed separator blocks for this top-of-file block.
 - Do NOT add XML docs for `setup()` or `loop()` functions unless explicitly requested.
 - Document all helper functions with params and returns.
 - Document all public methods (and constructors) in classes with params and usage where appropriate.

@@ -47,6 +47,7 @@
     <File Path="libraries/Woyak/LGFXUtil.h" />
     <File Path="libraries/Woyak/LGX_FeatherESP32_S3_TFT.h" />
     <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
+    <File Path="libraries/Woyak/LGX_Hosyond_ST7796.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
     <File Path="libraries/Woyak/MovingBarChart.h" />
     <File Path="libraries/Woyak/MS5837TempSensor.h" />
@@ -246,6 +247,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Display_ST7796S_LovylanGFX/Display_ST7796S_LovylanGFX.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Feather_ESP32_TFT/Feather_ESP32_TFT.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -335,6 +340,10 @@
     <Deploy />
   </Project>
   <Project Path="Pin_Display/Pin_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Playground/Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

@@ -2,6 +2,7 @@
 
 #include "ArduinoWithDisplay.h"
 #include "Color.h"
+#include "Format.h"
 #include "Util.h"
 #include <math.h>
 #include <new>
@@ -22,6 +23,16 @@ private:
    int16_t _height;
    int16_t _yAxisWidth;
 
+   // State for the current overlay frame, established by beginOverlay() and used by
+   // subsequent plotSeries() calls.
+   int16_t _chartLeft = 0;
+   int16_t _chartTop = 0;
+   int16_t _chartWidth = 0;
+   int16_t _chartHeight = 0;
+   float _overlayYMin = 0.0f;
+   float _overlayYMax = 0.0f;
+   unsigned long _overlayXMaxMs = 0;
+
 public:
    ///
    /// <summary>
@@ -36,6 +47,110 @@ public:
    ScatterPlot(ArduinoWithDisplay* display, int16_t x, int16_t y, int16_t width, int16_t height)
       : _display(display), _x(x), _y(y), _width(width), _height(height), _yAxisWidth(50)
    {
+   }
+
+   ///
+   /// <summary>
+   /// Prepares the plot area for an overlay of one or more colored series that share a
+   /// common axis range: draws the Y-axis min/max labels and X-axis "0s"/duration
+   /// labels, and (optionally) clears the chart area. Call once per frame before any
+   /// plotSeries() calls; the established geometry and axis range remain in effect for
+   /// plotSeries() calls made on subsequent frames until beginOverlay() is called again.
+   /// </summary>
+   /// <param name="yMin">Minimum value of the shared Y-axis range.</param>
+   /// <param name="yMax">Maximum value of the shared Y-axis range.</param>
+   /// <param name="xMaxMs">Maximum elapsed time (milliseconds) of the shared X-axis range.</param>
+   /// <param name="yAxisFormat">Format used to render the Y-axis min/max labels.</param>
+   /// <param name="xAxisFormat">Format used to render the X-axis duration label (in seconds).</param>
+   /// <param name="clearChart">If true, clears the chart area before plotting.</param>
+   ///
+   void beginOverlay(float yMin, float yMax, unsigned long xMaxMs, const Format& yAxisFormat, const Format& xAxisFormat, bool clearChart = true)
+   {
+      if (_display == nullptr)
+      {
+         return;
+      }
+
+      _display->setTextSize(2);
+
+      int16_t labelWidth = static_cast<int16_t>(yAxisFormat.length() * _display->charW());
+      _yAxisWidth = labelWidth + _display->charW();
+      int16_t axisLineHeight = _display->charH() + 2;
+
+      _chartLeft = _x + _yAxisWidth;
+      _chartTop = _y;
+      _chartWidth = _width - _yAxisWidth;
+      _chartHeight = _height - axisLineHeight;
+
+      _overlayYMin = yMin;
+      _overlayYMax = yMax;
+      _overlayXMaxMs = xMaxMs;
+
+      if (_chartHeight < 20 || _chartWidth < 20)
+      {
+         return;
+      }
+
+      if (clearChart)
+      {
+         _display->fillRect(_x, _chartTop, _width, _height, Color::BLACK);
+      }
+
+      _display->setCursor(_x, _chartTop);
+      _display->print(yMax, yAxisFormat, Color::WHITE);
+      _display->setCursor(_x, _chartTop + _chartHeight - _display->charH());
+      _display->print(yMin, yAxisFormat, Color::WHITE);
+
+      int16_t axisLabelY = _chartTop + _chartHeight + 2;
+      _display->setCursor(_chartLeft, axisLabelY);
+      _display->print("0s", Color::WHITE);
+      _display->setCursor(_x, axisLabelY);
+      _display->printR(static_cast<float>(xMaxMs) / 1000.0f, xAxisFormat, Color::WHITE);
+   }
+
+   ///
+   /// <summary>
+   /// Plots one series' samples into the chart area established by the most recent
+   /// beginOverlay() call, starting at the given index and clipping any point that
+   /// falls outside the shared axis ranges. Passing a non-zero start index plots only
+   /// newly added points, avoiding the need to redraw previously plotted points.
+   /// </summary>
+   /// <param name="values">Sample values for the series.</param>
+   /// <param name="elapsedMs">Elapsed times (parallel to values) for the series.</param>
+   /// <param name="count">Number of samples in the series.</param>
+   /// <param name="startIndex">Index of the first sample to plot.</param>
+   /// <param name="color">Color used to plot this series' points.</param>
+   ///
+   void plotSeries(const float* values, const unsigned long* elapsedMs, size_t count, size_t startIndex, Color color) const
+   {
+      if (_display == nullptr || values == nullptr || count == 0 || _overlayXMaxMs == 0 || startIndex >= count)
+      {
+         return;
+      }
+
+      float ySpan = _overlayYMax - _overlayYMin;
+      if (ySpan <= 0.0f)
+      {
+         ySpan = 1.0f;
+      }
+
+      for (size_t i = startIndex; i < count; i++)
+      {
+         float value = values[i];
+         if (!isfinite(value))
+         {
+            continue;
+         }
+
+         unsigned long boundedElapsedMs = min(elapsedMs[i], _overlayXMaxMs);
+         int16_t x = _chartLeft + static_cast<int16_t>((static_cast<float>(boundedElapsedMs) / static_cast<float>(_overlayXMaxMs)) * (_chartWidth - 1));
+         int16_t y = _chartTop + static_cast<int16_t>(((_overlayYMax - value) / ySpan) * (_chartHeight - 1));
+
+         x = constrain(x, _chartLeft, _chartLeft + _chartWidth - 1);
+         y = constrain(y, _chartTop, _chartTop + _chartHeight - 1);
+
+         _display->drawPixel(x, y, color);
+      }
    }
 
    ///

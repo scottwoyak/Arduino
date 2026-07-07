@@ -92,4 +92,31 @@ public:
          _bars[i]->reset();
       }
    }
+
+   ///
+   /// <summary>
+   /// Sets the value range mapped across each bar's height and resets for a full redraw.
+   /// </summary>
+   /// <param name="range">The new value range.</param>
+   ///
+   void setRange(RangeF range)
+   {
+      for (uint16_t i = 0; i < _numBars; i++)
+      {
+         _bars[i]->setRange(range);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Clears all bars to an empty state at the minimum of the current range.
+   /// </summary>
+   ///
+   void clear()
+   {
+      for (uint16_t i = 0; i < _numBars; i++)
+      {
+         _bars[i]->clear();
+      }
+   }
 };

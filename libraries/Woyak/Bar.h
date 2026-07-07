@@ -124,6 +124,30 @@ public:
       _rect = rect;
       reset();
    }
+
+   ///
+   /// <summary>
+   /// Sets the value range mapped across the bar and resets it for a full redraw.
+   /// </summary>
+   /// <param name="range">The new value range.</param>
+   ///
+   void setRange(RangeF range)
+   {
+      _range = range;
+      reset();
+   }
+
+   ///
+   /// <summary>
+   /// Clears the bar to an empty state at the minimum of its current range and resets it
+   /// for a full redraw.
+   /// </summary>
+   ///
+   void clear()
+   {
+      _value = _range.min;
+      reset();
+   }
 };
 
 ///
