@@ -318,6 +318,23 @@ public:
 
    ///
    /// <summary>
+   /// Draws a line between two points with the specified color, supporting negative coordinates as offsets from the far edge.
+   /// </summary>
+   /// <param name="x0">Start X coordinate; negative values offset from right edge.</param>
+   /// <param name="y0">Start Y coordinate; negative values offset from bottom edge.</param>
+   /// <param name="x1">End X coordinate; negative values offset from right edge.</param>
+   /// <param name="y1">End Y coordinate; negative values offset from bottom edge.</param>
+   /// <param name="color">Line color.</param>
+   ///
+   void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, Color color)
+   {
+      _normalizeCoords(x0, y0);
+      _normalizeCoords(x1, y1);
+      display.drawLine(x0, y0, x1, y1, (uint16_t)color);
+   }
+
+   ///
+   /// <summary>
    /// Sets the cursor position, supporting negative coordinates as offsets from the far edge.
    /// </summary>
    /// <param name="x">X coordinate; negative values offset from right edge.</param>

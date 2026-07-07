@@ -25,6 +25,7 @@
     <File Path="libraries/Woyak/DisplayTable.h" />
     <File Path="libraries/Woyak/DS18B20TempSensor.h" />
     <File Path="libraries/Woyak/ESP32TempSensor.h" />
+    <File Path="libraries/Woyak/ESP32_S3_Playground.h" />
     <File Path="libraries/Woyak/Feather.h" />
     <File Path="libraries/Woyak/Feather_ESP32_S3.h" />
     <File Path="libraries/Woyak/Feather_ESP32_S3_ST7796S.h" />
@@ -415,7 +416,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Temp_Warm_Up_Display/Temp_Warm_Up_Display.vcxproj">
+  <Project Path="Temp_Warm_Up_Playground/Temp_Warm_Up_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

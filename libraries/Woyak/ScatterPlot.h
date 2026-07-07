@@ -52,10 +52,11 @@ public:
    ///
    /// <summary>
    /// Prepares the plot area for an overlay of one or more colored series that share a
-   /// common axis range: draws the Y-axis min/max labels and X-axis "0s"/duration
-   /// labels, and (optionally) clears the chart area. Call once per frame before any
-   /// plotSeries() calls; the established geometry and axis range remain in effect for
-   /// plotSeries() calls made on subsequent frames until beginOverlay() is called again.
+   /// common axis range: draws gray X/Y axis lines, the Y-axis min/max labels, and the
+   /// X-axis "0s"/duration labels, and (optionally) clears the chart area. Call once per
+   /// frame before any plotSeries() calls; the established geometry and axis range remain
+   /// in effect for plotSeries() calls made on subsequent frames until beginOverlay() is
+   /// called again.
    /// </summary>
    /// <param name="yMin">Minimum value of the shared Y-axis range.</param>
    /// <param name="yMax">Maximum value of the shared Y-axis range.</param>
@@ -96,6 +97,9 @@ public:
          _display->fillRect(_x, _chartTop, _width, _height, Color::BLACK);
       }
 
+      _display->fillRect(_chartLeft, _chartTop + _chartHeight - 1, _chartWidth, 1, Color::GRAY);
+      _display->fillRect(_chartLeft, _chartTop, 1, _chartHeight, Color::GRAY);
+
       _display->setCursor(_x, _chartTop);
       _display->print(yMax, yAxisFormat, Color::WHITE);
       _display->setCursor(_x, _chartTop + _chartHeight - _display->charH());
@@ -111,17 +115,22 @@ public:
    ///
    /// <summary>
    /// Plots one series' samples into the chart area established by the most recent
-   /// beginOverlay() call, starting at the given index and clipping any point that
-   /// falls outside the shared axis ranges. Passing a non-zero start index plots only
-   /// newly added points, avoiding the need to redraw previously plotted points.
+   /// beginOverlay() call, starting at the given index and excluding any point whose
+   /// elapsed time falls beyond the shared X-axis range (e.g. once zoomed in). Passing a
+   /// non-zero start index plots only newly added points, avoiding the need to redraw
+   /// previously plotted points. When connectPoints is true, each plotted point is joined
+   /// to the prior in-range point with a line instead of drawing a lone pixel; when
+   /// startIndex is non-zero, the line segment still connects back to sample
+   /// startIndex - 1 so a series plotted incrementally across frames has no gap.
    /// </summary>
    /// <param name="values">Sample values for the series.</param>
    /// <param name="elapsedMs">Elapsed times (parallel to values) for the series.</param>
    /// <param name="count">Number of samples in the series.</param>
    /// <param name="startIndex">Index of the first sample to plot.</param>
    /// <param name="color">Color used to plot this series' points.</param>
+   /// <param name="connectPoints">If true, draws a line connecting each point to the previous one instead of a lone pixel.</param>
    ///
-   void plotSeries(const float* values, const unsigned long* elapsedMs, size_t count, size_t startIndex, Color color) const
+   void plotSeries(const float* values, const unsigned long* elapsedMs, size_t count, size_t startIndex, Color color, bool connectPoints = false) const
    {
       if (_display == nullptr || values == nullptr || count == 0 || _overlayXMaxMs == 0 || startIndex >= count)
       {
@@ -134,22 +143,53 @@ public:
          ySpan = 1.0f;
       }
 
+      auto toPixel = [&](size_t i, int16_t& x, int16_t& y)
+      {
+         x = _chartLeft + static_cast<int16_t>((static_cast<float>(elapsedMs[i]) / static_cast<float>(_overlayXMaxMs)) * (_chartWidth - 1));
+         y = _chartTop + static_cast<int16_t>(((_overlayYMax - values[i]) / ySpan) * (_chartHeight - 1));
+
+         x = constrain(x, _chartLeft, _chartLeft + _chartWidth - 1);
+         y = constrain(y, _chartTop, _chartTop + _chartHeight - 1);
+      };
+
+      bool havePrevPoint = false;
+      int16_t prevX = 0;
+      int16_t prevY = 0;
+
+      if (connectPoints && (startIndex > 0))
+      {
+         size_t prevIndex = startIndex - 1;
+         if (isfinite(values[prevIndex]) && (elapsedMs[prevIndex] <= _overlayXMaxMs))
+         {
+            toPixel(prevIndex, prevX, prevY);
+            havePrevPoint = true;
+         }
+      }
+
       for (size_t i = startIndex; i < count; i++)
       {
          float value = values[i];
-         if (!isfinite(value))
+         if (!isfinite(value) || (elapsedMs[i] > _overlayXMaxMs))
          {
             continue;
          }
 
-         unsigned long boundedElapsedMs = min(elapsedMs[i], _overlayXMaxMs);
-         int16_t x = _chartLeft + static_cast<int16_t>((static_cast<float>(boundedElapsedMs) / static_cast<float>(_overlayXMaxMs)) * (_chartWidth - 1));
-         int16_t y = _chartTop + static_cast<int16_t>(((_overlayYMax - value) / ySpan) * (_chartHeight - 1));
+         int16_t x;
+         int16_t y;
+         toPixel(i, x, y);
 
-         x = constrain(x, _chartLeft, _chartLeft + _chartWidth - 1);
-         y = constrain(y, _chartTop, _chartTop + _chartHeight - 1);
+         if (connectPoints && havePrevPoint)
+         {
+            _display->drawLine(prevX, prevY, x, y, color);
+         }
+         else
+         {
+            _display->drawPixel(x, y, color);
+         }
 
-         _display->drawPixel(x, y, color);
+         prevX = x;
+         prevY = y;
+         havePrevPoint = true;
       }
    }
 

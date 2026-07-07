@@ -75,7 +75,7 @@ public:
    /// <summary>
    /// Minimum time between accepted button press events.
    /// </summary>
-   uint16_t minPressIntervalMs = 100;
+   uint16_t minPressIntervalMs = 500;
 
    /// <summary>
    /// Constructs a Button on the specified GPIO pin.
