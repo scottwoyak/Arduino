@@ -7,7 +7,6 @@
 #include "Format.h"
 #include "Fonts/Roboto.h"
 #include "Fonts/RobotoMonoBold.h"
-#include "LGX_FeatherESP32_S3_TFT.h"
 #include "Structs.h"
 
 ///

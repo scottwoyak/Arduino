@@ -1,5 +1,6 @@
 #pragma once
 
+#include "LGX_FeatherESP32_S3_TFT.h"
 #include "ArduinoWithDisplay.h"
 #include "Button.h"
 #include <string>
