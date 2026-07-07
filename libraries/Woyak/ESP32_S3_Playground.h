@@ -1,12 +1,12 @@
 #pragma once
 
-#include "LGX_Hosyond_ST7796.h"
+#include "LGX_ST7796S.h"
 #include "ArduinoWithDisplay.h"
 #include "RotaryEncoder.h"
 
 ///
 /// <summary>
-/// ESP32-S3 Playground board wrapper. Pairs an LGX_Hosyond_ST7796 TFT display with a
+/// ESP32-S3 Playground board wrapper. Pairs an LGX_ST7796 TFT display with a
 /// rotary encoder for interactive experimentation. More peripherals will be added to
 /// this board over time.
 /// </summary>
@@ -38,6 +38,7 @@ public:
    void begin() override
    {
       ArduinoWithDisplay::begin();
+      setRotation(DisplayRotation::LANDSCAPE_FLIP);
       encoder.begin();
    }
 };

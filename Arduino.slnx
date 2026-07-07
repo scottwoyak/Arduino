@@ -48,7 +48,7 @@
     <File Path="libraries/Woyak/LGFXUtil.h" />
     <File Path="libraries/Woyak/LGX_FeatherESP32_S3_TFT.h" />
     <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
-    <File Path="libraries/Woyak/LGX_Hosyond_ST7796.h" />
+    <File Path="libraries/Woyak/LGX_ST7796S.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
     <File Path="libraries/Woyak/MovingBarChart.h" />
     <File Path="libraries/Woyak/MS5837TempSensor.h" />
@@ -357,6 +357,10 @@
     <Deploy />
   </Project>
   <Project Path="RotaryEncoder_Display/RotaryEncoder_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="ScatterPlot_Profiler_Playground/ScatterPlot_Profiler_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
