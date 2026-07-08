@@ -33,6 +33,11 @@ private:
    float _overlayYMax = 0.0f;
    unsigned long _overlayXMaxMs = 0;
 
+   uint8_t* _density = nullptr;
+   uint16_t* _lineBuffer = nullptr;
+   int16_t _lastPixelCount = 0;
+   int16_t _lastChartWidth = 0;
+
 public:
    ///
    /// <summary>
@@ -47,6 +52,12 @@ public:
    ScatterPlot(ArduinoWithDisplay* display, int16_t x, int16_t y, int16_t width, int16_t height)
       : _display(display), _x(x), _y(y), _width(width), _height(height), _yAxisWidth(50)
    {
+   }
+
+   ~ScatterPlot()
+   {
+      delete[] _density;
+      delete[] _lineBuffer;
    }
 
    ///
@@ -247,69 +258,79 @@ public:
          ySpan = 1.0f;
       }
 
-      // Draw chart background and axes
-      _display->fillRect(chartLeft, chartTop, chartWidth, chartHeight, Color::BLACK);
-      _display->fillRect(chartLeft, chartTop + chartHeight - 1, chartWidth, 1, Color::DARKGRAY);
-      _display->fillRect(chartLeft, chartTop, 1, chartHeight, Color::DARKGRAY);
-
-      // Create density map
+      // Create binary map
       size_t pixelCount = static_cast<size_t>(chartWidth) * static_cast<size_t>(chartHeight);
-      uint8_t* density = new (std::nothrow) uint8_t[pixelCount];
-      if (density == nullptr)
+      if (pixelCount != _lastPixelCount || _density == nullptr)
+      {
+         delete[] _density;
+         _density = new (std::nothrow) uint8_t[pixelCount];
+         _lastPixelCount = pixelCount;
+      }
+
+      if (_density == nullptr)
       {
          Util::setHaltReason("OOM allocating density array in ScatterPlot");
          Util::reset();
          return;
       }
-      memset(density, 0, pixelCount);
+      memset(_density, 0, pixelCount);
 
-      // Build density map
-      uint8_t maxDensity = 0;
+      // Populate binary map
+      float sampleXMultiplier = static_cast<float>(chartWidth - 1) / max(static_cast<size_t>(1), valueCount - 1);
+      float sampleYMultiplier = static_cast<float>(chartHeight - 1) / ySpan;
+
       for (size_t sampleIndex = 0; sampleIndex < valueCount; sampleIndex++)
       {
-         int16_t x = static_cast<int16_t>((sampleIndex * static_cast<size_t>(chartWidth - 1)) / max(static_cast<size_t>(1), valueCount - 1));
+         int16_t x = static_cast<int16_t>(sampleIndex * sampleXMultiplier);
          float value = values[sampleIndex];
-         int16_t y = static_cast<int16_t>((plotYMax - value) * static_cast<float>(chartHeight - 1) / ySpan);
+         int16_t y = static_cast<int16_t>((plotYMax - value) * sampleYMultiplier);
 
          if (y < 0) y = 0;
-         if (y >= chartHeight) y = chartHeight - 1;
+         else if (y >= chartHeight) y = chartHeight - 1;
 
          size_t densityIndex = static_cast<size_t>(y) * static_cast<size_t>(chartWidth) + static_cast<size_t>(x);
-         if (density[densityIndex] < 255)
-         {
-            density[densityIndex]++;
-         }
-
-         if (density[densityIndex] > maxDensity)
-         {
-            maxDensity = density[densityIndex];
-         }
+         _density[densityIndex] = 1;
       }
 
-      // Render density map with color gradient
+      // Render chart using a line buffer to reduce flicker and speed up drawing
+      if (chartWidth != _lastChartWidth || _lineBuffer == nullptr)
+      {
+         delete[] _lineBuffer;
+         _lineBuffer = new (std::nothrow) uint16_t[chartWidth];
+         _lastChartWidth = chartWidth;
+      }
+
+      if (_lineBuffer == nullptr)
+      {
+         Util::setHaltReason("OOM allocating lineBuffer in ScatterPlot");
+         Util::reset();
+         return;
+      }
+
+      uint16_t bgColor = static_cast<uint16_t>(Color::BLACK);
+      uint16_t axisColor = static_cast<uint16_t>(Color::DARKGRAY);
+      uint16_t greenColor = static_cast<uint16_t>(Color::GREEN);
+
+      _display->display.setSwapBytes(true);
+      uint8_t* densityPtr = _density;
       for (int16_t y = 0; y < chartHeight; y++)
       {
+         bool isAxisY = (y == chartHeight - 1);
          for (int16_t x = 0; x < chartWidth; x++)
          {
-            size_t densityIndex = static_cast<size_t>(y) * static_cast<size_t>(chartWidth) + static_cast<size_t>(x);
-            uint8_t value = density[densityIndex];
-            if (value == 0)
+            uint16_t pixelColor = (x == 0 || isAxisY) ? axisColor : bgColor;
+
+            if (*densityPtr++ > 0)
             {
-               continue;
+               pixelColor = greenColor;
             }
 
-            float ratio = 0.0f;
-            if (maxDensity > 0)
-            {
-               ratio = static_cast<float>(value) / static_cast<float>(maxDensity);
-            }
-
-            Color color = Color565::blend(Color565::fromRGB(0, 128, 0), Color::GREEN, ratio);
-            _display->fillRect(chartLeft + x, chartTop + y, 1, 1, color);
+            _lineBuffer[x] = pixelColor;
          }
-      }
 
-      delete[] density;
+         _display->display.pushImage(chartLeft, chartTop + y, chartWidth, 1, _lineBuffer);
+      }
+      _display->display.setSwapBytes(false);
 
       // Display Y-axis labels (right-aligned)
       int16_t maxLabelX = chartLeft - yAxisGap - static_cast<int16_t>(maxLabelStr.length() * _display->charW());

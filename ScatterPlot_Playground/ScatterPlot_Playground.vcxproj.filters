@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ScatterPlot_Profiler_Playground.ino" />
+    <ClCompile Include="ScatterPlot_Playground.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.ScatterPlot_Profiler_Playground.vsarduino.h">
+    <ClInclude Include="__vm\.ScatterPlot_Playground.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

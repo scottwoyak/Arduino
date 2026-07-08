@@ -42,7 +42,7 @@ constexpr uint16_t DISPLAY_HEIGHT = 320;
 constexpr uint16_t HEADER_HEIGHT = 3 * 8 + 2 * 8 + 4; // title (size 3) + rate line (size 2) plus padding
 
 // ----------- Serial Output
-constexpr uint8_t SERIAL_PRINT_RATE_PER_SEC = 5;
+constexpr uint8_t SERIAL_PRINT_RATE_PER_SEC = 1;
 constexpr SerialTable::Column RESULT_COLUMNS[] = {
    { "Samples", 12 },
    { "Rate(/s)", 12 },

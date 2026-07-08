@@ -360,7 +360,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="ScatterPlot_Profiler_Playground/ScatterPlot_Profiler_Playground.vcxproj">
+  <Project Path="ScatterPlot_Playground/ScatterPlot_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
