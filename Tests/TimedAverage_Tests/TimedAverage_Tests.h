@@ -1,4 +1,4 @@
-#pragma once
+       #pragma once
 
 #include <AUnit.h>
 #include "TimedAverage.h"
@@ -123,6 +123,43 @@ test(TimedAverageTest, shouldResetClearsStateWithoutChangingDuration)
    assertEqual((unsigned long)1000, average.durationMs());
    assertEqual((size_t)0, average.count());
    assertTrue(isnan(average.average()));
+}
+
+test(TimedAverageTest, shouldAccuratelyAverageDataLessThanWindow)
+{
+   setupTimedAverageTest();
+   // 2000ms window, but we'll only have data for first 500ms
+   TimedAverageMock average(2000);
+
+   timedAverageTestTicks = 0;
+   average.set(10.0f);
+   timedAverageTestTicks = 250;
+   average.set(20.0f);
+   timedAverageTestTicks = 500;
+   average.set(30.0f);
+
+   // At 500ms with values 10, 20, 30, the average should be 20, not something lower
+   // The average should reflect the actual data present, not be suppressed by the unfilled window
+   assertEqual(20.0f, average.average());
+   assertEqual((size_t)3, average.count());
+}
+
+test(TimedAverageTest, shouldAccuratelyAverageConstantValuesLessThanWindow)
+{
+   setupTimedAverageTest();
+   // 2000ms window with constant values for first second
+   TimedAverageMock average(2000);
+
+   for (int i = 0; i < 10; i++)
+   {
+      timedAverageTestTicks = i * 100;
+      average.set(5.0f);
+   }
+   // timedAverageTestTicks is now 900ms
+
+   // Should be exactly 5.0, not something lower
+   assertEqual(5.0f, average.average());
+   assertEqual((size_t)10, average.count());
 }
 
 } // namespace TimedAverageTests

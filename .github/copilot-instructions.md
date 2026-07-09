@@ -34,6 +34,7 @@
 - Always use the `Timer` class when waiting for something.
 - Use `SPAN` or `SAMPLE_TIME` for timing-related names; prefer seconds-based timing variable names like `SAMPLE_PERIOD_S` instead of names using `WINDOWS` like `DISPLAY_WINDOW_SECONDS`.
 - Prefer expressing timing as rate when value is >= 1 per second, but use interval constants when effective rate is < 1 per second.
+- For time constants greater than 2 seconds, prefer using seconds-based constant names with an `_S` suffix (e.g., `NAME_S`) instead of milliseconds-based names with an `_MS` suffix.
 - When addressing data quality issues, prefer root-cause stabilization logic over fixed sample-skipping heuristics.
 - For mock-timer-based deterministic tests, prefer exact equality assertions (`assertEqual`) over range-style boolean checks when expected values are deterministic.
 - Optimize code and suggestions for the ESP32-S3 platform, including using ESP32-specific APIs like `gpio_isr_handler_add()`, `esp_timer`, and `IRAM_ATTR` for ISR functions, and other ESP32-S3 features.

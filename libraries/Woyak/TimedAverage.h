@@ -112,6 +112,12 @@ public:
    /// <summary>
    /// Gets the weighted average across active buckets.
    /// </summary>
+   /// <remarks>
+   /// The average is computed across all buckets that have data, with boundary buckets
+   /// weighted by their fractional occupancy within the window. When the total elapsed
+   /// time is less than the configured duration, only the buckets containing data are
+   /// included, ensuring accurate averaging during the startup phase.
+   /// </remarks>
    /// <returns>Weighted average, or NaN when no values exist.</returns>
    float average()
    {
@@ -126,6 +132,16 @@ public:
          firstBucket = 0;
       }
 
+      // Count how many buckets have data to determine if we're still filling the window
+      uint bucketsWithData = 0;
+      for (uint i = 0; i < _numBuckets; i++)
+      {
+         if (_bucketCounts[i] > 0)
+         {
+            bucketsWithData++;
+         }
+      }
+
       for (uint i = 0; i < _numBuckets; i++)
       {
          if (_bucketCounts[i] == 0)
@@ -134,14 +150,22 @@ public:
          }
 
          float fraction = 1;
-         if (i == _currentBucket)
+
+         // Only apply fractional weighting to boundary buckets when the window is full
+         // (i.e., when we have data in the blending bucket too)
+         if (bucketsWithData >= _numBuckets)
          {
-            fraction = elapsed / _bucketMs;
+            // Window is full, apply boundary weighting
+            if (i == _currentBucket)
+            {
+               fraction = elapsed / _bucketMs;
+            }
+            else if (i == firstBucket)
+            {
+               fraction = 1 - (elapsed / _bucketMs);
+            }
          }
-         else if (i == firstBucket)
-         {
-            fraction = 1 - (elapsed / _bucketMs);
-         }
+         // If window is not yet full, use full weight for all buckets with data
 
          total += fraction * _bucketSums[i];
          count += fraction * _bucketCounts[i];

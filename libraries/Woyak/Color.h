@@ -17,6 +17,7 @@ enum class Color : uint16_t
    MAGENTA = 1,
    YELLOW = 1,
    ORANGE = 1,
+   PINK = 1,
    GRAY = 1,
    DARKGRAY = 0,
 
