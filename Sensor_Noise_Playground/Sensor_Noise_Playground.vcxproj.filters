@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Sensor_Scatter_Display.ino" />
+    <ClCompile Include="Sensor_Noise_Playground.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.Sensor_Scatter_Display.vsarduino.h">
+    <ClInclude Include="__vm\.Sensor_Noise_Playground.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

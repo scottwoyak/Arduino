@@ -372,7 +372,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Sensor_Noise_Display/Sensor_Noise_Display.vcxproj">
+  <Project Path="Sensor_Noise_Playground/Sensor_Noise_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

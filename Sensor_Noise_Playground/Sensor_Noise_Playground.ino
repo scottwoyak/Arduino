@@ -14,20 +14,12 @@
 #include <Wire.h>
 #include <math.h>
 
-#include "ArduinoBoard.h"
-
-#ifndef ARDUINO_BUTTON_SUPPORTED
-#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
-#endif
-#ifndef ARDUINO_DISPLAY_SUPPORTED
-#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
-#endif
+#include "ESP32_S3_Playground.h"
 #include "SerialX.h"
 #include "SerialTable.h"
 #include "TimedStats.h"
 #include "Timer.h"
-#include "TestSensor.h"
-#include "I2C.h"
+#include "TempSensor.h"
 #include "RollingRate.h"
 #include "TimedScatterPlot.h"
 #include "TimedHistogram.h"
@@ -35,8 +27,8 @@
 #include "TimedValues.h"
 
 // ----------- The Board
-Arduino arduino;
-TestSensor sensor;
+ESP32_S3_Playground arduino;
+TempSensor sensor;
 
 // ----------- History Windows
 constexpr unsigned long SCATTER_HISTORY_PERIOD_S = 30;
@@ -47,14 +39,14 @@ TimedStats stats(NOISE_HISTORY_S * 1000UL);
 
 // ----------- Sampling
 constexpr uint16_t SENSOR_SAMPLE_RATE_PER_SEC = 100;
-RateTimer sampleTimer(SENSOR_SAMPLE_RATE_PER_SEC);
+Timer sampleTimer(1000UL / SENSOR_SAMPLE_RATE_PER_SEC);
 RollingRate sampleRate;
 
 // ----------- Display Items
 constexpr uint16_t DISPLAY_RATE_PER_SEC = 10;
 constexpr uint16_t HISTOGRAM_BIN_COUNT = 40;
 constexpr float SENSOR_VALUE_RESOLUTION_F = 0.0049f;
-RateTimer displayTimer(DISPLAY_RATE_PER_SEC);
+Timer displayTimer(1000UL / DISPLAY_RATE_PER_SEC);
 Format sampleRateFormat("###/s", Format::Alignment::RIGHT);
 Format valueFormat("####.##");
 Format rangeFormat("###.##");
@@ -89,6 +81,12 @@ constexpr SerialTable::Column SERIAL_COLUMNS[] = {
 };
 SerialTable serialTable(nullptr, SERIAL_COLUMNS, sizeof(SERIAL_COLUMNS) / sizeof(SERIAL_COLUMNS[0]));
 
+///
+/// <summary>
+/// Adds a sample to both the rolling samples window and the rolling stats window.
+/// </summary>
+/// <param name="value">Temperature sample value in Fahrenheit.</param>
+///
 void addSample(float value)
 {
    sampleRate.tick();
@@ -96,15 +94,20 @@ void addSample(float value)
    stats.set(value);
 }
 
+///
+/// <summary>
+/// Draws the display header showing the current display mode.
+/// </summary>
+///
 void drawHeader()
 {
-   arduino.setTextSize(2);
+   arduino.setTextSize(3);
    arduino.setCursor(0, 0);
 
    switch (displayMode)
    {
    case DisplayMode::Scatter:
-      arduino.println("Sensor Scatter", Color::HEADING);
+      arduino.println("Sensor Noise", Color::HEADING);
       break;
 
    case DisplayMode::Histogram:
@@ -118,6 +121,11 @@ void drawHeader()
    }
 }
 
+///
+/// <summary>
+/// Prints a summary of the serial output to explain what data is being collected and reported.
+/// </summary>
+///
 void printSerialSummary()
 {
    Serial.println();
@@ -131,6 +139,12 @@ void printSerialSummary()
    Serial.println("- StdDev: population standard deviation in active period");
 }
 
+///
+/// <summary>
+/// Prints a row of sensor statistics to the serial table.
+/// </summary>
+/// <param name="timedStats">The stats object to print values from.</param>
+///
 void printSerialValues(TimedStats& timedStats)
 {
    float avg = timedStats.average();
@@ -158,6 +172,12 @@ void printSerialValues(TimedStats& timedStats)
    serialRowsPrinted++;
 }
 
+///
+/// <summary>
+/// Renders the noise view: a detailed statistical display showing sample count, average,
+/// range, and standard deviation (both absolute and as a percentage of the mean).
+/// </summary>
+///
 void renderNoiseView()
 {
    float avg = stats.average();
@@ -228,22 +248,18 @@ void setup()
    if (!sensorReady)
    {
       Serial.println("Temperature sensor initialization failed.");
-      Serial.println("I2C scan:");
-      I2C::scan();
    }
 
-   float firstValue = sensor.get();
+   float firstValue = sensor.readTemperatureF();
    if (!isfinite(firstValue))
    {
       Serial.println("Temperature sensor did not return a valid value.");
-      Serial.println("I2C scan:");
-      I2C::scan();
    }
 }
 
 void loop()
 {
-   if (arduino.buttonA.wasPressed())
+   if (arduino.encoder.button.wasPressed())
    {
       switch (displayMode)
       {
@@ -267,7 +283,7 @@ void loop()
 
    if (sampleTimer.ready())
    {
-      const float value = sensor.get();
+      const float value = sensor.readTemperatureF();
       if (isfinite(value))
       {
          addSample(value);
@@ -279,8 +295,7 @@ void loop()
       printSerialValues(stats);
    }
 
-   const bool shouldRender = (displayMode == DisplayMode::Scatter) || displayTimer.ready();
-   if (!shouldRender)
+   if (!displayTimer.ready())
    {
       return;
    }
@@ -305,4 +320,3 @@ void loop()
       break;
    }
 }
-

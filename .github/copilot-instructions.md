@@ -12,6 +12,7 @@
 - Do not edit `.sln`/`.slnx` solution files (or other files) that are currently open in the IDE, per the active IDESTATE context; ask the user to close them first or make the change manually.
 - When adding new test projects, always include them in `Tests/All_Tests/All_Tests.ino` so they run in the aggregate test project.
 - When asked for a recommendation, offer solutions and ask the user what to do instead of automatically implementing one.
+- When implementing or reviewing sketches/libraries, if a simplifying assumption would reduce code complexity or improve performance (e.g., scatter plot x-values are monotonically increasing, or rolling buffer sizes remain constant for the sketch's lifetime), ask the user whether that assumption can be made before writing complex general-case/defensive code. It's acceptable to just document the sketch as requiring the assumption rather than handling edge cases that don't actually occur in practice.
 
 ## General Coding Conventions
 - Do not make changes in libraries outside of the Woyak library; third-party libraries should remain untouched.
