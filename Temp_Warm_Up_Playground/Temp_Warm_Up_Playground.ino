@@ -141,7 +141,7 @@ constexpr unsigned long MAX_TARGET_SAMPLE_RATE = _maxTargetSampleRate();
 
 // ----------- Test Completion
 constexpr unsigned long FIXED_TEST_DURATION_S = 15UL;
-constexpr unsigned long ROLLING_AVERAGE_MIN_WINDOW_MS = 500UL;
+constexpr unsigned long ROLLING_AVERAGE_MIN_MS = 500UL;
 constexpr unsigned long ROLLING_AVERAGE_TARGET_SAMPLE_COUNT = 10UL;
 constexpr size_t MAX_RESULTS = NUM_TARGET_SAMPLES;
 constexpr size_t RAW_SAMPLE_MARGIN = 200; // headroom added to the theoretical max sample count
@@ -149,23 +149,24 @@ constexpr size_t MAX_RAW_SAMPLES_PER_TEST = static_cast<size_t>(MAX_TARGET_SAMPL
 
 ///
 /// <summary>
-/// Computes the width of the centered moving-average smoothing window for a given
+/// Computes the width of the centered moving-average smoothing period for a given
 /// target sample rate: enough time to span ROLLING_AVERAGE_TARGET_SAMPLE_COUNT samples,
 /// with a fixed minimum duration so low rates still get reasonable smoothing. All
-/// moving-average math itself lives in ScatterPlot; this only decides how wide a window
+/// moving-average math itself lives in ScatterPlot; this only decides how wide a period
 /// to ask it for.
 /// </summary>
 /// <param name="sampleRate">Target samples per second, or 0 for an unbounded rate.</param>
-/// <returns>Smoothing window width, in milliseconds.</returns>
+/// <returns>Smoothing period width, in milliseconds.</returns>
 ///
-unsigned long smoothingWindowMs(unsigned long sampleRate)
+unsigned long smoothingPeriodMs(unsigned long sampleRate)
 {
    return (sampleRate == 0)
-      ? ROLLING_AVERAGE_MIN_WINDOW_MS
-      : max(ROLLING_AVERAGE_MIN_WINDOW_MS, (ROLLING_AVERAGE_TARGET_SAMPLE_COUNT * 1000UL) / sampleRate);
+      ? ROLLING_AVERAGE_MIN_MS
+      : max(ROLLING_AVERAGE_MIN_MS, (ROLLING_AVERAGE_TARGET_SAMPLE_COUNT * 1000UL) / sampleRate);
 }
 
 // ----------- Cooldown
+constexpr unsigned long COOLDOWN_STARTUP_DELAY_MS = 2000UL;
 constexpr unsigned long COOLDOWN_SAMPLE_PERIOD_MS = 500UL;
 constexpr size_t NUM_COOLDOWN_ROLLING_SAMPLES = 4;
 
@@ -175,7 +176,6 @@ constexpr uint16_t DISPLAY_HEIGHT = 320;
 constexpr uint8_t TITLE_TEXT_SIZE = 3;
 constexpr uint8_t BODY_TEXT_SIZE = 2;
 constexpr uint16_t COLLECTING_HEADER_HEIGHT = TITLE_TEXT_SIZE * 8 + BODY_TEXT_SIZE * 8 + 4; // title + status line, plus padding
-constexpr uint16_t RATES_LINE_HEIGHT = BODY_TEXT_SIZE * 8 + 2; // Rate display line height with margin
 
 // ----------- Scatter Plot
 constexpr uint16_t DISPLAY_UPDATE_INTERVAL_MS = 100;
@@ -188,8 +188,7 @@ TempSensor sensor;
 Format targetRateFormat("###", 4, Format::Alignment::RIGHT);
 Format actualRateFormat("###", 4, Format::Alignment::RIGHT);
 Format tempFormat("###.##", 6, Format::Alignment::RIGHT);
-Format deltaFormat("-##.##", 6, Format::Alignment::RIGHT);  // Allows negative values
-Format collectingRateFormat("###/s", Format::Alignment::RIGHT);
+Format deltaFormat("##.##", 6, Format::Alignment::RIGHT);
 Format cooldownTempFormat("###.## F");
 
 // ----------- Summary Results Table
@@ -207,13 +206,13 @@ SerialTable resultTable(RESULT_TABLE_TITLE, RESULT_TABLE_COLUMNS, NUM_RESULT_TAB
 // ----------- Scatter Plot State
 ScatterPlot scatterPlot(&arduino, 0, COLLECTING_HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - COLLECTING_HEADER_HEIGHT);
 Timer displayUpdateTimer(DISPLAY_UPDATE_INTERVAL_MS);
-int16_t collectingRateRowY = 0;
 
 // ----------- Status Line State
 bool hasDrawnStatusLine = false;
 bool lastStatusWasCooldown = false;
 float lastCooldownAvg = NAN;
 size_t lastDrawnRatesCount = 0;
+int16_t lastDrawnRatesWidth = 0;
 
 // ----------- View State
 ResultView resultView = ResultView::Summary;
@@ -241,23 +240,25 @@ private:
    unsigned long _samples = 0;
    bool _complete = true;
 
-   // Width of the centered moving-average window (a span of elapsed time), derived from
+   // Width of the centered moving-average period (a span of elapsed time), derived from
    // the target sample rate so the average always mixes ~10 samples' worth of data
-   // regardless of rate. Assigned to the series' movingAverageWindow so the moving
+   // regardless of rate. Assigned to the series' movingSampleSize so the moving
    // average itself is computed internally by ScatterPlotSeries.
-   unsigned long _smoothingWindowMs = ROLLING_AVERAGE_MIN_WINDOW_MS;
+   unsigned long _smoothingPeriodMs = ROLLING_AVERAGE_MIN_MS;
 
    bool _hasResult = false;
    float _resultTempF = NAN;
    float _resultRate = NAN;
    float _resultStartTempF = NAN;
 
+   ///
    /// <summary>
    /// Records the completed test's result: the peak (steady-state) moving-average
    /// temperature reached, computed internally by the series from its raw samples, the
    /// achieved rate, and the starting temperature.
    /// </summary>
    /// <param name="elapsedMs">Elapsed time since the test started, in milliseconds.</param>
+   ///
    void _finish(unsigned long elapsedMs)
    {
       _resultRate = (elapsedMs > 0) ? (1000.0f * static_cast<float>(_samples) / static_cast<float>(elapsedMs)) : NAN;
@@ -291,7 +292,7 @@ public:
    ///
    /// <summary>
    /// Starts a new test run at the given target sample rate, appending samples to the
-   /// series at seriesIndex. The centered smoothing window duration is derived from the
+   /// series at seriesIndex. The centered smoothing duration is derived from the
    /// target rate so the moving average always mixes ~10 samples' worth of data (500ms
    /// minimum), keeping visual smoothness consistent across rates.
    /// </summary>
@@ -300,13 +301,13 @@ public:
    ///
    void start(unsigned long sampleRate, size_t seriesIndex)
    {
-      _smoothingWindowMs = smoothingWindowMs(sampleRate);
+      _smoothingPeriodMs = smoothingPeriodMs(sampleRate);
       _series = (_scatterPlot != nullptr) ? _scatterPlot->getSeries(seriesIndex) : nullptr;
 
       if (_series != nullptr)
       {
          _series->clear();
-         _series->movingAverageWindow = static_cast<float>(_smoothingWindowMs);
+         _series->movingSampleSize = static_cast<float>(_smoothingPeriodMs) / 1000.0f;
       }
 
       _rollingRate.reset();
@@ -358,7 +359,7 @@ public:
 
       if (_series != nullptr)
       {
-         _series->add(static_cast<float>(elapsedMs), tempF);
+         _series->add(static_cast<float>(elapsedMs) / 1000.0f, tempF);
       }
       _samples++;
 
@@ -417,17 +418,6 @@ public:
 
    ///
    /// <summary>
-   /// Gets the elapsed time since the in-progress test started.
-   /// </summary>
-   /// <returns>Elapsed time in milliseconds.</returns>
-   ///
-   unsigned long currentElapsedMs() const
-   {
-      return millis() - _startMs;
-   }
-
-   ///
-   /// <summary>
    /// Gets the smoothed sample rate achieved so far during the in-progress test.
    /// </summary>
    /// <returns>Current samples per second.</returns>
@@ -445,14 +435,7 @@ public:
    ///
    unsigned long targetRate() const { return _targetRate; }
 
-   ///
-   /// <summary>
-   /// Gets the temperature recorded when the current (or most recently started) test began.
-   /// </summary>
-   /// <returns>Starting temperature in Fahrenheit.</returns>
-   ///
-   float startTempF() const { return _startTempF; }
-};
+   };
 
 ///
 /// <summary>
@@ -467,6 +450,7 @@ private:
    TempSensor* _sensor;
    RollingAverage _rollingAvg;
    Timer _sampleTimer = Timer(COOLDOWN_SAMPLE_PERIOD_MS);
+   Timer _startupTimer = Timer(COOLDOWN_STARTUP_DELAY_MS);
 
    bool _complete = true;
    bool _hasPrevAvg = false;
@@ -488,13 +472,16 @@ public:
 
    ///
    /// <summary>
-   /// Starts a new cooldown, clearing prior readings.
+   /// Starts a new cooldown, clearing prior readings. Cooling-criteria sampling does not
+   /// begin until an automatic startup delay has elapsed, giving the sensor a moment to
+   /// settle first.
    /// </summary>
    ///
    void start()
    {
       _rollingAvg.reset();
       _sampleTimer.reset();
+      _startupTimer.reset();
       _complete = false;
       _hasPrevAvg = false;
       _prevAvg = NAN;
@@ -503,13 +490,19 @@ public:
 
    ///
    /// <summary>
-   /// Samples the sensor at the configured period and completes the cooldown once the
-   /// rolling average stays flat or increases from one sample to the next.
+   /// Waits out the startup delay, then samples the sensor at the configured period and
+   /// completes the cooldown once the rolling average stays flat or increases from one
+   /// sample to the next.
    /// </summary>
    ///
    void loop()
    {
       if (_complete)
+      {
+         return;
+      }
+
+      if (_startupTimer.remaining() > 0)
       {
          return;
       }
@@ -832,8 +825,6 @@ void drawCollectingHeader()
    arduino.setTextSize(TITLE_TEXT_SIZE);
    arduino.clearDisplay();
    arduino.println("Warm-Up Tests", Color::HEADING);
-
-   collectingRateRowY = arduino.getCursorY();
 }
 
 ///
@@ -892,11 +883,11 @@ void updateStatusLine()
 
    if (isfinite(currentAvg))
    {
-      arduino.printlnR(currentAvg, cooldownTempFormat, Color::LABEL);
+      arduino.printlnR("Cooling Down: ", currentAvg, cooldownTempFormat, Color::GRAY, Color::GRAY, Color::BLACK);
    }
    else
    {
-      arduino.printlnR("Cooling down...", Color::LABEL);
+      arduino.printlnR("Cooling down...", Color::GRAY);
    }
 
    hasDrawnStatusLine = true;
@@ -942,8 +933,9 @@ void drawScatterView(ResultView viewMode, bool forceFullRedraw)
    // Draw the actual rates at the top-right corner of the display, color-coded per series,
    // only if there are completed results and we're not showing the cooldown message
    // instead (updateStatusLine owns this row while cooling down). Include the currently
-   // running test's rate if one is active. Clears the row first when the rate count
-   // changes so switching between cooldown/collecting modes never leaves stale text behind.
+   // running test's rate if one is active. Clears the row first whenever the rate count
+   // or the rendered text width changes so a shrinking width (e.g. "100/s" back down to
+   // "99/s") never leaves stale leading characters behind.
    size_t resultCount = testRunner.resultCount();
    bool isRunning = !testRunner.isComplete() && !testRunner.isCooldown();
    bool shouldShowRates = (resultCount > 0 || isRunning) && !testRunner.isCooldown();
@@ -954,11 +946,6 @@ void drawScatterView(ResultView viewMode, bool forceFullRedraw)
 
       // Count how many rates to display (completed + current if running)
       size_t displayRateCount = resultCount + (isRunning ? 1 : 0);
-
-      if (displayRateCount != lastDrawnRatesCount)
-      {
-         clearTopRightStatus();
-      }
 
       // Build each rate's text and measure total width so the group is right-aligned
       String rateStrs[MAX_RESULTS + 1];
@@ -979,6 +966,11 @@ void drawScatterView(ResultView viewMode, bool forceFullRedraw)
          totalWidth += arduino.charW() * rateStrs[resultCount].length();
       }
 
+      if (displayRateCount != lastDrawnRatesCount || totalWidth < lastDrawnRatesWidth)
+      {
+         clearTopRightStatus();
+      }
+
       int16_t x = DISPLAY_WIDTH - totalWidth;
       arduino.setCursor(x, 0);
 
@@ -997,6 +989,7 @@ void drawScatterView(ResultView viewMode, bool forceFullRedraw)
       }
 
       lastDrawnRatesCount = displayRateCount;
+      lastDrawnRatesWidth = totalWidth;
    }
 }
 
@@ -1019,25 +1012,7 @@ void updateLiveView()
 
 ///
 /// <summary>
-/// Draws a legend line showing each tested sample rate (e.g. "100/s") in its series
-/// color, used in place of a button prompt on the scatter plot result views.
-/// </summary>
-/// <param name="y">Y coordinate at which to draw the legend line.</param>
-///
-void drawRateLegend(int16_t y)
-{
-   arduino.setCursor(0, y);
-   for (size_t i = 0; i < NUM_TARGET_SAMPLES; i++)
-   {
-      Color color = TARGET_SERIES[i % NUM_TARGET_SAMPLES].color;
-      arduino.print(TARGET_SERIES[i].rate, collectingRateFormat, color);
-   }
-   arduino.println();
-}
-
-///
-/// <summary>
-/// Draws the summary results table listing target rate, actual rate, starting
+/// Draws the summary results table
 /// temperature, and temperature delta for each completed test.
 /// </summary>
 ///
@@ -1060,7 +1035,6 @@ void drawSummaryView()
    int16_t targetColWidth = 10 * charWidth; // "Target(/s)" = 10 chars
    int16_t actualColWidth = 10 * charWidth; // "Actual(/s)" = 10 chars
    int16_t startColWidth = 8 * charWidth;   // "Start(F)" = 8 chars
-   int16_t deltaColWidth = 8 * charWidth;   // "Delta(F)" = 8 chars
 
    int16_t targetColX = 0;
    int16_t actualColX = targetColX + targetColWidth + columnGap;
@@ -1143,6 +1117,7 @@ void startTestRun()
    lastStatusWasCooldown = false;
    lastCooldownAvg = NAN;
    lastDrawnRatesCount = 0;
+   lastDrawnRatesWidth = 0;
    updateStatusLine();
    displayUpdateTimer.reset();
 }
@@ -1174,6 +1149,9 @@ void setup()
       ScatterPlotSeries* series = scatterPlot.createSeries(MAX_RAW_SAMPLES_PER_TEST);
       series->color = TARGET_SERIES[i].color;
    }
+
+   scatterPlot.setYAxisFormat("##.##F");
+   scatterPlot.setXAxisFormat("##.#s");
 
    testRunner.begin(&testCase, &cooldownMonitor);
    startTestRun();
@@ -1215,20 +1193,8 @@ void loop()
 
       if (testRunner.isComplete())
       {
-         Serial.println("\n=== Debug: First 3 seconds of data for highest rate test ===");
-         size_t maxIndex = testRunner.resultCount() - 1;
-         ScatterPlotSeries* series = scatterPlot.getSeries(maxIndex);
-
-         Serial.println("ElapsedMs,RawTemp");
-         for (size_t i = 0; i < series->getCount() && series->getX(i) < 3000; i++)
-         {
-            Serial.print(series->getX(i));
-            Serial.print(",");
-            Serial.println(series->getY(i));
-         }
-         Serial.println("=== End Debug ===\n");
-
          Serial.println("Tests complete");
+         drawResultView();
          return;
       }
    }

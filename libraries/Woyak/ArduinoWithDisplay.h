@@ -162,6 +162,21 @@ public:
 
    ///
    /// <summary>
+   /// Gets the precise rendered pixel width of a string in the current font, accounting
+   /// for the fact that the last character only contributes its ink width rather than
+   /// its full advance width. Use this instead of length() * charW() when a string must
+   /// be pixel-accurately right-aligned or centered.
+   /// </summary>
+   /// <param name="str">String to measure.</param>
+   /// <returns>Width of the string in pixels as it will actually be rendered.</returns>
+   ///
+   uint16_t textWidth(const char* str)
+   {
+      return display.textWidth(str);
+   }
+
+   ///
+   /// <summary>
    /// Sets the display rotation orientation.
    /// </summary>
    /// <param name="rotation">The desired rotation orientation.</param>

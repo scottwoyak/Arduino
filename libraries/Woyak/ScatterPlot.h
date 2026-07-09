@@ -14,7 +14,7 @@ class ScatterPlot;
 /// A single data series owned and rendered by a ScatterPlot: stores its own (x, y)
 /// points, display flags (points, connected lines, moving-average line), and color.
 /// Also owns a centered moving-average of its own points, computed on demand from
-/// movingAverageWindow (in the same units as the x values) and cached until new points
+/// movingSampleSize (in the same units as the x values) and cached until new points
 /// are added. Set finalized once no more points will be added so the moving average's
 /// trailing samples (which need future points to center on) are computed from whatever
 /// data actually exists instead of being left pending.
@@ -31,7 +31,7 @@ private:
    size_t _capacity = 0;
 
    // Scratch buffer holding the most recently computed centered moving average, recomputed
-   // on demand (and cached until add()/set() invalidates it) from the raw points, movingAverageWindow,
+   // on demand (and cached until add()/set() invalidates it) from the raw points, movingSampleSize,
    // and finalized.
    float* _movingAverageBuffer = nullptr;
    size_t _movingAverageBufferCapacity = 0;
@@ -69,7 +69,7 @@ private:
    /// <summary>
    /// Recomputes the centered moving average into the internal scratch buffer if it has
    /// been invalidated since the last computation. Each output value is the average of
-   /// every point whose x falls within movingAverageWindow/2 of that point's own x,
+   /// every point whose x falls within movingSampleSize/2 of that point's own x,
    /// blending data from both before and after it. Because centering a point requires
    /// points that arrive after it, a point can only be finalized once enough later points
    /// actually exist; unless finalized is true, trailing points are left pending (NAN).
@@ -89,7 +89,7 @@ private:
          return;
       }
 
-      float halfWindow = movingAverageWindow / 2.0f;
+      float halfWindow = movingSampleSize / 2.0f;
 
       size_t lo = 0;
       size_t hi = 0;
@@ -211,9 +211,9 @@ public:
    Color color = Color::WHITE;
 
    ///
-   /// <summary>Width of the centered moving-average window, in the same units as the x values.</summary>
+   /// <summary>Width of the centered moving-average window, in the same units as the x values (sample count or time period).</summary>
    ///
-   float movingAverageWindow = 0.0f;
+   float movingSampleSize = 0.0f;
 
    ///
    /// <summary>
@@ -327,7 +327,7 @@ public:
    /// <summary>
    /// Removes every point from the series and resets its moving-average cache and
    /// incremental redraw tracking, so the series can be reused (e.g. for a new test run).
-   /// Does not reset showPoints, showLines, showMovingAverage, color, or movingAverageWindow.
+   /// Does not reset showPoints, showLines, showMovingAverage, color, or movingSampleSize.
    /// </summary>
    ///
    void clear()
@@ -493,6 +493,10 @@ private:
    size_t _seriesCount = 0;
    size_t _seriesCapacity = 0;
 
+   // Axis format customization
+   const char* _xAxisFormat = nullptr;
+   const char* _yAxisFormat = nullptr;
+
    ///
    /// <summary>
    /// Scans every owned series and computes the shared X/Y axis range needed to fit
@@ -556,6 +560,26 @@ private:
 
    ///
    /// <summary>
+   /// Formats a Y-axis label value using the custom Y-axis format if one has been set
+   /// via setYAxisFormat(), otherwise falling back to significant-digit formatting. Used
+   /// by both chart geometry computation and axis-label drawing so the reserved label
+   /// column width always matches what is actually drawn.
+   /// </summary>
+   /// <param name="value">Y-axis value to format.</param>
+   /// <returns>Formatted label text.</returns>
+   ///
+   String _formatYLabel(float value) const
+   {
+      if (_yAxisFormat != nullptr)
+      {
+         Format fmt(_yAxisFormat, Format::Alignment::RIGHT);
+         return String(fmt.toString(value).c_str());
+      }
+      return Util::toSignificantString(value, AXIS_LABEL_SIGNIFICANT_DIGITS);
+   }
+
+   ///
+   /// <summary>
    /// Computes the chart's pixel geometry from the current axis range, sizing the Y-axis
    /// label column to fit the widest of the min/max labels.
    /// </summary>
@@ -564,10 +588,10 @@ private:
    ///
    void _computeChartGeometry(float yMin, float yMax)
    {
-      String maxLabel = Util::toSignificantString(yMax, AXIS_LABEL_SIGNIFICANT_DIGITS);
-      String minLabel = Util::toSignificantString(yMin, AXIS_LABEL_SIGNIFICANT_DIGITS);
-      int16_t yLabelChars = max(static_cast<int16_t>(maxLabel.length()), static_cast<int16_t>(minLabel.length()));
-      _yAxisWidth = static_cast<int16_t>(yLabelChars * _display->charW()) + Y_AXIS_LABEL_GAP;
+      String maxLabel = _formatYLabel(yMax);
+      String minLabel = _formatYLabel(yMin);
+      uint16_t yLabelWidth = max(_display->textWidth(maxLabel.c_str()), _display->textWidth(minLabel.c_str()));
+      _yAxisWidth = static_cast<int16_t>(yLabelWidth) + Y_AXIS_LABEL_GAP;
 
       int16_t axisLineHeight = _display->charH() + 2;
 
@@ -588,26 +612,41 @@ private:
       _display->fillRect(_chartLeft, _chartTop + _chartHeight - 1, _chartWidth, 1, Color::GRAY);
       _display->fillRect(_chartLeft, _chartTop, 1, _chartHeight, Color::GRAY);
 
-      String maxLabel = Util::toSignificantString(_axisYMax, AXIS_LABEL_SIGNIFICANT_DIGITS);
-      int16_t maxLabelX = _chartLeft - Y_AXIS_LABEL_GAP - static_cast<int16_t>(maxLabel.length() * _display->charW());
+      String maxLabel = _formatYLabel(_axisYMax);
+      int16_t maxLabelX = _chartLeft - Y_AXIS_LABEL_GAP - static_cast<int16_t>(_display->textWidth(maxLabel.c_str()));
       _display->setCursor(maxLabelX, _chartTop);
       _display->print(maxLabel, Color::LABEL);
 
-      String minLabel = Util::toSignificantString(_axisYMin, AXIS_LABEL_SIGNIFICANT_DIGITS);
-      int16_t minLabelX = _chartLeft - Y_AXIS_LABEL_GAP - static_cast<int16_t>(minLabel.length() * _display->charW());
+      String minLabel = _formatYLabel(_axisYMin);
+      int16_t minLabelX = _chartLeft - Y_AXIS_LABEL_GAP - static_cast<int16_t>(_display->textWidth(minLabel.c_str()));
       _display->setCursor(minLabelX, _chartTop + _chartHeight - _display->charH());
       _display->print(minLabel, Color::LABEL);
 
-      String xMinLabel = Util::toSignificantString(_axisXMin, AXIS_LABEL_SIGNIFICANT_DIGITS);
+      String xMinLabel;
+      if (_xAxisFormat != nullptr)
+      {
+         Format fmt(_xAxisFormat);
+         xMinLabel = fmt.toString(_axisXMin).c_str();
+      }
+      else
+      {
+         xMinLabel = Util::toSignificantString(_axisXMin, AXIS_LABEL_SIGNIFICANT_DIGITS);
+      }
       _display->setCursor(_chartLeft, _chartTop + _chartHeight + 1);
       _display->print(xMinLabel, Color::LABEL);
 
-      String xMaxLabel = Util::toSignificantString(_axisXMax, AXIS_LABEL_SIGNIFICANT_DIGITS);
-      int16_t xMaxLabelX = _chartLeft + _chartWidth - static_cast<int16_t>(xMaxLabel.length() * _display->charW());
-      if (xMaxLabelX < _chartLeft)
+      String xMaxLabel;
+      if (_xAxisFormat != nullptr)
       {
-         xMaxLabelX = _chartLeft;
+         Format fmt(_xAxisFormat, Format::Alignment::RIGHT);
+         xMaxLabel = fmt.toString(_axisXMax).c_str();
       }
+      else
+      {
+         xMaxLabel = Util::toSignificantString(_axisXMax, AXIS_LABEL_SIGNIFICANT_DIGITS);
+      }
+      int16_t xMaxLabelX = _chartLeft + _chartWidth - static_cast<int16_t>(_display->textWidth(xMaxLabel.c_str()));
+      xMaxLabelX = max(_chartLeft, xMaxLabelX);
       _display->setCursor(xMaxLabelX, _chartTop + _chartHeight + 1);
       _display->print(xMaxLabel, Color::LABEL);
    }
@@ -833,6 +872,30 @@ public:
    void invalidate()
    {
       _forceFullRedraw = true;
+   }
+
+   ///
+   /// <summary>
+   /// Sets a custom format string for X-axis labels. Pass nullptr to revert to the
+   /// default significant-digit formatting.
+   /// </summary>
+   /// <param name="format">Format pattern (e.g., "##.#s"), or nullptr for default.</param>
+   ///
+   void setXAxisFormat(const char* format)
+   {
+      _xAxisFormat = format;
+   }
+
+   ///
+   /// <summary>
+   /// Sets a custom format string for Y-axis labels. Pass nullptr to revert to the
+   /// default significant-digit formatting.
+   /// </summary>
+   /// <param name="format">Format pattern (e.g., "#.##F"), or nullptr for default.</param>
+   ///
+   void setYAxisFormat(const char* format)
+   {
+      _yAxisFormat = format;
    }
 
    ///
