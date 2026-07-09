@@ -526,6 +526,26 @@ public:
       print(label, value, format, valueColor, backgroundColor);
       println();
    }
+   void print(const char* label, const char* value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, valueColor, backgroundColor);
+   }
+   void println(const char* label, const char* value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void print(const char* label, const char* value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   void println(const char* label, const char* value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, format, labelColor, valueColor, backgroundColor);
+      println();
+   }
 
    //
    // ----------- String variants
@@ -566,6 +586,26 @@ public:
    void println(const char* label, const String& value, const Format& format, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       print(label, value, format, valueColor, backgroundColor);
+      println();
+   }
+   void print(const char* label, const String& value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, valueColor, backgroundColor);
+   }
+   void println(const char* label, const String& value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void print(const char* label, const String& value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   void println(const char* label, const String& value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, format, labelColor, valueColor, backgroundColor);
       println();
    }
 
@@ -624,6 +664,26 @@ public:
    void println(const char* label, const std::string& value, const Format& format, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       print(label, value, format, valueColor, backgroundColor);
+      println();
+   }
+   void print(const char* label, const std::string& value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, valueColor, backgroundColor);
+   }
+   void println(const char* label, const std::string& value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void print(const char* label, const std::string& value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   void println(const char* label, const std::string& value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, format, labelColor, valueColor, backgroundColor);
       println();
    }
 
@@ -714,6 +774,40 @@ public:
       printR(label, value, format, valueColor, backgroundColor);
       println();
    }
+   void print(const char* label, float value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, valueColor, backgroundColor);
+   }
+   void println(const char* label, float value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void print(const char* label, float value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   void println(const char* label, float value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, format, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void printR(const char* label, float value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      std::string valueText = format.toString(value);
+      std::string rowText = std::string(label) + valueText;
+      uint16_t len = display.textWidth(rowText.c_str());
+      setCursorX(-len);
+      print(label, labelColor, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   void printlnR(const char* label, float value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      printR(label, value, format, labelColor, valueColor, backgroundColor);
+      println();
+   }
 
    //
    // ----------- double variants
@@ -802,6 +896,40 @@ public:
       printR(label, value, format, valueColor, backgroundColor);
       println();
    }
+   void print(const char* label, double value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, valueColor, backgroundColor);
+   }
+   void println(const char* label, double value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void print(const char* label, double value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   void println(const char* label, double value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, format, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void printR(const char* label, double value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      std::string valueText = format.toString(value);
+      std::string rowText = std::string(label) + valueText;
+      uint16_t len = display.textWidth(rowText.c_str());
+      setCursorX(-len);
+      print(label, labelColor, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   void printlnR(const char* label, double value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      printR(label, value, format, labelColor, valueColor, backgroundColor);
+      println();
+   }
 
    //
    // ----------- uint8_t variants
@@ -864,6 +992,26 @@ public:
    void println(const char* label, uint8_t value, const Format& format, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       print(label, value, format, valueColor, backgroundColor);
+      println();
+   }
+   void print(const char* label, uint8_t value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, valueColor, backgroundColor);
+   }
+   void println(const char* label, uint8_t value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void print(const char* label, uint8_t value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   void println(const char* label, uint8_t value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, format, labelColor, valueColor, backgroundColor);
       println();
    }
 
@@ -930,6 +1078,26 @@ public:
       print(label, value, format, valueColor, backgroundColor);
       println();
    }
+   void print(const char* label, uint16_t value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, valueColor, backgroundColor);
+   }
+   void println(const char* label, uint16_t value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void print(const char* label, uint16_t value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   void println(const char* label, uint16_t value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, format, labelColor, valueColor, backgroundColor);
+      println();
+   }
 
    //
    // ----------- int variants
@@ -992,6 +1160,26 @@ public:
    void println(const char* label, int value, const Format& format, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       print(label, value, format, valueColor, backgroundColor);
+      println();
+   }
+   void print(const char* label, int value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, valueColor, backgroundColor);
+   }
+   void println(const char* label, int value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void print(const char* label, int value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   void println(const char* label, int value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, format, labelColor, valueColor, backgroundColor);
       println();
    }
 
@@ -1058,6 +1246,26 @@ public:
       print(label, value, format, valueColor, backgroundColor);
       println();
    }
+   void print(const char* label, long value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, valueColor, backgroundColor);
+   }
+   void println(const char* label, long value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void print(const char* label, long value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   void println(const char* label, long value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, format, labelColor, valueColor, backgroundColor);
+      println();
+   }
 
    //
    // ----------- unsigned long variants
@@ -1122,6 +1330,26 @@ public:
       print(label, value, format, valueColor, backgroundColor);
       println();
    }
+   void print(const char* label, unsigned long value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, valueColor, backgroundColor);
+   }
+   void println(const char* label, unsigned long value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void print(const char* label, unsigned long value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, labelColor, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   void println(const char* label, unsigned long value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, value, format, labelColor, valueColor, backgroundColor);
+      println();
+   }
 
    //
    // ----------- size_t variants
@@ -1175,5 +1403,21 @@ public:
    void println(const char* label, size_t value, const Format& format, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       println(label, (unsigned long)value, format, valueColor, backgroundColor);
+   }
+   void print(const char* label, size_t value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, (unsigned long)value, labelColor, valueColor, backgroundColor);
+   }
+   void println(const char* label, size_t value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      println(label, (unsigned long)value, labelColor, valueColor, backgroundColor);
+   }
+   void print(const char* label, size_t value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      print(label, (unsigned long)value, format, labelColor, valueColor, backgroundColor);
+   }
+   void println(const char* label, size_t value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      println(label, (unsigned long)value, format, labelColor, valueColor, backgroundColor);
    }
 };
