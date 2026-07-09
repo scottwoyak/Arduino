@@ -17,8 +17,8 @@
 //   live rolling-average temperature. The live scatter plot redraws at most once per
 //   second while collecting.
 // - A single scatter plot accumulates live, with each rate's samples plotted in
-//   its own color against elapsed time. The X-axis always spans the fixed 15 second
-//   test duration; the Y-axis automatically scales to fit the plotted data.
+//   its own color against elapsed time. Both the X-axis and Y-axis automatically
+//   scale to fit whatever is currently plotted.
 // - Once every rate has been tested, shows the summary results table (target rate,
 //   actual rate, starting temperature, and peak temperature increase) with 2 spaces
 //   between columns. The rotary encoder's button cycles between the summary table,
@@ -30,7 +30,6 @@
 // with the screen rotated 180 degrees from the default landscape orientation.
 //
 // System/standard library headers
-#include <new>
 #include <Wire.h>
 
 // Local library headers (from libraries/Woyak)
@@ -180,7 +179,6 @@ constexpr uint16_t RATES_LINE_HEIGHT = BODY_TEXT_SIZE * 8 + 2; // Rate display l
 
 // ----------- Scatter Plot
 constexpr uint16_t DISPLAY_UPDATE_INTERVAL_MS = 100;
-constexpr unsigned long SCATTER_X_MAX_MS = FIXED_TEST_DURATION_S * 1000UL;
 
 // ----------- The Board
 ESP32_S3_Playground arduino;
@@ -192,8 +190,6 @@ Format actualRateFormat("###", 4, Format::Alignment::RIGHT);
 Format tempFormat("###.##", 6, Format::Alignment::RIGHT);
 Format deltaFormat("-##.##", 6, Format::Alignment::RIGHT);  // Allows negative values
 Format collectingRateFormat("###/s", Format::Alignment::RIGHT);
-Format scatterAxisFormat("###.#", Format::Alignment::RIGHT);
-Format scatterDurationFormat("##.#s", Format::Alignment::LEFT);
 Format cooldownTempFormat("###.## F");
 
 // ----------- Summary Results Table
@@ -212,16 +208,6 @@ SerialTable resultTable(RESULT_TABLE_TITLE, RESULT_TABLE_COLUMNS, NUM_RESULT_TAB
 ScatterPlot scatterPlot(&arduino, 0, COLLECTING_HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - COLLECTING_HEADER_HEIGHT);
 Timer displayUpdateTimer(DISPLAY_UPDATE_INTERVAL_MS);
 int16_t collectingRateRowY = 0;
-constexpr size_t NO_RATE_INDEX = static_cast<size_t>(-1);
-float lastPlottedYMin = NAN;
-float lastPlottedYMax = NAN;
-size_t lastPlottedCurrentSampleCount = 0;
-size_t lastPlottedRollingAvgReadyCount = 0;
-size_t lastPlottedRateIndex = NO_RATE_INDEX;
-bool lastPlottedUseRollingAvg = false;
-float scatterPlotYZoom = 1.0f; // Zoom multiplier; zoom > 1 means data is stretched vertically
-float lastPlottedZoom = 1.0f; // Track last plotted zoom to detect changes and avoid flicker
-long lastEncoderPosition = 0; // Track encoder position to detect rotation
 
 // ----------- Status Line State
 bool hasDrawnStatusLine = false;
@@ -236,8 +222,8 @@ bool sensorReady = false;
 ///
 /// <summary>
 /// Runs a single warm-up test at a target sample rate for the fixed test duration.
-/// Records the peak temperature reached, the achieved rate, and the raw samples
-/// (with elapsed time) collected during the run.
+/// Records the peak temperature reached, the achieved rate, and appends each raw
+/// sample (with elapsed time) to the ScatterPlotSeries assigned to this test.
 /// </summary>
 ///
 class TestCase
@@ -245,6 +231,7 @@ class TestCase
 private:
    TempSensor* _sensor;
    ScatterPlot* _scatterPlot;
+   ScatterPlotSeries* _series = nullptr;
    RollingRate _rollingRate;
    Timer _sampleTimer = Timer(1UL);
 
@@ -256,8 +243,8 @@ private:
 
    // Width of the centered moving-average window (a span of elapsed time), derived from
    // the target sample rate so the average always mixes ~10 samples' worth of data
-   // regardless of rate. The moving average itself is computed internally by ScatterPlot;
-   // see ScatterPlot::findMovingAveragePeak() and ScatterPlot::plotMovingAverageSeries().
+   // regardless of rate. Assigned to the series' movingAverageWindow so the moving
+   // average itself is computed internally by ScatterPlotSeries.
    unsigned long _smoothingWindowMs = ROLLING_AVERAGE_MIN_WINDOW_MS;
 
    bool _hasResult = false;
@@ -265,22 +252,24 @@ private:
    float _resultRate = NAN;
    float _resultStartTempF = NAN;
 
-   float _rawSamples[MAX_RAW_SAMPLES_PER_TEST];
-   unsigned long _rawElapsedMs[MAX_RAW_SAMPLES_PER_TEST];
-   size_t _rawSampleCount = 0;
-
    /// <summary>
    /// Records the completed test's result: the peak (steady-state) moving-average
-   /// temperature reached, computed internally by ScatterPlot from the raw samples, the
+   /// temperature reached, computed internally by the series from its raw samples, the
    /// achieved rate, and the starting temperature.
    /// </summary>
    /// <param name="elapsedMs">Elapsed time since the test started, in milliseconds.</param>
    void _finish(unsigned long elapsedMs)
    {
       _resultRate = (elapsedMs > 0) ? (1000.0f * static_cast<float>(_samples) / static_cast<float>(elapsedMs)) : NAN;
-      _resultTempF = (_scatterPlot != nullptr)
-         ? _scatterPlot->findMovingAveragePeak(_rawSamples, _rawElapsedMs, _rawSampleCount, _smoothingWindowMs)
-         : NAN;
+      if (_series != nullptr)
+      {
+         _series->finalized = true;
+         _resultTempF = _series->findMovingAveragePeak();
+      }
+      else
+      {
+         _resultTempF = NAN;
+      }
       _resultStartTempF = _startTempF;
       _hasResult = true;
       _complete = true;
@@ -292,7 +281,7 @@ public:
    /// Initializes a new instance of the TestCase class.
    /// </summary>
    /// <param name="sensor">Sensor to sample during the test.</param>
-   /// <param name="scatterPlot">Scatter plot used to compute the moving average internally.</param>
+   /// <param name="scatterPlot">Scatter plot that owns each rate's data series.</param>
    ///
    TestCase(TempSensor* sensor, ScatterPlot* scatterPlot)
       : _sensor(sensor), _scatterPlot(scatterPlot)
@@ -301,16 +290,24 @@ public:
 
    ///
    /// <summary>
-   /// Starts a new test run at the given target sample rate. The centered smoothing
-   /// window duration is derived from the target rate so the moving average always
-   /// mixes ~10 samples' worth of data (500ms minimum), keeping visual smoothness
-   /// consistent across rates.
+   /// Starts a new test run at the given target sample rate, appending samples to the
+   /// series at seriesIndex. The centered smoothing window duration is derived from the
+   /// target rate so the moving average always mixes ~10 samples' worth of data (500ms
+   /// minimum), keeping visual smoothness consistent across rates.
    /// </summary>
    /// <param name="sampleRate">Target samples per second.</param>
+   /// <param name="seriesIndex">Index of the ScatterPlot series to append this test's samples to.</param>
    ///
-   void start(unsigned long sampleRate)
+   void start(unsigned long sampleRate, size_t seriesIndex)
    {
       _smoothingWindowMs = smoothingWindowMs(sampleRate);
+      _series = (_scatterPlot != nullptr) ? _scatterPlot->getSeries(seriesIndex) : nullptr;
+
+      if (_series != nullptr)
+      {
+         _series->clear();
+         _series->movingAverageWindow = static_cast<float>(_smoothingWindowMs);
+      }
 
       _rollingRate.reset();
       _samples = 0;
@@ -322,7 +319,6 @@ public:
       _resultTempF = NAN;
       _resultRate = NAN;
       _resultStartTempF = NAN;
-      _rawSampleCount = 0;
 
       unsigned long intervalMs = (sampleRate == 0) ? 1UL : max(1UL, 1000UL / sampleRate);
       _sampleTimer = Timer(intervalMs);
@@ -330,9 +326,10 @@ public:
 
    ///
    /// <summary>
-   /// Samples the sensor at the configured rate, recording the raw value and elapsed time,
-   /// and completes the test once the fixed test duration elapses. The peak (steady-state)
-   /// moving-average temperature is computed internally by ScatterPlot once the test finishes.
+   /// Samples the sensor at the configured rate, appending the raw value and elapsed time
+   /// to this test's series, and completes the test once the fixed test duration elapses.
+   /// The peak (steady-state) moving-average temperature is computed internally by the
+   /// series once the test finishes.
    /// </summary>
    ///
    void loop()
@@ -359,11 +356,9 @@ public:
       unsigned long elapsedMs = millis() - _startMs;
       _rollingRate.tick();
 
-      if (_rawSampleCount < MAX_RAW_SAMPLES_PER_TEST)
+      if (_series != nullptr)
       {
-         _rawSamples[_rawSampleCount] = tempF;
-         _rawElapsedMs[_rawSampleCount] = elapsedMs;
-         _rawSampleCount++;
+         _series->add(static_cast<float>(elapsedMs), tempF);
       }
       _samples++;
 
@@ -457,30 +452,6 @@ public:
    /// <returns>Starting temperature in Fahrenheit.</returns>
    ///
    float startTempF() const { return _startTempF; }
-
-   ///
-   /// <summary>
-   /// Gets the number of raw samples collected during the test.
-   /// </summary>
-   /// <returns>Raw sample count.</returns>
-   ///
-   size_t rawSampleCount() const { return _rawSampleCount; }
-
-   ///
-   /// <summary>
-   /// Gets the raw samples collected during the test.
-   /// </summary>
-   /// <returns>Pointer to the raw sample array.</returns>
-   ///
-   const float* rawSamples() const { return _rawSamples; }
-
-   ///
-   /// <summary>
-   /// Gets the elapsed time (from test start) for each raw sample collected.
-   /// </summary>
-   /// <returns>Pointer to the raw elapsed-time array, parallel to rawSamples().</returns>
-   ///
-   const unsigned long* rawElapsedMs() const { return _rawElapsedMs; }
 };
 
 ///
@@ -584,9 +555,10 @@ public:
 ///
 /// <summary>
 /// Steps a TestCase through each target sample rate in turn, recording the target rate,
-/// achieved rate, temperature delta from the baseline, and raw samples for each
-/// completed rate. A CooldownMonitor runs before the first test and between each
-/// subsequent test until the sensor's temperature stops falling.
+/// achieved rate, and temperature delta from the baseline for each completed rate (each
+/// rate's raw samples remain in the ScatterPlot series TestCase appended them to). A
+/// CooldownMonitor runs before the first test and between each subsequent test until the
+/// sensor's temperature stops falling.
 /// </summary>
 ///
 class TestRunner
@@ -606,36 +578,7 @@ private:
    float _resultStartTemps[MAX_RESULTS] = { NAN };
    int _pendingResultIndex = -1;
 
-   float* _rawDatasets[MAX_RESULTS] = { nullptr };
-   unsigned long* _rawElapsedDatasets[MAX_RESULTS] = { nullptr };
-   size_t _rawDatasetCounts[MAX_RESULTS] = { 0 };
-
-   /// <summary>
-   /// Releases and clears any raw sample datasets retained from a prior run.
-   /// </summary>
-   void _freeDatasets()
-   {
-      for (size_t i = 0; i < MAX_RESULTS; i++)
-      {
-         delete[] _rawDatasets[i];
-         delete[] _rawElapsedDatasets[i];
-         _rawDatasets[i] = nullptr;
-         _rawElapsedDatasets[i] = nullptr;
-         _rawDatasetCounts[i] = 0;
-      }
-   }
-
 public:
-   ///
-   /// <summary>
-   /// Releases the raw sample datasets retained for scatter plotting.
-   /// </summary>
-   ///
-   ~TestRunner()
-   {
-      _freeDatasets();
-   }
-
    ///
    /// <summary>
    /// Binds the runner to the TestCase it will drive and the CooldownMonitor used
@@ -668,7 +611,6 @@ public:
       _currentRateIndex = 0;
       _resultCount = 0;
       _pendingResultIndex = -1;
-      _freeDatasets();
       _cooldownMonitor->start();
    }
 
@@ -696,7 +638,7 @@ public:
          }
 
          _cooldown = false;
-         _testCase->start(TARGET_SERIES[_currentRateIndex].rate);
+         _testCase->start(TARGET_SERIES[_currentRateIndex].rate, _currentRateIndex);
          return;
       }
 
@@ -718,32 +660,6 @@ public:
          _resultRates[_resultCount] = achievedRate;
          _resultTemps[_resultCount] = temp;
          _resultStartTemps[_resultCount] = startTempF;
-
-         size_t rawCount = _testCase->rawSampleCount();
-         if (rawCount > 0)
-         {
-            const float* rawSamples = _testCase->rawSamples();
-            const unsigned long* rawElapsedMs = _testCase->rawElapsedMs();
-            float* dataset = new (std::nothrow) float[rawCount];
-            unsigned long* elapsedDataset = new (std::nothrow) unsigned long[rawCount];
-            if (dataset != nullptr && elapsedDataset != nullptr)
-            {
-               for (size_t i = 0; i < rawCount; i++)
-               {
-                  dataset[i] = rawSamples[i];
-                  elapsedDataset[i] = rawElapsedMs[i];
-               }
-               _rawDatasets[_resultCount] = dataset;
-               _rawElapsedDatasets[_resultCount] = elapsedDataset;
-               _rawDatasetCounts[_resultCount] = rawCount;
-            }
-            else
-            {
-               delete[] dataset;
-               delete[] elapsedDataset;
-               Serial.println("Warning: Unable to allocate raw sample storage for scatter plot");
-            }
-         }
 
          _pendingResultIndex = static_cast<int>(_resultCount);
          _resultCount++;
@@ -811,7 +727,7 @@ public:
    /// <summary>
    /// Gets the index of the newly completed pending result.
    /// </summary>
-   /// <returns>Index into the result/raw sample arrays.</returns>
+   /// <returns>Index into the result arrays.</returns>
    ///
    size_t pendingResultIndex() const
    {
@@ -898,55 +814,6 @@ public:
          return NAN;
       }
       return _resultStartTemps[index];
-   }
-
-   ///
-   /// <summary>
-   /// Gets the number of raw samples retained for a completed result.
-   /// </summary>
-   /// <param name="index">Result index.</param>
-   /// <returns>Raw sample count, or 0 if the index is out of range.</returns>
-   ///
-   size_t rawSampleCount(size_t index) const
-   {
-      if (index >= _resultCount)
-      {
-         return 0;
-      }
-      return _rawDatasetCounts[index];
-   }
-
-   ///
-   /// <summary>
-   /// Gets the raw samples retained for a completed result.
-   /// </summary>
-   /// <param name="index">Result index.</param>
-   /// <returns>Pointer to the raw sample array, or nullptr if the index is out of range.</returns>
-   ///
-   const float* rawSamples(size_t index) const
-   {
-      if (index >= _resultCount)
-      {
-         return nullptr;
-      }
-      return _rawDatasets[index];
-   }
-
-   ///
-   /// <summary>
-   /// Gets the elapsed time (from test start) for each raw sample retained for a
-   /// completed result.
-   /// </summary>
-   /// <param name="index">Result index.</param>
-   /// <returns>Pointer to the raw elapsed-time array, or nullptr if the index is out of range.</returns>
-   ///
-   const unsigned long* rawElapsedMs(size_t index) const
-   {
-      if (index >= _resultCount)
-      {
-         return nullptr;
-      }
-      return _rawElapsedDatasets[index];
    }
 };
 
@@ -1039,309 +906,99 @@ void updateStatusLine()
 
 ///
 /// <summary>
-/// Rounds a value down to one decimal place.
-/// </summary>
-/// <param name="value">Value to round.</param>
-/// <returns>Value rounded down to the nearest tenth.</returns>
-///
-float floorToOneDecimal(float value)
-{
-   return floorf(value * 10.0f) / 10.0f;
-}
-
-///
-/// <summary>
-/// Rounds a value up to one decimal place.
-/// </summary>
-/// <param name="value">Value to round.</param>
-/// <returns>Value rounded up to the nearest tenth.</returns>
-///
-float ceilToOneDecimal(float value)
-{
-   return ceilf(value * 10.0f) / 10.0f;
-}
-
-///
-/// <summary>
-/// Computes the shared Y-axis range across every series with data: each completed
-/// test's samples, plus the currently in-progress test's samples (if the run
-/// is active and not cooling down). Ranges over rolling-average values instead of raw
-/// samples when requested.
-/// </summary>
-/// <param name="useRollingAvg">If true, ranges over rolling-average values instead of raw samples.</param>
-/// <param name="outMin">Receives the minimum finite value found, rounded down to one decimal, or NAN if no data exists.</param>
-/// <param name="outMax">Receives the maximum finite value found, rounded up to one decimal, or NAN if no data exists.</param>
-///
-void computeScatterYRange(bool useRollingAvg, float* outMin, float* outMax)
-{
-   float minValue = NAN;
-   float maxValue = NAN;
-
-   size_t resultCount = testRunner.resultCount();
-   for (size_t series = 0; series < resultCount; series++)
-   {
-      if (useRollingAvg)
-      {
-         unsigned long windowMs = smoothingWindowMs(testRunner.resultTargetRate(series));
-         float seriesMin;
-         float seriesMax;
-         scatterPlot.movingAverageRange(testRunner.rawSamples(series), testRunner.rawElapsedMs(series), testRunner.rawSampleCount(series), windowMs, true, &seriesMin, &seriesMax);
-         if (isfinite(seriesMin) && (!isfinite(minValue) || (seriesMin < minValue))) minValue = seriesMin;
-         if (isfinite(seriesMax) && (!isfinite(maxValue) || (seriesMax > maxValue))) maxValue = seriesMax;
-      }
-      else
-      {
-         const float* samples = testRunner.rawSamples(series);
-         size_t count = testRunner.rawSampleCount(series);
-         for (size_t i = 0; i < count; i++)
-         {
-            float value = samples[i];
-            if (!isfinite(value))
-            {
-               continue;
-            }
-            if (!isfinite(minValue) || (value < minValue)) minValue = value;
-            if (!isfinite(maxValue) || (value > maxValue)) maxValue = value;
-         }
-      }
-   }
-
-   if (!testRunner.isComplete() && !testRunner.isCooldown())
-   {
-      if (useRollingAvg)
-      {
-         unsigned long windowMs = smoothingWindowMs(testCase.targetRate());
-         float seriesMin;
-         float seriesMax;
-         scatterPlot.movingAverageRange(testCase.rawSamples(), testCase.rawElapsedMs(), testCase.rawSampleCount(), windowMs, false, &seriesMin, &seriesMax);
-         if (isfinite(seriesMin) && (!isfinite(minValue) || (seriesMin < minValue))) minValue = seriesMin;
-         if (isfinite(seriesMax) && (!isfinite(maxValue) || (seriesMax > maxValue))) maxValue = seriesMax;
-      }
-      else
-      {
-         const float* samples = testCase.rawSamples();
-         size_t count = testCase.rawSampleCount();
-         for (size_t i = 0; i < count; i++)
-         {
-            float value = samples[i];
-            if (!isfinite(value))
-            {
-               continue;
-            }
-            if (!isfinite(minValue) || (value < minValue)) minValue = value;
-            if (!isfinite(maxValue) || (value > maxValue)) maxValue = value;
-         }
-      }
-   }
-
-   *outMin = isfinite(minValue) ? floorToOneDecimal(minValue) : NAN;
-   *outMax = isfinite(maxValue) ? ceilToOneDecimal(maxValue) : NAN;
-}
-
-///
-/// <summary>
 /// Draws the combined multi-series scatter plot: every completed test's samples, plus
 /// the currently in-progress test's samples (if any), each in its series color, against
-/// a fixed-duration X-axis and a Y-axis that automatically scales to fit the plotted
-/// data. Can display raw samples as discrete points, rolling-average samples as connected
-/// lines, or both overlaid. The X-axis can be zoomed with the encoder (20% per step, 1x-20x),
-/// and zoom changes only trigger a full redraw to minimize flicker. Unless forced, a full
-/// clear and redraw only happens when the zoom, axis range, view mode, or active series
-/// changes; otherwise only newly collected points on the active series are plotted.
+/// axes that automatically scale to fit whatever is currently plotted. Can display raw
+/// samples as discrete points, rolling-average samples as connected lines, or both
+/// overlaid, by toggling each series' showPoints/showMovingAverage flags before calling
+/// ScatterPlot::render(). A full clear and redraw only happens when the computed axis
+/// range changes or forceFullRedraw requests one (e.g. because the view mode just
+/// changed); otherwise only newly collected points are plotted.
 /// </summary>
 /// <param name="viewMode">Which scatter plot view to display (RawScatter, RollingAvgScatter, or Overlay).</param>
 /// <param name="forceFullRedraw">If true, always performs a full clear and redraw.</param>
 ///
 void drawScatterView(ResultView viewMode, bool forceFullRedraw)
 {
-   float yMin;
-   float yMax;
+   bool showRaw = (viewMode != ResultView::RollingAvgScatter);
+   bool showMovingAverage = (viewMode != ResultView::RawScatter);
 
-   // For overlay, compute range across both raw and rolling avg; for single modes, compute that mode's range
-   bool useRollingAvg = (viewMode == ResultView::RollingAvgScatter);
-   bool isOverlay = (viewMode == ResultView::Overlay);
-
-   if (isOverlay)
+   for (size_t i = 0; i < scatterPlot.getSeriesCount(); i++)
    {
-      // For overlay, we need the combined range of both raw and rolling avg data
-      computeScatterYRange(false, &yMin, &yMax); // Get raw range
-      float rollingYMin, rollingYMax;
-      computeScatterYRange(true, &rollingYMin, &rollingYMax); // Get rolling avg range
-
-      // Use the combined range
-      if (isfinite(rollingYMin)) yMin = isfinite(yMin) ? min(yMin, rollingYMin) : rollingYMin;
-      if (isfinite(rollingYMax)) yMax = isfinite(yMax) ? max(yMax, rollingYMax) : rollingYMax;
-   }
-   else
-   {
-      computeScatterYRange(useRollingAvg, &yMin, &yMax);
+      ScatterPlotSeries* series = scatterPlot.getSeries(i);
+      series->showPoints = showRaw;
+      series->showMovingAverage = showMovingAverage;
    }
 
-   if (!isfinite(yMin) || !isfinite(yMax))
+   if (forceFullRedraw)
    {
-      return;
+      scatterPlot.invalidate();
    }
-
-   // X-axis zoom: zoom level controls how much of the 15-second window is visible
-   unsigned long xMaxMs = static_cast<unsigned long>(SCATTER_X_MAX_MS / scatterPlotYZoom);
-
-   size_t activeRateIndex = testRunner.isComplete() ? NO_RATE_INDEX : testRunner.currentRateIndex();
-   bool axisChanged = (yMin != lastPlottedYMin) || (yMax != lastPlottedYMax);
-   bool zoomChanged = (scatterPlotYZoom != lastPlottedZoom);
-   bool seriesChanged = (activeRateIndex != lastPlottedRateIndex) || (useRollingAvg != lastPlottedUseRollingAvg);
-   bool needsFullRedraw = forceFullRedraw || axisChanged || zoomChanged || seriesChanged;
 
    arduino.display.startWrite();
+   scatterPlot.render();
+   arduino.display.endWrite();
 
-   if (needsFullRedraw)
+   // Draw the actual rates at the top-right corner of the display, color-coded per series,
+   // only if there are completed results and we're not showing the cooldown message
+   // instead (updateStatusLine owns this row while cooling down). Include the currently
+   // running test's rate if one is active. Clears the row first when the rate count
+   // changes so switching between cooldown/collecting modes never leaves stale text behind.
+   size_t resultCount = testRunner.resultCount();
+   bool isRunning = !testRunner.isComplete() && !testRunner.isCooldown();
+   bool shouldShowRates = (resultCount > 0 || isRunning) && !testRunner.isCooldown();
+
+   if (shouldShowRates)
    {
-      scatterPlot.beginOverlay(yMin, yMax, xMaxMs, scatterAxisFormat, scatterDurationFormat);
+      arduino.setTextSize(BODY_TEXT_SIZE);
 
-      size_t resultCount = testRunner.resultCount();
+      // Count how many rates to display (completed + current if running)
+      size_t displayRateCount = resultCount + (isRunning ? 1 : 0);
 
-      if (isOverlay)
+      if (displayRateCount != lastDrawnRatesCount)
       {
-         // Overlay mode: plot both raw samples (as points) and rolling avg (as lines)
-         // Plot raw samples first
-         for (size_t series = 0; series < resultCount; series++)
-         {
-            Color color = TARGET_SERIES[series % NUM_TARGET_SAMPLES].color;
-            const float* samples = testRunner.rawSamples(series);
-            scatterPlot.plotSeries(samples, testRunner.rawElapsedMs(series), testRunner.rawSampleCount(series), 0, color, false); // false = points
-         }
-         // Then plot rolling average lines on top
-         for (size_t series = 0; series < resultCount; series++)
-         {
-            Color color = TARGET_SERIES[series % NUM_TARGET_SAMPLES].color;
-            unsigned long windowMs = smoothingWindowMs(testRunner.resultTargetRate(series));
-            scatterPlot.plotMovingAverageSeries(testRunner.rawSamples(series), testRunner.rawElapsedMs(series), testRunner.rawSampleCount(series), 0, color, windowMs, true);
-         }
+         clearTopRightStatus();
       }
-      else
+
+      // Build each rate's text and measure total width so the group is right-aligned
+      String rateStrs[MAX_RESULTS + 1];
+      int16_t totalWidth = 0;
+
+      // Add completed results' rates
+      for (size_t i = 0; i < resultCount; i++)
       {
-         // Single mode: plot either raw or rolling avg
-         for (size_t series = 0; series < resultCount; series++)
-         {
-            Color color = TARGET_SERIES[series % NUM_TARGET_SAMPLES].color;
-            if (useRollingAvg)
-            {
-               unsigned long windowMs = smoothingWindowMs(testRunner.resultTargetRate(series));
-               scatterPlot.plotMovingAverageSeries(testRunner.rawSamples(series), testRunner.rawElapsedMs(series), testRunner.rawSampleCount(series), 0, color, windowMs, true);
-            }
-            else
-            {
-               scatterPlot.plotSeries(testRunner.rawSamples(series), testRunner.rawElapsedMs(series), testRunner.rawSampleCount(series), 0, color, false);
-            }
-         }
+         rateStrs[i] = String(static_cast<unsigned long>(testRunner.resultRate(i))) + "/s";
+         if (i < displayRateCount - 1) rateStrs[i] += " ";
+         totalWidth += arduino.charW() * rateStrs[i].length();
       }
+
+      // Add currently running test's rate if applicable
+      if (isRunning)
+      {
+         rateStrs[resultCount] = String(static_cast<unsigned long>(testCase.currentRate())) + "/s";
+         totalWidth += arduino.charW() * rateStrs[resultCount].length();
+      }
+
+      int16_t x = DISPLAY_WIDTH - totalWidth;
+      arduino.setCursor(x, 0);
+
+      // Print completed results' rates
+      for (size_t i = 0; i < resultCount; i++)
+      {
+         Color color = TARGET_SERIES[i % NUM_TARGET_SAMPLES].color;
+         arduino.print(rateStrs[i].c_str(), color);
+      }
+
+      // Print current rate if running
+      if (isRunning)
+      {
+         Color color = TARGET_SERIES[testRunner.currentRateIndex() % NUM_TARGET_SAMPLES].color;
+         arduino.print(rateStrs[resultCount].c_str(), color);
+      }
+
+      lastDrawnRatesCount = displayRateCount;
    }
-
-   if (!testRunner.isComplete() && !testRunner.isCooldown())
-   {
-      size_t rawPlotStartIndex = needsFullRedraw ? 0 : lastPlottedCurrentSampleCount;
-      size_t rollingAvgPlotStartIndex = needsFullRedraw ? 0 : lastPlottedRollingAvgReadyCount;
-      unsigned long windowMs = smoothingWindowMs(testCase.targetRate());
-      Color color = TARGET_SERIES[testRunner.currentRateIndex() % NUM_TARGET_SAMPLES].color;
-      size_t rollingAvgReadyCount = lastPlottedRollingAvgReadyCount;
-
-      if (isOverlay)
-      {
-         // Plot current raw samples
-         const float* rawSamples = testCase.rawSamples();
-         scatterPlot.plotSeries(rawSamples, testCase.rawElapsedMs(), testCase.rawSampleCount(), rawPlotStartIndex, color, false);
-
-         // Plot current rolling avg samples (only the portion that has been finalized so far)
-         rollingAvgReadyCount = scatterPlot.plotMovingAverageSeries(testCase.rawSamples(), testCase.rawElapsedMs(), testCase.rawSampleCount(), rollingAvgPlotStartIndex, color, windowMs, false);
-      }
-      else if (useRollingAvg)
-      {
-         // Plot only the finalized portion of the rolling avg samples
-         rollingAvgReadyCount = scatterPlot.plotMovingAverageSeries(testCase.rawSamples(), testCase.rawElapsedMs(), testCase.rawSampleCount(), rollingAvgPlotStartIndex, color, windowMs, false);
-      }
-      else
-      {
-         // Plot only current raw samples
-         const float* samples = testCase.rawSamples();
-         scatterPlot.plotSeries(samples, testCase.rawElapsedMs(), testCase.rawSampleCount(), rawPlotStartIndex, color, false);
-      }
-
-      lastPlottedCurrentSampleCount = testCase.rawSampleCount();
-      lastPlottedRollingAvgReadyCount = rollingAvgReadyCount;
-   }
-   else
-   {
-      lastPlottedCurrentSampleCount = 0;
-      lastPlottedRollingAvgReadyCount = 0;
-   }
-
-           arduino.display.endWrite();
-
-           // Draw the actual rates at the top-right corner of the display, color-coded per series,
-           // only if there are completed results and we're not showing the cooldown message
-           // instead (updateStatusLine owns this row while cooling down). Include the currently
-           // running test's rate if one is active. Clears the row first when the rate count
-           // changes so switching between cooldown/collecting modes never leaves stale text behind.
-           size_t resultCount = testRunner.resultCount();
-           bool isRunning = !testRunner.isComplete() && !testRunner.isCooldown();
-           bool shouldShowRates = (resultCount > 0 || isRunning) && !testRunner.isCooldown();
-
-           if (shouldShowRates)
-           {
-               arduino.setTextSize(BODY_TEXT_SIZE);
-
-               // Count how many rates to display (completed + current if running)
-               size_t displayRateCount = resultCount + (isRunning ? 1 : 0);
-
-               if (displayRateCount != lastDrawnRatesCount)
-               {
-                  clearTopRightStatus();
-               }
-
-               // Build each rate's text and measure total width so the group is right-aligned
-               String rateStrs[MAX_RESULTS + 1];
-               int16_t totalWidth = 0;
-
-               // Add completed results' rates
-               for (size_t i = 0; i < resultCount; i++)
-               {
-                  rateStrs[i] = String(static_cast<unsigned long>(testRunner.resultRate(i))) + "/s";
-                  if (i < displayRateCount - 1) rateStrs[i] += " ";
-                  totalWidth += arduino.charW() * rateStrs[i].length();
-               }
-
-               // Add currently running test's rate if applicable
-               if (isRunning)
-               {
-                  rateStrs[resultCount] = String(static_cast<unsigned long>(testCase.currentRate())) + "/s";
-                  totalWidth += arduino.charW() * rateStrs[resultCount].length();
-               }
-
-               int16_t x = DISPLAY_WIDTH - totalWidth;
-               arduino.setCursor(x, 0);
-
-               // Print completed results' rates
-               for (size_t i = 0; i < resultCount; i++)
-               {
-                  Color color = TARGET_SERIES[i % NUM_TARGET_SAMPLES].color;
-                  arduino.print(rateStrs[i].c_str(), color);
-               }
-
-               // Print current rate if running
-               if (isRunning)
-               {
-                  Color color = TARGET_SERIES[testRunner.currentRateIndex() % NUM_TARGET_SAMPLES].color;
-                  arduino.print(rateStrs[resultCount].c_str(), color);
-               }
-
-               lastDrawnRatesCount = displayRateCount;
-           }
-
-           lastPlottedYMin = yMin;
-           lastPlottedYMax = yMax;
-           lastPlottedZoom = scatterPlotYZoom;
-           lastPlottedRateIndex = activeRateIndex;
-           lastPlottedUseRollingAvg = useRollingAvg;
-       }
+}
 
 ///
 /// <summary>
@@ -1451,16 +1108,13 @@ void drawSummaryView()
 /// <summary>
 /// Draws the currently selected post-run view: the summary table, a raw-sample scatter
 /// plot, or a rolling-average scatter plot, each covering every completed test.
-/// Pressing the encoder button cycles between views. Rotating the encoder while viewing
-/// a scatter plot zooms in/out (20% per step) with the bottom edge (0 F) locked.
+/// Pressing the encoder button cycles between views.
 /// </summary>
 ///
 void drawResultView()
 {
    if (resultView == ResultView::Summary)
    {
-      scatterPlotYZoom = 1.0f; // Reset zoom when returning to summary
-      lastEncoderPosition = arduino.encoder.getPosition(); // Reset encoder position
       drawSummaryView();
       return;
    }
@@ -1514,6 +1168,13 @@ void setup()
    }
 
    sensorReady = true;
+
+   for (size_t i = 0; i < NUM_TARGET_SAMPLES; i++)
+   {
+      ScatterPlotSeries* series = scatterPlot.createSeries(MAX_RAW_SAMPLES_PER_TEST);
+      series->color = TARGET_SERIES[i].color;
+   }
+
    testRunner.begin(&testCase, &cooldownMonitor);
    startTestRun();
 }
@@ -1530,79 +1191,47 @@ void loop()
       if (arduino.encoder.button.wasPressed())
       {
          resultView++;
-         scatterPlotYZoom = 1.0f; // Reset zoom when changing views
-         lastEncoderPosition = arduino.encoder.getPosition(); // Reset encoder position
          drawResultView();
       }
+      return;
+   }
 
-      // Handle encoder rotation for zoom on scatter plots
-      if (resultView != ResultView::Summary)
+   testRunner.loop();
+
+   if (testRunner.hasPendingResult())
+   {
+      size_t index = testRunner.pendingResultIndex();
+      unsigned long targetRate = testRunner.resultTargetRate(index);
+      float actualRate = testRunner.resultRate(index);
+      float startTempF = testRunner.resultStartTempF(index);
+      float incr = testRunner.resultTemp(index);
+
+      resultTable.printRow(
+         targetRate,
+         SerialTable::fixed(actualRate, 2),
+         SerialTable::fixed(startTempF, 2),
+         SerialTable::fixed(incr, 2));
+      testRunner.clearPendingResult();
+
+      if (testRunner.isComplete())
       {
-         long currentEncoderPosition = arduino.encoder.getPosition();
-         long encoderDelta = currentEncoderPosition - lastEncoderPosition;
+         Serial.println("\n=== Debug: First 3 seconds of data for highest rate test ===");
+         size_t maxIndex = testRunner.resultCount() - 1;
+         ScatterPlotSeries* series = scatterPlot.getSeries(maxIndex);
 
-         if (encoderDelta != 0)
+         Serial.println("ElapsedMs,RawTemp");
+         for (size_t i = 0; i < series->getCount() && series->getX(i) < 3000; i++)
          {
-            // Each rotation step adjusts zoom by 20%
-            if (encoderDelta > 0)
-            {
-               scatterPlotYZoom *= 1.2f; // Zoom in (expand 20%)
-            }
-            else
-            {
-               scatterPlotYZoom /= 1.2f; // Zoom out (contract 20%)
-            }
-            // Clamp zoom to reasonable bounds (1x to 20x)
-            if (scatterPlotYZoom < 1.0f) scatterPlotYZoom = 1.0f;
-            if (scatterPlotYZoom > 20.0f) scatterPlotYZoom = 20.0f;
-
-            lastEncoderPosition = currentEncoderPosition;
-            // Draw only the scatter plot, not the header (to avoid flicker)
-            arduino.setTextSize(BODY_TEXT_SIZE);
-            drawScatterView(resultView, true);
-                   }
-                }
-                return;
-             }
-
-             testRunner.loop();
-
-             if (testRunner.hasPendingResult())
-             {
-                size_t index = testRunner.pendingResultIndex();
-                unsigned long targetRate = testRunner.resultTargetRate(index);
-                float actualRate = testRunner.resultRate(index);
-                float startTempF = testRunner.resultStartTempF(index);
-                float incr = testRunner.resultTemp(index);
-
-                resultTable.printRow(
-                   targetRate,
-                   SerialTable::fixed(actualRate, 2),
-                   SerialTable::fixed(startTempF, 2),
-                   SerialTable::fixed(incr, 2));
-                testRunner.clearPendingResult();
-
-                if (testRunner.isComplete())
-                {
-                   Serial.println("\n=== Debug: First 3 seconds of data for highest rate test ===");
-                   size_t maxIndex = testRunner.resultCount() - 1;
-                   const float* rawSamples = testRunner.rawSamples(maxIndex);
-                   const unsigned long* elapsedMs = testRunner.rawElapsedMs(maxIndex);
-                   size_t sampleCount = testRunner.rawSampleCount(maxIndex);
-
-                   Serial.println("ElapsedMs,RawTemp");
-                   for (size_t i = 0; i < sampleCount && elapsedMs[i] < 3000; i++)
-                   {
-                      Serial.print(elapsedMs[i]);
-                      Serial.print(",");
-                      Serial.println(rawSamples[i]);
-                   }
-                   Serial.println("=== End Debug ===\n");
-
-                   Serial.println("Tests complete");
-                   return;
-                }
-             }
-
-             updateLiveView();
+            Serial.print(series->getX(i));
+            Serial.print(",");
+            Serial.println(series->getY(i));
          }
+         Serial.println("=== End Debug ===\n");
+
+         Serial.println("Tests complete");
+         return;
+      }
+   }
+
+   updateLiveView();
+}

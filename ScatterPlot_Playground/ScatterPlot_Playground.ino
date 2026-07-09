@@ -1,12 +1,12 @@
 //
-// Profiles how fast a ScatterPlot can be redrawn as its backing sample buffer grows.
+// Profiles how fast a ScatterPlot can be redrawn as its backing sample series grows.
 //
-// Continuously samples a TestSensor and appends each reading to a growing buffer, calling
-// ScatterPlot::render() after every new sample so the chart is fully rebuilt on each iteration.
-// Because render() rebuilds its density map from every stored sample (and redraws the whole
-// chart area), the time per update grows as the buffer grows, so the achieved update rate falls
-// over the course of the test. The test stops once the rolling update rate drops to
-// STOP_RATE_PER_SEC, or once the sample buffer safety cap is reached, whichever comes first.
+// Continuously samples a TestSensor and appends each reading to a ScatterPlotSeries, calling
+// ScatterPlot::render() after every 10th new sample. Because render() recomputes the shared
+// axis range by scanning every point stored in the series on each call, the time per update
+// grows as the series grows, so the achieved update rate falls over the course of the test.
+// The test stops once the rolling update rate drops to STOP_RATE_PER_SEC, or once the sample
+// buffer safety cap is reached, whichever comes first.
 //
 // Serial output logs sample count, update rate, and elapsed time at SERIAL_PRINT_RATE_PER_SEC
 // while the test runs, and prints a final summary (including which stop condition was hit) once
@@ -16,7 +16,6 @@
 
 // System/standard library headers
 #include <math.h>
-#include <new>
 #include <Wire.h>
 
 // Local library headers (from libraries/Woyak)
@@ -61,10 +60,10 @@ Format countFormat("#####", Format::Alignment::RIGHT);
 // ----------- Test State
 RollingRate updateRate(RATE_WINDOW_SAMPLES);
 ScatterPlot scatterPlot(&arduino, 0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT);
+ScatterPlotSeries* sampleSeries = nullptr;
 RateTimer serialPrintTimer(SERIAL_PRINT_RATE_PER_SEC);
 SerialTable resultTable("Scatter Plot Update Rate", RESULT_COLUMNS, NUM_RESULT_COLUMNS);
 
-float* sampleValues = nullptr;
 size_t sampleCount = 0;
 bool sensorReady = false;
 bool testComplete = false;
@@ -157,13 +156,8 @@ void setup()
 	arduino.begin();
 	drawTitle();
 
-	sampleValues = new (std::nothrow) float[MAX_SAMPLES];
-	if (sampleValues == nullptr)
-	{
-		Util::setHaltReason("OOM allocating sampleValues in Profiler");
-		Util::reset();
-		return;
-	}
+	sampleSeries = scatterPlot.createSeries(MAX_SAMPLES);
+	sampleSeries->showPoints = true;
 
 	sensorReady = sensor.begin();
 	if (!sensorReady)
@@ -194,14 +188,14 @@ void loop()
 
 	if (sampleCount < MAX_SAMPLES)
 	{
-		sampleValues[sampleCount] = value;
+		sampleSeries->add(static_cast<float>(sampleCount), value);
 		sampleCount++;
 	}
 
 	if ((sampleCount % 10) == 0)
 	{
 		updateRate.tick();
-		scatterPlot.render(sampleValues, sampleCount);
+		scatterPlot.render();
 		updateRateReadout();
 	}
 

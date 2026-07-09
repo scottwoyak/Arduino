@@ -268,7 +268,13 @@ void renderDisplayScatterPlot()
    }
 
    ScatterPlot plot(&arduino, 0, plotTop, plotWidth, plotHeight);
-   plot.render(sensorCapture.values(), totalCount);
+   ScatterPlotSeries* series = plot.createSeries(totalCount);
+   const float* values = sensorCapture.values();
+   for (size_t i = 0; i < totalCount; i++)
+   {
+      series->add(static_cast<float>(i), values[i]);
+   }
+   plot.render();
 }
 
    /// <summary>
