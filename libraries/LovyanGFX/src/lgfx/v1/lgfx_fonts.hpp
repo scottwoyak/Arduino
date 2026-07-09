@@ -340,7 +340,6 @@ namespace lgfx
     bool getUnicodeIndex(uint16_t unicode, uint16_t *index) const;
   };
 
-
 //----------------------------------------------------------------------------
 
   namespace fonts
@@ -572,7 +571,11 @@ namespace lgfx
  }
 }
 
-namespace fonts = lgfx::v1::fonts;
+namespace fonts
+{
+  using namespace lgfx::v1::fonts;
+}
+using namespace fonts;
 
 #ifndef _GFXFONT_H_
 #define _GFXFONT_H_

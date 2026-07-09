@@ -7,17 +7,23 @@
 #include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
 #include <lgfx/v1/platforms/esp32/Light_CH422G.hpp>
 
-
-// LGFX for Waveshare ESP32-S3-Touch-LCD-4.3
-// https://www.waveshare.com/esp32-s3-touch-lcd-4.3.htm
-// Hardware: 800x480 RGB565 display with GT911 touch controller.
-// Special:  CH422G I/O expander controls GT911 reset, LCD reset, and backlight.
+// LGFX for Waveshare ESP32-S3-Touch-LCD-7
+// https://www.waveshare.com/esp32-s3-touch-lcd-7.htm
+// Hardware: 800x480 RGB565 display (ST7262) with GT911 touch controller.
+// Special:  CH422G I/O expander controls GT911 reset, LCD reset, backlight,
+//           SD card CS, USB/CAN mux, and LCD power enable.
 
 // CH422G output-pin assignments (board-specific, not reconfigurable).
-static constexpr uint8_t kCh422gPinTpRst  = 1;
-static constexpr uint8_t kCh422gPinLcdBl  = 2;
-static constexpr uint8_t kCh422gPinLcdRst = 3;
-static constexpr uint8_t kCh422gPinSdCs   = 4;  // active-low; HIGH = deselected
+static constexpr uint8_t kCh422gPinTpRst    = 1;
+static constexpr uint8_t kCh422gPinLcdBl    = 2;
+static constexpr uint8_t kCh422gPinLcdRst   = 3;
+static constexpr uint8_t kCh422gPinSdCs     = 4;  // active-low; HIGH = deselected
+// EXIO5 controls the USB/CAN mux (U9, FSUSB42UMX).
+// Default: low = USB mode (consistent with R117 hardware pull-down).
+// To enable CAN: call _light_instance.write_pin(kCh422gPinUsbSel, true)
+// after display.init(), then initialise the TWAI driver.
+static constexpr uint8_t kCh422gPinUsbSel   = 5;
+static constexpr uint8_t kCh422gPinLcdVddEn = 6;  // LCD panel power enable; HIGH = on
 
 class LGFX : public lgfx::LGFX_Device
 {
@@ -49,6 +55,8 @@ public:
     {
       auto cfg = _bus_instance.config();
       cfg.panel    = &_panel_instance;
+
+      // 16-bit RGB565 data bus — pin order matches ST7262 panel connector.
       cfg.pin_d0   = GPIO_NUM_14;   // B0
       cfg.pin_d1   = GPIO_NUM_38;   // B1
       cfg.pin_d2   = GPIO_NUM_18;   // B2
@@ -72,14 +80,16 @@ public:
       cfg.pin_pclk    = GPIO_NUM_7;
       cfg.freq_write  = 16000000;
 
+      // Timing parameters verified against Waveshare supplier config
+      // (esp_panel_board_custom_conf.h).
       cfg.hsync_polarity    = 0;
       cfg.hsync_front_porch = 8;
       cfg.hsync_pulse_width = 4;
       cfg.hsync_back_porch  = 8;
       cfg.vsync_polarity    = 0;
-      cfg.vsync_front_porch = 16;
+      cfg.vsync_front_porch = 8;
       cfg.vsync_pulse_width = 4;
-      cfg.vsync_back_porch  = 16;
+      cfg.vsync_back_porch  = 8;
       cfg.pclk_idle_high    = 1;
       _bus_instance.config(cfg);
     }
@@ -87,33 +97,42 @@ public:
 
     {
       auto cfg = _light_instance.config();
-      cfg.pin_sda     = GPIO_NUM_8;
-      cfg.pin_scl     = GPIO_NUM_9;
-      cfg.i2c_port    = 0;
-      cfg.freq        = 400000;
-      cfg.pin_bl      = kCh422gPinLcdBl;
-      // All active-low pins (SD_CS) start HIGH (deselected); all others HIGH too.
-      cfg.shadow_init = (1 << kCh422gPinTpRst) | (1 << kCh422gPinLcdBl)
-                      | (1 << kCh422gPinLcdRst) | (1 << kCh422gPinSdCs);
+      cfg.pin_sda  = GPIO_NUM_8;
+      cfg.pin_scl  = GPIO_NUM_9;
+      cfg.i2c_port = 0;
+      cfg.freq     = 400000;
+      cfg.pin_bl   = kCh422gPinLcdBl;
+      // Initial shadow state:
+      //   - kCh422gPinLcdVddEn HIGH : panel power on
+      //   - kCh422gPinLcdBl   HIGH : backlight on
+      //   - kCh422gPinTpRst   HIGH : touch not in reset
+      //   - kCh422gPinLcdRst  HIGH : LCD not in reset
+      //   - kCh422gPinSdCs    HIGH : SD card deselected (active-low)
+      //   - kCh422gPinUsbSel  LOW  : USB mode (consistent with R117 pull-down)
+      cfg.shadow_init = (1 << kCh422gPinLcdVddEn)
+                      | (1 << kCh422gPinLcdBl)
+                      | (1 << kCh422gPinTpRst)
+                      | (1 << kCh422gPinLcdRst)
+                      | (1 << kCh422gPinSdCs);
       _light_instance.config(cfg);
       _panel_instance.light(&_light_instance);
     }
 
     {
       auto cfg = _touch_instance.config();
-      cfg.x_min        = 0;
-      cfg.y_min        = 0;
-      cfg.x_max        = 800;
-      cfg.y_max        = 480;
-      cfg.bus_shared   = false;
+      cfg.x_min           = 0;
+      cfg.y_min           = 0;
+      cfg.x_max           = 800;
+      cfg.y_max           = 480;
+      cfg.bus_shared      = false;
       cfg.offset_rotation = 0;
-      cfg.i2c_port     = 0;
-      cfg.i2c_addr     = 0x5D;  // INT low during reset selects 0x5D.
-      cfg.pin_sda      = GPIO_NUM_8;
-      cfg.pin_scl      = GPIO_NUM_9;
-      cfg.pin_int      = GPIO_NUM_4;
-      cfg.pin_rst      = -1;    // Reset handled via CH422G in init_impl().
-      cfg.freq         = 400000;
+      cfg.i2c_port        = 0;
+      cfg.i2c_addr        = 0x5D;  // INT low during reset selects 0x5D.
+      cfg.pin_sda         = GPIO_NUM_8;
+      cfg.pin_scl         = GPIO_NUM_9;
+      cfg.pin_int         = GPIO_NUM_4;
+      cfg.pin_rst         = -1;    // Reset handled via CH422G in init_impl().
+      cfg.freq            = 400000;
       _touch_instance.config(cfg);
       _panel_instance.setTouch(&_touch_instance);
     }
@@ -123,7 +142,8 @@ public:
 
   bool init_impl(bool use_reset, bool use_clear) override
   {
-    // Initialise CH422G: sets up I2C, drives all pins to shadow_init state.
+    // Enable LCD panel power before any other init.
+    // CH422G init also drives all shadow_init pins to their defined states.
     _light_instance.init(255);
 
     // GT911 address selection: INT must be LOW while reset is asserted.
