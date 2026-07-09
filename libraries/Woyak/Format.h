@@ -28,6 +28,7 @@ public:
 private:
    std::string _prefix = "";
    std::string _postfix = "";
+   std::string _formatString = "";
    size_t _length = 0;
    Alignment _alignment = Alignment::LEFT;
    uint8_t _precision = 2;
@@ -89,6 +90,7 @@ public:
    Format(const char* format, Alignment alignment = Alignment::LEFT)
    {
       _alignment = alignment;
+      _formatString = format;
       std::string str = format;
 
       // extract the length
@@ -217,6 +219,12 @@ public:
       // determine how to actually display it
       if (str.length() > _length)
       {
+         Serial.print("Format overflow: desired=\"");
+         Serial.print(value);
+         Serial.print("\" format=\"");
+         Serial.print(_formatString.c_str());
+         Serial.println("\"");
+
          str.clear();
          str.append(_length, _errChar);
       }
