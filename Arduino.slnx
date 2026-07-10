@@ -85,6 +85,7 @@
     <File Path="libraries/Woyak/TimedHistogram.h" />
     <File Path="libraries/Woyak/TimedHistogramChart.h" />
     <File Path="libraries/Woyak/TimedHistogramPlot.h" />
+    <File Path="libraries/Woyak/TimedMinMax.h" />
     <File Path="libraries/Woyak/TimedScatterPlot.h" />
     <File Path="libraries/Woyak/TimedStats.h" />
     <File Path="libraries/Woyak/TimedValues.h" />
@@ -408,6 +409,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Temp_Calibrator_Playground/Temp_Calibrator_Playground.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Temp_Display/Temp_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -421,6 +426,14 @@
     <Deploy />
   </Project>
   <Project Path="Temp_Warm_Up_Playground/Temp_Warm_Up_Playground.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Tests/TimedMinMax_Tests/TimedMinMax_Tests.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="TimedScatterPlot_Playground/TimedScatterPlot_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

@@ -3,6 +3,7 @@
 #include "LGX_ST7796S.h"
 #include "ArduinoWithDisplay.h"
 #include "RotaryEncoder.h"
+#include <Preferences.h>
 
 ///
 /// <summary>
@@ -20,6 +21,13 @@ public:
    /// </summary>
    ///
    RotaryEncoder encoder;
+
+   ///
+   /// <summary>
+   /// Non-volatile storage for persisting settings across power cycles.
+   /// </summary>
+   ///
+   Preferences preferences;
 
    ///
    /// <summary>

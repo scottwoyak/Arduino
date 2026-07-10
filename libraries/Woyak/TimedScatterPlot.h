@@ -24,6 +24,7 @@ private:
    Format _sampleRangeFormat;
    unsigned long _historyMs;
    float _minValueStep = 0.0f;
+   int16_t _topOffset = 0;
 
    float* _sampleValues = nullptr;
    unsigned long* _sampleAgesMs = nullptr;
@@ -41,6 +42,13 @@ private:
    size_t _lastAddedSamples = 0;
    bool _lastRebuiltPixels = false;
    unsigned long _lastAddWindowMs = 0;
+
+   // Fine-grained timing breakdown within the compute phase, used to profile where
+   // render() time is spent (temporary instrumentation).
+   unsigned long _lastSnapshotMicros = 0;
+   unsigned long _lastExtremaMicros = 0;
+   unsigned long _lastPixelBuildMicros = 0;
+   unsigned long _lastDiffMicros = 0;
 
    bool _hasPixelFrame = false;
    float _frameMinValue = NAN;
@@ -449,6 +457,19 @@ public:
 
    ///
    /// <summary>
+   /// Sets the vertical offset in pixels above the plot area, allowing space for
+   /// other content (such as a title or readout) to be drawn above the chart without
+   /// being overwritten.
+   /// </summary>
+   /// <param name="topOffset">Number of pixels to reserve above the chart area.</param>
+   ///
+   void setTopOffset(int16_t topOffset)
+   {
+      _topOffset = topOffset;
+   }
+
+   ///
+   /// <summary>
    /// Sets a custom format for axis min/max labels.
    /// </summary>
    /// <param name="format">Format object defining precision and alignment.</param>
@@ -548,6 +569,47 @@ public:
 
    ///
    /// <summary>
+   /// Gets the time in microseconds spent copying samples out of the TimedValues buffer
+   /// during the last render (temporary profiling instrumentation).
+   /// </summary>
+   unsigned long lastSnapshotMicros() const
+   {
+      return _lastSnapshotMicros;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the time in microseconds spent updating the sliding-window min/max during the
+   /// last render (temporary profiling instrumentation).
+   /// </summary>
+   unsigned long lastExtremaMicros() const
+   {
+      return _lastExtremaMicros;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the time in microseconds spent rebuilding/updating the pixel-lit buffer during
+   /// the last render (temporary profiling instrumentation).
+   /// </summary>
+   unsigned long lastPixelBuildMicros() const
+   {
+      return _lastPixelBuildMicros;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the time in microseconds spent diffing pixels against the previous frame and
+   /// issuing writeFastVLine calls during the last render (temporary profiling
+   /// instrumentation).
+   /// </summary>
+   unsigned long lastDiffMicros() const
+   {
+      return _lastDiffMicros;
+   }
+
+   ///
+   /// <summary>
    /// Draws the scatter plot.
    /// </summary>
    ///
@@ -562,7 +624,7 @@ public:
       const int16_t infoHeight = _feather->charH();
       const int16_t labelWidth = static_cast<int16_t>(_minMaxFormat.length() * _feather->charW());
       const int16_t chartLeft = labelWidth + _feather->charW();
-      const int16_t chartTop = infoHeight + 2;
+      const int16_t chartTop = _topOffset + infoHeight + 2;
       const int16_t chartWidth = width - chartLeft - 1;
       const int16_t rangeLineHeight = _feather->charH() + 2;
       const int16_t chartHeight = height - chartTop - rangeLineHeight;
@@ -603,7 +665,9 @@ public:
          return;
       }
 
+      const unsigned long snapshotStartMicros = micros();
       const size_t valueCount = _samples.snapshot(_sampleValues, _sampleAgesMs, _sampleCapacity);
+      _lastSnapshotMicros = micros() - snapshotStartMicros;
 
       if (!_ensurePixelBuffers(static_cast<size_t>(chartWidth) * static_cast<size_t>(chartHeight)))
       {
@@ -637,6 +701,7 @@ public:
          // sample each frame: push samples added since the last update (the newest-first
          // snapshot lets us stop as soon as we reach an already-seen sample); TimedMinMax
          // evicts samples that have aged out of the retention window internally.
+         const unsigned long extremaStartMicros = micros();
          const unsigned long elapsedExtremaMs = _hasExtremaState ? (nowMs - _lastExtremaTickMs) : (retentionMs + 1UL);
 
          size_t newExtremaCount = 0;
@@ -653,6 +718,7 @@ public:
 
          _lastExtremaTickMs = nowMs;
          _hasExtremaState = true;
+         _lastExtremaMicros = micros() - extremaStartMicros;
 
          minValue = _minMax.min();
          if (isnan(minValue))
@@ -695,6 +761,8 @@ public:
          const bool alignToSensorStep = _minValueStep > 0.0f;
          const float pixelsPerStep = alignToSensorStep ? (_minValueStep / valuePerPixel) : 1.0f;
 
+         const unsigned long pixelBuildStartMicros = micros();
+
          if (rebuildPixels)
          {
             _lastRebuiltPixels = true;
@@ -730,6 +798,8 @@ public:
                _lastShiftPixels = 0;
                _lastAddWindowMs = 0;
                _lastFrameUpdateMs = nowMs;
+               _lastPixelBuildMicros = micros() - pixelBuildStartMicros;
+               _lastDiffMicros = 0;
                _lastRenderMicros = micros() - frameStartMicros;
                _lastComputeMicros = _lastRenderMicros;
                _lastDisplayMicros = 0;
@@ -762,6 +832,8 @@ public:
                _setPixelsForValue(x, value, plotMax, valuePerPixel, pixelsPerStep, chartWidth, chartHeight);
             }
          }
+
+         _lastPixelBuildMicros = micros() - pixelBuildStartMicros;
 
          // Snapshot is newest-first, so the last entry already holds the maximum age.
          sampleRangeSeconds = static_cast<float>(_sampleAgesMs[valueCount - 1]) / 1000.0f;
@@ -797,6 +869,8 @@ public:
       // can possibly differ, letting us skip re-diffing the unchanged bulk of the chart.
       const int16_t diffXStart = _lastRebuiltPixels ? 0 : std::max<int16_t>(0, chartWidth - _lastShiftPixels);
 
+      const unsigned long diffStartMicros = micros();
+
       for (int16_t x = diffXStart; x < chartWidth; x++)
       {
          int16_t y = 0;
@@ -831,6 +905,8 @@ public:
             _feather->display.writeFastVLine(chartLeft + x, chartTop + runStart, y - runStart, newColor);
          }
       }
+
+      _lastDiffMicros = micros() - diffStartMicros;
 
       _feather->fillRect(chartLeft, chartTop + chartHeight - 1, chartWidth, 1, Color::DARKGRAY);
       _feather->fillRect(chartLeft, chartTop, 1, chartHeight, Color::DARKGRAY);

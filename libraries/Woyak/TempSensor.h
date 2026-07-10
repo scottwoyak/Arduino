@@ -3,6 +3,7 @@
 #include "I2CTempSensor.h"
 #include "ITempSensor.h"
 #include "TempSensorCallibration.h"
+#include "Timer.h"
 
 // sensor types
 #include "BME280TempSensor.h"
@@ -399,6 +400,56 @@ public:
       tempF += _tempCorrectionF;
       hum += _humCorrection;
    }
+
+   ///
+   /// <summary>
+   /// Samples the temperature sensor, discarding initial readings,
+   /// and returns the average of the remaining measurements.
+   /// 
+   /// This method blocks until all measurements have been collected.
+   /// </summary>
+   /// <param name="numAverage">Number of measurements to average for the result. Defaults to 1.</param>
+   /// <param name="numDiscard">Number of initial measurements to discard before averaging. Defaults to 0.</param>
+   /// <param name="sampleRateMs">Interval in milliseconds between measurements. Use 0 to sample as fast as possible.</param>
+   /// <returns>The average temperature in Fahrenheit with correction applied, or NaN if unavailable.</returns>
+   ///
+   float sample(uint8_t numAverage = 1, uint8_t numDiscard = 0, uint16_t sampleRateMs = 0)
+   {
+      if (_sensor == nullptr)
+      {
+         Serial.println("TempSensor::sample() - No sensor created. Call begin()");
+         return NAN;
+      }
+
+      // Total measurements to take
+      uint16_t totalMeasurements = numDiscard + numAverage;
+      float sum = 0.0f;
+      Timer sampleTimer(sampleRateMs);
+
+      for (uint16_t i = 0; i < totalMeasurements; i++)
+      {
+         // Wait for the next sample interval (0 rate means ready() always returns true)
+         while (!sampleTimer.ready())
+         {
+            delay(1);
+         }
+
+         // Read the temperature
+         float temp = readTemperatureF();
+
+         // Accumulate only if we've discarded enough samples
+         if (i >= numDiscard && !isnan(temp))
+         {
+            sum += temp;
+         }
+      }
+
+      // Return the average
+      if (numAverage > 0)
+      {
+         return sum / numAverage;
+      }
+
+      return NAN;
+   }
 };
-
-
