@@ -11,6 +11,15 @@ constexpr int8_t PIN_TFT_BL = 10;
 constexpr int8_t PIN_TOUCH_CS = 11;
 constexpr int8_t PIN_TOUCH_INT = 12;
 
+/* For the Playground Setup
+constexpr int8_t PIN_TFT_DC = 8;
+constexpr int8_t PIN_TFT_CS = 10;
+constexpr int8_t PIN_TFT_RST = 9;
+constexpr int8_t PIN_TFT_BL = 7;
+constexpr int8_t PIN_TOUCH_CS = 0;
+constexpr int8_t PIN_TOUCH_INT = 0;
+*/
+
 ///
 /// <summary>
 /// LovyanGFX configuration for the Hosyond ST7796S display.

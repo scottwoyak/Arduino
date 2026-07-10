@@ -1,217 +1,421 @@
 #pragma once
 
 #include <new>
+#include <math.h>
 #include <Arduino.h>
 
 #include "ArduinoWithDisplay.h"
-#include "TimedMinMax.h"
+#include "Color.h"
+#include "Format.h"
+#include "Structs.h"
 #include "TimedValues.h"
 #include "Util.h"
 
+class TimedScatterPlot;
+
 ///
 /// <summary>
-/// Renders a scatter plot from a TimedValues buffer with time-windowed history.
-/// Each pixel is displayed as either fully lit (green) or unlit (black).
-/// Incremental rendering updates only changed pixels for efficiency.
+/// A single time-series data source owned and rendered by a TimedScatterPlot. Values are
+/// stored in an internal TimedValues buffer keyed by the plot's history window, so old
+/// samples age out automatically and the caller never has to maintain its own buffer.
+/// Display flags (showPoints, showLines, showMovingAverage) and color mirror
+/// ScatterPlotSeries, but the moving average here is windowed in milliseconds rather than
+/// by raw sample count, since the X axis is always time.
+/// </summary>
+///
+class TimedScatterPlotSeries
+{
+   friend class TimedScatterPlot;
+
+private:
+   TimedValues _samples;
+
+   // Scratch buffers holding the most recently captured snapshot (newest-first), refreshed
+   // once per render() call and reused by axis-range computation and drawing.
+   float* _values = nullptr;
+   unsigned long* _agesMs = nullptr;
+   size_t _capacity = 0;
+   size_t _count = 0;
+
+   // Scratch buffer holding the centered moving average computed over the current
+   // snapshot, indexed the same as _values/_agesMs (newest-first).
+   float* _movingAverageBuffer = nullptr;
+   size_t _movingAverageBufferCapacity = 0;
+
+   // Copy of the values/ages/moving-average actually drawn on the last render() pass, so
+   // the next render() can erase exactly those strokes instead of clearing the whole chart.
+   float* _prevValues = nullptr;
+   unsigned long* _prevAgesMs = nullptr;
+   size_t _prevCapacity = 0;
+   size_t _prevCount = 0;
+   float* _prevMovingAverageBuffer = nullptr;
+   size_t _prevMovingAverageBufferCapacity = 0;
+
+   ///
+   /// <summary>
+   /// Ensures the snapshot scratch buffers can hold at least the given number of samples.
+   /// </summary>
+   /// <param name="capacity">Minimum required buffer capacity.</param>
+   /// <returns>True if the buffers have at least the requested capacity.</returns>
+   ///
+   bool _ensureCapacity(size_t capacity)
+   {
+      if (capacity <= _capacity)
+      {
+         return true;
+      }
+
+      float* values = new (std::nothrow) float[capacity];
+      unsigned long* agesMs = new (std::nothrow) unsigned long[capacity];
+      if (values == nullptr || agesMs == nullptr)
+      {
+         delete[] values;
+         delete[] agesMs;
+         Util::setHaltReason("OOM allocating snapshot buffers in TimedScatterPlotSeries");
+         Util::reset();
+         return false;
+      }
+
+      delete[] _values;
+      delete[] _agesMs;
+      _values = values;
+      _agesMs = agesMs;
+      _capacity = capacity;
+      return true;
+   }
+
+   ///
+   /// <summary>
+   /// Ensures the moving-average scratch buffer can hold at least the given number of
+   /// samples.
+   /// </summary>
+   /// <param name="capacity">Minimum required buffer capacity.</param>
+   /// <returns>True if the buffer has at least the requested capacity.</returns>
+   ///
+   bool _ensureMovingAverageBuffer(size_t capacity)
+   {
+      if (capacity <= _movingAverageBufferCapacity)
+      {
+         return _movingAverageBuffer != nullptr;
+      }
+
+      float* buffer = new (std::nothrow) float[capacity];
+      if (buffer == nullptr)
+      {
+         Util::setHaltReason("OOM allocating moving-average buffer in TimedScatterPlotSeries");
+         Util::reset();
+         return false;
+      }
+
+      delete[] _movingAverageBuffer;
+      _movingAverageBuffer = buffer;
+      _movingAverageBufferCapacity = capacity;
+      return true;
+   }
+
+   ///
+   /// <summary>
+   /// Ensures the previous-frame scratch buffers can hold at least the given number of samples.
+   /// </summary>
+   /// <param name="capacity">Minimum required buffer capacity.</param>
+   /// <returns>True if the buffers have at least the requested capacity.</returns>
+   ///
+   bool _ensurePrevCapacity(size_t capacity)
+   {
+      if (capacity <= _prevCapacity)
+      {
+         return true;
+      }
+
+      float* values = new (std::nothrow) float[capacity];
+      unsigned long* agesMs = new (std::nothrow) unsigned long[capacity];
+      if (values == nullptr || agesMs == nullptr)
+      {
+         delete[] values;
+         delete[] agesMs;
+         return false;
+      }
+
+      delete[] _prevValues;
+      delete[] _prevAgesMs;
+      _prevValues = values;
+      _prevAgesMs = agesMs;
+      _prevCapacity = capacity;
+      return true;
+   }
+
+   ///
+   /// <summary>
+   /// Ensures the previous-frame moving-average scratch buffer can hold at least the given
+   /// number of samples.
+   /// </summary>
+   /// <param name="capacity">Minimum required buffer capacity.</param>
+   /// <returns>True if the buffer has at least the requested capacity.</returns>
+   ///
+   bool _ensurePrevMovingAverageBuffer(size_t capacity)
+   {
+      if (capacity <= _prevMovingAverageBufferCapacity)
+      {
+         return true;
+      }
+
+      float* buffer = new (std::nothrow) float[capacity];
+      if (buffer == nullptr)
+      {
+         return false;
+      }
+
+      delete[] _prevMovingAverageBuffer;
+      _prevMovingAverageBuffer = buffer;
+      _prevMovingAverageBufferCapacity = capacity;
+      return true;
+   }
+
+   ///
+   /// <summary>
+   /// Copies the values/ages/moving-average just drawn into the previous-frame buffers, so
+   /// the next render() can erase exactly those strokes. Silently leaves the previous-frame
+   /// buffers empty if allocation fails; the worst consequence is a stale stroke lingering
+   /// on screen until the next axis change forces a full redraw.
+   /// </summary>
+   ///
+   void _capturePrevSnapshot()
+   {
+      if ((_count == 0) || !_ensurePrevCapacity(_count) || !_ensurePrevMovingAverageBuffer(_count))
+      {
+         _prevCount = 0;
+         return;
+      }
+
+      memcpy(_prevValues, _values, _count * sizeof(float));
+      memcpy(_prevAgesMs, _agesMs, _count * sizeof(unsigned long));
+      memcpy(_prevMovingAverageBuffer, _movingAverageBuffer, _count * sizeof(float));
+      _prevCount = _count;
+   }
+
+   ///
+   /// <summary>
+   /// Captures a fresh newest-first snapshot of the retained samples (already trimmed to
+   /// the TimedValues retention window by the buffer itself) and recomputes the centered
+   /// moving average over it. Called once per render() pass.
+   /// </summary>
+   ///
+   void _refreshSnapshot()
+   {
+      size_t available = _samples.count();
+      if (!_ensureCapacity(available))
+      {
+         _count = 0;
+         return;
+      }
+
+      _count = _samples.snapshot(_values, _agesMs, available);
+      _recomputeMovingAverage();
+   }
+
+   ///
+   /// <summary>
+   /// Recomputes the centered moving average over the current snapshot. Each output
+   /// value is the average of every retained sample whose age falls within
+   /// movingAverageWindowMs/2 of that sample's own age. Since the snapshot is a fixed
+   /// point-in-time view (no further samples will ever be added to it), every index can
+   /// be fully computed immediately; averages naturally get noisier near the edges of the
+   /// retained window where fewer neighboring samples exist.
+   /// </summary>
+   ///
+   void _recomputeMovingAverage()
+   {
+      if (_count == 0 || !_ensureMovingAverageBuffer(_count))
+      {
+         return;
+      }
+
+      // _agesMs is newest-first (smallest age at index 0, largest age at the end).
+      const float halfWindow = movingAverageWindowMs / 2.0f;
+
+      for (size_t i = 0; i < _count; i++)
+      {
+         const unsigned long centerAge = _agesMs[i];
+         float sum = 0.0f;
+         size_t finiteCount = 0;
+
+         // Fold in samples that are the same age or older (index >= i).
+         for (size_t j = i; j < _count; j++)
+         {
+            if ((static_cast<float>(_agesMs[j]) - static_cast<float>(centerAge)) > halfWindow)
+            {
+               break;
+            }
+            if (isfinite(_values[j]))
+            {
+               sum += _values[j];
+               finiteCount++;
+            }
+         }
+
+         // Fold in samples that are newer (index < i).
+         for (size_t j = i; j-- > 0; )
+         {
+            if ((static_cast<float>(centerAge) - static_cast<float>(_agesMs[j])) > halfWindow)
+            {
+               break;
+            }
+            if (isfinite(_values[j]))
+            {
+               sum += _values[j];
+               finiteCount++;
+            }
+         }
+
+         _movingAverageBuffer[i] = (finiteCount > 0) ? (sum / finiteCount) : NAN;
+      }
+   }
+
+public:
+   ///
+   /// <summary>If true, draws each sample of this series.</summary>
+   ///
+   bool showPoints = true;
+
+   ///
+   /// <summary>If true, connects each drawn sample of this series to the previous one with a line.</summary>
+   ///
+   bool showLines = false;
+
+   ///
+   /// <summary>If true, draws this series' centered moving average as a connected line.</summary>
+   ///
+   bool showMovingAverage = false;
+
+   ///
+   /// <summary>Color used to draw this series' points and lines.</summary>
+   ///
+   Color color = Color::WHITE;
+
+   ///
+   /// <summary>Color used to draw this series' moving-average line.</summary>
+   ///
+   Color movingAverageColor = Color::YELLOW;
+
+   ///
+   /// <summary>Width of the centered moving-average window, in milliseconds.</summary>
+   ///
+   float movingAverageWindowMs = 0.0f;
+
+   ///
+   /// <summary>
+   /// Constructs a new TimedScatterPlotSeries retaining samples for historyMs.
+   /// </summary>
+   /// <param name="historyMs">Time window in milliseconds for retained samples.</param>
+   /// <param name="initialCapacity">Initial capacity hint for the internal buffer.</param>
+   ///
+   explicit TimedScatterPlotSeries(unsigned long historyMs, size_t initialCapacity = 16)
+      : _samples(historyMs, initialCapacity)
+   {
+   }
+
+   TimedScatterPlotSeries(const TimedScatterPlotSeries&) = delete;
+   TimedScatterPlotSeries& operator=(const TimedScatterPlotSeries&) = delete;
+
+   ~TimedScatterPlotSeries()
+   {
+      delete[] _values;
+      delete[] _agesMs;
+      delete[] _movingAverageBuffer;
+      delete[] _prevValues;
+      delete[] _prevAgesMs;
+      delete[] _prevMovingAverageBuffer;
+   }
+
+   ///
+   /// <summary>
+   /// Adds a new value to the series, timestamped with the current time.
+   /// </summary>
+   /// <param name="value">Value to add.</param>
+   ///
+   void add(float value)
+   {
+      _samples.set(value);
+   }
+
+   ///
+   /// <summary>
+   /// Removes every retained sample from this series.
+   /// </summary>
+   ///
+   void clear()
+   {
+      _samples.reset();
+      _count = 0;
+      _prevCount = 0;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the number of samples currently retained (as of the last render() snapshot).
+   /// </summary>
+   /// <returns>Number of retained samples.</returns>
+   ///
+   size_t getCount() const { return _count; }
+};
+
+///
+/// <summary>
+/// Renders one or more TimedScatterPlotSeries on the display as a shared-axis, time-on-X
+/// scatter plot within a fixed screen rectangle. Callers create series via createSeries(),
+/// feed them by calling add(value) as data becomes available, and set each series'
+/// display flags (showPoints, showLines, showMovingAverage) and color, just like
+/// ScatterPlot. TimedScatterPlot owns all sample storage internally (via TimedValues), so
+/// the caller never maintains its own buffer. The X axis always represents time-ago
+/// (newest samples on the right) over a fixed historyMs window; while the plot has been
+/// running for less than historyMs, samples instead grow left-to-right from a fixed start
+/// point, filling in new columns as data arrives, after which normal right-anchored
+/// scrolling takes over. The Y axis range is computed automatically each render() from
+/// whatever is currently displayed. The rectangle given to the constructor is fixed for
+/// the plot's lifetime, allowing several plots to share one screen.
 /// </summary>
 ///
 class TimedScatterPlot
 {
 private:
-   ArduinoWithDisplay* _feather;
-   TimedValues& _samples;
+   ArduinoWithDisplay* _display;
+   Rect16 _rect;
+   unsigned long _historyMs;
+   float _minValueStep;
+
    Format _minMaxFormat;
    Format _sampleRangeFormat;
-   unsigned long _historyMs;
-   float _minValueStep = 0.0f;
-   int16_t _topOffset = 0;
 
-   float* _sampleValues = nullptr;
-   unsigned long* _sampleAgesMs = nullptr;
-   size_t _sampleCapacity = 0;
+   // Optional centered title drawn above the chart; when set, the chart area is reduced
+   // to make room for it.
+   String _title;
 
-   bool* _pixelLit = nullptr;
-   uint16_t* _previousPixels = nullptr;
-   size_t _pixelCapacity = 0;
+   int16_t _chartLeft = 0;
+   int16_t _chartTop = 0;
+   int16_t _chartWidth = 0;
+   int16_t _chartHeight = 0;
+   float _axisYMin = 0.0f;
+   float _axisYMax = 0.0f;
+   bool _hasRenderedFrame = false;
+   bool _forceFullRedraw = false;
+
+   // Tracks the ramp-up period before the visible history window has actually filled with
+   // data, so points start at the left edge and fill in new columns to the right as data
+   // accumulates, instead of immediately being squeezed against the right edge of a
+   // full-width window. Once elapsed time reaches historyMs, normal right-anchored
+   // scrolling behavior takes over.
+   bool _hasRampStart = false;
+   unsigned long _rampStartMs = 0;
+   unsigned long _rampElapsedMs = 0;
+   bool _isRampingUp = true;
+
+   TimedScatterPlotSeries** _series = nullptr;
+   size_t _seriesCount = 0;
+   size_t _seriesCapacity = 0;
 
    unsigned long _lastRenderMicros = 0;
    unsigned long _lastComputeMicros = 0;
    unsigned long _lastDisplayMicros = 0;
-
-   int16_t _lastShiftPixels = 0;
-   size_t _lastAddedSamples = 0;
-   bool _lastRebuiltPixels = false;
-   unsigned long _lastAddWindowMs = 0;
-
-   // Fine-grained timing breakdown within the compute phase, used to profile where
-   // render() time is spent (temporary instrumentation).
-   unsigned long _lastSnapshotMicros = 0;
-   unsigned long _lastExtremaMicros = 0;
-   unsigned long _lastPixelBuildMicros = 0;
-   unsigned long _lastDiffMicros = 0;
-
-   bool _hasPixelFrame = false;
-   float _frameMinValue = NAN;
-   float _frameMaxValue = NAN;
-   int16_t _frameChartWidth = 0;
-   int16_t _frameChartHeight = 0;
-   unsigned long _lastFrameUpdateMs = 0;
-   unsigned long _pendingShiftMs = 0;
-
-   // Sliding-window min/max tracking, maintained incrementally across render() calls so
-   // the axis range doesn't require rescanning every retained sample every frame.
-   TimedMinMax _minMax;
-   bool _hasExtremaState = false;
-   unsigned long _lastExtremaTickMs = 0;
-
-   ///
-   /// <summary>
-   /// Ensures sample value and age buffers are allocated with sufficient capacity.
-   /// </summary>
-   /// <param name="capacity">Required capacity in elements.</param>
-   /// <returns>True if allocation succeeded or was already sufficient; false on failure.</returns>
-   ///
-   bool _ensureSampleBuffers(size_t capacity)
-   {
-      if (capacity <= _sampleCapacity)
-      {
-         return true;
-      }
-
-      float* sampleValues = new (std::nothrow) float[capacity];
-      unsigned long* sampleAgesMs = new (std::nothrow) unsigned long[capacity];
-      if (sampleValues == nullptr || sampleAgesMs == nullptr)
-      {
-         Util::setHaltReason("OOM allocating sample buffers in TimedScatterPlot");
-         Util::reset();
-         return false;
-      }
-
-      delete[] _sampleValues;
-      delete[] _sampleAgesMs;
-      _sampleValues = sampleValues;
-      _sampleAgesMs = sampleAgesMs;
-      _sampleCapacity = capacity;
-      return true;
-   }
-
-   ///
-   /// <summary>
-   /// Ensures pixel-lit and previous-pixel-color buffers are allocated with the exact
-   /// required capacity, reallocating whenever the chart dimensions change.
-   /// </summary>
-   /// <param name="capacity">Required capacity in elements.</param>
-   /// <returns>True if allocation succeeded or was already sufficient; false on failure.</returns>
-   ///
-   bool _ensurePixelBuffers(size_t capacity)
-   {
-      if (capacity == _pixelCapacity)
-      {
-         return true;
-      }
-
-      bool* pixelLit = new (std::nothrow) bool[capacity];
-      uint16_t* previousPixels = new (std::nothrow) uint16_t[capacity];
-      if (pixelLit == nullptr || previousPixels == nullptr)
-      {
-         Util::setHaltReason("OOM allocating pixel buffers in TimedScatterPlot");
-         Util::reset();
-         return false;
-      }
-
-      delete[] _pixelLit;
-      delete[] _previousPixels;
-      _pixelLit = pixelLit;
-      _previousPixels = previousPixels;
-      _pixelCapacity = capacity;
-
-      memset(_pixelLit, 0, _pixelCapacity * sizeof(bool));
-      for (size_t i = 0; i < _pixelCapacity; i++)
-      {
-         _previousPixels[i] = static_cast<uint16_t>(Color::BLACK);
-      }
-
-      return true;
-   }
-
-   ///
-   /// <summary>
-   /// Ensures the min/max extrema tracker has sufficient capacity to hold every
-   /// retained sample as a candidate.
-   /// </summary>
-   /// <param name="capacity">Required capacity in elements.</param>
-   /// <returns>True if allocation succeeded or was already sufficient; false on failure.</returns>
-   ///
-   bool _ensureExtremaBuffers(size_t capacity)
-   {
-      if (_minMax.ensureCapacity(capacity))
-      {
-         return true;
-      }
-
-      Util::setHaltReason("OOM allocating extrema buffers in TimedScatterPlot");
-      Util::reset();
-      return false;
-   }
-
-   ///
-   /// <summary>
-   /// Clears pixels that have changed from their previous color to black.
-   /// Used during incremental rendering updates.
-   /// </summary>
-   /// <param name="chartLeft">Left x-coordinate of the chart area.</param>
-   /// <param name="chartTop">Top y-coordinate of the chart area.</param>
-   /// <param name="chartWidth">Width in pixels of the chart area.</param>
-   /// <param name="chartHeight">Height in pixels of the chart area.</param>
-   ///
-   void _clearChangedPixels(int16_t chartLeft, int16_t chartTop, int16_t chartWidth, int16_t chartHeight)
-   {
-      if (_previousPixels == nullptr)
-      {
-         return;
-      }
-
-      size_t pixelCount = static_cast<size_t>(chartWidth) * static_cast<size_t>(chartHeight);
-      for (size_t i = 0; i < pixelCount; i++)
-      {
-         if (_previousPixels[i] == static_cast<uint16_t>(Color::BLACK))
-         {
-            continue;
-         }
-
-         int16_t x = chartLeft + static_cast<int16_t>(i % static_cast<size_t>(chartWidth));
-         int16_t y = chartTop + static_cast<int16_t>(i / static_cast<size_t>(chartWidth));
-         _feather->display.writePixel(x, y, static_cast<uint16_t>(Color::BLACK));
-         _previousPixels[i] = static_cast<uint16_t>(Color::BLACK);
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Shifts the pixel-lit array left by the specified pixel count.
-   /// </summary>
-   /// <param name="chartWidth">Width in pixels of the chart area.</param>
-   /// <param name="chartHeight">Height in pixels of the chart area.</param>
-   /// <param name="shiftPixels">Number of pixels to shift left.</param>
-   ///
-   void _shiftPixelsLeft(int16_t chartWidth, int16_t chartHeight, int16_t shiftPixels)
-   {
-      if (shiftPixels <= 0 || shiftPixels >= chartWidth)
-      {
-         return;
-      }
-
-      const size_t copyCount = static_cast<size_t>(chartWidth - shiftPixels);
-      for (int16_t y = 0; y < chartHeight; y++)
-      {
-         bool* litRow = _pixelLit + static_cast<size_t>(y) * static_cast<size_t>(chartWidth);
-         memmove(litRow, litRow + shiftPixels, copyCount * sizeof(bool));
-         memset(litRow + copyCount, 0, static_cast<size_t>(shiftPixels) * sizeof(bool));
-
-         uint16_t* colorRow = _previousPixels + static_cast<size_t>(y) * static_cast<size_t>(chartWidth);
-         memmove(colorRow, colorRow + shiftPixels, copyCount * sizeof(uint16_t));
-      }
-   }
 
    ///
    /// <summary>
@@ -228,6 +432,23 @@ private:
          scale *= 10.0f;
       }
       return scale;
+   }
+
+   ///
+   /// <summary>
+   /// Aligns a value to the sensor step size if one is configured.
+   /// </summary>
+   /// <param name="value">Value to align.</param>
+   /// <returns>Value aligned to sensor step size, or original value if step is not configured.</returns>
+   ///
+   float _alignToSensorStep(float value) const
+   {
+      if (_minValueStep <= 0.0f)
+      {
+         return value;
+      }
+
+      return roundf(value / _minValueStep) * _minValueStep;
    }
 
    ///
@@ -258,214 +479,410 @@ private:
 
    ///
    /// <summary>
-   /// Computes the epsilon (smallest meaningful difference) for the axis precision.
+   /// Refreshes every series' snapshot from its internal TimedValues buffer and scans the
+   /// results to compute the shared Y axis range needed to fit whatever is currently
+   /// displayed: a series' raw samples contribute only if showPoints or showLines is set,
+   /// and its moving average contributes only if showMovingAverage is set.
    /// </summary>
-   /// <returns>Epsilon value at the axis precision level.</returns>
+   /// <param name="outYMin">Receives the minimum finite Y value found, or NAN if none exists.</param>
+   /// <param name="outYMax">Receives the maximum finite Y value found, or NAN if none exists.</param>
    ///
-   float _axisPrecisionEpsilon() const
+   void _refreshAndComputeAxisRange(float* outYMin, float* outYMax)
    {
-      const float scale = _axisPrecisionScale();
-      return 0.5f / scale;
+      float yMin = NAN;
+      float yMax = NAN;
+
+      for (size_t s = 0; s < _seriesCount; s++)
+      {
+         TimedScatterPlotSeries* series = _series[s];
+         series->_refreshSnapshot();
+
+         bool includeRaw = series->showPoints || series->showLines;
+         if (includeRaw)
+         {
+            for (size_t i = 0; i < series->_count; i++)
+            {
+               float value = series->_values[i];
+               if (isfinite(value))
+               {
+                  if (!isfinite(yMin) || (value < yMin)) yMin = value;
+                  if (!isfinite(yMax) || (value > yMax)) yMax = value;
+               }
+            }
+         }
+
+         if (series->showMovingAverage)
+         {
+            for (size_t i = 0; i < series->_count; i++)
+            {
+               float value = series->_movingAverageBuffer[i];
+               if (isfinite(value))
+               {
+                  if (!isfinite(yMin) || (value < yMin)) yMin = value;
+                  if (!isfinite(yMax) || (value > yMax)) yMax = value;
+               }
+            }
+         }
+      }
+
+      *outYMin = yMin;
+      *outYMax = yMax;
    }
 
    ///
    /// <summary>
-   /// Aligns a value to the sensor step size if one is configured.
+   /// Formats a Y-axis label value using the configured min/max Format.
    /// </summary>
-   /// <param name="value">Value to align.</param>
-   /// <returns>Value aligned to sensor step size, or original value if step is not configured.</returns>
+   /// <param name="value">Y-axis value to format.</param>
+   /// <returns>Formatted label text.</returns>
    ///
-   float _alignToSensorStep(float value) const
+   String _formatYLabel(float value) const
    {
-      if (_minValueStep <= 0.0f)
-      {
-         return value;
-      }
-
-      return roundf(value / _minValueStep) * _minValueStep;
+      return String(_minMaxFormat.toString(value).c_str());
    }
 
    ///
    /// <summary>
-   /// Marks a single pixel location as lit.
+   /// Computes the chart's pixel geometry from the current axis range, sizing the Y-axis
+   /// label column to fit the widest of the min/max labels, within the fixed rectangle.
    /// </summary>
-   /// <param name="x">Pixel x-coordinate within the chart.</param>
-   /// <param name="y">Pixel y-coordinate within the chart.</param>
-   /// <param name="chartWidth">Width in pixels of the chart area.</param>
-   /// <param name="chartHeight">Height in pixels of the chart area.</param>
    ///
-   void _setPixelLit(int16_t x, int16_t y, int16_t chartWidth, int16_t chartHeight)
+   void _computeChartGeometry()
    {
-      if (x < 0 || x >= chartWidth || y < 0 || y >= chartHeight)
-      {
-         return;
-      }
+      String maxLabel = _formatYLabel(_axisYMax);
+      String minLabel = _formatYLabel(_axisYMin);
+      uint16_t yLabelWidth = max(_display->textWidth(maxLabel.c_str()), _display->textWidth(minLabel.c_str()));
+      int16_t yAxisWidth = static_cast<int16_t>(yLabelWidth) + 2;
 
-      size_t pixelIndex = static_cast<size_t>(y) * static_cast<size_t>(chartWidth) + static_cast<size_t>(x);
-      _pixelLit[pixelIndex] = true;
-      _lastAddedSamples++;
+      int16_t axisLineHeight = _display->charH() + 2;
+      int16_t titlePadding = _display->charH() / 4;
+      int16_t titleHeight = _title.length() > 0 ? (_display->charH() + 2 * titlePadding) : 0;
+
+      _chartLeft = static_cast<int16_t>(_rect.x) + yAxisWidth;
+      _chartTop = static_cast<int16_t>(_rect.y) + titleHeight;
+      _chartWidth = static_cast<int16_t>(_rect.width) - yAxisWidth;
+      _chartHeight = static_cast<int16_t>(_rect.height) - axisLineHeight - titleHeight;
    }
 
    ///
    /// <summary>
-   /// Clamps a value to the specified plot range.
+   /// Draws the gray X/Y axis lines and the min/max/time-range axis labels for the current
+   /// chart geometry and axis range.
    /// </summary>
-   /// <param name="value">Value to clamp.</param>
-   /// <param name="plotMin">Minimum value in the plot range.</param>
-   /// <param name="plotMax">Maximum value in the plot range.</param>
-   /// <returns>Clamped value.</returns>
    ///
-   float _clampToPlotRange(float value, float plotMin, float plotMax) const
+   void _drawAxes() const
    {
-      if (value < plotMin)
+      if (_title.length() > 0)
       {
-         return plotMin;
+         int16_t titleX = _chartLeft + (_chartWidth - static_cast<int16_t>(_display->textWidth(_title.c_str()))) / 2;
+         int16_t titlePadding = _display->charH() / 4;
+         _display->setCursor(max(_chartLeft, titleX), static_cast<int16_t>(_rect.y) + titlePadding);
+         _display->print(_title, Color::LABEL);
       }
-      if (value > plotMax)
-      {
-         return plotMax;
-      }
-      return value;
+
+      _display->fillRect(_chartLeft, _chartTop + _chartHeight - 1, _chartWidth, 1, Color::GRAY);
+      _display->fillRect(_chartLeft, _chartTop, 1, _chartHeight, Color::GRAY);
+
+      String maxLabel = _formatYLabel(_axisYMax);
+      int16_t maxLabelX = _chartLeft - 2 - static_cast<int16_t>(_display->textWidth(maxLabel.c_str()));
+      _display->setCursor(maxLabelX, _chartTop);
+      _display->print(maxLabel, Color::LABEL);
+
+      String minLabel = _formatYLabel(_axisYMin);
+      int16_t minLabelX = _chartLeft - 2 - static_cast<int16_t>(_display->textWidth(minLabel.c_str()));
+      _display->setCursor(minLabelX, _chartTop + _chartHeight - _display->charH());
+      _display->print(minLabel, Color::LABEL);
+
+      String rangeLabel = _formatHistoryRangeLabel();
+      int16_t rangeLabelX = _chartLeft + (_chartWidth - static_cast<int16_t>(_display->textWidth(rangeLabel.c_str()))) / 2;
+      _display->setCursor(max(_chartLeft, rangeLabelX), _chartTop + _chartHeight + 1);
+      _display->print(rangeLabel, Color::LABEL);
    }
 
    ///
    /// <summary>
-   /// Converts an age in milliseconds to an x-coordinate on the chart.
+   /// Formats the history-window label shown below the X axis, automatically switching
+   /// units so the value stays readable: milliseconds below 2 seconds, seconds below 2
+   /// minutes, and minutes otherwise.
+   /// </summary>
+   /// <returns>Formatted history-range label, e.g. "500 ms", "45 s", or "10 m".</returns>
+   ///
+   String _formatHistoryRangeLabel() const
+   {
+      float value;
+      const char* suffix;
+
+      if (_historyMs < 2000)
+      {
+         value = static_cast<float>(_historyMs);
+         suffix = " ms";
+      }
+      else if (_historyMs < 120000)
+      {
+         value = static_cast<float>(_historyMs) / 1000.0f;
+         suffix = " s";
+      }
+      else
+      {
+         value = static_cast<float>(_historyMs) / 60000.0f;
+         suffix = " m";
+      }
+
+      std::string pattern = std::string("####") + suffix;
+      Format format(pattern.c_str(), _sampleRangeFormat.alignment());
+      return String(format.toString(value).c_str());
+   }
+
+   ///
+   /// <summary>
+   /// Converts an age-in-milliseconds/value pair to pixel coordinates using the current
+   /// chart geometry and axis range. Newest samples (age 0) map to the right edge; samples
+   /// at or beyond historyMs map to the left edge.
    /// </summary>
    /// <param name="ageMs">Age of the sample in milliseconds.</param>
-   /// <param name="chartWidth">Width in pixels of the chart area.</param>
-   /// <returns>X-coordinate for the sample (newer samples on the right).</returns>
+   /// <param name="value">Y value to convert.</param>
+   /// <param name="outX">Receives the pixel X coordinate.</param>
+   /// <param name="outY">Receives the pixel Y coordinate.</param>
    ///
-   int16_t _xForAgeMs(unsigned long ageMs, int16_t chartWidth) const
+   void _toPixel(unsigned long ageMs, float value, int16_t& outX, int16_t& outY) const
    {
-      if (_historyMs <= 1UL || chartWidth <= 1)
-      {
-         return chartWidth - 1;
-      }
+      float ySpan = _axisYMax - _axisYMin;
+      if (ySpan <= 0.0f) ySpan = 1.0f;
 
-      unsigned long boundedAgeMs = min(ageMs, _historyMs - 1UL);
-      int16_t x = static_cast<int16_t>(((_historyMs - 1UL - boundedAgeMs) * static_cast<unsigned long>(chartWidth - 1)) / (_historyMs - 1UL));
-      return constrain(x, 0, chartWidth - 1);
+      float fraction;
+      if (_isRampingUp)
+      {
+         // Anchor each sample to its absolute time-since-ramp-start (instead of its age
+         // relative to "now"), so already-placed points stay put and new samples simply
+         // appear in new columns further to the right as time passes.
+         unsigned long sampleElapsedMs = (ageMs < _rampElapsedMs) ? (_rampElapsedMs - ageMs) : 0;
+         fraction = static_cast<float>(sampleElapsedMs) / static_cast<float>(_historyMs);
+      }
+      else
+      {
+         unsigned long boundedAgeMs = min(ageMs, _historyMs);
+         fraction = 1.0f - (static_cast<float>(boundedAgeMs) / static_cast<float>(_historyMs));
+      }
+      fraction = constrain(fraction, 0.0f, 1.0f);
+
+      outX = _chartLeft + static_cast<int16_t>(fraction * (_chartWidth - 1));
+      outY = _chartTop + static_cast<int16_t>(((_axisYMax - value) / ySpan) * (_chartHeight - 1));
+
+      outX = constrain(outX, _chartLeft, static_cast<int16_t>(_chartLeft + _chartWidth - 1));
+      outY = constrain(outY, _chartTop, static_cast<int16_t>(_chartTop + _chartHeight - 1));
    }
 
    ///
    /// <summary>
-   /// Marks the pixels lit for a sample value at a given x-coordinate.
-   /// Spans multiple pixels if the sensor resolution is coarser than pixel resolution.
+   /// Plots a set of samples (connected with lines when connectPoints is set) using the
+   /// given color, aligning to the sensor step first when alignToStep is set. Samples must
+   /// be supplied newest-first but are drawn oldest-first so lines connect in chronological
+   /// order. Used both to draw the current frame and, with color set to black, to erase the
+   /// previous frame's exact strokes before drawing over them.
    /// </summary>
-   /// <param name="x">X-coordinate on the chart.</param>
-   /// <param name="value">Sample value to plot.</param>
-   /// <param name="plotMax">Maximum value in the plot range.</param>
-   /// <param name="valuePerPixel">Y-axis scale (value units per pixel).</param>
-   /// <param name="pixelsPerStep">Width of each sensor step in pixels.</param>
-   /// <param name="chartWidth">Width in pixels of the chart area.</param>
-   /// <param name="chartHeight">Height in pixels of the chart area.</param>
+   /// <param name="values">Newest-first sample values to plot.</param>
+   /// <param name="agesMs">Newest-first sample ages (parallel to values), in milliseconds.</param>
+   /// <param name="count">Number of samples in values/agesMs.</param>
+   /// <param name="connectPoints">If true, connects consecutive finite samples with a line.</param>
+   /// <param name="drawPoints">If true, draws each finite sample as a pixel.</param>
+   /// <param name="alignToStep">If true, aligns each value to the configured sensor step before plotting.</param>
+   /// <param name="color">Color to draw with.</param>
    ///
-   void _setPixelsForValue(int16_t x, float value, float plotMax, float valuePerPixel, float pixelsPerStep, int16_t chartWidth, int16_t chartHeight)
+   void _plotSeriesData(const float* values, const unsigned long* agesMs, size_t count, bool connectPoints, bool drawPoints, bool alignToStep, Color color) const
    {
-      if (valuePerPixel <= 0.0f)
+      if (count == 0)
       {
          return;
       }
 
-      const float yFloat = (plotMax - value) / valuePerPixel;
-      if (pixelsPerStep <= 1.0f)
+      bool havePrevPoint = false;
+      int16_t prevX = 0;
+      int16_t prevY = 0;
+
+      // Iterate oldest-first (reverse of the newest-first snapshot order) so lines connect
+      // chronologically left-to-right.
+      for (size_t idx = count; idx-- > 0; )
       {
-         int16_t y = static_cast<int16_t>(roundf(yFloat));
-         _setPixelLit(x, y, chartWidth, chartHeight);
-         return;
+         float value = values[idx];
+         if (!isfinite(value))
+         {
+            continue;
+         }
+
+         if (alignToStep && (_minValueStep > 0.0f))
+         {
+            value = _alignToSensorStep(value);
+         }
+
+         int16_t x;
+         int16_t y;
+         _toPixel(agesMs[idx], value, x, y);
+
+         if (connectPoints && havePrevPoint)
+         {
+            _display->drawLine(prevX, prevY, x, y, color);
+         }
+         if (drawPoints)
+         {
+            _display->drawPixel(x, y, color);
+         }
+
+         prevX = x;
+         prevY = y;
+         havePrevPoint = true;
       }
-
-      const float halfSpan = (pixelsPerStep - 1.0f) * 0.5f;
-      int16_t yStart = static_cast<int16_t>(floorf(yFloat - halfSpan));
-      int16_t yEnd = static_cast<int16_t>(ceilf(yFloat + halfSpan));
-
-      for (int16_t y = yStart; y <= yEnd; y++)
-      {
-         _setPixelLit(x, y, chartWidth, chartHeight);
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Gets the display color for a pixel.
-   /// </summary>
-   /// <param name="index">Flat index into the pixel-lit/previous-pixel buffers.</param>
-   /// <returns>Color::GREEN when the pixel is lit, otherwise Color::BLACK.</returns>
-   ///
-   uint16_t _pixelColor(size_t index) const
-   {
-      return _pixelLit[index] ? static_cast<uint16_t>(Color::GREEN) : static_cast<uint16_t>(Color::BLACK);
    }
 
 public:
+   ///
    /// <summary>
-   /// Creates a timed scatter plot renderer using default formats.
-   /// Default min/max format shows one decimal place right-aligned.
-   /// Default sample range format shows one decimal place with 's' suffix, center-aligned.
+   /// Creates a timed scatter plot renderer that draws within the given fixed screen
+   /// rectangle, using a default min/max axis label format (one decimal place,
+   /// right-aligned) and a default sample-range alignment (center-aligned). The X axis
+   /// range label automatically switches units based on the history window: milliseconds
+   /// below 2 seconds, seconds below 2 minutes, and minutes otherwise.
    /// </summary>
-   /// <param name="feather">Pointer to the display interface.</param>
-   /// <param name="samples">Reference to the TimedValues buffer containing samples.</param>
+   /// <param name="display">Pointer to the display object.</param>
+   /// <param name="rect">Fixed screen rectangle this plot draws within; unchanged for the plot's lifetime.</param>
    /// <param name="historyMs">Time window in milliseconds for the visible history.</param>
    /// <param name="minValueStep">Optional sensor resolution step size (0.0 for no alignment, default 0.0).</param>
+   /// <param name="title">Optional centered title drawn above the chart; defaults to none, in which case the plot uses the full rectangle.</param>
    ///
-   TimedScatterPlot(ArduinoWithDisplay* feather, TimedValues& samples, unsigned long historyMs, float minValueStep = 0.0f)
-      : TimedScatterPlot(feather, samples, historyMs, Format("##.#", Format::Alignment::RIGHT), Format("##.#s", Format::Alignment::CENTER), minValueStep)
+   TimedScatterPlot(ArduinoWithDisplay* display, Rect16 rect, unsigned long historyMs, float minValueStep = 0.0f, const String& title = String())
+      : TimedScatterPlot(display, rect, historyMs, Format("##.#", Format::Alignment::RIGHT), Format("##.#s", Format::Alignment::CENTER), minValueStep, title)
    {}
 
    ///
    /// <summary>
-   /// Creates a timed scatter plot renderer with custom formats.
+   /// Creates a timed scatter plot renderer with a custom min/max axis label format and a
+   /// custom sample-range format (only its alignment is used; the X axis range label's
+   /// units and precision are chosen automatically based on the history window).
    /// </summary>
    ///
-   TimedScatterPlot(ArduinoWithDisplay* feather, TimedValues& samples, unsigned long historyMs, const Format& minMaxFormat, const Format& sampleRangeFormat, float minValueStep = 0.0f)
-      : _feather(feather), _samples(samples), _minMaxFormat(minMaxFormat), _sampleRangeFormat(sampleRangeFormat), _historyMs(historyMs), _minValueStep(minValueStep),
-        _minMax(samples.durationMs())
+   TimedScatterPlot(ArduinoWithDisplay* display, Rect16 rect, unsigned long historyMs, const Format& minMaxFormat, const Format& sampleRangeFormat, float minValueStep = 0.0f, const String& title = String())
+      : _display(display), _rect(rect), _historyMs((historyMs == 0) ? 1 : historyMs), _minValueStep(minValueStep),
+        _minMaxFormat(minMaxFormat), _sampleRangeFormat(sampleRangeFormat), _title(title)
    {
-      if (_historyMs == 0)
-      {
-         _historyMs = 1;
-      }
    }
 
    TimedScatterPlot(const TimedScatterPlot&) = delete;
    TimedScatterPlot& operator=(const TimedScatterPlot&) = delete;
 
-   ///
-   /// <summary>
-   /// Releases the allocated rendering buffers.
-   /// </summary>
-   ///
    ~TimedScatterPlot()
    {
-      delete[] _sampleValues;
-      delete[] _sampleAgesMs;
-      delete[] _pixelLit;
-      delete[] _previousPixels;
+      for (size_t i = 0; i < _seriesCount; i++)
+      {
+         delete _series[i];
+      }
+      delete[] _series;
    }
 
    ///
    /// <summary>
-   /// Updates the visible time span in milliseconds.
+   /// Creates a new time series owned by this plot, retaining samples for this plot's
+   /// history window.
+   /// </summary>
+   /// <param name="initialCapacity">Initial capacity hint for the series' internal buffer.</param>
+   /// <returns>Pointer to the newly created series.</returns>
+   ///
+   TimedScatterPlotSeries* createSeries(size_t initialCapacity = 16)
+   {
+      if (_seriesCount >= _seriesCapacity)
+      {
+         size_t newCapacity = _seriesCapacity + 5;
+         TimedScatterPlotSeries** newSeries = new (std::nothrow) TimedScatterPlotSeries*[newCapacity];
+
+         if (newSeries == nullptr)
+         {
+            Util::setHaltReason("OOM allocating series array in TimedScatterPlot");
+            Util::reset();
+            return nullptr;
+         }
+
+         if (_seriesCount > 0)
+         {
+            memcpy(newSeries, _series, _seriesCount * sizeof(TimedScatterPlotSeries*));
+         }
+
+         delete[] _series;
+         _series = newSeries;
+         _seriesCapacity = newCapacity;
+      }
+
+      TimedScatterPlotSeries* newSeries = new TimedScatterPlotSeries(_historyMs, initialCapacity);
+      _series[_seriesCount++] = newSeries;
+      return newSeries;
+   }
+
+   ///
+   /// <summary>
+   /// Gets a series by index.
+   /// </summary>
+   /// <param name="index">Index of the series to retrieve.</param>
+   /// <returns>Pointer to the series at the specified index, or nullptr if index is invalid.</returns>
+   ///
+   TimedScatterPlotSeries* getSeries(size_t index)
+   {
+      return (index < _seriesCount) ? _series[index] : nullptr;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the number of series currently managed by this plot.
+   /// </summary>
+   /// <returns>Number of series.</returns>
+   ///
+   size_t getSeriesCount() const
+   {
+      return _seriesCount;
+   }
+
+   ///
+   /// <summary>
+   /// Deletes a series at the specified index.
+   /// </summary>
+   /// <param name="index">Index of the series to delete.</param>
+   ///
+   void deleteSeries(size_t index)
+   {
+      if (index < _seriesCount)
+      {
+         delete _series[index];
+
+         for (size_t i = index; i < _seriesCount - 1; i++)
+         {
+            _series[i] = _series[i + 1];
+         }
+
+         _seriesCount--;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Deletes all series managed by this plot.
+   /// </summary>
+   ///
+   void deleteAllSeries()
+   {
+      for (size_t i = 0; i < _seriesCount; i++)
+      {
+         delete _series[i];
+      }
+      _seriesCount = 0;
+   }
+
+   ///
+   /// <summary>
+   /// Updates the visible time span in milliseconds. Existing series keep their own
+   /// retention window (set at createSeries() time) unless recreated.
    /// </summary>
    /// <param name="historyMs">Time window in milliseconds to display.</param>
    ///
    void setHistoryMs(unsigned long historyMs)
    {
       _historyMs = (historyMs == 0) ? 1 : historyMs;
-   }
-
-   ///
-   /// <summary>
-   /// Sets the vertical offset in pixels above the plot area, allowing space for
-   /// other content (such as a title or readout) to be drawn above the chart without
-   /// being overwritten.
-   /// </summary>
-   /// <param name="topOffset">Number of pixels to reserve above the chart area.</param>
-   ///
-   void setTopOffset(int16_t topOffset)
-   {
-      _topOffset = topOffset;
+      _forceFullRedraw = true;
    }
 
    ///
@@ -481,9 +898,11 @@ public:
 
    ///
    /// <summary>
-   /// Sets a custom format for the sample range time display.
+   /// Sets a custom alignment for the sample range time display. The units and precision
+   /// of the label itself are always chosen automatically based on the history window;
+   /// only the alignment of this format is used.
    /// </summary>
-   /// <param name="format">Format object defining precision and alignment.</param>
+   /// <param name="format">Format object whose alignment is used for the sample range label.</param>
    ///
    void setSampleRangeFormat(const Format& format)
    {
@@ -492,14 +911,47 @@ public:
 
    ///
    /// <summary>
+   /// Sets or clears the centered title drawn above the chart. Pass an empty string to
+   /// remove the title, restoring the full rectangle to the chart. Forces a full redraw
+   /// on the next render() since the chart geometry changes.
+   /// </summary>
+   /// <param name="title">Title text to display, or an empty string for none.</param>
+   ///
+   void setTitle(const String& title)
+   {
+      _title = title;
+      _forceFullRedraw = true;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the current title text, or an empty string if none is set.
+   /// </summary>
+   /// <returns>Current title text.</returns>
+   ///
+   const String& getTitle() const
+   {
+      return _title;
+   }
+
+   ///
+   /// <summary>
+   /// Forces the next render() call to perform a full clear and redraw of the chart area,
+   /// even if the computed axis range has not changed.
+   /// </summary>
+   ///
+   void invalidate()
+   {
+      _forceFullRedraw = true;
+   }
+
+   ///
+   /// <summary>
    /// Gets the time in microseconds of the last render operation.
    /// </summary>
    /// <returns>Time elapsed during last render in microseconds.</returns>
    ///
-   unsigned long lastRenderMicros() const
-   {
-      return _lastRenderMicros;
-   }
+   unsigned long lastRenderMicros() const { return _lastRenderMicros; }
 
    ///
    /// <summary>
@@ -507,10 +959,7 @@ public:
    /// </summary>
    /// <returns>Time elapsed computing the last frame in microseconds.</returns>
    ///
-   unsigned long lastComputeMicros() const
-   {
-      return _lastComputeMicros;
-   }
+   unsigned long lastComputeMicros() const { return _lastComputeMicros; }
 
    ///
    /// <summary>
@@ -518,418 +967,128 @@ public:
    /// </summary>
    /// <returns>Time elapsed writing to the display in microseconds.</returns>
    ///
-   unsigned long lastDisplayMicros() const
-   {
-      return _lastDisplayMicros;
-   }
+   unsigned long lastDisplayMicros() const { return _lastDisplayMicros; }
 
    ///
    /// <summary>
-   /// Gets the number of pixels the chart was shifted left during the last render.
-   /// </summary>
-   /// <returns>Pixel shift count, or 0 if no shift occurred.</returns>
-   ///
-   int16_t lastShiftPixels() const
-   {
-      return _lastShiftPixels;
-   }
-
-   ///
-   /// <summary>
-   /// Gets the number of newly plotted samples added during the last render.
-   /// </summary>
-   /// <returns>Count of samples added.</returns>
-   ///
-   size_t lastAddedSamples() const
-   {
-      return _lastAddedSamples;
-   }
-
-   ///
-   /// <summary>
-   /// Gets whether the pixel buffer was fully rebuilt during the last render.
-   /// </summary>
-   /// <returns>True if the pixel buffer was rebuilt from scratch.</returns>
-   ///
-   bool lastRebuiltPixels() const
-   {
-      return _lastRebuiltPixels;
-   }
-
-   ///
-   /// <summary>
-   /// Gets the time window in milliseconds of newly added samples during the last render.
-   /// </summary>
-   /// <returns>Time window in milliseconds.</returns>
-   ///
-   unsigned long lastAddWindowMs() const
-   {
-      return _lastAddWindowMs;
-   }
-
-   ///
-   /// <summary>
-   /// Gets the time in microseconds spent copying samples out of the TimedValues buffer
-   /// during the last render (temporary profiling instrumentation).
-   /// </summary>
-   unsigned long lastSnapshotMicros() const
-   {
-      return _lastSnapshotMicros;
-   }
-
-   ///
-   /// <summary>
-   /// Gets the time in microseconds spent updating the sliding-window min/max during the
-   /// last render (temporary profiling instrumentation).
-   /// </summary>
-   unsigned long lastExtremaMicros() const
-   {
-      return _lastExtremaMicros;
-   }
-
-   ///
-   /// <summary>
-   /// Gets the time in microseconds spent rebuilding/updating the pixel-lit buffer during
-   /// the last render (temporary profiling instrumentation).
-   /// </summary>
-   unsigned long lastPixelBuildMicros() const
-   {
-      return _lastPixelBuildMicros;
-   }
-
-   ///
-   /// <summary>
-   /// Gets the time in microseconds spent diffing pixels against the previous frame and
-   /// issuing writeFastVLine calls during the last render (temporary profiling
-   /// instrumentation).
-   /// </summary>
-   unsigned long lastDiffMicros() const
-   {
-      return _lastDiffMicros;
-   }
-
-   ///
-   /// <summary>
-   /// Draws the scatter plot.
+   /// Renders every owned series within this plot's fixed rectangle: refreshes each
+   /// series' snapshot from its internal TimedValues buffer, computes the shared Y axis
+   /// range to fit whatever is currently displayed, then draws axis labels and each
+   /// series' points, lines, and/or moving-average line. When the axis range and chart
+   /// geometry are unchanged from the previous frame, the chart interior is not cleared;
+   /// instead, each series' previously drawn strokes are erased in black before the new
+   /// frame is drawn, avoiding the flicker a full clear would cause. A full clear and
+   /// redraw still happens whenever the axis range or geometry changes, invalidate() was
+   /// called, or this is the first frame.
    /// </summary>
    ///
    void render()
    {
       const unsigned long frameStartMicros = micros();
 
-      _feather->setTextSize(2);
-
-      const int16_t width = _feather->width();
-      const int16_t height = _feather->height();
-      const int16_t infoHeight = _feather->charH();
-      const int16_t labelWidth = static_cast<int16_t>(_minMaxFormat.length() * _feather->charW());
-      const int16_t chartLeft = labelWidth + _feather->charW();
-      const int16_t chartTop = _topOffset + infoHeight + 2;
-      const int16_t chartWidth = width - chartLeft - 1;
-      const int16_t rangeLineHeight = _feather->charH() + 2;
-      const int16_t chartHeight = height - chartTop - rangeLineHeight;
-
-      if (chartWidth < 2 || chartHeight < 2)
+      if (_display == nullptr || _seriesCount == 0)
       {
-         const unsigned long displayStartMicros = micros();
-         _feather->display.startWrite();
-         _feather->println("Plot area too small", Color::LABEL);
-         _feather->display.endWrite();
-         _lastDisplayMicros = micros() - displayStartMicros;
-         _lastRenderMicros = micros() - frameStartMicros;
-         _lastComputeMicros = _lastRenderMicros - _lastDisplayMicros;
          return;
       }
 
-      if (!_ensureSampleBuffers(_samples.size()))
+      const unsigned long nowMs = millis();
+      if (!_hasRampStart)
       {
-         const unsigned long displayStartMicros = micros();
-         _feather->display.startWrite();
-         _feather->println("Memory unavailable", Color::LABEL);
-         _feather->display.endWrite();
-         _lastDisplayMicros = micros() - displayStartMicros;
-         _lastRenderMicros = micros() - frameStartMicros;
-         _lastComputeMicros = _lastRenderMicros - _lastDisplayMicros;
+         _rampStartMs = nowMs;
+         _hasRampStart = true;
+      }
+      _rampElapsedMs = nowMs - _rampStartMs;
+      const bool wasRampingUp = _isRampingUp;
+      _isRampingUp = (_rampElapsedMs < _historyMs);
+
+      float yMin;
+      float yMax;
+      _refreshAndComputeAxisRange(&yMin, &yMax);
+
+      if (!isfinite(yMin) || !isfinite(yMax))
+      {
+         _lastComputeMicros = micros() - frameStartMicros;
+         _lastDisplayMicros = 0;
+         _lastRenderMicros = _lastComputeMicros;
          return;
       }
 
-      if (!_ensureExtremaBuffers(_samples.size()))
+      yMin = _roundDownToAxisPrecision(yMin);
+      yMax = _roundUpToAxisPrecision(yMax);
+      if (yMax <= yMin)
       {
-         const unsigned long displayStartMicros = micros();
-         _feather->display.startWrite();
-         _feather->println("Memory unavailable", Color::LABEL);
-         _feather->display.endWrite();
-         _lastDisplayMicros = micros() - displayStartMicros;
-         _lastRenderMicros = micros() - frameStartMicros;
-         _lastComputeMicros = _lastRenderMicros - _lastDisplayMicros;
+         yMax = yMin + _axisPrecisionScale();
+      }
+
+      const int16_t oldChartLeft = _chartLeft;
+      const int16_t oldChartTop = _chartTop;
+      const int16_t oldChartWidth = _chartWidth;
+      const int16_t oldChartHeight = _chartHeight;
+      const float oldAxisYMin = _axisYMin;
+      const float oldAxisYMax = _axisYMax;
+
+      _display->setTextSize(2);
+      _axisYMin = yMin;
+      _axisYMax = yMax;
+      _computeChartGeometry();
+
+      if (_chartWidth < 20 || _chartHeight < 20)
+      {
+         _lastComputeMicros = micros() - frameStartMicros;
+         _lastDisplayMicros = 0;
+         _lastRenderMicros = _lastComputeMicros;
          return;
       }
 
-      const unsigned long snapshotStartMicros = micros();
-      const size_t valueCount = _samples.snapshot(_sampleValues, _sampleAgesMs, _sampleCapacity);
-      _lastSnapshotMicros = micros() - snapshotStartMicros;
+      bool fullRedraw = _forceFullRedraw || !_hasRenderedFrame || wasRampingUp
+         || (yMin != oldAxisYMin) || (yMax != oldAxisYMax)
+         || (_chartLeft != oldChartLeft) || (_chartTop != oldChartTop)
+         || (_chartWidth != oldChartWidth) || (_chartHeight != oldChartHeight);
 
-      if (!_ensurePixelBuffers(static_cast<size_t>(chartWidth) * static_cast<size_t>(chartHeight)))
-      {
-         const unsigned long displayStartMicros = micros();
-         _feather->display.startWrite();
-         _feather->println("Memory unavailable", Color::LABEL);
-         _feather->display.endWrite();
-         _lastDisplayMicros = micros() - displayStartMicros;
-         _lastRenderMicros = micros() - frameStartMicros;
-         _lastComputeMicros = _lastRenderMicros - _lastDisplayMicros;
-         return;
-      }
-
-      _lastShiftPixels = 0;
-      _lastAddedSamples = 0;
-      _lastRebuiltPixels = false;
-      _lastAddWindowMs = 0;
-
-      float minValue = 0.0f;
-      float maxValue = 0.0f;
-      float axisMinValue = 0.0f;
-      float axisMaxValue = 0.0f;
-      float sampleRangeSeconds = NAN;
-
-      if (valueCount > 0)
-      {
-         const unsigned long nowMs = millis();
-         const unsigned long retentionMs = _samples.durationMs();
-
-         // Maintain running min/max incrementally instead of rescanning every retained
-         // sample each frame: push samples added since the last update (the newest-first
-         // snapshot lets us stop as soon as we reach an already-seen sample); TimedMinMax
-         // evicts samples that have aged out of the retention window internally.
-         const unsigned long extremaStartMicros = micros();
-         const unsigned long elapsedExtremaMs = _hasExtremaState ? (nowMs - _lastExtremaTickMs) : (retentionMs + 1UL);
-
-         size_t newExtremaCount = 0;
-         while (newExtremaCount < valueCount && _sampleAgesMs[newExtremaCount] < elapsedExtremaMs)
-         {
-            newExtremaCount++;
-         }
-
-         for (size_t i = newExtremaCount; i-- > 0; )
-         {
-            const unsigned long tick = nowMs - _sampleAgesMs[i];
-            _minMax.set(_sampleValues[i], tick);
-         }
-
-         _lastExtremaTickMs = nowMs;
-         _hasExtremaState = true;
-         _lastExtremaMicros = micros() - extremaStartMicros;
-
-         minValue = _minMax.min();
-         if (isnan(minValue))
-         {
-            minValue = _sampleValues[0];
-         }
-
-         maxValue = _minMax.max();
-         if (isnan(maxValue))
-         {
-            maxValue = _sampleValues[0];
-         }
-
-         minValue = _roundDownToAxisPrecision(minValue);
-         maxValue = _roundUpToAxisPrecision(maxValue);
-
-         const unsigned long msPerPixel = (_historyMs > 1UL)
-            ? std::max<unsigned long>(1UL, (_historyMs - 1UL) / static_cast<unsigned long>(std::max<int16_t>(1, chartWidth - 1)))
-            : 1UL;
-
-         const bool sameChart = _hasPixelFrame && _frameChartWidth == chartWidth && _frameChartHeight == chartHeight;
-         const float rangeEpsilon = _axisPrecisionEpsilon();
-         const bool rangeChanged = _hasPixelFrame
-            && (fabsf(minValue - _frameMinValue) > rangeEpsilon || fabsf(maxValue - _frameMaxValue) > rangeEpsilon);
-         const bool stalePixels = _hasPixelFrame && ((nowMs - _lastFrameUpdateMs) > msPerPixel);
-         const bool rebuildPixels = !_hasPixelFrame || !sameChart || rangeChanged || stalePixels;
-
-         float plotMin = rebuildPixels ? minValue : _frameMinValue;
-         float plotMax = rebuildPixels ? maxValue : _frameMaxValue;
-         axisMinValue = plotMin;
-         axisMaxValue = plotMax;
-
-         float range = plotMax - plotMin;
-         if (range <= 0.0f)
-         {
-            range = 1.0f;
-         }
-
-         const float valuePerPixel = range / static_cast<float>(std::max<int16_t>(1, chartHeight - 1));
-         const bool alignToSensorStep = _minValueStep > 0.0f;
-         const float pixelsPerStep = alignToSensorStep ? (_minValueStep / valuePerPixel) : 1.0f;
-
-         const unsigned long pixelBuildStartMicros = micros();
-
-         if (rebuildPixels)
-         {
-            _lastRebuiltPixels = true;
-            _pendingShiftMs = 0;
-            memset(_pixelLit, 0, _pixelCapacity * sizeof(bool));
-
-            for (size_t i = 0; i < valueCount; i++)
-            {
-               float value = _sampleValues[i];
-               if (alignToSensorStep)
-               {
-                  value = _alignToSensorStep(value);
-               }
-
-               value = _clampToPlotRange(value, plotMin, plotMax);
-               int16_t x = _xForAgeMs(_sampleAgesMs[i], chartWidth);
-               _setPixelsForValue(x, value, plotMax, valuePerPixel, pixelsPerStep, chartWidth, chartHeight);
-            }
-         }
-         else
-         {
-            const unsigned long elapsedMs = nowMs - _lastFrameUpdateMs;
-            _pendingShiftMs += elapsedMs;
-
-            int16_t shiftPixels = static_cast<int16_t>(_pendingShiftMs / msPerPixel);
-            if (shiftPixels > 1)
-            {
-               shiftPixels = 1;
-            }
-
-            if (shiftPixels <= 0)
-            {
-               _lastShiftPixels = 0;
-               _lastAddWindowMs = 0;
-               _lastFrameUpdateMs = nowMs;
-               _lastPixelBuildMicros = micros() - pixelBuildStartMicros;
-               _lastDiffMicros = 0;
-               _lastRenderMicros = micros() - frameStartMicros;
-               _lastComputeMicros = _lastRenderMicros;
-               _lastDisplayMicros = 0;
-               return;
-            }
-
-            _pendingShiftMs -= static_cast<unsigned long>(shiftPixels) * msPerPixel;
-            _lastShiftPixels = shiftPixels;
-            _shiftPixelsLeft(chartWidth, chartHeight, shiftPixels);
-
-            const unsigned long addWindowMs = msPerPixel;
-            _lastAddWindowMs = addWindowMs;
-
-            for (size_t i = 0; i < valueCount; i++)
-            {
-               const unsigned long ageMs = _sampleAgesMs[i];
-               if (ageMs > addWindowMs)
-               {
-                  break;
-               }
-
-               float value = _sampleValues[i];
-               if (alignToSensorStep)
-               {
-                  value = _alignToSensorStep(value);
-               }
-
-               value = _clampToPlotRange(value, plotMin, plotMax);
-               int16_t x = _xForAgeMs(ageMs, chartWidth);
-               _setPixelsForValue(x, value, plotMax, valuePerPixel, pixelsPerStep, chartWidth, chartHeight);
-            }
-         }
-
-         _lastPixelBuildMicros = micros() - pixelBuildStartMicros;
-
-         // Snapshot is newest-first, so the last entry already holds the maximum age.
-         sampleRangeSeconds = static_cast<float>(_sampleAgesMs[valueCount - 1]) / 1000.0f;
-         _hasPixelFrame = true;
-         _frameMinValue = plotMin;
-         _frameMaxValue = plotMax;
-         _frameChartWidth = chartWidth;
-         _frameChartHeight = chartHeight;
-         _lastFrameUpdateMs = nowMs;
-      }
+      _forceFullRedraw = false;
+      _hasRenderedFrame = true;
 
       const unsigned long displayStartMicros = micros();
 
-      _feather->display.startWrite();
+      _display->display.startWrite();
 
-      if (valueCount == 0)
+      if (fullRedraw)
       {
-         _hasPixelFrame = false;
-         _pendingShiftMs = 0;
-         _hasExtremaState = false;
-         _minMax.reset();
-         _clearChangedPixels(chartLeft, chartTop, chartWidth, chartHeight);
-         _feather->display.endWrite();
-         _lastDisplayMicros = micros() - displayStartMicros;
-         _lastRenderMicros = micros() - frameStartMicros;
-         _lastComputeMicros = _lastRenderMicros - _lastDisplayMicros;
-         return;
+         _display->fillRect(_chartLeft + 1, _chartTop, _chartWidth - 1, _chartHeight - 1, Color::BLACK);
+         _drawAxes();
       }
 
-      // After a full rebuild every column may have changed, so the whole chart must be
-      // diffed. After an incremental shift, _previousPixels was shifted in lockstep with
-      // _pixelLit (see _shiftPixelsLeft), so only the newly-exposed columns on the right
-      // can possibly differ, letting us skip re-diffing the unchanged bulk of the chart.
-      const int16_t diffXStart = _lastRebuiltPixels ? 0 : std::max<int16_t>(0, chartWidth - _lastShiftPixels);
-
-      const unsigned long diffStartMicros = micros();
-
-      for (int16_t x = diffXStart; x < chartWidth; x++)
+      for (size_t i = 0; i < _seriesCount; i++)
       {
-         int16_t y = 0;
-         while (y < chartHeight)
+         TimedScatterPlotSeries* series = _series[i];
+
+         if (!fullRedraw)
          {
-            size_t index = static_cast<size_t>(y) * static_cast<size_t>(chartWidth) + static_cast<size_t>(x);
-            uint16_t newColor = _pixelColor(index);
-
-            if (_previousPixels[index] == newColor)
+            // Erase exactly what was drawn last frame for this series before drawing the new frame.
+            if (series->showPoints || series->showLines)
             {
-               y++;
-               continue;
+               _plotSeriesData(series->_prevValues, series->_prevAgesMs, series->_prevCount, series->showLines, series->showPoints, true, Color::BLACK);
             }
-
-            const int16_t runStart = y;
-            _previousPixels[index] = newColor;
-            y++;
-
-            while (y < chartHeight)
+            if (series->showMovingAverage)
             {
-               size_t nextIndex = static_cast<size_t>(y) * static_cast<size_t>(chartWidth) + static_cast<size_t>(x);
-               uint16_t nextColor = _pixelColor(nextIndex);
-               if (nextColor != newColor || _previousPixels[nextIndex] == nextColor)
-               {
-                  break;
-               }
-
-               _previousPixels[nextIndex] = newColor;
-               y++;
+               _plotSeriesData(series->_prevMovingAverageBuffer, series->_prevAgesMs, series->_prevCount, true, false, false, Color::BLACK);
             }
-
-            _feather->display.writeFastVLine(chartLeft + x, chartTop + runStart, y - runStart, newColor);
          }
+
+         if (series->showPoints || series->showLines)
+         {
+            _plotSeriesData(series->_values, series->_agesMs, series->_count, series->showLines, series->showPoints, true, series->color);
+         }
+
+         if (series->showMovingAverage)
+         {
+            _plotSeriesData(series->_movingAverageBuffer, series->_agesMs, series->_count, true, false, false, series->movingAverageColor);
+         }
+
+         series->_capturePrevSnapshot();
       }
 
-      _lastDiffMicros = micros() - diffStartMicros;
-
-      _feather->fillRect(chartLeft, chartTop + chartHeight - 1, chartWidth, 1, Color::DARKGRAY);
-      _feather->fillRect(chartLeft, chartTop, 1, chartHeight, Color::DARKGRAY);
-
-      String axisMaxLabel = Util::toSignificantString(axisMaxValue, 3);
-      String axisMinLabel = Util::toSignificantString(axisMinValue, 3);
-
-      int16_t maxLabelX = labelWidth - static_cast<int16_t>(_feather->textWidth(axisMaxLabel.c_str()));
-      _feather->setCursor(std::max<int16_t>(0, maxLabelX), chartTop);
-      _feather->print(axisMaxLabel, Color::LABEL);
-
-      int16_t minLabelX = labelWidth - static_cast<int16_t>(_feather->textWidth(axisMinLabel.c_str()));
-      _feather->setCursor(std::max<int16_t>(0, minLabelX), chartTop + chartHeight - _feather->charH());
-      _feather->print(axisMinLabel, Color::LABEL);
-
-      if (isfinite(sampleRangeSeconds))
-      {
-         int16_t sampleRangeX = chartLeft + (chartWidth - static_cast<int16_t>(_sampleRangeFormat.length() * _feather->charW())) / 2;
-         _feather->setCursor(sampleRangeX, chartTop + chartHeight + 1);
-         _feather->print(sampleRangeSeconds, _sampleRangeFormat, Color::LABEL);
-      }
-
-      _feather->display.endWrite();
+      _display->display.endWrite();
 
       _lastDisplayMicros = micros() - displayStartMicros;
       _lastRenderMicros = micros() - frameStartMicros;

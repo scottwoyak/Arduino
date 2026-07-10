@@ -31,6 +31,7 @@
 
 // ----------- Test Parameters
 constexpr unsigned long HISTORY_MS = 10000;  // 10 second visible history window
+constexpr unsigned long MOVING_AVERAGE_MS = 1000;  // moving average window width
 constexpr uint16_t HZ_STEP = 10;             // Hz change per encoder click
 constexpr uint16_t MIN_HZ = 10;
 constexpr uint16_t MAX_HZ = 2000;
@@ -50,10 +51,6 @@ constexpr SerialTable::Column RESULT_COLUMNS[] = {
    { "Render(/s)", 12 },
    { "Compute(us)", 13 },
    { "Display(us)", 13 },
-   { "Snap(us)", 10 },
-   { "Extrma(us)", 12 },
-   { "PxBld(us)", 11 },
-   { "Diff(us)", 10 },
 };
 constexpr size_t NUM_RESULT_COLUMNS = sizeof(RESULT_COLUMNS) / sizeof(RESULT_COLUMNS[0]);
 
@@ -67,8 +64,8 @@ Format rateFormat("#####/s", Format::Alignment::RIGHT);
 Format microsFormat("######us", Format::Alignment::RIGHT);
 
 // ----------- Test State
-TimedValues samples(HISTORY_MS);
-TimedScatterPlot plot(&arduino, samples, HISTORY_MS);
+TimedScatterPlot plot(&arduino, Rect16{ 0, HEADER_HEIGHT, DISPLAY_WIDTH, static_cast<uint16_t>(DISPLAY_HEIGHT - HEADER_HEIGHT) }, HISTORY_MS);
+TimedScatterPlotSeries* series = nullptr;
 RollingRate sampleRate;
 RollingRate renderRate;
 RateTimer readoutTimer(10);
@@ -129,11 +126,7 @@ void printSerialRow()
       SerialTable::fixed(sampleRate.get(), 1),
       SerialTable::fixed(renderRate.get(), 1),
       plot.lastComputeMicros(),
-      plot.lastDisplayMicros(),
-      plot.lastSnapshotMicros(),
-      plot.lastExtremaMicros(),
-      plot.lastPixelBuildMicros(),
-      plot.lastDiffMicros());
+      plot.lastDisplayMicros());
 }
 
 void setup()
@@ -147,7 +140,11 @@ void setup()
    arduino.encoder.setPosition(DEFAULT_HZ / HZ_STEP);
 
    drawTitle();
-   plot.setTopOffset(HEADER_HEIGHT);
+
+   series = plot.createSeries();
+   series->color = Color::GREEN;
+   series->showMovingAverage = true;
+   series->movingAverageWindowMs = MOVING_AVERAGE_MS;
 
    sensorReady = sensor.begin();
    if (!sensorReady)
@@ -172,7 +169,7 @@ void loop()
    // Reset the measurements for a clean baseline at the current rate
    if (arduino.encoder.button.wasPressed())
    {
-      samples.reset();
+      series->clear();
       sampleRate.reset();
       renderRate.reset();
    }
@@ -191,7 +188,7 @@ void loop()
       float value = sensor.get();
       if (isfinite(value))
       {
-         samples.set(value);
+         series->add(value);
          sampleRate.tick();
       }
    }

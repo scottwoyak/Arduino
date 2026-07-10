@@ -497,6 +497,10 @@ private:
    const char* _xAxisFormat = nullptr;
    const char* _yAxisFormat = nullptr;
 
+   // Optional centered title drawn above the chart; when set, the chart area is reduced
+   // to make room for it.
+   String _title;
+
    ///
    /// <summary>
    /// Scans every owned series and computes the shared X/Y axis range needed to fit
@@ -594,11 +598,13 @@ private:
       _yAxisWidth = static_cast<int16_t>(yLabelWidth) + Y_AXIS_LABEL_GAP;
 
       int16_t axisLineHeight = _display->charH() + 2;
+      int16_t titlePadding = _display->charH() / 4;
+      int16_t titleHeight = _title.length() > 0 ? (_display->charH() + 2 * titlePadding) : 0;
 
       _chartLeft = _x + _yAxisWidth;
-      _chartTop = _y;
+      _chartTop = _y + titleHeight;
       _chartWidth = _width - _yAxisWidth;
-      _chartHeight = _height - axisLineHeight;
+      _chartHeight = _height - axisLineHeight - titleHeight;
    }
 
    ///
@@ -609,6 +615,14 @@ private:
    ///
    void _drawAxes() const
    {
+      if (_title.length() > 0)
+      {
+         int16_t titleX = _chartLeft + (_chartWidth - static_cast<int16_t>(_display->textWidth(_title.c_str()))) / 2;
+         int16_t titlePadding = _display->charH() / 4;
+         _display->setCursor(max(_chartLeft, titleX), _y + titlePadding);
+         _display->print(_title, Color::LABEL);
+      }
+
       _display->fillRect(_chartLeft, _chartTop + _chartHeight - 1, _chartWidth, 1, Color::GRAY);
       _display->fillRect(_chartLeft, _chartTop, 1, _chartHeight, Color::GRAY);
 
@@ -752,9 +766,10 @@ public:
    /// <param name="y">Y coordinate for the plot.</param>
    /// <param name="width">Width of the plot area in pixels.</param>
    /// <param name="height">Height of the plot area in pixels.</param>
+   /// <param name="title">Optional centered title drawn above the chart; defaults to none, in which case the plot uses the full area.</param>
    ///
-   ScatterPlot(ArduinoWithDisplay* display, int16_t x, int16_t y, int16_t width, int16_t height)
-      : _display(display), _x(x), _y(y), _width(width), _height(height)
+   ScatterPlot(ArduinoWithDisplay* display, int16_t x, int16_t y, int16_t width, int16_t height, const String& title = String())
+      : _display(display), _x(x), _y(y), _width(width), _height(height), _title(title)
    {
    }
 
@@ -872,6 +887,31 @@ public:
    void invalidate()
    {
       _forceFullRedraw = true;
+   }
+
+   ///
+   /// <summary>
+   /// Sets or clears the centered title drawn above the chart. Pass an empty string to
+   /// remove the title, restoring the full plot area to the chart. Forces a full redraw
+   /// on the next render() since the chart geometry changes.
+   /// </summary>
+   /// <param name="title">Title text to display, or an empty string for none.</param>
+   ///
+   void setTitle(const String& title)
+   {
+      _title = title;
+      _forceFullRedraw = true;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the current title text, or an empty string if none is set.
+   /// </summary>
+   /// <returns>Current title text.</returns>
+   ///
+   const String& getTitle() const
+   {
+      return _title;
    }
 
    ///

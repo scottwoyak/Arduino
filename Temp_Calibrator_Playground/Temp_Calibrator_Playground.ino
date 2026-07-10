@@ -18,10 +18,11 @@
 #include "TempSensor.h"
 #include "Multiplexer.h"
 #include "SerialX.h"
-//#include "Influx.h"
-#include "TempCalibrator.h"
+#include "Influx.h"
 #include "TimedScatterPlot.h"
 #include "TimedValues.h"
+#include "RollingAverage.h"
+#include "TimedAverage.h"
 #include <Wire.h>
 
 ESP32_S3_Playground arduino;
@@ -39,14 +40,10 @@ TempSensor sensors[] =
    TempSensor(),
 };
 
-// The averaging window used for computing correction factors
-constexpr unsigned long SAMPLING_DURATION_S = 60;
-
 // Sensor and telemetry timing
-constexpr uint16_t SAMPLING_INTERVAL_MS = 10000;  // 10 seconds between measurements
-constexpr uint16_t SAMPLE_RATE_MS = 100;  // 10 Hz sample rate
-constexpr uint8_t NUM_SAMPLES = 10;  // Average 10 measurements
-constexpr uint8_t DISCARD_SAMPLES = 0;  // Discard 0 measurements
+constexpr uint16_t SAMPLE_INTERVAL_MS = 100;  // how often each Sampler takes a raw reading
+constexpr uint16_t SENSOR_UPDATE_INTERVAL_MS = SAMPLE_INTERVAL_MS;  // how often readings/plots/correction update
+constexpr unsigned long TIMED_AVERAGE_DURATION_MS = 2 * 60 * 1000UL;  // 2 minute averaging window
 constexpr auto INFLUX_INTERVAL_S = 10;
 constexpr auto PREFS_INTERVAL_S = 60;
 constexpr auto SAVED_INFO_WAIT_S = 60;
@@ -56,43 +53,142 @@ constexpr const char* CALIBRATOR_PREFS_NAMESPACE = "Calibrator";
 constexpr const char* TEMP_KEY_PREFIX = "Temp ";
 constexpr const char* ID_KEY_PREFIX = "ID ";
 
-// Calibrator for temperature corrections and timed averages
-TempCalibrator calibrator(NUM_SENSORS, SAMPLING_DURATION_S * 1000UL, TempCalibrator::BaselineMode::FIRST_SENSOR);
+///
+/// <summary>
+/// Samples a single multiplexed TempSensor on its own 100ms cadence and maintains a
+/// rolling buffer of the last 10 readings, exposing their average as the sensor's current
+/// value. Call update() as often as possible from loop(); it internally gates actual
+/// sampling (including the Multiplexer::select() call) to once every SAMPLE_INTERVAL_MS.
+/// </summary>
+///
+class Sampler
+{
+private:
+   static constexpr uint8_t BUFFER_SIZE = 10;
 
-// Track current temperature readings for each sensor
-float currentReadings[NUM_SENSORS] = {NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN};
+   TempSensor* _sensor;
+   uint8_t _muxIndex;
+   Timer _sampleTimer;
 
-Format tempFormat("###.##");
-Format avgTempFormat("###.###");
-Format correctionFormat("+#.###");
+   RollingAverage _shortAverage;
+   TimedAverage _longAverage;
 
-// Time window for sensor 0 plot (10 minutes of history)
-constexpr unsigned long TIME_WINDOW_PLOT_MS = 600000;   // 10 minutes
+public:
+   ///
+   /// <summary>
+   /// Constructs a Sampler for the given sensor at the given multiplexer channel.
+   /// </summary>
+   /// <param name="sensor">Sensor to sample.</param>
+   /// <param name="muxIndex">Multiplexer channel this sensor is wired to.</param>
+   ///
+   Sampler(TempSensor* sensor, uint8_t muxIndex)
+      : _sensor(sensor), _muxIndex(muxIndex), _sampleTimer(SAMPLE_INTERVAL_MS),
+        _shortAverage(BUFFER_SIZE), _longAverage(TIMED_AVERAGE_DURATION_MS)
+   {
+   }
 
-// Timed value buffer for sensor 0 (optimized rolling window)
-TimedValuesBase<float> sensorPlotData(TIME_WINDOW_PLOT_MS, 64);
+   ///
+   /// <summary>
+   /// Takes a new reading if SAMPLE_INTERVAL_MS has elapsed since the last one, storing it
+   /// in the rolling buffer and the timed average. Does nothing if the sensor does not exist.
+   /// </summary>
+   ///
+   void update()
+   {
+      if (!_sensor->exists() || !_sampleTimer.ready())
+      {
+         return;
+      }
 
-// Scatter plot renderer (uses TimedScatterPlot for optimized rendering)
-TimedScatterPlot* plotSensor0 = nullptr;
+      Multiplexer::select(_muxIndex);
+      float temp = _sensor->readTemperatureF();
 
-Timer sensorReadTrigger(SAMPLING_INTERVAL_MS);
-//TimerSecs influxTrigger(INFLUX_INTERVAL_S);
+      _shortAverage.set(temp);
+      _longAverage.set(temp);
+   }
+
+   ///
+   /// <summary>
+   /// Gets the average of the readings currently in the rolling buffer (10 samples).
+   /// </summary>
+   /// <returns>Average temperature in Fahrenheit, or NaN if no readings have been taken yet.</returns>
+   ///
+   float getShortAvgValue() const
+   {
+      return _shortAverage.average();
+   }
+
+   ///
+   /// <summary>
+   /// Gets the timed average over the configured TIMED_AVERAGE_DURATION_MS window (2 minutes).
+   /// </summary>
+   /// <returns>Average temperature in Fahrenheit, or NaN if no readings have been taken yet.</returns>
+   ///
+   float getLongAvgValue()
+   {
+      return _longAverage.average();
+   }
+};
+
+// Samplers, one per sensor, each maintaining a rolling buffer of recent readings
+Sampler* samplers[NUM_SENSORS] = { nullptr };
+
+Format tempFormat("###.##", 13, Format::Alignment::RIGHT);
+Format avgTempFormat("###.###", 10, Format::Alignment::RIGHT);
+Format correctionFormat("+#.###", 10, Format::Alignment::RIGHT);
+
+// Column widths and colors for the sensor table (data colors match their column heading)
+constexpr uint8_t COL_NUM_WIDTH = 4;
+constexpr uint8_t COL_TYPE_WIDTH = 9;
+constexpr Color COL_NUM_COLOR = Color::LABEL;
+constexpr Color COL_TYPE_COLOR = Color::LABEL;
+constexpr Color COL_NOW_COLOR = Color::VALUE;
+constexpr Color COL_AVG_COLOR = Color::VALUE2;
+constexpr Color COL_DELTA_COLOR = Color::VALUE3;
+
+// Time window for the sensor plot
+constexpr unsigned long TIME_WINDOW_PLOT_MS = 60000;   // 1 minute
+
+// Distinct colors for each sensor's line, cycled if there are more sensors than colors.
+constexpr Color SENSOR_PLOT_COLORS[] =
+{
+   Color::WHITE,
+   Color::YELLOW,
+   Color::CYAN,
+   Color::GREEN,
+   Color::ORANGE,
+   Color::MAGENTA,
+   Color::RED,
+   Color::BLUE,
+};
+
+// Scatter plot renderers showing every detected sensor as a line plot, one plot per
+// table column: 10 Sample Avg, 2 Min Avg, and Correction (left to right).
+TimedScatterPlot* shortAvgPlot = nullptr;
+TimedScatterPlot* longAvgPlot = nullptr;
+TimedScatterPlot* correctionPlot = nullptr;
+TimedScatterPlotSeries* shortAvgSeries[NUM_SENSORS] = { nullptr };
+TimedScatterPlotSeries* longAvgSeries[NUM_SENSORS] = { nullptr };
+TimedScatterPlotSeries* correctionSeries[NUM_SENSORS] = { nullptr };
+
+Timer sensorReadTrigger(SENSOR_UPDATE_INTERVAL_MS);
+TimerSecs influxTrigger(INFLUX_INTERVAL_S);
 TimerSecs prefsTrigger(PREFS_INTERVAL_S);
 
-//InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-//Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
+InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
 
-//Point points[] =
-//{
-//   Point("Air"),
-//   Point("Air"),
-//   Point("Air"),
-//   Point("Air"),
-//   Point("Air"),
-//   Point("Air"),
-//   Point("Air"),
-//   Point("Air"),
-//};
+Point points[] =
+{
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+};
 
 void printCalibrationCodeToSerial()
 {
@@ -110,7 +206,7 @@ void printCalibrationCodeToSerial()
 
    // print saved factors for easy paste into TempSensorCallibration.h
    Serial.println("Copy this data to libraries\\Woyak\\TempSensorCallibration.h");
-   Serial.println(String("Based on averaging data points over the last ") + SAMPLING_DURATION_S + " seconds, here are the calibration factors:");
+   Serial.println(String("Based on averaging data points over the last ") + (TIMED_AVERAGE_DURATION_MS / 1000) + " seconds, here are the calibration factors:");
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       Serial.print("\"");
@@ -121,8 +217,6 @@ void printCalibrationCodeToSerial()
       Serial.println();
    }
 }
-
-
 
 void displaySavedInfo()
 {
@@ -182,12 +276,25 @@ void displaySensorList()
 {
    arduino.setTextSize(2);
 
-   // Display table header (no heading for first column)
-   arduino.print("    ", Color::HEADING);
-   arduino.print("Type     ", Color::HEADING);
-   arduino.print("Now    ", Color::HEADING);
-   arduino.print("Avg      ", Color::HEADING);
-   arduino.println("Delta", Color::HEADING);
+   static const Format numHeaderFormat(COL_NUM_WIDTH, Format::Alignment::LEFT);
+   static const Format typeHeaderFormat(COL_TYPE_WIDTH, Format::Alignment::LEFT);
+   static const Format numFormat("#", COL_NUM_WIDTH, Format::Alignment::LEFT);
+
+   // Header formats match the width/alignment of the data formats below them so the
+   // header text lines up with the columns it labels.
+   static const Format nowHeaderFormat(tempFormat.length(), Format::Alignment::RIGHT);
+   static const Format avgHeaderFormat(avgTempFormat.length(), Format::Alignment::RIGHT);
+   static const Format correctionHeaderFormat(correctionFormat.length(), Format::Alignment::RIGHT);
+
+   // Display table header, each column colored to match the color used for that
+   // column's data below.
+   arduino.print("", numHeaderFormat, COL_NUM_COLOR);
+   arduino.print("Type", typeHeaderFormat, COL_TYPE_COLOR);
+   arduino.print("10 Sample Avg", nowHeaderFormat, COL_NOW_COLOR);
+   arduino.print(" ");
+   arduino.print("2 Min Avg", avgHeaderFormat, COL_AVG_COLOR);
+   arduino.print(" ");
+   arduino.println("Correction", correctionHeaderFormat, COL_DELTA_COLOR);
 
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
@@ -196,80 +303,79 @@ void displaySensorList()
       bool sensorExists = sensor.exists();
 
       // Sensor number
-      arduino.print((i + 1), Color::LABEL);
-      arduino.print("   ");
+      arduino.print((i + 1), numFormat, COL_NUM_COLOR);
 
       // Sensor type
       if (sensorExists)
       {
-         String type = sensor.type();
-         arduino.print(type, Color::LABEL);
-         // Pad to 9 characters
-         for (int pad = type.length(); pad < 9; pad++)
-            arduino.print(" ");
+         arduino.print(sensor.type(), typeHeaderFormat, COL_TYPE_COLOR);
       }
       else
       {
-         arduino.print("---      ");
+         arduino.print("---", typeHeaderFormat, COL_TYPE_COLOR);
       }
 
       if (sensorExists)
       {
-         float correction = calibrator.getCorrection(i);
-         float timedAverage = calibrator.getAverage(i);
-         float current = currentReadings[i];
+         float timedAverage = samplers[i]->getLongAvgValue();
+         float baseline = samplers[0]->getLongAvgValue();
+         float correction = (!isnan(timedAverage) && !isnan(baseline)) ? (baseline - timedAverage) : NAN;
+         float current = samplers[i]->getShortAvgValue();
 
-         // Display current temp (padded to 9 chars)
+         // Display current temp
          if (!isnan(current))
          {
-            arduino.print(current, tempFormat, Color::VALUE);
-            arduino.print(" ");
+            arduino.print(current, tempFormat, COL_NOW_COLOR);
          }
          else
          {
-            arduino.print("         ");
+            arduino.print("---", tempFormat, COL_NOW_COLOR);
          }
+         arduino.print(" ");
 
-         // Display averaged temp (padded to 10 chars)
+         // Display averaged temp
          if (!isnan(timedAverage))
          {
-            arduino.print(timedAverage, avgTempFormat, Color::VALUE);
-            arduino.print(" ");
+            arduino.print(timedAverage, avgTempFormat, COL_AVG_COLOR);
          }
          else
          {
-            arduino.print("          ");
+            arduino.print("---", avgTempFormat, COL_AVG_COLOR);
          }
+         arduino.print(" ");
 
-         // Display correction factor
-         if (!isnan(correction))
+         // Display correction factor (only once the timed average is available, since
+         // it can't yet be computed otherwise)
+         if (!isnan(timedAverage) && !isnan(correction))
          {
-            arduino.println(correction, correctionFormat, Color::VALUE);
+            arduino.println(correction, correctionFormat, COL_DELTA_COLOR);
          }
          else
          {
-            arduino.println("          ");
+            arduino.println("---", correctionFormat, COL_DELTA_COLOR);
          }
       }
       else
       {
-         arduino.print("----    ");
-         arduino.print("----      ");
-         arduino.println("----");
+         arduino.print("---", tempFormat, COL_NOW_COLOR);
+         arduino.print(" ");
+         arduino.print("---", avgTempFormat, COL_AVG_COLOR);
+         arduino.print(" ");
+         arduino.println("---", correctionFormat, COL_DELTA_COLOR);
       }
    }
 }
 
 /// <summary>
-/// Renders the scatter plot for sensor 0 showing 10 minutes of history.
-/// The plot fills the remaining display space below the calibration table.
+/// Renders the three scatter plots showing the configured time window of history for every
+/// detected sensor, one per table column: 10 Sample Avg, 2 Min Avg, and Correction (left to
+/// right). All plots fill the remaining display space below the calibration table.
 /// </summary>
 void displayScatterPlots()
 {
-   if (!plotSensor0) return;
-
-   // The plot automatically handles full-screen rendering with topOffset positioning
-   plotSensor0->render();
+   if (shortAvgPlot) shortAvgPlot->render();
+   if (longAvgPlot) longAvgPlot->render();
+   if (correctionPlot) correctionPlot->render();
 }
 
 void setup()
@@ -300,46 +406,126 @@ void setup()
       // clear out corrections
       sensor.setTempCorrectionF(0);
 
-      //points[i].addTag("location", (String("Calibration ") + (i + 1)).c_str());
+      points[i].addTag("location", (String("Calibration ") + (i + 1)).c_str());
       arduino.preferences.putString((String(ID_KEY_PREFIX) + i).c_str(), sensorExists ? sensor.id() : "");
+
+      samplers[i] = new Sampler(&sensor, i);
    }
    arduino.preferences.end();
 
-   //uint8_t batchSize = std::max((uint8_t)1, detectedSensorCount);
-   //client.setWriteOptions(WriteOptions().batchSize(batchSize).bufferSize(2 * batchSize));
+   uint8_t batchSize = std::max((uint8_t)1, detectedSensorCount);
+   client.setWriteOptions(WriteOptions().batchSize(batchSize).bufferSize(2 * batchSize));
    Serial.print("Detected sensors: ");
    Serial.println(detectedSensorCount);
 
-   //arduino.echoToSerial = true;
-   //arduino.clearDisplay();
-   //arduino.setTextSize(3);
-   //arduino.println("Init", Color::HEADING);
-   //arduino.moveCursorY(10);
+   arduino.echoToSerial = true;
+   arduino.clearDisplay();
+   arduino.setTextSize(3);
+   arduino.println("Init", Color::HEADING);
+   arduino.moveCursorY(10);
 
-   //arduino.setTextSize(2);
-   //if (!influx.begin(&arduino))
-   //{
-   //   Util::reset(WIFI_RESET_DELAY_S);
-   //}
-
-   // Initialize TimedScatterPlot for sensor 0 data
-   // The plot starts below the calibration table and fills the remaining display space
-   plotSensor0 = new (std::nothrow) TimedScatterPlot(&arduino, sensorPlotData, TIME_WINDOW_PLOT_MS);
-
-   if (!plotSensor0)
+   arduino.setTextSize(2);
+   if (!influx.begin(&arduino))
    {
-      Serial.println("Failed to allocate scatter plot");
+      Util::reset(WIFI_RESET_DELAY_S);
+   }
+
+   delay(1000);
+
+   arduino.clearDisplay();
+   arduino.echoToSerial = false;
+
+   pinMode(BUILTIN_LED, OUTPUT);
+   digitalWrite(BUILTIN_LED, LOW);
+
+   // Initialize TimedScatterPlot to plot every detected sensor as a line
+   // The plot starts below the calibration table and fills the remaining display space
+
+   // Calculate topOffset: header (size 3) + table header (size 2) + 8 sensor rows (size 2)
+   int16_t headerHeight = arduino.charH();  // "Calibrating..." header, still at size 3 here
+
+   arduino.setTextSize(2);
+   int16_t tableHeight = (1 + NUM_SENSORS) * arduino.charH();  // header row + 8 sensor rows at size 2
+   arduino.setTextSize(3);  // restore, matching the size used elsewhere in setup()
+
+   int16_t topOffset = headerHeight + tableHeight + 4;  // Add small padding
+
+   uint16_t plotAreaWidth = arduino.width();
+   uint16_t plotWidth = plotAreaWidth / 3;
+   uint16_t plotHeight = static_cast<uint16_t>(arduino.height() - topOffset);
+
+   Rect16 shortAvgPlotRect
+   {
+      0,
+      static_cast<uint16_t>(topOffset),
+      plotWidth,
+      plotHeight
+   };
+
+   Rect16 longAvgPlotRect
+   {
+      plotWidth,
+      static_cast<uint16_t>(topOffset),
+      plotWidth,
+      plotHeight
+   };
+
+   Rect16 correctionPlotRect
+   {
+      static_cast<uint16_t>(2 * plotWidth),
+      static_cast<uint16_t>(topOffset),
+      static_cast<uint16_t>(plotAreaWidth - 2 * plotWidth),
+      plotHeight
+   };
+
+   shortAvgPlot = new (std::nothrow) TimedScatterPlot(&arduino, shortAvgPlotRect, TIME_WINDOW_PLOT_MS, 0.0f, "10 Sample Avg");
+   longAvgPlot = new (std::nothrow) TimedScatterPlot(&arduino, longAvgPlotRect, TIME_WINDOW_PLOT_MS, 0.0f, "2 Min Avg");
+   correctionPlot = new (std::nothrow) TimedScatterPlot(&arduino, correctionPlotRect, TIME_WINDOW_PLOT_MS, Format("+#.##", Format::Alignment::RIGHT), Format("##.#s", Format::Alignment::CENTER), 0.0f, "Correction");
+
+   if (!shortAvgPlot || !longAvgPlot || !correctionPlot)
+   {
+      Util::setHaltReason("OOM allocating scatter plots in Temp_Calibrator_Playground");
+      Util::reset();
       return;
    }
 
-   // Calculate topOffset: header (size 3) + table header (size 2) + 8 sensor rows (size 2)
-   // Header: charH() at size 3
-   // Table: (1 header row + NUM_SENSORS rows) * 2 * charH() at size 2
-   int16_t headerHeight = arduino.charH();  // "Calibrating..." header at size 3 = charH()
-   int16_t tableHeight = (1 + NUM_SENSORS) * 2 * arduino.charH();  // header + 8 rows at size 2
-   int16_t topOffset = headerHeight + tableHeight + 4;  // Add small padding
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   {
+      if (!sensors[i].exists())
+      {
+         continue;
+      }
 
-   plotSensor0->setTopOffset(topOffset);
+      Color color = SENSOR_PLOT_COLORS[i % (sizeof(SENSOR_PLOT_COLORS) / sizeof(SENSOR_PLOT_COLORS[0]))];
+
+      TimedScatterPlotSeries* shortAvgSeriesForSensor = shortAvgPlot->createSeries();
+      TimedScatterPlotSeries* longAvgSeriesForSensor = longAvgPlot->createSeries();
+      TimedScatterPlotSeries* correctionSeriesForSensor = correctionPlot->createSeries();
+      if (!shortAvgSeriesForSensor || !longAvgSeriesForSensor || !correctionSeriesForSensor)
+      {
+         Util::setHaltReason("OOM allocating scatter plot series in Temp_Calibrator_Playground");
+         Util::reset();
+         return;
+      }
+
+      shortAvgSeriesForSensor->showPoints = false;
+      shortAvgSeriesForSensor->showLines = true;
+      shortAvgSeriesForSensor->color = color;
+      shortAvgSeries[i] = shortAvgSeriesForSensor;
+
+      longAvgSeriesForSensor->showPoints = false;
+      longAvgSeriesForSensor->showLines = true;
+      longAvgSeriesForSensor->color = color;
+      longAvgSeries[i] = longAvgSeriesForSensor;
+
+      correctionSeriesForSensor->showPoints = false;
+      correctionSeriesForSensor->showLines = true;
+      correctionSeriesForSensor->color = color;
+      correctionSeries[i] = correctionSeriesForSensor;
+   }
+
+   // Clear the "Saved Correction Factors" screen before switching to the calibrating display
+   arduino.clearDisplay();
 }
 
 long count = 0;
@@ -350,29 +536,55 @@ void loop()
       arduino.clearDisplay();
    }
 
-   // ------------------------------------------- sample + display
+   // ------------------------------------------- sample (each Sampler self-paces to 100ms)
+   for (int i = 0; i < NUM_SENSORS; i++)
+   {
+      samplers[i]->update();
+   }
+
+   // ------------------------------------------- calibrate + display
    if (sensorReadTrigger.ready())
    {
       for (int i = 0; i < NUM_SENSORS; i++)
       {
-         Multiplexer::select(i);
-         TempSensor& sensor = sensors[i];
-         if (sensor.exists())
+         if (sensors[i].exists())
          {
-            float temp = sensor.sample(NUM_SAMPLES, DISCARD_SAMPLES, SAMPLE_RATE_MS);
-            currentReadings[i] = temp;
-            calibrator.set(i, temp);
             count++;
-
-            // Add sensor 0 data to TimedValues for scatter plot
-            if (i == 0 && !isnan(temp))
-            {
-               sensorPlotData.set(temp);
-            }
          }
       }
 
-      // Sample timing is managed by sensorReadTrigger timer
+      // Baseline is the first sensor's 2-minute timed average
+      float baseline = samplers[0]->getLongAvgValue();
+
+      for (int i = 0; i < NUM_SENSORS; i++)
+      {
+         if (!sensors[i].exists())
+         {
+            continue;
+         }
+
+         float timedAverage = samplers[i]->getLongAvgValue();
+         float current = samplers[i]->getShortAvgValue();
+
+         // Add this sensor's current (short average) value to the first plot
+         if (shortAvgSeries[i] != nullptr && !isnan(current))
+         {
+            shortAvgSeries[i]->add(current);
+         }
+
+         // Add this sensor's timed average to the second plot
+         if (longAvgSeries[i] != nullptr && !isnan(timedAverage))
+         {
+            longAvgSeries[i]->add(timedAverage);
+         }
+
+         // Add this sensor's current correction/delta to the third plot (only once the
+         // timed average and baseline are available)
+         if (correctionSeries[i] != nullptr && !isnan(timedAverage) && !isnan(baseline))
+         {
+            correctionSeries[i]->add(baseline - timedAverage);
+         }
+      }
    }
 
    // Always display the data
@@ -382,16 +594,19 @@ void loop()
    arduino.setCursor(0, arduino.charH());
    displaySensorList();
 
-   // Display scatter plots for sensor 0
+   // Display scatter plots for every detected sensor
    displayScatterPlots();
 
    // ------------------------------------------- save to flash
    if (prefsTrigger.ready())
    {
+      float saveBaseline = samplers[0]->getLongAvgValue();
       arduino.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
       for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
-         arduino.preferences.putFloat((String(TEMP_KEY_PREFIX) + i).c_str(), calibrator.getCorrection(i));
+         float timedAverage = samplers[i]->getLongAvgValue();
+         float correction = (!isnan(timedAverage) && !isnan(saveBaseline)) ? (saveBaseline - timedAverage) : 0.0f;
+         arduino.preferences.putFloat((String(TEMP_KEY_PREFIX) + i).c_str(), correction);
       }
       arduino.preferences.end();
 
@@ -399,69 +614,63 @@ void loop()
    }
 
    // ------------------------------------------- send to INFLUX
-   //if (influxTrigger.ready())
-   //{
-   //   if (influx.ensureWiFiConnected())
-   //   {
-   //      digitalWrite(BUILTIN_LED, HIGH);
+   if (influxTrigger.ready())
+   {
+      if (influx.ensureWiFiConnected())
+      {
+         digitalWrite(BUILTIN_LED, HIGH);
 
-   //      Serial.print("Uploading to InfluxDB... ");
-   //      Serial.print(count);
-   //      Serial.println(" values collected");
-   //      count = 0;
+         Serial.print("Uploading to InfluxDB... ");
+         Serial.print(count);
+         Serial.println(" values collected");
+         count = 0;
 
-   //      bool writeFailed = false;
-   //      float baseline = calibrator.getBaseline();
+         bool writeFailed = false;
+         float baseline = samplers[0]->getLongAvgValue();
 
-   //      for (int i = 0; i < NUM_SENSORS; i++)
-   //      {
-   //         float temperature = calibrator.getAverage(i);
-   //         if (!sensors[i].exists() || std::isnan(temperature))
-   //         {
-   //            continue;
-   //         }
+         for (int i = 0; i < NUM_SENSORS; i++)
+         {
+            float temperature = samplers[i]->getLongAvgValue();
+            if (!sensors[i].exists() || std::isnan(temperature))
+            {
+               continue;
+            }
 
-   //         float tDelta = calibrator.getCorrection(i);
-   //         float tCorrected = temperature + tDelta;
-   //         float tCorrectedDelta = std::isnan(baseline) ? NAN : (tCorrected - baseline);
+            float tDelta = std::isnan(baseline) ? NAN : (baseline - temperature);
+            float tShortAvg = samplers[i]->getShortAvgValue();
+            float tLongAvg = temperature;
 
-   //         points[i].clearFields();
-   //         // the current readings
-   //         points[i].addField("temperature", temperature, 3);
+            points[i].clearFields();
+            // the current short and long averages
+            points[i].addField("tShortAvg", tShortAvg, 3);
+            points[i].addField("tLongAvg", tLongAvg, 3);
 
-   //         // the deltas from the baseline
-   //         points[i].addField("tDelta", tDelta, 4);
+            // the deltas from the baseline
+            points[i].addField("tDelta", tDelta, 4);
 
-   //         // the current readings using the correction factors. Once these
-   //         // stop changing, the correction factors have converged
-   //         points[i].addField("tCorrected", tCorrected, 3);
+            if (!client.writePoint(points[i]))
+            {
+               writeFailed = true;
+               break;
+            }
+         }
 
-   //         // corrected delta from baseline
-   //         points[i].addField("tCorrectedDelta", tCorrectedDelta, 4);
+         if (!writeFailed && !client.isBufferEmpty())
+         {
+            writeFailed = !client.flushBuffer();
+         }
 
-   //         if (!client.writePoint(points[i]))
-   //         {
-   //            writeFailed = true;
-   //            break;
-   //         }
-   //      }
+         if (writeFailed)
+         {
+            Serial.println("InfluxDB write failed: ");
+            Serial.println(client.getLastErrorMessage());
+         }
+         else
+         {
+            printCalibrationCodeToSerial();
+         }
 
-   //      if (!writeFailed && !client.isBufferEmpty())
-   //      {
-   //         writeFailed = !client.flushBuffer();
-   //      }
-
-   //      if (writeFailed)
-   //      {
-   //         Serial.println("InfluxDB write failed: ");
-   //         Serial.println(client.getLastErrorMessage());
-   //      }
-   //      else
-   //      {
-   //         printCalibrationCodeToSerial();
-   //      }
-
-   //      digitalWrite(BUILTIN_LED, LOW);
-   //   }
-   //}
+         digitalWrite(BUILTIN_LED, LOW);
+      }
+   }
 }
