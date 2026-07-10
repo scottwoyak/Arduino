@@ -4,6 +4,7 @@
 #include "Button.h"
 #include <limits>
 
+///
 /// <summary>
 /// Rotary encoder with integral pushbutton.
 /// </summary>
@@ -12,12 +13,15 @@
 /// a position counter. Includes a built-in button for user interaction. Supports optional
 /// min/max position limits. Uses interrupts for reliable detection of fast rotations.
 /// </remarks>
+///
 class RotaryEncoder
 {
 public:
+   ///
    /// <summary>
    /// Integral button on the rotary encoder shaft.
    /// </summary>
+   ///
    Button button;
 
 private:
@@ -36,15 +40,15 @@ private:
 
    uint8_t _pinA;
    uint8_t _pinB;
-   long _min = std::numeric_limits<long>::min();
-   long _max = std::numeric_limits<long>::max();
+   int32_t _min = std::numeric_limits<int32_t>::min();
+   int32_t _max = std::numeric_limits<int32_t>::max();
 
    static RotaryEncoder* _instance;
 
    volatile bool _isLowA = false;
    volatile bool _isLowB = false;
    volatile Direction _initialDirection = Direction::UNKNOWN;
-   volatile long _position = 0;
+   volatile int32_t _position = 0;
 
    void _onChange(Source source)
    {
@@ -107,12 +111,14 @@ private:
    static void onChangeB() { _instance->_onChangeB(); }
 
 public:
+   ///
    /// <summary>
    /// Constructs a RotaryEncoder with the specified pins.
    /// </summary>
    /// <param name="pinA">GPIO pin for phase A</param>
    /// <param name="pinB">GPIO pin for phase B</param>
    /// <param name="buttonPin">GPIO pin for the pushbutton</param>
+   ///
    RotaryEncoder(uint8_t pinA, uint8_t pinB, uint8_t buttonPin) : button(buttonPin)
    {
       _pinA = pinA;
@@ -120,6 +126,7 @@ public:
       _instance = this;
    }
 
+   ///
    /// <summary>
    /// Initializes encoder pins and interrupt handlers.
    /// </summary>
@@ -127,6 +134,7 @@ public:
    /// Configures phase A and B pins with pull-ups and CHANGE interrupts.
    /// Also initializes the integral button. Call once during setup().
    /// </remarks>
+   ///
    void begin()
    {
       pinMode(_pinA, INPUT_PULLUP);
@@ -141,70 +149,117 @@ public:
       button.begin();
    }
 
-   /// <summary>Gets the phase A pin number.</summary>
+   ///
+   /// <summary>
+   /// Gets the phase A pin number.
+   /// </summary>
+   /// <returns>GPIO pin for phase A</returns>
+   ///
    uint8_t getPinA() const
    {
       return _pinA;
    }
 
-   /// <summary>Gets the phase B pin number.</summary>
+   ///
+   /// <summary>
+   /// Gets the phase B pin number.
+   /// </summary>
+   /// <returns>GPIO pin for phase B</returns>
+   ///
    uint8_t getPinB() const
    {
       return _pinB;
    }
 
-   /// <summary>Gets the button pin number.</summary>
+   ///
+   /// <summary>
+   /// Gets the button pin number.
+   /// </summary>
+   /// <returns>GPIO pin for the pushbutton</returns>
+   ///
    uint8_t getButtonPin() const
    {
       return button.getPin();
    }
 
-   /// <summary>Gets the current state of phase A pin.</summary>
+   ///
+   /// <summary>
+   /// Gets the current state of phase A pin.
+   /// </summary>
+   /// <returns>True if phase A pin is low</returns>
+   ///
    bool isLowA() const
    {
       return _isLowA;
    }
 
-   /// <summary>Gets the current state of phase B pin.</summary>
+   ///
+   /// <summary>
+   /// Gets the current state of phase B pin.
+   /// </summary>
+   /// <returns>True if phase B pin is low</returns>
+   ///
    bool isLowB() const
    {
       return _isLowB;
    }
 
-   /// <summary>Gets the current rotation position.</summary>
+   ///
+   /// <summary>
+   /// Gets the current rotation position.
+   /// </summary>
    /// <returns>Position counter (incremented on clockwise, decremented on counter-clockwise)</returns>
-   long getPosition() const
+   ///
+   int32_t getPosition() const
    {
       return _position;
    }
 
-   /// <summary>Sets the rotation position.</summary>
+   ///
+   /// <summary>
+   /// Sets the rotation position.
+   /// </summary>
    /// <param name="position">New position value</param>
-   void setPosition(long position)
+   ///
+   void setPosition(int32_t position)
    {
       _position = position;
    }
 
-   /// <summary>Sets the min/max position limits.</summary>
+   ///
+   /// <summary>
+   /// Sets the min/max position limits.
+   /// </summary>
    /// <param name="min">Minimum allowed position</param>
    /// <param name="max">Maximum allowed position</param>
    /// <remarks>
    /// Position will be clamped to this range during rotation.
    /// </remarks>
-   void setLimits(long min, long max)
+   ///
+   void setLimits(int32_t min, int32_t max)
    {
       _min = min;
       _max = max;
    }
 
-   /// <summary>Gets the minimum position limit.</summary>
-   long getMin() const
+   ///
+   /// <summary>
+   /// Gets the minimum position limit.
+   /// </summary>
+   /// <returns>Minimum allowed position</returns>
+   ///
+   int32_t getMin() const
    {
       return _min;
    }
 
-   /// <summary>Gets the maximum position limit.</summary>
-   long getMax() const
+   ///
+   /// <summary>
+   /// Gets the maximum position limit.
+   /// </summary>
+   /// <returns>Maximum allowed position</returns>
+   ///
+   int32_t getMax() const
    {
       return _max;
    }
