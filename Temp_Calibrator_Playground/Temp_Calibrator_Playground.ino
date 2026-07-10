@@ -18,8 +18,10 @@
 #include "TempSensor.h"
 #include "Multiplexer.h"
 #include "SerialX.h"
-#include "Influx.h"
+//#include "Influx.h"
 #include "TempCalibrator.h"
+#include "TimedScatterPlot.h"
+#include "TimedValues.h"
 #include <Wire.h>
 
 ESP32_S3_Playground arduino;
@@ -41,7 +43,10 @@ TempSensor sensors[] =
 constexpr unsigned long SAMPLING_DURATION_S = 60;
 
 // Sensor and telemetry timing
-constexpr uint16_t SAMPLING_INTERVAL_MS = 100;
+constexpr uint16_t SAMPLING_INTERVAL_MS = 10000;  // 10 seconds between measurements
+constexpr uint16_t SAMPLE_RATE_MS = 100;  // 10 Hz sample rate
+constexpr uint8_t NUM_SAMPLES = 10;  // Average 10 measurements
+constexpr uint8_t DISCARD_SAMPLES = 0;  // Discard 0 measurements
 constexpr auto INFLUX_INTERVAL_S = 10;
 constexpr auto PREFS_INTERVAL_S = 60;
 constexpr auto SAVED_INFO_WAIT_S = 60;
@@ -54,61 +59,40 @@ constexpr const char* ID_KEY_PREFIX = "ID ";
 // Calibrator for temperature corrections and timed averages
 TempCalibrator calibrator(NUM_SENSORS, SAMPLING_DURATION_S * 1000UL, TempCalibrator::BaselineMode::FIRST_SENSOR);
 
-Format tempFormat("###.## F");
+// Track current temperature readings for each sensor
+float currentReadings[NUM_SENSORS] = {NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN};
+
+Format tempFormat("###.##");
+Format avgTempFormat("###.###");
 Format correctionFormat("+#.###");
 
+// Time window for sensor 0 plot (10 minutes of history)
+constexpr unsigned long TIME_WINDOW_PLOT_MS = 600000;   // 10 minutes
+
+// Timed value buffer for sensor 0 (optimized rolling window)
+TimedValuesBase<float> sensorPlotData(TIME_WINDOW_PLOT_MS, 64);
+
+// Scatter plot renderer (uses TimedScatterPlot for optimized rendering)
+TimedScatterPlot* plotSensor0 = nullptr;
+
 Timer sensorReadTrigger(SAMPLING_INTERVAL_MS);
-TimerSecs influxTrigger(INFLUX_INTERVAL_S);
+//TimerSecs influxTrigger(INFLUX_INTERVAL_S);
 TimerSecs prefsTrigger(PREFS_INTERVAL_S);
 
-InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
+//InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+//Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
 
-Point points[] =
-{
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-};
-
-enum class View : uint8_t
-{
-   RawTemps = 0,
-   Corrected,
-   Correction,
-};
-
-inline View& operator++(View& view)
-{
-   switch (view)
-   {
-   case View::RawTemps:
-      view = View::Corrected;
-      break;
-   case View::Corrected:
-      view = View::Correction;
-      break;
-   default:
-      view = View::RawTemps;
-      break;
-   }
-   return view;
-}
-
-inline View operator++(View& view, int)
-{
-   View previous = view;
-   ++view;
-   return previous;
-}
-
-View view = View::RawTemps;
-uint8_t selectedSensor = 0;  // controlled by rotary encoder
+//Point points[] =
+//{
+//   Point("Air"),
+//   Point("Air"),
+//   Point("Air"),
+//   Point("Air"),
+//   Point("Air"),
+//   Point("Air"),
+//   Point("Air"),
+//   Point("Air"),
+//};
 
 void printCalibrationCodeToSerial()
 {
@@ -138,6 +122,8 @@ void printCalibrationCodeToSerial()
    }
 }
 
+
+
 void displaySavedInfo()
 {
    // load saved correction factors
@@ -154,11 +140,9 @@ void displaySavedInfo()
 
    // display saved temperature factors
    arduino.setCursor(0, 0);
-   arduino.setTextSize(2);
-   arduino.fillRect(0, 0, arduino.width(), 2.5 * arduino.charH(), Color::ORANGE);
-   arduino.moveCursorY((0.5) * arduino.charH() / 2);
-   arduino.printlnC("Temp", Color::WHITE, Color::ORANGE);
-   arduino.printlnC("Deltas", Color::WHITE, Color::ORANGE);
+   arduino.setTextSize(3);
+   arduino.fillRect(0, 0, arduino.width(), arduino.charH(), Color::ORANGE);
+   arduino.printlnC("Saved Correction Factors", Color::WHITE, Color::ORANGE);
    arduino.moveCursorY(arduino.charH() / 2);
 
    arduino.setTextSize(3);
@@ -189,67 +173,103 @@ void displaySavedInfo()
 
 void displayHeader()
 {
-   arduino.setTextSize(2);
-   arduino.fillRect(0, 0, arduino.width(), 2 * arduino.charH(), Color::ORANGE);
-
-   switch (view)
-   {
-   case View::RawTemps:
-      arduino.printlnC("Raw Temps", Color::WHITE, Color::ORANGE);
-      break;
-   case View::Corrected:
-      arduino.printlnC("Corrected", Color::WHITE, Color::ORANGE);
-      break;
-   case View::Correction:
-      arduino.printlnC("Correction", Color::WHITE, Color::ORANGE);
-      break;
-   }
+   arduino.setTextSize(3);
+   arduino.fillRect(0, 0, arduino.width(), arduino.charH(), Color::ORANGE);
+   arduino.printlnC("Calibrating...", Color::WHITE, Color::ORANGE);
 }
 
 void displaySensorList()
 {
-   arduino.setTextSize(3);
+   arduino.setTextSize(2);
+
+   // Display table header (no heading for first column)
+   arduino.print("    ", Color::HEADING);
+   arduino.print("Type     ", Color::HEADING);
+   arduino.print("Now    ", Color::HEADING);
+   arduino.print("Avg      ", Color::HEADING);
+   arduino.println("Delta", Color::HEADING);
+
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       Multiplexer::select(i);
       TempSensor& sensor = sensors[i];
       bool sensorExists = sensor.exists();
 
-      // Highlight selected sensor
-      if (i == selectedSensor)
-      {
-         arduino.fillRect(0, arduino.getCursorY(), arduino.width(), arduino.charH(), Color::GRAY);
-      }
-
       // Sensor number
-      arduino.print((i + 1), (i == selectedSensor) ? Color::BLUE : Color::LABEL);
-      arduino.moveCursorX(10);
+      arduino.print((i + 1), Color::LABEL);
+      arduino.print("   ");
+
+      // Sensor type
+      if (sensorExists)
+      {
+         String type = sensor.type();
+         arduino.print(type, Color::LABEL);
+         // Pad to 9 characters
+         for (int pad = type.length(); pad < 9; pad++)
+            arduino.print(" ");
+      }
+      else
+      {
+         arduino.print("---      ");
+      }
 
       if (sensorExists)
       {
          float correction = calibrator.getCorrection(i);
          float timedAverage = calibrator.getAverage(i);
+         float current = currentReadings[i];
 
-         switch (view)
+         // Display current temp (padded to 9 chars)
+         if (!isnan(current))
          {
-         case View::RawTemps:
-            arduino.println(timedAverage, tempFormat, Color::VALUE);
-            break;
+            arduino.print(current, tempFormat, Color::VALUE);
+            arduino.print(" ");
+         }
+         else
+         {
+            arduino.print("         ");
+         }
 
-         case View::Corrected:
-            arduino.println(timedAverage + correction, tempFormat, Color::VALUE);
-            break;
+         // Display averaged temp (padded to 10 chars)
+         if (!isnan(timedAverage))
+         {
+            arduino.print(timedAverage, avgTempFormat, Color::VALUE);
+            arduino.print(" ");
+         }
+         else
+         {
+            arduino.print("          ");
+         }
 
-         case View::Correction:
+         // Display correction factor
+         if (!isnan(correction))
+         {
             arduino.println(correction, correctionFormat, Color::VALUE);
-            break;
+         }
+         else
+         {
+            arduino.println("          ");
          }
       }
       else
       {
-         arduino.println("-----", Color::GRAY);
+         arduino.print("----    ");
+         arduino.print("----      ");
+         arduino.println("----");
       }
    }
+}
+
+/// <summary>
+/// Renders the scatter plot for sensor 0 showing 10 minutes of history.
+/// The plot fills the remaining display space below the calibration table.
+/// </summary>
+void displayScatterPlots()
+{
+   if (!plotSensor0) return;
+
+   // The plot automatically handles full-screen rendering with topOffset positioning
+   plotSensor0->render();
 }
 
 void setup()
@@ -258,7 +278,6 @@ void setup()
    Wire.begin();
 
    arduino.begin();
-   arduino.setRotation(DisplayRotation::PORTRAIT);
 
    displaySavedInfo();
 
@@ -281,35 +300,46 @@ void setup()
       // clear out corrections
       sensor.setTempCorrectionF(0);
 
-      points[i].addTag("location", (String("Calibration ") + (i + 1)).c_str());
+      //points[i].addTag("location", (String("Calibration ") + (i + 1)).c_str());
       arduino.preferences.putString((String(ID_KEY_PREFIX) + i).c_str(), sensorExists ? sensor.id() : "");
    }
    arduino.preferences.end();
 
-   uint8_t batchSize = std::max((uint8_t)1, detectedSensorCount);
-   client.setWriteOptions(WriteOptions().batchSize(batchSize).bufferSize(2 * batchSize));
+   //uint8_t batchSize = std::max((uint8_t)1, detectedSensorCount);
+   //client.setWriteOptions(WriteOptions().batchSize(batchSize).bufferSize(2 * batchSize));
    Serial.print("Detected sensors: ");
    Serial.println(detectedSensorCount);
 
-   arduino.echoToSerial = true;
-   arduino.clearDisplay();
-   arduino.setTextSize(3);
-   arduino.println("Init", Color::HEADING);
-   arduino.moveCursorY(10);
+   //arduino.echoToSerial = true;
+   //arduino.clearDisplay();
+   //arduino.setTextSize(3);
+   //arduino.println("Init", Color::HEADING);
+   //arduino.moveCursorY(10);
 
-   arduino.setTextSize(2);
-   if (!influx.begin(&arduino))
+   //arduino.setTextSize(2);
+   //if (!influx.begin(&arduino))
+   //{
+   //   Util::reset(WIFI_RESET_DELAY_S);
+   //}
+
+   // Initialize TimedScatterPlot for sensor 0 data
+   // The plot starts below the calibration table and fills the remaining display space
+   plotSensor0 = new (std::nothrow) TimedScatterPlot(&arduino, sensorPlotData, TIME_WINDOW_PLOT_MS);
+
+   if (!plotSensor0)
    {
-      Util::reset(WIFI_RESET_DELAY_S);
+      Serial.println("Failed to allocate scatter plot");
+      return;
    }
 
-   delay(1000);
+   // Calculate topOffset: header (size 3) + table header (size 2) + 8 sensor rows (size 2)
+   // Header: charH() at size 3
+   // Table: (1 header row + NUM_SENSORS rows) * 2 * charH() at size 2
+   int16_t headerHeight = arduino.charH();  // "Calibrating..." header at size 3 = charH()
+   int16_t tableHeight = (1 + NUM_SENSORS) * 2 * arduino.charH();  // header + 8 rows at size 2
+   int16_t topOffset = headerHeight + tableHeight + 4;  // Add small padding
 
-   arduino.clearDisplay();
-   arduino.echoToSerial = false;
-
-   pinMode(BUILTIN_LED, OUTPUT);
-   digitalWrite(BUILTIN_LED, LOW);
+   plotSensor0->setTopOffset(topOffset);
 }
 
 long count = 0;
@@ -318,12 +348,7 @@ void loop()
    if (arduino.encoder.button.wasPressed())
    {
       arduino.clearDisplay();
-      view++;
    }
-
-   // Update selected sensor from encoder position
-   int encoderPos = arduino.encoder.getPosition();
-   selectedSensor = constrain(encoderPos % NUM_SENSORS, 0, NUM_SENSORS - 1);
 
    // ------------------------------------------- sample + display
    if (sensorReadTrigger.ready())
@@ -334,18 +359,31 @@ void loop()
          TempSensor& sensor = sensors[i];
          if (sensor.exists())
          {
-            float temp = sensor.readTemperatureF();
+            float temp = sensor.sample(NUM_SAMPLES, DISCARD_SAMPLES, SAMPLE_RATE_MS);
+            currentReadings[i] = temp;
             calibrator.set(i, temp);
             count++;
+
+            // Add sensor 0 data to TimedValues for scatter plot
+            if (i == 0 && !isnan(temp))
+            {
+               sensorPlotData.set(temp);
+            }
          }
       }
 
-      arduino.setCursor(0, 0);
-      displayHeader();
-
-      arduino.setCursor(0, 2 * arduino.charH());
-      displaySensorList();
+      // Sample timing is managed by sensorReadTrigger timer
    }
+
+   // Always display the data
+   arduino.setCursor(0, 0);
+   displayHeader();
+
+   arduino.setCursor(0, arduino.charH());
+   displaySensorList();
+
+   // Display scatter plots for sensor 0
+   displayScatterPlots();
 
    // ------------------------------------------- save to flash
    if (prefsTrigger.ready())
@@ -361,69 +399,69 @@ void loop()
    }
 
    // ------------------------------------------- send to INFLUX
-   if (influxTrigger.ready())
-   {
-      if (influx.ensureWiFiConnected())
-      {
-         digitalWrite(BUILTIN_LED, HIGH);
+   //if (influxTrigger.ready())
+   //{
+   //   if (influx.ensureWiFiConnected())
+   //   {
+   //      digitalWrite(BUILTIN_LED, HIGH);
 
-         Serial.print("Uploading to InfluxDB... ");
-         Serial.print(count);
-         Serial.println(" values collected");
-         count = 0;
+   //      Serial.print("Uploading to InfluxDB... ");
+   //      Serial.print(count);
+   //      Serial.println(" values collected");
+   //      count = 0;
 
-         bool writeFailed = false;
-         float baseline = calibrator.getBaseline();
+   //      bool writeFailed = false;
+   //      float baseline = calibrator.getBaseline();
 
-         for (int i = 0; i < NUM_SENSORS; i++)
-         {
-            float temperature = calibrator.getAverage(i);
-            if (!sensors[i].exists() || std::isnan(temperature))
-            {
-               continue;
-            }
+   //      for (int i = 0; i < NUM_SENSORS; i++)
+   //      {
+   //         float temperature = calibrator.getAverage(i);
+   //         if (!sensors[i].exists() || std::isnan(temperature))
+   //         {
+   //            continue;
+   //         }
 
-            float tDelta = calibrator.getCorrection(i);
-            float tCorrected = temperature + tDelta;
-            float tCorrectedDelta = std::isnan(baseline) ? NAN : (tCorrected - baseline);
+   //         float tDelta = calibrator.getCorrection(i);
+   //         float tCorrected = temperature + tDelta;
+   //         float tCorrectedDelta = std::isnan(baseline) ? NAN : (tCorrected - baseline);
 
-            points[i].clearFields();
-            // the current readings
-            points[i].addField("temperature", temperature, 3);
+   //         points[i].clearFields();
+   //         // the current readings
+   //         points[i].addField("temperature", temperature, 3);
 
-            // the deltas from the baseline
-            points[i].addField("tDelta", tDelta, 4);
+   //         // the deltas from the baseline
+   //         points[i].addField("tDelta", tDelta, 4);
 
-            // the current readings using the correction factors. Once these
-            // stop changing, the correction factors have converged
-            points[i].addField("tCorrected", tCorrected, 3);
+   //         // the current readings using the correction factors. Once these
+   //         // stop changing, the correction factors have converged
+   //         points[i].addField("tCorrected", tCorrected, 3);
 
-            // corrected delta from baseline
-            points[i].addField("tCorrectedDelta", tCorrectedDelta, 4);
+   //         // corrected delta from baseline
+   //         points[i].addField("tCorrectedDelta", tCorrectedDelta, 4);
 
-            if (!client.writePoint(points[i]))
-            {
-               writeFailed = true;
-               break;
-            }
-         }
+   //         if (!client.writePoint(points[i]))
+   //         {
+   //            writeFailed = true;
+   //            break;
+   //         }
+   //      }
 
-         if (!writeFailed && !client.isBufferEmpty())
-         {
-            writeFailed = !client.flushBuffer();
-         }
+   //      if (!writeFailed && !client.isBufferEmpty())
+   //      {
+   //         writeFailed = !client.flushBuffer();
+   //      }
 
-         if (writeFailed)
-         {
-            Serial.println("InfluxDB write failed: ");
-            Serial.println(client.getLastErrorMessage());
-         }
-         else
-         {
-            printCalibrationCodeToSerial();
-         }
+   //      if (writeFailed)
+   //      {
+   //         Serial.println("InfluxDB write failed: ");
+   //         Serial.println(client.getLastErrorMessage());
+   //      }
+   //      else
+   //      {
+   //         printCalibrationCodeToSerial();
+   //      }
 
-         digitalWrite(BUILTIN_LED, LOW);
-      }
-   }
+   //      digitalWrite(BUILTIN_LED, LOW);
+   //   }
+   //}
 }
