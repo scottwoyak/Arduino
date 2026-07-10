@@ -1,12 +1,11 @@
-/// <summary>
-/// Rotary encoder position and button state display.
-/// </summary>
-/// <remarks>
-/// Displays real-time rotary encoder position, pin states (A/B high/low), and button status.
-/// Button press resets encoder position to zero.
-/// 
-/// Hardware: Feather ESP32 with rotary encoder on GPIO pins and TFT display.
-/// </remarks>
+//
+// Rotary encoder position and button state display.
+//
+// Displays real-time rotary encoder position, pin states (A/B high/low), and button status.
+// Button press resets encoder position to zero.
+//
+// Hardware: Feather ESP32 with rotary encoder on GPIO pins and TFT display.
+//
 
 #include <Arduino.h>
 
@@ -20,12 +19,17 @@
 #include "SerialX.h"
 #include "Stopwatch.h"
 
-Arduino arduino;
-RotaryEncoder encoder(9, 6, 5);
+// ----------- Pins
+constexpr uint8_t PIN_A = 9;
+constexpr uint8_t PIN_B = 6;
+constexpr uint8_t PIN_BUTTON = 5;
 
+// ----------- The Board
+Arduino arduino;
+RotaryEncoder encoder(PIN_A, PIN_B, PIN_BUTTON);
+
+// ----------- Display formatting
 Format posFormat("+######");
-Format boolFormat("5");
-Format highLowFormat("4");
 
 void setup()
 {
@@ -46,11 +50,11 @@ void loop()
    arduino.setTextSize(3);
 
    // Display pin A state
-   arduino.println("     A: ", encoder.isLowA() ? "Low" : "High", highLowFormat);
+   arduino.println("     A: ", encoder.isLowA() ? "Low " : "High");
    arduino.moveCursorY(2);
 
    // Display pin B state
-   arduino.println("     B: ", encoder.isLowB() ? "Low" : "High", highLowFormat);
+   arduino.println("     B: ", encoder.isLowB() ? "Low " : "High");
    arduino.moveCursorY(2);
 
    // Display current position
@@ -58,7 +62,7 @@ void loop()
    arduino.moveCursorY(2);
 
    // Display button state
-   arduino.println("Button: ", encoder.button.isPressed() ? "True" : "False", boolFormat);
+   arduino.println("Button: ", encoder.button.isPressed() ? "True " : "False");
 
    // Display pin configuration
    arduino.setTextSize(2);
