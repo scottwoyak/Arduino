@@ -8,17 +8,20 @@
 #include "Color.h"
 #include "Format.h"
 #include "Structs.h"
-#include "TimedValues.h"
+#include "TimedAverageHistory.h"
 #include "Util.h"
 
 class TimedScatterPlot;
 
 ///
 /// <summary>
-/// A single time-series data source owned and rendered by a TimedScatterPlot. Values are
-/// stored in an internal TimedValues buffer keyed by the plot's history window, so old
-/// samples age out automatically and the caller never has to maintain its own buffer.
-/// Display flags (showPoints, showLines, showMovingAverage) and color mirror
+/// A single time-series data source owned and rendered by a TimedScatterPlot. Rather than
+/// retaining every raw sample, values are aggregated (averaged) into a fixed number of
+/// time bins sized to the plot's chart pixel width, using TimedAverageHistory (see
+/// TimedAverageHistory.h) for the underlying bin storage/rotation. Since the chart can only ever
+/// display one column of resolution per bin, this bounds memory by chart width instead of
+/// by history duration or sample rate, and the caller never has to maintain its own
+/// buffer. Display flags (showPoints, showLines, showMovingAverage) and color mirror
 /// ScatterPlotSeries, but the moving average here is windowed in milliseconds rather than
 /// by raw sample count, since the X axis is always time.
 /// </summary>
@@ -28,160 +31,67 @@ class TimedScatterPlotSeries
    friend class TimedScatterPlot;
 
 private:
-   TimedValues _samples;
+   // Fixed-size time-binned average storage; see TimedAverageHistory.h. Handles all the
+   // low-level circular-bin allocation, rotation, and averaging, bounding memory by numBins
+   // (typically the chart's pixel width) regardless of history duration or sample rate.
+   TimedAverageHistory _bins;
 
    // Scratch buffers holding the most recently captured snapshot (newest-first), refreshed
-   // once per render() call and reused by axis-range computation and drawing.
+   // once per render() call and reused by axis-range computation and drawing. Sized to
+   // _bins.numBins() (fixed at construction), so they no longer scale with history
+   // duration or sample rate.
    float* _values = nullptr;
    unsigned long* _agesMs = nullptr;
-   size_t _capacity = 0;
    size_t _count = 0;
 
    // Scratch buffer holding the centered moving average computed over the current
    // snapshot, indexed the same as _values/_agesMs (newest-first).
    float* _movingAverageBuffer = nullptr;
-   size_t _movingAverageBufferCapacity = 0;
 
    // Copy of the values/ages/moving-average actually drawn on the last render() pass, so
    // the next render() can erase exactly those strokes instead of clearing the whole chart.
    float* _prevValues = nullptr;
    unsigned long* _prevAgesMs = nullptr;
-   size_t _prevCapacity = 0;
    size_t _prevCount = 0;
    float* _prevMovingAverageBuffer = nullptr;
-   size_t _prevMovingAverageBufferCapacity = 0;
 
    ///
    /// <summary>
-   /// Ensures the snapshot scratch buffers can hold at least the given number of samples.
+   /// Allocates the snapshot/prev-frame rendering buffers, all sized to _bins.numBins().
+   /// Called once from the constructor since the bin count never changes afterward.
    /// </summary>
-   /// <param name="capacity">Minimum required buffer capacity.</param>
-   /// <returns>True if the buffers have at least the requested capacity.</returns>
+   /// <returns>True if every buffer was allocated successfully.</returns>
    ///
-   bool _ensureCapacity(size_t capacity)
+   bool _allocateBuffers()
    {
-      if (capacity <= _capacity)
-      {
-         return true;
-      }
+      size_t numBins = _bins.numBins();
+      _values = new (std::nothrow) float[numBins];
+      _agesMs = new (std::nothrow) unsigned long[numBins];
+      _movingAverageBuffer = new (std::nothrow) float[numBins];
+      _prevValues = new (std::nothrow) float[numBins];
+      _prevAgesMs = new (std::nothrow) unsigned long[numBins];
+      _prevMovingAverageBuffer = new (std::nothrow) float[numBins];
 
-      float* values = new (std::nothrow) float[capacity];
-      unsigned long* agesMs = new (std::nothrow) unsigned long[capacity];
-      if (values == nullptr || agesMs == nullptr)
+      if (_values == nullptr || _agesMs == nullptr || _movingAverageBuffer == nullptr
+         || _prevValues == nullptr || _prevAgesMs == nullptr || _prevMovingAverageBuffer == nullptr)
       {
-         delete[] values;
-         delete[] agesMs;
-         Util::setHaltReason("OOM allocating snapshot buffers in TimedScatterPlotSeries");
+         Util::setHaltReason("OOM allocating rendering buffers in TimedScatterPlotSeries");
          Util::reset();
          return false;
       }
 
-      delete[] _values;
-      delete[] _agesMs;
-      _values = values;
-      _agesMs = agesMs;
-      _capacity = capacity;
-      return true;
-   }
-
-   ///
-   /// <summary>
-   /// Ensures the moving-average scratch buffer can hold at least the given number of
-   /// samples.
-   /// </summary>
-   /// <param name="capacity">Minimum required buffer capacity.</param>
-   /// <returns>True if the buffer has at least the requested capacity.</returns>
-   ///
-   bool _ensureMovingAverageBuffer(size_t capacity)
-   {
-      if (capacity <= _movingAverageBufferCapacity)
-      {
-         return _movingAverageBuffer != nullptr;
-      }
-
-      float* buffer = new (std::nothrow) float[capacity];
-      if (buffer == nullptr)
-      {
-         Util::setHaltReason("OOM allocating moving-average buffer in TimedScatterPlotSeries");
-         Util::reset();
-         return false;
-      }
-
-      delete[] _movingAverageBuffer;
-      _movingAverageBuffer = buffer;
-      _movingAverageBufferCapacity = capacity;
-      return true;
-   }
-
-   ///
-   /// <summary>
-   /// Ensures the previous-frame scratch buffers can hold at least the given number of samples.
-   /// </summary>
-   /// <param name="capacity">Minimum required buffer capacity.</param>
-   /// <returns>True if the buffers have at least the requested capacity.</returns>
-   ///
-   bool _ensurePrevCapacity(size_t capacity)
-   {
-      if (capacity <= _prevCapacity)
-      {
-         return true;
-      }
-
-      float* values = new (std::nothrow) float[capacity];
-      unsigned long* agesMs = new (std::nothrow) unsigned long[capacity];
-      if (values == nullptr || agesMs == nullptr)
-      {
-         delete[] values;
-         delete[] agesMs;
-         return false;
-      }
-
-      delete[] _prevValues;
-      delete[] _prevAgesMs;
-      _prevValues = values;
-      _prevAgesMs = agesMs;
-      _prevCapacity = capacity;
-      return true;
-   }
-
-   ///
-   /// <summary>
-   /// Ensures the previous-frame moving-average scratch buffer can hold at least the given
-   /// number of samples.
-   /// </summary>
-   /// <param name="capacity">Minimum required buffer capacity.</param>
-   /// <returns>True if the buffer has at least the requested capacity.</returns>
-   ///
-   bool _ensurePrevMovingAverageBuffer(size_t capacity)
-   {
-      if (capacity <= _prevMovingAverageBufferCapacity)
-      {
-         return true;
-      }
-
-      float* buffer = new (std::nothrow) float[capacity];
-      if (buffer == nullptr)
-      {
-         return false;
-      }
-
-      delete[] _prevMovingAverageBuffer;
-      _prevMovingAverageBuffer = buffer;
-      _prevMovingAverageBufferCapacity = capacity;
       return true;
    }
 
    ///
    /// <summary>
    /// Copies the values/ages/moving-average just drawn into the previous-frame buffers, so
-   /// the next render() can erase exactly those strokes. Silently leaves the previous-frame
-   /// buffers empty if allocation fails; the worst consequence is a stale stroke lingering
-   /// on screen until the next axis change forces a full redraw.
+   /// the next render() can erase exactly those strokes.
    /// </summary>
    ///
    void _capturePrevSnapshot()
    {
-      if ((_count == 0) || !_ensurePrevCapacity(_count) || !_ensurePrevMovingAverageBuffer(_count))
+      if (_count == 0)
       {
          _prevCount = 0;
          return;
@@ -195,21 +105,13 @@ private:
 
    ///
    /// <summary>
-   /// Captures a fresh newest-first snapshot of the retained samples (already trimmed to
-   /// the TimedValues retention window by the buffer itself) and recomputes the centered
-   /// moving average over it. Called once per render() pass.
+   /// Captures a fresh newest-first snapshot from the underlying time bins and recomputes
+   /// the centered moving average over it. Called once per render() pass.
    /// </summary>
    ///
    void _refreshSnapshot()
    {
-      size_t available = _samples.count();
-      if (!_ensureCapacity(available))
-      {
-         _count = 0;
-         return;
-      }
-
-      _count = _samples.snapshot(_values, _agesMs, available);
+      _count = _bins.snapshot(_values, _agesMs);
       _recomputeMovingAverage();
    }
 
@@ -225,7 +127,7 @@ private:
    ///
    void _recomputeMovingAverage()
    {
-      if (_count == 0 || !_ensureMovingAverageBuffer(_count))
+      if (_count == 0)
       {
          return;
       }
@@ -304,14 +206,17 @@ public:
 
    ///
    /// <summary>
-   /// Constructs a new TimedScatterPlotSeries retaining samples for historyMs.
+   /// Constructs a new TimedScatterPlotSeries that aggregates samples into numBins fixed
+   /// time bins spanning historyMs, sized to the plot's chart pixel width so memory is
+   /// bounded by chart resolution instead of history duration or sample rate.
    /// </summary>
-   /// <param name="historyMs">Time window in milliseconds for retained samples.</param>
-   /// <param name="initialCapacity">Initial capacity hint for the internal buffer.</param>
+   /// <param name="historyMs">Time window in milliseconds spanned by the retained bins.</param>
+   /// <param name="numBins">Number of time bins to retain (typically the chart's pixel width).</param>
    ///
-   explicit TimedScatterPlotSeries(unsigned long historyMs, size_t initialCapacity = 16)
-      : _samples(historyMs, initialCapacity)
+   explicit TimedScatterPlotSeries(unsigned long historyMs, size_t numBins = 16)
+      : _bins(historyMs, numBins)
    {
+      _allocateBuffers();
    }
 
    TimedScatterPlotSeries(const TimedScatterPlotSeries&) = delete;
@@ -329,13 +234,14 @@ public:
 
    ///
    /// <summary>
-   /// Adds a new value to the series, timestamped with the current time.
+   /// Adds a new value to the series, accumulating it into the currently-open time bin
+   /// (rotating out expired bins first as needed).
    /// </summary>
    /// <param name="value">Value to add.</param>
    ///
    void add(float value)
    {
-      _samples.set(value);
+      _bins.add(value);
    }
 
    ///
@@ -345,7 +251,7 @@ public:
    ///
    void clear()
    {
-      _samples.reset();
+      _bins.reset();
       _count = 0;
       _prevCount = 0;
    }
@@ -365,8 +271,10 @@ public:
 /// scatter plot within a fixed screen rectangle. Callers create series via createSeries(),
 /// feed them by calling add(value) as data becomes available, and set each series'
 /// display flags (showPoints, showLines, showMovingAverage) and color, just like
-/// ScatterPlot. TimedScatterPlot owns all sample storage internally (via TimedValues), so
-/// the caller never maintains its own buffer. The X axis always represents time-ago
+/// ScatterPlot. TimedScatterPlot owns all sample storage internally as fixed-size time
+/// bins sized to the chart's pixel width, so the caller never maintains its own buffer
+/// and memory does not scale with history duration or sample rate. The X axis always
+/// represents time-ago
 /// (newest samples on the right) over a fixed historyMs window; while the plot has been
 /// running for less than historyMs, samples instead grow left-to-right from a fixed start
 /// point, filling in new columns as data arrives, after which normal right-anchored
@@ -479,7 +387,7 @@ private:
 
    ///
    /// <summary>
-   /// Refreshes every series' snapshot from its internal TimedValues buffer and scans the
+   /// Refreshes every series' snapshot from its internal time bins and scans the
    /// results to compute the shared Y axis range needed to fit whatever is currently
    /// displayed: a series' raw samples contribute only if showPoints or showLines is set,
    /// and its moving average contributes only if showMovingAverage is set.
@@ -779,13 +687,16 @@ public:
 
    ///
    /// <summary>
-   /// Creates a new time series owned by this plot, retaining samples for this plot's
-   /// history window.
+   /// Creates a new time series owned by this plot, retaining samples aggregated into a
+   /// fixed number of time bins spanning this plot's history window. By default the bin
+   /// count matches this plot's rectangle pixel width, since that is the maximum possible
+   /// chart resolution; memory is therefore bounded by chart width rather than by history
+   /// duration or sample rate.
    /// </summary>
-   /// <param name="initialCapacity">Initial capacity hint for the series' internal buffer.</param>
+   /// <param name="numBins">Number of time bins to retain, or 0 (the default) to use this plot's rectangle pixel width.</param>
    /// <returns>Pointer to the newly created series.</returns>
    ///
-   TimedScatterPlotSeries* createSeries(size_t initialCapacity = 16)
+   TimedScatterPlotSeries* createSeries(size_t numBins = 0)
    {
       if (_seriesCount >= _seriesCapacity)
       {
@@ -809,7 +720,8 @@ public:
          _seriesCapacity = newCapacity;
       }
 
-      TimedScatterPlotSeries* newSeries = new TimedScatterPlotSeries(_historyMs, initialCapacity);
+      size_t effectiveNumBins = (numBins > 0) ? numBins : static_cast<size_t>(max<int16_t>(1, static_cast<int16_t>(_rect.width)));
+      TimedScatterPlotSeries* newSeries = new TimedScatterPlotSeries(_historyMs, effectiveNumBins);
       _series[_seriesCount++] = newSeries;
       return newSeries;
    }
@@ -972,7 +884,7 @@ public:
    ///
    /// <summary>
    /// Renders every owned series within this plot's fixed rectangle: refreshes each
-   /// series' snapshot from its internal TimedValues buffer, computes the shared Y axis
+   /// series' snapshot from its internal time bins, computes the shared Y axis
    /// range to fit whatever is currently displayed, then draws axis labels and each
    /// series' points, lines, and/or moving-average line. When the axis range and chart
    /// geometry are unchanged from the previous frame, the chart interior is not cleared;

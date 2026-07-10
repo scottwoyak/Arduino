@@ -81,6 +81,7 @@
     <File Path="libraries/Woyak/Tick.h" />
     <File Path="libraries/Woyak/TimeConstants.h" />
     <File Path="libraries/Woyak/TimedAverage.h" />
+    <File Path="libraries/Woyak/TimedAverageHistory.h" />
     <File Path="libraries/Woyak/TimedBin.h" />
     <File Path="libraries/Woyak/TimedHistogram.h" />
     <File Path="libraries/Woyak/TimedHistogramChart.h" />

@@ -119,4 +119,26 @@ public:
 
       return connect(timeoutMs);
    }
+
+   /// <summary>
+   /// Forces a full WiFi disconnect and reconnect, even if currently connected.
+   /// This clears stale DHCP/DNS state that a simple status check would not detect,
+   /// which is useful when the network link is up but requests to a remote host are
+   /// being refused (e.g. due to a stale cached DNS resolution).
+   /// </summary>
+   /// <param name="timeoutMs">Maximum time to wait for reconnection in milliseconds</param>
+   /// <returns>True when reconnected; otherwise false</returns>
+   bool reconnect(uint32_t timeoutMs = DEFAULT_TIMEOUT_MS)
+   {
+      WiFi.disconnect();
+
+      const uint32_t start = millis();
+      while (_wifiMulti.run() != WL_CONNECTED && (millis() - start) < timeoutMs)
+      {
+         Serial.print(".");
+         delay(CHECK_INTERVAL_MS);
+      }
+
+      return WiFi.status() == WL_CONNECTED;
+   }
 };

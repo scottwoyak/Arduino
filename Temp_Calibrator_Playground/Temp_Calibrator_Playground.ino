@@ -20,7 +20,6 @@
 #include "SerialX.h"
 #include "Influx.h"
 #include "TimedScatterPlot.h"
-#include "TimedValues.h"
 #include "RollingAverage.h"
 #include "TimedAverage.h"
 #include <Wire.h>
@@ -178,41 +177,13 @@ TimerSecs prefsTrigger(PREFS_INTERVAL_S);
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
 
-Point shortAvgPoints[] =
-{
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-};
+InfluxPoint* shortAvgPoints[NUM_SENSORS] = { nullptr };
+InfluxPoint* longAvgPoints[NUM_SENSORS] = { nullptr };
+InfluxPoint* correctionPoints[NUM_SENSORS] = { nullptr };
 
-Point longAvgPoints[] =
-{
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-};
-
-Point correctionPoints[] =
-{
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-   Point("Air"),
-};
+InfluxField* shortAvgFields[NUM_SENSORS] = { nullptr };
+InfluxField* longAvgFields[NUM_SENSORS] = { nullptr };
+InfluxField* correctionFields[NUM_SENSORS] = { nullptr };
 
 void printCalibrationCodeToSerial()
 {
@@ -430,9 +401,15 @@ void setup()
       // clear out corrections
       sensor.setTempCorrectionF(0);
 
-      shortAvgPoints[i].addTag("location", (String("Cal ") + (i + 1) + ": Short Average").c_str());
-      longAvgPoints[i].addTag("location", (String("Cal ") + (i + 1) + ": Long Average").c_str());
-      correctionPoints[i].addTag("location", (String("Cal ") + (i + 1) + ": Correction").c_str());
+      shortAvgPoints[i] = new InfluxPoint("Air", { { "location", (String("Cal ") + (i + 1) + ": Short Average").c_str() } });
+      shortAvgFields[i] = shortAvgPoints[i]->addValueField("temperature", 3);
+
+      longAvgPoints[i] = new InfluxPoint("Air", { { "location", (String("Cal ") + (i + 1) + ": Long Average").c_str() } });
+      longAvgFields[i] = longAvgPoints[i]->addValueField("temperature", 3);
+
+      correctionPoints[i] = new InfluxPoint("Air", { { "location", (String("Cal ") + (i + 1) + ": Correction").c_str() } });
+      correctionFields[i] = correctionPoints[i]->addValueField("temperature", 4);
+
       arduino.preferences.putString((String(ID_KEY_PREFIX) + i).c_str(), sensorExists ? sensor.id() : "");
 
       samplers[i] = new Sampler(&sensor, i);
@@ -441,6 +418,7 @@ void setup()
 
    uint8_t batchSize = std::max((uint8_t)1, (uint8_t)(3 * detectedSensorCount));
    client.setWriteOptions(WriteOptions().batchSize(batchSize).bufferSize(2 * batchSize));
+
    Serial.print("Detected sensors: ");
    Serial.println(detectedSensorCount);
 
@@ -665,16 +643,14 @@ void loop()
             float tDelta = std::isnan(baseline) ? NAN : (baseline - tLongAvg);
             float tShortAvg = samplers[i]->getShortAvgValue();
 
-            shortAvgPoints[i].clearFields();
-            shortAvgPoints[i].addField("temperature", tShortAvg, 3);
+            shortAvgFields[i]->set(tShortAvg);
+            longAvgFields[i]->set(tLongAvg);
+            correctionFields[i]->set(tDelta);
 
-            longAvgPoints[i].clearFields();
-            longAvgPoints[i].addField("temperature", tLongAvg, 3);
-
-            correctionPoints[i].clearFields();
-            correctionPoints[i].addField("temperature", tDelta, 4);
-
-            if (!client.writePoint(shortAvgPoints[i]) || !client.writePoint(longAvgPoints[i]) || !client.writePoint(correctionPoints[i]))
+            // InfluxPoint::post() clears/re-populates fields, skips NaN/Inf values,
+            // and (with writeToSerial=true) prints the line protocol actually sent
+            // and any error, so bad/unexpected uploads can be spotted directly.
+            if (!shortAvgPoints[i]->post(&client, true) || !longAvgPoints[i]->post(&client, true) || !correctionPoints[i]->post(&client, true))
             {
                writeFailed = true;
                break;
@@ -688,7 +664,9 @@ void loop()
 
          if (writeFailed)
          {
-            Serial.println("InfluxDB write failed: ");
+            Serial.print("InfluxDB write failed. Status code: ");
+            Serial.print(client.getLastStatusCode());
+            Serial.print(", message: ");
             Serial.println(client.getLastErrorMessage());
          }
          else
