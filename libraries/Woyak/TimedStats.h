@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "Stats.h"
+#include "TimedMinMax.h"
 
 /// <summary>
 /// Tracks time-windowed statistics by storing values in rotating time buckets.
@@ -23,6 +24,7 @@ private:
    unsigned long _bucketMs = 1;
    unsigned long _startTicks = 0;
    float _elapsedTicks = 0;
+   TimedMinMaxBase<TimeFunc> _minMax;
 
     /// <summary>
     /// Advances active bucket(s) based on elapsed time and clears expired buckets.
@@ -181,7 +183,8 @@ public:
    /// </summary>
    /// <param name="durationMs">Total duration in milliseconds.</param>
    /// <param name="nBuckets">Number of time buckets (plus one blending bucket).</param>
-   TimedStatsBase(unsigned long durationMs, uint nBuckets = 20)
+   TimedStatsBase(unsigned long durationMs, uint nBuckets = 20) :
+      _minMax(std::max(durationMs, 1UL))
    {
       uint normalizedBuckets = std::max(nBuckets, static_cast<uint>(1));
 
@@ -220,6 +223,7 @@ public:
    {
       _advance();
       _buckets[_currentBucket]->add(value);
+      _minMax.set(value);
    }
 
    /// <summary>
@@ -249,85 +253,8 @@ public:
    /// <returns>Minimum value, or NaN when no values exist.</returns>
    float min()
    {
-      float elapsed = _advance();
-
-      float low = NAN;
-      uint firstBucket = _currentBucket + 1;
-      if (firstBucket >= _numBuckets)
-      {
-         firstBucket = 0;
-      }
-
-      uint secondBoundaryBucket = firstBucket + 1;
-      if (secondBoundaryBucket >= _numBuckets)
-      {
-         secondBoundaryBucket = 0;
-      }
-
-      bool usedCoreBucket = false;
-      for (uint i = 0; i < _numBuckets; i++)
-      {
-         if ((i == _currentBucket) || (i == firstBucket) || (i == secondBoundaryBucket))
-         {
-            continue;
-         }
-
-         if (_buckets[i]->count() == 0)
-         {
-            continue;
-         }
-
-         float bucketMin = _buckets[i]->min();
-         if (std::isnan(low) || bucketMin < low)
-         {
-            low = bucketMin;
-         }
-
-         usedCoreBucket = true;
-      }
-
-      if (usedCoreBucket)
-      {
-         return low;
-      }
-
-      for (uint i = 0; i < _numBuckets; i++)
-      {
-         size_t bucketCount = _buckets[i]->count();
-         if (bucketCount == 0)
-         {
-            continue;
-         }
-
-         float fraction = 1;
-         if (i == _currentBucket)
-         {
-            fraction = elapsed / _bucketMs;
-         }
-         else if (i == firstBucket)
-         {
-            fraction = 1 - (elapsed / _bucketMs);
-         }
-
-         if (fraction < 0.5f)
-         {
-            continue;
-         }
-
-         float weightedBucketCount = fraction * static_cast<float>(bucketCount);
-         if (weightedBucketCount < 1.0f)
-         {
-            continue;
-         }
-
-         float bucketMin = _buckets[i]->min();
-         if (std::isnan(low) || bucketMin < low)
-         {
-            low = bucketMin;
-         }
-      }
-
-      return low;
+      _advance();
+      return _minMax.min();
    }
 
    /// <summary>
@@ -336,85 +263,8 @@ public:
    /// <returns>Maximum value, or NaN when no values exist.</returns>
    float max()
    {
-      float elapsed = _advance();
-
-      float high = NAN;
-      uint firstBucket = _currentBucket + 1;
-      if (firstBucket >= _numBuckets)
-      {
-         firstBucket = 0;
-      }
-
-      uint secondBoundaryBucket = firstBucket + 1;
-      if (secondBoundaryBucket >= _numBuckets)
-      {
-         secondBoundaryBucket = 0;
-      }
-
-      bool usedCoreBucket = false;
-      for (uint i = 0; i < _numBuckets; i++)
-      {
-         if ((i == _currentBucket) || (i == firstBucket) || (i == secondBoundaryBucket))
-         {
-            continue;
-         }
-
-         if (_buckets[i]->count() == 0)
-         {
-            continue;
-         }
-
-         float bucketMax = _buckets[i]->max();
-         if (std::isnan(high) || bucketMax > high)
-         {
-            high = bucketMax;
-         }
-
-         usedCoreBucket = true;
-      }
-
-      if (usedCoreBucket)
-      {
-         return high;
-      }
-
-      for (uint i = 0; i < _numBuckets; i++)
-      {
-         size_t bucketCount = _buckets[i]->count();
-         if (bucketCount == 0)
-         {
-            continue;
-         }
-
-         float fraction = 1.0f;
-         if (i == _currentBucket)
-         {
-            fraction = elapsed / _bucketMs;
-         }
-         else if (i == firstBucket)
-         {
-            fraction = 1.0f - (elapsed / _bucketMs);
-         }
-
-         if (fraction < 0.5f)
-         {
-            continue;
-         }
-
-         float weightedBucketCount = fraction * static_cast<float>(bucketCount);
-         if (weightedBucketCount < 1.0f)
-         {
-            continue;
-         }
-
-         float bucketMax = _buckets[i]->max();
-         if (std::isnan(high) || bucketMax > high)
-         {
-            high = bucketMax;
-         }
-      }
-
-      return high;
+      _advance();
+      return _minMax.max();
    }
 
    /// <summary>
@@ -423,103 +273,8 @@ public:
    /// <returns>Range value, or NaN when no values exist.</returns>
    float range()
    {
-      float elapsed = _advance();
-
-      float low = NAN;
-      float high = NAN;
-      uint firstBucket = _currentBucket + 1;
-      if (firstBucket >= _numBuckets)
-      {
-         firstBucket = 0;
-      }
-
-      uint secondBoundaryBucket = firstBucket + 1;
-      if (secondBoundaryBucket >= _numBuckets)
-      {
-         secondBoundaryBucket = 0;
-      }
-
-      bool usedCoreBucket = false;
-      for (uint i = 0; i < _numBuckets; i++)
-      {
-         if ((i == _currentBucket) || (i == firstBucket) || (i == secondBoundaryBucket))
-         {
-            continue;
-         }
-
-         if (_buckets[i]->count() == 0)
-         {
-            continue;
-         }
-
-         float bucketMin = _buckets[i]->min();
-         float bucketMax = _buckets[i]->max();
-
-         if (std::isnan(low) || bucketMin < low)
-         {
-            low = bucketMin;
-         }
-
-         if (std::isnan(high) || bucketMax > high)
-         {
-            high = bucketMax;
-         }
-
-         usedCoreBucket = true;
-      }
-
-      if (!usedCoreBucket)
-      {
-         for (uint i = 0; i < _numBuckets; i++)
-         {
-            size_t bucketCount = _buckets[i]->count();
-            if (bucketCount == 0)
-            {
-               continue;
-            }
-
-            float fraction = 1.0f;
-            if (i == _currentBucket)
-            {
-               fraction = elapsed / _bucketMs;
-            }
-            else if (i == firstBucket)
-            {
-               fraction = 1.0f - (elapsed / _bucketMs);
-            }
-
-            if (fraction < 0.5f)
-            {
-               continue;
-            }
-
-            float weightedBucketCount = fraction * static_cast<float>(bucketCount);
-            if (weightedBucketCount < 1.0f)
-            {
-               continue;
-            }
-
-            float bucketMin = _buckets[i]->min();
-            float bucketMax = _buckets[i]->max();
-
-            if (std::isnan(low) || bucketMin < low)
-            {
-               low = bucketMin;
-            }
-
-            if (std::isnan(high) || bucketMax > high)
-            {
-               high = bucketMax;
-            }
-         }
-      }
-
-      if (!isfinite(low) || !isfinite(high))
-      {
-         return NAN;
-      }
-
-      return high - low;
+      _advance();
+      return _minMax.range();
    }
 
    /// <summary>
@@ -559,6 +314,7 @@ public:
    {
       _durationMs = std::max(durationMs, 1UL);
       _bucketMs = std::max(1UL, static_cast<unsigned long>(static_cast<float>(_durationMs) / (_numBuckets - 1)));
+      _minMax.setDurationMs(_durationMs);
       reset();
    }
 
@@ -584,6 +340,7 @@ public:
       _currentBucket = 0;
       _startTicks = TimeFunc();
       _elapsedTicks = 0;
+      _minMax.reset();
    }
 
    /// <summary>

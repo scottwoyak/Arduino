@@ -15,16 +15,16 @@
 #include <math.h>
 
 #include "ESP32_S3_Playground.h"
-#include "SerialX.h"
-#include "SerialTable.h"
-#include "TimedStats.h"
-#include "Timer.h"
-#include "TempSensor.h"
 #include "RollingRate.h"
-#include "TimedScatterPlot.h"
+#include "SerialTable.h"
+#include "SerialX.h"
+#include "TempSensor.h"
 #include "TimedHistogram.h"
 #include "TimedHistogramPlot.h"
+#include "TimedScatterPlot.h"
+#include "TimedStats.h"
 #include "TimedValues.h"
+#include "Timer.h"
 
 // ----------- The Board
 ESP32_S3_Playground arduino;
@@ -38,8 +38,12 @@ TimedValues samples(SCATTER_HISTORY_PERIOD_S * 1000UL, 256);
 TimedStats stats(NOISE_HISTORY_S * 1000UL);
 
 // ----------- Sampling
-constexpr uint16_t SENSOR_SAMPLE_RATE_PER_SEC = 100;
-Timer sampleTimer(1000UL / SENSOR_SAMPLE_RATE_PER_SEC);
+constexpr uint16_t TARGET_SAMPLE_RATES[] = {
+   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100
+};
+constexpr uint16_t NUM_TARGET_SAMPLE_RATES = sizeof(TARGET_SAMPLE_RATES) / sizeof(TARGET_SAMPLE_RATES[0]);
+constexpr uint16_t DEFAULT_SAMPLE_RATE_INDEX = NUM_TARGET_SAMPLE_RATES - 1; // 100/s
+Timer sampleTimer(1000UL / TARGET_SAMPLE_RATES[DEFAULT_SAMPLE_RATE_INDEX]);
 RollingRate sampleRate;
 
 // ----------- Display Items
@@ -48,6 +52,7 @@ constexpr uint16_t HISTOGRAM_BIN_COUNT = 40;
 constexpr float SENSOR_VALUE_RESOLUTION_F = 0.0049f;
 Timer displayTimer(1000UL / DISPLAY_RATE_PER_SEC);
 Format sampleRateFormat("###/s", Format::Alignment::RIGHT);
+Format targetSampleRateFormat("###/s", Format::Alignment::RIGHT);
 Format valueFormat("####.##");
 Format rangeFormat("###.##");
 Format stdDevFormat("####.##");
@@ -239,6 +244,9 @@ void setup()
    Wire.begin();
    arduino.begin();
 
+   arduino.encoder.setLimits(0, NUM_TARGET_SAMPLE_RATES - 1);
+   arduino.encoder.setPosition(DEFAULT_SAMPLE_RATE_INDEX);
+
    arduino.clearDisplay();
    drawHeader();
 
@@ -281,6 +289,13 @@ void loop()
       drawHeader();
    }
 
+   const uint16_t targetSampleRate = TARGET_SAMPLE_RATES[arduino.encoder.getPosition()];
+   const unsigned long targetSampleIntervalMs = 1000UL / targetSampleRate;
+   if (sampleTimer.getDuration() != targetSampleIntervalMs)
+   {
+      sampleTimer.setDuration(targetSampleIntervalMs);
+   }
+
    if (sampleTimer.ready())
    {
       const float value = sensor.readTemperatureF();
@@ -302,6 +317,8 @@ void loop()
 
    arduino.setTextSize(2);
    arduino.setCursor(0, 0);
+   arduino.printR("", static_cast<float>(targetSampleRate), targetSampleRateFormat, Color::GRAY);
+   arduino.setCursor(0, arduino.charH());
    arduino.printR("", sampleRate.get(), sampleRateFormat, Color::GRAY);
 
    switch (displayMode)

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Util.h"
 
@@ -42,6 +42,29 @@ public:
    void reset()
    {
       _startTime = TimeFunc();
+   }
+
+   ///
+   /// <summary>
+   /// Changes the interval duration and resets the timer start point to the current time.
+   /// </summary>
+   /// <param name="duration">New duration in time units</param>
+   ///
+   void setDuration(unsigned long duration)
+   {
+      _durationTime = duration;
+      reset();
+   }
+
+   ///
+   /// <summary>
+   /// Gets the currently configured interval duration.
+   /// </summary>
+   /// <returns>Duration in time units</returns>
+   ///
+   unsigned long getDuration() const
+   {
+      return _durationTime;
    }
 
    ///
