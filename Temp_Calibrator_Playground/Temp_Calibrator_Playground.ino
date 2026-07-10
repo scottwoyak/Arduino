@@ -2,15 +2,15 @@
 // Calibrates and displays temperature readings for 8 multiplexed sensors and uploads calibration telemetry.
 //
 // Uses the ESP32-S3 Playground board with rotary encoder and TFT display instead of buttons.
-// Displays real-time temperature data and correction factors. On startup, saved calibration deltas
-// are loaded from Preferences, displayed, and printed to Serial. The sketch probes all 8 multiplexer
-// channels, initializes each TempSensor, and tracks detected sensor count for InfluxDB batching.
-//
-// Rotary encoder button cycles between Raw Temps (timed average), Corrected (timed average + correction),
-// and Correction (current computed delta). Correction factors are periodically saved to Preferences
+// Each sensor is sampled on its own 100ms cadence via a Sampler, which maintains a short
+// (10 sample) rolling average and a long (2 minute) timed average. The display shows a table
+// of per-sensor short average, long average, and correction (delta from sensor 0's long
+// average), plus three scatter plots - one per table column - showing recent history for
+// every detected sensor. On startup, saved calibration deltas are loaded from Preferences,
+// displayed, and printed to Serial. Correction factors are periodically saved to Preferences
 // and telemetry is written to InfluxDB with reconnect and buffering.
 //
-// Turn the rotary encoder to highlight different sensors in the display.
+// Press the rotary encoder button to clear the display.
 //
 #include "WiFiSettings.h"
 #include "ESP32_S3_Playground.h"
@@ -133,8 +133,8 @@ public:
 // Samplers, one per sensor, each maintaining a rolling buffer of recent readings
 Sampler* samplers[NUM_SENSORS] = { nullptr };
 
-Format tempFormat("###.##", 13, Format::Alignment::RIGHT);
-Format avgTempFormat("###.###", 10, Format::Alignment::RIGHT);
+Format shortAvgFormat("###.##", 13, Format::Alignment::RIGHT);
+Format longAvgFormat("###.###", 10, Format::Alignment::RIGHT);
 Format correctionFormat("+#.###", 10, Format::Alignment::RIGHT);
 
 // Column widths and colors for the sensor table (data colors match their column heading)
@@ -142,9 +142,9 @@ constexpr uint8_t COL_NUM_WIDTH = 4;
 constexpr uint8_t COL_TYPE_WIDTH = 9;
 constexpr Color COL_NUM_COLOR = Color::LABEL;
 constexpr Color COL_TYPE_COLOR = Color::LABEL;
-constexpr Color COL_NOW_COLOR = Color::VALUE;
-constexpr Color COL_AVG_COLOR = Color::VALUE2;
-constexpr Color COL_DELTA_COLOR = Color::VALUE3;
+constexpr Color COL_SHORT_AVG_COLOR = Color::VALUE;
+constexpr Color COL_LONG_AVG_COLOR = Color::VALUE2;
+constexpr Color COL_CORRECTION_COLOR = Color::VALUE3;
 
 // Time window for the sensor plot
 constexpr unsigned long TIME_WINDOW_PLOT_MS = 60000;   // 1 minute
@@ -178,7 +178,31 @@ TimerSecs prefsTrigger(PREFS_INTERVAL_S);
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
 
-Point points[] =
+Point shortAvgPoints[] =
+{
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+};
+
+Point longAvgPoints[] =
+{
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+   Point("Air"),
+};
+
+Point correctionPoints[] =
 {
    Point("Air"),
    Point("Air"),
@@ -282,19 +306,19 @@ void displaySensorList()
 
    // Header formats match the width/alignment of the data formats below them so the
    // header text lines up with the columns it labels.
-   static const Format nowHeaderFormat(tempFormat.length(), Format::Alignment::RIGHT);
-   static const Format avgHeaderFormat(avgTempFormat.length(), Format::Alignment::RIGHT);
+   static const Format shortAvgHeaderFormat(shortAvgFormat.length(), Format::Alignment::RIGHT);
+   static const Format longAvgHeaderFormat(longAvgFormat.length(), Format::Alignment::RIGHT);
    static const Format correctionHeaderFormat(correctionFormat.length(), Format::Alignment::RIGHT);
 
    // Display table header, each column colored to match the color used for that
    // column's data below.
    arduino.print("", numHeaderFormat, COL_NUM_COLOR);
    arduino.print("Type", typeHeaderFormat, COL_TYPE_COLOR);
-   arduino.print("10 Sample Avg", nowHeaderFormat, COL_NOW_COLOR);
+   arduino.print("10 Sample Avg", shortAvgHeaderFormat, COL_SHORT_AVG_COLOR);
    arduino.print(" ");
-   arduino.print("2 Min Avg", avgHeaderFormat, COL_AVG_COLOR);
+   arduino.print("2 Min Avg", longAvgHeaderFormat, COL_LONG_AVG_COLOR);
    arduino.print(" ");
-   arduino.println("Correction", correctionHeaderFormat, COL_DELTA_COLOR);
+   arduino.println("Correction", correctionHeaderFormat, COL_CORRECTION_COLOR);
 
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
@@ -317,51 +341,51 @@ void displaySensorList()
 
       if (sensorExists)
       {
-         float timedAverage = samplers[i]->getLongAvgValue();
+         float longAvg = samplers[i]->getLongAvgValue();
          float baseline = samplers[0]->getLongAvgValue();
-         float correction = (!isnan(timedAverage) && !isnan(baseline)) ? (baseline - timedAverage) : NAN;
-         float current = samplers[i]->getShortAvgValue();
+         float correction = (!isnan(longAvg) && !isnan(baseline)) ? (baseline - longAvg) : NAN;
+         float shortAvg = samplers[i]->getShortAvgValue();
 
          // Display current temp
-         if (!isnan(current))
+         if (!isnan(shortAvg))
          {
-            arduino.print(current, tempFormat, COL_NOW_COLOR);
+            arduino.print(shortAvg, shortAvgFormat, COL_SHORT_AVG_COLOR);
          }
          else
          {
-            arduino.print("---", tempFormat, COL_NOW_COLOR);
+            arduino.print("---", shortAvgFormat, COL_SHORT_AVG_COLOR);
          }
          arduino.print(" ");
 
          // Display averaged temp
-         if (!isnan(timedAverage))
+         if (!isnan(longAvg))
          {
-            arduino.print(timedAverage, avgTempFormat, COL_AVG_COLOR);
+            arduino.print(longAvg, longAvgFormat, COL_LONG_AVG_COLOR);
          }
          else
          {
-            arduino.print("---", avgTempFormat, COL_AVG_COLOR);
+            arduino.print("---", longAvgFormat, COL_LONG_AVG_COLOR);
          }
          arduino.print(" ");
 
          // Display correction factor (only once the timed average is available, since
          // it can't yet be computed otherwise)
-         if (!isnan(timedAverage) && !isnan(correction))
+         if (!isnan(longAvg) && !isnan(correction))
          {
-            arduino.println(correction, correctionFormat, COL_DELTA_COLOR);
+            arduino.println(correction, correctionFormat, COL_CORRECTION_COLOR);
          }
          else
          {
-            arduino.println("---", correctionFormat, COL_DELTA_COLOR);
+            arduino.println("---", correctionFormat, COL_CORRECTION_COLOR);
          }
       }
       else
       {
-         arduino.print("---", tempFormat, COL_NOW_COLOR);
+         arduino.print("---", shortAvgFormat, COL_SHORT_AVG_COLOR);
          arduino.print(" ");
-         arduino.print("---", avgTempFormat, COL_AVG_COLOR);
+         arduino.print("---", longAvgFormat, COL_LONG_AVG_COLOR);
          arduino.print(" ");
-         arduino.println("---", correctionFormat, COL_DELTA_COLOR);
+         arduino.println("---", correctionFormat, COL_CORRECTION_COLOR);
       }
    }
 }
@@ -406,14 +430,16 @@ void setup()
       // clear out corrections
       sensor.setTempCorrectionF(0);
 
-      points[i].addTag("location", (String("Calibration ") + (i + 1)).c_str());
+      shortAvgPoints[i].addTag("location", (String("Cal ") + (i + 1) + ": Short Average").c_str());
+      longAvgPoints[i].addTag("location", (String("Cal ") + (i + 1) + ": Long Average").c_str());
+      correctionPoints[i].addTag("location", (String("Cal ") + (i + 1) + ": Correction").c_str());
       arduino.preferences.putString((String(ID_KEY_PREFIX) + i).c_str(), sensorExists ? sensor.id() : "");
 
       samplers[i] = new Sampler(&sensor, i);
    }
    arduino.preferences.end();
 
-   uint8_t batchSize = std::max((uint8_t)1, detectedSensorCount);
+   uint8_t batchSize = std::max((uint8_t)1, (uint8_t)(3 * detectedSensorCount));
    client.setWriteOptions(WriteOptions().batchSize(batchSize).bufferSize(2 * batchSize));
    Serial.print("Detected sensors: ");
    Serial.println(detectedSensorCount);
@@ -563,26 +589,26 @@ void loop()
             continue;
          }
 
-         float timedAverage = samplers[i]->getLongAvgValue();
-         float current = samplers[i]->getShortAvgValue();
+         float longAvg = samplers[i]->getLongAvgValue();
+         float shortAvg = samplers[i]->getShortAvgValue();
 
-         // Add this sensor's current (short average) value to the first plot
-         if (shortAvgSeries[i] != nullptr && !isnan(current))
+         // Add this sensor's short average value to the first plot
+         if (shortAvgSeries[i] != nullptr && !isnan(shortAvg))
          {
-            shortAvgSeries[i]->add(current);
+            shortAvgSeries[i]->add(shortAvg);
          }
 
-         // Add this sensor's timed average to the second plot
-         if (longAvgSeries[i] != nullptr && !isnan(timedAverage))
+         // Add this sensor's long average value to the second plot
+         if (longAvgSeries[i] != nullptr && !isnan(longAvg))
          {
-            longAvgSeries[i]->add(timedAverage);
+            longAvgSeries[i]->add(longAvg);
          }
 
          // Add this sensor's current correction/delta to the third plot (only once the
-         // timed average and baseline are available)
-         if (correctionSeries[i] != nullptr && !isnan(timedAverage) && !isnan(baseline))
+         // long average and baseline are available)
+         if (correctionSeries[i] != nullptr && !isnan(longAvg) && !isnan(baseline))
          {
-            correctionSeries[i]->add(baseline - timedAverage);
+            correctionSeries[i]->add(baseline - longAvg);
          }
       }
    }
@@ -604,8 +630,8 @@ void loop()
       arduino.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
       for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
-         float timedAverage = samplers[i]->getLongAvgValue();
-         float correction = (!isnan(timedAverage) && !isnan(saveBaseline)) ? (saveBaseline - timedAverage) : 0.0f;
+         float longAvg = samplers[i]->getLongAvgValue();
+         float correction = (!isnan(longAvg) && !isnan(saveBaseline)) ? (saveBaseline - longAvg) : 0.0f;
          arduino.preferences.putFloat((String(TEMP_KEY_PREFIX) + i).c_str(), correction);
       }
       arduino.preferences.end();
@@ -630,25 +656,25 @@ void loop()
 
          for (int i = 0; i < NUM_SENSORS; i++)
          {
-            float temperature = samplers[i]->getLongAvgValue();
-            if (!sensors[i].exists() || std::isnan(temperature))
+            float tLongAvg = samplers[i]->getLongAvgValue();
+            if (!sensors[i].exists() || std::isnan(tLongAvg))
             {
                continue;
             }
 
-            float tDelta = std::isnan(baseline) ? NAN : (baseline - temperature);
+            float tDelta = std::isnan(baseline) ? NAN : (baseline - tLongAvg);
             float tShortAvg = samplers[i]->getShortAvgValue();
-            float tLongAvg = temperature;
 
-            points[i].clearFields();
-            // the current short and long averages
-            points[i].addField("tShortAvg", tShortAvg, 3);
-            points[i].addField("tLongAvg", tLongAvg, 3);
+            shortAvgPoints[i].clearFields();
+            shortAvgPoints[i].addField("temperature", tShortAvg, 3);
 
-            // the deltas from the baseline
-            points[i].addField("tDelta", tDelta, 4);
+            longAvgPoints[i].clearFields();
+            longAvgPoints[i].addField("temperature", tLongAvg, 3);
 
-            if (!client.writePoint(points[i]))
+            correctionPoints[i].clearFields();
+            correctionPoints[i].addField("temperature", tDelta, 4);
+
+            if (!client.writePoint(shortAvgPoints[i]) || !client.writePoint(longAvgPoints[i]) || !client.writePoint(correctionPoints[i]))
             {
                writeFailed = true;
                break;
