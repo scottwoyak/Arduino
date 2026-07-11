@@ -47,6 +47,7 @@ private:
    volatile bool _isLowB = false;
    volatile Direction _initialDirection = Direction::UNKNOWN;
    volatile int32_t _position = 0;
+   int32_t _lastPosition = 0;
 
    void _onChange(Source source)
    {
@@ -221,6 +222,32 @@ public:
    void setPosition(int32_t position)
    {
       _position = position;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the change in position since the last call to delta(), then resets the
+   /// tracked baseline to the current position.
+   /// </summary>
+   /// <returns>Signed change in position since the last call to delta().</returns>
+   ///
+   int32_t delta()
+   {
+      int32_t position = _position;
+      int32_t change = position - _lastPosition;
+      _lastPosition = position;
+      return change;
+   }
+
+   ///
+   /// <summary>
+   /// Resets the current position and the delta() baseline to zero.
+   /// </summary>
+   ///
+   void reset()
+   {
+      _position = 0;
+      _lastPosition = 0;
    }
 
    ///

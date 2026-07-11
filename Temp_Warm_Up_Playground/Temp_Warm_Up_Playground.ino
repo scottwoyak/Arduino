@@ -21,10 +21,10 @@
 //   scale to fit whatever is currently plotted.
 // - Once every rate has been tested, shows the summary results table (target rate,
 //   actual rate, starting temperature, and peak temperature increase) with 2 spaces
-//   between columns. The rotary encoder's button cycles between the summary table,
-//   a raw-sample scatter plot (points), and a rolling-average scatter plot (connected
-//   lines); the scatter plot views show a color legend of the tested sample rates
-//   (e.g. "100/s") in place of a button prompt.
+//   between columns. Rotating encoderA cycles between the summary table, a
+//   points-and-lines scatter plot, a points-only scatter plot, and a lines-only
+//   scatter plot; the scatter plot views show a color legend of the tested sample
+//   rates (e.g. "100/s") in place of a button prompt.
 //
 // Hardware: ESP32_S3_Playground board (LGX_Hosyond_ST7796 display, rotary encoder),
 // with the screen rotated 180 degrees from the default landscape orientation.
@@ -44,17 +44,17 @@
 
 ///
 /// <summary>
-/// Which post-run view is currently displayed: the summary results table, a raw-sample
-/// scatter plot, a rolling-average scatter plot, or an overlay of both raw samples and
-/// rolling average on the same axes.
+/// Which post-run view is currently displayed: the summary results table, a scatter plot
+/// showing both raw-sample points and the rolling-average line, a raw-sample points-only
+/// plot, or a rolling-average lines-only plot.
 /// </summary>
 ///
-enum class ResultView : uint8_t { Summary, Overlay, RawScatter, RollingAvgScatter };
+enum class ResultView : uint8_t { Summary, PointsAndLines, Points, Lines };
 
 ///
 /// <summary>
-/// Advances to the next post-run view: summary table, overlay scatter plot,
-/// raw-sample scatter plot, rolling-average scatter plot, and back to the summary table.
+/// Advances to the next post-run view: summary table, points-and-lines scatter plot,
+/// points-only scatter plot, lines-only scatter plot, and back to the summary table.
 /// </summary>
 /// <param name="view">View to advance.</param>
 /// <returns>Reference to the updated view.</returns>
@@ -64,15 +64,15 @@ inline ResultView& operator++(ResultView& view)
    switch (view)
    {
    case ResultView::Summary:
-      view = ResultView::Overlay;
+      view = ResultView::PointsAndLines;
       break;
 
-   case ResultView::Overlay:
-      view = ResultView::RawScatter;
+   case ResultView::PointsAndLines:
+      view = ResultView::Points;
       break;
 
-   case ResultView::RawScatter:
-      view = ResultView::RollingAvgScatter;
+   case ResultView::Points:
+      view = ResultView::Lines;
       break;
 
    default:
@@ -94,6 +94,67 @@ inline ResultView operator++(ResultView& view, int)
    ResultView previous = view;
    ++view;
    return previous;
+}
+
+///
+/// <summary>
+/// Advances to the previous post-run view: the reverse of operator++.
+/// </summary>
+/// <param name="view">View to move backward.</param>
+/// <returns>Reference to the updated view.</returns>
+///
+inline ResultView& operator--(ResultView& view)
+{
+   switch (view)
+   {
+   case ResultView::PointsAndLines:
+      view = ResultView::Summary;
+      break;
+
+   case ResultView::Points:
+      view = ResultView::PointsAndLines;
+      break;
+
+   case ResultView::Lines:
+      view = ResultView::Points;
+      break;
+
+   default:
+      view = ResultView::Lines;
+      break;
+   }
+   return view;
+}
+
+///
+/// <summary>
+/// Advances to the previous post-run view and returns the view's prior value.
+/// </summary>
+/// <param name="view">View to move backward.</param>
+/// <returns>The view's value before moving backward.</returns>
+///
+inline ResultView operator--(ResultView& view, int)
+{
+   ResultView previous = view;
+   --view;
+   return previous;
+}
+
+///
+/// <summary>
+/// Advances or moves back the view by the given number of steps, wrapping around as
+/// needed (e.g. as driven by a rotary encoder's delta()).
+/// </summary>
+/// <param name="view">View to adjust.</param>
+/// <param name="delta">Number of steps to advance (positive) or move back (negative).</param>
+/// <returns>Reference to the updated view.</returns>
+///
+inline ResultView& operator+=(ResultView& view, int32_t delta)
+{
+   constexpr int32_t numViews = static_cast<int32_t>(ResultView::Lines) + 1;
+   int32_t index = (static_cast<int32_t>(view) + (delta % numViews) + numViews) % numViews;
+   view = static_cast<ResultView>(index);
+   return view;
 }
 
 // ----------- Target Sample Rates and Series Colors
@@ -175,7 +236,6 @@ constexpr uint16_t DISPLAY_WIDTH = 480;
 constexpr uint16_t DISPLAY_HEIGHT = 320;
 constexpr uint8_t TITLE_TEXT_SIZE = 3;
 constexpr uint8_t BODY_TEXT_SIZE = 2;
-constexpr uint16_t COLLECTING_HEADER_HEIGHT = TITLE_TEXT_SIZE * 8 + BODY_TEXT_SIZE * 8 + 4; // title + status line, plus padding
 
 // ----------- Scatter Plot
 constexpr uint16_t DISPLAY_UPDATE_INTERVAL_MS = 100;
@@ -204,7 +264,7 @@ constexpr size_t NUM_RESULT_TABLE_COLUMNS = sizeof(RESULT_TABLE_COLUMNS) / sizeo
 SerialTable resultTable(RESULT_TABLE_TITLE, RESULT_TABLE_COLUMNS, NUM_RESULT_TABLE_COLUMNS);
 
 // ----------- Scatter Plot State
-ScatterPlot scatterPlot(&arduino, 0, COLLECTING_HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - COLLECTING_HEADER_HEIGHT);
+ScatterPlot scatterPlot(&arduino, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 Timer displayUpdateTimer(DISPLAY_UPDATE_INTERVAL_MS);
 
 // ----------- Status Line State
@@ -213,6 +273,7 @@ bool lastStatusWasCooldown = false;
 float lastCooldownAvg = NAN;
 size_t lastDrawnRatesCount = 0;
 int16_t lastDrawnRatesWidth = 0;
+int16_t statusLineY = 0;
 
 // ----------- View State
 ResultView resultView = ResultView::Summary;
@@ -817,36 +878,46 @@ TestRunner testRunner;
 ///
 /// <summary>
 /// Clears the display and draws the collecting-view title, recording the Y position
-/// of the status line drawn below it.
+/// of the status line drawn below it. Resizes the scatter plot to fill the remaining
+/// space below the header, so its top edge always matches the actual rendered header
+/// height instead of a hard-coded estimate.
 /// </summary>
 ///
 void drawCollectingHeader()
 {
    arduino.setTextSize(TITLE_TEXT_SIZE);
    arduino.clearDisplay();
-   arduino.println("Warm-Up Tests", Color::HEADING);
+   arduino.println("Warm-Up Profiler", Color::HEADING);
+
+   arduino.setTextSize(BODY_TEXT_SIZE);
+   statusLineY = arduino.getCursorY();
+   arduino.setCursorY(statusLineY + arduino.charH());
+   arduino.setCursorY(arduino.getCursorY() + arduino.charH() / 4);
+
+   int16_t headerHeight = arduino.getCursorY();
+   scatterPlot.setRect(0, headerHeight, DISPLAY_WIDTH, DISPLAY_HEIGHT - headerHeight);
 }
 
 ///
 /// <summary>
-/// Clears the top-right status row (a single line of BODY_TEXT_SIZE text at the very
-/// top of the display, Y=0) so it can be redrawn with new content.
+/// Clears the top-right status row (a single line of BODY_TEXT_SIZE text on the line
+/// just below the header) so it can be redrawn with new content.
 /// </summary>
 ///
 void clearTopRightStatus()
 {
    arduino.setTextSize(BODY_TEXT_SIZE);
    int16_t rightContentStartX = DISPLAY_WIDTH * 40 / 100;  // Start clearing at 40% (keeping left 40%, clearing right 60%)
-   arduino.fillRect(rightContentStartX, 0, DISPLAY_WIDTH - rightContentStartX, arduino.charH(), Color::BLACK);
+   arduino.fillRect(rightContentStartX, statusLineY, DISPLAY_WIDTH - rightContentStartX, arduino.charH(), Color::BLACK);
 }
 
 ///
 /// <summary>
-/// Redraws the status line at the very top-right corner of the display (Y=0): the
-/// current test's measured sample rate (in that series' color) while collecting, or
-/// the live cooldown rolling-average temperature between tests (and before the first
-/// test). The row is cleared first whenever the content changes so switching between
-/// cooldown/collecting modes never leaves stale text behind.
+/// Redraws the status line on the line just below the header: the current test's
+/// measured sample rate (in that series' color) while collecting, or the live cooldown
+/// rolling-average temperature between tests (and before the first test). The row is
+/// cleared first whenever the content changes so switching between cooldown/collecting
+/// modes never leaves stale text behind.
 /// </summary>
 ///
 void updateStatusLine()
@@ -879,7 +950,7 @@ void updateStatusLine()
    }
 
    clearTopRightStatus();
-   arduino.setCursor(0, 0);
+   arduino.setCursor(0, statusLineY);
 
    if (isfinite(currentAvg))
    {
@@ -906,13 +977,13 @@ void updateStatusLine()
 /// range changes or forceFullRedraw requests one (e.g. because the view mode just
 /// changed); otherwise only newly collected points are plotted.
 /// </summary>
-/// <param name="viewMode">Which scatter plot view to display (RawScatter, RollingAvgScatter, or Overlay).</param>
+/// <param name="viewMode">Which scatter plot view to display (Points, Lines, or PointsAndLines).</param>
 /// <param name="forceFullRedraw">If true, always performs a full clear and redraw.</param>
 ///
 void drawScatterView(ResultView viewMode, bool forceFullRedraw)
 {
-   bool showRaw = (viewMode != ResultView::RollingAvgScatter);
-   bool showMovingAverage = (viewMode != ResultView::RawScatter);
+   bool showRaw = (viewMode != ResultView::Lines);
+   bool showMovingAverage = (viewMode != ResultView::Points);
 
    for (size_t i = 0; i < scatterPlot.getSeriesCount(); i++)
    {
@@ -930,12 +1001,12 @@ void drawScatterView(ResultView viewMode, bool forceFullRedraw)
    scatterPlot.render();
    arduino.display.endWrite();
 
-   // Draw the actual rates at the top-right corner of the display, color-coded per series,
-   // only if there are completed results and we're not showing the cooldown message
-   // instead (updateStatusLine owns this row while cooling down). Include the currently
-   // running test's rate if one is active. Clears the row first whenever the rate count
-   // or the rendered text width changes so a shrinking width (e.g. "100/s" back down to
-   // "99/s") never leaves stale leading characters behind.
+   // Draw the actual rates on the line just below the header, right-aligned and
+   // color-coded per series, only if there are completed results and we're not showing
+   // the cooldown message instead (updateStatusLine owns this row while cooling down).
+   // Include the currently running test's rate if one is active. Clears the row first
+   // whenever the rate count or the rendered text width changes so a shrinking width
+   // (e.g. "100/s" back down to "99/s") never leaves stale leading characters behind.
    size_t resultCount = testRunner.resultCount();
    bool isRunning = !testRunner.isComplete() && !testRunner.isCooldown();
    bool shouldShowRates = (resultCount > 0 || isRunning) && !testRunner.isCooldown();
@@ -944,12 +1015,15 @@ void drawScatterView(ResultView viewMode, bool forceFullRedraw)
    {
       arduino.setTextSize(BODY_TEXT_SIZE);
 
+      constexpr const char* RATE_LABEL = " Sample Rate: ";
+
       // Count how many rates to display (completed + current if running)
       size_t displayRateCount = resultCount + (isRunning ? 1 : 0);
 
-      // Build each rate's text and measure total width so the group is right-aligned
+      // Build each rate's text and measure total width (including the label) so the
+      // group is right-aligned
       String rateStrs[MAX_RESULTS + 1];
-      int16_t totalWidth = 0;
+      int16_t totalWidth = arduino.charW() * strlen(RATE_LABEL);
 
       // Add completed results' rates
       for (size_t i = 0; i < resultCount; i++)
@@ -972,7 +1046,9 @@ void drawScatterView(ResultView viewMode, bool forceFullRedraw)
       }
 
       int16_t x = DISPLAY_WIDTH - totalWidth;
-      arduino.setCursor(x, 0);
+      arduino.setCursor(x, statusLineY);
+
+      arduino.print(RATE_LABEL, Color::LABEL);
 
       // Print completed results' rates
       for (size_t i = 0; i < resultCount; i++)
@@ -1007,7 +1083,7 @@ void updateLiveView()
    }
 
    updateStatusLine();
-   drawScatterView(ResultView::Overlay, false);
+   drawScatterView(ResultView::PointsAndLines, false);
 }
 
 ///
@@ -1020,7 +1096,8 @@ void drawSummaryView()
 {
    arduino.clearDisplay();
    arduino.setTextSize(TITLE_TEXT_SIZE);
-   arduino.println("Warm-Up Test", Color::HEADING);
+   arduino.println("Warm-Up Profiler", Color::HEADING);
+   arduino.setCursorY(arduino.getCursorY() + arduino.charH() / 4);
    arduino.setTextSize(BODY_TEXT_SIZE);
 
    int16_t charWidth = arduino.charW();
@@ -1080,9 +1157,9 @@ void drawSummaryView()
 
 ///
 /// <summary>
-/// Draws the currently selected post-run view: the summary table, a raw-sample scatter
-/// plot, or a rolling-average scatter plot, each covering every completed test.
-/// Pressing the encoder button cycles between views.
+/// Draws the currently selected post-run view: the summary table, a points-only scatter
+/// plot, or a lines-only scatter plot, each covering every completed test.
+/// Rotating encoderA cycles between views.
 /// </summary>
 ///
 void drawResultView()
@@ -1102,7 +1179,8 @@ void drawResultView()
 ///
 /// <summary>
 /// Starts a full test run: prints the serial results header, resets the runner and
-/// result view, and draws the initial collecting view.
+/// result view, clears every scatter plot series so old data disappears immediately,
+/// and draws the initial collecting view.
 /// </summary>
 ///
 void startTestRun()
@@ -1111,6 +1189,12 @@ void startTestRun()
 
    testRunner.start();
    resultView = ResultView::Summary;
+
+   for (size_t i = 0; i < scatterPlot.getSeriesCount(); i++)
+   {
+      scatterPlot.getSeries(i)->clear();
+   }
+   scatterPlot.invalidate();
 
    drawCollectingHeader();
    hasDrawnStatusLine = false;
@@ -1130,7 +1214,8 @@ void setup()
    arduino.begin();
    arduino.setTextSize(TITLE_TEXT_SIZE);
    arduino.clearDisplay();
-   arduino.println("Warm-Up Profile", Color::HEADING);
+   arduino.println("Warm-Up Profiler", Color::HEADING);
+   arduino.setCursorY(arduino.getCursorY() + arduino.charH() / 4);
 
    sensor.begin();
 
@@ -1152,6 +1237,7 @@ void setup()
 
    scatterPlot.setYAxisFormat("##.##F");
    scatterPlot.setXAxisFormat("##.#s");
+   scatterPlot.setInitialYRange(-0.1f, 0.5f);
 
    testRunner.begin(&testCase, &cooldownMonitor);
    startTestRun();
@@ -1164,11 +1250,18 @@ void loop()
       return;
    }
 
+   if (arduino.buttonA.wasPressed())
+   {
+      startTestRun();
+      return;
+   }
+
    if (testRunner.isComplete())
    {
-      if (arduino.encoderA.button.wasPressed())
+      int32_t delta = arduino.encoderA.delta();
+      if (delta != 0)
       {
-         resultView++;
+         resultView += delta;
          drawResultView();
       }
       return;
@@ -1194,7 +1287,11 @@ void loop()
       if (testRunner.isComplete())
       {
          Serial.println("Tests complete");
-         drawResultView();
+         arduino.encoderA.reset();
+
+         // The live view already looks identical to the PointsAndLines result view,
+         // so just switch the view state without redrawing.
+         resultView = ResultView::PointsAndLines;
          return;
       }
    }

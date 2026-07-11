@@ -497,6 +497,11 @@ private:
    const char* _xAxisFormat = nullptr;
    const char* _yAxisFormat = nullptr;
 
+   // Optional initial Y-axis range: the plot never shrinks below this range, but will
+   // grow beyond it if the data requires a wider range.
+   float _initialYMin = NAN;
+   float _initialYMax = NAN;
+
    // Optional centered title drawn above the chart; when set, the chart area is reduced
    // to make room for it.
    String _title;
@@ -558,8 +563,8 @@ private:
 
       *outXMin = xMin;
       *outXMax = xMax;
-      *outYMin = yMin;
-      *outYMax = yMax;
+      *outYMin = isfinite(_initialYMin) ? ((!isfinite(yMin) || (_initialYMin < yMin)) ? _initialYMin : yMin) : yMin;
+      *outYMax = isfinite(_initialYMax) ? ((!isfinite(yMax) || (_initialYMax > yMax)) ? _initialYMax : yMax) : yMax;
    }
 
    ///
@@ -784,6 +789,25 @@ public:
 
    ///
    /// <summary>
+   /// Repositions and/or resizes the plot area. Forces a full redraw on the next
+   /// render() since the chart geometry changes.
+   /// </summary>
+   /// <param name="x">X coordinate for the plot.</param>
+   /// <param name="y">Y coordinate for the plot.</param>
+   /// <param name="width">Width of the plot area in pixels.</param>
+   /// <param name="height">Height of the plot area in pixels.</param>
+   ///
+   void setRect(int16_t x, int16_t y, int16_t width, int16_t height)
+   {
+      _x = x;
+      _y = y;
+      _width = width;
+      _height = height;
+      _forceFullRedraw = true;
+   }
+
+   ///
+   /// <summary>
    /// Creates a new scatter plot series owned by this plot, with the specified initial
    /// capacity.
    /// </summary>
@@ -936,6 +960,21 @@ public:
    void setYAxisFormat(const char* format)
    {
       _yAxisFormat = format;
+   }
+
+   ///
+   /// <summary>
+   /// Sets an initial Y-axis range the chart starts with before any data requires a wider
+   /// range. The plot's Y range never shrinks below [min, max], but grows beyond it as
+   /// needed to fit newly added data. Pass NAN for either value to disable that bound.
+   /// </summary>
+   /// <param name="min">Initial minimum Y value.</param>
+   /// <param name="max">Initial maximum Y value.</param>
+   ///
+   void setInitialYRange(float min, float max)
+   {
+      _initialYMin = min;
+      _initialYMax = max;
    }
 
    ///
