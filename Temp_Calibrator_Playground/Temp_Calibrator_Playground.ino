@@ -127,6 +127,18 @@ public:
    {
       return _longAverage.average();
    }
+
+   ///
+   /// <summary>
+   /// Reports whether the long (timed) average has accumulated a full
+   /// TIMED_AVERAGE_DURATION_MS window of data.
+   /// </summary>
+   /// <returns>True once the long average window is fully populated.</returns>
+   ///
+   bool isLongAvgFull()
+   {
+      return _longAverage.isFull();
+   }
 };
 
 // Samplers, one per sensor, each maintaining a rolling buffer of recent readings
@@ -630,18 +642,28 @@ void loop()
          count = 0;
 
          bool writeFailed = false;
+         bool baselineFull = samplers[0]->isLongAvgFull();
          float baseline = samplers[0]->getLongAvgValue();
 
          for (int i = 0; i < NUM_SENSORS; i++)
          {
-            float tLongAvg = samplers[i]->getLongAvgValue();
-            if (!sensors[i].exists() || std::isnan(tLongAvg))
+            if (!sensors[i].exists())
             {
                continue;
             }
 
-            float tDelta = std::isnan(baseline) ? NAN : (baseline - tLongAvg);
+            // Short average uploads as soon as it is available; long average and
+            // correction (which depends on it) only upload once their full timed
+            // window has been collected.
             float tShortAvg = samplers[i]->getShortAvgValue();
+            bool longAvgFull = baselineFull && samplers[i]->isLongAvgFull();
+            float tLongAvg = longAvgFull ? samplers[i]->getLongAvgValue() : NAN;
+            float tDelta = (longAvgFull && !std::isnan(baseline) && !std::isnan(tLongAvg)) ? (baseline - tLongAvg) : NAN;
+
+            if (std::isnan(tShortAvg) && std::isnan(tLongAvg) && std::isnan(tDelta))
+            {
+               continue;
+            }
 
             shortAvgFields[i]->set(tShortAvg);
             longAvgFields[i]->set(tLongAvg);

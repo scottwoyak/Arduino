@@ -246,6 +246,27 @@ public:
    }
 
    /// <summary>
+   /// Reports whether every bucket (including the blending bucket) has received at least
+   /// one value, meaning average() now reflects the full configured duration rather than
+   /// a partially-filled startup window.
+   /// </summary>
+   /// <returns>True once the full window has been filled with data.</returns>
+   bool isFull()
+   {
+      _advance();
+
+      for (uint i = 0; i < _numBuckets; i++)
+      {
+         if (_bucketCounts[i] == 0)
+         {
+            return false;
+         }
+      }
+
+      return true;
+   }
+
+   /// <summary>
    /// Gets the current active bucket index.
    /// </summary>
    /// <returns>Zero-based active bucket index.</returns>
