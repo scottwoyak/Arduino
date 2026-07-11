@@ -7,7 +7,7 @@
 - Never attempt to build the solution or project automatically (do not use run_build or Visual Micro build commands). If a build or compilation is needed, explicitly ask the user to run it manually and provide the output if necessary.
 - Do not run build/test commands that require VisualMicro context when operating outside Visual Studio VisualMicro pipeline; rely on user-run VisualMicro builds instead. User prefers not to run full solution builds in this workflow; ask them before any compile/run action and rely on user-provided serial output for runtime measurements.
 - When asked to compile an Arduino sketch, build only the current sketch/project, not the entire solution.
-- When creating new Arduino projects or sketches, do not add them to the Visual Studio solution file; user will manage solution entries manually.
+- When creating new Arduino projects or sketches, only create the project folder and the `.ino` file. Do not create the `.vcxproj`, `.vcxproj.user`, or `__vm` folder/generated header files — the user will manually import the sketch with Visual Micro to generate those. After creating a new project, remind the user to import it into Visual Micro.
 - When creating new Arduino test sketches, only create the `.ino` file. Do not create `.vcxproj` project files or modify the `.slnx` solution file. The user imports new projects into the solution via Visual Micro themselves.
 - Do not edit `.sln`/`.slnx` solution files (or other files) that are currently open in the IDE, per the active IDESTATE context; ask the user to close them first or make the change manually.
 - When adding new test projects, always include them in `Tests/All_Tests/All_Tests.ino` so they run in the aggregate test project.

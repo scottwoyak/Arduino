@@ -19,9 +19,9 @@ class MS5837PressureTestSensor;
 class CapacitiveTestSensor;
 
 // One-line sensor source switch used by all sketches.
-using TestSensor = ESP32TempTestSensor;
+// using TestSensor = ESP32TempTestSensor;
 // using TestSensor = SinWithNormalNoiseTestSensor;
-// using TestSensor = TempSensorTestSensor;
+using TestSensor = TempSensorTestSensor;
 // using TestSensor = ConstantTestSensor;
 // using TestSensor = RandomTestSensor;
 // using TestSensor = NormalTestSensor;

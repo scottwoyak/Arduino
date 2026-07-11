@@ -86,6 +86,17 @@ public:
 
    ///
    /// <summary>
+   /// Updates the sampling interval used to pace new value collection.
+   /// </summary>
+   /// <param name="samplingIntervalMs">New collection interval in milliseconds.</param>
+   ///
+   void setSamplingInterval(unsigned long samplingIntervalMs)
+   {
+      _samplingTimer.setDuration(samplingIntervalMs);
+   }
+
+   ///
+   /// <summary>
    /// Advances capture timeout state.
    /// </summary>
    /// <returns>State flags for transitions that occurred during this call.</returns>

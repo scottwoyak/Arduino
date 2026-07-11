@@ -366,7 +366,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Sensor_Averaging_Display/Sensor_Averaging_Display.vcxproj">
+  <Project Path="Sensor_Averaging_Playground/Sensor_Averaging_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

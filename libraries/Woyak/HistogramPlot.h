@@ -21,6 +21,7 @@ private:
     int16_t _sectionTop;
     int16_t _sectionHeight;
     Color _barColor;
+    Color _axisLabelColor;
     uint8_t _labelSignificantDigits;
 
     int16_t* _previousBarHeights = nullptr;
@@ -118,7 +119,7 @@ private:
         String maxLabel = Util::toSignificantString(_histogram.max(), _labelSignificantDigits);
 
         _feather->setCursor(_sectionLeft, chartBottom + 1);
-        _feather->print(minLabel, _barColor);
+        _feather->print(minLabel, _axisLabelColor);
 
         int16_t maxLabelX = _sectionLeft + _sectionWidth - static_cast<int16_t>(maxLabel.length() * _feather->charW());
         if (maxLabelX < _sectionLeft)
@@ -126,7 +127,7 @@ private:
           maxLabelX = _sectionLeft;
         }
         _feather->setCursor(maxLabelX, chartBottom + 1);
-        _feather->print(maxLabel, _barColor);
+        _feather->print(maxLabel, _axisLabelColor);
 
         _previousMin = _histogram.min();
         _previousMax = _histogram.max();
@@ -136,43 +137,64 @@ private:
    }
 
 public:
-   /// <summary>
-   /// Constructs a histogram plot renderer.
-   /// </summary>
-   /// <param name="feather">Pointer to the display interface.</param>
-   /// <param name="histogram">Reference to the histogram to render.</param>
-   /// <param name="sectionLeft">Left x-coordinate of the histogram panel.</param>
-   /// <param name="sectionWidth">Width in pixels of the histogram panel.</param>
-   /// <param name="sectionTop">Top y-coordinate of the histogram panel.</param>
-   /// <param name="sectionHeight">Height in pixels of the histogram panel.</param>
-   /// <param name="barColor">Color to use for histogram bars.</param>
-   /// <param name="labelSignificantDigits">Number of significant digits for min/max labels.</param>
-   HistogramPlot(ArduinoWithDisplay* feather, const Histogram& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor, uint8_t labelSignificantDigits)
-      : _feather(feather), _histogram(histogram), _sectionLeft(sectionLeft), _sectionWidth(sectionWidth), _sectionTop(sectionTop), _sectionHeight(sectionHeight), _barColor(barColor), _labelSignificantDigits(labelSignificantDigits)
-   {
-   }
+    ///
+    /// <summary>
+    /// Constructs a histogram plot renderer with separate axis label color.
+    /// </summary>
+    /// <param name="feather">Pointer to the display interface.</param>
+    /// <param name="histogram">Reference to the histogram to render.</param>
+    /// <param name="sectionLeft">Left x-coordinate of the histogram panel.</param>
+    /// <param name="sectionWidth">Width in pixels of the histogram panel.</param>
+    /// <param name="sectionTop">Top y-coordinate of the histogram panel.</param>
+    /// <param name="sectionHeight">Height in pixels of the histogram panel.</param>
+    /// <param name="barColor">Color to use for histogram bars.</param>
+    /// <param name="labelSignificantDigits">Number of significant digits for min/max labels.</param>
+    /// <param name="axisLabelColor">Color to use for axis labels.</param>
+    ///
+    HistogramPlot(ArduinoWithDisplay* feather, const Histogram& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor, uint8_t labelSignificantDigits, Color axisLabelColor)
+       : _feather(feather), _histogram(histogram), _sectionLeft(sectionLeft), _sectionWidth(sectionWidth), _sectionTop(sectionTop), _sectionHeight(sectionHeight), _barColor(barColor), _axisLabelColor(axisLabelColor), _labelSignificantDigits(labelSignificantDigits)
+    {
+    }
 
-   /// <summary>
-   /// Destructor that releases allocated render state buffers.
-   /// </summary>
-   ~HistogramPlot()
-   {
-      delete[] _previousBarHeights;
-   }
+    ///
+    /// <summary>
+    /// Constructs a histogram plot renderer with axis labels matching bar color.
+    /// </summary>
+    /// <param name="feather">Pointer to the display interface.</param>
+    /// <param name="histogram">Reference to the histogram to render.</param>
+    /// <param name="sectionLeft">Left x-coordinate of the histogram panel.</param>
+    /// <param name="sectionWidth">Width in pixels of the histogram panel.</param>
+    /// <param name="sectionTop">Top y-coordinate of the histogram panel.</param>
+    /// <param name="sectionHeight">Height in pixels of the histogram panel.</param>
+    /// <param name="barColor">Color to use for histogram bars and axis labels.</param>
+    /// <param name="labelSignificantDigits">Number of significant digits for min/max labels.</param>
+    ///
+    HistogramPlot(ArduinoWithDisplay* feather, const Histogram& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor, uint8_t labelSignificantDigits)
+       : HistogramPlot(feather, histogram, sectionLeft, sectionWidth, sectionTop, sectionHeight, barColor, labelSignificantDigits, barColor)
+    {
+    }
 
-   /// <summary>
-   /// Renders the histogram to the display with incremental updates.
-   /// Call this method repeatedly to update the display as new data arrives.
-   /// </summary>
-   void render()
-   {
-      if (!_allocateRenderState())
-      {
-        _feather->setTextSize(2);
-        _feather->println("Memory unavailable", Color::LABEL);
-        return;
-      }
+    /// <summary>
+    /// Destructor that releases allocated render state buffers.
+    /// </summary>
+    ~HistogramPlot()
+    {
+       delete[] _previousBarHeights;
+    }
 
-      _renderBars();
-   }
+    /// <summary>
+    /// Renders the histogram to the display with incremental updates.
+    /// Call this method repeatedly to update the display as new data arrives.
+    /// </summary>
+    void render()
+    {
+       if (!_allocateRenderState())
+       {
+         _feather->setTextSize(2);
+         _feather->println("Memory unavailable", Color::LABEL);
+         return;
+       }
+
+       _renderBars();
+    }
 };
