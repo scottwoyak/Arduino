@@ -19,6 +19,13 @@ Contributors:
 
 #if defined ( ARDUINO )
  #include <Arduino.h>
+ // Some cores (e.g. Arduino Nano ESP32 / io_pin_remap.h with BOARD_HAS_PIN_REMAP)
+ // define pinMode as a function-like macro, which collides with LovyanGFX's own
+ // lgfx::pinMode function/method declarations and call sites. Undefine it here so
+ // the macro doesn't leak into any LovyanGFX headers/sources that include this file.
+ #ifdef pinMode
+  #undef pinMode
+ #endif
 #endif
 
 #include <stdint.h>

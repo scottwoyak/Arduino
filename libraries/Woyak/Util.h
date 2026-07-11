@@ -3,6 +3,10 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
+#if !defined ( BOARD_HAS_PIN_REMAP )
+ #define digitalPinToGPIONumber(pin) (pin)
+#endif
+
 /// <summary>
 /// Utility functions for common operations.
 /// </summary>
@@ -191,6 +195,41 @@ public:
 			preferences.remove("halt");
 		}
 		preferences.end();
+	}
+
+	///
+	/// <summary>
+	/// Prints known information about the current board and chip to serial.
+	/// </summary>
+	///
+	static void printBoardInfo()
+	{
+		Serial.println("=== Board Info ===");
+		Serial.printf("Board:            %s\n", ARDUINO_BOARD);
+		Serial.printf("Chip Model:       %s\n", ESP.getChipModel());
+		Serial.printf("Chip Revision:    %d\n", ESP.getChipRevision());
+		Serial.printf("CPU Cores:        %d\n", ESP.getChipCores());
+		Serial.printf("CPU Freq:         %d MHz\n", ESP.getCpuFreqMHz());
+		Serial.printf("Flash Size:       %d bytes\n", ESP.getFlashChipSize());
+		Serial.printf("Flash Speed:      %d Hz\n", ESP.getFlashChipSpeed());
+		Serial.printf("Heap Size:        %d bytes\n", ESP.getHeapSize());
+		Serial.printf("Free Heap:        %d bytes\n", ESP.getFreeHeap());
+		Serial.printf("PSRAM Size:       %d bytes\n", ESP.getPsramSize());
+		Serial.printf("Free PSRAM:       %d bytes\n", ESP.getFreePsram());
+		Serial.printf("SDK Version:      %s\n", ESP.getSdkVersion());
+		Serial.println("==================");
+
+		Serial.println("=== Default SPI Pins ===");
+		Serial.printf("SCK:              %d (GPIO %d)\n", SCK, digitalPinToGPIONumber(SCK));
+		Serial.printf("MOSI:             %d (GPIO %d)\n", MOSI, digitalPinToGPIONumber(MOSI));
+		Serial.printf("MISO:             %d (GPIO %d)\n", MISO, digitalPinToGPIONumber(MISO));
+		Serial.printf("SS:               %d (GPIO %d)\n", SS, digitalPinToGPIONumber(SS));
+		Serial.println("=========================");
+
+		Serial.println("=== Default I2C Pins ===");
+		Serial.printf("SDA:              %d (GPIO %d)\n", SDA, digitalPinToGPIONumber(SDA));
+		Serial.printf("SCL:              %d (GPIO %d)\n", SCL, digitalPinToGPIONumber(SCL));
+		Serial.println("=========================");
 	}
 
 };

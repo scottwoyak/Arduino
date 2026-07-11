@@ -1,6 +1,7 @@
 #include "ESP32_S3_Playground.h"
 #include "RollingRate.h"
 #include "SerialX.h"
+#include "LGFXUtil.h"
 
 ESP32_S3_Playground arduino;
 RollingRate fps(100);
@@ -11,6 +12,8 @@ void setup()
 {
    SerialX::begin();
    arduino.begin();
+
+   LGFXUtil::printLGFX(&arduino.display);
 }
 
 void loop()

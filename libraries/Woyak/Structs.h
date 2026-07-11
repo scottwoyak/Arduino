@@ -26,5 +26,11 @@ struct Point16
 {
    uint16_t x;
    uint16_t y;
+
+   Point16() = default;
+
+   Point16(uint16_t x, uint16_t y) : x(x), y(y)
+   {
+   }
 };
 

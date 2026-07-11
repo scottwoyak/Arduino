@@ -2,23 +2,43 @@
 
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
+#include "Util.h"
 
 // Hardware Pin Definitions
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+
+// For the external large display wired to the Adafruit Feather ESP32-S3 TFT
 constexpr int8_t PIN_TFT_DC = 6;
 constexpr int8_t PIN_TFT_CS = 5;
 constexpr int8_t PIN_TFT_RST = 9;
 constexpr int8_t PIN_TFT_BL = 10;
-constexpr int8_t PIN_TOUCH_CS = 11;
-constexpr int8_t PIN_TOUCH_INT = 12;
+const int8_t PIN_TFT_SCLK = digitalPinToGPIONumber(SCK);
+const int8_t PIN_TFT_MOSI = digitalPinToGPIONumber(MOSI);
+const int8_t PIN_TFT_MISO = digitalPinToGPIONumber(MISO);
 
-/* For the Playground Setup
-constexpr int8_t PIN_TFT_DC = 8;
-constexpr int8_t PIN_TFT_CS = 10;
+#elif defined(ARDUINO_ESP32_DEV)
+
+// For the DOIT ESP32 DEVKIT V1
+constexpr int8_t PIN_TFT_DC = 6;
+constexpr int8_t PIN_TFT_CS = 5;
 constexpr int8_t PIN_TFT_RST = 9;
-constexpr int8_t PIN_TFT_BL = 7;
-constexpr int8_t PIN_TOUCH_CS = 0;
-constexpr int8_t PIN_TOUCH_INT = 0;
-*/
+constexpr int8_t PIN_TFT_BL = 10;
+const int8_t PIN_TFT_SCLK = digitalPinToGPIONumber(SCK);
+const int8_t PIN_TFT_MOSI = digitalPinToGPIONumber(MOSI);
+const int8_t PIN_TFT_MISO = digitalPinToGPIONumber(MISO);
+
+#else
+
+// For the ESP32-S3 Dev Module (Lonely Binary S3 board)
+constexpr int8_t PIN_TFT_DC = 6;
+constexpr int8_t PIN_TFT_CS = 5;
+constexpr int8_t PIN_TFT_RST = 9;
+constexpr int8_t PIN_TFT_BL = 10;
+const int8_t PIN_TFT_SCLK = digitalPinToGPIONumber(SCK);
+const int8_t PIN_TFT_MOSI = digitalPinToGPIONumber(MOSI);
+const int8_t PIN_TFT_MISO = digitalPinToGPIONumber(MISO);
+
+#endif
 
 ///
 /// <summary>
@@ -57,9 +77,9 @@ public:
          cfg.dma_channel = SPI_DMA_CH_AUTO; // Auto-assign DMA channel
 
          // Hardware SPI pins (using Arduino IDE macros for your board)
-         cfg.pin_sclk = SCK;
-         cfg.pin_mosi = MOSI;
-         cfg.pin_miso = MISO;
+         cfg.pin_sclk = PIN_TFT_SCLK;
+         cfg.pin_mosi = PIN_TFT_MOSI;
+         cfg.pin_miso = PIN_TFT_MISO;
          cfg.pin_dc = PIN_TFT_DC;             // Data/Command
 
          _bus_instance.config(cfg);
@@ -83,11 +103,11 @@ public:
          cfg.offset_rotation = 0;
          cfg.dummy_read_pixel = 8;
          cfg.dummy_read_bits = 1;
-         cfg.readable = true;  // Allows reading display RAM
+         cfg.readable = false;  // MISO is not wired; disable display RAM reads
          cfg.invert = false; // ST7796 usually doesn't need color inversion
          cfg.rgb_order = false; // false = RGB, true = BGR
          cfg.dlen_16bit = false; // 16-bit data length
-         cfg.bus_shared = true;  // CRITICAL: Tells the panel the SPI bus is shared
+         cfg.bus_shared = false;  // No other devices share this SPI bus
 
          _panel_instance.config(cfg);
       }

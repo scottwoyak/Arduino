@@ -51,6 +51,17 @@ public:
          Serial.printf("  dummy_read_pixel:  %d\n", p_cfg.dummy_read_pixel);
          Serial.printf("  dummy_read_bits:   %d\n", p_cfg.dummy_read_bits);
          Serial.printf("  dlen_16bit:        %s\n", p_cfg.dlen_16bit ? "true" : "false");
+
+         auto light = (lgfx::Light_PWM*)panel->getLight();
+         if (light != nullptr)
+         {
+            auto l_cfg = light->config();
+            Serial.println("[Backlight Config]");
+            Serial.printf("  pin_bl:            %d\n", l_cfg.pin_bl);
+            Serial.printf("  freq:              %d Hz\n", l_cfg.freq);
+            Serial.printf("  pwm_channel:       %d\n", l_cfg.pwm_channel);
+            Serial.printf("  invert:            %s\n", l_cfg.invert ? "true" : "false");
+         }
       }
       else
       {
