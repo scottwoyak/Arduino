@@ -53,95 +53,6 @@ enum class ResultView : uint8_t { Summary, PointsAndLines, Points, Lines };
 
 ///
 /// <summary>
-/// Advances to the next post-run view: summary table, points-and-lines scatter plot,
-/// points-only scatter plot, lines-only scatter plot, and back to the summary table.
-/// </summary>
-/// <param name="view">View to advance.</param>
-/// <returns>Reference to the updated view.</returns>
-///
-inline ResultView& operator++(ResultView& view)
-{
-   switch (view)
-   {
-   case ResultView::Summary:
-      view = ResultView::PointsAndLines;
-      break;
-
-   case ResultView::PointsAndLines:
-      view = ResultView::Points;
-      break;
-
-   case ResultView::Points:
-      view = ResultView::Lines;
-      break;
-
-   default:
-      view = ResultView::Summary;
-      break;
-   }
-   return view;
-}
-
-///
-/// <summary>
-/// Advances to the next post-run view and returns the view's prior value.
-/// </summary>
-/// <param name="view">View to advance.</param>
-/// <returns>The view's value before advancing.</returns>
-///
-inline ResultView operator++(ResultView& view, int)
-{
-   ResultView previous = view;
-   ++view;
-   return previous;
-}
-
-///
-/// <summary>
-/// Advances to the previous post-run view: the reverse of operator++.
-/// </summary>
-/// <param name="view">View to move backward.</param>
-/// <returns>Reference to the updated view.</returns>
-///
-inline ResultView& operator--(ResultView& view)
-{
-   switch (view)
-   {
-   case ResultView::PointsAndLines:
-      view = ResultView::Summary;
-      break;
-
-   case ResultView::Points:
-      view = ResultView::PointsAndLines;
-      break;
-
-   case ResultView::Lines:
-      view = ResultView::Points;
-      break;
-
-   default:
-      view = ResultView::Lines;
-      break;
-   }
-   return view;
-}
-
-///
-/// <summary>
-/// Advances to the previous post-run view and returns the view's prior value.
-/// </summary>
-/// <param name="view">View to move backward.</param>
-/// <returns>The view's value before moving backward.</returns>
-///
-inline ResultView operator--(ResultView& view, int)
-{
-   ResultView previous = view;
-   --view;
-   return previous;
-}
-
-///
-/// <summary>
 /// Advances or moves back the view by the given number of steps, wrapping around as
 /// needed (e.g. as driven by a rotary encoder's delta()).
 /// </summary>
@@ -495,8 +406,7 @@ public:
    /// <returns>Target samples per second.</returns>
    ///
    unsigned long targetRate() const { return _targetRate; }
-
-   };
+};
 
 ///
 /// <summary>
@@ -1088,8 +998,8 @@ void updateLiveView()
 
 ///
 /// <summary>
-/// Draws the summary results table
-/// temperature, and temperature delta for each completed test.
+/// Draws the summary results table: target rate, actual rate, starting temperature,
+/// and temperature delta for each completed test.
 /// </summary>
 ///
 void drawSummaryView()
@@ -1157,9 +1067,9 @@ void drawSummaryView()
 
 ///
 /// <summary>
-/// Draws the currently selected post-run view: the summary table, a points-only scatter
-/// plot, or a lines-only scatter plot, each covering every completed test.
-/// Rotating encoderA cycles between views.
+/// Draws the currently selected post-run view: the summary table, a points-and-lines
+/// scatter plot, a points-only scatter plot, or a lines-only scatter plot, each covering
+/// every completed test. Rotating encoderA cycles between views.
 /// </summary>
 ///
 void drawResultView()

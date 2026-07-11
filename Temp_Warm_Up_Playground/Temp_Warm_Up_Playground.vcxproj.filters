@@ -15,11 +15,11 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Temp_Warm_Up_Playground.ino" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="__vm\.Temp_Warm_Up_Playground.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Temp_Warm_Up_Playground.ino" />
   </ItemGroup>
 </Project>
