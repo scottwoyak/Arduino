@@ -263,7 +263,7 @@ void displaySavedInfo()
    }
 
    TimerSecs waitTimer(SAVED_INFO_WAIT_S);
-   while (!arduino.encoder.button.wasPressed() && !waitTimer.ready())
+   while (!arduino.encoderA.button.wasPressed() && !waitTimer.ready())
    {
       delay(1);
    }
@@ -547,7 +547,7 @@ void setup()
 long count = 0;
 void loop()
 {
-   if (arduino.encoder.button.wasPressed())
+   if (arduino.encoderA.button.wasPressed())
    {
       arduino.clearDisplay();
    }

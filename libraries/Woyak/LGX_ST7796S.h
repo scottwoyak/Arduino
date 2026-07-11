@@ -8,35 +8,38 @@
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
 
 // For the external large display wired to the Adafruit Feather ESP32-S3 TFT
+// Default SPI pins:
+//   SCK  = 36
+//   MOSI = 35
+//   MISO = 37
+// Default I2C pins:
+//   SDA = 42
+//   SCL = 41
 constexpr int8_t PIN_TFT_DC = 6;
 constexpr int8_t PIN_TFT_CS = 5;
 constexpr int8_t PIN_TFT_RST = 9;
 constexpr int8_t PIN_TFT_BL = 10;
-const int8_t PIN_TFT_SCLK = digitalPinToGPIONumber(SCK);
-const int8_t PIN_TFT_MOSI = digitalPinToGPIONumber(MOSI);
-const int8_t PIN_TFT_MISO = digitalPinToGPIONumber(MISO);
-
-#elif defined(ARDUINO_ESP32_DEV)
-
-// For the DOIT ESP32 DEVKIT V1
-constexpr int8_t PIN_TFT_DC = 6;
-constexpr int8_t PIN_TFT_CS = 5;
-constexpr int8_t PIN_TFT_RST = 9;
-constexpr int8_t PIN_TFT_BL = 10;
-const int8_t PIN_TFT_SCLK = digitalPinToGPIONumber(SCK);
-const int8_t PIN_TFT_MOSI = digitalPinToGPIONumber(MOSI);
-const int8_t PIN_TFT_MISO = digitalPinToGPIONumber(MISO);
+const int8_t PIN_TFT_SCLK = digitalPinToGPIONumber(SCK);  // GPIO 36
+const int8_t PIN_TFT_MOSI = digitalPinToGPIONumber(MOSI); // GPIO 35
+const int8_t PIN_TFT_MISO = digitalPinToGPIONumber(MISO); // GPIO 37
 
 #else
 
 // For the ESP32-S3 Dev Module (Lonely Binary S3 board)
+// Default SPI pins:
+//   SCK  = 12
+//   MOSI = 11
+//   MISO = 13
+// Default I2C pins:
+//   SDA = 8
+//   SCL = 9
 constexpr int8_t PIN_TFT_DC = 6;
 constexpr int8_t PIN_TFT_CS = 5;
-constexpr int8_t PIN_TFT_RST = 9;
+constexpr int8_t PIN_TFT_RST = 14; // avoids conflict with default I2C SCL (9)
 constexpr int8_t PIN_TFT_BL = 10;
-const int8_t PIN_TFT_SCLK = digitalPinToGPIONumber(SCK);
-const int8_t PIN_TFT_MOSI = digitalPinToGPIONumber(MOSI);
-const int8_t PIN_TFT_MISO = digitalPinToGPIONumber(MISO);
+const int8_t PIN_TFT_SCLK = digitalPinToGPIONumber(SCK);  // GPIO 12
+const int8_t PIN_TFT_MOSI = digitalPinToGPIONumber(MOSI); // GPIO 11
+const int8_t PIN_TFT_MISO = digitalPinToGPIONumber(MISO); // GPIO 13
 
 #endif
 

@@ -1,12 +1,11 @@
 #include "ESP32_S3_Playground.h"
-#include "RollingRate.h"
 #include "SerialX.h"
 #include "LGFXUtil.h"
 
 ESP32_S3_Playground arduino;
-RollingRate fps(100);
 
-Format posFormat("+######");
+Format posFormat("+###");
+Format buttonFormat("########", Format::Alignment::LEFT);
 
 void setup()
 {
@@ -16,16 +15,38 @@ void setup()
    LGFXUtil::printLGFX(&arduino.display);
 }
 
+void displayHeader()
+{
+   arduino.setTextSize(4);
+   arduino.println("Playground", Color::HEADING);
+   arduino.setCursorY(arduino.getCursorY() + arduino.charH() / 4);
+}
+
+void displayEncoder(const char* label, RotaryEncoder& encoder)
+{
+   bool pressed = encoder.button.isPressed();
+   arduino.print(label);
+   arduino.print(pressed ? "Pressed" : "Released", buttonFormat, pressed ? Color::VALUE2 : Color::VALUE3);
+   arduino.print("  ");
+   arduino.println(encoder.getPosition(), posFormat);
+}
+
+void displayButton(const char* label, Button& button)
+{
+   bool pressed = button.isPressed();
+   arduino.print(label);
+   arduino.println(pressed ? "Pressed" : "Released", buttonFormat, pressed ? Color::VALUE2 : Color::VALUE3);
+}
+
 void loop()
 {
-   fps.tick();
-
    arduino.setCursor(0, 0);
-   arduino.setTextSize(3);
-   arduino.println("Value: ", arduino.encoder.getPosition(), posFormat);
+   displayHeader();
 
-   arduino.setTextSize(2);
-   arduino.print("FPS: ");
-   arduino.print(fps.get(), 1);
-   arduino.print("  "); // erase any remaining characters from previous loop
+   arduino.setTextSize(3);
+   displayEncoder("Encoder A: ", arduino.encoderA);
+   displayEncoder("Encoder B: ", arduino.encoderB);
+
+   displayButton(" Button A: ", arduino.buttonA);
+   displayButton(" Button B: ", arduino.buttonB);
 }

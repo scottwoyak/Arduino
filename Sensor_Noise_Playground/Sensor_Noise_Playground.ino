@@ -244,8 +244,8 @@ void setup()
    Wire.begin();
    arduino.begin();
 
-   arduino.encoder.setLimits(0, NUM_TARGET_SAMPLE_RATES - 1);
-   arduino.encoder.setPosition(DEFAULT_SAMPLE_RATE_INDEX);
+   arduino.encoderA.setLimits(0, NUM_TARGET_SAMPLE_RATES - 1);
+   arduino.encoderA.setPosition(DEFAULT_SAMPLE_RATE_INDEX);
 
    arduino.clearDisplay();
    drawHeader();
@@ -267,7 +267,7 @@ void setup()
 
 void loop()
 {
-   if (arduino.encoder.button.wasPressed())
+   if (arduino.encoderA.button.wasPressed())
    {
       switch (displayMode)
       {
@@ -289,7 +289,7 @@ void loop()
       drawHeader();
    }
 
-   const uint16_t targetSampleRate = TARGET_SAMPLE_RATES[arduino.encoder.getPosition()];
+   const uint16_t targetSampleRate = TARGET_SAMPLE_RATES[arduino.encoderA.getPosition()];
    const unsigned long targetSampleIntervalMs = 1000UL / targetSampleRate;
    if (sampleTimer.getDuration() != targetSampleIntervalMs)
    {

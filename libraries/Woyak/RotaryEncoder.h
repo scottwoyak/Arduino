@@ -43,8 +43,6 @@ private:
    int32_t _min = std::numeric_limits<int32_t>::min();
    int32_t _max = std::numeric_limits<int32_t>::max();
 
-   static RotaryEncoder* _instance;
-
    volatile bool _isLowA = false;
    volatile bool _isLowB = false;
    volatile Direction _initialDirection = Direction::UNKNOWN;
@@ -107,8 +105,8 @@ private:
       _onChange(Source::B);
    }
 
-   static void onChangeA() { _instance->_onChangeA(); }
-   static void onChangeB() { _instance->_onChangeB(); }
+   static void onChangeA(void* arg) { static_cast<RotaryEncoder*>(arg)->_onChangeA(); }
+   static void onChangeB(void* arg) { static_cast<RotaryEncoder*>(arg)->_onChangeB(); }
 
 public:
    ///
@@ -123,7 +121,6 @@ public:
    {
       _pinA = pinA;
       _pinB = pinB;
-      _instance = this;
    }
 
    ///
@@ -139,8 +136,8 @@ public:
    {
       pinMode(_pinA, INPUT_PULLUP);
       pinMode(_pinB, INPUT_PULLUP);
-      attachInterrupt(digitalPinToInterrupt(_pinA), RotaryEncoder::onChangeA, CHANGE);
-      attachInterrupt(digitalPinToInterrupt(_pinB), RotaryEncoder::onChangeB, CHANGE);
+      attachInterruptArg(digitalPinToInterrupt(_pinA), RotaryEncoder::onChangeA, this, CHANGE);
+      attachInterruptArg(digitalPinToInterrupt(_pinB), RotaryEncoder::onChangeB, this, CHANGE);
 
       // should be high because we pulled them up
       _isLowA = digitalRead(_pinA) == LOW;
@@ -264,6 +261,3 @@ public:
       return _max;
    }
 };
-
-// Static member initialization
-RotaryEncoder* RotaryEncoder::_instance;

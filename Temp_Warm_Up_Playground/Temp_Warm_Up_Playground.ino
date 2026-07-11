@@ -1166,7 +1166,7 @@ void loop()
 
    if (testRunner.isComplete())
    {
-      if (arduino.encoder.button.wasPressed())
+      if (arduino.encoderA.button.wasPressed())
       {
          resultView++;
          drawResultView();

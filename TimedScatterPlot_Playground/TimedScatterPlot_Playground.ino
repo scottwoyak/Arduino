@@ -136,8 +136,8 @@ void setup()
 
    arduino.begin();
 
-   arduino.encoder.setLimits(MIN_HZ / HZ_STEP, MAX_HZ / HZ_STEP);
-   arduino.encoder.setPosition(DEFAULT_HZ / HZ_STEP);
+   arduino.encoderA.setLimits(MIN_HZ / HZ_STEP, MAX_HZ / HZ_STEP);
+   arduino.encoderA.setPosition(DEFAULT_HZ / HZ_STEP);
 
    drawTitle();
 
@@ -167,7 +167,7 @@ void loop()
    }
 
    // Reset the measurements for a clean baseline at the current rate
-   if (arduino.encoder.button.wasPressed())
+   if (arduino.encoderA.button.wasPressed())
    {
       series->clear();
       sampleRate.reset();
@@ -175,7 +175,7 @@ void loop()
    }
 
    // The rotary encoder directly sets the target sampling rate in Hz
-   targetHz = static_cast<uint16_t>(arduino.encoder.getPosition()) * HZ_STEP;
+   targetHz = static_cast<uint16_t>(arduino.encoderA.getPosition()) * HZ_STEP;
 
    // Manually pace sample acquisition at the encoder-selected rate. A fixed-duration
    // Timer doesn't fit here since the interval changes continuously as the encoder turns.

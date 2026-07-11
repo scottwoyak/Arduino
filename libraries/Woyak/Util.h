@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
-#if !defined ( BOARD_HAS_PIN_REMAP )
+#if !defined ( BOARD_HAS_PIN_REMAP ) && !defined ( digitalPinToGPIONumber )
  #define digitalPinToGPIONumber(pin) (pin)
 #endif
 
@@ -12,54 +12,6 @@
 /// </summary>
 class Util
 {
-
-   /*
-   const char* WiFiStatus2Str(uint8_t status) {
-      switch (status) {
-      case WL_NO_SHIELD: return "WL_NO_SHIELD";
-      case WL_IDLE_STATUS: return "WL_IDLE_STATUS";
-      case WL_NO_SSID_AVAIL: return "WL_NO_SSID_AVAIL";
-      case WL_SCAN_COMPLETED: return "WL_SCAN_COMPLETED";
-      case WL_CONNECTED: return "WL_CONNECTED";
-      case WL_CONNECT_FAILED: return "WL_CONNECT_FAILED";
-      case WL_CONNECTION_LOST: return "WL_CONNECTION_LOST";
-      case WL_DISCONNECTED: return "WL_DISCONNECTED";
-      default: return "UNKNOWN";
-      }
-   }
-
-   bool connectToWifi(const char* ssid, const char* pass, ulong timeoutMs = 0) {
-      Serial.print("Connecting to ");
-      Serial.print(ssid);
-
-      WiFi.setPins(8, 7, 4, 2);
-      int status = WiFi.begin(ssid, pass);
-
-      Stopwatch sw;
-      while (status != WL_CONNECTED) {
-
-         if (timeoutMs > 0 && sw.elapsedMillis() > timeoutMs) {
-            break;
-         }
-
-         // wait for connection:
-         Serial.print(".");
-         delay(500);
-      }
-      Serial.println();
-
-      if (status == WL_CONNECTED) {
-         Serial.print("Connected to ");
-         Serial.println(ssid);
-         return true;
-      }
-      else {
-         Serial.println("Connection failed");
-         return false;
-      }
-   }
-   */
-
 public:
    /// <summary>
    /// Reads ADC input and converts to voltage accounting for voltage divider.
@@ -103,133 +55,133 @@ public:
    /// <param name="start">Start timestamp from micros() or millis()</param>
    /// <param name="end">End timestamp from micros() or millis()</param>
    /// <returns>Elapsed time in the same units as the input timestamps</returns>
-	static unsigned long getSpan(unsigned long start, unsigned long end)
-	{
-		return end - start;
-	}
+   static unsigned long getSpan(unsigned long start, unsigned long end)
+   {
+      return end - start;
+   }
 
-	/// <summary>
-	/// Calculates microseconds elapsed since the given starting time.
-	/// </summary>
-	/// <param name="start">Starting timestamp from a prior micros() call</param>
-	/// <returns>Microseconds elapsed</returns>
-	static unsigned long microsSince(unsigned long start)
-	{
-		return getSpan(start, micros());
-	}
+   /// <summary>
+   /// Calculates microseconds elapsed since the given starting time.
+   /// </summary>
+   /// <param name="start">Starting timestamp from a prior micros() call</param>
+   /// <returns>Microseconds elapsed</returns>
+   static unsigned long microsSince(unsigned long start)
+   {
+      return getSpan(start, micros());
+   }
 
-	/// <summary>
-	/// Formats a floating-point value to a target number of significant digits.
-	/// </summary>
-	/// <param name="value">Value to format.</param>
-	/// <param name="significantDigits">Number of significant digits to preserve.</param>
-	/// <returns>Formatted numeric text, or "n/a" for non-finite input.</returns>
-	static String toSignificantString(float value, uint8_t significantDigits)
-	{
-		if (!isfinite(value))
-		{
-			return "n/a";
-		}
+   /// <summary>
+   /// Formats a floating-point value to a target number of significant digits.
+   /// </summary>
+   /// <param name="value">Value to format.</param>
+   /// <param name="significantDigits">Number of significant digits to preserve.</param>
+   /// <returns>Formatted numeric text, or "n/a" for non-finite input.</returns>
+   static String toSignificantString(float value, uint8_t significantDigits)
+   {
+      if (!isfinite(value))
+      {
+         return "n/a";
+      }
 
-		if (value == 0.0f)
-		{
-			return "0";
-		}
+      if (value == 0.0f)
+      {
+         return "0";
+      }
 
-		float absValue = fabsf(value);
-		int exponent = static_cast<int>(floorf(log10f(absValue)));
-		int decimals = static_cast<int>(significantDigits) - 1 - exponent;
-		if (decimals <= 0)
-		{
-			long truncated = static_cast<long>(value);
-			return String(truncated);
-		}
+      float absValue = fabsf(value);
+      int exponent = static_cast<int>(floorf(log10f(absValue)));
+      int decimals = static_cast<int>(significantDigits) - 1 - exponent;
+      if (decimals <= 0)
+      {
+         long truncated = static_cast<long>(value);
+         return String(truncated);
+      }
 
-		return String(value, static_cast<unsigned int>(decimals));
-	}
+      return String(value, static_cast<unsigned int>(decimals));
+   }
 
-	/// <summary>
-	/// Resets the device after an optional delay.
-	/// </summary>
-	/// <param name="delaySecs">Seconds to delay before reset (default 0.0)</param>
-	/// <remarks>
-	/// Calls ESP.restart() for ESP32. Behavior may differ on other boards.
-	/// This function does not return.
-	/// </remarks>
-	static void reset(float delaySecs = 0.0f)
-	{
-		delay(static_cast<unsigned long>(1000.0f * delaySecs));
+   /// <summary>
+   /// Resets the device after an optional delay.
+   /// </summary>
+   /// <param name="delaySecs">Seconds to delay before reset (default 0.0)</param>
+   /// <remarks>
+   /// Calls ESP.restart() for ESP32. Behavior may differ on other boards.
+   /// This function does not return.
+   /// </remarks>
+   static void reset(float delaySecs = 0.0f)
+   {
+      delay(static_cast<unsigned long>(1000.0f * delaySecs));
 
-		// TODO this is for the ESP32 which complains about the standard resetFunc() method of reset. We'll
-		// need other techniques for different boards.
-		ESP.restart();
-	}
+      // TODO this is for the ESP32 which complains about the standard resetFunc() method of reset. We'll
+      // need other techniques for different boards.
+      ESP.restart();
+   }
 
-	/// <summary>
-	/// Saves a halt reason to a preferences object.
-	/// </summary>
-	static void setHaltReason(const String& reason)
-	{
-		Preferences preferences;
-		preferences.begin("Woyak", false);
-		preferences.putString("halt", reason);
-		preferences.end();
-	}
+   /// <summary>
+   /// Saves a halt reason to a preferences object.
+   /// </summary>
+   static void setHaltReason(const String& reason)
+   {
+      Preferences preferences;
+      preferences.begin("Woyak", false);
+      preferences.putString("halt", reason);
+      preferences.end();
+   }
 
-	/// <summary>
-	/// Checks for a previous halt reason in a preferences object and prints it to Serial if found.
-	/// </summary>
-	static void checkHaltReason()
-	{
-		Preferences preferences;
-		preferences.begin("Woyak", false);
-		// Note: Not all implementation of Preferences have isKey, but ESP32 and PreferencesFlash do.
-		if (preferences.isKey("halt"))
-		{
-			String reason = preferences.getString("halt", "");
-			if (reason.length() > 0)
-			{
-				Serial.print("Previous halt reason: ");
-				Serial.println(reason);
-			}
-			preferences.remove("halt");
-		}
-		preferences.end();
-	}
+   /// <summary>
+   /// Checks for a previous halt reason in a preferences object and prints it to Serial if found.
+   /// </summary>
+   static void checkHaltReason()
+   {
+      Preferences preferences;
+      preferences.begin("Woyak", false);
+      // Note: Not all implementation of Preferences have isKey, but ESP32 and PreferencesFlash do.
+      if (preferences.isKey("halt"))
+      {
+         String reason = preferences.getString("halt", "");
+         if (reason.length() > 0)
+         {
+            Serial.print("Previous halt reason: ");
+            Serial.println(reason);
+         }
+         preferences.remove("halt");
+      }
+      preferences.end();
+   }
 
-	///
-	/// <summary>
-	/// Prints known information about the current board and chip to serial.
-	/// </summary>
-	///
-	static void printBoardInfo()
-	{
-		Serial.println("=== Board Info ===");
-		Serial.printf("Board:            %s\n", ARDUINO_BOARD);
-		Serial.printf("Chip Model:       %s\n", ESP.getChipModel());
-		Serial.printf("Chip Revision:    %d\n", ESP.getChipRevision());
-		Serial.printf("CPU Cores:        %d\n", ESP.getChipCores());
-		Serial.printf("CPU Freq:         %d MHz\n", ESP.getCpuFreqMHz());
-		Serial.printf("Flash Size:       %d bytes\n", ESP.getFlashChipSize());
-		Serial.printf("Flash Speed:      %d Hz\n", ESP.getFlashChipSpeed());
-		Serial.printf("Heap Size:        %d bytes\n", ESP.getHeapSize());
-		Serial.printf("Free Heap:        %d bytes\n", ESP.getFreeHeap());
-		Serial.printf("PSRAM Size:       %d bytes\n", ESP.getPsramSize());
-		Serial.printf("Free PSRAM:       %d bytes\n", ESP.getFreePsram());
-		Serial.printf("SDK Version:      %s\n", ESP.getSdkVersion());
-		Serial.println("==================");
+   ///
+   /// <summary>
+   /// Prints known information about the current board and chip to serial.
+   /// </summary>
+   ///
+   static void printBoardInfo()
+   {
+      Serial.println("=== Board Info ===");
+      Serial.print("Board:            "); Serial.println(ARDUINO_BOARD);
+      Serial.print("Chip Model:       "); Serial.println(ESP.getChipModel());
+      Serial.print("Chip Revision:    "); Serial.println(ESP.getChipRevision());
+      Serial.print("CPU Cores:        "); Serial.println(ESP.getChipCores());
+      Serial.print("CPU Freq:         "); Serial.print(ESP.getCpuFreqMHz()); Serial.println(" MHz");
+      Serial.print("Flash Size:       "); Serial.print(ESP.getFlashChipSize()); Serial.println(" bytes");
+      Serial.print("Flash Speed:      "); Serial.print(ESP.getFlashChipSpeed()); Serial.println(" Hz");
+      Serial.print("Heap Size:        "); Serial.print(ESP.getHeapSize()); Serial.println(" bytes");
+      Serial.print("Free Heap:        "); Serial.print(ESP.getFreeHeap()); Serial.println(" bytes");
+      Serial.print("PSRAM Size:       "); Serial.print(ESP.getPsramSize()); Serial.println(" bytes");
+      Serial.print("Free PSRAM:       "); Serial.print(ESP.getFreePsram()); Serial.println(" bytes");
+      Serial.print("SDK Version:      "); Serial.println(ESP.getSdkVersion());
+      Serial.println("==================");
 
-		Serial.println("=== Default SPI Pins ===");
-		Serial.printf("SCK:              %d (GPIO %d)\n", SCK, digitalPinToGPIONumber(SCK));
-		Serial.printf("MOSI:             %d (GPIO %d)\n", MOSI, digitalPinToGPIONumber(MOSI));
-		Serial.printf("MISO:             %d (GPIO %d)\n", MISO, digitalPinToGPIONumber(MISO));
-		Serial.printf("SS:               %d (GPIO %d)\n", SS, digitalPinToGPIONumber(SS));
-		Serial.println("=========================");
+      Serial.println("=== Default SPI Pins ===");
+      Serial.print("SCK:              "); Serial.print(SCK); Serial.print(" (GPIO "); Serial.print(digitalPinToGPIONumber(SCK)); Serial.println(")");
+      Serial.print("MOSI:             "); Serial.print(MOSI); Serial.print(" (GPIO "); Serial.print(digitalPinToGPIONumber(MOSI)); Serial.println(")");
+      Serial.print("MISO:             "); Serial.print(MISO); Serial.print(" (GPIO "); Serial.print(digitalPinToGPIONumber(MISO)); Serial.println(")");
+      Serial.print("SS:               "); Serial.print(SS); Serial.print(" (GPIO "); Serial.print(digitalPinToGPIONumber(SS)); Serial.println(")");
+      Serial.println("=========================");
 
-		Serial.println("=== Default I2C Pins ===");
-		Serial.printf("SDA:              %d (GPIO %d)\n", SDA, digitalPinToGPIONumber(SDA));
-		Serial.printf("SCL:              %d (GPIO %d)\n", SCL, digitalPinToGPIONumber(SCL));
-		Serial.println("=========================");
-	}
+      Serial.println("=== Default I2C Pins ===");
+      Serial.print("SDA:              "); Serial.print(SDA); Serial.print(" (GPIO "); Serial.print(digitalPinToGPIONumber(SDA)); Serial.println(")");
+      Serial.print("SCL:              "); Serial.print(SCL); Serial.print(" (GPIO "); Serial.print(digitalPinToGPIONumber(SCL)); Serial.println(")");
+      Serial.println("=========================");
+   }
 
 };

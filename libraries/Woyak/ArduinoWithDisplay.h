@@ -827,52 +827,52 @@ public:
    //
    // ----------- double variants
    //
-   void print(double value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(double value, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(double value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(double value, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(double value, unsigned int precision, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(double value, unsigned int precision, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value, precision);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(double value, unsigned int precision, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(double value, unsigned int precision, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value, precision);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(double value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(double value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(double value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(double value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       print(value, format, textColor, backgroundColor);
       println();
    }
-   void printR(double value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printR(double value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       printR(str, textColor, backgroundColor);
    }
-   void printlnR(double value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printlnR(double value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       printlnR(str, textColor, backgroundColor);
    }
-   void printC(double value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printC(double value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       printC(str, textColor, backgroundColor);
    }
-   void printlnC(double value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printlnC(double value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       printlnC(str, textColor, backgroundColor);
@@ -949,42 +949,42 @@ public:
    //
    // ----------- uint8_t variants
    //
-   void print(uint8_t value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(uint8_t value, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(uint8_t value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(uint8_t value, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(uint8_t value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(uint8_t value, uint8_t base, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value, base);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(uint8_t value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(uint8_t value, uint8_t base, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value, base);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(uint8_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(uint8_t value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(uint8_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(uint8_t value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       print(value, format, textColor, backgroundColor);
       println();
    }
-   void printR(uint8_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printR(uint8_t value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       printR(str, textColor, backgroundColor);
    }
-   void printlnR(uint8_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printlnR(uint8_t value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       printlnR(str, textColor, backgroundColor);
@@ -1033,42 +1033,42 @@ public:
    //
    // ----------- uint16_t variants
    //
-   void print(uint16_t value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(uint16_t value, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(uint16_t value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(uint16_t value, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(uint16_t value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(uint16_t value, uint8_t base, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value, base);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(uint16_t value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(uint16_t value, uint8_t base, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value, base);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(uint16_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(uint16_t value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(uint16_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(uint16_t value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       print(value, format, textColor, backgroundColor);
       println();
    }
-   void printR(uint16_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printR(uint16_t value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       printR(str, textColor, backgroundColor);
    }
-   void printlnR(uint16_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printlnR(uint16_t value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       printlnR(str, textColor, backgroundColor);
@@ -1117,42 +1117,42 @@ public:
    //
    // ----------- int variants
    //
-   void print(int value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(int value, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(int value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(int value, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(int value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(int value, uint8_t base, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value, base);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(int value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(int value, uint8_t base, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value, base);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(int value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(int value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(int value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(int value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       print(value, format, textColor, backgroundColor);
       println();
    }
-   void printR(int value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printR(int value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       printR(str, textColor, backgroundColor);
    }
-   void printlnR(int value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printlnR(int value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       printlnR(str, textColor, backgroundColor);
@@ -1201,42 +1201,42 @@ public:
    //
    // ----------- long variants
    //
-   void print(long value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(long value, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(long value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(long value, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(long value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(long value, uint8_t base, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value, base);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(long value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(long value, uint8_t base, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value, base);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(long value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(long value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(long value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(long value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       print(value, format, textColor, backgroundColor);
       println();
    }
-   void printR(long value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printR(long value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       printR(str, textColor, backgroundColor);
    }
-   void printlnR(long value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printlnR(long value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       printlnR(str, textColor, backgroundColor);
@@ -1285,42 +1285,42 @@ public:
    //
    // ----------- unsigned long variants
    //
-   void print(unsigned long value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(unsigned long value, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(unsigned long value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(unsigned long value, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(unsigned long value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(unsigned long value, uint8_t base, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value, base);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(unsigned long value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(unsigned long value, uint8_t base, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       String str(value, base);
       _println(str.c_str(), textColor, backgroundColor);
    }
-   void print(unsigned long value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(unsigned long value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       _print(str.c_str(), textColor, backgroundColor);
    }
-   void println(unsigned long value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(unsigned long value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       print(value, format, textColor, backgroundColor);
       println();
    }
-   void printR(unsigned long value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printR(unsigned long value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       printR(str, textColor, backgroundColor);
    }
-   void printlnR(unsigned long value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printlnR(unsigned long value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       std::string str = format.toString(value);
       printlnR(str, textColor, backgroundColor);
@@ -1371,35 +1371,35 @@ public:
    //
    // size_t is forwarded to the unsigned long overloads to avoid ambiguity with the
    // other built-in integer types on platforms where size_t is a distinct type.
-   void print(size_t value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(size_t value, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       print((unsigned long)value, textColor, backgroundColor);
    }
-   void println(size_t value, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(size_t value, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       println((unsigned long)value, textColor, backgroundColor);
    }
-   void print(size_t value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(size_t value, uint8_t base, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       print((unsigned long)value, base, textColor, backgroundColor);
    }
-   void println(size_t value, uint8_t base, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(size_t value, uint8_t base, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       println((unsigned long)value, base, textColor, backgroundColor);
    }
-   void print(size_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(size_t value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       print((unsigned long)value, format, textColor, backgroundColor);
    }
-   void println(size_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(size_t value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       println((unsigned long)value, format, textColor, backgroundColor);
    }
-   void printR(size_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printR(size_t value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       printR((unsigned long)value, format, textColor, backgroundColor);
    }
-   void printlnR(size_t value, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printlnR(size_t value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       printlnR((unsigned long)value, format, textColor, backgroundColor);
    }
