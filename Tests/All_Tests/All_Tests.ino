@@ -8,7 +8,6 @@
 #include "../RollingValues_Tests/RollingValues_Tests.h"
 #include "../Stats_Tests/Stats_Tests.h"
 #include "../Stopwatch_Tests/Stopwatch_Tests.h"
-#include "../TempCalibrator_Tests/TempCalibrator_Tests.h"
 #include "../Tick_Tests/Tick_Tests.h"
 #include "../TimedAverage_Tests/TimedAverage_Tests.h"
 #include "../TimedBin_Tests/TimedBin_Tests.h"

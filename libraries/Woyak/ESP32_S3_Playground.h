@@ -21,12 +21,12 @@
 // and the default I2C pins:
 //   SDA = 42
 //   SCL = 41
-constexpr int8_t PIN_ENCODER_A_PHASE_A = A0;
-constexpr int8_t PIN_ENCODER_A_PHASE_B = A1;
-constexpr int8_t PIN_ENCODER_A_BUTTON  = A2;
-constexpr int8_t PIN_ENCODER_B_PHASE_A = A4;
-constexpr int8_t PIN_ENCODER_B_PHASE_B = A5;
-constexpr int8_t PIN_ENCODER_B_BUTTON  = A3;
+constexpr int8_t PIN_ENCODER_A_PHASE_A = A5;
+constexpr int8_t PIN_ENCODER_A_PHASE_B = A4;
+constexpr int8_t PIN_ENCODER_A_BUTTON  = A3;
+constexpr int8_t PIN_ENCODER_B_PHASE_A = A0;
+constexpr int8_t PIN_ENCODER_B_PHASE_B = A1;
+constexpr int8_t PIN_ENCODER_B_BUTTON  = A2;
 constexpr int8_t PIN_BUTTON_A          = 18;
 constexpr int8_t PIN_BUTTON_B          = 21;
 

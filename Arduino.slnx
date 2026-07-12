@@ -149,10 +149,6 @@
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
-    <Project Path="Tests/TempCalibrator_Tests/TempCalibrator_Tests.vcxproj">
-      <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
-    </Project>
     <Project Path="Tests/Tick_Tests/Tick_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />

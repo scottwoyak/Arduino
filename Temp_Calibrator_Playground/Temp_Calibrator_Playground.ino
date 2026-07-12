@@ -7,12 +7,20 @@
 // of per-sensor short average, long average, and correction (delta from sensor 0's long
 // average), plus three scatter plots - one per table column - showing recent history for
 // every detected sensor. On startup, saved calibration deltas are loaded from Preferences,
-// displayed, and printed to Serial. Correction factors are periodically saved to Preferences
-// and telemetry is written to InfluxDB with reconnect and buffering.
+// displayed, and printed to Serial. Correction factors are periodically saved to Preferences,
+// reported to Serial (as a timestamped table) once per minute, and telemetry is written to
+// InfluxDB with reconnect and buffering.
+//
+// Each Sampler also feeds its long (timed) average into a shared TempCalibrator, which automatically
+// records every sensor's correction factor each time the baseline (sensor 0) reaches a new
+// whole-number temperature. Press the encoder A button to print the recorded calibration-vs-temperature
+// table to Serial and save it to Preferences (as a binary blob) for later analysis; use
+// loadCalibrationPoints() to read it back.
 //
 // Press the rotary encoder button to clear the display.
 //
-#include "WiFiSettings.h"
+#include <Wire.h>
+
 #include "ESP32_S3_Playground.h"
 #include "Timer.h"
 #include "TempSensor.h"
@@ -22,7 +30,9 @@
 #include "TimedScatterPlot.h"
 #include "RollingAverage.h"
 #include "TimedAverage.h"
-#include <Wire.h>
+#include "TempCalibrator.h"
+
+#include "WiFiSettings.h"
 
 ESP32_S3_Playground arduino;
 constexpr uint8_t NUM_SENSORS = 8;
@@ -45,12 +55,17 @@ constexpr uint16_t SENSOR_UPDATE_INTERVAL_MS = SAMPLE_INTERVAL_MS;  // how often
 constexpr unsigned long TIMED_AVERAGE_DURATION_MS = 2 * 60 * 1000UL;  // 2 minute averaging window
 constexpr auto INFLUX_INTERVAL_S = 10;
 constexpr auto PREFS_INTERVAL_S = 60;
+constexpr auto SERIAL_REPORT_INTERVAL_S = 60;  // 1 minute
 constexpr auto SAVED_INFO_WAIT_S = 60;
 constexpr auto WIFI_RESET_DELAY_S = 10;
+constexpr uint8_t BATCH_SIZE_PER_SENSOR = 3;  // InfluxDB write batch size, per detected sensor
+constexpr uint16_t INFLUX_INIT_DELAY_MS = 1000;  // pause after InfluxDB init to show "Init" screen
 
 constexpr const char* CALIBRATOR_PREFS_NAMESPACE = "Calibrator";
 constexpr const char* TEMP_KEY_PREFIX = "Temp ";
 constexpr const char* ID_KEY_PREFIX = "ID ";
+constexpr const char* CAL_POINT_COUNT_KEY = "CalCount";
+constexpr const char* CAL_POINTS_KEY = "CalPoints";
 
 ///
 /// <summary>
@@ -72,6 +87,9 @@ private:
    RollingAverage _shortAverage;
    TimedAverage _longAverage;
 
+   TempCalibrator* _calibrator;
+   uint8_t _calibratorIndex;
+
 public:
    ///
    /// <summary>
@@ -79,17 +97,21 @@ public:
    /// </summary>
    /// <param name="sensor">Sensor to sample.</param>
    /// <param name="muxIndex">Multiplexer channel this sensor is wired to.</param>
+   /// <param name="calibrator">Shared TempCalibrator that records per-degree correction factors.</param>
+   /// <param name="calibratorIndex">This sensor's index within the calibrator.</param>
    ///
-   Sampler(TempSensor* sensor, uint8_t muxIndex)
+   Sampler(TempSensor* sensor, uint8_t muxIndex, TempCalibrator* calibrator, uint8_t calibratorIndex)
       : _sensor(sensor), _muxIndex(muxIndex), _sampleTimer(SAMPLE_INTERVAL_MS),
-        _shortAverage(BUFFER_SIZE), _longAverage(TIMED_AVERAGE_DURATION_MS)
+        _shortAverage(BUFFER_SIZE), _longAverage(TIMED_AVERAGE_DURATION_MS),
+        _calibrator(calibrator), _calibratorIndex(calibratorIndex)
    {
    }
 
    ///
    /// <summary>
    /// Takes a new reading if SAMPLE_INTERVAL_MS has elapsed since the last one, storing it
-   /// in the rolling buffer and the timed average. Does nothing if the sensor does not exist.
+   /// in the rolling buffer, the timed average, and the shared TempCalibrator. Does nothing
+   /// if the sensor does not exist.
    /// </summary>
    ///
    void update()
@@ -104,6 +126,7 @@ public:
 
       _shortAverage.set(temp);
       _longAverage.set(temp);
+      _calibrator->set(_calibratorIndex, _longAverage.average());
    }
 
    ///
@@ -143,6 +166,69 @@ public:
 
 // Samplers, one per sensor, each maintaining a rolling buffer of recent readings
 Sampler* samplers[NUM_SENSORS] = { nullptr };
+
+// Records each sensor's correction factor every time sensor 0's temperature reaches a new
+// whole-number value, building a table of correction-vs-temperature for later interpolation.
+TempCalibrator calibrator(NUM_SENSORS, TempCalibrator::BaselineMode::FIRST_SENSOR);
+
+///
+/// <summary>
+/// Saves all recorded calibration points (baseline + per-sensor corrections) to Preferences
+/// as a single binary blob, so they can be loaded and analyzed later.
+/// </summary>
+///
+void saveCalibrationPoints()
+{
+   uint8_t count = calibrator.getCalibrationPointCount();
+   if (count == 0)
+   {
+      Serial.println("No calibration points recorded yet, nothing saved.");
+      return;
+   }
+
+   TempCalibrator::CalibrationPoint* points = new TempCalibrator::CalibrationPoint[count];
+   for (uint8_t i = 0; i < count; i++)
+   {
+      points[i] = calibrator.getCalibrationPoint(i);
+   }
+
+   arduino.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
+   arduino.preferences.putUChar(CAL_POINT_COUNT_KEY, count);
+   arduino.preferences.putBytes(CAL_POINTS_KEY, points, count * sizeof(TempCalibrator::CalibrationPoint));
+   arduino.preferences.end();
+
+   delete[] points;
+
+   Serial.print("Saved ");
+   Serial.print(count);
+   Serial.println(" calibration points to Preferences.");
+}
+
+///
+/// <summary>
+/// Loads calibration points previously saved with saveCalibrationPoints() from Preferences.
+/// The caller owns the returned array and must delete[] it when done.
+/// </summary>
+/// <param name="count">Set to the number of points loaded (0 if none were saved).</param>
+/// <returns>Newly allocated array of loaded calibration points, or nullptr if none were saved.</returns>
+///
+TempCalibrator::CalibrationPoint* loadCalibrationPoints(uint8_t& count)
+{
+   arduino.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, true);
+   count = arduino.preferences.getUChar(CAL_POINT_COUNT_KEY, 0);
+
+   if (count == 0)
+   {
+      arduino.preferences.end();
+      return nullptr;
+   }
+
+   TempCalibrator::CalibrationPoint* points = new TempCalibrator::CalibrationPoint[count];
+   arduino.preferences.getBytes(CAL_POINTS_KEY, points, count * sizeof(TempCalibrator::CalibrationPoint));
+   arduino.preferences.end();
+
+   return points;
+}
 
 Format shortAvgFormat("###.##", 13, Format::Alignment::RIGHT);
 Format longAvgFormat("###.###", 10, Format::Alignment::RIGHT);
@@ -185,6 +271,7 @@ TimedScatterPlotSeries* correctionSeries[NUM_SENSORS] = { nullptr };
 Timer sensorReadTrigger(SENSOR_UPDATE_INTERVAL_MS);
 TimerSecs influxTrigger(INFLUX_INTERVAL_S);
 TimerSecs prefsTrigger(PREFS_INTERVAL_S);
+TimerSecs serialReportTrigger(SERIAL_REPORT_INTERVAL_S);
 
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
@@ -197,6 +284,27 @@ InfluxField* shortAvgFields[NUM_SENSORS] = { nullptr };
 InfluxField* longAvgFields[NUM_SENSORS] = { nullptr };
 InfluxField* correctionFields[NUM_SENSORS] = { nullptr };
 
+// Tracks values collected since the last InfluxDB upload, for the upload log line
+long sampleCount = 0;
+
+///
+/// <summary>
+/// Formats a number as a two-digit, zero-padded string (e.g. 5 -> "05").
+/// </summary>
+/// <param name="value">Number to format, expected to be in the range 0-99.</param>
+/// <returns>Zero-padded two-digit string.</returns>
+///
+String _twoDigits(int value)
+{
+   return (value < 10 ? "0" : "") + String(value);
+}
+
+///
+/// <summary>
+/// Prints the currently saved per-sensor correction factors and IDs to Serial, formatted
+/// for easy pasting into libraries\Woyak\TempSensorCallibration.h.
+/// </summary>
+///
 void printCalibrationCodeToSerial()
 {
    // load saved correction factors
@@ -211,9 +319,20 @@ void printCalibrationCodeToSerial()
    }
    arduino.preferences.end();
 
+   // Separate this report from any prior Serial output with a blank line and a timestamped title
+   time_t now = time(nullptr);
+   struct tm timeinfo;
+   localtime_r(&now, &timeinfo);
+   String timestamp = String(timeinfo.tm_year + 1900) + "-" + _twoDigits(timeinfo.tm_mon + 1) + "-" + _twoDigits(timeinfo.tm_mday) +
+      " " + _twoDigits(timeinfo.tm_hour) + ":" + _twoDigits(timeinfo.tm_min) + ":" + _twoDigits(timeinfo.tm_sec);
+
+   Serial.println();
+   Serial.print("Calibration Report - ");
+   Serial.println(timestamp);
+
    // print saved factors for easy paste into TempSensorCallibration.h
    Serial.println("Copy this data to libraries\\Woyak\\TempSensorCallibration.h");
-   Serial.println(String("Based on averaging data points over the last ") + (TIMED_AVERAGE_DURATION_MS / 1000) + " seconds, here are the calibration factors:");
+   Serial.println(String("// Based on averaging data points over the last ") + (TIMED_AVERAGE_DURATION_MS / 1000) + " seconds at a sample rate of " + (1000 / SENSOR_UPDATE_INTERVAL_MS) + "/s");
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       Serial.print("\"");
@@ -223,8 +342,62 @@ void printCalibrationCodeToSerial()
       Serial.print(", 0.000,");
       Serial.println();
    }
+
+   // Also display the recorded correction factors in a table for easy reading, one
+   // column per sensor with the current baseline temperature in the first column.
+   // Skip the table entirely if no saved correction run exists yet (no sensor IDs
+   // have ever been recorded to Preferences).
+   bool anySavedData = false;
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   {
+      if (!ids[i].empty())
+      {
+         anySavedData = true;
+         break;
+      }
+   }
+
+   if (!anySavedData)
+   {
+      return;
+   }
+
+   String sensorLabels[NUM_SENSORS];
+   SerialTable::Column columns[NUM_SENSORS + 1];
+   columns[0] = { "Temp", 8 };
+
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   {
+      sensorLabels[i] = "Sensor" + String(i + 1);
+      columns[i + 1] = { sensorLabels[i].c_str(), 9 };
+   }
+
+   String correctionText[NUM_SENSORS];
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   {
+      correctionText[i] = !ids[i].empty() ? String(tempCorrections[i], 3) : "-----";
+   }
+
+   SerialTable table("Recorded Temperature Corrections", columns, NUM_SENSORS + 1);
+   table.printHeader();
+   float baseline = (samplers[0] != nullptr) ? samplers[0]->getLongAvgValue() : NAN;
+   table.printRow(SerialTable::fixed(baseline, 0),
+      correctionText[0],
+      correctionText[1],
+      correctionText[2],
+      correctionText[3],
+      correctionText[4],
+      correctionText[5],
+      correctionText[6],
+      correctionText[7]);
 }
 
+///
+/// <summary>
+/// Displays previously saved correction factors on screen and prints them to Serial,
+/// waiting for the rotary encoder button or a timeout before returning.
+/// </summary>
+///
 void displaySavedInfo()
 {
    // load saved correction factors
@@ -272,6 +445,11 @@ void displaySavedInfo()
    printCalibrationCodeToSerial();
 }
 
+///
+/// <summary>
+/// Displays the "Calibrating..." header banner at the top of the screen.
+/// </summary>
+///
 void displayHeader()
 {
    arduino.setTextSize(3);
@@ -279,6 +457,12 @@ void displayHeader()
    arduino.printlnC("Calibrating...", Color::WHITE, Color::ORANGE);
 }
 
+///
+/// <summary>
+/// Displays the sensor table showing, for every sensor, its type, 10-sample average,
+/// 2-minute timed average, and correction relative to sensor 0's timed average.
+/// </summary>
+///
 void displaySensorList()
 {
    arduino.setTextSize(2);
@@ -373,11 +557,13 @@ void displaySensorList()
    }
 }
 
+///
 /// <summary>
 /// Renders the three scatter plots showing the configured time window of history for every
 /// detected sensor, one per table column: 10 Sample Avg, 2 Min Avg, and Correction (left to
 /// right). All plots fill the remaining display space below the calibration table.
 /// </summary>
+///
 void displayScatterPlots()
 {
    if (shortAvgPlot) shortAvgPlot->render();
@@ -424,11 +610,11 @@ void setup()
 
       arduino.preferences.putString((String(ID_KEY_PREFIX) + i).c_str(), sensorExists ? sensor.id() : "");
 
-      samplers[i] = new Sampler(&sensor, i);
+      samplers[i] = new Sampler(&sensor, i, &calibrator, i);
    }
    arduino.preferences.end();
 
-   uint8_t batchSize = std::max((uint8_t)1, (uint8_t)(3 * detectedSensorCount));
+   uint8_t batchSize = std::max((uint8_t)1, (uint8_t)(BATCH_SIZE_PER_SENSOR * detectedSensorCount));
    client.setWriteOptions(WriteOptions().batchSize(batchSize).bufferSize(2 * batchSize));
 
    Serial.print("Detected sensors: ");
@@ -446,7 +632,7 @@ void setup()
       Util::reset(WIFI_RESET_DELAY_S);
    }
 
-   delay(1000);
+   delay(INFLUX_INIT_DELAY_MS);
 
    arduino.clearDisplay();
    arduino.echoToSerial = false;
@@ -544,12 +730,13 @@ void setup()
    arduino.clearDisplay();
 }
 
-long count = 0;
 void loop()
 {
    if (arduino.encoderA.button.wasPressed())
    {
       arduino.clearDisplay();
+      calibrator.printCalibrationTable();
+      saveCalibrationPoints();
    }
 
    // ------------------------------------------- sample (each Sampler self-paces to 100ms)
@@ -565,7 +752,7 @@ void loop()
       {
          if (sensors[i].exists())
          {
-            count++;
+            sampleCount++;
          }
       }
 
@@ -625,7 +812,11 @@ void loop()
          arduino.preferences.putFloat((String(TEMP_KEY_PREFIX) + i).c_str(), correction);
       }
       arduino.preferences.end();
+   }
 
+   // ------------------------------------------- report to serial
+   if (serialReportTrigger.ready())
+   {
       printCalibrationCodeToSerial();
    }
 
@@ -637,9 +828,9 @@ void loop()
          digitalWrite(BUILTIN_LED, HIGH);
 
          Serial.print("Uploading to InfluxDB... ");
-         Serial.print(count);
+         Serial.print(sampleCount);
          Serial.println(" values collected");
-         count = 0;
+         sampleCount = 0;
 
          bool writeFailed = false;
          bool baselineFull = samplers[0]->isLongAvgFull();
@@ -657,13 +848,8 @@ void loop()
             // window has been collected.
             float tShortAvg = samplers[i]->getShortAvgValue();
             bool longAvgFull = baselineFull && samplers[i]->isLongAvgFull();
-            float tLongAvg = longAvgFull ? samplers[i]->getLongAvgValue() : NAN;
-            float tDelta = (longAvgFull && !std::isnan(baseline) && !std::isnan(tLongAvg)) ? (baseline - tLongAvg) : NAN;
-
-            if (std::isnan(tShortAvg) && std::isnan(tLongAvg) && std::isnan(tDelta))
-            {
-               continue;
-            }
+            float tLongAvg = samplers[i]->getLongAvgValue();
+            float tDelta = baseline - tLongAvg;
 
             shortAvgFields[i]->set(tShortAvg);
             longAvgFields[i]->set(tLongAvg);
@@ -671,8 +857,13 @@ void loop()
 
             // InfluxPoint::post() clears/re-populates fields, skips NaN/Inf values,
             // and (with writeToSerial=true) prints the line protocol actually sent
-            // and any error, so bad/unexpected uploads can be spotted directly.
-            if (!shortAvgPoints[i]->post(&client, true) || !longAvgPoints[i]->post(&client, true) || !correctionPoints[i]->post(&client, true))
+            // and any error, so bad/unexpected uploads can be spotted directly. Points
+            // aren't posted until their underlying value is expected to be ready (e.g.
+            // long average/correction before the timed window fills), so a NaN value
+            // once posting starts is a genuine error and is still reported.
+            if ((!shortAvgPoints[i]->post(&client, true)) ||
+                (longAvgFull && !longAvgPoints[i]->post(&client, true)) ||
+                (longAvgFull && !correctionPoints[i]->post(&client, true)))
             {
                writeFailed = true;
                break;
@@ -690,10 +881,6 @@ void loop()
             Serial.print(client.getLastStatusCode());
             Serial.print(", message: ");
             Serial.println(client.getLastErrorMessage());
-         }
-         else
-         {
-            printCalibrationCodeToSerial();
          }
 
          digitalWrite(BUILTIN_LED, LOW);
