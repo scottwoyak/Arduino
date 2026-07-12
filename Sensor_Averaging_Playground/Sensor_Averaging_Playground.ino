@@ -2,13 +2,13 @@
 // Captures finite sensor values for a fixed run window (or until the sample cap is reached), stores
 // them in RAM, and reports serial/display summaries.
 //
-// On startup, a prompt screen is shown where Encoder A adjusts the target sample rate (starting at
-// 100/s); steps are 10/s below 100/s and 100/s at or above 100/s. Press Encoder A's button to start
-// the capture using the selected rate.
+// On startup, a SetupEditor screen lets the user review/adjust the target sample rate, max samples,
+// sampling duration, and warmup period (Encoder A selects a field, Encoder B adjusts it, Button B
+// resets to defaults). Press Button A to confirm and start the capture using the selected values.
 //
 // Capture flow:
 // 1) Initialize display, serial, and sensor.
-// 2) Prompt for the target sample rate via Encoder A; start capture on button press.
+// 2) Load setup values from Preferences and run the SetupEditor screen; start capture on Button A.
 // 3) Sample at up to the selected target rate and store finite values in RAM.
 // 4) Stop when MAX_SAMPLES are stored or SAMPLING_DURATION_S elapses.
 //
@@ -21,25 +21,27 @@
 // Sensor mode:
 // - Reads from TestSensor (configurable via TestSensor.h using alias).
 //
-// Typical usage: flash the sketch, dial in the desired sample rate with Encoder A, press Encoder A's
-// button to start, and allow capture to complete, then review serial and display outputs to compare
-// stability (StdDev%, range) across averaging sizes.
+// Typical usage: flash the sketch, adjust the setup values with Encoder A/B, press Button A to start,
+// and allow capture to complete, then review serial and display outputs to compare stability
+// (StdDev%, range) across averaging sizes.
 //
 
+#include <Wire.h>
+
+#include "DisplayTable.h"
 #include "ESP32_S3_Playground.h"
 #include "Histogram.h"
+#include "HistogramPlot.h"
+#include "RollingRate.h"
+#include "ScatterPlot.h"
 #include "SensorCapture.h"
-#include "Timer.h"
+#include "SerialHistogram.h"
 #include "SerialTable.h"
 #include "SerialX.h"
-#include "SerialHistogram.h"
-#include "HistogramPlot.h"
-#include "ScatterPlot.h"
-#include "DisplayTable.h"
-#include "RollingRate.h"
-#include "Util.h"
-#include <Wire.h>
+#include "SetupEditor.h"
 #include "TestSensor.h"
+#include "Timer.h"
+#include "Util.h"
 
 // ----------- The Board
 ESP32_S3_Playground arduino;
@@ -52,6 +54,7 @@ constexpr uint16_t MIN_SAMPLE_RATE_PER_SEC = 10;
 constexpr uint16_t MAX_SAMPLE_RATE_PER_SEC = 1000;
 constexpr uint16_t SAMPLE_RATE_STEP_LOW = 10;
 constexpr uint16_t SAMPLE_RATE_STEP_HIGH = 100;
+constexpr uint16_t SAMPLE_RATE_STEP_THRESHOLD = 100;
 constexpr size_t DEFAULT_MAX_SAMPLES = 1000;
 constexpr size_t MIN_MAX_SAMPLES = 100;
 constexpr size_t MAX_MAX_SAMPLES = 5000;
@@ -63,22 +66,51 @@ constexpr unsigned long DEFAULT_WARMUP_PERIOD_S = 0;
 constexpr unsigned long MAX_WARMUP_PERIOD_S = 30;
 constexpr unsigned long WARMUP_STEP_S = 1;
 
-// ----------- Preferences Keys
+// ----------- Preferences Namespace
 constexpr const char* PREF_NAMESPACE = "sensor_avg";
-constexpr const char* PREF_RATE_KEY = "rate";
-constexpr const char* PREF_SAMPLES_KEY = "samples";
-constexpr const char* PREF_DURATION_KEY = "duration";
-constexpr const char* PREF_WARMUP_KEY = "warmup";
 
-uint16_t targetSampleRate = DEFAULT_SAMPLE_RATE_PER_SEC;
-size_t maxSamples = DEFAULT_MAX_SAMPLES;
-unsigned long samplingDurationS = DEFAULT_SAMPLING_DURATION_S;
-unsigned long warmupPeriodS = DEFAULT_WARMUP_PERIOD_S;
+long targetSampleRate = DEFAULT_SAMPLE_RATE_PER_SEC;
+long maxSamples = DEFAULT_MAX_SAMPLES;
+long samplingDurationS = DEFAULT_SAMPLING_DURATION_S;
+long warmupPeriodS = DEFAULT_WARMUP_PERIOD_S;
 RollingRate actualSampleRate;
 
-// Setup page selection state
-enum SetupItem { SAMPLE_RATE = 0, MAX_SAMPLES_ITEM = 1, SAMPLING_DURATION = 2, WARMUP_PERIOD = 3 };
-SetupItem selectedSetupItem = SAMPLE_RATE;
+///
+/// <summary>
+/// Sample-rate setup field with non-linear stepping: SAMPLE_RATE_STEP_LOW below 100/s,
+/// SAMPLE_RATE_STEP_HIGH at or above 100/s.
+/// </summary>
+///
+class SampleRateField : public IntSetupField
+{
+public:
+   using IntSetupField::IntSetupField;
+
+protected:
+   long _stepValue(long current, int32_t direction) override
+   {
+      long stepSize = (current < SAMPLE_RATE_STEP_THRESHOLD) ? SAMPLE_RATE_STEP_LOW : SAMPLE_RATE_STEP_HIGH;
+      return current + (direction * stepSize);
+   }
+};
+
+// ----------- Setup Screen Fields
+Format setupRateFormat("####/s", Format::Alignment::LEFT);
+Format setupSamplesFormat("#####", Format::Alignment::LEFT);
+Format setupDurationFormat("###s", Format::Alignment::LEFT);
+Format setupWarmupFormat("###s", Format::Alignment::LEFT);
+
+SampleRateField rateField("Rate", "rate", &targetSampleRate,
+   MIN_SAMPLE_RATE_PER_SEC, MAX_SAMPLE_RATE_PER_SEC, SAMPLE_RATE_STEP_LOW, DEFAULT_SAMPLE_RATE_PER_SEC, setupRateFormat);
+IntSetupField samplesField("Max Samples", "samples", &maxSamples,
+   MIN_MAX_SAMPLES, MAX_MAX_SAMPLES, SAMPLE_STEP, DEFAULT_MAX_SAMPLES, setupSamplesFormat);
+IntSetupField durationField("Max Duration", "duration", &samplingDurationS,
+   MIN_SAMPLING_DURATION_S, MAX_SAMPLING_DURATION_S, DURATION_STEP_S, DEFAULT_SAMPLING_DURATION_S, setupDurationFormat);
+IntSetupField warmupField("Warmup", "warmup", &warmupPeriodS,
+   0, MAX_WARMUP_PERIOD_S, WARMUP_STEP_S, DEFAULT_WARMUP_PERIOD_S, setupWarmupFormat);
+
+SetupField* setupFields[] = { &rateField, &samplesField, &durationField, &warmupField };
+SetupEditor setupEditor(&arduino, PREF_NAMESPACE, "Setup", setupFields, 4);
 
 SensorCapture* sensorCapture = nullptr;
 SensorCapture* warmupCapture = nullptr;
@@ -203,55 +235,10 @@ void createWarmupCapture()
    }
 }
 
-///
-/// <summary>
-/// Persists the current setup settings (sample rate, max samples, sampling duration, warmup period) to Preferences.
-/// </summary>
-///
-void saveSetupSettings()
-{
-   arduino.preferences.begin(PREF_NAMESPACE, false);
-   arduino.preferences.putUShort(PREF_RATE_KEY, targetSampleRate);
-   arduino.preferences.putULong(PREF_SAMPLES_KEY, static_cast<uint32_t>(maxSamples));
-   arduino.preferences.putULong(PREF_DURATION_KEY, samplingDurationS);
-   arduino.preferences.putULong(PREF_WARMUP_KEY, warmupPeriodS);
-   arduino.preferences.end();
-}
-
-///
-/// <summary>
-/// Loads setup settings from Preferences, falling back to defaults for any missing values.
-/// </summary>
-///
-void loadSetupSettings()
-{
-   arduino.preferences.begin(PREF_NAMESPACE, true);
-   targetSampleRate = arduino.preferences.getUShort(PREF_RATE_KEY, DEFAULT_SAMPLE_RATE_PER_SEC);
-   maxSamples = static_cast<size_t>(arduino.preferences.getULong(PREF_SAMPLES_KEY, DEFAULT_MAX_SAMPLES));
-   samplingDurationS = arduino.preferences.getULong(PREF_DURATION_KEY, DEFAULT_SAMPLING_DURATION_S);
-   warmupPeriodS = arduino.preferences.getULong(PREF_WARMUP_KEY, DEFAULT_WARMUP_PERIOD_S);
-   arduino.preferences.end();
-}
-
-///
-/// <summary>
-/// Resets setup settings to their defaults and persists them, overwriting any saved values.
-/// </summary>
-///
-void resetSetupSettings()
-{
-   targetSampleRate = DEFAULT_SAMPLE_RATE_PER_SEC;
-   maxSamples = DEFAULT_MAX_SAMPLES;
-   samplingDurationS = DEFAULT_SAMPLING_DURATION_S;
-   warmupPeriodS = DEFAULT_WARMUP_PERIOD_S;
-   saveSetupSettings();
-}
-
 // ----------- Display Items
 constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 2;
 RateTimer displayRefreshTimer(DISPLAY_UPDATE_RATE_PER_SEC);
 bool collectingViewInitialized = false;
-bool promptViewInitialized = false;
 Format progressPercentFormat("###%", Format::Alignment::LEFT);
 Format maxCaptureFormat(20, Format::Alignment::LEFT);
 Format targetRateFormat("####/s", Format::Alignment::LEFT);
@@ -574,7 +561,7 @@ void initializeCollectingTable()
 
    String maxText = String(maxSamples) + " samples OR " + String(samplingDurationS) + "s";
    collectingTable.updateValue(0, maxText, Color::VALUE);
-   collectingTable.updateValue(2, targetSampleRate, Color::VALUE);
+   collectingTable.updateValue(2, static_cast<unsigned long>(targetSampleRate), Color::VALUE);
 }
 
 /// <summary>
@@ -672,131 +659,32 @@ void finishCapture()
 }
 
 /// <summary>
-/// Adjusts the target sample rate by one encoder step, using 10/s steps below 100/s and
-/// 100/s steps at or above 100/s, clamped to [MIN_SAMPLE_RATE_PER_SEC, MAX_SAMPLE_RATE_PER_SEC].
+/// Starts a capture run using the currently confirmed setup values.
 /// </summary>
-/// <param name="steps">Signed number of encoder steps to apply.</param>
-void adjustTargetSampleRate(int32_t steps)
+void startCapture()
 {
-   int32_t direction = (steps > 0) ? 1 : -1;
-   int32_t remainingSteps = abs(steps);
-
-   for (int32_t i = 0; i < remainingSteps; i++)
+   captureStarted = true;
+   createSensorCapture();
+   sensorCapture->setSamplingInterval(1000UL / targetSampleRate);
+   sensorCapture->reset();
+   actualSampleRate.reset();
+   captureStartMs = millis();
+   warmupActive = (warmupPeriodS > 0);
+   warmupStartMs = captureStartMs;
+   collectingViewInitialized = false;
    {
-      uint16_t stepSize = (targetSampleRate < 100) ? SAMPLE_RATE_STEP_LOW : SAMPLE_RATE_STEP_HIGH;
-      int32_t newRate = static_cast<int32_t>(targetSampleRate) + (direction * stepSize);
-      newRate = constrain(newRate, MIN_SAMPLE_RATE_PER_SEC, MAX_SAMPLE_RATE_PER_SEC);
-      targetSampleRate = static_cast<uint16_t>(newRate);
+      String maxText = String(maxSamples) + " samples OR " + String(samplingDurationS) + "s";
+      collectingTable.updateValue(0, maxText, Color::VALUE);
    }
+   collectingTable.updateValue(2, static_cast<unsigned long>(targetSampleRate), Color::VALUE);
+   createWarmupCapture();
+   warmupBoundaryCount = 0;
+   warmupBoundaryNextIndex = 0;
+   realBoundaryCount = 0;
+   boundaryDumpPrinted = false;
+   updateDisplay(true);
+   Serial.println(warmupActive ? "Warming up..." : "Capture started...");
 }
-
-///
-/// <summary>
-/// Adjusts the maximum samples setting by encoder steps, clamped to [MIN_MAX_SAMPLES, MAX_MAX_SAMPLES].
-/// </summary>
-/// <param name="steps">Signed number of encoder steps to apply.</param>
-///
-void adjustMaxSamples(int32_t steps)
-{
-   int32_t direction = (steps > 0) ? 1 : -1;
-   int32_t remainingSteps = abs(steps);
-
-   for (int32_t i = 0; i < remainingSteps; i++)
-   {
-      int32_t newValue = static_cast<int32_t>(maxSamples) + (direction * SAMPLE_STEP);
-      newValue = constrain(newValue, MIN_MAX_SAMPLES, MAX_MAX_SAMPLES);
-      maxSamples = static_cast<size_t>(newValue);
-   }
-}
-
-///
-/// <summary>
-/// Adjusts the sampling duration setting by encoder steps, clamped to [MIN_SAMPLING_DURATION_S, MAX_SAMPLING_DURATION_S].
-/// </summary>
-/// <param name="steps">Signed number of encoder steps to apply.</param>
-///
-void adjustSamplingDuration(int32_t steps)
-{
-   int32_t direction = (steps > 0) ? 1 : -1;
-   int32_t remainingSteps = abs(steps);
-
-   for (int32_t i = 0; i < remainingSteps; i++)
-   {
-      int32_t newValue = static_cast<int32_t>(samplingDurationS) + (direction * DURATION_STEP_S);
-      newValue = constrain(newValue, MIN_SAMPLING_DURATION_S, MAX_SAMPLING_DURATION_S);
-      samplingDurationS = static_cast<unsigned long>(newValue);
-   }
-}
-
-///
-/// <summary>
-/// Adjusts the warmup period setting by encoder steps, clamped to [0, MAX_WARMUP_PERIOD_S].
-/// </summary>
-/// <param name="steps">Signed number of encoder steps to apply.</param>
-///
-void adjustWarmupPeriod(int32_t steps)
-{
-   int32_t direction = (steps > 0) ? 1 : -1;
-   int32_t remainingSteps = abs(steps);
-
-   for (int32_t i = 0; i < remainingSteps; i++)
-   {
-      int32_t newValue = static_cast<int32_t>(warmupPeriodS) + (direction * WARMUP_STEP_S);
-      newValue = constrain(newValue, 0, MAX_WARMUP_PERIOD_S);
-      warmupPeriodS = static_cast<unsigned long>(newValue);
-   }
-}
-
-/// <summary>
-/// Draws the startup prompt screen showing configurable options with the selected one highlighted.
-/// EncoderA selects the option, EncoderB adjusts the value. Only clears the display on the first
-/// draw (or after leaving the setup page) to avoid flicker on subsequent redraws, since every line
-/// uses a fixed-width value with its own background color and fully overwrites itself in place.
-/// </summary>
-void drawPromptScreen()
-{
-   if (!promptViewInitialized)
-   {
-      arduino.clearDisplay();
-      promptViewInitialized = true;
-   }
-   arduino.setCursor(0, 0);
-   arduino.setTextSize(3);
-   arduino.println("Setup", Color::HEADING);
-
-   arduino.setTextSize(2);
-
-   // Sample Rate option
-   Color rateBgColor = (selectedSetupItem == SAMPLE_RATE) ? Color::BLUE : Color::BLACK;
-   String rateValueText = String(targetSampleRate) + "/s";
-   arduino.print("Rate: ", Color::LABEL);
-   arduino.println(rateValueText.c_str(), Color::WHITE, rateBgColor);
-
-   // Max Samples option
-   Color samplesBgColor = (selectedSetupItem == MAX_SAMPLES_ITEM) ? Color::BLUE : Color::BLACK;
-   String samplesValueText = String(maxSamples);
-   arduino.print("Max Samples: ", Color::LABEL);
-   arduino.println(samplesValueText.c_str(), Color::WHITE, samplesBgColor);
-
-   // Sampling Duration option
-   Color durationBgColor = (selectedSetupItem == SAMPLING_DURATION) ? Color::BLUE : Color::BLACK;
-   String durationValueText = String(samplingDurationS) + "s";
-   arduino.print("Max Duration: ", Color::LABEL);
-   arduino.println(durationValueText.c_str(), Color::WHITE, durationBgColor);
-
-   // Warmup Period option
-   Color warmupBgColor = (selectedSetupItem == WARMUP_PERIOD) ? Color::BLUE : Color::BLACK;
-   String warmupValueText = String(warmupPeriodS) + "s";
-   arduino.print("Warmup: ", Color::LABEL);
-   arduino.println(warmupValueText.c_str(), Color::WHITE, warmupBgColor);
-
-   arduino.println();
-   arduino.println("Enc A: Select", Color::VALUE);
-   arduino.println("Enc B: Adjust", Color::VALUE);
-   arduino.println("Button A: Start", Color::VALUE);
-   arduino.println("Button B: Reset", Color::VALUE);
-}
-
 
 void setup()
 {
@@ -809,94 +697,13 @@ void setup()
 
    Util::printBoardInfo();
 
-   loadSetupSettings();
-   createSensorCapture();
-
-   drawPromptScreen();
-   Serial.println("Turn Encoder A to select, Encoder B to adjust, Button A to start, Button B to reset.");
+   setupEditor.load();
+   setupEditor.run();
+   startCapture();
 }
 
 void loop()
 {
-   if (!captureStarted)
-   {
-      // EncoderA cycles through setup items
-      int32_t deltaA = arduino.encoderA.delta();
-      if (deltaA != 0)
-      {
-         int32_t newItem = static_cast<int32_t>(selectedSetupItem) + (deltaA > 0 ? 1 : -1);
-         newItem = (newItem + 4) % 4; // Wrap around (0-3)
-         selectedSetupItem = static_cast<SetupItem>(newItem);
-         drawPromptScreen();
-      }
-
-      // EncoderB adjusts the selected item's value
-      int32_t deltaB = arduino.encoderB.delta();
-      if (deltaB != 0)
-      {
-         switch (selectedSetupItem)
-         {
-            case SAMPLE_RATE:
-               adjustTargetSampleRate(deltaB);
-               break;
-            case MAX_SAMPLES_ITEM:
-               adjustMaxSamples(deltaB);
-               break;
-            case SAMPLING_DURATION:
-               adjustSamplingDuration(deltaB);
-               break;
-            case WARMUP_PERIOD:
-               adjustWarmupPeriod(deltaB);
-               break;
-         }
-         drawPromptScreen();
-      }
-
-      if (arduino.buttonB.wasPressed())
-      {
-         resetSetupSettings();
-         drawPromptScreen();
-         Serial.println("Settings reset to defaults.");
-      }
-
-      if (arduino.buttonA.wasPressed())
-      {
-         captureStarted = true;
-         promptViewInitialized = false;
-         createSensorCapture();
-         sensorCapture->setSamplingInterval(1000UL / targetSampleRate);
-         sensorCapture->reset();
-         actualSampleRate.reset();
-         captureStartMs = millis();
-         warmupActive = (warmupPeriodS > 0);
-         warmupStartMs = captureStartMs;
-         collectingViewInitialized = false;
-         {
-            String maxText = String(maxSamples) + " samples OR " + String(samplingDurationS) + "s";
-            collectingTable.updateValue(0, maxText, Color::VALUE);
-         }
-         collectingTable.updateValue(2, targetSampleRate, Color::VALUE);
-         createWarmupCapture();
-         saveSetupSettings();
-         warmupBoundaryCount = 0;
-         warmupBoundaryNextIndex = 0;
-         realBoundaryCount = 0;
-         boundaryDumpPrinted = false;
-         if (warmupActive)
-         {
-            updateDisplay(true);
-            Serial.println("Warming up...");
-         }
-         else
-         {
-            updateDisplay(true);
-            Serial.println("Capture started...");
-         }
-      }
-
-      return;
-   }
-
    if (warmupActive)
    {
       unsigned long warmupMs = warmupPeriodS * 1000UL;
@@ -946,8 +753,8 @@ void loop()
       {
          captureStarted = false;
          captureFinalized = false;
-         drawPromptScreen();
-         Serial.println("Turn Encoder A to set sample rate, press Button A to start.");
+         setupEditor.run();
+         startCapture();
       }
 
       return;
