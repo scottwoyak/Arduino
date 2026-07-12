@@ -21,9 +21,12 @@ private:
       String value;
       Color labelColor;
       Color valueColor;
+      String drawnValue;
+      Color drawnValueColor;
 
       Row(const char* lbl, const Format* fmt, Color lc, Color vc)
-         : label(lbl), format(fmt), value(""), labelColor(lc), valueColor(vc)
+         : label(lbl), format(fmt), value(""), labelColor(lc), valueColor(vc),
+           drawnValue(""), drawnValueColor(vc)
       {
       }
    };
@@ -33,6 +36,7 @@ private:
    int16_t _x;
    int16_t _y;
    int16_t _labelWidth;
+   bool _labelsDrawn = false;
 
 public:
    ///
@@ -205,7 +209,10 @@ public:
 
    ///
    /// <summary>
-   /// Draws the table onto the configured display, applying labels and formatted values.
+   /// Draws the table onto the configured display. On the first call (or after
+   /// invalidate()), draws labels and values for every row; on subsequent calls, only
+   /// redraws the value of a row when its text or color has changed, since labels never
+   /// change and formatted values share a fixed width, avoiding unnecessary display writes.
    /// </summary>
    ///
    void draw()
@@ -217,24 +224,52 @@ public:
 
       int16_t y = _y;
 
-      for (const auto& row : _rows)
+      for (auto& row : _rows)
       {
-         _display->setCursor(_x, y);
-
-         int16_t labelLen = row.label.length();
-         int16_t padding = _labelWidth - labelLen - 2;
-
-         for (int16_t i = 0; i < padding; i++)
+         if (!_labelsDrawn)
          {
-            _display->print(" ", row.labelColor);
-         }
+            _display->setCursor(_x, y);
 
-         _display->print(row.label.c_str(), row.labelColor);
-         _display->print(": ", row.labelColor);
-         _display->print(row.value, row.valueColor);
-         _display->println();
+            int16_t labelLen = row.label.length();
+            int16_t padding = _labelWidth - labelLen - 2;
+
+            for (int16_t i = 0; i < padding; i++)
+            {
+               _display->print(" ", row.labelColor);
+            }
+
+            _display->print(row.label.c_str(), row.labelColor);
+            _display->print(": ", row.labelColor);
+            _display->print(row.value, row.valueColor);
+            _display->println();
+
+            row.drawnValue = row.value;
+            row.drawnValueColor = row.valueColor;
+         }
+         else if ((row.value != row.drawnValue) || (row.valueColor != row.drawnValueColor))
+         {
+            int16_t valueX = _x + (_labelWidth * _display->charW());
+            _display->setCursor(valueX, y);
+            _display->print(row.value, row.valueColor);
+
+            row.drawnValue = row.value;
+            row.drawnValueColor = row.valueColor;
+         }
 
          y += _display->charH();
       }
+
+      _labelsDrawn = true;
+   }
+
+   ///
+   /// <summary>
+   /// Forces the next draw() call to redraw every label and value from scratch (e.g.
+   /// after the display area was cleared or the table's position changed).
+   /// </summary>
+   ///
+   void invalidate()
+   {
+      _labelsDrawn = false;
    }
 };

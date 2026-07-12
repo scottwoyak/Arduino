@@ -20,6 +20,7 @@ enum class Color : uint16_t
    PINK = 1,
    GRAY = 1,
    DARKGRAY = 0,
+   LIGHTGRAY = 1,
 
    HEADING = WHITE,
    HEADING2 = WHITE,
@@ -47,6 +48,7 @@ enum class Color : uint16_t
    ORANGE = 0xFC00,
    GRAY = 0x8430,
    DARKGRAY = 0x6B4D,
+   LIGHTGRAY = 0xC618,
    PINK = 0xFD9C,
 
    HEADING = ORANGE,

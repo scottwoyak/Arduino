@@ -30,9 +30,11 @@
 #include "Histogram.h"
 #include "SensorCapture.h"
 #include "Timer.h"
+#include "SerialTable.h"
 #include "SerialX.h"
 #include "SerialHistogram.h"
 #include "HistogramPlot.h"
+#include "ScatterPlot.h"
 #include "DisplayTable.h"
 #include "RollingRate.h"
 #include "Util.h"
@@ -61,6 +63,13 @@ constexpr unsigned long DEFAULT_WARMUP_PERIOD_S = 0;
 constexpr unsigned long MAX_WARMUP_PERIOD_S = 30;
 constexpr unsigned long WARMUP_STEP_S = 1;
 
+// ----------- Preferences Keys
+constexpr const char* PREF_NAMESPACE = "sensor_avg";
+constexpr const char* PREF_RATE_KEY = "rate";
+constexpr const char* PREF_SAMPLES_KEY = "samples";
+constexpr const char* PREF_DURATION_KEY = "duration";
+constexpr const char* PREF_WARMUP_KEY = "warmup";
+
 uint16_t targetSampleRate = DEFAULT_SAMPLE_RATE_PER_SEC;
 size_t maxSamples = DEFAULT_MAX_SAMPLES;
 unsigned long samplingDurationS = DEFAULT_SAMPLING_DURATION_S;
@@ -72,9 +81,86 @@ enum SetupItem { SAMPLE_RATE = 0, MAX_SAMPLES_ITEM = 1, SAMPLING_DURATION = 2, W
 SetupItem selectedSetupItem = SAMPLE_RATE;
 
 SensorCapture* sensorCapture = nullptr;
+SensorCapture* warmupCapture = nullptr;
 bool captureStarted = false;
 bool captureFinalized = false;
 unsigned long captureStartMs = 0;
+bool warmupActive = false;
+unsigned long warmupStartMs = 0;
+
+// Boundary-diagnostics buffers: last 10 warmup samples (circular) and first 10 real samples.
+constexpr uint8_t NUM_BOUNDARY_SAMPLES = 10;
+unsigned long warmupBoundaryTimestampsMs[NUM_BOUNDARY_SAMPLES];
+float warmupBoundaryValues[NUM_BOUNDARY_SAMPLES];
+uint8_t warmupBoundaryCount = 0;
+uint8_t warmupBoundaryNextIndex = 0;
+unsigned long realBoundaryTimestampsMs[NUM_BOUNDARY_SAMPLES];
+float realBoundaryValues[NUM_BOUNDARY_SAMPLES];
+uint8_t realBoundaryCount = 0;
+bool boundaryDumpPrinted = false;
+
+///
+/// <summary>
+/// Records one warmup sample timestamp/value into the circular boundary-diagnostics buffer.
+/// </summary>
+/// <param name="timestampMs">Sample timestamp in milliseconds.</param>
+/// <param name="value">Sample value.</param>
+///
+void recordWarmupBoundarySample(unsigned long timestampMs, float value)
+{
+   warmupBoundaryTimestampsMs[warmupBoundaryNextIndex] = timestampMs;
+   warmupBoundaryValues[warmupBoundaryNextIndex] = value;
+   warmupBoundaryNextIndex = (warmupBoundaryNextIndex + 1) % NUM_BOUNDARY_SAMPLES;
+   if (warmupBoundaryCount < NUM_BOUNDARY_SAMPLES)
+   {
+      warmupBoundaryCount++;
+   }
+}
+
+///
+/// <summary>
+/// Records one real (post-warmup) sample timestamp/value, then prints the boundary diagnostics
+/// table once the first 10 real samples have been collected.
+/// </summary>
+/// <param name="timestampMs">Sample timestamp in milliseconds.</param>
+/// <param name="value">Sample value.</param>
+///
+void recordRealBoundarySample(unsigned long timestampMs, float value)
+{
+   if (realBoundaryCount < NUM_BOUNDARY_SAMPLES)
+   {
+      realBoundaryTimestampsMs[realBoundaryCount] = timestampMs;
+      realBoundaryValues[realBoundaryCount] = value;
+      realBoundaryCount++;
+   }
+
+   if ((realBoundaryCount >= NUM_BOUNDARY_SAMPLES) && !boundaryDumpPrinted)
+   {
+      boundaryDumpPrinted = true;
+
+      static const SerialTable::Column columns[] = {
+         { "Set", 8 },
+         { "Time (ms)", 12 },
+         { "Value", 10 },
+      };
+      SerialTable table("Warmup/Real Boundary Sample Dump", columns, 3);
+      table.printHeader();
+
+      uint8_t oldestIndex = (warmupBoundaryCount < NUM_BOUNDARY_SAMPLES)
+         ? 0
+         : warmupBoundaryNextIndex;
+      for (uint8_t i = 0; i < warmupBoundaryCount; i++)
+      {
+         uint8_t index = (oldestIndex + i) % NUM_BOUNDARY_SAMPLES;
+         table.printRow("warmup", warmupBoundaryTimestampsMs[index], SerialTable::fixed(warmupBoundaryValues[index], 3));
+      }
+
+      for (uint8_t i = 0; i < realBoundaryCount; i++)
+      {
+         table.printRow("real", realBoundaryTimestampsMs[i], SerialTable::fixed(realBoundaryValues[i], 3));
+      }
+   }
+}
 
 ///
 /// <summary>
@@ -93,17 +179,86 @@ void createSensorCapture()
       1000UL / targetSampleRate);
 }
 
+///
+/// <summary>
+/// Creates a new SensorCapture used to record warmup-phase samples for display only;
+/// these samples are excluded from the histogram and statistics.
+/// </summary>
+///
+void createWarmupCapture()
+{
+   if (warmupCapture != nullptr)
+   {
+      delete warmupCapture;
+      warmupCapture = nullptr;
+   }
+
+   if (warmupPeriodS > 0)
+   {
+      size_t warmupMaxValues = static_cast<size_t>(warmupPeriodS) * targetSampleRate + 1;
+      warmupCapture = new SensorCapture(
+         warmupMaxValues,
+         warmupPeriodS * 1000UL,
+         1000UL / targetSampleRate);
+   }
+}
+
+///
+/// <summary>
+/// Persists the current setup settings (sample rate, max samples, sampling duration, warmup period) to Preferences.
+/// </summary>
+///
+void saveSetupSettings()
+{
+   arduino.preferences.begin(PREF_NAMESPACE, false);
+   arduino.preferences.putUShort(PREF_RATE_KEY, targetSampleRate);
+   arduino.preferences.putULong(PREF_SAMPLES_KEY, static_cast<uint32_t>(maxSamples));
+   arduino.preferences.putULong(PREF_DURATION_KEY, samplingDurationS);
+   arduino.preferences.putULong(PREF_WARMUP_KEY, warmupPeriodS);
+   arduino.preferences.end();
+}
+
+///
+/// <summary>
+/// Loads setup settings from Preferences, falling back to defaults for any missing values.
+/// </summary>
+///
+void loadSetupSettings()
+{
+   arduino.preferences.begin(PREF_NAMESPACE, true);
+   targetSampleRate = arduino.preferences.getUShort(PREF_RATE_KEY, DEFAULT_SAMPLE_RATE_PER_SEC);
+   maxSamples = static_cast<size_t>(arduino.preferences.getULong(PREF_SAMPLES_KEY, DEFAULT_MAX_SAMPLES));
+   samplingDurationS = arduino.preferences.getULong(PREF_DURATION_KEY, DEFAULT_SAMPLING_DURATION_S);
+   warmupPeriodS = arduino.preferences.getULong(PREF_WARMUP_KEY, DEFAULT_WARMUP_PERIOD_S);
+   arduino.preferences.end();
+}
+
+///
+/// <summary>
+/// Resets setup settings to their defaults and persists them, overwriting any saved values.
+/// </summary>
+///
+void resetSetupSettings()
+{
+   targetSampleRate = DEFAULT_SAMPLE_RATE_PER_SEC;
+   maxSamples = DEFAULT_MAX_SAMPLES;
+   samplingDurationS = DEFAULT_SAMPLING_DURATION_S;
+   warmupPeriodS = DEFAULT_WARMUP_PERIOD_S;
+   saveSetupSettings();
+}
+
 // ----------- Display Items
-constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 5;
+constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 2;
 RateTimer displayRefreshTimer(DISPLAY_UPDATE_RATE_PER_SEC);
 bool collectingViewInitialized = false;
 bool promptViewInitialized = false;
 Format progressPercentFormat("###%", Format::Alignment::LEFT);
-Format collectingSamplesFormat("####/1000", Format::Alignment::LEFT);
+Format maxCaptureFormat(20, Format::Alignment::LEFT);
 Format targetRateFormat("####/s", Format::Alignment::LEFT);
 Format actualRateFormat("####.#/s", Format::Alignment::LEFT);
-Format collectingTimeFormat("##/10s", Format::Alignment::LEFT);
+Format warmupStatusFormat(20, Format::Alignment::LEFT);
 DisplayTable collectingTable(&arduino, 0, 0);
+ScatterPlot* resultsScatterPlot = nullptr;
 
 // ----------- Analysis Settings
 constexpr size_t HISTOGRAM_BINS = 20;
@@ -122,7 +277,7 @@ constexpr size_t NUM_BUFFER_SIZES = sizeof(BUFFER_SIZES) / sizeof(BUFFER_SIZES[0
 /// <param name="sectionHeight">Height of the panel in pixels.</param>
 /// <param name="barColor">Color used to draw histogram bars.</param>
 /// <param name="axisLabelColor">Color used to draw axis labels (min/max text).</param>
-void drawHistogramOnPlayground(const char* title, const Histogram& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor, Color axisLabelColor)
+void drawHistogram(const char* title, const Histogram& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor, Color axisLabelColor)
 {
    arduino.setTextSize(2);
    arduino.setCursor(sectionLeft, sectionTop);
@@ -144,6 +299,60 @@ float computeEffectiveRateHz(size_t sampleSize)
    return (sampleSize > 0) ? (static_cast<float>(targetSampleRate) / static_cast<float>(sampleSize)) : NAN;
 }
 
+///
+/// <summary>
+/// Draws a scatter plot of captured sensor values (sample index vs. value) on the Playground display.
+/// Warmup-phase samples (if any) are drawn as a separate gray series before the retained samples,
+/// which are drawn in the given point color.
+/// </summary>
+/// <param name="sectionLeft">Left X coordinate of the panel.</param>
+/// <param name="sectionWidth">Width of the panel in pixels.</param>
+/// <param name="sectionTop">Top Y coordinate of the panel.</param>
+/// <param name="sectionHeight">Height of the panel in pixels.</param>
+/// <param name="pointColor">Color used to draw retained (post-warmup) scatter points.</param>
+///
+void drawScatterPlot(int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color pointColor)
+{
+   if (resultsScatterPlot != nullptr)
+   {
+      delete resultsScatterPlot;
+   }
+   resultsScatterPlot = new ScatterPlot(&arduino, sectionLeft, sectionTop, sectionWidth, sectionHeight);
+
+   size_t warmupCount = (warmupCapture != nullptr) ? warmupCapture->count() : 0;
+   const float* warmupValues = (warmupCapture != nullptr) ? warmupCapture->values() : nullptr;
+
+   size_t count = sensorCapture->count();
+   const float* values = sensorCapture->values();
+
+   if (warmupCount > 0)
+   {
+      ScatterPlotSeries* warmupSeries = resultsScatterPlot->createSeries(warmupCount);
+      warmupSeries->showPoints = true;
+      warmupSeries->showLines = false;
+      warmupSeries->color = Color::LIGHTGRAY;
+
+      for (size_t i = 0; i < warmupCount; i++)
+      {
+         warmupSeries->add((float)i, warmupValues[i]);
+      }
+      warmupSeries->finalized = true;
+   }
+
+   ScatterPlotSeries* series = resultsScatterPlot->createSeries((count > 0) ? count : 1);
+   series->showPoints = true;
+   series->showLines = false;
+   series->color = pointColor;
+
+   for (size_t i = 0; i < count; i++)
+   {
+      series->add((float)(warmupCount + i), values[i]);
+   }
+   series->finalized = true;
+
+   resultsScatterPlot->render();
+}
+
 /// <summary>
 /// Renders histogram and N/range analysis table on the Playground display.
 /// </summary>
@@ -162,15 +371,20 @@ void renderHistogramsOnPlayground()
    arduino.println(rateText.c_str(), Color::LABEL);
 
    int16_t top = arduino.getCursorY();
-   int16_t messageHeight = arduino.charH() + 2;
-   int16_t availableHeight = (int16_t)arduino.height() - top - messageHeight;
+   int16_t availableHeight = (int16_t)arduino.height() - top;
    int16_t totalWidth = (int16_t)arduino.width();
    constexpr int16_t sectionGap = 5;
    constexpr int16_t tableWidth = 160;
    int16_t leftWidth = totalWidth - sectionGap - tableWidth;
    int16_t x = leftWidth + sectionGap;
 
-   drawHistogramOnPlayground("", valueHistogram, 0, leftWidth, top, availableHeight, Color::GREEN, Color::WHITE);
+   int16_t plotHeight = (availableHeight - sectionGap) / 2;
+   int16_t scatterHeight = plotHeight;
+   int16_t histogramTop = top + scatterHeight + sectionGap;
+   int16_t histogramHeight = availableHeight - scatterHeight - sectionGap;
+
+   drawScatterPlot(0, leftWidth, top, scatterHeight, Color::GREEN);
+   drawHistogram("", valueHistogram, 0, leftWidth, histogramTop, histogramHeight, Color::GREEN, Color::WHITE);
 
    arduino.setTextSize(2);
    Format numSamplesFormat("####", Format::Alignment::RIGHT);
@@ -352,21 +566,28 @@ void initializeCollectingTable()
    collectingTableY += arduino.charH();
 
    collectingTable = DisplayTable(&arduino, 0, collectingTableY);
-   collectingTable.addRow("Samples", collectingSamplesFormat, Color::LABEL, Color::VALUE);
-   collectingTable.addRow("Time", collectingTimeFormat, Color::LABEL, Color::VALUE);
+   collectingTable.addRow("Max", maxCaptureFormat, Color::LABEL, Color::VALUE);
    collectingTable.addRow("Progress", progressPercentFormat, Color::LABEL, Color::VALUE);
    collectingTable.addRow("Target Rate", targetRateFormat, Color::LABEL, Color::VALUE);
    collectingTable.addRow("Actual Rate", actualRateFormat, Color::LABEL, Color::VALUE);
+   collectingTable.addRow("Warmup", warmupStatusFormat, Color::LABEL, Color::VALUE);
+
+   String maxText = String(maxSamples) + " samples OR " + String(samplingDurationS) + "s";
+   collectingTable.updateValue(0, maxText, Color::VALUE);
+   collectingTable.updateValue(2, targetSampleRate, Color::VALUE);
 }
 
 /// <summary>
-/// Updates collecting status text shown on the Playground display.
-/// Refresh is throttled to DISPLAY_UPDATE_RATE_PER_SEC unless forceRefresh is true.
+/// Updates the collecting-progress screen shown on the Playground display. Max (samples/
+/// duration) and Target Rate are static once capture starts; Progress and Actual Rate show
+/// placeholder "----" values while warming up, then live values during capture. The Warmup
+/// row shows a countdown while warming up and "Complete" afterward. Refresh is throttled to
+/// DISPLAY_UPDATE_RATE_PER_SEC unless forceRefresh is true.
 /// </summary>
 /// <param name="forceRefresh">When true, bypasses the refresh-rate throttle and redraws immediately.</param>
 void updateDisplay(bool forceRefresh = false)
 {
-   if (sensorCapture->isCaptureComplete())
+   if (!warmupActive && sensorCapture->isCaptureComplete())
    {
       return;
    }
@@ -381,7 +602,7 @@ void updateDisplay(bool forceRefresh = false)
       return;
    }
 
-   if (forceRefresh || !collectingViewInitialized)
+   if (!collectingViewInitialized)
    {
       arduino.clearDisplay();
       arduino.setCursor(0, 0);
@@ -390,8 +611,28 @@ void updateDisplay(bool forceRefresh = false)
 
       arduino.setTextSize(2);
       arduino.println("Collecting data", Color::VALUE);
+      collectingTable.invalidate();
       collectingViewInitialized = true;
    }
+
+   if (warmupActive)
+   {
+      constexpr const char* PLACEHOLDER = "----";
+      collectingTable.updateValue(1, PLACEHOLDER, Color::GRAY);
+      collectingTable.updateValue(3, PLACEHOLDER, Color::GRAY);
+
+      unsigned long warmupMs = warmupPeriodS * 1000UL;
+      unsigned long elapsedWarmupMs = nowMs - warmupStartMs;
+      unsigned long remainingMs = (elapsedWarmupMs < warmupMs) ? (warmupMs - elapsedWarmupMs) : 0;
+      unsigned long remainingSeconds = (remainingMs + 999UL) / 1000UL;
+      String warmupText = String(remainingSeconds) + "s remaining";
+      collectingTable.updateValue(4, warmupText, Color::VALUE);
+
+      collectingTable.draw();
+      return;
+   }
+
+   collectingTable.updateValue(4, "Complete", Color::VALUE);
 
    size_t count = sensorCapture->count();
    unsigned long elapsedSeconds = (nowMs - captureStartMs) / 1000UL;
@@ -402,10 +643,6 @@ void updateDisplay(bool forceRefresh = false)
 
    float samplePercent = (maxSamples > 0) ? ((static_cast<unsigned long>(count) * 100.0f) / maxSamples) : 0.0f;
    float timePercent = (samplingDurationS > 0) ? ((elapsedSeconds * 100.0f) / samplingDurationS) : 0.0f;
-   bool samplesAreLimiting = (samplePercent >= timePercent);
-
-   Color sampleColor = samplesAreLimiting ? Color::VALUE : Color::GRAY;
-   Color timeColor = !samplesAreLimiting ? Color::VALUE : Color::GRAY;
 
    float progressPercent = max(samplePercent, timePercent);
    if (progressPercent > 100.0f)
@@ -413,11 +650,8 @@ void updateDisplay(bool forceRefresh = false)
       progressPercent = 100.0f;
    }
 
-   collectingTable.updateValue(0, count, sampleColor);
-   collectingTable.updateValue(1, elapsedSeconds, timeColor);
-   collectingTable.updateValue(2, progressPercent, Color::VALUE);
-   collectingTable.updateValue(3, targetSampleRate, Color::VALUE);
-   collectingTable.updateValue(4, actualSampleRate.get(), Color::VALUE);
+   collectingTable.updateValue(1, progressPercent, Color::VALUE);
+   collectingTable.updateValue(3, actualSampleRate.get(), Color::VALUE);
    collectingTable.draw();
 }
 
@@ -515,11 +749,17 @@ void adjustWarmupPeriod(int32_t steps)
 
 /// <summary>
 /// Draws the startup prompt screen showing configurable options with the selected one highlighted.
-/// EncoderA selects the option, EncoderB adjusts the value.
+/// EncoderA selects the option, EncoderB adjusts the value. Only clears the display on the first
+/// draw (or after leaving the setup page) to avoid flicker on subsequent redraws, since every line
+/// uses a fixed-width value with its own background color and fully overwrites itself in place.
 /// </summary>
 void drawPromptScreen()
 {
-   arduino.clearDisplay();
+   if (!promptViewInitialized)
+   {
+      arduino.clearDisplay();
+      promptViewInitialized = true;
+   }
    arduino.setCursor(0, 0);
    arduino.setTextSize(3);
    arduino.println("Setup", Color::HEADING);
@@ -527,29 +767,34 @@ void drawPromptScreen()
    arduino.setTextSize(2);
 
    // Sample Rate option
-   Color rateColor = (selectedSetupItem == SAMPLE_RATE) ? Color::VALUE2 : Color::LABEL;
-   String rateText = "Rate: " + String(targetSampleRate) + "/s";
-   arduino.println(rateText.c_str(), rateColor);
+   Color rateBgColor = (selectedSetupItem == SAMPLE_RATE) ? Color::BLUE : Color::BLACK;
+   String rateValueText = String(targetSampleRate) + "/s";
+   arduino.print("Rate: ", Color::LABEL);
+   arduino.println(rateValueText.c_str(), Color::WHITE, rateBgColor);
 
    // Max Samples option
-   Color samplesColor = (selectedSetupItem == MAX_SAMPLES_ITEM) ? Color::VALUE2 : Color::LABEL;
-   String samplesText = "Max Samples: " + String(maxSamples);
-   arduino.println(samplesText.c_str(), samplesColor);
+   Color samplesBgColor = (selectedSetupItem == MAX_SAMPLES_ITEM) ? Color::BLUE : Color::BLACK;
+   String samplesValueText = String(maxSamples);
+   arduino.print("Max Samples: ", Color::LABEL);
+   arduino.println(samplesValueText.c_str(), Color::WHITE, samplesBgColor);
 
    // Sampling Duration option
-   Color durationColor = (selectedSetupItem == SAMPLING_DURATION) ? Color::VALUE2 : Color::LABEL;
-   String durationText = "Duration: " + String(samplingDurationS) + "s";
-   arduino.println(durationText.c_str(), durationColor);
+   Color durationBgColor = (selectedSetupItem == SAMPLING_DURATION) ? Color::BLUE : Color::BLACK;
+   String durationValueText = String(samplingDurationS) + "s";
+   arduino.print("Max Duration: ", Color::LABEL);
+   arduino.println(durationValueText.c_str(), Color::WHITE, durationBgColor);
 
    // Warmup Period option
-   Color warmupColor = (selectedSetupItem == WARMUP_PERIOD) ? Color::VALUE2 : Color::LABEL;
-   String warmupText = "Warmup: " + String(warmupPeriodS) + "s";
-   arduino.println(warmupText.c_str(), warmupColor);
+   Color warmupBgColor = (selectedSetupItem == WARMUP_PERIOD) ? Color::BLUE : Color::BLACK;
+   String warmupValueText = String(warmupPeriodS) + "s";
+   arduino.print("Warmup: ", Color::LABEL);
+   arduino.println(warmupValueText.c_str(), Color::WHITE, warmupBgColor);
 
    arduino.println();
    arduino.println("Enc A: Select", Color::VALUE);
    arduino.println("Enc B: Adjust", Color::VALUE);
    arduino.println("Button A: Start", Color::VALUE);
+   arduino.println("Button B: Reset", Color::VALUE);
 }
 
 
@@ -564,11 +809,11 @@ void setup()
 
    Util::printBoardInfo();
 
+   loadSetupSettings();
    createSensorCapture();
 
    drawPromptScreen();
-   promptViewInitialized = true;
-   Serial.println("Turn Encoder A to select, Encoder B to adjust, Button A to start.");
+   Serial.println("Turn Encoder A to select, Encoder B to adjust, Button A to start, Button B to reset.");
 }
 
 void loop()
@@ -607,16 +852,89 @@ void loop()
          drawPromptScreen();
       }
 
+      if (arduino.buttonB.wasPressed())
+      {
+         resetSetupSettings();
+         drawPromptScreen();
+         Serial.println("Settings reset to defaults.");
+      }
+
       if (arduino.buttonA.wasPressed())
       {
          captureStarted = true;
+         promptViewInitialized = false;
          createSensorCapture();
          sensorCapture->setSamplingInterval(1000UL / targetSampleRate);
          sensorCapture->reset();
          actualSampleRate.reset();
          captureStartMs = millis();
+         warmupActive = (warmupPeriodS > 0);
+         warmupStartMs = captureStartMs;
+         collectingViewInitialized = false;
+         {
+            String maxText = String(maxSamples) + " samples OR " + String(samplingDurationS) + "s";
+            collectingTable.updateValue(0, maxText, Color::VALUE);
+         }
+         collectingTable.updateValue(2, targetSampleRate, Color::VALUE);
+         createWarmupCapture();
+         saveSetupSettings();
+         warmupBoundaryCount = 0;
+         warmupBoundaryNextIndex = 0;
+         realBoundaryCount = 0;
+         boundaryDumpPrinted = false;
+         if (warmupActive)
+         {
+            updateDisplay(true);
+            Serial.println("Warming up...");
+         }
+         else
+         {
+            updateDisplay(true);
+            Serial.println("Capture started...");
+         }
+      }
+
+      return;
+   }
+
+   if (warmupActive)
+   {
+      unsigned long warmupMs = warmupPeriodS * 1000UL;
+      unsigned long elapsedMs = millis() - warmupStartMs;
+
+      if ((warmupCapture != nullptr) && warmupCapture->readyForValue())
+      {
+         unsigned long sampleTimestampMs = millis();
+         float sensorValue = sensor.get();
+         warmupCapture->addValue(sensorValue);
+         recordWarmupBoundarySample(sampleTimestampMs, sensorValue);
+      }
+
+      if (elapsedMs >= warmupMs)
+      {
+         warmupActive = false;
+         sensorCapture->reset();
+         actualSampleRate.reset();
+         captureStartMs = millis();
+
+         // Take the first retained sample immediately, before the display redraw below, so
+         // there is no gap between the last warmup sample and the first retained sample
+         // (a delay here could let the sensor cool down and skew the retained data).
+         unsigned long firstValueTimestampMs = millis();
+         float firstValue = sensor.get();
+         SensorCaptureState firstValueStates = sensorCapture->addValue(firstValue);
+         if ((firstValueStates & SENSOR_CAPTURE_STATE_VALUE_STORED) != 0)
+         {
+            actualSampleRate.tick();
+            recordRealBoundarySample(firstValueTimestampMs, firstValue);
+         }
+
          updateDisplay(true);
          Serial.println("Capture started...");
+      }
+      else
+      {
+         updateDisplay();
       }
 
       return;
@@ -640,12 +958,14 @@ void loop()
 
    if (sensorCapture->readyForValue())
    {
+      unsigned long sampleTimestampMs = millis();
       float sensorValue = sensor.get();
       valueStates = sensorCapture->addValue(sensorValue);
 
       if ((valueStates & SENSOR_CAPTURE_STATE_VALUE_STORED) != 0)
       {
          actualSampleRate.tick();
+         recordRealBoundarySample(sampleTimestampMs, sensorValue);
          updateDisplay();
       }
 
