@@ -30,6 +30,8 @@
 
 #include "ESP32_S3_Playground.h"
 #include "DisplayField.h"
+#include "DisplayGrid.h"
+#include "EnumSelector.h"
 #include "Histogram.h"
 #include "HistogramPlot.h"
 #include "RollingRate.h"
@@ -46,6 +48,16 @@
 // ----------- The Board
 ESP32_S3_Playground arduino;
 TestSensor sensor;
+
+///
+/// <summary>
+/// Which post-capture results view is currently displayed: the scatter/histogram charts,
+/// or the Sigma%/effective-rate summary table.
+/// </summary>
+///
+enum class ResultView : uint8_t { Charts, Table };
+
+EnumSelector<ResultView> resultViewSelector(arduino.encoderA, ResultView::Table, ResultView::Charts);
 
 // ----------- Capture Settings
 constexpr unsigned long DEFAULT_SAMPLING_DURATION_S = 10;
@@ -124,6 +136,7 @@ Timer samplingTimer(1000UL / DEFAULT_SAMPLE_RATE_PER_SEC);
 // Boundary diagnostics: dump the last warmup samples and first real samples once enough
 // real samples exist, querying timestamps/values directly from the Values objects.
 constexpr uint8_t NUM_BOUNDARY_SAMPLES = 10;
+constexpr uint8_t NUM_BOUNDARY_REAL_SAMPLES = 40;
 bool boundaryDumpPrinted = false;
 
 ///
@@ -165,7 +178,7 @@ void printBoundaryDump()
       havePreviousTimestamp = true;
    }
 
-   size_t realCount = min(static_cast<size_t>(NUM_BOUNDARY_SAMPLES), samplesValues->count());
+   size_t realCount = min(static_cast<size_t>(NUM_BOUNDARY_REAL_SAMPLES), samplesValues->count());
    for (size_t i = 0; i < realCount; i++)
    {
       unsigned long timestampMs = samplesValues->timestamp(i);
@@ -199,7 +212,7 @@ void createSamplesValues()
 ///
 void createWarmupValues()
 {
-   size_t warmupMaxValues = (warmupPeriodS > 0) ? (static_cast<size_t>(warmupPeriodS) * targetSampleRate + 1) : 0;
+   size_t warmupMaxValues = (warmupPeriodS > 0) ? (warmupPeriodS * targetSampleRate + 1) : 0;
    warmupValues.reset(warmupMaxValues);
 }
 
@@ -207,30 +220,31 @@ void createWarmupValues()
 constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 10;
 RateTimer displayRefreshTimer(DISPLAY_UPDATE_RATE_PER_SEC);
 
-// Minimum time before the next sample is due for a display redraw to be allowed to proceed.
-// The redraw (field draws/sprite pushes) takes a few milliseconds; performing it right before
-// a sample is due would delay that sample's timing check in loop(), so the redraw is postponed
-// by one loop() iteration whenever a sample is imminent.
-constexpr unsigned long DISPLAY_DRAW_SAFETY_MARGIN_MS = 3;
 bool collectingViewInitialized = false;
 Format progressPercentFormat("###%", Format::Alignment::LEFT);
 Format maxCaptureFormat(20, Format::Alignment::LEFT);
 Format targetRateFormat("####/s", Format::Alignment::LEFT);
 Format actualRateFormat("####.#/s", Format::Alignment::LEFT);
 Format warmupStatusFormat(20, Format::Alignment::LEFT);
+Format samplesCountFormat("#####", Format::Alignment::LEFT);
+Format elapsedFormat("####s", Format::Alignment::LEFT);
+DisplayField* warmupStatusField = nullptr;
 DisplayField* maxField = nullptr;
 DisplayField* progressField = nullptr;
+DisplayField* samplesCountField = nullptr;
+DisplayField* elapsedField = nullptr;
 DisplayField* targetRateField = nullptr;
 DisplayField* actualRateField = nullptr;
-DisplayField* warmupStatusField = nullptr;
 ScatterPlot* resultsScatterPlot = nullptr;
 
 // ----------- Analysis Settings
 constexpr size_t HISTOGRAM_BINS = 20;
 constexpr uint8_t CHART_MIN_MAX_SIGNIFICANT_DIGITS = 3;
+constexpr const char* CHART_Y_AXIS_FORMAT = "####";
 constexpr size_t BUFFER_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
 constexpr size_t NUM_BUFFER_SIZES = sizeof(BUFFER_SIZES) / sizeof(BUFFER_SIZES[0]);
 
+///
 /// <summary>
 /// Draws a histogram panel on the Playground display.
 /// </summary>
@@ -242,7 +256,12 @@ constexpr size_t NUM_BUFFER_SIZES = sizeof(BUFFER_SIZES) / sizeof(BUFFER_SIZES[0
 /// <param name="sectionHeight">Height of the panel in pixels.</param>
 /// <param name="barColor">Color used to draw histogram bars.</param>
 /// <param name="axisLabelColor">Color used to draw axis labels (min/max text).</param>
-void drawHistogram(const char* title, const Histogram& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor, Color axisLabelColor)
+/// <param name="yAxisFormat">If not nullptr, reserves a left-side Y-axis column sized to fit
+/// labels formatted with this pattern (max bin count at top, 1 at bottom); pass nullptr for
+/// no Y-axis. Use the same format string as the paired ScatterPlot's setYAxisFormat() so
+/// both charts' reserved label columns end up the same width.</param>
+///
+void drawHistogram(const char* title, const Histogram& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor, Color axisLabelColor, const char* yAxisFormat = nullptr)
 {
    arduino.setTextSize(2);
    arduino.setCursor(sectionLeft, sectionTop);
@@ -250,18 +269,8 @@ void drawHistogram(const char* title, const Histogram& histogram, int16_t sectio
 
    int16_t chartTop = arduino.getCursorY() + 1;
    int16_t adjustedHeight = sectionHeight - (chartTop - sectionTop);
-   HistogramPlot plot(&arduino, histogram, sectionLeft, sectionWidth, chartTop, adjustedHeight, barColor, CHART_MIN_MAX_SIGNIFICANT_DIGITS, axisLabelColor);
+   HistogramPlot plot(&arduino, histogram, sectionLeft, sectionWidth, chartTop, adjustedHeight, barColor, CHART_MIN_MAX_SIGNIFICANT_DIGITS, axisLabelColor, yAxisFormat);
    plot.render();
-}
-
-/// <summary>
-/// Computes the effective rate for a given averaging block size using the current target sample rate.
-/// </summary>
-/// <param name="sampleSize">Averaging block size (N).</param>
-/// <returns>Effective rate in samples/sec, or NaN when sampleSize is zero.</returns>
-float computeEffectiveRateHz(size_t sampleSize)
-{
-   return (sampleSize > 0) ? (static_cast<float>(targetSampleRate) / static_cast<float>(sampleSize)) : NAN;
 }
 
 ///
@@ -283,6 +292,7 @@ void drawScatterPlot(int16_t sectionLeft, int16_t sectionWidth, int16_t sectionT
       delete resultsScatterPlot;
    }
    resultsScatterPlot = new ScatterPlot(&arduino, sectionLeft, sectionTop, sectionWidth, sectionHeight);
+   resultsScatterPlot->setYAxisFormat(CHART_Y_AXIS_FORMAT);
 
    size_t warmupCount = warmupValues.count();
    const float* warmupValueData = warmupValues.values();
@@ -318,131 +328,112 @@ void drawScatterPlot(int16_t sectionLeft, int16_t sectionWidth, int16_t sectionT
    resultsScatterPlot->render();
 }
 
+///
 /// <summary>
-/// Renders histogram and N/range analysis table on the Playground display.
+/// Draws the shared "Averaging Results" header, common to both result views. The caller
+/// is responsible for clearing the display beforehand.
 /// </summary>
-void renderHistogramsOnPlayground()
+///
+void drawResultsHeader()
 {
-   arduino.clearDisplay();
+   arduino.setTextSize(3);
+   arduino.setCursor(0, 0);
+   arduino.println("Averaging Results", Color::HEADING);
+}
+
+///
+/// <summary>
+/// Draws the scatter plot and histogram charts view on the Playground display.
+/// </summary>
+///
+void drawChartsView()
+{
+   drawResultsHeader();
 
    Histogram valueHistogram(samplesValues->values(), samplesValues->count(), HISTOGRAM_BINS);
-
-   arduino.setTextSize(2);
-   arduino.setCursor(0, 0);
-   String headerText = String(samplesValues->count()) + " Samples";
-   arduino.println(headerText.c_str(), Color::HEADING);
-
-   String rateText = "Target " + String(targetSampleRate) + "/s  Actual " + String(actualSampleRate.get(), 1) + "/s";
-   arduino.println(rateText.c_str(), Color::LABEL);
 
    int16_t top = arduino.getCursorY();
    int16_t availableHeight = (int16_t)arduino.height() - top;
    int16_t totalWidth = (int16_t)arduino.width();
    constexpr int16_t sectionGap = 5;
-   constexpr int16_t tableWidth = 160;
-   int16_t leftWidth = totalWidth - sectionGap - tableWidth;
-   int16_t x = leftWidth + sectionGap;
 
    int16_t plotHeight = (availableHeight - sectionGap) / 2;
    int16_t scatterHeight = plotHeight;
    int16_t histogramTop = top + scatterHeight + sectionGap;
    int16_t histogramHeight = availableHeight - scatterHeight - sectionGap;
 
-   drawScatterPlot(0, leftWidth, top, scatterHeight, Color::GREEN);
-   drawHistogram("", valueHistogram, 0, leftWidth, histogramTop, histogramHeight, Color::GREEN, Color::WHITE);
+   drawScatterPlot(0, totalWidth, top, scatterHeight, Color::GREEN);
+
+   // Use the same Y-axis format string as the scatter plot so both charts reserve an
+   // identically sized left-side label column and their x-axes line up visually.
+   drawHistogram("", valueHistogram, 0, totalWidth, histogramTop, histogramHeight, Color::GREEN, Color::WHITE, CHART_Y_AXIS_FORMAT);
+}
+
+///
+/// <summary>
+/// Draws the StdDev/StdDev%/effective-rate summary table view on the Playground display.
+/// </summary>
+///
+void drawTableView()
+{
+   drawResultsHeader();
 
    arduino.setTextSize(2);
-   Format numSamplesFormat("####", Format::Alignment::RIGHT);
-   Format sigmaPercentFormat("###.##%", Format::Alignment::RIGHT);
-   Format hzFormat(" ####", Format::Alignment::RIGHT);
+
+   unsigned long elapsedSeconds = static_cast<unsigned long>(captureStopwatch.elapsedSecs());
+   String headerText = String(samplesValues->count()) + " samples collected in " + String(elapsedSeconds) + " seconds";
+   arduino.println(headerText.c_str(), Color::LABEL);
+
+   String rateText = "Target " + String(targetSampleRate) + "/s  Actual " + String(actualSampleRate.get(), 0) + "/s";
+   arduino.println(rateText.c_str(), Color::LABEL);
+   arduino.println();
+
+   static Format numSamplesFormat("####", Format::Alignment::RIGHT);
+   static Format rangeFormat("###.##", Format::Alignment::RIGHT);
+   static Format stdDevFormat("###.##", Format::Alignment::RIGHT);
+   static Format stdDevPercentFormat("###.##%", Format::Alignment::RIGHT);
+   static Format hzFormat(" ####", Format::Alignment::RIGHT);
+
+   static const DisplayGrid::Column columns[] = {
+      { "N", &numSamplesFormat },
+      { "Range", &rangeFormat },
+      { "StdDev", &stdDevFormat },
+      { "StdDev%", &stdDevPercentFormat },
+      { "Hz", &hzFormat },
+   };
+   DisplayGrid grid(&arduino, nullptr, columns, 5);
+   grid.printHeader();
 
    Stats rawStats = samplesValues->computeBasicStats();
    float rawAvg = rawStats.get();
+   float rawRange = Values::computeRange(rawStats.min(), rawStats.max());
    float rawStdDev = rawStats.stdDev();
    size_t rawCount = rawStats.count();
 
-   arduino.setCursor(x, 0);
-   arduino.println("   N Sigma%   Hz", Color::VALUE3);
-
-   arduino.setCursorX(x);
-   float rawSigmaPercent = NAN;
+   float rawStdDevPercent = NAN;
    if (isfinite(rawAvg) && (fabsf(rawAvg) > 0.0f) && isfinite(rawStdDev))
    {
-      rawSigmaPercent = (rawStdDev / fabsf(rawAvg)) * 100.0f;
+      rawStdDevPercent = (rawStdDev / fabsf(rawAvg)) * 100.0f;
    }
 
-   if ((rawCount > 0) && isfinite(rawSigmaPercent))
+   if ((rawCount > 0) && isfinite(rawStdDevPercent))
    {
-      arduino.print(" Raw", Color::LABEL);
-      arduino.print(rawSigmaPercent, sigmaPercentFormat, Color::VALUE2);
-      arduino.println(computeEffectiveRateHz(1), hzFormat, Color::VALUE2);
+      grid.printRow(Color::VALUE2, "Raw", rawRange, rawStdDev, rawStdDevPercent, actualSampleRate.get());
    }
    else
    {
-      arduino.println(" Raw   n/a   n/a", Color::GRAY);
+      grid.printRow(Color::GRAY, "Raw", "n/a", "n/a", "n/a", "n/a");
    }
 
-   constexpr size_t BUFFER_SIZE_FOR_DISPLAY[] = { 10, 20, 50, 100 };
-   for (size_t i = 0; i < (sizeof(BUFFER_SIZE_FOR_DISPLAY) / sizeof(BUFFER_SIZE_FOR_DISPLAY[0])); i++)
+   for (size_t i = 0; i < NUM_BUFFER_SIZES; i++)
    {
-      arduino.moveCursorY(-1);
-      size_t sampleSize = BUFFER_SIZE_FOR_DISPLAY[i];
-      float effectiveRateHz = computeEffectiveRateHz(sampleSize);
+      size_t sampleSize = BUFFER_SIZES[i];
+      float effectiveRateHz = actualSampleRate.get() / sampleSize;
 
       Stats avgSeriesStats = samplesValues->computeAverageSeriesStats(sampleSize);
       float avgMean = avgSeriesStats.get();
-      float avgStdDev = avgSeriesStats.stdDev();
-      size_t averageCount = avgSeriesStats.count();
-
-      float avgSigmaPercent = NAN;
-      if (isfinite(avgMean) && (fabsf(avgMean) > 0.0f) && isfinite(avgStdDev))
-      {
-         avgSigmaPercent = (avgStdDev / fabsf(avgMean)) * 100.0f;
-      }
-
-      arduino.setCursorX(x);
-      if ((averageCount > 0) && isfinite(avgSigmaPercent))
-      {
-         arduino.print(sampleSize, numSamplesFormat, Color::LABEL);
-         arduino.print(avgSigmaPercent, sigmaPercentFormat, Color::VALUE);
-         arduino.println(effectiveRateHz, hzFormat, Color::VALUE);
-      }
-      else
-      {
-         std::string rowText = numSamplesFormat.toString((double)sampleSize) + "   n/a   n/a";
-         arduino.println(rowText, Color::GRAY);
-      }
-   }
-}
-
-/// <summary>
-/// Prints post-capture block-average analysis for configured sample sizes.
-/// </summary>
-void printAveragingAnalysis()
-{
-   Serial.println("Averaging Analysis");
-
-   SerialX::print("Num Samples", 12);
-   SerialX::print("Range", 10);
-   SerialX::print("StdDev", 10);
-   SerialX::print("StdDev%", 10);
-   SerialX::println("Eff Rate", 8);
-
-   SerialX::print("-----------", 12);
-   SerialX::print("-----", 10);
-   SerialX::print("------", 10);
-   SerialX::print("-------", 10);
-   SerialX::println("--------", 8);
-
-   for (size_t analysisIndex = 0; analysisIndex < NUM_BUFFER_SIZES; analysisIndex++)
-   {
-      size_t sampleSize = BUFFER_SIZES[analysisIndex];
-      float effectiveRate = (sampleSize > 0) ? (static_cast<float>(targetSampleRate) / static_cast<float>(sampleSize)) : NAN;
-
-      Stats avgSeriesStats = samplesValues->computeAverageSeriesStats(sampleSize);
       float avgRange = Values::computeRange(avgSeriesStats.min(), avgSeriesStats.max());
       float avgStdDev = avgSeriesStats.stdDev();
-      float avgMean = avgSeriesStats.get();
       size_t averageCount = avgSeriesStats.count();
 
       float avgStdDevPercent = NAN;
@@ -451,29 +442,42 @@ void printAveragingAnalysis()
          avgStdDevPercent = (avgStdDev / fabsf(avgMean)) * 100.0f;
       }
 
-      SerialX::print(sampleSize, 12);
-      if (averageCount == 0)
+      if ((averageCount > 0) && isfinite(avgStdDevPercent))
       {
-         SerialX::print("n/a", 10);
-         SerialX::print("n/a", 10);
-         SerialX::print("n/a", 10);
+         grid.printRow(Color::VALUE, sampleSize, avgRange, avgStdDev, avgStdDevPercent, effectiveRateHz);
       }
       else
       {
-         SerialX::print(avgRange, 3, 10);
-         SerialX::print(avgStdDev, 3, 10);
-         SerialX::print(isfinite(avgStdDevPercent) ? String(avgStdDevPercent, 2) + "%" : "n/a", 10);
+         grid.printRow(Color::GRAY, sampleSize, "n/a", "n/a", "n/a", "n/a");
       }
-
-      SerialX::println(isfinite(effectiveRate) ? String(effectiveRate, 1) + "/s" : "n/a", 8);
    }
-
-   Serial.println();
 }
 
+///
+/// <summary>
+/// Draws the currently selected results view on the Playground display. Rotating
+/// encoderA cycles between the charts view and the summary table view.
+/// </summary>
+///
+void drawResultView()
+{
+   arduino.clearDisplay();
+
+   if (resultViewSelector.value() == ResultView::Charts)
+   {
+      drawChartsView();
+   }
+   else
+   {
+      drawTableView();
+   }
+}
+
+///
 /// <summary>
 /// Initializes the DisplayField rows used by the collecting-progress screen.
 /// </summary>
+///
 void initializeCollectingTable()
 {
    arduino.setTextSize(3);
@@ -483,53 +487,51 @@ void initializeCollectingTable()
    collectingTableY += arduino.charH();
    int16_t rowHeight = arduino.charH();
 
+   delete warmupStatusField;
    delete maxField;
    delete progressField;
+   delete samplesCountField;
+   delete elapsedField;
    delete targetRateField;
    delete actualRateField;
-   delete warmupStatusField;
 
    // pad labels so their ": " separators line up, matching "Target Rate"/"Actual Rate"
-   maxField = new DisplayField(&arduino, 0, collectingTableY, "        Max", maxCaptureFormat, 2);
-   progressField = new DisplayField(&arduino, 0, collectingTableY + rowHeight, "   Progress", progressPercentFormat, 2);
-   targetRateField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 2, "Target Rate", targetRateFormat, 2);
-   actualRateField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 3, "Actual Rate", actualRateFormat, 2);
-   warmupStatusField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 4, "     Warmup", warmupStatusFormat, 2);
+   warmupStatusField = new DisplayField(&arduino, 0, collectingTableY, "     Warmup", warmupStatusFormat, 2);
+   maxField = new DisplayField(&arduino, 0, collectingTableY + rowHeight, "        Max", maxCaptureFormat, 2);
+   progressField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 2, "   Progress", progressPercentFormat, 2);
+   samplesCountField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 3, "    Samples", samplesCountFormat, 2);
+   elapsedField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 4, "    Elapsed", elapsedFormat, 2);
+   targetRateField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 5, "Target Rate", targetRateFormat, 2);
+   actualRateField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 6, "Actual Rate", actualRateFormat, 2);
 
    String maxText = String(maxSamples) + " samples OR " + String(samplingDurationS) + "s";
    maxField->setValue(maxText);
-   targetRateField->setValue(static_cast<unsigned long>(targetSampleRate));
+   targetRateField->setValue(targetSampleRate);
 }
 
+///
 /// <summary>
 /// Updates the collecting-progress screen shown on the Playground display. Max (samples/
-/// duration) and Target Rate are static once capture starts; Progress and Actual Rate show
-/// placeholder "----" values while warming up, then live values during capture. The Warmup
-/// row shows a countdown while warming up and "Complete" afterward. Refresh is throttled to
-/// DISPLAY_UPDATE_RATE_PER_SEC unless forceRefresh is true.
+/// duration) and Target Rate are static once capture starts; Progress, Samples, Elapsed,
+/// and Actual Rate show placeholder "----" values while warming up, then live values during
+/// capture. The Warmup row (shown first) shows a countdown while warming up and "Complete"
+/// afterward. Refresh is throttled to DISPLAY_UPDATE_RATE_PER_SEC unless forceRefresh is true.
 /// </summary>
 /// <param name="forceRefresh">When true, bypasses the refresh-rate throttle and redraws immediately.</param>
+///
 void updateDisplay(bool forceRefresh = false)
 {
-   bool durationElapsed = captureStopwatch.elapsedMillis() >= (samplingDurationS * 1000UL);
-   if (!warmupStopwatch.isRunning() && (samplesValues->isCaptureComplete() || durationElapsed))
+   bool durationElapsed = captureStopwatch.elapsedSecs() >= samplingDurationS;
+   if (!warmupStopwatch.isRunning() && (samplesValues->isFull() || durationElapsed))
    {
       return;
    }
 
-   unsigned long nowMs = millis();
    if (forceRefresh)
    {
       displayRefreshTimer.reset();
    }
    else if (!displayRefreshTimer.ready())
-   {
-      return;
-   }
-
-   // Postpone the actual draw work (without consuming the throttle) if a sample is imminent,
-   // so drawing never delays the next sample's timing check in loop().
-   if (samplingTimer.remaining() < DISPLAY_DRAW_SAFETY_MARGIN_MS)
    {
       return;
    }
@@ -543,11 +545,13 @@ void updateDisplay(bool forceRefresh = false)
 
       arduino.setTextSize(2);
       arduino.println("Collecting data", Color::VALUE);
+      warmupStatusField->invalidate();
       maxField->invalidate();
       progressField->invalidate();
+      samplesCountField->invalidate();
+      elapsedField->invalidate();
       targetRateField->invalidate();
       actualRateField->invalidate();
-      warmupStatusField->invalidate();
       collectingViewInitialized = true;
    }
 
@@ -559,20 +563,23 @@ void updateDisplay(bool forceRefresh = false)
       constexpr const char* PLACEHOLDER = "----";
       progressField->setValueColor(Color::GRAY);
       progressField->setValue(PLACEHOLDER);
+      samplesCountField->setValueColor(Color::GRAY);
+      samplesCountField->setValue(PLACEHOLDER);
+      elapsedField->setValueColor(Color::GRAY);
+      elapsedField->setValue(PLACEHOLDER);
       actualRateField->setValueColor(Color::GRAY);
       actualRateField->setValue(PLACEHOLDER);
 
-      unsigned long warmupMs = warmupPeriodS * 1000UL;
-      unsigned long elapsedWarmupMs = static_cast<unsigned long>(warmupStopwatch.elapsedMillis());
-      unsigned long remainingMs = (elapsedWarmupMs < warmupMs) ? (warmupMs - elapsedWarmupMs) : 0;
-      unsigned long remainingSeconds = (remainingMs + 999UL) / 1000UL;
-      String warmupText = String(remainingSeconds) + "s remaining";
-      warmupStatusField->setValueColor(Color::VALUE);
+      float remainingSeconds = max(0.0, warmupPeriodS - warmupStopwatch.elapsedSecs());
+      String warmupText = String(remainingSeconds, 1) + "s remaining";
+      warmupStatusField->setValueColor(Color::VALUE2);
       warmupStatusField->setValue(warmupText);
 
-      progressField->draw();
-      actualRateField->draw();
       warmupStatusField->draw();
+      progressField->draw();
+      samplesCountField->draw();
+      elapsedField->draw();
+      actualRateField->draw();
       return;
    }
 
@@ -580,14 +587,14 @@ void updateDisplay(bool forceRefresh = false)
    warmupStatusField->setValue("Complete");
 
    size_t count = samplesValues->count();
-   unsigned long elapsedSeconds = static_cast<unsigned long>(captureStopwatch.elapsedMillis()) / 1000UL;
+   float elapsedSeconds = captureStopwatch.elapsedSecs();
    if (elapsedSeconds > samplingDurationS)
    {
       elapsedSeconds = samplingDurationS;
    }
 
-   float samplePercent = (maxSamples > 0) ? ((static_cast<unsigned long>(count) * 100.0f) / maxSamples) : 0.0f;
-   float timePercent = (samplingDurationS > 0) ? ((elapsedSeconds * 100.0f) / samplingDurationS) : 0.0f;
+   float samplePercent = (count * 100.0f) / maxSamples;
+   float timePercent = (elapsedSeconds * 100.0f) / samplingDurationS;
 
    float progressPercent = max(samplePercent, timePercent);
    if (progressPercent > 100.0f)
@@ -597,17 +604,25 @@ void updateDisplay(bool forceRefresh = false)
 
    progressField->setValueColor(Color::VALUE);
    progressField->setValue(progressPercent);
+   samplesCountField->setValueColor(Color::VALUE);
+   samplesCountField->setValue(static_cast<unsigned long>(count));
+   elapsedField->setValueColor(Color::VALUE);
+   elapsedField->setValue(static_cast<unsigned long>(elapsedSeconds));
    actualRateField->setValueColor(Color::VALUE);
    actualRateField->setValue(actualSampleRate.get());
 
-   progressField->draw();
-   actualRateField->draw();
    warmupStatusField->draw();
+   progressField->draw();
+   samplesCountField->draw();
+   elapsedField->draw();
+   actualRateField->draw();
 }
 
+///
 /// <summary>
 /// Finalizes capture and prints summaries.
 /// </summary>
+///
 void finishCapture()
 {
    if (captureFinalized)
@@ -617,13 +632,15 @@ void finishCapture()
 
    captureFinalized = true;
    printBoundaryDump();
-   printAveragingAnalysis();
-   renderHistogramsOnPlayground();
+   resultViewSelector.reset(ResultView::Charts);
+   drawResultView();
 }
 
+///
 /// <summary>
 /// Starts a capture run using the currently confirmed setup values.
 /// </summary>
+///
 void startCapture()
 {
    captureStarted = true;
@@ -644,7 +661,7 @@ void startCapture()
       String maxText = String(maxSamples) + " samples OR " + String(samplingDurationS) + "s";
       maxField->setValue(maxText);
    }
-   targetRateField->setValue(static_cast<unsigned long>(targetSampleRate));
+   targetRateField->setValue(targetSampleRate);
    createWarmupValues();
    boundaryDumpPrinted = false;
    updateDisplay(true);
@@ -677,6 +694,12 @@ void loop()
          captureFinalized = false;
          setupEditor.run();
          startCapture();
+         return;
+      }
+
+      if (resultViewSelector.hasChanged())
+      {
+         drawResultView();
       }
 
       return;
@@ -696,17 +719,18 @@ void loop()
       {
          if (warmupStopwatch.isRunning())
          {
-            // Transitioning from warmup to real capture.
+            // Transitioning from warmup to real capture. Avoid forcing an immediate
+            // full redraw here (and avoid a blocking Serial write) since that adds
+            // extra work to this one sample iteration; let the normal, possibly
+            // throttled updateDisplay() call below pick up the change instead.
             warmupStopwatch.stop();
-            updateDisplay(true);
-            Serial.println("Capture started...");
          }
 
          samplesValues->addValue(sensorValue);
 
          updateDisplay();
 
-         bool durationElapsed = captureStopwatch.elapsedMillis() >= (samplingDurationS * 1000UL);
+         bool durationElapsed = captureStopwatch.elapsedSecs() >= samplingDurationS;
          if ((samplesValues->count() >= maxSamples) || durationElapsed)
          {
             finishCapture();

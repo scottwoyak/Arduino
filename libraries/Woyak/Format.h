@@ -72,6 +72,12 @@ public:
    bool includePlus() const { return _includePlus; }
 
    /// <summary>
+   /// Gets the original format pattern string this Format was parsed from, or an empty
+   /// string if it was constructed with an explicit length instead of a pattern.
+   /// </summary>
+   const std::string& formatString() const { return _formatString; }
+
+   /// <summary>
    /// Initializes a format with an explicit fixed output length.
    /// </summary>
    /// <param name="length">Total output width to enforce.</param>

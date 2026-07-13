@@ -979,6 +979,45 @@ public:
 
    ///
    /// <summary>
+   /// Gets the left pixel coordinate of the chart's plotted-data area (after the reserved
+   /// Y-axis label column), as computed by the most recent render(). Useful for aligning
+   /// another chart's x-axis (e.g. a HistogramPlot) with this one.
+   /// </summary>
+   /// <returns>Left pixel coordinate of the chart area.</returns>
+   ///
+   int16_t getChartLeft() const
+   {
+      return _chartLeft;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the pixel width of the chart's plotted-data area (excluding the reserved
+   /// Y-axis label column), as computed by the most recent render(). Useful for aligning
+   /// another chart's x-axis (e.g. a HistogramPlot) with this one.
+   /// </summary>
+   /// <returns>Width of the chart area, in pixels.</returns>
+   ///
+   int16_t getChartWidth() const
+   {
+      return _chartWidth;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the pixel width of the reserved Y-axis label column, as computed by the most
+   /// recent render(). Useful for reserving a matching column in another chart (e.g. a
+   /// HistogramPlot) so both charts' x-axes line up.
+   /// </summary>
+   /// <returns>Width of the reserved Y-axis label column, in pixels.</returns>
+   ///
+   int16_t getYAxisWidth() const
+   {
+      return _yAxisWidth;
+   }
+
+   ///
+   /// <summary>
    /// Renders every owned series: automatically computes the shared X/Y axis range to fit
    /// whatever is currently displayed (based on each series' showPoints/showLines/
    /// showMovingAverage flags), then draws axis labels and each series' points, lines,

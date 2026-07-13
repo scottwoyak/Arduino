@@ -22,8 +22,10 @@
     <File Path="libraries/Woyak/Counter.h" />
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
+    <File Path="libraries/Woyak/DisplayGrid.h" />
     <File Path="libraries/Woyak/DisplayTable.h" />
     <File Path="libraries/Woyak/DS18B20TempSensor.h" />
+    <File Path="libraries/Woyak/EnumSelector.h" />
     <File Path="libraries/Woyak/ESP32TempSensor.h" />
     <File Path="libraries/Woyak/ESP32_S3_Playground.h" />
     <File Path="libraries/Woyak/Feather.h" />

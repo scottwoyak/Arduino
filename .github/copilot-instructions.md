@@ -43,6 +43,10 @@
 - Prefer using pointers instead of references for parameters/members where a choice exists.
 - Prefer explicit-width integer types (uint8_t, uint16_t, uint32_t, uint64_t) over platform-dependent types like uint/unsigned int for new and cleaned-up code.
 - For array "count" constants (e.g. an array named TARGET_SAMPLE_RATES), name the corresponding count constant with a NUM_ prefix followed by a plural noun (e.g. NUM_TARGET_SAMPLES) rather than an _COUNT suffix.
+- When performing code cleanup passes on Arduino sketches/libraries, check for and replace manual millisecond-based elapsed-time arithmetic (e.g. `stopwatch.elapsedMillis() >= (X * 1000UL)` or computing seconds by dividing elapsedMillis by 1000) with the Stopwatch class's `elapsedSecs()` method where available, instead of multiplying/dividing by ms constants.
+- Review for unneeded/redundant casts (e.g., static_cast) and remove them, but only when they don't change overload resolution or intended truncation/conversion behavior.
+- When deciding whether to remove a zero/guard check during cleanup, only remove it if the value is provably non-zero at that call site (e.g., a local constant). Do not remove guard checks in public/reusable API functions whose callers aren't all known, since external callers could pass zero.
+- When the user says "cleanup" a file/class, perform a full cleanup pass, not just one narrow pattern (e.g., not just casts). This includes: redundant casts, unneeded zero/guard checks, comment/doc-comment formatting consistency, dead code, and other general code quality issues consistent with the rest of the codebase's style.
 
 ## Documentation Comment Style
 - User prefers Visual Studio XML documentation comments (`/// <summary>`, `<param>`, `<returns>`) for class and method documentation. These are XML documentation comments used for IntelliSense.

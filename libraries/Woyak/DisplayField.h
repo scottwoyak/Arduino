@@ -14,6 +14,7 @@
 /// a Format object, which keeps its rendered width fixed.
 /// </summary>
 /// <remarks>
+/// The value sprite is created in the constructor so it is ready before the first draw().
 /// The field stores its own text size and mono flag, applying them automatically at the
 /// start of every draw(). The label and position are captured on the first draw() and are
 /// assumed to stay constant afterward. Call invalidate() if the display area was cleared,
@@ -42,32 +43,44 @@ private:
 
    ///
    /// <summary>
-   /// Renders the current value into the off-screen sprite and pushes it over the value
-   /// region. The sprite is created lazily on first use, sized to fit the format's fixed
-   /// width and the current font height.
+   /// Creates the off-screen sprite (if not already created), sized to fit the format's
+   /// fixed width and the current font height, and loads the field's font into it.
+   /// </summary>
+   ///
+   void _createSprite()
+   {
+      if (_spriteCreated)
+      {
+         return;
+      }
+
+      LGFX* display = &_display->display;
+
+      std::string widthSample(_format->length(), '0');
+      int16_t spriteWidth = (int16_t)display->textWidth(widthSample.c_str());
+      int16_t spriteHeight = (int16_t)display->fontHeight();
+
+      _sprite.setColorDepth(16);
+      _sprite.createSprite(spriteWidth, spriteHeight);
+
+      // load our own copy of the font rather than sharing the display's runtime font
+      // pointer, which can be freed out from under us if the display later loads a
+      // different font (e.g. another DisplayField or the sketch switching modes)
+      uint8_t size = constrain(_textSize, (uint8_t)1, (uint8_t)7);
+      _sprite.loadFont(_mono ? RobotoMonoBold[size] : Roboto[size]);
+
+      _spriteCreated = true;
+   }
+
+   ///
+   /// <summary>
+   /// Renders the current value into the off-screen sprite (created in the constructor)
+   /// and pushes it over the value region.
    /// </summary>
    ///
    void _drawValueSprite()
    {
-      LGFX* display = &_display->display;
-
-      if (!_spriteCreated)
-      {
-         std::string widthSample(_format->length(), '0');
-         int16_t spriteWidth = (int16_t)display->textWidth(widthSample.c_str());
-         int16_t spriteHeight = (int16_t)display->fontHeight();
-
-         _sprite.setColorDepth(16);
-         _sprite.createSprite(spriteWidth, spriteHeight);
-
-         // load our own copy of the font rather than sharing the display's runtime font
-         // pointer, which can be freed out from under us if the display later loads a
-         // different font (e.g. another DisplayField or the sketch switching modes)
-         uint8_t size = constrain(_textSize, (uint8_t)1, (uint8_t)7);
-         _sprite.loadFont(_mono ? RobotoMonoBold[size] : Roboto[size]);
-
-         _spriteCreated = true;
-      }
+      _createSprite();
 
       _sprite.fillScreen((uint16_t)Color::BLACK);
       _sprite.setTextColor((uint16_t)_valueColor, (uint16_t)Color::BLACK);
@@ -100,6 +113,8 @@ public:
         _labelColor(labelColor), _valueColor(valueColor), _drawnValueColor(valueColor),
         _sprite(&display->display), _textSize(textSize), _mono(mono)
    {
+      _display->setTextSize(_textSize, _mono);
+      _createSprite();
    }
 
    ///
@@ -223,10 +238,9 @@ public:
          return;
       }
 
-      // the display's text size only matters for drawing the label directly and for
-      // capturing the font when the sprite is (lazily) created; once the sprite exists,
-      // later draws only touch the sprite and don't need the display's text size set
-      if (!_labelDrawn || !_spriteCreated)
+      // the display's text size only matters for drawing the label directly; the sprite
+      // already has its own font loaded and doesn't need the display's text size set
+      if (!_labelDrawn)
       {
          _display->setTextSize(_textSize, _mono);
       }
@@ -261,8 +275,8 @@ public:
 
    ///
    /// <summary>
-   /// Forces the next draw() to redraw the label and value from scratch and rebuild the
-   /// value sprite (e.g. after the display area was cleared or the font/size changed).
+   /// Forces the next draw() to redraw the label from scratch, and rebuilds the value
+   /// sprite immediately (e.g. after the display area was cleared or the font/size changed).
    /// </summary>
    ///
    void invalidate()
@@ -274,5 +288,7 @@ public:
          _sprite.deleteSprite();
          _spriteCreated = false;
       }
+      _display->setTextSize(_textSize, _mono);
+      _createSprite();
    }
 };

@@ -290,7 +290,7 @@ void renderDisplayScatterPlot()
          return;
       }
 
-   if (sensorCapture.isCaptureComplete() || ((nowMs - captureStartMs) >= (MAX_CAPTURE_TIME_S * 1000UL)))
+   if (sensorCapture.isFull() || ((nowMs - captureStartMs) >= (MAX_CAPTURE_TIME_S * 1000UL)))
    {
       switch (displayMode)
       {

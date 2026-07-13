@@ -9,7 +9,8 @@
 
 ///
 /// <summary>
-/// Captures finite values (each with its own storage timestamp) up to a fixed capacity.
+/// Captures values (each with its own storage timestamp) up to a fixed capacity. Non-finite
+/// values (NaN/Inf) are stored as-is; statistics helpers ignore them when computing results.
 /// </summary>
 ///
 class Values
@@ -20,7 +21,6 @@ private:
    float* _values;
    unsigned long* _timestampsMs;
    size_t _valueIndex;
-   bool _captureComplete;
 
    bool _hasValues() const
    {
@@ -91,19 +91,18 @@ public:
    void reset()
    {
       _valueIndex = 0;
-      _captureComplete = false;
    }
 
    ///
    /// <summary>
    /// Adds one value to the capture pipeline, recording the current time as its timestamp.
    /// </summary>
-   /// <param name="value">Value to evaluate/store.</param>
-   /// <returns>True if the value was stored; false if capture is complete or the value is not finite.</returns>
+   /// <param name="value">Value to store, including non-finite values (e.g. NaN/Inf).</param>
+   /// <returns>True if the value was stored; false if capture is full.</returns>
    ///
    bool addValue(float value)
    {
-      if (_captureComplete || !isfinite(value))
+      if (isFull())
       {
          return false;
       }
@@ -116,11 +115,6 @@ public:
          _timestampsMs[_valueIndex] = millis();
          _valueIndex++;
          stored = true;
-      }
-
-      if (_valueIndex >= _numValues)
-      {
-         _captureComplete = true;
       }
 
       return stored;
@@ -263,13 +257,13 @@ public:
 
    ///
    /// <summary>
-   /// Indicates whether capture is complete.
+   /// Indicates whether the value buffer has reached capacity.
    /// </summary>
-   /// <returns>True when finished by duration or capacity.</returns>
+   /// <returns>True when the stored value count has reached the configured maximum.</returns>
    ///
-   bool isCaptureComplete() const
+   bool isFull() const
    {
-      return _captureComplete;
+      return _valueIndex >= _numValues;
    }
 
    ///
