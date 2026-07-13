@@ -9,6 +9,9 @@
 /// <summary>
 /// A utility class to display a formatted key-value table on an Arduino display.
 /// Allows adding rows with specific formats and updating values dynamimcally.
+/// Row values are redrawn through a single shared off-screen sprite, sized to fit the
+/// widest formatted value, which avoids reprinting labels and reduces flicker compared
+/// to drawing each value directly to the display every frame.
 /// </summary>
 ///
 class DisplayTable
@@ -37,6 +40,68 @@ private:
    int16_t _y;
    int16_t _labelWidth;
    bool _labelsDrawn = false;
+   uint8_t _textSize;
+   bool _mono;
+   LGFX_Sprite _sprite;
+   bool _spriteCreated = false;
+   int16_t _valueX = 0;
+   int16_t _valueSpriteWidth = 0;
+
+   ///
+   /// <summary>
+   /// Creates the shared value sprite (if not already created), sized to fit the widest
+   /// row's formatted value and the current font height, then loads a stable copy of the
+   /// current font into the sprite so it is not affected by later display font changes.
+   /// </summary>
+   ///
+   void _createSprite()
+   {
+      if (_spriteCreated)
+      {
+         return;
+      }
+
+      LGFX* display = &_display->display;
+
+      size_t maxLength = 0;
+      for (const auto& row : _rows)
+      {
+         if (row.format->length() > maxLength)
+         {
+            maxLength = row.format->length();
+         }
+      }
+
+      std::string widthSample(maxLength, '0');
+      _valueSpriteWidth = (int16_t)display->textWidth(widthSample.c_str());
+      int16_t spriteHeight = (int16_t)display->fontHeight();
+
+      _sprite.setColorDepth(16);
+      _sprite.createSprite(_valueSpriteWidth, spriteHeight);
+
+      // load our own copy of the font rather than sharing the display's runtime font
+      // pointer, which can be freed out from under us if the display later loads a
+      // different font
+      uint8_t size = constrain(_textSize, (uint8_t)1, (uint8_t)7);
+      _sprite.loadFont(_mono ? RobotoMonoBold[size] : Roboto[size]);
+
+      _spriteCreated = true;
+   }
+
+   ///
+   /// <summary>
+   /// Renders a row's value into the shared sprite and pushes it over the row's value
+   /// region at the given Y coordinate.
+   /// </summary>
+   ///
+   void _drawValueSprite(const Row& row, int16_t y)
+   {
+      _sprite.fillScreen((uint16_t)Color::BLACK);
+      _sprite.setTextColor((uint16_t)row.valueColor, (uint16_t)Color::BLACK);
+      _sprite.setCursor(0, 0);
+      _sprite.print(row.value.c_str());
+      _sprite.pushSprite(_valueX, y);
+   }
 
 public:
    ///
@@ -46,9 +111,12 @@ public:
    /// <param name="display">The display interface to draw onto.</param>
    /// <param name="x">The X coordinate for the top-left corner of the table.</param>
    /// <param name="y">The Y coordinate for the top-left corner of the table.</param>
+   /// <param name="textSize">The text size applied automatically before drawing labels and values.</param>
+   /// <param name="mono">If true, uses a monospaced font; if false, uses a proportional font.</param>
    ///
-   DisplayTable(ArduinoWithDisplay* display, int16_t x, int16_t y)
-      : _display(display), _x(x), _y(y), _labelWidth(0)
+   DisplayTable(ArduinoWithDisplay* display, int16_t x, int16_t y, uint8_t textSize = 2, bool mono = true)
+      : _display(display), _x(x), _y(y), _labelWidth(0),
+        _textSize(textSize), _mono(mono), _sprite(&display->display)
    {
    }
 
@@ -222,6 +290,12 @@ public:
          return;
       }
 
+      if (!_labelsDrawn || !_spriteCreated)
+      {
+         _display->setTextSize(_textSize, _mono);
+      }
+
+      _valueX = _x + (_labelWidth * _display->charW());
       int16_t y = _y;
 
       for (auto& row : _rows)
@@ -241,19 +315,24 @@ public:
             _display->print(row.label.c_str(), row.labelColor);
             _display->print(": ", row.labelColor);
             _display->print(row.value, row.valueColor);
-            _display->println();
 
             row.drawnValue = row.value;
             row.drawnValueColor = row.valueColor;
          }
-         else if ((row.value != row.drawnValue) || (row.valueColor != row.drawnValueColor))
+         else
          {
-            int16_t valueX = _x + (_labelWidth * _display->charW());
-            _display->setCursor(valueX, y);
-            _display->print(row.value, row.valueColor);
+            if (!_spriteCreated)
+            {
+               _createSprite();
+            }
 
-            row.drawnValue = row.value;
-            row.drawnValueColor = row.valueColor;
+            if ((row.value != row.drawnValue) || (row.valueColor != row.drawnValueColor))
+            {
+               _drawValueSprite(row, y);
+
+               row.drawnValue = row.value;
+               row.drawnValueColor = row.valueColor;
+            }
          }
 
          y += _display->charH();
@@ -264,12 +343,19 @@ public:
 
    ///
    /// <summary>
-   /// Forces the next draw() call to redraw every label and value from scratch (e.g.
-   /// after the display area was cleared or the table's position changed).
+   /// Forces the next draw() call to redraw every label and value from scratch and rebuild
+   /// the shared value sprite (e.g. after the display area was cleared, the table's
+   /// position changed, or the font/size changed).
    /// </summary>
    ///
    void invalidate()
    {
       _labelsDrawn = false;
+      if (_spriteCreated)
+      {
+         _sprite.unloadFont();
+         _sprite.deleteSprite();
+         _spriteCreated = false;
+      }
    }
 };

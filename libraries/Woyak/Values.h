@@ -6,34 +6,19 @@
 #include "RollingAverage.h"
 #include "SerialX.h"
 #include "Stats.h"
-#include "Timer.h"
 
 ///
 /// <summary>
-/// State flags emitted by SensorCapture state transitions.
+/// Captures finite values (each with its own storage timestamp) up to a fixed capacity.
 /// </summary>
 ///
-enum SensorCaptureState : uint8_t
-{
-   SENSOR_CAPTURE_STATE_NONE = 0,
-   SENSOR_CAPTURE_STATE_VALUE_STORED = 1 << 0,
-   SENSOR_CAPTURE_STATE_COMPLETED = 1 << 1,
-};
-
-///
-/// <summary>
-/// Captures finite sensor values on a fixed sampling cadence, then stops by duration or capacity.
-/// </summary>
-///
-class SensorCapture
+class Values
 {
 private:
-   Timer _captureTimer;
-   Timer _samplingTimer;
-
    size_t _numValues;
 
    float* _values;
+   unsigned long* _timestampsMs;
    size_t _valueIndex;
    bool _captureComplete;
 
@@ -45,30 +30,57 @@ private:
 public:
    ///
    /// <summary>
-   /// Initializes capture session configuration.
+   /// Initializes an empty Values object with no capacity. Call reset(maxValues) before use.
    /// </summary>
-   /// <param name="maxValues">Maximum number of values stored in RAM.</param>
-   /// <param name="captureDurationMs">Maximum capture duration in milliseconds.</param>
-   /// <param name="samplingIntervalMs">Collection interval in milliseconds.</param>
    ///
-   SensorCapture(
-      size_t maxValues,
-      unsigned long captureDurationMs,
-      unsigned long samplingIntervalMs)
-      : _captureTimer(captureDurationMs),
-        _samplingTimer(samplingIntervalMs),
-        _numValues(maxValues),
-        _values((_numValues > 0) ? new float[_numValues] : nullptr)
+   Values()
+      : _numValues(0),
+        _values(nullptr),
+        _timestampsMs(nullptr)
    {
       reset();
    }
 
-   SensorCapture(const SensorCapture&) = delete;
-   SensorCapture& operator=(const SensorCapture&) = delete;
+   ///
+   /// <summary>
+   /// Initializes capture session configuration.
+   /// </summary>
+   /// <param name="maxValues">Maximum number of values stored in RAM.</param>
+   ///
+   Values(size_t maxValues)
+      : _numValues(0),
+        _values(nullptr),
+        _timestampsMs(nullptr)
+   {
+      reset(maxValues);
+   }
 
-   ~SensorCapture()
+   Values(const Values&) = delete;
+   Values& operator=(const Values&) = delete;
+
+   ~Values()
    {
       delete[] _values;
+      delete[] _timestampsMs;
+   }
+
+   ///
+   /// <summary>
+   /// (Re)configures the capacity for this capture session, reallocating the internal storage
+   /// buffers, then resets capture state for a new capture cycle.
+   /// </summary>
+   /// <param name="maxValues">Maximum number of values stored in RAM.</param>
+   ///
+   void reset(size_t maxValues)
+   {
+      delete[] _values;
+      delete[] _timestampsMs;
+
+      _numValues = maxValues;
+      _values = (_numValues > 0) ? new float[_numValues] : nullptr;
+      _timestampsMs = (_numValues > 0) ? new unsigned long[_numValues] : nullptr;
+
+      reset();
    }
 
    ///
@@ -80,91 +92,38 @@ public:
    {
       _valueIndex = 0;
       _captureComplete = false;
-      _captureTimer.reset();
-      _samplingTimer.reset();
    }
 
    ///
    /// <summary>
-   /// Updates the sampling interval used to pace new value collection.
+   /// Adds one value to the capture pipeline, recording the current time as its timestamp.
    /// </summary>
-   /// <param name="samplingIntervalMs">New collection interval in milliseconds.</param>
+   /// <param name="value">Value to evaluate/store.</param>
+   /// <returns>True if the value was stored; false if capture is complete or the value is not finite.</returns>
    ///
-   void setSamplingInterval(unsigned long samplingIntervalMs)
+   bool addValue(float value)
    {
-      _samplingTimer.setDuration(samplingIntervalMs);
-   }
-
-   ///
-   /// <summary>
-   /// Advances capture timeout state.
-   /// </summary>
-   /// <returns>State flags for transitions that occurred during this call.</returns>
-   ///
-   SensorCaptureState update()
-   {
-      SensorCaptureState states = SENSOR_CAPTURE_STATE_NONE;
-
-      if (_captureComplete)
-      {
-         return states;
-      }
-
-      if ((_valueIndex >= _numValues) || _captureTimer.ready())
-      {
-         _captureComplete = true;
-         states = static_cast<SensorCaptureState>(states | SENSOR_CAPTURE_STATE_COMPLETED);
-      }
-
-      return states;
-   }
-
-   ///
-   /// <summary>
-   /// Indicates whether a new value should be collected now.
-   /// </summary>
-   /// <returns>True when actively capturing and the value timer interval elapsed.</returns>
-   ///
-   bool readyForValue()
-   {
-      if (_captureComplete)
+      if (_captureComplete || !isfinite(value))
       {
          return false;
       }
 
-      return _samplingTimer.ready();
-   }
-
-   ///
-   /// <summary>
-   /// Adds one sensor value to the capture pipeline.
-   /// </summary>
-   /// <param name="value">Value to evaluate/store.</param>
-   /// <returns>State flags for storage/completion transitions.</returns>
-   ///
-   SensorCaptureState addValue(float value)
-   {
-      SensorCaptureState states = SENSOR_CAPTURE_STATE_NONE;
-
-      if (_captureComplete || !isfinite(value))
-      {
-         return states;
-      }
+      bool stored = false;
 
       if ((_valueIndex < _numValues) && (_values != nullptr))
       {
          _values[_valueIndex] = value;
+         _timestampsMs[_valueIndex] = millis();
          _valueIndex++;
-         states = static_cast<SensorCaptureState>(states | SENSOR_CAPTURE_STATE_VALUE_STORED);
+         stored = true;
       }
 
       if (_valueIndex >= _numValues)
       {
          _captureComplete = true;
-         states = static_cast<SensorCaptureState>(states | SENSOR_CAPTURE_STATE_COMPLETED);
       }
 
-      return states;
+      return stored;
    }
 
    ///
@@ -193,6 +152,23 @@ public:
       }
 
       return _values[index];
+   }
+
+   ///
+   /// <summary>
+   /// Gets the storage timestamp for a stored value.
+   /// </summary>
+   /// <param name="index">Zero-based value index.</param>
+   /// <returns>Timestamp in milliseconds when the value was stored, or 0 when index is out of range.</returns>
+   ///
+   unsigned long timestamp(size_t index) const
+   {
+      if ((index >= _valueIndex) || (_timestampsMs == nullptr))
+      {
+         return 0;
+      }
+
+      return _timestampsMs[index];
    }
 
    ///

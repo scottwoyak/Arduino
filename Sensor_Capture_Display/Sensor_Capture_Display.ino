@@ -25,7 +25,7 @@
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
 
-#include "SensorCapture.h"
+#include "Values.h"
 #include "Timer.h"
 #include "SerialX.h"
 #include "SerialTable.h"
@@ -101,10 +101,8 @@ Format statsFormat("######.##", Format::Alignment::LEFT);
 Format stdDevPercentFormat("##.##%", Format::Alignment::LEFT);
 Format rateFormat("#####/s", Format::Alignment::LEFT);
 
-SensorCapture sensorCapture(
-   MAX_SAMPLES,
-   MAX_CAPTURE_TIME_S * 1000UL,
-   ((1000UL / MAX_SAMPLING_RATE_PER_SEC) == 0 ? 1UL : (1000UL / MAX_SAMPLING_RATE_PER_SEC)));
+Values sensorCapture(MAX_SAMPLES);
+Timer samplingTimer((1000UL / MAX_SAMPLING_RATE_PER_SEC) == 0 ? 1UL : (1000UL / MAX_SAMPLING_RATE_PER_SEC));
 
 bool captureFinalized = false;
 unsigned long captureStartMs = 0;
@@ -292,7 +290,7 @@ void renderDisplayScatterPlot()
          return;
       }
 
-   if (sensorCapture.isCaptureComplete())
+   if (sensorCapture.isCaptureComplete() || ((nowMs - captureStartMs) >= (MAX_CAPTURE_TIME_S * 1000UL)))
    {
       switch (displayMode)
       {
@@ -360,7 +358,7 @@ void printCaptureSummary()
    float valueStdDev = basicStats.stdDev();
    float valueMin = basicStats.min();
    float valueMax = basicStats.max();
-   float valueRange = SensorCapture::computeRange(valueMin, valueMax);
+   float valueRange = Values::computeRange(valueMin, valueMax);
    float valueStdDevPercent = NAN;
    if (isfinite(valueAvg) && (fabsf(valueAvg) > 0.0f) && isfinite(valueStdDev))
    {
@@ -408,7 +406,7 @@ void printSamplingRateAnalysis()
       float effectiveRate = (samplingRate > 0) ? (static_cast<float>(MAX_SAMPLING_RATE_PER_SEC) / static_cast<float>(samplingRate)) : NAN;
 
       Stats avgSeriesStats = sensorCapture.computeAverageSeriesStats(samplingRate);
-      float avgRange = SensorCapture::computeRange(avgSeriesStats.min(), avgSeriesStats.max());
+      float avgRange = Values::computeRange(avgSeriesStats.min(), avgSeriesStats.max());
       float avgStdDev = avgSeriesStats.stdDev();
       size_t averageCount = avgSeriesStats.count();
 
@@ -563,21 +561,18 @@ void setup()
 
 void loop()
 {
-   SensorCaptureState states = sensorCapture.update();
-   SensorCaptureState valueStates = SENSOR_CAPTURE_STATE_NONE;
-
-   if (sensorCapture.readyForValue())
+   if (samplingTimer.ready())
    {
       float sensorValue = sensor.get();
-      valueStates = sensorCapture.addValue(sensorValue);
+      bool stored = sensorCapture.addValue(sensorValue);
 
-      if ((valueStates & SENSOR_CAPTURE_STATE_VALUE_STORED) != 0)
+      if (stored)
       {
          updateDisplayProgress();
       }
    }
 
-   if (((states | valueStates) & SENSOR_CAPTURE_STATE_COMPLETED) != 0)
+   if ((sensorCapture.count() >= MAX_SAMPLES) || ((millis() - captureStartMs) >= (MAX_CAPTURE_TIME_S * 1000UL)))
    {
       finishCapture();
    }

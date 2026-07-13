@@ -419,9 +419,23 @@ private:
       }
 
       _arduino->println();
-      _arduino->println("Enc A: Select", Color::VALUE);
-      _arduino->println("Enc B: Adjust", Color::VALUE);
-      _arduino->println("Button A: Confirm", Color::VALUE);
-      _arduino->println("Button B: Reset", Color::VALUE);
+
+      static constexpr const char* INSTRUCTIONS[] = {
+         "Encoder A: Select",
+         "Encoder B: Adjust",
+         "Button A: Confirm",
+         "Button B: Reset",
+      };
+      constexpr size_t NUM_INSTRUCTIONS = sizeof(INSTRUCTIONS) / sizeof(INSTRUCTIONS[0]);
+
+      int16_t rowHeight = _arduino->charH();
+      int16_t y = (int16_t)_arduino->height() - rowHeight * (int16_t)NUM_INSTRUCTIONS;
+      for (size_t i = 0; i < NUM_INSTRUCTIONS; i++)
+      {
+         int16_t x = (int16_t)_arduino->width() - (int16_t)_arduino->textWidth(INSTRUCTIONS[i]);
+         _arduino->setCursor(x, y);
+         _arduino->println(INSTRUCTIONS[i], Color::GRAY);
+         y += rowHeight;
+      }
    }
 };

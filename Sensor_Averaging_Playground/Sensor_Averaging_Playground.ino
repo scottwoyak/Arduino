@@ -16,7 +16,7 @@
 // - While collecting, the Playground display shows live capture progress plus target/actual sample rate.
 // - After capture, the display renders a value histogram with min/max labels plus Sigma%/effective-rate
 //   rows for multiple averaging window sizes, along with the target/actual sample rate.
-// - Serial summary includes run metrics, value stats, target/actual sample rate, and a value histogram.
+// - Serial output includes the averaging analysis table and the warmup/real boundary sample dump.
 //
 // Sensor mode:
 // - Reads from TestSensor (configurable via TestSensor.h using alias).
@@ -28,20 +28,20 @@
 
 #include <Wire.h>
 
-#include "DisplayTable.h"
 #include "ESP32_S3_Playground.h"
+#include "DisplayField.h"
 #include "Histogram.h"
 #include "HistogramPlot.h"
 #include "RollingRate.h"
 #include "ScatterPlot.h"
-#include "SensorCapture.h"
-#include "SerialHistogram.h"
 #include "SerialTable.h"
 #include "SerialX.h"
 #include "SetupEditor.h"
+#include "Stopwatch.h"
 #include "TestSensor.h"
 #include "Timer.h"
 #include "Util.h"
+#include "Values.h"
 
 // ----------- The Board
 ESP32_S3_Playground arduino;
@@ -112,139 +112,117 @@ IntSetupField warmupField("Warmup", "warmup", &warmupPeriodS,
 SetupField* setupFields[] = { &rateField, &samplesField, &durationField, &warmupField };
 SetupEditor setupEditor(&arduino, PREF_NAMESPACE, "Setup", setupFields, 4);
 
-SensorCapture* sensorCapture = nullptr;
-SensorCapture* warmupCapture = nullptr;
+Values* samplesValues = nullptr;
+Values warmupValues;
 bool captureStarted = false;
 bool captureFinalized = false;
-unsigned long captureStartMs = 0;
-bool warmupActive = false;
-unsigned long warmupStartMs = 0;
+Stopwatch captureStopwatch{ false, StopwatchPrecision::Millis };
+bool running = false;
+Stopwatch warmupStopwatch{ false, StopwatchPrecision::Millis };
+Timer samplingTimer(1000UL / DEFAULT_SAMPLE_RATE_PER_SEC);
 
-// Boundary-diagnostics buffers: last 10 warmup samples (circular) and first 10 real samples.
+// Boundary diagnostics: dump the last warmup samples and first real samples once enough
+// real samples exist, querying timestamps/values directly from the Values objects.
 constexpr uint8_t NUM_BOUNDARY_SAMPLES = 10;
-unsigned long warmupBoundaryTimestampsMs[NUM_BOUNDARY_SAMPLES];
-float warmupBoundaryValues[NUM_BOUNDARY_SAMPLES];
-uint8_t warmupBoundaryCount = 0;
-uint8_t warmupBoundaryNextIndex = 0;
-unsigned long realBoundaryTimestampsMs[NUM_BOUNDARY_SAMPLES];
-float realBoundaryValues[NUM_BOUNDARY_SAMPLES];
-uint8_t realBoundaryCount = 0;
 bool boundaryDumpPrinted = false;
 
 ///
 /// <summary>
-/// Records one warmup sample timestamp/value into the circular boundary-diagnostics buffer.
+/// Prints the warmup/real boundary sample dump after capture is complete, querying timestamps
+/// and values directly from the warmup and samples Values objects.
 /// </summary>
-/// <param name="timestampMs">Sample timestamp in milliseconds.</param>
-/// <param name="value">Sample value.</param>
 ///
-void recordWarmupBoundarySample(unsigned long timestampMs, float value)
+void printBoundaryDump()
 {
-   warmupBoundaryTimestampsMs[warmupBoundaryNextIndex] = timestampMs;
-   warmupBoundaryValues[warmupBoundaryNextIndex] = value;
-   warmupBoundaryNextIndex = (warmupBoundaryNextIndex + 1) % NUM_BOUNDARY_SAMPLES;
-   if (warmupBoundaryCount < NUM_BOUNDARY_SAMPLES)
+   if (boundaryDumpPrinted)
    {
-      warmupBoundaryCount++;
+      return;
+   }
+
+   boundaryDumpPrinted = true;
+
+   static const SerialTable::Column columns[] = {
+      { "Set", 8 },
+      { "Time (ms)", 12 },
+      { "Delta (ms)", 12 },
+      { "Value", 10 },
+   };
+   SerialTable table("Warmup/Real Boundary Sample Dump", columns, 4);
+   table.printHeader();
+
+   size_t warmupCount = warmupValues.count();
+   size_t warmupStart = (warmupCount > NUM_BOUNDARY_SAMPLES) ? (warmupCount - NUM_BOUNDARY_SAMPLES) : 0;
+   unsigned long previousTimestampMs = 0;
+   bool havePreviousTimestamp = false;
+
+   for (size_t i = warmupStart; i < warmupCount; i++)
+   {
+      unsigned long timestampMs = warmupValues.timestamp(i);
+      long deltaMs = havePreviousTimestamp ? (long)(timestampMs - previousTimestampMs) : 0;
+      table.printRow("warmup", timestampMs, havePreviousTimestamp ? String(deltaMs) : String("-"),
+         SerialTable::fixed(warmupValues[i], 3));
+      previousTimestampMs = timestampMs;
+      havePreviousTimestamp = true;
+   }
+
+   size_t realCount = min(static_cast<size_t>(NUM_BOUNDARY_SAMPLES), samplesValues->count());
+   for (size_t i = 0; i < realCount; i++)
+   {
+      unsigned long timestampMs = samplesValues->timestamp(i);
+      long deltaMs = havePreviousTimestamp ? (long)(timestampMs - previousTimestampMs) : 0;
+      table.printRow("real", timestampMs, havePreviousTimestamp ? String(deltaMs) : String("-"),
+         SerialTable::fixed((*samplesValues)[i], 3));
+      previousTimestampMs = timestampMs;
+      havePreviousTimestamp = true;
    }
 }
 
 ///
 /// <summary>
-/// Records one real (post-warmup) sample timestamp/value, then prints the boundary diagnostics
-/// table once the first 10 real samples have been collected.
+/// Creates a new samples Values object with current settings.
 /// </summary>
-/// <param name="timestampMs">Sample timestamp in milliseconds.</param>
-/// <param name="value">Sample value.</param>
 ///
-void recordRealBoundarySample(unsigned long timestampMs, float value)
+void createSamplesValues()
 {
-   if (realBoundaryCount < NUM_BOUNDARY_SAMPLES)
+   if (samplesValues != nullptr)
    {
-      realBoundaryTimestampsMs[realBoundaryCount] = timestampMs;
-      realBoundaryValues[realBoundaryCount] = value;
-      realBoundaryCount++;
+      delete samplesValues;
    }
-
-   if ((realBoundaryCount >= NUM_BOUNDARY_SAMPLES) && !boundaryDumpPrinted)
-   {
-      boundaryDumpPrinted = true;
-
-      static const SerialTable::Column columns[] = {
-         { "Set", 8 },
-         { "Time (ms)", 12 },
-         { "Value", 10 },
-      };
-      SerialTable table("Warmup/Real Boundary Sample Dump", columns, 3);
-      table.printHeader();
-
-      uint8_t oldestIndex = (warmupBoundaryCount < NUM_BOUNDARY_SAMPLES)
-         ? 0
-         : warmupBoundaryNextIndex;
-      for (uint8_t i = 0; i < warmupBoundaryCount; i++)
-      {
-         uint8_t index = (oldestIndex + i) % NUM_BOUNDARY_SAMPLES;
-         table.printRow("warmup", warmupBoundaryTimestampsMs[index], SerialTable::fixed(warmupBoundaryValues[index], 3));
-      }
-
-      for (uint8_t i = 0; i < realBoundaryCount; i++)
-      {
-         table.printRow("real", realBoundaryTimestampsMs[i], SerialTable::fixed(realBoundaryValues[i], 3));
-      }
-   }
+   samplesValues = new Values(maxSamples);
 }
 
 ///
 /// <summary>
-/// Creates a new SensorCapture with current settings.
-/// </summary>
-///
-void createSensorCapture()
-{
-   if (sensorCapture != nullptr)
-   {
-      delete sensorCapture;
-   }
-   sensorCapture = new SensorCapture(
-      maxSamples,
-      samplingDurationS * 1000UL,
-      1000UL / targetSampleRate);
-}
-
-///
-/// <summary>
-/// Creates a new SensorCapture used to record warmup-phase samples for display only;
+/// (Re)configures the warmup Values object used to record warmup-phase samples for display only;
 /// these samples are excluded from the histogram and statistics.
 /// </summary>
 ///
-void createWarmupCapture()
+void createWarmupValues()
 {
-   if (warmupCapture != nullptr)
-   {
-      delete warmupCapture;
-      warmupCapture = nullptr;
-   }
-
-   if (warmupPeriodS > 0)
-   {
-      size_t warmupMaxValues = static_cast<size_t>(warmupPeriodS) * targetSampleRate + 1;
-      warmupCapture = new SensorCapture(
-         warmupMaxValues,
-         warmupPeriodS * 1000UL,
-         1000UL / targetSampleRate);
-   }
+   size_t warmupMaxValues = (warmupPeriodS > 0) ? (static_cast<size_t>(warmupPeriodS) * targetSampleRate + 1) : 0;
+   warmupValues.reset(warmupMaxValues);
 }
 
 // ----------- Display Items
-constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 2;
+constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 10;
 RateTimer displayRefreshTimer(DISPLAY_UPDATE_RATE_PER_SEC);
+
+// Minimum time before the next sample is due for a display redraw to be allowed to proceed.
+// The redraw (field draws/sprite pushes) takes a few milliseconds; performing it right before
+// a sample is due would delay that sample's timing check in loop(), so the redraw is postponed
+// by one loop() iteration whenever a sample is imminent.
+constexpr unsigned long DISPLAY_DRAW_SAFETY_MARGIN_MS = 3;
 bool collectingViewInitialized = false;
 Format progressPercentFormat("###%", Format::Alignment::LEFT);
 Format maxCaptureFormat(20, Format::Alignment::LEFT);
 Format targetRateFormat("####/s", Format::Alignment::LEFT);
 Format actualRateFormat("####.#/s", Format::Alignment::LEFT);
 Format warmupStatusFormat(20, Format::Alignment::LEFT);
-DisplayTable collectingTable(&arduino, 0, 0);
+DisplayField* maxField = nullptr;
+DisplayField* progressField = nullptr;
+DisplayField* targetRateField = nullptr;
+DisplayField* actualRateField = nullptr;
+DisplayField* warmupStatusField = nullptr;
 ScatterPlot* resultsScatterPlot = nullptr;
 
 // ----------- Analysis Settings
@@ -306,11 +284,11 @@ void drawScatterPlot(int16_t sectionLeft, int16_t sectionWidth, int16_t sectionT
    }
    resultsScatterPlot = new ScatterPlot(&arduino, sectionLeft, sectionTop, sectionWidth, sectionHeight);
 
-   size_t warmupCount = (warmupCapture != nullptr) ? warmupCapture->count() : 0;
-   const float* warmupValues = (warmupCapture != nullptr) ? warmupCapture->values() : nullptr;
+   size_t warmupCount = warmupValues.count();
+   const float* warmupValueData = warmupValues.values();
 
-   size_t count = sensorCapture->count();
-   const float* values = sensorCapture->values();
+   size_t count = samplesValues->count();
+   const float* values = samplesValues->values();
 
    if (warmupCount > 0)
    {
@@ -321,7 +299,7 @@ void drawScatterPlot(int16_t sectionLeft, int16_t sectionWidth, int16_t sectionT
 
       for (size_t i = 0; i < warmupCount; i++)
       {
-         warmupSeries->add((float)i, warmupValues[i]);
+         warmupSeries->add((float)i, warmupValueData[i]);
       }
       warmupSeries->finalized = true;
    }
@@ -347,11 +325,11 @@ void renderHistogramsOnPlayground()
 {
    arduino.clearDisplay();
 
-   Histogram valueHistogram(sensorCapture->values(), sensorCapture->count(), HISTOGRAM_BINS);
+   Histogram valueHistogram(samplesValues->values(), samplesValues->count(), HISTOGRAM_BINS);
 
    arduino.setTextSize(2);
    arduino.setCursor(0, 0);
-   String headerText = String(sensorCapture->count()) + " Samples";
+   String headerText = String(samplesValues->count()) + " Samples";
    arduino.println(headerText.c_str(), Color::HEADING);
 
    String rateText = "Target " + String(targetSampleRate) + "/s  Actual " + String(actualSampleRate.get(), 1) + "/s";
@@ -378,7 +356,7 @@ void renderHistogramsOnPlayground()
    Format sigmaPercentFormat("###.##%", Format::Alignment::RIGHT);
    Format hzFormat(" ####", Format::Alignment::RIGHT);
 
-   Stats rawStats = sensorCapture->computeBasicStats();
+   Stats rawStats = samplesValues->computeBasicStats();
    float rawAvg = rawStats.get();
    float rawStdDev = rawStats.stdDev();
    size_t rawCount = rawStats.count();
@@ -411,7 +389,7 @@ void renderHistogramsOnPlayground()
       size_t sampleSize = BUFFER_SIZE_FOR_DISPLAY[i];
       float effectiveRateHz = computeEffectiveRateHz(sampleSize);
 
-      Stats avgSeriesStats = sensorCapture->computeAverageSeriesStats(sampleSize);
+      Stats avgSeriesStats = samplesValues->computeAverageSeriesStats(sampleSize);
       float avgMean = avgSeriesStats.get();
       float avgStdDev = avgSeriesStats.stdDev();
       size_t averageCount = avgSeriesStats.count();
@@ -438,54 +416,6 @@ void renderHistogramsOnPlayground()
 }
 
 /// <summary>
-/// Computes and prints capture statistics and histogram data to Serial.
-/// </summary>
-void printCaptureSummary()
-{
-   Stats basicStats = sensorCapture->computeBasicStats();
-
-   float valueAvg = basicStats.get();
-   float valueStdDev = basicStats.stdDev();
-   float valueMin = basicStats.min();
-   float valueMax = basicStats.max();
-   float valueRange = SensorCapture::computeRange(valueMin, valueMax);
-   float valueStdDevPercent = NAN;
-   if (isfinite(valueAvg) && (fabsf(valueAvg) > 0.0f) && isfinite(valueStdDev))
-   {
-      valueStdDevPercent = (valueStdDev / fabsf(valueAvg)) * 100.0f;
-   }
-
-   Serial.println();
-   Serial.println("Capture Summary");
-   SerialX::print("Capture ms", 20);
-   SerialX::println(samplingDurationS * 1000UL, 20);
-   SerialX::print("Target Rate", 20);
-   SerialX::println(String(targetSampleRate) + "/s", 20);
-   SerialX::print("Actual Rate", 20);
-   SerialX::println(String(actualSampleRate.get(), 1) + "/s", 20);
-   SerialX::print("Samples", 20);
-   SerialX::println(sensorCapture->count(), 20);
-   SerialX::print("Avg", 20);
-   SerialX::println(valueAvg, 3, 20);
-   SerialX::print("StdDev", 20);
-   SerialX::println(valueStdDev, 3, 20);
-   SerialX::print("StdDev%", 20);
-   SerialX::println(isfinite(valueStdDevPercent) ? String(valueStdDevPercent, 2) + "%" : "n/a", 20);
-   SerialX::print("Min", 20);
-   SerialX::println(valueMin, 3, 20);
-   SerialX::print("Max", 20);
-   SerialX::println(valueMax, 3, 20);
-   SerialX::print("Range", 20);
-   SerialX::println(valueRange, 3, 20);
-   Serial.println();
-
-   Histogram histogram(sensorCapture->values(), sensorCapture->count(), HISTOGRAM_BINS);
-   SerialHistogram::print("Sensor Value Histogram", histogram, 3);
-
-   sensorCapture->printFirstAndLastToSerial(10, 3);
-}
-
-/// <summary>
 /// Prints post-capture block-average analysis for configured sample sizes.
 /// </summary>
 void printAveragingAnalysis()
@@ -509,8 +439,8 @@ void printAveragingAnalysis()
       size_t sampleSize = BUFFER_SIZES[analysisIndex];
       float effectiveRate = (sampleSize > 0) ? (static_cast<float>(targetSampleRate) / static_cast<float>(sampleSize)) : NAN;
 
-      Stats avgSeriesStats = sensorCapture->computeAverageSeriesStats(sampleSize);
-      float avgRange = SensorCapture::computeRange(avgSeriesStats.min(), avgSeriesStats.max());
+      Stats avgSeriesStats = samplesValues->computeAverageSeriesStats(sampleSize);
+      float avgRange = Values::computeRange(avgSeriesStats.min(), avgSeriesStats.max());
       float avgStdDev = avgSeriesStats.stdDev();
       float avgMean = avgSeriesStats.get();
       size_t averageCount = avgSeriesStats.count();
@@ -542,7 +472,7 @@ void printAveragingAnalysis()
 }
 
 /// <summary>
-/// Initializes the display table used by the collecting-progress screen.
+/// Initializes the DisplayField rows used by the collecting-progress screen.
 /// </summary>
 void initializeCollectingTable()
 {
@@ -551,17 +481,24 @@ void initializeCollectingTable()
 
    arduino.setTextSize(2);
    collectingTableY += arduino.charH();
+   int16_t rowHeight = arduino.charH();
 
-   collectingTable = DisplayTable(&arduino, 0, collectingTableY);
-   collectingTable.addRow("Max", maxCaptureFormat, Color::LABEL, Color::VALUE);
-   collectingTable.addRow("Progress", progressPercentFormat, Color::LABEL, Color::VALUE);
-   collectingTable.addRow("Target Rate", targetRateFormat, Color::LABEL, Color::VALUE);
-   collectingTable.addRow("Actual Rate", actualRateFormat, Color::LABEL, Color::VALUE);
-   collectingTable.addRow("Warmup", warmupStatusFormat, Color::LABEL, Color::VALUE);
+   delete maxField;
+   delete progressField;
+   delete targetRateField;
+   delete actualRateField;
+   delete warmupStatusField;
+
+   // pad labels so their ": " separators line up, matching "Target Rate"/"Actual Rate"
+   maxField = new DisplayField(&arduino, 0, collectingTableY, "        Max", maxCaptureFormat, 2);
+   progressField = new DisplayField(&arduino, 0, collectingTableY + rowHeight, "   Progress", progressPercentFormat, 2);
+   targetRateField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 2, "Target Rate", targetRateFormat, 2);
+   actualRateField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 3, "Actual Rate", actualRateFormat, 2);
+   warmupStatusField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 4, "     Warmup", warmupStatusFormat, 2);
 
    String maxText = String(maxSamples) + " samples OR " + String(samplingDurationS) + "s";
-   collectingTable.updateValue(0, maxText, Color::VALUE);
-   collectingTable.updateValue(2, static_cast<unsigned long>(targetSampleRate), Color::VALUE);
+   maxField->setValue(maxText);
+   targetRateField->setValue(static_cast<unsigned long>(targetSampleRate));
 }
 
 /// <summary>
@@ -574,7 +511,8 @@ void initializeCollectingTable()
 /// <param name="forceRefresh">When true, bypasses the refresh-rate throttle and redraws immediately.</param>
 void updateDisplay(bool forceRefresh = false)
 {
-   if (!warmupActive && sensorCapture->isCaptureComplete())
+   bool durationElapsed = captureStopwatch.elapsedMillis() >= (samplingDurationS * 1000UL);
+   if (!warmupStopwatch.isRunning() && (samplesValues->isCaptureComplete() || durationElapsed))
    {
       return;
    }
@@ -589,6 +527,13 @@ void updateDisplay(bool forceRefresh = false)
       return;
    }
 
+   // Postpone the actual draw work (without consuming the throttle) if a sample is imminent,
+   // so drawing never delays the next sample's timing check in loop().
+   if (samplingTimer.remaining() < DISPLAY_DRAW_SAFETY_MARGIN_MS)
+   {
+      return;
+   }
+
    if (!collectingViewInitialized)
    {
       arduino.clearDisplay();
@@ -598,31 +543,44 @@ void updateDisplay(bool forceRefresh = false)
 
       arduino.setTextSize(2);
       arduino.println("Collecting data", Color::VALUE);
-      collectingTable.invalidate();
+      maxField->invalidate();
+      progressField->invalidate();
+      targetRateField->invalidate();
+      actualRateField->invalidate();
+      warmupStatusField->invalidate();
       collectingViewInitialized = true;
    }
 
-   if (warmupActive)
+   maxField->draw();
+   targetRateField->draw();
+
+   if (warmupStopwatch.isRunning())
    {
       constexpr const char* PLACEHOLDER = "----";
-      collectingTable.updateValue(1, PLACEHOLDER, Color::GRAY);
-      collectingTable.updateValue(3, PLACEHOLDER, Color::GRAY);
+      progressField->setValueColor(Color::GRAY);
+      progressField->setValue(PLACEHOLDER);
+      actualRateField->setValueColor(Color::GRAY);
+      actualRateField->setValue(PLACEHOLDER);
 
       unsigned long warmupMs = warmupPeriodS * 1000UL;
-      unsigned long elapsedWarmupMs = nowMs - warmupStartMs;
+      unsigned long elapsedWarmupMs = static_cast<unsigned long>(warmupStopwatch.elapsedMillis());
       unsigned long remainingMs = (elapsedWarmupMs < warmupMs) ? (warmupMs - elapsedWarmupMs) : 0;
       unsigned long remainingSeconds = (remainingMs + 999UL) / 1000UL;
       String warmupText = String(remainingSeconds) + "s remaining";
-      collectingTable.updateValue(4, warmupText, Color::VALUE);
+      warmupStatusField->setValueColor(Color::VALUE);
+      warmupStatusField->setValue(warmupText);
 
-      collectingTable.draw();
+      progressField->draw();
+      actualRateField->draw();
+      warmupStatusField->draw();
       return;
    }
 
-   collectingTable.updateValue(4, "Complete", Color::VALUE);
+   warmupStatusField->setValueColor(Color::VALUE);
+   warmupStatusField->setValue("Complete");
 
-   size_t count = sensorCapture->count();
-   unsigned long elapsedSeconds = (nowMs - captureStartMs) / 1000UL;
+   size_t count = samplesValues->count();
+   unsigned long elapsedSeconds = static_cast<unsigned long>(captureStopwatch.elapsedMillis()) / 1000UL;
    if (elapsedSeconds > samplingDurationS)
    {
       elapsedSeconds = samplingDurationS;
@@ -637,9 +595,14 @@ void updateDisplay(bool forceRefresh = false)
       progressPercent = 100.0f;
    }
 
-   collectingTable.updateValue(1, progressPercent, Color::VALUE);
-   collectingTable.updateValue(3, actualSampleRate.get(), Color::VALUE);
-   collectingTable.draw();
+   progressField->setValueColor(Color::VALUE);
+   progressField->setValue(progressPercent);
+   actualRateField->setValueColor(Color::VALUE);
+   actualRateField->setValue(actualSampleRate.get());
+
+   progressField->draw();
+   actualRateField->draw();
+   warmupStatusField->draw();
 }
 
 /// <summary>
@@ -653,7 +616,7 @@ void finishCapture()
    }
 
    captureFinalized = true;
-   printCaptureSummary();
+   printBoundaryDump();
    printAveragingAnalysis();
    renderHistogramsOnPlayground();
 }
@@ -664,26 +627,28 @@ void finishCapture()
 void startCapture()
 {
    captureStarted = true;
-   createSensorCapture();
-   sensorCapture->setSamplingInterval(1000UL / targetSampleRate);
-   sensorCapture->reset();
+   createSamplesValues();
+   samplesValues->reset();
+   samplingTimer.setDuration(1000UL / targetSampleRate);
    actualSampleRate.reset();
-   captureStartMs = millis();
-   warmupActive = (warmupPeriodS > 0);
-   warmupStartMs = captureStartMs;
+   running = true;
+   captureStopwatch.reset();
+   captureStopwatch.start();
+   warmupStopwatch.reset();
+   if (warmupPeriodS > 0)
+   {
+      warmupStopwatch.start();
+   }
    collectingViewInitialized = false;
    {
       String maxText = String(maxSamples) + " samples OR " + String(samplingDurationS) + "s";
-      collectingTable.updateValue(0, maxText, Color::VALUE);
+      maxField->setValue(maxText);
    }
-   collectingTable.updateValue(2, static_cast<unsigned long>(targetSampleRate), Color::VALUE);
-   createWarmupCapture();
-   warmupBoundaryCount = 0;
-   warmupBoundaryNextIndex = 0;
-   realBoundaryCount = 0;
+   targetRateField->setValue(static_cast<unsigned long>(targetSampleRate));
+   createWarmupValues();
    boundaryDumpPrinted = false;
    updateDisplay(true);
-   Serial.println(warmupActive ? "Warming up..." : "Capture started...");
+   Serial.println(warmupStopwatch.isRunning() ? "Warming up..." : "Capture started...");
 }
 
 void setup()
@@ -704,49 +669,6 @@ void setup()
 
 void loop()
 {
-   if (warmupActive)
-   {
-      unsigned long warmupMs = warmupPeriodS * 1000UL;
-      unsigned long elapsedMs = millis() - warmupStartMs;
-
-      if ((warmupCapture != nullptr) && warmupCapture->readyForValue())
-      {
-         unsigned long sampleTimestampMs = millis();
-         float sensorValue = sensor.get();
-         warmupCapture->addValue(sensorValue);
-         recordWarmupBoundarySample(sampleTimestampMs, sensorValue);
-      }
-
-      if (elapsedMs >= warmupMs)
-      {
-         warmupActive = false;
-         sensorCapture->reset();
-         actualSampleRate.reset();
-         captureStartMs = millis();
-
-         // Take the first retained sample immediately, before the display redraw below, so
-         // there is no gap between the last warmup sample and the first retained sample
-         // (a delay here could let the sensor cool down and skew the retained data).
-         unsigned long firstValueTimestampMs = millis();
-         float firstValue = sensor.get();
-         SensorCaptureState firstValueStates = sensorCapture->addValue(firstValue);
-         if ((firstValueStates & SENSOR_CAPTURE_STATE_VALUE_STORED) != 0)
-         {
-            actualSampleRate.tick();
-            recordRealBoundarySample(firstValueTimestampMs, firstValue);
-         }
-
-         updateDisplay(true);
-         Serial.println("Capture started...");
-      }
-      else
-      {
-         updateDisplay();
-      }
-
-      return;
-   }
-
    if (captureFinalized)
    {
       if (arduino.buttonA.wasPressed())
@@ -760,31 +682,36 @@ void loop()
       return;
    }
 
-   SensorCaptureState states = sensorCapture->update();
-   SensorCaptureState valueStates = SENSOR_CAPTURE_STATE_NONE;
-
-   if (sensorCapture->readyForValue())
+   if (running && samplingTimer.ready())
    {
-      unsigned long sampleTimestampMs = millis();
       float sensorValue = sensor.get();
-      valueStates = sensorCapture->addValue(sensorValue);
+      actualSampleRate.tick();
 
-      if ((valueStates & SENSOR_CAPTURE_STATE_VALUE_STORED) != 0)
+      if (warmupStopwatch.elapsedSecs() < warmupPeriodS)
       {
-         actualSampleRate.tick();
-         recordRealBoundarySample(sampleTimestampMs, sensorValue);
+         warmupValues.addValue(sensorValue);
          updateDisplay();
       }
-
-      if ((valueStates & SENSOR_CAPTURE_STATE_COMPLETED) != 0)
+      else
       {
-         finishCapture();
-      }
-   }
+         if (warmupStopwatch.isRunning())
+         {
+            // Transitioning from warmup to real capture.
+            warmupStopwatch.stop();
+            updateDisplay(true);
+            Serial.println("Capture started...");
+         }
 
-   if ((states & SENSOR_CAPTURE_STATE_COMPLETED) != 0)
-   {
-      finishCapture();
+         samplesValues->addValue(sensorValue);
+
+         updateDisplay();
+
+         bool durationElapsed = captureStopwatch.elapsedMillis() >= (samplingDurationS * 1000UL);
+         if ((samplesValues->count() >= maxSamples) || durationElapsed)
+         {
+            finishCapture();
+         }
+      }
    }
 }
 

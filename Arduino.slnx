@@ -62,7 +62,6 @@
     <File Path="libraries/Woyak/RollingStats.h" />
     <File Path="libraries/Woyak/RotaryEncoder.h" />
     <File Path="libraries/Woyak/ScatterPlot.h" />
-    <File Path="libraries/Woyak/SensorCapture.h" />
     <File Path="libraries/Woyak/SerialHistogram.h" />
     <File Path="libraries/Woyak/SerialTable.h" />
     <File Path="libraries/Woyak/SerialX.h" />
@@ -95,6 +94,7 @@
     <File Path="libraries/Woyak/Units.h" />
     <File Path="libraries/Woyak/Url.h" />
     <File Path="libraries/Woyak/Util.h" />
+    <File Path="libraries/Woyak/Values.h" />
     <File Path="libraries/Woyak/ValueStore.h" />
     <File Path="libraries/Woyak/ValueStoreFram.h" />
     <File Path="libraries/Woyak/Waveshare_ESP32_S3_Zero.h" />
