@@ -156,6 +156,10 @@
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
+    <Project Path="Tests/TimedAverageHistory_Tests/TimedAverageHistory_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
     <Project Path="Tests/TimedAverage_Tests/TimedAverage_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
@@ -169,6 +173,10 @@
       <Deploy />
     </Project>
     <Project Path="Tests/TimedMinMax_Tests/TimedMinMax_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
+    <Project Path="Tests/TimedRate_Tests/TimedRate_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>

@@ -20,12 +20,12 @@ template<unsigned long (*TimeFunc)() = micros>
 class TimedBinBase
 {
 private:
-   uint32_t* _subBins;
+   uint16_t* _subBins;
    uint16_t _numSubBins;
    uint32_t _currentSubBinStartTimeMicros;
    uint32_t _subBinDurationMicros;
    uint16_t _index;
-   uint32_t _transitionSubBin;
+   uint16_t _transitionSubBin;
 
    ///
    /// <summary>
@@ -58,7 +58,7 @@ public:
    TimedBinBase(uint32_t durationMs, uint16_t numSubBins = 10)
    {
       _numSubBins = numSubBins;
-      _subBins = new uint32_t[numSubBins];
+      _subBins = new uint16_t[numSubBins];
       _subBinDurationMicros = (1000 * durationMs) / numSubBins;
       reset();
    }
@@ -119,11 +119,11 @@ public:
    /// </summary>
    /// <returns>The estimated event count within the tracked duration.</returns>
    ///
-   uint32_t getCount()
+   uint16_t getCount()
    {
       _advanceIfNeeded();
 
-      uint32_t count = 0;
+      uint16_t count = 0;
       for (uint16_t i = 0; i < _numSubBins; i++)
       {
          count += _subBins[i];
@@ -141,7 +141,7 @@ public:
    /// <param name="binIndex">Zero-based sub-bin index, or -1 for the transitioning sub-bin.</param>
    /// <returns>The raw count for the specified sub-bin.</returns>
    ///
-   uint32_t getBinCount(int binIndex)
+   uint16_t getBinCount(int binIndex)
    {
       if (binIndex == -1)
       {

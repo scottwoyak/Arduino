@@ -21,14 +21,14 @@ class CapacitiveTestSensor;
 // One-line sensor source switch used by all sketches. Change only TEST_SENSOR_TYPE below;
 // TestSensor is derived from it automatically. Use sensor.sensorType() to display the
 // active sensor's type name at runtime.
-#define TEST_SENSOR_TYPE TempSensorTestSensor
+// #define TEST_SENSOR_TYPE TempSensorTestSensor
 // #define TEST_SENSOR_TYPE ESP32TempTestSensor
 // #define TEST_SENSOR_TYPE SinWithNormalNoiseTestSensor
 // #define TEST_SENSOR_TYPE SinTestSensor
 // #define TEST_SENSOR_TYPE ConstantTestSensor
 // #define TEST_SENSOR_TYPE RandomTestSensor
 // #define TEST_SENSOR_TYPE NormalTestSensor
-// #define TEST_SENSOR_TYPE MS5837PressureTestSensor
+#define TEST_SENSOR_TYPE MS5837PressureTestSensor
 // #define TEST_SENSOR_TYPE CapacitiveTestSensor
 
 using TestSensor = TEST_SENSOR_TYPE;

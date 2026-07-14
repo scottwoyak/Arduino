@@ -47,6 +47,7 @@ private:
       {
          _hasStarted = true;
          _binStartMs = nowMs;
+         _filledBins = 1;
          return;
       }
 

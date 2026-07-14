@@ -177,6 +177,20 @@ private:
       }
    }
 
+   /// <summary>
+   /// Computes the effective min/max tracking window so it matches the window used by
+   /// the weighted average/stdDev calculations, which exclude the current bucket's
+   /// boundary blending buckets.
+   /// </summary>
+   /// <param name="durationMs">Total duration in milliseconds.</param>
+   /// <param name="bucketMs">Duration of a single bucket in milliseconds.</param>
+   /// <returns>Effective duration, in milliseconds, to track min/max values over.</returns>
+   static unsigned long _minMaxDurationMs(unsigned long durationMs, unsigned long bucketMs)
+   {
+      unsigned long effective = (durationMs > bucketMs) ? (durationMs - bucketMs) : durationMs;
+      return std::max(effective, 1UL);
+   }
+
 public:
    /// <summary>
    /// Initializes timed statistics for a duration divided into buckets.
@@ -184,7 +198,8 @@ public:
    /// <param name="durationMs">Total duration in milliseconds.</param>
    /// <param name="nBuckets">Number of time buckets (plus one blending bucket).</param>
    TimedStatsBase(unsigned long durationMs, uint nBuckets = 20) :
-      _minMax(std::max(durationMs, 1UL))
+      _minMax(_minMaxDurationMs(std::max(durationMs, 1UL),
+         std::max(1UL, static_cast<unsigned long>(static_cast<float>(std::max(durationMs, 1UL)) / std::max(nBuckets, static_cast<uint>(1))))))
    {
       uint normalizedBuckets = std::max(nBuckets, static_cast<uint>(1));
 
@@ -314,7 +329,7 @@ public:
    {
       _durationMs = std::max(durationMs, 1UL);
       _bucketMs = std::max(1UL, static_cast<unsigned long>(static_cast<float>(_durationMs) / (_numBuckets - 1)));
-      _minMax.setDurationMs(_durationMs);
+      _minMax.setDurationMs(_minMaxDurationMs(_durationMs, _bucketMs));
       reset();
    }
 

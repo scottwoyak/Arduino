@@ -195,7 +195,7 @@ public:
 	  unsigned long now = TimeFunc();
 	  for (size_t i = 0; i < copyCount; i++)
 	  {
-		 size_t newestOffset = copyCount - 1 - i;
+		 size_t newestOffset = _count - 1 - i;
 		 size_t entryIndex = (_head + newestOffset) % _capacity;
 		 values[i] = _entries[entryIndex].value;
 		 if (agesMs != nullptr)
