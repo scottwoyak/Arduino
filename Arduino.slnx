@@ -67,7 +67,9 @@
     <File Path="libraries/Woyak/SerialHistogram.h" />
     <File Path="libraries/Woyak/SerialTable.h" />
     <File Path="libraries/Woyak/SerialX.h" />
-    <File Path="libraries/Woyak/SetupEditor.h" />
+    <File Path="libraries/Woyak/SetupDisplay.h" />
+    <File Path="libraries/Woyak/SetupField.h" />
+    <File Path="libraries/Woyak/SetupTable.h" />
     <File Path="libraries/Woyak/SevenSegment.h" />
     <File Path="libraries/Woyak/SHT3xTempSensor.h" />
     <File Path="libraries/Woyak/SHT4xTempSensor.h" />
@@ -217,11 +219,11 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Capacitor_Calibration_Display/Capacitor_Calibration_Display.vcxproj">
+  <Project Path="Capacitor_Display/Capacitor_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Capacitor_Display/Capacitor_Display.vcxproj">
+  <Project Path="Capacitor_Playground/Capacitor_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

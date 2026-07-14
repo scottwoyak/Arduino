@@ -20,40 +20,51 @@
 // Serial commands:
 // - Send 'L' to reload and apply the last saved best configuration.
 //
-// Typical usage: let the live display stabilize, press Button A to run calibration, then use the
-// serial rankings to choose resistor/delay combinations for your deployment.
+// Live editable fields (Encoder A selects a field, Encoder B adjusts it, Button B resets to
+// defaults) are shown directly on the live monitoring screen, so changing a value immediately
+// re-applies it to the sensor and the resulting charge time/rate readouts update live:
+// - Resistor: which charge pin/resistor is active (1M, 470K, 100K, 47K).
+// - Discharge: discharge delay in microseconds.
+// - Buffer: rolling-average buffer size.
+// Values are persisted to Preferences as they change and reloaded automatically on startup.
+//
+// Typical usage: adjust Resistor/Discharge/Buffer with Encoder A/B while watching the live
+// charge time/rate readouts, press Button A to run the automated calibration sweep, then use
+// the serial rankings to choose resistor/delay combinations for your deployment.
+//
+// Hardware: ESP32_S3_Playground board (LGX_ST7796 display, encoders, standalone buttons).
 //
 
 #include <Arduino.h>
-#include "CapacitorSensor.h"
 #include "ArduinoBoard.h"
-
-#ifndef ARDUINO_BUTTON_SUPPORTED
-#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
-#endif
-#ifndef ARDUINO_DISPLAY_SUPPORTED
-#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
-#endif
-#ifndef ARDUINO_PREFERENCES_SUPPORTED
-#error "This sketch requires a board with Preferences support (e.g. Feather ESP32-S3 or Feather M0)."
-#endif
-
-#include "RollingStats.h"
+#include "CapacitorSensor.h"
+#include "SetupTable.h"
 #include "SerialTable.h"
+#include "TimedStats.h"
 #include "SerialX.h"
+#include "SetupField.h"
 #include "Timer.h"
+
+///
+/// <summary>
+/// Forward declarations for types used in function signatures (Arduino's build system
+/// auto-generates function prototypes that appear before these types are fully defined below).
+/// </summary>
+///
+
+struct TestCase;
+struct TestRunResult;
 
 // ----------- Display
 Arduino arduino;
-Format chargeFormat("####.# us");
-Format deferredFormat("#### us");
+Format chargeFormat("#####.# us");
 Format effectiveRateFormat("###/s");
 Format sampleRateFormat("######/s");
-constexpr size_t DISPLAY_INTERVAL_MS = 100;
+constexpr size_t DISPLAY_INTERVAL_MS = 200;
 Timer displayTimer(DISPLAY_INTERVAL_MS);
 
 // ----------- Test Sweep Parameters
-constexpr size_t STATS_SAMPLE_COUNT = 1000;
+constexpr unsigned long STATS_PERIOD_MS = 500;
 constexpr float TARGET_EFFECTIVE_RATES[] = { 15.0f, 30.0f, 50.0f };
 constexpr size_t TARGET_EFFECTIVE_RATE_COUNT = sizeof(TARGET_EFFECTIVE_RATES) / sizeof(TARGET_EFFECTIVE_RATES[0]);
 constexpr float PRIMARY_TARGET_EFFECTIVE_RATE = 30.0f;
@@ -67,11 +78,11 @@ constexpr size_t MIN_TARGET_BUFFER_SIZE = 1;
 constexpr size_t MAX_TARGET_BUFFER_SIZE = 500;
 
 // ----------- Hardware Pin Assignments
-constexpr uint8_t SENSE_PIN = 5;
-constexpr uint8_t CHARGE_PIN_1M = 6;
-constexpr uint8_t CHARGE_PIN_470K = 9;
-constexpr uint8_t CHARGE_PIN_100K = 10;
-constexpr uint8_t CHARGE_PIN_47K = 11;
+constexpr uint8_t SENSE_PIN = 7;
+constexpr uint8_t CHARGE_PIN_1M = 15;
+constexpr uint8_t CHARGE_PIN_470K = 16;
+constexpr uint8_t CHARGE_PIN_100K = 2;
+constexpr uint8_t CHARGE_PIN_47K = 1;
 
 // ----------- Resistor (Charge Pin) Sweep
 /// <summary>Pairs a charge pin with its resistor value label for the sweep.</summary>
@@ -99,13 +110,56 @@ const char PREF_CHARGE_PIN_KEY[] = "cpin";
 const char PREF_DISCHARGE_KEY[] = "dly";
 const char PREF_BUFFER_KEY[] = "buf";
 
-// Forward declarations for types used in function signatures
-struct TestCase;
-struct TestRunResult;
+// ----------- Live Editable Fields (Encoder A selects a field, Encoder B adjusts it)
+// Changing any of these immediately re-applies the configuration to the live sensor.
+long liveResistorIndex = 0;
+long liveDischargeDelayMicros = CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS;
+long liveBufferSize = (long)CapacitorSensor::DEFAULT_BUFFER_SIZE;
 
+Format liveResistorFormat(8, Format::Alignment::LEFT);
+Format liveDischargeFormat("#### us", Format::Alignment::LEFT);
+Format liveBufferFormat("###", Format::Alignment::LEFT);
+
+///
+/// <summary>
+/// Resistor-selection setup field that steps through RESISTOR_OPTIONS by index and displays
+/// the resistor's label instead of a raw index number.
+/// </summary>
+///
+class ResistorSetupField : public IntSetupField
+{
+public:
+   using IntSetupField::IntSetupField;
+
+   void adjust(int32_t direction) override
+   {
+      long count = (long)RESISTOR_OPTION_COUNT;
+      long newValue = (*_value + (direction > 0 ? 1 : -1) + count) % count;
+      *_value = newValue;
+   }
+
+   std::string valueText() override
+   {
+      long index = constrain(*_value, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
+      return _format.toString(RESISTOR_OPTIONS[index].label);
+   }
+};
+
+ResistorSetupField resistorField("Resistor", &liveResistorIndex,
+   0, (long)(RESISTOR_OPTION_COUNT - 1), 1, 0, liveResistorFormat);
+IntSetupField delayField("Discharge", &liveDischargeDelayMicros,
+   50, 2000, 50, (long)CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS, liveDischargeFormat);
+IntSetupField bufferSizeField("Buffer", &liveBufferSize,
+   (long)MIN_TARGET_BUFFER_SIZE, (long)MAX_TARGET_BUFFER_SIZE, 5, (long)CapacitorSensor::DEFAULT_BUFFER_SIZE, liveBufferFormat);
+
+SetupField* liveFields[] = { &resistorField, &delayField, &bufferSizeField };
+SetupTable liveFieldTable(&arduino, PREF_NAMESPACE, liveFields, 3);
+
+///
 /// <summary>Look up the resistor value label for a charge pin.</summary>
 /// <param name="chargePin">Charge pin to look up</param>
 /// <returns>Matching resistor value label, or "?" when the pin is unknown</returns>
+///
 const char* resistorLabel(uint8_t chargePin)
 {
    for (size_t i = 0; i < RESISTOR_OPTION_COUNT; i++)
@@ -119,9 +173,11 @@ const char* resistorLabel(uint8_t chargePin)
    return "?";
 }
 
+///
 /// <summary>Check whether a charge pin matches one of the configured resistor options.</summary>
 /// <param name="chargePin">Charge pin to check</param>
 /// <returns>True if the pin is a known resistor option</returns>
+///
 bool isKnownChargePin(uint8_t chargePin)
 {
    for (size_t i = 0; i < RESISTOR_OPTION_COUNT; i++)
@@ -135,9 +191,29 @@ bool isKnownChargePin(uint8_t chargePin)
    return false;
 }
 
+///
+/// <summary>Look up the resistor option index for a charge pin.</summary>
+/// <param name="chargePin">Charge pin to look up</param>
+/// <returns>Matching resistor option index, or 0 when the pin is unknown</returns>
+///
+size_t resistorIndexFromChargePin(uint8_t chargePin)
+{
+   for (size_t i = 0; i < RESISTOR_OPTION_COUNT; i++)
+   {
+      if (RESISTOR_OPTIONS[i].chargePin == chargePin)
+      {
+         return i;
+      }
+   }
+
+   return 0;
+}
+
+///
 /// <summary>Look up the charge pin for a resistor value label.</summary>
 /// <param name="label">Resistor value label to look up</param>
 /// <returns>Matching charge pin, or the first resistor option's pin when the label is unknown</returns>
+///
 uint8_t chargePinFromResistorLabel(const char* label)
 {
    if (label == nullptr)
@@ -158,23 +234,66 @@ uint8_t chargePinFromResistorLabel(const char* label)
 
 CapacitorSensor capacitorSensor(RESISTOR_OPTIONS[0].chargePin, SENSE_PIN);
 
+// ----------- Live Display Statistics (StdDev/Range over a 500ms window)
+TimedStats liveChargeStats(STATS_PERIOD_MS);
+uint32_t liveChargeStatsLastCounter = 0;
+
+///
+/// <summary>Feeds newly-processed charge time samples into the live 500ms stats window.</summary>
+///
+void updateLiveChargeStats()
+{
+   uint32_t counter = capacitorSensor.counter();
+   if (counter == liveChargeStatsLastCounter)
+   {
+      return;
+   }
+
+   liveChargeStatsLastCounter = counter;
+   float chargeTime = capacitorSensor.chargeTimeMicros();
+   if (isfinite(chargeTime))
+   {
+      liveChargeStats.set(chargeTime);
+   }
+}
+
+///
 /// <summary>Applies a resistor/discharge/buffer configuration to the capacitor sensor.</summary>
 /// <param name="chargePin">Charge pin to select</param>
 /// <param name="dischargeDelayMicros">Discharge delay in microseconds</param>
 /// <param name="deferredProcessingPeriodMicros">Deferred processing period in microseconds</param>
 /// <param name="bufferSize">Rolling average buffer size (falls back to the sensor default when zero)</param>
+///
 void applyConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, uint32_t deferredProcessingPeriodMicros, size_t bufferSize)
 {
    capacitorSensor.setChargePin(chargePin);
    capacitorSensor.setDischargeDelayMicros(dischargeDelayMicros);
    capacitorSensor.setDeferredProcessingPeriodMicros(deferredProcessingPeriodMicros);
    capacitorSensor.setBufferSize(bufferSize > 0 ? bufferSize : CapacitorSensor::DEFAULT_BUFFER_SIZE);
+   liveChargeStats.reset();
 }
 
+///
+/// <summary>Updates the live editable fields (Resistor/Discharge/Buffer) to reflect a configuration
+/// and persists the new values, so the on-screen fields stay in sync with the sensor.</summary>
+/// <param name="chargePin">Charge pin the sensor was configured with</param>
+/// <param name="dischargeDelayMicros">Discharge delay in microseconds the sensor was configured with</param>
+/// <param name="bufferSize">Rolling average buffer size the sensor was configured with</param>
+///
+void syncLiveFields(uint8_t chargePin, uint16_t dischargeDelayMicros, size_t bufferSize)
+{
+   liveResistorIndex = (long)resistorIndexFromChargePin(chargePin);
+   liveDischargeDelayMicros = (long)dischargeDelayMicros;
+   liveBufferSize = (long)bufferSize;
+   liveFieldTable.save();
+}
+
+///
 /// <summary>Persists the best-known configuration to Preferences.</summary>
 /// <param name="chargePin">Charge pin to save</param>
 /// <param name="dischargeDelayMicros">Discharge delay in microseconds to save</param>
 /// <param name="bufferSize">Rolling average buffer size to save</param>
+///
 void saveBestConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, size_t bufferSize)
 {
    arduino.preferences.begin(PREF_NAMESPACE, false);
@@ -185,9 +304,11 @@ void saveBestConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, siz
    arduino.preferences.end();
 }
 
+///
 /// <summary>
 /// Loads the best-known configuration from Preferences and applies it, printing a summary to Serial.
 /// </summary>
+///
 void loadBestConfiguration()
 {
    if (capacitorSensor.counter() == 0 || !isfinite(capacitorSensor.chargeTimeMicros()) || capacitorSensor.rate() <= 0.0f)
@@ -237,58 +358,56 @@ void loadBestConfiguration()
    Serial.println();
 }
 
-/// <summary>Parameters for a single test case.</summary>
+///
+/// <summary>Discharge delay and target rate combination to be tested during a calibration sweep.</summary>
+///
 struct TestCase
 {
-   /// <summary>Target effective rate for this test.</summary>
    float targetEffectiveRate = NAN;
-   /// <summary>Discharge delay in microseconds for this test.</summary>
    uint16_t dischargeDelayMicros = 0;
 };
 
-/// <summary>Result data from a single test run.</summary>
+///
+/// <summary>Configuration and measured statistics captured from a single calibration test run.</summary>
+///
 struct TestRunResult
 {
-   /// <summary>Resistor value label for this test.</summary>
    const char* resistorLabel = nullptr;
-   /// <summary>Target effective rate for this test.</summary>
    float targetEffectiveRate = NAN;
-   /// <summary>Discharge delay used for this test.</summary>
    uint16_t dischargeDelayMicros = 0;
-   /// <summary>Deferred processing period used for this test.</summary>
    uint32_t deferredProcessingPeriodMicros = 0;
-   /// <summary>Average charge time measured during test.</summary>
    float averageChargeTimeMicros = NAN;
-   /// <summary>Min-to-max variation in rolling average during test.</summary>
    float chargeTimeVariationMicros = NAN;
-   /// <summary>Standard deviation of charge time during test.</summary>
    float chargeStdDevMicros = NAN;
-   /// <summary>Buffer size used for this test.</summary>
    size_t bufferSize = 0;
-   /// <summary>Sample rate in Hz during this test.</summary>
    float rawRateHz = NAN;
-   /// <summary>Effective output rate in Hz during this test.</summary>
    float effectiveRateHz = NAN;
 };
 
-/// <summary>Executes a single test run on a capacitor sensor.</summary>
+///
+/// <summary>Runs a single calibration test case against a capacitor sensor and collects the resulting statistics.</summary>
+///
 class TestRun
 {
 private:
    CapacitorSensor& _sensor;
 
 public:
+   ///
    /// <summary>Create a test run for the given sensor.</summary>
    /// <param name="sensor">Reference to the capacitor sensor to test</param>
+   ///
    explicit TestRun(CapacitorSensor& sensor)
       : _sensor(sensor)
    {
    }
 
+   ///
    /// <summary>Execute a single test run with the specified parameters.</summary>
    /// <param name="targetEffectiveRate">Target effective output rate in Hz</param>
    /// <param name="dischargeDelayMicros">Discharge delay in microseconds</param>
    /// <returns>Test result data structure</returns>
+   ///
    TestRunResult run(float targetEffectiveRate, uint16_t dischargeDelayMicros)
    {
       TestRunResult result;
@@ -308,15 +427,16 @@ public:
       size_t targetBufferSize = _calculateTargetBufferSize(rawRate, targetEffectiveRate);
       result.bufferSize = targetBufferSize;
 
-      // Configure sensor buffer for this test and collect a fixed number of output samples
+      // Configure sensor buffer for this test and collect output samples for a fixed time period
       _sensor.setBufferSize(targetBufferSize);
-      RollingStats stats(STATS_SAMPLE_COUNT);
+      TimedStats stats(STATS_PERIOD_MS);
       float measuredAverageMin = NAN;
       float measuredAverageMax = NAN;
       size_t sampleCount = 0;
 
       uint32_t lastCounter = _sensor.counter();
-      while (sampleCount < STATS_SAMPLE_COUNT)
+      unsigned long startMs = millis();
+      while (millis() - startMs < STATS_PERIOD_MS)
       {
          uint32_t counter = _sensor.counter();
          if (counter == lastCounter)
@@ -365,10 +485,12 @@ public:
    }
 
 private:
+   ///
    /// <summary>Calculate target buffer size based on raw rate and target effective rate.</summary>
    /// <param name="rawRate">Raw sensor rate in Hz</param>
    /// <param name="targetEffectiveRate">Target effective output rate in Hz</param>
    /// <returns>Computed buffer size constrained to valid range</returns>
+   ///
    size_t _calculateTargetBufferSize(float rawRate, float targetEffectiveRate)
    {
       if (!isfinite(rawRate) || rawRate <= 0.0f)
@@ -402,11 +524,27 @@ struct TestCaseParameters
 
 TestCaseParameters testParameters;
 
+/// <summary>Applies the current live editable field values (resistor/discharge/buffer) to the sensor.</summary>
+void applyLiveFields()
+{
+   long resistorIndex = constrain(liveResistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
+   applyConfiguration(
+      RESISTOR_OPTIONS[resistorIndex].chargePin,
+      (uint16_t)liveDischargeDelayMicros,
+      FIXED_DEFERRED_PROCESSING_PERIOD_MICROS,
+      (size_t)liveBufferSize);
+}
+
 void setup()
 {
    SerialX::begin();
    arduino.begin();
    capacitorSensor.begin();
+
+   // Temporarily disabled: skip loading previously saved field values from Preferences,
+   // so the sketch always starts from the compiled-in defaults.
+   // liveFieldTable.load();
+   applyLiveFields();
 
    size_t caseIndex = 0;
    for (size_t rateIndex = 0; rateIndex < TARGET_EFFECTIVE_RATE_COUNT; rateIndex++)
@@ -426,11 +564,13 @@ void setup()
    testParameters.count = caseIndex;
 }
 
+///
 /// <summary>Find the result with the lowest StdDev % for a given target rate.</summary>
 /// <param name="results">Array of all test results</param>
 /// <param name="count">Number of results in the array</param>
 /// <param name="targetRate">Target effective rate to match</param>
 /// <returns>Pointer to the best result, or nullptr if none found</returns>
+///
 const TestRunResult* findBestResult(TestRunResult* results, size_t count, float targetRate)
 {
    const TestRunResult* best = nullptr;
@@ -455,9 +595,11 @@ const TestRunResult* findBestResult(TestRunResult* results, size_t count, float 
    return best;
 }
 
+///
 /// <summary>Print the top 3 configurations per target rate ranked by lowest StdDev %.</summary>
 /// <param name="results">Array of all test results</param>
 /// <param name="count">Number of results in the array</param>
+///
 void printBestConfigurations(TestRunResult* results, size_t count)
 {
    Serial.println();
@@ -542,11 +684,13 @@ void printBestConfigurations(TestRunResult* results, size_t count)
    }
 }
 
+///
 /// <summary>Prints a single aggregate statistics row if any samples were collected.</summary>
 /// <param name="table">Table to print the row to</param>
 /// <param name="label">Row label</param>
 /// <param name="avgStats">Aggregated average-charge-time statistics</param>
 /// <param name="stdDevStats">Aggregated StdDev statistics</param>
+///
 void printAggregateRow(SerialTable& table, const char* label, const Stats& avgStats, const Stats& stdDevStats)
 {
    if (avgStats.count() == 0)
@@ -562,9 +706,11 @@ void printAggregateRow(SerialTable& table, const char* label, const Stats& avgSt
       SerialTable::fixed(rangeMicros, 3));
 }
 
+///
 /// <summary>Prints aggregate charge-time statistics grouped by resistor value.</summary>
 /// <param name="results">Array of all test results</param>
 /// <param name="count">Number of results in the array</param>
+///
 void printAggregateByResistor(const TestRunResult* results, size_t count)
 {
    const SerialTable::Column columns[] = {
@@ -604,9 +750,11 @@ void printAggregateByResistor(const TestRunResult* results, size_t count)
    Serial.println();
 }
 
+///
 /// <summary>Prints aggregate charge-time statistics grouped by target effective rate.</summary>
 /// <param name="results">Array of all test results</param>
 /// <param name="count">Number of results in the array</param>
+///
 void printAggregateByTargetRate(const TestRunResult* results, size_t count)
 {
    const SerialTable::Column columns[] = {
@@ -650,9 +798,11 @@ void printAggregateByTargetRate(const TestRunResult* results, size_t count)
    Serial.println();
 }
 
+///
 /// <summary>Prints aggregate charge-time statistics grouped into buffer-size buckets.</summary>
 /// <param name="results">Array of all test results</param>
 /// <param name="count">Number of results in the array</param>
+///
 void printAggregateByBufferSize(const TestRunResult* results, size_t count)
 {
    const SerialTable::Column columns[] = {
@@ -742,9 +892,11 @@ void printAggregateByBufferSize(const TestRunResult* results, size_t count)
    Serial.println();
 }
 
+///
 /// <summary>Prints aggregate charge-time statistics grouped by discharge delay.</summary>
 /// <param name="results">Array of all test results</param>
 /// <param name="count">Number of results in the array</param>
+///
 void printAggregateByDischargeDelay(const TestRunResult* results, size_t count)
 {
    const SerialTable::Column columns[] = {
@@ -788,9 +940,11 @@ void printAggregateByDischargeDelay(const TestRunResult* results, size_t count)
    Serial.println();
 }
 
+///
 /// <summary>Prints all aggregate statistics groupings (by resistor, target rate, buffer size, and discharge delay).</summary>
 /// <param name="results">Array of all test results</param>
 /// <param name="count">Number of results in the array</param>
+///
 void printAggregateStatistics(const TestRunResult* results, size_t count)
 {
    Serial.println();
@@ -813,7 +967,27 @@ void loop()
       }
    }
 
-   // Button A pressed: execute all tests
+   updateLiveChargeStats();
+
+   // Live-edit the resistor/discharge/buffer fields: Encoder A selects a field, Encoder B
+   // adjusts it. Any change is immediately applied to the sensor and persisted, so the
+   // charge time/rate readouts below update live as the values change.
+   bool fieldsChanged = liveFieldTable.poll();
+
+   if (arduino.buttonB.wasPressed())
+   {
+      // reset() already persists the defaults, so just re-apply them below.
+      liveFieldTable.reset();
+      applyLiveFields();
+      displayTimer.reset();
+   }
+   else if (fieldsChanged)
+   {
+      applyLiveFields();
+      liveFieldTable.save();
+      displayTimer.reset();
+   }
+
    if (arduino.buttonA.wasPressed())
    {
       Serial.println();
@@ -852,17 +1026,13 @@ void loop()
 
             // Update display with current test parameters and progress
             arduino.setCursor(0, 0);
-            arduino.setTextSize(2);
+            arduino.setTextSize(DEFAULT_HEADING_SIZE);
             arduino.println("Running Tests...", Color::HEADING);
-            arduino.moveCursorY(-2);
+            arduino.setTextSize(DEFAULT_TEXT_SIZE);
             arduino.println("    Resistor: ", RESISTOR_OPTIONS[resistorIndex].label, Color::VALUE);
-            arduino.moveCursorY(-2);
             arduino.println("       Delay: ", testParameters.cases[i].dischargeDelayMicros, chargeFormat, Color::VALUE);
-            arduino.moveCursorY(-2);
             arduino.println("      Target: ", String((int)round(testParameters.cases[i].targetEffectiveRate)) + "/s", Color::VALUE);
-            arduino.moveCursorY(-2);
             arduino.println("        Test: ", String(currentTest) + "/" + String(totalTests), Color::VALUE2);
-            arduino.moveCursorY(-2);
 
             TestRun testRun(capacitorSensor);
             TestRunResult result = testRun.run(
@@ -912,6 +1082,10 @@ void loop()
             best->dischargeDelayMicros,
             best->deferredProcessingPeriodMicros,
             best->bufferSize);
+         syncLiveFields(
+            bestChargePin,
+            best->dischargeDelayMicros,
+            best->bufferSize);
          saveBestConfiguration(
             bestChargePin,
             best->dischargeDelayMicros,
@@ -925,32 +1099,45 @@ void loop()
             FIXED_DEFERRED_PROCESSING_PERIOD_MICROS,
             CapacitorSensor::DEFAULT_BUFFER_SIZE);
       }
+
+      arduino.clearDisplay();
+      displayTimer.reset();
    }
 
    if (displayTimer.ready())
    {
       arduino.setCursor(0, 0);
-      arduino.setTextSize(3);
+      arduino.setTextSize(DEFAULT_HEADING_SIZE);
       arduino.println("Capacitor Tuning", Color::HEADING);
-      arduino.moveCursorY(-2);
 
-      arduino.setTextSize(2);
-      arduino.println("       Resistor: ", resistorLabel(capacitorSensor.chargePin()), Color::VALUE);
-      arduino.moveCursorY(-2);
-      arduino.println(" Discharge Time: ", capacitorSensor.dischargeDelayMicros(), chargeFormat, Color::VALUE);
-      arduino.moveCursorY(-2);
-      arduino.println("    Buffer Size: ", (int)capacitorSensor.bufferSize(), Color::VALUE);
-      arduino.moveCursorY(-2);
+      arduino.setTextSize(DEFAULT_TEXT_SIZE);
+      int16_t fieldsTop = arduino.getCursorY();
+      liveFieldTable.draw(0, fieldsTop, 15);
+      arduino.setCursor(0, fieldsTop + liveFieldTable.height());
 
       float rawRate = capacitorSensor.rate();
       float effectiveRate = (capacitorSensor.bufferSize() > 0) ? (rawRate / (float)capacitorSensor.bufferSize()) : 0;
 
-      arduino.println("Avg Charge Time: ", capacitorSensor.chargeTimeMicros(), chargeFormat, Color::VALUE3);
-      arduino.moveCursorY(-2);
-      arduino.println("    Sample Rate: ", (int)round(rawRate), sampleRateFormat, Color::VALUE2);
-      arduino.moveCursorY(-2);
+      arduino.println("Avg Charge Time: ", capacitorSensor.chargeTimeMicros(), chargeFormat, Color::VALUE2);
+      arduino.println("         StdDev: ", liveChargeStats.stdDev(), chargeFormat, Color::VALUE2);
+      arduino.println("          Range: ", liveChargeStats.range(), chargeFormat, Color::VALUE2);
+      arduino.println("       Raw Rate: ", (int)round(rawRate), sampleRateFormat, Color::VALUE2);
       arduino.println(" Effective Rate: ", effectiveRate, effectiveRateFormat, Color::VALUE2);
-      arduino.moveCursorY(-2);
+
+      const char* instructions[] =
+      {
+         "Encoder A: select field",
+         "Encoder B: adjust value",
+         "Button A: run test sweep",
+         "Button B: reset field defaults",
+      };
+      constexpr size_t instructionCount = sizeof(instructions) / sizeof(instructions[0]);
+
+      arduino.setCursorY(arduino.height() - instructionCount * arduino.charH());
+      for (size_t i = 0; i < instructionCount; i++)
+      {
+         arduino.printlnR(instructions[i], Color::SUB_LABEL);
+      }
    }
 }
 

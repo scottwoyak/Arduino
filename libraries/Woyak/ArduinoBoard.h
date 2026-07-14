@@ -10,6 +10,9 @@ using Arduino = Feather_M0_OLED;
 #define ARDUINO_DISPLAY_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
 
+constexpr uint8_t DEFAULT_HEADING_SIZE = 2;
+constexpr uint8_t DEFAULT_TEXT_SIZE = 1;
+
 #elif defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
 
 #include "Feather_ESP32_S3.h"
@@ -21,6 +24,9 @@ using Arduino = Feather_ESP32_S3;
 #define ARDUINO_LED_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
 
+constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
+constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
+
 #elif defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO)
 
 #include "Waveshare_ESP32_S3_Zero.h"
@@ -28,6 +34,8 @@ using Arduino = Waveshare_ESP32_S3_Zero;
 
 #define ARDUINO_LED_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
+
+// This board has no onboard display, so no text-size defaults are defined.
 
 #elif defined(ARDUINO_ESP32S3_DEV)
 // Generic ESP32S3 Dev Module boards are assumed to be wired up as a Playground setup
@@ -41,5 +49,8 @@ using Arduino = ESP32_S3_Playground;
 #define ARDUINO_DISPLAY_SUPPORTED
 #define ARDUINO_PLAYGROUND_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
+
+constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
+constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
 #endif

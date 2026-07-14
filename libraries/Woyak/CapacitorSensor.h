@@ -375,6 +375,11 @@ public:
       bool wasStarted = _started;
       if (wasStarted) stop();
 
+      // stop() leaves the old charge pin driven LOW as an output; release it to
+      // high-impedance input so it no longer forms a voltage divider with the new
+      // charge resistor through the shared capacitor/sense node.
+      pinMode(_chargePin, INPUT);
+
       _chargePin = chargePin;
 
       portENTER_CRITICAL(&_mux);
