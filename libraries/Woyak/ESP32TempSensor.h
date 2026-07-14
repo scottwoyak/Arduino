@@ -25,7 +25,7 @@ public:
    ESP32TempSensor() {}
 
    /// <summary>Gets the sensor type string.</summary>
-   virtual const char* type() { return "ESP32 CPU"; }
+   virtual const char* type() const { return "ESP32 CPU"; }
 
    /// <summary>Gets the sensor ID.</summary>
    virtual const char* id() { return ""; }

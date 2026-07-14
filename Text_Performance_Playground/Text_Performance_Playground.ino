@@ -171,13 +171,13 @@ void loop()
          arduino.display.setFont(&fonts::Font0);
          arduino.display.setTextSize(numberTextSize);
          arduino.setCursor(numberX, numberY);
-         arduino.print(numberFormat.toString(number).c_str(), Color::VALUE);
+         arduino.print(number, numberFormat, Color::VALUE);
          break;
 
       case DisplayMode::SMOOTH_FONTS:
          arduino.setTextSize(numberTextSize);
          arduino.setCursor(numberX, numberY);
-         arduino.print(numberFormat.toString(number).c_str(), Color::VALUE);
+         arduino.print(number, numberFormat, Color::VALUE);
          break;
 
       case DisplayMode::SPRITES:

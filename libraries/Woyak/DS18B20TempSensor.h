@@ -26,7 +26,7 @@ public:
       return true;
    }
 
-   virtual const char* type() { return "DS18B20"; }
+   virtual const char* type() const { return "DS18B20"; }
    virtual const char* id()
    {
       if (_id.length() == 0)

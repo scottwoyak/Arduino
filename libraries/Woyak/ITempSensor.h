@@ -31,7 +31,7 @@ public:
    /// Gets the sensor type name.
    /// </summary>
    /// <returns>Sensor type string (e.g., "DHT22", "BME280", "DS18B20")</returns>
-   virtual const char* type() = 0;
+   virtual const char* type() const = 0;
 
    /// <summary>
    /// Gets the I2C or 1-Wire address.

@@ -48,17 +48,25 @@ private:
    // snapshot, indexed the same as _values/_agesMs (newest-first).
    float* _movingAverageBuffer = nullptr;
 
-   // Copy of the values/ages/moving-average actually drawn on the last render() pass, so
-   // the next render() can erase exactly those strokes instead of clearing the whole chart.
-   float* _prevValues = nullptr;
-   unsigned long* _prevAgesMs = nullptr;
-   size_t _prevCount = 0;
-   float* _prevMovingAverageBuffer = nullptr;
+   // Per-pixel-column "which rows are lit" bitmasks used to diff this frame's drawing
+   // against the previous frame's, so only pixels that actually changed color get drawn -
+   // no stroke-replay erasing, and no special-casing needed for bin rotation, since the
+   // diff is exact regardless of how the underlying data shifted between frames. Raw
+   // points/lines and the moving-average line are tracked in separate mask pairs since
+   // they're normally drawn in different colors. Sized to the plot's chart pixel
+   // dimensions (see _ensureMaskBuffers()), reallocated only when those dimensions change.
+   uint8_t* _rawMask = nullptr;
+   uint8_t* _prevRawMask = nullptr;
+   uint8_t* _maMask = nullptr;
+   uint8_t* _prevMaMask = nullptr;
+   size_t _maskBytesPerColumn = 0;
+   int16_t _maskChartWidth = 0;
+   int16_t _maskChartHeight = 0;
 
    ///
    /// <summary>
-   /// Allocates the snapshot/prev-frame rendering buffers, all sized to _bins.numBins().
-   /// Called once from the constructor since the bin count never changes afterward.
+   /// Allocates the snapshot rendering buffers, sized to _bins.numBins(). Called once
+   /// from the constructor since the bin count never changes afterward.
    /// </summary>
    /// <returns>True if every buffer was allocated successfully.</returns>
    ///
@@ -68,12 +76,8 @@ private:
       _values = new (std::nothrow) float[numBins];
       _agesMs = new (std::nothrow) unsigned long[numBins];
       _movingAverageBuffer = new (std::nothrow) float[numBins];
-      _prevValues = new (std::nothrow) float[numBins];
-      _prevAgesMs = new (std::nothrow) unsigned long[numBins];
-      _prevMovingAverageBuffer = new (std::nothrow) float[numBins];
 
-      if (_values == nullptr || _agesMs == nullptr || _movingAverageBuffer == nullptr
-         || _prevValues == nullptr || _prevAgesMs == nullptr || _prevMovingAverageBuffer == nullptr)
+      if (_values == nullptr || _agesMs == nullptr || _movingAverageBuffer == nullptr)
       {
          Util::setHaltReason("OOM allocating rendering buffers in TimedScatterPlotSeries");
          Util::reset();
@@ -85,22 +89,55 @@ private:
 
    ///
    /// <summary>
-   /// Copies the values/ages/moving-average just drawn into the previous-frame buffers, so
-   /// the next render() can erase exactly those strokes.
+   /// (Re)allocates the pixel-column bitmasks to match the given chart pixel dimensions,
+   /// freeing and reallocating only when the dimensions actually changed (they are stable
+   /// across most frames, changing only when the axis range/labels or chart geometry
+   /// changes). Newly allocated masks start fully cleared (no pixels lit).
    /// </summary>
+   /// <param name="chartWidth">Chart interior width in pixels (one bitmask column per pixel).</param>
+   /// <param name="chartHeight">Chart interior height in pixels (one bit per row).</param>
+   /// <returns>True if the masks are sized correctly and ready to use.</returns>
    ///
-   void _capturePrevSnapshot()
+   bool _ensureMaskBuffers(int16_t chartWidth, int16_t chartHeight)
    {
-      if (_count == 0)
+      if ((chartWidth == _maskChartWidth) && (chartHeight == _maskChartHeight) && (_rawMask != nullptr))
       {
-         _prevCount = 0;
-         return;
+         return true;
       }
 
-      memcpy(_prevValues, _values, _count * sizeof(float));
-      memcpy(_prevAgesMs, _agesMs, _count * sizeof(unsigned long));
-      memcpy(_prevMovingAverageBuffer, _movingAverageBuffer, _count * sizeof(float));
-      _prevCount = _count;
+      delete[] _rawMask;
+      delete[] _prevRawMask;
+      delete[] _maMask;
+      delete[] _prevMaMask;
+      _rawMask = _prevRawMask = _maMask = _prevMaMask = nullptr;
+
+      _maskChartWidth = chartWidth;
+      _maskChartHeight = chartHeight;
+      _maskBytesPerColumn = static_cast<size_t>((chartHeight + 7) / 8);
+
+      const size_t bufSize = static_cast<size_t>(chartWidth) * _maskBytesPerColumn;
+      if (bufSize == 0)
+      {
+         return true;
+      }
+
+      _rawMask = new (std::nothrow) uint8_t[bufSize];
+      _prevRawMask = new (std::nothrow) uint8_t[bufSize];
+      _maMask = new (std::nothrow) uint8_t[bufSize];
+      _prevMaMask = new (std::nothrow) uint8_t[bufSize];
+
+      if (_rawMask == nullptr || _prevRawMask == nullptr || _maMask == nullptr || _prevMaMask == nullptr)
+      {
+         Util::setHaltReason("OOM allocating scatter plot masks in TimedScatterPlotSeries");
+         Util::reset();
+         return false;
+      }
+
+      memset(_rawMask, 0, bufSize);
+      memset(_prevRawMask, 0, bufSize);
+      memset(_maMask, 0, bufSize);
+      memset(_prevMaMask, 0, bufSize);
+      return true;
    }
 
    ///
@@ -192,7 +229,7 @@ public:
    ///
    /// <summary>Color used to draw this series' points and lines.</summary>
    ///
-   Color color = Color::WHITE;
+   Color color = Color::GREEN;
 
    ///
    /// <summary>Color used to draw this series' moving-average line.</summary>
@@ -227,9 +264,10 @@ public:
       delete[] _values;
       delete[] _agesMs;
       delete[] _movingAverageBuffer;
-      delete[] _prevValues;
-      delete[] _prevAgesMs;
-      delete[] _prevMovingAverageBuffer;
+      delete[] _rawMask;
+      delete[] _prevRawMask;
+      delete[] _maMask;
+      delete[] _prevMaMask;
    }
 
    ///
@@ -253,7 +291,15 @@ public:
    {
       _bins.reset();
       _count = 0;
-      _prevCount = 0;
+
+      if (_maskBytesPerColumn > 0)
+      {
+         const size_t bufSize = static_cast<size_t>(_maskChartWidth) * _maskBytesPerColumn;
+         memset(_rawMask, 0, bufSize);
+         memset(_prevRawMask, 0, bufSize);
+         memset(_maMask, 0, bufSize);
+         memset(_prevMaMask, 0, bufSize);
+      }
    }
 
    ///
@@ -263,6 +309,23 @@ public:
    /// <returns>Number of retained samples.</returns>
    ///
    size_t getCount() const { return _count; }
+
+   ///
+   /// <summary>
+   /// Gets the number of time bins retained by this series (fixed at construction).
+   /// </summary>
+   /// <returns>Number of retained time bins.</returns>
+   ///
+   size_t numBins() const { return _bins.numBins(); }
+
+   ///
+   /// <summary>
+   /// Gets the duration spanned by each time bin retained by this series, in milliseconds
+   /// (fixed at construction).
+   /// </summary>
+   /// <returns>Bin duration in milliseconds.</returns>
+   ///
+   unsigned long binDurationMs() const { return _bins.binDurationMs(); }
 };
 
 ///
@@ -306,16 +369,6 @@ private:
    float _axisYMax = 0.0f;
    bool _hasRenderedFrame = false;
    bool _forceFullRedraw = false;
-
-   // Tracks the ramp-up period before the visible history window has actually filled with
-   // data, so points start at the left edge and fill in new columns to the right as data
-   // accumulates, instead of immediately being squeezed against the right edge of a
-   // full-width window. Once elapsed time reaches historyMs, normal right-anchored
-   // scrolling behavior takes over.
-   bool _hasRampStart = false;
-   unsigned long _rampStartMs = 0;
-   unsigned long _rampElapsedMs = 0;
-   bool _isRampingUp = true;
 
    TimedScatterPlotSeries** _series = nullptr;
    size_t _seriesCount = 0;
@@ -543,61 +596,139 @@ private:
 
    ///
    /// <summary>
-   /// Converts an age-in-milliseconds/value pair to pixel coordinates using the current
-   /// chart geometry and axis range. Newest samples (age 0) map to the right edge; samples
-   /// at or beyond historyMs map to the left edge.
+   /// Converts a bin index/value pair to pixel coordinates relative to the chart's top-left
+   /// corner (0,0 is the top-left interior pixel; _chartLeft/_chartTop are added by the
+   /// caller separately when drawing to the display). Newest samples (bin index 0) map to
+   /// the right edge; the oldest possible bin (numBins - 1) maps to the left edge. Before
+   /// every bin has been populated, only the newest binIndex values are ever passed in (see
+   /// TimedAverageHistory::snapshot()'s filledBins() count), so those samples naturally land
+   /// on the rightmost columns and new columns fill in to the left as more bins are
+   /// populated - no separate ramp-up tracking or wall-clock state is needed.
    /// </summary>
-   /// <param name="ageMs">Age of the sample in milliseconds.</param>
+   /// <param name="binIndex">Newest-first index of the sample within its series (0 is newest).</param>
+   /// <param name="numBins">Total number of bins retained by the series this sample came from.</param>
    /// <param name="value">Y value to convert.</param>
-   /// <param name="outX">Receives the pixel X coordinate.</param>
-   /// <param name="outY">Receives the pixel Y coordinate.</param>
+   /// <param name="outX">Receives the chart-relative pixel X coordinate.</param>
+   /// <param name="outY">Receives the chart-relative pixel Y coordinate.</param>
    ///
-   void _toPixel(unsigned long ageMs, float value, int16_t& outX, int16_t& outY) const
+   void _toPixel(size_t binIndex, size_t numBins, float value, int16_t& outX, int16_t& outY) const
    {
       float ySpan = _axisYMax - _axisYMin;
       if (ySpan <= 0.0f) ySpan = 1.0f;
 
-      float fraction;
-      if (_isRampingUp)
-      {
-         // Anchor each sample to its absolute time-since-ramp-start (instead of its age
-         // relative to "now"), so already-placed points stay put and new samples simply
-         // appear in new columns further to the right as time passes.
-         unsigned long sampleElapsedMs = (ageMs < _rampElapsedMs) ? (_rampElapsedMs - ageMs) : 0;
-         fraction = static_cast<float>(sampleElapsedMs) / static_cast<float>(_historyMs);
-      }
-      else
-      {
-         unsigned long boundedAgeMs = min(ageMs, _historyMs);
-         fraction = 1.0f - (static_cast<float>(boundedAgeMs) / static_cast<float>(_historyMs));
-      }
-      fraction = constrain(fraction, 0.0f, 1.0f);
+      // binIndex is a stable integer identity for a given retained sample (bin 0 is
+      // always the newest/still-open bin, regardless of how many rotations have
+      // occurred), so mapping it to a pixel column with pure integer arithmetic - as
+      // opposed to first converting to a float age-based fraction of _historyMs -
+      // guarantees the exact same binIndex always lands on the exact same pixel
+      // column, frame after frame, with no floating-point rounding drift.
+      const int32_t span = static_cast<int32_t>(_chartWidth) - 1;
+      const int32_t denom = (numBins > 1) ? static_cast<int32_t>(numBins - 1) : 1;
+      const int32_t clampedIndex = min(static_cast<int32_t>(binIndex), denom);
+      outX = static_cast<int16_t>(span - (clampedIndex * span) / denom);
 
-      outX = _chartLeft + static_cast<int16_t>(fraction * (_chartWidth - 1));
-      outY = _chartTop + static_cast<int16_t>(((_axisYMax - value) / ySpan) * (_chartHeight - 1));
+      outY = static_cast<int16_t>(((_axisYMax - value) / ySpan) * (_chartHeight - 1));
 
-      outX = constrain(outX, _chartLeft, static_cast<int16_t>(_chartLeft + _chartWidth - 1));
-      outY = constrain(outY, _chartTop, static_cast<int16_t>(_chartTop + _chartHeight - 1));
+      outX = constrain(outX, static_cast<int16_t>(0), static_cast<int16_t>(_chartWidth - 1));
+      outY = constrain(outY, static_cast<int16_t>(0), static_cast<int16_t>(_chartHeight - 1));
    }
 
    ///
    /// <summary>
-   /// Plots a set of samples (connected with lines when connectPoints is set) using the
-   /// given color, aligning to the sensor step first when alignToStep is set. Samples must
-   /// be supplied newest-first but are drawn oldest-first so lines connect in chronological
-   /// order. Used both to draw the current frame and, with color set to black, to erase the
-   /// previous frame's exact strokes before drawing over them.
+   /// Sets (lights) a single bit in a chart pixel-column bitmask, addressing column x, row
+   /// y (both chart-relative). No-ops if the coordinates fall outside the mask bounds.
    /// </summary>
-   /// <param name="values">Newest-first sample values to plot.</param>
-   /// <param name="agesMs">Newest-first sample ages (parallel to values), in milliseconds.</param>
-   /// <param name="count">Number of samples in values/agesMs.</param>
-   /// <param name="connectPoints">If true, connects consecutive finite samples with a line.</param>
-   /// <param name="drawPoints">If true, draws each finite sample as a pixel.</param>
-   /// <param name="alignToStep">If true, aligns each value to the configured sensor step before plotting.</param>
-   /// <param name="color">Color to draw with.</param>
+   /// <param name="mask">Bitmask buffer to modify.</param>
+   /// <param name="bytesPerColumn">Number of bytes per column in the mask (rows packed 8 per byte).</param>
+   /// <param name="chartWidth">Chart width in pixel columns, for bounds checking.</param>
+   /// <param name="chartHeight">Chart height in pixel rows, for bounds checking.</param>
+   /// <param name="x">Chart-relative pixel column.</param>
+   /// <param name="y">Chart-relative pixel row.</param>
    ///
-   void _plotSeriesData(const float* values, const unsigned long* agesMs, size_t count, bool connectPoints, bool drawPoints, bool alignToStep, Color color) const
+   static void _setMaskBit(uint8_t* mask, size_t bytesPerColumn, int16_t chartWidth, int16_t chartHeight, int16_t x, int16_t y)
    {
+      if (x < 0 || x >= chartWidth || y < 0 || y >= chartHeight)
+      {
+         return;
+      }
+
+      uint8_t* column = mask + (static_cast<size_t>(x) * bytesPerColumn);
+      column[y >> 3] |= static_cast<uint8_t>(1u << (y & 7));
+   }
+
+   ///
+   /// <summary>
+   /// Gets whether a single bit is set in a chart pixel-column bitmask. Out-of-bounds
+   /// coordinates are treated as unset.
+   /// </summary>
+   ///
+   static bool _getMaskBit(const uint8_t* mask, size_t bytesPerColumn, int16_t chartWidth, int16_t chartHeight, int16_t x, int16_t y)
+   {
+      if (x < 0 || x >= chartWidth || y < 0 || y >= chartHeight)
+      {
+         return false;
+      }
+
+      const uint8_t* column = mask + (static_cast<size_t>(x) * bytesPerColumn);
+      return (column[y >> 3] & static_cast<uint8_t>(1u << (y & 7))) != 0;
+   }
+
+   ///
+   /// <summary>
+   /// Sets every bit along a line from (x0,y0) to (x1,y1) using integer Bresenham stepping,
+   /// so the exact same pair of endpoints always lights the exact same set of pixels,
+   /// frame after frame, matching what drawLine() would physically draw.
+   /// </summary>
+   ///
+   static void _rasterizeLine(uint8_t* mask, size_t bytesPerColumn, int16_t chartWidth, int16_t chartHeight, int16_t x0, int16_t y0, int16_t x1, int16_t y1)
+   {
+      int16_t dx = abs(static_cast<int16_t>(x1 - x0));
+      int16_t sx = (x0 < x1) ? 1 : -1;
+      int16_t dy = static_cast<int16_t>(-abs(static_cast<int16_t>(y1 - y0)));
+      int16_t sy = (y0 < y1) ? 1 : -1;
+      int16_t err = dx + dy;
+
+      for (;;)
+      {
+         _setMaskBit(mask, bytesPerColumn, chartWidth, chartHeight, x0, y0);
+         if (x0 == x1 && y0 == y1)
+         {
+            break;
+         }
+         int16_t e2 = static_cast<int16_t>(2 * err);
+         if (e2 >= dy)
+         {
+            err = static_cast<int16_t>(err + dy);
+            x0 = static_cast<int16_t>(x0 + sx);
+         }
+         if (e2 <= dx)
+         {
+            err = static_cast<int16_t>(err + dx);
+            y0 = static_cast<int16_t>(y0 + sy);
+         }
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Rasterizes a set of samples (connected with lines when connectPoints is set) into a
+   /// pixel-column bitmask, clearing it first, aligning to the sensor step first when
+   /// alignToStep is set. Samples must be supplied newest-first but are rasterized
+   /// oldest-first so lines connect in chronological order.
+   /// </summary>
+   /// <param name="mask">Bitmask buffer to rasterize into (cleared first).</param>
+   /// <param name="bytesPerColumn">Number of bytes per column in the mask.</param>
+   /// <param name="values">Newest-first sample values to plot.</param>
+   /// <param name="count">Number of samples in values.</param>
+   /// <param name="numBins">Total number of bins retained by the series these samples came from.</param>
+   /// <param name="connectPoints">If true, connects consecutive finite samples with a line.</param>
+   /// <param name="drawPoints">If true, sets each finite sample's own pixel.</param>
+   /// <param name="alignToStep">If true, aligns each value to the configured sensor step before plotting.</param>
+   ///
+   void _rasterizeSeriesData(uint8_t* mask, size_t bytesPerColumn, const float* values, size_t count, size_t numBins, bool connectPoints, bool drawPoints, bool alignToStep) const
+   {
+      memset(mask, 0, bytesPerColumn * static_cast<size_t>(_chartWidth));
+
       if (count == 0)
       {
          return;
@@ -624,20 +755,66 @@ private:
 
          int16_t x;
          int16_t y;
-         _toPixel(agesMs[idx], value, x, y);
+         _toPixel(idx, numBins, value, x, y);
 
          if (connectPoints && havePrevPoint)
          {
-            _display->drawLine(prevX, prevY, x, y, color);
+            _rasterizeLine(mask, bytesPerColumn, _chartWidth, _chartHeight, prevX, prevY, x, y);
          }
          if (drawPoints)
          {
-            _display->drawPixel(x, y, color);
+            _setMaskBit(mask, bytesPerColumn, _chartWidth, _chartHeight, x, y);
          }
 
          prevX = x;
          prevY = y;
          havePrevPoint = true;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Diffs a freshly rasterized mask against the previous frame's mask and draws only the
+   /// pixels that actually changed: newly-lit pixels are drawn in color, newly-unlit pixels
+   /// are drawn in black. Pixels whose state did not change are left untouched, so a
+   /// series' unchanging trailing data - the vast majority of the chart during steady-state
+   /// scrolling - is never redrawn or flashed. mask is copied into prevMask afterward so the
+   /// next frame diffs against what was actually just drawn.
+   /// </summary>
+   /// <param name="mask">This frame's freshly rasterized mask.</param>
+   /// <param name="prevMask">Previous frame's mask; updated in place to match mask after diffing.</param>
+   /// <param name="bytesPerColumn">Number of bytes per column in the masks.</param>
+   /// <param name="color">Color to draw newly-lit pixels with; newly-unlit pixels are always drawn in black.</param>
+   ///
+   void _diffMasksAndDraw(uint8_t* mask, uint8_t* prevMask, size_t bytesPerColumn, Color color) const
+   {
+      for (int16_t x = 0; x < _chartWidth; x++)
+      {
+         uint8_t* column = mask + (static_cast<size_t>(x) * bytesPerColumn);
+         uint8_t* prevColumn = prevMask + (static_cast<size_t>(x) * bytesPerColumn);
+
+         for (size_t byteIdx = 0; byteIdx < bytesPerColumn; byteIdx++)
+         {
+            uint8_t changed = column[byteIdx] ^ prevColumn[byteIdx];
+            if (changed == 0)
+            {
+               continue;
+            }
+
+            for (uint8_t bit = 0; bit < 8; bit++)
+            {
+               if ((changed & (1u << bit)) == 0)
+               {
+                  continue;
+               }
+
+               int16_t y = static_cast<int16_t>((byteIdx << 3) + bit);
+               bool nowLit = (column[byteIdx] & (1u << bit)) != 0;
+               _display->drawPixel(_chartLeft + x, _chartTop + y, nowLit ? color : Color::BLACK);
+            }
+         }
+
+         memcpy(prevColumn, column, bytesPerColumn);
       }
    }
 
@@ -886,12 +1063,12 @@ public:
    /// Renders every owned series within this plot's fixed rectangle: refreshes each
    /// series' snapshot from its internal time bins, computes the shared Y axis
    /// range to fit whatever is currently displayed, then draws axis labels and each
-   /// series' points, lines, and/or moving-average line. When the axis range and chart
-   /// geometry are unchanged from the previous frame, the chart interior is not cleared;
-   /// instead, each series' previously drawn strokes are erased in black before the new
-   /// frame is drawn, avoiding the flicker a full clear would cause. A full clear and
-   /// redraw still happens whenever the axis range or geometry changes, invalidate() was
-   /// called, or this is the first frame.
+   /// series' points, lines, and/or moving-average line. Each series rasterizes its
+   /// current frame into a per-pixel-column bitmask and diffs it against the previous
+   /// frame's mask, drawing only the pixels that actually changed color; unchanging
+   /// pixels (the vast majority during steady-state scrolling) are never redrawn or
+   /// flashed. A full clear and redraw of the chart area still happens whenever the axis
+   /// range or geometry changes, invalidate() was called, or this is the first frame.
    /// </summary>
    ///
    void render()
@@ -902,16 +1079,6 @@ public:
       {
          return;
       }
-
-      const unsigned long nowMs = millis();
-      if (!_hasRampStart)
-      {
-         _rampStartMs = nowMs;
-         _hasRampStart = true;
-      }
-      _rampElapsedMs = nowMs - _rampStartMs;
-      const bool wasRampingUp = _isRampingUp;
-      _isRampingUp = (_rampElapsedMs < _historyMs);
 
       float yMin;
       float yMax;
@@ -932,6 +1099,7 @@ public:
          yMax = yMin + _axisPrecisionScale();
       }
 
+      const bool wasFirstFrame = !_hasRenderedFrame;
       const int16_t oldChartLeft = _chartLeft;
       const int16_t oldChartTop = _chartTop;
       const int16_t oldChartWidth = _chartWidth;
@@ -952,7 +1120,11 @@ public:
          return;
       }
 
-      bool fullRedraw = _forceFullRedraw || !_hasRenderedFrame || wasRampingUp
+      // Bin rotations do not force a whole-chart full redraw here: each series' mask-based
+      // diff (see _diffMasksAndDraw()) naturally redraws every pixel whose lit/unlit
+      // state changed as a result of a rotation, and leaves every unchanged pixel alone,
+      // so no special-casing for rotation (or for the ramp-up fill-in period) is needed at all.
+      bool fullRedraw = _forceFullRedraw || !_hasRenderedFrame
          || (yMin != oldAxisYMin) || (yMax != oldAxisYMax)
          || (_chartLeft != oldChartLeft) || (_chartTop != oldChartTop)
          || (_chartWidth != oldChartWidth) || (_chartHeight != oldChartHeight);
@@ -964,40 +1136,72 @@ public:
 
       _display->display.startWrite();
 
+      // Every series' pixel-column masks are sized to the current chart dimensions;
+      // ensure they're (re)allocated before either a full redraw or diffing occurs, since
+      // a dimension change invalidates any previously accumulated mask content anyway
+      // (handled by fullRedraw clearing the masks to match the fresh chart area below).
+      for (size_t i = 0; i < _seriesCount; i++)
+      {
+         _series[i]->_ensureMaskBuffers(_chartWidth, _chartHeight);
+      }
+
       if (fullRedraw)
       {
-         _display->fillRect(_chartLeft + 1, _chartTop, _chartWidth - 1, _chartHeight - 1, Color::BLACK);
+         // Clear the union of the old and new chart rectangles, not just the newly
+         // computed one: when the axis range changes, the Y-axis label column can widen
+         // or narrow (_computeChartGeometry() sizes it to the current min/max labels),
+         // shifting _chartLeft/_chartWidth. Clearing only the new rectangle would leave
+         // stale pixels wherever the previous frame's chart area doesn't overlap the new
+         // one, which never get erased or scrolled off since erasure elsewhere assumes
+         // fixed chart geometry. On the very first frame there is no previous rectangle
+         // to union with (old geometry is default-initialized to zero, not a real prior
+         // chart area), so only the new rectangle is cleared.
+         int16_t clearLeft = _chartLeft;
+         int16_t clearTop = _chartTop;
+         int16_t clearRight = _chartLeft + _chartWidth;
+         int16_t clearBottom = _chartTop + _chartHeight;
+
+         if (!wasFirstFrame)
+         {
+            clearLeft = min(clearLeft, oldChartLeft);
+            clearTop = min(clearTop, oldChartTop);
+            clearRight = max<int16_t>(clearRight, oldChartLeft + oldChartWidth);
+            clearBottom = max<int16_t>(clearBottom, oldChartTop + oldChartHeight);
+         }
+
+         _display->fillRect(clearLeft + 1, clearTop, clearRight - clearLeft - 1, clearBottom - clearTop - 1, Color::BLACK);
          _drawAxes();
+
+         // The chart was just physically cleared to black, so every series' "previous"
+         // mask must also be reset to fully-unlit; otherwise the upcoming diff would
+         // think already-black pixels are still lit from before and skip redrawing them.
+         for (size_t i = 0; i < _seriesCount; i++)
+         {
+            TimedScatterPlotSeries* series = _series[i];
+            const size_t bufSize = series->_maskBytesPerColumn * static_cast<size_t>(_chartWidth);
+            if (bufSize > 0)
+            {
+               memset(series->_prevRawMask, 0, bufSize);
+               memset(series->_prevMaMask, 0, bufSize);
+            }
+         }
       }
 
       for (size_t i = 0; i < _seriesCount; i++)
       {
          TimedScatterPlotSeries* series = _series[i];
 
-         if (!fullRedraw)
-         {
-            // Erase exactly what was drawn last frame for this series before drawing the new frame.
-            if (series->showPoints || series->showLines)
-            {
-               _plotSeriesData(series->_prevValues, series->_prevAgesMs, series->_prevCount, series->showLines, series->showPoints, true, Color::BLACK);
-            }
-            if (series->showMovingAverage)
-            {
-               _plotSeriesData(series->_prevMovingAverageBuffer, series->_prevAgesMs, series->_prevCount, true, false, false, Color::BLACK);
-            }
-         }
-
          if (series->showPoints || series->showLines)
          {
-            _plotSeriesData(series->_values, series->_agesMs, series->_count, series->showLines, series->showPoints, true, series->color);
+            _rasterizeSeriesData(series->_rawMask, series->_maskBytesPerColumn, series->_values, series->_count, series->numBins(), series->showLines, series->showPoints, true);
+            _diffMasksAndDraw(series->_rawMask, series->_prevRawMask, series->_maskBytesPerColumn, series->color);
          }
 
          if (series->showMovingAverage)
          {
-            _plotSeriesData(series->_movingAverageBuffer, series->_agesMs, series->_count, true, false, false, series->movingAverageColor);
+            _rasterizeSeriesData(series->_maMask, series->_maskBytesPerColumn, series->_movingAverageBuffer, series->_count, series->numBins(), true, false, false);
+            _diffMasksAndDraw(series->_maMask, series->_prevMaMask, series->_maskBytesPerColumn, series->movingAverageColor);
          }
-
-         series->_capturePrevSnapshot();
       }
 
       _display->display.endWrite();

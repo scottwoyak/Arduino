@@ -23,7 +23,7 @@ public:
    ~I2CTempSensor() override = default;
 
    const char* id() override { return _id.c_str(); }
-   const char* type() override { return _type.c_str(); }
+   const char* type() const override { return _type.c_str(); }
    uint8_t address() override { return _address; }
 
    bool exists() override { return true; }

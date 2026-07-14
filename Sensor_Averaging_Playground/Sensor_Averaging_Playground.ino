@@ -382,10 +382,10 @@ void drawTableView()
 
    unsigned long elapsedSeconds = static_cast<unsigned long>(captureStopwatch.elapsedSecs());
    String headerText = String(samplesValues->count()) + " samples collected in " + String(elapsedSeconds) + " seconds";
-   arduino.println(headerText.c_str(), Color::LABEL);
+   arduino.println(headerText, Color::LABEL);
 
    String rateText = "Target " + String(targetSampleRate) + "/s  Actual " + String(actualSampleRate.get(), 0) + "/s";
-   arduino.println(rateText.c_str(), Color::LABEL);
+   arduino.println(rateText, Color::LABEL);
    arduino.println();
 
    static Format numSamplesFormat("####", Format::Alignment::RIGHT);
@@ -646,7 +646,7 @@ void startCapture()
    captureStarted = true;
    createSamplesValues();
    samplesValues->reset();
-   samplingTimer.setDuration(1000UL / targetSampleRate);
+   samplingTimer.setDurationMs(1000UL / targetSampleRate);
    actualSampleRate.reset();
    running = true;
    captureStopwatch.reset();

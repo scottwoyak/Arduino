@@ -208,7 +208,7 @@ public:
    ///
    /// <summary>Color used to draw this series' points, lines, and moving average.</summary>
    ///
-   Color color = Color::WHITE;
+   Color color = Color::GREEN;
 
    ///
    /// <summary>Width of the centered moving-average window, in the same units as the x values (sample count or time period).</summary>

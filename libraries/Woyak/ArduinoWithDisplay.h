@@ -561,6 +561,32 @@ public:
       print(label, value, format, labelColor, valueColor, backgroundColor);
       println();
    }
+   void printR(const char* label, const char* value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      std::string rowText = std::string(label) + value;
+      uint16_t len = display.textWidth(rowText.c_str());
+      setCursorX(-len);
+      print(label, Color::LABEL, backgroundColor);
+      print(value, valueColor, backgroundColor);
+   }
+   void printlnR(const char* label, const char* value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      printR(label, value, valueColor, backgroundColor);
+      println();
+   }
+   void printR(const char* label, const char* value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      std::string rowText = std::string(label) + value;
+      uint16_t len = display.textWidth(rowText.c_str());
+      setCursorX(-len);
+      print(label, labelColor, backgroundColor);
+      print(value, valueColor, backgroundColor);
+   }
+   void printlnR(const char* label, const char* value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      printR(label, value, labelColor, valueColor, backgroundColor);
+      println();
+   }
 
    //
    // ----------- String variants
@@ -699,6 +725,24 @@ public:
    void println(const char* label, const std::string& value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
    {
       print(label, value, format, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void printR(const char* label, const std::string& value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      printR(label, value.c_str(), valueColor, backgroundColor);
+   }
+   void printlnR(const char* label, const std::string& value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      printR(label, value, valueColor, backgroundColor);
+      println();
+   }
+   void printR(const char* label, const std::string& value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      printR(label, value.c_str(), labelColor, valueColor, backgroundColor);
+   }
+   void printlnR(const char* label, const std::string& value, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      printR(label, value, labelColor, valueColor, backgroundColor);
       println();
    }
 
@@ -1111,6 +1155,48 @@ public:
    void println(const char* label, uint16_t value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
    {
       print(label, value, format, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void printR(const char* label, uint16_t value, const Format& format, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      std::string valueText = format.toString(value);
+      std::string rowText = std::string(label) + valueText;
+      uint16_t len = display.textWidth(rowText.c_str());
+      setCursorX(-len);
+      print(label, Color::LABEL, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   void printlnR(const char* label, uint16_t value, const Format& format, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      printR(label, value, format, valueColor, backgroundColor);
+      println();
+   }
+   void printR(const char* label, uint16_t value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      std::string valueText = format.toString(value);
+      std::string rowText = std::string(label) + valueText;
+      uint16_t len = display.textWidth(rowText.c_str());
+      setCursorX(-len);
+      print(label, labelColor, backgroundColor);
+      print(value, format, valueColor, backgroundColor);
+   }
+   void printlnR(const char* label, uint16_t value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
+   {
+      printR(label, value, format, labelColor, valueColor, backgroundColor);
+      println();
+   }
+   void printR(const char* label, uint16_t value, const Format& format, Color labelColor, Color valueColor, Color labelBackgroundColor, Color valueBackgroundColor)
+   {
+      std::string valueText = format.toString(value);
+      std::string rowText = std::string(label) + valueText;
+      uint16_t len = display.textWidth(rowText.c_str());
+      setCursorX(-len);
+      print(label, labelColor, labelBackgroundColor);
+      print(value, format, valueColor, valueBackgroundColor);
+   }
+   void printlnR(const char* label, uint16_t value, const Format& format, Color labelColor, Color valueColor, Color labelBackgroundColor, Color valueBackgroundColor)
+   {
+      printR(label, value, format, labelColor, valueColor, labelBackgroundColor, valueBackgroundColor);
       println();
    }
 

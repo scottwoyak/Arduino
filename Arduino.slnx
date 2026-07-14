@@ -168,6 +168,10 @@
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
+    <Project Path="Tests/TimedMinMax_Tests/TimedMinMax_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
     <Project Path="Tests/TimedStats_Tests/TimedStats_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
@@ -422,10 +426,6 @@
     <Deploy />
   </Project>
   <Project Path="Temp_Warm_Up_Playground/Temp_Warm_Up_Playground.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="Tests/TimedMinMax_Tests/TimedMinMax_Tests.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

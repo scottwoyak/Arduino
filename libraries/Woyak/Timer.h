@@ -50,7 +50,7 @@ public:
    /// </summary>
    /// <param name="duration">New duration in time units</param>
    ///
-   void setDuration(unsigned long duration)
+   void setDurationMs(unsigned long duration)
    {
       _durationTime = duration;
       reset();
@@ -62,7 +62,7 @@ public:
    /// </summary>
    /// <returns>Duration in time units</returns>
    ///
-   unsigned long getDuration() const
+   unsigned long getDurationMs() const
    {
       return _durationTime;
    }

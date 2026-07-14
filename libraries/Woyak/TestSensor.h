@@ -18,17 +18,20 @@ class SinWithNormalNoiseTestSensor;
 class MS5837PressureTestSensor;
 class CapacitiveTestSensor;
 
-// One-line sensor source switch used by all sketches.
-// using TestSensor = ESP32TempTestSensor;
-// using TestSensor = SinWithNormalNoiseTestSensor;
-using TestSensor = TempSensorTestSensor;
-// using TestSensor = ConstantTestSensor;
-// using TestSensor = RandomTestSensor;
-// using TestSensor = NormalTestSensor;
-// using TestSensor = SinTestSensor;
-// using TestSensor = SinWithNormalNoiseTestSensor;
-// using TestSensor = MS5837PressureTestSensor;
-// using TestSensor = CapacitiveTestSensor;
+// One-line sensor source switch used by all sketches. Change only TEST_SENSOR_TYPE below;
+// TestSensor is derived from it automatically. Use sensor.sensorType() to display the
+// active sensor's type name at runtime.
+#define TEST_SENSOR_TYPE TempSensorTestSensor
+// #define TEST_SENSOR_TYPE ESP32TempTestSensor
+// #define TEST_SENSOR_TYPE SinWithNormalNoiseTestSensor
+// #define TEST_SENSOR_TYPE SinTestSensor
+// #define TEST_SENSOR_TYPE ConstantTestSensor
+// #define TEST_SENSOR_TYPE RandomTestSensor
+// #define TEST_SENSOR_TYPE NormalTestSensor
+// #define TEST_SENSOR_TYPE MS5837PressureTestSensor
+// #define TEST_SENSOR_TYPE CapacitiveTestSensor
+
+using TestSensor = TEST_SENSOR_TYPE;
 
 namespace TestSensorConfig
 {
@@ -91,17 +94,29 @@ class ITestSensor
 public:
    virtual ~ITestSensor() = default;
 
+   ///
    /// <summary>
    /// Initializes the sensor instance.
    /// </summary>
    /// <returns>True when initialization succeeds; otherwise false.</returns>
+   ///
    virtual bool begin() = 0;
 
+   ///
    /// <summary>
    /// Gets one sensor reading.
    /// </summary>
    /// <returns>The current reading for this sensor implementation.</returns>
+   ///
    virtual float get() = 0;
+
+   ///
+   /// <summary>
+   /// Gets the sensor type name, for display/diagnostic purposes.
+   /// </summary>
+   /// <returns>The sensor type name.</returns>
+   ///
+   virtual const char* sensorType() const = 0;
 };
 
 ///
@@ -114,6 +129,13 @@ class MockTestSensorBase : public ITestSensor
 protected:
    unsigned long _startMs = 0;
 
+   ///
+   /// <summary>
+   /// Computes the delay between samples for a given sampling rate.
+   /// </summary>
+   /// <param name="samplingRatePerSec">Desired samples per second, or 0 for no throttling.</param>
+   /// <returns>The delay in milliseconds between samples, or 0 when unthrottled.</returns>
+   ///
    uint16_t _throttleDelayMs(uint16_t samplingRatePerSec) const
    {
       if (samplingRatePerSec == 0)
@@ -125,23 +147,54 @@ protected:
       return (delayMs == 0) ? 1 : delayMs;
    }
 
+   ///
+   /// <summary>
+   /// Gets the sampling rate used to throttle readings.
+   /// </summary>
+   /// <returns>Samples per second, or 0 for no throttling.</returns>
+   ///
    virtual uint16_t _samplingRatePerSec() const
    {
       return 0;
    }
 
+   ///
+   /// <summary>
+   /// Performs sensor-specific initialization.
+   /// </summary>
+   /// <returns>True when initialization succeeds; otherwise false.</returns>
+   ///
    virtual bool _beginImpl()
    {
       return true;
    }
 
+   ///
+   /// <summary>
+   /// Gets the number of decimal places to round readings to.
+   /// </summary>
+   /// <returns>The number of decimal places.</returns>
+   ///
    virtual uint8_t _numDecimals() const
    {
       return 3;
    }
 
+   ///
+   /// <summary>
+   /// Gets one raw, unrounded sensor reading.
+   /// </summary>
+   /// <returns>The raw sensor value.</returns>
+   ///
    virtual float _getValue() = 0;
 
+   ///
+   /// <summary>
+   /// Computes the power-of-ten scale factor for a given number of decimal places.
+   /// </summary>
+   /// <param name="numDecimals">Number of decimal places.</param>
+   /// <returns>The scale factor (e.g. 3 decimals => 1000).</returns>
+   ///
    long _decimalScale(uint8_t numDecimals) const
    {
       long scale = 1;
@@ -153,12 +206,29 @@ protected:
       return scale;
    }
 
+   ///
+   /// <summary>
+   /// Rounds a value to a specified number of decimal places.
+   /// </summary>
+   /// <param name="value">The value to round.</param>
+   /// <param name="numDecimals">Number of decimal places to round to.</param>
+   /// <returns>The rounded value.</returns>
+   ///
    float _roundToDecimals(float value, uint8_t numDecimals) const
    {
       long scale = _decimalScale(numDecimals);
       return roundf(value * static_cast<float>(scale)) / static_cast<float>(scale);
    }
 
+   ///
+   /// <summary>
+   /// Generates a normally distributed random value using the Box-Muller transform.
+   /// </summary>
+   /// <param name="mean">Mean of the distribution.</param>
+   /// <param name="stddev">Standard deviation of the distribution.</param>
+   /// <param name="randomScale">Scale used for the underlying uniform random draws.</param>
+   /// <returns>A normally distributed random value.</returns>
+   ///
    float _normalDistributed(float mean, float stddev, long randomScale) const
    {
       if ((stddev <= 0.0f) || (randomScale <= 1))
@@ -175,6 +245,15 @@ protected:
       return mean + (z0 * stddev);
    }
 
+   ///
+   /// <summary>
+   /// Computes a sinusoidal value based on elapsed time since sensor start.
+   /// </summary>
+   /// <param name="midpoint">Midpoint (mean) value of the sine wave.</param>
+   /// <param name="amplitude">Amplitude of the sine wave.</param>
+   /// <param name="periodS">Period of the sine wave, in seconds.</param>
+   /// <returns>The current sine wave value.</returns>
+   ///
    float _sinValue(float midpoint, float amplitude, float periodS) const
    {
       float periodMs = periodS * 1000.0f;
@@ -189,12 +268,24 @@ protected:
    }
 
 public:
+   ///
+   /// <summary>
+   /// Initializes the mock sensor and records its start time.
+   /// </summary>
+   /// <returns>True when initialization succeeds; otherwise false.</returns>
+   ///
    bool begin() override
    {
       _startMs = millis();
       return _beginImpl();
    }
 
+   ///
+   /// <summary>
+   /// Gets one rounded, throttled sensor reading.
+   /// </summary>
+   /// <returns>The current reading, rounded to the configured decimal places.</returns>
+   ///
    float get() override
    {
       uint16_t delayMs = _throttleDelayMs(_samplingRatePerSec());
@@ -218,22 +309,38 @@ private:
    TempSensor _sensor;
 
 public:
+   ///
    /// <summary>
    /// Initializes the physical temperature sensor.
    /// </summary>
    /// <returns>True when sensor initialization succeeds; otherwise false.</returns>
+   ///
    bool begin() override
    {
       return _sensor.begin();
    }
 
+   ///
    /// <summary>
    /// Reads one temperature sample in Fahrenheit.
    /// </summary>
    /// <returns>The measured temperature in Fahrenheit.</returns>
+   ///
    float get() override
    {
       return _sensor.readTemperatureF();
+   }
+
+   ///
+   /// <summary>
+   /// Gets the actual detected physical sensor type (e.g. DS18B20), rather than this
+   /// wrapper class own name, since the physical sensor is auto-detected at runtime.
+   /// </summary>
+   /// <returns>The detected sensor type name.</returns>
+   ///
+   const char* sensorType() const override
+   {
+      return _sensor.type();
    }
 };
 
@@ -269,6 +376,17 @@ public:
    {
       return _sensor.readTemperatureF();
    }
+
+   ///
+   /// <summary>
+   /// Gets the sensor type name.
+   /// </summary>
+   /// <returns>The sensor type name.</returns>
+   ///
+   const char* sensorType() const override
+   {
+      return "ESP32 CPU Temp";
+   }
 };
 
 ///
@@ -292,6 +410,18 @@ private:
    float _getValue() override
    {
       return TestSensorConfig::CONSTANT_VALUE;
+   }
+
+public:
+   ///
+   /// <summary>
+   /// Gets the sensor type name.
+   /// </summary>
+   /// <returns>The sensor type name.</returns>
+   ///
+   const char* sensorType() const override
+   {
+      return "Constant";
    }
 };
 
@@ -331,6 +461,18 @@ private:
       long offset = random(0, span + 1);
       return TestSensorConfig::RANDOM_MIN_VALUE + (static_cast<float>(offset) / static_cast<float>(decimalScale));
    }
+
+public:
+   ///
+   /// <summary>
+   /// Gets the sensor type name.
+   /// </summary>
+   /// <returns>The sensor type name.</returns>
+   ///
+   const char* sensorType() const override
+   {
+      return "Random";
+   }
 };
 
 ///
@@ -364,6 +506,18 @@ private:
          TestSensorConfig::NORMAL_STDDEV,
          _decimalScale(TestSensorConfig::NORMAL_NUM_DECIMALS));
    }
+
+public:
+   ///
+   /// <summary>
+   /// Gets the sensor type name.
+   /// </summary>
+   /// <returns>The sensor type name.</returns>
+   ///
+   const char* sensorType() const override
+   {
+      return "Normal";
+   }
 };
 
 ///
@@ -390,6 +544,18 @@ private:
          TestSensorConfig::SIN_MEAN,
          TestSensorConfig::SIN_AMPLITUDE,
          TestSensorConfig::SIN_PERIOD_S);
+   }
+
+public:
+   ///
+   /// <summary>
+   /// Gets the sensor type name.
+   /// </summary>
+   /// <returns>The sensor type name.</returns>
+   ///
+   const char* sensorType() const override
+   {
+      return "Sine";
    }
 };
 
@@ -434,6 +600,18 @@ private:
          _decimalScale(TestSensorConfig::SIN_NOISE_NUM_DECIMALS));
       return sinValue + noise;
    }
+
+public:
+   ///
+   /// <summary>
+   /// Gets the sensor type name.
+   /// </summary>
+   /// <returns>The sensor type name.</returns>
+   ///
+   const char* sensorType() const override
+   {
+      return "Sine + Noise";
+   }
 };
 
 ///
@@ -444,10 +622,12 @@ private:
 class MS5837PressureTestSensor : public ITestSensor
 {
 private:
+   ///
    /// <summary>
    /// Gets the MS5837 model configuration.
    /// </summary>
    /// <returns>The MS5837 model identifier.</returns>
+   ///
    static uint8_t _ms5837Model()
    {
       return TestSensorConfig::MS5837_MODEL;
@@ -456,24 +636,39 @@ private:
    MS5837 _sensor;
 
 public:
+   ///
    /// <summary>
    /// Initializes the MS5837 pressure sensor.
    /// </summary>
    /// <returns>True when sensor initialization succeeds; otherwise false.</returns>
+   ///
    bool begin() override
    {
       _sensor.setModel(_ms5837Model());
       return _sensor.init();
    }
 
+   ///
    /// <summary>
    /// Reads one pressure sample from MS5837.
    /// </summary>
    /// <returns>The current pressure sample.</returns>
+   ///
    float get() override
    {
       _sensor.read();
       return _sensor.pressure();
+   }
+
+   ///
+   /// <summary>
+   /// Gets the sensor type name.
+   /// </summary>
+   /// <returns>The sensor type name.</returns>
+   ///
+   const char* sensorType() const override
+   {
+      return "MS5837 Pressure";
    }
 };
 
@@ -492,10 +687,12 @@ private:
       TestSensorConfig::CAPACITIVE_BUFFER_SIZE };
 
 public:
+   ///
    /// <summary>
    /// Initializes the capacitive sensor source.
    /// </summary>
    /// <returns>True when initialization succeeds.</returns>
+   ///
    bool begin() override
    {
       _sensor.setDeferredProcessingPeriodMicros(TestSensorConfig::CAPACITIVE_PROCESS_PERIOD_US);
@@ -503,13 +700,26 @@ public:
       return true;
    }
 
+   ///
    /// <summary>
    /// Reads one capacitive charge-time sample.
    /// </summary>
    /// <returns>The measured charge time in micros.</returns>
+   ///
    float get() override
    {
       return _sensor.chargeTimeMicros();
+   }
+
+   ///
+   /// <summary>
+   /// Gets the sensor type name.
+   /// </summary>
+   /// <returns>The sensor type name.</returns>
+   ///
+   const char* sensorType() const override
+   {
+      return "Capacitive";
    }
 };
 

@@ -25,7 +25,7 @@ class NullSensor : public ITempSensor
 {
 public:
    bool exists() override { return false; }
-   const char* type() override { return "None"; }
+   const char* type() const override { return "None"; }
    const char* id() override { return "??"; }
    uint8_t address() override { return 0; }
    bool begin() override { return true; }
@@ -49,14 +49,17 @@ public:
 class TempSensor : public ITempSensor
 {
 private:
-   // the actual sensor this class manages
-   ITempSensor* _sensor = nullptr;
+   // the actual sensor this class manages. Defaults to a NullSensor so
+   // callers never need to guard against a null pointer.
+   ITempSensor* _sensor = new NullSensor();
 
+   ///
    /// <summary>
    /// Detects and creates the most appropriate sensor for the current hardware.
    /// </summary>
    /// <param name="print">True to print detection details to Serial.</param>
    /// <returns>A concrete sensor instance, or a NullSensor when none is detected.</returns>
+   ///
    ITempSensor* _create(bool print)
    {
       if (print) Serial.println("Detecting Temperature Sensor...");
@@ -170,37 +173,43 @@ private:
 
 public:
 
+   ~TempSensor()
+   {
+      delete _sensor;
+   }
+
+   ///
    /// <summary>
    /// Detects and initializes a temperature sensor with Serial diagnostics enabled.
    /// </summary>
    /// <returns>True when initialization succeeds; otherwise false.</returns>
+   ///
    bool begin() override { return begin(true); }
 
+   ///
    /// <summary>
    /// Detects and initializes a temperature sensor.
    /// </summary>
    /// <param name="print">True to print detection details to Serial.</param>
    /// <returns>True when initialization succeeds; otherwise false.</returns>
+   ///
    bool begin(bool print)
    {
+      delete _sensor;
       _sensor = _create(print);
 
-      bool status = false;
-      if (_sensor != nullptr)
-      {
-         status = _sensor->begin();
+      bool status = _sensor->begin();
 
-         if (status)
+      if (status)
+      {
+         std::string id = _sensor->id();
+         for (int i = 0; i < NUM_CORRECTIONS; i++)
          {
-            std::string id = _sensor->id();
-            for (int i = 0; i < NUM_CORRECTIONS; i++)
+            if (id == CORRECTIONS[i].id)
             {
-               if (id == CORRECTIONS[i].id)
-               {
-                  _tempCorrectionF = CORRECTIONS[i].tempF;
-                  _humCorrection = CORRECTIONS[i].hum;
-                  break;
-               }
+               _tempCorrectionF = CORRECTIONS[i].tempF;
+               _humCorrection = CORRECTIONS[i].hum;
+               break;
             }
          }
       }
@@ -208,194 +217,179 @@ public:
       return status;
    }
 
+   ///
    /// <summary>
    /// Initializes a DS18B20 temperature sensor on the specified one-wire pin.
    /// </summary>
    /// <param name="oneWirePin">GPIO pin connected to the DS18B20 data line.</param>
    /// <param name="print">True to print setup details to Serial.</param>
    /// <returns>True when initialization succeeds; otherwise false.</returns>
+   ///
    bool begin(uint8_t oneWirePin, bool print)
    {
       if (print) Serial.println("Creating DS18B20 sensor");
+      delete _sensor;
       _sensor = new DS18B20TempSensor(oneWirePin);
       return _sensor->begin();
    }
 
+   ///
    /// <summary>
    /// Uses and initializes a caller-provided sensor implementation.
    /// </summary>
    /// <param name="sensor">Pre-created sensor instance to use.</param>
    /// <param name="print">True to print setup details to Serial.</param>
    /// <returns>True when initialization succeeds; otherwise false.</returns>
+   ///
    bool begin(ITempSensor* sensor, bool print)
    {
       if (print) Serial.println("Using provided sensor");
+      delete _sensor;
       _sensor = sensor;
       return _sensor->begin();
    }
 
+   ///
    /// <summary>
    /// Indicates whether the active sensor is available.
    /// </summary>
    /// <returns>True when a backing sensor exists and reports available; otherwise false.</returns>
+   ///
    bool exists() override
    {
-      if (_sensor == nullptr)
-      {
-         Serial.println("TempSensor::exists() - No sensor created. Call begin()");
-         return false;
-      }
-
       return _sensor->exists();
    }
+
+   ///
    /// <summary>
    /// Gets the detected sensor type name.
    /// </summary>
-   /// <returns>Sensor type string, or an error message when no sensor is initialized.</returns>
-   const char* type() override
+   /// <returns>Sensor type string, or "None" when no sensor is initialized.</returns>
+   ///
+   const char* type() const override
    {
-      if (_sensor == nullptr)
-      {
-         Serial.println("TempSensor::type() - No sensor created. Call begin()");
-         return "No sensor created. Call begin()";
-      }
-
       return _sensor->type();
    }
+
+   ///
    /// <summary>
    /// Gets the active sensor I2C address when applicable.
    /// </summary>
    /// <returns>The sensor address, or 0 when no sensor is initialized.</returns>
+   ///
    uint8_t address() override
    {
-      if (_sensor == nullptr)
-      {
-         Serial.println("TempSensor::address() - No sensor created. Call begin()");
-         return 0;
-      }
-
       return _sensor->address();
    }
+
+   ///
    /// <summary>
    /// Gets the configured temperature correction offset in Fahrenheit.
    /// </summary>
    /// <returns>Temperature correction applied to Fahrenheit readings.</returns>
-   float tempCorrectionF()
+   ///
+   float tempCorrectionF() const
    {
       return _tempCorrectionF;
    }
 
+   ///
    /// <summary>
    /// Gets the configured humidity correction offset.
    /// </summary>
    /// <returns>Humidity correction applied to humidity readings.</returns>
-   float humidityCorrection()
+   ///
+   float humidityCorrection() const
    {
       return _humCorrection;
    }
 
+   ///
    /// <summary>
    /// Sets the temperature correction offset in Fahrenheit.
    /// </summary>
    /// <param name="correction">Correction value to add to Fahrenheit readings.</param>
+   ///
    void setTempCorrectionF(float correction)
    {
       _tempCorrectionF = correction;
    }
 
+   ///
    /// <summary>
    /// Sets the humidity correction offset.
    /// </summary>
    /// <param name="correction">Correction value to add to humidity readings.</param>
+   ///
    void setHumidityCorrection(float correction)
    {
       _humCorrection = correction;
    }
+
+   ///
    /// <summary>
    /// Gets the unique identifier for the active sensor when available.
    /// </summary>
-   /// <returns>Sensor ID string, or an error message when no sensor is initialized.</returns>
+   /// <returns>Sensor ID string, or "??" when no sensor is initialized.</returns>
+   ///
    const char* id() override
    {
-      if (_sensor == nullptr)
-      {
-         Serial.println("TempSensor::id() - No sensor created. Call begin()");
-         return "No sensor created. Call begin()";
-      }
-
       return _sensor->id();
    }
+
+   ///
    /// <summary>
    /// Reads temperature in Fahrenheit from the active sensor.
    /// </summary>
    /// <returns>Temperature in Fahrenheit with correction applied, or NaN when unavailable.</returns>
+   ///
    float readTemperatureF() override
    {
-      if (_sensor == nullptr)
-      {
-         Serial.println("TempSensor::readTemperatureF() - No sensor created. Call begin()");
-         return NAN;
-      }
-
       return _sensor->readTemperatureF() + _tempCorrectionF;
    }
+
+   ///
    /// <summary>
    /// Reads temperature in Celsius from the active sensor.
    /// </summary>
    /// <returns>Temperature in Celsius with correction applied, or NaN when unavailable.</returns>
+   ///
    float readTemperatureC() override
    {
-      if (_sensor == nullptr)
-      {
-         Serial.println("TempSensor::readTemperatureC() - No sensor created. Call begin()");
-         return NAN;
-      }
-
       return _sensor->readTemperatureC() + Units::F2C(_tempCorrectionF);
    }
 
+   ///
    /// <summary>
    /// Reads relative humidity from the active sensor.
    /// </summary>
    /// <returns>Humidity with correction applied, or NaN when unavailable.</returns>
+   ///
    float readHumidity() override
    {
-      if (_sensor == nullptr)
-      {
-         Serial.println("TempSensor::readHumidity() - No sensor created. Call begin()");
-         return NAN;
-      }
-
       return _sensor->readHumidity() + _humCorrection;
    }
+
+   ///
    /// <summary>
    /// Indicates whether the active sensor can return temperature and humidity together.
    /// </summary>
    /// <returns>True when combined readings are supported; otherwise false.</returns>
+   ///
    bool readsBoth() override
    {
-      if (_sensor == nullptr)
-      {
-         Serial.println("TempSensor::readsBoth() - No sensor created. Call begin()");
-         return false;
-      }
-
       return _sensor->readsBoth();
    }
 
+   ///
    /// <summary>
    /// Reads both temperature (F) and humidity from the active sensor.
    /// </summary>
    /// <param name="tempF">Receives the Fahrenheit temperature reading.</param>
    /// <param name="hum">Receives the humidity reading.</param>
+   ///
    void readBoth(float& tempF, float& hum) override
    {
-      if (_sensor == nullptr)
-      {
-         Serial.println("TempSensor::readBoth() - No sensor created. Call begin()");
-         return;
-      }
-
       _sensor->readBoth(tempF, hum);
       tempF += _tempCorrectionF;
       hum += _humCorrection;
@@ -415,12 +409,6 @@ public:
    ///
    float sample(uint8_t numAverage = 1, uint8_t numDiscard = 0, uint16_t sampleRateMs = 0)
    {
-      if (_sensor == nullptr)
-      {
-         Serial.println("TempSensor::sample() - No sensor created. Call begin()");
-         return NAN;
-      }
-
       // Total measurements to take
       uint16_t totalMeasurements = numDiscard + numAverage;
       float sum = 0.0f;

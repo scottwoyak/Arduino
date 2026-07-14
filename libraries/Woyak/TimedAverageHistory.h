@@ -33,6 +33,7 @@ private:
    unsigned long _binStartMs = 0;
    unsigned long _binDurationMs = 1;
    bool _hasStarted = false;
+   unsigned long _rotationCount = 0;
 
    ///
    /// <summary>
@@ -55,6 +56,7 @@ private:
          _headIndex = (_headIndex + 1) % _numBins;
          _binSums[_headIndex] = 0.0f;
          _binCounts[_headIndex] = 0;
+         _rotationCount++;
          if (_filledBins < _numBins)
          {
             _filledBins++;
@@ -108,6 +110,18 @@ public:
    /// <returns>Number of bins.</returns>
    ///
    size_t numBins() const { return _numBins; }
+
+   ///
+   /// <summary>
+   /// Gets the number of times a bin has rotated out (i.e. the read head has advanced)
+   /// since construction or the last reset(). Callers that cache a snapshot's index-to-
+   /// pixel mapping across frames can compare this against a previously saved value to
+   /// detect that every retained bin has shifted position and any cached per-index
+   /// state (e.g. previously drawn pixel positions) is now stale.
+   /// </summary>
+   /// <returns>Total number of bin rotations so far.</returns>
+   ///
+   unsigned long rotationCount() const { return _rotationCount; }
 
    ///
    /// <summary>
@@ -192,6 +206,7 @@ public:
       _headIndex = 0;
       _filledBins = 0;
       _hasStarted = false;
+      _rotationCount = 0;
    }
 };
 
