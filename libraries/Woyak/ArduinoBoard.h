@@ -27,4 +27,16 @@ using Arduino = Waveshare_ESP32_S3_Zero;
 #define ARDUINO_LED_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
 
+#elif defined(ARDUINO_ESP32S3_DEV)
+// Generic ESP32S3 Dev Module boards are assumed to be wired up as a Playground setup
+// (LGX_ST7796 display, two rotary encoders, two standalone buttons).
+
+#include "ESP32_S3_Playground.h"
+using Arduino = ESP32_S3_Playground;
+
+#define ARDUINO_BUTTON_SUPPORTED
+#define ARDUINO_DISPLAY_SUPPORTED
+#define ARDUINO_PLAYGROUND_SUPPORTED
+#define ARDUINO_PREFERENCES_SUPPORTED
+
 #endif

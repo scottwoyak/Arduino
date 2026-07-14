@@ -66,6 +66,7 @@
     <File Path="libraries/Woyak/SerialHistogram.h" />
     <File Path="libraries/Woyak/SerialTable.h" />
     <File Path="libraries/Woyak/SerialX.h" />
+    <File Path="libraries/Woyak/SetupEditor.h" />
     <File Path="libraries/Woyak/SevenSegment.h" />
     <File Path="libraries/Woyak/SHT3xTempSensor.h" />
     <File Path="libraries/Woyak/SHT4xTempSensor.h" />
@@ -423,6 +424,10 @@
     <Deploy />
   </Project>
   <Project Path="Tests/TimedMinMax_Tests/TimedMinMax_Tests.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Text_Performance_Playground/Text_Performance_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
