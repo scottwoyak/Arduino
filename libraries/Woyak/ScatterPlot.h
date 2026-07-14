@@ -631,7 +631,7 @@ private:
 
       String minLabel = _formatYLabel(_axisYMin);
       int16_t minLabelX = _chartLeft - Y_AXIS_LABEL_GAP - static_cast<int16_t>(_display->textWidth(minLabel.c_str()));
-      minLabelX = max(0, minLabelX);
+      minLabelX = max(static_cast<int16_t>(0), minLabelX);
       int16_t minLabelY = _chartTop + _chartHeight - _display->charH();
       _display->setCursor(minLabelX, minLabelY);
       _display->print(minLabel, Color::LABEL);
