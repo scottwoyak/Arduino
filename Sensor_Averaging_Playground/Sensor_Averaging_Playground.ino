@@ -239,7 +239,7 @@ ScatterPlot* resultsScatterPlot = nullptr;
 
 // ----------- Analysis Settings
 constexpr size_t HISTOGRAM_BINS = 20;
-constexpr uint8_t CHART_MIN_MAX_SIGNIFICANT_DIGITS = 3;
+constexpr const char* CHART_MIN_MAX_FORMAT = "##.##";
 constexpr const char* CHART_Y_AXIS_FORMAT = "####";
 constexpr size_t BUFFER_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
 constexpr size_t NUM_BUFFER_SIZES = sizeof(BUFFER_SIZES) / sizeof(BUFFER_SIZES[0]);
@@ -269,7 +269,7 @@ void drawHistogram(const char* title, const Histogram& histogram, int16_t sectio
 
    int16_t chartTop = arduino.getCursorY() + 1;
    int16_t adjustedHeight = sectionHeight - (chartTop - sectionTop);
-   HistogramPlot plot(&arduino, histogram, sectionLeft, sectionWidth, chartTop, adjustedHeight, barColor, CHART_MIN_MAX_SIGNIFICANT_DIGITS, axisLabelColor, yAxisFormat);
+   HistogramPlot plot(&arduino, histogram, sectionLeft, sectionWidth, chartTop, adjustedHeight, barColor, Format(CHART_MIN_MAX_FORMAT), axisLabelColor, yAxisFormat);
    plot.render();
 }
 

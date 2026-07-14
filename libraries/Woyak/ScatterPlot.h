@@ -467,7 +467,6 @@ class ScatterPlot
 {
 private:
    static constexpr int16_t Y_AXIS_LABEL_GAP = 2;
-   static constexpr uint8_t AXIS_LABEL_SIGNIFICANT_DIGITS = 3;
 
    ArduinoWithDisplay* _display;
    int16_t _x;
@@ -494,8 +493,8 @@ private:
    size_t _seriesCapacity = 0;
 
    // Axis format customization
-   const char* _xAxisFormat = nullptr;
-   const char* _yAxisFormat = nullptr;
+   Format _xAxisFormat = Format("##.##");
+   Format _yAxisFormat = Format("##.##", Format::Alignment::RIGHT);
 
    // Optional initial Y-axis range: the plot never shrinks below this range, but will
    // grow beyond it if the data requires a wider range.
@@ -569,22 +568,16 @@ private:
 
    ///
    /// <summary>
-   /// Formats a Y-axis label value using the custom Y-axis format if one has been set
-   /// via setYAxisFormat(), otherwise falling back to significant-digit formatting. Used
-   /// by both chart geometry computation and axis-label drawing so the reserved label
-   /// column width always matches what is actually drawn.
+   /// Formats a Y-axis label value using the current Y-axis format. Used by both chart
+   /// geometry computation and axis-label drawing so the reserved label column width
+   /// always matches what is actually drawn.
    /// </summary>
    /// <param name="value">Y-axis value to format.</param>
    /// <returns>Formatted label text.</returns>
    ///
    String _formatYLabel(float value) const
    {
-      if (_yAxisFormat != nullptr)
-      {
-         Format fmt(_yAxisFormat, Format::Alignment::RIGHT);
-         return String(fmt.toString(value).c_str());
-      }
-      return Util::toSignificantString(value, AXIS_LABEL_SIGNIFICANT_DIGITS);
+      return String(_yAxisFormat.toString(value).c_str());
    }
 
    ///
@@ -638,32 +631,16 @@ private:
 
       String minLabel = _formatYLabel(_axisYMin);
       int16_t minLabelX = _chartLeft - Y_AXIS_LABEL_GAP - static_cast<int16_t>(_display->textWidth(minLabel.c_str()));
-      _display->setCursor(minLabelX, _chartTop + _chartHeight - _display->charH());
+      minLabelX = max(0, minLabelX);
+      int16_t minLabelY = _chartTop + _chartHeight - _display->charH();
+      _display->setCursor(minLabelX, minLabelY);
       _display->print(minLabel, Color::LABEL);
 
-      String xMinLabel;
-      if (_xAxisFormat != nullptr)
-      {
-         Format fmt(_xAxisFormat);
-         xMinLabel = fmt.toString(_axisXMin).c_str();
-      }
-      else
-      {
-         xMinLabel = Util::toSignificantString(_axisXMin, AXIS_LABEL_SIGNIFICANT_DIGITS);
-      }
+      String xMinLabel = String(_xAxisFormat.toString(_axisXMin).c_str());
       _display->setCursor(_chartLeft, _chartTop + _chartHeight + 1);
       _display->print(xMinLabel, Color::LABEL);
 
-      String xMaxLabel;
-      if (_xAxisFormat != nullptr)
-      {
-         Format fmt(_xAxisFormat, Format::Alignment::RIGHT);
-         xMaxLabel = fmt.toString(_axisXMax).c_str();
-      }
-      else
-      {
-         xMaxLabel = Util::toSignificantString(_axisXMax, AXIS_LABEL_SIGNIFICANT_DIGITS);
-      }
+      String xMaxLabel = String(_xAxisFormat.toString(_axisXMax).c_str());
       int16_t xMaxLabelX = _chartLeft + _chartWidth - static_cast<int16_t>(_display->textWidth(xMaxLabel.c_str()));
       xMaxLabelX = max(_chartLeft, xMaxLabelX);
       _display->setCursor(xMaxLabelX, _chartTop + _chartHeight + 1);
@@ -688,10 +665,14 @@ private:
       if (ySpan <= 0.0f) ySpan = 1.0f;
 
       outX = _chartLeft + static_cast<int16_t>(((x - _axisXMin) / xSpan) * (_chartWidth - 1));
-      outY = _chartTop + static_cast<int16_t>(((_axisYMax - y) / ySpan) * (_chartHeight - 1));
+      // The bottom-most chart row is reserved for the gray X-axis line (drawn by
+      // _drawAxes()), so data points are confined to chartHeight - 1 rows above it;
+      // otherwise a minimum-value sample would land on the same row as the axis line
+      // and overwrite it.
+      outY = _chartTop + static_cast<int16_t>(((_axisYMax - y) / ySpan) * (_chartHeight - 2));
 
       outX = constrain(outX, _chartLeft, static_cast<int16_t>(_chartLeft + _chartWidth - 1));
-      outY = constrain(outY, _chartTop, static_cast<int16_t>(_chartTop + _chartHeight - 1));
+      outY = constrain(outY, _chartTop, static_cast<int16_t>(_chartTop + _chartHeight - 2));
    }
 
    ///
@@ -940,24 +921,22 @@ public:
 
    ///
    /// <summary>
-   /// Sets a custom format string for X-axis labels. Pass nullptr to revert to the
-   /// default significant-digit formatting.
+   /// Sets the format used to render X-axis min/max labels.
    /// </summary>
-   /// <param name="format">Format pattern (e.g., "##.#s"), or nullptr for default.</param>
+   /// <param name="format">Format to apply to the X-axis min/max labels.</param>
    ///
-   void setXAxisFormat(const char* format)
+   void setXAxisFormat(const Format& format)
    {
       _xAxisFormat = format;
    }
 
    ///
    /// <summary>
-   /// Sets a custom format string for Y-axis labels. Pass nullptr to revert to the
-   /// default significant-digit formatting.
+   /// Sets the format used to render Y-axis min/max labels.
    /// </summary>
-   /// <param name="format">Format pattern (e.g., "#.##F"), or nullptr for default.</param>
+   /// <param name="format">Format to apply to the Y-axis min/max labels.</param>
    ///
-   void setYAxisFormat(const char* format)
+   void setYAxisFormat(const Format& format)
    {
       _yAxisFormat = format;
    }

@@ -116,4 +116,37 @@ test(TimedStatsTest, timedStatsRangeShouldStayBoundedAcrossBoundaryTransitions)
    }
 }
 
+test(TimedStatsTest, timedStatsStdDevShouldBeAccurateForLargeOffsetSmallNoise)
+{
+   setupTimedStatsTest();
+   TimedStatsMock stats(1000, 10);
+
+   // Simulate a realistic sensor reading: a large offset (e.g. temperature in F, ~98)
+   // with small, known noise added via an alternating +/- delta, so the true population
+   // stddev is easy to compute by hand (it's just "delta").
+   const float offset = 98.6f;
+   const float delta = 0.05f;
+
+   for (uint16_t t = 0; t <= 900; t += 10)
+   {
+      timedStatsTestTicks = t;
+      bool isEven = ((t / 10) % 2) == 0;
+      stats.set(offset + (isEven ? delta : -delta));
+   }
+
+   timedStatsTestTicks = 999;
+
+   float avg = stats.average();
+   float sd = stats.stdDev();
+
+   Serial.print("avg=");
+   Serial.print(avg, 6);
+   Serial.print(" sd=");
+   Serial.println(sd, 6);
+
+   assertNear(offset, avg, 0.01f);
+   assertNear(delta, sd, 0.01f);
+}
+
 } // namespace TimedStatsTests
+

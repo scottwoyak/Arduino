@@ -30,7 +30,7 @@ private:
    float _previousMaxBinCount = -1.0f;
    unsigned long _lastRenderMs = 0;
    Format _sampleRangeFormat = Format("##.#s", Format::Alignment::CENTER);
-   static constexpr uint8_t MIN_MAX_SIGNIFICANT_DIGITS = 3;
+   Format _minMaxFormat = Format("##.##");
    Rect16 _rect;
    bool _showYAxis;
    const char* _yAxisFormat;
@@ -201,8 +201,8 @@ private:
        int16_t rangeLabelW = static_cast<int16_t>(_sampleRangeFormat.length() * _feather->charW());
        int16_t rangeX = chartLeft + (chartWidth - rangeLabelW) / 2;
 
-       String minLabel = Util::toSignificantString(snapshot.minValue, MIN_MAX_SIGNIFICANT_DIGITS);
-       String maxLabel = Util::toSignificantString(snapshot.maxValue, MIN_MAX_SIGNIFICANT_DIGITS);
+       String minLabel = String(_minMaxFormat.toString(snapshot.minValue).c_str());
+       String maxLabel = String(_minMaxFormat.toString(snapshot.maxValue).c_str());
 
        _feather->setCursor(chartLeft, labelY);
        _feather->print(minLabel, Color::LABEL);
@@ -214,7 +214,7 @@ private:
        if (isfinite(snapshot.sampleRangeSeconds))
        {
          _feather->setCursor(rangeX, labelY);
-         _feather->print(snapshot.sampleRangeSeconds, _sampleRangeFormat, Color::LABEL);
+         _feather->print(snapshot.sampleRangeSeconds, _sampleRangeFormat, Color::GRAY);
        }
 
        _previousMin = snapshot.minValue;
@@ -265,6 +265,20 @@ public:
    {
      _sampleRangeFormat = format;
      _previousSampleRangeSeconds = NAN;
+   }
+
+   ///
+   /// <summary>
+   /// Sets the format used to render the min/max sample value labels and forces them to
+   /// be redrawn on the next render.
+   /// </summary>
+   /// <param name="format">Format to apply to the min/max value labels.</param>
+   ///
+   void setMinMaxFormat(const Format& format)
+   {
+     _minMaxFormat = format;
+     _previousMin = NAN;
+     _previousMax = NAN;
    }
 
    ///

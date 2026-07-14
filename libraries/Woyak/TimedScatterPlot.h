@@ -551,6 +551,7 @@ private:
 
       String minLabel = _formatYLabel(_axisYMin);
       int16_t minLabelX = _chartLeft - 2 - static_cast<int16_t>(_display->textWidth(minLabel.c_str()));
+      minLabelX = max(static_cast<int16_t>(0), minLabelX);
       _display->setCursor(minLabelX, _chartTop + _chartHeight - _display->charH());
       _display->print(minLabel, Color::LABEL);
 
@@ -627,10 +628,14 @@ private:
       const int32_t clampedIndex = min(static_cast<int32_t>(binIndex), denom);
       outX = static_cast<int16_t>(span - (clampedIndex * span) / denom);
 
-      outY = static_cast<int16_t>(((_axisYMax - value) / ySpan) * (_chartHeight - 1));
+      // The bottom-most chart row is reserved for the gray X-axis line (drawn by
+      // _drawAxes()), so data points are confined to chartHeight - 1 rows above it;
+      // otherwise a minimum-value sample would land on the same row as the axis line
+      // and overwrite it on every redraw.
+      outY = static_cast<int16_t>(((_axisYMax - value) / ySpan) * (_chartHeight - 2));
 
       outX = constrain(outX, static_cast<int16_t>(0), static_cast<int16_t>(_chartWidth - 1));
-      outY = constrain(outY, static_cast<int16_t>(0), static_cast<int16_t>(_chartHeight - 1));
+      outY = constrain(outY, static_cast<int16_t>(0), static_cast<int16_t>(_chartHeight - 2));
    }
 
    ///

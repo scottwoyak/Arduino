@@ -22,7 +22,7 @@ private:
    Rect16 _rect;
    Color _barColor;
    Color _axisLabelColor;
-   uint8_t _labelSignificantDigits;
+   Format _minMaxFormat;
    bool _showYAxis;
    const char* _yAxisFormat;
 
@@ -161,8 +161,8 @@ private:
 
       if (_histogram.count() > 0 && (_histogram.min() != _previousMin || _histogram.max() != _previousMax))
       {
-         String minLabel = Util::toSignificantString(_histogram.min(), _labelSignificantDigits);
-         String maxLabel = Util::toSignificantString(_histogram.max(), _labelSignificantDigits);
+         String minLabel = String(_minMaxFormat.toString(_histogram.min()).c_str());
+         String maxLabel = String(_minMaxFormat.toString(_histogram.max()).c_str());
 
          _arduino->setCursor(chartLeft, chartBottom + 1);
          _arduino->print(minLabel, _axisLabelColor);
@@ -191,7 +191,7 @@ public:
    /// <param name="histogram">Reference to the histogram to render.</param>
    /// <param name="rect">Bounding rectangle of the histogram panel.</param>
    /// <param name="barColor">Color to use for histogram bars.</param>
-   /// <param name="labelSignificantDigits">Number of significant digits for min/max labels.</param>
+   /// <param name="minMaxFormat">Format to use for min/max value labels.</param>
    /// <param name="axisLabelColor">Color to use for axis labels.</param>
    /// <param name="yAxisFormat">If not nullptr, reserves a left-side Y-axis column sized to
    /// fit labels formatted with this pattern (e.g. "####"), showing the max bin count at
@@ -200,21 +200,21 @@ public:
    /// this histogram, give both the same format string length so their reserved label
    /// columns end up the same width.</param>
    ///
-   HistogramPlot(ArduinoWithDisplay* arduino, const Histogram& histogram, Rect16 rect, Color barColor, uint8_t labelSignificantDigits, Color axisLabelColor, const char* yAxisFormat = nullptr)
-      : _arduino(arduino), _histogram(histogram), _rect(rect), _barColor(barColor), _axisLabelColor(axisLabelColor), _labelSignificantDigits(labelSignificantDigits), _showYAxis(yAxisFormat != nullptr), _yAxisFormat(yAxisFormat)
+   HistogramPlot(ArduinoWithDisplay* arduino, const Histogram& histogram, Rect16 rect, Color barColor, const Format& minMaxFormat, Color axisLabelColor, const char* yAxisFormat = nullptr)
+      : _arduino(arduino), _histogram(histogram), _rect(rect), _barColor(barColor), _axisLabelColor(axisLabelColor), _minMaxFormat(minMaxFormat), _showYAxis(yAxisFormat != nullptr), _yAxisFormat(yAxisFormat)
    {
    }
 
    ///
    /// <summary>
    /// Constructs a histogram plot renderer with axis labels matching bar color. Bar color
-   /// defaults to Color::GREEN and label significant digits defaults to 3 if not specified.
+   /// defaults to Color::GREEN and the min/max label format defaults to "##.##" if not specified.
    /// </summary>
    /// <param name="arduino">Pointer to the display interface.</param>
    /// <param name="histogram">Reference to the histogram to render.</param>
    /// <param name="rect">Bounding rectangle of the histogram panel.</param>
    /// <param name="barColor">Color to use for histogram bars and axis labels (default Color::GREEN).</param>
-   /// <param name="labelSignificantDigits">Number of significant digits for min/max labels (default 3).</param>
+   /// <param name="minMaxFormat">Format to use for min/max value labels (default "##.##").</param>
    /// <param name="yAxisFormat">If not nullptr, reserves a left-side Y-axis column sized to
    /// fit labels formatted with this pattern (e.g. "####"), showing the max bin count at
    /// the top and "1" at the bottom (with a vertical axis line); pass nullptr (the
@@ -222,8 +222,8 @@ public:
    /// this histogram, give both the same format string length so their reserved label
    /// columns end up the same width.</param>
    ///
-   HistogramPlot(ArduinoWithDisplay* arduino, const Histogram& histogram, Rect16 rect, Color barColor = Color::GREEN, uint8_t labelSignificantDigits = 3, const char* yAxisFormat = nullptr)
-      : HistogramPlot(arduino, histogram, rect, barColor, labelSignificantDigits, barColor, yAxisFormat)
+   HistogramPlot(ArduinoWithDisplay* arduino, const Histogram& histogram, Rect16 rect, Color barColor = Color::GREEN, const Format& minMaxFormat = Format("##.##"), const char* yAxisFormat = nullptr)
+      : HistogramPlot(arduino, histogram, rect, barColor, minMaxFormat, barColor, yAxisFormat)
    {
    }
 

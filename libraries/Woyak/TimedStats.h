@@ -53,9 +53,17 @@ private:
     }
 
    /// <summary>
-   /// Accumulates weighted count, sum, and sum-of-squares for the active window.
+   /// Accumulates weighted count, sum, and pooled sum-of-squared-deviations (relative to
+   /// <paramref name="referenceMean"/>) for the active window.
    /// </summary>
-   void _accumulateWeighted(float elapsed, float& weightedCount, float& weightedSum, float& weightedSumSquares)
+   /// <remarks>
+   /// Accumulating squared deviations relative to the overall mean (rather than the raw
+   /// values) avoids catastrophic cancellation when computing variance for values with a
+   /// large offset and small spread (e.g. a temperature reading around 98.6 with noise of
+   /// only a few hundredths). Pass 0.0f as <paramref name="referenceMean"/> when only the
+   /// weighted count/sum (i.e. the average) are needed.
+   /// </remarks>
+   void _accumulateWeighted(float elapsed, float referenceMean, float& weightedCount, float& weightedSum, float& weightedSumSquares)
    {
       weightedCount = 0;
       weightedSum = 0;
@@ -99,7 +107,8 @@ private:
 
          float bucketMean = _buckets[i]->get();
          float bucketVariance = _buckets[i]->variance();
-         float bucketSumSquares = static_cast<float>(bucketCount) * (bucketVariance + (bucketMean * bucketMean));
+         float meanDeviation = bucketMean - referenceMean;
+         float bucketSumSquares = static_cast<float>(bucketCount) * (bucketVariance + (meanDeviation * meanDeviation));
 
          weightedCount += static_cast<float>(bucketCount);
          weightedSum += bucketMean * static_cast<float>(bucketCount);
@@ -125,7 +134,8 @@ private:
 
             float bucketMean = _buckets[bucketIndex]->get();
             float bucketVariance = _buckets[bucketIndex]->variance();
-            float bucketSumSquares = static_cast<float>(bucketCount) * (bucketVariance + (bucketMean * bucketMean));
+            float meanDeviation = bucketMean - referenceMean;
+            float bucketSumSquares = static_cast<float>(bucketCount) * (bucketVariance + (meanDeviation * meanDeviation));
 
             weightedCount += weightedBucketCount;
             weightedSum += fraction * bucketMean * static_cast<float>(bucketCount);
@@ -169,7 +179,8 @@ private:
 
          float bucketMean = _buckets[i]->get();
          float bucketVariance = _buckets[i]->variance();
-         float bucketSumSquares = static_cast<float>(bucketCount) * (bucketVariance + (bucketMean * bucketMean));
+         float meanDeviation = bucketMean - referenceMean;
+         float bucketSumSquares = static_cast<float>(bucketCount) * (bucketVariance + (meanDeviation * meanDeviation));
 
          weightedCount += weightedBucketCount;
          weightedSum += fraction * bucketMean * static_cast<float>(bucketCount);
@@ -252,7 +263,7 @@ public:
       float weightedCount = 0;
       float weightedSum = 0;
       float weightedSumSquares = 0;
-      _accumulateWeighted(elapsed, weightedCount, weightedSum, weightedSumSquares);
+      _accumulateWeighted(elapsed, 0.0f, weightedCount, weightedSum, weightedSumSquares);
 
       if (weightedCount == 0)
       {
@@ -303,7 +314,7 @@ public:
       float weightedCount = 0;
       float weightedSum = 0;
       float weightedSumSquares = 0;
-      _accumulateWeighted(elapsed, weightedCount, weightedSum, weightedSumSquares);
+      _accumulateWeighted(elapsed, 0.0f, weightedCount, weightedSum, weightedSumSquares);
 
       if (weightedCount == 0)
       {
@@ -311,8 +322,12 @@ public:
       }
 
       float avg = weightedSum / weightedCount;
-      float avgSquares = weightedSumSquares / weightedCount;
-      float variance = avgSquares - (avg * avg);
+
+      // Recompute the pooled sum-of-squares as deviations from the overall mean, rather
+      // than from zero, to avoid catastrophic cancellation when values have a large
+      // offset and small spread.
+      _accumulateWeighted(elapsed, avg, weightedCount, weightedSum, weightedSumSquares);
+      float variance = weightedSumSquares / weightedCount;
       if (variance < 0.0f)
       {
          variance = 0.0f;
@@ -369,7 +384,7 @@ public:
       float weightedCount = 0;
       float weightedSum = 0;
       float weightedSumSquares = 0;
-      _accumulateWeighted(elapsed, weightedCount, weightedSum, weightedSumSquares);
+      _accumulateWeighted(elapsed, 0.0f, weightedCount, weightedSum, weightedSumSquares);
 
       if (weightedCount <= 0.0f)
       {

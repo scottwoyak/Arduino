@@ -4,6 +4,7 @@
 #include <math.h>
 #include <MS5837.h>
 
+#include "Format.h"
 #include "TempSensor.h"
 #include "ESP32TempSensor.h"
 #include "CapacitorSensor.h"
@@ -39,18 +40,24 @@ namespace TestSensorConfig
    static constexpr uint16_t CONSTANT_SAMPLING_RATE_PER_SEC = 0;
    static constexpr uint8_t CONSTANT_NUM_DECIMALS = 3;
    static constexpr float CONSTANT_VALUE = 100.0f;
+   static constexpr const char* CONSTANT_FORMAT = "##.#";
+   static constexpr const char* CONSTANT_HIGH_RES_FORMAT = "##.##";
 
    // ----- random sensor
    static constexpr uint16_t RANDOM_SAMPLING_RATE_PER_SEC = 0;
    static constexpr uint8_t RANDOM_NUM_DECIMALS = 3;
    static constexpr float RANDOM_MIN_VALUE = 90.0f;
    static constexpr float RANDOM_MAX_VALUE = 110.0f;
+   static constexpr const char* RANDOM_FORMAT = "###.##";
+   static constexpr const char* RANDOM_HIGH_RES_FORMAT = "###.###";
 
    // ----- normal sensor
    static constexpr uint16_t NORMAL_SAMPLING_RATE_PER_SEC = 0;
    static constexpr uint8_t NORMAL_NUM_DECIMALS = 3;
    static constexpr float NORMAL_MEAN = 100.0f;
    static constexpr float NORMAL_STDDEV = 3.0f;
+   static constexpr const char* NORMAL_FORMAT = "###.##";
+   static constexpr const char* NORMAL_HIGH_RES_FORMAT = "###.###";
 
    // ----- sin sensor
    static constexpr uint16_t SIN_SAMPLING_RATE_PER_SEC = 0;
@@ -58,6 +65,8 @@ namespace TestSensorConfig
    static constexpr float SIN_MEAN = 0.0f;
    static constexpr float SIN_AMPLITUDE = 10.0f;
    static constexpr float SIN_PERIOD_S = 10.0f;
+   static constexpr const char* SIN_FORMAT = "###.##";
+   static constexpr const char* SIN_HIGH_RES_FORMAT = "###.###";
 
    // ----- sin with normal noise sensor
    static constexpr uint16_t SIN_NOISE_SAMPLING_RATE_PER_SEC = 100;
@@ -66,9 +75,17 @@ namespace TestSensorConfig
    static constexpr float SIN_NOISE_AMPLITUDE = 1.0f;
    static constexpr float SIN_NOISE_PERIOD_S = 10.0f;
    static constexpr float SIN_NOISE_STDDEV = 2.0f;
+   static constexpr const char* SIN_NOISE_FORMAT = "###.##";
+   static constexpr const char* SIN_NOISE_HIGH_RES_FORMAT = "###.###";
+
+   // ----- temp sensor (physical sensor)
+   static constexpr const char* TEMP_FORMAT = "###.##";
+   static constexpr const char* TEMP_HIGH_RES_FORMAT = "###.###";
 
    // ----- ms5837 pressure sensor
    static const uint8_t MS5837_MODEL = MS5837::MS5837_02BA;
+   static constexpr const char* MS5837_FORMAT = "####.##";
+   static constexpr const char* MS5837_HIGH_RES_FORMAT = "####.###";
 
    // ----- capacitive sensor
    // Charge pin to resistor mapping used in capacitor calibration/wiring sketches:
@@ -82,6 +99,8 @@ namespace TestSensorConfig
    static constexpr uint16_t CAPACITIVE_DISCHARGE_DELAY_US = CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS;
    static constexpr uint32_t CAPACITIVE_PROCESS_PERIOD_US = CapacitorSensor::DEFAULT_DEFERRED_PROCESSING_PERIOD_MICROS;
    static constexpr size_t CAPACITIVE_BUFFER_SIZE = CapacitorSensor::DEFAULT_BUFFER_SIZE;
+   static constexpr const char* CAPACITIVE_FORMAT = "#########";
+   static constexpr const char* CAPACITIVE_HIGH_RES_FORMAT = "##########";
 }
 
 ///
@@ -117,6 +136,23 @@ public:
    /// <returns>The sensor type name.</returns>
    ///
    virtual const char* sensorType() const = 0;
+
+   ///
+   /// <summary>
+   /// Gets the format object for values (used for axis limits and current readings).
+   /// </summary>
+   /// <returns>A Format object configured for value display.</returns>
+   ///
+   virtual const Format& getFormat() const = 0;
+
+   ///
+   /// <summary>
+   /// Gets the high-resolution format object for values (used for statistics like average, stddev, and range).
+   /// Has one more decimal place than getFormat for finer-grained display.
+   /// </summary>
+   /// <returns>A Format object configured for high-resolution value display.</returns>
+   ///
+   virtual const Format& getHighResFormat() const = 0;
 };
 
 ///
@@ -128,6 +164,39 @@ class MockTestSensorBase : public ITestSensor
 {
 protected:
    unsigned long _startMs = 0;
+   Format* _format = nullptr;
+   Format* _highResFormat = nullptr;
+
+   ///
+   /// <summary>
+   /// Initializes the format objects based on the sensor's decimal precision.
+   /// Must be called by derived class constructors.
+   /// </summary>
+   ///
+   void _initializeFormats()
+   {
+      if (_format == nullptr)
+      {
+         uint8_t numDecimals = _numDecimals();
+         String pattern = "####.";
+         for (uint8_t i = 0; i < numDecimals; i++)
+         {
+            pattern += "#";
+         }
+         _format = new (std::nothrow) Format(pattern.c_str());
+      }
+
+      if (_highResFormat == nullptr)
+      {
+         uint8_t numDecimals = _numDecimals() + 1;
+         String pattern = "####.";
+         for (uint8_t i = 0; i < numDecimals; i++)
+         {
+            pattern += "#";
+         }
+         _highResFormat = new (std::nothrow) Format(pattern.c_str());
+      }
+   }
 
    ///
    /// <summary>
@@ -296,6 +365,43 @@ public:
 
       return _roundToDecimals(_getValue(), _numDecimals());
    }
+
+   ///
+   /// <summary>
+   /// Gets the format object for values (axis limits and current readings).
+   /// </summary>
+   /// <returns>A Format object configured for value display.</returns>
+   ///
+   const Format& getFormat() const override
+   {
+      if (_format == nullptr)
+      {
+         const_cast<MockTestSensorBase*>(this)->_initializeFormats();
+      }
+      return *_format;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the high-resolution format object for values (statistics display).
+   /// Has one more decimal place than getFormat.
+   /// </summary>
+   /// <returns>A Format object configured for high-resolution value display.</returns>
+   ///
+   const Format& getHighResFormat() const override
+   {
+      if (_highResFormat == nullptr)
+      {
+         const_cast<MockTestSensorBase*>(this)->_initializeFormats();
+      }
+      return *_highResFormat;
+   }
+
+   ~MockTestSensorBase() override
+   {
+      delete _format;
+      delete _highResFormat;
+   }
 };
 
 ///
@@ -307,6 +413,8 @@ class TempSensorTestSensor : public ITestSensor
 {
 private:
    TempSensor _sensor;
+   Format* _format = nullptr;
+   Format* _highResFormat = nullptr;
 
 public:
    ///
@@ -342,6 +450,42 @@ public:
    {
       return _sensor.type();
    }
+
+   ///
+   /// <summary>
+   /// Gets the format object for values.
+   /// </summary>
+   /// <returns>A Format object configured for value display.</returns>
+   ///
+   const Format& getFormat() const override
+   {
+      if (_format == nullptr)
+      {
+         const_cast<TempSensorTestSensor*>(this)->_format = new (std::nothrow) Format(TestSensorConfig::TEMP_FORMAT);
+      }
+      return *_format;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the high-resolution format object for values.
+   /// </summary>
+   /// <returns>A Format object configured for high-resolution value display.</returns>
+   ///
+   const Format& getHighResFormat() const override
+   {
+      if (_highResFormat == nullptr)
+      {
+         const_cast<TempSensorTestSensor*>(this)->_highResFormat = new (std::nothrow) Format(TestSensorConfig::TEMP_HIGH_RES_FORMAT);
+      }
+      return *_highResFormat;
+   }
+
+   ~TempSensorTestSensor() override
+   {
+      delete _format;
+      delete _highResFormat;
+   }
 };
 
 ///
@@ -353,6 +497,8 @@ class ESP32TempTestSensor : public ITestSensor
 {
 private:
    ESP32TempSensor _sensor;
+   Format* _format = nullptr;
+   Format* _highResFormat = nullptr;
 
 public:
    ///
@@ -386,6 +532,42 @@ public:
    const char* sensorType() const override
    {
       return "ESP32 CPU Temp";
+   }
+
+   ///
+   /// <summary>
+   /// Gets the format object for values.
+   /// </summary>
+   /// <returns>A Format object configured for value display.</returns>
+   ///
+   const Format& getFormat() const override
+   {
+      if (_format == nullptr)
+      {
+         const_cast<ESP32TempTestSensor*>(this)->_format = new (std::nothrow) Format(TestSensorConfig::TEMP_FORMAT);
+      }
+      return *_format;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the high-resolution format object for values.
+   /// </summary>
+   /// <returns>A Format object configured for high-resolution value display.</returns>
+   ///
+   const Format& getHighResFormat() const override
+   {
+      if (_highResFormat == nullptr)
+      {
+         const_cast<ESP32TempTestSensor*>(this)->_highResFormat = new (std::nothrow) Format(TestSensorConfig::TEMP_HIGH_RES_FORMAT);
+      }
+      return *_highResFormat;
+   }
+
+   ~ESP32TempTestSensor() override
+   {
+      delete _format;
+      delete _highResFormat;
    }
 };
 
@@ -634,6 +816,8 @@ private:
    }
 
    MS5837 _sensor;
+   Format* _format = nullptr;
+   Format* _highResFormat = nullptr;
 
 public:
    ///
@@ -666,11 +850,47 @@ public:
    /// </summary>
    /// <returns>The sensor type name.</returns>
    ///
-   const char* sensorType() const override
-   {
-      return "MS5837 Pressure";
-   }
-};
+       const char* sensorType() const override
+       {
+          return "MS5837 Pressure";
+       }
+
+       ///
+       /// <summary>
+       /// Gets the format object for values.
+       /// </summary>
+       /// <returns>A Format object configured for value display.</returns>
+       ///
+       const Format& getFormat() const override
+       {
+          if (_format == nullptr)
+          {
+             const_cast<MS5837PressureTestSensor*>(this)->_format = new (std::nothrow) Format(TestSensorConfig::MS5837_FORMAT);
+          }
+          return *_format;
+       }
+
+       ///
+       /// <summary>
+       /// Gets the high-resolution format object for values.
+       /// </summary>
+       /// <returns>A Format object configured for high-resolution value display.</returns>
+       ///
+       const Format& getHighResFormat() const override
+       {
+          if (_highResFormat == nullptr)
+          {
+             const_cast<MS5837PressureTestSensor*>(this)->_highResFormat = new (std::nothrow) Format(TestSensorConfig::MS5837_HIGH_RES_FORMAT);
+          }
+          return *_highResFormat;
+       }
+
+       ~MS5837PressureTestSensor() override
+       {
+          delete _format;
+          delete _highResFormat;
+       }
+   };
 
 ///
 /// <summary>
@@ -685,6 +905,8 @@ private:
       TestSensorConfig::CAPACITIVE_SENSE_PIN,
       TestSensorConfig::CAPACITIVE_DISCHARGE_DELAY_US,
       TestSensorConfig::CAPACITIVE_BUFFER_SIZE };
+   Format* _format = nullptr;
+   Format* _highResFormat = nullptr;
 
 public:
    ///
@@ -720,6 +942,42 @@ public:
    const char* sensorType() const override
    {
       return "Capacitive";
+   }
+
+   ///
+   /// <summary>
+   /// Gets the format object for values.
+   /// </summary>
+   /// <returns>A Format object configured for value display.</returns>
+   ///
+   const Format& getFormat() const override
+   {
+      if (_format == nullptr)
+      {
+         const_cast<CapacitiveTestSensor*>(this)->_format = new (std::nothrow) Format(TestSensorConfig::CAPACITIVE_FORMAT);
+      }
+      return *_format;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the high-resolution format object for values.
+   /// </summary>
+   /// <returns>A Format object configured for high-resolution value display.</returns>
+   ///
+   const Format& getHighResFormat() const override
+   {
+      if (_highResFormat == nullptr)
+      {
+         const_cast<CapacitiveTestSensor*>(this)->_highResFormat = new (std::nothrow) Format(TestSensorConfig::CAPACITIVE_HIGH_RES_FORMAT);
+      }
+      return *_highResFormat;
+   }
+
+   ~CapacitiveTestSensor() override
+   {
+      delete _format;
+      delete _highResFormat;
    }
 };
 

@@ -193,7 +193,7 @@ void drawDisplayHistogramForRange(size_t startIndex, int16_t top, int16_t height
    size_t valueCount = sensorCapture.count() - startIndex;
    Histogram histogram(values, valueCount, MIN_HISTOGRAM_BINS, MAX_HISTOGRAM_BINS);
 
-   HistogramPlot plot(&arduino, histogram, 0, arduino.width(), top, height, Color::VALUE2, 3);
+   HistogramPlot plot(&arduino, histogram, 0, arduino.width(), top, height, Color::VALUE2, Format("##.##"));
    plot.render();
 }
 

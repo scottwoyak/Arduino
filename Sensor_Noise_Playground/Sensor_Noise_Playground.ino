@@ -71,12 +71,9 @@ constexpr uint16_t HISTOGRAM_BIN_COUNT = 40;
 constexpr float SENSOR_VALUE_RESOLUTION_F = 0.0049f;
 Timer displayTimer(1000UL / DISPLAY_RATE_PER_SEC);
 Format rateFormat("###/s", Format::Alignment::RIGHT);
-Format valueFormat("####.##");
-Format rangeFormat("###.##");
-Format stdDevFormat("####.##");
-Format stdDevPercentFormat("##.##%", 7);
 Format countFormat("######");
 Format sampleTimeFormat("#### ms");
+Format stdDevPercentFormat("##.##%", 7);
 DisplayTable noiseTable(&arduino, CONTENT_RECT.x, CONTENT_RECT.y, 2);
 TimedScatterPlot scatterPlot(&arduino, CONTENT_RECT, SCATTER_HISTORY_PERIOD_S * 1000UL, 0.0f);
 TimedScatterPlotSeries* scatterSeries = nullptr;
@@ -218,12 +215,14 @@ void setup()
    applySampleRateLimits();
 
    scatterSeries = scatterPlot.createSeries();
+   scatterPlot.setMinMaxFormat(sensor.getFormat());
+   histogramPlot.setMinMaxFormat(sensor.getFormat());
 
    noiseTable.addRow("Sampling Time", sampleTimeFormat, Color::LABEL, Color::VALUE2);
    noiseTable.addRow("Num Samples Collected", countFormat, Color::LABEL, Color::VALUE2);
-   noiseTable.addRow("Avg", valueFormat, Color::LABEL, Color::VALUE2);
-   noiseTable.addRow("Range", rangeFormat, Color::LABEL, Color::VALUE2);
-   noiseTable.addRow("StdDev", stdDevFormat, Color::LABEL, Color::VALUE2);
+   noiseTable.addRow("Avg", sensor.getHighResFormat(), Color::LABEL, Color::VALUE2);
+   noiseTable.addRow("Range", sensor.getHighResFormat(), Color::LABEL, Color::VALUE2);
+   noiseTable.addRow("StdDev", sensor.getHighResFormat(), Color::LABEL, Color::VALUE2);
    noiseTable.addRow("StdDev%", stdDevPercentFormat, Color::LABEL, Color::VALUE2);
 
    sensor.begin();
@@ -244,6 +243,7 @@ void loop()
    {
       arduino.fillRect(CONTENT_RECT.x, CONTENT_RECT.y, CONTENT_RECT.width, CONTENT_RECT.height, Color::BLACK);
       noiseTable.invalidate();
+      scatterPlot.invalidate();
       drawHeader();
       sampleRate.reset();
    }
