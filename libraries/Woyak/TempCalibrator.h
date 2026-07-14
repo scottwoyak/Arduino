@@ -458,46 +458,132 @@ public:
 
    ///
    /// <summary>
-   /// Prints all recorded calibration points, in ascending baseline order, to Serial
-   /// as a table. One column is printed per sensor, containing that sensor's
-   /// correction factor at each recorded baseline temperature.
+   /// Builds the list of included sensors and matching table columns for calibration
+   /// table printing, shared by printCalibrationHeader(), printCalibrationRow(), and
+   /// printCalibrationTable().
    /// </summary>
+   /// <param name="sensorExists">Optional array (indexed by sensor) indicating which sensors are
+   /// present; only those sensors get a column. Pass nullptr to include every managed sensor.</param>
+   /// <param name="sensorLabels">Storage (size MAX_SENSORS) for the generated column label strings.</param>
+   /// <param name="columns">Storage (size MAX_SENSORS + 1) for the generated column metadata.</param>
+   /// <param name="includedSensors">Storage (size MAX_SENSORS) receiving the sensor index for each included column.</param>
+   /// <param name="includedCount">Receives the number of sensors included as columns.</param>
    ///
-   void printCalibrationTable() const
+   void _buildCalibrationColumns(const bool* sensorExists, String* sensorLabels, SerialTable::Column* columns,
+      uint8_t* includedSensors, uint8_t& includedCount) const
    {
-      if (_calibrationPointCount == 0)
+      includedCount = 0;
+      for (uint8_t i = 0; i < _numSensors; i++)
+      {
+         if (sensorExists == nullptr || sensorExists[i])
+         {
+            includedSensors[includedCount++] = i;
+         }
+      }
+
+      columns[0] = { "Temp", 8 };
+      for (uint8_t c = 0; c < includedCount; c++)
+      {
+         sensorLabels[c] = "S" + String(includedSensors[c]);
+         columns[c + 1] = { sensorLabels[c].c_str(), 9 };
+      }
+   }
+
+public:
+   ///
+   /// <summary>
+   /// Prints just the "Correction Values Table" title and column header row, without any
+   /// data rows. Pair with printCalibrationRow() to stream rows as they're recorded rather
+   /// than reprinting the whole table each time.
+   /// </summary>
+   /// <param name="sensorExists">Optional array (indexed by sensor) indicating which sensors are
+   /// present; only those sensors get a column. Pass nullptr to include every managed sensor.</param>
+   ///
+   void printCalibrationHeader(const bool* sensorExists = nullptr) const
+   {
+      String sensorLabels[MAX_SENSORS];
+      SerialTable::Column columns[MAX_SENSORS + 1];
+      uint8_t includedSensors[MAX_SENSORS];
+      uint8_t includedCount;
+      _buildCalibrationColumns(sensorExists, sensorLabels, columns, includedSensors, includedCount);
+
+      if (includedCount == 0)
+      {
+         return;
+      }
+
+      SerialTable table("Correction Values Table", columns, includedCount + 1);
+      table.printHeader();
+   }
+
+   ///
+   /// <summary>
+   /// Prints a single recorded calibration point as one table row, matching the column
+   /// layout produced by printCalibrationHeader(). Intended to be called once per new row
+   /// as it's recorded, immediately after printCalibrationHeader() has been called once.
+   /// </summary>
+   /// <param name="index">Zero-based index of the recorded point to print.</param>
+   /// <param name="sensorExists">Optional array (indexed by sensor) indicating which sensors are
+   /// present; only those sensors get a column. Pass nullptr to include every managed sensor.</param>
+   ///
+   void printCalibrationRow(uint8_t index, const bool* sensorExists = nullptr) const
+   {
+      if (index >= _calibrationPointCount)
       {
          return;
       }
 
       String sensorLabels[MAX_SENSORS];
       SerialTable::Column columns[MAX_SENSORS + 1];
-      columns[0] = { "Base", 8 };
+      uint8_t includedSensors[MAX_SENSORS];
+      uint8_t includedCount;
+      _buildCalibrationColumns(sensorExists, sensorLabels, columns, includedSensors, includedCount);
 
-      for (uint8_t i = 0; i < _numSensors; i++)
+      if (includedCount == 0)
       {
-         sensorLabels[i] = "S" + String(i);
-         columns[i + 1] = { sensorLabels[i].c_str(), 8 };
+         return;
       }
 
-      SerialTable table("Calibration Table", columns, _numSensors + 1);
-      table.printHeader();
+      const CalibrationPoint& point = _calibrationPoints[index];
 
+      SerialX::print(String(point.baseline) + "F", columns[0].width);
+      for (uint8_t c = 0; c < includedCount; c++)
+      {
+         float correction = point.corrections[includedSensors[c]];
+         if (c + 1 == includedCount)
+         {
+            SerialX::println(correction, 3, columns[c + 1].width);
+         }
+         else
+         {
+            SerialX::print(correction, 3, columns[c + 1].width);
+         }
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Prints all recorded calibration points, in ascending baseline order, to Serial
+   /// as a table. One column is printed per sensor, containing that sensor's
+   /// correction factor at each recorded baseline temperature.
+   /// </summary>
+   /// <param name="sensorExists">Optional array (indexed by sensor) indicating which sensors are
+   /// present; only those sensors get a column. Pass nullptr to include every managed sensor.</param>
+   ///
+   void printCalibrationTable(const bool* sensorExists = nullptr) const
+   {
+      if (_calibrationPointCount == 0)
+      {
+         return;
+      }
+
+      printCalibrationHeader(sensorExists);
       for (uint8_t i = 0; i < _calibrationPointCount; i++)
       {
-         const CalibrationPoint& point = _calibrationPoints[i];
-         table.printRow(point.baseline,
-            SerialTable::fixed(point.corrections[0], 2),
-            SerialTable::fixed(point.corrections[1], 2),
-            SerialTable::fixed(point.corrections[2], 2),
-            SerialTable::fixed(point.corrections[3], 2),
-            SerialTable::fixed(point.corrections[4], 2),
-            SerialTable::fixed(point.corrections[5], 2),
-            SerialTable::fixed(point.corrections[6], 2),
-            SerialTable::fixed(point.corrections[7], 2));
+         printCalibrationRow(i, sensorExists);
       }
 
-      printFitAnalysis();
+      //printFitAnalysis();
    }
 
    ///
