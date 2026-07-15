@@ -293,6 +293,8 @@ public:
 		LED::begin();
 #if defined ARDUINO_WAVESHARE_ESP32_S3_ZERO
 		FastLED.addLeds<WS2812B, 21, RGB>(_leds, NUM_LEDS);
+#elif defined ARDUINO_ESP32S3_DEV
+		FastLED.addLeds<WS2812, 48, GRB>(_leds, NUM_LEDS);
 #else
 		FastLED.addLeds<NEOPIXEL, PIN_NEOPIXEL>(_leds, NUM_LEDS);
 #endif

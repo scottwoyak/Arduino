@@ -52,6 +52,22 @@ public:
       double rSquared = 0.0;  ///< Coefficient of determination (goodness of fit)
       bool isQuadratic = false;  ///< True if this is a quadratic fit, false if linear
       bool valid = false;     ///< True if enough data existed to compute this fit
+
+      ///
+      /// <summary>
+      /// Evaluates the fitted curve (a + b*x + c*x^2) at the given x value.
+      /// </summary>
+      /// <param name="x">X value (baseline temperature) to evaluate the fit at.</param>
+      /// <returns>The fitted correction value, or NaN if this fit is not valid.</returns>
+      ///
+      double evaluate(double x) const
+      {
+         if (!valid)
+         {
+            return NAN;
+         }
+         return a + b * x + c * x * x;
+      }
    };
 
 private:
@@ -204,16 +220,17 @@ private:
    /// fits of a sensor's correction factor as a function of the baseline temperature,
    /// along with each fit's R-squared (coefficient of determination).
    /// </summary>
+   /// <param name="points">Array of recorded calibration points, in any order.</param>
+   /// <param name="n">Number of valid points in the array.</param>
    /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
    /// <param name="linearFit">Receives the linear fit result.</param>
    /// <param name="quadraticFit">Receives the quadratic fit result.</param>
    ///
-   void _computeFits(uint8_t sensorIndex, RegressionFit& linearFit, RegressionFit& quadraticFit) const
+   static void _computeFitsFromPoints(const CalibrationPoint* points, uint8_t n, uint8_t sensorIndex, RegressionFit& linearFit, RegressionFit& quadraticFit)
    {
       linearFit = RegressionFit();
       quadraticFit = RegressionFit();
 
-      uint8_t n = _calibrationPointCount;
       if (n < 2)
       {
          return;
@@ -224,8 +241,8 @@ private:
 
       for (uint8_t i = 0; i < n; i++)
       {
-         double x = _calibrationPoints[i].baseline;
-         double y = _calibrationPoints[i].corrections[sensorIndex];
+         double x = points[i].baseline;
+         double y = points[i].corrections[sensorIndex];
          double x2 = x * x;
 
          sumX += x;
@@ -241,7 +258,7 @@ private:
       double totalSS = 0.0;
       for (uint8_t i = 0; i < n; i++)
       {
-         double diff = _calibrationPoints[i].corrections[sensorIndex] - meanY;
+         double diff = points[i].corrections[sensorIndex] - meanY;
          totalSS += diff * diff;
       }
 
@@ -255,8 +272,8 @@ private:
          double residualSS = 0.0;
          for (uint8_t i = 0; i < n; i++)
          {
-            double x = _calibrationPoints[i].baseline;
-            double residual = _calibrationPoints[i].corrections[sensorIndex] - (a + b * x);
+            double x = points[i].baseline;
+            double residual = points[i].corrections[sensorIndex] - (a + b * x);
             residualSS += residual * residual;
          }
 
@@ -289,8 +306,8 @@ private:
             double residualSS = 0.0;
             for (uint8_t i = 0; i < n; i++)
             {
-               double x = _calibrationPoints[i].baseline;
-               double residual = _calibrationPoints[i].corrections[sensorIndex] - (a + b * x + c * x * x);
+               double x = points[i].baseline;
+               double residual = points[i].corrections[sensorIndex] - (a + b * x + c * x * x);
                residualSS += residual * residual;
             }
 
@@ -306,6 +323,45 @@ private:
 
    ///
    /// <summary>
+   /// Computes least-squares linear and quadratic fits of a sensor's correction factor as a
+   /// function of the baseline temperature, using this instance's recorded calibration points.
+   /// </summary>
+   /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
+   /// <param name="linearFit">Receives the linear fit result.</param>
+   /// <param name="quadraticFit">Receives the quadratic fit result.</param>
+   ///
+   void _computeFits(uint8_t sensorIndex, RegressionFit& linearFit, RegressionFit& quadraticFit) const
+   {
+      _computeFitsFromPoints(_calibrationPoints, _calibrationPointCount, sensorIndex, linearFit, quadraticFit);
+   }
+
+   ///
+   /// <summary>
+   /// Picks the recommended fit for a sensor from an array of calibration points: quadratic
+   /// if it improves R-squared over linear by more than QUADRATIC_R_SQUARED_IMPROVEMENT_THRESHOLD,
+   /// linear otherwise.
+   /// </summary>
+   /// <param name="points">Array of recorded calibration points, in any order.</param>
+   /// <param name="n">Number of valid points in the array.</param>
+   /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
+   /// <returns>The recommended fit, or an invalid fit if there wasn't enough data.</returns>
+   ///
+   static RegressionFit _getBestFitFromPoints(const CalibrationPoint* points, uint8_t n, uint8_t sensorIndex)
+   {
+      RegressionFit linearFit;
+      RegressionFit quadraticFit;
+      _computeFitsFromPoints(points, n, sensorIndex, linearFit, quadraticFit);
+
+      if (quadraticFit.valid && (!linearFit.valid || quadraticFit.rSquared > linearFit.rSquared + QUADRATIC_R_SQUARED_IMPROVEMENT_THRESHOLD))
+      {
+         return quadraticFit;
+      }
+
+      return linearFit;
+   }
+
+   ///
+   /// <summary>
    /// Picks the recommended fit for a sensor: quadratic if it improves R-squared over
    /// linear by more than QUADRATIC_R_SQUARED_IMPROVEMENT_THRESHOLD, linear otherwise.
    /// </summary>
@@ -314,16 +370,7 @@ private:
    ///
    RegressionFit _getBestFit(uint8_t sensorIndex) const
    {
-      RegressionFit linearFit;
-      RegressionFit quadraticFit;
-      _computeFits(sensorIndex, linearFit, quadraticFit);
-
-      if (quadraticFit.valid && (!linearFit.valid || quadraticFit.rSquared > linearFit.rSquared + QUADRATIC_R_SQUARED_IMPROVEMENT_THRESHOLD))
-      {
-         return quadraticFit;
-      }
-
-      return linearFit;
+      return _getBestFitFromPoints(_calibrationPoints, _calibrationPointCount, sensorIndex);
    }
 
 public:
@@ -454,6 +501,23 @@ public:
    {
       _calibrationPointCount = 0;
       _nextThreshold = NAN;
+   }
+
+   ///
+   /// <summary>
+   /// Computes the recommended curve fit (linear or quadratic, whichever has the better
+   /// R-squared, favoring linear unless quadratic improves it meaningfully) for a sensor's
+   /// correction factor as a function of baseline temperature, from an externally supplied
+   /// array of calibration points (e.g. loaded from Preferences rather than recorded live).
+   /// </summary>
+   /// <param name="points">Array of recorded calibration points, in any order.</param>
+   /// <param name="count">Number of valid points in the array.</param>
+   /// <param name="sensorIndex">Zero-based sensor index (0-7).</param>
+   /// <returns>The recommended fit, or an invalid fit if there wasn't enough data.</returns>
+   ///
+   static RegressionFit getBestFit(const CalibrationPoint* points, uint8_t count, uint8_t sensorIndex)
+   {
+      return _getBestFitFromPoints(points, count, sensorIndex);
    }
 
    ///

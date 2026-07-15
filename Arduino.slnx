@@ -343,11 +343,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Multi_Temp_Display/Multi_Temp_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="Multi_Temp_Monitor_Display/Multi_Temp_Monitor_Display.vcxproj">
+  <Project Path="Muti_Temp_Playground/Muti_Temp_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

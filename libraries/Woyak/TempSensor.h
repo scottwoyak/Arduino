@@ -168,8 +168,22 @@ private:
       return sensor;
    }
 
-   float _tempCorrectionF = 0;
-   float _humCorrection = 0;
+   float _tempCorrectionA = 0;
+   float _tempCorrectionB = 0;
+   float _tempCorrectionC = 0;
+
+   ///
+   /// <summary>
+   /// Evaluates the configured temperature correction polynomial (a + b*T + c*T^2) against
+   /// a raw Fahrenheit reading.
+   /// </summary>
+   /// <param name="rawTempF">Uncorrected temperature reading in Fahrenheit.</param>
+   /// <returns>Correction offset, in Fahrenheit, to add to the raw reading.</returns>
+   ///
+   float _computeTempCorrectionF(float rawTempF) const
+   {
+      return _tempCorrectionA + _tempCorrectionB * rawTempF + _tempCorrectionC * rawTempF * rawTempF;
+   }
 
 public:
 
@@ -207,8 +221,9 @@ public:
          {
             if (id == CORRECTIONS[i].id)
             {
-               _tempCorrectionF = CORRECTIONS[i].tempF;
-               _humCorrection = CORRECTIONS[i].hum;
+               _tempCorrectionA = CORRECTIONS[i].tempA;
+               _tempCorrectionB = CORRECTIONS[i].tempB;
+               _tempCorrectionC = CORRECTIONS[i].tempC;
                break;
             }
          }
@@ -284,46 +299,61 @@ public:
 
    ///
    /// <summary>
-   /// Gets the configured temperature correction offset in Fahrenheit.
+   /// Gets the constant term of the configured temperature correction polynomial. For
+   /// sensors calibrated with only a flat offset (linear/quadratic terms both 0), this is
+   /// the entire correction applied to every reading.
    /// </summary>
-   /// <returns>Temperature correction applied to Fahrenheit readings.</returns>
+   /// <returns>Constant term of the temperature correction polynomial.</returns>
    ///
    float tempCorrectionF() const
    {
-      return _tempCorrectionF;
+      return _tempCorrectionA;
    }
 
    ///
    /// <summary>
-   /// Gets the configured humidity correction offset.
+   /// Gets the configured temperature correction polynomial coefficients (a + b*T + c*T^2),
+   /// evaluated against the raw Fahrenheit reading.
    /// </summary>
-   /// <returns>Humidity correction applied to humidity readings.</returns>
+   /// <param name="a">Receives the constant term.</param>
+   /// <param name="b">Receives the linear term coefficient.</param>
+   /// <param name="c">Receives the quadratic term coefficient.</param>
    ///
-   float humidityCorrection() const
+   void getTempCorrection(float& a, float& b, float& c) const
    {
-      return _humCorrection;
+      a = _tempCorrectionA;
+      b = _tempCorrectionB;
+      c = _tempCorrectionC;
    }
 
    ///
    /// <summary>
-   /// Sets the temperature correction offset in Fahrenheit.
+   /// Sets a flat temperature correction offset (a degree-0 polynomial), clearing any
+   /// previously configured linear/quadratic terms.
    /// </summary>
    /// <param name="correction">Correction value to add to Fahrenheit readings.</param>
    ///
    void setTempCorrectionF(float correction)
    {
-      _tempCorrectionF = correction;
+      _tempCorrectionA = correction;
+      _tempCorrectionB = 0;
+      _tempCorrectionC = 0;
    }
 
    ///
    /// <summary>
-   /// Sets the humidity correction offset.
+   /// Sets the full temperature correction polynomial (a + b*T + c*T^2), evaluated against
+   /// the raw Fahrenheit reading.
    /// </summary>
-   /// <param name="correction">Correction value to add to humidity readings.</param>
+   /// <param name="a">Constant term.</param>
+   /// <param name="b">Linear term coefficient.</param>
+   /// <param name="c">Quadratic term coefficient.</param>
    ///
-   void setHumidityCorrection(float correction)
+   void setTempCorrection(float a, float b, float c)
    {
-      _humCorrection = correction;
+      _tempCorrectionA = a;
+      _tempCorrectionB = b;
+      _tempCorrectionC = c;
    }
 
    ///
@@ -345,7 +375,8 @@ public:
    ///
    float readTemperatureF() override
    {
-      return _sensor->readTemperatureF() + _tempCorrectionF;
+      float rawTempF = _sensor->readTemperatureF();
+      return rawTempF + _computeTempCorrectionF(rawTempF);
    }
 
    ///
@@ -356,7 +387,9 @@ public:
    ///
    float readTemperatureC() override
    {
-      return _sensor->readTemperatureC() + Units::F2C(_tempCorrectionF);
+      float rawTempC = _sensor->readTemperatureC();
+      float correctionF = _computeTempCorrectionF(Units::C2F(rawTempC));
+      return rawTempC + Units::F2C(correctionF);
    }
 
    ///
@@ -367,7 +400,7 @@ public:
    ///
    float readHumidity() override
    {
-      return _sensor->readHumidity() + _humCorrection;
+      return _sensor->readHumidity();
    }
 
    ///
@@ -391,53 +424,8 @@ public:
    void readBoth(float& tempF, float& hum) override
    {
       _sensor->readBoth(tempF, hum);
-      tempF += _tempCorrectionF;
-      hum += _humCorrection;
+      tempF += _computeTempCorrectionF(tempF);
    }
 
-   ///
-   /// <summary>
-   /// Samples the temperature sensor, discarding initial readings,
-   /// and returns the average of the remaining measurements.
-   /// 
-   /// This method blocks until all measurements have been collected.
-   /// </summary>
-   /// <param name="numAverage">Number of measurements to average for the result. Defaults to 1.</param>
-   /// <param name="numDiscard">Number of initial measurements to discard before averaging. Defaults to 0.</param>
-   /// <param name="sampleRateMs">Interval in milliseconds between measurements. Use 0 to sample as fast as possible.</param>
-   /// <returns>The average temperature in Fahrenheit with correction applied, or NaN if unavailable.</returns>
-   ///
-   float sample(uint8_t numAverage = 1, uint8_t numDiscard = 0, uint16_t sampleRateMs = 0)
-   {
-      // Total measurements to take
-      uint16_t totalMeasurements = numDiscard + numAverage;
-      float sum = 0.0f;
-      Timer sampleTimer(sampleRateMs);
 
-      for (uint16_t i = 0; i < totalMeasurements; i++)
-      {
-         // Wait for the next sample interval (0 rate means ready() always returns true)
-         while (!sampleTimer.ready())
-         {
-            delay(1);
-         }
-
-         // Read the temperature
-         float temp = readTemperatureF();
-
-         // Accumulate only if we've discarded enough samples
-         if (i >= numDiscard && !isnan(temp))
-         {
-            sum += temp;
-         }
-      }
-
-      // Return the average
-      if (numAverage > 0)
-      {
-         return sum / numAverage;
-      }
-
-      return NAN;
-   }
 };
