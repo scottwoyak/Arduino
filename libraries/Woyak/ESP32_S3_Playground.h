@@ -4,6 +4,7 @@
 #include "ArduinoWithDisplay.h"
 #include "RotaryEncoder.h"
 #include "Button.h"
+#include "LED.h"
 #include <Preferences.h>
 
 // Pin assignments for all peripherals on this board. Grouped per board variant so
@@ -102,6 +103,13 @@ public:
 
    ///
    /// <summary>
+   /// Onboard WS2812 NeoPixel LED (GPIO48).
+   /// </summary>
+   ///
+   NeoPixelLED neoPixel;
+
+   ///
+   /// <summary>
    /// Initializes a new instance of the ESP32_S3_Playground class.
    /// </summary>
    ///
@@ -127,6 +135,7 @@ public:
       encoderB.begin();
       buttonA.begin();
       buttonB.begin();
+      neoPixel.begin();
    }
 };
 
