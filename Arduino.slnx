@@ -215,10 +215,6 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="CapacitorDepth_Display/CapacitorDepth_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
   <Project Path="Capacitor_Display/Capacitor_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -236,6 +232,10 @@
     <Deploy />
   </Project>
   <Project Path="DallasTemperature_Display/DallasTemperature_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Depth_Display/Depth_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -336,10 +336,6 @@
     <Deploy />
   </Project>
   <Project Path="Memory_Usage/Memory_Usage.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="MS5837_Depth_Display/MS5837_Depth_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
