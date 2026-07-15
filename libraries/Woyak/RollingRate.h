@@ -33,7 +33,7 @@ public:
       _rMicros.resume();
    }
 
-   float get()
+   float get() const
    {
       float secs = _rMicros.getElapsedSeconds();
       if (secs == 0)

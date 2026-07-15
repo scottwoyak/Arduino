@@ -78,11 +78,11 @@ constexpr size_t MIN_TARGET_BUFFER_SIZE = 1;
 constexpr size_t MAX_TARGET_BUFFER_SIZE = 500;
 
 // ----------- Hardware Pin Assignments
-constexpr uint8_t SENSE_PIN = 7;
-constexpr uint8_t CHARGE_PIN_1M = 15;
-constexpr uint8_t CHARGE_PIN_470K = 16;
-constexpr uint8_t CHARGE_PIN_100K = 2;
-constexpr uint8_t CHARGE_PIN_47K = 1;
+constexpr uint8_t SENSE_PIN = CapacitorSensor::SENSE_PIN;
+constexpr uint8_t CHARGE_PIN_1M = CapacitorSensor::CHARGE_PIN_1M;
+constexpr uint8_t CHARGE_PIN_470K = CapacitorSensor::CHARGE_PIN_470K;
+constexpr uint8_t CHARGE_PIN_100K = CapacitorSensor::CHARGE_PIN_100K;
+constexpr uint8_t CHARGE_PIN_47K = CapacitorSensor::CHARGE_PIN_47K;
 
 // ----------- Resistor (Charge Pin) Sweep
 /// <summary>Pairs a charge pin with its resistor value label for the sweep.</summary>

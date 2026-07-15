@@ -7,8 +7,9 @@
 //
 
 #include <Arduino.h>
+#include "CapacitorSensor.h"
 
-constexpr uint8_t SENSE_PIN = 7;
+constexpr uint8_t SENSE_PIN = CapacitorSensor::SENSE_PIN;
 
 ///
 /// <summary>
@@ -22,10 +23,10 @@ struct ChargeResistor
 };
 
 constexpr ChargeResistor CHARGE_RESISTORS[] = {
-   { 15, "1M" },
-   { 16, "470K" },
-   { 2, "100K" },
-   { 1, "47K" },
+   { CapacitorSensor::CHARGE_PIN_1M, "1M" },
+   { CapacitorSensor::CHARGE_PIN_470K, "470K" },
+   { CapacitorSensor::CHARGE_PIN_100K, "100K" },
+   { CapacitorSensor::CHARGE_PIN_47K, "47K" },
 };
 constexpr size_t CHARGE_RESISTOR_COUNT = sizeof(CHARGE_RESISTORS) / sizeof(CHARGE_RESISTORS[0]);
 

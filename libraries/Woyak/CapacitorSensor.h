@@ -14,7 +14,6 @@
 #include "RollingAverage.h"
 #include "RollingRate.h"
 
-
 ///
 /// <summary>
 /// Measures capacitor charge time as a rolling average, operating entirely in
@@ -40,7 +39,7 @@ private:
    uint32_t _deferredProcessingPeriodMicros;
 
    // ----------- Core State
-   portMUX_TYPE _mux = SPINLOCK_INITIALIZER;
+   mutable portMUX_TYPE _mux = SPINLOCK_INITIALIZER;
    volatile State _state = State::IDLE;
    volatile int64_t _chargeStartMicros = 0;
    volatile int64_t _chargeEndMicros = 0;
@@ -287,25 +286,41 @@ public:
    /// <summary>Default rolling average window size.</summary>
    static constexpr size_t DEFAULT_BUFFER_SIZE = 30;
 
+   // ----------- Standard Hardware Wiring
+   // Pin assignments for the standard capacitor sensor prototype wiring shared by the
+   // Capacitor_Playground, Capacitor_Wiring_Test, and Depth_Display sketches. Each charge pin
+   // drives the capacitor through a different charge resistor; SENSE_PIN is shared by all of them.
+   /// <summary>Shared sense pin used with all of the standard charge resistor pins below.</summary>
+   static constexpr uint8_t SENSE_PIN = 7;
+   /// <summary>Charge pin wired through a 1M resistor.</summary>
+   static constexpr uint8_t CHARGE_PIN_1M = 15;
+   /// <summary>Charge pin wired through a 470K resistor.</summary>
+   static constexpr uint8_t CHARGE_PIN_470K = 16;
+   /// <summary>Charge pin wired through a 100K resistor.</summary>
+   static constexpr uint8_t CHARGE_PIN_100K = 2;
+   /// <summary>Charge pin wired through a 47K resistor.</summary>
+   static constexpr uint8_t CHARGE_PIN_47K = 1;
+
    /// <summary>Construct and configure a capacitor sensor. Only one instance may exist at a time.</summary>
    /// <param name="chargePin">Output pin that drives the charge resistor</param>
    /// <param name="sensePin">Input pin that detects when the capacitor is fully charged</param>
    /// <param name="dischargeDelayMicros">Discharge hold time in microseconds</param>
-   /// <param name="averageSamples">Rolling average window size</param>
+   /// <param name="averageSamples">Rolling average window size. A value of 0 is treated as 1, i.e.
+   /// no averaging is performed and the latest sample is used directly.</param>
    CapacitorSensor(
       uint8_t chargePin,
       uint8_t sensePin,
       uint16_t dischargeDelayMicros = DEFAULT_DISCHARGE_DELAY_MICROS,
       size_t averageSamples = DEFAULT_BUFFER_SIZE)
-      : _average(averageSamples),
+      : _average(averageSamples == 0 ? 1 : averageSamples),
       _rawSensorRate(RATE_SAMPLES)
    {
-     if (_instanceExists)
-     {
-        abort();
-     }
+      if (_instanceExists)
+      {
+         abort();
+      }
 
-     _instanceExists = true;
+      _instanceExists = true;
 
       _chargePin = chargePin;
       _sensePin = sensePin;
@@ -400,7 +415,7 @@ public:
 
    /// <summary>Get the latest rolling-average charge time.</summary>
    /// <returns>Charge time in microseconds, or NaN when no measurement is available</returns>
-   float chargeTimeMicros()
+   float chargeTimeMicros() const
    {
       portENTER_CRITICAL(&_mux);
       float val = _latestAverageMicros;
@@ -408,16 +423,9 @@ public:
       return val;
    }
 
-   /// <summary>Get the latest rolling-average charge time.</summary>
-   /// <returns>Charge time in microseconds, or NaN when no measurement is available</returns>
-   float chargeTimeMicros() const
-   {
-      return const_cast<CapacitorSensor*>(this)->chargeTimeMicros();
-   }
-
    /// <summary>Get the raw sensor sample rate.</summary>
    /// <returns>Samples per second</returns>
-   float rate()
+   float rate() const
    {
       portENTER_CRITICAL(&_mux);
       float val = _rawSensorRate.get();
@@ -427,7 +435,7 @@ public:
 
    /// <summary>Get the processed measurement counter.</summary>
    /// <returns>Monotonic count of processed measurements</returns>
-   uint32_t counter()
+   uint32_t counter() const
    {
       portENTER_CRITICAL(&_mux);
       uint32_t val = _counter;
@@ -478,11 +486,12 @@ public:
       return _deferredProcessingPeriodMicros;
    }
 
-   /// <summary>Resize the rolling average buffer, clearing all existing samples.</summary>
+   /// <summary>Resize the rolling average buffer, clearing all existing samples. A size of 0 is
+   /// treated as 1, i.e. no averaging is performed and the latest sample is used directly.</summary>
    /// <param name="size">New buffer size</param>
    void setBufferSize(size_t size)
    {
-      _average.reset(size);
+      _average.reset(size == 0 ? 1 : size);
    }
 
    /// <summary>Get the current rolling average buffer size.</summary>
