@@ -600,12 +600,13 @@ void applyLiveFields()
 
 ///
 /// <summary>
-/// Draws the heading and "Test Results..." subheading for the log viewer, sizes the
+/// Draws the heading and the given subheading for the log viewer, sizes the
 /// viewer's rect to fill the remaining space above the footer prompt, and switches into
 /// viewer mode.
 /// </summary>
+/// <param name="subheading">Subheading text describing which test's results are being shown (e.g. "Buffer Size Sweep Test Results...").</param>
 ///
-void initializeResultsView()
+void initializeResultsView(const String& subheading)
 {
    arduino.clearDisplay();
 
@@ -614,7 +615,7 @@ void initializeResultsView()
    arduino.println("Capacitor Tuning", Color::HEADING);
 
    arduino.setTextSize(DEFAULT_TEXT_SIZE);
-   arduino.println("Test Results...", Color::LIGHTGRAY);
+   arduino.println(subheading, Color::LIGHTGRAY);
    arduino.moveCursorY(8);
 
    int16_t viewerTop = arduino.getCursorY();
@@ -723,7 +724,7 @@ void runRollingSweepTest()
    Serial.println("Rolling Sweep Complete");
 
    capacitorSensor.setBufferSize((size_t)liveBufferSize);
-   initializeResultsView();
+   initializeResultsView("Buffer Size Sweep Test Results...");
 }
 
 ///
@@ -820,7 +821,7 @@ void runDischargeSweepTest()
    Serial.println("Discharge Sweep Complete");
 
    capacitorSensor.setDischargeDelayMicros((uint16_t)liveDischargeDelayMicros);
-   initializeResultsView();
+   initializeResultsView("Discharge Time Sweep Test Results...");
 }
 
 ///
@@ -941,7 +942,7 @@ void runOptimizedSweepTest()
          CapacitorSensor::DEFAULT_BUFFER_SIZE);
    }
 
-   initializeResultsView();
+   initializeResultsView("Optimization Sweep Test Results...");
 }
 
 void setup()
