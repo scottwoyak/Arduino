@@ -172,6 +172,16 @@ public:
    }
 
    /// <summary>
+   /// Gets the effective sample rate after rolling-average smoothing, i.e. the raw sample rate
+   /// divided by the buffer size.
+   /// </summary>
+   /// <returns>The current effective sample rate.</returns>
+   float effectiveRate()
+   {
+      return _sensor->effectiveRate();
+   }
+
+   /// <summary>
    /// Gets the processed measurement counter, useful for detecting whether a new
    /// measurement has arrived since the last check.
    /// </summary>

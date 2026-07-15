@@ -123,10 +123,12 @@ public:
          }
          labelText += ": ";
 
-         Color valueBackgroundColor = (i == _selectedIndex) ? Color::BLUE : Color::BLACK;
+         bool isSelected = (i == _selectedIndex);
+         Color valueBackgroundColor = isSelected ? Color::BLUE : Color::BLACK;
+         Color valueTextColor = isSelected ? Color::WHITE : Color::VALUE;
          _arduino->setCursor(x, y + rowHeight * i);
          _arduino->print(labelText, Color::LABEL, Color::BLACK);
-         _arduino->println(_fields[i]->valueText(), Color::VALUE, valueBackgroundColor);
+         _arduino->println(_fields[i]->valueText(), valueTextColor, valueBackgroundColor);
       }
    }
 

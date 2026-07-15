@@ -41,67 +41,66 @@ private:
    }
 
    /// <summary>
-   /// Base case for recursive row value printing.
+   /// Right-aligns text within the given width by left-padding with spaces (no-op if the
+   /// text is already at least as wide as the requested width).
    /// </summary>
-   void _printValues(size_t&) const
+   static String _pad(const String& text, size_t width)
+   {
+      String result;
+      for (size_t i = text.length(); i < width; i++)
+      {
+         result += ' ';
+      }
+      result += text;
+      return result;
+   }
+
+   /// <summary>
+   /// Base case for recursive row value formatting.
+   /// </summary>
+   void _appendValues(String&, size_t&) const
    {
    }
 
    /// <summary>
-   /// Recursively prints row values using column widths.
+   /// Recursively appends formatted row values (space-separated by column width) to line.
    /// </summary>
    template<typename T, typename... Rest>
-   void _printValues(size_t& index, const T& value, const Rest&... rest) const
+   void _appendValues(String& line, size_t& index, const T& value, const Rest&... rest) const
    {
       if (index >= _columnCount)
       {
          return;
       }
 
-      if (index + 1 >= _columnCount)
-      {
-         _printlnValue(value, _columns[index].width);
-         index++;
-         return;
-      }
-
-      _printValue(value, _columns[index].width);
+      line += _formatValue(value, _columns[index].width);
       index++;
-      _printValues(index, rest...);
+      _appendValues(line, index, rest...);
    }
 
    /// <summary>
-   /// Prints a fixed-decimal floating-point value.
+   /// Formats a fixed-decimal floating-point value with width-based alignment.
    /// </summary>
-   static void _printValue(const FixedFloat& value, size_t width)
+   static String _formatValue(const FixedFloat& value, size_t width)
    {
-      SerialX::print(value.value, value.decimals, width);
+      return _pad(String(value.value, (unsigned int)value.decimals), width);
    }
 
    /// <summary>
-   /// Prints a fixed-decimal floating-point value and ends the line.
-   /// </summary>
-   static void _printlnValue(const FixedFloat& value, size_t width)
-   {
-      SerialX::println(value.value, value.decimals, width);
-   }
-
-   /// <summary>
-   /// Prints a value with width-based alignment.
+   /// Formats a value with width-based alignment.
    /// </summary>
    template<typename T>
-   static void _printValue(const T& value, size_t width)
+   static String _formatValue(const T& value, size_t width)
    {
-      SerialX::print(value, width);
+      return _pad(String(value), width);
    }
 
    /// <summary>
-   /// Prints a value with width-based alignment and ends the line.
+   /// Formats a C-string value with width-based alignment.
    /// </summary>
-   template<typename T>
-   static void _printlnValue(const T& value, size_t width)
+   static String _formatValue(const char* value, size_t width)
    {
-      SerialX::println(value, width);
+      return _pad(String(value), width);
    }
 
 public:
@@ -124,66 +123,82 @@ public:
    /// <summary>
    /// Prints the title, column header row, and divider row.
    /// </summary>
-   void printHeader() const
+   /// <returns>The printed lines, each terminated with '\n', concatenated together.</returns>
+   ///
+   String printHeader() const
    {
       if (!_isConfigured())
       {
-         return;
+         return String();
       }
 
+      String output;
       if (_title != nullptr)
       {
-         Serial.println();
-         Serial.println(_title);
+         SerialX::println();
+         output += '\n';
+
+         SerialX::println(_title);
+         output += _title;
+         output += '\n';
       }
 
-      size_t lastIndex = _columnCount - 1;
-      for (size_t i = 0; i < lastIndex; i++)
+      String headerLine;
+      for (size_t i = 0; i < _columnCount; i++)
       {
-         _printValue(_columns[i].title, _columns[i].width);
+         headerLine += _formatValue(_columns[i].title, _columns[i].width);
       }
-      _printlnValue(_columns[lastIndex].title, _columns[lastIndex].width);
+      SerialX::println(headerLine);
+      output += headerLine;
+      output += '\n';
 
-      printDivider();
+      output += printDivider();
+      return output;
    }
 
    /// <summary>
    /// Prints a divider row based on column widths.
    /// </summary>
-   void printDivider() const
+   /// <returns>The printed divider line, terminated with '\n'.</returns>
+   ///
+   String printDivider() const
    {
       if (!_isConfigured())
       {
-         return;
+         return String();
       }
 
+      String divider;
       for (size_t i = 0; i < _columnCount; i++)
       {
          for (size_t j = 0; j < _columns[i].width; j++)
          {
-            Serial.print('-');
+            divider += '-';
          }
       }
-      Serial.println();
+      SerialX::println(divider);
+
+      return divider + '\n';
    }
 
    /// <summary>
    /// Prints one row of values using configured columns.
    /// </summary>
+   /// <returns>The printed row line, terminated with '\n'.</returns>
+   ///
    template<typename... Args>
-   void printRow(const Args&... values) const
+   String printRow(const Args&... values) const
    {
       if (!_isConfigured())
       {
-         return;
+         return String();
       }
 
+      String line;
       size_t index = 0;
-      _printValues(index, values...);
+      _appendValues(line, index, values...);
+      SerialX::println(line);
 
-      if (index < _columnCount)
-      {
-         Serial.println();
-      }
+      return line + '\n';
    }
 };

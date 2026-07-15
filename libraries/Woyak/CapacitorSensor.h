@@ -433,6 +433,20 @@ public:
       return val;
    }
 
+   /// <summary>Get the effective sample rate after rolling-average smoothing, i.e. the raw
+   /// sample rate divided by the buffer size.</summary>
+   /// <returns>Effective samples per second</returns>
+   float effectiveRate() const
+   {
+      size_t size = bufferSize();
+      if (size == 0)
+      {
+         return 0.0f;
+      }
+
+      return rate() / static_cast<float>(size);
+   }
+
    /// <summary>Get the processed measurement counter.</summary>
    /// <returns>Monotonic count of processed measurements</returns>
    uint32_t counter() const

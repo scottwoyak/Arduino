@@ -24,6 +24,7 @@
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
     <File Path="libraries/Woyak/DisplayGrid.h" />
     <File Path="libraries/Woyak/DisplayTable.h" />
+    <File Path="libraries/Woyak/DisplayTextView.h" />
     <File Path="libraries/Woyak/DS18B20TempSensor.h" />
     <File Path="libraries/Woyak/EnumSelector.h" />
     <File Path="libraries/Woyak/ESP32TempSensor.h" />

@@ -6,6 +6,12 @@
 
 #define COLOR_MONOCHROME
 
+///
+/// <summary>
+/// Display color values for monochrome displays. All non-black values map to the single
+/// available foreground color; BLACK and DARKGRAY map to the background color.
+/// </summary>
+///
 enum class Color : uint16_t
 {
    WHITE = 1,
@@ -35,21 +41,44 @@ enum class Color : uint16_t
 
 #define COLOR_565
 
+enum class Color : uint16_t;
+
+namespace Color565
+{
+   /// <summary>
+   /// Converts RGB color components to 565-bit color format.
+   /// </summary>
+   /// <param name="red">Red component (0-255)</param>
+   /// <param name="green">Green component (0-255)</param>
+   /// <param name="blue">Blue component (0-255)</param>
+   /// <returns>Color in 565 format</returns>
+   constexpr Color fromRGB(uint8_t red, uint8_t green, uint8_t blue)
+   {
+      return (Color) (((red & 0xF8) << 8) | ((green & 0xFC) << 3) | (blue >> 3));
+   }
+}
+
+///
+/// <summary>
+/// Display color values in RGB565 format, defined in terms of their RGB components via
+/// Color565::fromRGB().
+/// </summary>
+///
 enum class Color : uint16_t
 {
-   BLACK = 0x0000,
-   WHITE = 0xFFFF,
-   RED = 0xF800,
-   GREEN = 0x07E0,
-   BLUE = 0x001F,
-   CYAN = 0x07FF,
-   MAGENTA = 0xF81F,
-   YELLOW = 0xFFE0,
-   ORANGE = 0xFC00,
-   GRAY = 0x8430,
-   DARKGRAY = 0x6B4D,
-   LIGHTGRAY = 0xC618,
-   PINK = 0xFD9C,
+   BLACK = (uint16_t) Color565::fromRGB(0, 0, 0),
+   WHITE = (uint16_t) Color565::fromRGB(255, 255, 255),
+   RED = (uint16_t) Color565::fromRGB(255, 0, 0),
+   GREEN = (uint16_t) Color565::fromRGB(0, 255, 0),
+   BLUE = (uint16_t) Color565::fromRGB(0, 0, 255),
+   CYAN = (uint16_t) Color565::fromRGB(0, 255, 255),
+   MAGENTA = (uint16_t) Color565::fromRGB(255, 0, 255),
+   YELLOW = (uint16_t) Color565::fromRGB(255, 255, 0),
+   ORANGE = (uint16_t) Color565::fromRGB(255, 128, 0),
+   GRAY = (uint16_t) Color565::fromRGB(132, 132, 132),
+   DARKGRAY = (uint16_t) Color565::fromRGB(105, 105, 105),
+   LIGHTGRAY = (uint16_t) Color565::fromRGB(192, 192, 192),
+   PINK = (uint16_t) Color565::fromRGB(255, 179, 224),
 
    HEADING = ORANGE,
    HEADING2 = CYAN,
@@ -64,24 +93,12 @@ enum class Color : uint16_t
 
 namespace Color565
 {
-   /// <summary>
-   /// Converts RGB color components to 565-bit color format.
-   /// </summary>
-   /// <param name="red">Red component (0-255)</param>
-   /// <param name="green">Green component (0-255)</param>
-   /// <param name="blue">Blue component (0-255)</param>
-   /// <returns>Color in 565 format</returns>
-   Color fromRGB(uint8_t red, uint8_t green, uint8_t blue)
-   {
-      return (Color) (((red & 0xF8) << 8) | ((green & 0xFC) << 3) | (blue >> 3));
-   }
-
    /// <summary>Extracts red component (0-255) from 565-bit color.</summary>
    /// <param name="color">Color value (16-bit)</param>
    /// <returns>Red component (0-255)</returns>
-   uint8_t getR(uint16_t color) 
-   { 
-      return (uint8_t) (255*((color >> 11) & 0x1F)/31.0); 
+   uint8_t getR(uint16_t color)
+   {
+      return (uint8_t) (255 * ((color >> 11) & 0x1F) / 31.0);
    }
 
    /// <summary>Extracts red component (0-255) from Color.</summary>
@@ -90,9 +107,9 @@ namespace Color565
    /// <summary>Extracts green component (0-255) from 565-bit color.</summary>
    /// <param name="color">Color value (16-bit)</param>
    /// <returns>Green component (0-255)</returns>
-   uint8_t getG(uint16_t color) 
-   { 
-      return (uint8_t) (255*((color >> 5) & 0x3F)/63.0); 
+   uint8_t getG(uint16_t color)
+   {
+      return (uint8_t) (255 * ((color >> 5) & 0x3F) / 63.0);
    }
 
    /// <summary>Extracts green component (0-255) from Color.</summary>
@@ -101,9 +118,9 @@ namespace Color565
    /// <summary>Extracts blue component (0-255) from 565-bit color.</summary>
    /// <param name="color">Color value (16-bit)</param>
    /// <returns>Blue component (0-255)</returns>
-   uint8_t getB(uint16_t color) 
-   { 
-      return (uint8_t)(255 * ((color & 0x1F) / 31.0));
+   uint8_t getB(uint16_t color)
+   {
+      return (uint8_t) (255 * ((color & 0x1F) / 31.0));
    }
 
    /// <summary>Extracts blue component (0-255) from Color.</summary>
@@ -137,6 +154,8 @@ namespace Color565
    /// <summary>Blends color values using linear interpolation (overload variants).</summary>
    Color blend(Color c1, uint16_t c2, float ratio) { return blend((uint16_t)c1, (uint16_t)c2, ratio); }
 
+   /// <summary>Prints the RGB components of a Color to Serial.</summary>
+   /// <param name="color">Color to print</param>
    void print(Color color)
    {
       Serial.print("R:");
@@ -146,14 +165,21 @@ namespace Color565
       Serial.print(" B:");
       Serial.print(getB(color));
    }
+
+   /// <summary>Prints the RGB components of a 565-bit color to Serial.</summary>
+   /// <param name="color">Color value (16-bit)</param>
    void print(uint16_t color) { print((Color)color); }
 
+   /// <summary>Prints the RGB components of a Color to Serial, followed by a newline.</summary>
+   /// <param name="color">Color to print</param>
    void println(Color color)
    {
       print(color);
       Serial.println();
    }
+
+   /// <summary>Prints the RGB components of a 565-bit color to Serial, followed by a newline.</summary>
+   /// <param name="color">Color value (16-bit)</param>
    void println(uint16_t color) { println((Color)color); }
 }
-
 

@@ -67,6 +67,14 @@ namespace SerialX
 	}
 
 	/// <summary>
+	/// Prints a blank line.
+	/// </summary>
+	inline size_t println()
+	{
+		return Serial.println();
+	}
+
+	/// <summary>
 	/// Prints a C-string with optional left space padding.
 	/// </summary>
 	inline size_t print(const char* text, size_t width = 0)

@@ -109,7 +109,7 @@ namespace TestSensorConfig
    static constexpr float DEPTH_CALIBRATION_CHARGE_TIME = 295.0f;
    static constexpr float DEPTH_CALIBRATION_DEPTH_CM = 45.72f; // 18 inches (half of full depth)
    static constexpr float DEPTH_FULL_DEPTH_CM = 91.44f; // 36 inches
-   static constexpr size_t DEPTH_BUFFER_SIZE = 0; // 0 = no averaging (buffer size of 1) during sensor tests
+   static constexpr size_t DEPTH_BUFFER_SIZE = 130; // 0 = no averaging (buffer size of 1) during sensor tests
    static constexpr const char* DEPTH_FORMAT = "####.##";
    static constexpr const char* DEPTH_HIGH_RES_FORMAT = "####.###";
 }
