@@ -101,6 +101,57 @@ public:
    }
 
    /// <summary>
+   /// Formats a duration in milliseconds as a short, human-friendly string, automatically
+   /// choosing the largest unit that keeps the displayed value readable: milliseconds
+   /// below 1 second, seconds below 1 minute, minutes below 1 hour, hours below 1 day,
+   /// and days otherwise.
+   /// </summary>
+   /// <param name="durationMs">Duration in milliseconds.</param>
+   /// <returns>Formatted duration, e.g. "500 ms", "45 s", "5 m", "3 h", or "2 d".</returns>
+   static String formatDuration(unsigned long durationMs)
+   {
+      float value;
+      const char* suffix;
+
+      if (durationMs < 1000)
+      {
+         value = static_cast<float>(durationMs);
+         suffix = " ms";
+      }
+      else if (durationMs < 60000)
+      {
+         value = static_cast<float>(durationMs) / 1000.0f;
+         suffix = " s";
+      }
+      else if (durationMs < 3600000)
+      {
+         value = static_cast<float>(durationMs) / 60000.0f;
+         suffix = " m";
+      }
+      else if (durationMs < 86400000UL)
+      {
+         value = static_cast<float>(durationMs) / 3600000.0f;
+         suffix = " h";
+      }
+      else
+      {
+         value = static_cast<float>(durationMs) / 86400000.0f;
+         suffix = " d";
+      }
+
+      char buffer[16];
+      if (value < 10.0f)
+      {
+         snprintf(buffer, sizeof(buffer), "%.1f%s", value, suffix);
+      }
+      else
+      {
+         snprintf(buffer, sizeof(buffer), "%.0f%s", value, suffix);
+      }
+      return String(buffer);
+   }
+
+   /// <summary>
    /// Resets the device after an optional delay.
    /// </summary>
    /// <param name="delaySecs">Seconds to delay before reset (default 0.0)</param>

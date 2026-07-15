@@ -59,13 +59,13 @@ private:
    // Per-pixel-column "which rows are lit" bitmasks used to diff this frame's drawing
    // against the previous frame's, so only pixels that actually changed color get drawn -
    // no stroke-replay erasing, and no special-casing needed for bin rotation, since the
-   // diff is exact regardless of how the underlying data shifted between frames. Raw
-   // points/lines and the moving-average line are tracked in separate mask pairs since
-   // they're normally drawn in different colors. Sized to the plot's chart pixel
-   // dimensions (see _ensureMaskBuffers()), reallocated only when those dimensions change.
-   uint8_t* _rawMask = nullptr;
+   // diff is exact regardless of how the underlying data shifted between frames. Only the
+   // previous frame's masks are retained per-series (this frame's raw/moving-average masks
+   // are scratch buffers shared across every series in the owning TimedScatterPlot, since
+   // only one series is ever rasterized at a time - see TimedScatterPlot::_sharedRawMask).
+   // Sized to the plot's chart pixel dimensions (see _ensureMaskBuffers()), reallocated
+   // only when those dimensions change.
    uint8_t* _prevRawMask = nullptr;
-   uint8_t* _maMask = nullptr;
    uint8_t* _prevMaMask = nullptr;
    uint8_t* _bandMask = nullptr;
    uint8_t* _prevBandMask = nullptr;
@@ -113,18 +113,14 @@ private:
    ///
    bool _ensureMaskBuffers(int16_t chartWidth, int16_t chartHeight)
    {
-      if ((chartWidth == _maskChartWidth) && (chartHeight == _maskChartHeight) && (_rawMask != nullptr))
+      if ((chartWidth == _maskChartWidth) && (chartHeight == _maskChartHeight) && (_prevRawMask != nullptr))
       {
          return true;
       }
 
-      delete[] _rawMask;
       delete[] _prevRawMask;
-      delete[] _maMask;
       delete[] _prevMaMask;
-      delete[] _bandMask;
-      delete[] _prevBandMask;
-      _rawMask = _prevRawMask = _maMask = _prevMaMask = _bandMask = _prevBandMask = nullptr;
+      _prevRawMask = _prevMaMask = nullptr;
 
       _maskChartWidth = chartWidth;
       _maskChartHeight = chartHeight;
@@ -136,24 +132,19 @@ private:
          return true;
       }
 
-      _rawMask = new (std::nothrow) uint8_t[bufSize];
       _prevRawMask = new (std::nothrow) uint8_t[bufSize];
-      _maMask = new (std::nothrow) uint8_t[bufSize];
       _prevMaMask = new (std::nothrow) uint8_t[bufSize];
       _bandMask = new (std::nothrow) uint8_t[bufSize];
       _prevBandMask = new (std::nothrow) uint8_t[bufSize];
 
-      if (_rawMask == nullptr || _prevRawMask == nullptr || _maMask == nullptr || _prevMaMask == nullptr
-         || _bandMask == nullptr || _prevBandMask == nullptr)
+      if (_prevRawMask == nullptr || _prevMaMask == nullptr)
       {
          Util::setHaltReason("OOM allocating scatter plot masks in TimedScatterPlotSeries");
          Util::reset();
          return false;
       }
 
-      memset(_rawMask, 0, bufSize);
       memset(_prevRawMask, 0, bufSize);
-      memset(_maMask, 0, bufSize);
       memset(_prevMaMask, 0, bufSize);
       memset(_bandMask, 0, bufSize);
       memset(_prevBandMask, 0, bufSize);
@@ -397,11 +388,7 @@ public:
       delete[] _values;
       delete[] _agesMs;
       delete[] _movingAverageBuffer;
-      delete[] _stdDevLowBuffer;
-      delete[] _stdDevHighBuffer;
-      delete[] _rawMask;
       delete[] _prevRawMask;
-      delete[] _maMask;
       delete[] _prevMaMask;
       delete[] _bandMask;
       delete[] _prevBandMask;
@@ -432,9 +419,7 @@ public:
       if (_maskBytesPerColumn > 0)
       {
          const size_t bufSize = static_cast<size_t>(_maskChartWidth) * _maskBytesPerColumn;
-         memset(_rawMask, 0, bufSize);
          memset(_prevRawMask, 0, bufSize);
-         memset(_maMask, 0, bufSize);
          memset(_prevMaMask, 0, bufSize);
          memset(_bandMask, 0, bufSize);
          memset(_prevBandMask, 0, bufSize);
@@ -561,9 +546,62 @@ private:
    DisplayField** _movingAverageFields = nullptr;
    DisplayField** _stdDevFields = nullptr;
 
+   // Shared scratch raw/moving-average masks used by _ensureSharedMaskBuffers()/render();
+   // reused across every series in this plot since only one series is ever rasterized at
+   // a time, sized to the plot's chart pixel dimensions and reallocated only when those
+   // dimensions change.
+   uint8_t* _sharedRawMask = nullptr;
+   uint8_t* _sharedMaMask = nullptr;
+   size_t _sharedMaskBytesPerColumn = 0;
+   int16_t _sharedMaskChartWidth = 0;
+   int16_t _sharedMaskChartHeight = 0;
+
    unsigned long _lastRenderMicros = 0;
    unsigned long _lastComputeMicros = 0;
    unsigned long _lastDisplayMicros = 0;
+
+   ///
+   /// <summary>
+   /// (Re)allocates the shared scratch raw/moving-average masks to match the given chart
+   /// pixel dimensions, freeing and reallocating only when the dimensions actually changed.
+   /// </summary>
+   /// <param name="chartWidth">Chart interior width in pixels (one bitmask column per pixel).</param>
+   /// <param name="chartHeight">Chart interior height in pixels (one bit per row).</param>
+   /// <returns>True if the masks are sized correctly and ready to use.</returns>
+   ///
+   bool _ensureSharedMaskBuffers(int16_t chartWidth, int16_t chartHeight)
+   {
+      if ((chartWidth == _sharedMaskChartWidth) && (chartHeight == _sharedMaskChartHeight) && (_sharedRawMask != nullptr))
+      {
+         return true;
+      }
+
+      delete[] _sharedRawMask;
+      delete[] _sharedMaMask;
+      _sharedRawMask = _sharedMaMask = nullptr;
+
+      _sharedMaskChartWidth = chartWidth;
+      _sharedMaskChartHeight = chartHeight;
+      _sharedMaskBytesPerColumn = static_cast<size_t>((chartHeight + 7) / 8);
+
+      const size_t bufSize = static_cast<size_t>(chartWidth) * _sharedMaskBytesPerColumn;
+      if (bufSize == 0)
+      {
+         return true;
+      }
+
+      _sharedRawMask = new (std::nothrow) uint8_t[bufSize];
+      _sharedMaMask = new (std::nothrow) uint8_t[bufSize];
+
+      if (_sharedRawMask == nullptr || _sharedMaMask == nullptr)
+      {
+         Util::setHaltReason("OOM allocating shared scatter plot masks in TimedScatterPlot");
+         Util::reset();
+         return false;
+      }
+
+      return true;
+   }
 
    ///
    /// <summary>
@@ -857,28 +895,7 @@ private:
    ///
    String _formatHistoryRangeLabel() const
    {
-      float value;
-      const char* suffix;
-
-      if (_historyMs < 2000)
-      {
-         value = static_cast<float>(_historyMs);
-         suffix = " ms";
-      }
-      else if (_historyMs < 120000)
-      {
-         value = static_cast<float>(_historyMs) / 1000.0f;
-         suffix = " s";
-      }
-      else
-      {
-         value = static_cast<float>(_historyMs) / 60000.0f;
-         suffix = " m";
-      }
-
-      std::string pattern = std::string("####") + suffix;
-      Format format(pattern.c_str(), _sampleRangeFormat.alignment());
-      return String(format.toString(value).c_str());
+      return Util::formatDuration(_historyMs);
    }
 
    ///
@@ -1269,6 +1286,8 @@ public:
       delete[] _series;
       delete[] _movingAverageFields;
       delete[] _stdDevFields;
+      delete[] _sharedRawMask;
+      delete[] _sharedMaMask;
    }
 
    ///
@@ -1568,10 +1587,14 @@ public:
 
       _display->display.startWrite();
 
-      // Every series' pixel-column masks are sized to the current chart dimensions;
+      // Every series' previous-frame masks are sized to the current chart dimensions;
       // ensure they're (re)allocated before either a full redraw or diffing occurs, since
       // a dimension change invalidates any previously accumulated mask content anyway
       // (handled by fullRedraw clearing the masks to match the fresh chart area below).
+      // The current-frame raw/moving-average masks are shared scratch buffers owned by
+      // this plot (only one series is ever rasterized at a time), so only one allocation
+      // is needed regardless of series count.
+      _ensureSharedMaskBuffers(_chartWidth, _chartHeight);
       for (size_t i = 0; i < _seriesCount; i++)
       {
          _series[i]->_ensureMaskBuffers(_chartWidth, _chartHeight);
@@ -1635,14 +1658,14 @@ public:
 
          if (series->showPoints || series->showLines)
          {
-            _rasterizeSeriesData(series->_rawMask, series->_maskBytesPerColumn, series->_values, series->_count, series->numBins(), series->showLines, series->showPoints, true);
-            _diffMasksAndDraw(series->_rawMask, series->_prevRawMask, series->_maskBytesPerColumn, series->color);
+            _rasterizeSeriesData(_sharedRawMask, _sharedMaskBytesPerColumn, series->_values, series->_count, series->numBins(), series->showLines, series->showPoints, true);
+            _diffMasksAndDraw(_sharedRawMask, series->_prevRawMask, _sharedMaskBytesPerColumn, series->color);
          }
 
          if (series->showMovingAverage)
          {
-            _rasterizeSeriesData(series->_maMask, series->_maskBytesPerColumn, series->_movingAverageBuffer, series->_count, series->numBins(), true, false, false);
-            _diffMasksAndDraw(series->_maMask, series->_prevMaMask, series->_maskBytesPerColumn, series->movingAverageColor);
+            _rasterizeSeriesData(_sharedMaMask, _sharedMaskBytesPerColumn, series->_movingAverageBuffer, series->_count, series->numBins(), true, false, false);
+            _diffMasksAndDraw(_sharedMaMask, series->_prevMaMask, _sharedMaskBytesPerColumn, series->movingAverageColor);
          }
 
          if (series->showStdDevBand)

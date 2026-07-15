@@ -21,13 +21,16 @@ class DisplayGrid
 public:
    ///
    /// <summary>
-   /// Describes a single column: its header title and the format used to render cell values.
+   /// Describes a single column: its header title, the format used to render cell values,
+   /// and an optional fixed color that overrides printRow()'s valueColor for this column
+   /// (e.g. for an ID column that should always be white regardless of row status).
    /// </summary>
    ///
    struct Column
    {
       const char* title;
       const Format* format;
+      const Color* color = nullptr;
    };
 
 private:
@@ -111,7 +114,8 @@ private:
    ///
    /// <summary>
    /// Recursively prints row values using each column's effective Format, inserting a
-   /// single space between columns and a newline after the last column.
+   /// single space between columns and a newline after the last column. Uses the
+   /// column's fixed color if one is configured, otherwise falls back to valueColor.
    /// </summary>
    ///
    template<typename T, typename... Rest>
@@ -124,15 +128,16 @@ private:
 
       bool isLast = (index + 1 >= _columnCount);
       const Format& format = *_effectiveFormat(index);
+      Color color = (_columns[index].color != nullptr) ? *_columns[index].color : valueColor;
 
-      _display->print(value, format, valueColor);
+      _display->print(value, format, color);
       if (isLast)
       {
          _display->println();
       }
       else
       {
-         _display->print(" ", valueColor);
+         _display->print(" ", color);
       }
 
       index++;
@@ -202,15 +207,16 @@ public:
       {
          bool isLast = (i + 1 >= _columnCount);
          const Format& format = *_effectiveFormat(i);
+         Color color = (_columns[i].color != nullptr) ? *_columns[i].color : _headerColor;
 
-         _display->print(_columns[i].title, format, _headerColor);
+         _display->print(_columns[i].title, format, color);
          if (isLast)
          {
             _display->println();
          }
          else
          {
-            _display->print(" ", _headerColor);
+            _display->print(" ", color);
          }
       }
 

@@ -1,14 +1,17 @@
 /// <summary>
 /// Displays temperatures from up to 8 I2C-multiplexed sensors in a multi-column table (current
-/// value plus 10s/1m/2m/10m time averages) and uploads all of those values to InfluxDB.
-/// Hold Button A to show sensor type instead of the temperature table.
+/// value plus 10s/1m/2m/5m/10m time averages) and uploads all of those values to InfluxDB.
+/// Hold Button A to show sensor type instead of the temperature table. Rotate encoderA to
+/// cycle between the table and a scatterplot of the last 100 samples for each sampling rate
+/// (current value plus each averaging window).
 /// </summary>
 /// <remarks>
 /// Initializes up to 8 TempSensor instances behind an I2C multiplexer and tracks each sensor's
 /// location metadata for telemetry tagging. Reads temperature on SENSOR_READ_INTERVAL_MS cadence
-/// and feeds one current-value field plus four time-averaged fields (10s, 1m, 2m, 10m) per sensor,
-/// while keeping upload cadence at INFLUX_INTERVAL_S. Renders either the temperature table or
-/// sensor type labels (Button A held) on display.
+/// and feeds one current-value field plus five time-averaged fields (10s, 1m, 2m, 5m, 10m) per sensor,
+/// while keeping upload cadence at INFLUX_INTERVAL_S. Renders the temperature table, sensor type
+/// labels (Button A held), or one of six per-sensor scatterplot views (encoderA), each holding a
+/// rolling history of the last 100 samples for that sampling rate.
 /// 
 /// Telemetry flow: each sensor maps to five InfluxPoints (current plus the four averaging windows),
 /// all tagged with the sensor's location and a "stat" tag identifying which value they carry, each
@@ -31,14 +34,41 @@
 #include "Timer.h"
 #include "DisplayGrid.h"
 #include "DisplayField.h"
+#include "Util.h"
 
 #include "WiFiSettings.h"
+#include "TimedScatterPlot.h"
 
 Format tempFormat(" ##.###");
 Format uploadStatusFormat(7, Format::Alignment::RIGHT);
 
 constexpr uint8_t NUM_SENSORS = 8;
-constexpr uint8_t NUM_WINDOWS = 4;
+constexpr uint8_t NUM_WINDOWS = 5;
+
+// History window shown by each scatterplot view: 20x that view's averaging time (the
+// "Now" view has an implicit averaging time of 1s, so it shows a 20s history).
+constexpr float PLOT_HISTORY_MULTIPLIER = 20.0f;
+
+// Views cycled via encoderA: the temperature table, then one scatterplot per
+// sampling rate (current value plus each averaging window).
+enum class ViewMode : uint8_t
+{
+   TABLE = 0,
+   NOW,
+   WINDOW_0,
+   WINDOW_1,
+   WINDOW_2,
+   WINDOW_3,
+   WINDOW_4,
+};
+constexpr uint8_t NUM_VIEWS = static_cast<uint8_t>(ViewMode::WINDOW_4) + 1;
+constexpr uint8_t NUM_PLOT_VIEWS = NUM_VIEWS - 1;
+
+// Distinct colors used to tell sensors apart on the scatterplots.
+constexpr Color SENSOR_PLOT_COLORS[NUM_SENSORS] = {
+   Color::YELLOW, Color::CYAN, Color::GREEN, Color::MAGENTA,
+   Color::ORANGE, Color::RED, Color::WHITE, Color::PINK,
+};
 
 constexpr uint8_t INFLUX_TEMP_DECIMAL_PLACES = 3;
 constexpr uint8_t SENSOR_CORRECTION_DECIMAL_PLACES = 3;
@@ -51,8 +81,8 @@ constexpr auto INFLUX_STAT_TAG_NAME = "stat";
 constexpr auto INFLUX_STAT_CURRENT = "current";
 
 // Averaging windows, in seconds, displayed/uploaded alongside the current value
-constexpr float AVERAGE_WINDOWS_S[NUM_WINDOWS] = { 10, 60, 120, 600 };
-constexpr const char* AVERAGE_WINDOW_LABELS[NUM_WINDOWS] = { "10s", "1m", "2m", "10m" };
+constexpr float AVERAGE_WINDOWS_S[NUM_WINDOWS] = { 10, 60, 120, 300, 600 };
+constexpr const char* AVERAGE_WINDOW_LABELS[NUM_WINDOWS] = { "10s", "1m", "2m", "5m", "10m" };
 
 ESP32_S3_Playground arduino;
 NeoPixelStatus status(&arduino.neoPixel);
@@ -69,6 +99,10 @@ InfluxPoint* averagePoints[NUM_SENSORS][NUM_WINDOWS];
 InfluxField* averageFields[NUM_SENSORS][NUM_WINDOWS];
 DisplayField* uploadStatusField = nullptr;
 
+TimedScatterPlot* plots[NUM_PLOT_VIEWS];
+TimedScatterPlotSeries* plotSeries[NUM_PLOT_VIEWS][NUM_SENSORS];
+ViewMode viewMode = ViewMode::TABLE;
+
 const char* locations[NUM_SENSORS] = {
    "Test 1",
    "Test 2",
@@ -83,6 +117,7 @@ const char* locations[NUM_SENSORS] = {
 void setup()
 {
    SerialX::begin();
+   Util::checkHaltReason();
    Wire.begin();
 
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
@@ -159,22 +194,54 @@ void setup()
       Util::reset(WIFI_RESET_DELAY_S);
    }
 
-       arduino.clearDisplay();
-       arduino.echoToSerial = false;
+   arduino.clearDisplay();
+   arduino.echoToSerial = false;
 
-       arduino.setTextSize(2);
-       std::string uploadSample(uploadStatusFormat.length(), '0');
-       int16_t uploadX = arduino.width() - arduino.textWidth(uploadSample.c_str());
-       int16_t uploadY = arduino.height() - arduino.charH();
-       uploadStatusField = new DisplayField(&arduino, uploadX, uploadY, "", uploadStatusFormat, 2, true, Color::GRAY, Color::GRAY);
-       uploadStatusField->setValue("");
-       uploadStatusField->draw();
+   arduino.setTextSize(2);
+   std::string uploadSample(uploadStatusFormat.length(), '0');
+   int16_t uploadX = arduino.width() - arduino.textWidth(uploadSample.c_str());
+   int16_t uploadY = arduino.height() - arduino.charH();
+   uploadStatusField = new DisplayField(&arduino, uploadX, uploadY, "", uploadStatusFormat, 2, true, Color::GRAY, Color::GRAY);
+   uploadStatusField->setValue("");
+   uploadStatusField->draw();
+
+   int16_t plotTop = arduino.charH() * 2;
+   int16_t plotHeight = arduino.height() - plotTop;
+   constexpr float NOW_AVERAGE_WINDOW_S = 1.0f;
+   for (uint8_t p = 0; p < NUM_PLOT_VIEWS; p++)
+   {
+      const char* title = (p == 0) ? "Now" : AVERAGE_WINDOW_LABELS[p - 1];
+      float averageWindowS = (p == 0) ? NOW_AVERAGE_WINDOW_S : AVERAGE_WINDOWS_S[p - 1];
+      unsigned long plotHistoryMs = static_cast<unsigned long>(averageWindowS * PLOT_HISTORY_MULTIPLIER * 1000.0f);
+      Rect16 plotRect = { 0, static_cast<uint16_t>(plotTop), arduino.width(), static_cast<uint16_t>(plotHeight) };
+      plots[p] = new TimedScatterPlot(&arduino, plotRect, plotHistoryMs, tempFormat, Format("##.#s", Format::Alignment::CENTER), 0.0f, title);
+      for (uint8_t i = 0; i < NUM_SENSORS; i++)
+      {
+         TimedScatterPlotSeries* series = plots[p]->createSeries();
+         series->showPoints = false;
+         series->showLines = true;
+         series->color = SENSOR_PLOT_COLORS[i];
+         plotSeries[p][i] = series;
+      }
    }
+}
 
 void loop()
 {
    const bool showType = arduino.buttonA.isPressed();
    static bool lastShowType = showType;
+
+   int32_t viewDelta = arduino.encoderA.delta();
+   if (viewDelta != 0)
+   {
+      int8_t newView = (static_cast<int8_t>(viewMode) + static_cast<int8_t>(viewDelta)) % NUM_VIEWS;
+      if (newView < 0)
+      {
+         newView += NUM_VIEWS;
+      }
+      viewMode = static_cast<ViewMode>(newView);
+      arduino.clearDisplay();
+   }
 
    if (showType != lastShowType)
    {
@@ -197,6 +264,12 @@ void loop()
          for (uint8_t w = 0; w < NUM_WINDOWS; w++)
          {
             averageFields[i][w]->set(tempF);
+         }
+
+         plotSeries[0][i]->add(tempF);
+         for (uint8_t w = 0; w < NUM_WINDOWS; w++)
+         {
+            plotSeries[w + 1][i]->add(averageFields[i][w]->get());
          }
       }
    }
@@ -231,31 +304,38 @@ void loop()
          arduino.println(sensors[i]->type(), Color::VALUE);
       }
    }
-   else
+   else if (viewMode == ViewMode::TABLE)
    {
-      static Format idFormat(" ##", Format::Alignment::RIGHT);
+      static Format idFormat("#", Format::Alignment::RIGHT);
+      static const Color idColor = Color::WHITE;
       static const DisplayGrid::Column columns[] = {
-         { "Sensor", &idFormat },
+         { "", &idFormat, &idColor },
          { "Now", &tempFormat },
          { AVERAGE_WINDOW_LABELS[0], &tempFormat },
          { AVERAGE_WINDOW_LABELS[1], &tempFormat },
          { AVERAGE_WINDOW_LABELS[2], &tempFormat },
          { AVERAGE_WINDOW_LABELS[3], &tempFormat },
+         { AVERAGE_WINDOW_LABELS[4], &tempFormat },
       };
-      DisplayGrid grid(&arduino, nullptr, columns, 6, Color::WHITE);
+      DisplayGrid grid(&arduino, nullptr, columns, 7, Color::WHITE);
       grid.printHeader();
 
       for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
          if (!sensors[i]->exists())
          {
-            grid.printRow(Color::GRAY, i, "----", "----", "----", "----", "----");
+            grid.printRow(Color::GRAY, i, "----", "----", "----", "----", "----", "----");
             continue;
          }
 
          grid.printRow(Color::VALUE, i, currentFields[i]->get(), averageFields[i][0]->get(), averageFields[i][1]->get(),
-                       averageFields[i][2]->get(), averageFields[i][3]->get());
+                       averageFields[i][2]->get(), averageFields[i][3]->get(), averageFields[i][4]->get());
       }
+   }
+   else
+   {
+      uint8_t plotView = static_cast<uint8_t>(viewMode) - 1;
+      plots[plotView]->render();
    }
 
    if (influxTimer.ready())
@@ -299,10 +379,9 @@ void loop()
          Serial.println(client.getLastErrorMessage());
       }
 
-             digitalWrite(BUILTIN_LED, LOW);
-             uploadStatusField->setValue("");
-             uploadStatusField->draw();
-          }
-      }
-
+                   digitalWrite(BUILTIN_LED, LOW);
+                   uploadStatusField->setValue("");
+                   uploadStatusField->draw();
+                }
+             }
 
