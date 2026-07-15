@@ -62,7 +62,11 @@ private:
    // ----------- ISR Callback
    static inline CapacitorSensor* _isrContext = nullptr;
 
-   /// <summary>ISR: capture charge end time when the sense pin rises.</summary>
+   ///
+   /// <summary>
+   /// ISR: capture charge end time when the sense pin rises.
+   /// </summary>
+   ///
    static void ARDUINO_ISR_ATTR _onPinRising()
    {
       if (_isrContext != nullptr)
@@ -79,7 +83,11 @@ private:
    }
 
    // ----------- Timer Callbacks
-   /// <summary>Timer callback: discharge period elapsed; begin charging.</summary>
+   ///
+   /// <summary>
+   /// Timer callback: discharge period elapsed; begin charging.
+   /// </summary>
+   ///
    static void _onDischargeElapsed(void* arg)
    {
       CapacitorSensor* self = static_cast<CapacitorSensor*>(arg);
@@ -89,7 +97,11 @@ private:
       }
    }
 
-   /// <summary>Timer callback: charge exceeded timeout; restart cycle.</summary>
+   ///
+   /// <summary>
+   /// Timer callback: charge exceeded timeout; restart cycle.
+   /// </summary>
+   ///
    static void _onChargeTimeout(void* arg)
    {
       CapacitorSensor* self = static_cast<CapacitorSensor*>(arg);
@@ -99,7 +111,11 @@ private:
       }
    }
 
-   /// <summary>Periodic timer callback: process a completed measurement if one is ready.</summary>
+   ///
+   /// <summary>
+   /// Periodic timer callback: process a completed measurement if one is ready.
+   /// </summary>
+   ///
    static void _onDeferredProcessing(void* arg)
    {
       CapacitorSensor* self = static_cast<CapacitorSensor*>(arg);
@@ -116,7 +132,11 @@ private:
       }
    }
 
-   /// <summary>Drive the sense pin low and start the discharge hold timer.</summary>
+   ///
+   /// <summary>
+   /// Drive the sense pin low and start the discharge hold timer.
+   /// </summary>
+   ///
    void _startDischarging()
    {
       gpio_intr_disable(static_cast<gpio_num_t>(_sensePin));
@@ -134,7 +154,11 @@ private:
       portEXIT_CRITICAL(&_mux);
    }
 
-   /// <summary>Arm the charge timeout, release the sense pin, clear pending interrupts, and apply charge voltage.</summary>
+   ///
+   /// <summary>
+   /// Arm the charge timeout, release the sense pin, clear pending interrupts, and apply charge voltage.
+   /// </summary>
+   ///
    void _startCharging()
    {
       bool beginCharge = false;
@@ -188,7 +212,11 @@ private:
       digitalWrite(_chargePin, HIGH);
    }
 
-   /// <summary>Handle a charge timeout by restarting the discharge cycle.</summary>
+   ///
+   /// <summary>
+   /// Handle a charge timeout by restarting the discharge cycle.
+   /// </summary>
+   ///
    void _handleChargeTimeout()
    {
       bool timeoutValid = false;
@@ -212,7 +240,11 @@ private:
    }
 
    // ----------- Measurement Processing
-   /// <summary>Compute charge time from captured timestamps, update rolling average and rate, then restart discharge.</summary>
+   ///
+   /// <summary>
+   /// Compute charge time from captured timestamps, update rolling average and rate, then restart discharge.
+   /// </summary>
+   ///
    void _processMeasurement()
    {
       int64_t start, end;
@@ -243,7 +275,11 @@ private:
       _startDischarging();
    }
 
-   /// <summary>Start the deferred processing timer and begin the first discharge cycle.</summary>
+   ///
+   /// <summary>
+   /// Start the deferred processing timer and begin the first discharge cycle.
+   /// </summary>
+   ///
    void start()
    {
       if (_started)
@@ -256,7 +292,11 @@ private:
       _startDischarging();
    }
 
-   /// <summary>Stop all background timers, disable the sense interrupt, and drive pins to a safe idle state.</summary>
+   ///
+   /// <summary>
+   /// Stop all background timers, disable the sense interrupt, and drive pins to a safe idle state.
+   /// </summary>
+   ///
    void stop()
    {
       portENTER_CRITICAL(&_mux);
@@ -277,36 +317,76 @@ private:
    }
 
 public:
-   /// <summary>Default discharge hold time in microseconds.</summary>
+   ///
+   /// <summary>
+   /// Default discharge hold time in microseconds.
+   /// </summary>
+   ///
    static constexpr uint16_t DEFAULT_DISCHARGE_DELAY_MICROS = 200;
 
-   /// <summary>Default deferred processing period in microseconds.</summary>
+   ///
+   /// <summary>
+   /// Default deferred processing period in microseconds.
+   /// </summary>
+   ///
    static constexpr uint32_t DEFAULT_DEFERRED_PROCESSING_PERIOD_MICROS = 500;
 
-   /// <summary>Default rolling average window size.</summary>
+   ///
+   /// <summary>
+   /// Default rolling average window size.
+   /// </summary>
+   ///
    static constexpr size_t DEFAULT_BUFFER_SIZE = 30;
 
    // ----------- Standard Hardware Wiring
    // Pin assignments for the standard capacitor sensor prototype wiring shared by the
    // Capacitor_Playground, Capacitor_Wiring_Test, and Depth_Display sketches. Each charge pin
    // drives the capacitor through a different charge resistor; SENSE_PIN is shared by all of them.
-   /// <summary>Shared sense pin used with all of the standard charge resistor pins below.</summary>
+   ///
+   /// <summary>
+   /// Shared sense pin used with all of the standard charge resistor pins below.
+   /// </summary>
+   ///
    static constexpr uint8_t SENSE_PIN = 7;
-   /// <summary>Charge pin wired through a 1M resistor.</summary>
+
+   ///
+   /// <summary>
+   /// Charge pin wired through a 1M resistor.
+   /// </summary>
+   ///
    static constexpr uint8_t CHARGE_PIN_1M = 15;
-   /// <summary>Charge pin wired through a 470K resistor.</summary>
+
+   ///
+   /// <summary>
+   /// Charge pin wired through a 470K resistor.
+   /// </summary>
+   ///
    static constexpr uint8_t CHARGE_PIN_470K = 16;
-   /// <summary>Charge pin wired through a 100K resistor.</summary>
+
+   ///
+   /// <summary>
+   /// Charge pin wired through a 100K resistor.
+   /// </summary>
+   ///
    static constexpr uint8_t CHARGE_PIN_100K = 2;
-   /// <summary>Charge pin wired through a 47K resistor.</summary>
+
+   ///
+   /// <summary>
+   /// Charge pin wired through a 47K resistor.
+   /// </summary>
+   ///
    static constexpr uint8_t CHARGE_PIN_47K = 1;
 
-   /// <summary>Construct and configure a capacitor sensor. Only one instance may exist at a time.</summary>
+   ///
+   /// <summary>
+   /// Construct and configure a capacitor sensor. Only one instance may exist at a time.
+   /// </summary>
    /// <param name="chargePin">Output pin that drives the charge resistor</param>
    /// <param name="sensePin">Input pin that detects when the capacitor is fully charged</param>
    /// <param name="dischargeDelayMicros">Discharge hold time in microseconds</param>
    /// <param name="averageSamples">Rolling average window size. A value of 0 is treated as 1, i.e.
    /// no averaging is performed and the latest sample is used directly.</param>
+   ///
    CapacitorSensor(
       uint8_t chargePin,
       uint8_t sensePin,
@@ -329,7 +409,11 @@ public:
       _isrContext = this;
    }
 
-   /// <summary>Stop background timers, release ESP timer handles, and detach the GPIO interrupt.</summary>
+   ///
+   /// <summary>
+   /// Stop background timers, release ESP timer handles, and detach the GPIO interrupt.
+   /// </summary>
+   ///
    ~CapacitorSensor()
    {
       stop();
@@ -343,7 +427,11 @@ public:
       _instanceExists = false;
    }
 
-   /// <summary>Initialize GPIO pins and ESP timers, then start background measurement.</summary>
+   ///
+   /// <summary>
+   /// Initialize GPIO pins and ESP timers, then start background measurement.
+   /// </summary>
+   ///
    void begin()
    {
       pinMode(_chargePin, OUTPUT);
@@ -413,8 +501,12 @@ public:
       }
    }
 
-   /// <summary>Get the latest rolling-average charge time.</summary>
+   ///
+   /// <summary>
+   /// Get the latest rolling-average charge time.
+   /// </summary>
    /// <returns>Charge time in microseconds, or NaN when no measurement is available</returns>
+   ///
    float chargeTimeMicros() const
    {
       portENTER_CRITICAL(&_mux);
@@ -423,8 +515,12 @@ public:
       return val;
    }
 
-   /// <summary>Get the raw sensor sample rate.</summary>
+   ///
+   /// <summary>
+   /// Get the raw sensor sample rate.
+   /// </summary>
    /// <returns>Samples per second</returns>
+   ///
    float rate() const
    {
       portENTER_CRITICAL(&_mux);
@@ -433,9 +529,13 @@ public:
       return val;
    }
 
-   /// <summary>Get the effective sample rate after rolling-average smoothing, i.e. the raw
-   /// sample rate divided by the buffer size.</summary>
+   ///
+   /// <summary>
+   /// Get the effective sample rate after rolling-average smoothing, i.e. the raw
+   /// sample rate divided by the buffer size.
+   /// </summary>
    /// <returns>Effective samples per second</returns>
+   ///
    float effectiveRate() const
    {
       size_t size = bufferSize();
@@ -447,8 +547,12 @@ public:
       return rate() / static_cast<float>(size);
    }
 
-   /// <summary>Get the processed measurement counter.</summary>
+   ///
+   /// <summary>
+   /// Get the processed measurement counter.
+   /// </summary>
    /// <returns>Monotonic count of processed measurements</returns>
+   ///
    uint32_t counter() const
    {
       portENTER_CRITICAL(&_mux);
@@ -457,22 +561,34 @@ public:
       return val;
    }
 
-   /// <summary>Set the discharge hold time.</summary>
+   ///
+   /// <summary>
+   /// Set the discharge hold time.
+   /// </summary>
    /// <param name="dischargeDelayMicros">Discharge hold time in microseconds</param>
+   ///
    void setDischargeDelayMicros(uint16_t dischargeDelayMicros)
    {
       _dischargeDelayMicros = dischargeDelayMicros;
    }
 
-   /// <summary>Get the current discharge hold time in microseconds.</summary>
+   ///
+   /// <summary>
+   /// Get the current discharge hold time in microseconds.
+   /// </summary>
    /// <returns>Discharge delay in microseconds</returns>
+   ///
    uint16_t dischargeDelayMicros() const
    {
       return _dischargeDelayMicros;
    }
 
-   /// <summary>Set the deferred processing period.</summary>
+   ///
+   /// <summary>
+   /// Set the deferred processing period.
+   /// </summary>
    /// <param name="deferredProcessingPeriodMicros">Processing period in microseconds (minimum 1)</param>
+   ///
    void setDeferredProcessingPeriodMicros(uint32_t deferredProcessingPeriodMicros)
    {
       if (deferredProcessingPeriodMicros == 0)
@@ -493,30 +609,46 @@ public:
       }
    }
 
-   /// <summary>Get the current deferred processing period in microseconds.</summary>
+   ///
+   /// <summary>
+   /// Get the current deferred processing period in microseconds.
+   /// </summary>
    /// <returns>Deferred processing period in microseconds</returns>
+   ///
    uint32_t deferredProcessingPeriodMicros() const
    {
       return _deferredProcessingPeriodMicros;
    }
 
-   /// <summary>Resize the rolling average buffer, clearing all existing samples. A size of 0 is
-   /// treated as 1, i.e. no averaging is performed and the latest sample is used directly.</summary>
+   ///
+   /// <summary>
+   /// Resize the rolling average buffer, clearing all existing samples. A size of 0 is
+   /// treated as 1, i.e. no averaging is performed and the latest sample is used directly.
+   /// </summary>
    /// <param name="size">New buffer size</param>
+   ///
    void setBufferSize(size_t size)
    {
       _average.reset(size == 0 ? 1 : size);
    }
 
-   /// <summary>Get the current rolling average buffer size.</summary>
+   ///
+   /// <summary>
+   /// Get the current rolling average buffer size.
+   /// </summary>
    /// <returns>Number of samples in the rolling window</returns>
+   ///
    size_t bufferSize() const
    {
       return _average.size();
    }
 
-   /// <summary>Get the active charge pin.</summary>
+   ///
+   /// <summary>
+   /// Get the active charge pin.
+   /// </summary>
    /// <returns>Charge pin number</returns>
+   ///
    uint8_t chargePin() const
    {
       return _chargePin;

@@ -13,7 +13,6 @@ private:
    float _zeroTime;
    float _calibrationTime;
    float _calibrationDepth;
-   float _fullDepth;
    float _baselineCm;
 
 public:
@@ -24,8 +23,7 @@ public:
    /// <param name="sensePin">GPIO pin used to detect the rising threshold.</param>
    /// <param name="zeroTime">Charge time (microseconds) measured at zero depth (in air).</param>
    /// <param name="calibrationTime">Charge time (microseconds) measured at calibrationDepth.</param>
-   /// <param name="calibrationDepth">Depth value corresponding to calibrationTime (e.g. half of fullDepth).</param>
-   /// <param name="fullDepth">Full-scale depth value used to size the depth bar/UI; the charge-time-to-depth mapping is linear and is not clamped to this value.</param>
+   /// <param name="calibrationDepth">Depth value corresponding to calibrationTime (e.g. half of the sensor's full-scale depth).</param>
    /// <param name="bufferSize">Rolling average window size used by the underlying capacitor sensor. A
    /// value of 0 is treated as 1, i.e. no averaging is performed and the latest sample is used directly.</param>
    CapacitorDepthSensor(
@@ -34,14 +32,12 @@ public:
       float zeroTime,
       float calibrationTime,
       float calibrationDepth,
-      float fullDepth,
       size_t bufferSize = CapacitorSensor::DEFAULT_BUFFER_SIZE)
    {
       _sensor = new CapacitorSensor(chargePin, sensePin, CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS, bufferSize);
       _zeroTime = zeroTime;
       _calibrationTime = calibrationTime;
       _calibrationDepth = calibrationDepth;
-      _fullDepth = fullDepth;
       _baselineCm = 0.0f;
    }
 
@@ -62,7 +58,7 @@ public:
    /// <summary>
    /// Gets the latest computed raw depth based on the current capacitor charge time, unaffected
    /// by baseline. The charge-time-to-depth mapping is linear, derived from the zero-depth and
-   /// calibration-depth points, and is not clamped to fullDepth.
+   /// calibration-depth points.
    /// </summary>
    /// <returns>The interpolated depth value.</returns>
    float rawDepthCm()

@@ -25,8 +25,11 @@
 // yet, the calibration sequence starts automatically on startup.
 //
 // Display output: a heading and sensor-type subheading at the top, the signed depth delta in
-// centimeters centered below them, a blue depth level bar on the right (full at zero depth, empty
-// at the calibrated maximum depth), and the live sensor read rate in gray in the lower right corner.
+// centimeters centered below them with the equivalent value in inches shown just below it, each
+// followed in gray by the 1-second rolling range (max-min) of that measurement (in millimeters
+// for the centimeter row), labeled above with the sampling window, a blue depth level bar on the
+// right (full at zero depth, empty at the calibrated maximum depth), and the live sensor read
+// rate in gray in the lower right corner.
 // For the capacitor sensor, the rolling-average buffer size is shown in the upper right corner and
 // can be adjusted live with Encoder B (requires a Playground board); the value is persisted to
 // Preferences and restored on startup.
@@ -46,6 +49,8 @@
 #include "DisplayField.h"
 #include "RollingRate.h"
 #include "SerialX.h"
+#include "TimedStats.h"
+#include "Timer.h"
 
 #if DEPTH_SENSOR_TYPE == DEPTH_SENSOR_MS5837
 #include <MS5837.h>
@@ -75,10 +80,9 @@ constexpr uint8_t CAPACITOR_SENSE_PIN = CapacitorSensor::SENSE_PIN;
 constexpr float CAPACITOR_DEFAULT_ZERO_CHARGE_TIME = 128.3f;
 constexpr float CAPACITOR_DEFAULT_CALIBRATION_CHARGE_TIME = 295.0f;
 constexpr float CAPACITOR_CALIBRATION_DEPTH_CM = 45.72f; // 18 inches (half of full depth)
-constexpr float CAPACITOR_FULL_DEPTH_CM = 91.44f; // 36 inches
 constexpr int32_t CAPACITOR_DEFAULT_BUFFER_SIZE = 30; // matches CapacitorSensor::DEFAULT_BUFFER_SIZE
 constexpr int32_t CAPACITOR_BUFFER_SIZE_MIN = 1;
-constexpr int32_t CAPACITOR_BUFFER_SIZE_MAX = 200;
+constexpr int32_t CAPACITOR_BUFFER_SIZE_MAX = 2000;
 
 Arduino arduino;
 
@@ -91,8 +95,7 @@ CapacitorDepthSensor sensor(
    CAPACITOR_SENSE_PIN,
    CAPACITOR_DEFAULT_ZERO_CHARGE_TIME,
    CAPACITOR_DEFAULT_CALIBRATION_CHARGE_TIME,
-   CAPACITOR_CALIBRATION_DEPTH_CM,
-   CAPACITOR_FULL_DEPTH_CM);
+   CAPACITOR_CALIBRATION_DEPTH_CM);
 constexpr auto SENSOR_TYPE_NAME = "Capacitor";
 #endif
 
@@ -105,20 +108,30 @@ constexpr auto CAP_ZERO_TIME_KEY = "capZeroTime";
 constexpr auto CAP_CALIBRATION_TIME_KEY = "capCalibTime";
 constexpr auto CAP_BUFFER_SIZE_KEY = "capBufSize";
 
-Format deltaDepthFormat("####.## cm");
-Format rateFormat("###/s");
-Format bufferSizeFormat("Buf:###");
+Format depthCmFormat("####.# cm");
+Format depthInFormat("####.# in");
+Format depthCmRangeFormat("#### mm");
+Format depthInRangeFormat("###.# in");
+constexpr auto RATE_LABEL = "Sensor Sampling Rate: ";
+Format bufferSizeFormat("Buf:####");
+
+constexpr float CENTIMETERS_PER_INCH = 2.54f;
+constexpr float MILLIMETERS_PER_CENTIMETER = 10.0f;
+constexpr unsigned long DEPTH_RANGE_WINDOW_MS = 1000;
 
 constexpr float DEFAULT_FULL_DEPTH_FEET = 3.0f;
 constexpr float CENTIMETERS_PER_FOOT = 30.48f;
 #if DEPTH_SENSOR_TYPE == DEPTH_SENSOR_MS5837
 constexpr float DEFAULT_MAX_DEPTH_CM = DEFAULT_FULL_DEPTH_FEET * CENTIMETERS_PER_FOOT;
 #elif DEPTH_SENSOR_TYPE == DEPTH_SENSOR_CAPACITOR
-constexpr float DEFAULT_MAX_DEPTH_CM = CAPACITOR_FULL_DEPTH_CM;
+constexpr float DEFAULT_MAX_DEPTH_CM = 91.44f; // 36 inches
 #endif
 constexpr uint8_t TITLE_TEXT_SIZE = 3;
 constexpr uint8_t SUBTITLE_TEXT_SIZE = 2;
-constexpr uint8_t DEPTH_TEXT_SIZE = 5;
+constexpr uint8_t DEPTH_TEXT_SIZE = 4;
+constexpr uint8_t DEPTH_RANGE_TEXT_SIZE = DEPTH_TEXT_SIZE;
+constexpr uint8_t RANGE_LABEL_TEXT_SIZE = 2;
+std::string rangeLabelText;
 constexpr uint8_t RATE_TEXT_SIZE = 2;
 constexpr uint16_t DEPTH_BAR_WIDTH_PX = 10;
 
@@ -142,10 +155,48 @@ int32_t capBufferSize = CAPACITOR_DEFAULT_BUFFER_SIZE;
 RollingRate readRate;
 CalibrationState calibrationState = CalibrationState::None;
 
-DisplayField* depthField = nullptr;
-DisplayField* rateField = nullptr;
+TimedStats depthCmRangeStats(DEPTH_RANGE_WINDOW_MS);
+
+constexpr float DISPLAY_REFRESH_RATE_HZ = 15.0f;
+RateTimer displayTimer(DISPLAY_REFRESH_RATE_HZ);
+
+DisplayField* depthCmField = nullptr;
+DisplayField* depthInField = nullptr;
+DisplayField* depthCmRangeField = nullptr;
+DisplayField* depthInRangeField = nullptr;
 DisplayField* bufferSizeField = nullptr;
 VerticalBar* depthBar = nullptr;
+
+int16_t rangeLabelX = 0;
+int16_t rangeLabelY = 0;
+
+///
+/// <summary>
+/// Draws the small "Range (past Ns)" label above the depth range values, indicating the
+/// sampling window (in seconds) used to compute the rolling range.
+/// </summary>
+///
+void drawRangeLabel()
+{
+   arduino.setTextSize(RANGE_LABEL_TEXT_SIZE);
+   arduino.setCursor(rangeLabelX, rangeLabelY);
+   arduino.println(rangeLabelText.c_str(), Color::GRAY);
+}
+
+///
+/// <summary>
+/// Draws the "Sensor Sampling Rate: #/s" row in the lower right corner, right-anchored so
+/// the whole label+value row shifts left as the value's digit count grows, with no padding
+/// gap between the label and the value.
+/// </summary>
+///
+void drawRateRow(float effectiveRate)
+{
+   std::string rateValueText = std::to_string((long)round(effectiveRate)) + "/s";
+   arduino.setTextSize(RATE_TEXT_SIZE);
+   arduino.setCursor(0, arduino.height() - arduino.charH());
+   arduino.printR(RATE_LABEL, rateValueText.c_str(), Color::GRAY, Color::GRAY, Color::BLACK);
+}
 
 ///
 /// <summary>
@@ -187,8 +238,10 @@ void renderCalibrationPrompt()
    }
 #endif
 
-   depthField->invalidate();
-   rateField->invalidate();
+   depthCmField->invalidate();
+   depthInField->invalidate();
+   depthCmRangeField->invalidate();
+   depthInRangeField->invalidate();
    depthBar->reset();
 #if DEPTH_SENSOR_TYPE == DEPTH_SENSOR_CAPACITOR
    if (bufferSizeField != nullptr)
@@ -305,20 +358,59 @@ void setup()
    int16_t headerHeight = drawHeading();
 
    arduino.setTextSize(RATE_TEXT_SIZE);
-   std::string rateSample(rateFormat.length(), '0');
-   int16_t rateWidth = arduino.textWidth(rateSample.c_str());
-   int16_t rateX = arduino.width() - rateWidth;
    int16_t rateY = arduino.height() - arduino.charH();
 
    arduino.setTextSize(DEPTH_TEXT_SIZE);
-   std::string depthSample(deltaDepthFormat.length(), '0');
-   int16_t depthWidth = arduino.textWidth(depthSample.c_str());
-   int16_t depthX = (arduino.width() - depthWidth) / 2;
-   int16_t depthY = headerHeight + ((rateY - headerHeight - arduino.charH()) / 2);
-   depthField = new DisplayField(&arduino, depthX, depthY, "", deltaDepthFormat, DEPTH_TEXT_SIZE, true, Color::LABEL, Color::VALUE);
+   std::string depthCmSample(depthCmFormat.length(), '0');
+   int16_t depthCmWidth = arduino.textWidth(depthCmSample.c_str());
+   int16_t depthCmHeight = arduino.charH();
 
-   arduino.setTextSize(RATE_TEXT_SIZE);
-   rateField = new DisplayField(&arduino, rateX, rateY, "", rateFormat, RATE_TEXT_SIZE, true, Color::GRAY, Color::GRAY);
+   arduino.setTextSize(DEPTH_TEXT_SIZE);
+   std::string depthInSample(depthInFormat.length(), '0');
+   int16_t depthInWidth = arduino.textWidth(depthInSample.c_str());
+   int16_t depthInHeight = arduino.charH();
+
+   arduino.setTextSize(DEPTH_RANGE_TEXT_SIZE);
+   std::string depthCmRangeSample(depthCmRangeFormat.length(), '0');
+   int16_t depthCmRangeWidth = arduino.textWidth(depthCmRangeSample.c_str());
+   int16_t depthCmRangeHeight = arduino.charH();
+
+   std::string depthInRangeSample(depthInRangeFormat.length(), '0');
+   int16_t depthInRangeWidth = arduino.textWidth(depthInRangeSample.c_str());
+   int16_t depthInRangeHeight = arduino.charH();
+
+   arduino.setTextSize(RANGE_LABEL_TEXT_SIZE);
+   rangeLabelText = "Range (past " + std::to_string(DEPTH_RANGE_WINDOW_MS / 1000) + "s)";
+   int16_t rangeLabelHeight = arduino.charH();
+
+   constexpr int16_t DEPTH_FIELD_GAP_PX = 4;
+   constexpr int16_t DEPTH_RANGE_GAP_PX = 8;
+   constexpr int16_t RANGE_LABEL_GAP_PX = 4;
+   int16_t depthBlockHeight = depthCmHeight + DEPTH_FIELD_GAP_PX + depthInHeight;
+   int16_t depthCmY = headerHeight + ((rateY - headerHeight - depthBlockHeight) / 2);
+   int16_t depthInY = depthCmY + depthCmHeight + DEPTH_FIELD_GAP_PX;
+
+   int16_t depthRowWidth = depthCmWidth + DEPTH_RANGE_GAP_PX + depthCmRangeWidth;
+   int16_t depthCmX = (arduino.width() - depthRowWidth) / 2;
+   int16_t depthCmRangeY = depthCmY + ((depthCmHeight - depthCmRangeHeight) / 2);
+
+   int16_t depthInRowWidth = depthInWidth + DEPTH_RANGE_GAP_PX + depthInRangeWidth;
+   int16_t depthInX = (arduino.width() - depthInRowWidth) / 2;
+   int16_t depthInRangeY = depthInY + ((depthInHeight - depthInRangeHeight) / 2);
+
+   int16_t depthCmRangeX = max(depthCmX + depthCmWidth + DEPTH_RANGE_GAP_PX, depthInX + depthInWidth + DEPTH_RANGE_GAP_PX);
+   int16_t depthInRangeX = depthCmRangeX;
+
+   rangeLabelX = depthCmRangeX;
+   rangeLabelY = depthCmY - RANGE_LABEL_GAP_PX - rangeLabelHeight;
+
+   depthCmField = new DisplayField(&arduino, depthCmX, depthCmY, "", depthCmFormat, DEPTH_TEXT_SIZE, true, Color::LABEL, Color::VALUE);
+   depthInField = new DisplayField(&arduino, depthInX, depthInY, "", depthInFormat, DEPTH_TEXT_SIZE, true, Color::LABEL, Color::VALUE);
+   depthCmRangeField = new DisplayField(&arduino, depthCmRangeX, depthCmRangeY, "", depthCmRangeFormat, DEPTH_RANGE_TEXT_SIZE, true, Color::GRAY, Color::GRAY);
+   depthInRangeField = new DisplayField(&arduino, depthInRangeX, depthInRangeY, "", depthInRangeFormat, DEPTH_RANGE_TEXT_SIZE, true, Color::GRAY, Color::GRAY);
+
+   drawRangeLabel();
+   drawRateRow(0.0f);
 
    Rect16 depthBarRect(arduino.width() - DEPTH_BAR_WIDTH_PX, 0, DEPTH_BAR_WIDTH_PX, rateY);
    depthBar = new VerticalBar(depthBarRect, RangeF(maxDepthCm, 0.0f), Color::BLUE, Color::BLACK);
@@ -347,7 +439,8 @@ void loop()
    int32_t bufferDelta = arduino.encoderB.delta();
    if (calibrationState == CalibrationState::None && bufferDelta != 0)
    {
-      capBufferSize = constrain(capBufferSize + bufferDelta * 10, CAPACITOR_BUFFER_SIZE_MIN, CAPACITOR_BUFFER_SIZE_MAX);
+      int32_t bufferStep = (capBufferSize >= 1000) ? 100 : (capBufferSize >= 100) ? 50 : 10;
+      capBufferSize = constrain(capBufferSize + bufferDelta * bufferStep, CAPACITOR_BUFFER_SIZE_MIN, CAPACITOR_BUFFER_SIZE_MAX);
       sensor.setBufferSize((size_t)capBufferSize);
       saveBufferSize();
       bufferSizeField->setValue((int)capBufferSize);
@@ -386,6 +479,8 @@ void loop()
          calibrationState = CalibrationState::None;
          arduino.clearDisplay();
          drawHeading();
+         drawRangeLabel();
+         drawRateRow(0.0f);
 #if DEPTH_SENSOR_TYPE == DEPTH_SENSOR_CAPACITOR
          if (bufferSizeField != nullptr)
          {
@@ -405,13 +500,33 @@ void loop()
    readRate.tick();
 
    float deltaDepthCm = sensor.getDepth();
+   depthCmRangeStats.set(deltaDepthCm);
 
-   depthField->setValue(deltaDepthCm);
-   depthField->draw();
+#if DEPTH_SENSOR_TYPE == DEPTH_SENSOR_CAPACITOR
+   float effectiveRate = sensor.effectiveRate();
+#else
+   float effectiveRate = readRate.get();
+#endif
 
-   rateField->setValue(readRate.get());
-   rateField->draw();
+   if (displayTimer.ready())
+   {
+      float depthCmRange = depthCmRangeStats.range();
 
-   depthBar->set(deltaDepthCm);
-   depthBar->draw(&arduino.display);
+      depthCmField->setValue(deltaDepthCm);
+      depthCmField->draw();
+
+      depthInField->setValue(deltaDepthCm / CENTIMETERS_PER_INCH);
+      depthInField->draw();
+
+      depthCmRangeField->setValue(depthCmRange * MILLIMETERS_PER_CENTIMETER);
+      depthCmRangeField->draw();
+
+      depthInRangeField->setValue(depthCmRange / CENTIMETERS_PER_INCH);
+      depthInRangeField->draw();
+
+      drawRateRow(effectiveRate);
+
+      depthBar->set(deltaDepthCm);
+      depthBar->draw(&arduino.display);
+   }
 }
