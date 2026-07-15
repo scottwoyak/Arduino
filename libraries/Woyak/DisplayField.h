@@ -77,16 +77,73 @@ private:
    /// Renders the current value into the off-screen sprite (created in the constructor)
    /// and pushes it over the value region.
    /// </summary>
+   /// <remarks>
+   /// The value string is right/left/center-aligned using its actual measured pixel
+   /// width rather than relying on the Format's literal space padding, since a space
+   /// glyph's advance width does not always exactly match a digit's advance width in
+   /// bitmap fonts. Using space padding for alignment can therefore leave a visible gap
+   /// that varies from value to value (e.g. between two fields with different digit
+   /// counts), which pixel-based alignment avoids.
+   /// </remarks>
    ///
    void _drawValueSprite()
    {
       _createSprite();
 
+      std::string trimmed = _trimmedValue();
+      int16_t textWidth = (int16_t)_sprite.textWidth(trimmed.c_str());
+      int16_t spriteWidth = _sprite.width();
+      int16_t textX = _alignedTextX(textWidth, spriteWidth);
+
       _sprite.fillScreen((uint16_t)Color::BLACK);
       _sprite.setTextColor((uint16_t)_valueColor, (uint16_t)Color::BLACK);
-      _sprite.setCursor(0, 0);
-      _sprite.print(_value.c_str());
+      _sprite.setCursor(textX, 0);
+      _sprite.print(trimmed.c_str());
       _sprite.pushSprite(_valueX, _y);
+   }
+
+   ///
+   /// <summary>
+   /// Strips the Format's literal space padding from the current value, leaving just the
+   /// significant text, so its width can be measured and positioned in pixels.
+   /// </summary>
+   /// <returns>The current value with leading/trailing space padding removed.</returns>
+   ///
+   std::string _trimmedValue() const
+   {
+      std::string str = _value.c_str();
+      size_t start = str.find_first_not_of(' ');
+      if (start == std::string::npos)
+      {
+         return std::string();
+      }
+      size_t end = str.find_last_not_of(' ');
+      return str.substr(start, end - start + 1);
+   }
+
+   ///
+   /// <summary>
+   /// Computes the X offset (within a region of the given total width) at which to draw
+   /// text of the given pixel width, honoring the field's Format alignment.
+   /// </summary>
+   /// <param name="textWidth">Measured pixel width of the text to draw.</param>
+   /// <param name="totalWidth">Total pixel width of the region to align within.</param>
+   /// <returns>X offset for the text's left edge.</returns>
+   ///
+   int16_t _alignedTextX(int16_t textWidth, int16_t totalWidth) const
+   {
+      switch (_format->alignment())
+      {
+      case Format::Alignment::RIGHT:
+         return max(static_cast<int16_t>(0), static_cast<int16_t>(totalWidth - textWidth));
+
+      case Format::Alignment::CENTER:
+         return max(static_cast<int16_t>(0), static_cast<int16_t>((totalWidth - textWidth) / 2));
+
+      case Format::Alignment::LEFT:
+      default:
+         return 0;
+      }
    }
 
 public:
@@ -226,9 +283,9 @@ public:
 
    ///
    /// <summary>
-   /// Draws the field. The first call renders the full "label: value" string directly to
-   /// the display; later calls redraw only the value via a sprite, and only when the value
-   /// text or color changed since the last draw.
+   /// Draws the field. The first call renders the label directly to the display and the
+   /// value via the sprite (see _drawValueSprite()); later calls redraw only the value via
+   /// the sprite, and only when the value text or color changed since the last draw.
    /// </summary>
    ///
    void draw()
@@ -257,7 +314,7 @@ public:
 
          _valueX = _display->getCursorX();
 
-         _display->print(_value.c_str(), _valueColor);
+         _drawValueSprite();
 
          _drawnValue = _value;
          _drawnValueColor = _valueColor;
