@@ -55,12 +55,13 @@ const Rect16 CONTENT_RECT{ 0, HEADER_HEIGHT + SUB_HEADING_GAP + HEADER_GAP, DISP
 
 // ----------- Sampling
 constexpr uint16_t TARGET_SAMPLE_RATES[] = {
-   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100
+   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100,
+   200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000
 };
 constexpr uint16_t NUM_TARGET_SAMPLE_RATES = sizeof(TARGET_SAMPLE_RATES) / sizeof(TARGET_SAMPLE_RATES[0]);
-constexpr uint16_t DEFAULT_SAMPLE_RATE_INDEX = NUM_TARGET_SAMPLE_RATES - 1; // 100/s
+constexpr uint16_t DEFAULT_SAMPLE_RATE_INDEX = 18; // 100/s
 constexpr unsigned long MIN_ELAPSED_MS_FOR_ACTUAL_RATE = 500; // actual rate reads "---" until this much time has elapsed
-Timer sampleTimer(1000UL / TARGET_SAMPLE_RATES[DEFAULT_SAMPLE_RATE_INDEX]);
+TimerMicros sampleTimer(1000000UL / TARGET_SAMPLE_RATES[DEFAULT_SAMPLE_RATE_INDEX]);
 TimedRate sampleRate(1000UL);
 
 uint16_t sampleRateIndex = DEFAULT_SAMPLE_RATE_INDEX;
@@ -70,7 +71,7 @@ constexpr uint16_t DISPLAY_RATE_PER_SEC = 10;
 constexpr uint16_t HISTOGRAM_BIN_COUNT = 40;
 constexpr float SENSOR_VALUE_RESOLUTION_F = 0.0049f;
 Timer displayTimer(1000UL / DISPLAY_RATE_PER_SEC);
-Format rateFormat("###/s", Format::Alignment::RIGHT);
+Format rateFormat("####/s", Format::Alignment::RIGHT);
 Format countFormat("######");
 Format sampleTimeFormat("#### ms");
 Format stdDevPercentFormat("##.##%", 7);
@@ -215,6 +216,8 @@ void setup()
    applySampleRateLimits();
 
    scatterSeries = scatterPlot.createSeries();
+   scatterSeries->showMovingAverage = true;
+   scatterSeries->showStdDevBand = true;
    scatterPlot.setMinMaxFormat(sensor.getFormat());
    histogramPlot.setMinMaxFormat(sensor.getFormat());
 
@@ -250,14 +253,14 @@ void loop()
 
    sampleRateIndex = static_cast<uint16_t>(arduino.encoderB.getPosition());
 
-   const unsigned long effectiveSamplePeriodMs = 1000UL / TARGET_SAMPLE_RATES[sampleRateIndex];
+   const unsigned long effectiveSamplePeriodUs = 1000000UL / TARGET_SAMPLE_RATES[sampleRateIndex];
 
-   if (sampleTimer.getDurationMs() != effectiveSamplePeriodMs)
+   if (sampleTimer.getDurationMs() != effectiveSamplePeriodUs)
    {
-      sampleTimer.setDurationMs(effectiveSamplePeriodMs);
+      sampleTimer.setDurationMs(effectiveSamplePeriodUs);
    }
 
-   if (sampleTimer.ready())
+   if (sampleTimer.ready() && sensor.hasNewValue())
    {
       const float value = sensor.get();
       if (isfinite(value))

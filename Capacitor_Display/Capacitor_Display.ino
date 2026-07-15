@@ -16,8 +16,8 @@
 #include "Timer.h"
 
 // ----------- Pins
-constexpr uint8_t CHARGE_PIN = 6;
-constexpr uint8_t SENSE_PIN = 5;
+constexpr uint8_t CHARGE_PIN = CapacitorSensor::CHARGE_PIN_100K;
+constexpr uint8_t SENSE_PIN = CapacitorSensor::SENSE_PIN;
 
 // ----------- The Board
 Arduino arduino;

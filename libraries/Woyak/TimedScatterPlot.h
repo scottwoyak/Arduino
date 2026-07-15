@@ -6,6 +6,7 @@
 
 #include "ArduinoWithDisplay.h"
 #include "Color.h"
+#include "DisplayField.h"
 #include "Format.h"
 #include "Structs.h"
 #include "TimedAverageHistory.h"
@@ -48,6 +49,13 @@ private:
    // snapshot, indexed the same as _values/_agesMs (newest-first).
    float* _movingAverageBuffer = nullptr;
 
+   // Scratch buffers holding the rolling mean +/- stddev band computed over the current
+   // snapshot (windowed the same way as the moving average, over movingStatsDuration), indexed
+   // the same as _values/_agesMs (newest-first), so the band moves with the data instead
+   // of being a single flat mean/stddev over the whole retained history.
+   float* _stdDevLowBuffer = nullptr;
+   float* _stdDevHighBuffer = nullptr;
+
    // Per-pixel-column "which rows are lit" bitmasks used to diff this frame's drawing
    // against the previous frame's, so only pixels that actually changed color get drawn -
    // no stroke-replay erasing, and no special-casing needed for bin rotation, since the
@@ -59,6 +67,8 @@ private:
    uint8_t* _prevRawMask = nullptr;
    uint8_t* _maMask = nullptr;
    uint8_t* _prevMaMask = nullptr;
+   uint8_t* _bandMask = nullptr;
+   uint8_t* _prevBandMask = nullptr;
    size_t _maskBytesPerColumn = 0;
    int16_t _maskChartWidth = 0;
    int16_t _maskChartHeight = 0;
@@ -76,8 +86,11 @@ private:
       _values = new (std::nothrow) float[numBins];
       _agesMs = new (std::nothrow) unsigned long[numBins];
       _movingAverageBuffer = new (std::nothrow) float[numBins];
+      _stdDevLowBuffer = new (std::nothrow) float[numBins];
+      _stdDevHighBuffer = new (std::nothrow) float[numBins];
 
-      if (_values == nullptr || _agesMs == nullptr || _movingAverageBuffer == nullptr)
+      if (_values == nullptr || _agesMs == nullptr || _movingAverageBuffer == nullptr
+         || _stdDevLowBuffer == nullptr || _stdDevHighBuffer == nullptr)
       {
          Util::setHaltReason("OOM allocating rendering buffers in TimedScatterPlotSeries");
          Util::reset();
@@ -109,7 +122,9 @@ private:
       delete[] _prevRawMask;
       delete[] _maMask;
       delete[] _prevMaMask;
-      _rawMask = _prevRawMask = _maMask = _prevMaMask = nullptr;
+      delete[] _bandMask;
+      delete[] _prevBandMask;
+      _rawMask = _prevRawMask = _maMask = _prevMaMask = _bandMask = _prevBandMask = nullptr;
 
       _maskChartWidth = chartWidth;
       _maskChartHeight = chartHeight;
@@ -125,8 +140,11 @@ private:
       _prevRawMask = new (std::nothrow) uint8_t[bufSize];
       _maMask = new (std::nothrow) uint8_t[bufSize];
       _prevMaMask = new (std::nothrow) uint8_t[bufSize];
+      _bandMask = new (std::nothrow) uint8_t[bufSize];
+      _prevBandMask = new (std::nothrow) uint8_t[bufSize];
 
-      if (_rawMask == nullptr || _prevRawMask == nullptr || _maMask == nullptr || _prevMaMask == nullptr)
+      if (_rawMask == nullptr || _prevRawMask == nullptr || _maMask == nullptr || _prevMaMask == nullptr
+         || _bandMask == nullptr || _prevBandMask == nullptr)
       {
          Util::setHaltReason("OOM allocating scatter plot masks in TimedScatterPlotSeries");
          Util::reset();
@@ -137,6 +155,8 @@ private:
       memset(_prevRawMask, 0, bufSize);
       memset(_maMask, 0, bufSize);
       memset(_prevMaMask, 0, bufSize);
+      memset(_bandMask, 0, bufSize);
+      memset(_prevBandMask, 0, bufSize);
       return true;
    }
 
@@ -150,13 +170,109 @@ private:
    {
       _count = _bins.snapshot(_values, _agesMs);
       _recomputeMovingAverage();
+      _recomputeStdDevBand();
+   }
+
+   ///
+   /// <summary>
+   /// Recomputes a rolling mean +/- stddev band over the current snapshot, windowed the
+   /// same way as the centered moving average (every retained sample whose age falls
+   /// within movingStatsDuration/2 of that sample's own age), so the band moves with the data
+   /// instead of being a single flat mean/stddev over the whole retained history. Indices
+   /// with no finite samples in their window are set to NAN in both output buffers.
+   /// </summary>
+   ///
+   void _recomputeStdDevBand()
+   {
+      if (_count == 0)
+      {
+         return;
+      }
+
+      // _agesMs is newest-first (smallest age at index 0, largest age at the end).
+      const float halfWindow = movingStatsDuration / 2.0f;
+
+      for (size_t i = 0; i < _count; i++)
+      {
+         const unsigned long centerAge = _agesMs[i];
+         float sum = 0.0f;
+         size_t finiteCount = 0;
+
+         // Fold in samples that are the same age or older (index >= i).
+         for (size_t j = i; j < _count; j++)
+         {
+            if ((static_cast<float>(_agesMs[j]) - static_cast<float>(centerAge)) > halfWindow)
+            {
+               break;
+            }
+            if (isfinite(_values[j]))
+            {
+               sum += _values[j];
+               finiteCount++;
+            }
+         }
+
+         // Fold in samples that are newer (index < i).
+         for (size_t j = i; j-- > 0; )
+         {
+            if ((static_cast<float>(centerAge) - static_cast<float>(_agesMs[j])) > halfWindow)
+            {
+               break;
+            }
+            if (isfinite(_values[j]))
+            {
+               sum += _values[j];
+               finiteCount++;
+            }
+         }
+
+         if (finiteCount == 0)
+         {
+            _stdDevLowBuffer[i] = NAN;
+            _stdDevHighBuffer[i] = NAN;
+            continue;
+         }
+
+         const float mean = sum / static_cast<float>(finiteCount);
+         float sumSquares = 0.0f;
+
+         // Same two-pass windowing as above, now accumulating squared deviations from mean.
+         for (size_t j = i; j < _count; j++)
+         {
+            if ((static_cast<float>(_agesMs[j]) - static_cast<float>(centerAge)) > halfWindow)
+            {
+               break;
+            }
+            if (isfinite(_values[j]))
+            {
+               const float deviation = _values[j] - mean;
+               sumSquares += deviation * deviation;
+            }
+         }
+         for (size_t j = i; j-- > 0; )
+         {
+            if ((static_cast<float>(centerAge) - static_cast<float>(_agesMs[j])) > halfWindow)
+            {
+               break;
+            }
+            if (isfinite(_values[j]))
+            {
+               const float deviation = _values[j] - mean;
+               sumSquares += deviation * deviation;
+            }
+         }
+
+         const float stdDev = sqrtf(sumSquares / static_cast<float>(finiteCount));
+         _stdDevLowBuffer[i] = mean - stdDev;
+         _stdDevHighBuffer[i] = mean + stdDev;
+      }
    }
 
    ///
    /// <summary>
    /// Recomputes the centered moving average over the current snapshot. Each output
    /// value is the average of every retained sample whose age falls within
-   /// movingAverageWindowMs/2 of that sample's own age. Since the snapshot is a fixed
+   /// movingStatsDuration/2 of that sample's own age. Since the snapshot is a fixed
    /// point-in-time view (no further samples will ever be added to it), every index can
    /// be fully computed immediately; averages naturally get noisier near the edges of the
    /// retained window where fewer neighboring samples exist.
@@ -170,7 +286,7 @@ private:
       }
 
       // _agesMs is newest-first (smallest age at index 0, largest age at the end).
-      const float halfWindow = movingAverageWindowMs / 2.0f;
+      const float halfWindow = movingStatsDuration / 2.0f;
 
       for (size_t i = 0; i < _count; i++)
       {
@@ -237,9 +353,26 @@ public:
    Color movingAverageColor = Color::YELLOW;
 
    ///
-   /// <summary>Width of the centered moving-average window, in milliseconds.</summary>
+   /// <summary>If true, draws a rolling mean +/- stddev band of this series, windowed the
+   /// same way as the centered moving average (see movingStatsDuration), so the band moves with
+   /// the data instead of reflecting a single flat mean/stddev over the whole retained
+   /// history.</summary>
    ///
-   float movingAverageWindowMs = 0.0f;
+   bool showStdDevBand = false;
+
+   ///
+   /// <summary>Color used to draw this series' stddev band.</summary>
+   ///
+   Color stdDevBandColor = Color::MAGENTA;
+
+   ///
+   /// <summary>
+   /// Width of the centered window used by both the moving average and the stddev band,
+   /// in milliseconds, so the two always track the same span of data. Defaults to one
+   /// tenth of the series' total retained history window (historyMs).
+   /// </summary>
+   ///
+   float movingStatsDuration;
 
    ///
    /// <summary>
@@ -251,7 +384,7 @@ public:
    /// <param name="numBins">Number of time bins to retain (typically the chart's pixel width).</param>
    ///
    explicit TimedScatterPlotSeries(unsigned long historyMs, size_t numBins = 16)
-      : _bins(historyMs, numBins)
+      : _bins(historyMs, numBins), movingStatsDuration(static_cast<float>(historyMs) / 10.0f)
    {
       _allocateBuffers();
    }
@@ -264,10 +397,14 @@ public:
       delete[] _values;
       delete[] _agesMs;
       delete[] _movingAverageBuffer;
+      delete[] _stdDevLowBuffer;
+      delete[] _stdDevHighBuffer;
       delete[] _rawMask;
       delete[] _prevRawMask;
       delete[] _maMask;
       delete[] _prevMaMask;
+      delete[] _bandMask;
+      delete[] _prevBandMask;
    }
 
    ///
@@ -299,6 +436,8 @@ public:
          memset(_prevRawMask, 0, bufSize);
          memset(_maMask, 0, bufSize);
          memset(_prevMaMask, 0, bufSize);
+         memset(_bandMask, 0, bufSize);
+         memset(_prevBandMask, 0, bufSize);
       }
    }
 
@@ -309,6 +448,37 @@ public:
    /// <returns>Number of retained samples.</returns>
    ///
    size_t getCount() const { return _count; }
+
+   ///
+   /// <summary>
+   /// Gets the most recently computed moving-average value (the newest retained sample's
+   /// centered window average), or NAN if no samples are retained or the newest sample's
+   /// window is not yet ready.
+   /// </summary>
+   /// <returns>Newest moving-average value, or NAN if unavailable.</returns>
+   ///
+   float getLatestMovingAverage() const
+   {
+      return (_count > 0) ? _movingAverageBuffer[0] : NAN;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the most recently computed rolling stddev (half the width of the newest
+   /// retained sample's mean +/- stddev band), or NAN if no samples are retained or the
+   /// band is not finite for the newest sample.
+   /// </summary>
+   /// <returns>Newest stddev value, or NAN if unavailable.</returns>
+   ///
+   float getLatestStdDev() const
+   {
+      if (_count == 0 || !isfinite(_stdDevLowBuffer[0]) || !isfinite(_stdDevHighBuffer[0]))
+      {
+         return NAN;
+      }
+
+      return (_stdDevHighBuffer[0] - _stdDevLowBuffer[0]) / 2.0f;
+   }
 
    ///
    /// <summary>
@@ -357,6 +527,15 @@ private:
    Format _minMaxFormat;
    Format _sampleRangeFormat;
 
+   // Right-aligned copy of _minMaxFormat used for the moving-average/stddev mid-axis
+   // DisplayFields (see _drawMidAxisLabels()), which must always line up with the
+   // right-aligned min/max axis labels regardless of the alignment passed to
+   // setMinMaxFormat() (e.g. a sensor's own Format, which typically defaults to
+   // left-aligned). DisplayField only stores a pointer to its Format, so this must be a
+   // persistent member rather than a local temporary; kept in sync with _minMaxFormat
+   // wherever it's set.
+   Format _midAxisLabelFormat;
+
    // Optional centered title drawn above the chart; when set, the chart area is reduced
    // to make room for it.
    String _title;
@@ -373,6 +552,14 @@ private:
    TimedScatterPlotSeries** _series = nullptr;
    size_t _seriesCount = 0;
    size_t _seriesCapacity = 0;
+
+   // One optional DisplayField per series for its moving-average and stddev mid-axis
+   // labels (see _drawMidAxisLabels()), lazily created the first time each is needed.
+   // DisplayField redraws only its value (via an off-screen sprite) when it changes,
+   // avoiding the flicker of erasing/reprinting raw text every frame. Parallel to
+   // _series, growing/shrinking together with it.
+   DisplayField** _movingAverageFields = nullptr;
+   DisplayField** _stdDevFields = nullptr;
 
    unsigned long _lastRenderMicros = 0;
    unsigned long _lastComputeMicros = 0;
@@ -484,10 +671,39 @@ private:
                }
             }
          }
+
+         if (series->showStdDevBand)
+         {
+            for (size_t i = 0; i < series->_count; i++)
+            {
+               float low = series->_stdDevLowBuffer[i];
+               float high = series->_stdDevHighBuffer[i];
+               if (isfinite(low) && (!isfinite(yMin) || (low < yMin))) yMin = low;
+               if (isfinite(high) && (!isfinite(yMax) || (high > yMax))) yMax = high;
+            }
+         }
       }
 
       *outYMin = yMin;
       *outYMax = yMax;
+   }
+
+   ///
+   /// <summary>
+   /// Builds a right-aligned copy of the given Format, for use by the mid-axis
+   /// moving-average/stddev DisplayFields, which must always line up with the
+   /// right-aligned min/max axis labels regardless of the alignment the caller passed
+   /// to the constructor or setMinMaxFormat() (e.g. a sensor's own Format, which
+   /// typically defaults to left-aligned).
+   /// </summary>
+   /// <param name="format">Format to copy with right alignment applied.</param>
+   /// <returns>Right-aligned copy of the given Format.</returns>
+   ///
+   static Format _makeRightAlignedFormat(const Format& format)
+   {
+      return format.formatString().empty()
+         ? Format(format.length(), Format::Alignment::RIGHT)
+         : Format(format.formatString().c_str(), Format::Alignment::RIGHT);
    }
 
    ///
@@ -563,6 +779,76 @@ private:
 
    ///
    /// <summary>
+   /// Draws each series' latest moving-average and/or stddev value, stacked vertically
+   /// centered in the Y-axis label column (between the min and max labels), each in the
+   /// same color as the line/band it corresponds to and right-aligned like the min/max
+   /// labels. Values reflect the newest retained sample as of the last render() snapshot.
+   /// Each value is rendered through a lazily-created DisplayField (see
+   /// _movingAverageFields/_stdDevFields), which only redraws its sprite-backed value when
+   /// it changes, avoiding the flicker of reprinting raw text every frame.
+   /// </summary>
+   ///
+   void _drawMidAxisLabels()
+   {
+      int16_t lineHeight = _display->charH();
+      size_t labelCount = 0;
+
+      for (size_t i = 0; i < _seriesCount; i++)
+      {
+         const TimedScatterPlotSeries* series = _series[i];
+         if (series->showMovingAverage) labelCount++;
+         if (series->showStdDevBand) labelCount++;
+      }
+
+      if (labelCount == 0)
+      {
+         return;
+      }
+
+      int16_t y = _chartTop + (_chartHeight - static_cast<int16_t>(labelCount) * lineHeight) / 2;
+      int16_t labelWidth = static_cast<int16_t>(_display->textWidth(std::string(_minMaxFormat.length(), '0').c_str()));
+      int16_t labelX = max(static_cast<int16_t>(0), static_cast<int16_t>(_chartLeft - 2 - labelWidth));
+
+      for (size_t i = 0; i < _seriesCount; i++)
+      {
+         TimedScatterPlotSeries* series = _series[i];
+
+         if (series->showStdDevBand)
+         {
+            if (_stdDevFields[i] == nullptr)
+            {
+               _stdDevFields[i] = new DisplayField(_display, labelX, y, "", _midAxisLabelFormat, 2, true, series->stdDevBandColor, series->stdDevBandColor);
+            }
+
+            float value = series->getLatestStdDev();
+            if (isfinite(value))
+            {
+               _stdDevFields[i]->setValue(value);
+               _stdDevFields[i]->draw();
+            }
+            y += lineHeight;
+         }
+
+         if (series->showMovingAverage)
+         {
+            if (_movingAverageFields[i] == nullptr)
+            {
+               _movingAverageFields[i] = new DisplayField(_display, labelX, y, "", _midAxisLabelFormat, 2, true, series->movingAverageColor, series->movingAverageColor);
+            }
+
+            float value = series->getLatestMovingAverage();
+            if (isfinite(value))
+            {
+               _movingAverageFields[i]->setValue(value);
+               _movingAverageFields[i]->draw();
+            }
+            y += lineHeight;
+         }
+      }
+   }
+
+   ///
+   /// <summary>
    /// Formats the history-window label shown below the X axis, automatically switching
    /// units so the value stays readable: milliseconds below 2 seconds, seconds below 2
    /// minutes, and minutes otherwise.
@@ -623,10 +909,15 @@ private:
       // opposed to first converting to a float age-based fraction of _historyMs -
       // guarantees the exact same binIndex always lands on the exact same pixel
       // column, frame after frame, with no floating-point rounding drift.
-      const int32_t span = static_cast<int32_t>(_chartWidth) - 1;
+      //
+      // The left-most chart column is reserved for the gray Y-axis line (drawn by
+      // _drawAxes()), so data points are confined to columns 1..chartWidth - 1;
+      // otherwise the oldest retained sample would land on column 0 and overwrite the
+      // axis line on every redraw.
+      const int32_t span = static_cast<int32_t>(_chartWidth) - 2;
       const int32_t denom = (numBins > 1) ? static_cast<int32_t>(numBins - 1) : 1;
       const int32_t clampedIndex = min(static_cast<int32_t>(binIndex), denom);
-      outX = static_cast<int16_t>(span - (clampedIndex * span) / denom);
+      outX = static_cast<int16_t>(1 + span - (clampedIndex * span) / denom);
 
       // The bottom-most chart row is reserved for the gray X-axis line (drawn by
       // _drawAxes()), so data points are confined to chartHeight - 1 rows above it;
@@ -634,7 +925,7 @@ private:
       // and overwrite it on every redraw.
       outY = static_cast<int16_t>(((_axisYMax - value) / ySpan) * (_chartHeight - 2));
 
-      outX = constrain(outX, static_cast<int16_t>(0), static_cast<int16_t>(_chartWidth - 1));
+      outX = constrain(outX, static_cast<int16_t>(1), static_cast<int16_t>(_chartWidth - 1));
       outY = constrain(outY, static_cast<int16_t>(0), static_cast<int16_t>(_chartHeight - 2));
    }
 
@@ -823,7 +1114,116 @@ private:
       }
    }
 
+   ///
+   /// <summary>
+   /// Rasterizes a rolling mean +/- stddev band into a pixel-column bitmask, clearing it
+   /// first. Each buffer is rasterized as a connected line the same way _rasterizeSeriesData
+   /// draws a moving-average line, so the band moves with the data instead of being a
+   /// static pair of horizontal lines.
+   /// </summary>
+   /// <param name="mask">Bitmask buffer to rasterize into (cleared first).</param>
+   /// <param name="bytesPerColumn">Number of bytes per column in the mask.</param>
+   /// <param name="lowValues">Newest-first mean-minus-stddev values to plot.</param>
+   /// <param name="highValues">Newest-first mean-plus-stddev values to plot.</param>
+   /// <param name="count">Number of samples in lowValues/highValues.</param>
+   /// <param name="numBins">Total number of bins retained by the series these samples came from.</param>
+   ///
+   void _rasterizeStdDevBand(uint8_t* mask, size_t bytesPerColumn, const float* lowValues, const float* highValues, size_t count, size_t numBins) const
+   {
+      memset(mask, 0, bytesPerColumn * static_cast<size_t>(_chartWidth));
+
+      if (count == 0)
+      {
+         return;
+      }
+
+      bool havePrevLow = false;
+      bool havePrevHigh = false;
+      int16_t prevLowX = 0;
+      int16_t prevLowY = 0;
+      int16_t prevHighX = 0;
+      int16_t prevHighY = 0;
+
+      // Iterate oldest-first (reverse of the newest-first snapshot order) so lines connect
+      // chronologically left-to-right, matching _rasterizeSeriesData.
+      for (size_t idx = count; idx-- > 0; )
+      {
+         float lowValue = lowValues[idx];
+         if (isfinite(lowValue))
+         {
+            int16_t x;
+            int16_t y;
+            _toPixel(idx, numBins, lowValue, x, y);
+            if (havePrevLow)
+            {
+               _rasterizeLine(mask, bytesPerColumn, _chartWidth, _chartHeight, prevLowX, prevLowY, x, y);
+            }
+            prevLowX = x;
+            prevLowY = y;
+            havePrevLow = true;
+         }
+
+         float highValue = highValues[idx];
+         if (isfinite(highValue))
+         {
+            int16_t x;
+            int16_t y;
+            _toPixel(idx, numBins, highValue, x, y);
+            if (havePrevHigh)
+            {
+               _rasterizeLine(mask, bytesPerColumn, _chartWidth, _chartHeight, prevHighX, prevHighY, x, y);
+            }
+            prevHighX = x;
+            prevHighY = y;
+            havePrevHigh = true;
+         }
+      }
+   }
+
 public:
+   ///
+   /// <summary>
+   /// Converts a Y-axis value to an absolute display pixel row using the axis range
+   /// computed during the most recent render() call, for callers that want to overlay
+   /// their own annotations (e.g. a mean/stddev band) on top of the chart.
+   /// </summary>
+   /// <param name="value">Y-axis value to convert.</param>
+   /// <returns>Absolute display row, clamped to the chart's interior.</returns>
+   ///
+   int16_t valueToDisplayY(float value) const
+   {
+      float ySpan = _axisYMax - _axisYMin;
+      if (ySpan <= 0.0f) ySpan = 1.0f;
+
+      int16_t relativeY = static_cast<int16_t>(((_axisYMax - value) / ySpan) * (_chartHeight - 2));
+      relativeY = constrain(relativeY, static_cast<int16_t>(0), static_cast<int16_t>(_chartHeight - 2));
+      return _chartTop + relativeY;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the chart interior's left edge in absolute display pixels, as computed during
+   /// the most recent render() call.
+   /// </summary>
+   /// <returns>Absolute display column of the chart's left edge.</returns>
+   ///
+   int16_t chartLeft() const
+   {
+      return _chartLeft;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the chart interior's width in pixels, as computed during the most recent
+   /// render() call.
+   /// </summary>
+   /// <returns>Chart interior width in pixels.</returns>
+   ///
+   int16_t chartWidth() const
+   {
+      return _chartWidth;
+   }
+
    ///
    /// <summary>
    /// Creates a timed scatter plot renderer that draws within the given fixed screen
@@ -851,7 +1251,7 @@ public:
    ///
    TimedScatterPlot(ArduinoWithDisplay* display, Rect16 rect, unsigned long historyMs, const Format& minMaxFormat, const Format& sampleRangeFormat, float minValueStep = 0.0f, const String& title = String())
       : _display(display), _rect(rect), _historyMs((historyMs == 0) ? 1 : historyMs), _minValueStep(minValueStep),
-        _minMaxFormat(minMaxFormat), _sampleRangeFormat(sampleRangeFormat), _title(title)
+        _minMaxFormat(minMaxFormat), _sampleRangeFormat(sampleRangeFormat), _midAxisLabelFormat(_makeRightAlignedFormat(minMaxFormat)), _title(title)
    {
    }
 
@@ -863,8 +1263,12 @@ public:
       for (size_t i = 0; i < _seriesCount; i++)
       {
          delete _series[i];
+         delete _movingAverageFields[i];
+         delete _stdDevFields[i];
       }
       delete[] _series;
+      delete[] _movingAverageFields;
+      delete[] _stdDevFields;
    }
 
    ///
@@ -884,9 +1288,14 @@ public:
       {
          size_t newCapacity = _seriesCapacity + 5;
          TimedScatterPlotSeries** newSeries = new (std::nothrow) TimedScatterPlotSeries*[newCapacity];
+         DisplayField** newMovingAverageFields = new (std::nothrow) DisplayField*[newCapacity];
+         DisplayField** newStdDevFields = new (std::nothrow) DisplayField*[newCapacity];
 
-         if (newSeries == nullptr)
+         if (newSeries == nullptr || newMovingAverageFields == nullptr || newStdDevFields == nullptr)
          {
+            delete[] newSeries;
+            delete[] newMovingAverageFields;
+            delete[] newStdDevFields;
             Util::setHaltReason("OOM allocating series array in TimedScatterPlot");
             Util::reset();
             return nullptr;
@@ -895,16 +1304,25 @@ public:
          if (_seriesCount > 0)
          {
             memcpy(newSeries, _series, _seriesCount * sizeof(TimedScatterPlotSeries*));
+            memcpy(newMovingAverageFields, _movingAverageFields, _seriesCount * sizeof(DisplayField*));
+            memcpy(newStdDevFields, _stdDevFields, _seriesCount * sizeof(DisplayField*));
          }
 
          delete[] _series;
+         delete[] _movingAverageFields;
+         delete[] _stdDevFields;
          _series = newSeries;
+         _movingAverageFields = newMovingAverageFields;
+         _stdDevFields = newStdDevFields;
          _seriesCapacity = newCapacity;
       }
 
       size_t effectiveNumBins = (numBins > 0) ? numBins : static_cast<size_t>(max<int16_t>(1, static_cast<int16_t>(_rect.width)));
       TimedScatterPlotSeries* newSeries = new TimedScatterPlotSeries(_historyMs, effectiveNumBins);
-      _series[_seriesCount++] = newSeries;
+      _series[_seriesCount] = newSeries;
+      _movingAverageFields[_seriesCount] = nullptr;
+      _stdDevFields[_seriesCount] = nullptr;
+      _seriesCount++;
       return newSeries;
    }
 
@@ -942,10 +1360,14 @@ public:
       if (index < _seriesCount)
       {
          delete _series[index];
+         delete _movingAverageFields[index];
+         delete _stdDevFields[index];
 
          for (size_t i = index; i < _seriesCount - 1; i++)
          {
             _series[i] = _series[i + 1];
+            _movingAverageFields[i] = _movingAverageFields[i + 1];
+            _stdDevFields[i] = _stdDevFields[i + 1];
          }
 
          _seriesCount--;
@@ -962,6 +1384,10 @@ public:
       for (size_t i = 0; i < _seriesCount; i++)
       {
          delete _series[i];
+         delete _movingAverageFields[i];
+         delete _stdDevFields[i];
+         _movingAverageFields[i] = nullptr;
+         _stdDevFields[i] = nullptr;
       }
       _seriesCount = 0;
    }
@@ -988,6 +1414,7 @@ public:
    void setMinMaxFormat(const Format& format)
    {
       _minMaxFormat = format;
+      _midAxisLabelFormat = _makeRightAlignedFormat(format);
    }
 
    ///
@@ -1188,7 +1615,17 @@ public:
             {
                memset(series->_prevRawMask, 0, bufSize);
                memset(series->_prevMaMask, 0, bufSize);
+               memset(series->_prevBandMask, 0, bufSize);
             }
+
+            // The chart area (and thus the mid-axis label column position) was just
+            // cleared/recomputed, so any existing moving-average/stddev DisplayFields
+            // are stale (their captured x/y no longer matches); drop them so
+            // _drawMidAxisLabels() recreates them at the current position.
+            delete _movingAverageFields[i];
+            delete _stdDevFields[i];
+            _movingAverageFields[i] = nullptr;
+            _stdDevFields[i] = nullptr;
          }
       }
 
@@ -1207,7 +1644,15 @@ public:
             _rasterizeSeriesData(series->_maMask, series->_maskBytesPerColumn, series->_movingAverageBuffer, series->_count, series->numBins(), true, false, false);
             _diffMasksAndDraw(series->_maMask, series->_prevMaMask, series->_maskBytesPerColumn, series->movingAverageColor);
          }
+
+         if (series->showStdDevBand)
+         {
+            _rasterizeStdDevBand(series->_bandMask, series->_maskBytesPerColumn, series->_stdDevLowBuffer, series->_stdDevHighBuffer, series->_count, series->numBins());
+            _diffMasksAndDraw(series->_bandMask, series->_prevBandMask, series->_maskBytesPerColumn, series->stdDevBandColor);
+         }
       }
+
+      _drawMidAxisLabels();
 
       _display->display.endWrite();
 

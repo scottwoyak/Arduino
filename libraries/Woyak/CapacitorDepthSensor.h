@@ -26,15 +26,18 @@ public:
    /// <param name="calibrationTime">Charge time (microseconds) measured at calibrationDepth.</param>
    /// <param name="calibrationDepth">Depth value corresponding to calibrationTime (e.g. half of fullDepth).</param>
    /// <param name="fullDepth">Full-scale depth value used to size the depth bar/UI; the charge-time-to-depth mapping is linear and is not clamped to this value.</param>
+   /// <param name="bufferSize">Rolling average window size used by the underlying capacitor sensor. A
+   /// value of 0 is treated as 1, i.e. no averaging is performed and the latest sample is used directly.</param>
    CapacitorDepthSensor(
       uint8_t chargePin,
       uint8_t sensePin,
       float zeroTime,
       float calibrationTime,
       float calibrationDepth,
-      float fullDepth)
+      float fullDepth,
+      size_t bufferSize = CapacitorSensor::DEFAULT_BUFFER_SIZE)
    {
-      _sensor = new CapacitorSensor(chargePin, sensePin);
+      _sensor = new CapacitorSensor(chargePin, sensePin, CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS, bufferSize);
       _zeroTime = zeroTime;
       _calibrationTime = calibrationTime;
       _calibrationDepth = calibrationDepth;
@@ -166,5 +169,15 @@ public:
    float rate()
    {
       return _sensor->rate();
+   }
+
+   /// <summary>
+   /// Gets the processed measurement counter, useful for detecting whether a new
+   /// measurement has arrived since the last check.
+   /// </summary>
+   /// <returns>Monotonic count of processed measurements.</returns>
+   uint32_t counter() const
+   {
+      return _sensor->counter();
    }
 };

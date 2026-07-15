@@ -70,8 +70,8 @@
 
 constexpr float FRESH_WATER_DENSITY_KG_PER_M3 = 997.0f;
 
-constexpr uint8_t CAPACITOR_CHARGE_PIN = 2; // 100K resistor
-constexpr uint8_t CAPACITOR_SENSE_PIN = 7;
+constexpr uint8_t CAPACITOR_CHARGE_PIN = CapacitorSensor::CHARGE_PIN_100K;
+constexpr uint8_t CAPACITOR_SENSE_PIN = CapacitorSensor::SENSE_PIN;
 constexpr float CAPACITOR_DEFAULT_ZERO_CHARGE_TIME = 128.3f;
 constexpr float CAPACITOR_DEFAULT_CALIBRATION_CHARGE_TIME = 295.0f;
 constexpr float CAPACITOR_CALIBRATION_DEPTH_CM = 45.72f; // 18 inches (half of full depth)

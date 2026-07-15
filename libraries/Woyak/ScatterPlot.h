@@ -206,7 +206,23 @@ public:
    bool showMovingAverage = false;
 
    ///
-   /// <summary>Color used to draw this series' points, lines, and moving average.</summary>
+   /// <summary>Color used to draw this series' moving-average line.</summary>
+   ///
+   Color movingAverageColor = Color::YELLOW;
+
+   ///
+   /// <summary>If true, draws a horizontal band at mean +/- stddev of this series' currently
+   /// displayed (showPoints/showLines) Y values, recomputed each render().</summary>
+   ///
+   bool showStdDevBand = false;
+
+   ///
+   /// <summary>Color used to draw this series' stddev band.</summary>
+   ///
+   Color stdDevBandColor = Color::MAGENTA;
+
+   ///
+   /// <summary>Color used to draw this series' points and lines.</summary>
    ///
    Color color = Color::GREEN;
 
@@ -448,6 +464,51 @@ public:
       *outMin = minValue;
       *outMax = maxValue;
    }
+
+   ///
+   /// <summary>
+   /// Computes the mean and population standard deviation of the series' raw Y values,
+   /// used to draw an optional stddev band (see showStdDevBand).
+   /// </summary>
+   /// <param name="outMean">Receives the mean of the finite Y values, or NAN if none exist.</param>
+   /// <param name="outStdDev">Receives the standard deviation of the finite Y values, or NAN if none exist.</param>
+   ///
+   void stdDevRange(float* outMean, float* outStdDev) const
+   {
+      float sum = 0.0f;
+      size_t finiteCount = 0;
+
+      for (size_t i = 0; i < _count; i++)
+      {
+         if (isfinite(_y[i]))
+         {
+            sum += _y[i];
+            finiteCount++;
+         }
+      }
+
+      if (finiteCount == 0)
+      {
+         *outMean = NAN;
+         *outStdDev = NAN;
+         return;
+      }
+
+      const float mean = sum / static_cast<float>(finiteCount);
+      float sumSquares = 0.0f;
+
+      for (size_t i = 0; i < _count; i++)
+      {
+         if (isfinite(_y[i]))
+         {
+            const float deviation = _y[i] - mean;
+            sumSquares += deviation * deviation;
+         }
+      }
+
+      *outMean = mean;
+      *outStdDev = sqrtf(sumSquares / static_cast<float>(finiteCount));
+   }
 };
 
 ///
@@ -557,6 +618,20 @@ private:
             series->movingAverageRange(&maMin, &maMax);
             if (isfinite(maMin) && (!isfinite(yMin) || (maMin < yMin))) yMin = maMin;
             if (isfinite(maMax) && (!isfinite(yMax) || (maMax > yMax))) yMax = maMax;
+         }
+
+         if (series->showStdDevBand)
+         {
+            float bandMean;
+            float bandStdDev;
+            series->stdDevRange(&bandMean, &bandStdDev);
+            if (isfinite(bandMean) && isfinite(bandStdDev))
+            {
+               const float bandMin = bandMean - bandStdDev;
+               const float bandMax = bandMean + bandStdDev;
+               if (!isfinite(yMin) || (bandMin < yMin)) yMin = bandMin;
+               if (!isfinite(yMax) || (bandMax > yMax)) yMax = bandMax;
+            }
          }
       }
 
@@ -696,7 +771,7 @@ private:
       }
 
       bool connectPoints = useMovingAverage || series->showLines;
-      Color color = series->color;
+      Color color = useMovingAverage ? series->movingAverageColor : series->color;
 
       bool havePrevPoint = false;
       int16_t prevX = 0;
@@ -1077,6 +1152,24 @@ public:
          {
             size_t newReadyCount = _plotSeriesData(series, series->movingAverageRenderedCount(), true);
             series->setMovingAverageRenderedCount(newReadyCount);
+         }
+
+         if (series->showStdDevBand)
+         {
+            float bandMean;
+            float bandStdDev;
+            series->stdDevRange(&bandMean, &bandStdDev);
+            if (isfinite(bandMean) && isfinite(bandStdDev))
+            {
+               int16_t lowY;
+               int16_t highY;
+               int16_t dummyX;
+               _toPixel(_axisXMin, bandMean - bandStdDev, dummyX, lowY);
+               _toPixel(_axisXMin, bandMean + bandStdDev, dummyX, highY);
+               int16_t chartRight = static_cast<int16_t>(_chartLeft + _chartWidth - 1);
+               _display->drawLine(_chartLeft, lowY, chartRight, lowY, series->stdDevBandColor);
+               _display->drawLine(_chartLeft, highY, chartRight, highY, series->stdDevBandColor);
+            }
          }
       }
 

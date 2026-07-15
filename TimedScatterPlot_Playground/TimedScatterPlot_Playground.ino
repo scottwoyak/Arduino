@@ -144,7 +144,7 @@ void setup()
    series = plot.createSeries();
    series->color = Color::GREEN;
    series->showMovingAverage = true;
-   series->movingAverageWindowMs = MOVING_AVERAGE_MS;
+   series->movingStatsDuration = MOVING_AVERAGE_MS;
 
    sensorReady = sensor.begin();
    if (!sensorReady)

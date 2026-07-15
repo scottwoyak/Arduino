@@ -8,6 +8,7 @@
 #include "TempSensor.h"
 #include "ESP32TempSensor.h"
 #include "CapacitorSensor.h"
+#include "CapacitorDepthSensor.h"
 
 class ESP32TempTestSensor;
 class TempSensorTestSensor;
@@ -18,6 +19,7 @@ class SinTestSensor;
 class SinWithNormalNoiseTestSensor;
 class MS5837PressureTestSensor;
 class CapacitiveTestSensor;
+class DepthTestSensor;
 
 // One-line sensor source switch used by all sketches. Change only TEST_SENSOR_TYPE below;
 // TestSensor is derived from it automatically. Use sensor.sensorType() to display the
@@ -29,8 +31,10 @@ class CapacitiveTestSensor;
 // #define TEST_SENSOR_TYPE ConstantTestSensor
 // #define TEST_SENSOR_TYPE RandomTestSensor
 // #define TEST_SENSOR_TYPE NormalTestSensor
-#define TEST_SENSOR_TYPE MS5837PressureTestSensor
+#define TEST_SENSOR_TYPE DepthTestSensor
+// #define TEST_SENSOR_TYPE MS5837PressureTestSensor
 // #define TEST_SENSOR_TYPE CapacitiveTestSensor
+// #define TEST_SENSOR_TYPE DepthTestSensor
 
 using TestSensor = TEST_SENSOR_TYPE;
 
@@ -88,19 +92,26 @@ namespace TestSensorConfig
    static constexpr const char* MS5837_HIGH_RES_FORMAT = "####.###";
 
    // ----- capacitive sensor
-   // Charge pin to resistor mapping used in capacitor calibration/wiring sketches:
-   // - 6  => 1M
-   // - 9  => 470K
-   // - 10 => 100K
-   // - 11 => 47K
-   // Alternate sense pin used in calibration/wiring sketches: 5
-   static constexpr uint8_t CAPACITIVE_CHARGE_PIN = 14;
-   static constexpr uint8_t CAPACITIVE_SENSE_PIN = 27;
+   // Uses the standard capacitor sensor prototype wiring defined by CapacitorSensor
+   // (shared by the Capacitor_Playground, Capacitor_Wiring_Test, and Depth_Display sketches).
+   static constexpr uint8_t CAPACITIVE_CHARGE_PIN = CapacitorSensor::CHARGE_PIN_100K;
+   static constexpr uint8_t CAPACITIVE_SENSE_PIN = CapacitorSensor::SENSE_PIN;
    static constexpr uint16_t CAPACITIVE_DISCHARGE_DELAY_US = CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS;
    static constexpr uint32_t CAPACITIVE_PROCESS_PERIOD_US = CapacitorSensor::DEFAULT_DEFERRED_PROCESSING_PERIOD_MICROS;
    static constexpr size_t CAPACITIVE_BUFFER_SIZE = CapacitorSensor::DEFAULT_BUFFER_SIZE;
    static constexpr const char* CAPACITIVE_FORMAT = "#########";
    static constexpr const char* CAPACITIVE_HIGH_RES_FORMAT = "##########";
+
+   // ----- depth sensor (capacitive-based)
+   static constexpr uint8_t DEPTH_CHARGE_PIN = CAPACITIVE_CHARGE_PIN;
+   static constexpr uint8_t DEPTH_SENSE_PIN = CAPACITIVE_SENSE_PIN;
+   static constexpr float DEPTH_ZERO_CHARGE_TIME = 128.3f;
+   static constexpr float DEPTH_CALIBRATION_CHARGE_TIME = 295.0f;
+   static constexpr float DEPTH_CALIBRATION_DEPTH_CM = 45.72f; // 18 inches (half of full depth)
+   static constexpr float DEPTH_FULL_DEPTH_CM = 91.44f; // 36 inches
+   static constexpr size_t DEPTH_BUFFER_SIZE = 0; // 0 = no averaging (buffer size of 1) during sensor tests
+   static constexpr const char* DEPTH_FORMAT = "####.##";
+   static constexpr const char* DEPTH_HIGH_RES_FORMAT = "####.###";
 }
 
 ///
@@ -153,6 +164,20 @@ public:
    /// <returns>A Format object configured for high-resolution value display.</returns>
    ///
    virtual const Format& getHighResFormat() const = 0;
+
+   ///
+   /// <summary>
+   /// Checks whether a new physical measurement has arrived since the last call to get(),
+   /// for sensors whose underlying measurement rate can be slower than the polling rate.
+   /// Callers can use this to avoid recording duplicate/stale readings when oversampling.
+   /// </summary>
+   /// <returns>True when a new measurement is available; sensors that always produce a fresh
+   /// value on every call (e.g. mock sensors) should return true.</returns>
+   ///
+   virtual bool hasNewValue()
+   {
+      return true;
+   }
 };
 
 ///
@@ -907,6 +932,7 @@ private:
       TestSensorConfig::CAPACITIVE_BUFFER_SIZE };
    Format* _format = nullptr;
    Format* _highResFormat = nullptr;
+   uint32_t _lastCounter = 0;
 
 public:
    ///
@@ -931,6 +957,20 @@ public:
    float get() override
    {
       return _sensor.chargeTimeMicros();
+   }
+
+   ///
+   /// <summary>
+   /// Checks whether a new physical measurement has been processed since the last check.
+   /// </summary>
+   /// <returns>True when the sensor's measurement counter has advanced.</returns>
+   ///
+   bool hasNewValue() override
+   {
+      uint32_t current = _sensor.counter();
+      bool isNew = current != _lastCounter;
+      _lastCounter = current;
+      return isNew;
    }
 
    ///
@@ -975,6 +1015,113 @@ public:
    }
 
    ~CapacitiveTestSensor() override
+   {
+      delete _format;
+      delete _highResFormat;
+   }
+};
+
+///
+/// <summary>
+/// Uses the capacitor-based depth sensor as the test sensor source, reporting depth in
+/// centimeters (via CapacitorDepthSensor's charge-time-to-depth calibration) rather than the
+/// raw charge time reported by CapacitiveTestSensor.
+/// </summary>
+///
+class DepthTestSensor : public ITestSensor
+{
+private:
+   CapacitorDepthSensor _sensor{
+      TestSensorConfig::DEPTH_CHARGE_PIN,
+      TestSensorConfig::DEPTH_SENSE_PIN,
+      TestSensorConfig::DEPTH_ZERO_CHARGE_TIME,
+      TestSensorConfig::DEPTH_CALIBRATION_CHARGE_TIME,
+      TestSensorConfig::DEPTH_CALIBRATION_DEPTH_CM,
+      TestSensorConfig::DEPTH_FULL_DEPTH_CM,
+      TestSensorConfig::DEPTH_BUFFER_SIZE };
+   Format* _format = nullptr;
+   Format* _highResFormat = nullptr;
+   uint32_t _lastCounter = 0;
+
+public:
+   ///
+   /// <summary>
+   /// Initializes the underlying capacitor depth sensor.
+   /// </summary>
+   /// <returns>True when initialization succeeds.</returns>
+   ///
+   bool begin() override
+   {
+      return _sensor.begin();
+   }
+
+   ///
+   /// <summary>
+   /// Reads one depth sample, in centimeters.
+   /// </summary>
+   /// <returns>The current depth reading, in centimeters.</returns>
+   ///
+   float get() override
+   {
+      return _sensor.getDepth();
+   }
+
+   ///
+   /// <summary>
+   /// Checks whether a new physical measurement has been processed since the last check.
+   /// </summary>
+   /// <returns>True when the sensor's measurement counter has advanced.</returns>
+   ///
+   bool hasNewValue() override
+   {
+      uint32_t current = _sensor.counter();
+      bool isNew = current != _lastCounter;
+      _lastCounter = current;
+      return isNew;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the sensor type name.
+   /// </summary>
+   /// <returns>The sensor type name.</returns>
+   ///
+   const char* sensorType() const override
+   {
+      return "Depth";
+   }
+
+   ///
+   /// <summary>
+   /// Gets the format object for values.
+   /// </summary>
+   /// <returns>A Format object configured for value display.</returns>
+   ///
+   const Format& getFormat() const override
+   {
+      if (_format == nullptr)
+      {
+         const_cast<DepthTestSensor*>(this)->_format = new (std::nothrow) Format(TestSensorConfig::DEPTH_FORMAT);
+      }
+      return *_format;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the high-resolution format object for values.
+   /// </summary>
+   /// <returns>A Format object configured for high-resolution value display.</returns>
+   ///
+   const Format& getHighResFormat() const override
+   {
+      if (_highResFormat == nullptr)
+      {
+         const_cast<DepthTestSensor*>(this)->_highResFormat = new (std::nothrow) Format(TestSensorConfig::DEPTH_HIGH_RES_FORMAT);
+      }
+      return *_highResFormat;
+   }
+
+   ~DepthTestSensor() override
    {
       delete _format;
       delete _highResFormat;
