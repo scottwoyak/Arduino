@@ -58,7 +58,6 @@ constexpr uint16_t SAMPLE_INTERVAL_MS = 100;  // how often each SensorData takes
 constexpr uint16_t TIMED_AVERAGE_DURATION_S = 5 * 60;  // 5 minute averaging window
 constexpr uint16_t INFLUX_INTERVAL_S = 10;
 constexpr uint16_t PREFS_INTERVAL_S = 60;
-constexpr uint16_t SERIAL_REPORT_INTERVAL_S = 60;  // 1 minute
 constexpr uint16_t WIFI_RESET_DELAY_S = 10;
 constexpr uint8_t BATCH_SIZE_PER_SENSOR = 3;  // InfluxDB write batch size, per detected sensor
 constexpr uint16_t INFLUX_INIT_DELAY_MS = 1000;  // pause after InfluxDB init to show "Init" screen
@@ -204,10 +203,6 @@ void saveCalibrationPoints()
    arduino.preferences.end();
 
    delete[] points;
-
-   Serial.print("Saved ");
-   Serial.print(count);
-   Serial.println(" calibration points to Preferences.");
 }
 
 ///
@@ -277,7 +272,6 @@ TimedScatterPlotSeries* correctionSeries[NUM_SENSORS] = { nullptr };
 Timer sensorReadTrigger(SAMPLE_INTERVAL_MS);
 TimerSecs influxTrigger(INFLUX_INTERVAL_S);
 TimerSecs prefsTrigger(PREFS_INTERVAL_S);
-TimerSecs serialReportTrigger(SERIAL_REPORT_INTERVAL_S);
 
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
@@ -690,6 +684,37 @@ void displayScatterPlots()
    if (correctionPlot) correctionPlot->render();
 }
 
+///
+/// <summary>
+/// Prints one row of the calibration history table (baseline temperature and per-sensor
+/// correction) to Serial, printing the column header once beforehand. Called each time the
+/// baseline (sensor 0) temperature reaches a new whole-degree value.
+/// </summary>
+///
+void printSensorTableToSerial()
+{
+   static bool headerPrinted = false;
+   static const Format baselineColFormat("###", Format::Alignment::RIGHT);
+   static const Format sensorColFormat("+#.###", 8, Format::Alignment::RIGHT);
+
+   if (!headerPrinted)
+   {
+      Serial.println("Base    S0       S1       S2       S3       S4       S5       S6       S7");
+      headerPrinted = true;
+   }
+
+   float baseline = sensorData[0]->getLongAvgValue();
+
+   String row = baselineColFormat.toString(baseline).c_str();
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   {
+      float longAvg = sensorData[i]->getLongAvgValue();
+      float correction = (!isnan(longAvg) && !isnan(baseline)) ? (baseline - longAvg) : 0.0f;
+      row += " " + String(sensorColFormat.toString(correction).c_str());
+   }
+   Serial.println(row);
+}
+
 void setup()
 {
    SerialX::begin();
@@ -867,12 +892,15 @@ void loop()
       }
    }
 
-   // Save the calibration point table to Preferences as soon as a new entry is added,
-   // rather than waiting for the encoder A button to be pressed.
+   // Save the calibration point table to Preferences and report the temperature table to
+   // Serial each time a new whole-degree calibration point is recorded (i.e. the baseline
+   // temperature increases by a degree), rather than waiting for the encoder A button to
+   // be pressed.
    uint8_t calibrationPointCount = calibrator.getCalibrationPointCount();
    if (calibrationPointCount != lastCalibrationPointCount)
    {
       saveCalibrationPoints();
+      printSensorTableToSerial();
       lastCalibrationPointCount = calibrationPointCount;
    }
 
@@ -945,12 +973,6 @@ void loop()
       arduino.preferences.end();
    }
 
-   // ------------------------------------------- report to serial
-   if (serialReportTrigger.ready())
-   {
-      printCalibrationCodeToSerial();
-   }
-
    // ------------------------------------------- send to INFLUX
    if (influxTrigger.ready())
    {
@@ -958,9 +980,6 @@ void loop()
       {
          digitalWrite(BUILTIN_LED, HIGH);
 
-         Serial.print("Uploading to InfluxDB... ");
-         Serial.print(sampleCount);
-         Serial.println(" values collected");
          sampleCount = 0;
 
          bool writeFailed = false;
