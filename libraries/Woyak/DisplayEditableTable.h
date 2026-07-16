@@ -5,32 +5,32 @@
 #include "Format.h"
 #include "Color.h"
 #include "ESP32_S3_Playground.h"
-#include "SetupField.h"
+#include "DisplayEditableField.h"
 
 ///
 /// <summary>
-/// Reusable, embeddable table of SetupField values that can be navigated and adjusted live
+/// Reusable, embeddable table of DisplayEditableField values that can be navigated and adjusted live
 /// with a board's encoders: Encoder A cycles the selected field, Encoder B adjusts its value.
 /// Also supports loading/saving/resetting all fields against a Preferences namespace. Unlike
-/// SetupDisplay, this class does not block and does not own a title/instructions area - it
+/// DisplayEditor, this class does not block and does not own a title/instructions area - it
 /// simply tracks the selected field, persists values, and draws the label/value rows at a
 /// caller-specified position, so it can be embedded into any display layout (a live monitoring
 /// screen, a dedicated setup screen, etc.).
 /// </summary>
 ///
-class SetupTable
+class DisplayEditableTable
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the SetupTable class.
+   /// Initializes a new instance of the DisplayEditableTable class.
    /// </summary>
    /// <param name="arduino">Board providing the display, encoders, and preferences.</param>
    /// <param name="prefNamespace">Preferences namespace used to persist field values.</param>
    /// <param name="fields">Array of field pointers to display and edit.</param>
    /// <param name="fieldCount">Number of entries in fields.</param>
    ///
-   SetupTable(ESP32_S3_Playground* arduino, const char* prefNamespace, SetupField** fields, uint8_t fieldCount)
+   DisplayEditableTable(ESP32_S3_Playground* arduino, const char* prefNamespace, DisplayEditableField** fields, uint8_t fieldCount)
       : _arduino(arduino), _prefNamespace(prefNamespace), _fields(fields), _fieldCount(fieldCount)
    {
    }
@@ -150,7 +150,7 @@ public:
    /// </summary>
    /// <returns>The field pointer array passed to the constructor.</returns>
    ///
-   SetupField** fields() const
+   DisplayEditableField** fields() const
    {
       return _fields;
    }
@@ -217,7 +217,7 @@ public:
 private:
    ESP32_S3_Playground* _arduino;
    const char* _prefNamespace;
-   SetupField** _fields;
+   DisplayEditableField** _fields;
    uint8_t _fieldCount;
    uint8_t _selectedIndex = 0;
 

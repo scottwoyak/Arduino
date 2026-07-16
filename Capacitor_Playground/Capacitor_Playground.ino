@@ -45,12 +45,12 @@
 #include "ArduinoBoard.h"
 #include "CapacitorSensor.h"
 #include "RollingAverage.h"
-#include "SetupTable.h"
+#include "DisplayEditableTable.h"
 #include "SerialTable.h"
 #include "Stats.h"
 #include "TimedStats.h"
 #include "SerialX.h"
-#include "SetupField.h"
+#include "DisplayEditableField.h"
 #include "DisplayTextView.h"
 #include "Timer.h"
 
@@ -166,10 +166,10 @@ constexpr size_t TEST_TYPE_COUNT = sizeof(TEST_TYPE_LABELS) / sizeof(TEST_TYPE_L
 /// the resistor's label instead of a raw index number.
 /// </summary>
 ///
-class ResistorSetupField : public IntSetupField
+class ResistorSetupField : public IntDisplayEditableField
 {
 public:
-   using IntSetupField::IntSetupField;
+   using IntDisplayEditableField::IntDisplayEditableField;
 
    void adjust(int32_t direction) override
    {
@@ -191,10 +191,10 @@ public:
 /// the test type's label instead of a raw index number.
 /// </summary>
 ///
-class TestTypeSetupField : public IntSetupField
+class TestTypeSetupField : public IntDisplayEditableField
 {
 public:
-   using IntSetupField::IntSetupField;
+   using IntDisplayEditableField::IntDisplayEditableField;
 
    void adjust(int32_t direction) override
    {
@@ -212,15 +212,15 @@ public:
 
 ResistorSetupField resistorField("Resistor", &liveResistorIndex,
    0, (long)(RESISTOR_OPTION_COUNT - 1), 1, 0, liveResistorFormat);
-IntSetupField delayField("Discharge Time", &liveDischargeDelayMicros,
+IntDisplayEditableField delayField("Discharge Time", &liveDischargeDelayMicros,
    50, 2000, 50, (long)CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS, liveDischargeFormat);
-IntSetupField bufferSizeField("Averaging Buffer Size", &liveBufferSize,
+IntDisplayEditableField bufferSizeField("Averaging Buffer Size", &liveBufferSize,
    (long)MIN_TARGET_BUFFER_SIZE, (long)MAX_TARGET_BUFFER_SIZE, 5, (long)CapacitorSensor::DEFAULT_BUFFER_SIZE, liveBufferFormat);
 TestTypeSetupField testTypeField("Test Type", &liveTestType,
    0, (long)(TEST_TYPE_COUNT - 1), 1, 0, liveTestTypeFormat);
 
-SetupField* liveFields[] = { &resistorField, &delayField, &bufferSizeField, &testTypeField };
-SetupTable liveFieldTable(&arduino, PREF_NAMESPACE, liveFields, 4);
+DisplayEditableField* liveFields[] = { &resistorField, &delayField, &bufferSizeField, &testTypeField };
+DisplayEditableTable liveFieldTable(&arduino, PREF_NAMESPACE, liveFields, 4);
 
 ///
 /// <summary>Look up the resistor value label for a charge pin.</summary>

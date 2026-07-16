@@ -2,13 +2,13 @@
 // Captures finite sensor values for a fixed run window (or until the sample cap is reached), stores
 // them in RAM, and reports serial/display summaries.
 //
-// On startup, a SetupDisplay screen lets the user review/adjust the target sample rate, max samples,
+// On startup, a DisplayEditor screen lets the user review/adjust the target sample rate, max samples,
 // sampling duration, and warmup period (Encoder A selects a field, Encoder B adjusts it, Button B
 // resets to defaults). Press Button A to confirm and start the capture using the selected values.
 //
 // Capture flow:
 // 1) Initialize display, serial, and sensor.
-// 2) Load setup values from Preferences and run the SetupDisplay screen; start capture on Button A.
+// 2) Load setup values from Preferences and run the DisplayEditor screen; start capture on Button A.
 // 3) Sample at up to the selected target rate and store finite values in RAM.
 // 4) Stop when MAX_SAMPLES are stored or SAMPLING_DURATION_S elapses.
 //
@@ -38,7 +38,7 @@
 #include "ScatterPlot.h"
 #include "SerialTable.h"
 #include "SerialX.h"
-#include "SetupDisplay.h"
+#include "DisplayEditor.h"
 #include "Stopwatch.h"
 #include "TestSensor.h"
 #include "Timer.h"
@@ -93,10 +93,10 @@ RollingRate actualSampleRate;
 /// SAMPLE_RATE_STEP_HIGH at or above 100/s.
 /// </summary>
 ///
-class SampleRateField : public IntSetupField
+class SampleRateField : public IntDisplayEditableField
 {
 public:
-   using IntSetupField::IntSetupField;
+   using IntDisplayEditableField::IntDisplayEditableField;
 
 protected:
    long _stepValue(long current, int32_t direction) override
@@ -114,15 +114,15 @@ Format setupWarmupFormat("###s", Format::Alignment::LEFT);
 
 SampleRateField rateField("Rate", &targetSampleRate,
    MIN_SAMPLE_RATE_PER_SEC, MAX_SAMPLE_RATE_PER_SEC, SAMPLE_RATE_STEP_LOW, DEFAULT_SAMPLE_RATE_PER_SEC, setupRateFormat);
-IntSetupField samplesField("Max Samples", &maxSamples,
+IntDisplayEditableField samplesField("Max Samples", &maxSamples,
    MIN_MAX_SAMPLES, MAX_MAX_SAMPLES, SAMPLE_STEP, DEFAULT_MAX_SAMPLES, setupSamplesFormat);
-IntSetupField durationField("Max Duration", &samplingDurationS,
+IntDisplayEditableField durationField("Max Duration", &samplingDurationS,
    MIN_SAMPLING_DURATION_S, MAX_SAMPLING_DURATION_S, DURATION_STEP_S, DEFAULT_SAMPLING_DURATION_S, setupDurationFormat);
-IntSetupField warmupField("Warmup", &warmupPeriodS,
+IntDisplayEditableField warmupField("Warmup", &warmupPeriodS,
    0, MAX_WARMUP_PERIOD_S, WARMUP_STEP_S, DEFAULT_WARMUP_PERIOD_S, setupWarmupFormat);
 
-SetupField* setupFields[] = { &rateField, &samplesField, &durationField, &warmupField };
-SetupDisplay setupDisplay(&arduino, PREF_NAMESPACE, "Setup", setupFields, 4);
+DisplayEditableField* setupFields[] = { &rateField, &samplesField, &durationField, &warmupField };
+DisplayEditor setupDisplay(&arduino, PREF_NAMESPACE, "Setup", setupFields, 4);
 
 Values* samplesValues = nullptr;
 Values warmupValues;

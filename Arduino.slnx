@@ -22,6 +22,9 @@
     <File Path="libraries/Woyak/Counter.h" />
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
+    <File Path="libraries/Woyak/DisplayEditableField.h" />
+    <File Path="libraries/Woyak/DisplayEditableTable.h" />
+    <File Path="libraries/Woyak/DisplayEditor.h" />
     <File Path="libraries/Woyak/DisplayGrid.h" />
     <File Path="libraries/Woyak/DisplayTable.h" />
     <File Path="libraries/Woyak/DisplayTextView.h" />
@@ -68,9 +71,6 @@
     <File Path="libraries/Woyak/SerialHistogram.h" />
     <File Path="libraries/Woyak/SerialTable.h" />
     <File Path="libraries/Woyak/SerialX.h" />
-    <File Path="libraries/Woyak/SetupDisplay.h" />
-    <File Path="libraries/Woyak/SetupField.h" />
-    <File Path="libraries/Woyak/SetupTable.h" />
     <File Path="libraries/Woyak/SevenSegment.h" />
     <File Path="libraries/Woyak/SHT3xTempSensor.h" />
     <File Path="libraries/Woyak/SHT4xTempSensor.h" />

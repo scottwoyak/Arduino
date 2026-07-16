@@ -5,29 +5,29 @@
 
 ///
 /// <summary>
-/// Abstract base for one editable setup value shown by SetupDisplay or SetupTable.
+/// Abstract base for one editable setup value shown by DisplayEditor or DisplayEditableTable.
 /// Subclasses bind to a caller-owned variable and implement type-specific adjustment and
 /// display. Persistence (loading/saving to Preferences) is handled entirely by
-/// SetupTable, using the generic numericValue()/setNumericValue()/defaultNumericValue()
-/// accessors below, so SetupField itself has no Preferences dependency.
+/// DisplayEditableTable, using the generic numericValue()/setNumericValue()/defaultNumericValue()
+/// accessors below, so DisplayEditableField itself has no Preferences dependency.
 /// </summary>
 ///
-class SetupField
+class DisplayEditableField
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the SetupField class.
+   /// Initializes a new instance of the DisplayEditableField class.
    /// </summary>
    /// <param name="label">Label text drawn before the value, e.g. "Rate: ".</param>
    /// <param name="format">Format used to render the value for display.</param>
    ///
-   SetupField(const char* label, const Format& format)
+   DisplayEditableField(const char* label, const Format& format)
       : _label(label), _format(format)
    {
    }
 
-   virtual ~SetupField()
+   virtual ~DisplayEditableField()
    {
    }
 
@@ -101,12 +101,12 @@ protected:
 /// implement non-linear stepping.
 /// </summary>
 ///
-class IntSetupField : public SetupField
+class IntDisplayEditableField : public DisplayEditableField
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the IntSetupField class.
+   /// Initializes a new instance of the IntDisplayEditableField class.
    /// </summary>
    /// <param name="label">Label text drawn before the value, e.g. "Max Samples: ".</param>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
@@ -116,10 +116,10 @@ public:
    /// <param name="defaultValue">Default value used when no saved value exists or on reset.</param>
    /// <param name="format">Format used to render the value for display.</param>
    ///
-   IntSetupField(const char* label, long* value,
+   IntDisplayEditableField(const char* label, long* value,
                  long minValue, long maxValue, long step, long defaultValue,
                  const Format& format)
-      : SetupField(label, format),
+      : DisplayEditableField(label, format),
         _value(value), _minValue(minValue), _maxValue(maxValue), _step(step), _default(defaultValue)
    {
    }
@@ -183,12 +183,12 @@ protected:
 /// to implement non-linear stepping.
 /// </summary>
 ///
-class FloatSetupField : public SetupField
+class FloatDisplayEditableField : public DisplayEditableField
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the FloatSetupField class.
+   /// Initializes a new instance of the FloatDisplayEditableField class.
    /// </summary>
    /// <param name="label">Label text drawn before the value.</param>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
@@ -198,10 +198,10 @@ public:
    /// <param name="defaultValue">Default value used when no saved value exists or on reset.</param>
    /// <param name="format">Format used to render the value for display.</param>
    ///
-   FloatSetupField(const char* label, float* value,
+   FloatDisplayEditableField(const char* label, float* value,
                     float minValue, float maxValue, float step, float defaultValue,
                     const Format& format)
-      : SetupField(label, format),
+      : DisplayEditableField(label, format),
         _value(value), _minValue(minValue), _maxValue(maxValue), _step(step), _default(defaultValue)
    {
    }
