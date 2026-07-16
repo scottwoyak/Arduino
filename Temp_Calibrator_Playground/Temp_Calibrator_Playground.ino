@@ -55,11 +55,10 @@ TempSensor sensors[] =
 
 // Sensor and telemetry timing
 constexpr uint16_t SAMPLE_INTERVAL_MS = 100;  // how often each SensorData takes a raw reading, and how often the outer loop drives sensor updates
-constexpr uint16_t TIMED_AVERAGE_DURATION_S = 5 * 60;  // 2 minute averaging window
+constexpr uint16_t TIMED_AVERAGE_DURATION_S = 5 * 60;  // 5 minute averaging window
 constexpr uint16_t INFLUX_INTERVAL_S = 10;
 constexpr uint16_t PREFS_INTERVAL_S = 60;
 constexpr uint16_t SERIAL_REPORT_INTERVAL_S = 60;  // 1 minute
-constexpr uint16_t SAVED_INFO_WAIT_S = 60;
 constexpr uint16_t WIFI_RESET_DELAY_S = 10;
 constexpr uint8_t BATCH_SIZE_PER_SENSOR = 3;  // InfluxDB write batch size, per detected sensor
 constexpr uint16_t INFLUX_INIT_DELAY_MS = 1000;  // pause after InfluxDB init to show "Init" screen
@@ -145,7 +144,7 @@ public:
 
    ///
    /// <summary>
-   /// Gets the timed average over the configured TIMED_AVERAGE_DURATION_S window (2 minutes).
+   /// Gets the timed average over the configured TIMED_AVERAGE_DURATION_S window (5 minutes).
    /// </summary>
    /// <returns>Average temperature in Fahrenheit, or NaN if no readings have been taken yet.</returns>
    ///
@@ -241,9 +240,6 @@ Format shortAvgFormat("###.##", 13, Format::Alignment::RIGHT);
 Format longAvgFormat("###.###", 10, Format::Alignment::RIGHT);
 Format correctionFormat("+#.###", 10, Format::Alignment::RIGHT);
 
-// Horizontal gap between the sensor number and its correction value on the saved-info screen
-constexpr uint8_t SENSOR_NUM_INDENT_PX = 10;
-
 // Column widths and colors for the sensor table (data colors match their column heading)
 constexpr uint8_t COL_NUM_WIDTH = 4;
 constexpr uint8_t COL_TYPE_WIDTH = 9;
@@ -270,7 +266,7 @@ constexpr Color SENSOR_PLOT_COLORS[] =
 };
 
 // Scatter plot renderers showing every detected sensor as a line plot, one plot per
-// table column: 10 Sample Avg, 2 Min Avg, and Correction (left to right).
+// table column: 10 Sample Avg, 5 Min Avg, and Correction (left to right).
 TimedScatterPlot* shortAvgPlot = nullptr;
 TimedScatterPlot* longAvgPlot = nullptr;
 TimedScatterPlot* correctionPlot = nullptr;
@@ -463,57 +459,12 @@ void printCalibrationCodeToSerial()
 
 ///
 /// <summary>
-/// Displays previously saved correction factors on screen and prints them to Serial,
-/// waiting for the rotary encoder button or a timeout before returning.
+/// Displays previously saved calibration points (if any) on startup before running begins.
 /// </summary>
 ///
 void displaySavedInfo()
 {
    displaySavedCalibrationPlot();
-
-   // load saved correction factors
-   arduino.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
-   float tempCorrections[NUM_SENSORS];
-
-   for (uint8_t i = 0; i < NUM_SENSORS; i++)
-   {
-      tempCorrections[i] = arduino.preferences.getFloat((String(TEMP_KEY_PREFIX) + i).c_str());
-   }
-   arduino.preferences.end();
-
-   printCalibrationCodeToSerial();
-
-   // display saved temperature factors
-   arduino.setCursor(0, 0);
-   arduino.setTextSize(3);
-   arduino.fillRect(0, 0, arduino.width(), arduino.charH(), Color::ORANGE);
-   arduino.printlnC("Temperature Calibrator", Color::WHITE, Color::ORANGE);
-   arduino.moveCursorY(arduino.charH() / 2);
-
-   arduino.setTextSize(3);
-   for (uint8_t i = 0; i < NUM_SENSORS; i++)
-   {
-      arduino.print((i + 1), Color::LABEL);
-      arduino.moveCursorX(SENSOR_NUM_INDENT_PX);
-
-      if (isnan(tempCorrections[i]))
-      {
-         arduino.println("-----", Color::GRAY);
-      }
-      else
-      {
-         arduino.println(tempCorrections[i], correctionFormat, Color::VALUE);
-      }
-   }
-
-   TimerSecs waitTimer(SAVED_INFO_WAIT_S);
-   while (!arduino.encoderA.button.wasPressed() && !waitTimer.ready())
-   {
-      delay(1);
-   }
-
-   // print again in case the user didn't have serial open the first time
-   printCalibrationCodeToSerial();
 }
 
 ///
@@ -543,8 +494,7 @@ void displaySavedCalibrationPlot()
 
    arduino.setTextSize(3);
    arduino.setCursor(0, 0);
-   arduino.fillRect(0, 0, arduino.width(), arduino.charH(), Color::ORANGE);
-   arduino.printlnC("Temperature Calibrator", Color::WHITE, Color::ORANGE);
+   arduino.println("Temperature Calibrator", Color::HEADING);
 
    arduino.setTextSize(2);
    arduino.println("Saved Calibration Points. Press Button A to continue", Color::LABEL);
@@ -623,8 +573,7 @@ void displaySavedCalibrationPlot()
 void displayHeader()
 {
    arduino.setTextSize(3);
-   arduino.fillRect(0, 0, arduino.width(), arduino.charH(), Color::ORANGE);
-   arduino.printlnC("Temperature Calibrator", Color::WHITE, Color::ORANGE);
+   arduino.println("Temperature Calibrator", Color::HEADING);
 }
 
 ///
@@ -653,7 +602,7 @@ void displaySensorList()
    arduino.print("Type", typeHeaderFormat, COL_TYPE_COLOR);
    arduino.print("10 Sample Avg", shortAvgHeaderFormat, COL_SHORT_AVG_COLOR);
    arduino.print(" ");
-   arduino.print("2 Min Avg", longAvgHeaderFormat, COL_LONG_AVG_COLOR);
+   arduino.print("5 Min Avg", longAvgHeaderFormat, COL_LONG_AVG_COLOR);
    arduino.print(" ");
    arduino.println("Correction", correctionHeaderFormat, COL_CORRECTION_COLOR);
 
@@ -730,7 +679,7 @@ void displaySensorList()
 ///
 /// <summary>
 /// Renders the three scatter plots showing the configured time window of history for every
-/// detected sensor, one per table column: 10 Sample Avg, 2 Min Avg, and Correction (left to
+/// detected sensor, one per table column: 10 Sample Avg, 5 Min Avg, and Correction (left to
 /// right). All plots fill the remaining display space below the calibration table.
 /// </summary>
 ///
@@ -851,7 +800,7 @@ void setup()
    };
 
    shortAvgPlot = new (std::nothrow) TimedScatterPlot(&arduino, shortAvgPlotRect, TIME_WINDOW_PLOT_MS, 0.0f, "10 Sample Avg");
-   longAvgPlot = new (std::nothrow) TimedScatterPlot(&arduino, longAvgPlotRect, TIME_WINDOW_PLOT_MS, 0.0f, "2 Min Avg");
+   longAvgPlot = new (std::nothrow) TimedScatterPlot(&arduino, longAvgPlotRect, TIME_WINDOW_PLOT_MS, 0.0f, "5 Min Avg");
    correctionPlot = new (std::nothrow) TimedScatterPlot(&arduino, correctionPlotRect, TIME_WINDOW_PLOT_MS, Format("+#.##", Format::Alignment::RIGHT), 0.0f, "Correction");
 
    if (!shortAvgPlot || !longAvgPlot || !correctionPlot)
@@ -896,7 +845,7 @@ void setup()
       correctionSeries[i] = correctionSeriesForSensor;
    }
 
-   // Clear the "Saved Correction Factors" screen before switching to the calibrating display
+   // Clear the saved calibration plot screen before switching to the calibrating display
    arduino.clearDisplay();
 }
 
@@ -1043,9 +992,9 @@ void loop()
             // aren't posted until their underlying value is expected to be ready (e.g.
             // long average/correction before the timed window fills), so a NaN value
             // once posting starts is a genuine error and is still reported.
-            if ((!shortAvgPoints[i]->post(&client, true)) ||
-                (longAvgFull && !longAvgPoints[i]->post(&client, true)) ||
-                (longAvgFull && !correctionPoints[i]->post(&client, true)))
+            if ((!shortAvgPoints[i]->post(&client)) ||
+                (longAvgFull && !longAvgPoints[i]->post(&client)) ||
+                (longAvgFull && !correctionPoints[i]->post(&client)))
             {
                writeFailed = true;
                break;
