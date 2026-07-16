@@ -6,6 +6,7 @@
 
 #include "ArduinoWithDisplay.h"
 #include "Color.h"
+#include "DisplayBuffer.h"
 #include "DisplayField.h"
 #include "Format.h"
 #include "Structs.h"
@@ -56,22 +57,16 @@ private:
    float* _stdDevLowBuffer = nullptr;
    float* _stdDevHighBuffer = nullptr;
 
-   // Per-pixel-column "which rows are lit" bitmasks used to diff this frame's drawing
-   // against the previous frame's, so only pixels that actually changed color get drawn -
-   // no stroke-replay erasing, and no special-casing needed for bin rotation, since the
-   // diff is exact regardless of how the underlying data shifted between frames. Only the
-   // previous frame's masks are retained per-series (this frame's raw/moving-average masks
-   // are scratch buffers shared across every series in the owning TimedScatterPlot, since
-   // only one series is ever rasterized at a time - see TimedScatterPlot::_sharedRawMask).
-   // Sized to the plot's chart pixel dimensions (see _ensureMaskBuffers()), reallocated
-   // only when those dimensions change.
-   uint8_t* _prevRawMask = nullptr;
-   uint8_t* _prevMaMask = nullptr;
-   uint8_t* _bandMask = nullptr;
-   uint8_t* _prevBandMask = nullptr;
-   size_t _maskBytesPerColumn = 0;
-   int16_t _maskChartWidth = 0;
-   int16_t _maskChartHeight = 0;
+   // Per-bin-slot cache of the last moving-average/stddev band values computed with a
+   // fully populated centered window (i.e. real samples existed on both sides out to
+   // movingStatsDuration/2). Indexed the same as _values/_agesMs (newest-first) and
+   // shifted by _shiftLockedBuffers() as bins rotate, so once a bin's window is complete
+   // its value is locked in and stops drifting as it nears the trailing (oldest) edge of
+   // the retained history, where fewer older neighbors remain to average against.
+   float* _lockedMovingAverage = nullptr;
+   float* _lockedStdDevLow = nullptr;
+   float* _lockedStdDevHigh = nullptr;
+   unsigned long _lastRotationCount = 0;
 
    ///
    /// <summary>
@@ -88,13 +83,24 @@ private:
       _movingAverageBuffer = new (std::nothrow) float[numBins];
       _stdDevLowBuffer = new (std::nothrow) float[numBins];
       _stdDevHighBuffer = new (std::nothrow) float[numBins];
+      _lockedMovingAverage = new (std::nothrow) float[numBins];
+      _lockedStdDevLow = new (std::nothrow) float[numBins];
+      _lockedStdDevHigh = new (std::nothrow) float[numBins];
 
       if (_values == nullptr || _agesMs == nullptr || _movingAverageBuffer == nullptr
-         || _stdDevLowBuffer == nullptr || _stdDevHighBuffer == nullptr)
+         || _stdDevLowBuffer == nullptr || _stdDevHighBuffer == nullptr
+         || _lockedMovingAverage == nullptr || _lockedStdDevLow == nullptr || _lockedStdDevHigh == nullptr)
       {
          Util::setHaltReason("OOM allocating rendering buffers in TimedScatterPlotSeries");
          Util::reset();
          return false;
+      }
+
+      for (size_t i = 0; i < numBins; i++)
+      {
+         _lockedMovingAverage[i] = NAN;
+         _lockedStdDevLow[i] = NAN;
+         _lockedStdDevHigh[i] = NAN;
       }
 
       return true;
@@ -102,53 +108,47 @@ private:
 
    ///
    /// <summary>
-   /// (Re)allocates the pixel-column bitmasks to match the given chart pixel dimensions,
-   /// freeing and reallocating only when the dimensions actually changed (they are stable
-   /// across most frames, changing only when the axis range/labels or chart geometry
-   /// changes). Newly allocated masks start fully cleared (no pixels lit).
+   /// Shifts the locked moving-average/stddev caches to follow the same physical bins as
+   /// they rotate to higher (older) indices, discarding entries for bins that have rotated
+   /// out entirely and blanking the newly opened bins at the front. Must run before
+   /// recomputing so locked values stay aligned with the bin they were computed for.
    /// </summary>
-   /// <param name="chartWidth">Chart interior width in pixels (one bitmask column per pixel).</param>
-   /// <param name="chartHeight">Chart interior height in pixels (one bit per row).</param>
-   /// <returns>True if the masks are sized correctly and ready to use.</returns>
    ///
-   bool _ensureMaskBuffers(int16_t chartWidth, int16_t chartHeight)
+   void _shiftLockedBuffers()
    {
-      if ((chartWidth == _maskChartWidth) && (chartHeight == _maskChartHeight) && (_prevRawMask != nullptr))
+      unsigned long currentRotationCount = _bins.rotationCount();
+      unsigned long delta = currentRotationCount - _lastRotationCount;
+      _lastRotationCount = currentRotationCount;
+
+      if (delta == 0)
       {
-         return true;
+         return;
       }
 
-      delete[] _prevRawMask;
-      delete[] _prevMaMask;
-      _prevRawMask = _prevMaMask = nullptr;
-
-      _maskChartWidth = chartWidth;
-      _maskChartHeight = chartHeight;
-      _maskBytesPerColumn = static_cast<size_t>((chartHeight + 7) / 8);
-
-      const size_t bufSize = static_cast<size_t>(chartWidth) * _maskBytesPerColumn;
-      if (bufSize == 0)
+      size_t numBins = _bins.numBins();
+      if (delta >= numBins)
       {
-         return true;
+         for (size_t i = 0; i < numBins; i++)
+         {
+            _lockedMovingAverage[i] = NAN;
+            _lockedStdDevLow[i] = NAN;
+            _lockedStdDevHigh[i] = NAN;
+         }
+         return;
       }
 
-      _prevRawMask = new (std::nothrow) uint8_t[bufSize];
-      _prevMaMask = new (std::nothrow) uint8_t[bufSize];
-      _bandMask = new (std::nothrow) uint8_t[bufSize];
-      _prevBandMask = new (std::nothrow) uint8_t[bufSize];
-
-      if (_prevRawMask == nullptr || _prevMaMask == nullptr)
+      for (size_t i = numBins; i-- > delta; )
       {
-         Util::setHaltReason("OOM allocating scatter plot masks in TimedScatterPlotSeries");
-         Util::reset();
-         return false;
+         _lockedMovingAverage[i] = _lockedMovingAverage[i - delta];
+         _lockedStdDevLow[i] = _lockedStdDevLow[i - delta];
+         _lockedStdDevHigh[i] = _lockedStdDevHigh[i - delta];
       }
-
-      memset(_prevRawMask, 0, bufSize);
-      memset(_prevMaMask, 0, bufSize);
-      memset(_bandMask, 0, bufSize);
-      memset(_prevBandMask, 0, bufSize);
-      return true;
+      for (size_t i = 0; i < delta; i++)
+      {
+         _lockedMovingAverage[i] = NAN;
+         _lockedStdDevLow[i] = NAN;
+         _lockedStdDevHigh[i] = NAN;
+      }
    }
 
    ///
@@ -160,6 +160,7 @@ private:
    void _refreshSnapshot()
    {
       _count = _bins.snapshot(_values, _agesMs);
+      _shiftLockedBuffers();
       _recomputeMovingAverage();
       _recomputeStdDevBand();
    }
@@ -171,6 +172,13 @@ private:
    /// within movingStatsDuration/2 of that sample's own age), so the band moves with the data
    /// instead of being a single flat mean/stddev over the whole retained history. Indices
    /// with no finite samples in their window are set to NAN in both output buffers.
+   ///
+   /// The leading (newest) edge, where the window would need samples newer than any that
+   /// can ever exist, is left blank (NAN) rather than drawn with a lopsided partial window.
+   /// The trailing (oldest) edge, where the window needs older samples than are currently
+   /// retained, is locked to the first value computed once real data eventually fills that
+   /// window, via _lockedStdDevLow/_lockedStdDevHigh, so it doesn't keep drifting frame to
+   /// frame as more history accumulates.
    /// </summary>
    ///
    void _recomputeStdDevBand()
@@ -186,14 +194,26 @@ private:
       for (size_t i = 0; i < _count; i++)
       {
          const unsigned long centerAge = _agesMs[i];
+
+         if (static_cast<float>(centerAge) < halfWindow)
+         {
+            // Leading edge: the window would need samples newer than "now", which can
+            // never exist, so this index never draws.
+            _stdDevLowBuffer[i] = NAN;
+            _stdDevHighBuffer[i] = NAN;
+            continue;
+         }
+
          float sum = 0.0f;
          size_t finiteCount = 0;
+         bool olderWindowComplete = false;
 
          // Fold in samples that are the same age or older (index >= i).
          for (size_t j = i; j < _count; j++)
          {
             if ((static_cast<float>(_agesMs[j]) - static_cast<float>(centerAge)) > halfWindow)
             {
+               olderWindowComplete = true;
                break;
             }
             if (isfinite(_values[j]))
@@ -219,8 +239,8 @@ private:
 
          if (finiteCount == 0)
          {
-            _stdDevLowBuffer[i] = NAN;
-            _stdDevHighBuffer[i] = NAN;
+            _stdDevLowBuffer[i] = isfinite(_lockedStdDevLow[i]) ? _lockedStdDevLow[i] : NAN;
+            _stdDevHighBuffer[i] = isfinite(_lockedStdDevHigh[i]) ? _lockedStdDevHigh[i] : NAN;
             continue;
          }
 
@@ -254,8 +274,28 @@ private:
          }
 
          const float stdDev = sqrtf(sumSquares / static_cast<float>(finiteCount));
-         _stdDevLowBuffer[i] = mean - stdDev;
-         _stdDevHighBuffer[i] = mean + stdDev;
+         float low = mean - stdDev;
+         float high = mean + stdDev;
+
+         if (olderWindowComplete)
+         {
+            _lockedStdDevLow[i] = low;
+            _lockedStdDevHigh[i] = high;
+            _stdDevLowBuffer[i] = low;
+            _stdDevHighBuffer[i] = high;
+         }
+         else if (isfinite(_lockedStdDevLow[i]))
+         {
+            // Trailing edge still filling in and this slot already has a locked value from
+            // a completed window; keep showing that instead of the still-shrinking partial.
+            _stdDevLowBuffer[i] = _lockedStdDevLow[i];
+            _stdDevHighBuffer[i] = _lockedStdDevHigh[i];
+         }
+         else
+         {
+            _stdDevLowBuffer[i] = low;
+            _stdDevHighBuffer[i] = high;
+         }
       }
    }
 
@@ -263,10 +303,14 @@ private:
    /// <summary>
    /// Recomputes the centered moving average over the current snapshot. Each output
    /// value is the average of every retained sample whose age falls within
-   /// movingStatsDuration/2 of that sample's own age. Since the snapshot is a fixed
-   /// point-in-time view (no further samples will ever be added to it), every index can
-   /// be fully computed immediately; averages naturally get noisier near the edges of the
-   /// retained window where fewer neighboring samples exist.
+   /// movingStatsDuration/2 of that sample's own age.
+   ///
+   /// The leading (newest) edge, where the window would need samples newer than any that
+   /// can ever exist, is left blank (NAN) rather than drawn with a lopsided partial window.
+   /// The trailing (oldest) edge, where the window needs older samples than are currently
+   /// retained, is locked to the first value computed once real data eventually fills that
+   /// window, via _lockedMovingAverage, so it doesn't keep drifting frame to frame as more
+   /// history accumulates.
    /// </summary>
    ///
    void _recomputeMovingAverage()
@@ -282,14 +326,25 @@ private:
       for (size_t i = 0; i < _count; i++)
       {
          const unsigned long centerAge = _agesMs[i];
+
+         if (static_cast<float>(centerAge) < halfWindow)
+         {
+            // Leading edge: the window would need samples newer than "now", which can
+            // never exist, so this index never draws.
+            _movingAverageBuffer[i] = NAN;
+            continue;
+         }
+
          float sum = 0.0f;
          size_t finiteCount = 0;
+         bool olderWindowComplete = false;
 
          // Fold in samples that are the same age or older (index >= i).
          for (size_t j = i; j < _count; j++)
          {
             if ((static_cast<float>(_agesMs[j]) - static_cast<float>(centerAge)) > halfWindow)
             {
+               olderWindowComplete = true;
                break;
             }
             if (isfinite(_values[j]))
@@ -313,7 +368,29 @@ private:
             }
          }
 
-         _movingAverageBuffer[i] = (finiteCount > 0) ? (sum / finiteCount) : NAN;
+         if (finiteCount == 0)
+         {
+            _movingAverageBuffer[i] = isfinite(_lockedMovingAverage[i]) ? _lockedMovingAverage[i] : NAN;
+            continue;
+         }
+
+         const float average = sum / static_cast<float>(finiteCount);
+
+         if (olderWindowComplete)
+         {
+            _lockedMovingAverage[i] = average;
+            _movingAverageBuffer[i] = average;
+         }
+         else if (isfinite(_lockedMovingAverage[i]))
+         {
+            // Trailing edge still filling in and this slot already has a locked value from
+            // a completed window; keep showing that instead of the still-shrinking partial.
+            _movingAverageBuffer[i] = _lockedMovingAverage[i];
+         }
+         else
+         {
+            _movingAverageBuffer[i] = average;
+         }
       }
    }
 
@@ -388,11 +465,12 @@ public:
       delete[] _values;
       delete[] _agesMs;
       delete[] _movingAverageBuffer;
-      delete[] _prevRawMask;
-      delete[] _prevMaMask;
-      delete[] _bandMask;
-      delete[] _prevBandMask;
-   }
+      delete[] _stdDevLowBuffer;
+      delete[] _stdDevHighBuffer;
+         delete[] _lockedMovingAverage;
+         delete[] _lockedStdDevLow;
+         delete[] _lockedStdDevHigh;
+      }
 
    ///
    /// <summary>
@@ -415,16 +493,16 @@ public:
    {
       _bins.reset();
       _count = 0;
+      _lastRotationCount = 0;
 
-      if (_maskBytesPerColumn > 0)
-      {
-         const size_t bufSize = static_cast<size_t>(_maskChartWidth) * _maskBytesPerColumn;
-         memset(_prevRawMask, 0, bufSize);
-         memset(_prevMaMask, 0, bufSize);
-         memset(_bandMask, 0, bufSize);
-         memset(_prevBandMask, 0, bufSize);
+      size_t numBins = _bins.numBins();
+         for (size_t i = 0; i < numBins; i++)
+         {
+            _lockedMovingAverage[i] = NAN;
+            _lockedStdDevLow[i] = NAN;
+            _lockedStdDevHigh[i] = NAN;
+         }
       }
-   }
 
    ///
    /// <summary>
@@ -510,7 +588,6 @@ private:
    float _minValueStep;
 
    Format _minMaxFormat;
-   Format _sampleRangeFormat;
 
    // Right-aligned copy of _minMaxFormat used for the moving-average/stddev mid-axis
    // DisplayFields (see _drawMidAxisLabels()), which must always line up with the
@@ -546,62 +623,16 @@ private:
    DisplayField** _movingAverageFields = nullptr;
    DisplayField** _stdDevFields = nullptr;
 
-   // Shared scratch raw/moving-average masks used by _ensureSharedMaskBuffers()/render();
-   // reused across every series in this plot since only one series is ever rasterized at
-   // a time, sized to the plot's chart pixel dimensions and reallocated only when those
-   // dimensions change.
-   uint8_t* _sharedRawMask = nullptr;
-   uint8_t* _sharedMaMask = nullptr;
-   size_t _sharedMaskBytesPerColumn = 0;
-   int16_t _sharedMaskChartWidth = 0;
-   int16_t _sharedMaskChartHeight = 0;
+   // Plot-wide shared pixel buffer used to diff each frame's rasterized content (raw
+   // points/lines, moving-average line, and stddev band each get their own layer index)
+   // against the previous frame's, drawing only pixels whose layer actually changed. See
+   // DisplayBuffer.h; extracted as a standalone reusable class since this diffing
+   // behavior isn't specific to scatter plots.
+   DisplayBuffer _displayBuffer;
 
    unsigned long _lastRenderMicros = 0;
    unsigned long _lastComputeMicros = 0;
    unsigned long _lastDisplayMicros = 0;
-
-   ///
-   /// <summary>
-   /// (Re)allocates the shared scratch raw/moving-average masks to match the given chart
-   /// pixel dimensions, freeing and reallocating only when the dimensions actually changed.
-   /// </summary>
-   /// <param name="chartWidth">Chart interior width in pixels (one bitmask column per pixel).</param>
-   /// <param name="chartHeight">Chart interior height in pixels (one bit per row).</param>
-   /// <returns>True if the masks are sized correctly and ready to use.</returns>
-   ///
-   bool _ensureSharedMaskBuffers(int16_t chartWidth, int16_t chartHeight)
-   {
-      if ((chartWidth == _sharedMaskChartWidth) && (chartHeight == _sharedMaskChartHeight) && (_sharedRawMask != nullptr))
-      {
-         return true;
-      }
-
-      delete[] _sharedRawMask;
-      delete[] _sharedMaMask;
-      _sharedRawMask = _sharedMaMask = nullptr;
-
-      _sharedMaskChartWidth = chartWidth;
-      _sharedMaskChartHeight = chartHeight;
-      _sharedMaskBytesPerColumn = static_cast<size_t>((chartHeight + 7) / 8);
-
-      const size_t bufSize = static_cast<size_t>(chartWidth) * _sharedMaskBytesPerColumn;
-      if (bufSize == 0)
-      {
-         return true;
-      }
-
-      _sharedRawMask = new (std::nothrow) uint8_t[bufSize];
-      _sharedMaMask = new (std::nothrow) uint8_t[bufSize];
-
-      if (_sharedRawMask == nullptr || _sharedMaMask == nullptr)
-      {
-         Util::setHaltReason("OOM allocating shared scatter plot masks in TimedScatterPlot");
-         Util::reset();
-         return false;
-      }
-
-      return true;
-   }
 
    ///
    /// <summary>
@@ -728,24 +759,6 @@ private:
 
    ///
    /// <summary>
-   /// Builds a right-aligned copy of the given Format, for use by the mid-axis
-   /// moving-average/stddev DisplayFields, which must always line up with the
-   /// right-aligned min/max axis labels regardless of the alignment the caller passed
-   /// to the constructor or setMinMaxFormat() (e.g. a sensor's own Format, which
-   /// typically defaults to left-aligned).
-   /// </summary>
-   /// <param name="format">Format to copy with right alignment applied.</param>
-   /// <returns>Right-aligned copy of the given Format.</returns>
-   ///
-   static Format _makeRightAlignedFormat(const Format& format)
-   {
-      return format.formatString().empty()
-         ? Format(format.length(), Format::Alignment::RIGHT)
-         : Format(format.formatString().c_str(), Format::Alignment::RIGHT);
-   }
-
-   ///
-   /// <summary>
    /// Formats a Y-axis label value using the configured min/max Format.
    /// </summary>
    /// <param name="value">Y-axis value to format.</param>
@@ -758,15 +771,15 @@ private:
 
    ///
    /// <summary>
-   /// Computes the chart's pixel geometry from the current axis range, sizing the Y-axis
-   /// label column to fit the widest of the min/max labels, within the fixed rectangle.
+   /// Computes the chart's pixel geometry. The Y-axis label column is sized directly from
+   /// the fixed output length of _minMaxFormat (length() * charW()) rather than the rendered
+   /// width of the current min/max label text, so the column width - and therefore
+   /// _chartLeft/_chartWidth - never shifts as the axis range changes.
    /// </summary>
    ///
    void _computeChartGeometry()
    {
-      String maxLabel = _formatYLabel(_axisYMax);
-      String minLabel = _formatYLabel(_axisYMin);
-      uint16_t yLabelWidth = max(_display->textWidth(maxLabel.c_str()), _display->textWidth(minLabel.c_str()));
+      uint16_t yLabelWidth = static_cast<uint16_t>(_minMaxFormat.length()) * _display->charW();
       int16_t yAxisWidth = static_cast<int16_t>(yLabelWidth) + 2;
 
       int16_t axisLineHeight = _display->charH() + 2;
@@ -946,258 +959,132 @@ private:
       outY = constrain(outY, static_cast<int16_t>(0), static_cast<int16_t>(_chartHeight - 2));
    }
 
-   ///
-   /// <summary>
-   /// Sets (lights) a single bit in a chart pixel-column bitmask, addressing column x, row
-   /// y (both chart-relative). No-ops if the coordinates fall outside the mask bounds.
-   /// </summary>
-   /// <param name="mask">Bitmask buffer to modify.</param>
-   /// <param name="bytesPerColumn">Number of bytes per column in the mask (rows packed 8 per byte).</param>
-   /// <param name="chartWidth">Chart width in pixel columns, for bounds checking.</param>
-   /// <param name="chartHeight">Chart height in pixel rows, for bounds checking.</param>
-   /// <param name="x">Chart-relative pixel column.</param>
-   /// <param name="y">Chart-relative pixel row.</param>
-   ///
-   static void _setMaskBit(uint8_t* mask, size_t bytesPerColumn, int16_t chartWidth, int16_t chartHeight, int16_t x, int16_t y)
-   {
-      if (x < 0 || x >= chartWidth || y < 0 || y >= chartHeight)
-      {
-         return;
-      }
+       ///
+       /// <summary>
+       /// Rasterizes a set of samples (connected with lines when connectPoints is set) into the
+       /// plot-wide shared display buffer under the given layer index, aligning to the sensor
+       /// step first when alignToStep is set. Samples must be supplied newest-first but are
+       /// rasterized oldest-first so lines connect in chronological order. Does not clear the
+       /// buffer first; callers rasterize every series/layer into the same shared buffer before
+       /// diffing once.
+       /// </summary>
+       /// <param name="values">Newest-first sample values to plot.</param>
+       /// <param name="count">Number of samples in values.</param>
+       /// <param name="numBins">Total number of bins retained by the series these samples came from.</param>
+       /// <param name="connectPoints">If true, connects consecutive finite samples with a line.</param>
+       /// <param name="drawPoints">If true, sets each finite sample's own pixel.</param>
+       /// <param name="alignToStep">If true, aligns each value to the configured sensor step before plotting.</param>
+       /// <param name="layer">Layer index (1..DisplayBuffer::MAX_LAYERS) to stamp for this series' data.</param>
+       ///
+       void _rasterizeSeriesData(const float* values, size_t count, size_t numBins, bool connectPoints, bool drawPoints, bool alignToStep, uint8_t layer)
+       {
+          if (count == 0 || layer == 0)
+          {
+             return;
+          }
 
-      uint8_t* column = mask + (static_cast<size_t>(x) * bytesPerColumn);
-      column[y >> 3] |= static_cast<uint8_t>(1u << (y & 7));
-   }
+          bool havePrevPoint = false;
+          int16_t prevX = 0;
+          int16_t prevY = 0;
 
-   ///
-   /// <summary>
-   /// Gets whether a single bit is set in a chart pixel-column bitmask. Out-of-bounds
-   /// coordinates are treated as unset.
-   /// </summary>
-   ///
-   static bool _getMaskBit(const uint8_t* mask, size_t bytesPerColumn, int16_t chartWidth, int16_t chartHeight, int16_t x, int16_t y)
-   {
-      if (x < 0 || x >= chartWidth || y < 0 || y >= chartHeight)
-      {
-         return false;
-      }
+          // Iterate oldest-first (reverse of the newest-first snapshot order) so lines connect
+          // chronologically left-to-right.
+          for (size_t idx = count; idx-- > 0; )
+          {
+             float value = values[idx];
+             if (!isfinite(value))
+             {
+                continue;
+             }
 
-      const uint8_t* column = mask + (static_cast<size_t>(x) * bytesPerColumn);
-      return (column[y >> 3] & static_cast<uint8_t>(1u << (y & 7))) != 0;
-   }
+             if (alignToStep && (_minValueStep > 0.0f))
+             {
+                value = _alignToSensorStep(value);
+             }
 
-   ///
-   /// <summary>
-   /// Sets every bit along a line from (x0,y0) to (x1,y1) using integer Bresenham stepping,
-   /// so the exact same pair of endpoints always lights the exact same set of pixels,
-   /// frame after frame, matching what drawLine() would physically draw.
-   /// </summary>
-   ///
-   static void _rasterizeLine(uint8_t* mask, size_t bytesPerColumn, int16_t chartWidth, int16_t chartHeight, int16_t x0, int16_t y0, int16_t x1, int16_t y1)
-   {
-      int16_t dx = abs(static_cast<int16_t>(x1 - x0));
-      int16_t sx = (x0 < x1) ? 1 : -1;
-      int16_t dy = static_cast<int16_t>(-abs(static_cast<int16_t>(y1 - y0)));
-      int16_t sy = (y0 < y1) ? 1 : -1;
-      int16_t err = dx + dy;
+             int16_t x;
+             int16_t y;
+             _toPixel(idx, numBins, value, x, y);
 
-      for (;;)
-      {
-         _setMaskBit(mask, bytesPerColumn, chartWidth, chartHeight, x0, y0);
-         if (x0 == x1 && y0 == y1)
-         {
-            break;
-         }
-         int16_t e2 = static_cast<int16_t>(2 * err);
-         if (e2 >= dy)
-         {
-            err = static_cast<int16_t>(err + dy);
-            x0 = static_cast<int16_t>(x0 + sx);
-         }
-         if (e2 <= dx)
-         {
-            err = static_cast<int16_t>(err + dx);
-            y0 = static_cast<int16_t>(y0 + sy);
-         }
-      }
-   }
+             if (connectPoints && havePrevPoint)
+             {
+                _displayBuffer.drawLine(prevX, prevY, x, y, layer);
+             }
+             if (drawPoints)
+             {
+                _displayBuffer.setPixel(x, y, layer);
+             }
 
-   ///
-   /// <summary>
-   /// Rasterizes a set of samples (connected with lines when connectPoints is set) into a
-   /// pixel-column bitmask, clearing it first, aligning to the sensor step first when
-   /// alignToStep is set. Samples must be supplied newest-first but are rasterized
-   /// oldest-first so lines connect in chronological order.
-   /// </summary>
-   /// <param name="mask">Bitmask buffer to rasterize into (cleared first).</param>
-   /// <param name="bytesPerColumn">Number of bytes per column in the mask.</param>
-   /// <param name="values">Newest-first sample values to plot.</param>
-   /// <param name="count">Number of samples in values.</param>
-   /// <param name="numBins">Total number of bins retained by the series these samples came from.</param>
-   /// <param name="connectPoints">If true, connects consecutive finite samples with a line.</param>
-   /// <param name="drawPoints">If true, sets each finite sample's own pixel.</param>
-   /// <param name="alignToStep">If true, aligns each value to the configured sensor step before plotting.</param>
-   ///
-   void _rasterizeSeriesData(uint8_t* mask, size_t bytesPerColumn, const float* values, size_t count, size_t numBins, bool connectPoints, bool drawPoints, bool alignToStep) const
-   {
-      memset(mask, 0, bytesPerColumn * static_cast<size_t>(_chartWidth));
+             prevX = x;
+             prevY = y;
+             havePrevPoint = true;
+          }
+       }
 
-      if (count == 0)
-      {
-         return;
-      }
+       ///
+       /// <summary>
+       /// Rasterizes a rolling mean +/- stddev band into the plot-wide shared display buffer
+       /// under the given layer index. Each buffer is rasterized as a connected line the same
+       /// way _rasterizeSeriesData draws a moving-average line, so the band moves with the
+       /// data instead of being a static pair of horizontal lines. Does not clear the buffer first.
+       /// </summary>
+       /// <param name="lowValues">Newest-first mean-minus-stddev values to plot.</param>
+       /// <param name="highValues">Newest-first mean-plus-stddev values to plot.</param>
+       /// <param name="count">Number of samples in lowValues/highValues.</param>
+       /// <param name="numBins">Total number of bins retained by the series these samples came from.</param>
+       /// <param name="layer">Layer index (1..DisplayBuffer::MAX_LAYERS) to stamp for this band.</param>
+       ///
+       void _rasterizeStdDevBand(const float* lowValues, const float* highValues, size_t count, size_t numBins, uint8_t layer)
+       {
+          if (count == 0 || layer == 0)
+          {
+             return;
+          }
 
-      bool havePrevPoint = false;
-      int16_t prevX = 0;
-      int16_t prevY = 0;
+          bool havePrevLow = false;
+          bool havePrevHigh = false;
+          int16_t prevLowX = 0;
+          int16_t prevLowY = 0;
+          int16_t prevHighX = 0;
+          int16_t prevHighY = 0;
 
-      // Iterate oldest-first (reverse of the newest-first snapshot order) so lines connect
-      // chronologically left-to-right.
-      for (size_t idx = count; idx-- > 0; )
-      {
-         float value = values[idx];
-         if (!isfinite(value))
-         {
-            continue;
-         }
+          // Iterate oldest-first (reverse of the newest-first snapshot order) so lines connect
+          // chronologically left-to-right, matching _rasterizeSeriesData.
+          for (size_t idx = count; idx-- > 0; )
+          {
+             float lowValue = lowValues[idx];
+             if (isfinite(lowValue))
+             {
+                int16_t x;
+                int16_t y;
+                _toPixel(idx, numBins, lowValue, x, y);
+                if (havePrevLow)
+                {
+                   _displayBuffer.drawLine(prevLowX, prevLowY, x, y, layer);
+                }
+                prevLowX = x;
+                prevLowY = y;
+                havePrevLow = true;
+             }
 
-         if (alignToStep && (_minValueStep > 0.0f))
-         {
-            value = _alignToSensorStep(value);
-         }
+             float highValue = highValues[idx];
+             if (isfinite(highValue))
+             {
+                int16_t x;
+                int16_t y;
+                _toPixel(idx, numBins, highValue, x, y);
+                if (havePrevHigh)
+                {
+                   _displayBuffer.drawLine(prevHighX, prevHighY, x, y, layer);
+                }
+                prevHighX = x;
+                prevHighY = y;
+                havePrevHigh = true;
+             }
+          }
+       }
 
-         int16_t x;
-         int16_t y;
-         _toPixel(idx, numBins, value, x, y);
-
-         if (connectPoints && havePrevPoint)
-         {
-            _rasterizeLine(mask, bytesPerColumn, _chartWidth, _chartHeight, prevX, prevY, x, y);
-         }
-         if (drawPoints)
-         {
-            _setMaskBit(mask, bytesPerColumn, _chartWidth, _chartHeight, x, y);
-         }
-
-         prevX = x;
-         prevY = y;
-         havePrevPoint = true;
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Diffs a freshly rasterized mask against the previous frame's mask and draws only the
-   /// pixels that actually changed: newly-lit pixels are drawn in color, newly-unlit pixels
-   /// are drawn in black. Pixels whose state did not change are left untouched, so a
-   /// series' unchanging trailing data - the vast majority of the chart during steady-state
-   /// scrolling - is never redrawn or flashed. mask is copied into prevMask afterward so the
-   /// next frame diffs against what was actually just drawn.
-   /// </summary>
-   /// <param name="mask">This frame's freshly rasterized mask.</param>
-   /// <param name="prevMask">Previous frame's mask; updated in place to match mask after diffing.</param>
-   /// <param name="bytesPerColumn">Number of bytes per column in the masks.</param>
-   /// <param name="color">Color to draw newly-lit pixels with; newly-unlit pixels are always drawn in black.</param>
-   ///
-   void _diffMasksAndDraw(uint8_t* mask, uint8_t* prevMask, size_t bytesPerColumn, Color color) const
-   {
-      for (int16_t x = 0; x < _chartWidth; x++)
-      {
-         uint8_t* column = mask + (static_cast<size_t>(x) * bytesPerColumn);
-         uint8_t* prevColumn = prevMask + (static_cast<size_t>(x) * bytesPerColumn);
-
-         for (size_t byteIdx = 0; byteIdx < bytesPerColumn; byteIdx++)
-         {
-            uint8_t changed = column[byteIdx] ^ prevColumn[byteIdx];
-            if (changed == 0)
-            {
-               continue;
-            }
-
-            for (uint8_t bit = 0; bit < 8; bit++)
-            {
-               if ((changed & (1u << bit)) == 0)
-               {
-                  continue;
-               }
-
-               int16_t y = static_cast<int16_t>((byteIdx << 3) + bit);
-               bool nowLit = (column[byteIdx] & (1u << bit)) != 0;
-               _display->drawPixel(_chartLeft + x, _chartTop + y, nowLit ? color : Color::BLACK);
-            }
-         }
-
-         memcpy(prevColumn, column, bytesPerColumn);
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Rasterizes a rolling mean +/- stddev band into a pixel-column bitmask, clearing it
-   /// first. Each buffer is rasterized as a connected line the same way _rasterizeSeriesData
-   /// draws a moving-average line, so the band moves with the data instead of being a
-   /// static pair of horizontal lines.
-   /// </summary>
-   /// <param name="mask">Bitmask buffer to rasterize into (cleared first).</param>
-   /// <param name="bytesPerColumn">Number of bytes per column in the mask.</param>
-   /// <param name="lowValues">Newest-first mean-minus-stddev values to plot.</param>
-   /// <param name="highValues">Newest-first mean-plus-stddev values to plot.</param>
-   /// <param name="count">Number of samples in lowValues/highValues.</param>
-   /// <param name="numBins">Total number of bins retained by the series these samples came from.</param>
-   ///
-   void _rasterizeStdDevBand(uint8_t* mask, size_t bytesPerColumn, const float* lowValues, const float* highValues, size_t count, size_t numBins) const
-   {
-      memset(mask, 0, bytesPerColumn * static_cast<size_t>(_chartWidth));
-
-      if (count == 0)
-      {
-         return;
-      }
-
-      bool havePrevLow = false;
-      bool havePrevHigh = false;
-      int16_t prevLowX = 0;
-      int16_t prevLowY = 0;
-      int16_t prevHighX = 0;
-      int16_t prevHighY = 0;
-
-      // Iterate oldest-first (reverse of the newest-first snapshot order) so lines connect
-      // chronologically left-to-right, matching _rasterizeSeriesData.
-      for (size_t idx = count; idx-- > 0; )
-      {
-         float lowValue = lowValues[idx];
-         if (isfinite(lowValue))
-         {
-            int16_t x;
-            int16_t y;
-            _toPixel(idx, numBins, lowValue, x, y);
-            if (havePrevLow)
-            {
-               _rasterizeLine(mask, bytesPerColumn, _chartWidth, _chartHeight, prevLowX, prevLowY, x, y);
-            }
-            prevLowX = x;
-            prevLowY = y;
-            havePrevLow = true;
-         }
-
-         float highValue = highValues[idx];
-         if (isfinite(highValue))
-         {
-            int16_t x;
-            int16_t y;
-            _toPixel(idx, numBins, highValue, x, y);
-            if (havePrevHigh)
-            {
-               _rasterizeLine(mask, bytesPerColumn, _chartWidth, _chartHeight, prevHighX, prevHighY, x, y);
-            }
-            prevHighX = x;
-            prevHighY = y;
-            havePrevHigh = true;
-         }
-      }
-   }
-
-public:
+   public:
    ///
    /// <summary>
    /// Converts a Y-axis value to an absolute display pixel row using the axis range
@@ -1243,11 +1130,11 @@ public:
 
    ///
    /// <summary>
-   /// Creates a timed scatter plot renderer that draws within the given fixed screen
+    /// Creates a timed scatter plot renderer that draws within the given fixed screen
    /// rectangle, using a default min/max axis label format (one decimal place,
-   /// right-aligned) and a default sample-range alignment (center-aligned). The X axis
-   /// range label automatically switches units based on the history window: milliseconds
-   /// below 2 seconds, seconds below 2 minutes, and minutes otherwise.
+   /// right-aligned). The X axis range label is always centered and automatically
+   /// switches units based on the history window: milliseconds below 2 seconds, seconds
+   /// below 2 minutes, and minutes otherwise.
    /// </summary>
    /// <param name="display">Pointer to the display object.</param>
    /// <param name="rect">Fixed screen rectangle this plot draws within; unchanged for the plot's lifetime.</param>
@@ -1256,19 +1143,19 @@ public:
    /// <param name="title">Optional centered title drawn above the chart; defaults to none, in which case the plot uses the full rectangle.</param>
    ///
    TimedScatterPlot(ArduinoWithDisplay* display, Rect16 rect, unsigned long historyMs, float minValueStep = 0.0f, const String& title = String())
-      : TimedScatterPlot(display, rect, historyMs, Format("##.#", Format::Alignment::RIGHT), Format("##.#s", Format::Alignment::CENTER), minValueStep, title)
+      : TimedScatterPlot(display, rect, historyMs, Format("##.#", Format::Alignment::RIGHT), minValueStep, title)
    {}
 
    ///
    /// <summary>
-   /// Creates a timed scatter plot renderer with a custom min/max axis label format and a
-   /// custom sample-range format (only its alignment is used; the X axis range label's
-   /// units and precision are chosen automatically based on the history window).
+   /// Creates a timed scatter plot renderer with a custom min/max axis label format (the X
+   /// axis range label's units and precision are chosen automatically based on the history
+   /// window and is always centered).
    /// </summary>
    ///
-   TimedScatterPlot(ArduinoWithDisplay* display, Rect16 rect, unsigned long historyMs, const Format& minMaxFormat, const Format& sampleRangeFormat, float minValueStep = 0.0f, const String& title = String())
+   TimedScatterPlot(ArduinoWithDisplay* display, Rect16 rect, unsigned long historyMs, const Format& minMaxFormat, float minValueStep = 0.0f, const String& title = String())
       : _display(display), _rect(rect), _historyMs((historyMs == 0) ? 1 : historyMs), _minValueStep(minValueStep),
-        _minMaxFormat(minMaxFormat), _sampleRangeFormat(sampleRangeFormat), _midAxisLabelFormat(_makeRightAlignedFormat(minMaxFormat)), _title(title)
+        _minMaxFormat(&minMaxFormat, Format::Alignment::RIGHT), _midAxisLabelFormat(&minMaxFormat, Format::Alignment::RIGHT), _title(title)
    {
    }
 
@@ -1286,8 +1173,6 @@ public:
       delete[] _series;
       delete[] _movingAverageFields;
       delete[] _stdDevFields;
-      delete[] _sharedRawMask;
-      delete[] _sharedMaMask;
    }
 
    ///
@@ -1426,27 +1311,20 @@ public:
 
    ///
    /// <summary>
-   /// Sets a custom format for axis min/max labels.
+   /// Sets a custom format for axis min/max labels. Forces a full redraw on the next
+   /// render() since the reserved Y-axis label column width is derived from this format's
+   /// fixed length.
    /// </summary>
    /// <param name="format">Format object defining precision and alignment.</param>
    ///
-   void setMinMaxFormat(const Format& format)
+    void setMinMaxFormat(const Format& format)
    {
-      _minMaxFormat = format;
-      _midAxisLabelFormat = _makeRightAlignedFormat(format);
-   }
-
-   ///
-   /// <summary>
-   /// Sets a custom alignment for the sample range time display. The units and precision
-   /// of the label itself are always chosen automatically based on the history window;
-   /// only the alignment of this format is used.
-   /// </summary>
-   /// <param name="format">Format object whose alignment is used for the sample range label.</param>
-   ///
-   void setSampleRangeFormat(const Format& format)
-   {
-      _sampleRangeFormat = format;
+      // Y-axis labels are always drawn flush against the chart's left edge, so force
+      // right alignment on our own copy regardless of how the caller's format is aligned
+      // (e.g. a sensor's format may be left-aligned for use elsewhere, like a table).
+      _minMaxFormat = format.clone(Format::Alignment::RIGHT);
+      _midAxisLabelFormat = format.clone(Format::Alignment::RIGHT);
+      _forceFullRedraw = true;
    }
 
    ///
@@ -1511,176 +1389,160 @@ public:
 
    ///
    /// <summary>
-   /// Renders every owned series within this plot's fixed rectangle: refreshes each
-   /// series' snapshot from its internal time bins, computes the shared Y axis
-   /// range to fit whatever is currently displayed, then draws axis labels and each
-   /// series' points, lines, and/or moving-average line. Each series rasterizes its
-   /// current frame into a per-pixel-column bitmask and diffs it against the previous
-   /// frame's mask, drawing only the pixels that actually changed color; unchanging
-   /// pixels (the vast majority during steady-state scrolling) are never redrawn or
-   /// flashed. A full clear and redraw of the chart area still happens whenever the axis
-   /// range or geometry changes, invalidate() was called, or this is the first frame.
+       /// Renders every owned series within this plot's fixed rectangle: refreshes each
+       /// series' snapshot from its internal time bins, computes the shared Y axis
+       /// range to fit whatever is currently displayed, then draws axis labels and each
+       /// series' points, lines, and/or moving-average line. Every series/layer rasterizes
+       /// its current frame into one plot-wide shared DisplayBuffer, each stamping a
+       /// distinct layer index, and the whole buffer is diffed against the previous frame's in a
+       /// single pass (see DisplayBuffer::diffAndDraw()), drawing only the pixels that actually changed
+       /// color; unchanging pixels (the vast majority during steady-state scrolling) are never
+       /// redrawn or flashed. No physical black flash-clear is needed even when the axis
+       /// range changes: DisplayBuffer::diffAndDraw() erases any pixel that was lit last
+       /// frame but isn't lit this frame, and this is safe because _computeChartGeometry()
+       /// reserves a fixed-width Y-axis label column, so _chartLeft/_chartWidth never shift.
+       /// Axis labels are only redrawn when the axis range or geometry changes,
+       /// invalidate() was called, or this is the first frame.
    /// </summary>
    ///
-   void render()
-   {
-      const unsigned long frameStartMicros = micros();
+       void render()
+       {
+          const unsigned long frameStartMicros = micros();
 
-      if (_display == nullptr || _seriesCount == 0)
-      {
-         return;
-      }
+          if (_display == nullptr || _seriesCount == 0)
+          {
+             return;
+          }
 
-      float yMin;
-      float yMax;
-      _refreshAndComputeAxisRange(&yMin, &yMax);
+          float yMin;
+          float yMax;
+          _refreshAndComputeAxisRange(&yMin, &yMax);
 
-      if (!isfinite(yMin) || !isfinite(yMax))
-      {
-         _lastComputeMicros = micros() - frameStartMicros;
-         _lastDisplayMicros = 0;
-         _lastRenderMicros = _lastComputeMicros;
-         return;
-      }
+          if (!isfinite(yMin) || !isfinite(yMax))
+          {
+             _lastComputeMicros = micros() - frameStartMicros;
+             _lastDisplayMicros = 0;
+             _lastRenderMicros = _lastComputeMicros;
+             return;
+          }
 
-      yMin = _roundDownToAxisPrecision(yMin);
-      yMax = _roundUpToAxisPrecision(yMax);
-      if (yMax <= yMin)
-      {
-         yMax = yMin + _axisPrecisionScale();
-      }
+          yMin = _roundDownToAxisPrecision(yMin);
+          yMax = _roundUpToAxisPrecision(yMax);
+          if (yMax <= yMin)
+          {
+             yMax = yMin + _axisPrecisionScale();
+          }
 
-      const bool wasFirstFrame = !_hasRenderedFrame;
-      const int16_t oldChartLeft = _chartLeft;
-      const int16_t oldChartTop = _chartTop;
-      const int16_t oldChartWidth = _chartWidth;
-      const int16_t oldChartHeight = _chartHeight;
-      const float oldAxisYMin = _axisYMin;
-      const float oldAxisYMax = _axisYMax;
+          const int16_t oldChartLeft = _chartLeft;
+          const int16_t oldChartTop = _chartTop;
+          const int16_t oldChartWidth = _chartWidth;
+          const int16_t oldChartHeight = _chartHeight;
+          const float oldAxisYMin = _axisYMin;
+          const float oldAxisYMax = _axisYMax;
 
-      _display->setTextSize(2);
-      _axisYMin = yMin;
-      _axisYMax = yMax;
-      _computeChartGeometry();
+          _display->setTextSize(2);
+          _axisYMin = yMin;
+          _axisYMax = yMax;
+          _computeChartGeometry();
 
-      if (_chartWidth < 20 || _chartHeight < 20)
-      {
-         _lastComputeMicros = micros() - frameStartMicros;
-         _lastDisplayMicros = 0;
-         _lastRenderMicros = _lastComputeMicros;
-         return;
-      }
+          if (_chartWidth < 20 || _chartHeight < 20)
+          {
+             _lastComputeMicros = micros() - frameStartMicros;
+             _lastDisplayMicros = 0;
+             _lastRenderMicros = _lastComputeMicros;
+             return;
+          }
 
-      // Bin rotations do not force a whole-chart full redraw here: each series' mask-based
-      // diff (see _diffMasksAndDraw()) naturally redraws every pixel whose lit/unlit
-      // state changed as a result of a rotation, and leaves every unchanged pixel alone,
-      // so no special-casing for rotation (or for the ramp-up fill-in period) is needed at all.
-      bool fullRedraw = _forceFullRedraw || !_hasRenderedFrame
-         || (yMin != oldAxisYMin) || (yMax != oldAxisYMax)
-         || (_chartLeft != oldChartLeft) || (_chartTop != oldChartTop)
-         || (_chartWidth != oldChartWidth) || (_chartHeight != oldChartHeight);
+          // Bin rotations do not force a whole-chart full redraw here: the buffer-based diff
+          // (see DisplayBuffer::diffAndDraw()) naturally redraws every pixel whose layer changed as a
+          // result of a rotation, and leaves every unchanged pixel alone, so no special-casing
+          // for rotation (or for the ramp-up fill-in period) is needed at all.
+          bool fullRedraw = _forceFullRedraw || !_hasRenderedFrame
+             || (yMin != oldAxisYMin) || (yMax != oldAxisYMax)
+             || (_chartLeft != oldChartLeft) || (_chartTop != oldChartTop)
+             || (_chartWidth != oldChartWidth) || (_chartHeight != oldChartHeight);
 
-      _forceFullRedraw = false;
-      _hasRenderedFrame = true;
+          _forceFullRedraw = false;
+          _hasRenderedFrame = true;
 
-      const unsigned long displayStartMicros = micros();
+          const unsigned long displayStartMicros = micros();
 
-      _display->display.startWrite();
+          _display->display.startWrite();
 
-      // Every series' previous-frame masks are sized to the current chart dimensions;
-      // ensure they're (re)allocated before either a full redraw or diffing occurs, since
-      // a dimension change invalidates any previously accumulated mask content anyway
-      // (handled by fullRedraw clearing the masks to match the fresh chart area below).
-      // The current-frame raw/moving-average masks are shared scratch buffers owned by
-      // this plot (only one series is ever rasterized at a time), so only one allocation
-      // is needed regardless of series count.
-      _ensureSharedMaskBuffers(_chartWidth, _chartHeight);
-      for (size_t i = 0; i < _seriesCount; i++)
-      {
-         _series[i]->_ensureMaskBuffers(_chartWidth, _chartHeight);
-      }
+          // The plot-wide display buffer is sized to the current chart dimensions; bind it
+          // before either a full redraw or diffing occurs, since a dimension change
+          // invalidates any previously accumulated buffer content anyway (handled by
+          // fullRedraw resetting the buffer to match the fresh chart area below).
+          _displayBuffer.bind(_display, _chartLeft, _chartTop, _chartWidth, _chartHeight);
 
-      if (fullRedraw)
-      {
-         // Clear the union of the old and new chart rectangles, not just the newly
-         // computed one: when the axis range changes, the Y-axis label column can widen
-         // or narrow (_computeChartGeometry() sizes it to the current min/max labels),
-         // shifting _chartLeft/_chartWidth. Clearing only the new rectangle would leave
-         // stale pixels wherever the previous frame's chart area doesn't overlap the new
-         // one, which never get erased or scrolled off since erasure elsewhere assumes
-         // fixed chart geometry. On the very first frame there is no previous rectangle
-         // to union with (old geometry is default-initialized to zero, not a real prior
-         // chart area), so only the new rectangle is cleared.
-         int16_t clearLeft = _chartLeft;
-         int16_t clearTop = _chartTop;
-         int16_t clearRight = _chartLeft + _chartWidth;
-         int16_t clearBottom = _chartTop + _chartHeight;
+          if (fullRedraw)
+          {
+             // No physical black flash-clear is needed here: the plotted-data interior is
+             // rendered entirely through _displayBuffer below, whose diffAndDraw() already
+             // erases (draws black over) any pixel that was lit last frame but isn't lit
+             // this frame - including every stale point invalidated by the new axis range.
+             // This is only safe because _computeChartGeometry() reserves a fixed-width
+             // Y-axis label column (sized from _minMaxFormat's fixed length), so
+             // _chartLeft/_chartWidth never shift and there is no stale exterior area left
+             // behind by a shrinking/widening chart rectangle.
+             _drawAxes();
 
-         if (!wasFirstFrame)
-         {
-            clearLeft = min(clearLeft, oldChartLeft);
-            clearTop = min(clearTop, oldChartTop);
-            clearRight = max<int16_t>(clearRight, oldChartLeft + oldChartWidth);
-            clearBottom = max<int16_t>(clearBottom, oldChartTop + oldChartHeight);
-         }
+             for (size_t i = 0; i < _seriesCount; i++)
+             {
+                // The chart area (and thus the mid-axis label column position) was just
+                // cleared/recomputed, so any existing moving-average/stddev DisplayFields
+                // are stale (their captured x/y no longer matches); drop them so
+                // _drawMidAxisLabels() recreates them at the current position.
+                delete _movingAverageFields[i];
+                delete _stdDevFields[i];
+                _movingAverageFields[i] = nullptr;
+                _stdDevFields[i] = nullptr;
+             }
+          }
 
-         _display->fillRect(clearLeft + 1, clearTop, clearRight - clearLeft - 1, clearBottom - clearTop - 1, Color::BLACK);
-         _drawAxes();
+          _displayBuffer.clear();
 
-         // The chart was just physically cleared to black, so every series' "previous"
-         // mask must also be reset to fully-unlit; otherwise the upcoming diff would
-         // think already-black pixels are still lit from before and skip redrawing them.
-         for (size_t i = 0; i < _seriesCount; i++)
-         {
-            TimedScatterPlotSeries* series = _series[i];
-            const size_t bufSize = series->_maskBytesPerColumn * static_cast<size_t>(_chartWidth);
-            if (bufSize > 0)
-            {
-               memset(series->_prevRawMask, 0, bufSize);
-               memset(series->_prevMaMask, 0, bufSize);
-               memset(series->_prevBandMask, 0, bufSize);
-            }
+          // Assign each series/layer (raw, moving-average, stddev band) the next free nibble
+          // layer index and record its color in the display buffer's palette, then rasterize
+          // it into the one shared buffer. Layer 0 is reserved for "unlit"; only
+          // DisplayBuffer::MAX_LAYERS distinct layers can be drawn in a single frame given the
+          // 4-bit buffer width.
+          uint8_t nextLayer = 1;
 
-            // The chart area (and thus the mid-axis label column position) was just
-            // cleared/recomputed, so any existing moving-average/stddev DisplayFields
-            // are stale (their captured x/y no longer matches); drop them so
-            // _drawMidAxisLabels() recreates them at the current position.
-            delete _movingAverageFields[i];
-            delete _stdDevFields[i];
-            _movingAverageFields[i] = nullptr;
-            _stdDevFields[i] = nullptr;
-         }
-      }
+          for (size_t i = 0; i < _seriesCount; i++)
+          {
+             TimedScatterPlotSeries* series = _series[i];
 
-      for (size_t i = 0; i < _seriesCount; i++)
-      {
-         TimedScatterPlotSeries* series = _series[i];
+             if ((series->showPoints || series->showLines) && nextLayer <= DisplayBuffer::MAX_LAYERS)
+             {
+                uint8_t layer = nextLayer++;
+                _displayBuffer.setPaletteColor(layer, series->color);
+                _rasterizeSeriesData(series->_values, series->_count, series->numBins(), series->showLines, series->showPoints, true, layer);
+             }
 
-         if (series->showPoints || series->showLines)
-         {
-            _rasterizeSeriesData(_sharedRawMask, _sharedMaskBytesPerColumn, series->_values, series->_count, series->numBins(), series->showLines, series->showPoints, true);
-            _diffMasksAndDraw(_sharedRawMask, series->_prevRawMask, _sharedMaskBytesPerColumn, series->color);
-         }
+             if (series->showMovingAverage && nextLayer <= DisplayBuffer::MAX_LAYERS)
+             {
+                uint8_t layer = nextLayer++;
+                _displayBuffer.setPaletteColor(layer, series->movingAverageColor);
+                _rasterizeSeriesData(series->_movingAverageBuffer, series->_count, series->numBins(), true, false, false, layer);
+             }
 
-         if (series->showMovingAverage)
-         {
-            _rasterizeSeriesData(_sharedMaMask, _sharedMaskBytesPerColumn, series->_movingAverageBuffer, series->_count, series->numBins(), true, false, false);
-            _diffMasksAndDraw(_sharedMaMask, series->_prevMaMask, _sharedMaskBytesPerColumn, series->movingAverageColor);
-         }
+             if (series->showStdDevBand && nextLayer <= DisplayBuffer::MAX_LAYERS)
+             {
+                uint8_t layer = nextLayer++;
+                _displayBuffer.setPaletteColor(layer, series->stdDevBandColor);
+                _rasterizeStdDevBand(series->_stdDevLowBuffer, series->_stdDevHighBuffer, series->_count, series->numBins(), layer);
+             }
+          }
 
-         if (series->showStdDevBand)
-         {
-            _rasterizeStdDevBand(series->_bandMask, series->_maskBytesPerColumn, series->_stdDevLowBuffer, series->_stdDevHighBuffer, series->_count, series->numBins());
-            _diffMasksAndDraw(series->_bandMask, series->_prevBandMask, series->_maskBytesPerColumn, series->stdDevBandColor);
-         }
-      }
+          _displayBuffer.diffAndDraw();
 
-      _drawMidAxisLabels();
+          _drawMidAxisLabels();
 
-      _display->display.endWrite();
+          _display->display.endWrite();
 
-      _lastDisplayMicros = micros() - displayStartMicros;
-      _lastRenderMicros = micros() - frameStartMicros;
-      _lastComputeMicros = _lastRenderMicros - _lastDisplayMicros;
-   }
-};
+          _lastDisplayMicros = micros() - displayStartMicros;
+          _lastRenderMicros = micros() - frameStartMicros;
+          _lastComputeMicros = _lastRenderMicros - _lastDisplayMicros;
+       }
+   };

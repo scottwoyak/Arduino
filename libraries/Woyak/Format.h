@@ -57,6 +57,22 @@ public:
    Alignment alignment() const { return _alignment; }
 
    /// <summary>
+   /// Creates a copy of this Format.
+   /// </summary>
+   /// <returns>A copy of this Format.</returns>
+   Format clone() const { return *this; }
+
+   /// <summary>
+   /// Creates a copy of this Format with a different alignment.
+   /// </summary>
+   /// <param name="alignment">Alignment to apply to the cloned Format.</param>
+   /// <returns>A copy of this Format with the specified alignment.</returns>
+   Format clone(Alignment alignment) const
+   {
+      return Format(this, alignment);
+   }
+
+   /// <summary>
    /// Gets the number of decimal digits used for floating-point values.
    /// </summary>
    uint8_t precision() const { return _precision; }
@@ -150,6 +166,17 @@ public:
       : Format(format, alignment)
    {
       _length = length;
+   }
+
+   /// <summary>
+   /// Initializes a copy of an existing format with a different alignment.
+   /// </summary>
+   /// <param name="other">Format to copy.</param>
+   /// <param name="alignment">Alignment to apply to the copy.</param>
+   Format(const Format* other, Alignment alignment)
+      : Format(*other)
+   {
+      _alignment = alignment;
    }
 
    /// <summary>

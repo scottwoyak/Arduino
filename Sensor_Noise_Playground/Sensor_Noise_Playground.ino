@@ -218,14 +218,14 @@ void setup()
    scatterSeries = scatterPlot.createSeries();
    scatterSeries->showMovingAverage = true;
    scatterSeries->showStdDevBand = true;
-   scatterPlot.setMinMaxFormat(sensor.getFormat());
-   histogramPlot.setMinMaxFormat(sensor.getFormat());
+   scatterPlot.setMinMaxFormat(*sensor.getFormat());
+   histogramPlot.setMinMaxFormat(*sensor.getFormat());
 
    noiseTable.addRow("Sampling Time", sampleTimeFormat, Color::LABEL, Color::VALUE2);
    noiseTable.addRow("Num Samples Collected", countFormat, Color::LABEL, Color::VALUE2);
-   noiseTable.addRow("Avg", sensor.getHighResFormat(), Color::LABEL, Color::VALUE2);
-   noiseTable.addRow("Range", sensor.getHighResFormat(), Color::LABEL, Color::VALUE2);
-   noiseTable.addRow("StdDev", sensor.getHighResFormat(), Color::LABEL, Color::VALUE2);
+   noiseTable.addRow("Avg", *sensor.getHighResFormat(), Color::LABEL, Color::VALUE2);
+   noiseTable.addRow("Range", *sensor.getHighResFormat(), Color::LABEL, Color::VALUE2);
+   noiseTable.addRow("StdDev", *sensor.getHighResFormat(), Color::LABEL, Color::VALUE2);
    noiseTable.addRow("StdDev%", stdDevPercentFormat, Color::LABEL, Color::VALUE2);
 
    sensor.begin();

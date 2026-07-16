@@ -2,6 +2,7 @@
 
 #include "ArduinoWithDisplay.h"
 #include "Color.h"
+#include "DisplayBuffer.h"
 #include "Format.h"
 #include "Util.h"
 #include <math.h>
@@ -37,11 +38,6 @@ private:
    size_t _movingAverageBufferCapacity = 0;
    size_t _movingAverageReadyCount = 0;
    bool _movingAverageDirty = true;
-
-   // Tracks how much of this series has already been drawn, so ScatterPlot::render() can
-   // plot only newly added points instead of redrawing the whole series every frame.
-   size_t _renderedCount = 0;
-   size_t _movingAverageRenderedCount = 0;
 
    ///
    /// <summary>
@@ -142,54 +138,7 @@ private:
       _movingAverageDirty = false;
    }
 
-   ///
-   /// <summary>
-   /// Gets how many leading points have already been drawn by ScatterPlot::render(),
-   /// so only newly added points need to be plotted.
-   /// </summary>
-   /// <returns>Number of already-rendered points.</returns>
-   ///
-   size_t renderedCount() const { return _renderedCount; }
-
-   ///
-   /// <summary>
-   /// Records how many leading points have now been drawn by ScatterPlot::render().
-   /// </summary>
-   /// <param name="count">Number of points now rendered.</param>
-   ///
-   void setRenderedCount(size_t count) { _renderedCount = count; }
-
-   ///
-   /// <summary>
-   /// Gets how many leading moving-average points have already been drawn by
-   /// ScatterPlot::render().
-   /// </summary>
-   /// <returns>Number of already-rendered moving-average points.</returns>
-   ///
-   size_t movingAverageRenderedCount() const { return _movingAverageRenderedCount; }
-
-   ///
-   /// <summary>
-   /// Records how many leading moving-average points have now been drawn by
-   /// ScatterPlot::render().
-   /// </summary>
-   /// <param name="count">Number of moving-average points now rendered.</param>
-   ///
-   void setMovingAverageRenderedCount(size_t count) { _movingAverageRenderedCount = count; }
-
-   ///
-   /// <summary>
-   /// Resets incremental redraw tracking so the next render() redraws this series from
-   /// scratch (e.g. after the shared chart was fully cleared).
-   /// </summary>
-   ///
-   void resetRenderState()
-   {
-      _renderedCount = 0;
-      _movingAverageRenderedCount = 0;
-   }
-
-public:
+   public:
    ///
    /// <summary>If true, draws each point of this series.</summary>
    ///
@@ -341,9 +290,9 @@ public:
 
    ///
    /// <summary>
-   /// Removes every point from the series and resets its moving-average cache and
-   /// incremental redraw tracking, so the series can be reused (e.g. for a new test run).
-   /// Does not reset showPoints, showLines, showMovingAverage, color, or movingSampleSize.
+   /// Removes every point from the series and resets its moving-average cache, so the
+   /// series can be reused (e.g. for a new test run). Does not reset showPoints,
+   /// showLines, showMovingAverage, color, or movingSampleSize.
    /// </summary>
    ///
    void clear()
@@ -351,8 +300,6 @@ public:
       _count = 0;
       _movingAverageReadyCount = 0;
       _movingAverageDirty = true;
-      _renderedCount = 0;
-      _movingAverageRenderedCount = 0;
       finalized = false;
    }
 
@@ -518,10 +465,13 @@ public:
 /// becomes available, and set each series' display flags (showPoints, showLines,
 /// showMovingAverage) and color. Calling render() scans every owned series, automatically
 /// computes the shared X/Y axis range to fit whatever is currently displayed, and draws
-/// axis labels plus each series' points/lines/moving-average line. A full clear and
-/// redraw only happens when the axis range changes or invalidate() was called since the
-/// last render(); otherwise only newly added points are plotted, so render() can be
-/// called every frame while data is still being collected.
+/// axis labels plus each series' points/lines/moving-average line. Every series/layer
+/// rasterizes its current frame into one plot-wide shared DisplayBuffer, each stamping a
+/// distinct layer index, and the whole buffer is diffed against the previous frame's in a
+/// single pass (see DisplayBuffer::diffAndDraw()), drawing only the pixels that actually
+/// changed color; unchanging pixels are never redrawn or flashed. A full clear and redraw
+/// of the chart area only happens when the computed axis range changes or invalidate()
+/// was called since the last render().
 /// </summary>
 ///
 class ScatterPlot
@@ -547,6 +497,10 @@ private:
    float _axisYMax = 0.0f;
    bool _hasRenderedFrame = false;
    bool _forceFullRedraw = false;
+
+   // Plot-wide shared 4-bit layer buffer used to rasterize every series/layer each frame
+   // and diff against the previous frame, so only pixels that actually changed are redrawn.
+   DisplayBuffer _displayBuffer;
 
    // Series management
    ScatterPlotSeries** _series = nullptr;
@@ -657,17 +611,17 @@ private:
 
    ///
    /// <summary>
-   /// Computes the chart's pixel geometry from the current axis range, sizing the Y-axis
-   /// label column to fit the widest of the min/max labels.
+   /// Computes the chart's pixel geometry. The Y-axis label column is sized directly from
+   /// the fixed output length of _yAxisFormat (length() * charW()) rather than the rendered
+   /// width of the current min/max label text, so the column width - and therefore
+   /// _chartLeft/_chartWidth - never shifts as the axis range changes. This lets render()
+   /// rely entirely on DisplayBuffer's diff to erase stale points on an axis-range-only
+   /// change, without needing a full physical clear to handle a shifting chart rectangle.
    /// </summary>
-   /// <param name="yMin">Minimum value of the shared Y-axis range.</param>
-   /// <param name="yMax">Maximum value of the shared Y-axis range.</param>
    ///
-   void _computeChartGeometry(float yMin, float yMax)
+   void _computeChartGeometry()
    {
-      String maxLabel = _formatYLabel(yMax);
-      String minLabel = _formatYLabel(yMin);
-      uint16_t yLabelWidth = max(_display->textWidth(maxLabel.c_str()), _display->textWidth(minLabel.c_str()));
+      uint16_t yLabelWidth = static_cast<uint16_t>(_yAxisFormat.length()) * _display->charW();
       _yAxisWidth = static_cast<int16_t>(yLabelWidth) + Y_AXIS_LABEL_GAP;
 
       int16_t axisLineHeight = _display->charH() + 2;
@@ -715,109 +669,102 @@ private:
       _display->setCursor(_chartLeft, _chartTop + _chartHeight + 1);
       _display->print(xMinLabel, Color::LABEL);
 
+      // Trim trailing padding so the max label's measured width matches its visible
+      // content; otherwise invisible trailing padding would push the text left of the
+      // true right edge, making it look left-aligned instead of flush-right.
       String xMaxLabel = String(_xAxisFormat.toString(_axisXMax).c_str());
+      while ((xMaxLabel.length() > 0) && (xMaxLabel[xMaxLabel.length() - 1] == ' '))
+      {
+         xMaxLabel.remove(xMaxLabel.length() - 1);
+      }
       int16_t xMaxLabelX = _chartLeft + _chartWidth - static_cast<int16_t>(_display->textWidth(xMaxLabel.c_str()));
       xMaxLabelX = max(_chartLeft, xMaxLabelX);
       _display->setCursor(xMaxLabelX, _chartTop + _chartHeight + 1);
       _display->print(xMaxLabel, Color::LABEL);
    }
 
-   ///
-   /// <summary>
-   /// Converts a data point to pixel coordinates using the current chart geometry and
-   /// axis range, clamping the result to stay within the chart area.
-   /// </summary>
-   /// <param name="x">X value to convert.</param>
-   /// <param name="y">Y value to convert.</param>
-   /// <param name="outX">Receives the pixel X coordinate.</param>
-   /// <param name="outY">Receives the pixel Y coordinate.</param>
-   ///
-   void _toPixel(float x, float y, int16_t& outX, int16_t& outY) const
-   {
-      float xSpan = _axisXMax - _axisXMin;
-      if (xSpan <= 0.0f) xSpan = 1.0f;
-      float ySpan = _axisYMax - _axisYMin;
-      if (ySpan <= 0.0f) ySpan = 1.0f;
+       ///
+       /// <summary>
+       /// Converts a data point to buffer-relative pixel coordinates (0,0 at the chart's
+       /// top-left) using the current chart geometry and axis range, clamping the result to
+       /// stay within the chart area.
+       /// </summary>
+       /// <param name="x">X value to convert.</param>
+       /// <param name="y">Y value to convert.</param>
+       /// <param name="outX">Receives the buffer-relative pixel X coordinate.</param>
+       /// <param name="outY">Receives the buffer-relative pixel Y coordinate.</param>
+       ///
+       void _toPixel(float x, float y, int16_t& outX, int16_t& outY) const
+       {
+          float xSpan = _axisXMax - _axisXMin;
+          if (xSpan <= 0.0f) xSpan = 1.0f;
+          float ySpan = _axisYMax - _axisYMin;
+          if (ySpan <= 0.0f) ySpan = 1.0f;
 
-      outX = _chartLeft + static_cast<int16_t>(((x - _axisXMin) / xSpan) * (_chartWidth - 1));
-      // The bottom-most chart row is reserved for the gray X-axis line (drawn by
-      // _drawAxes()), so data points are confined to chartHeight - 1 rows above it;
-      // otherwise a minimum-value sample would land on the same row as the axis line
-      // and overwrite it.
-      outY = _chartTop + static_cast<int16_t>(((_axisYMax - y) / ySpan) * (_chartHeight - 2));
+          outX = static_cast<int16_t>(((x - _axisXMin) / xSpan) * (_chartWidth - 1));
+          // The bottom-most chart row is reserved for the gray X-axis line (drawn by
+          // _drawAxes()), so data points are confined to chartHeight - 1 rows above it;
+          // otherwise a minimum-value sample would land on the same row as the axis line
+          // and overwrite it.
+          outY = static_cast<int16_t>(((_axisYMax - y) / ySpan) * (_chartHeight - 2));
 
-      outX = constrain(outX, _chartLeft, static_cast<int16_t>(_chartLeft + _chartWidth - 1));
-      outY = constrain(outY, _chartTop, static_cast<int16_t>(_chartTop + _chartHeight - 2));
-   }
+          outX = constrain(outX, static_cast<int16_t>(0), static_cast<int16_t>(_chartWidth - 1));
+          outY = constrain(outY, static_cast<int16_t>(0), static_cast<int16_t>(_chartHeight - 2));
+       }
 
-   ///
-   /// <summary>
-   /// Plots either a series' raw points (connected with lines when showLines is set) or
-   /// its moving-average line, starting at startIndex so previously plotted points are
-   /// not redrawn. When connecting points, the line segment still reaches back to the
-   /// point before startIndex so an incrementally plotted series has no gap.
-   /// </summary>
-   /// <param name="series">Series to plot.</param>
-   /// <param name="startIndex">Index of the first point to plot.</param>
-   /// <param name="useMovingAverage">If true, plots the moving-average values (always connected) instead of the raw points.</param>
-   /// <returns>The number of points now available to plot (getCount() or getMovingAverageReadyCount()).</returns>
-   ///
-   size_t _plotSeriesData(ScatterPlotSeries* series, size_t startIndex, bool useMovingAverage) const
-   {
-      size_t count = useMovingAverage ? series->getMovingAverageReadyCount() : series->getCount();
-      if (startIndex >= count)
-      {
-         return count;
-      }
+       ///
+       /// <summary>
+       /// Rasterizes either a series' raw points (connected with lines when showLines is
+       /// set) or its moving-average line into the plot-wide shared display buffer under the
+       /// given layer index. Does not clear the buffer first; callers rasterize every
+       /// series/layer into the same shared buffer before diffing once.
+       /// </summary>
+       /// <param name="series">Series to rasterize.</param>
+       /// <param name="useMovingAverage">If true, rasterizes the moving-average values (always connected) instead of the raw points.</param>
+       /// <param name="layer">Layer index (1..DisplayBuffer::MAX_LAYERS) to stamp for this data.</param>
+       ///
+       void _rasterizeSeriesData(ScatterPlotSeries* series, bool useMovingAverage, uint8_t layer)
+       {
+          size_t count = useMovingAverage ? series->getMovingAverageReadyCount() : series->getCount();
+          if (count == 0 || layer == 0)
+          {
+             return;
+          }
 
-      bool connectPoints = useMovingAverage || series->showLines;
-      Color color = useMovingAverage ? series->movingAverageColor : series->color;
+          bool connectPoints = useMovingAverage || series->showLines;
 
-      bool havePrevPoint = false;
-      int16_t prevX = 0;
-      int16_t prevY = 0;
+          bool havePrevPoint = false;
+          int16_t prevX = 0;
+          int16_t prevY = 0;
 
-      if (connectPoints && (startIndex > 0))
-      {
-         size_t prevIndex = startIndex - 1;
-         float prevValue = useMovingAverage ? series->getMovingAverageY(prevIndex) : series->getY(prevIndex);
-         if (isfinite(prevValue))
-         {
-            _toPixel(series->getX(prevIndex), prevValue, prevX, prevY);
-            havePrevPoint = true;
-         }
-      }
+          for (size_t i = 0; i < count; i++)
+          {
+             float value = useMovingAverage ? series->getMovingAverageY(i) : series->getY(i);
+             if (!isfinite(value))
+             {
+                continue;
+             }
 
-      for (size_t i = startIndex; i < count; i++)
-      {
-         float value = useMovingAverage ? series->getMovingAverageY(i) : series->getY(i);
-         if (!isfinite(value))
-         {
-            continue;
-         }
+             int16_t x;
+             int16_t y;
+             _toPixel(series->getX(i), value, x, y);
 
-         int16_t x;
-         int16_t y;
-         _toPixel(series->getX(i), value, x, y);
+             if (connectPoints && havePrevPoint)
+             {
+                _displayBuffer.drawLine(prevX, prevY, x, y, layer);
+             }
+             else
+             {
+                _displayBuffer.setPixel(x, y, layer);
+             }
 
-         if (connectPoints && havePrevPoint)
-         {
-            _display->drawLine(prevX, prevY, x, y, color);
-         }
-         else
-         {
-            _display->drawPixel(x, y, color);
-         }
+             prevX = x;
+             prevY = y;
+             havePrevPoint = true;
+          }
+       }
 
-         prevX = x;
-         prevY = y;
-         havePrevPoint = true;
-      }
-
-      return count;
-   }
-
-public:
+   public:
    ///
    /// <summary>
    /// Initializes a new ScatterPlot at the specified position and dimensions.
@@ -1007,13 +954,19 @@ public:
 
    ///
    /// <summary>
-   /// Sets the format used to render Y-axis min/max labels.
+   /// Sets the format used to render Y-axis min/max labels. Forces a full redraw on the
+   /// next render() since the reserved Y-axis label column width is derived from this
+   /// format's fixed length.
    /// </summary>
    /// <param name="format">Format to apply to the Y-axis min/max labels.</param>
    ///
    void setYAxisFormat(const Format& format)
    {
-      _yAxisFormat = format;
+      // Y-axis labels are always drawn flush against the chart's left edge, so force
+      // right alignment on our own copy regardless of how the caller's format is aligned
+      // (e.g. a sensor's format may be left-aligned for use elsewhere, like a table).
+      _yAxisFormat = format.clone(Format::Alignment::RIGHT);
+      _forceFullRedraw = true;
    }
 
    ///
@@ -1070,109 +1023,129 @@ public:
       return _yAxisWidth;
    }
 
-   ///
-   /// <summary>
-   /// Renders every owned series: automatically computes the shared X/Y axis range to fit
-   /// whatever is currently displayed (based on each series' showPoints/showLines/
-   /// showMovingAverage flags), then draws axis labels and each series' points, lines,
-   /// and/or moving-average line. A full clear and redraw only happens when the computed
-   /// axis range changes or invalidate() was called since the last render(); otherwise
-   /// only points added since the last call are plotted, so this can be called every
-   /// frame while data is still being collected without flickering or repeatedly
-   /// redrawing old points.
-   /// </summary>
-   ///
-   void render()
-   {
-      if (_display == nullptr || _seriesCount == 0)
-      {
-         return;
-      }
+       ///
+       /// <summary>
+       /// Renders every owned series: automatically computes the shared X/Y axis range to fit
+       /// whatever is currently displayed (based on each series' showPoints/showLines/
+       /// showMovingAverage flags), then draws axis labels and each series' points, lines,
+       /// and/or moving-average line. Every series/layer rasterizes its current frame into one
+       /// plot-wide shared DisplayBuffer, each stamping a distinct layer index, and the whole
+       /// buffer is diffed against the previous frame's in a single pass (see
+       /// DisplayBuffer::diffAndDraw()), drawing only the pixels that actually changed color;
+       /// unchanging pixels are never redrawn or flashed, and stale points from a prior axis
+       /// range are naturally erased by the diff rather than a full clear. Axis labels and the
+       /// chart geometry are only recomputed/redrawn when the computed axis range changes or
+       /// invalidate() was called since the last render().
+       /// </summary>
+       ///
+       void render()
+       {
+          if (_display == nullptr || _seriesCount == 0)
+          {
+             return;
+          }
 
-      float xMin;
-      float xMax;
-      float yMin;
-      float yMax;
-      _computeAxisRange(&xMin, &xMax, &yMin, &yMax);
+          float xMin;
+          float xMax;
+          float yMin;
+          float yMax;
+          _computeAxisRange(&xMin, &xMax, &yMin, &yMax);
 
-      if (!isfinite(xMin) || !isfinite(xMax) || !isfinite(yMin) || !isfinite(yMax))
-      {
-         return;
-      }
+          if (!isfinite(xMin) || !isfinite(xMax) || !isfinite(yMin) || !isfinite(yMax))
+          {
+             return;
+          }
 
-      bool axisChanged = !_hasRenderedFrame || (xMin != _axisXMin) || (xMax != _axisXMax) || (yMin != _axisYMin) || (yMax != _axisYMax);
-      bool needsFullRedraw = _forceFullRedraw || axisChanged;
+          bool axisChanged = !_hasRenderedFrame || (xMin != _axisXMin) || (xMax != _axisXMax) || (yMin != _axisYMin) || (yMax != _axisYMax);
+          bool needsFullRedraw = _forceFullRedraw || axisChanged;
 
-      _display->setTextSize(2);
+          _display->setTextSize(2);
 
-      if (needsFullRedraw)
-      {
-         _computeChartGeometry(yMin, yMax);
+          if (needsFullRedraw)
+          {
+             _computeChartGeometry();
 
-         if (_chartWidth < 20 || _chartHeight < 20)
-         {
-            return;
-         }
+             if (_chartWidth < 20 || _chartHeight < 20)
+             {
+                return;
+             }
 
-         // Only the plotted-data interior needs a black flash-clear, since stale points
-         // must be erased when the axis range changes. This excludes the axis line pixels
-         // (redrawn gray below regardless) and the labels (fixed-width text that redraws
-         // over itself in place), so neither ever flashes black.
-         _display->fillRect(_chartLeft + 1, _chartTop, _chartWidth - 1, _chartHeight - 1, Color::BLACK);
+             // No physical black flash-clear is needed here: the plotted-data interior is
+             // rendered entirely through _displayBuffer below, whose diffAndDraw() already
+             // erases (draws black over) any pixel that was lit last frame but isn't lit
+             // this frame - including every stale point invalidated by the new axis range.
 
-         _axisXMin = xMin;
-         _axisXMax = xMax;
-         _axisYMin = yMin;
-         _axisYMax = yMax;
-         _forceFullRedraw = false;
+             _axisXMin = xMin;
+             _axisXMax = xMax;
+             _axisYMin = yMin;
+             _axisYMax = yMax;
+             _forceFullRedraw = false;
 
-         _drawAxes();
+             _drawAxes();
+          }
+          else if (_chartWidth < 20 || _chartHeight < 20)
+          {
+             return;
+          }
 
-         for (size_t i = 0; i < _seriesCount; i++)
-         {
-            _series[i]->resetRenderState();
-         }
-      }
-      else if (_chartWidth < 20 || _chartHeight < 20)
-      {
-         return;
-      }
+          // The plot-wide display buffer is sized to the current chart dimensions; bind it
+          // before diffing occurs. bind() only reallocates (and clears) its buffers when the
+          // chart's pixel dimensions actually change; an axis-range-only change reuses the
+          // existing buffer so diffAndDraw() can still detect and erase stale points from the
+          // previous axis mapping, without any separate full clear/reset here.
+          _displayBuffer.bind(_display, _chartLeft, _chartTop, _chartWidth, _chartHeight);
 
-      for (size_t i = 0; i < _seriesCount; i++)
-      {
-         ScatterPlotSeries* series = _series[i];
+          _displayBuffer.clear();
 
-         if (series->showPoints || series->showLines)
-         {
-            size_t newCount = _plotSeriesData(series, series->renderedCount(), false);
-            series->setRenderedCount(newCount);
-         }
+          // Assign each series/layer (raw, moving-average, stddev band) the next free nibble
+          // layer index and record its color in the display buffer's palette, then rasterize
+          // it into the one shared buffer. Layer 0 is reserved for "unlit"; only
+          // DisplayBuffer::MAX_LAYERS distinct layers can be drawn in a single frame given the
+          // 4-bit buffer width.
+          uint8_t nextLayer = 1;
 
-         if (series->showMovingAverage)
-         {
-            size_t newReadyCount = _plotSeriesData(series, series->movingAverageRenderedCount(), true);
-            series->setMovingAverageRenderedCount(newReadyCount);
-         }
+          for (size_t i = 0; i < _seriesCount; i++)
+          {
+             ScatterPlotSeries* series = _series[i];
 
-         if (series->showStdDevBand)
-         {
-            float bandMean;
-            float bandStdDev;
-            series->stdDevRange(&bandMean, &bandStdDev);
-            if (isfinite(bandMean) && isfinite(bandStdDev))
-            {
-               int16_t lowY;
-               int16_t highY;
-               int16_t dummyX;
-               _toPixel(_axisXMin, bandMean - bandStdDev, dummyX, lowY);
-               _toPixel(_axisXMin, bandMean + bandStdDev, dummyX, highY);
-               int16_t chartRight = static_cast<int16_t>(_chartLeft + _chartWidth - 1);
-               _display->drawLine(_chartLeft, lowY, chartRight, lowY, series->stdDevBandColor);
-               _display->drawLine(_chartLeft, highY, chartRight, highY, series->stdDevBandColor);
-            }
-         }
-      }
+             if ((series->showPoints || series->showLines) && nextLayer <= DisplayBuffer::MAX_LAYERS)
+             {
+                uint8_t layer = nextLayer++;
+                _displayBuffer.setPaletteColor(layer, series->color);
+                _rasterizeSeriesData(series, false, layer);
+             }
 
-      _hasRenderedFrame = true;
-   }
-};
+             if (series->showMovingAverage && nextLayer <= DisplayBuffer::MAX_LAYERS)
+             {
+                uint8_t layer = nextLayer++;
+                _displayBuffer.setPaletteColor(layer, series->movingAverageColor);
+                _rasterizeSeriesData(series, true, layer);
+             }
+
+             if (series->showStdDevBand && nextLayer <= DisplayBuffer::MAX_LAYERS)
+             {
+                float bandMean;
+                float bandStdDev;
+                series->stdDevRange(&bandMean, &bandStdDev);
+                if (isfinite(bandMean) && isfinite(bandStdDev))
+                {
+                   uint8_t layer = nextLayer++;
+                   _displayBuffer.setPaletteColor(layer, series->stdDevBandColor);
+
+                   int16_t lowY;
+                   int16_t highY;
+                   int16_t dummyX;
+                   _toPixel(_axisXMin, bandMean - bandStdDev, dummyX, lowY);
+                   _toPixel(_axisXMin, bandMean + bandStdDev, dummyX, highY);
+                   int16_t chartRight = static_cast<int16_t>(_chartWidth - 1);
+                   _displayBuffer.drawLine(0, lowY, chartRight, lowY, layer);
+                   _displayBuffer.drawLine(0, highY, chartRight, highY, layer);
+                }
+             }
+          }
+
+          _displayBuffer.diffAndDraw();
+
+          _hasRenderedFrame = true;
+       }
+   };

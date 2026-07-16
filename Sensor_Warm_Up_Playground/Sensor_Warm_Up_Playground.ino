@@ -863,7 +863,7 @@ void updateStatusLine()
 
    if (isfinite(currentAvg))
    {
-      arduino.printlnR("Cooling Down: ", currentAvg, sensor.getHighResFormat(), Color::GRAY, Color::GRAY, Color::BLACK);
+      arduino.printlnR("Cooling Down: ", currentAvg, *sensor.getHighResFormat(), Color::GRAY, Color::GRAY, Color::BLACK);
    }
    else
    {
@@ -1055,10 +1055,10 @@ void drawSummaryView()
       arduino.print(testRunner.resultRate(i), actualRateFormat, rowColor);
 
       arduino.setCursor(startColX, rowY);
-      arduino.print(testRunner.resultStartValue(i), sensor.getFormat(), rowColor);
+      arduino.print(testRunner.resultStartValue(i), *sensor.getFormat(), rowColor);
 
       arduino.setCursor(incrColX, rowY);
-      arduino.println(testRunner.resultValue(i), sensor.getHighResFormat(), rowColor);
+      arduino.println(testRunner.resultValue(i), *sensor.getHighResFormat(), rowColor);
 
       rowY = arduino.getCursorY();
    }

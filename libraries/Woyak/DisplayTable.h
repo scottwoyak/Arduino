@@ -358,4 +358,24 @@ public:
          _spriteCreated = false;
       }
    }
-};
+
+   ///
+   /// <summary>
+   /// Computes the total pixel width the table needs to display its labels and values,
+   /// based on the longest label and the widest formatted value across all rows. Useful
+   /// for laying out other content (e.g. a plot) relative to the table's actual content
+   /// width rather than a guessed fixed width.
+   /// </summary>
+   /// <returns>The required width, in pixels.</returns>
+   ///
+   int16_t getWidth()
+   {
+      if (!_spriteCreated)
+      {
+         _display->setTextSize(_textSize, _mono);
+         _createSprite();
+      }
+
+      return (int16_t)(_labelWidth * _display->charW()) + _valueSpriteWidth;
+   }
+   };

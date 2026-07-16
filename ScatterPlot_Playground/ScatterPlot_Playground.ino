@@ -1,7 +1,8 @@
 //
 // Profiles how fast a ScatterPlot can be redrawn as its backing sample series grows.
 //
-// Continuously samples a TestSensor and appends each reading to a ScatterPlotSeries, calling
+// Continuously samples a mock data source (see DATA_SOURCE_TYPE below) and appends each reading
+// to a ScatterPlotSeries, calling
 // ScatterPlot::render() after every 10th new sample. Because render() recomputes the shared
 // axis range by scanning every point stored in the series on each call, the time per update
 // grows as the series grows, so the achieved update rate falls over the course of the test.
@@ -10,8 +11,8 @@
 //
 // Serial output logs sample count, update rate, and elapsed time at SERIAL_PRINT_RATE_PER_SEC
 // while the test runs, and prints a final summary (including which stop condition was hit) once
-// the test completes. The display shows a title, a live "Rate / Samples" readout that updates
-// every iteration, and the scatter plot itself below it.
+// the test completes. The display shows a title, a status table on the left (sensor type, live
+// rate, and sample count), and the scatter plot to the right of the table.
 //
 
 // System/standard library headers
@@ -20,6 +21,7 @@
 
 // Local library headers (from libraries/Woyak)
 #include "ESP32_S3_Playground.h"
+#include "DisplayTable.h"
 #include "RollingRate.h"
 #include "ScatterPlot.h"
 #include "SerialTable.h"
@@ -27,6 +29,16 @@
 #include "TestSensor.h"
 #include "Timer.h"
 #include "Util.h"
+
+// ----------- Data Source
+// One-line data source switch for this sketch only. Change only DATA_SOURCE_TYPE below;
+// sensor is declared as that type directly. Use sensor.sensorType() to display the
+// active source's type name at runtime.
+// #define DATA_SOURCE_TYPE ConstantTestSensor
+#define DATA_SOURCE_TYPE RandomTestSensor
+// #define DATA_SOURCE_TYPE NormalTestSensor
+// #define DATA_SOURCE_TYPE SinTestSensor
+// #define DATA_SOURCE_TYPE SinWithNormalNoiseTestSensor
 
 // ----------- Test Parameters
 constexpr float STOP_RATE_PER_SEC = 10.0f;
@@ -38,7 +50,8 @@ constexpr size_t MAX_SAMPLES = 30000; // safety cap in case the rate never reach
 // Matches the ESP32_S3_Playground board's LGX_Hosyond_ST7796 display in landscape orientation.
 constexpr uint16_t DISPLAY_WIDTH = 480;
 constexpr uint16_t DISPLAY_HEIGHT = 320;
-constexpr uint16_t HEADER_HEIGHT = 3 * 8 + 2 * 8 + 4; // title (size 3) + rate line (size 2) plus padding
+constexpr uint16_t HEADER_HEIGHT = 3 * 8 + 4; // title (size 3) plus padding
+constexpr uint16_t TABLE_PLOT_GAP = 10; // gap between the status table and the scatter plot
 
 // ----------- Serial Output
 constexpr uint8_t SERIAL_PRINT_RATE_PER_SEC = 1;
@@ -51,14 +64,15 @@ constexpr size_t NUM_RESULT_COLUMNS = sizeof(RESULT_COLUMNS) / sizeof(RESULT_COL
 
 // ----------- The Board
 ESP32_S3_Playground arduino;
-RandomTestSensor sensor;
+DATA_SOURCE_TYPE sensor;
 
 // ----------- Display Formats
-Format rateFormat("####/s", Format::Alignment::RIGHT);
-Format countFormat("#####", Format::Alignment::RIGHT);
+Format rateFormat("####/s", Format::Alignment::LEFT);
+Format xAxisFormat("#####");
 
 // ----------- Test State
 RollingRate updateRate(RATE_WINDOW_SAMPLES);
+DisplayTable statusTable(&arduino, 0, HEADER_HEIGHT, 2);
 ScatterPlot scatterPlot(&arduino, 0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT);
 ScatterPlotSeries* sampleSeries = nullptr;
 RateTimer serialPrintTimer(SERIAL_PRINT_RATE_PER_SEC);
@@ -68,36 +82,29 @@ size_t sampleCount = 0;
 bool sensorReady = false;
 bool testComplete = false;
 unsigned long testStartMs = 0;
-int16_t rateRowY = 0;
 
 ///
 /// <summary>
-/// Clears the display and draws the sketch title, recording the Y position of the
-/// rate readout line drawn below it.
+/// Clears the display and draws the sketch title.
 /// </summary>
 ///
 void drawTitle()
 {
    arduino.setTextSize(3);
    arduino.clearDisplay();
-   arduino.println("Scatter Plot Profiler", Color::HEADING);
-
-   rateRowY = arduino.getCursorY();
+   arduino.println("Scatter Plot Playground", Color::HEADING);
 }
 
 ///
 /// <summary>
-/// Redraws the live update rate and sample count line. The fixed-width formats
-/// overwrite their own background in place, so the row does not need to be cleared
-/// first and does not flicker.
+/// Updates the live update-rate and sample-count rows in the status table. DisplayTable
+/// only redraws a row's value when it actually changes, so this does not flicker.
 /// </summary>
 ///
 void updateRateReadout()
 {
-   arduino.setTextSize(2);
-   arduino.setCursor(0, rateRowY);
-   arduino.print("Rate: ", updateRate.get(), rateFormat, Color::VALUE);
-   arduino.println("  Samples: ", sampleCount, countFormat, Color::VALUE2);
+   statusTable.updateValue(1, updateRate.get());
+   statusTable.draw();
 }
 
 ///
@@ -142,10 +149,8 @@ void finishTest(bool reachedStopRate)
    SerialX::println(String(elapsedSeconds, 1) + "s", 20);
 
    arduino.setTextSize(2);
-   arduino.fillRect(0, rateRowY, DISPLAY_WIDTH, arduino.charH(), Color::BLACK);
-   arduino.setCursor(0, rateRowY);
-   arduino.print("Final: ", finalRate, rateFormat, Color::VALUE);
-   arduino.println("  Samples: ", sampleCount, countFormat, Color::VALUE2);
+   statusTable.updateValue(1, finalRate);
+   statusTable.draw();
 }
 
 void setup()
@@ -158,12 +163,22 @@ void setup()
 
 	sampleSeries = scatterPlot.createSeries(MAX_SAMPLES);
 	sampleSeries->showPoints = true;
+	scatterPlot.setXAxisFormat(xAxisFormat);
+	scatterPlot.setYAxisFormat(*sensor.getFormat());
+
+	statusTable.addRow("Sensor", Format(8), Color::LABEL, Color::VALUE);
+	statusTable.addRow("Rate", rateFormat, Color::LABEL, Color::VALUE);
+	statusTable.updateValue(0, String(sensor.sensorType()));
+	statusTable.draw();
+
+	int16_t plotX = statusTable.getWidth() + TABLE_PLOT_GAP;
+	scatterPlot.setRect(plotX, HEADER_HEIGHT, DISPLAY_WIDTH - plotX, DISPLAY_HEIGHT - HEADER_HEIGHT);
 
 	sensorReady = sensor.begin();
 	if (!sensorReady)
 	{
 		arduino.setTextSize(2);
-		arduino.setCursor(0, rateRowY);
+		arduino.setCursor(0, HEADER_HEIGHT);
 		arduino.println("Sensor init failed", Color::RED);
 		Serial.println("Error: sensor initialization failed");
 		return;
@@ -175,6 +190,11 @@ void setup()
 
 void loop()
 {
+	if (arduino.buttonA.wasPressed())
+	{
+		Util::reset();
+	}
+
 	if (!sensorReady || testComplete)
 	{
 		return;
@@ -188,7 +208,7 @@ void loop()
 
 	if (sampleCount < MAX_SAMPLES)
 	{
-		sampleSeries->add(static_cast<float>(sampleCount), value);
+		sampleSeries->add(static_cast<float>(sampleCount + 1), value);
 		sampleCount++;
 	}
 

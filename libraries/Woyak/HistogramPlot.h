@@ -167,7 +167,14 @@ private:
          _arduino->setCursor(chartLeft, chartBottom + 1);
          _arduino->print(minLabel, _axisLabelColor);
 
-         int16_t maxLabelX = chartLeft + chartWidth - static_cast<int16_t>(maxLabel.length() * _arduino->charW());
+         // Trim trailing padding so the max label's measured width matches its visible
+         // content; otherwise invisible trailing padding (e.g. from a left-aligned format)
+         // would push the text left of the true right edge.
+         while ((maxLabel.length() > 0) && (maxLabel[maxLabel.length() - 1] == ' '))
+         {
+            maxLabel.remove(maxLabel.length() - 1);
+         }
+         int16_t maxLabelX = chartLeft + chartWidth - static_cast<int16_t>(_arduino->textWidth(maxLabel.c_str()));
          if (maxLabelX < chartLeft)
          {
             maxLabelX = chartLeft;

@@ -214,7 +214,7 @@ void setup()
       float averageWindowS = (p == 0) ? NOW_AVERAGE_WINDOW_S : AVERAGE_WINDOWS_S[p - 1];
       unsigned long plotHistoryMs = static_cast<unsigned long>(averageWindowS * PLOT_HISTORY_MULTIPLIER * 1000.0f);
       Rect16 plotRect = { 0, static_cast<uint16_t>(plotTop), arduino.width(), static_cast<uint16_t>(plotHeight) };
-      plots[p] = new TimedScatterPlot(&arduino, plotRect, plotHistoryMs, tempFormat, Format("##.#s", Format::Alignment::CENTER), 0.0f, title);
+      plots[p] = new TimedScatterPlot(&arduino, plotRect, plotHistoryMs, tempFormat, 0.0f, title);
       for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
          TimedScatterPlotSeries* series = plots[p]->createSeries();

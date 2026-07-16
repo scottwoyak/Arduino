@@ -207,7 +207,14 @@ private:
        _feather->setCursor(chartLeft, labelY);
        _feather->print(minLabel, Color::LABEL);
 
-       int16_t maxLabelX = chartLeft + chartWidth - static_cast<int16_t>(maxLabel.length() * _feather->charW());
+       // Trim trailing padding so the max label's measured width matches its visible
+       // content; otherwise invisible trailing padding (e.g. from a left-aligned format)
+       // would push the text left of the true right edge.
+       while ((maxLabel.length() > 0) && (maxLabel[maxLabel.length() - 1] == ' '))
+       {
+          maxLabel.remove(maxLabel.length() - 1);
+       }
+       int16_t maxLabelX = chartLeft + chartWidth - static_cast<int16_t>(_feather->textWidth(maxLabel.c_str()));
        _feather->setCursor(maxLabelX, labelY);
        _feather->print(maxLabel, Color::LABEL);
 
