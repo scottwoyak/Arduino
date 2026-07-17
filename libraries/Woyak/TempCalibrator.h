@@ -16,6 +16,10 @@
 class TempCalibrator
 {
 public:
+   // Calibration points are only fit over this baseline temperature range, since it's
+   // the range we care about fitting most accurately.
+   static constexpr float FIT_MIN_BASELINE_F = 40.0f;
+   static constexpr float FIT_MAX_BASELINE_F = 70.0f;
    ///
    /// <summary>
    /// Baseline computation mode.
@@ -218,7 +222,9 @@ private:
    /// <summary>
    /// Computes least-squares linear (y = a + b*x) and quadratic (y = a + b*x + c*x^2)
    /// fits of a sensor's correction factor as a function of the baseline temperature,
-   /// along with each fit's R-squared (coefficient of determination).
+   /// along with each fit's R-squared (coefficient of determination). Only points with a
+   /// baseline within [FIT_MIN_BASELINE_F, FIT_MAX_BASELINE_F] are used, since that's the
+   /// range we care about fitting most accurately.
    /// </summary>
    /// <param name="points">Array of recorded calibration points, in any order.</param>
    /// <param name="n">Number of valid points in the array.</param>
@@ -231,7 +237,17 @@ private:
       linearFit = RegressionFit();
       quadraticFit = RegressionFit();
 
-      if (n < 2)
+      // Only fit over the baseline temperature range we care about fitting accurately.
+      uint8_t m = 0;
+      for (uint8_t i = 0; i < n; i++)
+      {
+         if (points[i].baseline >= FIT_MIN_BASELINE_F && points[i].baseline <= FIT_MAX_BASELINE_F)
+         {
+            m++;
+         }
+      }
+
+      if (m < 2)
       {
          return;
       }
@@ -241,6 +257,11 @@ private:
 
       for (uint8_t i = 0; i < n; i++)
       {
+         if (points[i].baseline < FIT_MIN_BASELINE_F || points[i].baseline > FIT_MAX_BASELINE_F)
+         {
+            continue;
+         }
+
          double x = points[i].baseline;
          double y = points[i].corrections[sensorIndex];
          double x2 = x * x;
@@ -254,24 +275,34 @@ private:
          sumX2Y += x2 * y;
       }
 
-      double meanY = sumY / n;
+      double meanY = sumY / m;
       double totalSS = 0.0;
       for (uint8_t i = 0; i < n; i++)
       {
+         if (points[i].baseline < FIT_MIN_BASELINE_F || points[i].baseline > FIT_MAX_BASELINE_F)
+         {
+            continue;
+         }
+
          double diff = points[i].corrections[sensorIndex] - meanY;
          totalSS += diff * diff;
       }
 
       // Linear fit: y = a + b*x
-      double linearDenom = (n * sumX2 - sumX * sumX);
+      double linearDenom = (m * sumX2 - sumX * sumX);
       if (linearDenom != 0.0)
       {
-         double b = (n * sumXY - sumX * sumY) / linearDenom;
-         double a = (sumY - b * sumX) / n;
+         double b = (m * sumXY - sumX * sumY) / linearDenom;
+         double a = (sumY - b * sumX) / m;
 
          double residualSS = 0.0;
          for (uint8_t i = 0; i < n; i++)
          {
+            if (points[i].baseline < FIT_MIN_BASELINE_F || points[i].baseline > FIT_MAX_BASELINE_F)
+            {
+               continue;
+            }
+
             double x = points[i].baseline;
             double residual = points[i].corrections[sensorIndex] - (a + b * x);
             residualSS += residual * residual;
@@ -286,18 +317,18 @@ private:
       }
 
       // Quadratic fit: y = a + b*x + c*x^2, via the normal equations solved as a 3x3 system
-      if (n >= 3)
+      if (m >= 3)
       {
-         double m[3][3] =
+         double mat[3][3] =
          {
-            { static_cast<double>(n), sumX,  sumX2 },
+            { static_cast<double>(m), sumX,  sumX2 },
             { sumX,                   sumX2, sumX3 },
             { sumX2,                  sumX3, sumX4 }
          };
          double rhs[3] = { sumY, sumXY, sumX2Y };
          double solution[3];
 
-         if (_solve3x3(m, rhs, solution))
+         if (_solve3x3(mat, rhs, solution))
          {
             double a = solution[0];
             double b = solution[1];
@@ -306,6 +337,11 @@ private:
             double residualSS = 0.0;
             for (uint8_t i = 0; i < n; i++)
             {
+               if (points[i].baseline < FIT_MIN_BASELINE_F || points[i].baseline > FIT_MAX_BASELINE_F)
+               {
+                  continue;
+               }
+
                double x = points[i].baseline;
                double residual = points[i].corrections[sensorIndex] - (a + b * x + c * x * x);
                residualSS += residual * residual;

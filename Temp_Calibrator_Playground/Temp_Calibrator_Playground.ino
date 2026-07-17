@@ -330,6 +330,24 @@ void printCalibrationCodeToSerial()
       fits[i] = TempCalibrator::getBestFit(points, pointCount, i);
    }
 
+   // Sensors that were never recorded to Preferences (no ID saved) have no data and are
+   // skipped entirely in every table below, rather than shown as all-zero placeholders.
+   uint8_t existingSensors[NUM_SENSORS];
+   uint8_t existingSensorCount = 0;
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   {
+      if (!ids[i].empty())
+      {
+         existingSensors[existingSensorCount++] = i;
+      }
+   }
+
+   if (existingSensorCount == 0)
+   {
+      delete[] points;
+      return;
+   }
+
    // Separate this report from any prior Serial output with a blank line and a timestamped title
    time_t now = time(nullptr);
    struct tm timeinfo;
@@ -346,6 +364,7 @@ void printCalibrationCodeToSerial()
    // otherwise fall back to the flat correction factor recorded at the last baseline.
    Serial.println("Copy this data to libraries\\Woyak\\TempSensorCallibration.h");
    Serial.println(String("// Based on averaging data points over the last ") + TIMED_AVERAGE_DURATION_S + " seconds at a sample rate of " + (1000 / SAMPLE_INTERVAL_MS) + "/s");
+   Serial.println(String("// Factors computed based on temperatures ") + static_cast<int>(TempCalibrator::FIT_MIN_BASELINE_F) + "-" + static_cast<int>(TempCalibrator::FIT_MAX_BASELINE_F) + "F");
 
    // Column widths sized to line up the id, tempA (3 decimals), tempB, and tempC (6
    // decimals) columns regardless of sign or digit count, matching the style of the
@@ -353,8 +372,9 @@ void printCalibrationCodeToSerial()
    static const Format idColFormat(16, Format::Alignment::LEFT);
    static const Format tempAColFormat("+#.###", 7, Format::Alignment::RIGHT);
    static const Format tempBCColFormat("+#.######", 10, Format::Alignment::RIGHT);
-   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   for (uint8_t e = 0; e < existingSensorCount; e++)
    {
+      uint8_t i = existingSensors[e];
       std::string idField = "\"" + ids[i] + "\",";
       Serial.print(idColFormat.toString(idField).c_str());
 
@@ -374,7 +394,7 @@ void printCalibrationCodeToSerial()
          Serial.print(", ");
          Serial.print(tempBCColFormat.toString(0.0).c_str());
       }
-      Serial.println(",");
+      Serial.println(String(",  // S") + i);
    }
 
    // Include the full calibration point history as comments, for future reference, so
@@ -384,18 +404,59 @@ void printCalibrationCodeToSerial()
       Serial.println();
       Serial.println("// Full calibration history (baseline temp, correction per sensor):");
 
-      static const Format baselineColFormat("###", Format::Alignment::RIGHT);
+      static const Format baselineColFormat("###", 4, Format::Alignment::RIGHT);
       static const Format sensorColFormat("+#.###", 8, Format::Alignment::RIGHT);
 
-      Serial.println("// Base    S0       S1       S2       S3       S4       S5       S6       S7");
+      String header = "// " + String(baselineColFormat.toString("Base").c_str());
+      for (uint8_t e = 0; e < existingSensorCount; e++)
+      {
+         header += " " + String(sensorColFormat.toString(("S" + String(existingSensors[e])).c_str()).c_str());
+      }
+      Serial.println(header);
 
       for (uint8_t i = 0; i < pointCount; i++)
       {
          const TempCalibrator::CalibrationPoint& point = points[i];
          String row = "// " + String(baselineColFormat.toString(point.baseline).c_str());
-         for (uint8_t s = 0; s < NUM_SENSORS; s++)
+         for (uint8_t e = 0; e < existingSensorCount; e++)
          {
+            uint8_t s = existingSensors[e];
             row += " " + String(sensorColFormat.toString(point.corrections[s]).c_str());
+         }
+         Serial.println(row);
+      }
+   }
+
+   // Show, for each sampled calibration point, how far off the corrected value (raw
+   // reading + fitted correction) would still be from the baseline, as a residual error
+   // check on the fitted curves above.
+   if (pointCount > 0)
+   {
+      Serial.println();
+      Serial.println("// Residual error after calibration (corrected - baseline), using best-fit curve:");
+
+      static const Format baselineColFormat("###", 4, Format::Alignment::RIGHT);
+      static const Format sensorColFormat("+#.###", 8, Format::Alignment::RIGHT);
+
+      String header = "// " + String(baselineColFormat.toString("Base").c_str());
+      for (uint8_t e = 0; e < existingSensorCount; e++)
+      {
+         header += " " + String(sensorColFormat.toString(("S" + String(existingSensors[e])).c_str()).c_str());
+      }
+      Serial.println(header);
+
+      for (uint8_t i = 0; i < pointCount; i++)
+      {
+         const TempCalibrator::CalibrationPoint& point = points[i];
+         float baselineTemp = point.baseline;
+         String row = "// " + String(baselineColFormat.toString(baselineTemp).c_str());
+         for (uint8_t e = 0; e < existingSensorCount; e++)
+         {
+            uint8_t s = existingSensors[e];
+            float predictedCorrection = fits[s].valid ?
+               static_cast<float>(fits[s].a + fits[s].b * baselineTemp + fits[s].c * baselineTemp * baselineTemp) : 0.0f;
+            float residual = predictedCorrection - point.corrections[s];
+            row += " " + String(sensorColFormat.toString(residual).c_str());
          }
          Serial.println(row);
       }
@@ -404,25 +465,7 @@ void printCalibrationCodeToSerial()
    delete[] points;
 
    // Also display the recorded correction factors in a table for easy reading, one
-   // column per detected sensor with the current baseline temperature in the first
-   // column. Sensors that were never recorded to Preferences (no ID saved) are skipped
-   // entirely rather than shown as an empty placeholder column. Skip the table entirely
-   // if no saved correction run exists yet.
-   uint8_t existingSensors[NUM_SENSORS];
-   uint8_t existingSensorCount = 0;
-   for (uint8_t i = 0; i < NUM_SENSORS; i++)
-   {
-      if (!ids[i].empty())
-      {
-         existingSensors[existingSensorCount++] = i;
-      }
-   }
-
-   if (existingSensorCount == 0)
-   {
-      return;
-   }
-
+   // column per detected sensor with the current baseline temperature in the first column.
    String sensorLabels[NUM_SENSORS];
    SerialTable::Column columns[NUM_SENSORS + 1];
    columns[0] = { "Temp", 8 };
@@ -444,7 +487,14 @@ void printCalibrationCodeToSerial()
 
    SerialTable table("Recorded Temperature Corrections", columns, existingSensorCount + 1);
    table.printHeader();
+
    float baseline = (sensorData[0] != nullptr) ? sensorData[0]->getLongAvgValue() : NAN;
+
+   // No data has been collected yet, so there's no row to show.
+   if (isnan(baseline))
+   {
+      return;
+   }
 
    table.printRow(SerialTable::fixed(baseline, 0),
       correctionText[0], correctionText[1], correctionText[2], correctionText[3],
