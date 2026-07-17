@@ -82,26 +82,138 @@ public:
    ///
    virtual void setNumericValue(double value) = 0;
 
+       ///
+       /// <summary>
+       /// Gets this field's default value as a double, for generic Preferences persistence.
+       /// </summary>
+       /// <returns>The default value.</returns>
+       ///
+       virtual double defaultNumericValue() const = 0;
+
+       ///
+       /// <summary>
+       /// Gets whether this field can be selected and adjusted live via the encoders. Read-only
+       /// fields (e.g. measured values) return false so DisplayEditableTable skips them when
+       /// cycling the selection and never highlights or persists them.
+       /// </summary>
+       /// <returns>True if the field is selectable/adjustable; false if it is display-only.</returns>
+       ///
+           virtual bool isEditable() const
+           {
+              return true;
+           }
+
+           ///
+           /// <summary>
+           /// Gets whether this field is currently enabled for interaction/display, e.g. so a
+           /// field can be temporarily grayed out and skipped by encoder selection when it is
+           /// not relevant to the current configuration (like a noise StdDev row while noise is
+           /// off) without being permanently read-only like a measured value. The default
+           /// implementation always returns true.
+           /// </summary>
+           /// <returns>True if the field is currently enabled; false if it should appear dimmed and be skipped.</returns>
+           ///
+           virtual bool isEnabled() const
+           {
+              return true;
+           }
+
+           ///
+           /// <summary>
+           /// Sets the section header text drawn above this field when it appears in a
+           /// DisplayEditableTable, e.g. "Plot" or "Measured". A field with no section set (the
+           /// default) is drawn as part of the previous field's section.
+           /// </summary>
+           /// <param name="section">Section header text, or nullptr for no header.</param>
+           ///
+           void setSection(const char* section)
+           {
+              _section = section;
+           }
+
+           ///
+           /// <summary>
+           /// Gets the section header text drawn above this field, or nullptr if this field
+           /// continues the previous field's section.
+           /// </summary>
+           /// <returns>The section header text, or nullptr.</returns>
+           ///
+           const char* section() const
+           {
+              return _section;
+           }
+
+       protected:
+           const char* _label;
+           Format _format;
+           const char* _section = nullptr;
+       };
+
    ///
    /// <summary>
-   /// Gets this field's default value as a double, for generic Preferences persistence.
+   /// Display-only field backed by a caller-owned float, for measured values (e.g. a live rate)
+   /// that need to share a table/alignment with editable fields but cannot be selected or adjusted.
    /// </summary>
-   /// <returns>The default value.</returns>
    ///
-   virtual double defaultNumericValue() const = 0;
+   class ReadOnlyDisplayEditableField : public DisplayEditableField
+   {
+   public:
+       ///
+       /// <summary>
+       /// Initializes a new instance of the ReadOnlyDisplayEditableField class.
+       /// </summary>
+       /// <param name="label">Label text drawn before the value.</param>
+       /// <param name="value">Caller-owned variable that holds the current value.</param>
+       /// <param name="format">Format used to render the value for display.</param>
+       ///
+       ReadOnlyDisplayEditableField(const char* label, float* value, const Format& format)
+          : DisplayEditableField(label, format), _value(value)
+       {
+       }
 
-protected:
-   const char* _label;
-   Format _format;
-};
+       void reset() override
+       {
+       }
 
-///
-/// <summary>
-/// Integer setup field backed by a caller-owned long. Override _stepValue in a subclass to
-/// implement non-linear stepping.
-/// </summary>
-///
-class IntDisplayEditableField : public DisplayEditableField
+       void adjust(int32_t direction) override
+       {
+       }
+
+       std::string valueText() override
+       {
+          return _format.toString((double)*_value);
+       }
+
+       double numericValue() const override
+       {
+          return (double)*_value;
+       }
+
+       void setNumericValue(double value) override
+       {
+       }
+
+       double defaultNumericValue() const override
+       {
+          return 0.0;
+       }
+
+       bool isEditable() const override
+       {
+          return false;
+       }
+
+           private:
+               float* _value;
+           };
+
+       ///
+       /// <summary>
+       /// Integer setup field backed by a caller-owned long. Override _stepValue in a subclass to
+       /// implement non-linear stepping.
+       /// </summary>
+       ///
+       class IntDisplayEditableField : public DisplayEditableField
 {
 public:
    ///
@@ -170,12 +282,61 @@ protected:
       return current + (direction * _step);
    }
 
-   long* _value;
-   long _minValue;
-   long _maxValue;
-   long _step;
-   long _default;
-};
+       long* _value;
+       long _minValue;
+       long _maxValue;
+       long _step;
+       long _default;
+   };
+
+   ///
+   /// <summary>
+   /// Enumerated-selection field backed by a caller-owned long index into a fixed array of
+   /// string labels. Adjusting the field steps through the labels by index, wrapping around at
+   /// either end, and valueText() displays the selected label instead of a raw index number.
+   /// Replaces the common pattern of writing a one-off IntDisplayEditableField subclass just to
+   /// step through and display a small fixed set of string options (e.g. "Points"/"Lines",
+   /// "True"/"False", "Fixed"/"Timed").
+   /// </summary>
+   ///
+   class EnumDisplayEditableField : public IntDisplayEditableField
+   {
+   public:
+      ///
+      /// <summary>
+      /// Initializes a new instance of the EnumDisplayEditableField class.
+      /// </summary>
+      /// <param name="label">Label text drawn before the value.</param>
+      /// <param name="value">Caller-owned variable that holds the current selected index.</param>
+      /// <param name="labels">Array of label strings to step through and display.</param>
+      /// <param name="labelCount">Number of entries in labels.</param>
+      /// <param name="defaultValue">Default index used when no saved value exists or on reset.</param>
+      /// <param name="format">Format used to render the selected label for display.</param>
+      ///
+      EnumDisplayEditableField(const char* label, long* value, const char* const* labels,
+         size_t labelCount, long defaultValue, const Format& format)
+         : IntDisplayEditableField(label, value, 0, (long)labelCount - 1, 1, defaultValue, format),
+           _labels(labels), _labelCount(labelCount)
+      {
+      }
+
+      void adjust(int32_t direction) override
+      {
+         long count = (long)_labelCount;
+         long newValue = (*_value + (direction > 0 ? 1 : -1) + count) % count;
+         *_value = newValue;
+      }
+
+      std::string valueText() override
+      {
+         long index = constrain(*_value, 0L, (long)(_labelCount - 1));
+         return _format.toString(_labels[index]);
+      }
+
+   private:
+      const char* const* _labels;
+      size_t _labelCount;
+   };
 
 ///
 /// <summary>

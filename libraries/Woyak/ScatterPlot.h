@@ -4,6 +4,8 @@
 #include "Color.h"
 #include "DisplayBuffer.h"
 #include "Format.h"
+#include "IScatterPlot.h"
+#include "Structs.h"
 #include "Util.h"
 #include <math.h>
 #include <new>
@@ -21,7 +23,7 @@ class ScatterPlot;
 /// data actually exists instead of being left pending.
 /// </summary>
 ///
-class ScatterPlotSeries
+class ScatterPlotSeries : public IScatterPlotSeries
 {
    friend class ScatterPlot;
 
@@ -31,6 +33,35 @@ private:
    size_t _count = 0;
    size_t _capacity = 0;
 
+   // Auto-incremented X value used by the single-argument add(value) overload, so callers
+   // that don't track their own X coordinate (matching TimedScatterPlotSeries::add()) can
+   // still use this series through the IScatterPlotSeries interface.
+   float _nextX = 0.0f;
+
+   // Incrementally maintained raw X/Y range, updated in O(1) by add()/set(), so callers
+   // like ScatterPlot::_computeAxisRange() don't need to rescan every point on every
+   // render() call to find the current range.
+   float _xMin = NAN;
+   float _xMax = NAN;
+   float _yMin = NAN;
+   float _yMax = NAN;
+
+   // Incrementally maintained running sum/sum-of-squares/finite-count of the raw Y values,
+   // updated in O(1) by add(), so stdDevRange() can compute the mean/stddev without
+   // rescanning every point on every call (e.g. every render() while showStdDevBand is set).
+   // set() marks _statsDirty since it can modify an arbitrary existing point, forcing one
+   // full recompute from scratch the next time stdDevRange() is called.
+   float _sumY = 0.0f;
+   float _sumSquaresY = 0.0f;
+   size_t _finiteYCount = 0;
+   bool _statsDirty = false;
+
+   // Set by set() (which can modify an arbitrary existing point, potentially invalidating
+   // a previously-tracked min/max) to force one full rescan of _xMin/_xMax/_yMin/_yMax the
+   // next time getRawRange() is called, instead of maintaining the range incrementally
+   // through that rare path.
+   bool _rangeDirty = false;
+
    // Scratch buffer holding the most recently computed centered moving average, recomputed
    // on demand (and cached until add()/set() invalidates it) from the raw points, movingSampleSize,
    // and finalized.
@@ -38,6 +69,16 @@ private:
    size_t _movingAverageBufferCapacity = 0;
    size_t _movingAverageReadyCount = 0;
    bool _movingAverageDirty = true;
+
+   // Scratch buffers holding the most recently computed rolling mean +/- stddev band,
+   // windowed the same way as the centered moving average (movingSampleSize), so the band
+   // moves with the data instead of being a single flat mean/stddev over the whole series.
+   // Recomputed on demand (and cached until add()/set() invalidates it).
+   float* _stdDevLowBuffer = nullptr;
+   float* _stdDevHighBuffer = nullptr;
+   size_t _stdDevBufferCapacity = 0;
+   size_t _stdDevReadyCount = 0;
+   bool _stdDevDirty = true;
 
    ///
    /// <summary>
@@ -134,47 +175,131 @@ private:
          _movingAverageBuffer[i] = NAN;
       }
 
-      _movingAverageReadyCount = readyCount;
-      _movingAverageDirty = false;
-   }
+         _movingAverageReadyCount = readyCount;
+         _movingAverageDirty = false;
+      }
 
-   public:
-   ///
-   /// <summary>If true, draws each point of this series.</summary>
-   ///
-   bool showPoints = true;
+      ///
+      /// <summary>
+      /// Ensures the internal stddev-band scratch buffers can hold at least the given number
+      /// of samples, growing (and never shrinking) them as needed.
+      /// </summary>
+      /// <param name="count">Minimum required buffer capacity.</param>
+      /// <returns>True if both buffers have at least the requested capacity.</returns>
+      ///
+      bool _ensureStdDevBuffers(size_t count)
+      {
+         if (count <= _stdDevBufferCapacity)
+         {
+            return (_stdDevLowBuffer != nullptr) && (_stdDevHighBuffer != nullptr);
+         }
 
-   ///
-   /// <summary>If true, connects each drawn point of this series to the previous one with a line.</summary>
-   ///
-   bool showLines = false;
+         delete[] _stdDevLowBuffer;
+         delete[] _stdDevHighBuffer;
+         _stdDevLowBuffer = new (std::nothrow) float[count];
+         _stdDevHighBuffer = new (std::nothrow) float[count];
+         _stdDevBufferCapacity = ((_stdDevLowBuffer != nullptr) && (_stdDevHighBuffer != nullptr)) ? count : 0;
 
-   ///
-   /// <summary>If true, draws this series' centered moving average as a connected line.</summary>
-   ///
-   bool showMovingAverage = false;
+         return (_stdDevLowBuffer != nullptr) && (_stdDevHighBuffer != nullptr);
+      }
 
-   ///
-   /// <summary>Color used to draw this series' moving-average line.</summary>
-   ///
-   Color movingAverageColor = Color::YELLOW;
+      ///
+      /// <summary>
+      /// Recomputes a rolling mean +/- stddev band into the internal scratch buffers if it has
+      /// been invalidated since the last computation, windowed the same way as the centered
+      /// moving average (every point whose x falls within movingSampleSize/2 of that point's own
+      /// x), so the band moves with the data instead of being a single flat mean/stddev over the
+      /// whole series. Because centering a point requires points that arrive after it, a point
+      /// can only be finalized once enough later points actually exist; unless finalized is true,
+      /// trailing points are left pending (NAN).
+      /// </summary>
+      ///
+      void _recomputeStdDevBand()
+      {
+         if (!_stdDevDirty)
+         {
+            return;
+         }
 
-   ///
-   /// <summary>If true, draws a horizontal band at mean +/- stddev of this series' currently
-   /// displayed (showPoints/showLines) Y values, recomputed each render().</summary>
-   ///
-   bool showStdDevBand = false;
+         if (_count == 0 || !_ensureStdDevBuffers(_count))
+         {
+            _stdDevReadyCount = 0;
+            _stdDevDirty = false;
+            return;
+         }
 
-   ///
-   /// <summary>Color used to draw this series' stddev band.</summary>
-   ///
-   Color stdDevBandColor = Color::MAGENTA;
+         float halfWindow = movingSampleSize / 2.0f;
 
-   ///
-   /// <summary>Color used to draw this series' points and lines.</summary>
-   ///
-   Color color = Color::GREEN;
+         size_t lo = 0;
+         size_t hi = 0;
+         float sum = 0.0f;
+         float sumSquares = 0.0f;
+         size_t finiteCount = 0;
+         size_t readyCount = 0;
 
+         for (size_t i = 0; i < _count; i++)
+         {
+            // Evict points that have aged out of the trailing (past) edge of the window.
+            while (lo < _count && (_x[i] - _x[lo]) > halfWindow)
+            {
+               if (isfinite(_y[lo]))
+               {
+                  sum -= _y[lo];
+                  sumSquares -= _y[lo] * _y[lo];
+                  finiteCount--;
+               }
+               lo++;
+            }
+
+            // Fold in points up to the leading (future) edge of the window.
+            while (hi < _count && (_x[hi] - _x[i]) <= halfWindow)
+            {
+               if (isfinite(_y[hi]))
+               {
+                  sum += _y[hi];
+                  sumSquares += _y[hi] * _y[hi];
+                  finiteCount++;
+               }
+               hi++;
+            }
+
+            // The window is only known to be fully populated once a point beyond its future
+            // edge has actually been seen (hi < _count); otherwise more data may still arrive
+            // that belongs inside it, unless the series has been marked finalized.
+            if (!finalized && (hi >= _count))
+            {
+               break;
+            }
+
+            if (finiteCount > 0)
+            {
+               const float mean = sum / static_cast<float>(finiteCount);
+               const float meanOfSquares = sumSquares / static_cast<float>(finiteCount);
+               const float variance = meanOfSquares - (mean * mean);
+               const float stdDev = sqrtf((variance > 0.0f) ? variance : 0.0f);
+               _stdDevLowBuffer[i] = mean - stdDev;
+               _stdDevHighBuffer[i] = mean + stdDev;
+            }
+            else
+            {
+               _stdDevLowBuffer[i] = NAN;
+               _stdDevHighBuffer[i] = NAN;
+            }
+
+            readyCount = i + 1;
+         }
+
+         for (size_t i = readyCount; i < _count; i++)
+         {
+            _stdDevLowBuffer[i] = NAN;
+            _stdDevHighBuffer[i] = NAN;
+         }
+
+         _stdDevReadyCount = readyCount;
+         _stdDevDirty = false;
+      }
+
+      public:
    ///
    /// <summary>Width of the centered moving-average window, in the same units as the x values (sample count or time period).</summary>
    ///
@@ -224,6 +349,8 @@ private:
       delete[] _x;
       delete[] _y;
       delete[] _movingAverageBuffer;
+      delete[] _stdDevLowBuffer;
+      delete[] _stdDevHighBuffer;
    }
 
    ///
@@ -236,6 +363,8 @@ private:
    ///
    void add(float x, float y)
    {
+      _nextX = x + 1.0f;
+
       if (_count >= _capacity)
       {
          size_t newCapacity = _capacity + (_capacity / 2) + 1;
@@ -268,25 +397,65 @@ private:
       _y[_count] = y;
       _count++;
       _movingAverageDirty = true;
+      _stdDevDirty = true;
+
+      if (isfinite(x))
+      {
+         if (!isfinite(_xMin) || (x < _xMin)) _xMin = x;
+         if (!isfinite(_xMax) || (x > _xMax)) _xMax = x;
+      }
+
+      if (isfinite(y))
+      {
+         if (!isfinite(_yMin) || (y < _yMin)) _yMin = y;
+         if (!isfinite(_yMax) || (y > _yMax)) _yMax = y;
+
+         if (!_statsDirty)
+         {
+            _sumY += y;
+            _sumSquaresY += y * y;
+            _finiteYCount++;
+         }
+      }
    }
 
    ///
    /// <summary>
-   /// Sets the value at a specific index.
+   /// Adds a new point to the series using an auto-incrementing X value (starting at 1 for
+   /// the first point), matching the single-value add() semantics of IScatterPlotSeries /
+   /// TimedScatterPlotSeries. Prefer the explicit add(x, y) overload when the caller already
+   /// tracks its own X coordinate.
    /// </summary>
-   /// <param name="index">Index to set.</param>
-   /// <param name="x">X coordinate value.</param>
-   /// <param name="y">Y coordinate value.</param>
+   /// <param name="value">Y coordinate value.</param>
    ///
-   void set(size_t index, float x, float y)
+   void add(float value) override
    {
-      if (index < _count)
-      {
-         _x[index] = x;
-         _y[index] = y;
-         _movingAverageDirty = true;
-      }
+      add(_nextX, value);
    }
+
+      ///
+      /// <summary>
+      /// Sets the value at a specific index. Since this can modify any existing point
+      /// (potentially invalidating a previously-computed min/max), it forces a one-time full
+      /// rescan of the incrementally-tracked X/Y range on the next call that needs it, rather
+      /// than trying to maintain the range incrementally here.
+      /// </summary>
+      /// <param name="index">Index to set.</param>
+      /// <param name="x">X coordinate value.</param>
+      /// <param name="y">Y coordinate value.</param>
+      ///
+      void set(size_t index, float x, float y)
+      {
+         if (index < _count)
+         {
+                  _x[index] = x;
+                  _y[index] = y;
+                  _movingAverageDirty = true;
+                  _stdDevDirty = true;
+                  _statsDirty = true;
+                  _rangeDirty = true;
+               }
+            }
 
    ///
    /// <summary>
@@ -295,12 +464,24 @@ private:
    /// showLines, showMovingAverage, color, or movingSampleSize.
    /// </summary>
    ///
-   void clear()
+   void clear() override
    {
       _count = 0;
       _movingAverageReadyCount = 0;
       _movingAverageDirty = true;
+      _stdDevReadyCount = 0;
+      _stdDevDirty = true;
       finalized = false;
+      _nextX = 0.0f;
+      _xMin = NAN;
+      _xMax = NAN;
+      _yMin = NAN;
+      _yMax = NAN;
+      _sumY = 0.0f;
+      _sumSquaresY = 0.0f;
+      _finiteYCount = 0;
+      _statsDirty = false;
+      _rangeDirty = false;
    }
 
    ///
@@ -334,6 +515,53 @@ private:
    /// <returns>Number of points.</returns>
    ///
    size_t getCount() const { return _count; }
+
+   ///
+   /// <summary>
+   /// Gets the raw X/Y range of this series' points, maintained incrementally by add() in
+   /// O(1) so callers (e.g. ScatterPlot::_computeAxisRange()) don't need to rescan every
+   /// point on every call. If set() was used since the range was last computed, this does
+   /// one full O(n) rescan to re-establish it before returning.
+   /// </summary>
+   /// <param name="outXMin">Receives the minimum finite X value found, or NAN if none exists.</param>
+   /// <param name="outXMax">Receives the maximum finite X value found, or NAN if none exists.</param>
+   /// <param name="outYMin">Receives the minimum finite Y value found, or NAN if none exists.</param>
+   /// <param name="outYMax">Receives the maximum finite Y value found, or NAN if none exists.</param>
+   ///
+   void getRawRange(float* outXMin, float* outXMax, float* outYMin, float* outYMax)
+   {
+      if (_rangeDirty)
+      {
+         _xMin = NAN;
+         _xMax = NAN;
+         _yMin = NAN;
+         _yMax = NAN;
+
+         for (size_t i = 0; i < _count; i++)
+         {
+            float x = _x[i];
+            if (isfinite(x))
+            {
+               if (!isfinite(_xMin) || (x < _xMin)) _xMin = x;
+               if (!isfinite(_xMax) || (x > _xMax)) _xMax = x;
+            }
+
+            float y = _y[i];
+            if (isfinite(y))
+            {
+               if (!isfinite(_yMin) || (y < _yMin)) _yMin = y;
+               if (!isfinite(_yMax) || (y > _yMax)) _yMax = y;
+            }
+         }
+
+         _rangeDirty = false;
+      }
+
+      *outXMin = _xMin;
+      *outXMax = _xMax;
+      *outYMin = _yMin;
+      *outYMax = _yMax;
+   }
 
    ///
    /// <summary>
@@ -412,51 +640,121 @@ private:
       *outMax = maxValue;
    }
 
-   ///
-   /// <summary>
-   /// Computes the mean and population standard deviation of the series' raw Y values,
-   /// used to draw an optional stddev band (see showStdDevBand).
-   /// </summary>
-   /// <param name="outMean">Receives the mean of the finite Y values, or NAN if none exist.</param>
-   /// <param name="outStdDev">Receives the standard deviation of the finite Y values, or NAN if none exist.</param>
-   ///
-   void stdDevRange(float* outMean, float* outStdDev) const
-   {
-      float sum = 0.0f;
-      size_t finiteCount = 0;
+             ///
+             /// <summary>
+             /// Computes the mean and population standard deviation of the series' raw Y values.
+             /// Uses the running sum/sum-of-squares maintained incrementally by add() so this is
+             /// O(1) in the common case; if set() was used since the stats were last computed,
+             /// this does one full O(n) rescan to re-establish them first.
+             /// </summary>
+             /// <param name="outMean">Receives the mean of the finite Y values, or NAN if none exist.</param>
+             /// <param name="outStdDev">Receives the standard deviation of the finite Y values, or NAN if none exist.</param>
+             ///
+             void stdDevRange(float* outMean, float* outStdDev)
+             {
+                if (_statsDirty)
+                {
+                   _sumY = 0.0f;
+                   _sumSquaresY = 0.0f;
+                   _finiteYCount = 0;
 
-      for (size_t i = 0; i < _count; i++)
-      {
-         if (isfinite(_y[i]))
-         {
-            sum += _y[i];
-            finiteCount++;
-         }
-      }
+                   for (size_t i = 0; i < _count; i++)
+                   {
+                      if (isfinite(_y[i]))
+                      {
+                         _sumY += _y[i];
+                         _sumSquaresY += _y[i] * _y[i];
+                         _finiteYCount++;
+                      }
+                   }
 
-      if (finiteCount == 0)
-      {
-         *outMean = NAN;
-         *outStdDev = NAN;
-         return;
-      }
+                   _statsDirty = false;
+                }
 
-      const float mean = sum / static_cast<float>(finiteCount);
-      float sumSquares = 0.0f;
+                if (_finiteYCount == 0)
+                {
+                   *outMean = NAN;
+                   *outStdDev = NAN;
+                   return;
+                }
 
-      for (size_t i = 0; i < _count; i++)
-      {
-         if (isfinite(_y[i]))
-         {
-            const float deviation = _y[i] - mean;
-            sumSquares += deviation * deviation;
-         }
-      }
+                const float mean = _sumY / static_cast<float>(_finiteYCount);
+                const float meanOfSquares = _sumSquaresY / static_cast<float>(_finiteYCount);
+                const float variance = meanOfSquares - (mean * mean);
 
-      *outMean = mean;
-      *outStdDev = sqrtf(sumSquares / static_cast<float>(finiteCount));
-   }
-};
+                *outMean = mean;
+                *outStdDev = sqrtf((variance > 0.0f) ? variance : 0.0f);
+             }
+
+             ///
+             /// <summary>
+             /// Gets how many leading points of the rolling stddev band are finalized (safe to
+             /// use), recomputing it first if any points have been added or set since the last call.
+             /// </summary>
+             /// <returns>Number of finalized leading stddev-band points.</returns>
+             ///
+             size_t getStdDevReadyCount()
+             {
+                _recomputeStdDevBand();
+                return _stdDevReadyCount;
+             }
+
+             ///
+             /// <summary>
+             /// Gets the rolling stddev band's low value (mean - stddev) at the specified raw
+             /// point index, recomputing the band first if any points have been added or set
+             /// since the last call.
+             /// </summary>
+             /// <param name="index">Raw point index (parallel to getX()/getY()).</param>
+             /// <returns>The low value of the band, or NAN if not yet finalized or out of range.</returns>
+             ///
+             float getStdDevLowY(size_t index)
+             {
+                _recomputeStdDevBand();
+                return (index < _stdDevReadyCount) ? _stdDevLowBuffer[index] : NAN;
+             }
+
+             ///
+             /// <summary>
+             /// Gets the rolling stddev band's high value (mean + stddev) at the specified raw
+             /// point index, recomputing the band first if any points have been added or set
+             /// since the last call.
+             /// </summary>
+             /// <param name="index">Raw point index (parallel to getX()/getY()).</param>
+             /// <returns>The high value of the band, or NAN if not yet finalized or out of range.</returns>
+             ///
+             float getStdDevHighY(size_t index)
+             {
+                _recomputeStdDevBand();
+                return (index < _stdDevReadyCount) ? _stdDevHighBuffer[index] : NAN;
+             }
+
+             ///
+             /// <summary>
+             /// Computes the min/max range of the series' rolling stddev band.
+             /// </summary>
+             /// <param name="outMin">Receives the minimum finite value found, or NAN if none exists.</param>
+             /// <param name="outMax">Receives the maximum finite value found, or NAN if none exists.</param>
+             ///
+             void stdDevBandRange(float* outMin, float* outMax)
+             {
+                size_t readyCount = getStdDevReadyCount();
+
+                float minValue = NAN;
+                float maxValue = NAN;
+                for (size_t i = 0; i < readyCount; i++)
+                {
+                   float low = _stdDevLowBuffer[i];
+                   float high = _stdDevHighBuffer[i];
+                   if (isfinite(low) && (!isfinite(minValue) || (low < minValue))) minValue = low;
+                   if (isfinite(high) && (!isfinite(maxValue) || (high > maxValue))) maxValue = high;
+                }
+
+                *outMin = minValue;
+                *outMax = maxValue;
+             }
+          };
+
 
 ///
 /// <summary>
@@ -474,7 +772,7 @@ private:
 /// was called since the last render().
 /// </summary>
 ///
-class ScatterPlot
+class ScatterPlot : public IScatterPlot
 {
 private:
    static constexpr int16_t Y_AXIS_LABEL_GAP = 2;
@@ -498,6 +796,14 @@ private:
    bool _hasRenderedFrame = false;
    bool _forceFullRedraw = false;
 
+   // Tracks whether the chart's pixel geometry (_chartLeft/_chartTop/_chartWidth/
+   // _chartHeight) has ever been established and the outer plot rect physically painted.
+   // Unlike _hasRenderedFrame (which clear()/no-data render() resets so the next frame
+   // knows to wait for a fresh axis range), this stays true across clear() since clear()
+   // already physically erases the rect itself - so the next render() doesn't need to
+   // redundantly fillRect() the same area again just because a full redraw was forced.
+   bool _geometryEstablished = false;
+
    // Plot-wide shared 4-bit layer buffer used to rasterize every series/layer each frame
    // and diff against the previous frame, so only pixels that actually changed are redrawn.
    DisplayBuffer _displayBuffer;
@@ -520,19 +826,29 @@ private:
    // to make room for it.
    String _title;
 
+   // Chart colors. _outerBackgroundColor covers the area outside the plotted-data region
+   // (e.g. behind axis labels/title); _plotAreaBackgroundColor covers the plotted-data
+   // region itself (drawn via the DisplayBuffer's background/layer-0 color).
+   Color _outerBackgroundColor = Color::BLACK;
+   Color _plotAreaBackgroundColor = Color::BLACK;
+   Color _axisColor = Color::GRAY;
+   Color _labelColor = Color::LABEL;
+
    ///
    /// <summary>
-   /// Scans every owned series and computes the shared X/Y axis range needed to fit
-   /// whatever is currently displayed: a series' raw points contribute to the Y range
-   /// only if showPoints or showLines is set, and its moving average contributes only if
-   /// showMovingAverage is set, mirroring exactly what render() will go on to draw.
+   /// Computes the shared X/Y axis range needed to fit whatever is currently displayed
+   /// across every owned series: a series' raw points contribute to the range only if
+   /// showPoints or showLines is set (via its incrementally-tracked getRawRange(), so this
+   /// no longer rescans every point on every call), and its moving average/stddev band
+   /// contribute only if showMovingAverage/showStdDevBand is set, mirroring exactly what
+   /// render() will go on to draw.
    /// </summary>
    /// <param name="outXMin">Receives the minimum finite X value found, or NAN if none exists.</param>
    /// <param name="outXMax">Receives the maximum finite X value found, or NAN if none exists.</param>
    /// <param name="outYMin">Receives the minimum finite Y value found, or NAN if none exists.</param>
    /// <param name="outYMax">Receives the maximum finite Y value found, or NAN if none exists.</param>
    ///
-   void _computeAxisRange(float* outXMin, float* outXMax, float* outYMin, float* outYMax) const
+   void _computeAxisRange(float* outXMin, float* outXMax, float* outYMin, float* outYMax)
    {
       float xMin = NAN;
       float xMax = NAN;
@@ -542,27 +858,21 @@ private:
       for (size_t s = 0; s < _seriesCount; s++)
       {
          ScatterPlotSeries* series = _series[s];
-         size_t count = series->getCount();
          bool includeRaw = series->showPoints || series->showLines;
 
-         for (size_t i = 0; i < count; i++)
-         {
-            float x = series->getX(i);
-            if (isfinite(x))
-            {
-               if (!isfinite(xMin) || (x < xMin)) xMin = x;
-               if (!isfinite(xMax) || (x > xMax)) xMax = x;
-            }
+         float seriesXMin;
+         float seriesXMax;
+         float seriesYMin;
+         float seriesYMax;
+         series->getRawRange(&seriesXMin, &seriesXMax, &seriesYMin, &seriesYMax);
 
-            if (includeRaw)
-            {
-               float y = series->getY(i);
-               if (isfinite(y))
-               {
-                  if (!isfinite(yMin) || (y < yMin)) yMin = y;
-                  if (!isfinite(yMax) || (y > yMax)) yMax = y;
-               }
-            }
+         if (isfinite(seriesXMin) && (!isfinite(xMin) || (seriesXMin < xMin))) xMin = seriesXMin;
+         if (isfinite(seriesXMax) && (!isfinite(xMax) || (seriesXMax > xMax))) xMax = seriesXMax;
+
+         if (includeRaw)
+         {
+            if (isfinite(seriesYMin) && (!isfinite(yMin) || (seriesYMin < yMin))) yMin = seriesYMin;
+            if (isfinite(seriesYMax) && (!isfinite(yMax) || (seriesYMax > yMax))) yMax = seriesYMax;
          }
 
          if (series->showMovingAverage)
@@ -574,20 +884,15 @@ private:
             if (isfinite(maMax) && (!isfinite(yMax) || (maMax > yMax))) yMax = maMax;
          }
 
-         if (series->showStdDevBand)
-         {
-            float bandMean;
-            float bandStdDev;
-            series->stdDevRange(&bandMean, &bandStdDev);
-            if (isfinite(bandMean) && isfinite(bandStdDev))
+            if (series->showStdDevBand)
             {
-               const float bandMin = bandMean - bandStdDev;
-               const float bandMax = bandMean + bandStdDev;
-               if (!isfinite(yMin) || (bandMin < yMin)) yMin = bandMin;
-               if (!isfinite(yMax) || (bandMax > yMax)) yMax = bandMax;
+               float bandMin;
+               float bandMax;
+               series->stdDevBandRange(&bandMin, &bandMax);
+               if (isfinite(bandMin) && (!isfinite(yMin) || (bandMin < yMin))) yMin = bandMin;
+               if (isfinite(bandMax) && (!isfinite(yMax) || (bandMax > yMax))) yMax = bandMax;
             }
          }
-      }
 
       *outXMin = xMin;
       *outXMax = xMax;
@@ -647,139 +952,257 @@ private:
          int16_t titleX = _chartLeft + (_chartWidth - static_cast<int16_t>(_display->textWidth(_title.c_str()))) / 2;
          int16_t titlePadding = _display->charH() / 4;
          _display->setCursor(max(_chartLeft, titleX), _y + titlePadding);
-         _display->print(_title, Color::LABEL);
+         _display->print(_title, _labelColor, _outerBackgroundColor);
       }
 
-      _display->fillRect(_chartLeft, _chartTop + _chartHeight - 1, _chartWidth, 1, Color::GRAY);
-      _display->fillRect(_chartLeft, _chartTop, 1, _chartHeight, Color::GRAY);
+         _display->fillRect(_chartLeft, _chartTop + _chartHeight - 1, _chartWidth, 1, _axisColor);
+         _display->fillRect(_chartLeft, _chartTop, 1, _chartHeight, _axisColor);
 
-      String maxLabel = _formatYLabel(_axisYMax);
-      int16_t maxLabelX = _chartLeft - Y_AXIS_LABEL_GAP - static_cast<int16_t>(_display->textWidth(maxLabel.c_str()));
-      _display->setCursor(maxLabelX, _chartTop);
-      _display->print(maxLabel, Color::LABEL);
+         // Physically clear the reserved Y-axis label column and the X-axis label row before
+         // drawing the new min/max labels. Labels are right-aligned (Y) or left/right-aligned
+         // (X) based on their own rendered text width, so a narrower new label wouldn't
+         // otherwise overwrite every pixel a previously-drawn wider label occupied, leaving
+         // stale digits on screen (e.g. after recreatePlot() swaps in a new source/plot).
+         int16_t yLabelColumnX = _x;
+         int16_t yLabelColumnWidth = _chartLeft - Y_AXIS_LABEL_GAP - _x;
+         _display->fillRect(yLabelColumnX, _chartTop, yLabelColumnWidth, _display->charH(), _outerBackgroundColor);
+         _display->fillRect(yLabelColumnX, _chartTop + _chartHeight - _display->charH(), yLabelColumnWidth, _display->charH(), _outerBackgroundColor);
+         _display->fillRect(_chartLeft, _chartTop + _chartHeight + 1, _chartWidth, _display->charH(), _outerBackgroundColor);
 
-      String minLabel = _formatYLabel(_axisYMin);
-      int16_t minLabelX = _chartLeft - Y_AXIS_LABEL_GAP - static_cast<int16_t>(_display->textWidth(minLabel.c_str()));
-      minLabelX = max(static_cast<int16_t>(0), minLabelX);
-      int16_t minLabelY = _chartTop + _chartHeight - _display->charH();
-      _display->setCursor(minLabelX, minLabelY);
-      _display->print(minLabel, Color::LABEL);
+         String maxLabel = _formatYLabel(_axisYMax);
+         int16_t maxLabelX = _chartLeft - Y_AXIS_LABEL_GAP - static_cast<int16_t>(_display->textWidth(maxLabel.c_str()));
+         _display->setCursor(maxLabelX, _chartTop);
+         _display->print(maxLabel, _labelColor, _outerBackgroundColor);
 
-      String xMinLabel = String(_xAxisFormat.toString(_axisXMin).c_str());
-      _display->setCursor(_chartLeft, _chartTop + _chartHeight + 1);
-      _display->print(xMinLabel, Color::LABEL);
+         String minLabel = _formatYLabel(_axisYMin);
+         int16_t minLabelX = _chartLeft - Y_AXIS_LABEL_GAP - static_cast<int16_t>(_display->textWidth(minLabel.c_str()));
+         minLabelX = max(static_cast<int16_t>(0), minLabelX);
+         int16_t minLabelY = _chartTop + _chartHeight - _display->charH();
+         _display->setCursor(minLabelX, minLabelY);
+         _display->print(minLabel, _labelColor, _outerBackgroundColor);
 
-      // Trim trailing padding so the max label's measured width matches its visible
-      // content; otherwise invisible trailing padding would push the text left of the
-      // true right edge, making it look left-aligned instead of flush-right.
-      String xMaxLabel = String(_xAxisFormat.toString(_axisXMax).c_str());
-      while ((xMaxLabel.length() > 0) && (xMaxLabel[xMaxLabel.length() - 1] == ' '))
-      {
-         xMaxLabel.remove(xMaxLabel.length() - 1);
+         String xMinLabel = String(_xAxisFormat.toString(_axisXMin).c_str());
+         _display->setCursor(_chartLeft, _chartTop + _chartHeight + 1);
+         _display->print(xMinLabel, _labelColor, _outerBackgroundColor);
+
+         // Trim trailing padding so the max label's measured width matches its visible
+         // content; otherwise invisible trailing padding would push the text left of the
+         // true right edge, making it look left-aligned instead of flush-right.
+         String xMaxLabel = String(_xAxisFormat.toString(_axisXMax).c_str());
+         while ((xMaxLabel.length() > 0) && (xMaxLabel[xMaxLabel.length() - 1] == ' '))
+         {
+            xMaxLabel.remove(xMaxLabel.length() - 1);
+         }
+         int16_t xMaxLabelX = _chartLeft + _chartWidth - static_cast<int16_t>(_display->textWidth(xMaxLabel.c_str()));
+         xMaxLabelX = max(_chartLeft, xMaxLabelX);
+         _display->setCursor(xMaxLabelX, _chartTop + _chartHeight + 1);
+         _display->print(xMaxLabel, _labelColor, _outerBackgroundColor);
       }
-      int16_t xMaxLabelX = _chartLeft + _chartWidth - static_cast<int16_t>(_display->textWidth(xMaxLabel.c_str()));
-      xMaxLabelX = max(_chartLeft, xMaxLabelX);
-      _display->setCursor(xMaxLabelX, _chartTop + _chartHeight + 1);
-      _display->print(xMaxLabel, Color::LABEL);
-   }
 
-       ///
-       /// <summary>
-       /// Converts a data point to buffer-relative pixel coordinates (0,0 at the chart's
-       /// top-left) using the current chart geometry and axis range, clamping the result to
-       /// stay within the chart area.
-       /// </summary>
-       /// <param name="x">X value to convert.</param>
-       /// <param name="y">Y value to convert.</param>
-       /// <param name="outX">Receives the buffer-relative pixel X coordinate.</param>
-       /// <param name="outY">Receives the buffer-relative pixel Y coordinate.</param>
-       ///
-       void _toPixel(float x, float y, int16_t& outX, int16_t& outY) const
-       {
-          float xSpan = _axisXMax - _axisXMin;
-          if (xSpan <= 0.0f) xSpan = 1.0f;
-          float ySpan = _axisYMax - _axisYMin;
-          if (ySpan <= 0.0f) ySpan = 1.0f;
-
-          outX = static_cast<int16_t>(((x - _axisXMin) / xSpan) * (_chartWidth - 1));
-          // The bottom-most chart row is reserved for the gray X-axis line (drawn by
-          // _drawAxes()), so data points are confined to chartHeight - 1 rows above it;
-          // otherwise a minimum-value sample would land on the same row as the axis line
-          // and overwrite it.
-          outY = static_cast<int16_t>(((_axisYMax - y) / ySpan) * (_chartHeight - 2));
-
-          outX = constrain(outX, static_cast<int16_t>(0), static_cast<int16_t>(_chartWidth - 1));
-          outY = constrain(outY, static_cast<int16_t>(0), static_cast<int16_t>(_chartHeight - 2));
-       }
-
-       ///
-       /// <summary>
-       /// Rasterizes either a series' raw points (connected with lines when showLines is
-       /// set) or its moving-average line into the plot-wide shared display buffer under the
-       /// given layer index. Does not clear the buffer first; callers rasterize every
-       /// series/layer into the same shared buffer before diffing once.
-       /// </summary>
-       /// <param name="series">Series to rasterize.</param>
-       /// <param name="useMovingAverage">If true, rasterizes the moving-average values (always connected) instead of the raw points.</param>
-       /// <param name="layer">Layer index (1..DisplayBuffer::MAX_LAYERS) to stamp for this data.</param>
-       ///
-       void _rasterizeSeriesData(ScatterPlotSeries* series, bool useMovingAverage, uint8_t layer)
-       {
-          size_t count = useMovingAverage ? series->getMovingAverageReadyCount() : series->getCount();
-          if (count == 0 || layer == 0)
+          ///
+          /// <summary>
+          /// Converts a data point to buffer-relative pixel coordinates (0,0 at the chart's
+          /// top-left) using the current chart geometry and axis range, clamping the result to
+          /// stay within the chart area.
+          /// </summary>
+          /// <param name="x">X value to convert.</param>
+          /// <param name="y">Y value to convert.</param>
+          /// <param name="outX">Receives the buffer-relative pixel X coordinate.</param>
+          /// <param name="outY">Receives the buffer-relative pixel Y coordinate.</param>
+          ///
+          void _toPixel(float x, float y, int16_t& outX, int16_t& outY) const
           {
-             return;
-          }
+             float xSpan = _axisXMax - _axisXMin;
+             float ySpan = _axisYMax - _axisYMin;
 
-          bool connectPoints = useMovingAverage || series->showLines;
-
-          bool havePrevPoint = false;
-          int16_t prevX = 0;
-          int16_t prevY = 0;
-
-          for (size_t i = 0; i < count; i++)
-          {
-             float value = useMovingAverage ? series->getMovingAverageY(i) : series->getY(i);
-             if (!isfinite(value))
+             // When the axis has zero span (e.g. every plotted value is identical), center
+             // the data in the chart instead of mapping it to the axis-minimum edge.
+             if (xSpan <= 0.0f)
              {
-                continue;
-             }
-
-             int16_t x;
-             int16_t y;
-             _toPixel(series->getX(i), value, x, y);
-
-             if (connectPoints && havePrevPoint)
-             {
-                _displayBuffer.drawLine(prevX, prevY, x, y, layer);
+                outX = static_cast<int16_t>((_chartWidth - 1) / 2);
              }
              else
              {
-                _displayBuffer.setPixel(x, y, layer);
+                outX = static_cast<int16_t>(((x - _axisXMin) / xSpan) * (_chartWidth - 1));
              }
 
-             prevX = x;
-             prevY = y;
-             havePrevPoint = true;
-          }
-       }
+             // The bottom-most chart row is reserved for the gray X-axis line (drawn by
+             // _drawAxes()), so data points are confined to chartHeight - 1 rows above it;
+             // otherwise a minimum-value sample would land on the same row as the axis line
+             // and overwrite it.
+             if (ySpan <= 0.0f)
+             {
+                outY = static_cast<int16_t>((_chartHeight - 2) / 2);
+             }
+             else
+             {
+                outY = static_cast<int16_t>(((_axisYMax - y) / ySpan) * (_chartHeight - 2));
+             }
 
-   public:
-   ///
-   /// <summary>
-   /// Initializes a new ScatterPlot at the specified position and dimensions.
-   /// </summary>
-   /// <param name="display">Pointer to the display object.</param>
-   /// <param name="x">X coordinate for the plot.</param>
-   /// <param name="y">Y coordinate for the plot.</param>
-   /// <param name="width">Width of the plot area in pixels.</param>
-   /// <param name="height">Height of the plot area in pixels.</param>
-   /// <param name="title">Optional centered title drawn above the chart; defaults to none, in which case the plot uses the full area.</param>
-   ///
-   ScatterPlot(ArduinoWithDisplay* display, int16_t x, int16_t y, int16_t width, int16_t height, const String& title = String())
-      : _display(display), _x(x), _y(y), _width(width), _height(height), _title(title)
-   {
-   }
+             outX = constrain(outX, static_cast<int16_t>(0), static_cast<int16_t>(_chartWidth - 1));
+             outY = constrain(outY, static_cast<int16_t>(0), static_cast<int16_t>(_chartHeight - 2));
+          }
+
+          ///
+          /// <summary>
+          /// Rasterizes either a series' raw points (connected with lines when showLines is
+          /// set) or its moving-average line into the plot-wide shared display buffer under the
+          /// given layer index. Does not clear the buffer first; callers rasterize every
+          /// series/layer into the same shared buffer before diffing once.
+          /// </summary>
+          /// <param name="series">Series to rasterize.</param>
+          /// <param name="useMovingAverage">If true, rasterizes the moving-average values (always connected) instead of the raw points.</param>
+          /// <param name="layer">Layer index (1..DisplayBuffer::MAX_LAYERS) to stamp for this data.</param>
+          ///
+          void _rasterizeSeriesData(ScatterPlotSeries* series, bool useMovingAverage, uint8_t layer)
+          {
+             size_t count = useMovingAverage ? series->getMovingAverageReadyCount() : series->getCount();
+             if (count == 0 || layer == 0)
+             {
+                return;
+             }
+
+             bool connectPoints = useMovingAverage || series->showLines;
+
+             bool havePrevPoint = false;
+             int16_t prevX = 0;
+             int16_t prevY = 0;
+
+             for (size_t i = 0; i < count; i++)
+             {
+                float value = useMovingAverage ? series->getMovingAverageY(i) : series->getY(i);
+                if (!isfinite(value))
+                {
+                   continue;
+                }
+
+                int16_t x;
+                int16_t y;
+                _toPixel(series->getX(i), value, x, y);
+
+                if (connectPoints && havePrevPoint)
+                {
+                   _displayBuffer.drawLine(prevX, prevY, x, y, layer);
+                }
+                else
+                {
+                   _displayBuffer.setPixel(x, y, layer);
+                }
+
+                      prevX = x;
+                      prevY = y;
+                      havePrevPoint = true;
+                   }
+                }
+
+                ///
+                /// <summary>
+                /// Rasterizes a series' rolling mean +/- stddev band (low and high edges, each
+                /// connected with lines) into the plot-wide shared display buffer under the given
+                /// layer index. Does not clear the buffer first; callers rasterize every
+                /// series/layer into the same shared buffer before diffing once.
+                /// </summary>
+                /// <param name="series">Series to rasterize.</param>
+                /// <param name="layer">Layer index (1..DisplayBuffer::MAX_LAYERS) to stamp for this data.</param>
+                ///
+                void _rasterizeStdDevBand(ScatterPlotSeries* series, uint8_t layer)
+                {
+                   size_t count = series->getStdDevReadyCount();
+                   if (count == 0 || layer == 0)
+                   {
+                      return;
+                   }
+
+                   bool haveLowPrev = false;
+                   int16_t lowPrevX = 0;
+                   int16_t lowPrevY = 0;
+                   bool haveHighPrev = false;
+                   int16_t highPrevX = 0;
+                   int16_t highPrevY = 0;
+
+                   for (size_t i = 0; i < count; i++)
+                   {
+                      float x = series->getX(i);
+
+                      float low = series->getStdDevLowY(i);
+                      if (isfinite(low))
+                      {
+                         int16_t px;
+                         int16_t py;
+                         _toPixel(x, low, px, py);
+                         if (haveLowPrev)
+                         {
+                            _displayBuffer.drawLine(lowPrevX, lowPrevY, px, py, layer);
+                         }
+                         else
+                         {
+                            _displayBuffer.setPixel(px, py, layer);
+                         }
+                         lowPrevX = px;
+                         lowPrevY = py;
+                         haveLowPrev = true;
+                      }
+                      else
+                      {
+                         haveLowPrev = false;
+                      }
+
+                      float high = series->getStdDevHighY(i);
+                      if (isfinite(high))
+                      {
+                         int16_t px;
+                         int16_t py;
+                         _toPixel(x, high, px, py);
+                         if (haveHighPrev)
+                         {
+                            _displayBuffer.drawLine(highPrevX, highPrevY, px, py, layer);
+                         }
+                         else
+                         {
+                            _displayBuffer.setPixel(px, py, layer);
+                         }
+                         highPrevX = px;
+                         highPrevY = py;
+                         haveHighPrev = true;
+                      }
+                      else
+                      {
+                         haveHighPrev = false;
+                      }
+                   }
+                }
+
+       public:
+          ///
+          /// <summary>
+          /// Initializes a new ScatterPlot at the specified position and dimensions.
+          /// </summary>
+          /// <param name="display">Pointer to the display object.</param>
+          /// <param name="x">X coordinate for the plot.</param>
+          /// <param name="y">Y coordinate for the plot.</param>
+          /// <param name="width">Width of the plot area in pixels.</param>
+          /// <param name="height">Height of the plot area in pixels.</param>
+          /// <param name="title">Optional centered title drawn above the chart; defaults to none, in which case the plot uses the full area.</param>
+          ///
+          ScatterPlot(ArduinoWithDisplay* display, int16_t x, int16_t y, int16_t width, int16_t height, const String& title = String())
+             : _display(display), _x(x), _y(y), _width(width), _height(height), _title(title)
+          {
+          }
+
+          ///
+          /// <summary>
+          /// Initializes a new ScatterPlot within the given fixed screen rectangle, matching the
+          /// Rect16-based constructor shape of TimedScatterPlot (see IScatterPlot).
+          /// </summary>
+          /// <param name="display">Pointer to the display object.</param>
+          /// <param name="rect">Fixed screen rectangle this plot draws within.</param>
+          /// <param name="title">Optional centered title drawn above the chart; defaults to none, in which case the plot uses the full area.</param>
+          ///
+          ScatterPlot(ArduinoWithDisplay* display, Rect16 rect, const String& title = String())
+             : ScatterPlot(display, static_cast<int16_t>(rect.x), static_cast<int16_t>(rect.y),
+                static_cast<int16_t>(rect.width), static_cast<int16_t>(rect.height), title)
+          {
+          }
 
    ~ScatterPlot()
    {
@@ -807,6 +1230,7 @@ private:
       _width = width;
       _height = height;
       _forceFullRedraw = true;
+      _geometryEstablished = false;
    }
 
    ///
@@ -817,7 +1241,7 @@ private:
    /// <param name="capacity">Initial capacity for the series' data arrays.</param>
    /// <returns>Pointer to the newly created series.</returns>
    ///
-   ScatterPlotSeries* createSeries(size_t capacity = 10)
+   ScatterPlotSeries* createSeries(size_t capacity)
    {
       if (_seriesCount >= _seriesCapacity)
       {
@@ -848,12 +1272,24 @@ private:
 
    ///
    /// <summary>
+   /// Creates a new scatter plot series owned by this plot, using a default initial
+   /// capacity of 10 (see IScatterPlot::createSeries()).
+   /// </summary>
+   /// <returns>Pointer to the newly created series.</returns>
+   ///
+   IScatterPlotSeries* createSeries() override
+   {
+      return createSeries(10);
+   }
+
+   ///
+   /// <summary>
    /// Gets a series by index.
    /// </summary>
    /// <param name="index">Index of the series to retrieve.</param>
    /// <returns>Pointer to the series at the specified index, or nullptr if index is invalid.</returns>
    ///
-   ScatterPlotSeries* getSeries(size_t index)
+   IScatterPlotSeries* getSeries(size_t index) override
    {
       return (index < _seriesCount) ? _series[index] : nullptr;
    }
@@ -864,7 +1300,7 @@ private:
    /// </summary>
    /// <returns>Number of series.</returns>
    ///
-   size_t getSeriesCount() const
+   size_t getSeriesCount() const override
    {
       return _seriesCount;
    }
@@ -875,7 +1311,7 @@ private:
    /// </summary>
    /// <param name="index">Index of the series to delete.</param>
    ///
-   void deleteSeries(size_t index)
+   void deleteSeries(size_t index) override
    {
       if (index < _seriesCount)
       {
@@ -895,7 +1331,7 @@ private:
    /// Deletes all series managed by this plot.
    /// </summary>
    ///
-   void deleteAllSeries()
+   void deleteAllSeries() override
    {
       for (size_t i = 0; i < _seriesCount; i++)
       {
@@ -911,9 +1347,38 @@ private:
    /// the display or otherwise invalidating pixels render() would not normally redraw.
    /// </summary>
    ///
-   void invalidate()
+   void invalidate() override
    {
       _forceFullRedraw = true;
+   }
+
+   ///
+   /// <summary>
+   /// Immediately and physically erases any previously rendered chart content (axes, points,
+   /// lines, etc.) and forces the next render() to perform a full redraw. Unlike invalidate(),
+   /// which only takes effect the next time render() is called with plottable data, this acts
+   /// right away - use this when clearing a series (e.g. switching data sources) so stale
+   /// content doesn't linger on screen until enough new samples accumulate to make
+   /// render()'s computed axis range valid again.
+   /// </summary>
+   ///
+   void clear() override
+   {
+      bool alreadyErased = (_display != nullptr && _hasRenderedFrame);
+      if (alreadyErased)
+      {
+         _display->fillRect(_x, _y, _width, _height, _outerBackgroundColor);
+      }
+
+      _displayBuffer.reset(alreadyErased);
+
+      _hasRenderedFrame = false;
+      _forceFullRedraw = true;
+
+      for (size_t i = 0; i < _seriesCount; i++)
+      {
+         _series[i]->clear();
+      }
    }
 
    ///
@@ -928,6 +1393,7 @@ private:
    {
       _title = title;
       _forceFullRedraw = true;
+      _geometryEstablished = false;
    }
 
    ///
@@ -960,14 +1426,15 @@ private:
    /// </summary>
    /// <param name="format">Format to apply to the Y-axis min/max labels.</param>
    ///
-   void setYAxisFormat(const Format& format)
+   void setYAxisFormat(const Format& format) override
    {
       // Y-axis labels are always drawn flush against the chart's left edge, so force
       // right alignment on our own copy regardless of how the caller's format is aligned
       // (e.g. a sensor's format may be left-aligned for use elsewhere, like a table).
-      _yAxisFormat = format.clone(Format::Alignment::RIGHT);
-      _forceFullRedraw = true;
-   }
+         _yAxisFormat = format.clone(Format::Alignment::RIGHT);
+         _forceFullRedraw = true;
+         _geometryEstablished = false;
+      }
 
    ///
    /// <summary>
@@ -982,6 +1449,26 @@ private:
    {
       _initialYMin = min;
       _initialYMax = max;
+   }
+
+   ///
+   /// <summary>
+   /// Sets the colors used to draw the chart's non-data elements. Forces a full redraw on
+   /// the next render() since the plot-area background is repainted immediately.
+   /// </summary>
+   /// <param name="outerBackgroundColor">Color used outside the plotted-data area (e.g. behind axis labels/title).</param>
+   /// <param name="plotAreaBackgroundColor">Color used behind the plotted-data area itself.</param>
+   /// <param name="axisColor">Color used to draw the axis lines.</param>
+   /// <param name="labelColor">Color used to draw axis labels and the title.</param>
+   ///
+   void setColors(Color outerBackgroundColor, Color plotAreaBackgroundColor, Color axisColor, Color labelColor) override
+   {
+      _outerBackgroundColor = outerBackgroundColor;
+      _plotAreaBackgroundColor = plotAreaBackgroundColor;
+      _axisColor = axisColor;
+      _labelColor = labelColor;
+      _forceFullRedraw = true;
+      _geometryEstablished = false;
    }
 
    ///
@@ -1038,114 +1525,171 @@ private:
        /// invalidate() was called since the last render().
        /// </summary>
        ///
-       void render()
-       {
-          if (_display == nullptr || _seriesCount == 0)
+          void render() override
           {
-             return;
-          }
-
-          float xMin;
-          float xMax;
-          float yMin;
-          float yMax;
-          _computeAxisRange(&xMin, &xMax, &yMin, &yMax);
-
-          if (!isfinite(xMin) || !isfinite(xMax) || !isfinite(yMin) || !isfinite(yMax))
-          {
-             return;
-          }
-
-          bool axisChanged = !_hasRenderedFrame || (xMin != _axisXMin) || (xMax != _axisXMax) || (yMin != _axisYMin) || (yMax != _axisYMax);
-          bool needsFullRedraw = _forceFullRedraw || axisChanged;
-
-          _display->setTextSize(2);
-
-          if (needsFullRedraw)
-          {
-             _computeChartGeometry();
-
-             if (_chartWidth < 20 || _chartHeight < 20)
+             if (_display == nullptr || _seriesCount == 0)
              {
                 return;
              }
 
-             // No physical black flash-clear is needed here: the plotted-data interior is
-             // rendered entirely through _displayBuffer below, whose diffAndDraw() already
-             // erases (draws black over) any pixel that was lit last frame but isn't lit
-             // this frame - including every stale point invalidated by the new axis range.
+             float xMin;
+             float xMax;
+             float yMin;
+             float yMax;
+             _computeAxisRange(&xMin, &xMax, &yMin, &yMax);
 
-             _axisXMin = xMin;
-             _axisXMax = xMax;
-             _axisYMin = yMin;
-             _axisYMax = yMax;
-             _forceFullRedraw = false;
-
-             _drawAxes();
-          }
-          else if (_chartWidth < 20 || _chartHeight < 20)
-          {
-             return;
-          }
-
-          // The plot-wide display buffer is sized to the current chart dimensions; bind it
-          // before diffing occurs. bind() only reallocates (and clears) its buffers when the
-          // chart's pixel dimensions actually change; an axis-range-only change reuses the
-          // existing buffer so diffAndDraw() can still detect and erase stale points from the
-          // previous axis mapping, without any separate full clear/reset here.
-          _displayBuffer.bind(_display, _chartLeft, _chartTop, _chartWidth, _chartHeight);
-
-          _displayBuffer.clear();
-
-          // Assign each series/layer (raw, moving-average, stddev band) the next free nibble
-          // layer index and record its color in the display buffer's palette, then rasterize
-          // it into the one shared buffer. Layer 0 is reserved for "unlit"; only
-          // DisplayBuffer::MAX_LAYERS distinct layers can be drawn in a single frame given the
-          // 4-bit buffer width.
-          uint8_t nextLayer = 1;
-
-          for (size_t i = 0; i < _seriesCount; i++)
-          {
-             ScatterPlotSeries* series = _series[i];
-
-             if ((series->showPoints || series->showLines) && nextLayer <= DisplayBuffer::MAX_LAYERS)
+             if (!isfinite(xMin) || !isfinite(xMax) || !isfinite(yMin) || !isfinite(yMax))
              {
-                uint8_t layer = nextLayer++;
-                _displayBuffer.setPaletteColor(layer, series->color);
-                _rasterizeSeriesData(series, false, layer);
+                // No plottable data right now (e.g. every series was just cleared for a new
+                // source). Physically erase any previously rendered chart content instead of
+                // silently leaving stale points/axes on screen, then wait for real data before
+                // establishing a new axis range.
+                if (_hasRenderedFrame)
+                {
+                   _display->fillRect(_x, _y, _width, _height, _outerBackgroundColor);
+                   _displayBuffer.reset(/* alreadyPhysicallyErased */ true);
+                   _hasRenderedFrame = false;
+                   _forceFullRedraw = true;
+                }
+                return;
              }
 
-             if (series->showMovingAverage && nextLayer <= DisplayBuffer::MAX_LAYERS)
+             bool axisChanged = !_hasRenderedFrame || (xMin != _axisXMin) || (xMax != _axisXMax) || (yMin != _axisYMin) || (yMax != _axisYMax);
+             bool needsFullRedraw = _forceFullRedraw || axisChanged;
+
+             _display->setTextSize(2);
+
+             // Tracks whether the chart's physical rect was (re)painted this frame (e.g.
+             // setRect()/title change, or the very first frame for a brand-new plot
+             // instance); declared outside the needsFullRedraw block below since it's also
+             // needed afterward to keep the display buffer's previous-frame state in sync
+             // with the physical display.
+             bool geometryChanged = false;
+
+             if (needsFullRedraw)
              {
-                uint8_t layer = nextLayer++;
-                _displayBuffer.setPaletteColor(layer, series->movingAverageColor);
-                _rasterizeSeriesData(series, true, layer);
+                const int16_t oldChartLeft = _chartLeft;
+                const int16_t oldChartTop = _chartTop;
+                const int16_t oldChartWidth = _chartWidth;
+                const int16_t oldChartHeight = _chartHeight;
+
+                _computeChartGeometry();
+
+                if (_chartWidth < 20 || _chartHeight < 20)
+                {
+                   return;
+                }
+
+                // Only repaint the full plot rect (title, axis-label gutter, and chart
+                // interior) when the chart geometry actually changed (e.g. setRect()/title
+                // change) or it hasn't been physically painted yet; an axis-range-only change
+                // (which happens on most frames with live/noisy data) keeps the same geometry,
+                // so repainting the whole rect every time would flicker the axis-label margins
+                // for no reason - the chart interior is still fully refreshed below via
+                // _displayBuffer's diffAndDraw(). Note this intentionally checks
+                // _geometryEstablished rather than _hasRenderedFrame: clear() already
+                // physically erases the rect itself and leaves _geometryEstablished true, so
+                // the next render() doesn't redundantly fillRect() the same area again.
+                geometryChanged = !_geometryEstablished
+                   || (_chartLeft != oldChartLeft) || (_chartTop != oldChartTop)
+                   || (_chartWidth != oldChartWidth) || (_chartHeight != oldChartHeight);
+
+                if (geometryChanged)
+                {
+                   _display->fillRect(_x, _y, _width, _height, _outerBackgroundColor);
+                }
+
+                _geometryEstablished = true;
+
+                // No physical black flash-clear of the chart interior is needed here: it is
+                // rendered entirely through _displayBuffer below, whose diffAndDraw() already
+                // erases (draws black over) any pixel that was lit last frame but isn't lit
+                // this frame - including every stale point invalidated by the new axis range.
+
+                _axisXMin = xMin;
+                _axisXMax = xMax;
+                _axisYMin = yMin;
+                _axisYMax = yMax;
+                _forceFullRedraw = false;
+
+                _drawAxes();
+             }
+             else if (_chartWidth < 20 || _chartHeight < 20)
+             {
+                return;
              }
 
-             if (series->showStdDevBand && nextLayer <= DisplayBuffer::MAX_LAYERS)
+             // The plot-wide display buffer is sized to the current chart dimensions; bind it
+             // before diffing occurs. bind() only reallocates (and clears) its buffers when the
+             // chart's pixel dimensions actually change; an axis-range-only change reuses the
+             // existing buffer so diffAndDraw() can still detect and erase stale points from the
+             // previous axis mapping, without any separate full clear/reset here.
+             _displayBuffer.bind(_display, _chartLeft, _chartTop, _chartWidth, _chartHeight);
+             _displayBuffer.setBackgroundColor(_plotAreaBackgroundColor);
+
+             // Whenever geometryChanged just physically repainted the chart interior via the
+             // fillRect() above (e.g. a brand-new plot instance created by recreatePlot() when
+             // switching Source), the display buffer's previous-frame state must be told that
+             // the area was already erased. Otherwise bind() (whether it just (re)allocated
+             // fresh buffers primed to "unknown/changed", or is reusing buffers from a
+             // differently-sized previous plot) leaves _prevMask out of sync with what's
+             // actually on screen, causing diffAndDraw() below to individually redraw every
+             // single pixel in the chart interior to "correct" a mismatch that doesn't really
+             // exist - the slow, visible left-to-right clear the user saw on a Source change.
+             if (geometryChanged)
              {
-                float bandMean;
-                float bandStdDev;
-                series->stdDevRange(&bandMean, &bandStdDev);
-                if (isfinite(bandMean) && isfinite(bandStdDev))
+                _displayBuffer.reset(/* alreadyPhysicallyErased */ true);
+             }
+
+             _displayBuffer.clear();
+
+             // Assign each series/layer (raw, moving-average, stddev band) the next free nibble
+             // layer index and record its color in the display buffer's palette, then rasterize
+             // it into the one shared buffer. Layer 0 is reserved for "unlit"; only
+             // DisplayBuffer::MAX_LAYERS distinct layers can be drawn in a single frame given the
+             // 4-bit buffer width. Raw points are rasterized first for every series, then moving
+             // averages, then stddev bands, so overlays are always drawn on top of raw points
+             // (and stddev bands on top of moving averages) even when multiple series overlap.
+             uint8_t nextLayer = 1;
+
+             for (size_t i = 0; i < _seriesCount; i++)
+             {
+                ScatterPlotSeries* series = _series[i];
+
+                if ((series->showPoints || series->showLines) && nextLayer <= DisplayBuffer::MAX_LAYERS)
+                {
+                   uint8_t layer = nextLayer++;
+                   _displayBuffer.setPaletteColor(layer, series->color);
+                   _rasterizeSeriesData(series, false, layer);
+                }
+             }
+
+             for (size_t i = 0; i < _seriesCount; i++)
+             {
+                ScatterPlotSeries* series = _series[i];
+
+                if (series->showMovingAverage && nextLayer <= DisplayBuffer::MAX_LAYERS)
+                {
+                   uint8_t layer = nextLayer++;
+                   _displayBuffer.setPaletteColor(layer, series->movingAverageColor);
+                   _rasterizeSeriesData(series, true, layer);
+                }
+             }
+
+             for (size_t i = 0; i < _seriesCount; i++)
+             {
+                ScatterPlotSeries* series = _series[i];
+
+                if (series->showStdDevBand && nextLayer <= DisplayBuffer::MAX_LAYERS)
                 {
                    uint8_t layer = nextLayer++;
                    _displayBuffer.setPaletteColor(layer, series->stdDevBandColor);
-
-                   int16_t lowY;
-                   int16_t highY;
-                   int16_t dummyX;
-                   _toPixel(_axisXMin, bandMean - bandStdDev, dummyX, lowY);
-                   _toPixel(_axisXMin, bandMean + bandStdDev, dummyX, highY);
-                   int16_t chartRight = static_cast<int16_t>(_chartWidth - 1);
-                   _displayBuffer.drawLine(0, lowY, chartRight, lowY, layer);
-                   _displayBuffer.drawLine(0, highY, chartRight, highY, layer);
+                   _rasterizeStdDevBand(series, layer);
                 }
              }
+
+             _displayBuffer.diffAndDraw();
+
+             _hasRenderedFrame = true;
           }
-
-          _displayBuffer.diffAndDraw();
-
-          _hasRenderedFrame = true;
-       }
-   };
+       };

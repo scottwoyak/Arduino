@@ -215,7 +215,7 @@ void setup()
 
    applySampleRateLimits();
 
-   scatterSeries = scatterPlot.createSeries();
+   scatterSeries = scatterPlot.createSeries(0);
    scatterSeries->showMovingAverage = true;
    scatterSeries->showStdDevBand = true;
    scatterPlot.setMinMaxFormat(*sensor.getFormat());

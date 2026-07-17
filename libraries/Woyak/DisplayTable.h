@@ -343,6 +343,21 @@ public:
 
    ///
    /// <summary>
+   /// Moves the table to a new top-left position and forces the next draw() call to
+   /// redraw every label and value from scratch at the new location.
+   /// </summary>
+   /// <param name="x">The new X coordinate for the top-left corner of the table.</param>
+   /// <param name="y">The new Y coordinate for the top-left corner of the table.</param>
+   ///
+   void setPosition(int16_t x, int16_t y)
+   {
+      _x = x;
+      _y = y;
+      _labelsDrawn = false;
+   }
+
+   ///
+   /// <summary>
    /// Forces the next draw() call to redraw every label and value from scratch and rebuild
    /// the shared value sprite (e.g. after the display area was cleared, the table's
    /// position changed, or the font/size changed).

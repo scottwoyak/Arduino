@@ -103,7 +103,7 @@ public:
    /// <summary>
    /// Formats a duration in milliseconds as a short, human-friendly string, automatically
    /// choosing the largest unit that keeps the displayed value readable: milliseconds
-   /// below 1 second, seconds below 1 minute, minutes below 1 hour, hours below 1 day,
+   /// below 1 second, seconds below 120 seconds, minutes below 1 hour, hours below 1 day,
    /// and days otherwise.
    /// </summary>
    /// <param name="durationMs">Duration in milliseconds.</param>
@@ -118,7 +118,7 @@ public:
          value = static_cast<float>(durationMs);
          suffix = " ms";
       }
-      else if (durationMs < 60000)
+      else if (durationMs < 120000)
       {
          value = static_cast<float>(durationMs) / 1000.0f;
          suffix = " s";

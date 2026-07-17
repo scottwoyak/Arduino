@@ -220,7 +220,7 @@ TestTypeSetupField testTypeField("Test Type", &liveTestType,
    0, (long)(TEST_TYPE_COUNT - 1), 1, 0, liveTestTypeFormat);
 
 DisplayEditableField* liveFields[] = { &resistorField, &delayField, &bufferSizeField, &testTypeField };
-DisplayEditableTable liveFieldTable(&arduino, PREF_NAMESPACE, liveFields, 4);
+DisplayEditableTable liveFieldTable(&arduino, PREF_NAMESPACE, liveFields, 4, 0, 0);
 
 ///
 /// <summary>Look up the resistor value label for a charge pin.</summary>
@@ -1381,7 +1381,11 @@ void loop()
    // Live-edit the resistor/discharge/buffer fields: Encoder A selects a field, Encoder B
    // adjusts it. Any change is immediately applied to the sensor and persisted, so the
    // charge time/rate readouts below update live as the values change.
-   bool fieldsChanged = liveFieldTable.poll();
+   int32_t liveSelectDelta = arduino.encoderA.delta();
+   int32_t liveAdjustDelta = arduino.encoderB.delta();
+   bool fieldsChanged = (liveSelectDelta != 0 || liveAdjustDelta != 0);
+   liveFieldTable.selectNext(liveSelectDelta);
+   liveFieldTable.adjustSelected(liveAdjustDelta);
 
    if (arduino.encoderB.button.wasPressed())
    {
@@ -1433,7 +1437,8 @@ void loop()
       arduino.setTextSize(DEFAULT_TEXT_SIZE);
       arduino.moveCursorY(8);
       int16_t fieldsTop = arduino.getCursorY();
-      liveFieldTable.draw(0, fieldsTop, 21);
+      liveFieldTable.setPosition(0, fieldsTop);
+      liveFieldTable.draw();
       arduino.setCursor(0, fieldsTop + liveFieldTable.height());
 
       float rawRate = capacitorSensor.rate();

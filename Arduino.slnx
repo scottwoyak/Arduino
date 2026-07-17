@@ -48,6 +48,7 @@
     <File Path="libraries/Woyak/I2CTempSensor.h" />
     <File Path="libraries/Woyak/IndexedEncoder.h" />
     <File Path="libraries/Woyak/Influx.h" />
+    <File Path="libraries/Woyak/IScatterPlot.h" />
     <File Path="libraries/Woyak/ITempSensor.h" />
     <File Path="libraries/Woyak/Latch.h" />
     <File Path="libraries/Woyak/Led.h" />
@@ -433,10 +434,6 @@
     <Deploy />
   </Project>
   <Project Path="Text_Performance_Playground/Text_Performance_Playground.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="TimedScatterPlot_Playground/TimedScatterPlot_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

@@ -241,13 +241,20 @@ public:
 
    ///
    /// <summary>
-   /// Resets the current position and the delta() baseline to zero.
+   /// Resets the current position and the delta() baseline to zero, and clears any
+   /// in-progress quadrature transition state. Without clearing _initialDirection, a stray
+   /// transition detected while pins were settling (e.g. during begin()) could leave the
+   /// encoder mid-detent, causing the next real turn to silently complete/cancel that stale
+   /// transition instead of registering as a fresh position change.
    /// </summary>
    ///
    void reset()
    {
       _position = 0;
       _lastPosition = 0;
+      _isLowA = digitalRead(_pinA) == LOW;
+      _isLowB = digitalRead(_pinB) == LOW;
+      _initialDirection = Direction::UNKNOWN;
    }
 
    ///

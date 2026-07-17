@@ -32,7 +32,7 @@ public:
    DisplayEditor(ESP32_S3_Playground* arduino, const char* prefNamespace,
                const char* title, DisplayEditableField** fields, uint8_t fieldCount)
       : _arduino(arduino), _title(title),
-        _table(arduino, prefNamespace, fields, fieldCount)
+        _table(arduino, prefNamespace, fields, fieldCount, 0, 0)
    {
    }
 
@@ -79,8 +79,12 @@ public:
 
       while (true)
       {
-         if (_table.poll())
+         int32_t selectDelta = _arduino->encoderA.delta();
+         int32_t adjustDelta = _arduino->encoderB.delta();
+         if (selectDelta != 0 || adjustDelta != 0)
          {
+            _table.selectNext(selectDelta);
+            _table.adjustSelected(adjustDelta);
             _draw();
          }
 
@@ -125,7 +129,8 @@ private:
       _arduino->setTextSize(2);
 
       int16_t tableTop = _arduino->getCursorY();
-      _table.draw(0, tableTop);
+      _table.setPosition(0, tableTop);
+      _table.draw();
 
       _arduino->setCursor(0, tableTop + _table.height());
       _arduino->println();

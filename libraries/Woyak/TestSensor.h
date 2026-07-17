@@ -16,7 +16,6 @@ class ConstantTestSensor;
 class RandomTestSensor;
 class NormalTestSensor;
 class SinTestSensor;
-class SinWithNormalNoiseTestSensor;
 class MS5837PressureTestSensor;
 class CapacitiveTestSensor;
 class DepthTestSensor;
@@ -26,7 +25,6 @@ class DepthTestSensor;
 // active sensor's type name at runtime.
 // #define TEST_SENSOR_TYPE TempSensorTestSensor
 // #define TEST_SENSOR_TYPE ESP32TempTestSensor
-// #define TEST_SENSOR_TYPE SinWithNormalNoiseTestSensor
 // #define TEST_SENSOR_TYPE SinTestSensor
 // #define TEST_SENSOR_TYPE ConstantTestSensor
 // #define TEST_SENSOR_TYPE RandomTestSensor
@@ -40,11 +38,20 @@ using TestSensor = TEST_SENSOR_TYPE;
 
 namespace TestSensorConfig
 {
+   // ----- noise (shared by all mock sensors, via MockTestSensorBase::noiseStdDev)
+   static constexpr float NOISE_STDDEV = 1.0f; // applied when the Noise field is set to true
+   static constexpr float NOISE_MIN_STDDEV = 0.0f;
+   static constexpr float NOISE_MAX_STDDEV = 100.0f;
+   static constexpr float NOISE_STDDEV_STEP = 0.1f;
+
    // ----- constant sensor
    static constexpr uint16_t CONSTANT_SAMPLING_RATE_PER_SEC = 0;
    static constexpr float CONSTANT_VALUE = 100.0f;
-   static constexpr const char* CONSTANT_FORMAT = "##.#";
-   static constexpr const char* CONSTANT_HIGH_RES_FORMAT = "##.##";
+   static constexpr float CONSTANT_MIN_VALUE = 0.0f;
+   static constexpr float CONSTANT_MAX_VALUE = 1000.0f;
+   static constexpr float CONSTANT_STEP = 1.0f;
+   static constexpr const char* CONSTANT_FORMAT = "###.#";
+   static constexpr const char* CONSTANT_HIGH_RES_FORMAT = "###.##";
 
    // ----- random sensor
    static constexpr uint16_t RANDOM_SAMPLING_RATE_PER_SEC = 0;
@@ -65,17 +72,20 @@ namespace TestSensorConfig
    static constexpr float SIN_MEAN = 0.0f;
    static constexpr float SIN_AMPLITUDE = 10.0f;
    static constexpr float SIN_PERIOD_S = 10.0f;
+   static constexpr float SIN_MIN_PERIOD_S = 1.0f;
+   static constexpr float SIN_MAX_PERIOD_S = 60.0f;
+   static constexpr float SIN_PERIOD_STEP_S = 1.0f;
    static constexpr const char* SIN_FORMAT = "###.##";
    static constexpr const char* SIN_HIGH_RES_FORMAT = "###.###";
-
-   // ----- sin with normal noise sensor
-   static constexpr uint16_t SIN_NOISE_SAMPLING_RATE_PER_SEC = 100;
-   static constexpr float SIN_NOISE_MEAN = 0.0f;
-   static constexpr float SIN_NOISE_AMPLITUDE = 1.0f;
-   static constexpr float SIN_NOISE_PERIOD_S = 10.0f;
-   static constexpr float SIN_NOISE_STDDEV = 2.0f;
-   static constexpr const char* SIN_NOISE_FORMAT = "###.##";
-   static constexpr const char* SIN_NOISE_HIGH_RES_FORMAT = "###.###";
+    // Fixed time increment applied per sample when SinTestSensor uses TimeSource::FIXED_STEP,
+   // so the wave advances in perfectly even steps regardless of actual loop/sampling jitter.
+   static constexpr float SIN_FIXED_STEP_S = 0.05f;
+   // Period range/step used while TimeSource::FIXED_STEP is active, expressed in samples
+   // (period / SIN_FIXED_STEP_S) rather than seconds, since a fixed-step period doesn't
+   // correspond to real elapsed time.
+   static constexpr long SIN_FIXED_MIN_PERIOD_SAMPLES = 400;
+   static constexpr long SIN_FIXED_MAX_PERIOD_SAMPLES = 2000;
+   static constexpr long SIN_FIXED_PERIOD_STEP_SAMPLES = 500;
 
    // ----- temp sensor (physical sensor)
    static constexpr const char* TEMP_FORMAT = "###.##";
@@ -194,6 +204,18 @@ public:
    {
       return true;
    }
+
+   ///
+   /// <summary>
+   /// Sets the standard deviation of Gaussian noise added to readings, for sensors that
+   /// support it (mock sensors). Sensors that don't support noise (e.g. physical sensors)
+   /// ignore this call.
+   /// </summary>
+   /// <param name="stdDev">Standard deviation of the noise, or 0 to disable it.</param>
+   ///
+   virtual void setNoiseStdDev(float stdDev)
+   {
+   }
 };
 
 ///
@@ -205,6 +227,12 @@ class MockTestSensorBase : public ITestSensor
 {
 protected:
    unsigned long _startMs = 0;
+
+   // Counts how many samples have been produced since begin(), so sensors that support a
+   // TimeSource::FIXED_STEP mode can advance by a constant time increment per sample instead
+   // of relying on actual elapsed wall-clock time (millis()), which can drift if the loop's
+   // real sampling rate varies (e.g. due to rendering/diffing overhead growing over time).
+   uint32_t _sampleIndex = 0;
 
    ///
    /// <summary>
@@ -317,6 +345,27 @@ protected:
 
    ///
    /// <summary>
+   /// Computes a sinusoidal value using an explicit elapsed-time value.
+   /// </summary>
+   /// <param name="midpoint">Midpoint (mean) value of the sine wave.</param>
+   /// <param name="amplitude">Amplitude of the sine wave.</param>
+   /// <param name="periodS">Period of the sine wave, in seconds.</param>
+   /// <param name="elapsedS">Elapsed time, in seconds, to evaluate the wave at.</param>
+   /// <returns>The sine wave value at the given elapsed time.</returns>
+   ///
+   float _sinValue(float midpoint, float amplitude, float periodS, float elapsedS) const
+   {
+      if (periodS <= 0.0f)
+      {
+         return midpoint;
+      }
+
+      float radians = (elapsedS / periodS) * (2.0f * PI);
+      return midpoint + (sinf(radians) * amplitude);
+   }
+
+   ///
+   /// <summary>
    /// Computes a sinusoidal value based on elapsed time since sensor start.
    /// </summary>
    /// <param name="midpoint">Midpoint (mean) value of the sine wave.</param>
@@ -326,18 +375,20 @@ protected:
    ///
    float _sinValue(float midpoint, float amplitude, float periodS) const
    {
-      float periodMs = periodS * 1000.0f;
-      if (periodMs <= 0.0f)
-      {
-         return midpoint;
-      }
-
-      float elapsedMs = static_cast<float>(millis() - _startMs);
-      float radians = (elapsedMs / periodMs) * (2.0f * PI);
-      return midpoint + (sinf(radians) * amplitude);
+      float elapsedS = static_cast<float>(millis() - _startMs) / 1000.0f;
+      return _sinValue(midpoint, amplitude, periodS, elapsedS);
    }
 
 public:
+   ///
+   /// <summary>
+   /// Standard deviation of Gaussian noise added to every reading returned by get(). A value
+   /// of 0 (the default) disables noise entirely. Public and mutable so it can be bound
+   /// directly to an editable field for live adjustment.
+   /// </summary>
+   ///
+   float noiseStdDev = 0.0f;
+
    ///
    /// <summary>
    /// Initializes the mock sensor's format objects with the sensor-specific format patterns.
@@ -359,12 +410,14 @@ public:
    bool begin() override
    {
       _startMs = millis();
+      _sampleIndex = 0;
       return _beginImpl();
    }
 
    ///
    /// <summary>
-   /// Gets one rounded, throttled sensor reading.
+   /// Gets one rounded, throttled sensor reading, with Gaussian noise (per noiseStdDev)
+   /// added before rounding.
    /// </summary>
    /// <returns>The current reading, rounded to the configured decimal places.</returns>
    ///
@@ -376,7 +429,21 @@ public:
          delay(delayMs);
       }
 
-      return _roundToDecimals(_getValue(), getFormat()->precision());
+      float rawValue = _getValue() + _normalDistributed(0.0f, noiseStdDev, 3);
+      float value = _roundToDecimals(rawValue, getFormat()->precision());
+      _sampleIndex++;
+      return value;
+   }
+
+   ///
+   /// <summary>
+   /// Sets the standard deviation of Gaussian noise added to readings.
+   /// </summary>
+   /// <param name="stdDev">Standard deviation of the noise, or 0 to disable it.</param>
+   ///
+   void setNoiseStdDev(float stdDev) override
+   {
+      noiseStdDev = stdDev;
    }
 };
 
@@ -506,10 +573,18 @@ private:
 
    float _getValue() override
    {
-      return TestSensorConfig::CONSTANT_VALUE;
+      return value;
    }
 
 public:
+   ///
+   /// <summary>
+   /// The constant value returned by this sensor. Public and mutable so it can be bound
+   /// directly to an editable field (e.g. DisplayEditableTable) for live adjustment.
+   /// </summary>
+   ///
+   float value = TestSensorConfig::CONSTANT_VALUE;
+
    ///
    /// <summary>
    /// Initializes the sensor with its configured format patterns.
@@ -644,6 +719,27 @@ public:
 ///
 class SinTestSensor : public MockTestSensorBase
 {
+public:
+   ///
+   /// <summary>
+   /// Selects how the sine wave's elapsed time advances from one sample to the next. Backed
+   /// by a plain long (rather than an enum class) so timeSource can be bound directly to an
+   /// IntDisplayEditableField for live adjustment.
+   /// </summary>
+   ///
+   enum TimeSource : long
+   {
+      // Uses actual wall-clock time (millis()) since begin(). Simple and realistic, but the
+      // wave's apparent period will stretch or compress if the actual sampling rate varies
+      // (e.g. rendering/diffing overhead growing as more points are plotted).
+      TIME_SOURCE_CLOCK = 0,
+
+      // Advances by a fixed time increment (TestSensorConfig::SIN_FIXED_STEP_S) each time
+      // get() is called, regardless of actual elapsed wall-clock time. Keeps the wave's
+      // period visually constant across a run even if the real sampling rate varies.
+      TIME_SOURCE_FIXED_STEP = 1
+   };
+
 private:
    uint16_t _samplingRatePerSec() const override
    {
@@ -652,20 +748,48 @@ private:
 
    float _getValue() override
    {
+      if (timeSource == TIME_SOURCE_FIXED_STEP)
+      {
+         float elapsedS = static_cast<float>(_sampleIndex) * TestSensorConfig::SIN_FIXED_STEP_S;
+         return _sinValue(
+            TestSensorConfig::SIN_MEAN,
+            TestSensorConfig::SIN_AMPLITUDE,
+            periodS,
+            elapsedS);
+      }
+
       return _sinValue(
          TestSensorConfig::SIN_MEAN,
          TestSensorConfig::SIN_AMPLITUDE,
-         TestSensorConfig::SIN_PERIOD_S);
+         periodS);
    }
 
 public:
    ///
    /// <summary>
-   /// Initializes the sensor with its configured format patterns.
+   /// Selects which time source the wave currently uses. Public and mutable so it can be
+   /// bound directly to an editable field for live adjustment.
    /// </summary>
    ///
-   SinTestSensor()
-      : MockTestSensorBase(TestSensorConfig::SIN_FORMAT, TestSensorConfig::SIN_HIGH_RES_FORMAT)
+   long timeSource;
+
+   ///
+   /// <summary>
+   /// The wave's period, in seconds. Public and mutable so it can be bound directly to an
+   /// editable field for live adjustment.
+   /// </summary>
+   ///
+   float periodS = TestSensorConfig::SIN_PERIOD_S;
+
+   ///
+   /// <summary>
+   /// Initializes the sensor with its configured format patterns.
+   /// </summary>
+   /// <param name="timeSource">Selects whether the wave advances using wall-clock time or a
+   /// fixed time increment per sample. Defaults to TIME_SOURCE_CLOCK.</param>
+   ///
+   explicit SinTestSensor(long timeSource = TIME_SOURCE_CLOCK)
+      : MockTestSensorBase(TestSensorConfig::SIN_FORMAT, TestSensorConfig::SIN_HIGH_RES_FORMAT), timeSource(timeSource)
    {
    }
 
@@ -677,67 +801,7 @@ public:
    ///
    const char* sensorType() const override
    {
-      return "Sine";
-   }
-};
-
-///
-/// <summary>
-/// Returns a sinusoidal signal with additive normal-distributed noise.
-/// </summary>
-///
-class SinWithNormalNoiseTestSensor : public MockTestSensorBase
-{
-private:
-   uint16_t _samplingRatePerSec() const override
-   {
-      return TestSensorConfig::SIN_NOISE_SAMPLING_RATE_PER_SEC;
-   }
-
-   bool _beginImpl() override
-   {
-      randomSeed(micros());
-      return true;
-   }
-
-   float _getValue() override
-   {
-      float sinValue = _sinValue(
-         TestSensorConfig::SIN_NOISE_MEAN,
-         TestSensorConfig::SIN_NOISE_AMPLITUDE,
-         TestSensorConfig::SIN_NOISE_PERIOD_S);
-      if (TestSensorConfig::SIN_NOISE_STDDEV <= 0.0f)
-      {
-         return sinValue;
-      }
-
-      float noise = _normalDistributed(
-         0.0f,
-         TestSensorConfig::SIN_NOISE_STDDEV,
-         getFormat()->precision());
-      return sinValue + noise;
-   }
-
-public:
-   ///
-   /// <summary>
-   /// Initializes the sensor with its configured format patterns.
-   /// </summary>
-   ///
-   SinWithNormalNoiseTestSensor()
-      : MockTestSensorBase(TestSensorConfig::SIN_NOISE_FORMAT, TestSensorConfig::SIN_NOISE_HIGH_RES_FORMAT)
-   {
-   }
-
-   ///
-   /// <summary>
-   /// Gets the sensor type name.
-   /// </summary>
-   /// <returns>The sensor type name.</returns>
-   ///
-   const char* sensorType() const override
-   {
-      return "Sin+";
+      return "Sin";
    }
 };
 
