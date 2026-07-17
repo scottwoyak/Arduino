@@ -71,8 +71,10 @@ private:
 
    ///
    /// <summary>
-   /// Allocates the snapshot rendering buffers, sized to _bins.numBins(). Called once
-   /// from the constructor since the bin count never changes afterward.
+   /// Allocates the raw snapshot buffers (_values/_agesMs), sized to _bins.numBins().
+   /// Called once from the constructor since the bin count never changes afterward. The
+   /// moving-average/stddev buffers are allocated separately and lazily; see
+   /// _ensureStatsBuffersAllocated().
    /// </summary>
    /// <returns>True if every buffer was allocated successfully.</returns>
    ///
@@ -81,6 +83,33 @@ private:
       size_t numBins = _bins.numBins();
       _values = new (std::nothrow) float[numBins];
       _agesMs = new (std::nothrow) unsigned long[numBins];
+
+      if (_values == nullptr || _agesMs == nullptr)
+      {
+         Util::setHaltReason("OOM allocating rendering buffers in TimedScatterPlotSeries");
+         Util::reset();
+         return false;
+      }
+
+      return true;
+   }
+
+   ///
+   /// <summary>
+   /// Lazily allocates the moving-average/stddev buffers on first use (i.e. the first time
+   /// showMovingAverage or showStdDevBand is set), rather than paying for them up front for
+   /// series that never enable those features. Safe to call repeatedly; only allocates once.
+   /// </summary>
+   /// <returns>True if the buffers are allocated (either just now or previously).</returns>
+   ///
+   bool _ensureStatsBuffersAllocated()
+   {
+      if (_movingAverageBuffer != nullptr)
+      {
+         return true;
+      }
+
+      size_t numBins = _bins.numBins();
       _movingAverageBuffer = new (std::nothrow) float[numBins];
       _stdDevLowBuffer = new (std::nothrow) float[numBins];
       _stdDevHighBuffer = new (std::nothrow) float[numBins];
@@ -88,11 +117,10 @@ private:
       _lockedStdDevLow = new (std::nothrow) float[numBins];
       _lockedStdDevHigh = new (std::nothrow) float[numBins];
 
-      if (_values == nullptr || _agesMs == nullptr || _movingAverageBuffer == nullptr
-         || _stdDevLowBuffer == nullptr || _stdDevHighBuffer == nullptr
+      if (_movingAverageBuffer == nullptr || _stdDevLowBuffer == nullptr || _stdDevHighBuffer == nullptr
          || _lockedMovingAverage == nullptr || _lockedStdDevLow == nullptr || _lockedStdDevHigh == nullptr)
       {
-         Util::setHaltReason("OOM allocating rendering buffers in TimedScatterPlotSeries");
+         Util::setHaltReason("OOM allocating stats buffers in TimedScatterPlotSeries");
          Util::reset();
          return false;
       }
@@ -121,7 +149,7 @@ private:
       unsigned long delta = currentRotationCount - _lastRotationCount;
       _lastRotationCount = currentRotationCount;
 
-      if (delta == 0)
+      if (delta == 0 || _lockedMovingAverage == nullptr)
       {
          return;
       }
@@ -176,8 +204,18 @@ private:
       }
 
       _shiftLockedBuffers();
-      _recomputeMovingAverage();
-      _recomputeStdDevBand();
+      if (showMovingAverage || showStdDevBand)
+      {
+         _ensureStatsBuffersAllocated();
+      }
+      if (_movingAverageBuffer != nullptr)
+      {
+         _recomputeMovingAverage();
+      }
+      if (_stdDevLowBuffer != nullptr)
+      {
+         _recomputeStdDevBand();
+      }
    }
 
    ///
@@ -444,10 +482,10 @@ public:
       delete[] _movingAverageBuffer;
       delete[] _stdDevLowBuffer;
       delete[] _stdDevHighBuffer;
-         delete[] _lockedMovingAverage;
-         delete[] _lockedStdDevLow;
-         delete[] _lockedStdDevHigh;
-      }
+      delete[] _lockedMovingAverage;
+      delete[] _lockedStdDevLow;
+      delete[] _lockedStdDevHigh;
+   }
 
    ///
    /// <summary>
@@ -472,7 +510,9 @@ public:
       _count = 0;
       _lastRotationCount = 0;
 
-      size_t numBins = _bins.numBins();
+      if (_lockedMovingAverage != nullptr)
+      {
+         size_t numBins = _bins.numBins();
          for (size_t i = 0; i < numBins; i++)
          {
             _lockedMovingAverage[i] = NAN;
@@ -480,6 +520,7 @@ public:
             _lockedStdDevHigh[i] = NAN;
          }
       }
+   }
 
    ///
    /// <summary>
@@ -499,7 +540,7 @@ public:
    ///
    float getLatestMovingAverage() const
    {
-      return (_count > 0) ? _movingAverageBuffer[0] : NAN;
+      return (_count > 0 && _movingAverageBuffer != nullptr) ? _movingAverageBuffer[0] : NAN;
    }
 
    ///
@@ -512,7 +553,7 @@ public:
    ///
    float getLatestStdDev() const
    {
-      if (_count == 0 || !isfinite(_stdDevLowBuffer[0]) || !isfinite(_stdDevHighBuffer[0]))
+      if (_count == 0 || _stdDevLowBuffer == nullptr || !isfinite(_stdDevLowBuffer[0]) || !isfinite(_stdDevHighBuffer[0]))
       {
          return NAN;
       }

@@ -10,8 +10,10 @@
 /// location metadata for telemetry tagging. Reads temperature on SENSOR_READ_INTERVAL_MS cadence
 /// and feeds one current-value field plus five time-averaged fields (10s, 1m, 2m, 5m, 10m) per sensor,
 /// while keeping upload cadence at INFLUX_INTERVAL_S. Renders the temperature table, sensor type
-/// labels (Button A held), or one of six per-sensor scatterplot views (encoderA), each holding a
-/// rolling history of the last 100 samples for that sampling rate.
+/// labels (Button A held), or one of six per-sensor scatterplot views (encoderA). Only the plot
+/// view currently being displayed is allocated in memory; its TimedScatterPlot and per-sensor
+/// series are created when switching to that view and destroyed when leaving it, so memory is
+/// bounded by a single view's series rather than by all views combined.
 /// 
 /// Telemetry flow: each sensor maps to five InfluxPoints (current plus the four averaging windows),
 /// all tagged with the sensor's location and a "stat" tag identifying which value they carry, each
@@ -49,20 +51,22 @@ constexpr uint8_t NUM_WINDOWS = 5;
 constexpr float PLOT_HISTORY_MULTIPLIER = 20.0f;
 
 // Views cycled via encoderA: the temperature table, then one scatterplot per
-// sampling rate. Temporarily reduced to just Now and 5m to test whether the
-// scatterplot history buffers are exhausting heap and causing Influx writes
-// to fail with an immediate "connection refused".
+// sampling rate (current value plus each averaging window). Only one plot view's
+// TimedScatterPlot/series are ever allocated at a time (see _activatePlotView()),
+// created on demand when switching to a plot view and destroyed when leaving it, so
+// memory is bounded by a single view's series instead of NUM_VIEWS worth at once.
 enum class ViewMode : uint8_t
 {
    TABLE = 0,
    NOW,
-   WINDOW_5M,
+   WINDOW_0,
+   WINDOW_1,
+   WINDOW_2,
+   WINDOW_3,
+   WINDOW_4,
 };
-constexpr uint8_t NUM_VIEWS = static_cast<uint8_t>(ViewMode::WINDOW_5M) + 1;
+constexpr uint8_t NUM_VIEWS = static_cast<uint8_t>(ViewMode::WINDOW_4) + 1;
 constexpr uint8_t NUM_PLOT_VIEWS = NUM_VIEWS - 1;
-
-// Index into AVERAGE_WINDOWS_S/AVERAGE_WINDOW_LABELS used by the WINDOW_5M plot view.
-constexpr uint8_t PLOT_WINDOW_INDEX = 3; // 5m
 
 // Distinct colors used to tell sensors apart on the scatterplots.
 constexpr Color SENSOR_PLOT_COLORS[NUM_SENSORS] = {
@@ -99,8 +103,9 @@ InfluxPoint* averagePoints[NUM_SENSORS][NUM_WINDOWS];
 InfluxField* averageFields[NUM_SENSORS][NUM_WINDOWS];
 DisplayField* uploadStatusField = nullptr;
 
-TimedScatterPlot* plots[NUM_PLOT_VIEWS];
-TimedScatterPlotSeries* plotSeries[NUM_PLOT_VIEWS][NUM_SENSORS];
+TimedScatterPlot* activePlot = nullptr;
+TimedScatterPlotSeries* activePlotSeries[NUM_SENSORS] = { nullptr };
+int8_t activePlotView = -1;
 ViewMode viewMode = ViewMode::TABLE;
 
 const char* locations[NUM_SENSORS] = {
@@ -113,6 +118,63 @@ const char* locations[NUM_SENSORS] = {
    "Test 7",
    "Test 8",
 };
+
+Rect16 plotRect;
+
+///
+/// <summary>
+/// Destroys the currently active plot view (if any), freeing its series/bin buffers.
+/// </summary>
+/// <returns>None</returns>
+///
+void deactivatePlotView()
+{
+   if (activePlot == nullptr)
+   {
+      return;
+   }
+
+   delete activePlot;
+   activePlot = nullptr;
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   {
+      activePlotSeries[i] = nullptr;
+   }
+   activePlotView = -1;
+}
+
+///
+/// <summary>
+/// Creates the plot view for the given plot index (0 = Now, 1..NUM_WINDOWS = averaging
+/// windows), replacing any previously active plot view.
+/// </summary>
+/// <param name="plotView">Zero-based plot view index (see ViewMode)</param>
+/// <returns>None</returns>
+///
+void activatePlotView(uint8_t plotView)
+{
+   if (activePlotView == plotView)
+   {
+      return;
+   }
+
+   deactivatePlotView();
+
+   constexpr float NOW_AVERAGE_WINDOW_S = 1.0f;
+   const char* title = (plotView == 0) ? "Now" : AVERAGE_WINDOW_LABELS[plotView - 1];
+   float averageWindowS = (plotView == 0) ? NOW_AVERAGE_WINDOW_S : AVERAGE_WINDOWS_S[plotView - 1];
+   unsigned long plotHistoryMs = static_cast<unsigned long>(averageWindowS * PLOT_HISTORY_MULTIPLIER * 1000.0f);
+   activePlot = new TimedScatterPlot(&arduino, plotRect, plotHistoryMs, tempFormat, 0.0f, title);
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   {
+      TimedScatterPlotSeries* series = activePlot->createSeries(0);
+      series->showPoints = false;
+      series->showLines = true;
+      series->color = SENSOR_PLOT_COLORS[i];
+      activePlotSeries[i] = series;
+   }
+   activePlotView = plotView;
+}
 
 ///
 /// <summary>
@@ -237,27 +299,7 @@ void setup()
 
    int16_t plotTop = arduino.charH() * 2;
    int16_t plotHeight = arduino.height() - plotTop;
-   constexpr float NOW_AVERAGE_WINDOW_S = 1.0f;
-   // Temporarily disabled to test whether the scatterplot history buffers are
-   // exhausting heap and causing Influx writes to fail with "connection refused".
-   /*
-   for (uint8_t p = 0; p < NUM_PLOT_VIEWS; p++)
-   {
-      const char* title = (p == 0) ? "Now" : AVERAGE_WINDOW_LABELS[PLOT_WINDOW_INDEX];
-      float averageWindowS = (p == 0) ? NOW_AVERAGE_WINDOW_S : AVERAGE_WINDOWS_S[PLOT_WINDOW_INDEX];
-      unsigned long plotHistoryMs = static_cast<unsigned long>(averageWindowS * PLOT_HISTORY_MULTIPLIER * 1000.0f);
-      Rect16 plotRect = { 0, static_cast<uint16_t>(plotTop), arduino.width(), static_cast<uint16_t>(plotHeight) };
-      plots[p] = new TimedScatterPlot(&arduino, plotRect, plotHistoryMs, tempFormat, 0.0f, title);
-      for (uint8_t i = 0; i < NUM_SENSORS; i++)
-      {
-         TimedScatterPlotSeries* series = plots[p]->createSeries(0);
-         series->showPoints = false;
-         series->showLines = true;
-         series->color = SENSOR_PLOT_COLORS[i];
-         plotSeries[p][i] = series;
-      }
-   }
-   */
+   plotRect = { 0, static_cast<uint16_t>(plotTop), arduino.width(), static_cast<uint16_t>(plotHeight) };
 }
 
 void loop()
@@ -274,6 +316,16 @@ void loop()
          newView += NUM_VIEWS;
       }
       viewMode = static_cast<ViewMode>(newView);
+
+      if (viewMode == ViewMode::TABLE)
+      {
+         deactivatePlotView();
+      }
+      else
+      {
+         activatePlotView(static_cast<uint8_t>(viewMode) - 1);
+      }
+
       arduino.clearDisplay();
    }
 
@@ -300,12 +352,11 @@ void loop()
             averageFields[i][w]->set(tempF);
          }
 
-         // Temporarily disabled along with plot creation above to test whether the
-         // scatterplot history buffers are exhausting heap.
-         /*
-         plotSeries[0][i]->add(tempF);
-         plotSeries[1][i]->add(averageFields[i][PLOT_WINDOW_INDEX]->get());
-         */
+         if (activePlot != nullptr)
+         {
+            float plotValue = (activePlotView == 0) ? tempF : averageFields[i][activePlotView - 1]->get();
+            activePlotSeries[i]->add(plotValue);
+         }
       }
    }
 
@@ -367,14 +418,9 @@ void loop()
                        averageFields[i][2]->get(), averageFields[i][3]->get(), averageFields[i][4]->get());
       }
    }
-   else
+   else if (activePlot != nullptr)
    {
-      // Temporarily disabled along with plot creation/updates above to test whether the
-      // scatterplot history buffers are exhausting heap.
-      /*
-      uint8_t plotView = static_cast<uint8_t>(viewMode) - 1;
-      plots[plotView]->render();
-      */
+      activePlot->render();
    }
 
    if (influxTimer.ready())
