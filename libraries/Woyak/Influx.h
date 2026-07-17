@@ -41,13 +41,6 @@ public:
 	{
 		_client = client;
 		_status = status;
-
-		// Keep the TLS connection open between writes instead of doing a full TLS
-		// handshake + teardown every upload cycle. Repeated non-reused BearSSL/mbedTLS
-		// handshakes on ESP32 leak/fragment heap over time (observed free heap dropping
-		// from ~196KB to ~56KB within a few minutes), eventually causing new handshakes
-		// to fail outright with "connection refused".
-		_client->setHTTPOptions(HTTPOptions().connectionReuse(true));
 	}
 
 	/// <summary>

@@ -16,8 +16,7 @@
 /// Telemetry flow: each sensor maps to five InfluxPoints (current plus the four averaging windows),
 /// all tagged with the sensor's location and a "stat" tag identifying which value they carry, each
 /// posting a single "temperature" field. On each upload interval, all active sensor points are
-/// posted, then the client buffer is flushed. Wi-Fi connectivity is monitored continuously and
-/// triggers reset on loss.
+/// posted individually. Wi-Fi connectivity is monitored continuously and triggers reset on loss.
 /// 
 /// Typical usage: start the sketch and verify detected sensors in Serial startup output, let averages
 /// settle (up to 10 minutes for the longest window) before using displayed values for decisions,
@@ -50,19 +49,20 @@ constexpr uint8_t NUM_WINDOWS = 5;
 constexpr float PLOT_HISTORY_MULTIPLIER = 20.0f;
 
 // Views cycled via encoderA: the temperature table, then one scatterplot per
-// sampling rate (current value plus each averaging window).
+// sampling rate. Temporarily reduced to just Now and 5m to test whether the
+// scatterplot history buffers are exhausting heap and causing Influx writes
+// to fail with an immediate "connection refused".
 enum class ViewMode : uint8_t
 {
    TABLE = 0,
    NOW,
-   WINDOW_0,
-   WINDOW_1,
-   WINDOW_2,
-   WINDOW_3,
-   WINDOW_4,
+   WINDOW_5M,
 };
-constexpr uint8_t NUM_VIEWS = static_cast<uint8_t>(ViewMode::WINDOW_4) + 1;
+constexpr uint8_t NUM_VIEWS = static_cast<uint8_t>(ViewMode::WINDOW_5M) + 1;
 constexpr uint8_t NUM_PLOT_VIEWS = NUM_VIEWS - 1;
+
+// Index into AVERAGE_WINDOWS_S/AVERAGE_WINDOW_LABELS used by the WINDOW_5M plot view.
+constexpr uint8_t PLOT_WINDOW_INDEX = 3; // 5m
 
 // Distinct colors used to tell sensors apart on the scatterplots.
 constexpr Color SENSOR_PLOT_COLORS[NUM_SENSORS] = {
@@ -113,6 +113,38 @@ const char* locations[NUM_SENSORS] = {
    "Test 7",
    "Test 8",
 };
+
+///
+/// <summary>
+/// Posts the current-value and time-averaged Influx points for every detected sensor.
+/// </summary>
+/// <returns>True if all points posted successfully</returns>
+///
+bool uploadAllPoints()
+{
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   {
+      if (!sensors[i]->exists())
+      {
+         continue;
+      }
+
+      if (!currentPoints[i]->post(&client))
+      {
+         return false;
+      }
+
+      for (uint8_t w = 0; w < NUM_WINDOWS; w++)
+      {
+         if (!averagePoints[i][w]->post(&client))
+         {
+            return false;
+         }
+      }
+   }
+
+   return true;
+}
 
 void setup()
 {
@@ -187,8 +219,6 @@ void setup()
    }
    arduino.printlnR("ok", Color::VALUE);
 
-   constexpr uint16_t NUM_POINTS = NUM_SENSORS * (1 + NUM_WINDOWS);
-   client.setWriteOptions(WriteOptions().batchSize(NUM_POINTS).bufferSize(NUM_POINTS).flushInterval(INFLUX_INTERVAL_S + 1));
    if (!influx.begin(&arduino))
    {
       Util::reset(WIFI_RESET_DELAY_S);
@@ -208,10 +238,13 @@ void setup()
    int16_t plotTop = arduino.charH() * 2;
    int16_t plotHeight = arduino.height() - plotTop;
    constexpr float NOW_AVERAGE_WINDOW_S = 1.0f;
+   // Temporarily disabled to test whether the scatterplot history buffers are
+   // exhausting heap and causing Influx writes to fail with "connection refused".
+   /*
    for (uint8_t p = 0; p < NUM_PLOT_VIEWS; p++)
    {
-      const char* title = (p == 0) ? "Now" : AVERAGE_WINDOW_LABELS[p - 1];
-      float averageWindowS = (p == 0) ? NOW_AVERAGE_WINDOW_S : AVERAGE_WINDOWS_S[p - 1];
+      const char* title = (p == 0) ? "Now" : AVERAGE_WINDOW_LABELS[PLOT_WINDOW_INDEX];
+      float averageWindowS = (p == 0) ? NOW_AVERAGE_WINDOW_S : AVERAGE_WINDOWS_S[PLOT_WINDOW_INDEX];
       unsigned long plotHistoryMs = static_cast<unsigned long>(averageWindowS * PLOT_HISTORY_MULTIPLIER * 1000.0f);
       Rect16 plotRect = { 0, static_cast<uint16_t>(plotTop), arduino.width(), static_cast<uint16_t>(plotHeight) };
       plots[p] = new TimedScatterPlot(&arduino, plotRect, plotHistoryMs, tempFormat, 0.0f, title);
@@ -224,6 +257,7 @@ void setup()
          plotSeries[p][i] = series;
       }
    }
+   */
 }
 
 void loop()
@@ -266,11 +300,12 @@ void loop()
             averageFields[i][w]->set(tempF);
          }
 
+         // Temporarily disabled along with plot creation above to test whether the
+         // scatterplot history buffers are exhausting heap.
+         /*
          plotSeries[0][i]->add(tempF);
-         for (uint8_t w = 0; w < NUM_WINDOWS; w++)
-         {
-            plotSeries[w + 1][i]->add(averageFields[i][w]->get());
-         }
+         plotSeries[1][i]->add(averageFields[i][PLOT_WINDOW_INDEX]->get());
+         */
       }
    }
 
@@ -334,8 +369,12 @@ void loop()
    }
    else
    {
+      // Temporarily disabled along with plot creation/updates above to test whether the
+      // scatterplot history buffers are exhausting heap.
+      /*
       uint8_t plotView = static_cast<uint8_t>(viewMode) - 1;
       plots[plotView]->render();
+      */
    }
 
    if (influxTimer.ready())
@@ -344,39 +383,28 @@ void loop()
       uploadStatusField->setValue("Upload");
       uploadStatusField->draw();
 
-      bool writeFailed = false;
-      for (uint8_t i = 0; i < NUM_SENSORS && !writeFailed; i++)
+      bool writeFailed = !uploadAllPoints();
+
+      if (writeFailed && client.getLastStatusCode() <= 0)
       {
-         if (!sensors[i]->exists())
-         {
-            continue;
-         }
-
-         if (!currentPoints[i]->post(&client))
-         {
-            writeFailed = true;
-            break;
-         }
-
-         for (uint8_t w = 0; w < NUM_WINDOWS; w++)
-         {
-            if (!averagePoints[i][w]->post(&client))
-            {
-               writeFailed = true;
-               break;
-            }
-         }
-      }
-
-      if (!writeFailed && !client.isBufferEmpty())
-      {
-         writeFailed = !client.flushBuffer();
+         // A transport-level failure (no HTTP status at all) usually means the reused
+         // connection went stale (e.g. the server closed an idle keep-alive). Force a
+         // fresh connection and retry once before giving up.
+         Serial.println("InfluxDB write failed at transport level, reconnecting and retrying...");
+         client.validateConnection();
+         writeFailed = !uploadAllPoints();
       }
 
       if (writeFailed)
       {
          Serial.println("InfluxDB write failed: ");
          Serial.println(client.getLastErrorMessage());
+         Serial.print("   HTTP status: ");
+         Serial.println(client.getLastStatusCode());
+         Serial.print("   WiFi status: ");
+         Serial.println(WiFiX::statusString());
+         Serial.print("   Free heap: ");
+         Serial.println(ESP.getFreeHeap());
       }
 
                    digitalWrite(BUILTIN_LED, LOW);
