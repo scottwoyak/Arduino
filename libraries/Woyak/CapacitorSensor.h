@@ -11,7 +11,7 @@
 #include "soc/soc.h"
 #include "soc/gpio_reg.h"
 
-#include "RollingAverage.h"
+#include "FilteredRollingAverage.h"
 #include "RollingRate.h"
 
 ///
@@ -48,7 +48,7 @@ private:
    bool _started = false;
 
    // ----------- Analysis
-   RollingAverage _average;
+   FilteredRollingAverage _average;
    float _latestAverageMicros = NAN;
    RollingRate _rawSensorRate;
 
@@ -338,6 +338,20 @@ public:
    ///
    static constexpr size_t DEFAULT_BUFFER_SIZE = 30;
 
+   ///
+   /// <summary>
+   /// Default rolling average filter value. A value of 0 disables filtering.
+   /// </summary>
+   ///
+   static constexpr float DEFAULT_FILTER = 5.0f;
+
+   ///
+   /// <summary>
+   /// Default rolling average filter mode.
+   /// </summary>
+   ///
+   static constexpr FilteredRollingAverage::FilterMode DEFAULT_FILTER_MODE = FilteredRollingAverage::FilterMode::PERCENT;
+
    // ----------- Standard Hardware Wiring
    // Pin assignments for the standard capacitor sensor prototype wiring shared by the
    // Capacitor_Playground, Capacitor_Wiring_Test, and Depth_Display sketches. Each charge pin
@@ -386,13 +400,17 @@ public:
    /// <param name="dischargeDelayMicros">Discharge hold time in microseconds</param>
    /// <param name="averageSamples">Rolling average window size. A value of 0 is treated as 1, i.e.
    /// no averaging is performed and the latest sample is used directly.</param>
+   /// <param name="filter">Maximum allowed deviation from the current average. A value of 0 disables filtering.</param>
+   /// <param name="filterMode">How to interpret the filter value (absolute value or percent of average).</param>
    ///
    CapacitorSensor(
       uint8_t chargePin,
       uint8_t sensePin,
       uint16_t dischargeDelayMicros = DEFAULT_DISCHARGE_DELAY_MICROS,
-      size_t averageSamples = DEFAULT_BUFFER_SIZE)
-      : _average(averageSamples == 0 ? 1 : averageSamples),
+      size_t averageSamples = DEFAULT_BUFFER_SIZE,
+      float filter = DEFAULT_FILTER,
+      FilteredRollingAverage::FilterMode filterMode = DEFAULT_FILTER_MODE)
+      : _average(averageSamples == 0 ? 1 : averageSamples, filter, filterMode),
       _rawSensorRate(RATE_SAMPLES)
    {
       if (_instanceExists)
@@ -641,6 +659,40 @@ public:
    size_t bufferSize() const
    {
       return _average.size();
+   }
+
+   ///
+   /// <summary>
+   /// Set the filter value and mode used to reject outlier samples. A value of 0 disables filtering.
+   /// </summary>
+   /// <param name="filter">Maximum allowed deviation from the current average.</param>
+   /// <param name="filterMode">How to interpret the filter value (absolute value or percent of average).</param>
+   ///
+   void setFilter(float filter, FilteredRollingAverage::FilterMode filterMode = FilteredRollingAverage::FilterMode::VALUE)
+   {
+      _average.setFilter(filter, filterMode);
+   }
+
+   ///
+   /// <summary>
+   /// Get the current filter value.
+   /// </summary>
+   /// <returns>Maximum allowed deviation from the current average, or 0 when filtering is disabled.</returns>
+   ///
+   float filter() const
+   {
+      return _average.filter();
+   }
+
+   ///
+   /// <summary>
+   /// Get the current filter mode.
+   /// </summary>
+   /// <returns>How the filter value is interpreted.</returns>
+   ///
+   FilteredRollingAverage::FilterMode filterMode() const
+   {
+      return _average.filterMode();
    }
 
    ///

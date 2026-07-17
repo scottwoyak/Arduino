@@ -30,6 +30,7 @@ enum class Color : uint16_t
 
    HEADING = WHITE,
    HEADING2 = WHITE,
+   SUB_HEADING = WHITE,
    LABEL = WHITE,
    VALUE = WHITE,
    VALUE2 = WHITE,
@@ -82,6 +83,7 @@ enum class Color : uint16_t
 
    HEADING = ORANGE,
    HEADING2 = CYAN,
+   SUB_HEADING = (uint16_t) Color565::fromRGB(255, 204, 102),
    LABEL = WHITE,
    VALUE = YELLOW,
    VALUE2 = CYAN,

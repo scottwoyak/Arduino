@@ -209,6 +209,53 @@ public:
 
        ///
        /// <summary>
+       /// Blank spacer row with no label or value, e.g. to push a following field down to a
+       /// different row than a field in an adjacent table it might otherwise visually overlap.
+       /// </summary>
+       ///
+       class BlankDisplayEditableField : public DisplayEditableField
+       {
+       public:
+          BlankDisplayEditableField()
+             : DisplayEditableField("", Format(size_t(0)))
+          {
+          }
+
+          void reset() override
+          {
+          }
+
+          void adjust(int32_t direction) override
+          {
+          }
+
+          std::string valueText() override
+          {
+             return "";
+          }
+
+          double numericValue() const override
+          {
+             return 0.0;
+          }
+
+          void setNumericValue(double value) override
+          {
+          }
+
+          double defaultNumericValue() const override
+          {
+             return 0.0;
+          }
+
+          bool isEditable() const override
+          {
+             return false;
+          }
+       };
+
+       ///
+       /// <summary>
        /// Integer setup field backed by a caller-owned long. Override _stepValue in a subclass to
        /// implement non-linear stepping.
        /// </summary>

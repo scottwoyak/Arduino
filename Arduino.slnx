@@ -37,6 +37,7 @@
     <File Path="libraries/Woyak/Feather_ESP32_S3_ST7796S.h" />
     <File Path="libraries/Woyak/Feather_M0_OLED.h" />
     <File Path="libraries/Woyak/FeedTimer.h" />
+    <File Path="libraries/Woyak/FilteredRollingAverage.h" />
     <File Path="libraries/Woyak/Format.h" />
     <File Path="libraries/Woyak/FramSpiEx.h" />
     <File Path="libraries/Woyak/HDC302XTempSensor.h" />

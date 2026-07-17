@@ -20,10 +20,9 @@
 //   then prints a table of range and StdDev for several rolling buffer sizes computed from the
 //   same raw data.
 //
-// Button B is currently unused.
-//
-// Serial commands:
-// - Send 'L' to reload and apply the last saved best configuration.
+// Button B cycles the embedded charge-time scatter plot through three states: off, on, and
+// on with moving-average/StdDev overlays. The plot fills the space between the setup/measurement
+// tables and the footer instructions.
 //
 // Live editable fields (Encoder A selects a field, Encoder B adjusts it, Encoder B Button resets
 // to defaults) are shown directly on the live monitoring screen, so changing a value immediately
@@ -32,7 +31,9 @@
 // - Discharge: discharge delay in microseconds.
 // - Buffer: rolling-average buffer size.
 // - Test Type: which test Button A runs (Optimize or Buffer Size Sweep).
-// Values are persisted to Preferences as they change and reloaded automatically on startup.
+// Values are persisted to Preferences as they change and reloaded automatically on startup. The
+// best-known configuration saved by the Optimize sweep is also automatically applied to the
+// sensor once it is ready after startup.
 //
 // Typical usage: adjust Resistor/Discharge/Buffer with Encoder A/B while watching the live
 // charge time/rate readouts, select a Test Type, press Button A to run it, then use the serial
@@ -53,6 +54,7 @@
 #include "DisplayEditableField.h"
 #include "DisplayTextView.h"
 #include "Timer.h"
+#include "TimedScatterPlot.h"
 
 ///
 /// <summary>
@@ -67,8 +69,6 @@ struct TestRunResult;
 // ----------- Display
 Arduino arduino;
 Format chargeFormat("#####.# us");
-Format effectiveRateFormat("###/s");
-Format sampleRateFormat("######/s");
 Format resistorLabelFormat(4);
 constexpr size_t DISPLAY_INTERVAL_MS = 200;
 Timer displayTimer(DISPLAY_INTERVAL_MS);
@@ -77,6 +77,24 @@ bool forceDisplayUpdate = false; // Set true to force an immediate redraw outsid
 // ----------- Test Output Log Viewer
 DisplayTextView textViewer(&arduino, Rect16{ 0, 0, 0, 0 }, DEFAULT_TEXT_SIZE, Color::WHITE, Color::DARKGRAY);
 bool viewingResults = false;
+
+// ----------- Best Configuration Auto-Load
+bool bestConfigLoaded = false; // Set true once loadBestConfiguration() has been attempted successfully after startup.
+
+// ----------- Charge Time Scatter Plot (embedded on the main page, toggled via Button B)
+/// <summary>Plot visibility states cycled through by Button B.</summary>
+enum class PlotState
+{
+   OFF,
+   ON,
+   ON_WITH_STATS,
+};
+
+constexpr unsigned long SCATTER_HISTORY_S = 20;
+TimedScatterPlot* chargeScatterPlot = nullptr;
+IScatterPlotSeries* chargeScatterSeries = nullptr;
+PlotState plotState = PlotState::OFF;
+PlotState previousPlotState = PlotState::OFF;
 
 // ----------- Test Sweep Parameters
 constexpr unsigned long STATS_PERIOD_MS = 2000;
@@ -136,17 +154,31 @@ const char PREF_CHARGE_PIN_KEY[] = "cpin";
 const char PREF_DISCHARGE_KEY[] = "dly";
 const char PREF_BUFFER_KEY[] = "buf";
 
-// ----------- Live Editable Fields (Encoder A selects a field, Encoder B adjusts it)
+// ----------- Editable Fields (Encoder A selects a field, Encoder B adjusts it)
 // Changing any of these immediately re-applies the configuration to the live sensor.
-long liveResistorIndex = 0;
-long liveDischargeDelayMicros = CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS;
-long liveBufferSize = (long)CapacitorSensor::DEFAULT_BUFFER_SIZE;
-long liveTestType = 0;
+long resistorIndex = 0;
+long dischargeDelayMicros = CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS;
+long bufferSize = (long)CapacitorSensor::DEFAULT_BUFFER_SIZE;
+long testType = 0;
+float filter = CapacitorSensor::DEFAULT_FILTER;
 
-Format liveResistorFormat(8, Format::Alignment::LEFT);
-Format liveDischargeFormat("#### us", Format::Alignment::LEFT);
-Format liveBufferFormat("###", Format::Alignment::LEFT);
-Format liveTestTypeFormat(20, Format::Alignment::LEFT);
+Format resistorFieldFormat(8, Format::Alignment::LEFT);
+Format dischargeFieldFormat("#### us", Format::Alignment::LEFT);
+Format bufferFieldFormat("###", Format::Alignment::LEFT);
+Format testTypeFieldFormat(20, Format::Alignment::LEFT);
+Format filterFieldFormat("##.# %", Format::Alignment::LEFT);
+
+// ----------- Measured Fields (read-only, share the same table as the editable fields)
+// Updated each display refresh from the sensor/stats before table.draw() is called.
+float measuredChargeTimeMicros = NAN;
+float measuredStdDevMicros = NAN;
+float measuredRangeMicros = NAN;
+float measuredRawRate = 0.0f;
+float measuredEffectiveRate = 0.0f;
+
+Format measuredChargeFormat("#####.# us", Format::Alignment::LEFT);
+Format measuredRateFormat("######/s", Format::Alignment::LEFT);
+Format measuredEffectiveRateFormat("###/s", Format::Alignment::LEFT);
 
 // ----------- Test Type Selection
 /// <summary>Test types selectable via the Test Type live field, run by pressing Button A.</summary>
@@ -210,17 +242,42 @@ public:
    }
 };
 
-ResistorSetupField resistorField("Resistor", &liveResistorIndex,
-   0, (long)(RESISTOR_OPTION_COUNT - 1), 1, 0, liveResistorFormat);
-IntDisplayEditableField delayField("Discharge Time", &liveDischargeDelayMicros,
-   50, 2000, 50, (long)CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS, liveDischargeFormat);
-IntDisplayEditableField bufferSizeField("Averaging Buffer Size", &liveBufferSize,
-   (long)MIN_TARGET_BUFFER_SIZE, (long)MAX_TARGET_BUFFER_SIZE, 5, (long)CapacitorSensor::DEFAULT_BUFFER_SIZE, liveBufferFormat);
-TestTypeSetupField testTypeField("Test Type", &liveTestType,
-   0, (long)(TEST_TYPE_COUNT - 1), 1, 0, liveTestTypeFormat);
+ResistorSetupField resistorField("Resistor", &resistorIndex,
+   0, (long)(RESISTOR_OPTION_COUNT - 1), 1, 0, resistorFieldFormat);
+IntDisplayEditableField delayField("Discharge Time", &dischargeDelayMicros,
+   50, 2000, 50, (long)CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS, dischargeFieldFormat);
+IntDisplayEditableField bufferSizeField("Buffer Size", &bufferSize,
+   (long)MIN_TARGET_BUFFER_SIZE, (long)MAX_TARGET_BUFFER_SIZE, 5, (long)CapacitorSensor::DEFAULT_BUFFER_SIZE, bufferFieldFormat);
+TestTypeSetupField testTypeField("Test Type", &testType,
+   0, (long)(TEST_TYPE_COUNT - 1), 1, 0, testTypeFieldFormat);
+FloatDisplayEditableField filterField("Outlier Filter", &filter,
+   0.0f, 50.0f, 1.0f, CapacitorSensor::DEFAULT_FILTER, filterFieldFormat);
 
-DisplayEditableField* liveFields[] = { &resistorField, &delayField, &bufferSizeField, &testTypeField };
-DisplayEditableTable liveFieldTable(&arduino, PREF_NAMESPACE, liveFields, 4, 0, 0);
+ReadOnlyDisplayEditableField chargeTimeField("Avg Charge Time", &measuredChargeTimeMicros, measuredChargeFormat);
+ReadOnlyDisplayEditableField stdDevField("StdDev", &measuredStdDevMicros, measuredChargeFormat);
+ReadOnlyDisplayEditableField rangeField("Range", &measuredRangeMicros, measuredChargeFormat);
+ReadOnlyDisplayEditableField rawRateField("Raw Rate", &measuredRawRate, measuredRateFormat);
+ReadOnlyDisplayEditableField effectiveRateField("Effective Rate", &measuredEffectiveRate, measuredEffectiveRateFormat);
+
+BlankDisplayEditableField testTypeSpacerField;
+
+DisplayEditableField* setupFields[] = { &resistorField, &delayField, &bufferSizeField, &filterField, &testTypeSpacerField, &testTypeField };
+DisplayEditableTable table(&arduino, PREF_NAMESPACE, setupFields, sizeof(setupFields) / sizeof(setupFields[0]), 0, 0);
+
+DisplayEditableField* measurementFields[] = { &chargeTimeField, &stdDevField, &rangeField, &rawRateField, &effectiveRateField };
+DisplayEditableTable measurementsTable(&arduino, PREF_NAMESPACE, measurementFields, sizeof(measurementFields) / sizeof(measurementFields[0]), 0, 0);
+
+///
+/// <summary>
+/// Assigns the "Setup" and "Measurements" section headers to the field table (must run
+/// after all field objects above are constructed).
+/// </summary>
+///
+void initializeFieldSections()
+{
+   resistorField.setSection("Setup");
+   chargeTimeField.setSection("Measurements");
+}
 
 ///
 /// <summary>Look up the resistor value label for a charge pin.</summary>
@@ -302,25 +359,25 @@ uint8_t chargePinFromResistorLabel(const char* label)
 CapacitorSensor capacitorSensor(RESISTOR_OPTIONS[0].chargePin, SENSE_PIN);
 
 // ----------- Live Display Statistics (StdDev/Range over a 500ms window)
-TimedStats liveChargeStats(STATS_PERIOD_MS);
-uint32_t liveChargeStatsLastCounter = 0;
+TimedStats chargeStats(STATS_PERIOD_MS);
+uint32_t chargeStatsLastCounter = 0;
 
 ///
 /// <summary>Feeds newly-processed charge time samples into the live 500ms stats window.</summary>
 ///
-void updateLiveChargeStats()
+void updateChargeStats()
 {
    uint32_t counter = capacitorSensor.counter();
-   if (counter == liveChargeStatsLastCounter)
+   if (counter == chargeStatsLastCounter)
    {
       return;
    }
 
-   liveChargeStatsLastCounter = counter;
+   chargeStatsLastCounter = counter;
    float chargeTime = capacitorSensor.chargeTimeMicros();
    if (isfinite(chargeTime))
    {
-      liveChargeStats.set(chargeTime);
+      chargeStats.set(chargeTime);
    }
 }
 
@@ -337,22 +394,22 @@ void applyConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, uint32
    capacitorSensor.setDischargeDelayMicros(dischargeDelayMicros);
    capacitorSensor.setDeferredProcessingPeriodMicros(deferredProcessingPeriodMicros);
    capacitorSensor.setBufferSize(bufferSize > 0 ? bufferSize : CapacitorSensor::DEFAULT_BUFFER_SIZE);
-   liveChargeStats.reset();
+   chargeStats.reset();
 }
 
 ///
-/// <summary>Updates the live editable fields (Resistor/Discharge/Buffer) to reflect a configuration
+/// <summary>Updates the editable fields (Resistor/Discharge/Buffer) to reflect a configuration
 /// and persists the new values, so the on-screen fields stay in sync with the sensor.</summary>
-/// <param name="chargePin">Charge pin the sensor was configured with</param>
-/// <param name="dischargeDelayMicros">Discharge delay in microseconds the sensor was configured with</param>
-/// <param name="bufferSize">Rolling average buffer size the sensor was configured with</param>
+/// <param name="newChargePin">Charge pin the sensor was configured with</param>
+/// <param name="newDischargeDelayMicros">Discharge delay in microseconds the sensor was configured with</param>
+/// <param name="newBufferSize">Rolling average buffer size the sensor was configured with</param>
 ///
-void syncLiveFields(uint8_t chargePin, uint16_t dischargeDelayMicros, size_t bufferSize)
+void syncFields(uint8_t newChargePin, uint16_t newDischargeDelayMicros, size_t newBufferSize)
 {
-   liveResistorIndex = (long)resistorIndexFromChargePin(chargePin);
-   liveDischargeDelayMicros = (long)dischargeDelayMicros;
-   liveBufferSize = (long)bufferSize;
-   liveFieldTable.save();
+   resistorIndex = (long)resistorIndexFromChargePin(newChargePin);
+   dischargeDelayMicros = (long)newDischargeDelayMicros;
+   bufferSize = (long)newBufferSize;
+   table.save();
 }
 
 ///
@@ -373,15 +430,17 @@ void saveBestConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, siz
 
 ///
 /// <summary>
-/// Loads the best-known configuration from Preferences and applies it, printing a summary to Serial.
+/// Loads the best-known configuration from Preferences and applies it, printing a summary to
+/// Serial. Returns false if the sensor is not ready yet so the caller can retry later; returns
+/// true once the attempt is complete (whether or not a saved configuration was applied).
 /// </summary>
+/// <returns>True if the load attempt is complete; false if the sensor is not ready yet and the caller should retry.</returns>
 ///
-void loadBestConfiguration()
+bool loadBestConfiguration()
 {
    if (capacitorSensor.counter() == 0 || !isfinite(capacitorSensor.chargeTimeMicros()) || capacitorSensor.rate() <= 0.0f)
    {
-      Serial.println("Saved config not applied: sensor is not ready yet.");
-      return;
+      return false;
    }
 
    arduino.preferences.begin(PREF_NAMESPACE, true);
@@ -394,7 +453,7 @@ void loadBestConfiguration()
    if (!hasBest)
    {
       Serial.println("No saved best configuration found.");
-      return;
+      return true;
    }
 
    if (!isKnownChargePin(chargePin))
@@ -423,6 +482,8 @@ void loadBestConfiguration()
    table.printRow("Buffer Size", (unsigned long)bufferSize);
    table.printRow("Deferred Period", String((unsigned long)FIXED_DEFERRED_PROCESSING_PERIOD_MICROS) + " us");
    Serial.println();
+
+   return true;
 }
 
 ///
@@ -587,15 +648,16 @@ struct TestCaseParameters
 
 TestCaseParameters testParameters;
 
-/// <summary>Applies the current live editable field values (resistor/discharge/buffer) to the sensor.</summary>
-void applyLiveFields()
+/// <summary>Applies the current editable field values (resistor/discharge/buffer) to the sensor.</summary>
+void applyFields()
 {
-   long resistorIndex = constrain(liveResistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
+   long selectedResistorIndex = constrain(resistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
    applyConfiguration(
-      RESISTOR_OPTIONS[resistorIndex].chargePin,
-      (uint16_t)liveDischargeDelayMicros,
+      RESISTOR_OPTIONS[selectedResistorIndex].chargePin,
+      (uint16_t)dischargeDelayMicros,
       FIXED_DEFERRED_PROCESSING_PERIOD_MICROS,
-      (size_t)liveBufferSize);
+      (size_t)bufferSize);
+   capacitorSensor.setFilter(filter, FilteredRollingAverage::FilterMode::PERCENT);
 }
 
 ///
@@ -615,7 +677,7 @@ void initializeResultsView(const String& subheading)
    arduino.println("Capacitor Tuning", Color::HEADING);
 
    arduino.setTextSize(DEFAULT_TEXT_SIZE);
-   arduino.println(subheading, Color::LIGHTGRAY);
+   arduino.println(subheading, Color::SUB_HEADING);
    arduino.moveCursorY(8);
 
    int16_t viewerTop = arduino.getCursorY();
@@ -649,13 +711,13 @@ void runRollingSweepTest()
    arduino.setCursor(0, 0);
    arduino.setTextSize(DEFAULT_HEADING_SIZE);
    int16_t headerRowY = arduino.getCursorY();
-   arduino.println(String("Buffer Size Sweep: ") + String(collected) + "/" + String(ROLLING_SWEEP_SAMPLE_COUNT), Color::HEADING);
+   arduino.println(String("Buffer Size Sweep: ") + String((int)(100.0f * collected / ROLLING_SWEEP_SAMPLE_COUNT)) + "%", Color::HEADING);
    arduino.setTextSize(DEFAULT_TEXT_SIZE);
    arduino.moveCursorY(8);
 
-   long resistorIndex = constrain(liveResistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
-   arduino.println("    Resistor: ", RESISTOR_OPTIONS[resistorIndex].label, resistorLabelFormat, Color::VALUE);
-   arduino.println("       Delay: ", (int)liveDischargeDelayMicros, chargeFormat, Color::VALUE);
+   long selectedResistorIndex = constrain(resistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
+   arduino.println("    Resistor: ", RESISTOR_OPTIONS[selectedResistorIndex].label, resistorLabelFormat, Color::VALUE);
+   arduino.println("       Delay: ", (int)dischargeDelayMicros, chargeFormat, Color::VALUE);
 
    Timer collectDisplayTimer(0);
    while (collected < ROLLING_SWEEP_SAMPLE_COUNT)
@@ -679,7 +741,7 @@ void runRollingSweepTest()
          {
             arduino.setCursorY(headerRowY);
             arduino.setTextSize(DEFAULT_HEADING_SIZE);
-            arduino.println(String("Buffer Size Sweep: ") + String(collected) + "/" + String(ROLLING_SWEEP_SAMPLE_COUNT), Color::HEADING);
+            arduino.println(String("Buffer Size Sweep: ") + String((int)(100.0f * collected / ROLLING_SWEEP_SAMPLE_COUNT)) + "%", Color::HEADING);
             arduino.setTextSize(DEFAULT_TEXT_SIZE);
          }
       }
@@ -688,10 +750,15 @@ void runRollingSweepTest()
    Serial.println();
    Serial.println("Rolling Sweep: computing stats...");
 
+   textViewer.addLine(String("Resistor: ") + RESISTOR_OPTIONS[selectedResistorIndex].label);
+   textViewer.addLine(String("Discharge Delay: ") + String(dischargeDelayMicros) + " us");
+   textViewer.addLine("");
+
    const SerialTable::Column columns[] = {
-      { "Rolling Size", 14 },
+      { "Buffer Size", 14 },
       { "Range(us)", 12 },
       { "StdDev(us)", 12 },
+      { "StdDev %", 10 },
    };
    SerialTable table(nullptr, columns, sizeof(columns) / sizeof(columns[0]));
    String headerText = table.printHeader();
@@ -713,17 +780,19 @@ void runRollingSweepTest()
       }
 
       float rangeMicros = rollingAverageStats.max() - rollingAverageStats.min();
+      float stdDevPercent = (rollingAverageStats.get() != 0) ? (rollingAverageStats.stdDev() / rollingAverageStats.get() * 100.0f) : 0.0f;
       String rowText = table.printRow(
          (unsigned long)rollingSize,
          SerialTable::fixed(rangeMicros, 3),
-         SerialTable::fixed(rollingAverageStats.stdDev(), 3));
+         SerialTable::fixed(rollingAverageStats.stdDev(), 3),
+         SerialTable::fixed(stdDevPercent, 2));
       textViewer.addText(rowText);
    }
 
    Serial.println();
    Serial.println("Rolling Sweep Complete");
 
-   capacitorSensor.setBufferSize((size_t)liveBufferSize);
+   capacitorSensor.setBufferSize((size_t)bufferSize);
    initializeResultsView("Buffer Size Sweep Test Results...");
 }
 
@@ -757,8 +826,11 @@ void runDischargeSweepTest()
    arduino.setTextSize(DEFAULT_TEXT_SIZE);
    arduino.moveCursorY(8);
 
-   long resistorIndex = constrain(liveResistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
-   arduino.println("    Resistor: ", RESISTOR_OPTIONS[resistorIndex].label, resistorLabelFormat, Color::VALUE);
+   long selectedResistorIndex = constrain(resistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
+   arduino.println("    Resistor: ", RESISTOR_OPTIONS[selectedResistorIndex].label, resistorLabelFormat, Color::VALUE);
+
+   textViewer.addLine(String("Resistor: ") + RESISTOR_OPTIONS[selectedResistorIndex].label);
+   textViewer.addLine("");
 
    const SerialTable::Column columns[] = {
       { "Delay(us)", 12 },
@@ -769,9 +841,9 @@ void runDischargeSweepTest()
    String headerText = table.printHeader();
    textViewer.addText(headerText);
 
-   for (uint16_t dischargeDelayMicros = DISCHARGE_SWEEP_MIN_MICROS; dischargeDelayMicros <= DISCHARGE_SWEEP_MAX_MICROS; dischargeDelayMicros += DISCHARGE_SWEEP_STEP_MICROS)
+   for (uint16_t sweepDischargeDelayMicros = DISCHARGE_SWEEP_MIN_MICROS; sweepDischargeDelayMicros <= DISCHARGE_SWEEP_MAX_MICROS; sweepDischargeDelayMicros += DISCHARGE_SWEEP_STEP_MICROS)
    {
-      capacitorSensor.setDischargeDelayMicros(dischargeDelayMicros);
+      capacitorSensor.setDischargeDelayMicros(sweepDischargeDelayMicros);
 
       size_t collected = 0;
       uint32_t lastCounter = capacitorSensor.counter();
@@ -803,24 +875,24 @@ void runDischargeSweepTest()
          }
       }
 
-      Stats chargeStats;
+      Stats sweepStats;
       for (size_t i = 0; i < DISCHARGE_SWEEP_SAMPLE_COUNT; i++)
       {
-         chargeStats.add(samples[i]);
+         sweepStats.add(samples[i]);
       }
 
-      float rangeMicros = chargeStats.max() - chargeStats.min();
+      float rangeMicros = sweepStats.max() - sweepStats.min();
       String rowText = table.printRow(
-         (unsigned long)dischargeDelayMicros,
+         (unsigned long)sweepDischargeDelayMicros,
          SerialTable::fixed(rangeMicros, 3),
-         SerialTable::fixed(chargeStats.stdDev(), 3));
+         SerialTable::fixed(sweepStats.stdDev(), 3));
       textViewer.addText(rowText);
    }
 
    Serial.println();
    Serial.println("Discharge Sweep Complete");
 
-   capacitorSensor.setDischargeDelayMicros((uint16_t)liveDischargeDelayMicros);
+   capacitorSensor.setDischargeDelayMicros((uint16_t)dischargeDelayMicros);
    initializeResultsView("Discharge Time Sweep Test Results...");
 }
 
@@ -924,7 +996,7 @@ void runOptimizedSweepTest()
          CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS,
          best->deferredProcessingPeriodMicros,
          best->bufferSize);
-      syncLiveFields(
+      syncFields(
          bestChargePin,
          CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS,
          best->bufferSize);
@@ -945,6 +1017,27 @@ void runOptimizedSweepTest()
    initializeResultsView("Optimization Sweep Test Results...");
 }
 
+///
+/// <summary>
+/// Lazily creates the charge-time scatter plot and its data series, sized to the given
+/// rectangle. The plot itself is created once (on the first call) and reused thereafter;
+/// subsequent calls do nothing.
+/// </summary>
+/// <param name="plotRect">Screen rectangle the plot should fill.</param>
+///
+void ensureChargeScatterPlot(Rect16 plotRect)
+{
+   if (chargeScatterPlot != nullptr)
+   {
+      return;
+   }
+
+   chargeScatterPlot = new TimedScatterPlot(&arduino, plotRect, SCATTER_HISTORY_S * 1000UL, chargeFormat);
+   chargeScatterSeries = chargeScatterPlot->createSeries();
+   chargeScatterSeries->showPoints = true;
+   chargeScatterPlot->setColors(Color::BLACK, Color::BLACK, Color::GRAY, Color::LABEL);
+}
+
 void setup()
 {
    SerialX::begin();
@@ -953,10 +1046,9 @@ void setup()
 
    arduino.setTextSize(DEFAULT_TEXT_SIZE);
 
-   // Temporarily disabled: skip loading previously saved field values from Preferences,
-   // so the sketch always starts from the compiled-in defaults.
-   // liveFieldTable.load();
-   applyLiveFields();
+   initializeFieldSections();
+   table.load();
+   applyFields();
 
    size_t caseIndex = 0;
    for (size_t rateIndex = 0; rateIndex < TARGET_EFFECTIVE_RATE_COUNT; rateIndex++)
@@ -1062,7 +1154,7 @@ void printBestConfigurations(TestRunResult* results, size_t count)
       textViewer.addLine(targetLine);
 
       const SerialTable::Column columns[] = {
-         { "Rank", 8 },
+         { "Rank", 6 },
          { "Resistor (Pin)", 18 },
          { "Buffer", 8 },
          { "StdDev %", 10 },
@@ -1130,7 +1222,7 @@ void printAggregateRow(SerialTable& table, const char* label, const Stats& avgSt
 void printAggregateByResistor(const TestRunResult* results, size_t count)
 {
    const SerialTable::Column columns[] = {
-      { "Value", 14 },
+      { "Value", 10 },
       { "Avg(us)", 12 },
       { "StdDev(us)", 12 },
       { "StdDev %", 10 },
@@ -1177,7 +1269,7 @@ void printAggregateByResistor(const TestRunResult* results, size_t count)
 void printAggregateByTargetRate(const TestRunResult* results, size_t count)
 {
    const SerialTable::Column columns[] = {
-      { "Value", 14 },
+      { "Value", 10 },
       { "Avg(us)", 12 },
       { "StdDev(us)", 12 },
       { "StdDev %", 10 },
@@ -1228,8 +1320,8 @@ void printAggregateByTargetRate(const TestRunResult* results, size_t count)
 void printAggregateByBufferSize(const TestRunResult* results, size_t count)
 {
    const SerialTable::Column columns[] = {
-      { "Value", 14 },
-      { "N", 6 },
+      { "Value", 10 },
+      { "N", 4 },
       { "Avg(us)", 12 },
       { "StdDev(us)", 12 },
       { "StdDev %", 10 },
@@ -1341,13 +1433,9 @@ void printAggregateStatistics(const TestRunResult* results, size_t count)
 
 void loop()
 {
-   if (Serial.available() > 0)
+   if (!bestConfigLoaded)
    {
-      char command = (char)Serial.read();
-      if (command == 'L' || command == 'l')
-      {
-         loadBestConfiguration();
-      }
+      bestConfigLoaded = loadBestConfiguration();
    }
 
    if (viewingResults)
@@ -1356,6 +1444,8 @@ void loop()
       {
          viewingResults = false;
          arduino.clearDisplay();
+         table.forceRedraw();
+         measurementsTable.forceRedraw();
          forceDisplayUpdate = true;
          return;
       }
@@ -1376,39 +1466,66 @@ void loop()
       return;
    }
 
-   updateLiveChargeStats();
+   updateChargeStats();
 
-   // Live-edit the resistor/discharge/buffer fields: Encoder A selects a field, Encoder B
+   if (chargeScatterSeries != nullptr)
+   {
+      chargeScatterSeries->add(capacitorSensor.chargeTimeMicros());
+   }
+
+   // Edit the resistor/discharge/buffer fields: Encoder A selects a field, Encoder B
    // adjusts it. Any change is immediately applied to the sensor and persisted, so the
    // charge time/rate readouts below update live as the values change.
-   int32_t liveSelectDelta = arduino.encoderA.delta();
-   int32_t liveAdjustDelta = arduino.encoderB.delta();
-   bool fieldsChanged = (liveSelectDelta != 0 || liveAdjustDelta != 0);
-   liveFieldTable.selectNext(liveSelectDelta);
-   liveFieldTable.adjustSelected(liveAdjustDelta);
+   int32_t selectDelta = arduino.encoderA.delta();
+   int32_t adjustDelta = arduino.encoderB.delta();
+   bool fieldsChanged = (selectDelta != 0 || adjustDelta != 0);
+   table.selectNext(selectDelta);
+   table.adjustSelected(adjustDelta);
 
    if (arduino.encoderB.button.wasPressed())
    {
       // reset() already persists the defaults, so just re-apply them below.
-      liveFieldTable.reset();
-      applyLiveFields();
+      table.reset();
+      applyFields();
       forceDisplayUpdate = true;
    }
    else if (fieldsChanged)
    {
-      applyLiveFields();
-      liveFieldTable.save();
+      applyFields();
+      table.save();
       forceDisplayUpdate = true;
    }
 
    if (arduino.buttonB.wasPressed())
    {
-      // Currently unused.
+      switch (plotState)
+      {
+      case PlotState::OFF:
+         plotState = PlotState::ON;
+         break;
+      case PlotState::ON:
+         plotState = PlotState::ON_WITH_STATS;
+         break;
+      case PlotState::ON_WITH_STATS:
+      default:
+         plotState = PlotState::OFF;
+         break;
+      }
+
+      if (chargeScatterSeries != nullptr)
+      {
+         bool showStats = (plotState == PlotState::ON_WITH_STATS);
+         chargeScatterSeries->showMovingAverage = showStats;
+         chargeScatterSeries->showStdDevBand = showStats;
+         chargeScatterPlot->invalidate();
+      }
+
+      forceDisplayUpdate = true;
    }
 
    if (arduino.buttonA.wasPressed())
    {
-      TestType selectedTestType = (TestType)constrain(liveTestType, 0L, (long)(TEST_TYPE_COUNT - 1));
+      TestType selectedTestType = (TestType)constrain(testType, 0L, (long)(TEST_TYPE_COUNT - 1));
       switch (selectedTestType)
       {
       case TestType::BUFFER_SIZE_SWEEP:
@@ -1436,34 +1553,46 @@ void loop()
 
       arduino.setTextSize(DEFAULT_TEXT_SIZE);
       arduino.moveCursorY(8);
+
+      measuredChargeTimeMicros = capacitorSensor.chargeTimeMicros();
+      measuredStdDevMicros = chargeStats.stdDev();
+      measuredRangeMicros = chargeStats.range();
+      measuredRawRate = capacitorSensor.rate();
+      measuredEffectiveRate = (capacitorSensor.bufferSize() > 0) ? (measuredRawRate / (float)capacitorSensor.bufferSize()) : 0;
+
       int16_t fieldsTop = arduino.getCursorY();
-      liveFieldTable.setPosition(0, fieldsTop);
-      liveFieldTable.draw();
-      arduino.setCursor(0, fieldsTop + liveFieldTable.height());
+      table.setPosition(0, fieldsTop);
+      table.draw();
 
-      float rawRate = capacitorSensor.rate();
-      float effectiveRate = (capacitorSensor.bufferSize() > 0) ? (rawRate / (float)capacitorSensor.bufferSize()) : 0;
+      constexpr int16_t TABLE_GAP_PIXELS = 10;
+      int16_t measurementsLeft = arduino.width() / 2 + TABLE_GAP_PIXELS / 2;
+      measurementsTable.setPosition(measurementsLeft, fieldsTop);
+      measurementsTable.draw();
 
-      arduino.println("      Avg Charge Time: ", capacitorSensor.chargeTimeMicros(), chargeFormat, Color::VALUE2);
-      arduino.println("               StdDev: ", liveChargeStats.stdDev(), chargeFormat, Color::VALUE2);
-      arduino.println("                Range: ", liveChargeStats.range(), chargeFormat, Color::VALUE2);
-      arduino.println("             Raw Rate: ", (int)round(rawRate), sampleRateFormat, Color::VALUE2);
-      arduino.println("       Effective Rate: ", effectiveRate, effectiveRateFormat, Color::VALUE2);
+      int16_t fieldsBottom = fieldsTop + max(table.height(), measurementsTable.height());
 
-      const char* instructions[] =
+      constexpr size_t FOOTER_LINE_COUNT = 1;
+      int16_t footerTop = arduino.height() - FOOTER_LINE_COUNT * arduino.charH();
+
+      constexpr int16_t PLOT_GAP_PIXELS = 8;
+      int16_t plotTop = fieldsBottom + PLOT_GAP_PIXELS;
+      Rect16 plotRect{ 0, static_cast<uint16_t>(plotTop), static_cast<uint16_t>(arduino.width()),
+                       static_cast<uint16_t>(footerTop - plotTop) };
+
+      if (plotState != PlotState::OFF)
       {
-         "Encoder A: select field",
-         "Encoder B: adjust value",
-         "Encoder B Button: reset field defaults",
-         "Button A: run selected test",
-      };
-      constexpr size_t instructionCount = sizeof(instructions) / sizeof(instructions[0]);
-
-      arduino.setCursorY(arduino.height() - instructionCount * arduino.charH());
-      for (size_t i = 0; i < instructionCount; i++)
-      {
-         arduino.printlnR(instructions[i], Color::SUB_LABEL);
+         ensureChargeScatterPlot(plotRect);
+         chargeScatterPlot->render();
       }
+      else if (previousPlotState != PlotState::OFF)
+      {
+         // Plot was just turned off: erase its previous footprint.
+         arduino.fillRect(plotRect.x, plotRect.y, plotRect.width, plotRect.height, Color::BLACK);
+      }
+      previousPlotState = plotState;
+
+      arduino.setCursorY(footerTop);
+      arduino.printlnR("Button A: run selected test   Button B: toggle plot", Color::SUB_LABEL);
    }
 }
 

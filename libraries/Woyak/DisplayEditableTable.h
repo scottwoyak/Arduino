@@ -29,6 +29,7 @@ private:
    size_t _maxLabelLength = 0;
    uint8_t _selectedIndex = 0;
    char _keyBuffer[10];
+   bool _showSections = true;
 
    ///
    /// <summary>
@@ -126,7 +127,7 @@ private:
       int16_t y = 0;
       for (uint8_t i = 0; i < index; i++)
       {
-         if (_fields[i]->section() != nullptr)
+         if (_showSections && _fields[i]->section() != nullptr)
          {
             if (i > 0)
             {
@@ -137,7 +138,7 @@ private:
          y += rowHeight;
       }
 
-      if (index < _fieldCount && _fields[index]->section() != nullptr)
+      if (_showSections && index < _fieldCount && _fields[index]->section() != nullptr)
       {
          if (index > 0)
          {
@@ -214,15 +215,50 @@ public:
    ///
    /// <summary>
    /// Updates the position rows are drawn at, e.g. when the table follows a variable-height
-   /// title that is only known at runtime.
+   /// title that is only known at runtime. Does nothing if the position is unchanged from the
+   /// last call, so calling this every draw cycle with a recomputed-but-identical position
+   /// doesn't force every row to be redrawn (see draw()'s per-row change tracking).
    /// </summary>
    /// <param name="x">Left X coordinate of the table.</param>
    /// <param name="y">Top Y coordinate of the table.</param>
    ///
    void setPosition(int16_t x, int16_t y)
    {
+      if (x == _x && y == _y)
+      {
+         return;
+      }
+
       _x = x;
       _y = y;
+      _forceRedraw = true;
+   }
+
+   ///
+   /// <summary>
+   /// Forces every row (including section headers) to be fully redrawn on the next draw()
+   /// call, even if their content hasn't changed, e.g. after the display was cleared by
+   /// another view (like a scatter plot) so this table's cached content no longer matches
+   /// what's actually on screen.
+   /// </summary>
+   ///
+   void forceRedraw()
+   {
+      _forceRedraw = true;
+   }
+
+   ///
+   /// <summary>
+   /// Sets whether section header rows (see DisplayEditableField::section()) are drawn and
+   /// reserved space for. Defaults to true. Useful when a table reuses field objects whose
+   /// section was set for a different table (e.g. a scatter-plot view reusing main-screen
+   /// fields) and shouldn't repeat that section header.
+   /// </summary>
+   /// <param name="showSections">True to draw section headers, false to suppress them.</param>
+   ///
+   void setShowSections(bool showSections)
+   {
+      _showSections = showSections;
       _forceRedraw = true;
    }
 
@@ -333,15 +369,17 @@ public:
          bool valueNeedsDraw = _forceRedraw || (valueText != _cache[i].valueText) ||
             (isSelected != _cache[i].selected) || (isDisabled != !_cache[i].enabled);
 
-         if (_forceRedraw && _fields[i]->section() != nullptr)
+         if (_showSections && _forceRedraw && _fields[i]->section() != nullptr)
          {
             int16_t headerY = rowY - rowHeight;
             _arduino->setCursor(_x, headerY);
-            _arduino->println(_fields[i]->section(), Color::HEADING2, Color::BLACK);
+            _arduino->println(_fields[i]->section(), Color::SUB_HEADING, Color::BLACK);
          }
 
+         bool isBlankRow = _fields[i]->label()[0] == '\0';
+
          Color labelColor = isDisabled ? Color::GRAY : Color::LABEL;
-         if (labelNeedsDraw)
+         if (labelNeedsDraw && !isBlankRow)
          {
             String labelText = _fields[i]->label();
             while (labelText.length() < _maxLabelLength)
@@ -354,7 +392,7 @@ public:
             _arduino->print(labelText, labelColor, Color::BLACK);
          }
 
-         if (valueNeedsDraw)
+         if (valueNeedsDraw && !isBlankRow)
          {
             Color valueBackgroundColor = isSelected ? Color::BLUE : Color::BLACK;
             Color valueTextColor = isDisabled ? Color::GRAY : (isSelected ? Color::WHITE : (_fields[i]->isEditable() ? Color::VALUE : Color::VALUE2));
