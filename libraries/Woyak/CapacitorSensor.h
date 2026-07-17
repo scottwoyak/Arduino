@@ -33,10 +33,14 @@ private:
    static constexpr uint64_t CHARGE_TIMEOUT_US = 200000;
    static constexpr uint16_t RATE_SAMPLES = 100;
 
+   // Fixed internally so it always stays safely below the smallest supported discharge
+   // delay, preventing missed/overwritten measurements without overloading the CPU with
+   // an overly aggressive polling timer.
+   static constexpr uint32_t DEFERRED_PROCESSING_PERIOD_MICROS = 100;
+
    uint8_t _chargePin;
    uint8_t _sensePin;
    uint16_t _dischargeDelayMicros;
-   uint32_t _deferredProcessingPeriodMicros;
 
    // ----------- Core State
    mutable portMUX_TYPE _mux = SPINLOCK_INITIALIZER;
@@ -275,6 +279,7 @@ private:
       _startDischarging();
    }
 
+public:
    ///
    /// <summary>
    /// Start the deferred processing timer and begin the first discharge cycle.
@@ -288,7 +293,7 @@ private:
       }
 
       _started = true;
-      esp_timer_start_periodic(_deferredProcessingTimer, _deferredProcessingPeriodMicros);
+      esp_timer_start_periodic(_deferredProcessingTimer, DEFERRED_PROCESSING_PERIOD_MICROS);
       _startDischarging();
    }
 
@@ -316,20 +321,12 @@ private:
       pinMode(_sensePin, INPUT);
    }
 
-public:
    ///
    /// <summary>
    /// Default discharge hold time in microseconds.
    /// </summary>
    ///
    static constexpr uint16_t DEFAULT_DISCHARGE_DELAY_MICROS = 200;
-
-   ///
-   /// <summary>
-   /// Default deferred processing period in microseconds.
-   /// </summary>
-   ///
-   static constexpr uint32_t DEFAULT_DEFERRED_PROCESSING_PERIOD_MICROS = 500;
 
    ///
    /// <summary>
@@ -423,7 +420,6 @@ public:
       _chargePin = chargePin;
       _sensePin = sensePin;
       _dischargeDelayMicros = dischargeDelayMicros;
-      _deferredProcessingPeriodMicros = DEFAULT_DEFERRED_PROCESSING_PERIOD_MICROS;
       _isrContext = this;
    }
 
@@ -601,42 +597,6 @@ public:
       return _dischargeDelayMicros;
    }
 
-   ///
-   /// <summary>
-   /// Set the deferred processing period.
-   /// </summary>
-   /// <param name="deferredProcessingPeriodMicros">Processing period in microseconds (minimum 1)</param>
-   ///
-   void setDeferredProcessingPeriodMicros(uint32_t deferredProcessingPeriodMicros)
-   {
-      if (deferredProcessingPeriodMicros == 0)
-      {
-         deferredProcessingPeriodMicros = 1;
-      }
-
-      bool isStarted = false;
-      portENTER_CRITICAL(&_mux);
-      _deferredProcessingPeriodMicros = deferredProcessingPeriodMicros;
-      isStarted = _started;
-      portEXIT_CRITICAL(&_mux);
-
-      if (isStarted && _deferredProcessingTimer != nullptr)
-      {
-         esp_timer_stop(_deferredProcessingTimer);
-         esp_timer_start_periodic(_deferredProcessingTimer, _deferredProcessingPeriodMicros);
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Get the current deferred processing period in microseconds.
-   /// </summary>
-   /// <returns>Deferred processing period in microseconds</returns>
-   ///
-   uint32_t deferredProcessingPeriodMicros() const
-   {
-      return _deferredProcessingPeriodMicros;
-   }
 
    ///
    /// <summary>
@@ -647,7 +607,38 @@ public:
    ///
    void setBufferSize(size_t size)
    {
+      // Background timers write into the rolling buffer via _average.set(); stop them
+      // before resizing/reallocating the buffer to avoid racing with that reallocation.
+      bool wasStarted = _started;
+      if (wasStarted) stop();
+
       _average.reset(size == 0 ? 1 : size);
+
+      if (wasStarted) start();
+   }
+
+   ///
+   /// <summary>
+   /// Get the number of raw charge-time samples currently buffered in the rolling window.
+   /// </summary>
+   /// <returns>Number of finite samples contributing to the current average.</returns>
+   ///
+   size_t rawValueCount() const
+   {
+      return _average.count();
+   }
+
+   ///
+   /// <summary>
+   /// Get a raw charge-time sample stored in the rolling buffer, relative to the most recently
+   /// added sample.
+   /// </summary>
+   /// <param name="index">0 for the latest sample, 1 for the previous, and so on.</param>
+   /// <returns>Charge time in microseconds, or NaN if fewer than index + 1 samples are buffered.</returns>
+   ///
+   float rawValueAt(size_t index) const
+   {
+      return _average.valueAt(index);
    }
 
    ///

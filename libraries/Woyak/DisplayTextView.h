@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "ArduinoWithDisplay.h"
+#include "SerialX.h"
 #include "Structs.h"
 
 ///
@@ -30,6 +31,7 @@ private:
    Color _backgroundColor;
    int32_t _scrollOffset = 0;
    bool _needsRedraw = true;
+   bool _echoToSerial;
 
    ///
    /// <summary>
@@ -76,11 +78,13 @@ public:
    /// <param name="textSize">The text size used to render each line.</param>
    /// <param name="textColor">The color used to render each line.</param>
    /// <param name="backgroundColor">The background color filled behind the text area.</param>
+   /// <param name="echoToSerial">Whether lines added via addLine()/addText() are also echoed to Serial.</param>
    ///
    DisplayTextView(ArduinoWithDisplay* display, Rect16 rect,
-                    uint8_t textSize, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+                    uint8_t textSize, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK,
+                    bool echoToSerial = true)
       : _display(display), _rect(rect),
-        _textSize(textSize), _textColor(textColor), _backgroundColor(backgroundColor)
+        _textSize(textSize), _textColor(textColor), _backgroundColor(backgroundColor), _echoToSerial(echoToSerial)
    {
    }
 
@@ -118,6 +122,11 @@ public:
    {
       _lines.push_back(line);
       _needsRedraw = true;
+
+      if (_echoToSerial)
+      {
+         SerialX::println(line.c_str());
+      }
    }
 
    ///

@@ -132,15 +132,6 @@ public:
    }
 
    /// <summary>
-   /// Sets the deferred processing period in microseconds.
-   /// </summary>
-   /// <param name="deferredProcessingPeriodMicros">Deferred processing period in microseconds.</param>
-   void setDeferredProcessingPeriodMicros(uint32_t deferredProcessingPeriodMicros)
-   {
-      _sensor->setDeferredProcessingPeriodMicros(deferredProcessingPeriodMicros);
-   }
-
-   /// <summary>
    /// Sets the rolling average buffer size.
    /// </summary>
    /// <param name="bufferSize">Buffer size for averaging.</param>
@@ -156,6 +147,25 @@ public:
    size_t bufferSize()
    {
       return _sensor->bufferSize();
+   }
+
+   /// <summary>
+   /// Sets the filter value and mode used to reject outlier samples. A value of 0 disables filtering.
+   /// </summary>
+   /// <param name="filter">Maximum allowed deviation from the current average.</param>
+   /// <param name="filterMode">How to interpret the filter value (absolute value or percent of average).</param>
+   void setFilter(float filter, FilteredRollingAverage::FilterMode filterMode = FilteredRollingAverage::FilterMode::VALUE)
+   {
+      _sensor->setFilter(filter, filterMode);
+   }
+
+   /// <summary>
+   /// Gets the current filter value.
+   /// </summary>
+   /// <returns>Maximum allowed deviation from the current average, or 0 when filtering is disabled.</returns>
+   float filter() const
+   {
+      return _sensor->filter();
    }
 
    /// <summary>

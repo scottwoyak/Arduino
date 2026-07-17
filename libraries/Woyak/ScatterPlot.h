@@ -981,6 +981,14 @@ private:
          _display->setCursor(minLabelX, minLabelY);
          _display->print(minLabel, _labelColor, _outerBackgroundColor);
 
+         String rangeLabel = _formatYLabel(_axisYMax - _axisYMin);
+         int16_t rangeLabelX = _chartLeft - Y_AXIS_LABEL_GAP - static_cast<int16_t>(_display->textWidth(rangeLabel.c_str()));
+         rangeLabelX = max(static_cast<int16_t>(0), rangeLabelX);
+         int16_t rangeLabelY = _chartTop + (_chartHeight - _display->charH()) / 2;
+         _display->fillRect(yLabelColumnX, rangeLabelY, yLabelColumnWidth, _display->charH(), _outerBackgroundColor);
+         _display->setCursor(rangeLabelX, rangeLabelY);
+         _display->print(rangeLabel, Color::GRAY, _outerBackgroundColor);
+
          String xMinLabel = String(_xAxisFormat.toString(_axisXMin).c_str());
          _display->setCursor(_chartLeft, _chartTop + _chartHeight + 1);
          _display->print(xMinLabel, _labelColor, _outerBackgroundColor);

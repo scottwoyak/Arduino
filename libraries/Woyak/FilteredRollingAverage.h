@@ -30,6 +30,13 @@ public:
    };
 
 private:
+   // Number of samples accepted unconditionally (bypassing the filter) after a reset/resize,
+   // before filtering begins. Without this, the very first accepted sample seeds the average,
+   // and if it happens to be biased toward one edge of the true distribution, the filter band
+   // built around that skewed average will reject legitimate samples on the other side,
+   // causing the average to only slowly self-correct sample by sample as the window fills.
+   static constexpr size_t WARMUP_COUNT = 20;
+
    float _filter;
    FilterMode _filterMode;
 
@@ -94,7 +101,7 @@ public:
    ///
    bool set(float value)
    {
-      if (_filter > 0.0f && isfinite(value))
+      if (_filter > 0.0f && isfinite(value) && count() >= WARMUP_COUNT)
       {
          float avg = average();
          if (isfinite(avg))

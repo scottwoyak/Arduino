@@ -31,7 +31,8 @@
 // right (full at zero depth, empty at the calibrated maximum depth), and the live sensor read
 // rate in gray in the lower right corner.
 // For the capacitor sensor, the rolling-average buffer size is shown in the upper right corner and
-// can be adjusted live with Encoder B (requires a Playground board); the value is persisted to
+// can be adjusted live with Encoder A (requires a Playground board); the outlier filter percent is
+// shown just below it and can be adjusted live with Encoder B. Both values are persisted to
 // Preferences and restored on startup.
 //
 
@@ -69,7 +70,7 @@
 #endif
 #if DEPTH_SENSOR_TYPE == DEPTH_SENSOR_CAPACITOR
 #ifndef ARDUINO_PLAYGROUND_SUPPORTED
-#error "The capacitor sensor's buffer size control requires a Playground board (e.g. ESP32S3 Dev Module) with Encoder B."
+#error "The capacitor sensor's buffer size and filter controls require a Playground board (e.g. ESP32S3 Dev Module) with Encoder A and Encoder B."
 #endif
 #endif
 
@@ -83,6 +84,10 @@ constexpr float CAPACITOR_CALIBRATION_DEPTH_CM = 45.72f; // 18 inches (half of f
 constexpr int32_t CAPACITOR_DEFAULT_BUFFER_SIZE = 30; // matches CapacitorSensor::DEFAULT_BUFFER_SIZE
 constexpr int32_t CAPACITOR_BUFFER_SIZE_MIN = 1;
 constexpr int32_t CAPACITOR_BUFFER_SIZE_MAX = 2000;
+constexpr float CAPACITOR_DEFAULT_FILTER = 5.0f; // percent, per FilteredRollingAverage::FilterMode::PERCENT
+constexpr float CAPACITOR_FILTER_MIN = 0.0f;
+constexpr float CAPACITOR_FILTER_MAX = 100.0f;
+constexpr float CAPACITOR_FILTER_STEP = 0.5f;
 
 Arduino arduino;
 
@@ -107,13 +112,15 @@ constexpr auto MAX_DEPTH_KEY = "maxDepthCm";
 constexpr auto CAP_ZERO_TIME_KEY = "capZeroTime";
 constexpr auto CAP_CALIBRATION_TIME_KEY = "capCalibTime";
 constexpr auto CAP_BUFFER_SIZE_KEY = "capBufSize";
+constexpr auto CAP_FILTER_KEY = "capFilter";
 
 Format depthCmFormat("####.# cm");
 Format depthInFormat("####.# in");
 Format depthCmRangeFormat("#### mm");
 Format depthInRangeFormat("###.# in");
 constexpr auto RATE_LABEL = "Sensor Sampling Rate: ";
-Format bufferSizeFormat("Buf:####");
+Format bufferSizeFormat("Buf:####", Format::Alignment::RIGHT);
+Format filterSizeFormat("Flt:##.#%", Format::Alignment::RIGHT);
 
 constexpr float CENTIMETERS_PER_INCH = 2.54f;
 constexpr float MILLIMETERS_PER_CENTIMETER = 10.0f;
@@ -152,6 +159,7 @@ float maxDepthCm = DEFAULT_MAX_DEPTH_CM;
 float capZeroChargeTime = CAPACITOR_DEFAULT_ZERO_CHARGE_TIME;
 float capCalibrationChargeTime = CAPACITOR_DEFAULT_CALIBRATION_CHARGE_TIME;
 int32_t capBufferSize = CAPACITOR_DEFAULT_BUFFER_SIZE;
+float capFilterSize = CAPACITOR_DEFAULT_FILTER;
 RollingRate readRate;
 CalibrationState calibrationState = CalibrationState::None;
 
@@ -165,6 +173,7 @@ DisplayField* depthInField = nullptr;
 DisplayField* depthCmRangeField = nullptr;
 DisplayField* depthInRangeField = nullptr;
 DisplayField* bufferSizeField = nullptr;
+DisplayField* filterSizeField = nullptr;
 VerticalBar* depthBar = nullptr;
 
 int16_t rangeLabelX = 0;
@@ -172,7 +181,7 @@ int16_t rangeLabelY = 0;
 
 ///
 /// <summary>
-/// Draws the small "Range (past Ns)" label above the depth range values, indicating the
+/// Draws the small "Range (prior Ns)" label above the depth range values, indicating the
 /// sampling window (in seconds) used to compute the rolling range.
 /// </summary>
 ///
@@ -249,6 +258,11 @@ void renderCalibrationPrompt()
       bufferSizeField->invalidate();
       bufferSizeField->draw();
    }
+   if (filterSizeField != nullptr)
+   {
+      filterSizeField->invalidate();
+      filterSizeField->draw();
+   }
 #endif
 }
 
@@ -293,6 +307,8 @@ bool loadCalibration()
    sensor.setCalibration(capZeroChargeTime, capCalibrationChargeTime);
    capBufferSize = preferences.getInt(CAP_BUFFER_SIZE_KEY, capBufferSize);
    sensor.setBufferSize((size_t)capBufferSize);
+   capFilterSize = preferences.getFloat(CAP_FILTER_KEY, capFilterSize);
+   sensor.setFilter(capFilterSize, FilteredRollingAverage::FilterMode::PERCENT);
 #endif
    preferences.end();
    return hasCalibration;
@@ -309,6 +325,19 @@ void saveBufferSize()
 {
    preferences.begin(PREFERENCES_NAMESPACE, false);
    preferences.putInt(CAP_BUFFER_SIZE_KEY, capBufferSize);
+   preferences.end();
+}
+
+///
+/// <summary>
+/// Saves the current capacitor sensor filter value to Preferences so it can be automatically
+/// restored the next time the sketch starts.
+/// </summary>
+///
+void saveFilterSize()
+{
+   preferences.begin(PREFERENCES_NAMESPACE, false);
+   preferences.putFloat(CAP_FILTER_KEY, capFilterSize);
    preferences.end();
 }
 #endif
@@ -380,7 +409,7 @@ void setup()
    int16_t depthInRangeHeight = arduino.charH();
 
    arduino.setTextSize(RANGE_LABEL_TEXT_SIZE);
-   rangeLabelText = "Range (past " + std::to_string(DEPTH_RANGE_WINDOW_MS / 1000) + "s)";
+   rangeLabelText = "Range (prior " + std::to_string(DEPTH_RANGE_WINDOW_MS / 1000) + "s)";
    int16_t rangeLabelHeight = arduino.charH();
 
    constexpr int16_t DEPTH_FIELD_GAP_PX = 4;
@@ -391,11 +420,13 @@ void setup()
    int16_t depthInY = depthCmY + depthCmHeight + DEPTH_FIELD_GAP_PX;
 
    int16_t depthRowWidth = depthCmWidth + DEPTH_RANGE_GAP_PX + depthCmRangeWidth;
-   int16_t depthCmX = (arduino.width() - depthRowWidth) / 2;
+   int16_t depthInRowWidth = depthInWidth + DEPTH_RANGE_GAP_PX + depthInRangeWidth;
+   int16_t depthBlockWidth = max(depthRowWidth, depthInRowWidth);
+   int16_t depthX = (arduino.width() - depthBlockWidth) / 2;
+   int16_t depthCmX = depthX;
+   int16_t depthInX = depthX;
    int16_t depthCmRangeY = depthCmY + ((depthCmHeight - depthCmRangeHeight) / 2);
 
-   int16_t depthInRowWidth = depthInWidth + DEPTH_RANGE_GAP_PX + depthInRangeWidth;
-   int16_t depthInX = (arduino.width() - depthInRowWidth) / 2;
    int16_t depthInRangeY = depthInY + ((depthInHeight - depthInRangeHeight) / 2);
 
    int16_t depthCmRangeX = max(depthCmX + depthCmWidth + DEPTH_RANGE_GAP_PX, depthInX + depthInWidth + DEPTH_RANGE_GAP_PX);
@@ -424,6 +455,14 @@ void setup()
    bufferSizeField = new DisplayField(&arduino, bufferX, 0, "", bufferSizeFormat, SUBTITLE_TEXT_SIZE, true, Color::GRAY, Color::GRAY);
    bufferSizeField->setValue((int)capBufferSize);
    bufferSizeField->draw();
+
+   std::string filterSample(filterSizeFormat.length(), '0');
+   int16_t filterWidth = arduino.textWidth(filterSample.c_str());
+   int16_t filterX = arduino.width() - filterWidth - DEPTH_BAR_WIDTH_PX;
+   int16_t filterY = arduino.charH();
+   filterSizeField = new DisplayField(&arduino, filterX, filterY, "", filterSizeFormat, SUBTITLE_TEXT_SIZE, true, Color::GRAY, Color::GRAY);
+   filterSizeField->setValue(capFilterSize);
+   filterSizeField->draw();
 #endif
 
    if (!hasCalibration)
@@ -436,7 +475,7 @@ void setup()
 void loop()
 {
 #if DEPTH_SENSOR_TYPE == DEPTH_SENSOR_CAPACITOR
-   int32_t bufferDelta = arduino.encoderB.delta();
+   int32_t bufferDelta = arduino.encoderA.delta();
    if (calibrationState == CalibrationState::None && bufferDelta != 0)
    {
       int32_t bufferStep = (capBufferSize >= 1000) ? 100 : (capBufferSize >= 100) ? 50 : 10;
@@ -445,6 +484,16 @@ void loop()
       saveBufferSize();
       bufferSizeField->setValue((int)capBufferSize);
       bufferSizeField->draw();
+   }
+
+   int32_t filterDelta = arduino.encoderB.delta();
+   if (calibrationState == CalibrationState::None && filterDelta != 0)
+   {
+      capFilterSize = constrain(capFilterSize + filterDelta * CAPACITOR_FILTER_STEP, CAPACITOR_FILTER_MIN, CAPACITOR_FILTER_MAX);
+      sensor.setFilter(capFilterSize, FilteredRollingAverage::FilterMode::PERCENT);
+      saveFilterSize();
+      filterSizeField->setValue(capFilterSize);
+      filterSizeField->draw();
    }
 #endif
 

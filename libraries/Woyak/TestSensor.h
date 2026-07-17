@@ -29,9 +29,9 @@ class DepthTestSensor;
 // #define TEST_SENSOR_TYPE ConstantTestSensor
 // #define TEST_SENSOR_TYPE RandomTestSensor
 // #define TEST_SENSOR_TYPE NormalTestSensor
-#define TEST_SENSOR_TYPE DepthTestSensor
+// #define TEST_SENSOR_TYPE DepthTestSensor
 // #define TEST_SENSOR_TYPE MS5837PressureTestSensor
-// #define TEST_SENSOR_TYPE CapacitiveTestSensor
+#define TEST_SENSOR_TYPE CapacitiveTestSensor
 // #define TEST_SENSOR_TYPE DepthTestSensor
 
 using TestSensor = TEST_SENSOR_TYPE;
@@ -102,8 +102,8 @@ namespace TestSensorConfig
    static constexpr uint8_t CAPACITIVE_CHARGE_PIN = CapacitorSensor::CHARGE_PIN_100K;
    static constexpr uint8_t CAPACITIVE_SENSE_PIN = CapacitorSensor::SENSE_PIN;
    static constexpr uint16_t CAPACITIVE_DISCHARGE_DELAY_US = CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS;
-   static constexpr uint32_t CAPACITIVE_PROCESS_PERIOD_US = CapacitorSensor::DEFAULT_DEFERRED_PROCESSING_PERIOD_MICROS;
    static constexpr size_t CAPACITIVE_BUFFER_SIZE = CapacitorSensor::DEFAULT_BUFFER_SIZE;
+   static constexpr float CAPACITIVE_FILTER = 5.0f; // percent, per FilteredRollingAverage::FilterMode::PERCENT
    static constexpr const char* CAPACITIVE_FORMAT = "#########";
    static constexpr const char* CAPACITIVE_HIGH_RES_FORMAT = "##########";
 
@@ -885,7 +885,8 @@ private:
       TestSensorConfig::CAPACITIVE_CHARGE_PIN,
       TestSensorConfig::CAPACITIVE_SENSE_PIN,
       TestSensorConfig::CAPACITIVE_DISCHARGE_DELAY_US,
-      TestSensorConfig::CAPACITIVE_BUFFER_SIZE };
+      TestSensorConfig::CAPACITIVE_BUFFER_SIZE,
+      TestSensorConfig::CAPACITIVE_FILTER };
    uint32_t _lastCounter = 0;
 
 public:
@@ -907,7 +908,6 @@ public:
    ///
    bool begin() override
    {
-      _sensor.setDeferredProcessingPeriodMicros(TestSensorConfig::CAPACITIVE_PROCESS_PERIOD_US);
       _sensor.begin();
       return true;
    }

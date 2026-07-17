@@ -133,4 +133,19 @@ public:
    {
       return _count;
    }
+
+   /// <summary>
+   /// Gets a raw value stored in the rolling window, relative to the most recently added value.
+   /// </summary>
+   /// <param name="index">0 for the latest value, 1 for the previous, and so on.</param>
+   /// <returns>The requested value, or NaN if the buffer holds fewer than index + 1 values.</returns>
+   float valueAt(size_t index) const
+   {
+      if (index >= _values.count())
+      {
+         return NAN;
+      }
+
+      return _values.get(index);
+   }
 };

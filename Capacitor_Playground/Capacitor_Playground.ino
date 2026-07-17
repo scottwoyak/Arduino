@@ -2,19 +2,19 @@
 // Capacitor sensor tuner: displays real-time measurements and runs the selected test on Button A.
 //
 // Combines live monitoring with automated tests for CapacitorSensor. During normal runtime, the
-// display shows active resistor selection, discharge delay, deferred processing period, buffer
-// size, test type, average charge time, sample rate, and effective output rate.
+// display shows active resistor selection, discharge delay, buffer size, test type, average
+// charge time, sample rate, and effective output rate.
 //
 // Test Type field selects which test Button A runs:
-// - Optimize: covers resistor/charge pin options (e.g., 1M, 470K, 100K, 47K) and target effective
-//   output rates (samples per second) using the fixed default discharge delay; the deferred
-//   processing period is fixed at 500 microseconds. For each test case, the sensor is configured
-//   (discharge delay + deferred period + buffer size), a fixed number of samples is captured, and
+// - Optimize: covers resistor/charge pin options (e.g., 1M, 470K, 100K, 47K), target effective
+//   output rates (samples per second), and discharge delay values (200, 500, 750, 1000 us); the
+//   deferred processing period is fixed internally by CapacitorSensor. For each test case, the
+//   sensor is configured (discharge delay + buffer size), a fixed number of samples is captured, and
 //   stats are computed (average charge time, variation, StdDev, raw rate, and effective rate).
 //   Results are printed immediately to Serial in a fixed-width table, then ranked later by lowest
-//   StdDev % per target rate. After the sweep, a "best configurations" summary is printed for each
-//   target rate, and the best configuration for 30/s is automatically applied and persisted for
-//   continued live viewing.
+//   StdDev % per target rate. After the sweep,
+//   a "best configurations" summary is printed for each target rate, and the best configuration
+//   for 30/s is automatically applied and persisted for continued live viewing.
 // - Buffer Size Sweep: collects 10,000 raw charge-time samples at the current resistor/discharge
 //   configuration (updating the display only with the collected count to minimize interference),
 //   then prints a table of range and StdDev for several rolling buffer sizes computed from the
@@ -54,7 +54,11 @@
 #include "DisplayEditableField.h"
 #include "DisplayTextView.h"
 #include "Timer.h"
+#include "Stopwatch.h"
 #include "TimedScatterPlot.h"
+#include "ScatterPlot.h"
+#include "Histogram.h"
+#include "HistogramPlot.h"
 
 ///
 /// <summary>
@@ -77,6 +81,17 @@ bool forceDisplayUpdate = false; // Set true to force an immediate redraw outsid
 // ----------- Test Output Log Viewer
 DisplayTextView textViewer(&arduino, Rect16{ 0, 0, 0, 0 }, DEFAULT_TEXT_SIZE, Color::WHITE, Color::DARKGRAY);
 bool viewingResults = false;
+
+// ----------- Results Scatter Plot (bottom half of the results view, one-shot per test run)
+constexpr size_t RESULTS_SCATTER_MAX_POINTS = 500;
+ScatterPlot* resultsScatterPlot = nullptr;
+Rect16 resultsScatterRect{ 0, 0, 0, 0 };
+
+constexpr size_t RESULTS_HISTOGRAM_MIN_BINS = 10;
+constexpr size_t RESULTS_HISTOGRAM_MAX_BINS = 40;
+Histogram* resultsHistogram = nullptr;
+HistogramPlot* resultsHistogramPlot = nullptr;
+Rect16 resultsHistogramRect{ 0, 0, 0, 0 };
 
 // ----------- Best Configuration Auto-Load
 bool bestConfigLoaded = false; // Set true once loadBestConfiguration() has been attempted successfully after startup.
@@ -102,13 +117,20 @@ constexpr float TARGET_EFFECTIVE_RATES[] = { 15.0f, 30.0f, 50.0f };
 constexpr size_t TARGET_EFFECTIVE_RATE_COUNT = sizeof(TARGET_EFFECTIVE_RATES) / sizeof(TARGET_EFFECTIVE_RATES[0]);
 constexpr float PRIMARY_TARGET_EFFECTIVE_RATE = 30.0f;
 
-constexpr uint32_t FIXED_DEFERRED_PROCESSING_PERIOD_MICROS = 500; // 500 us allows 2000 samples/s for the internal averaging.
+constexpr uint16_t OPTIMIZATION_DISCHARGE_DELAYS_MICROS[] = { 200, 500, 750, 1000 };
+constexpr size_t OPTIMIZATION_DISCHARGE_DELAY_COUNT = sizeof(OPTIMIZATION_DISCHARGE_DELAYS_MICROS) / sizeof(OPTIMIZATION_DISCHARGE_DELAYS_MICROS[0]);
 
 // ----------- Rolling-Size Sweep Test Parameters
 constexpr size_t ROLLING_SWEEP_SAMPLE_COUNT = 10000;
 constexpr size_t ROLLING_SWEEP_SIZES[] = { 1, 10, 20, 50, 100, 200, 500, 1000 };
 constexpr size_t ROLLING_SWEEP_SIZE_COUNT = sizeof(ROLLING_SWEEP_SIZES) / sizeof(ROLLING_SWEEP_SIZES[0]);
 constexpr size_t ROLLING_SWEEP_DISPLAY_UPDATE_INTERVAL = 200; // Only update the display every N samples to minimize interference.
+
+// ----------- Raw Data Capture Test Parameters
+constexpr size_t RAW_DATA_CAPTURE_SAMPLE_COUNT = 10000;
+constexpr size_t RAW_DATA_CAPTURE_DISPLAY_UPDATE_INTERVAL = 200; // Only update the display every N samples to minimize interference.
+constexpr float RAW_DATA_CAPTURE_CONFIDENCE_PERCENTS[] = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f, 20.0f, 30.0f };
+constexpr size_t RAW_DATA_CAPTURE_CONFIDENCE_COUNT = sizeof(RAW_DATA_CAPTURE_CONFIDENCE_PERCENTS) / sizeof(RAW_DATA_CAPTURE_CONFIDENCE_PERCENTS[0]);
 
 // ----------- Discharge Time Sweep Test Parameters
 constexpr uint16_t DISCHARGE_SWEEP_MIN_MICROS = 100;
@@ -145,7 +167,7 @@ constexpr ResistorOption RESISTOR_OPTIONS[] = {
    { CHARGE_PIN_47K, "47K" },
 };
 constexpr size_t RESISTOR_OPTION_COUNT = sizeof(RESISTOR_OPTIONS) / sizeof(RESISTOR_OPTIONS[0]);
-constexpr size_t MAX_TEST_RESULTS = RESISTOR_OPTION_COUNT * TARGET_EFFECTIVE_RATE_COUNT;
+constexpr size_t MAX_TEST_RESULTS = RESISTOR_OPTION_COUNT * TARGET_EFFECTIVE_RATE_COUNT * OPTIMIZATION_DISCHARGE_DELAY_COUNT;
 
 // ----------- Preferences Keys
 const char PREF_NAMESPACE[] = "cap_tune";
@@ -187,9 +209,10 @@ enum class TestType
    OPTIMIZE = 0,
    BUFFER_SIZE_SWEEP = 1,
    DISCHARGE_TIME_SWEEP = 2,
+   RAW_DATA_CAPTURE = 3,
 };
 
-constexpr const char* TEST_TYPE_LABELS[] = { "Optimize", "Buffer Size Sweep", "Discharge Time Sweep" };
+constexpr const char* TEST_TYPE_LABELS[] = { "Optimize", "Buffer Size Sweep", "Discharge Time Sweep", "Raw Data Capture" };
 constexpr size_t TEST_TYPE_COUNT = sizeof(TEST_TYPE_LABELS) / sizeof(TEST_TYPE_LABELS[0]);
 
 ///
@@ -385,14 +408,12 @@ void updateChargeStats()
 /// <summary>Applies a resistor/discharge/buffer configuration to the capacitor sensor.</summary>
 /// <param name="chargePin">Charge pin to select</param>
 /// <param name="dischargeDelayMicros">Discharge delay in microseconds</param>
-/// <param name="deferredProcessingPeriodMicros">Deferred processing period in microseconds</param>
 /// <param name="bufferSize">Rolling average buffer size (falls back to the sensor default when zero)</param>
 ///
-void applyConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, uint32_t deferredProcessingPeriodMicros, size_t bufferSize)
+void applyConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, size_t bufferSize)
 {
    capacitorSensor.setChargePin(chargePin);
    capacitorSensor.setDischargeDelayMicros(dischargeDelayMicros);
-   capacitorSensor.setDeferredProcessingPeriodMicros(deferredProcessingPeriodMicros);
    capacitorSensor.setBufferSize(bufferSize > 0 ? bufferSize : CapacitorSensor::DEFAULT_BUFFER_SIZE);
    chargeStats.reset();
 }
@@ -469,18 +490,17 @@ bool loadBestConfiguration()
       bufferSize = CapacitorSensor::DEFAULT_BUFFER_SIZE;
    }
 
-   applyConfiguration(chargePin, dischargeDelayMicros, FIXED_DEFERRED_PROCESSING_PERIOD_MICROS, (size_t)bufferSize);
+   applyConfiguration(chargePin, dischargeDelayMicros, (size_t)bufferSize);
 
    const SerialTable::Column columns[] = {
       { "Field", 18 },
       { "Value", 24 },
    };
    SerialTable table("Loaded Saved Best Configuration", columns, sizeof(columns) / sizeof(columns[0]));
-   table.printHeader();
-   table.printRow("Resistor Value", String(resistorLabel(chargePin)) + " (Pin " + String((unsigned long)chargePin) + ")");
-   table.printRow("Discharge Delay", String((unsigned long)dischargeDelayMicros) + " us");
-   table.printRow("Buffer Size", (unsigned long)bufferSize);
-   table.printRow("Deferred Period", String((unsigned long)FIXED_DEFERRED_PROCESSING_PERIOD_MICROS) + " us");
+   SerialX::print(table.printHeader());
+   SerialX::print(table.printRow("Resistor Value", String(resistorLabel(chargePin)) + " (Pin " + String((unsigned long)chargePin) + ")"));
+   SerialX::print(table.printRow("Discharge Delay", String((unsigned long)dischargeDelayMicros) + " us"));
+   SerialX::print(table.printRow("Buffer Size", (unsigned long)bufferSize));
    Serial.println();
 
    return true;
@@ -492,6 +512,7 @@ bool loadBestConfiguration()
 struct TestCase
 {
    float targetEffectiveRate = NAN;
+   uint16_t dischargeDelayMicros = 0;
 };
 
 ///
@@ -501,7 +522,7 @@ struct TestRunResult
 {
    const char* resistorLabel = nullptr;
    float targetEffectiveRate = NAN;
-   uint32_t deferredProcessingPeriodMicros = 0;
+   uint16_t dischargeDelayMicros = 0;
    float averageChargeTimeMicros = NAN;
    float chargeTimeVariationMicros = NAN;
    float chargeStdDevMicros = NAN;
@@ -531,17 +552,17 @@ public:
    ///
    /// <summary>Execute a single test run with the specified parameters.</summary>
    /// <param name="targetEffectiveRate">Target effective output rate in Hz</param>
+   /// <param name="dischargeDelayMicros">Discharge delay in microseconds</param>
    /// <returns>Test result data structure</returns>
    ///
-   TestRunResult run(float targetEffectiveRate)
+   TestRunResult run(float targetEffectiveRate, uint16_t dischargeDelayMicros)
    {
       TestRunResult result;
       result.targetEffectiveRate = targetEffectiveRate;
-      result.deferredProcessingPeriodMicros = FIXED_DEFERRED_PROCESSING_PERIOD_MICROS;
+      result.dischargeDelayMicros = dischargeDelayMicros;
 
-      // Stabilize the sensor at the fixed default discharge delay, then read the rate
-      _sensor.setDischargeDelayMicros(CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS);
-      _sensor.setDeferredProcessingPeriodMicros(FIXED_DEFERRED_PROCESSING_PERIOD_MICROS);
+      // Stabilize the sensor at the requested discharge delay, then read the rate
+      _sensor.setDischargeDelayMicros(dischargeDelayMicros);
       delay(100);
 
       float rawRate = _sensor.rate();
@@ -603,7 +624,6 @@ public:
       result.effectiveRateHz = (result.bufferSize > 0) ? (finalRawRate / result.bufferSize) : 0;
 
       _sensor.setBufferSize(CapacitorSensor::DEFAULT_BUFFER_SIZE);
-      _sensor.setDeferredProcessingPeriodMicros(FIXED_DEFERRED_PROCESSING_PERIOD_MICROS);
 
       return result;
    }
@@ -641,7 +661,7 @@ private:
 struct TestCaseParameters
 {
    /// <summary>Array of test case parameters.</summary>
-   TestCase cases[TARGET_EFFECTIVE_RATE_COUNT];
+   TestCase cases[TARGET_EFFECTIVE_RATE_COUNT * OPTIMIZATION_DISCHARGE_DELAY_COUNT];
    /// <summary>Number of test cases.</summary>
    size_t count = 0;
 };
@@ -655,20 +675,24 @@ void applyFields()
    applyConfiguration(
       RESISTOR_OPTIONS[selectedResistorIndex].chargePin,
       (uint16_t)dischargeDelayMicros,
-      FIXED_DEFERRED_PROCESSING_PERIOD_MICROS,
       (size_t)bufferSize);
    capacitorSensor.setFilter(filter, FilteredRollingAverage::FilterMode::PERCENT);
 }
 
 ///
 /// <summary>
-/// Draws the heading and the given subheading for the log viewer, sizes the
-/// viewer's rect to fill the remaining space above the footer prompt, and switches into
-/// viewer mode.
+/// Draws the heading and the given subheading for the log viewer, splits the remaining
+/// space above the footer prompt between the text viewer (top) and the results plots
+/// (bottom), splits the bottom plot area itself between a scatter plot (left) and a
+/// histogram (right), and switches into viewer mode. When showPlots is false, the text viewer
+/// fills the whole area instead and the plot rects are cleared so renderResultsScatterPlot()
+/// has nothing to draw into (used for results that are aggregated summaries rather than raw
+/// sample data, e.g. the Optimization Sweep).
 /// </summary>
 /// <param name="subheading">Subheading text describing which test's results are being shown (e.g. "Buffer Size Sweep Test Results...").</param>
+/// <param name="showPlots">Whether to reserve space for the scatter plot/histogram below the text viewer.</param>
 ///
-void initializeResultsView(const String& subheading)
+void initializeResultsView(const String& subheading, bool showPlots = true)
 {
    arduino.clearDisplay();
 
@@ -681,15 +705,102 @@ void initializeResultsView(const String& subheading)
    arduino.moveCursorY(8);
 
    int16_t viewerTop = arduino.getCursorY();
+   int16_t availableHeight = arduino.height() - arduino.charH() - viewerTop;
+
+   if (!showPlots)
+   {
+      textViewer.setRect(Rect16{ 0, static_cast<uint16_t>(viewerTop), static_cast<uint16_t>(arduino.width()),
+                                static_cast<uint16_t>(availableHeight) });
+      resultsScatterRect = Rect16{ 0, 0, 0, 0 };
+      resultsHistogramRect = Rect16{ 0, 0, 0, 0 };
+      viewingResults = true;
+      return;
+   }
+
+   constexpr float TEXT_VIEWER_HEIGHT_FRACTION = 0.55f;
+   constexpr int16_t PLOT_GAP_PIXELS = 8;
+   int16_t textViewerHeight = static_cast<int16_t>(availableHeight * TEXT_VIEWER_HEIGHT_FRACTION);
+
    textViewer.setRect(Rect16{ 0, static_cast<uint16_t>(viewerTop), static_cast<uint16_t>(arduino.width()),
-                             static_cast<uint16_t>(arduino.height() - arduino.charH() - viewerTop) });
+                             static_cast<uint16_t>(textViewerHeight) });
+
+   int16_t plotTop = viewerTop + textViewerHeight + PLOT_GAP_PIXELS;
+   int16_t plotHeight = availableHeight - textViewerHeight - PLOT_GAP_PIXELS;
+   int16_t plotWidth = arduino.width() - PLOT_GAP_PIXELS;
+   int16_t scatterWidth = plotWidth / 2;
+   int16_t histogramWidth = plotWidth - scatterWidth;
+
+   resultsScatterRect = Rect16{ 0, static_cast<uint16_t>(plotTop), static_cast<uint16_t>(scatterWidth),
+                                static_cast<uint16_t>(plotHeight) };
+   resultsHistogramRect = Rect16{ static_cast<uint16_t>(scatterWidth + PLOT_GAP_PIXELS), static_cast<uint16_t>(plotTop),
+                                  static_cast<uint16_t>(histogramWidth), static_cast<uint16_t>(plotHeight) };
 
    viewingResults = true;
 }
 
 ///
 /// <summary>
-/// Collects ROLLING_SWEEP_SAMPLE_COUNT raw charge-time samples using the currently selected
+/// Renders a one-shot scatter plot of raw sample values (index on X, value on Y) into
+/// resultsScatterRect and a histogram of the same values into resultsHistogramRect,
+/// replacing any previously shown results plots. Downsamples the scatter plot to at most
+/// RESULTS_SCATTER_MAX_POINTS points to bound render cost for large sample sets.
+/// </summary>
+/// <param name="values">Sample values to plot.</param>
+/// <param name="count">Number of entries in values.</param>
+///
+void renderResultsScatterPlot(const float* values, size_t count)
+{
+   delete resultsScatterPlot;
+   resultsScatterPlot = nullptr;
+
+   delete resultsHistogram;
+   resultsHistogram = nullptr;
+   delete resultsHistogramPlot;
+   resultsHistogramPlot = nullptr;
+
+   if (count == 0)
+   {
+      return;
+   }
+
+   if (resultsScatterRect.width > 0 && resultsScatterRect.height > 0)
+   {
+      size_t plottedCount = min(count, RESULTS_SCATTER_MAX_POINTS);
+      size_t step = (count + plottedCount - 1) / plottedCount;
+
+      resultsScatterPlot = new ScatterPlot(&arduino, resultsScatterRect);
+      resultsScatterPlot->setXAxisFormat(Format("#####"));
+      resultsScatterPlot->setYAxisFormat(Format("###.#"));
+      ScatterPlotSeries* series = resultsScatterPlot->createSeries(plottedCount);
+      series->showPoints = true;
+
+      for (size_t i = 0; i < count; i += step)
+      {
+         series->add(static_cast<float>(i), values[i]);
+      }
+
+      // Ensure the final sample is always plotted so the X-axis max reflects the true last index,
+      // even when the step size doesn't evenly divide into count - 1.
+      size_t lastIndex = count - 1;
+      if ((lastIndex % step) != 0)
+      {
+         series->add(static_cast<float>(lastIndex), values[lastIndex]);
+      }
+
+      resultsScatterPlot->render();
+   }
+
+   if (resultsHistogramRect.width > 0 && resultsHistogramRect.height > 0)
+   {
+      resultsHistogram = new Histogram(values, count, RESULTS_HISTOGRAM_MIN_BINS, RESULTS_HISTOGRAM_MAX_BINS);
+      resultsHistogramPlot = new HistogramPlot(&arduino, *resultsHistogram, resultsHistogramRect, Color::GREEN, Format("###.#"));
+      resultsHistogramPlot->render();
+   }
+}
+
+///
+/// <summary>
+/// Collects ROLLING_SWEEP_SAMPLE_COUNT raw charge-time samples
 /// resistor/discharge configuration, updating the display only with the collected count to
 /// minimize interference with the measurements. After collection, prints a table of range and
 /// StdDev for each rolling window size in ROLLING_SWEEP_SIZES, computed from the same raw data.
@@ -716,8 +827,9 @@ void runRollingSweepTest()
    arduino.moveCursorY(8);
 
    long selectedResistorIndex = constrain(resistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
-   arduino.println("    Resistor: ", RESISTOR_OPTIONS[selectedResistorIndex].label, resistorLabelFormat, Color::VALUE);
-   arduino.println("       Delay: ", (int)dischargeDelayMicros, chargeFormat, Color::VALUE);
+   arduino.println("      Resistor: ", RESISTOR_OPTIONS[selectedResistorIndex].label, resistorLabelFormat, Color::VALUE);
+   arduino.println("         Delay: ", (int)dischargeDelayMicros, chargeFormat, Color::VALUE);
+   arduino.println("Outlier Filter: ", filter, filterFieldFormat, Color::VALUE);
 
    Timer collectDisplayTimer(0);
    while (collected < ROLLING_SWEEP_SAMPLE_COUNT)
@@ -752,6 +864,7 @@ void runRollingSweepTest()
 
    textViewer.addLine(String("Resistor: ") + RESISTOR_OPTIONS[selectedResistorIndex].label);
    textViewer.addLine(String("Discharge Delay: ") + String(dischargeDelayMicros) + " us");
+   textViewer.addLine(String("Outlier Filter: ") + String(filter, 1) + " %");
    textViewer.addLine("");
 
    const SerialTable::Column columns[] = {
@@ -793,8 +906,201 @@ void runRollingSweepTest()
    Serial.println("Rolling Sweep Complete");
 
    capacitorSensor.setBufferSize((size_t)bufferSize);
-   initializeResultsView("Buffer Size Sweep Test Results...");
+   initializeResultsView("Buffer Size Sweep Test Results...", false);
 }
+
+///
+/// <summary>
+/// Temporarily grows the sensor's rolling buffer to RAW_DATA_CAPTURE_SAMPLE_COUNT so that it
+/// accumulates that many raw charge-time samples using the currently selected configuration,
+/// updating the display only with the collected count to minimize interference with the
+/// measurements. Once full, stops background measurement so the buffer is stable, reads the
+/// actual buffered sensor values back via rawValueAt(), and prints a confidence table to serial
+/// showing how many (and what percent) of the samples fall within avg +/- range, for each
+/// percent range in RAW_DATA_CAPTURE_CONFIDENCE_PERCENTS. Measurement restarts afterward.
+/// </summary>
+///
+void runRawDataCaptureTest()
+{
+   static float samples[RAW_DATA_CAPTURE_SAMPLE_COUNT];
+
+   textViewer.clear();
+
+   // Temporarily grow the sensor's rolling buffer to hold RAW_DATA_CAPTURE_SAMPLE_COUNT raw
+   // charge-time readings, then wait for the buffer to fill so the actual sensor values can be
+   // read back afterward via rawValueAt().
+   capacitorSensor.setBufferSize(RAW_DATA_CAPTURE_SAMPLE_COUNT);
+
+   size_t collected = 0;
+
+   arduino.clearDisplay();
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(DEFAULT_HEADING_SIZE);
+   int16_t headerRowY = arduino.getCursorY();
+   arduino.println(String("Raw Data Capture: ") + String((int)(100.0f * collected / RAW_DATA_CAPTURE_SAMPLE_COUNT)) + "%", Color::HEADING);
+   arduino.setTextSize(DEFAULT_TEXT_SIZE);
+   arduino.moveCursorY(8);
+
+   long selectedResistorIndex = constrain(resistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
+   arduino.println("      Resistor: ", RESISTOR_OPTIONS[selectedResistorIndex].label, resistorLabelFormat, Color::VALUE);
+   arduino.println("Discharge Time: ", (int)dischargeDelayMicros, chargeFormat, Color::VALUE);
+   arduino.println("Outlier Filter: ", filter, filterFieldFormat, Color::VALUE);
+
+   // Abort the capture if no new samples arrive for this long, e.g. when a too-strict outlier
+   // filter causes every incoming sample to be rejected and the buffer never fills.
+   constexpr double RAW_DATA_CAPTURE_STALL_TIMEOUT_MS = 500.0;
+   Stopwatch stallStopwatch;
+   size_t previousCollected = collected;
+   bool stalled = false;
+
+   while (collected < RAW_DATA_CAPTURE_SAMPLE_COUNT)
+   {
+      collected = capacitorSensor.rawValueCount();
+
+      if (collected != previousCollected)
+      {
+         previousCollected = collected;
+         stallStopwatch.reset();
+      }
+      else if (stallStopwatch.elapsedMillis() >= RAW_DATA_CAPTURE_STALL_TIMEOUT_MS)
+      {
+         stalled = true;
+         break;
+      }
+
+      // Only update the display periodically with the collected count to minimize interference.
+      if ((collected % RAW_DATA_CAPTURE_DISPLAY_UPDATE_INTERVAL) == 0 || collected == RAW_DATA_CAPTURE_SAMPLE_COUNT)
+      {
+         arduino.setCursorY(headerRowY);
+         arduino.setTextSize(DEFAULT_HEADING_SIZE);
+         arduino.println(String("Raw Data Capture: ") + String((int)(100.0f * collected / RAW_DATA_CAPTURE_SAMPLE_COUNT)) + "%", Color::HEADING);
+         arduino.setTextSize(DEFAULT_TEXT_SIZE);
+      }
+
+      yield();
+   }
+
+   // Stop background measurement so the buffer contents are stable while we read them all back.
+   capacitorSensor.stop();
+
+   if (stalled)
+   {
+      Serial.println();
+      Serial.println("Raw Data Capture: aborted, no new samples arrived (outlier filter may be rejecting all readings).");
+
+      textViewer.addLine("Raw Data Capture aborted:");
+      textViewer.addLine("No new samples arrived for " + String((int)RAW_DATA_CAPTURE_STALL_TIMEOUT_MS) + " ms.");
+      textViewer.addLine("The outlier filter may be too strict, rejecting all readings.");
+
+      capacitorSensor.setBufferSize((size_t)bufferSize);
+      capacitorSensor.start();
+      initializeResultsView("Raw Data Capture Test Results...");
+      return;
+   }
+
+   Serial.println();
+   Serial.println("Raw Data Capture: computing stats...");
+
+   textViewer.addLine(String("Resistor: ") + RESISTOR_OPTIONS[selectedResistorIndex].label);
+   textViewer.addLine(String("Discharge Time: ") + String(dischargeDelayMicros) + " us");
+   textViewer.addLine(String("Outlier Filter: ") + String(filter, 1));
+   textViewer.addLine("");
+
+   // rawValueAt() is indexed relative to the most recent sample (0 = latest), so read samples
+   // in reverse to store them in samples[] in true chronological order (0 = first captured).
+   Stats captureStats;
+   for (size_t i = 0; i < RAW_DATA_CAPTURE_SAMPLE_COUNT; i++)
+   {
+      samples[i] = capacitorSensor.rawValueAt(RAW_DATA_CAPTURE_SAMPLE_COUNT - 1 - i);
+      captureStats.add(samples[i]);
+   }
+
+   float average = captureStats.get();
+   textViewer.addLine(String("Average: ") + String(average, 3) + " us");
+   textViewer.addLine(String("StdDev: ") + String(captureStats.stdDev(), 3) + " us");
+   textViewer.addLine("");
+
+   const SerialTable::Column columns[] = {
+      { "Range", 5, "##.#%" },
+      { "+-", 8, "##.#" },
+      { "Min", 8, "##.#" },
+      { "Max", 8, "##.#" },
+      { "Count", 8 },
+      { "Percent", 9, "##.##%" },
+   };
+   SerialTable table(nullptr, columns, sizeof(columns) / sizeof(columns[0]));
+   String headerText = table.printHeader();
+   textViewer.addText(headerText);
+
+   for (size_t rangeIndex = 0; rangeIndex < RAW_DATA_CAPTURE_CONFIDENCE_COUNT; rangeIndex++)
+   {
+      float percent = RAW_DATA_CAPTURE_CONFIDENCE_PERCENTS[rangeIndex];
+      float toleranceMicros = average * (percent / 100.0f);
+      float rangeMin = average - toleranceMicros;
+      float rangeMax = average + toleranceMicros;
+
+      size_t withinRange = 0;
+      for (size_t i = 0; i < RAW_DATA_CAPTURE_SAMPLE_COUNT; i++)
+      {
+         if (fabsf(samples[i] - average) <= toleranceMicros)
+         {
+            withinRange++;
+         }
+      }
+
+      float withinRangePercent = 100.0f * withinRange / RAW_DATA_CAPTURE_SAMPLE_COUNT;
+         String rowText = table.printRow(
+            percent,
+            toleranceMicros,
+            rangeMin,
+            rangeMax,
+            (unsigned long)withinRange,
+            withinRangePercent);
+         textViewer.addText(rowText);
+      }
+
+      textViewer.addLine("");
+
+      const SerialTable::Column binColumns[] = {
+         { "Bin (us)", 12 },
+         { "Count", 8 },
+      };
+      SerialTable binTable(nullptr, binColumns, sizeof(binColumns) / sizeof(binColumns[0]));
+      String binHeaderText = binTable.printHeader();
+      textViewer.addText(binHeaderText);
+
+      long binMin = (long)floorf(captureStats.min());
+      long binMax = (long)ceilf(captureStats.max());
+      for (long bin = binMin; bin < binMax; bin++)
+      {
+         size_t binCount = 0;
+         for (size_t i = 0; i < RAW_DATA_CAPTURE_SAMPLE_COUNT; i++)
+         {
+            if (samples[i] >= (float)bin && samples[i] < (float)(bin + 1))
+            {
+               binCount++;
+            }
+         }
+
+         if (binCount == 0)
+         {
+            continue;
+         }
+
+         String binRowText = binTable.printRow(
+            String(bin) + "-" + String(bin + 1),
+            (unsigned long)binCount);
+         textViewer.addText(binRowText);
+      }
+
+      Serial.println();
+      Serial.println("Raw Data Capture Complete");
+
+      capacitorSensor.setBufferSize((size_t)bufferSize);
+      capacitorSensor.start();
+      initializeResultsView("Raw Data Capture Test Results...");
+      renderResultsScatterPlot(samples, RAW_DATA_CAPTURE_SAMPLE_COUNT);
+   }
 
 ///
 /// <summary>
@@ -812,8 +1118,8 @@ void runDischargeSweepTest()
 
    textViewer.clear();
 
-   // Use a buffer size of 1 so every raw charge-time reading is captured individually.
-   capacitorSensor.setBufferSize(1);
+   // Use the currently selected buffer size so results reflect the live averaging configuration.
+   capacitorSensor.setBufferSize((size_t)bufferSize);
 
    const size_t totalSamples = DISCHARGE_SWEEP_STEP_COUNT * DISCHARGE_SWEEP_SAMPLE_COUNT;
    size_t totalCollected = 0;
@@ -822,14 +1128,18 @@ void runDischargeSweepTest()
    arduino.setCursor(0, 0);
    arduino.setTextSize(DEFAULT_HEADING_SIZE);
    int16_t headerRowY = arduino.getCursorY();
-   arduino.println(String("Discharge Time Sweep: ") + String(totalCollected) + "/" + String(totalSamples), Color::HEADING);
+   arduino.println(String("Discharge Time Sweep: ") + String((int)(100.0f * totalCollected / totalSamples)) + "%", Color::HEADING);
    arduino.setTextSize(DEFAULT_TEXT_SIZE);
    arduino.moveCursorY(8);
 
    long selectedResistorIndex = constrain(resistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
-   arduino.println("    Resistor: ", RESISTOR_OPTIONS[selectedResistorIndex].label, resistorLabelFormat, Color::VALUE);
+   arduino.println("      Resistor: ", RESISTOR_OPTIONS[selectedResistorIndex].label, resistorLabelFormat, Color::VALUE);
+   arduino.println("        Buffer: ", (int)bufferSize, bufferFieldFormat, Color::VALUE);
+   arduino.println("Outlier Filter: ", filter, filterFieldFormat, Color::VALUE);
 
    textViewer.addLine(String("Resistor: ") + RESISTOR_OPTIONS[selectedResistorIndex].label);
+   textViewer.addLine(String("Buffer: ") + String(bufferSize));
+   textViewer.addLine(String("Outlier Filter: ") + String(filter, 1) + " %");
    textViewer.addLine("");
 
    const SerialTable::Column columns[] = {
@@ -869,7 +1179,7 @@ void runDischargeSweepTest()
             {
                arduino.setCursorY(headerRowY);
                arduino.setTextSize(DEFAULT_HEADING_SIZE);
-               arduino.println(String("Discharge Time Sweep: ") + String(totalCollected) + "/" + String(totalSamples), Color::HEADING);
+               arduino.println(String("Discharge Time Sweep: ") + String((int)(100.0f * totalCollected / totalSamples)) + "%", Color::HEADING);
                arduino.setTextSize(DEFAULT_TEXT_SIZE);
             }
          }
@@ -893,7 +1203,8 @@ void runDischargeSweepTest()
    Serial.println("Discharge Sweep Complete");
 
    capacitorSensor.setDischargeDelayMicros((uint16_t)dischargeDelayMicros);
-   initializeResultsView("Discharge Time Sweep Test Results...");
+   capacitorSensor.setBufferSize((size_t)bufferSize);
+   initializeResultsView("Discharge Time Sweep Test Results...", false);
 }
 
 ///
@@ -917,6 +1228,7 @@ void runOptimizedSweepTest()
    const SerialTable::Column resultColumns[] = {
       { "Resistor", 10 },
       { "Target", 10 },
+      { "Delay", 8 },
       { "Buffer", 8 },
       { "Avg(us)", 12 },
       { "Range(us)", 12 },
@@ -949,9 +1261,10 @@ void runOptimizedSweepTest()
          arduino.moveCursorY(8);
          arduino.println("    Resistor: ", RESISTOR_OPTIONS[resistorIndex].label, resistorLabelFormat, Color::VALUE);
          arduino.println("      Target: ", String((int)round(testParameters.cases[i].targetEffectiveRate)) + "/s", Color::VALUE);
+         arduino.println("       Delay: ", (int)testParameters.cases[i].dischargeDelayMicros, chargeFormat, Color::VALUE);
 
          TestRun testRun(capacitorSensor);
-         TestRunResult result = testRun.run(testParameters.cases[i].targetEffectiveRate);
+         TestRunResult result = testRun.run(testParameters.cases[i].targetEffectiveRate, testParameters.cases[i].dischargeDelayMicros);
          result.resistorLabel = RESISTOR_OPTIONS[resistorIndex].label;
          allResults[allResultCount++] = result;
 
@@ -968,6 +1281,7 @@ void runOptimizedSweepTest()
          String resultRowText = resultsTable.printRow(
             RESISTOR_OPTIONS[resistorIndex].label,
             String((int)round(result.targetEffectiveRate)) + "/s",
+            (unsigned long)result.dischargeDelayMicros,
             (unsigned long)result.bufferSize,
             avgText,
             rangeText,
@@ -990,31 +1304,29 @@ void runOptimizedSweepTest()
    const TestRunResult* best = findBestResult(allResults, allResultCount, PRIMARY_TARGET_EFFECTIVE_RATE);
    if (best != nullptr)
    {
-      uint8_t bestChargePin = chargePinFromResistorLabel(best->resistorLabel);
-      applyConfiguration(
-         bestChargePin,
-         CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS,
-         best->deferredProcessingPeriodMicros,
-         best->bufferSize);
-      syncFields(
-         bestChargePin,
-         CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS,
-         best->bufferSize);
-      saveBestConfiguration(
-         bestChargePin,
-         CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS,
-         best->bufferSize);
-   }
-   else
-   {
-      applyConfiguration(
-         RESISTOR_OPTIONS[0].chargePin,
-         CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS,
-         FIXED_DEFERRED_PROCESSING_PERIOD_MICROS,
-         CapacitorSensor::DEFAULT_BUFFER_SIZE);
-   }
+         uint8_t bestChargePin = chargePinFromResistorLabel(best->resistorLabel);
+         applyConfiguration(
+            bestChargePin,
+            best->dischargeDelayMicros,
+            best->bufferSize);
+         syncFields(
+            bestChargePin,
+            best->dischargeDelayMicros,
+            best->bufferSize);
+         saveBestConfiguration(
+            bestChargePin,
+            best->dischargeDelayMicros,
+            best->bufferSize);
+      }
+      else
+      {
+         applyConfiguration(
+            RESISTOR_OPTIONS[0].chargePin,
+            CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS,
+            CapacitorSensor::DEFAULT_BUFFER_SIZE);
+      }
 
-   initializeResultsView("Optimization Sweep Test Results...");
+   initializeResultsView("Optimization Sweep Test Results...", false);
 }
 
 ///
@@ -1055,8 +1367,12 @@ void setup()
    {
       float targetRate = TARGET_EFFECTIVE_RATES[rateIndex];
 
-      testParameters.cases[caseIndex].targetEffectiveRate = targetRate;
-      caseIndex++;
+      for (size_t delayIndex = 0; delayIndex < OPTIMIZATION_DISCHARGE_DELAY_COUNT; delayIndex++)
+      {
+         testParameters.cases[caseIndex].targetEffectiveRate = targetRate;
+         testParameters.cases[caseIndex].dischargeDelayMicros = OPTIMIZATION_DISCHARGE_DELAYS_MICROS[delayIndex];
+         caseIndex++;
+      }
    }
 
    testParameters.count = caseIndex;
@@ -1100,8 +1416,6 @@ const TestRunResult* findBestResult(TestRunResult* results, size_t count, float 
 ///
 void printBestConfigurations(TestRunResult* results, size_t count)
 {
-   Serial.println();
-   Serial.println("------- Best Configurations (Top 3 Lowest StdDev %) -------");
    textViewer.addLine("");
    textViewer.addLine("------- Best Configurations (Top 3 Lowest StdDev %) -------");
 
@@ -1121,7 +1435,7 @@ void printBestConfigurations(TestRunResult* results, size_t count)
          }
       }
 
-      // Sort by stddev % ascending (selection sort)
+       // Sort by stddev % ascending (selection sort)
       for (size_t a = 0; a < indexCount; a++)
       {
          for (size_t b = a + 1; b < indexCount; b++)
@@ -1146,9 +1460,6 @@ void printBestConfigurations(TestRunResult* results, size_t count)
       }
 
       Serial.println();
-      Serial.print("  Target: ");
-      Serial.print((int)round(targetRate));
-      Serial.println("/s");
       String targetLine = "  Target: " + String((int)round(targetRate)) + "/s";
       textViewer.addLine("");
       textViewer.addLine(targetLine);
@@ -1156,6 +1467,7 @@ void printBestConfigurations(TestRunResult* results, size_t count)
       const SerialTable::Column columns[] = {
          { "Rank", 6 },
          { "Resistor (Pin)", 18 },
+         { "Delay", 8 },
          { "Buffer", 8 },
          { "StdDev %", 10 },
       };
@@ -1178,12 +1490,12 @@ void printBestConfigurations(TestRunResult* results, size_t count)
          String rowText = table.printRow(
             (unsigned long)(rank + 1),
             String(r.resistorLabel ? r.resistorLabel : "?") + " (" + String((unsigned long)resistorPin) + ")",
+            (unsigned long)r.dischargeDelayMicros,
             (unsigned long)r.bufferSize,
             stdDevPct);
          textViewer.addText(rowText);
       }
 
-      Serial.println();
       textViewer.addLine("");
    }
 }
@@ -1257,7 +1569,6 @@ void printAggregateByResistor(const TestRunResult* results, size_t count)
       printAggregateRow(table, RESISTOR_OPTIONS[resistorIndex].label, avgStats, stdDevStats);
    }
 
-   Serial.println();
    textViewer.addLine("");
 }
 
@@ -1308,7 +1619,6 @@ void printAggregateByTargetRate(const TestRunResult* results, size_t count)
       printAggregateRow(table, label, avgStats, stdDevStats);
    }
 
-   Serial.println();
    textViewer.addLine("");
 }
 
@@ -1333,7 +1643,6 @@ void printAggregateByBufferSize(const TestRunResult* results, size_t count)
 
    if (count == 0)
    {
-      Serial.println();
       textViewer.addLine("");
       return;
    }
@@ -1410,7 +1719,6 @@ void printAggregateByBufferSize(const TestRunResult* results, size_t count)
       textViewer.addText(rowText);
    }
 
-   Serial.println();
    textViewer.addLine("");
 }
 
@@ -1421,8 +1729,6 @@ void printAggregateByBufferSize(const TestRunResult* results, size_t count)
 ///
 void printAggregateStatistics(const TestRunResult* results, size_t count)
 {
-   Serial.println();
-   Serial.println("------- Aggregate Statistics -------");
    textViewer.addLine("");
    textViewer.addLine("------- Aggregate Statistics -------");
 
@@ -1534,6 +1840,10 @@ void loop()
 
       case TestType::DISCHARGE_TIME_SWEEP:
          runDischargeSweepTest();
+         break;
+
+      case TestType::RAW_DATA_CAPTURE:
+         runRawDataCaptureTest();
          break;
 
       case TestType::OPTIMIZE:

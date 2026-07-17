@@ -3,14 +3,15 @@
 #include <Arduino.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#include "SerialX.h"
+#include "Format.h"
 
 /// <summary>
 /// Lightweight fixed-width serial table helper.
 /// </summary>
 /// <remarks>
-/// Uses SerialX for aligned output and avoids dynamic allocation.
+/// Builds formatted, fixed-width table text (title, header, divider, rows) and avoids
+/// dynamic allocation. Callers are responsible for printing the returned strings (e.g. to
+/// Serial or a display view).
 /// </remarks>
 class SerialTable
 {
@@ -19,6 +20,7 @@ public:
    {
       const char* title;
       size_t width;
+      const char* format = nullptr; // Optional Format pattern (e.g. "##.#%") applied to float/double row values; ignored for other types.
    };
 
    struct FixedFloat
@@ -73,7 +75,7 @@ private:
          return;
       }
 
-      line += _formatValue(value, _columns[index].width);
+      line += _formatValue(value, _columns[index]);
       index++;
       _appendValues(line, index, rest...);
    }
@@ -81,32 +83,59 @@ private:
    /// <summary>
    /// Formats a fixed-decimal floating-point value with width-based alignment.
    /// </summary>
-   static String _formatValue(const FixedFloat& value, size_t width)
+   static String _formatValue(const FixedFloat& value, const Column& column)
    {
-      return _pad(String(value.value, (unsigned int)value.decimals), width);
+      return _pad(String(value.value, (unsigned int)value.decimals), column.width);
+   }
+
+   /// <summary>
+   /// Formats a double value, applying the column's format pattern if one is set,
+   /// otherwise falling back to width-based alignment.
+   /// </summary>
+   static String _formatValue(double value, const Column& column)
+   {
+      if (column.format != nullptr)
+      {
+         Format fmt(column.format, column.width, Format::Alignment::RIGHT);
+         return String(fmt.toString(value).c_str());
+      }
+
+      return _pad(String(value), column.width);
+   }
+
+   /// <summary>
+   /// Formats a float value, applying the column's format pattern if one is set,
+   /// otherwise falling back to width-based alignment.
+   /// </summary>
+   static String _formatValue(float value, const Column& column)
+   {
+      return _formatValue((double)value, column);
    }
 
    /// <summary>
    /// Formats a value with width-based alignment.
    /// </summary>
    template<typename T>
-   static String _formatValue(const T& value, size_t width)
+   static String _formatValue(const T& value, const Column& column)
    {
-      return _pad(String(value), width);
+      return _pad(String(value), column.width);
    }
 
    /// <summary>
    /// Formats a C-string value with width-based alignment.
    /// </summary>
-   static String _formatValue(const char* value, size_t width)
+   static String _formatValue(const char* value, const Column& column)
    {
-      return _pad(String(value), width);
+      return _pad(String(value), column.width);
    }
 
 public:
    /// <summary>
    /// Creates a serial table with title and fixed-width column metadata.
    /// </summary>
+   /// <param name="title">Optional title printed above the header row, or nullptr for none.</param>
+   /// <param name="columns">Column metadata (title and width) for the table.</param>
+   /// <param name="columnCount">Number of entries in columns.</param>
    explicit SerialTable(const char* title, const Column* columns, size_t columnCount)
       : _title(title), _columns(columns), _columnCount(columnCount)
    {
@@ -135,10 +164,8 @@ public:
       String output;
       if (_title != nullptr)
       {
-         SerialX::println();
          output += '\n';
 
-         SerialX::println(_title);
          output += _title;
          output += '\n';
       }
@@ -146,9 +173,8 @@ public:
       String headerLine;
       for (size_t i = 0; i < _columnCount; i++)
       {
-         headerLine += _formatValue(_columns[i].title, _columns[i].width);
+         headerLine += _formatValue(_columns[i].title, _columns[i]);
       }
-      SerialX::println(headerLine);
       output += headerLine;
       output += '\n';
 
@@ -176,7 +202,6 @@ public:
             divider += '-';
          }
       }
-      SerialX::println(divider);
 
       return divider + '\n';
    }
@@ -197,7 +222,6 @@ public:
       String line;
       size_t index = 0;
       _appendValues(line, index, values...);
-      SerialX::println(line);
 
       return line + '\n';
    }

@@ -163,9 +163,10 @@ private:
       {
          String minLabel = String(_minMaxFormat.toString(_histogram.min()).c_str());
          String maxLabel = String(_minMaxFormat.toString(_histogram.max()).c_str());
+         String rangeLabel = String(_minMaxFormat.toString(_histogram.max() - _histogram.min()).c_str());
 
          _arduino->setCursor(chartLeft, chartBottom + 1);
-         _arduino->print(minLabel, _axisLabelColor);
+         _arduino->print(minLabel, Color::WHITE);
 
          // Trim trailing padding so the max label's measured width matches its visible
          // content; otherwise invisible trailing padding (e.g. from a left-aligned format)
@@ -180,7 +181,20 @@ private:
             maxLabelX = chartLeft;
          }
          _arduino->setCursor(maxLabelX, chartBottom + 1);
-         _arduino->print(maxLabel, _axisLabelColor);
+         _arduino->print(maxLabel, Color::WHITE);
+
+         // Trim trailing padding so the range label is centered on its visible content.
+         while ((rangeLabel.length() > 0) && (rangeLabel[rangeLabel.length() - 1] == ' '))
+         {
+            rangeLabel.remove(rangeLabel.length() - 1);
+         }
+         int16_t rangeLabelX = chartLeft + (chartWidth - static_cast<int16_t>(_arduino->textWidth(rangeLabel.c_str()))) / 2;
+         if (rangeLabelX < chartLeft)
+         {
+            rangeLabelX = chartLeft;
+         }
+         _arduino->setCursor(rangeLabelX, chartBottom + 1);
+         _arduino->print(rangeLabel, Color::GRAY);
 
          _previousMin = _histogram.min();
          _previousMax = _histogram.max();
