@@ -14,6 +14,7 @@
 - When asked for a recommendation, offer solutions and ask the user what to do instead of automatically implementing one.
 - When implementing or reviewing sketches/libraries, if a simplifying assumption would reduce code complexity or improve performance (e.g., scatter plot x-values are monotonically increasing, or rolling buffer sizes remain constant for the sketch's lifetime), ask the user whether that assumption can be made before writing complex general-case/defensive code. It's acceptable to just document the sketch as requiring the assumption rather than handling edge cases that don't actually occur in practice.
 - Use `SerialX::begin()` (from SerialX.h) instead of `Serial.begin(...)` for starting serial in all Arduino sketches.
+- For standard function calls that accept immediate parameter literals where the meaning is obvious (like `delay(10);`), do not extract them into local explicit `constexpr` constants on the preceding line. Inline magic numbers are acceptable if they are self-evident from context or heavily stereotyped.
 
 ## General Coding Conventions
 - Do not make changes in libraries outside of the Woyak library; third-party libraries should remain untouched.
@@ -71,7 +72,7 @@
   ///
   ```
 - A wrapped `/// <summary>` doc-comment block needs a blank line before it, separating it from the previous sibling declaration (e.g. between documented enum members), UNLESS it immediately follows a scope-opener (`{`), an access specifier (`public:`/`private:`/`protected:`), or a `// -----------` section-header comment.
-- Do NOT add per-member doc comments to enum values whose names are self-evident (e.g. `PORTRAIT`, `LANDSCAPE`). Only add a single wrapped `///` XML summary comment on the enum declaration itself.
+- Do NOT add per-member doc comments to enum values, struct members, or class fields whose names and types are self-evident (e.g. `PORTRAIT`, or a `label` field in a struct). Only add a single wrapped `///` XML summary comment on the parent declaration itself.
 - For `.ino` sketch files, use a top-of-file `//` line-comment block (not XML `///` doc comments) describing what the sketch does, with blank `//` lines separating sections. Format as:
   ```cpp
   //
@@ -85,7 +86,7 @@
 - Keep section comments in the style `// ----------- COMMENT` where they already exist (e.g. grouping overloads by type in library headers); do not remove them during cleanup.
 
 ## Code Cleanup Requests
-When the user asks for 'cleanup' (with no other file specified), apply it to the currently displayed/open file from IDE context (provided in the `IDESTATE CONTEXT`). A cleanup pass means bringing the file in line with all the conventions, plus the rules below. Always read `.editorconfig` as part of a cleanup pass and apply its settings (indentation, brace placement, empty-bodied function braces, etc.) as the authoritative source for formatting; this document intentionally defers to `.editorconfig` for those specifics rather than duplicating them, and focuses instead on naming, documentation, and code-organization conventions.
+When the user asks for 'cleanup' (with no other file specified), apply it to the currently displayed/open file from IDE context (provided in the `IDESTATE CONTEXT`). A cleanup pass means bringing the file in line with all the conventions, plus the rules below. **CRITICAL: You MUST read and use the `cleanup.md` file located in the root of the workspace as your definitive step-by-step checklist during every cleanup pass to ensure no rules are missed.** Always read `.editorconfig` as part of a cleanup pass and apply its settings (indentation, brace placement, empty-bodied function braces, etc.) as the authoritative source for formatting; this document intentionally defers to `.editorconfig` for those specifics rather than duplicating them, and focuses instead on naming, documentation, and code-organization conventions.
 
 ### Non-Negotiable Preservation Rules
 - Preserve inline comments and commented-out code exactly as-is; do not remove or "clean up" commented-out code during a cleanup pass, even if it looks unused or obsolete.
@@ -166,7 +167,7 @@ float helperFunction(float param1)
 - Document all public methods (and constructors) in classes with params and usage where appropriate.
 - Remove incorrect or obsolete comments (but never remove commented-out code; see Non-Negotiable Preservation Rules above).
 - Convert block comments (`/* */`) for functions to XML doc format (`///`).
-- Do NOT add per-member doc comments to enum values whose names are self-evident (e.g. `PORTRAIT`, `LANDSCAPE`); a single summary on the `enum` itself is sufficient.
+- Do NOT add per-member doc comments to enum values, struct members, or class fields whose names and types are self-evident (e.g. `PORTRAIT` or a `label` field); a single summary on the parent declaration itself is sufficient.
 
 #### 3. Code Organization
 - For `.ino` sketches, organize as: INCLUDES, CONSTANTS, GLOBAL STATE, HELPERS, SETUP, LOOP — group code in this order without adding new banner/section-header comments for these top-level groups.
@@ -300,7 +301,6 @@ enum DisplayRotation
 ```
 
 **After:**
-```cpp
 ///
 /// <summary>
 /// Display rotation orientation options.
@@ -313,7 +313,6 @@ enum DisplayRotation
    PORTRAIT_FLIP = 2,
    LANDSCAPE_FLIP = 3,
 };
-```
 Note: the enum-level summary uses the wrapped `///` block, but the individual members are self-evident and don't need their own doc comments.
 
 ### Processing Order

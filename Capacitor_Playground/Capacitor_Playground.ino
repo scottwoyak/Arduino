@@ -105,14 +105,14 @@ enum class PlotState
    ON_WITH_STATS,
 };
 
-constexpr unsigned long SCATTER_HISTORY_S = 20;
+constexpr uint32_t SCATTER_HISTORY_S = 20;
 TimedScatterPlot* chargeScatterPlot = nullptr;
 IScatterPlotSeries* chargeScatterSeries = nullptr;
 PlotState plotState = PlotState::OFF;
 PlotState previousPlotState = PlotState::OFF;
 
 // ----------- Test Sweep Parameters
-constexpr unsigned long STATS_PERIOD_MS = 2000;
+constexpr uint32_t STATS_PERIOD_MS = 2000;
 constexpr float TARGET_EFFECTIVE_RATES[] = { 15.0f, 30.0f, 50.0f };
 constexpr size_t TARGET_EFFECTIVE_RATE_COUNT = sizeof(TARGET_EFFECTIVE_RATES) / sizeof(TARGET_EFFECTIVE_RATES[0]);
 constexpr float PRIMARY_TARGET_EFFECTIVE_RATE = 30.0f;
@@ -228,14 +228,14 @@ public:
 
    void adjust(int32_t direction) override
    {
-      long count = (long)RESISTOR_OPTION_COUNT;
+      int32_t count = (int32_t)RESISTOR_OPTION_COUNT;
       long newValue = (*_value + (direction > 0 ? 1 : -1) + count) % count;
       *_value = newValue;
    }
 
    std::string valueText() override
    {
-      long index = constrain(*_value, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
+      long index = constrain(*_value, 0L, (int32_t)(RESISTOR_OPTION_COUNT - 1));
       return _format.toString(RESISTOR_OPTIONS[index].label);
    }
 };
@@ -253,14 +253,14 @@ public:
 
    void adjust(int32_t direction) override
    {
-      long count = (long)TEST_TYPE_COUNT;
+      int32_t count = (int32_t)TEST_TYPE_COUNT;
       long newValue = (*_value + (direction > 0 ? 1 : -1) + count) % count;
       *_value = newValue;
    }
 
    std::string valueText() override
    {
-      long index = constrain(*_value, 0L, (long)(TEST_TYPE_COUNT - 1));
+      long index = constrain(*_value, 0L, (int32_t)(TEST_TYPE_COUNT - 1));
       return _format.toString(TEST_TYPE_LABELS[index]);
    }
 };
@@ -580,8 +580,9 @@ public:
       size_t sampleCount = 0;
 
       uint32_t lastCounter = _sensor.counter();
-      unsigned long startMs = millis();
-      while (millis() - startMs < STATS_PERIOD_MS)
+      Stopwatch stopwatch;
+      stopwatch.start();
+      while (stopwatch.elapsedMillis() < STATS_PERIOD_MS)
       {
          uint32_t counter = _sensor.counter();
          if (counter == lastCounter)
@@ -668,7 +669,11 @@ struct TestCaseParameters
 
 TestCaseParameters testParameters;
 
-/// <summary>Applies the current editable field values (resistor/discharge/buffer) to the sensor.</summary>
+///
+/// <summary>
+/// Applies the current editable field values (resistor/discharge/buffer) to the sensor.
+/// </summary>
+///
 void applyFields()
 {
    long selectedResistorIndex = constrain(resistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
@@ -776,7 +781,7 @@ void renderResultsScatterPlot(const float* values, size_t count)
 
       for (size_t i = 0; i < count; i += step)
       {
-         series->add(static_cast<float>(i), values[i]);
+         series->add(i, values[i]);
       }
 
       // Ensure the final sample is always plotted so the X-axis max reflects the true last index,
@@ -784,7 +789,7 @@ void renderResultsScatterPlot(const float* values, size_t count)
       size_t lastIndex = count - 1;
       if ((lastIndex % step) != 0)
       {
-         series->add(static_cast<float>(lastIndex), values[lastIndex]);
+         series->add(lastIndex, values[lastIndex]);
       }
 
       resultsScatterPlot->render();
@@ -1069,9 +1074,9 @@ void runRawDataCaptureTest()
       String binHeaderText = binTable.printHeader();
       textViewer.addText(binHeaderText);
 
-      long binMin = (long)floorf(captureStats.min());
-      long binMax = (long)ceilf(captureStats.max());
-      for (long bin = binMin; bin < binMax; bin++)
+      int32_t binMin = (int32_t)floorf(captureStats.min());
+      int32_t binMax = (int32_t)ceilf(captureStats.max());
+      for (int32_t bin = binMin; bin < binMax; bin++)
       {
          size_t binCount = 0;
          for (size_t i = 0; i < RAW_DATA_CAPTURE_SAMPLE_COUNT; i++)
@@ -1475,7 +1480,8 @@ void printBestConfigurations(TestRunResult* results, size_t count)
       String headerText = table.printHeader();
       textViewer.addText(headerText);
 
-      size_t printCount = (indexCount < 3) ? indexCount : 3;
+      constexpr size_t TOP_RANKING_COUNT = 3;
+      size_t printCount = (indexCount < TOP_RANKING_COUNT) ? indexCount : TOP_RANKING_COUNT;
       for (size_t rank = 0; rank < printCount; rank++)
       {
          const TestRunResult& r = results[indices[rank]];
@@ -1614,7 +1620,8 @@ void printAggregateByTargetRate(const TestRunResult* results, size_t count)
          }
       }
 
-      char label[16] = "";
+      constexpr size_t LABEL_BUFFER_SIZE = 16;
+      char label[LABEL_BUFFER_SIZE] = "";
       snprintf(label, sizeof(label), "%d/s", (int)round(targetRate));
       printAggregateRow(table, label, avgStats, stdDevStats);
    }
@@ -1707,7 +1714,8 @@ void printAggregateByBufferSize(const TestRunResult* results, size_t count)
       float rangeMicros = avgStats.max() - avgStats.min();
       float avgMicros = avgStats.get();
       float stdDevPercent = (isfinite(stdDevStats.get()) && avgMicros != 0.0f) ? (stdDevStats.get() / avgMicros) * 100.0f : NAN;
-      char label[16] = "";
+      constexpr size_t LABEL_BUFFER_SIZE = 16;
+      char label[LABEL_BUFFER_SIZE] = "";
       snprintf(label, sizeof(label), "%lu-%lu", (unsigned long)start, (unsigned long)end);
       String rowText = table.printRow(
          label,
