@@ -28,8 +28,9 @@
 /// This is intentionally display-content-agnostic (no knowledge of series, bins, or time),
 /// so it can be reused by any component that wants cheap frame-to-frame diffing of a small
 /// multi-color raster region (e.g. TimedScatterPlot, or any other custom chart/gauge).
-/// Index 0 is reserved to mean "unlit" and always draws as Color::BLACK; up to
-/// MAX_LAYERS (15) other layers may be assigned distinct colors each frame via setPaletteColor().
+/// Index 0 is reserved to mean "unlit"/background and defaults to Color::BLACK, but may be
+/// reassigned via setBackgroundColor(); up to MAX_LAYERS (15) other layers may be assigned
+/// distinct colors each frame via setPaletteColor().
 /// </summary>
 ///
 class DisplayBuffer
@@ -65,7 +66,8 @@ public:
 private:
    // Maps a frame's layer indices (1..MAX_LAYERS) to the color each should be drawn with;
    // callers rebuild this at the start of every frame via setPaletteColor() as each layer is
-   // assigned. Index 0 is always Color::BLACK (unlit).
+   // assigned. Index 0 (unlit/background) defaults to Color::BLACK but may be reassigned via
+   // setBackgroundColor().
    Color _paletteColors[MAX_LAYERS + 1] = { Color::BLACK };
 
    ///
@@ -124,24 +126,33 @@ private:
 
    ///
    /// <summary>
-   /// Called once per frame at the start of diffAndDraw(). On the very first call after a
+   /// Called once per frame at the start of diffAndDraw(). On the first call after a
    /// bind()/reset(), narrows the buffers from the initial worst-case 4 bits/pixel down to
    /// the minimum bit depth actually needed for the highest layer used so far (tracked via
    /// setPaletteColor()), repacking both the current and previous frame buffers in place.
-   /// Locks the depth afterward so later frames (which may transiently use fewer layers)
-   /// don't repack again mid-lifetime.
+   /// The depth is never narrowed again after that (so later frames that transiently use
+   /// fewer layers don't repack needlessly), but it can still grow later if a caller starts
+   /// using a higher layer index than the currently packed depth can represent (e.g. enabling
+   /// a moving-average/stddev overlay after the buffer already locked in at 1 bit/pixel for
+   /// raw points alone) - otherwise the extra layer's bits would be silently masked away and
+   /// it would draw using layer 0's (background) color instead of its own.
    /// </summary>
    ///
    void _lockBitDepthIfNeeded()
    {
-      if (_depthLocked || _mask == nullptr)
+      if (_mask == nullptr)
+      {
+         return;
+      }
+
+      const uint8_t newBitsPerPixel = _minBitsPerPixel(_maxLayerUsed);
+      if (_depthLocked && (newBitsPerPixel <= _bitsPerPixel))
       {
          return;
       }
 
       _depthLocked = true;
 
-      const uint8_t newBitsPerPixel = _minBitsPerPixel(_maxLayerUsed);
       if (newBitsPerPixel == _bitsPerPixel)
       {
          return;
@@ -267,7 +278,12 @@ public:
       }
 
       memset(_mask, 0, bufSize);
-      memset(_prevMask, 0, bufSize);
+
+      // Prime the previous-frame buffer with a value that can never match a real layer-0
+      // pattern, so the first diffAndDraw() after a (re)allocation treats every pixel as
+      // changed and actually paints the background (and anything else stamped) instead of
+      // assuming it already matches what's on the physical display.
+      memset(_prevMask, 0xFF, bufSize);
       return true;
    }
 
@@ -285,7 +301,7 @@ public:
    /// <summary>
    /// Assigns the color a given layer index should be drawn with for the current frame.
    /// Must be called before diffAndDraw() for every layer index stamped this frame (layer
-   /// 0/unlit always draws as Color::BLACK and cannot be reassigned).
+   /// 0/unlit's color is set separately via setBackgroundColor()).
    /// </summary>
    /// <param name="layer">Layer index (1..MAX_LAYERS) to assign a color to.</param>
    /// <param name="color">Color this layer should draw as this frame.</param>
@@ -300,6 +316,17 @@ public:
             _maxLayerUsed = layer;
          }
       }
+   }
+
+   ///
+   /// <summary>
+   /// Sets the color layer 0 (unlit/background) draws as. Defaults to Color::BLACK.
+   /// </summary>
+   /// <param name="color">Color the background/unlit layer should draw as.</param>
+   ///
+   void setBackgroundColor(Color color)
+   {
+      _paletteColors[0] = color;
    }
 
    ///
@@ -320,18 +347,22 @@ public:
    ///
    /// <summary>
    /// Resets both the current and previous frame buffers to layer 0 (unlit) everywhere.
-   /// Call this after physically clearing the corresponding display region to black, so the
-   /// next diffAndDraw() doesn't think already-black pixels are still lit from before and
-   /// skip redrawing them.
+   /// Pass true for alreadyPhysicallyErased if the caller has already physically painted
+   /// the entire corresponding display region to the background color itself (e.g. via a
+   /// single fillRect()), so the next diffAndDraw() sees no difference for the already-
+   /// erased background and doesn't waste time repainting it pixel-by-pixel. Pass false
+   /// (the default) if the physical display still shows the old frame's content, so the
+   /// next diffAndDraw() treats every pixel as changed and actually repaints it.
    /// </summary>
+   /// <param name="alreadyPhysicallyErased">True if the display region was already physically cleared by the caller.</param>
    ///
-   void reset()
+   void reset(bool alreadyPhysicallyErased = false)
    {
       const size_t bufSize = _bytesPerColumn * static_cast<size_t>(_width);
       if (bufSize > 0)
       {
          memset(_mask, 0, bufSize);
-         memset(_prevMask, 0, bufSize);
+         memset(_prevMask, alreadyPhysicallyErased ? 0 : 0xFF, bufSize);
       }
    }
 
@@ -420,7 +451,7 @@ public:
    /// <summary>
    /// Diffs this frame's buffer against the previous frame's and draws only the pixels
    /// whose layer index actually changed, looking up each pixel's color via the palette set
-   /// through setPaletteColor() (layer 0 always draws as Color::BLACK). Pixels whose layer
+   /// through setPaletteColor()/setBackgroundColor(). Pixels whose layer
    /// did not change are left untouched, so unchanging content is never redrawn or flashed.
    /// The current frame's buffer is copied into the previous-frame buffer afterward so the
    /// next call diffs against what was actually just drawn.

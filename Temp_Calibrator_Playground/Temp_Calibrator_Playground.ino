@@ -894,9 +894,9 @@ void setup()
 
       Color color = SENSOR_PLOT_COLORS[i % (sizeof(SENSOR_PLOT_COLORS) / sizeof(SENSOR_PLOT_COLORS[0]))];
 
-      TimedScatterPlotSeries* shortAvgSeriesForSensor = shortAvgPlot->createSeries();
-      TimedScatterPlotSeries* longAvgSeriesForSensor = longAvgPlot->createSeries();
-      TimedScatterPlotSeries* correctionSeriesForSensor = correctionPlot->createSeries();
+      TimedScatterPlotSeries* shortAvgSeriesForSensor = shortAvgPlot->createSeries(0);
+      TimedScatterPlotSeries* longAvgSeriesForSensor = longAvgPlot->createSeries(0);
+      TimedScatterPlotSeries* correctionSeriesForSensor = correctionPlot->createSeries(0);
       if (!shortAvgSeriesForSensor || !longAvgSeriesForSensor || !correctionSeriesForSensor)
       {
          Util::setHaltReason("OOM allocating scatter plot series in Temp_Calibrator_Playground");

@@ -3,25 +3,25 @@
 #include <Arduino.h>
 #include "Color.h"
 #include "ESP32_S3_Playground.h"
-#include "SetupField.h"
-#include "SetupTable.h"
+#include "DisplayEditableField.h"
+#include "DisplayEditableTable.h"
 
 ///
 /// <summary>
-/// Interactive, blocking, full-screen editor that drives a list of SetupField objects using a
+/// Interactive, blocking, full-screen editor that drives a list of DisplayEditableField objects using a
 /// board's encoders and buttons. Encoder A cycles the selected field, Encoder B adjusts its
 /// value, Button B resets all fields to their defaults, and Button A confirms and saves.
-/// Internally uses a SetupTable for field navigation/adjustment/drawing/persistence,
-/// so the same SetupField list can also be embedded directly into another screen via
-/// SetupTable.
+/// Internally uses a DisplayEditableTable for field navigation/adjustment/drawing/persistence,
+/// so the same DisplayEditableField list can also be embedded directly into another screen via
+/// DisplayEditableTable.
 /// </summary>
 ///
-class SetupDisplay
+class DisplayEditor
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the SetupDisplay class.
+   /// Initializes a new instance of the DisplayEditor class.
    /// </summary>
    /// <param name="arduino">Board providing the display, encoders, buttons, and preferences.</param>
    /// <param name="prefNamespace">Preferences namespace used to persist field values.</param>
@@ -29,10 +29,10 @@ public:
    /// <param name="fields">Array of field pointers to display and edit.</param>
    /// <param name="fieldCount">Number of entries in fields.</param>
    ///
-   SetupDisplay(ESP32_S3_Playground* arduino, const char* prefNamespace,
-               const char* title, SetupField** fields, uint8_t fieldCount)
+   DisplayEditor(ESP32_S3_Playground* arduino, const char* prefNamespace,
+               const char* title, DisplayEditableField** fields, uint8_t fieldCount)
       : _arduino(arduino), _title(title),
-        _table(arduino, prefNamespace, fields, fieldCount)
+        _table(arduino, prefNamespace, fields, fieldCount, 0, 0)
    {
    }
 
@@ -79,8 +79,12 @@ public:
 
       while (true)
       {
-         if (_table.poll())
+         int32_t selectDelta = _arduino->encoderA.delta();
+         int32_t adjustDelta = _arduino->encoderB.delta();
+         if (selectDelta != 0 || adjustDelta != 0)
          {
+            _table.selectNext(selectDelta);
+            _table.adjustSelected(adjustDelta);
             _draw();
          }
 
@@ -101,7 +105,7 @@ public:
 private:
    ESP32_S3_Playground* _arduino;
    const char* _title;
-   SetupTable _table;
+   DisplayEditableTable _table;
    bool _viewInitialized = false;
 
    ///
@@ -125,7 +129,8 @@ private:
       _arduino->setTextSize(2);
 
       int16_t tableTop = _arduino->getCursorY();
-      _table.draw(0, tableTop);
+      _table.setPosition(0, tableTop);
+      _table.draw();
 
       _arduino->setCursor(0, tableTop + _table.height());
       _arduino->println();

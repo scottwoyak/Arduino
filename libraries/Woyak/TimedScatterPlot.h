@@ -9,6 +9,7 @@
 #include "DisplayBuffer.h"
 #include "DisplayField.h"
 #include "Format.h"
+#include "IScatterPlot.h"
 #include "Structs.h"
 #include "TimedAverageHistory.h"
 #include "Util.h"
@@ -28,7 +29,7 @@ class TimedScatterPlot;
 /// by raw sample count, since the X axis is always time.
 /// </summary>
 ///
-class TimedScatterPlotSeries
+class TimedScatterPlotSeries : public IScatterPlotSeries
 {
    friend class TimedScatterPlot;
 
@@ -160,6 +161,20 @@ private:
    void _refreshSnapshot()
    {
       _count = _bins.snapshot(_values, _agesMs);
+
+      // Index 0 (age 0) is always the currently-open bin, which is still accumulating new
+      // raw samples into its running average (see TimedAverageHistoryBase::add()). Its
+      // average therefore keeps changing - and visibly jitters on the chart - every time a
+      // new sample lands in it, right up until it closes and a new bin opens. Blanking it
+      // here (rather than only at render/rasterize time) excludes it consistently from
+      // everything downstream that already treats NAN as "no data": axis-range scanning,
+      // point/line rasterization, and the moving-average/stddev-band recompute below - at
+      // the cost of one bin-duration of latency before new data appears on the chart.
+      if (_count > 0)
+      {
+         _values[0] = NAN;
+      }
+
       _shiftLockedBuffers();
       _recomputeMovingAverage();
       _recomputeStdDevBand();
@@ -396,44 +411,6 @@ private:
 
 public:
    ///
-   /// <summary>If true, draws each sample of this series.</summary>
-   ///
-   bool showPoints = true;
-
-   ///
-   /// <summary>If true, connects each drawn sample of this series to the previous one with a line.</summary>
-   ///
-   bool showLines = false;
-
-   ///
-   /// <summary>If true, draws this series' centered moving average as a connected line.</summary>
-   ///
-   bool showMovingAverage = false;
-
-   ///
-   /// <summary>Color used to draw this series' points and lines.</summary>
-   ///
-   Color color = Color::GREEN;
-
-   ///
-   /// <summary>Color used to draw this series' moving-average line.</summary>
-   ///
-   Color movingAverageColor = Color::YELLOW;
-
-   ///
-   /// <summary>If true, draws a rolling mean +/- stddev band of this series, windowed the
-   /// same way as the centered moving average (see movingStatsDuration), so the band moves with
-   /// the data instead of reflecting a single flat mean/stddev over the whole retained
-   /// history.</summary>
-   ///
-   bool showStdDevBand = false;
-
-   ///
-   /// <summary>Color used to draw this series' stddev band.</summary>
-   ///
-   Color stdDevBandColor = Color::MAGENTA;
-
-   ///
    /// <summary>
    /// Width of the centered window used by both the moving average and the stddev band,
    /// in milliseconds, so the two always track the same span of data. Defaults to one
@@ -479,7 +456,7 @@ public:
    /// </summary>
    /// <param name="value">Value to add.</param>
    ///
-   void add(float value)
+   void add(float value) override
    {
       _bins.add(value);
    }
@@ -489,7 +466,7 @@ public:
    /// Removes every retained sample from this series.
    /// </summary>
    ///
-   void clear()
+   void clear() override
    {
       _bins.reset();
       _count = 0;
@@ -579,7 +556,7 @@ public:
 /// the plot's lifetime, allowing several plots to share one screen.
 /// </summary>
 ///
-class TimedScatterPlot
+class TimedScatterPlot : public IScatterPlot
 {
 private:
    ArduinoWithDisplay* _display;
@@ -602,12 +579,28 @@ private:
    // to make room for it.
    String _title;
 
+   // Chart colors. _outerBackgroundColor covers the area outside the plotted-data region
+   // (e.g. behind axis labels/title); _plotAreaBackgroundColor covers the plotted-data
+   // region itself (drawn via the DisplayBuffer's background/layer-0 color).
+   Color _outerBackgroundColor = Color::BLACK;
+   Color _plotAreaBackgroundColor = Color::BLACK;
+   Color _axisColor = Color::GRAY;
+   Color _labelColor = Color::LABEL;
+
    int16_t _chartLeft = 0;
    int16_t _chartTop = 0;
    int16_t _chartWidth = 0;
    int16_t _chartHeight = 0;
    float _axisYMin = 0.0f;
    float _axisYMax = 0.0f;
+
+   // True when the underlying data range this frame was flat (every plotted value
+   // identical), before _axisYMin/_axisYMax were padded out to a nonzero span for axis
+   // label/geometry purposes. _toPixel() uses this (rather than re-deriving flatness from
+   // the already-padded axis span) to still center a flat series in the chart instead of
+   // mapping it to the bottom edge.
+   bool _dataIsFlat = false;
+
    bool _hasRenderedFrame = false;
    bool _forceFullRedraw = false;
 
@@ -805,27 +798,37 @@ private:
          int16_t titleX = _chartLeft + (_chartWidth - static_cast<int16_t>(_display->textWidth(_title.c_str()))) / 2;
          int16_t titlePadding = _display->charH() / 4;
          _display->setCursor(max(_chartLeft, titleX), static_cast<int16_t>(_rect.y) + titlePadding);
-         _display->print(_title, Color::LABEL);
+         _display->print(_title, _labelColor, _outerBackgroundColor);
       }
 
-      _display->fillRect(_chartLeft, _chartTop + _chartHeight - 1, _chartWidth, 1, Color::GRAY);
-      _display->fillRect(_chartLeft, _chartTop, 1, _chartHeight, Color::GRAY);
+      _display->fillRect(_chartLeft, _chartTop + _chartHeight - 1, _chartWidth, 1, _axisColor);
+      _display->fillRect(_chartLeft, _chartTop, 1, _chartHeight, _axisColor);
+
+      // Physically clear the reserved Y-axis label column before drawing the new min/max
+      // labels. Labels are right-aligned based on their own rendered text width, so a
+      // narrower new label wouldn't otherwise overwrite every pixel a previously-drawn
+      // wider label occupied, leaving stale digits on screen (e.g. after recreatePlot()
+      // swaps in a new source/plot).
+      int16_t yLabelColumnX = static_cast<int16_t>(_rect.x);
+      int16_t yLabelColumnWidth = _chartLeft - 2 - yLabelColumnX;
+      _display->fillRect(yLabelColumnX, _chartTop, yLabelColumnWidth, _display->charH(), _outerBackgroundColor);
+      _display->fillRect(yLabelColumnX, _chartTop + _chartHeight - _display->charH(), yLabelColumnWidth, _display->charH(), _outerBackgroundColor);
 
       String maxLabel = _formatYLabel(_axisYMax);
       int16_t maxLabelX = _chartLeft - 2 - static_cast<int16_t>(_display->textWidth(maxLabel.c_str()));
       _display->setCursor(maxLabelX, _chartTop);
-      _display->print(maxLabel, Color::LABEL);
+      _display->print(maxLabel, _labelColor, _outerBackgroundColor);
 
       String minLabel = _formatYLabel(_axisYMin);
       int16_t minLabelX = _chartLeft - 2 - static_cast<int16_t>(_display->textWidth(minLabel.c_str()));
       minLabelX = max(static_cast<int16_t>(0), minLabelX);
       _display->setCursor(minLabelX, _chartTop + _chartHeight - _display->charH());
-      _display->print(minLabel, Color::LABEL);
+      _display->print(minLabel, _labelColor, _outerBackgroundColor);
 
       String rangeLabel = _formatHistoryRangeLabel();
       int16_t rangeLabelX = _chartLeft + (_chartWidth - static_cast<int16_t>(_display->textWidth(rangeLabel.c_str()))) / 2;
       _display->setCursor(max(_chartLeft, rangeLabelX), _chartTop + _chartHeight + 1);
-      _display->print(rangeLabel, Color::LABEL);
+      _display->print(rangeLabel, _labelColor, _outerBackgroundColor);
    }
 
    ///
@@ -931,7 +934,6 @@ private:
    void _toPixel(size_t binIndex, size_t numBins, float value, int16_t& outX, int16_t& outY) const
    {
       float ySpan = _axisYMax - _axisYMin;
-      if (ySpan <= 0.0f) ySpan = 1.0f;
 
       // binIndex is a stable integer identity for a given retained sample (bin 0 is
       // always the newest/still-open bin, regardless of how many rotations have
@@ -952,8 +954,19 @@ private:
       // The bottom-most chart row is reserved for the gray X-axis line (drawn by
       // _drawAxes()), so data points are confined to chartHeight - 1 rows above it;
       // otherwise a minimum-value sample would land on the same row as the axis line
-      // and overwrite it on every redraw.
-      outY = static_cast<int16_t>(((_axisYMax - value) / ySpan) * (_chartHeight - 2));
+      // and overwrite it on every redraw. When the underlying data range is flat (e.g.
+      // every plotted value is identical), center the data instead of pinning it to the
+      // axis-maximum edge; _dataIsFlat is used rather than re-checking ySpan here since
+      // render() pads _axisYMin/_axisYMax out to a nonzero span for axis label/geometry
+      // purposes even when the real data range was flat.
+      if (_dataIsFlat)
+      {
+         outY = static_cast<int16_t>((_chartHeight - 2) / 2);
+      }
+      else
+      {
+         outY = static_cast<int16_t>(((_axisYMax - value) / ySpan) * (_chartHeight - 2));
+      }
 
       outX = constrain(outX, static_cast<int16_t>(1), static_cast<int16_t>(_chartWidth - 1));
       outY = constrain(outY, static_cast<int16_t>(0), static_cast<int16_t>(_chartHeight - 2));
@@ -1097,9 +1110,16 @@ private:
    int16_t valueToDisplayY(float value) const
    {
       float ySpan = _axisYMax - _axisYMin;
-      if (ySpan <= 0.0f) ySpan = 1.0f;
 
-      int16_t relativeY = static_cast<int16_t>(((_axisYMax - value) / ySpan) * (_chartHeight - 2));
+      int16_t relativeY;
+      if (ySpan <= 0.0f)
+      {
+         relativeY = static_cast<int16_t>((_chartHeight - 2) / 2);
+      }
+      else
+      {
+         relativeY = static_cast<int16_t>(((_axisYMax - value) / ySpan) * (_chartHeight - 2));
+      }
       relativeY = constrain(relativeY, static_cast<int16_t>(0), static_cast<int16_t>(_chartHeight - 2));
       return _chartTop + relativeY;
    }
@@ -1186,9 +1206,8 @@ private:
    /// <param name="numBins">Number of time bins to retain, or 0 (the default) to use this plot's rectangle pixel width.</param>
    /// <returns>Pointer to the newly created series.</returns>
    ///
-   TimedScatterPlotSeries* createSeries(size_t numBins = 0)
-   {
-      if (_seriesCount >= _seriesCapacity)
+   TimedScatterPlotSeries* createSeries(size_t numBins)
+   {      if (_seriesCount >= _seriesCapacity)
       {
          size_t newCapacity = _seriesCapacity + 5;
          TimedScatterPlotSeries** newSeries = new (std::nothrow) TimedScatterPlotSeries*[newCapacity];
@@ -1221,46 +1240,58 @@ private:
          _seriesCapacity = newCapacity;
       }
 
-      size_t effectiveNumBins = (numBins > 0) ? numBins : static_cast<size_t>(max<int16_t>(1, static_cast<int16_t>(_rect.width)));
-      TimedScatterPlotSeries* newSeries = new TimedScatterPlotSeries(_historyMs, effectiveNumBins);
-      _series[_seriesCount] = newSeries;
-      _movingAverageFields[_seriesCount] = nullptr;
-      _stdDevFields[_seriesCount] = nullptr;
-      _seriesCount++;
-      return newSeries;
-   }
+         size_t effectiveNumBins = (numBins > 0) ? numBins : static_cast<size_t>(max<int16_t>(1, static_cast<int16_t>(_rect.width)));
+         TimedScatterPlotSeries* newSeries = new TimedScatterPlotSeries(_historyMs, effectiveNumBins);
+         _series[_seriesCount] = newSeries;
+         _movingAverageFields[_seriesCount] = nullptr;
+         _stdDevFields[_seriesCount] = nullptr;
+         _seriesCount++;
+         return newSeries;
+      }
 
-   ///
-   /// <summary>
-   /// Gets a series by index.
-   /// </summary>
-   /// <param name="index">Index of the series to retrieve.</param>
-   /// <returns>Pointer to the series at the specified index, or nullptr if index is invalid.</returns>
-   ///
-   TimedScatterPlotSeries* getSeries(size_t index)
-   {
-      return (index < _seriesCount) ? _series[index] : nullptr;
-   }
+      ///
+      /// <summary>
+      /// Creates a new time series owned by this plot, using this plot's rectangle pixel
+      /// width as the bin count (see IScatterPlot::createSeries()).
+      /// </summary>
+      /// <returns>Pointer to the newly created series.</returns>
+      ///
+      IScatterPlotSeries* createSeries() override
+      {
+         return createSeries(0);
+      }
 
-   ///
-   /// <summary>
-   /// Gets the number of series currently managed by this plot.
-   /// </summary>
-   /// <returns>Number of series.</returns>
-   ///
-   size_t getSeriesCount() const
-   {
-      return _seriesCount;
-   }
+      ///
+      /// <summary>
+      /// Gets a series by index.
+      /// </summary>
+      /// <param name="index">Index of the series to retrieve.</param>
+      /// <returns>Pointer to the series at the specified index, or nullptr if index is invalid.</returns>
+      ///
+      IScatterPlotSeries* getSeries(size_t index) override
+      {
+         return (index < _seriesCount) ? _series[index] : nullptr;
+      }
 
-   ///
-   /// <summary>
-   /// Deletes a series at the specified index.
-   /// </summary>
-   /// <param name="index">Index of the series to delete.</param>
-   ///
-   void deleteSeries(size_t index)
-   {
+      ///
+      /// <summary>
+      /// Gets the number of series currently managed by this plot.
+      /// </summary>
+      /// <returns>Number of series.</returns>
+      ///
+      size_t getSeriesCount() const override
+      {
+         return _seriesCount;
+      }
+
+      ///
+      /// <summary>
+      /// Deletes a series at the specified index.
+      /// </summary>
+      /// <param name="index">Index of the series to delete.</param>
+      ///
+      void deleteSeries(size_t index) override
+      {
       if (index < _seriesCount)
       {
          delete _series[index];
@@ -1283,7 +1314,7 @@ private:
    /// Deletes all series managed by this plot.
    /// </summary>
    ///
-   void deleteAllSeries()
+   void deleteAllSeries() override
    {
       for (size_t i = 0; i < _seriesCount; i++)
       {
@@ -1317,15 +1348,27 @@ private:
    /// </summary>
    /// <param name="format">Format object defining precision and alignment.</param>
    ///
-    void setMinMaxFormat(const Format& format)
-   {
-      // Y-axis labels are always drawn flush against the chart's left edge, so force
-      // right alignment on our own copy regardless of how the caller's format is aligned
-      // (e.g. a sensor's format may be left-aligned for use elsewhere, like a table).
-      _minMaxFormat = format.clone(Format::Alignment::RIGHT);
-      _midAxisLabelFormat = format.clone(Format::Alignment::RIGHT);
-      _forceFullRedraw = true;
-   }
+     void setMinMaxFormat(const Format& format)
+    {
+       // Y-axis labels are always drawn flush against the chart's left edge, so force
+       // right alignment on our own copy regardless of how the caller's format is aligned
+       // (e.g. a sensor's format may be left-aligned for use elsewhere, like a table).
+       _minMaxFormat = format.clone(Format::Alignment::RIGHT);
+       _midAxisLabelFormat = format.clone(Format::Alignment::RIGHT);
+       _forceFullRedraw = true;
+    }
+
+    ///
+    /// <summary>
+    /// Sets a custom format for axis min/max labels (see setMinMaxFormat()), matching the
+    /// IScatterPlot::setYAxisFormat() interface shared with ScatterPlot.
+    /// </summary>
+    /// <param name="format">Format object defining precision and alignment.</param>
+    ///
+    void setYAxisFormat(const Format& format) override
+    {
+       setMinMaxFormat(format);
+    }
 
    ///
    /// <summary>
@@ -1354,13 +1397,60 @@ private:
 
    ///
    /// <summary>
+   /// Sets the colors used to draw the chart's non-data elements. Forces a full redraw on
+   /// the next render() since the plot-area background is repainted immediately.
+   /// </summary>
+   /// <param name="outerBackgroundColor">Color used outside the plotted-data area (e.g. behind axis labels/title).</param>
+   /// <param name="plotAreaBackgroundColor">Color used behind the plotted-data area itself.</param>
+   /// <param name="axisColor">Color used to draw the axis lines.</param>
+   /// <param name="labelColor">Color used to draw axis labels and the title.</param>
+   ///
+   void setColors(Color outerBackgroundColor, Color plotAreaBackgroundColor, Color axisColor, Color labelColor) override
+   {
+      _outerBackgroundColor = outerBackgroundColor;
+      _plotAreaBackgroundColor = plotAreaBackgroundColor;
+      _axisColor = axisColor;
+      _labelColor = labelColor;
+      _forceFullRedraw = true;
+   }
+
+   ///
+   /// <summary>
    /// Forces the next render() call to perform a full clear and redraw of the chart area,
    /// even if the computed axis range has not changed.
    /// </summary>
    ///
-   void invalidate()
+   void invalidate() override
    {
       _forceFullRedraw = true;
+   }
+
+   ///
+   /// <summary>
+   /// Immediately erases any previously rendered chart content (axes, points, lines, etc.),
+   /// clears every owned series' retained samples, and forces the next render() to perform
+   /// a full redraw. Mirrors ScatterPlot::clear() so both plot types can be reset the same
+   /// way (e.g. when switching data sources) without waiting for enough new samples to
+   /// accumulate to make the computed axis range valid again.
+   /// </summary>
+   ///
+   void clear() override
+   {
+      bool alreadyErased = (_display != nullptr && _hasRenderedFrame);
+      if (alreadyErased)
+      {
+         _display->fillRect(_rect.x, _rect.y, _rect.width, _rect.height, _outerBackgroundColor);
+      }
+
+      _displayBuffer.reset(alreadyErased);
+
+      _hasRenderedFrame = false;
+      _forceFullRedraw = true;
+
+      for (size_t i = 0; i < _seriesCount; i++)
+      {
+         _series[i]->clear();
+      }
    }
 
    ///
@@ -1405,7 +1495,7 @@ private:
        /// invalidate() was called, or this is the first frame.
    /// </summary>
    ///
-       void render()
+       void render() override
        {
           const unsigned long frameStartMicros = micros();
 
@@ -1428,7 +1518,8 @@ private:
 
           yMin = _roundDownToAxisPrecision(yMin);
           yMax = _roundUpToAxisPrecision(yMax);
-          if (yMax <= yMin)
+          _dataIsFlat = (yMax <= yMin);
+          if (_dataIsFlat)
           {
              yMax = yMin + _axisPrecisionScale();
           }
@@ -1457,10 +1548,11 @@ private:
           // (see DisplayBuffer::diffAndDraw()) naturally redraws every pixel whose layer changed as a
           // result of a rotation, and leaves every unchanged pixel alone, so no special-casing
           // for rotation (or for the ramp-up fill-in period) is needed at all.
-          bool fullRedraw = _forceFullRedraw || !_hasRenderedFrame
-             || (yMin != oldAxisYMin) || (yMax != oldAxisYMax)
+          bool geometryChanged = !_hasRenderedFrame
              || (_chartLeft != oldChartLeft) || (_chartTop != oldChartTop)
              || (_chartWidth != oldChartWidth) || (_chartHeight != oldChartHeight);
+          bool fullRedraw = _forceFullRedraw || geometryChanged
+             || (yMin != oldAxisYMin) || (yMax != oldAxisYMax);
 
           _forceFullRedraw = false;
           _hasRenderedFrame = true;
@@ -1474,10 +1566,37 @@ private:
           // invalidates any previously accumulated buffer content anyway (handled by
           // fullRedraw resetting the buffer to match the fresh chart area below).
           _displayBuffer.bind(_display, _chartLeft, _chartTop, _chartWidth, _chartHeight);
+          _displayBuffer.setBackgroundColor(_plotAreaBackgroundColor);
+
+          // Whenever geometryChanged just physically repainted the chart interior via the
+          // fillRect() below (e.g. a brand-new plot instance created by recreatePlot() when
+          // switching Source), the display buffer's previous-frame state must be told that
+          // the area was already erased. Otherwise bind() (whether it just (re)allocated
+          // fresh buffers primed to "unknown/changed", or is reusing buffers from a
+          // differently-sized previous plot) leaves _prevMask out of sync with what's
+          // actually on screen, causing diffAndDraw() to individually redraw every single
+          // pixel in the chart interior to "correct" a mismatch that doesn't really exist -
+          // the slow, visible left-to-right clear seen on a Source change.
+          if (geometryChanged)
+          {
+             _displayBuffer.reset(/* alreadyPhysicallyErased */ true);
+          }
 
           if (fullRedraw)
           {
-             // No physical black flash-clear is needed here: the plotted-data interior is
+             // Only repaint the full plot rect (title, axis-label gutter, and chart
+             // interior) when the chart geometry actually changed (e.g. first frame,
+             // setRect()/title change); an axis-range-only change keeps the same geometry
+             // and _drawAxes() below already redraws the label text in place, so repainting
+             // the whole rect on every axis-range change would flicker the axis-label
+             // margins for no reason. The chart interior is still fully refreshed below via
+             // _displayBuffer's diffAndDraw().
+             if (geometryChanged)
+             {
+                _display->fillRect(_rect.x, _rect.y, _rect.width, _rect.height, _outerBackgroundColor);
+             }
+
+             // No physical black flash-clear of the chart interior is needed here: it is
              // rendered entirely through _displayBuffer below, whose diffAndDraw() already
              // erases (draws black over) any pixel that was lit last frame but isn't lit
              // this frame - including every stale point invalidated by the new axis range.
@@ -1506,7 +1625,9 @@ private:
           // layer index and record its color in the display buffer's palette, then rasterize
           // it into the one shared buffer. Layer 0 is reserved for "unlit"; only
           // DisplayBuffer::MAX_LAYERS distinct layers can be drawn in a single frame given the
-          // 4-bit buffer width.
+          // 4-bit buffer width. Raw points are rasterized first for every series, then moving
+          // averages, then stddev bands, so overlays are always drawn on top of raw points
+          // (and stddev bands on top of moving averages) even when multiple series overlap.
           uint8_t nextLayer = 1;
 
           for (size_t i = 0; i < _seriesCount; i++)
@@ -1519,6 +1640,11 @@ private:
                 _displayBuffer.setPaletteColor(layer, series->color);
                 _rasterizeSeriesData(series->_values, series->_count, series->numBins(), series->showLines, series->showPoints, true, layer);
              }
+          }
+
+          for (size_t i = 0; i < _seriesCount; i++)
+          {
+             TimedScatterPlotSeries* series = _series[i];
 
              if (series->showMovingAverage && nextLayer <= DisplayBuffer::MAX_LAYERS)
              {
@@ -1526,6 +1652,11 @@ private:
                 _displayBuffer.setPaletteColor(layer, series->movingAverageColor);
                 _rasterizeSeriesData(series->_movingAverageBuffer, series->_count, series->numBins(), true, false, false, layer);
              }
+          }
+
+          for (size_t i = 0; i < _seriesCount; i++)
+          {
+             TimedScatterPlotSeries* series = _series[i];
 
              if (series->showStdDevBand && nextLayer <= DisplayBuffer::MAX_LAYERS)
              {

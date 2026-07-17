@@ -217,7 +217,7 @@ void setup()
       plots[p] = new TimedScatterPlot(&arduino, plotRect, plotHistoryMs, tempFormat, 0.0f, title);
       for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
-         TimedScatterPlotSeries* series = plots[p]->createSeries();
+         TimedScatterPlotSeries* series = plots[p]->createSeries(0);
          series->showPoints = false;
          series->showLines = true;
          series->color = SENSOR_PLOT_COLORS[i];
