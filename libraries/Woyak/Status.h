@@ -3,19 +3,18 @@
 #include "Color.h"
 #include "LED.h"
 
+///
 /// <summary>
 /// Blink interval used for animated status indicators.
 /// </summary>
-constexpr auto BLINK_INTERVAL_MS = 300;
+///
+constexpr uint16_t BLINK_INTERVAL_MS = 300;
 
-//-------------------------------------------------------------------------------------------------
-//
-// Identifies the current device startup or connectivity state.
-//
-//-------------------------------------------------------------------------------------------------
+///
 /// <summary>
 /// Identifies the current device startup or connectivity state.
 /// </summary>
+///
 enum Status
 {
 	NONE = 0,
@@ -25,39 +24,37 @@ enum Status
 	READY = 4,
 };
 
-//-------------------------------------------------------------------------------------------------
-//
-// Defines a common interface for status indicators used during startup and connectivity changes.
-//
-//-------------------------------------------------------------------------------------------------
+///
 /// <summary>
 /// Defines a common interface for status indicators used during startup and connectivity changes.
 /// </summary>
+///
 class IStatus
 {
 public:
 	virtual ~IStatus() = default;
 
+   ///
 	/// <summary>
 	/// Initializes the status indicator.
 	/// </summary>
+	///
 	virtual void begin() = 0;
 
+	///
 	/// <summary>
 	/// Updates the indicator to reflect the specified status.
 	/// </summary>
 	/// <param name="status">The status value to display.</param>
+   ///
 	virtual void setStatus(Status status) = 0;
 };
 
-//-------------------------------------------------------------------------------------------------
-//
-// Drives three discrete LEDs to represent power, WiFi, and web connectivity states.
-//
-//-------------------------------------------------------------------------------------------------
+///
 /// <summary>
 /// Drives three discrete LEDs to represent power, WiFi, and web connectivity states.
 /// </summary>
+///
 class LedStatus : public IStatus
 {
 private:
@@ -66,12 +63,14 @@ private:
 	LED _webLed;
 
 public:
+   ///
 	/// <summary>
 	/// Initializes the status indicator with dedicated power, WiFi, and web LEDs.
 	/// </summary>
 	/// <param name="powerPin">The pin used for the power status LED.</param>
 	/// <param name="wifiPin">The pin used for the WiFi status LED.</param>
 	/// <param name="webPin">The pin used for the web status LED.</param>
+	///
 	LedStatus(uint8_t powerPin, uint8_t wifiPin, uint8_t webPin)
 		: _powerLed(powerPin), _wifiLed(wifiPin), _webLed(webPin)
 	{
@@ -80,9 +79,11 @@ public:
 		_webLed.setLevel(0.20f);
 	}
 
+	///
 	/// <summary>
 	/// Initializes all three status LEDs.
 	/// </summary>
+	///
 	void begin() override
 	{
 		_powerLed.begin();
@@ -90,10 +91,12 @@ public:
 		_webLed.begin();
 	}
 
+	///
 	/// <summary>
 	/// Updates the discrete LEDs to represent the specified status.
 	/// </summary>
 	/// <param name="status">The status value to display.</param>
+   /// 
 	void setStatus(Status status) override
 	{
 		switch (status)
@@ -131,44 +134,47 @@ public:
 	}
 };
 
-//-------------------------------------------------------------------------------------------------
-//
-// Uses a single RGB LED to indicate startup and connectivity states with different colors.
-//
-//-------------------------------------------------------------------------------------------------
+///
 /// <summary>
 /// Uses a single RGB LED to indicate startup and connectivity states with different colors.
 /// </summary>
+///
 class RGBLEDStatus : public IStatus
 {
 private:
 	RGBLED _led;
 
 public:
+   ///
 	/// <summary>
 	/// Initializes the status indicator with a single RGB LED.
 	/// </summary>
 	/// <param name="redPin">The red channel pin.</param>
 	/// <param name="greenPin">The green channel pin.</param>
 	/// <param name="bluePin">The blue channel pin.</param>
+	///
 	RGBLEDStatus(uint8_t redPin, uint8_t greenPin, uint8_t bluePin)
 		: _led(redPin, greenPin, bluePin)
 	{
 	}
 
+	///
 	/// <summary>
 	/// Initializes the RGB LED and clears the current status.
 	/// </summary>
+	///
 	void begin() override
 	{
 		_led.begin();
 		setStatus(Status::NONE);
 	}
 
+	///
 	/// <summary>
 	/// Updates the RGB LED to represent the specified status.
 	/// </summary>
 	/// <param name="status">The status value to display.</param>
+   ///
 	void setStatus(Status status) override
 	{
 		switch (status)
@@ -200,14 +206,11 @@ public:
 	}
 };
 
-//-------------------------------------------------------------------------------------------------
-//
-// Uses a NeoPixel LED to indicate startup and connectivity states with built-in color helpers.
-//
-//-------------------------------------------------------------------------------------------------
+///
 /// <summary>
 /// Uses a NeoPixel LED to indicate startup and connectivity states with built-in color helpers.
 /// </summary>
+///
 class NeoPixelStatus : public IStatus
 {
 private:
@@ -215,10 +218,12 @@ private:
 	NeoPixelLED* _led;
 
 public:
+   ///
 	/// <summary>
 	/// Initializes the status indicator with a NeoPixel LED.
 	/// </summary>
 	/// <param name="led">The NeoPixel LED instance to use, or null to create one internally.</param>
+	///
 	NeoPixelStatus(NeoPixelLED* led = nullptr)
 	{
 		if (led != nullptr)
@@ -232,6 +237,11 @@ public:
 		}
 	}
 
+	///
+	/// <summary>
+	/// Destroys the status indicator, releasing the internally created NeoPixel LED if any.
+	/// </summary>
+	///
 	~NeoPixelStatus() override
 	{
 		if (_autoCreatedLED)
@@ -240,18 +250,22 @@ public:
 		}
 	}
 
+	///
 	/// <summary>
 	/// Initializes the NeoPixel using the default brightness level.
 	/// </summary>
+	///
 	void begin() override
 	{
 		begin(0.05f);
 	}
 
+	///
 	/// <summary>
 	/// Initializes the NeoPixel LED and applies the specified brightness level.
 	/// </summary>
 	/// <param name="level">The NeoPixel brightness level from 0.0 to 1.0.</param>
+   /// 
 	void begin(float level)
 	{
 		if (_autoCreatedLED)
@@ -263,19 +277,23 @@ public:
 		setStatus(Status::NONE);
 	}
 
+	///
 	/// <summary>
 	/// Updates the active NeoPixel brightness level.
 	/// </summary>
 	/// <param name="level">The NeoPixel brightness level from 0.0 to 1.0.</param>
+   /// 
 	void setLevel(float level)
 	{
 		_led->setLevel(level);
 	}
 
+	///
 	/// <summary>
 	/// Updates the NeoPixel to represent the specified status.
 	/// </summary>
 	/// <param name="status">The status value to display.</param>
+   /// 
 	void setStatus(Status status) override
 	{
 		switch (status)
@@ -306,22 +324,26 @@ public:
 		}
 	}
 
+   ///
 	/// <summary>
 	/// Sets a custom NeoPixel status color using normalized RGB channel values.
 	/// </summary>
 	/// <param name="r">The red channel level from 0.0 to 1.0.</param>
 	/// <param name="g">The green channel level from 0.0 to 1.0.</param>
 	/// <param name="b">The blue channel level from 0.0 to 1.0.</param>
+	///
 	void setStatus(float r, float g, float b)
 	{
 		_led->setColor(r, g, b);
 		_led->turnOn();
 	}
 
+	///
 	/// <summary>
 	/// Sets a custom NeoPixel status color from a 16-bit display color value.
 	/// </summary>
 	/// <param name="color">The color to apply to the NeoPixel.</param>
+   /// 
 	void setStatus(Color color)
 	{
 		_led->setColor(Color565::getR(color), Color565::getG(color), Color565::getB(color));

@@ -1,12 +1,11 @@
-/// <summary>
-/// NeoPixel LED blinking indicator demonstration.
-/// </summary>
-/// <remarks>
-/// Initializes a Feather onboard NeoPixel to blink in red at 500ms intervals.
-/// Demonstrates basic NeoPixel color, brightness, and animation control.
-/// 
-/// Hardware: Feather board with integrated NeoPixel LED.
-/// </remarks>
+//
+// NeoPixel LED blinking indicator demonstration.
+//
+// Initializes a Feather onboard NeoPixel to blink in red at 500ms intervals.
+// Demonstrates basic NeoPixel color, brightness, and animation control.
+//
+// Hardware: Feather board with integrated NeoPixel LED.
+//
 
 #include <Arduino.h>
 
@@ -17,26 +16,25 @@
 #endif
 
 #include "LED.h"
-#include "Stopwatch.h"
 
 constexpr float RED_INTENSITY = 1.0f;
 constexpr float GREEN_INTENSITY = 0.0f;
 constexpr float BLUE_INTENSITY = 0.0f;
 
 constexpr float BRIGHTNESS_LEVEL = 0.1f;
-constexpr unsigned long BLINK_INTERVAL_MS = 500;
+constexpr uint16_t BLINK_INTERVAL_MS = 500;
 
 Arduino arduino;
+NeoPixelLED& led = arduino.neoPixel;
 
 void setup()
 {
-   Serial.begin(115200);
    arduino.begin();
 
    // Configure NeoPixel: red color, 10% brightness, blink at 500ms
-   arduino.neoPixel.setColor(RED_INTENSITY, GREEN_INTENSITY, BLUE_INTENSITY);
-   arduino.neoPixel.setLevel(BRIGHTNESS_LEVEL);
-   arduino.neoPixel.blink(BLINK_INTERVAL_MS);
+   led.setColor(RED_INTENSITY, GREEN_INTENSITY, BLUE_INTENSITY);
+   led.setLevel(BRIGHTNESS_LEVEL);
+   led.blink(BLINK_INTERVAL_MS);
 }
 
 void loop()
