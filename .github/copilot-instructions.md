@@ -3,7 +3,7 @@
 ## Environment & Workflow
 - Before answering each user request, first read and follow the latest IDESTATE context, especially the current file, as authoritative. When the user issues a 'refresh' command, explicitly check the newly provided IDESTATE context to update awareness of the current active file and environment state.
 - When determining which sketch a command applies to, always use the latest IDESTATE current file from the user's message as authoritative.
-- Do not automatically run tests; only run tests when explicitly requested.
+- Do not automatically run tests; only run tests when explicitly requested. When running tests for the Arduino/Woyak project, only run the specific relevant tests (e.g., TimedAverage tests) rather than the full aggregate All_Tests suite, since running everything takes too long.
 - Never attempt to build the solution or project automatically (do not use run_build or Visual Micro build commands). If a build or compilation is needed, explicitly ask the user to run it manually and provide the output if necessary.
 - Do not run build/test commands that require VisualMicro context when operating outside Visual Studio VisualMicro pipeline; rely on user-run VisualMicro builds instead. User prefers not to run full solution builds in this workflow; ask them before any compile/run action and rely on user-provided serial output for runtime measurements.
 - When asked to compile an Arduino sketch, build only the current sketch/project, not the entire solution.
