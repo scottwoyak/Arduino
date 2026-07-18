@@ -88,6 +88,7 @@ private:
 
    RollingAverage _shortAverage;
    TimedAverage _longAverage;
+   float _currentValue = NAN;
 
 public:
    ///
@@ -126,8 +127,20 @@ public:
       Multiplexer::select(_muxIndex);
       float temp = _sensor->readTemperatureF();
 
+      _currentValue = temp;
       _shortAverage.set(temp);
       _longAverage.set(temp);
+   }
+
+   ///
+   /// <summary>
+   /// Gets the most recent raw reading taken by read(), before any averaging.
+   /// </summary>
+   /// <returns>Most recent temperature in Fahrenheit, or NaN if no readings have been taken yet.</returns>
+   ///
+   float getCurrentValue() const
+   {
+      return _currentValue;
    }
 
    ///
@@ -276,10 +289,12 @@ TimerSecs prefsTrigger(PREFS_INTERVAL_S);
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
 
+InfluxPoint* nowPoints[NUM_SENSORS] = { nullptr };
 InfluxPoint* shortAvgPoints[NUM_SENSORS] = { nullptr };
 InfluxPoint* longAvgPoints[NUM_SENSORS] = { nullptr };
 InfluxPoint* correctionPoints[NUM_SENSORS] = { nullptr };
 
+InfluxField* nowFields[NUM_SENSORS] = { nullptr };
 InfluxField* shortAvgFields[NUM_SENSORS] = { nullptr };
 InfluxField* longAvgFields[NUM_SENSORS] = { nullptr };
 InfluxField* correctionFields[NUM_SENSORS] = { nullptr };
@@ -793,13 +808,16 @@ void setup()
       // clear out corrections
       sensor.setTempCorrectionF(0);
 
-      shortAvgPoints[i] = new InfluxPoint("Air", { { "location", (String("Cal ") + (i + 1) + ": Short Average").c_str() } });
+      nowPoints[i] = new InfluxPoint("Air", { { "location", (String("Calibration ") + (i + 1)).c_str() }, { "Value", "Now" } });
+      nowFields[i] = nowPoints[i]->addValueField("temperature", 3);
+
+      shortAvgPoints[i] = new InfluxPoint("Air", { { "location", (String("Calibration ") + (i + 1)).c_str() }, { "Value", "Short Average" } });
       shortAvgFields[i] = shortAvgPoints[i]->addValueField("temperature", 3);
 
-      longAvgPoints[i] = new InfluxPoint("Air", { { "location", (String("Cal ") + (i + 1) + ": Long Average").c_str() } });
+      longAvgPoints[i] = new InfluxPoint("Air", { { "location", (String("Calibration ") + (i + 1)).c_str() }, { "Value", "Long Average" } });
       longAvgFields[i] = longAvgPoints[i]->addValueField("temperature", 3);
 
-      correctionPoints[i] = new InfluxPoint("Air", { { "location", (String("Cal ") + (i + 1) + ": Correction").c_str() } });
+      correctionPoints[i] = new InfluxPoint("Air", { { "location", (String("Calibration ") + (i + 1)).c_str() }, { "Value", "Correction" } });
       correctionFields[i] = correctionPoints[i]->addValueField("temperature", 4);
 
       arduino.preferences.putString((String(ID_KEY_PREFIX) + i).c_str(), sensorExists ? sensor.id() : "");
@@ -1046,11 +1064,13 @@ void loop()
             // Short average uploads as soon as it is available; long average and
             // correction (which depends on it) only upload once their full timed
             // window has been collected.
+            float tNow = sensorData[i]->getCurrentValue();
             float tShortAvg = sensorData[i]->getShortAvgValue();
             bool longAvgFull = baselineFull && sensorData[i]->isLongAvgFull();
             float tLongAvg = sensorData[i]->getLongAvgValue();
             float tDelta = baseline - tLongAvg;
 
+            nowFields[i]->set(tNow);
             shortAvgFields[i]->set(tShortAvg);
             longAvgFields[i]->set(tLongAvg);
             correctionFields[i]->set(tDelta);
@@ -1061,7 +1081,8 @@ void loop()
             // aren't posted until their underlying value is expected to be ready (e.g.
             // long average/correction before the timed window fills), so a NaN value
             // once posting starts is a genuine error and is still reported.
-            if ((!shortAvgPoints[i]->post(&client)) ||
+            if ((!nowPoints[i]->post(&client)) ||
+                (!shortAvgPoints[i]->post(&client)) ||
                 (longAvgFull && !longAvgPoints[i]->post(&client)) ||
                 (longAvgFull && !correctionPoints[i]->post(&client)))
             {
