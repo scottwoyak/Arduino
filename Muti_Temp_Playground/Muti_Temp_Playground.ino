@@ -84,6 +84,14 @@ constexpr auto INFLUX_TEMPERATURE_FIELD_NAME = "temperature";
 constexpr auto INFLUX_STAT_TAG_NAME = "stat";
 constexpr auto INFLUX_STAT_CURRENT = "current";
 
+// Every uploadAllPoints() call queues up to this many points (one "current" point plus
+// one point per averaging window, per sensor). Setting the write batch size to this
+// count means writePoint() only buffers each point instead of sending it immediately;
+// they are all still separate Influx points/timestamps, just posted together in a
+// single HTTP request when flushed at the end of uploadAllPoints().
+constexpr uint8_t INFLUX_POINTS_PER_SENSOR = NUM_WINDOWS + 1;
+constexpr uint8_t INFLUX_BATCH_SIZE = NUM_SENSORS * INFLUX_POINTS_PER_SENSOR;
+
 // Averaging windows, in seconds, displayed/uploaded alongside the current value
 constexpr float AVERAGE_WINDOWS_S[NUM_WINDOWS] = { 10, 60, 120, 300, 600 };
 constexpr const char* AVERAGE_WINDOW_LABELS[NUM_WINDOWS] = { "10s", "1m", "2m", "5m", "10m" };
@@ -161,10 +169,9 @@ void activatePlotView(uint8_t plotView)
    deactivatePlotView();
 
    constexpr float NOW_AVERAGE_WINDOW_S = 1.0f;
-   const char* title = (plotView == 0) ? "Now" : AVERAGE_WINDOW_LABELS[plotView - 1];
    float averageWindowS = (plotView == 0) ? NOW_AVERAGE_WINDOW_S : AVERAGE_WINDOWS_S[plotView - 1];
    unsigned long plotHistoryMs = static_cast<unsigned long>(averageWindowS * PLOT_HISTORY_MULTIPLIER * 1000.0f);
-   activePlot = new TimedScatterPlot(&arduino, plotRect, plotHistoryMs, tempFormat, 0.0f, title);
+   activePlot = new TimedScatterPlot(&arduino, plotRect, plotHistoryMs, tempFormat, 0.0f);
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       TimedScatterPlotSeries* series = activePlot->createSeries(0);
@@ -172,6 +179,15 @@ void activatePlotView(uint8_t plotView)
       series->showLines = true;
       series->color = SENSOR_PLOT_COLORS[i];
       activePlotSeries[i] = series;
+
+      // Seed the series with its current value right away so the plot shows data
+      // immediately when switching views, rather than staying empty until the next
+      // sensorTimer.ready() reading.
+      if (sensors[i]->exists())
+      {
+         float plotValue = (plotView == 0) ? currentFields[i]->get() : averageFields[i][plotView - 1]->get();
+         series->add(plotValue);
+      }
    }
    activePlotView = plotView;
 }
@@ -184,6 +200,8 @@ void activatePlotView(uint8_t plotView)
 ///
 bool uploadAllPoints()
 {
+   bool allSucceeded = true;
+
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       if (!sensors[i]->exists())
@@ -193,19 +211,26 @@ bool uploadAllPoints()
 
       if (!currentPoints[i]->post(&client))
       {
-         return false;
+         allSucceeded = false;
       }
 
       for (uint8_t w = 0; w < NUM_WINDOWS; w++)
       {
          if (!averagePoints[i][w]->post(&client))
          {
-            return false;
+            allSucceeded = false;
          }
       }
    }
 
-   return true;
+   // All points above were only queued into the write buffer (see INFLUX_BATCH_SIZE), so
+   // flush now to post everything in a single HTTP request sharing one write timestamp.
+   if (!client.flushBuffer())
+   {
+      allSucceeded = false;
+   }
+
+   return allSucceeded;
 }
 
 void setup()
@@ -231,6 +256,8 @@ void setup()
          averagePoints[i][w]->addTag(INFLUX_STAT_TAG_NAME, AVERAGE_WINDOW_LABELS[w]);
       }
    }
+
+   client.setWriteOptions(WriteOptions().batchSize(INFLUX_BATCH_SIZE).bufferSize(2 * INFLUX_BATCH_SIZE));
 
    arduino.begin();
    arduino.setTextSize(2);
@@ -369,7 +396,13 @@ void loop()
 
    arduino.setCursor(0, 0);
    arduino.setTextSize(3);
-   arduino.print("Mutli Temperature Monitor", Color::HEADING);
+   arduino.print("Mutli-Temp Monitor", Color::HEADING);
+   if (viewMode != ViewMode::TABLE)
+   {
+      const char* rangeLabel = (activePlotView == 0) ? "Now" : AVERAGE_WINDOW_LABELS[activePlotView - 1];
+      arduino.print(" - ", Color::HEADING);
+      arduino.print(rangeLabel, Color::HEADING);
+   }
    arduino.println();
    arduino.setTextSize(2);
    arduino.moveCursorY(arduino.charH() / 3);
