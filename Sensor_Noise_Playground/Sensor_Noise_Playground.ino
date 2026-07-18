@@ -18,6 +18,7 @@
 
 #include "EnumSelector.h"
 #include "ESP32_S3_Playground.h"
+#include "DisplayField.h"
 #include "DisplayTable.h"
 #include "RollingRate.h"
 #include "TestSensor.h"
@@ -76,6 +77,8 @@ Format countFormat("######");
 Format sampleTimeFormat("#### ms");
 Format stdDevPercentFormat("##.##%", 7);
 DisplayTable noiseTable(&arduino, CONTENT_RECT.x, CONTENT_RECT.y, 2);
+DisplayField* targetRateField = nullptr;
+DisplayField* actualRateField = nullptr;
 TimedScatterPlot scatterPlot(&arduino, CONTENT_RECT, SCATTER_HISTORY_PERIOD_S * 1000UL, 0.0f);
 TimedScatterPlotSeries* scatterSeries = nullptr;
 TimedHistogram histogram(HISTOGRAM_BIN_COUNT, HISTOGRAM_HISTORY_PERIOD_S * 1000UL, SENSOR_VALUE_RESOLUTION_F);
@@ -85,7 +88,7 @@ enum class DisplayMode : uint8_t
 {
    Scatter,
    Histogram,
-   Noise,
+   Table,
    RateOnly,
 };
 
@@ -102,10 +105,8 @@ void addSample(float value)
    sampleRate.tick();
    samples.set(value);
    stats.set(value);
-   if (scatterSeries != nullptr)
-   {
-      scatterSeries->add(value);
-   }
+   ASSERT(scatterSeries != nullptr);
+   scatterSeries->add(value);
 }
 
 ///
@@ -118,34 +119,18 @@ void drawHeader()
    arduino.setTextSize(3);
    arduino.setCursor(0, 0);
    arduino.println("Sensor Noise", Color::HEADING);
-   const uint8_t titleHeight = arduino.charH();
 
    arduino.setTextSize(2);
-   arduino.setCursor(0, titleHeight);
    arduino.print("Sensor Type: ", Color::GRAY);
    arduino.println(sensor.sensorType(), Color::GRAY);
 
-   switch (displayModeSelector.value())
+   if (displayModeSelector.value() == DisplayMode::RateOnly)
    {
-   case DisplayMode::Scatter:
-      break;
-
-   case DisplayMode::Histogram:
-      break;
-
-   case DisplayMode::Noise:
-      break;
-
-   case DisplayMode::RateOnly:
-   default:
       arduino.setTextSize(2);
       arduino.setCursor(0, CONTENT_RECT.y);
       arduino.println("This view doesn't display anything so that we", Color::VALUE2);
-      arduino.setCursor(0, CONTENT_RECT.y + arduino.charH());
       arduino.println("can more accurately measure the actual sensor", Color::VALUE2);
-      arduino.setCursor(0, CONTENT_RECT.y + (arduino.charH() * 2));
       arduino.println("sample rate.", Color::VALUE2);
-      break;
    }
 }
 
@@ -156,7 +141,7 @@ void drawHeader()
 /// noiseTable, which only redraws a row's value when it actually changes.
 /// </summary>
 ///
-void renderNoiseView()
+void renderTableView()
 {
    float avg = stats.average();
    float minValue = stats.min();
@@ -228,6 +213,15 @@ void setup()
    noiseTable.addRow("StdDev", *sensor.getHighResFormat(), Color::LABEL, Color::VALUE2);
    noiseTable.addRow("StdDev%", stdDevPercentFormat, Color::LABEL, Color::VALUE2);
 
+   arduino.setTextSize(2);
+   std::string label = "Target Sampling Rate";
+   int x = arduino.display.width() - (label.length() + 2  + rateFormat.length()) * arduino.charW();
+   targetRateField = new DisplayField(&arduino, x, 0, label.c_str(), rateFormat, 2);
+
+   label = "Actual Rate";
+   x = arduino.display.width() - (label.length() + 2  +  rateFormat.length()) * arduino.charW();
+   actualRateField = new DisplayField(&arduino, x, arduino.charH(), label.c_str(), rateFormat, 2);
+
    sensor.begin();
    sensor.get();
 
@@ -277,16 +271,15 @@ void loop()
    const uint16_t targetSampleRate = TARGET_SAMPLE_RATES[sampleRateIndex];
 
    arduino.setTextSize(2);
-   arduino.setCursor(0, 0);
-   arduino.printlnR("Target Sampling Rate: ", targetSampleRate, rateFormat, Color::LABEL, Color::VALUE, Color::BLACK, Color::BLUE);
-   arduino.setCursor(0, arduino.charH());
+   targetRateField->draw(targetSampleRate);
+
    if (sampleRate.getElapsedMs() >= MIN_ELAPSED_MS_FOR_ACTUAL_RATE)
    {
-      arduino.printlnR("Actual Rate: ", sampleRate.get(), rateFormat, Color::VALUE);
+      actualRateField->draw(sampleRate.get());
    }
    else
    {
-      arduino.printlnR("Actual Rate: ", rateFormat.toString("---"), Color::VALUE);
+      actualRateField->draw("---");
    }
 
    switch (displayModeSelector.value())
@@ -299,8 +292,8 @@ void loop()
       histogramPlot.render();
       break;
 
-   case DisplayMode::Noise:
-      renderNoiseView();
+   case DisplayMode::Table:
+      renderTableView();
       break;
 
    case DisplayMode::RateOnly:

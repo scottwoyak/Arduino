@@ -37,6 +37,7 @@ Use this checklist when performing a code cleanup pass to ensure all areas are e
 - [ ] **Templates / Overloads**: Check the preference regarding template meta-programming versus explicit overloads.
 - [ ] **Platform Target**: Review rules for ESP32-S3 specific optimizations.
 - [ ] **Zero/Guard Checks**: Review the conditions under which guard checks should or shouldn't be removed.
+- [ ] **ASSERT Placement**: Verify ASSERT statements appear before all early-return guard clauses and other statements in a function, so invariants are checked before any other work (including guard-clause early returns). For every run of one or more consecutive ASSERTs immediately followed by non-ASSERT code (including runs that occur mid-function, not just at the top), verify a blank line separates the last ASSERT from the next line of code.
 
 ## 7. Display, Strings & Formatting
 - [ ] **Serial Output**: Ensure the correct serial initialization and table classes are used.
@@ -52,3 +53,4 @@ Use this checklist when performing a code cleanup pass to ensure all areas are e
 - [ ] **DRY Principles**: Extract repeated code and setup logic according to guidelines.
 - [ ] **Operator Preference**: Check the rule for increment operations.
 - [ ] **Formatting Consistency**: Ensure you defer to `.editorconfig` for whitespace and brace rules.
+- [ ] **Default-Matching Arguments**: Check calls with optional/default-valued parameters and remove any explicit argument that matches the parameter's default value.

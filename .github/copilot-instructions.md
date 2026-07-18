@@ -36,6 +36,7 @@
 - Use `micros` instead of `us` in names and identifiers.
 - Always use the `Timer` class when waiting for something.
 - Use `SPAN` or `SAMPLE_TIME` for timing-related names; prefer seconds-based timing variable names like `SAMPLE_PERIOD_S` instead of names using `WINDOWS` like `DISPLAY_WINDOW_SECONDS`.
+- When calling a function that has optional/default-valued parameters, only pass an explicit argument for that parameter if it differs from the parameter's default value; omit the argument when it matches the default. Check for and remove redundant default-matching arguments during cleanup passes.
 - Prefer expressing timing as rate when value is >= 1 per second, but use interval constants when effective rate is < 1 per second.
 - For time constants greater than 2 seconds, prefer using seconds-based constant names with an `_S` suffix (e.g., `NAME_S`) instead of milliseconds-based names with an `_MS` suffix.
 - When addressing data quality issues, prefer root-cause stabilization logic over fixed sample-skipping heuristics.
@@ -84,6 +85,8 @@
   ```
 - Do not add XML docs for `setup()` or `loop()` functions unless explicitly requested; they're self-explanatory.
 - Keep section comments in the style `// ----------- COMMENT` where they already exist (e.g. grouping overloads by type in library headers); do not remove them during cleanup.
+- When a pointer or condition should never be false/null at runtime (i.e. it isn't a legitimately optional value, but rather something that indicates a bug if violated), prefer failing loudly with the `ASSERT(condition)` macro (defined in `libraries/Woyak/Util.h`, built on `Util::setHaltReason()` + `Util::reset()`) instead of a defensive `if (ptr != nullptr)` guard/no-op that would hide the underlying bug. Reserve plain null checks for values that are genuinely optional.
+- Place `ASSERT` statements as early as possible in a function — before any early-return guard clauses and before all other statements — so invariants are checked before any other work happens, even if a guard clause would otherwise make the assert unreachable in some cases. Whenever an `ASSERT` (or a contiguous run of `ASSERT` statements) is immediately followed by a non-`ASSERT` line, leave a blank line between the last `ASSERT` in that run and the next line of code. This applies to every such run in a function, not just the first one at the top (e.g. `ASSERT` -> code -> another `ASSERT` -> code still needs a blank line after each `ASSERT` run).
 
 ## Code Cleanup Requests
 When the user asks for 'cleanup' (with no other file specified), apply it to the currently displayed/open file from IDE context (provided in the `IDESTATE CONTEXT`). A cleanup pass means bringing the file in line with all the conventions, plus the rules below. **CRITICAL: You MUST read and use the `cleanup.md` file located in the root of the workspace as your definitive step-by-step checklist during every cleanup pass to ensure no rules are missed.** Always read `.editorconfig` as part of a cleanup pass and apply its settings (indentation, brace placement, empty-bodied function braces, etc.) as the authoritative source for formatting; this document intentionally defers to `.editorconfig` for those specifics rather than duplicating them, and focuses instead on naming, documentation, and code-organization conventions.

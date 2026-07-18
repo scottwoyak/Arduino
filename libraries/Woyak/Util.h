@@ -7,6 +7,39 @@
  #define digitalPinToGPIONumber(pin) (pin)
 #endif
 
+///
+/// <summary>
+/// Halts the device (via Util::setHaltReason()/Util::reset()) if condition is false,
+/// recording the failed expression, file, and line so it's visible via
+/// Util::checkHaltReason() on the next boot. Intended for invariants that should never be
+/// false at runtime (e.g. a pointer that must always be set): failing loudly and
+/// immediately makes bugs visible instead of letting the sketch silently limp along with a
+/// no-op guard hiding the underlying problem.
+/// </summary>
+///
+#define ASSERT(condition) \
+   do \
+   { \
+      if (!(condition)) \
+      { \
+         Util::setHaltReason(String("Assertion failed: ") + #condition + " (" __FILE__ ":" + String(__LINE__) + ")"); \
+         Util::reset(); \
+      } \
+   } while (0)
+
+///
+/// <summary>
+/// Returns the number of elements in a fixed-size array, computed at compile time.
+/// </summary>
+///
+template <typename T, size_t N>
+constexpr size_t arraySize(const T (&)[N])
+{
+   return N;
+}
+
+#define ARRAY_SIZE(array) arraySize(array)
+
 /// <summary>
 /// Utility functions for common operations.
 /// </summary>

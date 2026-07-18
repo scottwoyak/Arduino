@@ -15,7 +15,7 @@
 /// </summary>
 /// <remarks>
 /// The value sprite is created in the constructor so it is ready before the first draw().
-/// The field stores its own text size and mono flag, applying them automatically at the
+/// The field stores its own text size, applying it automatically at the
 /// start of every draw(). The label and position are captured on the first draw() and are
 /// assumed to stay constant afterward. Call invalidate() if the display area was cleared,
 /// or the text size/font changed via setTextSize(), so the next draw() rebuilds everything.
@@ -39,7 +39,6 @@ private:
    LGFX_Sprite _sprite;
    bool _spriteCreated = false;
    uint8_t _textSize;
-   bool _mono;
 
    ///
    /// <summary>
@@ -67,7 +66,7 @@ private:
       // pointer, which can be freed out from under us if the display later loads a
       // different font (e.g. another DisplayField or the sketch switching modes)
       uint8_t size = constrain(_textSize, (uint8_t)1, (uint8_t)7);
-      _sprite.loadFont(_mono ? RobotoMonoBold[size] : Roboto[size]);
+      _sprite.loadFont(RobotoMonoBold[size]);
 
       _spriteCreated = true;
    }
@@ -158,114 +157,33 @@ public:
    /// Pass an empty string to draw only the value, with no label or separator.</param>
    /// <param name="format">The formatter applied to the value, controlling its fixed width.</param>
    /// <param name="textSize">The text size applied automatically before each draw().</param>
-   /// <param name="mono">If true, uses a monospaced font; if false, uses a proportional font.</param>
    /// <param name="labelColor">The color used to draw the label text.</param>
    /// <param name="valueColor">The color used to draw the value text.</param>
    ///
    DisplayField(ArduinoWithDisplay* display, int16_t x, int16_t y,
                 const char* label, const Format& format,
-                uint8_t textSize, bool mono = true,
+                uint8_t textSize,
                 Color labelColor = Color::LABEL, Color valueColor = Color::VALUE)
       : _display(display), _x(x), _y(y), _label(label), _format(&format),
         _labelColor(labelColor), _valueColor(valueColor), _drawnValueColor(valueColor),
-        _sprite(&display->display), _textSize(textSize), _mono(mono)
+        _sprite(&display->display), _textSize(textSize)
    {
-      _display->setTextSize(_textSize, _mono);
+      _display->setTextSize(_textSize, true);
       _createSprite();
    }
 
    ///
    /// <summary>
-   /// Sets the value to display, formatting it through the field's Format object.
-   /// </summary>
-   /// <param name="value">The new value to display.</param>
-   ///
-   void setValue(double value)
-   {
-      _value = _format->toString(value).c_str();
-   }
-
-   ///
-   /// <summary>
-   /// Sets the value to display, formatting it through the field's Format object.
-   /// </summary>
-   /// <param name="value">The new value to display.</param>
-   ///
-   void setValue(float value)
-   {
-      _value = _format->toString(value).c_str();
-   }
-
-   ///
-   /// <summary>
-   /// Sets the value to display, formatting it through the field's Format object.
-   /// </summary>
-   /// <param name="value">The new value to display.</param>
-   ///
-   void setValue(int value)
-   {
-      _value = _format->toString(value).c_str();
-   }
-
-   ///
-   /// <summary>
-   /// Sets the value to display, formatting it through the field's Format object.
-   /// </summary>
-   /// <param name="value">The new value to display.</param>
-   ///
-   void setValue(long value)
-   {
-      _value = _format->toString(value).c_str();
-   }
-
-   ///
-   /// <summary>
-   /// Sets the value to display, formatting it through the field's Format object.
-   /// </summary>
-   /// <param name="value">The new value to display.</param>
-   ///
-   void setValue(unsigned long value)
-   {
-      _value = _format->toString(value).c_str();
-   }
-
-   ///
-   /// <summary>
-   /// Sets the value to display, formatting it through the field's Format object.
-   /// </summary>
-   /// <param name="value">The new value to display.</param>
-   ///
-   void setValue(const String& value)
-   {
-      _value = _format->toString(value).c_str();
-   }
-
-   ///
-   /// <summary>
-   /// Sets the value to display, formatting it through the field's Format object.
-   /// </summary>
-   /// <param name="value">The new value to display.</param>
-   ///
-   void setValue(const char* value)
-   {
-      _value = _format->toString(value).c_str();
-   }
-
-   ///
-   /// <summary>
-   /// Sets the text size (and mono/proportional font mode) applied automatically before
-   /// each draw(). Invalidates the field so the next draw() rebuilds the label and sprite
-   /// using the new size.
+   /// Sets the text size applied automatically before each draw(). Invalidates the field
+   /// so the next draw() rebuilds the label and sprite using the new size.
    /// </summary>
    /// <param name="textSize">The text size to apply before drawing.</param>
-   /// <param name="mono">If true, uses a monospaced font; if false, uses a proportional font.</param>
    ///
-   void setTextSize(uint8_t textSize, bool mono = true)
+   void setTextSize(uint8_t textSize)
    {
-      if (textSize != _textSize || mono != _mono)
+      if (textSize != _textSize)
       {
          _textSize = textSize;
-         _mono = mono;
          invalidate();
       }
    }
@@ -283,13 +201,18 @@ public:
 
    ///
    /// <summary>
-   /// Draws the field. The first call renders the label directly to the display and the
-   /// value via the sprite (see _drawValueSprite()); later calls redraw only the value via
-   /// the sprite, and only when the value text or color changed since the last draw.
+   /// Sets the value to display and draws the field. The first call renders the label
+   /// directly to the display and the value via the sprite (see _drawValueSprite());
+   /// later calls redraw only the value via the sprite, and only when the value text or
+   /// color changed since the last draw.
    /// </summary>
+   /// <param name="value">The new value to display, formatted through the field's Format object.</param>
    ///
-   void draw()
+   template <typename T>
+   void draw(const T& value)
    {
+      _value = _format->toString(value).c_str();
+
       if (_display == nullptr)
       {
          return;
@@ -299,7 +222,7 @@ public:
       // already has its own font loaded and doesn't need the display's text size set
       if (!_labelDrawn)
       {
-         _display->setTextSize(_textSize, _mono);
+         _display->setTextSize(_textSize, true);
       }
 
       if (!_labelDrawn)
@@ -345,7 +268,7 @@ public:
          _sprite.deleteSprite();
          _spriteCreated = false;
       }
-      _display->setTextSize(_textSize, _mono);
+      _display->setTextSize(_textSize, true);
       _createSprite();
    }
 };

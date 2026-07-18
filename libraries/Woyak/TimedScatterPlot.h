@@ -912,14 +912,13 @@ private:
          {
             if (_stdDevFields[i] == nullptr)
             {
-               _stdDevFields[i] = new DisplayField(_display, labelX, y, "", _midAxisLabelFormat, 2, true, series->stdDevBandColor, series->stdDevBandColor);
+               _stdDevFields[i] = new DisplayField(_display, labelX, y, "", _midAxisLabelFormat, 2, series->stdDevBandColor, series->stdDevBandColor);
             }
 
             float value = series->getLatestStdDev();
             if (isfinite(value))
             {
-               _stdDevFields[i]->setValue(value);
-               _stdDevFields[i]->draw();
+               _stdDevFields[i]->draw(value);
             }
             y += lineHeight;
          }
@@ -928,14 +927,13 @@ private:
          {
             if (_movingAverageFields[i] == nullptr)
             {
-               _movingAverageFields[i] = new DisplayField(_display, labelX, y, "", _midAxisLabelFormat, 2, true, series->movingAverageColor, series->movingAverageColor);
+               _movingAverageFields[i] = new DisplayField(_display, labelX, y, "", _midAxisLabelFormat, 2, series->movingAverageColor, series->movingAverageColor);
             }
 
             float value = series->getLatestMovingAverage();
             if (isfinite(value))
             {
-               _movingAverageFields[i]->setValue(value);
-               _movingAverageFields[i]->draw();
+               _movingAverageFields[i]->draw(value);
             }
             y += lineHeight;
          }

@@ -14,9 +14,9 @@
 // Display:
 // - While a rate test is collecting samples, shows the target and actual (measured)
 //   sample rates; during a cooldown period it shows "Cooling down..." along with the
-//   live rolling-average value. The live scatter plot redraws at most once per
+//   rolling-average value. The scatter plot redraws at most once per
 //   second while collecting.
-// - A single scatter plot accumulates live, with each rate's samples plotted in
+// - A single scatter plot accumulates over the run, with each rate's samples plotted in
 //   its own color against elapsed time. Both the X-axis and Y-axis automatically
 //   scale to fit whatever is currently plotted.
 // - Once every rate has been tested, shows the summary results table (target rate,
@@ -36,13 +36,17 @@
 
 // Local library headers (from libraries/Woyak)
 #include "ESP32_S3_Playground.h"
+#include "DisplayField.h"
+#include "DisplayGrid.h"
 #include "RollingAverage.h"
 #include "RollingRate.h"
 #include "ScatterPlot.h"
 #include "SerialTable.h"
 #include "SerialX.h"
+#include "Stopwatch.h"
 #include "TestSensor.h"
 #include "Timer.h"
+#include "Util.h"
 
 ///
 /// <summary>
@@ -162,7 +166,6 @@ Format targetRateFormat("###", 4, Format::Alignment::RIGHT);
 Format actualRateFormat("###", 4, Format::Alignment::RIGHT);
 
 // ----------- Summary Results Table
-constexpr uint8_t COLUMN_SPACING_CHARS = 2;
 constexpr const char* RESULT_TABLE_TITLE = "Warm-Up Test Results";
 constexpr SerialTable::Column RESULT_TABLE_COLUMNS[] = {
    { "Target(/s)", 14 },
@@ -173,6 +176,17 @@ constexpr SerialTable::Column RESULT_TABLE_COLUMNS[] = {
 constexpr size_t NUM_RESULT_TABLE_COLUMNS = sizeof(RESULT_TABLE_COLUMNS) / sizeof(RESULT_TABLE_COLUMNS[0]);
 SerialTable resultTable(RESULT_TABLE_TITLE, RESULT_TABLE_COLUMNS, NUM_RESULT_TABLE_COLUMNS);
 
+// The on-screen summary table (see drawSummaryView()). Declared after `sensor` since its
+// Start/Delta column formats are taken from the sensor's Format objects.
+const DisplayGrid::Column RESULT_GRID_COLUMNS[] = {
+   { "Target(/s)", &targetRateFormat },
+   { "Actual(/s)", &actualRateFormat },
+   { "Start", sensor.getFormat() },
+   { "Delta", sensor.getHighResFormat() },
+};
+constexpr size_t NUM_RESULT_GRID_COLUMNS = sizeof(RESULT_GRID_COLUMNS) / sizeof(RESULT_GRID_COLUMNS[0]);
+DisplayGrid resultGrid(&arduino, nullptr, RESULT_GRID_COLUMNS, NUM_RESULT_GRID_COLUMNS, Color::LABEL);
+
 // ----------- Scatter Plot State
 ScatterPlot scatterPlot(&arduino, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 Timer displayUpdateTimer(DISPLAY_UPDATE_INTERVAL_MS);
@@ -180,10 +194,12 @@ Timer displayUpdateTimer(DISPLAY_UPDATE_INTERVAL_MS);
 // ----------- Status Line State
 bool hasDrawnStatusLine = false;
 bool lastStatusWasCooldown = false;
-float lastCooldownAvg = NAN;
+bool lastCooldownAvgWasFinite = false;
+DisplayField* cooldownField = nullptr;
 size_t lastDrawnRatesCount = 0;
 int16_t lastDrawnRatesWidth = 0;
 int16_t statusLineY = 0;
+int16_t cooldownLineY = 0;
 
 // ----------- View State
 ResultView resultView = ResultView::Summary;
@@ -204,8 +220,8 @@ private:
    ScatterPlotSeries* _series = nullptr;
    RollingRate _rollingRate;
    Timer _sampleTimer = Timer(1UL);
+   Stopwatch _stopwatch{ false, StopwatchPrecision::Millis };
 
-   unsigned long _startMs = 0;
    float _startValue = NAN;
    unsigned long _targetRate = 0;
    unsigned long _samples = 0;
@@ -228,20 +244,15 @@ private:
    /// value reached, computed internally by the series from its raw samples, the
    /// achieved rate, and the starting value.
    /// </summary>
-   /// <param name="elapsedMs">Elapsed time since the test started, in milliseconds.</param>
+   /// <param name="elapsedSecs">Elapsed time since the test started, in seconds.</param>
    ///
-   void _finish(unsigned long elapsedMs)
+   void _finish(double elapsedSecs)
    {
-      _resultRate = (elapsedMs > 0) ? (1000.0f * static_cast<float>(_samples) / static_cast<float>(elapsedMs)) : NAN;
-      if (_series != nullptr)
-      {
-         _series->finalized = true;
-         _resultValue = _series->findMovingAveragePeak();
-      }
-      else
-      {
-         _resultValue = NAN;
-      }
+      ASSERT(_series != nullptr);
+
+      _resultRate = (elapsedSecs > 0) ? static_cast<float>(_samples / elapsedSecs) : NAN;
+      _series->finalized = true;
+      _resultValue = _series->findMovingAveragePeak();
       _resultStartValue = _startValue;
       _hasResult = true;
       _complete = true;
@@ -272,18 +283,19 @@ public:
    ///
    void start(unsigned long sampleRate, size_t seriesIndex)
    {
-      _smoothingPeriodMs = smoothingPeriodMs(sampleRate);
-      _series = (_scatterPlot != nullptr) ? _scatterPlot->getSeries(seriesIndex) : nullptr;
+      ASSERT(_scatterPlot != nullptr);
 
-      if (_series != nullptr)
-      {
-         _series->clear();
-         _series->movingSampleSize = static_cast<float>(_smoothingPeriodMs) / 1000.0f;
-      }
+      _smoothingPeriodMs = smoothingPeriodMs(sampleRate);
+      _series = static_cast<ScatterPlotSeries*>(_scatterPlot->getSeries(seriesIndex));
+      ASSERT(_series != nullptr);
+
+      _series->clear();
+      _series->movingSampleSize = static_cast<float>(_smoothingPeriodMs) / 1000.0f;
 
       _rollingRate.reset();
       _samples = 0;
-      _startMs = millis();
+      _stopwatch.reset();
+      _stopwatch.start();
       _startValue = NAN;
       _targetRate = sampleRate;
       _complete = false;
@@ -306,6 +318,8 @@ public:
    ///
    void loop()
    {
+      ASSERT(_series != nullptr);
+
       if (_complete)
       {
          return;
@@ -320,23 +334,20 @@ public:
       if (!isfinite(_startValue))
       {
          _startValue = currentValue;
-         // Adjust start time so the first reading's elapsed time is exactly 0.
-         _startMs = millis();
+         // Adjust the stopwatch so the first reading's elapsed time is exactly 0.
+         _stopwatch.reset();
       }
 
       float value = currentValue - _startValue;
-      unsigned long elapsedMs = millis() - _startMs;
+      double elapsedSecs = _stopwatch.elapsedSecs();
       _rollingRate.tick();
 
-      if (_series != nullptr)
-      {
-         _series->add(static_cast<float>(elapsedMs) / 1000.0f, value);
-      }
+      _series->add(static_cast<float>(elapsedSecs), value);
       _samples++;
 
-      if (elapsedMs >= (FIXED_TEST_DURATION_S * 1000UL))
+      if (elapsedSecs >= FIXED_TEST_DURATION_S)
       {
-         _finish(elapsedMs);
+         _finish(elapsedSecs);
       }
    }
 
@@ -564,10 +575,7 @@ public:
    ///
    void start()
    {
-      if (_testCase == nullptr || _cooldownMonitor == nullptr)
-      {
-         return;
-      }
+      ASSERT(_testCase != nullptr && _cooldownMonitor != nullptr);
 
       _complete = false;
       _cooldown = true;
@@ -786,47 +794,66 @@ TestRunner testRunner;
 
 ///
 /// <summary>
-/// Clears the display and draws the collecting-view title, recording the Y position
-/// of the status line drawn below it. Resizes the scatter plot to fill the remaining
-/// space below the header, so its top edge always matches the actual rendered header
-/// height instead of a hard-coded estimate.
+/// Clears the display and draws the collecting-view title, recording the Y positions
+/// of the two top-right status rows drawn to the right of the title: the rate row on
+/// the same row as the title, and the cooldown row directly beneath it. Resizes the
+/// scatter plot to fill the remaining space below the header, so its top edge always
+/// matches the actual rendered header height instead of a hard-coded estimate.
 /// </summary>
 ///
 void drawCollectingHeader()
 {
    arduino.setTextSize(TITLE_TEXT_SIZE);
    arduino.clearDisplay();
+   statusLineY = 0;
    arduino.println("Sensor Warm-Up", Color::HEADING);
 
-   arduino.setTextSize(BODY_TEXT_SIZE);
-   statusLineY = arduino.getCursorY();
-   arduino.setCursorY(statusLineY + arduino.charH());
-   arduino.setCursorY(arduino.getCursorY() + arduino.charH() / 4);
-
-   int16_t headerHeight = arduino.getCursorY();
+   int16_t headerHeight = arduino.getCursorY() + arduino.charH() / 4;
    scatterPlot.setRect(0, headerHeight, DISPLAY_WIDTH, DISPLAY_HEIGHT - headerHeight);
+
+   arduino.setTextSize(BODY_TEXT_SIZE);
+   cooldownLineY = statusLineY + arduino.charH();
+
+   // Compute the field's X so the rendered "label: value" text hugs the right edge of the
+   // display, matching the right-aligned fallback text drawn via printlnR() in updateStatusLine().
+   std::string valueSample(sensor.getHighResFormat()->length(), '0');
+   int16_t cooldownLabelWidth = arduino.textWidth("Cooling Down: ");
+   int16_t cooldownValueWidth = arduino.textWidth(valueSample.c_str());
+   int16_t cooldownFieldX = DISPLAY_WIDTH - cooldownLabelWidth - cooldownValueWidth;
+
+   if (cooldownField == nullptr)
+   {
+      cooldownField = new DisplayField(&arduino, cooldownFieldX, cooldownLineY, "Cooling Down", *sensor.getHighResFormat(),
+                                        BODY_TEXT_SIZE, Color::GRAY, Color::GRAY);
+   }
+   else
+   {
+      cooldownField->invalidate();
+   }
 }
 
 ///
 /// <summary>
-/// Clears the top-right status row (a single line of BODY_TEXT_SIZE text on the line
-/// just below the header) so it can be redrawn with new content.
+/// Clears a top-right status row (a single line of BODY_TEXT_SIZE text at the top of
+/// the display, to the right of the title) so it can be redrawn with new content.
 /// </summary>
+/// <param name="y">The Y position of the row to clear.</param>
 ///
-void clearTopRightStatus()
+void clearTopRightStatus(int16_t y)
 {
    arduino.setTextSize(BODY_TEXT_SIZE);
-   int16_t rightContentStartX = DISPLAY_WIDTH * 40 / 100;  // Start clearing at 40% (keeping left 40%, clearing right 60%)
-   arduino.fillRect(rightContentStartX, statusLineY, DISPLAY_WIDTH - rightContentStartX, arduino.charH(), Color::BLACK);
+   int16_t rightContentStartX = arduino.width() - 6*5*arduino.charW();  // 6 rates, 5 chars each
+   arduino.fillRect(rightContentStartX, y, DISPLAY_WIDTH - rightContentStartX, arduino.charH(), Color::BLACK);
 }
 
 ///
 /// <summary>
-/// Redraws the status line on the line just below the header: the current test's
-/// measured sample rate (in that series' color) while collecting, or the live cooldown
-/// rolling-average value between tests (and before the first test). The row is
-/// cleared first whenever the content changes so switching between cooldown/collecting
-/// modes never leaves stale text behind.
+/// Redraws the two top-right status rows: the current test's measured sample rate(s)
+/// (in each series' color) on the first row while collecting, drawn from
+/// drawScatterView, and the cooldown rolling-average value on the second row between
+/// tests (and before the first test). The cooldown row is cleared first whenever its
+/// content changes so switching between cooldown/collecting modes never leaves stale
+/// text behind.
 /// </summary>
 ///
 void updateStatusLine()
@@ -834,45 +861,47 @@ void updateStatusLine()
    arduino.setTextSize(BODY_TEXT_SIZE);
 
    bool isCooldown = testRunner.isCooldown();
-   float currentAvg = isCooldown ? testRunner.cooldownAvgValue() : NAN;
-
    bool modeChanged = !hasDrawnStatusLine || (isCooldown != lastStatusWasCooldown);
-   bool avgChanged = isCooldown && ((isfinite(currentAvg) != isfinite(lastCooldownAvg)) || (isfinite(currentAvg) && (currentAvg != lastCooldownAvg)));
-
-   if (!modeChanged && !avgChanged)
-   {
-      return;
-   }
 
    if (!isCooldown)
    {
-      // Not cooling down; clear any leftover cooldown text. The rates display
-      // (drawn from drawScatterView) owns this row while actively collecting.
+      // Not cooling down; clear any leftover cooldown text on the second row.
       if (modeChanged)
       {
-         clearTopRightStatus();
+         clearTopRightStatus(cooldownLineY);
       }
       hasDrawnStatusLine = true;
       lastStatusWasCooldown = isCooldown;
-      lastCooldownAvg = currentAvg;
       return;
    }
 
-   clearTopRightStatus();
-   arduino.setCursor(0, statusLineY);
+   float currentAvg = testRunner.cooldownAvgValue();
+   bool currentAvgIsFinite = isfinite(currentAvg);
 
-   if (isfinite(currentAvg))
+   // Clear the row whenever switching modes or when the fallback "Cooling down..." text and
+   // the narrower numeric field trade places; one is not guaranteed to fully overwrite the
+   // other, so without this stale characters from the wider string are left behind.
+   if (modeChanged || (currentAvgIsFinite != lastCooldownAvgWasFinite))
    {
-      arduino.printlnR("Cooling Down: ", currentAvg, *sensor.getHighResFormat(), Color::GRAY, Color::GRAY, Color::BLACK);
+      clearTopRightStatus(cooldownLineY);
+      cooldownField->invalidate();
+   }
+
+   if (currentAvgIsFinite)
+   {
+      // DisplayField only redraws when the formatted value actually changes, so no
+      // separate "did the average change" tracking is needed here.
+      cooldownField->draw(currentAvg);
    }
    else
    {
+      arduino.setCursor(0, cooldownLineY);
       arduino.printlnR("Cooling down...", Color::GRAY);
    }
 
    hasDrawnStatusLine = true;
    lastStatusWasCooldown = isCooldown;
-   lastCooldownAvg = currentAvg;
+   lastCooldownAvgWasFinite = currentAvgIsFinite;
 }
 
 ///
@@ -896,7 +925,7 @@ void drawScatterView(ResultView viewMode, bool forceFullRedraw)
 
    for (size_t i = 0; i < scatterPlot.getSeriesCount(); i++)
    {
-      ScatterPlotSeries* series = scatterPlot.getSeries(i);
+      IScatterPlotSeries* series = scatterPlot.getSeries(i);
       series->showPoints = showRaw;
       series->showMovingAverage = showMovingAverage;
    }
@@ -910,7 +939,7 @@ void drawScatterView(ResultView viewMode, bool forceFullRedraw)
    scatterPlot.render();
    arduino.display.endWrite();
 
-   // Draw the actual rates on the line just below the header, right-aligned and
+   // Draw the actual rates at the top of the display (to the right of the title), right-aligned and
    // color-coded per series, only if there are completed results and we're not showing
    // the cooldown message instead (updateStatusLine owns this row while cooling down).
    // Include the currently running test's rate if one is active. Clears the row first
@@ -924,40 +953,35 @@ void drawScatterView(ResultView viewMode, bool forceFullRedraw)
    {
       arduino.setTextSize(BODY_TEXT_SIZE);
 
-      constexpr const char* RATE_LABEL = " Sample Rate: ";
-
       // Count how many rates to display (completed + current if running)
       size_t displayRateCount = resultCount + (isRunning ? 1 : 0);
 
-      // Build each rate's text and measure total width (including the label) so the
-      // group is right-aligned
+      // Build each rate's text and measure total width so the group is right-aligned
       String rateStrs[MAX_RESULTS + 1];
-      int16_t totalWidth = arduino.charW() * strlen(RATE_LABEL);
+      int16_t totalWidth = 0;
 
       // Add completed results' rates
       for (size_t i = 0; i < resultCount; i++)
       {
          rateStrs[i] = String(static_cast<unsigned long>(testRunner.resultRate(i))) + "/s";
          if (i < displayRateCount - 1) rateStrs[i] += " ";
-         totalWidth += arduino.charW() * rateStrs[i].length();
+         totalWidth += arduino.textWidth(rateStrs[i].c_str());
       }
 
       // Add currently running test's rate if applicable
       if (isRunning)
       {
          rateStrs[resultCount] = String(static_cast<unsigned long>(testCase.currentRate())) + "/s";
-         totalWidth += arduino.charW() * rateStrs[resultCount].length();
+         totalWidth += arduino.textWidth(rateStrs[resultCount].c_str());
       }
 
       if (displayRateCount != lastDrawnRatesCount || totalWidth < lastDrawnRatesWidth)
       {
-         clearTopRightStatus();
+         clearTopRightStatus(statusLineY);
       }
 
       int16_t x = DISPLAY_WIDTH - totalWidth;
       arduino.setCursor(x, statusLineY);
-
-      arduino.print(RATE_LABEL, Color::LABEL);
 
       // Print completed results' rates
       for (size_t i = 0; i < resultCount; i++)
@@ -981,10 +1005,10 @@ void drawScatterView(ResultView viewMode, bool forceFullRedraw)
 ///
 /// <summary>
 /// At the display refresh interval, redraws the status line and incrementally updates
-/// the live raw-sample scatter plot.
+/// the raw-sample scatter plot.
 /// </summary>
 ///
-void updateLiveView()
+void updateScatterPlotView()
 {
    if (!displayUpdateTimer.ready())
    {
@@ -1009,58 +1033,22 @@ void drawSummaryView()
    arduino.setCursorY(arduino.getCursorY() + arduino.charH() / 4);
    arduino.setTextSize(BODY_TEXT_SIZE);
 
-   int16_t charWidth = arduino.charW();
-   int16_t columnGap = COLUMN_SPACING_CHARS * charWidth;
+   resultGrid.printHeader();
 
-   // Column headers with their widths (in characters)
-   const char* targetHeader = "Target(/s)";
-   const char* actualHeader = "Actual(/s)";
-   const char* startHeader = "Start";
-   const char* deltaHeader = "Delta";
-
-   int16_t targetColWidth = 10 * charWidth; // "Target(/s)" = 10 chars
-   int16_t actualColWidth = 10 * charWidth; // "Actual(/s)" = 10 chars
-   int16_t startColWidth = 8 * charWidth;   // reserve the same column width as before
-
-   int16_t targetColX = 0;
-   int16_t actualColX = targetColX + targetColWidth + columnGap;
-   int16_t startColX = actualColX + actualColWidth + columnGap;
-   int16_t incrColX = startColX + startColWidth + columnGap;
-
-   int16_t headerY = arduino.getCursorY();
-   arduino.setCursor(targetColX, headerY);
-   arduino.print(targetHeader, Color::LABEL);
-   arduino.setCursor(actualColX, headerY);
-   arduino.print(actualHeader, Color::LABEL);
-   arduino.setCursor(startColX, headerY);
-   arduino.print(startHeader, Color::LABEL);
-   arduino.setCursor(incrColX, headerY);
-   arduino.println(deltaHeader, Color::LABEL);
-
-   int16_t rowY = arduino.getCursorY();
    size_t resultCount = testRunner.resultCount();
    for (size_t i = 0; i < resultCount; i++)
    {
-      if ((rowY + arduino.charH()) > arduino.height())
+      if ((arduino.getCursorY() + arduino.charH()) > arduino.height())
       {
          break;
       }
 
       Color rowColor = TARGET_SERIES[i % NUM_TARGET_SAMPLES].color;
-
-      arduino.setCursor(targetColX, rowY);
-      arduino.print(testRunner.resultTargetRate(i), targetRateFormat, rowColor);
-
-      arduino.setCursor(actualColX, rowY);
-      arduino.print(testRunner.resultRate(i), actualRateFormat, rowColor);
-
-      arduino.setCursor(startColX, rowY);
-      arduino.print(testRunner.resultStartValue(i), *sensor.getFormat(), rowColor);
-
-      arduino.setCursor(incrColX, rowY);
-      arduino.println(testRunner.resultValue(i), *sensor.getHighResFormat(), rowColor);
-
-      rowY = arduino.getCursorY();
+      resultGrid.printRow(rowColor,
+         testRunner.resultTargetRate(i),
+         testRunner.resultRate(i),
+         testRunner.resultStartValue(i),
+         testRunner.resultValue(i));
    }
 }
 
@@ -1108,7 +1096,6 @@ void startTestRun()
    drawCollectingHeader();
    hasDrawnStatusLine = false;
    lastStatusWasCooldown = false;
-   lastCooldownAvg = NAN;
    lastDrawnRatesCount = 0;
    lastDrawnRatesWidth = 0;
    updateStatusLine();
@@ -1140,6 +1127,7 @@ void setup()
    {
       ScatterPlotSeries* series = scatterPlot.createSeries(MAX_RAW_SAMPLES_PER_TEST);
       series->color = TARGET_SERIES[i].color;
+      series->movingAverageColor = TARGET_SERIES[i].color;
    }
 
    scatterPlot.setYAxisFormat("##.##");
@@ -1196,12 +1184,12 @@ void loop()
          Serial.println("Tests complete");
          arduino.encoderA.reset();
 
-         // The live view already looks identical to the PointsAndLines result view,
+         // The scatter plot view already looks identical to the PointsAndLines result view,
          // so just switch the view state without redrawing.
          resultView = ResultView::PointsAndLines;
          return;
       }
    }
 
-   updateLiveView();
+   updateScatterPlotView();
 }

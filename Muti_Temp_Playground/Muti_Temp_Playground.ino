@@ -293,9 +293,8 @@ void setup()
    std::string uploadSample(uploadStatusFormat.length(), '0');
    int16_t uploadX = arduino.width() - arduino.textWidth(uploadSample.c_str());
    int16_t uploadY = arduino.height() - arduino.charH();
-   uploadStatusField = new DisplayField(&arduino, uploadX, uploadY, "", uploadStatusFormat, 2, true, Color::GRAY, Color::GRAY);
-   uploadStatusField->setValue("");
-   uploadStatusField->draw();
+   uploadStatusField = new DisplayField(&arduino, uploadX, uploadY, "", uploadStatusFormat, 2, Color::GRAY, Color::GRAY);
+   uploadStatusField->draw("");
 
    int16_t plotTop = arduino.charH() * 2;
    int16_t plotHeight = arduino.height() - plotTop;
@@ -426,8 +425,7 @@ void loop()
    if (influxTimer.ready())
    {
       digitalWrite(BUILTIN_LED, HIGH);
-      uploadStatusField->setValue("Upload");
-      uploadStatusField->draw();
+      uploadStatusField->draw("Upload");
 
       bool writeFailed = !uploadAllPoints();
 
@@ -454,8 +452,7 @@ void loop()
       }
 
                    digitalWrite(BUILTIN_LED, LOW);
-                   uploadStatusField->setValue("");
-                   uploadStatusField->draw();
+                   uploadStatusField->draw("");
                 }
              }
 

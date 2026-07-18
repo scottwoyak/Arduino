@@ -30,9 +30,8 @@ class DepthTestSensor;
 // #define TEST_SENSOR_TYPE RandomTestSensor
 // #define TEST_SENSOR_TYPE NormalTestSensor
 // #define TEST_SENSOR_TYPE DepthTestSensor
-// #define TEST_SENSOR_TYPE MS5837PressureTestSensor
-#define TEST_SENSOR_TYPE CapacitiveTestSensor
-// #define TEST_SENSOR_TYPE DepthTestSensor
+#define TEST_SENSOR_TYPE MS5837PressureTestSensor
+// #define TEST_SENSOR_TYPE CapacitiveTestSensor
 
 using TestSensor = TEST_SENSOR_TYPE;
 
@@ -104,8 +103,8 @@ namespace TestSensorConfig
    static constexpr uint16_t CAPACITIVE_DISCHARGE_DELAY_US = CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS;
    static constexpr size_t CAPACITIVE_BUFFER_SIZE = CapacitorSensor::DEFAULT_BUFFER_SIZE;
    static constexpr float CAPACITIVE_FILTER = 5.0f; // percent, per FilteredRollingAverage::FilterMode::PERCENT
-   static constexpr const char* CAPACITIVE_FORMAT = "#########";
-   static constexpr const char* CAPACITIVE_HIGH_RES_FORMAT = "##########";
+   static constexpr const char* CAPACITIVE_FORMAT = "####";
+   static constexpr const char* CAPACITIVE_HIGH_RES_FORMAT = "####.#";
 
    // ----- depth sensor (capacitive-based)
    static constexpr uint8_t DEPTH_CHARGE_PIN = CAPACITIVE_CHARGE_PIN;

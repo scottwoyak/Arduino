@@ -13,8 +13,8 @@
 // 4) Stop when MAX_SAMPLES are stored or SAMPLING_DURATION_S elapses.
 //
 // Output flow:
-// - While collecting, the Playground display shows live capture progress plus target/actual sample rate.
-// - After capture, the display renders a value histogram with min/max labels plus Sigma%/effective-rate
+// - While collecting, the Playground display shows capture progress plus target/actual sample rate.
+// - After capture, the display renders a value histogram with min/max labels plus StdDev%/effective-rate
 //   rows for multiple averaging window sizes, along with the target/actual sample rate.
 // - Serial output includes the averaging analysis table and the warmup/real boundary sample dump.
 //
@@ -122,7 +122,7 @@ IntDisplayEditableField warmupField("Warmup", &warmupPeriodS,
    0, MAX_WARMUP_PERIOD_S, WARMUP_STEP_S, DEFAULT_WARMUP_PERIOD_S, setupWarmupFormat);
 
 DisplayEditableField* setupFields[] = { &rateField, &samplesField, &durationField, &warmupField };
-DisplayEditor setupDisplay(&arduino, PREF_NAMESPACE, "Setup", setupFields, 4);
+DisplayEditor setupDisplay(&arduino, PREF_NAMESPACE, "Setup", setupFields, ARRAY_SIZE(setupFields));
 
 Values* samplesValues = nullptr;
 Values warmupValues;
@@ -160,7 +160,7 @@ void printBoundaryDump()
       { "Delta (ms)", 12 },
       { "Value", 10 },
    };
-   SerialTable table("Warmup/Real Boundary Sample Dump", columns, 4);
+   SerialTable table("Warmup/Real Boundary Sample Dump", columns, ARRAY_SIZE(columns));
    table.printHeader();
 
    size_t warmupCount = warmupValues.count();
@@ -171,7 +171,7 @@ void printBoundaryDump()
    for (size_t i = warmupStart; i < warmupCount; i++)
    {
       unsigned long timestampMs = warmupValues.timestamp(i);
-      long deltaMs = havePreviousTimestamp ? (long)(timestampMs - previousTimestampMs) : 0;
+      long deltaMs = havePreviousTimestamp ? static_cast<long>(timestampMs - previousTimestampMs) : 0;
       table.printRow("warmup", timestampMs, havePreviousTimestamp ? String(deltaMs) : String("-"),
          SerialTable::fixed(warmupValues[i], 3));
       previousTimestampMs = timestampMs;
@@ -182,7 +182,7 @@ void printBoundaryDump()
    for (size_t i = 0; i < realCount; i++)
    {
       unsigned long timestampMs = samplesValues->timestamp(i);
-      long deltaMs = havePreviousTimestamp ? (long)(timestampMs - previousTimestampMs) : 0;
+      long deltaMs = havePreviousTimestamp ? static_cast<long>(timestampMs - previousTimestampMs) : 0;
       table.printRow("real", timestampMs, havePreviousTimestamp ? String(deltaMs) : String("-"),
          SerialTable::fixed((*samplesValues)[i], 3));
       previousTimestampMs = timestampMs;
@@ -197,10 +197,7 @@ void printBoundaryDump()
 ///
 void createSamplesValues()
 {
-   if (samplesValues != nullptr)
-   {
-      delete samplesValues;
-   }
+   delete samplesValues;
    samplesValues = new Values(maxSamples);
 }
 
@@ -269,7 +266,8 @@ void drawHistogram(const char* title, const Histogram& histogram, int16_t sectio
 
    int16_t chartTop = arduino.getCursorY() + 1;
    int16_t adjustedHeight = sectionHeight - (chartTop - sectionTop);
-   HistogramPlot plot(&arduino, histogram, sectionLeft, sectionWidth, chartTop, adjustedHeight, barColor, Format(CHART_MIN_MAX_FORMAT), axisLabelColor, yAxisFormat);
+   Rect16 rect{ sectionLeft, chartTop, sectionWidth, adjustedHeight };
+   HistogramPlot plot(&arduino, histogram, rect, barColor, Format(CHART_MIN_MAX_FORMAT), axisLabelColor, yAxisFormat);
    plot.render();
 }
 
@@ -287,10 +285,7 @@ void drawHistogram(const char* title, const Histogram& histogram, int16_t sectio
 ///
 void drawScatterPlot(int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color pointColor)
 {
-   if (resultsScatterPlot != nullptr)
-   {
-      delete resultsScatterPlot;
-   }
+   delete resultsScatterPlot;
    resultsScatterPlot = new ScatterPlot(&arduino, sectionLeft, sectionTop, sectionWidth, sectionHeight);
    resultsScatterPlot->setYAxisFormat(CHART_Y_AXIS_FORMAT);
 
@@ -309,7 +304,7 @@ void drawScatterPlot(int16_t sectionLeft, int16_t sectionWidth, int16_t sectionT
 
       for (size_t i = 0; i < warmupCount; i++)
       {
-         warmupSeries->add((float)i, warmupValueData[i]);
+         warmupSeries->add(static_cast<float>(i), warmupValueData[i]);
       }
       warmupSeries->finalized = true;
    }
@@ -321,7 +316,7 @@ void drawScatterPlot(int16_t sectionLeft, int16_t sectionWidth, int16_t sectionT
 
    for (size_t i = 0; i < count; i++)
    {
-      series->add((float)(warmupCount + i), values[i]);
+      series->add(static_cast<float>(warmupCount + i), values[i]);
    }
    series->finalized = true;
 
@@ -401,7 +396,7 @@ void drawTableView()
       { "StdDev%", &stdDevPercentFormat },
       { "Hz", &hzFormat },
    };
-   DisplayGrid grid(&arduino, nullptr, columns, 5);
+   DisplayGrid grid(&arduino, nullptr, columns, ARRAY_SIZE(columns));
    grid.printHeader();
 
    Stats rawStats = samplesValues->computeBasicStats();
@@ -503,17 +498,13 @@ void initializeCollectingTable()
    elapsedField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 4, "    Elapsed", elapsedFormat, 2);
    targetRateField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 5, "Target Rate", targetRateFormat, 2);
    actualRateField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 6, "Actual Rate", actualRateFormat, 2);
-
-   String maxText = String(maxSamples) + " samples OR " + String(samplingDurationS) + "s";
-   maxField->setValue(maxText);
-   targetRateField->setValue(targetSampleRate);
 }
 
 ///
 /// <summary>
 /// Updates the collecting-progress screen shown on the Playground display. Max (samples/
 /// duration) and Target Rate are static once capture starts; Progress, Samples, Elapsed,
-/// and Actual Rate show placeholder "----" values while warming up, then live values during
+/// and Actual Rate show placeholder "----" values while warming up, then updated values during
 /// capture. The Warmup row (shown first) shows a countdown while warming up and "Complete"
 /// afterward. Refresh is throttled to DISPLAY_UPDATE_RATE_PER_SEC unless forceRefresh is true.
 /// </summary>
@@ -555,36 +546,31 @@ void updateDisplay(bool forceRefresh = false)
       collectingViewInitialized = true;
    }
 
-   maxField->draw();
-   targetRateField->draw();
+   String maxText = String(maxSamples) + " samples OR " + String(samplingDurationS) + "s";
+   maxField->draw(maxText);
+   targetRateField->draw(targetSampleRate);
 
    if (warmupStopwatch.isRunning())
    {
       constexpr const char* PLACEHOLDER = "----";
       progressField->setValueColor(Color::GRAY);
-      progressField->setValue(PLACEHOLDER);
       samplesCountField->setValueColor(Color::GRAY);
-      samplesCountField->setValue(PLACEHOLDER);
       elapsedField->setValueColor(Color::GRAY);
-      elapsedField->setValue(PLACEHOLDER);
       actualRateField->setValueColor(Color::GRAY);
-      actualRateField->setValue(PLACEHOLDER);
 
       float remainingSeconds = max(0.0, warmupPeriodS - warmupStopwatch.elapsedSecs());
       String warmupText = String(remainingSeconds, 1) + "s remaining";
       warmupStatusField->setValueColor(Color::VALUE2);
-      warmupStatusField->setValue(warmupText);
 
-      warmupStatusField->draw();
-      progressField->draw();
-      samplesCountField->draw();
-      elapsedField->draw();
-      actualRateField->draw();
+      warmupStatusField->draw(warmupText);
+      progressField->draw(PLACEHOLDER);
+      samplesCountField->draw(PLACEHOLDER);
+      elapsedField->draw(PLACEHOLDER);
+      actualRateField->draw(PLACEHOLDER);
       return;
    }
 
    warmupStatusField->setValueColor(Color::VALUE);
-   warmupStatusField->setValue("Complete");
 
    size_t count = samplesValues->count();
    float elapsedSeconds = captureStopwatch.elapsedSecs();
@@ -603,19 +589,15 @@ void updateDisplay(bool forceRefresh = false)
    }
 
    progressField->setValueColor(Color::VALUE);
-   progressField->setValue(progressPercent);
    samplesCountField->setValueColor(Color::VALUE);
-   samplesCountField->setValue(static_cast<unsigned long>(count));
    elapsedField->setValueColor(Color::VALUE);
-   elapsedField->setValue(static_cast<unsigned long>(elapsedSeconds));
    actualRateField->setValueColor(Color::VALUE);
-   actualRateField->setValue(actualSampleRate.get());
 
-   warmupStatusField->draw();
-   progressField->draw();
-   samplesCountField->draw();
-   elapsedField->draw();
-   actualRateField->draw();
+   warmupStatusField->draw("Complete");
+   progressField->draw(progressPercent);
+   samplesCountField->draw(static_cast<unsigned long>(count));
+   elapsedField->draw(static_cast<unsigned long>(elapsedSeconds));
+   actualRateField->draw(actualSampleRate.get());
 }
 
 ///
@@ -657,11 +639,6 @@ void startCapture()
       warmupStopwatch.start();
    }
    collectingViewInitialized = false;
-   {
-      String maxText = String(maxSamples) + " samples OR " + String(samplingDurationS) + "s";
-      maxField->setValue(maxText);
-   }
-   targetRateField->setValue(targetSampleRate);
    createWarmupValues();
    boundaryDumpPrinted = false;
    updateDisplay(true);

@@ -181,11 +181,9 @@ void loop()
          break;
 
       case DisplayMode::SPRITES:
-         numberField->setValue(number);
-         numberField->draw();
+         numberField->draw(number);
          break;
    }
 
-   rateField->setValue(frameRate.get());
-   rateField->draw();
+   rateField->draw(frameRate.get());
 }
