@@ -22,7 +22,7 @@ void displayHeader()
    arduino.setCursorY(arduino.getCursorY() + arduino.charH() / 4);
 }
 
-void displayEncoder(const char* label, RotaryEncoder& encoder)
+void displayEncoder(const char* label, Encoder& encoder)
 {
    bool pressed = encoder.button.isPressed();
    arduino.print(label);

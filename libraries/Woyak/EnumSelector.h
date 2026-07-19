@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include "RotaryEncoder.h"
+#include "IEncoder.h"
 
 ///
 /// <summary>
@@ -15,7 +15,7 @@ template<typename Enum>
 class EnumSelector
 {
 private:
-   RotaryEncoder& _encoder;
+   IEncoder& _encoder;
    Enum _value;
    int32_t _numValues;
 
@@ -28,7 +28,7 @@ public:
    /// <param name="lastValue">The last (highest-valued) enumerator in the enum.</param>
    /// <param name="initialValue">The value to start on.</param>
    ///
-   EnumSelector(RotaryEncoder& encoder, Enum lastValue, Enum initialValue)
+   EnumSelector(IEncoder& encoder, Enum lastValue, Enum initialValue)
       : _encoder(encoder),
         _value(initialValue),
         _numValues(static_cast<int32_t>(lastValue) + 1)

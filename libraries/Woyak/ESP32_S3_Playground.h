@@ -2,7 +2,7 @@
 
 #include "LGX_ST7796S.h"
 #include "ArduinoWithDisplay.h"
-#include "RotaryEncoder.h"
+#include "QuadratureEncoder.h"
 #include "Button.h"
 #include "LED.h"
 #include <Preferences.h>
@@ -70,7 +70,7 @@ public:
    /// for its pin assignments.
    /// </summary>
    ///
-   RotaryEncoder encoderA;
+   QuadratureEncoder encoderA;
 
    ///
    /// <summary>
@@ -78,7 +78,7 @@ public:
    /// for its pin assignments, which vary by board to avoid colliding with the display.
    /// </summary>
    ///
-   RotaryEncoder encoderB;
+   QuadratureEncoder encoderB;
 
    ///
    /// <summary>

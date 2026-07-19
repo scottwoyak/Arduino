@@ -47,6 +47,7 @@
     <File Path="libraries/Woyak/I2C.h" />
     <File Path="libraries/Woyak/I2CMultiplexor.h" />
     <File Path="libraries/Woyak/I2CTempSensor.h" />
+    <File Path="libraries/Woyak/IEncoder.h" />
     <File Path="libraries/Woyak/IndexedEncoder.h" />
     <File Path="libraries/Woyak/Influx.h" />
     <File Path="libraries/Woyak/IScatterPlot.h" />
@@ -58,17 +59,18 @@
     <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
     <File Path="libraries/Woyak/LGX_ST7796S.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
+    <File Path="libraries/Woyak/ModulinoEncoder.h" />
     <File Path="libraries/Woyak/MovingBarChart.h" />
     <File Path="libraries/Woyak/MS5837TempSensor.h" />
     <File Path="libraries/Woyak/MultiBar.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
+    <File Path="libraries/Woyak/QuadratureEncoder.h" />
     <File Path="libraries/Woyak/Rate.h" />
     <File Path="libraries/Woyak/RollingAverage.h" />
     <File Path="libraries/Woyak/RollingMicros.h" />
     <File Path="libraries/Woyak/RollingRate.h" />
     <File Path="libraries/Woyak/RollingStats.h" />
-    <File Path="libraries/Woyak/RotaryEncoder.h" />
     <File Path="libraries/Woyak/ScatterPlot.h" />
     <File Path="libraries/Woyak/SerialHistogram.h" />
     <File Path="libraries/Woyak/SerialTable.h" />
@@ -270,6 +272,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Encoder_Display/Encoder_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Feather_ESP32_TFT/Feather_ESP32_TFT.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -363,10 +369,6 @@
     <Deploy />
   </Project>
   <Project Path="Publisher_Display/Publisher_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="RotaryEncoder_Display/RotaryEncoder_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
