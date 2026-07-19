@@ -3,7 +3,7 @@
 //
 // Uses the ESP32-S3 Playground board with rotary encoder and TFT display instead of buttons.
 // Each sensor is sampled on its own 100ms cadence via a SensorData, which maintains a short
-// (10 sample) rolling average and a long (2 minute) timed average. The display shows a table
+// (1 second) rolling average and a long (5 minute) timed average. The display shows a table
 // of per-sensor short average, long average, and correction (delta from sensor 0's long
 // average), plus three scatter plots - one per table column - showing recent history for
 // every detected sensor. On startup, saved calibration deltas are loaded from Preferences,
@@ -55,11 +55,15 @@ TempSensor sensors[] =
 
 // Sensor and telemetry timing
 constexpr uint16_t SAMPLE_INTERVAL_MS = 100;  // how often each SensorData takes a raw reading, and how often the outer loop drives sensor updates
-constexpr uint16_t TIMED_AVERAGE_DURATION_S = 5 * 60;  // 5 minute averaging window
+constexpr uint8_t SHORT_AVERAGE_NUM_SAMPLES = 10;  // # samples in the short rolling average (10 samples @ SAMPLE_INTERVAL_MS = 1 second)
+constexpr uint16_t LONG_AVERAGE_DURATION_S = 5 * 60;  // long timed-average window (5 minutes)
 constexpr uint16_t INFLUX_INTERVAL_S = 10;
 constexpr uint16_t PREFS_INTERVAL_S = 60;
 constexpr uint16_t WIFI_RESET_DELAY_S = 10;
-constexpr uint8_t BATCH_SIZE_PER_SENSOR = 3;  // InfluxDB write batch size, per detected sensor
+// Each detected sensor uploads 3 InfluxPoints per cycle: short average, long average, and
+// correction (see the shortAvgPoints/longAvgPoints/correctionPoints setup below). The write
+// batch size is derived from this so every sensor's points fit in a single batch/HTTP request.
+constexpr uint8_t INFLUX_POINTS_PER_SENSOR = 3;
 constexpr uint16_t INFLUX_INIT_DELAY_MS = 1000;  // pause after InfluxDB init to show "Init" screen
 
 constexpr const char* CALIBRATOR_PREFS_NAMESPACE = "Calibrator";
@@ -71,7 +75,7 @@ constexpr const char* CAL_POINTS_KEY = "CalPoints";
 ///
 /// <summary>
 /// Samples a single multiplexed TempSensor on its own 100ms cadence and maintains a
-/// rolling buffer of the last 10 readings, exposing their average as the sensor's current
+/// rolling buffer covering SHORT_AVERAGE_NUM_SAMPLES, exposing their average as the sensor's current
 /// value. Call ready() as often as possible from loop(), and call read() whenever it
 /// returns true; ready() internally gates actual sampling (including the
 /// Multiplexer::select() call) to once every SAMPLE_INTERVAL_MS.
@@ -80,8 +84,6 @@ constexpr const char* CAL_POINTS_KEY = "CalPoints";
 class SensorData
 {
 private:
-   static constexpr uint8_t BUFFER_SIZE = 10;
-
    TempSensor* _sensor;
    uint8_t _muxIndex;
    Timer _sampleTimer;
@@ -100,7 +102,7 @@ public:
    ///
    SensorData(TempSensor* sensor, uint8_t muxIndex)
       : _sensor(sensor), _muxIndex(muxIndex), _sampleTimer(SAMPLE_INTERVAL_MS),
-        _shortAverage(BUFFER_SIZE), _longAverage(TIMED_AVERAGE_DURATION_S * 1000UL)
+        _shortAverage(SHORT_AVERAGE_NUM_SAMPLES), _longAverage(LONG_AVERAGE_DURATION_S * 1000UL)
    {
    }
 
@@ -156,7 +158,7 @@ public:
 
    ///
    /// <summary>
-   /// Gets the timed average over the configured TIMED_AVERAGE_DURATION_S window (5 minutes).
+   /// Gets the timed average over the configured LONG_AVERAGE_DURATION_S window (5 minutes).
    /// </summary>
    /// <returns>Average temperature in Fahrenheit, or NaN if no readings have been taken yet.</returns>
    ///
@@ -168,7 +170,7 @@ public:
    ///
    /// <summary>
    /// Reports whether the long (timed) average has accumulated a full
-   /// TIMED_AVERAGE_DURATION_S window of data.
+   /// LONG_AVERAGE_DURATION_S window of data.
    /// </summary>
    /// <returns>True once the long average window is fully populated.</returns>
    ///
@@ -378,7 +380,7 @@ void printCalibrationCodeToSerial()
    // curve (a + b*T + c*T^2) when enough calibration history exists for a sensor;
    // otherwise fall back to the flat correction factor recorded at the last baseline.
    Serial.println("Copy this data to libraries\\Woyak\\TempSensorCallibration.h");
-   Serial.println(String("// Based on averaging data points over the last ") + TIMED_AVERAGE_DURATION_S + " seconds at a sample rate of " + (1000 / SAMPLE_INTERVAL_MS) + "/s");
+   Serial.println(String("// Based on averaging data points over the last ") + LONG_AVERAGE_DURATION_S + " seconds at a sample rate of " + (1000 / SAMPLE_INTERVAL_MS) + "/s");
    Serial.println(String("// Factors computed based on temperatures ") + static_cast<int>(TempCalibrator::FIT_MIN_BASELINE_F) + "-" + static_cast<int>(TempCalibrator::FIT_MAX_BASELINE_F) + "F");
 
    // Column widths sized to line up the id, tempA (3 decimals), tempB, and tempC (6
@@ -826,7 +828,7 @@ void setup()
    }
    arduino.preferences.end();
 
-   uint8_t batchSize = std::max(static_cast<uint8_t>(1), static_cast<uint8_t>(BATCH_SIZE_PER_SENSOR * detectedSensorCount));
+   uint8_t batchSize = std::max(static_cast<uint8_t>(1), static_cast<uint8_t>(INFLUX_POINTS_PER_SENSOR * detectedSensorCount));
    client.setWriteOptions(WriteOptions().batchSize(batchSize).bufferSize(2 * batchSize));
 
    Serial.print("Detected sensors: ");
