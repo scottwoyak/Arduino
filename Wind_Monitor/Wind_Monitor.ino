@@ -130,7 +130,7 @@ void loop()
 {
    // Update LED status based on wind sensor activity
    // Note: Must be done in loop (not interrupt) to avoid NeoPixel driver crashes
-   if (wind.ledState())
+   if (wind.isLedOn())
    {
       status.setStatus(1.0f, 0.0f, 0.0f);  // Red LED for active measurement
    }

@@ -67,8 +67,8 @@ void setup()
    {
       sensors[i] = new TempSensor();
       points[i] = new InfluxPoint(INFLUX_MEASUREMENT);
-      tempFields[i] = points[i]->addTimeAveragedField(INFLUX_INTERVAL_S, "temperature", 3);
-      humFields[i] = points[i]->addTimeAveragedField(INFLUX_INTERVAL_S, "humidity", 2);
+      tempFields[i] = points[i]->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", 3);
+      humFields[i] = points[i]->addTimeAverageField(INFLUX_INTERVAL_S, "humidity", 2);
    }
 
    SerialX::begin();

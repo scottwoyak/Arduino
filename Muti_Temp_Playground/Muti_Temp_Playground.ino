@@ -245,7 +245,7 @@ void setup()
       for (uint8_t w = 0; w < NUM_WINDOWS; w++)
       {
          averagePoints[i][w] = new InfluxPoint(INFLUX_MEASUREMENT);
-         averageFields[i][w] = averagePoints[i][w]->addTimeAveragedField(AVERAGE_WINDOWS_S[w], INFLUX_TEMPERATURE_FIELD_NAME, INFLUX_TEMP_DECIMAL_PLACES);
+         averageFields[i][w] = averagePoints[i][w]->addTimeAverageField(AVERAGE_WINDOWS_S[w], INFLUX_TEMPERATURE_FIELD_NAME, INFLUX_TEMP_DECIMAL_PLACES);
          averagePoints[i][w]->addTag("location", locations[i]);
          averagePoints[i][w]->addTag(INFLUX_STAT_TAG_NAME, AVERAGE_WINDOW_LABELS[w]);
       }

@@ -67,8 +67,8 @@ TempSensor sensor;
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
 Influx influx(WIFI_SSID, WIFI_PASSWORD, &client, &status);
 InfluxPoint point(INFLUX_MEASUREMENT);
-InfluxField* tempField = point.addTimeAveragedField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
-InfluxField* humField = point.addTimeAveragedField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
+InfluxField* tempField = point.addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
+InfluxField* humField = point.addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
 Timer sensorTimer(SENSOR_INTERVAL_MS);
 Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 

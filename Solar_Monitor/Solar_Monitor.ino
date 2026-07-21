@@ -59,13 +59,13 @@ InfluxPoint loadPoint(INFLUX_MEASUREMENT, {{"item", "Load"}});
 Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
 // Field references for data points
-InfluxField* batteryVoltsField = batteryPoint.addTimeAveragedField("volts", 3);
-InfluxField* batterymAField = batteryPoint.addTimeAveragedField("mA", 1);
+InfluxField* batteryVoltsField = batteryPoint.addTimeAverageField("volts", 3);
+InfluxField* batterymAField = batteryPoint.addTimeAverageField("mA", 1);
 InfluxField* batterymAhField = batteryPoint.addValueField("mAh", 1);
-InfluxField* solarVoltsField = solarPoint.addTimeAveragedField("volts", 3);
-InfluxField* solarmAField = solarPoint.addTimeAveragedField("mA", 1);
-InfluxField* loadVoltsField = loadPoint.addTimeAveragedField("volts", 3);
-InfluxField* loadmAField = loadPoint.addTimeAveragedField("mA", 1);
+InfluxField* solarVoltsField = solarPoint.addTimeAverageField("volts", 3);
+InfluxField* solarmAField = solarPoint.addTimeAverageField("mA", 1);
+InfluxField* loadVoltsField = loadPoint.addTimeAverageField("volts", 3);
+InfluxField* loadmAField = loadPoint.addTimeAverageField("mA", 1);
 InfluxField* loadmAhField = loadPoint.addValueField("mAh", 1);
 
 // Display smoothing/averaging

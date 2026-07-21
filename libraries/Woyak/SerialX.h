@@ -32,8 +32,9 @@ namespace SerialX
 		const uint32_t start = millis();
 		while (!Serial && (millis() - start) < timeoutMs)
 		{
-			delay(1);
+			delay(10);
 		}
+      delay(500);
 	}
 
 	/// <summary>

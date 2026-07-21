@@ -1,13 +1,20 @@
 #pragma once
 
-#include "ArduinoWithDisplay.h"
 #include <InfluxDbClient.h>
 #include <InfluxDbCloud.h>
 #include <cmath>
+#include "RollingAverage.h"
 #include "Status.h"
 #include "TimedAverage.h"
 #include "Timer.h"
 #include "WiFiX.h"
+
+// Display-based methods (and ArduinoWithDisplay.h, which requires a board-specific
+// LGFX type) are only available on boards with a display. ARDUINO_DISPLAY_SUPPORTED
+// is defined by ArduinoBoard.h when the target board has one.
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+#include "ArduinoWithDisplay.h"
+#endif
 
 constexpr auto TZ_INFO = "UTC-5";
 
@@ -82,6 +89,7 @@ public:
 		return connectWiFi();
 	}
 
+	#ifdef ARDUINO_DISPLAY_SUPPORTED
 	/// <summary>
 	/// Initializes WiFi/time/Influx connection with display progress output.
 	/// </summary>
@@ -126,6 +134,7 @@ public:
 		arduino->println(_client->getLastErrorMessage(), Color::RED);
 		return false;
 	}
+#endif
 
 	/// <summary>
 	/// Initializes WiFi/time/Influx connection with Serial progress output.
@@ -174,6 +183,7 @@ public:
 	/// </summary>
 	/// <param name="arduino">Display-capable Arduino wrapper</param>
 	/// <returns>None</returns>
+#ifdef ARDUINO_DISPLAY_SUPPORTED
 	static void startInit(ArduinoWithDisplay* arduino)
 	{
 		arduino->echoToSerial = true;
@@ -193,6 +203,7 @@ public:
 		arduino->clearDisplay();
 		arduino->echoToSerial = false;
 	}
+#endif
 };
 
 ///
@@ -343,6 +354,51 @@ public:
 
 ///
 /// <summary>
+/// Field that tracks a rolling average over a fixed number of samples using RollingAverage.
+/// </summary>
+///
+class InfluxRollingAverageField : public InfluxField
+{
+private:
+   /// <summary>Rolling sample-count average accumulator.</summary>
+   RollingAverage _stats;
+
+public:
+   /// <summary>
+   /// Creates an InfluxRollingAverageField with a sample window, name, and decimal place precision.
+   /// </summary>
+   /// <param name="size">Number of samples retained in the rolling window</param>
+   /// <param name="name">Field name</param>
+   /// <param name="decimalPlaces">Number of decimal places for the value</param>
+   InfluxRollingAverageField(size_t size, const std::string& name, uint8_t decimalPlaces)
+      : InfluxField(name, decimalPlaces),
+        _stats(size)
+   {
+   }
+
+   ~InfluxRollingAverageField() override = default;
+
+   /// <summary>
+   /// Adds a sample to the rolling average field.
+   /// </summary>
+   /// <param name="value">Sample value to add</param>
+   void set(float value) override
+   {
+      _stats.set(value);
+   }
+
+   /// <summary>
+   /// Returns the current rolling average value.
+   /// </summary>
+   /// <returns>Current average over the configured sample window</returns>
+   float get() override
+   {
+      return _stats.average();
+   }
+};
+
+///
+/// <summary>
 /// Builds and posts an Influx point from a collection of field helpers and optional tags.
 /// </summary>
 ///
@@ -418,9 +474,23 @@ public:
    /// <param name="name">Field name</param>
    /// <param name="decimalPlaces">Number of decimal places for the value</param>
    /// <returns>Pointer to the created field</returns>
-   InfluxField* addTimeAveragedField(float seconds, const std::string& name, uint8_t decimalPlaces)
+   InfluxField* addTimeAverageField(float seconds, const std::string& name, uint8_t decimalPlaces)
    {
       InfluxField* field = new InfluxTimeAveragedField(seconds, name, decimalPlaces);
+      _fields.push_back(field);
+      return field;
+   }
+
+   /// <summary>
+   /// Adds a rolling average field that accumulates an average over a fixed number of samples.
+   /// </summary>
+   /// <param name="size">Number of samples retained in the rolling window</param>
+   /// <param name="name">Field name</param>
+   /// <param name="decimalPlaces">Number of decimal places for the value</param>
+   /// <returns>Pointer to the created field</returns>
+   InfluxField* addRollingAverageField(size_t size, const std::string& name, uint8_t decimalPlaces)
+   {
+      InfluxField* field = new InfluxRollingAverageField(size, name, decimalPlaces);
       _fields.push_back(field);
       return field;
    }

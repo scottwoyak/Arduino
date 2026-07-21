@@ -2,11 +2,36 @@
 
 #include <Arduino.h>
 #include "Latch.h"
-#include "Util.h"
 
+///
+/// <summary>
+/// Measures wind speed from a reed-switch/hall-effect anemometer using interrupt-driven
+/// pulse timing, with an optional LED that blinks once per full rotation.
+/// </summary>
+/// <remarks>
+/// Only one WindMeter instance may be active at a time: the interrupt handler is routed
+/// through a single static instance pointer, so constructing a second WindMeter will
+/// silently redirect that pointer and break the first instance's interrupt handling.
+/// </remarks>
+///
 class WindMeter
 {
 private:
+   // Wind speed threshold below which the meter is considered stopped/idle rather than
+   // rotating too slowly to measure reliably.
+   static constexpr float MIN_DETECTABLE_MPH = 0.1f;
+
+   // microsSinceLastTick threshold (in microseconds) corresponding to MIN_DETECTABLE_MPH,
+   // derived from the anemometer's speed formula: 1 rotation/s = 1.7 ms/s, so
+   // 0.1 mph = 1901400 micros between ticks and 100 mph = 1901 micros between ticks.
+   static constexpr unsigned long IDLE_THRESHOLD_MICROS = 1901400;
+
+   // Numerator for converting a tick period (in microseconds) to mph: speed = MPH_NUMERATOR / period.
+   static constexpr float MPH_NUMERATOR = 190140.0f;
+
+   // Number of ticks (half-rotations) per LED blink toggle.
+   static constexpr uint8_t TICKS_PER_ROTATION = 20;
+
    static inline WindMeter* _instance;
    static void interruptTick()
    {
@@ -38,52 +63,64 @@ private:
          {
             if (_ledPin > 0)
             {
-               digitalWrite(this->_ledPin, LOW);
+               digitalWrite(_ledPin, LOW);
             }
             _ledState = false;
          }
-         else if (_ticks >= 20)
+         else if (_ticks >= TICKS_PER_ROTATION)
          {
             _ticks = 0;
             if (_ledPin > 0)
             {
-               digitalWrite(this->_ledPin, HIGH);
+               digitalWrite(_ledPin, HIGH);
             }
             _ledState = true;
          }
       }
    }
 
-   // the formula from the wind meter for turning rotation Hz into MPH
-   /*
-   float _computeWindSpeed(unsigned long micros, unsigned long rotations)
-   {
-      return (2.7 * 1000 * 1000.0 / micros) * rotations;
-   }
-   */
-
 public:
-   WindMeter(uint8_t pin, uint8_t ledPin = LED_BUILTIN)
+   ///
+   /// <summary>
+   /// Constructs a WindMeter monitoring the specified pin, with an optional LED that
+   /// blinks once per rotation.
+   /// </summary>
+   /// <param name="sensorPin">GPIO pin connected to the anemometer's switch.</param>
+   /// <param name="ledPin">Optional GPIO pin for a rotation-indicator LED; defaults to LED_BUILTIN.</param>
+   ///
+   WindMeter(uint8_t sensorPin, uint8_t ledPin = LED_BUILTIN)
    {
-      this->_pin = pin;
-      this->_ledPin = ledPin;
-      this->_instance = this;
+      _pin = sensorPin;
+      _ledPin = ledPin;
+      _instance = this;
    }
 
+   ///
+   /// <summary>
+   /// Initializes the anemometer pin and attaches the change interrupt.
+   /// </summary>
+   ///
    void begin()
    {
       // set up the led pin
       if (_ledPin > 0)
       {
-         pinMode(this->_ledPin, OUTPUT);
-         digitalWrite(this->_ledPin, LOW);
+         pinMode(_ledPin, OUTPUT);
+         digitalWrite(_ledPin, LOW);
       }
 
       // create the interrupt for monitoring the pin change
-      pinMode(this->_pin, INPUT_PULLUP);
-      attachInterrupt(digitalPinToInterrupt(this->_pin), WindMeter::interruptTick, CHANGE);
+      pinMode(_pin, INPUT_PULLUP);
+      attachInterrupt(digitalPinToInterrupt(_pin), WindMeter::interruptTick, CHANGE);
    }
 
+   ///
+   /// <summary>
+   /// Gets the current wind speed in miles per hour, computed from the time between
+   /// the two most recent pulses.
+   /// </summary>
+   /// <returns>Wind speed in mph, or 0.0 if the anemometer has been idle too long.</returns>
+   ///
    float getSpeed()
    {
       noInterrupts();
@@ -91,26 +128,24 @@ public:
       unsigned long microsSinceLastTick = _latch.getMicrosSinceLastTick();
       interrupts();
 
-      // wind speed formula is 1 rotation/s = 1.7 ms/s
-      // 0.1 mph = 1901400 micros
-      // 100 mph = 1901 micros
-      if (microsSinceLastTick > 1901400) // less than 0.1 mph
+      if (period == 0 || microsSinceLastTick > IDLE_THRESHOLD_MICROS)
       {
-         return 0.0;
+         // no ticks yet, or idle long enough to be considered stopped
+         return 0.0f;
       }
       else
       {
-         return 190140.0 / period;
-         /*
-         double rotPerS = 1000000.0 / (20 * span);
-         double mPerS = 1.7 * rotPerS;
-         double mph = mPerS * 2.23694;
-         return mph;
-         */
+         return MPH_NUMERATOR / period;
       }
    }
 
-   bool ledState()
+   ///
+   /// <summary>
+   /// Gets the current state of the rotation-indicator LED.
+   /// </summary>
+   /// <returns>True if the LED is currently on; false otherwise.</returns>
+   ///
+   bool isLedOn()
    {
       return _ledState;
    }
