@@ -1,13 +1,12 @@
-/// <summary>
-/// Temperature and humidity display for Feather boards.
-/// </summary>
-/// <remarks>
-/// Continuously reads a connected sensor and shows temperature, humidity, read duration,
-/// and read rate on the display.
-///
-/// Define ONE_WIRE_PIN to use a DS18B20 sensor; otherwise an I2C temperature/humidity
-/// sensor is auto-detected. Hardware: Feather display board with supported sensor.
-/// </remarks>
+//
+// Temperature and humidity display for Feather boards.
+//
+// Continuously reads a connected sensor and shows temperature, humidity, read duration,
+// and read rate on the display.
+//
+// Define ONE_WIRE_PIN to use a DS18B20 sensor; otherwise an I2C temperature/humidity
+// sensor is auto-detected. Hardware: Feather display board with supported sensor.
+//
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -35,6 +34,8 @@ Format msFormat("####.# ms");
 
 Rate tempRate;  // Timer for temperature read performance
 Rate humRate;   // Timer for humidity read performance
+
+constexpr uint8_t MIN_CHARS_FOR_LABEL = 12;
 
 void setup()
 {
@@ -82,7 +83,7 @@ void loop()
 
    // Display temperature value
    arduino.setTextSize(3);
-   if (arduino.display.width() / arduino.charW() > 12)
+   if (arduino.width() / arduino.charW() > MIN_CHARS_FOR_LABEL)
    {
       arduino.print("Temp: ", Color::LABEL);
    }
@@ -98,7 +99,7 @@ void loop()
 
    // Display humidity value
    arduino.setTextSize(3);
-   if (arduino.display.width() / arduino.charW() > 12)
+   if (arduino.width() / arduino.charW() > MIN_CHARS_FOR_LABEL)
    {
       arduino.print(" Hum: ", Color::LABEL);
    }
