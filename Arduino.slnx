@@ -208,6 +208,14 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Bluetooth_Sensor_Display/Bluetooth_Sensor_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Bluetooth_Viewer_Display/Bluetooth_Viewer_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Board/Board.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

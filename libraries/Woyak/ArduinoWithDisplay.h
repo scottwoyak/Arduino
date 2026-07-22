@@ -799,6 +799,36 @@ public:
       std::string str = format.toString(value);
       printlnC(str, textColor, backgroundColor);
    }
+   void print(const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      std::string str = format.toNoValueString();
+      _print(str.c_str(), textColor, backgroundColor);
+   }
+   void println(const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      print(format, textColor, backgroundColor);
+      println();
+   }
+   void printR(const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      std::string str = format.toNoValueString();
+      printR(str, textColor, backgroundColor);
+   }
+   void printlnR(const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      std::string str = format.toNoValueString();
+      printlnR(str, textColor, backgroundColor);
+   }
+   void printC(const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      std::string str = format.toNoValueString();
+      printC(str, textColor, backgroundColor);
+   }
+   void printlnC(const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      std::string str = format.toNoValueString();
+      printlnC(str, textColor, backgroundColor);
+   }
    void print(const char* label, float value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
       print(label, Color::LABEL, backgroundColor);

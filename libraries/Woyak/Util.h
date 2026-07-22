@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <esp_system.h>
 
 #if !defined ( BOARD_HAS_PIN_REMAP ) && !defined ( digitalPinToGPIONumber )
  #define digitalPinToGPIONumber(pin) (pin)
@@ -46,6 +47,40 @@ constexpr size_t arraySize(const T (&)[N])
 class Util
 {
 public:
+   /// <summary>
+   /// Converts an ESP32 reset reason code to a human-readable string.
+   /// </summary>
+   /// <param name="reason">Reset reason to convert; defaults to the current boot's reason</param>
+   /// <returns>Human-readable description of the reset reason</returns>
+   static const char* resetReasonString(esp_reset_reason_t reason = esp_reset_reason())
+   {
+      switch (reason)
+      {
+      case ESP_RST_POWERON:
+         return "Power-on reset";
+      case ESP_RST_EXT:
+         return "External pin reset";
+      case ESP_RST_SW:
+         return "Software reset";
+      case ESP_RST_PANIC:
+         return "Software panic reset";
+      case ESP_RST_INT_WDT:
+         return "Interrupt watchdog reset";
+      case ESP_RST_TASK_WDT:
+         return "Task watchdog reset";
+      case ESP_RST_WDT:
+         return "Other watchdog reset";
+      case ESP_RST_DEEPSLEEP:
+         return "Woke from deep sleep";
+      case ESP_RST_BROWNOUT:
+         return "Brownout reset (voltage dropout)";
+      case ESP_RST_SDIO:
+         return "SDIO reset";
+      default:
+         return "Unknown reset reason";
+      }
+   }
+
    /// <summary>
    /// Reads ADC input and converts to voltage accounting for voltage divider.
    /// </summary>
@@ -213,16 +248,22 @@ public:
    }
 
    /// <summary>
-   /// Checks for a previous halt reason in a preferences object and prints it to Serial if found.
+   /// Prints the current boot's reset reason and checks for a previous halt reason in a
+   /// preferences object, printing it to Serial if found.
    /// </summary>
-   static void checkHaltReason()
+   /// <returns>The previous halt reason, or an empty string if none was recorded.</returns>
+   static String checkHaltReason()
    {
+      Serial.print("Reset reason: ");
+      Serial.println(resetReasonString());
+
+      String reason = "";
       Preferences preferences;
       preferences.begin("Woyak", false);
       // Note: Not all implementation of Preferences have isKey, but ESP32 and PreferencesFlash do.
       if (preferences.isKey("halt"))
       {
-         String reason = preferences.getString("halt", "");
+         reason = preferences.getString("halt", "");
          if (reason.length() > 0)
          {
             Serial.print("Previous halt reason: ");
@@ -231,6 +272,7 @@ public:
          preferences.remove("halt");
       }
       preferences.end();
+      return reason;
    }
 
    ///

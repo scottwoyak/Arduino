@@ -9,15 +9,19 @@
 #undef round
 #endif
 
+///
 /// <summary>
 /// Represents a lightweight format template used to convert values to fixed-width display strings.
 /// </summary>
+///
 class Format
 {
 public:
+   ///
    /// <summary>
    /// Controls horizontal alignment when formatted content is shorter than the target length.
    /// </summary>
+   ///
    enum class Alignment
    {
       LEFT,
@@ -36,79 +40,26 @@ private:
    bool _includePlus = false;
 
 public:
-   /// <summary>
-   /// Gets the literal prefix placed before the formatted value.
-   /// </summary>
-   std::string prefix() const { return _prefix; }
-
-   /// <summary>
-   /// Gets the literal postfix placed after the formatted value.
-   /// </summary>
-   std::string postfix() const { return _postfix; }
-
-   /// <summary>
-   /// Gets the target output length.
-   /// </summary>
-   size_t length() const { return _length; }
-
-   /// <summary>
-   /// Gets the alignment used when padding output.
-   /// </summary>
-   Alignment alignment() const { return _alignment; }
-
-   /// <summary>
-   /// Creates a copy of this Format.
-   /// </summary>
-   /// <returns>A copy of this Format.</returns>
-   Format clone() const { return *this; }
-
-   /// <summary>
-   /// Creates a copy of this Format with a different alignment.
-   /// </summary>
-   /// <param name="alignment">Alignment to apply to the cloned Format.</param>
-   /// <returns>A copy of this Format with the specified alignment.</returns>
-   Format clone(Alignment alignment) const
-   {
-      return Format(this, alignment);
-   }
-
-   /// <summary>
-   /// Gets the number of decimal digits used for floating-point values.
-   /// </summary>
-   uint8_t precision() const { return _precision; }
-
-   /// <summary>
-   /// Gets the character used when content exceeds the target length.
-   /// </summary>
-   char errChar() const { return _errChar; }
-
-   /// <summary>
-   /// Gets whether positive values include a leading plus sign.
-   /// </summary>
-   bool includePlus() const { return _includePlus; }
-
-   /// <summary>
-   /// Gets the original format pattern string this Format was parsed from, or an empty
-   /// string if it was constructed with an explicit length instead of a pattern.
-   /// </summary>
-   const std::string& formatString() const { return _formatString; }
-
+   ///
    /// <summary>
    /// Initializes a format with an explicit fixed output length.
    /// </summary>
    /// <param name="length">Total output width to enforce.</param>
    /// <param name="alignment">Padding alignment for values shorter than the target length.</param>
+   ///
    Format(size_t length, Alignment alignment = Alignment::LEFT)
    {
       _length = length;
       _alignment = alignment;
    }
 
+   ///
    /// <summary>
    /// Initializes a format by parsing a format pattern and optional alignment.
    /// </summary>
    /// <param name="format">Pattern containing optional prefix/postfix and # placeholders.</param>
    /// <param name="alignment">Padding alignment for values shorter than the target length.</param>
+   ///
    Format(const char* format, Alignment alignment = Alignment::LEFT)
    {
       _alignment = alignment;
@@ -156,34 +107,148 @@ public:
       _precision = pos == std::string::npos ? 0 : (str.length() - 1) - pos;
    }
 
+   ///
    /// <summary>
    /// Initializes a parsed format while overriding the output length.
    /// </summary>
    /// <param name="format">Pattern containing optional prefix/postfix and # placeholders.</param>
    /// <param name="length">Total output width to enforce.</param>
    /// <param name="alignment">Padding alignment for values shorter than the target length.</param>
+   ///
    Format(const char* format, size_t length, Alignment alignment = Alignment::LEFT)
       : Format(format, alignment)
    {
       _length = length;
    }
 
+   ///
    /// <summary>
    /// Initializes a copy of an existing format with a different alignment.
    /// </summary>
    /// <param name="other">Format to copy.</param>
    /// <param name="alignment">Alignment to apply to the copy.</param>
+   ///
    Format(const Format* other, Alignment alignment)
       : Format(*other)
    {
       _alignment = alignment;
    }
 
+   ///
+   /// <summary>
+   /// Gets the literal prefix placed before the formatted value.
+   /// </summary>
+   ///
+   std::string prefix() const { return _prefix; }
+
+   ///
+   /// <summary>
+   /// Gets the literal postfix placed after the formatted value.
+   /// </summary>
+   ///
+   std::string postfix() const { return _postfix; }
+
+   ///
+   /// <summary>
+   /// Gets the target output length.
+   /// </summary>
+   ///
+   size_t length() const { return _length; }
+
+   ///
+   /// <summary>
+   /// Gets the alignment used when padding output.
+   /// </summary>
+   ///
+   Alignment alignment() const { return _alignment; }
+
+   ///
+   /// <summary>
+   /// Creates a copy of this Format.
+   /// </summary>
+   /// <returns>A copy of this Format.</returns>
+   ///
+   Format clone() const { return *this; }
+
+   ///
+   /// <summary>
+   /// Creates a copy of this Format with a different alignment.
+   /// </summary>
+   /// <param name="alignment">Alignment to apply to the cloned Format.</param>
+   /// <returns>A copy of this Format with the specified alignment.</returns>
+   ///
+   Format clone(Alignment alignment) const
+   {
+      return Format(this, alignment);
+   }
+
+   ///
+   /// <summary>
+   /// Gets the number of decimal digits used for floating-point values.
+   /// </summary>
+   ///
+   uint8_t precision() const { return _precision; }
+
+   ///
+   /// <summary>
+   /// Gets the character used when content exceeds the target length.
+   /// </summary>
+   ///
+   char errChar() const { return _errChar; }
+
+   ///
+   /// <summary>
+   /// Gets whether positive values include a leading plus sign.
+   /// </summary>
+   ///
+   bool includePlus() const { return _includePlus; }
+
+   ///
+   /// <summary>
+   /// Builds a placeholder string the same width/shape as a formatted value, for use when
+   /// no value is currently available to display (as opposed to a value that is legitimately
+   /// NaN, which should still be rendered via toString()).
+   /// </summary>
+   /// <param name="noValueChar">Character used to fill each digit position.</param>
+   /// <returns>Placeholder display string matching this format's layout.</returns>
+   ///
+   std::string toNoValueString(char noValueChar = '-') const
+   {
+      size_t signLen = _includePlus ? 1 : 0;
+      size_t numericLen = _length - _prefix.length() - _postfix.length() - signLen;
+
+      std::string digits;
+      if (_precision > 0 && numericLen > _precision)
+      {
+         size_t wholeLen = numericLen - _precision - 1;
+         digits.append(wholeLen, noValueChar);
+         digits.append(1, '.');
+         digits.append(_precision, noValueChar);
+      }
+      else
+      {
+         digits.append(numericLen, noValueChar);
+      }
+
+      std::string str = _prefix + std::string(signLen, ' ') + digits + _postfix;
+      return str;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the original format pattern string this Format was parsed from, or an empty
+   /// string if it was constructed with an explicit length instead of a pattern.
+   /// </summary>
+   ///
+   const std::string& formatString() const { return _formatString; }
+
+   ///
    /// <summary>
    /// Formats a floating-point value using this format definition.
    /// </summary>
    /// <param name="value">Value to format.</param>
    /// <returns>Formatted display string.</returns>
+   ///
    std::string toString(double value) const
    {
       std::string valueStr;
@@ -220,31 +285,37 @@ public:
       return toString(str);
    }
 
+   ///
    /// <summary>
    /// Formats an Arduino String value using this format definition.
    /// </summary>
    /// <param name="value">String value to format.</param>
    /// <returns>Formatted display string.</returns>
+   ///
    std::string toString(const String& value) const
    {
       return toString(value.c_str());
    }
 
+   ///
    /// <summary>
    /// Formats a std::string value using this format definition.
    /// </summary>
    /// <param name="value">String value to format.</param>
    /// <returns>Formatted display string.</returns>
+   ///
    std::string toString(const std::string& value) const
    {
       return toString(value.c_str());
    }
 
+   ///
    /// <summary>
    /// Formats a C-string value using this format definition.
    /// </summary>
    /// <param name="value">String value to format.</param>
    /// <returns>Formatted display string.</returns>
+   ///
    std::string toString(const char* value) const
    {
       std::string str = value;

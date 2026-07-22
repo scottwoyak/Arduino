@@ -443,6 +443,29 @@ public:
    }
 
    /// <summary>
+   /// Clears all accumulated data and restarts timing, discarding any in-progress
+   /// auto-sizing measurements so bucket sizing is re-learned from scratch.
+   /// </summary>
+   void reset()
+   {
+      _clearBuckets();
+
+      if (_autoSizing)
+      {
+         _applyBucketCount(AUTO_MIN_BUCKETS);
+         _autoSizingFinalized = false;
+         _hasPreviousSampleTicks = false;
+         _previousSampleTicks = 0;
+         _measuredIntervalSumMs = 0.0f;
+         _intervalSampleCount = 0;
+      }
+
+      _currentBucket = 0;
+      _startTicks = TimeFunc();
+      _elapsedTicks = 0;
+   }
+
+   /// <summary>
    /// Gets the current active bucket index.
    /// </summary>
    /// <returns>Zero-based active bucket index.</returns>
