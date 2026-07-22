@@ -823,8 +823,9 @@ void drawCollectingHeader()
 
    if (cooldownField == nullptr)
    {
-      cooldownField = new DisplayField(&arduino, cooldownFieldX, cooldownLineY, "Cooling Down", *sensor.getHighResFormat(),
-                                        BODY_TEXT_SIZE, Color::GRAY, Color::GRAY);
+      Point16 cooldownPos(cooldownFieldX, cooldownLineY);
+      cooldownField = new DisplayField(&arduino, cooldownPos, "Cooling Down", *sensor.getHighResFormat(),
+                                        Color::GRAY, Color::GRAY);
    }
    else
    {

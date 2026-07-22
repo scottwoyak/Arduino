@@ -49,6 +49,7 @@ namespace SerialX
 		}
 
 		printed += Serial.print(text);
+
 		return printed;
 	}
 
@@ -64,6 +65,7 @@ namespace SerialX
 		}
 
 		printed += Serial.println(text);
+
 		return printed;
 	}
 
@@ -72,7 +74,9 @@ namespace SerialX
 	/// </summary>
 	inline size_t println()
 	{
-		return Serial.println();
+		size_t printed = Serial.println();
+
+		return printed;
 	}
 
 	/// <summary>

@@ -20,9 +20,11 @@ class MS5837PressureTestSensor;
 class CapacitiveTestSensor;
 class DepthTestSensor;
 
-// One-line sensor source switch used by all sketches. Change only TEST_SENSOR_TYPE below;
+// One-line sensor source switch used by all sketches. Change only TEST_SENSOR_TYPE below,
+// or #define TEST_SENSOR_TYPE in the sketch before including this header to override it.
 // TestSensor is derived from it automatically. Use sensor.sensorType() to display the
 // active sensor's type name at runtime.
+#ifndef TEST_SENSOR_TYPE
  #define TEST_SENSOR_TYPE TempSensorTestSensor
 // #define TEST_SENSOR_TYPE ESP32TempTestSensor
 // #define TEST_SENSOR_TYPE SinTestSensor
@@ -32,6 +34,7 @@ class DepthTestSensor;
 // #define TEST_SENSOR_TYPE DepthTestSensor
 // #define TEST_SENSOR_TYPE MS5837PressureTestSensor
 // #define TEST_SENSOR_TYPE CapacitiveTestSensor
+#endif
 
 using TestSensor = TEST_SENSOR_TYPE;
 

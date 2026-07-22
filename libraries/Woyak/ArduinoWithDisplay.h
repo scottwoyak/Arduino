@@ -79,6 +79,11 @@ public:
    ///
    bool echoToSerial = false;
 
+private:
+   uint8_t _textSize = 1;
+
+public:
+
    ///
    /// <summary>
    /// Initializes a new instance of the ArduinoWithDisplay class.
@@ -253,6 +258,8 @@ public:
    ///
    void setTextSize(uint8_t size, bool mono = true)
    {
+      _textSize = size;
+
       // LGFX uses setTextSize to set a scaling factor. We instead load a properly
       // sized font. Make sure to set the scaling factor back to 1
       display.setTextSize(1);
@@ -299,6 +306,17 @@ public:
          // TFT_eSPI & LGFX guess at the space width. Make it the monospace value
          font->spaceWidth = maxAdvance;
       }
+   }
+
+   ///
+   /// <summary>
+   /// Gets the text size most recently set via setTextSize().
+   /// </summary>
+   /// <returns>The current font size index.</returns>
+   ///
+   uint8_t getTextSize() const
+   {
+      return _textSize;
    }
 
    ///

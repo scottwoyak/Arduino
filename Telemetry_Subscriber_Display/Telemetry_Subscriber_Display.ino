@@ -11,7 +11,7 @@
 /// </remarks>
 
 // Uncomment to use local telemetry server instead of remote
-// #define TELEMETRY_LOCAL
+#define TELEMETRY_LOCAL
 
 #include <Arduino.h>
 #include <WiFi.h>

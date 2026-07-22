@@ -90,6 +90,19 @@ public:
 
    ///
    /// <summary>
+   /// Sets whether lines added via addLine()/addText() are also echoed to Serial. Callers
+   /// can toggle this around call sites that already print the same text to Serial
+   /// themselves (e.g. via SerialTable), to avoid double-printing.
+   /// </summary>
+   /// <param name="echoToSerial">Whether to echo added lines to Serial.</param>
+   ///
+   void setEchoToSerial(bool echoToSerial)
+   {
+      _echoToSerial = echoToSerial;
+   }
+
+   ///
+   /// <summary>
    /// Removes all buffered lines and resets scrolling to the top.
    /// </summary>
    ///

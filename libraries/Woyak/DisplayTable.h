@@ -141,13 +141,13 @@ public:
 
    ///
    /// <summary>
-   /// Updates the value of an existing row in the table.
+   /// Sets the value of an existing row in the table.
    /// </summary>
    /// <param name="rowIndex">The zero-based index of the row to update.</param>
    /// <param name="value">The new double value to display.</param>
    /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
    ///
-   void updateValue(size_t rowIndex, double value, Color valueColor = Color::VALUE)
+   void setValue(size_t rowIndex, double value, Color valueColor = Color::VALUE)
    {
       if (rowIndex < _rows.size())
       {
@@ -158,13 +158,13 @@ public:
 
    ///
    /// <summary>
-   /// Updates the value of an existing row in the table.
+   /// Sets the value of an existing row in the table.
    /// </summary>
    /// <param name="rowIndex">The zero-based index of the row to update.</param>
    /// <param name="value">The new float value to display.</param>
    /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
    ///
-   void updateValue(size_t rowIndex, float value, Color valueColor = Color::VALUE)
+   void setValue(size_t rowIndex, float value, Color valueColor = Color::VALUE)
    {
       if (rowIndex < _rows.size())
       {
@@ -175,13 +175,13 @@ public:
 
    ///
    /// <summary>
-   /// Updates the value of an existing row in the table.
+   /// Sets the value of an existing row in the table.
    /// </summary>
    /// <param name="rowIndex">The zero-based index of the row to update.</param>
    /// <param name="value">The new int value to display.</param>
    /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
    ///
-   void updateValue(size_t rowIndex, int value, Color valueColor = Color::VALUE)
+   void setValue(size_t rowIndex, int value, Color valueColor = Color::VALUE)
    {
       if (rowIndex < _rows.size())
       {
@@ -192,13 +192,13 @@ public:
 
    ///
    /// <summary>
-   /// Updates the value of an existing row in the table.
+   /// Sets the value of an existing row in the table.
    /// </summary>
    /// <param name="rowIndex">The zero-based index of the row to update.</param>
    /// <param name="value">The new unsigned long value to display.</param>
    /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
    ///
-   void updateValue(size_t rowIndex, unsigned long value, Color valueColor = Color::VALUE)
+   void setValue(size_t rowIndex, unsigned long value, Color valueColor = Color::VALUE)
    {
       if (rowIndex < _rows.size())
       {
@@ -209,13 +209,13 @@ public:
 
    ///
    /// <summary>
-   /// Updates the value of an existing row in the table.
+   /// Sets the value of an existing row in the table.
    /// </summary>
    /// <param name="rowIndex">The zero-based index of the row to update.</param>
    /// <param name="value">The new size_t value to display.</param>
    /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
    ///
-   void updateValue(size_t rowIndex, size_t value, Color valueColor = Color::VALUE)
+   void setValue(size_t rowIndex, size_t value, Color valueColor = Color::VALUE)
    {
       if (rowIndex < _rows.size())
       {
@@ -226,13 +226,13 @@ public:
 
    ///
    /// <summary>
-   /// Updates the value of an existing row in the table.
+   /// Sets the value of an existing row in the table.
    /// </summary>
    /// <param name="rowIndex">The zero-based index of the row to update.</param>
    /// <param name="value">The new String value to display.</param>
    /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
    ///
-   void updateValue(size_t rowIndex, const String& value, Color valueColor = Color::VALUE)
+   void setValue(size_t rowIndex, const String& value, Color valueColor = Color::VALUE)
    {
       if (rowIndex < _rows.size())
       {
@@ -243,13 +243,13 @@ public:
 
    ///
    /// <summary>
-   /// Updates the value of an existing row in the table.
+   /// Sets the value of an existing row in the table.
    /// </summary>
    /// <param name="rowIndex">The zero-based index of the row to update.</param>
    /// <param name="value">The new std::string value to display.</param>
    /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
    ///
-   void updateValue(size_t rowIndex, const std::string& value, Color valueColor = Color::VALUE)
+   void setValue(size_t rowIndex, const std::string& value, Color valueColor = Color::VALUE)
    {
       if (rowIndex < _rows.size())
       {
@@ -260,17 +260,35 @@ public:
 
    ///
    /// <summary>
-   /// Updates the value of an existing row in the table.
+   /// Sets the value of an existing row in the table.
    /// </summary>
    /// <param name="rowIndex">The zero-based index of the row to update.</param>
    /// <param name="value">The new character array value to display.</param>
    /// <param name="valueColor">The color to draw the updated value (default: Color::VALUE).</param>
    ///
-   void updateValue(size_t rowIndex, const char* value, Color valueColor = Color::VALUE)
+   void setValue(size_t rowIndex, const char* value, Color valueColor = Color::VALUE)
    {
       if (rowIndex < _rows.size())
       {
          _rows[rowIndex].value = _rows[rowIndex].format->toString(value).c_str();
+         _rows[rowIndex].valueColor = valueColor;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Sets a row's value to a placeholder string (via the row's Format::toNoValueString())
+   /// to indicate no value is currently available, as opposed to a legitimate NaN reading.
+   /// </summary>
+   /// <param name="rowIndex">The zero-based index of the row to update.</param>
+   /// <param name="valueColor">The color to draw the placeholder value (default: Color::VALUE).</param>
+   /// <param name="noValueChar">Character used to fill each digit position.</param>
+   ///
+   void setNoValue(size_t rowIndex, Color valueColor = Color::VALUE, char noValueChar = '-')
+   {
+      if (rowIndex < _rows.size())
+      {
+         _rows[rowIndex].value = _rows[rowIndex].format->toNoValueString(noValueChar).c_str();
          _rows[rowIndex].valueColor = valueColor;
       }
    }

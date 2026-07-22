@@ -12,7 +12,7 @@
 /// <summary>
 /// Halts the device (via Util::setHaltReason()/Util::reset()) if condition is false,
 /// recording the failed expression, file, and line so it's visible via
-/// Util::checkHaltReason() on the next boot. Intended for invariants that should never be
+/// Util::checkTheLastShutdownReason() on the next boot. Intended for invariants that should never be
 /// false at runtime (e.g. a pointer that must always be set): failing loudly and
 /// immediately makes bugs visible instead of letting the sketch silently limp along with a
 /// no-op guard hiding the underlying problem.
@@ -252,7 +252,7 @@ public:
    /// preferences object, printing it to Serial if found.
    /// </summary>
    /// <returns>The previous halt reason, or an empty string if none was recorded.</returns>
-   static String checkHaltReason()
+   static String checkTheLastShutdownReason()
    {
       Serial.print("Reset reason: ");
       Serial.println(resetReasonString());

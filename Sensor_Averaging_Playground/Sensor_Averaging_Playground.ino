@@ -491,13 +491,20 @@ void initializeCollectingTable()
    delete actualRateField;
 
    // pad labels so their ": " separators line up, matching "Target Rate"/"Actual Rate"
-   warmupStatusField = new DisplayField(&arduino, 0, collectingTableY, "     Warmup", warmupStatusFormat, 2);
-   maxField = new DisplayField(&arduino, 0, collectingTableY + rowHeight, "        Max", maxCaptureFormat, 2);
-   progressField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 2, "   Progress", progressPercentFormat, 2);
-   samplesCountField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 3, "    Samples", samplesCountFormat, 2);
-   elapsedField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 4, "    Elapsed", elapsedFormat, 2);
-   targetRateField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 5, "Target Rate", targetRateFormat, 2);
-   actualRateField = new DisplayField(&arduino, 0, collectingTableY + rowHeight * 6, "Actual Rate", actualRateFormat, 2);
+   Point16 warmupPos(0, collectingTableY);
+   warmupStatusField = new DisplayField(&arduino, warmupPos, "     Warmup", warmupStatusFormat);
+   Point16 maxPos(0, collectingTableY + rowHeight);
+   maxField = new DisplayField(&arduino, maxPos, "        Max", maxCaptureFormat);
+   Point16 progressPos(0, collectingTableY + rowHeight * 2);
+   progressField = new DisplayField(&arduino, progressPos, "   Progress", progressPercentFormat);
+   Point16 samplesCountPos(0, collectingTableY + rowHeight * 3);
+   samplesCountField = new DisplayField(&arduino, samplesCountPos, "    Samples", samplesCountFormat);
+   Point16 elapsedPos(0, collectingTableY + rowHeight * 4);
+   elapsedField = new DisplayField(&arduino, elapsedPos, "    Elapsed", elapsedFormat);
+   Point16 targetRatePos(0, collectingTableY + rowHeight * 5);
+   targetRateField = new DisplayField(&arduino, targetRatePos, "Target Rate", targetRateFormat);
+   Point16 actualRatePos(0, collectingTableY + rowHeight * 6);
+   actualRateField = new DisplayField(&arduino, actualRatePos, "Actual Rate", actualRateFormat);
 }
 
 ///

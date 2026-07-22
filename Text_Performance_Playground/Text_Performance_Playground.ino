@@ -115,14 +115,16 @@ void setupMode()
 
    if (currentMode == DisplayMode::SPRITES)
    {
-      numberField = new DisplayField(&arduino, numberX, numberY, "", numberFormat, numberTextSize);
+      Point16 numberPos(numberX, numberY);
+      numberField = new DisplayField(&arduino, numberPos, numberFormat);
    }
 
    arduino.setTextSize(RATE_TEXT_SIZE);
    int16_t rateWidth = arduino.textWidth("Rate: 999/s");
    int16_t x = arduino.width() - rateWidth - 10;
    int16_t y = arduino.height() - arduino.charH() - 10;
-   rateField = new DisplayField(&arduino, x, y, "Rate", rateFormat, RATE_TEXT_SIZE);
+   Point16 pos(x, y);
+   rateField = new DisplayField(&arduino, pos, "Rate", rateFormat);
 }
 
 void setup()

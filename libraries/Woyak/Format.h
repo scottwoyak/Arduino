@@ -230,7 +230,7 @@ public:
          digits.append(numericLen, noValueChar);
       }
 
-      std::string str = _prefix + std::string(signLen, ' ') + digits + _postfix;
+      std::string str = _prefix + std::string(signLen, noValueChar) + digits + _postfix;
       return str;
    }
 

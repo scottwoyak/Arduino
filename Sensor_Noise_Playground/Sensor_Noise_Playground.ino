@@ -151,30 +151,30 @@ void renderTableView()
    float sd = stats.stdDev();
    float sdPercent = (isfinite(avg) && (fabsf(avg) > 0.0f) && isfinite(sd)) ? ((sd / fabsf(avg)) * 100.0f) : NAN;
 
-   noiseTable.updateValue(0, NOISE_HISTORY_S * 1000UL);
-   noiseTable.updateValue(1, count);
+   noiseTable.setValue(0, NOISE_HISTORY_S * 1000UL);
+   noiseTable.setValue(1, count);
 
    if (count == 0 || !isfinite(avg))
    {
-      noiseTable.updateValue(2, "No valid data", Color::RED);
-      noiseTable.updateValue(3, "Check sensor");
-      noiseTable.updateValue(4, "and I2C", Color::VALUE2);
-      noiseTable.updateValue(5, "wiring", Color::VALUE2);
+      noiseTable.setValue(2, "No valid data", Color::RED);
+      noiseTable.setValue(3, "Check sensor");
+      noiseTable.setValue(4, "and I2C", Color::VALUE2);
+      noiseTable.setValue(5, "wiring", Color::VALUE2);
       noiseTable.draw();
       return;
    }
 
-   noiseTable.updateValue(2, avg);
-   noiseTable.updateValue(3, rng);
-   noiseTable.updateValue(4, sd);
+   noiseTable.setValue(2, avg);
+   noiseTable.setValue(3, rng);
+   noiseTable.setValue(4, sd);
 
    if (isfinite(sdPercent))
    {
-      noiseTable.updateValue(5, sdPercent);
+      noiseTable.setValue(5, sdPercent);
    }
    else
    {
-      noiseTable.updateValue(5, "n/a", Color::VALUE2);
+      noiseTable.setValue(5, "n/a", Color::VALUE2);
    }
 
    noiseTable.draw();
@@ -216,11 +216,13 @@ void setup()
    arduino.setTextSize(2);
    std::string label = "Target Sampling Rate";
    int x = arduino.display.width() - (label.length() + 2  + rateFormat.length()) * arduino.charW();
-   targetRateField = new DisplayField(&arduino, x, 0, label.c_str(), rateFormat, 2);
+   Point16 targetRatePos(x, 0);
+   targetRateField = new DisplayField(&arduino, targetRatePos, label.c_str(), rateFormat);
 
    label = "Actual Rate";
    x = arduino.display.width() - (label.length() + 2  +  rateFormat.length()) * arduino.charW();
-   actualRateField = new DisplayField(&arduino, x, arduino.charH(), label.c_str(), rateFormat, 2);
+   Point16 actualRatePos(x, arduino.charH());
+   actualRateField = new DisplayField(&arduino, actualRatePos, label.c_str(), rateFormat);
 
    sensor.begin();
    sensor.get();

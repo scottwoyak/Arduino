@@ -497,10 +497,10 @@ bool loadBestConfiguration()
       { "Value", 24 },
    };
    SerialTable table("Loaded Saved Best Configuration", columns, sizeof(columns) / sizeof(columns[0]));
-   SerialX::print(table.printHeader());
-   SerialX::print(table.printRow("Resistor Value", String(resistorLabel(chargePin)) + " (Pin " + String((unsigned long)chargePin) + ")"));
-   SerialX::print(table.printRow("Discharge Delay", String((unsigned long)dischargeDelayMicros) + " us"));
-   SerialX::print(table.printRow("Buffer Size", (unsigned long)bufferSize));
+   table.printHeader();
+   table.printRow("Resistor Value", String(resistorLabel(chargePin)) + " (Pin " + String((unsigned long)chargePin) + ")");
+   table.printRow("Discharge Delay", String((unsigned long)dischargeDelayMicros) + " us");
+   table.printRow("Buffer Size", (unsigned long)bufferSize);
    Serial.println();
 
    return true;
@@ -879,8 +879,8 @@ void runRollingSweepTest()
       { "StdDev %", 10 },
    };
    SerialTable table(nullptr, columns, sizeof(columns) / sizeof(columns[0]));
-   String headerText = table.printHeader();
-   textViewer.addText(headerText);
+   textViewer.setEchoToSerial(false);
+   textViewer.addText(table.printHeader());
 
    for (size_t sizeIndex = 0; sizeIndex < ROLLING_SWEEP_SIZE_COUNT; sizeIndex++)
    {
@@ -899,13 +899,13 @@ void runRollingSweepTest()
 
       float rangeMicros = rollingAverageStats.max() - rollingAverageStats.min();
       float stdDevPercent = (rollingAverageStats.get() != 0) ? (rollingAverageStats.stdDev() / rollingAverageStats.get() * 100.0f) : 0.0f;
-      String rowText = table.printRow(
+      textViewer.addText(table.printRow(
          (unsigned long)rollingSize,
          SerialTable::fixed(rangeMicros, 3),
          SerialTable::fixed(rollingAverageStats.stdDev(), 3),
-         SerialTable::fixed(stdDevPercent, 2));
-      textViewer.addText(rowText);
+         SerialTable::fixed(stdDevPercent, 2)));
    }
+   textViewer.setEchoToSerial(true);
 
    Serial.println();
    Serial.println("Rolling Sweep Complete");
@@ -1034,8 +1034,8 @@ void runRawDataCaptureTest()
       { "Percent", 9, "##.##%" },
    };
    SerialTable table(nullptr, columns, sizeof(columns) / sizeof(columns[0]));
-   String headerText = table.printHeader();
-   textViewer.addText(headerText);
+   textViewer.setEchoToSerial(false);
+   textViewer.addText(table.printHeader());
 
    for (size_t rangeIndex = 0; rangeIndex < RAW_DATA_CAPTURE_CONFIDENCE_COUNT; rangeIndex++)
    {
@@ -1054,14 +1054,13 @@ void runRawDataCaptureTest()
       }
 
       float withinRangePercent = 100.0f * withinRange / RAW_DATA_CAPTURE_SAMPLE_COUNT;
-         String rowText = table.printRow(
+         textViewer.addText(table.printRow(
             percent,
             toleranceMicros,
             rangeMin,
             rangeMax,
             (unsigned long)withinRange,
-            withinRangePercent);
-         textViewer.addText(rowText);
+            withinRangePercent));
       }
 
       textViewer.addLine("");
@@ -1071,8 +1070,7 @@ void runRawDataCaptureTest()
          { "Count", 8 },
       };
       SerialTable binTable(nullptr, binColumns, sizeof(binColumns) / sizeof(binColumns[0]));
-      String binHeaderText = binTable.printHeader();
-      textViewer.addText(binHeaderText);
+      textViewer.addText(binTable.printHeader());
 
       int32_t binMin = (int32_t)floorf(captureStats.min());
       int32_t binMax = (int32_t)ceilf(captureStats.max());
@@ -1092,11 +1090,11 @@ void runRawDataCaptureTest()
             continue;
          }
 
-         String binRowText = binTable.printRow(
+         textViewer.addText(binTable.printRow(
             String(bin) + "-" + String(bin + 1),
-            (unsigned long)binCount);
-         textViewer.addText(binRowText);
+            (unsigned long)binCount));
       }
+      textViewer.setEchoToSerial(true);
 
       Serial.println();
       Serial.println("Raw Data Capture Complete");
@@ -1153,8 +1151,8 @@ void runDischargeSweepTest()
       { "StdDev(us)", 12 },
    };
    SerialTable table(nullptr, columns, sizeof(columns) / sizeof(columns[0]));
-   String headerText = table.printHeader();
-   textViewer.addText(headerText);
+   textViewer.setEchoToSerial(false);
+   textViewer.addText(table.printHeader());
 
    for (uint16_t sweepDischargeDelayMicros = DISCHARGE_SWEEP_MIN_MICROS; sweepDischargeDelayMicros <= DISCHARGE_SWEEP_MAX_MICROS; sweepDischargeDelayMicros += DISCHARGE_SWEEP_STEP_MICROS)
    {
@@ -1197,12 +1195,12 @@ void runDischargeSweepTest()
       }
 
       float rangeMicros = sweepStats.max() - sweepStats.min();
-      String rowText = table.printRow(
+      textViewer.addText(table.printRow(
          (unsigned long)sweepDischargeDelayMicros,
          SerialTable::fixed(rangeMicros, 3),
-         SerialTable::fixed(sweepStats.stdDev(), 3));
-      textViewer.addText(rowText);
+         SerialTable::fixed(sweepStats.stdDev(), 3)));
    }
+   textViewer.setEchoToSerial(true);
 
    Serial.println();
    Serial.println("Discharge Sweep Complete");
@@ -1242,8 +1240,8 @@ void runOptimizedSweepTest()
       { "Effective", 11 },
    };
    SerialTable resultsTable(nullptr, resultColumns, sizeof(resultColumns) / sizeof(resultColumns[0]));
-   String resultsHeaderText = resultsTable.printHeader();
-   textViewer.addText(resultsHeaderText);
+   textViewer.setEchoToSerial(false);
+   textViewer.addText(resultsTable.printHeader());
 
    const size_t totalTests = RESISTOR_OPTION_COUNT * testParameters.count;
    arduino.clearDisplay();
@@ -1283,7 +1281,7 @@ void runOptimizedSweepTest()
             stdDevPctText = String(chargeStdDevPercent, 2) + " %";
          }
 
-         String resultRowText = resultsTable.printRow(
+         textViewer.addText(resultsTable.printRow(
             RESISTOR_OPTIONS[resistorIndex].label,
             String((int)round(result.targetEffectiveRate)) + "/s",
             (unsigned long)result.dischargeDelayMicros,
@@ -1292,13 +1290,13 @@ void runOptimizedSweepTest()
             rangeText,
             stdDevPctText,
             String((int)round(result.rawRateHz)) + "/s",
-            String((int)round(result.effectiveRateHz)) + "/s");
-         textViewer.addText(resultRowText);
+            String((int)round(result.effectiveRateHz)) + "/s"));
 
          // Yield to allow display and other updates
          delay(10);
       }
    }
+   textViewer.setEchoToSerial(true);
 
    printAggregateStatistics(allResults, allResultCount);
    printBestConfigurations(allResults, allResultCount);
@@ -1423,6 +1421,7 @@ void printBestConfigurations(TestRunResult* results, size_t count)
 {
    textViewer.addLine("");
    textViewer.addLine("------- Best Configurations (Top 3 Lowest StdDev %) -------");
+   textViewer.setEchoToSerial(false);
 
    for (size_t rateIndex = 0; rateIndex < TARGET_EFFECTIVE_RATE_COUNT; rateIndex++)
    {
@@ -1477,8 +1476,7 @@ void printBestConfigurations(TestRunResult* results, size_t count)
          { "StdDev %", 10 },
       };
       SerialTable table("Best Configurations", columns, sizeof(columns) / sizeof(columns[0]));
-      String headerText = table.printHeader();
-      textViewer.addText(headerText);
+      textViewer.addText(table.printHeader());
 
       constexpr size_t TOP_RANKING_COUNT = 3;
       size_t printCount = (indexCount < TOP_RANKING_COUNT) ? indexCount : TOP_RANKING_COUNT;
@@ -1493,17 +1491,17 @@ void printBestConfigurations(TestRunResult* results, size_t count)
             stdDevPct = String(pct, 2) + " %";
          }
 
-         String rowText = table.printRow(
+         textViewer.addText(table.printRow(
             (unsigned long)(rank + 1),
             String(r.resistorLabel ? r.resistorLabel : "?") + " (" + String((unsigned long)resistorPin) + ")",
             (unsigned long)r.dischargeDelayMicros,
             (unsigned long)r.bufferSize,
-            stdDevPct);
-         textViewer.addText(rowText);
+            stdDevPct));
       }
 
       textViewer.addLine("");
    }
+   textViewer.setEchoToSerial(true);
 }
 
 ///
@@ -1523,13 +1521,12 @@ void printAggregateRow(SerialTable& table, const char* label, const Stats& avgSt
    float rangeMicros = avgStats.max() - avgStats.min();
    float avgMicros = avgStats.get();
    float stdDevPercent = (isfinite(stdDevStats.get()) && avgMicros != 0.0f) ? (stdDevStats.get() / avgMicros) * 100.0f : NAN;
-   String rowText = table.printRow(
+   textViewer.addText(table.printRow(
       label,
       SerialTable::fixed(avgMicros, 3),
       SerialTable::fixed(stdDevStats.get(), 3),
       SerialTable::fixed(stdDevPercent, 2),
-      SerialTable::fixed(rangeMicros, 3));
-   textViewer.addText(rowText);
+      SerialTable::fixed(rangeMicros, 3)));
 }
 
 ///
@@ -1547,8 +1544,7 @@ void printAggregateByResistor(const TestRunResult* results, size_t count)
       { "Range(us)", 12 },
    };
    SerialTable table("By Resistor", columns, sizeof(columns) / sizeof(columns[0]));
-   String headerText = table.printHeader();
-   textViewer.addText(headerText);
+   textViewer.addText(table.printHeader());
 
    for (size_t resistorIndex = 0; resistorIndex < RESISTOR_OPTION_COUNT; resistorIndex++)
    {
@@ -1593,8 +1589,7 @@ void printAggregateByTargetRate(const TestRunResult* results, size_t count)
       { "Range(us)", 12 },
    };
    SerialTable table("By Target Rate", columns, sizeof(columns) / sizeof(columns[0]));
-   String headerText = table.printHeader();
-   textViewer.addText(headerText);
+   textViewer.addText(table.printHeader());
 
    for (size_t rateIndex = 0; rateIndex < TARGET_EFFECTIVE_RATE_COUNT; rateIndex++)
    {
@@ -1645,8 +1640,7 @@ void printAggregateByBufferSize(const TestRunResult* results, size_t count)
       { "Range(us)", 12 },
    };
    SerialTable table("By Buffer Size", columns, sizeof(columns) / sizeof(columns[0]));
-   String headerText = table.printHeader();
-   textViewer.addText(headerText);
+   textViewer.addText(table.printHeader());
 
    if (count == 0)
    {
@@ -1717,14 +1711,13 @@ void printAggregateByBufferSize(const TestRunResult* results, size_t count)
       constexpr size_t LABEL_BUFFER_SIZE = 16;
       char label[LABEL_BUFFER_SIZE] = "";
       snprintf(label, sizeof(label), "%lu-%lu", (unsigned long)start, (unsigned long)end);
-      String rowText = table.printRow(
+      textViewer.addText(table.printRow(
          label,
          (unsigned long)n,
          SerialTable::fixed(avgMicros, 3),
          SerialTable::fixed(stdDevStats.get(), 3),
          SerialTable::fixed(stdDevPercent, 2),
-         SerialTable::fixed(rangeMicros, 3));
-      textViewer.addText(rowText);
+         SerialTable::fixed(rangeMicros, 3)));
    }
 
    textViewer.addLine("");
@@ -1740,9 +1733,11 @@ void printAggregateStatistics(const TestRunResult* results, size_t count)
    textViewer.addLine("");
    textViewer.addLine("------- Aggregate Statistics -------");
 
+   textViewer.setEchoToSerial(false);
    printAggregateByResistor(results, count);
    printAggregateByTargetRate(results, count);
    printAggregateByBufferSize(results, count);
+   textViewer.setEchoToSerial(true);
 }
 
 void loop()

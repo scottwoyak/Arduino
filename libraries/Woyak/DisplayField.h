@@ -29,6 +29,7 @@ private:
    int16_t _y;
    String _label;
    const Format* _format;
+   Format::Alignment _alignment;
    Color _labelColor;
    Color _valueColor;
    String _value;
@@ -151,41 +152,65 @@ public:
    /// Initializes a new instance of the DisplayField class.
    /// </summary>
    /// <param name="display">The display interface to draw onto.</param>
-   /// <param name="x">The X coordinate of the label's top-left corner.</param>
-   /// <param name="y">The Y coordinate of the label's top-left corner.</param>
+   /// <param name="pos">The X/Y coordinate of the label's top-left corner.</param>
    /// <param name="label">The label text drawn before the value (a ": " separator is added).
    /// Pass an empty string to draw only the value, with no label or separator.</param>
    /// <param name="format">The formatter applied to the value, controlling its fixed width.</param>
-   /// <param name="textSize">The text size applied automatically before each draw().</param>
    /// <param name="labelColor">The color used to draw the label text.</param>
    /// <param name="valueColor">The color used to draw the value text.</param>
+   /// <param name="alignment">Controls whether x is the field's left edge (LEFT) or right
+   /// edge (RIGHT); CENTER is treated the same as LEFT.</param>
    ///
-   DisplayField(ArduinoWithDisplay* display, int16_t x, int16_t y,
+   DisplayField(ArduinoWithDisplay* display, Point16 pos,
                 const char* label, const Format& format,
-                uint8_t textSize,
-                Color labelColor = Color::LABEL, Color valueColor = Color::VALUE)
-      : _display(display), _x(x), _y(y), _label(label), _format(&format),
+                Color labelColor = Color::LABEL, Color valueColor = Color::VALUE,
+                Format::Alignment alignment = Format::Alignment::LEFT)
+      : _display(display), _label(label), _format(&format), _alignment(alignment),
         _labelColor(labelColor), _valueColor(valueColor), _drawnValueColor(valueColor),
-        _sprite(&display->display), _textSize(textSize)
+        _sprite(&display->display), _textSize(display->getTextSize())
    {
-      _display->setTextSize(_textSize, true);
       _createSprite();
+
+      int16_t x = pos.x;
+      int16_t y = pos.y;
+
+      if (y < 0)
+      {
+         y = display->display.height() + y;
+      }
+
+      if (_alignment == Format::Alignment::RIGHT)
+      {
+         int16_t totalWidth = _sprite.width();
+         if (_label.length() > 0)
+         {
+            std::string labelWithSep = std::string(_label.c_str()) + ": ";
+            totalWidth += (int16_t)display->display.textWidth(labelWithSep.c_str());
+         }
+         x = x - totalWidth;
+      }
+
+      _x = x;
+      _y = y;
    }
 
    ///
    /// <summary>
-   /// Sets the text size applied automatically before each draw(). Invalidates the field
-   /// so the next draw() rebuilds the label and sprite using the new size.
+   /// Initializes a new instance of the DisplayField class with no label, drawing only the value.
    /// </summary>
-   /// <param name="textSize">The text size to apply before drawing.</param>
+   /// <param name="display">The display interface to draw onto.</param>
+   /// <param name="pos">The X/Y coordinate of the value's top-left corner.</param>
+   /// <param name="format">The formatter applied to the value, controlling its fixed width.</param>
+   /// <param name="valueColor">The color used to draw the value text.</param>
+   /// <param name="alignment">Controls whether x is the field's left edge (LEFT) or right
+   /// edge (RIGHT); CENTER is treated the same as LEFT.</param>
    ///
-   void setTextSize(uint8_t textSize)
+   DisplayField(ArduinoWithDisplay* display, Point16 pos,
+                const Format& format,
+                Color valueColor = Color::VALUE,
+                Format::Alignment alignment = Format::Alignment::LEFT)
+      : DisplayField(display, pos, "", format, Color::LABEL, valueColor, alignment)
    {
-      if (textSize != _textSize)
-      {
-         _textSize = textSize;
-         invalidate();
-      }
    }
 
    ///
@@ -220,10 +245,7 @@ public:
 
       // the display's text size only matters for drawing the label directly; the sprite
       // already has its own font loaded and doesn't need the display's text size set
-      if (!_labelDrawn)
-      {
-         _display->setTextSize(_textSize, true);
-      }
+      _display->setTextSize(_textSize, true);
 
       if (!_labelDrawn)
       {

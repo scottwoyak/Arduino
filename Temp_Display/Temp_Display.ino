@@ -1,8 +1,8 @@
 //
 // Temperature and humidity display for Feather boards.
 //
-// Continuously reads a connected sensor and shows temperature, humidity, read duration,
-// and read rate on the display.
+// Continuously reads a connected sensor and shows the temperature and humidity, along
+// with a table of sensor information and read rate.
 //
 // Define ONE_WIRE_PIN to use a DS18B20 sensor; otherwise an I2C temperature/humidity
 // sensor is auto-detected. Hardware: Feather display board with supported sensor.
@@ -17,29 +17,40 @@
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
 
+#include "DisplayField.h"
+#include "DisplayTable.h"
 #include "Rate.h"
+#include "SerialTable.h"
 #include "SerialX.h"
 #include "TempSensor.h"
+#include "Util.h"
 
 // Uncomment to use DS18B20 sensor instead of I2C auto-detection
 // #define ONE_WIRE_PIN 5
 
+// ----------- The Board
 Arduino arduino;
+
+// ----------- Sensor
 TempSensor sensor;
+Rate readRate;  // Timer for combined temperature/humidity read performance
 
-Format tempFormat("###.## F");
-Format humFormat("###.#%");
-Format rateFormat("####/s");
-Format msFormat("####.# ms");
-
-Rate tempRate;  // Timer for temperature read performance
-Rate humRate;   // Timer for humidity read performance
-
-constexpr uint8_t MIN_CHARS_FOR_LABEL = 12;
+// ----------- Display Items
+constexpr int16_t VALUE_PADDING_PX = 5;
+Format tempFormat("###.##F");
+Format humFormat("###.#%", Format::Alignment::RIGHT);
+Format rateFormat("####/s", Format::Alignment::RIGHT);
+Format typeAddressFormat(16);
+Format idFormat(16);
+Format correctionFormat("+#.###F");
+DisplayTable table(&arduino, 0, 0);
+DisplayField* rateField = nullptr;
+int16_t headingHeight;
 
 void setup()
 {
    SerialX::begin();
+   Util::checkTheLastShutdownReason();
 
    Wire.begin();
    arduino.begin();
@@ -58,67 +69,63 @@ void setup()
    }
    else
    {
-      Serial.println("Temperature Sensor Detected:");
-      Serial.println("  Type: " + String(sensor.type()));
-      Serial.println("  ID: " + String(sensor.id()));
-      Serial.println("  Address: 0x" + String(sensor.address(), HEX));
+      const SerialTable::Column columns[] = {
+         { "Field", 10 },
+         { "Value", 16 },
+      };
+      SerialTable serialTable("Temperature Sensor Detected", columns, sizeof(columns) / sizeof(columns[0]));
+      serialTable.printHeader();
+      serialTable.printRow("Type", sensor.type());
+      serialTable.printRow("ID", sensor.id());
+      serialTable.printRow("Address", "0x" + String(sensor.address(), HEX));
    }
+
+   // Draw the heading, then reserve space below it for the large temp/humidity readout
+   arduino.clearDisplay();
+   arduino.setTextSize(3);
+   arduino.setCursor(0, 0);
+   arduino.println("Temperature", Color::HEADING);
+   headingHeight = arduino.charH();
+
+   arduino.setTextSize(4);
+   table.setPosition(0, headingHeight + VALUE_PADDING_PX + arduino.charH() + VALUE_PADDING_PX);
+   table.addRow("Type", typeAddressFormat, Color::LABEL, Color::VALUE2);
+   table.addRow("ID", idFormat, Color::LABEL, Color::VALUE2);
+   table.addRow("Correction", correctionFormat, Color::LABEL, Color::VALUE2);
+
+   // Rate is shown separately in the lower right corner, in gray
+   arduino.setTextSize(2);
+   Point16 pos(arduino.width(), -arduino.charH());
+   rateField = new DisplayField(&arduino, pos, rateFormat, Color::LIGHT_GRAY, Format::Alignment::RIGHT);
 }
 
 void loop()
 {
-   arduino.setCursor(0, 0);
+   // Read temperature and humidity with timing
+   readRate.start();
+   float temp;
+   float hum;
+   sensor.readBoth(temp, hum);
+   readRate.stop();
 
-   // Read temperature with timing
-   tempRate.start();
-   float temp = sensor.readTemperatureF();
-   tempRate.stop();
-   float tempTime = tempRate.elapsedMicros() / 1000.0f;
+   // Draw the large temp/humidity readout above the table
+   arduino.setTextSize(4);
+   arduino.setCursor(0, headingHeight + VALUE_PADDING_PX);
+   arduino.print(temp, tempFormat, Color::VALUE);
+   arduino.printlnR(hum, humFormat, Color::VALUE);
 
-   // Read humidity with timing
-   humRate.start();
-   float hum = sensor.readHumidity();
-   humRate.stop();
-   float humTime = humRate.elapsedMicros() / 1000.0f;
-
-   // Display temperature value
-   arduino.setTextSize(3);
-   if (arduino.width() / arduino.charW() > MIN_CHARS_FOR_LABEL)
+   table.setValue(0, String(sensor.type()) + " 0x" + String(sensor.address(), HEX), Color::VALUE2);
+   table.setValue(1, sensor.id(), Color::VALUE2);
+   if (sensor.hasTempCorrection())
    {
-      arduino.print("Temp: ", Color::LABEL);
+      table.setValue(2, sensor.tempCorrectionF(), Color::VALUE2);
    }
-   arduino.println(temp, tempFormat, Color::VALUE);
-
-   // Display temperature read metrics
-   arduino.setTextSize(2);
-   arduino.print(tempTime, msFormat, Color::SUB_LABEL);
-   arduino.print("  ");
-   arduino.print(tempRate.get(), rateFormat, Color::SUB_LABEL);
-   arduino.println();
-   arduino.moveCursorY(arduino.charH() / 2);
-
-   // Display humidity value
-   arduino.setTextSize(3);
-   if (arduino.width() / arduino.charW() > MIN_CHARS_FOR_LABEL)
+   else
    {
-      arduino.print(" Hum: ", Color::LABEL);
+      table.setNoValue(2, Color::VALUE2);
    }
-   arduino.println(hum, humFormat, Color::VALUE);
 
-   // Display humidity read metrics
-   arduino.setTextSize(2);
-   arduino.print(humTime, msFormat, Color::SUB_LABEL);
-   arduino.print("  ");
-   arduino.print(humRate.get(), rateFormat, Color::SUB_LABEL);
-   arduino.println();
+   rateField->draw(readRate.get());
 
-   // Display sensor information in corner
-   arduino.setTextSize(2);
-   arduino.setCursor(0, -2 * arduino.charH() + 1);
-   arduino.print("Type: ", sensor.type(), Color::VALUE2);
-   arduino.print(" 0x", Color::VALUE2);
-   arduino.println(sensor.address(), HEX, Color::VALUE2);
-
-   arduino.moveCursorY(1);
-   arduino.println("  ID: ", sensor.id(), Color::VALUE2);
+   table.draw();
 }

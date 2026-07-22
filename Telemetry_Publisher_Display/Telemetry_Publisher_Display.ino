@@ -1,22 +1,20 @@
-/// <summary>
-/// Telemetry data publisher with display feedback.
-/// </summary>
-/// <remarks>
-/// Publishes sinusoidal test data to a telemetry server via WebSocket connection.
-/// Displays connection status, topic, host, and message rate on a TFT display.
-/// Implements callback-based event handling for connection lifecycle and data flow.
-/// 
-/// Uncomment TELEMETRY_LOCAL to use a local telemetry server instead of the remote.
-/// Hardware: Feather ESP32 with WiFi and TFT display.
-/// </remarks>
+//
+// Telemetry data publisher with display feedback.
+//
+// Publishes mock sensor test data to a telemetry server via WebSocket connection.
+// Displays connection status, topic, host, and message rate on a TFT display.
+// Implements callback-based event handling for connection lifecycle and data flow.
+//
+// Uncomment TELEMETRY_LOCAL to use a local telemetry server instead of the remote.
+// Change TEST_SENSOR_TYPE below to select a different mock sensor (see TestSensor.h for options).
+// Hardware: Feather ESP32 with WiFi and TFT display.
+//
 
 // Uncomment to use local telemetry server instead of remote
 #define TELEMETRY_LOCAL
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <cmath>
-#include <numbers>
 
 #include "ArduinoBoard.h"
 
@@ -28,35 +26,34 @@
 #include "SerialX.h"
 #include "Stopwatch.h"
 #include "TelemetryClient.h"
+
+// Selects the mock sensor used to generate published test data.
+#define TEST_SENSOR_TYPE SinTestSensor
+#include "TestSensor.h"
+
 #include "Timer.h"
 #include "Url.h"
 
 #include "WiFiSettings.h"
 
+// ----------- Telemetry
 constexpr const char* TELEMETRY_TOPIC = "Test";
 constexpr unsigned long PUBLISH_INTERVAL_MS = 100;
-constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
-constexpr unsigned long SINUSOID_PERIOD_US = 2000000;
-
-Arduino arduino;
-Stopwatch sw(false);
-Timer publishTimer(PUBLISH_INTERVAL_MS);
-RollingRate rate(100);
-
 TelemetryPublisher client(TELEMETRY_TOPIC, 3);
+
+// ----------- The Board
+Arduino arduino;
+
+// ----------- Sensor
+TestSensor sensor;
+Timer publishTimer(PUBLISH_INTERVAL_MS);
+
+// ----------- Display Items
+constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
+Stopwatch sw(false);
+RollingRate rate(100);
 Point16 ratePos;
-
 Format rateFormat("###/s");
-
-/// <summary>
-/// Generates a sinusoidal test value for publishing.
-/// </summary>
-/// <returns>Sine value oscillating between -1 and 1 with a fixed period</returns>
-float getValue()
-{
-   float x = 2 * std::numbers::pi * (((float)(micros() % SINUSOID_PERIOD_US)) / SINUSOID_PERIOD_US);
-   return std::sin(x);
-}
 
 void onConnected()
 {
@@ -137,13 +134,15 @@ void setup()
 
    client.setCallbacks(onConnected, onDisconnected, nullptr, onText, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
+
+   sensor.begin();
 }
 
 void loop()
 {
    if (publishTimer.ready())
    {
-      float value = getValue();
+      float value = sensor.get();
       client.setValue(value);
    }
 

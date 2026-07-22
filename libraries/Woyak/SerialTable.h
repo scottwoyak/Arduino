@@ -4,14 +4,15 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "Format.h"
+#include "SerialX.h"
 
 /// <summary>
 /// Lightweight fixed-width serial table helper.
 /// </summary>
 /// <remarks>
-/// Builds formatted, fixed-width table text (title, header, divider, rows) and avoids
-/// dynamic allocation. Callers are responsible for printing the returned strings (e.g. to
-/// Serial or a display view).
+/// Builds formatted, fixed-width table text (title, header, divider, rows) and prints it
+/// directly to Serial. The built text is also returned in case the caller wants to use it
+/// elsewhere (e.g. a display view).
 /// </remarks>
 class SerialTable
 {
@@ -150,7 +151,7 @@ public:
    }
 
    /// <summary>
-   /// Prints the title, column header row, and divider row.
+   /// Prints the title, column header row, and divider row to Serial.
    /// </summary>
    /// <returns>The printed lines, each terminated with '\n', concatenated together.</returns>
    ///
@@ -178,16 +179,19 @@ public:
       output += headerLine;
       output += '\n';
 
-      output += printDivider();
+      output += printDivider(false);
+
+      SerialX::print(output);
       return output;
    }
 
    /// <summary>
-   /// Prints a divider row based on column widths.
+   /// Prints a divider row based on column widths to Serial.
    /// </summary>
+   /// <param name="printToSerial">Whether to print the divider to Serial (true), or just build and return the divider text (false, used internally by printHeader to avoid double-printing).</param>
    /// <returns>The printed divider line, terminated with '\n'.</returns>
    ///
-   String printDivider() const
+   String printDivider(bool printToSerial = true) const
    {
       if (!_isConfigured())
       {
@@ -203,11 +207,18 @@ public:
          }
       }
 
-      return divider + '\n';
+      divider += '\n';
+
+      if (printToSerial)
+      {
+         SerialX::print(divider);
+      }
+
+      return divider;
    }
 
    /// <summary>
-   /// Prints one row of values using configured columns.
+   /// Prints one row of values using configured columns to Serial.
    /// </summary>
    /// <returns>The printed row line, terminated with '\n'.</returns>
    ///
@@ -222,7 +233,9 @@ public:
       String line;
       size_t index = 0;
       _appendValues(line, index, values...);
+      line += '\n';
 
-      return line + '\n';
+      SerialX::print(line);
+      return line;
    }
 };

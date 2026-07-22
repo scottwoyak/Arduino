@@ -14,6 +14,10 @@
 #include "SHT3xTempSensor.h"
 #include "SHT4xTempSensor.h"
 
+#if defined(ARDUINO_ARCH_ESP32)
+#include "ESP32TempSensor.h"
+#endif
+
 #include <string>
 
 ///
@@ -132,6 +136,14 @@ private:
          }
       }
 
+#if defined(ARDUINO_ARCH_ESP32)
+      if (sensor == nullptr)
+      {
+         if (print) Serial.println("  Defaulting to internal ESP32 CPU temperature sensor");
+         sensor = new ESP32TempSensor();
+      }
+#endif
+
       if (print)
       {
          if (sensor != nullptr)
@@ -171,6 +183,7 @@ private:
    float _tempCorrectionA = 0;
    float _tempCorrectionB = 0;
    float _tempCorrectionC = 0;
+   bool _hasTempCorrection = false;
 
    ///
    /// <summary>
@@ -224,6 +237,7 @@ public:
                _tempCorrectionA = CORRECTIONS[i].tempA;
                _tempCorrectionB = CORRECTIONS[i].tempB;
                _tempCorrectionC = CORRECTIONS[i].tempC;
+               _hasTempCorrection = true;
                break;
             }
          }
@@ -312,6 +326,17 @@ public:
 
    ///
    /// <summary>
+   /// Indicates whether a temperature correction was found for the detected sensor's ID.
+   /// </summary>
+   /// <returns>True when a correction is configured; otherwise false.</returns>
+   ///
+   bool hasTempCorrection() const
+   {
+      return _hasTempCorrection;
+   }
+
+   ///
+   /// <summary>
    /// Gets the configured temperature correction polynomial coefficients (a + b*T + c*T^2),
    /// evaluated against the raw Fahrenheit reading.
    /// </summary>
@@ -338,6 +363,7 @@ public:
       _tempCorrectionA = correction;
       _tempCorrectionB = 0;
       _tempCorrectionC = 0;
+      _hasTempCorrection = true;
    }
 
    ///
@@ -354,6 +380,7 @@ public:
       _tempCorrectionA = a;
       _tempCorrectionB = b;
       _tempCorrectionC = c;
+      _hasTempCorrection = true;
    }
 
    ///
@@ -416,15 +443,24 @@ public:
 
    ///
    /// <summary>
-   /// Reads both temperature (F) and humidity from the active sensor.
+   /// Reads both temperature (F) and humidity from the active sensor. When the wrapped
+   /// sensor doesn't support combined reads, temperature and humidity are read individually.
    /// </summary>
    /// <param name="tempF">Receives the Fahrenheit temperature reading.</param>
    /// <param name="hum">Receives the humidity reading.</param>
    ///
    void readBoth(float& tempF, float& hum) override
    {
-      _sensor->readBoth(tempF, hum);
-      tempF += _computeTempCorrectionF(tempF);
+      if (_sensor->readsBoth())
+      {
+         _sensor->readBoth(tempF, hum);
+         tempF += _computeTempCorrectionF(tempF);
+      }
+      else
+      {
+         tempF = readTemperatureF();
+         hum = readHumidity();
+      }
    }
 
 

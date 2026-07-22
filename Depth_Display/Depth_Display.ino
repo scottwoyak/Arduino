@@ -435,10 +435,14 @@ void setup()
    rangeLabelX = depthCmRangeX;
    rangeLabelY = depthCmY - RANGE_LABEL_GAP_PX - rangeLabelHeight;
 
-   depthCmField = new DisplayField(&arduino, depthCmX, depthCmY, "", depthCmFormat, DEPTH_TEXT_SIZE);
-   depthInField = new DisplayField(&arduino, depthInX, depthInY, "", depthInFormat, DEPTH_TEXT_SIZE);
-   depthCmRangeField = new DisplayField(&arduino, depthCmRangeX, depthCmRangeY, "", depthCmRangeFormat, DEPTH_RANGE_TEXT_SIZE, Color::GRAY, Color::GRAY);
-   depthInRangeField = new DisplayField(&arduino, depthInRangeX, depthInRangeY, "", depthInRangeFormat, DEPTH_RANGE_TEXT_SIZE, Color::GRAY, Color::GRAY);
+   Point16 depthCmPos(depthCmX, depthCmY);
+   depthCmField = new DisplayField(&arduino, depthCmPos, depthCmFormat);
+   Point16 depthInPos(depthInX, depthInY);
+   depthInField = new DisplayField(&arduino, depthInPos, depthInFormat);
+   Point16 depthCmRangePos(depthCmRangeX, depthCmRangeY);
+   depthCmRangeField = new DisplayField(&arduino, depthCmRangePos, depthCmRangeFormat, Color::GRAY);
+   Point16 depthInRangePos(depthInRangeX, depthInRangeY);
+   depthInRangeField = new DisplayField(&arduino, depthInRangePos, depthInRangeFormat, Color::GRAY);
 
    drawRangeLabel();
    drawRateRow(0.0f);
@@ -452,14 +456,16 @@ void setup()
    std::string bufferSample(bufferSizeFormat.length(), '0');
    int16_t bufferWidth = arduino.textWidth(bufferSample.c_str());
    int16_t bufferX = arduino.width() - bufferWidth - DEPTH_BAR_WIDTH_PX;
-   bufferSizeField = new DisplayField(&arduino, bufferX, 0, "", bufferSizeFormat, SUBTITLE_TEXT_SIZE, Color::GRAY, Color::GRAY);
+   Point16 bufferPos(bufferX, 0);
+   bufferSizeField = new DisplayField(&arduino, bufferPos, bufferSizeFormat, Color::GRAY);
    bufferSizeField->draw((int)capBufferSize);
 
    std::string filterSample(filterSizeFormat.length(), '0');
    int16_t filterWidth = arduino.textWidth(filterSample.c_str());
    int16_t filterX = arduino.width() - filterWidth - DEPTH_BAR_WIDTH_PX;
    int16_t filterY = arduino.charH();
-   filterSizeField = new DisplayField(&arduino, filterX, filterY, "", filterSizeFormat, SUBTITLE_TEXT_SIZE, Color::GRAY, Color::GRAY);
+   Point16 filterPos(filterX, filterY);
+   filterSizeField = new DisplayField(&arduino, filterPos, filterSizeFormat, Color::GRAY);
    filterSizeField->draw(capFilterSize);
 #endif
 

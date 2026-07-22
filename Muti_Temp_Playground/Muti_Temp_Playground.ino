@@ -230,7 +230,7 @@ bool uploadAllPoints()
 void setup()
 {
    SerialX::begin();
-   Util::checkHaltReason();
+   Util::checkTheLastShutdownReason();
    Wire.begin();
 
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
@@ -314,7 +314,8 @@ void setup()
    std::string uploadSample(uploadStatusFormat.length(), '0');
    int16_t uploadX = arduino.width() - arduino.textWidth(uploadSample.c_str());
    int16_t uploadY = arduino.height() - arduino.charH();
-   uploadStatusField = new DisplayField(&arduino, uploadX, uploadY, "", uploadStatusFormat, 2, Color::GRAY, Color::GRAY);
+   Point16 uploadPos(uploadX, uploadY);
+   uploadStatusField = new DisplayField(&arduino, uploadPos, uploadStatusFormat, Color::GRAY);
    uploadStatusField->draw("");
 
    int16_t plotTop = arduino.charH() * 2;

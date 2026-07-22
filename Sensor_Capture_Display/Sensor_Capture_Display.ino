@@ -171,12 +171,12 @@ void renderDisplaySummary()
    }
 
    arduino.setTextSize(2);
-   summaryTable.updateValue(0, static_cast<unsigned long>(sampleCount));
-   summaryTable.updateValue(1, captureTimeSec);
-   summaryTable.updateValue(2, samplesPerSecond);
-   summaryTable.updateValue(3, avg);
-   summaryTable.updateValue(4, stdDev);
-   summaryTable.updateValue(5, isfinite(stdDevPercent) ? String(stdDevPercent, 2) + "%" : "n/a");
+   summaryTable.setValue(0, static_cast<unsigned long>(sampleCount));
+   summaryTable.setValue(1, captureTimeSec);
+   summaryTable.setValue(2, samplesPerSecond);
+   summaryTable.setValue(3, avg);
+   summaryTable.setValue(4, stdDev);
+   summaryTable.setValue(5, isfinite(stdDevPercent) ? String(stdDevPercent, 2) + "%" : "n/a");
 
    summaryTable.draw();
 }
@@ -331,11 +331,11 @@ void renderDisplayScatterPlot()
 
    // Set sample values
    Color sampleColor = samplesAreLimiting ? Color::VALUE : Color::GRAY;
-   collectingTable.updateValue(0, count, sampleColor);
+   collectingTable.setValue(0, count, sampleColor);
 
    // Set time values
    Color timeColor = !samplesAreLimiting ? Color::VALUE : Color::GRAY;
-   collectingTable.updateValue(1, elapsedSeconds, timeColor);
+   collectingTable.setValue(1, elapsedSeconds, timeColor);
 
    float progressPercent = max(samplePercent, timePercent);
    if (progressPercent > 100.0f)
@@ -343,7 +343,7 @@ void renderDisplayScatterPlot()
       progressPercent = 100.0f;
    }
 
-   collectingTable.updateValue(2, progressPercent, Color::VALUE);
+   collectingTable.setValue(2, progressPercent, Color::VALUE);
    collectingTable.draw();
 }
 
