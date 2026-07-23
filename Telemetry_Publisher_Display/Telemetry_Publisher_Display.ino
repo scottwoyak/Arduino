@@ -22,6 +22,7 @@
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
 
+#include "DisplayTable.h"
 #include "RollingRate.h"
 #include "SerialX.h"
 #include "Stopwatch.h"
@@ -39,7 +40,8 @@
 // ----------- Telemetry
 constexpr const char* TELEMETRY_TOPIC = "Test";
 constexpr unsigned long PUBLISH_INTERVAL_MS = 100;
-TelemetryPublisher client(TELEMETRY_TOPIC, 3);
+constexpr uint8_t TELEMETRY_DECIMAL_PLACES = 3;
+TelemetryPublisher client(TELEMETRY_TOPIC, TELEMETRY_DECIMAL_PLACES);
 
 // ----------- The Board
 Arduino arduino;
@@ -50,16 +52,30 @@ Timer publishTimer(PUBLISH_INTERVAL_MS);
 
 // ----------- Display Items
 constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
+constexpr uint16_t RATE_NUM_SAMPLES = 100;
 Stopwatch sw(false);
-RollingRate rate(100);
-Point16 ratePos;
+RollingRate rate(RATE_NUM_SAMPLES);
+Format topicFormat(20);
+Format hostFormat(24);
 Format rateFormat("###/s");
+DisplayTable table(&arduino, 0, 0);
 
+///
+/// <summary>
+/// Called when the WebSocket connection to the telemetry server is established.
+/// </summary>
+///
 void onConnected()
 {
    Serial.println("Telemetry: WebSocket Connected");
 }
 
+///
+/// <summary>
+/// Called when the WebSocket connection to the telemetry server is lost.
+/// Restarts the device so it can reconnect from a clean state.
+/// </summary>
+///
 void onDisconnected()
 {
    Serial.println("Telemetry: WebSocket Disconnected");
@@ -67,11 +83,23 @@ void onDisconnected()
    Util::reset();
 }
 
+///
+/// <summary>
+/// Called when a text message is received from the telemetry server.
+/// </summary>
+/// <param name="payload">Message payload (unused)</param>
+///
 void onText(std::string payload)
 {
    rate.tick();
 }
 
+///
+/// <summary>
+/// Called when a telemetry client error occurs. Displays the error and resets the device.
+/// </summary>
+/// <param name="msg">Error message to display</param>
+///
 void onError(std::string msg)
 {
    arduino.setTextSize(2);
@@ -82,6 +110,11 @@ void onError(std::string msg)
    Util::reset(10);
 }
 
+///
+/// <summary>
+/// Called once the telemetry connection is fully started. Draws the main display layout.
+/// </summary>
+///
 void onStarted()
 {
    arduino.printlnR("OK", Color::VALUE);
@@ -94,15 +127,16 @@ void onStarted()
    arduino.moveCursorY(4);
 
    arduino.setTextSize(2);
-   arduino.println("Topic: ", client.getTopic());
+   table.setPosition(0, arduino.getCursor().y);
+   table.addRow("Topic", topicFormat, Color::LABEL, Color::VALUE);
+   table.addRow("Host", hostFormat, Color::LABEL, Color::VALUE2);
+   table.addRow("Rate", rateFormat, Color::LABEL, Color::VALUE);
 
    Url url(client.getUrl().c_str());
-   arduino.display.setTextWrap(true);
-   arduino.println(" Host: ", url.getHost(), Color::VALUE2);
-
-   arduino.print("Rate: ", "---");
-   ratePos = arduino.getCursor();
-   arduino.println();
+   table.setValue(0, client.getTopic(), Color::VALUE);
+   table.setValue(1, url.getHost(), Color::VALUE2);
+   table.setNoValue(2, Color::VALUE);
+   table.draw();
 
    rate.reset();
    sw.start();
@@ -150,8 +184,9 @@ void loop()
 
    if (sw.elapsedMillis() > RATE_UPDATE_INTERVAL_MS)
    {
-      arduino.setCursor(ratePos);
-      arduino.println(rate.get(), rateFormat, Color::VALUE);
+      table.setValue(2, rate.get());
       sw.reset();
    }
+
+   table.draw();
 }

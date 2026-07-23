@@ -582,7 +582,7 @@ public:
    ///
    /// <summary>
    /// The constant value returned by this sensor. Public and mutable so it can be bound
-   /// directly to an editable field (e.g. DisplayEditableTable) for live adjustment.
+   /// directly to an editable field (e.g. DisplayTableEditor) for live adjustment.
    /// </summary>
    ///
    float value = TestSensorConfig::CONSTANT_VALUE;
@@ -726,7 +726,7 @@ public:
    /// <summary>
    /// Selects how the sine wave's elapsed time advances from one sample to the next. Backed
    /// by a plain long (rather than an enum class) so timeSource can be bound directly to an
-   /// IntDisplayEditableField for live adjustment.
+   /// IntDisplayTableCellEditor for live adjustment.
    /// </summary>
    ///
    enum TimeSource : long

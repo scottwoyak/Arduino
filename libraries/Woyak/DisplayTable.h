@@ -24,12 +24,17 @@ private:
       String value;
       Color labelColor;
       Color valueColor;
+      Color valueBackgroundColor;
       String drawnValue;
       Color drawnValueColor;
+      Color drawnValueBackgroundColor;
+      Color drawnLabelColor;
+      const char* section = nullptr;
 
       Row(const char* lbl, const Format* fmt, Color lc, Color vc)
          : label(lbl), format(fmt), value(""), labelColor(lc), valueColor(vc),
-           drawnValue(""), drawnValueColor(vc)
+           valueBackgroundColor(Color::BLACK), drawnValue(""), drawnValueColor(vc),
+           drawnValueBackgroundColor(Color::BLACK), drawnLabelColor(lc)
       {
       }
    };
@@ -46,6 +51,47 @@ private:
    bool _spriteCreated = false;
    int16_t _valueX = 0;
    int16_t _valueSpriteWidth = 0;
+   bool _showSections = true;
+
+   ///
+   /// <summary>
+   /// Computes the pixel Y offset (relative to _y) of a given row index, accounting for
+   /// section header rows and the half-height blank row separating sections. A row starts
+   /// a new section - and gets a header row (plus a separating half-row gap, unless it's the
+   /// first row) drawn above it - whenever its section text is non-null. Passing _rows.size()
+   /// computes the table's total pixel height.
+   /// </summary>
+   /// <param name="index">Zero-based row index, or _rows.size() for the total height.</param>
+   /// <returns>Pixel offset from the table's Y position.</returns>
+   ///
+   int16_t _rowY(size_t index) const
+   {
+      int16_t rowHeight = _display->charH();
+      int16_t halfRow = rowHeight / 2;
+      int16_t y = 0;
+      for (size_t i = 0; i < index; i++)
+      {
+         if (_showSections && _rows[i].section != nullptr)
+         {
+            if (i > 0)
+            {
+               y += halfRow;
+            }
+            y += rowHeight;
+         }
+         y += rowHeight;
+      }
+
+      if (_showSections && index < _rows.size() && _rows[index].section != nullptr)
+      {
+         if (index > 0)
+         {
+            y += halfRow;
+         }
+         y += rowHeight;
+      }
+      return y;
+   }
 
    ///
    /// <summary>
@@ -96,8 +142,8 @@ private:
    ///
    void _drawValueSprite(const Row& row, int16_t y)
    {
-      _sprite.fillScreen((uint16_t)Color::BLACK);
-      _sprite.setTextColor((uint16_t)row.valueColor, (uint16_t)Color::BLACK);
+      _sprite.fillScreen((uint16_t)row.valueBackgroundColor);
+      _sprite.setTextColor((uint16_t)row.valueColor, (uint16_t)row.valueBackgroundColor);
       _sprite.setCursor(0, 0);
       _sprite.print(row.value.c_str());
       _sprite.pushSprite(_valueX, y);
@@ -122,6 +168,20 @@ public:
 
    ///
    /// <summary>
+   /// Removes all rows from the table and forces the next draw() call to rebuild the value
+   /// sprite and redraw everything from scratch, e.g. so addRow() can be called again to
+   /// build a completely different set of rows (see DisplayTableEditor::setFields()).
+   /// </summary>
+   ///
+   void clearRows()
+   {
+      _rows.clear();
+      _labelWidth = 0;
+      invalidate();
+   }
+
+   ///
+   /// <summary>
    /// Adds a new row to the table.
    /// </summary>
    /// <param name="label">The text label for the row.</param>
@@ -137,6 +197,37 @@ public:
       {
          _labelWidth = labelLen;
       }
+   }
+
+   ///
+   /// <summary>
+   /// Sets the section header text drawn above a row, e.g. "Plot" or "Measured". A row with
+   /// no section set (the default) is drawn as part of the previous row's section. Set
+   /// showSections(false) to suppress drawing/reserving space for section headers entirely.
+   /// </summary>
+   /// <param name="rowIndex">The zero-based index of the row to update.</param>
+   /// <param name="section">Section header text, or nullptr for no header.</param>
+   ///
+   void setSection(size_t rowIndex, const char* section)
+   {
+      if (rowIndex < _rows.size())
+      {
+         _rows[rowIndex].section = section;
+         _labelsDrawn = false;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Sets whether section header rows (see setSection()) are drawn and reserved space for.
+   /// Defaults to true.
+   /// </summary>
+   /// <param name="showSections">True to draw section headers, false to suppress them.</param>
+   ///
+   void setShowSections(bool showSections)
+   {
+      _showSections = showSections;
+      _labelsDrawn = false;
    }
 
    ///
@@ -295,6 +386,38 @@ public:
 
    ///
    /// <summary>
+   /// Sets the background color drawn behind a row's value, e.g. to highlight a currently
+   /// selected/editable row. Defaults to Color::BLACK for every row.
+   /// </summary>
+   /// <param name="rowIndex">The zero-based index of the row to update.</param>
+   /// <param name="valueBackgroundColor">The background color to draw behind the value.</param>
+   ///
+   void setValueBackgroundColor(size_t rowIndex, Color valueBackgroundColor)
+   {
+      if (rowIndex < _rows.size())
+      {
+         _rows[rowIndex].valueBackgroundColor = valueBackgroundColor;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Sets the color drawn for a row's label, e.g. to dim a disabled row's label. Triggers a
+   /// redraw of that row's label on the next draw() call if the color changed.
+   /// </summary>
+   /// <param name="rowIndex">The zero-based index of the row to update.</param>
+   /// <param name="labelColor">The color to draw the label text.</param>
+   ///
+   void setLabelColor(size_t rowIndex, Color labelColor)
+   {
+      if (rowIndex < _rows.size())
+      {
+         _rows[rowIndex].labelColor = labelColor;
+      }
+   }
+
+   ///
+   /// <summary>
    /// Draws the table onto the configured display. On the first call (or after
    /// invalidate()), draws labels and values for every row; on subsequent calls, only
    /// redraws the value of a row when its text or color has changed, since labels never
@@ -308,56 +431,74 @@ public:
          return;
       }
 
-      if (!_labelsDrawn || !_spriteCreated)
+      if (_display->getTextSize() != _textSize)
       {
          _display->setTextSize(_textSize, _mono);
       }
 
       _valueX = _x + (_labelWidth * _display->charW());
-      int16_t y = _y;
 
-      for (auto& row : _rows)
+      for (size_t i = 0; i < _rows.size(); i++)
       {
-         if (!_labelsDrawn)
+         Row& row = _rows[i];
+         int16_t y = _y + _rowY(i);
+
+         if (!_spriteCreated)
          {
+            _createSprite();
+         }
+
+         bool labelNeedsDraw = !_labelsDrawn || (row.labelColor != row.drawnLabelColor);
+
+         if (labelNeedsDraw)
+         {
+            if (_showSections && row.section != nullptr && !_labelsDrawn)
+            {
+               int16_t rowHeight = _display->charH();
+               _display->setCursor(_x, y - rowHeight);
+               _display->println(row.section, Color::SUB_HEADING, Color::BLACK);
+            }
+
             _display->setCursor(_x, y);
 
             int16_t labelLen = row.label.length();
             int16_t padding = _labelWidth - labelLen - 2;
 
-            for (int16_t i = 0; i < padding; i++)
+            for (int16_t p = 0; p < padding; p++)
             {
                _display->print(" ", row.labelColor);
             }
 
             _display->print(row.label.c_str(), row.labelColor);
             _display->print(": ", row.labelColor);
-            _display->print(row.value, row.valueColor);
+
+            row.drawnLabelColor = row.labelColor;
+         }
+
+         if (!_labelsDrawn)
+         {
+            _drawValueSprite(row, y);
 
             row.drawnValue = row.value;
             row.drawnValueColor = row.valueColor;
+            row.drawnValueBackgroundColor = row.valueBackgroundColor;
          }
          else
          {
-            if (!_spriteCreated)
-            {
-               _createSprite();
-            }
-
-            if ((row.value != row.drawnValue) || (row.valueColor != row.drawnValueColor))
+            if ((row.value != row.drawnValue) || (row.valueColor != row.drawnValueColor) ||
+               (row.valueBackgroundColor != row.drawnValueBackgroundColor))
             {
                _drawValueSprite(row, y);
 
                row.drawnValue = row.value;
                row.drawnValueColor = row.valueColor;
+               row.drawnValueBackgroundColor = row.valueBackgroundColor;
             }
          }
-
-         y += _display->charH();
       }
 
-      _labelsDrawn = true;
-   }
+            _labelsDrawn = true;
+         }
 
    ///
    /// <summary>
@@ -372,6 +513,33 @@ public:
       _x = x;
       _y = y;
       _labelsDrawn = false;
+   }
+
+   ///
+   /// <summary>
+   /// Moves the table to a new top-left position and forces the next draw() call to
+   /// redraw every label and value from scratch at the new location.
+   /// </summary>
+   /// <param name="pos">The new top-left coordinate of the table.</param>
+   ///
+   void setPosition(Point16 pos)
+   {
+      setPosition(pos.x, pos.y);
+   }
+
+   ///
+   /// <summary>
+   /// Computes the table's bounding rectangle, based on its top-left position, its
+   /// content width (see getWidth()), and the total height of all its rows. Useful for
+   /// laying out other content (e.g. a value field) relative to the table's actual bounds.
+   /// </summary>
+   /// <returns>The table's bounding rectangle, in pixels.</returns>
+   ///
+   Rect16 getRect()
+   {
+      int16_t width = getWidth();
+      int16_t height = _rowY(_rows.size());
+      return Rect16{ (uint16_t)_x, (uint16_t)_y, (uint16_t)width, (uint16_t)height };
    }
 
    ///

@@ -32,9 +32,12 @@ private:
    Format::Alignment _alignment;
    Color _labelColor;
    Color _valueColor;
+   Color _valueBackgroundColor = Color::BLACK;
    String _value;
    String _drawnValue;
    Color _drawnValueColor;
+   Color _drawnValueBackgroundColor = Color::BLACK;
+   Color _drawnLabelColor;
    bool _labelDrawn = false;
    int16_t _valueX = 0;
    LGFX_Sprite _sprite;
@@ -95,8 +98,8 @@ private:
       int16_t spriteWidth = _sprite.width();
       int16_t textX = _alignedTextX(textWidth, spriteWidth);
 
-      _sprite.fillScreen((uint16_t)Color::BLACK);
-      _sprite.setTextColor((uint16_t)_valueColor, (uint16_t)Color::BLACK);
+      _sprite.fillScreen((uint16_t)_valueBackgroundColor);
+      _sprite.setTextColor((uint16_t)_valueColor, (uint16_t)_valueBackgroundColor);
       _sprite.setCursor(textX, 0);
       _sprite.print(trimmed.c_str());
       _sprite.pushSprite(_valueX, _y);
@@ -167,6 +170,7 @@ public:
                 Format::Alignment alignment = Format::Alignment::LEFT)
       : _display(display), _label(label), _format(&format), _alignment(alignment),
         _labelColor(labelColor), _valueColor(valueColor), _drawnValueColor(valueColor),
+        _drawnLabelColor(labelColor),
         _sprite(&display->display), _textSize(display->getTextSize())
    {
       _createSprite();
@@ -226,6 +230,29 @@ public:
 
    ///
    /// <summary>
+   /// Sets the color used to draw the label text on the next draw().
+   /// </summary>
+   /// <param name="color">The label text color.</param>
+   ///
+   void setLabelColor(Color color)
+   {
+      _labelColor = color;
+   }
+
+   ///
+   /// <summary>
+   /// Sets the background color drawn behind the value, e.g. to highlight a currently
+   /// selected/editable field. Defaults to Color::BLACK.
+   /// </summary>
+   /// <param name="color">The background color to draw behind the value.</param>
+   ///
+   void setValueBackgroundColor(Color color)
+   {
+      _valueBackgroundColor = color;
+   }
+
+   ///
+   /// <summary>
    /// Sets the value to display and draws the field. The first call renders the label
    /// directly to the display and the value via the sprite (see _drawValueSprite());
    /// later calls redraw only the value via the sprite, and only when the value text or
@@ -263,15 +290,31 @@ public:
 
          _drawnValue = _value;
          _drawnValueColor = _valueColor;
+         _drawnValueBackgroundColor = _valueBackgroundColor;
+         _drawnLabelColor = _labelColor;
          _labelDrawn = true;
          return;
       }
 
-      if ((_value != _drawnValue) || (_valueColor != _drawnValueColor))
+      if (_labelColor != _drawnLabelColor)
+      {
+         _display->setCursor(_x, _y);
+
+         if (_label.length() > 0)
+         {
+            _display->print(_label.c_str(), _labelColor);
+            _display->print(": ", _labelColor);
+         }
+
+         _drawnLabelColor = _labelColor;
+      }
+
+      if ((_value != _drawnValue) || (_valueColor != _drawnValueColor) || (_valueBackgroundColor != _drawnValueBackgroundColor))
       {
          _drawValueSprite();
          _drawnValue = _value;
          _drawnValueColor = _valueColor;
+         _drawnValueBackgroundColor = _valueBackgroundColor;
       }
    }
 

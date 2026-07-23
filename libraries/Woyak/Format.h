@@ -42,7 +42,9 @@ private:
 public:
    ///
    /// <summary>
-   /// Initializes a format with an explicit fixed output length.
+   /// Initializes a string-style format with an explicit fixed output length. Precision
+   /// does not apply to this constructor (set to 0) since it is intended for plain string
+   /// values rather than numeric formatting.
    /// </summary>
    /// <param name="length">Total output width to enforce.</param>
    /// <param name="alignment">Padding alignment for values shorter than the target length.</param>
@@ -51,6 +53,7 @@ public:
    {
       _length = length;
       _alignment = alignment;
+      _precision = 0;
    }
 
    ///

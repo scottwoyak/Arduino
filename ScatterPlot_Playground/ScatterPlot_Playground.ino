@@ -21,8 +21,8 @@
 
 // Local library headers (from libraries/Woyak)
 #include "ESP32_S3_Playground.h"
-#include "DisplayEditableField.h"
-#include "DisplayEditableTable.h"
+#include "DisplayTableCellEditor.h"
+#include "DisplayTableEditor.h"
 #include "IScatterPlot.h"
 #include "RollingRate.h"
 #include "ScatterPlot.h"
@@ -91,27 +91,27 @@ Format xAxisFormat("#####");
 Format testFunctionFormat(6);
 long testFunctionIndex = 0;
 long lastTestFunctionIndex = 0;
-EnumDisplayEditableField testFunctionField("Source", &testFunctionIndex,
+EnumDisplayTableCellEditor testFunctionField("Source", &testFunctionIndex,
    TEST_FUNCTION_LABELS, NUM_TEST_FUNCTIONS, 0, testFunctionFormat);
 float rateValue = 0.0f;
-ReadOnlyDisplayEditableField rateField("Rate", &rateValue, rateFormat);
+ReadOnlyDisplayTableCellEditor rateField("Rate", &rateValue, rateFormat);
 
 uint32_t startFreeHeapBytes = 0;
 float memoryDeltaKb = 0.0f;
-ReadOnlyDisplayEditableField memoryField("Memory", &memoryDeltaKb, memoryFormat);
+ReadOnlyDisplayTableCellEditor memoryField("Memory", &memoryDeltaKb, memoryFormat);
 
 ///
 /// <summary>
 /// Plot-size-selection field shared by the X Size and Y Size rows. Steps through PLOT_SIZE_PERCENTS
-/// by index (like EnumDisplayEditableField), but formats its label directly from the selected
+/// by index (like EnumDisplayTableCellEditor), but formats its label directly from the selected
 /// percentage instead of a separate parallel string-label array.
 /// </summary>
 ///
-class PlotSizeField : public IntDisplayEditableField
+class PlotSizeField : public IntDisplayTableCellEditor
 {
 public:
    PlotSizeField(const char* label, long* value, const Format& format)
-      : IntDisplayEditableField(label, value, 0, (long)NUM_PLOT_SIZES - 1, 1, 0, format)
+      : IntDisplayTableCellEditor(label, value, 0, (long)NUM_PLOT_SIZES - 1, 1, 0, format)
    {
    }
 
@@ -146,7 +146,7 @@ PlotSizeField plotYSizeField("Y Size", &plotYSizeIndex, plotSizeFormat);
 Format plotTypeFormat(8);
 long plotTypeIndex = 0;
 long lastPlotTypeIndex = 0;
-EnumDisplayEditableField plotTypeField("Type", &plotTypeIndex,
+EnumDisplayTableCellEditor plotTypeField("Type", &plotTypeIndex,
    PLOT_TYPE_LABELS, NUM_PLOT_TYPES, 0, plotTypeFormat);
 
 // ----------- Series Display Mode Selection
@@ -165,7 +165,7 @@ constexpr size_t NUM_DISPLAY_MODES = sizeof(DISPLAY_MODE_LABELS) / sizeof(DISPLA
 Format displayModeFormat(8);
 long displayModeIndex = 0;
 long lastDisplayModeIndex = 0;
-EnumDisplayEditableField displayModeField("Display", &displayModeIndex,
+EnumDisplayTableCellEditor displayModeField("Display", &displayModeIndex,
    DISPLAY_MODE_LABELS, NUM_DISPLAY_MODES, 0, displayModeFormat);
 
 // ----------- Stats Overlay Selection
@@ -185,7 +185,7 @@ constexpr size_t NUM_STATS_MODES = sizeof(STATS_MODE_LABELS) / sizeof(STATS_MODE
 Format statsModeFormat(8);
 long statsModeIndex = 0;
 long lastStatsModeIndex = 0;
-EnumDisplayEditableField statsModeField("Stats", &statsModeIndex,
+EnumDisplayTableCellEditor statsModeField("Stats", &statsModeIndex,
    STATS_MODE_LABELS, NUM_STATS_MODES, 0, statsModeFormat);
 
 // ----------- Source-Specific Configuration Fields
@@ -193,7 +193,7 @@ EnumDisplayEditableField statsModeField("Stats", &statsModeIndex,
 // choose its time source (Clock vs Fixed) and adjust its period. Each source's field array is
 // swapped into statusTable by applyTestFunction() below.
 Format constantValueFormat("####.#");
-FloatDisplayEditableField constantValueField("Value", &constantSensor.value,
+FloatDisplayTableCellEditor constantValueField("Value", &constantSensor.value,
    TestSensorConfig::CONSTANT_MIN_VALUE, TestSensorConfig::CONSTANT_MAX_VALUE,
    TestSensorConfig::CONSTANT_STEP, TestSensorConfig::CONSTANT_VALUE, constantValueFormat);
 
@@ -207,7 +207,7 @@ constexpr const char* SIN_TIME_SOURCE_LABELS[] = { "Clock", "Fixed" };
 constexpr size_t NUM_SIN_TIME_SOURCES = sizeof(SIN_TIME_SOURCE_LABELS) / sizeof(SIN_TIME_SOURCE_LABELS[0]);
 
 Format sinTimeSourceFormat(8);
-EnumDisplayEditableField sinTimeSourceField("Sampling", &sinSensor.timeSource,
+EnumDisplayTableCellEditor sinTimeSourceField("Sampling", &sinSensor.timeSource,
    SIN_TIME_SOURCE_LABELS, NUM_SIN_TIME_SOURCES, SinTestSensor::TIME_SOURCE_FIXED_STEP, sinTimeSourceFormat);
 
 ///
@@ -219,10 +219,10 @@ EnumDisplayEditableField sinTimeSourceField("Sampling", &sinSensor.timeSource,
 /// instead.
 /// </summary>
 ///
-class SinPeriodField : public FloatDisplayEditableField
+class SinPeriodField : public FloatDisplayTableCellEditor
 {
 public:
-   using FloatDisplayEditableField::FloatDisplayEditableField;
+   using FloatDisplayTableCellEditor::FloatDisplayTableCellEditor;
 
    void adjust(int32_t direction) override
    {
@@ -235,7 +235,7 @@ public:
          return;
       }
 
-      FloatDisplayEditableField::adjust(direction);
+      FloatDisplayTableCellEditor::adjust(direction);
    }
 
    std::string valueText() override
@@ -272,7 +272,7 @@ constexpr size_t NUM_NOISE_ENABLED_STATES = sizeof(NOISE_ENABLED_LABELS) / sizeo
 Format noiseEnabledFormat(8);
 long noiseEnabled = 0;
 long lastNoiseEnabled = 0;
-EnumDisplayEditableField noiseEnabledField("Noise", &noiseEnabled,
+EnumDisplayTableCellEditor noiseEnabledField("Noise", &noiseEnabled,
    NOISE_ENABLED_LABELS, NUM_NOISE_ENABLED_STATES, 0, noiseEnabledFormat);
 
 ///
@@ -282,10 +282,10 @@ EnumDisplayEditableField noiseEnabledField("Noise", &noiseEnabled,
 /// encoder selection since it has no effect on the active sensor.
 /// </summary>
 ///
-class NoiseStdDevField : public FloatDisplayEditableField
+class NoiseStdDevField : public FloatDisplayTableCellEditor
 {
 public:
-   using FloatDisplayEditableField::FloatDisplayEditableField;
+   using FloatDisplayTableCellEditor::FloatDisplayTableCellEditor;
 
    bool isEnabled() const override
    {
@@ -315,10 +315,10 @@ static const bool sectionsInitialized = []()
    return true;
 }();
 
-DisplayEditableField* defaultStatusFields[] = { &testFunctionField, &noiseEnabledField, &noiseStdDevField, &plotTypeField, &plotXSizeField, &plotYSizeField, &displayModeField, &statsModeField, &rateField, &memoryField };
-DisplayEditableField* constantStatusFields[] = { &testFunctionField, &constantValueField, &noiseEnabledField, &noiseStdDevField, &plotTypeField, &plotXSizeField, &plotYSizeField, &displayModeField, &statsModeField, &rateField, &memoryField };
-DisplayEditableField* sinStatusFields[] = { &testFunctionField, &sinTimeSourceField, &sinPeriodField, &noiseEnabledField, &noiseStdDevField, &plotTypeField, &plotXSizeField, &plotYSizeField, &displayModeField, &statsModeField, &rateField, &memoryField };
-DisplayEditableTable statusTable(&arduino, PREF_NAMESPACE, defaultStatusFields,
+DisplayTableCellEditor* defaultStatusFields[] = { &testFunctionField, &noiseEnabledField, &noiseStdDevField, &plotTypeField, &plotXSizeField, &plotYSizeField, &displayModeField, &statsModeField, &rateField, &memoryField };
+DisplayTableCellEditor* constantStatusFields[] = { &testFunctionField, &constantValueField, &noiseEnabledField, &noiseStdDevField, &plotTypeField, &plotXSizeField, &plotYSizeField, &displayModeField, &statsModeField, &rateField, &memoryField };
+DisplayTableCellEditor* sinStatusFields[] = { &testFunctionField, &sinTimeSourceField, &sinPeriodField, &noiseEnabledField, &noiseStdDevField, &plotTypeField, &plotXSizeField, &plotYSizeField, &displayModeField, &statsModeField, &rateField, &memoryField };
+DisplayTableEditor statusTable(&arduino, PREF_NAMESPACE, defaultStatusFields,
    sizeof(defaultStatusFields) / sizeof(defaultStatusFields[0]), 0, HEADER_HEIGHT);
 
 // ----------- Test State

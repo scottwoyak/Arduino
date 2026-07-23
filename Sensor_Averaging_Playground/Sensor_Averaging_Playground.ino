@@ -93,10 +93,10 @@ RollingRate actualSampleRate;
 /// SAMPLE_RATE_STEP_HIGH at or above 100/s.
 /// </summary>
 ///
-class SampleRateField : public IntDisplayEditableField
+class SampleRateField : public IntDisplayTableCellEditor
 {
 public:
-   using IntDisplayEditableField::IntDisplayEditableField;
+   using IntDisplayTableCellEditor::IntDisplayTableCellEditor;
 
 protected:
    long _stepValue(long current, int32_t direction) override
@@ -114,14 +114,14 @@ Format setupWarmupFormat("###s", Format::Alignment::LEFT);
 
 SampleRateField rateField("Rate", &targetSampleRate,
    MIN_SAMPLE_RATE_PER_SEC, MAX_SAMPLE_RATE_PER_SEC, SAMPLE_RATE_STEP_LOW, DEFAULT_SAMPLE_RATE_PER_SEC, setupRateFormat);
-IntDisplayEditableField samplesField("Max Samples", &maxSamples,
+IntDisplayTableCellEditor samplesField("Max Samples", &maxSamples,
    MIN_MAX_SAMPLES, MAX_MAX_SAMPLES, SAMPLE_STEP, DEFAULT_MAX_SAMPLES, setupSamplesFormat);
-IntDisplayEditableField durationField("Max Duration", &samplingDurationS,
+IntDisplayTableCellEditor durationField("Max Duration", &samplingDurationS,
    MIN_SAMPLING_DURATION_S, MAX_SAMPLING_DURATION_S, DURATION_STEP_S, DEFAULT_SAMPLING_DURATION_S, setupDurationFormat);
-IntDisplayEditableField warmupField("Warmup", &warmupPeriodS,
+IntDisplayTableCellEditor warmupField("Warmup", &warmupPeriodS,
    0, MAX_WARMUP_PERIOD_S, WARMUP_STEP_S, DEFAULT_WARMUP_PERIOD_S, setupWarmupFormat);
 
-DisplayEditableField* setupFields[] = { &rateField, &samplesField, &durationField, &warmupField };
+DisplayTableCellEditor* setupFields[] = { &rateField, &samplesField, &durationField, &warmupField };
 DisplayEditor setupDisplay(&arduino, PREF_NAMESPACE, "Setup", setupFields, ARRAY_SIZE(setupFields));
 
 Values* samplesValues = nullptr;

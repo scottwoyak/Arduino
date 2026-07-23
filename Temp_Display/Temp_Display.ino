@@ -96,7 +96,7 @@ void setup()
    // Rate is shown separately in the lower right corner, in gray
    arduino.setTextSize(2);
    Point16 pos(arduino.width(), -arduino.charH());
-   rateField = new DisplayField(&arduino, pos, rateFormat, Color::LIGHT_GRAY, Format::Alignment::RIGHT);
+   rateField = new DisplayField(&arduino, pos, rateFormat, Color::LIGHTGRAY, Format::Alignment::RIGHT);
 }
 
 void loop()

@@ -1,4 +1,4 @@
-﻿<Solution>
+<Solution>
   <Configurations>
     <Platform Name="Any CPU" />
     <Platform Name="ARM" />
@@ -22,11 +22,11 @@
     <File Path="libraries/Woyak/Counter.h" />
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
-    <File Path="libraries/Woyak/DisplayEditableField.h" />
-    <File Path="libraries/Woyak/DisplayEditableTable.h" />
     <File Path="libraries/Woyak/DisplayEditor.h" />
     <File Path="libraries/Woyak/DisplayGrid.h" />
     <File Path="libraries/Woyak/DisplayTable.h" />
+    <File Path="libraries/Woyak/DisplayTableCellEditor.h" />
+    <File Path="libraries/Woyak/DisplayTableEditor.h" />
     <File Path="libraries/Woyak/DisplayTextView.h" />
     <File Path="libraries/Woyak/DS18B20TempSensor.h" />
     <File Path="libraries/Woyak/EnumSelector.h" />
@@ -252,6 +252,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="DisplayTable_Playground/DisplayTable_Playground.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Display_HosyondESP32-32E/Display_HosyondESP32-32E.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -376,10 +380,6 @@
     <Platform Solution="Release|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Telemetry_Publisher_Display/Telemetry_Publisher_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
   <Project Path="ScatterPlot_Playground/ScatterPlot_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -421,6 +421,14 @@
     <Deploy />
   </Project>
   <Project Path="SR04_Display/SR04_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Telemetry_Publisher_Display/Telemetry_Publisher_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Telemetry_Publisher_Playground/Telemetry_Publisher_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

@@ -3,18 +3,18 @@
 #include <Arduino.h>
 #include "Color.h"
 #include "ESP32_S3_Playground.h"
-#include "DisplayEditableField.h"
-#include "DisplayEditableTable.h"
+#include "DisplayTableCellEditor.h"
+#include "DisplayTableEditor.h"
 #include "Util.h"
 
 ///
 /// <summary>
-/// Interactive, blocking, full-screen editor that drives a list of DisplayEditableField objects using a
+/// Interactive, blocking, full-screen editor that drives a list of DisplayTableCellEditor objects using a
 /// board's encoders and buttons. Encoder A cycles the selected field, Encoder B adjusts its
 /// value, Button B resets all fields to their defaults, and Button A confirms and saves.
-/// Internally uses a DisplayEditableTable for field navigation/adjustment/drawing/persistence,
-/// so the same DisplayEditableField list can also be embedded directly into another screen via
-/// DisplayEditableTable.
+/// Internally uses a DisplayTableEditor for field navigation/adjustment/drawing/persistence,
+/// so the same DisplayTableCellEditor list can also be embedded directly into another screen via
+/// DisplayTableEditor.
 /// </summary>
 ///
 class DisplayEditor
@@ -31,7 +31,7 @@ public:
    /// <param name="fieldCount">Number of entries in fields.</param>
    ///
    DisplayEditor(ESP32_S3_Playground* arduino, const char* prefNamespace,
-               const char* title, DisplayEditableField** fields, uint8_t fieldCount)
+               const char* title, DisplayTableCellEditor** fields, uint8_t fieldCount)
       : _arduino(arduino), _title(title),
         _table(arduino, prefNamespace, fields, fieldCount, 0, 0)
    {
@@ -106,7 +106,7 @@ public:
 private:
    ESP32_S3_Playground* _arduino;
    const char* _title;
-   DisplayEditableTable _table;
+   DisplayTableEditor _table;
    bool _viewInitialized = false;
 
    ///

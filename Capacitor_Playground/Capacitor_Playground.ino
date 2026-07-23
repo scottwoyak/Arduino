@@ -46,12 +46,12 @@
 #include "ArduinoBoard.h"
 #include "CapacitorSensor.h"
 #include "RollingAverage.h"
-#include "DisplayEditableTable.h"
+#include "DisplayTableEditor.h"
 #include "SerialTable.h"
 #include "Stats.h"
 #include "TimedStats.h"
 #include "SerialX.h"
-#include "DisplayEditableField.h"
+#include "DisplayTableCellEditor.h"
 #include "DisplayTextView.h"
 #include "Timer.h"
 #include "Stopwatch.h"
@@ -221,10 +221,10 @@ constexpr size_t TEST_TYPE_COUNT = sizeof(TEST_TYPE_LABELS) / sizeof(TEST_TYPE_L
 /// the resistor's label instead of a raw index number.
 /// </summary>
 ///
-class ResistorSetupField : public IntDisplayEditableField
+class ResistorSetupField : public IntDisplayTableCellEditor
 {
 public:
-   using IntDisplayEditableField::IntDisplayEditableField;
+   using IntDisplayTableCellEditor::IntDisplayTableCellEditor;
 
    void adjust(int32_t direction) override
    {
@@ -246,10 +246,10 @@ public:
 /// the test type's label instead of a raw index number.
 /// </summary>
 ///
-class TestTypeSetupField : public IntDisplayEditableField
+class TestTypeSetupField : public IntDisplayTableCellEditor
 {
 public:
-   using IntDisplayEditableField::IntDisplayEditableField;
+   using IntDisplayTableCellEditor::IntDisplayTableCellEditor;
 
    void adjust(int32_t direction) override
    {
@@ -267,28 +267,28 @@ public:
 
 ResistorSetupField resistorField("Resistor", &resistorIndex,
    0, (long)(RESISTOR_OPTION_COUNT - 1), 1, 0, resistorFieldFormat);
-IntDisplayEditableField delayField("Discharge Time", &dischargeDelayMicros,
+IntDisplayTableCellEditor delayField("Discharge Time", &dischargeDelayMicros,
    50, 2000, 50, (long)CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS, dischargeFieldFormat);
-IntDisplayEditableField bufferSizeField("Buffer Size", &bufferSize,
+IntDisplayTableCellEditor bufferSizeField("Buffer Size", &bufferSize,
    (long)MIN_TARGET_BUFFER_SIZE, (long)MAX_TARGET_BUFFER_SIZE, 5, (long)CapacitorSensor::DEFAULT_BUFFER_SIZE, bufferFieldFormat);
 TestTypeSetupField testTypeField("Test Type", &testType,
    0, (long)(TEST_TYPE_COUNT - 1), 1, 0, testTypeFieldFormat);
-FloatDisplayEditableField filterField("Outlier Filter", &filter,
+FloatDisplayTableCellEditor filterField("Outlier Filter", &filter,
    0.0f, 50.0f, 1.0f, CapacitorSensor::DEFAULT_FILTER, filterFieldFormat);
 
-ReadOnlyDisplayEditableField chargeTimeField("Avg Charge Time", &measuredChargeTimeMicros, measuredChargeFormat);
-ReadOnlyDisplayEditableField stdDevField("StdDev", &measuredStdDevMicros, measuredChargeFormat);
-ReadOnlyDisplayEditableField rangeField("Range", &measuredRangeMicros, measuredChargeFormat);
-ReadOnlyDisplayEditableField rawRateField("Raw Rate", &measuredRawRate, measuredRateFormat);
-ReadOnlyDisplayEditableField effectiveRateField("Effective Rate", &measuredEffectiveRate, measuredEffectiveRateFormat);
+ReadOnlyDisplayTableCellEditor chargeTimeField("Avg Charge Time", &measuredChargeTimeMicros, measuredChargeFormat);
+ReadOnlyDisplayTableCellEditor stdDevField("StdDev", &measuredStdDevMicros, measuredChargeFormat);
+ReadOnlyDisplayTableCellEditor rangeField("Range", &measuredRangeMicros, measuredChargeFormat);
+ReadOnlyDisplayTableCellEditor rawRateField("Raw Rate", &measuredRawRate, measuredRateFormat);
+ReadOnlyDisplayTableCellEditor effectiveRateField("Effective Rate", &measuredEffectiveRate, measuredEffectiveRateFormat);
 
-BlankDisplayEditableField testTypeSpacerField;
+BlankDisplayTableCellEditor testTypeSpacerField;
 
-DisplayEditableField* setupFields[] = { &resistorField, &delayField, &bufferSizeField, &filterField, &testTypeSpacerField, &testTypeField };
-DisplayEditableTable table(&arduino, PREF_NAMESPACE, setupFields, sizeof(setupFields) / sizeof(setupFields[0]), 0, 0);
+DisplayTableCellEditor* setupFields[] = { &resistorField, &delayField, &bufferSizeField, &filterField, &testTypeSpacerField, &testTypeField };
+DisplayTableEditor table(&arduino, PREF_NAMESPACE, setupFields, sizeof(setupFields) / sizeof(setupFields[0]), 0, 0);
 
-DisplayEditableField* measurementFields[] = { &chargeTimeField, &stdDevField, &rangeField, &rawRateField, &effectiveRateField };
-DisplayEditableTable measurementsTable(&arduino, PREF_NAMESPACE, measurementFields, sizeof(measurementFields) / sizeof(measurementFields[0]), 0, 0);
+DisplayTableCellEditor* measurementFields[] = { &chargeTimeField, &stdDevField, &rangeField, &rawRateField, &effectiveRateField };
+DisplayTableEditor measurementsTable(&arduino, PREF_NAMESPACE, measurementFields, sizeof(measurementFields) / sizeof(measurementFields[0]), 0, 0);
 
 ///
 /// <summary>
