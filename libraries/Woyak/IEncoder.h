@@ -132,6 +132,18 @@ public:
 
    ///
    /// <summary>
+   /// Checks whether the position has changed since the last call to delta(), without
+   /// consuming the change (the delta() baseline is left untouched).
+   /// </summary>
+   /// <returns>True if the position differs from the delta() baseline.</returns>
+   ///
+   bool hasChanged() const
+   {
+      return getPosition() != _lastPosition;
+   }
+
+   ///
+   /// <summary>
    /// Resets the current position and the delta() baseline to zero, and clears any
    /// implementation-specific in-progress transition state.
    /// </summary>

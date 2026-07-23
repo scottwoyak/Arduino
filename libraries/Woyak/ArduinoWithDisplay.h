@@ -82,6 +82,27 @@ public:
 private:
    uint8_t _textSize = 1;
 
+   // hardcoded character width/height (in pixels) for each RobotoMonoBold font size
+   // index (1-7, index 0 is unused since there is no font size 0), measured once on
+   // device and pasted in here since these values are fixed for a given font and never
+   // change at runtime
+   struct CharMetrics
+   {
+      uint8_t width;
+      uint8_t height;
+   };
+   static constexpr CharMetrics _charMetricsTable[8] =
+   {
+      { 0,  0 },  // size 0 - unused, there is no font size 0
+      { 5,  8 },  // size 1 - RobotoMonoBold_8
+      { 9,  17 }, // size 2 - RobotoMonoBold_16
+      { 14, 25 }, // size 3 - RobotoMonoBold_24
+      { 18, 32 }, // size 4 - RobotoMonoBold_32
+      { 22, 40 }, // size 5 - RobotoMonoBold_40
+      { 27, 49 }, // size 6 - RobotoMonoBold_48
+      { 31, 56 }, // size 7 - RobotoMonoBold_56
+   };
+
 public:
 
    ///
@@ -133,36 +154,62 @@ public:
 
    ///
    /// <summary>
-   /// Gets the current font height in pixels.
+   /// Gets the center point of the display in pixels.
    /// </summary>
-   /// <returns>Height of the current font in pixels.</returns>
+   /// <returns>The X/Y coordinate of the display's center.</returns>
    ///
-   uint8_t charH()
+   Point16 center()
    {
-      return display.fontHeight();
+      return Point16(width() / 2, height() / 2);
    }
 
    ///
    /// <summary>
-   /// Gets the current font character width in pixels.
+   /// Gets the font height in pixels for the given font size, or the current font size
+   /// if not specified.
    /// </summary>
-   /// <returns>Width of a character in the current font in pixels.</returns>
+   /// <param name="size">Font size index (0-7) to measure; defaults to the current font size.</param>
+   /// <returns>Height of the font in pixels.</returns>
    ///
-   uint8_t charW()
+   uint8_t charH(int16_t size = -1)
    {
-      // if monospaced, all chars return the same width. If not, '0' is an average width
-      // and will be the same for all digits
-      const lgfx::v1::VLWfont* font = (const lgfx::v1::VLWfont*) display.getFont();
-      uint16_t gNum;
-      font->getUnicodeIndex(0x30, &gNum);
-      return font->gxAdvance[gNum];
+      if (size < 0)
+      {
+         return display.fontHeight();
+      }
 
-      // Note: textWidth returns the gxAdvance value for all characters of a string except
-      // the last character which only returns gdX+glyphWidth for a more pixel perfect
-      // width calculation. This means that when asking for the width of a single character,
-      // you don't get the full advance and thus the need for us to manually compute the
-      // value above.
-      //return display.textWidth("0");
+      return _charMetricsTable[constrain(size, 0, 7)].height;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the character width in pixels for the given font size, or the current font
+   /// size if not specified. Since font metrics are constant, results are cached the
+   /// first time each size is measured.
+   /// </summary>
+   /// <param name="size">Font size index (0-7) to measure; defaults to the current font size.</param>
+   /// <returns>Width of a character in the given font size, in pixels.</returns>
+   ///
+   uint8_t charW(int16_t size = -1)
+   {
+      if (size < 0)
+      {
+         // if monospaced, all chars return the same width. If not, '0' is an average width
+         // and will be the same for all digits
+         const lgfx::v1::VLWfont* font = (const lgfx::v1::VLWfont*) display.getFont();
+         uint16_t gNum;
+         font->getUnicodeIndex(0x30, &gNum);
+         return font->gxAdvance[gNum];
+
+         // Note: textWidth returns the gxAdvance value for all characters of a string except
+         // the last character which only returns gdX+glyphWidth for a more pixel perfect
+         // width calculation. This means that when asking for the width of a single character,
+         // you don't get the full advance and thus the need for us to manually compute the
+         // value above.
+         //return display.textWidth("0");
+      }
+
+      return _charMetricsTable[constrain(size, 0, 7)].width;
    }
 
    ///
@@ -218,6 +265,7 @@ public:
       Serial.print("font->yAdvance: ");
       Serial.println(font->yAdvance);
       Serial.print("font->ascent: ");
+
       Serial.println(font->ascent);
       Serial.print("font->descent: ");
       Serial.println(font->descent);

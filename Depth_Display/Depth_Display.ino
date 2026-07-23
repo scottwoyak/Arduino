@@ -47,7 +47,7 @@
 #include <Wire.h>
 #include "ArduinoBoard.h"
 #include "Bar.h"
-#include "DisplayField.h"
+#include "DisplayValue.h"
 #include "RollingRate.h"
 #include "SerialX.h"
 #include "TimedStats.h"
@@ -168,12 +168,12 @@ TimedStats depthCmRangeStats(DEPTH_RANGE_WINDOW_MS);
 constexpr float DISPLAY_REFRESH_RATE_HZ = 15.0f;
 RateTimer displayTimer(DISPLAY_REFRESH_RATE_HZ);
 
-DisplayField* depthCmField = nullptr;
-DisplayField* depthInField = nullptr;
-DisplayField* depthCmRangeField = nullptr;
-DisplayField* depthInRangeField = nullptr;
-DisplayField* bufferSizeField = nullptr;
-DisplayField* filterSizeField = nullptr;
+DisplayValue* depthCmField = nullptr;
+DisplayValue* depthInField = nullptr;
+DisplayValue* depthCmRangeField = nullptr;
+DisplayValue* depthInRangeField = nullptr;
+DisplayValue* bufferSizeField = nullptr;
+DisplayValue* filterSizeField = nullptr;
 VerticalBar* depthBar = nullptr;
 
 int16_t rangeLabelX = 0;
@@ -435,14 +435,14 @@ void setup()
    rangeLabelX = depthCmRangeX;
    rangeLabelY = depthCmY - RANGE_LABEL_GAP_PX - rangeLabelHeight;
 
-   Point16 depthCmPos(depthCmX, depthCmY);
-   depthCmField = new DisplayField(&arduino, depthCmPos, depthCmFormat);
-   Point16 depthInPos(depthInX, depthInY);
-   depthInField = new DisplayField(&arduino, depthInPos, depthInFormat);
-   Point16 depthCmRangePos(depthCmRangeX, depthCmRangeY);
-   depthCmRangeField = new DisplayField(&arduino, depthCmRangePos, depthCmRangeFormat, Color::GRAY);
-   Point16 depthInRangePos(depthInRangeX, depthInRangeY);
-   depthInRangeField = new DisplayField(&arduino, depthInRangePos, depthInRangeFormat, Color::GRAY);
+   depthCmField = new DisplayValue(&arduino, depthCmFormat, DEPTH_TEXT_SIZE);
+   depthCmField->setPosition(depthCmX, depthCmY);
+   depthInField = new DisplayValue(&arduino, depthInFormat, DEPTH_TEXT_SIZE);
+   depthInField->setPosition(depthInX, depthInY);
+   depthCmRangeField = new DisplayValue(&arduino, depthCmRangeFormat, DEPTH_RANGE_TEXT_SIZE, Color::GRAY);
+   depthCmRangeField->setPosition(depthCmRangeX, depthCmRangeY);
+   depthInRangeField = new DisplayValue(&arduino, depthInRangeFormat, DEPTH_RANGE_TEXT_SIZE, Color::GRAY);
+   depthInRangeField->setPosition(depthInRangeX, depthInRangeY);
 
    drawRangeLabel();
    drawRateRow(0.0f);
@@ -456,16 +456,16 @@ void setup()
    std::string bufferSample(bufferSizeFormat.length(), '0');
    int16_t bufferWidth = arduino.textWidth(bufferSample.c_str());
    int16_t bufferX = arduino.width() - bufferWidth - DEPTH_BAR_WIDTH_PX;
-   Point16 bufferPos(bufferX, 0);
-   bufferSizeField = new DisplayField(&arduino, bufferPos, bufferSizeFormat, Color::GRAY);
+   bufferSizeField = new DisplayValue(&arduino, bufferSizeFormat, SUBTITLE_TEXT_SIZE, Color::GRAY);
+   bufferSizeField->setPosition(bufferX, 0);
    bufferSizeField->draw((int)capBufferSize);
 
    std::string filterSample(filterSizeFormat.length(), '0');
    int16_t filterWidth = arduino.textWidth(filterSample.c_str());
    int16_t filterX = arduino.width() - filterWidth - DEPTH_BAR_WIDTH_PX;
    int16_t filterY = arduino.charH();
-   Point16 filterPos(filterX, filterY);
-   filterSizeField = new DisplayField(&arduino, filterPos, filterSizeFormat, Color::GRAY);
+   filterSizeField = new DisplayValue(&arduino, filterSizeFormat, SUBTITLE_TEXT_SIZE, Color::GRAY);
+   filterSizeField->setPosition(filterX, filterY);
    filterSizeField->draw(capFilterSize);
 #endif
 

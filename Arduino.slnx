@@ -28,6 +28,7 @@
     <File Path="libraries/Woyak/DisplayTableCellEditor.h" />
     <File Path="libraries/Woyak/DisplayTableEditor.h" />
     <File Path="libraries/Woyak/DisplayTextView.h" />
+    <File Path="libraries/Woyak/DisplayValue.h" />
     <File Path="libraries/Woyak/DS18B20TempSensor.h" />
     <File Path="libraries/Woyak/EnumSelector.h" />
     <File Path="libraries/Woyak/ESP32TempSensor.h" />
@@ -252,7 +253,15 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="DisplayField_Playground/DisplayField_Playground.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="DisplayTable_Playground/DisplayTable_Playground.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="DisplayValue_Playground/DisplayValue_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

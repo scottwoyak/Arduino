@@ -17,8 +17,8 @@
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
 
-#include "DisplayField.h"
 #include "DisplayTable.h"
+#include "DisplayValue.h"
 #include "Rate.h"
 #include "SerialTable.h"
 #include "SerialX.h"
@@ -44,7 +44,7 @@ Format typeAddressFormat(16);
 Format idFormat(16);
 Format correctionFormat("+#.###F");
 DisplayTable table(&arduino, 0, 0);
-DisplayField* rateField = nullptr;
+DisplayValue* rateField = nullptr;
 int16_t headingHeight;
 
 void setup()
@@ -95,8 +95,8 @@ void setup()
 
    // Rate is shown separately in the lower right corner, in gray
    arduino.setTextSize(2);
-   Point16 pos(arduino.width(), -arduino.charH());
-   rateField = new DisplayField(&arduino, pos, rateFormat, Color::LIGHTGRAY, Format::Alignment::RIGHT);
+   rateField = new DisplayValue(&arduino, rateFormat, 2, Color::LIGHTGRAY, DisplayValue::Alignment::RIGHT);
+   rateField->setPosition(arduino.width() - rateField->width(), arduino.height() - arduino.charH());
 }
 
 void loop()
