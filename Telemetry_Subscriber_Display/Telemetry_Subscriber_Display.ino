@@ -45,9 +45,9 @@ RollingRate changeRate(RATE_NUM_SAMPLES);
 
 TelemetrySubscriber client(TELEMETRY_TOPIC);
 
-Format topicFormat(20);
-Format hostFormat(24);
-Format rateFormat("###/s");
+constexpr const char* TOPIC_FORMAT = "                    ";
+constexpr const char* HOST_FORMAT = "                        ";
+constexpr const char* RATE_FORMAT = "###/s";
 DisplayTable table(&arduino, 0, 0);
 
 float lastValue = NAN;
@@ -109,10 +109,10 @@ void onStarted()
 
    arduino.setTextSize(2);
    table.setPosition(0, arduino.getCursor().y);
-   table.addRow("Topic", topicFormat, Color::LABEL, Color::VALUE);
-   table.addRow("Host", hostFormat, Color::LABEL, Color::VALUE2);
-   table.addRow("Query Rate", rateFormat, Color::LABEL, Color::VALUE);
-   table.addRow("Change Rate", rateFormat, Color::LABEL, Color::VALUE);
+   table.addRow("Topic", TOPIC_FORMAT, Color::LABEL, Color::VALUE);
+   table.addRow("Host", HOST_FORMAT, Color::LABEL, Color::VALUE2);
+   table.addRow("Query Rate", RATE_FORMAT, Color::LABEL, Color::VALUE);
+   table.addRow("Change Rate", RATE_FORMAT, Color::LABEL, Color::VALUE);
 
    Url url(client.getUrl().c_str());
    table.setValue(0, client.getTopic(), Color::VALUE);

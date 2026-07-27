@@ -33,11 +33,12 @@
 //
 // System/standard library headers
 #include <Wire.h>
+#include <array>
 
 // Local library headers (from libraries/Woyak)
 #include "ESP32_S3_Playground.h"
 #include "DisplayField.h"
-#include "DisplayGrid.h"
+#include "DisplayTable.h"
 #include "RollingAverage.h"
 #include "RollingRate.h"
 #include "ScatterPlot.h"
@@ -97,33 +98,12 @@ constexpr SampleRateSeries TARGET_SERIES[] = {
 };
 constexpr size_t NUM_TARGET_SAMPLES = sizeof(TARGET_SERIES) / sizeof(TARGET_SERIES[0]);
 
-///
-/// <summary>
-/// Finds the largest value in the target sample rate array at compile time.
-/// </summary>
-/// <returns>The maximum target sample rate.</returns>
-///
-constexpr unsigned long _maxTargetSampleRate()
-{
-   unsigned long maxRate = TARGET_SERIES[0].rate;
-   for (size_t i = 1; i < NUM_TARGET_SAMPLES; i++)
-   {
-      if (TARGET_SERIES[i].rate > maxRate)
-      {
-         maxRate = TARGET_SERIES[i].rate;
-      }
-   }
-   return maxRate;
-}
-constexpr unsigned long MAX_TARGET_SAMPLE_RATE = _maxTargetSampleRate();
 
 // ----------- Test Completion
 constexpr unsigned long FIXED_TEST_DURATION_S = 15UL;
 constexpr unsigned long ROLLING_AVERAGE_MIN_MS = 500UL;
 constexpr unsigned long ROLLING_AVERAGE_TARGET_SAMPLE_COUNT = 10UL;
 constexpr size_t MAX_RESULTS = NUM_TARGET_SAMPLES;
-constexpr size_t RAW_SAMPLE_MARGIN = 200; // headroom added to the theoretical max sample count
-constexpr size_t MAX_RAW_SAMPLES_PER_TEST = static_cast<size_t>(MAX_TARGET_SAMPLE_RATE * FIXED_TEST_DURATION_S) + RAW_SAMPLE_MARGIN;
 
 ///
 /// <summary>
@@ -168,27 +148,26 @@ Format actualRateFormat("###", 4, Format::Alignment::RIGHT);
 // ----------- Summary Results Table
 constexpr const char* RESULT_TABLE_TITLE = "Warm-Up Test Results";
 constexpr SerialTable::Column RESULT_TABLE_COLUMNS[] = {
-   { "Target(/s)", 14 },
-   { "Actual(/s)", 14 },
+   { "Target", 14, "###/s" },
+   { "Actual", 14, "###.##/s" },
    { "Start", 12 },
    { "Delta", 12 },
 };
-constexpr size_t NUM_RESULT_TABLE_COLUMNS = sizeof(RESULT_TABLE_COLUMNS) / sizeof(RESULT_TABLE_COLUMNS[0]);
-SerialTable resultTable(RESULT_TABLE_TITLE, RESULT_TABLE_COLUMNS, NUM_RESULT_TABLE_COLUMNS);
+SerialTable resultTable(RESULT_TABLE_TITLE, RESULT_TABLE_COLUMNS);
 
 // The on-screen summary table (see drawSummaryView()). Declared after `sensor` since its
-// Start/Delta column formats are taken from the sensor's Format objects.
-const DisplayGrid::Column RESULT_GRID_COLUMNS[] = {
-   { "Target(/s)", &targetRateFormat },
-   { "Actual(/s)", &actualRateFormat },
-   { "Start", sensor.getFormat() },
-   { "Delta", sensor.getHighResFormat() },
+// Start/Delta column formats are taken from the sensor's format pattern strings.
+std::array RESULT_TABLE_DISPLAY_COLUMNS = {
+   DisplayTable::Column(""),
+   DisplayTable::Column("Target", "###/s", DisplayTable::Alignment::RIGHT),
+   DisplayTable::Column("Actual", "###/s", DisplayTable::Alignment::RIGHT),
+   DisplayTable::Column("Start", sensor.getFormatStr(), DisplayTable::Alignment::RIGHT),
+   DisplayTable::Column("Delta", sensor.getHighResFormatStr(), DisplayTable::Alignment::RIGHT),
 };
-constexpr size_t NUM_RESULT_GRID_COLUMNS = sizeof(RESULT_GRID_COLUMNS) / sizeof(RESULT_GRID_COLUMNS[0]);
-DisplayGrid resultGrid(&arduino, nullptr, RESULT_GRID_COLUMNS, NUM_RESULT_GRID_COLUMNS, Color::LABEL);
+DisplayTable resultDisplayTable(&arduino, 0, 0, RESULT_TABLE_DISPLAY_COLUMNS, BODY_TEXT_SIZE, Color::LABEL);
 
 // ----------- Scatter Plot State
-ScatterPlot scatterPlot(&arduino, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+ScatterPlot scatterPlot(&arduino, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, "##.#s", sensor.getFormatStr());
 Timer displayUpdateTimer(DISPLAY_UPDATE_INTERVAL_MS);
 
 // ----------- Status Line State
@@ -290,7 +269,7 @@ public:
       ASSERT(_series != nullptr);
 
       _series->clear();
-      _series->movingSampleSize = static_cast<float>(_smoothingPeriodMs) / 1000.0f;
+      _series->movingSampleSize = static_cast<float>(_smoothingPeriodMs);
 
       _rollingRate.reset();
       _samples = 0;
@@ -342,7 +321,14 @@ public:
       double elapsedSecs = _stopwatch.elapsedSecs();
       _rollingRate.tick();
 
-      _series->add(static_cast<float>(elapsedSecs), value);
+      // The series' FixedRangeHistory is locked to [0, FIXED_TEST_DURATION_S * 1000], so clamp
+      // the elapsed time before adding - otherwise an overshoot sample (elapsedSecs slightly past
+      // FIXED_TEST_DURATION_S due to sample-timer jitter) would fall outside the locked range
+      // and trigger FixedRangeHistory::add()'s halt/reset. The series' X values are stored in
+      // milliseconds (matching ScatterPlot's ms-to-seconds label conversion), not seconds.
+      double clampedElapsedSecs = (elapsedSecs > FIXED_TEST_DURATION_S) ? FIXED_TEST_DURATION_S : elapsedSecs;
+
+      _series->add(static_cast<float>(clampedElapsedSecs * 1000.0), value);
       _samples++;
 
       if (elapsedSecs >= FIXED_TEST_DURATION_S)
@@ -794,11 +780,12 @@ TestRunner testRunner;
 
 ///
 /// <summary>
-/// Clears the display and draws the collecting-view title, recording the Y positions
-/// of the two top-right status rows drawn to the right of the title: the rate row on
-/// the same row as the title, and the cooldown row directly beneath it. Resizes the
-/// scatter plot to fill the remaining space below the header, so its top edge always
-/// matches the actual rendered header height instead of a hard-coded estimate.
+/// Clears the display and draws the collecting-view title and sensor type sub-header,
+/// recording the Y positions of the two top-right status rows drawn to the right of the
+/// title: the rate row on the same row as the title, and the cooldown row directly
+/// beneath it. Resizes the scatter plot to fill the remaining space below the
+/// sub-header, so its top edge always matches the actual rendered header height instead
+/// of a hard-coded estimate.
 /// </summary>
 ///
 void drawCollectingHeader()
@@ -808,15 +795,19 @@ void drawCollectingHeader()
    statusLineY = 0;
    arduino.println("Sensor Warm-Up", Color::HEADING);
 
+   arduino.setTextSize(BODY_TEXT_SIZE);
+   arduino.print("Sensor Type: ", Color::SUB_HEADING);
+   arduino.println(sensor.sensorType(), Color::SUB_HEADING);
+
    int16_t headerHeight = arduino.getCursorY() + arduino.charH() / 4;
    scatterPlot.setRect(0, headerHeight, DISPLAY_WIDTH, DISPLAY_HEIGHT - headerHeight);
 
-   arduino.setTextSize(BODY_TEXT_SIZE);
    cooldownLineY = statusLineY + arduino.charH();
 
    // Compute the field's X so the rendered "label: value" text hugs the right edge of the
    // display, matching the right-aligned fallback text drawn via printlnR() in updateStatusLine().
-   std::string valueSample(sensor.getHighResFormat()->length(), '0');
+   Format highResFormat(sensor.getHighResFormatStr().c_str());
+   std::string valueSample(highResFormat.length(), '0');
    int16_t cooldownLabelWidth = arduino.textWidth("Cooling Down: ");
    int16_t cooldownValueWidth = arduino.textWidth(valueSample.c_str());
    int16_t cooldownFieldX = DISPLAY_WIDTH - cooldownLabelWidth - cooldownValueWidth;
@@ -824,8 +815,8 @@ void drawCollectingHeader()
    if (cooldownField == nullptr)
    {
       Point16 cooldownPos(cooldownFieldX, cooldownLineY);
-      cooldownField = new DisplayField(&arduino, cooldownPos, "Cooling Down", *sensor.getHighResFormat(),
-                                        Color::GRAY, Color::GRAY);
+      cooldownField = new DisplayField(&arduino, cooldownPos, "Cooling Down",
+                                        highResFormat, BODY_TEXT_SIZE);
    }
    else
    {
@@ -892,7 +883,7 @@ void updateStatusLine()
    {
       // DisplayField only redraws when the formatted value actually changes, so no
       // separate "did the average change" tracking is needed here.
-      cooldownField->draw(currentAvg);
+      cooldownField->draw(currentAvg, Color::GRAY, Color::GRAY);
    }
    else
    {
@@ -912,7 +903,7 @@ void updateStatusLine()
 /// axes that automatically scale to fit whatever is currently plotted. Can display raw
 /// samples as discrete points, rolling-average samples as connected lines, or both
 /// overlaid, by toggling each series' showPoints/showMovingAverage flags before calling
-/// ScatterPlot::render(). A full clear and redraw only happens when the computed axis
+/// ScatterPlot::draw(). A full clear and redraw only happens when the computed axis
 /// range changes or forceFullRedraw requests one (e.g. because the view mode just
 /// changed); otherwise only newly collected points are plotted.
 /// </summary>
@@ -928,6 +919,11 @@ void drawScatterView(ResultView viewMode, bool forceFullRedraw)
    {
       IScatterPlotSeries* series = scatterPlot.getSeries(i);
       series->showPoints = showRaw;
+      // The moving average is computed with a centered window, so its trailing edge
+      // is only filled in once enough later samples exist to fully populate that
+      // window; unfilled (not-yet-ready) points are left as NaN and simply aren't
+      // drawn, so the average naturally trails the raw data by half a window's width
+      // while a test is still collecting instead of bouncing/shifting.
       series->showMovingAverage = showMovingAverage;
    }
 
@@ -937,7 +933,7 @@ void drawScatterView(ResultView viewMode, bool forceFullRedraw)
    }
 
    arduino.display.startWrite();
-   scatterPlot.render();
+   scatterPlot.draw();
    arduino.display.endWrite();
 
    // Draw the actual rates at the top of the display (to the right of the title), right-aligned and
@@ -1023,7 +1019,8 @@ void updateScatterPlotView()
 ///
 /// <summary>
 /// Draws the summary results table: target rate, actual rate, starting value,
-/// and value delta for each completed test.
+/// and value delta for each completed test. The table is centered within the
+/// available space below the title and sensor type sub-header.
 /// </summary>
 ///
 void drawSummaryView()
@@ -1031,26 +1028,31 @@ void drawSummaryView()
    arduino.clearDisplay();
    arduino.setTextSize(TITLE_TEXT_SIZE);
    arduino.println("Sensor Warm-Up", Color::HEADING);
-   arduino.setCursorY(arduino.getCursorY() + arduino.charH() / 4);
-   arduino.setTextSize(BODY_TEXT_SIZE);
 
-   resultGrid.printHeader();
+   arduino.setTextSize(BODY_TEXT_SIZE);
+   arduino.print("Sensor Type: ", Color::SUB_HEADING);
+   arduino.println(sensor.sensorType(), Color::SUB_HEADING);
+
+   int16_t contentY = arduino.getCursorY() + arduino.charH() / 4;
+   Rect16 contentRect(0, contentY, DISPLAY_WIDTH, DISPLAY_HEIGHT - contentY);
+
+   resultDisplayTable.clearRows();
 
    size_t resultCount = testRunner.resultCount();
    for (size_t i = 0; i < resultCount; i++)
    {
-      if ((arduino.getCursorY() + arduino.charH()) > arduino.height())
-      {
-         break;
-      }
-
       Color rowColor = TARGET_SERIES[i % NUM_TARGET_SAMPLES].color;
-      resultGrid.printRow(rowColor,
-         testRunner.resultTargetRate(i),
-         testRunner.resultRate(i),
-         testRunner.resultStartValue(i),
-         testRunner.resultValue(i));
+      resultDisplayTable.addRow("", rowColor);
+      resultDisplayTable.setValue(i, 0, testRunner.resultTargetRate(i), rowColor);
+      resultDisplayTable.setValue(i, 1, testRunner.resultRate(i), rowColor);
+      resultDisplayTable.setValue(i, 2, testRunner.resultStartValue(i), rowColor);
+      resultDisplayTable.setValue(i, 3, testRunner.resultValue(i), rowColor);
    }
+
+   Point16 contentCenter(contentRect.x + contentRect.width / 2, contentRect.y + contentRect.height / 2);
+   resultDisplayTable.setPosition(contentCenter, DisplayTable::Anchor::CENTER);
+
+   resultDisplayTable.draw();
 }
 
 ///
@@ -1112,6 +1114,10 @@ void setup()
    arduino.setTextSize(TITLE_TEXT_SIZE);
    arduino.clearDisplay();
    arduino.println("Sensor Warm-Up", Color::HEADING);
+
+   arduino.setTextSize(BODY_TEXT_SIZE);
+   arduino.print("Sensor Type: ", Color::SUB_HEADING);
+   arduino.println(sensor.sensorType(), Color::SUB_HEADING);
    arduino.setCursorY(arduino.getCursorY() + arduino.charH() / 4);
 
    sensorReady = sensor.begin();
@@ -1126,14 +1132,17 @@ void setup()
 
    for (size_t i = 0; i < NUM_TARGET_SAMPLES; i++)
    {
-      ScatterPlotSeries* series = scatterPlot.createSeries(MAX_RAW_SAMPLES_PER_TEST);
+      // Each test run always spans exactly [0, FIXED_TEST_DURATION_S] seconds (see
+      // TestCase::loop()/_finish()), so the X range can be locked up front and the series
+      // stored as fixed-range bins (one per chart pixel column) instead of a raw array
+      // sized for the theoretical worst-case sample count.
+      ScatterPlotSeries* series = scatterPlot.createSeries(DISPLAY_WIDTH);
+      series->setFixedXRange(0.0f, static_cast<float>(FIXED_TEST_DURATION_S * 1000UL), DISPLAY_WIDTH);
       series->color = TARGET_SERIES[i].color;
       series->movingAverageColor = TARGET_SERIES[i].color;
    }
 
-   scatterPlot.setYAxisFormat("##.##");
-   scatterPlot.setXAxisFormat("##.#s");
-   scatterPlot.setInitialYRange(-0.1f, 0.5f);
+   scatterPlot.setYAxisMode(ScatterPlot::AxisMode::GROW_ONLY);
 
    testRunner.begin(&testCase, &cooldownMonitor);
    startTestRun();
@@ -1174,8 +1183,8 @@ void loop()
       float incr = testRunner.resultValue(index);
 
       resultTable.printRow(
-         targetRate,
-         SerialTable::fixed(actualRate, 2),
+         static_cast<float>( ),
+         actualRate,
          SerialTable::fixed(startValue, 2),
          SerialTable::fixed(incr, 2));
       testRunner.clearPendingResult();

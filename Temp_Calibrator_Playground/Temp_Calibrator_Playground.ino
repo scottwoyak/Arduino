@@ -31,10 +31,11 @@
 #include "SerialX.h"
 #include "Influx.h"
 #include "ScatterPlot.h"
-#include "TimedScatterPlot.h"
+#include "ScatterPlot.h"
 #include "RollingAverage.h"
 #include "TimedAverage.h"
 #include "TempCalibrator.h"
+#include "Vector.h"
 
 #include "WiFiSettings.h"
 
@@ -277,9 +278,9 @@ constexpr Color SENSOR_PLOT_COLORS[] =
 
 // Scatter plot renderers showing every detected sensor as a line plot, one plot per
 // table column: 10 Sample Avg, 5 Min Avg, and Correction (left to right).
-TimedScatterPlot* shortAvgPlot = nullptr;
-TimedScatterPlot* longAvgPlot = nullptr;
-TimedScatterPlot* correctionPlot = nullptr;
+ScatterPlot* shortAvgPlot = nullptr;
+ScatterPlot* longAvgPlot = nullptr;
+ScatterPlot* correctionPlot = nullptr;
 TimedScatterPlotSeries* shortAvgSeries[NUM_SENSORS] = { nullptr };
 TimedScatterPlotSeries* longAvgSeries[NUM_SENSORS] = { nullptr };
 TimedScatterPlotSeries* correctionSeries[NUM_SENSORS] = { nullptr };
@@ -484,13 +485,13 @@ void printCalibrationCodeToSerial()
    // Also display the recorded correction factors in a table for easy reading, one
    // column per detected sensor with the current baseline temperature in the first column.
    String sensorLabels[NUM_SENSORS];
-   SerialTable::Column columns[NUM_SENSORS + 1];
-   columns[0] = { "Temp", 8 };
+   Vector<SerialTable::Column> columns;
+   columns.append() = { "Temp", 8 };
 
    for (uint8_t i = 0; i < existingSensorCount; i++)
    {
       sensorLabels[i] = "Sensor" + String(existingSensors[i] + 1);
-      columns[i + 1] = { sensorLabels[i].c_str(), 9 };
+      columns.append() = { sensorLabels[i].c_str(), 9 };
    }
 
    // Format with a fixed decimal precision and a leading +/- sign, so every value has
@@ -502,7 +503,7 @@ void printCalibrationCodeToSerial()
       correctionText[i] = tableCorrectionFormat.toString(tempCorrections[existingSensors[i]]).c_str();
    }
 
-   SerialTable table("Recorded Temperature Corrections", columns, existingSensorCount + 1);
+   SerialTable table("Recorded Temperature Corrections", columns);
    table.printHeader();
 
    float baseline = (sensorData[0] != nullptr) ? sensorData[0]->getLongAvgValue() : NAN;
@@ -560,10 +561,16 @@ void displaySavedCalibrationPlot()
    arduino.setTextSize(2);
    arduino.println("Saved Calibration Points. Press Button A to continue", Color::LABEL);
 
-   ScatterPlot plot(&arduino, 0, arduino.getCursorY(), arduino.width(), arduino.height() - arduino.getCursorY());
-   plot.setXAxisFormat(Format("##F"));
+   ScatterPlot plot(&arduino, 0, arduino.getCursorY(), arduino.width(), arduino.height() - arduino.getCursorY(), "##F", "##.##");
    ScatterPlotSeries* rawSeries[NUM_SENSORS] = { nullptr };
    ScatterPlotSeries* fitSeries[NUM_SENSORS] = { nullptr };
+
+   // Points are recorded in ascending baseline order, so the first and last entries give
+   // the full X range up front for both the raw points and the fitted curve, letting both
+   // series lock their X axis and use fixed-range bin storage instead of raw arrays.
+   float baselineMin = (count > 0) ? points[0].baseline : 0.0f;
+   float baselineMax = (count > 0) ? points[count - 1].baseline : 1.0f;
+   float baselineSpan = baselineMax - baselineMin;
 
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
@@ -573,11 +580,19 @@ void displaySavedCalibrationPlot()
       rawSeries[i]->showPoints = true;
       rawSeries[i]->showLines = false;
       rawSeries[i]->color = color;
+      if (count > 0)
+      {
+         rawSeries[i]->setFixedXRange(baselineMin, baselineMax, count);
+      }
 
       fitSeries[i] = plot.createSeries(FIT_CURVE_RESOLUTION);
       fitSeries[i]->showPoints = false;
       fitSeries[i]->showLines = true;
       fitSeries[i]->color = color;
+      if (count > 0)
+      {
+         fitSeries[i]->setFixedXRange(baselineMin, baselineMax, FIT_CURVE_RESOLUTION);
+      }
    }
 
    for (uint8_t p = 0; p < count; p++)
@@ -595,10 +610,6 @@ void displaySavedCalibrationPlot()
    // give the range to draw each sensor's fitted curve over.
    if (count > 0)
    {
-      float baselineMin = points[0].baseline;
-      float baselineMax = points[count - 1].baseline;
-      float baselineSpan = baselineMax - baselineMin;
-
       for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
          TempCalibrator::RegressionFit fit = TempCalibrator::getBestFit(points, count, i);
@@ -621,7 +632,7 @@ void displaySavedCalibrationPlot()
 
    while (!arduino.encoderA.button.wasPressed())
    {
-      plot.render();
+      plot.draw();
       delay(1);
    }
 }
@@ -746,9 +757,9 @@ void displaySensorList()
 ///
 void displayScatterPlots()
 {
-   if (shortAvgPlot) shortAvgPlot->render();
-   if (longAvgPlot) longAvgPlot->render();
-   if (correctionPlot) correctionPlot->render();
+   if (shortAvgPlot) shortAvgPlot->draw();
+   if (longAvgPlot) longAvgPlot->draw();
+   if (correctionPlot) correctionPlot->draw();
 }
 
 ///
@@ -894,9 +905,9 @@ void setup()
       plotHeight
    };
 
-   shortAvgPlot = new (std::nothrow) TimedScatterPlot(&arduino, shortAvgPlotRect, TIME_WINDOW_PLOT_MS, 0.0f, "10 Sample Avg");
-   longAvgPlot = new (std::nothrow) TimedScatterPlot(&arduino, longAvgPlotRect, TIME_WINDOW_PLOT_MS, 0.0f, "5 Min Avg");
-   correctionPlot = new (std::nothrow) TimedScatterPlot(&arduino, correctionPlotRect, TIME_WINDOW_PLOT_MS, Format("+#.##", Format::Alignment::RIGHT), 0.0f, "Correction");
+   shortAvgPlot = new (std::nothrow) ScatterPlot(&arduino, shortAvgPlotRect, "#####", "##.##", "10 Sample Avg");
+   longAvgPlot = new (std::nothrow) ScatterPlot(&arduino, longAvgPlotRect, "#####", "##.##", "5 Min Avg");
+   correctionPlot = new (std::nothrow) ScatterPlot(&arduino, correctionPlotRect, "#####", "+#.##", "Correction");
 
    if (!shortAvgPlot || !longAvgPlot || !correctionPlot)
    {
@@ -914,9 +925,9 @@ void setup()
 
       Color color = SENSOR_PLOT_COLORS[i % (sizeof(SENSOR_PLOT_COLORS) / sizeof(SENSOR_PLOT_COLORS[0]))];
 
-      TimedScatterPlotSeries* shortAvgSeriesForSensor = shortAvgPlot->createSeries(0);
-      TimedScatterPlotSeries* longAvgSeriesForSensor = longAvgPlot->createSeries(0);
-      TimedScatterPlotSeries* correctionSeriesForSensor = correctionPlot->createSeries(0);
+      TimedScatterPlotSeries* shortAvgSeriesForSensor = shortAvgPlot->createTimedSeries(TIME_WINDOW_PLOT_MS, plotWidth);
+      TimedScatterPlotSeries* longAvgSeriesForSensor = longAvgPlot->createTimedSeries(TIME_WINDOW_PLOT_MS, plotWidth);
+      TimedScatterPlotSeries* correctionSeriesForSensor = correctionPlot->createTimedSeries(TIME_WINDOW_PLOT_MS, plotWidth);
       if (!shortAvgSeriesForSensor || !longAvgSeriesForSensor || !correctionSeriesForSensor)
       {
          Util::setHaltReason("OOM allocating scatter plot series in Temp_Calibrator_Playground");

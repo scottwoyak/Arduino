@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <span>
 #include "Format.h"
 #include "SerialX.h"
 
@@ -32,15 +33,14 @@ public:
 
 private:
    const char* _title = nullptr;
-   const Column* _columns = nullptr;
-   size_t _columnCount = 0;
+   std::span<const Column> _columns;
 
    /// <summary>
    /// Returns true when table metadata is available for printing.
    /// </summary>
    bool _isConfigured() const
    {
-      return (_columns != nullptr) && (_columnCount > 0);
+      return !_columns.empty();
    }
 
    /// <summary>
@@ -71,7 +71,7 @@ private:
    template<typename T, typename... Rest>
    void _appendValues(String& line, size_t& index, const T& value, const Rest&... rest) const
    {
-      if (index >= _columnCount)
+      if (index >= _columns.size())
       {
          return;
       }
@@ -135,10 +135,9 @@ public:
    /// Creates a serial table with title and fixed-width column metadata.
    /// </summary>
    /// <param name="title">Optional title printed above the header row, or nullptr for none.</param>
-   /// <param name="columns">Column metadata (title and width) for the table.</param>
-   /// <param name="columnCount">Number of entries in columns.</param>
-   explicit SerialTable(const char* title, const Column* columns, size_t columnCount)
-      : _title(title), _columns(columns), _columnCount(columnCount)
+   /// <param name="columns">Column metadata (title and width) for the table, owned by the caller and expected to outlive this object.</param>
+   explicit SerialTable(const char* title, std::span<const Column> columns)
+      : _title(title), _columns(columns)
    {
    }
 
@@ -172,7 +171,7 @@ public:
       }
 
       String headerLine;
-      for (size_t i = 0; i < _columnCount; i++)
+      for (size_t i = 0; i < _columns.size(); i++)
       {
          headerLine += _formatValue(_columns[i].title, _columns[i]);
       }
@@ -199,7 +198,7 @@ public:
       }
 
       String divider;
-      for (size_t i = 0; i < _columnCount; i++)
+      for (size_t i = 0; i < _columns.size(); i++)
       {
          for (size_t j = 0; j < _columns[i].width; j++)
          {

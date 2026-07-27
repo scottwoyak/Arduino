@@ -3,6 +3,7 @@
 #include "Histogram.h"
 #include "ArduinoWithDisplay.h"
 #include "Format.h"
+#include "IHistogramPlot.h"
 #include "Util.h"
 
 ///
@@ -12,7 +13,7 @@
 /// of histogram bars and labels.
 /// </summary>
 ///
-class HistogramPlot
+class HistogramPlot : public IHistogramPlot
 {
 private:
    static constexpr int16_t Y_AXIS_LABEL_GAP = 2;
@@ -21,8 +22,8 @@ private:
    const Histogram& _histogram;
    Rect16 _rect;
    Color _barColor;
-   Color _axisLabelColor;
-   Format _minMaxFormat;
+   Color _axisLabelColor = Color::LABEL;
+   const char* _xAxisFormat;
    bool _showYAxis;
    const char* _yAxisFormat;
 
@@ -161,9 +162,10 @@ private:
 
       if (_histogram.count() > 0 && (_histogram.min() != _previousMin || _histogram.max() != _previousMax))
       {
-         String minLabel = String(_minMaxFormat.toString(_histogram.min()).c_str());
-         String maxLabel = String(_minMaxFormat.toString(_histogram.max()).c_str());
-         String rangeLabel = String(_minMaxFormat.toString(_histogram.max() - _histogram.min()).c_str());
+         Format fmt(_xAxisFormat);
+         String minLabel = String(fmt.toString(_histogram.min()).c_str());
+         String maxLabel = String(fmt.toString(_histogram.max()).c_str());
+         String rangeLabel = String(fmt.toString(_histogram.max() - _histogram.min()).c_str());
 
          _arduino->setCursor(chartLeft, chartBottom + 1);
          _arduino->print(minLabel, Color::WHITE);
@@ -206,46 +208,78 @@ private:
 public:
    ///
    /// <summary>
-   /// Constructs a histogram plot renderer with separate axis label color.
+   /// Constructs a histogram plot renderer. The bar color defaults to Color::GREEN and
+   /// the X-axis min/max/range label format defaults to "##.##" if not specified. No
+   /// Y-axis is shown unless yAxisFormat is given. Axis label color defaults to
+   /// Color::LABEL; use setAxisLabelColor() to change it.
    /// </summary>
    /// <param name="arduino">Pointer to the display interface.</param>
    /// <param name="histogram">Reference to the histogram to render.</param>
    /// <param name="rect">Bounding rectangle of the histogram panel.</param>
-   /// <param name="barColor">Color to use for histogram bars.</param>
-   /// <param name="minMaxFormat">Format to use for min/max value labels.</param>
-   /// <param name="axisLabelColor">Color to use for axis labels.</param>
+   /// <param name="xAxisFormat">Format string to use for min/max value labels (default "##.##").</param>
    /// <param name="yAxisFormat">If not nullptr, reserves a left-side Y-axis column sized to
    /// fit labels formatted with this pattern (e.g. "####"), showing the max bin count at
    /// the top and "1" at the bottom (with a vertical axis line); pass nullptr (the
    /// default) for no Y-axis. To align another chart's x-axis (e.g. a ScatterPlot's) with
    /// this histogram, give both the same format string length so their reserved label
    /// columns end up the same width.</param>
+   /// <param name="barColor">Color to use for histogram bars (default Color::GREEN).</param>
    ///
-   HistogramPlot(ArduinoWithDisplay* arduino, const Histogram& histogram, Rect16 rect, Color barColor, const Format& minMaxFormat, Color axisLabelColor, const char* yAxisFormat = nullptr)
-      : _arduino(arduino), _histogram(histogram), _rect(rect), _barColor(barColor), _axisLabelColor(axisLabelColor), _minMaxFormat(minMaxFormat), _showYAxis(yAxisFormat != nullptr), _yAxisFormat(yAxisFormat)
+   HistogramPlot(ArduinoWithDisplay* arduino, const Histogram& histogram, Rect16 rect, const char* xAxisFormat = "##.##", const char* yAxisFormat = nullptr, Color barColor = Color::GREEN)
+      : _arduino(arduino), _histogram(histogram), _rect(rect), _barColor(barColor), _xAxisFormat(xAxisFormat), _showYAxis(yAxisFormat != nullptr), _yAxisFormat(yAxisFormat)
    {
    }
 
    ///
    /// <summary>
-   /// Constructs a histogram plot renderer with axis labels matching bar color. Bar color
-   /// defaults to Color::GREEN and the min/max label format defaults to "##.##" if not specified.
+   /// Sets the color used to draw the Y-axis min/max labels.
    /// </summary>
-   /// <param name="arduino">Pointer to the display interface.</param>
-   /// <param name="histogram">Reference to the histogram to render.</param>
-   /// <param name="rect">Bounding rectangle of the histogram panel.</param>
-   /// <param name="barColor">Color to use for histogram bars and axis labels (default Color::GREEN).</param>
-   /// <param name="minMaxFormat">Format to use for min/max value labels (default "##.##").</param>
-   /// <param name="yAxisFormat">If not nullptr, reserves a left-side Y-axis column sized to
-   /// fit labels formatted with this pattern (e.g. "####"), showing the max bin count at
-   /// the top and "1" at the bottom (with a vertical axis line); pass nullptr (the
-   /// default) for no Y-axis. To align another chart's x-axis (e.g. a ScatterPlot's) with
-   /// this histogram, give both the same format string length so their reserved label
-   /// columns end up the same width.</param>
+   /// <param name="color">The color to use for axis labels.</param>
    ///
-   HistogramPlot(ArduinoWithDisplay* arduino, const Histogram& histogram, Rect16 rect, Color barColor = Color::GREEN, const Format& minMaxFormat = Format("##.##"), const char* yAxisFormat = nullptr)
-      : HistogramPlot(arduino, histogram, rect, barColor, minMaxFormat, barColor, yAxisFormat)
+   void setAxisLabelColor(Color color) override
    {
+      _axisLabelColor = color;
+   }
+
+   ///
+   /// <summary>
+   /// Sets the format used to render the min/max/range value labels and forces them to
+   /// be redrawn on the next render.
+   /// </summary>
+   /// <param name="format">Format string to apply to the min/max/range labels.</param>
+   ///
+   void setXAxisFormat(const char* format) override
+   {
+      _xAxisFormat = format;
+      _previousMin = NAN;
+      _previousMax = NAN;
+   }
+   using IHistogramPlot::setXAxisFormat;
+
+   ///
+   /// <summary>
+   /// Sets the format used to render the Y-axis min/max bin count labels and forces them
+   /// to be redrawn on the next render.
+   /// </summary>
+   /// <param name="format">Format string to apply to the Y-axis labels.</param>
+   ///
+   void setYAxisFormat(const char* format) override
+   {
+      _yAxisFormat = format;
+      _showYAxis = true;
+      _previousMaxBin = 0;
+   }
+   using IHistogramPlot::setYAxisFormat;
+
+   ///
+   /// <summary>
+   /// Sets the color used to draw the histogram bars.
+   /// </summary>
+   /// <param name="color">The color to use for histogram bars.</param>
+   ///
+   void setBarColor(Color color) override
+   {
+      _barColor = color;
    }
 
    ///
@@ -264,7 +298,7 @@ public:
    /// Call this method repeatedly to update the display as new data arrives.
    /// </summary>
    ///
-   void render()
+   void render() override
    {
       if (!_allocateRenderState())
       {

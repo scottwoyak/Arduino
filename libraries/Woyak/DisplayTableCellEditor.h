@@ -1,44 +1,106 @@
 #pragma once
 
 #include <Arduino.h>
+#include <span>
 #include "Format.h"
 
 ///
 /// <summary>
-/// Abstract base for one editable setup value shown by DisplayEditor or DisplayTableEditor.
-/// Subclasses bind to a caller-owned variable and implement type-specific adjustment and
-/// display. Persistence (loading/saving to Preferences) is handled entirely by
-/// DisplayTableEditor, using the generic numericValue()/setNumericValue()/defaultNumericValue()
-/// accessors below, so DisplayTableCellEditor itself has no Preferences dependency.
+/// Abstract base for one value shown as a row in a DisplayTable-based view (DisplayTableEditor),
+/// whether or not it can be edited.
+/// (format, value rendering). Row-level metadata (label, section header) is owned by the
+/// TableEditorRow that wraps this cell, not the cell itself. See CellEditor for the additional
+/// contract implemented by editable fields.
 /// </summary>
 ///
-class DisplayTableCellEditor
+class DisplayTableCell
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the DisplayTableCellEditor class.
+   /// Initializes a new instance of the DisplayTableCell class.
    /// </summary>
-   /// <param name="label">Label text drawn before the value, e.g. "Rate: ".</param>
    /// <param name="format">Format used to render the value for display.</param>
    ///
-   DisplayTableCellEditor(const char* label, const Format& format)
-      : _label(label), _format(format)
+   DisplayTableCell(const Format& format)
+      : _format(format)
    {}
 
-   virtual ~DisplayTableCellEditor()
+   virtual ~DisplayTableCell()
    {}
 
    ///
    /// <summary>
-   /// Gets the label text drawn before the value.
+   /// Formats this field's current value for display.
    /// </summary>
-   /// <returns>The field's label text.</returns>
+   /// <returns>The formatted value text.</returns>
    ///
-   const char* label() const
+   virtual std::string valueText() = 0;
+
+   ///
+   /// <summary>
+   /// Gets whether this field can be selected and adjusted live via the encoders. Read-only
+   /// fields (e.g. measured values) return false so DisplayTableEditor skips them when
+   /// cycling the selection and never highlights or persists them.
+   /// </summary>
+   /// <returns>True if the field is selectable/adjustable; false if it is display-only.</returns>
+   ///
+   virtual bool isEditable() const
    {
-      return _label;
+      return false;
    }
+
+   ///
+   /// <summary>
+   /// Gets whether this field is currently enabled for interaction/display, e.g. so a
+   /// field can be temporarily grayed out and skipped by encoder selection when it is
+   /// not relevant to the current configuration (like a noise StdDev row while noise is
+   /// off) without being permanently read-only like a measured value. The default
+   /// implementation always returns true.
+   /// </summary>
+   /// <returns>True if the field is currently enabled; false if it should appear dimmed and be skipped.</returns>
+   ///
+   virtual bool isEnabled() const
+   {
+      return true;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the format used to render this field's value.
+   /// </summary>
+   /// <returns>The field's format.</returns>
+   ///
+   const Format& format() const
+   {
+      return _format;
+   }
+
+protected:
+   Format _format;
+};
+
+///
+/// <summary>
+/// Abstract base for one editable setup value shown by DisplayTableEditor.
+/// Subclasses bind to a caller-owned variable and implement type-specific adjustment and
+/// display. Persistence (loading/saving to Preferences) is handled entirely by
+/// DisplayTableEditor, using the generic numericValue()/setNumericValue()/defaultNumericValue()
+/// accessors below, so CellEditor itself has no Preferences dependency.
+/// </summary>
+///
+class CellEditor : public DisplayTableCell
+{
+public:
+   ///
+   /// <summary>
+   /// Initializes a new instance of the CellEditor class.
+   /// </summary>
+   /// <param name="format">Format used to render the value for display.</param>
+   ///
+   CellEditor(const Format& format)
+      : DisplayTableCell(format)
+   {}
 
    ///
    /// <summary>
@@ -54,14 +116,6 @@ public:
    /// <param name="direction">Signed number of encoder steps to apply.</param>
    ///
    virtual void adjust(int32_t direction) = 0;
-
-   ///
-   /// <summary>
-   /// Formats this field's current value for display.
-   /// </summary>
-   /// <returns>The formatted value text.</returns>
-   ///
-   virtual std::string valueText() = 0;
 
    ///
    /// <summary>
@@ -88,74 +142,10 @@ public:
    ///
    virtual double defaultNumericValue() const = 0;
 
-   ///
-   /// <summary>
-   /// Gets whether this field can be selected and adjusted live via the encoders. Read-only
-   /// fields (e.g. measured values) return false so DisplayTableEditor skips them when
-   /// cycling the selection and never highlights or persists them.
-   /// </summary>
-   /// <returns>True if the field is selectable/adjustable; false if it is display-only.</returns>
-   ///
-   virtual bool isEditable() const
+   bool isEditable() const override
    {
       return true;
    }
-
-   ///
-   /// <summary>
-   /// Gets whether this field is currently enabled for interaction/display, e.g. so a
-   /// field can be temporarily grayed out and skipped by encoder selection when it is
-   /// not relevant to the current configuration (like a noise StdDev row while noise is
-   /// off) without being permanently read-only like a measured value. The default
-   /// implementation always returns true.
-   /// </summary>
-   /// <returns>True if the field is currently enabled; false if it should appear dimmed and be skipped.</returns>
-   ///
-   virtual bool isEnabled() const
-   {
-      return true;
-   }
-
-   ///
-   /// <summary>
-   /// Sets the section header text drawn above this field when it appears in a
-   /// DisplayTableEditor, e.g. "Plot" or "Measured". A field with no section set (the
-   /// default) is drawn as part of the previous field's section.
-   /// </summary>
-   /// <param name="section">Section header text, or nullptr for no header.</param>
-   ///
-   void setSection(const char* section)
-   {
-      _section = section;
-   }
-
-   ///
-   /// <summary>
-   /// Gets the section header text drawn above this field, or nullptr if this field
-   /// continues the previous field's section.
-   /// </summary>
-   /// <returns>The section header text, or nullptr.</returns>
-   ///
-   const char* section() const
-   {
-      return _section;
-   }
-
-   ///
-   /// <summary>
-   /// Gets the format used to render this field's value.
-   /// </summary>
-   /// <returns>The field's format.</returns>
-   ///
-   const Format& format() const
-   {
-      return _format;
-   }
-
-protected:
-   const char* _label;
-   Format _format;
-   const char* _section = nullptr;
 };
 
 ///
@@ -164,48 +154,23 @@ protected:
 /// that need to share a table/alignment with editable fields but cannot be selected or adjusted.
 /// </summary>
 ///
-class ReadOnlyDisplayTableCellEditor : public DisplayTableCellEditor
+class ReadOnlyCell : public DisplayTableCell
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the ReadOnlyDisplayTableCellEditor class.
+   /// Initializes a new instance of the ReadOnlyCell class.
    /// </summary>
-   /// <param name="label">Label text drawn before the value.</param>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
    /// <param name="format">Format used to render the value for display.</param>
    ///
-   ReadOnlyDisplayTableCellEditor(const char* label, float* value, const Format& format)
-      : DisplayTableCellEditor(label, format), _value(value)
-   {}
-
-   void reset() override
-   {}
-
-   void adjust(int32_t direction) override
+   ReadOnlyCell(float* value, const Format& format)
+      : DisplayTableCell(format), _value(value)
    {}
 
    std::string valueText() override
    {
       return _format.toString((double)*_value);
-   }
-
-   double numericValue() const override
-   {
-      return (double)*_value;
-   }
-
-   void setNumericValue(double value) override
-   {}
-
-   double defaultNumericValue() const override
-   {
-      return 0.0;
-   }
-
-   bool isEditable() const override
-   {
-      return false;
    }
 
 private:
@@ -219,48 +184,23 @@ private:
 /// fields but cannot be selected or adjusted.
 /// </summary>
 ///
-class StringDisplayTableCellEditor : public DisplayTableCellEditor
+class StringCell : public DisplayTableCell
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the StringDisplayTableCellEditor class.
+   /// Initializes a new instance of the StringCell class.
    /// </summary>
-   /// <param name="label">Label text drawn before the value.</param>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
    /// <param name="format">Format used to render the value for display.</param>
    ///
-   StringDisplayTableCellEditor(const char* label, const std::string* value, const Format& format)
-      : DisplayTableCellEditor(label, format), _value(value)
-   {}
-
-   void reset() override
-   {}
-
-   void adjust(int32_t direction) override
+   StringCell(const std::string* value, const Format& format)
+      : DisplayTableCell(format), _value(value)
    {}
 
    std::string valueText() override
    {
       return _format.toString(*_value);
-   }
-
-   double numericValue() const override
-   {
-      return 0.0;
-   }
-
-   void setNumericValue(double value) override
-   {}
-
-   double defaultNumericValue() const override
-   {
-      return 0.0;
-   }
-
-   bool isEditable() const override
-   {
-      return false;
    }
 
 private:
@@ -273,40 +213,16 @@ private:
 /// different row than a field in an adjacent table it might otherwise visually overlap.
 /// </summary>
 ///
-class BlankDisplayTableCellEditor : public DisplayTableCellEditor
+class BlankCell : public DisplayTableCell
 {
 public:
-   BlankDisplayTableCellEditor()
-      : DisplayTableCellEditor("", Format(size_t(0)))
-   {}
-
-   void reset() override
-   {}
-
-   void adjust(int32_t direction) override
+   BlankCell()
+      : DisplayTableCell(Format(size_t(0)))
    {}
 
    std::string valueText() override
    {
       return "";
-   }
-
-   double numericValue() const override
-   {
-      return 0.0;
-   }
-
-   void setNumericValue(double value) override
-   {}
-
-   double defaultNumericValue() const override
-   {
-      return 0.0;
-   }
-
-   bool isEditable() const override
-   {
-      return false;
    }
 };
 
@@ -316,14 +232,13 @@ public:
 /// implement non-linear stepping.
 /// </summary>
 ///
-class IntDisplayTableCellEditor : public DisplayTableCellEditor
+class IntCellEditor : public CellEditor
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the IntDisplayTableCellEditor class.
+   /// Initializes a new instance of the IntCellEditor class.
    /// </summary>
-   /// <param name="label">Label text drawn before the value, e.g. "Max Samples: ".</param>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
    /// <param name="minValue">Minimum allowed value.</param>
    /// <param name="maxValue">Maximum allowed value.</param>
@@ -331,10 +246,10 @@ public:
    /// <param name="defaultValue">Default value used when no saved value exists or on reset.</param>
    /// <param name="format">Format used to render the value for display.</param>
    ///
-   IntDisplayTableCellEditor(const char* label, long* value,
+   IntCellEditor(long* value,
       long minValue, long maxValue, long step, long defaultValue,
       const Format& format)
-      : DisplayTableCellEditor(label, format),
+      : CellEditor(format),
       _value(value), _minValue(minValue), _maxValue(maxValue), _step(step), _default(defaultValue)
    {}
 
@@ -393,50 +308,105 @@ protected:
 
 ///
 /// <summary>
-/// Enumerated-selection field backed by a caller-owned long index into a fixed array of
-/// string labels. Adjusting the field steps through the labels by index, wrapping around at
-/// either end, and valueText() displays the selected label instead of a raw index number.
-/// Replaces the common pattern of writing a one-off IntDisplayTableCellEditor subclass just to
-/// step through and display a small fixed set of string options (e.g. "Points"/"Lines",
-/// "True"/"False", "Fixed"/"Timed").
+/// Boolean setup field backed by a caller-owned bool. Adjusting the field (in either
+/// direction) toggles it, and valueText() displays "False"/"True" instead of a raw
+/// number. Replaces the common pattern of writing a two-entry EnumCellEditor just to
+/// toggle a boolean value.
 /// </summary>
 ///
-class EnumDisplayTableCellEditor : public IntDisplayTableCellEditor
+class BoolCellEditor : public CellEditor
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the EnumDisplayTableCellEditor class.
+   /// Initializes a new instance of the BoolCellEditor class.
    /// </summary>
-   /// <param name="label">Label text drawn before the value.</param>
+   /// <param name="value">Caller-owned variable that holds the current value.</param>
+   /// <param name="defaultValue">Default value used when no saved value exists or on reset.</param>
+   /// <param name="format">Format used to render the value for display.</param>
+   ///
+   BoolCellEditor(bool* value, bool defaultValue, const Format& format)
+      : CellEditor(format), _value(value), _default(defaultValue)
+   {}
+
+   void reset() override
+   {
+      *_value = _default;
+   }
+
+   void adjust(int32_t direction) override
+   {
+      *_value = !*_value;
+   }
+
+   std::string valueText() override
+   {
+      return _format.toString(*_value ? "True" : "False");
+   }
+
+   double numericValue() const override
+   {
+      return *_value ? 1.0 : 0.0;
+   }
+
+   void setNumericValue(double value) override
+   {
+      *_value = (value != 0.0);
+   }
+
+   double defaultNumericValue() const override
+   {
+      return _default ? 1.0 : 0.0;
+   }
+
+private:
+   bool* _value;
+   bool _default;
+};
+
+///
+/// <summary>
+/// Enumerated-selection field backed by a caller-owned long index into a fixed array of
+/// string labels. Adjusting the field steps through the labels by index, wrapping around at
+/// either end, and valueText() displays the selected label instead of a raw index number.
+/// Replaces the common pattern of writing a one-off IntCellEditor subclass just to
+/// step through and display a small fixed set of string options (e.g. "Points"/"Lines",
+/// "True"/"False", "Fixed"/"Timed").
+/// </summary>
+///
+class EnumCellEditor : public IntCellEditor
+{
+public:
+   ///
+   /// <summary>
+   /// Initializes a new instance of the EnumCellEditor class.
+   /// </summary>
    /// <param name="value">Caller-owned variable that holds the current selected index.</param>
-   /// <param name="labels">Array of label strings to step through and display.</param>
-   /// <param name="labelCount">Number of entries in labels.</param>
+   /// <param name="labels">Span of label strings to step through and display.</param>
    /// <param name="defaultValue">Default index used when no saved value exists or on reset.</param>
    /// <param name="format">Format used to render the selected label for display.</param>
    ///
-   EnumDisplayTableCellEditor(const char* label, long* value, const char* const* labels,
-      size_t labelCount, long defaultValue, const Format& format)
-      : IntDisplayTableCellEditor(label, value, 0, (long)labelCount - 1, 1, defaultValue, format),
-      _labels(labels), _labelCount(labelCount)
+   EnumCellEditor(long* value, std::span<const char* const> labels,
+      long defaultValue, const Format& format)
+      : IntCellEditor(value, 0, (long)labels.size() - 1, 1, defaultValue, format),
+      _labels(labels)
    {}
 
    void adjust(int32_t direction) override
    {
-      long count = (long)_labelCount;
+      long count = (long)_labels.size();
       long newValue = (*_value + (direction > 0 ? 1 : -1) + count) % count;
       *_value = newValue;
    }
 
    std::string valueText() override
    {
-      long index = constrain(*_value, 0L, (long)(_labelCount - 1));
+      long index = constrain(*_value, 0L, (long)(_labels.size() - 1));
       return _format.toString(_labels[index]);
    }
 
 private:
-   const char* const* _labels;
-   size_t _labelCount;
+   std::span<const char* const> _labels;
 };
 
 ///
@@ -445,14 +415,13 @@ private:
 /// to implement non-linear stepping.
 /// </summary>
 ///
-class FloatDisplayTableCellEditor : public DisplayTableCellEditor
+class FloatCellEditor : public CellEditor
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the FloatDisplayTableCellEditor class.
+   /// Initializes a new instance of the FloatCellEditor class.
    /// </summary>
-   /// <param name="label">Label text drawn before the value.</param>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
    /// <param name="minValue">Minimum allowed value.</param>
    /// <param name="maxValue">Maximum allowed value.</param>
@@ -460,10 +429,10 @@ public:
    /// <param name="defaultValue">Default value used when no saved value exists or on reset.</param>
    /// <param name="format">Format used to render the value for display.</param>
    ///
-   FloatDisplayTableCellEditor(const char* label, float* value,
+   FloatCellEditor(float* value,
       float minValue, float maxValue, float step, float defaultValue,
       const Format& format)
-      : DisplayTableCellEditor(label, format),
+      : CellEditor(format),
       _value(value), _minValue(minValue), _maxValue(maxValue), _step(step), _default(defaultValue)
    {}
 

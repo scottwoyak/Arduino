@@ -2,13 +2,13 @@
 // Captures finite sensor values for a fixed run window (or until the sample cap is reached), stores
 // them in RAM, and reports serial/display summaries.
 //
-// On startup, a DisplayEditor screen lets the user review/adjust the target sample rate, max samples,
+// On startup, a setup screen lets the user review/adjust the target sample rate, max samples,
 // sampling duration, and warmup period (Encoder A selects a field, Encoder B adjusts it, Button B
 // resets to defaults). Press Button A to confirm and start the capture using the selected values.
 //
 // Capture flow:
 // 1) Initialize display, serial, and sensor.
-// 2) Load setup values from Preferences and run the DisplayEditor screen; start capture on Button A.
+// 2) Load setup values from Preferences and run the setup screen; start capture on Button A.
 // 3) Sample at up to the selected target rate and store finite values in RAM.
 // 4) Stop when MAX_SAMPLES are stored or SAMPLING_DURATION_S elapses.
 //
@@ -27,10 +27,10 @@
 //
 
 #include <Wire.h>
+#include <array>
 
 #include "ESP32_S3_Playground.h"
-#include "DisplayField.h"
-#include "DisplayGrid.h"
+#include "DisplayTable.h"
 #include "EnumSelector.h"
 #include "Histogram.h"
 #include "HistogramPlot.h"
@@ -38,7 +38,7 @@
 #include "ScatterPlot.h"
 #include "SerialTable.h"
 #include "SerialX.h"
-#include "DisplayEditor.h"
+#include "DisplayTableEditor.h"
 #include "Stopwatch.h"
 #include "TestSensor.h"
 #include "Timer.h"
@@ -93,10 +93,10 @@ RollingRate actualSampleRate;
 /// SAMPLE_RATE_STEP_HIGH at or above 100/s.
 /// </summary>
 ///
-class SampleRateField : public IntDisplayTableCellEditor
+class SampleRateCell : public IntCellEditor
 {
 public:
-   using IntDisplayTableCellEditor::IntDisplayTableCellEditor;
+   using IntCellEditor::IntCellEditor;
 
 protected:
    long _stepValue(long current, int32_t direction) override
@@ -107,24 +107,19 @@ protected:
 };
 
 // ----------- Setup Screen Fields
-Format setupRateFormat("####/s", Format::Alignment::LEFT);
-Format setupSamplesFormat("#####", Format::Alignment::LEFT);
-Format setupDurationFormat("###s", Format::Alignment::LEFT);
-Format setupWarmupFormat("###s", Format::Alignment::LEFT);
+SampleRateCell rateCell(&targetSampleRate,
+   MIN_SAMPLE_RATE_PER_SEC, MAX_SAMPLE_RATE_PER_SEC, SAMPLE_RATE_STEP_LOW, DEFAULT_SAMPLE_RATE_PER_SEC, "####/s");
+IntCellEditor samplesCell(&maxSamples,
+   MIN_MAX_SAMPLES, MAX_MAX_SAMPLES, SAMPLE_STEP, DEFAULT_MAX_SAMPLES, "#####");
+IntCellEditor durationCell(&samplingDurationS,
+   MIN_SAMPLING_DURATION_S, MAX_SAMPLING_DURATION_S, DURATION_STEP_S, DEFAULT_SAMPLING_DURATION_S, "###s");
+IntCellEditor warmupCell(&warmupPeriodS,
+   0, MAX_WARMUP_PERIOD_S, WARMUP_STEP_S, DEFAULT_WARMUP_PERIOD_S, "###s");
 
-SampleRateField rateField("Rate", &targetSampleRate,
-   MIN_SAMPLE_RATE_PER_SEC, MAX_SAMPLE_RATE_PER_SEC, SAMPLE_RATE_STEP_LOW, DEFAULT_SAMPLE_RATE_PER_SEC, setupRateFormat);
-IntDisplayTableCellEditor samplesField("Max Samples", &maxSamples,
-   MIN_MAX_SAMPLES, MAX_MAX_SAMPLES, SAMPLE_STEP, DEFAULT_MAX_SAMPLES, setupSamplesFormat);
-IntDisplayTableCellEditor durationField("Max Duration", &samplingDurationS,
-   MIN_SAMPLING_DURATION_S, MAX_SAMPLING_DURATION_S, DURATION_STEP_S, DEFAULT_SAMPLING_DURATION_S, setupDurationFormat);
-IntDisplayTableCellEditor warmupField("Warmup", &warmupPeriodS,
-   0, MAX_WARMUP_PERIOD_S, WARMUP_STEP_S, DEFAULT_WARMUP_PERIOD_S, setupWarmupFormat);
+TableEditorRow setupCells[] = { { "Rate", &rateCell }, { "Max Samples", &samplesCell }, { "Max Duration", &durationCell }, { "Warmup", &warmupCell } };
+DisplayTableEditor setupDisplay(&arduino, PREF_NAMESPACE, setupCells);
 
-DisplayTableCellEditor* setupFields[] = { &rateField, &samplesField, &durationField, &warmupField };
-DisplayEditor setupDisplay(&arduino, PREF_NAMESPACE, "Setup", setupFields, ARRAY_SIZE(setupFields));
-
-Values* samplesValues = nullptr;
+Values samplesValues;
 Values warmupValues;
 bool captureStarted = false;
 bool captureFinalized = false;
@@ -160,7 +155,7 @@ void printBoundaryDump()
       { "Delta (ms)", 12 },
       { "Value", 10 },
    };
-   SerialTable table("Warmup/Real Boundary Sample Dump", columns, ARRAY_SIZE(columns));
+   SerialTable table("Warmup/Real Boundary Sample Dump", columns);
    table.printHeader();
 
    size_t warmupCount = warmupValues.count();
@@ -178,13 +173,13 @@ void printBoundaryDump()
       havePreviousTimestamp = true;
    }
 
-   size_t realCount = min(static_cast<size_t>(NUM_BOUNDARY_REAL_SAMPLES), samplesValues->count());
+   size_t realCount = min(static_cast<size_t>(NUM_BOUNDARY_REAL_SAMPLES), samplesValues.count());
    for (size_t i = 0; i < realCount; i++)
    {
-      unsigned long timestampMs = samplesValues->timestamp(i);
+      unsigned long timestampMs = samplesValues.timestamp(i);
       long deltaMs = havePreviousTimestamp ? static_cast<long>(timestampMs - previousTimestampMs) : 0;
       table.printRow("real", timestampMs, havePreviousTimestamp ? String(deltaMs) : String("-"),
-         SerialTable::fixed((*samplesValues)[i], 3));
+         SerialTable::fixed(samplesValues[i], 3));
       previousTimestampMs = timestampMs;
       havePreviousTimestamp = true;
    }
@@ -197,8 +192,7 @@ void printBoundaryDump()
 ///
 void createSamplesValues()
 {
-   delete samplesValues;
-   samplesValues = new Values(maxSamples);
+   samplesValues.reset(maxSamples);
 }
 
 ///
@@ -218,25 +212,24 @@ constexpr uint16_t DISPLAY_UPDATE_RATE_PER_SEC = 10;
 RateTimer displayRefreshTimer(DISPLAY_UPDATE_RATE_PER_SEC);
 
 bool collectingViewInitialized = false;
-Format progressPercentFormat("###%", Format::Alignment::LEFT);
-Format maxCaptureFormat(20, Format::Alignment::LEFT);
-Format targetRateFormat("####/s", Format::Alignment::LEFT);
-Format actualRateFormat("####.#/s", Format::Alignment::LEFT);
-Format warmupStatusFormat(20, Format::Alignment::LEFT);
-Format samplesCountFormat("#####", Format::Alignment::LEFT);
-Format elapsedFormat("####s", Format::Alignment::LEFT);
-DisplayField* warmupStatusField = nullptr;
-DisplayField* maxField = nullptr;
-DisplayField* progressField = nullptr;
-DisplayField* samplesCountField = nullptr;
-DisplayField* elapsedField = nullptr;
-DisplayField* targetRateField = nullptr;
-DisplayField* actualRateField = nullptr;
-ScatterPlot* resultsScatterPlot = nullptr;
+enum CollectingRow : size_t { WARMUP_ROW, MAX_ROW, PROGRESS_ROW, SAMPLES_ROW, ELAPSED_ROW, TARGET_RATE_ROW, ACTUAL_RATE_ROW };
+
+static const DisplayTable::ValueRow collectingRows[] = {
+   { "Warmup", "####################" },
+   { "Max", "####################" },
+   { "Progress", "###%" },
+   { "Samples", "#####" },
+   { "Elapsed", "####s" },
+   { "Target Rate", "####/s" },
+   { "Actual Rate", "####.#/s" },
+};
+DisplayTable collectingTable(&arduino, 0, 0, collectingRows, 2, DisplayTable::Alignment::RIGHT);
+ScatterPlot resultsScatterPlot(&arduino, Rect16{ 0, 0, 0, 0 }, CHART_X_AXIS_FORMAT, CHART_Y_AXIS_FORMAT);
 
 // ----------- Analysis Settings
 constexpr size_t HISTOGRAM_BINS = 20;
 constexpr const char* CHART_MIN_MAX_FORMAT = "##.##";
+constexpr const char* CHART_X_AXIS_FORMAT = "####";
 constexpr const char* CHART_Y_AXIS_FORMAT = "####";
 constexpr size_t BUFFER_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
 constexpr size_t NUM_BUFFER_SIZES = sizeof(BUFFER_SIZES) / sizeof(BUFFER_SIZES[0]);
@@ -258,16 +251,17 @@ constexpr size_t NUM_BUFFER_SIZES = sizeof(BUFFER_SIZES) / sizeof(BUFFER_SIZES[0
 /// no Y-axis. Use the same format string as the paired ScatterPlot's setYAxisFormat() so
 /// both charts' reserved label columns end up the same width.</param>
 ///
-void drawHistogram(const char* title, const Histogram& histogram, int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color barColor, Color axisLabelColor, const char* yAxisFormat = nullptr)
+void drawHistogram(const char* title, const Histogram& histogram, uint16_t sectionLeft, uint16_t sectionWidth, uint16_t sectionTop, uint16_t sectionHeight, Color barColor, Color axisLabelColor, const char* yAxisFormat = nullptr)
 {
    arduino.setTextSize(2);
    arduino.setCursor(sectionLeft, sectionTop);
    arduino.println(title, Color::LABEL);
 
-   int16_t chartTop = arduino.getCursorY() + 1;
-   int16_t adjustedHeight = sectionHeight - (chartTop - sectionTop);
+   uint16_t chartTop = static_cast<uint16_t>(arduino.getCursorY() + 1);
+   uint16_t adjustedHeight = sectionHeight - (chartTop - sectionTop);
    Rect16 rect{ sectionLeft, chartTop, sectionWidth, adjustedHeight };
-   HistogramPlot plot(&arduino, histogram, rect, barColor, Format(CHART_MIN_MAX_FORMAT), axisLabelColor, yAxisFormat);
+   HistogramPlot plot(&arduino, histogram, rect, CHART_MIN_MAX_FORMAT, yAxisFormat, barColor);
+   plot.setAxisLabelColor(axisLabelColor);
    plot.render();
 }
 
@@ -283,24 +277,29 @@ void drawHistogram(const char* title, const Histogram& histogram, int16_t sectio
 /// <param name="sectionHeight">Height of the panel in pixels.</param>
 /// <param name="pointColor">Color used to draw retained (post-warmup) scatter points.</param>
 ///
-void drawScatterPlot(int16_t sectionLeft, int16_t sectionWidth, int16_t sectionTop, int16_t sectionHeight, Color pointColor)
+void drawScatterPlot(uint16_t sectionLeft, uint16_t sectionWidth, uint16_t sectionTop, uint16_t sectionHeight, Color pointColor)
 {
-   delete resultsScatterPlot;
-   resultsScatterPlot = new ScatterPlot(&arduino, sectionLeft, sectionTop, sectionWidth, sectionHeight);
-   resultsScatterPlot->setYAxisFormat(CHART_Y_AXIS_FORMAT);
+   Rect16 sectionRect{ sectionLeft, sectionTop, sectionWidth, sectionHeight };
+   resultsScatterPlot.setRect(static_cast<int16_t>(sectionRect.x), static_cast<int16_t>(sectionRect.y),
+      static_cast<int16_t>(sectionRect.width), static_cast<int16_t>(sectionRect.height));
+   resultsScatterPlot.deleteAllSeries();
 
    size_t warmupCount = warmupValues.count();
    const float* warmupValueData = warmupValues.values();
 
-   size_t count = samplesValues->count();
-   const float* values = samplesValues->values();
+   size_t count = samplesValues.count();
+   const float* values = samplesValues.values();
 
    if (warmupCount > 0)
    {
-      ScatterPlotSeries* warmupSeries = resultsScatterPlot->createSeries(warmupCount);
+      ScatterPlotSeries* warmupSeries = resultsScatterPlot.createSeries(warmupCount);
       warmupSeries->showPoints = true;
       warmupSeries->showLines = false;
       warmupSeries->color = Color::LIGHTGRAY;
+
+      // The full index range [0, warmupCount - 1] is known up front, so lock the X axis
+      // and store this series as fixed-range bins instead of a raw array.
+      warmupSeries->setFixedXRange(0.0f, static_cast<float>(warmupCount - 1), warmupCount);
 
       for (size_t i = 0; i < warmupCount; i++)
       {
@@ -309,10 +308,17 @@ void drawScatterPlot(int16_t sectionLeft, int16_t sectionWidth, int16_t sectionT
       warmupSeries->finalized = true;
    }
 
-   ScatterPlotSeries* series = resultsScatterPlot->createSeries((count > 0) ? count : 1);
+   ScatterPlotSeries* series = resultsScatterPlot.createSeries((count > 0) ? count : 1);
    series->showPoints = true;
    series->showLines = false;
    series->color = pointColor;
+
+   // The full index range [warmupCount, warmupCount + count - 1] is known up front, so
+   // lock the X axis and store this series as fixed-range bins instead of a raw array.
+   if (count > 0)
+   {
+      series->setFixedXRange(static_cast<float>(warmupCount), static_cast<float>(warmupCount + count - 1), count);
+   }
 
    for (size_t i = 0; i < count; i++)
    {
@@ -320,7 +326,7 @@ void drawScatterPlot(int16_t sectionLeft, int16_t sectionWidth, int16_t sectionT
    }
    series->finalized = true;
 
-   resultsScatterPlot->render();
+   resultsScatterPlot.draw();
 }
 
 ///
@@ -345,17 +351,17 @@ void drawChartsView()
 {
    drawResultsHeader();
 
-   Histogram valueHistogram(samplesValues->values(), samplesValues->count(), HISTOGRAM_BINS);
+   Histogram valueHistogram(samplesValues.values(), samplesValues.count(), HISTOGRAM_BINS);
 
-   int16_t top = arduino.getCursorY();
-   int16_t availableHeight = (int16_t)arduino.height() - top;
-   int16_t totalWidth = (int16_t)arduino.width();
+   uint16_t top = static_cast<uint16_t>(arduino.getCursorY());
+   uint16_t availableHeight = arduino.height() - top;
+   uint16_t totalWidth = arduino.width();
    constexpr int16_t sectionGap = 5;
 
-   int16_t plotHeight = (availableHeight - sectionGap) / 2;
-   int16_t scatterHeight = plotHeight;
-   int16_t histogramTop = top + scatterHeight + sectionGap;
-   int16_t histogramHeight = availableHeight - scatterHeight - sectionGap;
+   uint16_t plotHeight = (availableHeight - sectionGap) / 2;
+   uint16_t scatterHeight = plotHeight;
+   uint16_t histogramTop = top + scatterHeight + sectionGap;
+   uint16_t histogramHeight = availableHeight - scatterHeight - sectionGap;
 
    drawScatterPlot(0, totalWidth, top, scatterHeight, Color::GREEN);
 
@@ -376,30 +382,25 @@ void drawTableView()
    arduino.setTextSize(2);
 
    unsigned long elapsedSeconds = static_cast<unsigned long>(captureStopwatch.elapsedSecs());
-   String headerText = String(samplesValues->count()) + " samples collected in " + String(elapsedSeconds) + " seconds";
+   String headerText = String(samplesValues.count()) + " samples collected in " + String(elapsedSeconds) + " seconds";
    arduino.println(headerText, Color::LABEL);
 
    String rateText = "Target " + String(targetSampleRate) + "/s  Actual " + String(actualSampleRate.get(), 0) + "/s";
    arduino.println(rateText, Color::LABEL);
    arduino.println();
 
-   static Format numSamplesFormat("####", Format::Alignment::RIGHT);
-   static Format rangeFormat("###.##", Format::Alignment::RIGHT);
-   static Format stdDevFormat("###.##", Format::Alignment::RIGHT);
-   static Format stdDevPercentFormat("###.##%", Format::Alignment::RIGHT);
-   static Format hzFormat(" ####", Format::Alignment::RIGHT);
-
-   static const DisplayGrid::Column columns[] = {
-      { "N", &numSamplesFormat },
-      { "Range", &rangeFormat },
-      { "StdDev", &stdDevFormat },
-      { "StdDev%", &stdDevPercentFormat },
-      { "Hz", &hzFormat },
+   static std::array columns = {
+      DisplayTable::Column("", DisplayTable::Alignment::RIGHT),
+      DisplayTable::Column("Range", "###.##", DisplayTable::Alignment::RIGHT),
+      DisplayTable::Column("StdDev", "###.##", DisplayTable::Alignment::RIGHT),
+      DisplayTable::Column("StdDev%", "###.##%", DisplayTable::Alignment::RIGHT),
+      DisplayTable::Column("Hz", " ####", DisplayTable::Alignment::RIGHT),
    };
-   DisplayGrid grid(&arduino, nullptr, columns, ARRAY_SIZE(columns));
-   grid.printHeader();
+   static DisplayTable table(&arduino, 0, 0, columns, 2, Color::VALUE3);
+   table.setPosition(arduino.getCursorX(), arduino.getCursorY());
+   table.clearRows();
 
-   Stats rawStats = samplesValues->computeBasicStats();
+   Stats rawStats = samplesValues.computeBasicStats();
    float rawAvg = rawStats.get();
    float rawRange = Values::computeRange(rawStats.min(), rawStats.max());
    float rawStdDev = rawStats.stdDev();
@@ -413,11 +414,19 @@ void drawTableView()
 
    if ((rawCount > 0) && isfinite(rawStdDevPercent))
    {
-      grid.printRow(Color::VALUE2, "Raw", rawRange, rawStdDev, rawStdDevPercent, actualSampleRate.get());
+      table.addRow("Raw", Color::VALUE2);
+      table.setValue(0, 0, rawRange, Color::VALUE2);
+      table.setValue(0, 1, rawStdDev, Color::VALUE2);
+      table.setValue(0, 2, rawStdDevPercent, Color::VALUE2);
+      table.setValue(0, 3, actualSampleRate.get(), Color::VALUE2);
    }
    else
    {
-      grid.printRow(Color::GRAY, "Raw", "n/a", "n/a", "n/a", "n/a");
+      table.addRow("Raw", Color::GRAY);
+      table.setNoValue(0, 0, Color::GRAY, '-');
+      table.setNoValue(0, 1, Color::GRAY, '-');
+      table.setNoValue(0, 2, Color::GRAY, '-');
+      table.setNoValue(0, 3, Color::GRAY, '-');
    }
 
    for (size_t i = 0; i < NUM_BUFFER_SIZES; i++)
@@ -425,7 +434,7 @@ void drawTableView()
       size_t sampleSize = BUFFER_SIZES[i];
       float effectiveRateHz = actualSampleRate.get() / sampleSize;
 
-      Stats avgSeriesStats = samplesValues->computeAverageSeriesStats(sampleSize);
+      Stats avgSeriesStats = samplesValues.computeAverageSeriesStats(sampleSize);
       float avgMean = avgSeriesStats.get();
       float avgRange = Values::computeRange(avgSeriesStats.min(), avgSeriesStats.max());
       float avgStdDev = avgSeriesStats.stdDev();
@@ -437,15 +446,28 @@ void drawTableView()
          avgStdDevPercent = (avgStdDev / fabsf(avgMean)) * 100.0f;
       }
 
+      size_t rowIndex = i + 1;
+      String rowLabel = String(sampleSize);
+
       if ((averageCount > 0) && isfinite(avgStdDevPercent))
       {
-         grid.printRow(Color::VALUE, sampleSize, avgRange, avgStdDev, avgStdDevPercent, effectiveRateHz);
+         table.addRow(rowLabel.c_str(), Color::VALUE);
+         table.setValue(rowIndex, 0, avgRange, Color::VALUE);
+         table.setValue(rowIndex, 1, avgStdDev, Color::VALUE);
+         table.setValue(rowIndex, 2, avgStdDevPercent, Color::VALUE);
+         table.setValue(rowIndex, 3, effectiveRateHz, Color::VALUE);
       }
       else
       {
-         grid.printRow(Color::GRAY, sampleSize, "n/a", "n/a", "n/a", "n/a");
+         table.addRow(rowLabel.c_str(), Color::GRAY);
+         table.setNoValue(rowIndex, 0, Color::GRAY, '-');
+         table.setNoValue(rowIndex, 1, Color::GRAY, '-');
+         table.setNoValue(rowIndex, 2, Color::GRAY, '-');
+         table.setNoValue(rowIndex, 3, Color::GRAY, '-');
       }
    }
+
+   table.draw();
 }
 
 ///
@@ -470,7 +492,7 @@ void drawResultView()
 
 ///
 /// <summary>
-/// Initializes the DisplayField rows used by the collecting-progress screen.
+/// Initializes the DisplayTable rows used by the collecting-progress screen.
 /// </summary>
 ///
 void initializeCollectingTable()
@@ -480,31 +502,8 @@ void initializeCollectingTable()
 
    arduino.setTextSize(2);
    collectingTableY += arduino.charH();
-   int16_t rowHeight = arduino.charH();
 
-   delete warmupStatusField;
-   delete maxField;
-   delete progressField;
-   delete samplesCountField;
-   delete elapsedField;
-   delete targetRateField;
-   delete actualRateField;
-
-   // pad labels so their ": " separators line up, matching "Target Rate"/"Actual Rate"
-   Point16 warmupPos(0, collectingTableY);
-   warmupStatusField = new DisplayField(&arduino, warmupPos, "     Warmup", warmupStatusFormat);
-   Point16 maxPos(0, collectingTableY + rowHeight);
-   maxField = new DisplayField(&arduino, maxPos, "        Max", maxCaptureFormat);
-   Point16 progressPos(0, collectingTableY + rowHeight * 2);
-   progressField = new DisplayField(&arduino, progressPos, "   Progress", progressPercentFormat);
-   Point16 samplesCountPos(0, collectingTableY + rowHeight * 3);
-   samplesCountField = new DisplayField(&arduino, samplesCountPos, "    Samples", samplesCountFormat);
-   Point16 elapsedPos(0, collectingTableY + rowHeight * 4);
-   elapsedField = new DisplayField(&arduino, elapsedPos, "    Elapsed", elapsedFormat);
-   Point16 targetRatePos(0, collectingTableY + rowHeight * 5);
-   targetRateField = new DisplayField(&arduino, targetRatePos, "Target Rate", targetRateFormat);
-   Point16 actualRatePos(0, collectingTableY + rowHeight * 6);
-   actualRateField = new DisplayField(&arduino, actualRatePos, "Actual Rate", actualRateFormat);
+   collectingTable.setPosition(0, collectingTableY);
 }
 
 ///
@@ -520,7 +519,7 @@ void initializeCollectingTable()
 void updateDisplay(bool forceRefresh = false)
 {
    bool durationElapsed = captureStopwatch.elapsedSecs() >= samplingDurationS;
-   if (!warmupStopwatch.isRunning() && (samplesValues->isFull() || durationElapsed))
+   if (!warmupStopwatch.isRunning() && (samplesValues.isFull() || durationElapsed))
    {
       return;
    }
@@ -543,43 +542,31 @@ void updateDisplay(bool forceRefresh = false)
 
       arduino.setTextSize(2);
       arduino.println("Collecting data", Color::VALUE);
-      warmupStatusField->invalidate();
-      maxField->invalidate();
-      progressField->invalidate();
-      samplesCountField->invalidate();
-      elapsedField->invalidate();
-      targetRateField->invalidate();
-      actualRateField->invalidate();
+      collectingTable.invalidate();
       collectingViewInitialized = true;
    }
 
    String maxText = String(maxSamples) + " samples OR " + String(samplingDurationS) + "s";
-   maxField->draw(maxText);
-   targetRateField->draw(targetSampleRate);
+   collectingTable.setValue(MAX_ROW, maxText);
+   collectingTable.setValue(TARGET_RATE_ROW, static_cast<int>(targetSampleRate));
 
    if (warmupStopwatch.isRunning())
    {
       constexpr const char* PLACEHOLDER = "----";
-      progressField->setValueColor(Color::GRAY);
-      samplesCountField->setValueColor(Color::GRAY);
-      elapsedField->setValueColor(Color::GRAY);
-      actualRateField->setValueColor(Color::GRAY);
 
       float remainingSeconds = max(0.0, warmupPeriodS - warmupStopwatch.elapsedSecs());
       String warmupText = String(remainingSeconds, 1) + "s remaining";
-      warmupStatusField->setValueColor(Color::VALUE2);
 
-      warmupStatusField->draw(warmupText);
-      progressField->draw(PLACEHOLDER);
-      samplesCountField->draw(PLACEHOLDER);
-      elapsedField->draw(PLACEHOLDER);
-      actualRateField->draw(PLACEHOLDER);
+      collectingTable.setValue(WARMUP_ROW, warmupText, Color::VALUE2);
+      collectingTable.setValue(PROGRESS_ROW, PLACEHOLDER, Color::GRAY);
+      collectingTable.setValue(SAMPLES_ROW, PLACEHOLDER, Color::GRAY);
+      collectingTable.setValue(ELAPSED_ROW, PLACEHOLDER, Color::GRAY);
+      collectingTable.setValue(ACTUAL_RATE_ROW, PLACEHOLDER, Color::GRAY);
+      collectingTable.draw();
       return;
    }
 
-   warmupStatusField->setValueColor(Color::VALUE);
-
-   size_t count = samplesValues->count();
+   size_t count = samplesValues.count();
    float elapsedSeconds = captureStopwatch.elapsedSecs();
    if (elapsedSeconds > samplingDurationS)
    {
@@ -595,16 +582,12 @@ void updateDisplay(bool forceRefresh = false)
       progressPercent = 100.0f;
    }
 
-   progressField->setValueColor(Color::VALUE);
-   samplesCountField->setValueColor(Color::VALUE);
-   elapsedField->setValueColor(Color::VALUE);
-   actualRateField->setValueColor(Color::VALUE);
-
-   warmupStatusField->draw("Complete");
-   progressField->draw(progressPercent);
-   samplesCountField->draw(static_cast<unsigned long>(count));
-   elapsedField->draw(static_cast<unsigned long>(elapsedSeconds));
-   actualRateField->draw(actualSampleRate.get());
+   collectingTable.setValue(WARMUP_ROW, "Complete", Color::VALUE);
+   collectingTable.setValue(PROGRESS_ROW, progressPercent, Color::VALUE);
+   collectingTable.setValue(SAMPLES_ROW, static_cast<unsigned long>(count), Color::VALUE);
+   collectingTable.setValue(ELAPSED_ROW, static_cast<unsigned long>(elapsedSeconds));
+   collectingTable.setValue(ACTUAL_RATE_ROW, actualSampleRate.get());
+   collectingTable.draw();
 }
 
 ///
@@ -634,7 +617,7 @@ void startCapture()
 {
    captureStarted = true;
    createSamplesValues();
-   samplesValues->reset();
+   samplesValues.reset();
    samplingTimer.setDurationMs(1000UL / targetSampleRate);
    actualSampleRate.reset();
    running = true;
@@ -652,6 +635,70 @@ void startCapture()
    Serial.println(warmupStopwatch.isRunning() ? "Warming up..." : "Capture started...");
 }
 
+///
+/// <summary>
+/// Runs a blocking setup screen using setupDisplay: Encoder A selects a field, Encoder B
+/// adjusts it, Button B resets all fields to their defaults, and Button A confirms and saves.
+/// </summary>
+///
+void runSetupScreen()
+{
+   arduino.clearDisplay();
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(3);
+   arduino.println("Setup", Color::HEADING);
+
+   arduino.setTextSize(2);
+   int16_t tableTop = arduino.getCursorY();
+   setupDisplay.setPosition(0, tableTop);
+   setupDisplay.forceRedraw();
+   setupDisplay.draw();
+
+   arduino.setCursor(0, tableTop + setupDisplay.height());
+   arduino.println();
+
+   static constexpr const char* INSTRUCTIONS[] = {
+      "Encoder A: Select",
+      "Encoder B: Adjust",
+      "Button A: Confirm",
+      "Button B: Reset",
+   };
+
+   int16_t rowHeight = arduino.charH();
+   int16_t y = (int16_t)arduino.height() - rowHeight * (int16_t)ARRAY_SIZE(INSTRUCTIONS);
+   for (size_t i = 0; i < ARRAY_SIZE(INSTRUCTIONS); i++)
+   {
+      int16_t x = (int16_t)arduino.width() - (int16_t)arduino.textWidth(INSTRUCTIONS[i]);
+      arduino.setCursor(x, y);
+      arduino.println(INSTRUCTIONS[i], Color::GRAY);
+      y += rowHeight;
+   }
+
+   while (true)
+   {
+      int32_t selectDelta = arduino.encoderA.delta();
+      int32_t adjustDelta = arduino.encoderB.delta();
+      if (selectDelta != 0 || adjustDelta != 0)
+      {
+         setupDisplay.selectNext(selectDelta);
+         setupDisplay.adjustSelected(adjustDelta);
+         setupDisplay.draw();
+      }
+
+      if (arduino.buttonB.wasPressed())
+      {
+         setupDisplay.reset();
+         setupDisplay.draw();
+      }
+
+      if (arduino.buttonA.wasPressed())
+      {
+         setupDisplay.save();
+         return;
+      }
+   }
+}
+
 void setup()
 {
    SerialX::begin(115200, 2000);
@@ -661,10 +708,8 @@ void setup()
    sensor.begin();
    initializeCollectingTable();
 
-   Util::printBoardInfo();
-
    setupDisplay.load();
-   setupDisplay.run();
+   runSetupScreen();
    startCapture();
 }
 
@@ -676,7 +721,7 @@ void loop()
       {
          captureStarted = false;
          captureFinalized = false;
-         setupDisplay.run();
+         runSetupScreen();
          startCapture();
          return;
       }
@@ -710,12 +755,12 @@ void loop()
             warmupStopwatch.stop();
          }
 
-         samplesValues->addValue(sensorValue);
+         samplesValues.addValue(sensorValue);
 
          updateDisplay();
 
          bool durationElapsed = captureStopwatch.elapsedSecs() >= samplingDurationS;
-         if ((samplesValues->count() >= maxSamples) || durationElapsed)
+         if ((samplesValues.count() >= maxSamples) || durationElapsed)
          {
             finishCapture();
          }

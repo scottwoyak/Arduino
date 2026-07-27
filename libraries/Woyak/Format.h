@@ -60,7 +60,11 @@ public:
    /// <summary>
    /// Initializes a format by parsing a format pattern and optional alignment.
    /// </summary>
-   /// <param name="format">Pattern containing optional prefix/postfix and # placeholders.</param>
+   /// <param name="format">
+   /// Pattern containing optional prefix/postfix and # placeholders. A leading '+' forces a
+   /// sign to always be shown for positive values; a leading '-' instead just reserves a width
+   /// column for a sign without forcing one (negative values already include their own '-').
+   /// </param>
    /// <param name="alignment">Padding alignment for values shorter than the target length.</param>
    ///
    Format(const char* format, Alignment alignment = Alignment::LEFT)
@@ -75,7 +79,7 @@ public:
       // extract the prefix
       while (str.length() > 0)
       {
-         if (str[0] == '#' || str[0] == '+')
+         if (str[0] == '#' || str[0] == '+' || str[0] == '-')
          {
             break;
          }
@@ -89,6 +93,12 @@ public:
       if (!str.empty() && str[0] == '+')
       {
          _includePlus = true;
+         str.erase(0, 1);
+      }
+      else if (!str.empty() && str[0] == '-')
+      {
+         // Reserves a width column for a possible sign without forcing one to display;
+         // negative values already contribute their own '-' via to_string()/String().
          str.erase(0, 1);
       }
 
@@ -177,10 +187,10 @@ public:
    /// <summary>
    /// Creates a copy of this Format with a different alignment.
    /// </summary>
-   /// <param name="alignment">Alignment to apply to the cloned Format.</param>
+   /// <param name="alignment">Alignment to apply to the copy.</param>
    /// <returns>A copy of this Format with the specified alignment.</returns>
    ///
-   Format clone(Alignment alignment) const
+   Format withAlignment(Alignment alignment) const
    {
       return Format(this, alignment);
    }
@@ -191,6 +201,24 @@ public:
    /// </summary>
    ///
    uint8_t precision() const { return _precision; }
+
+   ///
+   /// <summary>
+   /// Creates a copy of this Format with the given number of decimal digits of precision,
+   /// for higher-resolution display of values like statistics (average, stddev, range).
+   /// </summary>
+   /// <param name="precision">Number of decimal digits the copy should use.</param>
+   /// <returns>A new Format with the specified precision.</returns>
+   ///
+   Format withPrecision(uint8_t precision) const
+   {
+      std::string str = _formatString;
+      size_t pos = str.find_last_of('#');
+      size_t extraDigits = precision > _precision ? (precision - _precision) : 0;
+      std::string insertion = (_precision > 0 ? "" : ".") + std::string(extraDigits, '#');
+      str.insert(pos + 1, insertion);
+      return Format(str.c_str(), _alignment);
+   }
 
    ///
    /// <summary>

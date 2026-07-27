@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <esp_system.h>
+#include "Format.h"
 
 #if !defined ( BOARD_HAS_PIN_REMAP ) && !defined ( digitalPinToGPIONumber )
  #define digitalPinToGPIONumber(pin) (pin)
@@ -48,7 +49,46 @@ class Util
 {
 public:
    /// <summary>
-   /// Converts an ESP32 reset reason code to a human-readable string.
+   /// Returns a random float value that fits within the given format, i.e. one whose
+   /// whole-number digit count doesn't exceed what the format can display (e.g. a
+   /// format of "####.#" returns a value in the range [0, 9999.9]).
+   /// </summary>
+   /// <param name="format">Format describing the target field's length and precision.</param>
+   /// <returns>A random value between 0 and the largest value the format can display.</returns>
+   static float randomValue(const Format& format)
+   {
+      uint32_t scale = 1;
+      for (uint8_t p = 0; p < format.precision(); p++)
+      {
+         scale *= 10;
+      }
+
+      // Whole-number digit count is the format's total length minus its decimal digits
+      // and the decimal point itself (e.g. "####.#" has 4 whole digits).
+      size_t wholeDigits = format.length() - format.precision() - 1;
+      uint32_t maxWhole = 1;
+      for (size_t d = 0; d < wholeDigits; d++)
+      {
+         maxWhole *= 10;
+      }
+
+          return (float)random(0, (long)(maxWhole * scale) - 1) / (float)scale;
+      }
+
+      /// <summary>
+      /// Returns a random float value that fits within the given format string, i.e. one whose
+      /// whole-number digit count doesn't exceed what the format can display (e.g. a
+      /// format of "####.#" returns a value in the range [0, 9999.9]).
+      /// </summary>
+      /// <param name="format">Format string describing the target field's length and precision.</param>
+      /// <returns>A random value between 0 and the largest value the format can display.</returns>
+      static float randomValue(const char* format)
+      {
+         return randomValue(Format(format));
+      }
+
+      /// <summary>
+      /// Converts an ESP32 reset reason code to a human-readable string.
    /// </summary>
    /// <param name="reason">Reset reason to convert; defaults to the current boot's reason</param>
    /// <returns>Human-readable description of the reset reason</returns>

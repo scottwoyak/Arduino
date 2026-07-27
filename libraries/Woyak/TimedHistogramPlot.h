@@ -2,6 +2,7 @@
 
 #include "TimedHistogram.h"
 #include "ArduinoWithDisplay.h"
+#include "IHistogramPlot.h"
 #include "TimedValues.h"
 #include "Util.h"
 
@@ -12,7 +13,7 @@
 /// </summary>
 ///
 template<unsigned long (*TimeFunc)() = millis>
-class TimedHistogramPlotBase
+class TimedHistogramPlotBase : public IHistogramPlot
 {
 private:
    static constexpr int16_t Y_AXIS_LABEL_GAP = 2;
@@ -29,8 +30,9 @@ private:
    float _previousSampleRangeSeconds = NAN;
    float _previousMaxBinCount = -1.0f;
    unsigned long _lastRenderMs = 0;
-   Format _sampleRangeFormat = Format("##.#s", Format::Alignment::CENTER);
-   Format _minMaxFormat = Format("##.##");
+   Color _barColor;
+   Color _axisLabelColor = Color::LABEL;
+   const char* _xAxisFormat;
    Rect16 _rect;
    bool _showYAxis;
    const char* _yAxisFormat;
@@ -160,7 +162,7 @@ private:
        {
          if (barHeight > prevH)
          {
-            _feather->fillRect(chartLeft + x0, chartBottom - barHeight, barWidth, barHeight - prevH, Color::GREEN);
+            _feather->fillRect(chartLeft + x0, chartBottom - barHeight, barWidth, barHeight - prevH, _barColor);
          }
          else
          {
@@ -186,11 +188,11 @@ private:
 
        int16_t topLabelX = chartLeft - Y_AXIS_LABEL_GAP - static_cast<int16_t>(_feather->textWidth(topLabel.c_str()));
        _feather->setCursor(topLabelX, chartTop);
-       _feather->print(topLabel, Color::LABEL);
+       _feather->print(topLabel, _axisLabelColor);
 
        int16_t bottomLabelX = chartLeft - Y_AXIS_LABEL_GAP - static_cast<int16_t>(_feather->textWidth(bottomLabel.c_str()));
        _feather->setCursor(bottomLabelX, chartBottom - _feather->charH());
-       _feather->print(bottomLabel, Color::LABEL);
+       _feather->print(bottomLabel, _axisLabelColor);
 
        _previousMaxBinCount = snapshot.maxBinCount;
      }
@@ -198,14 +200,15 @@ private:
      if (snapshot.minValue != _previousMin || snapshot.maxValue != _previousMax || snapshot.sampleRangeSeconds != _previousSampleRangeSeconds)
      {
        int16_t labelY = chartBottom + 2;
-       int16_t rangeLabelW = static_cast<int16_t>(_sampleRangeFormat.length() * _feather->charW());
+       Format xFmt(_xAxisFormat);
+       int16_t rangeLabelW = static_cast<int16_t>(xFmt.length() * _feather->charW());
        int16_t rangeX = chartLeft + (chartWidth - rangeLabelW) / 2;
 
-       String minLabel = String(_minMaxFormat.toString(snapshot.minValue).c_str());
-       String maxLabel = String(_minMaxFormat.toString(snapshot.maxValue).c_str());
+       String minLabel = String(xFmt.toString(snapshot.minValue).c_str());
+       String maxLabel = String(xFmt.toString(snapshot.maxValue).c_str());
 
        _feather->setCursor(chartLeft, labelY);
-       _feather->print(minLabel, Color::LABEL);
+       _feather->print(minLabel, _axisLabelColor);
 
        // Trim trailing padding so the max label's measured width matches its visible
        // content; otherwise invisible trailing padding (e.g. from a left-aligned format)
@@ -216,12 +219,13 @@ private:
        }
        int16_t maxLabelX = chartLeft + chartWidth - static_cast<int16_t>(_feather->textWidth(maxLabel.c_str()));
        _feather->setCursor(maxLabelX, labelY);
-       _feather->print(maxLabel, Color::LABEL);
+       _feather->print(maxLabel, _axisLabelColor);
 
        if (isfinite(snapshot.sampleRangeSeconds))
        {
+         Format rangeFmt(_xAxisFormat, Format::Alignment::CENTER);
          _feather->setCursor(rangeX, labelY);
-         _feather->print(snapshot.sampleRangeSeconds, _sampleRangeFormat, Color::GRAY);
+         _feather->print(snapshot.sampleRangeSeconds, rangeFmt, Color::GRAY);
        }
 
        _previousMin = snapshot.minValue;
@@ -236,19 +240,23 @@ public:
    ///
    /// <summary>
    /// Constructs a timed histogram plot renderer that draws within the given fixed screen
-   /// rectangle.
+   /// rectangle. The bar color defaults to Color::GREEN and the X-axis min/max label
+   /// format defaults to "##.##" if not specified. Axis label color defaults to
+   /// Color::LABEL; use setAxisLabelColor() to change it.
    /// </summary>
    /// <param name="feather">Pointer to the display interface.</param>
    /// <param name="histogram">Reference to the histogram to render.</param>
    /// <param name="samples">Reference to the timed values sampled into the histogram.</param>
    /// <param name="rect">Fixed screen rectangle this plot draws within; unchanged for the plot's lifetime.</param>
+   /// <param name="xAxisFormat">Format string to use for min/max value labels (default "##.##").</param>
    /// <param name="yAxisFormat">If not nullptr, reserves a left-side Y-axis column sized to
    /// fit labels formatted with this pattern (e.g. "####"), showing the max bin count at
    /// the top and "1" at the bottom (with a vertical axis line); pass nullptr (the
    /// default) for no Y-axis.</param>
+   /// <param name="barColor">Color to use for histogram bars (default Color::GREEN).</param>
    ///
-   TimedHistogramPlotBase(ArduinoWithDisplay* feather, TimedHistogramBase<TimeFunc>& histogram, TimedValuesBase<float, TimeFunc>& samples, Rect16 rect, const char* yAxisFormat = nullptr)
-     : _feather(feather), _histogram(histogram), _samples(samples), _rect(rect), _showYAxis(yAxisFormat != nullptr), _yAxisFormat(yAxisFormat)
+   TimedHistogramPlotBase(ArduinoWithDisplay* feather, TimedHistogramBase<TimeFunc>& histogram, TimedValuesBase<float, TimeFunc>& samples, Rect16 rect, const char* xAxisFormat = "##.##", const char* yAxisFormat = nullptr, Color barColor = Color::GREEN)
+     : _feather(feather), _histogram(histogram), _samples(samples), _barColor(barColor), _xAxisFormat(xAxisFormat), _rect(rect), _showYAxis(yAxisFormat != nullptr), _yAxisFormat(yAxisFormat)
    {}
 
    ///
@@ -263,29 +271,55 @@ public:
 
    ///
    /// <summary>
-   /// Sets the format used to render the sample range (in seconds) label and forces it to
-   /// be redrawn on the next render.
+   /// Sets the format used to render the min/max sample value labels and the sample range
+   /// (in seconds) label, and forces them to be redrawn on the next render.
    /// </summary>
-   /// <param name="format">Format to apply to the sample range label.</param>
+   /// <param name="format">Format string to apply to the min/max value labels and the sample range label.</param>
    ///
-   void setSampleRangeFormat(const Format& format)
+   void setXAxisFormat(const char* format) override
    {
-     _sampleRangeFormat = format;
+     _xAxisFormat = format;
+     _previousMin = NAN;
+     _previousMax = NAN;
      _previousSampleRangeSeconds = NAN;
+   }
+   using IHistogramPlot::setXAxisFormat;
+
+   ///
+   /// <summary>
+   /// Sets the format used to render the Y-axis min/max bin count labels and forces them
+   /// to be redrawn on the next render.
+   /// </summary>
+   /// <param name="format">Format string to apply to the Y-axis labels.</param>
+   ///
+   void setYAxisFormat(const char* format) override
+   {
+     _yAxisFormat = format;
+     _showYAxis = true;
+     _previousMaxBinCount = -1.0f;
+   }
+   using IHistogramPlot::setYAxisFormat;
+
+   ///
+   /// <summary>
+   /// Sets the color used to draw the histogram bars.
+   /// </summary>
+   /// <param name="color">The color to use for histogram bars.</param>
+   ///
+   void setBarColor(Color color) override
+   {
+     _barColor = color;
    }
 
    ///
    /// <summary>
-   /// Sets the format used to render the min/max sample value labels and forces them to
-   /// be redrawn on the next render.
+   /// Sets the color used to draw the Y-axis min/max labels.
    /// </summary>
-   /// <param name="format">Format to apply to the min/max value labels.</param>
+   /// <param name="color">The color to use for axis labels.</param>
    ///
-   void setMinMaxFormat(const Format& format)
+   void setAxisLabelColor(Color color) override
    {
-     _minMaxFormat = format;
-     _previousMin = NAN;
-     _previousMax = NAN;
+     _axisLabelColor = color;
    }
 
    ///
@@ -294,7 +328,7 @@ public:
    /// Call this method repeatedly to update the display as new data arrives.
    /// </summary>
    ///
-   void render()
+   void render() override
    {
      if (!_allocateRenderState())
      {

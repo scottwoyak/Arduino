@@ -31,6 +31,11 @@
 // ----------- The Board
 Arduino arduino;
 
+// ----------- Text Sizes
+constexpr uint8_t HEADER_SIZE = 3;
+constexpr uint8_t VALUE_SIZE = 4;
+constexpr uint8_t FOOTER_SIZE = 2;
+
 // ----------- Sensor
 TempSensor sensor;
 Rate readRate;  // Timer for combined temperature/humidity read performance
@@ -40,9 +45,9 @@ constexpr int16_t VALUE_PADDING_PX = 5;
 Format tempFormat("###.##F");
 Format humFormat("###.#%", Format::Alignment::RIGHT);
 Format rateFormat("####/s", Format::Alignment::RIGHT);
-Format typeAddressFormat(16);
-Format idFormat(16);
-Format correctionFormat("+#.###F");
+constexpr const char* TYPE_ADDRESS_FORMAT = "################";
+constexpr const char* ID_FORMAT = "################";
+constexpr const char* CORRECTION_FORMAT = "+#.###F";
 DisplayTable table(&arduino, 0, 0);
 DisplayValue* rateField = nullptr;
 int16_t headingHeight;
@@ -73,7 +78,7 @@ void setup()
          { "Field", 10 },
          { "Value", 16 },
       };
-      SerialTable serialTable("Temperature Sensor Detected", columns, sizeof(columns) / sizeof(columns[0]));
+      SerialTable serialTable("Temperature Sensor Detected", columns);
       serialTable.printHeader();
       serialTable.printRow("Type", sensor.type());
       serialTable.printRow("ID", sensor.id());
@@ -82,21 +87,21 @@ void setup()
 
    // Draw the heading, then reserve space below it for the large temp/humidity readout
    arduino.clearDisplay();
-   arduino.setTextSize(3);
+   arduino.setTextSize(HEADER_SIZE);
    arduino.setCursor(0, 0);
    arduino.println("Temperature", Color::HEADING);
    headingHeight = arduino.charH();
 
-   arduino.setTextSize(4);
+   arduino.setTextSize(VALUE_SIZE);
    table.setPosition(0, headingHeight + VALUE_PADDING_PX + arduino.charH() + VALUE_PADDING_PX);
-   table.addRow("Type", typeAddressFormat, Color::LABEL, Color::VALUE2);
-   table.addRow("ID", idFormat, Color::LABEL, Color::VALUE2);
-   table.addRow("Correction", correctionFormat, Color::LABEL, Color::VALUE2);
+   table.addRow("Type", TYPE_ADDRESS_FORMAT, Color::LABEL, Color::VALUE2);
+   table.addRow("ID", ID_FORMAT, Color::LABEL, Color::VALUE2);
+   table.addRow("Correction", CORRECTION_FORMAT, Color::LABEL, Color::VALUE2);
 
    // Rate is shown separately in the lower right corner, in gray
-   arduino.setTextSize(2);
-   rateField = new DisplayValue(&arduino, rateFormat, 2, Color::LIGHTGRAY, DisplayValue::Alignment::RIGHT);
-   rateField->setPosition(arduino.width() - rateField->width(), arduino.height() - arduino.charH());
+   arduino.setTextSize(FOOTER_SIZE);
+   rateField = new DisplayValue(&arduino, rateFormat, FOOTER_SIZE, DisplayValue::Alignment::RIGHT);
+   rateField->setPosition(arduino.width(), arduino.height() - arduino.charH());
 }
 
 void loop()
@@ -109,7 +114,7 @@ void loop()
    readRate.stop();
 
    // Draw the large temp/humidity readout above the table
-   arduino.setTextSize(4);
+   arduino.setTextSize(VALUE_SIZE);
    arduino.setCursor(0, headingHeight + VALUE_PADDING_PX);
    arduino.print(temp, tempFormat, Color::VALUE);
    arduino.printlnR(hum, humFormat, Color::VALUE);
@@ -125,7 +130,7 @@ void loop()
       table.setNoValue(2, Color::VALUE2);
    }
 
-   rateField->draw(readRate.get());
+   rateField->draw(readRate.get(), Color::LIGHTGRAY);
 
    table.draw();
 }

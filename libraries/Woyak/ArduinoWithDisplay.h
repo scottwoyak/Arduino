@@ -79,6 +79,19 @@ public:
    ///
    bool echoToSerial = false;
 
+   ///
+   /// <summary>
+   /// Normalizes negative coordinates to be offsets from the display's far edge, e.g.
+   /// a value of -1 becomes display.width()-1 (or display.height()-1 for y).
+   /// </summary>
+   /// <param name="x">X coordinate; negative values offset from the right edge.</param>
+   /// <param name="y">Y coordinate; negative values offset from the bottom edge.</param>
+   ///
+   void normalizeCoords(int16_t& x, int16_t& y)
+   {
+      _normalizeCoords(x, y);
+   }
+
 private:
    uint8_t _textSize = 1;
 
@@ -395,6 +408,43 @@ public:
    {
       _normalizeCoords(x, y);
       display.drawPixel(x, y, (uint16_t)color);
+   }
+
+   ///
+   /// <summary>
+   /// Draws a vertical run of pixels with the specified color, supporting negative coordinates as offsets from the far edge.
+   /// </summary>
+   /// <param name="x">X coordinate; negative values offset from right edge.</param>
+   /// <param name="y">Starting Y coordinate; negative values offset from bottom edge.</param>
+   /// <param name="h">Number of pixels to draw downward from y.</param>
+   /// <param name="color">Line color.</param>
+   ///
+   void drawFastVLine(int16_t x, int16_t y, int16_t h, Color color)
+   {
+      _normalizeCoords(x, y);
+      display.drawFastVLine(x, y, h, (uint16_t)color);
+   }
+
+   ///
+   /// <summary>
+   /// Begins a batched sequence of drawing calls, deferring the underlying transaction
+   /// (e.g. SPI) so multiple draw calls can be sent together instead of one transaction
+   /// each. Must be paired with a matching endWrite() call.
+   /// </summary>
+   ///
+   void startWrite()
+   {
+      display.startWrite();
+   }
+
+   ///
+   /// <summary>
+   /// Ends a batched sequence of drawing calls started with startWrite().
+   /// </summary>
+   ///
+   void endWrite()
+   {
+      display.endWrite();
    }
 
    ///

@@ -55,9 +55,9 @@ constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
 constexpr uint16_t RATE_NUM_SAMPLES = 100;
 Stopwatch sw(false);
 RollingRate rate(RATE_NUM_SAMPLES);
-Format topicFormat(20);
-Format hostFormat(24);
-Format rateFormat("###/s");
+constexpr const char* TOPIC_FORMAT = "                    ";
+constexpr const char* HOST_FORMAT = "                        ";
+constexpr const char* RATE_FORMAT = "###/s";
 DisplayTable table(&arduino, 0, 0);
 
 ///
@@ -128,9 +128,9 @@ void onStarted()
 
    arduino.setTextSize(2);
    table.setPosition(0, arduino.getCursor().y);
-   table.addRow("Topic", topicFormat, Color::LABEL, Color::VALUE);
-   table.addRow("Host", hostFormat, Color::LABEL, Color::VALUE2);
-   table.addRow("Rate", rateFormat, Color::LABEL, Color::VALUE);
+   table.addRow("Topic", TOPIC_FORMAT, Color::LABEL, Color::VALUE);
+   table.addRow("Host", HOST_FORMAT, Color::LABEL, Color::VALUE2);
+   table.addRow("Rate", RATE_FORMAT, Color::LABEL, Color::VALUE);
 
    Url url(client.getUrl().c_str());
    table.setValue(0, client.getTopic(), Color::VALUE);

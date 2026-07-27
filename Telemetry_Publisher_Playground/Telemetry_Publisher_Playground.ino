@@ -81,19 +81,27 @@ Format lastValueFormat("+###.###");
 std::string statusText = "Connecting to WiFi...";
 std::string topicText = TELEMETRY_TOPIC;
 std::string hostText = " ";
-StringDisplayTableCellEditor statusField("Status", &statusText, statusFormat);
-StringDisplayTableCellEditor topicField("Topic", &topicText, topicFormat);
-StringDisplayTableCellEditor hostField("Host", &hostText, hostFormat);
+StringCell statusCell(&statusText, statusFormat);
+StringCell topicCell(&topicText, topicFormat);
+StringCell hostCell(&hostText, hostFormat);
 long testFunctionIndex = 0;
 long lastTestFunctionIndex = 0;
-EnumDisplayTableCellEditor sourceField("Source", &testFunctionIndex,
-   TEST_FUNCTION_LABELS, NUM_TEST_FUNCTIONS, 0, sourceFormat);
-IntDisplayTableCellEditor targetField("Target", &publishRatePerSec,
+EnumCellEditor sourceCell(&testFunctionIndex,
+   TEST_FUNCTION_LABELS, 0, sourceFormat);
+IntCellEditor targetCell(&publishRatePerSec,
    MIN_PUBLISH_RATE_PER_SEC, MAX_PUBLISH_RATE_PER_SEC, PUBLISH_RATE_STEP, DEFAULT_PUBLISH_RATE_PER_SEC, rateFormat);
 float rateValue = 0.0f;
-ReadOnlyDisplayTableCellEditor rateField("Rate", &rateValue, rateFormat);
-DisplayTableCellEditor* statusFields[] = { &statusField, &topicField, &hostField, &sourceField, &targetField, &rateField };
-DisplayTableEditor table(&arduino, PREF_NAMESPACE, statusFields, sizeof(statusFields) / sizeof(statusFields[0]), 0, 0);
+ReadOnlyCell rateCell(&rateValue, rateFormat);
+TableEditorRow statusCells[] =
+{
+   { "Status", &statusCell },
+   { "Topic", &topicCell },
+   { "Host", &hostCell },
+   { "Source", &sourceCell },
+   { "Target", &targetCell },
+   { "Rate", &rateCell },
+};
+DisplayTableEditor table(&arduino, PREF_NAMESPACE, statusCells, 0, 0);
 DisplayField* valueField = nullptr;
 float lastValue = NAN;
 
@@ -194,7 +202,7 @@ void setup()
    int16_t valueWidth = arduino.charW() * lastValueFormat.length();
    int16_t valueX = (arduino.width() - valueWidth) / 2;
    int16_t valueY = valueAreaTop + (valueAreaHeight - arduino.charH()) / 2;
-   valueField = new DisplayField(&arduino, Point16(valueX, valueY), lastValueFormat, Color::VALUE);
+   valueField = new DisplayField(&arduino, Point16(valueX, valueY), lastValueFormat, 5);
    arduino.setTextSize(2);
 
    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -256,6 +264,6 @@ void loop()
 
    if (valueField != nullptr)
    {
-      valueField->draw(lastValue);
+      valueField->draw(lastValue, Color::LABEL, Color::VALUE);
    }
 }

@@ -12,6 +12,7 @@ using Arduino = Feather_M0_OLED;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 2;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 1;
+constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 
 #elif defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
 
@@ -26,6 +27,7 @@ using Arduino = Feather_ESP32_S3;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
+constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 
 #elif defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO)
 
@@ -53,5 +55,6 @@ using Arduino = ESP32_S3_Playground;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
+constexpr uint8_t DEFAULT_CONTENT_SIZE = 3;
 
 #endif

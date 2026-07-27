@@ -3,11 +3,11 @@
 //
 // Continuously samples a mock data source (see DATA_SOURCE_TYPE below) and appends each reading
 // to a ScatterPlotSeries, calling
-// ScatterPlot::render() after every 10th new sample. Because render() recomputes the shared
-// axis range by scanning every point stored in the series on each call, the time per update
-// grows as the series grows, so the achieved update rate falls over the course of the test.
-// The test stops once the rolling update rate drops to STOP_RATE_PER_SEC, or once the sample
-// buffer safety cap is reached, whichever comes first.
+// ScatterPlot::draw() after every 10th new sample. draw() recomputes the shared axis range
+// via ScatterPlotSeries::getRawRange(), which is maintained incrementally in O(1) by add(), so
+// the per-update cost stays roughly flat as the series grows rather than scaling with sample
+// count. The test stops once the rolling update rate drops to STOP_RATE_PER_SEC, or once the
+// sample buffer safety cap is reached, whichever comes first.
 //
 // Serial output prints a final summary (including which stop condition was hit) once the test
 // completes. The display shows a title, a status table on the left (source and live rate) with
@@ -23,17 +23,15 @@
 #include "ESP32_S3_Playground.h"
 #include "DisplayTableCellEditor.h"
 #include "DisplayTableEditor.h"
-#include "IScatterPlot.h"
 #include "RollingRate.h"
 #include "ScatterPlot.h"
 #include "SerialX.h"
 #include "TestSensor.h"
 #include "Timer.h"
-#include "TimedScatterPlot.h"
 #include "Util.h"
 
 // ----------- Test Function Selection
-// The available mock test functions the user can select from at startup via a DisplayEditor.
+// The available mock test functions the user can select from at startup via a DisplayTableEditor.
 constexpr const char* TEST_FUNCTION_LABELS[] = { "Const", "Random", "Normal", "Sin" };
 constexpr size_t NUM_TEST_FUNCTIONS = sizeof(TEST_FUNCTION_LABELS) / sizeof(TEST_FUNCTION_LABELS[0]);
 constexpr const char* PREF_NAMESPACE = "ScatterPlotPg";
@@ -44,23 +42,16 @@ constexpr const char* PREF_NAMESPACE = "ScatterPlotPg";
 constexpr uint8_t PLOT_SIZE_PERCENTS[] = { 100,80, 60, 40,20 };
 constexpr size_t NUM_PLOT_SIZES = sizeof(PLOT_SIZE_PERCENTS) / sizeof(PLOT_SIZE_PERCENTS[0]);
 
-// ----------- Plot Type Selection
-// "Fixed" uses a ScatterPlot, which stops the test once the samples/rate stop conditions
-// below are hit. "Timed" uses a TimedScatterPlot instead, which has no end point: data is
-// continually generated and displayed within a rolling TIMED_HISTORY_S window until buttonB
-// clears it or the source changes. Both are driven through the shared IScatterPlot/
-// IScatterPlotSeries interface (see IScatterPlot.h) so the rest of the sketch doesn't need to
-// know which concrete plot type is active.
-constexpr const char* PLOT_TYPE_LABELS[] = { "Fixed", "Timed" };
-constexpr size_t NUM_PLOT_TYPES = sizeof(PLOT_TYPE_LABELS) / sizeof(PLOT_TYPE_LABELS[0]);
-constexpr unsigned long TIMED_HISTORY_S = 20;
-
 // ----------- Test Parameters
-constexpr float STOP_RATE_PER_SEC = 10.0f; // when the plot slows below this rate, stop collecting samples
 constexpr uint16_t RATE_WINDOW_SAMPLES = 10;
-constexpr size_t MIN_SAMPLES_BEFORE_STOP_CHECK = RATE_WINDOW_SAMPLES * 10;
-constexpr size_t MAX_SAMPLES = 30000; // safety cap in case the rate never reaches STOP_RATE_PER_SEC
 constexpr unsigned long STATUS_DRAW_INTERVAL_MS = 200; // throttles statusTable.draw() during sampling
+
+// ----------- Sample Count Selection
+// Rolling plot capacity, selectable at runtime; X axis spans [1, selected value], scrolling
+// once full. See MaxSamplesCell/maxSamplesIndex below.
+constexpr size_t MAX_SAMPLES_OPTIONS[] = { 500, 1000, 2000, 3000, 5000, 10000 };
+constexpr size_t NUM_MAX_SAMPLES_OPTIONS = sizeof(MAX_SAMPLES_OPTIONS) / sizeof(MAX_SAMPLES_OPTIONS[0]);
+constexpr size_t DEFAULT_MAX_SAMPLES_INDEX = 1; // 1000
 
 // ----------- Display Geometry
 // Matches the ESP32_S3_Playground board's LGX_Hosyond_ST7796 display in landscape orientation.
@@ -84,34 +75,28 @@ ITestSensor* const TEST_FUNCTION_SENSORS[] = { &constantSensor, &randomSensor, &
 ITestSensor* sensor = nullptr;
 
 // ----------- Display Formats
-Format rateFormat("####/s", Format::Alignment::LEFT);
-Format memoryFormat("###.# kb");
-Format xAxisFormat("#####");
-
-Format testFunctionFormat(6);
 long testFunctionIndex = 0;
 long lastTestFunctionIndex = 0;
-EnumDisplayTableCellEditor testFunctionField("Source", &testFunctionIndex,
-   TEST_FUNCTION_LABELS, NUM_TEST_FUNCTIONS, 0, testFunctionFormat);
+EnumCellEditor testFunctionCell(&testFunctionIndex,TEST_FUNCTION_LABELS, 0, "######");
 float rateValue = 0.0f;
-ReadOnlyDisplayTableCellEditor rateField("Rate", &rateValue, rateFormat);
+ReadOnlyCell rateCell(&rateValue, Format("####/s", Format::Alignment::LEFT));
 
 uint32_t startFreeHeapBytes = 0;
 float memoryDeltaKb = 0.0f;
-ReadOnlyDisplayTableCellEditor memoryField("Memory", &memoryDeltaKb, memoryFormat);
+ReadOnlyCell memoryCell(&memoryDeltaKb, "###.# kb");
 
 ///
 /// <summary>
 /// Plot-size-selection field shared by the X Size and Y Size rows. Steps through PLOT_SIZE_PERCENTS
-/// by index (like EnumDisplayTableCellEditor), but formats its label directly from the selected
+/// by index (like EnumCellEditor), but formats its label directly from the selected
 /// percentage instead of a separate parallel string-label array.
 /// </summary>
 ///
-class PlotSizeField : public IntDisplayTableCellEditor
+class PlotSizeCell : public IntCellEditor
 {
 public:
-   PlotSizeField(const char* label, long* value, const Format& format)
-      : IntDisplayTableCellEditor(label, value, 0, (long)NUM_PLOT_SIZES - 1, 1, 0, format)
+   PlotSizeCell(long* value, const char* formatStr)
+      : IntCellEditor(value, 0, (long)NUM_PLOT_SIZES - 1, 1, 0, formatStr)
    {
    }
 
@@ -128,26 +113,43 @@ public:
    }
 };
 
-Format plotSizeFormat("###%", 8);
 long plotXSizeIndex = 0;
 long plotYSizeIndex = 0;
 long lastPlotXSizeIndex = 0;
 long lastPlotYSizeIndex = 0;
-PlotSizeField plotXSizeField("X Size", &plotXSizeIndex, plotSizeFormat);
-PlotSizeField plotYSizeField("Y Size", &plotYSizeIndex, plotSizeFormat);
+PlotSizeCell plotXSizeCell(&plotXSizeIndex, "###%    ");
+PlotSizeCell plotYSizeCell(&plotYSizeIndex, "###%    ");
 
 ///
 /// <summary>
-/// Plot-type-selection field. Switching this field's value swaps the active concrete plot
-/// implementation (ScatterPlot vs TimedScatterPlot) behind the shared IScatterPlot pointer;
-/// see applyPlotType().
+/// Rolling-sample-count-selection field. Steps through MAX_SAMPLES_OPTIONS by index (like
+/// PlotSizeCell), formatting its label directly from the selected sample count.
 /// </summary>
 ///
-Format plotTypeFormat(8);
-long plotTypeIndex = 0;
-long lastPlotTypeIndex = 0;
-EnumDisplayTableCellEditor plotTypeField("Type", &plotTypeIndex,
-   PLOT_TYPE_LABELS, NUM_PLOT_TYPES, 0, plotTypeFormat);
+class MaxSamplesCell : public IntCellEditor
+{
+public:
+   MaxSamplesCell(long* value, const char* formatStr)
+      : IntCellEditor(value, 0, (long)NUM_MAX_SAMPLES_OPTIONS - 1, 1, 0, formatStr)
+   {
+   }
+
+   void adjust(int32_t direction) override
+   {
+      long newValue = (*_value + (direction > 0 ? 1 : -1) + (long)NUM_MAX_SAMPLES_OPTIONS) % (long)NUM_MAX_SAMPLES_OPTIONS;
+      *_value = newValue;
+   }
+
+   std::string valueText() override
+   {
+      long index = constrain(*_value, 0L, (long)(NUM_MAX_SAMPLES_OPTIONS - 1));
+      return _format.toString((double)MAX_SAMPLES_OPTIONS[index]);
+   }
+};
+
+long maxSamplesIndex = DEFAULT_MAX_SAMPLES_INDEX;
+long lastMaxSamplesIndex = DEFAULT_MAX_SAMPLES_INDEX;
+MaxSamplesCell maxSamplesCell(&maxSamplesIndex, "#####   ");
 
 // ----------- Series Display Mode Selection
 // Controls whether the active sample series is drawn as raw points or connected lines.
@@ -162,11 +164,10 @@ constexpr size_t NUM_DISPLAY_MODES = sizeof(DISPLAY_MODE_LABELS) / sizeof(DISPLA
 /// or connected lines are drawn for the active sample series; see applyDisplayMode().
 /// </summary>
 ///
-Format displayModeFormat(8);
 long displayModeIndex = 0;
 long lastDisplayModeIndex = 0;
-EnumDisplayTableCellEditor displayModeField("Display", &displayModeIndex,
-   DISPLAY_MODE_LABELS, NUM_DISPLAY_MODES, 0, displayModeFormat);
+EnumCellEditor displayModeCell(&displayModeIndex,
+   DISPLAY_MODE_LABELS, 0, "########");
 
 // ----------- Stats Overlay Selection
 // Controls which statistical overlays (moving average, moving stddev band) are drawn on top
@@ -182,78 +183,49 @@ constexpr size_t NUM_STATS_MODES = sizeof(STATS_MODE_LABELS) / sizeof(STATS_MODE
 /// applyStatsMode().
 /// </summary>
 ///
-Format statsModeFormat(8);
 long statsModeIndex = 0;
 long lastStatsModeIndex = 0;
-EnumDisplayTableCellEditor statsModeField("Stats", &statsModeIndex,
-   STATS_MODE_LABELS, NUM_STATS_MODES, 0, statsModeFormat);
+EnumCellEditor statsModeCell(&statsModeIndex,
+   STATS_MODE_LABELS, 0, "########");
 
 // ----------- Source-Specific Configuration Fields
 // The Constant source lets the user set its value directly; the Sin source lets the user
-// choose its time source (Clock vs Fixed) and adjust its period. Each source's field array is
+// adjust its period (always fixed-step; see SinPeriodCell). Each source's field array is
 // swapped into statusTable by applyTestFunction() below.
-Format constantValueFormat("####.#");
-FloatDisplayTableCellEditor constantValueField("Value", &constantSensor.value,
+FloatCellEditor constantValueCell(&constantSensor.value,
    TestSensorConfig::CONSTANT_MIN_VALUE, TestSensorConfig::CONSTANT_MAX_VALUE,
-   TestSensorConfig::CONSTANT_STEP, TestSensorConfig::CONSTANT_VALUE, constantValueFormat);
+   TestSensorConfig::CONSTANT_STEP, TestSensorConfig::CONSTANT_VALUE, "####.#");
 
 ///
 /// <summary>
-/// Sin time-source-selection field. Labels are ordered to match SinTestSensor::TIME_SOURCE_CLOCK
-/// (0) and SinTestSensor::TIME_SOURCE_FIXED_STEP (1).
+/// Sin period field that displays whole-number values as a plain sample count with no unit,
+/// since the period doesn't correspond to real elapsed time - it advances by a fixed step per
+/// sample (see SinTestSensor::TIME_SOURCE_FIXED_STEP, the sensor's only sampling mode).
 /// </summary>
 ///
-constexpr const char* SIN_TIME_SOURCE_LABELS[] = { "Clock", "Fixed" };
-constexpr size_t NUM_SIN_TIME_SOURCES = sizeof(SIN_TIME_SOURCE_LABELS) / sizeof(SIN_TIME_SOURCE_LABELS[0]);
-
-Format sinTimeSourceFormat(8);
-EnumDisplayTableCellEditor sinTimeSourceField("Sampling", &sinSensor.timeSource,
-   SIN_TIME_SOURCE_LABELS, NUM_SIN_TIME_SOURCES, SinTestSensor::TIME_SOURCE_FIXED_STEP, sinTimeSourceFormat);
-
-///
-/// <summary>
-/// Sin period field that displays whole-number values with a unit that depends on the
-/// currently selected sampling mode. While Clock, the period is real wall-clock time, so it's
-/// shown in seconds ("s"). While Fixed, the period doesn't correspond to real elapsed time -
-/// it advances by a fixed step per sample - so it's shown as a plain sample count with no unit
-/// instead.
-/// </summary>
-///
-class SinPeriodField : public FloatDisplayTableCellEditor
+class SinPeriodCell : public FloatCellEditor
 {
 public:
-   using FloatDisplayTableCellEditor::FloatDisplayTableCellEditor;
+   using FloatCellEditor::FloatCellEditor;
 
    void adjust(int32_t direction) override
    {
-      if (sinSensor.timeSource == SinTestSensor::TIME_SOURCE_FIXED_STEP)
-      {
-         long samples = lroundf(*_value / TestSensorConfig::SIN_FIXED_STEP_S);
-         samples += direction * TestSensorConfig::SIN_FIXED_PERIOD_STEP_SAMPLES;
-         samples = constrain(samples, TestSensorConfig::SIN_FIXED_MIN_PERIOD_SAMPLES, TestSensorConfig::SIN_FIXED_MAX_PERIOD_SAMPLES);
-         *_value = samples * TestSensorConfig::SIN_FIXED_STEP_S;
-         return;
-      }
-
-      FloatDisplayTableCellEditor::adjust(direction);
+      long samples = lroundf(*_value / TestSensorConfig::SIN_FIXED_STEP_S);
+      samples += direction * TestSensorConfig::SIN_FIXED_PERIOD_STEP_SAMPLES;
+      samples = constrain(samples, TestSensorConfig::SIN_FIXED_MIN_PERIOD_SAMPLES, TestSensorConfig::SIN_FIXED_MAX_PERIOD_SAMPLES);
+      *_value = samples * TestSensorConfig::SIN_FIXED_STEP_S;
    }
 
    std::string valueText() override
    {
-      if (sinSensor.timeSource == SinTestSensor::TIME_SOURCE_FIXED_STEP)
-      {
-         long samples = lroundf(*_value / TestSensorConfig::SIN_FIXED_STEP_S);
-         return _format.toString(String(samples));
-      }
-
-      return _format.toString(String(lroundf(*_value)) + "s");
+      long samples = lroundf(*_value / TestSensorConfig::SIN_FIXED_STEP_S);
+      return _format.toString(String(samples));
    }
 };
 
-Format sinPeriodFormat(8);
-SinPeriodField sinPeriodField("Period", &sinSensor.periodS,
+SinPeriodCell sinPeriodCell(&sinSensor.periodS,
    TestSensorConfig::SIN_MIN_PERIOD_S, TestSensorConfig::SIN_MAX_PERIOD_S,
-   TestSensorConfig::SIN_PERIOD_STEP_S, TestSensorConfig::SIN_PERIOD_S, sinPeriodFormat);
+   TestSensorConfig::SIN_PERIOD_STEP_S, TestSensorConfig::SIN_PERIOD_S, "########");
 
 // ----------- Noise Configuration Fields
 // Shared by every mock test function via MockTestSensorBase::noiseStdDev. The Noise field
@@ -269,11 +241,10 @@ SinPeriodField sinPeriodField("Period", &sinSensor.periodS,
 constexpr const char* NOISE_ENABLED_LABELS[] = { "False", "True" };
 constexpr size_t NUM_NOISE_ENABLED_STATES = sizeof(NOISE_ENABLED_LABELS) / sizeof(NOISE_ENABLED_LABELS[0]);
 
-Format noiseEnabledFormat(8);
 long noiseEnabled = 0;
 long lastNoiseEnabled = 0;
-EnumDisplayTableCellEditor noiseEnabledField("Noise", &noiseEnabled,
-   NOISE_ENABLED_LABELS, NUM_NOISE_ENABLED_STATES, 0, noiseEnabledFormat);
+EnumCellEditor noiseEnabledCell(&noiseEnabled,
+   NOISE_ENABLED_LABELS, 0, "########");
 
 ///
 /// <summary>
@@ -282,10 +253,10 @@ EnumDisplayTableCellEditor noiseEnabledField("Noise", &noiseEnabled,
 /// encoder selection since it has no effect on the active sensor.
 /// </summary>
 ///
-class NoiseStdDevField : public FloatDisplayTableCellEditor
+class NoiseStdDevCell : public FloatCellEditor
 {
 public:
-   using FloatDisplayTableCellEditor::FloatDisplayTableCellEditor;
+   using FloatCellEditor::FloatCellEditor;
 
    bool isEnabled() const override
    {
@@ -293,51 +264,84 @@ public:
    }
 };
 
-Format noiseStdDevFormat("####.#");
 float noiseStdDevValue = TestSensorConfig::NOISE_STDDEV;
 float lastNoiseStdDevValue = TestSensorConfig::NOISE_STDDEV;
-NoiseStdDevField noiseStdDevField("StdDev", &noiseStdDevValue,
+NoiseStdDevCell noiseStdDevCell(&noiseStdDevValue,
    TestSensorConfig::NOISE_MIN_STDDEV, TestSensorConfig::NOISE_MAX_STDDEV,
-   TestSensorConfig::NOISE_STDDEV_STEP, TestSensorConfig::NOISE_STDDEV, noiseStdDevFormat);
+   TestSensorConfig::NOISE_STDDEV_STEP, TestSensorConfig::NOISE_STDDEV, "####.#");
 
 // ----------- Section Headers
-// testFunctionField starts the "Test Function" section (shared by the always-present Source
-// row, the source-specific configuration rows, and the Noise/StdDev rows); plotTypeField
-// starts the "Plot" section; rateField starts the "Measured" section. Only a section's first
-// field needs setSection() - later fields in the same section are drawn without a header.
-// Applied here via immediately-invoked lambdas so the sections are set before any table
-// layout/size queries happen in setup().
-static const bool sectionsInitialized = []()
-{
-   testFunctionField.setSection("Test Function");
-   plotTypeField.setSection("Plot");
-   rateField.setSection("Measured");
-   return true;
-}();
+// The Test Function section is shared by the always-present Source row, the source-specific
+// configuration rows, and the Noise/StdDev rows; the Plot section starts at the plot-size rows;
+// the Measured section starts at the FPS row. Section headers are their own label-only
+// TableEditorRow entries (no cell), rendered above the rows that follow them.
 
-DisplayTableCellEditor* defaultStatusFields[] = { &testFunctionField, &noiseEnabledField, &noiseStdDevField, &plotTypeField, &plotXSizeField, &plotYSizeField, &displayModeField, &statsModeField, &rateField, &memoryField };
-DisplayTableCellEditor* constantStatusFields[] = { &testFunctionField, &constantValueField, &noiseEnabledField, &noiseStdDevField, &plotTypeField, &plotXSizeField, &plotYSizeField, &displayModeField, &statsModeField, &rateField, &memoryField };
-DisplayTableCellEditor* sinStatusFields[] = { &testFunctionField, &sinTimeSourceField, &sinPeriodField, &noiseEnabledField, &noiseStdDevField, &plotTypeField, &plotXSizeField, &plotYSizeField, &displayModeField, &statsModeField, &rateField, &memoryField };
-DisplayTableEditor statusTable(&arduino, PREF_NAMESPACE, defaultStatusFields,
-   sizeof(defaultStatusFields) / sizeof(defaultStatusFields[0]), 0, HEADER_HEIGHT);
+TableEditorRow defaultStatusCells[] =
+{
+   { "Test Function" },
+   { "Source", &testFunctionCell },
+   { "Noise", &noiseEnabledCell },
+   { "StdDev", &noiseStdDevCell },
+   { "Plot" },
+   { "X Size", &plotXSizeCell },
+   { "Y Size", &plotYSizeCell },
+   { "Samples", &maxSamplesCell },
+   { "Display", &displayModeCell },
+   { "Stats", &statsModeCell },
+   { "Measured" },
+   { "FPS", &rateCell },
+   { "Memory", &memoryCell },
+};
+TableEditorRow constantStatusCells[] =
+{
+   { "Test Function" },
+   { "Source", &testFunctionCell },
+   { "Value", &constantValueCell },
+   { "Noise", &noiseEnabledCell },
+   { "StdDev", &noiseStdDevCell },
+   { "Plot" },
+   { "X Size", &plotXSizeCell },
+   { "Y Size", &plotYSizeCell },
+   { "Samples", &maxSamplesCell },
+   { "Display", &displayModeCell },
+   { "Stats", &statsModeCell },
+   { "Measured" },
+   { "FPS", &rateCell },
+   { "Memory", &memoryCell },
+};
+TableEditorRow sinStatusCells[] =
+{
+   { "Test Function" },
+   { "Source", &testFunctionCell },
+   { "Period", &sinPeriodCell },
+   { "Noise", &noiseEnabledCell },
+   { "StdDev", &noiseStdDevCell },
+   { "Plot" },
+   { "X Size", &plotXSizeCell },
+   { "Y Size", &plotYSizeCell },
+   { "Samples", &maxSamplesCell },
+   { "Display", &displayModeCell },
+   { "Stats", &statsModeCell },
+   { "Measured" },
+   { "FPS", &rateCell },
+   { "Memory", &memoryCell },
+};
+DisplayTableEditor statusTable(&arduino, PREF_NAMESPACE, defaultStatusCells,
+   0, HEADER_HEIGHT, 2, DisplayTable::Alignment::RIGHT);
 
 // ----------- Test State
 RollingRate updateRate(RATE_WINDOW_SAMPLES);
 // Allocated in setup(), after startFreeHeapBytes is recorded, so the plot's own memory usage
-// is included in the measured memory delta. Held through the shared IScatterPlot/
-// IScatterPlotSeries interface so either concrete plot type (ScatterPlot or
-// TimedScatterPlot) can be swapped in by applyPlotType() without the rest of the sketch
-// needing to know which one is active.
-IScatterPlot* scatterPlot = nullptr;
+// is included in the measured memory delta. Held through the shared ScatterPlot/
+// IScatterPlotSeries interface, matching recreatePlot()'s single rolling-count series setup.
+ScatterPlot* scatterPlot = nullptr;
 IScatterPlotSeries* sampleSeries = nullptr;
 
 size_t sampleCount = 0;
 bool sensorReady = false;
-bool testComplete = false;
-unsigned long testStartMs = 0;
 
 // Throttles statusTable.draw() (called from updateRateReadout() during sampling) to every
-// STATUS_DRAW_INTERVAL_MS, since redrawing the whole table on every render() is unrelated
+// STATUS_DRAW_INTERVAL_MS, since redrawing the whole table on every draw() is unrelated
 // per-call overhead that would otherwise scale with the sample rate.
 TimerMillis statusDrawTimer(STATUS_DRAW_INTERVAL_MS);
 
@@ -355,15 +359,43 @@ void drawTitle()
 
 ///
 /// <summary>
+/// Gets the combined free heap across both internal SRAM and external PSRAM. On ESP32-S3
+/// boards with PSRAM, ESP.getFreeHeap() alone only reports free internal heap - once an
+/// allocation grows large enough to be satisfied from PSRAM instead of internal SRAM, that
+/// allocation disappears from ESP.getFreeHeap()'s accounting entirely, making memory usage
+/// look like it *decreased* even though it actually grew. Combining both regions gives a
+/// true total memory-used reading regardless of which region backs a given allocation.
+/// </summary>
+/// <returns>Total free heap, in bytes, across internal SRAM and PSRAM.</returns>
+///
+uint32_t getTotalFreeHeap()
+{
+   return ESP.getFreeHeap() + ESP.getFreePsram();
+}
+
+///
+/// <summary>
+/// Recomputes memoryDeltaKb from the current free heap relative to startFreeHeapBytes.
+/// Called immediately after any plot recreation (so the Memory row reflects the new
+/// plot's allocation right away) as well as periodically from updateRateReadout().
+/// </summary>
+///
+void updateMemoryReadout()
+{
+   memoryDeltaKb = (float)((int32_t)startFreeHeapBytes - (int32_t)getTotalFreeHeap()) / 1024.0f;
+}
+
+///
+/// <summary>
 /// Updates the live update-rate row in the status table, redrawing it at most every
 /// STATUS_DRAW_INTERVAL_MS (see statusDrawTimer) so the redraw itself doesn't add overhead
-/// on every sample-driven render() call.
+/// on every sample-driven draw() call.
 /// </summary>
 ///
 void updateRateReadout()
 {
    rateValue = updateRate.get();
-   memoryDeltaKb = (float)((int32_t)startFreeHeapBytes - (int32_t)ESP.getFreeHeap()) / 1024.0f;
+   updateMemoryReadout();
 
    if (statusDrawTimer.ready())
    {
@@ -373,35 +405,7 @@ void updateRateReadout()
 
 ///
 /// <summary>
-/// Stops the test, prints a final summary to serial, and updates the rate readout line on
-/// the display to show the final result.
-/// </summary>
-///
-void finishTest()
-{
-   testComplete = true;
-
-   float finalRate = updateRate.get();
-   float elapsedSeconds = (millis() - testStartMs) / 1000.0f;
-
-   Serial.println();
-   Serial.println("Scatter plot profiler complete");
-   SerialX::print("Total Samples", 20);
-   SerialX::println(sampleCount, 20);
-   SerialX::print("Final Rate", 20);
-   SerialX::println(String(finalRate, 1) + "/s", 20);
-   SerialX::print("Elapsed", 20);
-   SerialX::println(String(elapsedSeconds, 1) + "s", 20);
-
-   arduino.setTextSize(2);
-   rateValue = finalRate;
-   memoryDeltaKb = (float)((int32_t)startFreeHeapBytes - (int32_t)ESP.getFreeHeap()) / 1024.0f;
-   statusTable.draw();
-}
-
-///
-/// <summary>
-/// Computes the scatter plot's rectangle from the currently selected X/Y size percentages
+/// Computes the scatter plot's rectangle
 /// and the status table's current width. The plot area (to the right of the status table)
 /// is only ever partially filled per the selected percentages; the resulting rectangle is
 /// centered within that available area. The letterbox area surrounding the plot rect is only
@@ -429,13 +433,18 @@ Rect16 computePlotRect()
 	static int16_t lastPlotAreaX = -1;
 	static int16_t lastAvailableWidth = -1;
 	static int16_t lastAvailableHeight = -1;
-	bool availableAreaChanged = (plotAreaX != lastPlotAreaX) || (availableWidth != lastAvailableWidth) || (availableHeight != lastAvailableHeight);
+	static uint8_t lastXPercent = 0;
+	static uint8_t lastYPercent = 0;
+	bool availableAreaChanged = (plotAreaX != lastPlotAreaX) || (availableWidth != lastAvailableWidth) || (availableHeight != lastAvailableHeight)
+		|| (xPercent != lastXPercent) || (yPercent != lastYPercent);
 	if (availableAreaChanged)
 	{
 		arduino.fillRect(plotAreaX, HEADER_HEIGHT, availableWidth, availableHeight, PLOT_BACKGROUND_COLOR);
 		lastPlotAreaX = plotAreaX;
 		lastAvailableWidth = availableWidth;
 		lastAvailableHeight = availableHeight;
+		lastXPercent = xPercent;
+		lastYPercent = yPercent;
 	}
 
 	return Rect16{ (uint16_t)plotX, (uint16_t)plotY, (uint16_t)plotWidth, (uint16_t)plotHeight };
@@ -443,12 +452,11 @@ Rect16 computePlotRect()
 
 ///
 /// <summary>
-/// (Re)creates the active plot at its current rectangle (see computePlotRect()), using
-/// either a ScatterPlot ("Fixed" type) or TimedScatterPlot ("Timed" type) as selected by
-/// plotTypeField, and (re)creates its single sample series. Both concrete plot types are
-/// held through the shared IScatterPlot/IScatterPlotSeries interface (see IScatterPlot.h),
-/// so the rest of the sketch (sampling loop, clearPlot(), etc.) doesn't need to know which
-/// one is active. Called whenever the plot type or size changes, and once from setup().
+/// (Re)creates the active plot at its current rectangle (see computePlotRect()), using a
+/// single rolling-count ScatterPlot series of the currently selected sample count (see
+/// MAX_SAMPLES_OPTIONS/ScatterPlot::createRollingSeries()): points fill in from the left and,
+/// once full, the oldest point scrolls off as each new one is added. Called whenever the plot
+/// size or sample count changes, and once from setup().
 /// </summary>
 ///
 void recreatePlot()
@@ -457,30 +465,22 @@ void recreatePlot()
 
 	Rect16 rect = computePlotRect();
 
-	if (plotTypeIndex == 0)
-	{
-		ScatterPlot* fixedPlot = new ScatterPlot(&arduino, rect);
-		fixedPlot->setXAxisFormat(xAxisFormat);
-		ScatterPlotSeries* fixedSeries = fixedPlot->createSeries(MAX_SAMPLES);
-		fixedSeries->movingSampleSize = (float)MAX_SAMPLES / 10.0f;
-		sampleSeries = fixedSeries;
-		scatterPlot = fixedPlot;
-	}
-	else
-	{
-		TimedScatterPlot* timedPlot = new TimedScatterPlot(&arduino, rect, TIMED_HISTORY_S * 1000UL);
-		sampleSeries = timedPlot->createSeries();
-		scatterPlot = timedPlot;
-	}
+	scatterPlot = new ScatterPlot(&arduino, rect, "#####", "##.#");
+
+	size_t maxSamples = MAX_SAMPLES_OPTIONS[constrain(maxSamplesIndex, 0L, (long)(NUM_MAX_SAMPLES_OPTIONS - 1))];
+	ScatterPlotSeries* rollingSeries = scatterPlot->createRollingSeries(maxSamples);
+	rollingSeries->movingSampleSize = (float)maxSamples / 10.0f;
+	sampleSeries = rollingSeries;
 
 	scatterPlot->setColors(PLOT_BACKGROUND_COLOR, PLOT_BACKGROUND_COLOR, Color::GRAY, Color::LABEL);
+	scatterPlot->setYAxisMode(ScatterPlot::AxisMode::GROW_ONLY);
 
 	applyDisplayMode();
 	applyStatsMode();
 
 	if (sensor != nullptr)
 	{
-		scatterPlot->setYAxisFormat(*sensor->getFormat());
+		scatterPlot->setYAxisFormat(sensor->getFormatStr());
 	}
 }
 
@@ -546,15 +546,15 @@ void selectTestFunction()
 
 	if (sensor == &constantSensor)
 	{
-		statusTable.setFields(constantStatusFields, sizeof(constantStatusFields) / sizeof(constantStatusFields[0]));
+		statusTable.setFields(constantStatusCells);
 	}
 	else if (sensor == &sinSensor)
 	{
-		statusTable.setFields(sinStatusFields, sizeof(sinStatusFields) / sizeof(sinStatusFields[0]));
+		statusTable.setFields(sinStatusCells);
 	}
 	else
 	{
-		statusTable.setFields(defaultStatusFields, sizeof(defaultStatusFields) / sizeof(defaultStatusFields[0]));
+		statusTable.setFields(defaultStatusCells);
 	}
 	statusTable.load();
 }
@@ -562,10 +562,10 @@ void selectTestFunction()
 ///
 /// <summary>
 /// Switches the active sensor to the currently selected test function and recreates the plot
-/// (which also resets sample count, series data, update rate, and completion status) so the
-/// plot starts a fresh run. Called both at startup and whenever the live test function field
-/// changes. Also swaps in the source-specific configuration rows (e.g. Value for Constant,
-/// Sampling and Period for Sin) alongside the always-present Source and Rate rows.
+/// (which also resets sample count, series data, and update rate) so the plot starts a fresh
+/// run. Called both at startup and whenever the live test function field changes. Also swaps
+/// in the source-specific configuration rows (e.g. Value for Constant, Sampling and Period
+/// for Sin) alongside the always-present Source and Rate rows.
 /// </summary>
 ///
 void applyTestFunction()
@@ -574,10 +574,10 @@ void applyTestFunction()
 	recreatePlot();
 
 	sampleCount = 0;
-	testComplete = false;
 	updateRate.reset();
 
 	rateValue = updateRate.get();
+	updateMemoryReadout();
 	arduino.setTextSize(2);
 	statusTable.draw();
 
@@ -589,8 +589,6 @@ void applyTestFunction()
 		Serial.println("Error: sensor initialization failed");
 		return;
 	}
-
-	testStartMs = millis();
 }
 
 ///
@@ -603,7 +601,6 @@ void clearPlot()
 {
 	sampleSeries->clear();
 	sampleCount = 0;
-	testComplete = false;
 	updateRate.reset();
 
 	scatterPlot->clear();
@@ -611,8 +608,6 @@ void clearPlot()
 	rateValue = updateRate.get();
 	arduino.setTextSize(2);
 	statusTable.draw();
-
-	testStartMs = millis();
 }
 
 void setup()
@@ -630,13 +625,27 @@ void setup()
 	// which depends on the currently active text size.
 	arduino.setTextSize(2);
 
-	startFreeHeapBytes = ESP.getFreeHeap();
+	startFreeHeapBytes = getTotalFreeHeap();
 
 	// applyTestFunction() selects the sensor and its field set (which determines the status
 	// table's width) before recreating the plot, so computePlotRect() sizes the plot
 	// correctly from the very first frame (e.g. a 100% width plot isn't sized against the
 	// wrong table width at startup).
 	applyTestFunction();
+
+	// statusTable.load() (called from applyTestFunction() -> selectTestFunction()) may have
+	// restored persisted values that differ from these compile-time defaults. Re-sync the
+	// change-tracking variables to the now-current values so the first encoder turn (which
+	// only moves the selection highlight via selectNext(), not a value via adjust()) doesn't
+	// spuriously look like a value change and trigger an unwanted recreatePlot()/applyTestFunction().
+	lastTestFunctionIndex = testFunctionIndex;
+	lastPlotXSizeIndex = plotXSizeIndex;
+	lastPlotYSizeIndex = plotYSizeIndex;
+	lastMaxSamplesIndex = maxSamplesIndex;
+	lastNoiseEnabled = noiseEnabled;
+	lastNoiseStdDevValue = noiseStdDevValue;
+	lastDisplayModeIndex = displayModeIndex;
+	lastStatsModeIndex = statsModeIndex;
 
 	// Discard any spurious position change accumulated on the encoders while pins were
 	// settling during begin()/applyTestFunction(), so the first real turn moves the selection
@@ -672,26 +681,17 @@ void loop()
 			lastTestFunctionIndex = testFunctionIndex;
 			applyTestFunction();
 		}
-		else if (plotTypeIndex != lastPlotTypeIndex)
-		{
-			lastPlotTypeIndex = plotTypeIndex;
-			recreatePlot();
-			sampleCount = 0;
-			testComplete = false;
-			updateRate.reset();
-			testStartMs = millis();
-			statusTable.draw();
-		}
-		else if (plotXSizeIndex != lastPlotXSizeIndex || plotYSizeIndex != lastPlotYSizeIndex)
+		else if (plotXSizeIndex != lastPlotXSizeIndex || plotYSizeIndex != lastPlotYSizeIndex || maxSamplesIndex != lastMaxSamplesIndex)
 		{
 			lastPlotXSizeIndex = plotXSizeIndex;
 			lastPlotYSizeIndex = plotYSizeIndex;
+			lastMaxSamplesIndex = maxSamplesIndex;
 			recreatePlot();
 			sampleSeries->clear();
 			sampleCount = 0;
-			testComplete = false;
 			updateRate.reset();
-			testStartMs = millis();
+			rateValue = updateRate.get();
+			updateMemoryReadout();
 			statusTable.draw();
 		}
 		else if (noiseEnabled != lastNoiseEnabled || noiseStdDevValue != lastNoiseStdDevValue)
@@ -706,7 +706,7 @@ void loop()
 			lastDisplayModeIndex = displayModeIndex;
 			applyDisplayMode();
 			scatterPlot->invalidate();
-			scatterPlot->render();
+			scatterPlot->draw();
 			statusTable.draw();
 		}
 		else if (statsModeIndex != lastStatsModeIndex)
@@ -714,7 +714,7 @@ void loop()
 			lastStatsModeIndex = statsModeIndex;
 			applyStatsMode();
 			scatterPlot->invalidate();
-			scatterPlot->render();
+			scatterPlot->draw();
 			statusTable.draw();
 		}
 		else
@@ -723,7 +723,7 @@ void loop()
 		}
 	}
 
-	if (!sensorReady || testComplete)
+	if (!sensorReady)
 	{
 		return;
 	}
@@ -734,33 +734,13 @@ void loop()
 		return;
 	}
 
-	bool isTimed = (plotTypeIndex != 0);
-
-	if (isTimed || sampleCount < MAX_SAMPLES)
-	{
-		sampleSeries->add(value);
-		sampleCount++;
-	}
+	sampleSeries->add(value);
+	sampleCount++;
 
 	if ((sampleCount % 10) == 0)
 	{
 		updateRate.tick();
-		scatterPlot->render();
+		scatterPlot->draw();
 		updateRateReadout();
-	}
-
-	if (isTimed)
-	{
-		return;
-	}
-
-	bool rateBelowStop = (sampleCount >= MIN_SAMPLES_BEFORE_STOP_CHECK) && (updateRate.get() <= STOP_RATE_PER_SEC);
-	if (rateBelowStop)
-	{
-		finishTest();
-	}
-	else if (sampleCount >= MAX_SAMPLES)
-	{
-		finishTest();
 	}
 }

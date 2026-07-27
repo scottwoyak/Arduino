@@ -25,7 +25,8 @@
 #include "TimedHistogram.h"
 #include "TimedHistogramPlot.h"
 #include "TimedRate.h"
-#include "TimedScatterPlot.h"
+#include "ScatterPlot.h"
+#include "SerialX.h"
 #include "TimedStats.h"
 #include "TimedValues.h"
 #include "Timer.h"
@@ -73,16 +74,16 @@ constexpr uint16_t HISTOGRAM_BIN_COUNT = 40;
 constexpr float SENSOR_VALUE_RESOLUTION_F = 0.0049f;
 Timer displayTimer(1000UL / DISPLAY_RATE_PER_SEC);
 Format rateFormat("####/s", Format::Alignment::RIGHT);
-Format countFormat("######");
-Format sampleTimeFormat("#### ms");
-Format stdDevPercentFormat("##.##%", 7);
-DisplayTable noiseTable(&arduino, CONTENT_RECT.x, CONTENT_RECT.y, 2);
+constexpr const char* COUNT_FORMAT = "######";
+constexpr const char* SAMPLE_TIME_FORMAT = "#### ms";
+constexpr const char* STDDEV_PERCENT_FORMAT = "##.##%";
+DisplayTable noiseTable(&arduino, 0, 0, 3);
 DisplayField* targetRateField = nullptr;
 DisplayField* actualRateField = nullptr;
-TimedScatterPlot scatterPlot(&arduino, CONTENT_RECT, SCATTER_HISTORY_PERIOD_S * 1000UL, 0.0f);
+ScatterPlot scatterPlot(&arduino, CONTENT_RECT, "##.#s", sensor.getFormatStr());
 TimedScatterPlotSeries* scatterSeries = nullptr;
 TimedHistogram histogram(HISTOGRAM_BIN_COUNT, HISTOGRAM_HISTORY_PERIOD_S * 1000UL, SENSOR_VALUE_RESOLUTION_F);
-TimedHistogramPlot histogramPlot(&arduino, histogram, samples, CONTENT_RECT, "###");
+TimedHistogramPlot histogramPlot(&arduino, histogram, samples, CONTENT_RECT, sensor.getFormatStr().c_str());
 
 enum class DisplayMode : uint8_t
 {
@@ -121,8 +122,8 @@ void drawHeader()
    arduino.println("Sensor Noise", Color::HEADING);
 
    arduino.setTextSize(2);
-   arduino.print("Sensor Type: ", Color::GRAY);
-   arduino.println(sensor.sensorType(), Color::GRAY);
+   arduino.print("Sensor Type: ", Color::SUB_HEADING);
+   arduino.println(sensor.sensorType(), Color::SUB_HEADING);
 
    if (displayModeSelector.value() == DisplayMode::RateOnly)
    {
@@ -152,7 +153,7 @@ void renderTableView()
    float sdPercent = (isfinite(avg) && (fabsf(avg) > 0.0f) && isfinite(sd)) ? ((sd / fabsf(avg)) * 100.0f) : NAN;
 
    noiseTable.setValue(0, NOISE_HISTORY_S * 1000UL);
-   noiseTable.setValue(1, count);
+   noiseTable.setValue(1, (double)count);
 
    if (count == 0 || !isfinite(avg))
    {
@@ -195,34 +196,38 @@ void applySampleRateLimits()
 
 void setup()
 {
+   SerialX::begin();
    Wire.begin();
    arduino.begin();
 
    applySampleRateLimits();
 
-   scatterSeries = scatterPlot.createSeries(0);
+   scatterSeries = scatterPlot.createTimedSeries(SCATTER_HISTORY_PERIOD_S * 1000UL, CONTENT_RECT.width);
    scatterSeries->showMovingAverage = true;
    scatterSeries->showStdDevBand = true;
-   scatterPlot.setMinMaxFormat(*sensor.getFormat());
-   histogramPlot.setMinMaxFormat(*sensor.getFormat());
+   scatterPlot.setShowXMinMaxValue(false);
+   scatterPlot.setShowXRangeValue(true);
 
-   noiseTable.addRow("Sampling Time", sampleTimeFormat, Color::LABEL, Color::VALUE2);
-   noiseTable.addRow("Num Samples Collected", countFormat, Color::LABEL, Color::VALUE2);
-   noiseTable.addRow("Avg", *sensor.getHighResFormat(), Color::LABEL, Color::VALUE2);
-   noiseTable.addRow("Range", *sensor.getHighResFormat(), Color::LABEL, Color::VALUE2);
-   noiseTable.addRow("StdDev", *sensor.getHighResFormat(), Color::LABEL, Color::VALUE2);
-   noiseTable.addRow("StdDev%", stdDevPercentFormat, Color::LABEL, Color::VALUE2);
+   noiseTable.addRow("Sampling Time", SAMPLE_TIME_FORMAT);
+   noiseTable.addRow("Num Samples Collected", COUNT_FORMAT);
+   noiseTable.addRow("Avg", sensor.getHighResFormatStr());
+   noiseTable.addRow("Range", sensor.getHighResFormatStr());
+   noiseTable.addRow("StdDev", sensor.getHighResFormatStr());
+   noiseTable.addRow("StdDev%", STDDEV_PERCENT_FORMAT);
+
+   Point16 contentCenter(CONTENT_RECT.x + CONTENT_RECT.width / 2, CONTENT_RECT.y + CONTENT_RECT.height / 2);
+   noiseTable.setPosition(contentCenter, DisplayTable::Anchor::CENTER);
 
    arduino.setTextSize(2);
    std::string label = "Target Sampling Rate";
    int x = arduino.display.width() - (label.length() + 2  + rateFormat.length()) * arduino.charW();
    Point16 targetRatePos(x, 0);
-   targetRateField = new DisplayField(&arduino, targetRatePos, label.c_str(), rateFormat);
+   targetRateField = new DisplayField(&arduino, targetRatePos, label.c_str(), rateFormat, 2);
 
    label = "Actual Rate";
    x = arduino.display.width() - (label.length() + 2  +  rateFormat.length()) * arduino.charW();
    Point16 actualRatePos(x, arduino.charH());
-   actualRateField = new DisplayField(&arduino, actualRatePos, label.c_str(), rateFormat);
+   actualRateField = new DisplayField(&arduino, actualRatePos, label.c_str(), rateFormat, 2);
 
    sensor.begin();
    sensor.get();
@@ -287,7 +292,7 @@ void loop()
    switch (displayModeSelector.value())
    {
    case DisplayMode::Scatter:
-      scatterPlot.render();
+      scatterPlot.draw();
       break;
 
    case DisplayMode::Histogram:

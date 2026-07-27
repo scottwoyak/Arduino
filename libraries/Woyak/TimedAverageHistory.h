@@ -76,7 +76,7 @@ public:
    ///
    TimedAverageHistoryBase(unsigned long durationMs, size_t numBins)
       : _numBins((numBins == 0) ? 1 : numBins),
-        _binDurationMs(max(1UL, durationMs / ((numBins == 0) ? 1 : numBins)))
+        _binDurationMs(max(1UL, (durationMs + _numBins / 2) / _numBins))
    {
       _binSums = new (std::nothrow) float[_numBins];
       _binCounts = new (std::nothrow) uint32_t[_numBins];

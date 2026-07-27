@@ -29,11 +29,11 @@ constexpr uint8_t NUM_VALUES = 5;
 float values[NUM_VALUES] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 uint8_t selectedIndex = 0;
 
-DisplayValue topLeftValue(&arduino, valueFormat, FIELD_TEXT_SIZE, Color::VALUE, DisplayValue::Alignment::LEFT);
-DisplayValue topRightValue(&arduino, valueFormat, FIELD_TEXT_SIZE, Color::VALUE, DisplayValue::Alignment::RIGHT);
-DisplayValue bottomRightValue(&arduino, valueFormat, FIELD_TEXT_SIZE, Color::VALUE, DisplayValue::Alignment::RIGHT);
-DisplayValue bottomLeftValue(&arduino, valueFormat, FIELD_TEXT_SIZE, Color::VALUE, DisplayValue::Alignment::LEFT);
-DisplayValue centerValue(&arduino, valueFormat, FIELD_TEXT_SIZE, Color::VALUE, DisplayValue::Alignment::DECIMAL);
+DisplayValue topLeftValue(&arduino, valueFormat, FIELD_TEXT_SIZE, DisplayValue::Alignment::LEFT);
+DisplayValue topRightValue(&arduino, valueFormat, FIELD_TEXT_SIZE, DisplayValue::Alignment::RIGHT);
+DisplayValue bottomRightValue(&arduino, valueFormat, FIELD_TEXT_SIZE, DisplayValue::Alignment::RIGHT);
+DisplayValue bottomLeftValue(&arduino, valueFormat, FIELD_TEXT_SIZE, DisplayValue::Alignment::LEFT);
+DisplayValue centerValue(&arduino, valueFormat, FIELD_TEXT_SIZE, DisplayValue::Alignment::DECIMAL);
 
 // Selection rotation order: top-left, top-right, bottom-right, bottom-left, center
 DisplayValue* displayValues[NUM_VALUES] =
@@ -72,39 +72,27 @@ void positionValues()
    topLeftValue.setPosition(0, headerHeight);
    bottomLeftValue.setPosition(0, bottomY);
 
-   int16_t rightX = arduino.width() - topLeftValue.width();
+   int16_t rightX = arduino.width();
    topRightValue.setPosition(rightX, headerHeight);
    bottomRightValue.setPosition(rightX, bottomY);
 
-   int16_t centerX = (int16_t)(arduino.center().x - topLeftValue.width() / 2);
+   int16_t centerX = arduino.center().x;
    int16_t centerY = (int16_t)(arduino.center().y - arduino.charH() / 2);
    centerValue.setPosition(centerX, centerY);
 }
 
 ///
 /// <summary>
-/// Sets the selected value's background to blue and all others back to black.
-/// </summary>
-///
-void updateSelection()
-{
-   for (uint8_t i = 0; i < NUM_VALUES; i++)
-   {
-      Color backgroundColor = (i == selectedIndex) ? Color::BLUE : Color::BLACK;
-      displayValues[i]->setBackgroundColor(backgroundColor);
-   }
-}
-
-///
-/// <summary>
-/// Redraws all five values with their own current values.
+/// Redraws all five values with their own current values, highlighting the selected
+/// value's background in blue.
 /// </summary>
 ///
 void updateValues()
 {
    for (uint8_t i = 0; i < NUM_VALUES; i++)
    {
-      displayValues[i]->draw(values[i]);
+      Color backgroundColor = (i == selectedIndex) ? Color::BLUE : Color::BLACK;
+      displayValues[i]->draw(values[i], Color::VALUE, backgroundColor);
    }
 }
 
@@ -119,7 +107,6 @@ void setup()
 
    drawHeader();
    positionValues();
-   updateSelection();
 }
 
 void loop()
@@ -128,7 +115,6 @@ void loop()
    {
       int32_t selectDelta = arduino.encoderA.delta();
       selectedIndex = (selectedIndex + NUM_VALUES + selectDelta) % NUM_VALUES;
-      updateSelection();
    }
 
    if (arduino.encoderB.hasChanged())

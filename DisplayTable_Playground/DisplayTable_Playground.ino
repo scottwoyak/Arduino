@@ -1,6 +1,6 @@
 //
 // Demonstrates the DisplayTable family of classes: DisplayTable, DisplayTableEditor,
-// DisplayTableCellEditor, and DisplayField.
+// CellEditor.
 //
 // Button A / Button B advance / reverse through the available demos. Within a demo,
 // Encoder A / Encoder B perform demo-specific actions (e.g. selecting and adjusting a
@@ -13,13 +13,13 @@
 // 3) Table Editor  - a DisplayTableEditor with mixed editable/read-only fields, showing
 //                    selection (Encoder A), adjustment (Encoder B), and Preferences
 //                    persistence (Encoder B's button resets to defaults).
-// 4) Fields        - standalone DisplayField instances with different alignments.
+// 4) Tables        - five standalone DisplayTable instances positioned at the corners
+//                    and center of the display.
 //
 
 #include <Wire.h>
 
 #include "ESP32_S3_Playground.h"
-#include "DisplayField.h"
 #include "SerialX.h"
 #include "DisplayTable.h"
 #include "DisplayTableCellEditor.h"
@@ -42,7 +42,7 @@ int16_t contentY = 0;
 int16_t instructionsY = 0;
 
 // ----------- Demo Selection
-enum class Demo : uint8_t { LiveTable, Sections, TableEditor, Fields };
+enum class Demo : uint8_t { LiveTable, Sections, TableEditor, Tables };
 constexpr uint8_t NUM_DEMOS = 4;
 
 struct DemoInfo
@@ -56,15 +56,15 @@ constexpr DemoInfo DEMOS[NUM_DEMOS] =
    { "Live Table", "EncoderA: rate  EncoderB: amplitude" },
    { "Sections", "EncoderA: select row  EncoderB: unused" },
    { "Table Editor", "EncoderA: select field  EncoderB: adjust  EncoderB button: reset" },
-   { "Fields", "EncoderA: counter  EncoderB: temperature" },
+   { "Tables", "EncoderA: select table  EncoderB: adjust value" },
 };
 
 Demo currentDemo = Demo::LiveTable;
 
 // ----------- Demo 1: Live Table (plain read-only rows)
-Format liveRateFormat("###/s");
-Format liveAmplitudeFormat("##.#");
-Format liveWaveFormat("+##.##");
+constexpr const char* LIVE_RATE_FORMAT = "###/s";
+constexpr const char* LIVE_AMPLITUDE_FORMAT = "##.#";
+constexpr const char* LIVE_WAVE_FORMAT = "+##.##";
 DisplayTable* liveTable = nullptr;
 long liveRate = 10;
 long liveAmplitude = 5;
@@ -75,18 +75,13 @@ constexpr long LIVE_AMPLITUDE_MAX = 20;
 constexpr float LIVE_WAVE_PERIOD_SCALE = 20.0f;
 
 // ----------- Demo 2: Sections (section headers + highlight cycling)
-Format sectionValueFormat("####");
+constexpr const char* SECTION_VALUE_FORMAT = "####";
 DisplayTable* sectionsTable = nullptr;
 constexpr uint8_t NUM_SECTION_ROWS = 4;
 uint8_t sectionsSelectedRow = 0;
 long sectionValues[NUM_SECTION_ROWS] = { 1, 2, 3, 4 };
 
 // ----------- Demo 3: Table Editor (mixed editable/read-only fields)
-Format editorRateFormat("###/s");
-Format editorModeFormat("######");
-Format editorGainFormat("##.##");
-Format editorLiveFormat("#####");
-
 long editorRate = 10;
 long editorMode = 0;
 float editorGain = 1.0f;
@@ -103,25 +98,35 @@ constexpr float EDITOR_GAIN_DEFAULT = 1.0f;
 
 const char* const editorModeLabels[] = { "Manual", "Auto", "Timed" };
 
-IntDisplayTableCellEditor editorRateField("Rate", &editorRate,
-   EDITOR_RATE_MIN, EDITOR_RATE_MAX, EDITOR_RATE_STEP, EDITOR_RATE_DEFAULT, editorRateFormat);
-EnumDisplayTableCellEditor editorModeField("Mode", &editorMode,
-   editorModeLabels, ARRAY_SIZE(editorModeLabels), 0, editorModeFormat);
-FloatDisplayTableCellEditor editorGainField("Gain", &editorGain,
-   EDITOR_GAIN_MIN, EDITOR_GAIN_MAX, EDITOR_GAIN_STEP, EDITOR_GAIN_DEFAULT, editorGainFormat);
-ReadOnlyDisplayTableCellEditor editorLiveField("Live", &editorLiveValue, editorLiveFormat);
+IntCellEditor editorRateCell(&editorRate,
+   EDITOR_RATE_MIN, EDITOR_RATE_MAX, EDITOR_RATE_STEP, EDITOR_RATE_DEFAULT, "###/s");
+EnumCellEditor editorModeCell(&editorMode,
+   editorModeLabels, 0, "######");
+FloatCellEditor editorGainCell(&editorGain,
+   EDITOR_GAIN_MIN, EDITOR_GAIN_MAX, EDITOR_GAIN_STEP, EDITOR_GAIN_DEFAULT, "##.##");
+ReadOnlyCell editorLiveCell(&editorLiveValue, "#####");
 
-DisplayTableCellEditor* editorFields[] = { &editorRateField, &editorModeField, &editorGainField, &editorLiveField };
+TableEditorRow editorCells[] = { { "Settings" }, { "Rate", &editorRateCell }, { "Mode", &editorModeCell }, { "Gain", &editorGainCell }, { "Measured" }, { "Live", &editorLiveCell } };
 DisplayTableEditor* editorTable = nullptr;
 
-// ----------- Demo 4: Fields (standalone DisplayField instances)
-Format fieldCounterFormat("#####");
-Format fieldTempFormat("##.# F");
-DisplayField* counterField = nullptr;
-DisplayField* temperatureField = nullptr;
-long fieldCounter = 0;
-float fieldTemperature = 72.0f;
-constexpr float FIELD_TEMP_STEP_F = 0.5f;
+// ----------- Demo 4: Tables (standalone DisplayTable instances at the corners/center)
+constexpr const char* TABLES_VALUE_FORMAT = "##.#";
+constexpr uint8_t NUM_TABLES = 5;
+constexpr float TABLES_VALUE_STEP = 0.1f;
+float tablesValues[NUM_TABLES] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+uint8_t tablesSelectedIndex = 0;
+
+DisplayTable topLeftTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
+DisplayTable topRightTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
+DisplayTable bottomRightTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
+DisplayTable bottomLeftTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
+DisplayTable centerTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
+
+// Selection rotation order: top-left, top-right, bottom-right, bottom-left, center
+DisplayTable* tables[NUM_TABLES] =
+{
+   &topLeftTable, &topRightTable, &bottomRightTable, &bottomLeftTable, &centerTable
+};
 
 ///
 /// <summary>
@@ -164,12 +169,6 @@ void teardownDemos()
 
    delete editorTable;
    editorTable = nullptr;
-
-   delete counterField;
-   counterField = nullptr;
-
-   delete temperatureField;
-   temperatureField = nullptr;
 }
 
 ///
@@ -180,9 +179,14 @@ void teardownDemos()
 void enterLiveTable()
 {
    liveTable = new DisplayTable(&arduino, 0, contentY, CONTENT_TEXT_SIZE);
-   liveTable->addRow("Rate", liveRateFormat);
-   liveTable->addRow("Amplitude", liveAmplitudeFormat);
-   liveTable->addRow("Wave", liveWaveFormat);
+   liveTable->addRow("Rate", LIVE_RATE_FORMAT);
+   liveTable->addRow("Amplitude", LIVE_AMPLITUDE_FORMAT);
+   liveTable->addRow("Wave", LIVE_WAVE_FORMAT);
+
+   for (uint8_t i = 0; i < 3; i++)
+   {
+      liveTable->setValueBackgroundColor(i, Color::DARKGRAY);
+   }
 }
 
 ///
@@ -231,12 +235,12 @@ void handleLiveTableInput()
 void enterSections()
 {
    sectionsTable = new DisplayTable(&arduino, 0, contentY, CONTENT_TEXT_SIZE);
-   sectionsTable->addRow("Row A", sectionValueFormat);
-   sectionsTable->addRow("Row B", sectionValueFormat);
+   sectionsTable->addRow("Row A", SECTION_VALUE_FORMAT);
+   sectionsTable->addRow("Row B", SECTION_VALUE_FORMAT);
    sectionsTable->setSection(0, "Group 1");
 
-   sectionsTable->addRow("Row C", sectionValueFormat);
-   sectionsTable->addRow("Row D", sectionValueFormat);
+   sectionsTable->addRow("Row C", SECTION_VALUE_FORMAT);
+   sectionsTable->addRow("Row D", SECTION_VALUE_FORMAT);
    sectionsTable->setSection(2, "Group 2");
 
    sectionsSelectedRow = 0;
@@ -252,7 +256,7 @@ void updateSections()
    for (uint8_t i = 0; i < NUM_SECTION_ROWS; i++)
    {
       sectionsTable->setValue(i, (double)sectionValues[i]);
-      sectionsTable->setValueBackgroundColor(i, (i == sectionsSelectedRow) ? Color::BLUE : Color::BLACK);
+      sectionsTable->setValueBackgroundColor(i, (i == sectionsSelectedRow) ? Color::BLUE : Color::DARKGRAY);
    }
    sectionsTable->draw();
 }
@@ -279,10 +283,7 @@ void handleSectionsInput()
 ///
 void enterTableEditor()
 {
-   editorRateField.setSection("Settings");
-   editorLiveField.setSection("Measured");
-
-   editorTable = new DisplayTableEditor(&arduino, PREF_NAMESPACE, editorFields, ARRAY_SIZE(editorFields), 0, contentY);
+   editorTable = new DisplayTableEditor(&arduino, PREF_NAMESPACE, editorCells, ARRAY_SIZE(editorCells), 0, contentY);
    editorTable->load();
 }
 
@@ -322,41 +323,74 @@ void handleTableEditorInput()
 
 ///
 /// <summary>
-/// Builds the Fields demo's standalone DisplayField instances at the shared content
-/// position.
+/// Builds the Tables demo's five standalone DisplayTable instances, each with a single
+/// row, and positions them at the top-left, top-right, bottom-right, bottom-left, and
+/// center of the display.
 /// </summary>
 ///
-void enterFields()
+void enterTables()
 {
-   counterField = new DisplayField(&arduino, Point16(0, contentY), "Counter", fieldCounterFormat);
-   temperatureField = new DisplayField(&arduino, Point16(0, (int16_t)(contentY + arduino.charH())),
-      "Temperature", fieldTempFormat, Color::LABEL, Color::VALUE, Format::Alignment::LEFT);
-}
-
-///
-/// <summary>
-/// Redraws the Fields demo's counter and temperature values.
-/// </summary>
-///
-void updateFields()
-{
-   counterField->draw(fieldCounter);
-   temperatureField->draw(fieldTemperature);
-}
-
-///
-/// <summary>
-/// Applies Encoder A/B input to the Fields demo's counter and temperature values.
-/// </summary>
-///
-void handleFieldsInput()
-{
-   fieldCounter += arduino.encoderA.delta();
-
-   int32_t tempDelta = arduino.encoderB.delta();
-   if (tempDelta != 0)
+   for (uint8_t i = 0; i < NUM_TABLES; i++)
    {
-      fieldTemperature += (float)tempDelta * FIELD_TEMP_STEP_F;
+      tables[i]->clearRows();
+      tables[i]->addRow("Val", TABLES_VALUE_FORMAT);
+      tables[i]->setShowSections(false);
+   }
+
+   int16_t tableHeight = tables[0]->getRect().height;
+
+   topLeftTable.setPosition(0, contentY);
+   bottomLeftTable.setPosition(0, (int16_t)(arduino.height() - arduino.charH(INSTRUCTIONS_TEXT_SIZE) - tableHeight));
+
+   int16_t topRightWidth = topRightTable.getWidth();
+   topRightTable.setPosition((int16_t)(arduino.width() - topRightWidth), contentY);
+
+   int16_t bottomRightWidth = bottomRightTable.getWidth();
+   bottomRightTable.setPosition((int16_t)(arduino.width() - bottomRightWidth),
+      (int16_t)(arduino.height() - arduino.charH(INSTRUCTIONS_TEXT_SIZE) - tableHeight));
+
+   int16_t centerWidth = centerTable.getWidth();
+   centerTable.setPosition((int16_t)(arduino.center().x - centerWidth / 2),
+      (int16_t)(arduino.center().y - tableHeight / 2));
+
+   tablesSelectedIndex = 0;
+}
+
+///
+/// <summary>
+/// Sets the selected table's value background to blue and all others to dark gray,
+/// then redraws all five tables with their own current values.
+/// </summary>
+///
+void updateTables()
+{
+   for (uint8_t i = 0; i < NUM_TABLES; i++)
+   {
+      Color backgroundColor = (i == tablesSelectedIndex) ? Color::BLUE : Color::DARKGRAY;
+      tables[i]->setValueBackgroundColor(0, backgroundColor);
+      tables[i]->setValue(0, (double)tablesValues[i]);
+      tables[i]->draw();
+   }
+}
+
+///
+/// <summary>
+/// Applies Encoder A input to cycle the selected table and Encoder B input to adjust the
+/// selected table's value.
+/// </summary>
+///
+void handleTablesInput()
+{
+   int32_t selectDelta = arduino.encoderA.delta();
+   if (selectDelta != 0)
+   {
+      tablesSelectedIndex = (tablesSelectedIndex + NUM_TABLES + selectDelta) % NUM_TABLES;
+   }
+
+   int32_t valueDelta = arduino.encoderB.delta();
+   if (valueDelta != 0)
+   {
+      tablesValues[tablesSelectedIndex] += (float)valueDelta * TABLES_VALUE_STEP;
    }
 }
 
@@ -382,8 +416,8 @@ void enterDemo()
    case Demo::TableEditor:
       enterTableEditor();
       break;
-   case Demo::Fields:
-      enterFields();
+   case Demo::Tables:
+      enterTables();
       break;
    }
 }
@@ -429,9 +463,9 @@ void loop()
       handleTableEditorInput();
       updateTableEditor();
       break;
-   case Demo::Fields:
-      handleFieldsInput();
-      updateFields();
+   case Demo::Tables:
+      handleTablesInput();
+      updateTables();
       break;
    }
 }

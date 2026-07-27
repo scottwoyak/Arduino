@@ -36,6 +36,8 @@ enum class Color : uint16_t
    VALUE2 = WHITE,
    VALUE3 = WHITE,
    SUB_LABEL = WHITE,
+   SECTION_HEADER = WHITE,
+   TABLE_HEADER = WHITE,
 };
 
 #else
@@ -80,7 +82,7 @@ enum class Color : uint16_t
    ORANGE = (uint16_t) Color565::fromRGB(255, 128, 0),
    GRAY = (uint16_t) Color565::fromRGB(132, 132, 132),
    DARKGRAY = (uint16_t) Color565::fromRGB(105, 105, 105),
-   LIGHTGRAY = (uint16_t) Color565::fromRGB(192, 192, 192),
+   LIGHTGRAY = (uint16_t) Color565::fromRGB(170, 170, 170),
    PINK = (uint16_t) Color565::fromRGB(255, 179, 224),
 
    HEADING = ORANGE,
@@ -91,6 +93,8 @@ enum class Color : uint16_t
    VALUE2 = CYAN,
    VALUE3 = GREEN,
    SUB_LABEL = GRAY,
+   SECTION_HEADER = GREEN,
+   TABLE_HEADER = GREEN,
 };
 
 #endif

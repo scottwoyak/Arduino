@@ -3,13 +3,18 @@
 // stores them in RAM, and reports serial summaries plus an automatic serial dump.
 //
 // Capture flow:
-// 1) Initialize serial, display, and sensor, then start sampling immediately.
-// 2) Sample at up to MAX_SAMPLING_RATE_PER_SEC and store finite values in RAM.
-// 3) Stop when MAX_SAMPLES are stored or MAX_CAPTURE_TIME_S is reached.
+// 1) Initialize serial, display, and sensor.
+// 2) Show a combined setup/capture table letting the user review/adjust the max sample count
+//    and max capture time (Encoder A selects a field, Encoder B adjusts it, Button B resets to
+//    defaults) before sampling starts. Press Button A to confirm and start sampling; the same
+//    table then switches to showing live Samples/Time/Progress rows.
+// 3) Sample at up to MAX_SAMPLING_RATE_PER_SEC and store finite values in RAM.
+// 4) Stop when the selected max sample count is stored or the selected max capture time is reached.
 //
 // Output flow:
 // - Display shows live progress during capture, including elapsed seconds.
-// - After capture, button A cycles display modes: summary, histogram, post warm-up histogram, and scatter plot.
+// - After capture, encoderA cycles display modes: summary, histogram, post warm-up histogram, and scatter plot.
+// - After capture, pressing Button A returns to the setup screen so another capture can be configured and run.
 // - Serial summary includes run metrics, value stats, histogram bins, and warm-up analysis.
 // - Stored points are dumped to serial automatically after capture completes.
 //
@@ -18,8 +23,8 @@
 //
 #include "ArduinoBoard.h"
 
-#ifndef ARDUINO_BUTTON_SUPPORTED
-#error "This sketch requires a board with button support (e.g. Feather ESP32-S3 or Feather M0)."
+#ifndef ARDUINO_PLAYGROUND_SUPPORTED
+#error "This sketch requires a Playground board (e.g. ESP32-S3 Dev Module wired as a Playground)."
 #endif
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
@@ -32,14 +37,25 @@
 #include "SerialHistogram.h"
 #include "HistogramPlot.h"
 #include "DisplayTable.h"
+#include "DisplayTableCellEditor.h"
+#include "DisplayTableEditor.h"
 #include "ScatterPlot.h"
 #include <math.h>
 #include "TestSensor.h"
 
 constexpr unsigned long MAX_SAMPLING_RATE_PER_SEC = 100;
 // ----- capture configuration
-constexpr size_t MAX_SAMPLES = 5000;
-constexpr unsigned long MAX_CAPTURE_TIME_S = 120;
+constexpr size_t DEFAULT_MAX_SAMPLES = 5000;
+constexpr size_t MIN_MAX_SAMPLES = 100;
+constexpr size_t MAX_MAX_SAMPLES = 5000;
+constexpr size_t MAX_SAMPLES_STEP = 100;
+constexpr unsigned long DEFAULT_MAX_CAPTURE_TIME_S = 120;
+constexpr unsigned long MIN_MAX_CAPTURE_TIME_S = 5;
+constexpr unsigned long MAX_MAX_CAPTURE_TIME_S = 300;
+constexpr unsigned long MAX_CAPTURE_TIME_STEP_S = 5;
+
+// ----- Preferences namespace
+constexpr const char* PREF_NAMESPACE = "sensor_capture";
 
 // ----- histogram display
 constexpr size_t MIN_HISTOGRAM_BINS = 5;
@@ -67,8 +83,7 @@ const SerialTable::Column ANALYSIS_TABLE_COLUMNS[] = {
    { "Range", 12 },
    { "StdDev", 12 },
 };
-constexpr size_t ANALYSIS_TABLE_COLUMN_COUNT = sizeof(ANALYSIS_TABLE_COLUMNS) / sizeof(ANALYSIS_TABLE_COLUMNS[0]);
-SerialTable analysisTable(ANALYSIS_TABLE_TITLE, ANALYSIS_TABLE_COLUMNS, ANALYSIS_TABLE_COLUMN_COUNT);
+SerialTable analysisTable(ANALYSIS_TABLE_TITLE, ANALYSIS_TABLE_COLUMNS);
 
 // ----- warm-up analysis table
 constexpr const char* WARMUP_TABLE_TITLE = "Warm-up Stability Analysis";
@@ -78,9 +93,9 @@ const SerialTable::Column WARMUP_TABLE_COLUMNS[] = {
    { "End", 12 },
    { "Delta", 12 },
 };
-constexpr size_t WARMUP_TABLE_COLUMN_COUNT = sizeof(WARMUP_TABLE_COLUMNS) / sizeof(WARMUP_TABLE_COLUMNS[0]);
-SerialTable warmupTable(WARMUP_TABLE_TITLE, WARMUP_TABLE_COLUMNS, WARMUP_TABLE_COLUMN_COUNT);
+SerialTable warmupTable(WARMUP_TABLE_TITLE, WARMUP_TABLE_COLUMNS);
 
+// ----- display modes
 enum class DisplayMode : uint8_t
 {
    Summary = 0,
@@ -90,20 +105,20 @@ enum class DisplayMode : uint8_t
    Count
 };
 
+// ----- board and sensor
 Arduino arduino;
 TestSensor sensor;
-Format progressPercentFormat("###%", Format::Alignment::LEFT);
-Format samplesFormat("#####", Format::Alignment::LEFT);
-Format collectingSamplesFormat("#####/5000", Format::Alignment::LEFT);
-Format timeFormat("###s", Format::Alignment::LEFT);
-Format collectingTimeFormat("###/120s", Format::Alignment::LEFT);
-Format statsFormat("######.##", Format::Alignment::LEFT);
-Format stdDevPercentFormat("##.##%", Format::Alignment::LEFT);
-Format rateFormat("#####/s", Format::Alignment::LEFT);
 
-Values sensorCapture(MAX_SAMPLES);
-Timer samplingTimer((1000UL / MAX_SAMPLING_RATE_PER_SEC) == 0 ? 1UL : (1000UL / MAX_SAMPLING_RATE_PER_SEC));
+// ----- display value formats
+constexpr const char* PROGRESS_PERCENT_FORMAT = "###%";
+constexpr const char* SAMPLES_FORMAT = "#####";
+constexpr const char* TIME_FORMAT = "###s";
+constexpr const char* STATS_FORMAT = "######.##";
+constexpr const char* STDDEV_PERCENT_FORMAT = "##.##%";
+constexpr const char* RATE_FORMAT = "#####/s";
 
+// ----- capture state
+bool captureStarted = false;
 bool captureFinalized = false;
 unsigned long captureStartMs = 0;
 RateTimer displayRefreshTimer(DISPLAY_UPDATE_RATE_PER_SEC);
@@ -111,15 +126,63 @@ DisplayMode displayMode = DisplayMode::Summary;
 size_t postWarmupStartIndex = 0;
 bool postWarmupReady = false;
 
+Values sensorCapture;
+Timer samplingTimer((1000UL / MAX_SAMPLING_RATE_PER_SEC) == 0 ? 1UL : (1000UL / MAX_SAMPLING_RATE_PER_SEC));
+
+// ----- serial dump state
 bool serialDumpStarted = false;
 bool serialDumpComplete = false;
 size_t serialDumpIndex = 0;
 size_t serialDumpCount = 0;
 unsigned long lastSerialDumpMs = 0;
 
-// Display tables
+// ----- combined setup/capture table (editable capture limits plus live progress)
+// Max Samples/Max Time are editable via Encoder A/B until capture starts, at which point they
+// become disabled (grayed out, skipped by selection) since the sample buffer is already sized
+// to the confirmed value. Samples/Time/Progress are read-only rows updated live during capture.
+long maxSamples = DEFAULT_MAX_SAMPLES;
+long maxCaptureTimeS = DEFAULT_MAX_CAPTURE_TIME_S;
+float progressSamplesValue = 0.0f;
+float progressTimeValue = 0.0f;
+float progressPercentValue = 0.0f;
+
+///
+/// <summary>
+/// Editable capture-limit field that becomes disabled once capture has started, since the
+/// sample buffer is already sized to the confirmed value at that point.
+/// </summary>
+///
+class CaptureLimitCell : public IntCellEditor
+{
+public:
+   using IntCellEditor::IntCellEditor;
+
+   bool isEnabled() const override
+   {
+      return !captureStarted;
+   }
+};
+
+CaptureLimitCell samplesCell(&maxSamples,
+   MIN_MAX_SAMPLES, MAX_MAX_SAMPLES, MAX_SAMPLES_STEP, DEFAULT_MAX_SAMPLES, SAMPLES_FORMAT, DisplayTable::Alignment::LEFT);
+CaptureLimitCell durationCell(&maxCaptureTimeS,
+   MIN_MAX_CAPTURE_TIME_S, MAX_MAX_CAPTURE_TIME_S, MAX_CAPTURE_TIME_STEP_S, DEFAULT_MAX_CAPTURE_TIME_S, TIME_FORMAT, DisplayTable::Alignment::LEFT);
+ReadOnlyCell samplesReadCell(&progressSamplesValue, SAMPLES_FORMAT);
+ReadOnlyCell timeReadCell(&progressTimeValue, TIME_FORMAT);
+ReadOnlyCell progressReadCell(&progressPercentValue, PROGRESS_PERCENT_FORMAT);
+
+TableEditorRow captureCells[] =
+{
+   { "Max Samples", &samplesCell },
+   { "Max Time", &durationCell },
+   { "Samples", &samplesReadCell },
+   { "Time", &timeReadCell },
+   { "Progress", &progressReadCell },
+};
+DisplayTableEditor captureTable(&arduino, PREF_NAMESPACE, captureCells, 0, 0);
+
+// ----- display tables
 DisplayTable summaryTable(&arduino, 0, 0);
-DisplayTable collectingTable(&arduino, 0, 0);
 
 /// <summary>
 /// Initializes display tables used by summary and collecting screens.
@@ -130,20 +193,17 @@ void initializeDisplayTables()
    int16_t summaryTableY = arduino.charH();
 
    arduino.setTextSize(2);
-   int16_t collectingTableY = summaryTableY;
+   int16_t captureTableY = summaryTableY;
 
    summaryTable = DisplayTable(&arduino, 0, summaryTableY);
-   summaryTable.addRow("Samples", samplesFormat, Color::LABEL, Color::VALUE);
-   summaryTable.addRow("Time", timeFormat, Color::LABEL, Color::VALUE);
-   summaryTable.addRow("Rate", rateFormat, Color::LABEL, Color::VALUE);
-   summaryTable.addRow("Avg", statsFormat, Color::LABEL, Color::VALUE2);
-   summaryTable.addRow("StdDev", statsFormat, Color::LABEL, Color::VALUE3);
-   summaryTable.addRow("StdDev%", stdDevPercentFormat, Color::LABEL, Color::VALUE3);
+   summaryTable.addRow("Samples", SAMPLES_FORMAT);
+   summaryTable.addRow("Time", TIME_FORMAT);
+   summaryTable.addRow("Rate", RATE_FORMAT);
+   summaryTable.addRow("Avg", STATS_FORMAT, Color::VALUE2);
+   summaryTable.addRow("StdDev", STATS_FORMAT, Color::VALUE3);
+   summaryTable.addRow("StdDev%", STDDEV_PERCENT_FORMAT, Color::VALUE3);
 
-   collectingTable = DisplayTable(&arduino, 0, collectingTableY);
-   collectingTable.addRow("Samples", collectingSamplesFormat, Color::LABEL, Color::VALUE);
-   collectingTable.addRow("Time", collectingTimeFormat, Color::LABEL, Color::VALUE);
-   collectingTable.addRow("Progress", progressPercentFormat, Color::LABEL, Color::VALUE);
+   captureTable.setPosition(0, captureTableY);
 }
 
 /// <summary>
@@ -158,7 +218,7 @@ void renderDisplaySummary()
 
    unsigned long captureTimeMs = millis() - captureStartMs;
    unsigned long captureTimeSec = captureTimeMs / 1000UL;
-   size_t sampleCount = sensorCapture.count();
+   unsigned long sampleCount = sensorCapture.count();
    float samplesPerSecond = (captureTimeMs > 0) ? (sampleCount * 1000.0f / captureTimeMs) : 0.0f;
 
    Stats basicStats = sensorCapture.computeBasicStats();
@@ -171,7 +231,8 @@ void renderDisplaySummary()
    }
 
    arduino.setTextSize(2);
-   summaryTable.setValue(0, static_cast<unsigned long>(sampleCount));
+   summaryTable.invalidate();
+   summaryTable.setValue(0, sampleCount);
    summaryTable.setValue(1, captureTimeSec);
    summaryTable.setValue(2, samplesPerSecond);
    summaryTable.setValue(3, avg);
@@ -187,13 +248,14 @@ void renderDisplaySummary()
 /// <param name="startIndex">First sample index to include.</param>
 /// <param name="top">Top Y coordinate of the histogram area.</param>
 /// <param name="height">Histogram drawing height in pixels.</param>
-void drawDisplayHistogramForRange(size_t startIndex, int16_t top, int16_t height)
+void drawHistogram(size_t startIndex, uint16_t top, uint16_t height)
 {
    const float* values = sensorCapture.values() + startIndex;
    size_t valueCount = sensorCapture.count() - startIndex;
    Histogram histogram(values, valueCount, MIN_HISTOGRAM_BINS, MAX_HISTOGRAM_BINS);
 
-   HistogramPlot plot(&arduino, histogram, 0, arduino.width(), top, height, Color::VALUE2, Format("##.##"));
+   Rect16 rect{ 0, top, arduino.width(), height };
+   HistogramPlot plot(&arduino, histogram, rect, "##.##");
    plot.render();
 }
 
@@ -205,7 +267,7 @@ void renderDisplayPostWarmupHistogram()
    arduino.clearDisplay();
    arduino.setTextSize(3);
    arduino.setCursor(0, 0);
-   arduino.println("Post Warm-up", Color::HEADING);
+   arduino.println("Post Warm-up Samples", Color::HEADING);
 
    if (!postWarmupReady || (postWarmupStartIndex >= sensorCapture.count()))
    {
@@ -214,9 +276,9 @@ void renderDisplayPostWarmupHistogram()
       return;
    }
 
-   int16_t top = arduino.getCursorY();
-   int16_t h = arduino.height() - top - 2;
-   drawDisplayHistogramForRange(postWarmupStartIndex, top, h);
+   uint16_t top = arduino.getCursorY();
+   uint16_t h = arduino.height() - top - 2;
+   drawHistogram(postWarmupStartIndex, top, h);
 }
 
 /// <summary>
@@ -227,11 +289,11 @@ void renderDisplayHistogram()
    arduino.clearDisplay();
    arduino.setTextSize(3);
    arduino.setCursor(0, 0);
-   arduino.println("Histogram", Color::HEADING);
+   arduino.println("All Samples", Color::HEADING);
 
-   int16_t top = arduino.getCursorY();
-   int16_t h = arduino.height() - top - 2;
-   drawDisplayHistogramForRange(0, top, h);
+   uint16_t top = arduino.getCursorY();
+   uint16_t h = arduino.height() - top - 2;
+   drawHistogram(0, top, h);
 }
 
 /// <summary>
@@ -253,10 +315,9 @@ void renderDisplayScatterPlot()
    }
 
    arduino.setTextSize(2);
-   int16_t plotTop = arduino.getCursorY();
-   int16_t footerHeight = arduino.charH() + 2;
-   int16_t plotHeight = arduino.height() - plotTop - footerHeight - 2;
-   int16_t plotWidth = arduino.width();
+   uint16_t plotTop = arduino.getCursorY();
+   uint16_t plotHeight = arduino.height() - plotTop - 2;
+   uint16_t plotWidth = arduino.width();
 
    if (plotHeight < 20 || plotWidth < 20)
    {
@@ -265,14 +326,14 @@ void renderDisplayScatterPlot()
       return;
    }
 
-   ScatterPlot plot(&arduino, 0, plotTop, plotWidth, plotHeight);
+   ScatterPlot plot(&arduino, 0, plotTop, plotWidth, plotHeight, SAMPLES_FORMAT, STATS_FORMAT);
    ScatterPlotSeries* series = plot.createSeries(totalCount);
    const float* values = sensorCapture.values();
    for (size_t i = 0; i < totalCount; i++)
    {
       series->add(static_cast<float>(i), values[i]);
    }
-   plot.render();
+   plot.draw();
 }
 
    /// <summary>
@@ -290,62 +351,49 @@ void renderDisplayScatterPlot()
          return;
       }
 
-   if (sensorCapture.isFull() || ((nowMs - captureStartMs) >= (MAX_CAPTURE_TIME_S * 1000UL)))
-   {
-      switch (displayMode)
+      if (sensorCapture.isFull() || ((nowMs - captureStartMs) >= (static_cast<unsigned long>(maxCaptureTimeS) * 1000UL)))
       {
-      case DisplayMode::Summary:
-         renderDisplaySummary();
-         break;
-      case DisplayMode::Histogram:
-         renderDisplayHistogram();
-         break;
-      case DisplayMode::PostWarmupHistogram:
-         renderDisplayPostWarmupHistogram();
-         break;
-      case DisplayMode::ScatterPlot:
-      default:
-         renderDisplayScatterPlot();
-         break;
+         switch (displayMode)
+         {
+         case DisplayMode::Summary:
+            renderDisplaySummary();
+            break;
+         case DisplayMode::Histogram:
+            renderDisplayHistogram();
+            break;
+         case DisplayMode::PostWarmupHistogram:
+            renderDisplayPostWarmupHistogram();
+            break;
+         case DisplayMode::ScatterPlot:
+         default:
+            renderDisplayScatterPlot();
+            break;
+         }
+         return;
       }
-      return;
+
+      arduino.setTextSize(3);
+      arduino.setCursor(0, 0);
+      arduino.print("Sensor Capture", Color::HEADING);
+
+      arduino.setTextSize(2);
+
+      unsigned long count = sensorCapture.count();
+      unsigned long elapsedSeconds = (nowMs - captureStartMs) / 1000UL;
+      if (elapsedSeconds > static_cast<unsigned long>(maxCaptureTimeS))
+      {
+         elapsedSeconds = static_cast<unsigned long>(maxCaptureTimeS);
+      }
+
+      float samplePercent = (maxSamples > 0) ? ((count * 100.0f) / maxSamples) : 0.0f;
+      float timePercent = (maxCaptureTimeS > 0) ? ((elapsedSeconds * 100.0f) / maxCaptureTimeS) : 0.0f;
+
+      progressSamplesValue = static_cast<float>(count);
+      progressTimeValue = static_cast<float>(elapsedSeconds);
+      progressPercentValue = min(max(samplePercent, timePercent), 100.0f);
+
+      captureTable.draw();
    }
-
-   arduino.setTextSize(3);
-   arduino.setCursor(0, 0);
-   arduino.print("Sensor Capture", Color::HEADING);
-
-   arduino.setTextSize(2);
-
-   size_t count = sensorCapture.count();
-   unsigned long elapsedSeconds = (nowMs - captureStartMs) / 1000UL;
-   if (elapsedSeconds > MAX_CAPTURE_TIME_S)
-   {
-      elapsedSeconds = MAX_CAPTURE_TIME_S;
-   }
-
-   float samplePercent = (MAX_SAMPLES > 0) ? ((static_cast<unsigned long>(count) * 100.0f) / MAX_SAMPLES) : 0.0f;
-   float timePercent = (MAX_CAPTURE_TIME_S > 0) ? ((elapsedSeconds * 100.0f) / MAX_CAPTURE_TIME_S) : 0.0f;
-
-   bool samplesAreLimiting = (samplePercent >= timePercent);
-
-   // Set sample values
-   Color sampleColor = samplesAreLimiting ? Color::VALUE : Color::GRAY;
-   collectingTable.setValue(0, count, sampleColor);
-
-   // Set time values
-   Color timeColor = !samplesAreLimiting ? Color::VALUE : Color::GRAY;
-   collectingTable.setValue(1, elapsedSeconds, timeColor);
-
-   float progressPercent = max(samplePercent, timePercent);
-   if (progressPercent > 100.0f)
-   {
-      progressPercent = 100.0f;
-   }
-
-   collectingTable.setValue(2, progressPercent, Color::VALUE);
-   collectingTable.draw();
-}
 
 /// <summary>
 /// Computes and prints capture statistics to Serial.
@@ -552,15 +600,85 @@ void setup()
    arduino.begin();
    arduino.clearDisplay();
    sensor.begin();
+
    initializeDisplayTables();
+   captureTable.load();
+
+   arduino.setTextSize(3);
+   arduino.setCursor(0, 0);
+   arduino.println("Sensor Capture", Color::HEADING);
+   arduino.setTextSize(2);
+   captureTable.setPosition(0, arduino.getCursorY());
+   captureTable.draw();
+}
+
+/// <summary>
+/// Confirms the setup fields, sizes the sample buffer, and starts capturing.
+/// </summary>
+void startCapture()
+{
+   captureStarted = true;
+   captureTable.save();
+
+   sensorCapture.reset(static_cast<size_t>(maxSamples));
 
    captureStartMs = millis();
    updateDisplayProgress(true);
    Serial.println("Capture started...");
 }
 
+/// <summary>
+/// Returns to the setup screen so another capture can be configured and run.
+/// </summary>
+void resetToSetup()
+{
+   captureStarted = false;
+   captureFinalized = false;
+   displayMode = DisplayMode::Summary;
+   postWarmupStartIndex = 0;
+   postWarmupReady = false;
+   serialDumpStarted = false;
+   serialDumpComplete = false;
+   serialDumpIndex = 0;
+   serialDumpCount = 0;
+
+   arduino.clearDisplay();
+   arduino.setTextSize(3);
+   arduino.setCursor(0, 0);
+   arduino.println("Sensor Capture", Color::HEADING);
+   arduino.setTextSize(2);
+   captureTable.setPosition(0, arduino.getCursorY());
+   captureTable.forceRedraw();
+   captureTable.draw();
+}
+
 void loop()
 {
+   if (!captureStarted)
+   {
+      int32_t selectDelta = arduino.encoderA.delta();
+      int32_t adjustDelta = arduino.encoderB.delta();
+      if (selectDelta != 0 || adjustDelta != 0)
+      {
+         captureTable.selectNext(selectDelta);
+         captureTable.adjustSelected(adjustDelta);
+         captureTable.draw();
+      }
+
+      if (arduino.buttonB.wasPressed())
+      {
+         captureTable.reset();
+         captureTable.draw();
+      }
+
+      if (arduino.buttonA.wasPressed())
+      {
+         startCapture();
+      }
+
+      return;
+   }
+
    if (samplingTimer.ready())
    {
       float sensorValue = sensor.get();
@@ -572,7 +690,7 @@ void loop()
       }
    }
 
-   if ((sensorCapture.count() >= MAX_SAMPLES) || ((millis() - captureStartMs) >= (MAX_CAPTURE_TIME_S * 1000UL)))
+   if ((sensorCapture.count() >= static_cast<size_t>(maxSamples)) || ((millis() - captureStartMs) >= (static_cast<unsigned long>(maxCaptureTimeS) * 1000UL)))
    {
       finishCapture();
    }
@@ -581,7 +699,21 @@ void loop()
 
    if (captureFinalized && arduino.buttonA.wasPressed())
    {
-      displayMode = static_cast<DisplayMode>((static_cast<uint8_t>(displayMode) + 1U) % static_cast<uint8_t>(DisplayMode::Count));
+      resetToSetup();
+      return;
+   }
+
+   int32_t modeDelta = arduino.encoderA.delta();
+   if (captureFinalized && (modeDelta != 0))
+   {
+      int32_t modeCount = static_cast<int32_t>(DisplayMode::Count);
+      int32_t newMode = (static_cast<int32_t>(displayMode) + modeDelta) % modeCount;
+      if (newMode < 0)
+      {
+         newMode += modeCount;
+      }
+
+      displayMode = static_cast<DisplayMode>(newMode);
       updateDisplayProgress(true);
    }
 }

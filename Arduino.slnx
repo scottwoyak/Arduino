@@ -22,36 +22,37 @@
     <File Path="libraries/Woyak/Counter.h" />
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
-    <File Path="libraries/Woyak/DisplayEditor.h" />
-    <File Path="libraries/Woyak/DisplayGrid.h" />
+    <File Path="libraries/Woyak/DisplayBuffer.h" />
     <File Path="libraries/Woyak/DisplayTable.h" />
     <File Path="libraries/Woyak/DisplayTableCellEditor.h" />
     <File Path="libraries/Woyak/DisplayTableEditor.h" />
+    <File Path="libraries/Woyak/DisplayField.h" />
     <File Path="libraries/Woyak/DisplayTextView.h" />
     <File Path="libraries/Woyak/DisplayValue.h" />
     <File Path="libraries/Woyak/DS18B20TempSensor.h" />
     <File Path="libraries/Woyak/EnumSelector.h" />
     <File Path="libraries/Woyak/ESP32TempSensor.h" />
     <File Path="libraries/Woyak/ESP32_S3_Playground.h" />
-    <File Path="libraries/Woyak/Feather.h" />
     <File Path="libraries/Woyak/Feather_ESP32_S3.h" />
-    <File Path="libraries/Woyak/Feather_ESP32_S3_ST7796S.h" />
     <File Path="libraries/Woyak/Feather_M0_OLED.h" />
     <File Path="libraries/Woyak/FeedTimer.h" />
     <File Path="libraries/Woyak/FilteredRollingAverage.h" />
     <File Path="libraries/Woyak/Format.h" />
+    <File Path="libraries/Woyak/FixedRangeHistory.h" />
     <File Path="libraries/Woyak/FramSpiEx.h" />
-    <File Path="libraries/Woyak/HDC302XTempSensor.h" />
     <File Path="libraries/Woyak/RollingValues.h" />
     <File Path="libraries/Woyak/Histogram.h" />
     <File Path="libraries/Woyak/HistogramPlot.h" />
     <File Path="libraries/Woyak/I2C.h" />
     <File Path="libraries/Woyak/I2CMultiplexor.h" />
+    <File Path="libraries/Woyak/HDC302xTempSensor.h" />
     <File Path="libraries/Woyak/I2CTempSensor.h" />
+    <File Path="libraries/Woyak/IDepthSensor.h" />
     <File Path="libraries/Woyak/IEncoder.h" />
+    <File Path="libraries/Woyak/IHistogramPlot.h" />
     <File Path="libraries/Woyak/IndexedEncoder.h" />
     <File Path="libraries/Woyak/Influx.h" />
-    <File Path="libraries/Woyak/IScatterPlot.h" />
+    <File Path="libraries/Woyak/IScatterPlotSeries.h" />
     <File Path="libraries/Woyak/ITempSensor.h" />
     <File Path="libraries/Woyak/Latch.h" />
     <File Path="libraries/Woyak/Led.h" />
@@ -60,8 +61,10 @@
     <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
     <File Path="libraries/Woyak/LGX_ST7796S.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
+    <File Path="libraries/Woyak/MinMaxValue.h" />
     <File Path="libraries/Woyak/ModulinoEncoder.h" />
     <File Path="libraries/Woyak/MovingBarChart.h" />
+    <File Path="libraries/Woyak/MS5837DepthSensor.h" />
     <File Path="libraries/Woyak/MS5837TempSensor.h" />
     <File Path="libraries/Woyak/MultiBar.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
@@ -73,12 +76,24 @@
     <File Path="libraries/Woyak/RollingRate.h" />
     <File Path="libraries/Woyak/RollingStats.h" />
     <File Path="libraries/Woyak/ScatterPlot.h" />
+    <File Path="libraries/Woyak/ScatterPlotSeries.h" />
+    <File Path="libraries/Woyak/ScatterPlotSeriesBase.h" />
     <File Path="libraries/Woyak/SerialHistogram.h" />
     <File Path="libraries/Woyak/SerialTable.h" />
     <File Path="libraries/Woyak/SerialX.h" />
     <File Path="libraries/Woyak/SevenSegment.h" />
     <File Path="libraries/Woyak/SHT3xTempSensor.h" />
     <File Path="libraries/Woyak/SHT4xTempSensor.h" />
+    <File Path="libraries/Woyak/Scott.h" />
+    <File Path="libraries/Woyak/Scott8.h" />
+    <File Path="libraries/Woyak/Scott16.h" />
+    <File Path="libraries/Woyak/Scott24.h" />
+    <File Path="libraries/Woyak/Scott32.h" />
+    <File Path="libraries/Woyak/Scott40.h" />
+    <File Path="libraries/Woyak/Scott48.h" />
+    <File Path="libraries/Woyak/Scott56.h" />
+    <File Path="libraries/Woyak/Scott64.h" />
+    <File Path="libraries/Woyak/Slider.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
     <File Path="libraries/Woyak/Stats.h" />
     <File Path="libraries/Woyak/Status.h" />
@@ -97,7 +112,8 @@
     <File Path="libraries/Woyak/TimedHistogramChart.h" />
     <File Path="libraries/Woyak/TimedHistogramPlot.h" />
     <File Path="libraries/Woyak/TimedMinMax.h" />
-    <File Path="libraries/Woyak/TimedScatterPlot.h" />
+    <File Path="libraries/Woyak/TimedRate.h" />
+    <File Path="libraries/Woyak/TimedScatterPlotSeries.h" />
     <File Path="libraries/Woyak/TimedStats.h" />
     <File Path="libraries/Woyak/TimedValues.h" />
     <File Path="libraries/Woyak/Timer.h" />
@@ -107,6 +123,7 @@
     <File Path="libraries/Woyak/Values.h" />
     <File Path="libraries/Woyak/ValueStore.h" />
     <File Path="libraries/Woyak/ValueStoreFram.h" />
+    <File Path="libraries/Woyak/Vector.h" />
     <File Path="libraries/Woyak/Waveshare_ESP32_S3_Zero.h" />
     <File Path="libraries/Woyak/WiFiSettings.h" />
     <File Path="libraries/Woyak/WiFiX.h" />
@@ -205,6 +222,26 @@
       <Deploy />
     </Project>
   </Folder>
+  <Project Path="Basic_DisplayField/Basic_DisplayField.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Basic_DisplayTable/Basic_DisplayTable.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Basic_DisplayTableEditor/Basic_DisplayTableEditor.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Basic_DisplayValue/Basic_DisplayValue.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Basic_ScatterPlot/Basic_ScatterPlot.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Battery_Display/Battery_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -397,7 +434,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Sensor_Capture_Display/Sensor_Capture_Display.vcxproj">
+  <Project Path="Sensor_Capture_Playground/Sensor_Capture_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

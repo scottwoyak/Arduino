@@ -53,21 +53,18 @@ namespace TestSensorConfig
    static constexpr float CONSTANT_MAX_VALUE = 1000.0f;
    static constexpr float CONSTANT_STEP = 1.0f;
    static constexpr const char* CONSTANT_FORMAT = "###.#";
-   static constexpr const char* CONSTANT_HIGH_RES_FORMAT = "###.##";
 
    // ----- random sensor
    static constexpr uint16_t RANDOM_SAMPLING_RATE_PER_SEC = 0;
    static constexpr float RANDOM_MIN_VALUE = 90.0f;
    static constexpr float RANDOM_MAX_VALUE = 110.0f;
    static constexpr const char* RANDOM_FORMAT = "###.#";
-   static constexpr const char* RANDOM_HIGH_RES_FORMAT = "###.###";
 
    // ----- normal sensor
    static constexpr uint16_t NORMAL_SAMPLING_RATE_PER_SEC = 0;
    static constexpr float NORMAL_MEAN = 100.0f;
    static constexpr float NORMAL_STDDEV = 3.0f;
    static constexpr const char* NORMAL_FORMAT = "###.##";
-   static constexpr const char* NORMAL_HIGH_RES_FORMAT = "###.###";
 
    // ----- sin sensor
    static constexpr uint16_t SIN_SAMPLING_RATE_PER_SEC = 0;
@@ -77,26 +74,23 @@ namespace TestSensorConfig
    static constexpr float SIN_MIN_PERIOD_S = 1.0f;
    static constexpr float SIN_MAX_PERIOD_S = 60.0f;
    static constexpr float SIN_PERIOD_STEP_S = 1.0f;
-   static constexpr const char* SIN_FORMAT = "###.##";
-   static constexpr const char* SIN_HIGH_RES_FORMAT = "###.###";
+   static constexpr const char* SIN_FORMAT = "###.#";
     // Fixed time increment applied per sample when SinTestSensor uses TimeSource::FIXED_STEP,
    // so the wave advances in perfectly even steps regardless of actual loop/sampling jitter.
    static constexpr float SIN_FIXED_STEP_S = 0.05f;
    // Period range/step used while TimeSource::FIXED_STEP is active, expressed in samples
    // (period / SIN_FIXED_STEP_S) rather than seconds, since a fixed-step period doesn't
    // correspond to real elapsed time.
-   static constexpr long SIN_FIXED_MIN_PERIOD_SAMPLES = 400;
-   static constexpr long SIN_FIXED_MAX_PERIOD_SAMPLES = 2000;
-   static constexpr long SIN_FIXED_PERIOD_STEP_SAMPLES = 500;
+   static constexpr long SIN_FIXED_MIN_PERIOD_SAMPLES = 100;
+   static constexpr long SIN_FIXED_MAX_PERIOD_SAMPLES = 4000;
+   static constexpr long SIN_FIXED_PERIOD_STEP_SAMPLES = 100;
 
    // ----- temp sensor (physical sensor)
    static constexpr const char* TEMP_FORMAT = "###.##";
-   static constexpr const char* TEMP_HIGH_RES_FORMAT = "###.###";
 
    // ----- ms5837 pressure sensor
    static const uint8_t MS5837_MODEL = MS5837::MS5837_02BA;
    static constexpr const char* MS5837_FORMAT = "####.##";
-   static constexpr const char* MS5837_HIGH_RES_FORMAT = "####.###";
 
    // ----- capacitive sensor
    // Uses the standard capacitor sensor prototype wiring defined by CapacitorSensor
@@ -107,7 +101,6 @@ namespace TestSensorConfig
    static constexpr size_t CAPACITIVE_BUFFER_SIZE = CapacitorSensor::DEFAULT_BUFFER_SIZE;
    static constexpr float CAPACITIVE_FILTER = 5.0f; // percent, per FilteredRollingAverage::FilterMode::PERCENT
    static constexpr const char* CAPACITIVE_FORMAT = "####";
-   static constexpr const char* CAPACITIVE_HIGH_RES_FORMAT = "####.#";
 
    // ----- depth sensor (capacitive-based)
    static constexpr uint8_t DEPTH_CHARGE_PIN = CAPACITIVE_CHARGE_PIN;
@@ -117,7 +110,6 @@ namespace TestSensorConfig
    static constexpr float DEPTH_CALIBRATION_DEPTH_CM = 45.72f; // 18 inches (half of full depth)
    static constexpr size_t DEPTH_BUFFER_SIZE = 130; // 0 = no averaging (buffer size of 1) during sensor tests
    static constexpr const char* DEPTH_FORMAT = "####.##";
-   static constexpr const char* DEPTH_HIGH_RES_FORMAT = "####.###";
 }
 
 ///
@@ -128,20 +120,25 @@ namespace TestSensorConfig
 class ITestSensor
 {
 private:
-   Format _format;
-   Format _highResFormat;
+   std::string _formatPattern;
+   std::string _highResFormatPattern;
 
 public:
    ///
    /// <summary>
-   /// Initializes the format objects used for value display.
+   /// Initializes the format pattern strings used for value display. The high-resolution
+   /// pattern (used for statistics like average, stddev, and range) is derived automatically
+   /// from the base pattern by adding one additional decimal place. Only the pattern strings
+   /// are stored (see getFormatStr() and getHighResFormatStr()); callers construct
+   /// their own Format objects when display concerns like alignment are needed.
    /// </summary>
    /// <param name="format">Format pattern used for axis limits and current readings.</param>
-   /// <param name="highResFormat">Format pattern used for statistics like average, stddev, and range.</param>
    ///
-   ITestSensor(const char* format, const char* highResFormat)
-      : _format(format), _highResFormat(highResFormat)
+   ITestSensor(const char* format)
+      : _formatPattern(format)
    {
+      Format baseFormat(format);
+      _highResFormatPattern = baseFormat.withPrecision(baseFormat.precision() + 1).formatString();
    }
 
    virtual ~ITestSensor() = default;
@@ -172,25 +169,29 @@ public:
 
    ///
    /// <summary>
-   /// Gets the format object for values (used for axis limits and current readings).
+   /// Gets the format pattern string used for values (used for axis limits and current
+   /// readings). Callers needing alignment, precision, or other display concerns should
+   /// construct their own Format from this pattern, since those concepts don't apply at
+   /// this stage.
    /// </summary>
-   /// <returns>A Format object configured for value display.</returns>
+   /// <returns>The format pattern string configured for value display.</returns>
    ///
-   const Format* getFormat() const
+   const std::string& getFormatStr() const
    {
-      return &_format;
+      return _formatPattern;
    }
 
    ///
    /// <summary>
-   /// Gets the high-resolution format object for values (used for statistics like average, stddev, and range).
-   /// Has one more decimal place than getFormat for finer-grained display.
+   /// Gets the high-resolution format pattern string for values (used for statistics like
+   /// average, stddev, and range). Automatically derived from getFormatStr() by adding
+   /// one additional decimal place.
    /// </summary>
-   /// <returns>A Format object configured for high-resolution value display.</returns>
+   /// <returns>The high-resolution format pattern string.</returns>
    ///
-   const Format* getHighResFormat() const
+   const std::string& getHighResFormatStr() const
    {
-      return &_highResFormat;
+      return _highResFormatPattern;
    }
 
    ///
@@ -229,6 +230,11 @@ class MockTestSensorBase : public ITestSensor
 {
 protected:
    unsigned long _startMs = 0;
+
+   // Number of decimal digits used for rounding/scaling readings, cached from the format
+   // pattern at construction so mock sensors don't need to construct a Format (which has
+   // display-only concepts like alignment that don't apply here) just to get precision.
+   uint8_t _precision = 0;
 
    // Counts how many samples have been produced since begin(), so sensors that support a
    // TimeSource::FIXED_STEP mode can advance by a constant time increment per sample instead
@@ -393,13 +399,12 @@ public:
 
    ///
    /// <summary>
-   /// Initializes the mock sensor's format objects with the sensor-specific format patterns.
+   /// Initializes the mock sensor's format object with the sensor-specific format pattern.
    /// </summary>
    /// <param name="format">Format pattern used for axis limits and current readings.</param>
-   /// <param name="highResFormat">Format pattern used for statistics like average, stddev, and range.</param>
    ///
-   MockTestSensorBase(const char* format, const char* highResFormat)
-      : ITestSensor(format, highResFormat)
+   MockTestSensorBase(const char* format)
+      : ITestSensor(format), _precision(Format(format).precision())
    {
    }
 
@@ -432,7 +437,7 @@ public:
       }
 
       float rawValue = _getValue() + _normalDistributed(0.0f, noiseStdDev, 3);
-      float value = _roundToDecimals(rawValue, getFormat()->precision());
+      float value = _roundToDecimals(rawValue, _precision);
       _sampleIndex++;
       return value;
    }
@@ -466,7 +471,7 @@ public:
    /// </summary>
    ///
    TempSensorTestSensor()
-      : ITestSensor(TestSensorConfig::TEMP_FORMAT, TestSensorConfig::TEMP_HIGH_RES_FORMAT)
+      : ITestSensor(TestSensorConfig::TEMP_FORMAT)
    {
    }
 
@@ -522,7 +527,7 @@ public:
    /// </summary>
    ///
    ESP32TempTestSensor()
-      : ITestSensor(TestSensorConfig::TEMP_FORMAT, TestSensorConfig::TEMP_HIGH_RES_FORMAT)
+      : ITestSensor(TestSensorConfig::TEMP_FORMAT)
    {
    }
 
@@ -593,7 +598,7 @@ public:
    /// </summary>
    ///
    ConstantTestSensor()
-      : MockTestSensorBase(TestSensorConfig::CONSTANT_FORMAT, TestSensorConfig::CONSTANT_HIGH_RES_FORMAT)
+      : MockTestSensorBase(TestSensorConfig::CONSTANT_FORMAT)
    {
    }
 
@@ -630,7 +635,7 @@ private:
 
    float _getValue() override
    {
-      long decimalScale = _decimalScale(getFormat()->precision());
+      long decimalScale = _decimalScale(_precision);
       long span = static_cast<long>((TestSensorConfig::RANDOM_MAX_VALUE - TestSensorConfig::RANDOM_MIN_VALUE) * decimalScale);
       if (span <= 0)
       {
@@ -648,7 +653,7 @@ public:
    /// </summary>
    ///
    RandomTestSensor()
-      : MockTestSensorBase(TestSensorConfig::RANDOM_FORMAT, TestSensorConfig::RANDOM_HIGH_RES_FORMAT)
+      : MockTestSensorBase(TestSensorConfig::RANDOM_FORMAT)
    {
    }
 
@@ -688,7 +693,7 @@ private:
       return _normalDistributed(
          TestSensorConfig::NORMAL_MEAN,
          TestSensorConfig::NORMAL_STDDEV,
-         getFormat()->precision());
+         _precision);
    }
 
 public:
@@ -698,7 +703,7 @@ public:
    /// </summary>
    ///
    NormalTestSensor()
-      : MockTestSensorBase(TestSensorConfig::NORMAL_FORMAT, TestSensorConfig::NORMAL_HIGH_RES_FORMAT)
+      : MockTestSensorBase(TestSensorConfig::NORMAL_FORMAT)
    {
    }
 
@@ -726,7 +731,7 @@ public:
    /// <summary>
    /// Selects how the sine wave's elapsed time advances from one sample to the next. Backed
    /// by a plain long (rather than an enum class) so timeSource can be bound directly to an
-   /// IntDisplayTableCellEditor for live adjustment.
+   /// IntCellEditor for live adjustment.
    /// </summary>
    ///
    enum TimeSource : long
@@ -743,30 +748,70 @@ public:
    };
 
 private:
+   // Accumulated phase (in radians) and the elapsed-time value it was last advanced to.
+   // Advancing phase incrementally (rather than computing it directly from total elapsed
+   // time / periodS) means a live change to periodS only changes the rate at which phase
+   // accumulates from here on, so the wave continues smoothly from its current value
+   // instead of jumping to a different point in the cycle.
+   float _phaseRadians = 0.0f;
+   float _lastElapsedS = 0.0f;
+
    uint16_t _samplingRatePerSec() const override
    {
       return TestSensorConfig::SIN_SAMPLING_RATE_PER_SEC;
    }
 
-   float _getValue() override
+   ///
+   /// <summary>
+   /// Advances the accumulated phase by the time elapsed since the last call, at a rate
+   /// determined by the current periodS, and returns the new phase.
+   /// </summary>
+   /// <param name="elapsedS">Total elapsed time, in seconds, since begin().</param>
+   /// <returns>The accumulated phase, in radians.</returns>
+   ///
+   float _advancePhase(float elapsedS)
    {
-      if (timeSource == TIME_SOURCE_FIXED_STEP)
+      float deltaS = elapsedS - _lastElapsedS;
+      _lastElapsedS = elapsedS;
+
+      if (periodS > 0.0f)
       {
-         float elapsedS = static_cast<float>(_sampleIndex) * TestSensorConfig::SIN_FIXED_STEP_S;
-         return _sinValue(
-            TestSensorConfig::SIN_MEAN,
-            TestSensorConfig::SIN_AMPLITUDE,
-            periodS,
-            elapsedS);
+         _phaseRadians += (deltaS / periodS) * (2.0f * PI);
       }
 
-      return _sinValue(
-         TestSensorConfig::SIN_MEAN,
-         TestSensorConfig::SIN_AMPLITUDE,
-         periodS);
+      return _phaseRadians;
+   }
+
+   float _getValue() override
+   {
+      float elapsedS;
+      if (timeSource == TIME_SOURCE_FIXED_STEP)
+      {
+         elapsedS = static_cast<float>(_sampleIndex) * TestSensorConfig::SIN_FIXED_STEP_S;
+      }
+      else
+      {
+         elapsedS = static_cast<float>(millis() - _startMs) / 1000.0f;
+      }
+
+      float radians = _advancePhase(elapsedS);
+      return TestSensorConfig::SIN_MEAN + (sinf(radians) * TestSensorConfig::SIN_AMPLITUDE);
    }
 
 public:
+   ///
+   /// <summary>
+   /// Initializes the sensor and resets the phase accumulator so a new run starts at phase 0.
+   /// </summary>
+   /// <returns>True when initialization succeeds; otherwise false.</returns>
+   ///
+   bool begin() override
+   {
+      _phaseRadians = 0.0f;
+      _lastElapsedS = 0.0f;
+      return MockTestSensorBase::begin();
+   }
+
    ///
    /// <summary>
    /// Selects which time source the wave currently uses. Public and mutable so it can be
@@ -791,7 +836,7 @@ public:
    /// fixed time increment per sample. Defaults to TIME_SOURCE_CLOCK.</param>
    ///
    explicit SinTestSensor(long timeSource = TIME_SOURCE_CLOCK)
-      : MockTestSensorBase(TestSensorConfig::SIN_FORMAT, TestSensorConfig::SIN_HIGH_RES_FORMAT), timeSource(timeSource)
+      : MockTestSensorBase(TestSensorConfig::SIN_FORMAT), timeSource(timeSource)
    {
    }
 
@@ -835,7 +880,7 @@ public:
    /// </summary>
    ///
    MS5837PressureTestSensor()
-      : ITestSensor(TestSensorConfig::MS5837_FORMAT, TestSensorConfig::MS5837_HIGH_RES_FORMAT)
+      : ITestSensor(TestSensorConfig::MS5837_FORMAT)
    {
    }
 
@@ -898,7 +943,7 @@ public:
    /// </summary>
    ///
    CapacitiveTestSensor()
-      : ITestSensor(TestSensorConfig::CAPACITIVE_FORMAT, TestSensorConfig::CAPACITIVE_HIGH_RES_FORMAT)
+      : ITestSensor(TestSensorConfig::CAPACITIVE_FORMAT)
    {
    }
 
@@ -977,7 +1022,7 @@ public:
    /// </summary>
    ///
    DepthTestSensor()
-      : ITestSensor(TestSensorConfig::DEPTH_FORMAT, TestSensorConfig::DEPTH_HIGH_RES_FORMAT)
+      : ITestSensor(TestSensorConfig::DEPTH_FORMAT)
    {
    }
 

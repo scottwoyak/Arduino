@@ -54,3 +54,4 @@ Use this checklist when performing a code cleanup pass to ensure all areas are e
 - [ ] **Operator Preference**: Check the rule for increment operations.
 - [ ] **Formatting Consistency**: Ensure you defer to `.editorconfig` for whitespace and brace rules.
 - [ ] **Default-Matching Arguments**: Check calls with optional/default-valued parameters and remove any explicit argument that matches the parameter's default value.
+- [ ] **Multi-Line Parameter Lists**: When a constructor/function has many parameters, or an initializer list has many members, verify each parameter and each initializer is on its own line.

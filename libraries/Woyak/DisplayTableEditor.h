@@ -2,15 +2,67 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <span>
 #include "Color.h"
-#include "ESP32_S3_Playground.h"
+#include "ArduinoBoard.h"
 #include "DisplayTableCellEditor.h"
 #include "DisplayTable.h"
 
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "DisplayTableEditor requires a board with a display."
+#endif
+#ifndef ARDUINO_PREFERENCES_SUPPORTED
+#error "DisplayTableEditor requires a board with Preferences support."
+#endif
+
 ///
 /// <summary>
-/// Reusable, embeddable table of DisplayTableCellEditor values that can be navigated and adjusted live
-/// with a board's encoders: Encoder A cycles the selected field, Encoder B adjusts its value.
+/// Pairs a DisplayTableCell (or CellEditor) with the row-level display metadata
+/// (label) needed to render it as a row in a DisplayTableEditor. The first column of
+/// a row is just a label; it isn't part of the cell's own value/editing behavior, so
+/// that metadata lives here instead of on the cell itself. A row can also be a
+/// label-only section header (no cell), which renders as a header above the rows
+/// that follow it, e.g. { "Measured" }.
+/// </summary>
+///
+struct TableEditorRow
+{
+   ///
+   /// <summary>
+   /// Initializes a new instance of the TableEditorRow struct for a normal labeled field.
+   /// </summary>
+   /// <param name="label">Label text drawn in the row's first column, e.g. "Rate".</param>
+   /// <param name="cell">The cell providing this row's value/editing behavior.</param>
+   ///
+   TableEditorRow(const char* label, DisplayTableCell* cell)
+      : label(label), cell(cell)
+   {}
+
+   ///
+   /// <summary>
+   /// Initializes a new instance of the TableEditorRow struct as a section header row - a
+   /// label-only entry with no cell that renders as a header above the rows that follow it.
+   /// </summary>
+   /// <param name="header">Section header text drawn above the following rows.</param>
+   ///
+   explicit TableEditorRow(const char* header)
+      : label(header), cell(nullptr)
+   {}
+
+   const char* label;
+   DisplayTableCell* cell;
+
+   // Row index within the internal DisplayTable this field maps to, or -1 for section
+   // header rows, which don't correspond to a table row of their own. Set by
+   // DisplayTableEditor::_relayout().
+   int8_t rowIndex = -1;
+};
+
+///
+/// <summary>
+/// Reusable, embeddable table of DisplayTableCell values (a mix of editable CellEditor fields
+/// and read-only cells) that can be navigated and adjusted live with a board's encoders:
+/// Encoder A cycles the selected field, Encoder B adjusts its value.
 /// Also supports loading/saving/resetting all fields against a Preferences namespace. This class owns
 /// no rendering logic of its own - it delegates all drawing to an internal DisplayTable, so drawing
 /// fixes (sprite creation, text-size restoration, flicker avoidance, layout math, etc.) only need to
@@ -21,10 +73,9 @@
 class DisplayTableEditor
 {
 private:
-   ESP32_S3_Playground* _arduino;
+   Arduino* _arduino;
    const char* _prefNamespace;
-   DisplayTableCellEditor** _fields;
-   uint8_t _fieldCount;
+   std::span<TableEditorRow> _fields;
    uint8_t _selectedIndex = 0;
    char _keyBuffer[10];
    DisplayTable _table;
@@ -41,14 +92,14 @@ private:
    /// currently displayed (e.g. different config rows per selected test function) without
    /// different fields sharing - and clobbering - the same positional key.
    /// </summary>
-   /// <param name="field">Field to compute a persistence key for.</param>
+   /// <param name="row">Row to compute a persistence key for.</param>
    /// <returns>A short, stable Preferences key.</returns>
    ///
-   const char* _keyFor(DisplayTableCellEditor* field)
+   const char* _keyFor(const TableEditorRow& row)
    {
       // Simple FNV-1a hash of the label, truncated to fit Preferences' short key limit.
       uint32_t hash = 2166136261u;
-      for (const char* p = field->label(); *p != '\0'; p++)
+      for (const char* p = row.label; *p != '\0'; p++)
       {
          hash ^= static_cast<uint8_t>(*p);
          hash *= 16777619u;
@@ -60,21 +111,34 @@ private:
    ///
    /// <summary>
    /// Rebuilds the internal DisplayTable's rows from the current field array and resets the
-   /// selection to the first editable field. Shared by the constructor and setFields().
+   /// selection to the first editable field. Section header rows (no cell) don't get a table
+   /// row of their own; their label instead becomes the section header text of the next real
+   /// row, reusing DisplayTable's existing section-header rendering. Shared by the constructor
+   /// and setFields().
    /// </summary>
    ///
    void _relayout()
    {
-      for (uint8_t i = 0; i < _fieldCount; i++)
+      const char* pendingSection = nullptr;
+      for (uint8_t i = 0; i < _fields.size(); i++)
       {
-         _table.addRow(_fields[i]->label(), _fields[i]->format());
-         _table.setSection(i, _fields[i]->section());
+         if (_fields[i].cell == nullptr)
+         {
+            _fields[i].rowIndex = -1;
+            pendingSection = _fields[i].label;
+            continue;
+         }
+
+         _fields[i].rowIndex = static_cast<int8_t>(_table.rowCount());
+         _table.addRow(_fields[i].label, _fields[i].cell->format());
+         _table.setSection(_fields[i].rowIndex, pendingSection);
+         pendingSection = nullptr;
       }
 
       _selectedIndex = 0;
-      for (uint8_t i = 0; i < _fieldCount; i++)
+      for (uint8_t i = 0; i < _fields.size(); i++)
       {
-         if (_fields[i]->isEditable())
+         if (_fields[i].cell != nullptr && _fields[i].cell->isEditable())
          {
             _selectedIndex = i;
             break;
@@ -86,23 +150,30 @@ private:
    /// <summary>
    /// Pushes every field's current value/colors into the internal DisplayTable, reflecting
    /// selection highlighting and disabled/enabled state. Called by draw() before delegating
-   /// to the table.
+   /// to the table. Section header rows (no cell) have no table row to sync.
    /// </summary>
    ///
    void _syncTable()
    {
-      for (uint8_t i = 0; i < _fieldCount; i++)
+      for (uint8_t i = 0; i < _fields.size(); i++)
       {
-         bool isSelected = _fields[i]->isEditable() && _fields[i]->isEnabled() && (i == _selectedIndex);
-         bool isDisabled = !_fields[i]->isEnabled();
+         DisplayTableCell* cell = _fields[i].cell;
+         if (cell == nullptr)
+         {
+            continue;
+         }
+
+         uint8_t rowIndex = _fields[i].rowIndex;
+         bool isSelected = cell->isEditable() && cell->isEnabled() && (i == _selectedIndex);
+         bool isDisabled = !cell->isEnabled();
 
          Color labelColor = isDisabled ? Color::GRAY : Color::LABEL;
          Color valueBackgroundColor = isSelected ? Color::BLUE : Color::BLACK;
-         Color valueColor = isDisabled ? Color::GRAY : (isSelected ? Color::WHITE : (_fields[i]->isEditable() ? Color::VALUE : Color::VALUE2));
+         Color valueColor = isDisabled ? Color::GRAY : (isSelected ? Color::WHITE : (cell->isEditable() ? Color::VALUE : Color::VALUE2));
 
-         _table.setLabelColor(i, labelColor);
-         _table.setValue(i, _fields[i]->valueText().c_str(), valueColor);
-         _table.setValueBackgroundColor(i, valueBackgroundColor);
+         _table.setLabelColor(rowIndex, labelColor);
+         _table.setValue(rowIndex, cell->valueText().c_str(), valueColor);
+         _table.setValueBackgroundColor(rowIndex, valueBackgroundColor);
       }
    }
 
@@ -113,20 +184,36 @@ public:
    /// </summary>
    /// <param name="arduino">Board providing the display, encoders, and preferences.</param>
    /// <param name="prefNamespace">Preferences namespace used to persist field values.</param>
-   /// <param name="fields">Array of field pointers to display and edit.</param>
-   /// <param name="fieldCount">Number of entries in fields.</param>
+   /// <param name="fields">Span of rows to display and edit.</param>
    /// <param name="x">Left X coordinate of the table.</param>
    /// <param name="y">Top Y coordinate of the table.</param>
    /// <param name="textSize">The text size applied automatically before drawing labels and values.</param>
-   /// <param name="mono">If true, uses a monospaced font; if false, uses a proportional font.</param>
+   /// <param name="labelAlignment">Alignment of the row label text within its reserved column width (default: RIGHT).</param>
    ///
-   DisplayTableEditor(ESP32_S3_Playground* arduino, const char* prefNamespace, DisplayTableCellEditor** fields,
-      uint8_t fieldCount, int16_t x, int16_t y, uint8_t textSize = 2, bool mono = true)
-      : _arduino(arduino), _prefNamespace(prefNamespace), _fields(fields), _fieldCount(fieldCount),
-      _table(arduino, x, y, textSize, mono)
+   DisplayTableEditor(Arduino* arduino, const char* prefNamespace, std::span<TableEditorRow> fields,
+      int16_t x, int16_t y, uint8_t textSize = 2,
+      DisplayTable::Alignment labelAlignment = DisplayTable::Alignment::RIGHT)
+      : _arduino(arduino), _prefNamespace(prefNamespace), _fields(fields),
+      _table(arduino, x, y, textSize, labelAlignment)
    {
       _relayout();
    }
+
+   ///
+   /// <summary>
+   /// Initializes a new instance of the DisplayTableEditor class, deferring positioning until
+   /// setPosition() is called, e.g. once a variable-height title's actual height is known.
+   /// </summary>
+   /// <param name="arduino">Board providing the display, encoders, and preferences.</param>
+   /// <param name="prefNamespace">Preferences namespace used to persist field values.</param>
+   /// <param name="fields">Span of rows to display and edit.</param>
+   /// <param name="textSize">The text size applied automatically before drawing labels and values.</param>
+   /// <param name="labelAlignment">Alignment of the row label text within its reserved column width (default: RIGHT).</param>
+   ///
+   DisplayTableEditor(Arduino* arduino, const char* prefNamespace, std::span<TableEditorRow> fields,
+      uint8_t textSize = 2, DisplayTable::Alignment labelAlignment = DisplayTable::Alignment::RIGHT)
+      : DisplayTableEditor(arduino, prefNamespace, fields, 0, 0, textSize, labelAlignment)
+   {}
 
    ///
    /// <summary>
@@ -137,16 +224,14 @@ public:
    /// new fields' persisted values and refresh the display. Does not change the table's
    /// position; call setPosition() separately if needed.
    /// </summary>
-   /// <param name="fields">Array of field pointers to display and edit.</param>
-   /// <param name="fieldCount">Number of entries in fields.</param>
+   /// <param name="fields">Span of rows to display and edit.</param>
    ///
-   void setFields(DisplayTableCellEditor** fields, uint8_t fieldCount)
+   void setFields(std::span<TableEditorRow> fields)
    {
       int16_t oldWidth = width();
       int16_t oldHeight = height();
 
       _fields = fields;
-      _fieldCount = fieldCount;
       _table.clearRows();
       _relayout();
 
@@ -209,20 +294,6 @@ public:
 
    ///
    /// <summary>
-   /// Sets whether section header rows (see DisplayTableCellEditor::section()) are drawn and
-   /// reserved space for. Defaults to true. Useful when a table reuses field objects whose
-   /// section was set for a different table (e.g. a scatter-plot view reusing main-screen
-   /// fields) and shouldn't repeat that section header.
-   /// </summary>
-   /// <param name="showSections">True to draw section headers, false to suppress them.</param>
-   ///
-   void setShowSections(bool showSections)
-   {
-      _table.setShowSections(showSections);
-   }
-
-   ///
-   /// <summary>
    /// Gets the index of the currently selected field.
    /// </summary>
    /// <returns>Zero-based index of the selected field.</returns>
@@ -240,7 +311,7 @@ public:
    ///
    void setSelectedIndex(uint8_t index)
    {
-      if (index < _fieldCount && _fields[index]->isEditable())
+      if (index < _fields.size() && _fields[index].cell != nullptr && _fields[index].cell->isEditable())
       {
          _selectedIndex = index;
       }
@@ -262,12 +333,13 @@ public:
          return;
       }
 
+      int32_t fieldCount = static_cast<int32_t>(_fields.size());
       int32_t step = direction > 0 ? 1 : -1;
       int32_t newIndex = static_cast<int32_t>(_selectedIndex);
-      for (uint8_t i = 0; i < _fieldCount; i++)
+      for (uint8_t i = 0; i < _fields.size(); i++)
       {
-         newIndex = (newIndex + step + _fieldCount) % _fieldCount;
-         if (_fields[newIndex]->isEditable() && _fields[newIndex]->isEnabled())
+         newIndex = (newIndex + step + fieldCount) % fieldCount;
+         if (_fields[newIndex].cell != nullptr && _fields[newIndex].cell->isEditable() && _fields[newIndex].cell->isEnabled())
          {
             break;
          }
@@ -291,24 +363,58 @@ public:
          return;
       }
 
-      if (_fields[_selectedIndex]->isEditable() && _fields[_selectedIndex]->isEnabled())
+      DisplayTableCell* cell = _fields[_selectedIndex].cell;
+      if (cell->isEditable() && cell->isEnabled())
       {
-         _fields[_selectedIndex]->adjust(direction);
+         static_cast<CellEditor*>(cell)->adjust(direction);
       }
    }
 
-   ///
-   /// <summary>
-   /// Draws the label/value rows at the position given to the constructor, highlighting the
-   /// currently selected field's value with a colored background. Syncs each field's current
-   /// value/colors into the internal DisplayTable, then delegates all drawing to it.
-   /// </summary>
-   ///
-   void draw()
-   {
-      _syncTable();
-      _table.draw();
-   }
+          ///
+          /// <summary>
+          /// Draws the label/value rows at the position given to the constructor, highlighting the
+          /// currently selected field's value with a colored background. Syncs each field's current
+          /// value/colors into the internal DisplayTable, then delegates all drawing to it.
+          /// </summary>
+          ///
+          void draw()
+          {
+             _syncTable();
+             _table.draw();
+          }
+
+       #ifdef ARDUINO_PLAYGROUND_SUPPORTED
+          ///
+          /// <summary>
+          /// Drives the editor from the board's own encoders in a single call: Encoder A moves the
+          /// selection (selectNext()), Encoder B adjusts the selected field's value
+          /// (adjustSelected()) and persists the change, Encoder B's integral button resets all
+          /// fields to their defaults (reset(), which also persists), and the table is redrawn
+          /// afterward. This is the simplest way to drive the editor each loop() iteration when no
+          /// additional per-change logic is needed. Requires a board with Encoder A/B (see
+          /// ARDUINO_PLAYGROUND_SUPPORTED); use selectNext()/adjustSelected()/reset()/draw()
+          /// directly if finer control is needed (e.g. reacting to a change before it's applied).
+          /// </summary>
+          ///
+          void update()
+          {
+             selectNext(_arduino->encoderA.delta());
+
+             int32_t adjustDelta = _arduino->encoderB.delta();
+             if (adjustDelta != 0)
+             {
+                adjustSelected(adjustDelta);
+                save();
+             }
+
+             if (_arduino->encoderB.button.wasPressed())
+             {
+                reset();
+             }
+
+             draw();
+          }
+       #endif
 
    ///
    /// <summary>
@@ -338,11 +444,11 @@ public:
 
    ///
    /// <summary>
-   /// Gets the underlying field array, e.g. for loading/saving/resetting from Preferences.
+   /// Gets the underlying row span, e.g. for loading/saving/resetting from Preferences.
    /// </summary>
-   /// <returns>The field pointer array passed to the constructor.</returns>
+   /// <returns>The row span passed to the constructor.</returns>
    ///
-   DisplayTableCellEditor** fields() const
+   std::span<TableEditorRow> fields() const
    {
       return _fields;
    }
@@ -355,7 +461,7 @@ public:
    ///
    uint8_t fieldCount() const
    {
-      return _fieldCount;
+      return static_cast<uint8_t>(_fields.size());
    }
 
    ///
@@ -367,15 +473,16 @@ public:
    {
       Preferences* prefs = _preferences();
       prefs->begin(_prefNamespace, true);
-      for (uint8_t i = 0; i < _fieldCount; i++)
+      for (uint8_t i = 0; i < _fields.size(); i++)
       {
-         if (!_fields[i]->isEditable())
+         if (_fields[i].cell == nullptr || !_fields[i].cell->isEditable())
          {
             continue;
          }
-         double defaultValue = _fields[i]->defaultNumericValue();
+         CellEditor* field = static_cast<CellEditor*>(_fields[i].cell);
+         double defaultValue = field->defaultNumericValue();
          double value = prefs->getDouble(_keyFor(_fields[i]), defaultValue);
-         _fields[i]->setNumericValue(value);
+         field->setNumericValue(value);
       }
       prefs->end();
    }
@@ -389,13 +496,14 @@ public:
    {
       Preferences* prefs = _preferences();
       prefs->begin(_prefNamespace, false);
-      for (uint8_t i = 0; i < _fieldCount; i++)
+      for (uint8_t i = 0; i < _fields.size(); i++)
       {
-         if (!_fields[i]->isEditable())
+         if (_fields[i].cell == nullptr || !_fields[i].cell->isEditable())
          {
             continue;
          }
-         prefs->putDouble(_keyFor(_fields[i]), _fields[i]->numericValue());
+         CellEditor* field = static_cast<CellEditor*>(_fields[i].cell);
+         prefs->putDouble(_keyFor(_fields[i]), field->numericValue());
       }
       prefs->end();
    }
@@ -407,13 +515,13 @@ public:
    ///
    void reset()
    {
-      for (uint8_t i = 0; i < _fieldCount; i++)
+      for (uint8_t i = 0; i < _fields.size(); i++)
       {
-         if (!_fields[i]->isEditable())
+         if (_fields[i].cell == nullptr || !_fields[i].cell->isEditable())
          {
             continue;
          }
-         _fields[i]->reset();
+         static_cast<CellEditor*>(_fields[i].cell)->reset();
       }
       save();
    }

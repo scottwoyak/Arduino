@@ -57,6 +57,15 @@ private:
    bool _depthLocked = false;
    uint8_t _maxLayerUsed = 0;
 
+   // True until the next diffAndDraw() call has run. While true, every pixel is treated as
+   // changed regardless of what _prevMask currently holds, since _prevMask's content right
+   // after a bind()/reset() is only a placeholder (see reset()) and could otherwise alias a
+   // real layer value once the buffer's bit depth is narrowed by _lockBitDepthIfNeeded() -
+   // e.g. at 1 bit/pixel only values 0/1 are representable, so a placeholder byte could
+   // decode to the same value as a real, never-before-drawn pixel and be wrongly skipped
+   // instead of painted.
+   bool _forceFullRepaint = true;
+
 public:
    ///
    /// <summary>Maximum number of distinct non-zero layer indices (1..MAX_LAYERS) a single frame can use.</summary>
@@ -278,12 +287,8 @@ public:
       }
 
       memset(_mask, 0, bufSize);
-
-      // Prime the previous-frame buffer with a value that can never match a real layer-0
-      // pattern, so the first diffAndDraw() after a (re)allocation treats every pixel as
-      // changed and actually paints the background (and anything else stamped) instead of
-      // assuming it already matches what's on the physical display.
-      memset(_prevMask, 0xFF, bufSize);
+      memset(_prevMask, 0, bufSize);
+      _forceFullRepaint = true;
       return true;
    }
 
@@ -362,8 +367,14 @@ public:
       if (bufSize > 0)
       {
          memset(_mask, 0, bufSize);
-         memset(_prevMask, alreadyPhysicallyErased ? 0 : 0xFF, bufSize);
+         memset(_prevMask, 0, bufSize);
       }
+
+      // If the caller hasn't already physically erased the region, every pixel must still
+      // be treated as changed on the next diffAndDraw() so the physical display actually
+      // gets repainted (see _forceFullRepaint's declaration for why an encoded sentinel
+      // value isn't used for this instead).
+      _forceFullRepaint = !alreadyPhysicallyErased;
    }
 
    ///
@@ -453,6 +464,10 @@ public:
    /// whose layer index actually changed, looking up each pixel's color via the palette set
    /// through setPaletteColor()/setBackgroundColor(). Pixels whose layer
    /// did not change are left untouched, so unchanging content is never redrawn or flashed.
+   /// Unchanged bytes (up to 8 pixels at a time) are skipped with a single XOR check rather
+   /// than inspecting each pixel individually. The entire scan is wrapped in
+   /// startWrite()/endWrite() so all the draw calls for this frame are sent as one batched
+   /// transaction instead of one per pixel.
    /// The current frame's buffer is copied into the previous-frame buffer afterward so the
    /// next call diffs against what was actually just drawn.
    /// </summary>
@@ -469,6 +484,13 @@ public:
       const uint8_t pixelsPerByte = static_cast<uint8_t>(8 / _bitsPerPixel);
       const uint8_t bitMask = static_cast<uint8_t>((1 << _bitsPerPixel) - 1);
 
+      // While a full repaint is pending (see _forceFullRepaint's declaration), every byte
+      // must be treated as changed so every pixel gets (re)painted, since _prevMask's
+      // content isn't a trustworthy baseline to diff against yet.
+      const bool forceFullRepaint = _forceFullRepaint;
+
+      _display->startWrite();
+
       for (int16_t x = 0; x < _width; x++)
       {
          uint8_t* column = _mask + (static_cast<size_t>(x) * _bytesPerColumn);
@@ -476,7 +498,7 @@ public:
 
          for (size_t byteIdx = 0; byteIdx < _bytesPerColumn; byteIdx++)
          {
-            uint8_t changed = column[byteIdx] ^ prevColumn[byteIdx];
+            uint8_t changed = forceFullRepaint ? static_cast<uint8_t>(0xFF) : static_cast<uint8_t>(column[byteIdx] ^ prevColumn[byteIdx]);
             if (changed == 0)
             {
                continue;
@@ -500,5 +522,9 @@ public:
 
          memcpy(prevColumn, column, _bytesPerColumn);
       }
+
+      _display->endWrite();
+
+      _forceFullRepaint = false;
    }
 };

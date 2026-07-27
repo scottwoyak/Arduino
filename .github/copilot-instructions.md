@@ -43,6 +43,7 @@
 - When addressing data quality issues, prefer root-cause stabilization logic over fixed sample-skipping heuristics.
 - For mock-timer-based deterministic tests, prefer exact equality assertions (`assertEqual`) over range-style boolean checks when expected values are deterministic.
 - Optimize code and suggestions for the ESP32-S3 platform, including using ESP32-specific APIs like `gpio_isr_handler_add()`, `esp_timer`, and `IRAM_ATTR` for ISR functions, and other ESP32-S3 features.
+- When a constructor or function has many parameters, or an initializer list has many members, put each parameter/initializer on its own line for readability (see `DisplayValue`'s constructors in `libraries/Woyak/DisplayValue.h`).
 - Always format serial tables with the `SerialTable` class.
 - Prefer using pointers instead of references for parameters/members where a choice exists.
 - Prefer explicit-width integer types (uint8_t, uint16_t, uint32_t, uint64_t) over platform-dependent types like uint/unsigned int for new and cleaned-up code.
@@ -51,6 +52,7 @@
 - Review for unneeded/redundant casts (e.g., static_cast) and remove them, but only when they don't change overload resolution or intended truncation/conversion behavior. Avoid explicit casts when the conversion already happens implicitly via usual arithmetic conversions.
 - When deciding whether to remove a zero/guard check during cleanup, only remove it if the value is provably non-zero at that call site (e.g., a local constant). Do not remove guard checks in public/reusable API functions whose callers aren't all known, since external callers could pass zero.
 - When the user says "cleanup" a file/class, perform a full cleanup pass, not just one narrow pattern (e.g., not just casts). This includes: redundant casts, unneeded zero/guard checks, comment/doc-comment formatting consistency, dead code, and other general code quality issues consistent with the rest of the codebase's style.
+- When a constructor (or function) has many parameters, put each parameter on a separate line, in addition to putting each initializer-list member on its own line.
 
 ## Documentation Comment Style
 - User prefers Visual Studio XML documentation comments (`/// <summary>`, `<param>`, `<returns>`) for class and method documentation. These are XML documentation comments used for IntelliSense.

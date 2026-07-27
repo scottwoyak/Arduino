@@ -27,6 +27,7 @@ Format valueFormat("##.#");
 constexpr float VALUE_STEP = 0.1f;
 constexpr uint8_t NUM_FIELDS = 5;
 float values[NUM_FIELDS] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+Color backgroundColors[NUM_FIELDS] = { Color::BLACK, Color::BLACK, Color::BLACK, Color::BLACK, Color::BLACK };
 uint8_t selectedIndex = 0;
 
 DisplayField topLeftField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, DisplayField::Alignment::LEFT);
@@ -85,8 +86,7 @@ void updateSelection()
 {
    for (uint8_t i = 0; i < NUM_FIELDS; i++)
    {
-      Color backgroundColor = (i == selectedIndex) ? Color::BLUE : Color::BLACK;
-      fields[i]->setValueBackgroundColor(backgroundColor);
+      backgroundColors[i] = (i == selectedIndex) ? Color::BLUE : Color::BLACK;
    }
 }
 
@@ -99,7 +99,7 @@ void updateFields()
 {
    for (uint8_t i = 0; i < NUM_FIELDS; i++)
    {
-      fields[i]->draw(values[i]);
+      fields[i]->draw(values[i], Color::LABEL, Color::VALUE, backgroundColors[i]);
    }
 }
 

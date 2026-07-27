@@ -26,6 +26,7 @@
 /// </remarks>
 
 #include "ESP32_S3_Playground.h"
+#include <array>
 
 #include "TempSensor.h"
 #include "SerialX.h"
@@ -33,12 +34,12 @@
 #include "Status.h"
 #include "I2CMultiplexor.h"
 #include "Timer.h"
-#include "DisplayGrid.h"
+#include "DisplayTable.h"
 #include "DisplayField.h"
 #include "Util.h"
 
 #include "WiFiSettings.h"
-#include "TimedScatterPlot.h"
+#include "ScatterPlot.h"
 
 Format tempFormat(" ##.###");
 Format uploadStatusFormat(7, Format::Alignment::RIGHT);
@@ -48,7 +49,7 @@ constexpr uint8_t NUM_WINDOWS = 5;
 
 // Views cycled via encoderA: the temperature table, then one scatterplot per
 // sampling rate (current value plus each averaging window). Only one plot view's
-// TimedScatterPlot/series are ever allocated at a time (see _activatePlotView()),
+// ScatterPlot/series are ever allocated at a time (see _activatePlotView()),
 // created on demand when switching to a plot view and destroyed when leaving it, so
 // memory is bounded by a single view's series instead of NUM_VIEWS worth at once.
 enum class ViewMode : uint8_t
@@ -107,7 +108,7 @@ InfluxPoint* averagePoints[NUM_SENSORS][NUM_WINDOWS];
 InfluxField* averageFields[NUM_SENSORS][NUM_WINDOWS];
 DisplayField* uploadStatusField = nullptr;
 
-TimedScatterPlot* activePlot = nullptr;
+ScatterPlot* activePlot = nullptr;
 TimedScatterPlotSeries* activePlotSeries[NUM_SENSORS] = { nullptr };
 int8_t activePlotView = -1;
 ViewMode viewMode = ViewMode::TABLE;
@@ -122,6 +123,18 @@ const char* locations[NUM_SENSORS] = {
    "Test 7",
    "Test 8",
 };
+
+std::array tableColumns = {
+   DisplayTable::Column(""),
+   DisplayTable::Column("Now", tempFormat.formatString().c_str(), tempFormat.alignment()),
+   DisplayTable::Column(AVERAGE_WINDOW_LABELS[0], tempFormat.formatString().c_str(), tempFormat.alignment()),
+   DisplayTable::Column(AVERAGE_WINDOW_LABELS[1], tempFormat.formatString().c_str(), tempFormat.alignment()),
+   DisplayTable::Column(AVERAGE_WINDOW_LABELS[2], tempFormat.formatString().c_str(), tempFormat.alignment()),
+   DisplayTable::Column(AVERAGE_WINDOW_LABELS[3], tempFormat.formatString().c_str(), tempFormat.alignment()),
+   DisplayTable::Column(AVERAGE_WINDOW_LABELS[4], tempFormat.formatString().c_str(), tempFormat.alignment()),
+};
+DisplayTable sensorTable(&arduino, 0, 0, tableColumns, 2, Color::WHITE);
+bool sensorTableBuilt = false;
 
 Rect16 plotRect;
 
@@ -165,10 +178,10 @@ void activatePlotView(uint8_t plotView)
    deactivatePlotView();
 
    unsigned long plotHistoryMs = 120*1000;
-   activePlot = new TimedScatterPlot(&arduino, plotRect, plotHistoryMs, tempFormat, 0.0f);
+   activePlot = new ScatterPlot(&arduino, plotRect, "-######", tempFormat.formatString());
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      TimedScatterPlotSeries* series = activePlot->createSeries(0);
+      TimedScatterPlotSeries* series = activePlot->createTimedSeries(plotHistoryMs, plotRect.width);
       series->showPoints = false;
       series->showLines = true;
       series->color = SENSOR_PLOT_COLORS[i];
@@ -315,8 +328,8 @@ void setup()
    int16_t uploadX = arduino.width() - arduino.textWidth(uploadSample.c_str());
    int16_t uploadY = arduino.height() - arduino.charH();
    Point16 uploadPos(uploadX, uploadY);
-   uploadStatusField = new DisplayField(&arduino, uploadPos, uploadStatusFormat, Color::GRAY);
-   uploadStatusField->draw("");
+   uploadStatusField = new DisplayField(&arduino, uploadPos, uploadStatusFormat, 2);
+   uploadStatusField->draw("", Color::LABEL, Color::GRAY);
 
    int16_t plotTop = arduino.charH() * 2;
    int16_t plotHeight = arduino.height() - plotTop;
@@ -420,41 +433,48 @@ void loop()
    }
    else if (viewMode == ViewMode::TABLE)
    {
-      static Format idFormat("#", Format::Alignment::RIGHT);
-      static const Color idColor = Color::WHITE;
-      static const DisplayGrid::Column columns[] = {
-         { "", &idFormat, &idColor },
-         { "Now", &tempFormat },
-         { AVERAGE_WINDOW_LABELS[0], &tempFormat },
-         { AVERAGE_WINDOW_LABELS[1], &tempFormat },
-         { AVERAGE_WINDOW_LABELS[2], &tempFormat },
-         { AVERAGE_WINDOW_LABELS[3], &tempFormat },
-         { AVERAGE_WINDOW_LABELS[4], &tempFormat },
-      };
-      DisplayGrid grid(&arduino, nullptr, columns, 7, Color::WHITE);
-      grid.printHeader();
+      if (!sensorTableBuilt)
+      {
+         sensorTable.setPosition(arduino.getCursorX(), arduino.getCursorY());
+         for (uint8_t i = 0; i < NUM_SENSORS; i++)
+         {
+            char label[4];
+            snprintf(label, sizeof(label), "%u", i);
+            sensorTable.addRow(label, Color::VALUE);
+         }
+         sensorTableBuilt = true;
+      }
 
       for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
          if (!sensors[i]->exists())
          {
-            grid.printRow(Color::GRAY, i, "----", "----", "----", "----", "----", "----");
+            for (size_t c = 0; c < ARRAY_SIZE(tableColumns); c++)
+            {
+               sensorTable.setNoValue(i, c, Color::GRAY, '-');
+            }
             continue;
          }
 
-         grid.printRow(Color::VALUE, i, currentFields[i]->get(), averageFields[i][0]->get(), averageFields[i][1]->get(),
-                       averageFields[i][2]->get(), averageFields[i][3]->get(), averageFields[i][4]->get());
+         sensorTable.setValue(i, 0, currentFields[i]->get(), Color::VALUE);
+         sensorTable.setValue(i, 1, averageFields[i][0]->get(), Color::VALUE);
+         sensorTable.setValue(i, 2, averageFields[i][1]->get(), Color::VALUE);
+         sensorTable.setValue(i, 3, averageFields[i][2]->get(), Color::VALUE);
+         sensorTable.setValue(i, 4, averageFields[i][3]->get(), Color::VALUE);
+         sensorTable.setValue(i, 5, averageFields[i][4]->get(), Color::VALUE);
       }
+
+      sensorTable.draw();
    }
    else if (activePlot != nullptr)
    {
-      activePlot->render();
+      activePlot->draw();
    }
 
    if (influxTimer.ready())
    {
       digitalWrite(BUILTIN_LED, HIGH);
-      uploadStatusField->draw("Upload");
+      uploadStatusField->draw("Upload", Color::LABEL, Color::GRAY);
 
       bool writeFailed = !uploadAllPoints();
 
@@ -481,7 +501,7 @@ void loop()
       }
 
                    digitalWrite(BUILTIN_LED, LOW);
-                   uploadStatusField->draw("");
+                   uploadStatusField->clear(Color::GRAY);
                 }
              }
 

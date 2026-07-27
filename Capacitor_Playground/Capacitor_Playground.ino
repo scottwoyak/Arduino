@@ -55,7 +55,7 @@
 #include "DisplayTextView.h"
 #include "Timer.h"
 #include "Stopwatch.h"
-#include "TimedScatterPlot.h"
+#include "ScatterPlot.h"
 #include "ScatterPlot.h"
 #include "Histogram.h"
 #include "HistogramPlot.h"
@@ -74,6 +74,8 @@ struct TestRunResult;
 Arduino arduino;
 Format chargeFormat("#####.# us");
 Format resistorLabelFormat(4);
+Format bufferCellFormat("###");
+Format filterCellFormat("##.# %");
 constexpr size_t DISPLAY_INTERVAL_MS = 200;
 Timer displayTimer(DISPLAY_INTERVAL_MS);
 bool forceDisplayUpdate = false; // Set true to force an immediate redraw outside the normal interval (e.g. on encoder changes).
@@ -106,8 +108,8 @@ enum class PlotState
 };
 
 constexpr uint32_t SCATTER_HISTORY_S = 20;
-TimedScatterPlot* chargeScatterPlot = nullptr;
-IScatterPlotSeries* chargeScatterSeries = nullptr;
+ScatterPlot* chargeScatterPlot = nullptr;
+TimedScatterPlotSeries* chargeScatterSeries = nullptr;
 PlotState plotState = PlotState::OFF;
 PlotState previousPlotState = PlotState::OFF;
 
@@ -167,6 +169,14 @@ constexpr ResistorOption RESISTOR_OPTIONS[] = {
    { CHARGE_PIN_47K, "47K" },
 };
 constexpr size_t RESISTOR_OPTION_COUNT = sizeof(RESISTOR_OPTIONS) / sizeof(RESISTOR_OPTIONS[0]);
+
+/// <summary>Resistor option labels, derived from RESISTOR_OPTIONS, for use with EnumCellEditor.</summary>
+constexpr const char* RESISTOR_LABELS[] = {
+   RESISTOR_OPTIONS[0].label,
+   RESISTOR_OPTIONS[1].label,
+   RESISTOR_OPTIONS[2].label,
+   RESISTOR_OPTIONS[3].label,
+};
 constexpr size_t MAX_TEST_RESULTS = RESISTOR_OPTION_COUNT * TARGET_EFFECTIVE_RATE_COUNT * OPTIMIZATION_DISCHARGE_DELAY_COUNT;
 
 // ----------- Preferences Keys
@@ -184,12 +194,6 @@ long bufferSize = (long)CapacitorSensor::DEFAULT_BUFFER_SIZE;
 long testType = 0;
 float filter = CapacitorSensor::DEFAULT_FILTER;
 
-Format resistorFieldFormat(8, Format::Alignment::LEFT);
-Format dischargeFieldFormat("#### us", Format::Alignment::LEFT);
-Format bufferFieldFormat("###", Format::Alignment::LEFT);
-Format testTypeFieldFormat(20, Format::Alignment::LEFT);
-Format filterFieldFormat("##.# %", Format::Alignment::LEFT);
-
 // ----------- Measured Fields (read-only, share the same table as the editable fields)
 // Updated each display refresh from the sensor/stats before table.draw() is called.
 float measuredChargeTimeMicros = NAN;
@@ -197,10 +201,6 @@ float measuredStdDevMicros = NAN;
 float measuredRangeMicros = NAN;
 float measuredRawRate = 0.0f;
 float measuredEffectiveRate = 0.0f;
-
-Format measuredChargeFormat("#####.# us", Format::Alignment::LEFT);
-Format measuredRateFormat("######/s", Format::Alignment::LEFT);
-Format measuredEffectiveRateFormat("###/s", Format::Alignment::LEFT);
 
 // ----------- Test Type Selection
 /// <summary>Test types selectable via the Test Type live field, run by pressing Button A.</summary>
@@ -215,92 +215,47 @@ enum class TestType
 constexpr const char* TEST_TYPE_LABELS[] = { "Optimize", "Buffer Size Sweep", "Discharge Time Sweep", "Raw Data Capture" };
 constexpr size_t TEST_TYPE_COUNT = sizeof(TEST_TYPE_LABELS) / sizeof(TEST_TYPE_LABELS[0]);
 
-///
-/// <summary>
-/// Resistor-selection setup field that steps through RESISTOR_OPTIONS by index and displays
-/// the resistor's label instead of a raw index number.
-/// </summary>
-///
-class ResistorSetupField : public IntDisplayTableCellEditor
+EnumCellEditor resistorCell(&resistorIndex,
+   RESISTOR_LABELS, 0, "########");
+IntCellEditor delayCell(&dischargeDelayMicros,
+   50, 2000, 50, (long)CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS, "#### us");
+IntCellEditor bufferSizeCell(&bufferSize,
+   (long)MIN_TARGET_BUFFER_SIZE, (long)MAX_TARGET_BUFFER_SIZE, 5, (long)CapacitorSensor::DEFAULT_BUFFER_SIZE, "###");
+EnumCellEditor testTypeCell(&testType,
+   TEST_TYPE_LABELS, 0, "####################");
+FloatCellEditor filterCell(&filter,
+   0.0f, 50.0f, 1.0f, CapacitorSensor::DEFAULT_FILTER, "##.# %");
+
+ReadOnlyCell chargeTimeCell(&measuredChargeTimeMicros, "#####.# us");
+ReadOnlyCell stdDevCell(&measuredStdDevMicros, "#####.# us");
+ReadOnlyCell rangeCell(&measuredRangeMicros, "#####.# us");
+ReadOnlyCell rawRateCell(&measuredRawRate, "######/s");
+ReadOnlyCell effectiveRateCell(&measuredEffectiveRate, "###/s");
+
+BlankCell testTypeSpacerCell;
+
+TableEditorRow setupCells[] =
 {
-public:
-   using IntDisplayTableCellEditor::IntDisplayTableCellEditor;
-
-   void adjust(int32_t direction) override
-   {
-      int32_t count = (int32_t)RESISTOR_OPTION_COUNT;
-      long newValue = (*_value + (direction > 0 ? 1 : -1) + count) % count;
-      *_value = newValue;
-   }
-
-   std::string valueText() override
-   {
-      long index = constrain(*_value, 0L, (int32_t)(RESISTOR_OPTION_COUNT - 1));
-      return _format.toString(RESISTOR_OPTIONS[index].label);
-   }
+   { "Setup" },
+   { "Resistor", &resistorCell },
+   { "Discharge Time", &delayCell },
+   { "Buffer Size", &bufferSizeCell },
+   { "Outlier Filter", &filterCell },
+   { "", &testTypeSpacerCell },
+   { "Test Type", &testTypeCell },
 };
+DisplayTableEditor table(&arduino, PREF_NAMESPACE, setupCells, 0, 0);
 
-///
-/// <summary>
-/// Test-type-selection setup field that steps through TEST_TYPE_LABELS by index and displays
-/// the test type's label instead of a raw index number.
-/// </summary>
-///
-class TestTypeSetupField : public IntDisplayTableCellEditor
+TableEditorRow measurementCells[] =
 {
-public:
-   using IntDisplayTableCellEditor::IntDisplayTableCellEditor;
-
-   void adjust(int32_t direction) override
-   {
-      int32_t count = (int32_t)TEST_TYPE_COUNT;
-      long newValue = (*_value + (direction > 0 ? 1 : -1) + count) % count;
-      *_value = newValue;
-   }
-
-   std::string valueText() override
-   {
-      long index = constrain(*_value, 0L, (int32_t)(TEST_TYPE_COUNT - 1));
-      return _format.toString(TEST_TYPE_LABELS[index]);
-   }
+   { "Measurements" },
+   { "Avg Charge Time", &chargeTimeCell },
+   { "StdDev", &stdDevCell },
+   { "Range", &rangeCell },
+   { "Raw Rate", &rawRateCell },
+   { "Effective Rate", &effectiveRateCell },
 };
-
-ResistorSetupField resistorField("Resistor", &resistorIndex,
-   0, (long)(RESISTOR_OPTION_COUNT - 1), 1, 0, resistorFieldFormat);
-IntDisplayTableCellEditor delayField("Discharge Time", &dischargeDelayMicros,
-   50, 2000, 50, (long)CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS, dischargeFieldFormat);
-IntDisplayTableCellEditor bufferSizeField("Buffer Size", &bufferSize,
-   (long)MIN_TARGET_BUFFER_SIZE, (long)MAX_TARGET_BUFFER_SIZE, 5, (long)CapacitorSensor::DEFAULT_BUFFER_SIZE, bufferFieldFormat);
-TestTypeSetupField testTypeField("Test Type", &testType,
-   0, (long)(TEST_TYPE_COUNT - 1), 1, 0, testTypeFieldFormat);
-FloatDisplayTableCellEditor filterField("Outlier Filter", &filter,
-   0.0f, 50.0f, 1.0f, CapacitorSensor::DEFAULT_FILTER, filterFieldFormat);
-
-ReadOnlyDisplayTableCellEditor chargeTimeField("Avg Charge Time", &measuredChargeTimeMicros, measuredChargeFormat);
-ReadOnlyDisplayTableCellEditor stdDevField("StdDev", &measuredStdDevMicros, measuredChargeFormat);
-ReadOnlyDisplayTableCellEditor rangeField("Range", &measuredRangeMicros, measuredChargeFormat);
-ReadOnlyDisplayTableCellEditor rawRateField("Raw Rate", &measuredRawRate, measuredRateFormat);
-ReadOnlyDisplayTableCellEditor effectiveRateField("Effective Rate", &measuredEffectiveRate, measuredEffectiveRateFormat);
-
-BlankDisplayTableCellEditor testTypeSpacerField;
-
-DisplayTableCellEditor* setupFields[] = { &resistorField, &delayField, &bufferSizeField, &filterField, &testTypeSpacerField, &testTypeField };
-DisplayTableEditor table(&arduino, PREF_NAMESPACE, setupFields, sizeof(setupFields) / sizeof(setupFields[0]), 0, 0);
-
-DisplayTableCellEditor* measurementFields[] = { &chargeTimeField, &stdDevField, &rangeField, &rawRateField, &effectiveRateField };
-DisplayTableEditor measurementsTable(&arduino, PREF_NAMESPACE, measurementFields, sizeof(measurementFields) / sizeof(measurementFields[0]), 0, 0);
-
-///
-/// <summary>
-/// Assigns the "Setup" and "Measurements" section headers to the field table (must run
-/// after all field objects above are constructed).
-/// </summary>
-///
-void initializeFieldSections()
-{
-   resistorField.setSection("Setup");
-   chargeTimeField.setSection("Measurements");
-}
+DisplayTableEditor measurementsTable(&arduino, PREF_NAMESPACE, measurementCells, 0, 0);
 
 ///
 /// <summary>Look up the resistor value label for a charge pin.</summary>
@@ -496,7 +451,7 @@ bool loadBestConfiguration()
       { "Field", 18 },
       { "Value", 24 },
    };
-   SerialTable table("Loaded Saved Best Configuration", columns, sizeof(columns) / sizeof(columns[0]));
+   SerialTable table("Loaded Saved Best Configuration", columns);
    table.printHeader();
    table.printRow("Resistor Value", String(resistorLabel(chargePin)) + " (Pin " + String((unsigned long)chargePin) + ")");
    table.printRow("Discharge Delay", String((unsigned long)dischargeDelayMicros) + " us");
@@ -773,11 +728,16 @@ void renderResultsScatterPlot(const float* values, size_t count)
       size_t plottedCount = min(count, RESULTS_SCATTER_MAX_POINTS);
       size_t step = (count + plottedCount - 1) / plottedCount;
 
-      resultsScatterPlot = new ScatterPlot(&arduino, resultsScatterRect);
-      resultsScatterPlot->setXAxisFormat(Format("#####"));
-      resultsScatterPlot->setYAxisFormat(Format("###.#"));
+      resultsScatterPlot = new ScatterPlot(&arduino, resultsScatterRect, "#####", "###.#");
       ScatterPlotSeries* series = resultsScatterPlot->createSeries(plottedCount);
       series->showPoints = true;
+
+      // The full index range [0, count - 1] is known up front, so lock the X axis and
+      // store this series as fixed-range bins instead of a raw array sized to
+      // plottedCount, bounding memory by plottedCount regardless of how many samples
+      // are actually added below.
+      size_t lastIndex = count - 1;
+      series->setFixedXRange(0.0f, static_cast<float>(lastIndex), plottedCount);
 
       for (size_t i = 0; i < count; i += step)
       {
@@ -786,13 +746,12 @@ void renderResultsScatterPlot(const float* values, size_t count)
 
       // Ensure the final sample is always plotted so the X-axis max reflects the true last index,
       // even when the step size doesn't evenly divide into count - 1.
-      size_t lastIndex = count - 1;
       if ((lastIndex % step) != 0)
       {
          series->add(lastIndex, values[lastIndex]);
       }
 
-      resultsScatterPlot->render();
+      resultsScatterPlot->draw();
    }
 
    if (resultsHistogramRect.width > 0 && resultsHistogramRect.height > 0)
@@ -834,7 +793,7 @@ void runRollingSweepTest()
    long selectedResistorIndex = constrain(resistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
    arduino.println("      Resistor: ", RESISTOR_OPTIONS[selectedResistorIndex].label, resistorLabelFormat, Color::VALUE);
    arduino.println("         Delay: ", (int)dischargeDelayMicros, chargeFormat, Color::VALUE);
-   arduino.println("Outlier Filter: ", filter, filterFieldFormat, Color::VALUE);
+   arduino.println("Outlier Filter: ", filter, filterCellFormat, Color::VALUE);
 
    Timer collectDisplayTimer(0);
    while (collected < ROLLING_SWEEP_SAMPLE_COUNT)
@@ -878,7 +837,7 @@ void runRollingSweepTest()
       { "StdDev(us)", 12 },
       { "StdDev %", 10 },
    };
-   SerialTable table(nullptr, columns, sizeof(columns) / sizeof(columns[0]));
+   SerialTable table(nullptr, columns);
    textViewer.setEchoToSerial(false);
    textViewer.addText(table.printHeader());
 
@@ -949,7 +908,7 @@ void runRawDataCaptureTest()
    long selectedResistorIndex = constrain(resistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
    arduino.println("      Resistor: ", RESISTOR_OPTIONS[selectedResistorIndex].label, resistorLabelFormat, Color::VALUE);
    arduino.println("Discharge Time: ", (int)dischargeDelayMicros, chargeFormat, Color::VALUE);
-   arduino.println("Outlier Filter: ", filter, filterFieldFormat, Color::VALUE);
+   arduino.println("Outlier Filter: ", filter, filterCellFormat, Color::VALUE);
 
    // Abort the capture if no new samples arrive for this long, e.g. when a too-strict outlier
    // filter causes every incoming sample to be rejected and the buffer never fills.
@@ -1033,7 +992,7 @@ void runRawDataCaptureTest()
       { "Count", 8 },
       { "Percent", 9, "##.##%" },
    };
-   SerialTable table(nullptr, columns, sizeof(columns) / sizeof(columns[0]));
+   SerialTable table(nullptr, columns);
    textViewer.setEchoToSerial(false);
    textViewer.addText(table.printHeader());
 
@@ -1069,7 +1028,7 @@ void runRawDataCaptureTest()
          { "Bin (us)", 12 },
          { "Count", 8 },
       };
-      SerialTable binTable(nullptr, binColumns, sizeof(binColumns) / sizeof(binColumns[0]));
+      SerialTable binTable(nullptr, binColumns);
       textViewer.addText(binTable.printHeader());
 
       int32_t binMin = (int32_t)floorf(captureStats.min());
@@ -1137,8 +1096,8 @@ void runDischargeSweepTest()
 
    long selectedResistorIndex = constrain(resistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
    arduino.println("      Resistor: ", RESISTOR_OPTIONS[selectedResistorIndex].label, resistorLabelFormat, Color::VALUE);
-   arduino.println("        Buffer: ", (int)bufferSize, bufferFieldFormat, Color::VALUE);
-   arduino.println("Outlier Filter: ", filter, filterFieldFormat, Color::VALUE);
+   arduino.println("        Buffer: ", (int)bufferSize, bufferCellFormat, Color::VALUE);
+   arduino.println("Outlier Filter: ", filter, filterCellFormat, Color::VALUE);
 
    textViewer.addLine(String("Resistor: ") + RESISTOR_OPTIONS[selectedResistorIndex].label);
    textViewer.addLine(String("Buffer: ") + String(bufferSize));
@@ -1150,7 +1109,7 @@ void runDischargeSweepTest()
       { "Range(us)", 12 },
       { "StdDev(us)", 12 },
    };
-   SerialTable table(nullptr, columns, sizeof(columns) / sizeof(columns[0]));
+   SerialTable table(nullptr, columns);
    textViewer.setEchoToSerial(false);
    textViewer.addText(table.printHeader());
 
@@ -1239,7 +1198,7 @@ void runOptimizedSweepTest()
       { "Raw", 10 },
       { "Effective", 11 },
    };
-   SerialTable resultsTable(nullptr, resultColumns, sizeof(resultColumns) / sizeof(resultColumns[0]));
+   SerialTable resultsTable(nullptr, resultColumns);
    textViewer.setEchoToSerial(false);
    textViewer.addText(resultsTable.printHeader());
 
@@ -1347,8 +1306,8 @@ void ensureChargeScatterPlot(Rect16 plotRect)
       return;
    }
 
-   chargeScatterPlot = new TimedScatterPlot(&arduino, plotRect, SCATTER_HISTORY_S * 1000UL, chargeFormat);
-   chargeScatterSeries = chargeScatterPlot->createSeries();
+   chargeScatterPlot = new ScatterPlot(&arduino, plotRect, "#####", chargeFormat.formatString());
+   chargeScatterSeries = chargeScatterPlot->createTimedSeries(SCATTER_HISTORY_S * 1000UL, plotRect.width);
    chargeScatterSeries->showPoints = true;
    chargeScatterPlot->setColors(Color::BLACK, Color::BLACK, Color::GRAY, Color::LABEL);
 }
@@ -1361,7 +1320,6 @@ void setup()
 
    arduino.setTextSize(DEFAULT_TEXT_SIZE);
 
-   initializeFieldSections();
    table.load();
    applyFields();
 
@@ -1475,7 +1433,7 @@ void printBestConfigurations(TestRunResult* results, size_t count)
          { "Buffer", 8 },
          { "StdDev %", 10 },
       };
-      SerialTable table("Best Configurations", columns, sizeof(columns) / sizeof(columns[0]));
+      SerialTable table("Best Configurations", columns);
       textViewer.addText(table.printHeader());
 
       constexpr size_t TOP_RANKING_COUNT = 3;
@@ -1543,7 +1501,7 @@ void printAggregateByResistor(const TestRunResult* results, size_t count)
       { "StdDev %", 10 },
       { "Range(us)", 12 },
    };
-   SerialTable table("By Resistor", columns, sizeof(columns) / sizeof(columns[0]));
+   SerialTable table("By Resistor", columns);
    textViewer.addText(table.printHeader());
 
    for (size_t resistorIndex = 0; resistorIndex < RESISTOR_OPTION_COUNT; resistorIndex++)
@@ -1588,7 +1546,7 @@ void printAggregateByTargetRate(const TestRunResult* results, size_t count)
       { "StdDev %", 10 },
       { "Range(us)", 12 },
    };
-   SerialTable table("By Target Rate", columns, sizeof(columns) / sizeof(columns[0]));
+   SerialTable table("By Target Rate", columns);
    textViewer.addText(table.printHeader());
 
    for (size_t rateIndex = 0; rateIndex < TARGET_EFFECTIVE_RATE_COUNT; rateIndex++)
@@ -1639,7 +1597,7 @@ void printAggregateByBufferSize(const TestRunResult* results, size_t count)
       { "StdDev %", 10 },
       { "Range(us)", 12 },
    };
-   SerialTable table("By Buffer Size", columns, sizeof(columns) / sizeof(columns[0]));
+   SerialTable table("By Buffer Size", columns);
    textViewer.addText(table.printHeader());
 
    if (count == 0)
@@ -1895,7 +1853,7 @@ void loop()
       if (plotState != PlotState::OFF)
       {
          ensureChargeScatterPlot(plotRect);
-         chargeScatterPlot->render();
+         chargeScatterPlot->draw();
       }
       else if (previousPlotState != PlotState::OFF)
       {

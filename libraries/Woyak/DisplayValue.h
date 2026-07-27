@@ -3,6 +3,7 @@
 #include "ArduinoWithDisplay.h"
 #include "Format.h"
 #include "Color.h"
+#include "Util.h"
 
 ///
 /// <summary>
@@ -15,7 +16,8 @@
 /// The sprite is created lazily on first use (the first draw() call), so it picks up
 /// the display's font metrics once the caller has set up its font size.
 /// The position is set via setPosition() and is assumed to stay constant until changed.
-/// Call invalidate() if the display area was cleared, so the next draw() repaints.
+/// Every call to draw() unconditionally redraws the sprite, so callers are free to pass
+/// a different value and/or color on each call.
 /// </remarks>
 ///
 class DisplayValue
@@ -30,20 +32,16 @@ public:
    {
       LEFT,     // text's left edge is aligned to the sprite's left edge
       RIGHT,    // text's right edge is aligned to the sprite's right edge
+      CENTER,   // text is centered within the sprite
       DECIMAL   // text's decimal point is centered within the sprite
-   };
+    };
 
 private:
    ArduinoWithDisplay* _display;
    int16_t _x = 0;
    int16_t _y = 0;
-   const Format* _format;
+   Format _format;
    Alignment _alignment;
-   Color _valueColor;
-   Color _valueBackgroundColor = Color::BLACK;
-   bool _dirty = true;
-   String _value;
-   String _drawnValue;
    LGFX_Sprite _sprite;
    bool _spriteCreated = false;
    uint8_t _textSize;
@@ -57,7 +55,7 @@ private:
    ///
    void _createSprite()
    {
-      int16_t spriteWidth = (int16_t)_display->charW(_textSize) * _format->length();
+      int16_t spriteWidth = (int16_t)_display->charW(_textSize) * _format.length();
       int16_t spriteHeight = (int16_t)_display->charH(_textSize);
 
       _sprite.setColorDepth(16);
@@ -73,21 +71,21 @@ private:
 
    ///
    /// <summary>
-   /// Strips the Format's literal space padding from the current value, leaving just the
+   /// Strips the Format's literal space padding from the given value, leaving just the
    /// significant text, so its width can be measured and positioned in pixels.
    /// </summary>
-   /// <returns>The current value with leading/trailing space padding removed.</returns>
+   /// <param name="value">The formatted value to trim.</param>
+   /// <returns>The value with leading/trailing space padding removed.</returns>
    ///
-   std::string _trimmedValue() const
+   std::string _trimmedValue(const std::string& value) const
    {
-      std::string str = _value.c_str();
-      size_t start = str.find_first_not_of(' ');
+      size_t start = value.find_first_not_of(' ');
       if (start == std::string::npos)
       {
          return std::string();
       }
-      size_t end = str.find_last_not_of(' ');
-      return str.substr(start, end - start + 1);
+      size_t end = value.find_last_not_of(' ');
+      return value.substr(start, end - start + 1);
    }
 
    ///
@@ -107,19 +105,10 @@ private:
          case Alignment::RIGHT:
             return max(static_cast<int16_t>(0), static_cast<int16_t>(totalWidth - textWidth));
 
+         case Alignment::CENTER:
+            return max(static_cast<int16_t>(0), static_cast<int16_t>((totalWidth - textWidth) / 2));
+
          case Alignment::DECIMAL:
-         {
-            size_t dotPos = trimmed.find('.');
-            if (dotPos == std::string::npos)
-            {
-               return max(static_cast<int16_t>(0), static_cast<int16_t>(totalWidth - textWidth));
-            }
-
-            std::string beforeDot = trimmed.substr(0, dotPos);
-            int16_t beforeWidth = (int16_t)_sprite.textWidth(beforeDot.c_str());
-            return max(static_cast<int16_t>(0), static_cast<int16_t>((totalWidth / 2) - beforeWidth));
-         }
-
          case Alignment::LEFT:
          default:
             return 0;
@@ -128,9 +117,26 @@ private:
 
    ///
    /// <summary>
+   /// Gets the number of characters preceding the decimal point in the given trimmed
+   /// value text, or the full character count if no decimal point is present.
+   /// </summary>
+   /// <param name="trimmed">The trimmed value text being drawn.</param>
+   /// <returns>The count of characters before the decimal point.</returns>
+   ///
+   size_t _charsBeforeDecimal(const std::string& trimmed) const
+   {
+      size_t dotPos = trimmed.find('.');
+      return dotPos == std::string::npos ? trimmed.length() : dotPos;
+   }
+
+   ///
+   /// <summary>
    /// Renders the current value into the off-screen sprite (created in the constructor)
    /// and pushes it over the value region.
    /// </summary>
+   /// <param name="value">The formatted value to draw.</param>
+   /// <param name="valueColor">The color used to draw the value text.</param>
+   /// <param name="backgroundColor">The background color drawn behind the value.</param>
    /// <remarks>
    /// The value string is right/left/center-aligned using its actual measured pixel
    /// width rather than relying on the Format's literal space padding, since a space
@@ -140,23 +146,32 @@ private:
    /// counts), which pixel-based alignment avoids.
    /// </remarks>
    ///
-   void _drawSprite()
+   void _drawSprite(const std::string& value, Color valueColor, Color backgroundColor)
    {
       if (!_spriteCreated)
       {
          _createSprite();
       }
 
-      std::string trimmed = _trimmedValue();
+      std::string trimmed = _trimmedValue(value);
       int16_t textWidth = (int16_t)_sprite.textWidth(trimmed.c_str());
       int16_t spriteWidth = _sprite.width();
       int16_t textX = _alignedTextX(trimmed, textWidth, spriteWidth);
 
-      _sprite.fillScreen((uint16_t)_valueBackgroundColor);
-      _sprite.setTextColor((uint16_t)_valueColor, (uint16_t)_valueBackgroundColor);
+      int16_t pushX = _x;
+      if (_alignment == Alignment::DECIMAL)
+      {
+         // shift the sprite left by the width of the characters preceding the decimal
+         // point, so the decimal point itself lands at the stored anchor position _x
+         size_t charsBeforeDecimal = _charsBeforeDecimal(trimmed);
+         pushX -= (int16_t)_display->charW(_textSize) * (int16_t)charsBeforeDecimal;
+      }
+
+      _sprite.fillScreen((uint16_t)backgroundColor);
+      _sprite.setTextColor((uint16_t)valueColor, (uint16_t)backgroundColor);
       _sprite.setCursor(textX, 0);
       _sprite.print(trimmed.c_str());
-      _sprite.pushSprite(_x, _y);
+      _sprite.pushSprite(pushX, _y);
    }
 
 public:
@@ -167,13 +182,15 @@ public:
    /// <param name="display">The display interface to draw onto.</param>
    /// <param name="format">The formatter applied to the value, controlling its fixed width.</param>
    /// <param name="textSize">The font size used to draw the value text.</param>
-   /// <param name="valueColor">The color used to draw the value text.</param>
    /// <param name="alignment">Controls how the value's text is aligned within its fixed width.</param>
    ///
-   DisplayValue(ArduinoWithDisplay* display, const Format& format, uint8_t textSize,
-      Color valueColor = Color::VALUE, Alignment alignment = Alignment::LEFT)
-      : _display(display), _format(&format), _alignment(alignment),
-      _valueColor(valueColor),
+   DisplayValue(ArduinoWithDisplay* display,
+      const Format& format,
+      uint8_t textSize,
+      Alignment alignment = Alignment::LEFT)
+      : _display(display),
+      _format(format),
+      _alignment(alignment),
       _sprite(&display->display)
    {
       _textSize = constrain(textSize, (uint8_t)1, (uint8_t)7);
@@ -188,18 +205,44 @@ public:
    ///
    int16_t width() const
    {
-      return (int16_t)_display->charW(_textSize) * _format->length();
+      return (int16_t)_display->charW(_textSize) * _format.length();
    }
 
    ///
    /// <summary>
-   /// Sets the top-left position at which the value sprite is pushed on the next draw().
+   /// Sets the position at which the value sprite is pushed on the next draw(). The
+   /// meaning of x depends on the value's alignment:
+   /// <list type="bullet">
+   /// <item>Alignment::LEFT: x is the position of the sprite's left edge.</item>
+   /// <item>Alignment::RIGHT: x is the position of the sprite's right edge rather than
+   /// its left edge, so a right-aligned value can be anchored to a fixed point (e.g.
+   /// the display's right edge) without the caller needing to know the sprite's width.</item>
+   /// <item>Alignment::CENTER: x is the position of the sprite's horizontal midpoint,
+   /// so a centered value can be anchored to a fixed point (e.g. the display's center)
+   /// without the caller needing to know the sprite's width.</item>
+   /// <item>Alignment::DECIMAL: x is the position where the decimal point is drawn; the
+   /// stored position is shifted left at draw time by the width of the characters
+   /// preceding the decimal point (see _drawSprite()), so multiple DisplayValues with
+   /// different format widths can share the same x and have their decimal points line
+   /// up on screen.</item>
+   /// </list>
    /// </summary>
-   /// <param name="x">The X coordinate of the value's top-left corner.</param>
-   /// <param name="y">The Y coordinate of the value's top-left corner.</param>
+   /// <param name="x">The X coordinate of the value's anchor (left edge; right edge for Alignment::RIGHT; horizontal midpoint for Alignment::CENTER; decimal point position for Alignment::DECIMAL); negative values offset from the right edge.</param>
+   /// <param name="y">The Y coordinate of the value's top-left corner; negative values offset from the bottom edge.</param>
    ///
    void setPosition(int16_t x, int16_t y)
    {
+      _display->normalizeCoords(x, y);
+
+      if (_alignment == Alignment::RIGHT)
+      {
+         x = x - width();
+      }
+      else if (_alignment == Alignment::CENTER)
+      {
+         x = x - width() / 2;
+      }
+
       _x = x;
       _y = y;
    }
@@ -217,68 +260,40 @@ public:
 
    ///
    /// <summary>
-   /// Sets the color used to draw the value text on the next draw().
-   /// </summary>
-   /// <param name="color">The value text color.</param>
-   ///
-   void setColor(Color color)
-   {
-      if (color != _valueColor)
-      {
-         _valueColor = color;
-         _dirty = true;
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Sets the background color drawn behind the value, e.g. to highlight a currently
-   /// selected/editable value. Defaults to Color::BLACK.
-   /// </summary>
-   /// <param name="color">The background color to draw behind the value.</param>
-   ///
-   void setBackgroundColor(Color color)
-   {
-      if (color != _valueBackgroundColor)
-      {
-         _valueBackgroundColor = color;
-         _dirty = true;
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Sets the value to display and redraws it via the sprite, but only when the value
-   /// text or color changed since the last draw.
+   /// Sets the value to display and draws it via the sprite.
    /// </summary>
    /// <param name="value">The new value to display, formatted through the Format object.</param>
+   /// <param name="valueColor">The color used to draw the value text.</param>
+   /// <param name="backgroundColor">The background color drawn behind the value, e.g. to
+   /// highlight a currently selected/editable value.</param>
    ///
    template <typename T>
-   void draw(const T& value)
+   void draw(const T& value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
-      _value = _format->toString(value).c_str();
+      ASSERT(_display != nullptr);
 
-      if (_display == nullptr)
-      {
-         return;
-      }
-
-      if ((_value != _drawnValue) || _dirty)
-      {
-         _drawSprite();
-         _drawnValue = _value;
-         _dirty = false;
-      }
+      std::string formattedValue = _format.toString(value);
+      _drawSprite(formattedValue, valueColor, backgroundColor);
    }
 
    ///
    /// <summary>
-   /// Forces the value to be redrawn immediately, e.g. after the display area was cleared,
-   /// so the next draw() repaints from scratch.
+   /// Blanks the value's region by filling the sprite with the given color and pushing
+   /// it, without measuring or drawing any text. Cheaper than draw(""), so the next
+   /// draw() still measures/aligns its own text normally.
    /// </summary>
+   /// <param name="backgroundColor">The color painted over the value's region.</param>
    ///
-   void invalidate()
+   void clear(Color backgroundColor = Color::BLACK)
    {
-      _dirty = true;
+      ASSERT(_display != nullptr);
+
+      if (!_spriteCreated)
+      {
+         _createSprite();
+      }
+
+      _sprite.fillScreen((uint16_t)backgroundColor);
+      _sprite.pushSprite(_x, _y);
    }
 };

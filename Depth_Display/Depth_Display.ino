@@ -247,21 +247,15 @@ void renderCalibrationPrompt()
    }
 #endif
 
-   depthCmField->invalidate();
-   depthInField->invalidate();
-   depthCmRangeField->invalidate();
-   depthInRangeField->invalidate();
    depthBar->reset();
 #if DEPTH_SENSOR_TYPE == DEPTH_SENSOR_CAPACITOR
    if (bufferSizeField != nullptr)
    {
-      bufferSizeField->invalidate();
-      bufferSizeField->draw((int)capBufferSize);
+      bufferSizeField->draw((int)capBufferSize, Color::GRAY);
    }
    if (filterSizeField != nullptr)
    {
-      filterSizeField->invalidate();
-      filterSizeField->draw(capFilterSize);
+      filterSizeField->draw(capFilterSize, Color::GRAY);
    }
 #endif
 }
@@ -439,9 +433,9 @@ void setup()
    depthCmField->setPosition(depthCmX, depthCmY);
    depthInField = new DisplayValue(&arduino, depthInFormat, DEPTH_TEXT_SIZE);
    depthInField->setPosition(depthInX, depthInY);
-   depthCmRangeField = new DisplayValue(&arduino, depthCmRangeFormat, DEPTH_RANGE_TEXT_SIZE, Color::GRAY);
+   depthCmRangeField = new DisplayValue(&arduino, depthCmRangeFormat, DEPTH_RANGE_TEXT_SIZE);
    depthCmRangeField->setPosition(depthCmRangeX, depthCmRangeY);
-   depthInRangeField = new DisplayValue(&arduino, depthInRangeFormat, DEPTH_RANGE_TEXT_SIZE, Color::GRAY);
+   depthInRangeField = new DisplayValue(&arduino, depthInRangeFormat, DEPTH_RANGE_TEXT_SIZE);
    depthInRangeField->setPosition(depthInRangeX, depthInRangeY);
 
    drawRangeLabel();
@@ -456,17 +450,17 @@ void setup()
    std::string bufferSample(bufferSizeFormat.length(), '0');
    int16_t bufferWidth = arduino.textWidth(bufferSample.c_str());
    int16_t bufferX = arduino.width() - bufferWidth - DEPTH_BAR_WIDTH_PX;
-   bufferSizeField = new DisplayValue(&arduino, bufferSizeFormat, SUBTITLE_TEXT_SIZE, Color::GRAY);
+   bufferSizeField = new DisplayValue(&arduino, bufferSizeFormat, SUBTITLE_TEXT_SIZE);
    bufferSizeField->setPosition(bufferX, 0);
-   bufferSizeField->draw((int)capBufferSize);
+   bufferSizeField->draw((int)capBufferSize, Color::GRAY);
 
    std::string filterSample(filterSizeFormat.length(), '0');
    int16_t filterWidth = arduino.textWidth(filterSample.c_str());
    int16_t filterX = arduino.width() - filterWidth - DEPTH_BAR_WIDTH_PX;
    int16_t filterY = arduino.charH();
-   filterSizeField = new DisplayValue(&arduino, filterSizeFormat, SUBTITLE_TEXT_SIZE, Color::GRAY);
+   filterSizeField = new DisplayValue(&arduino, filterSizeFormat, SUBTITLE_TEXT_SIZE);
    filterSizeField->setPosition(filterX, filterY);
-   filterSizeField->draw(capFilterSize);
+   filterSizeField->draw(capFilterSize, Color::GRAY);
 #endif
 
    if (!hasCalibration)
@@ -486,7 +480,7 @@ void loop()
       capBufferSize = constrain(capBufferSize + bufferDelta * bufferStep, CAPACITOR_BUFFER_SIZE_MIN, CAPACITOR_BUFFER_SIZE_MAX);
       sensor.setBufferSize((size_t)capBufferSize);
       saveBufferSize();
-      bufferSizeField->draw((int)capBufferSize);
+      bufferSizeField->draw((int)capBufferSize, Color::GRAY);
    }
 
    int32_t filterDelta
@@ -495,7 +489,7 @@ void loop()
       capFilterSize = constrain(capFilterSize + filterDelta * CAPACITOR_FILTER_STEP, CAPACITOR_FILTER_MIN, CAPACITOR_FILTER_MAX);
       sensor.setFilter(capFilterSize, FilteredRollingAverage::FilterMode::PERCENT);
       saveFilterSize();
-      filterSizeField->draw(capFilterSize);
+      filterSizeField->draw(capFilterSize, Color::GRAY);
    }
 #endif
 
@@ -535,8 +529,7 @@ void loop()
 #if DEPTH_SENSOR_TYPE == DEPTH_SENSOR_CAPACITOR
          if (bufferSizeField != nullptr)
          {
-            bufferSizeField->invalidate();
-            bufferSizeField->draw((int)capBufferSize);
+            bufferSizeField->draw((int)capBufferSize, Color::GRAY);
          }
 #endif
       }
@@ -567,9 +560,9 @@ void loop()
 
       depthInField->draw(deltaDepthCm / CENTIMETERS_PER_INCH);
 
-      depthCmRangeField->draw(depthCmRange * MILLIMETERS_PER_CENTIMETER);
+      depthCmRangeField->draw(depthCmRange * MILLIMETERS_PER_CENTIMETER, Color::GRAY);
 
-      depthInRangeField->draw(depthCmRange / CENTIMETERS_PER_INCH);
+      depthInRangeField->draw(depthCmRange / CENTIMETERS_PER_INCH, Color::GRAY);
 
       drawRateRow(effectiveRate);
 

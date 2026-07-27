@@ -4,6 +4,7 @@
 #include "DisplayValue.h"
 #include "Format.h"
 #include "Color.h"
+#include "Util.h"
 
 ///
 /// <summary>
@@ -43,9 +44,7 @@ private:
    int16_t _x;
    int16_t _y;
    String _label;
-   Color _labelColor;
-   Color _drawnLabelColor;
-   bool _labelDrawn = false;
+   bool _labelDirty = true;
    uint8_t _textSize;
    Alignment _alignment;
    DisplayValue _value;
@@ -61,42 +60,17 @@ public:
    /// Pass an empty string to draw only the value, with no label or separator.</param>
    /// <param name="format">The formatter applied to the value, controlling its fixed width.</param>
    /// <param name="textSize">The font size used to draw the label and value text.</param>
-   /// <param name="labelColor">The color used to draw the label text.</param>
-   /// <param name="valueColor">The color used to draw the value text.</param>
    /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
    /// edge (RIGHT), or the position of the ':' character separating label and value (COLON).</param>
    ///
    DisplayField(ArduinoWithDisplay* display, Point16 pos,
                 const char* label, const Format& format, uint8_t textSize,
-                Color labelColor = Color::LABEL, Color valueColor = Color::VALUE,
                 Alignment alignment = Alignment::LEFT)
       : _display(display), _label(label),
-        _labelColor(labelColor), _drawnLabelColor(labelColor),
         _textSize(textSize), _alignment(alignment),
-        _value(display, format, _textSize, valueColor)
+        _value(display, format, _textSize)
    {
       setPosition(pos);
-   }
-
-   ///
-   /// <summary>
-   /// Initializes a new instance of the DisplayField class using the default label and
-   /// value colors, so an alignment can be specified without also specifying colors.
-   /// </summary>
-   /// <param name="display">The display interface to draw onto.</param>
-   /// <param name="pos">The X/Y coordinate of the label's top-left corner.</param>
-   /// <param name="label">The label text drawn before the value (a ": " separator is added).
-   /// Pass an empty string to draw only the value, with no label or separator.</param>
-   /// <param name="format">The formatter applied to the value, controlling its fixed width.</param>
-   /// <param name="textSize">The font size used to draw the label and value text.</param>
-   /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
-   /// edge (RIGHT), or the position of the ':' character separating label and value (COLON).</param>
-   ///
-   DisplayField(ArduinoWithDisplay* display, Point16 pos,
-                const char* label, const Format& format, uint8_t textSize,
-                Alignment alignment)
-      : DisplayField(display, pos, label, format, textSize, Color::LABEL, Color::VALUE, alignment)
-   {
    }
 
    ///
@@ -107,16 +81,14 @@ public:
    /// <param name="pos">The X/Y coordinate of the value's top-left corner.</param>
    /// <param name="format">The formatter applied to the value, controlling its fixed width.</param>
    /// <param name="textSize">The font size used to draw the value text.</param>
-   /// <param name="valueColor">The color used to draw the value text.</param>
    /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
    /// edge (RIGHT), or the position of the ':' character separating label and value (COLON);
    /// COLON has no effect when there is no label.</param>
    ///
    DisplayField(ArduinoWithDisplay* display, Point16 pos,
                 const Format& format, uint8_t textSize,
-                Color valueColor = Color::VALUE,
                 Alignment alignment = Alignment::LEFT)
-      : DisplayField(display, pos, "", format, textSize, Color::LABEL, valueColor, alignment)
+      : DisplayField(display, pos, "", format, textSize, alignment)
    {
    }
 
@@ -131,37 +103,13 @@ public:
    /// Pass an empty string to draw only the value, with no label or separator.</param>
    /// <param name="format">The formatter applied to the value, controlling its fixed width.</param>
    /// <param name="textSize">The font size used to draw the label and value text.</param>
-   /// <param name="labelColor">The color used to draw the label text.</param>
-   /// <param name="valueColor">The color used to draw the value text.</param>
    /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
    /// edge (RIGHT), or the position of the ':' character separating label and value (COLON).</param>
    ///
    DisplayField(ArduinoWithDisplay* display,
                 const char* label, const Format& format, uint8_t textSize,
-                Color labelColor = Color::LABEL, Color valueColor = Color::VALUE,
                 Alignment alignment = Alignment::LEFT)
-      : DisplayField(display, Point16(0, 0), label, format, textSize, labelColor, valueColor, alignment)
-   {
-   }
-
-   ///
-   /// <summary>
-   /// Initializes a new instance of the DisplayField class without specifying a position,
-   /// using the default label and value colors, so an alignment can be specified without
-   /// also specifying colors. Call setPosition() once the position is known.
-   /// </summary>
-   /// <param name="display">The display interface to draw onto.</param>
-   /// <param name="label">The label text drawn before the value (a ": " separator is added).
-   /// Pass an empty string to draw only the value, with no label or separator.</param>
-   /// <param name="format">The formatter applied to the value, controlling its fixed width.</param>
-   /// <param name="textSize">The font size used to draw the label and value text.</param>
-   /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
-   /// edge (RIGHT), or the position of the ':' character separating label and value (COLON).</param>
-   ///
-   DisplayField(ArduinoWithDisplay* display,
-                const char* label, const Format& format, uint8_t textSize,
-                Alignment alignment)
-      : DisplayField(display, Point16(0, 0), label, format, textSize, Color::LABEL, Color::VALUE, alignment)
+      : DisplayField(display, Point16(0, 0), label, format, textSize, alignment)
    {
    }
 
@@ -170,8 +118,8 @@ public:
    /// Sets the field's position, recomputing the label/value layout for the field's
    /// alignment. Forces the next draw() to redraw the label from scratch.
    /// </summary>
-   /// <param name="x">The X coordinate of the label's top-left corner.</param>
-   /// <param name="y">The Y coordinate of the label's top-left corner.</param>
+   /// <param name="x">The X coordinate of the label's top-left corner; negative values offset from the right edge.</param>
+   /// <param name="y">The Y coordinate of the label's top-left corner; negative values offset from the bottom edge.</param>
    ///
    void setPosition(int16_t x, int16_t y)
    {
@@ -190,117 +138,86 @@ public:
       int16_t x = pos.x;
       int16_t y = pos.y;
 
-      if (y < 0)
-      {
-         y = _display->display.height() + y;
-      }
+      _display->normalizeCoords(x, y);
+
+      // the label/value widths below must be measured using the field's own text size,
+      // not whatever size the display happens to currently have set (e.g. from drawing
+      // a differently-sized heading earlier)
+      _display->setTextSize(_textSize, true);
 
       if (_alignment == Alignment::RIGHT)
       {
          int16_t totalWidth = _value.width();
          if (_label.length() > 0)
          {
-            std::string labelWithSep = std::string(_label.c_str()) + ": ";
-            totalWidth += (int16_t)_display->display.textWidth(labelWithSep.c_str());
+            size_t labelWithSepLen = _label.length() + 2; // + ": "
+            totalWidth += (int16_t)(labelWithSepLen * _display->charW(_textSize));
          }
          x = x - totalWidth;
       }
       else if (_alignment == Alignment::COLON && _label.length() > 0)
       {
-         int16_t labelWidth = (int16_t)_display->display.textWidth(_label.c_str());
+         int16_t labelWidth = (int16_t)(_label.length() * _display->charW(_textSize));
          x = x - labelWidth;
       }
 
       _x = x;
       _y = y;
       _value.setPosition(_x, _y);
-      _labelDrawn = false;
-   }
-
-   ///
-   /// <summary>
-   /// Sets the color used to draw the value text on the next draw().
-   /// </summary>
-   /// <param name="color">The value text color.</param>
-   ///
-   void setValueColor(Color color)
-   {
-      _value.setColor(color);
-   }
-
-   ///
-   /// <summary>
-   /// Sets the color used to draw the label text on the next draw().
-   /// </summary>
-   /// <param name="color">The label text color.</param>
-   ///
-   void setLabelColor(Color color)
-   {
-      _labelColor = color;
-   }
-
-   ///
-   /// <summary>
-   /// Sets the background color drawn behind the value, e.g. to highlight a currently
-   /// selected/editable field. Defaults to Color::BLACK.
-   /// </summary>
-   /// <param name="color">The background color to draw behind the value.</param>
-   ///
-   void setValueBackgroundColor(Color color)
-   {
-      _value.setBackgroundColor(color);
+      _labelDirty = true;
    }
 
    ///
    /// <summary>
    /// Sets the value to display and draws the field. The first call renders the label
    /// directly to the display and the value via the DisplayValue's sprite; later calls
-   /// redraw only the value, and only when the value text or color changed since the
-   /// last draw.
+   /// redraw only the value.
    /// </summary>
    /// <param name="value">The new value to display, formatted through the field's Format object.</param>
+   /// <param name="labelColor">The color used to draw the label text; only applies the first
+   /// time the label is drawn (or after invalidate()), since the label is not redrawn on
+   /// subsequent calls.</param>
+   /// <param name="valueColor">The color used to draw the value text.</param>
+   /// <param name="backgroundColor">The background color drawn behind the value.</param>
    ///
    template <typename T>
-   void draw(const T& value)
+   void draw(const T& value, Color labelColor = Color::LABEL, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {
-      if (_display == nullptr)
-      {
-         return;
-      }
+      ASSERT(_display != nullptr);
 
       // the display's text size only matters for drawing the label directly; the value's
       // sprite already has its own font loaded and doesn't need the display's text size set
       _display->setTextSize(_textSize, true);
 
-      if (!_labelDrawn)
+      if (_labelDirty)
       {
          _display->setCursor(_x, _y);
 
          if (_label.length() > 0)
          {
-            _display->print(_label.c_str(), _labelColor);
-            _display->print(": ", _labelColor);
+            _display->print(_label.c_str(), labelColor);
+            _display->print(": ", labelColor);
          }
 
          _value.setPosition(_display->getCursorX(), _y);
 
-         _drawnLabelColor = _labelColor;
-         _labelDrawn = true;
-      }
-      else if (_labelColor != _drawnLabelColor)
-      {
-         _display->setCursor(_x, _y);
-
-         if (_label.length() > 0)
-         {
-            _display->print(_label.c_str(), _labelColor);
-            _display->print(": ", _labelColor);
-         }
-
-         _drawnLabelColor = _labelColor;
+         _labelDirty = false;
       }
 
-      _value.draw(value);
+      _value.draw(value, valueColor, backgroundColor);
+   }
+
+   ///
+   /// <summary>
+   /// Blanks the value region by filling its sprite with the given color and pushing it
+   /// directly, leaving the label (if already drawn) untouched. Cheaper than
+   /// draw("") since it skips measuring/aligning text.
+   /// </summary>
+   /// <param name="backgroundColor">The color painted over the value region.</param>
+   ///
+   void clear(Color backgroundColor = Color::BLACK)
+   {
+      _value.clear(backgroundColor);
    }
 
    ///
@@ -311,8 +228,7 @@ public:
    ///
    void invalidate()
    {
-      _labelDrawn = false;
+      _labelDirty = true;
       _display->setTextSize(_textSize, true);
-      _value.invalidate();
    }
 };

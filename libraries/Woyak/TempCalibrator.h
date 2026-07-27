@@ -580,7 +580,7 @@ public:
          columns[i + 1] = { sensorLabels[i].c_str(), 8 };
       }
 
-      SerialTable table("Calibration Table", columns, _numSensors + 1);
+      SerialTable table("Calibration Table", std::span<const SerialTable::Column>(columns, _numSensors + 1));
       table.printHeader();
 
       for (uint8_t i = 0; i < _calibrationPointCount; i++)
@@ -624,7 +624,7 @@ public:
          { "R^2",  8 }
       };
 
-      SerialTable table("Recommended Fit (correction = a + b*baseline + c*baseline^2)", columns, 6);
+      SerialTable table("Recommended Fit (correction = a + b*baseline + c*baseline^2)", columns);
       table.printHeader();
 
       for (uint8_t i = 0; i < _numSensors; i++)
