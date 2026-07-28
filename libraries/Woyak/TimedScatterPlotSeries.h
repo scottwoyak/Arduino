@@ -29,12 +29,50 @@ private:
    TimedAverageHistory* _timeHistory = nullptr;
    bool _timeSnapshotDirty = true;
    unsigned long* _timeAgesMsBuffer = nullptr;
+   unsigned long _lastRotationCount = 0;
 
    void _refreshTimeSnapshot()
    {
       if (!_timeSnapshotDirty)
       {
          return;
+      }
+
+      _timeHistory->refresh();
+      unsigned long rotationCount = _timeHistory->rotationCount();
+      unsigned long rotations = rotationCount - _lastRotationCount;
+      _lastRotationCount = rotationCount;
+
+      // Each bin's age is k * binDurationMs - a fixed function of its retained index, not
+      // of wall-clock time - so a bin's X position only ever changes when it actually
+      // rotates out (rotationCount advances), never just from time passing between
+      // refreshes. That means the shift-and-reuse optimization IS valid here, the same as
+      // for a rolling-count series: every rotation drops the oldest bin off the front, so
+      // the moving-average/stddev overlay buffers already computed for the surviving bins
+      // can be shifted left and reused rather than recomputed. _y still holds the previous
+      // (pre-rotation) snapshot here since it hasn't been overwritten yet, so _y[i] is
+      // exactly the i-th oldest dropped value.
+      //
+      // This is only true once the history is full (filledBins() == numBins()), though:
+      // before that, every new bin still just extends the filled range without evicting
+      // anything - existing data shifts to *higher* indices, not lower - so treating those
+      // early rotations as "drop the oldest slot" would incorrectly subtract still-present
+      // data from the cached window sums, permanently corrupting them. So only shift once
+      // the ring is actually full; before that, a plain dirty recompute (cheap anyway,
+      // since _count is still small) is used instead.
+      bool historyFull = _timeHistory->filledBins() >= _timeHistory->numBins();
+      if (rotations > 0 && _count > 0 && historyFull)
+      {
+         size_t shiftCount = (rotations < static_cast<unsigned long>(_count)) ? static_cast<size_t>(rotations) : _count;
+         for (size_t i = 0; i < shiftCount; i++)
+         {
+            _rollOverlaysLeft(_count, _y[i]);
+         }
+      }
+      else if (rotations > 0)
+      {
+         _movingAverageDirty = true;
+         _stdDevDirty = true;
       }
 
       size_t filled = _timeHistory->snapshot(_y, _timeAgesMsBuffer);
@@ -92,6 +130,7 @@ protected:
    {
       _timeHistory->reset();
       _timeSnapshotDirty = true;
+      _lastRotationCount = 0;
    }
 
 public:
@@ -135,6 +174,12 @@ public:
       _timeSnapshotDirty = true;
       _movingAverageDirty = true;
       _stdDevDirty = true;
+
+      // New samples always land in the current (rightmost, x = 0) time bin, so the
+      // moving-average/stddev readiness gate in ScatterPlotSeriesBase (which relies on
+      // _maxSampleX to know how far real data extends) needs to track that here, mirroring
+      // what ScatterPlotSeries::add() does for its own storage modes.
+      _maxSampleX = 0.0f;
    }
 
    bool getFixedXRange(float* outMin, float* outMax) const override

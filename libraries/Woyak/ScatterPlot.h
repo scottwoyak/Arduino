@@ -403,7 +403,11 @@ private:
    /// <summary>
    /// Rasterizes one series' raw points (or its moving-average line) into the shared
    /// DisplayBuffer on the given layer, connecting consecutive points with a line when
-   /// the series requests lines (or when rasterizing the moving average).
+   /// the series requests lines (or when rasterizing the moving average). Points/moving-
+   /// average entries with no value (NAN, e.g. a bin/time-slot that never received a real
+   /// sample) are skipped entirely rather than drawn, so the line connects straight from
+   /// the last real point to the next one - i.e. linear interpolation across the gap -
+   /// instead of passing through an intermediate placeholder value.
    /// </summary>
    /// <param name="series">Series whose data should be rasterized.</param>
    /// <param name="useMovingAverage">True to rasterize the moving-average line instead of raw points.</param>

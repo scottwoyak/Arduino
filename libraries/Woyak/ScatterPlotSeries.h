@@ -91,6 +91,8 @@ private:
          _x[_count] = (float)(_count + 1);
          _y[_count] = value;
          _count++;
+         _movingAverageDirty = true;
+         _stdDevDirty = true;
       }
          else
          {
@@ -99,6 +101,7 @@ private:
             // are always the fixed slot positions [0, capacity - 1], so they never need
             // to change - keeping the X axis range constant and avoiding a full redraw
             // (and the resulting flicker) on every add().
+            float droppedY = _y[0];
             memmove(_y, _y + 1, (_rollingCapacity - 1) * sizeof(float));
             _y[_rollingCapacity - 1] = value;
 
@@ -106,7 +109,7 @@ private:
             // them in lockstep with the raw data instead of recomputing the whole
             // series, so already-displayed history doesn't visibly change as it
             // scrolls off - only the newly exposed trailing slot may need filling in.
-            _rollOverlaysLeft(_rollingCapacity);
+            _rollOverlaysLeft(_rollingCapacity, droppedY);
          }
 
          _statsDirty = true;

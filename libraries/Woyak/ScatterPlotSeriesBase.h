@@ -59,11 +59,32 @@ protected:
    size_t _movingAverageReadyCount = 0;
    bool _movingAverageDirty = true;
 
+   // Cached sliding-window state as of the last successfully finalized (ready) index, so
+   // a subsequent recompute can resume the two-pointer scan from _movingAverageReadyCount
+   // instead of rescanning from index 0 - already-ready values never change once computed.
+   size_t _movingAverageLo = 0;
+   size_t _movingAverageHi = 0;
+   float _movingAverageSum = 0.0f;
+   size_t _movingAverageFiniteCount = 0;
+
    float* _stdDevLowBuffer = nullptr;
    float* _stdDevHighBuffer = nullptr;
    size_t _stdDevBufferCapacity = 0;
    size_t _stdDevReadyCount = 0;
    bool _stdDevDirty = true;
+
+    // Cached sliding-window state mirroring _movingAverageLo/Hi/Sum/FiniteCount above, but
+   // for the stddev band's scan (which also needs a running sum of squares). These are
+   // kept as double (rather than float, like the moving-average accumulators) because the
+   // variance formula below (E[x^2] - E[x]^2) subtracts two values that are both on the
+   // order of the squared sample magnitude, even when the actual variance is tiny; at
+   // float precision that subtraction suffers catastrophic cancellation and can go
+   // slightly negative (getting clamped to a false zero stddev) for real, noisy data.
+   size_t _stdDevLo = 0;
+   size_t _stdDevHi = 0;
+   double _stdDevSum = 0.0;
+   double _stdDevSumSquares = 0.0;
+   size_t _stdDevFiniteCount = 0;
 
    // Highest X value of an actual submitted sample (as opposed to _xMax, which in
    // fixed-range bin mode reflects the full locked axis range's last bin center even
@@ -144,11 +165,24 @@ protected:
          return _movingAverageBuffer != nullptr;
       }
 
-      delete[] _movingAverageBuffer;
-      _movingAverageBuffer = new (std::nothrow) float[count];
-      _movingAverageBufferCapacity = (_movingAverageBuffer != nullptr) ? count : 0;
+      float* newBuffer = new (std::nothrow) float[count];
+      if (newBuffer == nullptr)
+      {
+         return false;
+      }
 
-      return _movingAverageBuffer != nullptr;
+      // Preserve already-computed values so a growing buffer doesn't lose the work an
+      // incremental recompute has already done at lower indices.
+      if (_movingAverageBuffer != nullptr && _movingAverageBufferCapacity > 0)
+      {
+         memcpy(newBuffer, _movingAverageBuffer, _movingAverageBufferCapacity * sizeof(float));
+      }
+
+      delete[] _movingAverageBuffer;
+      _movingAverageBuffer = newBuffer;
+      _movingAverageBufferCapacity = count;
+
+      return true;
    }
 
    void _recomputeMovingAverage()
@@ -169,13 +203,17 @@ protected:
 
       float halfWindow = movingSampleSize / 2.0f;
 
-      size_t lo = 0;
-      size_t hi = 0;
-      float sum = 0.0f;
-      size_t finiteCount = 0;
-      size_t readyCount = 0;
+      // Resume the sliding-window scan from the last already-finalized index instead of
+      // rescanning from 0: every index below _movingAverageReadyCount was already computed
+      // from a window that can never change (its data only depends on samples at or before
+      // it, which are immutable once appended), so re-deriving it would be wasted work.
+      size_t lo = _movingAverageLo;
+      size_t hi = _movingAverageHi;
+      float sum = _movingAverageSum;
+      size_t finiteCount = _movingAverageFiniteCount;
+      size_t readyCount = _movingAverageReadyCount;
 
-      for (size_t i = 0; i < _count; i++)
+      for (size_t i = readyCount; i < _count; i++)
       {
          while (lo < _count && (_x[i] - _x[lo]) > halfWindow)
          {
@@ -202,8 +240,20 @@ protected:
             break;
          }
 
-         _movingAverageBuffer[i] = (finiteCount > 0) ? (sum / finiteCount) : NAN;
+         // Only emit a moving-average vertex at positions that actually received a real
+         // raw sample (isfinite(_y[i])); positions that never got a real sample (e.g.
+         // an empty bin in fixed-range/timed bin mode) get NAN here so the renderer skips
+         // them and draws a straight, linearly-interpolated line to the next real vertex
+         // instead of a flat, staircase-like segment through an empty position.
+         _movingAverageBuffer[i] = (isfinite(_y[i]) && (finiteCount > 0)) ? (sum / finiteCount) : NAN;
          readyCount = i + 1;
+
+         // Persist the window state as of this now-finalized index so the next call can
+         // resume from here rather than rescanning.
+         _movingAverageLo = lo;
+         _movingAverageHi = hi;
+         _movingAverageSum = sum;
+         _movingAverageFiniteCount = finiteCount;
       }
 
       for (size_t i = readyCount; i < _count; i++)
@@ -218,24 +268,28 @@ protected:
    ///
    /// <summary>
    /// Shifts the cached moving-average and stddev-band buffers left by one slot to mirror
-   /// a rolling-count series dropping its oldest raw sample: since those buffers are
-   /// indexed by fixed slot position and the underlying window shape is invariant under a
-   /// uniform shift, the value previously computed for slot i + 1 is still correct for
-   /// slot i, so it is reused instead of being recomputed. Only the newly exposed last
-   /// slot may need attention - it stays NaN (matching its prior not-ready state) unless
-   /// finalized, in which case a full recompute is requested to fill it in with an
-   /// available, boundary-clipped window.
+   /// a scrolling series (rolling-count or time-bin rotation) dropping its oldest raw
+   /// sample: since those buffers are indexed by fixed slot position and the underlying
+   /// window shape is invariant under a uniform shift, the value previously computed for
+   /// slot i + 1 is still correct for slot i, so it is reused instead of being recomputed.
+   /// The cached sliding-window scan state (lo/hi/sum/etc., used to resume an incremental
+   /// recompute) is adjusted in lockstep so the next recompute only has to fill in the
+   /// newly exposed trailing slot instead of rescanning everything.
    /// </summary>
-   /// <param name="currentCount">Number of valid slots in the rolling buffer (its fixed capacity).</param>
+   /// <param name="currentCount">Number of valid slots in the scrolling buffer (its fixed capacity).</param>
+   /// <param name="droppedY">The raw Y value being dropped from slot 0, needed to remove its contribution from the cached window sums if it was still included in them.</param>
    ///
-   void _rollOverlaysLeft(size_t currentCount)
+   void _rollOverlaysLeft(size_t currentCount, float droppedY)
    {
       if (currentCount == 0)
       {
          return;
       }
 
-      if (_movingAverageBuffer != nullptr && (currentCount <= _movingAverageBufferCapacity))
+      bool hasMovingAvg = (_movingAverageBuffer != nullptr) && (currentCount <= _movingAverageBufferCapacity);
+      bool hasStdDev = (_stdDevLowBuffer != nullptr) && (_stdDevHighBuffer != nullptr) && (currentCount <= _stdDevBufferCapacity);
+
+      if (hasMovingAvg)
       {
          if (currentCount > 1)
          {
@@ -245,9 +299,34 @@ protected:
          {
             _movingAverageReadyCount--;
          }
+
+         // Remove the dropped sample's contribution if the cached window had not yet
+         // excluded it, then shift the window pointers down to match the new indices.
+         if (_movingAverageLo == 0)
+         {
+            if (isfinite(droppedY))
+            {
+               _movingAverageSum -= droppedY;
+               _movingAverageFiniteCount--;
+            }
+         }
+         else
+         {
+            _movingAverageLo--;
+         }
+
+         if (_movingAverageHi > 0)
+         {
+            _movingAverageHi--;
+         }
+
+         // The newly exposed trailing slot has never been computed; request a recompute,
+         // which (thanks to the resumed scan above) will only need to fill in this slot.
+         _movingAverageBuffer[currentCount - 1] = NAN;
+         _movingAverageDirty = true;
       }
 
-      if ((_stdDevLowBuffer != nullptr) && (_stdDevHighBuffer != nullptr) && (currentCount <= _stdDevBufferCapacity))
+      if (hasStdDev)
       {
          if (currentCount > 1)
          {
@@ -258,28 +337,29 @@ protected:
          {
             _stdDevReadyCount--;
          }
-      }
 
-      if (finalized)
-      {
-         // The last slot is newly exposed and has never been computed with a
-         // boundary-clipped window; request a full recompute to fill it in.
-         _movingAverageDirty = true;
+         if (_stdDevLo == 0)
+         {
+            if (isfinite(droppedY))
+            {
+               _stdDevSum -= droppedY;
+               _stdDevSumSquares -= static_cast<double>(droppedY) * droppedY;
+               _stdDevFiniteCount--;
+            }
+         }
+         else
+         {
+            _stdDevLo--;
+         }
+
+         if (_stdDevHi > 0)
+         {
+            _stdDevHi--;
+         }
+
+         _stdDevLowBuffer[currentCount - 1] = NAN;
+         _stdDevHighBuffer[currentCount - 1] = NAN;
          _stdDevDirty = true;
-      }
-      else
-      {
-         // Matches the not-ready (NaN) state the last slot already had before the
-         // shift, since a non-finalized series can't confirm its trailing window yet.
-         if (_movingAverageBuffer != nullptr && (currentCount <= _movingAverageBufferCapacity))
-         {
-            _movingAverageBuffer[currentCount - 1] = NAN;
-         }
-         if ((_stdDevLowBuffer != nullptr) && (_stdDevHighBuffer != nullptr) && (currentCount <= _stdDevBufferCapacity))
-         {
-            _stdDevLowBuffer[currentCount - 1] = NAN;
-            _stdDevHighBuffer[currentCount - 1] = NAN;
-         }
       }
    }
 
@@ -290,13 +370,30 @@ protected:
          return (_stdDevLowBuffer != nullptr) && (_stdDevHighBuffer != nullptr);
       }
 
+      float* newLowBuffer = new (std::nothrow) float[count];
+      float* newHighBuffer = new (std::nothrow) float[count];
+      if (newLowBuffer == nullptr || newHighBuffer == nullptr)
+      {
+         delete[] newLowBuffer;
+         delete[] newHighBuffer;
+         return false;
+      }
+
+      // Preserve already-computed values so a growing buffer doesn't lose the work an
+      // incremental recompute has already done at lower indices.
+      if ((_stdDevLowBuffer != nullptr) && (_stdDevHighBuffer != nullptr) && (_stdDevBufferCapacity > 0))
+      {
+         memcpy(newLowBuffer, _stdDevLowBuffer, _stdDevBufferCapacity * sizeof(float));
+         memcpy(newHighBuffer, _stdDevHighBuffer, _stdDevBufferCapacity * sizeof(float));
+      }
+
       delete[] _stdDevLowBuffer;
       delete[] _stdDevHighBuffer;
-      _stdDevLowBuffer = new (std::nothrow) float[count];
-      _stdDevHighBuffer = new (std::nothrow) float[count];
-      _stdDevBufferCapacity = ((_stdDevLowBuffer != nullptr) && (_stdDevHighBuffer != nullptr)) ? count : 0;
+      _stdDevLowBuffer = newLowBuffer;
+      _stdDevHighBuffer = newHighBuffer;
+      _stdDevBufferCapacity = count;
 
-      return (_stdDevLowBuffer != nullptr) && (_stdDevHighBuffer != nullptr);
+      return true;
    }
 
    void _recomputeStdDevBand()
@@ -317,21 +414,24 @@ protected:
 
       float halfWindow = movingSampleSize / 2.0f;
 
-      size_t lo = 0;
-      size_t hi = 0;
-      float sum = 0.0f;
-      float sumSquares = 0.0f;
-      size_t finiteCount = 0;
-      size_t readyCount = 0;
+      // Resume the sliding-window scan from the last already-finalized index instead of
+      // rescanning from 0 - see the matching comment in _recomputeMovingAverage(). Sum
+      // accumulators are double precision - see the comment on _stdDevSum's declaration.
+      size_t lo = _stdDevLo;
+      size_t hi = _stdDevHi;
+      double sum = _stdDevSum;
+      double sumSquares = _stdDevSumSquares;
+      size_t finiteCount = _stdDevFiniteCount;
+      size_t readyCount = _stdDevReadyCount;
 
-      for (size_t i = 0; i < _count; i++)
+      for (size_t i = readyCount; i < _count; i++)
       {
          while (lo < _count && (_x[i] - _x[lo]) > halfWindow)
          {
             if (isfinite(_y[lo]))
             {
                sum -= _y[lo];
-               sumSquares -= _y[lo] * _y[lo];
+               sumSquares -= static_cast<double>(_y[lo]) * _y[lo];
                finiteCount--;
             }
             lo++;
@@ -342,7 +442,7 @@ protected:
             if (isfinite(_y[hi]))
             {
                sum += _y[hi];
-               sumSquares += _y[hi] * _y[hi];
+               sumSquares += static_cast<double>(_y[hi]) * _y[hi];
                finiteCount++;
             }
             hi++;
@@ -355,12 +455,12 @@ protected:
 
          if (finiteCount > 0)
          {
-            const float mean = sum / static_cast<float>(finiteCount);
-            const float meanOfSquares = sumSquares / static_cast<float>(finiteCount);
-            const float variance = meanOfSquares - (mean * mean);
-            const float stdDev = sqrtf((variance > 0.0f) ? variance : 0.0f);
-            _stdDevLowBuffer[i] = mean - stdDev;
-            _stdDevHighBuffer[i] = mean + stdDev;
+            const double mean = sum / static_cast<double>(finiteCount);
+            const double meanOfSquares = sumSquares / static_cast<double>(finiteCount);
+            const double variance = meanOfSquares - (mean * mean);
+            const double stdDev = sqrt((variance > 0.0) ? variance : 0.0);
+            _stdDevLowBuffer[i] = static_cast<float>(mean - stdDev);
+            _stdDevHighBuffer[i] = static_cast<float>(mean + stdDev);
          }
          else
          {
@@ -369,6 +469,14 @@ protected:
          }
 
          readyCount = i + 1;
+
+         // Persist the window state as of this now-finalized index so the next call can
+         // resume from here rather than rescanning.
+         _stdDevLo = lo;
+         _stdDevHi = hi;
+         _stdDevSum = sum;
+         _stdDevSumSquares = sumSquares;
+         _stdDevFiniteCount = finiteCount;
       }
 
       for (size_t i = readyCount; i < _count; i++)
@@ -421,21 +529,30 @@ public:
       _count = 0;
       _movingAverageReadyCount = 0;
       _movingAverageDirty = true;
+      _movingAverageLo = 0;
+      _movingAverageHi = 0;
+      _movingAverageSum = 0.0f;
+      _movingAverageFiniteCount = 0;
       _stdDevReadyCount = 0;
       _stdDevDirty = true;
-         finalized = false;
-         _nextX = 0.0f;
-         _xMin = NAN;
-         _xMax = NAN;
-         _yMin = NAN;
-         _yMax = NAN;
-         _maxSampleX = NAN;
-         _sumY = 0.0f;
-         _sumSquaresY = 0.0f;
-         _finiteYCount = 0;
-         _statsDirty = false;
-         _rangeDirty = false;
-      }
+      _stdDevLo = 0;
+      _stdDevHi = 0;
+      _stdDevSum = 0.0;
+      _stdDevSumSquares = 0.0;
+      _stdDevFiniteCount = 0;
+      finalized = false;
+      _nextX = 0.0f;
+      _xMin = NAN;
+      _xMax = NAN;
+      _yMin = NAN;
+      _yMax = NAN;
+      _maxSampleX = NAN;
+      _sumY = 0.0f;
+      _sumSquaresY = 0.0f;
+      _finiteYCount = 0;
+      _statsDirty = false;
+      _rangeDirty = false;
+   }
 
    float getX(size_t index)
    {

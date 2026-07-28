@@ -1,14 +1,9 @@
 #include <AUnit.h>
+#include "SerialX.h"
 #include "Stopwatch_Tests.h"
 
 void setup() {
-   Serial.begin(115200);
-   while (!Serial)
-   {
-      delay(100);
-   }
-
-   delay(1000);
+   SerialX::begin();
    Serial.println("setup()");
 }
 

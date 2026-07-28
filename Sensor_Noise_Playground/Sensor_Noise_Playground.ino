@@ -40,6 +40,7 @@ TestSensor sensor;
 constexpr unsigned long SCATTER_HISTORY_PERIOD_S = 30;
 constexpr unsigned long HISTOGRAM_HISTORY_PERIOD_S = 6;
 constexpr unsigned long NOISE_HISTORY_S = 1;
+constexpr float SCATTER_MOVING_AVERAGE_WINDOW_MS = (SCATTER_HISTORY_PERIOD_S * 1000UL) / 5.0f;
 TimedValues samples(SCATTER_HISTORY_PERIOD_S * 1000UL, 256);
 TimedStats stats(NOISE_HISTORY_S * 1000UL);
 
@@ -94,6 +95,29 @@ enum class DisplayMode : uint8_t
 };
 
 EnumSelector<DisplayMode> displayModeSelector(arduino.encoderA, DisplayMode::RateOnly, DisplayMode::Scatter);
+
+///
+/// <summary>
+/// How much overlay detail the Scatter view draws on top of the raw sample points:
+/// just the points, the points plus the moving-average line, or the points plus both
+/// the moving-average line and the rolling stddev band. Cycled via encoderB's button.
+/// </summary>
+///
+enum class ScatterDetailLevel : uint8_t { Points, PointsAndMovingAverage, PointsAndMovingAverageAndStdDev };
+
+ScatterDetailLevel scatterDetailLevel = ScatterDetailLevel::PointsAndMovingAverageAndStdDev;
+
+///
+/// <summary>
+/// Applies the current scatterDetailLevel to scatterSeries' display flags.
+/// </summary>
+///
+void applyScatterDetailLevel()
+{
+   scatterSeries->showPoints = true;
+   scatterSeries->showMovingAverage = (scatterDetailLevel != ScatterDetailLevel::Points);
+   scatterSeries->showStdDevBand = (scatterDetailLevel == ScatterDetailLevel::PointsAndMovingAverageAndStdDev);
+}
 
 ///
 /// <summary>
@@ -183,6 +207,59 @@ void renderTableView()
 
 ///
 /// <summary>
+/// Dumps the sample points currently visible on the scatter plot (via scatterSeries) to
+/// Serial as "ageMs,value,movingAvg,stdDevLow,stdDevHigh" CSV lines, using the same
+/// per-point moving-average and stddev-band overlays drawn on the plot, so the exact
+/// on-screen data can be captured for a test case or inspected directly.
+/// </summary>
+///
+void dumpScatterViewToSerial()
+{
+   scatterSeries->prepareForRender();
+
+   size_t count = scatterSeries->pointCount();
+   const float* x = scatterSeries->xValues();
+   const float* y = scatterSeries->yValues();
+   const float* movingAvg = scatterSeries->movingAverageValues();
+   const float* stdDevLow = scatterSeries->stdDevLowValues();
+   const float* stdDevHigh = scatterSeries->stdDevHighValues();
+
+   Serial.println("ageMs,value,movingAvg,stdDevLow,stdDevHigh");
+   for (size_t i = 0; i < count; i++)
+   {
+      if (!isfinite(y[i]))
+      {
+         continue;
+      }
+
+      Serial.print(x[i], 1);
+      Serial.print(",");
+      Serial.print(y[i], 4);
+
+      Serial.print(",");
+      if (movingAvg != nullptr && isfinite(movingAvg[i]))
+      {
+         Serial.print(movingAvg[i], 4);
+      }
+
+      Serial.print(",");
+      if (stdDevLow != nullptr && isfinite(stdDevLow[i]))
+      {
+         Serial.print(stdDevLow[i], 4);
+      }
+
+      Serial.print(",");
+      if (stdDevHigh != nullptr && isfinite(stdDevHigh[i]))
+      {
+         Serial.print(stdDevHigh[i], 4);
+      }
+
+      Serial.println();
+   }
+}
+
+///
+/// <summary>
 /// Applies the encoder limits/position for the target sample rate, so turning encoderB
 /// resumes from its current value.
 /// </summary>
@@ -203,8 +280,8 @@ void setup()
    applySampleRateLimits();
 
    scatterSeries = scatterPlot.createTimedSeries(SCATTER_HISTORY_PERIOD_S * 1000UL, CONTENT_RECT.width);
-   scatterSeries->showMovingAverage = true;
-   scatterSeries->showStdDevBand = true;
+   scatterSeries->movingSampleSize = SCATTER_MOVING_AVERAGE_WINDOW_MS;
+   applyScatterDetailLevel();
    scatterPlot.setShowXMinMaxValue(false);
    scatterPlot.setShowXRangeValue(true);
 
@@ -241,6 +318,19 @@ void loop()
    if (arduino.buttonA.wasPressed())
    {
       Util::reset();
+   }
+
+   if (arduino.buttonB.wasPressed())
+   {
+      dumpScatterViewToSerial();
+   }
+
+   if (arduino.encoderB.button.wasPressed())
+   {
+      scatterDetailLevel = static_cast<ScatterDetailLevel>(
+         (static_cast<uint8_t>(scatterDetailLevel) + 1) % 3);
+      applyScatterDetailLevel();
+      scatterPlot.invalidate();
    }
 
    if (displayModeSelector.hasChanged())

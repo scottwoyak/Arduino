@@ -164,9 +164,9 @@ public:
 };
 
 CaptureLimitCell samplesCell(&maxSamples,
-   MIN_MAX_SAMPLES, MAX_MAX_SAMPLES, MAX_SAMPLES_STEP, DEFAULT_MAX_SAMPLES, SAMPLES_FORMAT, DisplayTable::Alignment::LEFT);
+   MIN_MAX_SAMPLES, MAX_MAX_SAMPLES, MAX_SAMPLES_STEP, DEFAULT_MAX_SAMPLES, Format(SAMPLES_FORMAT, Format::Alignment::LEFT));
 CaptureLimitCell durationCell(&maxCaptureTimeS,
-   MIN_MAX_CAPTURE_TIME_S, MAX_MAX_CAPTURE_TIME_S, MAX_CAPTURE_TIME_STEP_S, DEFAULT_MAX_CAPTURE_TIME_S, TIME_FORMAT, DisplayTable::Alignment::LEFT);
+   MIN_MAX_CAPTURE_TIME_S, MAX_MAX_CAPTURE_TIME_S, MAX_CAPTURE_TIME_STEP_S, DEFAULT_MAX_CAPTURE_TIME_S, Format(TIME_FORMAT, Format::Alignment::LEFT));
 ReadOnlyCell samplesReadCell(&progressSamplesValue, SAMPLES_FORMAT);
 ReadOnlyCell timeReadCell(&progressTimeValue, TIME_FORMAT);
 ReadOnlyCell progressReadCell(&progressPercentValue, PROGRESS_PERCENT_FORMAT);

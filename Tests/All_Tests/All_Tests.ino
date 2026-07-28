@@ -6,6 +6,7 @@
 #include "../RollingRate_Tests/RollingRate_Tests.h"
 #include "../RollingStats_Tests/RollingStats_Tests.h"
 #include "../RollingValues_Tests/RollingValues_Tests.h"
+#include "../ScatterPlotSeries_Tests/ScatterPlotSeries_Tests.h"
 #include "../Stats_Tests/Stats_Tests.h"
 #include "../Stopwatch_Tests/Stopwatch_Tests.h"
 #include "../Tick_Tests/Tick_Tests.h"
@@ -21,8 +22,7 @@
 
 void setup()
 {
-   Serial.begin(115200);
-   while (!Serial);
+   SerialX::begin();
 }
 
 void loop()

@@ -205,7 +205,8 @@ public:
    ///
    /// <summary>
    /// Creates a copy of this Format with the given number of decimal digits of precision,
-   /// for higher-resolution display of values like statistics (average, stddev, range).
+   /// for adjusting the resolution of display of values like statistics (average, stddev,
+   /// range). Supports both higher and lower precision than the original format.
    /// </summary>
    /// <param name="precision">Number of decimal digits the copy should use.</param>
    /// <returns>A new Format with the specified precision.</returns>
@@ -214,9 +215,26 @@ public:
    {
       std::string str = _formatString;
       size_t pos = str.find_last_of('#');
-      size_t extraDigits = precision > _precision ? (precision - _precision) : 0;
-      std::string insertion = (_precision > 0 ? "" : ".") + std::string(extraDigits, '#');
-      str.insert(pos + 1, insertion);
+
+      if (precision > _precision)
+      {
+         size_t extraDigits = precision - _precision;
+         std::string insertion = (_precision > 0 ? "" : ".") + std::string(extraDigits, '#');
+         str.insert(pos + 1, insertion);
+      }
+      else if (precision < _precision)
+      {
+         size_t removeDigits = _precision - precision;
+         size_t removeStart = pos - removeDigits + 1;
+         if (precision == 0)
+         {
+            // also remove the decimal point itself
+            removeStart--;
+            removeDigits++;
+         }
+         str.erase(removeStart, removeDigits);
+      }
+
       return Format(str.c_str(), _alignment);
    }
 

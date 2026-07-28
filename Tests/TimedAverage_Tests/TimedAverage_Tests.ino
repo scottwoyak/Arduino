@@ -1,10 +1,10 @@
 #include <AUnit.h>
+#include "SerialX.h"
 #include "TimedAverage_Tests.h"
 
 void setup()
 {
-   Serial.begin(115200);
-   while (!Serial);
+   SerialX::begin();
 }
 
 void loop()

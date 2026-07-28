@@ -278,51 +278,51 @@ NoiseStdDevCell noiseStdDevCell(&noiseStdDevValue,
 
 TableEditorRow defaultStatusCells[] =
 {
-   { "Test Function" },
+   TableEditorRow("Test Function"),
    { "Source", &testFunctionCell },
    { "Noise", &noiseEnabledCell },
    { "StdDev", &noiseStdDevCell },
-   { "Plot" },
+   TableEditorRow("Plot"),
    { "X Size", &plotXSizeCell },
    { "Y Size", &plotYSizeCell },
    { "Samples", &maxSamplesCell },
    { "Display", &displayModeCell },
    { "Stats", &statsModeCell },
-   { "Measured" },
+   TableEditorRow("Measured"),
    { "FPS", &rateCell },
    { "Memory", &memoryCell },
 };
 TableEditorRow constantStatusCells[] =
 {
-   { "Test Function" },
+   TableEditorRow("Test Function"),
    { "Source", &testFunctionCell },
    { "Value", &constantValueCell },
    { "Noise", &noiseEnabledCell },
    { "StdDev", &noiseStdDevCell },
-   { "Plot" },
+   TableEditorRow("Plot"),
    { "X Size", &plotXSizeCell },
    { "Y Size", &plotYSizeCell },
    { "Samples", &maxSamplesCell },
    { "Display", &displayModeCell },
    { "Stats", &statsModeCell },
-   { "Measured" },
+   TableEditorRow("Measured"),
    { "FPS", &rateCell },
    { "Memory", &memoryCell },
 };
 TableEditorRow sinStatusCells[] =
 {
-   { "Test Function" },
+   TableEditorRow("Test Function"),
    { "Source", &testFunctionCell },
    { "Period", &sinPeriodCell },
    { "Noise", &noiseEnabledCell },
    { "StdDev", &noiseStdDevCell },
-   { "Plot" },
+   TableEditorRow("Plot"),
    { "X Size", &plotXSizeCell },
    { "Y Size", &plotYSizeCell },
    { "Samples", &maxSamplesCell },
    { "Display", &displayModeCell },
    { "Stats", &statsModeCell },
-   { "Measured" },
+   TableEditorRow("Measured"),
    { "FPS", &rateCell },
    { "Memory", &memoryCell },
 };
@@ -469,7 +469,7 @@ void recreatePlot()
 
 	size_t maxSamples = MAX_SAMPLES_OPTIONS[constrain(maxSamplesIndex, 0L, (long)(NUM_MAX_SAMPLES_OPTIONS - 1))];
 	ScatterPlotSeries* rollingSeries = scatterPlot->createRollingSeries(maxSamples);
-	rollingSeries->movingSampleSize = (float)maxSamples / 10.0f;
+	rollingSeries->movingSampleSize = (float)maxSamples / 5.0f;
 	sampleSeries = rollingSeries;
 
 	scatterPlot->setColors(PLOT_BACKGROUND_COLOR, PLOT_BACKGROUND_COLOR, Color::GRAY, Color::LABEL);

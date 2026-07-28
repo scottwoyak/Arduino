@@ -102,7 +102,7 @@ constexpr size_t NUM_TARGET_SAMPLES = sizeof(TARGET_SERIES) / sizeof(TARGET_SERI
 // ----------- Test Completion
 constexpr unsigned long FIXED_TEST_DURATION_S = 15UL;
 constexpr unsigned long ROLLING_AVERAGE_MIN_MS = 500UL;
-constexpr unsigned long ROLLING_AVERAGE_TARGET_SAMPLE_COUNT = 10UL;
+constexpr unsigned long ROLLING_AVERAGE_TARGET_SAMPLE_COUNT = 20UL;
 constexpr size_t MAX_RESULTS = NUM_TARGET_SAMPLES;
 
 ///
@@ -167,7 +167,7 @@ std::array RESULT_TABLE_DISPLAY_COLUMNS = {
 DisplayTable resultDisplayTable(&arduino, 0, 0, RESULT_TABLE_DISPLAY_COLUMNS, BODY_TEXT_SIZE, Color::LABEL);
 
 // ----------- Scatter Plot State
-ScatterPlot scatterPlot(&arduino, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, "##.#s", sensor.getFormatStr());
+ScatterPlot scatterPlot(&arduino, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, "##.#s", sensor.getLowResFormatStr());
 Timer displayUpdateTimer(DISPLAY_UPDATE_INTERVAL_MS);
 
 // ----------- Status Line State
@@ -255,12 +255,20 @@ public:
    /// Starts a new test run at the given target sample rate, appending samples to the
    /// series at seriesIndex. The centered smoothing duration is derived from the
    /// target rate so the moving average always mixes ~10 samples' worth of data (500ms
-   /// minimum), keeping visual smoothness consistent across rates.
+   /// minimum), keeping visual smoothness consistent across rates. All runs compute
+   /// their Delta value from the same shared baseline rather than each run's own
+   /// starting value, so drift between cooldown periods is visible in the deltas
+   /// instead of being silently absorbed into each run's own zero point.
    /// </summary>
    /// <param name="sampleRate">Target samples per second.</param>
    /// <param name="seriesIndex">Index of the ScatterPlot series to append this test's samples to.</param>
+   /// <param name="baselineValue">
+   /// Shared baseline value to subtract from every raw sample, or NAN if this is the
+   /// first run and the baseline has not yet been established (in which case the first
+   /// sample taken becomes the baseline).
+   /// </param>
    ///
-   void start(unsigned long sampleRate, size_t seriesIndex)
+   void start(unsigned long sampleRate, size_t seriesIndex, float baselineValue)
    {
       ASSERT(_scatterPlot != nullptr);
 
@@ -275,7 +283,7 @@ public:
       _samples = 0;
       _stopwatch.reset();
       _stopwatch.start();
-      _startValue = NAN;
+      _startValue = baselineValue;
       _targetRate = sampleRate;
       _complete = false;
       _hasResult = false;
@@ -383,6 +391,15 @@ public:
    /// <returns>Starting value, or NAN if no result is available.</returns>
    ///
    float resultStartValue() const { return _resultStartValue; }
+
+   ///
+   /// <summary>
+   /// Gets the baseline value used to compute Delta for this run (either the shared
+   /// baseline passed to start(), or, for the first run, the first sample taken).
+   /// </summary>
+   /// <returns>Baseline value, or NAN if the test has not sampled yet.</returns>
+   ///
+   float startValue() const { return _startValue; }
 
    ///
    /// <summary>
@@ -538,6 +555,10 @@ private:
    float _resultStartValues[MAX_RESULTS] = { NAN };
    int _pendingResultIndex = -1;
 
+   // Shared baseline value used by every run's Delta calculation, established from the
+   // first sample of the first run and left unchanged for the remainder of the sweep.
+   float _baselineValue = NAN;
+
 public:
    ///
    /// <summary>
@@ -568,6 +589,7 @@ public:
       _currentRateIndex = 0;
       _resultCount = 0;
       _pendingResultIndex = -1;
+      _baselineValue = NAN;
       _cooldownMonitor->start();
    }
 
@@ -595,7 +617,7 @@ public:
          }
 
          _cooldown = false;
-         _testCase->start(TARGET_SERIES[_currentRateIndex].rate, _currentRateIndex);
+         _testCase->start(TARGET_SERIES[_currentRateIndex].rate, _currentRateIndex, _baselineValue);
          return;
       }
 
@@ -610,6 +632,13 @@ public:
       float value = _testCase->resultValue();
       float startValue = _testCase->resultStartValue();
       _testCase->clearResult();
+
+      // The first run establishes the shared baseline that every subsequent run's
+      // Delta is computed against.
+      if (!isfinite(_baselineValue))
+      {
+         _baselineValue = startValue;
+      }
 
       if (_resultCount < MAX_RESULTS)
       {
@@ -1183,7 +1212,7 @@ void loop()
       float incr = testRunner.resultValue(index);
 
       resultTable.printRow(
-         static_cast<float>( ),
+         static_cast<float>(targetRate),
          actualRate,
          SerialTable::fixed(startValue, 2),
          SerialTable::fixed(incr, 2));

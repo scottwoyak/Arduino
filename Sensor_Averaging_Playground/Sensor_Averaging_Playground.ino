@@ -224,7 +224,6 @@ static const DisplayTable::ValueRow collectingRows[] = {
    { "Actual Rate", "####.#/s" },
 };
 DisplayTable collectingTable(&arduino, 0, 0, collectingRows, 2, DisplayTable::Alignment::RIGHT);
-ScatterPlot resultsScatterPlot(&arduino, Rect16{ 0, 0, 0, 0 }, CHART_X_AXIS_FORMAT, CHART_Y_AXIS_FORMAT);
 
 // ----------- Analysis Settings
 constexpr size_t HISTOGRAM_BINS = 20;
@@ -232,6 +231,8 @@ constexpr const char* CHART_MIN_MAX_FORMAT = "##.##";
 constexpr const char* CHART_X_AXIS_FORMAT = "####";
 constexpr const char* CHART_Y_AXIS_FORMAT = "####";
 constexpr size_t BUFFER_SIZES[] = { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
+
+ScatterPlot resultsScatterPlot(&arduino, Rect16{ 0, 0, 0, 0 }, CHART_X_AXIS_FORMAT, CHART_Y_AXIS_FORMAT);
 constexpr size_t NUM_BUFFER_SIZES = sizeof(BUFFER_SIZES) / sizeof(BUFFER_SIZES[0]);
 
 ///

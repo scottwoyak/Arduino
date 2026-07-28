@@ -86,7 +86,7 @@ namespace TestSensorConfig
    static constexpr long SIN_FIXED_PERIOD_STEP_SAMPLES = 100;
 
    // ----- temp sensor (physical sensor)
-   static constexpr const char* TEMP_FORMAT = "###.##";
+   static constexpr const char* TEMP_FORMAT = "###.##F";
 
    // ----- ms5837 pressure sensor
    static const uint8_t MS5837_MODEL = MS5837::MS5837_02BA;
@@ -122,14 +122,17 @@ class ITestSensor
 private:
    std::string _formatPattern;
    std::string _highResFormatPattern;
+   std::string _lowResFormatPattern;
 
 public:
    ///
    /// <summary>
    /// Initializes the format pattern strings used for value display. The high-resolution
    /// pattern (used for statistics like average, stddev, and range) is derived automatically
-   /// from the base pattern by adding one additional decimal place. Only the pattern strings
-   /// are stored (see getFormatStr() and getHighResFormatStr()); callers construct
+   /// from the base pattern by adding one additional decimal place. The low-resolution
+   /// pattern (used for less cluttered display, like scatter plot axes) is derived by
+   /// removing one decimal place instead. Only the pattern strings are stored (see
+   /// getFormatStr(), getHighResFormatStr(), and getLowResFormatStr()); callers construct
    /// their own Format objects when display concerns like alignment are needed.
    /// </summary>
    /// <param name="format">Format pattern used for axis limits and current readings.</param>
@@ -139,6 +142,8 @@ public:
    {
       Format baseFormat(format);
       _highResFormatPattern = baseFormat.withPrecision(baseFormat.precision() + 1).formatString();
+      uint8_t lowPrecision = baseFormat.precision() > 0 ? baseFormat.precision() - 1 : 0;
+      _lowResFormatPattern = baseFormat.withPrecision(lowPrecision).formatString();
    }
 
    virtual ~ITestSensor() = default;
@@ -192,6 +197,19 @@ public:
    const std::string& getHighResFormatStr() const
    {
       return _highResFormatPattern;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the low-resolution format pattern string for values (used for less cluttered
+   /// display, like scatter plot Y axes). Automatically derived from getFormatStr() by
+   /// removing one decimal place.
+   /// </summary>
+   /// <returns>The low-resolution format pattern string.</returns>
+   ///
+   const std::string& getLowResFormatStr() const
+   {
+      return _lowResFormatPattern;
    }
 
    ///

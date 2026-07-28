@@ -1,6 +1,7 @@
+#include "LGX_ST7796S.h"
 #include <AUnit.h>
+#include "ScatterPlotSeries_Tests.h"
 #include "SerialX.h"
-#include "Util_Tests.h"
 
 void setup()
 {
@@ -9,6 +10,5 @@ void setup()
 
 void loop()
 {
-   // Run the test runner. It completes automatically and stops execution loop.
    aunit::TestRunner::run();
 }

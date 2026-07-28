@@ -169,6 +169,10 @@
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
+    <Project Path="Tests/ScatterPlotSeries_Tests/ScatterPlotSeries_Tests.vcxproj">
+      <Platform Solution="*|Any CPU" Project="ARM" />
+      <Deploy />
+    </Project>
     <Project Path="Tests/Stats_Tests/Stats_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
