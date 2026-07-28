@@ -371,6 +371,55 @@ public:
 
    ///
    /// <summary>
+   /// Creates and sizes an off-screen sprite with its own copy of the given font size,
+   /// applying the same monospace space-width fix as setTextSize() so that space-padded
+   /// alignment renders correctly within the sprite.
+   /// </summary>
+   /// <param name="sprite">The sprite to initialize; must not have already had createSprite() called on it.</param>
+   /// <param name="width">The sprite's width, in pixels.</param>
+   /// <param name="height">The sprite's height, in pixels.</param>
+   /// <param name="size">Font size index (0-7); outside this range is constrained to valid bounds.</param>
+   /// <param name="mono">If true, uses monospaced font; if false, uses proportional font. Defaults to true.</param>
+   ///
+   void createSprite(LGFX_Sprite& sprite, int16_t width, int16_t height, uint8_t size, bool mono = true)
+   {
+      sprite.setColorDepth(16);
+      sprite.createSprite(width, height);
+
+      size = constrain(size, 0, 7);
+
+      // load our own copy of the font rather than sharing the display's runtime font
+      // pointer, which can be freed out from under us if the display later loads a
+      // different font
+      if (mono)
+      {
+         sprite.loadFont(RobotoMonoBold[size]);
+      }
+      else
+      {
+         sprite.loadFont(Roboto[size]);
+      }
+
+      if (mono)
+      {
+         // this is unsafe code - we are accessing an internal LGFX data structure
+         // and modifying it
+         lgfx::v1::VLWfont* font = (lgfx::v1::VLWfont*)(sprite.getFont());
+
+         // get the max char width and make them all the same
+         uint8_t maxAdvance = 0;
+         for (uint16_t i = 0; i < font->gCount; i++)
+         {
+            maxAdvance = std::max(maxAdvance, font->gxAdvance[i]);
+         }
+
+         // TFT_eSPI & LGFX guess at the space width. Make it the monospace value
+         font->spaceWidth = maxAdvance;
+      }
+   }
+
+   ///
+   /// <summary>
    /// Gets the text size most recently set via setTextSize().
    /// </summary>
    /// <returns>The current font size index.</returns>

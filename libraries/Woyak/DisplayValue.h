@@ -58,13 +58,7 @@ private:
       int16_t spriteWidth = (int16_t)_display->charW(_textSize) * _format.length();
       int16_t spriteHeight = (int16_t)_display->charH(_textSize);
 
-      _sprite.setColorDepth(16);
-      _sprite.createSprite(spriteWidth, spriteHeight);
-
-      // load our own copy of the font rather than sharing the display's runtime font
-      // pointer, which can be freed out from under us if the display later loads a
-      // different font (e.g. another DisplayValue or the sketch switching modes)
-      _sprite.loadFont(RobotoMonoBold[_textSize]);
+      _display->createSprite(_sprite, spriteWidth, spriteHeight, _textSize);
 
       _spriteCreated = true;
    }

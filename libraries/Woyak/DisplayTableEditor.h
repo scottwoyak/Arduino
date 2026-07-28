@@ -75,7 +75,7 @@ class DisplayTableEditor
 private:
    Arduino* _arduino;
    const char* _prefNamespace;
-   std::span<TableEditorRow> _fields;
+   std::span<TableEditorRow> _rows;
    uint8_t _selectedIndex = 0;
    char _keyBuffer[10];
    DisplayTable _table;
@@ -120,25 +120,25 @@ private:
    void _relayout()
    {
       const char* pendingSection = nullptr;
-      for (uint8_t i = 0; i < _fields.size(); i++)
+      for (uint8_t i = 0; i < _rows.size(); i++)
       {
-         if (_fields[i].cell == nullptr)
+         if (_rows[i].cell == nullptr)
          {
-            _fields[i].rowIndex = -1;
-            pendingSection = _fields[i].label;
+            _rows[i].rowIndex = -1;
+            pendingSection = _rows[i].label;
             continue;
          }
 
-         _fields[i].rowIndex = static_cast<int8_t>(_table.rowCount());
-         _table.addRow(_fields[i].label, _fields[i].cell->format());
-         _table.setSection(_fields[i].rowIndex, pendingSection);
+         _rows[i].rowIndex = static_cast<int8_t>(_table.rowCount());
+         _table.addRow(_rows[i].label, _rows[i].cell->format());
+         _table.setSection(_rows[i].rowIndex, pendingSection);
          pendingSection = nullptr;
       }
 
       _selectedIndex = 0;
-      for (uint8_t i = 0; i < _fields.size(); i++)
+      for (uint8_t i = 0; i < _rows.size(); i++)
       {
-         if (_fields[i].cell != nullptr && _fields[i].cell->isEditable())
+         if (_rows[i].cell != nullptr && _rows[i].cell->isEditable())
          {
             _selectedIndex = i;
             break;
@@ -155,15 +155,15 @@ private:
    ///
    void _syncTable()
    {
-      for (uint8_t i = 0; i < _fields.size(); i++)
+      for (uint8_t i = 0; i < _rows.size(); i++)
       {
-         DisplayTableCell* cell = _fields[i].cell;
+         DisplayTableCell* cell = _rows[i].cell;
          if (cell == nullptr)
          {
             continue;
          }
 
-         uint8_t rowIndex = _fields[i].rowIndex;
+         uint8_t rowIndex = _rows[i].rowIndex;
          bool isSelected = cell->isEditable() && cell->isEnabled() && (i == _selectedIndex);
          bool isDisabled = !cell->isEnabled();
 
@@ -193,7 +193,7 @@ public:
    DisplayTableEditor(Arduino* arduino, const char* prefNamespace, std::span<TableEditorRow> fields,
       int16_t x, int16_t y, uint8_t textSize = 2,
       DisplayTable::Alignment labelAlignment = DisplayTable::Alignment::RIGHT)
-      : _arduino(arduino), _prefNamespace(prefNamespace), _fields(fields),
+      : _arduino(arduino), _prefNamespace(prefNamespace), _rows(fields),
       _table(arduino, x, y, textSize, labelAlignment)
    {
       _relayout();
@@ -231,7 +231,7 @@ public:
       int16_t oldWidth = width();
       int16_t oldHeight = height();
 
-      _fields = fields;
+      _rows = fields;
       _table.clearRows();
       _relayout();
 
@@ -311,7 +311,7 @@ public:
    ///
    void setSelectedIndex(uint8_t index)
    {
-      if (index < _fields.size() && _fields[index].cell != nullptr && _fields[index].cell->isEditable())
+      if (index < _rows.size() && _rows[index].cell != nullptr && _rows[index].cell->isEditable())
       {
          _selectedIndex = index;
       }
@@ -333,13 +333,13 @@ public:
          return;
       }
 
-      int32_t fieldCount = static_cast<int32_t>(_fields.size());
+      int32_t fieldCount = static_cast<int32_t>(_rows.size());
       int32_t step = direction > 0 ? 1 : -1;
       int32_t newIndex = static_cast<int32_t>(_selectedIndex);
-      for (uint8_t i = 0; i < _fields.size(); i++)
+      for (uint8_t i = 0; i < _rows.size(); i++)
       {
          newIndex = (newIndex + step + fieldCount) % fieldCount;
-         if (_fields[newIndex].cell != nullptr && _fields[newIndex].cell->isEditable() && _fields[newIndex].cell->isEnabled())
+         if (_rows[newIndex].cell != nullptr && _rows[newIndex].cell->isEditable() && _rows[newIndex].cell->isEnabled())
          {
             break;
          }
@@ -363,7 +363,7 @@ public:
          return;
       }
 
-      DisplayTableCell* cell = _fields[_selectedIndex].cell;
+      DisplayTableCell* cell = _rows[_selectedIndex].cell;
       if (cell->isEditable() && cell->isEnabled())
       {
          static_cast<CellEditor*>(cell)->adjust(direction);
@@ -450,7 +450,7 @@ public:
    ///
    std::span<TableEditorRow> fields() const
    {
-      return _fields;
+      return _rows;
    }
 
    ///
@@ -461,7 +461,7 @@ public:
    ///
    uint8_t fieldCount() const
    {
-      return static_cast<uint8_t>(_fields.size());
+      return static_cast<uint8_t>(_rows.size());
    }
 
    ///
@@ -473,15 +473,15 @@ public:
    {
       Preferences* prefs = _preferences();
       prefs->begin(_prefNamespace, true);
-      for (uint8_t i = 0; i < _fields.size(); i++)
+      for (uint8_t i = 0; i < _rows.size(); i++)
       {
-         if (_fields[i].cell == nullptr || !_fields[i].cell->isEditable())
+         if (_rows[i].cell == nullptr || !_rows[i].cell->isEditable())
          {
             continue;
          }
-         CellEditor* field = static_cast<CellEditor*>(_fields[i].cell);
+         CellEditor* field = static_cast<CellEditor*>(_rows[i].cell);
          double defaultValue = field->defaultNumericValue();
-         double value = prefs->getDouble(_keyFor(_fields[i]), defaultValue);
+         double value = prefs->getDouble(_keyFor(_rows[i]), defaultValue);
          field->setNumericValue(value);
       }
       prefs->end();
@@ -496,14 +496,14 @@ public:
    {
       Preferences* prefs = _preferences();
       prefs->begin(_prefNamespace, false);
-      for (uint8_t i = 0; i < _fields.size(); i++)
+      for (uint8_t i = 0; i < _rows.size(); i++)
       {
-         if (_fields[i].cell == nullptr || !_fields[i].cell->isEditable())
+         if (_rows[i].cell == nullptr || !_rows[i].cell->isEditable())
          {
             continue;
          }
-         CellEditor* field = static_cast<CellEditor*>(_fields[i].cell);
-         prefs->putDouble(_keyFor(_fields[i]), field->numericValue());
+         CellEditor* field = static_cast<CellEditor*>(_rows[i].cell);
+         prefs->putDouble(_keyFor(_rows[i]), field->numericValue());
       }
       prefs->end();
    }
@@ -515,13 +515,13 @@ public:
    ///
    void reset()
    {
-      for (uint8_t i = 0; i < _fields.size(); i++)
+      for (uint8_t i = 0; i < _rows.size(); i++)
       {
-         if (_fields[i].cell == nullptr || !_fields[i].cell->isEditable())
+         if (_rows[i].cell == nullptr || !_rows[i].cell->isEditable())
          {
             continue;
          }
-         static_cast<CellEditor*>(_fields[i].cell)->reset();
+         static_cast<CellEditor*>(_rows[i].cell)->reset();
       }
       save();
    }

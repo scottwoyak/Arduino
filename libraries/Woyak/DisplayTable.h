@@ -414,14 +414,8 @@ private:
 
          _sprites.emplace_back(display);
          int16_t spriteHeight = (int16_t)display->fontHeight();
-         _sprites[i].setColorDepth(16);
-         _sprites[i].createSprite(pixelWidth, spriteHeight);
-
-         // load our own copy of the font rather than sharing the display's runtime font
-         // pointer, which can be freed out from under us if the display later loads a
-         // different font
          uint8_t size = constrain(_textSize, (uint8_t)1, (uint8_t)7);
-         _sprites[i].loadFont(RobotoMonoBold[size]);
+         _display->createSprite(_sprites[i], pixelWidth, spriteHeight, size);
       }
 
       _headerHeight = _hasColumns() ? (_display->charH() + 2) : 0;
@@ -469,7 +463,6 @@ private:
             break;
          }
       }
-
       sprite.setCursor(0, 0);
       sprite.print(value.c_str());
       sprite.pushSprite(_columnX[columnIndex], y);
