@@ -37,6 +37,7 @@
     <File Path="libraries/Woyak/FeedTimer.h" />
     <File Path="libraries/Woyak/Field.h" />
     <File Path="libraries/Woyak/FieldTable.h" />
+    <File Path="libraries/Woyak/FieldTableEditor.h" />
     <File Path="libraries/Woyak/FilteredRollingAverage.h" />
     <File Path="libraries/Woyak/Format.h" />
     <File Path="libraries/Woyak/FixedRangeHistory.h" />
@@ -241,6 +242,10 @@
     <Deploy />
   </Project>
   <Project Path="Basic_FieldTable/Basic_FieldTable.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Basic_FieldTableEditor/Basic_FieldTableEditor.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

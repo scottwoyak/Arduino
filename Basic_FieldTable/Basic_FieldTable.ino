@@ -5,11 +5,12 @@
 // table redrawn as fast as possible, grouped into two sections ("Motion" and
 // "Environment"). Sections are their own rows in the table (see FieldTable::Row's
 // section-header constructor and addSection()), counting toward row indices the same
-// as data rows. Each data row is backed by its own Field, so only the value sprites
-// are repainted after the initial draw (row labels and section headers are only
-// drawn once). A heading is drawn once at startup, and a live update-rate readout is
-// kept in the lower right corner (drawn as a plain DisplayValue, same as the other
-// Basic_* sketches).
+// as data rows. Each data row is backed directly by a live float variable (see
+// FieldTable::Row's label/formatStr/value constructor), so a single call to draw()
+// reads every row's variable and only repaints rows whose value has actually changed
+// (row labels and section headers are only drawn once). A heading is drawn once at
+// startup, and a live update-rate readout is kept in the lower right corner (drawn as a
+// plain DisplayValue, same as the other Basic_* sketches).
 //
 // Hardware: Any board with a display (e.g. Feather ESP32-S3 or Feather M0).
 //
@@ -38,13 +39,18 @@ constexpr uint8_t CONTENT_TEXT_SIZE = DEFAULT_CONTENT_SIZE;
 constexpr uint8_t FOOTER_TEXT_SIZE = 2;
 
 // ----------- Content
+float speed = 0;
+float acceleration = 0;
+float temperature = 0;
+float humidity = 0;
+
 std::array rows = {
    FieldTable::Row("Motion"),
-   FieldTable::Row("Speed", "###.#"),
-   FieldTable::Row("Acceleration", "#.##"),
+   FieldTable::Row("Speed", "###.#", &speed),
+   FieldTable::Row("Acceleration", "#.##", &acceleration),
    FieldTable::Row("Environment"),
-   FieldTable::Row("Temperature", "###.#"),
-   FieldTable::Row("Humidity", "###.#"),
+   FieldTable::Row("Temperature", "###.#", &temperature),
+   FieldTable::Row("Humidity", "###.#", &humidity),
 };
 FieldTable table(&arduino, 0, 0, rows, CONTENT_TEXT_SIZE);
 
@@ -73,10 +79,12 @@ void setup()
 
 void loop()
 {
-   table.drawRow(1, Util::randomValue("###.#"));
-   table.drawRow(2, Util::randomValue("#.##"));
-   table.drawRow(4, Util::randomValue("###.#"));
-   table.drawRow(5, Util::randomValue("###.#"));
+   speed = Util::randomValue("###.#");
+   acceleration = Util::randomValue("#.##");
+   temperature = Util::randomValue("###.#");
+   humidity = Util::randomValue("###.#");
+
+   table.draw();
 
    rate.tick();
    if (rateDisplayTimer.ready())
