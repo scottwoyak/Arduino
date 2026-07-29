@@ -62,8 +62,8 @@ public:
          return NAN;
       }
    }
-   virtual bool readsBoth() { return true; }
-   virtual void readBoth(float& tempF, float& hum)
+   virtual bool supportsHumidity() { return true; }
+   virtual void readBoth(float& tempF, float& hum) override
    {
       sensors_event_t h, t;
       if (sht.getEvent(&h, &t))

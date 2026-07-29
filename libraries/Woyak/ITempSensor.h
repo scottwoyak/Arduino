@@ -64,10 +64,10 @@ public:
    virtual float readHumidity() = 0;
 
    /// <summary>
-   /// Checks if this sensor can read both temperature and humidity.
+   /// Checks if this sensor can measure humidity.
    /// </summary>
    /// <returns>True if sensor supports humidity, false if temperature-only</returns>
-   virtual bool readsBoth() = 0;
+   virtual bool supportsHumidity() = 0;
 
    /// <summary>
    /// Reads temperature and humidity in a single operation.
@@ -75,8 +75,13 @@ public:
    /// <param name="tempF">Output: temperature in Fahrenheit</param>
    /// <param name="hum">Output: relative humidity 0-100%</param>
    /// <remarks>
-   /// More efficient than separate calls to readTemperatureF() and readHumidity().
-   /// Only valid if readsBoth() returns true.
+   /// Sensors that can read both values together should override this for efficiency;
+   /// the default implementation simply calls readTemperatureF() and readHumidity()
+   /// separately.
    /// </remarks>
-   virtual void readBoth(float& tempF, float& hum) = 0;
+   virtual void readBoth(float& tempF, float& hum)
+   {
+      tempF = readTemperatureF();
+      hum = readHumidity();
+   }
 };

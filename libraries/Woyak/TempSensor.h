@@ -36,7 +36,7 @@ public:
    float readTemperatureF() override { return NAN; }
    float readTemperatureC() override { return NAN; }
    float readHumidity() override { return NAN; }
-   bool readsBoth() override { return false; }
+   bool supportsHumidity() override { return false; }
    void readBoth(float& tempF, float& hum) override
    {
       tempF = NAN;
@@ -432,35 +432,26 @@ public:
 
    ///
    /// <summary>
-   /// Indicates whether the active sensor can return temperature and humidity together.
+   /// Indicates whether the active sensor can measure humidity.
    /// </summary>
-   /// <returns>True when combined readings are supported; otherwise false.</returns>
+   /// <returns>True when humidity is supported; otherwise false.</returns>
    ///
-   bool readsBoth() override
+   bool supportsHumidity() override
    {
-      return _sensor->readsBoth();
+      return _sensor->supportsHumidity();
    }
 
    ///
    /// <summary>
-   /// Reads both temperature (F) and humidity from the active sensor. When the wrapped
-   /// sensor doesn't support combined reads, temperature and humidity are read individually.
+   /// Reads both temperature (F) and humidity from the active sensor.
    /// </summary>
    /// <param name="tempF">Receives the Fahrenheit temperature reading.</param>
    /// <param name="hum">Receives the humidity reading.</param>
    ///
    void readBoth(float& tempF, float& hum) override
    {
-      if (_sensor->readsBoth())
-      {
-         _sensor->readBoth(tempF, hum);
-         tempF += _computeTempCorrectionF(tempF);
-      }
-      else
-      {
-         tempF = readTemperatureF();
-         hum = readHumidity();
-      }
+      _sensor->readBoth(tempF, hum);
+      tempF += _computeTempCorrectionF(tempF);
    }
 
 

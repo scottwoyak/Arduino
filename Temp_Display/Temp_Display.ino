@@ -1,8 +1,8 @@
 //
 // Temperature and humidity display for Feather boards.
 //
-// Continuously reads a connected sensor and shows the temperature and humidity, along
-// with a table of sensor information and read rate.
+// Continuously reads a connected sensor and shows the temperature and humidity, centered
+// on the display, along with the sensor's type/address and read rate.
 //
 // Define ONE_WIRE_PIN to use a DS18B20 sensor; otherwise an I2C temperature/humidity
 // sensor is auto-detected. Hardware: Feather display board with supported sensor.
@@ -17,13 +17,10 @@
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
 
-#include "Table.h"
 #include "DisplayValue.h"
 #include "Rate.h"
-#include "SerialTable.h"
 #include "SerialX.h"
 #include "TempSensor.h"
-#include "Util.h"
 
 // Uncomment to use DS18B20 sensor instead of I2C auto-detection
 // #define ONE_WIRE_PIN 5
@@ -41,21 +38,15 @@ TempSensor sensor;
 Rate readRate;  // Timer for combined temperature/humidity read performance
 
 // ----------- Display Items
-constexpr int16_t VALUE_PADDING_PX = 5;
-Format tempFormat("###.##F");
-Format humFormat("###.#%", Format::Alignment::RIGHT);
+Format tempFormat("###.##F", Format::Alignment::LEFT);
+Format humFormat("###.#% ", Format::Alignment::LEFT);
 Format rateFormat("####/s", Format::Alignment::RIGHT);
-constexpr const char* TYPE_ADDRESS_FORMAT = "################";
-constexpr const char* ID_FORMAT = "################";
-constexpr const char* CORRECTION_FORMAT = "+#.###F";
-Table table(&arduino, 0, 0);
 DisplayValue* rateField = nullptr;
-int16_t headingHeight;
+int16_t valueStartY;
 
 void setup()
 {
    SerialX::begin();
-   Util::checkTheLastShutdownReason();
 
    Wire.begin();
    arduino.begin();
@@ -74,29 +65,26 @@ void setup()
    }
    else
    {
-      const SerialTable::Column columns[] = {
-         { "Field", 10 },
-         { "Value", 16 },
-      };
-      SerialTable serialTable("Temperature Sensor Detected", columns);
-      serialTable.printHeader();
-      serialTable.printRow("Type", sensor.type());
-      serialTable.printRow("ID", sensor.id());
-      serialTable.printRow("Address", "0x" + String(sensor.address(), HEX));
+      Serial.println("Temperature Sensor Detected");
+      Serial.print("Type: ");
+      Serial.println(sensor.type());
+      Serial.print("ID: ");
+      Serial.println(sensor.id());
+      Serial.print("Address: 0x");
+      Serial.println(sensor.address(), HEX);
    }
 
-   // Draw the heading, then reserve space below it for the large temp/humidity readout
+   // Draw the heading, then compute the vertical space remaining below it and above the
+   // footer row so the temp/humidity readout can be centered within that space.
    arduino.clearDisplay();
    arduino.setTextSize(HEADER_SIZE);
    arduino.setCursor(0, 0);
    arduino.println("Temperature", Color::HEADING);
-   headingHeight = arduino.charH();
-
-   arduino.setTextSize(VALUE_SIZE);
-   table.setPosition(0, headingHeight + VALUE_PADDING_PX + arduino.charH() + VALUE_PADDING_PX);
-   table.addRow("Type", TYPE_ADDRESS_FORMAT, Color::LABEL, Color::VALUE2);
-   table.addRow("ID", ID_FORMAT, Color::LABEL, Color::VALUE2);
-   table.addRow("Correction", CORRECTION_FORMAT, Color::LABEL, Color::VALUE2);
+   int16_t headingHeight = arduino.charH();
+   int16_t footerHeight = arduino.charH(FOOTER_SIZE);
+   int16_t valuesHeight = 2 * arduino.charH(VALUE_SIZE);
+   int16_t availableHeight = arduino.height() - headingHeight - footerHeight;
+   valueStartY = headingHeight + (availableHeight - valuesHeight) / 2;
 
    // Rate is shown separately in the lower right corner, in gray
    arduino.setTextSize(FOOTER_SIZE);
@@ -113,24 +101,25 @@ void loop()
    sensor.readBoth(temp, hum);
    readRate.stop();
 
-   // Draw the large temp/humidity readout above the table
+   // Draw the temperature and humidity stacked on top of each other, vertically centered
+   // in the space below the heading and horizontally centered on the display. If the
+   // sensor doesn't support humidity, show a grayed-out placeholder instead.
    arduino.setTextSize(VALUE_SIZE);
-   arduino.setCursor(0, headingHeight + VALUE_PADDING_PX);
-   arduino.print(temp, tempFormat, Color::VALUE);
-   arduino.printlnR(hum, humFormat, Color::VALUE);
-
-   table.setValue(0, String(sensor.type()) + " 0x" + String(sensor.address(), HEX), Color::VALUE2);
-   table.setValue(1, sensor.id(), Color::VALUE2);
-   if (sensor.hasTempCorrection())
+   arduino.setCursorY(valueStartY);
+   arduino.printlnC(temp, tempFormat, Color::VALUE);
+   if (sensor.supportsHumidity())
    {
-      table.setValue(2, sensor.tempCorrectionF(), Color::VALUE2);
+      arduino.printlnC(hum, humFormat, Color::VALUE);
    }
    else
    {
-      table.setNoValue(2, Color::VALUE2);
+      arduino.printlnC(humFormat, Color::GRAY);
    }
 
-   rateField->draw(readRate.get(), Color::LIGHTGRAY);
+   // Sensor type and address are shown in the lower left corner
+   arduino.setTextSize(FOOTER_SIZE);
+   arduino.setCursor(0, arduino.height() - arduino.charH());
+   arduino.print(String(sensor.type()) + " 0x" + String(sensor.address(), HEX), Color::LIGHTGRAY);
 
-   table.draw();
+   rateField->draw(readRate.get(), Color::LIGHTGRAY);
 }

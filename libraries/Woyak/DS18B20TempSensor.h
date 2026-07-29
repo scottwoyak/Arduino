@@ -59,7 +59,6 @@ public:
    }
 
    virtual float readHumidity() { return NAN; }
-   virtual bool readsBoth() { return false; }
-   virtual void readBoth(float& tempF, float& hum) { tempF = readTemperatureF(); hum = readHumidity(); }
+   virtual bool supportsHumidity() { return false; }
 };
 

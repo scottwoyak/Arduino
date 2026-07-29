@@ -30,7 +30,7 @@ public:
    virtual float readTemperatureF() = 0;
    virtual float readTemperatureC() = 0;
    virtual float readHumidity() = 0;
-   virtual bool readsBoth() = 0;
+   virtual bool supportsHumidity() = 0;
 
    int8_t getAddress() const { return _address; }
 

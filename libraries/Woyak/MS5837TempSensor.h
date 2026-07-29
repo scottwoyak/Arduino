@@ -42,15 +42,9 @@ public:
       return NAN;
    }
 
-   virtual bool readsBoth()
+   virtual bool supportsHumidity()
    {
       return false;
-   }
-
-   virtual void readBoth(float& tempF, float& hum)
-   {
-      tempF = readTemperatureF();
-      hum = NAN;
    }
 
    static MS5837TempSensor* tryCreate(uint8_t model = MS5837::MS5837_02BA)

@@ -70,8 +70,5 @@ public:
    virtual float readHumidity() { return NAN; }
 
    /// <summary>Returns false (no humidity support).</summary>
-   virtual bool readsBoth() { return false; }
-
-   /// <summary>Reads temperature; humidity always NaN.</summary>
-   virtual void readBoth(float& tempF, float& hum) { tempF = readTemperatureF(); hum = readHumidity(); }
+   virtual bool supportsHumidity() { return false; }
 };

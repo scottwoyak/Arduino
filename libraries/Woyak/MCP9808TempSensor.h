@@ -13,16 +13,15 @@ public:
    MCP9808TempSensor(uint8_t resolution, uint8_t address) : I2CTempSensor("MCP9808", address)
    {
       // Mode Resolution SampleTime
-      //  0    0.5캜       30 ms
-      //  1    0.25캜      65 ms
-      //  2    0.125캜     130 ms
-      //  3    0.0625캜    250 ms
+      //  0    0.5째C       30 ms
+      //  1    0.25째C      65 ms
+      //  2    0.125째C     130 ms
+      //  3    0.0625째C    250 ms
       mcp.setResolution(resolution);
    }
    virtual bool begin() { return mcp.begin(getAddress()); }
    virtual float readTemperatureF() { return mcp.readTempF(); }
    virtual float readTemperatureC() { return mcp.readTempF(); }
    virtual float readHumidity() { return NAN; }
-   virtual bool readsBoth() { return false; }
-   virtual void readBoth(float& tempF, float& hum) { tempF = readTemperatureF(); hum = readHumidity(); }
+   virtual bool supportsHumidity() { return false; }
 };

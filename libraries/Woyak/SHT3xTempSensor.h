@@ -17,7 +17,6 @@ public:
    virtual float readTemperatureF() { return Units::C2F(sht.readTemperature()); }
    virtual float readTemperatureC() { return sht.readTemperature(); }
    virtual float readHumidity() { return sht.readHumidity(); }
-   virtual bool readsBoth() { return false; }
-   virtual void readBoth(float& tempF, float& hum) { tempF = readTemperatureF(); hum = readHumidity(); }
+   virtual bool supportsHumidity() { return true; }
 };
 

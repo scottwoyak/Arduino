@@ -80,8 +80,8 @@ public:
       _hdc.readTemperatureHumidityOnDemand(temp, humidity, TRIGGERMODE_LP0);
       return (float)humidity;
    }
-   virtual bool readsBoth() { return true; }
-   virtual void readBoth(float& tempF, float& hum)
+   virtual bool supportsHumidity() { return true; }
+   virtual void readBoth(float& tempF, float& hum) override
    {
       double t, h;
       _hdc.readTemperatureHumidityOnDemand(t, h, TRIGGERMODE_LP0);
