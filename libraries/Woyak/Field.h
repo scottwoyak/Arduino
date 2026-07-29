@@ -209,6 +209,18 @@ public:
 
    ///
    /// <summary>
+   /// Returns the pixel width of the value's fixed-width sprite, e.g. so a caller (such
+   /// as FieldTable) can lay out other content relative to the field's overall width.
+   /// </summary>
+   /// <returns>The value sprite's width in pixels.</returns>
+   ///
+   int16_t valueWidth() const
+   {
+      return _value.width();
+   }
+
+   ///
+   /// <summary>
    /// Blanks the value region by filling its sprite with the given color and pushing it
    /// directly, leaving the label (if already drawn) untouched. Cheaper than
    /// draw("") since it skips measuring/aligning text.
