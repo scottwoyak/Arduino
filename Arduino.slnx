@@ -5,6 +5,7 @@
     <Platform Name="ARM64" />
   </Configurations>
   <Folder Name="/Libraries/">
+    <File Path="libraries/Woyak/Anchor.h" />
     <File Path="libraries/Woyak/ArduinoBase.h" />
     <File Path="libraries/Woyak/ArduinoBoard.h" />
     <File Path="libraries/Woyak/ArduinoWithDisplay.h" />

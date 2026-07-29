@@ -74,9 +74,9 @@ void drawTable()
    }
 
 //   Point16 center = arduino.center();
-//   resultDisplayTable.setPosition(center, DisplayTable::Anchor::CENTER);
+//   resultDisplayTable.setPosition(center, Anchor::CENTER);
    Point16 center(0,0);
-   resultDisplayTable.setPosition(center, DisplayTable::Anchor::TOP_LEFT);
+   resultDisplayTable.setPosition(center, Anchor::TOP_LEFT);
 
    resultDisplayTable.draw();
 }

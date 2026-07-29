@@ -126,8 +126,9 @@ void onError(std::string msg)
    Util::reset(10);
 }
 
-void onDisconnected()
+void onDisconnected(std::string reason)
 {
+   Serial.println("Disconnected: " + String(reason.c_str()));
    Util::reset();
 }
 

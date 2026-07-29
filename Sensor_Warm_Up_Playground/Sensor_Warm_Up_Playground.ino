@@ -1079,7 +1079,7 @@ void drawSummaryView()
    }
 
    Point16 contentCenter(contentRect.x + contentRect.width / 2, contentRect.y + contentRect.height / 2);
-   resultDisplayTable.setPosition(contentCenter, DisplayTable::Anchor::CENTER);
+   resultDisplayTable.setPosition(contentCenter, Anchor::CENTER);
 
    resultDisplayTable.draw();
 }

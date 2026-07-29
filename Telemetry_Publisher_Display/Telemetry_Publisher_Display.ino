@@ -76,9 +76,9 @@ void onConnected()
 /// Restarts the device so it can reconnect from a clean state.
 /// </summary>
 ///
-void onDisconnected()
+void onDisconnected(std::string reason)
 {
-   Serial.println("Telemetry: WebSocket Disconnected");
+   Serial.println("Telemetry: WebSocket Disconnected: " + String(reason.c_str()));
    delay(1000);
    Util::reset();
 }
@@ -128,14 +128,14 @@ void onStarted()
 
    arduino.setTextSize(2);
    table.setPosition(0, arduino.getCursor().y);
-   table.addRow("Topic", TOPIC_FORMAT, Color::LABEL, Color::VALUE);
-   table.addRow("Host", HOST_FORMAT, Color::LABEL, Color::VALUE2);
-   table.addRow("Rate", RATE_FORMAT, Color::LABEL, Color::VALUE);
+   table.addRow("Topic", TOPIC_FORMAT);
+   table.addRow("Host", HOST_FORMAT, Color::VALUE2);
+   table.addRow("Rate", RATE_FORMAT);
 
    Url url(client.getUrl().c_str());
    table.setValue(0, client.getTopic(), Color::VALUE);
    table.setValue(1, url.getHost(), Color::VALUE2);
-   table.setNoValue(2, Color::VALUE);
+   table.setNoValue(2);
    table.draw();
 
    rate.reset();

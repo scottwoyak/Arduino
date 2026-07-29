@@ -293,7 +293,7 @@ void setup()
    noiseTable.addRow("StdDev%", STDDEV_PERCENT_FORMAT);
 
    Point16 contentCenter(CONTENT_RECT.x + CONTENT_RECT.width / 2, CONTENT_RECT.y + CONTENT_RECT.height / 2);
-   noiseTable.setPosition(contentCenter, DisplayTable::Anchor::CENTER);
+   noiseTable.setPosition(contentCenter, Anchor::CENTER);
 
    arduino.setTextSize(2);
    std::string label = "Target Sampling Rate";

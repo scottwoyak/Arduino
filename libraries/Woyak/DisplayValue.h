@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ArduinoWithDisplay.h"
+#include "Anchor.h"
 #include "Format.h"
 #include "Color.h"
 #include "Util.h"
@@ -204,6 +205,18 @@ public:
 
    ///
    /// <summary>
+   /// Returns the pixel height of the value's fixed-height sprite, e.g. so a caller can
+   /// vertically center or bottom-anchor the value without needing to know its font size.
+   /// </summary>
+   /// <returns>The sprite's height in pixels.</returns>
+   ///
+   int16_t height() const
+   {
+      return (int16_t)_display->charH(_textSize);
+   }
+
+   ///
+   /// <summary>
    /// Sets the position at which the value sprite is pushed on the next draw(). The
    /// meaning of x depends on the value's alignment:
    /// <list type="bullet">
@@ -220,13 +233,34 @@ public:
    /// different format widths can share the same x and have their decimal points line
    /// up on screen.</item>
    /// </list>
+   /// The meaning of y depends on anchor's vertical component:
+   /// <list type="bullet">
+   /// <item>Anchor::TOP_LEFT/TOP_RIGHT: y is the position of the sprite's top edge.</item>
+   /// <item>Anchor::BOTTOM_LEFT/BOTTOM_RIGHT: y is the position of the sprite's bottom
+   /// edge, so a value can be anchored to a fixed point (e.g. the display's bottom edge)
+   /// without the caller needing to know the sprite's height.</item>
+   /// <item>Anchor::CENTER: y is the position of the sprite's vertical midpoint, so a
+   /// value can be vertically centered in a region without the caller needing to know
+   /// the sprite's height (and therefore without needing to keep the region's math in
+   /// sync with the value's text size).</item>
+   /// </list>
    /// </summary>
    /// <param name="x">The X coordinate of the value's anchor (left edge; right edge for Alignment::RIGHT; horizontal midpoint for Alignment::CENTER; decimal point position for Alignment::DECIMAL); negative values offset from the right edge.</param>
-   /// <param name="y">The Y coordinate of the value's top-left corner; negative values offset from the bottom edge.</param>
+   /// <param name="y">The Y coordinate of the value's anchor (top edge; bottom edge for Anchor::BOTTOM_LEFT/BOTTOM_RIGHT; vertical midpoint for Anchor::CENTER); negative values offset from the bottom edge.</param>
+   /// <param name="anchor">Which vertical point of the value's sprite y refers to (default: TOP_LEFT).</param>
    ///
-   void setPosition(int16_t x, int16_t y)
+   void setPosition(int16_t x, int16_t y, Anchor anchor = Anchor::TOP_LEFT)
    {
       _display->normalizeCoords(x, y);
+
+      if (anchor == Anchor::BOTTOM_LEFT || anchor == Anchor::BOTTOM_RIGHT)
+      {
+         y -= height();
+      }
+      else if (anchor == Anchor::CENTER)
+      {
+         y -= height() / 2;
+      }
 
       if (_alignment == Alignment::RIGHT)
       {
@@ -243,13 +277,15 @@ public:
 
    ///
    /// <summary>
-   /// Sets the top-left position at which the value sprite is pushed on the next draw().
+   /// Sets the position at which the value sprite is pushed on the next draw(), per the
+   /// x/y anchor semantics documented on the (x, y, anchor) overload.
    /// </summary>
-   /// <param name="pos">The top-left coordinate of the value.</param>
+   /// <param name="pos">The coordinate of the value's anchor point.</param>
+   /// <param name="anchor">Which vertical point of the value's sprite pos.y refers to (default: TOP_LEFT).</param>
    ///
-   void setPosition(Point16 pos)
+   void setPosition(Point16 pos, Anchor anchor = Anchor::TOP_LEFT)
    {
-      setPosition(pos.x, pos.y);
+      setPosition(pos.x, pos.y, anchor);
    }
 
    ///

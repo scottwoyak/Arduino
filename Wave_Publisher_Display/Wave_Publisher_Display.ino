@@ -50,9 +50,9 @@ void onConnected()
    Serial.println("Connected");
 }
 
-void onDisconnected()
+void onDisconnected(std::string reason)
 {
-   Serial.println("Disconnected");
+   Serial.println("Disconnected: " + String(reason.c_str()));
    delay(5000); // time for Serial to print and LED to show
    Util::reset();
 }

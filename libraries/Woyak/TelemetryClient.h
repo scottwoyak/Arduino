@@ -8,7 +8,7 @@
 WebSocketsClient webSocket;
 
 using TelemetryOnConnectedFunc = std::function<void()>;
-using TelemetryOnDisconnectedFunc = std::function<void()>;
+using TelemetryOnDisconnectedFunc = std::function<void(const std::string&)>;
 using TelemetryOnReceiveTextFunc = std::function<void(const std::string&)>;
 using TelemetryOnSendTextFunc = std::function<void(const std::string&)>;
 using TelemetryOnErrorFunc = std::function<void(const std::string&)>;
@@ -65,8 +65,9 @@ protected:
    /// Called when the WebSocket connection is lost. Subclasses should reset any
    /// per-connection state here.
    /// </summary>
+   /// <param name="reason">The disconnect reason reported by WebSocketsClient, if any.</param>
    ///
-   virtual void _onDisconnected() = 0;
+   virtual void _onDisconnected(const std::string& reason) = 0;
 
    ///
    /// <summary>
@@ -132,12 +133,15 @@ protected:
       switch (type)
       {
       case WStype_DISCONNECTED:
-         _onDisconnected();
+      {
+         std::string reason = (payload != nullptr && length > 0) ? std::string((const char*)payload, length) : "";
+         _onDisconnected(reason);
          if (_onDisconnectedFunc)
          {
-            _onDisconnectedFunc();
+            _onDisconnectedFunc(reason);
          }
-         break;
+      }
+      break;
 
       case WStype_CONNECTED:
          _onConnected();
@@ -348,7 +352,7 @@ public:
    /// text, errors, and successful start.
    /// </summary>
    /// <param name="onConnectedFunc">Called when the WebSocket connection is established.</param>
-   /// <param name="onDisconnectedFunc">Called when the WebSocket connection is lost.</param>
+   /// <param name="onDisconnectedFunc">Called with the disconnect reason when the WebSocket connection is lost.</param>
    /// <param name="onSendTextFunc">Called whenever a text message is sent.</param>
    /// <param name="onReceiveTextFunc">Called whenever a text message is received.</param>
    /// <param name="onErrorFunc">Called when the start/subscribe handshake fails.</param>
@@ -386,8 +390,9 @@ private:
    std::string _lastValue = "";
    bool _ready = false;
 
-   void _onDisconnected() override
+   void _onDisconnected(const std::string& reason) override
    {
+      (void)reason;
       _ready = false;
       _lastValue = "";
    }
@@ -463,8 +468,9 @@ class TelemetrySubscriber : public TelemetryClient
 private:
    float _value = NAN;
 
-   void _onDisconnected() override
+   void _onDisconnected(const std::string& reason) override
    {
+      (void)reason;
    }
 
    void _onConnected() override

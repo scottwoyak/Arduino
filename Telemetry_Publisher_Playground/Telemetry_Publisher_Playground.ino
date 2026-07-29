@@ -16,6 +16,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <cmath>
 
 #include "ArduinoBoard.h"
 
@@ -26,9 +27,9 @@
 #error "This sketch requires a Playground board (e.g. ESP32-S3 Dev Module wired as a Playground)."
 #endif
 
-#include "DisplayField.h"
 #include "DisplayTableCellEditor.h"
 #include "DisplayTableEditor.h"
+#include "DisplayValue.h"
 #include "RollingRate.h"
 #include "SerialX.h"
 #include "Stopwatch.h"
@@ -70,18 +71,23 @@ Timer publishTimer(1000UL / DEFAULT_PUBLISH_RATE_PER_SEC);
 constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
 constexpr uint16_t RATE_NUM_SAMPLES = 100;
 constexpr int16_t VALUE_PADDING_PX = 5;
+constexpr float RECONNECT_COUNTDOWN_SECS = 5.0f;
 Stopwatch sw(false);
+TimerSecs reconnectTimer(RECONNECT_COUNTDOWN_SECS);
+bool connected = false;
+bool disconnected = false;
+uint8_t lastCountdownSecs = 0;
 RollingRate rate(RATE_NUM_SAMPLES);
 Format topicFormat(20);
 Format hostFormat(24);
 Format sourceFormat(6);
-Format statusFormat(24);
 Format rateFormat("###/s");
 Format lastValueFormat("+###.###");
+Format statusValueFormat(32, Format::Alignment::CENTER);
 std::string statusText = "Connecting to WiFi...";
+Color statusColor = Color::BLUE;
 std::string topicText = TELEMETRY_TOPIC;
 std::string hostText = " ";
-StringCell statusCell(&statusText, statusFormat);
 StringCell topicCell(&topicText, topicFormat);
 StringCell hostCell(&hostText, hostFormat);
 long testFunctionIndex = 0;
@@ -94,7 +100,6 @@ float rateValue = 0.0f;
 ReadOnlyCell rateCell(&rateValue, rateFormat);
 TableEditorRow statusCells[] =
 {
-   { "Status", &statusCell },
    { "Topic", &topicCell },
    { "Host", &hostCell },
    { "Source", &sourceCell },
@@ -102,7 +107,8 @@ TableEditorRow statusCells[] =
    { "Rate", &rateCell },
 };
 DisplayTableEditor table(&arduino, PREF_NAMESPACE, statusCells, 0, 0);
-DisplayField* valueField = nullptr;
+DisplayValue* valueField = nullptr;
+DisplayValue* statusField = nullptr;
 float lastValue = NAN;
 
 ///
@@ -114,19 +120,39 @@ void onConnected()
 {
    Serial.println("Telemetry: WebSocket Connected");
    statusText = "Publishing Topic...";
+   statusColor = Color::GREEN;
+   disconnected = false;
+   connected = false;
 }
 
 ///
 /// <summary>
-/// Called when the WebSocket connection to the telemetry server is lost.
-/// Restarts the device so it can reconnect from a clean state.
+/// Called when the WebSocket connection to the telemetry server is lost. Shows a
+/// reconnect countdown with the disconnect reason in the status row rather than
+/// resetting the device; the WebSocket client retries the connection automatically.
 /// </summary>
+/// <remarks>
+/// The underlying WebSocketsClient reports this event repeatedly (roughly every
+/// reconnect attempt) while the connection remains down, not just once at the initial
+/// disconnect. The countdown timer is therefore only (re)started the first time we
+/// transition into the disconnected state, so repeated disconnect events don't keep
+/// resetting the visible countdown back to its starting value.
+/// </remarks>
+/// <param name="reason">The disconnect reason reported by TelemetryClient.</param>
 ///
-void onDisconnected()
+void onDisconnected(std::string reason)
 {
-   Serial.println("Telemetry: WebSocket Disconnected");
-   delay(1000);
-   Util::reset();
+   Serial.println("Telemetry: WebSocket Disconnected: " + String(reason.c_str()));
+
+   if (!disconnected)
+   {
+      disconnected = true;
+      lastCountdownSecs = 0;
+      reconnectTimer.reset();
+      statusColor = Color::RED;
+   }
+
+   connected = false;
 }
 
 ///
@@ -152,6 +178,7 @@ void onError(std::string msg)
 {
    Serial.println("Telemetry Error: " + String(msg.c_str()));
    statusText = "Retrying...";
+   statusColor = Color::RED;
 }
 
 ///
@@ -162,6 +189,8 @@ void onError(std::string msg)
 void onStarted()
 {
    statusText = "Connected";
+   statusColor = Color::GREEN;
+   connected = true;
 
    rate.reset();
    sw.start();
@@ -199,11 +228,14 @@ void setup()
    arduino.setTextSize(5);
    int16_t valueAreaTop = table.getRect().bottom() + VALUE_PADDING_PX;
    int16_t valueAreaHeight = arduino.height() - valueAreaTop;
-   int16_t valueWidth = arduino.charW() * lastValueFormat.length();
-   int16_t valueX = (arduino.width() - valueWidth) / 2;
-   int16_t valueY = valueAreaTop + (valueAreaHeight - arduino.charH()) / 2;
-   valueField = new DisplayField(&arduino, Point16(valueX, valueY), lastValueFormat, 5);
+   int16_t valueAreaCenterX = arduino.width() / 2;
+   int16_t valueAreaCenterY = valueAreaTop + valueAreaHeight / 2;
+   valueField = new DisplayValue(&arduino, lastValueFormat, 5, DisplayValue::Alignment::CENTER);
+   valueField->setPosition(valueAreaCenterX, valueAreaCenterY, Anchor::CENTER);
+
    arduino.setTextSize(2);
+   statusField = new DisplayValue(&arduino, statusValueFormat, 2, DisplayValue::Alignment::CENTER);
+   statusField->setPosition(valueAreaCenterX, valueAreaCenterY, Anchor::CENTER);
 
    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
    while (WiFi.status() != WL_CONNECTED)
@@ -211,7 +243,8 @@ void setup()
    }
 
    statusText = "Connecting to Server...";
-   table.draw();
+   statusColor = Color::GREEN;
+   statusField->draw(statusText, statusColor);
 
    client.setCallbacks(onConnected, onDisconnected, nullptr, onText, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
@@ -223,6 +256,16 @@ void setup()
 
 void loop()
 {
+   if (disconnected)
+   {
+      uint8_t secsLeft = static_cast<uint8_t>(ceil(reconnectTimer.remaining()));
+      if (secsLeft != lastCountdownSecs)
+      {
+         lastCountdownSecs = secsLeft;
+         statusText = secsLeft > 0 ? "Retrying in " + std::to_string(secsLeft) + "s" : "Retrying...";
+      }
+   }
+
    if (arduino.buttonA.wasPressed())
    {
       Util::reset();
@@ -262,8 +305,15 @@ void loop()
 
    table.draw();
 
-   if (valueField != nullptr)
+   if (connected)
    {
-      valueField->draw(lastValue, Color::LABEL, Color::VALUE);
+      if (valueField != nullptr)
+      {
+         valueField->draw(lastValue, Color::VALUE);
+      }
+   }
+   else if (statusField != nullptr)
+   {
+      statusField->draw(statusText, statusColor);
    }
 }

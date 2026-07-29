@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ArduinoWithDisplay.h"
+#include "Anchor.h"
 #include "Format.h"
 #include "Color.h"
 #include <vector>
@@ -46,14 +47,6 @@ public:
    /// top-left-only behavior.
    /// </summary>
    ///
-   enum class Anchor
-   {
-      TOP_LEFT,
-      TOP_RIGHT,
-      BOTTOM_LEFT,
-      BOTTOM_RIGHT,
-      CENTER
-   };
 
    ///
    /// <summary>

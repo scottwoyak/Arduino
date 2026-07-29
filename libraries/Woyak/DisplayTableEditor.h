@@ -169,7 +169,7 @@ private:
 
          Color labelColor = isDisabled ? Color::GRAY : Color::LABEL;
          Color valueBackgroundColor = isSelected ? Color::BLUE : Color::BLACK;
-         Color valueColor = isDisabled ? Color::GRAY : (isSelected ? Color::WHITE : (cell->isEditable() ? Color::VALUE : Color::VALUE2));
+         Color valueColor = isDisabled ? Color::GRAY : (isSelected ? Color::WHITE : (cell->hasColor() ? cell->color() : (cell->isEditable() ? Color::VALUE : Color::VALUE2)));
 
          _table.setLabelColor(rowIndex, labelColor);
          _table.setValue(rowIndex, cell->valueText().c_str(), valueColor);

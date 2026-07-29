@@ -27,6 +27,7 @@
 #include "SerialX.h"
 #include "Stopwatch.h"
 #include "TelemetryClient.h"
+#include "Timer.h"
 #include "Url.h"
 
 #include "WiFiSettings.h"
@@ -36,9 +37,11 @@ constexpr const char* TELEMETRY_TOPIC = "Test";
 
 constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
 constexpr uint16_t RATE_NUM_SAMPLES = 100;
+constexpr float RECONNECT_COUNTDOWN_SECS = 5.0f;
 
 Arduino arduino;
 Stopwatch sw(false);
+TimerSecs reconnectTimer(RECONNECT_COUNTDOWN_SECS);
 
 RollingRate queryRate(RATE_NUM_SAMPLES);
 RollingRate changeRate(RATE_NUM_SAMPLES);
@@ -51,6 +54,9 @@ constexpr const char* RATE_FORMAT = "###/s";
 DisplayTable table(&arduino, 0, 0);
 
 float lastValue = NAN;
+bool disconnected = false;
+uint8_t lastCountdownSecs = 0;
+std::string disconnectReason = "";
 
 ///
 /// <summary>
@@ -60,19 +66,24 @@ float lastValue = NAN;
 void onConnected()
 {
    Serial.println("Telemetry: WebSocket Connected");
+   disconnected = false;
 }
 
 ///
 /// <summary>
-/// Called when the WebSocket connection to the telemetry server is lost.
-/// Restarts the device so it can reconnect from a clean state.
+/// Called when the WebSocket connection to the telemetry server is lost. Shows a
+/// reconnect countdown with the disconnect reason rather than resetting the device;
+/// the WebSocket client retries the connection automatically.
 /// </summary>
+/// <param name="reason">The disconnect reason reported by TelemetryClient.</param>
 ///
-void onDisconnected()
+void onDisconnected(std::string reason)
 {
-   Serial.println("Telemetry: WebSocket Disconnected");
-   delay(1000);
-   Util::reset();
+   Serial.println("Telemetry: WebSocket Disconnected: " + String(reason.c_str()));
+   disconnected = true;
+   disconnectReason = reason;
+   lastCountdownSecs = 0;
+   reconnectTimer.reset();
 }
 
 ///
@@ -109,16 +120,16 @@ void onStarted()
 
    arduino.setTextSize(2);
    table.setPosition(0, arduino.getCursor().y);
-   table.addRow("Topic", TOPIC_FORMAT, Color::LABEL, Color::VALUE);
-   table.addRow("Host", HOST_FORMAT, Color::LABEL, Color::VALUE2);
-   table.addRow("Query Rate", RATE_FORMAT, Color::LABEL, Color::VALUE);
-   table.addRow("Change Rate", RATE_FORMAT, Color::LABEL, Color::VALUE);
+   table.addRow("Topic", TOPIC_FORMAT);
+   table.addRow("Host", HOST_FORMAT, Color::VALUE2);
+   table.addRow("Query Rate", RATE_FORMAT);
+   table.addRow("Change Rate", RATE_FORMAT);
 
    Url url(client.getUrl().c_str());
    table.setValue(0, client.getTopic(), Color::VALUE);
    table.setValue(1, url.getHost(), Color::VALUE2);
-   table.setNoValue(2, Color::VALUE);
-   table.setNoValue(3, Color::VALUE);
+   table.setNoValue(2);
+   table.setNoValue(3);
    table.draw();
 
    sw.start();
@@ -133,6 +144,35 @@ void onStarted()
 void onReceiveText(std::string msg)
 {
    queryRate.tick();
+}
+
+///
+/// <summary>
+/// Draws a "Disconnected" message with a countdown until the next automatic
+/// reconnect attempt, redrawing only when the displayed second changes.
+/// </summary>
+///
+void drawReconnectCountdown()
+{
+   uint8_t secsLeft = static_cast<uint8_t>(ceil(reconnectTimer.remaining()));
+   if (secsLeft == lastCountdownSecs)
+   {
+      return;
+   }
+   lastCountdownSecs = secsLeft;
+
+   arduino.clearDisplay();
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(3);
+   arduino.println("Disconnected", Color::RED);
+   arduino.moveCursorY(4);
+
+   arduino.setTextSize(2);
+   arduino.println(disconnectReason, Color::LABEL);
+   arduino.moveCursorY(4);
+
+   arduino.print("Reconnecting in ", Color::GREEN);
+   arduino.println(secsLeft, Color::VALUE);
 }
 
 void setup()
@@ -150,15 +190,15 @@ void setup()
    arduino.println("Initializing", Color::HEADING2);
    arduino.moveCursorY(4);
 
-   arduino.print("WiFi...", Color::LABEL);
+   arduino.print("WiFi...", Color::BLUE);
    while (WiFi.status() != WL_CONNECTED)
    {
-      arduino.print(".", Color::LABEL);
+      arduino.print(".", Color::BLUE);
    }
    arduino.printlnR("OK", Color::VALUE);
    arduino.moveCursorY(1);
 
-   arduino.print("WebSocket...", Color::LABEL);
+   arduino.print("WebSocket...", Color::GREEN);
 
    client.setCallbacks(onConnected, onDisconnected, nullptr, onReceiveText, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
@@ -167,6 +207,12 @@ void setup()
 void loop()
 {
    client.loop();
+
+   if (disconnected)
+   {
+      drawReconnectCountdown();
+      return;
+   }
 
    if (!std::isnan(client.getValue()) && client.getValue() != lastValue)
    {

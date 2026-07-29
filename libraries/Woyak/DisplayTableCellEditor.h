@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <span>
+#include "Color.h"
 #include "Format.h"
 
 ///
@@ -74,6 +75,30 @@ public:
    const Format& format() const
    {
       return _format;
+   }
+
+   ///
+   /// <summary>
+   /// Gets whether this field overrides its normal value color (e.g. to reflect a status
+   /// like connecting/connected/error). Default is false, so DisplayTableEditor falls back
+   /// to its usual editable/read-only color.
+   /// </summary>
+   /// <returns>True if color() should be used instead of the default value color.</returns>
+   ///
+   virtual bool hasColor() const
+   {
+      return false;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the overridden value color, when hasColor() is true.
+   /// </summary>
+   /// <returns>The color to draw the value text.</returns>
+   ///
+   virtual Color color() const
+   {
+      return Color::VALUE2;
    }
 
 protected:
@@ -193,9 +218,12 @@ public:
    /// </summary>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
    /// <param name="format">Format used to render the value for display.</param>
+   /// <param name="color">Optional caller-owned variable that overrides the value color (e.g. to
+   /// reflect a status like connecting/connected/error). When omitted, the default value color
+   /// is used.</param>
    ///
-   StringCell(const std::string* value, const Format& format)
-      : DisplayTableCell(format), _value(value)
+   StringCell(const std::string* value, const Format& format, const Color* color = nullptr)
+      : DisplayTableCell(format), _value(value), _color(color)
    {}
 
    std::string valueText() override
@@ -203,8 +231,19 @@ public:
       return _format.toString(*_value);
    }
 
+   bool hasColor() const override
+   {
+      return _color != nullptr;
+   }
+
+   Color color() const override
+   {
+      return *_color;
+   }
+
 private:
    const std::string* _value;
+   const Color* _color;
 };
 
 ///
