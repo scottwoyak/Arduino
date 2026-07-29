@@ -7,7 +7,7 @@
 
 ///
 /// <summary>
-/// Abstract base for one value shown as a row in a DisplayTable-based view (DisplayTableEditor),
+/// Abstract base for one value shown as a row in a Table-based view (DisplayTableEditor),
 /// whether or not it can be edited.
 /// (format, value rendering). Row-level metadata (label, section header) is owned by the
 /// TableEditorRow that wraps this cell, not the cell itself. See CellEditor for the additional

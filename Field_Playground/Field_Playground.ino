@@ -1,8 +1,8 @@
 //
-// Demonstrates DisplayField layout options: left-aligned, right-aligned, and centered
+// Demonstrates Field layout options: left-aligned, right-aligned, and centered
 // fields positioned at the corners and center of the display.
 //
-// Shows a "DisplayField" heading and five "Label: ##.#" fields, one at the top-left,
+// Shows a "Field" heading and five "Label: ##.#" fields, one at the top-left,
 // one at the bottom-left, one centered, and two right-aligned at the top-right and
 // bottom-right. Each field has its own independent value, shown with a blue background
 // when selected. Rotate Encoder A to change the selected field; rotate Encoder B to
@@ -12,7 +12,7 @@
 #include <Wire.h>
 
 #include "ESP32_S3_Playground.h"
-#include "DisplayField.h"
+#include "Field.h"
 #include "SerialX.h"
 
 // ----------- The Board
@@ -30,21 +30,21 @@ float values[NUM_FIELDS] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 Color backgroundColors[NUM_FIELDS] = { Color::BLACK, Color::BLACK, Color::BLACK, Color::BLACK, Color::BLACK };
 uint8_t selectedIndex = 0;
 
-DisplayField topLeftField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, DisplayField::Alignment::LEFT);
-DisplayField topRightField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, DisplayField::Alignment::RIGHT);
-DisplayField bottomRightField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, DisplayField::Alignment::RIGHT);
-DisplayField bottomLeftField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, DisplayField::Alignment::LEFT);
-DisplayField centerField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, DisplayField::Alignment::COLON);
+Field topLeftField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, Field::Alignment::LEFT);
+Field topRightField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, Field::Alignment::RIGHT);
+Field bottomRightField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, Field::Alignment::RIGHT);
+Field bottomLeftField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, Field::Alignment::LEFT);
+Field centerField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, Field::Alignment::COLON);
 
 // Selection rotation order: top-left, top-right, bottom-right, bottom-left, center
-DisplayField* fields[NUM_FIELDS] =
+Field* fields[NUM_FIELDS] =
 {
    &topLeftField, &topRightField, &bottomRightField, &bottomLeftField, &centerField
 };
 
 ///
 /// <summary>
-/// Clears the display and draws the "DisplayField" heading.
+/// Clears the display and draws the "Field" heading.
 /// </summary>
 ///
 void drawHeader()
@@ -52,7 +52,7 @@ void drawHeader()
    arduino.clearDisplay();
 
    arduino.setTextSize(HEADING_TEXT_SIZE);
-   arduino.println("DisplayField", Color::HEADING);
+   arduino.println("Field", Color::HEADING);
 }
 
 ///

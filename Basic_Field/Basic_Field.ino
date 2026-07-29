@@ -1,7 +1,7 @@
 //
-// Basic DisplayField demonstration.
+// Basic Field demonstration.
 //
-// Shows the minimal use of DisplayField: a "label: value" pair redrawn as fast as
+// Shows the minimal use of Field: a "label: value" pair redrawn as fast as
 // possible, where only the value's off-screen sprite is repainted after the initial
 // draw (the label is only drawn once). A heading is drawn once at startup, and a live
 // update-rate readout is kept in the lower right corner (drawn as a plain DisplayValue,
@@ -16,7 +16,7 @@
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
 
-#include "DisplayField.h"
+#include "Field.h"
 #include "DisplayValue.h"
 #include "RollingRate.h"
 #include "SerialX.h"
@@ -31,10 +31,10 @@ constexpr uint8_t FIELD_TEXT_SIZE = 3;
 constexpr uint8_t NUM_FIELDS = 3;
 Format fieldFormats[NUM_FIELDS] = { Format("###.#"), Format("###.##"), Format("#.##") };
 const char* fieldLabels[NUM_FIELDS] = { "Speed", "Acceleration", "Position" };
-DisplayField fields[NUM_FIELDS] = {
-   DisplayField(&arduino, fieldLabels[0], fieldFormats[0], FIELD_TEXT_SIZE, DisplayField::Alignment::COLON),
-   DisplayField(&arduino, fieldLabels[1], fieldFormats[1], FIELD_TEXT_SIZE, DisplayField::Alignment::COLON),
-   DisplayField(&arduino, fieldLabels[2], fieldFormats[2], FIELD_TEXT_SIZE, DisplayField::Alignment::COLON),
+Field fields[NUM_FIELDS] = {
+   Field(&arduino, fieldLabels[0], fieldFormats[0], FIELD_TEXT_SIZE, Field::Alignment::COLON),
+   Field(&arduino, fieldLabels[1], fieldFormats[1], FIELD_TEXT_SIZE, Field::Alignment::COLON),
+   Field(&arduino, fieldLabels[2], fieldFormats[2], FIELD_TEXT_SIZE, Field::Alignment::COLON),
 };
 
 // ----------- Rate readout (lower right)
@@ -52,7 +52,7 @@ void setup()
 
    arduino.setCursor(0, 0);
    arduino.setTextSize(3);
-   arduino.println("DisplayField", Color::HEADING);
+   arduino.println("Field", Color::HEADING);
 
    int16_t groupHeight = NUM_FIELDS * arduino.charH(FIELD_TEXT_SIZE);
    int16_t top = arduino.getCursorY();

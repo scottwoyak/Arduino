@@ -34,8 +34,8 @@
 #include "Status.h"
 #include "I2CMultiplexor.h"
 #include "Timer.h"
-#include "DisplayTable.h"
-#include "DisplayField.h"
+#include "Table.h"
+#include "Field.h"
 #include "Util.h"
 
 #include "WiFiSettings.h"
@@ -106,7 +106,7 @@ InfluxPoint* currentPoints[NUM_SENSORS];
 InfluxField* currentFields[NUM_SENSORS];
 InfluxPoint* averagePoints[NUM_SENSORS][NUM_WINDOWS];
 InfluxField* averageFields[NUM_SENSORS][NUM_WINDOWS];
-DisplayField* uploadStatusField = nullptr;
+Field* uploadStatusField = nullptr;
 
 ScatterPlot* activePlot = nullptr;
 TimedScatterPlotSeries* activePlotSeries[NUM_SENSORS] = { nullptr };
@@ -125,15 +125,15 @@ const char* locations[NUM_SENSORS] = {
 };
 
 std::array tableColumns = {
-   DisplayTable::Column(""),
-   DisplayTable::Column("Now", tempFormat.formatString().c_str(), tempFormat.alignment()),
-   DisplayTable::Column(AVERAGE_WINDOW_LABELS[0], tempFormat.formatString().c_str(), tempFormat.alignment()),
-   DisplayTable::Column(AVERAGE_WINDOW_LABELS[1], tempFormat.formatString().c_str(), tempFormat.alignment()),
-   DisplayTable::Column(AVERAGE_WINDOW_LABELS[2], tempFormat.formatString().c_str(), tempFormat.alignment()),
-   DisplayTable::Column(AVERAGE_WINDOW_LABELS[3], tempFormat.formatString().c_str(), tempFormat.alignment()),
-   DisplayTable::Column(AVERAGE_WINDOW_LABELS[4], tempFormat.formatString().c_str(), tempFormat.alignment()),
+   Table::Column(""),
+   Table::Column("Now", tempFormat.formatString().c_str(), tempFormat.alignment()),
+   Table::Column(AVERAGE_WINDOW_LABELS[0], tempFormat.formatString().c_str(), tempFormat.alignment()),
+   Table::Column(AVERAGE_WINDOW_LABELS[1], tempFormat.formatString().c_str(), tempFormat.alignment()),
+   Table::Column(AVERAGE_WINDOW_LABELS[2], tempFormat.formatString().c_str(), tempFormat.alignment()),
+   Table::Column(AVERAGE_WINDOW_LABELS[3], tempFormat.formatString().c_str(), tempFormat.alignment()),
+   Table::Column(AVERAGE_WINDOW_LABELS[4], tempFormat.formatString().c_str(), tempFormat.alignment()),
 };
-DisplayTable sensorTable(&arduino, 0, 0, tableColumns, 2, Color::WHITE);
+Table sensorTable(&arduino, 0, 0, tableColumns, 2, Color::WHITE);
 bool sensorTableBuilt = false;
 
 Rect16 plotRect;
@@ -328,7 +328,7 @@ void setup()
    int16_t uploadX = arduino.width() - arduino.textWidth(uploadSample.c_str());
    int16_t uploadY = arduino.height() - arduino.charH();
    Point16 uploadPos(uploadX, uploadY);
-   uploadStatusField = new DisplayField(&arduino, uploadPos, uploadStatusFormat, 2);
+   uploadStatusField = new Field(&arduino, uploadPos, uploadStatusFormat, 2);
    uploadStatusField->draw("", Color::LABEL, Color::GRAY);
 
    int16_t plotTop = arduino.charH() * 2;

@@ -36,7 +36,7 @@
 #include "SerialTable.h"
 #include "SerialHistogram.h"
 #include "HistogramPlot.h"
-#include "DisplayTable.h"
+#include "Table.h"
 #include "DisplayTableCellEditor.h"
 #include "DisplayTableEditor.h"
 #include "ScatterPlot.h"
@@ -182,12 +182,12 @@ TableEditorRow captureCells[] =
 DisplayTableEditor captureTable(&arduino, PREF_NAMESPACE, captureCells, 0, 0);
 
 // ----- display tables
-DisplayTable summaryTable(&arduino, 0, 0);
+Table summaryTable(&arduino, 0, 0);
 
 /// <summary>
 /// Initializes display tables used by summary and collecting screens.
 /// </summary>
-void initializeDisplayTables()
+void initializeTables()
 {
    arduino.setTextSize(3);
    int16_t summaryTableY = arduino.charH();
@@ -195,7 +195,7 @@ void initializeDisplayTables()
    arduino.setTextSize(2);
    int16_t captureTableY = summaryTableY;
 
-   summaryTable = DisplayTable(&arduino, 0, summaryTableY);
+   summaryTable = Table(&arduino, 0, summaryTableY);
    summaryTable.addRow("Samples", SAMPLES_FORMAT);
    summaryTable.addRow("Time", TIME_FORMAT);
    summaryTable.addRow("Rate", RATE_FORMAT);
@@ -601,7 +601,7 @@ void setup()
    arduino.clearDisplay();
    sensor.begin();
 
-   initializeDisplayTables();
+   initializeTables();
    captureTable.load();
 
    arduino.setTextSize(3);

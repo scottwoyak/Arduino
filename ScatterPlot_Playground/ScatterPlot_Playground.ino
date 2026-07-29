@@ -327,7 +327,7 @@ TableEditorRow sinStatusCells[] =
    { "Memory", &memoryCell },
 };
 DisplayTableEditor statusTable(&arduino, PREF_NAMESPACE, defaultStatusCells,
-   0, HEADER_HEIGHT, 2, DisplayTable::Alignment::RIGHT);
+   0, HEADER_HEIGHT, 2, Table::Alignment::RIGHT);
 
 // ----------- Test State
 RollingRate updateRate(RATE_WINDOW_SAMPLES);

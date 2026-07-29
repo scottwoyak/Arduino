@@ -24,7 +24,7 @@
 /// everything.
 /// </remarks>
 ///
-class DisplayField
+class Field
 {
 public:
    ///
@@ -52,7 +52,7 @@ private:
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the DisplayField class.
+   /// Initializes a new instance of the Field class.
    /// </summary>
    /// <param name="display">The display interface to draw onto.</param>
    /// <param name="pos">The X/Y coordinate of the label's top-left corner.</param>
@@ -63,7 +63,7 @@ public:
    /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
    /// edge (RIGHT), or the position of the ':' character separating label and value (COLON).</param>
    ///
-   DisplayField(ArduinoWithDisplay* display, Point16 pos,
+   Field(ArduinoWithDisplay* display, Point16 pos,
                 const char* label, const Format& format, uint8_t textSize,
                 Alignment alignment = Alignment::LEFT)
       : _display(display), _label(label),
@@ -75,7 +75,7 @@ public:
 
    ///
    /// <summary>
-   /// Initializes a new instance of the DisplayField class with no label, drawing only the value.
+   /// Initializes a new instance of the Field class with no label, drawing only the value.
    /// </summary>
    /// <param name="display">The display interface to draw onto.</param>
    /// <param name="pos">The X/Y coordinate of the value's top-left corner.</param>
@@ -85,16 +85,16 @@ public:
    /// edge (RIGHT), or the position of the ':' character separating label and value (COLON);
    /// COLON has no effect when there is no label.</param>
    ///
-   DisplayField(ArduinoWithDisplay* display, Point16 pos,
+   Field(ArduinoWithDisplay* display, Point16 pos,
                 const Format& format, uint8_t textSize,
                 Alignment alignment = Alignment::LEFT)
-      : DisplayField(display, pos, "", format, textSize, alignment)
+      : Field(display, pos, "", format, textSize, alignment)
    {
    }
 
    ///
    /// <summary>
-   /// Initializes a new instance of the DisplayField class without specifying a position,
+   /// Initializes a new instance of the Field class without specifying a position,
    /// e.g. so a global/member field can be constructed before its final layout is known.
    /// Call setPosition() once the position is known.
    /// </summary>
@@ -106,10 +106,10 @@ public:
    /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
    /// edge (RIGHT), or the position of the ':' character separating label and value (COLON).</param>
    ///
-   DisplayField(ArduinoWithDisplay* display,
+   Field(ArduinoWithDisplay* display,
                 const char* label, const Format& format, uint8_t textSize,
                 Alignment alignment = Alignment::LEFT)
-      : DisplayField(display, Point16(0, 0), label, format, textSize, alignment)
+      : Field(display, Point16(0, 0), label, format, textSize, alignment)
    {
    }
 

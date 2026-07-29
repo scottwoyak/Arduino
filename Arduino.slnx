@@ -24,10 +24,8 @@
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
     <File Path="libraries/Woyak/DisplayBuffer.h" />
-    <File Path="libraries/Woyak/DisplayTable.h" />
     <File Path="libraries/Woyak/DisplayTableCellEditor.h" />
     <File Path="libraries/Woyak/DisplayTableEditor.h" />
-    <File Path="libraries/Woyak/DisplayField.h" />
     <File Path="libraries/Woyak/DisplayTextView.h" />
     <File Path="libraries/Woyak/DisplayValue.h" />
     <File Path="libraries/Woyak/DS18B20TempSensor.h" />
@@ -37,6 +35,7 @@
     <File Path="libraries/Woyak/Feather_ESP32_S3.h" />
     <File Path="libraries/Woyak/Feather_M0_OLED.h" />
     <File Path="libraries/Woyak/FeedTimer.h" />
+    <File Path="libraries/Woyak/Field.h" />
     <File Path="libraries/Woyak/FilteredRollingAverage.h" />
     <File Path="libraries/Woyak/Format.h" />
     <File Path="libraries/Woyak/FixedRangeHistory.h" />
@@ -100,6 +99,7 @@
     <File Path="libraries/Woyak/Status.h" />
     <File Path="libraries/Woyak/Stopwatch.h" />
     <File Path="libraries/Woyak/Structs.h" />
+    <File Path="libraries/Woyak/Table.h" />
     <File Path="libraries/Woyak/TelemetryClient.h" />
     <File Path="libraries/Woyak/TempSensor.h" />
     <File Path="libraries/Woyak/TempSensorCallibration.h" />
@@ -227,14 +227,6 @@
       <Deploy />
     </Project>
   </Folder>
-  <Project Path="Basic_DisplayField/Basic_DisplayField.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="Basic_DisplayTable/Basic_DisplayTable.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
   <Project Path="Basic_DisplayTableEditor/Basic_DisplayTableEditor.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -243,7 +235,15 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Basic_Field/Basic_Field.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Basic_ScatterPlot/Basic_ScatterPlot.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Basic_Table/Basic_Table.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -295,14 +295,6 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="DisplayField_Playground/DisplayField_Playground.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="DisplayTable_Playground/DisplayTable_Playground.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
   <Project Path="DisplayValue_Playground/DisplayValue_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -344,6 +336,10 @@
     <Deploy />
   </Project>
   <Project Path="Feather_M0_OLED/Feather_M0_OLED.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Field_Playground/Field_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -472,6 +468,10 @@
     <Deploy />
   </Project>
   <Project Path="SR04_Display/SR04_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Table_Playground/Table_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

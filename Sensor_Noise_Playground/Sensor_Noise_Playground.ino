@@ -18,8 +18,8 @@
 
 #include "EnumSelector.h"
 #include "ESP32_S3_Playground.h"
-#include "DisplayField.h"
-#include "DisplayTable.h"
+#include "Field.h"
+#include "Table.h"
 #include "RollingRate.h"
 #include "TestSensor.h"
 #include "TimedHistogram.h"
@@ -78,9 +78,9 @@ Format rateFormat("####/s", Format::Alignment::RIGHT);
 constexpr const char* COUNT_FORMAT = "######";
 constexpr const char* SAMPLE_TIME_FORMAT = "#### ms";
 constexpr const char* STDDEV_PERCENT_FORMAT = "##.##%";
-DisplayTable noiseTable(&arduino, 0, 0, 3);
-DisplayField* targetRateField = nullptr;
-DisplayField* actualRateField = nullptr;
+Table noiseTable(&arduino, 0, 0, 3);
+Field* targetRateField = nullptr;
+Field* actualRateField = nullptr;
 ScatterPlot scatterPlot(&arduino, CONTENT_RECT, "##.#s", sensor.getFormatStr());
 TimedScatterPlotSeries* scatterSeries = nullptr;
 TimedHistogram histogram(HISTOGRAM_BIN_COUNT, HISTOGRAM_HISTORY_PERIOD_S * 1000UL, SENSOR_VALUE_RESOLUTION_F);
@@ -299,12 +299,12 @@ void setup()
    std::string label = "Target Sampling Rate";
    int x = arduino.display.width() - (label.length() + 2  + rateFormat.length()) * arduino.charW();
    Point16 targetRatePos(x, 0);
-   targetRateField = new DisplayField(&arduino, targetRatePos, label.c_str(), rateFormat, 2);
+   targetRateField = new Field(&arduino, targetRatePos, label.c_str(), rateFormat, 2);
 
    label = "Actual Rate";
    x = arduino.display.width() - (label.length() + 2  +  rateFormat.length()) * arduino.charW();
    Point16 actualRatePos(x, arduino.charH());
-   actualRateField = new DisplayField(&arduino, actualRatePos, label.c_str(), rateFormat, 2);
+   actualRateField = new Field(&arduino, actualRatePos, label.c_str(), rateFormat, 2);
 
    sensor.begin();
    sensor.get();

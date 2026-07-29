@@ -1,19 +1,19 @@
 //
-// Demonstrates the DisplayTable family of classes: DisplayTable, DisplayTableEditor,
+// Demonstrates the Table family of classes: Table, DisplayTableEditor,
 // CellEditor.
 //
 // Button A / Button B advance / reverse through the available demos. Within a demo,
 // Encoder A / Encoder B perform demo-specific actions (e.g. selecting and adjusting a
-// field). The screen always shows a "DisplayTable" header, a subheading naming the
+// field). The screen always shows a "Table" header, a subheading naming the
 // current demo, and a bottom instructions line describing what Encoder A/B do.
 //
 // Demos:
-// 1) Live Table    - a plain DisplayTable of read-only rows that update every frame.
-// 2) Sections      - a DisplayTable with section headers and encoder-driven highlighting.
+// 1) Live Table    - a plain Table of read-only rows that update every frame.
+// 2) Sections      - a Table with section headers and encoder-driven highlighting.
 // 3) Table Editor  - a DisplayTableEditor with mixed editable/read-only fields, showing
 //                    selection (Encoder A), adjustment (Encoder B), and Preferences
 //                    persistence (Encoder B's button resets to defaults).
-// 4) Tables        - five standalone DisplayTable instances positioned at the corners
+// 4) Tables        - five standalone Table instances positioned at the corners
 //                    and center of the display.
 //
 
@@ -21,7 +21,7 @@
 
 #include "ESP32_S3_Playground.h"
 #include "SerialX.h"
-#include "DisplayTable.h"
+#include "Table.h"
 #include "DisplayTableCellEditor.h"
 #include "DisplayTableEditor.h"
 #include "Util.h"
@@ -65,7 +65,7 @@ Demo currentDemo = Demo::LiveTable;
 constexpr const char* LIVE_RATE_FORMAT = "###/s";
 constexpr const char* LIVE_AMPLITUDE_FORMAT = "##.#";
 constexpr const char* LIVE_WAVE_FORMAT = "+##.##";
-DisplayTable* liveTable = nullptr;
+Table* liveTable = nullptr;
 long liveRate = 10;
 long liveAmplitude = 5;
 constexpr long LIVE_RATE_MIN = 1;
@@ -76,7 +76,7 @@ constexpr float LIVE_WAVE_PERIOD_SCALE = 20.0f;
 
 // ----------- Demo 2: Sections (section headers + highlight cycling)
 constexpr const char* SECTION_VALUE_FORMAT = "####";
-DisplayTable* sectionsTable = nullptr;
+Table* sectionsTable = nullptr;
 constexpr uint8_t NUM_SECTION_ROWS = 4;
 uint8_t sectionsSelectedRow = 0;
 long sectionValues[NUM_SECTION_ROWS] = { 1, 2, 3, 4 };
@@ -109,28 +109,28 @@ ReadOnlyCell editorLiveCell(&editorLiveValue, "#####");
 TableEditorRow editorCells[] = { { "Settings" }, { "Rate", &editorRateCell }, { "Mode", &editorModeCell }, { "Gain", &editorGainCell }, { "Measured" }, { "Live", &editorLiveCell } };
 DisplayTableEditor* editorTable = nullptr;
 
-// ----------- Demo 4: Tables (standalone DisplayTable instances at the corners/center)
+// ----------- Demo 4: Tables (standalone Table instances at the corners/center)
 constexpr const char* TABLES_VALUE_FORMAT = "##.#";
 constexpr uint8_t NUM_TABLES = 5;
 constexpr float TABLES_VALUE_STEP = 0.1f;
 float tablesValues[NUM_TABLES] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 uint8_t tablesSelectedIndex = 0;
 
-DisplayTable topLeftTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
-DisplayTable topRightTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
-DisplayTable bottomRightTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
-DisplayTable bottomLeftTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
-DisplayTable centerTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
+Table topLeftTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
+Table topRightTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
+Table bottomRightTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
+Table bottomLeftTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
+Table centerTable(&arduino, 0, 0, CONTENT_TEXT_SIZE);
 
 // Selection rotation order: top-left, top-right, bottom-right, bottom-left, center
-DisplayTable* tables[NUM_TABLES] =
+Table* tables[NUM_TABLES] =
 {
    &topLeftTable, &topRightTable, &bottomRightTable, &bottomLeftTable, &centerTable
 };
 
 ///
 /// <summary>
-/// Clears the display and draws the "DisplayTable" title plus the current demo's
+/// Clears the display and draws the "Table" title plus the current demo's
 /// subheading and instructions line, then records the layout coordinates that follow.
 /// </summary>
 ///
@@ -139,7 +139,7 @@ void drawHeaderAndFooter()
    arduino.clearDisplay();
 
    arduino.setTextSize(HEADER_TEXT_SIZE);
-   arduino.println("DisplayTable", Color::HEADING);
+   arduino.println("Table", Color::HEADING);
 
    arduino.setTextSize(SUBHEADING_TEXT_SIZE);
    arduino.println(DEMOS[(uint8_t)currentDemo].name, Color::SUB_HEADING);
@@ -178,7 +178,7 @@ void teardownDemos()
 ///
 void enterLiveTable()
 {
-   liveTable = new DisplayTable(&arduino, 0, contentY, CONTENT_TEXT_SIZE);
+   liveTable = new Table(&arduino, 0, contentY, CONTENT_TEXT_SIZE);
    liveTable->addRow("Rate", LIVE_RATE_FORMAT);
    liveTable->addRow("Amplitude", LIVE_AMPLITUDE_FORMAT);
    liveTable->addRow("Wave", LIVE_WAVE_FORMAT);
@@ -234,7 +234,7 @@ void handleLiveTableInput()
 ///
 void enterSections()
 {
-   sectionsTable = new DisplayTable(&arduino, 0, contentY, CONTENT_TEXT_SIZE);
+   sectionsTable = new Table(&arduino, 0, contentY, CONTENT_TEXT_SIZE);
    sectionsTable->addRow("Row A", SECTION_VALUE_FORMAT);
    sectionsTable->addRow("Row B", SECTION_VALUE_FORMAT);
    sectionsTable->setSection(0, "Group 1");
@@ -323,7 +323,7 @@ void handleTableEditorInput()
 
 ///
 /// <summary>
-/// Builds the Tables demo's five standalone DisplayTable instances, each with a single
+/// Builds the Tables demo's five standalone Table instances, each with a single
 /// row, and positions them at the top-left, top-right, bottom-right, bottom-left, and
 /// center of the display.
 /// </summary>

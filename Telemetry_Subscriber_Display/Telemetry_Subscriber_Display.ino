@@ -22,7 +22,7 @@
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
 
-#include "DisplayTable.h"
+#include "Table.h"
 #include "RollingRate.h"
 #include "SerialX.h"
 #include "Stopwatch.h"
@@ -51,7 +51,7 @@ TelemetrySubscriber client(TELEMETRY_TOPIC);
 constexpr const char* TOPIC_FORMAT = "                    ";
 constexpr const char* HOST_FORMAT = "                        ";
 constexpr const char* RATE_FORMAT = "###/s";
-DisplayTable table(&arduino, 0, 0);
+Table table(&arduino, 0, 0);
 
 float lastValue = NAN;
 bool disconnected = false;

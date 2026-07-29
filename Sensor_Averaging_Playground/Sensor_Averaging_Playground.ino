@@ -30,7 +30,7 @@
 #include <array>
 
 #include "ESP32_S3_Playground.h"
-#include "DisplayTable.h"
+#include "Table.h"
 #include "EnumSelector.h"
 #include "Histogram.h"
 #include "HistogramPlot.h"
@@ -214,7 +214,7 @@ RateTimer displayRefreshTimer(DISPLAY_UPDATE_RATE_PER_SEC);
 bool collectingViewInitialized = false;
 enum CollectingRow : size_t { WARMUP_ROW, MAX_ROW, PROGRESS_ROW, SAMPLES_ROW, ELAPSED_ROW, TARGET_RATE_ROW, ACTUAL_RATE_ROW };
 
-static const DisplayTable::ValueRow collectingRows[] = {
+static const Table::ValueRow collectingRows[] = {
    { "Warmup", "####################" },
    { "Max", "####################" },
    { "Progress", "###%" },
@@ -223,7 +223,7 @@ static const DisplayTable::ValueRow collectingRows[] = {
    { "Target Rate", "####/s" },
    { "Actual Rate", "####.#/s" },
 };
-DisplayTable collectingTable(&arduino, 0, 0, collectingRows, 2, DisplayTable::Alignment::RIGHT);
+Table collectingTable(&arduino, 0, 0, collectingRows, 2, Table::Alignment::RIGHT);
 
 // ----------- Analysis Settings
 constexpr size_t HISTOGRAM_BINS = 20;
@@ -391,13 +391,13 @@ void drawTableView()
    arduino.println();
 
    static std::array columns = {
-      DisplayTable::Column("", DisplayTable::Alignment::RIGHT),
-      DisplayTable::Column("Range", "###.##", DisplayTable::Alignment::RIGHT),
-      DisplayTable::Column("StdDev", "###.##", DisplayTable::Alignment::RIGHT),
-      DisplayTable::Column("StdDev%", "###.##%", DisplayTable::Alignment::RIGHT),
-      DisplayTable::Column("Hz", " ####", DisplayTable::Alignment::RIGHT),
+      Table::Column("", Table::Alignment::RIGHT),
+      Table::Column("Range", "###.##", Table::Alignment::RIGHT),
+      Table::Column("StdDev", "###.##", Table::Alignment::RIGHT),
+      Table::Column("StdDev%", "###.##%", Table::Alignment::RIGHT),
+      Table::Column("Hz", " ####", Table::Alignment::RIGHT),
    };
-   static DisplayTable table(&arduino, 0, 0, columns, 2, Color::VALUE3);
+   static Table table(&arduino, 0, 0, columns, 2, Color::VALUE3);
    table.setPosition(arduino.getCursorX(), arduino.getCursorY());
    table.clearRows();
 
@@ -493,7 +493,7 @@ void drawResultView()
 
 ///
 /// <summary>
-/// Initializes the DisplayTable rows used by the collecting-progress screen.
+/// Initializes the Table rows used by the collecting-progress screen.
 /// </summary>
 ///
 void initializeCollectingTable()

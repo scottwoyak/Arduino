@@ -11,7 +11,7 @@
 //                   style font.
 //   Smooth Fonts - the number is fully reprinted every frame using a plain
 //                   print(), with a proportional font loaded via setTextSize().
-//   Sprites      - the number is drawn with DisplayField, redrawing only the
+//   Sprites      - the number is drawn with Field, redrawing only the
 //                   value via a sprite.
 //
 
@@ -26,7 +26,7 @@
 #error "This sketch requires a board with rotary encoders (e.g. an ESP32-S3 Playground setup)."
 #endif
 
-#include "DisplayField.h"
+#include "Field.h"
 #include "RollingRate.h"
 #include "SerialX.h"
 
@@ -65,8 +65,8 @@ Format rateFormat("###/s", Format::Alignment::RIGHT);
 DisplayMode currentMode = DisplayMode::DEFAULT_MODE;
 uint8_t numberTextSize = 4;
 
-DisplayField* numberField = nullptr;
-DisplayField* rateField = nullptr;
+Field* numberField = nullptr;
+Field* rateField = nullptr;
 int16_t numberX = 0;
 int16_t numberY = 0;
 
@@ -116,7 +116,7 @@ void setupMode()
    if (currentMode == DisplayMode::SPRITES)
    {
       Point16 numberPos(numberX, numberY);
-      numberField = new DisplayField(&arduino, numberPos, numberFormat);
+      numberField = new Field(&arduino, numberPos, numberFormat);
    }
 
    arduino.setTextSize(RATE_TEXT_SIZE);
@@ -124,7 +124,7 @@ void setupMode()
    int16_t x = arduino.width() - rateWidth - 10;
    int16_t y = arduino.height() - arduino.charH() - 10;
    Point16 pos(x, y);
-   rateField = new DisplayField(&arduino, pos, "Rate", rateFormat);
+   rateField = new Field(&arduino, pos, "Rate", rateFormat);
 }
 
 void setup()

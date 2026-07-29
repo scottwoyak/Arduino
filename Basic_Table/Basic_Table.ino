@@ -1,7 +1,7 @@
 //
-// Basic DisplayTable demonstration.
+// Basic Table demonstration.
 //
-// Shows the minimal use of DisplayTable: a multi-column table ("Item", "Value", "StdDev")
+// Shows the minimal use of Table: a multi-column table ("Item", "Value", "StdDev")
 // redrawn as fast as possible, where only the value sprites are repainted after the
 // initial draw (row labels and column headers are only drawn once). A heading is drawn
 // once at startup, and a live update-rate readout is kept in the lower right corner
@@ -18,8 +18,8 @@
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
 
-#include "DisplayField.h"
-#include "DisplayTable.h"
+#include "Field.h"
+#include "Table.h"
 #include "DisplayValue.h"
 #include "RollingRate.h"
 #include "SerialX.h"
@@ -36,16 +36,16 @@ constexpr uint8_t FOOTER_TEXT_SIZE = 2;
 
 // ----------- Content
 std::array rows = {
-   DisplayTable::Row("Speed"),
-   DisplayTable::Row("Acceleration"),
-   DisplayTable::Row("Position"),
+   Table::Row("Speed"),
+   Table::Row("Acceleration"),
+   Table::Row("Position"),
 };
 std::array columns = {
-   DisplayTable::Column("Item"),
-   DisplayTable::Column("Value", "###.#"),
-   DisplayTable::Column("StdDev", "#.##"),
+   Table::Column("Item"),
+   Table::Column("Value", "###.#"),
+   Table::Column("StdDev", "#.##"),
 };
-DisplayTable table(&arduino, 0, 0, columns, rows, CONTENT_TEXT_SIZE);
+Table table(&arduino, 0, 0, columns, rows, CONTENT_TEXT_SIZE);
 
 // ----------- Rate readout (lower right)
 constexpr uint16_t RATE_NUM_SAMPLES = 200;
@@ -61,7 +61,7 @@ void setup()
 
    arduino.setCursor(0, 0);
    arduino.setTextSize(HEADER_SIZE);
-   arduino.println("DisplayTable", Color::HEADING);
+   arduino.println("Table", Color::HEADING);
 
    int16_t top = arduino.getCursorY();
    int16_t bottom = arduino.height() - arduino.charH(FOOTER_TEXT_SIZE);

@@ -17,7 +17,7 @@
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
 
-#include "DisplayTable.h"
+#include "Table.h"
 #include "DisplayValue.h"
 #include "Rate.h"
 #include "SerialTable.h"
@@ -48,7 +48,7 @@ Format rateFormat("####/s", Format::Alignment::RIGHT);
 constexpr const char* TYPE_ADDRESS_FORMAT = "################";
 constexpr const char* ID_FORMAT = "################";
 constexpr const char* CORRECTION_FORMAT = "+#.###F";
-DisplayTable table(&arduino, 0, 0);
+Table table(&arduino, 0, 0);
 DisplayValue* rateField = nullptr;
 int16_t headingHeight;
 

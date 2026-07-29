@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="DisplayTable_Align_Test.ino" />
+    <ClCompile Include="Field_Playground.ino" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.DisplayTable_Align_Test.vsarduino.h">
+    <ClInclude Include="__vm\.Field_Playground.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

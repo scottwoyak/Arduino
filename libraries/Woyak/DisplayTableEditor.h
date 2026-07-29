@@ -6,7 +6,7 @@
 #include "Color.h"
 #include "ArduinoBoard.h"
 #include "DisplayTableCellEditor.h"
-#include "DisplayTable.h"
+#include "Table.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "DisplayTableEditor requires a board with a display."
@@ -52,7 +52,7 @@ struct TableEditorRow
    const char* label;
    DisplayTableCell* cell;
 
-   // Row index within the internal DisplayTable this field maps to, or -1 for section
+   // Row index within the internal Table this field maps to, or -1 for section
    // header rows, which don't correspond to a table row of their own. Set by
    // DisplayTableEditor::_relayout().
    int8_t rowIndex = -1;
@@ -64,10 +64,10 @@ struct TableEditorRow
 /// and read-only cells) that can be navigated and adjusted live with a board's encoders:
 /// Encoder A cycles the selected field, Encoder B adjusts its value.
 /// Also supports loading/saving/resetting all fields against a Preferences namespace. This class owns
-/// no rendering logic of its own - it delegates all drawing to an internal DisplayTable, so drawing
+/// no rendering logic of its own - it delegates all drawing to an internal Table, so drawing
 /// fixes (sprite creation, text-size restoration, flicker avoidance, layout math, etc.) only need to
 /// live in one place. DisplayTableEditor simply tracks the selected field, persists values, and pushes
-/// each field's current text/color/section into the internal DisplayTable before drawing it.
+/// each field's current text/color/section into the internal Table before drawing it.
 /// </summary>
 ///
 class DisplayTableEditor
@@ -78,7 +78,7 @@ private:
    std::span<TableEditorRow> _rows;
    uint8_t _selectedIndex = 0;
    char _keyBuffer[10];
-   DisplayTable _table;
+   Table _table;
 
    Preferences* _preferences()
    {
@@ -110,10 +110,10 @@ private:
 
    ///
    /// <summary>
-   /// Rebuilds the internal DisplayTable's rows from the current field array and resets the
+   /// Rebuilds the internal Table's rows from the current field array and resets the
    /// selection to the first editable field. Section header rows (no cell) don't get a table
    /// row of their own; their label instead becomes the section header text of the next real
-   /// row, reusing DisplayTable's existing section-header rendering. Shared by the constructor
+   /// row, reusing Table's existing section-header rendering. Shared by the constructor
    /// and setFields().
    /// </summary>
    ///
@@ -148,7 +148,7 @@ private:
 
    ///
    /// <summary>
-   /// Pushes every field's current value/colors into the internal DisplayTable, reflecting
+   /// Pushes every field's current value/colors into the internal Table, reflecting
    /// selection highlighting and disabled/enabled state. Called by draw() before delegating
    /// to the table. Section header rows (no cell) have no table row to sync.
    /// </summary>
@@ -192,7 +192,7 @@ public:
    ///
    DisplayTableEditor(Arduino* arduino, const char* prefNamespace, std::span<TableEditorRow> fields,
       int16_t x, int16_t y, uint8_t textSize = 2,
-      DisplayTable::Alignment labelAlignment = DisplayTable::Alignment::RIGHT)
+      Table::Alignment labelAlignment = Table::Alignment::RIGHT)
       : _arduino(arduino), _prefNamespace(prefNamespace), _rows(fields),
       _table(arduino, x, y, textSize, labelAlignment)
    {
@@ -211,7 +211,7 @@ public:
    /// <param name="labelAlignment">Alignment of the row label text within its reserved column width (default: RIGHT).</param>
    ///
    DisplayTableEditor(Arduino* arduino, const char* prefNamespace, std::span<TableEditorRow> fields,
-      uint8_t textSize = 2, DisplayTable::Alignment labelAlignment = DisplayTable::Alignment::RIGHT)
+      uint8_t textSize = 2, Table::Alignment labelAlignment = Table::Alignment::RIGHT)
       : DisplayTableEditor(arduino, prefNamespace, fields, 0, 0, textSize, labelAlignment)
    {}
 
@@ -374,7 +374,7 @@ public:
           /// <summary>
           /// Draws the label/value rows at the position given to the constructor, highlighting the
           /// currently selected field's value with a colored background. Syncs each field's current
-          /// value/colors into the internal DisplayTable, then delegates all drawing to it.
+          /// value/colors into the internal Table, then delegates all drawing to it.
           /// </summary>
           ///
           void draw()

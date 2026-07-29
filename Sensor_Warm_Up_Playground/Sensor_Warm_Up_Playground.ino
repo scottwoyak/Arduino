@@ -37,8 +37,8 @@
 
 // Local library headers (from libraries/Woyak)
 #include "ESP32_S3_Playground.h"
-#include "DisplayField.h"
-#include "DisplayTable.h"
+#include "Field.h"
+#include "Table.h"
 #include "RollingAverage.h"
 #include "RollingRate.h"
 #include "ScatterPlot.h"
@@ -158,13 +158,13 @@ SerialTable resultTable(RESULT_TABLE_TITLE, RESULT_TABLE_COLUMNS);
 // The on-screen summary table (see drawSummaryView()). Declared after `sensor` since its
 // Start/Delta column formats are taken from the sensor's format pattern strings.
 std::array RESULT_TABLE_DISPLAY_COLUMNS = {
-   DisplayTable::Column(""),
-   DisplayTable::Column("Target", "###/s", DisplayTable::Alignment::RIGHT),
-   DisplayTable::Column("Actual", "###/s", DisplayTable::Alignment::RIGHT),
-   DisplayTable::Column("Start", sensor.getFormatStr(), DisplayTable::Alignment::RIGHT),
-   DisplayTable::Column("Delta", sensor.getHighResFormatStr(), DisplayTable::Alignment::RIGHT),
+   Table::Column(""),
+   Table::Column("Target", "###/s", Table::Alignment::RIGHT),
+   Table::Column("Actual", "###/s", Table::Alignment::RIGHT),
+   Table::Column("Start", sensor.getFormatStr(), Table::Alignment::RIGHT),
+   Table::Column("Delta", sensor.getHighResFormatStr(), Table::Alignment::RIGHT),
 };
-DisplayTable resultDisplayTable(&arduino, 0, 0, RESULT_TABLE_DISPLAY_COLUMNS, BODY_TEXT_SIZE, Color::LABEL);
+Table resultTable(&arduino, 0, 0, RESULT_TABLE_DISPLAY_COLUMNS, BODY_TEXT_SIZE, Color::LABEL);
 
 // ----------- Scatter Plot State
 ScatterPlot scatterPlot(&arduino, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, "##.#s", sensor.getLowResFormatStr());
@@ -174,7 +174,7 @@ Timer displayUpdateTimer(DISPLAY_UPDATE_INTERVAL_MS);
 bool hasDrawnStatusLine = false;
 bool lastStatusWasCooldown = false;
 bool lastCooldownAvgWasFinite = false;
-DisplayField* cooldownField = nullptr;
+Field* cooldownField = nullptr;
 size_t lastDrawnRatesCount = 0;
 int16_t lastDrawnRatesWidth = 0;
 int16_t statusLineY = 0;
@@ -844,7 +844,7 @@ void drawCollectingHeader()
    if (cooldownField == nullptr)
    {
       Point16 cooldownPos(cooldownFieldX, cooldownLineY);
-      cooldownField = new DisplayField(&arduino, cooldownPos, "Cooling Down",
+      cooldownField = new Field(&arduino, cooldownPos, "Cooling Down",
                                         highResFormat, BODY_TEXT_SIZE);
    }
    else
@@ -910,7 +910,7 @@ void updateStatusLine()
 
    if (currentAvgIsFinite)
    {
-      // DisplayField only redraws when the formatted value actually changes, so no
+      // Field only redraws when the formatted value actually changes, so no
       // separate "did the average change" tracking is needed here.
       cooldownField->draw(currentAvg, Color::GRAY, Color::GRAY);
    }
@@ -1065,23 +1065,23 @@ void drawSummaryView()
    int16_t contentY = arduino.getCursorY() + arduino.charH() / 4;
    Rect16 contentRect(0, contentY, DISPLAY_WIDTH, DISPLAY_HEIGHT - contentY);
 
-   resultDisplayTable.clearRows();
+   resultTable.clearRows();
 
    size_t resultCount = testRunner.resultCount();
    for (size_t i = 0; i < resultCount; i++)
    {
       Color rowColor = TARGET_SERIES[i % NUM_TARGET_SAMPLES].color;
-      resultDisplayTable.addRow("", rowColor);
-      resultDisplayTable.setValue(i, 0, testRunner.resultTargetRate(i), rowColor);
-      resultDisplayTable.setValue(i, 1, testRunner.resultRate(i), rowColor);
-      resultDisplayTable.setValue(i, 2, testRunner.resultStartValue(i), rowColor);
-      resultDisplayTable.setValue(i, 3, testRunner.resultValue(i), rowColor);
+      resultTable.addRow("", rowColor);
+      resultTable.setValue(i, 0, testRunner.resultTargetRate(i), rowColor);
+      resultTable.setValue(i, 1, testRunner.resultRate(i), rowColor);
+      resultTable.setValue(i, 2, testRunner.resultStartValue(i), rowColor);
+      resultTable.setValue(i, 3, testRunner.resultValue(i), rowColor);
    }
 
    Point16 contentCenter(contentRect.x + contentRect.width / 2, contentRect.y + contentRect.height / 2);
-   resultDisplayTable.setPosition(contentCenter, Anchor::CENTER);
+   resultTable.setPosition(contentCenter, Anchor::CENTER);
 
-   resultDisplayTable.draw();
+   resultTable.draw();
 }
 
 ///

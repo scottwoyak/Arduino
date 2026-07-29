@@ -22,7 +22,7 @@
 /// to drawing each value directly to the display every frame.
 /// </summary>
 ///
-class DisplayTable
+class Table
 {
 public:
    ///
@@ -71,13 +71,13 @@ public:
       /// "" for no title. Has no format/values of its own.
       /// </summary>
       ///
-      Column(const char* title, DisplayTable::Alignment alignment = DisplayTable::Alignment::LEFT)
+      Column(const char* title, Table::Alignment alignment = Table::Alignment::LEFT)
          : title(title), format("", _toFormatAlignment(alignment)) {}
-      Column(const char* title, const char* formatStr, DisplayTable::Alignment alignment = DisplayTable::Alignment::LEFT)
+      Column(const char* title, const char* formatStr, Table::Alignment alignment = Table::Alignment::LEFT)
          : title(title), format(formatStr, _toFormatAlignment(alignment)) {}
       Column(const char* title, const char* formatStr, Color color)
          : title(title), format(formatStr), hasColor(true), color(color) {}
-      Column(const char* title, const std::string& formatStr, DisplayTable::Alignment alignment = DisplayTable::Alignment::LEFT)
+      Column(const char* title, const std::string& formatStr, Table::Alignment alignment = Table::Alignment::LEFT)
          : Column(title, formatStr.c_str(), alignment) {}
       Column(const char* title, const std::string& formatStr, Color color)
          : Column(title, formatStr.c_str(), color) {}
@@ -89,13 +89,13 @@ public:
       /// the column's cell values.
       /// </summary>
       ///
-      static Format::Alignment _toFormatAlignment(DisplayTable::Alignment alignment)
+      static Format::Alignment _toFormatAlignment(Table::Alignment alignment)
       {
          switch (alignment)
          {
-            case DisplayTable::Alignment::RIGHT: return Format::Alignment::RIGHT;
-            case DisplayTable::Alignment::CENTER: return Format::Alignment::CENTER;
-            case DisplayTable::Alignment::LEFT:
+            case Table::Alignment::RIGHT: return Format::Alignment::RIGHT;
+            case Table::Alignment::CENTER: return Format::Alignment::CENTER;
+            case Table::Alignment::LEFT:
             default: return Format::Alignment::LEFT;
          }
       }
@@ -575,7 +575,7 @@ private:
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the DisplayTable class as a legacy single-value
+   /// Initializes a new instance of the Table class as a legacy single-value
    /// table: each row supplies its own format via addRow(), values are set via
    /// setValue(rowIndex, value, color), and no header row/divider line is drawn.
    /// </summary>
@@ -585,7 +585,7 @@ public:
    /// <param name="textSize">The text size applied automatically before drawing labels and values.</param>
    /// <param name="labelAlignment">Alignment of the row label text within its reserved column width (default: RIGHT).</param>
    ///
-   DisplayTable(ArduinoWithDisplay* display, int16_t x, int16_t y, uint8_t textSize = 2,
+   Table(ArduinoWithDisplay* display, int16_t x, int16_t y, uint8_t textSize = 2,
       Alignment labelAlignment = Alignment::RIGHT)
       : _display(display), _x(x), _y(y), _labelWidth(0), _labelAlignment(labelAlignment), _textSize(textSize),
         _columns(), _headerColor(Color::TABLE_HEADER)
@@ -594,7 +594,7 @@ public:
 
    ///
    /// <summary>
-   /// Initializes a new instance of the DisplayTable class as a legacy single-value table,
+   /// Initializes a new instance of the Table class as a legacy single-value table,
    /// adding the given rows immediately (equivalent to calling addRows(rows) right after
    /// construction). Values are set via setValue(rowIndex, value, color), and no header
    /// row/divider line is drawn.
@@ -606,7 +606,7 @@ public:
    /// <param name="textSize">The text size applied automatically before drawing labels and values.</param>
    /// <param name="labelAlignment">Alignment of the row label text within its reserved column width (default: RIGHT).</param>
    ///
-   DisplayTable(ArduinoWithDisplay* display, int16_t x, int16_t y, std::span<const ValueRow> rows,
+   Table(ArduinoWithDisplay* display, int16_t x, int16_t y, std::span<const ValueRow> rows,
       uint8_t textSize = 2, Alignment labelAlignment = Alignment::RIGHT)
       : _display(display), _x(x), _y(y), _labelWidth(0), _labelAlignment(labelAlignment), _textSize(textSize),
         _columns(), _headerColor(Color::TABLE_HEADER)
@@ -616,7 +616,7 @@ public:
 
    ///
    /// <summary>
-   /// Initializes a new instance of the DisplayTable class as a multi-column table: each
+   /// Initializes a new instance of the Table class as a multi-column table: each
    /// row's cells are automatically created (one per column) via addRow(label), values
    /// are set per column via setValue(rowIndex, columnIndex, value, color), and a header
    /// row plus a divider line are drawn above the data rows.
@@ -628,7 +628,7 @@ public:
    /// <param name="textSize">The text size applied automatically before drawing labels, headers, and values.</param>
    /// <param name="headerColor">The color used to draw the column header row (unless a column overrides it).</param>
    ///
-   DisplayTable(ArduinoWithDisplay* display, int16_t x, int16_t y, std::span<const Column> columns,
+   Table(ArduinoWithDisplay* display, int16_t x, int16_t y, std::span<const Column> columns,
       uint8_t textSize = 2, Color headerColor = Color::TABLE_HEADER)
       : _display(display), _x(x), _y(y), _labelWidth(0),
         _labelAlignment(columns.empty() ? Alignment::LEFT : _fromFormatAlignment(columns[0].format.alignment())),
@@ -638,7 +638,7 @@ public:
 
    ///
    /// <summary>
-   /// Initializes a new instance of the DisplayTable class as a multi-column table, adding
+   /// Initializes a new instance of the Table class as a multi-column table, adding
    /// the given rows immediately (equivalent to calling addRows(rows) right after
    /// construction). Values are set per column via setValue(rowIndex, columnIndex, value,
    /// color), and a header row plus a divider line are drawn above the data rows.
@@ -651,7 +651,7 @@ public:
    /// <param name="textSize">The text size applied automatically before drawing labels, headers, and values.</param>
    /// <param name="headerColor">The color used to draw the column header row (unless a column overrides it).</param>
    ///
-   DisplayTable(ArduinoWithDisplay* display, int16_t x, int16_t y, std::span<const Column> columns,
+   Table(ArduinoWithDisplay* display, int16_t x, int16_t y, std::span<const Column> columns,
       std::span<const Row> rows, uint8_t textSize = 2, Color headerColor = Color::TABLE_HEADER)
       : _display(display), _x(x), _y(y), _labelWidth(0),
         _labelAlignment(columns.empty() ? Alignment::LEFT : _fromFormatAlignment(columns[0].format.alignment())),
