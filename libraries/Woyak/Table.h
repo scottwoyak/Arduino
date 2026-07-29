@@ -138,8 +138,6 @@ public:
    };
 
 private:
-   friend class DisplayTableEditor;
-
    ///
    /// <summary>
    /// Per-column cell state for a single row: the format used to render it (taken from
@@ -230,7 +228,7 @@ private:
     ///
    /// <summary>
    /// Adds a new row to a legacy single-value table, using the given format for its one
-   /// value cell. Only reachable internally (e.g. via DisplayTableEditor, which owns
+   /// value cell. Only reachable internally (e.g. via FieldTableEditor, which owns
    /// parsed Format instances per field); sketches should use the format-string overload
    /// of addRow() instead.
    /// </summary>
@@ -664,7 +662,7 @@ public:
    /// <summary>
    /// Removes all rows from the table and forces the next draw() call to rebuild the
    /// column sprites and redraw everything from scratch, e.g. so addRow() can be called
-   /// again to build a completely different set of rows (see DisplayTableEditor::setFields()).
+   /// again to build a completely different set of rows (see FieldTableEditor::setFields()).
    /// </summary>
    ///
    void clearRows()
@@ -1477,20 +1475,20 @@ public:
          int16_t width = getWidth();
          int16_t height = _rowY(_rows.size());
 
-         if (anchor == Anchor::TOP_RIGHT || anchor == Anchor::BOTTOM_RIGHT)
+         if (anchor == Anchor::TOP_RIGHT || anchor == Anchor::BOTTOM_RIGHT || anchor == Anchor::MIDDLE_RIGHT)
          {
             x -= width;
          }
-         else if (anchor == Anchor::CENTER)
+         else if (anchor == Anchor::CENTER || anchor == Anchor::TOP_CENTER || anchor == Anchor::BOTTOM_CENTER)
          {
             x -= width / 2;
          }
 
-         if (anchor == Anchor::BOTTOM_LEFT || anchor == Anchor::BOTTOM_RIGHT)
+         if (anchor == Anchor::BOTTOM_LEFT || anchor == Anchor::BOTTOM_RIGHT || anchor == Anchor::BOTTOM_CENTER)
          {
             y -= height;
          }
-         else if (anchor == Anchor::CENTER)
+         else if (anchor == Anchor::CENTER || anchor == Anchor::MIDDLE_LEFT || anchor == Anchor::MIDDLE_RIGHT)
          {
             y -= height / 2;
          }

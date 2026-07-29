@@ -37,8 +37,8 @@
 #include "SerialHistogram.h"
 #include "HistogramPlot.h"
 #include "Table.h"
-#include "DisplayTableCellEditor.h"
-#include "DisplayTableEditor.h"
+#include "ValueEditor.h"
+#include "FieldTableEditor.h"
 #include "ScatterPlot.h"
 #include <math.h>
 #include "TestSensor.h"
@@ -152,10 +152,10 @@ float progressPercentValue = 0.0f;
 /// sample buffer is already sized to the confirmed value at that point.
 /// </summary>
 ///
-class CaptureLimitCell : public IntCellEditor
+class CaptureLimitField : public IntEditor
 {
 public:
-   using IntCellEditor::IntCellEditor;
+   using IntEditor::IntEditor;
 
    bool isEnabled() const override
    {
@@ -163,23 +163,23 @@ public:
    }
 };
 
-CaptureLimitCell samplesCell(&maxSamples,
+CaptureLimitField samplesField(&maxSamples,
    MIN_MAX_SAMPLES, MAX_MAX_SAMPLES, MAX_SAMPLES_STEP, DEFAULT_MAX_SAMPLES, Format(SAMPLES_FORMAT, Format::Alignment::LEFT));
-CaptureLimitCell durationCell(&maxCaptureTimeS,
+CaptureLimitField durationField(&maxCaptureTimeS,
    MIN_MAX_CAPTURE_TIME_S, MAX_MAX_CAPTURE_TIME_S, MAX_CAPTURE_TIME_STEP_S, DEFAULT_MAX_CAPTURE_TIME_S, Format(TIME_FORMAT, Format::Alignment::LEFT));
-ReadOnlyCell samplesReadCell(&progressSamplesValue, SAMPLES_FORMAT);
-ReadOnlyCell timeReadCell(&progressTimeValue, TIME_FORMAT);
-ReadOnlyCell progressReadCell(&progressPercentValue, PROGRESS_PERCENT_FORMAT);
+FloatValue samplesReadValue(&progressSamplesValue, SAMPLES_FORMAT);
+FloatValue timeReadValue(&progressTimeValue, TIME_FORMAT);
+FloatValue progressReadValue(&progressPercentValue, PROGRESS_PERCENT_FORMAT);
 
-TableEditorRow captureCells[] =
+FieldTableEditor::Row captureCells[] =
 {
-   { "Max Samples", &samplesCell },
-   { "Max Time", &durationCell },
-   { "Samples", &samplesReadCell },
-   { "Time", &timeReadCell },
-   { "Progress", &progressReadCell },
+   { "Max Samples", &samplesField },
+   { "Max Time", &durationField },
+   { "Samples", &samplesReadValue },
+   { "Time", &timeReadValue },
+   { "Progress", &progressReadValue },
 };
-DisplayTableEditor captureTable(&arduino, PREF_NAMESPACE, captureCells, 0, 0);
+FieldTableEditor captureTable(&arduino, PREF_NAMESPACE, captureCells, 0, 0);
 
 // ----- display tables
 Table summaryTable(&arduino, 0, 0);

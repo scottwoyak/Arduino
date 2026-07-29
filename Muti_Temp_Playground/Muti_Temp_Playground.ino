@@ -243,7 +243,6 @@ bool uploadAllPoints()
 void setup()
 {
    SerialX::begin();
-   Util::checkTheLastShutdownReason();
    Wire.begin();
 
    for (uint8_t i = 0; i < NUM_SENSORS; i++)

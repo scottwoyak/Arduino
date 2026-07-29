@@ -27,7 +27,7 @@
 #error "This sketch requires a board with encoders (e.g. the ESP32-S3 Playground)."
 #endif
 
-#include "DisplayTableCellEditor.h"
+#include "ValueEditor.h"
 #include "FieldTableEditor.h"
 #include "SerialX.h"
 
@@ -48,14 +48,14 @@ bool boolValue = false;
 
 const char* const enumLabels[] = { "Left", "Right", "Top", "Bottom" };
 
-BoolCellEditor boolCell(&boolValue, false, "#####");
-IntCellEditor valueCell(&intValue, -1000, 1000, 1, 0, "#####");
-EnumCellEditor enumCell(&enumValue, enumLabels, 0, "######");
+BoolEditor boolValueEditor(&boolValue, false, "#####");
+IntEditor intValueEditor(&intValue, -1000, 1000, 1, 0, "#####");
+EnumEditor enumValueEditor(&enumValue, enumLabels, 0, "######");
 
-FieldTableEditorRow rows[] = {
-   { "Bool", &boolCell },
-   { "Value", &valueCell },
-   { "Enum", &enumCell }
+FieldTableEditor::Row rows[] = {
+   { "Bool", &boolValueEditor },
+   { "Value", &intValueEditor },
+   { "Enum", &enumValueEditor }
 };
 FieldTableEditor editor(&arduino, PREF_NAMESPACE, rows, CONTENT_TEXT_SIZE);
 

@@ -1,6 +1,5 @@
 //
-// Demonstrates the Table family of classes: Table, DisplayTableEditor,
-// CellEditor.
+// Demonstrates the Table family of classes: Table.
 //
 // Button A / Button B advance / reverse through the available demos. Within a demo,
 // Encoder A / Encoder B perform demo-specific actions (e.g. selecting and adjusting a
@@ -10,10 +9,7 @@
 // Demos:
 // 1) Live Table    - a plain Table of read-only rows that update every frame.
 // 2) Sections      - a Table with section headers and encoder-driven highlighting.
-// 3) Table Editor  - a DisplayTableEditor with mixed editable/read-only fields, showing
-//                    selection (Encoder A), adjustment (Encoder B), and Preferences
-//                    persistence (Encoder B's button resets to defaults).
-// 4) Tables        - five standalone Table instances positioned at the corners
+// 3) Tables        - five standalone Table instances positioned at the corners
 //                    and center of the display.
 //
 
@@ -22,15 +18,10 @@
 #include "ESP32_S3_Playground.h"
 #include "SerialX.h"
 #include "Table.h"
-#include "DisplayTableCellEditor.h"
-#include "DisplayTableEditor.h"
 #include "Util.h"
 
 // ----------- The Board
 ESP32_S3_Playground arduino;
-
-// ----------- Preferences Namespace
-constexpr const char* PREF_NAMESPACE = "table_playground";
 
 // ----------- Layout
 constexpr uint8_t HEADER_TEXT_SIZE = 3;
@@ -42,8 +33,8 @@ int16_t contentY = 0;
 int16_t instructionsY = 0;
 
 // ----------- Demo Selection
-enum class Demo : uint8_t { LiveTable, Sections, TableEditor, Tables };
-constexpr uint8_t NUM_DEMOS = 4;
+enum class Demo : uint8_t { LiveTable, Sections, Tables };
+constexpr uint8_t NUM_DEMOS = 3;
 
 struct DemoInfo
 {
@@ -55,7 +46,6 @@ constexpr DemoInfo DEMOS[NUM_DEMOS] =
 {
    { "Live Table", "EncoderA: rate  EncoderB: amplitude" },
    { "Sections", "EncoderA: select row  EncoderB: unused" },
-   { "Table Editor", "EncoderA: select field  EncoderB: adjust  EncoderB button: reset" },
    { "Tables", "EncoderA: select table  EncoderB: adjust value" },
 };
 
@@ -81,35 +71,7 @@ constexpr uint8_t NUM_SECTION_ROWS = 4;
 uint8_t sectionsSelectedRow = 0;
 long sectionValues[NUM_SECTION_ROWS] = { 1, 2, 3, 4 };
 
-// ----------- Demo 3: Table Editor (mixed editable/read-only fields)
-long editorRate = 10;
-long editorMode = 0;
-float editorGain = 1.0f;
-float editorLiveValue = 0.0f;
-
-constexpr long EDITOR_RATE_MIN = 1;
-constexpr long EDITOR_RATE_MAX = 100;
-constexpr long EDITOR_RATE_STEP = 1;
-constexpr long EDITOR_RATE_DEFAULT = 10;
-constexpr float EDITOR_GAIN_MIN = 0.1f;
-constexpr float EDITOR_GAIN_MAX = 10.0f;
-constexpr float EDITOR_GAIN_STEP = 0.1f;
-constexpr float EDITOR_GAIN_DEFAULT = 1.0f;
-
-const char* const editorModeLabels[] = { "Manual", "Auto", "Timed" };
-
-IntCellEditor editorRateCell(&editorRate,
-   EDITOR_RATE_MIN, EDITOR_RATE_MAX, EDITOR_RATE_STEP, EDITOR_RATE_DEFAULT, "###/s");
-EnumCellEditor editorModeCell(&editorMode,
-   editorModeLabels, 0, "######");
-FloatCellEditor editorGainCell(&editorGain,
-   EDITOR_GAIN_MIN, EDITOR_GAIN_MAX, EDITOR_GAIN_STEP, EDITOR_GAIN_DEFAULT, "##.##");
-ReadOnlyCell editorLiveCell(&editorLiveValue, "#####");
-
-TableEditorRow editorCells[] = { { "Settings" }, { "Rate", &editorRateCell }, { "Mode", &editorModeCell }, { "Gain", &editorGainCell }, { "Measured" }, { "Live", &editorLiveCell } };
-DisplayTableEditor* editorTable = nullptr;
-
-// ----------- Demo 4: Tables (standalone Table instances at the corners/center)
+// ----------- Demo 3: Tables (standalone Table instances at the corners/center)
 constexpr const char* TABLES_VALUE_FORMAT = "##.#";
 constexpr uint8_t NUM_TABLES = 5;
 constexpr float TABLES_VALUE_STEP = 0.1f;
@@ -166,9 +128,6 @@ void teardownDemos()
 
    delete sectionsTable;
    sectionsTable = nullptr;
-
-   delete editorTable;
-   editorTable = nullptr;
 }
 
 ///
@@ -278,51 +237,6 @@ void handleSectionsInput()
 
 ///
 /// <summary>
-/// Builds the Table Editor demo's DisplayTableEditor and loads its persisted values.
-/// </summary>
-///
-void enterTableEditor()
-{
-   editorTable = new DisplayTableEditor(&arduino, PREF_NAMESPACE, editorCells, ARRAY_SIZE(editorCells), 0, contentY);
-   editorTable->load();
-}
-
-///
-/// <summary>
-/// Updates the Table Editor demo's read-only "Live" row and redraws the table.
-/// </summary>
-///
-void updateTableEditor()
-{
-   editorLiveValue = (float)editorRate * editorGain;
-   editorTable->draw();
-}
-
-///
-/// <summary>
-/// Applies Encoder A/B input to select and adjust the Table Editor demo's fields, and
-/// Encoder B's integral button to reset all fields to their defaults.
-/// </summary>
-///
-void handleTableEditorInput()
-{
-   editorTable->selectNext(arduino.encoderA.delta());
-
-   int32_t adjustDelta = arduino.encoderB.delta();
-   if (adjustDelta != 0)
-   {
-      editorTable->adjustSelected(adjustDelta);
-      editorTable->save();
-   }
-
-   if (arduino.encoderB.button.wasPressed())
-   {
-      editorTable->reset();
-   }
-}
-
-///
-/// <summary>
 /// Builds the Tables demo's five standalone Table instances, each with a single
 /// row, and positions them at the top-left, top-right, bottom-right, bottom-left, and
 /// center of the display.
@@ -413,9 +327,6 @@ void enterDemo()
    case Demo::Sections:
       enterSections();
       break;
-   case Demo::TableEditor:
-      enterTableEditor();
-      break;
    case Demo::Tables:
       enterTables();
       break;
@@ -458,10 +369,6 @@ void loop()
    case Demo::Sections:
       handleSectionsInput();
       updateSections();
-      break;
-   case Demo::TableEditor:
-      handleTableEditorInput();
-      updateTableEditor();
       break;
    case Demo::Tables:
       handleTablesInput();

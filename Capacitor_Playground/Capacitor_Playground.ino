@@ -46,12 +46,12 @@
 #include "ArduinoBoard.h"
 #include "CapacitorSensor.h"
 #include "RollingAverage.h"
-#include "DisplayTableEditor.h"
+#include "FieldTableEditor.h"
 #include "SerialTable.h"
 #include "Stats.h"
 #include "TimedStats.h"
 #include "SerialX.h"
-#include "DisplayTableCellEditor.h"
+#include "ValueEditor.h"
 #include "DisplayTextView.h"
 #include "Timer.h"
 #include "Stopwatch.h"
@@ -170,7 +170,7 @@ constexpr ResistorOption RESISTOR_OPTIONS[] = {
 };
 constexpr size_t RESISTOR_OPTION_COUNT = sizeof(RESISTOR_OPTIONS) / sizeof(RESISTOR_OPTIONS[0]);
 
-/// <summary>Resistor option labels, derived from RESISTOR_OPTIONS, for use with EnumCellEditor.</summary>
+/// <summary>Resistor option labels, derived from RESISTOR_OPTIONS, for use with EnumEditor.</summary>
 constexpr const char* RESISTOR_LABELS[] = {
    RESISTOR_OPTIONS[0].label,
    RESISTOR_OPTIONS[1].label,
@@ -215,47 +215,45 @@ enum class TestType
 constexpr const char* TEST_TYPE_LABELS[] = { "Optimize", "Buffer Size Sweep", "Discharge Time Sweep", "Raw Data Capture" };
 constexpr size_t TEST_TYPE_COUNT = sizeof(TEST_TYPE_LABELS) / sizeof(TEST_TYPE_LABELS[0]);
 
-EnumCellEditor resistorCell(&resistorIndex,
+EnumEditor resistorEditor(&resistorIndex,
    RESISTOR_LABELS, 0, "########");
-IntCellEditor delayCell(&dischargeDelayMicros,
+IntEditor delayEditor(&dischargeDelayMicros,
    50, 2000, 50, (long)CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS, "#### us");
-IntCellEditor bufferSizeCell(&bufferSize,
+IntEditor bufferSizeEditor(&bufferSize,
    (long)MIN_TARGET_BUFFER_SIZE, (long)MAX_TARGET_BUFFER_SIZE, 5, (long)CapacitorSensor::DEFAULT_BUFFER_SIZE, "###");
-EnumCellEditor testTypeCell(&testType,
+EnumEditor testTypeEditor(&testType,
    TEST_TYPE_LABELS, 0, "####################");
-FloatCellEditor filterCell(&filter,
+FloatEditor filterEditor(&filter,
    0.0f, 50.0f, 1.0f, CapacitorSensor::DEFAULT_FILTER, "##.# %");
 
-ReadOnlyCell chargeTimeCell(&measuredChargeTimeMicros, "#####.# us");
-ReadOnlyCell stdDevCell(&measuredStdDevMicros, "#####.# us");
-ReadOnlyCell rangeCell(&measuredRangeMicros, "#####.# us");
-ReadOnlyCell rawRateCell(&measuredRawRate, "######/s");
-ReadOnlyCell effectiveRateCell(&measuredEffectiveRate, "###/s");
+FloatValue chargeTimeValue(&measuredChargeTimeMicros, "#####.# us");
+FloatValue stdDevValue(&measuredStdDevMicros, "#####.# us");
+FloatValue rangeValue(&measuredRangeMicros, "#####.# us");
+FloatValue rawRateValue(&measuredRawRate, "######/s");
+FloatValue effectiveRateValue(&measuredEffectiveRate, "###/s");
 
-BlankCell testTypeSpacerCell;
-
-TableEditorRow setupCells[] =
+FieldTableEditor::Row setupCells[] =
 {
    { "Setup" },
-   { "Resistor", &resistorCell },
-   { "Discharge Time", &delayCell },
-   { "Buffer Size", &bufferSizeCell },
-   { "Outlier Filter", &filterCell },
-   { "", &testTypeSpacerCell },
-   { "Test Type", &testTypeCell },
+   { "Resistor", &resistorEditor },
+   { "Discharge Time", &delayEditor },
+   { "Buffer Size", &bufferSizeEditor },
+   { "Outlier Filter", &filterEditor },
+   { FieldTableEditor::Row::BlankRow },
+   { "Test Type", &testTypeEditor },
 };
-DisplayTableEditor table(&arduino, PREF_NAMESPACE, setupCells, 0, 0);
+FieldTableEditor table(&arduino, PREF_NAMESPACE, setupCells, 0, 0);
 
-TableEditorRow measurementCells[] =
+FieldTableEditor::Row measurementCells[] =
 {
    { "Measurements" },
-   { "Avg Charge Time", &chargeTimeCell },
-   { "StdDev", &stdDevCell },
-   { "Range", &rangeCell },
-   { "Raw Rate", &rawRateCell },
-   { "Effective Rate", &effectiveRateCell },
+   { "Avg Charge Time", &chargeTimeValue },
+   { "StdDev", &stdDevValue },
+   { "Range", &rangeValue },
+   { "Raw Rate", &rawRateValue },
+   { "Effective Rate", &effectiveRateValue },
 };
-DisplayTableEditor measurementsTable(&arduino, PREF_NAMESPACE, measurementCells, 0, 0);
+FieldTableEditor measurementsTable(&arduino, PREF_NAMESPACE, measurementCells, 0, 0);
 
 ///
 /// <summary>Look up the resistor value label for a charge pin.</summary>

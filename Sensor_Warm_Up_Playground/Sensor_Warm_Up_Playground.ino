@@ -845,7 +845,7 @@ void drawCollectingHeader()
    {
       Point16 cooldownPos(cooldownFieldX, cooldownLineY);
       cooldownField = new Field(&arduino, cooldownPos, "Cooling Down",
-                                        highResFormat, BODY_TEXT_SIZE);
+                                        sensor.getHighResFormatStr().c_str(), BODY_TEXT_SIZE);
    }
    else
    {

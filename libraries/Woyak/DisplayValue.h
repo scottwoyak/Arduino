@@ -233,31 +233,31 @@ public:
    /// different format widths can share the same x and have their decimal points line
    /// up on screen.</item>
    /// </list>
-   /// The meaning of y depends on anchor's vertical component:
+   /// The meaning of y depends on anchor:
    /// <list type="bullet">
-   /// <item>Anchor::TOP_LEFT/TOP_RIGHT: y is the position of the sprite's top edge.</item>
-   /// <item>Anchor::BOTTOM_LEFT/BOTTOM_RIGHT: y is the position of the sprite's bottom
+   /// <item>VerticalAnchor::TOP: y is the position of the sprite's top edge.</item>
+   /// <item>VerticalAnchor::BOTTOM: y is the position of the sprite's bottom
    /// edge, so a value can be anchored to a fixed point (e.g. the display's bottom edge)
    /// without the caller needing to know the sprite's height.</item>
-   /// <item>Anchor::CENTER: y is the position of the sprite's vertical midpoint, so a
+   /// <item>VerticalAnchor::MIDDLE: y is the position of the sprite's vertical midpoint, so a
    /// value can be vertically centered in a region without the caller needing to know
    /// the sprite's height (and therefore without needing to keep the region's math in
    /// sync with the value's text size).</item>
    /// </list>
    /// </summary>
    /// <param name="x">The X coordinate of the value's anchor (left edge; right edge for Alignment::RIGHT; horizontal midpoint for Alignment::CENTER; decimal point position for Alignment::DECIMAL); negative values offset from the right edge.</param>
-   /// <param name="y">The Y coordinate of the value's anchor (top edge; bottom edge for Anchor::BOTTOM_LEFT/BOTTOM_RIGHT; vertical midpoint for Anchor::CENTER); negative values offset from the bottom edge.</param>
-   /// <param name="anchor">Which vertical point of the value's sprite y refers to (default: TOP_LEFT).</param>
+   /// <param name="y">The Y coordinate of the value's anchor (top edge; bottom edge for VerticalAnchor::BOTTOM; vertical midpoint for VerticalAnchor::MIDDLE); negative values offset from the bottom edge.</param>
+   /// <param name="anchor">Which vertical point of the value's sprite y refers to (default: TOP).</param>
    ///
-   void setPosition(int16_t x, int16_t y, Anchor anchor = Anchor::TOP_LEFT)
+   void setPosition(int16_t x, int16_t y, VerticalAnchor anchor = VerticalAnchor::TOP)
    {
       _display->normalizeCoords(x, y);
 
-      if (anchor == Anchor::BOTTOM_LEFT || anchor == Anchor::BOTTOM_RIGHT)
+      if (anchor == VerticalAnchor::BOTTOM)
       {
          y -= height();
       }
-      else if (anchor == Anchor::CENTER)
+      else if (anchor == VerticalAnchor::MIDDLE)
       {
          y -= height() / 2;
       }
@@ -281,9 +281,9 @@ public:
    /// x/y anchor semantics documented on the (x, y, anchor) overload.
    /// </summary>
    /// <param name="pos">The coordinate of the value's anchor point.</param>
-   /// <param name="anchor">Which vertical point of the value's sprite pos.y refers to (default: TOP_LEFT).</param>
+   /// <param name="anchor">Which vertical point of the value's sprite pos.y refers to (default: TOP).</param>
    ///
-   void setPosition(Point16 pos, Anchor anchor = Anchor::TOP_LEFT)
+   void setPosition(Point16 pos, VerticalAnchor anchor = VerticalAnchor::TOP)
    {
       setPosition(pos.x, pos.y, anchor);
    }

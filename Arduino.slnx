@@ -24,8 +24,6 @@
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
     <File Path="libraries/Woyak/DisplayBuffer.h" />
-    <File Path="libraries/Woyak/DisplayTableCellEditor.h" />
-    <File Path="libraries/Woyak/DisplayTableEditor.h" />
     <File Path="libraries/Woyak/DisplayTextView.h" />
     <File Path="libraries/Woyak/DisplayValue.h" />
     <File Path="libraries/Woyak/DS18B20TempSensor.h" />
@@ -123,6 +121,7 @@
     <File Path="libraries/Woyak/Units.h" />
     <File Path="libraries/Woyak/Url.h" />
     <File Path="libraries/Woyak/Util.h" />
+    <File Path="libraries/Woyak/ValueEditor.h" />
     <File Path="libraries/Woyak/Values.h" />
     <File Path="libraries/Woyak/ValueStore.h" />
     <File Path="libraries/Woyak/ValueStoreFram.h" />
@@ -229,10 +228,6 @@
       <Deploy />
     </Project>
   </Folder>
-  <Project Path="Basic_DisplayTableEditor/Basic_DisplayTableEditor.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
   <Project Path="Basic_DisplayValue/Basic_DisplayValue.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

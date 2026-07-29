@@ -1,4 +1,4 @@
-//
+﻿//
 // Profiles how fast a ScatterPlot can be redrawn as its backing sample series grows.
 //
 // Continuously samples a mock data source (see DATA_SOURCE_TYPE below) and appends each reading
@@ -21,8 +21,8 @@
 
 // Local library headers (from libraries/Woyak)
 #include "ESP32_S3_Playground.h"
-#include "DisplayTableCellEditor.h"
-#include "DisplayTableEditor.h"
+#include "ValueEditor.h"
+#include "FieldTableEditor.h"
 #include "RollingRate.h"
 #include "ScatterPlot.h"
 #include "SerialX.h"
@@ -31,7 +31,7 @@
 #include "Util.h"
 
 // ----------- Test Function Selection
-// The available mock test functions the user can select from at startup via a DisplayTableEditor.
+// The available mock test functions the user can select from at startup via a FieldTableEditor.
 constexpr const char* TEST_FUNCTION_LABELS[] = { "Const", "Random", "Normal", "Sin" };
 constexpr size_t NUM_TEST_FUNCTIONS = sizeof(TEST_FUNCTION_LABELS) / sizeof(TEST_FUNCTION_LABELS[0]);
 constexpr const char* PREF_NAMESPACE = "ScatterPlotPg";
@@ -48,7 +48,7 @@ constexpr unsigned long STATUS_DRAW_INTERVAL_MS = 200; // throttles statusTable.
 
 // ----------- Sample Count Selection
 // Rolling plot capacity, selectable at runtime; X axis spans [1, selected value], scrolling
-// once full. See MaxSamplesCell/maxSamplesIndex below.
+// once full. See maxSamplesField/maxSamplesIndex below.
 constexpr size_t MAX_SAMPLES_OPTIONS[] = { 500, 1000, 2000, 3000, 5000, 10000 };
 constexpr size_t NUM_MAX_SAMPLES_OPTIONS = sizeof(MAX_SAMPLES_OPTIONS) / sizeof(MAX_SAMPLES_OPTIONS[0]);
 constexpr size_t DEFAULT_MAX_SAMPLES_INDEX = 1; // 1000
@@ -77,26 +77,26 @@ ITestSensor* sensor = nullptr;
 // ----------- Display Formats
 long testFunctionIndex = 0;
 long lastTestFunctionIndex = 0;
-EnumCellEditor testFunctionCell(&testFunctionIndex,TEST_FUNCTION_LABELS, 0, "######");
+EnumEditor testFunctionEditor(&testFunctionIndex,TEST_FUNCTION_LABELS, 0, "######");
 float rateValue = 0.0f;
-ReadOnlyCell rateCell(&rateValue, Format("####/s", Format::Alignment::LEFT));
+FloatValue rateValueField(&rateValue, Format("####/s", Format::Alignment::LEFT));
 
 uint32_t startFreeHeapBytes = 0;
 float memoryDeltaKb = 0.0f;
-ReadOnlyCell memoryCell(&memoryDeltaKb, "###.# kb");
+FloatValue memoryValue(&memoryDeltaKb, "###.# kb");
 
 ///
 /// <summary>
 /// Plot-size-selection field shared by the X Size and Y Size rows. Steps through PLOT_SIZE_PERCENTS
-/// by index (like EnumCellEditor), but formats its label directly from the selected
+/// by index (like EnumEditor), but formats its label directly from the selected
 /// percentage instead of a separate parallel string-label array.
 /// </summary>
 ///
-class PlotSizeCell : public IntCellEditor
+class PlotSizeField : public IntEditor
 {
 public:
-   PlotSizeCell(long* value, const char* formatStr)
-      : IntCellEditor(value, 0, (long)NUM_PLOT_SIZES - 1, 1, 0, formatStr)
+   PlotSizeField(long* value, const char* formatStr)
+      : IntEditor(value, 0, (long)NUM_PLOT_SIZES - 1, 1, 0, formatStr)
    {
    }
 
@@ -117,20 +117,20 @@ long plotXSizeIndex = 0;
 long plotYSizeIndex = 0;
 long lastPlotXSizeIndex = 0;
 long lastPlotYSizeIndex = 0;
-PlotSizeCell plotXSizeCell(&plotXSizeIndex, "###%    ");
-PlotSizeCell plotYSizeCell(&plotYSizeIndex, "###%    ");
+PlotSizeField plotXSizeField(&plotXSizeIndex, "###%    ");
+PlotSizeField plotYSizeField(&plotYSizeIndex, "###%    ");
 
 ///
 /// <summary>
 /// Rolling-sample-count-selection field. Steps through MAX_SAMPLES_OPTIONS by index (like
-/// PlotSizeCell), formatting its label directly from the selected sample count.
+/// PlotSizeField), formatting its label directly from the selected sample count.
 /// </summary>
 ///
-class MaxSamplesCell : public IntCellEditor
+class MaxSamplesField : public IntEditor
 {
 public:
-   MaxSamplesCell(long* value, const char* formatStr)
-      : IntCellEditor(value, 0, (long)NUM_MAX_SAMPLES_OPTIONS - 1, 1, 0, formatStr)
+   MaxSamplesField(long* value, const char* formatStr)
+      : IntEditor(value, 0, (long)NUM_MAX_SAMPLES_OPTIONS - 1, 1, 0, formatStr)
    {
    }
 
@@ -149,7 +149,7 @@ public:
 
 long maxSamplesIndex = DEFAULT_MAX_SAMPLES_INDEX;
 long lastMaxSamplesIndex = DEFAULT_MAX_SAMPLES_INDEX;
-MaxSamplesCell maxSamplesCell(&maxSamplesIndex, "#####   ");
+MaxSamplesField maxSamplesField(&maxSamplesIndex, "#####   ");
 
 // ----------- Series Display Mode Selection
 // Controls whether the active sample series is drawn as raw points or connected lines.
@@ -166,7 +166,7 @@ constexpr size_t NUM_DISPLAY_MODES = sizeof(DISPLAY_MODE_LABELS) / sizeof(DISPLA
 ///
 long displayModeIndex = 0;
 long lastDisplayModeIndex = 0;
-EnumCellEditor displayModeCell(&displayModeIndex,
+EnumEditor displayModeEditor(&displayModeIndex,
    DISPLAY_MODE_LABELS, 0, "########");
 
 // ----------- Stats Overlay Selection
@@ -185,14 +185,14 @@ constexpr size_t NUM_STATS_MODES = sizeof(STATS_MODE_LABELS) / sizeof(STATS_MODE
 ///
 long statsModeIndex = 0;
 long lastStatsModeIndex = 0;
-EnumCellEditor statsModeCell(&statsModeIndex,
+EnumEditor statsModeEditor(&statsModeIndex,
    STATS_MODE_LABELS, 0, "########");
 
 // ----------- Source-Specific Configuration Fields
 // The Constant source lets the user set its value directly; the Sin source lets the user
-// adjust its period (always fixed-step; see SinPeriodCell). Each source's field array is
+// adjust its period (always fixed-step; see sinPeriodField). Each source's field array is
 // swapped into statusTable by applyTestFunction() below.
-FloatCellEditor constantValueCell(&constantSensor.value,
+FloatEditor constantValueEditor(&constantSensor.value,
    TestSensorConfig::CONSTANT_MIN_VALUE, TestSensorConfig::CONSTANT_MAX_VALUE,
    TestSensorConfig::CONSTANT_STEP, TestSensorConfig::CONSTANT_VALUE, "####.#");
 
@@ -203,10 +203,10 @@ FloatCellEditor constantValueCell(&constantSensor.value,
 /// sample (see SinTestSensor::TIME_SOURCE_FIXED_STEP, the sensor's only sampling mode).
 /// </summary>
 ///
-class SinPeriodCell : public FloatCellEditor
+class SinPeriodField : public FloatEditor
 {
 public:
-   using FloatCellEditor::FloatCellEditor;
+   using FloatEditor::FloatEditor;
 
    void adjust(int32_t direction) override
    {
@@ -223,7 +223,7 @@ public:
    }
 };
 
-SinPeriodCell sinPeriodCell(&sinSensor.periodS,
+SinPeriodField sinPeriodField(&sinSensor.periodS,
    TestSensorConfig::SIN_MIN_PERIOD_S, TestSensorConfig::SIN_MAX_PERIOD_S,
    TestSensorConfig::SIN_PERIOD_STEP_S, TestSensorConfig::SIN_PERIOD_S, "########");
 
@@ -243,7 +243,7 @@ constexpr size_t NUM_NOISE_ENABLED_STATES = sizeof(NOISE_ENABLED_LABELS) / sizeo
 
 long noiseEnabled = 0;
 long lastNoiseEnabled = 0;
-EnumCellEditor noiseEnabledCell(&noiseEnabled,
+EnumEditor noiseEnabledEditor(&noiseEnabled,
    NOISE_ENABLED_LABELS, 0, "########");
 
 ///
@@ -253,10 +253,10 @@ EnumCellEditor noiseEnabledCell(&noiseEnabled,
 /// encoder selection since it has no effect on the active sensor.
 /// </summary>
 ///
-class NoiseStdDevCell : public FloatCellEditor
+class NoiseStdDevField : public FloatEditor
 {
 public:
-   using FloatCellEditor::FloatCellEditor;
+   using FloatEditor::FloatEditor;
 
    bool isEnabled() const override
    {
@@ -266,7 +266,7 @@ public:
 
 float noiseStdDevValue = TestSensorConfig::NOISE_STDDEV;
 float lastNoiseStdDevValue = TestSensorConfig::NOISE_STDDEV;
-NoiseStdDevCell noiseStdDevCell(&noiseStdDevValue,
+NoiseStdDevField noiseStdDevField(&noiseStdDevValue,
    TestSensorConfig::NOISE_MIN_STDDEV, TestSensorConfig::NOISE_MAX_STDDEV,
    TestSensorConfig::NOISE_STDDEV_STEP, TestSensorConfig::NOISE_STDDEV, "####.#");
 
@@ -274,60 +274,60 @@ NoiseStdDevCell noiseStdDevCell(&noiseStdDevValue,
 // The Test Function section is shared by the always-present Source row, the source-specific
 // configuration rows, and the Noise/StdDev rows; the Plot section starts at the plot-size rows;
 // the Measured section starts at the FPS row. Section headers are their own label-only
-// TableEditorRow entries (no cell), rendered above the rows that follow them.
+// FieldTableEditor::Row entries (no value), rendered above the rows that follow them.
 
-TableEditorRow defaultStatusCells[] =
+FieldTableEditor::Row defaultStatusCells[] =
 {
-   TableEditorRow("Test Function"),
-   { "Source", &testFunctionCell },
-   { "Noise", &noiseEnabledCell },
-   { "StdDev", &noiseStdDevCell },
-   TableEditorRow("Plot"),
-   { "X Size", &plotXSizeCell },
-   { "Y Size", &plotYSizeCell },
-   { "Samples", &maxSamplesCell },
-   { "Display", &displayModeCell },
-   { "Stats", &statsModeCell },
-   TableEditorRow("Measured"),
-   { "FPS", &rateCell },
-   { "Memory", &memoryCell },
+   { "Test Function" },
+   { "Source", &testFunctionEditor },
+   { "Noise", &noiseEnabledEditor },
+   { "StdDev", &noiseStdDevField },
+   { "Plot" },
+   { "X Size", &plotXSizeField },
+   { "Y Size", &plotYSizeField },
+   { "Samples", &maxSamplesField },
+   { "Display", &displayModeEditor },
+   { "Stats", &statsModeEditor },
+   { "Measured" },
+   { "FPS", &rateValueField },
+   { "Memory", &memoryValue },
 };
-TableEditorRow constantStatusCells[] =
+FieldTableEditor::Row constantStatusCells[]
 {
-   TableEditorRow("Test Function"),
-   { "Source", &testFunctionCell },
-   { "Value", &constantValueCell },
-   { "Noise", &noiseEnabledCell },
-   { "StdDev", &noiseStdDevCell },
-   TableEditorRow("Plot"),
-   { "X Size", &plotXSizeCell },
-   { "Y Size", &plotYSizeCell },
-   { "Samples", &maxSamplesCell },
-   { "Display", &displayModeCell },
-   { "Stats", &statsModeCell },
-   TableEditorRow("Measured"),
-   { "FPS", &rateCell },
-   { "Memory", &memoryCell },
+   { "Test Function" },
+   { "Source", &testFunctionEditor },
+   { "Value", &constantValueEditor },
+   { "Noise", &noiseEnabledEditor },
+   { "StdDev", &noiseStdDevField },
+   { "Plot" },
+   { "X Size", &plotXSizeField },
+   { "Y Size", &plotYSizeField },
+   { "Samples", &maxSamplesField },
+   { "Display", &displayModeEditor },
+   { "Stats", &statsModeEditor },
+   { "Measured" },
+   { "FPS", &rateValueField },
+   { "Memory", &memoryValue },
 };
-TableEditorRow sinStatusCells[] =
+FieldTableEditor::Row sinStatusCells[]
 {
-   TableEditorRow("Test Function"),
-   { "Source", &testFunctionCell },
-   { "Period", &sinPeriodCell },
-   { "Noise", &noiseEnabledCell },
-   { "StdDev", &noiseStdDevCell },
-   TableEditorRow("Plot"),
-   { "X Size", &plotXSizeCell },
-   { "Y Size", &plotYSizeCell },
-   { "Samples", &maxSamplesCell },
-   { "Display", &displayModeCell },
-   { "Stats", &statsModeCell },
-   TableEditorRow("Measured"),
-   { "FPS", &rateCell },
-   { "Memory", &memoryCell },
+   { "Test Function" },
+   { "Source", &testFunctionEditor },
+   { "Period", &sinPeriodField },
+   { "Noise", &noiseEnabledEditor },
+   { "StdDev", &noiseStdDevField },
+   { "Plot" },
+   { "X Size", &plotXSizeField },
+   { "Y Size", &plotYSizeField },
+   { "Samples", &maxSamplesField },
+   { "Display", &displayModeEditor },
+   { "Stats", &statsModeEditor },
+   { "Measured" },
+   { "FPS", &rateValueField },
+   { "Memory", &memoryValue },
 };
-DisplayTableEditor statusTable(&arduino, PREF_NAMESPACE, defaultStatusCells,
-   0, HEADER_HEIGHT, 2, Table::Alignment::RIGHT);
+FieldTableEditor statusTable(&arduino, PREF_NAMESPACE, defaultStatusCells,
+   0, HEADER_HEIGHT, 2);
 
 // ----------- Test State
 RollingRate updateRate(RATE_WINDOW_SAMPLES);
@@ -417,37 +417,37 @@ void updateRateReadout()
 ///
 Rect16 computePlotRect()
 {
-	int16_t plotAreaX = statusTable.width() + TABLE_PLOT_GAP;
-	int16_t availableWidth = DISPLAY_WIDTH - plotAreaX;
-	int16_t availableHeight = DISPLAY_HEIGHT - HEADER_HEIGHT;
+   int16_t plotAreaX = statusTable.width() + TABLE_PLOT_GAP;
+   int16_t availableWidth = DISPLAY_WIDTH - plotAreaX;
+   int16_t availableHeight = DISPLAY_HEIGHT - HEADER_HEIGHT;
 
-	uint8_t xPercent = PLOT_SIZE_PERCENTS[constrain(plotXSizeIndex, 0L, (long)(NUM_PLOT_SIZES - 1))];
-	uint8_t yPercent = PLOT_SIZE_PERCENTS[constrain(plotYSizeIndex, 0L, (long)(NUM_PLOT_SIZES - 1))];
+   uint8_t xPercent = PLOT_SIZE_PERCENTS[constrain(plotXSizeIndex, 0L, (long)(NUM_PLOT_SIZES - 1))];
+   uint8_t yPercent = PLOT_SIZE_PERCENTS[constrain(plotYSizeIndex, 0L, (long)(NUM_PLOT_SIZES - 1))];
 
-	int16_t plotWidth = (int16_t)((int32_t)availableWidth * xPercent / 100);
-	int16_t plotHeight = (int16_t)((int32_t)availableHeight * yPercent / 100);
+   int16_t plotWidth = (int16_t)((int32_t)availableWidth * xPercent / 100);
+   int16_t plotHeight = (int16_t)((int32_t)availableHeight * yPercent / 100);
 
-	int16_t plotX = plotAreaX + (availableWidth - plotWidth) / 2;
-	int16_t plotY = HEADER_HEIGHT + (availableHeight - plotHeight) / 2;
+   int16_t plotX = plotAreaX + (availableWidth - plotWidth) / 2;
+   int16_t plotY = HEADER_HEIGHT + (availableHeight - plotHeight) / 2;
 
-	static int16_t lastPlotAreaX = -1;
-	static int16_t lastAvailableWidth = -1;
-	static int16_t lastAvailableHeight = -1;
-	static uint8_t lastXPercent = 0;
-	static uint8_t lastYPercent = 0;
-	bool availableAreaChanged = (plotAreaX != lastPlotAreaX) || (availableWidth != lastAvailableWidth) || (availableHeight != lastAvailableHeight)
-		|| (xPercent != lastXPercent) || (yPercent != lastYPercent);
-	if (availableAreaChanged)
-	{
-		arduino.fillRect(plotAreaX, HEADER_HEIGHT, availableWidth, availableHeight, PLOT_BACKGROUND_COLOR);
-		lastPlotAreaX = plotAreaX;
-		lastAvailableWidth = availableWidth;
-		lastAvailableHeight = availableHeight;
-		lastXPercent = xPercent;
-		lastYPercent = yPercent;
-	}
+   static int16_t lastPlotAreaX = -1;
+   static int16_t lastAvailableWidth = -1;
+   static int16_t lastAvailableHeight = -1;
+   static uint8_t lastXPercent = 0;
+   static uint8_t lastYPercent = 0;
+   bool availableAreaChanged = (plotAreaX != lastPlotAreaX) || (availableWidth != lastAvailableWidth) || (availableHeight != lastAvailableHeight)
+      || (xPercent != lastXPercent) || (yPercent != lastYPercent);
+   if (availableAreaChanged)
+   {
+      arduino.fillRect(plotAreaX, HEADER_HEIGHT, availableWidth, availableHeight, PLOT_BACKGROUND_COLOR);
+      lastPlotAreaX = plotAreaX;
+      lastAvailableWidth = availableWidth;
+      lastAvailableHeight = availableHeight;
+      lastXPercent = xPercent;
+      lastYPercent = yPercent;
+   }
 
-	return Rect16{ (uint16_t)plotX, (uint16_t)plotY, (uint16_t)plotWidth, (uint16_t)plotHeight };
+   return Rect16{ (uint16_t)plotX, (uint16_t)plotY, (uint16_t)plotWidth, (uint16_t)plotHeight };
 }
 
 ///
@@ -461,27 +461,27 @@ Rect16 computePlotRect()
 ///
 void recreatePlot()
 {
-	delete scatterPlot;
+   delete scatterPlot;
 
-	Rect16 rect = computePlotRect();
+   Rect16 rect = computePlotRect();
 
-	scatterPlot = new ScatterPlot(&arduino, rect, "#####", "##.#");
+   scatterPlot = new ScatterPlot(&arduino, rect, "#####", "##.#");
 
-	size_t maxSamples = MAX_SAMPLES_OPTIONS[constrain(maxSamplesIndex, 0L, (long)(NUM_MAX_SAMPLES_OPTIONS - 1))];
-	ScatterPlotSeries* rollingSeries = scatterPlot->createRollingSeries(maxSamples);
-	rollingSeries->movingSampleSize = (float)maxSamples / 5.0f;
-	sampleSeries = rollingSeries;
+   size_t maxSamples = MAX_SAMPLES_OPTIONS[constrain(maxSamplesIndex, 0L, (long)(NUM_MAX_SAMPLES_OPTIONS - 1))];
+   ScatterPlotSeries* rollingSeries = scatterPlot->createRollingSeries(maxSamples);
+   rollingSeries->movingSampleSize = (float)maxSamples / 5.0f;
+   sampleSeries = rollingSeries;
 
-	scatterPlot->setColors(PLOT_BACKGROUND_COLOR, PLOT_BACKGROUND_COLOR, Color::GRAY, Color::LABEL);
-	scatterPlot->setYAxisMode(ScatterPlot::AxisMode::GROW_ONLY);
+   scatterPlot->setColors(PLOT_BACKGROUND_COLOR, PLOT_BACKGROUND_COLOR, Color::GRAY, Color::LABEL);
+   scatterPlot->setYAxisMode(ScatterPlot::AxisMode::GROW_ONLY);
 
-	applyDisplayMode();
-	applyStatsMode();
+   applyDisplayMode();
+   applyStatsMode();
 
-	if (sensor != nullptr)
-	{
-		scatterPlot->setYAxisFormat(sensor->getFormatStr());
-	}
+   if (sensor != nullptr)
+   {
+      scatterPlot->setYAxisFormat(sensor->getFormatStr());
+   }
 }
 
 ///
@@ -493,10 +493,10 @@ void recreatePlot()
 ///
 void applyDisplayMode()
 {
-	long index = constrain(displayModeIndex, 0L, (long)(NUM_DISPLAY_MODES - 1));
+   long index = constrain(displayModeIndex, 0L, (long)(NUM_DISPLAY_MODES - 1));
 
-	sampleSeries->showPoints = (index == 0);
-	sampleSeries->showLines = (index == 1);
+   sampleSeries->showPoints = (index == 0);
+   sampleSeries->showLines = (index == 1);
 }
 
 ///
@@ -508,10 +508,10 @@ void applyDisplayMode()
 ///
 void applyStatsMode()
 {
-	long index = constrain(statsModeIndex, 0L, (long)(NUM_STATS_MODES - 1));
+   long index = constrain(statsModeIndex, 0L, (long)(NUM_STATS_MODES - 1));
 
-	sampleSeries->showMovingAverage = (index == 1 || index == 3);
-	sampleSeries->showStdDevBand = (index == 2 || index == 3);
+   sampleSeries->showMovingAverage = (index == 1 || index == 3);
+   sampleSeries->showStdDevBand = (index == 2 || index == 3);
 }
 
 ///
@@ -522,12 +522,12 @@ void applyStatsMode()
 ///
 void applyNoise()
 {
-	if (sensor == nullptr)
-	{
-		return;
-	}
+   if (sensor == nullptr)
+   {
+      return;
+   }
 
-	sensor->setNoiseStdDev(noiseEnabled != 0 ? noiseStdDevValue : 0.0f);
+   sensor->setNoiseStdDev(noiseEnabled != 0 ? noiseStdDevValue : 0.0f);
 }
 
 ///
@@ -540,23 +540,23 @@ void applyNoise()
 ///
 void selectTestFunction()
 {
-	sensor = TEST_FUNCTION_SENSORS[testFunctionIndex];
-	sensorReady = sensor->begin();
-	applyNoise();
+   sensor = TEST_FUNCTION_SENSORS[testFunctionIndex];
+   sensorReady = sensor->begin();
+   applyNoise();
 
-	if (sensor == &constantSensor)
-	{
-		statusTable.setFields(constantStatusCells);
-	}
-	else if (sensor == &sinSensor)
-	{
-		statusTable.setFields(sinStatusCells);
-	}
-	else
-	{
-		statusTable.setFields(defaultStatusCells);
-	}
-	statusTable.load();
+   if (sensor == &constantSensor)
+   {
+      statusTable.setFields(constantStatusCells);
+   }
+   else if (sensor == &sinSensor)
+   {
+      statusTable.setFields(sinStatusCells);
+   }
+   else
+   {
+      statusTable.setFields(defaultStatusCells);
+   }
+   statusTable.load();
 }
 
 ///
@@ -570,25 +570,25 @@ void selectTestFunction()
 ///
 void applyTestFunction()
 {
-	selectTestFunction();
-	recreatePlot();
+   selectTestFunction();
+   recreatePlot();
 
-	sampleCount = 0;
-	updateRate.reset();
+   sampleCount = 0;
+   updateRate.reset();
 
-	rateValue = updateRate.get();
-	updateMemoryReadout();
-	arduino.setTextSize(2);
-	statusTable.draw();
+   rateValue = updateRate.get();
+   updateMemoryReadout();
+   arduino.setTextSize(2);
+   statusTable.draw();
 
-	if (!sensorReady)
-	{
-		arduino.setTextSize(2);
-		arduino.setCursor(0, HEADER_HEIGHT);
-		arduino.println("Sensor init failed", Color::RED);
-		Serial.println("Error: sensor initialization failed");
-		return;
-	}
+   if (!sensorReady)
+   {
+      arduino.setTextSize(2);
+      arduino.setCursor(0, HEADER_HEIGHT);
+      arduino.println("Sensor init failed", Color::RED);
+      Serial.println("Error: sensor initialization failed");
+      return;
+   }
 }
 
 ///
@@ -599,148 +599,148 @@ void applyTestFunction()
 ///
 void clearPlot()
 {
-	sampleSeries->clear();
-	sampleCount = 0;
-	updateRate.reset();
+   sampleSeries->clear();
+   sampleCount = 0;
+   updateRate.reset();
 
-	scatterPlot->clear();
+   scatterPlot->clear();
 
-	rateValue = updateRate.get();
-	arduino.setTextSize(2);
-	statusTable.draw();
+   rateValue = updateRate.get();
+   arduino.setTextSize(2);
+   statusTable.draw();
 }
 
 void setup()
 {
-	SerialX::begin();
-	Wire.begin();
+   SerialX::begin();
+   Wire.begin();
 
-	arduino.begin();
-	statusTable.load();
+   arduino.begin();
+   statusTable.load();
 
-	drawTitle();
+   drawTitle();
 
-	// Restore text size 2 (used by the status table and plot) immediately after drawing the
-	// title at size 3, since computePlotRect() below measures the table's width via charW(),
-	// which depends on the currently active text size.
-	arduino.setTextSize(2);
+   // Restore text size 2 (used by the status table and plot) immediately after drawing the
+   // title at size 3, since computePlotRect() below measures the table's width via charW(),
+   // which depends on the currently active text size.
+   arduino.setTextSize(2);
 
-	startFreeHeapBytes = getTotalFreeHeap();
+   startFreeHeapBytes = getTotalFreeHeap();
 
-	// applyTestFunction() selects the sensor and its field set (which determines the status
-	// table's width) before recreating the plot, so computePlotRect() sizes the plot
-	// correctly from the very first frame (e.g. a 100% width plot isn't sized against the
-	// wrong table width at startup).
-	applyTestFunction();
+   // applyTestFunction() selects the sensor and its field set (which determines the status
+   // table's width) before recreating the plot, so computePlotRect() sizes the plot
+   // correctly from the very first frame (e.g. a 100% width plot isn't sized against the
+   // wrong table width at startup).
+   applyTestFunction();
 
-	// statusTable.load() (called from applyTestFunction() -> selectTestFunction()) may have
-	// restored persisted values that differ from these compile-time defaults. Re-sync the
-	// change-tracking variables to the now-current values so the first encoder turn (which
-	// only moves the selection highlight via selectNext(), not a value via adjust()) doesn't
-	// spuriously look like a value change and trigger an unwanted recreatePlot()/applyTestFunction().
-	lastTestFunctionIndex = testFunctionIndex;
-	lastPlotXSizeIndex = plotXSizeIndex;
-	lastPlotYSizeIndex = plotYSizeIndex;
-	lastMaxSamplesIndex = maxSamplesIndex;
-	lastNoiseEnabled = noiseEnabled;
-	lastNoiseStdDevValue = noiseStdDevValue;
-	lastDisplayModeIndex = displayModeIndex;
-	lastStatsModeIndex = statsModeIndex;
+   // statusTable.load() (called from applyTestFunction() -> selectTestFunction()) may have
+   // restored persisted values that differ from these compile-time defaults. Re-sync the
+   // change-tracking variables to the now-current values so the first encoder turn (which
+   // only moves the selection highlight via selectNext(), not a value via adjust()) doesn't
+   // spuriously look like a value change and trigger an unwanted recreatePlot()/applyTestFunction().
+   lastTestFunctionIndex = testFunctionIndex;
+   lastPlotXSizeIndex = plotXSizeIndex;
+   lastPlotYSizeIndex = plotYSizeIndex;
+   lastMaxSamplesIndex = maxSamplesIndex;
+   lastNoiseEnabled = noiseEnabled;
+   lastNoiseStdDevValue = noiseStdDevValue;
+   lastDisplayModeIndex = displayModeIndex;
+   lastStatsModeIndex = statsModeIndex;
 
-	// Discard any spurious position change accumulated on the encoders while pins were
-	// settling during begin()/applyTestFunction(), so the first real turn moves the selection
-	// immediately instead of just clearing a phantom delta.
-	arduino.encoderA.reset();
-	arduino.encoderB.reset();
+   // Discard any spurious position change accumulated on the encoders while pins were
+   // settling during begin()/applyTestFunction(), so the first real turn moves the selection
+   // immediately instead of just clearing a phantom delta.
+   arduino.encoderA.reset();
+   arduino.encoderB.reset();
 }
 
 void loop()
 {
-	if (arduino.buttonA.wasPressed())
-	{
-		Util::reset();
-	}
+   if (arduino.buttonA.wasPressed())
+   {
+      Util::reset();
+   }
 
-	if (arduino.buttonB.wasPressed())
-	{
-		clearPlot();
-	}
+   if (arduino.buttonB.wasPressed())
+   {
+      clearPlot();
+   }
 
-	int32_t statusSelectDelta = arduino.encoderA.delta();
-	int32_t statusAdjustDelta = arduino.encoderB.delta();
-	if (statusSelectDelta != 0 || statusAdjustDelta != 0)
-	{
-		statusTable.selectNext(statusSelectDelta);
-		statusTable.adjustSelected(statusAdjustDelta);
+   int32_t statusSelectDelta = arduino.encoderA.delta();
+   int32_t statusAdjustDelta = arduino.encoderB.delta();
+   if (statusSelectDelta != 0 || statusAdjustDelta != 0)
+   {
+      statusTable.selectNext(statusSelectDelta);
+      statusTable.adjustSelected(statusAdjustDelta);
 
-		statusTable.save();
-		arduino.setTextSize(2);
+      statusTable.save();
+      arduino.setTextSize(2);
 
-		if (testFunctionIndex != lastTestFunctionIndex)
-		{
-			lastTestFunctionIndex = testFunctionIndex;
-			applyTestFunction();
-		}
-		else if (plotXSizeIndex != lastPlotXSizeIndex || plotYSizeIndex != lastPlotYSizeIndex || maxSamplesIndex != lastMaxSamplesIndex)
-		{
-			lastPlotXSizeIndex = plotXSizeIndex;
-			lastPlotYSizeIndex = plotYSizeIndex;
-			lastMaxSamplesIndex = maxSamplesIndex;
-			recreatePlot();
-			sampleSeries->clear();
-			sampleCount = 0;
-			updateRate.reset();
-			rateValue = updateRate.get();
-			updateMemoryReadout();
-			statusTable.draw();
-		}
-		else if (noiseEnabled != lastNoiseEnabled || noiseStdDevValue != lastNoiseStdDevValue)
-		{
-			lastNoiseEnabled = noiseEnabled;
-			lastNoiseStdDevValue = noiseStdDevValue;
-			applyNoise();
-			statusTable.draw();
-		}
-		else if (displayModeIndex != lastDisplayModeIndex)
-		{
-			lastDisplayModeIndex = displayModeIndex;
-			applyDisplayMode();
-			scatterPlot->invalidate();
-			scatterPlot->draw();
-			statusTable.draw();
-		}
-		else if (statsModeIndex != lastStatsModeIndex)
-		{
-			lastStatsModeIndex = statsModeIndex;
-			applyStatsMode();
-			scatterPlot->invalidate();
-			scatterPlot->draw();
-			statusTable.draw();
-		}
-		else
-		{
-			statusTable.draw();
-		}
-	}
+      if (testFunctionIndex != lastTestFunctionIndex)
+      {
+         lastTestFunctionIndex = testFunctionIndex;
+         applyTestFunction();
+      }
+      else if (plotXSizeIndex != lastPlotXSizeIndex || plotYSizeIndex != lastPlotYSizeIndex || maxSamplesIndex != lastMaxSamplesIndex)
+      {
+         lastPlotXSizeIndex = plotXSizeIndex;
+         lastPlotYSizeIndex = plotYSizeIndex;
+         lastMaxSamplesIndex = maxSamplesIndex;
+         recreatePlot();
+         sampleSeries->clear();
+         sampleCount = 0;
+         updateRate.reset();
+         rateValue = updateRate.get();
+         updateMemoryReadout();
+         statusTable.draw();
+      }
+      else if (noiseEnabled != lastNoiseEnabled || noiseStdDevValue != lastNoiseStdDevValue)
+      {
+         lastNoiseEnabled = noiseEnabled;
+         lastNoiseStdDevValue = noiseStdDevValue;
+         applyNoise();
+         statusTable.draw();
+      }
+      else if (displayModeIndex != lastDisplayModeIndex)
+      {
+         lastDisplayModeIndex = displayModeIndex;
+         applyDisplayMode();
+         scatterPlot->invalidate();
+         scatterPlot->draw();
+         statusTable.draw();
+      }
+      else if (statsModeIndex != lastStatsModeIndex)
+      {
+         lastStatsModeIndex = statsModeIndex;
+         applyStatsMode();
+         scatterPlot->invalidate();
+         scatterPlot->draw();
+         statusTable.draw();
+      }
+      else
+      {
+         statusTable.draw();
+      }
+   }
 
-	if (!sensorReady)
-	{
-		return;
-	}
+   if (!sensorReady)
+   {
+      return;
+   }
 
-	float value = sensor->get();
-	if (!isfinite(value))
-	{
-		return;
-	}
+   float value = sensor->get();
+   if (!isfinite(value))
+   {
+      return;
+   }
 
-	sampleSeries->add(value);
-	sampleCount++;
+   sampleSeries->add(value);
+   sampleCount++;
 
-	if ((sampleCount % 10) == 0)
-	{
-		updateRate.tick();
-		scatterPlot->draw();
-		updateRateReadout();
-	}
+   if ((sampleCount % 10) == 0)
+   {
+      updateRate.tick();
+      scatterPlot->draw();
+      updateRateReadout();
+   }
 }

@@ -7,27 +7,27 @@
 
 ///
 /// <summary>
-/// Abstract base for one value shown as a row in a Table-based view (DisplayTableEditor),
+/// Abstract base for one value shown as a row in a Table-based view (FieldTableEditor),
 /// whether or not it can be edited.
 /// (format, value rendering). Row-level metadata (label, section header) is owned by the
-/// TableEditorRow that wraps this cell, not the cell itself. See CellEditor for the additional
-/// contract implemented by editable fields.
+/// FieldTableEditor::Row that wraps this value, not the value itself. See Editor for the
+/// additional contract implemented by editable fields.
 /// </summary>
 ///
-class DisplayTableCell
+class ValueBase
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the DisplayTableCell class.
+   /// Initializes a new instance of the ValueBase class.
    /// </summary>
    /// <param name="format">Format used to render the value for display.</param>
    ///
-   DisplayTableCell(const Format& format)
+   ValueBase(const Format& format)
       : _format(format)
    {}
 
-   virtual ~DisplayTableCell()
+   virtual ~ValueBase()
    {}
 
    ///
@@ -41,7 +41,7 @@ public:
    ///
    /// <summary>
    /// Gets whether this field can be selected and adjusted live via the encoders. Read-only
-   /// fields (e.g. measured values) return false so DisplayTableEditor skips them when
+   /// fields (e.g. measured values) return false so FieldTableEditor skips them when
    /// cycling the selection and never highlights or persists them.
    /// </summary>
    /// <returns>True if the field is selectable/adjustable; false if it is display-only.</returns>
@@ -80,7 +80,7 @@ public:
    ///
    /// <summary>
    /// Gets whether this field overrides its normal value color (e.g. to reflect a status
-   /// like connecting/connected/error). Default is false, so DisplayTableEditor falls back
+   /// like connecting/connected/error). Default is false, so FieldTableEditor falls back
    /// to its usual editable/read-only color.
    /// </summary>
    /// <returns>True if color() should be used instead of the default value color.</returns>
@@ -107,24 +107,24 @@ protected:
 
 ///
 /// <summary>
-/// Abstract base for one editable setup value shown by DisplayTableEditor.
+/// Abstract base for one editable setup value shown by FieldTableEditor.
 /// Subclasses bind to a caller-owned variable and implement type-specific adjustment and
 /// display. Persistence (loading/saving to Preferences) is handled entirely by
-/// DisplayTableEditor, using the generic numericValue()/setNumericValue()/defaultNumericValue()
-/// accessors below, so CellEditor itself has no Preferences dependency.
+/// FieldTableEditor, using the generic numericValue()/setNumericValue()/defaultNumericValue()
+/// accessors below, so Editor itself has no Preferences dependency.
 /// </summary>
 ///
-class CellEditor : public DisplayTableCell
+class Editor : public ValueBase
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the CellEditor class.
+   /// Initializes a new instance of the Editor class.
    /// </summary>
    /// <param name="format">Format used to render the value for display.</param>
    ///
-   CellEditor(const Format& format)
-      : DisplayTableCell(format)
+   Editor(const Format& format)
+      : ValueBase(format)
    {}
 
    ///
@@ -179,18 +179,18 @@ public:
 /// that need to share a table/alignment with editable fields but cannot be selected or adjusted.
 /// </summary>
 ///
-class ReadOnlyCell : public DisplayTableCell
+class FloatValue : public ValueBase
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the ReadOnlyCell class.
+   /// Initializes a new instance of the FloatValue class.
    /// </summary>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
    /// <param name="format">Format used to render the value for display.</param>
    ///
-   ReadOnlyCell(float* value, const Format& format)
-      : DisplayTableCell(format), _value(value)
+   FloatValue(float* value, const Format& format)
+      : ValueBase(format), _value(value)
    {}
 
    std::string valueText() override
@@ -209,12 +209,12 @@ private:
 /// fields but cannot be selected or adjusted.
 /// </summary>
 ///
-class StringCell : public DisplayTableCell
+class StringValue : public ValueBase
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the StringCell class.
+   /// Initializes a new instance of the StringValue class.
    /// </summary>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
    /// <param name="format">Format used to render the value for display.</param>
@@ -222,8 +222,8 @@ public:
    /// reflect a status like connecting/connected/error). When omitted, the default value color
    /// is used.</param>
    ///
-   StringCell(const std::string* value, const Format& format, const Color* color = nullptr)
-      : DisplayTableCell(format), _value(value), _color(color)
+   StringValue(const std::string* value, const Format& format, const Color* color = nullptr)
+      : ValueBase(format), _value(value), _color(color)
    {}
 
    std::string valueText() override
@@ -252,16 +252,28 @@ private:
 /// different row than a field in an adjacent table it might otherwise visually overlap.
 /// </summary>
 ///
-class BlankCell : public DisplayTableCell
+class BlankValue : public ValueBase
 {
 public:
-   BlankCell()
-      : DisplayTableCell(Format(size_t(0)))
+   BlankValue()
+      : ValueBase(Format(size_t(0)))
    {}
 
    std::string valueText() override
    {
       return "";
+   }
+
+   ///
+   /// <summary>
+   /// Gets a shared BlankValue instance, since a spacer row carries no per-instance state.
+   /// </summary>
+   /// <returns>A shared BlankValue instance.</returns>
+   ///
+   static BlankValue& instance()
+   {
+      static BlankValue blank;
+      return blank;
    }
 };
 
@@ -271,12 +283,12 @@ public:
 /// implement non-linear stepping.
 /// </summary>
 ///
-class IntCellEditor : public CellEditor
+class IntEditor : public Editor
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the IntCellEditor class.
+   /// Initializes a new instance of the IntEditor class.
    /// </summary>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
    /// <param name="minValue">Minimum allowed value.</param>
@@ -285,11 +297,18 @@ public:
    /// <param name="defaultValue">Default value used when no saved value exists or on reset.</param>
    /// <param name="format">Format used to render the value for display.</param>
    ///
-   IntCellEditor(long* value,
-      long minValue, long maxValue, long step, long defaultValue,
+   IntEditor(long* value,
+      long minValue,
+      long maxValue,
+      long step,
+      long defaultValue,
       const Format& format)
-      : CellEditor(format),
-      _value(value), _minValue(minValue), _maxValue(maxValue), _step(step), _default(defaultValue)
+      : Editor(format),
+      _value(value),
+      _minValue(minValue),
+      _maxValue(maxValue),
+      _step(step),
+      _default(defaultValue)
    {}
 
    void reset() override
@@ -349,23 +368,23 @@ protected:
 /// <summary>
 /// Boolean setup field backed by a caller-owned bool. Adjusting the field (in either
 /// direction) toggles it, and valueText() displays "False"/"True" instead of a raw
-/// number. Replaces the common pattern of writing a two-entry EnumCellEditor just to
+/// number. Replaces the common pattern of writing a two-entry EnumEditor just to
 /// toggle a boolean value.
 /// </summary>
 ///
-class BoolCellEditor : public CellEditor
+class BoolEditor : public Editor
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the BoolCellEditor class.
+   /// Initializes a new instance of the BoolEditor class.
    /// </summary>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
    /// <param name="defaultValue">Default value used when no saved value exists or on reset.</param>
    /// <param name="format">Format used to render the value for display.</param>
    ///
-   BoolCellEditor(bool* value, bool defaultValue, const Format& format)
-      : CellEditor(format), _value(value), _default(defaultValue)
+   BoolEditor(bool* value, bool defaultValue, const Format& format)
+      : Editor(format), _value(value), _default(defaultValue)
    {}
 
    void reset() override
@@ -408,26 +427,28 @@ private:
 /// Enumerated-selection field backed by a caller-owned long index into a fixed array of
 /// string labels. Adjusting the field steps through the labels by index, wrapping around at
 /// either end, and valueText() displays the selected label instead of a raw index number.
-/// Replaces the common pattern of writing a one-off IntCellEditor subclass just to
+/// Replaces the common pattern of writing a one-off IntEditor subclass just to
 /// step through and display a small fixed set of string options (e.g. "Points"/"Lines",
 /// "True"/"False", "Fixed"/"Timed").
 /// </summary>
 ///
-class EnumCellEditor : public IntCellEditor
+class EnumEditor : public IntEditor
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the EnumCellEditor class.
+   /// Initializes a new instance of the EnumEditor class.
    /// </summary>
    /// <param name="value">Caller-owned variable that holds the current selected index.</param>
    /// <param name="labels">Span of label strings to step through and display.</param>
    /// <param name="defaultValue">Default index used when no saved value exists or on reset.</param>
    /// <param name="format">Format used to render the selected label for display.</param>
    ///
-   EnumCellEditor(long* value, std::span<const char* const> labels,
-      long defaultValue, const Format& format)
-      : IntCellEditor(value, 0, (long)labels.size() - 1, 1, defaultValue, format),
+   EnumEditor(long* value,
+      std::span<const char* const> labels,
+      long defaultValue,
+      const Format& format)
+      : IntEditor(value, 0, (long)labels.size() - 1, 1, defaultValue, format),
       _labels(labels)
    {}
 
@@ -454,12 +475,12 @@ private:
 /// to implement non-linear stepping.
 /// </summary>
 ///
-class FloatCellEditor : public CellEditor
+class FloatEditor : public Editor
 {
 public:
    ///
    /// <summary>
-   /// Initializes a new instance of the FloatCellEditor class.
+   /// Initializes a new instance of the FloatEditor class.
    /// </summary>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
    /// <param name="minValue">Minimum allowed value.</param>
@@ -468,11 +489,18 @@ public:
    /// <param name="defaultValue">Default value used when no saved value exists or on reset.</param>
    /// <param name="format">Format used to render the value for display.</param>
    ///
-   FloatCellEditor(float* value,
-      float minValue, float maxValue, float step, float defaultValue,
+   FloatEditor(float* value,
+      float minValue,
+      float maxValue,
+      float step,
+      float defaultValue,
       const Format& format)
-      : CellEditor(format),
-      _value(value), _minValue(minValue), _maxValue(maxValue), _step(step), _default(defaultValue)
+      : Editor(format),
+      _value(value),
+      _minValue(minValue),
+      _maxValue(maxValue),
+      _step(step),
+      _default(defaultValue)
    {}
 
    void reset() override

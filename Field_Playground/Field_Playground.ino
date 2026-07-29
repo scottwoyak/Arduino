@@ -23,18 +23,18 @@ constexpr uint8_t HEADING_TEXT_SIZE = 4;
 constexpr uint8_t FIELD_TEXT_SIZE = 3;
 
 // ----------- Field Value
-Format valueFormat("##.#");
+constexpr const char* VALUE_FORMAT = "##.#";
 constexpr float VALUE_STEP = 0.1f;
 constexpr uint8_t NUM_FIELDS = 5;
 float values[NUM_FIELDS] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 Color backgroundColors[NUM_FIELDS] = { Color::BLACK, Color::BLACK, Color::BLACK, Color::BLACK, Color::BLACK };
 uint8_t selectedIndex = 0;
 
-Field topLeftField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, Field::Alignment::LEFT);
-Field topRightField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, Field::Alignment::RIGHT);
-Field bottomRightField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, Field::Alignment::RIGHT);
-Field bottomLeftField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, Field::Alignment::LEFT);
-Field centerField(&arduino, "Label", valueFormat, FIELD_TEXT_SIZE, Field::Alignment::COLON);
+Field topLeftField(&arduino, "Label", VALUE_FORMAT, FIELD_TEXT_SIZE, Field::Alignment::LEFT);
+Field topRightField(&arduino, "Label", VALUE_FORMAT, FIELD_TEXT_SIZE, Field::Alignment::RIGHT);
+Field bottomRightField(&arduino, "Label", VALUE_FORMAT, FIELD_TEXT_SIZE, Field::Alignment::RIGHT);
+Field bottomLeftField(&arduino, "Label", VALUE_FORMAT, FIELD_TEXT_SIZE, Field::Alignment::LEFT);
+Field centerField(&arduino, "Label", VALUE_FORMAT, FIELD_TEXT_SIZE, Field::Alignment::GAP);
 
 // Selection rotation order: top-left, top-right, bottom-right, bottom-left, center
 Field* fields[NUM_FIELDS] =

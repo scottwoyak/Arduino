@@ -27,8 +27,8 @@
 #error "This sketch requires a Playground board (e.g. ESP32-S3 Dev Module wired as a Playground)."
 #endif
 
-#include "DisplayTableCellEditor.h"
-#include "DisplayTableEditor.h"
+#include "ValueEditor.h"
+#include "FieldTableEditor.h"
 #include "DisplayValue.h"
 #include "RollingRate.h"
 #include "SerialX.h"
@@ -88,25 +88,25 @@ std::string statusText = "Connecting to WiFi...";
 Color statusColor = Color::BLUE;
 std::string topicText = TELEMETRY_TOPIC;
 std::string hostText = " ";
-StringCell topicCell(&topicText, topicFormat);
-StringCell hostCell(&hostText, hostFormat);
+StringValue topicValue(&topicText, topicFormat);
+StringValue hostValue(&hostText, hostFormat);
 long testFunctionIndex = 0;
 long lastTestFunctionIndex = 0;
-EnumCellEditor sourceCell(&testFunctionIndex,
+EnumEditor sourceEditor(&testFunctionIndex,
    TEST_FUNCTION_LABELS, 0, sourceFormat);
-IntCellEditor targetCell(&publishRatePerSec,
+IntEditor targetEditor(&publishRatePerSec,
    MIN_PUBLISH_RATE_PER_SEC, MAX_PUBLISH_RATE_PER_SEC, PUBLISH_RATE_STEP, DEFAULT_PUBLISH_RATE_PER_SEC, rateFormat);
 float rateValue = 0.0f;
-ReadOnlyCell rateCell(&rateValue, rateFormat);
-TableEditorRow statusCells[] =
+FloatValue rateValueField(&rateValue, rateFormat);
+FieldTableEditor::Row statusCells[] =
 {
-   { "Topic", &topicCell },
-   { "Host", &hostCell },
-   { "Source", &sourceCell },
-   { "Target", &targetCell },
-   { "Rate", &rateCell },
+   { "Topic", &topicValue },
+   { "Host", &hostValue },
+   { "Source", &sourceEditor },
+   { "Target", &targetEditor },
+   { "Rate", &rateValueField },
 };
-DisplayTableEditor table(&arduino, PREF_NAMESPACE, statusCells, 0, 0);
+FieldTableEditor table(&arduino, PREF_NAMESPACE, statusCells, 0, 0);
 DisplayValue* valueField = nullptr;
 DisplayValue* statusField = nullptr;
 float lastValue = NAN;
@@ -231,11 +231,11 @@ void setup()
    int16_t valueAreaCenterX = arduino.width() / 2;
    int16_t valueAreaCenterY = valueAreaTop + valueAreaHeight / 2;
    valueField = new DisplayValue(&arduino, lastValueFormat, 5, DisplayValue::Alignment::CENTER);
-   valueField->setPosition(valueAreaCenterX, valueAreaCenterY, Anchor::CENTER);
+   valueField->setPosition(valueAreaCenterX, valueAreaCenterY, VerticalAnchor::MIDDLE);
 
    arduino.setTextSize(2);
    statusField = new DisplayValue(&arduino, statusValueFormat, 2, DisplayValue::Alignment::CENTER);
-   statusField->setPosition(valueAreaCenterX, valueAreaCenterY, Anchor::CENTER);
+   statusField->setPosition(valueAreaCenterX, valueAreaCenterY, VerticalAnchor::MIDDLE);
 
    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
    while (WiFi.status() != WL_CONNECTED)

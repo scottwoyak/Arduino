@@ -32,9 +32,9 @@ constexpr uint8_t NUM_FIELDS = 3;
 Format fieldFormats[NUM_FIELDS] = { Format("###.#"), Format("###.##"), Format("#.##") };
 const char* fieldLabels[NUM_FIELDS] = { "Speed", "Acceleration", "Position" };
 Field fields[NUM_FIELDS] = {
-   Field(&arduino, fieldLabels[0], fieldFormats[0], FIELD_TEXT_SIZE, Field::Alignment::COLON),
-   Field(&arduino, fieldLabels[1], fieldFormats[1], FIELD_TEXT_SIZE, Field::Alignment::COLON),
-   Field(&arduino, fieldLabels[2], fieldFormats[2], FIELD_TEXT_SIZE, Field::Alignment::COLON),
+   Field(&arduino, fieldLabels[0], fieldFormats[0].formatString().c_str(), FIELD_TEXT_SIZE, Field::Alignment::GAP),
+   Field(&arduino, fieldLabels[1], fieldFormats[1].formatString().c_str(), FIELD_TEXT_SIZE, Field::Alignment::GAP),
+   Field(&arduino, fieldLabels[2], fieldFormats[2].formatString().c_str(), FIELD_TEXT_SIZE, Field::Alignment::GAP),
 };
 
 // ----------- Rate readout (lower right)

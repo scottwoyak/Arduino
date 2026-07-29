@@ -1,7 +1,7 @@
 //
 // Basic FieldTable demonstration.
 //
-// Shows the minimal use of FieldTable: a single-column, COLON-aligned "label: value"
+// Shows the minimal use of FieldTable: a single-column, GAP-aligned "label value"
 // table redrawn as fast as possible, grouped into two sections ("Motion" and
 // "Environment"). Sections are their own rows in the table (see FieldTable::Row's
 // section-header constructor and addSection()), counting toward row indices the same

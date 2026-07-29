@@ -2,7 +2,7 @@
 
 #include "ArduinoWithDisplay.h"
 #include "Anchor.h"
-#include "DisplayTableCellEditor.h"
+#include "ValueEditor.h"
 #include "Field.h"
 #include "Format.h"
 #include "Color.h"
@@ -14,14 +14,14 @@
 #include <vector>
 
 // Forward declaration only - FieldTableEditor is built on top of FieldTable the same
-// way DisplayTableEditor is built on top of Table (see FieldTableEditor.h).
+// way the old DisplayTableEditor was built on top of Table (see FieldTableEditor.h).
 class FieldTableEditor;
 
 ///
 /// <summary>
-/// A utility class to display a single-column "label: value" table on an Arduino
+/// A utility class to display a single-column "label value" table on an Arduino
 /// display, built from a stack of Field objects rather than Table's per-column
-/// sprites. Every row is drawn COLON-aligned, so every row's ':' separator lines up
+/// sprites. Every row is drawn GAP-aligned, so every row's value lines up
 /// at the same X position regardless of how long each row's own label is. Like Table,
 /// rows can be grouped under section header rows (see addSection()), which are stored
 /// and indexed as rows in their own right - counting toward rowIndex arguments the same
@@ -63,7 +63,7 @@ public:
       ///
       /// <summary>
       /// Constructs a data row backed directly by a caller-owned float, rather than a
-      /// DisplayTableCell or a value pushed in per-call: draw() reads *value itself, only
+      /// ValueBase or a value pushed in per-call: draw() reads *value itself, only
       /// redrawing the row when the value has actually changed since the last draw().
       /// </summary>
       /// <param name="label">The text label for the row.</param>
@@ -76,16 +76,16 @@ public:
 
       ///
       /// <summary>
-      /// Constructs a data row backed by a DisplayTableCell rather than a value pushed in
-      /// per-call: draw() reads the cell's current valueText() itself, only redrawing the
+      /// Constructs a data row backed by a ValueBase rather than a value pushed in
+      /// per-call: draw() reads the value's current valueText() itself, only redrawing the
       /// row when its formatted text actually changes.
       /// </summary>
       /// <param name="label">The text label for the row.</param>
-      /// <param name="cell">The cell providing this row's format and current value.</param>
+      /// <param name="value">The ValueBase providing this row's format and current value.</param>
       /// <param name="labelColor">The color to draw the label text (default: Color::LABEL).</param>
       ///
-      Row(const char* label, DisplayTableCell* cell, Color labelColor = Color::LABEL)
-         : label(label), labelColor(labelColor), cell(cell) {}
+      Row(const char* label, ValueBase* value, Color labelColor = Color::LABEL)
+         : label(label), labelColor(labelColor), value(value) {}
 
       ///
       /// <summary>
@@ -96,7 +96,7 @@ public:
       ///
       constexpr Row(const char* section) : label(section) {}
 
-      DisplayTableCell* cell = nullptr;
+      ValueBase* value = nullptr;
       float* valuePtr = nullptr;
    };
 
@@ -122,10 +122,10 @@ private:
       bool drawn = false;
       int16_t yOffset = 0;
 
-      // Set only for rows backed by a DisplayTableCell (see the Row(label, cell) constructor);
-      // draw() reads this cell's current valueText() and lastValue caches the most recently
+      // Set only for rows backed by a ValueBase (see the Row(label, value) constructor);
+      // draw() reads this value's current valueText() and lastValue caches the most recently
       // drawn text so draw() can skip repainting rows whose formatted text hasn't changed.
-      DisplayTableCell* cell = nullptr;
+      ValueBase* value = nullptr;
       std::string lastValue;
 
       // Set only for rows backed directly by a caller-owned float (see the Row(label,
@@ -135,9 +135,9 @@ private:
       float* valuePtr = nullptr;
       float lastFloatValue = NAN;
 
-      // Data row constructor: owns a Field for COLON-aligned label/value rendering.
+      // Data row constructor: owns a Field for GAP-aligned label/value rendering.
       RowContents(ArduinoWithDisplay* display, const char* label, const char* formatStr, uint8_t textSize, Color labelColor)
-         : isSection(false), label(label), field(new Field(display, label, Format(formatStr), textSize, Field::Alignment::COLON)),
+         : isSection(false), label(label), field(new Field(display, label, formatStr, textSize, Field::Alignment::GAP)),
            labelColor(labelColor), labelLength((uint8_t)strlen(label))
       {
       }
@@ -145,23 +145,23 @@ private:
       // Data row constructor taking an already-parsed Format: used internally by
       // FieldTableEditor, which owns parsed Format instances per field.
       RowContents(ArduinoWithDisplay* display, const char* label, const Format& format, uint8_t textSize, Color labelColor)
-         : isSection(false), label(label), field(new Field(display, label, format, textSize, Field::Alignment::COLON)),
+         : isSection(false), label(label), field(new Field(display, label, format, textSize, Field::Alignment::GAP)),
            labelColor(labelColor), labelLength((uint8_t)strlen(label))
       {
       }
 
-      // Data row constructor backed by a DisplayTableCell: draw() pulls the value from the
-      // cell itself instead of the caller pushing it in via a per-row draw call.
-      RowContents(ArduinoWithDisplay* display, const char* label, DisplayTableCell* cell, uint8_t textSize, Color labelColor)
-         : isSection(false), label(label), field(new Field(display, label, cell->format(), textSize, Field::Alignment::COLON)),
-           labelColor(labelColor), labelLength((uint8_t)strlen(label)), cell(cell)
+      // Data row constructor backed by a ValueBase: draw() pulls the value from the
+      // value itself instead of the caller pushing it in via a per-row draw call.
+      RowContents(ArduinoWithDisplay* display, const char* label, ValueBase* value, uint8_t textSize, Color labelColor)
+         : isSection(false), label(label), field(new Field(display, label, value->format(), textSize, Field::Alignment::GAP)),
+           labelColor(labelColor), labelLength((uint8_t)strlen(label)), value(value)
       {
       }
 
       // Data row constructor backed directly by a caller-owned float: draw() pulls the
       // value from *valuePtr itself instead of the caller pushing it in via a per-row draw call.
       RowContents(ArduinoWithDisplay* display, const char* label, const char* formatStr, float* value, uint8_t textSize, Color labelColor)
-         : isSection(false), label(label), field(new Field(display, label, Format(formatStr), textSize, Field::Alignment::COLON)),
+         : isSection(false), label(label), field(new Field(display, label, formatStr, textSize, Field::Alignment::GAP)),
            labelColor(labelColor), labelLength((uint8_t)strlen(label)), valuePtr(value)
       {
       }
@@ -205,7 +205,7 @@ private:
    /// <param name="labelColor">The color to draw the label text (default: Color::LABEL).</param>
    /// <param name="valueColor">The color to draw the value text (default: Color::VALUE); unused,
    /// kept for symmetry with addRow(label, formatStr, valueColor) since the value color is
-   /// actually supplied per-call by the row's cell during draw().</param>
+   /// actually supplied per-call by the row's value during draw().</param>
    ///
    void addRow(const char* label, const char* formatStr, Color labelColor, Color valueColor)
    {
@@ -223,7 +223,7 @@ private:
 
    ///
    /// <summary>
-   /// Adds a new row, using the given already-parsed Format for its value cell. Only
+   /// Adds a new row, using the given already-parsed Format for its value. Only
    /// reachable internally (e.g. via FieldTableEditor, which owns parsed Format
    /// instances per field); sketches should use the format-string overload of addRow()
    /// instead.
@@ -277,7 +277,7 @@ private:
       int16_t rowHeight = _display->charH(_textSize);
       int16_t halfRow = rowHeight / 2;
       int16_t y = 0;
-      int16_t colonX = _x + (int16_t)(_maxLabelLength * _display->charW(_textSize));
+      int16_t gapX = _x + (int16_t)(_maxLabelLength * _display->charW(_textSize));
 
       for (size_t i = 0; i < _rows.size(); i++)
       {
@@ -293,7 +293,7 @@ private:
 
          if (!row.isSection)
          {
-            row.field->setPosition(Point16(colonX, _y + y));
+            row.field->setPosition(Point16(gapX, _y + y));
          }
 
          if (!_showSections && row.isSection)
@@ -365,7 +365,7 @@ public:
    /// <param name="labelColor">The color to draw the label text.</param>
    /// <param name="formatStr">Pattern containing optional prefix/postfix and # placeholders.</param>
    /// <param name="valueColor">Unused; kept only so callers can mirror Table::addRow()'s
-   /// parameter order. The value color is supplied per-call by the row's cell during draw() instead.</param>
+   /// parameter order. The value color is supplied per-call by the row's value during draw() instead.</param>
    ///
    void addRow(const char* label, Color labelColor, const char* formatStr, Color valueColor = Color::VALUE)
    {
@@ -380,7 +380,7 @@ public:
    /// <param name="label">The text label for the row.</param>
    /// <param name="formatStr">Pattern containing optional prefix/postfix and # placeholders.</param>
    /// <param name="valueColor">Unused; kept only so callers can mirror Table::addRow()'s
-   /// parameter order. The value color is supplied per-call by the row's cell during draw() instead.</param>
+   /// parameter order. The value color is supplied per-call by the row's value during draw() instead.</param>
    ///
    void addRow(const char* label, const char* formatStr, Color valueColor = Color::VALUE)
    {
@@ -389,17 +389,17 @@ public:
 
    ///
    /// <summary>
-   /// Adds a new row backed by a DisplayTableCell instead of a value pushed in per-call:
-   /// draw() reads the cell's current valueText() itself, only redrawing the row when its
+   /// Adds a new row backed by a ValueBase instead of a value pushed in per-call:
+   /// draw() reads the value's current valueText() itself, only redrawing the row when its
    /// formatted text actually changes.
    /// </summary>
    /// <param name="label">The text label for the row.</param>
-   /// <param name="cell">The cell providing this row's format and current value.</param>
+   /// <param name="value">The ValueBase providing this row's format and current value.</param>
    /// <param name="labelColor">The color to draw the label text (default: Color::LABEL).</param>
    ///
-   void addRow(const char* label, DisplayTableCell* cell, Color labelColor = Color::LABEL)
+   void addRow(const char* label, ValueBase* value, Color labelColor = Color::LABEL)
    {
-      RowContents* row = new RowContents(_display, label, cell, _textSize, labelColor);
+      RowContents* row = new RowContents(_display, label, value, _textSize, labelColor);
       if (row->labelLength > _maxLabelLength)
       {
          _maxLabelLength = row->labelLength;
@@ -411,7 +411,7 @@ public:
 
    ///
    /// <summary>
-   /// Adds a new row backed directly by a caller-owned float instead of a DisplayTableCell
+   /// Adds a new row backed directly by a caller-owned float instead of a ValueBase
    /// or a value pushed in per-call: draw() reads *value itself, only redrawing the row
    /// when the value has actually changed since the last draw().
    /// </summary>
@@ -436,9 +436,9 @@ public:
    /// <summary>
    /// Adds every row described in the given array, in order, equivalent to calling
    /// addRow(row.label, row.labelColor, row.formatStr, row.valueColor) - or
-   /// addRow(row.label, row.cell, row.labelColor) for a cell-backed Row, or
+   /// addRow(row.label, row.value, row.labelColor) for a value-backed Row, or
    /// addRow(row.label, row.formatStr, row.valuePtr, row.labelColor) for a float-backed
-   /// Row - once per entry. A Row entry with no format string, no cell, and no value
+   /// Row - once per entry. A Row entry with no format string, no value, and no value
    /// pointer (see Row's section-header constructor) is added as its own section row via
    /// addSection() instead.
    /// </summary>
@@ -448,9 +448,9 @@ public:
    {
       for (const auto& row : rows)
       {
-         if (row.cell != nullptr)
+         if (row.value != nullptr)
          {
-            addRow(row.label, row.cell, row.labelColor);
+            addRow(row.label, row.value, row.labelColor);
          }
          else if (row.valuePtr != nullptr)
          {
@@ -544,20 +544,20 @@ public:
          int16_t width = getWidth();
          int16_t height = getHeight();
 
-         if (anchor == Anchor::TOP_RIGHT || anchor == Anchor::BOTTOM_RIGHT)
+         if (anchor == Anchor::TOP_RIGHT || anchor == Anchor::BOTTOM_RIGHT || anchor == Anchor::MIDDLE_RIGHT)
          {
             x -= width;
          }
-         else if (anchor == Anchor::CENTER)
+         else if (anchor == Anchor::CENTER || anchor == Anchor::TOP_CENTER || anchor == Anchor::BOTTOM_CENTER)
          {
             x -= width / 2;
          }
 
-         if (anchor == Anchor::BOTTOM_LEFT || anchor == Anchor::BOTTOM_RIGHT)
+         if (anchor == Anchor::BOTTOM_LEFT || anchor == Anchor::BOTTOM_RIGHT || anchor == Anchor::BOTTOM_CENTER)
          {
             y -= height;
          }
-         else if (anchor == Anchor::CENTER)
+         else if (anchor == Anchor::CENTER || anchor == Anchor::MIDDLE_LEFT || anchor == Anchor::MIDDLE_RIGHT)
          {
             y -= height / 2;
          }
@@ -664,7 +664,7 @@ public:
    /// Draws a single data row's label (the first time it's drawn, or after
    /// invalidate()/repositioning) and its current value. Only reachable internally (e.g.
    /// via FieldTableEditor, which supplies its own per-row selection/disabled colors
-   /// instead of pulling them from a cell); sketches should use draw() instead.
+   /// instead of pulling them from a value); sketches should use draw() instead.
    /// </summary>
    /// <param name="rowIndex">The zero-based index of the row to draw; must refer to a
    /// data row added via addRow(), not a section row added via addSection().</param>
@@ -718,12 +718,12 @@ public:
    ///
    /// <summary>
    /// Draws every row: section headers the first time they're drawn since the last
-   /// layout change, every row backed by a DisplayTableCell (see addRow(label, cell)) by
+   /// layout change, every row backed by a DisplayTableValue (see addRow(label, value)) by
    /// reading its current valueText(), and every row backed directly by a caller-owned
    /// float (see addRow(label, formatStr, value)) by reading *value - only repainting
    /// rows whose value has changed since the last call (or that haven't been drawn yet,
    /// e.g. after invalidate() or repositioning). Rows added via the plain formatStr
-   /// overloads of addRow() have no cell or value pointer to pull a value from and are
+   /// overloads of addRow() have no value or value pointer to pull a value from and are
    /// skipped.
    /// </summary>
    ///
@@ -741,15 +741,15 @@ public:
             continue;
          }
 
-         if (row.cell != nullptr)
+         if (row.value != nullptr)
          {
-            std::string value = row.cell->valueText();
+            std::string value = row.value->valueText();
             if (row.drawn && value == row.lastValue)
             {
                continue;
             }
 
-            Color valueColor = row.cell->hasColor() ? row.cell->color() : Color::VALUE;
+            Color valueColor = row.value->hasColor() ? row.value->color() : Color::VALUE;
             _drawDataRow(i, value, valueColor, Color::BLACK);
             row.lastValue = value;
          }

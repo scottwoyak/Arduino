@@ -8,12 +8,12 @@
 
 ///
 /// <summary>
-/// Draws a single "label: value" pair on a display where the value updates frequently.
+/// Draws a single "label value" pair on a display where the value updates frequently.
 /// On the first draw(), the full label and value are rendered directly to the display.
 /// On subsequent calls, only the value is redrawn, via a DisplayValue that keeps its own
 /// off-screen sprite pushed over the value region. This avoids reprinting the label and
 /// reduces flicker compared to redrawing the whole string every frame. The value is
-/// formatted through a Format object, which keeps its rendered width fixed.
+/// formatted through a format string, which keeps its rendered width fixed.
 /// </summary>
 /// <remarks>
 /// The value's DisplayValue is created in the constructor so it is ready before the
@@ -36,7 +36,7 @@ public:
    {
       LEFT,   // pos.x is the label's left edge
       RIGHT,  // pos.x is the value's right edge
-      COLON   // pos.x is the position of the ':' character separating label and value
+      GAP     // pos.x is the position of the gap separating label and value
    };
 
 private:
@@ -56,19 +56,19 @@ public:
    /// </summary>
    /// <param name="display">The display interface to draw onto.</param>
    /// <param name="pos">The X/Y coordinate of the label's top-left corner.</param>
-   /// <param name="label">The label text drawn before the value (a ": " separator is added).
+   /// <param name="label">The label text drawn before the value (a gap separator is added).
    /// Pass an empty string to draw only the value, with no label or separator.</param>
-   /// <param name="format">The formatter applied to the value, controlling its fixed width.</param>
+   /// <param name="formatStr">The format pattern applied to the value, controlling its fixed width.</param>
    /// <param name="textSize">The font size used to draw the label and value text.</param>
    /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
-   /// edge (RIGHT), or the position of the ':' character separating label and value (COLON).</param>
+   /// edge (RIGHT), or the position of the gap separating label and value (GAP).</param>
    ///
    Field(ArduinoWithDisplay* display, Point16 pos,
-                const char* label, const Format& format, uint8_t textSize,
+                const char* label, const char* formatStr, uint8_t textSize,
                 Alignment alignment = Alignment::LEFT)
       : _display(display), _label(label),
         _textSize(textSize), _alignment(alignment),
-        _value(display, format, _textSize)
+        _value(display, Format(formatStr), _textSize)
    {
       setPosition(pos);
    }
@@ -79,16 +79,16 @@ public:
    /// </summary>
    /// <param name="display">The display interface to draw onto.</param>
    /// <param name="pos">The X/Y coordinate of the value's top-left corner.</param>
-   /// <param name="format">The formatter applied to the value, controlling its fixed width.</param>
+   /// <param name="formatStr">The format pattern applied to the value, controlling its fixed width.</param>
    /// <param name="textSize">The font size used to draw the value text.</param>
    /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
-   /// edge (RIGHT), or the position of the ':' character separating label and value (COLON);
-   /// COLON has no effect when there is no label.</param>
+   /// edge (RIGHT), or the position of the gap separating label and value (GAP);
+   /// GAP has no effect when there is no label.</param>
    ///
    Field(ArduinoWithDisplay* display, Point16 pos,
-                const Format& format, uint8_t textSize,
+                const char* formatStr, uint8_t textSize,
                 Alignment alignment = Alignment::LEFT)
-      : Field(display, pos, "", format, textSize, alignment)
+      : Field(display, pos, "", formatStr, textSize, alignment)
    {
    }
 
@@ -99,18 +99,66 @@ public:
    /// Call setPosition() once the position is known.
    /// </summary>
    /// <param name="display">The display interface to draw onto.</param>
-   /// <param name="label">The label text drawn before the value (a ": " separator is added).
+   /// <param name="label">The label text drawn before the value (a gap separator is added).
    /// Pass an empty string to draw only the value, with no label or separator.</param>
-   /// <param name="format">The formatter applied to the value, controlling its fixed width.</param>
+   /// <param name="formatStr">The format pattern applied to the value, controlling its fixed width.</param>
    /// <param name="textSize">The font size used to draw the label and value text.</param>
    /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
-   /// edge (RIGHT), or the position of the ':' character separating label and value (COLON).</param>
+   /// edge (RIGHT), or the position of the gap separating label and value (GAP).</param>
+   ///
+   Field(ArduinoWithDisplay* display,
+                const char* label, const char* formatStr, uint8_t textSize,
+                Alignment alignment = Alignment::LEFT)
+      : Field(display, Point16(0, 0), label, formatStr, textSize, alignment)
+   {
+   }
+
+   ///
+   /// <summary>
+   /// Initializes a new instance of the Field class without specifying a position, using
+   /// an already-parsed Format. Used internally by FieldTable/FieldTableEditor, which own
+   /// parsed Format instances (e.g. from a ValueBase) rather than format strings.
+   /// </summary>
+   /// <param name="display">The display interface to draw onto.</param>
+   /// <param name="label">The label text drawn before the value (a gap separator is added).
+   /// Pass an empty string to draw only the value, with no label or separator.</param>
+   /// <param name="format">The already-parsed formatter applied to the value.</param>
+   /// <param name="textSize">The font size used to draw the label and value text.</param>
+   /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
+   /// edge (RIGHT), or the position of the gap separating label and value (GAP).</param>
    ///
    Field(ArduinoWithDisplay* display,
                 const char* label, const Format& format, uint8_t textSize,
                 Alignment alignment = Alignment::LEFT)
-      : Field(display, Point16(0, 0), label, format, textSize, alignment)
+      : _display(display), _label(label),
+        _textSize(textSize), _alignment(alignment),
+        _value(display, format, _textSize)
    {
+      setPosition(Point16(0, 0));
+   }
+
+   ///
+   /// <summary>
+   /// Initializes a new instance of the Field class with no label, using an already-parsed
+   /// Format. Used internally for formats that cannot be expressed as a pattern string
+   /// (e.g. a Format constructed from an explicit length rather than a pattern).
+   /// </summary>
+   /// <param name="display">The display interface to draw onto.</param>
+   /// <param name="pos">The X/Y coordinate of the value's top-left corner.</param>
+   /// <param name="format">The already-parsed formatter applied to the value.</param>
+   /// <param name="textSize">The font size used to draw the value text.</param>
+   /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
+   /// edge (RIGHT), or the position of the gap separating label and value (GAP);
+   /// GAP has no effect when there is no label.</param>
+   ///
+   Field(ArduinoWithDisplay* display, Point16 pos,
+                const Format& format, uint8_t textSize,
+                Alignment alignment = Alignment::LEFT)
+      : _display(display), _label(""),
+        _textSize(textSize), _alignment(alignment),
+        _value(display, format, _textSize)
+   {
+      setPosition(pos);
    }
 
    ///
@@ -150,12 +198,12 @@ public:
          int16_t totalWidth = _value.width();
          if (_label.length() > 0)
          {
-            size_t labelWithSepLen = _label.length() + 2; // + ": "
+            size_t labelWithSepLen = _label.length() + 1; // + gap
             totalWidth += (int16_t)(labelWithSepLen * _display->charW(_textSize));
          }
          x = x - totalWidth;
       }
-      else if (_alignment == Alignment::COLON && _label.length() > 0)
+      else if (_alignment == Alignment::GAP && _label.length() > 0)
       {
          int16_t labelWidth = (int16_t)(_label.length() * _display->charW(_textSize));
          x = x - labelWidth;
@@ -196,7 +244,7 @@ public:
          if (_label.length() > 0)
          {
             _display->print(_label.c_str(), labelColor);
-            _display->print(": ", labelColor);
+            _display->print(" ", labelColor);
          }
 
          _value.setPosition(_display->getCursorX(), _y);

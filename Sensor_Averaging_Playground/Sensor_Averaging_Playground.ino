@@ -38,7 +38,7 @@
 #include "ScatterPlot.h"
 #include "SerialTable.h"
 #include "SerialX.h"
-#include "DisplayTableEditor.h"
+#include "FieldTableEditor.h"
 #include "Stopwatch.h"
 #include "TestSensor.h"
 #include "Timer.h"
@@ -93,10 +93,10 @@ RollingRate actualSampleRate;
 /// SAMPLE_RATE_STEP_HIGH at or above 100/s.
 /// </summary>
 ///
-class SampleRateCell : public IntCellEditor
+class SampleRateField : public IntEditor
 {
 public:
-   using IntCellEditor::IntCellEditor;
+   using IntEditor::IntEditor;
 
 protected:
    long _stepValue(long current, int32_t direction) override
@@ -107,17 +107,17 @@ protected:
 };
 
 // ----------- Setup Screen Fields
-SampleRateCell rateCell(&targetSampleRate,
+SampleRateField rateField(&targetSampleRate,
    MIN_SAMPLE_RATE_PER_SEC, MAX_SAMPLE_RATE_PER_SEC, SAMPLE_RATE_STEP_LOW, DEFAULT_SAMPLE_RATE_PER_SEC, "####/s");
-IntCellEditor samplesCell(&maxSamples,
+IntEditor samplesEditor(&maxSamples,
    MIN_MAX_SAMPLES, MAX_MAX_SAMPLES, SAMPLE_STEP, DEFAULT_MAX_SAMPLES, "#####");
-IntCellEditor durationCell(&samplingDurationS,
+IntEditor durationEditor(&samplingDurationS,
    MIN_SAMPLING_DURATION_S, MAX_SAMPLING_DURATION_S, DURATION_STEP_S, DEFAULT_SAMPLING_DURATION_S, "###s");
-IntCellEditor warmupCell(&warmupPeriodS,
+IntEditor warmupEditor(&warmupPeriodS,
    0, MAX_WARMUP_PERIOD_S, WARMUP_STEP_S, DEFAULT_WARMUP_PERIOD_S, "###s");
 
-TableEditorRow setupCells[] = { { "Rate", &rateCell }, { "Max Samples", &samplesCell }, { "Max Duration", &durationCell }, { "Warmup", &warmupCell } };
-DisplayTableEditor setupDisplay(&arduino, PREF_NAMESPACE, setupCells);
+FieldTableEditor::Row setupCells[] = { { "Rate", &rateField }, { "Max Samples", &samplesEditor }, { "Max Duration", &durationEditor }, { "Warmup", &warmupEditor } };
+FieldTableEditor setupDisplay(&arduino, PREF_NAMESPACE, setupCells);
 
 Values samplesValues;
 Values warmupValues;

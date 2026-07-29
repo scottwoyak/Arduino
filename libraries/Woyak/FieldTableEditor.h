@@ -5,7 +5,7 @@
 #include <span>
 #include "Color.h"
 #include "ArduinoBoard.h"
-#include "DisplayTableCellEditor.h"
+#include "ValueEditor.h"
 #include "FieldTable.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
@@ -17,53 +17,8 @@
 
 ///
 /// <summary>
-/// Pairs a DisplayTableCell (or CellEditor) with the row-level display metadata
-/// (label) needed to render it as a row in a FieldTableEditor. The first column of
-/// a row is just a label; it isn't part of the cell's own value/editing behavior, so
-/// that metadata lives here instead of on the cell itself. A row can also be a
-/// label-only section header (no cell), which renders as its own section row (see
-/// FieldTable::addSection()) above the rows that follow it, e.g. { "Measured" }.
-/// </summary>
-///
-struct FieldTableEditorRow
-{
-   ///
-   /// <summary>
-   /// Initializes a new instance of the FieldTableEditorRow struct for a normal labeled field.
-   /// </summary>
-   /// <param name="label">Label text drawn in the row's first column, e.g. "Rate".</param>
-   /// <param name="cell">The cell providing this row's value/editing behavior.</param>
-   ///
-   FieldTableEditorRow(const char* label, DisplayTableCell* cell)
-      : label(label), cell(cell)
-   {}
-
-   ///
-   /// <summary>
-   /// Initializes a new instance of the FieldTableEditorRow struct as a section header row - a
-   /// label-only entry with no cell that renders as its own section row above the rows that
-   /// follow it.
-   /// </summary>
-   /// <param name="header">Section header text drawn above the following rows.</param>
-   ///
-   explicit FieldTableEditorRow(const char* header)
-      : label(header), cell(nullptr)
-   {}
-
-   const char* label;
-   DisplayTableCell* cell;
-
-   // Row index within the internal FieldTable this field maps to, or -1 for section
-   // header rows, which are added as their own row via addSection() rather than
-   // stored on the FieldTableEditorRow that precedes them. Set by
-   // FieldTableEditor::_relayout().
-   int8_t rowIndex = -1;
-};
-
-///
-/// <summary>
-/// Reusable, embeddable single-column table of DisplayTableCell values (a mix of editable
-/// CellEditor fields and read-only cells) that can be navigated and adjusted live with a
+/// Reusable, embeddable single-column table of ValueBase values (a mix of editable
+/// Editor fields and read-only values) that can be navigated and adjusted live with a
 /// board's encoders: Encoder A cycles the selected field, Encoder B adjusts its value.
 /// Also supports loading/saving/resetting all fields against a Preferences namespace. This
 /// class owns no rendering logic of its own - it delegates all drawing to an internal
@@ -75,10 +30,65 @@ struct FieldTableEditorRow
 ///
 class FieldTableEditor
 {
+public:
+   ///
+   /// <summary>
+   /// Pairs a ValueBase (or Editor) with the row-level display metadata
+   /// (label) needed to render it as a row in a FieldTableEditor. The first column of
+   /// a row is just a label; it isn't part of the value's own value/editing behavior, so
+   /// that metadata lives here instead of on the value itself. A row can also be a
+   /// label-only section header (no value), which renders as its own section row (see
+   /// FieldTable::addSection()) above the rows that follow it, e.g. { "Measured" }.
+   /// </summary>
+   ///
+   struct Row
+   {
+      ///
+      /// <summary>
+      /// Initializes a new instance of the Row struct for a normal labeled field.
+      /// </summary>
+      /// <param name="label">Label text drawn in the row's first column, e.g. "Rate".</param>
+      /// <param name="value">The value providing this row's value/editing behavior.</param>
+      ///
+      Row(const char* label, ValueBase* value)
+         : label(label), value(value)
+      {}
+
+      ///
+      /// <summary>
+      /// Initializes a new instance of the Row struct as a section header row - a
+      /// label-only entry with no value that renders as its own section row above the rows that
+      /// follow it.
+      /// </summary>
+      /// <param name="header">Section header text drawn above the following rows.</param>
+      ///
+      Row(const char* header)
+         : label(header), value(nullptr)
+      {}
+
+      const char* label;
+      ValueBase* value;
+
+      // Row index within the internal FieldTable this field maps to, or -1 for section
+      // header rows, which are added as their own row via addSection() rather than
+      // stored on the Row that precedes them. Set by FieldTableEditor::_relayout().
+      int8_t rowIndex = -1;
+
+      ///
+      /// <summary>
+      /// A blank spacer data row (no label, no editable value), backed by a shared
+      /// BlankValue instance, e.g. { FieldTableEditor::Row::BlankRow } to push a following
+      /// field down to a different row than a field in an adjacent table it might
+      /// otherwise visually overlap.
+      /// </summary>
+      ///
+      static const Row BlankRow;
+   };
+
 private:
    Arduino* _arduino;
    const char* _prefNamespace;
-   std::span<FieldTableEditorRow> _rows;
+   std::span<Row> _rows;
    uint8_t _selectedIndex = 0;
    char _keyBuffer[10];
    FieldTable _table;
@@ -98,7 +108,7 @@ private:
    /// <param name="row">Row to compute a persistence key for.</param>
    /// <returns>A short, stable Preferences key.</returns>
    ///
-   const char* _keyFor(const FieldTableEditorRow& row)
+   const char* _keyFor(const Row& row)
    {
       // Simple FNV-1a hash of the label, truncated to fit Preferences' short key limit.
       uint32_t hash = 2166136261u;
@@ -114,7 +124,7 @@ private:
    ///
    /// <summary>
    /// Rebuilds the internal FieldTable's rows from the current field array and resets the
-   /// selection to the first editable field. Section header rows (no cell) are added as
+   /// selection to the first editable field. Section header rows (no value) are added as
    /// their own section row via addSection(), reusing FieldTable's existing section-header
    /// rendering. Shared by the constructor and setFields().
    /// </summary>
@@ -123,21 +133,21 @@ private:
    {
       for (uint8_t i = 0; i < _rows.size(); i++)
       {
-         if (_rows[i].cell == nullptr)
+         if (_rows[i].value == nullptr)
          {
-            _rows[i].rowIndex = -1;
+            _rows[i].rowIndex = static_cast<int8_t>(_table.rowCount());
             _table.addSection(_rows[i].label);
             continue;
          }
 
          _rows[i].rowIndex = static_cast<int8_t>(_table.rowCount());
-         _table.addRow(_rows[i].label, _rows[i].cell->format());
+         _table.addRow(_rows[i].label, _rows[i].value->format());
       }
 
       _selectedIndex = 0;
       for (uint8_t i = 0; i < _rows.size(); i++)
       {
-         if (_rows[i].cell != nullptr && _rows[i].cell->isEditable())
+         if (_rows[i].value != nullptr && _rows[i].value->isEditable())
          {
             _selectedIndex = i;
             break;
@@ -157,7 +167,7 @@ public:
    /// <param name="y">Top Y coordinate of the table.</param>
    /// <param name="textSize">The text size applied automatically before drawing labels and values.</param>
    ///
-   FieldTableEditor(Arduino* arduino, const char* prefNamespace, std::span<FieldTableEditorRow> fields,
+   FieldTableEditor(Arduino* arduino, const char* prefNamespace, std::span<Row> fields,
       int16_t x, int16_t y, uint8_t textSize = 2)
       : _arduino(arduino), _prefNamespace(prefNamespace), _rows(fields),
       _table(arduino, x, y, textSize)
@@ -175,7 +185,7 @@ public:
    /// <param name="fields">Span of rows to display and edit.</param>
    /// <param name="textSize">The text size applied automatically before drawing labels and values.</param>
    ///
-   FieldTableEditor(Arduino* arduino, const char* prefNamespace, std::span<FieldTableEditorRow> fields,
+   FieldTableEditor(Arduino* arduino, const char* prefNamespace, std::span<Row> fields,
       uint8_t textSize = 2)
       : FieldTableEditor(arduino, prefNamespace, fields, 0, 0, textSize)
    {}
@@ -191,7 +201,7 @@ public:
    /// </summary>
    /// <param name="fields">Span of rows to display and edit.</param>
    ///
-   void setFields(std::span<FieldTableEditorRow> fields)
+   void setFields(std::span<Row> fields)
    {
       int16_t oldWidth = width();
       int16_t oldHeight = height();
@@ -278,7 +288,7 @@ public:
    ///
    void setSelectedIndex(uint8_t index)
    {
-      if (index < _rows.size() && _rows[index].cell != nullptr && _rows[index].cell->isEditable())
+      if (index < _rows.size() && _rows[index].value != nullptr && _rows[index].value->isEditable())
       {
          _selectedIndex = index;
       }
@@ -306,7 +316,7 @@ public:
       for (uint8_t i = 0; i < _rows.size(); i++)
       {
          newIndex = (newIndex + step + fieldCount) % fieldCount;
-         if (_rows[newIndex].cell != nullptr && _rows[newIndex].cell->isEditable() && _rows[newIndex].cell->isEnabled())
+         if (_rows[newIndex].value != nullptr && _rows[newIndex].value->isEditable() && _rows[newIndex].value->isEnabled())
          {
             break;
          }
@@ -330,10 +340,10 @@ public:
          return;
       }
 
-      DisplayTableCell* cell = _rows[_selectedIndex].cell;
-      if (cell->isEditable() && cell->isEnabled())
+      ValueBase* value = _rows[_selectedIndex].value;
+      if (value->isEditable() && value->isEnabled())
       {
-         static_cast<CellEditor*>(cell)->adjust(direction);
+         static_cast<Editor*>(value)->adjust(direction);
       }
    }
 
@@ -341,7 +351,7 @@ public:
    /// <summary>
    /// Draws the label/value rows at the position given to the constructor, highlighting the
    /// currently selected field's value with a colored background. Reads each field's
-   /// current value/colors directly from its cell and delegates all drawing to the
+   /// current value/colors directly from its value and delegates all drawing to the
    /// internal FieldTable.
    /// </summary>
    ///
@@ -351,20 +361,20 @@ public:
 
       for (uint8_t i = 0; i < _rows.size(); i++)
       {
-         DisplayTableCell* cell = _rows[i].cell;
-         if (cell == nullptr)
+         ValueBase* value = _rows[i].value;
+         if (value == nullptr)
          {
             _table._drawSectionRow(_rows[i].rowIndex);
             continue;
          }
 
-         bool isSelected = cell->isEditable() && cell->isEnabled() && (i == _selectedIndex);
-         bool isDisabled = !cell->isEnabled();
+         bool isSelected = value->isEditable() && value->isEnabled() && (i == _selectedIndex);
+         bool isDisabled = !value->isEnabled();
 
          Color valueBackgroundColor = isSelected ? Color::BLUE : Color::BLACK;
-         Color valueColor = isDisabled ? Color::GRAY : (isSelected ? Color::WHITE : (cell->hasColor() ? cell->color() : (cell->isEditable() ? Color::VALUE : Color::VALUE2)));
+         Color valueColor = isDisabled ? Color::GRAY : (isSelected ? Color::WHITE : (value->hasColor() ? value->color() : (value->isEditable() ? Color::VALUE : Color::VALUE2)));
 
-         _table._drawDataRow(_rows[i].rowIndex, cell->valueText(), valueColor, valueBackgroundColor);
+         _table._drawDataRow(_rows[i].rowIndex, value->valueText(), valueColor, valueBackgroundColor);
       }
    }
 
@@ -433,7 +443,7 @@ public:
    /// </summary>
    /// <returns>The row span passed to the constructor.</returns>
    ///
-   std::span<FieldTableEditorRow> fields() const
+   std::span<Row> fields() const
    {
       return _rows;
    }
@@ -460,11 +470,11 @@ public:
       prefs->begin(_prefNamespace, true);
       for (uint8_t i = 0; i < _rows.size(); i++)
       {
-         if (_rows[i].cell == nullptr || !_rows[i].cell->isEditable())
+         if (_rows[i].value == nullptr || !_rows[i].value->isEditable())
          {
             continue;
          }
-         CellEditor* field = static_cast<CellEditor*>(_rows[i].cell);
+         Editor* field = static_cast<Editor*>(_rows[i].value);
          double defaultValue = field->defaultNumericValue();
          double value = prefs->getDouble(_keyFor(_rows[i]), defaultValue);
          field->setNumericValue(value);
@@ -483,11 +493,11 @@ public:
       prefs->begin(_prefNamespace, false);
       for (uint8_t i = 0; i < _rows.size(); i++)
       {
-         if (_rows[i].cell == nullptr || !_rows[i].cell->isEditable())
+         if (_rows[i].value == nullptr || !_rows[i].value->isEditable())
          {
             continue;
          }
-         CellEditor* field = static_cast<CellEditor*>(_rows[i].cell);
+         Editor* field = static_cast<Editor*>(_rows[i].value);
          prefs->putDouble(_keyFor(_rows[i]), field->numericValue());
       }
       prefs->end();
@@ -502,12 +512,14 @@ public:
    {
       for (uint8_t i = 0; i < _rows.size(); i++)
       {
-         if (_rows[i].cell == nullptr || !_rows[i].cell->isEditable())
+         if (_rows[i].value == nullptr || !_rows[i].value->isEditable())
          {
             continue;
          }
-         static_cast<CellEditor*>(_rows[i].cell)->reset();
+         static_cast<Editor*>(_rows[i].value)->reset();
       }
       save();
    }
 };
+
+inline const FieldTableEditor::Row FieldTableEditor::Row::BlankRow("", &BlankValue::instance());
