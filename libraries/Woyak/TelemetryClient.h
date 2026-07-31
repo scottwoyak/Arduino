@@ -25,7 +25,7 @@ using TelemetryOnStartedFunc = std::function<void()>;
 class TelemetryClient
 {
 private:
-   static constexpr unsigned long START_RETRY_INTERVAL_MS = 2000;
+   static constexpr unsigned long START_RETRY_INTERVAL_MS = 10000;
 
    std::string _serverVersion = "";
    std::string _status = "";
@@ -135,6 +135,20 @@ protected:
       case WStype_DISCONNECTED:
       {
          std::string reason = (payload != nullptr && length > 0) ? std::string((const char*)payload, length) : "";
+
+         // reset handshake state so the greeting and start/publish ack are
+         // recognized and re-processed correctly after reconnecting, instead
+         // of being routed to _onText() as ordinary payload data
+         _serverVersion.clear();
+         _status.clear();
+         _started = false;
+
+         // the underlying WebSocketsClient already reconnects and re-runs the
+         // handshake on its own; cancel any pending start retry so it doesn't
+         // also fire later and send a duplicate start/subscribe request on the
+         // new connection
+         _startRetryPending = false;
+
          _onDisconnected(reason);
          if (_onDisconnectedFunc)
          {
@@ -144,11 +158,17 @@ protected:
       break;
 
       case WStype_CONNECTED:
-         _onConnected();
-         if (_onConnectedFunc)
-         {
-            _onConnectedFunc();
-         }
+         // don't immediately use the freshly (re)established connection; the
+         // underlying WebSocketsClient reconnects quickly on its own, but we
+         // want to wait before sending the start/publish/subscribe handshake
+         // so repeated failures (e.g. topic still in use) don't hammer the
+         // server. The actual handshake send (_onConnected()) is deferred to
+         // loop() via the same _startRetryPending mechanism used for
+         // handshake-error retries; the user's onConnected callback is fired
+         // there too, so the UI keeps showing the retry countdown/error until
+         // the handshake is actually attempted.
+         _startRetryPending = true;
+         _startRetryAtMs = millis() + START_RETRY_INTERVAL_MS;
          break;
 
       case WStype_TEXT:
@@ -301,6 +321,36 @@ public:
 
    ///
    /// <summary>
+   /// Gets whether a start/subscribe handshake retry is currently pending after a
+   /// server error.
+   /// </summary>
+   /// <returns>True if a start retry is scheduled; false otherwise.</returns>
+   ///
+   bool isStartRetryPending() const
+   {
+      return _startRetryPending;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the number of seconds remaining before the pending start/subscribe retry
+   /// fires.
+   /// </summary>
+   /// <returns>Seconds remaining, or 0 if no retry is pending or it is already due.</returns>
+   ///
+   float getStartRetryRemainingSecs() const
+   {
+      if (!_startRetryPending)
+      {
+         return 0.0f;
+      }
+
+      long remainingMs = (long)_startRetryAtMs - (long)millis();
+      return remainingMs > 0 ? remainingMs / 1000.0f : 0.0f;
+   }
+
+   ///
+   /// <summary>
    /// Connects to the telemetry server over an unencrypted WebSocket connection.
    /// </summary>
    /// <param name="webSocketServerHost">The server hostname or IP address.</param>
@@ -340,6 +390,10 @@ public:
          _startRetryPending = false;
          _status.clear();
          _onConnected();
+         if (_onConnectedFunc)
+         {
+            _onConnectedFunc();
+         }
       }
 
       _onLoop();

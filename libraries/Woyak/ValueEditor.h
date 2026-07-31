@@ -16,14 +16,17 @@
 ///
 class ValueBase
 {
+protected:
+   Format _format;
+
 public:
    ///
    /// <summary>
    /// Initializes a new instance of the ValueBase class.
    /// </summary>
-   /// <param name="format">Format used to render the value for display.</param>
+   /// <param name="format">Format pattern used to render the value for display.</param>
    ///
-   ValueBase(const Format& format)
+   ValueBase(const char* format)
       : _format(format)
    {}
 
@@ -100,9 +103,6 @@ public:
    {
       return Color::VALUE2;
    }
-
-protected:
-   Format _format;
 };
 
 ///
@@ -121,9 +121,9 @@ public:
    /// <summary>
    /// Initializes a new instance of the Editor class.
    /// </summary>
-   /// <param name="format">Format used to render the value for display.</param>
+   /// <param name="format">Format pattern used to render the value for display.</param>
    ///
-   Editor(const Format& format)
+   Editor(const char* format)
       : ValueBase(format)
    {}
 
@@ -187,9 +187,9 @@ public:
    /// Initializes a new instance of the FloatValue class.
    /// </summary>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
-   /// <param name="format">Format used to render the value for display.</param>
+   /// <param name="format">Format pattern used to render the value for display.</param>
    ///
-   FloatValue(float* value, const Format& format)
+   FloatValue(float* value, const char* format)
       : ValueBase(format), _value(value)
    {}
 
@@ -217,12 +217,12 @@ public:
    /// Initializes a new instance of the StringValue class.
    /// </summary>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
-   /// <param name="format">Format used to render the value for display.</param>
+   /// <param name="format">Format pattern used to render the value for display.</param>
    /// <param name="color">Optional caller-owned variable that overrides the value color (e.g. to
    /// reflect a status like connecting/connected/error). When omitted, the default value color
    /// is used.</param>
    ///
-   StringValue(const std::string* value, const Format& format, const Color* color = nullptr)
+   StringValue(const std::string* value, const char* format, const Color* color = nullptr)
       : ValueBase(format), _value(value), _color(color)
    {}
 
@@ -256,7 +256,7 @@ class BlankValue : public ValueBase
 {
 public:
    BlankValue()
-      : ValueBase(Format(size_t(0)))
+      : ValueBase("")
    {}
 
    std::string valueText() override
@@ -295,14 +295,14 @@ public:
    /// <param name="maxValue">Maximum allowed value.</param>
    /// <param name="step">Linear step size used by the default _stepValue implementation.</param>
    /// <param name="defaultValue">Default value used when no saved value exists or on reset.</param>
-   /// <param name="format">Format used to render the value for display.</param>
+   /// <param name="format">Format pattern used to render the value for display.</param>
    ///
    IntEditor(long* value,
       long minValue,
       long maxValue,
       long step,
       long defaultValue,
-      const Format& format)
+      const char* format)
       : Editor(format),
       _value(value),
       _minValue(minValue),
@@ -381,9 +381,9 @@ public:
    /// </summary>
    /// <param name="value">Caller-owned variable that holds the current value.</param>
    /// <param name="defaultValue">Default value used when no saved value exists or on reset.</param>
-   /// <param name="format">Format used to render the value for display.</param>
+   /// <param name="format">Format pattern used to render the value for display.</param>
    ///
-   BoolEditor(bool* value, bool defaultValue, const Format& format)
+   BoolEditor(bool* value, bool defaultValue, const char* format)
       : Editor(format), _value(value), _default(defaultValue)
    {}
 
@@ -442,12 +442,12 @@ public:
    /// <param name="value">Caller-owned variable that holds the current selected index.</param>
    /// <param name="labels">Span of label strings to step through and display.</param>
    /// <param name="defaultValue">Default index used when no saved value exists or on reset.</param>
-   /// <param name="format">Format used to render the selected label for display.</param>
+   /// <param name="format">Format pattern used to render the selected label for display.</param>
    ///
    EnumEditor(long* value,
       std::span<const char* const> labels,
       long defaultValue,
-      const Format& format)
+      const char* format)
       : IntEditor(value, 0, (long)labels.size() - 1, 1, defaultValue, format),
       _labels(labels)
    {}
@@ -487,14 +487,14 @@ public:
    /// <param name="maxValue">Maximum allowed value.</param>
    /// <param name="step">Linear step size used by the default _stepValue implementation.</param>
    /// <param name="defaultValue">Default value used when no saved value exists or on reset.</param>
-   /// <param name="format">Format used to render the value for display.</param>
+   /// <param name="format">Format pattern used to render the value for display.</param>
    ///
    FloatEditor(float* value,
       float minValue,
       float maxValue,
       float step,
       float defaultValue,
-      const Format& format)
+      const char* format)
       : Editor(format),
       _value(value),
       _minValue(minValue),

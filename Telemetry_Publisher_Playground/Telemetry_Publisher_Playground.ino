@@ -31,6 +31,7 @@
 #include "FieldTableEditor.h"
 #include "DisplayValue.h"
 #include "RollingRate.h"
+#include "ScatterPlot.h"
 #include "SerialX.h"
 #include "Stopwatch.h"
 #include "TelemetryClient.h"
@@ -50,7 +51,6 @@ Arduino arduino;
 
 // ----------- Test Function Selection (source, selectable live via Encoder A/B)
 constexpr const char* TEST_FUNCTION_LABELS[] = { "Const", "Random", "Normal", "Sin" };
-constexpr size_t NUM_TEST_FUNCTIONS = sizeof(TEST_FUNCTION_LABELS) / sizeof(TEST_FUNCTION_LABELS[0]);
 constexpr const char* PREF_NAMESPACE = "TelemetryPubPg";
 ConstantTestSensor constantSensor;
 RandomTestSensor randomSensor;
@@ -67,49 +67,81 @@ constexpr long PUBLISH_RATE_STEP = 1;
 long publishRatePerSec = DEFAULT_PUBLISH_RATE_PER_SEC;
 Timer publishTimer(1000UL / DEFAULT_PUBLISH_RATE_PER_SEC);
 
-// ----------- Display Items
-constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
-constexpr uint16_t RATE_NUM_SAMPLES = 100;
-constexpr int16_t VALUE_PADDING_PX = 5;
-constexpr float RECONNECT_COUNTDOWN_SECS = 5.0f;
-Stopwatch sw(false);
+// ----------- Reconnect/Retry Tracking
+constexpr float RECONNECT_COUNTDOWN_SECS = 10.0f;
 TimerSecs reconnectTimer(RECONNECT_COUNTDOWN_SECS);
-bool connected = false;
 bool disconnected = false;
 uint8_t lastCountdownSecs = 0;
+uint16_t retryCount = 0;
+uint16_t lastRetryCount = 0;
+
+// ----------- Message Rate
+constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
+constexpr uint16_t RATE_NUM_SAMPLES = 10;
+Stopwatch sw(false);
 RollingRate rate(RATE_NUM_SAMPLES);
-Format topicFormat(20);
-Format hostFormat(24);
-Format sourceFormat(6);
-Format rateFormat("###/s");
-Format lastValueFormat("+###.###");
-Format statusValueFormat(32, Format::Alignment::CENTER);
+float rateValue = 0.0f;
+FloatValue rateValueField(&rateValue, "###/s");
+
+// ----------- Connection Status
+bool connected = false;
 std::string statusText = "Connecting to WiFi...";
 Color statusColor = Color::BLUE;
+
+// ----------- Server Info (host/topic, selectable live via Encoder A/B)
 std::string topicText = TELEMETRY_TOPIC;
 std::string hostText = " ";
-StringValue topicValue(&topicText, topicFormat);
-StringValue hostValue(&hostText, hostFormat);
+StringValue topicValue(&topicText, "##################");
+StringValue hostValue(&hostText, "##################");
 long testFunctionIndex = 0;
 long lastTestFunctionIndex = 0;
-EnumEditor sourceEditor(&testFunctionIndex,
-   TEST_FUNCTION_LABELS, 0, sourceFormat);
+EnumEditor sourceEditor(&testFunctionIndex, TEST_FUNCTION_LABELS, 0, "######");
 IntEditor targetEditor(&publishRatePerSec,
-   MIN_PUBLISH_RATE_PER_SEC, MAX_PUBLISH_RATE_PER_SEC, PUBLISH_RATE_STEP, DEFAULT_PUBLISH_RATE_PER_SEC, rateFormat);
-float rateValue = 0.0f;
-FloatValue rateValueField(&rateValue, rateFormat);
-FieldTableEditor::Row statusCells[] =
+   MIN_PUBLISH_RATE_PER_SEC, MAX_PUBLISH_RATE_PER_SEC, PUBLISH_RATE_STEP, DEFAULT_PUBLISH_RATE_PER_SEC, "###/s");
+
+// ----------- Status Table
+FieldTableEditor::Row tableCells[] =
 {
-   { "Topic", &topicValue },
+   { "Server" },
    { "Host", &hostValue },
-   { "Source", &sourceEditor },
-   { "Target", &targetEditor },
+   { "Topic", &topicValue },
    { "Rate", &rateValueField },
+   { "Published Content" },
+   { "Source", &sourceEditor },
+   { "Rate", &targetEditor },
 };
-FieldTableEditor table(&arduino, PREF_NAMESPACE, statusCells, 0, 0);
-DisplayValue* valueField = nullptr;
-DisplayValue* statusField = nullptr;
+FieldTableEditor table(&arduino, PREF_NAMESPACE, tableCells);
+
+// ----------- Value/Status Display
+DisplayValue value(&arduino, Format("###.###"), 5, DisplayValue::Alignment::DECIMAL);
+DisplayValue status(&arduino, Format(32, Format::Alignment::LEFT), 2, DisplayValue::Alignment::LEFT);
 float lastValue = NAN;
+std::string lastErrorMsg = "";
+std::string lastDrawnErrorMsg = "";
+
+// ----------- Error Message Area (plain print, manually cleared, so long messages can wrap)
+int16_t errorAreaX = 0;
+int16_t errorAreaY = 0;
+constexpr int16_t ERROR_AREA_HEIGHT_PX = 40;
+
+// ----------- Published Value Scatter Plot (bottom of display, 60 second rolling span)
+constexpr unsigned long PLOT_SPAN_MS = 60000UL;
+constexpr size_t PLOT_NUM_BINS = MAX_PUBLISH_RATE_PER_SEC * (PLOT_SPAN_MS / 1000UL);
+ScatterPlot valuePlot(&arduino, Rect16{}, "##.#s", "###.###");
+TimedScatterPlotSeries* valueSeries = valuePlot.createTimedSeries(PLOT_SPAN_MS, PLOT_NUM_BINS);
+
+///
+/// <summary>
+/// Clears the error message area, which uses plain wrapped text rather than a
+/// DisplayValue sprite, so it must be erased manually before drawing new text or
+/// when no error is currently active.
+/// </summary>
+///
+void clearErrorArea()
+{
+   arduino.fillRect(errorAreaX, errorAreaY, arduino.width() - errorAreaX, ERROR_AREA_HEIGHT_PX, Color::BLACK);
+   lastDrawnErrorMsg.clear();
+}
 
 ///
 /// <summary>
@@ -123,6 +155,9 @@ void onConnected()
    statusColor = Color::GREEN;
    disconnected = false;
    connected = false;
+   retryCount = 0;
+   lastErrorMsg.clear();
+   clearErrorArea();
 }
 
 ///
@@ -152,6 +187,13 @@ void onDisconnected(std::string reason)
       statusColor = Color::RED;
    }
 
+   retryCount++;
+
+   if (connected)
+   {
+      // switching from drawing value to drawing status; erase the stale number
+      value.clear();
+   }
    connected = false;
 }
 
@@ -177,8 +219,17 @@ void onText(std::string payload)
 void onError(std::string msg)
 {
    Serial.println("Telemetry Error: " + String(msg.c_str()));
-   statusText = "Retrying...";
+   retryCount++;
+   lastErrorMsg = msg;
+   lastCountdownSecs = 0;
    statusColor = Color::RED;
+
+   if (connected)
+   {
+      // switching from drawing value to drawing status; erase the stale number
+      value.clear();
+   }
+   connected = false;
 }
 
 ///
@@ -191,6 +242,13 @@ void onStarted()
    statusText = "Connected";
    statusColor = Color::GREEN;
    connected = true;
+   retryCount = 0;
+   lastErrorMsg.clear();
+
+   // status's sprite is wider than value's, so switching from drawing status to
+   // drawing value would otherwise leave stale status text visible around value
+   status.clear();
+   clearErrorArea();
 
    rate.reset();
    sw.start();
@@ -223,19 +281,31 @@ void setup()
    table.load();
    selectTestFunction();
    lastTestFunctionIndex = testFunctionIndex;
+   publishTimer.setDurationMs(1000UL / publishRatePerSec);
    table.draw();
 
+   int16_t valueAreaCenterX = arduino.width() * 3 / 4;
+   int16_t valueAreaCenterY = table.getRect().top() + table.getRect().height / 2;
+
    arduino.setTextSize(5);
-   int16_t valueAreaTop = table.getRect().bottom() + VALUE_PADDING_PX;
-   int16_t valueAreaHeight = arduino.height() - valueAreaTop;
-   int16_t valueAreaCenterX = arduino.width() / 2;
-   int16_t valueAreaCenterY = valueAreaTop + valueAreaHeight / 2;
-   valueField = new DisplayValue(&arduino, lastValueFormat, 5, DisplayValue::Alignment::CENTER);
-   valueField->setPosition(valueAreaCenterX, valueAreaCenterY, VerticalAnchor::MIDDLE);
+   value.setPosition(valueAreaCenterX, valueAreaCenterY, VerticalAnchor::MIDDLE);
 
    arduino.setTextSize(2);
-   statusField = new DisplayValue(&arduino, statusValueFormat, 2, DisplayValue::Alignment::CENTER);
-   statusField->setPosition(valueAreaCenterX, valueAreaCenterY, VerticalAnchor::MIDDLE);
+   constexpr int16_t MESSAGE_PADDING_PX = 5;
+   int16_t messageAreaX = 0;
+   int16_t messageTop = table.getRect().bottom() + MESSAGE_PADDING_PX + status.height() + 4;
+   status.setPosition(messageAreaX, messageTop, VerticalAnchor::TOP);
+
+   errorAreaX = messageAreaX;
+   errorAreaY = messageTop + status.height() + 4;
+   arduino.display.setTextWrap(true);
+
+   int16_t plotTop = errorAreaY + ERROR_AREA_HEIGHT_PX;
+   valuePlot.setRect(0, plotTop, arduino.width(), arduino.height() - plotTop);
+   valuePlot.setShowXMinMaxValue(false);
+   valuePlot.setShowXRangeValue(true);
+   valueSeries->showPoints = true;
+   valueSeries->showLines = false;
 
    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
    while (WiFi.status() != WL_CONNECTED)
@@ -244,7 +314,7 @@ void setup()
 
    statusText = "Connecting to Server...";
    statusColor = Color::GREEN;
-   statusField->draw(statusText, statusColor);
+   status.draw(statusText, statusColor);
 
    client.setCallbacks(onConnected, onDisconnected, nullptr, onText, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
@@ -259,9 +329,20 @@ void loop()
    if (disconnected)
    {
       uint8_t secsLeft = static_cast<uint8_t>(ceil(reconnectTimer.remaining()));
-      if (secsLeft != lastCountdownSecs)
+      if (secsLeft != lastCountdownSecs || retryCount != lastRetryCount)
       {
          lastCountdownSecs = secsLeft;
+         lastRetryCount = retryCount;
+         statusText = secsLeft > 0 ? "Retrying in " + std::to_string(secsLeft) + "s" : "Retrying...";
+      }
+   }
+   else if (client.isStartRetryPending())
+   {
+      uint8_t secsLeft = static_cast<uint8_t>(ceil(client.getStartRetryRemainingSecs()));
+      if (secsLeft != lastCountdownSecs || retryCount != lastRetryCount)
+      {
+         lastCountdownSecs = secsLeft;
+         lastRetryCount = retryCount;
          statusText = secsLeft > 0 ? "Retrying in " + std::to_string(secsLeft) + "s" : "Retrying...";
       }
    }
@@ -290,9 +371,10 @@ void loop()
 
    if (publishTimer.ready())
    {
-      float value = sensor->get();
-      client.setValue(value);
-      lastValue = value;
+      float sensorValue = sensor->get();
+      client.setValue(sensorValue);
+      lastValue = sensorValue;
+      valueSeries->add(sensorValue);
    }
 
    client.loop();
@@ -304,16 +386,22 @@ void loop()
    }
 
    table.draw();
+   valuePlot.draw();
 
    if (connected)
    {
-      if (valueField != nullptr)
-      {
-         valueField->draw(lastValue, Color::VALUE);
-      }
+      value.draw(lastValue, Color::VALUE);
    }
-   else if (statusField != nullptr)
+   else
    {
-      statusField->draw(statusText, statusColor);
+      status.draw(statusText, statusColor);
+
+      if (!lastErrorMsg.empty() && lastErrorMsg != lastDrawnErrorMsg)
+      {
+         clearErrorArea();
+         arduino.setCursor(errorAreaX, errorAreaY);
+         arduino.println(lastErrorMsg.c_str(), Color::RED);
+         lastDrawnErrorMsg = lastErrorMsg;
+      }
    }
 }

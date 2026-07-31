@@ -277,7 +277,12 @@ private:
       int16_t rowHeight = _display->charH(_textSize);
       int16_t halfRow = rowHeight / 2;
       int16_t y = 0;
-      int16_t gapX = _x + (int16_t)(_maxLabelLength * _display->charW(_textSize));
+
+      // Data rows are indented one character to the right of the table's own X
+      // position, so their labels never visually align with a section header's
+      // label, which is drawn flush at _x.
+      int16_t charW = _display->charW(_textSize);
+      int16_t gapX = _x + charW + (int16_t)(_maxLabelLength * charW);
 
       for (size_t i = 0; i < _rows.size(); i++)
       {

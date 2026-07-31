@@ -1,4 +1,4 @@
-﻿//
+//
 // Profiles how fast a ScatterPlot can be redrawn as its backing sample series grows.
 //
 // Continuously samples a mock data source (see DATA_SOURCE_TYPE below) and appends each reading
@@ -79,7 +79,7 @@ long testFunctionIndex = 0;
 long lastTestFunctionIndex = 0;
 EnumEditor testFunctionEditor(&testFunctionIndex,TEST_FUNCTION_LABELS, 0, "######");
 float rateValue = 0.0f;
-FloatValue rateValueField(&rateValue, Format("####/s", Format::Alignment::LEFT));
+FloatValue rateValueField(&rateValue, "####/s");
 
 uint32_t startFreeHeapBytes = 0;
 float memoryDeltaKb = 0.0f;

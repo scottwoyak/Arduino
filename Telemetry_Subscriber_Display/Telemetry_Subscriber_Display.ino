@@ -23,6 +23,7 @@
 #endif
 
 #include "Table.h"
+#include "DisplayValue.h"
 #include "RollingRate.h"
 #include "SerialX.h"
 #include "Stopwatch.h"
@@ -53,10 +54,17 @@ constexpr const char* HOST_FORMAT = "                        ";
 constexpr const char* RATE_FORMAT = "###/s";
 Table table(&arduino, 0, 0);
 
+// ----------- Disconnected/Reconnect Display
+constexpr uint8_t DISCONNECT_TEXT_SIZE = 2;
+DisplayValue reasonLine(&arduino, Format(32, Format::Alignment::LEFT), DISCONNECT_TEXT_SIZE, DisplayValue::Alignment::LEFT);
+DisplayValue statusLine(&arduino, Format(32, Format::Alignment::LEFT), DISCONNECT_TEXT_SIZE, DisplayValue::Alignment::LEFT);
+
 float lastValue = NAN;
 bool disconnected = false;
+bool started = false;
 uint8_t lastCountdownSecs = 0;
 std::string disconnectReason = "";
+std::string lastErrorMsg = "";
 
 ///
 /// <summary>
@@ -81,6 +89,8 @@ void onDisconnected(std::string reason)
 {
    Serial.println("Telemetry: WebSocket Disconnected: " + String(reason.c_str()));
    disconnected = true;
+   started = false;
+   lastValue = NAN;
    disconnectReason = reason;
    lastCountdownSecs = 0;
    reconnectTimer.reset();
@@ -88,18 +98,18 @@ void onDisconnected(std::string reason)
 
 ///
 /// <summary>
-/// Called when a telemetry client error occurs. Displays the error and resets the device.
+/// Called when a telemetry client error occurs (e.g. the topic hasn't been released yet
+/// from a prior connection). Remembers the error so it can be shown above the reconnect
+/// countdown; TelemetryClient automatically retries the start/subscribe request after a
+/// short delay, so the device is not reset here.
 /// </summary>
 /// <param name="msg">Error message to display</param>
 ///
 void onError(std::string msg)
 {
-   arduino.setTextSize(2);
-   arduino.clearDisplay();
-   arduino.display.setTextWrap(true);
-   arduino.println(msg, Color::RED);
+   lastErrorMsg = msg;
+   lastCountdownSecs = 0;
    Serial.println("Telemetry Error: " + String(msg.c_str()));
-   Util::reset(10);
 }
 
 ///
@@ -111,6 +121,8 @@ void onStarted()
 {
    arduino.printlnR("OK", Color::VALUE);
    delay(1000);
+
+   lastErrorMsg.clear();
 
    arduino.clearDisplay();
    arduino.setCursor(0, 0);
@@ -133,6 +145,7 @@ void onStarted()
    table.draw();
 
    sw.start();
+   started = true;
 }
 
 ///
@@ -148,31 +161,26 @@ void onReceiveText(std::string msg)
 
 ///
 /// <summary>
-/// Draws a "Disconnected" message with a countdown until the next automatic
-/// reconnect attempt, redrawing only when the displayed second changes.
+/// Draws the disconnect reason (or last error, if any) and a countdown until the next
+/// automatic reconnect/retry attempt, redrawing only when the displayed second changes.
+/// Uses DisplayValue sprites so only these two lines are repainted, leaving the rest of
+/// the display (e.g. any prior data) undisturbed.
 /// </summary>
+/// <param name="reasonText">The disconnect reason or error message to display.</param>
+/// <param name="secsLeft">Seconds remaining until the next retry attempt.</param>
 ///
-void drawReconnectCountdown()
+void drawReconnectCountdown(const std::string& reasonText, uint8_t secsLeft)
 {
-   uint8_t secsLeft = static_cast<uint8_t>(ceil(reconnectTimer.remaining()));
    if (secsLeft == lastCountdownSecs)
    {
       return;
    }
    lastCountdownSecs = secsLeft;
 
-   arduino.clearDisplay();
-   arduino.setCursor(0, 0);
-   arduino.setTextSize(3);
-   arduino.println("Disconnected", Color::RED);
-   arduino.moveCursorY(4);
+   reasonLine.draw(reasonText, Color::RED);
 
-   arduino.setTextSize(2);
-   arduino.println(disconnectReason, Color::LABEL);
-   arduino.moveCursorY(4);
-
-   arduino.print("Reconnecting in ", Color::GREEN);
-   arduino.println(secsLeft, Color::VALUE);
+   std::string statusText = "Reconnecting in " + std::to_string(secsLeft) + "s";
+   statusLine.draw(statusText, Color::GREEN);
 }
 
 void setup()
@@ -200,6 +208,11 @@ void setup()
 
    arduino.print("WebSocket...", Color::GREEN);
 
+   arduino.setTextSize(DISCONNECT_TEXT_SIZE);
+   int16_t reasonY = arduino.height() / 3;
+   reasonLine.setPosition(0, reasonY);
+   statusLine.setPosition(0, reasonY + reasonLine.height() + 4);
+
    client.setCallbacks(onConnected, onDisconnected, nullptr, onReceiveText, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
 }
@@ -210,7 +223,22 @@ void loop()
 
    if (disconnected)
    {
-      drawReconnectCountdown();
+      uint8_t secsLeft = static_cast<uint8_t>(ceil(reconnectTimer.remaining()));
+      drawReconnectCountdown(disconnectReason, secsLeft);
+      return;
+   }
+
+   if (client.isStartRetryPending())
+   {
+      uint8_t secsLeft = static_cast<uint8_t>(ceil(client.getStartRetryRemainingSecs()));
+      drawReconnectCountdown(lastErrorMsg, secsLeft);
+      return;
+   }
+
+   if (!started)
+   {
+      // waiting for the subscribe acknowledgement from the server; don't draw
+      // any data until the topic has been officially started
       return;
    }
 
