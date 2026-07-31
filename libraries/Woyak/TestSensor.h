@@ -16,6 +16,7 @@ class ConstantTestSensor;
 class RandomTestSensor;
 class NormalTestSensor;
 class SinTestSensor;
+class WaveTestSensor;
 class MS5837PressureTestSensor;
 class CapacitiveTestSensor;
 class DepthTestSensor;
@@ -28,6 +29,7 @@ class DepthTestSensor;
  #define TEST_SENSOR_TYPE TempSensorTestSensor
 // #define TEST_SENSOR_TYPE ESP32TempTestSensor
 // #define TEST_SENSOR_TYPE SinTestSensor
+// #define TEST_SENSOR_TYPE WaveTestSensor
 // #define TEST_SENSOR_TYPE ConstantTestSensor
 // #define TEST_SENSOR_TYPE RandomTestSensor
 // #define TEST_SENSOR_TYPE NormalTestSensor
@@ -84,6 +86,24 @@ namespace TestSensorConfig
    static constexpr long SIN_FIXED_MIN_PERIOD_SAMPLES = 100;
    static constexpr long SIN_FIXED_MAX_PERIOD_SAMPLES = 4000;
    static constexpr long SIN_FIXED_PERIOD_STEP_SAMPLES = 100;
+
+   // ----- wave sensor (simulates waves in a lake, as a sum of a few sine components)
+   static constexpr uint16_t WAVE_SAMPLING_RATE_PER_SEC = 0;
+   static constexpr float WAVE_PRIMARY_AMPLITUDE = 8.0f;
+   static constexpr float WAVE_PRIMARY_PERIOD_S = 1.1f;
+   // Wind-driven chop is modeled as a single faster component whose period tracks the
+   // primary wave's period (see WaveTestSensor::_getValue), so it always looks proportional
+   // to the primary wave regardless of the currently configured periodS.
+   static constexpr float WAVE_CHOP_AMPLITUDE = 2.0f;
+   static constexpr float WAVE_CHOP_PERIOD_DIVISOR = 3.0f;
+   // Fraction by which each component's period and amplitude are randomly varied every
+   // cycle (e.g. 0.3 = up to +/-30%), so the wave doesn't look like a perfectly repeating
+   // signal. See WaveTestSensor::_randomFactor().
+   static constexpr float WAVE_RANDOMNESS = 0.3f;
+   static constexpr float WAVE_MIN_PERIOD_S = 1.0f;
+   static constexpr float WAVE_MAX_PERIOD_S = 60.0f;
+   static constexpr float WAVE_PERIOD_STEP_S = 1.0f;
+   static constexpr const char* WAVE_FORMAT = "###.#";
 
    // ----- temp sensor (physical sensor)
    static constexpr const char* TEMP_FORMAT = "###.##F";
@@ -867,6 +887,143 @@ public:
    const char* sensorType() const override
    {
       return "Sin";
+   }
+};
+
+///
+/// <summary>
+/// Simulates waves in a lake as a sum of two sine components: a primary wave and a
+/// faster wind-driven chop component whose period always tracks 1/3 of the primary
+/// wave's period. Each component advances via its own phase accumulator so a live change
+/// to periodS only affects the rate each component's phase accumulates from here on.
+/// </summary>
+///
+class WaveTestSensor : public MockTestSensorBase
+{
+private:
+   // Accumulated phase (in radians) for each wave component, and the elapsed-time value
+   // they were last advanced to. See SinTestSensor::_advancePhase for why phase is
+   // accumulated incrementally rather than computed directly from total elapsed time.
+   float _primaryPhaseRadians = 0.0f;
+   float _chopPhaseRadians = 0.0f;
+   float _lastElapsedS = 0.0f;
+
+   // Per-cycle random multipliers (see _randomFactor()) applied to each component's period
+   // and amplitude, re-rolled every time that component completes a cycle (_advancePhase()
+   // wraps its phase past 2*PI), so successive waves vary in height and timing rather than
+   // repeating identically forever.
+   float _primaryPeriodFactor = 1.0f;
+   float _primaryAmplitudeFactor = 1.0f;
+   float _chopPeriodFactor = 1.0f;
+   float _chopAmplitudeFactor = 1.0f;
+
+   uint16_t _samplingRatePerSec() const override
+   {
+      return TestSensorConfig::WAVE_SAMPLING_RATE_PER_SEC;
+   }
+
+   ///
+   /// <summary>
+   /// Generates a random multiplier in [1 - WAVE_RANDOMNESS, 1 + WAVE_RANDOMNESS], used to
+   /// vary a wave component's period or amplitude from one cycle to the next.
+   /// </summary>
+   /// <returns>A random multiplier centered on 1.0.</returns>
+   ///
+   float _randomFactor() const
+   {
+      float spread = TestSensorConfig::WAVE_RANDOMNESS;
+      float unit = static_cast<float>(random(0, 1001)) / 1000.0f; // 0.0 .. 1.0
+      return 1.0f + ((unit * 2.0f - 1.0f) * spread);
+   }
+
+   ///
+   /// <summary>
+   /// Advances a single phase accumulator by the given time delta, at a rate determined
+   /// by the component's period, re-rolling its period/amplitude factors whenever the
+   /// phase wraps past a full cycle.
+   /// </summary>
+   /// <param name="phaseRadians">The phase accumulator to advance, in place.</param>
+   /// <param name="componentPeriodS">The wave component's nominal (unrandomized) period, in seconds.</param>
+   /// <param name="periodFactor">Random period multiplier for this component, updated in place on cycle wrap.</param>
+   /// <param name="amplitudeFactor">Random amplitude multiplier for this component, updated in place on cycle wrap.</param>
+   /// <param name="deltaS">Time elapsed, in seconds, since the last advance.</param>
+   ///
+   void _advancePhase(float& phaseRadians, float componentPeriodS, float& periodFactor, float& amplitudeFactor, float deltaS)
+   {
+      float actualPeriodS = componentPeriodS * periodFactor;
+      if (actualPeriodS > 0.0f)
+      {
+         phaseRadians += (deltaS / actualPeriodS) * (2.0f * PI);
+      }
+
+      if (phaseRadians >= (2.0f * PI))
+      {
+         phaseRadians = fmodf(phaseRadians, 2.0f * PI);
+         periodFactor = _randomFactor();
+         amplitudeFactor = _randomFactor();
+      }
+   }
+
+   float _getValue() override
+   {
+      float elapsedS = static_cast<float>(millis() - _startMs) / 1000.0f;
+      float deltaS = elapsedS - _lastElapsedS;
+      _lastElapsedS = elapsedS;
+
+      _advancePhase(_primaryPhaseRadians, periodS, _primaryPeriodFactor, _primaryAmplitudeFactor, deltaS);
+      _advancePhase(_chopPhaseRadians, periodS / TestSensorConfig::WAVE_CHOP_PERIOD_DIVISOR, _chopPeriodFactor, _chopAmplitudeFactor, deltaS);
+
+      return (sinf(_primaryPhaseRadians) * TestSensorConfig::WAVE_PRIMARY_AMPLITUDE * _primaryAmplitudeFactor)
+         + (sinf(_chopPhaseRadians) * TestSensorConfig::WAVE_CHOP_AMPLITUDE * _chopAmplitudeFactor);
+   }
+
+public:
+   ///
+   /// <summary>
+   /// Initializes the sensor and resets the phase accumulators and random factors so a new
+   /// run starts at phase 0 with no randomization applied yet.
+   /// </summary>
+   /// <returns>True when initialization succeeds; otherwise false.</returns>
+   ///
+   bool begin() override
+   {
+      _primaryPhaseRadians = 0.0f;
+      _chopPhaseRadians = 0.0f;
+      _lastElapsedS = 0.0f;
+      _primaryPeriodFactor = 1.0f;
+      _primaryAmplitudeFactor = 1.0f;
+      _chopPeriodFactor = 1.0f;
+      _chopAmplitudeFactor = 1.0f;
+      return MockTestSensorBase::begin();
+   }
+
+   ///
+   /// <summary>
+   /// The primary wave's period, in seconds. Public and mutable so it can be bound directly
+   /// to an editable field for live adjustment.
+   /// </summary>
+   ///
+   float periodS = TestSensorConfig::WAVE_PRIMARY_PERIOD_S;
+
+   ///
+   /// <summary>
+   /// Initializes the sensor with its configured format pattern.
+   /// </summary>
+   ///
+   WaveTestSensor()
+      : MockTestSensorBase(TestSensorConfig::WAVE_FORMAT)
+   {
+   }
+
+   ///
+   /// <summary>
+   /// Gets the sensor type name.
+   /// </summary>
+   /// <returns>The sensor type name.</returns>
+   ///
+   const char* sensorType() const override
+   {
+      return "Wave";
    }
 };
 

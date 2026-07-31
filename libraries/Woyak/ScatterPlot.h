@@ -9,6 +9,7 @@
 #include "ScatterPlotSeries.h"
 #include "Structs.h"
 #include "TimedScatterPlotSeries.h"
+#include "TimeWindowScatterPlotSeries.h"
 #include "Util.h"
 #include <math.h>
 #include <new>
@@ -401,6 +402,41 @@ private:
 
    ///
    /// <summary>
+   /// Draws a small filled circle centered on (x, y), used when a series' pointSize is
+   /// greater than 1. The circle's radius is size - 1, so it spans exactly
+   /// 2 * size - 1 pixels in diameter (e.g. pointSize 2 draws a 3-pixel-wide circle,
+   /// pointSize 3 draws a 5-pixel-wide circle). Each row of the circle is filled with a
+   /// single drawLine() call (or setPixel() for single-pixel rows) instead of testing
+   /// every pixel individually, since a horizontal span is drawn just as fast via
+   /// drawLine() as via a per-pixel loop but with far fewer distance checks.
+   /// </summary>
+   /// <param name="x">Buffer-relative center column.</param>
+   /// <param name="y">Buffer-relative center row.</param>
+   /// <param name="size">Marker size, in pixels; the drawn circle's radius is size - 1.</param>
+   /// <param name="layer">DisplayBuffer layer index to stamp the marker's pixels with.</param>
+   ///
+   void _drawPointMarker(int16_t x, int16_t y, uint8_t size, uint8_t layer)
+   {
+      int16_t radius = static_cast<int16_t>(size) - 1;
+      int16_t radiusSquared = radius * radius;
+
+      for (int16_t dy = -radius; dy <= radius; dy++)
+      {
+         int16_t halfWidth = static_cast<int16_t>(sqrtf(static_cast<float>(radiusSquared - (dy * dy))));
+
+         if (halfWidth == 0)
+         {
+            _displayBuffer.setPixel(x, y + dy, layer);
+         }
+         else
+         {
+            _displayBuffer.drawLine(x - halfWidth, y + dy, x + halfWidth, y + dy, layer);
+         }
+      }
+   }
+
+   ///
+   /// <summary>
    /// Rasterizes one series' raw points (or its moving-average line) into the shared
    /// DisplayBuffer on the given layer, connecting consecutive points with a line when
    /// the series requests lines (or when rasterizing the moving average). Points/moving-
@@ -442,6 +478,10 @@ private:
          if (connectPoints && havePrevPoint)
          {
             _displayBuffer.drawLine(prevX, prevY, x, y, layer);
+         }
+         else if (series->pointSize > 1)
+         {
+            _drawPointMarker(x, y, series->pointSize, layer);
          }
          else
          {
@@ -800,6 +840,25 @@ public:
    TimedScatterPlotSeries* createTimedSeries(unsigned long historyMs, size_t numBins)
    {
       TimedScatterPlotSeries* newSeries = new TimedScatterPlotSeries(historyMs, numBins);
+      _addSeries(newSeries);
+      return newSeries;
+   }
+
+   ///
+   /// <summary>
+   /// Creates a new time-window scatter plot series owned by this plot (see
+   /// TimeWindowScatterPlotSeries): every raw sample is retained unbinned, timestamped
+   /// with millis() at add() time, and evicted once older than historyMs. Call
+   /// updateWindow(nowMs) on the returned series once per frame, before draw(), to keep
+   /// the X axis locked to [nowMs - historyMs, nowMs] in sync with the wall clock.
+   /// </summary>
+   /// <param name="historyMs">Duration, in milliseconds, of the rolling window.</param>
+   /// <param name="initialCapacity">Initial capacity for the raw point storage, grown automatically if exceeded.</param>
+   /// <returns>Pointer to the newly created series.</returns>
+   ///
+   TimeWindowScatterPlotSeries* createTimeWindowSeries(unsigned long historyMs, size_t initialCapacity = 64)
+   {
+      TimeWindowScatterPlotSeries* newSeries = new TimeWindowScatterPlotSeries(historyMs, initialCapacity);
       _addSeries(newSeries);
       return newSeries;
    }

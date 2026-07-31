@@ -118,6 +118,7 @@
     <File Path="libraries/Woyak/TimedStats.h" />
     <File Path="libraries/Woyak/TimedValues.h" />
     <File Path="libraries/Woyak/Timer.h" />
+    <File Path="libraries/Woyak/TimeWindowScatterPlotSeries.h" />
     <File Path="libraries/Woyak/Units.h" />
     <File Path="libraries/Woyak/Url.h" />
     <File Path="libraries/Woyak/Util.h" />

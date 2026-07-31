@@ -47,6 +47,14 @@ private:
    bool _spriteCreated = false;
    uint8_t _textSize;
 
+   // Tracks the pixel X position the sprite was pushed to on the previous draw() call,
+   // so Alignment::DECIMAL (whose pushX shifts frame to frame as the number of characters
+   // before the decimal point changes, e.g. a sign or leading digit appearing/disappearing)
+   // can detect when the sprite's footprint has moved and erase the now-stale region the
+   // previous frame left outside the new sprite's bounds - otherwise leftover pixels (e.g.
+   // an old '-' sign) never get overwritten since pushSprite() only erases its own bounds.
+   int16_t _lastPushX = INT16_MIN;
+
    ///
    /// <summary>
    /// Creates the off-screen sprite, sized to fit the format's fixed width and the current
@@ -161,6 +169,16 @@ private:
          size_t charsBeforeDecimal = _charsBeforeDecimal(trimmed);
          pushX -= (int16_t)_display->charW(_textSize) * (int16_t)charsBeforeDecimal;
       }
+
+      // If this sprite's footprint has shifted since the previous draw() (only possible
+      // with Alignment::DECIMAL, since every other alignment keeps pushX fixed at _x),
+      // erase the previous position first so pixels outside the new sprite's bounds
+      // (e.g. a '-' sign that is no longer present) don't linger on screen.
+      if ((_lastPushX != INT16_MIN) && (_lastPushX != pushX))
+      {
+         _display->fillRect(_lastPushX, _y, _sprite.width(), _sprite.height(), backgroundColor);
+      }
+      _lastPushX = pushX;
 
       _sprite.fillScreen((uint16_t)backgroundColor);
       _sprite.setTextColor((uint16_t)valueColor, (uint16_t)backgroundColor);
@@ -322,6 +340,14 @@ public:
       {
          _createSprite();
       }
+
+      // If the last draw() pushed the sprite to a shifted DECIMAL position, erase that
+      // region too, since it may fall outside the sprite's normal (_x, _y) footprint.
+      if ((_lastPushX != INT16_MIN) && (_lastPushX != _x))
+      {
+         _display->fillRect(_lastPushX, _y, _sprite.width(), _sprite.height(), backgroundColor);
+      }
+      _lastPushX = _x;
 
       _sprite.fillScreen((uint16_t)backgroundColor);
       _sprite.pushSprite(_x, _y);

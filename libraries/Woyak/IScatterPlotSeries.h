@@ -28,6 +28,15 @@ public:
    bool showLines = false;
 
    ///
+   /// <summary>
+   /// Size, in pixels, of each drawn point when showPoints is true. The default, 1, draws
+   /// a single pixel. A size of 2 (or larger) instead draws a small plus-shaped marker
+   /// centered on the point, spanning size pixels in each direction from the center.
+   /// </summary>
+   ///
+   uint8_t pointSize = 1;
+
+   ///
    /// <summary>If true, draws this series' centered moving average as a connected line.</summary>
    ///
    bool showMovingAverage = false;

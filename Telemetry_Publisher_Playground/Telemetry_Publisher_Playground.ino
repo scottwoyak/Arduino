@@ -50,13 +50,14 @@ TelemetryPublisher client(TELEMETRY_TOPIC, TELEMETRY_DECIMAL_PLACES);
 Arduino arduino;
 
 // ----------- Test Function Selection (source, selectable live via Encoder A/B)
-constexpr const char* TEST_FUNCTION_LABELS[] = { "Const", "Random", "Normal", "Sin" };
+constexpr const char* TEST_FUNCTION_LABELS[] = { "Const", "Random", "Normal", "Sin", "Wave" };
 constexpr const char* PREF_NAMESPACE = "TelemetryPubPg";
 ConstantTestSensor constantSensor;
 RandomTestSensor randomSensor;
 NormalTestSensor normalSensor;
 SinTestSensor sinSensor;
-ITestSensor* const TEST_FUNCTION_SENSORS[] = { &constantSensor, &randomSensor, &normalSensor, &sinSensor };
+WaveTestSensor waveSensor;
+ITestSensor* const TEST_FUNCTION_SENSORS[] = { &constantSensor, &randomSensor, &normalSensor, &sinSensor, &waveSensor };
 ITestSensor* sensor = nullptr;
 
 // ----------- Publish Rate (adjustable live with Encoder A/B)
@@ -105,10 +106,10 @@ FieldTableEditor::Row tableCells[] =
    { "Server" },
    { "Host", &hostValue },
    { "Topic", &topicValue },
-   { "Rate", &rateValueField },
    { "Published Content" },
    { "Source", &sourceEditor },
-   { "Rate", &targetEditor },
+   { "Sampling Rate", &targetEditor },
+   { "Published Rate", &rateValueField },
 };
 FieldTableEditor table(&arduino, PREF_NAMESPACE, tableCells);
 
@@ -118,17 +119,19 @@ DisplayValue status(&arduino, Format(32, Format::Alignment::LEFT), 2, DisplayVal
 float lastValue = NAN;
 std::string lastErrorMsg = "";
 std::string lastDrawnErrorMsg = "";
+bool plotVisible = false;
 
 // ----------- Error Message Area (plain print, manually cleared, so long messages can wrap)
 int16_t errorAreaX = 0;
 int16_t errorAreaY = 0;
 constexpr int16_t ERROR_AREA_HEIGHT_PX = 40;
 
-// ----------- Published Value Scatter Plot (bottom of display, 60 second rolling span)
-constexpr unsigned long PLOT_SPAN_MS = 60000UL;
-constexpr size_t PLOT_NUM_BINS = MAX_PUBLISH_RATE_PER_SEC * (PLOT_SPAN_MS / 1000UL);
+// ----------- Published Value Scatter Plot (bottom of display, 5 second rolling span)
+constexpr unsigned long PLOT_SPAN_MS = 5000UL;
 ScatterPlot valuePlot(&arduino, Rect16{}, "##.#s", "###.###");
-TimedScatterPlotSeries* valueSeries = valuePlot.createTimedSeries(PLOT_SPAN_MS, PLOT_NUM_BINS);
+TimeWindowScatterPlotSeries* valueSeries = valuePlot.createTimeWindowSeries(PLOT_SPAN_MS);
+constexpr uint8_t VALUE_SERIES_POINT_SIZE = 2;
+constexpr uint8_t VALUE_SERIES_MAX_POINT_SIZE = 3;
 
 ///
 /// <summary>
@@ -263,12 +266,16 @@ void selectTestFunction()
 {
    sensor = TEST_FUNCTION_SENSORS[testFunctionIndex];
    sensor->begin();
+   valuePlot.setYAxisFormat(sensor->getFormatStr().c_str());
+   valuePlot.clear();
 }
 
 void setup()
 {
    SerialX::begin();
    arduino.begin();
+
+   valueSeries->pointSize = VALUE_SERIES_POINT_SIZE;
 
    arduino.setTextSize(3);
    arduino.setCursor(0, 0);
@@ -300,10 +307,12 @@ void setup()
    errorAreaY = messageTop + status.height() + 4;
    arduino.display.setTextWrap(true);
 
-   int16_t plotTop = errorAreaY + ERROR_AREA_HEIGHT_PX;
+   int16_t plotTop = table.getRect().bottom() + MESSAGE_PADDING_PX;
    valuePlot.setRect(0, plotTop, arduino.width(), arduino.height() - plotTop);
    valuePlot.setShowXMinMaxValue(false);
    valuePlot.setShowXRangeValue(true);
+   valuePlot.setShowYRangeValue(false);
+   valuePlot.setYAxisMode(ScatterPlot::AxisMode::GROW_ONLY);
    valueSeries->showPoints = true;
    valueSeries->showLines = false;
 
@@ -334,6 +343,7 @@ void loop()
          lastCountdownSecs = secsLeft;
          lastRetryCount = retryCount;
          statusText = secsLeft > 0 ? "Retrying in " + std::to_string(secsLeft) + "s" : "Retrying...";
+         statusColor = Color::RED;
       }
    }
    else if (client.isStartRetryPending())
@@ -344,6 +354,7 @@ void loop()
          lastCountdownSecs = secsLeft;
          lastRetryCount = retryCount;
          statusText = secsLeft > 0 ? "Retrying in " + std::to_string(secsLeft) + "s" : "Retrying...";
+         statusColor = Color::RED;
       }
    }
 
@@ -353,6 +364,25 @@ void loop()
    }
 
    table.selectNext(arduino.encoderA.delta());
+
+   if (arduino.encoderB.button.wasPressed())
+   {
+      if (valueSeries->showLines)
+      {
+         valueSeries->showLines = false;
+         valueSeries->showPoints = true;
+         valueSeries->pointSize = 1;
+      }
+      else if (valueSeries->pointSize < VALUE_SERIES_MAX_POINT_SIZE)
+      {
+         valueSeries->pointSize++;
+      }
+      else
+      {
+         valueSeries->showPoints = false;
+         valueSeries->showLines = true;
+      }
+   }
 
    int32_t adjustDelta = arduino.encoderB.delta();
    if (adjustDelta != 0)
@@ -386,7 +416,25 @@ void loop()
    }
 
    table.draw();
-   valuePlot.draw();
+
+   // Only show the plot once the error message area is clear; otherwise a long wrapped
+   // error message could overlap the plot region above it.
+   if (connected && lastErrorMsg.empty())
+   {
+      if (!plotVisible)
+      {
+         valuePlot.clear();
+         plotVisible = true;
+      }
+
+      valueSeries->updateWindow(millis());
+      valuePlot.draw();
+   }
+   else if (plotVisible)
+   {
+      valuePlot.clear();
+      plotVisible = false;
+   }
 
    if (connected)
    {

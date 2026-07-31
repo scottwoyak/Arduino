@@ -139,6 +139,31 @@ public:
 
    ///
    /// <summary>
+   /// Initializes a new instance of the Field class using an already-parsed Format. Used
+   /// internally for formats that cannot be expressed as a pattern string (e.g. a Format
+   /// constructed from an explicit length rather than a pattern).
+   /// </summary>
+   /// <param name="display">The display interface to draw onto.</param>
+   /// <param name="pos">The X/Y coordinate of the label's top-left corner.</param>
+   /// <param name="label">The label text drawn before the value (a gap separator is added).
+   /// Pass an empty string to draw only the value, with no label or separator.</param>
+   /// <param name="format">The already-parsed formatter applied to the value.</param>
+   /// <param name="textSize">The font size used to draw the label and value text.</param>
+   /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
+   /// edge (RIGHT), or the position of the gap separating label and value (GAP).</param>
+   ///
+   Field(ArduinoWithDisplay* display, Point16 pos,
+                const char* label, const Format& format, uint8_t textSize,
+                Alignment alignment = Alignment::LEFT)
+      : _display(display), _label(label),
+        _textSize(textSize), _alignment(alignment),
+        _value(display, format, _textSize)
+   {
+      setPosition(pos);
+   }
+
+   ///
+   /// <summary>
    /// Initializes a new instance of the Field class with no label, using an already-parsed
    /// Format. Used internally for formats that cannot be expressed as a pattern string
    /// (e.g. a Format constructed from an explicit length rather than a pattern).
