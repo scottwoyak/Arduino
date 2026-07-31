@@ -1851,6 +1851,7 @@ void loop()
       if (plotState != PlotState::OFF)
       {
          ensureChargeScatterPlot(plotRect);
+         chargeScatterSeries->updateWindow(millis());
          chargeScatterPlot->draw();
       }
       else if (previousPlotState != PlotState::OFF)

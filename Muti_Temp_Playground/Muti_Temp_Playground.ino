@@ -467,6 +467,13 @@ void loop()
    }
    else if (activePlot != nullptr)
    {
+      for (uint8_t i = 0; i < NUM_SENSORS; i++)
+      {
+         if (activePlotSeries[i] != nullptr)
+         {
+            activePlotSeries[i]->updateWindow(millis());
+         }
+      }
       activePlot->draw();
    }
 

@@ -327,40 +327,56 @@ test(ScatterPlotSeriesTest, shouldPreserveMovingAverageAsRollingBufferScrolls)
 
 test(ScatterPlotSeriesTest, timedSeriesShouldStartEmpty)
 {
-   TimedScatterPlotSeries series(1000, 5);
+   TimedScatterPlotSeries series(1000);
 
    assertEqual((size_t)0, series.pointCount());
 }
 
-test(ScatterPlotSeriesTest, timedSeriesShouldReportFixedXRangeFromHistoryMsAndBins)
+test(ScatterPlotSeriesTest, timedSeriesShouldRetainEveryRawSample)
 {
-   TimedScatterPlotSeries series(1000, 5);
+   TimedScatterPlotSeries series(1000);
+
+   series.add(1.0f);
+   series.add(2.0f);
+   series.add(3.0f);
+
+   assertEqual((size_t)3, series.pointCount());
+   assertEqual(1.0f, series.yValues()[0]);
+   assertEqual(2.0f, series.yValues()[1]);
+   assertEqual(3.0f, series.yValues()[2]);
+}
+
+test(ScatterPlotSeriesTest, timedSeriesUpdateWindowShouldLockXRangeToNowMinusHistory)
+{
+   TimedScatterPlotSeries series(1000);
+
+   series.add(42.0f);
+   series.updateWindow(5000UL);
 
    float xMin, xMax;
    bool hasRange = series.getFixedXRange(&xMin, &xMax);
 
    assertTrue(hasRange);
-   assertEqual(-1000.0f, xMin);
-   assertEqual(0.0f, xMax);
+   assertEqual(4000.0f, xMin);
+   assertEqual(5000.0f, xMax);
 }
 
-test(ScatterPlotSeriesTest, timedSeriesShouldReflectAddedSampleInCurrentBin)
+test(ScatterPlotSeriesTest, timedSeriesUpdateWindowShouldEvictSamplesOlderThanHistory)
 {
-   TimedScatterPlotSeries series(1000, 5);
+   TimedScatterPlotSeries series(1000);
 
-   series.add(42.0f);
-   series.prepareForRender();
+   series.add(10.0f);
+   series.updateWindow(4500UL);
+   series.add(20.0f);
+   series.updateWindow(5000UL);
 
-   // The current (still-open) bin is intentionally reported as NAN since it can still
-   // receive more samples before it closes - see TimedScatterPlotSeries::_refreshTimeSnapshot().
    assertEqual((size_t)1, series.pointCount());
-   assertTrue(isnan(series.yValues()[0]));
-   assertNear(0.0f, series.xValues()[0], 0.001f);
+   assertEqual(20.0f, series.yValues()[0]);
 }
 
 test(ScatterPlotSeriesTest, timedSeriesShouldClearBackToEmpty)
 {
-   TimedScatterPlotSeries series(1000, 5);
+   TimedScatterPlotSeries series(1000);
 
    series.add(1.0f);
    series.clear();

@@ -757,6 +757,13 @@ void displaySensorList()
 ///
 void displayScatterPlots()
 {
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   {
+      if (shortAvgSeries[i]) shortAvgSeries[i]->updateWindow(millis());
+      if (longAvgSeries[i]) longAvgSeries[i]->updateWindow(millis());
+      if (correctionSeries[i]) correctionSeries[i]->updateWindow(millis());
+   }
+
    if (shortAvgPlot) shortAvgPlot->draw();
    if (longAvgPlot) longAvgPlot->draw();
    if (correctionPlot) correctionPlot->draw();

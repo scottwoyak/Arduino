@@ -169,6 +169,37 @@ long lastDisplayModeIndex = 0;
 EnumEditor displayModeEditor(&displayModeIndex,
    DISPLAY_MODE_LABELS, 0, "########");
 
+// ----------- Point Size Selection
+// Controls the pixel size of each drawn point (see IScatterPlotSeries::pointSize). Only
+// meaningful while Display is set to Points; grayed out and skipped by encoder selection
+// otherwise, since it has no effect while lines are drawn instead of points.
+constexpr long MIN_POINT_SIZE = 1;
+constexpr long MAX_POINT_SIZE = 3;
+constexpr long DEFAULT_POINT_SIZE = 1;
+
+///
+/// <summary>
+/// Point-size-selection field that is only enabled (selectable/adjustable, drawn in its
+/// normal color) while Display is set to Points. While Display is Lines, it's grayed out
+/// and skipped by encoder selection since it has no effect on the drawn series.
+/// </summary>
+///
+class PointSizeField : public IntEditor
+{
+public:
+   using IntEditor::IntEditor;
+
+   bool isEnabled() const override
+   {
+      return displayModeIndex == 0;
+   }
+};
+
+long pointSizeValue = DEFAULT_POINT_SIZE;
+long lastPointSizeValue = DEFAULT_POINT_SIZE;
+PointSizeField pointSizeField(&pointSizeValue,
+   MIN_POINT_SIZE, MAX_POINT_SIZE, 1, DEFAULT_POINT_SIZE, "########");
+
 // ----------- Stats Overlay Selection
 // Controls which statistical overlays (moving average, moving stddev band) are drawn on top
 // of the active sample series. Applied to sampleSeries in applyStatsMode() below, called
@@ -287,6 +318,7 @@ FieldTableEditor::Row defaultStatusCells[] =
    { "Y Size", &plotYSizeField },
    { "Samples", &maxSamplesField },
    { "Display", &displayModeEditor },
+   { "Point Size", &pointSizeField },
    { "Stats", &statsModeEditor },
    { "Measured" },
    { "FPS", &rateValueField },
@@ -304,6 +336,7 @@ FieldTableEditor::Row constantStatusCells[]
    { "Y Size", &plotYSizeField },
    { "Samples", &maxSamplesField },
    { "Display", &displayModeEditor },
+   { "Point Size", &pointSizeField },
    { "Stats", &statsModeEditor },
    { "Measured" },
    { "FPS", &rateValueField },
@@ -321,6 +354,7 @@ FieldTableEditor::Row sinStatusCells[]
    { "Y Size", &plotYSizeField },
    { "Samples", &maxSamplesField },
    { "Display", &displayModeEditor },
+   { "Point Size", &pointSizeField },
    { "Stats", &statsModeEditor },
    { "Measured" },
    { "FPS", &rateValueField },
@@ -497,6 +531,7 @@ void applyDisplayMode()
 
    sampleSeries->showPoints = (index == 0);
    sampleSeries->showLines = (index == 1);
+   sampleSeries->pointSize = (uint8_t)constrain(pointSizeValue, MIN_POINT_SIZE, MAX_POINT_SIZE);
 }
 
 ///
@@ -645,6 +680,7 @@ void setup()
    lastNoiseEnabled = noiseEnabled;
    lastNoiseStdDevValue = noiseStdDevValue;
    lastDisplayModeIndex = displayModeIndex;
+   lastPointSizeValue = pointSizeValue;
    lastStatsModeIndex = statsModeIndex;
 
    // Discard any spurious position change accumulated on the encoders while pins were
@@ -701,9 +737,10 @@ void loop()
          applyNoise();
          statusTable.draw();
       }
-      else if (displayModeIndex != lastDisplayModeIndex)
+      else if (displayModeIndex != lastDisplayModeIndex || pointSizeValue != lastPointSizeValue)
       {
          lastDisplayModeIndex = displayModeIndex;
+         lastPointSizeValue = pointSizeValue;
          applyDisplayMode();
          scatterPlot->invalidate();
          scatterPlot->draw();

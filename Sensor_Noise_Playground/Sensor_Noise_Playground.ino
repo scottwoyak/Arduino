@@ -382,6 +382,7 @@ void loop()
    switch (displayModeSelector.value())
    {
    case DisplayMode::Scatter:
+      scatterSeries->updateWindow(millis());
       scatterPlot.draw();
       break;
 

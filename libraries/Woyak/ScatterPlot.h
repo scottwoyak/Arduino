@@ -9,7 +9,6 @@
 #include "ScatterPlotSeries.h"
 #include "Structs.h"
 #include "TimedScatterPlotSeries.h"
-#include "TimeWindowScatterPlotSeries.h"
 #include "Util.h"
 #include <math.h>
 #include <new>
@@ -828,26 +827,8 @@ public:
 
    ///
    /// <summary>
-   /// Creates a new rolling time-window scatter plot series owned by this plot (see
-   /// TimedScatterPlotSeries): samples are aggregated into numBins equal-duration bins
-   /// spanning the trailing historyMs milliseconds, rotating out the oldest bin as new
-   /// ones open, with the X axis locked to [-historyMs, 0].
-   /// </summary>
-   /// <param name="historyMs">Duration, in milliseconds, of the rolling window.</param>
-   /// <param name="numBins">Number of equal-duration bins to divide the window into.</param>
-   /// <returns>Pointer to the newly created series.</returns>
-   ///
-   TimedScatterPlotSeries* createTimedSeries(unsigned long historyMs, size_t numBins)
-   {
-      TimedScatterPlotSeries* newSeries = new TimedScatterPlotSeries(historyMs, numBins);
-      _addSeries(newSeries);
-      return newSeries;
-   }
-
-   ///
-   /// <summary>
-   /// Creates a new time-window scatter plot series owned by this plot (see
-   /// TimeWindowScatterPlotSeries): every raw sample is retained unbinned, timestamped
+   /// Creates a new timed scatter plot series owned by this plot (see
+   /// TimedScatterPlotSeries): every raw sample is retained unbinned, timestamped
    /// with millis() at add() time, and evicted once older than historyMs. Call
    /// updateWindow(nowMs) on the returned series once per frame, before draw(), to keep
    /// the X axis locked to [nowMs - historyMs, nowMs] in sync with the wall clock.
@@ -856,9 +837,9 @@ public:
    /// <param name="initialCapacity">Initial capacity for the raw point storage, grown automatically if exceeded.</param>
    /// <returns>Pointer to the newly created series.</returns>
    ///
-   TimeWindowScatterPlotSeries* createTimeWindowSeries(unsigned long historyMs, size_t initialCapacity = 64)
+   TimedScatterPlotSeries* createTimedSeries(unsigned long historyMs, size_t initialCapacity = 64)
    {
-      TimeWindowScatterPlotSeries* newSeries = new TimeWindowScatterPlotSeries(historyMs, initialCapacity);
+      TimedScatterPlotSeries* newSeries = new TimedScatterPlotSeries(historyMs, initialCapacity);
       _addSeries(newSeries);
       return newSeries;
    }

@@ -129,7 +129,7 @@ constexpr int16_t ERROR_AREA_HEIGHT_PX = 40;
 // ----------- Published Value Scatter Plot (bottom of display, 5 second rolling span)
 constexpr unsigned long PLOT_SPAN_MS = 5000UL;
 ScatterPlot valuePlot(&arduino, Rect16{}, "##.#s", "###.###");
-TimeWindowScatterPlotSeries* valueSeries = valuePlot.createTimeWindowSeries(PLOT_SPAN_MS);
+TimedScatterPlotSeries* valueSeries = valuePlot.createTimedSeries(PLOT_SPAN_MS);
 constexpr uint8_t VALUE_SERIES_POINT_SIZE = 2;
 constexpr uint8_t VALUE_SERIES_MAX_POINT_SIZE = 3;
 
