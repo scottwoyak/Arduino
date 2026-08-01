@@ -89,7 +89,7 @@ struct SampleRateSeries
 };
 
 constexpr SampleRateSeries TARGET_SERIES[] = {
-   { 2UL, Color::GREEN },
+   { 2UL, Color::LIME },
    { 10UL, Color::YELLOW },
    { 20UL, Color::CYAN },
    { 30UL, Color::MAGENTA },

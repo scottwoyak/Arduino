@@ -155,7 +155,7 @@ void onConnected()
 {
    Serial.println("Telemetry: WebSocket Connected");
    statusText = "Publishing Topic...";
-   statusColor = Color::GREEN;
+   statusColor = Color::LIME;
    disconnected = false;
    connected = false;
    retryCount = 0;
@@ -243,7 +243,7 @@ void onError(std::string msg)
 void onStarted()
 {
    statusText = "Connected";
-   statusColor = Color::GREEN;
+   statusColor = Color::LIME;
    connected = true;
    retryCount = 0;
    lastErrorMsg.clear();
@@ -322,7 +322,7 @@ void setup()
    }
 
    statusText = "Connecting to Server...";
-   statusColor = Color::GREEN;
+   statusColor = Color::LIME;
    status.draw(statusText, statusColor);
 
    client.setCallbacks(onConnected, onDisconnected, nullptr, onText, onError, onStarted);

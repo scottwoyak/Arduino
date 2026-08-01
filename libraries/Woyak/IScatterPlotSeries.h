@@ -59,7 +59,7 @@ public:
    ///
    /// <summary>Color used to draw this series' points and lines.</summary>
    ///
-   Color color = Color::GREEN;
+   Color color = Color::LIME;
 
    // Lazily-created DisplayValues for this series' mid-axis moving-average/stddev
    // labels, hoisted here so both concrete series types carry them uniformly instead of

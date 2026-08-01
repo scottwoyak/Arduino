@@ -269,7 +269,7 @@ constexpr Color SENSOR_PLOT_COLORS[] =
    Color::WHITE,
    Color::YELLOW,
    Color::CYAN,
-   Color::GREEN,
+   Color::LIME,
    Color::ORANGE,
    Color::MAGENTA,
    Color::RED,

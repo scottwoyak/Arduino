@@ -240,7 +240,7 @@ public:
    ///
    /// <summary>
    /// Constructs a timed histogram plot renderer that draws within the given fixed screen
-   /// rectangle. The bar color defaults to Color::GREEN and the X-axis min/max label
+   /// rectangle. The bar color defaults to Color::LIME and the X-axis min/max label
    /// format defaults to "##.##" if not specified. Axis label color defaults to
    /// Color::LABEL; use setAxisLabelColor() to change it.
    /// </summary>
@@ -253,9 +253,9 @@ public:
    /// fit labels formatted with this pattern (e.g. "####"), showing the max bin count at
    /// the top and "1" at the bottom (with a vertical axis line); pass nullptr (the
    /// default) for no Y-axis.</param>
-   /// <param name="barColor">Color to use for histogram bars (default Color::GREEN).</param>
+   /// <param name="barColor">Color to use for histogram bars (default Color::LIME).</param>
    ///
-   TimedHistogramPlotBase(ArduinoWithDisplay* feather, TimedHistogramBase<TimeFunc>& histogram, TimedValuesBase<float, TimeFunc>& samples, Rect16 rect, const char* xAxisFormat = "##.##", const char* yAxisFormat = nullptr, Color barColor = Color::GREEN)
+   TimedHistogramPlotBase(ArduinoWithDisplay* feather, TimedHistogramBase<TimeFunc>& histogram, TimedValuesBase<float, TimeFunc>& samples, Rect16 rect, const char* xAxisFormat = "##.##", const char* yAxisFormat = nullptr, Color barColor = Color::LIME)
      : _feather(feather), _histogram(histogram), _samples(samples), _barColor(barColor), _xAxisFormat(xAxisFormat), _rect(rect), _showYAxis(yAxisFormat != nullptr), _yAxisFormat(yAxisFormat)
    {}
 

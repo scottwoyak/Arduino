@@ -208,7 +208,7 @@ private:
 public:
    ///
    /// <summary>
-   /// Constructs a histogram plot renderer. The bar color defaults to Color::GREEN and
+   /// Constructs a histogram plot renderer. The bar color defaults to Color::LIME and
    /// the X-axis min/max/range label format defaults to "##.##" if not specified. No
    /// Y-axis is shown unless yAxisFormat is given. Axis label color defaults to
    /// Color::LABEL; use setAxisLabelColor() to change it.
@@ -223,9 +223,9 @@ public:
    /// default) for no Y-axis. To align another chart's x-axis (e.g. a ScatterPlot's) with
    /// this histogram, give both the same format string length so their reserved label
    /// columns end up the same width.</param>
-   /// <param name="barColor">Color to use for histogram bars (default Color::GREEN).</param>
+   /// <param name="barColor">Color to use for histogram bars (default Color::LIME).</param>
    ///
-   HistogramPlot(ArduinoWithDisplay* arduino, const Histogram& histogram, Rect16 rect, const char* xAxisFormat = "##.##", const char* yAxisFormat = nullptr, Color barColor = Color::GREEN)
+   HistogramPlot(ArduinoWithDisplay* arduino, const Histogram& histogram, Rect16 rect, const char* xAxisFormat = "##.##", const char* yAxisFormat = nullptr, Color barColor = Color::LIME)
       : _arduino(arduino), _histogram(histogram), _rect(rect), _barColor(barColor), _xAxisFormat(xAxisFormat), _showYAxis(yAxisFormat != nullptr), _yAxisFormat(yAxisFormat)
    {
    }

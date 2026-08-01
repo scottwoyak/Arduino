@@ -180,7 +180,7 @@ void drawReconnectCountdown(const std::string& reasonText, uint8_t secsLeft)
    reasonLine.draw(reasonText, Color::RED);
 
    std::string statusText = "Reconnecting in " + std::to_string(secsLeft) + "s";
-   statusLine.draw(statusText, Color::GREEN);
+   statusLine.draw(statusText, Color::LIME);
 }
 
 void setup()
@@ -206,7 +206,7 @@ void setup()
    arduino.printlnR("OK", Color::VALUE);
    arduino.moveCursorY(1);
 
-   arduino.print("WebSocket...", Color::GREEN);
+   arduino.print("WebSocket...", Color::LIME);
 
    arduino.setTextSize(DISCONNECT_TEXT_SIZE);
    int16_t reasonY = arduino.height() / 3;

@@ -67,7 +67,7 @@ constexpr uint8_t NUM_PLOT_VIEWS = NUM_VIEWS - 1;
 
 // Distinct colors used to tell sensors apart on the scatterplots.
 constexpr Color SENSOR_PLOT_COLORS[NUM_SENSORS] = {
-   Color::YELLOW, Color::CYAN, Color::GREEN, Color::MAGENTA,
+   Color::YELLOW, Color::CYAN, Color::LIME, Color::MAGENTA,
    Color::ORANGE, Color::RED, Color::WHITE, Color::PINK,
 };
 

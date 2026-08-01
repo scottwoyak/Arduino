@@ -755,7 +755,7 @@ void renderResultsScatterPlot(const float* values, size_t count)
    if (resultsHistogramRect.width > 0 && resultsHistogramRect.height > 0)
    {
       resultsHistogram = new Histogram(values, count, RESULTS_HISTOGRAM_MIN_BINS, RESULTS_HISTOGRAM_MAX_BINS);
-      resultsHistogramPlot = new HistogramPlot(&arduino, *resultsHistogram, resultsHistogramRect, Color::GREEN, Format("###.#"));
+      resultsHistogramPlot = new HistogramPlot(&arduino, *resultsHistogram, resultsHistogramRect, Color::LIME, Format("###.#"));
       resultsHistogramPlot->render();
    }
 }
