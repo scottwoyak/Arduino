@@ -42,15 +42,11 @@ constexpr uint8_t CONTENT_TEXT_SIZE = DEFAULT_CONTENT_SIZE;
 constexpr const char* PREF_NAMESPACE = "basic_field_editor";
 
 // ----------- Fields
-long intValue = 0;
-long enumValue = 0;
-bool boolValue = false;
-
 const char* const enumLabels[] = { "Left", "Right", "Top", "Bottom" };
 
-BoolEditor boolValueEditor(&boolValue, false, "#####");
-IntEditor intValueEditor(&intValue, -1000, 1000, 1, 0, "#####");
-EnumEditor enumValueEditor(&enumValue, enumLabels, 0, "######");
+BoolEditor boolValueEditor(false, "#####");
+IntEditor intValueEditor(-1000, 1000, 1, 0, "#####");
+EnumEditor enumValueEditor(enumLabels, 0, "######");
 
 FieldTableEditor::Row rows[] = {
    { "Bool", &boolValueEditor },

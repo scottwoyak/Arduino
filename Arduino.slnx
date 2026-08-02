@@ -61,6 +61,7 @@
     <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
     <File Path="libraries/Woyak/LGX_ST7796S.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
+    <File Path="libraries/Woyak/Memory.h" />
     <File Path="libraries/Woyak/MinMaxValue.h" />
     <File Path="libraries/Woyak/ModulinoEncoder.h" />
     <File Path="libraries/Woyak/MovingBarChart.h" />
@@ -288,6 +289,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Color_Playground/Color_Playground.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Counter_Display/Counter_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -297,6 +302,10 @@
     <Deploy />
   </Project>
   <Project Path="Depth_Display/Depth_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="DisplayBuffer_Playground/DisplayBuffer_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

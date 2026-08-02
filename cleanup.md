@@ -22,6 +22,7 @@ Use this checklist when performing a code cleanup pass to ensure all areas are e
 ## 4. Naming Conventions & Modifiers
 - [ ] **Privates/Protected**: Review prefix and declaration order rules.
 - [ ] **Array Counts**: Review the required naming convention for array count constants.
+- [ ] **Array Type**: Prefer `std::array` over plain C arrays for fixed-size arrays
 - [ ] **Timing Units**: Check that timing-related variables use the approved names and suffixes.
 - [ ] **Pointers vs Refs**: Check the preference rule for parameters and members.
 

@@ -140,11 +140,6 @@ unsigned long lastSerialDumpMs = 0;
 // Max Samples/Max Time are editable via Encoder A/B until capture starts, at which point they
 // become disabled (grayed out, skipped by selection) since the sample buffer is already sized
 // to the confirmed value. Samples/Time/Progress are read-only rows updated live during capture.
-long maxSamples = DEFAULT_MAX_SAMPLES;
-long maxCaptureTimeS = DEFAULT_MAX_CAPTURE_TIME_S;
-float progressSamplesValue = 0.0f;
-float progressTimeValue = 0.0f;
-float progressPercentValue = 0.0f;
 
 ///
 /// <summary>
@@ -163,13 +158,13 @@ public:
    }
 };
 
-CaptureLimitField samplesField(&maxSamples,
+CaptureLimitField samplesField(
    MIN_MAX_SAMPLES, MAX_MAX_SAMPLES, MAX_SAMPLES_STEP, DEFAULT_MAX_SAMPLES, Format(SAMPLES_FORMAT, Format::Alignment::LEFT));
-CaptureLimitField durationField(&maxCaptureTimeS,
+CaptureLimitField durationField(
    MIN_MAX_CAPTURE_TIME_S, MAX_MAX_CAPTURE_TIME_S, MAX_CAPTURE_TIME_STEP_S, DEFAULT_MAX_CAPTURE_TIME_S, Format(TIME_FORMAT, Format::Alignment::LEFT));
-FloatValue samplesReadValue(&progressSamplesValue, SAMPLES_FORMAT);
-FloatValue timeReadValue(&progressTimeValue, TIME_FORMAT);
-FloatValue progressReadValue(&progressPercentValue, PROGRESS_PERCENT_FORMAT);
+FloatValue samplesReadValue(SAMPLES_FORMAT);
+FloatValue timeReadValue(TIME_FORMAT);
+FloatValue progressReadValue(PROGRESS_PERCENT_FORMAT);
 
 FieldTableEditor::Row captureCells[] =
 {
@@ -351,7 +346,7 @@ void renderDisplayScatterPlot()
          return;
       }
 
-      if (sensorCapture.isFull() || ((nowMs - captureStartMs) >= (static_cast<unsigned long>(maxCaptureTimeS) * 1000UL)))
+      if (sensorCapture.isFull() || ((nowMs - captureStartMs) >= (static_cast<unsigned long>(durationField.get()) * 1000UL)))
       {
          switch (displayMode)
          {
@@ -380,17 +375,17 @@ void renderDisplayScatterPlot()
 
       unsigned long count = sensorCapture.count();
       unsigned long elapsedSeconds = (nowMs - captureStartMs) / 1000UL;
-      if (elapsedSeconds > static_cast<unsigned long>(maxCaptureTimeS))
+      if (elapsedSeconds > static_cast<unsigned long>(durationField.get()))
       {
-         elapsedSeconds = static_cast<unsigned long>(maxCaptureTimeS);
+         elapsedSeconds = static_cast<unsigned long>(durationField.get());
       }
 
-      float samplePercent = (maxSamples > 0) ? ((count * 100.0f) / maxSamples) : 0.0f;
-      float timePercent = (maxCaptureTimeS > 0) ? ((elapsedSeconds * 100.0f) / maxCaptureTimeS) : 0.0f;
+      float samplePercent = (samplesField.get() > 0) ? ((count * 100.0f) / samplesField.get()) : 0.0f;
+      float timePercent = (durationField.get() > 0) ? ((elapsedSeconds * 100.0f) / durationField.get()) : 0.0f;
 
-      progressSamplesValue = static_cast<float>(count);
-      progressTimeValue = static_cast<float>(elapsedSeconds);
-      progressPercentValue = min(max(samplePercent, timePercent), 100.0f);
+      samplesReadValue.set(static_cast<float>(count));
+      timeReadValue.set(static_cast<float>(elapsedSeconds));
+      progressReadValue.set(min(max(samplePercent, timePercent), 100.0f));
 
       captureTable.draw();
    }
@@ -620,7 +615,7 @@ void startCapture()
    captureStarted = true;
    captureTable.save();
 
-   sensorCapture.reset(static_cast<size_t>(maxSamples));
+   sensorCapture.reset(static_cast<size_t>(samplesField.get()));
 
    captureStartMs = millis();
    updateDisplayProgress(true);
@@ -690,7 +685,7 @@ void loop()
       }
    }
 
-   if ((sensorCapture.count() >= static_cast<size_t>(maxSamples)) || ((millis() - captureStartMs) >= (static_cast<unsigned long>(maxCaptureTimeS) * 1000UL)))
+   if ((sensorCapture.count() >= static_cast<size_t>(samplesField.get())) || ((millis() - captureStartMs) >= (static_cast<unsigned long>(durationField.get()) * 1000UL)))
    {
       finishCapture();
    }

@@ -14,12 +14,12 @@
 /// bits, several pixels per byte), paired with a small per-frame palette mapping each layer
 /// index to the Color it should be drawn with. Callers stamp pixels/lines with a layer index
 /// (via setPixel()/drawLine()) rather than drawing directly to the display, then call
-/// diffAndDraw() once per frame to push only the pixels whose layer actually changed since
-/// the previous frame to the display - unchanging pixels (typically the vast majority during
+/// draw() once per frame to push only the pixels whose layer actually changed since the
+/// previous frame to the display - unchanging pixels (typically the vast majority during
 /// steady-state scrolling/redraws) are never redrawn or flashed.
 ///
 /// The number of bits used per pixel (1, 2, or 4) is auto-detected lazily on the first
-/// diffAndDraw() call after a bind()/reset(), based on the highest layer index actually
+/// draw() call after a bind()/reset(), based on the highest layer index actually
 /// assigned a color via setPaletteColor() so far - e.g. a buffer that only ever uses layer 1
 /// needs just 1 bit/pixel, up to 3 needs 2 bits/pixel, and up to MAX_LAYERS needs 4
 /// bits/pixel. Once detected, the bit depth is locked for the buffer's lifetime and only
@@ -49,15 +49,29 @@ private:
    uint8_t* _prevMask = nullptr;
    size_t _bytesPerColumn = 0;
 
+   // Scratch row buffer, one resolved RGB565 color per column, reused every frame to bulk-
+   // push a full repainted row via pushImageRow() (one SPI/DMA transfer per row) instead of
+   // calling drawPixel() once per pixel. Only allocated (width * 2 bytes) on demand, so
+   // callers that never do a full repaint never pay for it.
+   uint16_t* _rowColors = nullptr;
+   int16_t _rowColorsWidth = 0;
+
+   // Scratch column buffer, one resolved RGB565 color per row, reused every frame to bulk-
+   // push a contiguous vertical run of changed pixels within a column via pushImageColumn()
+   // (one SPI/DMA transfer per run) instead of calling drawPixel() once per changed pixel.
+   // Sized to the buffer's height (the longest possible run), and only allocated on demand.
+   uint16_t* _colColors = nullptr;
+   int16_t _colColorsHeight = 0;
+
    // Number of bits used to pack each pixel's layer index; starts at the worst case (4) so
    // the very first frame after a bind()/reset() can safely stamp any layer, then is
-   // narrowed (and the buffers repacked) on the first diffAndDraw() call once the actual
+   // narrowed (and the buffers repacked) on the first draw() call once the actual
    // highest layer used this binding is known. Locked afterward until the next bind().
    uint8_t _bitsPerPixel = 4;
    bool _depthLocked = false;
    uint8_t _maxLayerUsed = 0;
 
-   // True until the next diffAndDraw() call has run. While true, every pixel is treated as
+   // True until the next draw() call has run. While true, every pixel is treated as
    // changed regardless of what _prevMask currently holds, since _prevMask's content right
    // after a bind()/reset() is only a placeholder (see reset()) and could otherwise alias a
    // real layer value once the buffer's bit depth is narrowed by _lockBitDepthIfNeeded() -
@@ -71,6 +85,18 @@ public:
    /// <summary>Maximum number of distinct non-zero layer indices (1..MAX_LAYERS) a single frame can use.</summary>
    ///
    static constexpr uint8_t MAX_LAYERS = 15;
+
+   ///
+   /// <summary>
+   /// Selects how draw() repaints the display. Both modes use the bulk row/column transfer
+   /// paths (pushImageRow()/pushImageColumn()) for performance.
+   /// </summary>
+   ///
+   enum class RedrawMode
+   {
+      FULL, // Unconditionally repaint every pixel, using bulk row transfers.
+      DIFF, // Only repaint pixels that changed since the previous frame, using bulk column transfers for contiguous runs (the default).
+   };
 
 private:
    // Maps a frame's layer indices (1..MAX_LAYERS) to the color each should be drawn with;
@@ -135,7 +161,7 @@ private:
 
    ///
    /// <summary>
-   /// Called once per frame at the start of diffAndDraw(). On the first call after a
+   /// Called once per frame at the start of draw(). On the first call after a
    /// bind()/reset(), narrows the buffers from the initial worst-case 4 bits/pixel down to
    /// the minimum bit depth actually needed for the highest layer used so far (tracked via
    /// setPaletteColor()), repacking both the current and previous frame buffers in place.
@@ -202,6 +228,48 @@ private:
       _bitsPerPixel = newBitsPerPixel;
    }
 
+   ///
+   /// <summary>
+   /// Lazily (re)allocates the scratch row buffer used by draw()'s full-repaint bulk-push
+   /// path, sized to the buffer's current width. Only reallocates when the width actually
+   /// changed (e.g. after a bind() resize), so steady-state frames pay no allocation cost.
+   /// </summary>
+   /// <returns>True if the row buffer is allocated and ready to use.</returns>
+   ///
+   bool _ensureRowColorsBuffer()
+   {
+      if (_rowColors != nullptr && _rowColorsWidth == _width)
+      {
+         return true;
+      }
+
+      delete[] _rowColors;
+      _rowColors = new (std::nothrow) uint16_t[_width];
+      _rowColorsWidth = _width;
+      return _rowColors != nullptr;
+   }
+
+   ///
+   /// <summary>
+   /// Lazily (re)allocates the scratch column buffer used by draw()'s diffed-redraw
+   /// batching path, sized to the buffer's current height (the longest possible contiguous
+   /// changed-pixel run within a column). Only reallocates when the height actually changed.
+   /// </summary>
+   /// <returns>True if the column buffer is allocated and ready to use.</returns>
+   ///
+   bool _ensureColColorsBuffer()
+   {
+      if (_colColors != nullptr && _colColorsHeight == _height)
+      {
+         return true;
+      }
+
+      delete[] _colColors;
+      _colColors = new (std::nothrow) uint16_t[_height];
+      _colColorsHeight = _height;
+      return _colColors != nullptr;
+   }
+
 public:
    ///
    /// <summary>
@@ -232,6 +300,8 @@ public:
    {
       delete[] _mask;
       delete[] _prevMask;
+      delete[] _rowColors;
+      delete[] _colColors;
    }
 
    ///
@@ -304,8 +374,65 @@ public:
 
    ///
    /// <summary>
+   /// Gets the size, in bytes, of one fully packed frame at this buffer's current bit depth.
+   /// </summary>
+   ///
+   size_t frameSizeBytes() const
+   {
+      return _bytesPerColumn * static_cast<size_t>(_width);
+   }
+
+   ///
+   /// <summary>
+   /// Packs a whole row-major layer-index image (one byte per pixel, width * height bytes)
+   /// directly into this buffer's back buffer - the buffer not currently reflecting the
+   /// physically displayed frame - using this buffer's current bit-packed column-major
+   /// layout. This lets a caller that alternates between a small number of precomputed
+   /// images (e.g. two target frames) pay the per-pixel packing cost once per image
+   /// generation, rather than re-stamping every pixel via setPixel() on every redraw.
+   /// After staging an image this way, call swapBuffers() to make it the current frame, then
+   /// draw() to paint only the pixels that actually changed versus the frame physically on
+   /// the display - swapBuffers() is an O(1) pointer swap, so no full-frame copy is needed
+   /// either, unlike draw()'s default current/previous bookkeeping.
+   /// Call setPaletteColor() for every layer index used by this (and any other) frame *before*
+   /// calling drawImage(), so the bit depth is locked in at the width needed for those layers
+   /// (see setPaletteColor()'s remarks) - packing before the bit depth is finalized would bake
+   /// in a layout that a later bit-depth change would invalidate.
+   /// </summary>
+   /// <param name="layerImage">Row-major source image (layerImage[y * width + x]), width * height bytes.</param>
+   ///
+   void drawImage(const uint8_t* layerImage)
+   {
+      for (int16_t x = 0; x < _width; x++)
+      {
+         for (int16_t y = 0; y < _height; y++)
+         {
+            uint8_t layer = layerImage[(static_cast<size_t>(y) * _width) + x];
+            _writePixel(_prevMask, _bytesPerColumn, _bitsPerPixel, x, y, layer);
+         }
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Swaps the current and previous frame buffers - an O(1) pointer swap, not a copy. Meant
+   /// to be paired with drawImage() (which stages a new image into the back/previous buffer)
+   /// and draw() (which diffs the new current buffer against the new previous buffer, i.e.
+   /// the frame that was actually last painted to the display, and repaints only what
+   /// changed).
+   /// </summary>
+   ///
+   void swapBuffers()
+   {
+      uint8_t* temp = _mask;
+      _mask = _prevMask;
+      _prevMask = temp;
+   }
+
+   ///
+   /// <summary>
    /// Assigns the color a given layer index should be drawn with for the current frame.
-   /// Must be called before diffAndDraw() for every layer index stamped this frame (layer
+   /// Must be called before draw() for every layer index stamped this frame (layer
    /// 0/unlit's color is set separately via setBackgroundColor()).
    /// </summary>
    /// <param name="layer">Layer index (1..MAX_LAYERS) to assign a color to.</param>
@@ -319,6 +446,12 @@ public:
          if (layer > _maxLayerUsed)
          {
             _maxLayerUsed = layer;
+
+            // Grow the packed bit depth immediately, rather than waiting for the next
+            // draw() call, so any setPixel() calls made this frame (before
+            // draw() runs) use a bit depth wide enough to represent this layer
+            // instead of silently truncating it against a still-too-narrow depth.
+            _lockBitDepthIfNeeded();
          }
       }
    }
@@ -336,45 +469,35 @@ public:
 
    ///
    /// <summary>
-   /// Clears the current frame's buffer to layer 0 (unlit) everywhere, without affecting
-   /// the previous frame's buffer (used by diffAndDraw() to know what changed).
+   /// Clears the current frame's buffer to layer 0 (unlit) everywhere. By default the
+   /// previous frame's buffer is left untouched so the next draw() call can still correctly
+   /// diff against what is actually still physically on the display. Callers are expected to
+   /// use the default (alsoResetPrevious = false) before (re)stamping a frame's worth of
+   /// content when the previous frame's buffer still accurately reflects what's physically on
+   /// the display (i.e. the normal per-frame redraw case) - a pixel that was lit last frame
+   /// but isn't re-stamped this frame is then correctly detected as changed and erased by the
+   /// next draw() call. If the display area was just physically erased by some other means
+   /// (e.g. fillRect()), pass alsoResetPrevious = true instead so both buffers agree with
+   /// what's now actually on screen and the next draw() correctly treats unlit pixels as
+   /// unchanged rather than repainting them. Resizing via bind() already does this internally.
    /// </summary>
+   /// <param name="alsoResetPrevious">
+   /// When true, also clears the previous frame's buffer (use after the display area was
+   /// physically erased by some other means). When false (default), only the current frame's
+   /// buffer is cleared, preserving the previous frame's buffer for diffing.
+   /// </param>
    ///
-   void clear()
+   void clear(bool alsoResetPrevious = false)
    {
       const size_t bufSize = _bytesPerColumn * static_cast<size_t>(_width);
       if (bufSize > 0)
       {
          memset(_mask, 0, bufSize);
+         if (alsoResetPrevious)
+         {
+            memset(_prevMask, 0, bufSize);
+         }
       }
-   }
-
-   ///
-   /// <summary>
-   /// Resets both the current and previous frame buffers to layer 0 (unlit) everywhere.
-   /// Pass true for alreadyPhysicallyErased if the caller has already physically painted
-   /// the entire corresponding display region to the background color itself (e.g. via a
-   /// single fillRect()), so the next diffAndDraw() sees no difference for the already-
-   /// erased background and doesn't waste time repainting it pixel-by-pixel. Pass false
-   /// (the default) if the physical display still shows the old frame's content, so the
-   /// next diffAndDraw() treats every pixel as changed and actually repaints it.
-   /// </summary>
-   /// <param name="alreadyPhysicallyErased">True if the display region was already physically cleared by the caller.</param>
-   ///
-   void reset(bool alreadyPhysicallyErased = false)
-   {
-      const size_t bufSize = _bytesPerColumn * static_cast<size_t>(_width);
-      if (bufSize > 0)
-      {
-         memset(_mask, 0, bufSize);
-         memset(_prevMask, 0, bufSize);
-      }
-
-      // If the caller hasn't already physically erased the region, every pixel must still
-      // be treated as changed on the next diffAndDraw() so the physical display actually
-      // gets repainted (see _forceFullRepaint's declaration for why an encoded sentinel
-      // value isn't used for this instead).
-      _forceFullRepaint = !alreadyPhysicallyErased;
    }
 
    ///
@@ -460,19 +583,71 @@ public:
 
    ///
    /// <summary>
-   /// Diffs this frame's buffer against the previous frame's and draws only the pixels
-   /// whose layer index actually changed, looking up each pixel's color via the palette set
-   /// through setPaletteColor()/setBackgroundColor(). Pixels whose layer
-   /// did not change are left untouched, so unchanging content is never redrawn or flashed.
-   /// Unchanged bytes (up to 8 pixels at a time) are skipped with a single XOR check rather
-   /// than inspecting each pixel individually. The entire scan is wrapped in
-   /// startWrite()/endWrite() so all the draw calls for this frame are sent as one batched
-   /// transaction instead of one per pixel.
-   /// The current frame's buffer is copied into the previous-frame buffer afterward so the
-   /// next call diffs against what was actually just drawn.
+   /// Draws a point marker centered on (x, y) with the given layer index: a single pixel
+   /// when size is 1 or less, otherwise a small filled circle whose radius is size - 1, so it
+   /// spans exactly 2 * size - 1 pixels in diameter (e.g. size 2 draws a 3-pixel-wide circle,
+   /// size 3 draws a 5-pixel-wide circle). Each row of the circle is filled with a single
+   /// drawLine() call (or setPixel() for single-pixel rows) instead of testing every pixel
+   /// individually, since a horizontal span is drawn just as fast via drawLine() as via a
+   /// per-pixel loop but with far fewer distance checks.
    /// </summary>
+   /// <param name="x">Buffer-relative center column.</param>
+   /// <param name="y">Buffer-relative center row.</param>
+   /// <param name="size">Marker size, in pixels; sizes above 1 draw a circle of radius size - 1.</param>
+   /// <param name="layer">Layer index (1..MAX_LAYERS) to stamp the marker's pixels with.</param>
    ///
-   void diffAndDraw()
+   void drawPoint(int16_t x, int16_t y, uint8_t size, uint8_t layer)
+   {
+      if (size <= 1)
+      {
+         setPixel(x, y, layer);
+         return;
+      }
+
+      int16_t radius = static_cast<int16_t>(size) - 1;
+      int16_t radiusSquared = radius * radius;
+
+      for (int16_t dy = -radius; dy <= radius; dy++)
+      {
+         int16_t halfWidth = static_cast<int16_t>(sqrtf(static_cast<float>(radiusSquared - (dy * dy))));
+
+         if (halfWidth == 0)
+         {
+            setPixel(x, y + dy, layer);
+         }
+         else
+         {
+            drawLine(x - halfWidth, y + dy, x + halfWidth, y + dy, layer);
+         }
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Draws this frame to the display, either repainting every pixel unconditionally (Sprite-
+   /// style redraw) or diffing against the previous frame and only repainting pixels whose
+   /// layer index actually changed, looking up each pixel's color via the palette set through
+   /// setPaletteColor()/setBackgroundColor(). A full repaint is also automatically forced
+   /// (regardless of fullRepaint) on the first draw() after a bind()/clear() that leaves the
+   /// previous frame's buffer untrustworthy to diff against - see bind()/clear()'s remarks.
+   /// When diffing, pixels whose layer did not change are left untouched, so unchanging
+   /// content is never redrawn or flashed; unchanged bytes (up to 8 pixels at a time) are
+   /// skipped with a single XOR check rather than inspecting each pixel individually. The
+   /// entire scan is wrapped in startWrite()/endWrite() so all the draw calls for this frame
+   /// are sent as one batched transaction instead of one per pixel.
+   /// After drawing, this frame's buffer and the previous-frame buffer are swapped (see
+   /// swapBuffers()'s remarks) - an O(1) pointer swap, not a copy - so the next call diffs
+   /// against what was actually just drawn. Callers that keep re-stamping the same content
+   /// every frame (e.g. via clear() + setPixel()/drawLine()) simply keep doing so each frame
+   /// as before; clear() operates on whichever buffer is current after this swap, so it still
+   /// ends up clearing the right one. Callers alternating between two already-complete,
+   /// unchanging images (see drawImage()'s remarks) can likewise just call drawImage() to
+   /// stage the next image into the new back buffer and then draw() again, with no manual
+   /// swapBuffers() call needed either way.
+   /// </summary>
+   /// <param name="mode">Redraw mode to use for this call (see RedrawMode); defaults to DIFF (only repaint changed pixels using bulk column transfers).</param>
+   ///
+   void draw(RedrawMode mode = RedrawMode::DIFF)
    {
       if (_display == nullptr)
       {
@@ -487,44 +662,111 @@ public:
       // While a full repaint is pending (see _forceFullRepaint's declaration), every byte
       // must be treated as changed so every pixel gets (re)painted, since _prevMask's
       // content isn't a trustworthy baseline to diff against yet.
-      const bool forceFullRepaint = _forceFullRepaint;
+      const bool repaintAll = (mode == RedrawMode::FULL) || _forceFullRepaint;
 
       _display->startWrite();
+
+      // A full repaint means every pixel in every row is being redrawn anyway, so resolve
+      // and bulk-push one row at a time via pushImageRow() (one SPI/DMA transfer per row)
+      // instead of falling through to the per-pixel drawPixel() path below - far fewer,
+      // much larger transfers for the common "everything changed" case.
+      if (repaintAll && _ensureRowColorsBuffer())
+      {
+         for (int16_t y = 0; y < _height; y++)
+         {
+            for (int16_t x = 0; x < _width; x++)
+            {
+               uint8_t layer = _readPixel(_mask, _bytesPerColumn, _bitsPerPixel, x, y);
+               _rowColors[x] = static_cast<uint16_t>(_paletteColors[layer]);
+            }
+            _display->pushImageRow(_left, _top + y, _rowColors, _width);
+         }
+
+         _display->endWrite();
+
+         _forceFullRepaint = false;
+         swapBuffers();
+         return;
+      }
+
+      // Diffed redraw: within each column, gather each contiguous run of changed pixels
+      // (byte-level XOR check still skips unchanged bytes in bulk) into _colColors. The run
+      // is bulk-pushed in one pushImageColumn() call - a single-pixel "run" still costs just
+      // one small transfer, matching the old per-pixel behavior in the worst (sparse-change)
+      // case.
+      _ensureColColorsBuffer();
 
       for (int16_t x = 0; x < _width; x++)
       {
          uint8_t* column = _mask + (static_cast<size_t>(x) * _bytesPerColumn);
          uint8_t* prevColumn = _prevMask + (static_cast<size_t>(x) * _bytesPerColumn);
 
+         int16_t runStartY = -1;
+         int16_t runLength = 0;
+
+         auto flushRun = [&]()
+         {
+            if (runLength > 1)
+            {
+               _display->pushImageColumn(_left + x, _top + runStartY, _colColors, runLength);
+            }
+            else if (runLength == 1)
+            {
+               _display->drawPixel(_left + x, _top + runStartY, static_cast<Color>(_colColors[0]));
+            }
+            runLength = 0;
+         };
+
          for (size_t byteIdx = 0; byteIdx < _bytesPerColumn; byteIdx++)
          {
-            uint8_t changed = forceFullRepaint ? static_cast<uint8_t>(0xFF) : static_cast<uint8_t>(column[byteIdx] ^ prevColumn[byteIdx]);
+            uint8_t changed = repaintAll ? static_cast<uint8_t>(0xFF) : static_cast<uint8_t>(column[byteIdx] ^ prevColumn[byteIdx]);
             if (changed == 0)
             {
+               flushRun();
                continue;
             }
 
             for (uint8_t slot = 0; slot < pixelsPerByte; slot++)
             {
+               int16_t y = static_cast<int16_t>((byteIdx * pixelsPerByte) + slot);
+               if (y >= _height)
+               {
+                  break;
+               }
+
                const uint8_t shift = static_cast<uint8_t>(slot * _bitsPerPixel);
                if ((changed >> shift) & bitMask)
                {
-                  int16_t y = static_cast<int16_t>((byteIdx * pixelsPerByte) + slot);
-                  if (y >= _height)
-                  {
-                     break;
-                  }
                   uint8_t layer = static_cast<uint8_t>((column[byteIdx] >> shift) & bitMask);
-                  _display->drawPixel(_left + x, _top + y, _paletteColors[layer]);
+                  if (runLength == 0)
+                  {
+                     runStartY = y;
+                  }
+                  else if (y != runStartY + runLength)
+                  {
+                     flushRun();
+                     runStartY = y;
+                  }
+
+                  if (runLength < _height)
+                  {
+                     _colColors[runLength] = static_cast<uint16_t>(_paletteColors[layer]);
+                  }
+                  runLength++;
+               }
+               else
+               {
+                  flushRun();
                }
             }
          }
 
-         memcpy(prevColumn, column, _bytesPerColumn);
+         flushRun();
       }
 
       _display->endWrite();
 
       _forceFullRepaint = false;
+      swapBuffers();
    }
 };

@@ -64,8 +64,6 @@ ITestSensor* sensor = nullptr;
 constexpr long DEFAULT_PUBLISH_RATE_PER_SEC = 10;
 constexpr long MIN_PUBLISH_RATE_PER_SEC = 1;
 constexpr long MAX_PUBLISH_RATE_PER_SEC = 200;
-constexpr long PUBLISH_RATE_STEP = 1;
-long publishRatePerSec = DEFAULT_PUBLISH_RATE_PER_SEC;
 Timer publishTimer(1000UL / DEFAULT_PUBLISH_RATE_PER_SEC);
 
 // ----------- Reconnect/Retry Tracking
@@ -81,8 +79,7 @@ constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
 constexpr uint16_t RATE_NUM_SAMPLES = 10;
 Stopwatch sw(false);
 RollingRate rate(RATE_NUM_SAMPLES);
-float rateValue = 0.0f;
-FloatValue rateValueField(&rateValue, "###/s");
+FloatValue rateValueField("###/s");
 
 // ----------- Connection Status
 bool connected = false;
@@ -90,15 +87,11 @@ std::string statusText = "Connecting to WiFi...";
 Color statusColor = Color::BLUE;
 
 // ----------- Server Info (host/topic, selectable live via Encoder A/B)
-std::string topicText = TELEMETRY_TOPIC;
-std::string hostText = " ";
-StringValue topicValue(&topicText, "##################");
-StringValue hostValue(&hostText, "##################");
-long testFunctionIndex = 0;
-long lastTestFunctionIndex = 0;
-EnumEditor sourceEditor(&testFunctionIndex, TEST_FUNCTION_LABELS, 0, "######");
-IntEditor targetEditor(&publishRatePerSec,
-   MIN_PUBLISH_RATE_PER_SEC, MAX_PUBLISH_RATE_PER_SEC, PUBLISH_RATE_STEP, DEFAULT_PUBLISH_RATE_PER_SEC, "###/s");
+StringValue topicValue("##################", TELEMETRY_TOPIC);
+StringValue hostValue("##################", " ");
+EnumEditor sourceEditor(TEST_FUNCTION_LABELS, 0, "######");
+ScaledStepIntEditor targetEditor(
+   MIN_PUBLISH_RATE_PER_SEC, MAX_PUBLISH_RATE_PER_SEC, DEFAULT_PUBLISH_RATE_PER_SEC, "###/s");
 
 // ----------- Status Table
 FieldTableEditor::Row tableCells[] =
@@ -259,12 +252,12 @@ void onStarted()
 
 ///
 /// <summary>
-/// Selects the sensor for the current testFunctionIndex and begins it.
+/// Selects the sensor for the current sourceEditor selection and begins it.
 /// </summary>
 ///
 void selectTestFunction()
 {
-   sensor = TEST_FUNCTION_SENSORS[testFunctionIndex];
+   sensor = TEST_FUNCTION_SENSORS[sourceEditor.get()];
    sensor->begin();
    valuePlot.setYAxisFormat(sensor->getFormatStr().c_str());
    valuePlot.clear();
@@ -287,8 +280,7 @@ void setup()
    table.setPosition(tablePos);
    table.load();
    selectTestFunction();
-   lastTestFunctionIndex = testFunctionIndex;
-   publishTimer.setDurationMs(1000UL / publishRatePerSec);
+   publishTimer.setDurationMs(1000UL / targetEditor.get());
    table.draw();
 
    int16_t valueAreaCenterX = arduino.width() * 3 / 4;
@@ -329,7 +321,7 @@ void setup()
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
 
    Url url(client.getUrl().c_str());
-   hostText = url.getHost().c_str();
+   hostValue.set(url.getHost().c_str());
    table.draw();
 }
 
@@ -390,13 +382,12 @@ void loop()
       table.adjustSelected(adjustDelta);
       table.save();
 
-      if (testFunctionIndex != lastTestFunctionIndex)
+      if (sourceEditor.hasChanged())
       {
          selectTestFunction();
-         lastTestFunctionIndex = testFunctionIndex;
       }
 
-      publishTimer.setDurationMs(1000UL / publishRatePerSec);
+      publishTimer.setDurationMs(1000UL / targetEditor.get());
    }
 
    if (publishTimer.ready())
@@ -411,7 +402,7 @@ void loop()
 
    if (sw.elapsedMillis() > RATE_UPDATE_INTERVAL_MS)
    {
-      rateValue = rate.get();
+      rateValueField.set(rate.get());
       sw.reset();
    }
 

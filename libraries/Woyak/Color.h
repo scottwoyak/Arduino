@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <math.h>
 
 #if defined(_Adafruit_GRAYOLED_H_)
 
@@ -75,6 +76,132 @@ namespace Color565
    constexpr Color fromRGB(uint8_t red, uint8_t green, uint8_t blue)
    {
       return (Color) (((red & 0xF8) << 8) | ((green & 0xFC) << 3) | (blue >> 3));
+   }
+
+   ///
+   /// <summary>
+   /// Converts HSV color components to 565-bit color format.
+   /// </summary>
+   /// <param name="hue">Hue, in degrees (0.0-360.0). Values outside this range wrap around.</param>
+   /// <param name="saturation">Saturation (0.0-1.0).</param>
+   /// <param name="value">Value/brightness (0.0-1.0).</param>
+   /// <returns>Color in 565 format</returns>
+   ///
+   inline Color fromHSV(float hue, float saturation, float value)
+   {
+      hue = fmodf(hue, 360.0f);
+      if (hue < 0.0f)
+      {
+         hue += 360.0f;
+      }
+
+      float c = value * saturation;
+      float x = c * (1.0f - fabsf(fmodf(hue / 60.0f, 2.0f) - 1.0f));
+      float m = value - c;
+
+      float r1, g1, b1;
+      if (hue < 60.0f)
+      {
+         r1 = c; g1 = x; b1 = 0.0f;
+      }
+      else if (hue < 120.0f)
+      {
+         r1 = x; g1 = c; b1 = 0.0f;
+      }
+      else if (hue < 180.0f)
+      {
+         r1 = 0.0f; g1 = c; b1 = x;
+      }
+      else if (hue < 240.0f)
+      {
+         r1 = 0.0f; g1 = x; b1 = c;
+      }
+      else if (hue < 300.0f)
+      {
+         r1 = x; g1 = 0.0f; b1 = c;
+      }
+      else
+      {
+         r1 = c; g1 = 0.0f; b1 = x;
+      }
+
+      uint8_t red = (uint8_t)constrain((r1 + m) * 255.0f, 0.0f, 255.0f);
+      uint8_t green = (uint8_t)constrain((g1 + m) * 255.0f, 0.0f, 255.0f);
+      uint8_t blue = (uint8_t)constrain((b1 + m) * 255.0f, 0.0f, 255.0f);
+
+      return fromRGB(red, green, blue);
+   }
+
+   ///
+   /// <summary>
+   /// Converts HSV color components to 565-bit color format, choosing "value" automatically
+   /// so the resulting color's perceived brightness (luma, via the Rec. 709 (sRGB/HD)
+   /// coefficients 0.2126R + 0.7152G + 0.0722B) hits the requested target as closely as
+   /// possible. This compensates for hues like pure red/blue that look much dimmer than
+   /// green at the same HSV "value" - e.g. fromHSV(0, 1, 1) (pure red) looks noticeably
+   /// darker than fromHSV(120, 1, 1) (pure green) despite having the same nominal
+   /// brightness/value, because red contributes far less to perceived luminance than green.
+   /// Since luma scales linearly with "value" for a fixed hue/saturation, the needed value is
+   /// solved for directly (targetLuminance / luma-at-value-1) rather than searched for, then
+   /// clamped to the valid [0,1] range - hues that cannot reach the target (e.g. pure blue)
+   /// are simply rendered at maximum value (as bright as that hue can get).
+   /// </summary>
+   /// <param name="hue">Hue, in degrees (0.0-360.0). Values outside this range wrap around.</param>
+   /// <param name="saturation">Saturation (0.0-1.0).</param>
+   /// <param name="targetLuminance">Desired perceived brightness/luma (0.0-1.0).</param>
+   /// <returns>Color in 565 format</returns>
+   ///
+   inline Color fromHSVLuminance(float hue, float saturation, float targetLuminance)
+   {
+      hue = fmodf(hue, 360.0f);
+      if (hue < 0.0f)
+      {
+         hue += 360.0f;
+      }
+
+      // Same hue/saturation math as fromHSV(), but evaluated at value = 1 so the resulting
+      // r0/g0/b0 triplet represents this hue's brightest possible rendering; luma scales
+      // linearly with value from there, so the value needed to hit targetLuminance can be
+      // solved for directly instead of iterated.
+      float c = saturation;
+      float x = c * (1.0f - fabsf(fmodf(hue / 60.0f, 2.0f) - 1.0f));
+      float m = 1.0f - c;
+
+      float r1, g1, b1;
+      if (hue < 60.0f)
+      {
+         r1 = c; g1 = x; b1 = 0.0f;
+      }
+      else if (hue < 120.0f)
+      {
+         r1 = x; g1 = c; b1 = 0.0f;
+      }
+      else if (hue < 180.0f)
+      {
+         r1 = 0.0f; g1 = c; b1 = x;
+      }
+      else if (hue < 240.0f)
+      {
+         r1 = 0.0f; g1 = x; b1 = c;
+      }
+      else if (hue < 300.0f)
+      {
+         r1 = x; g1 = 0.0f; b1 = c;
+      }
+      else
+      {
+         r1 = c; g1 = 0.0f; b1 = x;
+      }
+
+      float r0 = r1 + m;
+      float g0 = g1 + m;
+      float b0 = b1 + m;
+
+      float luma0 = (0.2126f * r0) + (0.7152f * g0) + (0.0722f * b0);
+      float value = (luma0 > 0.0001f) ? (targetLuminance / luma0) : 1.0f;
+      value = constrain(value, 0.0f, 1.0f);
+
+      return fromHSV(hue, saturation, value);
    }
 }
 

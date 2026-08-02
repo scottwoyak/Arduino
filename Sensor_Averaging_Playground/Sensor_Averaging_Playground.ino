@@ -64,13 +64,9 @@ constexpr unsigned long DEFAULT_SAMPLING_DURATION_S = 10;
 constexpr uint16_t DEFAULT_SAMPLE_RATE_PER_SEC = 100;
 constexpr uint16_t MIN_SAMPLE_RATE_PER_SEC = 10;
 constexpr uint16_t MAX_SAMPLE_RATE_PER_SEC = 1000;
-constexpr uint16_t SAMPLE_RATE_STEP_LOW = 10;
-constexpr uint16_t SAMPLE_RATE_STEP_HIGH = 100;
-constexpr uint16_t SAMPLE_RATE_STEP_THRESHOLD = 100;
 constexpr size_t DEFAULT_MAX_SAMPLES = 1000;
 constexpr size_t MIN_MAX_SAMPLES = 100;
 constexpr size_t MAX_MAX_SAMPLES = 5000;
-constexpr size_t SAMPLE_STEP = 100;
 constexpr unsigned long MIN_SAMPLING_DURATION_S = 5;
 constexpr unsigned long MAX_SAMPLING_DURATION_S = 60;
 constexpr unsigned long DURATION_STEP_S = 5;
@@ -81,39 +77,16 @@ constexpr unsigned long WARMUP_STEP_S = 1;
 // ----------- Preferences Namespace
 constexpr const char* PREF_NAMESPACE = "sensor_avg";
 
-long targetSampleRate = DEFAULT_SAMPLE_RATE_PER_SEC;
-long maxSamples = DEFAULT_MAX_SAMPLES;
-long samplingDurationS = DEFAULT_SAMPLING_DURATION_S;
-long warmupPeriodS = DEFAULT_WARMUP_PERIOD_S;
 RollingRate actualSampleRate;
 
-///
-/// <summary>
-/// Sample-rate setup field with non-linear stepping: SAMPLE_RATE_STEP_LOW below 100/s,
-/// SAMPLE_RATE_STEP_HIGH at or above 100/s.
-/// </summary>
-///
-class SampleRateField : public IntEditor
-{
-public:
-   using IntEditor::IntEditor;
-
-protected:
-   long _stepValue(long current, int32_t direction) override
-   {
-      long stepSize = (current < SAMPLE_RATE_STEP_THRESHOLD) ? SAMPLE_RATE_STEP_LOW : SAMPLE_RATE_STEP_HIGH;
-      return current + (direction * stepSize);
-   }
-};
-
 // ----------- Setup Screen Fields
-SampleRateField rateField(&targetSampleRate,
-   MIN_SAMPLE_RATE_PER_SEC, MAX_SAMPLE_RATE_PER_SEC, SAMPLE_RATE_STEP_LOW, DEFAULT_SAMPLE_RATE_PER_SEC, "####/s");
-IntEditor samplesEditor(&maxSamples,
-   MIN_MAX_SAMPLES, MAX_MAX_SAMPLES, SAMPLE_STEP, DEFAULT_MAX_SAMPLES, "#####");
-IntEditor durationEditor(&samplingDurationS,
+ScaledStepIntEditor rateField(
+   MIN_SAMPLE_RATE_PER_SEC, MAX_SAMPLE_RATE_PER_SEC, DEFAULT_SAMPLE_RATE_PER_SEC, "####/s");
+ScaledStepIntEditor samplesEditor(
+   MIN_MAX_SAMPLES, MAX_MAX_SAMPLES, DEFAULT_MAX_SAMPLES, "#####");
+IntEditor durationEditor(
    MIN_SAMPLING_DURATION_S, MAX_SAMPLING_DURATION_S, DURATION_STEP_S, DEFAULT_SAMPLING_DURATION_S, "###s");
-IntEditor warmupEditor(&warmupPeriodS,
+IntEditor warmupEditor(
    0, MAX_WARMUP_PERIOD_S, WARMUP_STEP_S, DEFAULT_WARMUP_PERIOD_S, "###s");
 
 FieldTableEditor::Row setupCells[] = { { "Rate", &rateField }, { "Max Samples", &samplesEditor }, { "Max Duration", &durationEditor }, { "Warmup", &warmupEditor } };
@@ -192,7 +165,7 @@ void printBoundaryDump()
 ///
 void createSamplesValues()
 {
-   samplesValues.reset(maxSamples);
+   samplesValues.reset(samplesEditor.get());
 }
 
 ///
@@ -203,7 +176,7 @@ void createSamplesValues()
 ///
 void createWarmupValues()
 {
-   size_t warmupMaxValues = (warmupPeriodS > 0) ? (warmupPeriodS * targetSampleRate + 1) : 0;
+   size_t warmupMaxValues = (warmupEditor.get() > 0) ? (warmupEditor.get() * rateField.get() + 1) : 0;
    warmupValues.reset(warmupMaxValues);
 }
 
@@ -364,11 +337,11 @@ void drawChartsView()
    uint16_t histogramTop = top + scatterHeight + sectionGap;
    uint16_t histogramHeight = availableHeight - scatterHeight - sectionGap;
 
-   drawScatterPlot(0, totalWidth, top, scatterHeight, Color::GREEN);
+   drawScatterPlot(0, totalWidth, top, scatterHeight, Color::LIME);
 
    // Use the same Y-axis format string as the scatter plot so both charts reserve an
    // identically sized left-side label column and their x-axes line up visually.
-   drawHistogram("", valueHistogram, 0, totalWidth, histogramTop, histogramHeight, Color::GREEN, Color::WHITE, CHART_Y_AXIS_FORMAT);
+   drawHistogram("", valueHistogram, 0, totalWidth, histogramTop, histogramHeight, Color::LIME, Color::WHITE, CHART_Y_AXIS_FORMAT);
 }
 
 ///
@@ -386,7 +359,7 @@ void drawTableView()
    String headerText = String(samplesValues.count()) + " samples collected in " + String(elapsedSeconds) + " seconds";
    arduino.println(headerText, Color::LABEL);
 
-   String rateText = "Target " + String(targetSampleRate) + "/s  Actual " + String(actualSampleRate.get(), 0) + "/s";
+   String rateText = "Target " + String(rateField.get()) + "/s  Actual " + String(actualSampleRate.get(), 0) + "/s";
    arduino.println(rateText, Color::LABEL);
    arduino.println();
 
@@ -519,7 +492,7 @@ void initializeCollectingTable()
 ///
 void updateDisplay(bool forceRefresh = false)
 {
-   bool durationElapsed = captureStopwatch.elapsedSecs() >= samplingDurationS;
+   bool durationElapsed = captureStopwatch.elapsedSecs() >= durationEditor.get();
    if (!warmupStopwatch.isRunning() && (samplesValues.isFull() || durationElapsed))
    {
       return;
@@ -547,15 +520,15 @@ void updateDisplay(bool forceRefresh = false)
       collectingViewInitialized = true;
    }
 
-   String maxText = String(maxSamples) + " samples OR " + String(samplingDurationS) + "s";
+   String maxText = String(samplesEditor.get()) + " samples OR " + String(durationEditor.get()) + "s";
    collectingTable.setValue(MAX_ROW, maxText);
-   collectingTable.setValue(TARGET_RATE_ROW, static_cast<int>(targetSampleRate));
+   collectingTable.setValue(TARGET_RATE_ROW, static_cast<int>(rateField.get()));
 
    if (warmupStopwatch.isRunning())
    {
       constexpr const char* PLACEHOLDER = "----";
 
-      float remainingSeconds = max(0.0, warmupPeriodS - warmupStopwatch.elapsedSecs());
+      float remainingSeconds = max(0.0, warmupEditor.get() - warmupStopwatch.elapsedSecs());
       String warmupText = String(remainingSeconds, 1) + "s remaining";
 
       collectingTable.setValue(WARMUP_ROW, warmupText, Color::VALUE2);
@@ -569,13 +542,13 @@ void updateDisplay(bool forceRefresh = false)
 
    size_t count = samplesValues.count();
    float elapsedSeconds = captureStopwatch.elapsedSecs();
-   if (elapsedSeconds > samplingDurationS)
+   if (elapsedSeconds > durationEditor.get())
    {
-      elapsedSeconds = samplingDurationS;
+      elapsedSeconds = durationEditor.get();
    }
 
-   float samplePercent = (count * 100.0f) / maxSamples;
-   float timePercent = (elapsedSeconds * 100.0f) / samplingDurationS;
+   float samplePercent = (count * 100.0f) / samplesEditor.get();
+   float timePercent = (elapsedSeconds * 100.0f) / durationEditor.get();
 
    float progressPercent = max(samplePercent, timePercent);
    if (progressPercent > 100.0f)
@@ -619,13 +592,13 @@ void startCapture()
    captureStarted = true;
    createSamplesValues();
    samplesValues.reset();
-   samplingTimer.setDurationMs(1000UL / targetSampleRate);
+   samplingTimer.setDurationMs(1000UL / rateField.get());
    actualSampleRate.reset();
    running = true;
    captureStopwatch.reset();
    captureStopwatch.start();
    warmupStopwatch.reset();
-   if (warmupPeriodS > 0)
+   if (warmupEditor.get() > 0)
    {
       warmupStopwatch.start();
    }
@@ -740,7 +713,7 @@ void loop()
       float sensorValue = sensor.get();
       actualSampleRate.tick();
 
-      if (warmupStopwatch.elapsedSecs() < warmupPeriodS)
+      if (warmupStopwatch.elapsedSecs() < warmupEditor.get())
       {
          warmupValues.addValue(sensorValue);
          updateDisplay();
@@ -760,8 +733,8 @@ void loop()
 
          updateDisplay();
 
-         bool durationElapsed = captureStopwatch.elapsedSecs() >= samplingDurationS;
-         if ((samplesValues.count() >= maxSamples) || durationElapsed)
+         bool durationElapsed = captureStopwatch.elapsedSecs() >= durationEditor.get();
+         if ((samplesValues.count() >= samplesEditor.get()) || durationElapsed)
          {
             finishCapture();
          }

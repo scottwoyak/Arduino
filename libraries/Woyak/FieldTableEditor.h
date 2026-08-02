@@ -477,7 +477,7 @@ public:
          Editor* field = static_cast<Editor*>(_rows[i].value);
          double defaultValue = field->defaultNumericValue();
          double value = prefs->getDouble(_keyFor(_rows[i]), defaultValue);
-         field->setNumericValue(value);
+         field->setNumericValue(value, /* markAsChanged */ false);
       }
       prefs->end();
    }

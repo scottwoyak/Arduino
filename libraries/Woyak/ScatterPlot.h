@@ -24,7 +24,7 @@
 /// axis labels plus each series' points/lines/moving-average line. Every series/layer
 /// rasterizes its current frame into one plot-wide shared DisplayBuffer, each stamping a
 /// distinct layer index, and the whole buffer is diffed against the previous frame's in a
-/// single pass (see DisplayBuffer::diffAndDraw()), drawing only the pixels that actually
+/// single pass (see DisplayBuffer::draw()), drawing only the pixels that actually
 /// changed color; unchanging pixels are never redrawn or flashed.
 /// </summary>
 /// <remarks>
@@ -145,6 +145,11 @@ private:
    // back down, avoiding the axis (and its labels) rescaling smaller as older/larger values
    // age out of a rolling series. See setYAxisMode().
    AxisMode _yAxisMode = AxisMode::AUTO;
+
+   // Controls how the shared DisplayBuffer redraws each frame; see DisplayBuffer::RedrawMode
+   // and setRedrawMode(). Defaults to DIFF (only repaint pixels that changed, using bulk
+   // column transfers), matching the buffer's own default.
+   DisplayBuffer::RedrawMode _redrawMode = DisplayBuffer::RedrawMode::DIFF;
 
    ///
    /// <summary>
@@ -309,6 +314,23 @@ private:
 
    ///
    /// <summary>
+   /// (Re)draws just the gray Y-axis and X-axis lines themselves (not their labels/title),
+   /// covering the same chart-relative column 0 and bottom row that the shared DisplayBuffer
+   /// is bound to. DisplayBuffer::draw(RedrawMode::FULL) unconditionally repaints every
+   /// pixel of that rectangle - including column 0 and the bottom row - back to the
+   /// background color every frame, which would otherwise erase these lines; called after
+   /// every _displayBuffer.draw() call (regardless of redraw mode) so the lines are always
+   /// repainted on top, last.
+   /// </summary>
+   ///
+   void _drawAxisLines()
+   {
+      _display->fillRect(_chartLeft, _chartTop, 1, _chartHeight, _axisColor);
+      _display->fillRect(_chartLeft, _chartTop + _chartHeight - 1, _chartWidth, 1, _axisColor);
+   }
+
+   ///
+   /// <summary>
    /// Draws the Y-axis chrome via _drawYAxisChrome(), then draws the gray X-axis line and
    /// its min/max labels for the current chart geometry and axis range.
    /// </summary>
@@ -401,41 +423,6 @@ private:
 
    ///
    /// <summary>
-   /// Draws a small filled circle centered on (x, y), used when a series' pointSize is
-   /// greater than 1. The circle's radius is size - 1, so it spans exactly
-   /// 2 * size - 1 pixels in diameter (e.g. pointSize 2 draws a 3-pixel-wide circle,
-   /// pointSize 3 draws a 5-pixel-wide circle). Each row of the circle is filled with a
-   /// single drawLine() call (or setPixel() for single-pixel rows) instead of testing
-   /// every pixel individually, since a horizontal span is drawn just as fast via
-   /// drawLine() as via a per-pixel loop but with far fewer distance checks.
-   /// </summary>
-   /// <param name="x">Buffer-relative center column.</param>
-   /// <param name="y">Buffer-relative center row.</param>
-   /// <param name="size">Marker size, in pixels; the drawn circle's radius is size - 1.</param>
-   /// <param name="layer">DisplayBuffer layer index to stamp the marker's pixels with.</param>
-   ///
-   void _drawPointMarker(int16_t x, int16_t y, uint8_t size, uint8_t layer)
-   {
-      int16_t radius = static_cast<int16_t>(size) - 1;
-      int16_t radiusSquared = radius * radius;
-
-      for (int16_t dy = -radius; dy <= radius; dy++)
-      {
-         int16_t halfWidth = static_cast<int16_t>(sqrtf(static_cast<float>(radiusSquared - (dy * dy))));
-
-         if (halfWidth == 0)
-         {
-            _displayBuffer.setPixel(x, y + dy, layer);
-         }
-         else
-         {
-            _displayBuffer.drawLine(x - halfWidth, y + dy, x + halfWidth, y + dy, layer);
-         }
-      }
-   }
-
-   ///
-   /// <summary>
    /// Rasterizes one series' raw points (or its moving-average line) into the shared
    /// DisplayBuffer on the given layer, connecting consecutive points with a line when
    /// the series requests lines (or when rasterizing the moving average). Points/moving-
@@ -480,7 +467,7 @@ private:
          }
          else if (series->pointSize > 1)
          {
-            _drawPointMarker(x, y, series->pointSize, layer);
+            _displayBuffer.drawPoint(x, y, series->pointSize, layer);
          }
          else
          {
@@ -913,7 +900,7 @@ public:
    {
       _display->fillRect(_x, _y, _width, _height, _outerBackgroundColor);
 
-      _displayBuffer.reset(/* alreadyPhysicallyErased */ true);
+      _displayBuffer.clear(true);
 
       _hasRenderedFrame = false;
       _forceFullRedraw = true;
@@ -1161,6 +1148,19 @@ public:
 
    ///
    /// <summary>
+   /// Controls how the shared DisplayBuffer redraws each frame - see DisplayBuffer::RedrawMode.
+   /// FULL always repaints every pixel; DIFF only repaints pixels that changed since the
+   /// previous frame. Both use the buffer's bulk row/column transfer paths.
+   /// </summary>
+   /// <param name="mode">The redraw mode to use for subsequent draw() calls.</param>
+   ///
+   void setRedrawMode(DisplayBuffer::RedrawMode mode)
+   {
+      _redrawMode = mode;
+   }
+
+   ///
+   /// <summary>
    /// Computes the shared X/Y axis range across every owned series, then redraws the
    /// chart: performs a full redraw (axes/labels/backgrounds) when the axis range or
    /// geometry has changed, then rasterizes each series' points/lines/moving-average/
@@ -1194,7 +1194,7 @@ public:
          if (_hasRenderedFrame)
          {
             _display->fillRect(_x, _y, _width, _height, _outerBackgroundColor);
-            _displayBuffer.reset(/* alreadyPhysicallyErased */ true);
+            _displayBuffer.clear(true);
             _hasRenderedFrame = false;
             _forceFullRedraw = true;
          }
@@ -1249,11 +1249,6 @@ public:
       _displayBuffer.bind(_display, _chartLeft, _chartTop, _chartWidth, _chartHeight);
       _displayBuffer.setBackgroundColor(_plotAreaBackgroundColor);
 
-      if (geometryChanged)
-      {
-         _displayBuffer.reset(/* alreadyPhysicallyErased */ true);
-      }
-
       _displayBuffer.clear();
 
       uint8_t nextLayer = 1;
@@ -1294,7 +1289,9 @@ public:
          }
       }
 
-      _displayBuffer.diffAndDraw();
+      _displayBuffer.draw(_redrawMode);
+
+      _drawAxisLines();
 
       _hasRenderedFrame = true;
    }

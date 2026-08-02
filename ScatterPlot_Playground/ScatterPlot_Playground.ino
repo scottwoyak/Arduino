@@ -48,10 +48,10 @@ constexpr unsigned long STATUS_DRAW_INTERVAL_MS = 200; // throttles statusTable.
 
 // ----------- Sample Count Selection
 // Rolling plot capacity, selectable at runtime; X axis spans [1, selected value], scrolling
-// once full. See maxSamplesField/maxSamplesIndex below.
-constexpr size_t MAX_SAMPLES_OPTIONS[] = { 500, 1000, 2000, 3000, 5000, 10000 };
-constexpr size_t NUM_MAX_SAMPLES_OPTIONS = sizeof(MAX_SAMPLES_OPTIONS) / sizeof(MAX_SAMPLES_OPTIONS[0]);
-constexpr size_t DEFAULT_MAX_SAMPLES_INDEX = 1; // 1000
+// once full. See maxSamplesField below.
+constexpr long MIN_MAX_SAMPLES = 100;
+constexpr long MAX_MAX_SAMPLES = 10000;
+constexpr long DEFAULT_MAX_SAMPLES = 1000;
 
 // ----------- Display Geometry
 // Matches the ESP32_S3_Playground board's LGX_Hosyond_ST7796 display in landscape orientation.
@@ -75,19 +75,16 @@ ITestSensor* const TEST_FUNCTION_SENSORS[] = { &constantSensor, &randomSensor, &
 ITestSensor* sensor = nullptr;
 
 // ----------- Display Formats
-long testFunctionIndex = 0;
-long lastTestFunctionIndex = 0;
-EnumEditor testFunctionEditor(&testFunctionIndex,TEST_FUNCTION_LABELS, 0, "######");
-float rateValue = 0.0f;
-FloatValue rateValueField(&rateValue, "####/s");
+EnumEditor testFunctionEditor(TEST_FUNCTION_LABELS, 0, "######");
+FloatValue rateValueField("####/s");
 
 uint32_t startFreeHeapBytes = 0;
-float memoryDeltaKb = 0.0f;
-FloatValue memoryValue(&memoryDeltaKb, "###.# kb");
+FloatValue memoryValue("###.# kb");
 
 ///
 /// <summary>
-/// Plot-size-selection field shared by the X Size and Y Size rows. Steps through PLOT_SIZE_PERCENTS
+/// Plot-size-selection field controlling both the X and Y size percentages together (the
+/// plot area is always resized uniformly on both axes). Steps through PLOT_SIZE_PERCENTS
 /// by index (like EnumEditor), but formats its label directly from the selected
 /// percentage instead of a separate parallel string-label array.
 /// </summary>
@@ -95,61 +92,35 @@ FloatValue memoryValue(&memoryDeltaKb, "###.# kb");
 class PlotSizeField : public IntEditor
 {
 public:
-   PlotSizeField(long* value, const char* formatStr)
-      : IntEditor(value, 0, (long)NUM_PLOT_SIZES - 1, 1, 0, formatStr)
+   PlotSizeField(const char* formatStr)
+      : IntEditor(0, (long)NUM_PLOT_SIZES - 1, 1, 0, formatStr)
    {
    }
 
    void adjust(int32_t direction) override
    {
-      long newValue = (*_value + (direction > 0 ? 1 : -1) + (long)NUM_PLOT_SIZES) % (long)NUM_PLOT_SIZES;
-      *_value = newValue;
+      long newValue = (get() + (direction > 0 ? 1 : -1) + (long)NUM_PLOT_SIZES) % (long)NUM_PLOT_SIZES;
+      set(newValue);
    }
 
    std::string valueText() override
    {
-      long index = constrain(*_value, 0L, (long)(NUM_PLOT_SIZES - 1));
+      long index = constrain(get(), 0L, (long)(NUM_PLOT_SIZES - 1));
       return _format.toString((double)PLOT_SIZE_PERCENTS[index]);
    }
 };
 
-long plotXSizeIndex = 0;
-long plotYSizeIndex = 0;
-long lastPlotXSizeIndex = 0;
-long lastPlotYSizeIndex = 0;
-PlotSizeField plotXSizeField(&plotXSizeIndex, "###%    ");
-PlotSizeField plotYSizeField(&plotYSizeIndex, "###%    ");
+PlotSizeField plotSizeField("###%    ");
 
 ///
 /// <summary>
-/// Rolling-sample-count-selection field. Steps through MAX_SAMPLES_OPTIONS by index (like
-/// PlotSizeField), formatting its label directly from the selected sample count.
+/// Rolling-sample-count-selection field, spanning MIN_MAX_SAMPLES to MAX_MAX_SAMPLES with a
+/// magnitude-scaled step size (see ScaledStepIntEditor) so coarse changes near 10000 don't
+/// require an impractical number of encoder clicks, while fine changes remain available near
+/// the low end of the range.
 /// </summary>
 ///
-class MaxSamplesField : public IntEditor
-{
-public:
-   MaxSamplesField(long* value, const char* formatStr)
-      : IntEditor(value, 0, (long)NUM_MAX_SAMPLES_OPTIONS - 1, 1, 0, formatStr)
-   {
-   }
-
-   void adjust(int32_t direction) override
-   {
-      long newValue = (*_value + (direction > 0 ? 1 : -1) + (long)NUM_MAX_SAMPLES_OPTIONS) % (long)NUM_MAX_SAMPLES_OPTIONS;
-      *_value = newValue;
-   }
-
-   std::string valueText() override
-   {
-      long index = constrain(*_value, 0L, (long)(NUM_MAX_SAMPLES_OPTIONS - 1));
-      return _format.toString((double)MAX_SAMPLES_OPTIONS[index]);
-   }
-};
-
-long maxSamplesIndex = DEFAULT_MAX_SAMPLES_INDEX;
-long lastMaxSamplesIndex = DEFAULT_MAX_SAMPLES_INDEX;
-MaxSamplesField maxSamplesField(&maxSamplesIndex, "#####   ");
+ScaledStepIntEditor maxSamplesField(MIN_MAX_SAMPLES, MAX_MAX_SAMPLES, DEFAULT_MAX_SAMPLES, "#####   ");
 
 // ----------- Series Display Mode Selection
 // Controls whether the active sample series is drawn as raw points or connected lines.
@@ -164,9 +135,7 @@ constexpr size_t NUM_DISPLAY_MODES = sizeof(DISPLAY_MODE_LABELS) / sizeof(DISPLA
 /// or connected lines are drawn for the active sample series; see applyDisplayMode().
 /// </summary>
 ///
-long displayModeIndex = 0;
-long lastDisplayModeIndex = 0;
-EnumEditor displayModeEditor(&displayModeIndex,
+EnumEditor displayModeEditor(
    DISPLAY_MODE_LABELS, 0, "########");
 
 // ----------- Point Size Selection
@@ -181,7 +150,9 @@ constexpr long DEFAULT_POINT_SIZE = 1;
 /// <summary>
 /// Point-size-selection field that is only enabled (selectable/adjustable, drawn in its
 /// normal color) while Display is set to Points. While Display is Lines, it's grayed out
-/// and skipped by encoder selection since it has no effect on the drawn series.
+/// and skipped by encoder selection since it has no effect on the drawn series. Adjusting
+/// wraps around at either end (e.g. incrementing past the max wraps to the min) instead of
+/// clamping.
 /// </summary>
 ///
 class PointSizeField : public IntEditor
@@ -191,13 +162,17 @@ public:
 
    bool isEnabled() const override
    {
-      return displayModeIndex == 0;
+      return displayModeEditor.get() == 0;
+   }
+
+   void adjust(int32_t direction) override
+   {
+      long count = _maxValue - _minValue + 1;
+      set(_minValue + (((get() - _minValue) + (direction > 0 ? 1 : -1) + count) % count));
    }
 };
 
-long pointSizeValue = DEFAULT_POINT_SIZE;
-long lastPointSizeValue = DEFAULT_POINT_SIZE;
-PointSizeField pointSizeField(&pointSizeValue,
+PointSizeField pointSizeField(
    MIN_POINT_SIZE, MAX_POINT_SIZE, 1, DEFAULT_POINT_SIZE, "########");
 
 // ----------- Stats Overlay Selection
@@ -214,16 +189,32 @@ constexpr size_t NUM_STATS_MODES = sizeof(STATS_MODE_LABELS) / sizeof(STATS_MODE
 /// applyStatsMode().
 /// </summary>
 ///
-long statsModeIndex = 0;
-long lastStatsModeIndex = 0;
-EnumEditor statsModeEditor(&statsModeIndex,
+EnumEditor statsModeEditor(
    STATS_MODE_LABELS, 0, "########");
+
+// ----------- Redraw Method Selection
+// Controls how ScatterPlot's shared DisplayBuffer repaints each frame; see
+// DisplayBuffer::RedrawMode and ScatterPlot::setRedrawMode(). Applied in
+// applyRedrawMode() below, called whenever the field changes and once from recreatePlot().
+constexpr const char* REDRAW_MODE_LABELS[] = { "Full", "Diff" };
+constexpr size_t NUM_REDRAW_MODES = sizeof(REDRAW_MODE_LABELS) / sizeof(REDRAW_MODE_LABELS[0]);
+
+///
+/// <summary>
+/// Redraw-method-selection field. Switching this field's value changes how the plot's
+/// shared DisplayBuffer repaints each frame - Full always repaints every pixel; Diff only
+/// repaints pixels that changed since the previous frame. Both use bulk row/column
+/// transfers. See applyRedrawMode().
+/// </summary>
+///
+EnumEditor redrawModeEditor(
+   REDRAW_MODE_LABELS, 1, "#########");
 
 // ----------- Source-Specific Configuration Fields
 // The Constant source lets the user set its value directly; the Sin source lets the user
 // adjust its period (always fixed-step; see sinPeriodField). Each source's field array is
 // swapped into statusTable by applyTestFunction() below.
-FloatEditor constantValueEditor(&constantSensor.value,
+FloatEditor constantValueEditor(
    TestSensorConfig::CONSTANT_MIN_VALUE, TestSensorConfig::CONSTANT_MAX_VALUE,
    TestSensorConfig::CONSTANT_STEP, TestSensorConfig::CONSTANT_VALUE, "####.#");
 
@@ -241,20 +232,20 @@ public:
 
    void adjust(int32_t direction) override
    {
-      long samples = lroundf(*_value / TestSensorConfig::SIN_FIXED_STEP_S);
+      long samples = lroundf(get() / TestSensorConfig::SIN_FIXED_STEP_S);
       samples += direction * TestSensorConfig::SIN_FIXED_PERIOD_STEP_SAMPLES;
       samples = constrain(samples, TestSensorConfig::SIN_FIXED_MIN_PERIOD_SAMPLES, TestSensorConfig::SIN_FIXED_MAX_PERIOD_SAMPLES);
-      *_value = samples * TestSensorConfig::SIN_FIXED_STEP_S;
+      set(samples * TestSensorConfig::SIN_FIXED_STEP_S);
    }
 
    std::string valueText() override
    {
-      long samples = lroundf(*_value / TestSensorConfig::SIN_FIXED_STEP_S);
+      long samples = lroundf(get() / TestSensorConfig::SIN_FIXED_STEP_S);
       return _format.toString(String(samples));
    }
 };
 
-SinPeriodField sinPeriodField(&sinSensor.periodS,
+SinPeriodField sinPeriodField(
    TestSensorConfig::SIN_MIN_PERIOD_S, TestSensorConfig::SIN_MAX_PERIOD_S,
    TestSensorConfig::SIN_PERIOD_STEP_S, TestSensorConfig::SIN_PERIOD_S, "########");
 
@@ -272,9 +263,7 @@ SinPeriodField sinPeriodField(&sinSensor.periodS,
 constexpr const char* NOISE_ENABLED_LABELS[] = { "False", "True" };
 constexpr size_t NUM_NOISE_ENABLED_STATES = sizeof(NOISE_ENABLED_LABELS) / sizeof(NOISE_ENABLED_LABELS[0]);
 
-long noiseEnabled = 0;
-long lastNoiseEnabled = 0;
-EnumEditor noiseEnabledEditor(&noiseEnabled,
+EnumEditor noiseEnabledEditor(
    NOISE_ENABLED_LABELS, 0, "########");
 
 ///
@@ -291,13 +280,11 @@ public:
 
    bool isEnabled() const override
    {
-      return noiseEnabled != 0;
+      return noiseEnabledEditor.get() != 0;
    }
 };
 
-float noiseStdDevValue = TestSensorConfig::NOISE_STDDEV;
-float lastNoiseStdDevValue = TestSensorConfig::NOISE_STDDEV;
-NoiseStdDevField noiseStdDevField(&noiseStdDevValue,
+NoiseStdDevField noiseStdDevField(
    TestSensorConfig::NOISE_MIN_STDDEV, TestSensorConfig::NOISE_MAX_STDDEV,
    TestSensorConfig::NOISE_STDDEV_STEP, TestSensorConfig::NOISE_STDDEV, "####.#");
 
@@ -314,12 +301,12 @@ FieldTableEditor::Row defaultStatusCells[] =
    { "Noise", &noiseEnabledEditor },
    { "StdDev", &noiseStdDevField },
    { "Plot" },
-   { "X Size", &plotXSizeField },
-   { "Y Size", &plotYSizeField },
+   { "Size", &plotSizeField },
    { "Samples", &maxSamplesField },
    { "Display", &displayModeEditor },
    { "Point Size", &pointSizeField },
    { "Stats", &statsModeEditor },
+   { "Redraw", &redrawModeEditor },
    { "Measured" },
    { "FPS", &rateValueField },
    { "Memory", &memoryValue },
@@ -332,12 +319,12 @@ FieldTableEditor::Row constantStatusCells[]
    { "Noise", &noiseEnabledEditor },
    { "StdDev", &noiseStdDevField },
    { "Plot" },
-   { "X Size", &plotXSizeField },
-   { "Y Size", &plotYSizeField },
+   { "Size", &plotSizeField },
    { "Samples", &maxSamplesField },
    { "Display", &displayModeEditor },
    { "Point Size", &pointSizeField },
    { "Stats", &statsModeEditor },
+   { "Redraw", &redrawModeEditor },
    { "Measured" },
    { "FPS", &rateValueField },
    { "Memory", &memoryValue },
@@ -350,12 +337,12 @@ FieldTableEditor::Row sinStatusCells[]
    { "Noise", &noiseEnabledEditor },
    { "StdDev", &noiseStdDevField },
    { "Plot" },
-   { "X Size", &plotXSizeField },
-   { "Y Size", &plotYSizeField },
+   { "Size", &plotSizeField },
    { "Samples", &maxSamplesField },
    { "Display", &displayModeEditor },
    { "Point Size", &pointSizeField },
    { "Stats", &statsModeEditor },
+   { "Redraw", &redrawModeEditor },
    { "Measured" },
    { "FPS", &rateValueField },
    { "Memory", &memoryValue },
@@ -409,14 +396,14 @@ uint32_t getTotalFreeHeap()
 
 ///
 /// <summary>
-/// Recomputes memoryDeltaKb from the current free heap relative to startFreeHeapBytes.
+/// Recomputes memoryValue from the current free heap relative to startFreeHeapBytes.
 /// Called immediately after any plot recreation (so the Memory row reflects the new
 /// plot's allocation right away) as well as periodically from updateRateReadout().
 /// </summary>
 ///
 void updateMemoryReadout()
 {
-   memoryDeltaKb = (float)((int32_t)startFreeHeapBytes - (int32_t)getTotalFreeHeap()) / 1024.0f;
+   memoryValue.set((float)((int32_t)startFreeHeapBytes - (int32_t)getTotalFreeHeap()) / 1024.0f);
 }
 
 ///
@@ -428,7 +415,7 @@ void updateMemoryReadout()
 ///
 void updateRateReadout()
 {
-   rateValue = updateRate.get();
+   rateValueField.set(updateRate.get());
    updateMemoryReadout();
 
    if (statusDrawTimer.ready())
@@ -455,11 +442,10 @@ Rect16 computePlotRect()
    int16_t availableWidth = DISPLAY_WIDTH - plotAreaX;
    int16_t availableHeight = DISPLAY_HEIGHT - HEADER_HEIGHT;
 
-   uint8_t xPercent = PLOT_SIZE_PERCENTS[constrain(plotXSizeIndex, 0L, (long)(NUM_PLOT_SIZES - 1))];
-   uint8_t yPercent = PLOT_SIZE_PERCENTS[constrain(plotYSizeIndex, 0L, (long)(NUM_PLOT_SIZES - 1))];
+   uint8_t sizePercent = PLOT_SIZE_PERCENTS[constrain(plotSizeField.get(), 0L, (long)(NUM_PLOT_SIZES - 1))];
 
-   int16_t plotWidth = (int16_t)((int32_t)availableWidth * xPercent / 100);
-   int16_t plotHeight = (int16_t)((int32_t)availableHeight * yPercent / 100);
+   int16_t plotWidth = (int16_t)((int32_t)availableWidth * sizePercent / 100);
+   int16_t plotHeight = (int16_t)((int32_t)availableHeight * sizePercent / 100);
 
    int16_t plotX = plotAreaX + (availableWidth - plotWidth) / 2;
    int16_t plotY = HEADER_HEIGHT + (availableHeight - plotHeight) / 2;
@@ -467,18 +453,16 @@ Rect16 computePlotRect()
    static int16_t lastPlotAreaX = -1;
    static int16_t lastAvailableWidth = -1;
    static int16_t lastAvailableHeight = -1;
-   static uint8_t lastXPercent = 0;
-   static uint8_t lastYPercent = 0;
+   static uint8_t lastSizePercent = 0;
    bool availableAreaChanged = (plotAreaX != lastPlotAreaX) || (availableWidth != lastAvailableWidth) || (availableHeight != lastAvailableHeight)
-      || (xPercent != lastXPercent) || (yPercent != lastYPercent);
+      || (sizePercent != lastSizePercent);
    if (availableAreaChanged)
    {
       arduino.fillRect(plotAreaX, HEADER_HEIGHT, availableWidth, availableHeight, PLOT_BACKGROUND_COLOR);
       lastPlotAreaX = plotAreaX;
       lastAvailableWidth = availableWidth;
       lastAvailableHeight = availableHeight;
-      lastXPercent = xPercent;
-      lastYPercent = yPercent;
+      lastSizePercent = sizePercent;
    }
 
    return Rect16{ (uint16_t)plotX, (uint16_t)plotY, (uint16_t)plotWidth, (uint16_t)plotHeight };
@@ -488,7 +472,7 @@ Rect16 computePlotRect()
 /// <summary>
 /// (Re)creates the active plot at its current rectangle (see computePlotRect()), using a
 /// single rolling-count ScatterPlot series of the currently selected sample count (see
-/// MAX_SAMPLES_OPTIONS/ScatterPlot::createRollingSeries()): points fill in from the left and,
+/// maxSamplesField/ScatterPlot::createRollingSeries()): points fill in from the left and,
 /// once full, the oldest point scrolls off as each new one is added. Called whenever the plot
 /// size or sample count changes, and once from setup().
 /// </summary>
@@ -501,7 +485,7 @@ void recreatePlot()
 
    scatterPlot = new ScatterPlot(&arduino, rect, "#####", "##.#");
 
-   size_t maxSamples = MAX_SAMPLES_OPTIONS[constrain(maxSamplesIndex, 0L, (long)(NUM_MAX_SAMPLES_OPTIONS - 1))];
+   size_t maxSamples = static_cast<size_t>(maxSamplesField.get());
    ScatterPlotSeries* rollingSeries = scatterPlot->createRollingSeries(maxSamples);
    rollingSeries->movingSampleSize = (float)maxSamples / 5.0f;
    sampleSeries = rollingSeries;
@@ -511,6 +495,7 @@ void recreatePlot()
 
    applyDisplayMode();
    applyStatsMode();
+   applyRedrawMode();
 
    if (sensor != nullptr)
    {
@@ -527,11 +512,11 @@ void recreatePlot()
 ///
 void applyDisplayMode()
 {
-   long index = constrain(displayModeIndex, 0L, (long)(NUM_DISPLAY_MODES - 1));
+   long index = constrain(displayModeEditor.get(), 0L, (long)(NUM_DISPLAY_MODES - 1));
 
    sampleSeries->showPoints = (index == 0);
    sampleSeries->showLines = (index == 1);
-   sampleSeries->pointSize = (uint8_t)constrain(pointSizeValue, MIN_POINT_SIZE, MAX_POINT_SIZE);
+   sampleSeries->pointSize = (uint8_t)constrain(pointSizeField.get(), MIN_POINT_SIZE, MAX_POINT_SIZE);
 }
 
 ///
@@ -543,11 +528,33 @@ void applyDisplayMode()
 ///
 void applyStatsMode()
 {
-   long index = constrain(statsModeIndex, 0L, (long)(NUM_STATS_MODES - 1));
+   long index = constrain(statsModeEditor.get(), 0L, (long)(NUM_STATS_MODES - 1));
 
    sampleSeries->showMovingAverage = (index == 1 || index == 3);
    sampleSeries->showStdDevBand = (index == 2 || index == 3);
 }
+
+///
+/// <summary>
+/// Applies the current Redraw field selection to the active plot's shared DisplayBuffer
+/// redraw mode - Full always repaints every pixel; Diff only repaints pixels that changed
+/// since the previous frame using bulk column transfers. Called whenever the field changes
+/// and once from recreatePlot().
+/// </summary>
+///
+void applyRedrawMode()
+{
+   long index = constrain(redrawModeEditor.get(), 0L, (long)(NUM_REDRAW_MODES - 1));
+
+   static constexpr DisplayBuffer::RedrawMode REDRAW_MODES[] =
+   {
+      DisplayBuffer::RedrawMode::FULL,
+      DisplayBuffer::RedrawMode::DIFF,
+   };
+
+   scatterPlot->setRedrawMode(REDRAW_MODES[index]);
+}
+
 
 ///
 /// <summary>
@@ -562,12 +569,12 @@ void applyNoise()
       return;
    }
 
-   sensor->setNoiseStdDev(noiseEnabled != 0 ? noiseStdDevValue : 0.0f);
+   sensor->setNoiseStdDev(noiseEnabledEditor.get() != 0 ? noiseStdDevField.get() : 0.0f);
 }
 
 ///
 /// <summary>
-/// Selects the sensor for the current testFunctionIndex, begins it, applies noise, and swaps
+/// Selects the sensor for the current testFunctionEditor selection, begins it, applies noise, and swaps
 /// the status table to the field set appropriate for that sensor (which may change the
 /// table's width). Split out from applyTestFunction() so recreatePlot() can be called
 /// afterward with the correct table width already in place.
@@ -575,16 +582,18 @@ void applyNoise()
 ///
 void selectTestFunction()
 {
-   sensor = TEST_FUNCTION_SENSORS[testFunctionIndex];
+   sensor = TEST_FUNCTION_SENSORS[testFunctionEditor.get()];
    sensorReady = sensor->begin();
    applyNoise();
 
    if (sensor == &constantSensor)
    {
+      constantValueEditor.set(constantSensor.value);
       statusTable.setFields(constantStatusCells);
    }
    else if (sensor == &sinSensor)
    {
+      sinPeriodField.set(sinSensor.periodS);
       statusTable.setFields(sinStatusCells);
    }
    else
@@ -592,6 +601,20 @@ void selectTestFunction()
       statusTable.setFields(defaultStatusCells);
    }
    statusTable.load();
+
+   // statusTable.load() above may have just overwritten constantValueEditor/sinPeriodField
+   // with the persisted value, but the sensors themselves still hold whatever value they
+   // were constructed/last set with - normally kept in sync via loop()'s assignment on every
+   // encoder change, which hasn't happened yet at startup. Push the freshly loaded editor
+   // value into the sensor now so the very first sample reflects the restored setting.
+   if (sensor == &constantSensor)
+   {
+      constantSensor.value = constantValueEditor.get();
+   }
+   else if (sensor == &sinSensor)
+   {
+      sinSensor.periodS = sinPeriodField.get();
+   }
 }
 
 ///
@@ -611,7 +634,7 @@ void applyTestFunction()
    sampleCount = 0;
    updateRate.reset();
 
-   rateValue = updateRate.get();
+   rateValueField.set(updateRate.get());
    updateMemoryReadout();
    arduino.setTextSize(2);
    statusTable.draw();
@@ -640,7 +663,7 @@ void clearPlot()
 
    scatterPlot->clear();
 
-   rateValue = updateRate.get();
+   rateValueField.set(updateRate.get());
    arduino.setTextSize(2);
    statusTable.draw();
 }
@@ -668,21 +691,6 @@ void setup()
    // wrong table width at startup).
    applyTestFunction();
 
-   // statusTable.load() (called from applyTestFunction() -> selectTestFunction()) may have
-   // restored persisted values that differ from these compile-time defaults. Re-sync the
-   // change-tracking variables to the now-current values so the first encoder turn (which
-   // only moves the selection highlight via selectNext(), not a value via adjust()) doesn't
-   // spuriously look like a value change and trigger an unwanted recreatePlot()/applyTestFunction().
-   lastTestFunctionIndex = testFunctionIndex;
-   lastPlotXSizeIndex = plotXSizeIndex;
-   lastPlotYSizeIndex = plotYSizeIndex;
-   lastMaxSamplesIndex = maxSamplesIndex;
-   lastNoiseEnabled = noiseEnabled;
-   lastNoiseStdDevValue = noiseStdDevValue;
-   lastDisplayModeIndex = displayModeIndex;
-   lastPointSizeValue = pointSizeValue;
-   lastStatsModeIndex = statsModeIndex;
-
    // Discard any spurious position change accumulated on the encoders while pins were
    // settling during begin()/applyTestFunction(), so the first real turn moves the selection
    // immediately instead of just clearing a phantom delta.
@@ -709,49 +717,61 @@ void loop()
       statusTable.selectNext(statusSelectDelta);
       statusTable.adjustSelected(statusAdjustDelta);
 
+      constantSensor.value = constantValueEditor.get();
+      sinSensor.periodS = sinPeriodField.get();
+
       statusTable.save();
       arduino.setTextSize(2);
 
-      if (testFunctionIndex != lastTestFunctionIndex)
+      // Call hasChanged() on every editor (not just short-circuited ones) so each editor's
+      // internal baseline always stays current even when a different field is the one that
+      // actually changed this tick.
+      bool testFunctionChanged = testFunctionEditor.hasChanged();
+      bool plotSizeChanged = plotSizeField.hasChanged();
+      bool maxSamplesChanged = maxSamplesField.hasChanged();
+      bool noiseEnabledChanged = noiseEnabledEditor.hasChanged();
+      bool noiseStdDevChanged = noiseStdDevField.hasChanged();
+      bool displayModeChanged = displayModeEditor.hasChanged();
+      bool pointSizeChanged = pointSizeField.hasChanged();
+      bool statsModeChanged = statsModeEditor.hasChanged();
+      bool redrawModeChanged = redrawModeEditor.hasChanged();
+
+      if (testFunctionChanged)
       {
-         lastTestFunctionIndex = testFunctionIndex;
          applyTestFunction();
       }
-      else if (plotXSizeIndex != lastPlotXSizeIndex || plotYSizeIndex != lastPlotYSizeIndex || maxSamplesIndex != lastMaxSamplesIndex)
+      else if (plotSizeChanged || maxSamplesChanged)
       {
-         lastPlotXSizeIndex = plotXSizeIndex;
-         lastPlotYSizeIndex = plotYSizeIndex;
-         lastMaxSamplesIndex = maxSamplesIndex;
          recreatePlot();
          sampleSeries->clear();
          sampleCount = 0;
          updateRate.reset();
-         rateValue = updateRate.get();
+         rateValueField.set(updateRate.get());
          updateMemoryReadout();
          statusTable.draw();
       }
-      else if (noiseEnabled != lastNoiseEnabled || noiseStdDevValue != lastNoiseStdDevValue)
+      else if (noiseEnabledChanged || noiseStdDevChanged)
       {
-         lastNoiseEnabled = noiseEnabled;
-         lastNoiseStdDevValue = noiseStdDevValue;
          applyNoise();
          statusTable.draw();
       }
-      else if (displayModeIndex != lastDisplayModeIndex || pointSizeValue != lastPointSizeValue)
+      else if (displayModeChanged || pointSizeChanged)
       {
-         lastDisplayModeIndex = displayModeIndex;
-         lastPointSizeValue = pointSizeValue;
          applyDisplayMode();
          scatterPlot->invalidate();
          scatterPlot->draw();
          statusTable.draw();
       }
-      else if (statsModeIndex != lastStatsModeIndex)
+      else if (statsModeChanged)
       {
-         lastStatsModeIndex = statsModeIndex;
          applyStatsMode();
          scatterPlot->invalidate();
          scatterPlot->draw();
+         statusTable.draw();
+      }
+      else if (redrawModeChanged)
+      {
+         applyRedrawMode();
          statusTable.draw();
       }
       else

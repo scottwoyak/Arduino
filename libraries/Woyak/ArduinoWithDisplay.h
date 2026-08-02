@@ -476,6 +476,51 @@ public:
 
    ///
    /// <summary>
+   /// Bulk-pushes a single row of already-resolved RGB565 colors starting at (x, y), one
+   /// SPI/DMA transfer for the whole row instead of one per pixel. Intended for full-repaint
+   /// scenarios (e.g. DisplayBuffer::draw(true)) where every pixel in a row is being
+   /// redrawn anyway, so resolving a row into a small stack/heap buffer once and pushing it
+   /// in one call is far faster than calling drawPixel() once per pixel. Must be called
+   /// between startWrite()/endWrite().
+   /// </summary>
+   /// <param name="x">Starting X coordinate of the row.</param>
+   /// <param name="y">Y coordinate of the row.</param>
+   /// <param name="colors">Pointer to w consecutive RGB565 colors, one per pixel.</param>
+   /// <param name="w">Number of pixels in the row.</param>
+   ///
+   void pushImageRow(int16_t x, int16_t y, const uint16_t* colors, int16_t w)
+   {
+      // Passing a raw uint16_t* to pushImage() makes LGFX assume byte-swapped ("swap565")
+      // input unless setSwapBytes(true) was called; colors here are already in the same
+      // native RGB565 order that drawPixel() expects, so reinterpret as lgfx::rgb565_t to
+      // bypass that swap heuristic - otherwise every pushed pixel comes out with scrambled
+      // R/G/B bits (e.g. red/magenta speckling instead of the intended solid color).
+      display.pushImage(x, y, w, 1, reinterpret_cast<const lgfx::rgb565_t*>(colors));
+   }
+
+   ///
+   /// <summary>
+   /// Bulk-pushes a single column of already-resolved RGB565 colors starting at (x, y), one
+   /// SPI/DMA transfer for the whole vertical run instead of one per pixel. Intended for
+   /// diffed redraws (e.g. DisplayBuffer::draw(false)) where a contiguous vertical run of
+   /// pixels within a column changed since the previous frame, so pushing the whole run in
+   /// one call is far faster than calling drawPixel() once per changed pixel. Must be called
+   /// between startWrite()/endWrite().
+   /// </summary>
+   /// <param name="x">X coordinate of the column.</param>
+   /// <param name="y">Starting Y coordinate of the run.</param>
+   /// <param name="colors">Pointer to h consecutive RGB565 colors, one per pixel.</param>
+   /// <param name="h">Number of pixels in the run.</param>
+   ///
+   void pushImageColumn(int16_t x, int16_t y, const uint16_t* colors, int16_t h)
+   {
+      // See pushImageRow()'s remarks: reinterpret as lgfx::rgb565_t so LGFX treats this as
+      // already-native RGB565 data rather than byte-swapping it.
+      display.pushImage(x, y, 1, h, reinterpret_cast<const lgfx::rgb565_t*>(colors));
+   }
+
+   ///
+   /// <summary>
    /// Begins a batched sequence of drawing calls, deferring the underlying transaction
    /// (e.g. SPI) so multiple draw calls can be sent together instead of one transaction
    /// each. Must be paired with a matching endWrite() call.

@@ -598,7 +598,13 @@ public:
    ///
    int16_t getWidth()
    {
-      int16_t labelWidth = (int16_t)(_maxLabelLength * _display->charW(_textSize));
+      int16_t charW = _display->charW(_textSize);
+
+      // Matches the gap-aligned row layout in _relayout() (one extra character width to
+      // the right of the label column for the label/value gap) plus the single-space
+      // separator Field::draw() prints between the label and the value, whose width
+      // isn't otherwise reflected until the value's real position is set on first draw.
+      int16_t labelWidth = (int16_t)(2 * charW) + (int16_t)(_maxLabelLength * charW);
 
       int16_t maxValueWidth = 0;
       for (const RowContents* row : _rows)

@@ -188,19 +188,9 @@ const char PREF_BUFFER_KEY[] = "buf";
 
 // ----------- Editable Fields (Encoder A selects a field, Encoder B adjusts it)
 // Changing any of these immediately re-applies the configuration to the live sensor.
-long resistorIndex = 0;
-long dischargeDelayMicros = CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS;
-long bufferSize = (long)CapacitorSensor::DEFAULT_BUFFER_SIZE;
-long testType = 0;
-float filter = CapacitorSensor::DEFAULT_FILTER;
 
 // ----------- Measured Fields (read-only, share the same table as the editable fields)
 // Updated each display refresh from the sensor/stats before table.draw() is called.
-float measuredChargeTimeMicros = NAN;
-float measuredStdDevMicros = NAN;
-float measuredRangeMicros = NAN;
-float measuredRawRate = 0.0f;
-float measuredEffectiveRate = 0.0f;
 
 // ----------- Test Type Selection
 /// <summary>Test types selectable via the Test Type live field, run by pressing Button A.</summary>
@@ -215,22 +205,22 @@ enum class TestType
 constexpr const char* TEST_TYPE_LABELS[] = { "Optimize", "Buffer Size Sweep", "Discharge Time Sweep", "Raw Data Capture" };
 constexpr size_t TEST_TYPE_COUNT = sizeof(TEST_TYPE_LABELS) / sizeof(TEST_TYPE_LABELS[0]);
 
-EnumEditor resistorEditor(&resistorIndex,
+EnumEditor resistorEditor(
    RESISTOR_LABELS, 0, "########");
-IntEditor delayEditor(&dischargeDelayMicros,
-   50, 2000, 50, (long)CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS, "#### us");
-IntEditor bufferSizeEditor(&bufferSize,
-   (long)MIN_TARGET_BUFFER_SIZE, (long)MAX_TARGET_BUFFER_SIZE, 5, (long)CapacitorSensor::DEFAULT_BUFFER_SIZE, "###");
-EnumEditor testTypeEditor(&testType,
+ScaledStepIntEditor delayEditor(
+   50, 2000, (long)CapacitorSensor::DEFAULT_DISCHARGE_DELAY_MICROS, "#### us");
+ScaledStepIntEditor bufferSizeEditor(
+   (long)MIN_TARGET_BUFFER_SIZE, (long)MAX_TARGET_BUFFER_SIZE, (long)CapacitorSensor::DEFAULT_BUFFER_SIZE, "###");
+EnumEditor testTypeEditor(
    TEST_TYPE_LABELS, 0, "####################");
-FloatEditor filterEditor(&filter,
+FloatEditor filterEditor(
    0.0f, 50.0f, 1.0f, CapacitorSensor::DEFAULT_FILTER, "##.# %");
 
-FloatValue chargeTimeValue(&measuredChargeTimeMicros, "#####.# us");
-FloatValue stdDevValue(&measuredStdDevMicros, "#####.# us");
-FloatValue rangeValue(&measuredRangeMicros, "#####.# us");
-FloatValue rawRateValue(&measuredRawRate, "######/s");
-FloatValue effectiveRateValue(&measuredEffectiveRate, "###/s");
+FloatValue chargeTimeValue("#####.# us", NAN);
+FloatValue stdDevValue("#####.# us", NAN);
+FloatValue rangeValue("#####.# us", NAN);
+FloatValue rawRateValue("######/s");
+FloatValue effectiveRateValue("###/s");
 
 FieldTableEditor::Row setupCells[] =
 {
@@ -380,9 +370,9 @@ void applyConfiguration(uint8_t chargePin, uint16_t dischargeDelayMicros, size_t
 ///
 void syncFields(uint8_t newChargePin, uint16_t newDischargeDelayMicros, size_t newBufferSize)
 {
-   resistorIndex = (long)resistorIndexFromChargePin(newChargePin);
-   dischargeDelayMicros = (long)newDischargeDelayMicros;
-   bufferSize = (long)newBufferSize;
+   resistorEditor.set((long)resistorIndexFromChargePin(newChargePin));
+   delayEditor.set((long)newDischargeDelayMicros);
+   bufferSizeEditor.set((long)newBufferSize);
    table.save();
 }
 
@@ -629,12 +619,12 @@ TestCaseParameters testParameters;
 ///
 void applyFields()
 {
-   long selectedResistorIndex = constrain(resistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
+   long selectedResistorIndex = constrain(resistorEditor.get(), 0L, (long)(RESISTOR_OPTION_COUNT - 1));
    applyConfiguration(
       RESISTOR_OPTIONS[selectedResistorIndex].chargePin,
-      (uint16_t)dischargeDelayMicros,
-      (size_t)bufferSize);
-   capacitorSensor.setFilter(filter, FilteredRollingAverage::FilterMode::PERCENT);
+      (uint16_t)delayEditor.get(),
+      (size_t)bufferSizeEditor.get());
+   capacitorSensor.setFilter(filterEditor.get(), FilteredRollingAverage::FilterMode::PERCENT);
 }
 
 ///
@@ -788,10 +778,10 @@ void runRollingSweepTest()
    arduino.setTextSize(DEFAULT_TEXT_SIZE);
    arduino.moveCursorY(8);
 
-   long selectedResistorIndex = constrain(resistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
+   long selectedResistorIndex = constrain(resistorEditor.get(), 0L, (long)(RESISTOR_OPTION_COUNT - 1));
    arduino.println("      Resistor: ", RESISTOR_OPTIONS[selectedResistorIndex].label, resistorLabelFormat, Color::VALUE);
-   arduino.println("         Delay: ", (int)dischargeDelayMicros, chargeFormat, Color::VALUE);
-   arduino.println("Outlier Filter: ", filter, filterCellFormat, Color::VALUE);
+   arduino.println("         Delay: ", (int)delayEditor.get(), chargeFormat, Color::VALUE);
+   arduino.println("Outlier Filter: ", filterEditor.get(), filterCellFormat, Color::VALUE);
 
    Timer collectDisplayTimer(0);
    while (collected < ROLLING_SWEEP_SAMPLE_COUNT)
@@ -825,8 +815,8 @@ void runRollingSweepTest()
    Serial.println("Rolling Sweep: computing stats...");
 
    textViewer.addLine(String("Resistor: ") + RESISTOR_OPTIONS[selectedResistorIndex].label);
-   textViewer.addLine(String("Discharge Delay: ") + String(dischargeDelayMicros) + " us");
-   textViewer.addLine(String("Outlier Filter: ") + String(filter, 1) + " %");
+   textViewer.addLine(String("Discharge Delay: ") + String(delayEditor.get()) + " us");
+   textViewer.addLine(String("Outlier Filter: ") + String(filterEditor.get(), 1) + " %");
    textViewer.addLine("");
 
    const SerialTable::Column columns[] = {
@@ -903,10 +893,10 @@ void runRawDataCaptureTest()
    arduino.setTextSize(DEFAULT_TEXT_SIZE);
    arduino.moveCursorY(8);
 
-   long selectedResistorIndex = constrain(resistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
+   long selectedResistorIndex = constrain(resistorEditor.get(), 0L, (long)(RESISTOR_OPTION_COUNT - 1));
    arduino.println("      Resistor: ", RESISTOR_OPTIONS[selectedResistorIndex].label, resistorLabelFormat, Color::VALUE);
-   arduino.println("Discharge Time: ", (int)dischargeDelayMicros, chargeFormat, Color::VALUE);
-   arduino.println("Outlier Filter: ", filter, filterCellFormat, Color::VALUE);
+   arduino.println("Discharge Time: ", (int)delayEditor.get(), chargeFormat, Color::VALUE);
+   arduino.println("Outlier Filter: ", filterEditor.get(), filterCellFormat, Color::VALUE);
 
    // Abort the capture if no new samples arrive for this long, e.g. when a too-strict outlier
    // filter causes every incoming sample to be rejected and the buffer never fills.
@@ -965,7 +955,7 @@ void runRawDataCaptureTest()
 
    textViewer.addLine(String("Resistor: ") + RESISTOR_OPTIONS[selectedResistorIndex].label);
    textViewer.addLine(String("Discharge Time: ") + String(dischargeDelayMicros) + " us");
-   textViewer.addLine(String("Outlier Filter: ") + String(filter, 1));
+   textViewer.addLine(String("Outlier Filter: ") + String(filterEditor.get(), 1));
    textViewer.addLine("");
 
    // rawValueAt() is indexed relative to the most recent sample (0 = latest), so read samples
@@ -1092,14 +1082,14 @@ void runDischargeSweepTest()
    arduino.setTextSize(DEFAULT_TEXT_SIZE);
    arduino.moveCursorY(8);
 
-   long selectedResistorIndex = constrain(resistorIndex, 0L, (long)(RESISTOR_OPTION_COUNT - 1));
+   long selectedResistorIndex = constrain(resistorEditor.get(), 0L, (long)(RESISTOR_OPTION_COUNT - 1));
    arduino.println("      Resistor: ", RESISTOR_OPTIONS[selectedResistorIndex].label, resistorLabelFormat, Color::VALUE);
-   arduino.println("        Buffer: ", (int)bufferSize, bufferCellFormat, Color::VALUE);
-   arduino.println("Outlier Filter: ", filter, filterCellFormat, Color::VALUE);
+   arduino.println("        Buffer: ", (int)bufferSizeEditor.get(), bufferCellFormat, Color::VALUE);
+   arduino.println("Outlier Filter: ", filterEditor.get(), filterCellFormat, Color::VALUE);
 
    textViewer.addLine(String("Resistor: ") + RESISTOR_OPTIONS[selectedResistorIndex].label);
-   textViewer.addLine(String("Buffer: ") + String(bufferSize));
-   textViewer.addLine(String("Outlier Filter: ") + String(filter, 1) + " %");
+   textViewer.addLine(String("Buffer: ") + String(bufferSizeEditor.get()));
+   textViewer.addLine(String("Outlier Filter: ") + String(filterEditor.get(), 1) + " %");
    textViewer.addLine("");
 
    const SerialTable::Column columns[] = {
@@ -1790,7 +1780,7 @@ void loop()
 
    if (arduino.buttonA.wasPressed())
    {
-      TestType selectedTestType = (TestType)constrain(testType, 0L, (long)(TEST_TYPE_COUNT - 1));
+      TestType selectedTestType = (TestType)constrain(testTypeEditor.get(), 0L, (long)(TEST_TYPE_COUNT - 1));
       switch (selectedTestType)
       {
       case TestType::BUFFER_SIZE_SWEEP:
@@ -1823,11 +1813,11 @@ void loop()
       arduino.setTextSize(DEFAULT_TEXT_SIZE);
       arduino.moveCursorY(8);
 
-      measuredChargeTimeMicros = capacitorSensor.chargeTimeMicros();
-      measuredStdDevMicros = chargeStats.stdDev();
-      measuredRangeMicros = chargeStats.range();
-      measuredRawRate = capacitorSensor.rate();
-      measuredEffectiveRate = (capacitorSensor.bufferSize() > 0) ? (measuredRawRate / (float)capacitorSensor.bufferSize()) : 0;
+      chargeTimeValue.set(capacitorSensor.chargeTimeMicros());
+      stdDevValue.set(chargeStats.stdDev());
+      rangeValue.set(chargeStats.range());
+      rawRateValue.set(capacitorSensor.rate());
+      effectiveRateValue.set((capacitorSensor.bufferSize() > 0) ? (rawRateValue.get() / (float)capacitorSensor.bufferSize()) : 0);
 
       int16_t fieldsTop = arduino.getCursorY();
       table.setPosition(0, fieldsTop);
