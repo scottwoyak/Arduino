@@ -54,6 +54,7 @@
 - When deciding whether to remove a zero/guard check during cleanup, only remove it if the value is provably non-zero at that call site (e.g., a local constant). Do not remove guard checks in public/reusable API functions whose callers aren't all known, since external callers could pass zero.
 - When the user says "cleanup" a file/class, perform a full cleanup pass, not just one narrow pattern (e.g., not just casts). This includes: redundant casts, unneeded zero/guard checks, comment/doc-comment formatting consistency, dead code, and other general code quality issues consistent with the rest of the codebase's style.
 - When a constructor (or function) has many parameters, put each parameter on a separate line, in addition to putting each initializer-list member on its own line.
+- Avoid using `snprintf` in C++/Arduino code; use an alternative approach (e.g., `std::ostringstream`, `String` concatenation, or similar) instead.
 
 ## Documentation Comment Style
 - User prefers Visual Studio XML documentation comments (`/// <summary>`, `<param>`, `<returns>`) for class and method documentation. These are XML documentation comments used for IntelliSense.
