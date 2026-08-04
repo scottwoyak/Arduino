@@ -238,6 +238,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Basic_FieldEditor/Basic_FieldEditor.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Basic_FieldTable/Basic_FieldTable.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

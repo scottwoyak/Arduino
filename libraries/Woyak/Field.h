@@ -242,6 +242,18 @@ public:
 
    ///
    /// <summary>
+   /// Gets the field's label text, e.g. so a caller pairing this Field with some other
+   /// name-keyed data (like FieldEditor::FieldInfo) doesn't have to restate it separately.
+   /// </summary>
+   /// <returns>The label text passed to the constructor.</returns>
+   ///
+   const char* label() const
+   {
+      return _label.c_str();
+   }
+
+   ///
+   /// <summary>
    /// Sets the value to display and draws the field. The first call renders the label
    /// directly to the display and the value via the DisplayValue's sprite; later calls
    /// redraw only the value.

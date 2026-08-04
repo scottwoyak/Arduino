@@ -36,10 +36,11 @@ public:
    ///
    /// <summary>
    /// Pairs a ValueBase (or Editor) with the row-level display metadata (label) needed to
-   /// identify it in the table. The first column of a row is just a label; it isn't part of
-   /// the value's own value/editing behavior, so that metadata lives here instead of on the
-   /// value itself. A row can also be a label-only section header (no value), or a blank
-   /// spacer row with neither label nor value.
+   /// identify it in the table. The label doubles as the key used to persist this row's
+   /// value to Preferences, so it isn't asked for separately. The first column of a row is
+   /// just a label; it isn't part of the value's own value/editing behavior, so that
+   /// metadata lives here instead of on the value itself. A row can also be a label-only
+   /// section header (no value), or a blank spacer row with neither label nor value.
    /// </summary>
    ///
    struct Row
@@ -48,7 +49,8 @@ public:
       /// <summary>
       /// Initializes a new instance of the Row struct for a normal labeled field.
       /// </summary>
-      /// <param name="label">Label text identifying this row, e.g. "Rate".</param>
+      /// <param name="label">Label text identifying this row, e.g. "Rate". Also used as its
+      /// Preferences key.</param>
       /// <param name="value">The value providing this row's value/editing behavior.</param>
       ///
       Row(const char* label, ValueBase* value)

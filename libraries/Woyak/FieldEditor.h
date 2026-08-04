@@ -6,22 +6,28 @@
 #include "Color.h"
 #include "ArduinoBoard.h"
 #include "ValueEditor.h"
+#include "Field.h"
 
 #ifndef ARDUINO_PREFERENCES_SUPPORTED
 #error "FieldEditor requires a board with Preferences support."
 #endif
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "FieldEditor requires a board with a display."
+#endif
 
 ///
 /// <summary>
-/// Reusable, render-agnostic collection of ValueBase values (a mix of editable Editor
-/// fields and read-only values) that can be navigated and adjusted live with a board's
-/// encoders: Encoder A cycles the selected field, Encoder B adjusts its value. Also
-/// supports loading/saving/resetting all fields against a Preferences namespace.
-/// FieldEditor has no rendering/layout logic and no notion of rows, tables, or sections -
-/// it just manages a flat set of named fields and makes them selectable/editable, so it
-/// can back any presentation (a table, a label drawn next to some other content, etc.).
-/// FieldTableEditor is built on top of this class, adding FieldTable-based table rendering
-/// (including its own row-level concepts like section headers).
+/// Reusable collection of ValueBase values (a mix of editable Editor fields and read-only
+/// values) that can be navigated and adjusted live with a board's encoders: Encoder A
+/// cycles the selected field, Encoder B adjusts its value. Also supports loading/saving/
+/// resetting all fields against a Preferences namespace. FieldEditor has no notion of
+/// rows, tables, or sections - it just manages a flat set of named fields and makes them
+/// selectable/editable. Each field may optionally be paired with its own Field instance
+/// (e.g. for an inline layout drawn next to other content, rather than a table); draw()
+/// then draws every paired field automatically, reading its own selection/enabled state to
+/// highlight the current selection. FieldTableEditor is built on top of this class instead,
+/// adding FieldTable-based table rendering (including its own row-level concepts like
+/// section headers) for fields that don't have their own individual Field/position.
 /// </summary>
 ///
 class FieldEditor
@@ -29,15 +35,15 @@ class FieldEditor
 public:
    ///
    /// <summary>
-   /// Pairs a ValueBase (or Editor) with the name used to identify it, e.g. for
-   /// Preferences persistence. The name isn't part of the value's own value/editing
-   /// behavior, so it lives here instead of on the value itself.
+   /// Pairs a ValueBase (or Editor) with the key used to identify it for Preferences
+   /// persistence. The key isn't part of the value's own value/editing behavior, so it
+   /// lives here instead of on the value itself.
    /// </summary>
    ///
    struct FieldInfo
    {
       // Default-constructible so Vector<FieldInfo> can grow its backing array (see
-      // Vector::_ensureCapacity()); a default-constructed FieldInfo has no name/value and is
+      // Vector::_ensureCapacity()); a default-constructed FieldInfo has no key/value and is
       // never actually used as-is.
       FieldInfo() = default;
 
@@ -45,15 +51,34 @@ public:
       /// <summary>
       /// Initializes a new instance of the FieldInfo struct.
       /// </summary>
-      /// <param name="name">Name identifying this field, e.g. "Rate", used to derive its Preferences key.</param>
+      /// <param name="key">Key identifying this field, e.g. "Rate", used to derive its Preferences key.</param>
       /// <param name="value">The value providing this field's value/editing behavior.</param>
       ///
-      FieldInfo(const char* name, ValueBase* value)
-         : name(name), value(value)
+      FieldInfo(const char* key, ValueBase* value)
+         : key(key), value(value)
       {}
 
-      const char* name = nullptr;
+      ///
+      /// <summary>
+      /// Initializes a new instance of the FieldInfo struct, pairing it with its own
+      /// already-positioned Field so draw() can render it automatically. The field's own
+      /// label is reused as this entry's key, so it isn't repeated separately.
+      /// </summary>
+      /// <param name="value">The value providing this field's value/editing behavior.</param>
+      /// <param name="field">The already-positioned Field used to render this field's label/value.</param>
+      ///
+      FieldInfo(ValueBase* value, Field* field)
+         : key(field->label()), value(value), field(field)
+      {}
+
+      const char* key = nullptr;
       ValueBase* value = nullptr;
+
+      // Optional Field used to render this entry's label/value, e.g. for an inline layout
+      // where each field is drawn next to the content it controls rather than in a table.
+      // Left null for entries rendered some other way (e.g. FieldTableEditor's rows, which
+      // are rendered via its own internal FieldTable instead).
+      Field* field = nullptr;
    };
 
 private:
@@ -70,7 +95,7 @@ private:
 
    ///
    /// <summary>
-   /// Generates the Preferences key used to persist a field, derived from a hash of its name
+   /// Generates the Preferences key used to persist a field, derived from a hash of its key
    /// rather than its position in the collection. This lets setFields() swap which fields are
    /// currently tracked (e.g. different config fields per selected test function) without
    /// different fields sharing - and clobbering - the same positional key.
@@ -80,9 +105,9 @@ private:
    ///
    const char* _keyFor(const FieldInfo& field)
    {
-      // Simple FNV-1a hash of the name, truncated to fit Preferences' short key limit.
+      // Simple FNV-1a hash of the key, truncated to fit Preferences' short key limit.
       uint32_t hash = 2166136261u;
-      for (const char* p = field.name; *p != '\0'; p++)
+      for (const char* p = field.key; *p != '\0'; p++)
       {
          hash ^= static_cast<uint8_t>(*p);
          hash *= 16777619u;
@@ -223,9 +248,10 @@ public:
    /// Computes the text/background colors a caller's own rendering should use for the field
    /// at the given index, based on its current selection/enabled state (selected fields are
    /// highlighted, disabled fields are grayed out, read-only fields use a dimmer value
-   /// color). The same logic FieldTableEditor uses to highlight a selected row, extracted
-   /// here so any caller with its own rendering (e.g. an inline field layout) can reuse it
-   /// instead of duplicating it.
+   /// color). Used internally by draw() to render fields paired with their own Field
+   /// instance; also available for callers with their own custom rendering that isn't a
+   /// simple paired Field (e.g. a caller doing its own dirty-tracking to avoid flicker, or
+   /// FieldTableEditor highlighting a row rendered via its own FieldTable).
    /// </summary>
    /// <param name="index">Index of the field to compute display colors for.</param>
    /// <param name="valueColor">Receives the color the value's text should be drawn in.</param>
@@ -239,6 +265,32 @@ public:
 
       backgroundColor = isSelected ? Color::BLUE : Color::BLACK;
       valueColor = isDisabled ? Color::GRAY : (isSelected ? Color::WHITE : (value->hasColor() ? value->color() : (value->isEditable() ? Color::VALUE : Color::VALUE2)));
+   }
+
+   ///
+   /// <summary>
+   /// Draws every field that was paired with its own Field instance (see the FieldInfo
+   /// constructor taking a Field*), highlighting whichever one is currently selected.
+   /// Fields with no paired Field instance are skipped, since they're assumed to be
+   /// rendered some other way (e.g. FieldTableEditor's rows, or a caller's own custom
+   /// rendering).
+   /// </summary>
+   ///
+   void draw()
+   {
+      for (uint8_t i = 0; i < _fields.size(); i++)
+      {
+         if (_fields[i].field == nullptr)
+         {
+            continue;
+         }
+
+         Color valueColor;
+         Color backgroundColor;
+         colorsFor(i, valueColor, backgroundColor);
+
+         _fields[i].field->draw(_fields[i].value->valueText(), Color::LABEL, valueColor, backgroundColor);
+      }
    }
 
    ///
@@ -331,12 +383,12 @@ public:
    /// Drives the editor from the board's own encoders in a single call: Encoder A moves the
    /// selection (selectNext()), Encoder B adjusts the selected field's value
    /// (adjustSelected()) and persists the change, and Encoder B's integral button resets all
-   /// fields to their defaults (reset(), which also persists). Unlike
-   /// FieldTableEditor::loop(), this does not draw anything - FieldEditor has no
-   /// rendering/layout logic - so the caller is responsible for redrawing its own
-   /// presentation of the fields when this returns true. Requires a board with Encoder A/B
-   /// (see ARDUINO_PLAYGROUND_SUPPORTED); use selectNext()/adjustSelected()/reset() directly
-   /// if finer control is needed (e.g. reacting to a change before it's applied).
+   /// fields to their defaults (reset(), which also persists). This does not call draw() -
+   /// the caller is responsible for calling it (or its own presentation logic) when this
+   /// returns true, e.g. so it can be skipped or combined with other conditions that also
+   /// require a redraw. Requires a board with Encoder A/B (see ARDUINO_PLAYGROUND_SUPPORTED);
+   /// use selectNext()/adjustSelected()/reset() directly if finer control is needed (e.g.
+   /// reacting to a change before it's applied).
    /// </summary>
    /// <returns>True if the selection changed, the selected value was adjusted, or the fields were reset; false otherwise.</returns>
    ///
