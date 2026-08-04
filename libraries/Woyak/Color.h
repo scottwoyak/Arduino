@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <math.h>
+#include <cmath>
 
 #if defined(_Adafruit_GRAYOLED_H_)
 
@@ -530,6 +531,156 @@ namespace Color565
    /// <param name="color">Color value (16-bit)</param>
    ///
    void println(uint16_t color) { println((Color)color); }
+
+   ///
+   /// <summary>
+   /// Converts HSL color components to a Color, since fromHSV()/fromHSVLuminance() only
+   /// provide HSV conversions. Standard HSL->RGB formula.
+   /// </summary>
+   /// <param name="hue">Hue, in degrees (0.0-360.0).</param>
+   /// <param name="saturation">Saturation (0.0-1.0).</param>
+   /// <param name="lightness">Lightness (0.0-1.0).</param>
+   /// <returns>The corresponding Color.</returns>
+   ///
+   inline Color fromHSL(float hue, float saturation, float lightness)
+   {
+      float c = (1.0f - fabsf(2.0f * lightness - 1.0f)) * saturation;
+      float x = c * (1.0f - fabsf(fmodf(hue / 60.0f, 2.0f) - 1.0f));
+      float m = lightness - (c / 2.0f);
+
+      float r1, g1, b1;
+      if (hue < 60.0f)
+      {
+         r1 = c; g1 = x; b1 = 0.0f;
+      }
+      else if (hue < 120.0f)
+      {
+         r1 = x; g1 = c; b1 = 0.0f;
+      }
+      else if (hue < 180.0f)
+      {
+         r1 = 0.0f; g1 = c; b1 = x;
+      }
+      else if (hue < 240.0f)
+      {
+         r1 = 0.0f; g1 = x; b1 = c;
+      }
+      else if (hue < 300.0f)
+      {
+         r1 = x; g1 = 0.0f; b1 = c;
+      }
+      else
+      {
+         r1 = c; g1 = 0.0f; b1 = x;
+      }
+
+      uint8_t red = (uint8_t)constrain((r1 + m) * 255.0f, 0.0f, 255.0f);
+      uint8_t green = (uint8_t)constrain((g1 + m) * 255.0f, 0.0f, 255.0f);
+      uint8_t blue = (uint8_t)constrain((b1 + m) * 255.0f, 0.0f, 255.0f);
+
+      return fromRGB(red, green, blue);
+   }
+
+   ///
+   /// <summary>
+   /// Decodes a single gamma-encoded sRGB channel (0.0-1.0) to linear light, using the
+   /// standard sRGB EOTF (a near-2.2 power curve with a linear toe near black).
+   /// </summary>
+   /// <param name="c">Gamma-encoded channel value (0.0-1.0).</param>
+   /// <returns>Linear-light channel value (0.0-1.0).</returns>
+   ///
+   inline float srgbToLinear(float c)
+   {
+      return (c <= 0.04045f) ? (c / 12.92f) : std::pow((c + 0.055f) / 1.055f, 2.4f);
+   }
+
+   // Weighting modes for toLuminance()/findLightnessForLuminance() below, applied on top
+   // of the R/G/B coefficients passed to those functions. The coefficients answer "how
+   // much does each channel contribute to brightness"; weighting answers "how does that
+   // numeric result relate to what a human actually perceives" (plain gamma-encoded values
+   // aren't perceptually linear - 50% isn't half as bright as 100%). "HSP" is the only mode
+   // that can actually reorder colors differently than the others - see toLuminance().
+   constexpr long WEIGHTING_NONE = 0;
+   constexpr long WEIGHTING_GAMMA = 1;
+   constexpr long WEIGHTING_HSP = 2;
+
+   ///
+   /// <summary>
+   /// Computes a Color's perceived brightness using the given coefficients and weighting
+   /// mode, normalized to roughly 0.0-1.0, for use as a sort key. Weighting is applied on
+   /// top of the coefficients: "None" sums the raw gamma-encoded channels as-is (the
+   /// traditional approach, but not perceptually linear); "Gamma-corrected" decodes sRGB
+   /// gamma to linear light before summing (proper linear relative luminance) - both of
+   /// these combine the weighted channels with a plain sum, so they're monotonic
+   /// re-expressions of each other and never actually change sort order relative to one
+   /// another. "HSP" instead sums the weighted squares of the gamma-encoded channels (then
+   /// takes the square root), which is not a monotonic re-expression of a plain weighted
+   /// sum, so it can rank colors of different hues differently than the other two modes.
+   /// </summary>
+   /// <param name="color">The color to convert.</param>
+   /// <param name="rWeight">Red coefficient.</param>
+   /// <param name="gWeight">Green coefficient.</param>
+   /// <param name="bWeight">Blue coefficient.</param>
+   /// <param name="weighting">Which weighting mode to apply (WEIGHTING_NONE/GAMMA/HSP).</param>
+   /// <returns>The perceived brightness.</returns>
+   ///
+   inline float toLuminance(Color color, float rWeight, float gWeight, float bWeight, long weighting)
+   {
+      float r = getR(color) / 255.0f;
+      float g = getG(color) / 255.0f;
+      float b = getB(color) / 255.0f;
+
+      if (weighting == WEIGHTING_HSP)
+      {
+         return std::sqrt((rWeight * r * r) + (gWeight * g * g) + (bWeight * b * b));
+      }
+
+      if (weighting == WEIGHTING_GAMMA)
+      {
+         r = srgbToLinear(r);
+         g = srgbToLinear(g);
+         b = srgbToLinear(b);
+      }
+
+      return (rWeight * r) + (gWeight * g) + (bWeight * b);
+   }
+
+   ///
+   /// <summary>
+   /// Binary-searches for the lightness (at the given saturation) whose perceived
+   /// brightness (per toLuminance()) is closest to `target`. Relies on perceived brightness
+   /// increasing monotonically with lightness at a fixed hue/saturation - black (lightness
+   /// 0.0) to the pure hue color (lightness 0.5) to white (lightness 1.0).
+   /// </summary>
+   /// <param name="hue">Hue, in degrees (0.0-360.0).</param>
+   /// <param name="saturation">Saturation (0.0-1.0) to hold fixed while solving.</param>
+   /// <param name="rWeight">Red coefficient.</param>
+   /// <param name="gWeight">Green coefficient.</param>
+   /// <param name="bWeight">Blue coefficient.</param>
+   /// <param name="weighting">Which weighting mode to solve under (see toLuminance()).</param>
+   /// <param name="target">Target perceived brightness to solve for.</param>
+   /// <returns>The lightness (0.0-1.0) that best matches the target.</returns>
+   ///
+   inline float findLightnessForLuminance(float hue, float saturation, float rWeight, float gWeight, float bWeight, long weighting, float target)
+   {
+      float lo = 0.0f;
+      float hi = 1.0f;
+      for (int i = 0; i < 20; i++)
+      {
+         float mid = (lo + hi) / 2.0f;
+         Color candidate = fromHSL(hue, saturation, mid);
+         float luminance = toLuminance(candidate, rWeight, gWeight, bWeight, weighting);
+         if (luminance < target)
+         {
+            lo = mid;
+         }
+         else
+         {
+            hi = mid;
+         }
+      }
+      return (lo + hi) / 2.0f;
+   }
 }
 
 ///

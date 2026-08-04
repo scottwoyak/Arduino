@@ -47,6 +47,7 @@
 #include "ArduinoBoard.h"
 #include "FieldTable.h"
 #include "FieldTableEditor.h"
+#include "FieldEditor.h"
 #include "ValueEditor.h"
 #include "Table.h"
 
@@ -70,8 +71,8 @@ constexpr int16_t HUES_LABEL_GAP = 4; // pixels between the Hues view's left-sid
 constexpr float DEFAULT_SATURATION = 0.80f;
 
 // ----------- View Selection
-enum class View : uint8_t { Hues, Luminance };
-constexpr uint8_t NUM_VIEWS = 2;
+enum class View : uint8_t { Hues, HuesByLuminance, Luminance, HuesBySaturation, PlottingColors };
+constexpr uint8_t NUM_VIEWS = 5;
 
 struct ViewInfo
 {
@@ -80,8 +81,11 @@ struct ViewInfo
 
 constexpr ViewInfo VIEWS[NUM_VIEWS] =
 {
-   { "Hues" },
+   { "Hues by Lightness" },
+   { "Hues by Luminance" },
    { "Luminance Sorting" },
+   { "Hues by Saturation" },
+   { "Recommended Plotting Colors" },
 };
 
 View currentView = View::Hues;
@@ -105,89 +109,17 @@ uint16_t numBars = 0;
 // views' content (see enterView()).
 int16_t contentTop = 0;
 
-///
-/// <summary>
-/// Converts HSL color components to a Color, since Color.h only provides an HSV
-/// conversion. Standard HSL->RGB formula.
-/// </summary>
-/// <param name="hue">Hue, in degrees (0.0-360.0).</param>
-/// <param name="saturation">Saturation (0.0-1.0).</param>
-/// <param name="lightness">Lightness (0.0-1.0).</param>
-/// <returns>The corresponding Color.</returns>
-///
-Color fromHSL(float hue, float saturation, float lightness)
-{
-   float c = (1.0f - fabsf(2.0f * lightness - 1.0f)) * saturation;
-   float x = c * (1.0f - fabsf(fmodf(hue / 60.0f, 2.0f) - 1.0f));
-   float m = lightness - (c / 2.0f);
-
-   float r1, g1, b1;
-   if (hue < 60.0f)
-   {
-      r1 = c; g1 = x; b1 = 0.0f;
-   }
-   else if (hue < 120.0f)
-   {
-      r1 = x; g1 = c; b1 = 0.0f;
-   }
-   else if (hue < 180.0f)
-   {
-      r1 = 0.0f; g1 = c; b1 = x;
-   }
-   else if (hue < 240.0f)
-   {
-      r1 = 0.0f; g1 = x; b1 = c;
-   }
-   else if (hue < 300.0f)
-   {
-      r1 = x; g1 = 0.0f; b1 = c;
-   }
-   else
-   {
-      r1 = c; g1 = 0.0f; b1 = x;
-   }
-
-   uint8_t red = (uint8_t)constrain((r1 + m) * 255.0f, 0.0f, 255.0f);
-   uint8_t green = (uint8_t)constrain((g1 + m) * 255.0f, 0.0f, 255.0f);
-   uint8_t blue = (uint8_t)constrain((b1 + m) * 255.0f, 0.0f, 255.0f);
-
-   return Color565::fromRGB(red, green, blue);
-}
-
-///
-/// <summary>
-/// Decodes a single gamma-encoded sRGB channel (0.0-1.0) to linear light, using the
-/// standard sRGB EOTF (a near-2.2 power curve with a linear toe near black).
-/// </summary>
-/// <param name="c">Gamma-encoded channel value (0.0-1.0).</param>
-/// <returns>Linear-light channel value (0.0-1.0).</returns>
-///
-float srgbToLinear(float c)
-{
-   return (c <= 0.04045f) ? (c / 12.92f) : std::pow((c + 0.055f) / 1.055f, 2.4f);
-}
-
-///
-/// <summary>
-/// Computes a Color's perceived brightness using the given coefficients and weighting
-/// mode, normalized to roughly 0.0-1.0, for use as a sort key. Weighting is applied on top
-/// of the coefficients: "None" sums the raw gamma-encoded channels as-is (the traditional
-/// approach, but not perceptually linear); "Gamma-corrected" decodes sRGB gamma to linear
-/// light before summing (proper linear relative luminance) - both of these combine the
-/// weighted channels with a plain sum, so they're monotonic re-expressions of each other
-/// and never actually change sort order relative to one another. "HSP" instead sums the
-/// weighted squares of the gamma-encoded channels (then takes the square root), which is
-/// not a monotonic re-expression of a plain weighted sum, so it can rank colors of
-/// different hues differently than the other two modes.
-/// </summary>
-/// <param name="color">The color to convert.</param>
-/// <param name="rWeight">Red coefficient.</param>
-/// <param name="gWeight">Green coefficient.</param>
-/// <param name="bWeight">Blue coefficient.</param>
-/// <param name="weighting">Which weighting mode to apply (WEIGHTING_NONE/GAMMA/HSP).</param>
-/// <returns>The perceived brightness.</returns>
-///
-float toLuminance(Color color, float rWeight, float gWeight, float bWeight, long weighting);
+// fromHSL()/srgbToLinear()/toLuminance()/findLightnessForLuminance() and the
+// WEIGHTING_NONE/GAMMA/HSP constants now live in Color565 (see Color.h) since they're
+// general-purpose color math, not specific to this sketch. Pulled in here via `using` so
+// existing call sites throughout the sketch don't need to be qualified.
+using Color565::fromHSL;
+using Color565::srgbToLinear;
+using Color565::toLuminance;
+using Color565::findLightnessForLuminance;
+using Color565::WEIGHTING_NONE;
+using Color565::WEIGHTING_GAMMA;
+using Color565::WEIGHTING_HSP;
 
 ///
 /// <summary>
@@ -231,9 +163,7 @@ const char* const WEIGHTING_LABELS[] =
    "Gamma",
    "HSP",
 };
-constexpr long WEIGHTING_NONE = 0;
-constexpr long WEIGHTING_GAMMA = 1;
-constexpr long WEIGHTING_HSP = 2;
+// WEIGHTING_NONE/GAMMA/HSP are pulled in from Color565 via the `using` declarations above.
 
 EnumEditor weightingEditor(WEIGHTING_LABELS, WEIGHTING_NONE, "###############");
 
@@ -350,27 +280,6 @@ std::vector<Color> generateHuePalette(size_t count, float saturation, float ligh
    return result;
 }
 
-float toLuminance(Color color, float rWeight, float gWeight, float bWeight, long weighting)
-{
-   float r = Color565::getR(color) / 255.0f;
-   float g = Color565::getG(color) / 255.0f;
-   float b = Color565::getB(color) / 255.0f;
-
-   if (weighting == WEIGHTING_HSP)
-   {
-      return std::sqrt((rWeight * r * r) + (gWeight * g * g) + (bWeight * b * b));
-   }
-
-   if (weighting == WEIGHTING_GAMMA)
-   {
-      r = srgbToLinear(r);
-      g = srgbToLinear(g);
-      b = srgbToLinear(b);
-   }
-
-   return (rWeight * r) + (gWeight * g) + (bWeight * b);
-}
-
 // ----------- Hues view: a single set of NUM_LIGHTNESS_LEVELS generated color palettes
 // (see generateHuesPalettes()), one per lightness level at the saturation set by this
 // view's one-row calibration table, all sharing the same hue-to-column mapping and left
@@ -402,10 +311,58 @@ RoundedFloatEditor huesLightnessEditors[NUM_LIGHTNESS_LEVELS] =
    RoundedFloatEditor(0.0f, 1.0f, 0.05f, DEFAULT_LIGHTNESS_LEVELS[3], "#.##"),
 };
 
-// Labels for each huesLightnessEditors row, e.g. "Lightness 1", "Lightness 2", etc.
+// Labels for each huesLightnessEditors row, e.g. "Lightness 1", "Lightness 2", etc. Used
+// only for Preferences key derivation (see FieldEditor::_keyFor()) - the grid draws each
+// row's live value directly without its own label, since row position already identifies
+// which lightness level it is.
 const char* const HUES_LIGHTNESS_LABELS[] = { "Lightness 1", "Lightness 2", "Lightness 3", "Lightness 4" };
 
-FieldTableEditor::Row huesCalibrationRows[] =
+// ----------- Hues by Saturation view: same layout idea as the Hues view above, but with
+// Saturation and Lightness swapped - one editable Saturation value per stacked row, and a
+// single shared Lightness field applied to every row/column.
+
+// Default lightness applied to every entry in every huesSatPalettes level. Deliberately not
+// reusing DEFAULT_SATURATION (0.80f) here - that's a reasonable chroma default, but as a
+// single shared lightness it would wash out most hues toward white.
+constexpr float DEFAULT_HUES_SAT_LIGHTNESS = 0.50f;
+
+// Lightness (shared across every row/column), editable live via huesSatEditor (Encoder B).
+RoundedFloatEditor huesSatLightnessEditor(0.0f, 1.0f, 0.05f, DEFAULT_HUES_SAT_LIGHTNESS, "#.##");
+
+// One editable saturation value per stacked row, defaulted from DEFAULT_LIGHTNESS_LEVELS
+// (reusing the same 0.20/0.40/0.60/0.80 spread), each exposed as its own "Saturation N" row
+// in huesSatEditor below.
+RoundedFloatEditor huesSatSaturationEditors[NUM_LIGHTNESS_LEVELS] =
+{
+   RoundedFloatEditor(0.0f, 1.0f, 0.05f, DEFAULT_LIGHTNESS_LEVELS[0], "#.##"),
+   RoundedFloatEditor(0.0f, 1.0f, 0.05f, DEFAULT_LIGHTNESS_LEVELS[1], "#.##"),
+   RoundedFloatEditor(0.0f, 1.0f, 0.05f, DEFAULT_LIGHTNESS_LEVELS[2], "#.##"),
+   RoundedFloatEditor(0.0f, 1.0f, 0.05f, DEFAULT_LIGHTNESS_LEVELS[3], "#.##"),
+};
+
+// Labels for each huesSatSaturationEditors row, e.g. "Saturation 1", "Saturation 2", etc.
+// Used only for Preferences key derivation (see FieldEditor::_keyFor()).
+const char* const HUES_SAT_SATURATION_LABELS[] = { "Saturation 1", "Saturation 2", "Saturation 3", "Saturation 4" };
+
+// Row 0 is Lightness (drawn on its own line below the grid); rows 1..NUM_LIGHTNESS_LEVELS
+// are the per-row Saturation values (drawn to the left of the grid, next to their bar
+// row). Mirrors huesFields/huesEditor below, with Saturation/Lightness swapped.
+FieldEditor::FieldInfo huesSatFields[] =
+{
+   { "Lightness", &huesSatLightnessEditor },
+   { HUES_SAT_SATURATION_LABELS[0], &huesSatSaturationEditors[0] },
+   { HUES_SAT_SATURATION_LABELS[1], &huesSatSaturationEditors[1] },
+   { HUES_SAT_SATURATION_LABELS[2], &huesSatSaturationEditors[2] },
+   { HUES_SAT_SATURATION_LABELS[3], &huesSatSaturationEditors[3] },
+};
+FieldEditor huesSatEditor(&arduino, PREF_NAMESPACE, huesSatFields);
+
+// Row 0 is Saturation (drawn on its own line below the grid); rows 1..NUM_LIGHTNESS_LEVELS
+// are the per-row Lightness values (drawn to the left of the grid, next to their bar row).
+// Unlike the Luminance view, the Hues view no longer uses a FieldTable/FieldTableEditor at
+// all - huesEditor only tracks selection/adjustment/persistence, while drawHuesFields()
+// draws each field's live value inline, next to the content it controls.
+FieldEditor::FieldInfo huesFields[] =
 {
    { "Saturation", &saturationEditor },
    { HUES_LIGHTNESS_LABELS[0], &huesLightnessEditors[0] },
@@ -413,7 +370,7 @@ FieldTableEditor::Row huesCalibrationRows[] =
    { HUES_LIGHTNESS_LABELS[2], &huesLightnessEditors[2] },
    { HUES_LIGHTNESS_LABELS[3], &huesLightnessEditors[3] },
 };
-FieldTableEditor huesCalibrationEditor(&arduino, PREF_NAMESPACE, huesCalibrationRows, CALIBRATION_TEXT_SIZE);
+FieldEditor huesEditor(&arduino, PREF_NAMESPACE, huesFields);
 
 // Saturation as of the last recompute, used to detect when huesCalibrationEditor has
 // changed and the palettes need to be regenerated.
@@ -426,24 +383,43 @@ float lastHuesLightness[NUM_LIGHTNESS_LEVELS] =
    DEFAULT_LIGHTNESS_LEVELS[0], DEFAULT_LIGHTNESS_LEVELS[1], DEFAULT_LIGHTNESS_LEVELS[2], DEFAULT_LIGHTNESS_LEVELS[3]
 };
 
-// Width reserved on the left of the grid for each row's lightness value label, computed
-// once in enterHues() from the widest formatted label at CALIBRATION_TEXT_SIZE.
+// Width reserved on the left of the grid for each row's lightness value, computed once in
+// enterHues() from the widest formatted value at CALIBRATION_TEXT_SIZE.
 int16_t huesLabelWidth = 0;
-
-// Format for the Hues view's left-side lightness value labels, e.g. "100%".
-Format huesLabelFormat("###%");
 
 // Top Y coordinate of the Hues view's bars, and the height of a single stacked block /
 // the whole stack, computed in enterHues() to fill the vertical space left over once the
-// heading, marker rows, and huesCalibrationEditor have been accounted for.
+// heading, marker rows, and the Saturation line (see huesSaturationY) have been accounted
+// for.
 int16_t huesBarsTop = 0;
 int16_t huesBlockHeight = 1;
 int16_t huesBarHeight = 1;
 
+// Top Y coordinate of the Hues view's Saturation line, drawn below the grid, and the X
+// coordinate its value is drawn at (directly after the "Saturation" label), both computed
+// once in enterHues().
+int16_t huesSaturationY = 0;
+int16_t huesSaturationValueX = 0;
+
+// huesEditor's selected field index as of the last drawHuesFields() call, used to redraw
+// only when the selection actually moves rather than on every loop() iteration (which
+// would otherwise repaint every field's background every frame and cause visible flicker).
+uint8_t lastHuesSelectedIndex = 0;
+
+// Last-drawn text/colors for each huesFields[] entry, so drawHuesFields() only repaints a
+// field when its text or color actually changed (e.g. it was just selected/deselected or
+// its value changed) instead of unconditionally blanking and reprinting every field
+// whenever any one of them changes - the same "skip unchanged rows" behavior FieldTable
+// gives FieldTableEditor for free.
+std::string lastHuesFieldText[std::size(huesFields)];
+Color lastHuesFieldColor[std::size(huesFields)] = {};
+Color lastHuesFieldBackgroundColor[std::size(huesFields)] = {};
+bool huesFieldDrawn[std::size(huesFields)] = {};
+
 ///
 /// <summary>
 /// Generates every lightness level's palette for the Hues view, each sized to exactly
-/// `count` entries, at the live saturation/lightness values from huesCalibrationEditor, so
+/// `count` entries, at the live saturation/lightness values from huesEditor's fields, so
 /// they all share the same hue-to-column mapping.
 /// </summary>
 /// <param name="count">Exact number of colors to generate per palette.</param>
@@ -467,8 +443,8 @@ void generateHuesPalettes(size_t count)
 /// is left black except for a single pixel (never larger, regardless of column/block
 /// size) centered within that row, in that level's color - unlike the solid blocks below,
 /// so the dot's a clear point rather than adding another solid block of color. Columns are
-/// left in ascending-hue order (no sorting). To the left of the grid, draws each row's
-/// current lightness value (e.g. "80%") as a label, vertically centered on that row.
+/// left in ascending-hue order (no sorting). Does not draw the Lightness/Saturation values
+/// themselves; see drawHuesFields() for that.
 /// </summary>
 ///
 void drawHuesGrid()
@@ -476,17 +452,6 @@ void drawHuesGrid()
    constexpr int16_t dotSize = 1;
    int16_t markerHeight = (int16_t)NUM_LIGHTNESS_LEVELS * (huesBlockHeight + BAR_GAP) - BAR_GAP;
    int16_t markerTop = huesBarsTop - BAR_MARKER_OFFSET - markerHeight;
-
-   // Left-side lightness value labels, one per row, vertically centered on that row.
-   arduino.setTextSize(CALIBRATION_TEXT_SIZE);
-   int16_t barY = huesBarsTop;
-   for (size_t lIndex = 0; lIndex < NUM_LIGHTNESS_LEVELS; lIndex++)
-   {
-      arduino.fillRect(0, barY, huesLabelWidth - HUES_LABEL_GAP, huesBlockHeight, Color::BLACK);
-      arduino.setCursor(0, barY + (huesBlockHeight - arduino.charH()) / 2);
-      arduino.print((int)std::round(lastHuesLightness[lIndex] * 100.0f), huesLabelFormat, Color::VALUE);
-      barY += huesBlockHeight + BAR_GAP;
-   }
 
    for (uint16_t index = 0; index < numBars; index++)
    {
@@ -510,22 +475,100 @@ void drawHuesGrid()
 
 ///
 /// <summary>
+/// Draws the Hues view's editable values inline, next to the content each one controls,
+/// rather than in a separate table: each Lightness value is drawn to the left of the grid,
+/// vertically centered on its own bar row, and Saturation is drawn as its own line below
+/// the grid. Reads selection state from huesEditor to highlight whichever field is
+/// currently selected, the same way FieldTableEditor highlights a selected table row.
+/// </summary>
+///
+void drawHuesFields()
+{
+   uint8_t selected = huesEditor.selectedIndex();
+
+   arduino.setTextSize(CALIBRATION_TEXT_SIZE);
+
+   // Only repaints a field's rect/text when its text or color actually changed since the
+   // last call (or it hasn't been drawn yet), avoiding the flicker unconditional
+   // fillRect()+print() on every field would cause whenever just the selection moves.
+   auto drawField = [&](uint8_t fieldIndex, int16_t x, int16_t y, int16_t w, int16_t h, const std::string& text, Color valueColor, Color backgroundColor)
+   {
+      if (huesFieldDrawn[fieldIndex] && text == lastHuesFieldText[fieldIndex] &&
+         valueColor == lastHuesFieldColor[fieldIndex] && backgroundColor == lastHuesFieldBackgroundColor[fieldIndex])
+      {
+         return;
+      }
+
+      arduino.fillRect(x, y, w, h, Color::BLACK);
+      arduino.setCursor(x, y);
+      arduino.print(text.c_str(), valueColor, backgroundColor);
+
+      lastHuesFieldText[fieldIndex] = text;
+      lastHuesFieldColor[fieldIndex] = valueColor;
+      lastHuesFieldBackgroundColor[fieldIndex] = backgroundColor;
+      huesFieldDrawn[fieldIndex] = true;
+   };
+
+   // Lightness values, one per row, to the left of the grid, vertically centered on that
+   // row (rows 1..NUM_LIGHTNESS_LEVELS in huesFieldRows; row 0 is Saturation).
+   int16_t barY = huesBarsTop;
+   for (size_t lIndex = 0; lIndex < NUM_LIGHTNESS_LEVELS; lIndex++)
+   {
+      ValueBase* value = huesFields[lIndex + 1].value;
+      Color valueColor;
+      Color backgroundColor;
+      huesEditor.colorsFor(static_cast<uint8_t>(lIndex + 1), valueColor, backgroundColor);
+
+      drawField(static_cast<uint8_t>(lIndex + 1), 0, barY + (huesBlockHeight - arduino.charH()) / 2,
+         huesLabelWidth - HUES_LABEL_GAP, huesBlockHeight, value->valueText(), valueColor, backgroundColor);
+      barY += huesBlockHeight + BAR_GAP;
+   }
+
+   // Saturation, drawn as its own "Saturation X.XX" line below the grid.
+   {
+      ValueBase* value = huesFields[0].value;
+      Color valueColor;
+      Color backgroundColor;
+      huesEditor.colorsFor(0, valueColor, backgroundColor);
+
+      if (!huesFieldDrawn[0])
+      {
+         arduino.setCursor(0, huesSaturationY);
+         arduino.print("Saturation ", Color::LABEL);
+      }
+
+      drawField(0, huesSaturationValueX, huesSaturationY, (int16_t)arduino.width() - huesSaturationValueX,
+         arduino.charH(), value->valueText(), valueColor, backgroundColor);
+   }
+
+   lastHuesSelectedIndex = selected;
+}
+
+
+///
+/// <summary>
 /// Lays out and draws the Hues view: computes huesLabelWidth, huesBarsTop/huesBlockHeight/
-/// huesBarHeight to fill the space between the heading/markers and huesCalibrationEditor
-/// (positioned at the bottom of the grid so it never overlaps the bars), generates the
-/// palettes, then draws the grid.
+/// huesBarHeight to fill the space between the heading/markers and the Saturation line
+/// (positioned directly below the grid so it never overlaps the bars), generates the
+/// palettes, then draws the grid and fields.
 /// </summary>
 ///
 void enterHues()
 {
+   // Force every field to be fully redrawn: enterView() just cleared the display, so the
+   // "skip unchanged fields" tracking in drawHuesFields() (huesFieldDrawn[]) would
+   // otherwise think each field's text/color is unchanged from before the clear and skip
+   // redrawing it, leaving the fields blank.
+   std::fill(std::begin(huesFieldDrawn), std::end(huesFieldDrawn), false);
+
    generateHuesPalettes(numBars);
 
-   // Reserve space on the left for each row's lightness value label ("100%" is the widest
+   // Reserve space on the left for each row's lightness value ("0.00" is the widest
    // possible value), then recompute barWidth/barsLeft (originally sized in setup() for
    // the full display width) to fill only the remaining width to its right, so the grid
-   // no longer overlaps the labels.
+   // no longer overlaps the values.
    arduino.setTextSize(CALIBRATION_TEXT_SIZE);
-   huesLabelWidth = arduino.textWidth("100%") + HUES_LABEL_GAP;
+   huesLabelWidth = arduino.textWidth("0.00") + HUES_LABEL_GAP;
 
    int16_t availableWidth = (int16_t)arduino.width() - huesLabelWidth;
    barWidth = std::max((int16_t)1, (int16_t)((availableWidth + BAR_GAP) / (int16_t)numBars - BAR_GAP));
@@ -534,22 +577,535 @@ void enterHues()
 
    // Compute the block height that fills whatever vertical space is left over once the
    // content top, the marker dot rows (BAR_MARKER_OFFSET + one dot-height stack, same
-   // height as the grid itself), the grid, and huesCalibrationEditor have all been
+   // height as the grid itself), the grid, and the Saturation line have all been
    // accounted for.
-   int16_t fixedHeight = BAR_MARKER_OFFSET + HEADING_MARGIN + HEADING_MARGIN + huesCalibrationEditor.height();
+   int16_t fixedHeight = BAR_MARKER_OFFSET + HEADING_MARGIN + HEADING_MARGIN + arduino.charH();
    int16_t availableHeight = (int16_t)arduino.height() - contentTop - fixedHeight;
    huesBlockHeight = std::max((int16_t)((availableHeight + BAR_GAP) / (2 * (int16_t)NUM_LIGHTNESS_LEVELS) - BAR_GAP), (int16_t)1);
    huesBarHeight = NUM_LIGHTNESS_LEVELS * (huesBlockHeight + BAR_GAP) - BAR_GAP;
 
    huesBarsTop = contentTop + BAR_MARKER_OFFSET + huesBarHeight;
 
-   // Always position the table directly below the actual bottom of the grid, rather than
-   // relying on the (potentially inexact, due to integer rounding above) space-filling
-   // math to land exactly there - this guarantees the table never overlaps the bars.
-   huesCalibrationEditor.setPosition(0, huesBarsTop + huesBarHeight + HEADING_MARGIN);
+   // Always position the Saturation line directly below the actual bottom of the grid,
+   // rather than relying on the (potentially inexact, due to integer rounding above)
+   // space-filling math to land exactly there - this guarantees it never overlaps the bars.
+   huesSaturationY = huesBarsTop + huesBarHeight + HEADING_MARGIN;
+   huesSaturationValueX = arduino.textWidth("Saturation ");
 
    drawHuesGrid();
-   huesCalibrationEditor.draw();
+   drawHuesFields();
+}
+
+// ----------- Hues by Luminance view: mirrors the Hues view above, but instead of using
+// each row's value directly as the HSL lightness, treats it as a target perceived
+// luminance (see toLuminance()) and solves for the lightness that achieves it at each hue
+// (see findLightnessForLuminance()), using the shared Weighting/Red/Green/Blue
+// coefficients from the Luminance view's calibration table - so every bar in a given row
+// reads as equally bright regardless of hue, rather than sharing a raw lightness value
+// that different hues perceive differently.
+
+// Default target luminance levels shown as the stacked blocks within each bar column, top
+// to bottom - reuses the same 0.20/0.40/0.60/0.80 spread as DEFAULT_LIGHTNESS_LEVELS, just
+// interpreted as a target perceived luminance instead of a raw HSL lightness. These are
+// editable live via huesLumEditor's "Luminance 1".."Luminance N" rows (see
+// huesLumLevelEditors below); this array only supplies their default values.
+constexpr float DEFAULT_LUMINANCE_LEVELS[] = { 0.20f, 0.40f, 0.60f, 0.80f };
+constexpr size_t NUM_LUMINANCE_LEVELS = sizeof(DEFAULT_LUMINANCE_LEVELS) / sizeof(DEFAULT_LUMINANCE_LEVELS[0]);
+
+// Each luminance level's generated palette (see generateHuesLuminancePalettes()), sized to
+// fill exactly numBars bar positions each.
+std::vector<Color> huesLumPalettes[NUM_LUMINANCE_LEVELS];
+
+// Saturation (chroma) applied to every entry in every huesLumPalettes level, editable live
+// via huesLumEditor (Encoder B).
+RoundedFloatEditor huesLumSaturationEditor(0.0f, 1.0f, 0.05f, DEFAULT_SATURATION, "#.##");
+
+// One editable target-luminance value per stacked row, defaulted from
+// DEFAULT_LUMINANCE_LEVELS, each exposed as its own "Luminance N" row in huesLumEditor
+// below.
+RoundedFloatEditor huesLumLevelEditors[NUM_LUMINANCE_LEVELS] =
+{
+   RoundedFloatEditor(0.0f, 1.0f, 0.05f, DEFAULT_LUMINANCE_LEVELS[0], "#.##"),
+   RoundedFloatEditor(0.0f, 1.0f, 0.05f, DEFAULT_LUMINANCE_LEVELS[1], "#.##"),
+   RoundedFloatEditor(0.0f, 1.0f, 0.05f, DEFAULT_LUMINANCE_LEVELS[2], "#.##"),
+   RoundedFloatEditor(0.0f, 1.0f, 0.05f, DEFAULT_LUMINANCE_LEVELS[3], "#.##"),
+};
+
+// Labels for each huesLumLevelEditors row, e.g. "Luminance 1", "Luminance 2", etc. Used
+// only for Preferences key derivation (see FieldEditor::_keyFor()).
+const char* const HUES_LUM_LABELS[] = { "Luminance 1", "Luminance 2", "Luminance 3", "Luminance 4" };
+
+// Row 0 is Saturation (drawn on its own line below the grid); rows 1..NUM_LUMINANCE_LEVELS
+// are the per-row target-luminance values (drawn to the left of the grid, next to their
+// bar row). Mirrors huesFields/huesEditor above, with the Lightness rows reinterpreted as
+// target luminance.
+FieldEditor::FieldInfo huesLumFields[] =
+{
+   { "Saturation", &huesLumSaturationEditor },
+   { HUES_LUM_LABELS[0], &huesLumLevelEditors[0] },
+   { HUES_LUM_LABELS[1], &huesLumLevelEditors[1] },
+   { HUES_LUM_LABELS[2], &huesLumLevelEditors[2] },
+   { HUES_LUM_LABELS[3], &huesLumLevelEditors[3] },
+};
+FieldEditor huesLumEditor(&arduino, PREF_NAMESPACE, huesLumFields);
+
+// Saturation/target-luminance values as of the last recompute, used to detect when
+// huesLumEditor has changed. Also tracks the shared Weighting/Red/Green/Blue coefficients
+// (from the Luminance view's calibration table) used to solve for lightness, since those
+// change the palette too even though they're not huesLumEditor's own fields.
+float lastHuesLumSaturation = DEFAULT_SATURATION;
+float lastHuesLumLevel[NUM_LUMINANCE_LEVELS] =
+{
+   DEFAULT_LUMINANCE_LEVELS[0], DEFAULT_LUMINANCE_LEVELS[1], DEFAULT_LUMINANCE_LEVELS[2], DEFAULT_LUMINANCE_LEVELS[3]
+};
+long lastHuesLumWeighting = WEIGHTING_NONE;
+float lastHuesLumR = DEFAULT_R;
+float lastHuesLumG = DEFAULT_G;
+float lastHuesLumB = DEFAULT_B;
+
+// Width reserved on the left of the grid for each row's luminance value, computed once in
+// enterHuesLum() from the widest formatted value at CALIBRATION_TEXT_SIZE.
+int16_t huesLumLabelWidth = 0;
+
+// Top Y coordinate of the Hues by Luminance view's bars, and the height of a single
+// stacked block / the whole stack, computed in enterHuesLum() to fill the vertical space
+// left over once the heading, marker rows, and the Saturation line (see
+// huesLumSaturationY) have been accounted for.
+int16_t huesLumBarsTop = 0;
+int16_t huesLumBlockHeight = 1;
+int16_t huesLumBarHeight = 1;
+
+// Top Y coordinate of the Hues by Luminance view's Saturation line, drawn below the grid,
+// and the X coordinate its value is drawn at (directly after the "Saturation" label), both
+// computed once in enterHuesLum().
+int16_t huesLumSaturationY = 0;
+int16_t huesLumSaturationValueX = 0;
+
+// huesLumEditor's selected field index as of the last drawHuesLumFields() call, used to
+// redraw only when the selection actually moves rather than on every loop() iteration
+// (which would otherwise repaint every field's background every frame and cause visible
+// flicker).
+uint8_t lastHuesLumSelectedIndex = 0;
+
+// Last-drawn text/colors for each huesLumFields[] entry, so drawHuesLumFields() only
+// repaints a field when its text or color actually changed, same idea as
+// lastHuesFieldText/huesFieldDrawn above.
+std::string lastHuesLumFieldText[std::size(huesLumFields)];
+Color lastHuesLumFieldColor[std::size(huesLumFields)] = {};
+Color lastHuesLumFieldBackgroundColor[std::size(huesLumFields)] = {};
+bool huesLumFieldDrawn[std::size(huesLumFields)] = {};
+
+///
+/// <summary>
+/// Generates every luminance level's palette for the Hues by Luminance view, each sized to
+/// exactly `count` entries, at the live saturation/target-luminance values from
+/// huesLumEditor's fields plus the shared Weighting/Red/Green/Blue coefficients (from the
+/// Luminance view's calibration table): for each column's hue, solves for the lightness
+/// that achieves that row's target luminance (see findLightnessForLuminance()), so they
+/// all share the same hue-to-column mapping while reading as equally bright across every
+/// hue in a given row.
+/// </summary>
+/// <param name="count">Exact number of colors to generate per palette.</param>
+///
+void generateHuesLuminancePalettes(size_t count)
+{
+   lastHuesLumSaturation = huesLumSaturationEditor.get();
+   lastHuesLumWeighting = weightingEditor.get();
+   lastHuesLumR = rCoeffEditor.get();
+   lastHuesLumG = gCoeffEditor.get();
+   lastHuesLumB = bCoeffEditor.get();
+
+   for (size_t lIndex = 0; lIndex < NUM_LUMINANCE_LEVELS; lIndex++)
+   {
+      lastHuesLumLevel[lIndex] = huesLumLevelEditors[lIndex].get();
+
+      std::vector<Color> palette;
+      palette.reserve(count);
+      for (size_t i = 0; i < count; i++)
+      {
+         float hue = 360.0f * (float)i / (float)count;
+         float lightness = findLightnessForLuminance(hue, lastHuesLumSaturation, lastHuesLumR, lastHuesLumG, lastHuesLumB,
+            lastHuesLumWeighting, lastHuesLumLevel[lIndex]);
+         palette.push_back(fromHSL(hue, lastHuesLumSaturation, lightness));
+      }
+      huesLumPalettes[lIndex] = std::move(palette);
+   }
+}
+
+///
+/// <summary>
+/// Draws every bar column in the Hues by Luminance view's grid as a stack of
+/// NUM_LUMINANCE_LEVELS blocks (one per huesLumLevelEditors value, top to bottom -
+/// darkest/lowest-luminance on top), separated by BAR_GAP, plus a matching stack of marker
+/// rows BAR_MARKER_OFFSET pixels above the grid - same idea as drawHuesGrid(). Does not
+/// draw the Luminance/Saturation values themselves; see drawHuesLumFields() for that.
+/// </summary>
+///
+void drawHuesLumGrid()
+{
+   constexpr int16_t dotSize = 1;
+   int16_t markerHeight = (int16_t)NUM_LUMINANCE_LEVELS * (huesLumBlockHeight + BAR_GAP) - BAR_GAP;
+   int16_t markerTop = huesLumBarsTop - BAR_MARKER_OFFSET - markerHeight;
+
+   for (uint16_t index = 0; index < numBars; index++)
+   {
+      int16_t x = barsLeft + index * (barWidth + BAR_GAP);
+      int16_t dotX = x + (barWidth - dotSize) / 2;
+
+      arduino.fillRect(x, markerTop, barWidth, markerHeight, Color::BLACK);
+
+      int16_t markerY = markerTop;
+      int16_t barY2 = huesLumBarsTop;
+      for (size_t lIndex = 0; lIndex < NUM_LUMINANCE_LEVELS; lIndex++)
+      {
+         Color color = huesLumPalettes[lIndex][index];
+         arduino.fillRect(dotX, markerY + (huesLumBlockHeight - dotSize) / 2, dotSize, dotSize, color);
+         arduino.fillRect(x, barY2, barWidth, huesLumBlockHeight, color);
+         markerY += huesLumBlockHeight + BAR_GAP;
+         barY2 += huesLumBlockHeight + BAR_GAP;
+      }
+   }
+}
+
+///
+/// <summary>
+/// Draws the Hues by Luminance view's editable values inline, next to the content each one
+/// controls: each target-luminance value is drawn to the left of the grid, vertically
+/// centered on its own bar row, and Saturation is drawn as its own line below the grid.
+/// Mirrors drawHuesFields().
+/// </summary>
+///
+void drawHuesLumFields()
+{
+   uint8_t selected = huesLumEditor.selectedIndex();
+
+   arduino.setTextSize(CALIBRATION_TEXT_SIZE);
+
+   auto drawField = [&](uint8_t fieldIndex, int16_t x, int16_t y, int16_t w, int16_t h, const std::string& text, Color valueColor, Color backgroundColor)
+   {
+      if (huesLumFieldDrawn[fieldIndex] && text == lastHuesLumFieldText[fieldIndex] &&
+         valueColor == lastHuesLumFieldColor[fieldIndex] && backgroundColor == lastHuesLumFieldBackgroundColor[fieldIndex])
+      {
+         return;
+      }
+
+      arduino.fillRect(x, y, w, h, Color::BLACK);
+      arduino.setCursor(x, y);
+      arduino.print(text.c_str(), valueColor, backgroundColor);
+
+      lastHuesLumFieldText[fieldIndex] = text;
+      lastHuesLumFieldColor[fieldIndex] = valueColor;
+      lastHuesLumFieldBackgroundColor[fieldIndex] = backgroundColor;
+      huesLumFieldDrawn[fieldIndex] = true;
+   };
+
+   // Target-luminance values, one per row, to the left of the grid, vertically centered on
+   // that row (rows 1..NUM_LUMINANCE_LEVELS in huesLumFields; row 0 is Saturation).
+   int16_t barY = huesLumBarsTop;
+   for (size_t lIndex = 0; lIndex < NUM_LUMINANCE_LEVELS; lIndex++)
+   {
+      ValueBase* value = huesLumFields[lIndex + 1].value;
+      Color valueColor;
+      Color backgroundColor;
+      huesLumEditor.colorsFor(static_cast<uint8_t>(lIndex + 1), valueColor, backgroundColor);
+
+      drawField(static_cast<uint8_t>(lIndex + 1), 0, barY + (huesLumBlockHeight - arduino.charH()) / 2,
+         huesLumLabelWidth - HUES_LABEL_GAP, huesLumBlockHeight, value->valueText(), valueColor, backgroundColor);
+      barY += huesLumBlockHeight + BAR_GAP;
+   }
+
+   // Saturation, drawn as its own "Saturation X.XX" line below the grid.
+   {
+      ValueBase* value = huesLumFields[0].value;
+      Color valueColor;
+      Color backgroundColor;
+      huesLumEditor.colorsFor(0, valueColor, backgroundColor);
+
+      if (!huesLumFieldDrawn[0])
+      {
+         arduino.setCursor(0, huesLumSaturationY);
+         arduino.print("Saturation ", Color::LABEL);
+      }
+
+      drawField(0, huesLumSaturationValueX, huesLumSaturationY, (int16_t)arduino.width() - huesLumSaturationValueX,
+         arduino.charH(), value->valueText(), valueColor, backgroundColor);
+   }
+
+   lastHuesLumSelectedIndex = selected;
+}
+
+///
+/// <summary>
+/// Lays out and draws the Hues by Luminance view: computes huesLumLabelWidth,
+/// huesLumBarsTop/huesLumBlockHeight/huesLumBarHeight to fill the space between the
+/// heading/markers and the Saturation line (positioned directly below the grid so it never
+/// overlaps the bars), generates the palettes, then draws the grid and fields.
+/// </summary>
+///
+void enterHuesLum()
+{
+   // Force every field to be fully redrawn: enterView() just cleared the display, so the
+   // "skip unchanged fields" tracking in drawHuesLumFields() (huesLumFieldDrawn[]) would
+   // otherwise think each field's text/color is unchanged from before the clear and skip
+   // redrawing it, leaving the fields blank.
+   std::fill(std::begin(huesLumFieldDrawn), std::end(huesLumFieldDrawn), false);
+
+   generateHuesLuminancePalettes(numBars);
+
+   // Reserve space on the left for each row's luminance value ("0.00" is the widest
+   // possible value), then recompute barWidth/barsLeft (originally sized in setup() for
+   // the full display width) to fill only the remaining width to its right, so the grid
+   // no longer overlaps the values.
+   arduino.setTextSize(CALIBRATION_TEXT_SIZE);
+   huesLumLabelWidth = arduino.textWidth("0.00") + HUES_LABEL_GAP;
+
+   int16_t availableWidth = (int16_t)arduino.width() - huesLumLabelWidth;
+   barWidth = std::max((int16_t)1, (int16_t)((availableWidth + BAR_GAP) / (int16_t)numBars - BAR_GAP));
+   int16_t barsWidth = numBars * (barWidth + BAR_GAP) - BAR_GAP;
+   barsLeft = huesLumLabelWidth + (int16_t)((availableWidth - barsWidth) / 2);
+
+   // Compute the block height that fills whatever vertical space is left over once the
+   // content top, the marker dot rows (BAR_MARKER_OFFSET + one dot-height stack, same
+   // height as the grid itself), the grid, and the Saturation line have all been
+   // accounted for.
+   int16_t fixedHeight = BAR_MARKER_OFFSET + HEADING_MARGIN + HEADING_MARGIN + arduino.charH();
+   int16_t availableHeight = (int16_t)arduino.height() - contentTop - fixedHeight;
+   huesLumBlockHeight = std::max((int16_t)((availableHeight + BAR_GAP) / (2 * (int16_t)NUM_LUMINANCE_LEVELS) - BAR_GAP), (int16_t)1);
+   huesLumBarHeight = NUM_LUMINANCE_LEVELS * (huesLumBlockHeight + BAR_GAP) - BAR_GAP;
+
+   huesLumBarsTop = contentTop + BAR_MARKER_OFFSET + huesLumBarHeight;
+
+   // Always position the Saturation line directly below the actual bottom of the grid,
+   // rather than relying on the (potentially inexact, due to integer rounding above)
+   // space-filling math to land exactly there - this guarantees it never overlaps the bars.
+   huesLumSaturationY = huesLumBarsTop + huesLumBarHeight + HEADING_MARGIN;
+   huesLumSaturationValueX = arduino.textWidth("Saturation ");
+
+   drawHuesLumGrid();
+   drawHuesLumFields();
+}
+
+// ----------- Hues by Saturation view: mirrors the Hues view above, but with Saturation
+// and Lightness swapped - each row varies Saturation at the shared Lightness value.
+
+// Each row's generated palette (see generateHuesSatPalettes()), sized to fill exactly
+// numBars bar positions each.
+std::vector<Color> huesSatPalettes[NUM_LIGHTNESS_LEVELS];
+
+// Lightness as of the last recompute, used to detect when huesSatEditor's Lightness field
+// has changed and the palettes need to be regenerated.
+float lastHuesSatLightness = DEFAULT_HUES_SAT_LIGHTNESS;
+
+// Saturation values as of the last recompute, used to detect when huesSatEditor's
+// Saturation rows have changed and the palettes need to be regenerated.
+float lastHuesSatSaturation[NUM_LIGHTNESS_LEVELS] =
+{
+   DEFAULT_LIGHTNESS_LEVELS[0], DEFAULT_LIGHTNESS_LEVELS[1], DEFAULT_LIGHTNESS_LEVELS[2], DEFAULT_LIGHTNESS_LEVELS[3]
+};
+
+// Width reserved on the left of the grid for each row's saturation value, computed once in
+// enterHuesSat() from the widest formatted value at CALIBRATION_TEXT_SIZE.
+int16_t huesSatLabelWidth = 0;
+
+// Top Y coordinate of the Hues by Saturation view's bars, and the height of a single
+// stacked block / the whole stack, computed in enterHuesSat() to fill the vertical space
+// left over once the heading, marker rows, and the Lightness line (see huesSatLightnessY)
+// have been accounted for.
+int16_t huesSatBarsTop = 0;
+int16_t huesSatBlockHeight = 1;
+int16_t huesSatBarHeight = 1;
+
+// Top Y coordinate of the Hues by Saturation view's Lightness line, drawn below the grid,
+// and the X coordinate its value is drawn at (directly after the "Lightness" label), both
+// computed once in enterHuesSat().
+int16_t huesSatLightnessY = 0;
+int16_t huesSatLightnessValueX = 0;
+
+// huesSatEditor's selected field index as of the last drawHuesSatFields() call, used to
+// redraw only when the selection actually moves rather than on every loop() iteration
+// (which would otherwise repaint every field's background every frame and cause visible
+// flicker).
+uint8_t lastHuesSatSelectedIndex = 0;
+
+// Last-drawn text/colors for each huesSatFields[] entry, so drawHuesSatFields() only
+// repaints a field when its text or color actually changed, same idea as
+// lastHuesFieldText/huesFieldDrawn above.
+std::string lastHuesSatFieldText[std::size(huesSatFields)];
+Color lastHuesSatFieldColor[std::size(huesSatFields)] = {};
+Color lastHuesSatFieldBackgroundColor[std::size(huesSatFields)] = {};
+bool huesSatFieldDrawn[std::size(huesSatFields)] = {};
+
+///
+/// <summary>
+/// Generates every saturation level's palette for the Hues by Saturation view, each sized
+/// to exactly `count` entries, at the live saturation/lightness values from huesSatEditor's
+/// fields, so they all share the same hue-to-column mapping.
+/// </summary>
+/// <param name="count">Exact number of colors to generate per palette.</param>
+///
+void generateHuesSatPalettes(size_t count)
+{
+   lastHuesSatLightness = huesSatLightnessEditor.get();
+   for (size_t sIndex = 0; sIndex < NUM_LIGHTNESS_LEVELS; sIndex++)
+   {
+      lastHuesSatSaturation[sIndex] = huesSatSaturationEditors[sIndex].get();
+      huesSatPalettes[sIndex] = generateHuePalette(count, lastHuesSatSaturation[sIndex], lastHuesSatLightness);
+   }
+}
+
+///
+/// <summary>
+/// Draws every bar column in the Hues by Saturation view's grid as a stack of
+/// NUM_LIGHTNESS_LEVELS blocks (one per huesSatSaturationEditors value, top to bottom),
+/// separated by BAR_GAP, plus a matching stack of marker rows BAR_MARKER_OFFSET pixels
+/// above the grid - same idea as drawHuesGrid(), just varying saturation per row instead
+/// of lightness. Does not draw the Saturation/Lightness values themselves; see
+/// drawHuesSatFields() for that.
+/// </summary>
+///
+void drawHuesSatGrid()
+{
+   constexpr int16_t dotSize = 1;
+   int16_t markerHeight = (int16_t)NUM_LIGHTNESS_LEVELS * (huesSatBlockHeight + BAR_GAP) - BAR_GAP;
+   int16_t markerTop = huesSatBarsTop - BAR_MARKER_OFFSET - markerHeight;
+
+   for (uint16_t index = 0; index < numBars; index++)
+   {
+      int16_t x = barsLeft + index * (barWidth + BAR_GAP);
+      int16_t dotX = x + (barWidth - dotSize) / 2;
+
+      arduino.fillRect(x, markerTop, barWidth, markerHeight, Color::BLACK);
+
+      int16_t markerY = markerTop;
+      int16_t barY2 = huesSatBarsTop;
+      for (size_t sIndex = 0; sIndex < NUM_LIGHTNESS_LEVELS; sIndex++)
+      {
+         Color color = huesSatPalettes[sIndex][index];
+         arduino.fillRect(dotX, markerY + (huesSatBlockHeight - dotSize) / 2, dotSize, dotSize, color);
+         arduino.fillRect(x, barY2, barWidth, huesSatBlockHeight, color);
+         markerY += huesSatBlockHeight + BAR_GAP;
+         barY2 += huesSatBlockHeight + BAR_GAP;
+      }
+   }
+}
+
+///
+/// <summary>
+/// Draws the Hues by Saturation view's editable values inline, next to the content each
+/// one controls: each Saturation value is drawn to the left of the grid, vertically
+/// centered on its own bar row, and Lightness is drawn as its own line below the grid.
+/// Mirrors drawHuesFields(), with Saturation/Lightness swapped.
+/// </summary>
+///
+void drawHuesSatFields()
+{
+   uint8_t selected = huesSatEditor.selectedIndex();
+
+   arduino.setTextSize(CALIBRATION_TEXT_SIZE);
+
+   auto drawField = [&](uint8_t fieldIndex, int16_t x, int16_t y, int16_t w, int16_t h, const std::string& text, Color valueColor, Color backgroundColor)
+   {
+      if (huesSatFieldDrawn[fieldIndex] && text == lastHuesSatFieldText[fieldIndex] &&
+         valueColor == lastHuesSatFieldColor[fieldIndex] && backgroundColor == lastHuesSatFieldBackgroundColor[fieldIndex])
+      {
+         return;
+      }
+
+      arduino.fillRect(x, y, w, h, Color::BLACK);
+      arduino.setCursor(x, y);
+      arduino.print(text.c_str(), valueColor, backgroundColor);
+
+      lastHuesSatFieldText[fieldIndex] = text;
+      lastHuesSatFieldColor[fieldIndex] = valueColor;
+      lastHuesSatFieldBackgroundColor[fieldIndex] = backgroundColor;
+      huesSatFieldDrawn[fieldIndex] = true;
+   };
+
+   // Saturation values, one per row, to the left of the grid, vertically centered on that
+   // row (rows 1..NUM_LIGHTNESS_LEVELS in huesSatFields; row 0 is Lightness).
+   int16_t barY = huesSatBarsTop;
+   for (size_t sIndex = 0; sIndex < NUM_LIGHTNESS_LEVELS; sIndex++)
+   {
+      ValueBase* value = huesSatFields[sIndex + 1].value;
+      Color valueColor;
+      Color backgroundColor;
+      huesSatEditor.colorsFor(static_cast<uint8_t>(sIndex + 1), valueColor, backgroundColor);
+
+      drawField(static_cast<uint8_t>(sIndex + 1), 0, barY + (huesSatBlockHeight - arduino.charH()) / 2,
+         huesSatLabelWidth - HUES_LABEL_GAP, huesSatBlockHeight, value->valueText(), valueColor, backgroundColor);
+      barY += huesSatBlockHeight + BAR_GAP;
+   }
+
+   // Lightness, drawn as its own "Lightness X.XX" line below the grid.
+   {
+      ValueBase* value = huesSatFields[0].value;
+      Color valueColor;
+      Color backgroundColor;
+      huesSatEditor.colorsFor(0, valueColor, backgroundColor);
+
+      if (!huesSatFieldDrawn[0])
+      {
+         arduino.setCursor(0, huesSatLightnessY);
+         arduino.print("Lightness ", Color::LABEL);
+      }
+
+      drawField(0, huesSatLightnessValueX, huesSatLightnessY, (int16_t)arduino.width() - huesSatLightnessValueX,
+         arduino.charH(), value->valueText(), valueColor, backgroundColor);
+   }
+
+   lastHuesSatSelectedIndex = selected;
+}
+
+///
+/// <summary>
+/// Lays out and draws the Hues by Saturation view: computes huesSatLabelWidth,
+/// huesSatBarsTop/huesSatBlockHeight/huesSatBarHeight to fill the space between the
+/// heading/markers and the Lightness line (positioned directly below the grid so it never
+/// overlaps the bars), generates the palettes, then draws the grid and fields. Mirrors
+/// enterHues(), with Saturation/Lightness swapped.
+/// </summary>
+///
+void enterHuesSat()
+{
+   // Force every field to be fully redrawn: enterView() just cleared the display, so the
+   // "skip unchanged fields" tracking in drawHuesSatFields() (huesSatFieldDrawn[]) would
+   // otherwise think each field's text/color is unchanged from before the clear and skip
+   // redrawing it, leaving the fields blank.
+   std::fill(std::begin(huesSatFieldDrawn), std::end(huesSatFieldDrawn), false);
+
+   generateHuesSatPalettes(numBars);
+
+   // Reserve space on the left for each row's saturation value ("0.00" is the widest
+   // possible value), then recompute barWidth/barsLeft (originally sized in setup() for
+   // the full display width) to fill only the remaining width to its right, so the grid
+   // no longer overlaps the values.
+   arduino.setTextSize(CALIBRATION_TEXT_SIZE);
+   huesSatLabelWidth = arduino.textWidth("0.00") + HUES_LABEL_GAP;
+
+   int16_t availableWidth = (int16_t)arduino.width() - huesSatLabelWidth;
+   barWidth = std::max((int16_t)1, (int16_t)((availableWidth + BAR_GAP) / (int16_t)numBars - BAR_GAP));
+   int16_t barsWidth = numBars * (barWidth + BAR_GAP) - BAR_GAP;
+   barsLeft = huesSatLabelWidth + (int16_t)((availableWidth - barsWidth) / 2);
+
+   // Compute the block height that fills whatever vertical space is left over once the
+   // content top, the marker dot rows (BAR_MARKER_OFFSET + one dot-height stack, same
+   // height as the grid itself), the grid, and the Lightness line have all been
+   // accounted for.
+   int16_t fixedHeight = BAR_MARKER_OFFSET + HEADING_MARGIN + HEADING_MARGIN + arduino.charH();
+   int16_t availableHeight = (int16_t)arduino.height() - contentTop - fixedHeight;
+   huesSatBlockHeight = std::max((int16_t)((availableHeight + BAR_GAP) / (2 * (int16_t)NUM_LIGHTNESS_LEVELS) - BAR_GAP), (int16_t)1);
+   huesSatBarHeight = NUM_LIGHTNESS_LEVELS * (huesSatBlockHeight + BAR_GAP) - BAR_GAP;
+
+   huesSatBarsTop = contentTop + BAR_MARKER_OFFSET + huesSatBarHeight;
+
+   // Always position the Lightness line directly below the actual bottom of the grid,
+   // rather than relying on the (potentially inexact, due to integer rounding above)
+   // space-filling math to land exactly there - this guarantees it never overlaps the bars.
+   huesSatLightnessY = huesSatBarsTop + huesSatBarHeight + HEADING_MARGIN;
+   huesSatLightnessValueX = arduino.textWidth("Lightness ");
+
+   drawHuesSatGrid();
+   drawHuesSatFields();
 }
 
 // ----------- Luminance view: a single flat palette generated from a spread of hue,
@@ -598,11 +1154,14 @@ int16_t luminanceBarHeight = 1;
 
 ///
 /// <summary>
-/// Generates the Luminance view's palette: every combination of LUM_SATURATION_LEVELS and
-/// LUM_LIGHTNESS_LEVELS, each crossed with an even spread of hues, flattened into a single
-/// vector sized to exactly `count` entries (see the assumption documented on
-/// LUM_SATURATION_LEVELS above). Final on-screen order comes from sorting by luminance
-/// (see recomputeLuminance()), so the order colors are generated in here doesn't matter.
+/// Generates the Luminance view's palette: the first entries are every combination of
+/// primary/half-primary RGB values (0, 128, 255 per channel), excluding pure black and pure
+/// white, since those aren't useful for comparing perceived brightness across hues. Any
+/// remaining bar positions are filled with every combination of LUM_SATURATION_LEVELS and
+/// LUM_LIGHTNESS_LEVELS, each crossed with an even spread of hues, the same as before (see
+/// the assumption documented on LUM_SATURATION_LEVELS above). Final on-screen order comes
+/// from sorting by luminance (see recomputeLuminance()), so the order colors are generated
+/// in here doesn't matter.
 /// </summary>
 /// <param name="count">Exact number of colors to generate.</param>
 /// <returns>The generated palette, with exactly `count` entries.</returns>
@@ -612,19 +1171,56 @@ std::vector<Color> generateLuminancePalette(size_t count)
    std::vector<Color> result;
    result.reserve(count);
 
+   // Primaries and half-primaries: every combination of 0/128/255 per channel, excluding
+   // pure black (0,0,0) and pure white (255,255,255).
+   constexpr uint8_t PRIMARY_LEVELS[] = { 0, 128, 255 };
+   for (uint8_t r : PRIMARY_LEVELS)
+   {
+      for (uint8_t g : PRIMARY_LEVELS)
+      {
+         for (uint8_t b : PRIMARY_LEVELS)
+         {
+            if (result.size() >= count)
+            {
+               return result;
+            }
+            if ((r == 0 && g == 0 && b == 0) || (r == 255 && g == 255 && b == 255))
+            {
+               continue;
+            }
+            result.push_back(Color565::fromRGB(r, g, b));
+         }
+      }
+   }
+
+   size_t remaining = count - result.size();
+   if (remaining == 0)
+   {
+      return result;
+   }
+
    float saturationLevels[NUM_LUM_SATURATION_LEVELS] = { lumSaturation1Editor.get(), lumSaturation2Editor.get() };
    float lightnessLevels[NUM_LUM_LIGHTNESS_LEVELS] = { lumLightness1Editor.get(), lumLightness2Editor.get() };
 
    size_t combos = NUM_LUM_SATURATION_LEVELS * NUM_LUM_LIGHTNESS_LEVELS;
-   size_t huesPerCombo = count / combos;
+   size_t huesPerCombo = remaining / combos;
+   size_t extra = remaining % combos;
 
+   // huesPerCombo may not divide `remaining` evenly (despite the assumption documented
+   // above, which only guarantees luminanceNumBars itself divides evenly - not necessarily
+   // `remaining` after the primaries/half-primaries are subtracted out). Any leftover is
+   // spread one-per-combo across the first `extra` combos so exactly `remaining` entries
+   // are generated, keeping the palette's total size matching `count` (callers index it
+   // assuming exactly `count` entries).
+   size_t comboIndex = 0;
    for (size_t sIndex = 0; sIndex < NUM_LUM_SATURATION_LEVELS; sIndex++)
    {
-      for (size_t lIndex = 0; lIndex < NUM_LUM_LIGHTNESS_LEVELS; lIndex++)
+      for (size_t lIndex = 0; lIndex < NUM_LUM_LIGHTNESS_LEVELS; lIndex++, comboIndex++)
       {
-         for (size_t hIndex = 0; hIndex < huesPerCombo; hIndex++)
+         size_t huesThisCombo = huesPerCombo + (comboIndex < extra ? 1 : 0);
+         for (size_t hIndex = 0; hIndex < huesThisCombo; hIndex++)
          {
-            float hue = 360.0f * (float)hIndex / (float)huesPerCombo;
+            float hue = 360.0f * (float)hIndex / (float)huesThisCombo;
             result.push_back(fromHSL(hue, saturationLevels[sIndex], lightnessLevels[lIndex]));
          }
       }
@@ -742,6 +1338,352 @@ void enterLuminance()
    referenceTable.draw();
 }
 
+// ----------- Plotting Colors view: two side-by-side sets of NUM_PLOT_COLORS_PER_SIDE
+// colors (left and right), each set sharing the same NUM_PLOT_COLORS_PER_SIDE evenly
+// spread hues but generated from its own editable target luminance and chroma
+// (saturation), so the two sets can be compared side by side - e.g. to see how a change
+// in either setting affects the recommended palette. Each color's lightness is solved
+// (via binary search) so it hits its set's target perceived luminance under gamma
+// weighting and the current Red/Green/Blue coefficients (see toLuminance()/
+// WEIGHTING_GAMMA), the same approach used by the Hues by Luminance view. Drawn the same
+// way as the Luminance view's single row (bars plus a matching row of marker dots above),
+// just with much narrower (1 pixel wide), widely-spaced (10 pixel gap) bars since there
+// are only NUM_PLOT_COLORS_PER_SIDE of them per set. Below the two sets is a pseudo table
+// (label column on the left, then one value column per set) with each set's Luminance and
+// Chroma editable live with the encoders (same interaction pattern as the Hues view's
+// inline fields).
+
+// Number of colors in each of the Plotting Colors view's two sets, and the fixed bar
+// geometry used to draw them (deliberately different from BAR_GAP/LUM_BAR_WIDTH - this
+// view isn't about packing as many bars as possible, it's about clearly separating a
+// small, fixed set of recommended plotting colors). The two generated sets now share the
+// primary/secondary group's hues (see PLOT_PRIMARY_SECONDARY_HUES below), so their count
+// must match NUM_PLOT_PRIMARY_SECONDARY_COLORS - defined after that array, below.
+constexpr int16_t PLOT_BAR_WIDTH = 1;
+constexpr int16_t PLOT_BAR_GAP = 10;
+
+// Extra horizontal gap between sets, in addition to PLOT_BAR_GAP.
+constexpr int16_t PLOT_GROUP_GAP = 24;
+
+// The fixed primary/secondary colors shown as a third group, to the far right of the two
+// generated sets - unlike those sets, these are constant reference colors, not solved for
+// a target luminance/chroma. Every combination of primary/half-primary levels (0/128/255
+// per channel) whose R+G+B sum is >= 510 (255+255), excluding pure white, plus the three
+// main primaries (full red/green/blue) even though their sum only reaches 255.
+const std::vector<Color> PLOT_PRIMARY_SECONDARY_COLORS =
+{
+   Color565::fromRGB(255, 0, 0),
+   Color565::fromRGB(0, 255, 0),
+   Color565::fromRGB(0, 0, 255),
+   Color565::fromRGB(0, 255, 255),
+   Color565::fromRGB(128, 128, 255),
+   Color565::fromRGB(128, 255, 128),
+   Color565::fromRGB(128, 255, 255),
+   Color565::fromRGB(255, 0, 255),
+   Color565::fromRGB(255, 128, 128),
+   Color565::fromRGB(255, 128, 255),
+   Color565::fromRGB(255, 255, 0),
+   Color565::fromRGB(255, 255, 128),
+};
+const size_t NUM_PLOT_PRIMARY_SECONDARY_COLORS = PLOT_PRIMARY_SECONDARY_COLORS.size();
+
+// Number of colors in each of the Plotting Colors view's two generated sets - matches
+// NUM_PLOT_PRIMARY_SECONDARY_COLORS since each generated entry shares that group's hue at
+// the same index (see PLOT_PRIMARY_SECONDARY_HUES below).
+constexpr size_t NUM_PLOT_COLORS_PER_SIDE = 12;
+
+// The hue (in degrees) of each entry in PLOT_PRIMARY_SECONDARY_COLORS, in the same order,
+// used by generatePlotColorsSet() so the two generated sets share the primary/secondary
+// group's hues instead of an even 0-360 spread - i.e. all three groups line up by hue,
+// with only luminance/chroma differing between them.
+constexpr float PLOT_PRIMARY_SECONDARY_HUES[] =
+{
+   0.0f, 120.0f, 240.0f, 180.0f, 240.0f, 120.0f, 180.0f, 300.0f, 0.0f, 300.0f, 60.0f, 60.0f,
+};
+static_assert(std::size(PLOT_PRIMARY_SECONDARY_HUES) == NUM_PLOT_COLORS_PER_SIDE, "PLOT_PRIMARY_SECONDARY_HUES must have one entry per generated set color");
+
+// Vertical gap between each bar's marker dot and its bar, and (to keep spacing visually
+// even) also used between the subheading and the marker dots themselves - tripled from
+// BAR_MARKER_OFFSET (used by the other views) to give the Plotting Colors view's points
+// more breathing room.
+constexpr int16_t PLOT_MARKER_OFFSET = BAR_MARKER_OFFSET * 3;
+
+// Default target luminance/chroma (saturation) for the left and right sets, editable live
+// via plotColorsEditor. Deliberately different defaults so the two sets look distinct out
+// of the box.
+constexpr float DEFAULT_PLOT_LUMINANCE_LEFT = 0.40f;
+constexpr float DEFAULT_PLOT_CHROMA_LEFT = 1.00f;
+constexpr float DEFAULT_PLOT_LUMINANCE_RIGHT = 0.70f;
+constexpr float DEFAULT_PLOT_CHROMA_RIGHT = 0.60f;
+
+RoundedFloatEditor plotLuminanceLeftEditor(0.0f, 1.0f, 0.05f, DEFAULT_PLOT_LUMINANCE_LEFT, "#.##");
+RoundedFloatEditor plotChromaLeftEditor(0.0f, 1.0f, 0.05f, DEFAULT_PLOT_CHROMA_LEFT, "#.##");
+RoundedFloatEditor plotLuminanceRightEditor(0.0f, 1.0f, 0.05f, DEFAULT_PLOT_LUMINANCE_RIGHT, "#.##");
+RoundedFloatEditor plotChromaRightEditor(0.0f, 1.0f, 0.05f, DEFAULT_PLOT_CHROMA_RIGHT, "#.##");
+
+// Fields in navigation order: left Luminance, left Chroma, right Luminance, right Chroma.
+// Names are unique (for Preferences key derivation, see FieldEditor::_keyFor()) even
+// though the left/right pairs are drawn under the shared "Luminance"/"Chroma" row labels
+// in drawPlotColorsFields() below.
+FieldEditor::FieldInfo plotColorsFields[] =
+{
+   { "Plot Luminance Left", &plotLuminanceLeftEditor },
+   { "Plot Chroma Left", &plotChromaLeftEditor },
+   { "Plot Luminance Right", &plotLuminanceRightEditor },
+   { "Plot Chroma Right", &plotChromaRightEditor },
+};
+FieldEditor plotColorsEditor(&arduino, PREF_NAMESPACE, plotColorsFields);
+
+// The generated palettes (see generatePlotColorsPalette()), each always exactly
+// NUM_PLOT_COLORS_PER_SIDE entries, in ascending-hue order.
+std::vector<Color> plotColorsPaletteLeft;
+std::vector<Color> plotColorsPaletteRight;
+
+// Left edge of the left set's bars, left edge of the right set's bars, top Y coordinate,
+// and height of the Plotting Colors view's bars, computed in enterPlotColors() to center
+// both fixed-width sets (with a gap between them) and fill the vertical space left over
+// once the heading, marker row, and field table have been accounted for.
+int16_t plotColorsLeftBarsLeft = 0;
+int16_t plotColorsRightBarsLeft = 0;
+int16_t plotColorsRefBarsLeft = 0;
+int16_t plotColorsBarsTop = 0;
+int16_t plotColorsBarHeight = 1;
+
+// Top Y coordinate of the field table's rows (Luminance, then Chroma), and the X
+// coordinates of the label column's left edge and each set's value column's left edge,
+// all computed once in enterPlotColors().
+int16_t plotColorsTableY = 0;
+int16_t plotColorsLabelX = 0;
+int16_t plotColorsLeftValueX = 0;
+int16_t plotColorsRightValueX = 0;
+int16_t plotColorsRowHeight = 1;
+
+// Last R/G/B coefficients and per-side luminance/chroma values the palettes were solved
+// against, so the loop() only needs to regenerate them when something relevant actually
+// changed (Weighting itself is intentionally not tracked here - this view always solves
+// under WEIGHTING_GAMMA, regardless of the Luminance view's own Weighting setting).
+float lastPlotR = DEFAULT_R;
+float lastPlotG = DEFAULT_G;
+float lastPlotB = DEFAULT_B;
+float lastPlotLuminanceLeft = DEFAULT_PLOT_LUMINANCE_LEFT;
+float lastPlotChromaLeft = DEFAULT_PLOT_CHROMA_LEFT;
+float lastPlotLuminanceRight = DEFAULT_PLOT_LUMINANCE_RIGHT;
+float lastPlotChromaRight = DEFAULT_PLOT_CHROMA_RIGHT;
+
+// plotColorsEditor's selected field index as of the last drawPlotColorsFields() call, and
+// last-drawn text/colors for each plotColorsFields[] entry, so drawPlotColorsFields() only
+// repaints a field when its text or color actually changed - same idea as
+// lastHuesFieldText/huesFieldDrawn above.
+uint8_t lastPlotColorsSelectedIndex = 0;
+std::string lastPlotColorsFieldText[std::size(plotColorsFields)];
+Color lastPlotColorsFieldColor[std::size(plotColorsFields)] = {};
+Color lastPlotColorsFieldBackgroundColor[std::size(plotColorsFields)] = {};
+bool plotColorsFieldDrawn[std::size(plotColorsFields)] = {};
+
+///
+/// <summary>
+/// Generates one set's palette: one entry per PLOT_PRIMARY_SECONDARY_HUES hue (so this set
+/// lines up hue-for-hue with the primary/secondary reference group), each solved (see
+/// findLightnessForLuminance()) to hit `targetLuminance` at the given chroma (saturation),
+/// under the current Red/Green/Blue coefficients and gamma weighting, so the whole set
+/// reads as constant-luminance.
+/// </summary>
+/// <param name="chroma">Saturation (0.0-1.0) applied to every entry.</param>
+/// <param name="targetLuminance">Target perceived brightness every entry is solved for.</param>
+/// <param name="rWeight">Red coefficient.</param>
+/// <param name="gWeight">Green coefficient.</param>
+/// <param name="bWeight">Blue coefficient.</param>
+/// <returns>The generated palette, with exactly NUM_PLOT_COLORS_PER_SIDE entries.</returns>
+///
+std::vector<Color> generatePlotColorsSet(float chroma, float targetLuminance, float rWeight, float gWeight, float bWeight)
+{
+   std::vector<Color> result;
+   result.reserve(NUM_PLOT_COLORS_PER_SIDE);
+   for (size_t i = 0; i < NUM_PLOT_COLORS_PER_SIDE; i++)
+   {
+      float hue = PLOT_PRIMARY_SECONDARY_HUES[i];
+      float lightness = findLightnessForLuminance(hue, chroma, rWeight, gWeight, bWeight, WEIGHTING_GAMMA, targetLuminance);
+      result.push_back(fromHSL(hue, chroma, lightness));
+   }
+   return result;
+}
+
+///
+/// <summary>
+/// Generates both sets' palettes (see generatePlotColorsSet()) from the live
+/// plotColorsFields values and the current Red/Green/Blue coefficients, and records those
+/// values so the loop() can detect the next actual change.
+/// </summary>
+///
+void generatePlotColorsPalette()
+{
+   lastPlotR = rCoeffEditor.get();
+   lastPlotG = gCoeffEditor.get();
+   lastPlotB = bCoeffEditor.get();
+   lastPlotLuminanceLeft = plotLuminanceLeftEditor.get();
+   lastPlotChromaLeft = plotChromaLeftEditor.get();
+   lastPlotLuminanceRight = plotLuminanceRightEditor.get();
+   lastPlotChromaRight = plotChromaRightEditor.get();
+
+   plotColorsPaletteLeft = generatePlotColorsSet(lastPlotChromaLeft, lastPlotLuminanceLeft, lastPlotR, lastPlotG, lastPlotB);
+   plotColorsPaletteRight = generatePlotColorsSet(lastPlotChromaRight, lastPlotLuminanceRight, lastPlotR, lastPlotG, lastPlotB);
+}
+
+///
+/// <summary>
+/// Draws one set's row of PLOT_BAR_WIDTH-wide bars, spaced PLOT_BAR_GAP pixels apart,
+/// starting at `left`, plus a matching row of marker dots PLOT_MARKER_OFFSET pixels above -
+/// same idea as the Luminance view's marker row (a single colored pixel, against an
+/// otherwise black background).
+/// </summary>
+/// <param name="left">Left edge of the set's first bar.</param>
+/// <param name="palette">The set's colors to draw.</param>
+///
+void drawPlotColorsSet(int16_t left, const std::vector<Color>& palette)
+{
+   constexpr int16_t dotSize = 1;
+   int16_t markerTop = plotColorsBarsTop - PLOT_MARKER_OFFSET - dotSize;
+
+   for (size_t index = 0; index < palette.size(); index++)
+   {
+      int16_t x = left + (int16_t)index * (PLOT_BAR_WIDTH + PLOT_BAR_GAP);
+      Color color = palette[index];
+
+      arduino.fillRect(x, markerTop, PLOT_BAR_WIDTH, dotSize, Color::BLACK);
+      arduino.fillRect(x, markerTop, dotSize, dotSize, color);
+
+      arduino.fillRect(x, plotColorsBarsTop, PLOT_BAR_WIDTH, plotColorsBarHeight, color);
+   }
+}
+
+///
+/// <summary>
+/// Draws all three sets' rows of bars (see drawPlotColorsSet()): the left and right
+/// generated sets, plus the fixed primary/secondary reference colors to the far right.
+/// </summary>
+///
+void drawPlotColorsRow()
+{
+   drawPlotColorsSet(plotColorsLeftBarsLeft, plotColorsPaletteLeft);
+   drawPlotColorsSet(plotColorsRightBarsLeft, plotColorsPaletteRight);
+   drawPlotColorsSet(plotColorsRefBarsLeft, PLOT_PRIMARY_SECONDARY_COLORS);
+}
+
+///
+/// <summary>
+/// Draws the Plotting Colors view's field table: a "Luminance"/"Chroma" label column on
+/// the far left, then one value column per set (left set's values under the left set's
+/// bars, right set's under the right set's), reading selection state from plotColorsEditor
+/// to highlight whichever field is currently selected - the same idea as
+/// FieldTableEditor's row highlighting, just laid out as two value columns instead of one.
+/// </summary>
+///
+void drawPlotColorsFields()
+{
+   uint8_t selected = plotColorsEditor.selectedIndex();
+
+   arduino.setTextSize(CALIBRATION_TEXT_SIZE);
+
+   auto drawField = [&](uint8_t fieldIndex, int16_t x, int16_t y, int16_t w, int16_t h, const std::string& text, Color valueColor, Color backgroundColor)
+   {
+      if (plotColorsFieldDrawn[fieldIndex] && text == lastPlotColorsFieldText[fieldIndex] &&
+         valueColor == lastPlotColorsFieldColor[fieldIndex] && backgroundColor == lastPlotColorsFieldBackgroundColor[fieldIndex])
+      {
+         return;
+      }
+
+      arduino.fillRect(x, y, w, h, Color::BLACK);
+      arduino.setCursor(x, y);
+      arduino.print(text.c_str(), valueColor, backgroundColor);
+
+      lastPlotColorsFieldText[fieldIndex] = text;
+      lastPlotColorsFieldColor[fieldIndex] = valueColor;
+      lastPlotColorsFieldBackgroundColor[fieldIndex] = backgroundColor;
+      plotColorsFieldDrawn[fieldIndex] = true;
+   };
+
+   constexpr uint8_t LEFT_LUM = 0;
+   constexpr uint8_t LEFT_CHROMA = 1;
+   constexpr uint8_t RIGHT_LUM = 2;
+   constexpr uint8_t RIGHT_CHROMA = 3;
+
+   int16_t lumRowY = plotColorsTableY;
+   int16_t chromaRowY = plotColorsTableY + plotColorsRowHeight;
+
+   // Row labels, drawn once (they never change/need highlighting).
+   arduino.setCursor(plotColorsLabelX, lumRowY);
+   arduino.print("Luminance", Color::LABEL);
+   arduino.setCursor(plotColorsLabelX, chromaRowY);
+   arduino.print("Chroma", Color::LABEL);
+
+   auto drawValueField = [&](uint8_t fieldIndex, int16_t x, int16_t y)
+   {
+      ValueBase* value = plotColorsFields[fieldIndex].value;
+      Color valueColor;
+      Color backgroundColor;
+      plotColorsEditor.colorsFor(fieldIndex, valueColor, backgroundColor);
+      drawField(fieldIndex, x, y, arduino.textWidth("0.00"), arduino.charH(), value->valueText(), valueColor, backgroundColor);
+   };
+
+   drawValueField(LEFT_LUM, plotColorsLeftValueX, lumRowY);
+   drawValueField(LEFT_CHROMA, plotColorsLeftValueX, chromaRowY);
+   drawValueField(RIGHT_LUM, plotColorsRightValueX, lumRowY);
+   drawValueField(RIGHT_CHROMA, plotColorsRightValueX, chromaRowY);
+
+   lastPlotColorsSelectedIndex = selected;
+}
+
+///
+/// <summary>
+/// Lays out and draws the Plotting Colors view: places the fixed primary/secondary
+/// reference colors on the far left, then the two generated sets of NUM_PLOT_COLORS_PER_SIDE
+/// bars to their right (with PLOT_GROUP_GAP between all three groups), computes the field
+/// table's position directly below the bars - with the label column and each set's value
+/// column aligned under that same set's bars - generates both sets' palettes, then draws
+/// the bars and field table.
+/// </summary>
+///
+void enterPlotColors()
+{
+   // Force every field to be fully redrawn: enterView() just cleared the display, so the
+   // "skip unchanged fields" tracking in drawPlotColorsFields() (plotColorsFieldDrawn[])
+   // would otherwise think each field's text/color is unchanged from before the clear and
+   // skip redrawing it, leaving the fields blank.
+   std::fill(std::begin(plotColorsFieldDrawn), std::end(plotColorsFieldDrawn), false);
+
+   int16_t setWidth = (int16_t)NUM_PLOT_COLORS_PER_SIDE * (PLOT_BAR_WIDTH + PLOT_BAR_GAP) - PLOT_BAR_GAP;
+   int16_t refWidth = (int16_t)NUM_PLOT_PRIMARY_SECONDARY_COLORS * (PLOT_BAR_WIDTH + PLOT_BAR_GAP) - PLOT_BAR_GAP;
+   int16_t totalWidth = refWidth + 2 * setWidth + 2 * PLOT_GROUP_GAP;
+   plotColorsRefBarsLeft = (int16_t)((arduino.width() - totalWidth) / 2);
+   plotColorsLeftBarsLeft = plotColorsRefBarsLeft + refWidth + PLOT_GROUP_GAP;
+   plotColorsRightBarsLeft = plotColorsLeftBarsLeft + setWidth + PLOT_GROUP_GAP;
+
+   generatePlotColorsPalette();
+
+   arduino.setTextSize(CALIBRATION_TEXT_SIZE);
+   plotColorsRowHeight = arduino.charH() + BAR_GAP;
+
+   // Reserve space at the bottom for the two-row field table (plus a margin above it),
+   // then fill whatever vertical space is left over with the bars. PLOT_MARKER_OFFSET is
+   // used twice here: once between the subheading and the marker dots, and again between
+   // the marker dots and the bars, so the spacing above and below the dots is equal.
+   int16_t tableHeight = 2 * plotColorsRowHeight;
+   int16_t fixedHeight = 2 * PLOT_MARKER_OFFSET + HEADING_MARGIN + tableHeight;
+   plotColorsBarHeight = std::max((int16_t)((int16_t)arduino.height() - contentTop - fixedHeight), (int16_t)1);
+   plotColorsBarsTop = contentTop + 2 * PLOT_MARKER_OFFSET;
+
+   plotColorsTableY = plotColorsBarsTop + plotColorsBarHeight + HEADING_MARGIN;
+   // The label column sits under the reference group (there are no editable fields for it),
+   // and each set's value column is aligned directly under that set's own bars, so the
+   // whole field table lines up with the three color groups above it.
+   plotColorsLabelX = plotColorsRefBarsLeft;
+   plotColorsLeftValueX = plotColorsLeftBarsLeft;
+   plotColorsRightValueX = plotColorsRightBarsLeft;
+
+   drawPlotColorsRow();
+   drawPlotColorsFields();
+}
+
 ///
 /// <summary>
 /// Clears the display, draws the shared "Colors" heading plus the current view's
@@ -766,8 +1708,17 @@ void enterView()
    case View::Hues:
       enterHues();
       break;
+   case View::HuesByLuminance:
+      enterHuesLum();
+      break;
    case View::Luminance:
       enterLuminance();
+      break;
+   case View::HuesBySaturation:
+      enterHuesSat();
+      break;
+   case View::PlottingColors:
+      enterPlotColors();
       break;
    }
 }
@@ -780,7 +1731,10 @@ void setup()
    arduino.buttonB.begin();
 
    calibrationEditor.load();
-   huesCalibrationEditor.load();
+   huesEditor.load();
+   huesLumEditor.load();
+   huesSatEditor.load();
+   plotColorsEditor.load();
 
    for (size_t i = 0; i < NUM_REFERENCE_FORMULAS; i++)
    {
@@ -821,21 +1775,7 @@ void loop()
 
    if (currentView == View::Hues)
    {
-      huesCalibrationEditor.selectNext(arduino.encoderA.delta());
-
-      int32_t adjustDelta = arduino.encoderB.delta();
-      if (adjustDelta != 0)
-      {
-         huesCalibrationEditor.adjustSelected(adjustDelta);
-         huesCalibrationEditor.save();
-      }
-
-      if (arduino.encoderB.button.wasPressed())
-      {
-         huesCalibrationEditor.reset();
-      }
-
-      huesCalibrationEditor.draw();
+      bool huesFieldsChanged = huesEditor.loop();
 
       bool huesChanged = saturationEditor.get() != lastHuesSaturation;
       for (size_t lIndex = 0; lIndex < NUM_LIGHTNESS_LEVELS; lIndex++)
@@ -850,6 +1790,39 @@ void loop()
       {
          generateHuesPalettes(numBars);
          drawHuesGrid();
+         huesFieldsChanged = true;
+      }
+
+      if (huesFieldsChanged)
+      {
+         drawHuesFields();
+      }
+   }
+   else if (currentView == View::HuesByLuminance)
+   {
+      bool huesLumFieldsChanged = huesLumEditor.loop();
+
+      bool huesLumChanged = huesLumSaturationEditor.get() != lastHuesLumSaturation ||
+         weightingEditor.get() != lastHuesLumWeighting || rCoeffEditor.get() != lastHuesLumR ||
+         gCoeffEditor.get() != lastHuesLumG || bCoeffEditor.get() != lastHuesLumB;
+      for (size_t lIndex = 0; lIndex < NUM_LUMINANCE_LEVELS; lIndex++)
+      {
+         if (huesLumLevelEditors[lIndex].get() != lastHuesLumLevel[lIndex])
+         {
+            huesLumChanged = true;
+         }
+      }
+
+      if (huesLumChanged)
+      {
+         generateHuesLuminancePalettes(numBars);
+         drawHuesLumGrid();
+         huesLumFieldsChanged = true;
+      }
+
+      if (huesLumFieldsChanged)
+      {
+         drawHuesLumFields();
       }
    }
    else if (currentView == View::Luminance)
@@ -897,6 +1870,51 @@ void loop()
       {
          recomputeLuminance();
          drawLuminanceRow();
+      }
+   }
+   else if (currentView == View::HuesBySaturation)
+   {
+      bool huesSatFieldsChanged = huesSatEditor.loop();
+
+      bool huesSatChanged = huesSatLightnessEditor.get() != lastHuesSatLightness;
+      for (size_t sIndex = 0; sIndex < NUM_LIGHTNESS_LEVELS; sIndex++)
+      {
+         if (huesSatSaturationEditors[sIndex].get() != lastHuesSatSaturation[sIndex])
+         {
+            huesSatChanged = true;
+         }
+      }
+
+      if (huesSatChanged)
+      {
+         generateHuesSatPalettes(numBars);
+         drawHuesSatGrid();
+         huesSatFieldsChanged = true;
+      }
+
+      if (huesSatFieldsChanged)
+      {
+         drawHuesSatFields();
+      }
+   }
+   else if (currentView == View::PlottingColors)
+   {
+      bool plotColorsFieldsChanged = plotColorsEditor.loop();
+
+      bool plotColorsChanged = rCoeffEditor.get() != lastPlotR || gCoeffEditor.get() != lastPlotG || bCoeffEditor.get() != lastPlotB ||
+         plotLuminanceLeftEditor.get() != lastPlotLuminanceLeft || plotChromaLeftEditor.get() != lastPlotChromaLeft ||
+         plotLuminanceRightEditor.get() != lastPlotLuminanceRight || plotChromaRightEditor.get() != lastPlotChromaRight;
+
+      if (plotColorsChanged)
+      {
+         generatePlotColorsPalette();
+         drawPlotColorsRow();
+         plotColorsFieldsChanged = true;
+      }
+
+      if (plotColorsFieldsChanged)
+      {
+         drawPlotColorsFields();
       }
    }
 }

@@ -6,7 +6,9 @@
 #include "Color.h"
 #include "ArduinoBoard.h"
 #include "ValueEditor.h"
+#include "FieldEditor.h"
 #include "FieldTable.h"
+#include "Vector.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "FieldTableEditor requires a board with a display."
@@ -20,12 +22,12 @@
 /// Reusable, embeddable single-column table of ValueBase values (a mix of editable
 /// Editor fields and read-only values) that can be navigated and adjusted live with a
 /// board's encoders: Encoder A cycles the selected field, Encoder B adjusts its value.
-/// Also supports loading/saving/resetting all fields against a Preferences namespace. This
-/// class owns no rendering logic of its own - it delegates all drawing to an internal
-/// FieldTable, so drawing fixes (sprite creation, text-size restoration, flicker avoidance,
-/// layout math, etc.) only need to live in one place. FieldTableEditor simply tracks the
-/// selected field, persists values, and draws each field's current text/color/selection
-/// state through the internal FieldTable.
+/// Also supports loading/saving/resetting all fields against a Preferences namespace.
+/// Selection/adjustment/persistence is delegated to an internal FieldEditor (the
+/// render-agnostic part), while this class owns only the FieldTable-based rendering
+/// (sprite creation, text-size restoration, flicker avoidance, layout math, etc.) -
+/// FieldTableEditor simply draws each field's current text/color/selection state, reading
+/// selection state from the internal FieldEditor.
 /// </summary>
 ///
 class FieldTableEditor
@@ -33,12 +35,11 @@ class FieldTableEditor
 public:
    ///
    /// <summary>
-   /// Pairs a ValueBase (or Editor) with the row-level display metadata
-   /// (label) needed to render it as a row in a FieldTableEditor. The first column of
-   /// a row is just a label; it isn't part of the value's own value/editing behavior, so
-   /// that metadata lives here instead of on the value itself. A row can also be a
-   /// label-only section header (no value), which renders as its own section row (see
-   /// FieldTable::addSection()) above the rows that follow it, e.g. { "Measured" }.
+   /// Pairs a ValueBase (or Editor) with the row-level display metadata (label) needed to
+   /// identify it in the table. The first column of a row is just a label; it isn't part of
+   /// the value's own value/editing behavior, so that metadata lives here instead of on the
+   /// value itself. A row can also be a label-only section header (no value), or a blank
+   /// spacer row with neither label nor value.
    /// </summary>
    ///
    struct Row
@@ -47,7 +48,7 @@ public:
       /// <summary>
       /// Initializes a new instance of the Row struct for a normal labeled field.
       /// </summary>
-      /// <param name="label">Label text drawn in the row's first column, e.g. "Rate".</param>
+      /// <param name="label">Label text identifying this row, e.g. "Rate".</param>
       /// <param name="value">The value providing this row's value/editing behavior.</param>
       ///
       Row(const char* label, ValueBase* value)
@@ -57,10 +58,9 @@ public:
       ///
       /// <summary>
       /// Initializes a new instance of the Row struct as a section header row - a
-      /// label-only entry with no value that renders as its own section row above the rows that
-      /// follow it.
+      /// label-only entry with no value, for sectioned tables.
       /// </summary>
-      /// <param name="header">Section header text drawn above the following rows.</param>
+      /// <param name="header">Section header text.</param>
       ///
       Row(const char* header)
          : label(header), value(nullptr)
@@ -69,9 +69,8 @@ public:
       const char* label;
       ValueBase* value;
 
-      // Row index within the internal FieldTable this field maps to, or -1 for section
-      // header rows, which are added as their own row via addSection() rather than
-      // stored on the Row that precedes them. Set by FieldTableEditor::_relayout().
+      // Row index within the internal FieldTable this row maps to, or -1 for section header
+      // rows. Populated by _relayout().
       int8_t rowIndex = -1;
 
       ///
@@ -87,50 +86,27 @@ public:
 
 private:
    Arduino* _arduino;
-   const char* _prefNamespace;
    std::span<Row> _rows;
-   uint8_t _selectedIndex = 0;
-   char _keyBuffer[10];
+   Vector<FieldEditor::FieldInfo> _editorFields;
+   // Maps each entry in _editorFields back to its index in _rows, since section header rows
+   // are excluded from _editorFields (FieldEditor has no notion of sections).
+   Vector<uint8_t> _editorFieldRowIndices;
+   FieldEditor _editor;
    FieldTable _table;
 
-   Preferences* _preferences()
-   {
-      return &_arduino->preferences;
-   }
-
    ///
    /// <summary>
-   /// Generates the Preferences key used to persist a field, derived from a hash of its label
-   /// rather than its position in the table. This lets setFields() swap which fields are
-   /// currently displayed (e.g. different config rows per selected test function) without
-   /// different fields sharing - and clobbering - the same positional key.
-   /// </summary>
-   /// <param name="row">Row to compute a persistence key for.</param>
-   /// <returns>A short, stable Preferences key.</returns>
-   ///
-   const char* _keyFor(const Row& row)
-   {
-      // Simple FNV-1a hash of the label, truncated to fit Preferences' short key limit.
-      uint32_t hash = 2166136261u;
-      for (const char* p = row.label; *p != '\0'; p++)
-      {
-         hash ^= static_cast<uint8_t>(*p);
-         hash *= 16777619u;
-      }
-      snprintf(_keyBuffer, sizeof(_keyBuffer), "f%08lx", static_cast<unsigned long>(hash));
-      return _keyBuffer;
-   }
-
-   ///
-   /// <summary>
-   /// Rebuilds the internal FieldTable's rows from the current field array and resets the
-   /// selection to the first editable field. Section header rows (no value) are added as
-   /// their own section row via addSection(), reusing FieldTable's existing section-header
-   /// rendering. Shared by the constructor and setFields().
+   /// Rebuilds the internal FieldEditor's flat field list and the internal FieldTable's rows
+   /// from the current row array. Section header rows (no value) are added as their own
+   /// section row via addSection(), reusing FieldTable's existing section-header rendering,
+   /// and are skipped when building the field list since FieldEditor has no notion of
+   /// sections. Shared by the constructor and setFields().
    /// </summary>
    ///
    void _relayout()
    {
+      _editorFields.clear();
+      _editorFieldRowIndices.clear();
       for (uint8_t i = 0; i < _rows.size(); i++)
       {
          if (_rows[i].value == nullptr)
@@ -142,17 +118,30 @@ private:
 
          _rows[i].rowIndex = static_cast<int8_t>(_table.rowCount());
          _table.addRow(_rows[i].label, _rows[i].value->format());
+         _editorFields.append() = FieldEditor::FieldInfo(_rows[i].label, _rows[i].value);
+         _editorFieldRowIndices.append() = i;
       }
+      _editor.setFields(_editorFields);
+   }
 
-      _selectedIndex = 0;
-      for (uint8_t i = 0; i < _rows.size(); i++)
+   ///
+   /// <summary>
+   /// Converts a row index into the corresponding index within the internal FieldEditor's
+   /// flat field list, or -1 if that row has no value (e.g. a section header).
+   /// </summary>
+   /// <param name="rowIndex">Index into _rows.</param>
+   /// <returns>The corresponding index into _editorFields, or -1 if none.</returns>
+   ///
+   int16_t _fieldIndexForRow(uint8_t rowIndex) const
+   {
+      for (uint8_t i = 0; i < _editorFieldRowIndices.size(); i++)
       {
-         if (_rows[i].value != nullptr && _rows[i].value->isEditable())
+         if (_editorFieldRowIndices[i] == rowIndex)
          {
-            _selectedIndex = i;
-            break;
+            return static_cast<int16_t>(i);
          }
       }
+      return -1;
    }
 
 public:
@@ -169,7 +158,7 @@ public:
    ///
    FieldTableEditor(Arduino* arduino, const char* prefNamespace, std::span<Row> fields,
       int16_t x, int16_t y, uint8_t textSize = 2)
-      : _arduino(arduino), _prefNamespace(prefNamespace), _rows(fields),
+      : _arduino(arduino), _rows(fields), _editor(arduino, prefNamespace, std::span<FieldEditor::FieldInfo>()),
       _table(arduino, x, y, textSize)
    {
       _relayout();
@@ -277,20 +266,22 @@ public:
    ///
    uint8_t selectedIndex() const
    {
-      return _selectedIndex;
+      uint8_t fieldIndex = _editor.selectedIndex();
+      return fieldIndex < _editorFieldRowIndices.size() ? _editorFieldRowIndices[fieldIndex] : 0;
    }
 
    ///
    /// <summary>
    /// Sets the currently selected field index, clamped to a valid range.
    /// </summary>
-   /// <param name="index">Zero-based index of the field to select.</param>
+   /// <param name="index">Zero-based index of the row to select.</param>
    ///
    void setSelectedIndex(uint8_t index)
    {
-      if (index < _rows.size() && _rows[index].value != nullptr && _rows[index].value->isEditable())
+      int16_t fieldIndex = _fieldIndexForRow(index);
+      if (fieldIndex >= 0)
       {
-         _selectedIndex = index;
+         _editor.setSelectedIndex(static_cast<uint8_t>(fieldIndex));
       }
    }
 
@@ -305,23 +296,7 @@ public:
    ///
    void selectNext(int32_t direction)
    {
-      if (direction == 0)
-      {
-         return;
-      }
-
-      int32_t fieldCount = static_cast<int32_t>(_rows.size());
-      int32_t step = direction > 0 ? 1 : -1;
-      int32_t newIndex = static_cast<int32_t>(_selectedIndex);
-      for (uint8_t i = 0; i < _rows.size(); i++)
-      {
-         newIndex = (newIndex + step + fieldCount) % fieldCount;
-         if (_rows[newIndex].value != nullptr && _rows[newIndex].value->isEditable() && _rows[newIndex].value->isEnabled())
-         {
-            break;
-         }
-      }
-      _selectedIndex = static_cast<uint8_t>(newIndex);
+      _editor.selectNext(direction);
    }
 
    ///
@@ -335,16 +310,7 @@ public:
    ///
    void adjustSelected(int32_t direction)
    {
-      if (direction == 0)
-      {
-         return;
-      }
-
-      ValueBase* value = _rows[_selectedIndex].value;
-      if (value->isEditable() && value->isEnabled())
-      {
-         static_cast<Editor*>(value)->adjust(direction);
-      }
+      _editor.adjustSelected(direction);
    }
 
    ///
@@ -368,11 +334,10 @@ public:
             continue;
          }
 
-         bool isSelected = value->isEditable() && value->isEnabled() && (i == _selectedIndex);
-         bool isDisabled = !value->isEnabled();
-
-         Color valueBackgroundColor = isSelected ? Color::BLUE : Color::BLACK;
-         Color valueColor = isDisabled ? Color::GRAY : (isSelected ? Color::WHITE : (value->hasColor() ? value->color() : (value->isEditable() ? Color::VALUE : Color::VALUE2)));
+         Color valueColor;
+         Color valueBackgroundColor;
+         int16_t fieldIndex = _fieldIndexForRow(i);
+         _editor.colorsFor(static_cast<uint8_t>(fieldIndex), valueColor, valueBackgroundColor);
 
          _table._drawDataRow(_rows[i].rowIndex, value->valueText(), valueColor, valueBackgroundColor);
       }
@@ -393,20 +358,7 @@ public:
    ///
    void loop()
    {
-      selectNext(_arduino->encoderA.delta());
-
-      int32_t adjustDelta = _arduino->encoderB.delta();
-      if (adjustDelta != 0)
-      {
-         adjustSelected(adjustDelta);
-         save();
-      }
-
-      if (_arduino->encoderB.button.wasPressed())
-      {
-         reset();
-      }
-
+      _editor.loop();
       draw();
    }
 #endif
@@ -456,7 +408,7 @@ public:
    ///
    uint8_t fieldCount() const
    {
-      return static_cast<uint8_t>(_rows.size());
+      return _editor.fieldCount();
    }
 
    ///
@@ -466,20 +418,7 @@ public:
    ///
    void load()
    {
-      Preferences* prefs = _preferences();
-      prefs->begin(_prefNamespace, true);
-      for (uint8_t i = 0; i < _rows.size(); i++)
-      {
-         if (_rows[i].value == nullptr || !_rows[i].value->isEditable())
-         {
-            continue;
-         }
-         Editor* field = static_cast<Editor*>(_rows[i].value);
-         double defaultValue = field->defaultNumericValue();
-         double value = prefs->getDouble(_keyFor(_rows[i]), defaultValue);
-         field->setNumericValue(value, /* markAsChanged */ false);
-      }
-      prefs->end();
+      _editor.load();
    }
 
    ///
@@ -489,18 +428,7 @@ public:
    ///
    void save()
    {
-      Preferences* prefs = _preferences();
-      prefs->begin(_prefNamespace, false);
-      for (uint8_t i = 0; i < _rows.size(); i++)
-      {
-         if (_rows[i].value == nullptr || !_rows[i].value->isEditable())
-         {
-            continue;
-         }
-         Editor* field = static_cast<Editor*>(_rows[i].value);
-         prefs->putDouble(_keyFor(_rows[i]), field->numericValue());
-      }
-      prefs->end();
+      _editor.save();
    }
 
    ///
@@ -510,16 +438,8 @@ public:
    ///
    void reset()
    {
-      for (uint8_t i = 0; i < _rows.size(); i++)
-      {
-         if (_rows[i].value == nullptr || !_rows[i].value->isEditable())
-         {
-            continue;
-         }
-         static_cast<Editor*>(_rows[i].value)->reset();
-      }
-      save();
+      _editor.reset();
    }
 };
 
-inline const FieldTableEditor::Row FieldTableEditor::Row::BlankRow("", &BlankValue::instance());
+inline const FieldTableEditor::Row FieldTableEditor::Row::BlankRow = FieldTableEditor::Row("", &BlankValue::instance());
