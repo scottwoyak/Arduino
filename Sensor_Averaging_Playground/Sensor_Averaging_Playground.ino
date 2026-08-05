@@ -397,10 +397,10 @@ void drawTableView()
    else
    {
       table.addRow("Raw", Color::GRAY);
-      table.setNoValue(0, 0, Color::GRAY, '-');
-      table.setNoValue(0, 1, Color::GRAY, '-');
-      table.setNoValue(0, 2, Color::GRAY, '-');
-      table.setNoValue(0, 3, Color::GRAY, '-');
+      table.setValueNone(0, 0, Color::GRAY, '-');
+      table.setValueNone(0, 1, Color::GRAY, '-');
+      table.setValueNone(0, 2, Color::GRAY, '-');
+      table.setValueNone(0, 3, Color::GRAY, '-');
    }
 
    for (size_t i = 0; i < NUM_BUFFER_SIZES; i++)
@@ -434,10 +434,10 @@ void drawTableView()
       else
       {
          table.addRow(rowLabel.c_str(), Color::GRAY);
-         table.setNoValue(rowIndex, 0, Color::GRAY, '-');
-         table.setNoValue(rowIndex, 1, Color::GRAY, '-');
-         table.setNoValue(rowIndex, 2, Color::GRAY, '-');
-         table.setNoValue(rowIndex, 3, Color::GRAY, '-');
+         table.setValueNone(rowIndex, 0, Color::GRAY, '-');
+         table.setValueNone(rowIndex, 1, Color::GRAY, '-');
+         table.setValueNone(rowIndex, 2, Color::GRAY, '-');
+         table.setValueNone(rowIndex, 3, Color::GRAY, '-');
       }
    }
 

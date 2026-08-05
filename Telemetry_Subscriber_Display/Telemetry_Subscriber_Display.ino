@@ -140,8 +140,8 @@ void onStarted()
    Url url(client.getUrl().c_str());
    table.setValue(0, client.getTopic(), Color::VALUE);
    table.setValue(1, url.getHost(), Color::VALUE2);
-   table.setNoValue(2);
-   table.setNoValue(3);
+   table.setValueNone(2);
+   table.setValueNone(3);
    table.draw();
 
    sw.start();

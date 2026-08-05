@@ -450,7 +450,7 @@ void loop()
          {
             for (size_t c = 0; c < ARRAY_SIZE(tableColumns); c++)
             {
-               sensorTable.setNoValue(i, c, Color::GRAY, '-');
+               sensorTable.setValueNone(i, c, Color::GRAY, '-');
             }
             continue;
          }

@@ -1265,7 +1265,7 @@ public:
    /// <param name="valueColor">The color to draw the placeholder value (default: Color::VALUE).</param>
    /// <param name="noValueChar">Character used to fill each digit position.</param>
    ///
-   void setNoValue(size_t rowIndex, size_t columnIndex, Color valueColor = Color::VALUE, char noValueChar = '-')
+   void setValueNone(size_t rowIndex, size_t columnIndex, Color valueColor = Color::VALUE, char noValueChar = '-')
    {
       if (rowIndex >= _rows.size())
       {
@@ -1293,9 +1293,9 @@ public:
    /// <param name="valueColor">The color to draw the placeholder value (default: Color::VALUE).</param>
    /// <param name="noValueChar">Character used to fill each digit position.</param>
    ///
-   void setNoValue(size_t rowIndex, Color valueColor = Color::VALUE, char noValueChar = '-')
+   void setValueNone(size_t rowIndex, Color valueColor = Color::VALUE, char noValueChar = '-')
    {
-      setNoValue(rowIndex, (size_t)0, valueColor, noValueChar);
+      setValueNone(rowIndex, (size_t)0, valueColor, noValueChar);
    }
 
    ///

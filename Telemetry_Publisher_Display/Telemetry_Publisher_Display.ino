@@ -24,12 +24,13 @@
 
 #include "Table.h"
 #include "RollingRate.h"
+#include "ScatterPlot.h"
 #include "SerialX.h"
 #include "Stopwatch.h"
 #include "TelemetryClient.h"
 
 // Selects the mock sensor used to generate published test data.
-#define TEST_SENSOR_TYPE SinTestSensor
+#define TEST_SENSOR_TYPE WaveTestSensor
 #include "TestSensor.h"
 
 #include "Timer.h"
@@ -52,13 +53,19 @@ Timer publishTimer(PUBLISH_INTERVAL_MS);
 
 // ----------- Display Items
 constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
-constexpr uint16_t RATE_NUM_SAMPLES = 100;
+constexpr uint16_t RATE_NUM_SAMPLES = 10;
 Stopwatch sw(false);
 RollingRate rate(RATE_NUM_SAMPLES);
 constexpr const char* TOPIC_FORMAT = "                    ";
 constexpr const char* HOST_FORMAT = "                        ";
 constexpr const char* RATE_FORMAT = "###/s";
 Table table(&arduino, 0, 0);
+
+// ----------- Published Value Scatter Plot (bottom of display, 5 second rolling span)
+constexpr unsigned long PLOT_SPAN_MS = 5000UL;
+ScatterPlot valuePlot(&arduino, Rect16{}, "##.#s", "###.###");
+TimedScatterPlotSeries* valueSeries = valuePlot.createTimedSeries(PLOT_SPAN_MS);
+constexpr uint8_t VALUE_SERIES_POINT_SIZE = 1;
 
 ///
 /// <summary>
@@ -135,8 +142,20 @@ void onStarted()
    Url url(client.getUrl().c_str());
    table.setValue(0, client.getTopic(), Color::VALUE);
    table.setValue(1, url.getHost(), Color::VALUE2);
-   table.setNoValue(2);
+   table.setValueNone(2);
    table.draw();
+
+   constexpr int16_t PLOT_TOP_PADDING_PX = 5;
+   int16_t plotTop = table.getRect().bottom() + PLOT_TOP_PADDING_PX;
+   valuePlot.setRect(0, plotTop, arduino.width(), arduino.height() - plotTop);
+   valuePlot.setYAxisFormat(sensor.getFormatStr().c_str());
+   valuePlot.setShowXMinMaxValue(false);
+   valuePlot.setShowXRangeValue(true);
+   valuePlot.setShowYRangeValue(false);
+   valuePlot.setYAxisMode(ScatterPlot::AxisMode::GROW_ONLY);
+   valueSeries->showPoints = true;
+   valueSeries->showLines = false;
+   valuePlot.clear();
 
    rate.reset();
    sw.start();
@@ -146,6 +165,8 @@ void setup()
 {
    SerialX::begin();
    arduino.begin();
+
+   valueSeries->pointSize = VALUE_SERIES_POINT_SIZE;
 
    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
@@ -178,6 +199,7 @@ void loop()
    {
       float value = sensor.get();
       client.setValue(value);
+      valueSeries->add(value);
    }
 
    client.loop();
@@ -189,4 +211,7 @@ void loop()
    }
 
    table.draw();
+
+   valueSeries->updateWindow(millis());
+   valuePlot.draw();
 }
