@@ -32,20 +32,17 @@ namespace SerialX
 			{
 				delay(10);
 			}
-
-			if (Serial)
-			{
-				// The first real print after the wait above can still get silently dropped
-				// (native USB CDC boards need an initial empty println() to prime the
-				// connection; UART-bridge boards need a brief delay while the OS finishes
-				// enumerating the port). Both fixes are cheap and harmless on every board,
-				// so just always do both rather than trying to detect the exact USB mode.
-				delay(1000);
-				Serial.println();
-			}
 		}
 
-		Util::checkTheLastShutdownReason();
+      // The first real print after the wait above can still get silently dropped
+      // (native USB CDC boards need an initial empty println() to prime the
+      // connection; UART-bridge boards need a brief delay while the OS finishes
+      // enumerating the port). Both fixes are cheap and harmless on every board,
+      // so just always do both rather than trying to detect the exact USB mode.
+      delay(1000);
+      Serial.println();
+
+      Util::checkTheLastShutdownReason();
 	}
 
 	/// <summary>
