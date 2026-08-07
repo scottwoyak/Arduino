@@ -21,6 +21,8 @@ protected:
 	uint8_t _level = 255;
 	bool _isOn = false;
 	unsigned long _blinkStart = 0;
+	bool _flashActive = false;
+	unsigned long _flashEnd = 0;
 
 	///
 	/// <summary>
@@ -113,6 +115,23 @@ public:
 
 	///
 	/// <summary>
+	/// Turns the LED on for the specified duration, then automatically turns it back off.
+	/// Non-blocking; the turn-off is handled by loop().
+	/// </summary>
+	/// <param name="durationMs">How long the LED should stay on, in milliseconds</param>
+	/// 
+	void flash(uint16_t durationMs)
+	{
+		_blinkIntervalMs = 0; // no blinking while flashing
+		_isOn = true;
+		_apply();
+
+		_flashActive = true;
+		_flashEnd = millis() + durationMs;
+	}
+
+	///
+	/// <summary>
 	/// Sets the LED brightness level as an integer (0-255).
 	/// </summary>
 	/// <param name="level">Brightness level from 0 (off) to 255 (full brightness)</param>
@@ -140,7 +159,16 @@ public:
 	///
 	virtual void loop()
 	{
-		if (_blinkIntervalMs > 0)
+		if (_flashActive)
+		{
+			if ((long)(millis() - _flashEnd) >= 0)
+			{
+				_flashActive = false;
+				_isOn = false;
+				_apply();
+			}
+		}
+		else if (_blinkIntervalMs > 0)
 		{
 			bool newIsOn = ((millis() - _blinkStart) % (2 * _blinkIntervalMs) < _blinkIntervalMs);
 			if (newIsOn != _isOn)

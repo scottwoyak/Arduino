@@ -1,63 +1,82 @@
-
 //
 // Wind Publisher
 //
+// Reads wind speed from an anemometer and publishes live readings over a WebSocket
+// telemetry connection, while also uploading rolling-averaged enclosure and CPU
+// temperature/humidity readings to InfluxDB on a fixed interval.
+//
+// Behavior:
+// - Connects to WiFi, then opens a WebSocket connection to the telemetry server and
+//   streams live wind speed readings as they're read.
+// - Samples enclosure temperature/humidity and CPU temperature every SENSOR_INTERVAL_MS
+//   and accumulates rolling averages for the next InfluxDB upload.
+// - Prints wind speed and temperature readings to Serial every SERIAL_INTERVAL_MS.
+// - Posts telemetry to InfluxDB every INFLUX_INTERVAL_S seconds.
+// - Resets the device on telemetry disconnect or error.
+//
 
-#include <WiFi.h>
-#include "SerialX.h"
-#include "WiFiSettings.h"
-#include "TelemetryClient.h"
-#include "Url.h"
-#include "WindMeter.h"
-#include "Status.h"
-#include <Timer.h>
+// Uncomment to use local telemetry server instead of remote
+#define TELEMETRY_LOCAL
+
 #include <Wire.h>
-#include "TempSensor.h"
+
+#include "ArduinoBoard.h"
 #include "ESP32TempSensor.h"
 #include "Influx.h"
+#include "SerialX.h"
+#include "Status.h"
+#include "TelemetryClient.h"
+#include "TempSensor.h"
+#include "Timer.h"
+#include "WindMeter.h"
 
-Timer serialTimer(5000);
-Timer sensorTimer(100);
+#include "WiFiSettings.h"
+
+// ----------- Telemetry
 constexpr uint8_t NUM_DECIMALS = 2;
+constexpr uint16_t SERIAL_INTERVAL_MS = 5000;
+constexpr uint16_t SENSOR_INTERVAL_MS = 100;
 TelemetryPublisher client("Wind/Bragg", NUM_DECIMALS);
+Timer serialTimer(SERIAL_INTERVAL_MS);
+Timer sensorTimer(SENSOR_INTERVAL_MS);
 
-// InfluxDB settings
+// ----------- InfluxDB settings
 constexpr auto INFLUX_MEASUREMENT = "Air";
 constexpr auto INFLUX_LOCATION = "Bragg";
-constexpr auto INFLUX_INTERVAL_S = 60;
+constexpr uint16_t INFLUX_INTERVAL_S = 60;
 constexpr uint8_t INFLUX_DECIMALS = 2;
 constexpr size_t INFLUX_ROLLING_SAMPLES = 10;
+constexpr uint8_t INFLUX_BATCH_SIZE = 2; // enclosure + CPU temperature points
 
-// Wind sensor and LED pins
-constexpr auto WIND_SENSOR_PIN = 1;
-constexpr auto WIND_LED_PIN = 6;
+// ----------- Wind sensor and LED pins
+constexpr uint8_t WIND_SENSOR_PIN = 1;
+constexpr uint8_t WIND_LED_PIN = 6;
 
+// ----------- I2C pins (custom configuration)
+constexpr uint8_t I2C_SDA_PIN = 10;
+constexpr uint8_t I2C_SCL_PIN = 11;
 
-// I2C pins (custom configuration)
-constexpr auto I2C_SDA_PIN = 11;
-constexpr auto I2C_SCL_PIN = 12;
+// ----------- Status LED pins
+constexpr uint8_t RED_LED_PIN = 9;
+constexpr uint8_t BLUE_LED_PIN = 8;
+constexpr uint8_t GREEN_LED_PIN = 7;
 
-constexpr auto RED_LED_PIN = 10;
-constexpr auto BLUE_LED_PIN = 9;
-constexpr auto GREEN_LED_PIN = 8;
+// ----------- CPU throttling
+constexpr uint8_t CPU_FREQUENCY_MHZ = 80; // keep things cool
 
-
+Arduino arduino;
 WindMeter wind(WIND_SENSOR_PIN, WIND_LED_PIN);
-
-
 RGBLEDStatus status(RED_LED_PIN, GREEN_LED_PIN, BLUE_LED_PIN);
-//NeoPixelStatus status;
+Influx influx(INFLUX_INTERVAL_S, &status);
 
 TempSensor enclosureTemp;
 ESP32TempSensor cpuTemp;
 
-InfluxDBClient influxClient(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-InfluxPoint enclosureTempPoint(INFLUX_MEASUREMENT, { { "location", INFLUX_LOCATION }, { "item", "Enclosure" } });
-InfluxPoint cpuTempPoint(INFLUX_MEASUREMENT, { { "location", INFLUX_LOCATION }, { "item", "CPU" } });
-InfluxField* enclosureTempField = enclosureTempPoint.addRollingAverageField(INFLUX_ROLLING_SAMPLES, "temperature", INFLUX_DECIMALS);
-InfluxField* enclosureHumidityField = enclosureTempPoint.addRollingAverageField(INFLUX_ROLLING_SAMPLES, "humidity", INFLUX_DECIMALS);
-InfluxField* cpuTempField = cpuTempPoint.addRollingAverageField(INFLUX_ROLLING_SAMPLES, "temperature", INFLUX_DECIMALS);
-Timer influxTimer(INFLUX_INTERVAL_S * 1000);
+InfluxPoint enclosurePoint(INFLUX_MEASUREMENT, { { "location", INFLUX_LOCATION }, { "item", "Enclosure" } });
+InfluxPoint cpuPoint(INFLUX_MEASUREMENT, { { "location", INFLUX_LOCATION }, { "item", "CPU" } });
+InfluxField* enclosureTempField = enclosurePoint.addRollingAverageField(INFLUX_ROLLING_SAMPLES, "temperature", INFLUX_DECIMALS);
+InfluxField* enclosureHumidityField = enclosurePoint.addRollingAverageField(INFLUX_ROLLING_SAMPLES, "humidity", INFLUX_DECIMALS);
+InfluxField* cpuTempField = cpuPoint.addRollingAverageField(INFLUX_ROLLING_SAMPLES, "temperature", INFLUX_DECIMALS);
 
 void setup()
 {
@@ -65,7 +84,7 @@ void setup()
    SerialX::begin();
    Serial.println("Wind Publisher");
 
-
+   arduino.begin();
    status.begin();
    status.setStatus(Status::STARTED);
 
@@ -74,30 +93,38 @@ void setup()
 
    wind.begin();
 
-   // Connect to WiFi
-   status.setStatus(Status::WIFI_CONNECTING);
-   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-   Serial.print("WiFi...");
-   while (WiFi.status() != WL_CONNECTED)
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
+   if (!influx.begin(arduino))
    {
-      Serial.print(".");
-      delay(500);
+      Util::reset();
    }
-   Serial.println("OK");
 
-   status.setStatus(Status::WEB_CONNECTING);
+   influx.client()->setWriteOptions(WriteOptions().batchSize(INFLUX_BATCH_SIZE).bufferSize(2 * INFLUX_BATCH_SIZE));
+
    client.setCallbacks(onConnected, onDisconnected, onSendText, onReceiveText, onError, nullptr);
-   client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
+   arduino.beginClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
 
-   setCpuFrequencyMhz(80); // keep things cool  
+   setCpuFrequencyMhz(CPU_FREQUENCY_MHZ);
 }
 
+///
+/// <summary>
+/// Invoked when the telemetry WebSocket connection is established.
+/// </summary>
+///
 void onConnected()
 {
    Serial.println("Connected");
    status.setStatus(Status::READY);
 }
 
+///
+/// <summary>
+/// Invoked when the telemetry WebSocket connection is lost. Resets the device so it
+/// re-establishes a fresh connection on restart.
+/// </summary>
+/// <param name="reason">Reason for the disconnect, as reported by the telemetry client</param>
+///
 void onDisconnected(std::string reason)
 {
    Serial.println("Disconnected: " + String(reason.c_str()));
@@ -105,6 +132,13 @@ void onDisconnected(std::string reason)
    Util::reset();
 }
 
+///
+/// <summary>
+/// Invoked when the telemetry client reports an error. Resets the device so it can
+/// attempt to recover with a fresh connection.
+/// </summary>
+/// <param name="msg">Error message reported by the telemetry client</param>
+///
 void onError(std::string msg)
 {
    Serial.print("Error: ");
@@ -113,17 +147,36 @@ void onError(std::string msg)
    Util::reset();
 }
 
+///
+/// <summary>
+/// Replaces all occurrences of a substring within a string, in place.
+/// </summary>
+/// <param name="str">String to modify</param>
+/// <param name="from">Substring to search for</param>
+/// <param name="to">Replacement substring</param>
+///
 void replaceAll(std::string& str, const std::string& from, const std::string& to)
 {
-   if (from.empty()) return;
-   size_t start_pos = 0;
-   while ((start_pos = str.find(from, start_pos)) != std::string::npos)
+   if (from.empty())
    {
-      str.replace(start_pos, from.length(), to);
-      start_pos += to.length(); // Move past the new replacement
+      return;
+   }
+
+   size_t startPos = 0;
+   while ((startPos = str.find(from, startPos)) != std::string::npos)
+   {
+      str.replace(startPos, from.length(), to);
+      startPos += to.length(); // Move past the new replacement
    }
 }
 
+///
+/// <summary>
+/// Invoked when the telemetry client sends a text message. Logs the message to Serial
+/// with escaped newlines for readability.
+/// </summary>
+/// <param name="msg">The text message that was sent</param>
+///
 void onSendText(std::string msg)
 {
    Serial.print(">>> ");
@@ -132,6 +185,13 @@ void onSendText(std::string msg)
    Serial.println(msg.c_str());
 }
 
+///
+/// <summary>
+/// Invoked when the telemetry client receives a text message. Logs the message to Serial
+/// with escaped newlines for readability.
+/// </summary>
+/// <param name="msg">The text message that was received</param>
+///
 void onReceiveText(std::string msg)
 {
    Serial.print("<<< ");
@@ -155,7 +215,6 @@ void loop()
 
    if (sensorTimer.ready())
    {
-
       enclosureTempField->set(enclosureTemp.readTemperatureF());
       enclosureHumidityField->set(enclosureTemp.readHumidity());
       cpuTempField->set(cpuTemp.readTemperatureF());
@@ -167,18 +226,31 @@ void loop()
       Serial.print(wind.getSpeed());
       Serial.println(" m/s");
 
-      Serial.print("Enclosure temp: "); 
+      Serial.print("Enclosure temp: ");
       Serial.print(enclosureTemp.readTemperatureF());
       Serial.println(" °F");
 
-      Serial.print("CPU temp: "); 
+      Serial.print("Enclosure humidity: ");
+      Serial.print(enclosureTemp.readHumidity());
+      Serial.println(" %");
+
+      Serial.print("CPU temp: ");
       Serial.print(cpuTemp.readTemperatureF());
       Serial.println(" °F");
    }
 
-   if (client.isStarted() && influxTimer.ready())
+   if (client.isStarted() && influx.ready())
    {
-      enclosureTempPoint.post(&influxClient, true);
-      cpuTempPoint.post(&influxClient, true);
+      enclosurePoint.post(influx.client(), true);
+      cpuPoint.post(influx.client(), true);
+
+      // Both points above were only queued into the write buffer (see INFLUX_BATCH_SIZE),
+      // so flush now to post them together in a single HTTP request sharing one timestamp.
+      if (!influx.client()->flushBuffer())
+      {
+         Serial.print("InfluxDB flush failed: ");
+         Serial.println(influx.client()->getLastErrorMessage());
+      }
    }
 }
+

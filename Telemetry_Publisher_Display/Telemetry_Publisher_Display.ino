@@ -14,18 +14,21 @@
 #define TELEMETRY_LOCAL
 
 #include <Arduino.h>
-#include <WiFi.h>
 
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
+#ifndef ARDUINO_LED_SUPPORTED
+#error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
+#endif
 
 #include "Table.h"
 #include "RollingRate.h"
 #include "ScatterPlot.h"
 #include "SerialX.h"
+#include "Status.h"
 #include "Stopwatch.h"
 #include "TelemetryClient.h"
 
@@ -46,6 +49,7 @@ TelemetryPublisher client(TELEMETRY_TOPIC, TELEMETRY_DECIMAL_PLACES);
 
 // ----------- The Board
 Arduino arduino;
+NeoPixelStatus status(&arduino.neoPixel);
 
 // ----------- Sensor
 TestSensor sensor;
@@ -124,6 +128,7 @@ void onError(std::string msg)
 ///
 void onStarted()
 {
+   status.setStatus(Status::READY);
    arduino.printlnR("OK", Color::VALUE);
    delay(1000);
 
@@ -165,30 +170,18 @@ void setup()
 {
    SerialX::begin();
    arduino.begin();
+   status.begin();
+   status.setStatus(Status::STARTED);
 
    valueSeries->pointSize = VALUE_SERIES_POINT_SIZE;
 
-   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+   arduino.printHeader("Initializing");
 
-   arduino.setTextSize(2);
-   arduino.setCursorY(-arduino.charH());
-   arduino.println("Publisher", Color::GRAY);
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
 
-   arduino.setCursor(0, 0);
-   arduino.println("Initializing", Color::HEADING2);
-   arduino.moveCursorY(4);
-
-   arduino.print("WiFi...", Color::LABEL);
-   while (WiFi.status() != WL_CONNECTED)
-   {
-      arduino.print(".", Color::LABEL);
-   }
-   arduino.printlnR("OK", Color::VALUE);
-
-   arduino.print("WebSocket...", Color::LABEL);
-
+   status.setStatus(Status::WEB_CONNECTING);
    client.setCallbacks(onConnected, onDisconnected, nullptr, onText, onError, onStarted);
-   client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
+   arduino.beginClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); });
 
    sensor.begin();
 }

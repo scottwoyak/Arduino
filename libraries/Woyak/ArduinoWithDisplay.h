@@ -24,6 +24,13 @@ enum DisplayRotation
 
 ///
 /// <summary>
+/// Text size used for the "Initializing" header printed by printHeader().
+/// </summary>
+///
+constexpr uint8_t TEXT_SIZE_HEADER = 2;
+
+///
+/// <summary>
 /// Arduino platform with integrated display support for graphics and text rendering.
 /// </summary>
 ///
@@ -32,22 +39,12 @@ class ArduinoWithDisplay : public ArduinoBase
 private:
    void _print(const char* str, Color textColor, Color backgroundColor)
    {
-      if (echoToSerial)
-      {
-         Serial.print(str);
-      }
-
       display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
       display.print(str);
    }
 
    void _println(const char* str, Color textColor, Color backgroundColor)
    {
-      if (echoToSerial)
-      {
-         Serial.println(str);
-      }
-
       display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
       display.println(str);
    }
@@ -64,6 +61,13 @@ private:
       }
    }
 
+   void _printD(const std::string& str, const Format& format, Color textColor, Color backgroundColor)
+   {
+      int16_t offsetPixels = (int16_t)(format.decimalOffset() * charW());
+      setCursorX(display.width() / 2 - offsetPixels);
+      print(str.c_str(), textColor, backgroundColor);
+   }
+
 public:
    ///
    /// <summary>
@@ -71,13 +75,6 @@ public:
    /// </summary>
    ///
    LGFX display;
-
-   ///
-   /// <summary>
-   /// If true, all text output is echoed to the serial port.
-   /// </summary>
-   ///
-   bool echoToSerial = false;
 
    ///
    /// <summary>
@@ -141,6 +138,22 @@ public:
       display.setTextSize(2);
       display.setTextWrap(false);
       display.setBrightness(255);
+   }
+
+   ///
+   /// <summary>
+   /// Initializes the display (as begin()) and then connects to WiFi, printing consistently
+   /// formatted "WiFi..." status text via ArduinoBase::initWifi. Use this overload instead of
+   /// begin() when the sketch wants the standard WiFi connect status text.
+   /// </summary>
+   /// <param name="ssid">The WiFi network name.</param>
+   /// <param name="password">The WiFi network password.</param>
+   /// <param name="status">Optional status indicator updated to WIFI_CONNECTING while connecting.</param>
+   ///
+   void begin(const char* ssid, const char* password, IStatus* status = nullptr)
+   {
+      begin();
+      initWifi(ssid, password, status);
    }
 
    ///
@@ -261,6 +274,18 @@ public:
    {
       display.fillScreen((uint16_t)color);
       display.setCursor(0, 0);
+   }
+
+   ///
+   /// <summary>
+   /// Clears a rectangular region of the display by filling it with the specified color.
+   /// </summary>
+   /// <param name="rect">The rectangle to clear.</param>
+   /// <param name="color">The fill color; defaults to black.</param>
+   ///
+   void clear(Rect16 rect, Color color = Color::BLACK)
+   {
+      display.fillRect(rect.x, rect.y, rect.width, rect.height, (uint16_t)color);
    }
 
    ///
@@ -676,26 +701,22 @@ public:
 
    ///
    /// <summary>
-   /// Prints a newline and optionally echoes to serial.
-   /// </summary>
+   /// Prints a newline
+   ///   /// </summary>
    ///
    void println()
    {
-      if (echoToSerial)
-      {
-         Serial.println();
-      }
       display.println();
    }
 
    //
    // ----------- const char* variants
    //
-   void print(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void print(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK) override
    {
       _print(str, textColor, backgroundColor);
    }
-   void println(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void println(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK) override
    {
       _println(str, textColor, backgroundColor);
    }
@@ -715,10 +736,19 @@ public:
       setCursorX(-len);
       print(str, textColor, backgroundColor);
    }
-   void printlnR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   void printlnR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK) override
    {
       printR(str, textColor, backgroundColor);
       println();
+   }
+   void printHeader(const char* str, Color textColor = Color::HEADING) override
+   {
+      Serial.println(str);
+
+      clearDisplay();
+      setTextSize(TEXT_SIZE_HEADER);
+      println(str, textColor);
+      moveCursorY(charH() / 2);
    }
    void printC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
@@ -1038,6 +1068,26 @@ public:
    {
       std::string str = format.toNoValueString();
       printlnC(str, textColor, backgroundColor);
+   }
+   void printD(double value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      std::string str = format.toString(value);
+      _printD(str, format, textColor, backgroundColor);
+   }
+   void printlnD(double value, const Format& format, Color textColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      printD(value, format, textColor, backgroundColor);
+      println();
+   }
+   void printD(const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      std::string str = format.toNoValueString();
+      _printD(str, format, textColor, backgroundColor);
+   }
+   void printlnD(const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      printD(format, textColor, backgroundColor);
+      println();
    }
    void print(const char* label, float value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
    {

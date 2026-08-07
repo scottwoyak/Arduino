@@ -2,6 +2,7 @@
 
 #include "ArduinoWithDisplay.h"
 #include "Button.h"
+#include "LED.h"
 #include <Adafruit_SH110X.h>
 #include <FlashStorage.h>
 
@@ -136,6 +137,7 @@ public:
    Button buttonB;
    Button buttonC;
    PreferencesFlash preferences;
+   LED led{ LED_BUILTIN };
 
    Feather_M0_OLED() : ArduinoWithDisplay(&display, &display), display(64, 128, &Wire), buttonA(9), buttonB(6), buttonC(5)
    {
@@ -149,6 +151,7 @@ public:
       buttonA.begin();
       buttonB.begin();
       buttonC.begin();
+      led.begin();
 
       display.begin(0x3C, true);
       display.setTextColor((uint16_t)Color::WHITE);

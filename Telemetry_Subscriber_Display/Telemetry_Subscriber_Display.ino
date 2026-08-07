@@ -1,9 +1,15 @@
 //
-// Telemetry data subscriber with display feedback.
+// Telemetry Subscriber Display
 //
-// Subscribes to a telemetry topic and displays received data along with
-// query rate (WebSocket message rate) and change rate (data update frequency).
-// Implements callback-based event handling for connection lifecycle and data flow.
+// Subscribes to a telemetry topic over a WebSocket connection and displays the topic,
+// host, and query rate (how often values can be retrieved from the server) on the
+// display.
+//
+// Behavior:
+// - Connects to WiFi, then opens a WebSocket connection to the telemetry server and
+//   subscribes to the configured topic.
+// - Shows a reconnect countdown with the disconnect reason if the connection drops.
+// - Resets the device on telemetry error.
 //
 // Uncomment TELEMETRY_LOCAL to use a local telemetry server instead of the remote.
 // Hardware: Feather ESP32 with WiFi and TFT display.
@@ -13,7 +19,6 @@
 #define TELEMETRY_LOCAL
 
 #include <Arduino.h>
-#include <WiFi.h>
 #include <cmath>
 
 #include "ArduinoBoard.h"
@@ -21,11 +26,15 @@
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
+#ifndef ARDUINO_LED_SUPPORTED
+#error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
+#endif
 
 #include "Table.h"
 #include "DisplayValue.h"
-#include "RollingRate.h"
+#include "TimedRate.h"
 #include "SerialX.h"
+#include "Status.h"
 #include "Stopwatch.h"
 #include "TelemetryClient.h"
 #include "Timer.h"
@@ -33,19 +42,19 @@
 
 #include "WiFiSettings.h"
 
-constexpr const char* TELEMETRY_TOPIC = "Test";
+constexpr const char* TELEMETRY_TOPIC = "Tests/Sin1";
+// constexpr const char* TELEMETRY_TOPIC = "Test";
 // constexpr const char* TELEMETRY_TOPIC = "Waves/Lake";
 
 constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
-constexpr uint16_t RATE_NUM_SAMPLES = 100;
 constexpr float RECONNECT_COUNTDOWN_SECS = 5.0f;
 
 Arduino arduino;
+NeoPixelStatus status(&arduino.neoPixel);
 Stopwatch sw(false);
 TimerSecs reconnectTimer(RECONNECT_COUNTDOWN_SECS);
 
-RollingRate queryRate(RATE_NUM_SAMPLES);
-RollingRate changeRate(RATE_NUM_SAMPLES);
+TimedRate rate(5000);
 
 TelemetrySubscriber client(TELEMETRY_TOPIC);
 
@@ -59,7 +68,6 @@ constexpr uint8_t DISCONNECT_TEXT_SIZE = 2;
 DisplayValue reasonLine(&arduino, Format(32, Format::Alignment::LEFT), DISCONNECT_TEXT_SIZE, DisplayValue::Alignment::LEFT);
 DisplayValue statusLine(&arduino, Format(32, Format::Alignment::LEFT), DISCONNECT_TEXT_SIZE, DisplayValue::Alignment::LEFT);
 
-float lastValue = NAN;
 bool disconnected = false;
 bool started = false;
 uint8_t lastCountdownSecs = 0;
@@ -90,7 +98,6 @@ void onDisconnected(std::string reason)
    Serial.println("Telemetry: WebSocket Disconnected: " + String(reason.c_str()));
    disconnected = true;
    started = false;
-   lastValue = NAN;
    disconnectReason = reason;
    lastCountdownSecs = 0;
    reconnectTimer.reset();
@@ -99,17 +106,16 @@ void onDisconnected(std::string reason)
 ///
 /// <summary>
 /// Called when a telemetry client error occurs (e.g. the topic hasn't been released yet
-/// from a prior connection). Remembers the error so it can be shown above the reconnect
-/// countdown; TelemetryClient automatically retries the start/subscribe request after a
-/// short delay, so the device is not reset here.
+/// from a prior connection). Resets the device after a short delay so it can attempt a
+/// fresh connection/handshake.
 /// </summary>
 /// <param name="msg">Error message to display</param>
 ///
 void onError(std::string msg)
 {
    lastErrorMsg = msg;
-   lastCountdownSecs = 0;
    Serial.println("Telemetry Error: " + String(msg.c_str()));
+   Util::reset(10);
 }
 
 ///
@@ -119,6 +125,7 @@ void onError(std::string msg)
 ///
 void onStarted()
 {
+   status.setStatus(Status::READY);
    arduino.printlnR("OK", Color::VALUE);
    delay(1000);
 
@@ -134,14 +141,12 @@ void onStarted()
    table.setPosition(0, arduino.getCursor().y);
    table.addRow("Topic", TOPIC_FORMAT);
    table.addRow("Host", HOST_FORMAT, Color::VALUE2);
-   table.addRow("Query Rate", RATE_FORMAT);
-   table.addRow("Change Rate", RATE_FORMAT);
+   table.addRow("Rate", RATE_FORMAT);
 
    Url url(client.getUrl().c_str());
    table.setValue(0, client.getTopic(), Color::VALUE);
    table.setValue(1, url.getHost(), Color::VALUE2);
    table.setValueNone(2);
-   table.setValueNone(3);
    table.draw();
 
    sw.start();
@@ -156,7 +161,7 @@ void onStarted()
 ///
 void onReceiveText(std::string msg)
 {
-   queryRate.tick();
+   rate.tick();
 }
 
 ///
@@ -187,34 +192,18 @@ void setup()
 {
    SerialX::begin();
    arduino.begin();
+   status.begin();
+   status.setStatus(Status::STARTED);
 
-   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-   arduino.setTextSize(2);
-   arduino.setCursorY(-arduino.charH());
-   arduino.echoToSerial = true;
-   arduino.println("Subscriber", Color::GRAY);
-
-   arduino.println("Initializing", Color::HEADING2);
-   arduino.moveCursorY(4);
-
-   arduino.print("WiFi...", Color::BLUE);
-   while (WiFi.status() != WL_CONNECTED)
-   {
-      arduino.print(".", Color::BLUE);
-   }
-   arduino.printlnR("OK", Color::VALUE);
-   arduino.moveCursorY(1);
-
-   arduino.print("WebSocket...", Color::LIME);
-
+   arduino.printHeader("Initializing");
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
    arduino.setTextSize(DISCONNECT_TEXT_SIZE);
    int16_t reasonY = arduino.height() / 3;
    reasonLine.setPosition(0, reasonY);
    statusLine.setPosition(0, reasonY + reasonLine.height() + 4);
 
    client.setCallbacks(onConnected, onDisconnected, nullptr, onReceiveText, onError, onStarted);
-   client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
+   arduino.beginClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
 }
 
 void loop()
@@ -228,13 +217,6 @@ void loop()
       return;
    }
 
-   if (client.isStartRetryPending())
-   {
-      uint8_t secsLeft = static_cast<uint8_t>(ceil(client.getStartRetryRemainingSecs()));
-      drawReconnectCountdown(lastErrorMsg, secsLeft);
-      return;
-   }
-
    if (!started)
    {
       // waiting for the subscribe acknowledgement from the server; don't draw
@@ -242,17 +224,9 @@ void loop()
       return;
    }
 
-   if (!std::isnan(client.getValue()) && client.getValue() != lastValue)
-   {
-      lastValue = client.getValue();
-      Serial.println(lastValue);
-      changeRate.tick();
-   }
-
    if (sw.elapsedMillis() > RATE_UPDATE_INTERVAL_MS)
    {
-      table.setValue(2, queryRate.get());
-      table.setValue(3, changeRate.get());
+      table.setValue(2, rate.get());
       sw.reset();
    }
 

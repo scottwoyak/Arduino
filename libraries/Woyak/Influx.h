@@ -3,10 +3,13 @@
 #include <InfluxDbClient.h>
 #include <InfluxDbCloud.h>
 #include <cmath>
+#include "ArduinoBase.h"
 #include "RollingAverage.h"
 #include "Status.h"
 #include "TimedAverage.h"
 #include "Timer.h"
+#include "TimeSync.h"
+#include "WiFiSettings.h"
 #include "WiFiX.h"
 
 // Display-based methods (and ArduinoWithDisplay.h, which requires a board-specific
@@ -20,109 +23,98 @@ constexpr auto TZ_INFO = "UTC-5";
 
 ///
 /// <summary>
-/// InfluxDB integration service that manages WiFi connectivity and Influx initialization.
+/// InfluxDB integration service that manages Influx initialization. WiFi connectivity is
+/// owned by the ArduinoBase instance passed in to the begin(...)/connectWiFi() methods.
 /// </summary>
 ///
 class Influx
 {
 private:
-	/// <summary>WiFi connection manager initialized with the access point credentials.</summary>
-	WiFiX _wifiX;
-
 	/// <summary>InfluxDB client used for time sync validation and data writes.</summary>
-	InfluxDBClient* _client;
+	InfluxDBClient _client;
 
 	/// <summary>Optional status LED indicator; nullptr if not used.</summary>
 	IStatus* _status;
 
+	/// <summary>Timer controlling how often uploads should occur, per ready().</summary>
+	Timer _uploadTimer;
+
 public:
 	/// <summary>
-	/// Creates an Influx service with credentials, client, and optional status indicator.
+	/// Creates an Influx service with an internally-owned InfluxDB client and optional status
+	/// indicator. The client connection parameters default to the values in WiFiSettings.h.
 	/// </summary>
-	/// <param name="wifiSSID">WiFi network SSID</param>
-	/// <param name="wifiPassword">WiFi network password</param>
-	/// <param name="client">InfluxDB client instance</param>
+	/// <param name="uploadIntervalSecs">Seconds between uploads, as reported by ready()</param>
 	/// <param name="status">Optional status indicator instance</param>
-	Influx(const char* wifiSSID, const char* wifiPassword, InfluxDBClient* client, IStatus* status = nullptr)
-		: _wifiX(wifiSSID, wifiPassword)
+	/// <param name="url">InfluxDB server URL</param>
+	/// <param name="org">InfluxDB organization</param>
+	/// <param name="bucket">InfluxDB bucket</param>
+	/// <param name="token">InfluxDB access token</param>
+	/// <param name="certInfo">Server certificate info</param>
+	Influx(uint16_t uploadIntervalSecs,
+			 IStatus* status = nullptr,
+			 const char* url = INFLUXDB_URL,
+			 const char* org = INFLUXDB_ORG,
+			 const char* bucket = INFLUXDB_BUCKET,
+			 const char* token = INFLUXDB_TOKEN,
+			 const char* certInfo = InfluxDbCloud2CACert) :
+		_client(url, org, bucket, token, certInfo),
+		_uploadTimer(uploadIntervalSecs * 1000UL)
 	{
-		_client = client;
 		_status = status;
 	}
 
 	/// <summary>
-	/// Attempts a WiFi connection using configured credentials.
+	/// Returns the internally-owned InfluxDB client, e.g. for InfluxPoint::post().
 	/// </summary>
-	/// <returns>True when connected, otherwise false</returns>
-	bool connectWiFi()
+	/// <returns>Pointer to the InfluxDB client</returns>
+	InfluxDBClient* client()
 	{
-		if (WiFi.status() == WL_CONNECTED)
-		{
-			return true;
-		}
-
-		if (_status)
-		{
-			_status->setStatus(Status::WIFI_CONNECTING);
-		}
-
-		bool isConnected = _wifiX.connect();
-		if (_status && isConnected)
-		{
-			_status->setStatus(Status::READY);
-		}
-
-		return isConnected;
+		return &_client;
 	}
 
 	/// <summary>
-	/// Ensures WiFi is connected, reconnecting when needed.
+	/// Returns true when the upload interval has elapsed, indicating it's time to post data.
 	/// </summary>
-	/// <returns>True when connected, otherwise false</returns>
-	bool ensureWiFiConnected()
+	/// <returns>True if an upload should occur now</returns>
+	bool ready()
 	{
-		if (WiFi.status() == WL_CONNECTED)
-		{
-			return true;
-		}
-
-		return connectWiFi();
+		return _uploadTimer.ready();
 	}
 
 	#ifdef ARDUINO_DISPLAY_SUPPORTED
 	/// <summary>
-	/// Initializes WiFi/time/Influx connection with display progress output.
+	/// Initializes time/Influx connection with display progress output. Assumes WiFi has
+	/// already been initialized on the given board (e.g. via arduino->initWifi(...)).
 	/// </summary>
 	/// <param name="arduino">Display-capable Arduino wrapper used for progress UI</param>
+	/// <param name="printDiagnostics">True to print time sync progress/result to Serial</param>
 	/// <returns>True when initialization succeeds</returns>
-	bool begin(ArduinoWithDisplay* arduino)
+	bool begin(ArduinoWithDisplay* arduino, bool printDiagnostics = false)
 	{
-		arduino->print("WiFi... ", Color::LABEL);
-		if (!connectWiFi())
+		if (WiFi.status() != WL_CONNECTED)
 		{
-			arduino->printlnR("FAILED", Color::RED);
 			arduino->println(String("WiFi connect failed: ") + WiFiX::statusString(), Color::RED);
 			return false;
 		}
-		arduino->printlnR("ok", Color::VALUE);
 
 		if (_status)
 		{
 			_status->setStatus(Status::WEB_CONNECTING);
 		}
 
-		bool oldEcho = arduino->echoToSerial;
-		arduino->echoToSerial = false;
 		arduino->print("Syncing Time... ", Color::LABEL);
-		timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
+		TimeSync::sync(TZ_INFO, "pool.ntp.org", "time.nis.gov", nullptr, printDiagnostics);
 		arduino->printlnR("ok", Color::VALUE);
-		arduino->echoToSerial = oldEcho;
 
 		arduino->print("Influx... ", Color::LABEL);
-		if (_client->validateConnection())
+		if (_client.validateConnection())
 		{
 			arduino->printlnR("ok", Color::VALUE);
-			Serial.println(_client->getServerUrl());
+			if (printDiagnostics)
+			{
+				Serial.println(_client.getServerUrl());
+			}
 			if (_status)
 			{
 				_status->setStatus(Status::READY);
@@ -131,41 +123,44 @@ public:
 		}
 
 		arduino->printlnR("FAILED", Color::RED);
-		arduino->println(_client->getLastErrorMessage(), Color::RED);
+		arduino->println(_client.getLastErrorMessage(), Color::RED);
 		return false;
 	}
 #endif
 
 	/// <summary>
-	/// Initializes WiFi/time/Influx connection with Serial progress output.
+	/// Initializes time/Influx connection, printing progress through the given ArduinoBase
+	/// (which prints to Serial and, on display-capable boards, the display as well). Assumes
+	/// WiFi has already been initialized on the given board (e.g. via arduino.initWifi(...)).
 	/// </summary>
+	/// <param name="arduino">ArduinoBase instance that receives progress text</param>
+	/// <param name="printDiagnostics">True to print time sync progress/result to Serial</param>
 	/// <returns>True when initialization succeeds</returns>
-	bool begin()
+	bool begin(ArduinoBase& arduino, bool printDiagnostics = false)
 	{
-		Serial.println("WiFi... ");
-		if (!connectWiFi())
+		if (WiFi.status() != WL_CONNECTED)
 		{
-			Serial.println("FAILED");
-			Serial.print("WiFi connect failed: ");
-			Serial.println(WiFiX::statusString());
+			arduino.println((String("WiFi connect failed: ") + WiFiX::statusString()).c_str(), Color::RED);
 			return false;
 		}
-		Serial.println("ok");
 
 		if (_status)
 		{
 			_status->setStatus(Status::WEB_CONNECTING);
 		}
 
-		Serial.print("Syncing Time... ");
-		timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
-		Serial.println("ok");
+		arduino.print("Syncing Time...", Color::LABEL);
+		TimeSync::sync(TZ_INFO, "pool.ntp.org", "time.nis.gov", nullptr, printDiagnostics);
+		arduino.printlnR("OK", Color::VALUE);
 
-		Serial.print("Influx... ");
-		if (_client->validateConnection())
+		arduino.print("Influx...", Color::LABEL);
+		if (_client.validateConnection())
 		{
-			Serial.println("ok");
-			Serial.println(_client->getServerUrl());
+			arduino.printlnR("OK", Color::VALUE);
+			if (printDiagnostics)
+			{
+				Serial.println(_client.getServerUrl());
+			}
 			if (_status)
 			{
 				_status->setStatus(Status::READY);
@@ -173,8 +168,8 @@ public:
 			return true;
 		}
 
-		Serial.println("FAILED");
-		Serial.println(_client->getLastErrorMessage());
+		arduino.printlnR("FAILED", Color::RED);
+		arduino.println(_client.getLastErrorMessage().c_str(), Color::RED);
 		return false;
 	}
 
@@ -186,7 +181,6 @@ public:
 #ifdef ARDUINO_DISPLAY_SUPPORTED
 	static void startInit(ArduinoWithDisplay* arduino)
 	{
-		arduino->echoToSerial = true;
 		arduino->clearDisplay();
 		arduino->setTextSize(2);
 		arduino->println("Initializing", Color::HEADING);
@@ -201,7 +195,6 @@ public:
 	static void endInit(ArduinoWithDisplay* arduino)
 	{
 		arduino->clearDisplay();
-		arduino->echoToSerial = false;
 	}
 #endif
 };

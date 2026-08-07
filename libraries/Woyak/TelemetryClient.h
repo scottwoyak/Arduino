@@ -25,14 +25,10 @@ using TelemetryOnStartedFunc = std::function<void()>;
 class TelemetryClient
 {
 private:
-   static constexpr unsigned long START_RETRY_INTERVAL_MS = 10000;
-
    std::string _serverVersion = "";
    std::string _status = "";
    std::string _topic;
    bool _started = false;
-   bool _startRetryPending = false;
-   unsigned long _startRetryAtMs = 0;
 
    // callbacks for our user
    TelemetryOnConnectedFunc _onConnectedFunc = nullptr;
@@ -143,12 +139,6 @@ protected:
          _status.clear();
          _started = false;
 
-         // the underlying WebSocketsClient already reconnects and re-runs the
-         // handshake on its own; cancel any pending start retry so it doesn't
-         // also fire later and send a duplicate start/subscribe request on the
-         // new connection
-         _startRetryPending = false;
-
          _onDisconnected(reason);
          if (_onDisconnectedFunc)
          {
@@ -158,17 +148,15 @@ protected:
       break;
 
       case WStype_CONNECTED:
-         // don't immediately use the freshly (re)established connection; the
-         // underlying WebSocketsClient reconnects quickly on its own, but we
-         // want to wait before sending the start/publish/subscribe handshake
-         // so repeated failures (e.g. topic still in use) don't hammer the
-         // server. The actual handshake send (_onConnected()) is deferred to
-         // loop() via the same _startRetryPending mechanism used for
-         // handshake-error retries; the user's onConnected callback is fired
-         // there too, so the UI keeps showing the retry countdown/error until
-         // the handshake is actually attempted.
-         _startRetryPending = true;
-         _startRetryAtMs = millis() + START_RETRY_INTERVAL_MS;
+         // send the start/publish/subscribe handshake immediately; if it fails
+         // (e.g. topic still in use), the caller's onError callback is responsible
+         // for deciding how to recover (e.g. resetting the device after a delay).
+         _status.clear();
+         _onConnected();
+         if (_onConnectedFunc)
+         {
+            _onConnectedFunc();
+         }
          break;
 
       case WStype_TEXT:
@@ -197,10 +185,6 @@ protected:
                {
                   _onErrorFunc(str);
                }
-
-               // wait a bit, then retry the start request rather than giving up
-               _startRetryPending = true;
-               _startRetryAtMs = millis() + START_RETRY_INTERVAL_MS;
             }
             else
             {
@@ -321,36 +305,6 @@ public:
 
    ///
    /// <summary>
-   /// Gets whether a start/subscribe handshake retry is currently pending after a
-   /// server error.
-   /// </summary>
-   /// <returns>True if a start retry is scheduled; false otherwise.</returns>
-   ///
-   bool isStartRetryPending() const
-   {
-      return _startRetryPending;
-   }
-
-   ///
-   /// <summary>
-   /// Gets the number of seconds remaining before the pending start/subscribe retry
-   /// fires.
-   /// </summary>
-   /// <returns>Seconds remaining, or 0 if no retry is pending or it is already due.</returns>
-   ///
-   float getStartRetryRemainingSecs() const
-   {
-      if (!_startRetryPending)
-      {
-         return 0.0f;
-      }
-
-      long remainingMs = (long)_startRetryAtMs - (long)millis();
-      return remainingMs > 0 ? remainingMs / 1000.0f : 0.0f;
-   }
-
-   ///
-   /// <summary>
    /// Connects to the telemetry server over an unencrypted WebSocket connection.
    /// </summary>
    /// <param name="webSocketServerHost">The server hostname or IP address.</param>
@@ -379,23 +333,12 @@ public:
 
    ///
    /// <summary>
-   /// Services the WebSocket connection and any pending start-retry. Must be called
-   /// regularly from the sketch's loop().
+   /// Services the WebSocket connection. Must be called regularly from the sketch's
+   /// loop().
    /// </summary>
    ///
    void loop()
    {
-      if (_startRetryPending && millis() >= _startRetryAtMs)
-      {
-         _startRetryPending = false;
-         _status.clear();
-         _onConnected();
-         if (_onConnectedFunc)
-         {
-            _onConnectedFunc();
-         }
-      }
-
       _onLoop();
       webSocket.loop();
    }

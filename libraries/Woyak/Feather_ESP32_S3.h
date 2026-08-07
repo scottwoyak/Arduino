@@ -14,6 +14,7 @@ public:
    Button buttonA;
    Preferences preferences;
    NeoPixelLED neoPixel;
+   LED led{ LED_BUILTIN };
 
    Feather_ESP32_S3() : ArduinoWithDisplay(), buttonA(0)
    {
@@ -26,6 +27,7 @@ public:
 
       buttonA.begin();
       neoPixel.begin();
+      led.begin();
    }
 
    void displayOn()

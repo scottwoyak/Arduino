@@ -97,7 +97,7 @@
 When the user asks for 'cleanup' (with no other file specified), apply it to the currently displayed/open file from IDE context (provided in the `IDESTATE CONTEXT`). A cleanup pass means bringing the file in line with all the conventions, plus the rules below. **CRITICAL: You MUST read and use the `cleanup.md` file located in the root of the workspace as your definitive step-by-step checklist during every cleanup pass to ensure no rules are missed.** Always read `.editorconfig` as part of a cleanup pass and apply its settings (indentation, brace placement, empty-bodied function braces, etc.) as the authoritative source for formatting; this document intentionally defers to `.editorconfig` for those specifics rather than duplicating them, and focuses instead on naming, documentation, and code-organization conventions.
 
 ### Non-Negotiable Preservation Rules
-- Preserve inline comments and commented-out code exactly as-is; do not remove or "clean up" commented-out code during a cleanup pass, even if it looks unused or obsolete.
+- Preserve inline comments and commented-out code exactly as-is; do not remove or "clean up" commented-out code during a cleanup pass, even if it looks unused or obsolete. In `Wind_Publisher.ino` (and similar sketches), preserve the commented-out `#define TELEMETRY_LOCAL` toggle line during cleanup passes; it's intentionally kept as a switchable comment the user re-enables from time to time, not dead code to remove.
 - Don't break existing functionality.
 - Do not automatically build or run tests as part of cleanup (see Environment & Workflow); ask the user to compile/test and report back if verification is needed.
 

@@ -106,6 +106,15 @@ public:
    }
 
    /// <summary>
+   /// Returns whether WiFi is currently connected.
+   /// </summary>
+   /// <returns>True when connected; otherwise false</returns>
+   bool isConnected() const
+   {
+      return WiFi.status() == WL_CONNECTED;
+   }
+
+   /// <summary>
    /// Ensures WiFi is connected, reconnecting if needed.
    /// </summary>
    /// <param name="timeoutMs">Maximum time to wait for reconnection in milliseconds</param>

@@ -10,7 +10,7 @@
 //   on the display at large text size, with location and version in the header/footer.
 // - Verifies Wi-Fi connectivity each loop and resets the device if it cannot reconnect.
 // - Posts telemetry to InfluxDB every INFLUX_INTERVAL_S seconds.
-//re
+//
 // Failure handling:
 // - Sensor initialization failure triggers a device reset after RESET_DELAY_S seconds.
 // - Influx initialization failure triggers a device reset after RESET_DELAY_S seconds.
@@ -44,17 +44,17 @@
 
 #include "WiFiSettings.h"
 
-constexpr const char* location = "StudioCloset";
-constexpr auto version = "v1.0";
+constexpr const char* LOCATION = "Studio";
+constexpr auto VERSION = "v1.0";
 constexpr auto INFLUX_MEASUREMENT = "Air";
-constexpr auto INFLUX_INTERVAL_S = 15;
-constexpr auto SENSOR_INTERVAL_MS = 500;
-constexpr auto WATCHDOG_INTERVAL_MS = 60 * 1000;
-constexpr auto RESET_DELAY_S = 10;
-constexpr auto MAX_CHARS = 8;
-constexpr auto SPACING = 8;
-constexpr auto SENSOR_POST_FAILURE_SLEEP_S = 60;
+constexpr uint8_t INFLUX_INTERVAL_S = 15;
+constexpr uint16_t SENSOR_INTERVAL_MS = 500;
+constexpr uint8_t WATCHDOG_INTERVAL_S = 60;
+constexpr uint8_t RESET_DELAY_S = 10;
+constexpr uint8_t SPACING = 8;
+constexpr uint8_t SENSOR_POST_FAILURE_SLEEP_S = 60;
 constexpr uint8_t TEXT_SIZE_SMALL = 2;
+constexpr uint8_t VALUE_TEXT_SIZE = 4;
 constexpr uint8_t INFLUX_TEMP_DECIMAL_PLACES = 3;
 constexpr uint8_t INFLUX_HUMIDITY_DECIMAL_PLACES = 2;
 
@@ -64,13 +64,11 @@ Format tempFormat("###.## F");
 Arduino arduino;
 NeoPixelStatus status(&arduino.neoPixel);
 TempSensor sensor;
-InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-Influx influx(WIFI_SSID, WIFI_PASSWORD, &client, &status);
+Influx influx(INFLUX_INTERVAL_S, &status);
 InfluxPoint point(INFLUX_MEASUREMENT);
 InfluxField* tempField = point.addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
 InfluxField* humField = point.addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
 Timer sensorTimer(SENSOR_INTERVAL_MS);
-Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
 void setup()
 {
@@ -82,19 +80,12 @@ void setup()
 
    status.begin();
 
-   arduino.echoToSerial = true;
-   arduino.clearDisplay();
-   arduino.setTextSize(TEXT_SIZE_SMALL);
-   arduino.println("Initializing", Color::HEADING);
-   arduino.moveCursorY(arduino.charH() / 2);
+   arduino.printHeader("Initializing");
 
-   arduino.print("Loc: ", Color::LABEL);
-   arduino.printlnR(location, Color::VALUE);
+   arduino.println("Location: ", LOCATION);
 
-   arduino.print("Sensor... ", Color::LABEL);
-   if (sensor.begin(true))
+   if (arduino.initSensor("Sensor", []() { return sensor.begin(false); }))
    {
-      arduino.printlnR("ok", Color::VALUE);
       Serial.print("   Type: ");
       Serial.println(sensor.type());
       Serial.print("   Address: ");
@@ -104,23 +95,26 @@ void setup()
    }
    else
    {
-      arduino.printR("FAILED", Color::RED);
       Util::reset(RESET_DELAY_S);
    }
 
-   if (!influx.begin(&arduino))
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD);
+   if (!influx.begin(arduino))
    {
       Util::reset(RESET_DELAY_S);
    }
 
-   delay(1000);
+   // Pause so the initialization info on the display remains visible for a moment
+   // before it's cleared and replaced with the live temperature/humidity readout.
+   arduino.setCursor(0, -arduino.charH());
+   arduino.println("Starting in 5s...", Color::GRAY);
+   delay(5000);
 
-   point.addTag("location", location);
+   point.addTag("location", LOCATION);
 
    arduino.clearDisplay();
-   arduino.echoToSerial = false;
 
-   Watchdog.enable(WATCHDOG_INTERVAL_MS);
+   Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
 }
 
 void loop()
@@ -133,7 +127,7 @@ void loop()
       humField->set(sensor.readHumidity());
    }
 
-   if (!influx.ensureWiFiConnected())
+   if (!arduino.ensureWiFiConnected(&status))
    {
       arduino.clearDisplay();
       arduino.println("WiFi connection lost", Color::RED);
@@ -145,27 +139,37 @@ void loop()
    arduino.print("Influx", Color::HEADING);
    arduino.printR(sensor.type(), Color::GRAY);
    arduino.println();
+   int16_t headerHeight = arduino.charH();
+   int16_t footerHeight = arduino.charH(TEXT_SIZE_SMALL);
 
    float temp = tempField->get();
    float hum = humField->get();
-   uint8_t x = (arduino.width() - MAX_CHARS * arduino.charW()) / 2;
 
-   arduino.setTextSize(4);
-   arduino.setCursor(x, (arduino.height() - 2 * arduino.charH()) / 2 - SPACING / 2);
-   arduino.println(temp, tempFormat, Color::VALUE);
+   arduino.setTextSize(VALUE_TEXT_SIZE);
+   int16_t valuesHeight = 2 * arduino.charH() + SPACING;
+   int16_t availableHeight = arduino.height() - headerHeight - footerHeight;
+   arduino.setCursorY(headerHeight + (availableHeight - valuesHeight) / 2);
+   arduino.printlnD(temp, tempFormat, Color::VALUE);
 
-   arduino.setCursor(x, arduino.getCursorY() + SPACING);
-   arduino.println(hum, humFormat, Color::VALUE);
+   arduino.setCursorY(arduino.getCursorY() + SPACING);
+   if (sensor.supportsHumidity())
+   {
+      arduino.printlnD(hum, humFormat, Color::VALUE);
+   }
+   else
+   {
+      arduino.printlnD(humFormat, Color::GRAY);
+   }
 
    arduino.setTextSize(TEXT_SIZE_SMALL);
    arduino.setCursor(0, -arduino.charH());
-   arduino.print(location, Color::CYAN);
-   arduino.printR(version, Color::SUB_LABEL);
+   arduino.print(LOCATION, Color::CYAN);
+   arduino.printR(VERSION, Color::SUB_LABEL);
 
-   if (influxTimer.ready())
+   if (influx.ready())
    {
       digitalWrite(BUILTIN_LED, HIGH);
-      if (!point.post(&client))
+      if (!point.post(influx.client()))
       {
          arduino.deepSleep(SENSOR_POST_FAILURE_SLEEP_S);
       }

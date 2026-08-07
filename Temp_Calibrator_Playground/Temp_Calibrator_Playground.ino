@@ -289,8 +289,7 @@ Timer sensorReadTrigger(SAMPLE_INTERVAL_MS);
 TimerSecs influxTrigger(INFLUX_INTERVAL_S);
 TimerSecs prefsTrigger(PREFS_INTERVAL_S);
 
-InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
+Influx influx;
 
 InfluxPoint* nowPoints[NUM_SENSORS] = { nullptr };
 InfluxPoint* shortAvgPoints[NUM_SENSORS] = { nullptr };
@@ -852,13 +851,13 @@ void setup()
    Serial.print("Detected sensors: ");
    Serial.println(detectedSensorCount);
 
-   arduino.echoToSerial = true;
    arduino.clearDisplay();
    arduino.setTextSize(3);
    arduino.println("Init", Color::HEADING);
    arduino.moveCursorY(10);
 
    arduino.setTextSize(2);
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD);
    if (!influx.begin(&arduino))
    {
       Util::reset(WIFI_RESET_DELAY_S);
@@ -867,7 +866,6 @@ void setup()
    delay(INFLUX_INIT_DELAY_MS);
 
    arduino.clearDisplay();
-   arduino.echoToSerial = false;
 
    pinMode(BUILTIN_LED, OUTPUT);
    digitalWrite(BUILTIN_LED, LOW);
@@ -1064,7 +1062,7 @@ void loop()
    // ------------------------------------------- send to INFLUX
    if (influxTrigger.ready())
    {
-      if (influx.ensureWiFiConnected())
+      if (arduino.ensureWiFiConnected())
       {
          digitalWrite(BUILTIN_LED, HIGH);
 
@@ -1101,10 +1099,10 @@ void loop()
             // aren't posted until their underlying value is expected to be ready (e.g.
             // long average/correction before the timed window fills), so a NaN value
             // once posting starts is a genuine error and is still reported.
-            if ((!nowPoints[i]->post(&client)) ||
-                (!shortAvgPoints[i]->post(&client)) ||
-                (longAvgFull && !longAvgPoints[i]->post(&client)) ||
-                (longAvgFull && !correctionPoints[i]->post(&client)))
+            if ((!nowPoints[i]->post(influx.client())) ||
+                (!shortAvgPoints[i]->post(influx.client())) ||
+                (longAvgFull && !longAvgPoints[i]->post(influx.client())) ||
+                (longAvgFull && !correctionPoints[i]->post(influx.client())))
             {
                writeFailed = true;
                break;

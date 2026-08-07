@@ -254,6 +254,28 @@ public:
 
    ///
    /// <summary>
+   /// Gets the character offset (0-based) of the decimal point within this format's
+   /// fixed-width output, for use in aligning the decimal points of two differently-sized
+   /// values (e.g. centering the decimal position of a temperature and a humidity value).
+   /// </summary>
+   /// <returns>Character index of the decimal point, or length() if this format has no decimal point.</returns>
+   ///
+   size_t decimalOffset() const
+   {
+      size_t signLen = _includePlus ? 1 : 0;
+      size_t numericLen = _length - _prefix.length() - _postfix.length() - signLen;
+
+      if (_precision == 0 || numericLen <= _precision)
+      {
+         return _length;
+      }
+
+      size_t wholeLen = numericLen - _precision - 1;
+      return _prefix.length() + signLen + wholeLen;
+   }
+
+   ///
+   /// <summary>
    /// Builds a placeholder string the same width/shape as a formatted value, for use when
    /// no value is currently available to display (as opposed to a value that is legitimately
    /// NaN, which should still be rendered via toString()).
@@ -300,6 +322,15 @@ public:
    ///
    std::string toString(double value) const
    {
+      // NaN/inf can't be safely routed through String(value, precision) (Arduino's
+      // dtostrf-based conversion is undefined for non-finite doubles), so render them as
+      // plain text instead.
+      if (!std::isfinite(value))
+      {
+         std::string str = _prefix + (std::isnan(value) ? "nan" : (value > 0 ? "inf" : "-inf")) + _postfix;
+         return toString(str);
+      }
+
       std::string valueStr;
 
       // avoid the -0.00 result, but only when the value would round to zero

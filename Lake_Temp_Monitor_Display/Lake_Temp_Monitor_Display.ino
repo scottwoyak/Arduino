@@ -37,9 +37,7 @@ constexpr auto INFLUX_INTERVAL_S = 15;
 constexpr auto WATCHDOG_INTERVAL_S = 60;
 constexpr auto WIFI_RESET_DELAY_S = 10;
 
-InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
-Timer influxTimer(INFLUX_INTERVAL_S * 1000);
+Influx influx(INFLUX_INTERVAL_S);
 
 constexpr uint8_t NUM_SENSORS = 4;
 
@@ -80,7 +78,6 @@ void setup()
    arduino.display.setTextWrap(false);
    pinMode(BUILTIN_LED, OUTPUT);
 
-   arduino.echoToSerial = true;
    arduino.display.setRotation(2);
    arduino.clearDisplay();
    arduino.println("Initializing", Color::HEADING);
@@ -115,6 +112,7 @@ void setup()
    }
    arduino.printlnR("ok", Color::VALUE);
 
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD);
    if (!influx.begin(&arduino))
    {
       Util::reset(WIFI_RESET_DELAY_S);
@@ -126,7 +124,6 @@ void setup()
    }
 
    arduino.clearDisplay();
-   arduino.echoToSerial = false;
 
    Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
 }
@@ -152,7 +149,7 @@ void loop()
    }
 
    // Check WiFi connection and reconnect if needed
-   if (!influx.ensureWiFiConnected())
+   if (!arduino.ensureWiFiConnected())
    {
       arduino.println("WiFi connection lost");
       Serial.println("WiFi connection lost");
@@ -195,9 +192,9 @@ void loop()
    arduino.printR(version, Color::SUB_LABEL);
 
    // Write point
-   if (influxTimer.ready())
+   if (influx.ready())
    {
-      if (!influx.ensureWiFiConnected())
+      if (!arduino.ensureWiFiConnected())
       {
          Serial.println("WiFi connection lost");
          Util::reset(WIFI_RESET_DELAY_S);
@@ -209,10 +206,10 @@ void loop()
       {
          if (sensors[i]->exists())
          {
-            if (points[i]->post(&client) == false)
+            if (points[i]->post(influx.client()) == false)
             {
                Serial.println("InfluxDB write failed: ");
-               Serial.println(client.getLastErrorMessage());
+               Serial.println(influx.client()->getLastErrorMessage());
             }
             else
             {

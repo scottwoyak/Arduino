@@ -18,8 +18,7 @@ Adafruit_MAX17048 battery;
 
 constexpr auto INFLUX_INTERVAL_S = 60;
 constexpr auto WATCHDOG_TIMEOUT_MS = 60 * 1000;
-InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
+Influx influx;
 InfluxPoint airPoint("Air"); // Influx data point
 InfluxPoint powerPoint("Power"); // Influx data point
 InfluxField* tempField = airPoint.addValueField("temperature", 2);
@@ -75,6 +74,7 @@ void setup()
       goToSleep();
    }
 
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD);
    if (!influx.begin(&arduino))
    {
       goToSleep();
@@ -96,23 +96,23 @@ void loop()
    humField->set(sensor.readHumidity());
    voltsField->set(battery.cellVoltage());
 
-   if (!influx.ensureWiFiConnected())
+   if (!arduino.ensureWiFiConnected())
    {
       goToSleep();
    }
 
    // Write points
    Serial.println("Writing data points...");
-   if (!airPoint.post(&client, true))
+   if (!airPoint.post(influx.client(), true))
    {
       Serial.println("InfluxDB write failed: ");
-      Serial.println(client.getLastErrorMessage());
+      Serial.println(influx.client()->getLastErrorMessage());
    }
 
-   if (powerPoint.post(&client, true) == false)
+   if (powerPoint.post(influx.client(), true) == false)
    {
       Serial.println("InfluxDB write failed: ");
-      Serial.println(client.getLastErrorMessage());
+      Serial.println(influx.client()->getLastErrorMessage());
    }
 
    goToSleep();

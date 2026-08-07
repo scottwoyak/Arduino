@@ -12,9 +12,6 @@
 #include <Wire.h>
 #include "SerialX.h"
 
-constexpr uint8_t I2C_SDA = 7;
-constexpr uint8_t I2C_SCL = 8;
-
 constexpr uint8_t I2C_MIN_ADDR = 1;  // First valid 7-bit I2C address to probe
 constexpr uint8_t I2C_MAX_ADDR = 127;  // One past the last 7-bit I2C address to probe
 constexpr unsigned long SCAN_INTERVAL_MS = 5000;
@@ -22,7 +19,13 @@ constexpr unsigned long SCAN_INTERVAL_MS = 5000;
 void setup()
 {
    SerialX::begin();
-   Wire.begin(I2C_SDA, I2C_SCL);
+
+   // On boards with non-standard I2C pins, set them before calling Wire.begin()
+   // with no arguments so it picks them up as its defaults.
+   #if defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO)
+      Wire.setPins(10, 11);
+   #endif
+   Wire.begin();
 
    Serial.println("\nI2C Port Scanner - Ready");
 }

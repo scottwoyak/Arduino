@@ -96,10 +96,8 @@ constexpr const char* AVERAGE_WINDOW_LABELS[NUM_WINDOWS] = { "10s", "1m", "2m", 
 ESP32_S3_Playground arduino;
 NeoPixelStatus status(&arduino.neoPixel);
 I2CMultiplexor multi;
-InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-Influx influx(WIFI_SSID, WIFI_PASSWORD, &client, &status);
+Influx influx(INFLUX_INTERVAL_S, &status);
 Timer sensorTimer(SENSOR_READ_INTERVAL_MS);
-Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
 TempSensor* sensors[NUM_SENSORS];
 InfluxPoint* currentPoints[NUM_SENSORS];
@@ -216,14 +214,14 @@ bool uploadAllPoints()
          continue;
       }
 
-      if (!currentPoints[i]->post(&client))
+      if (!currentPoints[i]->post(influx.client()))
       {
          allSucceeded = false;
       }
 
       for (uint8_t w = 0; w < NUM_WINDOWS; w++)
       {
-         if (!averagePoints[i][w]->post(&client))
+         if (!averagePoints[i][w]->post(influx.client()))
          {
             allSucceeded = false;
          }
@@ -273,7 +271,6 @@ void setup()
    status.begin();
    status.setStatus(Status::STARTED);
 
-   arduino.echoToSerial = true;
    arduino.clearDisplay();
    arduino.println("Initializing", Color::HEADING);
    arduino.moveCursorY(arduino.charH() / 2);
@@ -314,13 +311,13 @@ void setup()
    }
    arduino.printlnR("ok", Color::VALUE);
 
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD);
    if (!influx.begin(&arduino))
    {
       Util::reset(WIFI_RESET_DELAY_S);
    }
 
    arduino.clearDisplay();
-   arduino.echoToSerial = false;
 
    arduino.setTextSize(2);
    std::string uploadSample(uploadStatusFormat.length(), '0');
@@ -394,7 +391,7 @@ void loop()
    }
 
 
-   if (!influx.ensureWiFiConnected())
+   if (!arduino.ensureWiFiConnected(&status))
    {
       arduino.println("WiFi connection lost");
       Serial.println("WiFi connection lost");
@@ -477,7 +474,7 @@ void loop()
       activePlot->draw();
    }
 
-   if (influxTimer.ready())
+   if (influx.ready())
    {
       digitalWrite(BUILTIN_LED, HIGH);
       uploadStatusField->draw("Upload", Color::LABEL, Color::GRAY);

@@ -49,14 +49,12 @@ Adafruit_INA219 batterySensor(BATTERY_SENSOR_ADDR);
 Adafruit_INA219 solarSensor(SOLAR_SENSOR_ADDR);
 Adafruit_INA219 loadSensor(LOAD_SENSOR_ADDR);
 
-InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-Influx influx(WIFI_SSID, WIFI_PASSWORD, &client);
+Influx influx(INFLUX_INTERVAL_S);
 
 // Data point definitions for InfluxDB
 InfluxPoint batteryPoint(INFLUX_MEASUREMENT, {{"item", "Battery"}});
 InfluxPoint solarPoint(INFLUX_MEASUREMENT, {{"item", "Solar"}});
 InfluxPoint loadPoint(INFLUX_MEASUREMENT, {{"item", "Load"}});
-Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
 // Field references for data points
 InfluxField* batteryVoltsField = batteryPoint.addTimeAverageField("volts", 3);
@@ -133,7 +131,7 @@ void updateChargeAccumulators(float batterymA, float loadmA)
 /// <param name="pointName">Name of point for logging</param>
 void postDataPoint(InfluxPoint& point, const char* pointName)
 {
-   if (!influx.ensureWiFiConnected())
+   if (!feather.ensureWiFiConnected())
    {
       Serial.print(pointName);
       Serial.println(" - WiFi reconnection failed");
@@ -142,7 +140,7 @@ void postDataPoint(InfluxPoint& point, const char* pointName)
 
    digitalWrite(BUILTIN_LED, HIGH);
 
-   if (!point.post(&client, true))
+   if (!point.post(influx.client(), true))
    {
       Serial.print(pointName);
       Serial.print(" - InfluxDB write failed: ");
@@ -175,6 +173,7 @@ void setup()
    initializeSensor(solarSensor, "INA219 (Solar)");
    initializeSensor(loadSensor, "INA219 (Load)");
 
+   feather.initWifi(WIFI_SSID, WIFI_PASSWORD);
    if (!influx.begin(&feather))
    {
       Util::reset(WIFI_RESET_DELAY_S);
@@ -260,7 +259,7 @@ void loop()
    feather.println(" Current: ", displaySolarmA.get(), currentFormat);
 
    // Upload data points to InfluxDB
-   if (influxTimer.ready())
+   if (influx.ready())
    {
       postDataPoint(batteryPoint, "Battery");
       postDataPoint(solarPoint, "Solar");

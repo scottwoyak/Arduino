@@ -53,6 +53,7 @@
     <File Path="libraries/Woyak/IHistogramPlot.h" />
     <File Path="libraries/Woyak/IndexedEncoder.h" />
     <File Path="libraries/Woyak/Influx.h" />
+    <File Path="libraries/Woyak/IPrinter.h" />
     <File Path="libraries/Woyak/IScatterPlotSeries.h" />
     <File Path="libraries/Woyak/ITempSensor.h" />
     <File Path="libraries/Woyak/Latch.h" />
@@ -120,6 +121,7 @@
     <File Path="libraries/Woyak/TimedStats.h" />
     <File Path="libraries/Woyak/TimedValues.h" />
     <File Path="libraries/Woyak/Timer.h" />
+    <File Path="libraries/Woyak/TimeSync.h" />
     <File Path="libraries/Woyak/Units.h" />
     <File Path="libraries/Woyak/Url.h" />
     <File Path="libraries/Woyak/Util.h" />
@@ -526,6 +528,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Temp_Serial/Temp_Serial.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Text_Performance_Playground/Text_Performance_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -538,10 +544,6 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Wave_Publisher_Display/Wave_Publisher_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
   <Project Path="Wave_Subscriber_Display/Wave_Subscriber_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -550,15 +552,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Wind_Monitor/Wind_Monitor.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
   <Project Path="Wind_Publisher/Wind_Publisher.vcxproj" Id="186959f5-b577-1198-e42b-9b18a512c68a">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="Wind_Publisher_Display/Wind_Publisher_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

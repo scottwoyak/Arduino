@@ -8,20 +8,22 @@
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
 
-#include "SerialX.h"
-#include "TimedStats.h"
-#include "TimedHistogramChart.h"
-#include "WindMeter.h"
-#include "Slider.h"
-#include "MultiBar.h"
 #include "BarChart.h"
+#include "EnumSelector.h"
 #include "MovingBarChart.h"
+#include "MultiBar.h"
 #include "RollingRate.h"
+#include "SerialX.h"
+#include "Slider.h"
+#include "TimedHistogramChart.h"
+#include "TimedStats.h"
+#include "Timer.h"
+#include "WindMeter.h"
 
 Arduino arduino;
 WindMeter wind(A5);
 RollingRate refreshRate(100);
-Stopwatch sw;
+Timer serialTimer(1000);
 
 constexpr uint16_t WIND_AVERAGE_DURATION_S = 10 * 60;
 constexpr uint8_t WIND_AVERAGE_INTERVAL_S = 10;
@@ -62,26 +64,16 @@ enum class Mode
    MultiBar,
    Rolling,
    Histogram,
-   Count,
-} mode;
-
-Mode operator++(Mode& mode, int)
-{
-   mode = static_cast<Mode>((static_cast<int>(mode) + 1) % static_cast<int>(Mode::Count));
-   return mode;
-}
+};
+EnumSelector<Mode> modeSelector(arduino.buttonA, Mode::Histogram, Mode::Histogram);
 
 void setup()
 {
-   mode = Mode::Histogram;
-
    SerialX::begin();
    arduino.begin();
    wind.begin();
 
    delay(1000); // provide time for the wind meter to get a reading
-
-   sw.reset();
 }
 
 void loop()
@@ -104,17 +96,15 @@ void loop()
    arduino.printlnR(speed, speedFormat, Color::VALUE);
    arduino.moveCursorY(4);
 
-   if (arduino.buttonA.wasPressed())
+   if (modeSelector.hasChanged())
    {
-      mode++;
-
       arduino.display.fillRect(0, arduino.display.getCursorY(), arduino.display.width(), arduino.display.height() - arduino.display.getCursorY(), (uint16_t)Color::BLACK);
       multiBar.reset();
       rollingChart.reset();
       histogramChart.reset();
    }
 
-   switch (mode)
+   switch (modeSelector.value())
    {
    case Mode::MultiBar:
       displayMultiBar(speed);
@@ -130,10 +120,9 @@ void loop()
       break;
    }
 
-   if (sw.elapsedSecs() > 1)
+   if (serialTimer.ready())
    {
       Serial.println(refreshRate.get());
-      sw.reset();
    }
 }
 

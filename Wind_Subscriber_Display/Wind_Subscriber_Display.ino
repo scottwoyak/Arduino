@@ -1,7 +1,20 @@
-// undefine to use the remote server
-//#define TELEMETRY_LOCAL
+//
+// Wind Subscriber Display
+//
+// Subscribes to live wind speed telemetry over a WebSocket connection and renders it on
+// the display using one of three selectable views: a rolling min/max/average multi-bar,
+// a moving bar chart, or a windowed histogram with a current-value slider.
+//
+// Behavior:
+// - Connects to WiFi, then opens a WebSocket connection to the telemetry server and
+//   receives live wind speed readings as they arrive.
+// - Tracks a rolling 10-minute average/min/max and a windowed histogram of readings.
+// - Pressing button A cycles between the MultiBar, Rolling, and Histogram views.
+// - Resets the device on telemetry disconnect or error.
+//
 
-#include <WiFi.h>
+// Uncomment to use local telemetry server instead of remote
+#define TELEMETRY_LOCAL
 
 #include "ArduinoBoard.h"
 
@@ -11,34 +24,48 @@
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
+#ifndef ARDUINO_BUILTIN_LED_SUPPORTED
+#error "This sketch requires a board with a separate built-in LED (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
 
-#include "SerialX.h"
-#include "WiFiSettings.h"
-#include "TimedStats.h"
-#include "TimedHistogramChart.h"
-#include "Slider.h"
-#include "MultiBar.h"
 #include "BarChart.h"
+#include "EnumSelector.h"
 #include "MovingBarChart.h"
-#include "RollingRate.h"
+#include "MultiBar.h"
+#include "SerialX.h"
+#include "Slider.h"
+#include "Status.h"
 #include "TelemetryClient.h"
+#include "TimedHistogramChart.h"
+#include "TimedRate.h"
+#include "TimedStats.h"
+#include "Timer.h"
+#include "WiFiSettings.h"
 
+// ----------- Telemetry
 Arduino arduino;
-RollingRate refreshRate(100);
-Stopwatch sw;
-TelemetrySubscriber client("Wind/Lake");
+NeoPixelStatus status(&arduino.neoPixel);
+TimedRate refreshRate;
+TelemetrySubscriber client("Wind/Bragg");
 
+// ----------- Built-in LED (flashes on each received telemetry value)
+constexpr uint16_t RECEIVE_LED_FLASH_MS = 20;
+
+// ----------- Rolling wind statistics
 constexpr uint16_t WIND_AVERAGE_DURATION_S = 10 * 60;
-constexpr uint8_t WIND_AVERAGE_INTERVAL_S = 10;     
+constexpr uint8_t WIND_AVERAGE_INTERVAL_S = 10;
 constexpr uint8_t WIND_AVERAGE_BINS = WIND_AVERAGE_DURATION_S / WIND_AVERAGE_INTERVAL_S;
-TimedStats windStats(WIND_AVERAGE_DURATION_S*1000, WIND_AVERAGE_BINS);
+TimedStats windStats(WIND_AVERAGE_DURATION_S * 1000, WIND_AVERAGE_BINS);
 
 Format speedFormat("##.# mph", Format::Alignment::RIGHT);
 
+// ----------- Display layout
 constexpr uint16_t DISPLAY_HEIGHT = 135;
 constexpr uint16_t DISPLAY_WIDTH = 240;
 constexpr uint16_t HEADER_HEIGHT = 3 * 8 + 4; // one line of text size 3 plus padding
+constexpr Rect16 WORKSPACE_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT);
 
+// ----------- MultiBar view (min/max/average)
 Color c1 = Color565::fromRGB(0, 128, 0);
 Color c2 = Color::YELLOW;
 constexpr uint16_t BAR_HEIGHT = 34;
@@ -47,19 +74,21 @@ constexpr RangeF MULTIBAR_RANGE = { 0, 40 };
 constexpr uint8_t NUM_BARS = 4;
 MultiHorizontalBar multiBar(BAR_RECT, MULTIBAR_RANGE, NUM_BARS, c1, c2, Color::BLACK);
 
+// ----------- Rolling bar chart view
 Color Green2 = Color565::fromRGB(0, 200, 0);
 constexpr RangeF GRAPH_RANGE = { 0, 30 };
-constexpr Rect16 GRAPH_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT);
+constexpr Rect16 GRAPH_RECT = WORKSPACE_RECT;
 MovingBarChart rollingChart(GRAPH_RECT, GRAPH_RANGE, Green2, Color::BLACK);
 
-constexpr uint16_t HISTOGRAM_DURATION_S = 10*60;
+// ----------- Histogram view
+constexpr uint16_t HISTOGRAM_DURATION_S = 10 * 60;
 constexpr uint8_t HISTOGRAM_NUM_BINS = 80;
 constexpr RangeF CHART_RANGE = { 0, 30 };
 constexpr uint8_t VALUES_AXIS_HEIGHT = 16 + 6;
-constexpr Rect16 CHART_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT - VALUES_AXIS_HEIGHT);
+constexpr Rect16 CHART_RECT(WORKSPACE_RECT.x, WORKSPACE_RECT.y, WORKSPACE_RECT.width, WORKSPACE_RECT.height - VALUES_AXIS_HEIGHT);
 TimedHistogramChart histogramChart(CHART_RECT, CHART_RANGE, HISTOGRAM_NUM_BINS, HISTOGRAM_DURATION_S * 1000, Green2, Color::BLACK);
 
-constexpr Rect16 SLIDER_RECT(0, DISPLAY_HEIGHT - VALUES_AXIS_HEIGHT+2, DISPLAY_WIDTH, 3);
+constexpr Rect16 SLIDER_RECT(0, DISPLAY_HEIGHT - VALUES_AXIS_HEIGHT + 2, DISPLAY_WIDTH, 3);
 HorizontalSlider slider(SLIDER_RECT, CHART_RANGE, Color::WHITE, Color::BLACK);
 
 enum class Mode
@@ -67,54 +96,38 @@ enum class Mode
    MultiBar,
    Rolling,
    Histogram,
-   Count,
-} mode;
-
-Mode operator++(Mode& mode, int)
-{
-   mode = static_cast<Mode>((static_cast<int>(mode) + 1) % static_cast<int>(Mode::Count));
-   return mode;
-}
+};
+EnumSelector<Mode> modeSelector(arduino.buttonA, Mode::Histogram, Mode::Histogram);
 
 void setup()
 {
-   mode = Mode::Histogram;
-
    SerialX::begin();
    arduino.begin();
+   status.begin();
+   status.setStatus(Status::STARTED);
 
-   // Connect to WiFi
-   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+   arduino.printHeader("Initializing");
 
-   arduino.setTextSize(2);
-   arduino.setCursorY(-arduino.charH());
-   arduino.println("Wind Subscriber", Color::GRAY);
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
 
-   arduino.println("Initializing", Color::HEADING2);
-   arduino.moveCursorY(4);
-
-   arduino.print("WiFi...", Color::LABEL);
-   while (WiFi.status() != WL_CONNECTED)
-   {
-      arduino.print(".", Color::LABEL);
-   }
-   arduino.printlnR("OK", Color::VALUE);
-   arduino.moveCursorY(1);
-
-   arduino.print("WebSocket...", Color::LABEL);
-
-   client.setCallbacks(nullptr, onDisconnected, nullptr, nullptr, onError, onStarted);
-   client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
-
+   client.setCallbacks(nullptr, onDisconnected, nullptr, onReceiveText, onError, onStarted);
+   arduino.beginClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
 
    delay(1000); // provide time for the wind meter to get a reading
-
-   sw.reset();
 }
 
 void onStarted()
 {
+   status.setStatus(Status::READY);
    arduino.clearDisplay();
+   displayHeader();
+}
+
+void displayHeader()
+{
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(3);
+   arduino.print("Wind", Color::HEADING);
 }
 
 void onError(std::string msg)
@@ -130,6 +143,12 @@ void onDisconnected(std::string reason)
 {
    Serial.println("Disconnected: " + String(reason.c_str()));
    Util::reset();
+}
+
+void onReceiveText(std::string text)
+{
+   // briefly flash the built-in LED to indicate a new value was received
+   arduino.led.flash(RECEIVE_LED_FLASH_MS);
 }
 
 void loop()
@@ -154,22 +173,18 @@ void loop()
    // display values
    arduino.setCursor(0, 0);
    arduino.setTextSize(3);
-
-   arduino.print("Wind", Color::HEADING);
-   arduino.printR(speed, speedFormat, Color::VALUE);
+   arduino.printlnR(speed, speedFormat, Color::VALUE);
    arduino.moveCursorY(4);
 
-   if (arduino.buttonA.wasPressed())
+   if (modeSelector.hasChanged())
    {
-      mode++;
-
-      arduino.display.fillRect(0, arduino.display.getCursorY(), arduino.display.width(), arduino.display.height() - arduino.display.getCursorY(), (uint16_t)Color::BLACK);
+      arduino.clear(WORKSPACE_RECT);
       multiBar.reset();
       rollingChart.reset();
       histogramChart.reset();
    }
 
-   switch (mode)
+   switch (modeSelector.value())
    {
    case Mode::MultiBar:
       displayMultiBar(speed);
@@ -183,13 +198,6 @@ void loop()
 
    default:
       break;
-   }
-
-   if (sw.elapsedSecs() > 1)
-   {
-      Serial.println(refreshRate.get());
-      Serial.println(speed);
-      sw.reset();
    }
 }
 
@@ -217,7 +225,6 @@ void displayRollingChart(float speed)
 }
 
 Format AxisValueL("##.#", Format::Alignment::LEFT);
-Format AxisValueC("##.#", Format::Alignment::CENTER);
 Format AxisValueR("##.#", Format::Alignment::RIGHT);
 
 void displayHistogram()

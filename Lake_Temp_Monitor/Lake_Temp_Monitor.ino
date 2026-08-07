@@ -9,6 +9,7 @@
 #include <Arduino.h>
 #include <Adafruit_SleepyDog.h>
 
+#include "ArduinoBoard.h"
 #include "ESP32TempSensor.h"
 #include "I2CMultiplexor.h"
 #include "Influx.h"
@@ -50,9 +51,8 @@ const char* SENSOR_LOCATIONS[] = {
    "New CPU",
 };
 
+Arduino arduino;
 I2CMultiplexor multi;
-InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-Timer influxTimer(INFLUX_INTERVAL_S * 1000);
 
 // Sensor arrays
 TempSensor* sensors[NUM_SENSORS];
@@ -63,7 +63,7 @@ InfluxField* humFields[NUM_SENSORS];
 // Status indicators
 LedStatus status(WHITE_LED_PIN, BLUE_LED_PIN, GREEN_LED_PIN);
 LED redLed(RED_LED_PIN);
-Influx influx(WIFI_SSID, WIFI_PASSWORD, &client, &status);
+Influx influx(INFLUX_INTERVAL_S, &status);
 
 void setup()
 {
@@ -84,6 +84,9 @@ void setup()
 
    // Initialize I2C with custom pins
    Wire.begin(I2C_SDA, I2C_SCL);
+
+   arduino.begin();
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD);
 
    status.begin();
    redLed.begin();
@@ -126,7 +129,7 @@ void setup()
    }
 
    // Initialize InfluxDB connection
-   if (!influx.begin())
+   if (!influx.begin(arduino))
    {
       Util::reset(WIFI_RESET_DELAY_S);
    }
@@ -167,14 +170,14 @@ void loop()
    }
 
    // Ensure WiFi connectivity
-   if (!influx.ensureWiFiConnected())
+   if (!arduino.ensureWiFiConnected(&status))
    {
       Serial.println("WiFi reconnection failed, performing reset");
       Util::reset(WIFI_RESET_DELAY_S);
    }
 
    // Upload data points to InfluxDB at configured interval
-   if (influxTimer.ready())
+   if (influx.ready())
    {
       for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
@@ -185,12 +188,12 @@ void loop()
 
          redLed.turnOn();  // Indicate data transmission activity
 
-         if (!points[i]->post(&client, true))
+         if (!points[i]->post(influx.client(), true))
          {
             Serial.print("InfluxDB write failed for sensor ");
             Serial.print(i);
             Serial.print(": ");
-            Serial.println(client.getLastErrorMessage());
+            Serial.println(influx.client()->getLastErrorMessage());
          }
          else
          {

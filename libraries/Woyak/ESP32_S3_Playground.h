@@ -110,6 +110,13 @@ public:
 
    ///
    /// <summary>
+   /// Separate onboard built-in LED (distinct from the NeoPixel).
+   /// </summary>
+   ///
+   LED led{ LED_BUILTIN };
+
+   ///
+   /// <summary>
    /// Initializes a new instance of the ESP32_S3_Playground class.
    /// </summary>
    ///
@@ -136,6 +143,7 @@ public:
       buttonA.begin();
       buttonB.begin();
       neoPixel.begin();
+      led.begin();
    }
 };
 

@@ -200,6 +200,12 @@ public:
    void set(float value, unsigned long tick)
    {
       _evictExpired();
+
+      if (!std::isfinite(value))
+      {
+         return;
+      }
+
       _push(_minDeque, false, value, tick);
       _push(_maxDeque, true, value, tick);
    }

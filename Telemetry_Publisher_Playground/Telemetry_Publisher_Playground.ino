@@ -207,17 +207,15 @@ void onText(std::string payload)
 ///
 /// <summary>
 /// Called when a telemetry client error occurs (e.g. the server rejected the publish
-/// request). The client automatically retries the request after a delay, so this just
-/// updates the status row rather than resetting the device.
+/// request). Resets the device after a short delay so it can attempt a fresh
+/// connection/handshake.
 /// </summary>
 /// <param name="msg">Error message reported by the server</param>
 ///
 void onError(std::string msg)
 {
    Serial.println("Telemetry Error: " + String(msg.c_str()));
-   retryCount++;
    lastErrorMsg = msg;
-   lastCountdownSecs = 0;
    statusColor = Color::RED;
 
    if (connected)
@@ -226,6 +224,8 @@ void onError(std::string msg)
       value.clear();
    }
    connected = false;
+
+   Util::reset(10);
 }
 
 ///
@@ -330,17 +330,6 @@ void loop()
    if (disconnected)
    {
       uint8_t secsLeft = static_cast<uint8_t>(ceil(reconnectTimer.remaining()));
-      if (secsLeft != lastCountdownSecs || retryCount != lastRetryCount)
-      {
-         lastCountdownSecs = secsLeft;
-         lastRetryCount = retryCount;
-         statusText = secsLeft > 0 ? "Retrying in " + std::to_string(secsLeft) + "s" : "Retrying...";
-         statusColor = Color::RED;
-      }
-   }
-   else if (client.isStartRetryPending())
-   {
-      uint8_t secsLeft = static_cast<uint8_t>(ceil(client.getStartRetryRemainingSecs()));
       if (secsLeft != lastCountdownSecs || retryCount != lastRetryCount)
       {
          lastCountdownSecs = secsLeft;
