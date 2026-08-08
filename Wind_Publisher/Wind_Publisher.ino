@@ -53,8 +53,10 @@ constexpr uint8_t WIND_SENSOR_PIN = 1;
 constexpr uint8_t WIND_LED_PIN = 6;
 
 // ----------- I2C pins (custom configuration)
-constexpr uint8_t I2C_SDA_PIN = 10;
-constexpr uint8_t I2C_SCL_PIN = 11;
+constexpr uint8_t I2C_SCL_PIN = 43;  // TX pin
+constexpr uint8_t I2C_SDA_PIN = 44;  // RX pin
+//constexpr uint8_t I2C_SDA_PIN = 10;
+//constexpr uint8_t I2C_SCL_PIN = 11;
 
 // ----------- Status LED pins
 constexpr uint8_t RED_LED_PIN = 9;
@@ -65,7 +67,7 @@ constexpr uint8_t GREEN_LED_PIN = 7;
 constexpr uint8_t CPU_FREQUENCY_MHZ = 80; // keep things cool
 
 Arduino arduino;
-WindMeter wind(WIND_SENSOR_PIN, WIND_LED_PIN);
+WindMeter wind(WIND_SENSOR_PIN, WIND_LED_PIN, LEDColor::CLEAR_PINK);
 RGBLEDStatus status(RED_LED_PIN, GREEN_LED_PIN, BLUE_LED_PIN);
 Influx influx(INFLUX_INTERVAL_S, &status);
 

@@ -62,9 +62,10 @@ private:
    /// Detects and creates the most appropriate sensor for the current hardware.
    /// </summary>
    /// <param name="print">True to print detection details to Serial.</param>
+   /// <param name="allowEsp32Fallback">True to fall back to the internal ESP32 CPU temperature sensor when no external sensor is detected.</param>
    /// <returns>A concrete sensor instance, or a NullSensor when none is detected.</returns>
    ///
-   ITempSensor* _create(bool print)
+   ITempSensor* _create(bool print, bool allowEsp32Fallback)
    {
       if (print) Serial.println("Detecting Temperature Sensor...");
 
@@ -137,7 +138,7 @@ private:
       }
 
 #if defined(ARDUINO_ARCH_ESP32)
-      if (sensor == nullptr)
+      if (sensor == nullptr && allowEsp32Fallback)
       {
          if (print) Serial.println("  Defaulting to internal ESP32 CPU temperature sensor");
          sensor = new ESP32TempSensor();
@@ -207,23 +208,36 @@ public:
 
    ///
    /// <summary>
-   /// Detects and initializes a temperature sensor with Serial diagnostics enabled.
+   /// Detects and initializes a temperature sensor with Serial diagnostics enabled. Does
+   /// not fall back to the internal ESP32 CPU temperature sensor; use
+   /// begin(bool, bool) to allow that fallback.
    /// </summary>
    /// <returns>True when initialization succeeds; otherwise false.</returns>
    ///
-   bool begin() override { return begin(true); }
+   bool begin() override { return begin(true, false); }
+
+   ///
+   /// <summary>
+   /// Detects and initializes a temperature sensor. Does not fall back to the internal
+   /// ESP32 CPU temperature sensor; use begin(bool, bool) to allow that fallback.
+   /// </summary>
+   /// <param name="print">True to print detection details to Serial.</param>
+   /// <returns>True when initialization succeeds; otherwise false.</returns>
+   ///
+   bool begin(bool print) { return begin(print, false); }
 
    ///
    /// <summary>
    /// Detects and initializes a temperature sensor.
    /// </summary>
    /// <param name="print">True to print detection details to Serial.</param>
+   /// <param name="allowEsp32Fallback">True to fall back to the internal ESP32 CPU temperature sensor when no external sensor is detected; defaults to false since only one ESP32TempSensor can be installed per sketch.</param>
    /// <returns>True when initialization succeeds; otherwise false.</returns>
    ///
-   bool begin(bool print)
+   bool begin(bool print, bool allowEsp32Fallback)
    {
       delete _sensor;
-      _sensor = _create(print);
+      _sensor = _create(print, allowEsp32Fallback);
 
       bool status = _sensor->begin();
 

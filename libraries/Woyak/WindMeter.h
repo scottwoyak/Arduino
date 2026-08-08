@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include "Latch.h"
+#include "Led.h"
 
 ///
 /// <summary>
@@ -41,6 +42,7 @@ private:
 
    uint8_t _pin;
    uint8_t _ledPin;
+   float _ledCalibrationFactor;
    volatile Latch _latch;
    volatile uint8_t _ticks = 0;
    volatile bool _ledState = false;
@@ -58,12 +60,14 @@ private:
          // if a state change occurred, track the ticks
          _ticks = _ticks + 1;
 
-         // update the led to match the pin
+         // update the led to match the pin. analogWrite() (rather than a full LED
+         // object) is used here since tick() runs inside an interrupt handler, where
+         // virtual dispatch/blink state machinery should be avoided.
          if (_ticks == 1)
          {
             if (_ledPin > 0)
             {
-               digitalWrite(_ledPin, LOW);
+               analogWrite(_ledPin, 0);
             }
             _ledState = false;
          }
@@ -72,7 +76,7 @@ private:
             _ticks = 0;
             if (_ledPin > 0)
             {
-               digitalWrite(_ledPin, HIGH);
+               analogWrite(_ledPin, (uint8_t)(255 * _ledCalibrationFactor));
             }
             _ledState = true;
          }
@@ -87,11 +91,13 @@ public:
    /// </summary>
    /// <param name="sensorPin">GPIO pin connected to the anemometer's switch.</param>
    /// <param name="ledPin">Optional GPIO pin for a rotation-indicator LED; defaults to LED_BUILTIN.</param>
+   /// <param name="ledColor">LED color/lens tint used to seed the rotation-indicator LED's calibration factor (see ledColorCalibrationFactor()); defaults to LEDColor::UNKNOWN (no scaling).</param>
    ///
-   WindMeter(uint8_t sensorPin, uint8_t ledPin = LED_BUILTIN)
+   WindMeter(uint8_t sensorPin, uint8_t ledPin = LED_BUILTIN, LEDColor ledColor = LEDColor::UNKNOWN)
    {
       _pin = sensorPin;
       _ledPin = ledPin;
+      _ledCalibrationFactor = ledColorCalibrationFactor(ledColor);
       _instance = this;
    }
 

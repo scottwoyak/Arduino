@@ -74,9 +74,6 @@ public:
 	LedStatus(uint8_t powerPin, uint8_t wifiPin, uint8_t webPin)
 		: _powerLed(powerPin), _wifiLed(wifiPin), _webLed(webPin)
 	{
-		_powerLed.setLevel(0.30f);
-		_wifiLed.setLevel(1.0f);
-		_webLed.setLevel(0.20f);
 	}
 
 	///
@@ -145,7 +142,7 @@ private:
 	RGBLED _led;
 
 public:
-   ///
+	///
 	/// <summary>
 	/// Initializes the status indicator with a single RGB LED.
 	/// </summary>

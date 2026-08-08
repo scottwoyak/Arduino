@@ -55,7 +55,7 @@ void setup()
    #ifdef ONE_WIRE_PIN
       sensor.begin(ONE_WIRE_PIN, true);
    #else
-      sensor.begin();  // Auto-detect I2C sensor
+      sensor.begin(true, true);  // Auto-detect I2C sensor, falling back to the ESP32 CPU sensor
    #endif
 
    // Log sensor info

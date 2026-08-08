@@ -5,27 +5,27 @@
 // A Table lists one row per LED with columns for its GPIO pin, on/off state, and
 // calibration factor, plus a final "Overall" row holding the shared level applied to
 // every LED. Encoder A cycles the selected row, Encoder B adjusts the selected row's
-// factor (or the Overall row's level), and Encoder B's integral button toggles the
-// selected LED's on/off state (the Overall row has no on/off state and ignores the
-// button). Once a LED's calibration factor is set, its perceived brightness should
-// track the Overall level the same as all the other LEDs. Factors and the overall
-// level are persisted to Preferences as they change and reloaded automatically on
-// startup.
+// factor (or the Overall row's level), and either encoder's integral button toggles
+// the selected LED's on/off state (the Overall row has no on/off state and ignores
+// both buttons). Once a LED's calibration factor is set, its perceived brightness
+// should track the Overall level the same as all the other LEDs. Factors and the
+// overall level are persisted to Preferences as they change and reloaded
+// automatically on startup.
 //
 // Hardware: ESP32-S3 Dev Module wired as a Playground board (TFT display + rotary
-// encoders), plus 4 LEDs (with current-limiting resistors) wired to GPIO 17, 41, 42,
-// and 47 (free pins on this board's Playground wiring, avoiding Capacitor_Playground's
+// encoders), plus 5 LEDs (with current-limiting resistors) wired to GPIO 17, 41, 42,
+// 47, and 45 (free pins on this board's Playground wiring, avoiding Capacitor_Playground's
 // resistor charge pins). Adjust LED_PIN_* below if your wiring differs.
 //
 
 #include <Arduino.h>
 #include <string>
 
-#include "ESP32_S3_Playground.h"
 #include "ArduinoBoard.h"
-#include "Table.h"
+#include "ESP32_S3_Playground.h"
 #include "LED.h"
 #include "SerialX.h"
+#include "Table.h"
 
 // ----------- The Board
 ESP32_S3_Playground arduino;
@@ -47,13 +47,15 @@ constexpr uint8_t LED_PIN_1 = 17;
 constexpr uint8_t LED_PIN_2 = 41;
 constexpr uint8_t LED_PIN_3 = 42;
 constexpr uint8_t LED_PIN_4 = 47;
-constexpr uint8_t LED_PINS[] = { LED_PIN_1, LED_PIN_2, LED_PIN_3, LED_PIN_4 };
+constexpr uint8_t LED_PIN_5 = 45;
+constexpr uint8_t LED_PINS[] = { LED_PIN_1, LED_PIN_2, LED_PIN_3, LED_PIN_4, LED_PIN_5 };
 
 BasicLED led1(LED_PIN_1);
 BasicLED led2(LED_PIN_2);
 BasicLED led3(LED_PIN_3);
 BasicLED led4(LED_PIN_4);
-BasicLED* const leds[] = { &led1, &led2, &led3, &led4 };
+BasicLED led5(LED_PIN_5);
+BasicLED* const leds[] = { &led1, &led2, &led3, &led4, &led5 };
 constexpr uint8_t CALIBRATOR_NUM_LEDS = sizeof(leds) / sizeof(leds[0]);
 
 // ----------- Calibration Factor Range/Step (0.0-1.0 in 0.05 steps)
@@ -69,8 +71,8 @@ constexpr long LEVEL_STEP_PERCENT = 5;
 constexpr long DEFAULT_LEVEL_PERCENT = 100;
 
 // ----------- Live State (edited via the encoders, applied to the LEDs every loop)
-bool ledOn[CALIBRATOR_NUM_LEDS] = { true, true, true, true };
-float ledFactor[CALIBRATOR_NUM_LEDS] = { DEFAULT_FACTOR, DEFAULT_FACTOR, DEFAULT_FACTOR, DEFAULT_FACTOR };
+bool ledOn[CALIBRATOR_NUM_LEDS] = { true, true, true, true, true };
+float ledFactor[CALIBRATOR_NUM_LEDS] = { DEFAULT_FACTOR, DEFAULT_FACTOR, DEFAULT_FACTOR, DEFAULT_FACTOR, DEFAULT_FACTOR };
 long overallLevelPercent = DEFAULT_LEVEL_PERCENT;
 
 // Selectable rows: one per LED, plus a final "Overall" row.
@@ -78,7 +80,7 @@ constexpr uint8_t NUM_SELECTABLE_ROWS = CALIBRATOR_NUM_LEDS + 1;
 constexpr uint8_t OVERALL_ROW_INDEX = CALIBRATOR_NUM_LEDS;
 uint8_t selectedRowIndex = 0;
 
-// ----------- Table Columns: Pin, State, Factor
+// ----------- Table Columns: LED, Pin, State, Factor
 Table::Column COLUMNS[] = {
    { "LED" },
    { "Pin", "###", Table::Alignment::RIGHT },
@@ -90,6 +92,7 @@ Table::Row ROWS[] = {
    { "2" },
    { "3" },
    { "4" },
+   { "5" },
    { "Overall" },
 };
 Table table(&arduino, 0, 0, COLUMNS, ROWS, CONTENT_TEXT_SIZE);
@@ -266,7 +269,8 @@ void loop()
       updateTable();
    }
 
-   if (arduino.encoderB.button.wasPressed() && selectedRowIndex != OVERALL_ROW_INDEX)
+   bool togglePressed = arduino.encoderA.button.wasPressed() || arduino.encoderB.button.wasPressed();
+   if (togglePressed && selectedRowIndex != OVERALL_ROW_INDEX)
    {
       ledOn[selectedRowIndex] = !ledOn[selectedRowIndex];
       updateTable();

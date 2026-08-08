@@ -95,7 +95,7 @@ void setup()
    Wire.begin();
    arduino.begin();
 
-   if (!tempSensor.begin())
+   if (!tempSensor.begin(true, true))
    {
       Serial.println("Temperature sensor not found");
    }

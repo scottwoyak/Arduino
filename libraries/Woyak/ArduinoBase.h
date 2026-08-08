@@ -132,7 +132,6 @@ public:
          status->setStatus(Status::WIFI_CONNECTING);
       }
 
-      Serial.print("WiFi...");
       print("WiFi...", Color::LABEL);
 
       if (_wifiX == nullptr)
@@ -142,16 +141,13 @@ public:
 
       if (_wifiX->connect())
       {
-         Serial.println("OK");
          printlnR("OK", Color::VALUE);
       }
       else
       {
-         Serial.println("FAILED");
          printlnR("FAILED", Color::RED);
 
          std::string message = std::string("WiFi connect failed: ") + WiFiX::statusString();
-         Serial.println(message.c_str());
          println(message.c_str(), Color::RED);
       }
    }
