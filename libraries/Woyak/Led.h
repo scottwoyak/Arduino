@@ -19,6 +19,7 @@ protected:
 	uint8_t _pin;
 	uint16_t _blinkIntervalMs = 0;
 	uint8_t _level = 255;
+	float _calibrationFactor = 1.0f;
 	bool _isOn = false;
 	unsigned long _blinkStart = 0;
 	bool _flashActive = false;
@@ -33,7 +34,7 @@ protected:
 	{
 		if (_isOn)
 		{
-			analogWrite(_pin, _level);
+			analogWrite(_pin, _level * _calibrationFactor);
 		}
 		else
 		{
@@ -150,6 +151,32 @@ public:
 	virtual void setLevel(float level)
 	{
 		_level = constrain(255 * level, 0, 255);
+	}
+
+	///
+	/// <summary>
+	/// Sets a per-LED calibration factor that scales maximum brightness (0.0-1.0). Lets
+	/// different LED/resistor combinations be calibrated so the same setLevel() value
+	/// produces the same perceived brightness across LEDs; setLevel()'s own 0.0-1.0 range
+	/// is unaffected.
+	/// </summary>
+	/// <param name="factor">Scaling factor from 0.0 (off) to 1.0 (no scaling, full brightness)</param>
+	/// 
+	void setCalibrationFactor(float factor)
+	{
+		_calibrationFactor = constrain(factor, 0.0f, 1.0f);
+		_apply();
+	}
+
+	///
+	/// <summary>
+	/// Gets the current calibration factor.
+	/// </summary>
+	/// <returns>The calibration factor, from 0.0 to 1.0</returns>
+	///
+	float getCalibrationFactor() const
+	{
+		return _calibrationFactor;
 	}
 
 	///
@@ -299,9 +326,9 @@ public:
 			float g = _greenLevel / (_redLevel + _greenLevel + _blueLevel);
 			float b = _blueLevel / (_redLevel + _greenLevel + _blueLevel);
 
-			analogWrite(_redPin, _level * r);
-			analogWrite(_greenPin, _level * g);
-			analogWrite(_bluePin, _level * b);
+			analogWrite(_redPin, _level * _calibrationFactor * r);
+			analogWrite(_greenPin, _level * _calibrationFactor * g);
+			analogWrite(_bluePin, _level * _calibrationFactor * b);
 		}
 		else
 		{
@@ -386,7 +413,7 @@ public:
 	{
 		if (_isOn)
 		{
-			FastLED.setBrightness(_level);
+			FastLED.setBrightness(_level * _calibrationFactor);
 		}
 		else
 		{

@@ -412,6 +412,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="LED_Calibrator_Playground/LED_Calibrator_Playground.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="LED_FastLED/LED_FastLED.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

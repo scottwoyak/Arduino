@@ -187,6 +187,12 @@ private:
    uint8_t _textSize;
    bool _showSections = true;
 
+   // Pixel gap inserted between adjacent columns (and between the row-label column
+   // and the first value column). A negative value means "not explicitly set",
+   // in which case _createSprites() defaults it to 1.5x the header text's char
+   // width the first time it's needed.
+   int16_t _columnSpacing = -1;
+
      std::span<const Column> _columns;
      Color _headerColor;
      bool _headerDrawn = false;
@@ -372,6 +378,11 @@ private:
          return;
       }
 
+      if (_columnSpacing < 0)
+      {
+         _columnSpacing = (int16_t)(_display->charW(_textSize) * 1.5f);
+      }
+
       if (_hasColumns() && _columns[0].title != nullptr)
       {
          int16_t titleLength = (int16_t)strlen(_columns[0].title);
@@ -391,7 +402,7 @@ private:
       _sprites.clear();
       _sprites.reserve(columnCount);
 
-      int16_t currentX = _x + (int16_t)(_labelWidth * _display->charW()) + (int16_t)_display->charW();
+      int16_t currentX = _x + (int16_t)(_labelWidth * _display->charW(_textSize)) + _columnSpacing;
       for (size_t i = 0; i < columnCount; i++)
       {
          int16_t charWidth = _columnCharWidth(i);
@@ -401,7 +412,7 @@ private:
          int16_t pixelWidth = (int16_t)display->textWidth(widthSample.c_str());
          _columnPixelWidths[i] = pixelWidth;
          _columnX[i] = currentX;
-         currentX += pixelWidth + (int16_t)_display->charW();
+         currentX += pixelWidth + _columnSpacing;
 
          _sprites.emplace_back(display);
          int16_t spriteHeight = (int16_t)display->fontHeight();
@@ -426,35 +437,40 @@ private:
    void _drawValueSprite(Cell& cell, size_t columnIndex, int16_t y)
    {
       LGFX_Sprite& sprite = _sprites[columnIndex];
-      sprite.fillScreen((uint16_t)cell.valueBackgroundColor);
-      sprite.setTextColor((uint16_t)cell.valueColor, (uint16_t)cell.valueBackgroundColor);
+
+      // Fill the whole sprite with black first, so any padding added just to widen
+      // this column to fit a longer header title (i.e. space beyond the formatted
+      // value's own width) stays black rather than being covered by the value's
+      // background color/highlight.
+      sprite.fillScreen((uint16_t)Color::BLACK);
 
       std::string value = cell.value.c_str();
-      int16_t charWidth = _columnCharWidths[columnIndex];
-      if ((int16_t)value.length() < charWidth)
-      {
-         size_t fill = (size_t)charWidth - value.length();
-         switch (cell.format.alignment())
-         {
-         case Format::Alignment::RIGHT:
-            value = std::string(fill, ' ') + value;
-            break;
+      int16_t pixelWidth = _columnPixelWidths[columnIndex];
+      int16_t valueWidth = (int16_t)sprite.textWidth(value.c_str());
 
-         case Format::Alignment::CENTER:
-         {
-            size_t fillLeft = fill / 2;
-            size_t fillRight = fill - fillLeft;
-            value = std::string(fillLeft, ' ') + value + std::string(fillRight, ' ');
-         }
+      int16_t valueX;
+      switch (cell.format.alignment())
+      {
+      case Format::Alignment::RIGHT:
+         valueX = max((int16_t)0, (int16_t)(pixelWidth - valueWidth));
          break;
 
-         case Format::Alignment::LEFT:
-         default:
-            value = value + std::string(fill, ' ');
-            break;
-         }
+      case Format::Alignment::CENTER:
+         valueX = max((int16_t)0, (int16_t)((pixelWidth - valueWidth) / 2));
+         break;
+
+      case Format::Alignment::LEFT:
+      default:
+         valueX = 0;
+         break;
       }
-      sprite.setCursor(0, 0);
+
+      // Only the region behind the value's own text gets the value's background
+      // color, so a selection highlight hugs just the formatted value, not the
+      // whole (possibly header-widened) column.
+      sprite.fillRect(valueX, 0, valueWidth, sprite.height(), (uint16_t)cell.valueBackgroundColor);
+      sprite.setTextColor((uint16_t)cell.valueColor, (uint16_t)cell.valueBackgroundColor);
+      sprite.setCursor(valueX, 0);
       sprite.print(value.c_str());
       sprite.pushSprite(_columnX[columnIndex], y);
    }
@@ -656,6 +672,20 @@ public:
         _textSize(textSize), _columns(columns), _headerColor(headerColor)
    {
       addRows(rows);
+   }
+
+   ///
+   /// <summary>
+   /// Sets the pixel gap inserted between adjacent columns (and between the row-label
+   /// column and the first value column), overriding the default of 1.5x the header
+   /// text's char width. Must be called before the table is first drawn/positioned,
+   /// since column layout is computed once and cached.
+   /// </summary>
+   /// <param name="columnSpacing">The gap, in pixels, to insert between columns.</param>
+   ///
+   void setColumnSpacing(int16_t columnSpacing)
+   {
+      _columnSpacing = columnSpacing;
    }
 
    ///
