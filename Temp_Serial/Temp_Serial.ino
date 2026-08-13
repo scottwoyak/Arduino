@@ -10,8 +10,13 @@
 //
 
 #include <Arduino.h>
-#include <Wire.h>
 
+// On the Waveshare ESP32-S3-Zero, use the sensors board wrapper for its custom I2C pins.
+#if defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO)
+#define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
+#endif
+
+#include "ArduinoBoard.h"
 #include "SerialX.h"
 #include "TempSensor.h"
 #include "Timer.h"
@@ -21,6 +26,9 @@
 
 constexpr uint16_t PRINT_INTERVAL_MS = 1000;
 
+// ----------- The Board
+Arduino arduino;
+
 // ----------- Sensor
 TempSensor sensor;
 Timer printTimer(PRINT_INTERVAL_MS);
@@ -29,12 +37,8 @@ void setup()
 {
    SerialX::begin();
 
-   // On boards with non-standard I2C pins, set them before calling Wire.begin()
-   // with no arguments so it picks them up as its defaults.
-#if defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO)
-   Wire.setPins(10, 11);
-#endif
-   Wire.begin();
+   // The board wrapper's begin() handles any needed I2C bus setup.
+   arduino.begin();
 
    // Initialize temperature sensor
 #ifdef ONE_WIRE_PIN

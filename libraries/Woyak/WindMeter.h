@@ -40,12 +40,46 @@ private:
       WindMeter::_instance->tick();
    }
 
+   // Applies any pending rotation-indicator LED state change. Runs on a FreeRTOS timer
+   // (not interrupt context) since analogWrite()/LEDC on ESP32 uses locks that are not
+   // safe to call from an ISR.
+   static void _timerCallback(TimerHandle_t xTimer)
+   {
+      WindMeter* meter = static_cast<WindMeter*>(pvTimerGetTimerID(xTimer));
+      meter->_applyLedState();
+   }
+
+   void _startTimer()
+   {
+      TimerHandle_t timerHandle = xTimerCreate(
+         "WindLedTimer",   // only used for debugging
+         pdMS_TO_TICKS(1), // tick interval in ms
+         pdTRUE,           // auto-reload
+         this,             // user data
+         _timerCallback);  // callback function
+
+      if (timerHandle != nullptr)
+      {
+         xTimerStart(timerHandle, 0); // Start the timer
+      }
+   }
+
+   void _applyLedState()
+   {
+      if (_ledStateChanged && _ledPin > 0)
+      {
+         _ledStateChanged = false;
+         analogWrite(_ledPin, _ledState ? (uint8_t)(255 * _ledCalibrationFactor) : 0);
+      }
+   }
+
    uint8_t _pin;
    uint8_t _ledPin;
    float _ledCalibrationFactor;
    volatile Latch _latch;
    volatile uint8_t _ticks = 0;
    volatile bool _ledState = false;
+   volatile bool _ledStateChanged = false;
 
    void tick()
    {
@@ -60,25 +94,20 @@ private:
          // if a state change occurred, track the ticks
          _ticks = _ticks + 1;
 
-         // update the led to match the pin. analogWrite() (rather than a full LED
-         // object) is used here since tick() runs inside an interrupt handler, where
-         // virtual dispatch/blink state machinery should be avoided.
+         // Record the desired led state here, but don't call analogWrite() from the ISR:
+         // on ESP32, analogWrite()/LEDC uses locks that are not safe to call from
+         // interrupt context and can crash. _applyLedState(), run from the timer
+         // callback, applies the change instead.
          if (_ticks == 1)
          {
-            if (_ledPin > 0)
-            {
-               analogWrite(_ledPin, 0);
-            }
             _ledState = false;
+            _ledStateChanged = true;
          }
          else if (_ticks >= TICKS_PER_ROTATION)
          {
             _ticks = 0;
-            if (_ledPin > 0)
-            {
-               analogWrite(_ledPin, (uint8_t)(255 * _ledCalibrationFactor));
-            }
             _ledState = true;
+            _ledStateChanged = true;
          }
       }
    }
@@ -118,6 +147,10 @@ public:
       // create the interrupt for monitoring the pin change
       pinMode(_pin, INPUT_PULLUP);
       attachInterrupt(digitalPinToInterrupt(_pin), WindMeter::interruptTick, CHANGE);
+
+      // start the timer that applies rotation-indicator LED changes outside of
+      // interrupt context
+      _startTimer();
    }
 
    ///

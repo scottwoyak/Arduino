@@ -31,6 +31,18 @@ constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 
+#elif defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS)
+// Waveshare ESP32-S3-Zero wired with a custom-powered I2C bus and an RGB LED status
+// indicator (see WaveShare_ESP32_S3_Zero_Sensors constructor for required pins).
+
+#include "Waveshare_ESP32_S3_Zero.h"
+using Arduino = WaveShare_ESP32_S3_Zero_Sensors;
+
+#define ARDUINO_LED_SUPPORTED
+#define ARDUINO_PREFERENCES_SUPPORTED
+
+// This board has no onboard display, so no text-size defaults are defined.
+
 #elif defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO)
 
 #include "Waveshare_ESP32_S3_Zero.h"
@@ -60,4 +72,6 @@ constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 constexpr uint8_t DEFAULT_CONTENT_SIZE = 3;
 
+#else
+#warning "No Arduino Board Type Defined"
 #endif

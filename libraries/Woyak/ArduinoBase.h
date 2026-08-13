@@ -240,8 +240,6 @@ public:
          status->setStatus(Status::WEB_CONNECTING);
       }
 
-      Serial.print(label);
-      Serial.print("...");
       print(label, Color::LABEL);
       print("...", Color::LABEL);
       beginFunc();

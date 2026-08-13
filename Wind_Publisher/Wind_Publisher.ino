@@ -18,7 +18,8 @@
 // Uncomment to use local telemetry server instead of remote
 #define TELEMETRY_LOCAL
 
-#include <Wire.h>
+// This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
+#define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
 
 #include "ArduinoBoard.h"
 #include "ESP32TempSensor.h"
@@ -48,28 +49,19 @@ constexpr uint8_t INFLUX_DECIMALS = 2;
 constexpr size_t INFLUX_ROLLING_SAMPLES = 10;
 constexpr uint8_t INFLUX_BATCH_SIZE = 2; // enclosure + CPU temperature points
 
-// ----------- Wind sensor and LED pins
-constexpr uint8_t WIND_SENSOR_PIN = 1;
-constexpr uint8_t WIND_LED_PIN = 6;
-
-// ----------- I2C pins (custom configuration)
-constexpr uint8_t I2C_SCL_PIN = 43;  // TX pin
-constexpr uint8_t I2C_SDA_PIN = 44;  // RX pin
-//constexpr uint8_t I2C_SDA_PIN = 10;
-//constexpr uint8_t I2C_SCL_PIN = 11;
-
-// ----------- Status LED pins
-constexpr uint8_t RED_LED_PIN = 9;
-constexpr uint8_t BLUE_LED_PIN = 8;
-constexpr uint8_t GREEN_LED_PIN = 7;
+// ----------- Wind sensor pins
+constexpr uint8_t WIND_SENSOR_PIN = 11;
+constexpr uint8_t WIND_SENSOR_GROUND_PIN = 13; // held LOW to power the wind encoder/sensor
+constexpr uint8_t WIND_SENSOR_POWER_PIN = 12; // held HIGH to power the wind encoder/sensor
 
 // ----------- CPU throttling
 constexpr uint8_t CPU_FREQUENCY_MHZ = 80; // keep things cool
 
+// Uses WaveShare_ESP32_S3_Zero_Sensors's default I2C/RGB status LED/LED pins, which
+// match this sketch's wiring.
 Arduino arduino;
-WindMeter wind(WIND_SENSOR_PIN, WIND_LED_PIN, LEDColor::CLEAR_PINK);
-RGBLEDStatus status(RED_LED_PIN, GREEN_LED_PIN, BLUE_LED_PIN);
-Influx influx(INFLUX_INTERVAL_S, &status);
+WindMeter wind(WIND_SENSOR_PIN, arduino.ledPin(), LEDColor::CLEAR_PINK);
+Influx influx(INFLUX_INTERVAL_S, &arduino.status);
 
 TempSensor enclosureTemp;
 ESP32TempSensor cpuTemp;
@@ -82,20 +74,24 @@ InfluxField* cpuTempField = cpuPoint.addRollingAverageField(INFLUX_ROLLING_SAMPL
 
 void setup()
 {
-   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
    SerialX::begin();
    Serial.println("Wind Publisher");
 
-   arduino.begin();
-   status.begin();
-   status.setStatus(Status::STARTED);
+   // power the wind encoder/sensor
+   pinMode(WIND_SENSOR_GROUND_PIN, OUTPUT);
+   pinMode(WIND_SENSOR_POWER_PIN, OUTPUT);
+   digitalWrite(WIND_SENSOR_GROUND_PIN, LOW);
+   digitalWrite(WIND_SENSOR_POWER_PIN, HIGH);
+
+   arduino.begin(); // sets up the I2C bus/power rail and the RGB status LED
+   arduino.status.setStatus(Status::STARTED);
 
    enclosureTemp.begin();
    cpuTemp.begin();
 
    wind.begin();
 
-   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &arduino.status);
    if (!influx.begin(arduino))
    {
       Util::reset();
@@ -104,7 +100,7 @@ void setup()
    influx.client()->setWriteOptions(WriteOptions().batchSize(INFLUX_BATCH_SIZE).bufferSize(2 * INFLUX_BATCH_SIZE));
 
    client.setCallbacks(onConnected, onDisconnected, onSendText, onReceiveText, onError, nullptr);
-   arduino.beginClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
+   arduino.beginClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino.status);
 
    setCpuFrequencyMhz(CPU_FREQUENCY_MHZ);
 }
@@ -117,7 +113,7 @@ void setup()
 void onConnected()
 {
    Serial.println("Connected");
-   status.setStatus(Status::READY);
+   arduino.status.setStatus(Status::READY);
 }
 
 ///

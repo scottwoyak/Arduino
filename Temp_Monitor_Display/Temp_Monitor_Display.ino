@@ -44,7 +44,7 @@
 
 #include "WiFiSettings.h"
 
-constexpr const char* LOCATION = "Studio";
+constexpr const char* LOCATION = "Studio2";
 constexpr auto VERSION = "v1.0";
 constexpr auto INFLUX_MEASUREMENT = "Air";
 constexpr uint8_t INFLUX_INTERVAL_S = 15;

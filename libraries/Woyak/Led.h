@@ -77,6 +77,8 @@ protected:
    unsigned long _blinkStart = 0;
    bool _flashActive = false;
    unsigned long _flashEnd = 0;
+   bool _pendingStopBlink = false;
+   bool _pendingIsOn = false;
 
    ///
    /// <summary>
@@ -132,25 +134,41 @@ public:
 
    ///
    /// <summary>
-   /// Turns the LED on at its configured brightness level.
+   /// Turns the LED on at its configured brightness level. If the LED is currently
+   /// blinking, the switch to solid on is deferred until the current blink cycle
+   /// completes, so the user doesn't see a truncated "half flash".
    /// </summary>
    ///
    virtual void turnOn()
    {
+      if (_blinkIntervalMs > 0)
+      {
+         _pendingStopBlink = true;
+         _pendingIsOn = true;
+         return;
+      }
+
       _isOn = true;
-      _blinkIntervalMs = 0; // no blinking
       _apply();
    }
 
    ///
    /// <summary>
-   /// Turns the LED off.
+   /// Turns the LED off. If the LED is currently blinking, the switch to solid off is
+   /// deferred until the current blink cycle completes, so the user doesn't see a
+   /// truncated "half flash".
    /// </summary>
    ///
    virtual void turnOff()
    {
+      if (_blinkIntervalMs > 0)
+      {
+         _pendingStopBlink = true;
+         _pendingIsOn = false;
+         return;
+      }
+
       _isOn = false;
-      _blinkIntervalMs = 0;
       _apply();
    }
 
@@ -165,6 +183,7 @@ public:
       // no idea why this is needed, but without it, all the leds blink
       delayMicroseconds(50);
 
+      _pendingStopBlink = false;
       _blinkStart = millis();
       _blinkIntervalMs = blinkIntervalMs;
    }
@@ -179,6 +198,7 @@ public:
    void flash(uint16_t durationMs)
    {
       _blinkIntervalMs = 0; // no blinking while flashing
+      _pendingStopBlink = false;
       _isOn = true;
       _apply();
 
@@ -255,7 +275,19 @@ public:
          bool newIsOn = ((millis() - _blinkStart) % (2 * _blinkIntervalMs) < _blinkIntervalMs);
          if (newIsOn != _isOn)
          {
-            _isOn = newIsOn;
+            // A full on+off cycle only completes at the rising edge (off -> on), so
+            // that's the only point a pending stop can be applied without the user
+            // seeing a truncated "half flash".
+            if (_pendingStopBlink && newIsOn)
+            {
+               _pendingStopBlink = false;
+               _blinkIntervalMs = 0;
+               _isOn = _pendingIsOn;
+            }
+            else
+            {
+               _isOn = newIsOn;
+            }
             _apply();
          }
       }
