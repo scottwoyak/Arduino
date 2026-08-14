@@ -94,6 +94,8 @@ void setup()
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &arduino.status);
    if (!influx.begin(arduino))
    {
+      arduino.status.setStatus(Status::FAILED);
+      delay(1000); // time for LED to show
       Util::reset();
    }
 
@@ -126,6 +128,7 @@ void onConnected()
 void onDisconnected(std::string reason)
 {
    Serial.println("Disconnected: " + String(reason.c_str()));
+   arduino.status.setStatus(Status::FAILED);
    delay(1000); // time for Serial to print and LED to show
    Util::reset();
 }
@@ -141,6 +144,7 @@ void onError(std::string msg)
 {
    Serial.print("Error: ");
    Serial.println(msg.c_str());
+   arduino.status.setStatus(Status::FAILED);
    delay(1000); // time for Serial to print and LED to show
    Util::reset();
 }

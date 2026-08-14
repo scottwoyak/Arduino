@@ -24,14 +24,14 @@
 // Uncomment to use DS18B20 sensor instead of I2C auto-detection
 // #define ONE_WIRE_PIN 5
 
-constexpr uint16_t PRINT_INTERVAL_MS = 1000;
+constexpr uint16_t PRINT_INTERVAL_S = 3;
 
 // ----------- The Board
 Arduino arduino;
 
 // ----------- Sensor
 TempSensor sensor;
-Timer printTimer(PRINT_INTERVAL_MS);
+Timer printTimer(1000*PRINT_INTERVAL_S);
 
 void setup()
 {
@@ -39,6 +39,24 @@ void setup()
 
    // The board wrapper's begin() handles any needed I2C bus setup.
    arduino.begin();
+
+#ifdef ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
+   Serial.print("I2C SDA pin: ");
+   Serial.println(arduino.sdaPin());
+   Serial.print("I2C SCL pin: ");
+   Serial.println(arduino.sclPin());
+   Serial.print("I2C aux ground pin: ");
+   Serial.println(arduino.i2cAuxGroundPin());
+   Serial.print("I2C aux power pin: ");
+   Serial.println(arduino.i2cAuxPowerPin());
+#else
+   // Boards without custom I2C wiring use the default SDA/SCL pins baked into the
+   // board's variant definition.
+   Serial.print("I2C SDA pin: ");
+   Serial.println(SDA);
+   Serial.print("I2C SCL pin: ");
+   Serial.println(SCL);
+#endif
 
    // Initialize temperature sensor
 #ifdef ONE_WIRE_PIN

@@ -22,6 +22,7 @@ enum Status
 	WIFI_CONNECTING = 2,
 	WEB_CONNECTING = 3,
 	READY = 4,
+	FAILED = 5,
 };
 
 ///
@@ -127,6 +128,12 @@ public:
 			_wifiLed.turnOn();
 			_webLed.turnOn();
 			break;
+
+		case Status::FAILED:
+			_powerLed.turnOn();
+			_wifiLed.blink(BLINK_INTERVAL_MS);
+			_webLed.blink(BLINK_INTERVAL_MS);
+			break;
 		}
 	}
 };
@@ -174,32 +181,43 @@ public:
    ///
 	void setStatus(Status status) override
 	{
-		switch (status)
+		// Deferred to the next rising edge of any current blink cycle so a color
+		// change (e.g. blue WIFI_CONNECTING -> green WEB_CONNECTING) doesn't cut the
+		// LED's current on/off phase short.
+		_led.runAtNextRisingEdge([this, status]()
 		{
-		case Status::NONE:
-			_led.turnOff();
-			break;
+			switch (status)
+			{
+			case Status::NONE:
+				_led.turnOff();
+				break;
 
-		case Status::STARTED:
-			_led.setColor(1.0f, 1.0f, 1.0f);
-			_led.turnOn();
-			break;
+			case Status::STARTED:
+				_led.setColor(1.0f, 1.0f, 1.0f);
+				_led.turnOn();
+				break;
 
-		case Status::WIFI_CONNECTING:
-			_led.setColor(0.0f, 0.0f, 1.0f);
-			_led.blink(BLINK_INTERVAL_MS);
-			break;
+			case Status::WIFI_CONNECTING:
+				_led.setColor(0.0f, 0.0f, 1.0f);
+				_led.blink(BLINK_INTERVAL_MS);
+				break;
 
-		case Status::WEB_CONNECTING:
-			_led.setColor(0.0f, 1.0f, 0.0f);
-			_led.blink(BLINK_INTERVAL_MS);
-			break;
+			case Status::WEB_CONNECTING:
+				_led.setColor(0.0f, 1.0f, 0.0f);
+				_led.blink(BLINK_INTERVAL_MS);
+				break;
 
-		case Status::READY:
-			_led.setColor(0.0f, 1.0f, 0.0f);
-			_led.turnOn();
-			break;
-		}
+			case Status::READY:
+				_led.setColor(0.0f, 1.0f, 0.0f);
+				_led.turnOn();
+				break;
+
+			case Status::FAILED:
+				_led.setColor(1.0f, 0.0f, 0.0f);
+				_led.turnOn();
+				break;
+			}
+		});
 	}
 };
 
@@ -293,32 +311,43 @@ public:
    /// 
 	void setStatus(Status status) override
 	{
-		switch (status)
+		// Deferred to the next rising edge of any current blink cycle so a color
+		// change (e.g. blue WIFI_CONNECTING -> green WEB_CONNECTING) doesn't cut the
+		// LED's current on/off phase short.
+		_led->runAtNextRisingEdge([this, status]()
 		{
-		case Status::NONE:
-			_led->turnOff();
-			break;
+			switch (status)
+			{
+			case Status::NONE:
+				_led->turnOff();
+				break;
 
-		case Status::STARTED:
-			_led->setColor(1.0f, 1.0f, 1.0f);
-			_led->turnOn();
-			break;
+			case Status::STARTED:
+				_led->setColor(1.0f, 1.0f, 1.0f);
+				_led->turnOn();
+				break;
 
-		case Status::WIFI_CONNECTING:
-			_led->setColor(0.0f, 0.0f, 1.0f);
-			_led->blink(BLINK_INTERVAL_MS);
-			break;
+			case Status::WIFI_CONNECTING:
+				_led->setColor(0.0f, 0.0f, 1.0f);
+				_led->blink(BLINK_INTERVAL_MS);
+				break;
 
-		case Status::WEB_CONNECTING:
-			_led->setColor(0.0f, 1.0f, 0.0f);
-			_led->blink(BLINK_INTERVAL_MS);
-			break;
+			case Status::WEB_CONNECTING:
+				_led->setColor(0.0f, 1.0f, 0.0f);
+				_led->blink(BLINK_INTERVAL_MS);
+				break;
 
-		case Status::READY:
-			_led->setColor(0.0f, 1.0f, 0.0f);
-			_led->turnOn();
-			break;
-		}
+			case Status::READY:
+				_led->setColor(0.0f, 1.0f, 0.0f);
+				_led->turnOn();
+				break;
+
+			case Status::FAILED:
+				_led->setColor(1.0f, 0.0f, 0.0f);
+				_led->turnOn();
+				break;
+			}
+		});
 	}
 
    ///

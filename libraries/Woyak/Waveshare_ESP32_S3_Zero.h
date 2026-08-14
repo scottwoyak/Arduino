@@ -49,7 +49,7 @@ public:
 ///
 class WaveShare_ESP32_S3_Zero_Sensors : public WaveShare_ESP32_S3_Zero
 {
-private:
+public:
    // Default pin assignments, matching Wind_Publisher's wiring.
    static constexpr uint8_t DEFAULT_SDA_PIN = 1;
    static constexpr uint8_t DEFAULT_SCL_PIN = 2;
@@ -60,6 +60,7 @@ private:
    static constexpr uint8_t DEFAULT_GREEN_LED_PIN = 7;
    static constexpr uint8_t DEFAULT_BLUE_LED_PIN = 8;
 
+private:
    uint8_t _sdaPin;
    uint8_t _sclPin;
    uint8_t _i2cAuxGroundPin;
@@ -84,6 +85,50 @@ public:
    uint8_t ledPin() const
    {
       return _ledPin;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the pin assigned to the I2C data (SDA) line.
+   /// </summary>
+   /// <returns>The I2C SDA pin.</returns>
+   ///
+   uint8_t sdaPin() const
+   {
+      return _sdaPin;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the pin assigned to the I2C clock (SCL) line.
+   /// </summary>
+   /// <returns>The I2C SCL pin.</returns>
+   ///
+   uint8_t sclPin() const
+   {
+      return _sclPin;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the pin held LOW to power the enclosure temperature sensor's I2C bus.
+   /// </summary>
+   /// <returns>The I2C auxiliary ground pin.</returns>
+   ///
+   uint8_t i2cAuxGroundPin() const
+   {
+      return _i2cAuxGroundPin;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the pin held HIGH to power the enclosure temperature sensor's I2C bus.
+   /// </summary>
+   /// <returns>The I2C auxiliary power pin.</returns>
+   ///
+   uint8_t i2cAuxPowerPin() const
+   {
+      return _i2cAuxPowerPin;
    }
 
    ///

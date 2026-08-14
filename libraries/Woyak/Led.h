@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <functional>
 #include "Util.h"
 #include <FastLed.h>
 
@@ -74,11 +75,16 @@ protected:
    uint8_t _level = 255;
    float _calibrationFactor = 1.0f;
    bool _isOn = false;
-   unsigned long _blinkStart = 0;
+   unsigned long _nextToggleMs = 0;
    bool _flashActive = false;
    unsigned long _flashEnd = 0;
    bool _pendingStopBlink = false;
    bool _pendingIsOn = false;
+   bool _hasPendingAction = false;
+   std::function<void()> _pendingAction;
+#ifdef LED_BLINK_DIAGNOSTICS
+   unsigned long _lastTransitionMs = 0;
+#endif
 
    ///
    /// <summary>
@@ -180,12 +186,23 @@ public:
    ///
    void blink(uint16_t blinkIntervalMs)
    {
+      // Idempotent: if already blinking at this interval, leave the phase alone so
+      // redundant calls (e.g. setStatus() re-applying the same blinking status on
+      // every loop() iteration while reconnecting) don't reset the schedule and cut
+      // the current on/off phase short.
+      if (_blinkIntervalMs == blinkIntervalMs && !_pendingStopBlink)
+      {
+         return;
+      }
+
       // no idea why this is needed, but without it, all the leds blink
       delayMicroseconds(50);
 
       _pendingStopBlink = false;
-      _blinkStart = millis();
       _blinkIntervalMs = blinkIntervalMs;
+      _isOn = true;
+      _nextToggleMs = millis() + blinkIntervalMs;
+      _apply();
    }
 
    ///
@@ -204,6 +221,28 @@ public:
 
       _flashActive = true;
       _flashEnd = millis() + durationMs;
+   }
+
+   ///
+   /// <summary>
+   /// Schedules a state-changing action (e.g. setColor()+turnOn()/turnOff()/blink()) to
+   /// run at the next off-\>on transition of the current blink cycle, so switching between
+   /// two different blinking states (or a blinking state and a solid color) doesn't cut
+   /// the current on/off phase short. If the LED isn't currently blinking, the action runs
+   /// immediately.
+   /// </summary>
+   /// <param name="action">The state-changing action to run.</param>
+   ///
+   void runAtNextRisingEdge(std::function<void()> action)
+   {
+      if (_blinkIntervalMs == 0)
+      {
+         action();
+         return;
+      }
+
+      _pendingAction = action;
+      _hasPendingAction = true;
    }
 
    ///
@@ -272,12 +311,42 @@ public:
       }
       else if (_blinkIntervalMs > 0)
       {
-         bool newIsOn = ((millis() - _blinkStart) % (2 * _blinkIntervalMs) < _blinkIntervalMs);
-         if (newIsOn != _isOn)
+         // Schedule the next toggle relative to the last intended deadline rather than
+         // re-deriving phase from a fixed absolute anchor. If a single loop() call is
+         // delayed (e.g. by CPU contention from WiFi activity), this produces one
+         // slightly elongated phase followed by a normal one, instead of a truncated
+         // phase followed by a visibly compressed one.
+         if ((long)(millis() - _nextToggleMs) >= 0)
          {
+            bool newIsOn = !_isOn;
+            _nextToggleMs += _blinkIntervalMs;
+
+#ifdef LED_BLINK_DIAGNOSTICS
+            unsigned long now = millis();
+            long sinceLastTransition = (long)(now - _lastTransitionMs);
+            Serial.printf("[LED %u] transition to %s at %lu, %ld ms since last transition (expected ~%u)\n",
+               _pin, newIsOn ? "ON" : "OFF", now, sinceLastTransition, _blinkIntervalMs);
+            _lastTransitionMs = now;
+#endif
+
             // A full on+off cycle only completes at the rising edge (off -> on), so
-            // that's the only point a pending stop can be applied without the user
-            // seeing a truncated "half flash".
+            // that's the only point a pending stop/action can be applied without the
+            // user seeing a truncated "half flash".
+            if (newIsOn && _hasPendingAction)
+            {
+               _hasPendingAction = false;
+               std::function<void()> action = _pendingAction;
+               _pendingAction = nullptr;
+
+               // Let the pending action establish a fresh state (solid or blinking)
+               // instead of applying the old cycle's rising edge.
+               _blinkIntervalMs = 0;
+               _pendingStopBlink = false;
+               _isOn = false;
+               action();
+               return;
+            }
+
             if (_pendingStopBlink && newIsOn)
             {
                _pendingStopBlink = false;
