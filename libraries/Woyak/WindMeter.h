@@ -7,7 +7,7 @@
 ///
 /// <summary>
 /// Measures wind speed from a reed-switch/hall-effect anemometer using interrupt-driven
-/// pulse timing, with an optional LED that blinks once per full rotation.
+/// pulse timing, with an optional LED that flashes on for LED_FLASH_MS once per full rotation.
 /// </summary>
 /// <remarks>
 /// Only one WindMeter instance may be active at a time: the interrupt handler is routed
@@ -30,8 +30,12 @@ private:
    // Numerator for converting a tick period (in microseconds) to mph: speed = MPH_NUMERATOR / period.
    static constexpr float MPH_NUMERATOR = 190140.0f;
 
-   // Number of ticks (half-rotations) per LED blink toggle.
+   // Number of ticks per full rotation. The LED flashes on once per rotation, when the
+   // tick count reaches TICKS_PER_ROTATION.
    static constexpr uint8_t TICKS_PER_ROTATION = 20;
+
+   // Duration the rotation-indicator LED stays on for each flash.
+   static constexpr uint16_t LED_FLASH_MS = 50;
 
    static inline WindMeter* _instance;
    static void interruptTick()
@@ -71,6 +75,12 @@ private:
          _ledStateChanged = false;
          analogWrite(_ledPin, _ledState ? (uint8_t)(255 * _ledCalibrationFactor) : 0);
       }
+
+      if (_ledState && _ledPin > 0 && millis() >= _ledOffTime)
+      {
+         _ledState = false;
+         analogWrite(_ledPin, 0);
+      }
    }
 
    uint8_t _pin;
@@ -80,6 +90,7 @@ private:
    volatile uint8_t _ticks = 0;
    volatile bool _ledState = false;
    volatile bool _ledStateChanged = false;
+   volatile unsigned long _ledOffTime = 0;
 
    void tick()
    {
@@ -98,16 +109,12 @@ private:
          // on ESP32, analogWrite()/LEDC uses locks that are not safe to call from
          // interrupt context and can crash. _applyLedState(), run from the timer
          // callback, applies the change instead.
-         if (_ticks == 1)
-         {
-            _ledState = false;
-            _ledStateChanged = true;
-         }
-         else if (_ticks >= TICKS_PER_ROTATION)
+         if (_ticks >= TICKS_PER_ROTATION)
          {
             _ticks = 0;
             _ledState = true;
             _ledStateChanged = true;
+            _ledOffTime = millis() + LED_FLASH_MS;
          }
       }
    }
@@ -116,7 +123,7 @@ public:
    ///
    /// <summary>
    /// Constructs a WindMeter monitoring the specified pin, with an optional LED that
-   /// blinks once per rotation.
+   /// flashes once per rotation.
    /// </summary>
    /// <param name="sensorPin">GPIO pin connected to the anemometer's switch.</param>
    /// <param name="ledPin">Optional GPIO pin for a rotation-indicator LED; defaults to LED_BUILTIN.</param>
