@@ -1,12 +1,12 @@
 #pragma once
 
 #include "CapacitorSensor.h"
-#include "IDepthSensor.h"
+#include "DepthSensorBase.h"
 
 /// <summary>
 /// Converts capacitor charge timing into a depth value using linear interpolation.
 /// </summary>
-class CapacitorDepthSensor : public IDepthSensor
+class CapacitorDepthSensor : public DepthSensorBase
 {
 private:
    CapacitorSensor* _sensor;
@@ -50,7 +50,7 @@ public:
    /// Gets the latest computed depth, in centimeters, relative to the current baseline.
    /// </summary>
    /// <returns>The interpolated depth minus the configured baseline.</returns>
-   float getDepth() override
+   float readRawDepth() override
    {
       return rawDepthCm() - _baselineCm;
    }

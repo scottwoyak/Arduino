@@ -23,6 +23,7 @@
     <File Path="libraries/Woyak/Counter.h" />
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
+    <File Path="libraries/Woyak/DepthSensorBase.h" />
     <File Path="libraries/Woyak/DisplayBuffer.h" />
     <File Path="libraries/Woyak/DisplayTextView.h" />
     <File Path="libraries/Woyak/DisplayValue.h" />
@@ -71,6 +72,7 @@
     <File Path="libraries/Woyak/MS5837TempSensor.h" />
     <File Path="libraries/Woyak/MultiBar.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
+    <File Path="libraries/Woyak/MultiStatus.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
     <File Path="libraries/Woyak/QuadratureEncoder.h" />
     <File Path="libraries/Woyak/Rate.h" />
@@ -122,6 +124,7 @@
     <File Path="libraries/Woyak/TimedValues.h" />
     <File Path="libraries/Woyak/Timer.h" />
     <File Path="libraries/Woyak/TimeSync.h" />
+    <File Path="libraries/Woyak/UltrasonicDepthSensor.h" />
     <File Path="libraries/Woyak/Units.h" />
     <File Path="libraries/Woyak/Url.h" />
     <File Path="libraries/Woyak/Util.h" />

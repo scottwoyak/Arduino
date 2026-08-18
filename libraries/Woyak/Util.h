@@ -264,7 +264,6 @@ public:
    /// </summary>
    /// <param name="delaySecs">Seconds to delay before reset (default 0.0)</param>
    /// <remarks>
-   /// Calls ESP.restart() for ESP32. Behavior may differ on other boards.
    /// This function does not return.
    /// </remarks>
    static void reset(float delaySecs = 0.0f)
@@ -300,7 +299,7 @@ public:
       String reason = "";
       Preferences preferences;
       preferences.begin("Woyak", false);
-      // Note: Not all implementation of Preferences have isKey, but ESP32 and PreferencesFlash do.
+      // Note: Not all implementation of Preferences have isKey, but ESP32 does.
       if (preferences.isKey("halt"))
       {
          reason = preferences.getString("halt", "");

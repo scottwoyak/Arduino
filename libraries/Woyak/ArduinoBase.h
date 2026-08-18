@@ -193,7 +193,7 @@ public:
 
    ///
    /// <summary>
-   /// Initializes a single sensor, printing a label and "OK"/"NOT FOUND" based on the result,
+   /// Initializes a single sensor, printing a label and "OK"/"NOT FOUND
    /// to Serial and, on display-capable boards, the display as well.
    /// </summary>
    /// <param name="label">The sensor label to print (e.g. "Sensor 0 (New Surface)").</param>
@@ -202,20 +202,16 @@ public:
    ///
    bool initSensor(const char* label, bool (*initFunc)())
    {
-      Serial.print(label);
-      Serial.print("...");
       print(label, Color::LABEL);
       print("...", Color::LABEL);
 
       bool success = initFunc();
       if (success)
       {
-         Serial.println("OK");
          printlnR("OK", Color::VALUE);
       }
       else
       {
-         Serial.println("NOT FOUND");
          printlnR("NOT FOUND", Color::RED);
       }
       return success;

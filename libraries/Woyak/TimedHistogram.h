@@ -354,6 +354,57 @@ public:
 
    ///
    /// <summary>
+   /// Gets the smallest value represented by a bin containing data.
+   /// </summary>
+   /// <returns>The minimum value of the current data range, or the histogram's minimum if empty.</returns>
+   ///
+   float min() const
+   {
+      return getCurrentValuesRange().min;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the largest value represented by a bin containing data.
+   /// </summary>
+   /// <returns>The maximum value of the current data range, or the histogram's maximum if empty.</returns>
+   ///
+   float max() const
+   {
+      return getCurrentValuesRange().max;
+   }
+
+   ///
+   /// <summary>
+   /// Computes the average of the retained samples, approximated using each bin's
+   /// midpoint value weighted by its retained count.
+   /// </summary>
+   /// <returns>The weighted average value, or NAN if no samples are retained.</returns>
+   ///
+   float average() const
+   {
+      float weightedSum = 0.0f;
+      size_t totalCount = 0;
+
+      for (uint16_t i = 0; i < _numBins; i++)
+      {
+         size_t binCount = _bins[i]->getCount();
+         if (binCount == 0)
+         {
+            continue;
+         }
+
+         RangeF binRange = getBinRange(i);
+         float midValue = (binRange.min + binRange.max) / 2.0f;
+         weightedSum += midValue * static_cast<float>(binCount);
+         totalCount += binCount;
+      }
+
+      return totalCount > 0 ? weightedSum / static_cast<float>(totalCount) : NAN;
+   }
+
+   ///
+   /// <summary>
    /// Resets all tracked bin data and cached compute state.
    /// </summary>
    ///

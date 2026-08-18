@@ -38,24 +38,16 @@
 #include "TelemetryClient.h"
 #include "TimedHistogramChart.h"
 #include "TimedRate.h"
-#include "TimedStats.h"
 #include "Timer.h"
 #include "WiFiSettings.h"
 
 // ----------- Telemetry
 Arduino arduino;
 NeoPixelStatus status(&arduino.neoPixel);
-TimedRate refreshRate;
 TelemetrySubscriber client("Wind/Bragg");
 
 // ----------- Built-in LED (flashes on each received telemetry value)
 constexpr uint16_t RECEIVE_LED_FLASH_MS = 20;
-
-// ----------- Rolling wind statistics
-constexpr uint16_t WIND_AVERAGE_DURATION_S = 10 * 60;
-constexpr uint8_t WIND_AVERAGE_INTERVAL_S = 10;
-constexpr uint8_t WIND_AVERAGE_BINS = WIND_AVERAGE_DURATION_S / WIND_AVERAGE_INTERVAL_S;
-TimedStats windStats(WIND_AVERAGE_DURATION_S * 1000, WIND_AVERAGE_BINS);
 
 Format speedFormat("##.# mph", Format::Alignment::RIGHT);
 
@@ -87,6 +79,12 @@ constexpr RangeF CHART_RANGE = { 0, 30 };
 constexpr uint8_t VALUES_AXIS_HEIGHT = 16 + 6;
 constexpr Rect16 CHART_RECT(WORKSPACE_RECT.x, WORKSPACE_RECT.y, WORKSPACE_RECT.width, WORKSPACE_RECT.height - VALUES_AXIS_HEIGHT);
 TimedHistogramChart histogramChart(CHART_RECT, CHART_RANGE, HISTOGRAM_NUM_BINS, HISTOGRAM_DURATION_S * 1000, Green2, Color::BLACK);
+
+// Samples the histogram at a fixed cadence (rather than once per telemetry message) so
+// that a steady value accumulates counts proportional to elapsed time instead of being
+// under-represented relative to rapidly changing values, which arrive as more messages.
+constexpr uint16_t HISTOGRAM_SAMPLE_INTERVAL_MS = 100;
+Timer histogramSampleTimer(HISTOGRAM_SAMPLE_INTERVAL_MS);
 
 constexpr Rect16 SLIDER_RECT(0, DISPLAY_HEIGHT - VALUES_AXIS_HEIGHT + 2, DISPLAY_WIDTH, 3);
 HorizontalSlider slider(SLIDER_RECT, CHART_RANGE, Color::WHITE, Color::BLACK);
@@ -149,6 +147,13 @@ void onReceiveText(std::string text)
 {
    // briefly flash the built-in LED to indicate a new value was received
    arduino.led.flash(RECEIVE_LED_FLASH_MS);
+
+   // feed the charts/stats only when a new value has actually arrived, rather than
+   // every loop() iteration, so stale values aren't repeatedly re-sampled
+   float speed = client.getValue();
+   multiBar.set(speed);
+   rollingChart.set(speed);
+   slider.set(speed);
 }
 
 void loop()
@@ -160,15 +165,12 @@ void loop()
       return;
    }
 
-   refreshRate.tick();
-
-   // get values
    float speed = client.getValue();
-   windStats.set(speed);
-   multiBar.set(speed);
-   rollingChart.set(speed);
-   histogramChart.set(speed);
-   slider.set(speed);
+
+   if (histogramSampleTimer.ready())
+   {
+      histogramChart.set(speed);
+   }
 
    // display values
    arduino.setCursor(0, 0);
@@ -207,13 +209,13 @@ void displayMultiBar(float speed)
    arduino.println("Last 10 Minutes...", Color::LABEL);
    arduino.moveCursorY(1);
 
-   arduino.println("Min: ", windStats.min(), speedFormat);
+   arduino.println("Min: ", histogramChart.min(), speedFormat);
    arduino.moveCursorY(1);
 
-   arduino.println("Max: ", windStats.max(), speedFormat);
+   arduino.println("Max: ", histogramChart.max(), speedFormat);
    arduino.moveCursorY(1);
 
-   arduino.println("Avg: ", windStats.average(), speedFormat);
+   arduino.println("Avg: ", histogramChart.average(), speedFormat);
 
    // display bar
    multiBar.draw(&arduino.display);

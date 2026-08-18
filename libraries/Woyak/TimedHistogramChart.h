@@ -53,6 +53,21 @@ public:
       return _histogram.getCurrentValuesRange();
    }
 
+   float min() const
+   {
+      return _histogram.min();
+   }
+
+   float max() const
+   {
+      return _histogram.max();
+   }
+
+   float average() const
+   {
+      return _histogram.average();
+   }
+
    RangeF getVisibleRange()
    {
       return _visibleXRange;

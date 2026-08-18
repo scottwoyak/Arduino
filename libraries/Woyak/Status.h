@@ -53,6 +53,71 @@ public:
 
 ///
 /// <summary>
+/// Prints the current status to Serial as a human-readable label, only when the status
+/// changes. Useful as an additional/debugging status indicator alongside LED-based ones.
+/// </summary>
+///
+class SerialStatus : public IStatus
+{
+private:
+	Status _lastStatus = Status::NONE;
+	bool _hasLastStatus = false;
+
+	///
+	/// <summary>
+	/// Returns a human-readable label for a status value.
+	/// </summary>
+	/// <param name="status">Status value to describe</param>
+	/// <returns>Status label string</returns>
+	///
+	static const char* _statusString(Status status)
+	{
+		switch (status)
+		{
+		case Status::NONE:            return "NONE";
+		case Status::STARTED:         return "STARTED";
+		case Status::WIFI_CONNECTING: return "WIFI_CONNECTING";
+		case Status::WEB_CONNECTING:  return "WEB_CONNECTING";
+		case Status::READY:           return "READY";
+		case Status::FAILED:          return "FAILED";
+		default:                      return "UNKNOWN";
+		}
+	}
+
+public:
+	///
+	/// <summary>
+	/// No-op; Serial is expected to already be started by the sketch.
+	/// </summary>
+	///
+	void begin() override
+	{
+	}
+
+	///
+	/// <summary>
+	/// Prints the status label to Serial, but only when it differs from the last
+	/// status reported.
+	/// </summary>
+	/// <param name="status">The status value to display.</param>
+	///
+	void setStatus(Status status) override
+	{
+		if (_hasLastStatus && status == _lastStatus)
+		{
+			return;
+		}
+
+		_lastStatus = status;
+		_hasLastStatus = true;
+
+		Serial.print("Status: ");
+		Serial.println(_statusString(status));
+	}
+};
+
+///
+/// <summary>
 /// Drives three discrete LEDs to represent power, WiFi, and web connectivity states.
 /// </summary>
 ///

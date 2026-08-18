@@ -40,7 +40,7 @@
 // Change this define to switch which depth sensor implementation the sketch uses.
 #define DEPTH_SENSOR_MS5837 1
 #define DEPTH_SENSOR_CAPACITOR 2
-#define DEPTH_SENSOR_TYPE DEPTH_SENSOR_CAPACITOR
+#define DEPTH_SENSOR_TYPE DEPTH_SENSOR_MS5837
 
 #include <Arduino.h>
 #include <Preferences.h>
@@ -74,8 +74,7 @@
 #endif
 #endif
 
-constexpr float FRESH_WATER_DENSITY_KG_PER_M3 = 997.0f;
-
+#if DEPTH_SENSOR_TYPE == DEPTH_SENSOR_CAPACITOR
 constexpr uint8_t CAPACITOR_CHARGE_PIN = CapacitorSensor::CHARGE_PIN_100K;
 constexpr uint8_t CAPACITOR_SENSE_PIN = CapacitorSensor::SENSE_PIN;
 constexpr float CAPACITOR_DEFAULT_ZERO_CHARGE_TIME = 128.3f;
@@ -88,11 +87,12 @@ constexpr float CAPACITOR_DEFAULT_FILTER = 5.0f; // percent, per FilteredRolling
 constexpr float CAPACITOR_FILTER_MIN = 0.0f;
 constexpr float CAPACITOR_FILTER_MAX = 100.0f;
 constexpr float CAPACITOR_FILTER_STEP = 0.5f;
+#endif
 
 Arduino arduino;
 
 #if DEPTH_SENSOR_TYPE == DEPTH_SENSOR_MS5837
-MS5837DepthSensor sensor(MS5837::MS5837_02BA, FRESH_WATER_DENSITY_KG_PER_M3);
+MS5837DepthSensor sensor;
 constexpr auto SENSOR_TYPE_NAME = "MS5837-02BA";
 #elif DEPTH_SENSOR_TYPE == DEPTH_SENSOR_CAPACITOR
 CapacitorDepthSensor sensor(
@@ -156,10 +156,12 @@ enum class CalibrationState : uint8_t
 
 float baselineDepthCm = NAN;
 float maxDepthCm = DEFAULT_MAX_DEPTH_CM;
+#if DEPTH_SENSOR_TYPE == DEPTH_SENSOR_CAPACITOR
 float capZeroChargeTime = CAPACITOR_DEFAULT_ZERO_CHARGE_TIME;
 float capCalibrationChargeTime = CAPACITOR_DEFAULT_CALIBRATION_CHARGE_TIME;
 int32_t capBufferSize = CAPACITOR_DEFAULT_BUFFER_SIZE;
 float capFilterSize = CAPACITOR_DEFAULT_FILTER;
+#endif
 RollingRate readRate;
 CalibrationState calibrationState = CalibrationState::None;
 
@@ -483,7 +485,7 @@ void loop()
       bufferSizeField->draw((int)capBufferSize, Color::GRAY);
    }
 
-   int32_t filterDelta
+   int32_t filterDelta = arduino.encoderB.delta();
    if (calibrationState == CalibrationState::None && filterDelta != 0)
    {
       capFilterSize = constrain(capFilterSize + filterDelta * CAPACITOR_FILTER_STEP, CAPACITOR_FILTER_MIN, CAPACITOR_FILTER_MAX);

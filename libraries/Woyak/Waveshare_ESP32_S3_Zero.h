@@ -3,7 +3,9 @@
 #include <Wire.h>
 
 #include "ArduinoBase.h"
+#include "Button.h"
 #include "LED.h"
+#include "MultiStatus.h"
 #include "Status.h"
 #include <Preferences.h>
 
@@ -16,6 +18,9 @@
 class WaveShare_ESP32_S3_Zero : public ArduinoBase
 {
 public:
+   // The ESP32-S3-Zero's onboard BOOT button, wired to GPIO0.
+   static constexpr uint8_t DEFAULT_BUTTON_A_PIN = 0;
+
    ///
    /// <summary>
    /// Onboard WS2812 NeoPixel LED.
@@ -32,12 +37,29 @@ public:
 
    ///
    /// <summary>
-   /// Initializes the onboard NeoPixel LED.
+   /// Onboard BOOT button, on the pin returned by DEFAULT_BUTTON_A_PIN.
+   /// </summary>
+   ///
+   Button buttonA;
+
+   ///
+   /// <summary>
+   /// Constructs the board wrapper with buttonA on DEFAULT_BUTTON_A_PIN.
+   /// </summary>
+   ///
+   WaveShare_ESP32_S3_Zero() : buttonA(DEFAULT_BUTTON_A_PIN)
+   {
+   }
+
+   ///
+   /// <summary>
+   /// Initializes the onboard NeoPixel LED and BOOT button.
    /// </summary>
    ///
    void begin() override
    {
       neoPixel.begin();
+      buttonA.begin();
    }
 };
 
@@ -66,14 +88,18 @@ private:
    uint8_t _i2cAuxGroundPin;
    uint8_t _i2cAuxPowerPin;
    uint8_t _ledPin;
+   RGBLEDStatus _rgbStatus;
+   NeoPixelStatus _neoPixelStatus;
+   SerialStatus _serialStatus;
 
 public:
    ///
    /// <summary>
-   /// RGB LED status indicator used to represent startup and connectivity states.
+   /// Status indicator that drives both the external RGB LED and the onboard NeoPixel,
+   /// so status is visible even when the external LED isn't plugged in.
    /// </summary>
    ///
-   RGBLEDStatus status;
+   MultiStatus status;
 
    ///
    /// <summary>
@@ -168,15 +194,20 @@ public:
         _i2cAuxGroundPin(i2cAuxGroundPin),
         _i2cAuxPowerPin(i2cAuxPowerPin),
         _ledPin(ledPin),
-        status(redPin, greenPin, bluePin),
+        _rgbStatus(redPin, greenPin, bluePin),
+        _neoPixelStatus(&neoPixel),
         led(ledPin)
    {
+      status.addStatus(&_rgbStatus);
+      status.addStatus(&_neoPixelStatus);
+      status.addStatus(&_serialStatus);
    }
 
    ///
    /// <summary>
    /// Powers the enclosure temperature sensor, sets the custom I2C pins, initializes
-   /// the base board, and starts the RGB status LED.
+   /// the base board, and starts the combined status indicator (external RGB LED and
+   /// onboard NeoPixel).
    /// </summary>
    ///
    void begin() override
