@@ -32,7 +32,7 @@ constexpr auto version = "v1.0";
 Arduino arduino;
 I2CMultiplexor multi;
 
-constexpr auto INFLUX_MEASUREMENT = "Air";
+constexpr auto INFLUX_MEASUREMENT = "Sensors";
 constexpr auto INFLUX_INTERVAL_S = 15;
 constexpr auto WATCHDOG_INTERVAL_S = 60;
 constexpr auto WIFI_RESET_DELAY_S = 10;

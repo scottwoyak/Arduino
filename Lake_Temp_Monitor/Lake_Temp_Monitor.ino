@@ -27,7 +27,7 @@
 #include "WiFiSettings.h"
 
 // Influx database settings
-constexpr auto INFLUX_MEASUREMENT = "Air";
+constexpr auto INFLUX_MEASUREMENT = "Sensors";
 constexpr auto INFLUX_LOCATION = "Lake";
 constexpr auto INFLUX_INTERVAL_S = 15;       // Log data to InfluxDB every N seconds
 constexpr auto WATCHDOG_INTERVAL_S = 60;     // Reboot if no successful log in N seconds

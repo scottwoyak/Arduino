@@ -42,7 +42,7 @@ Timer serialTimer(SERIAL_INTERVAL_MS);
 Timer sensorTimer(SENSOR_INTERVAL_MS);
 
 // ----------- InfluxDB settings
-constexpr auto INFLUX_MEASUREMENT = "Air";
+constexpr auto INFLUX_MEASUREMENT = "Sensors";
 constexpr auto INFLUX_LOCATION = "Bragg";
 constexpr uint16_t INFLUX_INTERVAL_S = 60;
 constexpr uint8_t INFLUX_DECIMALS = 2;

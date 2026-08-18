@@ -46,7 +46,7 @@
 
 constexpr const char* LOCATION = "Printer";
 constexpr auto VERSION = "v1.0";
-constexpr auto INFLUX_MEASUREMENT = "Air";
+constexpr auto INFLUX_MEASUREMENT = "Sensors";
 constexpr uint8_t INFLUX_INTERVAL_S = 15;
 constexpr uint16_t SENSOR_INTERVAL_MS = 500;
 constexpr uint8_t WATCHDOG_INTERVAL_S = 60;

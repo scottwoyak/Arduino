@@ -71,7 +71,7 @@ constexpr float LED_WAVE_HEIGHT_LOW_CM = -10.0f;
 constexpr float LED_WAVE_HEIGHT_HIGH_CM = 10.0f;
 
 // ----------- InfluxDB settings
-constexpr auto INFLUX_MEASUREMENT = "Air";
+constexpr auto INFLUX_MEASUREMENT = "Sensors";
 constexpr auto INFLUX_LOCATION = "Test";
 constexpr uint16_t INFLUX_INTERVAL_S = 60;
 constexpr uint8_t INFLUX_DECIMALS = 1;
