@@ -50,4 +50,19 @@ public:
       Wire.write(1 << i);
       Wire.endTransmission();
    }
+
+   ///
+   /// <summary>
+   /// Deselects all multiplexor channels, isolating every downstream port. Needed
+   /// before talking to a sensor wired directly to the main I2C bus, so a previously
+   /// selected downstream sensor (which may share the same address) doesn't also
+   /// respond and conflict on the bus.
+   /// </summary>
+   ///
+   void off()
+   {
+      Wire.beginTransmission(_address);
+      Wire.write(0);
+      Wire.endTransmission();
+   }
 };

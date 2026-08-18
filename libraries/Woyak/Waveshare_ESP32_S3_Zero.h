@@ -77,6 +77,15 @@ public:
 
    ///
    /// <summary>
+   /// General-purpose LED on the pin returned by ledPin(). Available for sketches that
+   /// want a managed LED (begin()/turnOn()/turnOff()/blink()) rather than driving the
+   /// pin directly (e.g. as WindMeter does).
+   /// </summary>
+   ///
+   LED led;
+
+   ///
+   /// <summary>
    /// Gets the pin assigned to the general-purpose LED (e.g. for use by a WindMeter or
    /// similar peripheral that drives its own LED directly).
    /// </summary>
@@ -159,7 +168,8 @@ public:
         _i2cAuxGroundPin(i2cAuxGroundPin),
         _i2cAuxPowerPin(i2cAuxPowerPin),
         _ledPin(ledPin),
-        status(redPin, greenPin, bluePin)
+        status(redPin, greenPin, bluePin),
+        led(ledPin)
    {
    }
 
@@ -183,5 +193,6 @@ public:
 
       WaveShare_ESP32_S3_Zero::begin();
       status.begin();
+      led.begin();
    }
 };
