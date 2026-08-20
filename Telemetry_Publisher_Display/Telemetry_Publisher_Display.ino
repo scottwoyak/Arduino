@@ -24,12 +24,10 @@
 #error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
 #endif
 
-#include "Table.h"
-#include "RollingRate.h"
 #include "ScatterPlot.h"
 #include "SerialX.h"
 #include "Status.h"
-#include "Stopwatch.h"
+#include "Table.h"
 #include "TelemetryClient.h"
 
 // Selects the mock sensor used to generate published test data.
@@ -45,7 +43,6 @@
 constexpr const char* TELEMETRY_TOPIC = "Test";
 constexpr unsigned long PUBLISH_INTERVAL_MS = 100;
 constexpr uint8_t TELEMETRY_DECIMAL_PLACES = 3;
-TelemetryPublisher client(TELEMETRY_TOPIC, TELEMETRY_DECIMAL_PLACES);
 
 // ----------- The Board
 Arduino arduino;
@@ -57,9 +54,7 @@ Timer publishTimer(PUBLISH_INTERVAL_MS);
 
 // ----------- Display Items
 constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
-constexpr uint16_t RATE_NUM_SAMPLES = 10;
-Stopwatch sw(false);
-RollingRate rate(RATE_NUM_SAMPLES);
+Timer rateDisplayTimer(RATE_UPDATE_INTERVAL_MS);
 constexpr const char* TOPIC_FORMAT = "                    ";
 constexpr const char* HOST_FORMAT = "                        ";
 constexpr const char* RATE_FORMAT = "###/s";
@@ -71,100 +66,9 @@ ScatterPlot valuePlot(&arduino, Rect16{}, "##.#s", "###.###");
 TimedScatterPlotSeries* valueSeries = valuePlot.createTimedSeries(PLOT_SPAN_MS);
 constexpr uint8_t VALUE_SERIES_POINT_SIZE = 1;
 
-///
-/// <summary>
-/// Called when the WebSocket connection to the telemetry server is established.
-/// </summary>
-///
-void onConnected()
-{
-   Serial.println("Telemetry: WebSocket Connected");
-}
-
-///
-/// <summary>
-/// Called when the WebSocket connection to the telemetry server is lost.
-/// Restarts the device so it can reconnect from a clean state.
-/// </summary>
-///
-void onDisconnected(std::string reason)
-{
-   Serial.println("Telemetry: WebSocket Disconnected: " + String(reason.c_str()));
-   delay(1000);
-   Util::reset();
-}
-
-///
-/// <summary>
-/// Called when a text message is received from the telemetry server.
-/// </summary>
-/// <param name="payload">Message payload (unused)</param>
-///
-void onText(std::string payload)
-{
-   rate.tick();
-}
-
-///
-/// <summary>
-/// Called when a telemetry client error occurs. Displays the error and resets the device.
-/// </summary>
-/// <param name="msg">Error message to display</param>
-///
-void onError(std::string msg)
-{
-   arduino.setTextSize(2);
-   arduino.clearDisplay();
-   arduino.display.setTextWrap(true);
-   arduino.println(msg, Color::RED);
-   Serial.println("Telemetry Error: " + String(msg.c_str()));
-   Util::reset(10);
-}
-
-///
-/// <summary>
-/// Called once the telemetry connection is fully started. Draws the main display layout.
-/// </summary>
-///
-void onStarted()
-{
-   status.setStatus(Status::READY);
-   arduino.printlnR("OK", Color::VALUE);
-   delay(1000);
-
-   arduino.clearDisplay();
-   arduino.setCursor(0, 0);
-   arduino.setTextSize(3);
-   arduino.println("Publisher", Color::HEADING);
-   arduino.moveCursorY(4);
-
-   arduino.setTextSize(2);
-   table.setPosition(0, arduino.getCursor().y);
-   table.addRow("Topic", TOPIC_FORMAT);
-   table.addRow("Host", HOST_FORMAT, Color::VALUE2);
-   table.addRow("Rate", RATE_FORMAT);
-
-   Url url(client.getUrl().c_str());
-   table.setValue(0, client.getTopic(), Color::VALUE);
-   table.setValue(1, url.getHost(), Color::VALUE2);
-   table.setValueNone(2);
-   table.draw();
-
-   constexpr int16_t PLOT_TOP_PADDING_PX = 5;
-   int16_t plotTop = table.getRect().bottom() + PLOT_TOP_PADDING_PX;
-   valuePlot.setRect(0, plotTop, arduino.width(), arduino.height() - plotTop);
-   valuePlot.setYAxisFormat(sensor.getFormatStr().c_str());
-   valuePlot.setShowXMinMaxValue(false);
-   valuePlot.setShowXRangeValue(true);
-   valuePlot.setShowYRangeValue(false);
-   valuePlot.setYAxisMode(ScatterPlot::AxisMode::GROW_ONLY);
-   valueSeries->showPoints = true;
-   valueSeries->showLines = false;
-   valuePlot.clear();
-
-   rate.reset();
-   sw.start();
-}
+TelemetryEventHandler telemetryHandler(&status, &arduino);
+TelemetryPublisher client(TELEMETRY_TOPIC, TELEMETRY_DECIMAL_PLACES, &status, &telemetryHandler);
+bool needsInitialDisplay = true;
 
 void setup()
 {
@@ -175,13 +79,12 @@ void setup()
 
    valueSeries->pointSize = VALUE_SERIES_POINT_SIZE;
 
-   arduino.printHeader("Initializing");
+   arduino.beginInit();
 
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
 
    status.setStatus(Status::WEB_CONNECTING);
-   client.setCallbacks(onConnected, onDisconnected, nullptr, onText, onError, onStarted);
-   arduino.beginClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); });
+   arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); });
 
    sensor.begin();
 }
@@ -197,10 +100,45 @@ void loop()
 
    client.loop();
 
-   if (sw.elapsedMillis() > RATE_UPDATE_INTERVAL_MS)
+   if (client.isStarted() && needsInitialDisplay)
    {
-      table.setValue(2, rate.get());
-      sw.reset();
+      arduino.clearDisplay();
+      arduino.setCursor(0, 0);
+      arduino.setTextSize(3);
+      arduino.println("Publisher", Color::HEADING);
+      arduino.moveCursorY(4);
+
+      arduino.setTextSize(2);
+      table.setPosition(0, arduino.getCursor().y);
+      table.addRow("Topic", TOPIC_FORMAT);
+      table.addRow("Host", HOST_FORMAT, Color::VALUE2);
+      table.addRow("Rate", RATE_FORMAT);
+
+      Url url(client.getUrl().c_str());
+      table.setValue(0, client.getTopic(), Color::VALUE);
+      table.setValue(1, url.getHost(), Color::VALUE2);
+      table.setValueNone(2);
+      table.draw();
+
+      constexpr int16_t PLOT_TOP_PADDING_PX = 5;
+      int16_t plotTop = table.getRect().bottom() + PLOT_TOP_PADDING_PX;
+      valuePlot.setRect(0, plotTop, arduino.width(), arduino.height() - plotTop);
+      valuePlot.setYAxisFormat(sensor.getFormatStr().c_str());
+      valuePlot.setShowXMinMaxValue(false);
+      valuePlot.setShowXRangeValue(true);
+      valuePlot.setShowYRangeValue(false);
+      valuePlot.setYAxisMode(ScatterPlot::AxisMode::GROW_ONLY);
+      valueSeries->showPoints = true;
+      valueSeries->showLines = false;
+      valuePlot.clear();
+
+      rateDisplayTimer.reset();
+      needsInitialDisplay = false;
+   }
+
+   if (rateDisplayTimer.ready())
+   {
+      table.setValue(2, client.getRate());
    }
 
    table.draw();

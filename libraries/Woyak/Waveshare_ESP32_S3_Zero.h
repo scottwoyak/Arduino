@@ -69,7 +69,7 @@ public:
 /// dedicated ground/power rail pins powering the bus) and an RGB LED status indicator.
 /// </summary>
 ///
-class WaveShare_ESP32_S3_Zero_Sensors : public WaveShare_ESP32_S3_Zero
+class WaveShare_ESP32_S3_Zero_Sensors : public WaveShare_ESP32_S3_Zero, public IStatus
 {
 public:
    // Default pin assignments, matching Wind_Publisher's wiring.
@@ -92,15 +92,15 @@ private:
    NeoPixelStatus _neoPixelStatus;
    SerialStatus _serialStatus;
 
-public:
    ///
    /// <summary>
    /// Status indicator that drives both the external RGB LED and the onboard NeoPixel,
    /// so status is visible even when the external LED isn't plugged in.
    /// </summary>
    ///
-   MultiStatus status;
+   MultiStatus _status;
 
+public:
    ///
    /// <summary>
    /// General-purpose LED on the pin returned by ledPin(). Available for sketches that
@@ -198,9 +198,9 @@ public:
         _neoPixelStatus(&neoPixel),
         led(ledPin)
    {
-      status.addStatus(&_rgbStatus);
-      status.addStatus(&_neoPixelStatus);
-      status.addStatus(&_serialStatus);
+      _status.addStatus(&_rgbStatus);
+      _status.addStatus(&_neoPixelStatus);
+      _status.addStatus(&_serialStatus);
    }
 
    ///
@@ -223,7 +223,19 @@ public:
       Wire.begin();
 
       WaveShare_ESP32_S3_Zero::begin();
-      status.begin();
+      _status.begin();
       led.begin();
+   }
+
+   ///
+   /// <summary>
+   /// Updates the combined status indicator (external RGB LED and onboard NeoPixel) to
+   /// reflect the specified status.
+   /// </summary>
+   /// <param name="status">The status value to display.</param>
+   ///
+   void setStatus(Status status) override
+   {
+      _status.setStatus(status);
    }
 };

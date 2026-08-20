@@ -87,6 +87,19 @@ public:
 
    ///
    /// <summary>
+   /// Prints an "Initializing" header to Serial and, on display-capable boards, the
+   /// display as well. Convenience wrapper for printHeader(), used at the start of
+   /// setup() to standardize the initialization sequence across sketches.
+   /// </summary>
+   /// <param name="str">The header text to print.</param>
+   ///
+   void beginInit(const char* str = "Initializing")
+   {
+      printHeader(str);
+   }
+
+   ///
+   /// <summary>
    /// Prints a "label: value" line, e.g. "Location: Studio", to Serial and, on display-
    /// capable boards, the display as well.
    /// </summary>
@@ -229,7 +242,7 @@ public:
    /// <param name="beginFunc">Function that starts the client/service connection.</param>
    /// <param name="status">Optional status indicator updated to WEB_CONNECTING while connecting.</param>
    ///
-   void beginClient(const char* label, void (*beginFunc)(), IStatus* status = nullptr)
+   void initClient(const char* label, void (*beginFunc)(), IStatus* status = nullptr)
    {
       if (status != nullptr)
       {

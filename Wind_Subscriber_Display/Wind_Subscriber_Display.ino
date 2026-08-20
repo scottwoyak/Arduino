@@ -14,7 +14,7 @@
 //
 
 // Uncomment to use local telemetry server instead of remote
-#define TELEMETRY_LOCAL
+//#define TELEMETRY_LOCAL
 
 #include "ArduinoBoard.h"
 
@@ -37,14 +37,12 @@
 #include "Status.h"
 #include "TelemetryClient.h"
 #include "TimedHistogramChart.h"
-#include "TimedRate.h"
 #include "Timer.h"
 #include "WiFiSettings.h"
 
 // ----------- Telemetry
 Arduino arduino;
 NeoPixelStatus status(&arduino.neoPixel);
-TelemetrySubscriber client("Wind/Bragg");
 
 // ----------- Built-in LED (flashes on each received telemetry value)
 constexpr uint16_t RECEIVE_LED_FLASH_MS = 20;
@@ -97,6 +95,50 @@ enum class Mode
 };
 EnumSelector<Mode> modeSelector(arduino.buttonA, Mode::Histogram, Mode::Histogram);
 
+void displayHeader();
+
+TelemetrySubscriber client("Wind/Bragg", &status);
+
+///
+/// <summary>
+/// Handles telemetry lifecycle events for this sketch: draws the header once started
+/// and feeds the charts/stats/LED flash on each received value. Disconnect and error
+/// handling use the base class's default behavior.
+/// </summary>
+///
+class WindTelemetryHandler : public TelemetryEventHandler
+{
+public:
+   explicit WindTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &arduino)
+   {
+   }
+
+   void onStarted() override
+   {
+      TelemetryEventHandler::onStarted();
+
+      arduino.clearDisplay();
+      displayHeader();
+   }
+
+   void onReceiveText(const std::string& text) override
+   {
+      (void)text;
+
+      // briefly flash the built-in LED to indicate a new value was received
+      arduino.led.flash(RECEIVE_LED_FLASH_MS);
+
+      // feed the charts/stats only when a new value has actually arrived, rather than
+      // every loop() iteration, so stale values aren't repeatedly re-sampled
+      float speed = client.getValue();
+      multiBar.set(speed);
+      rollingChart.set(speed);
+      slider.set(speed);
+   }
+};
+
+WindTelemetryHandler telemetryHandler(&status);
+
 void setup()
 {
    SerialX::begin();
@@ -104,56 +146,27 @@ void setup()
    status.begin();
    status.setStatus(Status::STARTED);
 
-   arduino.printHeader("Initializing");
+   client.setHandler(&telemetryHandler);
+
+   arduino.beginInit();
 
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
 
-   client.setCallbacks(nullptr, onDisconnected, nullptr, onReceiveText, onError, onStarted);
-   arduino.beginClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
+   arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
 
    delay(1000); // provide time for the wind meter to get a reading
 }
 
-void onStarted()
-{
-   status.setStatus(Status::READY);
-   arduino.clearDisplay();
-   displayHeader();
-}
-
+///
+/// <summary>
+/// Draws the sketch's title header at the top of the display.
+/// </summary>
+///
 void displayHeader()
 {
    arduino.setCursor(0, 0);
    arduino.setTextSize(3);
    arduino.print("Wind", Color::HEADING);
-}
-
-void onError(std::string msg)
-{
-   arduino.setTextSize(2);
-   arduino.clearDisplay();
-   arduino.display.setTextWrap(true);
-   arduino.println(msg, Color::WHITE, Color::RED);
-   Util::reset(10);
-}
-
-void onDisconnected(std::string reason)
-{
-   Serial.println("Disconnected: " + String(reason.c_str()));
-   Util::reset();
-}
-
-void onReceiveText(std::string text)
-{
-   // briefly flash the built-in LED to indicate a new value was received
-   arduino.led.flash(RECEIVE_LED_FLASH_MS);
-
-   // feed the charts/stats only when a new value has actually arrived, rather than
-   // every loop() iteration, so stale values aren't repeatedly re-sampled
-   float speed = client.getValue();
-   multiBar.set(speed);
-   rollingChart.set(speed);
-   slider.set(speed);
 }
 
 void loop()
@@ -189,10 +202,10 @@ void loop()
    switch (modeSelector.value())
    {
    case Mode::MultiBar:
-      displayMultiBar(speed);
+      displayMultiBar();
       break;
    case Mode::Rolling:
-      displayRollingChart(speed);
+      displayRollingChart();
       break;
    case Mode::Histogram:
       displayHistogram();
@@ -203,7 +216,12 @@ void loop()
    }
 }
 
-void displayMultiBar(float speed)
+///
+/// <summary>
+/// Draws the MultiBar view: rolling 10-minute min/max/average labels and bar.
+/// </summary>
+///
+void displayMultiBar()
 {
    arduino.setTextSize(2);
    arduino.println("Last 10 Minutes...", Color::LABEL);
@@ -221,7 +239,12 @@ void displayMultiBar(float speed)
    multiBar.draw(&arduino.display);
 }
 
-void displayRollingChart(float speed)
+///
+/// <summary>
+/// Draws the Rolling view: a moving bar chart of recent readings.
+/// </summary>
+///
+void displayRollingChart()
 {
    rollingChart.draw(&arduino.display);
 }
@@ -229,6 +252,12 @@ void displayRollingChart(float speed)
 Format AxisValueL("##.#", Format::Alignment::LEFT);
 Format AxisValueR("##.#", Format::Alignment::RIGHT);
 
+///
+/// <summary>
+/// Draws the Histogram view: a windowed histogram of recent readings with a
+/// current-value slider, auto-scaling the visible range to the current values.
+/// </summary>
+///
 void displayHistogram()
 {
    RangeF range = histogramChart.getCurrentValuesRange();

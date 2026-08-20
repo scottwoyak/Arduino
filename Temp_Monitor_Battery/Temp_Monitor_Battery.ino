@@ -40,9 +40,9 @@ void setup()
 {
    SerialX::begin();
    Wire.begin();
-   Serial.println("Initializing... ");
 
    arduino.begin();
+   arduino.beginInit();
    pinMode(BUILTIN_LED, OUTPUT);
    digitalWrite(BUILTIN_LED, HIGH);
 

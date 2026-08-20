@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <esp_system.h>
+#include <esp_sleep.h>
 #include "Format.h"
 
 #if !defined ( BOARD_HAS_PIN_REMAP ) && !defined ( digitalPinToGPIONumber )
@@ -270,9 +271,11 @@ public:
    {
       delay(static_cast<unsigned long>(1000.0f * delaySecs));
 
-      // TODO this is for the ESP32 which complains about the standard resetFunc() method of reset. We'll
-      // need other techniques for different boards.
-      ESP.restart();
+      // Deep sleep gives a more complete hardware-level reset than ESP.restart() (a soft
+      // restart of the running app) - most of the chip is powered down before waking and
+      // re-running setup().
+      esp_sleep_enable_timer_wakeup(1); // wake up almost immediately
+      esp_deep_sleep_start();
    }
 
    /// <summary>

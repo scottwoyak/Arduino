@@ -40,6 +40,7 @@
 #include <Adafruit_SleepyDog.h>
 #include "SerialX.h"
 #include "Influx.h"
+#include "Rebooter.h"
 #include "Timer.h"
 
 #include "WiFiSettings.h"
@@ -69,6 +70,7 @@ InfluxPoint point(INFLUX_MEASUREMENT);
 InfluxField* tempField = point.addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
 InfluxField* humField = point.addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
 Timer sensorTimer(SENSOR_INTERVAL_MS);
+Rebooter rebooter;
 
 void setup()
 {
@@ -80,7 +82,7 @@ void setup()
 
    status.begin();
 
-   arduino.printHeader("Initializing");
+   arduino.beginInit();
 
    arduino.println("Location: ", LOCATION);
 
@@ -104,6 +106,8 @@ void setup()
       Util::reset(RESET_DELAY_S);
    }
 
+   rebooter.begin();
+
    // Pause so the initialization info on the display remains visible for a moment
    // before it's cleared and replaced with the live temperature/humidity readout.
    arduino.setCursor(0, -arduino.charH());
@@ -120,6 +124,8 @@ void setup()
 void loop()
 {
    Watchdog.reset();
+
+   rebooter.loop();
 
    if (sensorTimer.ready())
    {

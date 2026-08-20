@@ -18,6 +18,7 @@
 #include "ESP32TempSensor.h"
 #include "I2CMultiplexor.h"
 #include "Influx.h"
+#include "Rebooter.h"
 #include "SerialTable.h"
 #include "SerialX.h"
 #include "Status.h"
@@ -31,7 +32,7 @@ constexpr auto INFLUX_MEASUREMENT = "Sensors";
 constexpr auto INFLUX_LOCATION = "Lake";
 constexpr auto INFLUX_INTERVAL_S = 15;       // Log data to InfluxDB every N seconds
 constexpr auto WATCHDOG_INTERVAL_S = 60;     // Reboot if no successful log in N seconds
-constexpr auto WATCHDOG_STARTUP_MS = 5 * 60 * 1000;  // Reboot if startup fails in N ms
+constexpr auto WATCHDOG_STARTUP_M = 5;        // Reboot if startup fails in N minutes
 constexpr auto WIFI_RESET_DELAY_S = 10;
 
 ///
@@ -71,11 +72,9 @@ std::array<InfluxPoint*, NUM_SENSORS> points;
 std::array<InfluxField*, NUM_SENSORS> tempFields;
 std::array<InfluxField*, NUM_SENSORS> humFields;
 
-Influx influx(INFLUX_INTERVAL_S, &arduino.status);
+Influx influx(INFLUX_INTERVAL_S, &arduino);
 Timer sensorTimer(SENSOR_INTERVAL_MS);
-
-// Day-of-year recorded at startup (after time sync); loop() reboots once this changes.
-int startDay = -1;
+Rebooter rebooter;
 
 ///
 /// <summary>
@@ -124,7 +123,7 @@ void printSensorSummary()
 void setup()
 {
    // Enable watchdog for startup supervision (5 minutes)
-   Watchdog.enable(WATCHDOG_STARTUP_MS);
+   Watchdog.enable(WATCHDOG_STARTUP_M * 60 * 1000);
 
    // Create sensor objects and data structures
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
@@ -136,10 +135,10 @@ void setup()
    }
 
    SerialX::begin();
-   Serial.println("Initializing Lake Temperature Monitor");
 
    arduino.begin(); // sets up the I2C bus/power rail, the RGB status LED, and the activity LED
-   arduino.status.setStatus(Status::STARTED);
+   arduino.beginInit("Initializing Lake Temperature Monitor");
+   arduino.setStatus(Status::STARTED);
 
    // Initialize and detect all sensors
    Serial.println("Detecting sensors...");
@@ -179,12 +178,12 @@ void setup()
 
    printSensorSummary();
 
-   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &arduino.status);
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &arduino);
 
    // Initialize InfluxDB connection
    if (!influx.begin(arduino))
    {
-      arduino.status.setStatus(Status::FAILED);
+      arduino.setStatus(Status::FAILED);
       Util::reset(WIFI_RESET_DELAY_S);
    }
 
@@ -193,8 +192,7 @@ void setup()
    influx.client()->setWriteOptions(WriteOptions().batchSize(INFLUX_BATCH_SIZE).bufferSize(2 * INFLUX_BATCH_SIZE));
 
    // Record the current day so loop() can reboot once the date advances
-   time_t now = time(nullptr);
-   startDay = localtime(&now)->tm_yday;
+   rebooter.begin();
 
    // Tag each data point with the lake location and its specific item
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
@@ -206,7 +204,7 @@ void setup()
    // Reduce CPU frequency for lower power consumption
    setCpuFrequencyMhz(80);
 
-   arduino.status.setStatus(Status::READY);
+   arduino.setStatus(Status::READY);
 
    // Enable watchdog for operation (60 seconds between successful logs)
    Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
@@ -217,12 +215,7 @@ void loop()
    // Perform a daily reboot for long-term stability, as soon as the date advances past
    // the day the sketch started. The system clock is synced via NTP (see influx.begin()
    // in setup()), so this checks wall-clock time rather than elapsed millis().
-   time_t now = time(nullptr);
-   if (localtime(&now)->tm_yday != startDay)
-   {
-      Serial.println("Performing scheduled daily reboot");
-      Util::reset();
-   }
+   rebooter.loop();
 
    arduino.led.turnOff();  // Turn off activity LED (turned on during data upload)
 
@@ -241,7 +234,7 @@ void loop()
    }
 
    // Ensure WiFi connectivity
-   if (!arduino.ensureWiFiConnected(&arduino.status))
+   if (!arduino.ensureWiFiConnected(&arduino))
    {
       Serial.println("WiFi reconnection failed, performing reset");
       Util::reset(WIFI_RESET_DELAY_S);

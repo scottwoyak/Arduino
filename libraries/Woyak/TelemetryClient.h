@@ -1,18 +1,209 @@
 #pragma once
 
-#include <functional>
 #include <string>
 
 #include <WebSocketsClient.h>
 
+#include "RollingRate.h"
+#include "Status.h"
+#include "Util.h"
+
+// Display-based error rendering is only available on boards with a display.
+// ARDUINO_DISPLAY_SUPPORTED is defined by ArduinoBoard.h when the target board has one.
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+#include "ArduinoWithDisplay.h"
+#endif
+
 WebSocketsClient webSocket;
 
-using TelemetryOnConnectedFunc = std::function<void()>;
-using TelemetryOnDisconnectedFunc = std::function<void(const std::string&)>;
-using TelemetryOnReceiveTextFunc = std::function<void(const std::string&)>;
-using TelemetryOnSendTextFunc = std::function<void(const std::string&)>;
-using TelemetryOnErrorFunc = std::function<void(const std::string&)>;
-using TelemetryOnStartedFunc = std::function<void()>;
+///
+/// <summary>
+/// Number of seconds to wait before resetting the device after a telemetry error or
+/// disconnect, giving Serial/display output time to be seen.
+/// </summary>
+///
+constexpr float TELEMETRY_RESET_DELAY_S = 10.0f;
+
+///
+/// <summary>
+/// Number of samples used by TelemetryClient's rolling message rate tracker.
+/// </summary>
+///
+constexpr uint16_t TELEMETRY_RATE_NUM_SAMPLES = 50;
+
+///
+/// <summary>
+/// Handles telemetry client lifecycle events (connect, disconnect, start, error, and
+/// sent/received text). Provides default behavior for each event; sketches that need
+/// custom behavior should derive from this class and override only the methods they
+/// need.
+/// </summary>
+///
+class TelemetryEventHandler
+{
+private:
+   IStatus* _status;
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+   ArduinoWithDisplay* _display;
+#endif
+
+   ///
+   /// <summary>
+   /// Replaces all occurrences of a substring within a string, in place.
+   /// </summary>
+   /// <param name="str">String to modify</param>
+   /// <param name="from">Substring to search for</param>
+   /// <param name="to">Replacement substring</param>
+   ///
+   static void _replaceAll(std::string& str, const std::string& from, const std::string& to)
+   {
+      if (from.empty())
+      {
+         return;
+      }
+
+      size_t startPos = 0;
+      while ((startPos = str.find(from, startPos)) != std::string::npos)
+      {
+         str.replace(startPos, from.length(), to);
+         startPos += to.length(); // Move past the new replacement
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Logs a sent/received text message to Serial, quoted and with embedded newlines
+   /// escaped for single-line readability.
+   /// </summary>
+   /// <param name="prefix">Direction prefix to print before the quoted message (e.g. ">>> ").</param>
+   /// <param name="message">The message text to log.</param>
+   ///
+   static void _echoText(const char* prefix, const std::string& message)
+   {
+      std::string escaped = message;
+      _replaceAll(escaped, "\n", "\\n");
+      Serial.println((prefix + ("\"" + escaped + "\"")).c_str());
+   }
+
+public:
+   ///
+   /// <summary>
+   /// Initializes a new instance of the TelemetryEventHandler class.
+   /// </summary>
+   /// <param name="status">Status indicator updated by the default event handling.</param>
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+   /// <param name="display">Optional display used to draw error messages by default onError() handling.</param>
+#endif
+   ///
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+   explicit TelemetryEventHandler(IStatus* status, ArduinoWithDisplay* display = nullptr) : _status(status), _display(display)
+   {
+   }
+#else
+   explicit TelemetryEventHandler(IStatus* status) : _status(status)
+   {
+   }
+#endif
+
+   virtual ~TelemetryEventHandler() = default;
+
+   ///
+   /// <summary>
+   /// Invoked when the telemetry WebSocket connection is established. Default
+   /// implementation does nothing.
+   /// </summary>
+   ///
+   virtual void onConnected()
+   {
+   }
+
+   ///
+   /// <summary>
+   /// Invoked when the telemetry client finishes starting up. Default implementation
+   /// sets the status to READY and, on display-capable boards, completes the
+   /// "WebSocket..." label printed by ArduinoBase::initClient() with "OK".
+   /// </summary>
+   ///
+   virtual void onStarted()
+   {
+      _status->setStatus(Status::READY);
+
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+      if (_display != nullptr)
+      {
+         // Completes the "WebSocket..." label printed by ArduinoBase::initClient() -
+         // that call prints the label but relies on this line to print "OK" after it.
+         // If initClient()'s label/print sequence ever changes, update this too.
+         _display->printlnR("OK", Color::VALUE);
+         delay(1000);
+      }
+#endif
+   }
+
+   ///
+   /// <summary>
+   /// Invoked when the telemetry WebSocket connection is lost. Default implementation
+   /// logs the reason, sets the status to FAILED, and resets the device.
+   /// </summary>
+   /// <param name="reason">Reason for the disconnect, as reported by the telemetry client</param>
+   ///
+   virtual void onDisconnected(const std::string& reason)
+   {
+      Serial.println("Disconnected: " + String(reason.c_str()));
+      _status->setStatus(Status::FAILED);
+      Util::reset(TELEMETRY_RESET_DELAY_S);
+   }
+
+   ///
+   /// <summary>
+   /// Invoked when the telemetry client reports an error. Default implementation logs
+   /// the message, draws it on the display (if one was supplied), sets the status to
+   /// FAILED, and resets the device.
+   /// </summary>
+   /// <param name="message">Error message reported by the telemetry client</param>
+   ///
+   virtual void onError(const std::string& message)
+   {
+      Serial.println("Error: " + String(message.c_str()));
+
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+      if (_display != nullptr)
+      {
+         _display->setTextSize(2);
+         _display->clearDisplay();
+         _display->display.setTextWrap(true);
+         _display->println(message, Color::RED);
+      }
+#endif
+
+      _status->setStatus(Status::FAILED);
+      Util::reset(TELEMETRY_RESET_DELAY_S);
+   }
+
+   ///
+   /// <summary>
+   /// Invoked whenever a text message is sent. Default implementation logs the message
+   /// to Serial, quoted with embedded newlines escaped for readability.
+   /// </summary>
+   /// <param name="message">The message text that was sent</param>
+   ///
+   virtual void onSendText(const std::string& message)
+   {
+      _echoText(">>> ", message);
+   }
+
+   ///
+   /// <summary>
+   /// Invoked whenever a text message is received. Default implementation logs the
+   /// message to Serial, quoted with embedded newlines escaped for readability.
+   /// </summary>
+   /// <param name="message">The message text that was received</param>
+   ///
+   virtual void onReceiveText(const std::string& message)
+   {
+      _echoText("<<< ", message);
+   }
+};
 
 ///
 /// <summary>
@@ -29,14 +220,11 @@ private:
    std::string _status = "";
    std::string _topic;
    bool _started = false;
+   RollingRate _rate{ TELEMETRY_RATE_NUM_SAMPLES };
 
-   // callbacks for our user
-   TelemetryOnConnectedFunc _onConnectedFunc = nullptr;
-   TelemetryOnDisconnectedFunc _onDisconnectedFunc = nullptr;
-   TelemetryOnSendTextFunc _onSendTextFunc = nullptr;
-   TelemetryOnReceiveTextFunc _onReceiveTextFunc = nullptr;
-   TelemetryOnErrorFunc _onErrorFunc = nullptr;
-   TelemetryOnStartedFunc _onStartedFunc = nullptr;
+   // user event handler; owned by this instance only when no handler was supplied
+   TelemetryEventHandler* _handler = nullptr;
+   bool _ownsHandler = false;
 
    // static instance for handling callbacks from WebSocketClient
    static TelemetryClient* _instance;
@@ -92,6 +280,18 @@ protected:
 
    ///
    /// <summary>
+   /// Records a tick for the rolling message rate tracker. Called just before the
+   /// handler's onSendText() so the rate reflects how often requests are made to the
+   /// server (each publish for TelemetryPublisher, each "get" for TelemetrySubscriber).
+   /// </summary>
+   ///
+   void tickRate()
+   {
+      _rate.tick();
+   }
+
+   ///
+   /// <summary>
    /// Called once the start handshake (Publish/Subscribe) has succeeded. The default
    /// implementation does nothing.
    /// </summary>
@@ -108,10 +308,8 @@ protected:
    void _sendText(const std::string& text)
    {
       webSocket.sendTXT(text.c_str());
-      if (_onSendTextFunc)
-      {
-         _onSendTextFunc(text);
-      }
+      tickRate();
+      _handler->onSendText(text);
    }
 
    ///
@@ -140,10 +338,7 @@ protected:
          _started = false;
 
          _onDisconnected(reason);
-         if (_onDisconnectedFunc)
-         {
-            _onDisconnectedFunc(reason);
-         }
+         _handler->onDisconnected(reason);
       }
       break;
 
@@ -153,10 +348,7 @@ protected:
          // for deciding how to recover (e.g. resetting the device after a delay).
          _status.clear();
          _onConnected();
-         if (_onConnectedFunc)
-         {
-            _onConnectedFunc();
-         }
+         _handler->onConnected();
          break;
 
       case WStype_TEXT:
@@ -181,29 +373,21 @@ protected:
             {
                Serial.print("Start failure: ");
                Serial.println(str.c_str());
-               if (_onErrorFunc)
-               {
-                  _onErrorFunc(str);
-               }
+               _handler->onError(str);
             }
             else
             {
                Serial.println("Started");
                _started = true;
+               _rate.reset();
                _onStarted();
-               if (_onStartedFunc)
-               {
-                  _onStartedFunc();
-               }
+               _handler->onStarted();
             }
          }
          else
          {
             _onText(str);
-            if (_onReceiveTextFunc)
-            {
-               _onReceiveTextFunc(str);
-            }
+            _handler->onReceiveText(str);
          }
       }
       break;
@@ -230,10 +414,28 @@ public:
    /// </summary>
    /// <param name="topic">The telemetry topic to publish or subscribe to.</param>
    ///
-   explicit TelemetryClient(const std::string& topic)
+   explicit TelemetryClient(const std::string& topic, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
    {
       _instance = this;
       _topic = topic;
+
+      if (handler != nullptr)
+      {
+         _handler = handler;
+      }
+      else
+      {
+         _handler = new TelemetryEventHandler(status);
+         _ownsHandler = true;
+      }
+   }
+
+   ~TelemetryClient()
+   {
+      if (_ownsHandler)
+      {
+         delete _handler;
+      }
    }
 
    ///
@@ -245,6 +447,29 @@ public:
    const std::string& getTopic() const
    {
       return _topic;
+   }
+
+   ///
+   /// <summary>
+   /// Replaces the event handler used by this client. Any previously owned default
+   /// handler (created when no handler was supplied to the constructor) is deleted.
+   /// Useful when the handler needs a reference to the client itself, since the
+   /// handler can be constructed and assigned after the client, avoiding a forward
+   /// declaration of the client in the sketch.
+   /// </summary>
+   /// <param name="handler">The new event handler; must not be nullptr.</param>
+   ///
+   void setHandler(TelemetryEventHandler* handler)
+   {
+      ASSERT(handler != nullptr);
+
+      if (_ownsHandler)
+      {
+         delete _handler;
+      }
+
+      _handler = handler;
+      _ownsHandler = false;
    }
 
    ///
@@ -278,6 +503,18 @@ public:
    bool isConnected() const
    {
       return webSocket.isConnected();
+   }
+
+   ///
+   /// <summary>
+   /// Gets the current message rate, in messages per second, based on the ticks
+   /// recorded for each received message.
+   /// </summary>
+   /// <returns>Messages per second, or 0 if not enough data has been collected yet.</returns>
+   ///
+   float getRate() const
+   {
+      return _rate.get();
    }
 
    ///
@@ -341,35 +578,6 @@ public:
    {
       _onLoop();
       webSocket.loop();
-   }
-
-   ///
-   /// <summary>
-   /// Sets optional user callbacks invoked on connection, disconnection, sent/received
-   /// text, errors, and successful start.
-   /// </summary>
-   /// <param name="onConnectedFunc">Called when the WebSocket connection is established.</param>
-   /// <param name="onDisconnectedFunc">Called with the disconnect reason when the WebSocket connection is lost.</param>
-   /// <param name="onSendTextFunc">Called whenever a text message is sent.</param>
-   /// <param name="onReceiveTextFunc">Called whenever a text message is received.</param>
-   /// <param name="onErrorFunc">Called when the start/subscribe handshake fails.</param>
-   /// <param name="onStartedFunc">Called when the start/subscribe handshake succeeds.</param>
-   ///
-   void setCallbacks(
-      TelemetryOnConnectedFunc onConnectedFunc,
-      TelemetryOnDisconnectedFunc onDisconnectedFunc,
-      TelemetryOnSendTextFunc onSendTextFunc,
-      TelemetryOnReceiveTextFunc onReceiveTextFunc,
-      TelemetryOnErrorFunc onErrorFunc,
-      TelemetryOnStartedFunc onStartedFunc
-   )
-   {
-      _onConnectedFunc = onConnectedFunc;
-      _onDisconnectedFunc = onDisconnectedFunc;
-      _onSendTextFunc = onSendTextFunc;
-      _onReceiveTextFunc = onReceiveTextFunc;
-      _onErrorFunc = onErrorFunc;
-      _onStartedFunc = onStartedFunc;
    }
 };
 
@@ -435,8 +643,10 @@ public:
    /// </summary>
    /// <param name="topic">The telemetry topic to publish to.</param>
    /// <param name="decimalPlaces">The number of decimal places to publish values with.</param>
+   /// <param name="status">Status indicator used by the default event handler, if no handler is supplied.</param>
+   /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
    ///
-   TelemetryPublisher(const std::string& topic, uint8_t decimalPlaces) : TelemetryClient(topic)
+   TelemetryPublisher(const std::string& topic, uint8_t decimalPlaces, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr) : TelemetryClient(topic, status, handler)
    {
       _decimalPlaces = decimalPlaces;
    }
@@ -501,8 +711,10 @@ public:
    /// Initializes a new instance of the TelemetrySubscriber class.
    /// </summary>
    /// <param name="topic">The telemetry topic to subscribe to.</param>
+   /// <param name="status">Status indicator used by the default event handler, if no handler is supplied.</param>
+   /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
    ///
-   TelemetrySubscriber(const std::string& topic) : TelemetryClient(topic)
+   TelemetrySubscriber(const std::string& topic, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr) : TelemetryClient(topic, status, handler)
    {
    }
 

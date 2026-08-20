@@ -22,6 +22,9 @@
 #ifndef ARDUINO_LED_SUPPORTED
 #error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
 #endif
+#ifndef ARDUINO_BUILTIN_LED_SUPPORTED
+#error "This sketch requires a board with a separate built-in LED (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
 
 #include "BarChart.h"
 #include "MovingBarChart.h"
@@ -39,8 +42,10 @@
 Arduino arduino;
 NeoPixelStatus status(&arduino.neoPixel);
 RollingRate refreshRate(100);
-TelemetrySubscriber client("Waves/Lake");
 RollingStats sensorReadings(500);
+
+// ----------- Built-in LED (flashes on each received telemetry value)
+constexpr uint16_t RECEIVE_LED_FLASH_MS = 20;
 
 // ----------- Buffering / smoothing
 constexpr unsigned long LOG_INTERVAL_MS = 1000;
@@ -64,6 +69,37 @@ constexpr RangeF ROLLING_RANGE = { 0, 40 };
 constexpr Rect16 ROLLING_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT);
 MovingBarChart rollingChart(ROLLING_RECT, ROLLING_RANGE, LakeBlue, Color::BLACK);
 
+///
+/// <summary>
+/// Handles telemetry lifecycle events for this sketch: clears the display once
+/// started, and resets the device on disconnect or error.
+/// </summary>
+///
+class WaveTelemetryHandler : public TelemetryEventHandler
+{
+public:
+   explicit WaveTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &arduino)
+   {
+   }
+
+   void onStarted() override
+   {
+      TelemetryEventHandler::onStarted();
+      arduino.clearDisplay();
+   }
+
+   void onReceiveText(const std::string& text) override
+   {
+      (void)text;
+
+      // briefly flash the built-in LED to indicate a new value was received
+      arduino.led.flash(RECEIVE_LED_FLASH_MS);
+   }
+};
+
+WaveTelemetryHandler telemetryHandler(&status);
+TelemetrySubscriber client("Waves/Lake", &status, &telemetryHandler);
+
 void setup()
 {
    SerialX::begin();
@@ -71,35 +107,13 @@ void setup()
    status.begin();
    status.setStatus(Status::STARTED);
 
-   arduino.printHeader("Initializing");
+   arduino.beginInit();
 
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
 
-   client.setCallbacks(nullptr, onDisconnected, nullptr, nullptr, onError, onStarted);
-   arduino.beginClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
+   arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
 
    delay(1000); // provide time for the wave sensor to get a reading
-}
-
-void onStarted()
-{
-   status.setStatus(Status::READY);
-   arduino.clearDisplay();
-}
-
-void onError(std::string msg)
-{
-   arduino.setTextSize(2);
-   arduino.clearDisplay();
-   arduino.display.setTextWrap(true);
-   arduino.println(msg, Color::WHITE, Color::RED);
-   Util::reset(10);
-}
-
-void onDisconnected(std::string reason)
-{
-   Serial.println("Disconnected: " + String(reason.c_str()));
-   Util::reset();
 }
 
 float lastDelta = 0;

@@ -27,24 +27,21 @@
 #error "This sketch requires a Playground board (e.g. ESP32-S3 Dev Module wired as a Playground)."
 #endif
 
-#include "ValueEditor.h"
-#include "FieldTableEditor.h"
 #include "DisplayValue.h"
-#include "RollingRate.h"
+#include "FieldTableEditor.h"
 #include "ScatterPlot.h"
 #include "SerialX.h"
-#include "Stopwatch.h"
 #include "TelemetryClient.h"
 #include "TestSensor.h"
 #include "Timer.h"
 #include "Url.h"
+#include "ValueEditor.h"
 
 #include "WiFiSettings.h"
 
 // ----------- Telemetry
 constexpr const char* TELEMETRY_TOPIC = "Test";
 constexpr uint8_t TELEMETRY_DECIMAL_PLACES = 3;
-TelemetryPublisher client(TELEMETRY_TOPIC, TELEMETRY_DECIMAL_PLACES);
 
 // ----------- The Board
 Arduino arduino;
@@ -76,9 +73,7 @@ uint16_t lastRetryCount = 0;
 
 // ----------- Message Rate
 constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
-constexpr uint16_t RATE_NUM_SAMPLES = 10;
-Stopwatch sw(false);
-RollingRate rate(RATE_NUM_SAMPLES);
+Timer rateDisplayTimer(RATE_UPDATE_INTERVAL_MS);
 FloatValue rateValueField("###/s");
 
 // ----------- Connection Status
@@ -141,114 +136,96 @@ void clearErrorArea()
 
 ///
 /// <summary>
-/// Called when the WebSocket connection to the telemetry server is established.
+/// Handles telemetry lifecycle events for this sketch: updates on-screen status
+/// text/colors, tracks the reconnect countdown, ticks the message rate, and shows
+/// errors before resetting.
 /// </summary>
 ///
-void onConnected()
+class PlaygroundTelemetryHandler : public TelemetryEventHandler
 {
-   Serial.println("Telemetry: WebSocket Connected");
-   statusText = "Publishing Topic...";
-   statusColor = Color::LIME;
-   disconnected = false;
-   connected = false;
-   retryCount = 0;
-   lastErrorMsg.clear();
-   clearErrorArea();
-}
-
-///
-/// <summary>
-/// Called when the WebSocket connection to the telemetry server is lost. Shows a
-/// reconnect countdown with the disconnect reason in the status row rather than
-/// resetting the device; the WebSocket client retries the connection automatically.
-/// </summary>
-/// <remarks>
-/// The underlying WebSocketsClient reports this event repeatedly (roughly every
-/// reconnect attempt) while the connection remains down, not just once at the initial
-/// disconnect. The countdown timer is therefore only (re)started the first time we
-/// transition into the disconnected state, so repeated disconnect events don't keep
-/// resetting the visible countdown back to its starting value.
-/// </remarks>
-/// <param name="reason">The disconnect reason reported by TelemetryClient.</param>
-///
-void onDisconnected(std::string reason)
-{
-   Serial.println("Telemetry: WebSocket Disconnected: " + String(reason.c_str()));
-
-   if (!disconnected)
+public:
+   explicit PlaygroundTelemetryHandler(IStatus* status) : TelemetryEventHandler(status)
    {
-      disconnected = true;
-      lastCountdownSecs = 0;
-      reconnectTimer.reset();
+   }
+
+   void onConnected() override
+   {
+      Serial.println("Telemetry: WebSocket Connected");
+      statusText = "Publishing Topic...";
+      statusColor = Color::LIME;
+      disconnected = false;
+      connected = false;
+      retryCount = 0;
+      lastErrorMsg.clear();
+      clearErrorArea();
+   }
+
+   ///
+   /// <remarks>
+   /// The underlying WebSocketsClient reports this event repeatedly (roughly every
+   /// reconnect attempt) while the connection remains down, not just once at the initial
+   /// disconnect. The countdown timer is therefore only (re)started the first time we
+   /// transition into the disconnected state, so repeated disconnect events don't keep
+   /// resetting the visible countdown back to its starting value.
+   /// </remarks>
+   ///
+   void onDisconnected(const std::string& reason) override
+   {
+      Serial.println("Telemetry: WebSocket Disconnected: " + String(reason.c_str()));
+
+      if (!disconnected)
+      {
+         disconnected = true;
+         lastCountdownSecs = 0;
+         reconnectTimer.reset();
+         statusColor = Color::RED;
+      }
+
+      retryCount++;
+
+      if (connected)
+      {
+         // switching from drawing value to drawing status; erase the stale number
+         value.clear();
+      }
+      connected = false;
+   }
+
+   void onError(const std::string& message) override
+   {
+      Serial.println("Telemetry Error: " + String(message.c_str()));
+      lastErrorMsg = message;
       statusColor = Color::RED;
+
+      if (connected)
+      {
+         // switching from drawing value to drawing status; erase the stale number
+         value.clear();
+      }
+      connected = false;
+
+      Util::reset(RECONNECT_COUNTDOWN_SECS);
    }
 
-   retryCount++;
-
-   if (connected)
+   void onStarted() override
    {
-      // switching from drawing value to drawing status; erase the stale number
-      value.clear();
+      statusText = "Connected";
+      statusColor = Color::LIME;
+      connected = true;
+      retryCount = 0;
+      lastErrorMsg.clear();
+
+      // status's sprite is wider than value's, so switching from drawing status to
+      // drawing value would otherwise leave stale status text visible around value
+      status.clear();
+      clearErrorArea();
+
+      rateDisplayTimer.reset();
    }
-   connected = false;
-}
+};
 
-///
-/// <summary>
-/// Called when a text message is received from the telemetry server.
-/// </summary>
-/// <param name="payload">Message payload (unused)</param>
-///
-void onText(std::string payload)
-{
-   rate.tick();
-}
-
-///
-/// <summary>
-/// Called when a telemetry client error occurs (e.g. the server rejected the publish
-/// request). Resets the device after a short delay so it can attempt a fresh
-/// connection/handshake.
-/// </summary>
-/// <param name="msg">Error message reported by the server</param>
-///
-void onError(std::string msg)
-{
-   Serial.println("Telemetry Error: " + String(msg.c_str()));
-   lastErrorMsg = msg;
-   statusColor = Color::RED;
-
-   if (connected)
-   {
-      // switching from drawing value to drawing status; erase the stale number
-      value.clear();
-   }
-   connected = false;
-
-   Util::reset(10);
-}
-
-///
-/// <summary>
-/// Called once the telemetry connection is fully started. Marks the table as connected.
-/// </summary>
-///
-void onStarted()
-{
-   statusText = "Connected";
-   statusColor = Color::LIME;
-   connected = true;
-   retryCount = 0;
-   lastErrorMsg.clear();
-
-   // status's sprite is wider than value's, so switching from drawing status to
-   // drawing value would otherwise leave stale status text visible around value
-   status.clear();
-   clearErrorArea();
-
-   rate.reset();
-   sw.start();
-}
+PlaygroundTelemetryHandler telemetryHandler(nullptr);
+TelemetryPublisher client(TELEMETRY_TOPIC, TELEMETRY_DECIMAL_PLACES, nullptr, &telemetryHandler);
 
 ///
 /// <summary>
@@ -291,12 +268,13 @@ void setup()
 
    arduino.setTextSize(2);
    constexpr int16_t MESSAGE_PADDING_PX = 5;
+   constexpr int16_t ROW_GAP_PX = 4;
    int16_t messageAreaX = 0;
-   int16_t messageTop = table.getRect().bottom() + MESSAGE_PADDING_PX + status.height() + 4;
+   int16_t messageTop = table.getRect().bottom() + MESSAGE_PADDING_PX + status.height() + ROW_GAP_PX;
    status.setPosition(messageAreaX, messageTop, VerticalAnchor::TOP);
 
    errorAreaX = messageAreaX;
-   errorAreaY = messageTop + status.height() + 4;
+   errorAreaY = messageTop + status.height() + ROW_GAP_PX;
    arduino.display.setTextWrap(true);
 
    int16_t plotTop = table.getRect().bottom() + MESSAGE_PADDING_PX;
@@ -317,7 +295,6 @@ void setup()
    statusColor = Color::LIME;
    status.draw(statusText, statusColor);
 
-   client.setCallbacks(onConnected, onDisconnected, nullptr, onText, onError, onStarted);
    client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
 
    Url url(client.getUrl().c_str());
@@ -389,10 +366,9 @@ void loop()
 
    client.loop();
 
-   if (sw.elapsedMillis() > RATE_UPDATE_INTERVAL_MS)
+   if (rateDisplayTimer.ready())
    {
-      rateValueField.set(rate.get());
-      sw.reset();
+      rateValueField.set(client.getRate());
    }
 
    table.draw();

@@ -31,10 +31,10 @@
 #include "DepthSensorBase.h"
 #include "ESP32TempSensor.h"
 #include "Influx.h"
+#include "Rebooter.h"
 #include "SerialX.h"
 #include "SHT3xTempSensor.h"
 #include "Status.h"
-#include "Stopwatch.h"
 #include "TelemetryClient.h"
 #include "Timer.h"
 
@@ -58,10 +58,9 @@ constexpr uint8_t ECHO_PIN = 11;
 // ----------- Telemetry
 constexpr uint8_t NUM_DECIMALS = 1;
 constexpr uint16_t SENSOR_INTERVAL_MS = 5000;
-TelemetryPublisher client("Waves/Test", NUM_DECIMALS);
-//TelemetryPublisher client("Waves/Lake", NUM_DECIMALS);
 Timer publishTimer(33); // 30 per sec
 Timer sensorTimer(SENSOR_INTERVAL_MS);
+Rebooter rebooter;
 
 // ----------- LED wave height indicator
 // The general-purpose LED (arduino.led) is dimmed to reflect the current wave height:
@@ -81,11 +80,10 @@ constexpr uint8_t INFLUX_BATCH_SIZE = 3; // depth + enclosure + CPU temperature 
 // ----------- CPU throttling
 constexpr uint8_t CPU_FREQUENCY_MHZ = 80; // keep things cool
 
-Stopwatch restartSW;
-
 // Uses WaveShare_ESP32_S3_Zero_Sensors's default I2C/RGB status LED/LED pins, which
-// match this sketch's wiring. arduino.status drives both the external RGB LED and the
-// onboard NeoPixel, so status is visible even when the external LED isn't plugged in.
+// match this sketch's wiring. arduino itself implements IStatus and drives both the
+// external RGB LED and the onboard NeoPixel, so status is visible even when the
+// external LED isn't plugged in.
 Arduino arduino;
 
 #ifdef USE_ULTRASONIC
@@ -101,7 +99,10 @@ DepthSensorBase* const depth = &depthSensor;
 SHT3xTempSensor enclosureTemp;
 ESP32TempSensor cpuTemp;
 
-Influx influx(INFLUX_INTERVAL_S, &arduino.status);
+TelemetryEventHandler telemetryHandler(&arduino);
+TelemetryPublisher client("Waves/Test", NUM_DECIMALS, &arduino, &telemetryHandler);
+//TelemetryPublisher client("Waves/Lake", NUM_DECIMALS, &arduino, &telemetryHandler);
+Influx influx(INFLUX_INTERVAL_S, &arduino);
 InfluxPoint depthPoint(INFLUX_MEASUREMENT, { { "location", INFLUX_LOCATION } });
 InfluxField* averageDepthField = depthPoint.addValueField("averageDepth", INFLUX_DECIMALS);
 
@@ -117,9 +118,9 @@ void setup()
    Serial.println("Wave Publisher");
 
    arduino.begin(); // sets up the I2C bus/power rail and the RGB status LED
-   arduino.status.setStatus(Status::STARTED);
+   arduino.setStatus(Status::STARTED);
 
-   // solid on while starting up; switches to wave-height-based fading once started (see onStarted())
+   // solid on while starting up; switches to wave-height-based fading in loop() once wave data is available
    arduino.led.setLevel(1.0f);
    arduino.led.turnOn();
 
@@ -127,133 +128,27 @@ void setup()
    arduino.initSensor("CPU Sensor", []() { return cpuTemp.begin(); });
    arduino.initSensor("Depth Sensor", []() { return depth->begin(); });
 
-   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &arduino.status);
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &arduino);
    if (!influx.begin(arduino))
    {
-      arduino.status.setStatus(Status::FAILED);
+      arduino.setStatus(Status::FAILED);
       delay(1000); // time for LED to show
       Util::reset();
    }
 
    influx.client()->setWriteOptions(WriteOptions().batchSize(INFLUX_BATCH_SIZE).bufferSize(2 * INFLUX_BATCH_SIZE));
 
-   client.setCallbacks(onConnected, onDisconnected, onSendText, onReceiveText, onError, onStarted);
-   arduino.beginClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino.status);
+   rebooter.begin();
+
+   arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino);
 
    setCpuFrequencyMhz(CPU_FREQUENCY_MHZ);
-}
-
-///
-/// <summary>
-/// Invoked when the telemetry WebSocket connection is established.
-/// </summary>
-///
-void onConnected()
-{
-   Serial.println("Connected");
-}
-
-///
-/// <summary>
-/// Invoked when the telemetry client finishes starting up.
-/// </summary>
-///
-void onStarted()
-{
-   arduino.status.setStatus(Status::READY);
-}
-
-///
-/// <summary>
-/// Invoked when the telemetry WebSocket connection is lost. Resets the device so it
-/// re-establishes a fresh connection on restart.
-/// </summary>
-/// <param name="reason">Reason for the disconnect, as reported by the telemetry client</param>
-///
-void onDisconnected(std::string reason)
-{
-   Serial.println("Disconnected: " + String(reason.c_str()));
-   arduino.status.setStatus(Status::FAILED);
-   delay(1000); // time for Serial to print and LED to show
-   Util::reset();
-}
-
-///
-/// <summary>
-/// Invoked when the telemetry client reports an error. Resets the device so it can
-/// attempt to recover with a fresh connection.
-/// </summary>
-/// <param name="msg">Error message reported by the telemetry client</param>
-///
-void onError(std::string msg)
-{
-   Serial.print("Error: ");
-   Serial.println(msg.c_str());
-   arduino.status.setStatus(Status::FAILED);
-   delay(1000); // time for Serial to print and LED to show
-   Util::reset();
-}
-
-///
-/// <summary>
-/// Replaces all occurrences of a substring within a string, in place.
-/// </summary>
-/// <param name="str">String to modify</param>
-/// <param name="from">Substring to search for</param>
-/// <param name="to">Replacement substring</param>
-///
-void replaceAll(std::string& str, const std::string& from, const std::string& to)
-{
-   if (from.empty())
-   {
-      return;
-   }
-
-   size_t startPos = 0;
-   while ((startPos = str.find(from, startPos)) != std::string::npos)
-   {
-      str.replace(startPos, from.length(), to);
-      startPos += to.length(); // Move past the new replacement
-   }
-}
-
-///
-/// <summary>
-/// Invoked when the telemetry client sends a text message. Logs the message to Serial
-/// with escaped newlines for readability.
-/// </summary>
-/// <param name="msg">The text message that was sent</param>
-///
-void onSendText(std::string msg)
-{
-   Serial.print(">>> ");
-   replaceAll(msg, "\n", "\\n");
-   msg = '"' + msg + '"';
-   Serial.println(msg.c_str());
-}
-
-///
-/// <summary>
-/// Invoked when the telemetry client receives a text message. Logs the message to Serial
-/// with escaped newlines for readability.
-/// </summary>
-/// <param name="msg">The text message that was received</param>
-///
-void onReceiveText(std::string msg)
-{
-   Serial.print("<<< ");
-   replaceAll(msg, "\n", "\\n");
-   msg = '"' + msg + '"';
-   Serial.println(msg.c_str());
 }
 
 void loop()
 {
    // restart every 24 hours to play it safe
-   if (restartSW.elapsedSecs() > 24 * 60 * 60)
-   {
-      Util::reset();
-   }
+   rebooter.loop();
 
    if (client.isStarted())
    {
