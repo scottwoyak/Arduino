@@ -57,7 +57,6 @@
     <File Path="libraries/Woyak/IPrinter.h" />
     <File Path="libraries/Woyak/IScatterPlotSeries.h" />
     <File Path="libraries/Woyak/ITempSensor.h" />
-    <File Path="libraries/Woyak/Latch.h" />
     <File Path="libraries/Woyak/Led.h" />
     <File Path="libraries/Woyak/LGFXUtil.h" />
     <File Path="libraries/Woyak/LGX_FeatherESP32_S3_TFT.h" />

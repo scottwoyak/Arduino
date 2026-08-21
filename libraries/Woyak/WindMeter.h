@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Arduino.h>
-#include "Latch.h"
 #include "Led.h"
+#include "Util.h"
 
 ///
 /// <summary>
@@ -10,21 +10,17 @@
 /// pulse timing, with an optional LED that flashes on for LED_FLASH_MS once per full rotation.
 /// </summary>
 /// <remarks>
-/// Only one WindMeter instance may be active at a time: the interrupt handler is routed
-/// through a single static instance pointer, so constructing a second WindMeter will
-/// silently redirect that pointer and break the first instance's interrupt handling.
+/// Uses attachInterruptArg() so any number of WindMeter instances can be created, each
+/// routed through a single shared ISR.
 /// </remarks>
 ///
 class WindMeter
 {
 private:
-   // Wind speed threshold below which the meter is considered stopped/idle rather than
-   // rotating too slowly to measure reliably.
-   static constexpr float MIN_DETECTABLE_MPH = 0.1f;
-
-   // microsSinceLastTick threshold (in microseconds) corresponding to MIN_DETECTABLE_MPH,
-   // derived from the anemometer's speed formula: 1 rotation/s = 1.7 ms/s, so
-   // 0.1 mph = 1901400 micros between ticks and 100 mph = 1901 micros between ticks.
+   // microsSinceLastTick threshold (in microseconds) below which the meter is considered
+   // rotating rather than stopped/idle, derived from the anemometer's speed formula:
+   // 1 rotation/s = 1.7 ms/s, so 0.1 mph = 1901400 micros between ticks and 100 mph =
+   // 1901 micros between ticks.
    static constexpr unsigned long IDLE_THRESHOLD_MICROS = 1901400;
 
    // Numerator for converting a tick period (in microseconds) to mph: speed = MPH_NUMERATOR / period.
@@ -37,22 +33,52 @@ private:
    // Duration the rotation-indicator LED stays on for each flash.
    static constexpr uint16_t LED_FLASH_MS = 50;
 
-   static inline WindMeter* _instance;
-   static void ARDUINO_ISR_ATTR interruptTick()
+   // Debounce time constant for latched pin state changes.
+   static constexpr unsigned long DEBOUNCE_TIME_MICROS = 100;
+
+   uint8_t _pin;
+   uint8_t _ledPin;
+   float _ledCalibrationFactor;
+   volatile unsigned long _lastHighMicros = 0;
+   volatile unsigned long _period = 0;
+   volatile unsigned long _microsAtStateChange = 0;
+   volatile int _latchState = LOW;
+   volatile uint8_t _ticks = 0;
+   volatile bool _ledState = false;
+   volatile bool _ledStateChanged = false;
+   volatile unsigned long _ledOffTime = 0;
+
+   ///
+   /// <summary>
+   /// ISR trampoline that forwards the pin-change interrupt to the owning instance's tick().
+   /// </summary>
+   /// <param name="arg">The WindMeter instance that owns this interrupt.</param>
+   ///
+   static void ARDUINO_ISR_ATTR _interruptTickHandler(void* arg)
    {
-      // call the function on the class
-      WindMeter::_instance->tick();
+      static_cast<WindMeter*>(arg)->_tick();
    }
 
-   // Applies any pending rotation-indicator LED state change. Runs on a FreeRTOS timer
-   // (not interrupt context) since analogWrite()/LEDC on ESP32 uses locks that are not
-   // safe to call from an ISR.
+   ///
+   /// <summary>
+   /// FreeRTOS timer callback that applies any pending rotation-indicator LED state
+   /// change. Runs on a FreeRTOS timer (not interrupt context) since analogWrite()/LEDC
+   /// on ESP32 uses locks that are not safe to call from an ISR.
+   /// </summary>
+   /// <param name="xTimer">The FreeRTOS timer handle whose user data is the owning WindMeter instance.</param>
+   ///
    static void _timerCallback(TimerHandle_t xTimer)
    {
       WindMeter* meter = static_cast<WindMeter*>(pvTimerGetTimerID(xTimer));
       meter->_applyLedState();
    }
 
+   ///
+   /// <summary>
+   /// Creates and starts the FreeRTOS timer used to apply rotation-indicator LED
+   /// changes outside of interrupt context.
+   /// </summary>
+   ///
    void _startTimer()
    {
       TimerHandle_t timerHandle = xTimerCreate(
@@ -68,6 +94,12 @@ private:
       }
    }
 
+   ///
+   /// <summary>
+   /// Applies any pending rotation-indicator LED on/off change and turns the LED back
+   /// off once its flash duration has elapsed.
+   /// </summary>
+   ///
    void _applyLedState()
    {
       if (_ledStateChanged && _ledPin > 0)
@@ -83,24 +115,54 @@ private:
       }
    }
 
-   uint8_t _pin;
-   uint8_t _ledPin;
-   float _ledCalibrationFactor;
-   volatile Latch _latch;
-   volatile uint8_t _ticks = 0;
-   volatile bool _ledState = false;
-   volatile bool _ledStateChanged = false;
-   volatile unsigned long _ledOffTime = 0;
-
-   void ARDUINO_ISR_ATTR tick()
+   ///
+   /// <summary>
+   /// Attempts to change the latched pin state with debouncing.
+   /// </summary>
+   /// <param name="state">The new state value (HIGH or LOW)</param>
+   /// <returns>true if state changed (after debounce); false if ignored due to debounce or no change</returns>
+   /// <remarks>
+   /// If transitioning to HIGH, automatically records the period since the previous HIGH state.
+   /// </remarks>
+   ///
+   bool ARDUINO_ISR_ATTR _setLatchState(int state)
    {
+      unsigned long newMicros = micros();
+
       // debounce
-      if (_latch.settled() == false)
+      if (Util::getSpan(_microsAtStateChange, newMicros) < DEBOUNCE_TIME_MICROS)
       {
-         return;
+         return false;
       }
 
-      if (_latch.setState(digitalRead(_pin)))
+      if (state == _latchState)
+      {
+         return false;
+      }
+
+      _latchState = state;
+      _microsAtStateChange = newMicros;
+
+      // keep track of the period
+      if (state == HIGH)
+      {
+         _period = Util::getSpan(_lastHighMicros, newMicros);
+         _lastHighMicros = newMicros;
+      }
+
+      return true;
+   }
+
+   ///
+   /// <summary>
+   /// Interrupt service routine for anemometer pin state changes. Debounces the pin,
+   /// tracks the tick count, and schedules the rotation-indicator LED flash once per
+   /// full rotation.
+   /// </summary>
+   ///
+   void ARDUINO_ISR_ATTR _tick()
+   {
+      if (_setLatchState(digitalRead(_pin)))
       {
          // if a state change occurred, track the ticks
          _ticks = _ticks + 1;
@@ -134,7 +196,6 @@ public:
       _pin = sensorPin;
       _ledPin = ledPin;
       _ledCalibrationFactor = ledColorCalibrationFactor(ledColor);
-      _instance = this;
    }
 
    ///
@@ -153,7 +214,7 @@ public:
 
       // create the interrupt for monitoring the pin change
       pinMode(_pin, INPUT_PULLUP);
-      attachInterrupt(digitalPinToInterrupt(_pin), WindMeter::interruptTick, CHANGE);
+      attachInterruptArg(digitalPinToInterrupt(_pin), WindMeter::_interruptTickHandler, this, CHANGE);
 
       // start the timer that applies rotation-indicator LED changes outside of
       // interrupt context
@@ -170,8 +231,8 @@ public:
    float getSpeed()
    {
       noInterrupts();
-      unsigned long period = _latch.getPeriod();
-      unsigned long microsSinceLastTick = _latch.getMicrosSinceLastTick();
+      unsigned long period = _period;
+      unsigned long microsSinceLastTick = Util::getSpan(_lastHighMicros, micros());
       interrupts();
 
       if (period == 0 || microsSinceLastTick > IDLE_THRESHOLD_MICROS)

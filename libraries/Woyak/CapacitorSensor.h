@@ -19,6 +19,10 @@
 /// Measures capacitor charge time as a rolling average, operating entirely in
 /// the background via ESP timers. No service() call is required.
 /// </summary>
+/// <remarks>
+/// Uses attachInterruptArg() so any number of CapacitorSensor instances can be created,
+/// each routed through a single shared ISR.
+/// </remarks>
 ///
 class CapacitorSensor
 {
@@ -61,29 +65,25 @@ private:
    esp_timer_handle_t _timeoutTimer = nullptr;
    esp_timer_handle_t _deferredProcessingTimer = nullptr;
 
-   static inline bool _instanceExists = false;
-
    // ----------- ISR Callback
-   static inline CapacitorSensor* _isrContext = nullptr;
 
    ///
    /// <summary>
    /// ISR: capture charge end time when the sense pin rises.
    /// </summary>
+   /// <param name="arg">The CapacitorSensor instance that owns this interrupt.</param>
    ///
-   static void ARDUINO_ISR_ATTR _onPinRising()
+   static void ARDUINO_ISR_ATTR _onPinRising(void* arg)
    {
-      if (_isrContext != nullptr)
+      CapacitorSensor* self = static_cast<CapacitorSensor*>(arg);
+      portENTER_CRITICAL_ISR(&self->_mux);
+      if (self->_state == CHARGING)
       {
-         portENTER_CRITICAL_ISR(&_isrContext->_mux);
-         if (_isrContext->_state == CHARGING)
-         {
-            _isrContext->_chargeEndMicros = esp_timer_get_time();
-            _isrContext->_measurementComplete = true;
-            _isrContext->_state = IDLE;
-         }
-         portEXIT_CRITICAL_ISR(&_isrContext->_mux);
+         self->_chargeEndMicros = esp_timer_get_time();
+         self->_measurementComplete = true;
+         self->_state = IDLE;
       }
+      portEXIT_CRITICAL_ISR(&self->_mux);
    }
 
    // ----------- Timer Callbacks
@@ -190,7 +190,7 @@ private:
 
       // pinMode(INPUT) destroys the interrupt attachment matrix routing on ESP32
       // We must explicitly re-attach it to ensure the edge is caught.
-      attachInterrupt(digitalPinToInterrupt(_sensePin), _onPinRising, RISING);
+      attachInterruptArg(digitalPinToInterrupt(_sensePin), _onPinRising, this, RISING);
 
       // 3. Clear pending interrupts to prevent false triggering
       // GPIO 0-31 are in STATUS_W1TC_REG, GPIO 32+ are in STATUS1_W1TC_REG
@@ -390,7 +390,7 @@ public:
 
    ///
    /// <summary>
-   /// Construct and configure a capacitor sensor. Only one instance may exist at a time.
+   /// Construct and configure a capacitor sensor.
    /// </summary>
    /// <param name="chargePin">Output pin that drives the charge resistor</param>
    /// <param name="sensePin">Input pin that detects when the capacitor is fully charged</param>
@@ -410,17 +410,9 @@ public:
       : _average(averageSamples == 0 ? 1 : averageSamples, filter, filterMode),
       _rawSensorRate(RATE_SAMPLES)
    {
-      if (_instanceExists)
-      {
-         abort();
-      }
-
-      _instanceExists = true;
-
       _chargePin = chargePin;
       _sensePin = sensePin;
       _dischargeDelayMicros = dischargeDelayMicros;
-      _isrContext = this;
    }
 
    ///
@@ -436,9 +428,6 @@ public:
       if (_deferredProcessingTimer != nullptr) esp_timer_delete(_deferredProcessingTimer);
 
       detachInterrupt(digitalPinToInterrupt(_sensePin));
-
-      _isrContext = nullptr;
-      _instanceExists = false;
    }
 
    ///
@@ -453,7 +442,7 @@ public:
       pinMode(_sensePin, INPUT);
 
       // Attach interrupt once; keep it disabled until charging begins
-      attachInterrupt(digitalPinToInterrupt(_sensePin), _onPinRising, RISING);
+      attachInterruptArg(digitalPinToInterrupt(_sensePin), _onPinRising, this, RISING);
       gpio_intr_disable(static_cast<gpio_num_t>(_sensePin));
 
       esp_timer_create_args_t dischargeArgs = {};

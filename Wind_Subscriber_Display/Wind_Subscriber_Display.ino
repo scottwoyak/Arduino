@@ -14,7 +14,7 @@
 //
 
 // Uncomment to use local telemetry server instead of remote
-//#define TELEMETRY_LOCAL
+#define TELEMETRY_LOCAL
 
 #include "ArduinoBoard.h"
 
@@ -97,7 +97,7 @@ EnumSelector<Mode> modeSelector(arduino.buttonA, Mode::Histogram, Mode::Histogra
 
 void displayHeader();
 
-TelemetrySubscriber client("Wind/Bragg", &status);
+TelemetrySubscriber client("Wind/Lake", &status);
 
 ///
 /// <summary>
