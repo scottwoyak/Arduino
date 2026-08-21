@@ -14,7 +14,7 @@
 // Undefine to use the remote server.
 //#define TELEMETRY_LOCAL
 
-constexpr auto TELEMETRY_TOPIC = "Waves/Lake";
+constexpr auto TELEMETRY_TOPIC = "Waves/LakeP";
 
 #include "ArduinoBoard.h"
 
@@ -61,6 +61,10 @@ constexpr unsigned long CHART_UPDATE_MS = 10; // 100 fps
 // glitches/dropouts and are rejected before updating the rolling baseline average.
 constexpr float MAX_SENSOR_JUMP = 20;
 
+// Maximum plausible change (cm) in the computed wave-height delta between consecutive
+// buffered samples; larger jumps are rejected so a single bad delta doesn't spike the chart.
+constexpr float MAX_DELTA_JUMP = 5;
+
 BufferedTimeSeries waveHeight(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
 Timer bufferTimer(BUFFER_RESOLUTION_MS);
 Timer logTimer(LOG_INTERVAL_MS);
@@ -75,7 +79,7 @@ constexpr uint16_t HEADER_HEIGHT = 2 * 8 + 4; // one line of text size 2 plus pa
 constexpr uint16_t SUBHEADING_HEIGHT = 2 * 8 + 2; // one line of text size 2 plus padding
 
 // ----------- Rolling bar chart view
-Color LakeBlue = Color565::fromRGB(0, 0, 255);
+constexpr Color LakeBlue = Color565::fromRGB(0, 0, 255);
 constexpr RangeF ROLLING_RANGE = { 0, 40 };
 
 constexpr Rect16 ROLLING_RECT(0, HEADER_HEIGHT + SUBHEADING_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT - SUBHEADING_HEIGHT);
@@ -228,7 +232,7 @@ void loop()
       avgSensorReading = sensorReadings.get();
 
       float delta = avgSensorReading - sensorReading;
-      if (fabs(delta - lastDelta) < 5)
+      if (fabs(delta - lastDelta) < MAX_DELTA_JUMP)
       {
          waveHeight.set(delta);
          lastDelta = delta;
@@ -256,7 +260,6 @@ void loop()
 
    if (logTimer.ready())
    {
-
       Serial.println("------------------------------- Wave Data");
       Serial.println(String("Server Rate: ") + String(serverRate.get()) + " data pts per sec");
       Serial.println(String("Display Rate: ") + String(displayRate.get()) + " data pts per sec");

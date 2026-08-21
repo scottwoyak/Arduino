@@ -169,6 +169,22 @@ public:
 
    ///
    /// <summary>
+   /// Invoked when the WebSocket never successfully connected (e.g. the server isn't
+   /// running, or it's unreachable) before the socket was torn down. Default
+   /// implementation logs a clearer message than the raw low-level socket teardown
+   /// reason, sets the status to FAILED, and resets the device.
+   /// </summary>
+   /// <param name="reason">Low-level reason reported by the telemetry client, if any</param>
+   ///
+   virtual void onConnectionFailed(const std::string& reason)
+   {
+      Serial.println("Could not connect to telemetry server: " + String(reason.c_str()));
+      _status->setStatus(Status::FAILED);
+      Util::reset(TELEMETRY_RESET_DELAY_S);
+   }
+
+   ///
+   /// <summary>
    /// Invoked when the telemetry client reports an error. Default implementation logs
    /// the message, draws it on the display (if one was supplied), sets the status to
    /// FAILED, and resets the device.
@@ -239,6 +255,7 @@ private:
    std::string _status = "";
    std::string _topic;
    bool _started = false;
+   bool _hasConnected = false;
    RollingRate _rate{ TELEMETRY_RATE_NUM_SAMPLES };
 
    // user event handler; owned by this instance only when no handler was supplied
@@ -357,7 +374,16 @@ protected:
          _started = false;
 
          _onDisconnected(reason);
-         _handler->onDisconnected(reason);
+
+         if (_hasConnected)
+         {
+            _hasConnected = false;
+            _handler->onDisconnected(reason);
+         }
+         else
+         {
+            _handler->onConnectionFailed(reason);
+         }
       }
       break;
 
@@ -365,6 +391,7 @@ protected:
          // send the start/publish/subscribe handshake immediately; if it fails
          // (e.g. topic still in use), the caller's onError callback is responsible
          // for deciding how to recover (e.g. resetting the device after a delay).
+         _hasConnected = true;
          _status.clear();
          _onConnected();
          _handler->onConnected();

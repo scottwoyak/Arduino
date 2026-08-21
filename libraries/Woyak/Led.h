@@ -160,6 +160,26 @@ public:
 
    ///
    /// <summary>
+   /// Immediately turns the LED on at its configured brightness level, canceling any
+   /// current blink cycle or pending deferred action rather than waiting for the next
+   /// rising edge. Intended for urgent state changes (e.g. an error indicator) that
+   /// must be visible even if the caller can't rely on loop() running again soon
+   /// afterward (e.g. right before a blocking delay/reset).
+   /// </summary>
+   ///
+   void turnOnNow()
+   {
+      _blinkIntervalMs = 0;
+      _pendingStopBlink = false;
+      _flashActive = false;
+      _hasPendingAction = false;
+      _pendingAction = nullptr;
+      _isOn = true;
+      _apply();
+   }
+
+   ///
+   /// <summary>
    /// Turns the LED off. If the LED is currently blinking, the switch to solid off is
    /// deferred until the current blink cycle completes, so the user doesn't see a
    /// truncated "half flash".
@@ -254,6 +274,7 @@ public:
    virtual void setLevel(uint8_t level)
    {
       _level = constrain(level, 0, 255);
+      _apply();
    }
 
    ///
@@ -265,6 +286,7 @@ public:
    virtual void setLevel(float level)
    {
       _level = constrain(255 * level, 0, 255);
+      _apply();
    }
 
    ///

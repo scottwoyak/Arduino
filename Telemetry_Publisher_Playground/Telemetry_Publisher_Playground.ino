@@ -143,6 +143,36 @@ void clearErrorArea()
 ///
 class PlaygroundTelemetryHandler : public TelemetryEventHandler
 {
+private:
+   ///
+   /// <summary>
+   /// Shared handling for onDisconnected() and onConnectionFailed(): starts the
+   /// reconnect countdown (only on the first transition into the disconnected state,
+   /// since the underlying WebSocketsClient reports these events repeatedly - roughly
+   /// every reconnect attempt - while the connection remains down) and clears the
+   /// stale displayed value.
+   /// </summary>
+   ///
+   void _onDisconnectedOrConnectionFailed()
+   {
+      if (!disconnected)
+      {
+         disconnected = true;
+         lastCountdownSecs = 0;
+         reconnectTimer.reset();
+         statusColor = Color::RED;
+      }
+
+      retryCount++;
+
+      if (connected)
+      {
+         // switching from drawing value to drawing status; erase the stale number
+         value.clear();
+      }
+      connected = false;
+   }
+
 public:
    explicit PlaygroundTelemetryHandler(IStatus* status) : TelemetryEventHandler(status)
    {
@@ -172,23 +202,20 @@ public:
    void onDisconnected(const std::string& reason) override
    {
       Serial.println("Telemetry: WebSocket Disconnected: " + String(reason.c_str()));
+      _onDisconnectedOrConnectionFailed();
+   }
 
-      if (!disconnected)
-      {
-         disconnected = true;
-         lastCountdownSecs = 0;
-         reconnectTimer.reset();
-         statusColor = Color::RED;
-      }
-
-      retryCount++;
-
-      if (connected)
-      {
-         // switching from drawing value to drawing status; erase the stale number
-         value.clear();
-      }
-      connected = false;
+   ///
+   /// <remarks>
+   /// The WebSocket never successfully connected before the socket was torn down (e.g.
+   /// the server isn't running/reachable). Handled the same way as onDisconnected(),
+   /// rather than the default onConnectionFailed() behavior of resetting the device.
+   /// </remarks>
+   ///
+   void onConnectionFailed(const std::string& reason) override
+   {
+      Serial.println("Telemetry: WebSocket Connection Failed: " + String(reason.c_str()));
+      _onDisconnectedOrConnectionFailed();
    }
 
    void onError(const std::string& message) override

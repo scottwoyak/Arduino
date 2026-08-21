@@ -6,10 +6,10 @@
 //
 // Behavior:
 // - Connects to WiFi, then opens a WebSocket connection to the telemetry server and
-//   streams live wave height readings as they're read.
-// - Wave height is the offset of the current depth reading from a running average of
-//   readings taken over the past several minutes (see DepthSensorBase).
-// - Prints distance and wave height readings to Serial every publish cycle.
+//   streams live raw depth readings as they're read; the subscribing client is
+//   responsible for computing wave height from a running average of these readings.
+// - Prints distance and wave height (relative to this device's own running average,
+//   for local LED/Serial feedback only) readings to Serial every publish cycle.
 // - Drives the general-purpose LED at full brightness while starting up, then switches
 //   to a brightness proportional to wave height once telemetry is connected: off at
 //   or below LED_WAVE_HEIGHT_LOW_CM, full at or above LED_WAVE_HEIGHT_HIGH_CM, and
@@ -22,9 +22,9 @@
 //
 
 // Uncomment to use local telemetry server instead of remote
-#define TELEMETRY_LOCAL
+//#define TELEMETRY_LOCAL
 
-constexpr auto TELEMETRY_TOPIC = "Waves/Test";
+constexpr auto TELEMETRY_TOPIC = "Waves/LakeP";
 
 // This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
@@ -39,7 +39,6 @@ constexpr auto TELEMETRY_TOPIC = "Waves/Test";
 #include "Status.h"
 #include "TelemetryClient.h"
 #include "Timer.h"
-
 #include "WiFiSettings.h"
 
 //#define USE_ULTRASONIC
@@ -59,8 +58,9 @@ constexpr uint8_t ECHO_PIN = 11;
 
 // ----------- Telemetry
 constexpr uint8_t NUM_DECIMALS = 1;
+constexpr uint16_t PUBLISH_INTERVAL_MS = 33; // 30 per sec
 constexpr uint16_t SENSOR_INTERVAL_MS = 5000;
-Timer publishTimer(33); // 30 per sec
+Timer publishTimer(PUBLISH_INTERVAL_MS);
 Timer sensorTimer(SENSOR_INTERVAL_MS);
 Rebooter rebooter;
 
@@ -103,10 +103,9 @@ ESP32TempSensor cpuTemp;
 
 TelemetryEventHandler telemetryHandler(&arduino);
 TelemetryPublisher client(TELEMETRY_TOPIC, NUM_DECIMALS, &arduino, &telemetryHandler);
-//TelemetryPublisher client("Waves/Lake", NUM_DECIMALS, &arduino, &telemetryHandler);
 Influx influx(INFLUX_INTERVAL_S, &arduino);
 InfluxPoint depthPoint(INFLUX_MEASUREMENT, { { "location", INFLUX_LOCATION } });
-InfluxField* averageDepthField = depthPoint.addValueField("averageDepth", INFLUX_DECIMALS);
+InfluxField* averageDepthField = depthPoint.addValueField("avgDepth", INFLUX_DECIMALS);
 
 InfluxPoint enclosurePoint(INFLUX_MEASUREMENT, { { "location", INFLUX_LOCATION }, { "item", "Enclosure" } });
 InfluxPoint cpuPoint(INFLUX_MEASUREMENT, { { "location", INFLUX_LOCATION }, { "item", "CPU" } });
@@ -166,11 +165,10 @@ void loop()
          Serial.print(" cm   Wave Height: ");
          Serial.print(waveHeightCM);
          Serial.println(" cm");
-         client.setValue(waveHeightCM);
+         client.setValue(distanceCM);
 
          float ledLevel = (waveHeightCM - LED_WAVE_HEIGHT_LOW_CM) / (LED_WAVE_HEIGHT_HIGH_CM - LED_WAVE_HEIGHT_LOW_CM);
          arduino.led.setLevel(constrain(ledLevel, 0.0f, 1.0f));
-         arduino.led.turnOn();
 
          averageDepthField->set(depth->getAverageDepth());
       }

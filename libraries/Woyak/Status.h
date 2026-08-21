@@ -246,6 +246,16 @@ public:
    ///
 	void setStatus(Status status) override
 	{
+		// FAILED is applied immediately (rather than deferred to the next rising edge)
+		// since it's normally followed by a blocking delay/reset; waiting for the next
+		// blink transition could mean the color change never gets a chance to run.
+		if (status == Status::FAILED)
+		{
+			_led.setColor(1.0f, 0.0f, 0.0f);
+			_led.turnOnNow();
+			return;
+		}
+
 		// Deferred to the next rising edge of any current blink cycle so a color
 		// change (e.g. blue WIFI_CONNECTING -> green WEB_CONNECTING) doesn't cut the
 		// LED's current on/off phase short.
@@ -278,8 +288,7 @@ public:
 				break;
 
 			case Status::FAILED:
-				_led.setColor(1.0f, 0.0f, 0.0f);
-				_led.turnOn();
+				// Handled above, outside the deferred action.
 				break;
 			}
 		});
@@ -376,6 +385,16 @@ public:
    /// 
 	void setStatus(Status status) override
 	{
+		// FAILED is applied immediately (rather than deferred to the next rising edge)
+		// since it's normally followed by a blocking delay/reset; waiting for the next
+		// blink transition could mean the color change never gets a chance to run.
+		if (status == Status::FAILED)
+		{
+			_led->setColor(1.0f, 0.0f, 0.0f);
+			_led->turnOnNow();
+			return;
+		}
+
 		// Deferred to the next rising edge of any current blink cycle so a color
 		// change (e.g. blue WIFI_CONNECTING -> green WEB_CONNECTING) doesn't cut the
 		// LED's current on/off phase short.
@@ -408,8 +427,7 @@ public:
 				break;
 
 			case Status::FAILED:
-				_led->setColor(1.0f, 0.0f, 0.0f);
-				_led->turnOn();
+				// Handled above, outside the deferred action.
 				break;
 			}
 		});
