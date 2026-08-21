@@ -43,6 +43,7 @@ class TelemetryEventHandler
 {
 private:
    IStatus* _status;
+   bool _echoEnabled = true;
 #ifdef ARDUINO_DISPLAY_SUPPORTED
    ArduinoWithDisplay* _display;
 #endif
@@ -106,6 +107,18 @@ public:
 #endif
 
    virtual ~TelemetryEventHandler() = default;
+
+   ///
+   /// <summary>
+   /// Enables or disables the default Serial echo logging performed by onSendText()
+   /// and onReceiveText(). Enabled by default.
+   /// </summary>
+   /// <param name="enabled">True to log sent/received text messages to Serial, false to suppress them.</param>
+   ///
+   void setEchoEnabled(bool enabled)
+   {
+      _echoEnabled = enabled;
+   }
 
    ///
    /// <summary>
@@ -189,7 +202,10 @@ public:
    ///
    virtual void onSendText(const std::string& message)
    {
-      _echoText(">>> ", message);
+      if (_echoEnabled)
+      {
+         _echoText(">>> ", message);
+      }
    }
 
    ///
@@ -201,7 +217,10 @@ public:
    ///
    virtual void onReceiveText(const std::string& message)
    {
-      _echoText("<<< ", message);
+      if (_echoEnabled)
+      {
+         _echoText("<<< ", message);
+      }
    }
 };
 

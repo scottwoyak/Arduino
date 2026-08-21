@@ -13,7 +13,7 @@
 
 #include "ArduinoBoard.h"
 
-#ifndef ARDUINO_LED_SUPPORTED
+#ifndef ARDUINO_NEOPIXEL_SUPPORTED
 #error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
 #endif
 

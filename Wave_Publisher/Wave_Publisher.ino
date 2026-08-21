@@ -24,6 +24,8 @@
 // Uncomment to use local telemetry server instead of remote
 #define TELEMETRY_LOCAL
 
+constexpr auto TELEMETRY_TOPIC = "Waves/Test";
+
 // This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
 
@@ -100,7 +102,7 @@ SHT3xTempSensor enclosureTemp;
 ESP32TempSensor cpuTemp;
 
 TelemetryEventHandler telemetryHandler(&arduino);
-TelemetryPublisher client("Waves/Test", NUM_DECIMALS, &arduino, &telemetryHandler);
+TelemetryPublisher client(TELEMETRY_TOPIC, NUM_DECIMALS, &arduino, &telemetryHandler);
 //TelemetryPublisher client("Waves/Lake", NUM_DECIMALS, &arduino, &telemetryHandler);
 Influx influx(INFLUX_INTERVAL_S, &arduino);
 InfluxPoint depthPoint(INFLUX_MEASUREMENT, { { "location", INFLUX_LOCATION } });

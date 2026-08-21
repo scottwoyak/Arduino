@@ -23,7 +23,7 @@ using Arduino = Feather_ESP32_S3;
 #define ARDUINO_BUTTON_SUPPORTED
 #define ARDUINO_BUTTON_A_SUPPORTED
 #define ARDUINO_DISPLAY_SUPPORTED
-#define ARDUINO_LED_SUPPORTED
+#define ARDUINO_NEOPIXEL_SUPPORTED
 #define ARDUINO_BUILTIN_LED_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
 
@@ -38,7 +38,7 @@ constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 #include "Waveshare_ESP32_S3_Zero.h"
 using Arduino = WaveShare_ESP32_S3_Zero_Sensors;
 
-#define ARDUINO_LED_SUPPORTED
+#define ARDUINO_NEOPIXEL_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
 
 // This board has no onboard display, so no text-size defaults are defined.
@@ -48,7 +48,7 @@ using Arduino = WaveShare_ESP32_S3_Zero_Sensors;
 #include "Waveshare_ESP32_S3_Zero.h"
 using Arduino = WaveShare_ESP32_S3_Zero;
 
-#define ARDUINO_LED_SUPPORTED
+#define ARDUINO_NEOPIXEL_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
 
 // This board has no onboard display, so no text-size defaults are defined.
@@ -63,7 +63,7 @@ using Arduino = ESP32_S3_Playground;
 #define ARDUINO_BUTTON_SUPPORTED
 #define ARDUINO_BUTTON_A_SUPPORTED
 #define ARDUINO_DISPLAY_SUPPORTED
-#define ARDUINO_LED_SUPPORTED
+#define ARDUINO_NEOPIXEL_SUPPORTED
 #define ARDUINO_BUILTIN_LED_SUPPORTED
 #define ARDUINO_PLAYGROUND_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED

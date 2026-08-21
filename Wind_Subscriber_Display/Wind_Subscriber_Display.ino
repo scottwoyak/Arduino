@@ -14,7 +14,9 @@
 //
 
 // Uncomment to use local telemetry server instead of remote
-#define TELEMETRY_LOCAL
+//#define TELEMETRY_LOCAL
+
+constexpr auto TELEMETRY_TOPIC = "Wind/Lake";
 
 #include "ArduinoBoard.h"
 
@@ -53,7 +55,8 @@ Format speedFormat("##.# mph", Format::Alignment::RIGHT);
 constexpr uint16_t DISPLAY_HEIGHT = 135;
 constexpr uint16_t DISPLAY_WIDTH = 240;
 constexpr uint16_t HEADER_HEIGHT = 3 * 8 + 4; // one line of text size 3 plus padding
-constexpr Rect16 WORKSPACE_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT);
+constexpr uint16_t SUBHEADING_HEIGHT = 2 * 8 + 2; // one line of text size 2 plus padding
+constexpr Rect16 WORKSPACE_RECT(0, HEADER_HEIGHT + SUBHEADING_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT - SUBHEADING_HEIGHT);
 
 // ----------- MultiBar view (min/max/average)
 Color c1 = Color565::fromRGB(0, 128, 0);
@@ -78,11 +81,12 @@ constexpr uint8_t VALUES_AXIS_HEIGHT = 16 + 6;
 constexpr Rect16 CHART_RECT(WORKSPACE_RECT.x, WORKSPACE_RECT.y, WORKSPACE_RECT.width, WORKSPACE_RECT.height - VALUES_AXIS_HEIGHT);
 TimedHistogramChart histogramChart(CHART_RECT, CHART_RANGE, HISTOGRAM_NUM_BINS, HISTOGRAM_DURATION_S * 1000, Green2, Color::BLACK);
 
-// Samples the histogram at a fixed cadence (rather than once per telemetry message) so
-// that a steady value accumulates counts proportional to elapsed time instead of being
-// under-represented relative to rapidly changing values, which arrive as more messages.
-constexpr uint16_t HISTOGRAM_SAMPLE_INTERVAL_MS = 100;
-Timer histogramSampleTimer(HISTOGRAM_SAMPLE_INTERVAL_MS);
+// Samples the histogram and rolling chart at a fixed cadence (rather than once per
+// telemetry message) so that a steady value accumulates counts/bars proportional to
+// elapsed time instead of being under-represented relative to rapidly changing values,
+// which arrive as more messages.
+constexpr uint16_t SAMPLE_INTERVAL_MS = 100;
+Timer sampleTimer(SAMPLE_INTERVAL_MS);
 
 constexpr Rect16 SLIDER_RECT(0, DISPLAY_HEIGHT - VALUES_AXIS_HEIGHT + 2, DISPLAY_WIDTH, 3);
 HorizontalSlider slider(SLIDER_RECT, CHART_RANGE, Color::WHITE, Color::BLACK);
@@ -95,9 +99,63 @@ enum class Mode
 };
 EnumSelector<Mode> modeSelector(arduino.buttonA, Mode::Histogram, Mode::Histogram);
 
-void displayHeader();
+///
+/// <summary>
+/// Draws the sketch's title header (the telemetry topic) at the top of the display.
+/// </summary>
+///
+void displayHeader()
+{
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(3);
+   arduino.println(TELEMETRY_TOPIC, Color::HEADING);
+}
 
-TelemetrySubscriber client("Wind/Lake", &status);
+///
+/// <summary>
+/// Draws a subheading below the header indicating whether the telemetry server is
+/// local or remote.
+/// </summary>
+///
+void displaySubheading()
+{
+   arduino.setTextSize(2);
+#ifdef TELEMETRY_LOCAL
+   arduino.println("Local", Color::SUB_HEADING);
+#else
+   arduino.println("Remote", Color::SUB_HEADING);
+#endif
+}
+
+///
+/// <summary>
+/// Draws the server mode (Local/Remote) and telemetry topic as footer text at the
+/// bottom of the display, left and right aligned respectively. Only shown on the
+/// setup screen; it's cleared when the main display is drawn on telemetry start.
+/// </summary>
+///
+void displayFooter()
+{
+   Point16 savedCursor = arduino.getCursor();
+   uint8_t savedTextSize = arduino.getTextSize();
+
+   arduino.setTextSize(2);
+
+   arduino.setCursor(0, -arduino.charH());
+#ifdef TELEMETRY_LOCAL
+   arduino.print("Local", Color::GRAY);
+#else
+   arduino.print("Remote", Color::GRAY);
+#endif
+
+   arduino.setCursor(arduino.width(), -arduino.charH());
+   arduino.printR(TELEMETRY_TOPIC, Color::GRAY);
+
+   arduino.setTextSize(savedTextSize);
+   arduino.setCursor(savedCursor);
+}
+
+TelemetrySubscriber client(TELEMETRY_TOPIC, &status);
 
 ///
 /// <summary>
@@ -119,6 +177,7 @@ public:
 
       arduino.clearDisplay();
       displayHeader();
+      displaySubheading();
    }
 
    void onReceiveText(const std::string& text) override
@@ -132,7 +191,6 @@ public:
       // every loop() iteration, so stale values aren't repeatedly re-sampled
       float speed = client.getValue();
       multiBar.set(speed);
-      rollingChart.set(speed);
       slider.set(speed);
    }
 };
@@ -149,24 +207,12 @@ void setup()
    client.setHandler(&telemetryHandler);
 
    arduino.beginInit();
+   displayFooter();
 
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
 
    arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
-
    delay(1000); // provide time for the wind meter to get a reading
-}
-
-///
-/// <summary>
-/// Draws the sketch's title header at the top of the display.
-/// </summary>
-///
-void displayHeader()
-{
-   arduino.setCursor(0, 0);
-   arduino.setTextSize(3);
-   arduino.print("Wind", Color::HEADING);
 }
 
 void loop()
@@ -180,16 +226,20 @@ void loop()
 
    float speed = client.getValue();
 
-   if (histogramSampleTimer.ready())
+   // Skip sampling until the first real value has arrived; otherwise NAN placeholders
+   // get shifted into the rolling/histogram charts and take a full period to clear out,
+   // showing as red bars in the meantime.
+   if (sampleTimer.ready() && !isnan(speed))
    {
       histogramChart.set(speed);
+      rollingChart.set(speed);
    }
 
    // display values
    arduino.setCursor(0, 0);
    arduino.setTextSize(3);
    arduino.printlnR(speed, speedFormat, Color::VALUE);
-   arduino.moveCursorY(4);
+   arduino.setCursor(0, WORKSPACE_RECT.y);
 
    if (modeSelector.hasChanged())
    {

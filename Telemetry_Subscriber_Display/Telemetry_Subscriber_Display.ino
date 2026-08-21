@@ -24,7 +24,7 @@
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
-#ifndef ARDUINO_LED_SUPPORTED
+#ifndef ARDUINO_NEOPIXEL_SUPPORTED
 #error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
 #endif
 
@@ -78,6 +78,13 @@ void setup()
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
 
    arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
+
+#ifdef TELEMETRY_LOCAL
+   arduino.println("Server", "Local");
+#else
+   arduino.println("Server", "Remote");
+#endif
+   arduino.println("Topic", TELEMETRY_TOPIC);
 }
 
 void loop()

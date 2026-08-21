@@ -14,12 +14,14 @@
 // Undefine to use the remote server.
 //#define TELEMETRY_LOCAL
 
+constexpr auto TELEMETRY_TOPIC = "Waves/Lake";
+
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
-#ifndef ARDUINO_LED_SUPPORTED
+#ifndef ARDUINO_NEOPIXEL_SUPPORTED
 #error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
 #endif
 #ifndef ARDUINO_BUILTIN_LED_SUPPORTED
@@ -41,33 +43,99 @@
 // ----------- Telemetry
 Arduino arduino;
 NeoPixelStatus status(&arduino.neoPixel);
-RollingRate refreshRate(100);
+RollingRate displayRate(100);
+RollingRate serverRate(100);
 RollingStats sensorReadings(500);
+std::string receivedValues;
 
 // ----------- Built-in LED (flashes on each received telemetry value)
 constexpr uint16_t RECEIVE_LED_FLASH_MS = 20;
 
 // ----------- Buffering / smoothing
-constexpr unsigned long LOG_INTERVAL_MS = 1000;
+constexpr unsigned long LOG_INTERVAL_MS = 5000;
 constexpr unsigned long BUFFER_TIME_SPAN_MS = 2000;
 constexpr unsigned long BUFFER_RESOLUTION_MS = 100;
+constexpr unsigned long CHART_UPDATE_MS = 10; // 100 fps
+
+// Maximum plausible change (cm) between consecutive raw sensor readings; larger jumps are
+// glitches/dropouts and are rejected before updating the rolling baseline average.
+constexpr float MAX_SENSOR_JUMP = 20;
 
 BufferedTimeSeries waveHeight(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
 Timer bufferTimer(BUFFER_RESOLUTION_MS);
 Timer logTimer(LOG_INTERVAL_MS);
+Timer chartTimer(CHART_UPDATE_MS);
 
 Format heightFormat("###.# cm", Format::Alignment::RIGHT);
 
 // ----------- Display layout
 constexpr uint16_t DISPLAY_HEIGHT = 135;
 constexpr uint16_t DISPLAY_WIDTH = 240;
-constexpr uint16_t HEADER_HEIGHT = 3 * 8 + 4; // one line of text size 3 plus padding
+constexpr uint16_t HEADER_HEIGHT = 2 * 8 + 4; // one line of text size 2 plus padding
+constexpr uint16_t SUBHEADING_HEIGHT = 2 * 8 + 2; // one line of text size 2 plus padding
 
 // ----------- Rolling bar chart view
 Color LakeBlue = Color565::fromRGB(0, 0, 255);
 constexpr RangeF ROLLING_RANGE = { 0, 40 };
-constexpr Rect16 ROLLING_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT);
+
+constexpr Rect16 ROLLING_RECT(0, HEADER_HEIGHT + SUBHEADING_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT - SUBHEADING_HEIGHT);
 MovingBarChart rollingChart(ROLLING_RECT, ROLLING_RANGE, LakeBlue, Color::BLACK);
+
+///
+/// <summary>
+/// Draws the sketch's title header (the telemetry topic) at the top of the display.
+/// </summary>
+///
+void displayHeader()
+{
+   arduino.setCursor(0, 0);
+   arduino.setTextSize(2);
+   arduino.println(TELEMETRY_TOPIC, Color::HEADING);
+}
+
+///
+/// <summary>
+/// Draws a subheading below the header indicating whether the telemetry server is
+/// local or remote.
+/// </summary>
+///
+void displaySubheading()
+{
+   arduino.setTextSize(2);
+#ifdef TELEMETRY_LOCAL
+   arduino.println("Local", Color::SUB_HEADING);
+#else
+   arduino.println("Remote", Color::SUB_HEADING);
+#endif
+}
+
+///
+/// <summary>
+/// Draws the server mode (Local/Remote) and telemetry topic as footer text at the
+/// bottom of the display, left and right aligned respectively. Only shown on the
+/// setup screen; it's cleared when the main display is drawn on telemetry start.
+/// </summary>
+///
+void displayFooter()
+{
+   Point16 savedCursor = arduino.getCursor();
+   uint8_t savedTextSize = arduino.getTextSize();
+
+   arduino.setTextSize(2);
+
+   arduino.setCursor(0, -arduino.charH());
+#ifdef TELEMETRY_LOCAL
+   arduino.print("Local", Color::GRAY);
+#else
+   arduino.print("Remote", Color::GRAY);
+#endif
+
+   arduino.setCursor(arduino.width(), -arduino.charH());
+   arduino.printR(TELEMETRY_TOPIC, Color::GRAY);
+
+   arduino.setTextSize(savedTextSize);
+   arduino.setCursor(savedCursor);
+}
 
 ///
 /// <summary>
@@ -80,17 +148,27 @@ class WaveTelemetryHandler : public TelemetryEventHandler
 public:
    explicit WaveTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &arduino)
    {
+      // suppress the repeated "get" polling requests and value echoes from the serial log
+      setEchoEnabled(false);
    }
 
    void onStarted() override
    {
       TelemetryEventHandler::onStarted();
       arduino.clearDisplay();
+      displayHeader();
+      displaySubheading();
    }
 
    void onReceiveText(const std::string& text) override
    {
-      (void)text;
+      serverRate.tick();
+
+      if (receivedValues.length() > 0)
+      {
+         receivedValues += ",";
+      }
+      receivedValues += text;
 
       // briefly flash the built-in LED to indicate a new value was received
       arduino.led.flash(RECEIVE_LED_FLASH_MS);
@@ -98,7 +176,7 @@ public:
 };
 
 WaveTelemetryHandler telemetryHandler(&status);
-TelemetrySubscriber client("Waves/Lake", &status, &telemetryHandler);
+TelemetrySubscriber client(TELEMETRY_TOPIC, &status, &telemetryHandler);
 
 void setup()
 {
@@ -108,6 +186,7 @@ void setup()
    status.setStatus(Status::STARTED);
 
    arduino.beginInit();
+   displayFooter();
 
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
 
@@ -117,6 +196,7 @@ void setup()
 }
 
 float lastDelta = 0;
+float lastSensorReading = NAN;
 
 void loop()
 {
@@ -129,6 +209,7 @@ void loop()
 
    // get value measured from the bottom of the graph
    float sensorReading = client.getValue();
+   float avgSensorReading = sensorReadings.get();
 
    if (bufferTimer.ready())
    {
@@ -137,8 +218,14 @@ void loop()
          return;
       }
 
+      if (!isnan(lastSensorReading) && fabs(sensorReading - lastSensorReading) > MAX_SENSOR_JUMP)
+      {
+         return;
+      }
+      lastSensorReading = sensorReading;
+
       sensorReadings.set(sensorReading);
-      float avgSensorReading = sensorReadings.get();
+      avgSensorReading = sensorReadings.get();
 
       float delta = avgSensorReading - sensorReading;
       if (fabs(delta - lastDelta) < 5)
@@ -153,25 +240,31 @@ void loop()
       return;
    }
 
-   rollingChart.set((ROLLING_RANGE.min + ROLLING_RANGE.max) / 2.0 + waveHeight.get());
+   if (chartTimer.ready())
+   {
+      rollingChart.set((ROLLING_RANGE.min + ROLLING_RANGE.max) / 2.0 + waveHeight.get());
 
-   // display values
-   arduino.setCursor(0, 0);
-   arduino.setTextSize(3);
+      // display values
+      arduino.setCursor(0, 0);
+      arduino.setTextSize(3);
+      arduino.printlnR(waveHeight.get(), heightFormat, Color::VALUE);
+      arduino.setCursor(0, ROLLING_RECT.y);
 
-   arduino.setTextSize(2);
-   arduino.print(client.getTopic(), Color::HEADING);
-   arduino.setTextSize(3);
-   arduino.printR(waveHeight.get(), heightFormat, Color::VALUE);
-   arduino.moveCursorY(4);
-
-   refreshRate.tick();
-   rollingChart.draw(&arduino.display);
+      displayRate.tick();
+      rollingChart.draw(&arduino.display);
+   }
 
    if (logTimer.ready())
    {
-      Serial.println(String("Rate: ") + String(refreshRate.get()) + " data pts per sec");
+
+      Serial.println("------------------------------- Wave Data");
+      Serial.println(String("Server Rate: ") + String(serverRate.get()) + " data pts per sec");
+      Serial.println(String("Display Rate: ") + String(displayRate.get()) + " data pts per sec");
       Serial.println(String("Sensor Reading: ") + String(sensorReading));
+      Serial.println(String("Average Reading: ") + String(avgSensorReading));
       Serial.println(String("Wave Height: ") + String(waveHeight.get()));
+      Serial.println(String("Received Values: ") + receivedValues.c_str());
+      Serial.println();
+      receivedValues.clear();
    }
 }
