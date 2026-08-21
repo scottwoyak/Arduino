@@ -34,7 +34,6 @@ namespace lgfx
 //----------------------------------------------------------------------------
 
   static constexpr int8_t Bayer[16] = { -30, 18, -22, 26, -14, 2, -6, 10, -18, 30, -26, 22, -2, 14, -10, 6 };
-  // static constexpr int8_t Bayer[16] = { 0, };
 
   // SSD1677 commands
   static constexpr uint8_t CMD_DEEP_SLEEP        = 0x10;
@@ -58,21 +57,102 @@ namespace lgfx
   static constexpr uint8_t CTRL1_BYPASS_RED = 0x40;
 
   //--------------------------------------------------------------------------
-  // LUTs (ported from community-sdk EInkDisplay, non-X3 / GDEQ0426T82).
+  // SSD1677 LUT layout.
   // Layout: VS patterns (5 groups x 10 bytes) + TP/RP timing (10 groups x 5 bytes)
   //         + frame rate (5 bytes) = 105 bytes -> command 0x32.
   // Then voltages [VGH, VSH1, VSH2, VSL, VCOM] (bytes 105..109) -> 0x03/0x04/0x2C.
   //--------------------------------------------------------------------------
 
-  static constexpr uint8_t lut_fastest[110] = {
-    0x00, 0x4A, 0x88, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // LUT0: 00 black
-    0x80, 0x62, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // LUT1: 01 dark
-    0x88, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // LUT2: 10 light
-    0xA8, 0x44, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // LUT3: 11 white
+  // VS codes: 0 = VSS (no drive), 1 = VSH1 (darken), 2 = VSL (lighten),
+  // 3 = VSH2 (weak darken).
+  // For the absolute waveforms (quality/text/fast) the RAM group selects the
+  // target level: group 0 = white, 1 = light gray, 2 = dark gray, 3 = black.
+
+  // Quality: an oscillation prefix erases the previous image, then the
+  // four-gray tail forms the target.
+  // Keep |VSH1| == |VSL|: the net drive stays identical for all groups,
+  // which prevents image-correlated ghosting over repeated refreshes.
+  // The timing groups repeat the tail to stabilize the black and white
+  // endpoints.
+  static constexpr uint8_t lut_quality[110] = {
+    0x66, 0x66, 0x00, 0x4A, 0x88, 0x00, 0x00, 0x00, 0x00, 0x00, // white
+    0x66, 0x66, 0x80, 0x62, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // light
+    0x66, 0x66, 0x88, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // dark
+    0x66, 0x66, 0xA8, 0x44, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, // black
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // VCOM
-    0x09, 0x0C, 0x03, 0x03, 0x00,
-    0x0F, 0x03, 0x07, 0x03, 0x00,
-    0x03, 0x00, 0x02, 0x00, 0x00,
+    0x05, 0x05, 0x05, 0x05, 0x00,
+    0x05, 0x05, 0x05, 0x05, 0x01,
+    0x08, 0x0B, 0x02, 0x03, 0x01,
+    0x0C, 0x02, 0x07, 0x02, 0x01,
+    0x01, 0x00, 0x02, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00,
+    0x22, 0x22, 0x22, 0x22, 0x22,       // frame rate
+    0x17, 0x46, 0xA8, 0x36, 0x30,       // VGH, VSH1(+16V), VSH2, VSL(-16V), VCOM(-1.2V)
+  };
+
+  // Text: 64-frame absolute four-gray waveform for Mode 1.
+  static constexpr uint8_t lut_text[110] = {
+    0x55, 0x55, 0x55, 0x55, 0x55, 0x5A, 0xAA, 0xAA, 0x00, 0x00, // white
+    0xAA, 0x95, 0x55, 0x55, 0x55, 0x5A, 0x82, 0xA0, 0x00, 0x00, // light
+    0xAA, 0xA5, 0x55, 0x55, 0x55, 0x5A, 0xA0, 0x00, 0x00, 0x00, // dark
+    0xAA, 0xAA, 0xAA, 0xAA, 0x55, 0x55, 0x55, 0x50, 0x00, 0x00, // black
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // VCOM
+    0x02, 0x02, 0x02, 0x02, 0x00,
+    0x02, 0x02, 0x02, 0x02, 0x00,
+    0x02, 0x02, 0x02, 0x02, 0x00,
+    0x02, 0x02, 0x02, 0x02, 0x00,
+    0x02, 0x02, 0x02, 0x02, 0x00,
+    0x02, 0x02, 0x02, 0x02, 0x00,
+    0x02, 0x02, 0x02, 0x02, 0x00,
+    0x02, 0x02, 0x02, 0x02, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00,
+    0x8F, 0x8F, 0x8F, 0x8F, 0x8F,       // frame rate
+    0x17, 0x41, 0xA8, 0x32, 0x30,       // VGH, VSH1(+15V), VSH2, VSL(-15V), VCOM(-1.2V)
+  };
+
+  // Fast: 48-frame absolute four-gray waveform for Mode 2.
+  // The first 16 phases run for one frame and the remaining phases for two,
+  // while the final HOLD phase of each middle-gray row uses VSH2 for a weak
+  // two-frame darkening trim.
+  static constexpr uint8_t lut_fast[110] = {
+    0x55, 0x55, 0x55, 0x55, 0x55, 0x5A, 0xAA, 0xAA, 0x00, 0x00, // white
+    0xAA, 0x95, 0x55, 0x55, 0x55, 0x5A, 0x82, 0xAC, 0x00, 0x00, // light
+    0xAA, 0xA5, 0x55, 0x55, 0x55, 0x5A, 0xAC, 0x00, 0x00, 0x00, // dark
+    0xAA, 0xAA, 0xAA, 0xAA, 0x55, 0x55, 0x55, 0x50, 0x00, 0x00, // black
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // VCOM
+    0x01, 0x01, 0x01, 0x01, 0x00,
+    0x01, 0x01, 0x01, 0x01, 0x00,
+    0x01, 0x01, 0x01, 0x01, 0x00,
+    0x01, 0x01, 0x01, 0x01, 0x00,
+    0x02, 0x02, 0x02, 0x02, 0x00,
+    0x02, 0x02, 0x02, 0x02, 0x00,
+    0x02, 0x02, 0x02, 0x02, 0x00,
+    0x02, 0x02, 0x02, 0x02, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00,
+    0x8F, 0x8F, 0x8F, 0x8F, 0x8F,       // frame rate
+    0x17, 0x41, 0xA8, 0x32, 0x30,       // VGH, VSH1(+15V), VSH2, VSL(-15V), VCOM(-1.2V)
+  };
+
+  // Fastest: differential monochrome update (Mode 2). Here the RAM group is
+  // the transition class computed in _send_transition_planes: group 0 holds
+  // dark pixels, 3 holds light pixels, 1 drives black-to-white and 2 drives
+  // white-to-black. A 2-frame reverse-polarity prepulse precedes the
+  // 8-frame dose to curb ghosting from repeated partial updates.
+  static constexpr uint8_t lut_fastest[110] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // hold dark
+    0x6A, 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // black -> white
+    0x95, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // white -> black
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // hold light
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // VCOM
+    0x02, 0x02, 0x02, 0x02, 0x00,
+    0x01, 0x01, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00,
@@ -81,49 +161,8 @@ namespace lgfx
     0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00,
     0x8F, 0x8F, 0x8F, 0x8F, 0x8F,       // frame rate
-    0x17, 0x41, 0xA8, 0x32, 0x30,       // VGH, VSH1, VSH2, VSL, VCOM
-  };
-
-  // Factory absolute LUTs. 2-bit pixel encoding: BW=bit0(LSB), RED=bit1(MSB).
-  //   00=black, 01=dark, 10=light, 11=white. (i.e. value v(0..3) = (MSB<<1)|LSB.)
-  static constexpr uint8_t lut_factory_fast[110] = {
-    0x00, 0x4A, 0x88, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // LUT0: 00 black
-    0x80, 0x62, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // LUT1: 01 dark
-    0x88, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // LUT2: 10 light
-    0xA8, 0x44, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // LUT3: 11 white
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // VCOM
-    0x09, 0x0C, 0x03, 0x03, 0x00,
-    0x0F, 0x03, 0x07, 0x03, 0x00,
-    0x03, 0x00, 0x02, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x44, 0x44, 0x44, 0x44, 0x44,       // frame rate (faster clock)
-    0x17, 0x41, 0xA8, 0x32, 0x50,       // VGH, VSH1, VSH2, VSL, VCOM(-2.0V)
-  };
-
-  static constexpr uint8_t lut_factory_quality[110] = {
-    0x00, 0x4A, 0x88, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // LUT0: 00 black
-    0x80, 0x62, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // LUT1: 01 dark
-    0x88, 0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // LUT2: 10 light
-    0xA8, 0x44, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // LUT3: 11 white
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // VCOM
-    0x08, 0x0B, 0x02, 0x03, 0x00,
-    0x0C, 0x02, 0x07, 0x02, 0x00,
-    0x01, 0x00, 0x02, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x01,
-    0x22, 0x22, 0x22, 0x22, 0x22,       // frame rate (slower clock)
-    0x17, 0x41, 0xA8, 0x32, 0x30,       // VGH, VSH1, VSH2, VSL, VCOM(-1.2V)
+    // VCOM -1.2V keeps the hold groups near field-free.
+    0x17, 0x46, 0xA8, 0x32, 0x30,       // VGH, VSH1(+16V), VSH2, VSL(-15V), VCOM(-1.2V)
   };
 
   // Write a 110-byte LUT: 105 waveform bytes -> 0x32, voltages -> 0x03/0x04/0x2C.
@@ -149,10 +188,7 @@ namespace lgfx
     _epd_mode = epd_mode_t::epd_quality;
   }
 
-  Panel_SSD1677::~Panel_SSD1677(void)
-  {
-    if (_prev_buf) { heap_free(_prev_buf); _prev_buf = nullptr; }
-  }
+  Panel_SSD1677::~Panel_SSD1677(void) = default;
 
   color_depth_t Panel_SSD1677::setColorDepth(color_depth_t depth)
   {
@@ -361,7 +397,7 @@ namespace lgfx
       _send_plane(CMD_WRITE_RAM_RED, img, tr); // full/half: same image to both
     }
 
-    // Refresh sequence (community-sdk refreshDisplay, B/W).
+    // Built-in monochrome refresh sequence.
     _wait_busy();
     _bus->writeCommand(CMD_DISP_UPDATE_CTRL1, 8);
     _bus->writeData(is_full ? CTRL1_BYPASS_RED : CTRL1_NORMAL, 8);
@@ -552,14 +588,22 @@ namespace lgfx
     } while (++y < h);
   }
 
-  bool Panel_SSD1677::_wait_busy(uint32_t timeout)
+  bool Panel_SSD1677::_wait_busy(uint32_t timeout, bool enforce_refresh_minimum)
   {
     _bus->wait();
+    // BUSY is not guaranteed to assert in the same instant that the command
+    // transfer completes.  Sampling it immediately can therefore mistake the
+    // pre-activation LOW level for completion and return before the waveform
+    // has even started.
+    delay(2);
     if (_cfg.pin_busy >= 0 && gpio_in(_cfg.pin_busy))
     {
       uint32_t start_time = millis();
-      uint32_t delay_msec = _refresh_msec - (start_time - _send_msec);
-      if (delay_msec && delay_msec < timeout) { delay(delay_msec); }
+      if (enforce_refresh_minimum)
+      {
+        uint32_t delay_msec = _refresh_msec - (start_time - _send_msec);
+        if (delay_msec && delay_msec < timeout) { delay(delay_msec); }
+      }
       do
       {
         if (millis() - start_time > timeout) { return false; }
@@ -612,23 +656,317 @@ namespace lgfx
   // Panel_SSD1677_4Gray
   //==========================================================================
 
-  bool Panel_SSD1677_4Gray::_ensure_prev_buf(void)
+  Panel_SSD1677_4Gray::~Panel_SSD1677_4Gray(void)
   {
-    if (_prev_buf) { return true; }
-    size_t len = _get_plane_length() * 2;
-    _prev_buf = (uint8_t*)heap_alloc_psram(len);
-    if (!_prev_buf) { _prev_buf = (uint8_t*)heap_alloc(len); }
-    if (!_prev_buf) { return false; }
-    memset(_prev_buf, 0xFF, len); // white baseline
-    _prev_valid = false;
+    if (_displayed_buf) { heap_free(_displayed_buf); }
+  }
+
+  bool Panel_SSD1677_4Gray::init(bool use_reset)
+  {
+    bool result = Panel_SSD1677::init(use_reset);
+    _invalidate_gray_state();
+    if (result)
+    {
+      if (_displayed_buf) { heap_free(_displayed_buf); }
+      _displayed_buf = static_cast<uint8_t*>(heap_alloc_psram(_get_buffer_length()));
+      if (!_displayed_buf) { return false; }
+      memset(_displayed_buf, 0xFF, _get_buffer_length());
+      _displayed_valid = false;
+      // _after_wake() performs a software reset and establishes the first
+      // (non-swapped) SSD1677 RAM face.
+      _mode2_face_odd = false;
+      _mode2_face_known = true;
+    }
+    return result;
+  }
+
+  void Panel_SSD1677_4Gray::setSleep(bool flg)
+  {
+    Panel_SSD1677::setSleep(flg);
+    _invalidate_gray_state();
+    if (!flg)
+    {
+      // The hardware reset in the wake path establishes the even RAM face.
+      _mode2_face_odd = false;
+      _mode2_face_known = true;
+    }
+  }
+
+  void Panel_SSD1677_4Gray::setPowerSave(bool flg)
+  {
+    Panel_SSD1677::setPowerSave(flg);
+    // Analog power transitions make the retained Mode 2 face/history unsafe.
+    // The next Fast/Fastest update will reset and rebuild them.
+    _invalidate_gray_state();
+  }
+
+  void Panel_SSD1677_4Gray::_invalidate_gray_state(void)
+  {
+    _optical_state = optical_state_t::unknown;
+    _mode2_face_odd = false;
+    _mode2_face_known = false;
+    _displayed_valid = false;
+  }
+
+  void Panel_SSD1677_4Gray::_clear_modified_range(void)
+  {
+    _range_mod.top = INT16_MAX;
+    _range_mod.left = INT16_MAX;
+    _range_mod.right = 0;
+    _range_mod.bottom = 0;
+  }
+
+  range_rect_t Panel_SSD1677_4Gray::_full_range(void) const
+  {
+    range_rect_t result;
+    result.left = 0;
+    result.top = 0;
+    result.right = _cfg.panel_width - 1;
+    result.bottom = _cfg.panel_height - 1;
+    return result;
+  }
+
+  void Panel_SSD1677_4Gray::_send_gray_lut(const uint8_t* lut)
+  {
+    send_lut(_bus, lut);
+  }
+
+  void Panel_SSD1677_4Gray::_remember_displayed(const uint8_t* lsb,
+                                                const uint8_t* msb)
+  {
+    if (!_displayed_buf) { return; }
+    memcpy(_displayed_buf, lsb, _buf_x1_len);
+    memcpy(_displayed_buf + _buf_x1_len, msb, _buf_x1_len);
+    _displayed_valid = true;
+  }
+
+  static uint8_t dirty_byte_mask(int32_t byte_index,
+                                 const range_rect_t& dirty)
+  {
+    uint8_t mask = 0xFF;
+    if (byte_index == (dirty.left >> 3))
+    {
+      mask &= uint8_t(0xFFu >> (dirty.left & 7));
+    }
+    if (byte_index == (dirty.right >> 3))
+    {
+      mask &= uint8_t(0xFFu << (7 - (dirty.right & 7)));
+    }
+    return mask;
+  }
+
+  void Panel_SSD1677_4Gray::_send_transition_planes(
+      const uint8_t* new_msb,
+      const range_rect_t& dirty)
+  {
+    const auto full = _full_range();
+    const uint32_t row_bytes = ((_cfg.panel_width + 7) & ~7) >> 3;
+    const uint8_t* old_lsb = _displayed_buf;
+    const uint8_t* old_msb = _displayed_buf + _buf_x1_len;
+    uint8_t row[128];
+
+    // New levels are thresholded by new_msb, while an old middle gray must be
+    // driven all the way to the requested black/white endpoint. The group
+    // bits can still be formed bytewise without decoding individual pixels:
+    //   BW  = new_msb
+    //   RED = new_msb ? (old_lsb & old_msb) : (old_lsb | old_msb)
+    const bool full_dirty = dirty.left == full.left
+                         && dirty.top == full.top
+                         && dirty.right == full.right
+                         && dirty.bottom == full.bottom;
+    if (full_dirty)
+    {
+      _send_plane(CMD_WRITE_RAM_BW, new_msb, full);
+    }
+    else
+    {
+      _set_ram_area(full.left, full.top, full.right + 1, full.bottom + 1);
+      _bus->writeCommand(CMD_WRITE_RAM_BW, 8);
+      const int32_t first_byte = dirty.left >> 3;
+      const int32_t last_byte = dirty.right >> 3;
+      for (int32_t y = 0; y < (int32_t)_cfg.panel_height; ++y)
+      {
+        const size_t row_offset = size_t(y) * row_bytes;
+        memcpy(row, old_msb + row_offset, row_bytes);
+        if (y >= dirty.top && y <= dirty.bottom)
+        {
+          for (int32_t b = first_byte; b <= last_byte; ++b)
+          {
+            const uint8_t mask = dirty_byte_mask(b, dirty);
+            row[b] = (row[b] & uint8_t(~mask))
+                   | (new_msb[row_offset + b] & mask);
+          }
+        }
+        _bus->writeBytes(row, row_bytes, true, false);
+      }
+    }
+
+    _set_ram_area(full.left, full.top, full.right + 1, full.bottom + 1);
+    _bus->writeCommand(CMD_WRITE_RAM_RED, 8);
+    const int32_t first_byte = dirty.left >> 3;
+    const int32_t last_byte = dirty.right >> 3;
+    for (int32_t y = 0; y < (int32_t)_cfg.panel_height; ++y)
+    {
+      const size_t row_offset = size_t(y) * row_bytes;
+      memcpy(row, old_msb + row_offset, row_bytes);
+      if (y >= dirty.top && y <= dirty.bottom)
+      {
+        for (int32_t b = first_byte; b <= last_byte; ++b)
+        {
+          const size_t index = row_offset + b;
+          const uint8_t mask = dirty_byte_mask(b, dirty);
+          const uint8_t new_side = new_msb[index];
+          const uint8_t red = (new_side & (old_lsb[index] & old_msb[index]))
+                            | (uint8_t(~new_side)
+                               & (old_lsb[index] | old_msb[index]));
+          row[b] = (row[b] & uint8_t(~mask)) | (red & mask);
+        }
+      }
+      _bus->writeBytes(row, row_bytes, true, false);
+    }
+  }
+
+  bool Panel_SSD1677_4Gray::_activate(uint8_t ctrl1, uint8_t ctrl2,
+      bool powers_down, bool mode2_activation, bool enforce_refresh_minimum)
+  {
+    _bus->writeCommand(CMD_DISP_UPDATE_CTRL1, 8);
+    _bus->writeData(ctrl1, 8);
+    if (!_screen_on) { ctrl2 |= 0xC0; }
+    _bus->writeCommand(CMD_DISP_UPDATE_CTRL2, 8);
+    _bus->writeData(ctrl2, 8);
+    _bus->writeCommand(CMD_MASTER_ACTIVATION, 8);
+    _send_msec = millis();
+    if (!_wait_busy(10000, enforce_refresh_minimum))
+    {
+      _invalidate_gray_state();
+      return false;
+    }
+    _screen_on = !powers_down;
+    if (mode2_activation)
+    {
+      if (_mode2_face_known) { _mode2_face_odd = !_mode2_face_odd; }
+    }
+    else
+    {
+      _mode2_face_odd = false;
+      _mode2_face_known = true;
+    }
     return true;
   }
 
-  void Panel_SSD1677_4Gray::_store_prev(void)
+  bool Panel_SSD1677_4Gray::_reset_controller_and_face(void)
   {
-    if (!_prev_buf) { return; }
-    memcpy(_prev_buf, _buf, _get_plane_length() * 2);
-    _prev_valid = true;
+    _bus->writeCommand(0x12, 8);
+    _send_msec = millis();
+    if (!_wait_busy(5000)) { return false; }
+    for (uint8_t i = 0; auto cmds = getInitCommands(i); ++i)
+    {
+      if (!_wait_busy(5000)) { return false; }
+      command_list(cmds);
+    }
+    const auto full = _full_range();
+    _set_ram_area(full.left, full.top, full.right + 1, full.bottom + 1);
+    _bus->writeCommand(0x46, 8);
+    _bus->writeData(0xF7, 8);
+    if (!_wait_busy(5000)) { return false; }
+    _bus->writeCommand(0x47, 8);
+    _bus->writeData(0xF7, 8);
+    if (!_wait_busy(5000)) { return false; }
+    _screen_on = false;
+    _mode2_face_odd = false;
+    _mode2_face_known = true;
+    return true;
+  }
+
+  bool Panel_SSD1677_4Gray::_ensure_known_face(void)
+  {
+    if (_mode2_face_known || _reset_controller_and_face()) { return true; }
+    _invalidate_gray_state();
+    return false;
+  }
+
+  bool Panel_SSD1677_4Gray::_refresh_mode1_absolute(
+      const uint8_t* lsb, const uint8_t* msb, const uint8_t* lut)
+  {
+    // Mode 1 needs a known RAM face to map the two middle gray levels.
+    if (!_ensure_known_face())
+    {
+      return false;
+    }
+
+    // The ping-pong face exchanges the two middle codes in Mode 1. Swap the
+    // plane destinations on the odd face; 00 black and 11 white are symmetric.
+    const auto full = _full_range();
+    const uint8_t* bw = _mode2_face_odd ? msb : lsb;
+    const uint8_t* red = _mode2_face_odd ? lsb : msb;
+    _send_plane(CMD_WRITE_RAM_BW, bw, full, true);
+    _send_plane(CMD_WRITE_RAM_RED, red, full, true);
+    _send_gray_lut(lut);
+    // Wait on the BUSY line itself, without the 400 ms refresh-minimum floor.
+    if (!_activate(CTRL1_NORMAL, 0x07, true, false, false)) { return false; }
+    _optical_state = optical_state_t::gray4;
+    return true;
+  }
+
+  bool Panel_SSD1677_4Gray::_refresh_mode2_absolute(
+      const uint8_t* lsb, const uint8_t* msb, const uint8_t* lut)
+  {
+    if (!lut || !_ensure_known_face()) { return false; }
+
+    // Mode 2 consumes the group bits written to 0x24/0x26 directly on every
+    // activation. Both RAMs are overwritten, so their command mapping stays
+    // fixed even though the controller advances its ping-pong face. Swapping
+    // these destinations on odd faces would exchange the two middle grays.
+    const auto full = _full_range();
+    _send_plane(CMD_WRITE_RAM_BW, lsb, full, true);
+    _send_plane(CMD_WRITE_RAM_RED, msb, full, true);
+    _send_gray_lut(lut);
+    if (!_activate(CTRL1_NORMAL, 0x0C, false, true, false)) { return false; }
+
+    _optical_state = optical_state_t::gray4;
+    return true;
+  }
+
+  void Panel_SSD1677_4Gray::_remember_mono_dirty(
+      const uint8_t* msb, const range_rect_t& dirty)
+  {
+    const uint32_t row_bytes = ((_cfg.panel_width + 7) & ~7) >> 3;
+    uint8_t* old_lsb = _displayed_buf;
+    uint8_t* old_msb = _displayed_buf + _buf_x1_len;
+    const int32_t first_byte = dirty.left >> 3;
+    const int32_t last_byte = dirty.right >> 3;
+    for (int32_t y = dirty.top; y <= dirty.bottom; ++y)
+    {
+      const size_t row_offset = size_t(y) * row_bytes;
+      for (int32_t b = first_byte; b <= last_byte; ++b)
+      {
+        const size_t index = row_offset + b;
+        const uint8_t mask = dirty_byte_mask(b, dirty);
+        const uint8_t mono = msb[index] & mask;
+        old_lsb[index] = (old_lsb[index] & uint8_t(~mask)) | mono;
+        old_msb[index] = (old_msb[index] & uint8_t(~mask)) | mono;
+      }
+    }
+  }
+
+  bool Panel_SSD1677_4Gray::_refresh_mode2_fastest(
+      const uint8_t* lsb, const uint8_t* msb,
+      const range_rect_t& current_dirty)
+  {
+    if (!_displayed_valid)
+    {
+      // Establish a complete optical/history baseline without leaving Mode 2.
+      return _refresh_mode2_absolute(lsb, msb, lut_fast);
+    }
+    if (!_ensure_known_face()) { return false; }
+
+    _send_transition_planes(msb, current_dirty);
+    _send_gray_lut(lut_fastest);
+    if (!_activate(CTRL1_NORMAL, 0x0C, false, true, false)) { return false; }
+
+    _optical_state = optical_state_t::mono_synchronized;
+    _remember_mono_dirty(msb, current_dirty);
+    return true;
   }
 
   void Panel_SSD1677_4Gray::display(uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h)
@@ -645,60 +983,46 @@ namespace lgfx
     if (_range_mod.empty()) { return; }
 
     auto mode = getEpdMode();
-
-    // 4-gray always refreshes the full screen.
-    range_rect_t full;
-    full.left = 0; full.top = 0;
-    full.right = _cfg.panel_width - 1; full.bottom = _cfg.panel_height - 1;
+    const auto current_dirty = _range_mod;
 
     const uint8_t* planeL = _buf;
     const uint8_t* planeM = &_buf[_buf_x1_len];
 
     startWrite();
 
-    // Pick RAM source planes + LUT per mode. All use the factory absolute path
-    // (Display Mode 1, self-contained 0xC7).
-    //   quality / text : 4-level, factory_quality (cleanest, slow)
-    //   fast           : 4-level, factory_fast
-    //   fastest        : 1-bit B/W. lut_fastest (differential) cannot drive
-    //                    full white<->black transitions, so fastest binarizes:
-    //                    feed planeM (v>=2 -> white) to BOTH RAMs, making the
-    //                    2-bit value 00 (black) or 11 (white) only.
-    const uint8_t* bw_src = planeL;  // 4-level: LSB -> BW, MSB -> RED
-    const uint8_t* red_src = planeM;
-    const uint8_t* lut = lut_factory_quality;
-    if (mode == epd_mode_t::epd_fastest)
+    bool success = false;
+    switch (mode)
     {
-      lut = lut_fastest;
-    } else
-    if (mode == epd_mode_t::epd_fast)
-    {
-      lut = lut_factory_fast;
+    case epd_mode_t::epd_quality:
+      success = _refresh_mode1_absolute(planeL, planeM, lut_quality);
+      break;
+    case epd_mode_t::epd_text:
+      success = _refresh_mode1_absolute(planeL, planeM, lut_text);
+      break;
+    case epd_mode_t::epd_fast:
+      success = _refresh_mode2_absolute(planeL, planeM, lut_fast);
+      break;
+    case epd_mode_t::epd_fastest:
+      success = _refresh_mode2_fastest(planeL, planeM, current_dirty);
+      break;
+    default:
+      success = false;
+      break;
     }
 
-    // The factory LUT groups are reversed in brightness on this panel
-    // (HW group 00=white .. 11=black, opposite of the datasheet comment), so
-    // send the complement of both planes to get a correctly-oriented image.
-    _send_plane(CMD_WRITE_RAM_BW,  bw_src,  full, true);
-    _send_plane(CMD_WRITE_RAM_RED, red_src, full, true);
-
-    send_lut(_bus, lut);
-    _wait_busy();
-    _bus->writeCommand(CMD_DISP_UPDATE_CTRL1, 8);
-    _bus->writeData(CTRL1_NORMAL, 8);
-    _bus->writeCommand(CMD_DISP_UPDATE_CTRL2, 8);
-    _bus->writeData(0xC7, 8); // Mode 1, self-contained power cycle (powers down after)
-    _bus->writeCommand(CMD_MASTER_ACTIVATION, 8);
-    _send_msec = millis();
-    _wait_busy();
-    _screen_on = false;
-
-    _initialize_seq = false;
-    _last_epd_mode = mode;
-    _range_mod.top = INT16_MAX;
-    _range_mod.left = INT16_MAX;
-    _range_mod.right = 0;
-    _range_mod.bottom = 0;
+    if (success)
+    {
+      // Every absolute refresh (including Fastest's fallback) leaves the full
+      // 2-bit planes on glass, so record them as the differential baseline.
+      if (_optical_state == optical_state_t::gray4)
+      {
+        _remember_displayed(planeL, planeM);
+      }
+      _initialize_seq = false;
+      _last_epd_mode = mode;
+      _range_old = current_dirty;
+      _clear_modified_range();
+    }
 
     endWrite();
   }
