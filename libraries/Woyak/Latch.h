@@ -29,7 +29,7 @@ public:
    /// Determines whether the current state has settled (debounce time elapsed).
    /// </summary>
    /// <returns>true if at least DEBOUNCE_TIME_MICROS has passed since last state change</returns>
-   bool settled() volatile
+   bool ARDUINO_ISR_ATTR settled() volatile
    {
       return Util::getSpan(_microsAtStateChange, micros()) > DEBOUNCE_TIME_MICROS;
    }
@@ -42,7 +42,7 @@ public:
    /// <remarks>
    /// If transitioning to HIGH, automatically records the period since the previous HIGH state.
    /// </remarks>
-   bool setState(int state) volatile
+   bool ARDUINO_ISR_ATTR setState(int state) volatile
    {
       unsigned long newMicros = micros();
 

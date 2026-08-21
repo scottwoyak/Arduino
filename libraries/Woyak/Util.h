@@ -164,7 +164,7 @@ public:
    /// <param name="start">Start timestamp from micros() or millis()</param>
    /// <param name="end">End timestamp from micros() or millis()</param>
    /// <returns>Elapsed time in the same units as the input timestamps</returns>
-   static unsigned long getSpan(unsigned long start, unsigned long end)
+   static unsigned long IRAM_ATTR getSpan(unsigned long start, unsigned long end)
    {
       return end - start;
    }

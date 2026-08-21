@@ -8,38 +8,26 @@
 /// </summary>
 /// <remarks>
 /// Counts falling-edge transitions on an input pin and tracks the time between pulses
-/// for frequency/period determination. Supports up to 10 simultaneous counters using
-/// hardware interrupts. Pins should be pulled HIGH (active-low pulses).
+/// for frequency/period determination using hardware interrupts. Uses attachInterruptArg()
+/// so any number of Counter instances can be created, each routed through a single shared
+/// ISR. Pins should be pulled HIGH (active-low pulses).
 /// </remarks>
 class Counter
 {
    uint8_t _pin;
 
-   static uint8_t _index;
-   static const uint8_t MAX_COUNTERS = 10;
-   static Counter* _counters[MAX_COUNTERS];
-
    volatile unsigned long _count = 0;
    volatile unsigned long _micros = 0;
    volatile unsigned long _lastMicros = 0;
 
-   void _onLow()
+   void ARDUINO_ISR_ATTR _onLow()
    {
       _count = _count + 1;
       _lastMicros = _micros;
       _micros = micros();
    }
 
-   static void _onLow0() { _counters[0]->_onLow(); }
-   static void _onLow1() { _counters[1]->_onLow(); }
-   static void _onLow2() { _counters[2]->_onLow(); }
-   static void _onLow3() { _counters[3]->_onLow(); }
-   static void _onLow4() { _counters[4]->_onLow(); }
-   static void _onLow5() { _counters[5]->_onLow(); }
-   static void _onLow6() { _counters[6]->_onLow(); }
-   static void _onLow7() { _counters[7]->_onLow(); }
-   static void _onLow8() { _counters[8]->_onLow(); }
-   static void _onLow9() { _counters[9]->_onLow(); }
+   static void ARDUINO_ISR_ATTR _onLowHandler(void* arg) { static_cast<Counter*>(arg)->_onLow(); }
 
 public:
    /// <summary>
@@ -54,64 +42,17 @@ public:
    /// <summary>
    /// Initializes the counter with interrupt handler and begins counting pulses.
    /// </summary>
-   /// <returns>True if initialization succeeded, false if max counter limit reached</returns>
+   /// <returns>true, always; retained for backward compatibility with callers that check the result</returns>
    /// <remarks>
    /// Configures the pin as INPUT_PULLUP and attaches a FALLING edge interrupt.
-   /// Must be called once during setup(). Up to 10 counters can be initialized per device.
+   /// Must be called once during setup().
    /// </remarks>
    bool begin()
    {
-      if (_index >= MAX_COUNTERS)
-      {
-         return false;
-      }
-
       pinMode(_pin, INPUT_PULLUP);
 
-      switch (_index)
-      {
-      case 0:
-         attachInterrupt(digitalPinToInterrupt(_pin), Counter::_onLow0, FALLING);
-         break;
+      attachInterruptArg(digitalPinToInterrupt(_pin), Counter::_onLowHandler, this, FALLING);
 
-         case 1:
-            attachInterrupt(digitalPinToInterrupt(_pin), Counter::_onLow1, FALLING);
-            break;
-
-         case 2:
-            attachInterrupt(digitalPinToInterrupt(_pin), Counter::_onLow2, FALLING);
-            break;
-
-         case 3:
-            attachInterrupt(digitalPinToInterrupt(_pin), Counter::_onLow3, FALLING);
-            break;
-
-         case 4:
-            attachInterrupt(digitalPinToInterrupt(_pin), Counter::_onLow4, FALLING);
-            break;
-
-         case 5:
-            attachInterrupt(digitalPinToInterrupt(_pin), Counter::_onLow5, FALLING);
-            break;
-
-         case 6:
-            attachInterrupt(digitalPinToInterrupt(_pin), Counter::_onLow6, FALLING);
-            break;
-
-         case 7:
-            attachInterrupt(digitalPinToInterrupt(_pin), Counter::_onLow7, FALLING);
-            break;
-
-         case 8:
-            attachInterrupt(digitalPinToInterrupt(_pin), Counter::_onLow8, FALLING);
-            break;
-
-         case 9:
-            attachInterrupt(digitalPinToInterrupt(_pin), Counter::_onLow9, FALLING);
-            break;
-         }
-
-      _counters[_index++] = this;
       return true;
    }
 
@@ -157,7 +98,3 @@ public:
       return span;
    }
 };
-
-// Static member initialization
-Counter* Counter::_counters[Counter::MAX_COUNTERS] = {};
-uint8_t Counter::_index = 0;

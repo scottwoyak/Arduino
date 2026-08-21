@@ -23,17 +23,17 @@ volatile unsigned long risingMicros = 0;
 volatile unsigned long fallingMicros = 0;
 volatile unsigned long changeMicros = 0;
 
-static void onRising()
+static void ARDUINO_ISR_ATTR onRising()
 {
    risingMicros = micros();
    risingCount = risingCount + 1;
 }
-static void onFalling()
+static void ARDUINO_ISR_ATTR onFalling()
 {
    fallingMicros = micros();
    fallingCount = fallingCount + 1;
 }
-static void onChange()
+static void ARDUINO_ISR_ATTR onChange()
 {
    changeMicros = micros();
    changeCount = changeCount + 1;

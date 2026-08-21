@@ -43,7 +43,7 @@ private:
    volatile Direction _initialDirection = Direction::UNKNOWN;
    volatile int32_t _position = 0;
 
-   void _onChange(Source source)
+   void ARDUINO_ISR_ATTR _onChange(Source source)
    {
       if (_initialDirection == Direction::UNKNOWN)
       {
@@ -88,20 +88,20 @@ private:
       }
    }
 
-   void _onChangeA()
+   void ARDUINO_ISR_ATTR _onChangeA()
    {
       _isLowA = digitalRead(_pinA) == LOW;
       _onChange(Source::A);
    }
 
-   void _onChangeB()
+   void ARDUINO_ISR_ATTR _onChangeB()
    {
       _isLowB = digitalRead(_pinB) == LOW;
       _onChange(Source::B);
    }
 
-   static void onChangeA(void* arg) { static_cast<QuadratureEncoder*>(arg)->_onChangeA(); }
-   static void onChangeB(void* arg) { static_cast<QuadratureEncoder*>(arg)->_onChangeB(); }
+   static void ARDUINO_ISR_ATTR onChangeA(void* arg) { static_cast<QuadratureEncoder*>(arg)->_onChangeA(); }
+   static void ARDUINO_ISR_ATTR onChangeB(void* arg) { static_cast<QuadratureEncoder*>(arg)->_onChangeB(); }
 
    ///
    /// <summary>

@@ -2,38 +2,33 @@
 
 #include <Arduino.h>
 
+///
 /// <summary>
 /// Interrupt-driven button press detector with debouncing.
 /// </summary>
 /// <remarks>
 /// Monitors button presses using hardware interrupts and debounces with a minimum
 /// interval between accepted presses. Press events are tracked in a counter that can be
-/// polled or auto-reset. Supports up to 20 simultaneous button instances. Buttons should
-/// be wired to pull LOW on press (active-low), with internal pull-ups enabled.
+/// polled or auto-reset. Uses attachInterruptArg() so any number of Button instances can
+/// be created, each routed through a single shared ISR. Buttons should be wired to pull
+/// LOW on press (active-low), with internal pull-ups enabled.
 /// </remarks>
+///
 class Button
 {
-public:
-   /// <summary>
-   /// If true, pressing wasPressed() resets the counter; otherwise manual reset required.
-   /// </summary>
-   bool autoReset = true;
-
 private:
    uint8_t _pin;
-
-   static uint8_t _index;
-   static const uint8_t MAX_BUTTONS = 20;
-   static Button* _buttons[MAX_BUTTONS];
 
    volatile uint16_t _pressedCount = 0;
    volatile unsigned long _lastPressMillis = 0;
    volatile bool _pressedState = false;
 
+   ///
    /// <summary>
    /// Interrupt service routine for button state changes.
    /// </summary>
-   void _onChange()
+   ///
+   void ARDUINO_ISR_ATTR _onChange()
    {
       unsigned long now = millis();
       bool isPressedNow = (digitalRead(_pin) == LOW);
@@ -50,146 +45,73 @@ private:
       _pressedState = isPressedNow;
    }
 
-   static void _onChange0() { _buttons[0]->_onChange(); }
-   static void _onChange1() { _buttons[1]->_onChange(); }
-   static void _onChange2() { _buttons[2]->_onChange(); }
-   static void _onChange3() { _buttons[3]->_onChange(); }
-   static void _onChange4() { _buttons[4]->_onChange(); }
-   static void _onChange5() { _buttons[5]->_onChange(); }
-   static void _onChange6() { _buttons[6]->_onChange(); }
-   static void _onChange7() { _buttons[7]->_onChange(); }
-   static void _onChange8() { _buttons[8]->_onChange(); }
-   static void _onChange9() { _buttons[9]->_onChange(); }
-   static void _onChange10() { _buttons[10]->_onChange(); }
-   static void _onChange11() { _buttons[11]->_onChange(); }
-   static void _onChange12() { _buttons[12]->_onChange(); }
-   static void _onChange13() { _buttons[13]->_onChange(); }
-   static void _onChange14() { _buttons[14]->_onChange(); }
-   static void _onChange15() { _buttons[15]->_onChange(); }
-   static void _onChange16() { _buttons[16]->_onChange(); }
-   static void _onChange17() { _buttons[17]->_onChange(); }
-   static void _onChange18() { _buttons[18]->_onChange(); }
-   static void _onChange19() { _buttons[19]->_onChange(); }
+   static void ARDUINO_ISR_ATTR _onChangeHandler(void* arg) { static_cast<Button*>(arg)->_onChange(); }
 
 public:
+   /// <summary>
+   /// If true, pressing wasPressed() resets the counter; otherwise manual reset required.
+   /// </summary>
+   bool autoReset = true;
+
    /// <summary>
    /// Minimum time between accepted button press events.
    /// </summary>
    uint16_t minPressIntervalMs = 500;
 
+   ///
    /// <summary>
    /// Constructs a Button on the specified GPIO pin.
    /// </summary>
    /// <param name="pin">GPIO pin number for the button</param>
+   ///
    Button(uint8_t pin)
    {
       _pin = pin;
    }
 
+   ///
    /// <summary>
    /// Initializes the button with input pull-up and registers interrupt handler.
    /// </summary>
-   /// <returns>true if button registered successfully; false if MAX_BUTTONS reached</returns>
+   /// <returns>true, always; retained for backward compatibility with callers that check the result</returns>
    /// <remarks>
    /// Must be called once during setup(). Automatically configures INPUT_PULLUP mode
    /// and attaches a CHANGE interrupt to detect press/release transitions.
    /// </remarks>
+   ///
    bool begin()
    {
-      if (_index >= MAX_BUTTONS)
-      {
-         return false;
-      }
-
       pinMode(_pin, INPUT_PULLUP);
       _pressedState = (digitalRead(_pin) == LOW);
 
-      switch (_index)
-      {
-      case 0:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange0, CHANGE);
-         break;
-      case 1:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange1, CHANGE);
-         break;
-      case 2:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange2, CHANGE);
-         break;
-      case 3:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange3, CHANGE);
-         break;
-      case 4:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange4, CHANGE);
-         break;
-      case 5:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange5, CHANGE);
-         break;
-      case 6:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange6, CHANGE);
-         break;
-      case 7:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange7, CHANGE);
-         break;
-      case 8:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange8, CHANGE);
-         break;
-      case 9:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange9, CHANGE);
-         break;
-      case 10:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange10, CHANGE);
-         break;
-      case 11:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange11, CHANGE);
-         break;
-      case 12:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange12, CHANGE);
-         break;
-      case 13:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange13, CHANGE);
-         break;
-      case 14:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange14, CHANGE);
-         break;
-      case 15:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange15, CHANGE);
-         break;
-      case 16:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange16, CHANGE);
-         break;
-      case 17:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange17, CHANGE);
-         break;
-      case 18:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange18, CHANGE);
-         break;
-      case 19:
-         attachInterrupt(digitalPinToInterrupt(_pin), Button::_onChange19, CHANGE);
-         break;
-      }
+      attachInterruptArg(digitalPinToInterrupt(_pin), Button::_onChangeHandler, this, CHANGE);
 
-      _buttons[_index++] = this;
       return true;
    }
 
+   ///
    /// <summary>
    /// Gets the GPIO pin number for this button.
    /// </summary>
    /// <returns>GPIO pin number</returns>
+   ///
    uint8_t getPin() const
    {
       return _pin;
    }
 
+   ///
    /// <summary>
    /// Checks if the button is currently in the pressed state.
    /// </summary>
    /// <returns>true if button is pressed (pin is LOW); false otherwise</returns>
+   ///
    bool isPressed() const
    {
       return digitalRead(_pin) == LOW;
    }
 
+   ///
    /// <summary>
    /// Checks if a button press occurred since the last check.
    /// </summary>
@@ -198,6 +120,7 @@ public:
    /// If autoReset is true, the press counter is cleared after this call.
    /// If autoReset is false, use reset() to manually clear the counter.
    /// </remarks>
+   ///
    bool wasPressed()
    {
       noInterrupts();
@@ -211,24 +134,24 @@ public:
       return pressed;
    }
 
+   ///
    /// <summary>
    /// Manually resets the press counter to zero.
    /// </summary>
+   ///
    void reset()
    {
       _pressedCount = 0;
    }
 
+   ///
    /// <summary>
    /// Gets the current press counter value.
    /// </summary>
    /// <returns>Number of debounced press events detected</returns>
+   ///
    uint16_t getPressedCount() const
    {
       return _pressedCount;
    }
 };
-
-// Static member initialization
-Button* Button::_buttons[Button::MAX_BUTTONS] = {};
-uint8_t Button::_index = 0;

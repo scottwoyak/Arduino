@@ -203,7 +203,7 @@ Stopwatch sw;
 
 unsigned long microsAtChange = 0;
 int state;
-void tickInterrupt()
+void ARDUINO_ISR_ATTR tickInterrupt()
 {
    int newState = digitalRead(PIN);
    history.record(newState, Source::Interrupt);

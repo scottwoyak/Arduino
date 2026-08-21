@@ -38,7 +38,7 @@ private:
    static constexpr uint16_t LED_FLASH_MS = 50;
 
    static inline WindMeter* _instance;
-   static void interruptTick()
+   static void ARDUINO_ISR_ATTR interruptTick()
    {
       // call the function on the class
       WindMeter::_instance->tick();
@@ -92,7 +92,7 @@ private:
    volatile bool _ledStateChanged = false;
    volatile unsigned long _ledOffTime = 0;
 
-   void tick()
+   void ARDUINO_ISR_ATTR tick()
    {
       // debounce
       if (_latch.settled() == false)
