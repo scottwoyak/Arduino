@@ -407,10 +407,6 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Lake_Temp_Monitor_Display/Lake_Temp_Monitor_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
   <Project Path="Led/Led.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
