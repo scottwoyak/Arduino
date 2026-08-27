@@ -137,8 +137,9 @@ public:
    /// <param name="ssid">The WiFi network name.</param>
    /// <param name="password">The WiFi network password.</param>
    /// <param name="status">Optional status indicator updated to WIFI_CONNECTING while connecting.</param>
+   /// <returns>True if the WiFi connection succeeded; otherwise false.</returns>
    ///
-   void initWifi(const char* ssid, const char* password, IStatus* status = nullptr)
+   bool initWifi(const char* ssid, const char* password, IStatus* status = nullptr)
    {
       if (status != nullptr)
       {
@@ -155,6 +156,7 @@ public:
       if (_wifiX->connect())
       {
          printlnR("OK", Color::VALUE);
+         return true;
       }
       else
       {
@@ -162,6 +164,7 @@ public:
 
          std::string message = std::string("WiFi connect failed: ") + WiFiX::statusString();
          println(message.c_str(), Color::RED);
+         return false;
       }
    }
 

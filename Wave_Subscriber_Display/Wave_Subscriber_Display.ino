@@ -235,7 +235,7 @@ void loop()
 
       if (receivedValues.length() > 0)
       {
-         receivedValues += ",";
+         receivedValues += "\n";
       }
 
       unsigned long elapsedMillis = millis() - lastAcceptedMillis;
@@ -292,7 +292,8 @@ void loop()
       Serial.println("------------------------------- Wave Data");
       Serial.println(String("Server Rate: ") + String(serverRate.get()) + " data pts per sec");
       Serial.println(String("Display Rate: ") + String(displayRate.get()) + " data pts per sec");
-      Serial.println(String("Received Values (") + String(receivedValueCount) + ", " + String(rejectedSensorValueCount) + " rejected): " + receivedValues.c_str());
+      Serial.println(String("Received Values (") + String(receivedValueCount) + ", " + String(rejectedSensorValueCount) + " rejected):");
+      Serial.println(receivedValues.c_str());
       Serial.println();
       receivedValues.clear();
       receivedValueCount = 0;

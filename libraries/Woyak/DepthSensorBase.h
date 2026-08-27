@@ -79,4 +79,17 @@ public:
    {
       return _average.average();
    }
+
+   ///
+   /// <summary>
+   /// Reports whether the running average window used by getAverageDepth() and
+   /// getWaveHeight() has been fully populated with data, meaning those values reflect
+   /// the full configured averaging duration rather than a partially-filled startup window.
+   /// </summary>
+   /// <returns>True once the full averaging window has been filled with data.</returns>
+   ///
+   bool isAverageFull()
+   {
+      return _average.isFull();
+   }
 };

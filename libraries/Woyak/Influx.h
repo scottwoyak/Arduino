@@ -94,7 +94,9 @@ public:
 	{
 		if (WiFi.status() != WL_CONNECTED)
 		{
-			arduino->println(String("WiFi connect failed: ") + WiFiX::statusString(), Color::RED);
+			String message = String("WiFi connect failed: ") + WiFiX::statusString();
+			Serial.println(message);
+			arduino->println(message, Color::RED);
 			return false;
 		}
 
@@ -103,13 +105,17 @@ public:
 			_status->setStatus(Status::WEB_CONNECTING);
 		}
 
+		Serial.print("Syncing Time... ");
 		arduino->print("Syncing Time... ", Color::LABEL);
 		TimeSync::sync(TZ_INFO, "pool.ntp.org", "time.nis.gov", nullptr, printDiagnostics);
+		Serial.println("ok");
 		arduino->printlnR("ok", Color::VALUE);
 
+		Serial.print("Influx... ");
 		arduino->print("Influx... ", Color::LABEL);
 		if (_client.validateConnection())
 		{
+			Serial.println("ok");
 			arduino->printlnR("ok", Color::VALUE);
 			if (printDiagnostics)
 			{
@@ -122,7 +128,9 @@ public:
 			return true;
 		}
 
+		Serial.println("FAILED");
 		arduino->printlnR("FAILED", Color::RED);
+		Serial.println(_client.getLastErrorMessage());
 		arduino->println(_client.getLastErrorMessage(), Color::RED);
 		return false;
 	}
@@ -140,7 +148,9 @@ public:
 	{
 		if (WiFi.status() != WL_CONNECTED)
 		{
-			arduino.println((String("WiFi connect failed: ") + WiFiX::statusString()).c_str(), Color::RED);
+			std::string message = std::string("WiFi connect failed: ") + WiFiX::statusString();
+			Serial.println(message.c_str());
+			arduino.println(message.c_str(), Color::RED);
 			return false;
 		}
 
@@ -149,13 +159,17 @@ public:
 			_status->setStatus(Status::WEB_CONNECTING);
 		}
 
+		Serial.print("Syncing Time...");
 		arduino.print("Syncing Time...", Color::LABEL);
 		TimeSync::sync(TZ_INFO, "pool.ntp.org", "time.nis.gov", nullptr, printDiagnostics);
+		Serial.println("OK");
 		arduino.printlnR("OK", Color::VALUE);
 
+		Serial.print("Influx...");
 		arduino.print("Influx...", Color::LABEL);
 		if (_client.validateConnection())
 		{
+			Serial.println("OK");
 			arduino.printlnR("OK", Color::VALUE);
 			if (printDiagnostics)
 			{
@@ -168,7 +182,9 @@ public:
 			return true;
 		}
 
+		Serial.println("FAILED");
 		arduino.printlnR("FAILED", Color::RED);
+		Serial.println(_client.getLastErrorMessage().c_str());
 		arduino.println(_client.getLastErrorMessage().c_str(), Color::RED);
 		return false;
 	}
@@ -213,6 +229,9 @@ private:
    /// <summary>Number of decimal places used when writing the value to Influx.</summary>
    uint8_t _decimalPlaces;
 
+   /// <summary>Whether this field should be included when the owning point is posted.</summary>
+   bool _enabled = true;
+
 public:
    /// <summary>
    /// Creates a field with a name and decimal place precision.
@@ -243,6 +262,25 @@ public:
    uint8_t getDecimalPlaces() const
    {
       return _decimalPlaces;
+   }
+
+   /// <summary>
+   /// Sets whether this field is included when the owning point is posted. Disabled fields
+   /// are skipped entirely, regardless of their current value.
+   /// </summary>
+   /// <param name="enabled">True to include the field in future posts; false to omit it</param>
+   void setEnabled(bool enabled)
+   {
+      _enabled = enabled;
+   }
+
+   /// <summary>
+   /// Returns whether this field is currently included when the owning point is posted.
+   /// </summary>
+   /// <returns>True if the field is enabled</returns>
+   bool isEnabled() const
+   {
+      return _enabled;
    }
 
    /// <summary>
@@ -505,10 +543,15 @@ public:
       // clear out the old values
       _point.clearFields();
 
-      // populate new values, skipping invalid entries
+      // populate new values, skipping disabled fields and invalid entries
       size_t validFieldCount = 0;
       for (InfluxField* field : _fields)
       {
+         if (!field->isEnabled())
+         {
+            continue;
+         }
+
          const float value = field->get();
          if (std::isnan(value) || std::isinf(value))
          {

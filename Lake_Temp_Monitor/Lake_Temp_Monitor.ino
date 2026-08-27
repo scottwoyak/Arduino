@@ -5,6 +5,11 @@
 // Logs readings to InfluxDB at configurable intervals. Includes watchdog for automatic reset
 // on communication failures and daily reboot to manage long-term stability.
 //
+// Uploads to InfluxDB as measurement "Sensors", tagged with site="Lake", location="Dock",
+// sensor="Temperature", and item=<Surface|Bottom 1|Bottom 2|Enclosure|CPU> identifying which
+// sensor the point came from. Fields are "temperature" and "humidity", each averaged over
+// SENSOR_AVERAGE_PERIOD_S before being posted.
+//
 
 // This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
@@ -29,7 +34,9 @@
 
 // Influx database settings
 constexpr auto INFLUX_MEASUREMENT = "Sensors";
-constexpr auto INFLUX_LOCATION = "Lake";
+constexpr auto INFLUX_SITE = "Lake";
+constexpr auto INFLUX_LOCATION = "Dock";
+constexpr auto INFLUX_SENSOR = "Temperature";
 constexpr auto INFLUX_INTERVAL_S = 15;       // Log data to InfluxDB every N seconds
 constexpr auto WATCHDOG_INTERVAL_S = 60;     // Reboot if no successful log in N seconds
 constexpr auto WATCHDOG_STARTUP_M = 5;        // Reboot if startup fails in N minutes
@@ -114,7 +121,7 @@ void printSensorSummary()
          address = String("0x") + String(sensors[i]->address(), HEX);
       }
 
-      String tag = String(INFLUX_LOCATION) + "/" + SENSOR_CONFIGS[i].item;
+      String tag = String(INFLUX_SITE) + "/" + INFLUX_LOCATION + "/" + SENSOR_CONFIGS[i].item;
 
       table.printRow(connection, address, sensors[i]->type(), tag);
    }
@@ -129,7 +136,7 @@ void setup()
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       sensors[i] = new TempSensor();
-      points[i] = new InfluxPoint(INFLUX_MEASUREMENT);
+      points[i] = new InfluxPoint(INFLUX_MEASUREMENT, { { "site", INFLUX_SITE }, { "location", INFLUX_LOCATION }, { "sensor", INFLUX_SENSOR }, { "item", SENSOR_CONFIGS[i].item } });
       tempFields[i] = points[i]->addTimeAverageField(SENSOR_AVERAGE_PERIOD_S, "temperature", 3);
       humFields[i] = points[i]->addTimeAverageField(SENSOR_AVERAGE_PERIOD_S, "humidity", 2);
    }
@@ -193,13 +200,6 @@ void setup()
 
    // Record the current day so loop() can reboot once the date advances
    rebooter.begin();
-
-   // Tag each data point with the lake location and its specific item
-   for (uint8_t i = 0; i < NUM_SENSORS; i++)
-   {
-      points[i]->addTag("location", INFLUX_LOCATION);
-      points[i]->addTag("item", SENSOR_CONFIGS[i].item);
-   }
 
    // Reduce CPU frequency for lower power consumption
    setCpuFrequencyMhz(80);

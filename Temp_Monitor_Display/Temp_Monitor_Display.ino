@@ -27,6 +27,14 @@
 // - Power on and allow initialization to complete.
 // - Observe live values on the display and periodic telemetry uploads in InfluxDB.
 //
+// InfluxDB points uploaded (Measurement: Sensors):
+//
+// - site=Bragg, location=Printer, sensor=Temperature
+//     temperature: time-averaged value of sensor.readTemperatureF(), sampled every
+//     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
+//     humidity: time-averaged value of sensor.readHumidity(), sampled every
+//     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
+//
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
@@ -45,9 +53,11 @@
 
 #include "WiFiSettings.h"
 
-constexpr const char* LOCATION = "Printer";
+constexpr const char* LOCATION = "Cabin";
 constexpr auto VERSION = "v1.0";
 constexpr auto INFLUX_MEASUREMENT = "Sensors";
+constexpr auto INFLUX_SITE = "Lake";
+constexpr auto INFLUX_SENSOR = "Temperature";
 constexpr uint8_t INFLUX_INTERVAL_S = 15;
 constexpr uint16_t SENSOR_INTERVAL_MS = 500;
 constexpr uint8_t WATCHDOG_INTERVAL_S = 60;
@@ -66,7 +76,7 @@ Arduino arduino;
 NeoPixelStatus status(&arduino.neoPixel);
 TempSensor sensor;
 Influx influx(INFLUX_INTERVAL_S, &status);
-InfluxPoint point(INFLUX_MEASUREMENT);
+InfluxPoint point(INFLUX_MEASUREMENT, { { "site", INFLUX_SITE }, { "location", LOCATION }, { "sensor", INFLUX_SENSOR } });
 InfluxField* tempField = point.addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
 InfluxField* humField = point.addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
 Timer sensorTimer(SENSOR_INTERVAL_MS);
@@ -78,9 +88,9 @@ void setup()
    Wire.begin();
 
    arduino.begin();
-   pinMode(BUILTIN_LED, OUTPUT);
 
    status.begin();
+   status.setStatus(Status::STARTED);
 
    arduino.beginInit();
 
@@ -97,14 +107,18 @@ void setup()
    }
    else
    {
+      status.setStatus(Status::FAILED);
       Util::reset(RESET_DELAY_S);
    }
 
-   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD);
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
    if (!influx.begin(arduino))
    {
+      status.setStatus(Status::FAILED);
       Util::reset(RESET_DELAY_S);
    }
+
+   status.setStatus(Status::READY);
 
    rebooter.begin();
 
@@ -113,8 +127,6 @@ void setup()
    arduino.setCursor(0, -arduino.charH());
    arduino.println("Starting in 5s...", Color::GRAY);
    delay(5000);
-
-   point.addTag("location", LOCATION);
 
    arduino.clearDisplay();
 
@@ -174,11 +186,11 @@ void loop()
 
    if (influx.ready())
    {
-      digitalWrite(BUILTIN_LED, HIGH);
+      arduino.led.turnOn();
       if (!point.post(influx.client()))
       {
          arduino.deepSleep(SENSOR_POST_FAILURE_SLEEP_S);
       }
-      digitalWrite(BUILTIN_LED, LOW);
+      arduino.led.turnOff();
    }
 }

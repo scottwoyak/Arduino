@@ -20,11 +20,39 @@
 // - Restarts the device every 24 hours to play it safe, and on telemetry disconnect
 //   or error.
 //
+// InfluxDB points uploaded (Measurement: Sensors):
+//
+// - site=Lake, location=Dock, sensor=WaveHeight
+//     avgDepth: rolling average of raw depth readings (depth->getDepth()) over the
+//     5 minute averaging window (DepthSensorBase::DEFAULT_AVERAGE_DURATION_M); only
+//     posted once that window is fully populated (depth->isAverageFull()).
+//
+// - site=Lake, location=Dock, sensor=WaveHeight, item=Enclosure
+//     temperature: rolling average of enclosureTemp.readTemperatureF(), sampled every
+//     SENSOR_INTERVAL_MS, over the last INFLUX_ROLLING_SAMPLES readings.
+//     humidity: rolling average of enclosureTemp.readHumidity(), sampled every
+//     SENSOR_INTERVAL_MS, over the last INFLUX_ROLLING_SAMPLES readings.
+//
+// - site=Lake, location=Dock, sensor=WaveHeight, item=CPU
+//     temperature: rolling average of cpuTemp.readTemperatureF(), sampled every
+//     SENSOR_INTERVAL_MS, over the last INFLUX_ROLLING_SAMPLES readings.
+//
 
 // Uncomment to use local telemetry server instead of remote
 //#define TELEMETRY_LOCAL
 
 constexpr auto TELEMETRY_TOPIC = "Waves/LakeP";
+
+// ----------- InfluxDB settings
+constexpr auto INFLUX_MEASUREMENT = "Sensors";
+constexpr auto INFLUX_SITE = "Lake";
+constexpr auto INFLUX_LOCATION = "Dock";
+constexpr auto INFLUX_SENSOR = "WaveHeight";
+constexpr uint16_t INFLUX_INTERVAL_S = 60;
+constexpr uint8_t INFLUX_DECIMALS = 1;
+constexpr uint8_t INFLUX_AVG_DEPTH_DECIMALS = 2;
+constexpr size_t INFLUX_ROLLING_SAMPLES = 10;
+constexpr uint8_t INFLUX_BATCH_SIZE = 3; // depth + enclosure + CPU points
 
 // This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
@@ -71,14 +99,6 @@ Rebooter rebooter;
 constexpr float LED_WAVE_HEIGHT_LOW_CM = -10.0f;
 constexpr float LED_WAVE_HEIGHT_HIGH_CM = 10.0f;
 
-// ----------- InfluxDB settings
-constexpr auto INFLUX_MEASUREMENT = "Sensors";
-constexpr auto INFLUX_LOCATION = "Test";
-constexpr uint16_t INFLUX_INTERVAL_S = 60;
-constexpr uint8_t INFLUX_DECIMALS = 1;
-constexpr size_t INFLUX_ROLLING_SAMPLES = 10;
-constexpr uint8_t INFLUX_BATCH_SIZE = 3; // depth + enclosure + CPU temperature points
-
 // ----------- CPU throttling
 constexpr uint8_t CPU_FREQUENCY_MHZ = 80; // keep things cool
 
@@ -104,11 +124,11 @@ ESP32TempSensor cpuTemp;
 TelemetryEventHandler telemetryHandler(&arduino);
 TelemetryPublisher client(TELEMETRY_TOPIC, NUM_DECIMALS, &arduino, &telemetryHandler);
 Influx influx(INFLUX_INTERVAL_S, &arduino);
-InfluxPoint depthPoint(INFLUX_MEASUREMENT, { { "location", INFLUX_LOCATION } });
-InfluxField* averageDepthField = depthPoint.addValueField("avgDepth", INFLUX_DECIMALS);
+InfluxPoint devicePoint(INFLUX_MEASUREMENT, { { "site", INFLUX_SITE }, { "location", INFLUX_LOCATION }, { "sensor", INFLUX_SENSOR } });
+InfluxField* averageDepthField = devicePoint.addValueField("avgDepth", INFLUX_AVG_DEPTH_DECIMALS);
 
-InfluxPoint enclosurePoint(INFLUX_MEASUREMENT, { { "location", INFLUX_LOCATION }, { "item", "Enclosure" } });
-InfluxPoint cpuPoint(INFLUX_MEASUREMENT, { { "location", INFLUX_LOCATION }, { "item", "CPU" } });
+InfluxPoint enclosurePoint(INFLUX_MEASUREMENT, { { "site", INFLUX_SITE }, { "location", INFLUX_LOCATION }, { "sensor", INFLUX_SENSOR }, { "item", "Enclosure" } });
+InfluxPoint cpuPoint(INFLUX_MEASUREMENT, { { "site", INFLUX_SITE }, { "location", INFLUX_LOCATION }, { "sensor", INFLUX_SENSOR }, { "item", "CPU" } });
 InfluxField* enclosureTempField = enclosurePoint.addRollingAverageField(INFLUX_ROLLING_SAMPLES, "temperature", INFLUX_DECIMALS);
 InfluxField* enclosureHumidityField = enclosurePoint.addRollingAverageField(INFLUX_ROLLING_SAMPLES, "humidity", INFLUX_DECIMALS);
 InfluxField* cpuTempField = cpuPoint.addRollingAverageField(INFLUX_ROLLING_SAMPLES, "temperature", INFLUX_DECIMALS);
@@ -117,6 +137,9 @@ void setup()
 {
    SerialX::begin();
    Serial.println("Wave Publisher");
+
+   // avgDepth isn't posted until the 5 minute averaging window is full (see loop())
+   averageDepthField->setEnabled(false);
 
    arduino.begin(); // sets up the I2C bus/power rail and the RGB status LED
    arduino.setStatus(Status::STARTED);
@@ -170,13 +193,20 @@ void loop()
          float ledLevel = (waveHeightCM - LED_WAVE_HEIGHT_LOW_CM) / (LED_WAVE_HEIGHT_HIGH_CM - LED_WAVE_HEIGHT_LOW_CM);
          arduino.led.setLevel(constrain(ledLevel, 0.0f, 1.0f));
 
-         averageDepthField->set(depth->getAverageDepth());
+         // avgDepth isn't posted until the 5 minute averaging window is full, so it doesn't
+         // report a partially-averaged value while the enclosure/CPU fields are already
+         // posting on their own 60 second cadence.
+         if (depth->isAverageFull())
+         {
+            averageDepthField->setEnabled(true);
+            averageDepthField->set(depth->getAverageDepth());
+         }
       }
    }
 
    if (influx.ready())
    {
-      depthPoint.post(influx.client(), true);
+      devicePoint.post(influx.client(), true);
       enclosurePoint.post(influx.client(), true);
       cpuPoint.post(influx.client(), true);
 

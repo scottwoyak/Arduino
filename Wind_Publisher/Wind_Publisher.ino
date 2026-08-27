@@ -15,11 +15,33 @@
 // - Resets the device on telemetry disconnect or error.
 // - Restarts the device every 24 hours to play it safe.
 //
+// InfluxDB points uploaded (Measurement: Sensors):
+//
+// - site=Lake, location=Dock, sensor=Wind, item=Enclosure
+//     temperature: rolling average of enclosureTemp.readTemperatureF(), sampled every
+//     SENSOR_INTERVAL_MS, over the last INFLUX_ROLLING_SAMPLES readings.
+//     humidity: rolling average of enclosureTemp.readHumidity(), sampled every
+//     SENSOR_INTERVAL_MS, over the last INFLUX_ROLLING_SAMPLES readings.
+//
+// - site=Lake, location=Dock, sensor=Wind, item=CPU
+//     temperature: rolling average of cpuTemp.readTemperatureF(), sampled every
+//     SENSOR_INTERVAL_MS, over the last INFLUX_ROLLING_SAMPLES readings.
+//
 
 // Uncomment to use local telemetry server instead of remote
 //#define TELEMETRY_LOCAL
 
 constexpr auto TELEMETRY_TOPIC = "Wind/Lake";
+
+// ----------- InfluxDB settings
+constexpr auto INFLUX_MEASUREMENT = "Sensors";
+constexpr auto INFLUX_SITE = "Lake";
+constexpr auto INFLUX_LOCATION = "Dock";
+constexpr auto INFLUX_SENSOR = "Wind";
+constexpr uint16_t INFLUX_INTERVAL_S = 60;
+constexpr uint8_t INFLUX_DECIMALS = 2;
+constexpr size_t INFLUX_ROLLING_SAMPLES = 10;
+constexpr uint8_t INFLUX_BATCH_SIZE = 2; // enclosure + CPU points
 
 // This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
@@ -45,14 +67,6 @@ Timer serialTimer(SERIAL_INTERVAL_MS);
 Timer sensorTimer(SENSOR_INTERVAL_MS);
 Rebooter rebooter;
 
-// ----------- InfluxDB settings
-constexpr auto INFLUX_MEASUREMENT = "Sensors";
-constexpr auto INFLUX_LOCATION = "Lake";
-constexpr uint16_t INFLUX_INTERVAL_S = 60;
-constexpr uint8_t INFLUX_DECIMALS = 2;
-constexpr size_t INFLUX_ROLLING_SAMPLES = 10;
-constexpr uint8_t INFLUX_BATCH_SIZE = 2; // enclosure + CPU temperature points
-
 // ----------- Wind sensor pins
 constexpr uint8_t WIND_SENSOR_PIN = 11;
 constexpr uint8_t WIND_SENSOR_GROUND_PIN = 13; // held LOW to power the wind encoder/sensor
@@ -73,8 +87,8 @@ ESP32TempSensor cpuTemp;
 TelemetryEventHandler telemetryHandler(&arduino);
 TelemetryPublisher client(TELEMETRY_TOPIC, NUM_DECIMALS, &arduino, &telemetryHandler);
 
-InfluxPoint enclosurePoint(INFLUX_MEASUREMENT, { { "location", INFLUX_LOCATION }, { "item", "Enclosure" } });
-InfluxPoint cpuPoint(INFLUX_MEASUREMENT, { { "location", INFLUX_LOCATION }, { "item", "CPU" } });
+InfluxPoint enclosurePoint(INFLUX_MEASUREMENT, { { "site", INFLUX_SITE }, { "location", INFLUX_LOCATION }, { "sensor", INFLUX_SENSOR }, { "item", "Enclosure" } });
+InfluxPoint cpuPoint(INFLUX_MEASUREMENT, { { "site", INFLUX_SITE }, { "location", INFLUX_LOCATION }, { "sensor", INFLUX_SENSOR }, { "item", "CPU" } });
 InfluxField* enclosureTempField = enclosurePoint.addRollingAverageField(INFLUX_ROLLING_SAMPLES, "temperature", INFLUX_DECIMALS);
 InfluxField* enclosureHumidityField = enclosurePoint.addRollingAverageField(INFLUX_ROLLING_SAMPLES, "humidity", INFLUX_DECIMALS);
 InfluxField* cpuTempField = cpuPoint.addRollingAverageField(INFLUX_ROLLING_SAMPLES, "temperature", INFLUX_DECIMALS);

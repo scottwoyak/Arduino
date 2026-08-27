@@ -1811,4 +1811,44 @@ public:
    {
       println(label, (unsigned long)value, format, labelColor, valueColor, backgroundColor);
    }
+
+   ///
+   /// <summary>
+   /// Initializes a single sensor, echoing the label and "OK"/"NOT FOUND" result to Serial
+   /// in addition to the display, since display text isn't otherwise mirrored to Serial.
+   /// </summary>
+   /// <param name="label">The sensor label to print (e.g. "Sensor 0 (New Surface)").</param>
+   /// <param name="initFunc">Function that initializes the sensor and returns true on success.</param>
+   /// <returns>True if the sensor was found/initialized successfully.</returns>
+   ///
+   bool initSensor(const char* label, bool (*initFunc)())
+   {
+      Serial.print(label);
+      Serial.print("...");
+
+      bool success = ArduinoBase::initSensor(label, initFunc);
+
+      Serial.println(success ? "OK" : "NOT FOUND");
+      return success;
+   }
+
+   ///
+   /// <summary>
+   /// Connects to WiFi, echoing the "WiFi..." label and "OK"/"FAILED" result to Serial in
+   /// addition to the display, since display text isn't otherwise mirrored to Serial.
+   /// </summary>
+   /// <param name="ssid">The WiFi network name.</param>
+   /// <param name="password">The WiFi network password.</param>
+   /// <param name="status">Optional status indicator updated to WIFI_CONNECTING while connecting.</param>
+   /// <returns>True if the WiFi connection succeeded; otherwise false.</returns>
+   ///
+   bool initWifi(const char* ssid, const char* password, IStatus* status = nullptr)
+   {
+      Serial.print("WiFi...");
+
+      bool success = ArduinoBase::initWifi(ssid, password, status);
+
+      Serial.println(success ? "OK" : "FAILED");
+      return success;
+   }
 };
