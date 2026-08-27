@@ -6,3 +6,4 @@
 /**/bin/
 /.tmp.driveupload
 /temp_validate
+/OTA_Display/build/esp32.esp32.adafruit_feather_esp32s3_tft
