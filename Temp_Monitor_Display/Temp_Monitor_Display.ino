@@ -12,6 +12,9 @@
 //   on the display at large text size, with location and version in the header/footer.
 // - Verifies Wi-Fi connectivity each loop and resets the device if it cannot reconnect.
 // - Posts telemetry to InfluxDB every INFLUX_INTERVAL_S seconds.
+// - Checks for a firmware update every OTA_CHECK_INTERVAL_HR hours and, if a newer
+//   version is published, downloads and installs it (showing progress on the display)
+//   before restarting.
 //
 // Failure handling:
 // - Sensor initialization failure triggers a device reset after RESET_DELAY_S seconds.
@@ -57,11 +60,21 @@
 #include "Rebooter.h"
 #include "Timer.h"
 #include "DeviceConfig.h"
+#include "OTAUpdater.h"
 
 #include "WiFiSettings.h"
 
 constexpr auto DEVICE_CONFIG_URL = "https://raw.githubusercontent.com/scottwoyak/Arduino/main/TempMonitor.json";
-constexpr auto VERSION = "v1.0";
+
+// version.txt contains a quoted version string (e.g. "v1.1") and is included directly here
+// so the compiled-in VERSION always matches the same file uploaded to the GitHub release,
+// with no separate sync step required.
+constexpr auto VERSION =
+#include "version.txt"
+;
+constexpr auto OTA_VERSION_URL = "https://github.com/scottwoyak/Arduino/releases/download/temp-monitor-display-v1.0/version.txt";
+constexpr auto OTA_FIRMWARE_URL = "https://github.com/scottwoyak/Arduino/releases/download/temp-monitor-display-v1.0/Temp_Monitor_Display.ino.bin";
+constexpr uint8_t OTA_CHECK_INTERVAL_HR = 1;
 constexpr auto INFLUX_MEASUREMENT = "Sensors";
 constexpr auto INFLUX_SENSOR = "Temperature";
 constexpr uint8_t INFLUX_INTERVAL_S = 15;
@@ -89,6 +102,7 @@ InfluxField* tempField = nullptr;
 InfluxField* humField = nullptr;
 Timer sensorTimer(SENSOR_INTERVAL_MS);
 Rebooter rebooter;
+OTAUpdater ota(VERSION, OTA_VERSION_URL, OTA_FIRMWARE_URL, &arduino, OTA_CHECK_INTERVAL_HR * 3600.0f);
 
 ///
 /// <summary>
@@ -168,6 +182,7 @@ void loop()
    Watchdog.reset();
 
    rebooter.loop();
+   ota.loop();
 
    if (sensorTimer.ready())
    {

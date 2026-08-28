@@ -73,6 +73,7 @@
     <File Path="libraries/Woyak/MultiBar.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
     <File Path="libraries/Woyak/MultiStatus.h" />
+    <File Path="libraries/Woyak/OTAUpdater.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
     <File Path="libraries/Woyak/QuadratureEncoder.h" />
     <File Path="libraries/Woyak/Rate.h" />
