@@ -1848,7 +1848,7 @@ public:
 
       bool success = ArduinoBase::initWifi(ssid, password, status);
 
-      Serial.println(success ? "OK" : "FAILED");
+      Serial.println(success ? WiFi.localIP().toString() : "FAILED");
       return success;
    }
 };

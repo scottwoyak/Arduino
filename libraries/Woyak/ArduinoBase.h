@@ -155,7 +155,7 @@ public:
 
       if (_wifiX->connect())
       {
-         printlnR("OK", Color::VALUE);
+         printlnR(WiFi.localIP().toString().c_str(), Color::VALUE);
          return true;
       }
       else

@@ -19,8 +19,6 @@
 #include "ArduinoWithDisplay.h"
 #endif
 
-constexpr auto TZ_INFO = "UTC-5";
-
 ///
 /// <summary>
 /// InfluxDB integration service that manages Influx initialization. WiFi connectivity is
@@ -107,9 +105,10 @@ public:
 
 		Serial.print("Syncing Time... ");
 		arduino->print("Syncing Time... ", Color::LABEL);
-		TimeSync::sync(TZ_INFO, "pool.ntp.org", "time.nis.gov", nullptr, printDiagnostics);
-		Serial.println("ok");
-		arduino->printlnR("ok", Color::VALUE);
+		TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nis.gov", nullptr, printDiagnostics);
+		std::string localTime = TimeSync::localTimeString();
+		Serial.println(localTime.c_str());
+		arduino->printlnR(localTime, Color::VALUE);
 
 		Serial.print("Influx... ");
 		arduino->print("Influx... ", Color::LABEL);
@@ -161,9 +160,10 @@ public:
 
 		Serial.print("Syncing Time...");
 		arduino.print("Syncing Time...", Color::LABEL);
-		TimeSync::sync(TZ_INFO, "pool.ntp.org", "time.nis.gov", nullptr, printDiagnostics);
-		Serial.println("OK");
-		arduino.printlnR("OK", Color::VALUE);
+		TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nis.gov", nullptr, printDiagnostics);
+		std::string localTime = TimeSync::localTimeString();
+		Serial.println(localTime.c_str());
+		arduino.printlnR(localTime.c_str(), Color::VALUE);
 
 		Serial.print("Influx...");
 		arduino.print("Influx...", Color::LABEL);

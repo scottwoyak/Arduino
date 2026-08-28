@@ -4,6 +4,8 @@
 //
 // Behavior:
 // - Initializes display, sensor, NeoPixel status LED, watchdog, and InfluxDB client.
+// - After WiFi connects, fetches this device's location/site from a shared JSON config
+//   file (see DeviceConfig.h), keyed by this device's WiFi MAC address.
 // - Samples temperature and humidity every SENSOR_INTERVAL_MS and accumulates
 //   time-averaged values for the next upload.
 // - Continuously renders the latest averaged temperature and humidity values centered
@@ -13,6 +15,8 @@
 //
 // Failure handling:
 // - Sensor initialization failure triggers a device reset after RESET_DELAY_S seconds.
+// - Device config fetch/lookup retries indefinitely until it succeeds (this device's
+//   MAC address must be present in the shared config).
 // - Influx initialization failure triggers a device reset after RESET_DELAY_S seconds.
 // - Runtime InfluxDB post failure triggers deep sleep for SENSOR_POST_FAILURE_SLEEP_S
 //   seconds before the device wakes and retries.
@@ -20,7 +24,8 @@
 // Outputs:
 // - Display: centered temperature (###.## F) and humidity (##.#%) at text size 4;
 //   location and version shown at small size in the top-left and top-right corners.
-// - Serial: sensor type, address, and ID printed during initialization.
+// - Serial: sensor type, address, and ID printed during initialization; MAC address and
+//   the fetched location/site printed after WiFi connects.
 //
 // Usage:
 // - Flash to an Adafruit Feather ESP32-S3 TFT.
@@ -29,7 +34,7 @@
 //
 // InfluxDB points uploaded (Measurement: Sensors):
 //
-// - site=Bragg, location=Printer, sensor=Temperature
+// - site=<from DeviceConfig>, location=<from DeviceConfig>, sensor=Temperature
 //     temperature: time-averaged value of sensor.readTemperatureF(), sampled every
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //     humidity: time-averaged value of sensor.readHumidity(), sampled every
@@ -44,19 +49,20 @@
 #error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
 #endif
 
-#include "TempSensor.h"
 #include <Adafruit_SleepyDog.h>
+
+#include "TempSensor.h"
 #include "SerialX.h"
 #include "Influx.h"
 #include "Rebooter.h"
 #include "Timer.h"
+#include "DeviceConfig.h"
 
 #include "WiFiSettings.h"
 
-constexpr const char* LOCATION = "Cabin";
+constexpr auto DEVICE_CONFIG_URL = "https://raw.githubusercontent.com/scottwoyak/Arduino/main/TempMonitor.json";
 constexpr auto VERSION = "v1.0";
 constexpr auto INFLUX_MEASUREMENT = "Sensors";
-constexpr auto INFLUX_SITE = "Lake";
 constexpr auto INFLUX_SENSOR = "Temperature";
 constexpr uint8_t INFLUX_INTERVAL_S = 15;
 constexpr uint16_t SENSOR_INTERVAL_MS = 500;
@@ -68,6 +74,7 @@ constexpr uint8_t TEXT_SIZE_SMALL = 2;
 constexpr uint8_t VALUE_TEXT_SIZE = 4;
 constexpr uint8_t INFLUX_TEMP_DECIMAL_PLACES = 3;
 constexpr uint8_t INFLUX_HUMIDITY_DECIMAL_PLACES = 2;
+constexpr uint8_t STARTUP_DELAY_S = 5;
 
 Format humFormat("##.#%");
 Format tempFormat("###.## F");
@@ -76,11 +83,23 @@ Arduino arduino;
 NeoPixelStatus status(&arduino.neoPixel);
 TempSensor sensor;
 Influx influx(INFLUX_INTERVAL_S, &status);
-InfluxPoint point(INFLUX_MEASUREMENT, { { "site", INFLUX_SITE }, { "location", LOCATION }, { "sensor", INFLUX_SENSOR } });
-InfluxField* tempField = point.addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
-InfluxField* humField = point.addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
+DeviceConfig deviceConfig;
+InfluxPoint* point = nullptr;
+InfluxField* tempField = nullptr;
+InfluxField* humField = nullptr;
 Timer sensorTimer(SENSOR_INTERVAL_MS);
 Rebooter rebooter;
+
+///
+/// <summary>
+/// Formats this device's site and location (as fetched by DeviceConfig) as "Site/Location".
+/// </summary>
+/// <returns>The formatted "Site/Location" string.</returns>
+///
+std::string siteLocation()
+{
+   return std::string(deviceConfig.get("site")) + "/" + deviceConfig.get("location");
+}
 
 void setup()
 {
@@ -94,14 +113,14 @@ void setup()
 
    arduino.beginInit();
 
-   arduino.println("Location: ", LOCATION);
-
-   if (arduino.initSensor("Sensor", []() { return sensor.begin(false); }))
+   arduino.print("Sensor...", Color::LABEL);
+   if (sensor.begin(false))
    {
-      Serial.print("   Type: ");
+      arduino.printlnR(sensor.type(), Color::VALUE);
+      Serial.print("Sensor...");
       Serial.println(sensor.type());
-      Serial.print("   Address: ");
-      Serial.println(sensor.address());
+      Serial.print("   Address: 0x");
+      Serial.println(sensor.address(), HEX);
       Serial.print("   ID: ");
       Serial.println(sensor.id());
    }
@@ -112,6 +131,17 @@ void setup()
    }
 
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
+   Serial.print("MAC Address: ");
+   Serial.println(WiFi.macAddress());
+
+   deviceConfig.begin(DEVICE_CONFIG_URL, { "site", "location" }, &arduino);
+   arduino.print("Location...", Color::LABEL);
+   arduino.printlnR(siteLocation(), Color::VALUE);
+
+   point = new InfluxPoint(INFLUX_MEASUREMENT, { { "site", deviceConfig.get("site") }, { "location", deviceConfig.get("location") }, { "sensor", INFLUX_SENSOR } });
+   tempField = point->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
+   humField = point->addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
+
    if (!influx.begin(arduino))
    {
       status.setStatus(Status::FAILED);
@@ -126,7 +156,7 @@ void setup()
    // before it's cleared and replaced with the live temperature/humidity readout.
    arduino.setCursor(0, -arduino.charH());
    arduino.println("Starting in 5s...", Color::GRAY);
-   delay(5000);
+   delay(STARTUP_DELAY_S * 1000UL);
 
    arduino.clearDisplay();
 
@@ -181,13 +211,13 @@ void loop()
 
    arduino.setTextSize(TEXT_SIZE_SMALL);
    arduino.setCursor(0, -arduino.charH());
-   arduino.print(LOCATION, Color::CYAN);
+   arduino.print(siteLocation(), Color::CYAN);
    arduino.printR(VERSION, Color::SUB_LABEL);
 
    if (influx.ready())
    {
       arduino.led.turnOn();
-      if (!point.post(influx.client()))
+      if (!point->post(influx.client()))
       {
          arduino.deepSleep(SENSOR_POST_FAILURE_SLEEP_S);
       }

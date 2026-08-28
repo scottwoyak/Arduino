@@ -14,7 +14,7 @@
 // Undefine to use the remote server.
 //#define TELEMETRY_LOCAL
 
-constexpr auto TELEMETRY_TOPIC = "Waves/Lake";
+constexpr auto TELEMETRY_TOPIC = "Waves/LakeP";
 
 #include <iomanip>
 #include <sstream>
@@ -74,7 +74,7 @@ constexpr unsigned long BUFFER_TIME_SPAN_MS = 2000;
 constexpr unsigned long BUFFER_RESOLUTION_MS = 33;
 
 // How often the rolling bar chart is redrawn on the display.
-constexpr unsigned long CHART_UPDATE_MS = 20;
+constexpr unsigned long CHART_UPDATE_MS = 30;
 
 // Maximum plausible rate of depth change (cm/sec); larger rates of change are
 // glitches/dropouts and are rejected so a single bad reading doesn't spike the baseline
@@ -100,7 +100,7 @@ constexpr Color LakeBlue = Color565::fromRGB(0, 0, 255);
 // has no zero-baseline concept (bars always fill from their range minimum upward), so
 // the chart is given a range of 0..2*WAVE_HEIGHT_MAX and values are shifted by
 // +WAVE_HEIGHT_MAX before being plotted so that zero renders in the middle.
-constexpr float WAVE_HEIGHT_MAX = 30;
+constexpr float WAVE_HEIGHT_MAX = 15;
 constexpr Rect16 ROLLING_RECT(0, HEADER_HEIGHT + SUBHEADING_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT - SUBHEADING_HEIGHT);
 MovingBarChart waterLevelChart(ROLLING_RECT, RangeF(0, 2*WAVE_HEIGHT_MAX), LakeBlue, Color::BLACK);
 

@@ -24,6 +24,7 @@
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
     <File Path="libraries/Woyak/DepthSensorBase.h" />
+    <File Path="libraries/Woyak/DeviceConfig.h" />
     <File Path="libraries/Woyak/DisplayBuffer.h" />
     <File Path="libraries/Woyak/DisplayTextView.h" />
     <File Path="libraries/Woyak/DisplayValue.h" />
@@ -440,6 +441,10 @@
     <Deploy />
   </Project>
   <Project Path="Muti_Temp_Playground/Muti_Temp_Playground.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="OTA_Display/OTA_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

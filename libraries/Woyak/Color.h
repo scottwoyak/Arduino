@@ -238,7 +238,9 @@ enum class Color : uint16_t
    DARKBLUE = (uint16_t) Color565::fromRGB(0, 0, 139),
    DARKCYAN = (uint16_t) Color565::fromRGB(0, 139, 139),
    DARKGOLDENROD = (uint16_t) Color565::fromRGB(184, 134, 11),
-   DARKGRAY = (uint16_t) Color565::fromRGB(169, 169, 169),
+   // Deviates from the standard CSS/X11 DARKGRAY value (169, 169, 169), which is actually
+   // lighter than GRAY (128, 128, 128)
+   DARKGRAY = (uint16_t) Color565::fromRGB(50, 50, 50),
    DARKGREEN = (uint16_t) Color565::fromRGB(0, 100, 0),
    DARKKHAKI = (uint16_t) Color565::fromRGB(189, 183, 107),
    DARKMAGENTA = (uint16_t) Color565::fromRGB(139, 0, 139),
