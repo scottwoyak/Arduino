@@ -140,13 +140,26 @@ public:
 
    ///
    /// <summary>
-   /// Turns the LED on at its configured brightness level. If the LED is currently
+   /// Turns the LED on at its currently configured brightness level.
+   /// </summary>
+   ///
+   void turnOn()
+   {
+      turnOn(_level / 255.0f);
+   }
+
+   ///
+   /// <summary>
+   /// Turns the LED on at the given brightness level. If the LED is currently
    /// blinking, the switch to solid on is deferred until the current blink cycle
    /// completes, so the user doesn't see a truncated "half flash".
    /// </summary>
+   /// <param name="level">Normalized brightness from 0.0 (off) to 1.0 (full).</param>
    ///
-   virtual void turnOn()
+   virtual void turnOn(float level)
    {
+      _level = constrain(255 * level, 0, 255);
+
       if (_blinkIntervalMs > 0)
       {
          _pendingStopBlink = true;

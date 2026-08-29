@@ -143,8 +143,7 @@ void setup()
    arduino.setStatus(Status::STARTED);
 
    // solid on while starting up; switches to wave-height-based fading in loop() once wave data is available
-   arduino.led.setLevel(1.0f);
-   arduino.led.turnOn();
+   arduino.led.turnOn(1.0f);
 
    arduino.initSensor("Enclosure Sensor", []() { return enclosureTemp.begin(); });
    arduino.initSensor("CPU Sensor", []() { return cpuTemp.begin(); });
