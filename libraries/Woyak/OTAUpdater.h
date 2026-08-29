@@ -72,6 +72,7 @@ private:
    {
       HTTPClient http;
       http.begin(_versionUrl);
+      http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
       int httpCode = http.GET();
 
       if (httpCode != HTTP_CODE_OK)
