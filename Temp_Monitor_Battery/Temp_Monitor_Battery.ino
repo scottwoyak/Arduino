@@ -5,7 +5,6 @@
 #endif
 
 #include "TempSensor.h"
-#include <Adafruit_SleepyDog.h>
 #include <Adafruit_MAX1704x.h>
 #include "SerialX.h"
 #include "Influx.h"
@@ -83,13 +82,13 @@ void setup()
    airPoint.addTag("location", "Test");
    powerPoint.addTag("location", "Test");
 
-   Watchdog.enable(WATCHDOG_TIMEOUT_MS);
+   arduino.enableWatchdog(WATCHDOG_TIMEOUT_MS);
 }
 
 // Add the main program code into the continuous loop() function
 void loop()
 {
-   Watchdog.reset();
+   arduino.loop();
 
    // Store measured value into point
    tempField->set(sensor.readTemperatureF());

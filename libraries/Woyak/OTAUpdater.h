@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include <Arduino.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
@@ -46,7 +48,7 @@ private:
    static constexpr uint32_t _RESULT_DELAY_MS = 3000;
 
    const char* _version;
-   const char* _versionUrl;
+   std::string _versionUrl;
    const char* _firmwareUrl;
    TimerSecs _checkTimer;
 
@@ -63,6 +65,22 @@ private:
 
    ///
    /// <summary>
+   /// Derives the version-check URL from a firmware URL, per convention: version.txt is
+   /// published alongside the firmware binary in the same directory (e.g.
+   /// ".../releases/download/Foo/Foo.ino.bin" becomes ".../releases/download/Foo/version.txt").
+   /// </summary>
+   /// <param name="firmwareUrl">URL of the firmware .bin.</param>
+   /// <returns>The derived version.txt URL.</returns>
+   ///
+   static std::string _deriveVersionUrl(const char* firmwareUrl)
+   {
+      std::string url(firmwareUrl);
+      size_t lastSlash = url.find_last_of('/');
+      return url.substr(0, lastSlash + 1) + "version.txt";
+   }
+
+   ///
+   /// <summary>
    /// Fetches the version text file and returns whether it differs from this sketch's
    /// own version (a fresh fetch failure is treated as "no update available").
    /// </summary>
@@ -71,7 +89,7 @@ private:
    bool _isUpdateAvailable()
    {
       HTTPClient http;
-      http.begin(_versionUrl);
+      http.begin(_versionUrl.c_str());
       http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
       int httpCode = http.GET();
 
@@ -206,31 +224,33 @@ private:
 public:
    ///
    /// <summary>
-   /// Constructs an OTAUpdater, without a display (serial-only boards).
+   /// Constructs an OTAUpdater, without a display (serial-only boards). The version-check
+   /// URL is derived from firmwareUrl per convention: version.txt lives alongside the
+   /// firmware binary in the same directory.
    /// </summary>
    /// <param name="version">This sketch's own version string (e.g. "v1.0").</param>
-   /// <param name="versionUrl">URL of a text file containing the latest available version string.</param>
    /// <param name="firmwareUrl">URL of the firmware .bin to download when an update is available.</param>
    /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; 0 disables periodic checks (checkNow() still works).</param>
    ///
-   OTAUpdater(const char* version, const char* versionUrl, const char* firmwareUrl, float checkIntervalSecs = 0.0f)
-      : _version(version), _versionUrl(versionUrl), _firmwareUrl(firmwareUrl), _checkTimer(checkIntervalSecs)
+   OTAUpdater(const char* version, const char* firmwareUrl, float checkIntervalSecs = 0.0f)
+      : _version(version), _versionUrl(_deriveVersionUrl(firmwareUrl)), _firmwareUrl(firmwareUrl), _checkTimer(checkIntervalSecs)
    {
    }
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
    ///
    /// <summary>
-   /// Constructs an OTAUpdater that shows download progress on the given display.
+   /// Constructs an OTAUpdater that shows download progress on the given display. The
+   /// version-check URL is derived from firmwareUrl per convention: version.txt lives
+   /// alongside the firmware binary in the same directory.
    /// </summary>
    /// <param name="version">This sketch's own version string (e.g. "v1.0").</param>
-   /// <param name="versionUrl">URL of a text file containing the latest available version string.</param>
    /// <param name="firmwareUrl">URL of the firmware .bin to download when an update is available.</param>
    /// <param name="arduino">Display to show progress and results on while updating.</param>
    /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; 0 disables periodic checks (checkNow() still works).</param>
    ///
-   OTAUpdater(const char* version, const char* versionUrl, const char* firmwareUrl, ArduinoWithDisplay* arduino, float checkIntervalSecs = 0.0f)
-      : _version(version), _versionUrl(versionUrl), _firmwareUrl(firmwareUrl), _checkTimer(checkIntervalSecs), _arduino(arduino)
+   OTAUpdater(const char* version, const char* firmwareUrl, ArduinoWithDisplay* arduino, float checkIntervalSecs = 0.0f)
+      : _version(version), _versionUrl(_deriveVersionUrl(firmwareUrl)), _firmwareUrl(firmwareUrl), _checkTimer(checkIntervalSecs), _arduino(arduino)
    {
    }
 #endif

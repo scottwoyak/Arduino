@@ -23,7 +23,6 @@
 #include "ESP32TempSensor.h"
 #include "I2CMultiplexor.h"
 #include "Influx.h"
-#include "Rebooter.h"
 #include "SerialTable.h"
 #include "SerialX.h"
 #include "Status.h"
@@ -81,7 +80,6 @@ std::array<InfluxField*, NUM_SENSORS> humFields;
 
 Influx influx(INFLUX_INTERVAL_S, &arduino);
 Timer sensorTimer(SENSOR_INTERVAL_MS);
-Rebooter rebooter;
 
 ///
 /// <summary>
@@ -198,8 +196,8 @@ void setup()
    // one sensor doesn't let later sensors' time-averaged fields expire before they're posted.
    influx.client()->setWriteOptions(WriteOptions().batchSize(INFLUX_BATCH_SIZE).bufferSize(2 * INFLUX_BATCH_SIZE));
 
-   // Record the current day so loop() can reboot once the date advances
-   rebooter.begin();
+   // Record the current day so checkReboot() can reboot once the date advances
+   arduino.enableRebooter();
 
    // Reduce CPU frequency for lower power consumption
    setCpuFrequencyMhz(80);
@@ -214,8 +212,10 @@ void loop()
 {
    // Perform a daily reboot for long-term stability, as soon as the date advances past
    // the day the sketch started. The system clock is synced via NTP (see influx.begin()
-   // in setup()), so this checks wall-clock time rather than elapsed millis().
-   rebooter.loop();
+   // in setup()), so this checks wall-clock time rather than elapsed millis(). Watchdog
+   // reset is handled manually below (only on a successful write), not by arduino.loop(),
+   // since this sketch never calls arduino.enableWatchdog().
+   arduino.loop();
 
    arduino.led.turnOff();  // Turn off activity LED (turned on during data upload)
 

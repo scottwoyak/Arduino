@@ -7,6 +7,7 @@
 #include "Format.h"
 #include "Fonts/Roboto.h"
 #include "Fonts/RobotoMonoBold.h"
+#include "OTAUpdater.h"
 #include "Structs.h"
 
 ///
@@ -67,6 +68,9 @@ private:
       setCursorX(display.width() / 2 - offsetPixels);
       print(str.c_str(), textColor, backgroundColor);
    }
+
+   /// <summary>OTA firmware update handler; only created after enableOTA() is called.</summary>
+   OTAUpdater* _ota = nullptr;
 
 public:
    ///
@@ -1850,5 +1854,36 @@ public:
 
       Serial.println(success ? WiFi.localIP().toString() : "FAILED");
       return success;
+   }
+
+   ///
+   /// <summary>
+   /// Enables periodic (or on-demand) OTA firmware update checks, showing download progress
+   /// on this display. The version-check URL is derived from firmwareUrl per convention:
+   /// version.txt lives alongside the firmware binary in the same directory.
+   /// </summary>
+   /// <param name="version">This sketch's own version string (e.g. "v1.0").</param>
+   /// <param name="firmwareUrl">URL of the firmware .bin to download when an update is available.</param>
+   /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; 0 disables periodic checks.</param>
+   ///
+   void enableOTA(const char* version, const char* firmwareUrl, float checkIntervalSecs = 0.0f)
+   {
+      _ota = new OTAUpdater(version, firmwareUrl, this, checkIntervalSecs);
+   }
+
+   ///
+   /// <summary>
+   /// Drives the watchdog reset, scheduled daily reboot check, and (if enabled) OTA update
+   /// check. Call once per loop() iteration.
+   /// </summary>
+   ///
+   void loop()
+   {
+      ArduinoBase::loop();
+
+      if (_ota != nullptr)
+      {
+         _ota->loop();
+      }
    }
 };

@@ -2,9 +2,11 @@
 
 #include <string>
 #include <Arduino.h>
+#include <Adafruit_SleepyDog.h>
 
 #include "Color.h"
 #include "IPrinter.h"
+#include "Rebooter.h"
 #include "Status.h"
 #include "Util.h"
 #include "WiFiX.h"
@@ -22,6 +24,12 @@ class ArduinoBase : public IPrinter
 private:
    /// <summary>WiFi connection manager, created on first initWifi() call.</summary>
    WiFiX* _wifiX = nullptr;
+
+   /// <summary>Scheduled daily reboot handler; only active after enableRebooter() is called.</summary>
+   Rebooter _rebooter;
+
+   /// <summary>Whether enableRebooter() was called, so loop() knows whether to drive it.</summary>
+   bool _rebooterEnabled = false;
 
 public:
    ///
@@ -255,5 +263,47 @@ public:
       print(label, Color::LABEL);
       print("...", Color::LABEL);
       beginFunc();
+   }
+
+   ///
+   /// <summary>
+   /// Enables the hardware watchdog with the given timeout. Call from setup(); loop()
+   /// automatically resets it every iteration.
+   /// </summary>
+   /// <param name="timeoutMs">Watchdog timeout, in milliseconds, before an unresponsive
+   /// device is reset.</param>
+   ///
+   void enableWatchdog(uint32_t timeoutMs)
+   {
+      Watchdog.enable(timeoutMs);
+   }
+
+   ///
+   /// <summary>
+   /// Records the current day as the reboot baseline, so loop() can perform a scheduled
+   /// daily reboot (via Rebooter) once the calendar day advances. Call from setup(), after
+   /// WiFi/time sync (e.g. after initWifi() or an InfluxDB begin() that syncs NTP).
+   /// </summary>
+   ///
+   void enableRebooter()
+   {
+      _rebooterEnabled = true;
+      _rebooter.begin();
+   }
+
+   ///
+   /// <summary>
+   /// Drives the watchdog reset and, if enabled, the scheduled daily reboot check. Call
+   /// once per loop() iteration.
+   /// </summary>
+   ///
+   void loop()
+   {
+      Watchdog.reset();
+
+      if (_rebooterEnabled)
+      {
+         _rebooter.loop();
+      }
    }
 };

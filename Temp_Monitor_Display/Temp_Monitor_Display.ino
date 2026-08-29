@@ -52,15 +52,11 @@
 #error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
 #endif
 
-#include <Adafruit_SleepyDog.h>
-
 #include "TempSensor.h"
 #include "SerialX.h"
 #include "Influx.h"
-#include "Rebooter.h"
 #include "Timer.h"
 #include "DeviceConfig.h"
-#include "OTAUpdater.h"
 
 #include "WiFiSettings.h"
 
@@ -72,7 +68,6 @@ constexpr auto DEVICE_CONFIG_URL = "https://raw.githubusercontent.com/scottwoyak
 constexpr auto VERSION =
 #include "version.txt"
 ;
-constexpr auto OTA_VERSION_URL = "https://github.com/scottwoyak/Arduino/releases/download/Temp-Monitor-Display/version.txt";
 constexpr auto OTA_FIRMWARE_URL = "https://github.com/scottwoyak/Arduino/releases/download/Temp-Monitor-Display/Temp_Monitor_Display.ino.bin";
 constexpr uint8_t OTA_CHECK_INTERVAL_M = 10;
 constexpr auto INFLUX_MEASUREMENT = "Sensors";
@@ -101,8 +96,6 @@ InfluxPoint* point = nullptr;
 InfluxField* tempField = nullptr;
 InfluxField* humField = nullptr;
 Timer sensorTimer(SENSOR_INTERVAL_MS);
-Rebooter rebooter;
-OTAUpdater ota(VERSION, OTA_VERSION_URL, OTA_FIRMWARE_URL, &arduino, OTA_CHECK_INTERVAL_M * 60.0f);
 
 ///
 /// <summary>
@@ -164,7 +157,8 @@ void setup()
 
    status.setStatus(Status::READY);
 
-   rebooter.begin();
+   arduino.enableRebooter();
+   arduino.enableOTA(VERSION, OTA_FIRMWARE_URL, OTA_CHECK_INTERVAL_M * 60.0f);
 
    // Pause so the initialization info on the display remains visible for a moment
    // before it's cleared and replaced with the live temperature/humidity readout.
@@ -174,15 +168,12 @@ void setup()
 
    arduino.clearDisplay();
 
-   Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
+   arduino.enableWatchdog(WATCHDOG_INTERVAL_S * 1000);
 }
 
 void loop()
 {
-   Watchdog.reset();
-
-   rebooter.loop();
-   ota.loop();
+   arduino.loop();
 
    if (sensorTimer.ready())
    {

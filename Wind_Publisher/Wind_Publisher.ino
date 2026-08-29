@@ -49,7 +49,6 @@ constexpr uint8_t INFLUX_BATCH_SIZE = 2; // enclosure + CPU points
 #include "ArduinoBoard.h"
 #include "ESP32TempSensor.h"
 #include "Influx.h"
-#include "Rebooter.h"
 #include "SerialX.h"
 #include "Status.h"
 #include "TelemetryClient.h"
@@ -65,7 +64,6 @@ constexpr uint16_t SERIAL_INTERVAL_MS = 5000;
 constexpr uint16_t SENSOR_INTERVAL_MS = 100;
 Timer serialTimer(SERIAL_INTERVAL_MS);
 Timer sensorTimer(SENSOR_INTERVAL_MS);
-Rebooter rebooter;
 
 // ----------- Wind sensor pins
 constexpr uint8_t WIND_SENSOR_PIN = 11;
@@ -122,7 +120,7 @@ void setup()
 
    influx.client()->setWriteOptions(WriteOptions().batchSize(INFLUX_BATCH_SIZE).bufferSize(2 * INFLUX_BATCH_SIZE));
 
-   rebooter.begin();
+   arduino.enableRebooter();
 
    arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino);
 
@@ -132,7 +130,7 @@ void setup()
 void loop()
 {
    // restart daily for long-term stability
-   rebooter.loop();
+   arduino.loop();
 
    if (client.isStarted())
    {

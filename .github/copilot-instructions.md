@@ -16,6 +16,7 @@
 - Use `SerialX::begin()` (from SerialX.h) instead of `Serial.begin(...)` for starting serial in all Arduino sketches.
 - For standard function calls that accept immediate parameter literals where the meaning is obvious (like `delay(10);`), do not extract them into local explicit `constexpr` constants on the preceding line. Inline magic numbers are acceptable if they are self-evident from context or heavily stereotyped.
 - Use `Temp_Display.ino` as the reference/canonical sketch for code usage, formatting, and comment style conventions in this Arduino workspace. When cleaning up or writing other sketches, compare them against `Temp_Display.ino` as the style exemplar.
+- For Arduino sketches using the Woyak library, OTA firmware update URLs should follow a convention: version.txt lives alongside the firmware .bin in the same directory, so OTAUpdater derives the version-check URL automatically from the firmware URL rather than requiring both URLs to be specified separately.
 
 ## General Coding Conventions
 - Do not make changes in libraries outside of the Woyak library; third-party libraries should remain untouched.

@@ -61,7 +61,6 @@ constexpr uint8_t INFLUX_BATCH_SIZE = 3; // depth + enclosure + CPU points
 #include "DepthSensorBase.h"
 #include "ESP32TempSensor.h"
 #include "Influx.h"
-#include "Rebooter.h"
 #include "SerialX.h"
 #include "SHT3xTempSensor.h"
 #include "Status.h"
@@ -90,7 +89,6 @@ constexpr uint16_t PUBLISH_INTERVAL_MS = 33; // 30 per sec
 constexpr uint16_t SENSOR_INTERVAL_MS = 5000;
 Timer publishTimer(PUBLISH_INTERVAL_MS);
 Timer sensorTimer(SENSOR_INTERVAL_MS);
-Rebooter rebooter;
 
 // ----------- LED wave height indicator
 // The general-purpose LED (arduino.led) is dimmed to reflect the current wave height:
@@ -162,7 +160,7 @@ void setup()
 
    influx.client()->setWriteOptions(WriteOptions().batchSize(INFLUX_BATCH_SIZE).bufferSize(2 * INFLUX_BATCH_SIZE));
 
-   rebooter.begin();
+   arduino.enableRebooter();
 
    arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino);
 
@@ -172,7 +170,7 @@ void setup()
 void loop()
 {
    // restart every 24 hours to play it safe
-   rebooter.loop();
+   arduino.loop();
 
    if (client.isStarted())
    {
