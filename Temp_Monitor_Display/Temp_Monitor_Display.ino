@@ -42,6 +42,9 @@
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //     humidity: time-averaged value of sensor.readHumidity(), sampled every
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
+//     dewPoint, absoluteHumidity, heatIndex: time-averaged values derived from the
+//     same temperature/humidity reading (see TempSensor::readAll()), sampled every
+//     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //
 #include "ArduinoBoard.h"
 
@@ -95,6 +98,9 @@ DeviceConfig deviceConfig;
 InfluxPoint* point = nullptr;
 InfluxField* tempField = nullptr;
 InfluxField* humField = nullptr;
+InfluxField* dewPointField = nullptr;
+InfluxField* absoluteHumidityField = nullptr;
+InfluxField* heatIndexField = nullptr;
 Timer sensorTimer(SENSOR_INTERVAL_MS);
 
 ///
@@ -148,6 +154,9 @@ void setup()
    point = new InfluxPoint(INFLUX_MEASUREMENT, { { "site", deviceConfig.get("site") }, { "location", deviceConfig.get("location") }, { "sensor", INFLUX_SENSOR } });
    tempField = point->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
    humField = point->addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
+   dewPointField = point->addTimeAverageField(INFLUX_INTERVAL_S, "dewPoint", INFLUX_TEMP_DECIMAL_PLACES);
+   absoluteHumidityField = point->addTimeAverageField(INFLUX_INTERVAL_S, "absoluteHumidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
+   heatIndexField = point->addTimeAverageField(INFLUX_INTERVAL_S, "heatIndex", INFLUX_TEMP_DECIMAL_PLACES);
 
    if (!influx.begin(arduino))
    {
@@ -177,8 +186,12 @@ void loop()
 
    if (sensorTimer.ready())
    {
-      tempField->set(sensor.readTemperatureF());
-      humField->set(sensor.readHumidity());
+      Readings readings = sensor.readAll();
+      tempField->set(readings.tempF);
+      humField->set(readings.humidity);
+      dewPointField->set(readings.dewPointF);
+      absoluteHumidityField->set(readings.absoluteHumidity);
+      heatIndexField->set(readings.heatIndexF);
    }
 
    if (!arduino.ensureWiFiConnected(&status))

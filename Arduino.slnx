@@ -46,6 +46,7 @@
     <File Path="libraries/Woyak/RollingValues.h" />
     <File Path="libraries/Woyak/Histogram.h" />
     <File Path="libraries/Woyak/HistogramPlot.h" />
+    <File Path="libraries/Woyak/Humidity.h" />
     <File Path="libraries/Woyak/I2C.h" />
     <File Path="libraries/Woyak/I2CMultiplexor.h" />
     <File Path="libraries/Woyak/HDC302xTempSensor.h" />
@@ -526,10 +527,6 @@
     <Deploy />
   </Project>
   <Project Path="Temp_Display/Temp_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="Temp_Monitor_Battery/Temp_Monitor_Battery.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

@@ -1887,3 +1887,7 @@ public:
       }
    }
 };
+
+// OTAUpdater's methods that call ArduinoWithDisplay's own methods must be defined
+// out-of-line, after this class is fully defined; see OTAUpdaterImpl.h.
+#include "OTAUpdaterImpl.h"

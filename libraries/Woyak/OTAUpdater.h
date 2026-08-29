@@ -13,7 +13,8 @@
 // Display-based methods are only available on boards with a display.
 // ARDUINO_DISPLAY_SUPPORTED is defined by ArduinoBoard.h when the target board has one.
 #ifdef ARDUINO_DISPLAY_SUPPORTED
-#include "ArduinoWithDisplay.h"
+#include "Format.h"
+class ArduinoWithDisplay;
 #endif
 
 ///
@@ -128,18 +129,7 @@ private:
    /// <param name="current">Number of bytes downloaded so far.</param>
    /// <param name="total">Total number of bytes to download.</param>
    ///
-   void _onUpdateProgress(int current, int total)
-   {
-      uint8_t percent = (total > 0) ? (current * 100 / total) : 0;
-
-      _arduino->setTextSize(_TEXT_SIZE);
-      _arduino->setCursorY(_downloadRowY);
-      _arduino->printR((float)percent, _percentFormat, Color::VALUE);
-
-      int16_t barWidth = _arduino->width() - 2 * _PROGRESS_BAR_MARGIN;
-      int16_t fillWidth = barWidth * percent / 100;
-      _arduino->fillRect(_PROGRESS_BAR_MARGIN, _progressBarY, fillWidth, _PROGRESS_BAR_HEIGHT, Color::LIME);
-   }
+   void _onUpdateProgress(int current, int total);
 
    static void _onUpdateProgressHandler(int current, int total) { _active->_onUpdateProgress(current, total); }
 #endif
@@ -150,76 +140,7 @@ private:
    /// on the display (if present). Restarts the device on success.
    /// </summary>
    ///
-   void _performUpdate()
-   {
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-      if (_arduino != nullptr)
-      {
-         _arduino->printHeader("Updating Firmware");
-         _arduino->setTextSize(_TEXT_SIZE);
-         _arduino->print("Downloading...", Color::LABEL);
-         _downloadRowY = _arduino->getCursorY();
-
-         _progressBarY = _downloadRowY + _arduino->charH() + _PROGRESS_BAR_MARGIN;
-         _arduino->fillRect(_PROGRESS_BAR_MARGIN, _progressBarY, _arduino->width() - 2 * _PROGRESS_BAR_MARGIN, _PROGRESS_BAR_HEIGHT, Color::DARKGRAY);
-      }
-#endif
-
-      WiFiClientSecure client;
-      client.setInsecure();
-
-      _active = this;
-
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-      if (_arduino != nullptr)
-      {
-         httpUpdate.onProgress(_onUpdateProgressHandler);
-      }
-#endif
-      httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
-      httpUpdate.rebootOnUpdate(false);
-
-      t_httpUpdate_return result = httpUpdate.update(client, _firmwareUrl);
-
-      switch (result)
-      {
-         case HTTP_UPDATE_FAILED:
-            Serial.printf("OTAUpdater: update failed: %s\n", httpUpdate.getLastErrorString().c_str());
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-            if (_arduino != nullptr)
-            {
-               _arduino->println();
-               _arduino->println("Update failed", Color::RED);
-               _arduino->println(httpUpdate.getLastErrorString().c_str(), Color::RED);
-               delay(_RESULT_DELAY_MS);
-            }
-#endif
-            break;
-
-         case HTTP_UPDATE_NO_UPDATES:
-            Serial.println("OTAUpdater: no update available");
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-            if (_arduino != nullptr)
-            {
-               _arduino->println();
-               _arduino->println("No update available", Color::RED);
-               delay(_RESULT_DELAY_MS);
-            }
-#endif
-            break;
-
-         case HTTP_UPDATE_OK:
-            Serial.println("OTAUpdater: update OK, restarting");
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-            if (_arduino != nullptr)
-            {
-               _arduino->println("\n\nRestarting...", Color::LABEL);
-            }
-#endif
-            ESP.restart();
-            break;
-      }
-   }
+   void _performUpdate();
 
 public:
    ///
@@ -284,3 +205,11 @@ public:
       }
    }
 };
+
+// On non-display boards, ArduinoWithDisplay is never referenced, so the out-of-line
+// method bodies can be included right here. On display-capable boards, ArduinoWithDisplay.h
+// includes OTAUpdaterImpl.h itself, once its own class definition is complete, since
+// those method bodies need ArduinoWithDisplay to be a complete type.
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#include "OTAUpdaterImpl.h"
+#endif

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Humidity.h"
 #include "I2CTempSensor.h"
 #include "ITempSensor.h"
 #include "TempSensorCallibration.h"
@@ -19,6 +20,20 @@
 #endif
 
 #include <string>
+
+///
+/// <summary>
+/// A temperature/humidity reading along with humidity values derived from it.
+/// </summary>
+///
+struct Readings
+{
+   float tempF;
+   float humidity;
+   float dewPointF;
+   float absoluteHumidity;
+   float heatIndexF;
+};
 
 ///
 /// <summary>
@@ -468,5 +483,20 @@ public:
       tempF += _computeTempCorrectionF(tempF);
    }
 
-
+   ///
+   /// <summary>
+   /// Reads temperature and humidity, then computes dew point, absolute humidity, and
+   /// heat index from that single reading.
+   /// </summary>
+   /// <returns>The raw reading along with its derived humidity values.</returns>
+   ///
+   Readings readAll()
+   {
+      Readings readings;
+      readBoth(readings.tempF, readings.humidity);
+      readings.dewPointF = Humidity::dewPointF(readings.tempF, readings.humidity);
+      readings.absoluteHumidity = Humidity::absoluteHumidity(Units::F2C(readings.tempF), readings.humidity);
+      readings.heatIndexF = Humidity::heatIndexF(readings.tempF, readings.humidity);
+      return readings;
+   }
 };
