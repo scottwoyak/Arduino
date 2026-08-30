@@ -46,13 +46,21 @@ public:
    /// <summary>
    /// Gets the sensor's current raw depth value. Also updates the running average used by
    /// getWaveHeight(), so getWaveHeight() should be called after getDepth() to reflect the
-   /// same underlying reading rather than triggering a second sensor read.
+   /// same underlying reading rather than triggering a second sensor read. If the underlying
+   /// sensor reports a bad reading (NAN), the last known good raw depth is returned and the
+   /// running average is left unchanged rather than being polluted with a bad value.
    /// </summary>
-   /// <returns>The current raw depth reading.</returns>
+   /// <returns>The current raw depth reading, or the last known good reading if this read failed.</returns>
    ///
    float getDepth() override
    {
-      _lastRawDepth = readRawDepth();
+      float rawDepth = readRawDepth();
+      if (isnan(rawDepth))
+      {
+         return _lastRawDepth;
+      }
+
+      _lastRawDepth = rawDepth;
       _average.set(_lastRawDepth);
       return _lastRawDepth;
    }

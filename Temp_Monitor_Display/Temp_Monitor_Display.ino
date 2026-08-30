@@ -12,7 +12,7 @@
 //   on the display at large text size, with location and version in the header/footer.
 // - Verifies Wi-Fi connectivity each loop and resets the device if it cannot reconnect.
 // - Posts telemetry to InfluxDB every INFLUX_INTERVAL_S seconds.
-// - Checks for a firmware update every OTA_CHECK_INTERVAL_M minutes and, if a newer
+// - Checks for a firmware update periodically and, if a newer
 //   version is published, downloads and installs it (showing progress on the display)
 //   before restarting.
 //
@@ -72,8 +72,7 @@ constexpr auto DEVICE_CONFIG_URL = "https://raw.githubusercontent.com/scottwoyak
 constexpr auto VERSION =
 #include "version.txt"
 ;
-constexpr auto OTA_FIRMWARE_URL = "https://github.com/scottwoyak/Arduino/releases/download/Temp-Monitor-Display/Temp_Monitor_Display.ino.bin";
-constexpr uint8_t OTA_CHECK_INTERVAL_M = 10;
+constexpr auto SKETCH_NAME = "Temp_Monitor_Display";
 constexpr auto INFLUX_MEASUREMENT = "Sensors";
 constexpr auto INFLUX_SENSOR = "Temperature";
 constexpr uint8_t INFLUX_INTERVAL_S = 15;
@@ -144,6 +143,8 @@ void setup()
    }
 
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
+   arduino.enableRebooter();
+   arduino.enableOTA(VERSION, SKETCH_NAME);
    Serial.print("MAC Address: ");
    Serial.println(WiFi.macAddress());
 
@@ -165,9 +166,6 @@ void setup()
    }
 
    status.setStatus(Status::READY);
-
-   arduino.enableRebooter();
-   arduino.enableOTA(VERSION, OTA_FIRMWARE_URL, OTA_CHECK_INTERVAL_M * 60.0f);
 
    // Pause so the initialization info on the display remains visible for a moment
    // before it's cleared and replaced with the live temperature/humidity readout.

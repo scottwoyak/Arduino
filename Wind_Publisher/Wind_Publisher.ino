@@ -14,7 +14,7 @@
 // - Posts telemetry to InfluxDB every INFLUX_INTERVAL_S seconds.
 // - Resets the device on telemetry disconnect or error.
 // - Restarts the device every 24 hours to play it safe.
-// - Checks for a firmware update every OTA_CHECK_INTERVAL_M minutes.
+// - Checks for a firmware update periodically.
 //
 // Telemetry topic / InfluxDB site selection:
 // - The telemetry topic (and matching InfluxDB site/location/bucket) is one of the 3
@@ -42,11 +42,12 @@
 // Uncomment to use local telemetry server instead of remote
 //#define TELEMETRY_LOCAL
 
+#include <iterator>
+
 constexpr auto VERSION =
 #include "version.txt"
 ;
-constexpr auto OTA_FIRMWARE_URL = "https://github.com/scottwoyak/Arduino/releases/download/Wind-Publisher/Wind_Publisher.ino.bin";
-constexpr uint8_t OTA_CHECK_INTERVAL_M = 10;
+constexpr auto SKETCH_NAME = "Wind_Publisher";
 
 // ----------- Telemetry topic / InfluxDB site selection
 struct WindSite
@@ -62,7 +63,6 @@ constexpr WindSite WIND_SITES[] = {
    { "Wind/Bragg", "Monitor", "Bragg", "Studio" },
    { "Wind/Test", "Testing", "Test", "Test" },
 };
-constexpr size_t NUM_WIND_SITES = sizeof(WIND_SITES) / sizeof(WIND_SITES[0]);
 
 constexpr auto PREFERENCES_NAMESPACE = "WindPublisher";
 constexpr auto TOPIC_KEY = "topic";
@@ -158,7 +158,7 @@ void printWindSite(const WindSite& site)
 uint8_t promptForSiteIndex()
 {
    Serial.println("Select a wind site:");
-   for (uint8_t i = 0; i < NUM_WIND_SITES; i++)
+   for (uint8_t i = 0; i < std::size(WIND_SITES); i++)
    {
       Serial.print("  ");
       Serial.print(i + 1);
@@ -169,7 +169,7 @@ uint8_t promptForSiteIndex()
    while (true)
    {
       Serial.print("Enter selection (1-");
-      Serial.print(NUM_WIND_SITES);
+      Serial.print(std::size(WIND_SITES));
       Serial.print("): ");
 
       while (!Serial.available())
@@ -194,7 +194,7 @@ uint8_t promptForSiteIndex()
       if (isNumeric)
       {
          uint8_t selection = input.toInt();
-         if (selection >= 1 && selection <= NUM_WIND_SITES)
+         if (selection >= 1 && selection <= std::size(WIND_SITES))
          {
             uint8_t index = selection - 1;
             Serial.print("Selected: ");
@@ -257,7 +257,8 @@ WindSite resolveSite(bool forcePrompt)
 void setup()
 {
    SerialX::begin();
-   Serial.println("Wind Publisher");
+   Serial.print("Wind Publisher ");
+   Serial.println(VERSION);
 
    // power the wind encoder/sensor
    pinMode(WIND_SENSOR_GROUND_PIN, OUTPUT);
@@ -293,6 +294,8 @@ void setup()
    WindSite site = resolveSite(forcePrompt);
 
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &arduino);
+   arduino.enableRebooter();
+   arduino.enableOTA(VERSION, SKETCH_NAME);
 
    influx = new Influx(INFLUX_INTERVAL_S, &arduino, INFLUXDB_URL, INFLUXDB_ORG, site.influxBucket);
    if (!influx->begin(arduino))
@@ -303,9 +306,6 @@ void setup()
    }
 
    influx->client()->setWriteOptions(WriteOptions().batchSize(INFLUX_BATCH_SIZE).bufferSize(2 * INFLUX_BATCH_SIZE));
-
-   arduino.enableRebooter();
-   arduino.enableOTA(VERSION, OTA_FIRMWARE_URL, OTA_CHECK_INTERVAL_M * 60.0f);
 
    client = new TelemetryPublisher(site.telemetryTopic, NUM_DECIMALS, &arduino, &telemetryHandler);
 

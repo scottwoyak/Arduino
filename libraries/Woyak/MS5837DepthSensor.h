@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <MS5837.h>
 #include "DepthSensorBase.h"
 
@@ -15,6 +16,12 @@ public:
 
 private:
    static constexpr float METERS_TO_CENTIMETERS = 100.0f;
+   // Sensor is never deployed deeper than ~10' (304.8 cm); anything outside this range
+   // (with some margin for above-water mounting/waves) indicates a bad/corrupted I2C
+   // reading rather than a real depth, since there's no error signal available from the
+   // underlying MS5837 library's read() method.
+   static constexpr float MIN_PLAUSIBLE_DEPTH_CM = -50.0f;
+   static constexpr float MAX_PLAUSIBLE_DEPTH_CM = 350.0f;
 
    MS5837 _sensor;
    float _fluidDensityKgPerM3;
@@ -54,21 +61,34 @@ protected:
    /// <summary>
    /// Reads the sensor and returns depth in centimeters relative to the current baseline.
    /// </summary>
-   /// <returns>The current depth, in centimeters, minus the configured baseline.</returns>
+   /// <returns>The current depth, in centimeters, minus the configured baseline, or NAN if the sensor read failed.</returns>
    float readRawDepth() override
    {
-      return rawDepthCm() - _baselineCm;
+      float rawCm = rawDepthCm();
+      if (isnan(rawCm))
+      {
+         return NAN;
+      }
+
+      return rawCm - _baselineCm;
    }
 
 public:
    /// <summary>
    /// Reads the sensor and returns the raw depth in centimeters, unaffected by baseline.
    /// </summary>
-   /// <returns>The current raw depth in centimeters.</returns>
+   /// <returns>The current raw depth in centimeters, or NAN if the reading is implausible
+   /// (indicating a corrupted I2C read, since MS5837::read() has no error return).</returns>
    float rawDepthCm()
    {
       _sensor.read();
-      return _sensor.depth() * METERS_TO_CENTIMETERS;
+      float depthCm = _sensor.depth() * METERS_TO_CENTIMETERS;
+      if (depthCm < MIN_PLAUSIBLE_DEPTH_CM || depthCm > MAX_PLAUSIBLE_DEPTH_CM)
+      {
+         return NAN;
+      }
+
+      return depthCm;
    }
 
    /// <summary>

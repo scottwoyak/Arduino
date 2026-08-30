@@ -13,7 +13,7 @@
 // CLOSED), and orange while the gate is OPEN.
 //
 // The device restarts automatically at midnight and checks for a firmware update
-// every OTA_CHECK_INTERVAL_M minutes.
+// periodically.
 //
 
 #include <Arduino.h>
@@ -32,8 +32,7 @@
 constexpr auto VERSION = 
 #include "version.txt"
 ;
-constexpr auto OTA_FIRMWARE_URL = "https://github.com/scottwoyak/Arduino/releases/download/Gate-Opener/Gate_Opener.ino.bin";
-constexpr uint8_t OTA_CHECK_INTERVAL_M = 10;
+constexpr auto SKETCH_NAME = "Gate_Opener";
 
 constexpr uint16_t WEB_SERVER_PORT = 80;
 
@@ -147,7 +146,7 @@ void setup()
 
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
    arduino.enableRebooter();
-   arduino.enableOTA(VERSION, OTA_FIRMWARE_URL, OTA_CHECK_INTERVAL_M * 60.0f);
+   arduino.enableOTA(VERSION, SKETCH_NAME);
 
    server.on("/", HTTP_GET, handleRoot);
    server.on("/Gate", HTTP_GET, handleGetGate);

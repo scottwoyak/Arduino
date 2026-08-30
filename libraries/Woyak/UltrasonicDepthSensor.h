@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <cmath>
 
 #include "DepthSensorBase.h"
 
@@ -56,7 +57,7 @@ public:
    /// <summary>
    /// Triggers a new measurement and computes the resulting distance, in centimeters.
    /// </summary>
-   /// <returns>The measured distance in centimeters.</returns>
+   /// <returns>The measured distance in centimeters, or NAN if the echo pulse timed out.</returns>
    ///
    float readRawDepth() override
    {
@@ -68,6 +69,11 @@ public:
       digitalWrite(_triggerPin, LOW);
 
       long durationMicros = pulseIn(_echoPin, HIGH, _echoTimeoutMicros);
+      if (durationMicros == 0)
+      {
+         return NAN;
+      }
+
       float distanceCM = durationMicros * 0.034f / 2;
       return distanceCM;
    }

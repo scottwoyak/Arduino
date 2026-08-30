@@ -23,9 +23,7 @@
 #include "WiFiSettings.h"
 
 // URL of the firmware .bin to download when an update is requested.
-constexpr auto FIRMWARE_URL = "https://github.com/scottwoyak/Arduino/releases/download/ota-display-v1.0/OTA_Display.ino.bin";
-
-constexpr auto VERSION = "v1.0";
+constexpr auto FIRMWARE_URL = "https://github.com/scottwoyak/Arduino/releases/download/OTA_Display/OTA_Display.ino.bin";
 
 constexpr uint8_t HEADER_SIZE = 3;
 constexpr uint8_t TEXT_SIZE = 2;

@@ -292,18 +292,21 @@ public:
 
    ///
    /// <summary>
-   /// Enables periodic (or on-demand) OTA firmware update checks. The version-check URL is
-   /// derived from firmwareUrl per convention: version.txt lives alongside the firmware
-   /// binary in the same directory. On display-capable boards, use
-   /// ArduinoWithDisplay::enableOTA() instead to also show download progress on the display.
+   /// Enables periodic (or on-demand) OTA firmware update checks and immediately performs
+   /// one check (installing an update if available). The firmware and version-check URLs
+   /// are both derived from sketchName per convention: this sketch publishes to a GitHub
+   /// release tagged with its own name. WiFi must already be connected before calling this.
+   /// On display-capable boards, use ArduinoWithDisplay::enableOTA() instead to also show
+   /// download progress on the display.
    /// </summary>
    /// <param name="version">This sketch's own version string (e.g. "v1.0").</param>
-   /// <param name="firmwareUrl">URL of the firmware .bin to download when an update is available.</param>
-   /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; 0 disables periodic checks.</param>
+   /// <param name="sketchName">This sketch's name (e.g. "Wind_Publisher"), used to derive its release URLs.</param>
+   /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; defaults to 10 minutes.</param>
    ///
-   void enableOTA(const char* version, const char* firmwareUrl, float checkIntervalSecs = 0.0f)
+   void enableOTA(const char* version, const char* sketchName, float checkIntervalSecs = OTAUpdater::DEFAULT_CHECK_INTERVAL_SECS)
    {
-      _ota = new OTAUpdater(version, firmwareUrl, checkIntervalSecs);
+      _ota = new OTAUpdater(version, sketchName, checkIntervalSecs);
+      _ota->checkNow();
    }
 
    ///

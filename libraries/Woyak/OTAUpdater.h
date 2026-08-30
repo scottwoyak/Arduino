@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 
 #include <Arduino.h>
 #include <HTTPClient.h>
@@ -41,7 +42,15 @@ class ArduinoWithDisplay;
 ///
 class OTAUpdater
 {
+public:
+   // Default interval between periodic OTA checks, used when a sketch doesn't specify one.
+   static constexpr float DEFAULT_CHECK_INTERVAL_SECS = 10.0f * 60.0f;
+
 private:
+   // Base URL for this project's GitHub releases; each sketch publishes its firmware/version
+   // files as assets under a release tagged with its own sketch name (see _deriveUrls()).
+   static constexpr auto _RELEASES_BASE_URL = "https://github.com/scottwoyak/Arduino/releases/download";
+
    static constexpr uint8_t _HEADER_SIZE = 3;
    static constexpr uint8_t _TEXT_SIZE = 2;
    static constexpr int16_t _PROGRESS_BAR_HEIGHT = 12;
@@ -50,7 +59,7 @@ private:
 
    const char* _version;
    std::string _versionUrl;
-   const char* _firmwareUrl;
+   std::string _firmwareUrl;
    TimerSecs _checkTimer;
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
@@ -66,18 +75,17 @@ private:
 
    ///
    /// <summary>
-   /// Derives the version-check URL from a firmware URL, per convention: version.txt is
-   /// published alongside the firmware binary in the same directory (e.g.
-   /// ".../releases/download/Foo/Foo.ino.bin" becomes ".../releases/download/Foo/version.txt").
+   /// Derives this sketch's firmware/version-check URLs from its name, per convention: each
+   /// sketch publishes to a release tagged with its own name (e.g. "Wind_Publisher"), with
+   /// "{sketchName}.ino.bin" and "version.txt" as assets alongside each other.
    /// </summary>
-   /// <param name="firmwareUrl">URL of the firmware .bin.</param>
-   /// <returns>The derived version.txt URL.</returns>
+   /// <param name="sketchName">This sketch's name (e.g. "Wind_Publisher"), also used as the release tag.</param>
+   /// <returns>The derived { firmwareUrl, versionUrl } pair.</returns>
    ///
-   static std::string _deriveVersionUrl(const char* firmwareUrl)
+   static std::pair<std::string, std::string> _deriveUrls(const char* sketchName)
    {
-      std::string url(firmwareUrl);
-      size_t lastSlash = url.find_last_of('/');
-      return url.substr(0, lastSlash + 1) + "version.txt";
+      std::string releaseUrl = std::string(_RELEASES_BASE_URL) + "/" + sketchName + "/";
+      return { releaseUrl + sketchName + ".ino.bin", releaseUrl + "version.txt" };
    }
 
    ///
@@ -96,8 +104,7 @@ private:
 
       if (httpCode != HTTP_CODE_OK)
       {
-         Serial.print("OTAUpdater: version check HTTP GET failed, code: ");
-         Serial.println(httpCode);
+         Serial.printf("OTAUpdater: version check HTTP GET failed, code: %d, url: %s\n", httpCode, _versionUrl.c_str());
          http.end();
          return false;
       }
@@ -118,7 +125,13 @@ private:
       Serial.print(", server version ");
       Serial.println(serverVersion);
 
-      return !serverVersion.equals(_version);
+      bool updateAvailable = !serverVersion.equals(_version);
+      if (updateAvailable)
+      {
+         Serial.printf("OTAUpdater: Downloading %s\n", serverVersion.c_str());
+      }
+
+      return updateAvailable;
    }
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
@@ -145,34 +158,37 @@ private:
 public:
    ///
    /// <summary>
-   /// Constructs an OTAUpdater, without a display (serial-only boards). The version-check
-   /// URL is derived from firmwareUrl per convention: version.txt lives alongside the
-   /// firmware binary in the same directory.
+   /// Constructs an OTAUpdater, without a display (serial-only boards). The firmware and
+   /// version-check URLs are both derived from sketchName per convention: this sketch
+   /// publishes to a GitHub release tagged with its own name, alongside a "version.txt".
    /// </summary>
    /// <param name="version">This sketch's own version string (e.g. "v1.0").</param>
-   /// <param name="firmwareUrl">URL of the firmware .bin to download when an update is available.</param>
-   /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; 0 disables periodic checks (checkNow() still works).</param>
+   /// <param name="sketchName">This sketch's name (e.g. "Wind_Publisher"), used to derive its release URLs.</param>
+   /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; defaults to 10 minutes.</param>
    ///
-   OTAUpdater(const char* version, const char* firmwareUrl, float checkIntervalSecs = 0.0f)
-      : _version(version), _versionUrl(_deriveVersionUrl(firmwareUrl)), _firmwareUrl(firmwareUrl), _checkTimer(checkIntervalSecs)
+   OTAUpdater(const char* version, const char* sketchName, float checkIntervalSecs = DEFAULT_CHECK_INTERVAL_SECS)
+      : _version(version), _checkTimer(checkIntervalSecs)
    {
+      std::tie(_firmwareUrl, _versionUrl) = _deriveUrls(sketchName);
    }
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
    ///
    /// <summary>
    /// Constructs an OTAUpdater that shows download progress on the given display. The
-   /// version-check URL is derived from firmwareUrl per convention: version.txt lives
-   /// alongside the firmware binary in the same directory.
+   /// firmware and version-check URLs are both derived from sketchName per convention:
+   /// this sketch publishes to a GitHub release tagged with its own name, alongside a
+   /// "version.txt".
    /// </summary>
    /// <param name="version">This sketch's own version string (e.g. "v1.0").</param>
-   /// <param name="firmwareUrl">URL of the firmware .bin to download when an update is available.</param>
+   /// <param name="sketchName">This sketch's name (e.g. "Wind_Publisher"), used to derive its release URLs.</param>
    /// <param name="arduino">Display to show progress and results on while updating.</param>
-   /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; 0 disables periodic checks (checkNow() still works).</param>
+   /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; defaults to 10 minutes.</param>
    ///
-   OTAUpdater(const char* version, const char* firmwareUrl, ArduinoWithDisplay* arduino, float checkIntervalSecs = 0.0f)
-      : _version(version), _versionUrl(_deriveVersionUrl(firmwareUrl)), _firmwareUrl(firmwareUrl), _checkTimer(checkIntervalSecs), _arduino(arduino)
+   OTAUpdater(const char* version, const char* sketchName, ArduinoWithDisplay* arduino, float checkIntervalSecs = DEFAULT_CHECK_INTERVAL_SECS)
+      : _version(version), _checkTimer(checkIntervalSecs), _arduino(arduino)
    {
+      std::tie(_firmwareUrl, _versionUrl) = _deriveUrls(sketchName);
    }
 #endif
 

@@ -11,7 +11,7 @@
 // - Tracks a rolling 10-minute average/min/max and a windowed histogram of readings.
 // - Pressing button A cycles between the MultiBar, Rolling, and Histogram views.
 // - Resets the device on telemetry disconnect or error.
-// - Checks for a firmware update every OTA_CHECK_INTERVAL_M minutes.
+// - Checks for a firmware update periodically.
 //
 
 // Uncomment to use local telemetry server instead of remote
@@ -22,8 +22,7 @@ constexpr auto TELEMETRY_TOPIC = "Wind/Lake";
 constexpr auto VERSION =
 #include "version.txt"
 ;
-constexpr auto OTA_FIRMWARE_URL = "https://github.com/scottwoyak/Arduino/releases/download/Wind-Subscriber-Display/Wind_Subscriber_Display.ino.bin";
-constexpr uint8_t OTA_CHECK_INTERVAL_M = 10;
+constexpr auto SKETCH_NAME = "Wind_Subscriber_Display";
 
 
 #include "ArduinoBoard.h"
@@ -229,7 +228,7 @@ void setup()
 
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
 
-   arduino.enableOTA(VERSION, OTA_FIRMWARE_URL, OTA_CHECK_INTERVAL_M * 60.0f);
+   arduino.enableOTA(VERSION, SKETCH_NAME);
 
    arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
    delay(1000); // provide time for the wind meter to get a reading

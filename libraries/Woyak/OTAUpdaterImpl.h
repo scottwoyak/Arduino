@@ -55,12 +55,12 @@ inline void OTAUpdater::_performUpdate()
    httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
    httpUpdate.rebootOnUpdate(false);
 
-   t_httpUpdate_return result = httpUpdate.update(client, _firmwareUrl);
+   t_httpUpdate_return result = httpUpdate.update(client, _firmwareUrl.c_str());
 
    switch (result)
    {
       case HTTP_UPDATE_FAILED:
-         Serial.printf("OTAUpdater: update failed: %s\n", httpUpdate.getLastErrorString().c_str());
+         Serial.printf("OTAUpdater: update failed: %s, url: %s\n", httpUpdate.getLastErrorString().c_str(), _firmwareUrl.c_str());
 #ifdef ARDUINO_DISPLAY_SUPPORTED
          if (_arduino != nullptr)
          {
