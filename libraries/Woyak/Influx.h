@@ -93,7 +93,6 @@ public:
 		if (WiFi.status() != WL_CONNECTED)
 		{
 			String message = String("WiFi connect failed: ") + WiFiX::statusString();
-			Serial.println(message);
 			arduino->println(message, Color::RED);
 			return false;
 		}
@@ -103,18 +102,14 @@ public:
 			_status->setStatus(Status::WEB_CONNECTING);
 		}
 
-		Serial.print("Syncing Time... ");
 		arduino->print("Syncing Time... ", Color::LABEL);
 		TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nis.gov", nullptr, printDiagnostics);
 		std::string localTime = TimeSync::localTimeString();
-		Serial.println(localTime.c_str());
 		arduino->printlnR(localTime, Color::VALUE);
 
-		Serial.print("Influx... ");
 		arduino->print("Influx... ", Color::LABEL);
 		if (_client.validateConnection())
 		{
-			Serial.println("ok");
 			arduino->printlnR("ok", Color::VALUE);
 			if (printDiagnostics)
 			{
@@ -127,9 +122,7 @@ public:
 			return true;
 		}
 
-		Serial.println("FAILED");
 		arduino->printlnR("FAILED", Color::RED);
-		Serial.println(_client.getLastErrorMessage());
 		arduino->println(_client.getLastErrorMessage(), Color::RED);
 		return false;
 	}
@@ -148,7 +141,6 @@ public:
 		if (WiFi.status() != WL_CONNECTED)
 		{
 			std::string message = std::string("WiFi connect failed: ") + WiFiX::statusString();
-			Serial.println(message.c_str());
 			arduino.println(message.c_str(), Color::RED);
 			return false;
 		}
@@ -158,18 +150,14 @@ public:
 			_status->setStatus(Status::WEB_CONNECTING);
 		}
 
-		Serial.print("Syncing Time...");
 		arduino.print("Syncing Time...", Color::LABEL);
 		TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nis.gov", nullptr, printDiagnostics);
 		std::string localTime = TimeSync::localTimeString();
-		Serial.println(localTime.c_str());
 		arduino.printlnR(localTime.c_str(), Color::VALUE);
 
-		Serial.print("Influx...");
 		arduino.print("Influx...", Color::LABEL);
 		if (_client.validateConnection())
 		{
-			Serial.println("OK");
 			arduino.printlnR("OK", Color::VALUE);
 			if (printDiagnostics)
 			{
@@ -182,9 +170,7 @@ public:
 			return true;
 		}
 
-		Serial.println("FAILED");
 		arduino.printlnR("FAILED", Color::RED);
-		Serial.println(_client.getLastErrorMessage().c_str());
 		arduino.println(_client.getLastErrorMessage().c_str(), Color::RED);
 		return false;
 	}

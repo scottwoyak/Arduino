@@ -44,12 +44,14 @@ class ArduinoWithDisplay : public ArduinoBase
 private:
    void _print(const char* str, Color textColor, Color backgroundColor)
    {
+      Serial.print(str);
       display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
       display.print(str);
    }
 
    void _println(const char* str, Color textColor, Color backgroundColor)
    {
+      Serial.println(str);
       display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
       display.println(str);
    }
@@ -749,8 +751,6 @@ public:
    }
    void printHeader(const char* str, Color textColor = Color::HEADING) override
    {
-      Serial.println(str);
-
       clearDisplay();
       setTextSize(TEXT_SIZE_HEADER);
       println(str, textColor);
@@ -1816,54 +1816,6 @@ public:
    void println(const char* label, size_t value, const Format& format, Color labelColor, Color valueColor, Color backgroundColor)
    {
       println(label, (unsigned long)value, format, labelColor, valueColor, backgroundColor);
-   }
-
-   ///
-   /// <summary>
-   /// Initializes a single sensor, echoing the label and "OK"/"NOT FOUND" result to Serial
-   /// in addition to the display, since display text isn't otherwise mirrored to Serial.
-   /// </summary>
-   /// <param name="label">The sensor label to print (e.g. "Sensor 0 (New Surface)").</param>
-   /// <param name="initFunc">Function that initializes the sensor and returns true on success.</param>
-   /// <returns>True if the sensor was found/initialized successfully.</returns>
-   ///
-   bool initSensor(const char* label, bool (*initFunc)())
-   {
-      Serial.print(label);
-      Serial.print("...");
-
-      bool success = ArduinoBase::initSensor(label, initFunc);
-
-      Serial.println(success ? "OK" : "NOT FOUND");
-      return success;
-   }
-
-   ///
-   /// <summary>
-   /// Connects to WiFi, echoing the "WiFi..." and (if syncTime) "Time..." status lines to
-   /// Serial in addition to the display, since display text isn't otherwise mirrored to Serial.
-   /// </summary>
-   /// <param name="ssid">The WiFi network name.</param>
-   /// <param name="password">The WiFi network password.</param>
-   /// <param name="status">Optional status indicator updated to WIFI_CONNECTING while connecting.</param>
-   /// <param name="syncTime">True to sync the system clock via NTP after connecting.</param>
-   /// <returns>True if the WiFi connection succeeded; otherwise false.</returns>
-   ///
-   bool initWifi(const char* ssid, const char* password, IStatus* status = nullptr, bool syncTime = true)
-   {
-      Serial.print("WiFi...");
-
-      bool success = ArduinoBase::initWifi(ssid, password, status, syncTime);
-
-      Serial.println(success ? WiFi.localIP().toString() : "FAILED");
-
-      if (success && syncTime)
-      {
-         Serial.print("Time...");
-         Serial.println(TimeSync::localTimeString().c_str());
-      }
-
-      return success;
    }
 
    ///
