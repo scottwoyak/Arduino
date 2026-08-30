@@ -148,6 +148,19 @@ public:
       _value = _range.min;
       reset();
    }
+
+   ///
+   /// <summary>
+   /// Sets the color used to render the filled portion of the bar and resets it for a
+   /// full redraw.
+   /// </summary>
+   /// <param name="barColor">The new bar color.</param>
+   ///
+   void setColor(Color barColor)
+   {
+      _barColor = barColor;
+      reset();
+   }
 };
 
 ///

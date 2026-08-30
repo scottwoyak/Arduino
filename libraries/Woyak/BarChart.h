@@ -100,6 +100,18 @@ public:
 
    ///
    /// <summary>
+   /// Sets the color of an individual bar.
+   /// </summary>
+   /// <param name="index">Zero-based index of the bar.</param>
+   /// <param name="color">The new bar color.</param>
+   ///
+   void setBarColor(uint8_t index, Color color)
+   {
+      _bars[index]->setColor(color);
+   }
+
+   ///
+   /// <summary>
    /// Resets all bars so the next draw call performs a full redraw.
    /// </summary>
    ///

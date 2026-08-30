@@ -11,12 +11,20 @@
 // - Tracks a rolling 10-minute average/min/max and a windowed histogram of readings.
 // - Pressing button A cycles between the MultiBar, Rolling, and Histogram views.
 // - Resets the device on telemetry disconnect or error.
+// - Checks for a firmware update every OTA_CHECK_INTERVAL_M minutes.
 //
 
 // Uncomment to use local telemetry server instead of remote
 //#define TELEMETRY_LOCAL
 
 constexpr auto TELEMETRY_TOPIC = "Wind/Lake";
+
+constexpr auto VERSION =
+#include "version.txt"
+;
+constexpr auto OTA_FIRMWARE_URL = "https://github.com/scottwoyak/Arduino/releases/download/Wind-Subscriber-Display/Wind_Subscriber_Display.ino.bin";
+constexpr uint8_t OTA_CHECK_INTERVAL_M = 10;
+
 
 #include "ArduinoBoard.h"
 
@@ -31,6 +39,7 @@ constexpr auto TELEMETRY_TOPIC = "Wind/Lake";
 #endif
 
 #include "BarChart.h"
+#include "ColorRange.h"
 #include "EnumSelector.h"
 #include "MovingBarChart.h"
 #include "MultiBar.h"
@@ -80,6 +89,9 @@ constexpr RangeF CHART_RANGE = { 0, 30 };
 constexpr uint8_t VALUES_AXIS_HEIGHT = 16 + 6;
 constexpr Rect16 CHART_RECT(WORKSPACE_RECT.x, WORKSPACE_RECT.y, WORKSPACE_RECT.width, WORKSPACE_RECT.height - VALUES_AXIS_HEIGHT);
 TimedHistogramChart histogramChart(CHART_RECT, CHART_RANGE, HISTOGRAM_NUM_BINS, HISTOGRAM_DURATION_S * 1000, Green2, Color::BLACK);
+
+// Colors bars from lime green (low speed) through yellow, orange, and red (high speed).
+ColorRange speedColorRange;
 
 // Samples the histogram and rolling chart at a fixed cadence (rather than once per
 // telemetry message) so that a steady value accumulates counts/bars proportional to
@@ -203,6 +215,13 @@ void setup()
    arduino.begin();
    status.begin();
 
+   speedColorRange.addStop(0, Color::LIME);
+   speedColorRange.addStop(5, Color::LIME);
+   speedColorRange.addStop(10, Color::YELLOW);
+   speedColorRange.addStop(20, Color::ORANGE);
+   speedColorRange.addStop(30, Color::RED);
+   histogramChart.setColorRange(&speedColorRange);
+
    client.setHandler(&telemetryHandler);
 
    arduino.beginInit();
@@ -210,12 +229,16 @@ void setup()
 
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
 
+   arduino.enableOTA(VERSION, OTA_FIRMWARE_URL, OTA_CHECK_INTERVAL_M * 60.0f);
+
    arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
    delay(1000); // provide time for the wind meter to get a reading
 }
 
 void loop()
 {
+   arduino.loop();
+
    client.loop();
 
    if (client.isStarted() == false)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BarChart.h"
+#include "ColorRange.h"
 #include "TimedHistogram.h"
 
 class TimedHistogramChart
@@ -11,6 +12,29 @@ private:
    float* _values;
    RangeF _fullXRange;
    RangeF _visibleXRange;
+   ColorRange* _colorRange = nullptr;
+
+   ///
+   /// <summary>
+   /// Assigns each bar's color based on its value range midpoint, using the color range
+   /// if one was provided.
+   /// </summary>
+   ///
+   void _applyBarColors()
+   {
+      if (_colorRange == nullptr)
+      {
+         return;
+      }
+
+      uint8_t numBars = _chart.getNumBars();
+      float binWidth = (_fullXRange.max - _fullXRange.min) / numBars;
+      for (uint8_t i = 0; i < numBars; i++)
+      {
+         float binCenter = _fullXRange.min + (i + 0.5f) * binWidth;
+         _chart.setBarColor(i, _colorRange->getColor(binCenter));
+      }
+   }
 
 public:
    TimedHistogramChart(Rect16 rect, 
@@ -30,6 +54,20 @@ public:
    virtual ~TimedHistogramChart()
    {
       delete _values;
+   }
+
+   ///
+   /// <summary>
+   /// Assigns a color range used to color each bar based on its value, overriding the
+   /// single bar color passed to the constructor.
+   /// </summary>
+   /// <param name="colorRange">The color range to use; must outlive this chart.</param>
+   ///
+   void setColorRange(ColorRange* colorRange)
+   {
+      _colorRange = colorRange;
+      _applyBarColors();
+      _chart.reset();
    }
 
    void set(float value)
