@@ -5,8 +5,10 @@
 
 #include "Color.h"
 #include "IPrinter.h"
+#include "OTAUpdater.h"
 #include "Rebooter.h"
 #include "Status.h"
+#include "TimeSync.h"
 #include "Util.h"
 #include "WiFiX.h"
 
@@ -26,6 +28,10 @@ private:
 
    /// <summary>Scheduled daily reboot handler; self-driving via an internal timer once begin() is called.</summary>
    Rebooter _rebooter;
+
+protected:
+   /// <summary>OTA firmware update handler; only created after enableOTA() is called.</summary>
+   OTAUpdater* _ota = nullptr;
 
 public:
    ///
@@ -136,14 +142,18 @@ public:
    /// <summary>
    /// Connects to WiFi via WiFiX (WiFiMulti-based), printing a "WiFi..." label and "OK"/"FAILED"
    /// based on the result, to Serial and, on display-capable boards, the display as well.
-   /// Optionally drives an IStatus indicator through the WIFI_CONNECTING phase.
+   /// Optionally drives an IStatus indicator through the WIFI_CONNECTING phase. Once connected,
+   /// also syncs the system clock via NTP (auto-detecting the local timezone), printing a
+   /// "Time..." label with the resulting synchronized time; needed for calendar-based features
+   /// like Rebooter's midnight reboot to fire at the correct wall-clock time.
    /// </summary>
    /// <param name="ssid">The WiFi network name.</param>
    /// <param name="password">The WiFi network password.</param>
    /// <param name="status">Optional status indicator updated to WIFI_CONNECTING while connecting.</param>
+   /// <param name="syncTime">True to sync the system clock via NTP after connecting.</param>
    /// <returns>True if the WiFi connection succeeded; otherwise false.</returns>
    ///
-   bool initWifi(const char* ssid, const char* password, IStatus* status = nullptr)
+   bool initWifi(const char* ssid, const char* password, IStatus* status = nullptr, bool syncTime = true)
    {
       if (status != nullptr)
       {
@@ -157,12 +167,7 @@ public:
          _wifiX = new WiFiX(ssid, password);
       }
 
-      if (_wifiX->connect())
-      {
-         printlnR(WiFi.localIP().toString().c_str(), Color::VALUE);
-         return true;
-      }
-      else
+      if (!_wifiX->connect())
       {
          printlnR("FAILED", Color::RED);
 
@@ -170,6 +175,17 @@ public:
          println(message.c_str(), Color::RED);
          return false;
       }
+
+      printlnR(WiFi.localIP().toString().c_str(), Color::VALUE);
+
+      if (syncTime)
+      {
+         print("Time...", Color::LABEL);
+         TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nist.gov");
+         printlnR(TimeSync::localTimeString().c_str(), Color::VALUE);
+      }
+
+      return true;
    }
 
    ///
@@ -272,5 +288,34 @@ public:
    void enableRebooter()
    {
       _rebooter.begin();
+   }
+
+   ///
+   /// <summary>
+   /// Enables periodic (or on-demand) OTA firmware update checks. The version-check URL is
+   /// derived from firmwareUrl per convention: version.txt lives alongside the firmware
+   /// binary in the same directory. On display-capable boards, use
+   /// ArduinoWithDisplay::enableOTA() instead to also show download progress on the display.
+   /// </summary>
+   /// <param name="version">This sketch's own version string (e.g. "v1.0").</param>
+   /// <param name="firmwareUrl">URL of the firmware .bin to download when an update is available.</param>
+   /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; 0 disables periodic checks.</param>
+   ///
+   void enableOTA(const char* version, const char* firmwareUrl, float checkIntervalSecs = 0.0f)
+   {
+      _ota = new OTAUpdater(version, firmwareUrl, checkIntervalSecs);
+   }
+
+   ///
+   /// <summary>
+   /// Drives the (if enabled) OTA update check. Call once per loop() iteration.
+   /// </summary>
+   ///
+   void loop()
+   {
+      if (_ota != nullptr)
+      {
+         _ota->loop();
+      }
    }
 };

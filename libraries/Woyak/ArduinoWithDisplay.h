@@ -73,9 +73,6 @@ private:
       print(str.c_str(), textColor, backgroundColor);
    }
 
-   /// <summary>OTA firmware update handler; only created after enableOTA() is called.</summary>
-   OTAUpdater* _ota = nullptr;
-
 public:
    ///
    /// <summary>
@@ -157,11 +154,12 @@ public:
    /// <param name="ssid">The WiFi network name.</param>
    /// <param name="password">The WiFi network password.</param>
    /// <param name="status">Optional status indicator updated to WIFI_CONNECTING while connecting.</param>
+   /// <param name="syncTime">True to sync the system clock via NTP after connecting.</param>
    ///
-   void begin(const char* ssid, const char* password, IStatus* status = nullptr)
+   void begin(const char* ssid, const char* password, IStatus* status = nullptr, bool syncTime = true)
    {
       begin();
-      initWifi(ssid, password, status);
+      initWifi(ssid, password, status, syncTime);
    }
 
    ///
@@ -1842,21 +1840,29 @@ public:
 
    ///
    /// <summary>
-   /// Connects to WiFi, echoing the "WiFi..." label and "OK"/"FAILED" result to Serial in
-   /// addition to the display, since display text isn't otherwise mirrored to Serial.
+   /// Connects to WiFi, echoing the "WiFi..." and (if syncTime) "Time..." status lines to
+   /// Serial in addition to the display, since display text isn't otherwise mirrored to Serial.
    /// </summary>
    /// <param name="ssid">The WiFi network name.</param>
    /// <param name="password">The WiFi network password.</param>
    /// <param name="status">Optional status indicator updated to WIFI_CONNECTING while connecting.</param>
+   /// <param name="syncTime">True to sync the system clock via NTP after connecting.</param>
    /// <returns>True if the WiFi connection succeeded; otherwise false.</returns>
    ///
-   bool initWifi(const char* ssid, const char* password, IStatus* status = nullptr)
+   bool initWifi(const char* ssid, const char* password, IStatus* status = nullptr, bool syncTime = true)
    {
       Serial.print("WiFi...");
 
-      bool success = ArduinoBase::initWifi(ssid, password, status);
+      bool success = ArduinoBase::initWifi(ssid, password, status, syncTime);
 
       Serial.println(success ? WiFi.localIP().toString() : "FAILED");
+
+      if (success && syncTime)
+      {
+         Serial.print("Time...");
+         Serial.println(TimeSync::localTimeString().c_str());
+      }
+
       return success;
    }
 
@@ -1873,19 +1879,6 @@ public:
    void enableOTA(const char* version, const char* firmwareUrl, float checkIntervalSecs = 0.0f)
    {
       _ota = new OTAUpdater(version, firmwareUrl, this, checkIntervalSecs);
-   }
-
-   ///
-   /// <summary>
-   /// Drives the (if enabled) OTA update check. Call once per loop() iteration.
-   /// </summary>
-   ///
-   void loop()
-   {
-      if (_ota != nullptr)
-      {
-         _ota->loop();
-      }
    }
 };
 
