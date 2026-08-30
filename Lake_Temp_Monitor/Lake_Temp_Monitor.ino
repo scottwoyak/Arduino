@@ -143,7 +143,6 @@ void setup()
 
    arduino.begin(); // sets up the I2C bus/power rail, the RGB status LED, and the activity LED
    arduino.beginInit("Initializing Lake Temperature Monitor");
-   arduino.setStatus(Status::STARTED);
 
    // Initialize and detect all sensors
    Serial.println("Detecting sensors...");

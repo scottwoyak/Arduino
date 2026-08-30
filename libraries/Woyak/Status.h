@@ -35,9 +35,9 @@ class IStatus
 public:
 	virtual ~IStatus() = default;
 
-   ///
+	///
 	/// <summary>
-	/// Initializes the status indicator.
+	/// Initializes the status indicator and sets its status to STARTED.
 	/// </summary>
 	///
 	virtual void begin() = 0;
@@ -87,11 +87,12 @@ private:
 public:
 	///
 	/// <summary>
-	/// No-op; Serial is expected to already be started by the sketch.
+	/// Reports the initial STARTED status; Serial is expected to already be started by the sketch.
 	/// </summary>
 	///
 	void begin() override
 	{
+		setStatus(Status::STARTED);
 	}
 
 	///
@@ -152,6 +153,7 @@ public:
 		_powerLed.begin();
 		_wifiLed.begin();
 		_webLed.begin();
+		setStatus(Status::STARTED);
 	}
 
 	///
@@ -235,7 +237,7 @@ public:
 	void begin() override
 	{
 		_led.begin();
-		setStatus(Status::NONE);
+		setStatus(Status::STARTED);
 	}
 
 	///
@@ -363,7 +365,7 @@ public:
 		}
 
 		_led->setLevel(level);
-		setStatus(Status::NONE);
+		setStatus(Status::STARTED);
 	}
 
 	///

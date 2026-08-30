@@ -103,7 +103,6 @@ void setup()
    digitalWrite(WIND_SENSOR_POWER_PIN, HIGH);
 
    arduino.begin(); // sets up the I2C bus/power rail and the RGB status LED
-   arduino.setStatus(Status::STARTED);
 
    enclosureTemp.begin();
    cpuTemp.begin();
@@ -129,9 +128,6 @@ void setup()
 
 void loop()
 {
-   // restart daily for long-term stability
-   arduino.loop();
-
    if (client.isStarted())
    {
       // without a delay, the waveshare crashes

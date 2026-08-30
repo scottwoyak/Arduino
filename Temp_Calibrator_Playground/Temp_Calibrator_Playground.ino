@@ -40,6 +40,7 @@
 #include "WiFiSettings.h"
 
 ESP32_S3_Playground arduino;
+NeoPixelStatus status(&arduino.neoPixel);
 constexpr uint8_t NUM_SENSORS = 8;
 
 TempSensor sensors[] =
@@ -54,6 +55,9 @@ TempSensor sensors[] =
    TempSensor(),
 };
 
+// Number of sensors detected during initSensors(), set once in setup()
+uint8_t detectedSensorCount = 0;
+
 // Sensor and telemetry timing
 constexpr uint16_t SAMPLE_INTERVAL_MS = 100;  // how often each SensorData takes a raw reading, and how often the outer loop drives sensor updates
 constexpr uint8_t SHORT_AVERAGE_NUM_SAMPLES = 10;  // # samples in the short rolling average (10 samples @ SAMPLE_INTERVAL_MS = 1 second)
@@ -61,10 +65,6 @@ constexpr uint16_t LONG_AVERAGE_DURATION_S = 5 * 60;  // long timed-average wind
 constexpr uint16_t INFLUX_INTERVAL_S = 10;
 constexpr uint16_t PREFS_INTERVAL_S = 60;
 constexpr uint16_t WIFI_RESET_DELAY_S = 10;
-// Each detected sensor uploads 3 InfluxPoints per cycle: short average, long average, and
-// correction (see the shortAvgPoints/longAvgPoints/correctionPoints setup below). The write
-// batch size is derived from this so every sensor's points fit in a single batch/HTTP request.
-constexpr uint8_t INFLUX_POINTS_PER_SENSOR = 3;
 constexpr uint16_t INFLUX_INIT_DELAY_MS = 1000;  // pause after InfluxDB init to show "Init" screen
 
 constexpr const char* CALIBRATOR_PREFS_NAMESPACE = "Calibrator";
@@ -72,6 +72,31 @@ constexpr const char* TEMP_KEY_PREFIX = "Temp ";
 constexpr const char* ID_KEY_PREFIX = "ID ";
 constexpr const char* CAL_POINT_COUNT_KEY = "CalCount";
 constexpr const char* CAL_POINTS_KEY = "CalPoints";
+
+///
+/// <summary>
+/// Selects each multiplexer channel and initializes every sensor, tracking how many were
+/// detected. Passed to arduino.initSensor() so all 8 sensors are reported as a single
+/// "Sensors..." initialization step rather than one step per sensor.
+/// </summary>
+/// <returns>True if at least one sensor was detected.</returns>
+///
+bool initSensors()
+{
+   detectedSensorCount = 0;
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   {
+      Multiplexer::select(i);
+      sensors[i].begin();
+
+      if (sensors[i].exists())
+      {
+         detectedSensorCount++;
+      }
+   }
+
+   return detectedSensorCount > 0;
+}
 
 ///
 /// <summary>
@@ -286,10 +311,9 @@ TimedScatterPlotSeries* longAvgSeries[NUM_SENSORS] = { nullptr };
 TimedScatterPlotSeries* correctionSeries[NUM_SENSORS] = { nullptr };
 
 Timer sensorReadTrigger(SAMPLE_INTERVAL_MS);
-TimerSecs influxTrigger(INFLUX_INTERVAL_S);
 TimerSecs prefsTrigger(PREFS_INTERVAL_S);
 
-Influx influx;
+Influx influx(INFLUX_INTERVAL_S, &status, INFLUXDB_URL, INFLUXDB_ORG, "Testing");
 
 InfluxPoint* nowPoints[NUM_SENSORS] = { nullptr };
 InfluxPoint* shortAvgPoints[NUM_SENSORS] = { nullptr };
@@ -806,37 +830,33 @@ void setup()
 
    arduino.begin();
 
+   status.begin();
+
    displaySavedInfo();
 
+   arduino.setTextSize(2);
+   arduino.initSensor("Sensors", initSensors);
    arduino.setTextSize(3);
 
    arduino.preferences.begin(CALIBRATOR_PREFS_NAMESPACE, false);
-   uint8_t detectedSensorCount = 0;
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      Multiplexer::select(i);
       TempSensor& sensor = sensors[i];
-      sensor.begin();
-
       bool sensorExists = sensor.exists();
-      if (sensorExists)
-      {
-         detectedSensorCount++;
-      }
 
       // clear out corrections
       sensor.setTempCorrectionF(0);
 
-      nowPoints[i] = new InfluxPoint("Air", { { "location", (String("Calibration ") + (i + 1)).c_str() }, { "Value", "Now" } });
+      nowPoints[i] = new InfluxPoint("Sensors", { { "sensor", (String("Calibration ") + (i + 1)).c_str() }, { "item", "Now" } });
       nowFields[i] = nowPoints[i]->addValueField("temperature", 3);
 
-      shortAvgPoints[i] = new InfluxPoint("Air", { { "location", (String("Calibration ") + (i + 1)).c_str() }, { "Value", "Short Average" } });
+      shortAvgPoints[i] = new InfluxPoint("Sensors", { { "sensor", (String("Calibration ") + (i + 1)).c_str() }, { "item", "Short Average" } });
       shortAvgFields[i] = shortAvgPoints[i]->addValueField("temperature", 3);
 
-      longAvgPoints[i] = new InfluxPoint("Air", { { "location", (String("Calibration ") + (i + 1)).c_str() }, { "Value", "Long Average" } });
+      longAvgPoints[i] = new InfluxPoint("Sensors", { { "sensor", (String("Calibration ") + (i + 1)).c_str() }, { "item", "Long Average" } });
       longAvgFields[i] = longAvgPoints[i]->addValueField("temperature", 3);
 
-      correctionPoints[i] = new InfluxPoint("Air", { { "location", (String("Calibration ") + (i + 1)).c_str() }, { "Value", "Correction" } });
+      correctionPoints[i] = new InfluxPoint("Sensors", { { "sensor", (String("Calibration ") + (i + 1)).c_str() }, { "item", "Correction" } });
       correctionFields[i] = correctionPoints[i]->addValueField("temperature", 4);
 
       arduino.preferences.putString((String(ID_KEY_PREFIX) + i).c_str(), sensorExists ? sensor.id() : "");
@@ -844,9 +864,6 @@ void setup()
       sensorData[i] = new SensorData(&sensor, i);
    }
    arduino.preferences.end();
-
-   uint8_t batchSize = std::max(static_cast<uint8_t>(1), static_cast<uint8_t>(INFLUX_POINTS_PER_SENSOR * detectedSensorCount));
-   client.setWriteOptions(WriteOptions().batchSize(batchSize).bufferSize(2 * batchSize));
 
    Serial.print("Detected sensors: ");
    Serial.println(detectedSensorCount);
@@ -857,9 +874,10 @@ void setup()
    arduino.moveCursorY(10);
 
    arduino.setTextSize(2);
-   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD);
-   if (!influx.begin(&arduino))
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
+   if (!influx.begin(arduino))
    {
+      status.setStatus(Status::FAILED);
       Util::reset(WIFI_RESET_DELAY_S);
    }
 
@@ -867,10 +885,7 @@ void setup()
 
    arduino.clearDisplay();
 
-   pinMode(BUILTIN_LED, OUTPUT);
-   digitalWrite(BUILTIN_LED, LOW);
-
-   // Initialize TimedScatterPlot to plot every detected sensor as a line
+   // Initialize TimedScatterPlot
    // The plot starts below the calibration table and fills the remaining display space
 
    // Calculate topOffset: header (size 3) + table header (size 2) + 8 sensor rows (size 2)
@@ -1060,15 +1075,14 @@ void loop()
    }
 
    // ------------------------------------------- send to INFLUX
-   if (influxTrigger.ready())
+   if (influx.ready())
    {
-      if (arduino.ensureWiFiConnected())
+      if (arduino.ensureWiFiConnected(&status))
       {
-         digitalWrite(BUILTIN_LED, HIGH);
+         arduino.led.turnOn();
 
          sampleCount = 0;
 
-         bool writeFailed = false;
          bool baselineFull = sensorData[0]->isLongAvgFull();
          float baseline = sensorData[0]->getLongAvgValue();
 
@@ -1093,36 +1107,22 @@ void loop()
             longAvgFields[i]->set(tLongAvg);
             correctionFields[i]->set(tDelta);
 
-            // InfluxPoint::post() clears/re-populates fields, skips NaN/Inf values,
-            // and (with writeToSerial=true) prints the line protocol actually sent
-            // and any error, so bad/unexpected uploads can be spotted directly. Points
-            // aren't posted until their underlying value is expected to be ready (e.g.
-            // long average/correction before the timed window fills), so a NaN value
-            // once posting starts is a genuine error and is still reported.
-            if ((!nowPoints[i]->post(influx.client())) ||
-                (!shortAvgPoints[i]->post(influx.client())) ||
-                (longAvgFull && !longAvgPoints[i]->post(influx.client())) ||
-                (longAvgFull && !correctionPoints[i]->post(influx.client())))
+            // InfluxPoint::post() clears/re-populates fields, skips NaN/Inf values, and
+            // reports any write failure to Serial directly, so bad/unexpected uploads can
+            // be spotted directly. Points aren't posted until their underlying value is
+            // expected to be ready (e.g. long average/correction before the timed window
+            // fills), so a NaN value once posting starts is a genuine error and is still
+            // reported.
+            nowPoints[i]->post(influx.client());
+            shortAvgPoints[i]->post(influx.client());
+            if (longAvgFull)
             {
-               writeFailed = true;
-               break;
+               longAvgPoints[i]->post(influx.client());
+               correctionPoints[i]->post(influx.client());
             }
          }
 
-         if (!writeFailed && !client.isBufferEmpty())
-         {
-            writeFailed = !client.flushBuffer();
-         }
-
-         if (writeFailed)
-         {
-            Serial.print("InfluxDB write failed. Status code: ");
-            Serial.print(client.getLastStatusCode());
-            Serial.print(", message: ");
-            Serial.println(client.getLastErrorMessage());
-         }
-
-         digitalWrite(BUILTIN_LED, LOW);
+         arduino.led.turnOff();
       }
    }
 }

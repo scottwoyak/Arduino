@@ -269,7 +269,6 @@ void setup()
    pinMode(BUILTIN_LED, OUTPUT);
 
    status.begin();
-   status.setStatus(Status::STARTED);
 
    arduino.clearDisplay();
    arduino.println("Initializing", Color::HEADING);

@@ -56,6 +56,7 @@
 #endif
 
 #include "TempSensor.h"
+#include <Adafruit_SleepyDog.h>
 #include "SerialX.h"
 #include "Influx.h"
 #include "Timer.h"
@@ -122,7 +123,6 @@ void setup()
    arduino.begin();
 
    status.begin();
-   status.setStatus(Status::STARTED);
 
    arduino.beginInit();
 
@@ -177,12 +177,12 @@ void setup()
 
    arduino.clearDisplay();
 
-   arduino.enableWatchdog(WATCHDOG_INTERVAL_S * 1000);
+   Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
 }
 
 void loop()
 {
-   arduino.loop();
+   Watchdog.reset();
 
    if (sensorTimer.ready())
    {

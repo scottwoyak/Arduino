@@ -2,6 +2,10 @@
 
 #include <string>
 
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#define ARDUINO_DISPLAY_SUPPORTED
+#endif
+
 #include "ArduinoBase.h"
 #include "Color.h"
 #include "Format.h"
@@ -1873,14 +1877,11 @@ public:
 
    ///
    /// <summary>
-   /// Drives the watchdog reset, scheduled daily reboot check, and (if enabled) OTA update
-   /// check. Call once per loop() iteration.
+   /// Drives the (if enabled) OTA update check. Call once per loop() iteration.
    /// </summary>
    ///
    void loop()
    {
-      ArduinoBase::loop();
-
       if (_ota != nullptr)
       {
          _ota->loop();

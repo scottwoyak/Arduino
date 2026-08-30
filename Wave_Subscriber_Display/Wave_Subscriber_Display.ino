@@ -201,7 +201,6 @@ void setup()
    SerialX::begin();
    arduino.begin();
    status.begin();
-   status.setStatus(Status::STARTED);
 
    arduino.beginInit();
    displayFooter();

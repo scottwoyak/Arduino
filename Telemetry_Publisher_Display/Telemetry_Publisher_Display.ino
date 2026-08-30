@@ -75,7 +75,6 @@ void setup()
    SerialX::begin();
    arduino.begin();
    status.begin();
-   status.setStatus(Status::STARTED);
 
    valueSeries->pointSize = VALUE_SERIES_POINT_SIZE;
 

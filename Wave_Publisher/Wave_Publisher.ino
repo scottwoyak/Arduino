@@ -140,7 +140,6 @@ void setup()
    averageDepthField->setEnabled(false);
 
    arduino.begin(); // sets up the I2C bus/power rail and the RGB status LED
-   arduino.setStatus(Status::STARTED);
 
    // solid on while starting up; switches to wave-height-based fading in loop() once wave data is available
    arduino.led.turnOn(1.0f);
@@ -168,9 +167,6 @@ void setup()
 
 void loop()
 {
-   // restart every 24 hours to play it safe
-   arduino.loop();
-
    if (client.isStarted())
    {
       // without a delay, the waveshare crashes
