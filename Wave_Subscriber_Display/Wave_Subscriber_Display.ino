@@ -210,6 +210,8 @@ void setup()
    arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
 
    delay(1000); // provide time for the wave sensor to get a reading
+
+   arduino.clearLoggers();
 }
 
 float lastSensorReading = NAN;

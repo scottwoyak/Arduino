@@ -44,14 +44,14 @@ class ArduinoWithDisplay : public ArduinoBase
 private:
    void _print(const char* str, Color textColor, Color backgroundColor)
    {
-      Serial.print(str);
+      ArduinoBase::print(str, textColor, backgroundColor);
       display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
       display.print(str);
    }
 
    void _println(const char* str, Color textColor, Color backgroundColor)
    {
-      Serial.println(str);
+      ArduinoBase::println(str, textColor, backgroundColor);
       display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
       display.println(str);
    }
@@ -136,6 +136,8 @@ public:
    ///
    void begin() override
    {
+      addLogger(new SerialLogger());
+
       display.init();
 
       display.setRotation(DisplayRotation::LANDSCAPE);
@@ -707,16 +709,6 @@ public:
       setCursor(pt.x, pt.y);
    }
 
-   ///
-   /// <summary>
-   /// Prints a newline
-   ///   /// </summary>
-   ///
-   void println()
-   {
-      display.println();
-   }
-
    //
    // ----------- const char* variants
    //
@@ -727,6 +719,16 @@ public:
    void println(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK) override
    {
       _println(str, textColor, backgroundColor);
+   }
+   ///
+   /// <summary>
+   /// Prints a newline
+   /// </summary>
+   ///
+   void println()
+   {
+      ArduinoBase::println("");
+      display.println();
    }
    void print(const char* str, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {

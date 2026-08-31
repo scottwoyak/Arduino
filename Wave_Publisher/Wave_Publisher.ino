@@ -74,7 +74,7 @@ constexpr WaveSite WAVE_SITES[] = {
    { "Waves/Test", "Testing", "Test", "Test" },
 };
 
-constexpr auto PREFERENCES_NAMESPACE = "WavePublisher";
+constexpr auto PREFERENCES_NAMESPACE = SKETCH_NAME;
 constexpr auto TOPIC_KEY = "topic";
 constexpr auto BUCKET_KEY = "bucket";
 constexpr auto SITE_KEY = "site";
@@ -293,6 +293,8 @@ WaveSite resolveSite(bool forcePrompt)
 void setup()
 {
    SerialX::begin();
+   arduino.addLogger(new SerialLogger());
+
    Serial.print("Wave Publisher ");
    Serial.println(VERSION);
 
@@ -362,6 +364,8 @@ void setup()
    arduino.initClient("WebSocket", []() { client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino);
 
    setCpuFrequencyMhz(CPU_FREQUENCY_MHZ);
+
+   arduino.clearLoggers();
 }
 
 void loop()

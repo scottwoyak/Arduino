@@ -80,63 +80,14 @@ public:
 		return _uploadTimer.ready();
 	}
 
-	#ifdef ARDUINO_DISPLAY_SUPPORTED
-	/// <summary>
-	/// Initializes time/Influx connection with display progress output. Assumes WiFi has
-	/// already been initialized on the given board (e.g. via arduino->initWifi(...)).
-	/// </summary>
-	/// <param name="arduino">Display-capable Arduino wrapper used for progress UI</param>
-	/// <param name="printDiagnostics">True to print time sync progress/result to Serial</param>
-	/// <returns>True when initialization succeeds</returns>
-	bool begin(ArduinoWithDisplay* arduino, bool printDiagnostics = false)
-	{
-		if (WiFi.status() != WL_CONNECTED)
-		{
-			String message = String("WiFi connect failed: ") + WiFiX::statusString();
-			arduino->println(message, Color::RED);
-			return false;
-		}
-
-		if (_status)
-		{
-			_status->setStatus(Status::WEB_CONNECTING);
-		}
-
-		arduino->print("Syncing Time... ", Color::LABEL);
-		TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nis.gov", nullptr, printDiagnostics);
-		std::string localTime = TimeSync::localTimeString();
-		arduino->printlnR(localTime, Color::VALUE);
-
-		arduino->print("Influx... ", Color::LABEL);
-		if (_client.validateConnection())
-		{
-			arduino->printlnR("ok", Color::VALUE);
-			if (printDiagnostics)
-			{
-				Serial.println(_client.getServerUrl());
-			}
-			if (_status)
-			{
-				_status->setStatus(Status::READY);
-			}
-			return true;
-		}
-
-		arduino->printlnR("FAILED", Color::RED);
-		arduino->println(_client.getLastErrorMessage(), Color::RED);
-		return false;
-	}
-#endif
-
 	/// <summary>
 	/// Initializes time/Influx connection, printing progress through the given ArduinoBase
 	/// (which prints to Serial and, on display-capable boards, the display as well). Assumes
 	/// WiFi has already been initialized on the given board (e.g. via arduino.initWifi(...)).
 	/// </summary>
 	/// <param name="arduino">ArduinoBase instance that receives progress text</param>
-	/// <param name="printDiagnostics">True to print time sync progress/result to Serial</param>
 	/// <returns>True when initialization succeeds</returns>
-	bool begin(ArduinoBase& arduino, bool printDiagnostics = false)
+	bool begin(ArduinoBase& arduino)
 	{
 		if (WiFi.status() != WL_CONNECTED)
 		{
@@ -150,19 +101,17 @@ public:
 			_status->setStatus(Status::WEB_CONNECTING);
 		}
 
-		arduino.print("Syncing Time...", Color::LABEL);
-		TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nis.gov", nullptr, printDiagnostics);
-		std::string localTime = TimeSync::localTimeString();
-		arduino.printlnR(localTime.c_str(), Color::VALUE);
+		if (!TimeSync::isSynced())
+		{
+			arduino.print("Syncing Time...", Color::LABEL);
+			TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nis.gov");
+			arduino.printlnR(TimeSync::localTimeString().c_str(), Color::VALUE);
+		}
 
 		arduino.print("Influx...", Color::LABEL);
 		if (_client.validateConnection())
 		{
 			arduino.printlnR("OK", Color::VALUE);
-			if (printDiagnostics)
-			{
-				Serial.println(_client.getServerUrl());
-			}
 			if (_status)
 			{
 				_status->setStatus(Status::READY);
@@ -173,6 +122,17 @@ public:
 		arduino.printlnR("FAILED", Color::RED);
 		arduino.println(_client.getLastErrorMessage().c_str(), Color::RED);
 		return false;
+	}
+
+	/// <summary>
+	/// Convenience overload of begin(ArduinoBase&amp;) for callers that hold a pointer to
+	/// an ArduinoBase (or derived, e.g. ArduinoWithDisplay) instance.
+	/// </summary>
+	/// <param name="arduino">Pointer to the ArduinoBase instance that receives progress text</param>
+	/// <returns>True when initialization succeeds</returns>
+	bool begin(ArduinoBase* arduino)
+	{
+		return begin(*arduino);
 	}
 
 	/// <summary>

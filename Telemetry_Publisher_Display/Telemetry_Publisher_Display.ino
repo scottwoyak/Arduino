@@ -86,6 +86,8 @@ void setup()
    arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); });
 
    sensor.begin();
+
+   arduino.clearLoggers();
 }
 
 void loop()

@@ -65,6 +65,19 @@ public:
 
    ///
    /// <summary>
+   /// Returns whether the system clock has already been synchronized (e.g. via sync() or
+   /// syncWithAutoTimezone()). Useful to avoid re-syncing (and re-printing progress) when a
+   /// caller isn't sure whether the clock was already synced earlier during startup.
+   /// </summary>
+   /// <returns>True if the system clock is already synchronized.</returns>
+   ///
+   static bool isSynced()
+   {
+      return time(nullptr) >= 1000000000l;
+   }
+
+   ///
+   /// <summary>
    /// Formats the current local time as a short 12-hour time, e.g. "9:45 AM".
    /// </summary>
    /// <returns>The formatted local time string.</returns>

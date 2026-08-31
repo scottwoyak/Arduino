@@ -322,12 +322,23 @@ public:
    ///
    std::string toString(double value) const
    {
-      // NaN/inf can't be safely routed through String(value, precision) (Arduino's
-      // dtostrf-based conversion is undefined for non-finite doubles), so render them as
+      // NaN is rendered as text (e.g. "nan") rather than as a dash placeholder, since a
+      // computed NaN is a meaningful result (e.g. a calculation with missing/invalid
+      // inputs) that should be visible rather than hidden. Callers that want a dash
+      // placeholder for a value that is simply unavailable (e.g. no sensor present)
+      // should use toNoValueString() directly instead of passing NaN here.
+      if (std::isnan(value))
+      {
+         std::string str = _prefix + "nan" + _postfix;
+         return toString(str);
+      }
+
+      // inf can't be safely routed through String(value, precision) (Arduino's
+      // dtostrf-based conversion is undefined for non-finite doubles), so render it as
       // plain text instead.
       if (!std::isfinite(value))
       {
-         std::string str = _prefix + (std::isnan(value) ? "nan" : (value > 0 ? "inf" : "-inf")) + _postfix;
+         std::string str = _prefix + (value > 0 ? "inf" : "-inf") + _postfix;
          return toString(str);
       }
 

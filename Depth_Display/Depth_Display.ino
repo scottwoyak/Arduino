@@ -106,7 +106,7 @@ constexpr auto SENSOR_TYPE_NAME = "Capacitor";
 
 Preferences preferences;
 
-constexpr auto PREFERENCES_NAMESPACE = "DepthDisplay";
+constexpr auto PREFERENCES_NAMESPACE = "Depth_Display";
 constexpr auto BASELINE_DEPTH_KEY = "baselineCm";
 constexpr auto MAX_DEPTH_KEY = "maxDepthCm";
 constexpr auto CAP_ZERO_TIME_KEY = "capZeroTime";

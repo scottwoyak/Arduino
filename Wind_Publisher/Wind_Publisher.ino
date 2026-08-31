@@ -64,7 +64,7 @@ constexpr WindSite WIND_SITES[] = {
    { "Wind/Test", "Testing", "Test", "Test" },
 };
 
-constexpr auto PREFERENCES_NAMESPACE = "WindPublisher";
+constexpr auto PREFERENCES_NAMESPACE = SKETCH_NAME;
 constexpr auto TOPIC_KEY = "topic";
 constexpr auto BUCKET_KEY = "bucket";
 constexpr auto SITE_KEY = "site";
@@ -257,6 +257,8 @@ WindSite resolveSite(bool forcePrompt)
 void setup()
 {
    SerialX::begin();
+   arduino.addLogger(new SerialLogger());
+
    Serial.print("Wind Publisher ");
    Serial.println(VERSION);
 
@@ -318,6 +320,8 @@ void setup()
    arduino.initClient("WebSocket", []() { client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino);
 
    setCpuFrequencyMhz(CPU_FREQUENCY_MHZ);
+
+   arduino.clearLoggers();
 }
 
 void loop()

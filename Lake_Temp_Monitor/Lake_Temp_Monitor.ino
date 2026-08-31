@@ -10,6 +10,8 @@
 // sensor the point came from. Fields are "temperature" and "humidity", each averaged over
 // SENSOR_AVERAGE_PERIOD_S before being posted.
 //
+// Checks for a firmware update periodically.
+//
 
 // This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
@@ -30,6 +32,11 @@
 #include "Timer.h"
 
 #include "WiFiSettings.h"
+
+constexpr auto VERSION =
+#include "version.txt"
+;
+constexpr auto SKETCH_NAME = "Lake_Temp_Monitor";
 
 // Influx database settings
 constexpr auto INFLUX_MEASUREMENT = "Sensors";
@@ -127,6 +134,10 @@ void printSensorSummary()
 
 void setup()
 {
+   SerialX::begin();
+   Serial.print("Lake Temp Monitor ");
+   Serial.println(VERSION);
+
    // Enable watchdog for startup supervision (5 minutes)
    Watchdog.enable(WATCHDOG_STARTUP_M * 60 * 1000);
 
@@ -138,8 +149,6 @@ void setup()
       tempFields[i] = points[i]->addTimeAverageField(SENSOR_AVERAGE_PERIOD_S, "temperature", 3);
       humFields[i] = points[i]->addTimeAverageField(SENSOR_AVERAGE_PERIOD_S, "humidity", 2);
    }
-
-   SerialX::begin();
 
    arduino.begin(); // sets up the I2C bus/power rail, the RGB status LED, and the activity LED
    arduino.beginInit("Initializing Lake Temperature Monitor");
@@ -183,6 +192,7 @@ void setup()
    printSensorSummary();
 
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &arduino);
+   arduino.enableOTA(VERSION, SKETCH_NAME);
 
    // Initialize InfluxDB connection
    if (!influx.begin(arduino))
@@ -205,6 +215,8 @@ void setup()
 
    // Enable watchdog for operation (60 seconds between successful logs)
    Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
+
+   arduino.clearLoggers();
 }
 
 void loop()

@@ -1,12 +1,15 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <Arduino.h>
 
 #include "Color.h"
+#include "ILogger.h"
 #include "IPrinter.h"
 #include "OTAUpdater.h"
 #include "Rebooter.h"
+#include "SerialLogger.h"
 #include "Status.h"
 #include "TimeSync.h"
 #include "Util.h"
@@ -33,6 +36,37 @@ protected:
    /// <summary>OTA firmware update handler; only created after enableOTA() is called.</summary>
    OTAUpdater* _ota = nullptr;
 
+   /// <summary>
+   /// Active logger destinations that print()/println()/printlnR() output is written to
+   /// (see addLogger()/clearLoggers()). Empty by default, so no output is written anywhere
+   /// until a logger is explicitly added (e.g. via beginInit()).
+   /// </summary>
+   std::vector<ILogger*> _loggers;
+
+   ///
+   /// <summary>Writes text without a trailing newline to all active loggers.</summary>
+   /// <param name="str">The text to write.</param>
+   ///
+   void _logWrite(const char* str)
+   {
+      for (ILogger* logger : _loggers)
+      {
+         logger->write(str);
+      }
+   }
+
+   ///
+   /// <summary>Writes text followed by a newline to all active loggers.</summary>
+   /// <param name="str">The text to write.</param>
+   ///
+   void _logWriteln(const char* str)
+   {
+      for (ILogger* logger : _loggers)
+      {
+         logger->writeln(str);
+      }
+   }
+
 public:
    ///
    /// <summary>
@@ -40,6 +74,32 @@ public:
    /// </summary>
    ///
    virtual void begin() = 0;
+
+   ///
+   /// <summary>
+   /// Adds a logger to receive print()/println()/printlnR() output (e.g.
+   /// addLogger(new SerialLogger())). Ownership of the passed-in instance transfers to this
+   /// object (it is never deleted, matching the lifetime of other statically-allocated
+   /// helpers in these sketches). Multiple loggers can be active at once.
+   /// </summary>
+   /// <param name="logger">The logger to add.</param>
+   ///
+   void addLogger(ILogger* logger)
+   {
+      _loggers.push_back(logger);
+   }
+
+   ///
+   /// <summary>
+   /// Removes all active loggers. Call at the end of setup(), once initialization is
+   /// complete, so routine loop() output (e.g. live sensor values, telemetry chatter)
+   /// doesn't keep getting logged.
+   /// </summary>
+   ///
+   void clearLoggers()
+   {
+      _loggers.clear();
+   }
 
    ///
    /// <summary>
@@ -51,20 +111,30 @@ public:
    ///
    void print(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK) override
    {
-      Serial.print(str);
+      _logWrite(str);
    }
 
    ///
    /// <summary>
    /// Prints text to Serial followed by a newline.
    /// </summary>
-   /// <param name="str">The text to print.</param>
+   /// <param name="str">The text to print (default: empty, i.e. just a newline).</param>
    /// <param name="textColor">Ignored; present only for IPrinter compatibility.</param>
    /// <param name="backgroundColor">Ignored; present only for IPrinter compatibility.</param>
    ///
    void println(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK) override
    {
-      Serial.println(str);
+      _logWriteln(str);
+   }
+
+   ///
+   /// <summary>
+   /// Prints a newline with no text.
+   /// </summary>
+   ///
+   void println()
+   {
+      println("");
    }
 
    ///
@@ -78,7 +148,7 @@ public:
    ///
    void printlnR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK) override
    {
-      Serial.println(str);
+      _logWriteln(str);
    }
 
    ///
@@ -91,7 +161,6 @@ public:
    ///
    void printHeader(const char* str, Color textColor = Color::HEADING) override
    {
-      Serial.println(str);
       println(str, textColor);
    }
 
@@ -105,6 +174,10 @@ public:
    ///
    void beginInit(const char* str = "Initializing")
    {
+      if (_loggers.empty())
+      {
+         addLogger(new SerialLogger());
+      }
       printHeader(str);
    }
 
@@ -118,9 +191,6 @@ public:
    ///
    void println(const char* label, const char* value)
    {
-      Serial.print(label);
-      Serial.println(value);
-
       print(label, Color::LABEL);
       printlnR(value, Color::VALUE);
    }
