@@ -79,6 +79,7 @@
     <File Path="libraries/Woyak/OTAUpdater.h" />
     <File Path="libraries/Woyak/OTAUpdaterImpl.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
+    <File Path="libraries/Woyak/QMC5883PMagnometer.h" />
     <File Path="libraries/Woyak/QuadratureEncoder.h" />
     <File Path="libraries/Woyak/Rate.h" />
     <File Path="libraries/Woyak/Rebooter.h" />
@@ -311,6 +312,10 @@
     <Deploy />
   </Project>
   <Project Path="Color_Playground/Color_Playground.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Compass_Display/Compass_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
