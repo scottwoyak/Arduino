@@ -5,7 +5,7 @@
 #include <Arduino.h>
 
 #include "ArduinoWithDisplay.h"
-#include "Color.h"
+#include "ColorX.h"
 #include "Util.h"
 
 ///

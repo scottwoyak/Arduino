@@ -5,7 +5,7 @@
 #include "ValueEditor.h"
 #include "Field.h"
 #include "Format.h"
-#include "Color.h"
+#include "ColorX.h"
 #include "Util.h"
 #include <cmath>
 #include <cstring>

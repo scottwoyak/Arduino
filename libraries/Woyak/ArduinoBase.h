@@ -4,7 +4,7 @@
 #include <vector>
 #include <Arduino.h>
 
-#include "Color.h"
+#include "ColorX.h"
 #include "ILogger.h"
 #include "IPrinter.h"
 #include "Logger.h"

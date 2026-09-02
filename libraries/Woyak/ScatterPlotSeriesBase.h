@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Color.h"
+#include "ColorX.h"
 #include "IScatterPlotSeries.h"
 #include "Util.h"
 #include <math.h>

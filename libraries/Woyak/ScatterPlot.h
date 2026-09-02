@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ArduinoWithDisplay.h"
-#include "Color.h"
+#include "ColorX.h"
 #include "DisplayBuffer.h"
 #include "DisplayValue.h"
 #include "Format.h"

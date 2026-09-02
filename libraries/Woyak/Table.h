@@ -3,7 +3,7 @@
 #include "ArduinoWithDisplay.h"
 #include "Anchor.h"
 #include "Format.h"
-#include "Color.h"
+#include "ColorX.h"
 #include <vector>
 #include <deque>
 #include <algorithm>

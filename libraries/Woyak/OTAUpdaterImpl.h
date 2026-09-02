@@ -10,7 +10,7 @@
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
 #include "ArduinoWithDisplay.h"
-#include "Color.h"
+#include "ColorX.h"
 
 inline void OTAUpdater::_onUpdateProgress(int current, int total)
 {

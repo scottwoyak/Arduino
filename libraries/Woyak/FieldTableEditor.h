@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <span>
-#include "Color.h"
+#include "ColorX.h"
 #include "ArduinoBoard.h"
 #include "ValueEditor.h"
 #include "FieldEditor.h"

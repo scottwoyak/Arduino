@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Color.h"
+#include "ColorX.h"
 #include "Structs.h"
 
 #ifndef LGFX_AUTODETECT

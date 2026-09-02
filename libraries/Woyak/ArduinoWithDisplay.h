@@ -7,7 +7,7 @@
 #endif
 
 #include "ArduinoBase.h"
-#include "Color.h"
+#include "ColorX.h"
 #include "Format.h"
 #include "Fonts/Roboto.h"
 #include "Fonts/RobotoMonoBold.h"

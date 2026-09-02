@@ -2,7 +2,7 @@
 
 #include <stddef.h>
 
-#include "Color.h"
+#include "ColorX.h"
 #include "DisplayValue.h"
 #include "Format.h"
 

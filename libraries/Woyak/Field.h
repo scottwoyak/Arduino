@@ -3,7 +3,7 @@
 #include "ArduinoWithDisplay.h"
 #include "DisplayValue.h"
 #include "Format.h"
-#include "Color.h"
+#include "ColorX.h"
 #include "Util.h"
 
 ///
