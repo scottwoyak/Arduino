@@ -232,8 +232,6 @@ void setup()
 
    arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
    delay(1000); // provide time for the wind meter to get a reading
-
-   arduino.clearLoggers();
 }
 
 void loop()

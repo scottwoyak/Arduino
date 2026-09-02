@@ -26,7 +26,7 @@
 //
 // Outputs:
 // - Display: centered temperature (###.## F) and humidity (##.#%) at text size 4;
-//   location and version shown at small size in the top-left and top-right corners.
+//   bucket/site/location and version shown at small size in the top-left and top-right corners.
 // - Serial: sensor type, address, and ID printed during initialization; the resolved (or
 //   prompted-for) site/location printed after WiFi connects.
 //
@@ -145,6 +145,17 @@ std::string siteLocation()
 
 ///
 /// <summary>
+/// Formats this device's bucket, site, and location as "Bucket/Site/Location".
+/// </summary>
+/// <returns>The formatted "Bucket/Site/Location" string.</returns>
+///
+std::string bucketSiteLocation()
+{
+   return bucket.c_str() + std::string("/") + siteLocation();
+}
+
+///
+/// <summary>
 /// Prompts the user over Serial to pick an InfluxDB bucket from BUCKET_OPTIONS. Blocks
 /// until a valid selection is entered.
 /// </summary>
@@ -161,42 +172,9 @@ String promptForBucket()
       Serial.println(BUCKET_OPTIONS[i]);
    }
 
-   while (true)
-   {
-      Serial.print("Enter selection (1-");
-      Serial.print(std::size(BUCKET_OPTIONS));
-      Serial.print("): ");
-
-      while (!Serial.available())
-      {
-         delay(10);
-      }
-
-      String input = Serial.readStringUntil('\n');
-      input.trim();
-      Serial.println(input);
-
-      bool isNumeric = input.length() > 0;
-      for (uint8_t i = 0; i < input.length(); i++)
-      {
-         if (!isDigit(input[i]))
-         {
-            isNumeric = false;
-            break;
-         }
-      }
-
-      if (isNumeric)
-      {
-         uint8_t selection = input.toInt();
-         if (selection >= 1 && selection <= std::size(BUCKET_OPTIONS))
-         {
-            return BUCKET_OPTIONS[selection - 1];
-         }
-      }
-
-      Serial.println("Invalid selection, try again.");
-   }
+   String label = "Enter selection (1-" + String(std::size(BUCKET_OPTIONS)) + "): ";
+   long selection = SerialX::promptForInt(label, 1, std::size(BUCKET_OPTIONS));
+   return BUCKET_OPTIONS[selection - 1];
 }
 
 ///
@@ -213,55 +191,23 @@ void promptForSiteLocation(String& site, String& location)
 
    do
    {
-      Serial.print("Enter site: ");
-      while (!Serial.available())
-      {
-         delay(10);
-      }
-      site = Serial.readStringUntil('\n');
-      site.trim();
-      Serial.println(site);
+      site = SerialX::prompt("Enter site: ");
    } while (site.length() == 0);
 
    do
    {
-      Serial.print("Enter location: ");
-      while (!Serial.available())
-      {
-         delay(10);
-      }
-      location = Serial.readStringUntil('\n');
-      location.trim();
-      Serial.println(location);
+      location = SerialX::prompt("Enter location: ");
    } while (location.length() == 0);
 }
 
 ///
 /// <summary>
-/// Resolves this device's site/location/bucket: returns the values saved in Preferences,
-/// unless they haven't been saved yet or forcePrompt is true, in which case the user is
-/// prompted over Serial and the entered/selected values are saved for next time.
+/// Prompts the user over Serial for the bucket, site, and location, then saves the
+/// entered/selected values to Preferences for next time.
 /// </summary>
-/// <param name="forcePrompt">If true, always prompts even if saved values exist. Used to
-/// let callers detect buttonA being held at boot before other begin() calls run.</param>
 ///
-void resolveSiteLocation(bool forcePrompt)
+void promptAndSaveSiteLocation()
 {
-   arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
-   bool hasSavedConfig = arduino.preferences.isKey(SITE_KEY) && arduino.preferences.isKey(LOCATION_KEY) && arduino.preferences.isKey(BUCKET_KEY);
-   if (hasSavedConfig)
-   {
-      site = arduino.preferences.getString(SITE_KEY);
-      location = arduino.preferences.getString(LOCATION_KEY);
-      bucket = arduino.preferences.getString(BUCKET_KEY);
-   }
-   arduino.preferences.end();
-
-   if (hasSavedConfig && !forcePrompt)
-   {
-      return;
-   }
-
    bucket = promptForBucket();
    promptForSiteLocation(site, location);
 
@@ -269,6 +215,36 @@ void resolveSiteLocation(bool forcePrompt)
    arduino.preferences.putString(SITE_KEY, site);
    arduino.preferences.putString(LOCATION_KEY, location);
    arduino.preferences.putString(BUCKET_KEY, bucket);
+   arduino.preferences.end();
+}
+
+///
+/// <summary>
+/// Checks whether this device's site/location/bucket have been saved to Preferences.
+/// </summary>
+/// <returns>True if a saved configuration exists; otherwise false.</returns>
+///
+bool hasSavedConfig()
+{
+   arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
+   bool hasSavedConfig = arduino.preferences.isKey(SITE_KEY) && arduino.preferences.isKey(LOCATION_KEY) && arduino.preferences.isKey(BUCKET_KEY);
+   arduino.preferences.end();
+
+   return hasSavedConfig;
+}
+
+///
+/// <summary>
+/// Loads this device's saved site/location/bucket from Preferences into site, location,
+/// and bucket. Only call when hasSavedConfig() is true.
+/// </summary>
+///
+void loadSavedConfig()
+{
+   arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
+   site = arduino.preferences.getString(SITE_KEY);
+   location = arduino.preferences.getString(LOCATION_KEY);
+   bucket = arduino.preferences.getString(BUCKET_KEY);
    arduino.preferences.end();
 }
 
@@ -283,19 +259,48 @@ void setup()
 
    arduino.beginInit();
 
-   arduino.print("Sensor...", Color::LABEL);
+   // buttonA is on GPIO0, a strapping pin: holding it low during power-on/reset puts the
+   // chip into UART download mode instead of running the sketch, so it can't be checked
+   // during boot. Instead, give the user a short window after boot to press it.
+   constexpr uint16_t RECONFIGURE_PROMPT_WINDOW_MS = 2000;
+   Serial.println("Press buttonA now to reconfigure the site/location...");
+   Timer reconfigurePromptTimer(RECONFIGURE_PROMPT_WINDOW_MS);
+   bool reconfigure = false;
+   while (!reconfigurePromptTimer.expired())
+   {
+      if (arduino.buttonA.isPressed())
+      {
+         reconfigure = true;
+         break;
+      }
+   }
+
+   arduino.print("Bucket...", Color::LABEL);
+   Logger::write("Bucket...");
+   if (reconfigure || !hasSavedConfig())
+   {
+      promptAndSaveSiteLocation();
+   }
+   else
+   {
+      loadSavedConfig();
+   }
+   arduino.printlnR(bucket, Color::VALUE);
+   arduino.print("Location...", Color::LABEL);
+   arduino.printlnR(siteLocation(), Color::VALUE);
+   Logger::writeln(bucketSiteLocation());
+
    // Fall back to the internal ESP32 CPU temperature sensor if no external sensor is
    // found, so the device still reports a (less accurate) temperature reading instead
    // of failing to start.
-   if (sensor.begin(false, true))
+   if (arduino.initSensor("Sensor", []() { return sensor.begin(false, true); }, []() { return sensor.type(); }))
    {
-      arduino.printlnR(sensor.type(), Color::VALUE);
-      Serial.print("Sensor...");
-      Serial.println(sensor.type());
-      Serial.print("   Address: 0x");
-      Serial.println(sensor.address(), HEX);
-      Serial.print("   ID: ");
-      Serial.println(sensor.id());
+      Logger::write("   Type: ");
+      Logger::writeln(sensor.type());
+      Logger::write("   Address: 0x");
+      Logger::writeln(String(sensor.address(), HEX));
+      Logger::write("   ID: ");
+      Logger::writeln(String(sensor.id()));
    }
    else
    {
@@ -303,29 +308,9 @@ void setup()
       Util::reset(RESET_DELAY_S);
    }
 
-   // buttonA is on GPIO0, a strapping pin: holding it low during power-on/reset puts the
-   // chip into UART download mode instead of running the sketch, so it can't be checked
-   // during boot. Instead, give the user a short window after boot to press it.
-   constexpr uint16_t FORCE_PROMPT_WINDOW_MS = 2000;
-   Serial.println("Press buttonA now to reconfigure the site/location...");
-   Timer forcePromptTimer(FORCE_PROMPT_WINDOW_MS);
-   bool forcePrompt = false;
-   while (!forcePromptTimer.ready())
-   {
-      if (arduino.buttonA.isPressed())
-      {
-         forcePrompt = true;
-         break;
-      }
-   }
-   resolveSiteLocation(forcePrompt);
-
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
    arduino.enableRebooter();
    arduino.enableOTA(VERSION, SKETCH_NAME);
-
-   arduino.print("Location...", Color::LABEL);
-   arduino.printlnR(siteLocation(), Color::VALUE);
 
    influx = new Influx(INFLUX_INTERVAL_S, &status, INFLUXDB_URL, INFLUXDB_ORG, bucket.c_str());
 
@@ -347,21 +332,21 @@ void setup()
    allValuesTable.addRow("Dew Pt", &allValuesDewPoint);
    allValuesTable.addRow("Abs Hum", &allValuesAbsHum);
    allValuesTable.addRow("Heat Idx", &allValuesHeatIndex);
-   allValuesTable.setPosition(arduino.width() / 2, arduino.charH(), Anchor::TOP_CENTER);
+
+   int16_t tableHeaderHeight = arduino.charH(TEXT_SIZE_SMALL);
+   int16_t tableFooterHeight = arduino.charH(TEXT_SIZE_SMALL);
+   int16_t tableAvailableHeight = arduino.height() - tableHeaderHeight - tableFooterHeight;
+   allValuesTable.setPosition(arduino.width() / 2, tableHeaderHeight + tableAvailableHeight / 2, Anchor::CENTER);
 
    status.setStatus(Status::READY);
 
    // Pause so the initialization info on the display remains visible for a moment
    // before it's cleared and replaced with the live temperature/humidity readout.
-   arduino.setCursor(0, -arduino.charH());
-   arduino.println("Starting in 5s...", Color::GRAY);
    delay(STARTUP_DELAY_S * 1000UL);
 
    arduino.clearDisplay();
 
    Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
-
-   arduino.clearLoggers();
 }
 
 void loop()
@@ -399,9 +384,10 @@ void loop()
    bool allValuesMode = arduino.buttonA.isPressed();
    if (allValuesMode != wasAllValuesMode)
    {
-      // Switching between the all-values table and the normal readout: clear the stale
-      // content from whichever view was previously showing before drawing the other.
-      arduino.clearDisplay();
+      // Switching between the all-values table and the normal readout: clear only the
+      // content area between the header and footer, to avoid flicker from clearing the
+      // header/footer content that isn't changing.
+      arduino.clear(Rect16{ 0, (uint16_t)headerHeight, arduino.width(), (uint16_t)(arduino.height() - headerHeight - footerHeight) });
       allValuesTable.invalidate();
       wasAllValuesMode = allValuesMode;
    }
@@ -448,7 +434,7 @@ void loop()
 
    arduino.setTextSize(TEXT_SIZE_SMALL);
    arduino.setCursor(0, -arduino.charH());
-   arduino.print(siteLocation(), Color::CYAN);
+   arduino.print(bucketSiteLocation(), Color::CYAN);
    arduino.printR(VERSION, Color::SUB_LABEL);
 
    if (influx->ready())

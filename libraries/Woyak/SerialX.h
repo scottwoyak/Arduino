@@ -42,7 +42,135 @@ namespace SerialX
       delay(1000);
       Serial.println();
 
-      Util::checkTheLastShutdownReason();
+		Util::checkTheLastShutdownReason();
+	}
+
+	/// <summary>
+	/// Prints a label, then blocks until a line of text is entered over Serial, echoing
+	/// it back and returning it trimmed of leading/trailing whitespace. Used for simple
+	/// interactive setup-time prompts (e.g. site/location configuration).
+	/// </summary>
+	/// <param name="label">The prompt label to print before waiting for input (e.g. "Enter site: ").</param>
+	/// <returns>The entered text, trimmed of leading/trailing whitespace.</returns>
+	inline String prompt(const char* label)
+	{
+		Serial.print(label);
+
+		while (!Serial.available())
+		{
+			delay(10);
+		}
+		String input = Serial.readStringUntil('\n');
+		input.trim();
+		Serial.println(input);
+
+		return input;
+	}
+
+	/// <summary>
+	/// Prints a label, then blocks until a line of text is entered over Serial, echoing
+	/// it back and returning it trimmed of leading/trailing whitespace. Used for simple
+	/// interactive setup-time prompts (e.g. site/location configuration).
+	/// </summary>
+	/// <param name="label">The prompt label to print before waiting for input (e.g. "Enter site: ").</param>
+	/// <returns>The entered text, trimmed of leading/trailing whitespace.</returns>
+	inline String prompt(const String& label)
+	{
+		return prompt(label.c_str());
+	}
+
+	/// <summary>
+	/// Prints a label, then blocks until a valid whole number within [min, max] is entered
+	/// over Serial, reprompting on invalid/out-of-range input. Used for simple interactive
+	/// setup-time menu selections (e.g. choosing a numbered option from a list).
+	/// </summary>
+	/// <param name="label">The prompt label to print before waiting for input (e.g. "Enter selection (1-2): ").</param>
+	/// <param name="min">The minimum acceptable value, inclusive.</param>
+	/// <param name="max">The maximum acceptable value, inclusive.</param>
+	/// <returns>The entered number, guaranteed to be within [min, max].</returns>
+	inline long promptForInt(const char* label, long min, long max)
+	{
+		while (true)
+		{
+			String input = prompt(label);
+
+			bool isNumeric = input.length() > 0;
+			for (size_t i = 0; i < input.length(); i++)
+			{
+				if (!isDigit(input[i]))
+				{
+					isNumeric = false;
+					break;
+				}
+			}
+
+			if (isNumeric)
+			{
+				long value = input.toInt();
+				if (value >= min && value <= max)
+				{
+					return value;
+				}
+			}
+
+			Serial.println("Invalid selection, try again.");
+		}
+	}
+
+	/// <summary>
+	/// Prints a label, then blocks until a valid whole number within [min, max] is entered
+	/// over Serial, reprompting on invalid/out-of-range input. Used for simple interactive
+	/// setup-time menu selections (e.g. choosing a numbered option from a list).
+	/// </summary>
+	/// <param name="label">The prompt label to print before waiting for input (e.g. "Enter selection (1-2): ").</param>
+	/// <param name="min">The minimum acceptable value, inclusive.</param>
+	/// <param name="max">The maximum acceptable value, inclusive.</param>
+	/// <returns>The entered number, guaranteed to be within [min, max].</returns>
+	inline long promptForInt(const String& label, long min, long max)
+	{
+		return promptForInt(label.c_str(), min, max);
+	}
+
+	/// <summary>
+	/// Prints a label, then blocks until a valid floating-point number within [min, max] is
+	/// entered over Serial, reprompting on invalid/out-of-range input. Used for simple
+	/// interactive setup-time prompts (e.g. entering a calibration value).
+	/// </summary>
+	/// <param name="label">The prompt label to print before waiting for input (e.g. "Enter offset: ").</param>
+	/// <param name="min">The minimum acceptable value, inclusive.</param>
+	/// <param name="max">The maximum acceptable value, inclusive.</param>
+	/// <returns>The entered number, guaranteed to be within [min, max].</returns>
+	inline float promptForFloat(const char* label, float min, float max)
+	{
+		while (true)
+		{
+			String input = prompt(label);
+
+			char* end = nullptr;
+			float value = strtof(input.c_str(), &end);
+			bool isNumeric = input.length() > 0 && end != input.c_str() && *end == '\0';
+
+			if (isNumeric && value >= min && value <= max)
+			{
+				return value;
+			}
+
+			Serial.println("Invalid value, try again.");
+		}
+	}
+
+	/// <summary>
+	/// Prints a label, then blocks until a valid floating-point number within [min, max] is
+	/// entered over Serial, reprompting on invalid/out-of-range input. Used for simple
+	/// interactive setup-time prompts (e.g. entering a calibration value).
+	/// </summary>
+	/// <param name="label">The prompt label to print before waiting for input (e.g. "Enter offset: ").</param>
+	/// <param name="min">The minimum acceptable value, inclusive.</param>
+	/// <param name="max">The maximum acceptable value, inclusive.</param>
+	/// <returns>The entered number, guaranteed to be within [min, max].</returns>
+	inline float promptForFloat(const String& label, float min, float max)
+	{
+		return promptForFloat(label.c_str(), min, max);
 	}
 
 	/// <summary>

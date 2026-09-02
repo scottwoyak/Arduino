@@ -215,8 +215,6 @@ void setup()
 
    // Enable watchdog for operation (60 seconds between successful logs)
    Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
-
-   arduino.clearLoggers();
 }
 
 void loop()

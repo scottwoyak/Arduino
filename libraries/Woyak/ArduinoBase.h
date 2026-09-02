@@ -7,9 +7,9 @@
 #include "Color.h"
 #include "ILogger.h"
 #include "IPrinter.h"
+#include "Logger.h"
 #include "OTAUpdater.h"
 #include "Rebooter.h"
-#include "SerialLogger.h"
 #include "Status.h"
 #include "TimeSync.h"
 #include "Util.h"
@@ -17,10 +17,11 @@
 
 ///
 /// <summary>
-/// Base class for Arduino platforms. Implements IPrinter with a Serial-only default so any
-/// board (with or without a display) can use the shared init/status helpers below; display-
-/// capable boards (see ArduinoWithDisplay) override the print/println/printlnR/printHeader
-/// methods to render to their display as well.
+/// Base class for Arduino platforms. print()/println()/printlnR()/printHeader() are no-ops
+/// by default; display-capable boards (see ArduinoWithDisplay) override them to render to
+/// the display. Setup-time helpers below (beginInit(), initWifi(), initSensor(),
+/// initClient()) explicitly echo their status text to Logger as well, so it's visible on
+/// Serial regardless of whether the board has a display.
 /// </summary>
 ///
 class ArduinoBase : public IPrinter
@@ -36,37 +37,6 @@ protected:
    /// <summary>OTA firmware update handler; only created after enableOTA() is called.</summary>
    OTAUpdater* _ota = nullptr;
 
-   /// <summary>
-   /// Active logger destinations that print()/println()/printlnR() output is written to
-   /// (see addLogger()/clearLoggers()). Empty by default, so no output is written anywhere
-   /// until a logger is explicitly added (e.g. via beginInit()).
-   /// </summary>
-   std::vector<ILogger*> _loggers;
-
-   ///
-   /// <summary>Writes text without a trailing newline to all active loggers.</summary>
-   /// <param name="str">The text to write.</param>
-   ///
-   void _logWrite(const char* str)
-   {
-      for (ILogger* logger : _loggers)
-      {
-         logger->write(str);
-      }
-   }
-
-   ///
-   /// <summary>Writes text followed by a newline to all active loggers.</summary>
-   /// <param name="str">The text to write.</param>
-   ///
-   void _logWriteln(const char* str)
-   {
-      for (ILogger* logger : _loggers)
-      {
-         logger->writeln(str);
-      }
-   }
-
 public:
    ///
    /// <summary>
@@ -77,33 +47,7 @@ public:
 
    ///
    /// <summary>
-   /// Adds a logger to receive print()/println()/printlnR() output (e.g.
-   /// addLogger(new SerialLogger())). Ownership of the passed-in instance transfers to this
-   /// object (it is never deleted, matching the lifetime of other statically-allocated
-   /// helpers in these sketches). Multiple loggers can be active at once.
-   /// </summary>
-   /// <param name="logger">The logger to add.</param>
-   ///
-   void addLogger(ILogger* logger)
-   {
-      _loggers.push_back(logger);
-   }
-
-   ///
-   /// <summary>
-   /// Removes all active loggers. Call at the end of setup(), once initialization is
-   /// complete, so routine loop() output (e.g. live sensor values, telemetry chatter)
-   /// doesn't keep getting logged.
-   /// </summary>
-   ///
-   void clearLoggers()
-   {
-      _loggers.clear();
-   }
-
-   ///
-   /// <summary>
-   /// Prints text to Serial without a trailing newline.
+   /// No-op default; ArduinoWithDisplay overrides this to render to the display.
    /// </summary>
    /// <param name="str">The text to print.</param>
    /// <param name="textColor">Ignored; present only for IPrinter compatibility.</param>
@@ -111,12 +55,11 @@ public:
    ///
    void print(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK) override
    {
-      _logWrite(str);
    }
 
    ///
    /// <summary>
-   /// Prints text to Serial followed by a newline.
+   /// No-op default; ArduinoWithDisplay overrides this to render to the display.
    /// </summary>
    /// <param name="str">The text to print (default: empty, i.e. just a newline).</param>
    /// <param name="textColor">Ignored; present only for IPrinter compatibility.</param>
@@ -124,7 +67,6 @@ public:
    ///
    void println(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK) override
    {
-      _logWriteln(str);
    }
 
    ///
@@ -139,8 +81,7 @@ public:
 
    ///
    /// <summary>
-   /// Prints text to Serial followed by a newline. Since Serial output has no concept of
-   /// cursor position, this behaves identically to println().
+   /// No-op default; ArduinoWithDisplay overrides this to render to the display.
    /// </summary>
    /// <param name="str">The text to print.</param>
    /// <param name="textColor">Ignored; present only for IPrinter compatibility.</param>
@@ -148,13 +89,13 @@ public:
    ///
    void printlnR(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK) override
    {
-      _logWriteln(str);
    }
 
    ///
    /// <summary>
-   /// Prints the sketch's initialization header (e.g. "Initializing") to Serial and, on
-   /// display-capable boards, the display as well (see ArduinoWithDisplay::printHeader).
+   /// Prints a header line (e.g. "Initializing" or "Updating Firmware") to Serial (via
+   /// Logger) and, on display-capable boards, the display as well (see
+   /// ArduinoWithDisplay::printHeader).
    /// </summary>
    /// <param name="str">The header text to print.</param>
    /// <param name="textColor">The text color.</param>
@@ -162,22 +103,18 @@ public:
    void printHeader(const char* str, Color textColor = Color::HEADING) override
    {
       println(str, textColor);
+      Logger::writeln(str);
    }
 
    ///
    /// <summary>
-   /// Prints an "Initializing" header to Serial and, on display-capable boards, the
-   /// display as well. Convenience wrapper for printHeader(), used at the start of
-   /// setup() to standardize the initialization sequence across sketches.
+   /// Prints an "Initializing" header. Convenience wrapper for printHeader(), used at the
+   /// start of setup() to standardize the initialization sequence across sketches.
    /// </summary>
    /// <param name="str">The header text to print.</param>
    ///
    void beginInit(const char* str = "Initializing")
    {
-      if (_loggers.empty())
-      {
-         addLogger(new SerialLogger());
-      }
       printHeader(str);
    }
 
@@ -193,6 +130,8 @@ public:
    {
       print(label, Color::LABEL);
       printlnR(value, Color::VALUE);
+      Logger::write(label);
+      Logger::writeln(value);
    }
 
    ///
@@ -231,6 +170,7 @@ public:
       }
 
       print("WiFi...", Color::LABEL);
+      Logger::write("WiFi...");
 
       if (_wifiX == nullptr)
       {
@@ -240,19 +180,24 @@ public:
       if (!_wifiX->connect())
       {
          printlnR("FAILED", Color::RED);
+         Logger::writeln("FAILED");
 
          std::string message = std::string("WiFi connect failed: ") + WiFiX::statusString();
          println(message.c_str(), Color::RED);
+         Logger::writeln(message.c_str());
          return false;
       }
 
       printlnR(WiFi.localIP().toString().c_str(), Color::VALUE);
+      Logger::writeln(WiFi.localIP().toString().c_str());
 
       if (syncTime)
       {
          print("Time...", Color::LABEL);
+         Logger::write("Time...");
          TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nist.gov");
          printlnR(TimeSync::localTimeString().c_str(), Color::VALUE);
+         Logger::writeln(TimeSync::localTimeString().c_str());
       }
 
       return true;
@@ -299,26 +244,33 @@ public:
 
    ///
    /// <summary>
-   /// Initializes a single sensor, printing a label and "OK"/"NOT FOUND
-   /// to Serial and, on display-capable boards, the display as well.
+   /// Initializes a single sensor, printing a label and a success message (default "OK")
+   /// or "NOT FOUND" to Serial and, on display-capable boards, the display as well.
    /// </summary>
    /// <param name="label">The sensor label to print (e.g. "Sensor 0 (New Surface)").</param>
    /// <param name="initFunc">Function that initializes the sensor and returns true on success.</param>
+   /// <param name="successLabelFunc">Optional function called only on success to produce the
+   /// success message (e.g. the detected sensor type) in place of "OK".</param>
    /// <returns>True if the sensor was found/initialized successfully.</returns>
    ///
-   bool initSensor(const char* label, bool (*initFunc)())
+   bool initSensor(const char* label, bool (*initFunc)(), const char* (*successLabelFunc)() = nullptr)
    {
       print(label, Color::LABEL);
       print("...", Color::LABEL);
+      Logger::write(label);
+      Logger::write("...");
 
       bool success = initFunc();
       if (success)
       {
-         printlnR("OK", Color::VALUE);
+         const char* successLabel = successLabelFunc != nullptr ? successLabelFunc() : "OK";
+         printlnR(successLabel, Color::VALUE);
+         Logger::writeln(successLabel);
       }
       else
       {
          printlnR("NOT FOUND", Color::RED);
+         Logger::writeln("NOT FOUND");
       }
       return success;
    }
@@ -344,6 +296,8 @@ public:
 
       print(label, Color::LABEL);
       print("...", Color::LABEL);
+      Logger::write(label);
+      Logger::write("...");
       beginFunc();
    }
 

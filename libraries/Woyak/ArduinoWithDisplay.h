@@ -136,8 +136,6 @@ public:
    ///
    void begin() override
    {
-      addLogger(new SerialLogger());
-
       display.init();
 
       display.setRotation(DisplayRotation::LANDSCAPE);
@@ -846,6 +844,14 @@ public:
    void println(const String& str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
       _println(str.c_str(), textColor, backgroundColor);
+   }
+   void printR(const String& str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      printR(str.c_str(), textColor, backgroundColor);
+   }
+   void printlnR(const String& str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
+   {
+      printlnR(str.c_str(), textColor, backgroundColor);
    }
    void print(const String& str, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {

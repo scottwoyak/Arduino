@@ -99,6 +99,21 @@ public:
 
    ///
    /// <summary>
+   /// Alias for ready(). Checks if the timer interval has elapsed.
+   /// </summary>
+   /// <returns>true if interval has elapsed; false otherwise</returns>
+   /// <remarks>
+   /// When true is returned, the internal timer is advanced by one or more
+   /// complete intervals, maintaining cadence for the next cycle.
+   /// </remarks>
+   ///
+   bool expired()
+   {
+      return ready();
+   }
+
+   ///
+   /// <summary>
    /// Returns the remaining time until the next interval elapses.
    /// </summary>
    /// <returns>Remaining time in time units, or 0 if expired</returns>

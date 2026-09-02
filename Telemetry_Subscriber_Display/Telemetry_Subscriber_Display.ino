@@ -84,8 +84,6 @@ void setup()
    arduino.println("Server", "Remote");
 #endif
    arduino.println("Topic", TELEMETRY_TOPIC);
-
-   arduino.clearLoggers();
 }
 
 void loop()
