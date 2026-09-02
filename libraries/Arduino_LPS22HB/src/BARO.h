@@ -29,6 +29,15 @@ enum {
   KILOPASCAL
 };
 
+enum {
+  RATE_ONE_SHOT = 0,
+  RATE_1_HZ = 1,
+  RATE_10_HZ = 2,
+  RATE_25_HZ = 3,
+  RATE_50_HZ = 4,
+  RATE_75_HZ = 5,
+};
+
 class LPS22HBClass {
 public:
   LPS22HBClass(TwoWire& wire);
@@ -36,9 +45,11 @@ public:
   int begin();
   void end();
 
+  void setOutputRate(int rate);
+
   float readPressure(int units = KILOPASCAL);
   float readTemperature(void);
-
+  float readAltitude(void);
 private:
   int i2cRead(uint8_t reg);
   int i2cWrite(uint8_t reg, uint8_t val);
@@ -46,6 +57,7 @@ private:
 private:
   TwoWire* _wire;
   bool _initialized;
+  int _rate;
 };
 
 extern LPS22HBClass BARO;
