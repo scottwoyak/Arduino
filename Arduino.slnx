@@ -58,6 +58,7 @@
     <File Path="libraries/Woyak/ILogger.h" />
     <File Path="libraries/Woyak/IndexedEncoder.h" />
     <File Path="libraries/Woyak/Influx.h" />
+    <File Path="libraries/Woyak/InfluxLogger.h" />
     <File Path="libraries/Woyak/IPrinter.h" />
     <File Path="libraries/Woyak/IScatterPlotSeries.h" />
     <File Path="libraries/Woyak/ITempSensor.h" />

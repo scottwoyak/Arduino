@@ -60,6 +60,7 @@
 #include "SerialX.h"
 #include "SerialLogger.h"
 #include "Influx.h"
+#include "InfluxLogger.h"
 #include "Timer.h"
 #include "FieldTable.h"
 
@@ -98,6 +99,7 @@ Arduino arduino;
 NeoPixelStatus status(&arduino.neoPixel);
 TempSensor sensor;
 Influx* influx = nullptr;
+InfluxLogger* influxLogger = nullptr;
 InfluxPoint* point = nullptr;
 InfluxField* tempField = nullptr;
 InfluxField* humField = nullptr;
@@ -290,6 +292,11 @@ void setup()
    arduino.printlnR(siteLocation(), Color::VALUE);
    Logger::writeln(bucketSiteLocation());
 
+   // Created here (before sensor init/WiFi) so setup() messages logged via Logger are
+   // queued in memory; attach() below flushes them to Influx once it's available.
+   influxLogger = new InfluxLogger("Log", { { "site", site.c_str() }, { "location", location.c_str() }, { "sensor", INFLUX_SENSOR } });
+   Logger::addLogger(influxLogger);
+
    // Fall back to the internal ESP32 CPU temperature sensor if no external sensor is
    // found, so the device still reports a (less accurate) temperature reading instead
    // of failing to start.
@@ -326,6 +333,8 @@ void setup()
       status.setStatus(Status::FAILED);
       Util::reset(RESET_DELAY_S);
    }
+
+   influxLogger->attach(influx);
 
    allValuesTable.addRow("Temp", tempFormat.formatString().c_str(), &allValuesTemp);
    allValuesTable.addRow("Humidity", &allValuesHum);
