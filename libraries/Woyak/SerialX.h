@@ -132,6 +132,33 @@ namespace SerialX
 	}
 
 	/// <summary>
+	/// Prints a header, then a numbered list of options, then blocks until a valid
+	/// selection (1-based) is entered over Serial, reprompting on invalid/out-of-range
+	/// input. Used to simplify interactive setup-time menu selections (e.g. choosing a
+	/// numbered option from a list of sites/buckets/locations).
+	/// </summary>
+	/// <param name="header">Text printed before the numbered list (e.g. "Select a site:").</param>
+	/// <param name="options">The list of option descriptions to print and choose from.</param>
+	/// <param name="count">The number of entries in options.</param>
+	/// <returns>The 0-based index into options for the chosen entry.</returns>
+	inline size_t promptForOption(const char* header, const String options[], size_t count)
+	{
+		Serial.println(header);
+		for (size_t i = 0; i < count; i++)
+		{
+			Serial.print("  ");
+			Serial.print(i + 1);
+			Serial.print(": ");
+			Serial.println(options[i]);
+		}
+
+		String label = "Enter selection (1-" + String(count) + "): ";
+		long selection = promptForInt(label, 1, (long)count);
+
+		return (size_t)(selection - 1);
+	}
+
+	/// <summary>
 	/// Prints a label, then blocks until a valid floating-point number within [min, max] is
 	/// entered over Serial, reprompting on invalid/out-of-range input. Used for simple
 	/// interactive setup-time prompts (e.g. entering a calibration value).
