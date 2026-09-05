@@ -15,11 +15,11 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Gate_Publisher.ino" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="__vm\.Gate_Publisher.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Gate_Publisher.ino" />
   </ItemGroup>
 </Project>

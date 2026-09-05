@@ -3,8 +3,6 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-#include "RollingAverage.h"
-
 ///
 /// <summary>
 /// Driver for the QMC5883P magnetometer, as found on HW-127/GY-273 breakouts. This chip is a
@@ -15,8 +13,8 @@
 /// writing the register pointer and reading it back.
 /// </summary>
 /// <remarks>
-/// Each axis is smoothed with a rolling average over a configurable number of samples
-/// (default 5) to reduce read-to-read jitter.
+/// Call read() before reading x(), y(), z(), or azimuth() to fetch the sensor's latest
+/// sample; those accessors just return the values from the last read() call.
 /// </remarks>
 ///
 class QMC5883PMagnometer
@@ -45,9 +43,9 @@ private:
    static constexpr float GAUSS_TO_MICROTESLA = 100.0f;
 
    Range _range;
-   RollingAverage _x;
-   RollingAverage _y;
-   RollingAverage _z;
+   float _x = 0.0f;
+   float _y = 0.0f;
+   float _z = 0.0f;
 
    ///
    /// <summary>
@@ -80,14 +78,10 @@ public:
    /// <summary>
    /// Initializes a QMC5883P driver.
    /// </summary>
-   /// <param name="sampleCount">Number of samples averaged per axis.</param>
    /// <param name="range">Full-scale measurement range/sensitivity (see Range).</param>
    ///
-   explicit QMC5883PMagnometer(size_t sampleCount = 5, Range range = Range::GAUSS_8)
-      : _range(range),
-        _x(sampleCount),
-        _y(sampleCount),
-        _z(sampleCount)
+   explicit QMC5883PMagnometer(Range range = Range::GAUSS_8)
+      : _range(range)
    {
    }
 
@@ -113,11 +107,12 @@ public:
 
    ///
    /// <summary>
-   /// Reads the latest magnetometer sample and adds it to each axis's rolling average. The
-   /// sensor runs in continuous mode, so the data registers refresh on their own.
+   /// Reads the latest magnetometer sample from the sensor. The sensor runs in
+   /// continuous mode, so the data registers refresh on their own. Call this before
+   /// reading x(), y(), z(), or azimuth() to get an updated value.
    /// </summary>
    ///
-   void update()
+   void read()
    {
       Wire.beginTransmission(ADDRESS);
       Wire.write(REG_DATA_X_LSB);
@@ -128,48 +123,48 @@ public:
       int16_t rawY = (int16_t)(Wire.read() | (Wire.read() << 8));
       int16_t rawZ = (int16_t)(Wire.read() | (Wire.read() << 8));
 
-      _x.set((rawX / countsPerGauss()) * GAUSS_TO_MICROTESLA);
-      _y.set((rawY / countsPerGauss()) * GAUSS_TO_MICROTESLA);
-      _z.set((rawZ / countsPerGauss()) * GAUSS_TO_MICROTESLA);
+      _x = (rawX / countsPerGauss()) * GAUSS_TO_MICROTESLA;
+      _y = (rawY / countsPerGauss()) * GAUSS_TO_MICROTESLA;
+      _z = (rawZ / countsPerGauss()) * GAUSS_TO_MICROTESLA;
    }
 
    ///
    /// <summary>
-   /// Gets the rolling-averaged X-axis field strength, in microtesla.
+   /// Gets the X-axis field strength from the last read() call, in microtesla.
    /// </summary>
    /// <returns>X-axis field strength, in microtesla</returns>
    ///
    float x() const
    {
-      return _x.get();
+      return _x;
    }
 
    ///
    /// <summary>
-   /// Gets the rolling-averaged Y-axis field strength, in microtesla.
+   /// Gets the Y-axis field strength from the last read() call, in microtesla.
    /// </summary>
    /// <returns>Y-axis field strength, in microtesla</returns>
    ///
    float y() const
    {
-      return _y.get();
+      return _y;
    }
 
    ///
    /// <summary>
-   /// Gets the rolling-averaged Z-axis field strength, in microtesla.
+   /// Gets the Z-axis field strength from the last read() call, in microtesla.
    /// </summary>
    /// <returns>Z-axis field strength, in microtesla</returns>
    ///
    float z() const
    {
-      return _z.get();
+      return _z;
    }
 
    ///
    /// <summary>
-   /// Computes the compass azimuth (0-360 degrees) from the rolling-averaged X and Y
-   /// magnetic field components.
+   /// Computes the compass azimuth (0-360 degrees) from the X and Y magnetic field
+   /// components read by the last read() call.
    /// </summary>
    /// <returns>Azimuth in degrees, 0-360</returns>
    ///

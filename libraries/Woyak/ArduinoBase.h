@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 #include <Arduino.h>
@@ -284,10 +285,11 @@ public:
    /// Optionally drives an IStatus indicator through the WEB_CONNECTING phase.
    /// </summary>
    /// <param name="label">The client/service label to print (e.g. "WebSocket").</param>
-   /// <param name="beginFunc">Function that starts the client/service connection.</param>
+   /// <param name="beginFunc">Function that starts the client/service connection. May be a
+   /// capturing lambda or std::function (e.g. one bound to a member object).</param>
    /// <param name="status">Optional status indicator updated to WEB_CONNECTING while connecting.</param>
    ///
-   void initClient(const char* label, void (*beginFunc)(), IStatus* status = nullptr)
+   void initClient(const char* label, std::function<void()> beginFunc, IStatus* status = nullptr)
    {
       if (status != nullptr)
       {

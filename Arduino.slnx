@@ -80,6 +80,7 @@
     <File Path="libraries/Woyak/OTAUpdater.h" />
     <File Path="libraries/Woyak/OTAUpdaterImpl.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
+    <File Path="libraries/Woyak/Publisher.h" />
     <File Path="libraries/Woyak/QMC5883PMagnometer.h" />
     <File Path="libraries/Woyak/QuadratureEncoder.h" />
     <File Path="libraries/Woyak/Rate.h" />
@@ -107,6 +108,7 @@
     <File Path="libraries/Woyak/Scott48.h" />
     <File Path="libraries/Woyak/Scott56.h" />
     <File Path="libraries/Woyak/Scott64.h" />
+    <File Path="libraries/Woyak/SiteConfig.h" />
     <File Path="libraries/Woyak/Slider.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
     <File Path="libraries/Woyak/Stats.h" />

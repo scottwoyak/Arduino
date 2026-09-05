@@ -31,7 +31,7 @@ constexpr uint8_t AZIMUTH_SIZE = 4;
 constexpr uint8_t HEADER_GAP_PX = 10;
 
 // ----------- Sensor
-QMC5883PMagnometer sensor(1);
+QMC5883PMagnometer sensor;
 
 // ----------- Display Items
 Format axisFormat("+####.# uT");
@@ -66,7 +66,7 @@ void setup()
 
 void loop()
 {
-   sensor.update();
+   sensor.read();
 
    arduino.setTextSize(TABLE_SIZE);
    arduino.setCursor(0, arduino.charH(HEADER_SIZE) + HEADER_GAP_PX);
