@@ -6,6 +6,7 @@
 #include <time.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <WiFi.h>
 
 ///
 /// <summary>
@@ -22,6 +23,9 @@ public:
 
    /// <summary>Delay between time sync checks in milliseconds.</summary>
    static constexpr uint16_t SYNC_CHECK_DELAY_MS = 500;
+
+   /// <summary>Timeout in milliseconds for the timezone lookup HTTP request.</summary>
+   static constexpr uint16_t HTTP_TIMEOUT_MS = 5000;
 
    ///
    /// <summary>
@@ -143,7 +147,18 @@ private:
    ///
    static long _fetchUtcOffsetSecs(bool print)
    {
+      if (WiFi.status() != WL_CONNECTED)
+      {
+         if (print)
+         {
+            Serial.println("TimeSync: timezone lookup skipped, WiFi not connected");
+         }
+         return 0;
+      }
+
       HTTPClient http;
+      http.setConnectTimeout(HTTP_TIMEOUT_MS);
+      http.setTimeout(HTTP_TIMEOUT_MS);
       http.begin("http://ip-api.com/json/?fields=status,message,timezone,offset");
       int httpCode = http.GET();
 

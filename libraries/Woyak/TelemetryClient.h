@@ -156,13 +156,24 @@ public:
    ///
    /// <summary>
    /// Invoked when the telemetry WebSocket connection is lost. Default implementation
-   /// logs the reason, sets the status to FAILED, and resets the device.
+   /// logs the reason, completes the "WebSocket..." label (if a display was supplied)
+   /// with "FAILED", sets the status to FAILED, and resets the device.
    /// </summary>
    /// <param name="reason">Reason for the disconnect, as reported by the telemetry client</param>
    ///
    virtual void onDisconnected(const std::string& reason)
    {
       Serial.println("Disconnected: " + String(reason.c_str()));
+
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+      if (_display != nullptr)
+      {
+         // Completes the "WebSocket..." label printed by ArduinoBase::initClient() -
+         // see the matching comment in onStarted() above.
+         _display->printlnR("FAILED", Color::RED);
+      }
+#endif
+
       _status->setStatus(Status::FAILED);
       Util::reset(TELEMETRY_RESET_DELAY_S);
    }
@@ -172,13 +183,24 @@ public:
    /// Invoked when the WebSocket never successfully connected (e.g. the server isn't
    /// running, or it's unreachable) before the socket was torn down. Default
    /// implementation logs a clearer message than the raw low-level socket teardown
-   /// reason, sets the status to FAILED, and resets the device.
+   /// reason, completes the "WebSocket..." label (if a display was supplied) with
+   /// "FAILED", sets the status to FAILED, and resets the device.
    /// </summary>
    /// <param name="reason">Low-level reason reported by the telemetry client, if any</param>
    ///
    virtual void onConnectionFailed(const std::string& reason)
    {
       Serial.println("Could not connect to telemetry server: " + String(reason.c_str()));
+
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+      if (_display != nullptr)
+      {
+         // Completes the "WebSocket..." label printed by ArduinoBase::initClient() -
+         // see the matching comment in onStarted() above.
+         _display->printlnR("FAILED", Color::RED);
+      }
+#endif
+
       _status->setStatus(Status::FAILED);
       Util::reset(TELEMETRY_RESET_DELAY_S);
    }

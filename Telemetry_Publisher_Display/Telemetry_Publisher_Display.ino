@@ -1,9 +1,10 @@
 //
 // Telemetry data publisher with display feedback.
 //
-// Publishes mock sensor test data to a telemetry server via WebSocket connection.
+// Publishes mock sensor test data to a telemetry server via WebSocket connection,
+// using a Publisher. This sketch has no enclosure and does not upload any
+// sensor/enclosure values to InfluxDB.
 // Displays connection status, topic, host, and message rate on a TFT display.
-// Implements callback-based event handling for connection lifecycle and data flow.
 //
 // Uncomment TELEMETRY_LOCAL to use a local telemetry server instead of the remote.
 // Change TEST_SENSOR_TYPE below to select a different mock sensor (see TestSensor.h for options).
@@ -11,7 +12,7 @@
 //
 
 // Uncomment to use local telemetry server instead of remote
-#define TELEMETRY_LOCAL
+//#define TELEMETRY_LOCAL
 
 #include <Arduino.h>
 
@@ -25,39 +26,31 @@
 #endif
 
 #include "ScatterPlot.h"
-#include "SerialX.h"
-#include "Status.h"
 #include "Table.h"
-#include "TelemetryClient.h"
+#include "Url.h"
+#include "WiFiSettings.h"
 
 // Selects the mock sensor used to generate published test data.
 #define TEST_SENSOR_TYPE WaveTestSensor
 #include "TestSensor.h"
 
-#include "Timer.h"
-#include "Url.h"
+#include "Publisher.h"
 
-#include "WiFiSettings.h"
-
-// ----------- Telemetry
-constexpr const char* TELEMETRY_TOPIC = "Test";
-constexpr unsigned long PUBLISH_INTERVAL_MS = 100;
-constexpr uint8_t TELEMETRY_DECIMAL_PLACES = 3;
-
-// ----------- The Board
 Arduino arduino;
-NeoPixelStatus status(&arduino.neoPixel);
-
-// ----------- Sensor
 TestSensor sensor;
-Timer publishTimer(PUBLISH_INTERVAL_MS);
+
+PublisherConfig PUBLISHER_CONFIG = {
+   .sketchName = "Publisher",
+   .telemetryTopic = "Test",
+   .telemetryDecimals = 3,
+   .publishIntervalMs = 100,
+};
+
+Publisher publisher(&arduino, PUBLISHER_CONFIG);
 
 // ----------- Display Items
 constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
 Timer rateDisplayTimer(RATE_UPDATE_INTERVAL_MS);
-constexpr const char* TOPIC_FORMAT = "                    ";
-constexpr const char* HOST_FORMAT = "                        ";
-constexpr const char* RATE_FORMAT = "###/s";
 Table table(&arduino, 0, 0);
 
 // ----------- Published Value Scatter Plot (bottom of display, 5 second rolling span)
@@ -66,40 +59,33 @@ ScatterPlot valuePlot(&arduino, Rect16{}, "##.#s", "###.###");
 TimedScatterPlotSeries* valueSeries = valuePlot.createTimedSeries(PLOT_SPAN_MS);
 constexpr uint8_t VALUE_SERIES_POINT_SIZE = 1;
 
-TelemetryEventHandler telemetryHandler(&status, &arduino);
-TelemetryPublisher client(TELEMETRY_TOPIC, TELEMETRY_DECIMAL_PLACES, &status, &telemetryHandler);
+// Mirrors PUBLISHER_CONFIG.publishIntervalMs so the plot is sampled at the same rate
+// the telemetry value is published.
+Timer plotSampleTimer(PUBLISHER_CONFIG.publishIntervalMs);
 bool needsInitialDisplay = true;
 
 void setup()
 {
-   SerialX::begin();
-   arduino.begin();
-   status.begin();
-
    valueSeries->pointSize = VALUE_SERIES_POINT_SIZE;
 
-   arduino.beginInit();
+   publisher.addSensor("Test Sensor", []() { sensor.begin(); return true; });
+   publisher.setValueSource([]() { return sensor.get(); });
 
-   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
-
-   status.setStatus(Status::WEB_CONNECTING);
-   arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); });
-
-   sensor.begin();
+   publisher.begin();
 }
 
 void loop()
 {
-   if (publishTimer.ready())
+   if (plotSampleTimer.ready())
    {
-      float value = sensor.get();
-      client.setValue(value);
-      valueSeries->add(value);
+      valueSeries->add(sensor.get());
    }
 
-   client.loop();
+   publisher.loop();
 
-   if (client.isStarted() && needsInitialDisplay)
+   TelemetryPublisher* client = publisher.client();
+
+   if (client->isStarted() && needsInitialDisplay)
    {
       arduino.clearDisplay();
       arduino.setCursor(0, 0);
@@ -109,12 +95,12 @@ void loop()
 
       arduino.setTextSize(2);
       table.setPosition(0, arduino.getCursor().y);
-      table.addRow("Topic", TOPIC_FORMAT);
-      table.addRow("Host", HOST_FORMAT, Color::VALUE2);
-      table.addRow("Rate", RATE_FORMAT);
+      table.addRow("Topic", "                    ");
+      table.addRow("Host", "                        ", Color::VALUE2);
+      table.addRow("Rate", "###/s");
 
-      Url url(client.getUrl().c_str());
-      table.setValue(0, client.getTopic(), Color::VALUE);
+      Url url(client->getUrl().c_str());
+      table.setValue(0, client->getTopic(), Color::VALUE);
       table.setValue(1, url.getHost(), Color::VALUE2);
       table.setValueNone(2);
       table.draw();
@@ -137,7 +123,7 @@ void loop()
 
    if (rateDisplayTimer.ready())
    {
-      table.setValue(2, client.getRate());
+      table.setValue(2, client->getRate());
    }
 
    table.draw();

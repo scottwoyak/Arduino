@@ -15,11 +15,11 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Telemetry_Publisher_Playground.ino" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="__vm\.Telemetry_Publisher_Playground.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Telemetry_Publisher_Playground.ino" />
   </ItemGroup>
 </Project>

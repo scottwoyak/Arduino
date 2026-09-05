@@ -105,7 +105,9 @@ public:
 		{
 			arduino.print("Syncing Time...", Color::LABEL);
 			TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nis.gov");
-			arduino.printlnR(TimeSync::localTimeString().c_str(), Color::VALUE);
+
+			Color timeColor = TimeSync::isSynced() ? Color::VALUE : Color::RED;
+			arduino.printlnR(TimeSync::localTimeString().c_str(), timeColor);
 		}
 
 		arduino.print("Influx...", Color::LABEL);

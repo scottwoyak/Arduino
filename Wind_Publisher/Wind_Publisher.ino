@@ -65,6 +65,8 @@ PublisherConfig PUBLISHER_CONFIG = {
    .influxSensor = "Wind",
    .includeEnclosureTemp = true,
    .includeCpuTemp = true,
+   .enableOTA = true,
+   .enableRebooter = true,
 };
 
 Publisher publisher(&arduino, PUBLISHER_CONFIG);

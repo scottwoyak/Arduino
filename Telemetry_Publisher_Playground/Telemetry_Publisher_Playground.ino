@@ -1,7 +1,10 @@
 //
 // Telemetry data publisher with interactive Playground controls.
 //
-// Publishes mock sensor test data to a telemetry server via WebSocket connection.
+// Publishes mock sensor test data to a telemetry server via WebSocket connection,
+// using the shared Publisher lifecycle (banner, force-prompt site window, WiFi,
+// rebooter, OTA, and Influx setup/log mirroring only). This sketch has no enclosure
+// and does not upload any sensor/enclosure values to InfluxDB.
 // Displays connection status, topic, host, source, publish rate, and message rate on a TFT
 // display, same as Telemetry_Publisher_Display, but runs on a Playground board so the source
 // (mock test function) and publish rate can be selected/adjusted live: Encoder A cycles the
@@ -15,7 +18,6 @@
 #define TELEMETRY_LOCAL
 
 #include <Arduino.h>
-#include <WiFi.h>
 #include <cmath>
 
 #include "ArduinoBoard.h"
@@ -30,18 +32,17 @@
 #include "DisplayValue.h"
 #include "FieldTableEditor.h"
 #include "ScatterPlot.h"
-#include "SerialX.h"
-#include "TelemetryClient.h"
 #include "TestSensor.h"
-#include "Timer.h"
 #include "Url.h"
 #include "ValueEditor.h"
-
 #include "WiFiSettings.h"
 
-// ----------- Telemetry
-constexpr const char* TELEMETRY_TOPIC = "Test";
-constexpr uint8_t TELEMETRY_DECIMAL_PLACES = 3;
+#include "Publisher.h"
+
+// ----------- Telemetry topic
+// Fixed topic; this is a testing sketch with no enclosure, no InfluxDB upload, and no
+// selectable site configuration.
+constexpr auto TELEMETRY_TOPIC = "Test";
 
 // ----------- The Board
 Arduino arduino;
@@ -251,8 +252,15 @@ public:
    }
 };
 
-PlaygroundTelemetryHandler telemetryHandler(nullptr);
-TelemetryPublisher client(TELEMETRY_TOPIC, TELEMETRY_DECIMAL_PLACES, nullptr, &telemetryHandler);
+PlaygroundTelemetryHandler telemetryHandler(&arduino);
+
+PublisherConfig PUBLISHER_CONFIG = {
+   .sketchName = "Publisher",
+   .telemetryTopic = TELEMETRY_TOPIC,
+   .telemetryDecimals = 3,
+};
+
+Publisher publisher(&arduino, PUBLISHER_CONFIG);
 
 ///
 /// <summary>
@@ -269,9 +277,6 @@ void selectTestFunction()
 
 void setup()
 {
-   SerialX::begin();
-   arduino.begin();
-
    valueSeries->pointSize = VALUE_SERIES_POINT_SIZE;
 
    arduino.setTextSize(3);
@@ -313,18 +318,10 @@ void setup()
    valueSeries->showPoints = true;
    valueSeries->showLines = false;
 
-   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-   while (WiFi.status() != WL_CONNECTED)
-   {
-   }
+   publisher.setTelemetryHandler(&telemetryHandler);
+   publisher.begin();
 
-   statusText = "Connecting to Server...";
-   statusColor = Color::LIME;
-   status.draw(statusText, statusColor);
-
-   client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
-
-   Url url(client.getUrl().c_str());
+   Url url(publisher.client()->getUrl().c_str());
    hostValue.set(url.getHost().c_str());
    table.draw();
 }
@@ -386,16 +383,16 @@ void loop()
    if (publishTimer.ready())
    {
       float sensorValue = sensor->get();
-      client.setValue(sensorValue);
+      publisher.client()->setValue(sensorValue);
       lastValue = sensorValue;
       valueSeries->add(sensorValue);
    }
 
-   client.loop();
+   publisher.loop();
 
    if (rateDisplayTimer.ready())
    {
-      rateValueField.set(client.getRate());
+      rateValueField.set(publisher.client()->getRate());
    }
 
    table.draw();

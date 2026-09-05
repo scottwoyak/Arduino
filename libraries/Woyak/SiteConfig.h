@@ -33,6 +33,11 @@ struct SiteTable
    const SiteConfig* sites;
    size_t count;
 
+   /// <summary>Empty table; used when a Publisher sketch has a single fixed telemetry topic (see PublisherConfig::telemetryTopic) instead of a selectable site table.</summary>
+   SiteTable() : sites(nullptr), count(0)
+   {
+   }
+
    template <size_t N>
    SiteTable(const SiteConfig (&array)[N]) : sites(array), count(N)
    {

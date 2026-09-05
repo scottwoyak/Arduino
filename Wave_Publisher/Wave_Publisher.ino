@@ -117,6 +117,8 @@ PublisherConfig PUBLISHER_CONFIG = {
    .publishIntervalMs = 33, // 30 per sec
    .includeEnclosureTemp = true,
    .includeCpuTemp = true,
+   .enableOTA = true,
+   .enableRebooter = true,
 };
 
 Publisher publisher(&arduino, PUBLISHER_CONFIG);

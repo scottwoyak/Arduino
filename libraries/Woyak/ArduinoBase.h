@@ -153,13 +153,14 @@ public:
    /// Connects to WiFi via WiFiX (WiFiMulti-based), printing a "WiFi..." label and "OK"/"FAILED"
    /// based on the result, to Serial and, on display-capable boards, the display as well.
    /// Optionally drives an IStatus indicator through the WIFI_CONNECTING phase. Once connected,
-   /// also syncs the system clock via NTP (auto-detecting the local timezone), printing a
-   /// "Time..." label with the resulting synchronized time; needed for calendar-based features
-   /// like Rebooter's midnight reboot to fire at the correct wall-clock time.
+   /// the status indicator (if provided) is advanced to WEB_CONNECTING to reflect the next
+   /// initialization phase, and the system clock is synced via NTP (auto-detecting the local
+   /// timezone), printing a "Time..." label with the resulting synchronized time; needed for
+   /// calendar-based features like Rebooter's midnight reboot to fire at the correct wall-clock time.
    /// </summary>
    /// <param name="ssid">The WiFi network name.</param>
    /// <param name="password">The WiFi network password.</param>
-   /// <param name="status">Optional status indicator updated to WIFI_CONNECTING while connecting.</param>
+   /// <param name="status">Optional status indicator updated to WIFI_CONNECTING while connecting, then WEB_CONNECTING once connected.</param>
    /// <param name="syncTime">True to sync the system clock via NTP after connecting.</param>
    /// <returns>True if the WiFi connection succeeded; otherwise false.</returns>
    ///
@@ -192,12 +193,19 @@ public:
       printlnR(WiFi.localIP().toString().c_str(), Color::VALUE);
       Logger::writeln(WiFi.localIP().toString().c_str());
 
+      if (status != nullptr)
+      {
+         status->setStatus(Status::WEB_CONNECTING);
+      }
+
       if (syncTime)
       {
          print("Time...", Color::LABEL);
          Logger::write("Time...");
          TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nist.gov");
-         printlnR(TimeSync::localTimeString().c_str(), Color::VALUE);
+
+         Color timeColor = TimeSync::isSynced() ? Color::VALUE : Color::RED;
+         printlnR(TimeSync::localTimeString().c_str(), timeColor);
          Logger::writeln(TimeSync::localTimeString().c_str());
       }
 
