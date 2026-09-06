@@ -228,7 +228,7 @@ public:
 
       // Only drive the status indicator through WIFI_CONNECTING/READY when a (re)connect is
       // actually needed. Calling setStatus() unconditionally every loop() iteration - even
-      // when WiFi is already connected - hammers the NeoPixel driver (FastLED.show() disables
+      // when WiFi is already connected - hammers the NeoPixel driver (show() disables
       // interrupts while bit-banging) back-to-back with no throttling, which can starve other
       // tasks long enough to trip the interrupt/task watchdog and cause a panic reset.
       if (_wifiX->isConnected())

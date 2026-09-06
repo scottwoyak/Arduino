@@ -5,13 +5,6 @@
 
 ///
 /// <summary>
-/// Blink interval used for animated status indicators.
-/// </summary>
-///
-constexpr uint16_t BLINK_INTERVAL_MS = 300;
-
-///
-/// <summary>
 /// Identifies the current device startup or connectivity state.
 /// </summary>
 ///
@@ -32,6 +25,10 @@ enum Status
 ///
 class IStatus
 {
+protected:
+	/// <summary>Blink interval used by derived classes for animated status indicators.</summary>
+	static constexpr uint16_t BLINK_INTERVAL_MS = 300;
+
 public:
 	virtual ~IStatus() = default;
 
