@@ -159,6 +159,72 @@ namespace SerialX
 	}
 
 	/// <summary>
+	/// Prints a header, then a numbered list of options (marking defaultIndex as the
+	/// current default), then waits up to timeoutMs for a selection to be entered over
+	/// Serial. If no input arrives before the timeout, or the entered value isn't a
+	/// valid selection, defaultIndex is returned instead. Used so an automatically
+	/// triggered prompt (e.g. because a Serial monitor is attached) can't hang the
+	/// device forever if nobody responds.
+	/// </summary>
+	/// <param name="count">The number of selectable options.</param>
+	/// <param name="defaultIndex">The 0-based index used if the timeout elapses or the input is invalid.</param>
+	/// <param name="timeoutMs">How long to wait for a selection before falling back to defaultIndex, in milliseconds.</param>
+	/// <returns>The 0-based index for the chosen (or default) entry.</returns>
+	inline size_t readSelectionWithTimeout(size_t count, size_t defaultIndex, uint32_t timeoutMs)
+	{
+		Serial.print("Enter selection (1-");
+		Serial.print(count);
+		Serial.print("), defaults to ");
+		Serial.print(defaultIndex + 1);
+		Serial.print(" after ");
+		Serial.print(timeoutMs / 1000);
+		Serial.println("s: ");
+
+		uint32_t start = millis();
+		while (!Serial.available())
+		{
+			if (millis() - start >= timeoutMs)
+			{
+				Serial.println("No input - using default.");
+				return defaultIndex;
+			}
+			delay(10);
+		}
+
+		String input = Serial.readStringUntil('\n');
+		input.trim();
+		Serial.println(input);
+
+		if (input.length() == 0)
+		{
+			Serial.println("Using default.");
+			return defaultIndex;
+		}
+
+		bool isNumeric = true;
+		for (size_t i = 0; i < input.length(); i++)
+		{
+			if (!isDigit(input[i]))
+			{
+				isNumeric = false;
+				break;
+			}
+		}
+
+		if (isNumeric)
+		{
+			long selection = input.toInt();
+			if (selection >= 1 && selection <= (long)count)
+			{
+				return (size_t)(selection - 1);
+			}
+		}
+
+		Serial.println("Invalid selection - using default.");
+		return defaultIndex;
+	}
+
+	/// <summary>
 	/// Prints a label, then blocks until a valid floating-point number within [min, max] is
 	/// entered over Serial, reprompting on invalid/out-of-range input. Used for simple
 	/// interactive setup-time prompts (e.g. entering a calibration value).

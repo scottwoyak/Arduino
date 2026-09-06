@@ -44,17 +44,16 @@ private:
    }
 
    /// <summary>
-   /// Right-aligns text within the given width by left-padding with spaces (no-op if the
+   /// Left-aligns text within the given width by right-padding with spaces (no-op if the
    /// text is already at least as wide as the requested width).
    /// </summary>
    static String _pad(const String& text, size_t width)
    {
-      String result;
+      String result = text;
       for (size_t i = text.length(); i < width; i++)
       {
          result += ' ';
       }
-      result += text;
       return result;
    }
 
@@ -97,7 +96,7 @@ private:
    {
       if (column.format != nullptr)
       {
-         Format fmt(column.format, column.width, Format::Alignment::RIGHT);
+         Format fmt(column.format, column.width, Format::Alignment::LEFT);
          return String(fmt.toString(value).c_str());
       }
 

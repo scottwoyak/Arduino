@@ -97,6 +97,9 @@ private:
    ///
    bool _isUpdateAvailable()
    {
+      Serial.print("OTA Update: ");
+      Serial.println(_versionUrl.c_str());
+
       HTTPClient http;
       http.begin(_versionUrl.c_str());
       http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
@@ -104,7 +107,7 @@ private:
 
       if (httpCode != HTTP_CODE_OK)
       {
-         Serial.printf("OTAUpdater: version check HTTP GET failed, code: %d, url: %s\n", httpCode, _versionUrl.c_str());
+         Serial.printf("OTAUpdater: version check HTTP GET failed, code: %d\n", httpCode);
          http.end();
          return false;
       }
@@ -120,9 +123,9 @@ private:
          serverVersion = serverVersion.substring(1, serverVersion.length() - 1);
       }
 
-      Serial.print("OTAUpdater: local version ");
+      Serial.print("Current Version: ");
       Serial.print(_version);
-      Serial.print(", server version ");
+      Serial.print(", Remote Version: ");
       Serial.println(serverVersion);
 
       bool updateAvailable = !serverVersion.equals(_version);

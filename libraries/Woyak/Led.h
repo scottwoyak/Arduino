@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <functional>
 #include "Util.h"
-#include <FastLed.h>
+#include <Adafruit_NeoPixel.h>
 
 ///
 /// <summary>
@@ -400,10 +400,17 @@ public:
 
 ///
 /// <summary>
-/// LED controller using ESP32 software timer for automatic updates.
+/// LED controller using a dedicated ESP32 FreeRTOS task for automatic updates.
 /// </summary>
 /// <remarks>
-/// Uses an ESP32 FreeRTOS timer to automatically manage blinking patterns.
+/// Runs its own background task (rather than a software timer callback) to manage
+/// blinking patterns. A shared FreeRTOS software timer's callback runs on the single,
+/// system-wide Timer Service ("Tmr Svc") task, and per FreeRTOS's own rules that task's
+/// callbacks must never block - but NeoPixelLED's _apply() calls into Adafruit_NeoPixel's
+/// RMT-based show(), which blocks the calling task until transmission completes. Doing
+/// that from the shared Timer Service task deadlocks it (and every other software timer
+/// in the system) rather than just the one blink update. A dedicated task has no such
+/// restriction, so it can safely call blocking code like NeoPixel's show().
 /// User does not need to call loop() - updates happen automatically.
 /// </remarks>
 ///
@@ -411,25 +418,25 @@ class LED : public BasicLED
 {
 private:
 
-   static void _timerCallback(TimerHandle_t xTimer)
+   static void _taskFunc(void* param)
    {
-      LED* led = static_cast<LED*>(pvTimerGetTimerID(xTimer));
-      led->loop();
+      LED* led = static_cast<LED*>(param);
+      while (true)
+      {
+         led->loop();
+         vTaskDelay(pdMS_TO_TICKS(1));
+      }
    }
 
-   void _startTimer()
+   void _startTask()
    {
-      TimerHandle_t timerHandle = xTimerCreate(
-         "BlinkTimer",     // only used for debugging
-         pdMS_TO_TICKS(1), // tick interval in ms
-         pdTRUE,           // auto-reload
-         this,             // user data
-         _timerCallback);  // callback function
-
-      if (timerHandle != nullptr)
-      {
-         xTimerStart(timerHandle, 0); // Start the timer
-      }
+      xTaskCreate(
+         _taskFunc,     // task function
+         "BlinkTask",   // only used for debugging
+         2048,          // stack size (words)
+         this,          // parameter
+         1,             // priority
+         nullptr);      // task handle (not needed)
    }
 
 public:
@@ -445,19 +452,21 @@ public:
 
    ///
    /// <summary>
-   /// Initializes the LED and starts the internal timer for automatic updates.
+   /// Initializes the LED and starts the internal background task for automatic updates.
    /// </summary>
    ///
    void begin()
    {
       BasicLED::begin();
 
-      _startTimer();
+      _startTask();
    }
 };
 
 ///
 /// <summary>
+
+
 /// RGB LED controller for tri-color LEDs using three GPIO pins.
 /// </summary>
 /// <remarks>
@@ -561,19 +570,41 @@ public:
 ///
 constexpr uint8_t NUM_LEDS = 1;
 
+// Data pin and color order for the onboard NeoPixel, auto-detected based on the target board.
+#if defined ARDUINO_WAVESHARE_ESP32_S3_ZERO
+constexpr int16_t NEOPIXEL_LED_PIN = 21;
+constexpr neoPixelType NEOPIXEL_LED_TYPE = NEO_RGB + NEO_KHZ800;
+#elif defined ARDUINO_ESP32S3_DEV
+constexpr int16_t NEOPIXEL_LED_PIN = 48;
+constexpr neoPixelType NEOPIXEL_LED_TYPE = NEO_GRB + NEO_KHZ800;
+#else
+constexpr int16_t NEOPIXEL_LED_PIN = PIN_NEOPIXEL;
+constexpr neoPixelType NEOPIXEL_LED_TYPE = NEO_GRB + NEO_KHZ800;
+#endif
+
 ///
 /// <summary>
-/// NeoPixel/WS2812B addressable LED controller using the FastLED library.
+/// NeoPixel/WS2812B addressable LED controller using the Adafruit_NeoPixel library.
 /// </summary>
 /// <remarks>
-/// Manages a single NeoPixel LED with full RGB color control through the FastLED library.
-/// The data pin is auto-detected based on the target board.
+/// Manages a single NeoPixel LED with full RGB color control through the Adafruit_NeoPixel
+/// library. The data pin and color order are auto-detected based on the target board.
 /// </remarks>
 ///
 class NeoPixelLED : public LED
 {
 private:
-   CRGB _leds[NUM_LEDS];
+   // Constructed empty and configured lazily in begin() rather than via the
+   // (n, pin, type) constructor. NeoPixelLED instances are commonly created as
+   // globals (e.g. board wrapper members), which run their constructors during
+   // static initialization - before the ESP-IDF runtime is fully up. On ESP32
+   // (IDF >= 5) the (n, pin, type) constructor calls espInit() to claim an RMT
+   // channel immediately, which can silently fail that early, leaving the
+   // NeoPixel dark. Deferring setup to begin() (called from setup()) avoids this.
+   Adafruit_NeoPixel _pixel;
+   uint8_t _red = 0;
+   uint8_t _green = 0;
+   uint8_t _blue = 0;
 
 public:
    ///
@@ -583,42 +614,60 @@ public:
    ///
    NeoPixelLED()
    {
-      _leds[0] = CRGB::Black; // start with the led off
    }
 
    ///
    /// <summary>
-   /// Initializes the FastLED library and configures the NeoPixel LED.
+   /// Configures and initializes the Adafruit_NeoPixel library for the NeoPixel LED.
    /// </summary>
    ///
    virtual void begin() override
    {
       LED::begin();
-#if defined ARDUINO_WAVESHARE_ESP32_S3_ZERO
-      FastLED.addLeds<WS2812B, 21, RGB>(_leds, NUM_LEDS);
-#elif defined ARDUINO_ESP32S3_DEV
-      FastLED.addLeds<WS2812, 48, GRB>(_leds, NUM_LEDS);
-#else
-      FastLED.addLeds<NEOPIXEL, PIN_NEOPIXEL>(_leds, NUM_LEDS);
+
+#ifdef NEOPIXEL_POWER
+      // Some boards (e.g. Adafruit Feather ESP32-S3 TFT) gate power to the onboard
+      // NeoPixel behind a separate switched pin, which must be driven on before the
+      // NeoPixel will light.
+      pinMode(NEOPIXEL_POWER, OUTPUT);
+      digitalWrite(NEOPIXEL_POWER, NEOPIXEL_POWER_ON);
 #endif
+
+      #if defined(ESP32) && ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+      // The empty Adafruit_NeoPixel constructor used above (see the comment on
+      // _pixel) skips espInit(), which the (n, pin, type) constructor normally
+      // calls to create the RMT show_mutex on ESP-IDF >= 5. Without that mutex,
+      // espShow() silently no-ops (its "if (show_mutex && ...)" guard fails),
+      // so begin() still reports success but the NeoPixel never lights.
+      espInit();
+#endif
+
+      _pixel.updateType(NEOPIXEL_LED_TYPE);
+      _pixel.updateLength(NUM_LEDS);
+      _pixel.setPin(NEOPIXEL_LED_PIN);
+      _pixel.begin();
+      _apply(); // start with the led off
    }
 
    ///
    /// <summary>
    /// Applies brightness and shows the current LED state.
    /// </summary>
+   /// <remarks>
+   /// Scales the stored raw color by the current brightness level itself, rather than
+   /// relying on Adafruit_NeoPixel::setBrightness(), since that method destructively
+   /// rescales the pixel buffer in place and would drift the color over repeated calls
+   /// (e.g. from blinking/flashing).
+   /// </remarks>
    ///
    virtual void _apply() override
    {
-      if (_isOn)
-      {
-         FastLED.setBrightness(_level * _calibrationFactor);
-      }
-      else
-      {
-         FastLED.setBrightness(0);
-      }
-      FastLED.show();
+      uint8_t brightness = _isOn ? (uint8_t)(_level * _calibrationFactor) : 0;
+      _pixel.setPixelColor(0,
+         (uint16_t)_red * brightness / 255,
+         (uint16_t)_green * brightness / 255,
+         (uint16_t)_blue * brightness / 255);
+      _pixel.show();
    }
 
    ///
@@ -647,7 +696,9 @@ public:
    ///
    void setColor(uint8_t r, uint8_t g, uint8_t b)
    {
-      _leds[0] = CRGB(r, g, b);
+      _red = r;
+      _green = g;
+      _blue = b;
       _apply();
    }
 };

@@ -321,11 +321,24 @@ public:
 
       if (hasSiteTable)
       {
-         // buttonA is on GPIO0, a strapping pin: holding it low during power-on/reset puts
-         // the chip into UART download mode instead of running the sketch, so it can't be
-         // checked during boot. Instead, give the user a short window after boot to press it.
-         Serial.println("Press buttonA now to reconfigure the site...");
-         forcePrompt = SiteResolver::waitForForcePrompt(_arduino->buttonA, FORCE_PROMPT_WINDOW_MS);
+         if (Serial)
+         {
+            // A Serial monitor is attached (e.g. the board is inside an enclosure and
+            // buttonA can't be reached), so automatically offer the prompt. It's still
+            // bounded by SiteResolver::PROMPT_TIMEOUT_S, so a false-positive connection
+            // (or nobody responding) just falls back to the current/default site.
+            forcePrompt = true;
+         }
+         else
+         {
+            // No Serial monitor detected - fall back to the buttonA window. buttonA is
+            // on GPIO0, a strapping pin: holding it low during power-on/reset puts the
+            // chip into UART download mode instead of running the sketch, so it can't
+            // be checked during boot. Instead, give the user a short window after boot
+            // to press it.
+            Serial.println("Press buttonA now to reconfigure the site...");
+            forcePrompt = SiteResolver::waitForForcePrompt(_arduino->buttonA, FORCE_PROMPT_WINDOW_MS);
+         }
       }
 
       for (const SensorInit& sensor : _sensors)
@@ -351,11 +364,17 @@ public:
       // constructed.
       if (hasSiteTable)
       {
-         _site = _siteResolver.resolve(_arduino->preferences, "Select a site:", _config.sites.sites, _config.sites.count, forcePrompt);
+         _site = _siteResolver.resolve(_arduino->preferences, "Select a site (* = default):", _config.influxMeasurement, _config.influxSensor, _config.sites.sites, _config.sites.count, forcePrompt);
       }
       else
       {
          _site = { _config.telemetryTopic, nullptr, nullptr, nullptr };
+      }
+
+      if (!hasSiteTable)
+      {
+         Serial.print("Telemetry Topic: ");
+         Serial.println(_site.telemetryTopic);
       }
 
       // Created here (before initWifi/Influx) so setup() messages logged via Logger are
