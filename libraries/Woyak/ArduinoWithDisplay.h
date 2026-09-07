@@ -752,10 +752,24 @@ public:
    void printHeader(const char* str, Color textColor = Color::HEADING) override
    {
       clearDisplay();
-      setTextSize(TEXT_SIZE_HEADER);
+      setTextSize(headerTextSize());
       println(str, textColor);
       moveCursorY(charH() / 2);
    }
+
+   ///
+   /// <summary>
+   /// Gets the text size used for headers printed by printHeader() (e.g. the
+   /// "Initializing" header shown during setup). Boards with larger displays can
+   /// override this to use a bigger header text size.
+   /// </summary>
+   /// <returns>Text size to use for headers.</returns>
+   ///
+   virtual uint8_t headerTextSize()
+   {
+      return TEXT_SIZE_HEADER;
+   }
+
    void printC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
       uint16_t len = display.textWidth(str);

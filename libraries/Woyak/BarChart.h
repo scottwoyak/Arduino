@@ -12,7 +12,7 @@ class BarChart
 {
 private:
    VerticalBar** _bars;
-   uint8_t _numBars;
+   uint16_t _numBars;
    Rect16 _rect;
    RangeU16 _visibleBars;
    RangeF _valueRange;
@@ -49,7 +49,7 @@ public:
    /// <param name="color">Color used to render the filled portion of each bar.</param>
    /// <param name="backgroundColor">Color used to render the unfilled portion of each bar.</param>
    ///
-   BarChart(Rect16 rect, uint8_t numBars, RangeF valueRange, Color color, Color backgroundColor)
+   BarChart(Rect16 rect, uint16_t numBars, RangeF valueRange, Color color, Color backgroundColor)
    {
       _rect = rect;
       _numBars = numBars;
@@ -59,7 +59,7 @@ public:
 
       uint16_t barWidth = _rect.width / _numBars;
       Rect16 barRect(_rect.x, _rect.y, barWidth, _rect.height);
-      for (uint8_t i = 0; i < _numBars; i++)
+      for (uint16_t i = 0; i < _numBars; i++)
       {
          barRect.x = rect.x + i * barWidth;
          _bars[i] = new VerticalBar(barRect, valueRange, color, backgroundColor);
@@ -75,7 +75,7 @@ public:
    ///
    virtual ~BarChart()
    {
-      for (uint8_t i = 0; i < _numBars; i++)
+      for (uint16_t i = 0; i < _numBars; i++)
       {
          delete _bars[i];
       }
@@ -105,7 +105,7 @@ public:
    /// <param name="index">Zero-based index of the bar.</param>
    /// <param name="color">The new bar color.</param>
    ///
-   void setBarColor(uint8_t index, Color color)
+   void setBarColor(uint16_t index, Color color)
    {
       _bars[index]->setColor(color);
    }
@@ -117,7 +117,7 @@ public:
    ///
    void reset()
    {
-      for (uint8_t i = 0; i < _numBars; i++)
+      for (uint16_t i = 0; i < _numBars; i++)
       {
          _bars[i]->reset();
       }
@@ -129,7 +129,7 @@ public:
    /// </summary>
    /// <returns>The total number of bars.</returns>
    ///
-   uint8_t getNumBars()
+   uint16_t getNumBars()
    {
       return _numBars;
    }

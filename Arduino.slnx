@@ -145,6 +145,8 @@
     <File Path="libraries/Woyak/ValueStore.h" />
     <File Path="libraries/Woyak/ValueStoreFram.h" />
     <File Path="libraries/Woyak/Vector.h" />
+    <File Path="libraries/Woyak/Viewer.h" />
+    <File Path="libraries/Woyak/VirtualNeoPixel.h" />
     <File Path="libraries/Woyak/Waveshare_ESP32_S3_Zero.h" />
     <File Path="libraries/Woyak/WiFiSettings.h" />
     <File Path="libraries/Woyak/WiFiX.h" />
@@ -340,10 +342,6 @@
     <Deploy />
   </Project>
   <Project Path="DisplayValue_Playground/DisplayValue_Playground.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="Display_HosyondESP32-32E/Display_HosyondESP32-32E.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -567,6 +565,14 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Viewer/Viewer.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Viewer_Touch/Viewer_Touch.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Wave_Display/Wave_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -592,6 +598,10 @@
     <Deploy />
   </Project>
   <Project Path="Wind_Subscriber_Display/Wind_Subscriber_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Wind_Viewer/Wind_Viewer.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

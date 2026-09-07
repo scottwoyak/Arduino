@@ -151,15 +151,29 @@ public:
 
    ///
    /// <summary>
+   /// Gets the color used to render the filled portion of the bar.
+   /// </summary>
+   /// <returns>The current bar color.</returns>
+   ///
+   Color getColor() const
+   {
+      return _barColor;
+   }
+
+   ///
+   /// <summary>
    /// Sets the color used to render the filled portion of the bar and resets it for a
-   /// full redraw.
+   /// full redraw, but only if the color actually changed.
    /// </summary>
    /// <param name="barColor">The new bar color.</param>
    ///
    void setColor(Color barColor)
    {
-      _barColor = barColor;
-      reset();
+      if (barColor != _barColor)
+      {
+         _barColor = barColor;
+         reset();
+      }
    }
 };
 

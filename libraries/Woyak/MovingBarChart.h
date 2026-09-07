@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Bar.h"
+#include "ColorRange.h"
 
 ///
 /// <summary>
@@ -13,6 +14,7 @@ class MovingBarChart
 private:
    VerticalBar** _bars;
    uint16_t _numBars;
+   ColorRange* _colorRange = nullptr;
 
 public:
    ///
@@ -53,6 +55,23 @@ public:
 
    ///
    /// <summary>
+   /// Assigns a color range used to color each bar based on its value, overriding the
+   /// single bar color passed to the constructor. Colors are re-applied whenever a bar's
+   /// value shifts, adding a per-value cost; revert this call if it impacts performance.
+   /// </summary>
+   /// <param name="colorRange">The color range to use; must outlive this chart.</param>
+   ///
+   void setColorRange(ColorRange* colorRange)
+   {
+      _colorRange = colorRange;
+      for (uint16_t i = 0; i < _numBars; i++)
+      {
+         _bars[i]->setColor(_colorRange->getColor(_bars[i]->get()));
+      }
+   }
+
+   ///
+   /// <summary>
    /// Shifts all bars left by one and sets the newest (rightmost) bar to the given value.
    /// </summary>
    /// <param name="value">The new value for the rightmost bar.</param>
@@ -62,8 +81,16 @@ public:
       for (uint16_t i = 0; i < _numBars - 1; i++)
       {
          _bars[i]->set(_bars[i + 1]->get());
+         if (_colorRange != nullptr)
+         {
+            _bars[i]->setColor(_bars[i + 1]->getColor());
+         }
       }
       _bars[_numBars - 1]->set(value);
+      if (_colorRange != nullptr)
+      {
+         _bars[_numBars - 1]->setColor(_colorRange->getColor(value));
+      }
    }
 
    ///

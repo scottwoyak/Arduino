@@ -27,9 +27,9 @@ private:
          return;
       }
 
-      uint8_t numBars = _chart.getNumBars();
+      uint16_t numBars = _chart.getNumBars();
       float binWidth = (_fullXRange.max - _fullXRange.min) / numBars;
-      for (uint8_t i = 0; i < numBars; i++)
+      for (uint16_t i = 0; i < numBars; i++)
       {
          float binCenter = _fullXRange.min + (i + 0.5f) * binWidth;
          _chart.setBarColor(i, _colorRange->getColor(binCenter));
