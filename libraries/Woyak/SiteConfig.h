@@ -5,6 +5,7 @@
 
 #include "SerialTable.h"
 #include "SerialX.h"
+#include "Status.h"
 #include "Timer.h"
 
 ///
@@ -172,11 +173,71 @@ private:
 
    ///
    /// <summary>
+   /// Prompts the user over Serial to pick a site from the given table, with no
+   /// default and no timeout: used when there is no saved site yet, so the device
+   /// can't proceed with a meaningless default. If a Serial monitor is attached, this
+   /// blocks (reprompting on invalid input) until a valid selection is entered. If no
+   /// Serial monitor is attached, there's no way to prompt, so status is set to
+   /// Status::FAILED (solid red) and this blocks forever.
+   /// </summary>
+   /// <param name="status">Status indicator to set to Status::FAILED if no Serial monitor is attached.</param>
+   /// <param name="header">Prompt header text, e.g. "Select a gate location:".</param>
+   /// <param name="measurement">Influx measurement name shared by all entries in sites, shown in its own table column.</param>
+   /// <param name="sensor">Influx "sensor" tag value shared by all entries in sites, shown in its own table column.</param>
+   /// <param name="sites">Site table to choose from.</param>
+   /// <param name="count">Number of entries in sites.</param>
+   /// <returns>Index into sites for the chosen entry. Never returns if no Serial monitor is attached.</returns>
+   ///
+   static uint8_t promptForRequiredIndex(IStatus* status, const char* header, const char* measurement, const char* sensor, const SiteConfig sites[], size_t count)
+   {
+      if (!Serial)
+      {
+         status->setStatus(Status::FAILED);
+         while (true)
+         {
+            delay(1000);
+         }
+      }
+
+      static constexpr SerialTable::Column COLUMNS[] = {
+         { "#", 5 },
+         { "Bucket", 13 },
+         { "Measurement", 15 },
+         { "Sensor", 11 },
+         { "Site", 11 },
+         { "Location", 13 },
+         { "Telemetry Topic", 19 },
+      };
+
+      Serial.println(header);
+
+      SerialTable table(nullptr, COLUMNS);
+      table.printHeader();
+      for (size_t i = 0; i < count; i++)
+      {
+         table.printRow(String(i + 1), sites[i].influxBucket, measurement, sensor, sites[i].influxSite, sites[i].influxLocation, sites[i].telemetryTopic);
+      }
+      table.printDivider();
+
+      String label = "Enter selection (1-" + String(count) + "): ";
+      size_t index = (size_t)(SerialX::promptForInt(label, 1, (long)count) - 1);
+
+      Serial.print("Site: ");
+      Serial.println(describe(sites[index], measurement, sensor));
+
+      return (uint8_t)index;
+   }
+
+   ///
+   /// <summary>
    /// Resolves which site to use: returns the entry saved in Preferences, unless not all
    /// 4 values have been saved yet or forcePrompt is true, in which case the user is
-   /// prompted over Serial (from sites) and the choice is saved for next time.
+   /// prompted over Serial (from sites) and the choice is saved for next time. If there
+   /// is no saved site yet, the user must make a selection (see promptForRequiredIndex)
+   /// rather than falling back to a default after a timeout.
    /// </summary>
    /// <param name="preferences">Preferences instance to read/write (e.g. arduino.preferences).</param>
+   /// <param name="status">Status indicator, set to Status::FAILED if there's no saved site and no Serial monitor is attached.</param>
    /// <param name="promptHeader">Prompt header text used if the user must be asked.</param>
    /// <param name="measurement">Influx measurement name shared by all entries in sites, shown in the prompt table.</param>
    /// <param name="sensor">Influx "sensor" tag value shared by all entries in sites, shown in the prompt table.</param>
@@ -185,7 +246,7 @@ private:
    /// <param name="forcePrompt">If true, always prompts even if a saved site exists.</param>
    /// <returns>The resolved SiteConfig, backed by this resolver's storage.</returns>
    ///
-   SiteConfig resolve(Preferences& preferences, const char* promptHeader, const char* measurement, const char* sensor, const SiteConfig sites[], size_t count, bool forcePrompt)
+   SiteConfig resolve(Preferences& preferences, IStatus* status, const char* promptHeader, const char* measurement, const char* sensor, const SiteConfig sites[], size_t count, bool forcePrompt)
    {
       preferences.begin(_namespace, true);
       bool hasSavedSite = preferences.isKey(TOPIC_KEY) && preferences.isKey(BUCKET_KEY) && preferences.isKey(SITE_KEY) && preferences.isKey(LOCATION_KEY);
@@ -200,9 +261,10 @@ private:
 
       if (!hasSavedSite || forcePrompt)
       {
-         size_t defaultIndex = 0;
+         uint8_t selectedIndex;
          if (hasSavedSite)
          {
+            size_t defaultIndex = 0;
             for (size_t i = 0; i < count; i++)
             {
                if (_topic == sites[i].telemetryTopic)
@@ -211,9 +273,15 @@ private:
                   break;
                }
             }
+
+            selectedIndex = promptForIndex(promptHeader, measurement, sensor, sites, count, defaultIndex);
+         }
+         else
+         {
+            selectedIndex = promptForRequiredIndex(status, promptHeader, measurement, sensor, sites, count);
          }
 
-         const SiteConfig& selected = sites[promptForIndex(promptHeader, measurement, sensor, sites, count, defaultIndex)];
+         const SiteConfig& selected = sites[selectedIndex];
          _topic = selected.telemetryTopic;
          _bucket = selected.influxBucket;
          _site = selected.influxSite;

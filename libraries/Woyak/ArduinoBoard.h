@@ -37,6 +37,7 @@ constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 
 #define ARDUINO_NEOPIXEL_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
+#define ARDUINO_STATUS_SUPPORTED
 
 #include "Waveshare_ESP32_S3_Zero.h"
 using Arduino = WaveShare_ESP32_S3_Zero_Sensors;

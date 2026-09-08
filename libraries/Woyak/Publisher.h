@@ -127,8 +127,13 @@ private:
    /// <summary>Board wrapper.</summary>
    Arduino* _arduino;
 
-   /// <summary>Status indicator driven by the board's onboard NeoPixel LED; used wherever an IStatus* is required, since not every board type implements IStatus itself.</summary>
-   NeoPixelStatus _status;
+   /// <summary>Status indicator driving visual feedback during begin()/loop(). Points at the board itself when it implements IStatus (e.g. WaveShare_ESP32_S3_Zero_Sensors's combined external RGB LED/onboard NeoPixel/Serial indicator); otherwise falls back to _ownedNeoPixelStatus, driven by the board's onboard NeoPixel LED.</summary>
+   IStatus* _status;
+
+#ifndef ARDUINO_STATUS_SUPPORTED
+   /// <summary>Fallback status indicator, used when the board doesn't implement IStatus itself.</summary>
+   NeoPixelStatus _ownedNeoPixelStatus;
+#endif
 
    /// <summary>Copy of the config passed to the constructor.</summary>
    PublisherConfig _config;
@@ -186,18 +191,23 @@ public:
    /// Creates a Publisher bound to the given board and configuration. Register sensors,
    /// the value source, extra Influx points, and loop hooks afterward, then call begin().
    /// </summary>
-   /// <param name="arduino">The board wrapper (its onboard NeoPixel LED is used as the status indicator).</param>
+   /// <param name="arduino">The board wrapper (used as the status indicator directly if it implements IStatus itself; otherwise its onboard NeoPixel LED is used).</param>
    /// <param name="config">Shared publisher configuration.</param>
    ///
    Publisher(Arduino* arduino, const PublisherConfig& config)
       : _arduino(arduino),
-        _status(&arduino->neoPixel),
+#ifdef ARDUINO_STATUS_SUPPORTED
+        _status(arduino),
+#else
+        _status(&_ownedNeoPixelStatus),
+        _ownedNeoPixelStatus(&arduino->neoPixel),
+#endif
         _config(config),
         _siteResolver(config.preferencesNamespace),
 #ifdef ARDUINO_DISPLAY_SUPPORTED
-        _telemetryHandler(&_status, arduino),
+        _telemetryHandler(_status, arduino),
 #else
-        _telemetryHandler(&_status),
+        _telemetryHandler(_status),
 #endif
         _sensorTimer(config.sensorIntervalMs),
         _publishTimer(config.publishIntervalMs)
@@ -345,7 +355,7 @@ public:
       {
          if (!_arduino->initSensor(sensor.label, sensor.initFunc) && sensor.fatal)
          {
-            _status.setStatus(Status::FAILED);
+            _status->setStatus(Status::FAILED);
             Util::reset(10);
          }
       }
@@ -364,7 +374,7 @@ public:
       // constructed.
       if (hasSiteTable)
       {
-         _site = _siteResolver.resolve(_arduino->preferences, "Select a site (* = default):", _config.influxMeasurement, _config.influxSensor, _config.sites.sites, _config.sites.count, forcePrompt);
+         _site = _siteResolver.resolve(_arduino->preferences, _status, "Select a site (* = default):", _config.influxMeasurement, _config.influxSensor, _config.sites.sites, _config.sites.count, forcePrompt);
       }
       else
       {
@@ -395,7 +405,7 @@ public:
       _influxLogger = new InfluxLogger(_config.influxLogMeasurement, logTags);
       Logger::addLogger(_influxLogger);
 
-      _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, &_status);
+      _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
 
       if (_config.enableRebooter)
       {
@@ -410,10 +420,10 @@ public:
       _usesInflux = hasSiteTable;
       if (_usesInflux)
       {
-         _influx = new Influx(_config.influxIntervalS, &_status, INFLUXDB_URL, INFLUXDB_ORG, _site.influxBucket);
+         _influx = new Influx(_config.influxIntervalS, _status, INFLUXDB_URL, INFLUXDB_ORG, _site.influxBucket);
          if (!_influx->begin(_arduino))
          {
-            _status.setStatus(Status::FAILED);
+            _status->setStatus(Status::FAILED);
             delay(1000); // time for LED to show
             Util::reset();
          }
@@ -436,14 +446,14 @@ public:
          _influx->client()->setWriteOptions(WriteOptions().batchSize(_points.size()).bufferSize(2 * _points.size()));
       }
 
-      _client = new TelemetryPublisher(_site.telemetryTopic, _config.telemetryDecimals, &_status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
+      _client = new TelemetryPublisher(_site.telemetryTopic, _config.telemetryDecimals, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
 
       // Not followed by Influx::endInit() - the initialization display (WiFi, Time, Influx,
       // and now WebSocket rows) is left on-screen so the async connection's OK/FAILED result
       // (printed by TelemetryEventHandler) stays visible. Sketches that show a different UI
       // once connected (e.g. via client->isStarted()) are responsible for clearing the display
       // themselves at that point.
-      _arduino->initClient("WebSocket", [this]() { _client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &_status);
+      _arduino->initClient("WebSocket", [this]() { _client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, _status);
 
       setCpuFrequencyMhz(_config.cpuFrequencyMhz);
    }
