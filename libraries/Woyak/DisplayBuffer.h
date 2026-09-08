@@ -287,10 +287,15 @@ public:
    /// <param name="top">Absolute display row of the buffer's top edge.</param>
    /// <param name="width">Buffer width in pixels.</param>
    /// <param name="height">Buffer height in pixels.</param>
+   /// <param name="expectedMaxLayer">
+   /// Highest non-zero layer index this buffer is expected to use (0-MAX_LAYERS), so the
+   /// initial allocation can be sized for that bit depth instead of the worst case (see
+   /// bind() for details). Defaults to MAX_LAYERS to preserve prior behavior.
+   /// </param>
    ///
-   DisplayBuffer(ArduinoWithDisplay* display, int16_t left, int16_t top, int16_t width, int16_t height)
+   DisplayBuffer(ArduinoWithDisplay* display, int16_t left, int16_t top, int16_t width, int16_t height, uint8_t expectedMaxLayer = MAX_LAYERS)
    {
-      bind(display, left, top, width, height);
+      bind(display, left, top, width, height, expectedMaxLayer);
    }
 
    DisplayBuffer(const DisplayBuffer&) = delete;
@@ -316,9 +321,17 @@ public:
    /// <param name="top">Absolute display row of the buffer's top edge.</param>
    /// <param name="width">Buffer width in pixels.</param>
    /// <param name="height">Buffer height in pixels.</param>
+   /// <param name="expectedMaxLayer">
+   /// Highest non-zero layer index this buffer is expected to use (0-MAX_LAYERS), so the
+   /// initial allocation can be sized for that bit depth (1, 2, or 4 bits/pixel) instead of
+   /// always assuming the worst case (4 bits/pixel, up to MAX_LAYERS). If a later
+   /// setPaletteColor() call actually uses a higher layer than expected, the buffer still
+   /// grows automatically via _lockBitDepthIfNeeded() on the next draw(). Defaults to
+   /// MAX_LAYERS to preserve prior behavior.
+   /// </param>
    /// <returns>True if the buffers are sized correctly and ready to use.</returns>
    ///
-   bool bind(ArduinoWithDisplay* display, int16_t left, int16_t top, int16_t width, int16_t height)
+   bool bind(ArduinoWithDisplay* display, int16_t left, int16_t top, int16_t width, int16_t height, uint8_t expectedMaxLayer = MAX_LAYERS)
    {
       _display = display;
       _left = left;
@@ -335,7 +348,7 @@ public:
 
       _width = width;
       _height = height;
-      _bitsPerPixel = 4;
+      _bitsPerPixel = _minBitsPerPixel(expectedMaxLayer);
       _depthLocked = false;
       _maxLayerUsed = 0;
       _bytesPerColumn = _computeBytesPerColumn(height, _bitsPerPixel);

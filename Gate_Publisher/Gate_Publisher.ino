@@ -1,10 +1,9 @@
 //
 // Gate Publisher
 //
-// Reads the compass azimuth from a QMC5883P magnetometer (as found on HW-127/GY-273
-// breakouts) and publishes live readings over a WebSocket telemetry connection, while
-// also uploading a rolling-averaged CPU temperature reading to InfluxDB on a fixed
-// interval.
+// Reads the compass azimuth from an MLX90393 3-axis hall effect sensor and publishes
+// live readings over a WebSocket telemetry connection, while also uploading a
+// rolling-averaged CPU temperature reading to InfluxDB on a fixed interval.
 //
 // The site is always "Bragg", but there are two gate locations: Left and Right. See
 // Publisher.h for the shared init/loop sequence, site selection, and InfluxDB behavior.
@@ -30,7 +29,7 @@ constexpr auto SKETCH_NAME = "Gate_Publisher";
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
 
 #include "ArduinoBoard.h"
-#include "QMC5883PMagnometer.h"
+#include "MLX90393Magnetometer.h"
 #include "SerialTable.h"
 #include "WiFiSettings.h"
 
@@ -47,7 +46,7 @@ constexpr SiteConfig GATE_LOCATIONS[] = {
 // Uses WaveShare_ESP32_S3_Zero_Sensors's default I2C/RGB status LED/LED pins, which
 // match this sketch's wiring.
 Arduino arduino;
-QMC5883PMagnometer magnetometer;
+MLX90393Magnetometer magnetometer;
 
 // Azimuth reading captured at startup, treated as the gate's zero (closed) angle.
 float zeroAzimuth = 0.0f;
@@ -97,13 +96,9 @@ float gateAngle()
    {
       lastReportedAngle = angle;
 
-      // Temporary diagnostics: dump the raw x/y/z field components and resulting
-      // angle whenever the reported angle changes, to help track down gate-angle
-      // calibration issues. Remove once the angle math is validated.
+      // Diagnostics: print the angle reported to the telemetry server whenever it
+      // changes.
       static constexpr SerialTable::Column DEBUG_COLUMNS[] = {
-         { "X", 10, "###.##" },
-         { "Y", 10, "###.##" },
-         { "Z", 10, "###.##" },
          { "Angle", 10, "###.##" },
       };
       static SerialTable debugTable("Gate Angle Debug", DEBUG_COLUMNS);
@@ -113,7 +108,7 @@ float gateAngle()
          debugTable.printHeader();
          headerPrinted = true;
       }
-      debugTable.printRow(magnetometer.x(), magnetometer.y(), magnetometer.z(), angle);
+      debugTable.printRow(angle);
    }
 
    return lastReportedAngle;
@@ -136,10 +131,8 @@ Publisher publisher(&arduino, PUBLISHER_CONFIG);
 
 void setup()
 {
-   publisher.addSensor("QMC5883P", []() { return magnetometer.begin(); });
-   // Temporarily disabled while debugging gate-angle calibration, so readings aren't
-   // sent to the telemetry server; gateAngle() is instead polled directly from loop().
-   //publisher.setValueSource(gateAngle);
+   publisher.addSensor("MLX90393", []() { return magnetometer.begin(); });
+   publisher.setValueSource(gateAngle);
 
    publisher.begin();
 
@@ -154,8 +147,4 @@ void setup()
 void loop()
 {
    publisher.loop();
-
-   // Temporary: poll gateAngle() directly so the debug table still prints while
-   // publisher.setValueSource() is disabled above.
-   gateAngle();
 }

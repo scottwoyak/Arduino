@@ -405,7 +405,7 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Gate_Subscriber_Display/Gate_Subscriber_Display.vcxproj">
+  <Project Path="Gate_Viewer/Gate_Viewer.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

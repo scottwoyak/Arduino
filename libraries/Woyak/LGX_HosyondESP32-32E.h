@@ -16,6 +16,8 @@ public:
 	  {
 		 auto cfg = _bus_instance.config();
 		 cfg.spi_host = VSPI_HOST;
+		 cfg.freq_write = 40000000; // ST7796 panel supports much faster writes than the default; speeds up full-screen fills
+		 cfg.freq_read = 16000000;
 		 cfg.pin_mosi = 13;
 		 cfg.pin_miso = 12;
 		 cfg.pin_sclk = 14;

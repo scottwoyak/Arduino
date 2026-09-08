@@ -593,6 +593,21 @@ public:
 
    ///
    /// <summary>
+   /// Draws a circle outline centered on the given point, supporting negative coordinates as offsets from the far edge.
+   /// </summary>
+   /// <param name="x">Center X coordinate; negative values offset from right edge.</param>
+   /// <param name="y">Center Y coordinate; negative values offset from bottom edge.</param>
+   /// <param name="radius">Circle radius, in pixels.</param>
+   /// <param name="color">Circle color.</param>
+   ///
+   void drawCircle(int16_t x, int16_t y, int16_t radius, Color color)
+   {
+      _normalizeCoords(x, y);
+      display.drawCircle(x, y, radius, (uint16_t)color);
+   }
+
+   ///
+   /// <summary>
    /// Sets the cursor position, supporting negative coordinates as offsets from the far edge.
    /// </summary>
    /// <param name="x">X coordinate; negative values offset from right edge.</param>
