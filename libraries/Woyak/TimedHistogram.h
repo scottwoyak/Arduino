@@ -47,7 +47,9 @@ template<unsigned long (*TimeFunc)() = millis>
 class TimedHistogramBase
 {
 private:
-   TimedBinBase<TimeFunc>** _bins;
+   // TimeFunc ticks in milliseconds (per the default above), so TimedBinBase's
+   // TicksPerMs is 1, not its microsecond-assuming default of 1000.
+   TimedBinBase<TimeFunc, 1>** _bins;
    uint16_t _numBins;
    RangeF _range;
    unsigned long _durationMs = 1;
@@ -180,7 +182,7 @@ public:
       _numBins = numBins;
       _durationMs = std::max(1UL, ms);
       _minBinWidth = minBinWidth;
-      _bins = new (std::nothrow) TimedBinBase<TimeFunc>*[numBins];
+      _bins = new (std::nothrow) TimedBinBase<TimeFunc, 1>*[numBins];
 
       if (_bins == nullptr)
       {
@@ -191,7 +193,7 @@ public:
 
       for (uint16_t i = 0; i < numBins; i++)
       {
-         _bins[i] = new (std::nothrow) TimedBinBase<TimeFunc>(_durationMs);
+         _bins[i] = new (std::nothrow) TimedBinBase<TimeFunc, 1>(_durationMs);
          if (_bins[i] == nullptr)
          {
             Util::setHaltReason("OOM allocating TimedBinBase in TimedHistogram");

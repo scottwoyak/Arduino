@@ -14,16 +14,21 @@
 /// time advances, blending the transitioning sub-bin so the count decays smoothly.
 /// </remarks>
 ///
-/// <typeparam name="TimeFunc">Function pointer returning current time in microseconds.</typeparam>
+/// <typeparam name="TimeFunc">Function pointer returning the current time.</typeparam>
+/// <typeparam name="TicksPerMs">
+/// Number of TimeFunc ticks per millisecond (e.g. 1000 for a microsecond-based
+/// TimeFunc, 1 for a millisecond-based TimeFunc). Defaults to 1000 to match the
+/// microsecond-based TimedBin alias below.
+/// </typeparam>
 ///
-template<unsigned long (*TimeFunc)() = micros>
+template<unsigned long (*TimeFunc)() = micros, unsigned long TicksPerMs = 1000>
 class TimedBinBase
 {
 private:
    uint16_t* _subBins;
    uint16_t _numSubBins;
-   uint32_t _currentSubBinStartTimeMicros;
-   uint32_t _subBinDurationMicros;
+   uint32_t _currentSubBinStartTimeTicks;
+   uint32_t _subBinDurationTicks;
    uint16_t _index;
    uint16_t _transitionSubBin;
 
@@ -34,9 +39,9 @@ private:
    ///
    void _advanceIfNeeded()
    {
-      while (Util::getSpan(_currentSubBinStartTimeMicros, TimeFunc()) > _subBinDurationMicros)
+      while (Util::getSpan(_currentSubBinStartTimeTicks, TimeFunc()) > _subBinDurationTicks)
       {
-         _currentSubBinStartTimeMicros += _subBinDurationMicros;
+         _currentSubBinStartTimeTicks += _subBinDurationTicks;
          _index++;
          if (_index >= _numSubBins)
          {
@@ -59,7 +64,7 @@ public:
    {
       _numSubBins = numSubBins;
       _subBins = new uint16_t[numSubBins];
-      _subBinDurationMicros = (1000 * durationMs) / numSubBins;
+      _subBinDurationTicks = (TicksPerMs * durationMs) / numSubBins;
       reset();
    }
 
@@ -83,7 +88,7 @@ public:
    ///
    void begin()
    {
-      _currentSubBinStartTimeMicros = TimeFunc();
+      _currentSubBinStartTimeTicks = TimeFunc();
    }
 
    ///
@@ -99,7 +104,7 @@ public:
       }
       _transitionSubBin = 0;
       _index = 0;
-      _currentSubBinStartTimeMicros = TimeFunc();
+      _currentSubBinStartTimeTicks = TimeFunc();
    }
 
    ///
@@ -128,7 +133,7 @@ public:
       {
          count += _subBins[i];
       }
-      float partial = 1.0f - ((float)Util::getSpan(_currentSubBinStartTimeMicros, TimeFunc())) / _subBinDurationMicros;
+      float partial = 1.0f - ((float)Util::getSpan(_currentSubBinStartTimeTicks, TimeFunc())) / _subBinDurationTicks;
       count += std::roundf(partial * _transitionSubBin);
 
       return count;
@@ -162,8 +167,8 @@ public:
    {
       Serial.println("TimedBin: ");
       Serial.println("  Num Sub Bins: " + String(_numSubBins));
-      Serial.println("  Time / Bin (ms): " + String(_subBinDurationMicros / 1000.0));
-      Serial.println("  Total Time (ms): " + String(_subBinDurationMicros * _numSubBins / 1000.0) + " ms");
+      Serial.println("  Time / Bin (ms): " + String(_subBinDurationTicks / (float)TicksPerMs));
+      Serial.println("  Total Time (ms): " + String(_subBinDurationTicks * _numSubBins / (float)TicksPerMs) + " ms");
       Serial.println("  Bin Counts:");
       for (uint16_t i = 0; i < _numSubBins; i++)
       {
