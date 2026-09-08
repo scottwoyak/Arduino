@@ -18,10 +18,17 @@
 #include <Arduino.h>
 
 #include "Status.h"
+#include "Waveshare_ESP32_S3_Zero.h"
 
+#ifdef ARDUINO_WAVESHARE_ESP32_S3_ZERO
+constexpr uint8_t RED_PIN = WaveShare_ESP32_S3_Zero_Sensors::DEFAULT_RED_LED_PIN;
+constexpr uint8_t GREEN_PIN = WaveShare_ESP32_S3_Zero_Sensors::DEFAULT_GREEN_LED_PIN;
+constexpr uint8_t BLUE_PIN = WaveShare_ESP32_S3_Zero_Sensors::DEFAULT_BLUE_LED_PIN;
+#else
 constexpr uint8_t RED_PIN = 1;
 constexpr uint8_t GREEN_PIN = 2;
 constexpr uint8_t BLUE_PIN = 3;
+#endif
 
 constexpr unsigned long INTERVAL_OFF_MS = 1000;
 constexpr unsigned long INTERVAL_STARTED_MS = 1000;
