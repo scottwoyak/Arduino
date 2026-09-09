@@ -17,7 +17,14 @@
 // Uncomment to use local telemetry server instead of remote
 //#define TELEMETRY_LOCAL
 
-constexpr auto TELEMETRY_TOPIC = "Wind/Lake";
+#include <string>
+
+constexpr const char* TELEMETRY_TOPICS[] = { "Wind/Lake", "Wind/Bragg" };
+constexpr uint8_t NUM_TELEMETRY_TOPICS = 2;
+constexpr uint32_t TOPIC_PROMPT_TIMEOUT_MS = 10 * 1000;
+
+// Selected at startup via prompt in setup().
+std::string telemetryTopic;
 
 constexpr auto VERSION =
 #include "version.txt"
@@ -90,7 +97,7 @@ void displayHeader()
 {
    arduino.setCursor(0, 0);
    arduino.setTextSize(HEADER_TEXT_SIZE);
-   arduino.println(TELEMETRY_TOPIC, Color::HEADING);
+   arduino.println(telemetryTopic, Color::HEADING);
 }
 
 ///
@@ -108,13 +115,14 @@ void displayFooter()
    arduino.setTextSize(3);
 
    arduino.setCursor(arduino.width(), -arduino.charH());
-   arduino.printR(TELEMETRY_TOPIC, Color::GRAY);
+   arduino.printR(telemetryTopic, Color::GRAY);
 
    arduino.setTextSize(savedTextSize);
    arduino.setCursor(savedCursor);
 }
 
-TelemetrySubscriber client(TELEMETRY_TOPIC, &arduino.status);
+// Constructed in setup() once the telemetry topic has been selected.
+TelemetrySubscriber* client = nullptr;
 
 ///
 /// <summary>
@@ -148,7 +156,7 @@ public:
 
       // feed the charts/stats only when a new value has actually arrived, rather than
       // every loop() iteration, so stale values aren't repeatedly re-sampled
-      float speed = client.getValue();
+      float speed = client->getValue();
       slider.set(speed);
    }
 };
@@ -168,7 +176,19 @@ void setup()
    histogramChart.setColorRange(&speedColorRange);
    rollingChart.setColorRange(&speedColorRange);
 
-   client.setHandler(&telemetryHandler);
+   Serial.println("Select telemetry topic:");
+   for (uint8_t i = 0; i < NUM_TELEMETRY_TOPICS; i++)
+   {
+      Serial.print("  ");
+      Serial.print(i + 1);
+      Serial.print(": ");
+      Serial.println(TELEMETRY_TOPICS[i]);
+   }
+   size_t topicIndex = SerialX::readSelectionWithTimeout(NUM_TELEMETRY_TOPICS, 0, TOPIC_PROMPT_TIMEOUT_MS);
+   telemetryTopic = TELEMETRY_TOPICS[topicIndex];
+
+   client = new TelemetrySubscriber(telemetryTopic, &arduino.status);
+   client->setHandler(&telemetryHandler);
 
    arduino.beginInit();
    displayFooter();
@@ -177,7 +197,7 @@ void setup()
 
    arduino.enableOTA(VERSION, SKETCH_NAME);
 
-   arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino.status);
+   arduino.initClient("WebSocket", []() { client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino.status);
    delay(1000); // provide time for the wind meter to get a reading
 }
 
@@ -185,14 +205,14 @@ void loop()
 {
    arduino.loop();
 
-   client.loop();
+   client->loop();
 
-   if (client.isStarted() == false)
+   if (client->isStarted() == false)
    {
       return;
    }
 
-   float speed = client.getValue();
+   float speed = client->getValue();
 
    // Skip sampling until the first real value has arrived; otherwise NAN placeholders
    // get shifted into the rolling/histogram charts and take a full period to clear out,
