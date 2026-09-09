@@ -30,7 +30,6 @@ constexpr auto SKETCH_NAME = "Gate_Publisher";
 
 #include "ArduinoBoard.h"
 #include "MLX90393Magnetometer.h"
-#include "SerialTable.h"
 #include "WiFiSettings.h"
 
 #include "Publisher.h"
@@ -92,23 +91,17 @@ float gateAngle()
 
    float angle = leftGate ? -delta : delta;
 
+   // The gate should never report a negative angle (past fully closed). If it does,
+   // treat the current position as the new zero (closed) angle instead.
+   if (angle < 0.0f)
+   {
+      zeroAzimuth = rawAzimuth;
+      angle = 0.0f;
+   }
+
    if (fabs(angle - lastReportedAngle) >= (0.5f + ANGLE_DEADBAND_DEGREES))
    {
       lastReportedAngle = angle;
-
-      // Diagnostics: print the angle reported to the telemetry server whenever it
-      // changes.
-      static constexpr SerialTable::Column DEBUG_COLUMNS[] = {
-         { "Angle", 10, "###.##" },
-      };
-      static SerialTable debugTable("Gate Angle Debug", DEBUG_COLUMNS);
-      static bool headerPrinted = false;
-      if (!headerPrinted)
-      {
-         debugTable.printHeader();
-         headerPrinted = true;
-      }
-      debugTable.printRow(angle);
    }
 
    return lastReportedAngle;

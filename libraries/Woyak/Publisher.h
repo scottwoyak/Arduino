@@ -9,8 +9,6 @@
 
 #include "Influx.h"
 #include "ESP32TempSensor.h"
-#include "InfluxLogger.h"
-#include "Logger.h"
 #include "SiteConfig.h"
 #include "Status.h"
 #include "TelemetryClient.h"
@@ -53,10 +51,10 @@ struct PublisherConfig
    /// <summary>Influx measurement name used for the standard enclosure/CPU points and any points added via addPoint().</summary>
    const char* influxMeasurement = "Sensors";
 
-   /// <summary>Influx measurement name used for the InfluxLogger that mirrors Logger::write()/writeln() setup/init text into InfluxDB.</summary>
+   /// <summary>Influx measurement name used for the single startup log point (sketch name, version, telemetry topic).</summary>
    const char* influxLogMeasurement = "Log";
 
-   /// <summary>Value for the "sensor" tag attached to the standard enclosure/CPU points and the InfluxLogger's log points. Leave null if the sketch doesn't upload sensor/enclosure values to InfluxDB; the "sensor" tag is then omitted.</summary>
+   /// <summary>Value for the "sensor" tag attached to the standard enclosure/CPU points and the startup log point. Leave null if the sketch doesn't upload sensor/enclosure values to InfluxDB; the "sensor" tag is then omitted.</summary>
    const char* influxSensor = nullptr;
 
    /// <summary>How often (in seconds) queued Influx points are posted/flushed.</summary>
@@ -97,14 +95,14 @@ struct PublisherConfig
 /// <summary>
 /// Owns the initialization and loop sequence shared by every Gate/Wind/Wave-style
 /// publisher sketch: banner, force-prompt window, sensor init, site resolution, WiFi,
-/// rebooter, OTA, InfluxDB setup (including an InfluxLogger so setup()/init text is
-/// also retained in Influx), standard enclosure/CPU points, and the telemetry
+/// rebooter, OTA, InfluxDB setup (including a single startup log point with the sketch
+/// name, version, and telemetry topic), standard enclosure/CPU points, and the telemetry
 /// WebSocket client. A sketch registers its sensors, published value, extra Influx
 /// points, and per-loop work via the methods below before calling begin(), then calls
 /// begin() once from setup() and loop() once from loop().
 /// </summary>
 ///
-class Publisher
+class Publisher : private OTAUpdateEventHandler
 {
 public:
    /// <summary>How long to wait after boot for a buttonA press before proceeding.</summary>
@@ -127,7 +125,7 @@ private:
    /// <summary>Board wrapper.</summary>
    Arduino* _arduino;
 
-   /// <summary>Status indicator driving visual feedback during begin()/loop(). Points at the board itself when it implements IStatus (e.g. WaveShare_ESP32_S3_Zero_Sensors's combined external RGB LED/onboard NeoPixel/Serial indicator); otherwise falls back to _ownedNeoPixelStatus, driven by the board's onboard NeoPixel LED.</summary>
+   /// <summary>Status indicator driving visual feedback during begin()/loop(). Points at the board itself when it implements IStatus (e.g. WaveShare_ESP32_S3_Zero_Sensors's combined external RGB LED/onboard NeoPixel indicator); otherwise falls back to _ownedNeoPixelStatus, driven by the board's onboard NeoPixel LED.</summary>
    IStatus* _status;
 
 #ifndef ARDUINO_STATUS_SUPPORTED
@@ -159,9 +157,6 @@ private:
    /// <summary>True if this Publisher uses InfluxDB, i.e. config.sites is non-empty; set by begin().</summary>
    bool _usesInflux = false;
 
-   /// <summary>Posts Logger::write()/writeln() output to InfluxDB; queued in memory until begin() attaches it.</summary>
-   InfluxLogger* _influxLogger = nullptr;
-
    /// <summary>Default telemetry event handler driving the status LED on connect/disconnect, used unless a custom handler is registered via setTelemetryHandler().</summary>
    TelemetryEventHandler _telemetryHandler;
 
@@ -184,6 +179,119 @@ private:
 
    Timer _sensorTimer;
    Timer _publishTimer;
+
+   ///
+   /// <summary>
+   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater just before it downloads
+   /// and installs a newly detected firmware version. Logs the update as a single Influx
+   /// point before the update starts.
+   /// </summary>
+   /// <param name="newVersion">The newly detected version string.</param>
+   ///
+   void onUpdateAvailable(const char* newVersion) override
+   {
+      std::string otaMessage = std::string("Updating from ") + _config.version + " to " + newVersion;
+      _postLogPoint({ { "sketch", _config.sketchName }, { "event", "OTA Update" }, { "currentVersion", _config.version }, { "newVersion", newVersion } },
+                     otaMessage.c_str());
+   }
+
+   ///
+   /// <summary>
+   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater when a detected update
+   /// fails to download/install. Logs the failure as a single Influx point.
+   /// </summary>
+   /// <param name="newVersion">The version that failed to install.</param>
+   /// <param name="reason">The error reported by the underlying HTTP update client.</param>
+   ///
+   void onUpdateFailed(const char* newVersion, const char* reason) override
+   {
+      std::string otaMessage = std::string("Update to ") + newVersion + " failed: " + reason;
+      _postLogPoint({ { "sketch", _config.sketchName }, { "event", "OTA Update Failed" }, { "currentVersion", _config.version }, { "newVersion", newVersion }, { "reason", reason } },
+                     otaMessage.c_str());
+   }
+
+   ///
+   /// <summary>
+   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater when a detected update
+   /// downloads and installs successfully, just before the device restarts. Logs the
+   /// success as a single Influx point.
+   /// </summary>
+   /// <param name="newVersion">The version that was successfully installed.</param>
+   ///
+   void onUpdateSucceeded(const char* newVersion) override
+   {
+      std::string otaMessage = std::string("Updated to ") + newVersion;
+      _postLogPoint({ { "sketch", _config.sketchName }, { "event", "OTA Update Succeeded" }, { "currentVersion", _config.version }, { "newVersion", newVersion } },
+                     otaMessage.c_str());
+   }
+
+   ///
+   /// <summary>
+   /// Posts a single Influx point to the configured log measurement, tagged with the
+   /// resolved site/location/sensor (whichever are non-null), and with the given fields.
+   /// Does nothing if Influx isn't in use (e.g. begin() hasn't finished setting it up yet).
+   /// </summary>
+   /// <param name="fields">Field name/value pairs to attach to the log point.</param>
+   /// <param name="message">Serial message printed on success, before the comma-separated fields. Defaults to "Influx log" if not given.</param>
+   ///
+   void _postLogPoint(const std::vector<std::pair<const char*, const char*>>& fields, const char* message = "Influx log")
+   {
+      if (_influx == nullptr)
+      {
+         return;
+      }
+
+      Point point(_config.influxLogMeasurement);
+      if (_site.influxSite != nullptr)
+      {
+         point.addTag("site", _site.influxSite);
+      }
+      if (_site.influxLocation != nullptr)
+      {
+         point.addTag("location", _site.influxLocation);
+      }
+      if (_config.influxSensor != nullptr)
+      {
+         point.addTag("sensor", _config.influxSensor);
+      }
+      for (const auto& field : fields)
+      {
+         point.addField(field.first, field.second);
+      }
+      point.addField("message", message);
+
+      // Log points are one-off writes, not part of the periodic sensor batch, so force
+      // an immediate flush rather than letting them sit queued until the sensor batch
+      // size (set via setWriteOptions()) happens to be reached.
+      bool succeeded = _influx->client()->writePoint(point);
+      if (succeeded)
+      {
+         succeeded = _influx->client()->flushBuffer();
+      }
+
+      if (succeeded)
+      {
+         Serial.print("--- INFLUX LOG: ");
+         Serial.print(message);
+         Serial.print(": ");
+         for (size_t i = 0; i < fields.size(); i++)
+         {
+            if (i > 0)
+            {
+               Serial.print(", ");
+            }
+            Serial.print(fields[i].first);
+            Serial.print("=");
+            Serial.print(fields[i].second);
+         }
+         Serial.println();
+      }
+      else
+      {
+         Serial.print("--- INFLUX LOG: InfluxDB log write failed: ");
+         Serial.println(_influx->client()->getLastErrorMessage());
+      }
+   }
 
 public:
    ///
@@ -387,34 +495,11 @@ public:
          Serial.println(_site.telemetryTopic);
       }
 
-      // Created here (before initWifi/Influx) so setup() messages logged via Logger are
-      // queued in memory; attach() below flushes them to Influx once it's available.
-      std::vector<std::pair<const char*, const char*>> logTags;
-      if (_site.influxSite != nullptr)
-      {
-         logTags.push_back({ "site", _site.influxSite });
-      }
-      if (_site.influxLocation != nullptr)
-      {
-         logTags.push_back({ "location", _site.influxLocation });
-      }
-      if (_config.influxSensor != nullptr)
-      {
-         logTags.push_back({ "sensor", _config.influxSensor });
-      }
-      _influxLogger = new InfluxLogger(_config.influxLogMeasurement, logTags);
-      Logger::addLogger(_influxLogger);
-
       _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
 
       if (_config.enableRebooter)
       {
          _arduino->enableRebooter();
-      }
-
-      if (_config.enableOTA)
-      {
-         _arduino->enableOTA(_config.version, _config.sketchName);
       }
 
       _usesInflux = hasSiteTable;
@@ -428,7 +513,16 @@ public:
             Util::reset();
          }
 
-         _influxLogger->attach(_influx);
+         // Log the sketch name, version, telemetry topic, and Influx bucket/site path as
+         // a single startup point.
+         std::string startupMessage = std::string("Starting \"") + _config.sketchName + "\"";
+         std::string influxPath = std::string(_site.influxBucket != nullptr ? _site.influxBucket : "") + "/" +
+                                  _config.influxMeasurement + "/" +
+                                  (_config.influxSensor != nullptr ? _config.influxSensor : "") + "/" +
+                                  (_site.influxSite != nullptr ? _site.influxSite : "") + "/" +
+                                  (_site.influxLocation != nullptr ? _site.influxLocation : "");
+         _postLogPoint({ { "version", _config.version }, { "telemetryTopic", _site.telemetryTopic }, { "influx", influxPath.c_str() } },
+                        startupMessage.c_str());
 
          if (_config.includeEnclosureTemp)
          {
@@ -446,14 +540,19 @@ public:
          _influx->client()->setWriteOptions(WriteOptions().batchSize(_points.size()).bufferSize(2 * _points.size()));
       }
 
+      if (_config.enableOTA)
+      {
+         _arduino->enableOTA(_config.version, _config.sketchName, this);
+      }
+
       _client = new TelemetryPublisher(_site.telemetryTopic, _config.telemetryDecimals, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
 
       // Not followed by Influx::endInit() - the initialization display (WiFi, Time, Influx,
-      // and now WebSocket rows) is left on-screen so the async connection's OK/FAILED result
+      // and now Telemetry rows) is left on-screen so the async connection's OK/FAILED result
       // (printed by TelemetryEventHandler) stays visible. Sketches that show a different UI
       // once connected (e.g. via client->isStarted()) are responsible for clearing the display
       // themselves at that point.
-      _arduino->initClient("WebSocket", [this]() { _client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, _status);
+      _arduino->initClient("Telemetry", [this]() { _client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, _status);
 
       setCpuFrequencyMhz(_config.cpuFrequencyMhz);
    }
@@ -479,7 +578,7 @@ public:
       }
 
       _client->loop(); // Continuously poll for events and maintain connection
-      _arduino->loop(); // Drives OTA update checks
+      _arduino->checkForOTA(); // Drives OTA update checks
 
       if (_sensorTimer.ready())
       {

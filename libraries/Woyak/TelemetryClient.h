@@ -71,6 +71,28 @@ public:
 
    ///
    /// <summary>
+   /// Completes the "Telemetry..." label printed by ArduinoBase::initClient() with
+   /// "OK, v<version>", reporting the server's version greeting to Serial and, on
+   /// display-capable boards, the display as well. Called by TelemetryClient; not
+   /// virtual since it's not an event a sketch would want to customize.
+   /// </summary>
+   /// <param name="version">Server version reported by the telemetry server</param>
+   ///
+   void printServerVersion(const std::string& version)
+   {
+      Serial.print("OK, v");
+      Serial.println(version.c_str());
+
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+      if (_display != nullptr)
+      {
+         _display->printlnR(String("OK, v") + version.c_str(), Color::VALUE);
+      }
+#endif
+   }
+
+   ///
+   /// <summary>
    /// Invoked when the telemetry WebSocket connection is established. Default
    /// implementation does nothing.
    /// </summary>
@@ -83,7 +105,7 @@ public:
    /// <summary>
    /// Invoked when the telemetry client finishes starting up. Default implementation
    /// sets the status to READY and, on display-capable boards, completes the
-   /// "WebSocket..." label printed by ArduinoBase::initClient() with "OK".
+   /// "Telemetry..." label printed by ArduinoBase::initClient() with "OK".
    /// </summary>
    ///
    virtual void onStarted()
@@ -93,7 +115,7 @@ public:
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
       {
-         // Completes the "WebSocket..." label printed by ArduinoBase::initClient() -
+         // Completes the "Telemetry..." label printed by ArduinoBase::initClient() -
          // that call prints the label but relies on this line to print "OK" after it.
          // If initClient()'s label/print sequence ever changes, update this too.
          _display->printlnR("OK", Color::VALUE);
@@ -105,7 +127,7 @@ public:
    ///
    /// <summary>
    /// Invoked when the telemetry WebSocket connection is lost. Default implementation
-   /// logs the reason, completes the "WebSocket..." label (if a display was supplied)
+   /// logs the reason, completes the "Telemetry..." label (if a display was supplied)
    /// with "FAILED", sets the status to FAILED, and resets the device.
    /// </summary>
    /// <param name="reason">Reason for the disconnect, as reported by the telemetry client</param>
@@ -117,7 +139,7 @@ public:
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
       {
-         // Completes the "WebSocket..." label printed by ArduinoBase::initClient() -
+         // Completes the "Telemetry..." label printed by ArduinoBase::initClient() -
          // see the matching comment in onStarted() above.
          _display->printlnR("FAILED", Color::RED);
       }
@@ -132,7 +154,7 @@ public:
    /// Invoked when the WebSocket never successfully connected (e.g. the server isn't
    /// running, or it's unreachable) before the socket was torn down. Default
    /// implementation logs a clearer message than the raw low-level socket teardown
-   /// reason, completes the "WebSocket..." label (if a display was supplied) with
+   /// reason, completes the "Telemetry..." label (if a display was supplied) with
    /// "FAILED", sets the status to FAILED, and resets the device.
    /// </summary>
    /// <param name="reason">Low-level reason reported by the telemetry client, if any</param>
@@ -144,7 +166,7 @@ public:
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
       {
-         // Completes the "WebSocket..." label printed by ArduinoBase::initClient() -
+         // Completes the "Telemetry..." label printed by ArduinoBase::initClient() -
          // see the matching comment in onStarted() above.
          _display->printlnR("FAILED", Color::RED);
       }
@@ -418,12 +440,14 @@ protected:
 
          if (_serverVersion.length() == 0)
          {
-            // the first message received is a simple greeting with the server version
+            // the first message received is a simple greeting with the server version;
+            // reported via the handler, which completes the "Telemetry..." label
+            // printed by ArduinoBase::initClient()
 
             // strip off the initial part "TelemetryServer v###"
             _serverVersion = str.substr(std::string("TelemetryServer v").length());
-            Serial.print("Server Version: ");
-            Serial.println(_serverVersion.c_str());
+
+            _handler->printServerVersion(_serverVersion);
          }
          else if (_status.length() == 0)
          {
@@ -437,7 +461,6 @@ protected:
             }
             else
             {
-               Serial.println("Started");
                _started = true;
                _rate.reset();
                _onStarted();

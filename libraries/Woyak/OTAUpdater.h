@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <utility>
 
@@ -17,6 +18,54 @@
 #include "Format.h"
 class ArduinoWithDisplay;
 #endif
+
+///
+/// <summary>
+/// Receives notification of OTA update lifecycle events (update detected, failed, or
+/// succeeded). Provides default (no-op) behavior for each event; sketches that need
+/// custom behavior should derive from this class and override only the methods they
+/// need. Register the instance via OTAUpdater::setHandler() (or the onUpdateAvailable
+/// parameter of ArduinoBase/ArduinoWithDisplay::enableOTA()).
+/// </summary>
+///
+class OTAUpdateEventHandler
+{
+public:
+   virtual ~OTAUpdateEventHandler() = default;
+
+   ///
+   /// <summary>
+   /// Invoked when checkNow()/loop() finds a newer version available, just before the
+   /// update is downloaded and installed.
+   /// </summary>
+   /// <param name="newVersion">The newly detected version string.</param>
+   ///
+   virtual void onUpdateAvailable(const char* newVersion)
+   {
+   }
+
+   ///
+   /// <summary>
+   /// Invoked when a detected update fails to download/install.
+   /// </summary>
+   /// <param name="newVersion">The version that failed to install.</param>
+   /// <param name="reason">The error reported by the underlying HTTP update client.</param>
+   ///
+   virtual void onUpdateFailed(const char* newVersion, const char* reason)
+   {
+   }
+
+   ///
+   /// <summary>
+   /// Invoked when a detected update downloads and installs successfully, just before
+   /// the device restarts to apply it.
+   /// </summary>
+   /// <param name="newVersion">The version that was successfully installed.</param>
+   ///
+   virtual void onUpdateSucceeded(const char* newVersion)
+   {
+   }
+};
 
 ///
 /// <summary>
@@ -62,6 +111,12 @@ private:
    std::string _firmwareUrl;
    TimerSecs _checkTimer;
 
+   /// <summary>Version detected by the last _isUpdateAvailable() call that returned true.</summary>
+   std::string _availableVersion;
+
+   /// <summary>Optional handler notified (with the newly detected version) once a newer version is found, just before the update is installed.</summary>
+   OTAUpdateEventHandler* _handler = nullptr;
+
 #ifdef ARDUINO_DISPLAY_SUPPORTED
    ArduinoWithDisplay* _arduino;
    Format _percentFormat{ "###%", Format::Alignment::RIGHT };
@@ -97,9 +152,6 @@ private:
    ///
    bool _isUpdateAvailable()
    {
-      Serial.print("OTA Update: ");
-      Serial.println(_versionUrl.c_str());
-
       HTTPClient http;
       http.begin(_versionUrl.c_str());
       http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
@@ -123,14 +175,10 @@ private:
          serverVersion = serverVersion.substring(1, serverVersion.length() - 1);
       }
 
-      Serial.print("Current Version: ");
-      Serial.print(_version);
-      Serial.print(", Remote Version: ");
-      Serial.println(serverVersion);
-
       bool updateAvailable = !serverVersion.equals(_version);
       if (updateAvailable)
       {
+         _availableVersion = serverVersion.c_str();
          Serial.printf("OTAUpdater: Downloading %s\n", serverVersion.c_str());
       }
 
@@ -197,6 +245,18 @@ public:
 
    ///
    /// <summary>
+   /// Registers a handler notified whenever checkNow()/loop() finds a newer version
+   /// available, just before the update is downloaded and installed.
+   /// </summary>
+   /// <param name="handler">Handler to notify with the newly detected version string.</param>
+   ///
+   void setHandler(OTAUpdateEventHandler* handler)
+   {
+      _handler = handler;
+   }
+
+   ///
+   /// <summary>
    /// Checks (over the version URL) whether a newer firmware version is available and, if
    /// so, downloads and installs it, restarting the device on success. WiFi must already
    /// be connected before calling this.
@@ -206,6 +266,10 @@ public:
    {
       if (_isUpdateAvailable())
       {
+         if (_handler != nullptr)
+         {
+            _handler->onUpdateAvailable(_availableVersion.c_str());
+         }
          _performUpdate();
       }
    }

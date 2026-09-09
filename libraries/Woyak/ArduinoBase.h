@@ -335,14 +335,18 @@ public:
    /// </summary>
    /// <param name="version">This sketch's own version string (e.g. "v1.0").</param>
    /// <param name="sketchName">This sketch's name (e.g. "Wind_Publisher"), used to derive its release URLs.</param>
+   /// <param name="onUpdateAvailable">Optional handler, notified with the newly detected version string just before it's installed.</param>
    /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; defaults to 10 minutes.</param>
    ///
-   void enableOTA(const char* version, const char* sketchName, float checkIntervalSecs = OTAUpdater::DEFAULT_CHECK_INTERVAL_SECS)
+   void enableOTA(const char* version, const char* sketchName, OTAUpdateEventHandler* onUpdateAvailable = nullptr, float checkIntervalSecs = OTAUpdater::DEFAULT_CHECK_INTERVAL_SECS)
    {
       _ota = new OTAUpdater(version, sketchName, checkIntervalSecs);
+      if (onUpdateAvailable != nullptr)
+      {
+         _ota->setHandler(onUpdateAvailable);
+      }
       _ota->checkNow();
    }
-
    ///
    /// <summary>
    /// Drives the (if enabled) periodic OTA update check. Call once per loop() iteration.

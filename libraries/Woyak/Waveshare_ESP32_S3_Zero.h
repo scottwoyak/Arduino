@@ -90,7 +90,6 @@ private:
    uint8_t _ledPin;
    RGBLEDStatus _rgbStatus;
    NeoPixelStatus _neoPixelStatus;
-   SerialStatus _serialStatus;
 
    ///
    /// <summary>
@@ -200,7 +199,6 @@ public:
    {
       _status.addStatus(&_rgbStatus);
       _status.addStatus(&_neoPixelStatus);
-      _status.addStatus(&_serialStatus);
    }
 
    ///

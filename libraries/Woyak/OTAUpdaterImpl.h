@@ -60,17 +60,24 @@ inline void OTAUpdater::_performUpdate()
    switch (result)
    {
       case HTTP_UPDATE_FAILED:
-         Serial.printf("OTAUpdater: update failed: %s, url: %s\n", httpUpdate.getLastErrorString().c_str(), _firmwareUrl.c_str());
+      {
+         std::string reason = httpUpdate.getLastErrorString().c_str();
+         Serial.printf("OTAUpdater: update failed: %s, url: %s\n", reason.c_str(), _firmwareUrl.c_str());
 #ifdef ARDUINO_DISPLAY_SUPPORTED
          if (_arduino != nullptr)
          {
             _arduino->println();
             _arduino->println("Update failed", Color::RED);
-            _arduino->println(httpUpdate.getLastErrorString().c_str(), Color::RED);
+            _arduino->println(reason.c_str(), Color::RED);
             delay(_RESULT_DELAY_MS);
          }
 #endif
+         if (_handler != nullptr)
+         {
+            _handler->onUpdateFailed(_availableVersion.c_str(), reason.c_str());
+         }
          break;
+      }
 
       case HTTP_UPDATE_NO_UPDATES:
          Serial.println("OTAUpdater: no update available");
@@ -92,6 +99,10 @@ inline void OTAUpdater::_performUpdate()
             _arduino->println("\n\nRestarting...", Color::LABEL);
          }
 #endif
+         if (_handler != nullptr)
+         {
+            _handler->onUpdateSucceeded(_availableVersion.c_str());
+         }
          ESP.restart();
          break;
    }
