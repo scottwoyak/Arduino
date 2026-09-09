@@ -41,6 +41,7 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 #include "SerialX.h"
 #include "Status.h"
 #include "TelemetryClient.h"
+#include "TimeSync.h"
 #include "WiFiSettings.h"
 
 // ----------- Telemetry
@@ -57,6 +58,10 @@ constexpr int16_t GATE_ORIGIN_RADIUS = 10;
 Format azimuthFormat("###", Format::Alignment::RIGHT);
 int16_t lineLength = 0;
 int16_t gateOriginY = 0;
+
+// ----------- Last open time (updated whenever the gate transitions from closed to
+// open; 0 until the gate has opened at least once since boot)
+time_t lastGateOpenTime = 0;
 
 ///
 /// <summary>
@@ -87,8 +92,10 @@ constexpr Color GATE_OPEN_COLOR = (Color)Color565::fromRGB(255, 210, 0); // half
 ///
 /// <summary>
 /// Draws both gates' azimuth values as footer text at the bottom of the display, left
-/// and right aligned respectively, in gray with no decimals and a degree symbol. The
-/// background is black while closed and matches the gate-open banner color while open.
+/// and right aligned respectively, in gray with no decimals and a degree symbol, and
+/// (once the gate has opened at least once since boot) the last time the gate was
+/// opened, centered between them. The background is black while closed and matches
+/// the gate-open banner color while open.
 /// </summary>
 /// <param name="leftAzimuth">Left gate's azimuth in degrees, or NAN if unavailable.</param>
 /// <param name="rightAzimuth">Right gate's azimuth in degrees, or NAN if unavailable.</param>
@@ -108,6 +115,25 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth, bool isOpen)
 
    arduino.setCursor(arduino.width(), -arduino.charH());
    arduino.printR(rightAzimuth, azimuthFormat, Color::GRAY, backgroundColor);
+
+   if (lastGateOpenTime != 0)
+   {
+      struct tm timeInfo;
+      localtime_r(&lastGateOpenTime, &timeInfo);
+
+      char timeBuffer[16];
+      strftime(timeBuffer, sizeof(timeBuffer), "%I:%M %p", &timeInfo);
+      const char* timeStr = (timeBuffer[0] == '0') ? timeBuffer + 1 : timeBuffer;
+
+      char dateBuffer[16];
+      strftime(dateBuffer, sizeof(dateBuffer), "%m/%d", &timeInfo);
+      const char* dateStr = (dateBuffer[0] == '0') ? dateBuffer + 1 : dateBuffer;
+
+      std::string lastOpenText = std::string("Last Open: ") + timeStr + " " + dateStr;
+
+      arduino.setCursorY(-arduino.charH());
+      arduino.printC(lastOpenText.c_str(), Color::GRAY, backgroundColor);
+   }
 
    arduino.setTextSize(savedTextSize);
    arduino.setCursor(savedCursor);
@@ -440,6 +466,12 @@ void loop()
       // in the correct color even if their azimuth hasn't changed
       leftLine.lastAzimuth = NAN;
       rightLine.lastAzimuth = NAN;
+
+      if (isOpen && !lastIsOpen && TimeSync::isSynced())
+      {
+         lastGateOpenTime = time(nullptr);
+      }
+
       lastIsOpen = isOpen;
       everDrawn = true;
    }
