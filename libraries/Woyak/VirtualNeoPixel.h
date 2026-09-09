@@ -128,17 +128,6 @@ public:
 
    ///
    /// <summary>
-   /// Turns the virtual NeoPixel off, e.g. once initialization is complete so it no
-   /// longer overwrites the regular display content drawn in its corner.
-   /// </summary>
-   ///
-   void hide()
-   {
-      _led->turnOff();
-   }
-
-   ///
-   /// <summary>
    /// Updates the virtual NeoPixel to represent the specified status.
    /// </summary>
    /// <param name="status">The status value to display.</param>

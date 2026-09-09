@@ -84,15 +84,4 @@ public:
    {
       return ArduinoWithDisplay::headerTextSize() + 1;
    }
-
-   ///
-   /// <summary>
-   /// Hides the virtual NeoPixel so it stops overwriting display content drawn in its
-   /// corner. Serial status output is unaffected.
-   /// </summary>
-   ///
-   void hideStatus()
-   {
-      _virtualNeoPixelStatus.hide();
-   }
 };

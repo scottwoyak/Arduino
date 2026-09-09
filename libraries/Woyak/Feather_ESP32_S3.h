@@ -3,9 +3,11 @@
 #include "LGX_FeatherESP32_S3_TFT.h"
 #include "ArduinoWithDisplay.h"
 #include "Button.h"
+#include "MultiStatus.h"
 #include <string>
 #include <Preferences.h>
 #include "LED.h"
+#include "Status.h"
 #include "LGFXUtil.h"
 
 class Feather_ESP32_S3 : public ArduinoWithDisplay
@@ -16,7 +18,19 @@ public:
    NeoPixelLED neoPixel;
    LED led{ LED_BUILTIN };
 
-   Feather_ESP32_S3() : ArduinoWithDisplay(), buttonA(0)
+private:
+   NeoPixelStatus _neoPixelStatus;
+
+public:
+   ///
+   /// <summary>
+   /// Status indicator that drives the onboard NeoPixel.
+   /// </summary>
+   ///
+   MultiStatus status;
+
+   Feather_ESP32_S3() : ArduinoWithDisplay(), buttonA(0), _neoPixelStatus(&neoPixel),
+      status(&_neoPixelStatus)
    {
    }
 
@@ -28,6 +42,7 @@ public:
       buttonA.begin();
       neoPixel.begin();
       led.begin();
+      status.begin();
    }
 
    void displayOn()

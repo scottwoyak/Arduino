@@ -601,10 +601,6 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Wind_Subscriber_Display/Wind_Subscriber_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
   <Project Path="Wind_Viewer/Wind_Viewer.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

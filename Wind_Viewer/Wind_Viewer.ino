@@ -1,10 +1,13 @@
 //
 // Wind Viewer
 //
-// Subscribes to live wind speed telemetry over a WebSocket connection and renders it on
-// the Hosyond ESP32-32E 4" display (Viewer board): a moving bar chart across the bottom
-// third of the display, with a windowed histogram (and current-value slider) filling
-// the space between it and the header.
+// Subscribes to live wind speed telemetry over a WebSocket connection and renders it as
+// a moving bar chart across the bottom fifth of the display, with a windowed histogram
+// (and current-value slider) filling the space between it and the header.
+//
+// The layout is computed at runtime from the display's dimensions, so the sketch runs on
+// any display size, e.g. the Hosyond ESP32-32E 4" 480x320 display (Viewer board) or the
+// 240x135 display on the Feather ESP32-S3 TFT.
 //
 // Behavior:
 // - Connects to WiFi, then opens a WebSocket connection to the telemetry server and
@@ -57,25 +60,36 @@ Arduino arduino;
 Format speedFormat("##.# mph", Format::Alignment::RIGHT);
 
 // ----------- Display layout
-constexpr uint16_t DISPLAY_HEIGHT = 320;
-constexpr uint16_t DISPLAY_WIDTH = 480;
-constexpr uint8_t HEADER_TEXT_SIZE = 4;
-constexpr uint16_t HEADER_HEIGHT = 4 * 8 + 6; // one line of text size 4 plus padding
-constexpr Rect16 WORKSPACE_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT);
+// The layout is computed at runtime from the display's dimensions (see initLayout) so
+// that the sketch runs on displays of different sizes, e.g. the 480x320 Viewer board
+// and the 240x135 Feather ESP32-S3 TFT.
+constexpr uint8_t MIN_TEXT_SIZE = 2;
+constexpr uint8_t MAX_HEADER_TEXT_SIZE = 4;
+constexpr uint8_t SPEED_NUM_CHARS = 8; // "##.# mph"
+constexpr uint8_t HEADER_PADDING = 6;
+constexpr uint8_t VALUES_AXIS_PADDING = 8;
+constexpr uint8_t SLIDER_HEIGHT = 3;
 
-// ----------- Rolling bar chart (bottom third of the display)
+// ----------- Rolling bar chart (bottom fifth of the display)
 constexpr RangeF GRAPH_RANGE = { 0, 30 };
-constexpr uint16_t ROLLING_CHART_HEIGHT = DISPLAY_HEIGHT / 4;
-constexpr Rect16 GRAPH_RECT(0, DISPLAY_HEIGHT - ROLLING_CHART_HEIGHT, DISPLAY_WIDTH, ROLLING_CHART_HEIGHT);
-MovingBarChart rollingChart(GRAPH_RECT, GRAPH_RANGE, Color::LIME, Color::BLACK);
+constexpr float ROLLING_CHART_HEIGHT_FRACTION = 0.20f;
 
 // ----------- Histogram (fills the space between the header and the rolling chart)
 constexpr uint16_t HISTOGRAM_DURATION_S = 10 * 60;
-constexpr uint16_t HISTOGRAM_NUM_BINS = 300;
 constexpr RangeF CHART_RANGE = { 0, 30 };
-constexpr uint8_t VALUES_AXIS_HEIGHT = 25 + 8;
-constexpr Rect16 CHART_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT - ROLLING_CHART_HEIGHT - VALUES_AXIS_HEIGHT);
-TimedHistogramChart histogramChart(CHART_RECT, CHART_RANGE, HISTOGRAM_NUM_BINS, HISTOGRAM_DURATION_S * 1000, Color::LIME, Color::BLACK);
+
+// Histogram bins per pixel of chart width: 300 bins across the 480 pixel wide Viewer
+// display, with narrower displays getting proportionally fewer bins so that bar width
+// stays consistent across display sizes.
+constexpr float HISTOGRAM_BINS_PER_PIXEL = 300.0f / 480.0f;
+
+// Set by initLayout() once the display dimensions are known.
+uint8_t headerTextSize;
+uint8_t axisTextSize;
+Rect16 chartRect;
+MovingBarChart* rollingChart = nullptr;
+TimedHistogramChart* histogramChart = nullptr;
+HorizontalSlider* slider = nullptr;
 
 // Colors bars from lime green (low speed) through yellow, orange, and red (high speed).
 ColorRange speedColorRange;
@@ -87,8 +101,47 @@ ColorRange speedColorRange;
 constexpr uint16_t SAMPLE_INTERVAL_MS = 100;
 Timer sampleTimer(SAMPLE_INTERVAL_MS);
 
-constexpr Rect16 SLIDER_RECT(0, CHART_RECT.y + CHART_RECT.height + 2, DISPLAY_WIDTH, 3);
-HorizontalSlider slider(SLIDER_RECT, CHART_RANGE, Color::WHITE, Color::BLACK);
+///
+/// <summary>
+/// Computes the display layout and constructs the charts and slider from the display's
+/// actual dimensions, scaling text sizes, chart heights and histogram bin count so the
+/// sketch renders correctly on displays of different sizes. Must be called after
+/// arduino.begin(), once the display has been initialized.
+/// </summary>
+///
+void initLayout()
+{
+   uint16_t displayWidth = arduino.width();
+   uint16_t displayHeight = arduino.height();
+
+   // use the largest header size where the topic and the right-aligned speed still fit
+   // on a single line
+   headerTextSize = MIN_TEXT_SIZE;
+   for (uint8_t size = MAX_HEADER_TEXT_SIZE; size > MIN_TEXT_SIZE; size--)
+   {
+      uint16_t numChars = telemetryTopic.length() + SPEED_NUM_CHARS;
+      if (arduino.charW(size) * numChars <= displayWidth)
+      {
+         headerTextSize = size;
+         break;
+      }
+   }
+   axisTextSize = headerTextSize > MIN_TEXT_SIZE ? headerTextSize - 1 : MIN_TEXT_SIZE;
+
+   uint16_t headerHeight = arduino.charH(headerTextSize) + HEADER_PADDING;
+   uint16_t valuesAxisHeight = arduino.charH(axisTextSize) + VALUES_AXIS_PADDING;
+   uint16_t rollingChartHeight = displayHeight * ROLLING_CHART_HEIGHT_FRACTION;
+
+   Rect16 graphRect = { 0, (uint16_t)(displayHeight - rollingChartHeight), displayWidth, rollingChartHeight };
+   rollingChart = new MovingBarChart(graphRect, GRAPH_RANGE, Color::LIME, Color::BLACK);
+
+   chartRect = { 0, headerHeight, displayWidth, (uint16_t)(displayHeight - headerHeight - rollingChartHeight - valuesAxisHeight) };
+   uint16_t numBins = chartRect.width * HISTOGRAM_BINS_PER_PIXEL;
+   histogramChart = new TimedHistogramChart(chartRect, CHART_RANGE, numBins, HISTOGRAM_DURATION_S * 1000, Color::LIME, Color::BLACK);
+
+   Rect16 sliderRect = { 0, (uint16_t)(chartRect.bottom() + 2), displayWidth, SLIDER_HEIGHT };
+   slider = new HorizontalSlider(sliderRect, CHART_RANGE, Color::WHITE, Color::BLACK);
+}
 
 ///
 /// <summary>
@@ -98,7 +151,7 @@ HorizontalSlider slider(SLIDER_RECT, CHART_RANGE, Color::WHITE, Color::BLACK);
 void displayHeader()
 {
    arduino.setCursor(0, 0);
-   arduino.setTextSize(HEADER_TEXT_SIZE);
+   arduino.setTextSize(headerTextSize);
    arduino.println(telemetryTopic, Color::HEADING);
 }
 
@@ -114,7 +167,7 @@ void displayFooter()
    Point16 savedCursor = arduino.getCursor();
    uint8_t savedTextSize = arduino.getTextSize();
 
-   arduino.setTextSize(3);
+   arduino.setTextSize(axisTextSize);
 
    arduino.setCursor(arduino.width(), -arduino.charH());
    arduino.printR(telemetryTopic, Color::GRAY);
@@ -144,9 +197,10 @@ public:
    {
       TelemetryEventHandler::onStarted();
 
-      // Initialization is complete; hide the virtual NeoPixel so it stops overwriting
-      // the regular display content drawn in its corner.
-      arduino.hideStatus();
+      // Initialization is complete; turn the NeoPixel off so it stops overwriting the
+      // regular display content drawn in its corner on boards where it's drawn on the
+      // display.
+      arduino.neoPixel.turnOff();
 
       arduino.clearDisplay();
       displayHeader();
@@ -159,7 +213,7 @@ public:
       // feed the charts/stats only when a new value has actually arrived, rather than
       // every loop() iteration, so stale values aren't repeatedly re-sampled
       float speed = client->getValue();
-      slider.set(speed);
+      slider->set(speed);
    }
 };
 
@@ -169,14 +223,6 @@ void setup()
 {
    SerialX::begin();
    arduino.begin();
-
-   speedColorRange.addStop(0, Color::LIME);
-   speedColorRange.addStop(2, Color::LIME);
-   speedColorRange.addStop(10, Color::YELLOW);
-   speedColorRange.addStop(15, Color::ORANGE);
-   speedColorRange.addStop(20, Color::RED);
-   histogramChart.setColorRange(&speedColorRange);
-   rollingChart.setColorRange(&speedColorRange);
 
    arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
    String savedTopic = arduino.preferences.getString(TOPIC_KEY, TELEMETRY_TOPICS[0]);
@@ -206,6 +252,18 @@ void setup()
    arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
    arduino.preferences.putString(TOPIC_KEY, telemetryTopic.c_str());
    arduino.preferences.end();
+
+   // the layout depends on the selected topic's length, so build it only once the
+   // topic is known
+   initLayout();
+
+   speedColorRange.addStop(0, Color::LIME);
+   speedColorRange.addStop(2, Color::LIME);
+   speedColorRange.addStop(10, Color::YELLOW);
+   speedColorRange.addStop(15, Color::ORANGE);
+   speedColorRange.addStop(20, Color::RED);
+   histogramChart->setColorRange(&speedColorRange);
+   rollingChart->setColorRange(&speedColorRange);
 
    client = new TelemetrySubscriber(telemetryTopic, &arduino.status);
    client->setHandler(&telemetryHandler);
@@ -239,17 +297,17 @@ void loop()
    // showing as red bars in the meantime.
    if (sampleTimer.ready() && !isnan(speed))
    {
-      histogramChart.set(speed);
-      rollingChart.set(speed);
+      histogramChart->set(speed);
+      rollingChart->set(speed);
    }
 
    // display values
    arduino.setCursor(0, 0);
-   arduino.setTextSize(HEADER_TEXT_SIZE);
+   arduino.setTextSize(headerTextSize);
    arduino.printlnR(speed, speedFormat, Color::VALUE);
 
    displayHistogram();
-   rollingChart.draw(&arduino.display);
+   rollingChart->draw(&arduino.display);
 }
 
 Format AxisValueL("##.#", Format::Alignment::LEFT);
@@ -263,45 +321,45 @@ Format AxisValueR("##.#", Format::Alignment::RIGHT);
 ///
 void displayHistogram()
 {
-   RangeF range = histogramChart.getCurrentValuesRange();
+   RangeF range = histogramChart->getCurrentValuesRange();
 
    if (range.max < 5)
    {
-      histogramChart.setVisibleRange(RangeF(0, 5));
-      slider.setRange(RangeF(0, 5));
+      histogramChart->setVisibleRange(RangeF(0, 5));
+      slider->setRange(RangeF(0, 5));
    }
    else if (range.max < 10)
    {
-      histogramChart.setVisibleRange(RangeF(0, 10));
-      slider.setRange(RangeF(0, 10));
+      histogramChart->setVisibleRange(RangeF(0, 10));
+      slider->setRange(RangeF(0, 10));
    }
    else if (range.max < 15)
    {
-      histogramChart.setVisibleRange(RangeF(0, 15));
-      slider.setRange(RangeF(0, 15));
+      histogramChart->setVisibleRange(RangeF(0, 15));
+      slider->setRange(RangeF(0, 15));
    }
    else if (range.max < 20)
    {
-      histogramChart.setVisibleRange(RangeF(0, 20));
-      slider.setRange(RangeF(0, 20));
+      histogramChart->setVisibleRange(RangeF(0, 20));
+      slider->setRange(RangeF(0, 20));
    }
    else
    {
-      histogramChart.setVisibleRange(RangeF(0, 30));
-      slider.setRange(RangeF(0, 30));
+      histogramChart->setVisibleRange(RangeF(0, 30));
+      slider->setRange(RangeF(0, 30));
    }
 
-   histogramChart.draw(&arduino.display);
-   slider.draw(&arduino.display);
+   histogramChart->draw(&arduino.display);
+   slider->draw(&arduino.display);
 
-   arduino.setTextSize(3);
-   arduino.setCursor(0, CHART_RECT.y + CHART_RECT.height + 3);
+   arduino.setTextSize(axisTextSize);
+   arduino.setCursor(0, chartRect.bottom() + 3);
 
-   RangeF displayRange = histogramChart.getVisibleRange();
+   RangeF displayRange = histogramChart->getVisibleRange();
    arduino.print(displayRange.min, AxisValueL, Color::GRAY);
    arduino.printC((displayRange.min + displayRange.max) / 2, AxisValueL, Color::GRAY);
    arduino.printR(displayRange.max, AxisValueR, Color::GRAY);
-   uint16_t y = CHART_RECT.y + CHART_RECT.height + 1;
+   uint16_t y = chartRect.bottom() + 1;
    arduino.display.drawLine(0, y, arduino.display.width(), y, (uint16_t)Color::GRAY);
 }
 
