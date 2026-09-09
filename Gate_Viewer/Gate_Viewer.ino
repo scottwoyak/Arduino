@@ -442,7 +442,7 @@ void setup()
 
 void loop()
 {
-   arduino.loop();
+   arduino.checkForOTA();
 
    leftClient.loop();
    rightClient.loop();

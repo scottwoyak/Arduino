@@ -224,7 +224,7 @@ void loop()
    // in setup()), so this checks wall-clock time rather than elapsed millis(). Watchdog
    // reset is handled manually below (only on a successful write), not by arduino.loop(),
    // since this sketch never calls arduino.enableWatchdog().
-   arduino.loop();
+   arduino.checkForOTA();
 
    arduino.led.turnOff();  // Turn off activity LED (turned on during data upload)
 

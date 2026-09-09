@@ -203,7 +203,7 @@ void setup()
 
 void loop()
 {
-   arduino.loop();
+   arduino.checkForOTA();
 
    client->loop();
 

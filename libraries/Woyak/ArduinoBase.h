@@ -345,10 +345,10 @@ public:
 
    ///
    /// <summary>
-   /// Drives the (if enabled) OTA update check. Call once per loop() iteration.
+   /// Drives the (if enabled) periodic OTA update check. Call once per loop() iteration.
    /// </summary>
    ///
-   void loop()
+   void checkForOTA()
    {
       if (_ota != nullptr)
       {

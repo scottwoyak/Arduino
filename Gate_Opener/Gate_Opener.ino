@@ -162,5 +162,5 @@ void setup()
 void loop()
 {
    server.handleClient();
-   arduino.loop();
+   arduino.checkForOTA();
 }
