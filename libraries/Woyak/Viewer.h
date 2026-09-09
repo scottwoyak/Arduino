@@ -40,13 +40,12 @@ public:
 
 private:
    VirtualNeoPixelStatus _virtualNeoPixelStatus;
-   SerialStatus _serialStatus;
 
 public:
    ///
    /// <summary>
-   /// Status indicator that drives both the virtual NeoPixel and Serial output, so
-   /// status is visible even when Serial isn't connected (or the display isn't visible).
+   /// Status indicator that drives the virtual NeoPixel; Serial output isn't needed
+   /// since this board's display already shows status visually.
    /// </summary>
    ///
    MultiStatus status;
@@ -57,7 +56,7 @@ public:
    /// </summary>
    ///
    Viewer() : ArduinoWithDisplay(), buttonA(0), neoPixel(&display), _virtualNeoPixelStatus(&neoPixel),
-      status(&_virtualNeoPixelStatus, &_serialStatus)
+      status(&_virtualNeoPixelStatus)
    {
    }
 
