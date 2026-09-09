@@ -22,6 +22,8 @@
 constexpr const char* TELEMETRY_TOPICS[] = { "Wind/Lake", "Wind/Bragg" };
 constexpr uint8_t NUM_TELEMETRY_TOPICS = 2;
 constexpr uint32_t TOPIC_PROMPT_TIMEOUT_MS = 10 * 1000;
+constexpr auto PREFERENCES_NAMESPACE = "WindViewer";
+constexpr auto TOPIC_KEY = "topic";
 
 // Selected at startup via prompt in setup().
 std::string telemetryTopic;
@@ -176,6 +178,20 @@ void setup()
    histogramChart.setColorRange(&speedColorRange);
    rollingChart.setColorRange(&speedColorRange);
 
+   arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
+   String savedTopic = arduino.preferences.getString(TOPIC_KEY, TELEMETRY_TOPICS[0]);
+   arduino.preferences.end();
+
+   size_t defaultTopicIndex = 0;
+   for (uint8_t i = 0; i < NUM_TELEMETRY_TOPICS; i++)
+   {
+      if (savedTopic.equals(TELEMETRY_TOPICS[i]))
+      {
+         defaultTopicIndex = i;
+         break;
+      }
+   }
+
    Serial.println("Select telemetry topic:");
    for (uint8_t i = 0; i < NUM_TELEMETRY_TOPICS; i++)
    {
@@ -184,13 +200,17 @@ void setup()
       Serial.print(": ");
       Serial.println(TELEMETRY_TOPICS[i]);
    }
-   size_t topicIndex = SerialX::readSelectionWithTimeout(NUM_TELEMETRY_TOPICS, 0, TOPIC_PROMPT_TIMEOUT_MS);
+   size_t topicIndex = SerialX::readSelectionWithTimeout(NUM_TELEMETRY_TOPICS, defaultTopicIndex, TOPIC_PROMPT_TIMEOUT_MS);
    telemetryTopic = TELEMETRY_TOPICS[topicIndex];
+
+   arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+   arduino.preferences.putString(TOPIC_KEY, telemetryTopic.c_str());
+   arduino.preferences.end();
 
    client = new TelemetrySubscriber(telemetryTopic, &arduino.status);
    client->setHandler(&telemetryHandler);
 
-   arduino.beginInit();
+   arduino.beginInit(telemetryTopic.c_str());
    displayFooter();
 
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &arduino.status);

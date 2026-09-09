@@ -222,7 +222,7 @@ void loop()
    // Perform a daily reboot for long-term stability, as soon as the date advances past
    // the day the sketch started. The system clock is synced via NTP (see influx.begin()
    // in setup()), so this checks wall-clock time rather than elapsed millis(). Watchdog
-   // reset is handled manually below (only on a successful write), not by arduino.loop(),
+   // reset is handled manually below (only on a successful write), not by arduino.checkForOTA(),
    // since this sketch never calls arduino.enableWatchdog().
    arduino.checkForOTA();
 
