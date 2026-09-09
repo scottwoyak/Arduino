@@ -171,8 +171,6 @@ class WaveTelemetryHandler : public TelemetryEventHandler
 public:
    explicit WaveTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &arduino)
    {
-      // suppress the repeated "get" polling requests and value echoes from the serial log
-      setEchoEnabled(false);
    }
 
    void onStarted() override

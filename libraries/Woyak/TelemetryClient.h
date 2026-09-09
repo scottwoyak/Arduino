@@ -43,48 +43,9 @@ class TelemetryEventHandler
 {
 private:
    IStatus* _status;
-   bool _echoEnabled = true;
 #ifdef ARDUINO_DISPLAY_SUPPORTED
    ArduinoWithDisplay* _display;
 #endif
-
-   ///
-   /// <summary>
-   /// Replaces all occurrences of a substring within a string, in place.
-   /// </summary>
-   /// <param name="str">String to modify</param>
-   /// <param name="from">Substring to search for</param>
-   /// <param name="to">Replacement substring</param>
-   ///
-   static void _replaceAll(std::string& str, const std::string& from, const std::string& to)
-   {
-      if (from.empty())
-      {
-         return;
-      }
-
-      size_t startPos = 0;
-      while ((startPos = str.find(from, startPos)) != std::string::npos)
-      {
-         str.replace(startPos, from.length(), to);
-         startPos += to.length(); // Move past the new replacement
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Logs a sent/received text message to Serial, quoted and with embedded newlines
-   /// escaped for single-line readability.
-   /// </summary>
-   /// <param name="prefix">Direction prefix to print before the quoted message (e.g. ">>> ").</param>
-   /// <param name="message">The message text to log.</param>
-   ///
-   static void _echoText(const char* prefix, const std::string& message)
-   {
-      std::string escaped = message;
-      _replaceAll(escaped, "\n", "\\n");
-      Serial.println((prefix + ("\"" + escaped + "\"")).c_str());
-   }
 
 public:
    ///
@@ -107,18 +68,6 @@ public:
 #endif
 
    virtual ~TelemetryEventHandler() = default;
-
-   ///
-   /// <summary>
-   /// Enables or disables the default Serial echo logging performed by onSendText()
-   /// and onReceiveText(). Enabled by default.
-   /// </summary>
-   /// <param name="enabled">True to log sent/received text messages to Serial, false to suppress them.</param>
-   ///
-   void setEchoEnabled(bool enabled)
-   {
-      _echoEnabled = enabled;
-   }
 
    ///
    /// <summary>
@@ -233,32 +182,30 @@ public:
 
    ///
    /// <summary>
-   /// Invoked whenever a text message is sent. Default implementation logs the message
-   /// to Serial, quoted with embedded newlines escaped for readability.
+   /// Invoked whenever a text message is sent. Default implementation does nothing;
+   /// Serial echo logging of sent messages is handled independently by
+   /// TelemetryClient and isn't tied to this override, so subclasses don't need to
+   /// call the base implementation to preserve it.
    /// </summary>
    /// <param name="message">The message text that was sent</param>
    ///
    virtual void onSendText(const std::string& message)
    {
-      if (_echoEnabled)
-      {
-         _echoText(">>> ", message);
-      }
+      (void)message;
    }
 
    ///
    /// <summary>
-   /// Invoked whenever a text message is received. Default implementation logs the
-   /// message to Serial, quoted with embedded newlines escaped for readability.
+   /// Invoked whenever a text message is received. Default implementation does
+   /// nothing; Serial echo logging of received messages is handled independently by
+   /// TelemetryClient and isn't tied to this override, so subclasses don't need to
+   /// call the base implementation to preserve it.
    /// </summary>
    /// <param name="message">The message text that was received</param>
    ///
    virtual void onReceiveText(const std::string& message)
    {
-      if (_echoEnabled)
-      {
-         _echoText("<<< ", message);
-      }
+      (void)message;
    }
 };
 
@@ -278,6 +225,7 @@ private:
    std::string _topic;
    bool _started = false;
    bool _hasConnected = false;
+   bool _echoEnabled = false;
    RollingRate _rate{ TELEMETRY_RATE_NUM_SAMPLES };
 
    // user event handler; owned by this instance only when no handler was supplied
@@ -286,6 +234,44 @@ private:
 
    // static instance for handling callbacks from WebSocketClient
    static TelemetryClient* _instance;
+
+   ///
+   /// <summary>
+   /// Replaces all occurrences of a substring within a string, in place.
+   /// </summary>
+   /// <param name="str">String to modify</param>
+   /// <param name="from">Substring to search for</param>
+   /// <param name="to">Replacement substring</param>
+   ///
+   static void _replaceAll(std::string& str, const std::string& from, const std::string& to)
+   {
+      if (from.empty())
+      {
+         return;
+      }
+
+      size_t startPos = 0;
+      while ((startPos = str.find(from, startPos)) != std::string::npos)
+      {
+         str.replace(startPos, from.length(), to);
+         startPos += to.length(); // Move past the new replacement
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Logs a sent/received text message to Serial, quoted and with embedded newlines
+   /// escaped for single-line readability.
+   /// </summary>
+   /// <param name="prefix">Direction prefix to print before the quoted message (e.g. ">>> ").</param>
+   /// <param name="message">The message text to log.</param>
+   ///
+   static void _echoText(const char* prefix, const std::string& message)
+   {
+      std::string escaped = message;
+      _replaceAll(escaped, "\n", "\\n");
+      Serial.println((prefix + ("\"" + escaped + "\"")).c_str());
+   }
 
    ///
    /// <summary>
@@ -358,8 +344,8 @@ protected:
 
    ///
    /// <summary>
-   /// Sends a text message over the WebSocket connection and notifies the
-   /// onSendText callback, if set.
+   /// Sends a text message over the WebSocket connection, echoes it to Serial (if
+   /// enabled), and notifies the onSendText callback, if set.
    /// </summary>
    /// <param name="text">The message text to send.</param>
    ///
@@ -367,6 +353,12 @@ protected:
    {
       webSocket.sendTXT(text.c_str());
       tickRate();
+
+      if (_echoEnabled)
+      {
+         _echoText(">>> ", text);
+      }
+
       _handler->onSendText(text);
    }
 
@@ -454,6 +446,11 @@ protected:
          }
          else
          {
+            if (_echoEnabled)
+            {
+               _echoText("<<< ", str);
+            }
+
             _onText(str);
             _handler->onReceiveText(str);
          }
@@ -560,6 +557,29 @@ public:
    bool isStarted() const
    {
       return _started;
+   }
+
+   ///
+   /// <summary>
+   /// Enables or disables Serial echo logging of sent/received text messages.
+   /// Disabled by default.
+   /// </summary>
+   /// <param name="enabled">True to log sent/received text messages to Serial, false to suppress them.</param>
+   ///
+   void setEchoEnabled(bool enabled)
+   {
+      _echoEnabled = enabled;
+   }
+
+   ///
+   /// <summary>
+   /// Gets whether Serial echo logging of sent/received text is currently enabled.
+   /// </summary>
+   /// <returns>True if sent/received text messages are logged to Serial.</returns>
+   ///
+   bool isEchoEnabled() const
+   {
+      return _echoEnabled;
    }
 
    ///
