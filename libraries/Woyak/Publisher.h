@@ -5,6 +5,7 @@
 // WIFI_PASSWORD, TELEMETRY_HOST, TELEMETRY_PORT, INFLUXDB_URL, and INFLUXDB_ORG are
 // defined). This mirrors the include order already used by Gate/Wind/Wave_Publisher.
 
+#include <functional>
 #include <vector>
 
 #include "Influx.h"
@@ -157,8 +158,50 @@ private:
    /// <summary>True if this Publisher uses InfluxDB, i.e. config.sites is non-empty; set by begin().</summary>
    bool _usesInflux = false;
 
+   ///
+   /// <summary>
+   /// Default telemetry event handler used unless a custom handler is registered via
+   /// setTelemetryHandler(). Extends TelemetryEventHandler with a single extra
+   /// onStarted() callback slot (see Publisher::setOnStartedCallback()) so a sketch can
+   /// run its own onStarted() logic (e.g. turning off the status LED) without
+   /// subclassing TelemetryEventHandler and risking skipping base-class behavior that
+   /// Publisher itself may rely on.
+   /// </summary>
+   ///
+   class PublisherTelemetryHandler : public TelemetryEventHandler
+   {
+   private:
+      std::function<void()> _onStartedCallback = nullptr;
+
+   public:
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+      explicit PublisherTelemetryHandler(IStatus* status, ArduinoWithDisplay* display = nullptr) : TelemetryEventHandler(status, display)
+      {
+      }
+#else
+      explicit PublisherTelemetryHandler(IStatus* status) : TelemetryEventHandler(status)
+      {
+      }
+#endif
+
+      void setOnStartedCallback(std::function<void()> callback)
+      {
+         _onStartedCallback = callback;
+      }
+
+      void onStarted() override
+      {
+         TelemetryEventHandler::onStarted();
+
+         if (_onStartedCallback != nullptr)
+         {
+            _onStartedCallback();
+         }
+      }
+   };
+
    /// <summary>Default telemetry event handler driving the status LED on connect/disconnect, used unless a custom handler is registered via setTelemetryHandler().</summary>
-   TelemetryEventHandler _telemetryHandler;
+   PublisherTelemetryHandler _telemetryHandler;
 
    /// <summary>Custom handler registered via setTelemetryHandler(), used instead of _telemetryHandler if set.</summary>
    TelemetryEventHandler* _customTelemetryHandler = nullptr;
@@ -362,6 +405,23 @@ public:
    void setTelemetryHandler(TelemetryEventHandler* handler)
    {
       _customTelemetryHandler = handler;
+   }
+
+   ///
+   /// <summary>
+   /// Registers a callback invoked when telemetry finishes starting, run after the
+   /// default TelemetryEventHandler::onStarted() behavior (status set to READY, etc.).
+   /// Useful for sketch-specific startup completion behavior (e.g. turning off the
+   /// status LED) without the risk of subclassing TelemetryEventHandler and missing
+   /// base-class behavior Publisher relies on. Ignored if a custom handler is
+   /// registered via setTelemetryHandler(), since that replaces this default handler
+   /// entirely. Must be called before begin().
+   /// </summary>
+   /// <param name="callback">Function invoked once telemetry finishes starting.</param>
+   ///
+   void setOnStartedCallback(std::function<void()> callback)
+   {
+      _telemetryHandler.setOnStartedCallback(callback);
    }
 
    ///

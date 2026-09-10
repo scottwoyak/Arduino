@@ -36,7 +36,9 @@ constexpr uint16_t TELEMETRY_RATE_NUM_SAMPLES = 50;
 /// Handles telemetry client lifecycle events (connect, disconnect, start, error, and
 /// sent/received text). Provides default behavior for each event; sketches that need
 /// custom behavior should derive from this class and override only the methods they
-/// need.
+/// need. Contract: every override must call the base class implementation (typically
+/// first) so any current or future logic added to the base method (e.g. status
+/// updates, disconnect/reset handling) is never silently skipped.
 /// </summary>
 ///
 class TelemetryEventHandler
@@ -105,7 +107,8 @@ public:
    /// <summary>
    /// Invoked when the telemetry client finishes starting up. Default implementation
    /// sets the status to READY and, on display-capable boards, completes the
-   /// "Telemetry..." label printed by ArduinoBase::initClient() with "OK".
+   /// "Telemetry..." label printed by ArduinoBase::initClient() with "OK". Overrides
+   /// must call this base implementation (see class remarks).
    /// </summary>
    ///
    virtual void onStarted()
@@ -128,7 +131,8 @@ public:
    /// <summary>
    /// Invoked when the telemetry WebSocket connection is lost. Default implementation
    /// logs the reason, completes the "Telemetry..." label (if a display was supplied)
-   /// with "FAILED", sets the status to FAILED, and resets the device.
+   /// with "FAILED", sets the status to FAILED, and resets the device. Overrides must
+   /// call this base implementation (see class remarks).
    /// </summary>
    /// <param name="reason">Reason for the disconnect, as reported by the telemetry client</param>
    ///
@@ -155,7 +159,8 @@ public:
    /// running, or it's unreachable) before the socket was torn down. Default
    /// implementation logs a clearer message than the raw low-level socket teardown
    /// reason, completes the "Telemetry..." label (if a display was supplied) with
-   /// "FAILED", sets the status to FAILED, and resets the device.
+   /// "FAILED", sets the status to FAILED, and resets the device. Overrides must call
+   /// this base implementation (see class remarks).
    /// </summary>
    /// <param name="reason">Low-level reason reported by the telemetry client, if any</param>
    ///

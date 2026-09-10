@@ -82,6 +82,11 @@ void setup()
    publisher.addSensor("WindMeter", []() { wind.begin(); return true; });
    publisher.setValueSource([]() { return wind.getSpeed(); });
 
+   // Turn off the status LED once telemetry finishes starting, since the sketch is
+   // then fully up and running and no longer needs the LED for startup/connectivity
+   // feedback.
+   publisher.setOnStartedCallback([]() { arduino.setStatus(Status::NONE); });
+
    publisher.begin();
 }
 
