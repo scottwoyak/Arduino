@@ -42,6 +42,7 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 #include "Status.h"
 #include "TelemetryClient.h"
 #include "TimeSync.h"
+#include "Timer.h"
 #include "WiFiSettings.h"
 
 // ----------- Telemetry
@@ -55,13 +56,139 @@ Arduino arduino;
 // the portion of the line inside that circle is not drawn.)
 constexpr int16_t GATE_ORIGIN_MARGIN = 50;
 constexpr int16_t GATE_ORIGIN_RADIUS = 10;
-Format azimuthFormat("###", Format::Alignment::RIGHT);
+Format leftAzimuthFormat("###", Format::Alignment::LEFT);
+Format rightAzimuthFormat("###", Format::Alignment::RIGHT);
 int16_t lineLength = 0;
 int16_t gateOriginY = 0;
 
 // ----------- Last open time (updated whenever the gate transitions from closed to
 // open; 0 until the gate has opened at least once since boot)
 time_t lastGateOpenTime = 0;
+
+// ----------- Tap detection for the "Last Open" footer text, which opens the history
+// view when tapped. Rect is only valid (and the footer only tappable) once
+// lastOpenFooterVisible is true, i.e. after the gate has opened at least once.
+bool lastOpenFooterVisible = false;
+Rect16 lastOpenFooterRect;
+
+constexpr auto PREFERENCES_NAMESPACE = SKETCH_NAME;
+constexpr auto HISTORY_PREFERENCES_KEY = "history";
+constexpr size_t GATE_OPEN_HISTORY_SIZE = 10;
+
+///
+/// <summary>
+/// One recorded gate-opening event: the time it happened.
+/// </summary>
+///
+struct GateOpenRecord
+{
+   time_t time;
+};
+
+///
+/// <summary>
+/// Persists the most recent GATE_OPEN_HISTORY_SIZE gate-opening events (combined across
+/// both gates) to Preferences (NVS) as a fixed-size blob, newest entry first. Held
+/// entirely in RAM between load() and save() calls; save() is only called when a new
+/// event is appended, since opens are infrequent.
+/// </summary>
+///
+class GateOpenHistory
+{
+private:
+   GateOpenRecord _records[GATE_OPEN_HISTORY_SIZE] = {};
+   size_t _count = 0;
+
+public:
+   ///
+   /// <summary>
+   /// Loads the saved history from Preferences, if present, discarding any entries with
+   /// an implausible timestamp (e.g. recorded before the clock had synced, which would
+   /// otherwise show up as an opening on Dec 31st 1969). Leaves the history empty if no
+   /// saved data exists yet.
+   /// </summary>
+   ///
+   void load()
+   {
+      arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
+
+      size_t savedSize = arduino.preferences.getBytesLength(HISTORY_PREFERENCES_KEY);
+      if (savedSize > 0 && savedSize <= sizeof(_records))
+      {
+         arduino.preferences.getBytes(HISTORY_PREFERENCES_KEY, _records, savedSize);
+         _count = savedSize / sizeof(GateOpenRecord);
+      }
+
+      arduino.preferences.end();
+
+      // Constant duplicated from TimeSync::isSynced() rather than depending on TimeSync
+      // here, since a synced clock is what distinguishes a real timestamp from bogus
+      // pre-sync data.
+      constexpr time_t MIN_VALID_TIME = 1000000000l;
+
+      size_t validCount = 0;
+      for (size_t i = 0; i < _count; i++)
+      {
+         if (_records[i].time >= MIN_VALID_TIME)
+         {
+            _records[validCount++] = _records[i];
+         }
+      }
+
+      if (validCount != _count)
+      {
+         _count = validCount;
+
+         arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+         arduino.preferences.putBytes(HISTORY_PREFERENCES_KEY, _records, _count * sizeof(GateOpenRecord));
+         arduino.preferences.end();
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Adds a new gate-opening event as the newest entry, shifting older entries back
+   /// (dropping the oldest if the history is already full), and persists the updated
+   /// history to Preferences.
+   /// </summary>
+   /// <param name="time">Time the gate opened.</param>
+   ///
+   void add(time_t time)
+   {
+      size_t newCount = (_count < GATE_OPEN_HISTORY_SIZE) ? (_count + 1) : GATE_OPEN_HISTORY_SIZE;
+      for (size_t i = newCount - 1; i > 0; i--)
+      {
+         _records[i] = _records[i - 1];
+      }
+      _records[0] = { time };
+      _count = newCount;
+
+      arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+      arduino.preferences.putBytes(HISTORY_PREFERENCES_KEY, _records, _count * sizeof(GateOpenRecord));
+      arduino.preferences.end();
+   }
+
+   ///
+   /// <summary>Gets the number of recorded events, from 0 up to GATE_OPEN_HISTORY_SIZE.</summary>
+   /// <returns>Recorded event count.</returns>
+   ///
+   size_t count() const
+   {
+      return _count;
+   }
+
+   ///
+   /// <summary>Gets a recorded event, with index 0 being the most recent.</summary>
+   /// <param name="index">Index from 0 (most recent) to count() - 1 (oldest).</param>
+   /// <returns>The recorded event at the given index.</returns>
+   ///
+   const GateOpenRecord& get(size_t index) const
+   {
+      return _records[index];
+   }
+};
+
+GateOpenHistory gateOpenHistory;
 
 ///
 /// <summary>
@@ -87,15 +214,60 @@ LineState rightLine{ 0, 0, 0, 0, 0, false, NAN, true };
 
 ///
 /// <summary>
-constexpr Color GATE_OPEN_COLOR = (Color)Color565::fromRGB(255, 210, 0); // halfway between orange (255,165,0) and yellow (255,255,0)
+/// Formats a time_t as a friendly date string, e.g. "Aug 12th", using a 3-letter
+/// month abbreviation and an ordinal day suffix (st/nd/rd/th).
+/// </summary>
+/// <param name="time">Time to format.</param>
+/// <returns>Friendly date string, e.g. "Aug 12th".</returns>
+///
+std::string formatFriendlyDate(time_t time)
+{
+   static constexpr const char* MONTH_NAMES[12] = {
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+   };
+
+   struct tm timeInfo;
+   localtime_r(&time, &timeInfo);
+
+   int day = timeInfo.tm_mday;
+   const char* suffix;
+   if (day % 10 == 1 && day != 11)
+   {
+      suffix = "st";
+   }
+   else if (day % 10 == 2 && day != 12)
+   {
+      suffix = "nd";
+   }
+   else if (day % 10 == 3 && day != 13)
+   {
+      suffix = "rd";
+   }
+   else
+   {
+      suffix = "th";
+   }
+
+   return std::string(MONTH_NAMES[timeInfo.tm_mon]) + " " + std::to_string(day) + suffix;
+}
 
 ///
 /// <summary>
-/// Draws both gates' azimuth values as footer text at the bottom of the display, left
-/// and right aligned respectively, in gray with no decimals and a degree symbol, and
-/// (once the gate has opened at least once since boot) the last time the gate was
-/// opened, centered between them. The background is black while closed and matches
-/// the gate-open banner color while open.
+/// Background/banner color used to indicate an open gate, halfway between orange and
+/// yellow.
+/// </summary>
+///
+constexpr Color GATE_OPEN_COLOR = (Color)Color565::fromRGB(255, 210, 0);
+
+///
+/// <summary>
+/// Draws both gates' azimuth values, left and right aligned respectively, inline with
+/// the origin circles, with no decimals and a degree symbol, and (once the gate has
+/// opened at least once since boot) the last time the gate was opened, shown as footer
+/// text centered at the bottom of the display. The background is black while closed
+/// and matches the gate-open banner color while open; the text is gray while closed
+/// and dark orange while open.
 /// </summary>
 /// <param name="leftAzimuth">Left gate's azimuth in degrees, or NAN if unavailable.</param>
 /// <param name="rightAzimuth">Right gate's azimuth in degrees, or NAN if unavailable.</param>
@@ -109,14 +281,20 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth, bool isOpen)
    arduino.setTextSize(2);
 
    Color backgroundColor = isOpen ? GATE_OPEN_COLOR : Color::BLACK;
+   Color textColor = isOpen ? Color::DARKORANGE : Color::GRAY;
 
-   arduino.setCursor(0, -arduino.charH());
-   arduino.print(leftAzimuth, azimuthFormat, Color::GRAY, backgroundColor);
+   // Draw the azimuth values inline with the origin circles rather than at the very
+   // bottom of the display.
+   int16_t azimuthY = gateOriginY - arduino.charH() / 2;
 
-   arduino.setCursor(arduino.width(), -arduino.charH());
-   arduino.printR(rightAzimuth, azimuthFormat, Color::GRAY, backgroundColor);
+   arduino.setCursor(0, azimuthY);
+   arduino.print(leftAzimuth, leftAzimuthFormat, textColor, backgroundColor);
 
-   if (lastGateOpenTime != 0)
+   arduino.setCursor(arduino.width(), azimuthY);
+   arduino.printR(rightAzimuth, rightAzimuthFormat, textColor, backgroundColor);
+
+   lastOpenFooterVisible = (lastGateOpenTime != 0);
+   if (lastOpenFooterVisible)
    {
       struct tm timeInfo;
       localtime_r(&lastGateOpenTime, &timeInfo);
@@ -125,18 +303,73 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth, bool isOpen)
       strftime(timeBuffer, sizeof(timeBuffer), "%I:%M %p", &timeInfo);
       const char* timeStr = (timeBuffer[0] == '0') ? timeBuffer + 1 : timeBuffer;
 
-      char dateBuffer[16];
-      strftime(dateBuffer, sizeof(dateBuffer), "%m/%d", &timeInfo);
-      const char* dateStr = (dateBuffer[0] == '0') ? dateBuffer + 1 : dateBuffer;
+      std::string dateStr = formatFriendlyDate(lastGateOpenTime);
 
-      std::string lastOpenText = std::string("Last Open: ") + timeStr + " " + dateStr;
+      std::string lastOpenText = std::string("Last Open: ") + timeStr + ", " + dateStr;
 
       arduino.setCursorY(-arduino.charH());
-      arduino.printC(lastOpenText.c_str(), Color::GRAY, backgroundColor);
+
+      // Tap target is at least double the text's height, extending equally above and
+      // below it, to make it easier to tap without needing to make the text itself larger.
+      int16_t tapMargin = arduino.charH() / 2;
+      lastOpenFooterRect = Rect16(0, arduino.getCursor().y - tapMargin, arduino.width(), arduino.charH() + 2 * tapMargin);
+
+      arduino.printC(lastOpenText.c_str(), textColor, backgroundColor);
    }
 
    arduino.setTextSize(savedTextSize);
    arduino.setCursor(savedCursor);
+}
+
+// ----------- History view (shown when the "Last Open" footer is tapped)
+constexpr uint16_t HISTORY_VIEW_TIMEOUT_S = 15;
+constexpr uint8_t HISTORY_TITLE_TEXT_SIZE = 4;
+constexpr uint8_t HISTORY_ROW_TEXT_SIZE = 2;
+
+///
+/// <summary>
+/// Draws a full-screen list of up to GATE_OPEN_HISTORY_SIZE recorded gate-opening
+/// events, most recent first, each showing the friendly date, time, and which gate
+/// opened. Drawn once; the caller is responsible for returning to the main view.
+/// </summary>
+///
+void displayHistoryView()
+{
+   arduino.clearDisplay();
+
+   arduino.setTextSize(HISTORY_TITLE_TEXT_SIZE);
+   arduino.setCursor(0, 0);
+   arduino.println("Gate History", Color::HEADING);
+
+   arduino.setTextSize(HISTORY_ROW_TEXT_SIZE);
+
+   if (gateOpenHistory.count() == 0)
+   {
+      arduino.println("No openings recorded", Color::GRAY);
+   }
+   else
+   {
+      for (size_t i = 0; i < gateOpenHistory.count(); i++)
+      {
+         const GateOpenRecord& record = gateOpenHistory.get(i);
+
+         struct tm timeInfo;
+         localtime_r(&record.time, &timeInfo);
+
+         char timeBuffer[16];
+         strftime(timeBuffer, sizeof(timeBuffer), "%I:%M %p", &timeInfo);
+         const char* timeStr = (timeBuffer[0] == '0') ? timeBuffer + 1 : timeBuffer;
+
+         std::string dateStr = formatFriendlyDate(record.time);
+         std::string rowText = dateStr + " " + timeStr;
+
+         arduino.println(rowText.c_str(), Color::GRAY);
+      }
+   }
+
+   arduino.setTextSize(HISTORY_ROW_TEXT_SIZE);
+   arduino.setCursor(0, -arduino.charH(HISTORY_ROW_TEXT_SIZE));
+   arduino.print("Tap to return", Color::GRAY);
 }
 
 constexpr int16_t GATE_STATE_TOP_MARGIN = 10;
@@ -148,16 +381,18 @@ constexpr int16_t GATE_STATE_BOTTOM_MARGIN = 7;
 /// display in size 5 text, with its background filling the full display width and a
 /// 10px top margin and 7px bottom margin. Closed is shown in gray text on a black
 /// background, with a "Tap to open" hint below it in size 2 gray text; open is shown
-/// in black text on an orange background.
+/// in black text on an orange background. The firmware version is drawn in size 2
+/// text in the lower right corner, matching the state text color.
 /// </summary>
 /// <param name="isOpen">True if either gate's azimuth is greater than 10 degrees; false if both gates are at or below that threshold.</param>
+/// <param name="forceRedraw">If true, redraws even if isOpen hasn't changed since the last call (e.g. after returning from the history view).</param>
 ///
-void displayGateState(bool isOpen)
+void displayGateState(bool isOpen, bool forceRedraw = false)
 {
    static bool lastIsOpen = false;
    static bool everDrawn = false;
 
-   if (everDrawn && isOpen == lastIsOpen)
+   if (everDrawn && !forceRedraw && isOpen == lastIsOpen)
    {
       return;
    }
@@ -171,6 +406,7 @@ void displayGateState(bool isOpen)
    arduino.setTextSize(5);
 
    Color backgroundColor = isOpen ? GATE_OPEN_COLOR : Color::BLACK;
+   Color textColor = isOpen ? Color::BLACK : Color::GRAY;
    int16_t rowHeight = GATE_STATE_TOP_MARGIN + arduino.charH(5) + GATE_STATE_BOTTOM_MARGIN + arduino.charH(2);
    arduino.fillRect(0, 0, arduino.width(), arduino.height(), backgroundColor);
 
@@ -188,6 +424,10 @@ void displayGateState(bool isOpen)
       arduino.moveCursorY(-4);
       arduino.printlnC("Tap to open", Color::GRAY, Color::BLACK);
    }
+
+   arduino.setTextSize(2);
+   arduino.setCursor(arduino.width(), arduino.height() - arduino.charH());
+   arduino.printR(VERSION, textColor, backgroundColor);
 
    arduino.setTextSize(savedTextSize);
    arduino.setCursor(savedCursor);
@@ -418,6 +658,11 @@ public:
       rightLine = LineState{ (int16_t)(arduino.width() - GATE_ORIGIN_MARGIN), 0, 0, 0, 0, false, NAN, true };
       lineLength = (rightLine.startX - leftLine.startX) / 2;
       gateOriginY = arduino.height() - 1 - GATE_ORIGIN_MARGIN;
+
+      // Started only after the left client's SSL handshake completes, rather than
+      // alongside it in setup(), so the two TLS handshakes don't run concurrently and
+      // risk starving the task watchdog.
+      rightClient.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
    }
 };
 
@@ -428,6 +673,13 @@ void setup()
    SerialX::begin();
    arduino.begin();
 
+   gateOpenHistory.load();
+
+   if (gateOpenHistory.count() > 0)
+   {
+      lastGateOpenTime = gateOpenHistory.get(0).time;
+   }
+
    leftClient.setHandler(&telemetryHandler);
 
    arduino.beginInit();
@@ -436,8 +688,7 @@ void setup()
 
    arduino.enableOTA(VERSION, SKETCH_NAME);
 
-   arduino.initClient("WebSocket", []() { leftClient.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino.status);
-   rightClient.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
+   arduino.initClient("Telemetry", []() { leftClient.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino.status);
 }
 
 void loop()
@@ -452,15 +703,40 @@ void loop()
       return;
    }
 
+   lgfx::touch_point_t touchPoint;
+   bool touched = arduino.display.getTouch(&touchPoint) > 0;
+
+   static bool showingHistory = false;
+   static bool wasTouched = false;
+   static TimerSecs historyTimeoutTimer(HISTORY_VIEW_TIMEOUT_S);
+
+   bool tapped = touched && !wasTouched;
+   wasTouched = touched;
+
+   bool forceRedraw = false;
+   if (showingHistory)
+   {
+      if (tapped || historyTimeoutTimer.ready())
+      {
+         showingHistory = false;
+         arduino.clearDisplay();
+         forceRedraw = true;
+      }
+      else
+      {
+         return;
+      }
+   }
+
    float leftAzimuth = leftClient.getValue();
    float rightAzimuth = rightClient.isStarted() ? rightClient.getValue() : NAN;
 
-   constexpr float GATE_OPEN_THRESHOLD_DEGREES = 10.0f;
+   constexpr float GATE_OPEN_THRESHOLD_DEGREES = 5.0f;
    bool isOpen = (!isnan(leftAzimuth) && leftAzimuth > GATE_OPEN_THRESHOLD_DEGREES) || (!isnan(rightAzimuth) && rightAzimuth > GATE_OPEN_THRESHOLD_DEGREES);
 
    static bool lastIsOpen = false;
    static bool everDrawn = false;
-   if (!everDrawn || isOpen != lastIsOpen)
+   if (!everDrawn || isOpen != lastIsOpen || forceRedraw)
    {
       // the background was just repainted for the new state, so force both lines to redraw
       // in the correct color even if their azimuth hasn't changed
@@ -470,15 +746,27 @@ void loop()
       if (isOpen && !lastIsOpen && TimeSync::isSynced())
       {
          lastGateOpenTime = time(nullptr);
+
+         gateOpenHistory.add(lastGateOpenTime);
       }
 
       lastIsOpen = isOpen;
       everDrawn = true;
    }
 
-   displayGateState(isOpen);
+   displayGateState(isOpen, forceRedraw);
 
    displayFooterAzimuths(leftAzimuth, rightAzimuth, isOpen);
+
+   if (tapped && lastOpenFooterVisible &&
+       touchPoint.x >= lastOpenFooterRect.left() && touchPoint.x < lastOpenFooterRect.right() &&
+       touchPoint.y >= lastOpenFooterRect.top() && touchPoint.y < lastOpenFooterRect.bottom())
+   {
+      showingHistory = true;
+      historyTimeoutTimer.reset();
+      displayHistoryView();
+      return;
+   }
 
    if (!isnan(leftAzimuth))
    {

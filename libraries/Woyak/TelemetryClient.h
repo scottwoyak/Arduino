@@ -106,25 +106,15 @@ public:
    ///
    /// <summary>
    /// Invoked when the telemetry client finishes starting up. Default implementation
-   /// sets the status to READY and, on display-capable boards, completes the
-   /// "Telemetry..." label printed by ArduinoBase::initClient() with "OK". Overrides
-   /// must call this base implementation (see class remarks).
+   /// sets the status to READY. The "Telemetry..." label printed by
+   /// ArduinoBase::initClient() is already completed by printServerVersion() once the
+   /// server's version greeting arrives, so this method does not print anything further.
+   /// Overrides must call this base implementation (see class remarks).
    /// </summary>
    ///
    virtual void onStarted()
    {
       _status->setStatus(Status::READY);
-
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-      if (_display != nullptr)
-      {
-         // Completes the "Telemetry..." label printed by ArduinoBase::initClient() -
-         // that call prints the label but relies on this line to print "OK" after it.
-         // If initClient()'s label/print sequence ever changes, update this too.
-         _display->printlnR("OK", Color::VALUE);
-         delay(1000);
-      }
-#endif
    }
 
    ///
