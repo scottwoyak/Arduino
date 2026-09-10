@@ -54,6 +54,20 @@ using Arduino = WaveShare_ESP32_S3_Zero;
 
 // This board has no onboard display, so no text-size defaults are defined.
 
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_43)
+
+#define ARDUINO_BUTTON_SUPPORTED
+#define ARDUINO_BUTTON_A_SUPPORTED
+#define ARDUINO_DISPLAY_SUPPORTED
+#define ARDUINO_PREFERENCES_SUPPORTED
+
+#include "Waveshare_ESP32S3_Touch_LCD_43.h"
+using Arduino = Waveshare_ESP32S3_Touch_LCD_43;
+
+constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
+constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
+constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
+
 #elif defined(ARDUINO_ESP32_DEV)
 // Generic ESP32 Dev Module boards are assumed to be wired up as a Viewer setup
 // (Hosyond ESP32-32E builtin 4" ST7796 display, BOOT button as buttonA).

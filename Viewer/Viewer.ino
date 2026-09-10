@@ -1,6 +1,12 @@
 //
-// Sketch for the Hosyond ESP32-32E 4" display (Viewer board).
+// Sketch for the Hosyond ESP32-32E 4" display (Viewer board), also usable on the
+// Waveshare ESP32-S3-Touch-LCD-4.3B.
 //
+
+// Uncomment this to build for the Waveshare ESP32-S3-Touch-LCD-4.3B instead of the
+// Hosyond ESP32-32E Viewer board. Also requires selecting the generic "ESP32S3 Dev
+// Module" board in Visual Micro (that board has no dedicated board package entry).
+#define ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_43
 
 #include "ArduinoBoard.h"
 
