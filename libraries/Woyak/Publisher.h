@@ -602,7 +602,7 @@ public:
 
       if (_config.enableOTA)
       {
-         _arduino->enableOTA(_config.version, _config.sketchName, this);
+         _arduino->enableOTA(_config.version, _config.sketchName, this, _status);
       }
 
       _client = new TelemetryPublisher(_site.telemetryTopic, _config.telemetryDecimals, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);

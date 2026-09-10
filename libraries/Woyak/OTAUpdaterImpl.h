@@ -8,6 +8,30 @@
 
 #include "OTAUpdater.h"
 
+inline void OTAUpdater::_reportMissingPartitionAndHalt()
+{
+   constexpr auto MESSAGE = "OTAUpdater: no OTA download partition found";
+
+   Serial.println(MESSAGE);
+
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+   if (_arduino != nullptr)
+   {
+      _arduino->printHeader("OTA Update");
+      _arduino->setTextSize(_TEXT_SIZE);
+      _arduino->println(MESSAGE, Color::RED);
+   }
+#endif
+
+   if (_status != nullptr)
+   {
+      _status->setStatus(Status::FAILED);
+   }
+
+   Util::setHaltReason(MESSAGE);
+   Util::reset();
+}
+
 #ifdef ARDUINO_DISPLAY_SUPPORTED
 #include "ArduinoWithDisplay.h"
 #include "ColorX.h"

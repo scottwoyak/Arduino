@@ -23,6 +23,9 @@
 constexpr auto LEFT_TELEMETRY_TOPIC = "Gate/Left";
 constexpr auto RIGHT_TELEMETRY_TOPIC = "Gate/Right";
 
+constexpr auto GATE_OPENER_HOST = "192.168.1.9";
+constexpr uint16_t GATE_OPENER_PORT = 80;
+
 constexpr auto VERSION =
 #include "version.txt"
 ;
@@ -36,6 +39,7 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 
 #include <cmath>
 
+#include <HTTPClient.h>
 #include <WebSocketsClient.h>
 
 #include "SerialX.h"
@@ -375,6 +379,27 @@ void displayHistoryView()
 constexpr int16_t GATE_STATE_TOP_MARGIN = 10;
 constexpr int16_t GATE_STATE_BOTTOM_MARGIN = 7;
 
+// ----------- Tap detection for the gate state banner, which posts an open request when
+// tapped while the gate is closed. Rect is only tappable while the gate is closed (the
+// banner shows "Tap to open" in that state).
+Rect16 gateStateRect;
+
+///
+/// <summary>
+/// Posts "OPEN" to the Gate_Opener's /Gate endpoint to trigger the gate to open.
+/// </summary>
+///
+void postGateOpen()
+{
+   HTTPClient http;
+   String url = String("http://") + GATE_OPENER_HOST + ":" + GATE_OPENER_PORT + "/Gate";
+   http.begin(url);
+   http.addHeader("Content-Type", "text/plain");
+   int httpCode = http.POST("OPEN");
+   Serial.printf("postGateOpen: HTTP POST to %s returned code %d\n", url.c_str(), httpCode);
+   http.end();
+}
+
 ///
 /// <summary>
 /// Draws the overall gate state ("CLOSED" or "OPEN") centered at the top of the
@@ -414,6 +439,8 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
    {
       arduino.setCursor(0, (rowHeight - arduino.charH(5)) / 2);
       arduino.printlnC("OPEN", Color::BLACK, GATE_OPEN_COLOR);
+
+      gateStateRect = { 0, 0, 0, 0 };
    }
    else
    {
@@ -423,6 +450,8 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
       arduino.setTextSize(2);
       arduino.moveCursorY(-4);
       arduino.printlnC("Tap to open", Color::GRAY, Color::BLACK);
+
+      gateStateRect = { 0, 0, arduino.width(), (uint16_t)rowHeight };
    }
 
    arduino.setTextSize(2);
@@ -766,6 +795,13 @@ void loop()
       historyTimeoutTimer.reset();
       displayHistoryView();
       return;
+   }
+
+   if (tapped && !isOpen &&
+       touchPoint.x >= gateStateRect.left() && touchPoint.x < gateStateRect.right() &&
+       touchPoint.y >= gateStateRect.top() && touchPoint.y < gateStateRect.bottom())
+   {
+      postGateOpen();
    }
 
    if (!isnan(leftAzimuth))
