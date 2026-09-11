@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <string>
+#include <time.h>
 #include <utility>
 
 #include <Arduino.h>
@@ -148,6 +149,34 @@ private:
       return { releaseUrl + sketchName + ".ino.bin", releaseUrl + "version.txt" };
    }
 
+   ///
+   /// <summary>
+   /// Computes the number of seconds from now until the next wall-clock boundary that is
+   /// an exact multiple of the configured check interval (e.g. every 10 minutes results in
+   /// checks landing on 6:00, 6:10, 6:20, etc). Falls back to the full interval if the
+   /// system clock isn't synced yet (time(nullptr) is unreasonably small).
+   /// </summary>
+   /// <returns>Seconds until the next aligned check.</returns>
+   ///
+   unsigned long _secsUntilNextAlignedCheck() const
+   {
+      unsigned long intervalSecs = _checkTimer.getDurationMs() / 1000UL;
+      if (intervalSecs == 0)
+      {
+         return 0;
+      }
+
+      time_t now = time(nullptr);
+      if (now < 1000000000l)
+      {
+         // Clock not synced yet; fall back to a plain interval.
+         return intervalSecs;
+      }
+
+      unsigned long secsIntoInterval = static_cast<unsigned long>(now) % intervalSecs;
+      return (secsIntoInterval == 0) ? intervalSecs : (intervalSecs - secsIntoInterval);
+   }
+
        ///
        /// <summary>
        /// Checks whether the running firmware has a valid OTA download partition to update
@@ -250,6 +279,7 @@ public:
       : _version(version), _checkTimer(checkIntervalSecs)
    {
       std::tie(_firmwareUrl, _versionUrl) = _deriveUrls(sketchName);
+      _checkTimer.setDurationMs(_secsUntilNextAlignedCheck() * 1000UL);
    }
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
@@ -269,6 +299,7 @@ public:
       : _version(version), _checkTimer(checkIntervalSecs), _arduino(arduino)
    {
       std::tie(_firmwareUrl, _versionUrl) = _deriveUrls(sketchName);
+      _checkTimer.setDurationMs(_secsUntilNextAlignedCheck() * 1000UL);
    }
 #endif
 
@@ -331,6 +362,11 @@ public:
       if (_checkTimer.getDurationMs() != 0 && _checkTimer.ready())
       {
          checkNow();
+
+         // Re-arm the timer so the *next* check lands on the next even wall-clock
+         // boundary (e.g. 6:00, 6:10, 6:20...) rather than drifting from whenever
+         // this check happened to run.
+         _checkTimer.setDurationMs(_secsUntilNextAlignedCheck() * 1000UL);
       }
    }
 };

@@ -2,12 +2,18 @@
 // Gate Viewer
 //
 // Subscribes to live gate azimuth telemetry over WebSocket connections and renders both
-// the left and right gate angles on the Hosyond ESP32-32E 4" display (Viewer board) as
-// lines anchored at the lower corners of the display, with each line's angle matching
-// its received azimuth value (0-360 degrees) and a fixed length of half the display
-// height. The telemetry server does not yet support subscribing to multiple topics on
-// a single connection, so a second, minimal WebSocket client is used here just for the
-// right gate topic instead of a second TelemetrySubscriber instance.
+// the left and right gate angles on a supported display board as lines anchored at the
+// lower corners of the display, with each line's angle matching its received azimuth
+// value (0-360 degrees) and a fixed length of half the display height. The telemetry
+// server does not yet support subscribing to multiple topics on a single connection, so
+// a second, minimal WebSocket client is used here just for the right gate topic instead
+// of a second TelemetrySubscriber instance.
+//
+// On touch-capable boards (e.g. Viewer, Waveshare ESP32-S3 Touch LCD 4.3), tapping the
+// "CLOSED" banner opens the gate, and tapping the "Last Open" footer shows the opening
+// history (auto-dismissed after a timeout or on the next tap). Boards without touch
+// (e.g. Feather ESP32-S3 TFT) are display-only: gate state and lines are still shown,
+// but tap-to-open and the history view are unavailable.
 //
 // Behavior:
 // - Connects to WiFi, then opens two WebSocket connections to the telemetry server (one
@@ -732,15 +738,20 @@ void loop()
       return;
    }
 
+   #ifdef ARDUINO_TOUCH_SUPPORTED
    lgfx::touch_point_t touchPoint;
    bool touched = arduino.display.getTouch(&touchPoint) > 0;
 
-   static bool showingHistory = false;
    static bool wasTouched = false;
-   static TimerSecs historyTimeoutTimer(HISTORY_VIEW_TIMEOUT_S);
-
    bool tapped = touched && !wasTouched;
    wasTouched = touched;
+   #else
+   // No touch hardware on this board: tap-to-open and the history view are unreachable.
+   constexpr bool tapped = false;
+   #endif
+
+   static bool showingHistory = false;
+   static TimerSecs historyTimeoutTimer(HISTORY_VIEW_TIMEOUT_S);
 
    bool forceRedraw = false;
    if (showingHistory)
@@ -787,6 +798,7 @@ void loop()
 
    displayFooterAzimuths(leftAzimuth, rightAzimuth, isOpen);
 
+   #ifdef ARDUINO_TOUCH_SUPPORTED
    if (tapped && lastOpenFooterVisible &&
        touchPoint.x >= lastOpenFooterRect.left() && touchPoint.x < lastOpenFooterRect.right() &&
        touchPoint.y >= lastOpenFooterRect.top() && touchPoint.y < lastOpenFooterRect.bottom())
@@ -803,6 +815,7 @@ void loop()
    {
       postGateOpen();
    }
+   #endif
 
    if (!isnan(leftAzimuth))
    {
