@@ -207,8 +207,9 @@ private:
    ///
    /// <summary>
    /// Posts a single Influx point to the configured log measurement, tagged with the
-   /// sketch name, version (if set), and resolved site/location/sensor (whichever are
-   /// non-null), with the given message as its only field.
+   /// sketch name, version (if set), resolved site/location/sensor (whichever are
+   /// non-null), and the device's current IP address, with the given message as its
+   /// only field.
    /// Does nothing if Influx isn't in use (e.g. begin() hasn't finished setting it up yet).
    /// </summary>
    /// <param name="message">Message to log, both to Influx and Serial.</param>
@@ -238,6 +239,7 @@ private:
       {
          point.addTag("sensor", _config.influxSensor);
       }
+      point.addTag("ip", WiFi.localIP().toString());
       point.addField("message", message);
 
       // Log points are one-off writes, not part of the periodic sensor batch, so force

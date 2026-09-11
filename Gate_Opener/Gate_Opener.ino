@@ -11,7 +11,8 @@
 // Hardware: Waveshare ESP32-S3-Zero with a custom-powered I2C bus and RGB LED status
 // indicator. The onboard NeoPixel/RGB status LED reflects connection status only
 // (white while starting up, blue while connecting to WiFi, green once ready, red on
-// failure); the general-purpose LED lights up while the gate is OPEN.
+// failure); the general-purpose LED lights up while the gate is OPEN. The relay module
+// is powered directly (GND/VCC) and triggered via GATE_RELAY_PIN.
 //
 // Also uploads rolling-averaged enclosure temperature/humidity and a point-in-time
 // CPU temperature reading to InfluxDB on a fixed interval (Measurement: Sensors,
@@ -40,7 +41,7 @@ constexpr auto VERSION =
 constexpr auto SKETCH_NAME = "Gate_Opener";
 
 constexpr uint16_t WEB_SERVER_PORT = 80;
-constexpr uint8_t GATE_RELAY_PIN = 1; // pulsed HIGH to trigger the gate opener
+constexpr uint8_t GATE_RELAY_PIN = 13; // pulsed HIGH to trigger the gate opener
 constexpr float GATE_RELAY_TRIGGER_SECS = 1.0f;
 
 Arduino arduino;
