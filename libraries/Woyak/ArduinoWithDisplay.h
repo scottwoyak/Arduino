@@ -136,6 +136,8 @@ public:
    ///
    void begin() override
    {
+      _checkRunningPartition();
+
       display.init();
 
       display.setRotation(DisplayRotation::LANDSCAPE);

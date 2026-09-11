@@ -79,8 +79,8 @@ constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 #define ARDUINO_TOUCH_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
 
-#include "Viewer.h"
-using Arduino = Viewer;
+#include "ViewerBoard.h"
+using Arduino = ViewerBoard;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;

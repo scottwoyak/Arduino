@@ -175,6 +175,11 @@ public:
             _led->turnOn();
             break;
 
+         case Status::UPDATING:
+            _led->setColor(1.0f, 1.0f, 0.0f);
+            _led->blink(BLINK_INTERVAL_MS);
+            break;
+
          case Status::FAILED:
             // Handled above, outside the deferred action.
             break;

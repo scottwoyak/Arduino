@@ -9,11 +9,11 @@
 
 ///
 /// <summary>
-/// Viewer board wrapper. Hosyond ESP32-32E dev board with a builtin 4" ST7796 TFT
+/// ViewerBoard board wrapper. Hosyond ESP32-32E dev board with a builtin 4" ST7796 TFT
 /// display, using the BOOT button (GPIO0) as buttonA.
 /// </summary>
 ///
-class Viewer : public ArduinoWithDisplay
+class ViewerBoard : public ArduinoWithDisplay
 {
 public:
    ///
@@ -52,10 +52,10 @@ public:
 
    ///
    /// <summary>
-   /// Initializes a new instance of the Viewer class.
+   /// Initializes a new instance of the ViewerBoard class.
    /// </summary>
    ///
-   Viewer() : ArduinoWithDisplay(), buttonA(0), neoPixel(&display), _virtualNeoPixelStatus(&neoPixel),
+   ViewerBoard() : ArduinoWithDisplay(), buttonA(0), neoPixel(&display), _virtualNeoPixelStatus(&neoPixel),
       status(&_virtualNeoPixelStatus)
    {
    }
@@ -76,7 +76,7 @@ public:
    ///
    /// <summary>
    /// Uses one text size larger than the base default for initialization headers,
-   /// since the Viewer's larger 4" display has room for bigger text.
+   /// since the ViewerBoard's larger 4" display has room for bigger text.
    /// </summary>
    /// <returns>Text size to use for headers.</returns>
    ///

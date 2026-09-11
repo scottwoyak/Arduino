@@ -59,9 +59,11 @@ constexpr auto SKETCH_NAME = "Wind_Viewer";
 #include "TimedHistogramChart.h"
 #include "Timer.h"
 #include "WiFiSettings.h"
+#include "ViewerSketch.h"
 
 // ----------- Telemetry
 Arduino arduino;
+ViewerSketch viewer(&arduino, SKETCH_NAME, VERSION, &arduino.status, true);
 
 Format speedFormat("##.# mph", Format::Alignment::RIGHT);
 
@@ -277,9 +279,7 @@ void setup()
    arduino.beginInit(telemetryTopic.c_str());
    displayFooter();
 
-   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &arduino.status);
-
-   arduino.enableOTA(VERSION, SKETCH_NAME);
+   viewer.begin();
 
    arduino.initClient("WebSocket", []() { client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino.status);
    delay(1000); // provide time for the wind meter to get a reading
@@ -287,7 +287,7 @@ void setup()
 
 void loop()
 {
-   arduino.checkForOTA();
+   viewer.checkForOTA();
 
    client->loop();
 

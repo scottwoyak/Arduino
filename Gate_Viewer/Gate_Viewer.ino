@@ -54,9 +54,16 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 #include "TimeSync.h"
 #include "Timer.h"
 #include "WiFiSettings.h"
+#include "ViewerSketch.h"
 
 // ----------- Telemetry
 Arduino arduino;
+
+#ifdef ARDUINO_ESP32_DEV
+ViewerSketch viewer(&arduino, SKETCH_NAME, VERSION, &arduino.status, true);
+#else
+ViewerSketch viewer(&arduino, SKETCH_NAME, VERSION, &arduino.status);
+#endif
 
 // ----------- Line geometry (left line anchored 50px from the left edge, right line
 // anchored 50px from the right edge of the display; the gate origin's Y position is
@@ -65,7 +72,13 @@ Arduino arduino;
 // both gates report an azimuth of 0. A circle is drawn around each gate's origin, and
 // the portion of the line inside that circle is not drawn.)
 constexpr int16_t GATE_ORIGIN_MARGIN = 50;
-constexpr int16_t GATE_ORIGIN_RADIUS = 10;
+
+// Radius tuned to look right on the Viewer's 320px-wide display; scaled down
+// proportionally for smaller displays (e.g. the Feather's 240px-wide display).
+constexpr int16_t GATE_ORIGIN_RADIUS_REFERENCE_WIDTH = 320;
+constexpr int16_t GATE_ORIGIN_RADIUS_REFERENCE = 10;
+int16_t gateOriginRadius = GATE_ORIGIN_RADIUS_REFERENCE;
+
 Format leftAzimuthFormat("###", Format::Alignment::LEFT);
 Format rightAzimuthFormat("###", Format::Alignment::RIGHT);
 int16_t lineLength = 0;
@@ -277,7 +290,7 @@ constexpr Color GATE_OPEN_COLOR = (Color)Color565::fromRGB(255, 210, 0);
 /// opened at least once since boot) the last time the gate was opened, shown as footer
 /// text centered at the bottom of the display. The background is black while closed
 /// and matches the gate-open banner color while open; the text is gray while closed
-/// and dark orange while open.
+/// and black while open.
 /// </summary>
 /// <param name="leftAzimuth">Left gate's azimuth in degrees, or NAN if unavailable.</param>
 /// <param name="rightAzimuth">Right gate's azimuth in degrees, or NAN if unavailable.</param>
@@ -291,7 +304,7 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth, bool isOpen)
    arduino.setTextSize(2);
 
    Color backgroundColor = isOpen ? GATE_OPEN_COLOR : Color::BLACK;
-   Color textColor = isOpen ? Color::DARKORANGE : Color::GRAY;
+   Color textColor = isOpen ? Color::BLACK : Color::GRAY;
 
    // Draw the azimuth values inline with the origin circles rather than at the very
    // bottom of the display.
@@ -399,10 +412,11 @@ void postGateOpen()
 {
    HTTPClient http;
    String url = String("http://") + GATE_OPENER_HOST + ":" + GATE_OPENER_PORT + "/Gate";
+   Serial.print("Opening gate via ");
+   Serial.println(url);
    http.begin(url);
    http.addHeader("Content-Type", "text/plain");
-   int httpCode = http.POST("OPEN");
-   Serial.printf("postGateOpen: HTTP POST to %s returned code %d\n", url.c_str(), httpCode);
+   http.POST("OPEN");
    http.end();
 }
 
@@ -502,8 +516,8 @@ void displayLine(LineState& line, float azimuth, bool isOpen)
    float azimuthRad = azimuth * (float)M_PI / 180.0f;
    float xDir = line.mirrorX ? -cos(azimuthRad) : cos(azimuthRad);
    float yDir = sin(azimuthRad);
-   int16_t startX = line.startX + (int16_t)lround(GATE_ORIGIN_RADIUS * xDir);
-   int16_t startY = gateOriginY - (int16_t)lround(GATE_ORIGIN_RADIUS * yDir);
+   int16_t startX = line.startX + (int16_t)lround(gateOriginRadius * xDir);
+   int16_t startY = gateOriginY - (int16_t)lround(gateOriginRadius * yDir);
    int16_t endX = line.startX + (int16_t)lround(lineLength * xDir);
    int16_t endY = gateOriginY - (int16_t)lround(lineLength * yDir);
 
@@ -513,7 +527,7 @@ void displayLine(LineState& line, float azimuth, bool isOpen)
    }
 
    arduino.drawLine(startX, startY, endX, endY, lineColor);
-   arduino.drawCircle(line.startX, gateOriginY, GATE_ORIGIN_RADIUS, lineColor);
+   arduino.drawCircle(line.startX, gateOriginY, gateOriginRadius, lineColor);
 
    line.lastStartX = startX;
    line.lastStartY = startY;
@@ -700,6 +714,7 @@ public:
       rightLine = LineState{ (int16_t)(arduino.width() - GATE_ORIGIN_MARGIN), 0, 0, 0, 0, false, NAN, true };
       lineLength = (rightLine.startX - leftLine.startX) / 2;
       gateOriginY = arduino.height() - 1 - GATE_ORIGIN_MARGIN;
+      gateOriginRadius = (int16_t)lround(GATE_ORIGIN_RADIUS_REFERENCE * (float)arduino.width() / GATE_ORIGIN_RADIUS_REFERENCE_WIDTH);
 
       // Started only after the left client's SSL handshake completes, rather than
       // alongside it in setup(), so the two TLS handshakes don't run concurrently and
@@ -724,18 +739,14 @@ void setup()
 
    leftClient.setHandler(&telemetryHandler);
 
-   arduino.beginInit();
-
-   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &arduino.status);
-
-   arduino.enableOTA(VERSION, SKETCH_NAME);
+   viewer.begin();
 
    arduino.initClient("Telemetry", []() { leftClient.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino.status);
 }
 
 void loop()
 {
-   arduino.checkForOTA();
+   viewer.checkForOTA();
 
    leftClient.loop();
    rightClient.loop();

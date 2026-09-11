@@ -72,6 +72,7 @@
     <File Path="libraries/Woyak/Memory.h" />
     <File Path="libraries/Woyak/MinMaxValue.h" />
     <File Path="libraries/Woyak/ModulinoEncoder.h" />
+    <File Path="libraries/Woyak/Monitor.h" />
     <File Path="libraries/Woyak/MovingBarChart.h" />
     <File Path="libraries/Woyak/MS5837DepthSensor.h" />
     <File Path="libraries/Woyak/MS5837TempSensor.h" />
@@ -110,6 +111,7 @@
     <File Path="libraries/Woyak/Scott56.h" />
     <File Path="libraries/Woyak/Scott64.h" />
     <File Path="libraries/Woyak/SiteConfig.h" />
+    <File Path="libraries/Woyak/SketchBase.h" />
     <File Path="libraries/Woyak/Slider.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
     <File Path="libraries/Woyak/Stats.h" />
@@ -145,7 +147,8 @@
     <File Path="libraries/Woyak/ValueStore.h" />
     <File Path="libraries/Woyak/ValueStoreFram.h" />
     <File Path="libraries/Woyak/Vector.h" />
-    <File Path="libraries/Woyak/Viewer.h" />
+    <File Path="libraries/Woyak/ViewerBoard.h" />
+    <File Path="libraries/Woyak/ViewerSketch.h" />
     <File Path="libraries/Woyak/VirtualNeoPixel.h" />
     <File Path="libraries/Woyak/Waveshare_ESP32_S3_Zero.h" />
     <File Path="libraries/Woyak/WiFiSettings.h" />
