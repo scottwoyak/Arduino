@@ -16,6 +16,7 @@ enum Status
 	WEB_CONNECTING = 3,
 	READY = 4,
 	FAILED = 5,
+	UPDATING = 6,
 };
 
 ///
@@ -77,6 +78,7 @@ private:
 		case Status::WEB_CONNECTING:  return "WEB_CONNECTING";
 		case Status::READY:           return "READY";
 		case Status::FAILED:          return "FAILED";
+		case Status::UPDATING:        return "UPDATING";
 		default:                      return "UNKNOWN";
 		}
 	}
@@ -198,6 +200,12 @@ public:
 			_wifiLed.blink(BLINK_INTERVAL_MS);
 			_webLed.blink(BLINK_INTERVAL_MS);
 			break;
+
+		case Status::UPDATING:
+			_powerLed.turnOn();
+			_wifiLed.turnOn();
+			_webLed.blink(BLINK_INTERVAL_MS);
+			break;
 		}
 	}
 };
@@ -284,6 +292,11 @@ public:
 			case Status::READY:
 				_led.setColor(0.0f, 1.0f, 0.0f);
 				_led.turnOn();
+				break;
+
+			case Status::UPDATING:
+				_led.setColor(1.0f, 1.0f, 0.0f);
+				_led.blink(BLINK_INTERVAL_MS);
 				break;
 
 			case Status::FAILED:
@@ -423,6 +436,11 @@ public:
 			case Status::READY:
 				_led->setColor(0.0f, 1.0f, 0.0f);
 				_led->turnOn();
+				break;
+
+			case Status::UPDATING:
+				_led->setColor(1.0f, 1.0f, 0.0f);
+				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
 			case Status::FAILED:

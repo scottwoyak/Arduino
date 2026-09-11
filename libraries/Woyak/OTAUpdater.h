@@ -44,8 +44,7 @@ public:
    /// <param name="newVersion">The newly detected version string.</param>
    ///
    virtual void onUpdateAvailable(const char* newVersion)
-   {
-   }
+   {}
 
    ///
    /// <summary>
@@ -55,8 +54,7 @@ public:
    /// <param name="reason">The error reported by the underlying HTTP update client.</param>
    ///
    virtual void onUpdateFailed(const char* newVersion, const char* reason)
-   {
-   }
+   {}
 
    ///
    /// <summary>
@@ -66,8 +64,7 @@ public:
    /// <param name="newVersion">The version that was successfully installed.</param>
    ///
    virtual void onUpdateSucceeded(const char* newVersion)
-   {
-   }
+   {}
 };
 
 ///
@@ -117,13 +114,13 @@ private:
    /// <summary>Version detected by the last _isUpdateAvailable() call that returned true.</summary>
    std::string _availableVersion;
 
-       /// <summary>Optional handler notified (with the newly detected version) once a newer version is found, just before the update is installed.</summary>
-      OTAUpdateEventHandler* _handler = nullptr;
+   /// <summary>Optional handler notified (with the newly detected version) once a newer version is found, just before the update is installed.</summary>
+   OTAUpdateEventHandler* _handler = nullptr;
 
-      /// <summary>Optional status indicator set to FAILED if no OTA download partition is found.</summary>
-      IStatus* _status = nullptr;
+   /// <summary>Optional status indicator set to FAILED if no OTA download partition is found.</summary>
+   IStatus* _status = nullptr;
 
-   #ifdef ARDUINO_DISPLAY_SUPPORTED
+#ifdef ARDUINO_DISPLAY_SUPPORTED
    ArduinoWithDisplay* _arduino;
    Format _percentFormat{ "###%", Format::Alignment::RIGHT };
    int16_t _downloadRowY = 0;
@@ -177,38 +174,38 @@ private:
       return (secsIntoInterval == 0) ? intervalSecs : (intervalSecs - secsIntoInterval);
    }
 
-       ///
-       /// <summary>
-       /// Checks whether the running firmware has a valid OTA download partition to update
-       /// into (i.e. the partition table defines more than one OTA app slot). Without one,
-       /// httpUpdate.update() would fail anyway, so this is checked up front to fail fast
-       /// with a clear message instead of a confusing download-time error.
-       /// </summary>
-       /// <returns>True if an OTA download partition is available.</returns>
-       ///
-       bool _hasDownloadPartition()
-       {
-          return esp_ota_get_next_update_partition(nullptr) != nullptr;
-       }
+   ///
+   /// <summary>
+   /// Checks whether the running firmware has a valid OTA download partition to update
+   /// into (i.e. the partition table defines more than one OTA app slot). Without one,
+   /// httpUpdate.update() would fail anyway, so this is checked up front to fail fast
+   /// with a clear message instead of a confusing download-time error.
+   /// </summary>
+   /// <returns>True if an OTA download partition is available.</returns>
+   ///
+   bool _hasDownloadPartition()
+   {
+      return esp_ota_get_next_update_partition(nullptr) != nullptr;
+   }
 
-       ///
-       /// <summary>
-       /// Reports that no OTA download partition was found: prints to Serial and, on
-       /// display-capable boards, the display, sets the status indicator (if any) to
-       /// FAILED, then halts the device.
-       /// </summary>
-       /// <remarks>This function does not return.</remarks>
-       ///
-       void _reportMissingPartitionAndHalt();
+   ///
+   /// <summary>
+   /// Reports that no OTA download partition was found: prints to Serial and, on
+   /// display-capable boards, the display, sets the status indicator (if any) to
+   /// FAILED, then halts the device.
+   /// </summary>
+   /// <remarks>This function does not return.</remarks>
+   ///
+   void _reportMissingPartitionAndHalt();
 
-       ///
-       /// <summary>
-       /// Fetches the version text file and returns whether it differs from this sketch's
-       /// own version (a fresh fetch failure is treated as "no update available").
-       /// </summary>
-       /// <returns>True if a different version is available on the server.</returns>
-       ///
-       bool _isUpdateAvailable()
+   ///
+   /// <summary>
+   /// Fetches the version text file and returns whether it differs from this sketch's
+   /// own version (a fresh fetch failure is treated as "no update available").
+   /// </summary>
+   /// <returns>True if a different version is available on the server.</returns>
+   ///
+   bool _isUpdateAvailable()
    {
       HTTPClient http;
       http.begin(_versionUrl.c_str());
@@ -347,7 +344,20 @@ public:
          {
             _handler->onUpdateAvailable(_availableVersion.c_str());
          }
+
+         if (_status != nullptr)
+         {
+            _status->setStatus(Status::UPDATING);
+         }
+
          _performUpdate();
+
+         // Only reached if the update failed or wasn't actually applied (ESP.restart()
+         // is called directly on success), so restore the prior status.
+         if (_status != nullptr)
+         {
+            _status->setStatus(Status::READY);
+         }
       }
    }
 
