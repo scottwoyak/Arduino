@@ -411,9 +411,10 @@ void postGateOpen()
 /// Draws the overall gate state ("CLOSED" or "OPEN") centered at the top of the
 /// display in size 5 text, with its background filling the full display width and a
 /// 10px top margin and 7px bottom margin. Closed is shown in gray text on a black
-/// background, with a "Tap to open" hint below it in size 2 gray text; open is shown
-/// in black text on an orange background. The firmware version is drawn in size 2
-/// text in the lower right corner, matching the state text color.
+/// background, with a "Tap to open" hint below it in size 2 gray text on touch-capable
+/// boards (omitted on display-only boards); open is shown in black text on an orange
+/// background. The firmware version is drawn in size 2 text in the lower right corner,
+/// matching the state text color.
 /// </summary>
 /// <param name="isOpen">True if either gate's azimuth is greater than 10 degrees; false if both gates are at or below that threshold.</param>
 /// <param name="forceRedraw">If true, redraws even if isOpen hasn't changed since the last call (e.g. after returning from the history view).</param>
@@ -438,7 +439,11 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
 
    Color backgroundColor = isOpen ? GATE_OPEN_COLOR : Color::BLACK;
    Color textColor = isOpen ? Color::BLACK : Color::GRAY;
+#ifdef ARDUINO_TOUCH_SUPPORTED
    int16_t rowHeight = GATE_STATE_TOP_MARGIN + arduino.charH(5) + GATE_STATE_BOTTOM_MARGIN + arduino.charH(2);
+#else
+   int16_t rowHeight = GATE_STATE_TOP_MARGIN + arduino.charH(5) + GATE_STATE_BOTTOM_MARGIN;
+#endif
    arduino.fillRect(0, 0, arduino.width(), arduino.height(), backgroundColor);
 
    if (isOpen)
@@ -453,9 +458,11 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
       arduino.setCursor(0, GATE_STATE_TOP_MARGIN);
       arduino.printlnC("CLOSED", Color::GRAY, Color::BLACK);
 
+#ifdef ARDUINO_TOUCH_SUPPORTED
       arduino.setTextSize(2);
       arduino.moveCursorY(-4);
       arduino.printlnC("Tap to open", Color::GRAY, Color::BLACK);
+#endif
 
       gateStateRect = { 0, 0, arduino.width(), (uint16_t)rowHeight };
    }
