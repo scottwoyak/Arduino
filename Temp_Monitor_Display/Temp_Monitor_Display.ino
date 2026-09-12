@@ -9,10 +9,10 @@
 // - This device's site/location is prompted for over Serial the first time it runs, then
 //   saved to Preferences (NVS) so it survives reboots and OTA firmware updates. On
 //   subsequent boots the saved value is used automatically, unless buttonA is held during
-//   a short window right after startup, which forces a re-prompt. This is done via a
-//   TempMonitor subclass overriding Monitor's fixed-site resolution hook, since this
-//   sketch prompts for free-text site/location/bucket values rather than picking from a
-//   fixed SiteConfig table.
+//   a short window right after startup, which forces a re-prompt. This is handled by the
+//   shared TempMonitor class (see TempMonitor.h), which overrides Monitor's fixed-site
+//   resolution hook since this sketch prompts for free-text site/location/bucket values
+//   rather than picking from a fixed SiteConfig table.
 // - Samples temperature and humidity every SENSOR_INTERVAL_MS and accumulates
 //   time-averaged values for the next upload.
 // - Continuously renders the latest averaged temperature and humidity values centered
@@ -69,6 +69,7 @@
 #include "WiFiSettings.h"
 
 #include "Monitor.h"
+#include "TempMonitor.h"
 
 // version.txt contains a quoted version string (e.g. "v1.1") and is included directly here
 // so the compiled-in VERSION always matches the same file uploaded to the GitHub release,
@@ -80,9 +81,6 @@ constexpr auto SKETCH_NAME = "Temp_Monitor_Display";
 constexpr auto INFLUX_MEASUREMENT = "Sensors";
 constexpr auto INFLUX_SENSOR = "Temperature";
 constexpr auto PREFERENCES_NAMESPACE = "TempMonitor";
-constexpr auto SITE_KEY = "site";
-constexpr auto LOCATION_KEY = "location";
-constexpr auto BUCKET_KEY = "bucket";
 constexpr const char* BUCKET_OPTIONS[] = { "Monitor", "Testing" };
 constexpr uint8_t INFLUX_INTERVAL_S = 15;
 constexpr uint16_t SENSOR_INTERVAL_MS = 500;
@@ -108,11 +106,7 @@ InfluxField* dewPointField = nullptr;
 InfluxField* absoluteHumidityField = nullptr;
 InfluxField* heatIndexField = nullptr;
 
-String siteName;
-String locationName;
-String bucketName;
-
-// Cached values backing the buttonA-held all-values table (see allValuesTable below);
+// Cached values
 // FieldTable reads these directly via pointer and only repaints a row's value when it changes.
 float allValuesTemp = NAN;
 
@@ -134,177 +128,7 @@ FieldTable allValuesTable(&arduino, 0, 0, TEXT_SIZE_SMALL);
 // the display can be cleared exactly once when switching between it and the normal readout.
 bool wasAllValuesMode = false;
 
-///
-/// <summary>
-/// Formats this device's site and location as "Site/Location".
-/// </summary>
-/// <returns>The formatted "Site/Location" string.</returns>
-///
-std::string siteLocation()
-{
-   return std::string(siteName.c_str()) + "/" + locationName.c_str();
-}
-
-///
-/// <summary>
-/// Formats this device's bucket, site, and location as "Bucket/Site/Location".
-/// </summary>
-/// <returns>The formatted "Bucket/Site/Location" string.</returns>
-///
-std::string bucketSiteLocation()
-{
-   return bucketName.c_str() + std::string("/") + siteLocation();
-}
-
-///
-/// <summary>
-/// Prompts the user over Serial to pick an InfluxDB bucket from BUCKET_OPTIONS. Blocks
-/// until a valid selection is entered.
-/// </summary>
-/// <returns>The chosen bucket name.</returns>
-///
-String promptForBucket()
-{
-   Serial.println("Select an InfluxDB bucket:");
-   for (uint8_t i = 0; i < std::size(BUCKET_OPTIONS); i++)
-   {
-      Serial.print("  ");
-      Serial.print(i + 1);
-      Serial.print(": ");
-      Serial.println(BUCKET_OPTIONS[i]);
-   }
-
-   String label = "Enter selection (1-" + String(std::size(BUCKET_OPTIONS)) + "): ";
-   long selection = SerialX::promptForInt(label, 1, std::size(BUCKET_OPTIONS));
-   return BUCKET_OPTIONS[selection - 1];
-}
-
-///
-/// <summary>
-/// Prompts the user over Serial for a free-text site and location. Blocks until both are
-/// entered non-empty.
-/// </summary>
-/// <param name="siteName">Set to the entered site name.</param>
-/// <param name="locationName">Set to the entered location name.</param>
-///
-void promptForSiteLocation(String& siteName, String& locationName)
-{
-   Serial.println("Configure this device's site/location:");
-
-   do
-   {
-      siteName = SerialX::prompt("Enter site: ");
-   } while (siteName.length() == 0);
-
-   do
-   {
-      locationName = SerialX::prompt("Enter location: ");
-   } while (locationName.length() == 0);
-}
-
-///
-/// <summary>
-/// Prompts the user over Serial for the bucket, site, and location, then saves the
-/// entered/selected values to Preferences for next time.
-/// </summary>
-///
-void promptAndSaveSiteLocation()
-{
-   bucketName = promptForBucket();
-   promptForSiteLocation(siteName, locationName);
-
-   arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
-   arduino.preferences.putString(SITE_KEY, siteName);
-   arduino.preferences.putString(LOCATION_KEY, locationName);
-   arduino.preferences.putString(BUCKET_KEY, bucketName);
-   arduino.preferences.end();
-}
-
-///
-/// <summary>
-/// Checks whether this device's site/location/bucket have been saved to Preferences.
-/// </summary>
-/// <returns>True if a saved configuration exists; otherwise false.</returns>
-///
-bool hasSavedConfig()
-{
-   arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
-   bool hasSavedConfig = arduino.preferences.isKey(SITE_KEY) && arduino.preferences.isKey(LOCATION_KEY) && arduino.preferences.isKey(BUCKET_KEY);
-   arduino.preferences.end();
-
-   return hasSavedConfig;
-}
-
-///
-/// <summary>
-/// Loads this device's saved site/location/bucket from Preferences into site, location,
-/// and bucket. Only call when hasSavedConfig() is true.
-/// </summary>
-///
-void loadSavedConfig()
-{
-   arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
-   siteName = arduino.preferences.getString(SITE_KEY);
-   locationName = arduino.preferences.getString(LOCATION_KEY);
-   bucketName = arduino.preferences.getString(BUCKET_KEY);
-   arduino.preferences.end();
-}
-
-///
-/// <summary>
-/// Monitor subclass that resolves this sketch's free-text site/location/bucket instead
-/// of picking from a fixed SiteConfig table: prompts over Serial (or loads the saved
-/// values from Preferences) during begin(), giving the user a short buttonA-held window
-/// right after boot to force a re-prompt. Also exposes reportSensorFailure() so setup()
-/// can signal a fatal sensor init failure using the same status indicator/reset path
-/// Monitor uses internally.
-/// </summary>
-///
-class TempMonitor : public Monitor
-{
-protected:
-   SiteConfig _resolveFixedSite() override
-   {
-      // buttonA is on GPIO0, a strapping pin: holding it low during power-on/reset puts
-      // the chip into UART download mode instead of running the sketch, so it can't be
-      // checked during boot. Instead, give the user a short window after boot to press it.
-      constexpr uint16_t RECONFIGURE_PROMPT_WINDOW_MS = 2000;
-      Serial.println("Press buttonA now to reconfigure the site/location...");
-      bool reconfigure = SiteResolver::waitForForcePrompt(_arduino->buttonA, RECONFIGURE_PROMPT_WINDOW_MS);
-
-      if (reconfigure || !hasSavedConfig())
-      {
-         promptAndSaveSiteLocation();
-      }
-      else
-      {
-         loadSavedConfig();
-      }
-      _arduino->printlnInitStatus("Location...", siteLocation().c_str());
-
-      return SiteConfig{ nullptr, bucketName.c_str(), siteName.c_str(), locationName.c_str() };
-   }
-
-public:
-   TempMonitor(Arduino* arduino, const SketchConfig& config)
-      : Monitor(arduino, config)
-   {
-   }
-
-   ///
-   /// <summary>
-   /// Signals a fatal sensor initialization failure using the same status indicator and
-   /// reset delay Monitor uses internally for its own fatal init failures.
-   /// </summary>
-   ///
-   void reportSensorFailure()
-   {
-      _status->setStatus(Status::FAILED);
-      Util::reset(RESET_DELAY_S);
-   }
-};
-
-SketchConfig MONITOR_CONFIG = {
+SketchConfig MONITOR_CONFIG
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = PREFERENCES_NAMESPACE,
@@ -314,7 +138,7 @@ SketchConfig MONITOR_CONFIG = {
    .enableRebooter = true,
 };
 
-TempMonitor monitor(&arduino, MONITOR_CONFIG);
+TempMonitor monitor(&arduino, MONITOR_CONFIG, PREFERENCES_NAMESPACE, BUCKET_OPTIONS, std::size(BUCKET_OPTIONS), RESET_DELAY_S);
 
 void setup()
 {
@@ -451,6 +275,6 @@ void loop()
 
    arduino.setTextSize(TEXT_SIZE_SMALL);
    arduino.setCursor(0, -arduino.charH());
-   arduino.print(bucketSiteLocation(), Color::CYAN);
+   arduino.print(monitor.bucketSiteLocation(), Color::CYAN);
    arduino.printR(VERSION, Color::SUB_LABEL);
 }

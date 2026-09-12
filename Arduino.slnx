@@ -117,6 +117,7 @@
     <File Path="libraries/Woyak/Structs.h" />
     <File Path="libraries/Woyak/Table.h" />
     <File Path="libraries/Woyak/TelemetryClient.h" />
+    <File Path="libraries/Woyak/TempMonitor.h" />
     <File Path="libraries/Woyak/TempSensor.h" />
     <File Path="libraries/Woyak/TempSensorCallibration.h" />
     <File Path="libraries/Woyak/TestSensor.h" />
@@ -554,6 +555,10 @@
     <Deploy />
   </Project>
   <Project Path="Temp_Display/Temp_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Temp_Monitor/Temp_Monitor.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
