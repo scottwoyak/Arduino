@@ -79,11 +79,11 @@ void setup()
    arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
 
 #ifdef TELEMETRY_LOCAL
-   arduino.println("Server", "Local");
+   arduino.printlnInitStatus("Server", "Local");
 #else
-   arduino.println("Server", "Remote");
+   arduino.printlnInitStatus("Server", "Remote");
 #endif
-   arduino.println("Topic", TELEMETRY_TOPIC);
+   arduino.printlnInitStatus("Topic", TELEMETRY_TOPIC);
 }
 
 void loop()

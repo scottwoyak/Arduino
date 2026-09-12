@@ -29,7 +29,7 @@ enum DisplayRotation
 
 ///
 /// <summary>
-/// Text size used for the "Initializing" header printed by printHeader().
+/// Text size used for the "Initializing" header printed by printInitHeader().
 /// </summary>
 ///
 constexpr uint8_t TEXT_SIZE_HEADER = 2;
@@ -766,18 +766,24 @@ public:
       printR(str, textColor, backgroundColor);
       println();
    }
-   void printHeader(const char* str, Color textColor = Color::HEADING) override
+   void printInitHeader(const char* str, Color textColor = Color::HEADING) override
    {
       clearDisplay();
       setTextSize(headerTextSize());
-      println(str, textColor);
+      ArduinoBase::printInitHeader(str, textColor);
       moveCursorY(charH() / 2);
-      Logger::writeln(str);
    }
 
+protected:
+   void _printlnInitStatusDisplay(const char* str, Color textColor) override
+   {
+      println(str, textColor);
+   }
+
+public:
    ///
    /// <summary>
-   /// Gets the text size used for headers printed by printHeader() (e.g. the
+   /// Gets the text size used for headers printed by printInitHeader() (e.g. the
    /// "Initializing" header shown during setup). Boards with larger displays can
    /// override this to use a bigger header text size.
    /// </summary>
@@ -1875,10 +1881,8 @@ public:
    void enableOTA(const char* version, const char* sketchName, IStatus* status = nullptr, float checkIntervalSecs = OTAUpdater::DEFAULT_CHECK_INTERVAL_SECS, OTAUpdateEventHandler* onUpdateAvailable = nullptr)
    {
       _ota = new OTAUpdater(version, sketchName, this, checkIntervalSecs);
-      if (onUpdateAvailable != nullptr)
-      {
-         _ota->setHandler(onUpdateAvailable);
-      }
+      _otaLoggingHandler.next = onUpdateAvailable;
+      _ota->setHandler(&_otaLoggingHandler);
       _ota->setStatus(status);
       _ota->checkNow();
    }

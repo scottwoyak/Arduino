@@ -56,10 +56,8 @@
     <File Path="libraries/Woyak/IDepthSensor.h" />
     <File Path="libraries/Woyak/IEncoder.h" />
     <File Path="libraries/Woyak/IHistogramPlot.h" />
-    <File Path="libraries/Woyak/ILogger.h" />
     <File Path="libraries/Woyak/IndexedEncoder.h" />
     <File Path="libraries/Woyak/Influx.h" />
-    <File Path="libraries/Woyak/InfluxLogger.h" />
     <File Path="libraries/Woyak/IPrinter.h" />
     <File Path="libraries/Woyak/IScatterPlotSeries.h" />
     <File Path="libraries/Woyak/ITempSensor.h" />
@@ -95,7 +93,6 @@
     <File Path="libraries/Woyak/ScatterPlotSeries.h" />
     <File Path="libraries/Woyak/ScatterPlotSeriesBase.h" />
     <File Path="libraries/Woyak/SerialHistogram.h" />
-    <File Path="libraries/Woyak/SerialLogger.h" />
     <File Path="libraries/Woyak/SerialTable.h" />
     <File Path="libraries/Woyak/SerialX.h" />
     <File Path="libraries/Woyak/SevenSegment.h" />

@@ -106,7 +106,7 @@ void onUpdateProgress(int current, int total)
 ///
 void performUpdate()
 {
-   arduino.printHeader("Updating Firmware");
+   arduino.printInitHeader("Updating Firmware");
 
    if (!arduino.initWifi(WIFI_SSID, WIFI_PASSWORD))
    {

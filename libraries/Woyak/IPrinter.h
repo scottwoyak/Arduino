@@ -55,7 +55,7 @@ public:
    /// <param name="str">The header text to print (e.g. "Initializing").</param>
    /// <param name="textColor">The text color.</param>
    ///
-   virtual void printHeader(const char* str, Color textColor = Color::HEADING)
+   virtual void printInitHeader(const char* str, Color textColor = Color::HEADING)
    {
       println(str, textColor);
    }

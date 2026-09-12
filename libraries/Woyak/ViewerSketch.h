@@ -72,11 +72,11 @@ public:
       if (_version != nullptr)
       {
          std::string sketchAndVersion = std::string(_sketchName) + ", " + _version;
-         _arduino->printlnR("Sketch...", sketchAndVersion.c_str());
+         _arduino->printlnInitStatus("Sketch...", sketchAndVersion.c_str());
       }
       else
       {
-         _arduino->printlnR("Sketch...", _sketchName);
+         _arduino->printlnInitStatus("Sketch...", _sketchName);
       }
 
       _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);

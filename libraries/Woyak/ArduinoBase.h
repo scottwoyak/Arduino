@@ -7,9 +7,7 @@
 #include <esp_ota_ops.h>
 
 #include "ColorX.h"
-#include "ILogger.h"
 #include "IPrinter.h"
-#include "Logger.h"
 #include "OTAUpdater.h"
 #include "Rebooter.h"
 #include "Status.h"
@@ -19,11 +17,13 @@
 
 ///
 /// <summary>
-/// Base class for Arduino platforms. print()/println()/printlnR()/printHeader() are no-ops
-/// by default; display-capable boards (see ArduinoWithDisplay) override them to render to
-/// the display. Setup-time helpers below (beginInit(), initWifi(), initSensor(),
-/// initClient()) explicitly echo their status text to Logger as well, so it's visible on
-/// Serial regardless of whether the board has a display.
+/// Base class for Arduino platforms. print()/println()/printlnR() are no-ops by default;
+/// display-capable boards (see ArduinoWithDisplay) override them to render to the display.
+/// printInitHeader() and printlnInitStatus() additionally echo their status text directly
+/// to Serial (see their docs below), so init-time output is visible regardless of whether
+/// the board has a display; other helpers (initWifi(), initSensor(), initClient()) render
+/// through print()/println()/printlnR() only and rely on the sketch to also invoke
+/// printlnInitStatus() where Serial visibility is needed.
 /// </summary>
 ///
 class ArduinoBase : public IPrinter
@@ -38,6 +38,51 @@ private:
 protected:
    /// <summary>OTA firmware update handler; only created after enableOTA() is called.</summary>
    OTAUpdater* _ota = nullptr;
+
+   ///
+   /// <summary>
+   /// Default OTA event handler installed by enableOTA(),
+   /// "OTA update available" message regardless of whether it also supplies its own
+   /// handler (e.g. SketchBase, which posts the same event to Influx). Forwards each
+   /// event to the sketch's own handler, if one was supplied.
+   /// </summary>
+   ///
+   class _OTALoggingHandler : public OTAUpdateEventHandler
+   {
+   public:
+      /// <summary>The sketch's own handler, notified after this handler logs the event.</summary>
+      OTAUpdateEventHandler* next = nullptr;
+
+      void onUpdateAvailable(const char* newVersion) override
+      {
+         Serial.print("OTA update available: ");
+         Serial.println(newVersion);
+
+         if (next != nullptr)
+         {
+            next->onUpdateAvailable(newVersion);
+         }
+      }
+
+      void onUpdateFailed(const char* newVersion, const char* reason) override
+      {
+         if (next != nullptr)
+         {
+            next->onUpdateFailed(newVersion, reason);
+         }
+      }
+
+      void onUpdateSucceeded(const char* newVersion) override
+      {
+         if (next != nullptr)
+         {
+            next->onUpdateSucceeded(newVersion);
+         }
+      }
+   };
+
+   /// <summary>Installed as the OTAUpdater's handler by enableOTA(); see _OTALoggingHandler.</summary>
+   _OTALoggingHandler _otaLoggingHandler;
 
 public:
    ///
@@ -125,30 +170,80 @@ public:
 
    ///
    /// <summary>
-   /// Prints a header line (e.g. "Initializing" or "Updating Firmware") to Serial (via
-   /// Logger) and, on display-capable boards, the display as well (see
-   /// ArduinoWithDisplay::printHeader).
+   /// Prints a header line (e.g. "Initializing" or "Updating Firmware") to Serial and, on
+   /// display-capable boards, the display as well (see ArduinoWithDisplay::printInitHeader).
    /// </summary>
    /// <param name="str">The header text to print.</param>
    /// <param name="textColor">The text color.</param>
    ///
-   void printHeader(const char* str, Color textColor = Color::HEADING) override
+   void printInitHeader(const char* str, Color textColor = Color::HEADING) override
    {
+      Serial.println(str);
       println(str, textColor);
-      Logger::writeln(str);
    }
 
    ///
    /// <summary>
-   /// Prints an "Initializing" header. Convenience wrapper for printHeader(), used at the
+   /// Prints an "Initializing" header. Convenience wrapper for printInitHeader(), used at the
    /// start of setup() to standardize the initialization sequence across sketches.
    /// </summary>
    /// <param name="str">The header text to print.</param>
    ///
    void beginInit(const char* str = "Initializing")
    {
-      printHeader(str);
+      printInitHeader(str);
    }
+
+   ///
+   /// <summary>
+   /// Prints a one-off status line (e.g. "Gate opened"), to Serial and, on display-capable
+   /// boards, the display as well. Unlike printInitHeader(), does not clear the display or
+   /// resize text. Always writes directly to Serial, so it works for one-off events
+   /// anywhere in the sketch, not just during init. Overriding boards only need to
+   /// implement the display-drawing half via _printlnInitStatusDisplay().
+   /// </summary>
+   /// <param name="str">The status text to print.</param>
+   /// <param name="textColor">The text color (ignored on serial-only implementations).</param>
+   ///
+   void printlnInitStatus(const char* str, Color textColor = Color::WHITE)
+   {
+      Serial.println(str);
+      _printlnInitStatusDisplay(str, textColor);
+   }
+
+   ///
+   /// <summary>
+   /// Prints a one-off "label: value" status line (e.g. "Sketch...   Gate_Viewer, v1.0"),
+   /// to Serial and, on display-capable boards, the display as well. Same right-aligned
+   /// layout as println(label, value), but always writes directly to Serial (see
+   /// printlnInitStatus() above), so it works anywhere in the sketch, not just during init.
+   /// </summary>
+   /// <param name="label">The label text to print (e.g. "Sketch...").</param>
+   /// <param name="value">The value text to print right after the label.</param>
+   ///
+   void printlnInitStatus(const char* label, const char* value)
+   {
+      print(label, Color::LABEL);
+      Serial.print(label);
+
+      printlnR(value, Color::VALUE);
+      Serial.println(value);
+   }
+
+protected:
+   ///
+   /// <summary>
+   /// Display-drawing hook for printlnInitStatus(); no-op by default (serial-only boards).
+   /// ArduinoWithDisplay overrides this to render the status line to the display.
+   /// </summary>
+   /// <param name="str">The status text to print.</param>
+   /// <param name="textColor">The text color.</param>
+   ///
+   virtual void _printlnInitStatusDisplay(const char* str, Color textColor)
+   {
+   }
+
+public:
 
    ///
    /// <summary>
@@ -162,8 +257,6 @@ public:
    {
       print(label, Color::LABEL);
       printlnR(value, Color::VALUE);
-      Logger::write(label);
-      Logger::writeln(value);
    }
 
    ///
@@ -203,7 +296,7 @@ public:
       }
 
       print("WiFi...", Color::LABEL);
-      Logger::write("WiFi...");
+      Serial.print("WiFi...");
 
       if (_wifiX == nullptr)
       {
@@ -213,16 +306,16 @@ public:
       if (!_wifiX->connect())
       {
          printlnR("FAILED", Color::RED);
-         Logger::writeln("FAILED");
+         Serial.println("FAILED");
 
          std::string message = std::string("WiFi connect failed: ") + WiFiX::statusString();
          println(message.c_str(), Color::RED);
-         Logger::writeln(message.c_str());
+         Serial.println(message.c_str());
          return false;
       }
 
       printlnR(WiFi.localIP().toString().c_str(), Color::VALUE);
-      Logger::writeln(WiFi.localIP().toString().c_str());
+      Serial.println(WiFi.localIP().toString().c_str());
 
       if (status != nullptr)
       {
@@ -232,12 +325,12 @@ public:
       if (syncTime)
       {
          print("Time...", Color::LABEL);
-         Logger::write("Time...");
+         Serial.print("Time...");
          TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nist.gov");
 
          Color timeColor = TimeSync::isSynced() ? Color::VALUE : Color::RED;
          printlnR(TimeSync::localTimeString().c_str(), timeColor);
-         Logger::writeln(TimeSync::localTimeString().c_str());
+         Serial.println(TimeSync::localTimeString().c_str());
       }
 
       return true;
@@ -297,20 +390,20 @@ public:
    {
       print(label, Color::LABEL);
       print("...", Color::LABEL);
-      Logger::write(label);
-      Logger::write("...");
+      Serial.print(label);
+      Serial.print("...");
 
       bool success = initFunc();
       if (success)
       {
          const char* successLabel = successLabelFunc != nullptr ? successLabelFunc() : "OK";
          printlnR(successLabel, Color::VALUE);
-         Logger::writeln(successLabel);
+         Serial.println(successLabel);
       }
       else
       {
          printlnR("NOT FOUND", Color::RED);
-         Logger::writeln("NOT FOUND");
+         Serial.println("NOT FOUND");
       }
       return success;
    }
@@ -337,8 +430,8 @@ public:
 
       print(label, Color::LABEL);
       print("...", Color::LABEL);
-      Logger::write(label);
-      Logger::write("...");
+      Serial.print(label);
+      Serial.print("...");
       beginFunc();
    }
 
@@ -373,10 +466,8 @@ public:
    void enableOTA(const char* version, const char* sketchName, IStatus* status = nullptr, float checkIntervalSecs = OTAUpdater::DEFAULT_CHECK_INTERVAL_SECS, OTAUpdateEventHandler* onUpdateAvailable = nullptr)
    {
       _ota = new OTAUpdater(version, sketchName, checkIntervalSecs);
-      if (onUpdateAvailable != nullptr)
-      {
-         _ota->setHandler(onUpdateAvailable);
-      }
+      _otaLoggingHandler.next = onUpdateAvailable;
+      _ota->setHandler(&_otaLoggingHandler);
       _ota->setStatus(status);
       _ota->checkNow();
    }

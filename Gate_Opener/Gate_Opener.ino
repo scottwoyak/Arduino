@@ -16,8 +16,8 @@
 //
 // Also uploads rolling-averaged enclosure temperature/humidity and a point-in-time
 // CPU temperature reading to InfluxDB on a fixed interval (Measurement: Sensors,
-// site=Bragg, location=Gate, sensor="Gate Opener", item=<Enclosure|CPU>). Startup/init
-// text is also logged to InfluxDB (Measurement: Log) via InfluxLogger.
+// site=Bragg, location=Gate, sensor="Gate Opener", item=<Enclosure|CPU>). Startup/OTA
+// text is also logged to InfluxDB (Measurement: Log) directly via SketchBase.
 //
 // The device restarts automatically at midnight and checks for a firmware update
 // periodically.

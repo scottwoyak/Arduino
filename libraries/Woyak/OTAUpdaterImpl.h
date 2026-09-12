@@ -17,7 +17,7 @@ inline void OTAUpdater::_reportMissingPartitionAndHalt()
 #ifdef ARDUINO_DISPLAY_SUPPORTED
    if (_arduino != nullptr)
    {
-      _arduino->printHeader("OTA Update");
+      _arduino->printInitHeader("OTA Update");
       _arduino->setTextSize(_TEXT_SIZE);
       _arduino->println(MESSAGE, Color::RED);
    }
@@ -64,7 +64,7 @@ inline void OTAUpdater::_performUpdate()
 #ifdef ARDUINO_DISPLAY_SUPPORTED
    if (_arduino != nullptr)
    {
-      _arduino->printHeader("Updating Firmware");
+      _arduino->printInitHeader("Updating Firmware");
       _arduino->setTextSize(_TEXT_SIZE);
       _arduino->print("Downloading...", Color::LABEL);
       _downloadRowY = _arduino->getCursorY();
