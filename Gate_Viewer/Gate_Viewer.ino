@@ -26,6 +26,34 @@
 // Uncomment to use local telemetry server instead of remote
 //#define TELEMETRY_LOCAL
 
+#include <cmath>
+#include <string>
+
+///
+/// <summary>
+/// Tracks the previously drawn endpoint of one gate's azimuth line so it can be erased
+/// (redrawn in black) before the new angle is drawn, and avoids redrawing entirely when
+/// the azimuth hasn't changed.
+/// </summary>
+/// <remarks>
+/// Defined this early (rather than near displayLine()) because the Arduino builder
+/// auto-generates function prototypes (e.g. for displayLine()) and inserts them right
+/// before the first function definition in the file, which must come after this type
+/// is fully defined.
+/// </remarks>
+///
+struct LineState
+{
+   int16_t startX;
+   int16_t lastStartX;
+   int16_t lastStartY = 0;
+   int16_t lastEndX;
+   int16_t lastEndY = 0;
+   bool lineDrawn = false;
+   float lastAzimuth = NAN;
+   bool mirrorX = false;
+};
+
 constexpr auto LEFT_TELEMETRY_TOPIC = "Gate/Left";
 constexpr auto RIGHT_TELEMETRY_TOPIC = "Gate/Right";
 
@@ -43,8 +71,6 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Viewer)."
 #endif
 
-#include <cmath>
-
 #include <HTTPClient.h>
 #include <WebSocketsClient.h>
 
@@ -59,8 +85,11 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 // ----------- Telemetry
 Arduino arduino;
 
+// OTA temporarily disabled on ARDUINO_ESP32_DEV: firmware downloads reliably stall
+// (multi-minute silent gap in the task watchdog log, then a white screen) on this
+// board. Revisit once testing on an S3-based board instead.
 #ifdef ARDUINO_ESP32_DEV
-ViewerSketch viewer(&arduino, SKETCH_NAME, VERSION, &arduino.status, true);
+ViewerSketch viewer(&arduino, SKETCH_NAME, VERSION, &arduino.status, false);
 #else
 ViewerSketch viewer(&arduino, SKETCH_NAME, VERSION, &arduino.status);
 #endif
@@ -212,25 +241,6 @@ public:
 };
 
 GateOpenHistory gateOpenHistory;
-
-///
-/// <summary>
-/// Tracks the previously drawn endpoint of one gate's azimuth line so it can be erased
-/// (redrawn in black) before the new angle is drawn, and avoids redrawing entirely when
-/// the azimuth hasn't changed.
-/// </summary>
-///
-struct LineState
-{
-   int16_t startX;
-   int16_t lastStartX;
-   int16_t lastStartY = 0;
-   int16_t lastEndX;
-   int16_t lastEndY = 0;
-   bool lineDrawn = false;
-   float lastAzimuth = NAN;
-   bool mirrorX = false;
-};
 
 LineState leftLine{ 0 };
 LineState rightLine{ 0, 0, 0, 0, 0, false, NAN, true };

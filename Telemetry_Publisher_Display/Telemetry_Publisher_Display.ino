@@ -27,7 +27,6 @@
 
 #include "ScatterPlot.h"
 #include "Table.h"
-#include "Url.h"
 #include "WiFiSettings.h"
 
 // Selects the mock sensor used to generate published test data.
@@ -39,11 +38,12 @@
 Arduino arduino;
 TestSensor sensor;
 
+// { sketchName }, telemetryTopic, telemetryDecimals, publishIntervalMs
 PublisherConfig PUBLISHER_CONFIG = {
-   .sketchName = "Publisher",
-   .telemetryTopic = "Test",
-   .telemetryDecimals = 3,
-   .publishIntervalMs = 100,
+   { "Publisher" },
+   "Test",
+   3,
+   0,
 };
 
 Publisher publisher(&arduino, PUBLISHER_CONFIG);
@@ -99,9 +99,13 @@ void loop()
       table.addRow("Host", "                        ", Color::VALUE2);
       table.addRow("Rate", "###/s");
 
-      Url url(client->getUrl().c_str());
+      #ifdef TELEMETRY_LOCAL
+      constexpr auto HOST_LABEL = "local";
+#else
+      constexpr auto HOST_LABEL = "remote";
+#endif
       table.setValue(0, client->getTopic(), Color::VALUE);
-      table.setValue(1, url.getHost(), Color::VALUE2);
+      table.setValue(1, HOST_LABEL, Color::VALUE2);
       table.setValueNone(2);
       table.draw();
 

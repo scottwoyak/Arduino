@@ -50,19 +50,28 @@ public:
 protected:
    ///
    /// <summary>
-   /// Warns (via Serial) if the running firmware isn't booting from the "factory"
-   /// partition. A plain USB upload always writes to "factory", so booting from an
-   /// "ota_0"/"ota_1" slot means the device is running stale firmware left over from
-   /// a previous OTA update rather than the sketch that was just uploaded. Call this
-   /// once from begin().
+   /// Warns (via Serial) if the running firmware isn't booting from the partition a
+   /// plain USB upload writes to, which means the device is running stale firmware left
+   /// over from a previous OTA update rather than the sketch that was just uploaded.
+   /// Most partition schemes reserve a "factory" slot that USB uploads always target, but
+   /// schemes without one (e.g. "min_spiffs", which only defines "app0"/"app1") instead
+   /// have USB uploads target the first OTA slot ("app0"). Call this once from begin().
    /// </summary>
    ///
    void _checkRunningPartition()
    {
       const esp_partition_t* running = esp_ota_get_running_partition();
-      if (running != nullptr && strcmp(running->label, "factory") != 0)
+      if (running == nullptr)
       {
-         Serial.printf("WARNING: running from partition '%s', not 'factory' -- this may be stale OTA firmware, not your latest upload! Erase flash to fix.\n", running->label);
+         return;
+      }
+
+      const esp_partition_t* factory = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, nullptr);
+      const esp_partition_t* expected = (factory != nullptr) ? factory : esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, nullptr);
+
+      if (expected != nullptr && running != expected)
+      {
+         Serial.printf("WARNING: running from partition '%s', not '%s' -- this may be stale OTA firmware, not your latest upload! Erase flash to fix.\n", running->label, expected->label);
       }
    }
 

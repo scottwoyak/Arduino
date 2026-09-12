@@ -106,6 +106,10 @@ private:
    static constexpr int16_t _PROGRESS_BAR_MARGIN = 4;
    static constexpr uint32_t _RESULT_DELAY_MS = 3000;
 
+   // Timeout for the firmware download's TCP connect and TLS handshake, so a stalled
+   // connection fails with a clear error instead of hanging indefinitely.
+   static constexpr uint32_t _CONNECT_TIMEOUT_MS = 15000;
+
    const char* _version;
    std::string _versionUrl;
    std::string _firmwareUrl;
@@ -240,10 +244,11 @@ private:
       return updateAvailable;
    }
 
-#ifdef ARDUINO_DISPLAY_SUPPORTED
    ///
    /// <summary>
-   /// Reports OTA download progress as a percentage (and a fill bar) on the display.
+   /// Called periodically by HTTPUpdate while the firmware download is in progress.
+   /// Yields the CPU so other tasks get a chance to run between chunks and, on
+   /// display-capable boards, also reports progress as a percentage and a fill bar.
    /// </summary>
    /// <param name="current">Number of bytes downloaded so far.</param>
    /// <param name="total">Total number of bytes to download.</param>
@@ -251,12 +256,15 @@ private:
    void _onUpdateProgress(int current, int total);
 
    static void _onUpdateProgressHandler(int current, int total) { _active->_onUpdateProgress(current, total); }
-#endif
 
    ///
    /// <summary>
    /// Downloads and installs the firmware binary, showing progress and the final result
-   /// on the display (if present). Restarts the device on success.
+   /// on the display (if present). Restarts the device on success. Temporarily disables
+   /// both cores' idle-task watchdogs for the duration of the (blocking) download, since
+   /// flash writes during the update briefly halt the other core and could otherwise
+   /// starve its idle task long enough to trip the task watchdog and panic-reset the
+   /// device mid-download.
    /// </summary>
    ///
    void _performUpdate();

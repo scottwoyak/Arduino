@@ -67,10 +67,17 @@ public:
    ///
    void begin()
    {
-      std::string sketchLabel = std::string(_sketchName) + ", " + _version;
-      _arduino->println("Sketch...", sketchLabel.c_str());
-
       _arduino->beginInit();
+
+      if (_version != nullptr)
+      {
+         std::string sketchAndVersion = std::string(_sketchName) + ", " + _version;
+         _arduino->printlnR("Sketch...", sketchAndVersion.c_str());
+      }
+      else
+      {
+         _arduino->printlnR("Sketch...", _sketchName);
+      }
 
       _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
 

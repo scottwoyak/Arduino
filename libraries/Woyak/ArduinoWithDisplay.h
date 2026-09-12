@@ -772,6 +772,7 @@ public:
       setTextSize(headerTextSize());
       println(str, textColor);
       moveCursorY(charH() / 2);
+      Logger::writeln(str);
    }
 
    ///
