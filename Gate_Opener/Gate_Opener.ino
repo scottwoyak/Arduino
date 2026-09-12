@@ -50,7 +50,7 @@ WebServer server(WEB_SERVER_PORT);
 bool gateTriggerRelay = false;
 TimerSecs gateRelayTriggerTimer(GATE_RELAY_TRIGGER_SECS);
 
-MonitorConfig MONITOR_CONFIG = {
+SketchConfig MONITOR_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .fixedSite = { nullptr, INFLUXDB_BUCKET, "Bragg", "Gate" },

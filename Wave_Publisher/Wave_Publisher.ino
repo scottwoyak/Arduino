@@ -105,7 +105,7 @@ MS5837DepthSensor depthSensor;
 
 DepthSensorBase* const depth = &depthSensor;
 
-PublisherConfig PUBLISHER_CONFIG = {
+SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = SKETCH_NAME,

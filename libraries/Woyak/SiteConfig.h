@@ -27,7 +27,7 @@ struct SiteConfig
 /// <summary>
 /// A pointer/count pair for a SiteConfig table, constructed automatically from a
 /// SiteConfig array so callers don't need to pass the count separately (e.g.
-/// PublisherConfig::sites = GATE_LOCATIONS).
+/// SketchConfig::sites = GATE_LOCATIONS).
 /// </summary>
 ///
 struct SiteTable
@@ -35,7 +35,7 @@ struct SiteTable
    const SiteConfig* sites;
    size_t count;
 
-   /// <summary>Empty table; used when a Publisher sketch has a single fixed telemetry topic (see PublisherConfig::telemetryTopic) instead of a selectable site table.</summary>
+   /// <summary>Empty table; used when a Publisher sketch has a single fixed telemetry topic (see SketchConfig::telemetryTopic) instead of a selectable site table.</summary>
    SiteTable() : sites(nullptr), count(0)
    {
    }

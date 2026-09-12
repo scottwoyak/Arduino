@@ -38,12 +38,10 @@
 Arduino arduino;
 TestSensor sensor;
 
-// { sketchName }, telemetryTopic, telemetryDecimals, publishIntervalMs
-PublisherConfig PUBLISHER_CONFIG = {
-   { "Publisher" },
-   "Test",
-   3,
-   0,
+SketchConfig PUBLISHER_CONFIG = {
+   .sketchName = "Publisher",
+   .telemetryTopic = "Test",
+   .telemetryDecimals = 3,
 };
 
 Publisher publisher(&arduino, PUBLISHER_CONFIG);

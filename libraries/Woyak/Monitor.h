@@ -9,24 +9,6 @@
 
 ///
 /// <summary>
-/// Configuration for a Monitor (see Monitor). Adds Monitor's fixedSite field to the
-/// fields shared with Publisher (see SketchConfigBase).
-/// </summary>
-///
-/// Fields with a default value below only need to be specified by a sketch if it wants
-/// to override that default; use designated initializers and list only the fields that
-/// differ, e.g. { .sketchName = "Some_Monitor", .version = VERSION,
-/// .preferencesNamespace = "Some_Monitor", .sites = SOME_LOCATIONS,
-/// .influxSensor = "Gate", .includeCpuTemp = true }.
-///
-struct MonitorConfig : SketchConfigBase
-{
-   /// <summary>Fixed InfluxDB site+location entry used when sites is empty (no selection prompt). Ignored if sites is non-empty.</summary>
-   SiteConfig fixedSite = { nullptr, INFLUXDB_BUCKET, nullptr, nullptr };
-};
-
-///
-/// <summary>
 /// Owns the initialization and loop sequence shared by every InfluxDB-only monitor
 /// sketch: banner, force-prompt window, sensor init, site resolution, WiFi, rebooter,
 /// OTA, InfluxDB setup (including a single startup log point with the sketch name,
@@ -38,7 +20,7 @@ struct MonitorConfig : SketchConfigBase
 /// Monitor-specific hook overrides.
 /// </summary>
 ///
-class Monitor : public SketchBase<MonitorConfig>
+class Monitor : public SketchBase
 {
 protected:
    ///
@@ -74,8 +56,8 @@ public:
    /// <param name="arduino">The board wrapper (used as the status indicator directly if it implements IStatus itself; otherwise its onboard NeoPixel LED is used).</param>
    /// <param name="config">Shared monitor configuration.</param>
    ///
-   Monitor(Arduino* arduino, const MonitorConfig& config)
-      : SketchBase<MonitorConfig>(arduino, config)
+   Monitor(Arduino* arduino, const SketchConfig& config)
+      : SketchBase(arduino, config)
    {
    }
 };

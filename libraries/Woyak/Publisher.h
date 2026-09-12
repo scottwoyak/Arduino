@@ -10,30 +10,6 @@
 
 ///
 /// <summary>
-/// Configuration for a Publisher (see Publisher). Adds Publisher's telemetry-specific
-/// fields to the fields shared with Monitor (see SketchConfigBase).
-/// </summary>
-///
-/// Fields with a default value below only need to be specified by a sketch if it wants
-/// to override that default; use designated initializers and list only the fields that
-/// differ, e.g. { .sketchName = "Gate_Publisher", .version = VERSION,
-/// .preferencesNamespace = "Gate_Publisher", .sites = GATE_LOCATIONS,
-/// .influxSensor = "Gate", .includeCpuTemp = true }.
-///
-struct PublisherConfig : SketchConfigBase
-{
-   /// <summary>Fixed telemetry topic used when sites is left empty (i.e. the sketch has no selectable site table). Ignored if sites is non-empty.</summary>
-   const char* telemetryTopic = nullptr;
-
-   /// <summary>Decimal places used when publishing the telemetry value over the WebSocket connection.</summary>
-   uint8_t telemetryDecimals = 2;
-
-   /// <summary>How often (in milliseconds) the telemetry value source is read and published. 0 means every loop() iteration.</summary>
-   uint16_t publishIntervalMs = 0;
-};
-
-///
-/// <summary>
 /// Owns the initialization and loop sequence shared by every Gate/Wind/Wave-style
 /// publisher sketch: banner, force-prompt window, sensor init, site resolution, WiFi,
 /// rebooter, OTA, InfluxDB setup (including a single startup log point with the sketch
@@ -44,7 +20,7 @@ struct PublisherConfig : SketchConfigBase
 /// in SketchBase; this class adds the telemetry-specific pieces on top.
 /// </summary>
 ///
-class Publisher : public SketchBase<PublisherConfig>
+class Publisher : public SketchBase
 {
 private:
    /// <summary>Function that produces the value streamed over telemetry.</summary>
@@ -195,8 +171,8 @@ public:
    /// <param name="arduino">The board wrapper (used as the status indicator directly if it implements IStatus itself; otherwise its onboard NeoPixel LED is used).</param>
    /// <param name="config">Shared publisher configuration.</param>
    ///
-   Publisher(Arduino* arduino, const PublisherConfig& config)
-      : SketchBase<PublisherConfig>(arduino, config),
+   Publisher(Arduino* arduino, const SketchConfig& config)
+      : SketchBase(arduino, config),
 #ifdef ARDUINO_DISPLAY_SUPPORTED
         _telemetryHandler(_status, arduino),
 #else

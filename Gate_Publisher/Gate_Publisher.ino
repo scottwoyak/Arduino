@@ -107,7 +107,7 @@ float gateAngle()
    return lastReportedAngle;
 }
 
-PublisherConfig PUBLISHER_CONFIG = {
+SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = SKETCH_NAME,

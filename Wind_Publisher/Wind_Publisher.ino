@@ -57,7 +57,7 @@ constexpr uint8_t WIND_SENSOR_POWER_PIN = 12; // held HIGH to power the wind enc
 Arduino arduino;
 WindMeter wind(WIND_SENSOR_PIN, arduino.ledPin(), LEDColor::CLEAR_PINK);
 
-PublisherConfig PUBLISHER_CONFIG = {
+SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = SKETCH_NAME,

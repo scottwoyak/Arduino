@@ -254,7 +254,7 @@ public:
 
 PlaygroundTelemetryHandler telemetryHandler(&arduino);
 
-PublisherConfig PUBLISHER_CONFIG = {
+SketchConfig PUBLISHER_CONFIG = {
    .sketchName = "Publisher",
    .telemetryTopic = TELEMETRY_TOPIC,
    .telemetryDecimals = 3,

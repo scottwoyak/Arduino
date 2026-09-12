@@ -18,12 +18,20 @@
 
 ///
 /// <summary>
-/// Fields shared by every MonitorConfig/PublisherConfig: sketch identity, the
-/// site/location table, and InfluxDB cadence settings. Monitor/Publisher each add their
-/// own extra fields on top (e.g. fixedSite vs. telemetryTopic).
+/// Configuration shared by Monitor and Publisher sketches: sketch identity, the
+/// site/location table, InfluxDB cadence settings, Monitor's fixed-site fallback, and
+/// Publisher's telemetry settings. Fields that only apply to one sketch type (e.g.
+/// fixedSite for Monitor, telemetryTopic/telemetryDecimals/publishIntervalMs for
+/// Publisher) are simply left at their default when not used.
 /// </summary>
 ///
-struct SketchConfigBase
+/// Fields with a default value below only need to be specified by a sketch if it wants
+/// to override that default; use designated initializers and list only the fields that
+/// differ, e.g. { .sketchName = "Some_Monitor", .version = VERSION,
+/// .preferencesNamespace = "Some_Monitor", .sites = SOME_LOCATIONS,
+/// .influxSensor = "Gate", .includeCpuTemp = true }.
+///
+struct SketchConfig
 {
    /// <summary>Sketch name, printed at boot and used as the OTA update identifier.</summary>
    const char* sketchName;
@@ -72,6 +80,18 @@ struct SketchConfigBase
 
    /// <summary>If true, enable the scheduled daily reboot via arduino.enableRebooter(). Sketches that need it (e.g. long-running deployed sketches) must set this to true.</summary>
    bool enableRebooter = false;
+
+   /// <summary>Monitor only: fixed InfluxDB site+location entry used when sites is empty (no selection prompt). Ignored if sites is non-empty.</summary>
+   SiteConfig fixedSite = { nullptr, INFLUXDB_BUCKET, nullptr, nullptr };
+
+   /// <summary>Publisher only: fixed telemetry topic used when sites is left empty (i.e. the sketch has no selectable site table). Ignored if sites is non-empty.</summary>
+   const char* telemetryTopic = nullptr;
+
+   /// <summary>Publisher only: decimal places used when publishing the telemetry value over the WebSocket connection.</summary>
+   uint8_t telemetryDecimals = 2;
+
+   /// <summary>Publisher only: how often (in milliseconds) the telemetry value source is read and published. 0 means every loop() iteration.</summary>
+   uint16_t publishIntervalMs = 0;
 };
 
 ///
@@ -82,10 +102,8 @@ struct SketchConfigBase
 /// points), and the standard per-loop sensor sampling/Influx post cycle. Behavior that
 /// differs between Monitor (no telemetry) and Publisher (telemetry WebSocket client) is
 /// factored out into the protected virtual hooks below, overridden by each subclass.
-/// TConfig must derive from SketchConfigBase.
 /// </summary>
 ///
-template <typename TConfig>
 class SketchBase : private OTAUpdateEventHandler
 {
 public:
@@ -118,7 +136,7 @@ protected:
 #endif
 
    /// <summary>Copy of the config passed to the constructor.</summary>
-   TConfig _config;
+   SketchConfig _config;
 
    /// <summary>Resolves/persists the chosen SiteConfig entry.</summary>
    SiteResolver _siteResolver;
@@ -328,7 +346,7 @@ public:
    /// <param name="arduino">The board wrapper (used as the status indicator directly if it implements IStatus itself; otherwise its onboard NeoPixel LED is used).</param>
    /// <param name="config">Shared configuration.</param>
    ///
-   SketchBase(Arduino* arduino, const TConfig& config)
+   SketchBase(Arduino* arduino, const SketchConfig& config)
       : _arduino(arduino),
 #ifdef ARDUINO_STATUS_SUPPORTED
         _status(arduino),
@@ -420,21 +438,41 @@ public:
    {
       SerialX::begin();
 
-      Serial.print(_config.sketchName);
-      Serial.print(" ");
-      Serial.println(_config.version);
+      Serial.println();
+      Serial.println();
 
       _arduino->begin(); // sets up the I2C bus/power rail and the RGB status LED
 
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-      Influx::startInit(_arduino);
-      _arduino->print("Sketch...", Color::LABEL);
-      _arduino->printlnR(_config.sketchName, Color::VALUE2);
+      _arduino->printInitHeader("Initializing");
+
+      std::string fullSketchLine = _config.sketchName;
       if (_config.version != nullptr)
       {
-         _arduino->print("Version...", Color::LABEL);
-         _arduino->printlnR(_config.version, Color::VALUE2);
+         fullSketchLine += std::string(" ") + _config.version;
       }
+
+      Serial.print("Sketch... ");
+      Serial.println(fullSketchLine.c_str());
+
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+      std::string sketchLine = fullSketchLine;
+
+      // Shorten the sketch name (replacing the trailing space with ", ") if the full
+      // line doesn't fit in the remaining width of the row, e.g. "Temp..., v2.3".
+      int16_t availableWidth = _arduino->width() - _arduino->textWidth("Sketch...");
+      if (_config.version != nullptr && _arduino->textWidth(sketchLine.c_str()) > availableWidth)
+      {
+         std::string suffix = std::string("..., ") + _config.version;
+         std::string name = _config.sketchName;
+         while (name.length() > 0 && _arduino->textWidth((name + suffix).c_str()) > availableWidth)
+         {
+            name.pop_back();
+         }
+         sketchLine = name + suffix;
+      }
+
+      _arduino->print("Sketch...", Color::LABEL);
+      _arduino->printlnR(sketchLine, Color::VALUE);
 #endif
 
       bool hasSiteTable = _config.sites.count > 0;

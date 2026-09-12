@@ -3,26 +3,31 @@
 // readings to InfluxDB on a fixed interval.
 //
 // Behavior:
-// - Initializes display, sensor, NeoPixel status LED, watchdog, and InfluxDB client.
+// - Uses the shared Monitor class (see Monitor.h) to own the boot/init sequence:
+//   display init, status LED, sensor init hook, WiFi, daily rebooter, OTA, and the
+//   standard InfluxDB setup/post/flush cycle.
 // - This device's site/location is prompted for over Serial the first time it runs, then
 //   saved to Preferences (NVS) so it survives reboots and OTA firmware updates. On
 //   subsequent boots the saved value is used automatically, unless buttonA is held during
-//   a short window right after startup, which forces a re-prompt.
+//   a short window right after startup, which forces a re-prompt. This is done via a
+//   TempMonitor subclass overriding Monitor's fixed-site resolution hook, since this
+//   sketch prompts for free-text site/location/bucket values rather than picking from a
+//   fixed SiteConfig table.
 // - Samples temperature and humidity every SENSOR_INTERVAL_MS and accumulates
 //   time-averaged values for the next upload.
 // - Continuously renders the latest averaged temperature and humidity values centered
 //   on the display at large text size, with location and version in the header/footer.
 // - Verifies Wi-Fi connectivity each loop and resets the device if it cannot reconnect.
-// - Posts telemetry to InfluxDB every INFLUX_INTERVAL_S seconds.
+// - Posts telemetry to InfluxDB every INFLUX_INTERVAL_S seconds (handled by Monitor::loop()).
 // - Checks for a firmware update periodically and, if a newer
 //   version is published, downloads and installs it (showing progress on the display)
 //   before restarting.
 //
 // Failure handling:
 // - Sensor initialization failure triggers a device reset after RESET_DELAY_S seconds.
-// - Influx initialization failure triggers a device reset after RESET_DELAY_S seconds.
-// - Runtime InfluxDB post failure triggers deep sleep for SENSOR_POST_FAILURE_SLEEP_S
-//   seconds before the device wakes and retries.
+// - Influx initialization failure (handled by Monitor::begin()) triggers a device reset.
+// - Runtime InfluxDB post/flush failures are logged to Serial by Monitor::loop() and
+//   retried the following cycle.
 //
 // Outputs:
 // - Display: centered temperature (###.## F) and humidity (##.#%) at text size 4;
@@ -58,13 +63,12 @@
 #include "TempSensor.h"
 #include <Adafruit_SleepyDog.h>
 #include "SerialX.h"
-#include "SerialLogger.h"
-#include "Influx.h"
-#include "InfluxLogger.h"
 #include "Timer.h"
 #include "FieldTable.h"
 
 #include "WiFiSettings.h"
+
+#include "Monitor.h"
 
 // version.txt contains a quoted version string (e.g. "v1.1") and is included directly here
 // so the compiled-in VERSION always matches the same file uploaded to the GitHub release,
@@ -85,7 +89,6 @@ constexpr uint16_t SENSOR_INTERVAL_MS = 500;
 constexpr uint8_t WATCHDOG_INTERVAL_S = 60;
 constexpr uint8_t RESET_DELAY_S = 10;
 constexpr uint8_t SPACING = 8;
-constexpr uint8_t SENSOR_POST_FAILURE_SLEEP_S = 60;
 constexpr uint8_t TEXT_SIZE_SMALL = 2;
 constexpr uint8_t VALUE_TEXT_SIZE = 4;
 constexpr uint8_t INFLUX_TEMP_DECIMAL_PLACES = 3;
@@ -96,21 +99,18 @@ Format humFormat("##.#%");
 Format tempFormat("###.## F");
 
 Arduino arduino;
-NeoPixelStatus status(&arduino.neoPixel);
 TempSensor sensor;
-Influx* influx = nullptr;
-InfluxLogger* influxLogger = nullptr;
-InfluxPoint* point = nullptr;
+Timer sensorTimer(SENSOR_INTERVAL_MS);
+
 InfluxField* tempField = nullptr;
 InfluxField* humField = nullptr;
 InfluxField* dewPointField = nullptr;
 InfluxField* absoluteHumidityField = nullptr;
 InfluxField* heatIndexField = nullptr;
-Timer sensorTimer(SENSOR_INTERVAL_MS);
 
-String site;
-String location;
-String bucket;
+String siteName;
+String locationName;
+String bucketName;
 
 // Cached values backing the buttonA-held all-values table (see allValuesTable below);
 // FieldTable reads these directly via pointer and only repaints a row's value when it changes.
@@ -142,7 +142,7 @@ bool wasAllValuesMode = false;
 ///
 std::string siteLocation()
 {
-   return std::string(site.c_str()) + "/" + location.c_str();
+   return std::string(siteName.c_str()) + "/" + locationName.c_str();
 }
 
 ///
@@ -153,7 +153,7 @@ std::string siteLocation()
 ///
 std::string bucketSiteLocation()
 {
-   return bucket.c_str() + std::string("/") + siteLocation();
+   return bucketName.c_str() + std::string("/") + siteLocation();
 }
 
 ///
@@ -184,22 +184,22 @@ String promptForBucket()
 /// Prompts the user over Serial for a free-text site and location. Blocks until both are
 /// entered non-empty.
 /// </summary>
-/// <param name="site">Set to the entered site name.</param>
-/// <param name="location">Set to the entered location name.</param>
+/// <param name="siteName">Set to the entered site name.</param>
+/// <param name="locationName">Set to the entered location name.</param>
 ///
-void promptForSiteLocation(String& site, String& location)
+void promptForSiteLocation(String& siteName, String& locationName)
 {
    Serial.println("Configure this device's site/location:");
 
    do
    {
-      site = SerialX::prompt("Enter site: ");
-   } while (site.length() == 0);
+      siteName = SerialX::prompt("Enter site: ");
+   } while (siteName.length() == 0);
 
    do
    {
-      location = SerialX::prompt("Enter location: ");
-   } while (location.length() == 0);
+      locationName = SerialX::prompt("Enter location: ");
+   } while (locationName.length() == 0);
 }
 
 ///
@@ -210,13 +210,13 @@ void promptForSiteLocation(String& site, String& location)
 ///
 void promptAndSaveSiteLocation()
 {
-   bucket = promptForBucket();
-   promptForSiteLocation(site, location);
+   bucketName = promptForBucket();
+   promptForSiteLocation(siteName, locationName);
 
    arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
-   arduino.preferences.putString(SITE_KEY, site);
-   arduino.preferences.putString(LOCATION_KEY, location);
-   arduino.preferences.putString(BUCKET_KEY, bucket);
+   arduino.preferences.putString(SITE_KEY, siteName);
+   arduino.preferences.putString(LOCATION_KEY, locationName);
+   arduino.preferences.putString(BUCKET_KEY, bucketName);
    arduino.preferences.end();
 }
 
@@ -244,97 +244,105 @@ bool hasSavedConfig()
 void loadSavedConfig()
 {
    arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
-   site = arduino.preferences.getString(SITE_KEY);
-   location = arduino.preferences.getString(LOCATION_KEY);
-   bucket = arduino.preferences.getString(BUCKET_KEY);
+   siteName = arduino.preferences.getString(SITE_KEY);
+   locationName = arduino.preferences.getString(LOCATION_KEY);
+   bucketName = arduino.preferences.getString(BUCKET_KEY);
    arduino.preferences.end();
 }
 
+///
+/// <summary>
+/// Monitor subclass that resolves this sketch's free-text site/location/bucket instead
+/// of picking from a fixed SiteConfig table: prompts over Serial (or loads the saved
+/// values from Preferences) during begin(), giving the user a short buttonA-held window
+/// right after boot to force a re-prompt. Also exposes reportSensorFailure() so setup()
+/// can signal a fatal sensor init failure using the same status indicator/reset path
+/// Monitor uses internally.
+/// </summary>
+///
+class TempMonitor : public Monitor
+{
+protected:
+   SiteConfig _resolveFixedSite() override
+   {
+      // buttonA is on GPIO0, a strapping pin: holding it low during power-on/reset puts
+      // the chip into UART download mode instead of running the sketch, so it can't be
+      // checked during boot. Instead, give the user a short window after boot to press it.
+      constexpr uint16_t RECONFIGURE_PROMPT_WINDOW_MS = 2000;
+      Serial.println("Press buttonA now to reconfigure the site/location...");
+      bool reconfigure = SiteResolver::waitForForcePrompt(_arduino->buttonA, RECONFIGURE_PROMPT_WINDOW_MS);
+
+      if (reconfigure || !hasSavedConfig())
+      {
+         promptAndSaveSiteLocation();
+      }
+      else
+      {
+         loadSavedConfig();
+      }
+      _arduino->printlnInitStatus("Location...", siteLocation().c_str());
+
+      return SiteConfig{ nullptr, bucketName.c_str(), siteName.c_str(), locationName.c_str() };
+   }
+
+public:
+   TempMonitor(Arduino* arduino, const SketchConfig& config)
+      : Monitor(arduino, config)
+   {
+   }
+
+   ///
+   /// <summary>
+   /// Signals a fatal sensor initialization failure using the same status indicator and
+   /// reset delay Monitor uses internally for its own fatal init failures.
+   /// </summary>
+   ///
+   void reportSensorFailure()
+   {
+      _status->setStatus(Status::FAILED);
+      Util::reset(RESET_DELAY_S);
+   }
+};
+
+SketchConfig MONITOR_CONFIG = {
+   .sketchName = SKETCH_NAME,
+   .version = VERSION,
+   .preferencesNamespace = PREFERENCES_NAMESPACE,
+   .influxSensor = INFLUX_SENSOR,
+   .influxIntervalS = INFLUX_INTERVAL_S,
+   .enableOTA = true,
+   .enableRebooter = true,
+};
+
+TempMonitor monitor(&arduino, MONITOR_CONFIG);
+
 void setup()
 {
-   SerialX::begin();
    Wire.begin();
 
-   arduino.begin();
-
-   status.begin();
-
-   arduino.beginInit();
-
-   // buttonA is on GPIO0, a strapping pin: holding it low during power-on/reset puts the
-   // chip into UART download mode instead of running the sketch, so it can't be checked
-   // during boot. Instead, give the user a short window after boot to press it.
-   constexpr uint16_t RECONFIGURE_PROMPT_WINDOW_MS = 2000;
-   Serial.println("Press buttonA now to reconfigure the site/location...");
-   Timer reconfigurePromptTimer(RECONFIGURE_PROMPT_WINDOW_MS);
-   bool reconfigure = false;
-   while (!reconfigurePromptTimer.expired())
-   {
-      if (arduino.buttonA.isPressed())
-      {
-         reconfigure = true;
-         break;
-      }
-   }
-
-   arduino.print("Bucket...", Color::LABEL);
-   Logger::write("Bucket...");
-   if (reconfigure || !hasSavedConfig())
-   {
-      promptAndSaveSiteLocation();
-   }
-   else
-   {
-      loadSavedConfig();
-   }
-   arduino.printlnR(bucket, Color::VALUE);
-   arduino.print("Location...", Color::LABEL);
-   arduino.printlnR(siteLocation(), Color::VALUE);
-   Logger::writeln(bucketSiteLocation());
-
-   // Created here (before sensor init/WiFi) so setup() messages logged via Logger are
-   // queued in memory; attach() below flushes them to Influx once it's available.
-   influxLogger = new InfluxLogger("Log", { { "site", site.c_str() }, { "location", location.c_str() }, { "sensor", INFLUX_SENSOR } });
-   Logger::addLogger(influxLogger);
+   monitor.begin();
 
    // Fall back to the internal ESP32 CPU temperature sensor if no external sensor is
    // found, so the device still reports a (less accurate) temperature reading instead
    // of failing to start.
    if (arduino.initSensor("Sensor", []() { return sensor.begin(false, true); }, []() { return sensor.type(); }))
    {
-      Logger::write("   Type: ");
-      Logger::writeln(sensor.type());
-      Logger::write("   Address: 0x");
-      Logger::writeln(String(sensor.address(), HEX));
-      Logger::write("   ID: ");
-      Logger::writeln(String(sensor.id()));
+      std::string addressStr = sensor.address() != 0 ? std::string("0x") + String(sensor.address(), HEX).c_str() : "N/A";
+      std::string idStr = strlen(sensor.id()) > 0 ? sensor.id() : "N/A";
+      std::string sensorMessage = std::string("Sensor: ") + sensor.type() + ", Address: " + addressStr + ", ID: " + idStr;
+      monitor.logMessage(sensorMessage.c_str());
    }
    else
    {
-      status.setStatus(Status::FAILED);
-      Util::reset(RESET_DELAY_S);
+      monitor.reportSensorFailure();
    }
 
-   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
-   arduino.enableRebooter();
-   arduino.enableOTA(VERSION, SKETCH_NAME);
-
-   influx = new Influx(INFLUX_INTERVAL_S, &status, INFLUXDB_URL, INFLUXDB_ORG, bucket.c_str());
-
-   point = new InfluxPoint(INFLUX_MEASUREMENT, { { "site", site.c_str() }, { "location", location.c_str() }, { "sensor", INFLUX_SENSOR } });
+   InfluxPoint* point = monitor.addPoint(INFLUX_MEASUREMENT, { { "sensor", INFLUX_SENSOR } });
    tempField = point->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
    humField = point->addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
    dewPointField = point->addTimeAverageField(INFLUX_INTERVAL_S, "dewPoint", INFLUX_TEMP_DECIMAL_PLACES);
    absoluteHumidityField = point->addTimeAverageField(INFLUX_INTERVAL_S, "absoluteHumidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
    heatIndexField = point->addTimeAverageField(INFLUX_INTERVAL_S, "heatIndex", INFLUX_TEMP_DECIMAL_PLACES);
-
-   if (!influx->begin(arduino))
-   {
-      status.setStatus(Status::FAILED);
-      Util::reset(RESET_DELAY_S);
-   }
-
-   influxLogger->attach(influx);
 
    allValuesTable.addRow("Temp", tempFormat.formatString().c_str(), &allValuesTemp);
    allValuesTable.addRow("Humidity", &allValuesHum);
@@ -346,8 +354,6 @@ void setup()
    int16_t tableFooterHeight = arduino.charH(TEXT_SIZE_SMALL);
    int16_t tableAvailableHeight = arduino.height() - tableHeaderHeight - tableFooterHeight;
    allValuesTable.setPosition(arduino.width() / 2, tableHeaderHeight + tableAvailableHeight / 2, Anchor::CENTER);
-
-   status.setStatus(Status::READY);
 
    // Pause so the initialization info on the display remains visible for a moment
    // before it's cleared and replaced with the live temperature/humidity readout.
@@ -362,6 +368,8 @@ void loop()
 {
    Watchdog.reset();
 
+   monitor.loop();
+
    if (sensorTimer.ready())
    {
       Readings readings = sensor.readAll();
@@ -372,7 +380,7 @@ void loop()
       heatIndexField->set(readings.heatIndexF);
    }
 
-   if (!arduino.ensureWiFiConnected(&status))
+   if (!arduino.ensureWiFiConnected())
    {
       arduino.clearDisplay();
       arduino.println("WiFi connection lost", Color::RED);
@@ -445,14 +453,4 @@ void loop()
    arduino.setCursor(0, -arduino.charH());
    arduino.print(bucketSiteLocation(), Color::CYAN);
    arduino.printR(VERSION, Color::SUB_LABEL);
-
-   if (influx->ready())
-   {
-      arduino.led.turnOn();
-      if (!point->post(influx->client()))
-      {
-         arduino.deepSleep(SENSOR_POST_FAILURE_SLEEP_S);
-      }
-      arduino.led.turnOff();
-   }
 }
