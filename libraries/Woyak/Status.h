@@ -35,7 +35,8 @@ public:
 
 	///
 	/// <summary>
-	/// Initializes the status indicator and sets its status to STARTED.
+	/// Initializes the status indicator's underlying hardware. Leaves the status off
+	/// (as if Status::NONE) until a caller explicitly calls setStatus().
 	/// </summary>
 	///
 	virtual void begin() = 0;
@@ -86,12 +87,12 @@ private:
 public:
 	///
 	/// <summary>
-	/// Reports the initial STARTED status; Serial is expected to already be started by the sketch.
+	/// Does nothing; Serial is expected to already be started by the sketch. Call
+	/// setStatus() to report the first status.
 	/// </summary>
 	///
 	void begin() override
 	{
-		setStatus(Status::STARTED);
 	}
 
 	///
@@ -152,7 +153,6 @@ public:
 		_powerLed.begin();
 		_wifiLed.begin();
 		_webLed.begin();
-		setStatus(Status::STARTED);
 	}
 
 	///
@@ -236,13 +236,12 @@ public:
 
 	///
 	/// <summary>
-	/// Initializes the RGB LED and clears the current status.
+	/// Initializes the RGB LED. The LED stays off until setStatus() is called.
 	/// </summary>
 	///
 	void begin() override
 	{
 		_led.begin();
-		setStatus(Status::STARTED);
 	}
 
 	///
@@ -353,7 +352,8 @@ public:
 
 	///
 	/// <summary>
-	/// Initializes the NeoPixel using the default brightness level.
+	/// Initializes the NeoPixel using the default brightness level. The NeoPixel
+	/// stays off until setStatus() is called.
 	/// </summary>
 	///
 	void begin() override
@@ -375,7 +375,6 @@ public:
 		}
 
 		_led->setLevel(level);
-		setStatus(Status::STARTED);
 	}
 
 	///

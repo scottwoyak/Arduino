@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <functional>
+#include <memory>
 #include <string>
 #include <time.h>
 #include <utility>
@@ -9,7 +11,9 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <HTTPUpdate.h>
+#include <Update.h>
 #include <esp_ota_ops.h>
+#include <esp_task_wdt.h>
 
 #include "Status.h"
 #include "Timer.h"
@@ -106,9 +110,24 @@ private:
    static constexpr int16_t _PROGRESS_BAR_MARGIN = 4;
    static constexpr uint32_t _RESULT_DELAY_MS = 3000;
 
+   // Minimum time between progress redraws during the download. Throttling by elapsed
+   // time (rather than by percent change) keeps the number of draws roughly constant
+   // regardless of firmware size or download speed, capping how often the panel is
+   // touched - which was found to be the real trigger for display corruption once draws
+   // got too frequent, even though each individual draw is already fully serialized
+   // against flash writes (see waitDisplay() in _onUpdateProgress()).
+   static constexpr uint32_t _PROGRESS_REDRAW_INTERVAL_MS = 300;
+
    // Timeout for the firmware download's TCP connect and TLS handshake, so a stalled
    // connection fails with a clear error instead of hanging indefinitely.
    static constexpr uint32_t _CONNECT_TIMEOUT_MS = 15000;
+
+   // Maximum time to wait for more data to arrive between chunks while downloading, once
+   // the connection is established. The task watchdog is deinitialized for the whole
+   // download (see esp_task_wdt_deinit() in _performUpdate()), so a stall here (e.g. the
+   // server stops sending data but keeps the TCP connection open) would otherwise hang
+   // forever with nothing to catch it; this fails with a clear error instead.
+   static constexpr uint32_t _STALL_TIMEOUT_MS = 15000;
 
    const char* _version;
    std::string _versionUrl;
@@ -129,11 +148,21 @@ private:
    Format _percentFormat{ "###%", Format::Alignment::RIGHT };
    int16_t _downloadRowY = 0;
    int16_t _progressBarY = 0;
-#endif
 
-   // The active instance being updated, used by the static HTTPUpdate progress callback
-   // since HTTPUpdate only supports a plain function pointer (no captured context).
-   static inline OTAUpdater* _active = nullptr;
+   /// <summary>
+   /// Last percentage drawn by _onUpdateProgress(), so repeated callbacks for the same
+   /// percentage (which fire far more often than the display needs to redraw) skip the
+   /// SPI writes entirely. Set to -1 so the first callback always draws.
+   /// </summary>
+   int16_t _lastDrawnPercent = -1;
+
+   /// <summary>
+   /// millis() timestamp of the last progress redraw, so bursts of chunks arriving faster
+   /// than the display/panel can settle between draws are throttled by elapsed time
+   /// (see _PROGRESS_REDRAW_INTERVAL_MS) rather than only by percentage change.
+   /// </summary>
+   uint32_t _lastDrawTimeMs = 0;
+#endif
 
    ///
    /// <summary>
@@ -246,28 +275,40 @@ private:
 
    ///
    /// <summary>
-   /// Called periodically by HTTPUpdate while the firmware download is in progress.
-   /// Yields the CPU so other tasks get a chance to run between chunks and, on
-   /// display-capable boards, also reports progress as a percentage and a fill bar.
+   /// Called after each chunk is written to flash while the firmware download is in
+   /// progress. Yields the CPU so other tasks get a chance to run between chunks and, on
+   /// display-capable boards, also reports progress as a percentage and a fill bar
+   /// (throttled to redraw only when the percentage changes, to minimize SPI writes).
    /// </summary>
    /// <param name="current">Number of bytes downloaded so far.</param>
    /// <param name="total">Total number of bytes to download.</param>
    ///
    void _onUpdateProgress(int current, int total);
 
-   static void _onUpdateProgressHandler(int current, int total) { _active->_onUpdateProgress(current, total); }
-
    ///
    /// <summary>
-   /// Downloads and installs the firmware binary, showing progress and the final result
-   /// on the display (if present). Restarts the device on success. Temporarily disables
-   /// both cores' idle-task watchdogs for the duration of the (blocking) download, since
-   /// flash writes during the update briefly halt the other core and could otherwise
-   /// starve its idle task long enough to trip the task watchdog and panic-reset the
-   /// device mid-download.
+   /// Downloads and installs the firmware binary via a manual chunked HTTP read / flash
+   /// write loop, showing progress and the final result on the display (if present).
+   /// Restarts the device on success. Progress is drawn only between chunk writes, so a
+   /// display SPI transaction is never in flight while flash writes (which briefly disable
+   /// both cores' flash caches) are happening. Also temporarily disables both cores'
+   /// idle-task watchdogs for the duration of the (blocking) download, since flash writes
+   /// during the update briefly halt the other core and could otherwise starve its idle
+   /// task long enough to trip the task watchdog and panic-reset the device mid-download.
    /// </summary>
    ///
    void _performUpdate();
+
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+   ///
+   /// <summary>
+   /// Clears the display immediately, if one is present. Used to clear stale content as
+   /// soon as an update is detected, rather than leaving it showing through the delay
+   /// before _performUpdate() gets around to its own clear.
+   /// </summary>
+   ///
+   void _clearDisplayIfPresent();
+#endif
 
 public:
    ///
@@ -352,6 +393,13 @@ public:
          {
             _handler->onUpdateAvailable(_availableVersion.c_str());
          }
+
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+         // Clear immediately on detecting an update, rather than leaving whatever was on
+         // screen showing through the version check / HTTP connect delay that happens
+         // before _performUpdate() gets around to its own printInitHeader()/clearDisplay().
+         _clearDisplayIfPresent();
+#endif
 
          if (_status != nullptr)
          {

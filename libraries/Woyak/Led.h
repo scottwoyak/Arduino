@@ -577,11 +577,6 @@ constexpr neoPixelType NEOPIXEL_LED_TYPE = NEO_RGB + NEO_KHZ800;
 #elif defined ARDUINO_ESP32S3_DEV
 constexpr int16_t NEOPIXEL_LED_PIN = 48;
 constexpr neoPixelType NEOPIXEL_LED_TYPE = NEO_GRB + NEO_KHZ800;
-#elif defined ARDUINO_ESP32_DEV
-// Generic ESP32 Dev Module boards (e.g. the Viewer board) have no onboard NeoPixel;
-// this value is unused since NeoPixelLED is never instantiated for that board.
-constexpr int16_t NEOPIXEL_LED_PIN = -1;
-constexpr neoPixelType NEOPIXEL_LED_TYPE = NEO_GRB + NEO_KHZ800;
 #else
 constexpr int16_t NEOPIXEL_LED_PIN = PIN_NEOPIXEL;
 constexpr neoPixelType NEOPIXEL_LED_TYPE = NEO_GRB + NEO_KHZ800;

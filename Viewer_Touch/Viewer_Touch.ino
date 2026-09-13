@@ -1,10 +1,13 @@
 //
 // Viewer Touch
 //
-// Demonstrates resistive touch input on the Hosyond ESP32-32E 4" display (Viewer
-// board). Draws two on-screen buttons that change color while touched and revert when
-// released (or when the touch moves off the button).
+// Demonstrates capacitive touch input on the Hosyond ESP32-S3 4" display (Viewer
+// board). Draws four on-screen buttons (two on top, two below) that change color
+// while touched and revert when released (or when the touch moves off the button),
+// so both horizontal and vertical touch alignment can be verified.
 //
+
+#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
 
 #include "ArduinoBoard.h"
 
@@ -17,15 +20,14 @@
 Arduino arduino;
 
 constexpr auto TITLE = "Touch Demo";
-constexpr auto FOOTER_MESSAGE = "Press a Button";
 
 constexpr uint8_t TITLE_TEXT_SIZE = 4;
-constexpr uint8_t FOOTER_TEXT_SIZE = 3;
 constexpr uint8_t BUTTON_TEXT_SIZE = 3;
 
 constexpr uint16_t BUTTON_WIDTH = 180;
 constexpr uint16_t BUTTON_HEIGHT = 100;
-constexpr uint16_t BUTTON_GAP = 30;
+constexpr uint16_t BUTTON_COL_GAP = 30;
+constexpr uint16_t BUTTON_ROW_GAP = 30;
 
 Color NORMAL_COLOR = Color::BLUE;
 Color PRESSED_COLOR = Color::LIGHTBLUE;
@@ -122,6 +124,14 @@ TouchButton button2(
    Rect16(0, 0, BUTTON_WIDTH, BUTTON_HEIGHT),
    "Button 2");
 
+TouchButton button3(
+   Rect16(0, 0, BUTTON_WIDTH, BUTTON_HEIGHT),
+   "Button 3");
+
+TouchButton button4(
+   Rect16(0, 0, BUTTON_WIDTH, BUTTON_HEIGHT),
+   "Button 4");
+
 ///
 /// <summary>
 /// Draws the title header at the top of the display.
@@ -134,35 +144,27 @@ void displayHeader()
    arduino.println(TITLE, Color::HEADING);
 }
 
-///
-/// <summary>
-/// Draws the footer message in gray at the bottom of the display.
-/// </summary>
-///
-void displayFooter()
-{
-   arduino.setTextSize(FOOTER_TEXT_SIZE);
-   arduino.setCursor(0, -arduino.charH(FOOTER_TEXT_SIZE));
-   arduino.print(FOOTER_MESSAGE, Color::GRAY);
-}
-
 void setup()
 {
    SerialX::begin();
    arduino.begin();
 
-   int16_t totalWidth = BUTTON_WIDTH * 2 + BUTTON_GAP;
+   int16_t totalWidth = BUTTON_WIDTH * 2 + BUTTON_COL_GAP;
+   int16_t totalHeight = BUTTON_HEIGHT * 2 + BUTTON_ROW_GAP;
    int16_t left = (arduino.width() - totalWidth) / 2;
-   int16_t buttonY = (arduino.height() - BUTTON_HEIGHT) / 2;
+   int16_t top = (arduino.height() - totalHeight) / 2;
 
-   button1 = TouchButton(Rect16(left, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT), "Button 1");
-   button2 = TouchButton(Rect16(left + BUTTON_WIDTH + BUTTON_GAP, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT), "Button 2");
+   button1 = TouchButton(Rect16(left, top, BUTTON_WIDTH, BUTTON_HEIGHT), "Button 1");
+   button2 = TouchButton(Rect16(left + BUTTON_WIDTH + BUTTON_COL_GAP, top, BUTTON_WIDTH, BUTTON_HEIGHT), "Button 2");
+   button3 = TouchButton(Rect16(left, top + BUTTON_HEIGHT + BUTTON_ROW_GAP, BUTTON_WIDTH, BUTTON_HEIGHT), "Button 3");
+   button4 = TouchButton(Rect16(left + BUTTON_WIDTH + BUTTON_COL_GAP, top + BUTTON_HEIGHT + BUTTON_ROW_GAP, BUTTON_WIDTH, BUTTON_HEIGHT), "Button 4");
 
    arduino.clearDisplay();
    displayHeader();
-   displayFooter();
    button1.draw();
    button2.draw();
+   button3.draw();
+   button4.draw();
 }
 
 void loop()
@@ -172,4 +174,6 @@ void loop()
 
    button1.update(touched && button1.contains(touchPoint.x, touchPoint.y));
    button2.update(touched && button2.contains(touchPoint.x, touchPoint.y));
+   button3.update(touched && button3.contains(touchPoint.x, touchPoint.y));
+   button4.update(touched && button4.contains(touchPoint.x, touchPoint.y));
 }

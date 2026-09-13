@@ -443,6 +443,8 @@ public:
 
       _arduino->begin(); // sets up the I2C bus/power rail and the RGB status LED
 
+      _status->setStatus(Status::STARTED);
+
       _arduino->printInitHeader("Initializing");
 
       std::string fullSketchLine = _config.sketchName;

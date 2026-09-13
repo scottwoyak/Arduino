@@ -6,7 +6,7 @@
 // (and current-value slider) filling the space between it and the header.
 //
 // The layout is computed at runtime from the display's dimensions, so the sketch runs on
-// any display size, e.g. the Hosyond ESP32-32E 4" 480x320 display (Viewer board), the
+// any display size, e.g. the Hosyond ESP32-S3 4" 480x320 display (Viewer board), the
 // 240x135 display on the Feather ESP32-S3 TFT, or the Waveshare ESP32-S3-Touch-LCD-4.3B's
 // 800x480 display.
 //
@@ -22,9 +22,14 @@
 //#define TELEMETRY_LOCAL
 
 // Uncomment this to build for the Waveshare ESP32-S3-Touch-LCD-4.3B instead of the
-// Hosyond ESP32-32E Viewer board. Also requires selecting the generic "ESP32S3 Dev
+// Hosyond ESP32-S3 Viewer board. Also requires selecting the generic "ESP32S3 Dev
 // Module" board in Visual Micro (that board has no dedicated board package entry).
-#define ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_43
+//#define ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_43
+
+// Default: build for the Hosyond ESP32-S3 Viewer board. Also requires selecting the
+// generic "ESP32S3 Dev Module" board in Visual Micro (that board has no dedicated
+// board package entry).
+#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
 
 #include <string>
 

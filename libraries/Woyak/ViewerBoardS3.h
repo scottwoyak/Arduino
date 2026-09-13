@@ -1,6 +1,6 @@
 #pragma once
 
-#include "LGX_HosyondESP32-32E.h"
+#include "LGX_HosyondESP32S3.h"
 #include "ArduinoWithDisplay.h"
 #include "Button.h"
 #include "MultiStatus.h"
@@ -9,12 +9,22 @@
 
 ///
 /// <summary>
-/// ViewerBoard board wrapper. Hosyond ESP32-32E dev board with a builtin 4" ST7796 TFT
-/// display, using the BOOT button (GPIO0) as buttonA.
+/// ViewerBoardS3 board wrapper. Hosyond ESP32-S3 dev board with a builtin 4" ST7796S
+/// TFT display and FT6336U capacitive touch controller, using the BOOT button (GPIO0)
+/// as buttonA.
 /// </summary>
 ///
-class ViewerBoard : public ArduinoWithDisplay
+class ViewerBoardS3 : public ArduinoWithDisplay
 {
+private:
+   ///
+   /// <summary>
+   /// GPIO pin wired to the FT6336U touch controller's RST line. Must be held high for
+   /// the controller to operate normally.
+   /// </summary>
+   ///
+   static constexpr uint8_t TOUCH_RESET_PIN = 18;
+
 public:
    ///
    /// <summary>
@@ -52,21 +62,25 @@ public:
 
    ///
    /// <summary>
-   /// Initializes a new instance of the ViewerBoard class.
+   /// Initializes a new instance of the ViewerBoardS3 class.
    /// </summary>
    ///
-   ViewerBoard() : ArduinoWithDisplay(), buttonA(0), neoPixel(&display), _virtualNeoPixelStatus(&neoPixel),
+   ViewerBoardS3() : ArduinoWithDisplay(), buttonA(0), neoPixel(&display), _virtualNeoPixelStatus(&neoPixel),
       status(&_virtualNeoPixelStatus)
    {
    }
 
    ///
    /// <summary>
-   /// Initializes the display and the BOOT button.
+   /// Initializes the display, the FT6336U touch controller's RST line, and the BOOT
+   /// button.
    /// </summary>
    ///
    void begin() override
    {
+      pinMode(TOUCH_RESET_PIN, OUTPUT);
+      digitalWrite(TOUCH_RESET_PIN, HIGH);
+
       ArduinoWithDisplay::begin();
 
       buttonA.begin();
@@ -76,7 +90,7 @@ public:
    ///
    /// <summary>
    /// Uses one text size larger than the base default for initialization headers,
-   /// since the ViewerBoard's larger 4" display has room for bigger text.
+   /// since the ViewerBoardS3's larger 4" display has room for bigger text.
    /// </summary>
    /// <returns>Text size to use for headers.</returns>
    ///

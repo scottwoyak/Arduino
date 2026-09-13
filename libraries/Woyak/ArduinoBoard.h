@@ -69,9 +69,10 @@ constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 
-#elif defined(ARDUINO_ESP32_DEV)
-// Generic ESP32 Dev Module boards are assumed to be wired up as a Viewer setup
-// (Hosyond ESP32-32E builtin 4" ST7796 display, BOOT button as buttonA).
+#elif defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER)
+// Hosyond ESP32-S3 dev board (builtin 4" ST7796S display with FT6336U capacitive
+// touch, BOOT button as buttonA). Selected via manual #define since it shares the
+// "ESP32S3 Dev Module" Arduino IDE board type with ARDUINO_ESP32S3_DEV (Playground).
 
 #define ARDUINO_BUTTON_SUPPORTED
 #define ARDUINO_BUTTON_A_SUPPORTED
@@ -79,8 +80,8 @@ constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 #define ARDUINO_TOUCH_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
 
-#include "ViewerBoard.h"
-using Arduino = ViewerBoard;
+#include "ViewerBoardS3.h"
+using Arduino = ViewerBoardS3;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;

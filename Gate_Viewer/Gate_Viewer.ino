@@ -65,6 +65,8 @@ constexpr auto VERSION =
 ;
 constexpr auto SKETCH_NAME = "Gate_Viewer";
 
+#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
+
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
@@ -85,14 +87,7 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 // ----------- Telemetry
 Arduino arduino;
 
-// OTA temporarily disabled on ARDUINO_ESP32_DEV: firmware downloads reliably stall
-// (multi-minute silent gap in the task watchdog log, then a white screen) on this
-// board. Revisit once testing on an S3-based board instead.
-#ifdef ARDUINO_ESP32_DEV
-ViewerSketch viewer(&arduino, SKETCH_NAME, VERSION, &arduino.status, false);
-#else
-ViewerSketch viewer(&arduino, SKETCH_NAME, VERSION, &arduino.status);
-#endif
+ViewerSketch viewer(&arduino, SKETCH_NAME, VERSION, &arduino.status, true);
 
 // ----------- Line geometry (left line anchored 50px from the left edge, right line
 // anchored 50px from the right edge of the display; the gate origin's Y position is
@@ -314,7 +309,8 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth, bool isOpen)
    arduino.setTextSize(2);
 
    Color backgroundColor = isOpen ? GATE_OPEN_COLOR : Color::BLACK;
-   Color textColor = isOpen ? Color::BLACK : Color::GRAY;
+   Color textColor = isOpen ? Color::BLACK : Color::DIMGRAY;
+   Color messageColor = isOpen ? Color::BLACK : Color::GRAY;
 
    // Draw the azimuth values inline with the origin circles rather than at the very
    // bottom of the display.
@@ -347,7 +343,7 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth, bool isOpen)
       int16_t tapMargin = arduino.charH() / 2;
       lastOpenFooterRect = Rect16(0, arduino.getCursor().y - tapMargin, arduino.width(), arduino.charH() + 2 * tapMargin);
 
-      arduino.printC(lastOpenText.c_str(), textColor, backgroundColor);
+      arduino.printC(lastOpenText.c_str(), messageColor, backgroundColor);
    }
 
    arduino.setTextSize(savedTextSize);

@@ -64,7 +64,7 @@
     <File Path="libraries/Woyak/Led.h" />
     <File Path="libraries/Woyak/LGFXUtil.h" />
     <File Path="libraries/Woyak/LGX_FeatherESP32_S3_TFT.h" />
-    <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
+    <File Path="libraries/Woyak/LGX_HosyondESP32S3.h" />
     <File Path="libraries/Woyak/LGX_ST7796S.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
     <File Path="libraries/Woyak/Memory.h" />
@@ -145,7 +145,7 @@
     <File Path="libraries/Woyak/ValueStore.h" />
     <File Path="libraries/Woyak/ValueStoreFram.h" />
     <File Path="libraries/Woyak/Vector.h" />
-    <File Path="libraries/Woyak/ViewerBoard.h" />
+    <File Path="libraries/Woyak/ViewerBoardS3.h" />
     <File Path="libraries/Woyak/ViewerSketch.h" />
     <File Path="libraries/Woyak/VirtualNeoPixel.h" />
     <File Path="libraries/Woyak/Waveshare_ESP32_S3_Zero.h" />

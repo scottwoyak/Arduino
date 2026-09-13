@@ -116,14 +116,14 @@ public:
 
    ///
    /// <summary>
-   /// Initializes the virtual NeoPixel and applies the default brightness level.
+   /// Initializes the virtual NeoPixel and applies the default brightness level. The
+   /// indicator stays off until setStatus() is called.
    /// </summary>
    ///
    void begin() override
    {
       _led->begin();
       _led->setLevel(1.0f);
-      setStatus(Status::STARTED);
    }
 
    ///
