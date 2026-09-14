@@ -76,6 +76,7 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 #include <HTTPClient.h>
 #include <WebSocketsClient.h>
 
+#include "BufferedTimeSeries.h"
 #include "SerialX.h"
 #include "Status.h"
 #include "TelemetryClient.h"
@@ -107,6 +108,27 @@ Format leftAzimuthFormat("###", Format::Alignment::LEFT);
 Format rightAzimuthFormat("###", Format::Alignment::RIGHT);
 int16_t lineLength = 0;
 int16_t gateOriginY = 0;
+
+// ----------- Azimuth buffering (smooths the gate line animation by interpolating
+// between received values rather than snapping to each new reading)
+
+// Expected sample spacing (telemetry arrives at ~4 samples/sec on average, but with
+// significant jitter -- gaps of up to ~500ms have been observed), used to size the
+// azimuth buffers' interpolation resolution.
+constexpr unsigned long BUFFER_RESOLUTION_MS = 250;
+
+// Duration of history retained in the azimuth buffers. Wide enough to comfortably
+// cover the largest observed gaps between samples (so ready()/get() don't
+// intermittently fail and fall back to the raw, unsmoothed value mid-animation), at
+// the cost of a bit more interpolation lag (half the window).
+constexpr unsigned long BUFFER_TIME_SPAN_MS = 6 * BUFFER_RESOLUTION_MS;
+
+// Target animation frame rate for redrawing the gate lines.
+constexpr unsigned long CHART_UPDATE_MS = 1000 / 30;
+
+BufferedTimeSeries leftAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
+BufferedTimeSeries rightAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
+Timer chartTimer(CHART_UPDATE_MS);
 
 // ----------- Last open time (updated whenever the gate transitions from closed to
 // open; 0 until the gate has opened at least once since boot)
@@ -309,7 +331,7 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth, bool isOpen)
    arduino.setTextSize(2);
 
    Color backgroundColor = isOpen ? GATE_OPEN_COLOR : Color::BLACK;
-   Color textColor = isOpen ? Color::BLACK : Color::DIMGRAY;
+   Color textColor = isOpen ? Color::BLACK : Color::DARKGRAY;
    Color messageColor = isOpen ? Color::BLACK : Color::GRAY;
 
    // Draw the azimuth values inline with the origin circles rather than at the very
@@ -458,7 +480,6 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
    arduino.setTextSize(5);
 
    Color backgroundColor = isOpen ? GATE_OPEN_COLOR : Color::BLACK;
-   Color textColor = isOpen ? Color::BLACK : Color::GRAY;
 #ifdef ARDUINO_TOUCH_SUPPORTED
    int16_t rowHeight = GATE_STATE_TOP_MARGIN + arduino.charH(5) + GATE_STATE_BOTTOM_MARGIN + arduino.charH(2);
 #else
@@ -484,12 +505,12 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
       arduino.printlnC("Tap to open", Color::GRAY, Color::BLACK);
 #endif
 
-      gateStateRect = { 0, 0, arduino.width(), (uint16_t)rowHeight };
+      gateStateRect = { 0, 0, arduino.width(), (uint16_t)(gateOriginY - arduino.charH(2) / 2) };
    }
 
    arduino.setTextSize(2);
    arduino.setCursor(arduino.width(), arduino.height() - arduino.charH());
-   arduino.printR(VERSION, textColor, backgroundColor);
+   arduino.printR(VERSION, Color::DARKGRAY, backgroundColor);
 
    arduino.setTextSize(savedTextSize);
    arduino.setCursor(savedCursor);
@@ -769,10 +790,10 @@ void loop()
    static bool wasTouched = false;
    bool tapped = touched && !wasTouched;
    wasTouched = touched;
-   #else
+#else
    // No touch hardware on this board: tap-to-open and the history view are unreachable.
    constexpr bool tapped = false;
-   #endif
+#endif
 
    static bool showingHistory = false;
    static TimerSecs historyTimeoutTimer(HISTORY_VIEW_TIMEOUT_S);
@@ -794,6 +815,33 @@ void loop()
 
    float leftAzimuth = leftClient.getValue();
    float rightAzimuth = rightClient.isStarted() ? rightClient.getValue() : NAN;
+
+   // Push into the buffers whenever a new telemetry value arrives, and also periodically
+   // (at BUFFER_RESOLUTION_MS) even when the value hasn't changed. Without the periodic
+   // resample, a stationary gate (value unchanged for a long time) leaves only a single
+   // stale point in the buffer; when motion resumes, interpolating between that old
+   // stale point and the first fresh reading spans a huge time gap and produces a
+   // distorted/jumped value instead of a smooth transition.
+   static float lastPushedLeftAzimuth = NAN;
+   static float lastPushedRightAzimuth = NAN;
+   static unsigned long lastLeftPushMillis = 0;
+   static unsigned long lastRightPushMillis = 0;
+
+   bool leftChanged = !isnan(leftAzimuth) && leftAzimuth != lastPushedLeftAzimuth;
+   if (!isnan(leftAzimuth) && (leftChanged || millis() - lastLeftPushMillis >= BUFFER_RESOLUTION_MS))
+   {
+      leftAzimuthBuffer.set(leftAzimuth);
+      lastPushedLeftAzimuth = leftAzimuth;
+      lastLeftPushMillis = millis();
+   }
+
+   bool rightChanged = !isnan(rightAzimuth) && rightAzimuth != lastPushedRightAzimuth;
+   if (!isnan(rightAzimuth) && (rightChanged || millis() - lastRightPushMillis >= BUFFER_RESOLUTION_MS))
+   {
+      rightAzimuthBuffer.set(rightAzimuth);
+      lastPushedRightAzimuth = rightAzimuth;
+      lastRightPushMillis = millis();
+   }
 
    constexpr float GATE_OPEN_THRESHOLD_DEGREES = 5.0f;
    bool isOpen = (!isnan(leftAzimuth) && leftAzimuth > GATE_OPEN_THRESHOLD_DEGREES) || (!isnan(rightAzimuth) && rightAzimuth > GATE_OPEN_THRESHOLD_DEGREES);
@@ -839,15 +887,24 @@ void loop()
    {
       postGateOpen();
    }
-   #endif
+#endif
 
-   if (!isnan(leftAzimuth))
+   if (chartTimer.ready())
    {
-      displayLine(leftLine, leftAzimuth, isOpen);
-   }
+      // Fall back to the raw value whenever the buffer doesn't yet have enough history to
+      // interpolate (e.g. right after startup, or while the gate is stationary and no new
+      // samples are arriving), so the line is still drawn instead of disappearing.
+      float displayLeftAzimuth = leftAzimuthBuffer.ready() ? leftAzimuthBuffer.get() : leftAzimuth;
+      float displayRightAzimuth = rightAzimuthBuffer.ready() ? rightAzimuthBuffer.get() : rightAzimuth;
 
-   if (!isnan(rightAzimuth))
-   {
-      displayLine(rightLine, rightAzimuth, isOpen);
+      if (!isnan(displayLeftAzimuth))
+      {
+         displayLine(leftLine, displayLeftAzimuth, isOpen);
+      }
+
+      if (!isnan(displayRightAzimuth))
+      {
+         displayLine(rightLine, displayRightAzimuth, isOpen);
+      }
    }
 }
