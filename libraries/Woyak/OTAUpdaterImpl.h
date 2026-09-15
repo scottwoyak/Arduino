@@ -94,8 +94,10 @@ inline void OTAUpdater::_clearDisplayIfPresent()
 
 inline void OTAUpdater::_performUpdate()
 {
+#ifdef ARDUINO_DISPLAY_SUPPORTED
    _lastDrawnPercent = -1;
    _lastDrawTimeMs = 0;
+#endif
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
    if (_arduino != nullptr)
