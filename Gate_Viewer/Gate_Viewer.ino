@@ -76,7 +76,7 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 #include <HTTPClient.h>
 #include <WebSocketsClient.h>
 
-#include "BufferedTimeSeries.h"
+// #include "BufferedTimeSeries.h" // unused while azimuth buffering is disabled
 #include "SerialX.h"
 #include "Status.h"
 #include "TelemetryClient.h"
@@ -111,23 +111,26 @@ int16_t gateOriginY = 0;
 
 // ----------- Azimuth buffering (smooths the gate line animation by interpolating
 // between received values rather than snapping to each new reading)
+//
+// Disabled for now -- it wasn't producing the desired smoothing. Left here (commented
+// out) in case it's revisited later.
 
-// Expected sample spacing (telemetry arrives at ~4 samples/sec on average, but with
-// significant jitter -- gaps of up to ~500ms have been observed), used to size the
-// azimuth buffers' interpolation resolution.
-constexpr unsigned long BUFFER_RESOLUTION_MS = 250;
-
-// Duration of history retained in the azimuth buffers. Wide enough to comfortably
-// cover the largest observed gaps between samples (so ready()/get() don't
-// intermittently fail and fall back to the raw, unsmoothed value mid-animation), at
-// the cost of a bit more interpolation lag (half the window).
-constexpr unsigned long BUFFER_TIME_SPAN_MS = 6 * BUFFER_RESOLUTION_MS;
+// // Expected sample spacing (telemetry arrives at ~4 samples/sec on average, but with
+// // significant jitter -- gaps of up to ~500ms have been observed), used to size the
+// // azimuth buffers' interpolation resolution.
+// constexpr unsigned long BUFFER_RESOLUTION_MS = 250;
+//
+// // Duration of history retained in the azimuth buffers. Wide enough to comfortably
+// // cover the largest observed gaps between samples (so ready()/get() don't
+// // intermittently fail and fall back to the raw, unsmoothed value mid-animation), at
+// // the cost of a bit more interpolation lag (half the window).
+// constexpr unsigned long BUFFER_TIME_SPAN_MS = 6 * BUFFER_RESOLUTION_MS;
 
 // Target animation frame rate for redrawing the gate lines.
 constexpr unsigned long CHART_UPDATE_MS = 1000 / 30;
 
-BufferedTimeSeries leftAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
-BufferedTimeSeries rightAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
+// BufferedTimeSeries leftAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
+// BufferedTimeSeries rightAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
 Timer chartTimer(CHART_UPDATE_MS);
 
 // ----------- Last open time (updated whenever the gate transitions from closed to
@@ -816,32 +819,35 @@ void loop()
    float leftAzimuth = leftClient.getValue();
    float rightAzimuth = rightClient.isStarted() ? rightClient.getValue() : NAN;
 
-   // Push into the buffers whenever a new telemetry value arrives, and also periodically
-   // (at BUFFER_RESOLUTION_MS) even when the value hasn't changed. Without the periodic
-   // resample, a stationary gate (value unchanged for a long time) leaves only a single
-   // stale point in the buffer; when motion resumes, interpolating between that old
-   // stale point and the first fresh reading spans a huge time gap and produces a
-   // distorted/jumped value instead of a smooth transition.
-   static float lastPushedLeftAzimuth = NAN;
-   static float lastPushedRightAzimuth = NAN;
-   static unsigned long lastLeftPushMillis = 0;
-   static unsigned long lastRightPushMillis = 0;
-
-   bool leftChanged = !isnan(leftAzimuth) && leftAzimuth != lastPushedLeftAzimuth;
-   if (!isnan(leftAzimuth) && (leftChanged || millis() - lastLeftPushMillis >= BUFFER_RESOLUTION_MS))
-   {
-      leftAzimuthBuffer.set(leftAzimuth);
-      lastPushedLeftAzimuth = leftAzimuth;
-      lastLeftPushMillis = millis();
-   }
-
-   bool rightChanged = !isnan(rightAzimuth) && rightAzimuth != lastPushedRightAzimuth;
-   if (!isnan(rightAzimuth) && (rightChanged || millis() - lastRightPushMillis >= BUFFER_RESOLUTION_MS))
-   {
-      rightAzimuthBuffer.set(rightAzimuth);
-      lastPushedRightAzimuth = rightAzimuth;
-      lastRightPushMillis = millis();
-   }
+   // Buffering disabled for now -- it wasn't producing the desired smoothing. Left here
+   // (commented out) in case it's revisited later.
+   //
+   // // Push into the buffers whenever a new telemetry value arrives, and also periodically
+   // // (at BUFFER_RESOLUTION_MS) even when the value hasn't changed. Without the periodic
+   // // resample, a stationary gate (value unchanged for a long time) leaves only a single
+   // // stale point in the buffer; when motion resumes, interpolating between that old
+   // // stale point and the first fresh reading spans a huge time gap and produces a
+   // // distorted/jumped value instead of a smooth transition.
+   // static float lastPushedLeftAzimuth = NAN;
+   // static float lastPushedRightAzimuth = NAN;
+   // static unsigned long lastLeftPushMillis = 0;
+   // static unsigned long lastRightPushMillis = 0;
+   //
+   // bool leftChanged = !isnan(leftAzimuth) && leftAzimuth != lastPushedLeftAzimuth;
+   // if (!isnan(leftAzimuth) && (leftChanged || millis() - lastLeftPushMillis >= BUFFER_RESOLUTION_MS))
+   // {
+   //    leftAzimuthBuffer.set(leftAzimuth);
+   //    lastPushedLeftAzimuth = leftAzimuth;
+   //    lastLeftPushMillis = millis();
+   // }
+   //
+   // bool rightChanged = !isnan(rightAzimuth) && rightAzimuth != lastPushedRightAzimuth;
+   // if (!isnan(rightAzimuth) && (rightChanged || millis() - lastRightPushMillis >= BUFFER_RESOLUTION_MS))
+   // {
+   //    rightAzimuthBuffer.set(rightAzimuth);
+   //    lastPushedRightAzimuth = rightAzimuth;
+   //    lastRightPushMillis = millis();
+   // }
 
    constexpr float GATE_OPEN_THRESHOLD_DEGREES = 5.0f;
    bool isOpen = (!isnan(leftAzimuth) && leftAzimuth > GATE_OPEN_THRESHOLD_DEGREES) || (!isnan(rightAzimuth) && rightAzimuth > GATE_OPEN_THRESHOLD_DEGREES);
@@ -891,11 +897,15 @@ void loop()
 
    if (chartTimer.ready())
    {
-      // Fall back to the raw value whenever the buffer doesn't yet have enough history to
-      // interpolate (e.g. right after startup, or while the gate is stationary and no new
-      // samples are arriving), so the line is still drawn instead of disappearing.
-      float displayLeftAzimuth = leftAzimuthBuffer.ready() ? leftAzimuthBuffer.get() : leftAzimuth;
-      float displayRightAzimuth = rightAzimuthBuffer.ready() ? rightAzimuthBuffer.get() : rightAzimuth;
+      // Buffering disabled for now (see comment above); use raw values directly.
+      float displayLeftAzimuth = leftAzimuth;
+      float displayRightAzimuth = rightAzimuth;
+
+      // // Fall back to the raw value whenever the buffer doesn't yet have enough history to
+      // // interpolate (e.g. right after startup, or while the gate is stationary and no new
+      // // samples are arriving), so the line is still drawn instead of disappearing.
+      // float displayLeftAzimuth = leftAzimuthBuffer.ready() ? leftAzimuthBuffer.get() : leftAzimuth;
+      // float displayRightAzimuth = rightAzimuthBuffer.ready() ? rightAzimuthBuffer.get() : rightAzimuth;
 
       if (!isnan(displayLeftAzimuth))
       {
