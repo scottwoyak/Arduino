@@ -17,6 +17,22 @@ namespace SerialX
 	constexpr uint32_t DEFAULT_TIMEOUT_MS = 1000;
 
 	/// <summary>
+	/// The previous halt reason recorded by checkTheLastShutdownReason() during begin(),
+	/// or an empty string if none was recorded (e.g. a normal power-on/reset).
+	/// </summary>
+	inline String _lastShutdownReason = "";
+
+	/// <summary>
+	/// Returns the previous halt reason recorded during begin(), or an empty string if
+	/// none was recorded (e.g. a normal power-on/reset).
+	/// </summary>
+	/// <returns>The previous halt reason, or an empty string if none was recorded.</returns>
+	inline String lastShutdownReason()
+	{
+		return _lastShutdownReason;
+	}
+
+	/// <summary>
 	/// Initializes the serial port and waits briefly for a monitor connection.
 	/// </summary>
 	/// <param name="baud">The serial baud rate.</param>
@@ -42,7 +58,7 @@ namespace SerialX
       delay(1000);
       Serial.println();
 
-		Util::checkTheLastShutdownReason();
+		_lastShutdownReason = Util::checkTheLastShutdownReason();
 	}
 
 	/// <summary>

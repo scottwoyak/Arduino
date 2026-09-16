@@ -117,7 +117,6 @@
     <File Path="libraries/Woyak/Structs.h" />
     <File Path="libraries/Woyak/Table.h" />
     <File Path="libraries/Woyak/TelemetryClient.h" />
-    <File Path="libraries/Woyak/TempMonitor.h" />
     <File Path="libraries/Woyak/TempSensor.h" />
     <File Path="libraries/Woyak/TempSensorCallibration.h" />
     <File Path="libraries/Woyak/TestSensor.h" />

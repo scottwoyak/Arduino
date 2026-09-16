@@ -6,6 +6,7 @@
 // order already used by Publisher-based sketches (see Publisher.h).
 
 #include "SketchBase.h"
+#include "SerialX.h"
 
 ///
 /// <summary>
@@ -18,17 +19,176 @@
 /// before calling begin(), then calls begin() once from setup() and loop() once from
 /// loop(). Shared lifecycle logic lives in SketchBase; this class only supplies the
 /// Monitor-specific hook overrides.
+///
+/// Site resolution defaults to a single fixed site/location (config.fixedSite). If
+/// config.useBucketPrompt is set instead, Monitor prompts over Serial (or loads the
+/// saved values from Preferences) for a bucket (chosen from the shared BUCKET_OPTIONS
+/// list) and a site (chosen from the shared SITE_OPTIONS list) and location (entered as
+/// free text), persisting them to Preferences under config.preferencesNamespace. On
+/// boards with a button (ARDUINO_BUTTON_A_SUPPORTED), gives the user a short
+/// buttonA-held window right after boot to force a re-prompt; on boards without a
+/// button, automatically offers the re-prompt instead whenever a Serial monitor is
+/// attached at boot (e.g. the board is inside an enclosure).
 /// </summary>
 ///
 class Monitor : public SketchBase
 {
+private:
+   static constexpr auto SITE_KEY = "site";
+   static constexpr auto LOCATION_KEY = "location";
+   static constexpr auto BUCKET_KEY = "bucket";
+
+   /// <summary>Bucket choices offered to every Monitor sketch that opts into bucket/site/location prompting (see config.useBucketPrompt).</summary>
+   static constexpr const char* BUCKET_OPTIONS[] = { "Monitor", "Testing" };
+
+   /// <summary>Site choices offered to every Monitor sketch that opts into bucket/site/location prompting (see config.useBucketPrompt).</summary>
+   static constexpr const char* SITE_OPTIONS[] = { "Bragg", "Lake", "Testing" };
+
+   String _siteName;
+   String _locationName;
+   String _bucketName;
+
+   ///
+   /// <summary>
+   /// Prompts the user over Serial to pick an InfluxDB bucket from BUCKET_OPTIONS.
+   /// Blocks until a valid selection is entered.
+   /// </summary>
+   /// <returns>The chosen bucket name.</returns>
+   ///
+   String _promptForBucket()
+   {
+      Serial.println("Select an InfluxDB bucket:");
+      for (size_t i = 0; i < std::size(BUCKET_OPTIONS); i++)
+      {
+         Serial.print("  ");
+         Serial.print(i + 1);
+         Serial.print(": ");
+         Serial.println(BUCKET_OPTIONS[i]);
+      }
+
+      String label = "Enter selection (1-" + String(std::size(BUCKET_OPTIONS)) + "): ";
+      long selection = SerialX::promptForInt(label, 1, (long)std::size(BUCKET_OPTIONS));
+      return BUCKET_OPTIONS[selection - 1];
+   }
+
+   ///
+   /// <summary>
+   /// Prompts the user over Serial to pick a site from SITE_OPTIONS. Blocks until a
+   /// valid selection is entered.
+   /// </summary>
+   /// <returns>The chosen site name.</returns>
+   ///
+   String _promptForSite()
+   {
+      Serial.println("Select a site:");
+      for (size_t i = 0; i < std::size(SITE_OPTIONS); i++)
+      {
+         Serial.print("  ");
+         Serial.print(i + 1);
+         Serial.print(": ");
+         Serial.println(SITE_OPTIONS[i]);
+      }
+
+      String label = "Enter selection (1-" + String(std::size(SITE_OPTIONS)) + "): ";
+      long selection = SerialX::promptForInt(label, 1, (long)std::size(SITE_OPTIONS));
+      return SITE_OPTIONS[selection - 1];
+   }
+
+   ///
+   /// <summary>
+   /// Prompts the user over Serial for a site and location, storing them into _siteName
+   /// and _locationName. The site is chosen from SITE_OPTIONS. Blocks until both are
+   /// entered/selected non-empty.
+   /// </summary>
+   ///
+   void _promptForSiteLocation()
+   {
+      Serial.println("Configure this device's site/location:");
+
+      _siteName = _promptForSite();
+
+      do
+      {
+         _locationName = SerialX::prompt("Enter location: ");
+      } while (_locationName.length() == 0);
+   }
+
+   ///
+   /// <summary>
+   /// Prompts the user over Serial for the bucket, site, and location, then saves the
+   /// entered/selected values to Preferences for next time.
+   /// </summary>
+   ///
+   void _promptAndSaveSiteLocation()
+   {
+      _bucketName = _promptForBucket();
+      _promptForSiteLocation();
+
+      _arduino->preferences.begin(_config.preferencesNamespace, false);
+      _arduino->preferences.putString(SITE_KEY, _siteName);
+      _arduino->preferences.putString(LOCATION_KEY, _locationName);
+      _arduino->preferences.putString(BUCKET_KEY, _bucketName);
+      _arduino->preferences.end();
+   }
+
+   ///
+   /// <summary>
+   /// Checks whether this device's site/location/bucket have been saved to Preferences.
+   /// </summary>
+   /// <returns>True if a saved configuration exists; otherwise false.</returns>
+   ///
+   bool _hasSavedConfig()
+   {
+      _arduino->preferences.begin(_config.preferencesNamespace, true);
+      bool hasSavedConfig = _arduino->preferences.isKey(SITE_KEY) && _arduino->preferences.isKey(LOCATION_KEY) && _arduino->preferences.isKey(BUCKET_KEY);
+      _arduino->preferences.end();
+
+      return hasSavedConfig;
+   }
+
+   ///
+   /// <summary>
+   /// Loads this device's saved site/location/bucket from Preferences into _siteName,
+   /// _locationName, and _bucketName. Only call when _hasSavedConfig() is true.
+   /// </summary>
+   ///
+   void _loadSavedConfig()
+   {
+      _arduino->preferences.begin(_config.preferencesNamespace, true);
+      _siteName = _arduino->preferences.getString(SITE_KEY);
+      _locationName = _arduino->preferences.getString(LOCATION_KEY);
+      _bucketName = _arduino->preferences.getString(BUCKET_KEY);
+      _arduino->preferences.end();
+   }
+
 protected:
    ///
-   /// <summary>Monitor has no selectable site table fallback beyond its fixed site.</summary>
+   /// <summary>
+   /// Returns config.fixedSite unless config.useBucketPrompt is set, in which case a
+   /// bucket/site/location is prompted for over Serial (or loaded from Preferences)
+   /// instead.
+   /// </summary>
    ///
    SiteConfig _resolveFixedSite() override
    {
-      return _config.fixedSite;
+      if (!_config.useBucketPrompt)
+      {
+         return _config.fixedSite;
+      }
+
+      bool reconfigure = _shouldForcePrompt();
+
+      if (reconfigure || !_hasSavedConfig())
+      {
+         _promptAndSaveSiteLocation();
+      }
+      else
+      {
+         _loadSavedConfig();
+      }
+      _arduino->printlnInitStatus("Location...", siteLocation().c_str());
+
+      return SiteConfig{ nullptr, _bucketName.c_str(), _siteName.c_str(), _locationName.c_str() };
    }
 
    ///
@@ -59,5 +219,42 @@ public:
    Monitor(Arduino* arduino, const SketchConfig& config)
       : SketchBase(arduino, config)
    {
+   }
+
+   ///
+   /// <summary>
+   /// Formats this device's site and location as "Site/Location". Only valid once
+   /// begin() has resolved the site (i.e. config.useBucketPrompt was set).
+   /// </summary>
+   /// <returns>The formatted "Site/Location" string.</returns>
+   ///
+   std::string siteLocation() const
+   {
+      return std::string(_siteName.c_str()) + "/" + _locationName.c_str();
+   }
+
+   ///
+   /// <summary>
+   /// Formats this device's bucket, site, and location as "Bucket/Site/Location". Only
+   /// valid once begin() has resolved the site (i.e. config.useBucketPrompt was set).
+   /// </summary>
+   /// <returns>The formatted "Bucket/Site/Location" string.</returns>
+   ///
+   std::string bucketSiteLocation() const
+   {
+      return _bucketName.c_str() + std::string("/") + siteLocation();
+   }
+
+   ///
+   /// <summary>
+   /// Signals a fatal sensor initialization failure using the same status indicator and
+   /// config.sensorFailureResetDelayS delay Monitor uses internally for its own fatal
+   /// init failures.
+   /// </summary>
+   ///
+   void reportSensorFailure()
+   {
+      _status->setStatus(Status::FAILED);
+      Util::reset(_config.sensorFailureResetDelayS);
    }
 };

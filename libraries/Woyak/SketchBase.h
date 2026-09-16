@@ -8,8 +8,11 @@
 #include <functional>
 #include <vector>
 
+#include <esp_task_wdt.h>
+
 #include "Influx.h"
 #include "ESP32TempSensor.h"
+#include "SerialX.h"
 #include "SiteConfig.h"
 #include "Status.h"
 #include "TempSensor.h"
@@ -81,8 +84,20 @@ struct SketchConfig
    /// <summary>If true, enable the scheduled daily reboot via arduino.enableRebooter(). Sketches that need it (e.g. long-running deployed sketches) must set this to true.</summary>
    bool enableRebooter = false;
 
-   /// <summary>Monitor only: fixed InfluxDB site+location entry used when sites is empty (no selection prompt). Ignored if sites is non-empty.</summary>
+   /// <summary>If non-zero, enables the ESP32 task watchdog with this timeout (in seconds); loop() resets it automatically. Leave 0 to disable.</summary>
+   uint8_t watchdogIntervalS = 60;
+
+   /// <summary>Seconds to wait before resetting after WiFi connectivity is lost and cannot be reestablished. See _onWiFiLost().</summary>
+   uint8_t wifiLostResetDelayS = 10;
+
+   /// <summary>Monitor only: fixed InfluxDB site+location entry used when sites is empty (no selection prompt). Ignored if sites is non-empty, or if useBucketPrompt is set.</summary>
    SiteConfig fixedSite = { nullptr, INFLUXDB_BUCKET, nullptr, nullptr };
+
+   /// <summary>Monitor only: if true, prompts over Serial (or loads the saved values from Preferences) for a bucket (chosen from Monitor's shared BUCKET_OPTIONS list), a site (chosen from Monitor's shared SITE_OPTIONS list), and a free-text location, instead of using fixedSite.</summary>
+   bool useBucketPrompt = false;
+
+   /// <summary>Monitor only: seconds to wait before resetting after reportSensorFailure() is called.</summary>
+   uint8_t sensorFailureResetDelayS = 10;
 
    /// <summary>Publisher only: fixed telemetry topic used when sites is left empty (i.e. the sketch has no selectable site table). Ignored if sites is non-empty.</summary>
    const char* telemetryTopic = nullptr;
@@ -124,6 +139,30 @@ public:
    };
 
 protected:
+   ///
+   /// <summary>
+   /// Determines whether the user should be offered a chance to re-prompt for a
+   /// site/bucket/location selection right now: automatically true if a Serial monitor
+   /// is attached at boot (e.g. the board is inside an enclosure and buttonA can't be
+   /// reached), since that's still bounded by a prompt timeout; otherwise gives the user
+   /// a short buttonA-held window to force it. buttonA is on GPIO0, a strapping pin:
+   /// holding it low during power-on/reset puts the chip into UART download mode instead
+   /// of running the sketch, so it can't be checked during boot - hence the window
+   /// approach instead of a simple boot-time check.
+   /// </summary>
+   /// <returns>True if the user should be prompted to reconfigure.</returns>
+   ///
+   bool _shouldForcePrompt()
+   {
+      if (Serial)
+      {
+         return true;
+      }
+
+      Serial.println("Press buttonA now to reconfigure the site...");
+      return SiteResolver::waitForForcePrompt(_arduino->buttonA, FORCE_PROMPT_WINDOW_MS);
+   }
+
    /// <summary>Board wrapper.</summary>
    Arduino* _arduino;
 
@@ -168,6 +207,9 @@ protected:
    ESP32TempSensor _cpuTempSensor;
 
    Timer _sensorTimer;
+
+   /// <summary>Callback registered via setOnWiFiLostCallback(), used by _onWiFiLost().</summary>
+   std::function<bool()> _onWiFiLostCallback = nullptr;
 
    ///
    /// <summary>
@@ -214,6 +256,21 @@ protected:
    ///
    virtual void _beforeOTACheck()
    {
+   }
+
+   ///
+   /// <summary>
+   /// Extension point run when arduino.ensureWiFiConnected() reports the connection is
+   /// lost, before loop() resets the device. Defaults to the callback registered via
+   /// setOnWiFiLostCallback() (if any), or returns false if none was registered. Return
+   /// true if the loss was fully handled and loop() should skip its own default reset;
+   /// return false to let loop() reset the device after wifiLostResetDelayS seconds.
+   /// </summary>
+   /// <returns>True if the WiFi loss was fully handled and no reset is needed.</returns>
+   ///
+   virtual bool _onWiFiLost()
+   {
+      return _onWiFiLostCallback != nullptr ? _onWiFiLostCallback() : false;
    }
 
    ///
@@ -376,17 +433,32 @@ public:
 
    ///
    /// <summary>
+   /// Registers a callback invoked when WiFi connectivity is lost and cannot be
+   /// reestablished (see _onWiFiLost()). Use this to show something on the display,
+   /// log a message, etc. before the device resets. Return true from the callback if
+   /// the loss was fully handled and loop() should skip its own default reset; return
+   /// false to let loop() reset the device after config.wifiLostResetDelayS seconds.
+   /// </summary>
+   /// <param name="callback">Called with no arguments; returns true if fully handled.</param>
+   ///
+   void setOnWiFiLostCallback(std::function<bool()> callback)
+   {
+      _onWiFiLostCallback = callback;
+   }
+
+   ///
+   /// <summary>
    /// Creates and registers an additional Influx point (beyond the standard
    /// enclosure/CPU points), posted and flushed alongside them each upload cycle. The
    /// resolved site's "site" and "location" tags are added automatically; only
    /// pass extra tags (e.g. "sensor", "item"). Must be called after begin(), once the
    /// site has been resolved.
    /// </summary>
-   /// <param name="measurement">Influx measurement name.</param>
+   /// <param name="measurement">Influx measurement name. Defaults to config.influxMeasurement.</param>
    /// <param name="tags">Additional key/value pairs to attach as Influx tags.</param>
    /// <returns>Pointer to the created point, owned by this instance.</returns>
    ///
-   InfluxPoint* addPoint(const char* measurement, const std::vector<std::pair<const char*, const char*>>& tags = {})
+   InfluxPoint* addPoint(const char* measurement, const std::vector<std::pair<const char*, const char*>>& tags)
    {
       std::vector<std::pair<const char*, const char*>> allTags = { { "site", _site.influxSite }, { "location", _site.influxLocation } };
       allTags.insert(allTags.end(), tags.begin(), tags.end());
@@ -394,6 +466,30 @@ public:
       InfluxPoint* point = new InfluxPoint(measurement, allTags);
       _points.push_back(point);
       return point;
+   }
+
+   ///
+   /// <summary>
+   /// Overload of addPoint() that uses config.influxMeasurement as the measurement name.
+   /// </summary>
+   /// <param name="tags">Additional key/value pairs to attach as Influx tags.</param>
+   /// <returns>Pointer to the created point, owned by this instance.</returns>
+   ///
+   InfluxPoint* addPoint(const std::vector<std::pair<const char*, const char*>>& tags)
+   {
+      return addPoint(_config.influxMeasurement, tags);
+   }
+
+   ///
+   /// <summary>
+   /// Overload of addPoint() for the common case of a single "sensor" tag.
+   /// </summary>
+   /// <param name="sensor">Value for the "sensor" tag.</param>
+   /// <returns>Pointer to the created point, owned by this instance.</returns>
+   ///
+   InfluxPoint* addPoint(const char* sensor)
+   {
+      return addPoint({ { "sensor", sensor } });
    }
 
    ///
@@ -478,29 +574,7 @@ public:
 #endif
 
       bool hasSiteTable = _config.sites.count > 0;
-      bool forcePrompt = false;
-
-      if (hasSiteTable)
-      {
-         if (Serial)
-         {
-            // A Serial monitor is attached (e.g. the board is inside an enclosure and
-            // buttonA can't be reached), so automatically offer the prompt. It's still
-            // bounded by SiteResolver::PROMPT_TIMEOUT_S, so a false-positive connection
-            // (or nobody responding) just falls back to the current/default site.
-            forcePrompt = true;
-         }
-         else
-         {
-            // No Serial monitor detected - fall back to the buttonA window. buttonA is
-            // on GPIO0, a strapping pin: holding it low during power-on/reset puts the
-            // chip into UART download mode instead of running the sketch, so it can't
-            // be checked during boot. Instead, give the user a short window after boot
-            // to press it.
-            Serial.println("Press buttonA now to reconfigure the site...");
-            forcePrompt = SiteResolver::waitForForcePrompt(_arduino->buttonA, FORCE_PROMPT_WINDOW_MS);
-         }
-      }
+      bool forcePrompt = hasSiteTable ? _shouldForcePrompt() : false;
 
       for (const SensorInit& sensor : _sensors)
       {
@@ -555,7 +629,12 @@ public:
                                   (_config.influxSensor != nullptr ? _config.influxSensor : "") + "/" +
                                   (_site.influxSite != nullptr ? _site.influxSite : "") + "/" +
                                   (_site.influxLocation != nullptr ? _site.influxLocation : "");
-         _postLogPoint(_buildStartupMessage(influxPath).c_str());
+         std::string startupMessage = _buildStartupMessage(influxPath);
+         if (SerialX::lastShutdownReason().length() > 0)
+         {
+            startupMessage += std::string(", last shutdown: ") + SerialX::lastShutdownReason().c_str();
+         }
+         _postLogPoint(startupMessage.c_str());
 
          if (_config.includeEnclosureTemp)
          {
@@ -581,6 +660,17 @@ public:
       _afterOTASetup();
 
       setCpuFrequencyMhz(_config.cpuFrequencyMhz);
+
+      if (_config.watchdogIntervalS > 0)
+      {
+         esp_task_wdt_config_t twdtConfig = {
+            .timeout_ms = _config.watchdogIntervalS * 1000U,
+            .idle_core_mask = 0,
+            .trigger_panic = true,
+         };
+         esp_task_wdt_reconfigure(&twdtConfig);
+         esp_task_wdt_add(nullptr);
+      }
    }
 
    ///
@@ -591,6 +681,16 @@ public:
    ///
    void loop()
    {
+      if (_config.watchdogIntervalS > 0)
+      {
+         esp_task_wdt_reset();
+      }
+
+      if (!_arduino->ensureWiFiConnected() && !_onWiFiLost())
+      {
+         Util::reset(_config.wifiLostResetDelayS);
+      }
+
       _beforeOTACheck();
 
       _arduino->checkForOTA(); // Drives OTA update checks

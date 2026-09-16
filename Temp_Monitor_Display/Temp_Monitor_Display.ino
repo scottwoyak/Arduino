@@ -6,25 +6,27 @@
 // - Uses the shared Monitor class (see Monitor.h) to own the boot/init sequence:
 //   display init, status LED, sensor init hook, WiFi, daily rebooter, OTA, and the
 //   standard InfluxDB setup/post/flush cycle.
-// - This device's site/location is prompted for over Serial the first time it runs, then
-//   saved to Preferences (NVS) so it survives reboots and OTA firmware updates. On
-//   subsequent boots the saved value is used automatically, unless buttonA is held during
-//   a short window right after startup, which forces a re-prompt. This is handled by the
-//   shared TempMonitor class (see TempMonitor.h), which overrides Monitor's fixed-site
-//   resolution hook since this sketch prompts for free-text site/location/bucket values
-//   rather than picking from a fixed SiteConfig table.
+// - This device's bucket/site/location is prompted for over Serial the first time it
+//   runs, then saved to Preferences (NVS) so it survives reboots and OTA firmware
+//   updates. On subsequent boots the saved value is used automatically, unless buttonA
+//   is held during a short window right after startup, which forces a re-prompt. This is
+//   handled by the shared Monitor class (see Monitor.h) via MONITOR_CONFIG's
+//   useBucketPrompt flag, since this sketch prompts for a bucket (from a fixed list) and
+//   free-text site/location, rather than picking a single fixed SiteConfig entry.
 // - Samples temperature and humidity every SENSOR_INTERVAL_MS and accumulates
 //   time-averaged values for the next upload.
 // - Continuously renders the latest averaged temperature and humidity values centered
 //   on the display at large text size, with location and version in the header/footer.
-// - Verifies Wi-Fi connectivity each loop and resets the device if it cannot reconnect.
+// - Verifies Wi-Fi connectivity each loop (handled by SketchBase::loop()); on loss,
+//   clears the display and shows "WiFi connection lost" (via setOnWiFiLostCallback())
+//   before resetting the device after config.wifiLostResetDelayS seconds.
 // - Posts telemetry to InfluxDB every INFLUX_INTERVAL_S seconds (handled by Monitor::loop()).
 // - Checks for a firmware update periodically and, if a newer
 //   version is published, downloads and installs it (showing progress on the display)
 //   before restarting.
 //
 // Failure handling:
-// - Sensor initialization failure triggers a device reset after RESET_DELAY_S seconds.
+// - Sensor initialization failure triggers a device reset after config.sensorFailureResetDelayS seconds.
 // - Influx initialization failure (handled by Monitor::begin()) triggers a device reset.
 // - Runtime InfluxDB post/flush failures are logged to Serial by Monitor::loop() and
 //   retried the following cycle.
@@ -61,7 +63,6 @@
 #endif
 
 #include "TempSensor.h"
-#include <Adafruit_SleepyDog.h>
 #include "SerialX.h"
 #include "Timer.h"
 #include "FieldTable.h"
@@ -69,7 +70,6 @@
 #include "WiFiSettings.h"
 
 #include "Monitor.h"
-#include "TempMonitor.h"
 
 // version.txt contains a quoted version string (e.g. "v1.1") and is included directly here
 // so the compiled-in VERSION always matches the same file uploaded to the GitHub release,
@@ -78,14 +78,10 @@ constexpr auto VERSION =
 #include "version.txt"
 ;
 constexpr auto SKETCH_NAME = "Temp_Monitor_Display";
-constexpr auto INFLUX_MEASUREMENT = "Sensors";
 constexpr auto INFLUX_SENSOR = "Temperature";
 constexpr auto PREFERENCES_NAMESPACE = "TempMonitor";
-constexpr const char* BUCKET_OPTIONS[] = { "Monitor", "Testing" };
 constexpr uint8_t INFLUX_INTERVAL_S = 15;
 constexpr uint16_t SENSOR_INTERVAL_MS = 500;
-constexpr uint8_t WATCHDOG_INTERVAL_S = 60;
-constexpr uint8_t RESET_DELAY_S = 10;
 constexpr uint8_t SPACING = 8;
 constexpr uint8_t TEXT_SIZE_SMALL = 2;
 constexpr uint8_t VALUE_TEXT_SIZE = 4;
@@ -128,7 +124,7 @@ FieldTable allValuesTable(&arduino, 0, 0, TEXT_SIZE_SMALL);
 // the display can be cleared exactly once when switching between it and the normal readout.
 bool wasAllValuesMode = false;
 
-SketchConfig MONITOR_CONFIG
+SketchConfig MONITOR_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = PREFERENCES_NAMESPACE,
@@ -136,13 +132,21 @@ SketchConfig MONITOR_CONFIG
    .influxIntervalS = INFLUX_INTERVAL_S,
    .enableOTA = true,
    .enableRebooter = true,
+   .useBucketPrompt = true,
 };
 
-TempMonitor monitor(&arduino, MONITOR_CONFIG, PREFERENCES_NAMESPACE, BUCKET_OPTIONS, std::size(BUCKET_OPTIONS), RESET_DELAY_S);
+Monitor monitor(&arduino, MONITOR_CONFIG);
 
 void setup()
 {
    Wire.begin();
+
+   monitor.setOnWiFiLostCallback([]()
+   {
+      arduino.clearDisplay();
+      arduino.println("WiFi connection lost", Color::RED);
+      return false;
+   });
 
    monitor.begin();
 
@@ -161,7 +165,7 @@ void setup()
       monitor.reportSensorFailure();
    }
 
-   InfluxPoint* point = monitor.addPoint(INFLUX_MEASUREMENT, { { "sensor", INFLUX_SENSOR } });
+   InfluxPoint* point = monitor.addPoint(INFLUX_SENSOR);
    tempField = point->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
    humField = point->addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
    dewPointField = point->addTimeAverageField(INFLUX_INTERVAL_S, "dewPoint", INFLUX_TEMP_DECIMAL_PLACES);
@@ -184,14 +188,10 @@ void setup()
    delay(STARTUP_DELAY_S * 1000UL);
 
    arduino.clearDisplay();
-
-   Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
 }
 
 void loop()
 {
-   Watchdog.reset();
-
    monitor.loop();
 
    if (sensorTimer.ready())
@@ -202,13 +202,6 @@ void loop()
       dewPointField->set(readings.dewPointF);
       absoluteHumidityField->set(readings.absoluteHumidity);
       heatIndexField->set(readings.heatIndexF);
-   }
-
-   if (!arduino.ensureWiFiConnected())
-   {
-      arduino.clearDisplay();
-      arduino.println("WiFi connection lost", Color::RED);
-      Util::reset(RESET_DELAY_S);
    }
 
    arduino.setCursor(0, 0);
