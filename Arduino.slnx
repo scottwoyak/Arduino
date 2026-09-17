@@ -577,6 +577,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Viewer_Alignment/Viewer_Alignment.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Viewer_Touch/Viewer_Touch.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
