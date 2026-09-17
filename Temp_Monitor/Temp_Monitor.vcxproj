@@ -82,6 +82,9 @@
   <ItemGroup>
     <ClInclude Include="__vm\.Temp_Monitor.vsarduino.h" />
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="version.txt" />
+  </ItemGroup>
   <PropertyGroup>
     <DebuggerFlavor>VisualMicroDebugger</DebuggerFlavor>
   </PropertyGroup>

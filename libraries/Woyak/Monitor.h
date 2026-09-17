@@ -20,8 +20,8 @@
 /// loop(). Shared lifecycle logic lives in SketchBase; this class only supplies the
 /// Monitor-specific hook overrides.
 ///
-/// Site resolution defaults to a single fixed site/location (config.fixedSite). If
-/// config.useBucketPrompt is set instead, Monitor prompts over Serial (or loads the
+/// Site resolution defaults to a single fixed site/location (config.influx.context). If
+/// config.influx.promptForContext is set instead, Monitor prompts over Serial (or loads the
 /// saved values from Preferences) for a bucket (chosen from the shared BUCKET_OPTIONS
 /// list) and a site (chosen from the shared SITE_OPTIONS list) and location (entered as
 /// free text), persisting them to Preferences under config.preferencesNamespace. On
@@ -38,11 +38,11 @@ private:
    static constexpr auto LOCATION_KEY = "location";
    static constexpr auto BUCKET_KEY = "bucket";
 
-   /// <summary>Bucket choices offered to every Monitor sketch that opts into bucket/site/location prompting (see config.useBucketPrompt).</summary>
+   /// <summary>Bucket choices offered to every Monitor sketch that opts into bucket/site/location prompting (see config.influx.promptForContext).</summary>
    static constexpr const char* BUCKET_OPTIONS[] = { "Monitor", "Testing" };
 
-   /// <summary>Site choices offered to every Monitor sketch that opts into bucket/site/location prompting (see config.useBucketPrompt).</summary>
-   static constexpr const char* SITE_OPTIONS[] = { "Bragg", "Lake", "Testing" };
+   /// <summary>Site choices offered to every Monitor sketch that opts into bucket/site/location prompting (see config.influx.promptForContext).</summary>
+   static constexpr const char* SITE_OPTIONS[] = { "Bragg", "Lake" };
 
    String _siteName;
    String _locationName;
@@ -164,16 +164,16 @@ private:
 protected:
    ///
    /// <summary>
-   /// Returns config.fixedSite unless config.useBucketPrompt is set, in which case a
-   /// bucket/site/location is prompted for over Serial (or loaded from Preferences)
-   /// instead.
+   /// Returns config.influx.context unless config.influx.promptForContext is set, in which
+   /// case a bucket/site/location is prompted for over Serial (or loaded from
+   /// Preferences) instead.
    /// </summary>
    ///
-   SiteConfig _resolveFixedSite() override
+   InfluxContext _resolveFixedSite() override
    {
-      if (!_config.useBucketPrompt)
+      if (!_config.influx.promptForContext)
       {
-         return _config.fixedSite;
+         return _config.influx.context;
       }
 
       bool reconfigure = _shouldForcePrompt();
@@ -188,7 +188,7 @@ protected:
       }
       _arduino->printlnInitStatus("Location...", siteLocation().c_str());
 
-      return SiteConfig{ nullptr, _bucketName.c_str(), _siteName.c_str(), _locationName.c_str() };
+      return InfluxContext{ _bucketName.c_str(), _siteName.c_str(), _locationName.c_str(), _config.influx.context.sensor };
    }
 
    ///
@@ -224,7 +224,7 @@ public:
    ///
    /// <summary>
    /// Formats this device's site and location as "Site/Location". Only valid once
-   /// begin() has resolved the site (i.e. config.useBucketPrompt was set).
+   /// begin() has resolved the site (i.e. config.influx.promptForContext was set).
    /// </summary>
    /// <returns>The formatted "Site/Location" string.</returns>
    ///
@@ -236,7 +236,7 @@ public:
    ///
    /// <summary>
    /// Formats this device's bucket, site, and location as "Bucket/Site/Location". Only
-   /// valid once begin() has resolved the site (i.e. config.useBucketPrompt was set).
+   /// valid once begin() has resolved the site (i.e. config.influx.promptForContext was set).
    /// </summary>
    /// <returns>The formatted "Bucket/Site/Location" string.</returns>
    ///
@@ -248,13 +248,13 @@ public:
    ///
    /// <summary>
    /// Signals a fatal sensor initialization failure using the same status indicator and
-   /// config.sensorFailureResetDelayS delay Monitor uses internally for its own fatal
-   /// init failures.
+   /// config.influx.sensorFailureResetDelayS delay Monitor uses internally for its own
+   /// fatal init failures.
    /// </summary>
    ///
    void reportSensorFailure()
    {
       _status->setStatus(Status::FAILED);
-      Util::reset(_config.sensorFailureResetDelayS);
+      Util::reset(_config.influx.sensorFailureResetDelayS);
    }
 };

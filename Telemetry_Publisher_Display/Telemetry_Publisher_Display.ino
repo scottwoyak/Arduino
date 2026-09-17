@@ -38,10 +38,14 @@
 Arduino arduino;
 TestSensor sensor;
 
+TelemetryConfig TELEMETRY_CONFIG = {
+   .topic = "Test",
+   .decimals = 3,
+};
+
 SketchConfig PUBLISHER_CONFIG = {
    .sketchName = "Publisher",
-   .telemetryTopic = "Test",
-   .telemetryDecimals = 3,
+   .telemetry = TELEMETRY_CONFIG,
 };
 
 Publisher publisher(&arduino, PUBLISHER_CONFIG);
@@ -57,9 +61,9 @@ ScatterPlot valuePlot(&arduino, Rect16{}, "##.#s", "###.###");
 TimedScatterPlotSeries* valueSeries = valuePlot.createTimedSeries(PLOT_SPAN_MS);
 constexpr uint8_t VALUE_SERIES_POINT_SIZE = 1;
 
-// Mirrors PUBLISHER_CONFIG.publishIntervalMs so the plot is sampled at the same rate
+// Mirrors PUBLISHER_CONFIG.telemetry.publishIntervalMs so the plot is sampled at the same rate
 // the telemetry value is published.
-Timer plotSampleTimer(PUBLISHER_CONFIG.publishIntervalMs);
+Timer plotSampleTimer(PUBLISHER_CONFIG.telemetry.publishIntervalMs);
 bool needsInitialDisplay = true;
 
 void setup()

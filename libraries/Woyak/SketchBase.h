@@ -21,18 +21,17 @@
 
 ///
 /// <summary>
-/// Configuration shared by Monitor and Publisher sketches: sketch identity, the
-/// site/location table, InfluxDB cadence settings, Monitor's fixed-site fallback, and
-/// Publisher's telemetry settings. Fields that only apply to one sketch type (e.g.
-/// fixedSite for Monitor, telemetryTopic/telemetryDecimals/publishIntervalMs for
-/// Publisher) are simply left at their default when not used.
+/// Configuration shared by Monitor and Publisher sketches: sketch identity, InfluxDB
+/// settings (see InfluxConfig), and Publisher's telemetry settings. Fields that only
+/// apply to one sketch type (e.g. telemetry for Publisher) are simply left at their
+/// default when not used.
 /// </summary>
 ///
 /// Fields with a default value below only need to be specified by a sketch if it wants
 /// to override that default; use designated initializers and list only the fields that
 /// differ, e.g. { .sketchName = "Some_Monitor", .version = VERSION,
-/// .preferencesNamespace = "Some_Monitor", .sites = SOME_LOCATIONS,
-/// .influxSensor = "Gate", .includeCpuTemp = true }.
+/// .preferencesNamespace = "Some_Monitor", .influx = { .prompts = SOME_INFLUX_SITES },
+/// .includeCpuTemp = true }.
 ///
 struct SketchConfig
 {
@@ -45,29 +44,11 @@ struct SketchConfig
    /// <summary>Preferences (NVS) namespace used to persist the selected site/location. Only needed if sites is non-empty.</summary>
    const char* preferencesNamespace = nullptr;
 
-   /// <summary>Table of selectable InfluxDB site+location entries. Leave empty for a sketch with a single fixed site/location instead of a user-selectable table.</summary>
-   SiteTable sites;
+   /// <summary>InfluxDB settings: measurement names, post cadence, rolling-average sample count, and site selection.</summary>
+   InfluxConfig influx;
 
-   /// <summary>Influx measurement name used for the standard enclosure/CPU points and any points added via addPoint().</summary>
-   const char* influxMeasurement = "Sensors";
-
-   /// <summary>Influx measurement name used for the single startup/OTA log point.</summary>
-   const char* influxLogMeasurement = "Log";
-
-   /// <summary>Value for the "sensor" tag attached to the standard enclosure/CPU points and the log points. Leave null if the sketch doesn't upload sensor/enclosure values to InfluxDB; the "sensor" tag is then omitted.</summary>
-   const char* influxSensor = nullptr;
-
-   /// <summary>How often (in seconds) queued Influx points are posted/flushed.</summary>
-   uint16_t influxIntervalS = 60;
-
-   /// <summary>Decimal places used when posting the standard enclosure/CPU fields to InfluxDB.</summary>
-   uint8_t influxDecimals = 2;
-
-   /// <summary>Number of samples averaged for the standard rolling-average enclosure temperature/humidity fields.</summary>
-   size_t influxRollingSamples = 10;
-
-   /// <summary>How often (in milliseconds) the standard enclosure temperature/humidity sensor is sampled.</summary>
-   uint16_t sensorIntervalMs = 100;
+   /// <summary>Publisher only: telemetry settings (selectable topic table or fixed topic, decimals, publish cadence).</summary>
+   TelemetryConfig telemetry;
 
    /// <summary>CPU clock speed (in MHz) set once begin() completes, to reduce power draw/heat.</summary>
    uint8_t cpuFrequencyMhz = 80;
@@ -83,30 +64,6 @@ struct SketchConfig
 
    /// <summary>If true, enable the scheduled daily reboot via arduino.enableRebooter(). Sketches that need it (e.g. long-running deployed sketches) must set this to true.</summary>
    bool enableRebooter = false;
-
-   /// <summary>If non-zero, enables the ESP32 task watchdog with this timeout (in seconds); loop() resets it automatically. Leave 0 to disable.</summary>
-   uint8_t watchdogIntervalS = 60;
-
-   /// <summary>Seconds to wait before resetting after WiFi connectivity is lost and cannot be reestablished. See _onWiFiLost().</summary>
-   uint8_t wifiLostResetDelayS = 10;
-
-   /// <summary>Monitor only: fixed InfluxDB site+location entry used when sites is empty (no selection prompt). Ignored if sites is non-empty, or if useBucketPrompt is set.</summary>
-   SiteConfig fixedSite = { nullptr, INFLUXDB_BUCKET, nullptr, nullptr };
-
-   /// <summary>Monitor only: if true, prompts over Serial (or loads the saved values from Preferences) for a bucket (chosen from Monitor's shared BUCKET_OPTIONS list), a site (chosen from Monitor's shared SITE_OPTIONS list), and a free-text location, instead of using fixedSite.</summary>
-   bool useBucketPrompt = false;
-
-   /// <summary>Monitor only: seconds to wait before resetting after reportSensorFailure() is called.</summary>
-   uint8_t sensorFailureResetDelayS = 10;
-
-   /// <summary>Publisher only: fixed telemetry topic used when sites is left empty (i.e. the sketch has no selectable site table). Ignored if sites is non-empty.</summary>
-   const char* telemetryTopic = nullptr;
-
-   /// <summary>Publisher only: decimal places used when publishing the telemetry value over the WebSocket connection.</summary>
-   uint8_t telemetryDecimals = 2;
-
-   /// <summary>Publisher only: how often (in milliseconds) the telemetry value source is read and published. 0 means every loop() iteration.</summary>
-   uint16_t publishIntervalMs = 0;
 };
 
 ///
@@ -124,6 +81,18 @@ class SketchBase : private OTAUpdateEventHandler
 public:
    /// <summary>How long to wait after boot for a buttonA press before proceeding.</summary>
    static constexpr uint16_t FORCE_PROMPT_WINDOW_MS = 2000;
+
+   /// <summary>Decimal places used when posting the standard enclosure/CPU fields to InfluxDB.</summary>
+   static constexpr uint8_t INFLUX_DECIMALS = 2;
+
+   /// <summary>How often (in milliseconds) the standard enclosure temperature/humidity sensor is sampled.</summary>
+   static constexpr uint16_t SENSOR_INTERVAL_MS = 100;
+
+   /// <summary>ESP32 task watchdog timeout (in seconds); loop() resets it automatically.</summary>
+   static constexpr uint8_t WATCHDOG_INTERVAL_S = 60;
+
+   /// <summary>Seconds to wait before resetting after WiFi connectivity is lost and cannot be reestablished. See _onWiFiLost().</summary>
+   static constexpr uint8_t WIFI_LOST_RESET_DELAY_S = 10;
 
    ///
    /// <summary>
@@ -160,7 +129,7 @@ protected:
       }
 
       Serial.println("Press buttonA now to reconfigure the site...");
-      return SiteResolver::waitForForcePrompt(_arduino->buttonA, FORCE_PROMPT_WINDOW_MS);
+      return InfluxContextResolver::waitForForcePrompt(_arduino->buttonA, FORCE_PROMPT_WINDOW_MS);
    }
 
    /// <summary>Board wrapper.</summary>
@@ -177,11 +146,20 @@ protected:
    /// <summary>Copy of the config passed to the constructor.</summary>
    SketchConfig _config;
 
-   /// <summary>Resolves/persists the chosen SiteConfig entry.</summary>
-   SiteResolver _siteResolver;
+   /// <summary>Resolves/persists the chosen InfluxDB site entry.</summary>
+   InfluxContextResolver _siteResolver;
 
-   /// <summary>The resolved site, populated by begin().</summary>
-   SiteConfig _site{};
+   /// <summary>Resolves/persists the chosen telemetry topic.</summary>
+   TelemetryTopicResolver _topicResolver;
+
+   /// <summary>The resolved InfluxDB site, populated by begin().</summary>
+   InfluxContext _site{};
+
+   /// <summary>The resolved "sensor" tag value, populated by begin() from the resolved site's sensor field.</summary>
+   const char* _influxSensor = nullptr;
+
+   /// <summary>The resolved telemetry topic, populated by begin() (nullptr if not used).</summary>
+   const char* _telemetryTopic = nullptr;
 
    /// <summary>Sensors registered via addSensor(), run in order during begin().</summary>
    std::vector<SensorInit> _sensors;
@@ -213,20 +191,33 @@ protected:
 
    ///
    /// <summary>
-   /// Returns the site to use when the config has no selectable site table (i.e.
-   /// config.sites is empty). Monitor returns its fixedSite; Publisher returns a site
-   /// built from its fixed telemetryTopic. May also print sketch-specific startup
-   /// information (e.g. Publisher prints the telemetry topic).
+   /// Returns the InfluxDB site to use when the config has no selectable influx.prompts
+   /// table (i.e. config.influx.prompts is empty). Monitor returns its influx.context;
+   /// Publisher returns an empty site (no Influx bucket) since it has no fixed-site
+   /// concept of its own.
    /// </summary>
    ///
-   virtual SiteConfig _resolveFixedSite() = 0;
+   virtual InfluxContext _resolveFixedSite() = 0;
+
+   ///
+   /// <summary>
+   /// Returns the telemetry topic to use when the config has no selectable
+   /// telemetry.prompts table (i.e. config.telemetry.prompts is empty). Publisher returns its
+   /// fixed config.telemetry.topic (and prints it to Serial); Monitor doesn't use
+   /// telemetry, so the default returns nullptr.
+   /// </summary>
+   ///
+   virtual const char* _resolveFixedTelemetryTopic()
+   {
+      return nullptr;
+   }
 
    ///
    /// <summary>
    /// Returns whether Influx should be initialized this run. Monitor always uses Influx;
-   /// Publisher only does so when a selectable site table resolved a bucket.
+   /// Publisher only does so when a selectable Influx site table resolved a bucket.
    /// </summary>
-   /// <param name="hasSiteTable">True if config.sites is non-empty.</param>
+   /// <param name="hasSiteTable">True if config.influx.prompts is non-empty.</param>
    ///
    virtual bool _shouldUseInflux(bool hasSiteTable) = 0;
 
@@ -264,7 +255,7 @@ protected:
    /// lost, before loop() resets the device. Defaults to the callback registered via
    /// setOnWiFiLostCallback() (if any), or returns false if none was registered. Return
    /// true if the loss was fully handled and loop() should skip its own default reset;
-   /// return false to let loop() reset the device after wifiLostResetDelayS seconds.
+   /// return false to let loop() reset the device after WIFI_LOST_RESET_DELAY_S seconds.
    /// </summary>
    /// <returns>True if the WiFi loss was fully handled and no reset is needed.</returns>
    ///
@@ -352,23 +343,23 @@ protected:
          return;
       }
 
-      Point point(_config.influxLogMeasurement);
+      Point point(_config.influx.logMeasurement);
       point.addTag("sketch", _config.sketchName);
       if (_config.version != nullptr)
       {
          point.addTag("version", _config.version);
       }
-      if (_site.influxSite != nullptr)
+      if (_site.site != nullptr)
       {
-         point.addTag("site", _site.influxSite);
+         point.addTag("site", _site.site);
       }
-      if (_site.influxLocation != nullptr)
+      if (_site.location != nullptr)
       {
-         point.addTag("location", _site.influxLocation);
+         point.addTag("location", _site.location);
       }
-      if (_config.influxSensor != nullptr)
+      if (_influxSensor != nullptr)
       {
-         point.addTag("sensor", _config.influxSensor);
+         point.addTag("sensor", _influxSensor);
       }
       point.addTag("ip", WiFi.localIP().toString());
       point.addField("message", message);
@@ -413,7 +404,8 @@ public:
 #endif
         _config(config),
         _siteResolver(config.preferencesNamespace),
-        _sensorTimer(config.sensorIntervalMs)
+        _topicResolver(config.preferencesNamespace),
+        _sensorTimer(SENSOR_INTERVAL_MS)
    {
       ASSERT(arduino != nullptr);
    }
@@ -437,7 +429,7 @@ public:
    /// reestablished (see _onWiFiLost()). Use this to show something on the display,
    /// log a message, etc. before the device resets. Return true from the callback if
    /// the loss was fully handled and loop() should skip its own default reset; return
-   /// false to let loop() reset the device after config.wifiLostResetDelayS seconds.
+   /// false to let loop() reset the device after WIFI_LOST_RESET_DELAY_S seconds.
    /// </summary>
    /// <param name="callback">Called with no arguments; returns true if fully handled.</param>
    ///
@@ -454,13 +446,13 @@ public:
    /// pass extra tags (e.g. "sensor", "item"). Must be called after begin(), once the
    /// site has been resolved.
    /// </summary>
-   /// <param name="measurement">Influx measurement name. Defaults to config.influxMeasurement.</param>
+   /// <param name="measurement">Influx measurement name. Defaults to config.influx.measurement.</param>
    /// <param name="tags">Additional key/value pairs to attach as Influx tags.</param>
    /// <returns>Pointer to the created point, owned by this instance.</returns>
    ///
    InfluxPoint* addPoint(const char* measurement, const std::vector<std::pair<const char*, const char*>>& tags)
    {
-      std::vector<std::pair<const char*, const char*>> allTags = { { "site", _site.influxSite }, { "location", _site.influxLocation } };
+      std::vector<std::pair<const char*, const char*>> allTags = { { "site", _site.site }, { "location", _site.location } };
       allTags.insert(allTags.end(), tags.begin(), tags.end());
 
       InfluxPoint* point = new InfluxPoint(measurement, allTags);
@@ -470,14 +462,14 @@ public:
 
    ///
    /// <summary>
-   /// Overload of addPoint() that uses config.influxMeasurement as the measurement name.
+   /// Overload of addPoint() that uses config.influx.measurement as the measurement name.
    /// </summary>
    /// <param name="tags">Additional key/value pairs to attach as Influx tags.</param>
    /// <returns>Pointer to the created point, owned by this instance.</returns>
    ///
    InfluxPoint* addPoint(const std::vector<std::pair<const char*, const char*>>& tags)
    {
-      return addPoint(_config.influxMeasurement, tags);
+      return addPoint(_config.influx.measurement, tags);
    }
 
    ///
@@ -493,11 +485,32 @@ public:
    }
 
    ///
-   /// <summary>Returns the resolved site (only valid after begin() returns).</summary>
+   /// <summary>
+   /// Overload of addPoint() for the common single-sensor case, using the resolved
+   /// "sensor" tag value (site().sensor if set, otherwise config.influx.context.sensor)
+   /// as the "sensor" tag value.
+   /// </summary>
+   /// <returns>Pointer to the created point, owned by this instance.</returns>
    ///
-   const SiteConfig& site() const
+   InfluxPoint* addPoint()
+   {
+      return addPoint(_influxSensor);
+   }
+
+   ///
+   /// <summary>Returns the resolved InfluxDB site (only valid after begin() returns).</summary>
+   ///
+   const InfluxContext& site() const
    {
       return _site;
+   }
+
+   ///
+   /// <summary>Returns the resolved telemetry topic (only valid after begin() returns; nullptr if not used).</summary>
+   ///
+   const char* telemetryTopic() const
+   {
+      return _telemetryTopic;
    }
 
    ///
@@ -573,8 +586,9 @@ public:
       _arduino->printlnR(sketchLine, Color::VALUE);
 #endif
 
-      bool hasSiteTable = _config.sites.count > 0;
-      bool forcePrompt = hasSiteTable ? _shouldForcePrompt() : false;
+      bool hasSiteTable = _config.influx.prompts.size() > 0;
+      bool hasTopicTable = _config.telemetry.prompts.size() > 0;
+      bool forcePrompt = (hasSiteTable || hasTopicTable) ? _shouldForcePrompt() : false;
 
       for (const SensorInit& sensor : _sensors)
       {
@@ -599,11 +613,21 @@ public:
       // constructed.
       if (hasSiteTable)
       {
-         _site = _siteResolver.resolve(_arduino->preferences, _status, "Select a site (* = default):", _config.influxMeasurement, _config.influxSensor, _config.sites.sites, _config.sites.count, forcePrompt);
+         _site = _siteResolver.resolve(_arduino->preferences, _status, "Select an influx site (* = default):", _config.influx.measurement, _config.influx.prompts.data(), _config.influx.prompts.size(), forcePrompt);
       }
       else
       {
          _site = _resolveFixedSite();
+      }
+      _influxSensor = _site.sensor;
+
+      if (hasTopicTable)
+      {
+         _telemetryTopic = _topicResolver.resolve(_arduino->preferences, _status, "Select a telemetry topic (* = default):", _config.telemetry.prompts.data(), _config.telemetry.prompts.size(), forcePrompt);
+      }
+      else
+      {
+         _telemetryTopic = _resolveFixedTelemetryTopic();
       }
 
       _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
@@ -616,7 +640,7 @@ public:
       _usesInflux = _shouldUseInflux(hasSiteTable);
       if (_usesInflux)
       {
-         _influx = new Influx(_config.influxIntervalS, _status, INFLUXDB_URL, INFLUXDB_ORG, _site.influxBucket);
+         _influx = new Influx(_config.influx.intervalS, _status, INFLUXDB_URL, INFLUXDB_ORG, _site.bucket);
          if (!_influx->begin(_arduino))
          {
             _status->setStatus(Status::FAILED);
@@ -624,11 +648,11 @@ public:
             Util::reset();
          }
 
-         std::string influxPath = std::string(_site.influxBucket != nullptr ? _site.influxBucket : "") + "/" +
-                                  _config.influxMeasurement + "/" +
-                                  (_config.influxSensor != nullptr ? _config.influxSensor : "") + "/" +
-                                  (_site.influxSite != nullptr ? _site.influxSite : "") + "/" +
-                                  (_site.influxLocation != nullptr ? _site.influxLocation : "");
+         std::string influxPath = std::string(_site.bucket != nullptr ? _site.bucket : "") + "/" +
+                                  _config.influx.measurement + "/" +
+                                  (_influxSensor != nullptr ? _influxSensor : "") + "/" +
+                                  (_site.site != nullptr ? _site.site : "") + "/" +
+                                  (_site.location != nullptr ? _site.location : "");
          std::string startupMessage = _buildStartupMessage(influxPath);
          if (SerialX::lastShutdownReason().length() > 0)
          {
@@ -638,15 +662,15 @@ public:
 
          if (_config.includeEnclosureTemp)
          {
-            InfluxPoint* enclosurePoint = addPoint(_config.influxMeasurement, { { "sensor", _config.influxSensor }, { "item", "Enclosure" } });
-            _enclosureTempField = enclosurePoint->addRollingAverageField(_config.influxRollingSamples, "temperature", _config.influxDecimals);
-            _enclosureHumidityField = enclosurePoint->addRollingAverageField(_config.influxRollingSamples, "humidity", _config.influxDecimals);
+            InfluxPoint* enclosurePoint = addPoint(_config.influx.measurement, { { "sensor", _influxSensor }, { "item", "Enclosure" } });
+            _enclosureTempField = enclosurePoint->addRollingAverageField(_config.influx.rollingSamples, "temperature", INFLUX_DECIMALS);
+            _enclosureHumidityField = enclosurePoint->addRollingAverageField(_config.influx.rollingSamples, "humidity", INFLUX_DECIMALS);
          }
 
          if (_config.includeCpuTemp)
          {
-            InfluxPoint* cpuPoint = addPoint(_config.influxMeasurement, { { "sensor", _config.influxSensor }, { "item", "CPU" } });
-            _cpuTempField = cpuPoint->addValueField("temperature", _config.influxDecimals);
+            InfluxPoint* cpuPoint = addPoint(_config.influx.measurement, { { "sensor", _influxSensor }, { "item", "CPU" } });
+            _cpuTempField = cpuPoint->addValueField("temperature", INFLUX_DECIMALS);
          }
 
          _influx->client()->setWriteOptions(WriteOptions().batchSize(_points.size()).bufferSize(2 * _points.size()));
@@ -661,16 +685,13 @@ public:
 
       setCpuFrequencyMhz(_config.cpuFrequencyMhz);
 
-      if (_config.watchdogIntervalS > 0)
-      {
-         esp_task_wdt_config_t twdtConfig = {
-            .timeout_ms = _config.watchdogIntervalS * 1000U,
-            .idle_core_mask = 0,
-            .trigger_panic = true,
-         };
-         esp_task_wdt_reconfigure(&twdtConfig);
-         esp_task_wdt_add(nullptr);
-      }
+      esp_task_wdt_config_t twdtConfig = {
+         .timeout_ms = WATCHDOG_INTERVAL_S * 1000U,
+         .idle_core_mask = 0,
+         .trigger_panic = true,
+      };
+      esp_task_wdt_reconfigure(&twdtConfig);
+      esp_task_wdt_add(nullptr);
    }
 
    ///
@@ -681,14 +702,11 @@ public:
    ///
    void loop()
    {
-      if (_config.watchdogIntervalS > 0)
-      {
-         esp_task_wdt_reset();
-      }
+      esp_task_wdt_reset();
 
       if (!_arduino->ensureWiFiConnected() && !_onWiFiLost())
       {
-         Util::reset(_config.wifiLostResetDelayS);
+         Util::reset(WIFI_LOST_RESET_DELAY_S);
       }
 
       _beforeOTACheck();

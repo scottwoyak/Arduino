@@ -72,10 +72,16 @@ constexpr uint8_t ECHO_PIN = 11;
 #include "MS5837DepthSensor.h"
 #endif
 
-// ----------- Telemetry topic / InfluxDB site selection
-constexpr SiteConfig WAVE_SITES[] = {
-   { "Waves/LakeP", "Sensors", "Lake", "Dock" },
-   { "Waves/Test", "Testing", "WaveSite", "WaveLocation" },
+// ----------- InfluxDB site selection
+constexpr InfluxContext INFLUX_PROMPTS[] = {
+   { "Sensors", "Lake", "Dock", "WaveHeight" },
+   { "Testing", "WaveSite", "WaveLocation", "WaveHeight" },
+};
+
+// ----------- Telemetry topic selection
+constexpr const char* WAVE_TELEMETRY_TOPICS[] = {
+   "Waves/LakeP",
+   "Waves/Test",
 };
 
 constexpr uint8_t INFLUX_AVG_DEPTH_DECIMALS = 2;
@@ -105,16 +111,22 @@ MS5837DepthSensor depthSensor;
 
 DepthSensorBase* const depth = &depthSensor;
 
+InfluxConfig INFLUX_CONFIG = {
+   .prompts = INFLUX_PROMPTS,
+};
+
+TelemetryConfig TELEMETRY_CONFIG = {
+   .prompts = WAVE_TELEMETRY_TOPICS,
+   .decimals = 1,
+   .publishIntervalMs = 33, // 30 per sec
+};
+
 SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = SKETCH_NAME,
-   .sites = WAVE_SITES,
-   .influxSensor = "WaveHeight",
-   .influxDecimals = 1,
-   .telemetryDecimals = 1,
-   .sensorIntervalMs = 5000,
-   .publishIntervalMs = 33, // 30 per sec
+   .influx = INFLUX_CONFIG,
+   .telemetry = TELEMETRY_CONFIG,
    .includeEnclosureTemp = true,
    .includeCpuTemp = true,
    .enableOTA = true,

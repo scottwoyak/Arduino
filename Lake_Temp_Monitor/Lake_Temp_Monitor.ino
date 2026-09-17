@@ -2,8 +2,9 @@
 // Lake water temperature monitoring station with multi-sensor support.
 //
 // Monitors temperature and humidity at 5 different locations in a lake using I2C multiplexing.
-// Logs readings to InfluxDB at configurable intervals. Includes watchdog for automatic reset
-// on communication failures and daily reboot to manage long-term stability.
+// Uses the shared Monitor class (see Monitor.h) to own the boot/init sequence: status LED,
+// per-sensor init, WiFi, daily rebooter, OTA, task watchdog, and the standard InfluxDB
+// setup/post/flush cycle.
 //
 // Uploads to InfluxDB as measurement "Sensors", tagged with site="Lake", location="Dock",
 // sensor="Temperature", and item=<Surface|Bottom 1|Bottom 2|Enclosure|CPU> identifying which
@@ -16,22 +17,17 @@
 // This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
 
-#include <Arduino.h>
-#include <Adafruit_SleepyDog.h>
 #include <array>
-#include <time.h>
 
 #include "ArduinoBoard.h"
 #include "ESP32TempSensor.h"
 #include "I2CMultiplexor.h"
-#include "Influx.h"
 #include "SerialTable.h"
-#include "SerialX.h"
-#include "Status.h"
 #include "TempSensor.h"
-#include "Timer.h"
 
 #include "WiFiSettings.h"
+
+#include "Monitor.h"
 
 constexpr auto VERSION =
 #include "version.txt"
@@ -39,14 +35,10 @@ constexpr auto VERSION =
 constexpr auto SKETCH_NAME = "Lake_Temp_Monitor";
 
 // Influx database settings
-constexpr auto INFLUX_MEASUREMENT = "Sensors";
 constexpr auto INFLUX_SITE = "Lake";
 constexpr auto INFLUX_LOCATION = "Dock";
 constexpr auto INFLUX_SENSOR = "Temperature";
-constexpr auto INFLUX_INTERVAL_S = 15;       // Log data to InfluxDB every N seconds
-constexpr auto WATCHDOG_INTERVAL_S = 60;     // Reboot if no successful log in N seconds
-constexpr auto WATCHDOG_STARTUP_M = 5;        // Reboot if startup fails in N minutes
-constexpr auto WIFI_RESET_DELAY_S = 10;
+constexpr auto INFLUX_INTERVAL_S = 15;  // Log data to InfluxDB every N seconds
 
 ///
 /// <summary>
@@ -70,7 +62,6 @@ constexpr std::array SENSOR_CONFIGS = {
 };
 constexpr uint8_t NUM_SENSORS = SENSOR_CONFIGS.size();
 constexpr uint8_t CPU_SENSOR_INDEX = NUM_SENSORS - 1;  // Last sensor is the built-in ESP32 CPU sensor
-constexpr auto INFLUX_BATCH_SIZE = NUM_SENSORS;  // Batch all sensor points into a single HTTP write
 constexpr uint16_t SENSOR_INTERVAL_MS = 200;
 constexpr float SENSOR_AVERAGE_PERIOD_S = 2.0f;  // 2 secs, equivalent to 10 samples at SENSOR_INTERVAL_MS
 
@@ -81,12 +72,25 @@ I2CMultiplexor multi;
 
 // Sensor arrays
 std::array<TempSensor*, NUM_SENSORS> sensors;
-std::array<InfluxPoint*, NUM_SENSORS> points;
 std::array<InfluxField*, NUM_SENSORS> tempFields;
 std::array<InfluxField*, NUM_SENSORS> humFields;
 
-Influx influx(INFLUX_INTERVAL_S, &arduino);
 Timer sensorTimer(SENSOR_INTERVAL_MS);
+
+InfluxConfig INFLUX_CONFIG = {
+   .context = { INFLUXDB_BUCKET, INFLUX_SITE, INFLUX_LOCATION, INFLUX_SENSOR },
+   .intervalS = INFLUX_INTERVAL_S,
+};
+
+SketchConfig SKETCH_CONFIG = {
+   .sketchName = SKETCH_NAME,
+   .version = VERSION,
+   .enableOTA = true,
+   .enableRebooter = true,
+   .influx = INFLUX_CONFIG,
+};
+
+Monitor monitor(&arduino, SKETCH_CONFIG);
 
 ///
 /// <summary>
@@ -134,101 +138,33 @@ void printSensorSummary()
 
 void setup()
 {
-   SerialX::begin();
-   Serial.print("Lake Temp Monitor ");
-   Serial.println(VERSION);
-
-   // Enable watchdog for startup supervision (5 minutes)
-   Watchdog.enable(WATCHDOG_STARTUP_M * 60 * 1000);
-
-   // Create sensor objects and data structures
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       sensors[i] = new TempSensor();
-      points[i] = new InfluxPoint(INFLUX_MEASUREMENT, { { "site", INFLUX_SITE }, { "location", INFLUX_LOCATION }, { "sensor", INFLUX_SENSOR }, { "item", SENSOR_CONFIGS[i].item } });
-      tempFields[i] = points[i]->addTimeAverageField(SENSOR_AVERAGE_PERIOD_S, "temperature", 3);
-      humFields[i] = points[i]->addTimeAverageField(SENSOR_AVERAGE_PERIOD_S, "humidity", 2);
    }
 
-   arduino.begin(); // sets up the I2C bus/power rail, the RGB status LED, and the activity LED
-   arduino.beginInit("Initializing Lake Temperature Monitor");
+   monitor.addSensor("Surface", []() { multi.select(SENSOR_CONFIGS[0].port); return sensors[0]->begin(true); }, false);
+   monitor.addSensor("Bottom 1", []() { multi.select(SENSOR_CONFIGS[1].port); return sensors[1]->begin(true); }, false);
+   monitor.addSensor("Bottom 2", []() { multi.select(SENSOR_CONFIGS[2].port); return sensors[2]->begin(true); }, false);
+   monitor.addSensor("Enclosure", []() { multi.select(SENSOR_CONFIGS[3].port); return sensors[3]->begin(true); }, false);
+   monitor.addSensor("CPU", []() { return sensors[CPU_SENSOR_INDEX]->begin(new ESP32TempSensor(), true); }, false);
 
-   // Initialize and detect all sensors
-   Serial.println("Detecting sensors...");
-   for (uint8_t i = 0; i < NUM_SENSORS; i++)
-   {
-      Serial.print("  Sensor ");
-      Serial.print(i);
-      Serial.print(" (");
-      Serial.print(SENSOR_CONFIGS[i].item);
-      Serial.print(")... ");
-
-      bool sensorFound;
-      if (i == CPU_SENSOR_INDEX)
-      {
-         // Built-in ESP32 CPU temperature sensor
-         sensorFound = sensors[i]->begin(new ESP32TempSensor(), true);
-      }
-      else
-      {
-         multi.select(SENSOR_CONFIGS[i].port);
-         sensorFound = sensors[i]->begin(true);
-      }
-
-      if (sensorFound)
-      {
-         Serial.print("OK - ");
-         Serial.print(sensors[i]->type());
-         Serial.print(" (0x");
-         Serial.print(sensors[i]->address(), HEX);
-         Serial.println(")");
-      }
-      else
-      {
-         Serial.println("NOT FOUND");
-      }
-   }
+   monitor.begin();
 
    printSensorSummary();
 
-   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &arduino);
-   arduino.enableOTA(VERSION, SKETCH_NAME);
-
-   // Initialize InfluxDB connection
-   if (!influx.begin(arduino))
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      arduino.setStatus(Status::FAILED);
-      Util::reset(WIFI_RESET_DELAY_S);
+      InfluxPoint* point = monitor.addPoint({ { "sensor", INFLUX_SENSOR }, { "item", SENSOR_CONFIGS[i].item } });
+      tempFields[i] = point->addTimeAverageField(SENSOR_AVERAGE_PERIOD_S, "temperature", 3);
+      humFields[i] = point->addTimeAverageField(SENSOR_AVERAGE_PERIOD_S, "humidity", 2);
    }
-
-   // Batch all sensor points into a single HTTP write so a slow blocking network write for
-   // one sensor doesn't let later sensors' time-averaged fields expire before they're posted.
-   influx.client()->setWriteOptions(WriteOptions().batchSize(INFLUX_BATCH_SIZE).bufferSize(2 * INFLUX_BATCH_SIZE));
-
-   // Record the current day so checkReboot() can reboot once the date advances
-   arduino.enableRebooter();
-
-   // Reduce CPU frequency for lower power consumption
-   setCpuFrequencyMhz(80);
-
-   arduino.setStatus(Status::READY);
-
-   // Enable watchdog for operation (60 seconds between successful logs)
-   Watchdog.enable(WATCHDOG_INTERVAL_S * 1000);
 }
 
 void loop()
 {
-   // Perform a daily reboot for long-term stability, as soon as the date advances past
-   // the day the sketch started. The system clock is synced via NTP (see influx.begin()
-   // in setup()), so this checks wall-clock time rather than elapsed millis(). Watchdog
-   // reset is handled manually below (only on a successful write), not by arduino.checkForOTA(),
-   // since this sketch never calls arduino.enableWatchdog().
-   arduino.checkForOTA();
+   monitor.loop();
 
-   arduino.led.turnOff();  // Turn off activity LED (turned on during data upload)
-
-   // Read temperature and humidity from all available sensors
    if (sensorTimer.ready())
    {
       for (uint8_t i = 0; i < NUM_SENSORS; i++)
@@ -241,59 +177,4 @@ void loop()
          }
       }
    }
-
-   // Ensure WiFi connectivity
-   if (!arduino.ensureWiFiConnected(&arduino))
-   {
-      Serial.println("WiFi reconnection failed, performing reset");
-      Util::reset(WIFI_RESET_DELAY_S);
-   }
-
-   // Upload data points to InfluxDB at configured interval. The InfluxDBClient's batch size is
-   // set to NUM_SENSORS (the maximum possible), so points are only queued locally here rather
-   // than immediately triggering a blocking network write - avoiding a slow per-sensor write
-   // from letting later sensors' time-averaged fields expire while earlier sensors were still
-   // being posted. Since a missing/failed sensor means the batch may never actually fill up,
-   // flushBuffer() is called afterward to force the queued points out regardless of count.
-   if (influx.ready())
-   {
-      arduino.led.turnOn();  // Indicate data transmission activity
-
-      bool anyQueued = false;
-      for (uint8_t i = 0; i < NUM_SENSORS; i++)
-      {
-         if (!sensors[i]->exists())
-         {
-            continue;  // Skip sensors that weren't detected
-         }
-
-         if (points[i]->post(influx.client(), true))
-         {
-            anyQueued = true;
-         }
-         else
-         {
-            Serial.print("InfluxDB queue failed for sensor ");
-            Serial.print(i);
-            Serial.print(": ");
-            Serial.println(influx.client()->getLastErrorMessage());
-         }
-      }
-
-      if (anyQueued)
-      {
-         if (influx.client()->flushBuffer())
-         {
-            // Only reset watchdog on successful write
-            Watchdog.reset();
-         }
-         else
-         {
-            Serial.print("InfluxDB flush failed: ");
-            Serial.println(influx.client()->getLastErrorMessage());
-         }
-      }
-   }
 }
-
-

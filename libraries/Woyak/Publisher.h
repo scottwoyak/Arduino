@@ -82,17 +82,28 @@ private:
 protected:
    ///
    /// <summary>
-   /// Publisher's fixed-site fallback (used when config.sites is empty): a SiteConfig
-   /// built from the fixed telemetryTopic, with no Influx bucket/site/location. Also
-   /// prints the resolved telemetry topic to Serial, since Publisher (unlike Monitor)
-   /// always has a topic to report even without a site table.
+   /// Publisher's fixed-site fallback (used when config.influx.prompts is empty): an empty
+   /// InfluxContext, since Publisher has no fixed Influx site of its own.
    /// </summary>
    ///
-   SiteConfig _resolveFixedSite() override
+   InfluxContext _resolveFixedSite() override
+   {
+      return {};
+   }
+
+   ///
+   /// <summary>
+   /// Publisher's fixed telemetry topic fallback (used when config.telemetry.prompts is
+   /// empty): the fixed config.telemetry.topic. Also prints the resolved telemetry topic
+   /// to Serial, since Publisher always has a topic to report even without a topic
+   /// table.
+   /// </summary>
+   ///
+   const char* _resolveFixedTelemetryTopic() override
    {
       Serial.print("Telemetry Topic: ");
-      Serial.println(_config.telemetryTopic);
-      return { _config.telemetryTopic, nullptr, nullptr, nullptr };
+      Serial.println(_config.telemetry.topic);
+      return _config.telemetry.topic;
    }
 
    ///
@@ -108,7 +119,7 @@ protected:
    ///
    std::string _buildStartupMessage(const std::string& influxPath) override
    {
-      return std::string("Starting \"") + _config.sketchName + "\", telemetry topic: " + (_site.telemetryTopic != nullptr ? _site.telemetryTopic : "") + ", influx: " + influxPath;
+      return std::string("Starting \"") + _config.sketchName + "\", telemetry topic: " + (_telemetryTopic != nullptr ? _telemetryTopic : "") + ", influx: " + influxPath;
    }
 
    ///
@@ -123,7 +134,7 @@ protected:
    ///
    void _afterOTASetup() override
    {
-      _client = new TelemetryPublisher(_site.telemetryTopic, _config.telemetryDecimals, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
+      _client = new TelemetryPublisher(_telemetryTopic, _config.telemetry.decimals, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
       _arduino->initClient("Telemetry", [this]() { _client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, _status);
    }
 
@@ -178,7 +189,7 @@ public:
 #else
         _telemetryHandler(_status),
 #endif
-        _publishTimer(config.publishIntervalMs)
+        _publishTimer(config.telemetry.publishIntervalMs)
    {
    }
 

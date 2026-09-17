@@ -11,7 +11,7 @@
 //   updates. On subsequent boots the saved value is used automatically, unless buttonA
 //   is held during a short window right after startup, which forces a re-prompt. This is
 //   handled by the shared Monitor class (see Monitor.h) via MONITOR_CONFIG's
-//   useBucketPrompt flag, since this sketch prompts for a bucket (from a fixed list) and
+//   promptForContext flag, since this sketch prompts for a bucket (from a fixed list) and
 //   free-text site/location, rather than picking a single fixed SiteConfig entry.
 // - Samples temperature and humidity every SENSOR_INTERVAL_MS and accumulates
 //   time-averaged values for the next upload.
@@ -19,14 +19,14 @@
 //   on the display at large text size, with location and version in the header/footer.
 // - Verifies Wi-Fi connectivity each loop (handled by SketchBase::loop()); on loss,
 //   clears the display and shows "WiFi connection lost" (via setOnWiFiLostCallback())
-//   before resetting the device after config.wifiLostResetDelayS seconds.
+//   before resetting the device after SketchBase::WIFI_LOST_RESET_DELAY_S seconds.
 // - Posts telemetry to InfluxDB every INFLUX_INTERVAL_S seconds (handled by Monitor::loop()).
 // - Checks for a firmware update periodically and, if a newer
 //   version is published, downloads and installs it (showing progress on the display)
 //   before restarting.
 //
 // Failure handling:
-// - Sensor initialization failure triggers a device reset after config.sensorFailureResetDelayS seconds.
+// - Sensor initialization failure triggers a device reset after config.influx.sensorFailureResetDelayS seconds.
 // - Influx initialization failure (handled by Monitor::begin()) triggers a device reset.
 // - Runtime InfluxDB post/flush failures are logged to Serial by Monitor::loop() and
 //   retried the following cycle.
@@ -53,6 +53,8 @@
 //     same temperature/humidity reading (see TempSensor::readAll()), sampled every
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //
+#include <string>
+
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
@@ -124,15 +126,23 @@ FieldTable allValuesTable(&arduino, 0, 0, TEXT_SIZE_SMALL);
 // the display can be cleared exactly once when switching between it and the normal readout.
 bool wasAllValuesMode = false;
 
+InfluxContext INFLUX_CONTEXT = {
+   .sensor = INFLUX_SENSOR,
+};
+
+InfluxConfig INFLUX_CONFIG = {
+   .context = INFLUX_CONTEXT,
+   .intervalS = INFLUX_INTERVAL_S,
+   .promptForContext = true,
+};
+
 SketchConfig MONITOR_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = PREFERENCES_NAMESPACE,
-   .influxSensor = INFLUX_SENSOR,
-   .influxIntervalS = INFLUX_INTERVAL_S,
+   .influx = INFLUX_CONFIG,
    .enableOTA = true,
    .enableRebooter = true,
-   .useBucketPrompt = true,
 };
 
 Monitor monitor(&arduino, MONITOR_CONFIG);
@@ -165,7 +175,7 @@ void setup()
       monitor.reportSensorFailure();
    }
 
-   InfluxPoint* point = monitor.addPoint(INFLUX_SENSOR);
+   InfluxPoint* point = monitor.addPoint();
    tempField = point->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
    humField = point->addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
    dewPointField = point->addTimeAverageField(INFLUX_INTERVAL_S, "dewPoint", INFLUX_TEMP_DECIMAL_PLACES);

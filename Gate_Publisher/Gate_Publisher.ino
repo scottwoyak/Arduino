@@ -34,12 +34,20 @@ constexpr auto SKETCH_NAME = "Gate_Publisher";
 
 #include "Publisher.h"
 
-// ----------- Telemetry topic / InfluxDB location selection
-constexpr SiteConfig GATE_LOCATIONS[] = {
-   { "Gate/Left", "Monitor", "Bragg", "Left" },
-   { "Gate/Right", "Monitor", "Bragg", "Right" },
-   { "Test/Gate/Left", "Testing", "Bragg", "Left" },
-   { "Test/Gate/Right", "Testing", "Bragg", "Right" },
+// ----------- InfluxDB site selection
+constexpr InfluxContext INFLUX_PROMPTS[] = {
+   { "Monitor", "Bragg", "Left", "Gate" },
+   { "Monitor", "Bragg", "Right", "Gate" },
+   { "Testing", "Bragg", "Left", "Gate" },
+   { "Testing", "Bragg", "Right", "Gate" },
+};
+
+// ----------- Telemetry topic selection
+constexpr const char* GATE_TELEMETRY_TOPICS[] = {
+   "Gate/Left",
+   "Gate/Right",
+   "Test/Gate/Left",
+   "Test/Gate/Right",
 };
 
 // Uses WaveShare_ESP32_S3_Zero_Sensors's default I2C/RGB status LED/LED pins, which
@@ -107,13 +115,21 @@ float gateAngle()
    return lastReportedAngle;
 }
 
+InfluxConfig INFLUX_CONFIG = {
+   .prompts = INFLUX_PROMPTS,
+};
+
+TelemetryConfig TELEMETRY_CONFIG = {
+   .prompts = GATE_TELEMETRY_TOPICS,
+   .decimals = 0,
+};
+
 SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = SKETCH_NAME,
-   .sites = GATE_LOCATIONS,
-   .influxSensor = "Gate",
-   .telemetryDecimals = 0,
+   .influx = INFLUX_CONFIG,
+   .telemetry = TELEMETRY_CONFIG,
    .includeEnclosureTemp = false,
    .includeCpuTemp = true,
    .enableOTA = true,
@@ -131,7 +147,7 @@ void setup()
 
    // Zero the gate angle to the azimuth measured at startup, and pick the rotation
    // direction based on the resolved site's location (Left vs Right).
-   leftGate = strcmp(publisher.site().influxLocation, "Left") == 0;
+   leftGate = strcmp(publisher.site().location, "Left") == 0;
 
    magnetometer.read();
    zeroAzimuth = magnetometer.azimuth();

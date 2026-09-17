@@ -40,11 +40,18 @@ constexpr auto SKETCH_NAME = "Wind_Publisher";
 
 #include "Publisher.h"
 
-// ----------- Telemetry topic / InfluxDB site selection
-constexpr SiteConfig WIND_SITES[] = {
-   { "Wind/Lake", "Monitor", "Lake", "Dock" },
-   { "Wind/Bragg", "Monitor", "Bragg", "Studio" },
-   { "Wind/Test", "Testing", "WindSite", "WindLocation" },
+// ----------- InfluxDB site selection
+constexpr InfluxContext INFLUX_PROMPTS[] = {
+   { "Monitor", "Lake", "Dock", "Wind" },
+   { "Monitor", "Bragg", "Studio", "Wind" },
+   { "Testing", "WindSite", "WindLocation", "Wind" },
+};
+
+// ----------- Telemetry topic selection
+constexpr const char* WIND_TELEMETRY_TOPICS[] = {
+   "Wind/Lake",
+   "Wind/Bragg",
+   "Wind/Test",
 };
 
 // ----------- Wind sensor pins
@@ -57,12 +64,20 @@ constexpr uint8_t WIND_SENSOR_POWER_PIN = 12; // held HIGH to power the wind enc
 Arduino arduino;
 WindMeter wind(WIND_SENSOR_PIN, arduino.ledPin(), LEDColor::CLEAR_PINK);
 
+InfluxConfig INFLUX_CONFIG = {
+   .prompts = INFLUX_PROMPTS,
+};
+
+TelemetryConfig TELEMETRY_CONFIG = {
+   .prompts = WIND_TELEMETRY_TOPICS,
+};
+
 SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = SKETCH_NAME,
-   .sites = WIND_SITES,
-   .influxSensor = "Wind",
+   .influx = INFLUX_CONFIG,
+   .telemetry = TELEMETRY_CONFIG,
    .includeEnclosureTemp = true,
    .includeCpuTemp = true,
    .enableOTA = true,

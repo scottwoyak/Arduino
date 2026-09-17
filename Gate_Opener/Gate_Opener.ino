@@ -50,11 +50,14 @@ WebServer server(WEB_SERVER_PORT);
 bool gateTriggerRelay = false;
 TimerSecs gateRelayTriggerTimer(GATE_RELAY_TRIGGER_SECS);
 
+InfluxConfig INFLUX_CONFIG = {
+   .context = { INFLUXDB_BUCKET, "Bragg", "Gate", "Gate Opener" },
+};
+
 SketchConfig MONITOR_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
-   .fixedSite = { nullptr, INFLUXDB_BUCKET, "Bragg", "Gate" },
-   .influxSensor = "Gate Opener",
+   .influx = INFLUX_CONFIG,
    .includeEnclosureTemp = true,
    .includeCpuTemp = true,
    .enableOTA = true,
@@ -72,14 +75,14 @@ Monitor monitor(&arduino, MONITOR_CONFIG);
 ///
 void updateGateStatus()
 {
-	if (gateTriggerRelay)
-	{
-	  arduino.led.turnOn();
-	}
-	else
-	{
-	  arduino.led.turnOff();
-	}
+   if (gateTriggerRelay)
+   {
+      arduino.led.turnOn();
+   }
+   else
+   {
+      arduino.led.turnOff();
+   }
 }
 
 ///
@@ -90,10 +93,10 @@ void updateGateStatus()
 ///
 void startGateRelayTrigger()
 {
-	Serial.println("Gate Signal On");
-	digitalWrite(GATE_RELAY_PIN, HIGH);
-	gateRelayTriggerTimer.reset();
-	gateTriggerRelay = true;
+   Serial.println("Gate Signal On");
+   digitalWrite(GATE_RELAY_PIN, HIGH);
+   gateRelayTriggerTimer.reset();
+   gateTriggerRelay = true;
 }
 
 ///
@@ -103,14 +106,14 @@ void startGateRelayTrigger()
 ///
 void checkGateRelayTrigger()
 {
-	if (gateTriggerRelay && gateRelayTriggerTimer.ready())
-	{
-		digitalWrite(GATE_RELAY_PIN, LOW);
-		gateTriggerRelay = false;
-		Serial.println("Gate Signal Off");
+   if (gateTriggerRelay && gateRelayTriggerTimer.ready())
+   {
+      digitalWrite(GATE_RELAY_PIN, LOW);
+      gateTriggerRelay = false;
+      Serial.println("Gate Signal Off");
 
-		updateGateStatus();
-	}
+      updateGateStatus();
+   }
 }
 
 ///
@@ -149,33 +152,33 @@ void handleGetGate()
 ///
 void handlePostGate()
 {
-	bool redirect = server.hasArg("redirect");
-	String value = server.arg("plain");
-	value.trim();
+   bool redirect = server.hasArg("redirect");
+   String value = server.arg("plain");
+   value.trim();
 
-	if (value.equalsIgnoreCase("OPEN"))
-	{
-	  startGateRelayTrigger();
-	  updateGateStatus();
-	}
-	else
-	{
-	  Serial.print("Gate: invalid value \"");
-	  Serial.print(value);
-	  Serial.println("\"");
-	  server.send(400, "text/plain", "Value must be OPEN");
-	  return;
-	}
+   if (value.equalsIgnoreCase("OPEN"))
+   {
+      startGateRelayTrigger();
+      updateGateStatus();
+   }
+   else
+   {
+      Serial.print("Gate: invalid value \"");
+      Serial.print(value);
+      Serial.println("\"");
+      server.send(400, "text/plain", "Value must be OPEN");
+      return;
+   }
 
-	if (redirect)
-	{
-		server.sendHeader("Location", "/");
-		server.send(303);
-	}
-	else
-	{
-		server.send(200, "text/plain", "OPEN");
-	}
+   if (redirect)
+   {
+      server.sendHeader("Location", "/");
+      server.send(303);
+   }
+   else
+   {
+      server.send(200, "text/plain", "OPEN");
+   }
 }
 
 void setup()
