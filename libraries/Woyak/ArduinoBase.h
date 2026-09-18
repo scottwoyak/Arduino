@@ -92,6 +92,20 @@ public:
    ///
    virtual void begin() = 0;
 
+   ///
+   /// <summary>
+   /// Redraws/updates any board-owned status indicators that must be driven from the
+   /// main thread on every loop() iteration (e.g. a display-drawn virtual NeoPixel,
+   /// whose blink/flash timing can't safely run from a background task since it shares
+   /// the display with the sketch's own drawing). No-op by default; boards with such an
+   /// indicator override this. Call once per iteration from the sketch's loop() (or via
+   /// ViewerSketch::loop()/SketchBase::loop(), which call it for you).
+   /// </summary>
+   ///
+   virtual void updateStatusIndicators()
+   {
+   }
+
 protected:
    ///
    /// <summary>

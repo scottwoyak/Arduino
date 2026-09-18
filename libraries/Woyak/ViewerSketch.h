@@ -5,10 +5,13 @@
 // WIFI_PASSWORD are defined). This mirrors the include order used by Monitor-/
 // Publisher-based sketches (see SketchBase.h).
 
+#include <functional>
 #include <string>
 
 #include "ArduinoBase.h"
+#include "SiteConfig.h"
 #include "Status.h"
+#include "TelemetryClient.h"
 
 ///
 /// <summary>
@@ -39,6 +42,12 @@ protected:
 
    /// <summary>If true, enables OTA firmware updates via arduino.enableOTA() at the end of begin().</summary>
    bool _enableOTA;
+
+   /// <summary>Resolves/persists the selected telemetry topic; constructed on first use by resolveTopic().</summary>
+   TelemetryTopicResolver* _topicResolver = nullptr;
+
+   /// <summary>Constructed by beginTelemetry(topic, handler), once the telemetry topic has been resolved.</summary>
+   TelemetrySubscriber* _client = nullptr;
 
 public:
    ///
@@ -99,5 +108,78 @@ public:
       {
          _arduino->checkForOTA();
       }
+   }
+
+   void loop()
+   {
+      checkForOTA();
+
+      if (_client != nullptr)
+      {
+         _client->loop();
+      }
+
+      _arduino->updateStatusIndicators();
+   }
+
+   ///
+   /// <summary>
+   /// Resolves which telemetry topic this viewer should subscribe to: the value saved
+   /// in Preferences (NVS) under preferencesNamespace, unless it hasn't been saved yet
+   /// or forcePrompt is true, in which case the user is prompted over Serial (from
+   /// topics) and the choice is saved for next time. Mirrors the topic resolution
+   /// SketchBase/TelemetryTopicResolver performs for Publisher sketches. Also reports
+   /// the resolved topic via printlnInitStatus(), so it shows up on the display like
+   /// other init status lines. Call once from setup(), after begin(), and before
+   /// constructing the telemetry client(s) and calling arduino.initClient().
+   /// </summary>
+   /// <param name="preferencesNamespace">Preferences (NVS) namespace to read/write.</param>
+   /// <param name="promptHeader">Prompt header text, e.g. "Select telemetry topic:".</param>
+   /// <param name="topics">Telemetry topic table to choose from.</param>
+   /// <param name="count">Number of entries in topics.</param>
+   /// <param name="forcePrompt">If true, always prompts even if a saved topic exists.</param>
+   /// <returns>The resolved topic, backed by this ViewerSketch's storage.</returns>
+   ///
+   const char* resolveTopic(const char* preferencesNamespace, const char* promptHeader, const char* const topics[], size_t count, bool forcePrompt = false)
+   {
+      if (_topicResolver == nullptr)
+      {
+         _topicResolver = new TelemetryTopicResolver(preferencesNamespace);
+      }
+
+      const char* topic = _topicResolver->resolve(_arduino->preferences, _status, promptHeader, topics, count, forcePrompt);
+      _arduino->printlnInitStatus("Topic... ", topic);
+      return topic;
+   }
+
+   ///
+   /// <summary>
+   /// Constructs the TelemetrySubscriber for the given topic and begins connecting it,
+   /// printing the standard "Telemetry..." init status line (completed once the client
+   /// connects or fails) using this ViewerSketch's status indicator. Mirrors how
+   /// Publisher/SketchBase owns its telemetry client. Call once from setup(), after
+   /// resolveTopic() and any layout setup that depends on the topic.
+   /// </summary>
+   /// <param name="topic">The telemetry topic to subscribe to.</param>
+   /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
+   /// <returns>The constructed telemetry client, owned by this ViewerSketch.</returns>
+   ///
+   TelemetrySubscriber* beginTelemetry(const char* topic, TelemetryEventHandler* handler = nullptr)
+   {
+      _client = new TelemetrySubscriber(topic, _status, handler);
+      _arduino->initClient("Telemetry", [this]() { _client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, _status);
+      return _client;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the telemetry client constructed by beginTelemetry(), or nullptr if it hasn't
+   /// been called yet.
+   /// </summary>
+   /// <returns>The telemetry client.</returns>
+   ///
+   TelemetrySubscriber* getClient() const
+   {
+      return _client;
    }
 };

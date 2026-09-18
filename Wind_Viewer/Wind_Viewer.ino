@@ -33,18 +33,18 @@
 
 #include <string>
 
+#include <esp_heap_caps.h>
+
 constexpr const char* TELEMETRY_TOPICS[] = { "Wind/Lake", "Wind/Bragg" };
 constexpr uint8_t NUM_TELEMETRY_TOPICS = 2;
-constexpr uint32_t TOPIC_PROMPT_TIMEOUT_MS = 10 * 1000;
 constexpr auto PREFERENCES_NAMESPACE = "WindViewer";
-constexpr auto TOPIC_KEY = "topic";
 
 // Selected at startup via prompt in setup().
 std::string telemetryTopic;
 
 constexpr auto VERSION =
 #include "version.txt"
-;
+"-debugE"; // TEMPORARY: debug build tag, increment (debugA/B/C...) each time this is reflashed while debugging
 constexpr auto SKETCH_NAME = "Wind_Viewer";
 
 
@@ -113,6 +113,24 @@ ColorRange speedColorRange;
 // which arrive as more messages.
 constexpr uint16_t SAMPLE_INTERVAL_MS = 100;
 Timer sampleTimer(SAMPLE_INTERVAL_MS);
+
+// TEMPORARY DIAGNOSTICS: checks heap integrity and logs free heap / stack high-water
+// mark to Serial, tagged with a caller-supplied label, to help isolate a suspected
+// heap-corruption or stack-overflow issue. Remove once root-caused.
+void logDiagnostics(const char* label)
+{
+   bool heapOk = heap_caps_check_integrity_all(true);
+   Serial.print("[DIAG] ");
+   Serial.print(label);
+   Serial.print(" heapOk=");
+   Serial.print(heapOk ? "true" : "FALSE");
+   Serial.print(" freeHeap=");
+   Serial.print(ESP.getFreeHeap());
+   Serial.print(" minFreeHeap=");
+   Serial.print(ESP.getMinFreeHeap());
+   Serial.print(" stackHighWater=");
+   Serial.println(uxTaskGetStackHighWaterMark(nullptr));
+}
 
 ///
 /// <summary>
@@ -189,9 +207,6 @@ void displayFooter()
    arduino.setCursor(savedCursor);
 }
 
-// Constructed in setup() once the telemetry topic has been selected.
-TelemetrySubscriber* client = nullptr;
-
 ///
 /// <summary>
 /// Handles telemetry lifecycle events for this sketch: draws the header once started
@@ -208,15 +223,17 @@ public:
 
    void onStarted() override
    {
+      logDiagnostics("onStarted() entry");
+
       TelemetryEventHandler::onStarted();
 
-      // Initialization is complete; turn the NeoPixel off so it stops overwriting the
-      // regular display content drawn in its corner on boards where it's drawn on the
-      // display.
-      arduino.neoPixel.turnOff();
+      // TEMPORARY: the virtual NeoPixel is disabled (not wired into status) while
+      // debugging a display corruption issue, so there's nothing to turn off here.
 
       arduino.clearDisplay();
       displayHeader();
+
+      logDiagnostics("onStarted() exit");
    }
 
    void onReceiveText(const std::string& text) override
@@ -225,7 +242,7 @@ public:
 
       // feed the charts/stats only when a new value has actually arrived, rather than
       // every loop() iteration, so stale values aren't repeatedly re-sampled
-      float speed = client->getValue();
+      float speed = viewer.getClient()->getValue();
       slider->set(speed);
    }
 };
@@ -237,38 +254,16 @@ void setup()
    SerialX::begin();
    arduino.begin();
 
-   arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
-   String savedTopic = arduino.preferences.getString(TOPIC_KEY, TELEMETRY_TOPICS[0]);
-   arduino.preferences.end();
+   viewer.begin();
+   logDiagnostics("after viewer.begin()");
 
-   size_t defaultTopicIndex = 0;
-   for (uint8_t i = 0; i < NUM_TELEMETRY_TOPICS; i++)
-   {
-      if (savedTopic.equals(TELEMETRY_TOPICS[i]))
-      {
-         defaultTopicIndex = i;
-         break;
-      }
-   }
-
-   Serial.println("Select telemetry topic:");
-   for (uint8_t i = 0; i < NUM_TELEMETRY_TOPICS; i++)
-   {
-      Serial.print("  ");
-      Serial.print(i + 1);
-      Serial.print(": ");
-      Serial.println(TELEMETRY_TOPICS[i]);
-   }
-   size_t topicIndex = SerialX::readSelectionWithTimeout(NUM_TELEMETRY_TOPICS, defaultTopicIndex, TOPIC_PROMPT_TIMEOUT_MS);
-   telemetryTopic = TELEMETRY_TOPICS[topicIndex];
-
-   arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
-   arduino.preferences.putString(TOPIC_KEY, telemetryTopic.c_str());
-   arduino.preferences.end();
+   telemetryTopic = viewer.resolveTopic(PREFERENCES_NAMESPACE, "Select telemetry topic:", TELEMETRY_TOPICS, NUM_TELEMETRY_TOPICS);
+   logDiagnostics("after resolveTopic()");
 
    // the layout depends on the selected topic's length, so build it only once the
    // topic is known
    initLayout();
+   logDiagnostics("after initLayout()");
 
    speedColorRange.addStop(0, Color::LIME);
    speedColorRange.addStop(2, Color::LIME);
@@ -278,27 +273,29 @@ void setup()
    histogramChart->setColorRange(&speedColorRange);
    rollingChart->setColorRange(&speedColorRange);
 
-   client = new TelemetrySubscriber(telemetryTopic, &arduino.status);
-   client->setHandler(&telemetryHandler);
-
-   arduino.beginInit(telemetryTopic.c_str());
    displayFooter();
 
-   viewer.begin();
-
-   arduino.initClient("WebSocket", []() { client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino.status);
+   viewer.beginTelemetry(telemetryTopic.c_str(), &telemetryHandler);
+   logDiagnostics("after beginTelemetry()");
    delay(1000); // provide time for the wind meter to get a reading
 }
 
 void loop()
 {
-   viewer.checkForOTA();
+   viewer.loop();
 
-   client->loop();
+   TelemetrySubscriber* client = viewer.getClient();
 
    if (client->isStarted() == false)
    {
       return;
+   }
+
+   // TEMPORARY DIAGNOSTICS: periodic heap/stack check to catch slow corruption/leaks.
+   static Timer diagTimer(5000);
+   if (diagTimer.ready())
+   {
+      logDiagnostics("loop()");
    }
 
    float speed = client->getValue();
@@ -315,7 +312,7 @@ void loop()
    // display values
    arduino.setCursor(0, 0);
    arduino.setTextSize(headerTextSize);
-   arduino.printlnR(speed, speedFormat, Color::VALUE);
+   arduino.printlnR(speed, speedFormat, speedColorRange.getColor(speed));
 
    displayHistogram();
    rollingChart->draw(&arduino.display);

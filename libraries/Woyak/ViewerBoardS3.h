@@ -5,7 +5,6 @@
 #include "Button.h"
 #include "MultiStatus.h"
 #include <Preferences.h>
-#include "VirtualNeoPixel.h"
 
 ///
 /// <summary>
@@ -42,20 +41,8 @@ public:
 
    ///
    /// <summary>
-   /// Virtual NeoPixel, drawn as a small circle in the upper-right corner of the
-   /// display, since this board has no physical NeoPixel.
-   /// </summary>
-   ///
-   VirtualNeoPixelLED neoPixel;
-
-private:
-   VirtualNeoPixelStatus _virtualNeoPixelStatus;
-
-public:
-   ///
-   /// <summary>
-   /// Status indicator that drives the virtual NeoPixel; Serial output isn't needed
-   /// since this board's display already shows status visually.
+   /// Status indicator; this board has no physical NeoPixel, so no underlying
+   /// indicators are wired in for now.
    /// </summary>
    ///
    MultiStatus status;
@@ -65,8 +52,7 @@ public:
    /// Initializes a new instance of the ViewerBoardS3 class.
    /// </summary>
    ///
-   ViewerBoardS3() : ArduinoWithDisplay(), buttonA(0), neoPixel(&display), _virtualNeoPixelStatus(&neoPixel),
-      status(&_virtualNeoPixelStatus)
+   ViewerBoardS3() : ArduinoWithDisplay(), buttonA(0)
    {
    }
 

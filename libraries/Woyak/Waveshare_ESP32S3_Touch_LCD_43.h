@@ -5,7 +5,6 @@
 #include "Button.h"
 #include "MultiStatus.h"
 #include "Status.h"
-#include "VirtualNeoPixel.h"
 #include <Preferences.h>
 
 ///
@@ -26,26 +25,13 @@ public:
 
    ///
    /// <summary>
-   /// Virtual NeoPixel, drawn as a small circle in the upper-right corner of the
-   /// display, since this board has no physical NeoPixel.
-   /// </summary>
-   ///
-   VirtualNeoPixelLED neoPixel;
-
-private:
-   VirtualNeoPixelStatus _virtualNeoPixelStatus;
-
-public:
-   ///
-   /// <summary>
-   /// Status indicator that drives the virtual NeoPixel; Serial output isn't needed
-   /// since this board's display already shows status visually.
+   /// Status indicator; this board has no physical NeoPixel, so no underlying
+   /// indicators are wired in for now.
    /// </summary>
    ///
    MultiStatus status;
 
-   Waveshare_ESP32S3_Touch_LCD_43() : ArduinoWithDisplay(), buttonA(DEFAULT_BUTTON_A_PIN),
-      neoPixel(&display), _virtualNeoPixelStatus(&neoPixel), status(&_virtualNeoPixelStatus)
+   Waveshare_ESP32S3_Touch_LCD_43() : ArduinoWithDisplay(), buttonA(DEFAULT_BUTTON_A_PIN)
    {
    }
 

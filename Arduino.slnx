@@ -146,7 +146,6 @@
     <File Path="libraries/Woyak/Vector.h" />
     <File Path="libraries/Woyak/ViewerBoardS3.h" />
     <File Path="libraries/Woyak/ViewerSketch.h" />
-    <File Path="libraries/Woyak/VirtualNeoPixel.h" />
     <File Path="libraries/Woyak/Waveshare_ESP32_S3_Zero.h" />
     <File Path="libraries/Woyak/WiFiSettings.h" />
     <File Path="libraries/Woyak/WiFiX.h" />

@@ -567,8 +567,6 @@ void displayLine(LineState& line, float azimuth, bool isOpen)
    line.lastAzimuth = azimuth;
 }
 
-TelemetrySubscriber leftClient(LEFT_TELEMETRY_TOPIC, &arduino.status);
-
 ///
 /// <summary>
 /// Minimal, self-contained WebSocket subscriber for the right gate topic. A separate,
@@ -767,21 +765,19 @@ void setup()
       lastGateOpenTime = gateOpenHistory.get(0).time;
    }
 
-   leftClient.setHandler(&telemetryHandler);
-
    viewer.begin();
 
-   arduino.initClient("Telemetry", []() { leftClient.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &arduino.status);
+   viewer.beginTelemetry(LEFT_TELEMETRY_TOPIC, &telemetryHandler);
 }
 
 void loop()
 {
-   viewer.checkForOTA();
+   viewer.loop();
 
-   leftClient.loop();
+   TelemetrySubscriber* leftClient = viewer.getClient();
    rightClient.loop();
 
-   if (leftClient.isStarted() == false)
+   if (leftClient->isStarted() == false)
    {
       return;
    }
@@ -816,7 +812,7 @@ void loop()
       }
    }
 
-   float leftAzimuth = leftClient.getValue();
+   float leftAzimuth = leftClient->getValue();
    float rightAzimuth = rightClient.isStarted() ? rightClient.getValue() : NAN;
 
    // Buffering disabled for now -- it wasn't producing the desired smoothing. Left here
