@@ -38,7 +38,7 @@ void __increaseI2CPriority();
 
 class ModulinoClass {
 public:
-#if defined(ARDUINO_UNOR4_WIFI) || defined(ARDUINO_NANO_R4) || defined(ARDUINO_UNO_Q)
+#if defined(ARDUINO_UNOR4_WIFI) || defined(ARDUINO_NANO_R4) || defined(ARDUINO_UNO_Q) || defined(ARDUINO_VENTUNO_Q)
   void begin(HardwareI2C& wire = Wire1) {
 #else
   void begin(HardwareI2C& wire = Wire) {
@@ -119,6 +119,9 @@ public:
   }
   operator bool() {
     return address < 0x7F;
+  }
+  uint8_t getAddress() const {
+    return address;
   }
   static HardwareI2C* getWire() {
     return Modulino._wire;
@@ -526,14 +529,16 @@ extern ModulinoColor WHITE;
 
 class ModulinoMovement : public Module {
 public:
-  ModulinoMovement(ModulinoHubPort* hubPort = nullptr)
-    : Module(0xFF, "MOVEMENT", hubPort) {}
+  ModulinoMovement(uint8_t address = 0x6A, ModulinoHubPort* hubPort = nullptr)
+    : Module(address, "MOVEMENT", hubPort) {}
+  ModulinoMovement(ModulinoHubPort* hubPort, uint8_t address = 0x6A)
+    : Module(address, "MOVEMENT", hubPort) {}
   bool begin() {
     if (hubPort != nullptr) {
       hubPort->select();
     }
     if (_imu == nullptr) {
-      _imu = new LSM6DSOXClass(*((TwoWire*)getWire()), 0x6A);
+      _imu = new LSM6DSOXClass(*((TwoWire*)getWire()), getAddress());
     }
     initialized = _imu->begin();
     __increaseI2CPriority();
@@ -727,16 +732,17 @@ public:
     return (initialized != 0);
   }
   bool update() {
-    if (initialized) {
-      if (hubPort != nullptr) {
-        hubPort->select();
-      }
-      auto ret = _light->readAllSensors(r, g, b, rawlux, lux, ir);
-      if (hubPort != nullptr) {
-        hubPort->clear();
-      }
+    if (!initialized) {
+      return false;
     }
-    return 0;
+    if (hubPort != nullptr) {
+      hubPort->select();
+    }
+    auto ret = _light->readAllSensors(r, g, b, rawlux, lux, ir);
+    if (hubPort != nullptr) {
+      hubPort->clear();
+    } 
+    return ret == 1;
   }
   ModulinoColor getColor() {
     return ModulinoColor(r, g, b);
