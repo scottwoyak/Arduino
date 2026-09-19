@@ -115,11 +115,11 @@ protected:
    }
 
    ///
-   /// <summary>Builds the startup log message: sketch name, telemetry topic, and Influx bucket/site path.</summary>
+   /// <summary>Builds the second startup log message: telemetry topic and Influx bucket/site details.</summary>
    ///
-   std::string _buildStartupMessage(const std::string& influxPath) override
+   std::string _buildStartupMessage(const std::string& influxInfo) override
    {
-      return std::string("Starting \"") + _config.sketchName + "\", telemetry topic: " + (_telemetryTopic != nullptr ? _telemetryTopic : "") + ", influx: " + influxPath;
+      return std::string("Telemetry topic: ") + (_telemetryTopic != nullptr ? _telemetryTopic : "") + ", Influx: " + influxInfo;
    }
 
    ///

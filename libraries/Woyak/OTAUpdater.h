@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <functional>
 #include <memory>
 #include <string>
@@ -69,6 +70,17 @@ public:
    /// <param name="newVersion">The version that was successfully installed.</param>
    ///
    virtual void onUpdateSucceeded(const char* newVersion)
+   {}
+
+   ///
+   /// <summary>
+   /// Invoked for diagnostic OTA messages that are otherwise only printed to Serial
+   /// (e.g. version check failures, missing OTA partition), so a handler can mirror
+   /// them elsewhere (e.g. to a LogServer).
+   /// </summary>
+   /// <param name="message">The diagnostic message.</param>
+   ///
+   virtual void onLogMessage(const char* message)
    {}
 };
 
@@ -224,6 +236,24 @@ private:
 
    ///
    /// <summary>
+   /// Prints a diagnostic OTA message to Serial and, if a handler is registered, mirrors
+   /// it via OTAUpdateEventHandler::onLogMessage() (e.g. so SketchBase can also send it to
+   /// the LogServer).
+   /// </summary>
+   /// <param name="message">The message to print and mirror.</param>
+   ///
+   void _log(const char* message)
+   {
+      Serial.println(message);
+
+      if (_handler != nullptr)
+      {
+         _handler->onLogMessage(message);
+      }
+   }
+
+   ///
+   /// <summary>
    /// Reports that no OTA download partition was found: prints to Serial and, on
    /// display-capable boards, the display, sets the status indicator (if any) to
    /// FAILED, then halts the device.
@@ -248,7 +278,7 @@ private:
 
       if (httpCode != HTTP_CODE_OK)
       {
-         Serial.printf("OTAUpdater: version check HTTP GET failed, code: %d\n", httpCode);
+         _log((std::string("OTAUpdater: version check HTTP GET failed, code: ") + std::to_string(httpCode)).c_str());
          http.end();
          return false;
       }
@@ -264,15 +294,60 @@ private:
          serverVersion = serverVersion.substring(1, serverVersion.length() - 1);
       }
 
-      bool updateAvailable = !serverVersion.equals(_version);
-      if (updateAvailable)
-      {
-         _availableVersion = serverVersion.c_str();
-         Serial.printf("OTAUpdater: Downloading %s\n", serverVersion.c_str());
+         bool updateAvailable = _isNewerVersion(serverVersion.c_str(), _version);
+         if (updateAvailable)
+         {
+            _availableVersion = serverVersion.c_str();
+            _log((std::string("OTAUpdater: Downloading ") + serverVersion.c_str()).c_str());
+         }
+
+         return updateAvailable;
       }
 
-      return updateAvailable;
-   }
+      ///
+      /// <summary>
+      /// Parses a "major.minor.build" version string into its numeric components,
+      /// tolerating an optional leading 'v'/'V' and missing trailing components (treated as
+      /// 0), e.g. "v2.1" is parsed as 2.1.0.
+      /// </summary>
+      /// <param name="version">Version string to parse.</param>
+      /// <returns>The parsed { major, minor, build } components.</returns>
+      ///
+      std::array<uint32_t, 3> _parseVersion(const char* version)
+      {
+         std::array<uint32_t, 3> parts = { 0, 0, 0 };
+
+         if (version == nullptr)
+         {
+            return parts;
+         }
+
+         if (*version == 'v' || *version == 'V')
+         {
+            version++;
+         }
+
+         sscanf(version, "%lu.%lu.%lu", &parts[0], &parts[1], &parts[2]);
+         return parts;
+      }
+
+      ///
+      /// <summary>
+      /// Compares two version strings by their major, minor, and build components (see
+      /// _parseVersion()) to determine whether candidateVersion is strictly newer than
+      /// currentVersion.
+      /// </summary>
+      /// <param name="candidateVersion">The version fetched from the server.</param>
+      /// <param name="currentVersion">This sketch's own version.</param>
+      /// <returns>True if candidateVersion is greater than currentVersion.</returns>
+      ///
+      bool _isNewerVersion(const char* candidateVersion, const char* currentVersion)
+      {
+         std::array<uint32_t, 3> candidate = _parseVersion(candidateVersion);
+         std::array<uint32_t, 3> current = _parseVersion(currentVersion);
+
+         return candidate > current;
+      }
 
    ///
    /// <summary>

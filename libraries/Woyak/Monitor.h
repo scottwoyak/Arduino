@@ -115,6 +115,37 @@ private:
 
    ///
    /// <summary>
+   /// Asks the user, over Serial, whether to keep the currently loaded saved
+   /// bucket/site/location or enter new values instead. Call only after
+   /// _loadSavedConfig() has populated _bucketName/_siteName/_locationName. Waits up to
+   /// PROMPT_TIMEOUT_S seconds for a response, defaulting to "keep saved" if none arrives.
+   /// </summary>
+   /// <returns>True if the saved configuration should be kept; false to reconfigure.</returns>
+   ///
+   bool _promptKeepSavedConfig()
+   {
+      static constexpr uint16_t PROMPT_TIMEOUT_S = 10;
+
+      String options[] = {
+         "Keep saved: " + _bucketName + "/" + _siteName + "/" + _locationName,
+         "Enter new values",
+      };
+
+      Serial.println("Reconfigure this device's site/location:");
+      for (size_t i = 0; i < std::size(options); i++)
+      {
+         Serial.print("  ");
+         Serial.print(i + 1);
+         Serial.print(": ");
+         Serial.println(options[i]);
+      }
+
+      size_t selection = SerialX::readSelectionWithTimeout(std::size(options), 0, PROMPT_TIMEOUT_S * 1000UL);
+      return selection == 0;
+   }
+
+   ///
+   /// <summary>
    /// Prompts the user over Serial for the bucket, site, and location, then saves the
    /// entered/selected values to Preferences for next time.
    /// </summary>
@@ -176,9 +207,16 @@ protected:
          return _config.influx.context;
       }
 
+      bool hasSavedConfig = _hasSavedConfig();
       bool reconfigure = _shouldForcePrompt();
 
-      if (reconfigure || !_hasSavedConfig())
+      if (reconfigure && hasSavedConfig)
+      {
+         _loadSavedConfig();
+         reconfigure = !_promptKeepSavedConfig();
+      }
+
+      if (reconfigure || !hasSavedConfig)
       {
          _promptAndSaveSiteLocation();
       }
@@ -186,7 +224,7 @@ protected:
       {
          _loadSavedConfig();
       }
-      _arduino->printlnInitStatus("Location...", siteLocation().c_str());
+      _printAndLogStatus("Location... ", siteLocation().c_str());
 
       return InfluxContext{ _bucketName.c_str(), _siteName.c_str(), _locationName.c_str(), _config.influx.context.sensor };
    }
@@ -200,11 +238,11 @@ protected:
    }
 
    ///
-   /// <summary>Builds the startup log message: sketch name and Influx bucket/site path.</summary>
+   /// <summary>Builds the second startup log message: Influx bucket/site details.</summary>
    ///
-   std::string _buildStartupMessage(const std::string& influxPath) override
+   std::string _buildStartupMessage(const std::string& influxInfo) override
    {
-      return std::string("Starting ") + _config.sketchName + " (" + influxPath + ")";
+      return std::string("Influx: ") + influxInfo;
    }
 
 public:
@@ -231,18 +269,6 @@ public:
    std::string siteLocation() const
    {
       return std::string(_siteName.c_str()) + "/" + _locationName.c_str();
-   }
-
-   ///
-   /// <summary>
-   /// Formats this device's bucket, site, and location as "Bucket/Site/Location". Only
-   /// valid once begin() has resolved the site (i.e. config.influx.promptForContext was set).
-   /// </summary>
-   /// <returns>The formatted "Bucket/Site/Location" string.</returns>
-   ///
-   std::string bucketSiteLocation() const
-   {
-      return _bucketName.c_str() + std::string("/") + siteLocation();
    }
 
    ///

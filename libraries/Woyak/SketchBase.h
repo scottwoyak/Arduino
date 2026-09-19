@@ -12,6 +12,7 @@
 
 #include "Influx.h"
 #include "ESP32TempSensor.h"
+#include "Logger.h"
 #include "SerialX.h"
 #include "SiteConfig.h"
 #include "Status.h"
@@ -104,6 +105,7 @@ public:
    {
       const char* label;
       bool (*initFunc)();
+      const char* (*successLabelFunc)();
       bool fatal;
    };
 
@@ -222,10 +224,10 @@ protected:
    virtual bool _shouldUseInflux(bool hasSiteTable) = 0;
 
    ///
-   /// <summary>Builds the single startup log message posted once Influx is ready.</summary>
-   /// <param name="influxPath">Resolved bucket/measurement/sensor/site/location path.</param>
+   /// <summary>Builds the second startup log message (Influx bucket/measurement/sensor/site/location details) posted once Influx is ready.</summary>
+   /// <param name="influxInfo">Resolved bucket/measurement/sensor/site/location key=value details.</param>
    ///
-   virtual std::string _buildStartupMessage(const std::string& influxPath) = 0;
+   virtual std::string _buildStartupMessage(const std::string& influxInfo) = 0;
 
    ///
    /// <summary>
@@ -287,21 +289,20 @@ protected:
    ///
    /// <summary>
    /// OTAUpdateEventHandler implementation, invoked by OTAUpdater just before it downloads
-   /// and installs a newly detected firmware version. Logs the update as a single Influx
-   /// point before the update starts.
+   /// and installs a newly detected firmware version. Logs the update before it starts.
    /// </summary>
    /// <param name="newVersion">The newly detected version string.</param>
    ///
    void onUpdateAvailable(const char* newVersion) override
    {
       std::string otaMessage = std::string("Updating from ") + _config.version + " to " + newVersion;
-      _postLogPoint(otaMessage.c_str());
+      _logMessage(otaMessage.c_str());
    }
 
    ///
    /// <summary>
    /// OTAUpdateEventHandler implementation, invoked by OTAUpdater when a detected update
-   /// fails to download/install. Logs the failure as a single Influx point.
+   /// fails to download/install. Logs the failure.
    /// </summary>
    /// <param name="newVersion">The version that failed to install.</param>
    /// <param name="reason">The error reported by the underlying HTTP update client.</param>
@@ -309,80 +310,102 @@ protected:
    void onUpdateFailed(const char* newVersion, const char* reason) override
    {
       std::string otaMessage = std::string("Update to ") + newVersion + " failed: " + reason;
-      _postLogPoint(otaMessage.c_str());
+      _logMessage(otaMessage.c_str());
    }
 
    ///
    /// <summary>
    /// OTAUpdateEventHandler implementation, invoked by OTAUpdater when a detected update
    /// downloads and installs successfully, just before the device restarts. Logs the
-   /// success as a single Influx point.
+   /// success.
    /// </summary>
    /// <param name="newVersion">The version that was successfully installed.</param>
    ///
    void onUpdateSucceeded(const char* newVersion) override
    {
       std::string otaMessage = std::string("Updated to ") + newVersion;
-      _postLogPoint(otaMessage.c_str());
+      _logMessage(otaMessage.c_str());
    }
 
    ///
    /// <summary>
-   /// Posts a single Influx point to the configured log measurement, tagged with the
-   /// sketch name, version (if set), resolved site/location/sensor (whichever are
-   /// non-null), and the device's current IP address, with the given message as its
-   /// only field.
-   /// Does nothing if Influx isn't in use (e.g. begin() hasn't finished setting it up yet).
+   /// OTAUpdateEventHandler implementation, invoked for OTA diagnostic messages that are
+   /// otherwise only printed to Serial (e.g. version check failures, missing OTA
+   /// partition). Mirrors them to the LogServer.
    /// </summary>
-   /// <param name="message">Message to log, both to Influx and Serial.</param>
+   /// <param name="message">The diagnostic message.</param>
    ///
-   void _postLogPoint(const char* message)
+   void onLogMessage(const char* message) override
    {
-      if (_influx == nullptr)
-      {
-         return;
-      }
+      _logMessage(message);
+   }
 
-      Point point(_config.influx.logMeasurement);
-      point.addTag("sketch", _config.sketchName);
-      if (_config.version != nullptr)
-      {
-         point.addTag("version", _config.version);
-      }
-      if (_site.site != nullptr)
-      {
-         point.addTag("site", _site.site);
-      }
-      if (_site.location != nullptr)
-      {
-         point.addTag("location", _site.location);
-      }
-      if (_influxSensor != nullptr)
-      {
-         point.addTag("sensor", _influxSensor);
-      }
-      point.addTag("ip", WiFi.localIP().toString());
-      point.addField("message", message);
+   ///
+   /// <summary>
+   /// Sends a text log message to the LogServer, tagged implicitly by the handshake
+   /// (deviceId/sketch/version) sent when the connection was established. Does nothing
+   /// (other than the Serial echo performed by Logger::log()) if the LogServer
+   /// connection isn't up yet.
+   /// </summary>
+   /// <param name="message">Message to log, both to the LogServer and Serial.</param>
+   ///
+   void _logMessage(const char* message)
+   {
+      logger().log(message);
+   }
 
-      // Log points are one-off writes, not part of the periodic sensor batch, so force
-      // an immediate flush rather than letting them sit queued until the sensor batch
-      // size (set via setWriteOptions()) happens to be reached.
-      bool succeeded = _influx->client()->writePoint(point);
-      if (succeeded)
-      {
-         succeeded = _influx->client()->flushBuffer();
-      }
+   ///
+   /// <summary>Prints an init header via Arduino::printInitHeader() and also logs it.</summary>
+   /// <param name="str">The header text to print and log.</param>
+   ///
+   void _printAndLog(const char* str)
+   {
+      _arduino->printInitHeader(str);
+      _logMessage(str);
+   }
 
-      if (succeeded)
-      {
-         Serial.print("--- INFLUX LOG: ");
-         Serial.println(message);
-      }
-      else
-      {
-         Serial.print("--- INFLUX LOG: InfluxDB log write failed: ");
-         Serial.println(_influx->client()->getLastErrorMessage());
-      }
+   ///
+   /// <summary>Prints a one-off init status line via Arduino::printlnInitStatus(), which also logs it automatically.</summary>
+   /// <param name="str">The status text to print and log.</param>
+   ///
+   void _printAndLogStatus(const char* str)
+   {
+      _arduino->printlnInitStatus(str);
+   }
+
+   ///
+   /// <summary>Prints a one-off "label: value" init status line via Arduino::printlnInitStatus(), which also logs the combined text automatically.</summary>
+   /// <param name="label">The label text to print.</param>
+   /// <param name="value">The value text to print right after the label.</param>
+   ///
+   void _printAndLogStatus(const char* label, const char* value)
+   {
+      _arduino->printlnInitStatus(label, value);
+   }
+
+   ///
+   /// <summary>
+   /// Prints a "label..." fragment to the display (on display-capable boards) and logs it
+   /// (no newline yet), followed once the result is known by the completing "result"
+   /// fragment via _logStatusEnd(). Mirrors the old two-step
+   /// Serial.print(label)/Serial.println(result) pattern using Logger::logPartial()/log().
+   /// </summary>
+   /// <param name="label">The label fragment to print/log, e.g. "WiFi... ".</param>
+   ///
+   void _logStatusStart(const char* label)
+   {
+      _arduino->print(label, Color::LABEL);
+      logger().logPartial(label);
+   }
+
+   ///
+   /// <summary>Completes a status line started via _logStatusStart(), printing (on display-capable boards) and logging the result fragment.</summary>
+   /// <param name="result">The result fragment to print/log, e.g. "OK".</param>
+   ///
+   void _logStatusEnd(const char* result)
+   {
+      _arduino->printlnR(result, Color::VALUE);
+      logger().log(result);
    }
 
 public:
@@ -416,11 +439,12 @@ public:
    /// </summary>
    /// <param name="label">Sensor label printed during initialization.</param>
    /// <param name="initFunc">Captureless function that initializes the sensor.</param>
+   /// <param name="successLabelFunc">Optional captureless function returning a label to print on success instead of "OK".</param>
    /// <param name="fatal">If true, a failed init resets the device.</param>
    ///
-   void addSensor(const char* label, bool (*initFunc)(), bool fatal = true)
+   void addSensor(const char* label, bool (*initFunc)(), const char* (*successLabelFunc)() = nullptr, bool fatal = true)
    {
-      _sensors.push_back({ label, initFunc, fatal });
+      _sensors.push_back({ label, initFunc, successLabelFunc, fatal });
    }
 
    ///
@@ -523,16 +547,13 @@ public:
 
    ///
    /// <summary>
-   /// Posts a single Influx point to the configured log measurement, tagged with the
-   /// resolved site/location/sensor (whichever are non-null), and with the given message.
-   /// Also prints the message to Serial. Does nothing (other than the Serial print) if
-   /// Influx isn't in use yet (e.g. called before begin() completes).
+   /// Sends a text log message to the LogServer, and also prints it to Serial.
    /// </summary>
    /// <param name="message">Message text to log.</param>
    ///
    void logMessage(const char* message)
    {
-      _postLogPoint(message);
+      _logMessage(message);
    }
 
    ///
@@ -554,16 +575,20 @@ public:
 
       _status->setStatus(Status::STARTED);
 
-      _arduino->printInitHeader("Initializing");
+      std::string startingMessage = std::string("Starting ") + _config.sketchName;
+      if (_config.version != nullptr)
+      {
+         startingMessage += std::string(" ") + _config.version;
+      }
+      _logMessage(startingMessage.c_str());
+
+      _printAndLog("Initializing");
 
       std::string fullSketchLine = _config.sketchName;
       if (_config.version != nullptr)
       {
          fullSketchLine += std::string(" ") + _config.version;
       }
-
-      Serial.print("Sketch... ");
-      Serial.println(fullSketchLine.c_str());
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       std::string sketchLine = fullSketchLine;
@@ -582,7 +607,7 @@ public:
          sketchLine = name + suffix;
       }
 
-      _arduino->print("Sketch...", Color::LABEL);
+      _arduino->print("Sketch... ", Color::LABEL);
       _arduino->printlnR(sketchLine, Color::VALUE);
 #endif
 
@@ -592,10 +617,12 @@ public:
 
       for (const SensorInit& sensor : _sensors)
       {
-         if (!_arduino->initSensor(sensor.label, sensor.initFunc) && sensor.fatal)
+         bool success = _arduino->initSensor(sensor.label, sensor.initFunc, sensor.successLabelFunc);
+
+         if (!success && sensor.fatal)
          {
             _status->setStatus(Status::FAILED);
-            Util::reset(10);
+            Util::reset(_config.influx.sensorFailureResetDelayS);
          }
       }
 
@@ -632,6 +659,8 @@ public:
 
       _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
 
+      logger().begin(_config.sketchName, _config.version, _site.site, _site.location, _influxSensor);
+
       if (_config.enableRebooter)
       {
          _arduino->enableRebooter();
@@ -641,24 +670,31 @@ public:
       if (_usesInflux)
       {
          _influx = new Influx(_config.influx.intervalS, _status, INFLUXDB_URL, INFLUXDB_ORG, _site.bucket);
+         _logStatusStart("Influx... ");
          if (!_influx->begin(_arduino))
          {
+            _logStatusEnd("FAILED");
             _status->setStatus(Status::FAILED);
             delay(1000); // time for LED to show
             Util::reset();
          }
 
-         std::string influxPath = std::string(_site.bucket != nullptr ? _site.bucket : "") + "/" +
-                                  _config.influx.measurement + "/" +
-                                  (_influxSensor != nullptr ? _influxSensor : "") + "/" +
-                                  (_site.site != nullptr ? _site.site : "") + "/" +
-                                  (_site.location != nullptr ? _site.location : "");
-         std::string startupMessage = _buildStartupMessage(influxPath);
+         _logStatusEnd("OK");
+
+         std::string influxInfo = std::string("bucket=\"") + (_site.bucket != nullptr ? _site.bucket : "") +
+                                  "\" measurement=\"" + _config.influx.measurement +
+                                  "\" sensor=\"" + (_influxSensor != nullptr ? _influxSensor : "") +
+                                  "\" site=\"" + (_site.site != nullptr ? _site.site : "") + "\"";
+         std::string influxMessage = _buildStartupMessage(influxInfo);
          if (SerialX::lastShutdownReason().length() > 0)
          {
-            startupMessage += std::string(", last shutdown: ") + SerialX::lastShutdownReason().c_str();
+            influxMessage += std::string(", last shutdown: ") + SerialX::lastShutdownReason().c_str();
          }
-         _postLogPoint(startupMessage.c_str());
+         _logMessage(influxMessage.c_str());
+
+         std::string intervalMessage = std::string("Values measured every ") + std::to_string(SENSOR_INTERVAL_MS) +
+                                        " ms with an average uploaded every " + std::to_string(_config.influx.intervalS) + " seconds";
+         _logMessage(intervalMessage.c_str());
 
          if (_config.includeEnclosureTemp)
          {
@@ -703,6 +739,8 @@ public:
    void loop()
    {
       esp_task_wdt_reset();
+
+      logger().loop();
 
       if (!_arduino->ensureWiFiConnected() && !_onWiFiLost())
       {

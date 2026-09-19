@@ -12,7 +12,7 @@ inline void OTAUpdater::_reportMissingPartitionAndHalt()
 {
    constexpr auto MESSAGE = "OTAUpdater: no OTA download partition found";
 
-   Serial.println(MESSAGE);
+   _log(MESSAGE);
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
    if (_arduino != nullptr)
@@ -122,9 +122,6 @@ inline void OTAUpdater::_performUpdate()
    // normal failure result.
    client.setTimeout(_CONNECT_TIMEOUT_MS);
    client.setHandshakeTimeout(_CONNECT_TIMEOUT_MS / 1000);
-
-   Serial.printf("OTAUpdater: free heap before update: %lu bytes, largest block: %lu bytes\n",
-      ESP.getFreeHeap(), ESP.getMaxAllocHeap());
 
    // httpUpdate.update() drives both the HTTP download and the flash write from inside a
    // single blocking call, so a display redraw triggered by its progress callback can land
@@ -255,7 +252,7 @@ inline void OTAUpdater::_performUpdate()
 
    if (ok)
    {
-      Serial.println("OTAUpdater: update OK, restarting");
+      _log("OTAUpdater: update OK, restarting");
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_arduino != nullptr)
       {
@@ -270,7 +267,7 @@ inline void OTAUpdater::_performUpdate()
    }
    else
    {
-      Serial.printf("OTAUpdater: update failed: %s, url: %s\n", reason.c_str(), _firmwareUrl.c_str());
+      _log((std::string("OTAUpdater: update failed: ") + reason + ", url: " + _firmwareUrl).c_str());
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_arduino != nullptr)
       {

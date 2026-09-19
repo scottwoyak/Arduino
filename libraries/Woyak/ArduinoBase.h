@@ -8,6 +8,7 @@
 
 #include "ColorX.h"
 #include "IPrinter.h"
+#include "Logger.h"
 #include "OTAUpdater.h"
 #include "Rebooter.h"
 #include "Status.h"
@@ -184,15 +185,16 @@ public:
 
    ///
    /// <summary>
-   /// Prints a header line (e.g. "Initializing" or "Updating Firmware") to Serial and, on
-   /// display-capable boards, the display as well (see ArduinoWithDisplay::printInitHeader).
+   /// Prints a header line (e.g. "Initializing" or "Updating Firmware") to the display on
+   /// display-capable boards (see ArduinoWithDisplay::printInitHeader). Callers that also
+   /// want Serial output should log the same text (e.g. via SketchBase's _printAndLog()),
+   /// which echoes to Serial itself.
    /// </summary>
    /// <param name="str">The header text to print.</param>
    /// <param name="textColor">The text color.</param>
    ///
    void printInitHeader(const char* str, Color textColor = Color::HEADING) override
    {
-      Serial.println(str);
       println(str, textColor);
    }
 
@@ -210,38 +212,38 @@ public:
 
    ///
    /// <summary>
-   /// Prints a one-off status line (e.g. "Gate opened"), to Serial and, on display-capable
-   /// boards, the display as well. Unlike printInitHeader(), does not clear the display or
-   /// resize text. Always writes directly to Serial, so it works for one-off events
-   /// anywhere in the sketch, not just during init. Overriding boards only need to
-   /// implement the display-drawing half via _printlnInitStatusDisplay().
+   /// Prints a one-off status line (e.g. "Gate opened") to the display on display-capable
+   /// boards, and logs the same text to the LogServer (which also echoes it to Serial); see
+   /// Logger::log(). Unlike printInitHeader(), does not clear the display or resize text.
+   /// Overriding boards only need to implement the display-drawing half via
+   /// _printlnInitStatusDisplay().
    /// </summary>
-   /// <param name="str">The status text to print.</param>
+   /// <param name="str">The status text to print and log.</param>
    /// <param name="textColor">The text color (ignored on serial-only implementations).</param>
    ///
    void printlnInitStatus(const char* str, Color textColor = Color::WHITE)
    {
-      Serial.println(str);
       _printlnInitStatusDisplay(str, textColor);
+      logger().log(str);
    }
 
    ///
    /// <summary>
-   /// Prints a one-off "label: value" status line (e.g. "Sketch...   Gate_Viewer, v1.0"),
-   /// to Serial and, on display-capable boards, the display as well. Same right-aligned
-   /// layout as println(label, value), but always writes directly to Serial (see
-   /// printlnInitStatus() above), so it works anywhere in the sketch, not just during init.
+   /// Prints a one-off "label: value" status line (e.g. "Sketch...   Gate_Viewer, v1.0")
+   /// to the display on display-capable boards, and logs the same combined text to the
+   /// LogServer (which also echoes it to Serial); see Logger::logPartial()/log(). Same
+   /// right-aligned layout as println(label, value).
    /// </summary>
-   /// <param name="label">The label text to print (e.g. "Sketch...").</param>
-   /// <param name="value">The value text to print right after the label.</param>
+   /// <param name="label">The label text to print and log (e.g. "Sketch...").</param>
+   /// <param name="value">The value text to print and log right after the label.</param>
    ///
    void printlnInitStatus(const char* label, const char* value)
    {
       print(label, Color::LABEL);
-      Serial.print(label);
-
       printlnR(value, Color::VALUE);
-      Serial.println(value);
+
+      logger().logPartial(label);
+      logger().log(value);
    }
 
 protected:
@@ -309,8 +311,8 @@ public:
          status->setStatus(Status::WIFI_CONNECTING);
       }
 
-      print("WiFi...", Color::LABEL);
-      Serial.print("WiFi...");
+      print("WiFi... ", Color::LABEL);
+      logger().logPartial("WiFi... ");
 
       if (_wifiX == nullptr)
       {
@@ -320,16 +322,15 @@ public:
       if (!_wifiX->connect())
       {
          printlnR("FAILED", Color::RED);
-         Serial.println("FAILED");
+         logger().log("FAILED");
 
          std::string message = std::string("WiFi connect failed: ") + WiFiX::statusString();
          println(message.c_str(), Color::RED);
-         Serial.println(message.c_str());
          return false;
       }
 
       printlnR(WiFi.localIP().toString().c_str(), Color::VALUE);
-      Serial.println(WiFi.localIP().toString().c_str());
+      logger().log(WiFi.localIP().toString());
 
       if (status != nullptr)
       {
@@ -338,13 +339,13 @@ public:
 
       if (syncTime)
       {
-         print("Time...", Color::LABEL);
-         Serial.print("Time...");
+         print("Time... ", Color::LABEL);
+         logger().logPartial("Time... ");
          TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nist.gov");
 
          Color timeColor = TimeSync::isSynced() ? Color::VALUE : Color::RED;
          printlnR(TimeSync::localTimeString().c_str(), timeColor);
-         Serial.println(TimeSync::localTimeString().c_str());
+         logger().log(TimeSync::localTimeString());
       }
 
       return true;
@@ -392,9 +393,10 @@ public:
    ///
    /// <summary>
    /// Initializes a single sensor, printing a label and a success message (default "OK")
-   /// or "NOT FOUND" to Serial and, on display-capable boards, the display as well.
+   /// or "NOT FOUND" on display-capable boards, and logging the same combined text to the
+   /// LogServer (which also echoes it to Serial); see Logger::logPartial()/log().
    /// </summary>
-   /// <param name="label">The sensor label to print (e.g. "Sensor 0 (New Surface)").</param>
+   /// <param name="label">The sensor label to print and log (e.g. "Sensor 0 (New Surface)").</param>
    /// <param name="initFunc">Function that initializes the sensor and returns true on success.</param>
    /// <param name="successLabelFunc">Optional function called only on success to produce the
    /// success message (e.g. the detected sensor type) in place of "OK".</param>
@@ -403,21 +405,20 @@ public:
    bool initSensor(const char* label, bool (*initFunc)(), const char* (*successLabelFunc)() = nullptr)
    {
       print(label, Color::LABEL);
-      print("...", Color::LABEL);
-      Serial.print(label);
-      Serial.print("...");
+      print("... ", Color::LABEL);
+      logger().logPartial(std::string(label) + "... ");
 
       bool success = initFunc();
       if (success)
       {
          const char* successLabel = successLabelFunc != nullptr ? successLabelFunc() : "OK";
          printlnR(successLabel, Color::VALUE);
-         Serial.println(successLabel);
+         logger().log(successLabel);
       }
       else
       {
          printlnR("NOT FOUND", Color::RED);
-         Serial.println("NOT FOUND");
+         logger().log("NOT FOUND");
       }
       return success;
    }
@@ -444,8 +445,7 @@ public:
 
       print(label, Color::LABEL);
       print("...", Color::LABEL);
-      Serial.print(label);
-      Serial.print("...");
+      logger().logPartial(std::string(label) + "...");
       beginFunc();
    }
 

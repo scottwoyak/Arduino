@@ -29,7 +29,7 @@
 //   retried the following cycle.
 //
 // Outputs:
-// - Serial: sensor type, address, and ID printed during initialization; the resolved (or
+// - Serial: sensor type printed during initialization; the resolved (or
 //   prompted-for) site/location printed after WiFi connects.
 //
 // Usage:
@@ -51,6 +51,9 @@
 
 // This board is wired with an onboard NeoPixel status LED and no display or buttons.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
+
+// Uncomment this to log to the local LogServer instead of the remote one.
+//#define LOG_SERVER_LOCAL
 
 #include <string>
 
@@ -120,22 +123,13 @@ void setup()
 {
    Wire.begin();
 
-   monitor.begin();
-
    // Fall back to the internal ESP32 CPU temperature sensor if no external sensor is
    // found, so the device still reports a (less accurate) temperature reading instead
-   // of failing to start.
-   if (arduino.initSensor("Sensor", []() { return sensor.begin(false, true); }, []() { return sensor.type(); }))
-   {
-      std::string addressStr = sensor.address() != 0 ? std::string("0x") + String(sensor.address(), HEX).c_str() : "N/A";
-      std::string idStr = strlen(sensor.id()) > 0 ? sensor.id() : "N/A";
-      std::string sensorMessage = std::string("Sensor: ") + sensor.type() + ", Address: " + addressStr + ", ID: " + idStr;
-      monitor.logMessage(sensorMessage.c_str());
-   }
-   else
-   {
-      monitor.reportSensorFailure();
-   }
+   // of failing to start. Registered before begin() so the sensor is initialized before
+   // WiFi/Influx setup.
+   monitor.addSensor("Sensor", []() { return sensor.begin(false, true); }, []() { return sensor.type(); });
+
+   monitor.begin();
 
    InfluxPoint* point = monitor.addPoint();
    tempField = point->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);

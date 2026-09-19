@@ -9,6 +9,7 @@
 #include <string>
 
 #include "ArduinoBase.h"
+#include "Logger.h"
 #include "SiteConfig.h"
 #include "Status.h"
 #include "TelemetryClient.h"
@@ -49,7 +50,7 @@ protected:
    /// <summary>Constructed by beginTelemetry(topic, handler), once the telemetry topic has been resolved.</summary>
    TelemetrySubscriber* _client = nullptr;
 
-public:
+   public:
    ///
    /// <summary>
    /// Creates a ViewerSketch bound to the given board, sketch identity, and status
@@ -77,18 +78,21 @@ public:
    void begin()
    {
       _arduino->beginInit();
+      logger().log("Initializing");
 
       if (_version != nullptr)
       {
          std::string sketchAndVersion = std::string(_sketchName) + ", " + _version;
-         _arduino->printlnInitStatus("Sketch...", sketchAndVersion.c_str());
+         _arduino->printlnInitStatus("Sketch... ", sketchAndVersion.c_str());
       }
       else
       {
-         _arduino->printlnInitStatus("Sketch...", _sketchName);
+         _arduino->printlnInitStatus("Sketch... ", _sketchName);
       }
 
       _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
+
+      logger().begin(_sketchName, _version);
 
       if (_enableOTA)
       {
@@ -113,6 +117,8 @@ public:
    void loop()
    {
       checkForOTA();
+
+      logger().loop();
 
       if (_client != nullptr)
       {

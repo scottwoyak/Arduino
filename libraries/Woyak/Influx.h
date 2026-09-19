@@ -104,12 +104,11 @@ public:
 		if (!TimeSync::isSynced())
 		{
 			TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nis.gov");
-			arduino.printlnInitStatus("Syncing Time...", TimeSync::localTimeString().c_str());
 		}
 
-		if (_client.validateConnection())
+		bool success = _client.validateConnection();
+		if (success)
 		{
-			arduino.printlnInitStatus("Influx...", "OK");
 			if (_status)
 			{
 				_status->setStatus(Status::READY);
@@ -117,7 +116,6 @@ public:
 			return true;
 		}
 
-		arduino.printlnInitStatus("Influx...", "FAILED");
 		arduino.println(_client.getLastErrorMessage().c_str(), Color::RED);
 		return false;
 	}
