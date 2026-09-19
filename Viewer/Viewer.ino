@@ -6,12 +6,12 @@
 // Uncomment this to build for the Waveshare ESP32-S3-Touch-LCD-4.3B instead of the
 // Hosyond ESP32-S3 Viewer board. Also requires selecting the generic "ESP32S3 Dev
 // Module" board in Visual Micro (that board has no dedicated board package entry).
-//#define ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_43
+#define ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_43
 
 // Default: build for the Hosyond ESP32-S3 Viewer board. Also requires selecting the
 // generic "ESP32S3 Dev Module" board in Visual Micro (that board has no dedicated
 // board package entry).
-#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
+//#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
 
 #include "ArduinoBoard.h"
 

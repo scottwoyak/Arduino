@@ -41,9 +41,9 @@ public:
 
       // The RGB panel is wired physically landscape (800x480 native), so undo the
       // LANDSCAPE rotation ArduinoWithDisplay::begin() applies by default; rotation 0
-      // (PORTRAIT) is this panel's native, already-landscape orientation. The panel is
-      // also mounted upside down relative to that native orientation, so flip 180.
-      display.setRotation(DisplayRotation::PORTRAIT_FLIP);
+      // (PORTRAIT) is this panel's native, already-landscape orientation, and matches
+      // this board's actual mounting (no additional flip needed).
+      display.setRotation(DisplayRotation::PORTRAIT);
 
       buttonA.begin();
       status.begin();
