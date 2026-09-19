@@ -101,8 +101,6 @@ protected:
    ///
    const char* _resolveFixedTelemetryTopic() override
    {
-      Serial.print("Telemetry Topic: ");
-      Serial.println(_config.telemetry.topic);
       return _config.telemetry.topic;
    }
 
@@ -115,11 +113,11 @@ protected:
    }
 
    ///
-   /// <summary>Builds the second startup log message: telemetry topic and Influx bucket/site details.</summary>
+   /// <summary>Builds the telemetry topic status line logged/displayed once Influx begins successfully.</summary>
    ///
-   std::string _buildStartupMessage(const std::string& influxInfo) override
+   std::string _buildTelemetryMessage() override
    {
-      return std::string("Telemetry topic: ") + (_telemetryTopic != nullptr ? _telemetryTopic : "") + ", Influx: " + influxInfo;
+      return std::string("Telemetry topic: ") + (_telemetryTopic != nullptr ? _telemetryTopic : "");
    }
 
    ///

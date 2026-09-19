@@ -224,10 +224,12 @@ protected:
    virtual bool _shouldUseInflux(bool hasSiteTable) = 0;
 
    ///
-   /// <summary>Builds the second startup log message (Influx bucket/measurement/sensor/site/location details) posted once Influx is ready.</summary>
-   /// <param name="influxInfo">Resolved bucket/measurement/sensor/site/location key=value details.</param>
+   /// <summary>Returns the telemetry status line logged/displayed once Influx begins successfully (e.g. "Telemetry topic: X"). Monitor doesn't use telemetry, so the default returns an empty string (nothing is logged/displayed).</summary>
    ///
-   virtual std::string _buildStartupMessage(const std::string& influxInfo) = 0;
+   virtual std::string _buildTelemetryMessage()
+   {
+      return "";
+   }
 
    ///
    /// <summary>
@@ -615,6 +617,46 @@ public:
       bool hasTopicTable = _config.telemetry.prompts.size() > 0;
       bool forcePrompt = (hasSiteTable || hasTopicTable) ? _shouldForcePrompt() : false;
 
+      // Resolved before initWifi/Influx so the chosen bucket is known before Influx is
+      // constructed. Resolved here (before the sensor loop) purely so the telemetry/Influx
+      // info lines below can be printed/logged right after "Initializing", even though the
+      // actual WiFi/Influx connections are still made later, after sensor init.
+      if (hasSiteTable)
+      {
+         _site = _siteResolver.resolve(_arduino->preferences, _status, "Select an influx site (* = default):", _config.influx.measurement, _config.influx.prompts.data(), _config.influx.prompts.size(), forcePrompt);
+      }
+      else
+      {
+         _site = _resolveFixedSite();
+      }
+      _influxSensor = _site.sensor;
+
+      if (hasTopicTable)
+      {
+         _telemetryTopic = _topicResolver.resolve(_arduino->preferences, _status, "Select a telemetry topic (* = default):", _config.telemetry.prompts.data(), _config.telemetry.prompts.size(), forcePrompt);
+      }
+      else
+      {
+         _telemetryTopic = _resolveFixedTelemetryTopic();
+      }
+
+      std::string telemetryMessage = _buildTelemetryMessage();
+      if (telemetryMessage.length() > 0)
+      {
+         _printAndLogStatus(telemetryMessage.c_str());
+      }
+
+      std::string influxInfo = std::string("bucket=\"") + (_site.bucket != nullptr ? _site.bucket : "") +
+                               "\" site=\"" + (_site.site != nullptr ? _site.site : "") +
+                               "\" location=\"" + (_site.location != nullptr ? _site.location : "") +
+                               "\" sensor=\"" + (_influxSensor != nullptr ? _influxSensor : "") + "\"";
+      std::string influxMessage = std::string("Influx: ") + influxInfo;
+      if (SerialX::lastShutdownReason().length() > 0)
+      {
+         influxMessage += std::string(", last shutdown: ") + SerialX::lastShutdownReason().c_str();
+      }
+      _printAndLogStatus(influxMessage.c_str());
+
       for (const SensorInit& sensor : _sensors)
       {
          bool success = _arduino->initSensor(sensor.label, sensor.initFunc, sensor.successLabelFunc);
@@ -634,27 +676,6 @@ public:
       if (_config.includeEnclosureTemp)
       {
          _enclosureTempSensor.begin();
-      }
-
-      // Resolved before initWifi/Influx so the chosen bucket is known before Influx is
-      // constructed.
-      if (hasSiteTable)
-      {
-         _site = _siteResolver.resolve(_arduino->preferences, _status, "Select an influx site (* = default):", _config.influx.measurement, _config.influx.prompts.data(), _config.influx.prompts.size(), forcePrompt);
-      }
-      else
-      {
-         _site = _resolveFixedSite();
-      }
-      _influxSensor = _site.sensor;
-
-      if (hasTopicTable)
-      {
-         _telemetryTopic = _topicResolver.resolve(_arduino->preferences, _status, "Select a telemetry topic (* = default):", _config.telemetry.prompts.data(), _config.telemetry.prompts.size(), forcePrompt);
-      }
-      else
-      {
-         _telemetryTopic = _resolveFixedTelemetryTopic();
       }
 
       _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
@@ -680,17 +701,6 @@ public:
          }
 
          _logStatusEnd("OK");
-
-         std::string influxInfo = std::string("bucket=\"") + (_site.bucket != nullptr ? _site.bucket : "") +
-                                  "\" measurement=\"" + _config.influx.measurement +
-                                  "\" sensor=\"" + (_influxSensor != nullptr ? _influxSensor : "") +
-                                  "\" site=\"" + (_site.site != nullptr ? _site.site : "") + "\"";
-         std::string influxMessage = _buildStartupMessage(influxInfo);
-         if (SerialX::lastShutdownReason().length() > 0)
-         {
-            influxMessage += std::string(", last shutdown: ") + SerialX::lastShutdownReason().c_str();
-         }
-         _logMessage(influxMessage.c_str());
 
          std::string intervalMessage = std::string("Values measured every ") + std::to_string(SENSOR_INTERVAL_MS) +
                                         " ms with an average uploaded every " + std::to_string(_config.influx.intervalS) + " seconds";

@@ -7,6 +7,7 @@
 #include "RollingRate.h"
 #include "Status.h"
 #include "Util.h"
+#include "Logger.h"
 
 // Display-based error rendering is only available on boards with a display.
 // ARDUINO_DISPLAY_SUPPORTED is defined by ArduinoBoard.h when the target board has one.
@@ -82,13 +83,14 @@ public:
    ///
    void printServerVersion(const std::string& version)
    {
-      Serial.print("OK, v");
-      Serial.println(version.c_str());
+      std::string result = "OK, v" + version;
+
+      logger().log(result);
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
       {
-         _display->printlnR(String("OK, v") + version.c_str(), Color::VALUE);
+         _display->printlnR(result.c_str(), Color::VALUE);
       }
 #endif
    }
@@ -129,6 +131,7 @@ public:
    virtual void onDisconnected(const std::string& reason)
    {
       Serial.println("Disconnected: " + String(reason.c_str()));
+      logger().log("FAILED");
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
@@ -157,6 +160,7 @@ public:
    virtual void onConnectionFailed(const std::string& reason)
    {
       Serial.println("Could not connect to telemetry server: " + String(reason.c_str()));
+      logger().log("FAILED");
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)

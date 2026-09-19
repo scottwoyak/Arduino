@@ -444,8 +444,8 @@ public:
       }
 
       print(label, Color::LABEL);
-      print("...", Color::LABEL);
-      logger().logPartial(std::string(label) + "...");
+      print("... ", Color::LABEL);
+      logger().logPartial(std::string(label) + "... ");
       beginFunc();
    }
 

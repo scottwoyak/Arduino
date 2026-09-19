@@ -40,6 +40,12 @@ constexpr auto INFLUX_LOCATION = "Dock";
 constexpr auto INFLUX_SENSOR = "Temperature";
 constexpr auto INFLUX_INTERVAL_S = 15;  // Log data to InfluxDB every N seconds
 
+// ----------- InfluxDB bucket selection (production vs testing)
+constexpr InfluxContext INFLUX_PROMPTS[] = {
+   { INFLUXDB_BUCKET, INFLUX_SITE, INFLUX_LOCATION, INFLUX_SENSOR },
+   { "Testing", INFLUX_SITE, INFLUX_LOCATION, INFLUX_SENSOR },
+};
+
 ///
 /// <summary>
 /// Static configuration for a single sensor location: its multiplexor port and its
@@ -78,16 +84,17 @@ std::array<InfluxField*, NUM_SENSORS> humFields;
 Timer sensorTimer(SENSOR_INTERVAL_MS);
 
 InfluxConfig INFLUX_CONFIG = {
-   .context = { INFLUXDB_BUCKET, INFLUX_SITE, INFLUX_LOCATION, INFLUX_SENSOR },
+   .prompts = INFLUX_PROMPTS,
    .intervalS = INFLUX_INTERVAL_S,
 };
 
 SketchConfig SKETCH_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
+   .preferencesNamespace = SKETCH_NAME,
+   .influx = INFLUX_CONFIG,
    .enableOTA = true,
    .enableRebooter = true,
-   .influx = INFLUX_CONFIG,
 };
 
 Monitor monitor(&arduino, SKETCH_CONFIG);
@@ -143,11 +150,11 @@ void setup()
       sensors[i] = new TempSensor();
    }
 
-   monitor.addSensor("Surface", []() { multi.select(SENSOR_CONFIGS[0].port); return sensors[0]->begin(true); }, false);
-   monitor.addSensor("Bottom 1", []() { multi.select(SENSOR_CONFIGS[1].port); return sensors[1]->begin(true); }, false);
-   monitor.addSensor("Bottom 2", []() { multi.select(SENSOR_CONFIGS[2].port); return sensors[2]->begin(true); }, false);
-   monitor.addSensor("Enclosure", []() { multi.select(SENSOR_CONFIGS[3].port); return sensors[3]->begin(true); }, false);
-   monitor.addSensor("CPU", []() { return sensors[CPU_SENSOR_INDEX]->begin(new ESP32TempSensor(), true); }, false);
+   monitor.addSensor("Surface", []() { multi.select(SENSOR_CONFIGS[0].port); return sensors[0]->begin(true); }, nullptr, false);
+   monitor.addSensor("Bottom 1", []() { multi.select(SENSOR_CONFIGS[1].port); return sensors[1]->begin(true); }, nullptr, false);
+   monitor.addSensor("Bottom 2", []() { multi.select(SENSOR_CONFIGS[2].port); return sensors[2]->begin(true); }, nullptr, false);
+   monitor.addSensor("Enclosure", []() { multi.select(SENSOR_CONFIGS[3].port); return sensors[3]->begin(true); }, nullptr, false);
+   monitor.addSensor("CPU", []() { return sensors[CPU_SENSOR_INDEX]->begin(new ESP32TempSensor(), true); }, nullptr, false);
 
    monitor.begin();
 

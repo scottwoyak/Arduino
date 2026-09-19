@@ -406,9 +406,6 @@ private:
 
       size_t index = SerialX::readSelectionWithTimeout(count, defaultIndex, PROMPT_TIMEOUT_S * 1000UL);
 
-      Serial.print("Telemetry Topic: ");
-      Serial.println(topics[index]);
-
       return (uint8_t)index;
    }
 
@@ -455,9 +452,6 @@ private:
 
       String label = "Enter selection (1-" + String(count) + "): ";
       size_t index = (size_t)(SerialX::promptForInt(label, 1, (long)count) - 1);
-
-      Serial.print("Telemetry Topic: ");
-      Serial.println(topics[index]);
 
       return (uint8_t)index;
    }

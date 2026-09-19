@@ -93,7 +93,7 @@ void updateGateStatus()
 ///
 void startGateRelayTrigger()
 {
-   Serial.println("Gate Signal On");
+   monitor.logMessage("Gate Signal On");
    digitalWrite(GATE_RELAY_PIN, HIGH);
    gateRelayTriggerTimer.reset();
    gateTriggerRelay = true;
@@ -110,7 +110,7 @@ void checkGateRelayTrigger()
    {
       digitalWrite(GATE_RELAY_PIN, LOW);
       gateTriggerRelay = false;
-      Serial.println("Gate Signal Off");
+      monitor.logMessage("Gate Signal Off");
 
       updateGateStatus();
    }

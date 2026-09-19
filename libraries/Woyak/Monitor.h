@@ -237,14 +237,6 @@ protected:
       return true;
    }
 
-   ///
-   /// <summary>Builds the second startup log message: Influx bucket/site details.</summary>
-   ///
-   std::string _buildStartupMessage(const std::string& influxInfo) override
-   {
-      return std::string("Influx: ") + influxInfo;
-   }
-
 public:
    ///
    /// <summary>
