@@ -23,6 +23,7 @@ class LoggerClass
 
    static inline WebSocketsClient _webSocket;
    static inline bool _connected = false;
+   static inline bool _everConnected = false;
    static inline std::string _sketchName;
    static inline std::string _version;
    static inline std::string _site;
@@ -117,13 +118,25 @@ class LoggerClass
       {
          case WStype_CONNECTED:
             _connected = true;
+            if (!_everConnected)
+            {
+               _everConnected = true;
+               Serial.println(LOG_SERVER_HOST);
+            }
             _sendHandshake();
             _flushPendingMessages();
             break;
 
          case WStype_DISCONNECTED:
             _connected = false;
-            Serial.println("LogServer disconnected");
+            if (!_everConnected)
+            {
+               Serial.println("FAILED");
+            }
+            else
+            {
+               Serial.println("LogServer disconnected");
+            }
             break;
 
          case WStype_ERROR:
@@ -161,6 +174,8 @@ public:
       _sensor = sensor != nullptr ? sensor : "";
 
       _webSocket.onEvent(_onEvent);
+
+      Serial.print("Logging... ");
 
 #ifdef LOG_SERVER_LOCAL
       _webSocket.begin(LOG_SERVER_HOST, LOG_SERVER_PORT, LOG_SERVER_PATH);

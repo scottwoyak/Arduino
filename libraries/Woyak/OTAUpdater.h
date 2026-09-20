@@ -117,6 +117,14 @@ private:
    // files as assets under a release tagged with its own sketch name (see _deriveUrls()).
    static constexpr auto _RELEASES_BASE_URL = "https://github.com/scottwoyak/Arduino/releases/download";
 
+   // ARDUINO_BOARD_VARIANT_ID (defined per-branch in ArduinoBoard.h) identifies this
+   // sketch's physical wiring variant, so firmware asset names can be board-qualified
+   // (see _deriveUrls()), allowing a single release to host binaries for multiple boards.
+   // This is distinct from the raw ARDUINO_BOARD macro, since multiple wiring variants
+   // (e.g. Hosyond Viewer vs. generic Playground) can share the same underlying Arduino
+   // IDE board type.
+   static constexpr auto _BOARD_ID = ARDUINO_BOARD_VARIANT_ID;
+
    static constexpr uint8_t _HEADER_SIZE = 3;
    static constexpr uint8_t _TEXT_SIZE = 2;
    static constexpr int16_t _PROGRESS_BAR_HEIGHT = 12;
@@ -181,7 +189,11 @@ private:
    /// <summary>
    /// Derives this sketch's firmware/version-check URLs from its name, per convention: each
    /// sketch publishes to a release tagged with its own name (e.g. "Wind_Publisher"), with
-   /// "{sketchName}.ino.bin" and "version.txt" as assets alongside each other.
+   /// "{sketchName}.{boardId}.ino.bin" and "{sketchName}.{boardId}.version.txt" as assets
+   /// alongside each other. Both the firmware and version-check asset names are
+   /// board-qualified (via ARDUINO_BOARD_VARIANT_ID, see _BOARD_ID) so a single release can host
+   /// independently-versioned binaries for multiple boards without one board's publish
+   /// causing another board to redownload an unchanged binary.
    /// </summary>
    /// <param name="sketchName">This sketch's name (e.g. "Wind_Publisher"), also used as the release tag.</param>
    /// <returns>The derived { firmwareUrl, versionUrl } pair.</returns>
@@ -189,7 +201,8 @@ private:
    static std::pair<std::string, std::string> _deriveUrls(const char* sketchName)
    {
       std::string releaseUrl = std::string(_RELEASES_BASE_URL) + "/" + sketchName + "/";
-      return { releaseUrl + sketchName + ".ino.bin", releaseUrl + "version.txt" };
+      std::string boardQualifiedName = std::string(sketchName) + "." + _BOARD_ID;
+      return { releaseUrl + boardQualifiedName + ".ino.bin", releaseUrl + boardQualifiedName + ".version.txt" };
    }
 
    ///

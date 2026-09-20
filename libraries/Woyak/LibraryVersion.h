@@ -11,7 +11,7 @@
 /// (e.g. "2.4") with this build number to form the full compiled version (e.g. "2.4.1").
 /// </summary>
 ///
-constexpr auto LIBRARY_VERSION = "1";
+constexpr auto LIBRARY_VERSION = "101";
 
 ///
 /// <summary>

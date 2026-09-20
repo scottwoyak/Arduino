@@ -8,6 +8,11 @@
 #define ARDUINO_BUILTIN_LED_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
 
+// Distinct identifier for this physical board/wiring variant, used to board-qualify
+// OTA/publish asset names (see OTAUpdater::_BOARD_ID). Kept separate from ARDUINO_BOARD
+// since multiple wiring variants can share the same underlying Arduino IDE board type.
+#define ARDUINO_BOARD_VARIANT_ID "ADAFRUIT_FEATHER_M0"
+
 #include "Feather_M0_OLED.h"
 using Arduino = Feather_M0_OLED;
 
@@ -24,6 +29,8 @@ constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 #define ARDUINO_BUILTIN_LED_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
 
+#define ARDUINO_BOARD_VARIANT_ID "ADAFRUIT_FEATHER_ESP32S3_TFT"
+
 #include "Feather_ESP32_S3.h"
 using Arduino = Feather_ESP32_S3;
 
@@ -39,6 +46,8 @@ constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 #define ARDUINO_PREFERENCES_SUPPORTED
 #define ARDUINO_STATUS_SUPPORTED
 
+#define ARDUINO_BOARD_VARIANT_ID "WAVESHARE_ESP32_S3_ZERO_SENSORS"
+
 #include "Waveshare_ESP32_S3_Zero.h"
 using Arduino = WaveShare_ESP32_S3_Zero_Sensors;
 
@@ -48,6 +57,8 @@ using Arduino = WaveShare_ESP32_S3_Zero_Sensors;
 
 #define ARDUINO_NEOPIXEL_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
+
+#define ARDUINO_BOARD_VARIANT_ID "WAVESHARE_ESP32_S3_ZERO"
 
 #include "Waveshare_ESP32_S3_Zero.h"
 using Arduino = WaveShare_ESP32_S3_Zero;
@@ -61,6 +72,8 @@ using Arduino = WaveShare_ESP32_S3_Zero;
 #define ARDUINO_DISPLAY_SUPPORTED
 #define ARDUINO_TOUCH_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
+
+#define ARDUINO_BOARD_VARIANT_ID "WAVESHARE_ESP32S3_TOUCH_LCD_43"
 
 #include "Waveshare_ESP32S3_Touch_LCD_43.h"
 using Arduino = Waveshare_ESP32S3_Touch_LCD_43;
@@ -80,6 +93,8 @@ constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 #define ARDUINO_TOUCH_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
 
+#define ARDUINO_BOARD_VARIANT_ID "HOSYOND_ESP32_S3_VIEWER"
+
 #include "ViewerBoardS3.h"
 using Arduino = ViewerBoardS3;
 
@@ -98,6 +113,8 @@ constexpr uint8_t DEFAULT_CONTENT_SIZE = 3;
 #define ARDUINO_BUILTIN_LED_SUPPORTED
 #define ARDUINO_PLAYGROUND_SUPPORTED
 #define ARDUINO_PREFERENCES_SUPPORTED
+
+#define ARDUINO_BOARD_VARIANT_ID "ESP32S3_DEV_PLAYGROUND"
 
 #include "ESP32_S3_Playground.h"
 using Arduino = ESP32_S3_Playground;

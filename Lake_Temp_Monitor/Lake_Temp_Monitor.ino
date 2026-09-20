@@ -33,7 +33,7 @@
 // version.txt contains this sketch's own version (e.g. "1.1"); MakeVersion() appends
 // the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each version.txt.
-constexpr auto VERSION = MakeVersion(
+const auto VERSION = MakeVersion(
 #include "version.txt"
 );
 constexpr auto SKETCH_NAME = "Lake_Temp_Monitor";
