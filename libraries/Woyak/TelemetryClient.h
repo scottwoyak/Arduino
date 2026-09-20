@@ -85,7 +85,7 @@ public:
    {
       std::string result = "OK, v" + version;
 
-      logger().log(result);
+      Logger.log(result);
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
@@ -131,7 +131,7 @@ public:
    ///
    virtual void onDisconnected(const std::string& reason)
    {
-      logger().log("Telemetry connection lost (" + String(reason.c_str()) + "). Restarting in " + String(int(TELEMETRY_RESET_DELAY_S)) + "s");
+      Logger.log("Telemetry connection lost (" + String(reason.c_str()) + "). Restarting in " + String(int(TELEMETRY_RESET_DELAY_S)) + "s");
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
@@ -165,7 +165,7 @@ public:
    ///
    virtual void onConnectionFailed(const std::string& reason)
    {
-      logger().log("Could not connect to telemetry server (" + String(reason.c_str()) + "). Restarting in " + String(int(TELEMETRY_RESET_DELAY_S)) + "s");
+      Logger.log("Could not connect to telemetry server (" + String(reason.c_str()) + "). Restarting in " + String(int(TELEMETRY_RESET_DELAY_S)) + "s");
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)

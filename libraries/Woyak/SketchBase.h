@@ -346,14 +346,14 @@ protected:
    /// <summary>
    /// Sends a text log message to the LogServer, tagged implicitly by the handshake
    /// (deviceId/sketch/version) sent when the connection was established. Does nothing
-   /// (other than the Serial echo performed by Logger::log()) if the LogServer
+   /// (other than the Serial echo performed by Logger.log()) if the LogServer
    /// connection isn't up yet.
    /// </summary>
    /// <param name="message">Message to log, both to the LogServer and Serial.</param>
    ///
    void _logMessage(const char* message)
    {
-      logger().log(message);
+      Logger.log(message);
    }
 
    ///
@@ -390,14 +390,14 @@ protected:
    /// Prints a "label..." fragment to the display (on display-capable boards) and logs it
    /// (no newline yet), followed once the result is known by the completing "result"
    /// fragment via _logStatusEnd(). Mirrors the old two-step
-   /// Serial.print(label)/Serial.println(result) pattern using Logger::logPartial()/log().
+   /// Serial.print(label)/Serial.println(result) pattern using Logger.logPartial()/log().
    /// </summary>
    /// <param name="label">The label fragment to print/log, e.g. "WiFi... ".</param>
    ///
    void _logStatusStart(const char* label)
    {
       _arduino->print(label, Color::LABEL);
-      logger().logPartial(label);
+      Logger.logPartial(label);
    }
 
    ///
@@ -407,7 +407,7 @@ protected:
    void _logStatusEnd(const char* result)
    {
       _arduino->printlnR(result, Color::VALUE);
-      logger().log(result);
+      Logger.log(result);
    }
 
 public:
@@ -680,7 +680,7 @@ public:
 
       _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
 
-      logger().begin(_config.sketchName, _config.version, _site.site, _site.location, _influxSensor);
+      Logger.begin(_config.sketchName, _config.version, _site.site, _site.location, _influxSensor);
 
       if (_config.enableRebooter)
       {
@@ -750,7 +750,7 @@ public:
    {
       esp_task_wdt_reset();
 
-      logger().loop();
+      Logger.loop();
 
       if (!_arduino->ensureWiFiConnected() && !_onWiFiLost())
       {

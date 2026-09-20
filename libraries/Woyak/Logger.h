@@ -14,25 +14,26 @@
 /// device (deviceId/sketch/version), then each log() call sends a single text message.
 /// Connection is best-effort: a dropped/failed connection is logged to Serial but does
 /// not reset the device, since text logging shouldn't be able to crash a sketch that
-/// otherwise works fine.
+/// otherwise works fine. All members are static since a sketch has a single LogServer
+/// connection; use the global Logger instance below (mirroring Serial), e.g. Logger.log(...).
 /// </summary>
 ///
-class Logger
+class LoggerClass
 {
-private:
-   WebSocketsClient _webSocket;
-   bool _connected = false;
-   std::string _sketchName;
-   std::string _version;
-   std::string _site;
-   std::string _location;
-   std::string _sensor;
+
+   static inline WebSocketsClient _webSocket;
+   static inline bool _connected = false;
+   static inline std::string _sketchName;
+   static inline std::string _version;
+   static inline std::string _site;
+   static inline std::string _location;
+   static inline std::string _sensor;
 
    /// <summary>Messages logged before the connection was up, sent once it completes.</summary>
-   std::vector<std::string> _pendingMessages;
+   static inline std::vector<std::string> _pendingMessages;
 
    /// <summary>True if a logPartial() call is still awaiting its completing log() call.</summary>
-   bool _linePending = false;
+   static inline bool _linePending = false;
 
    ///
    /// <summary>
@@ -40,7 +41,7 @@ private:
    /// </summary>
    /// <param name="message">Message text to send.</param>
    ///
-   void _send(const char* message)
+   static void _send(const char* message)
    {
       _webSocket.sendTXT(message);
    }
@@ -54,7 +55,7 @@ private:
    /// </summary>
    /// <param name="message">Message text to send or queue.</param>
    ///
-   void _sendOrQueue(const char* message)
+   static void _sendOrQueue(const char* message)
    {
       if (_connected)
       {
@@ -71,7 +72,7 @@ private:
    /// Sends the initial JSON handshake message identifying this device to the LogServer.
    /// </summary>
    ///
-   void _sendHandshake()
+   static void _sendHandshake()
    {
       std::string deviceId = WiFi.macAddress().c_str();
 
@@ -90,7 +91,7 @@ private:
    /// Sends any messages that were logged before the connection finished coming up.
    /// </summary>
    ///
-   void _flushPendingMessages()
+   static void _flushPendingMessages()
    {
       for (const std::string& message : _pendingMessages)
       {
@@ -110,7 +111,7 @@ private:
    /// <param name="payload">The event payload, if any.</param>
    /// <param name="length">The length of the payload, in bytes.</param>
    ///
-   void _onEvent(WStype_t type, uint8_t* payload, size_t length)
+   static void _onEvent(WStype_t type, uint8_t* payload, size_t length)
    {
       switch (type)
       {
@@ -151,7 +152,7 @@ public:
    /// <param name="location">Resolved location name, sent in the handshake (may be nullptr if not used).</param>
    /// <param name="sensor">Resolved sensor tag, sent in the handshake (may be nullptr if not used).</param>
    ///
-   void begin(const char* sketchName, const char* version, const char* site = nullptr, const char* location = nullptr, const char* sensor = nullptr)
+   static void begin(const char* sketchName, const char* version, const char* site = nullptr, const char* location = nullptr, const char* sensor = nullptr)
    {
       _sketchName = sketchName != nullptr ? sketchName : "";
       _version = version != nullptr ? version : "";
@@ -159,7 +160,7 @@ public:
       _location = location != nullptr ? location : "";
       _sensor = sensor != nullptr ? sensor : "";
 
-      _webSocket.onEvent([this](WStype_t type, uint8_t* payload, size_t length) { _onEvent(type, payload, length); });
+      _webSocket.onEvent(_onEvent);
 
 #ifdef LOG_SERVER_LOCAL
       _webSocket.begin(LOG_SERVER_HOST, LOG_SERVER_PORT, LOG_SERVER_PATH);
@@ -176,7 +177,7 @@ public:
    /// Drives the WebSocket connection; call once per loop() iteration.
    /// </summary>
    ///
-   void loop()
+   static void loop()
    {
       _webSocket.loop();
    }
@@ -187,7 +188,7 @@ public:
    /// </summary>
    /// <returns>True if connected; otherwise false.</returns>
    ///
-   bool isConnected() const
+   static bool isConnected()
    {
       return _connected;
    }
@@ -203,7 +204,7 @@ public:
    /// </summary>
    /// <param name="message">Message text to log.</param>
    ///
-   void log(const char* message)
+   static void log(const char* message)
    {
       _sendOrQueue((std::string(message) + "\n").c_str());
 
@@ -222,7 +223,7 @@ public:
    /// </summary>
    /// <param name="message">Message text to log.</param>
    ///
-   void log(const std::string& message)
+   static void log(const std::string& message)
    {
       log(message.c_str());
    }
@@ -233,7 +234,7 @@ public:
    /// </summary>
    /// <param name="message">Message text to log.</param>
    ///
-   void log(const String& message)
+   static void log(const String& message)
    {
       log(message.c_str());
    }
@@ -248,7 +249,7 @@ public:
    /// </summary>
    /// <param name="message">Message fragment text to log.</param>
    ///
-   void logPartial(const char* message)
+   static void logPartial(const char* message)
    {
       _sendOrQueue(message);
 
@@ -267,7 +268,7 @@ public:
    /// </summary>
    /// <param name="message">Message fragment text to log.</param>
    ///
-   void logPartial(const std::string& message)
+   static void logPartial(const std::string& message)
    {
       logPartial(message.c_str());
    }
@@ -278,7 +279,7 @@ public:
    /// </summary>
    /// <param name="message">Message fragment text to log.</param>
    ///
-   void logPartial(const String& message)
+   static void logPartial(const String& message)
    {
       logPartial(message.c_str());
    }
@@ -286,15 +287,11 @@ public:
 
 ///
 /// <summary>
-/// Returns the single Logger instance shared by the whole sketch (one physical board, one
-/// LogServer connection). Board-level helpers (see ArduinoBase::printlnInitStatus(),
-/// initWifi(), initSensor(), initClient()) log through this automatically, so callers only
-/// need to invoke those helpers once to update both the display/Serial and the LogServer.
+/// Global Logger instance shared by the whole sketch (one physical board, one LogServer
+/// connection), mirroring Arduino's Serial global. Board-level helpers (see
+/// ArduinoBase::printlnInitStatus(), initWifi(), initSensor(), initClient()) log through
+/// this automatically, so callers only need to invoke those helpers once to update both
+/// the display/Serial and the LogServer.
 /// </summary>
-/// <returns>Reference to the global Logger instance.</returns>
 ///
-inline Logger& logger()
-{
-   static Logger instance;
-   return instance;
-}
+inline LoggerClass Logger;

@@ -214,7 +214,7 @@ public:
    /// <summary>
    /// Prints a one-off status line (e.g. "Gate opened") to the display on display-capable
    /// boards, and logs the same text to the LogServer (which also echoes it to Serial); see
-   /// Logger::log(). Unlike printInitHeader(), does not clear the display or resize text.
+   /// Logger.log(). Unlike printInitHeader(), does not clear the display or resize text.
    /// Overriding boards only need to implement the display-drawing half via
    /// _printlnInitStatusDisplay().
    /// </summary>
@@ -224,14 +224,14 @@ public:
    void printlnInitStatus(const char* str, Color textColor = Color::WHITE)
    {
       _printlnInitStatusDisplay(str, textColor);
-      logger().log(str);
+      Logger.log(str);
    }
 
    ///
    /// <summary>
    /// Prints a one-off "label: value" status line (e.g. "Sketch...   Gate_Viewer, v1.0")
    /// to the display on display-capable boards, and logs the same combined text to the
-   /// LogServer (which also echoes it to Serial); see Logger::logPartial()/log(). Same
+   /// LogServer (which also echoes it to Serial); see Logger.logPartial()/log(). Same
    /// right-aligned layout as println(label, value).
    /// </summary>
    /// <param name="label">The label text to print and log (e.g. "Sketch...").</param>
@@ -242,8 +242,8 @@ public:
       print(label, Color::LABEL);
       printlnR(value, Color::VALUE);
 
-      logger().logPartial(label);
-      logger().log(value);
+      Logger.logPartial(label);
+      Logger.log(value);
    }
 
 protected:
@@ -312,7 +312,7 @@ public:
       }
 
       print("WiFi... ", Color::LABEL);
-      logger().logPartial("WiFi... ");
+      Logger.logPartial("WiFi... ");
 
       if (_wifiX == nullptr)
       {
@@ -322,7 +322,7 @@ public:
       if (!_wifiX->connect())
       {
          printlnR("FAILED", Color::RED);
-         logger().log("FAILED");
+         Logger.log("FAILED");
 
          std::string message = std::string("WiFi connect failed: ") + WiFiX::statusString();
          println(message.c_str(), Color::RED);
@@ -330,7 +330,7 @@ public:
       }
 
       printlnR(WiFi.localIP().toString().c_str(), Color::VALUE);
-      logger().log(WiFi.localIP().toString());
+      Logger.log(WiFi.localIP().toString());
 
       if (status != nullptr)
       {
@@ -340,12 +340,12 @@ public:
       if (syncTime)
       {
          print("Time... ", Color::LABEL);
-         logger().logPartial("Time... ");
+         Logger.logPartial("Time... ");
          TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nist.gov");
 
          Color timeColor = TimeSync::isSynced() ? Color::VALUE : Color::RED;
          printlnR(TimeSync::localTimeString().c_str(), timeColor);
-         logger().log(TimeSync::localTimeString());
+         Logger.log(TimeSync::localTimeString());
       }
 
       return true;
@@ -394,7 +394,7 @@ public:
    /// <summary>
    /// Initializes a single sensor, printing a label and a success message (default "OK")
    /// or "NOT FOUND" on display-capable boards, and logging the same combined text to the
-   /// LogServer (which also echoes it to Serial); see Logger::logPartial()/log().
+   /// LogServer (which also echoes it to Serial); see Logger.logPartial()/log().
    /// </summary>
    /// <param name="label">The sensor label to print and log (e.g. "Sensor 0 (New Surface)").</param>
    /// <param name="initFunc">Function that initializes the sensor and returns true on success.</param>
@@ -406,19 +406,19 @@ public:
    {
       print(label, Color::LABEL);
       print("... ", Color::LABEL);
-      logger().logPartial(std::string(label) + "... ");
+      Logger.logPartial(std::string(label) + "... ");
 
       bool success = initFunc();
       if (success)
       {
          const char* successLabel = successLabelFunc != nullptr ? successLabelFunc() : "OK";
          printlnR(successLabel, Color::VALUE);
-         logger().log(successLabel);
+         Logger.log(successLabel);
       }
       else
       {
          printlnR("NOT FOUND", Color::RED);
-         logger().log("NOT FOUND");
+         Logger.log("NOT FOUND");
       }
       return success;
    }
@@ -445,7 +445,7 @@ public:
 
       print(label, Color::LABEL);
       print("... ", Color::LABEL);
-      logger().logPartial(std::string(label) + "... ");
+      Logger.logPartial(std::string(label) + "... ");
       beginFunc();
    }
 

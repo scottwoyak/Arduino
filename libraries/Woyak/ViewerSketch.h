@@ -78,7 +78,7 @@ protected:
    void begin()
    {
       _arduino->beginInit();
-      logger().log("Initializing");
+      Logger.log("Initializing");
 
       if (_version != nullptr)
       {
@@ -92,7 +92,7 @@ protected:
 
       _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
 
-      logger().begin(_sketchName, _version);
+      Logger.begin(_sketchName, _version);
 
       if (_enableOTA)
       {
@@ -118,7 +118,7 @@ protected:
    {
       checkForOTA();
 
-      logger().loop();
+      Logger.loop();
 
       if (_client != nullptr)
       {
