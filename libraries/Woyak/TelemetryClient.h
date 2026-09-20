@@ -122,23 +122,29 @@ public:
    ///
    /// <summary>
    /// Invoked when the telemetry WebSocket connection is lost. Default implementation
-   /// logs the reason, completes the "Telemetry..." label (if a display was supplied)
-   /// with "FAILED", sets the status to FAILED, and resets the device. Overrides must
-   /// call this base implementation (see class remarks).
+   /// logs the reason, shows a standalone message on the display (if one was supplied)
+   /// since a disconnect can happen at any time and not just while the "Telemetry..."
+   /// label is still on screen, sets the status to FAILED, and resets the device.
+   /// Overrides must call this base implementation (see class remarks).
    /// </summary>
    /// <param name="reason">Reason for the disconnect, as reported by the telemetry client</param>
    ///
    virtual void onDisconnected(const std::string& reason)
    {
-      Serial.println("Disconnected: " + String(reason.c_str()));
-      logger().log("FAILED");
+      logger().log("Telemetry connection lost (" + String(reason.c_str()) + "). Restarting in " + String(int(TELEMETRY_RESET_DELAY_S)) + "s");
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
       {
-         // Completes the "Telemetry..." label printed by ArduinoBase::initClient() -
-         // see the matching comment in onStarted() above.
-         _display->printlnR("FAILED", Color::RED);
+         // Unlike onConnectionFailed(), a disconnect can happen at any time after a
+         // successful connection, not just while the "Telemetry..." label printed by
+         // ArduinoBase::initClient() is still on screen, so print a standalone message
+         // instead of assuming there's a label row to complete.
+         _display->setTextSize(2);
+         _display->clearDisplay();
+         _display->display.setTextWrap(true);
+         _display->println("Telemetry connection lost", Color::RED);
+         _display->println(reason, Color::RED);
       }
 #endif
 
@@ -159,8 +165,7 @@ public:
    ///
    virtual void onConnectionFailed(const std::string& reason)
    {
-      Serial.println("Could not connect to telemetry server: " + String(reason.c_str()));
-      logger().log("FAILED");
+      logger().log("Could not connect to telemetry server (" + String(reason.c_str()) + "). Restarting in " + String(int(TELEMETRY_RESET_DELAY_S)) + "s");
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
@@ -168,6 +173,7 @@ public:
          // Completes the "Telemetry..." label printed by ArduinoBase::initClient() -
          // see the matching comment in onStarted() above.
          _display->printlnR("FAILED", Color::RED);
+         _display->println(reason, Color::RED);
       }
 #endif
 
