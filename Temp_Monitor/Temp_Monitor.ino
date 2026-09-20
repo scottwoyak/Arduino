@@ -73,13 +73,14 @@
 #include "WiFiSettings.h"
 
 #include "Monitor.h"
+#include "LibraryVersion.h"
 
-// version.txt contains a quoted version string (e.g. "v1.1") and is included directly here
-// so the compiled-in VERSION always matches the same file uploaded to the GitHub release,
-// with no separate sync step required.
-constexpr auto VERSION =
+// version.txt contains this sketch's own version (e.g. "2.0"); MakeVersion() appends
+// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
+// compiled VERSION without manually editing each version.txt.
+constexpr auto VERSION = MakeVersion(
 #include "version.txt"
-;
+);
 constexpr auto SKETCH_NAME = "Temp_Monitor";
 constexpr auto INFLUX_SENSOR = "Temperature";
 constexpr auto PREFERENCES_NAMESPACE = "TempMonitor";

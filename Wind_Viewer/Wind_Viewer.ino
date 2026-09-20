@@ -42,9 +42,12 @@ constexpr auto PREFERENCES_NAMESPACE = "WindViewer";
 // Selected at startup via prompt in setup().
 std::string telemetryTopic;
 
-constexpr auto VERSION =
+// version.txt contains this sketch's own version (e.g. "v1.0"); MakeVersion() appends
+// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
+// compiled VERSION without manually editing each version.txt.
+constexpr auto VERSION = MakeVersion(
 #include "version.txt"
-"-debugE"; // TEMPORARY: debug build tag, increment (debugA/B/C...) each time this is reflashed while debugging
+); // TEMPORARY: debug build tag, increment (debugA/B/C...) each time this is reflashed while debugging
 constexpr auto SKETCH_NAME = "Wind_Viewer";
 
 
@@ -56,6 +59,7 @@ constexpr auto SKETCH_NAME = "Wind_Viewer";
 
 #include "BarChart.h"
 #include "ColorRange.h"
+#include "LibraryVersion.h"
 #include "MovingBarChart.h"
 #include "SerialX.h"
 #include "Slider.h"

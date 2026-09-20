@@ -60,14 +60,18 @@ constexpr auto RIGHT_TELEMETRY_TOPIC = "Gate/Right";
 constexpr auto GATE_OPENER_HOST = "192.168.1.9";
 constexpr uint16_t GATE_OPENER_PORT = 80;
 
-constexpr auto VERSION =
+// version.txt contains this sketch's own version (e.g. "v1.06"); MakeVersion() appends
+// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
+// compiled VERSION without manually editing each version.txt.
+constexpr auto VERSION = MakeVersion(
 #include "version.txt"
-;
+);
 constexpr auto SKETCH_NAME = "Gate_Viewer";
 
 #define ARDUINO_HOSYOND_ESP32_S3_VIEWER
 
 #include "ArduinoBoard.h"
+#include "LibraryVersion.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Viewer)."

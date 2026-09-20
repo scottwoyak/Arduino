@@ -66,6 +66,7 @@
     <File Path="libraries/Woyak/LGX_FeatherESP32_S3_TFT.h" />
     <File Path="libraries/Woyak/LGX_HosyondESP32S3.h" />
     <File Path="libraries/Woyak/LGX_ST7796S.h" />
+    <File Path="libraries/Woyak/LibraryVersion.h" />
     <File Path="libraries/Woyak/Logger.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
     <File Path="libraries/Woyak/Memory.h" />
