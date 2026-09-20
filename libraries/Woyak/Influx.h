@@ -478,7 +478,7 @@ public:
    {
       if (client == nullptr)
       {
-         Serial.println("InfluxDB write failed: client is null");
+         Logger.log("InfluxDB write failed: client is null");
          return false;
       }
 
@@ -487,16 +487,20 @@ public:
 
       // populate new values, skipping disabled fields and invalid entries
       size_t validFieldCount = 0;
+      size_t disabledCount = 0;
+      size_t invalidCount = 0;
       for (InfluxField* field : _fields)
       {
          if (!field->isEnabled())
          {
+            disabledCount++;
             continue;
          }
 
          const float value = field->get();
          if (std::isnan(value) || std::isinf(value))
          {
+            invalidCount++;
             continue;
          }
 
@@ -506,7 +510,8 @@ public:
 
       if (validFieldCount == 0)
       {
-         Serial.println("InfluxDB write failed: no valid field values to post");
+         Logger.log("InfluxDB write failed: no valid field values to post (" +
+            std::to_string(disabledCount) + " disabled, " + std::to_string(invalidCount) + " NaN/Inf)");
          return false;
       }
 
@@ -520,8 +525,7 @@ public:
          return true;
       }
 
-      Serial.print("InfluxDB write failed: ");
-      Serial.println(client->getLastErrorMessage());
+      Logger.log(std::string("InfluxDB write failed: ") + client->getLastErrorMessage().c_str());
       return false;
    }
 };

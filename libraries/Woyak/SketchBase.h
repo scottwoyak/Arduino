@@ -787,8 +787,7 @@ public:
          // one timestamp.
          if (!_influx->client()->flushBuffer())
          {
-            Serial.print("InfluxDB flush failed: ");
-            Serial.println(_influx->client()->getLastErrorMessage());
+            Logger.log(std::string("InfluxDB flush failed: ") + _influx->client()->getLastErrorMessage().c_str());
          }
       }
    }
