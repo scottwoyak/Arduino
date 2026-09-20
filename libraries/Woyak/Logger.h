@@ -121,7 +121,7 @@ class LoggerClass
             if (!_everConnected)
             {
                _everConnected = true;
-               Serial.println(LOG_SERVER_HOST);
+               Serial.println((std::string("Logger ----- Connected: ") + LOG_SERVER_HOST).c_str());
             }
             _sendHandshake();
             _flushPendingMessages();
@@ -131,11 +131,11 @@ class LoggerClass
             _connected = false;
             if (!_everConnected)
             {
-               Serial.println("FAILED");
+               Serial.println("Logger ----- Connect failed");
             }
             else
             {
-               Serial.println("LogServer disconnected");
+               Serial.println("Logger ----- LogServer disconnected");
             }
             break;
 
@@ -175,7 +175,7 @@ public:
 
       _webSocket.onEvent(_onEvent);
 
-      Serial.print("Logging... ");
+      Serial.println("Logging...");
 
 #ifdef LOG_SERVER_LOCAL
       _webSocket.begin(LOG_SERVER_HOST, LOG_SERVER_PORT, LOG_SERVER_PATH);
