@@ -332,7 +332,6 @@ private:
          if (updateAvailable)
          {
             _availableVersion = serverVersion.c_str();
-            _log((std::string("OTAUpdater: Downloading ") + serverVersion.c_str()).c_str());
          }
 
          return updateAvailable;
@@ -504,6 +503,8 @@ public:
          {
             _handler->onUpdateAvailable(_availableVersion.c_str());
          }
+
+         _log((std::string("OTAUpdater: Downloading ") + _availableVersion).c_str());
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
          // Clear immediately on detecting an update, rather than leaving whatever was on
