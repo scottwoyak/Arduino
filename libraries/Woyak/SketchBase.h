@@ -191,6 +191,67 @@ protected:
    /// <summary>Callback registered via setOnWiFiLostCallback(), used by _onWiFiLost().</summary>
    std::function<bool()> _onWiFiLostCallback = nullptr;
 
+   /// <summary>Callback registered via onStatus(), invoked after the base fields added by _populateStatus() below.</summary>
+   void (*_sketchStatusHandler)(LoggerStatus& status) = nullptr;
+
+   /// <summary>The single SketchBase instance, used by _onGetStatus() to reach the instance whose fields it should add (Logger.onStatus() only accepts a captureless function pointer).</summary>
+   inline static SketchBase* _instance = nullptr;
+
+   ///
+   /// <summary>
+   /// Adds base status fields (Influx bucket, registered sensors, standard
+   /// enclosure/CPU sensor flags, telemetry topic) to a GetStatus reply, then invokes
+   /// the sketch's own handler (registered via onStatus()), if any.
+   /// </summary>
+   /// <param name="status">The in-progress status to add fields to.</param>
+   ///
+   void _populateStatus(LoggerStatus& status)
+   {
+      status.add("Influx Bucket", _site.bucket != nullptr ? _site.bucket : "N/A");
+
+      for (const SensorInit& sensor : _sensors)
+      {
+         const char* label = (sensor.successLabelFunc != nullptr) ? sensor.successLabelFunc() : "OK";
+         status.add(sensor.label, label);
+      }
+
+      if (_config.includeEnclosureTemp)
+      {
+         status.add("Enclosure Temperature", _enclosureTempSensor.readTemperatureF(), INFLUX_DECIMALS);
+         status.add("Enclosure Humidity", _enclosureTempSensor.readHumidity(), INFLUX_DECIMALS);
+      }
+
+      if (_config.includeCpuTemp)
+      {
+         status.add("CPU Temperature", _cpuTempSensor.readTemperatureF(), INFLUX_DECIMALS);
+      }
+
+      if (_telemetryTopic != nullptr)
+      {
+         status.add("Telemetry Topic", _telemetryTopic);
+      }
+
+      if (_sketchStatusHandler != nullptr)
+      {
+         _sketchStatusHandler(status);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Static trampoline registered with Logger.onStatus(), forwarding to the single
+   /// SketchBase instance's _populateStatus().
+   /// </summary>
+   /// <param name="status">The in-progress status to add fields to.</param>
+   ///
+   static void _onGetStatus(LoggerStatus& status)
+   {
+      if (_instance != nullptr)
+      {
+         _instance->_populateStatus(status);
+      }
+   }
+
    ///
    /// <summary>
    /// Returns the InfluxDB site to use when the config has no selectable influx.prompts
@@ -312,7 +373,7 @@ protected:
    void onUpdateFailed(const char* newVersion, const char* reason) override
    {
       std::string otaMessage = std::string("Update to ") + newVersion + " failed: " + reason;
-      _logMessage(otaMessage.c_str());
+      _logMessage(otaMessage.c_str(), LogSeverity::ERROR);
    }
 
    ///
@@ -333,13 +394,16 @@ protected:
    /// <summary>
    /// OTAUpdateEventHandler implementation, invoked for OTA diagnostic messages that are
    /// otherwise only printed to Serial (e.g. version check failures, missing OTA
-   /// partition). Mirrors them to the LogServer.
+   /// partition). Mirrors them to the LogServer, tagging error-type messages as ERROR.
    /// </summary>
    /// <param name="message">The diagnostic message.</param>
    ///
    void onLogMessage(const char* message) override
    {
-      _logMessage(message);
+      std::string text(message);
+      bool isError = text.find("failed") != std::string::npos || text.find("no OTA download partition") != std::string::npos;
+
+      _logMessage(message, isError ? LogSeverity::ERROR : LogSeverity::INFO);
    }
 
    ///
@@ -350,10 +414,11 @@ protected:
    /// connection isn't up yet.
    /// </summary>
    /// <param name="message">Message to log, both to the LogServer and Serial.</param>
+   /// <param name="severity">Severity of the message; ERROR is prefixed with "ERROR: ".</param>
    ///
-   void _logMessage(const char* message)
+   void _logMessage(const char* message, LogSeverity severity = LogSeverity::INFO)
    {
-      Logger.log(message);
+      Logger.log(message, severity);
    }
 
    ///
@@ -383,6 +448,16 @@ protected:
    void _printAndLogStatus(const char* label, const char* value)
    {
       _arduino->printlnInitStatus(label, value);
+   }
+
+   ///
+   /// <summary>Prints a brief status line to the display while logging a separate (typically more detailed) string, via Arduino::printlnInitStatus(), which also logs it automatically.</summary>
+   /// <param name="displayStr">The status text to print to the display.</param>
+   /// <param name="logStr">The status text to log.</param>
+   ///
+   void _printAndLogStatus(const char* displayStr, const char* logStr, Color textColor)
+   {
+      _arduino->printlnInitStatus(displayStr, logStr, textColor);
    }
 
    ///
@@ -433,6 +508,8 @@ public:
         _sensorTimer(SENSOR_INTERVAL_MS)
    {
       ASSERT(arduino != nullptr);
+
+      _instance = this;
    }
 
    ///
@@ -462,6 +539,21 @@ public:
    void setOnWiFiLostCallback(std::function<bool()> callback)
    {
       _onWiFiLostCallback = callback;
+   }
+
+   ///
+   /// <summary>
+   /// Registers a handler invoked when a "GetStatus" command is received, after the
+   /// base fields (Influx bucket, registered sensors, standard enclosure/CPU sensor
+   /// readings, telemetry topic) have been added, allowing the sketch to append its own
+   /// fields (e.g. live readings). Only one handler is supported; call once from
+   /// setup(), after begin().
+   /// </summary>
+   /// <param name="handler">Function invoked with the in-progress status to add fields to.</param>
+   ///
+   void onStatus(void (*handler)(LoggerStatus& status))
+   {
+      _sketchStatusHandler = handler;
    }
 
    ///
@@ -524,9 +616,9 @@ public:
    }
 
    ///
-   /// <summary>Returns the resolved InfluxDB site (only valid after begin() returns).</summary>
+   /// <summary>Returns the resolved InfluxDB context (only valid after begin() returns).</summary>
    ///
-   const InfluxContext& site() const
+   const InfluxContext& context() const
    {
       return _site;
    }
@@ -655,7 +747,7 @@ public:
       {
          influxMessage += std::string(", last shutdown: ") + SerialX::lastShutdownReason().c_str();
       }
-      _printAndLogStatus(influxMessage.c_str());
+      _printAndLogStatus("OK", influxMessage.c_str(), Color::WHITE);
 
       for (const SensorInit& sensor : _sensors)
       {
@@ -679,8 +771,6 @@ public:
       }
 
       _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
-
-      Logger.begin(_config.sketchName, _config.version, _site.site, _site.location, _influxSensor);
 
       if (_config.enableRebooter)
       {
@@ -728,6 +818,15 @@ public:
       }
 
       _afterOTASetup();
+
+      // Started last, after the telemetry connection (if any) has already fully
+      // resolved via waitForClient() in _afterOTASetup(). Logger.begin() itself remains
+      // async like TelemetryClient, but this call blocks until its "Logging... " label
+      // is completed by Logger::_onEvent(), so nothing else can log a line while it's
+      // pending.
+      Logger.begin(_config.sketchName, _config.version, _site.site, _site.location, _influxSensor);
+      _arduino->waitForClient([]() { return Logger.isResolved(); }, []() { Logger.loop(); });
+      Logger.onStatus(_onGetStatus);
 
       setCpuFrequencyMhz(_config.cpuFrequencyMhz);
 
@@ -787,7 +886,7 @@ public:
          // one timestamp.
          if (!_influx->client()->flushBuffer())
          {
-            Logger.log(std::string("InfluxDB flush failed: ") + _influx->client()->getLastErrorMessage().c_str());
+            Logger.log(std::string("InfluxDB flush failed: ") + _influx->client()->getLastErrorMessage().c_str(), LogSeverity::ERROR);
          }
       }
    }

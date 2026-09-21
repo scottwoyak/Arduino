@@ -6,6 +6,7 @@
 #include <ArduinoJson.h>
 
 #include "Util.h"
+#include "Logger.h"
 
 // Display-based methods are only available on boards with a display.
 // ARDUINO_DISPLAY_SUPPORTED is defined by ArduinoBoard.h when the target board has one.
@@ -100,8 +101,7 @@ private:
 
       if (httpCode != HTTP_CODE_OK)
       {
-         Serial.print("DeviceConfig: HTTP GET failed, code: ");
-         Serial.println(httpCode);
+         Logger.log("DeviceConfig: HTTP GET failed, code: " + String(httpCode), LogSeverity::ERROR);
          http.end();
          return _Result::FETCH_FAILED;
       }
@@ -113,10 +113,8 @@ private:
       DeserializationError error = deserializeJson(doc, payload);
       if (error)
       {
-         Serial.print("DeviceConfig: JSON parse failed: ");
-         Serial.println(error.c_str());
-         Serial.println("DeviceConfig: Response payload was:");
-         Serial.println(payload);
+         Logger.log("DeviceConfig: JSON parse failed: " + String(error.c_str()), LogSeverity::ERROR);
+         Logger.log("DeviceConfig: Response payload was: " + payload, LogSeverity::ERROR);
          return _Result::FETCH_FAILED;
       }
 

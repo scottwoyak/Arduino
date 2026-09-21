@@ -105,7 +105,28 @@ Monitor monitor(&arduino, SKETCH_CONFIG);
 
 ///
 /// <summary>
-/// Prints a summary table of all detected sensors: how each is connected (multiplexor
+/// Adds each sensor's current temperature/humidity readings to a GetStatus reply,
+/// on top of Logger's/SketchBase's base fields. Reads each sensor live rather than
+/// reporting a cached value, since GetStatus is infrequent and can afford the read.
+/// </summary>
+/// <param name="status">The in-progress status to add fields to.</param>
+///
+void onStatus(LoggerStatus& status)
+{
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
+   {
+      if (sensors[i]->exists())
+      {
+         multi.select(SENSOR_CONFIGS[i].port);
+         status.add(std::string(SENSOR_CONFIGS[i].item) + " Temperature", sensors[i]->readTemperatureF(), 3);
+         status.add(std::string(SENSOR_CONFIGS[i].item) + " Humidity", sensors[i]->readHumidity(), 2);
+      }
+   }
+}
+
+///
+/// <summary>
+/// Prints a summary table of all detected sensors:
 /// port, direct I2C, or the built-in ESP32 sensor), its I2C address, sensor type, and
 /// its location/item tag.
 /// </summary>
@@ -161,6 +182,7 @@ void setup()
    monitor.addSensor("CPU", []() { return sensors[CPU_SENSOR_INDEX]->begin(new ESP32TempSensor(), true); }, nullptr, false);
 
    monitor.begin();
+   monitor.onStatus(onStatus);
 
    printSensorSummary();
 
@@ -170,6 +192,8 @@ void setup()
       tempFields[i] = point->addTimeAverageField(SENSOR_AVERAGE_PERIOD_S, "temperature", 3);
       humFields[i] = point->addTimeAverageField(SENSOR_AVERAGE_PERIOD_S, "humidity", 2);
    }
+
+   Logger.logInitializationComplete();
 }
 
 void loop()

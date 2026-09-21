@@ -478,7 +478,7 @@ public:
    {
       if (client == nullptr)
       {
-         Logger.log("InfluxDB write failed: client is null");
+         Logger.log("InfluxDB write failed: client is null", LogSeverity::ERROR);
          return false;
       }
 
@@ -511,7 +511,7 @@ public:
       if (validFieldCount == 0)
       {
          Logger.log("InfluxDB write failed: no valid field values to post (" +
-            std::to_string(disabledCount) + " disabled, " + std::to_string(invalidCount) + " NaN/Inf)");
+            std::to_string(disabledCount) + " disabled, " + std::to_string(invalidCount) + " NaN/Inf)", LogSeverity::ERROR);
          return false;
       }
 
@@ -525,7 +525,7 @@ public:
          return true;
       }
 
-      Logger.log(std::string("InfluxDB write failed: ") + client->getLastErrorMessage().c_str());
+      Logger.log(std::string("InfluxDB write failed: ") + client->getLastErrorMessage().c_str(), LogSeverity::ERROR);
       return false;
    }
 };

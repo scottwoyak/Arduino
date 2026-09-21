@@ -155,6 +155,13 @@ private:
    std::string _firmwareUrl;
    TimerSecs _checkTimer;
 
+   // The originally configured check interval, in seconds. _checkTimer's own duration is
+   // repeatedly overwritten by _secsUntilNextAlignedCheck() (to land the *next* check on
+   // an aligned wall-clock boundary), so this is kept separately as the stable interval
+   // to align against; using _checkTimer's live duration for that calculation would
+   // otherwise compound each time it's re-armed, collapsing the interval towards zero.
+   unsigned long _checkIntervalSecs;
+
    /// <summary>Version detected by the last _isUpdateAvailable() call that returned true.</summary>
    std::string _availableVersion;
 
@@ -216,7 +223,7 @@ private:
    ///
    unsigned long _secsUntilNextAlignedCheck() const
    {
-      unsigned long intervalSecs = _checkTimer.getDurationMs() / 1000UL;
+      unsigned long intervalSecs = _checkIntervalSecs;
       if (intervalSecs == 0)
       {
          return 0;
@@ -249,19 +256,22 @@ private:
 
    ///
    /// <summary>
-   /// Prints a diagnostic OTA message to Serial and, if a handler is registered, mirrors
-   /// it via OTAUpdateEventHandler::onLogMessage() (e.g. so SketchBase can also send it to
-   /// the LogServer).
+   /// Reports a diagnostic OTA message: if a handler is registered, mirrors it via
+   /// OTAUpdateEventHandler::onLogMessage() (e.g. so SketchBase/ViewerSketch can send it
+   /// to the LogServer, which also echoes to Serial via Logger.log()). Otherwise, prints
+   /// directly to Serial so the message isn't lost.
    /// </summary>
    /// <param name="message">The message to print and mirror.</param>
    ///
    void _log(const char* message)
    {
-      Serial.println(message);
-
       if (_handler != nullptr)
       {
          _handler->onLogMessage(message);
+      }
+      else
+      {
+         Serial.println(message);
       }
    }
 
@@ -291,7 +301,7 @@ private:
 
       if (httpCode != HTTP_CODE_OK)
       {
-         _log((std::string("OTAUpdater: version check HTTP GET failed, code: ") + std::to_string(httpCode)).c_str());
+         _log((std::string("OTAUpdater: version check HTTP GET failed, code: ") + std::to_string(httpCode) + " (" + HTTPClient::errorToString(httpCode).c_str() + "), url: " + _versionUrl).c_str());
          http.end();
          return false;
       }
@@ -411,7 +421,7 @@ public:
    /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; defaults to 10 minutes.</param>
    ///
    OTAUpdater(const char* version, const char* sketchName, float checkIntervalSecs = DEFAULT_CHECK_INTERVAL_SECS)
-      : _version(version), _checkTimer(checkIntervalSecs)
+      : _version(version), _checkTimer(checkIntervalSecs), _checkIntervalSecs(static_cast<unsigned long>(checkIntervalSecs))
    {
       std::tie(_firmwareUrl, _versionUrl) = _deriveUrls(sketchName);
       _checkTimer.setDurationMs(_secsUntilNextAlignedCheck() * 1000UL);
@@ -431,7 +441,7 @@ public:
    /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; defaults to 10 minutes.</param>
    ///
    OTAUpdater(const char* version, const char* sketchName, ArduinoWithDisplay* arduino, float checkIntervalSecs = DEFAULT_CHECK_INTERVAL_SECS)
-      : _version(version), _checkTimer(checkIntervalSecs), _arduino(arduino)
+      : _version(version), _checkTimer(checkIntervalSecs), _checkIntervalSecs(static_cast<unsigned long>(checkIntervalSecs)), _arduino(arduino)
    {
       std::tie(_firmwareUrl, _versionUrl) = _deriveUrls(sketchName);
       _checkTimer.setDurationMs(_secsUntilNextAlignedCheck() * 1000UL);

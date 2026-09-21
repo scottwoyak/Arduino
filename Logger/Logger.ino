@@ -3,84 +3,61 @@
 //
 // Connects to WiFi and opens a WebSocket connection to the LogServer
 // (C:\SourceCode\LogServer), either the local instance on the LAN or the remote
-// DigitalOcean-hosted instance (see WiFiSettings.h). Once connected, sends an initial
-// JSON handshake identifying the device (deviceId/sketch/version), then sends a
-// heartbeat text log message once per second.
+// DigitalOcean-hosted instance (see WiFiSettings.h), via the shared Logger class (see
+// Logger.h). Once connected, Logger sends the initial JSON handshake identifying the
+// device (deviceId/sketch/version) automatically, then this sketch sends a heartbeat
+// text log message once per second. Also demonstrates handling a sketch-specific
+// command ("Ping") sent from the LogServer, in addition to Logger's built-in
+// "GetStatus" command.
 //
 
 // Uncomment to use the local LogServer instead of the remote one
-//#define LOG_SERVER_LOCAL
+#define LOG_SERVER_LOCAL
 
 #include <string>
 
-#include <WebSocketsClient.h>
-
 #include "ArduinoBoard.h"
+#include "Logger.h"
 #include "SerialX.h"
 #include "Timer.h"
 #include "WiFiSettings.h"
 
-constexpr auto VERSION = "v1.0";
+constexpr auto VERSION = "1.0";
 constexpr auto SKETCH_NAME = "Logger";
 
-constexpr float HEARTBEAT_PERIOD_S = 1.0f;
+constexpr float HEARTBEAT_PERIOD_S = 10.0f;
 
 Arduino arduino;
-WebSocketsClient webSocket;
 TimerSecs heartbeatTimer(HEARTBEAT_PERIOD_S);
-bool connected = false;
 
 ///
 /// <summary>
-/// Sends the initial JSON handshake message identifying this device to the LogServer.
+/// Handles commands received from the LogServer that aren't one of Logger's built-in
+/// commands ("GetStatus").
 /// </summary>
+/// <param name="command">Command text received from the LogServer.</param>
 ///
-void sendHandshake()
+void onCommand(const char* command)
 {
-   std::string deviceId = WiFi.macAddress().c_str();
-
-   std::string message = "{\"DeviceId\":\"" + deviceId +
-      "\",\"Sketch\":\"" + SKETCH_NAME +
-      "\",\"Version\":\"" + VERSION + "\"}";
-
-   webSocket.sendTXT(message.c_str());
-   Serial.println(message.c_str());
+   if (strcasecmp(command, "Hi") == 0)
+   {
+      Logger.respond("Hello");
+   }
+   else
+   {
+      Serial.println((std::string("Unhandled command: ") + command).c_str());
+   }
 }
 
 ///
 /// <summary>
-/// Handles WebSocket lifecycle events: sends the handshake on connect, and tracks the
-/// connected state so the heartbeat loop only sends once the socket is up.
+/// Adds sketch-specific fields to a GetStatus reply, on top of Logger's base fields.
 /// </summary>
-/// <param name="type">The event type reported by WebSocketsClient.</param>
-/// <param name="payload">The event payload, if any.</param>
-/// <param name="length">The length of the payload, in bytes.</param>
+/// <param name="status">The in-progress status to add fields to.</param>
 ///
-void onWebSocketEvent(WStype_t type, uint8_t* payload, size_t length)
+void onStatus(LoggerStatus& status)
 {
-   switch (type)
-   {
-      case WStype_CONNECTED:
-         connected = true;
-         Serial.println("LogServer connected");
-         sendHandshake();
-         break;
-
-      case WStype_DISCONNECTED:
-         connected = false;
-         Serial.println("LogServer disconnected");
-         break;
-
-      case WStype_ERROR:
-      {
-         std::string reason = (payload != nullptr && length > 0) ? std::string((const char*)payload, length) : "";
-         Serial.println(("LogServer error: " + reason).c_str());
-         break;
-      }
-
-      default:
-         break;
-   }
+   status.add("Heartbeat Period", std::to_string(HEARTBEAT_PERIOD_S) + " secs");
 }
 
 void setup()
@@ -90,28 +67,18 @@ void setup()
    arduino.begin();
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD);
 
-   webSocket.onEvent(onWebSocketEvent);
-
-#ifdef LOG_SERVER_LOCAL
-   webSocket.begin(LOG_SERVER_HOST, LOG_SERVER_PORT, LOG_SERVER_PATH);
-#else
-   // The remote LogServer is only reachable over TLS (port 443); certificate
-   // validation is skipped here since the WebSocketsClient library needs a pinned
-   // fingerprint or CA cert to validate, which this sketch does not maintain.
-   webSocket.beginSSL(LOG_SERVER_HOST, LOG_SERVER_PORT, LOG_SERVER_PATH);
-#endif
-
-   Serial.println("Connecting to LogServer...");
+   Logger.begin(SKETCH_NAME, VERSION);
+   Logger.onCommand(onCommand);
+   Logger.onStatus(onStatus);
 }
 
 void loop()
 {
-   webSocket.loop();
+   Logger.loop();
 
-   if (connected && heartbeatTimer.ready())
+   if (Logger.isConnected() && heartbeatTimer.ready())
    {
       std::string message = "Heartbeat from " + std::string(SKETCH_NAME) + " at " + std::to_string(millis()) + "ms";
-      webSocket.sendTXT(message.c_str());
-      Serial.println(message.c_str());
+      Logger.log(message);
    }
 }

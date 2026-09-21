@@ -120,6 +120,24 @@ SketchConfig SKETCH_CONFIG = {
 
 Monitor monitor(&arduino, SKETCH_CONFIG);
 
+///
+/// <summary>
+/// Adds the current sensor readings to a GetStatus reply, on top of Logger's/SketchBase's
+/// base fields. Reads the sensor live rather than reporting a cached value, since
+/// GetStatus is infrequent and can afford the read.
+/// </summary>
+/// <param name="status">The in-progress status to add fields to.</param>
+///
+void onStatus(LoggerStatus& status)
+{
+   Readings readings = sensor.readAll();
+   status.add("Temperature", readings.tempF, INFLUX_TEMP_DECIMAL_PLACES);
+   status.add("Humidity", readings.humidity, INFLUX_HUMIDITY_DECIMAL_PLACES);
+   status.add("Dew Point", readings.dewPointF, INFLUX_TEMP_DECIMAL_PLACES);
+   status.add("Absolute Humidity", readings.absoluteHumidity, INFLUX_HUMIDITY_DECIMAL_PLACES);
+   status.add("Heat Index", readings.heatIndexF, INFLUX_TEMP_DECIMAL_PLACES);
+}
+
 void setup()
 {
    Wire.begin();
@@ -131,6 +149,7 @@ void setup()
    monitor.addSensor("Sensor", []() { return sensor.begin(false, true); }, []() { return sensor.type(); });
 
    monitor.begin();
+   monitor.onStatus(onStatus);
 
    InfluxPoint* point = monitor.addPoint();
    tempField = point->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
@@ -138,6 +157,8 @@ void setup()
    dewPointField = point->addTimeAverageField(INFLUX_INTERVAL_S, "dewPoint", INFLUX_TEMP_DECIMAL_PLACES);
    absoluteHumidityField = point->addTimeAverageField(INFLUX_INTERVAL_S, "absoluteHumidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
    heatIndexField = point->addTimeAverageField(INFLUX_INTERVAL_S, "heatIndex", INFLUX_TEMP_DECIMAL_PLACES);
+
+   Logger.logInitializationComplete();
 }
 
 void loop()

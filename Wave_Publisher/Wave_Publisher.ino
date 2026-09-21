@@ -42,14 +42,6 @@
 // Uncomment to use local telemetry server instead of remote
 //#define TELEMETRY_LOCAL
 
-// version.txt contains this sketch's own version (e.g. "v1.0"); MakeVersion() appends
-// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
-// compiled VERSION without manually editing each version.txt.
-const auto VERSION = MakeVersion(
-#include "version.txt"
-);
-constexpr auto SKETCH_NAME = "Wave_Publisher";
-
 // This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
 
@@ -60,6 +52,14 @@ constexpr auto SKETCH_NAME = "Wave_Publisher";
 #include "WiFiSettings.h"
 
 #include "Publisher.h"
+
+// version.txt contains this sketch's own version (e.g. "v1.0"); MakeVersion() appends
+// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
+// compiled VERSION without manually editing each version.txt.
+const auto VERSION = MakeVersion(
+#include "version.txt"
+);
+constexpr auto SKETCH_NAME = "Wave_Publisher";
 
 //#define USE_ULTRASONIC
 #define USE_MS5837
@@ -144,6 +144,19 @@ InfluxField* averageDepthField = nullptr;
 
 Timer depthSampleTimer(DEPTH_SAMPLE_INTERVAL_MS);
 
+///
+/// <summary>
+/// Adds the current average depth and wave height readings to a GetStatus reply, on
+/// top of Logger's/SketchBase's base fields.
+/// </summary>
+/// <param name="status">The in-progress status to add fields to.</param>
+///
+void onStatus(LoggerStatus& status)
+{
+   status.add("Average Depth", depth->getAverageDepth(), INFLUX_AVG_DEPTH_DECIMALS);
+   status.add("Wave Height", depth->getWaveHeight(), INFLUX_AVG_DEPTH_DECIMALS);
+}
+
 void setup()
 {
    // solid on while starting up; switches to wave-height-based fading in loop() once wave data is available
@@ -153,11 +166,14 @@ void setup()
    publisher.setValueSource([]() { return depth->getDepth(); });
 
    publisher.begin();
+   publisher.onStatus(onStatus);
 
    // avgDepth isn't posted until the 5 minute averaging window is full (see loop())
    InfluxPoint* devicePoint = publisher.addPoint("Sensors", { { "sensor", "WaveHeight" } });
    averageDepthField = devicePoint->addValueField("avgDepth", INFLUX_AVG_DEPTH_DECIMALS);
    averageDepthField->setEnabled(false);
+
+   Logger.logInitializationComplete();
 }
 
 void loop()

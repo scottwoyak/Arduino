@@ -26,14 +26,6 @@
 // Uncomment to use local telemetry server instead of remote
 //#define TELEMETRY_LOCAL
 
-// version.txt contains this sketch's own version (e.g. "1.2"); MakeVersion() appends
-// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
-// compiled VERSION without manually editing each version.txt.
-const auto VERSION = MakeVersion(
-#include "version.txt"
-);
-constexpr auto SKETCH_NAME = "Wind_Publisher";
-
 // This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
 
@@ -43,6 +35,14 @@ constexpr auto SKETCH_NAME = "Wind_Publisher";
 #include "WiFiSettings.h"
 
 #include "Publisher.h"
+
+// version.txt contains this sketch's own version (e.g. "1.2"); MakeVersion() appends
+// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
+// compiled VERSION without manually editing each version.txt.
+const auto VERSION = MakeVersion(
+#include "version.txt"
+);
+constexpr auto SKETCH_NAME = "Wind_Publisher";
 
 // ----------- InfluxDB site selection
 constexpr InfluxContext INFLUX_PROMPTS[] = {
@@ -90,6 +90,19 @@ SketchConfig PUBLISHER_CONFIG = {
 
 Publisher publisher(&arduino, PUBLISHER_CONFIG);
 
+///
+/// <summary>
+/// Adds the current wind speed reading to a GetStatus reply, on top of
+/// Logger's/SketchBase's base fields. Reads the sensor live rather than reporting a
+/// cached value, since GetStatus is infrequent and can afford the read.
+/// </summary>
+/// <param name="status">The in-progress status to add fields to.</param>
+///
+void onStatus(LoggerStatus& status)
+{
+   status.add("Wind Speed", wind.getSpeed(), 1);
+}
+
 void setup()
 {
    // power the wind encoder/sensor
@@ -107,6 +120,9 @@ void setup()
    publisher.setOnStartedCallback([]() { arduino.setStatus(Status::NONE); });
 
    publisher.begin();
+   publisher.onStatus(onStatus);
+
+   Logger.logInitializationComplete();
 }
 
 void loop()

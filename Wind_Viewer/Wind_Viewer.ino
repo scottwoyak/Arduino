@@ -31,6 +31,16 @@
 // board package entry).
 #define ARDUINO_HOSYOND_ESP32_S3_VIEWER
 
+// Declares which VLW font sizes this sketch actually uses (2 and 4 - see
+// MIN_TEXT_SIZE/MAX_HEADER_TEXT_SIZE below - plus 3, this board's
+// DEFAULT_HEADING_SIZE used by printInitHeader() during boot), so
+// ArduinoWithDisplay.h/Fonts/Roboto*.h only compile in the needed font data instead of
+// all 7 sizes, reducing flash usage.
+#define TEXT_SIZES_CUSTOM
+#define TEXT_SIZE_2
+#define TEXT_SIZE_3
+#define TEXT_SIZE_4
+
 #include <string>
 
 #include <esp_heap_caps.h>
@@ -41,15 +51,6 @@ constexpr auto PREFERENCES_NAMESPACE = "WindViewer";
 
 // Selected at startup via prompt in setup().
 std::string telemetryTopic;
-
-// version.txt contains this sketch's own version (e.g. "v1.0"); MakeVersion() appends
-// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
-// compiled VERSION without manually editing each version.txt.
-const auto VERSION = MakeVersion(
-#include "version.txt"
-); // TEMPORARY: debug build tag, increment (debugA/B/C...) each time this is reflashed while debugging
-constexpr auto SKETCH_NAME = "Wind_Viewer";
-
 
 #include "ArduinoBoard.h"
 
@@ -69,6 +70,14 @@ constexpr auto SKETCH_NAME = "Wind_Viewer";
 #include "Timer.h"
 #include "WiFiSettings.h"
 #include "ViewerSketch.h"
+
+// version.txt contains this sketch's own version (e.g. "v1.0"); MakeVersion() appends
+// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
+// compiled VERSION without manually editing each version.txt.
+const auto VERSION = MakeVersion(
+#include "version.txt"
+); // TEMPORARY: debug build tag, increment (debugA/B/C...) each time this is reflashed while debugging
+constexpr auto SKETCH_NAME = "Wind_Viewer";
 
 // ----------- Telemetry
 Arduino arduino;
@@ -280,8 +289,15 @@ void setup()
    displayFooter();
 
    viewer.beginTelemetry(telemetryTopic.c_str(), &telemetryHandler);
+   viewer.onStatus([](LoggerStatus& status)
+   {
+      status.add("Topic", telemetryTopic.c_str());
+      status.add("Wind Speed", viewer.getClient()->getValue(), 1);
+   });
    logDiagnostics("after beginTelemetry()");
    delay(1000); // provide time for the wind meter to get a reading
+
+   Logger.logInitializationComplete();
 }
 
 void loop()

@@ -60,6 +60,22 @@ constexpr auto RIGHT_TELEMETRY_TOPIC = "Gate/Right";
 constexpr auto GATE_OPENER_HOST = "192.168.1.9";
 constexpr uint16_t GATE_OPENER_PORT = 80;
 
+#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
+
+// Declares which VLW font sizes this sketch actually uses (2, 4, and 5 - see
+// setTextSize()/HISTORY_TITLE_TEXT_SIZE/HISTORY_ROW_TEXT_SIZE below - plus 3, which is
+// this board's DEFAULT_HEADING_SIZE used by printInitHeader() during boot), so
+// ArduinoWithDisplay.h/Fonts/Roboto*.h only compile in the needed font data instead of
+// all 7 sizes, reducing flash usage.
+#define TEXT_SIZES_CUSTOM
+#define TEXT_SIZE_2
+#define TEXT_SIZE_3
+#define TEXT_SIZE_4
+#define TEXT_SIZE_5
+
+#include "ArduinoBoard.h"
+#include "LibraryVersion.h"
+
 // version.txt contains this sketch's own version (e.g. "v1.06"); MakeVersion() appends
 // the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each version.txt.
@@ -67,11 +83,6 @@ const auto VERSION = MakeVersion(
 #include "version.txt"
 );
 constexpr auto SKETCH_NAME = "Gate_Viewer";
-
-#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
-
-#include "ArduinoBoard.h"
-#include "LibraryVersion.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Viewer)."
@@ -603,7 +614,7 @@ private:
          _serverVersion.clear();
          _status.clear();
          _started = false;
-         Serial.println("Right gate disconnected");
+         Logger.log("Right gate disconnected", LogSeverity::ERROR);
          Util::reset(TELEMETRY_RESET_DELAY_S);
          break;
 
@@ -623,8 +634,7 @@ private:
             _status = str;
             if (str.starts_with("ERR"))
             {
-               Serial.print("Right gate start failure: ");
-               Serial.println(str.c_str());
+               Logger.log("Right gate start failure: " + str, LogSeverity::ERROR);
             }
             else
             {
@@ -772,6 +782,15 @@ void setup()
    viewer.begin();
 
    viewer.beginTelemetry(LEFT_TELEMETRY_TOPIC, &telemetryHandler);
+   viewer.onStatus([](LoggerStatus& status)
+   {
+      status.add("Left Topic", LEFT_TELEMETRY_TOPIC);
+      status.add("Right Topic", RIGHT_TELEMETRY_TOPIC);
+      status.add("Left Gate Angle", leftLine.lastAzimuth, 0);
+      status.add("Right Gate Angle", rightLine.lastAzimuth, 0);
+   });
+
+   Logger.logInitializationComplete();
 }
 
 void loop()

@@ -324,10 +324,17 @@ void setup()
 
    publisher.setTelemetryHandler(&telemetryHandler);
    publisher.begin();
+   publisher.onStatus([](LoggerStatus& status)
+   {
+      status.add("Source", TEST_FUNCTION_LABELS[sourceEditor.get()]);
+      status.add("Last Value", lastValue, 3);
+   });
 
    Url url(publisher.client()->getUrl().c_str());
    hostValue.set(url.getHost().c_str());
    table.draw();
+
+   Logger.logInitializationComplete();
 }
 
 void loop()

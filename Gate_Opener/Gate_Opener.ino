@@ -122,6 +122,18 @@ void checkGateRelayTrigger()
 
 ///
 /// <summary>
+/// Adds the current gate state to a GetStatus reply, on top of Logger's/SketchBase's
+/// base fields.
+/// </summary>
+/// <param name="status">The in-progress status to add fields to.</param>
+///
+void onStatus(LoggerStatus& status)
+{
+   status.add("Gate", gateTriggerRelay ? "OPEN" : "CLOSED");
+}
+
+///
+/// <summary>
 /// Handles GET / by rendering a single full-window button that triggers the gate to
 /// open.
 /// </summary>
@@ -191,6 +203,7 @@ void setup()
    digitalWrite(GATE_RELAY_PIN, LOW);
 
    monitor.begin();
+   monitor.onStatus(onStatus);
 
    server.on("/", HTTP_GET, handleRoot);
    server.on("/Gate", HTTP_GET, handleGetGate);
@@ -202,6 +215,8 @@ void setup()
 
    arduino.setStatus(Status::READY);
    updateGateStatus();
+
+   Logger.logInitializationComplete();
 }
 
 void loop()

@@ -152,7 +152,11 @@ function Find-LatestBin([string]$sketchDir, [string]$sketchName)
 	}
 
 	$binName = "$sketchName.ino.bin"
-	$candidates = Get-ChildItem -Path $buildsRoot -Recurse -Filter $binName -ErrorAction SilentlyContinue
+	# Exclude build\_publish, which is this script's own staging output (see below); without
+	# this, a previously staged/legacy-named binary left there from an earlier publish could
+	# be picked up as the "latest" build, causing later Copy-Item calls to copy a file onto itself.
+	$candidates = Get-ChildItem -Path $buildsRoot -Recurse -Filter $binName -ErrorAction SilentlyContinue |
+		Where-Object { $_.FullName -notlike (Join-Path $buildsRoot "_publish\*") }
 	if (-not $candidates -or $candidates.Count -eq 0)
 	{
 		throw "No '$binName' found under '$buildsRoot'. Build the sketch in Visual Studio first."
@@ -167,19 +171,13 @@ function Get-BoardId([string]$sketchDir, [string]$sketchName)
 	# ARDUINO_BOARD_VARIANT_ID (defined per-branch in libraries\Woyak\ArduinoBoard.h). That
 	# macro distinguishes physical wiring variants that share the same underlying Arduino
 	# IDE board type (e.g. Hosyond Viewer vs. generic Playground both build as
-	# ARDUINO_BOARD=ESP32S3_DEV), so we must resolve it the same way here: first look for
-	# a custom variant #define in the sketch's .ino, then fall back to the raw
-	# ARDUINO_BOARD macro from the .vcxproj for boards selected directly by IDE board type.
-	$inoPath = Join-Path $sketchDir "$sketchName.ino"
-	if (Test-Path $inoPath)
-	{
-		$variantMatch = Select-String -Path $inoPath -Pattern '^\s*#define\s+ARDUINO_(HOSYOND_ESP32_S3_VIEWER|WAVESHARE_ESP32_S3_ZERO_SENSORS)\b' | Select-Object -First 1
-		if ($variantMatch)
-		{
-			return $variantMatch.Matches[0].Groups[1].Value
-		}
-	}
-
+	# ARDUINO_BOARD=ESP32S3_DEV), so we must resolve it the same way here: read the raw
+	# ARDUINO_BOARD macro from the .vcxproj first (reflecting whichever board is actually
+	# selected/built in the IDE), and only consult the sketch's .ino for a custom variant
+	# #define when that board type is ambiguous (i.e. ESP32S3_DEV, which multiple wiring
+	# variants share). Checking the .ino unconditionally would misidentify the board
+	# whenever a different board type (e.g. an Adafruit Feather) is currently selected but
+	# the sketch still contains a variant #define from a previous board.
 	$vcxprojPath = Join-Path $sketchDir "$sketchName.vcxproj"
 	if (-not (Test-Path $vcxprojPath))
 	{
@@ -193,14 +191,27 @@ function Get-BoardId([string]$sketchDir, [string]$sketchName)
 	}
 
 	$boardId = $match.Matches[0].Groups[1].Value
-	if ($boardId -eq 'ESP32S3_DEV')
+	if ($boardId -ne 'ESP32S3_DEV')
 	{
-		# Generic ESP32S3 Dev Module boards are assumed to be wired up as a Playground
-		# setup (see ArduinoBoard.h), matching ARDUINO_BOARD_VARIANT_ID's "_PLAYGROUND" suffix.
-		return 'ESP32S3_DEV_PLAYGROUND'
+		return $boardId
 	}
 
-	return $boardId
+	# ESP32S3_DEV is ambiguous (shared by multiple wiring variants); disambiguate via the
+	# sketch's .ino variant #define, if present.
+	$inoPath = Join-Path $sketchDir "$sketchName.ino"
+	if (Test-Path $inoPath)
+	{
+		$variantMatch = Select-String -Path $inoPath -Pattern '^\s*#define\s+ARDUINO_(HOSYOND_ESP32_S3_VIEWER|WAVESHARE_ESP32_S3_ZERO_SENSORS)\b' | Select-Object -First 1
+		if ($variantMatch)
+		{
+			return $variantMatch.Matches[0].Groups[1].Value
+		}
+	}
+
+	# Generic ESP32S3 Dev Module boards with no variant #define are assumed to be wired up
+	# as a Playground setup (see ArduinoBoard.h), matching ARDUINO_BOARD_VARIANT_ID's
+	# "_PLAYGROUND" suffix.
+	return 'ESP32S3_DEV_PLAYGROUND'
 }
 
 Write-Host "Publishing release for sketch '$SketchName'..."

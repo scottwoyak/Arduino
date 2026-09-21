@@ -136,8 +136,6 @@ public:
    ///
    void begin() override
    {
-      _checkRunningPartition();
-
       display.init();
 
       display.setRotation(DisplayRotation::LANDSCAPE);
@@ -361,6 +359,12 @@ public:
       display.setTextSize(1);
 
       size = constrain(size, 0, 7);
+
+      // A null entry means this size was compiled out via TEXT_SIZES_CUSTOM/TEXT_SIZE_n
+      // in the sketch; loadFont() would crash trying to read through it, so fail loudly
+      // here instead so the missing TEXT_SIZE_n define is obvious.
+      ASSERT((mono ? RobotoMonoBold[size] : Roboto[size]) != nullptr);
+
       if (mono)
       {
          display.loadFont(RobotoMonoBold[size]);
@@ -422,6 +426,9 @@ public:
       sprite.createSprite(width, height);
 
       size = constrain(size, 0, 7);
+
+      // See setTextSize() for why this guards against a compiled-out font size.
+      ASSERT((mono ? RobotoMonoBold[size] : Roboto[size]) != nullptr);
 
       // load our own copy of the font rather than sharing the display's runtime font
       // pointer, which can be freed out from under us if the display later loads a

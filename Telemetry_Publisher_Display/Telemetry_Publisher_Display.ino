@@ -74,6 +74,9 @@ void setup()
    publisher.setValueSource([]() { return sensor.get(); });
 
    publisher.begin();
+   publisher.onStatus([](LoggerStatus& status) { status.add("Test Value", sensor.get(), 3); });
+
+   Logger.logInitializationComplete();
 }
 
 void loop()

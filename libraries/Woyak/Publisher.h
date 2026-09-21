@@ -122,18 +122,23 @@ protected:
 
    ///
    /// <summary>
-   /// Constructs the telemetry WebSocket client and starts its connection. Not followed
-   /// by Influx::endInit() - the initialization display (WiFi, Time, Influx, and now
-   /// Telemetry rows) is left on-screen so the async connection's OK/FAILED result
-   /// (printed by TelemetryEventHandler) stays visible. Sketches that show a different
-   /// UI once connected (e.g. via client()->isStarted()) are responsible for clearing
-   /// the display themselves at that point.
+   /// Constructs the telemetry WebSocket client and starts its connection, then blocks
+   /// (via ArduinoBase::waitForClient()) until it resolves (connects or fails) before
+   /// returning, so its "Telemetry... " label always completes before the next setup
+   /// step (Logger.begin()) can print anything. The telemetry client itself remains
+   /// fully async - only this setup-time wait is blocking - and Influx::endInit() is not
+   /// called since the initialization display (WiFi, Time, Influx, and now Telemetry
+   /// rows) is left on-screen so the connection's OK/FAILED result (printed by
+   /// TelemetryEventHandler) stays visible. Sketches that show a different UI once
+   /// connected (e.g. via client()->isStarted()) are responsible for clearing the
+   /// display themselves at that point.
    /// </summary>
    ///
    void _afterOTASetup() override
    {
       _client = new TelemetryPublisher(_telemetryTopic, _config.telemetry.decimals, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
       _arduino->initClient("Telemetry", [this]() { _client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, _status);
+      _arduino->waitForClient([this]() { return _client->isStarted(); }, [this]() { _client->loop(); });
    }
 
    ///

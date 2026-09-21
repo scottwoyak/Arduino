@@ -10,6 +10,7 @@
 
 #include "ArduinoBase.h"
 #include "Logger.h"
+#include "OTAUpdater.h"
 #include "SiteConfig.h"
 #include "Status.h"
 #include "TelemetryClient.h"
@@ -26,7 +27,7 @@
 /// checkForOTA() once from loop().
 /// </summary>
 ///
-class ViewerSketch
+class ViewerSketch : private OTAUpdateEventHandler
 {
 protected:
    /// <summary>Board wrapper.</summary>
@@ -92,12 +93,16 @@ protected:
 
       _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
 
-      Logger.begin(_sketchName, _version);
-
       if (_enableOTA)
       {
-         _arduino->enableOTA(_version, _sketchName);
+         _arduino->enableOTA(_version, _sketchName, _status, OTAUpdater::DEFAULT_CHECK_INTERVAL_SECS, this);
       }
+
+      // Started last, mirroring SketchBase's pattern: blocks (via waitForClient()) until
+      // the "Logging... " label printed by begin() is completed by Logger::_onEvent(),
+      // so nothing else may log a line until then. Logger itself remains async.
+      Logger.begin(_sketchName, _version);
+      _arduino->waitForClient([]() { return Logger.isResolved(); }, []() { Logger.loop(); });
    }
 
    ///
@@ -112,6 +117,21 @@ protected:
       {
          _arduino->checkForOTA();
       }
+   }
+
+   ///
+   /// <summary>
+   /// Registers a handler invoked when a "GetStatus" command is received from the
+   /// LogServer, allowing the sketch to report its own fields (e.g. the last received
+   /// telemetry value). Only one handler is supported; call once from setup(), after
+   /// begin(). Simply forwards to Logger.onStatus(), since a Viewer has no base fields
+   /// of its own to add first.
+   /// </summary>
+   /// <param name="handler">Function invoked with the in-progress status to add fields to.</param>
+   ///
+   void onStatus(void (*handler)(LoggerStatus& status))
+   {
+      Logger.onStatus(handler);
    }
 
    void loop()
@@ -187,5 +207,79 @@ protected:
    TelemetrySubscriber* getClient() const
    {
       return _client;
+   }
+
+private:
+   ///
+   /// <summary>
+   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater just before it
+   /// downloads and installs a newly detected firmware version. Logs the update before
+   /// it starts.
+   /// </summary>
+   /// <param name="newVersion">The newly detected version string.</param>
+   ///
+   void onUpdateAvailable(const char* newVersion) override
+   {
+      std::string otaMessage = std::string("Updating from ") + _version + " to " + newVersion;
+      _logMessage(otaMessage.c_str());
+   }
+
+   ///
+   /// <summary>
+   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater when a detected
+   /// update fails to download/install. Logs the failure at ERROR severity.
+   /// </summary>
+   /// <param name="newVersion">The version that failed to install.</param>
+   /// <param name="reason">The error reported by the underlying HTTP update client.</param>
+   ///
+   void onUpdateFailed(const char* newVersion, const char* reason) override
+   {
+      std::string otaMessage = std::string("Update to ") + newVersion + " failed: " + reason;
+      _logMessage(otaMessage.c_str(), LogSeverity::ERROR);
+   }
+
+   ///
+   /// <summary>
+   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater when a detected
+   /// update downloads and installs successfully, just before the device restarts.
+   /// Logs the success.
+   /// </summary>
+   /// <param name="newVersion">The version that was successfully installed.</param>
+   ///
+   void onUpdateSucceeded(const char* newVersion) override
+   {
+      std::string otaMessage = std::string("Updated to ") + newVersion;
+      _logMessage(otaMessage.c_str());
+   }
+
+   ///
+   /// <summary>
+   /// OTAUpdateEventHandler implementation, invoked for OTA diagnostic messages that
+   /// are otherwise only printed to Serial (e.g. version check failures, missing OTA
+   /// partition). Mirrors them to the LogServer, tagging error-type messages as ERROR.
+   /// </summary>
+   /// <param name="message">The diagnostic message.</param>
+   ///
+   void onLogMessage(const char* message) override
+   {
+      std::string text(message);
+      bool isError = text.find("failed") != std::string::npos || text.find("no OTA download partition") != std::string::npos;
+
+      _logMessage(message, isError ? LogSeverity::ERROR : LogSeverity::INFO);
+   }
+
+   ///
+   /// <summary>
+   /// Sends a text log message to the LogServer, tagged implicitly by the handshake
+   /// (deviceId/sketch/version) sent when the connection was established. Does nothing
+   /// (other than the Serial echo performed by Logger.log()) if the LogServer
+   /// connection isn't up yet.
+   /// </summary>
+   /// <param name="message">Message to log, both to the LogServer and Serial.</param>
+   /// <param name="severity">Severity of the message; ERROR is prefixed with "ERROR: ".</param>
+   ///
+   void _logMessage(const char* message, LogSeverity severity = LogSeverity::INFO)
+   {
+      Logger.log(message, severity);
    }
 };

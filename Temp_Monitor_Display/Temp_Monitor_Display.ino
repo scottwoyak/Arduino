@@ -55,6 +55,13 @@
 //
 #include <string>
 
+// Declares which VLW font sizes this sketch actually uses (TEXT_SIZE_SMALL=2 and
+// VALUE_TEXT_SIZE=4 below), so ArduinoWithDisplay.h/Fonts/Roboto*.h only compile in
+// the needed font data instead of all 7 sizes, reducing flash usage.
+#define TEXT_SIZES_CUSTOM
+#define TEXT_SIZE_2
+#define TEXT_SIZE_4
+
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
@@ -148,6 +155,25 @@ SketchConfig MONITOR_CONFIG = {
 
 Monitor monitor(&arduino, MONITOR_CONFIG);
 
+///
+/// <summary>
+/// Adds the most recent averaged sensor readings to a GetStatus reply, on top of
+/// Logger's/SketchBase's base fields.
+/// </summary>
+/// <param name="status">The in-progress status to add fields to.</param>
+///
+void onStatus(LoggerStatus& status)
+{
+   status.add("Temperature", tempField->get(), INFLUX_TEMP_DECIMAL_PLACES);
+   if (sensor.supportsHumidity())
+   {
+      status.add("Humidity", humField->get(), INFLUX_HUMIDITY_DECIMAL_PLACES);
+      status.add("Dew Point", dewPointField->get(), INFLUX_TEMP_DECIMAL_PLACES);
+      status.add("Absolute Humidity", absoluteHumidityField->get(), INFLUX_HUMIDITY_DECIMAL_PLACES);
+      status.add("Heat Index", heatIndexField->get(), INFLUX_TEMP_DECIMAL_PLACES);
+   }
+}
+
 void setup()
 {
    Wire.begin();
@@ -166,6 +192,7 @@ void setup()
    monitor.addSensor("Sensor", []() { return sensor.begin(false, true); }, []() { return sensor.type(); });
 
    monitor.begin();
+   monitor.onStatus(onStatus);
 
    InfluxPoint* point = monitor.addPoint();
    tempField = point->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
@@ -190,12 +217,18 @@ void setup()
    delay(STARTUP_DELAY_S * 1000UL);
 
    arduino.clearDisplay();
+
+   Logger.logInitializationComplete();
 }
 
-void loop()
+///
+/// <summary>
+/// Samples the sensor and updates the time-averaged Influx fields, once per
+/// SENSOR_INTERVAL_MS.
+/// </summary>
+///
+void updateSensorReadings()
 {
-   monitor.loop();
-
    if (sensorTimer.ready())
    {
       Readings readings = sensor.readAll();
@@ -205,71 +238,136 @@ void loop()
       absoluteHumidityField->set(readings.absoluteHumidity);
       heatIndexField->set(readings.heatIndexF);
    }
+}
 
+///
+/// <summary>
+/// Draws the header line ("Influx" + sensor type) at the top of the display.
+/// </summary>
+/// <returns>The header's height in pixels.</returns>
+///
+int16_t drawHeader()
+{
    arduino.setCursor(0, 0);
    arduino.setTextSize(TEXT_SIZE_SMALL);
    arduino.print("Influx", Color::HEADING);
    arduino.printR(sensor.type(), Color::GRAY);
    arduino.println();
-   int16_t headerHeight = arduino.charH();
+   return arduino.charH();
+}
+
+///
+/// <summary>
+/// Draws the footer line (site/location + version) at the bottom of the display.
+/// </summary>
+///
+void drawFooter()
+{
+   arduino.setTextSize(TEXT_SIZE_SMALL);
+   arduino.setCursor(0, -arduino.charH());
+   arduino.print(monitor.siteLocation(), Color::CYAN);
+   arduino.printR(VERSION, Color::SUB_LABEL);
+}
+
+///
+/// <summary>
+/// Clears the content area between the header and footer exactly once when switching
+/// between the all-values table and the normal readout, to avoid flicker from clearing
+/// the header/footer content that isn't changing.
+/// </summary>
+/// <param name="allValuesMode">True if the all-values table is currently shown.</param>
+/// <param name="headerHeight">The header's height in pixels.</param>
+/// <param name="footerHeight">The footer's height in pixels.</param>
+///
+void updateAllValuesMode(bool allValuesMode, int16_t headerHeight, int16_t footerHeight)
+{
+   if (allValuesMode != wasAllValuesMode)
+   {
+      arduino.clear(Rect16{ 0, (uint16_t)headerHeight, arduino.width(), (uint16_t)(arduino.height() - headerHeight - footerHeight) });
+      allValuesTable.invalidate();
+      wasAllValuesMode = allValuesMode;
+   }
+}
+
+///
+/// <summary>
+/// Shows all 5 time-averaged readings with labels, column-aligned via FieldTable,
+/// while buttonA is held.
+/// </summary>
+/// <param name="temp">Current time-averaged temperature.</param>
+/// <param name="hum">Current time-averaged humidity.</param>
+///
+void drawAllValuesReadout(float temp, float hum)
+{
+   allValuesTemp = temp;
+   if (sensor.supportsHumidity())
+   {
+      allValuesHum.set(humFormat.toString(hum));
+      allValuesDewPoint.set(tempFormat.toString(dewPointField->get()));
+      allValuesAbsHum.set(humFormat.toString(absoluteHumidityField->get()));
+      allValuesHeatIndex.set(tempFormat.toString(heatIndexField->get()));
+   }
+   else
+   {
+      allValuesHum.set(humFormat.toNoValueString());
+      allValuesDewPoint.set(tempFormat.toNoValueString());
+      allValuesAbsHum.set(humFormat.toNoValueString());
+      allValuesHeatIndex.set(tempFormat.toNoValueString());
+   }
+   allValuesTable.draw();
+}
+
+///
+/// <summary>
+/// Shows the centered temperature and humidity readout at large text size.
+/// </summary>
+/// <param name="temp">Current time-averaged temperature.</param>
+/// <param name="hum">Current time-averaged humidity.</param>
+/// <param name="headerHeight">The header's height in pixels.</param>
+/// <param name="footerHeight">The footer's height in pixels.</param>
+///
+void drawNormalReadout(float temp, float hum, int16_t headerHeight, int16_t footerHeight)
+{
+   arduino.setTextSize(VALUE_TEXT_SIZE);
+   int16_t valuesHeight = 2 * arduino.charH() + SPACING;
+   int16_t availableHeight = arduino.height() - headerHeight - footerHeight;
+   arduino.setCursorY(headerHeight + (availableHeight - valuesHeight) / 2);
+   arduino.printlnD(temp, tempFormat, Color::VALUE);
+
+   arduino.setCursorY(arduino.getCursorY() + SPACING);
+   if (sensor.supportsHumidity())
+   {
+      arduino.printlnD(hum, humFormat, Color::VALUE);
+   }
+   else
+   {
+      arduino.printlnD(humFormat, Color::GRAY);
+   }
+}
+
+void loop()
+{
+   monitor.loop();
+
+   updateSensorReadings();
+
+   int16_t headerHeight = drawHeader();
    int16_t footerHeight = arduino.charH(TEXT_SIZE_SMALL);
 
    float temp = tempField->get();
    float hum = humField->get();
 
    bool allValuesMode = arduino.buttonA.isPressed();
-   if (allValuesMode != wasAllValuesMode)
-   {
-      // Switching between the all-values table and the normal readout: clear only the
-      // content area between the header and footer, to avoid flicker from clearing the
-      // header/footer content that isn't changing.
-      arduino.clear(Rect16{ 0, (uint16_t)headerHeight, arduino.width(), (uint16_t)(arduino.height() - headerHeight - footerHeight) });
-      allValuesTable.invalidate();
-      wasAllValuesMode = allValuesMode;
-   }
+   updateAllValuesMode(allValuesMode, headerHeight, footerHeight);
 
    if (allValuesMode)
    {
-      // Show all 5 time-averaged readings with labels, column-aligned via FieldTable,
-      // while buttonA is held.
-      allValuesTemp = temp;
-      if (sensor.supportsHumidity())
-      {
-         allValuesHum.set(humFormat.toString(hum));
-         allValuesDewPoint.set(tempFormat.toString(dewPointField->get()));
-         allValuesAbsHum.set(humFormat.toString(absoluteHumidityField->get()));
-         allValuesHeatIndex.set(tempFormat.toString(heatIndexField->get()));
-      }
-      else
-      {
-         allValuesHum.set(humFormat.toNoValueString());
-         allValuesDewPoint.set(tempFormat.toNoValueString());
-         allValuesAbsHum.set(humFormat.toNoValueString());
-         allValuesHeatIndex.set(tempFormat.toNoValueString());
-      }
-      allValuesTable.draw();
+      drawAllValuesReadout(temp, hum);
    }
    else
    {
-      arduino.setTextSize(VALUE_TEXT_SIZE);
-      int16_t valuesHeight = 2 * arduino.charH() + SPACING;
-      int16_t availableHeight = arduino.height() - headerHeight - footerHeight;
-      arduino.setCursorY(headerHeight + (availableHeight - valuesHeight) / 2);
-      arduino.printlnD(temp, tempFormat, Color::VALUE);
-
-      arduino.setCursorY(arduino.getCursorY() + SPACING);
-      if (sensor.supportsHumidity())
-      {
-         arduino.printlnD(hum, humFormat, Color::VALUE);
-      }
-      else
-      {
-         arduino.printlnD(humFormat, Color::GRAY);
-      }
+      drawNormalReadout(temp, hum, headerHeight, footerHeight);
    }
 
-   arduino.setTextSize(TEXT_SIZE_SMALL);
-   arduino.setCursor(0, -arduino.charH());
-   arduino.print(monitor.siteLocation(), Color::CYAN);
-   arduino.printR(VERSION, Color::SUB_LABEL);
+   drawFooter();
 }

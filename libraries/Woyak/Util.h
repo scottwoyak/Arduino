@@ -4,7 +4,9 @@
 #include <Preferences.h>
 #include <esp_system.h>
 #include <esp_sleep.h>
+#include <string>
 #include "Format.h"
+#include "Logger.h"
 
 #if !defined ( BOARD_HAS_PIN_REMAP ) && !defined ( digitalPinToGPIONumber )
  #define digitalPinToGPIONumber(pin) (pin)
@@ -296,8 +298,7 @@ public:
    /// <returns>The previous halt reason, or an empty string if none was recorded.</returns>
    static String checkTheLastShutdownReason()
    {
-      Serial.print("Reset reason: ");
-      Serial.println(resetReasonString());
+      Logger.log(std::string("Reset reason: ") + resetReasonString());
 
       String reason = "";
       Preferences preferences;
@@ -308,8 +309,7 @@ public:
          reason = preferences.getString("halt", "");
          if (reason.length() > 0)
          {
-            Serial.print("Previous halt reason: ");
-            Serial.println(reason);
+            Logger.log(std::string("Previous halt reason: ") + reason.c_str());
          }
          preferences.remove("halt");
       }

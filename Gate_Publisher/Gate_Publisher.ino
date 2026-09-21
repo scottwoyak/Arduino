@@ -20,14 +20,6 @@
 // Uncomment to use local telemetry server instead of remote
 //#define TELEMETRY_LOCAL
 
-// version.txt contains this sketch's own version (e.g. "1.2"); MakeVersion() appends
-// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
-// compiled VERSION without manually editing each version.txt.
-const auto VERSION = MakeVersion(
-#include "version.txt"
-);
-constexpr auto SKETCH_NAME = "Gate_Publisher";
-
 // This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
 
@@ -37,6 +29,14 @@ constexpr auto SKETCH_NAME = "Gate_Publisher";
 #include "WiFiSettings.h"
 
 #include "Publisher.h"
+
+// version.txt contains this sketch's own version (e.g. "1.2"); MakeVersion() appends
+// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
+// compiled VERSION without manually editing each version.txt.
+const auto VERSION = MakeVersion(
+#include "version.txt"
+);
+constexpr auto SKETCH_NAME = "Gate_Publisher";
 
 // ----------- InfluxDB site selection
 constexpr InfluxContext INFLUX_PROMPTS[] = {
@@ -142,19 +142,34 @@ SketchConfig PUBLISHER_CONFIG = {
 
 Publisher publisher(&arduino, PUBLISHER_CONFIG);
 
+///
+/// <summary>
+/// Adds the most recent gate angle to a GetStatus reply, on top of
+/// Logger's/SketchBase's base fields.
+/// </summary>
+/// <param name="status">The in-progress status to add fields to.</param>
+///
+void onStatus(LoggerStatus& status)
+{
+   status.add("Gate Angle", lastReportedAngle, 0);
+}
+
 void setup()
 {
    publisher.addSensor("MLX90393", []() { return magnetometer.begin(); });
    publisher.setValueSource(gateAngle);
 
    publisher.begin();
+   publisher.onStatus(onStatus);
 
    // Zero the gate angle to the azimuth measured at startup, and pick the rotation
    // direction based on the resolved site's location (Left vs Right).
-   leftGate = strcmp(publisher.site().location, "Left") == 0;
+   leftGate = strcmp(publisher.context().location, "Left") == 0;
 
    magnetometer.read();
    zeroAzimuth = magnetometer.azimuth();
+
+   Logger.logInitializationComplete();
 }
 
 void loop()

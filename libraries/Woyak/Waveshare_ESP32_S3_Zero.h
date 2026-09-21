@@ -58,8 +58,6 @@ public:
    ///
    void begin() override
    {
-      _checkRunningPartition();
-
       neoPixel.begin();
       buttonA.begin();
    }

@@ -131,7 +131,7 @@ public:
    ///
    virtual void onDisconnected(const std::string& reason)
    {
-      Logger.log("Telemetry connection lost (" + String(reason.c_str()) + "). Restarting in " + String(int(TELEMETRY_RESET_DELAY_S)) + "s");
+      Logger.log("Telemetry connection lost (" + String(reason.c_str()) + "). Restarting in " + String(int(TELEMETRY_RESET_DELAY_S)) + "s", LogSeverity::ERROR);
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
@@ -165,7 +165,7 @@ public:
    ///
    virtual void onConnectionFailed(const std::string& reason)
    {
-      Logger.log("Could not connect to telemetry server (" + String(reason.c_str()) + "). Restarting in " + String(int(TELEMETRY_RESET_DELAY_S)) + "s");
+      Logger.log("Could not connect to telemetry server (" + String(reason.c_str()) + "). Restarting in " + String(int(TELEMETRY_RESET_DELAY_S)) + "s", LogSeverity::ERROR);
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
@@ -191,7 +191,7 @@ public:
    ///
    virtual void onError(const std::string& message)
    {
-      Serial.println("Error: " + String(message.c_str()));
+      Logger.log(message, LogSeverity::ERROR);
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
@@ -460,9 +460,7 @@ protected:
             _status = str;
             if (str.starts_with("ERR"))
             {
-               Serial.print("Start failure: ");
-               Serial.println(str.c_str());
-               _handler->onError(str);
+               _handler->onError("Start failure: " + str);
             }
             else
             {
@@ -489,8 +487,9 @@ protected:
          Serial.printf("[WS] Got Binary data\n");
          break;
 
+      case WStype_PING:
       case WStype_PONG:
-         Serial.printf("[WS] Pong\n");
+         // Keepalive frames; nothing to do.
          break;
 
       default:

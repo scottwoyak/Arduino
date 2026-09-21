@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 #include <Arduino.h>
-#include <esp_ota_ops.h>
 
 #include "ColorX.h"
 #include "IPrinter.h"
@@ -15,6 +14,16 @@
 #include "TimeSync.h"
 #include "Util.h"
 #include "WiFiX.h"
+
+///
+/// <summary>
+/// Maximum time to block waiting for an async client/service connection (e.g. a
+/// telemetry WebSocket or the LogServer) to finish starting, via
+/// ArduinoBase::waitForClient(). Prevents an unreachable server from hanging setup()
+/// forever; if this expires, the sketch proceeds anyway rather than blocking longer.
+/// </summary>
+///
+constexpr unsigned long CLIENT_CONNECT_TIMEOUT_MS = 15000UL;
 
 ///
 /// <summary>
@@ -56,8 +65,7 @@ protected:
 
       void onUpdateAvailable(const char* newVersion) override
       {
-         Serial.print("OTA update available: ");
-         Serial.println(newVersion);
+         Logger.log(std::string("OTA update available: ") + newVersion);
 
          if (next != nullptr)
          {
@@ -78,6 +86,14 @@ protected:
          if (next != nullptr)
          {
             next->onUpdateSucceeded(newVersion);
+         }
+      }
+
+      void onLogMessage(const char* message) override
+      {
+         if (next != nullptr)
+         {
+            next->onLogMessage(message);
          }
       }
    };
@@ -105,34 +121,6 @@ public:
    ///
    virtual void updateStatusIndicators()
    {
-   }
-
-protected:
-   ///
-   /// <summary>
-   /// Warns (via Serial) if the running firmware isn't booting from the partition a
-   /// plain USB upload writes to, which means the device is running stale firmware left
-   /// over from a previous OTA update rather than the sketch that was just uploaded.
-   /// Most partition schemes reserve a "factory" slot that USB uploads always target, but
-   /// schemes without one (e.g. "min_spiffs", which only defines "app0"/"app1") instead
-   /// have USB uploads target the first OTA slot ("app0"). Call this once from begin().
-   /// </summary>
-   ///
-   void _checkRunningPartition()
-   {
-      const esp_partition_t* running = esp_ota_get_running_partition();
-      if (running == nullptr)
-      {
-         return;
-      }
-
-      const esp_partition_t* factory = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, nullptr);
-      const esp_partition_t* expected = (factory != nullptr) ? factory : esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, nullptr);
-
-      if (expected != nullptr && running != expected)
-      {
-         Serial.printf("WARNING: running from partition '%s', not '%s' -- this may be stale OTA firmware, not your latest upload! Erase flash to fix.\n", running->label, expected->label);
-      }
    }
 
 public:
@@ -225,6 +213,23 @@ public:
    {
       _printlnInitStatusDisplay(str, textColor);
       Logger.log(str);
+   }
+
+   ///
+   /// <summary>
+   /// Prints a one-off status line to the display on display-capable boards, and logs a
+   /// separate (typically more detailed) string to the LogServer (which also echoes it
+   /// to Serial); see Logger.log(). Useful when the display should show a brief summary
+   /// (e.g. "OK") while the full detail is still captured in the log.
+   /// </summary>
+   /// <param name="displayStr">The status text to print to the display.</param>
+   /// <param name="logStr">The status text to log.</param>
+   /// <param name="textColor">The text color (ignored on serial-only implementations).</param>
+   ///
+   void printlnInitStatus(const char* displayStr, const char* logStr, Color textColor)
+   {
+      _printlnInitStatusDisplay(displayStr, textColor);
+      Logger.log(logStr);
    }
 
    ///
@@ -447,6 +452,37 @@ public:
       print("... ", Color::LABEL);
       Logger.logPartial(std::string(label) + "... ");
       beginFunc();
+   }
+
+   ///
+   /// <summary>
+   /// Blocks until an async client/service connection either resolves (isDoneFunc()
+   /// returns true) or CLIENT_CONNECT_TIMEOUT_MS elapses, calling loopFunc() and
+   /// yielding via delay(1) on each iteration so the WebSocket/OTA task watchdog is
+   /// never starved. Used to sequence multiple async connections (e.g. Telemetry then
+   /// Logger) started via initClient()/Logger.begin() so their "label... " completion
+   /// text can never interleave, without changing either client's own async nature.
+   /// </summary>
+   /// <param name="isDoneFunc">Returns true once the connection has succeeded or failed (its own callback prints the result).</param>
+   /// <param name="loopFunc">Services the connection; called once per iteration (e.g. client->loop()).</param>
+   /// <returns>True if isDoneFunc() returned true before the timeout; false if the timeout expired first.</returns>
+   ///
+   bool waitForClient(std::function<bool()> isDoneFunc, std::function<void()> loopFunc)
+   {
+      unsigned long startTime = millis();
+
+      while (!isDoneFunc())
+      {
+         if (millis() - startTime >= CLIENT_CONNECT_TIMEOUT_MS)
+         {
+            return false;
+         }
+
+         loopFunc();
+         delay(1);
+      }
+
+      return true;
    }
 
    ///

@@ -8,6 +8,8 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 
+#include "Logger.h"
+
 ///
 /// <summary>
 /// Utility for synchronizing the system clock via NTP. Replaces the timeSync() helper from
@@ -166,8 +168,7 @@ private:
       {
          if (print)
          {
-            Serial.print("TimeSync: timezone lookup failed, code: ");
-            Serial.println(httpCode);
+            Logger.log("TimeSync: timezone lookup failed, code: " + String(httpCode), LogSeverity::ERROR);
          }
          http.end();
          return 0;
@@ -182,8 +183,7 @@ private:
       {
          if (print)
          {
-            Serial.print("TimeSync: timezone lookup parse failed: ");
-            Serial.println(error.c_str());
+            Logger.log("TimeSync: timezone lookup parse failed: " + String(error.c_str()), LogSeverity::ERROR);
          }
          return 0;
       }
@@ -193,8 +193,7 @@ private:
       {
          if (print)
          {
-            Serial.print("TimeSync: timezone lookup failed: ");
-            Serial.println(doc["message"].as<const char*>());
+            Logger.log("TimeSync: timezone lookup failed: " + String(doc["message"].as<const char*>()), LogSeverity::ERROR);
          }
          return 0;
       }
