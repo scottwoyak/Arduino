@@ -101,6 +101,36 @@ protected:
    /// <summary>Installed as the OTAUpdater's handler by enableOTA(); see _OTALoggingHandler.</summary>
    _OTALoggingHandler _otaLoggingHandler;
 
+   /// <summary>The single ArduinoBase instance with OTA enabled, used by _onForceOTA() to reach the OTAUpdater to force (Logger.onForceOTA() only accepts a captureless function pointer).</summary>
+   inline static ArduinoBase* _otaInstance = nullptr;
+
+   ///
+   /// <summary>
+   /// Static trampoline registered with Logger.onForceOTA(), forwarding to the single
+   /// ArduinoBase instance's OTAUpdater to force a download/install regardless of version.
+   /// </summary>
+   ///
+   static void _onForceOTA()
+   {
+      if (_otaInstance != nullptr && _otaInstance->_ota != nullptr)
+      {
+         _otaInstance->_ota->checkNow(true);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Registers this instance's OTAUpdater with Logger so a "ForceOTA" command downloads
+   /// and installs the current OTA firmware regardless of version. Called at the end of
+   /// enableOTA().
+   /// </summary>
+   ///
+   void _registerForceOTA()
+   {
+      _otaInstance = this;
+      Logger.onForceOTA(_onForceOTA);
+   }
+
 public:
    ///
    /// <summary>
@@ -532,6 +562,7 @@ public:
       _otaLoggingHandler.next = onUpdateAvailable;
       _ota->setHandler(&_otaLoggingHandler);
       _ota->setStatus(status);
+      _registerForceOTA();
       _ota->checkNow();
    }
    ///

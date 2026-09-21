@@ -64,7 +64,11 @@
 .PARAMETER SketchName
 	The name of the sketch to publish (e.g. "Temp_Monitor"). Defaults to the name of
 	the current directory, so it can be invoked from Visual Studio with
-	$(ProjectDir) as the working directory and no explicit argument.
+	$(ProjectDir) as the working directory and no explicit argument. If that default
+	doesn't resolve to a valid sketch directory (e.g. $(ProjectDir) resolved to the
+	solution directory because no document tab from the sketch's project was open),
+	the script falls back to asking the running Visual Studio instance for whichever
+	project is currently selected/active in Solution Explorer.
 
 .PARAMETER RepoRoot
 	Path to the root of the Arduino repo. Defaults to the parent of this script's
@@ -86,10 +90,20 @@ param(
 	[string]$SketchName = (Split-Path -Leaf (Get-Location)),
 	[string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
 	[switch]$IncludeLegacyAssets,
-	[switch]$Relaunched
+	[switch]$Relaunched,
+	[switch]$SketchNameWasDefaulted
 )
 
 $ErrorActionPreference = "Stop"
+
+# Captured before the relaunch below (which forwards -SketchName explicitly, since the
+# relaunched instance's working directory is $RepoRoot rather than the original one), so
+# the active-project fallback further down still knows whether the caller actually
+# specified -SketchName or just got the current-directory default.
+if (-not $Relaunched)
+{
+	$SketchNameWasDefaulted = -not $PSBoundParameters.ContainsKey('SketchName')
+}
 
 # Visual Studio's Tools > External Tools launches this script without an interactive
 # console attached to stdin, so Read-Host (used below to confirm before publishing)
@@ -99,14 +113,21 @@ $ErrorActionPreference = "Stop"
 # then let the original (non-interactive) invocation exit immediately.
 if (-not $Relaunched)
 {
+	# Deliberately no -NoExit here: the relaunched window should close itself
+	# automatically on success. A trap further down catches any terminating error,
+	# prints it, and pauses with -NoExit re-added only in that failure path so the
+	# window stays open long enough to read the error.
 	$argList = @(
-		"-NoExit",
 		"-ExecutionPolicy", "Bypass",
 		"-File", "`"$PSCommandPath`"",
 		"-SketchName", "`"$SketchName`"",
 		"-RepoRoot", "`"$RepoRoot`"",
 		"-Relaunched"
 	)
+	if ($SketchNameWasDefaulted)
+	{
+		$argList += "-SketchNameWasDefaulted"
+	}
 	if ($IncludeLegacyAssets)
 	{
 		$argList += "-IncludeLegacyAssets"
@@ -114,6 +135,185 @@ if (-not $Relaunched)
 
 	Start-Process -FilePath "powershell.exe" -ArgumentList $argList -WorkingDirectory $RepoRoot
 	exit 0
+}
+
+# Since the relaunch above no longer passes -NoExit, this window will close automatically
+# on success. On a terminating error, this trap prints it and pauses (via Read-Host) so
+# the window doesn't disappear before the user can read what went wrong, then exits with
+# a non-zero code.
+trap
+{
+	Write-Host ""
+	Write-Host "ERROR: $_" -ForegroundColor Red
+	Read-Host "Press Enter to close this window"
+	exit 1
+}
+
+# C# helper used by Get-RunningDTE to enumerate the Running Object Table (ROT) and find
+# a running Visual Studio DTE automation object, since GetActiveObject("VisualStudio.DTE")
+# only works when that exact (unversioned) ProgID happens to be registered - newer/preview
+# Visual Studio releases (e.g. 2026) only register a versioned ProgID (e.g.
+# "VisualStudio.DTE.18.0"), which a hardcoded ProgID guess would miss entirely. The whole
+# enumeration is done in C# (rather than PowerShell calling the COM interop interfaces
+# directly) because PowerShell's late-binding cannot invoke methods on the raw
+# IRunningObjectTable/IEnumMoniker interface objects (e.g. EnumRunning/GetDisplayName)
+# marshaled back from Add-Type. Guarded so re-running in the same session (e.g. via
+# -NoExit) doesn't fail with a "type already exists" error.
+if (-not ([System.Management.Automation.PSTypeName]'RotHelper').Type)
+{
+	Add-Type -Language CSharp -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+
+public static class RotHelper
+{
+	public static object GetRunningDTE(out string error)
+	{
+		error = null;
+		IRunningObjectTable rot = null;
+		IBindCtx bindCtx = null;
+		try
+		{
+			int hr = NativeMethods.GetRunningObjectTable(0, out rot);
+			if (hr != 0 || rot == null)
+			{
+				error = "GetRunningObjectTable failed (hr=0x" + hr.ToString("X") + ").";
+				return null;
+			}
+
+			hr = NativeMethods.CreateBindCtx(0, out bindCtx);
+			if (hr != 0 || bindCtx == null)
+			{
+				error = "CreateBindCtx failed (hr=0x" + hr.ToString("X") + ").";
+				return null;
+			}
+
+			IEnumMoniker monikerEnum = null;
+			rot.EnumRunning(out monikerEnum);
+			monikerEnum.Reset();
+
+			IMoniker[] fetched = new IMoniker[1];
+			int matchCount = 0;
+			while (monikerEnum.Next(1, fetched, IntPtr.Zero) == 0)
+			{
+				IMoniker moniker = fetched[0];
+				string displayName = null;
+				try
+				{
+					moniker.GetDisplayName(bindCtx, null, out displayName);
+				}
+				catch
+				{
+					continue;
+				}
+
+				if (displayName != null && displayName.StartsWith("!VisualStudio.DTE"))
+				{
+					matchCount++;
+					object obj = null;
+					try
+					{
+						rot.GetObject(moniker, out obj);
+						if (obj != null)
+						{
+							return obj;
+						}
+					}
+					catch (Exception ex)
+					{
+						error = "GetObject failed for '" + displayName + "': " + ex.Message;
+					}
+				}
+			}
+
+			if (matchCount == 0)
+			{
+				error = "no '!VisualStudio.DTE*' moniker found in the Running Object Table. Is Visual Studio running?";
+			}
+		}
+		catch (Exception ex)
+		{
+			error = "unexpected error: " + ex.Message;
+		}
+
+		return null;
+	}
+
+	private static class NativeMethods
+	{
+		[DllImport("ole32.dll")]
+		public static extern int GetRunningObjectTable(int reserved, out IRunningObjectTable pprot);
+
+		[DllImport("ole32.dll")]
+		public static extern int CreateBindCtx(int reserved, out IBindCtx ppbc);
+	}
+}
+"@
+}
+
+function Get-RunningDTE
+{
+	# Finds a running Visual Studio DTE automation object via the Running Object Table
+	# (see RotHelper.GetRunningDTE above), matching any moniker starting with
+	# "!VisualStudio.DTE" (e.g. "!VisualStudio.DTE.18.0:12345"), regardless of the exact
+	# VS version. This is more robust than GetActiveObject("VisualStudio.DTE"), which only
+	# works for the plain, unversioned ProgID. Any failure is reported via Write-Warning so
+	# a silently-missing DTE connection doesn't look identical to "no match found".
+	$error = $null
+	$dte = [RotHelper]::GetRunningDTE([ref]$error)
+	if (-not $dte)
+	{
+		Write-Warning "Get-RunningDTE: $error"
+		return $null
+	}
+
+	return $dte
+}
+
+function Get-ActiveProjectDirectory
+{
+	# Visual Studio's $(ProjectDir) External Tools macro is resolved from the active
+	# *document* (tab), not the project selected in Solution Explorer, so it comes out
+	# empty/wrong whenever no tab from the sketch's project is open, or when the active
+	# tab belongs to a non-sketch project (e.g. a library header). As a fallback, ask the
+	# running Visual Studio instance directly, via its DTE automation object, for
+	# whichever project is currently selected/active in Solution Explorer. If multiple
+	# Visual Studio instances are running, an arbitrary one is used, so this is only used
+	# as a fallback, not the primary resolution path.
+	$dte = Get-RunningDTE
+	if (-not $dte)
+	{
+		return $null
+	}
+
+	try
+	{
+		$selectedProjects = $dte.ActiveSolutionProjects
+		if ($selectedProjects)
+		{
+			foreach ($project in $selectedProjects)
+			{
+				if ($project -and $project.FullName)
+				{
+					return (Split-Path -Parent $project.FullName)
+				}
+			}
+		}
+
+		Write-Warning "Get-ActiveProjectDirectory: DTE.ActiveSolutionProjects is empty (no project selected in Solution Explorer)."
+	}
+	catch
+	{
+		Write-Warning "Get-ActiveProjectDirectory: failed to read ActiveSolutionProjects: $($_.Exception.Message)"
+		return $null
+	}
+	finally
+	{
+		[System.Runtime.InteropServices.Marshal]::ReleaseComObject($dte) | Out-Null
+	}
+
+	return $null
 }
 
 function Get-EffectiveVersion([string]$sketchDir, [string]$repoRoot)
@@ -214,9 +414,24 @@ function Get-BoardId([string]$sketchDir, [string]$sketchName)
 	return 'ESP32S3_DEV_PLAYGROUND'
 }
 
+$sketchDir = Join-Path $RepoRoot $SketchName
+if ($SketchNameWasDefaulted -and (-not (Test-Path (Join-Path $sketchDir "version.txt"))))
+{
+	# The default (current-directory-derived) SketchName isn't a valid sketch, most
+	# likely because $(ProjectDir) didn't resolve to the intended sketch (e.g. no
+	# document tab from that project was open). Fall back to whichever project is
+	# actually selected/active in Visual Studio's Solution Explorer.
+	$activeProjectDir = Get-ActiveProjectDirectory
+	if ($activeProjectDir -and (Test-Path (Join-Path $activeProjectDir "version.txt")))
+	{
+		$SketchName = Split-Path -Leaf $activeProjectDir
+		$sketchDir = $activeProjectDir
+		Write-Host "Resolved sketch from Visual Studio's active project: '$SketchName'."
+	}
+}
+
 Write-Host "Publishing release for sketch '$SketchName'..."
 
-$sketchDir = Join-Path $RepoRoot $SketchName
 if (-not (Test-Path $sketchDir))
 {
 	throw "Sketch directory not found: '$sketchDir'."
@@ -284,10 +499,41 @@ if ($confirmation -notin @('y', 'Y', 'yes', 'Yes'))
 }
 
 $releaseExists = $true
-gh release view $tag --repo scottwoyak/Arduino *> $null
-if ($LASTEXITCODE -ne 0)
+
+# gh release view exits non-zero when the release doesn't exist yet (e.g. the first
+# publish of a new sketch). With $ErrorActionPreference = "Stop" (set at the top of this
+# script) and PowerShell 7's $PSNativeCommandUseErrorActionPreference (on by default),
+# that non-zero exit/stderr output is turned into a terminating error before
+# $LASTEXITCODE can be checked below, regardless of the *> $null redirection (which only
+# affects the literal output streams, not the synthesized error record). Both preferences
+# must be relaxed around this call so a missing release is treated as normal, expected
+# control flow instead of a script-ending error. $PSNativeCommandUseErrorActionPreference
+# doesn't exist on Windows PowerShell 5.1, so guard its use.
+$hasNativeCommandErrorPref = Test-Path variable:PSNativeCommandUseErrorActionPreference
+if ($hasNativeCommandErrorPref)
 {
-	$releaseExists = $false
+	$previousNativeCommandErrorActionPreference = $PSNativeCommandUseErrorActionPreference
+	$PSNativeCommandUseErrorActionPreference = $false
+}
+
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+
+try
+{
+	gh release view $tag --repo scottwoyak/Arduino *> $null
+	if ($LASTEXITCODE -ne 0)
+	{
+		$releaseExists = $false
+	}
+}
+finally
+{
+	$ErrorActionPreference = $previousErrorActionPreference
+	if ($hasNativeCommandErrorPref)
+	{
+		$PSNativeCommandUseErrorActionPreference = $previousNativeCommandErrorActionPreference
+	}
 }
 
 if ($releaseExists)

@@ -288,11 +288,14 @@ private:
    ///
    /// <summary>
    /// Fetches the version text file and returns whether it differs from this sketch's
-   /// own version (a fresh fetch failure is treated as "no update available").
+   /// own version (a fresh fetch failure is treated as "no update available"), unless
+   /// force is true, in which case an update is always reported as available (using the
+   /// current version as a fallback if the version check itself fails).
    /// </summary>
-   /// <returns>True if a different version is available on the server.</returns>
+   /// <param name="force">If true, report an update as available regardless of the server's version.</param>
+   /// <returns>True if an update should be downloaded and installed.</returns>
    ///
-   bool _isUpdateAvailable()
+   bool _isUpdateAvailable(bool force = false)
    {
       HTTPClient http;
       http.begin(_versionUrl.c_str());
@@ -303,6 +306,14 @@ private:
       {
          _log((std::string("OTAUpdater: version check HTTP GET failed, code: ") + std::to_string(httpCode) + " (" + HTTPClient::errorToString(httpCode).c_str() + "), url: " + _versionUrl).c_str());
          http.end();
+
+         if (force)
+         {
+            _availableVersion = _version;
+            _log("OTAUpdater: forcing update using current version (version check failed)");
+            return true;
+         }
+
          return false;
       }
 
@@ -317,7 +328,7 @@ private:
          serverVersion = serverVersion.substring(1, serverVersion.length() - 1);
       }
 
-         bool updateAvailable = _isNewerVersion(serverVersion.c_str(), _version);
+         bool updateAvailable = force || _isNewerVersion(serverVersion.c_str(), _version);
          if (updateAvailable)
          {
             _availableVersion = serverVersion.c_str();
@@ -478,15 +489,16 @@ public:
    /// be connected before calling this. Halts the device (see _reportMissingPartitionAndHalt())
    /// if the running firmware has no OTA download partition to update into.
    /// </summary>
+   /// <param name="force">If true, downloads and installs the current OTA firmware regardless of version.</param>
    ///
-   void checkNow()
+   void checkNow(bool force = false)
    {
       if (!_hasDownloadPartition())
       {
          _reportMissingPartitionAndHalt();
       }
 
-      if (_isUpdateAvailable())
+      if (_isUpdateAvailable(force))
       {
          if (_handler != nullptr)
          {
