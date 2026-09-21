@@ -251,6 +251,19 @@ public:
       Logger.log(value);
    }
 
+   ///
+   /// <summary>
+   /// Overload of printlnInitStatus(const char* label, const char* value) accepting a
+   /// std::string value so callers don't need to call .c_str() themselves.
+   /// </summary>
+   /// <param name="label">The label text to print and log.</param>
+   /// <param name="value">The value text to print and log right after the label.</param>
+   ///
+   void printlnInitStatus(const char* label, const std::string& value)
+   {
+      printlnInitStatus(label, value.c_str());
+   }
+
 protected:
    ///
    /// <summary>

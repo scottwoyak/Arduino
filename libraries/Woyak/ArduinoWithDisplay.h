@@ -263,6 +263,19 @@ public:
 
    ///
    /// <summary>
+   /// Overload of textWidth(const char*) accepting a std::string so callers don't need
+   /// to call .c_str() themselves.
+   /// </summary>
+   /// <param name="str">String to measure.</param>
+   /// <returns>Width of the string in pixels as it will actually be rendered.</returns>
+   ///
+   uint16_t textWidth(const std::string& str)
+   {
+      return textWidth(str.c_str());
+   }
+
+   ///
+   /// <summary>
    /// Sets the display rotation orientation.
    /// </summary>
    /// <param name="rotation">The desired rotation orientation.</param>

@@ -90,7 +90,7 @@ public:
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
       {
-         _display->printlnR(result.c_str(), Color::VALUE);
+         _display->printlnR(result, Color::VALUE);
       }
 #endif
    }
@@ -387,6 +387,30 @@ protected:
       }
 
       _handler->onSendText(text);
+   }
+
+   ///
+   /// <summary>
+   /// Overload of _sendText(const std::string&) accepting a String so callers don't
+   /// need to call .c_str() themselves.
+   /// </summary>
+   /// <param name="text">The message text to send.</param>
+   ///
+   void _sendText(const String& text)
+   {
+      _sendText(std::string(text.c_str()));
+   }
+
+   ///
+   /// <summary>
+   /// Overload of _sendText(const std::string&) accepting a const char* to disambiguate
+   /// string-literal calls between the std::string and String overloads.
+   /// </summary>
+   /// <param name="text">The message text to send.</param>
+   ///
+   void _sendText(const char* text)
+   {
+      _sendText(std::string(text));
    }
 
    ///
@@ -744,7 +768,7 @@ private:
 
          if (value != _lastValue.c_str())
          {
-            _sendText(value.c_str());
+            _sendText(value);
             _lastValue = value.c_str();
             _ready = false;
          }
@@ -799,7 +823,7 @@ private:
    {
       // subscribe
       std::string cmd = "Subscribe " + getTopic();
-      _sendText(cmd.c_str());
+      _sendText(cmd);
 
       // request the first value
       _sendText("get");

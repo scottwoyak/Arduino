@@ -84,7 +84,7 @@ protected:
       if (_version != nullptr)
       {
          std::string sketchAndVersion = std::string(_sketchName) + ", " + _version;
-         _arduino->printlnInitStatus("Sketch... ", sketchAndVersion.c_str());
+         _arduino->printlnInitStatus("Sketch... ", sketchAndVersion);
       }
       else
       {
@@ -221,7 +221,7 @@ private:
    void onUpdateAvailable(const char* newVersion) override
    {
       std::string otaMessage = std::string("Updating from ") + _version + " to " + newVersion;
-      _logMessage(otaMessage.c_str());
+      _logMessage(otaMessage);
    }
 
    ///
@@ -235,7 +235,7 @@ private:
    void onUpdateFailed(const char* newVersion, const char* reason) override
    {
       std::string otaMessage = std::string("Update to ") + newVersion + " failed: " + reason;
-      _logMessage(otaMessage.c_str(), LogSeverity::ERROR);
+      _logMessage(otaMessage, LogSeverity::ERROR);
    }
 
    ///
@@ -249,7 +249,7 @@ private:
    void onUpdateSucceeded(const char* newVersion) override
    {
       std::string otaMessage = std::string("Updated to ") + newVersion;
-      _logMessage(otaMessage.c_str());
+      _logMessage(otaMessage);
    }
 
    ///
@@ -281,5 +281,18 @@ private:
    void _logMessage(const char* message, LogSeverity severity = LogSeverity::INFO)
    {
       Logger.log(message, severity);
+   }
+
+   ///
+   /// <summary>
+   /// Overload of _logMessage(const char*, LogSeverity) accepting a std::string so
+   /// callers don't need to call .c_str() themselves.
+   /// </summary>
+   /// <param name="message">Message to log, both to the LogServer and Serial.</param>
+   /// <param name="severity">Severity of the message; ERROR is prefixed with "ERROR: ".</param>
+   ///
+   void _logMessage(const std::string& message, LogSeverity severity = LogSeverity::INFO)
+   {
+      _logMessage(message.c_str(), severity);
    }
 };

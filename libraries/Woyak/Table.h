@@ -503,7 +503,7 @@ private:
             }
          }
 
-         _display->print(title.c_str(), _headerColor);
+         _display->print(title, _headerColor);
 
          if (_labelAlignment == Alignment::LEFT)
          {
@@ -526,7 +526,7 @@ private:
          }
 
          _display->setCursor(_columnX[i], _y);
-         _display->print(title.c_str(), color);
+         _display->print(title, color);
       }
 
       int16_t lineY = _y + _display->charH();
@@ -1441,7 +1441,7 @@ public:
                }
             }
 
-            _display->print(row.label.c_str(), row.labelColor);
+            _display->print(row.label, row.labelColor);
 
             if (_labelAlignment == Alignment::LEFT)
             {

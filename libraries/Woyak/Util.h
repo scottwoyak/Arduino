@@ -309,7 +309,7 @@ public:
          reason = preferences.getString("halt", "");
          if (reason.length() > 0)
          {
-            Logger.log(std::string("Previous halt reason: ") + reason.c_str());
+            Logger.log("Previous halt reason: " + reason);
          }
          preferences.remove("halt");
       }

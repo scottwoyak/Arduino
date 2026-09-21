@@ -359,7 +359,7 @@ protected:
    void onUpdateAvailable(const char* newVersion) override
    {
       std::string otaMessage = std::string("Updating from ") + _config.version + " to " + newVersion;
-      _logMessage(otaMessage.c_str());
+      _logMessage(otaMessage);
    }
 
    ///
@@ -373,7 +373,7 @@ protected:
    void onUpdateFailed(const char* newVersion, const char* reason) override
    {
       std::string otaMessage = std::string("Update to ") + newVersion + " failed: " + reason;
-      _logMessage(otaMessage.c_str(), LogSeverity::ERROR);
+      _logMessage(otaMessage, LogSeverity::ERROR);
    }
 
    ///
@@ -387,7 +387,7 @@ protected:
    void onUpdateSucceeded(const char* newVersion) override
    {
       std::string otaMessage = std::string("Updated to ") + newVersion;
-      _logMessage(otaMessage.c_str());
+      _logMessage(otaMessage);
    }
 
    ///
@@ -419,6 +419,19 @@ protected:
    void _logMessage(const char* message, LogSeverity severity = LogSeverity::INFO)
    {
       Logger.log(message, severity);
+   }
+
+   ///
+   /// <summary>
+   /// Overload of _logMessage(const char*, LogSeverity) accepting a std::string so
+   /// callers don't need to call .c_str() themselves.
+   /// </summary>
+   /// <param name="message">Message to log, both to the LogServer and Serial.</param>
+   /// <param name="severity">Severity of the message; ERROR is prefixed with "ERROR: ".</param>
+   ///
+   void _logMessage(const std::string& message, LogSeverity severity = LogSeverity::INFO)
+   {
+      _logMessage(message.c_str(), severity);
    }
 
    ///
@@ -458,6 +471,19 @@ protected:
    void _printAndLogStatus(const char* displayStr, const char* logStr, Color textColor)
    {
       _arduino->printlnInitStatus(displayStr, logStr, textColor);
+   }
+
+   ///
+   /// <summary>
+   /// Overload of _printAndLogStatus(const char*, const char*, Color) accepting a
+   /// std::string log message so callers don't need to call .c_str() themselves.
+   /// </summary>
+   /// <param name="displayStr">The status text to print to the display.</param>
+   /// <param name="logStr">The status text to log.</param>
+   ///
+   void _printAndLogStatus(const char* displayStr, const std::string& logStr, Color textColor)
+   {
+      _printAndLogStatus(displayStr, logStr.c_str(), textColor);
    }
 
    ///
@@ -674,7 +700,7 @@ public:
       {
          startingMessage += std::string(" ") + _config.version;
       }
-      _logMessage(startingMessage.c_str());
+      _logMessage(startingMessage);
 
       _printAndLog("Initializing");
 
@@ -690,11 +716,11 @@ public:
       // Shorten the sketch name (replacing the trailing space with ", ") if the full
       // line doesn't fit in the remaining width of the row, e.g. "Temp..., v2.3".
       int16_t availableWidth = _arduino->width() - _arduino->textWidth("Sketch...");
-      if (_config.version != nullptr && _arduino->textWidth(sketchLine.c_str()) > availableWidth)
+      if (_config.version != nullptr && _arduino->textWidth(sketchLine) > availableWidth)
       {
          std::string suffix = std::string("..., ") + _config.version;
          std::string name = _config.sketchName;
-         while (name.length() > 0 && _arduino->textWidth((name + suffix).c_str()) > availableWidth)
+         while (name.length() > 0 && _arduino->textWidth(name + suffix) > availableWidth)
          {
             name.pop_back();
          }
@@ -747,7 +773,7 @@ public:
       {
          influxMessage += std::string(", last shutdown: ") + SerialX::lastShutdownReason().c_str();
       }
-      _printAndLogStatus("OK", influxMessage.c_str(), Color::WHITE);
+      _printAndLogStatus("OK", influxMessage, Color::WHITE);
 
       for (const SensorInit& sensor : _sensors)
       {
@@ -794,7 +820,7 @@ public:
 
          std::string intervalMessage = std::string("Values measured every ") + std::to_string(SENSOR_INTERVAL_MS) +
                                         " ms with an average uploaded every " + std::to_string(_config.influx.intervalS) + " seconds";
-         _logMessage(intervalMessage.c_str());
+         _logMessage(intervalMessage);
 
          if (_config.includeEnclosureTemp)
          {
