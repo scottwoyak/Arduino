@@ -612,7 +612,7 @@ private:
          _serverVersion.clear();
          _status.clear();
          _started = false;
-         Logger.log("Right gate disconnected", LogSeverity::ERROR);
+         Logger.log("Right gate telemetry disconnected", LogSeverity::ERROR);
          Util::reset(TELEMETRY_RESET_DELAY_S);
          break;
 
@@ -632,7 +632,7 @@ private:
             _status = str;
             if (str.starts_with("ERR"))
             {
-               Logger.log("Right gate start failure: " + str, LogSeverity::ERROR);
+               Logger.log("Right gate telemetry start failure: " + str, LogSeverity::ERROR);
             }
             else
             {
