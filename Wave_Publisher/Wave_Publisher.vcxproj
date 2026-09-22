@@ -82,9 +82,6 @@
       <DeploymentContent>true</DeploymentContent>
     </ClCompile>
   </ItemGroup>
-  <ItemGroup>
-    <Text Include="version.txt" />
-  </ItemGroup>
   <PropertyGroup>
     <DebuggerFlavor>VisualMicroDebugger</DebuggerFlavor>
   </PropertyGroup>
