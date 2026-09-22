@@ -71,12 +71,12 @@ protected:
 
    ///
    /// <summary>
-   /// Prints the sketch name/version banner to Serial and the display, connects to
-   /// WiFi, and enables OTA if configured. Call once from setup(), after registering any
-   /// telemetry client handlers so they're ready to start connecting once WiFi is up.
+   /// Prints the sketch name/version banner to Serial and the display. Call once from
+   /// setup(), before resolveTopic() if the sketch needs to prompt for a telemetry topic
+   /// after the banner but before WiFi connects (see beginConnect()).
    /// </summary>
    ///
-   void begin()
+   void beginBanner()
    {
       _arduino->beginInit();
       Logger.log("Initializing");
@@ -88,7 +88,16 @@ protected:
          const char* versionText = (_version[0] == 'v' || _version[0] == 'V') ? _version + 1 : _version;
          _arduino->printlnInitStatus("Version... ", versionText);
       }
+   }
 
+   ///
+   /// <summary>
+   /// Connects to WiFi, enables OTA if configured, and starts the Logger connection.
+   /// Call once from setup(), after beginBanner() (and, if needed, resolveTopic()).
+   /// </summary>
+   ///
+   void beginConnect()
+   {
       _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
 
       if (_enableOTA)
@@ -101,6 +110,19 @@ protected:
       // so nothing else may log a line until then. Logger itself remains async.
       Logger.begin(_sketchName, _version);
       _arduino->waitForClient([]() { return Logger.isResolved(); }, []() { Logger.loop(); });
+   }
+
+   ///
+   /// <summary>
+   /// Prints the sketch name/version banner to Serial and the display, connects to
+   /// WiFi, and enables OTA if configured. Call once from setup(), after registering any
+   /// telemetry client handlers so they're ready to start connecting once WiFi is up.
+   /// </summary>
+   ///
+   void begin()
+   {
+      beginBanner();
+      beginConnect();
    }
 
    ///

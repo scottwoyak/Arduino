@@ -43,8 +43,6 @@
 
 #include <string>
 
-#include <esp_heap_caps.h>
-
 constexpr const char* TELEMETRY_TOPICS[] = { "Wind/Lake", "Wind/Bragg" };
 constexpr uint8_t NUM_TELEMETRY_TOPICS = 2;
 constexpr auto PREFERENCES_NAMESPACE = "WindViewer";
@@ -74,7 +72,7 @@ std::string telemetryTopic;
 // This sketch's own version (e.g. "v1.0"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("v1.0"); // TEMPORARY: debug build tag, increment (debugA/B/C...) each time this is reflashed while debugging
+const auto VERSION = MakeVersion("v1.0");
 constexpr auto SKETCH_NAME = "Wind_Viewer";
 
 // ----------- Telemetry
@@ -124,24 +122,6 @@ ColorRange speedColorRange;
 // which arrive as more messages.
 constexpr uint16_t SAMPLE_INTERVAL_MS = 100;
 Timer sampleTimer(SAMPLE_INTERVAL_MS);
-
-// TEMPORARY DIAGNOSTICS: checks heap integrity and logs free heap / stack high-water
-// mark to Serial, tagged with a caller-supplied label, to help isolate a suspected
-// heap-corruption or stack-overflow issue. Remove once root-caused.
-void logDiagnostics(const char* label)
-{
-   bool heapOk = heap_caps_check_integrity_all(true);
-   Serial.print("[DIAG] ");
-   Serial.print(label);
-   Serial.print(" heapOk=");
-   Serial.print(heapOk ? "true" : "FALSE");
-   Serial.print(" freeHeap=");
-   Serial.print(ESP.getFreeHeap());
-   Serial.print(" minFreeHeap=");
-   Serial.print(ESP.getMinFreeHeap());
-   Serial.print(" stackHighWater=");
-   Serial.println(uxTaskGetStackHighWaterMark(nullptr));
-}
 
 ///
 /// <summary>
@@ -199,27 +179,6 @@ void displayHeader()
 
 ///
 /// <summary>
-/// Draws the telemetry topic as footer text at the bottom-right of the display. Only
-/// shown on the setup screen; it's cleared when the main display is drawn on telemetry
-/// start.
-/// </summary>
-///
-void displayFooter()
-{
-   Point16 savedCursor = arduino.getCursor();
-   uint8_t savedTextSize = arduino.getTextSize();
-
-   arduino.setTextSize(axisTextSize);
-
-   arduino.setCursor(arduino.width(), -arduino.charH());
-   arduino.printR(telemetryTopic, Color::GRAY);
-
-   arduino.setTextSize(savedTextSize);
-   arduino.setCursor(savedCursor);
-}
-
-///
-/// <summary>
 /// Handles telemetry lifecycle events for this sketch: draws the header once started
 /// and feeds the charts/stats on each received value. Disconnect and error handling use
 /// the base class's default behavior.
@@ -234,17 +193,10 @@ public:
 
    void onStarted() override
    {
-      logDiagnostics("onStarted() entry");
-
       TelemetryEventHandler::onStarted();
-
-      // TEMPORARY: the virtual NeoPixel is disabled (not wired into status) while
-      // debugging a display corruption issue, so there's nothing to turn off here.
 
       arduino.clearDisplay();
       displayHeader();
-
-      logDiagnostics("onStarted() exit");
    }
 
    void onReceiveText(const std::string& text) override
@@ -265,16 +217,15 @@ void setup()
    SerialX::begin();
    arduino.begin();
 
-   viewer.begin();
-   logDiagnostics("after viewer.begin()");
+   viewer.beginBanner();
 
-   telemetryTopic = viewer.resolveTopic(PREFERENCES_NAMESPACE, "Select telemetry topic:", TELEMETRY_TOPICS, NUM_TELEMETRY_TOPICS);
-   logDiagnostics("after resolveTopic()");
+   telemetryTopic = viewer.resolveTopic(PREFERENCES_NAMESPACE, "Select telemetry topic:", TELEMETRY_TOPICS, NUM_TELEMETRY_TOPICS, true);
+
+   viewer.beginConnect();
 
    // the layout depends on the selected topic's length, so build it only once the
    // topic is known
    initLayout();
-   logDiagnostics("after initLayout()");
 
    speedColorRange.addStop(0, Color::LIME);
    speedColorRange.addStop(2, Color::LIME);
@@ -284,15 +235,12 @@ void setup()
    histogramChart->setColorRange(&speedColorRange);
    rollingChart->setColorRange(&speedColorRange);
 
-   displayFooter();
-
    viewer.beginTelemetry(telemetryTopic.c_str(), &telemetryHandler);
    viewer.onStatus([](LoggerStatus& status)
    {
       status.add("Topic", telemetryTopic.c_str());
       status.add("Wind Speed", viewer.getClient()->getValue(), 1);
    });
-   logDiagnostics("after beginTelemetry()");
    delay(1000); // provide time for the wind meter to get a reading
 
    Logger.logInitializationComplete();
@@ -307,13 +255,6 @@ void loop()
    if (client->isStarted() == false)
    {
       return;
-   }
-
-   // TEMPORARY DIAGNOSTICS: periodic heap/stack check to catch slow corruption/leaks.
-   static Timer diagTimer(5000);
-   if (diagTimer.ready())
-   {
-      logDiagnostics("loop()");
    }
 
    float speed = client->getValue();
