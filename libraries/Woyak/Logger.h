@@ -127,6 +127,20 @@ public:
 
    ///
    /// <summary>
+   /// Overload of add(const char*, float, uint8_t) for callers holding a std::string
+   /// name (e.g. one built up via concatenation) rather than a const char*.
+   /// </summary>
+   /// <param name="name">Field name.</param>
+   /// <param name="value">Field value.</param>
+   /// <param name="decimals">Number of decimal places to format with.</param>
+   ///
+   void add(const std::string& name, float value, uint8_t decimals = 1)
+   {
+      add(name.c_str(), value, decimals);
+   }
+
+   ///
+   /// <summary>
    /// Joins all added fields into the final reply text, one "Name: value" pair per line.
    /// </summary>
    /// <returns>The reply text.</returns>
