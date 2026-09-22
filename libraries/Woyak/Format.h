@@ -454,3 +454,82 @@ public:
       return str;
    }
 };
+
+///
+/// <summary>
+/// Formats a duration in milliseconds as a short, human-friendly string, automatically
+/// choosing the largest unit that keeps the displayed value readable: milliseconds
+/// below 1 second, seconds below 120 seconds, minutes below 1 hour, hours below 1 day,
+/// and days otherwise.
+/// </summary>
+/// <param name="durationMs">Duration in milliseconds.</param>
+/// <returns>Formatted duration, e.g. "500 ms", "45 s", "5 m", "3 h", or "2 d".</returns>
+///
+inline String formatDuration(unsigned long durationMs)
+{
+   float value;
+   const char* suffix;
+
+   if (durationMs < 1000)
+   {
+      value = static_cast<float>(durationMs);
+      suffix = " ms";
+   }
+   else if (durationMs < 120000)
+   {
+      value = static_cast<float>(durationMs) / 1000.0f;
+      suffix = " s";
+   }
+   else if (durationMs < 3600000)
+   {
+      value = static_cast<float>(durationMs) / 60000.0f;
+      suffix = " m";
+   }
+   else if (durationMs < 86400000UL)
+   {
+      value = static_cast<float>(durationMs) / 3600000.0f;
+      suffix = " h";
+   }
+   else
+   {
+      value = static_cast<float>(durationMs) / 86400000.0f;
+      suffix = " d";
+   }
+
+   char buffer[16];
+   if (value < 10.0f)
+   {
+      snprintf(buffer, sizeof(buffer), "%.1f%s", value, suffix);
+   }
+   else
+   {
+      snprintf(buffer, sizeof(buffer), "%.0f%s", value, suffix);
+   }
+   return String(buffer);
+}
+
+///
+/// <summary>
+/// Formats a size in bytes as a short, human-friendly string, automatically choosing
+/// the largest unit that keeps the displayed value readable: bytes below 1 KB,
+/// kilobytes below 1 MB, and megabytes otherwise.
+/// </summary>
+/// <param name="bytes">Size in bytes.</param>
+/// <returns>Formatted size, e.g. "512 bytes", "45.0 KB", or "3.2 MB".</returns>
+///
+inline String formatBytes(uint32_t bytes)
+{
+   if (bytes < 1024UL)
+   {
+      return String(bytes) + " bytes";
+   }
+
+   if (bytes < 1024UL * 1024UL)
+   {
+      float value = static_cast<float>(bytes) / 1024.0f;
+      return String(value, value < 10.0f ? 1 : 0) + " KB";
+   }
+
+   float value = static_cast<float>(bytes) / (1024.0f * 1024.0f);
+   return String(value, value < 10.0f ? 1 : 0) + " MB";
+}

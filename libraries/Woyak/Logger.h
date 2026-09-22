@@ -8,6 +8,7 @@
 #include <WebSocketsClient.h>
 
 #include "WiFiSettings.h"
+#include "Format.h"
 
 ///
 /// <summary>
@@ -315,8 +316,8 @@ class LoggerClass
          status.add("WiFi SSID", std::string(WiFi.SSID().c_str()));
          status.add("IP Address", std::string(WiFi.localIP().toString().c_str()));
          status.add("Signal Strength", std::to_string(WiFi.RSSI()) + " dBm");
-         status.add("Uptime", std::to_string(millis() / 1000UL) + " secs");
-         status.add("Free Heap", std::to_string(ESP.getFreeHeap()) + " bytes");
+         status.add("Uptime", std::string(formatDuration(millis()).c_str()));
+         status.add("Free Heap", std::string(formatBytes(ESP.getFreeHeap()).c_str()));
 
          if (_statusHandler != nullptr)
          {
