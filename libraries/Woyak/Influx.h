@@ -236,6 +236,13 @@ public:
    /// </summary>
    /// <returns>Current field value</returns>
    virtual float get() = 0;
+
+   /// <summary>
+   /// Returns whether this field has collected at least one sample. Used to distinguish
+   /// a genuine NaN/Inf value from simply not having warmed up yet.
+   /// </summary>
+   /// <returns>True if at least one sample has been recorded</returns>
+   virtual bool hasData() = 0;
 };
 
 ///
@@ -277,6 +284,15 @@ public:
    float get() override
    {
       return _value;
+   }
+
+   /// <summary>
+   /// Returns whether a value has been assigned yet.
+   /// </summary>
+   /// <returns>True if set() has been called at least once</returns>
+   bool hasData() override
+   {
+      return !isnan(_value);
    }
 };
 
@@ -323,6 +339,15 @@ public:
    {
       return _stats.average();
    }
+
+   /// <summary>
+   /// Returns whether at least one sample has been recorded in the averaging window.
+   /// </summary>
+   /// <returns>True if at least one sample has been added</returns>
+   bool hasData() override
+   {
+      return _stats.count() > 0;
+   }
 };
 
 ///
@@ -367,6 +392,15 @@ public:
    float get() override
    {
       return _stats.average();
+   }
+
+   /// <summary>
+   /// Returns whether at least one sample has been recorded in the rolling window.
+   /// </summary>
+   /// <returns>True if at least one sample has been added</returns>
+   bool hasData() override
+   {
+      return _stats.count() > 0;
    }
 };
 
@@ -489,6 +523,7 @@ public:
       size_t validFieldCount = 0;
       size_t disabledCount = 0;
       size_t invalidCount = 0;
+      size_t warmingUpCount = 0;
       for (InfluxField* field : _fields)
       {
          if (!field->isEnabled())
@@ -500,7 +535,14 @@ public:
          const float value = field->get();
          if (std::isnan(value) || std::isinf(value))
          {
-            invalidCount++;
+            if (field->hasData())
+            {
+               invalidCount++;
+            }
+            else
+            {
+               warmingUpCount++;
+            }
             continue;
          }
 
@@ -510,8 +552,19 @@ public:
 
       if (validFieldCount == 0)
       {
+         // If every missing field is simply still warming up (no samples collected yet)
+         // and none are genuinely invalid, this is expected during startup - skip the
+         // post quietly rather than logging it as an error.
+         if (invalidCount == 0 && warmingUpCount > 0)
+         {
+            Logger.log("InfluxDB post skipped: fields still warming up (" +
+               std::to_string(warmingUpCount) + " pending)");
+            return false;
+         }
+
          Logger.log("InfluxDB write failed: no valid field values to post (" +
-            std::to_string(disabledCount) + " disabled, " + std::to_string(invalidCount) + " NaN/Inf)", LogSeverity::ERROR);
+            std::to_string(disabledCount) + " disabled, " + std::to_string(invalidCount) + " NaN/Inf, " +
+            std::to_string(warmingUpCount) + " warming up)", LogSeverity::ERROR);
          return false;
       }
 
