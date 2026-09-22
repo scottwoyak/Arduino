@@ -212,6 +212,77 @@ public:
 
 ///
 /// <summary>
+/// Uses a single plain (non-RGB) LED to indicate startup and connectivity states: blinking
+/// while initializing/connecting, solid once ready, and rapidly flashing on failure.
+/// </summary>
+///
+class SingleLedStatus : public IStatus
+{
+private:
+   /// <summary>Blink interval used to flash the LED rapidly on Status::FAILED.</summary>
+   static constexpr uint16_t FAST_BLINK_INTERVAL_MS = 100;
+
+   /// <summary>Brightness level used for the solid-on Status::READY state.</summary>
+   static constexpr float READY_BRIGHTNESS = 0.01f;
+
+   LED _led;
+
+public:
+   ///
+   /// <summary>
+   /// Initializes the status indicator with a single LED.
+   /// </summary>
+   /// <param name="pin">The pin used for the status LED.</param>
+   ///
+   SingleLedStatus(uint8_t pin) : _led(pin)
+   {
+   }
+
+   ///
+   /// <summary>
+   /// Initializes the status LED. The LED stays off until setStatus() is called.
+   /// </summary>
+   ///
+   void begin() override
+   {
+      _led.begin();
+   }
+
+   ///
+   /// <summary>
+   /// Updates the LED to represent the specified status: blinking while initializing
+   /// or connecting, solid once ready, and rapidly flashing on failure.
+   /// </summary>
+   /// <param name="status">The status value to display.</param>
+   ///
+   void setStatus(Status status) override
+   {
+      switch (status)
+      {
+      case Status::NONE:
+         _led.turnOff();
+         break;
+
+      case Status::STARTED:
+      case Status::WIFI_CONNECTING:
+      case Status::WEB_CONNECTING:
+      case Status::UPDATING:
+         _led.blink(BLINK_INTERVAL_MS);
+         break;
+
+      case Status::READY:
+         _led.turnOn(READY_BRIGHTNESS);
+         break;
+
+      case Status::FAILED:
+         _led.blink(FAST_BLINK_INTERVAL_MS);
+         break;
+      }
+   }
+};
+
+///
+/// <summary>
 /// Uses a single RGB LED to indicate startup and connectivity states with different colors.
 /// </summary>
 ///

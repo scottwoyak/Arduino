@@ -203,6 +203,20 @@ public:
 
    ///
    /// <summary>
+   /// Adds an additional status indicator (e.g. a sketch-specific single LED wired to
+   /// its own pins) to the combined status indicator, so it reflects the same status as
+   /// the external RGB LED and onboard NeoPixel. Must be called before begin() so the
+   /// added indicator's begin() is invoked.
+   /// </summary>
+   /// <param name="status">The status indicator to add.</param>
+   ///
+   void addStatus(IStatus* status)
+   {
+      _status.addStatus(status);
+   }
+
+   ///
+   /// <summary>
    /// Powers the enclosure temperature sensor, sets the custom I2C pins, initializes
    /// the base board, and starts the combined status indicator (external RGB LED and
    /// onboard NeoPixel).

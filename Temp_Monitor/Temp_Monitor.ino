@@ -87,9 +87,15 @@ constexpr uint16_t SENSOR_INTERVAL_MS = 500;
 constexpr uint8_t INFLUX_TEMP_DECIMAL_PLACES = 3;
 constexpr uint8_t INFLUX_HUMIDITY_DECIMAL_PLACES = 2;
 
+// Extra status LED wired directly to the board: signal on LED_STATUS_PIN, ground on
+// LED_STATUS_GROUND_PIN (held LOW), alongside the board's built-in RGB LED/NeoPixel status.
+constexpr uint8_t LED_STATUS_PIN = 13;
+constexpr uint8_t LED_STATUS_GROUND_PIN = 12;
+
 Arduino arduino;
 TempSensor sensor;
 Timer sensorTimer(SENSOR_INTERVAL_MS);
+SingleLedStatus ledStatus(LED_STATUS_PIN);
 
 InfluxField* tempField = nullptr;
 InfluxField* humField = nullptr;
@@ -138,6 +144,10 @@ void onStatus(LoggerStatus& status)
 
 void setup()
 {
+   // the led ground pin is wired to a pin, so power it up
+   pinMode(LED_STATUS_GROUND_PIN, OUTPUT);
+   digitalWrite(LED_STATUS_GROUND_PIN, LOW);
+
    Wire.begin();
 
    // Fall back to the internal ESP32 CPU temperature sensor if no external sensor is
@@ -145,6 +155,10 @@ void setup()
    // of failing to start. Registered before begin() so the sensor is initialized before
    // WiFi/Influx setup.
    monitor.addSensor("Sensor", []() { return sensor.begin(false, true); }, []() { return sensor.type(); });
+
+   // Registered before monitor.begin() (which calls arduino.begin()) so ledStatus.begin()
+   // is invoked along with the board's built-in status indicators.
+   arduino.addStatus(&ledStatus);
 
    monitor.begin();
    monitor.onStatus(onStatus);
