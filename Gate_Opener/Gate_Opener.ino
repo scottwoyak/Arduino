@@ -36,12 +36,10 @@
 
 #include "Monitor.h"
 
-// version.txt contains this sketch's own version (e.g. "1.7"); MakeVersion() appends
-// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
-// compiled VERSION without manually editing each version.txt.
-const auto VERSION = MakeVersion(
-#include "version.txt"
-);
+// This sketch's own version (e.g. "1.7"); MakeVersion() appends the shared
+// LIBRARY_VERSION build number so shared library changes bump every sketch's
+// compiled VERSION without manually editing each sketch.
+const auto VERSION = MakeVersion("1.7");
 constexpr auto SKETCH_NAME = "Gate_Opener";
 
 constexpr uint16_t WEB_SERVER_PORT = 80;

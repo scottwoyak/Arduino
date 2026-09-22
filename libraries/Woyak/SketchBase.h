@@ -773,7 +773,7 @@ public:
       {
          influxMessage += std::string(", last shutdown: ") + SerialX::lastShutdownReason().c_str();
       }
-      _printAndLogStatus("OK", influxMessage, Color::WHITE);
+      _logMessage(influxMessage);
 
       for (const SensorInit& sensor : _sensors)
       {

@@ -75,12 +75,10 @@
 #include "Monitor.h"
 #include "LibraryVersion.h"
 
-// version.txt contains this sketch's own version (e.g. "2.0"); MakeVersion() appends
-// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
-// compiled VERSION without manually editing each version.txt.
-const auto VERSION = MakeVersion(
-#include "version.txt"
-);
+// This sketch's own version (e.g. "2.0"); MakeVersion() appends the shared
+// LIBRARY_VERSION build number so shared library changes bump every sketch's
+// compiled VERSION without manually editing each sketch.
+const auto VERSION = MakeVersion("2.0");
 constexpr auto SKETCH_NAME = "Temp_Monitor";
 constexpr auto INFLUX_SENSOR = "Temperature";
 constexpr auto PREFERENCES_NAMESPACE = "TempMonitor";

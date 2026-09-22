@@ -9,9 +9,10 @@
 	  1. Locates the sketch's compiled .ino.bin under its local build output
 		  (<SketchName>\build\<board>\<SketchName>.ino.bin), picking the most recently
 		  built one if multiple board folders exist.
-	  2. Computes the effective compiled version by combining the sketch's own
-		  version.txt with the shared LIBRARY_VERSION (libraries\Woyak\LibraryVersion.h),
-		  matching the MakeVersion() logic used at compile time.
+	  2. Computes the effective compiled version by combining the sketch's own version
+		  literal (parsed from its MakeVersion("...") call in the .ino) with the shared
+		  LIBRARY_VERSION (libraries\Woyak\LibraryVersion.h), matching the MakeVersion()
+		  logic used at compile time.
 	  3. Creates (or updates) a single rolling GitHub release tagged with the sketch
 		  name, uploading "<SketchName>.<boardId>.ino.bin" and
 		  "<SketchName>.<boardId>.version.txt" as assets, overwriting only the assets for
@@ -316,16 +317,23 @@ function Get-ActiveProjectDirectory
 	return $null
 }
 
-function Get-EffectiveVersion([string]$sketchDir, [string]$repoRoot)
+function Get-EffectiveVersion([string]$sketchDir, [string]$sketchName, [string]$repoRoot)
 {
-	$versionTxtPath = Join-Path $sketchDir "version.txt"
-	if (-not (Test-Path $versionTxtPath))
+	# The sketch's own version is now an inline string literal passed to MakeVersion(...)
+	# in the .ino itself, rather than a separate version.txt file, so parse it directly
+	# out of the .ino.
+	$inoPath = Join-Path $sketchDir "$sketchName.ino"
+	if (-not (Test-Path $inoPath))
 	{
-		throw "Could not find version.txt at '$versionTxtPath'."
+		throw "Could not find sketch file at '$inoPath'."
 	}
 
-	# version.txt is a quoted string literal, e.g. "2.0"
-	$sketchVersion = (Get-Content $versionTxtPath -Raw).Trim().Trim('"')
+	$sketchVersionMatch = Select-String -Path $inoPath -Pattern 'MakeVersion\("([^"]+)"\)' | Select-Object -First 1
+	if (-not $sketchVersionMatch)
+	{
+		throw "Could not parse MakeVersion(...) version literal from '$inoPath'."
+	}
+	$sketchVersion = $sketchVersionMatch.Matches[0].Groups[1].Value
 
 	$libraryVersionPath = Join-Path $repoRoot "libraries\Woyak\LibraryVersion.h"
 	if (-not (Test-Path $libraryVersionPath))
@@ -365,8 +373,60 @@ function Find-LatestBin([string]$sketchDir, [string]$sketchName)
 	return ($candidates | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
 }
 
-function Get-BoardId([string]$sketchDir, [string]$sketchName)
+function Get-BoardIdFromBinary([string]$binPath)
 {
+	# Scans the compiled .bin for the ARDUINO_BOARD_VARIANT_ID string literal (see
+	# OTAUpdater::_BOARD_ID in libraries\Woyak\OTAUpdater.h), which the compiler embeds
+	# as a plain null-terminated ASCII string. Reads the file as raw bytes (rather than
+	# text) since a firmware binary isn't valid text and would otherwise be corrupted/
+	# misinterpreted by encoding conversion.
+	$bytes = [System.IO.File]::ReadAllBytes($binPath)
+	$text = [System.Text.Encoding]::ASCII.GetString($bytes)
+
+	# All known ARDUINO_BOARD_VARIANT_ID values (see libraries\Woyak\ArduinoBoard.h); the
+	# string must match one of these exactly, framed by non-identifier bytes, to avoid
+	# false positives from incidental substrings elsewhere in the binary.
+	$knownBoardIds = @(
+		'ADAFRUIT_FEATHER_M0',
+		'ADAFRUIT_FEATHER_ESP32S3_TFT',
+		'WAVESHARE_ESP32_S3_ZERO_SENSORS',
+		'WAVESHARE_ESP32_S3_ZERO',
+		'WAVESHARE_ESP32S3_TOUCH_LCD_43',
+		'HOSYOND_ESP32_S3_VIEWER',
+		'ESP32S3_DEV_PLAYGROUND'
+	)
+
+	foreach ($candidate in $knownBoardIds)
+	{
+		if ($text -match "[^A-Za-z0-9_]$candidate[^A-Za-z0-9_]")
+		{
+			return $candidate
+		}
+	}
+
+	return $null
+}
+
+function Get-BoardId([string]$sketchDir, [string]$sketchName, [string]$binPath)
+{
+
+	# string literal ARDUINO_BOARD_VARIANT_ID (defined per-branch in
+	# libraries\Woyak\ArduinoBoard.h), so it's embedded verbatim in the compiled .bin.
+	# Reading it directly from the binary is the authoritative source - unlike inferring
+	# it from the .vcxproj/.ino source below, it can never drift out of sync with what
+	# was actually compiled (e.g. a stale variant #define left in the .ino, or a build
+	# that's older than the current source).
+	if ($binPath -and (Test-Path $binPath))
+	{
+		$boardIdFromBinary = Get-BoardIdFromBinary -binPath $binPath
+		if ($boardIdFromBinary)
+		{
+			return $boardIdFromBinary
+		}
+
+		Write-Warning "Get-BoardId: could not find ARDUINO_BOARD_VARIANT_ID in '$binPath'; falling back to .vcxproj/.ino inference."
+	}
+
 	# Match OTAUpdater::_BOARD_ID (libraries\Woyak\OTAUpdater.h), which now resolves to
 	# ARDUINO_BOARD_VARIANT_ID (defined per-branch in libraries\Woyak\ArduinoBoard.h). That
 	# macro distinguishes physical wiring variants that share the same underlying Arduino
@@ -391,13 +451,16 @@ function Get-BoardId([string]$sketchDir, [string]$sketchName)
 	}
 
 	$boardId = $match.Matches[0].Groups[1].Value
-	if ($boardId -ne 'ESP32S3_DEV')
+	if ($boardId -ne 'ESP32S3_DEV' -and $boardId -ne 'WAVESHARE_ESP32_S3_ZERO')
 	{
 		return $boardId
 	}
 
-	# ESP32S3_DEV is ambiguous (shared by multiple wiring variants); disambiguate via the
-	# sketch's .ino variant #define, if present.
+	# ESP32S3_DEV and WAVESHARE_ESP32_S3_ZERO are both ambiguous: the raw ARDUINO_BOARD
+	# macro reflects only the underlying Arduino core board type, which is shared by
+	# multiple physical wiring variants (e.g. WAVESHARE_ESP32_S3_ZERO vs. its
+	# WAVESHARE_ESP32_S3_ZERO_SENSORS counterpart with a custom-powered I2C bus and RGB
+	# LED). Disambiguate via the sketch's .ino variant #define, if present.
 	$inoPath = Join-Path $sketchDir "$sketchName.ino"
 	if (Test-Path $inoPath)
 	{
@@ -410,19 +473,25 @@ function Get-BoardId([string]$sketchDir, [string]$sketchName)
 
 	# Generic ESP32S3 Dev Module boards with no variant #define are assumed to be wired up
 	# as a Playground setup (see ArduinoBoard.h), matching ARDUINO_BOARD_VARIANT_ID's
-	# "_PLAYGROUND" suffix.
-	return 'ESP32S3_DEV_PLAYGROUND'
+	# "_PLAYGROUND" suffix. WAVESHARE_ESP32_S3_ZERO with no variant #define matches
+	# ArduinoBoard.h's own plain WAVESHARE_ESP32_S3_ZERO branch, so it's returned as-is.
+	if ($boardId -eq 'ESP32S3_DEV')
+	{
+		return 'ESP32S3_DEV_PLAYGROUND'
+	}
+
+	return $boardId
 }
 
 $sketchDir = Join-Path $RepoRoot $SketchName
-if ($SketchNameWasDefaulted -and (-not (Test-Path (Join-Path $sketchDir "version.txt"))))
+if ($SketchNameWasDefaulted -and (-not (Test-Path (Join-Path $sketchDir "$SketchName.ino"))))
 {
 	# The default (current-directory-derived) SketchName isn't a valid sketch, most
 	# likely because $(ProjectDir) didn't resolve to the intended sketch (e.g. no
 	# document tab from that project was open). Fall back to whichever project is
 	# actually selected/active in Visual Studio's Solution Explorer.
 	$activeProjectDir = Get-ActiveProjectDirectory
-	if ($activeProjectDir -and (Test-Path (Join-Path $activeProjectDir "version.txt")))
+	if ($activeProjectDir -and (Test-Path (Join-Path $activeProjectDir "$(Split-Path -Leaf $activeProjectDir).ino")))
 	{
 		$SketchName = Split-Path -Leaf $activeProjectDir
 		$sketchDir = $activeProjectDir
@@ -437,13 +506,13 @@ if (-not (Test-Path $sketchDir))
 	throw "Sketch directory not found: '$sketchDir'."
 }
 
-$version = Get-EffectiveVersion -sketchDir $sketchDir -repoRoot $RepoRoot
+$version = Get-EffectiveVersion -sketchDir $sketchDir -sketchName $SketchName -repoRoot $RepoRoot
 Write-Host "Effective version: $version"
 
 $binFile = Find-LatestBin -sketchDir $sketchDir -sketchName $SketchName
 Write-Host "Using firmware: $($binFile.FullName) (built $($binFile.LastWriteTime))"
 
-$boardId = Get-BoardId -sketchDir $sketchDir -sketchName $SketchName
+$boardId = Get-BoardId -sketchDir $sketchDir -sketchName $SketchName -binPath $binFile.FullName
 Write-Host "Board: $boardId"
 
 # Stage version.txt (board-qualified) with the *effective* compiled version, not the raw

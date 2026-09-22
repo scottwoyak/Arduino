@@ -36,12 +36,10 @@
 
 #include "Publisher.h"
 
-// version.txt contains this sketch's own version (e.g. "1.2"); MakeVersion() appends
-// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
-// compiled VERSION without manually editing each version.txt.
-const auto VERSION = MakeVersion(
-#include "version.txt"
-);
+// This sketch's own version (e.g. "1.2"); MakeVersion() appends the shared
+// LIBRARY_VERSION build number so shared library changes bump every sketch's
+// compiled VERSION without manually editing each sketch.
+const auto VERSION = MakeVersion("1.2");
 constexpr auto SKETCH_NAME = "Wind_Publisher";
 
 // ----------- InfluxDB site selection

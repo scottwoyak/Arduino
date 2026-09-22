@@ -76,12 +76,10 @@ constexpr uint16_t GATE_OPENER_PORT = 80;
 #include "ArduinoBoard.h"
 #include "LibraryVersion.h"
 
-// version.txt contains this sketch's own version (e.g. "v1.06"); MakeVersion() appends
-// the shared LIBRARY_VERSION build number so shared library changes bump every sketch's
-// compiled VERSION without manually editing each version.txt.
-const auto VERSION = MakeVersion(
-#include "version.txt"
-);
+// This sketch's own version (e.g. "v1.06"); MakeVersion() appends the shared
+// LIBRARY_VERSION build number so shared library changes bump every sketch's
+// compiled VERSION without manually editing each sketch.
+const auto VERSION = MakeVersion("v1.06");
 constexpr auto SKETCH_NAME = "Gate_Viewer";
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
