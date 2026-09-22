@@ -81,14 +81,12 @@ protected:
       _arduino->beginInit();
       Logger.log("Initializing");
 
+      _arduino->printlnInitStatus("Sketch... ", _sketchName);
+
       if (_version != nullptr)
       {
-         std::string sketchAndVersion = std::string(_sketchName) + ", " + _version;
-         _arduino->printlnInitStatus("Sketch... ", sketchAndVersion);
-      }
-      else
-      {
-         _arduino->printlnInitStatus("Sketch... ", _sketchName);
+         const char* versionText = (_version[0] == 'v' || _version[0] == 'V') ? _version + 1 : _version;
+         _arduino->printlnInitStatus("Version... ", versionText);
       }
 
       _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
@@ -194,6 +192,7 @@ protected:
    {
       _client = new TelemetrySubscriber(topic, _status, handler);
       _arduino->initClient("Telemetry", [this]() { _client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, _status);
+      _arduino->waitForClient([this]() { return _client->isStarted(); }, [this]() { _client->loop(); });
       return _client;
    }
 

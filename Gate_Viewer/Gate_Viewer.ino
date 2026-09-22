@@ -12,8 +12,8 @@
 // On touch-capable boards (e.g. Viewer, Waveshare ESP32-S3 Touch LCD 4.3), tapping the
 // "CLOSED" banner opens the gate, and tapping the "Last Open" footer shows the opening
 // history (auto-dismissed after a timeout or on the next tap). Boards without touch
-// (e.g. Feather ESP32-S3 TFT) are display-only: gate state and lines are still shown,
-// but tap-to-open and the history view are unavailable.
+// (e.g. Feather ESP32-S3 TFT) use button A to open the gate instead; the history view
+// is unavailable on those boards.
 //
 // Behavior:
 // - Connects to WiFi, then opens two WebSocket connections to the telemetry server (one
@@ -320,6 +320,22 @@ std::string formatFriendlyDate(time_t time)
 
 ///
 /// <summary>
+/// Formats a time_t as a compact numeric date string, e.g. "9/22", for narrower
+/// displays that don't have room for formatFriendlyDate()'s longer form.
+/// </summary>
+/// <param name="time">Time to format.</param>
+/// <returns>Compact date string, e.g. "9/22".</returns>
+///
+std::string formatShortDate(time_t time)
+{
+   struct tm timeInfo;
+   localtime_r(&time, &timeInfo);
+
+   return std::to_string(timeInfo.tm_mon + 1) + "/" + std::to_string(timeInfo.tm_mday);
+}
+
+///
+/// <summary>
 /// Background/banner color used to indicate an open gate, halfway between orange and
 /// yellow.
 /// </summary>
@@ -370,10 +386,11 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth, bool isOpen)
       strftime(timeBuffer, sizeof(timeBuffer), "%I:%M %p", &timeInfo);
       const char* timeStr = (timeBuffer[0] == '0') ? timeBuffer + 1 : timeBuffer;
 
+#ifdef ARDUINO_TOUCH_SUPPORTED
       std::string dateStr = formatFriendlyDate(lastGateOpenTime);
-
       std::string lastOpenText = std::string("Last Open: ") + timeStr + ", " + dateStr;
 
+      arduino.setCursorX(0);
       arduino.setCursorY(-arduino.charH());
 
       // Tap target is at least double the text's height, extending equally above and
@@ -381,7 +398,17 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth, bool isOpen)
       int16_t tapMargin = arduino.charH() / 2;
       lastOpenFooterRect = Rect16(0, arduino.getCursor().y - tapMargin, arduino.width(), arduino.charH() + 2 * tapMargin);
 
-      arduino.printC(lastOpenText.c_str(), messageColor, backgroundColor);
+      arduino.print(lastOpenText.c_str(), messageColor, backgroundColor);
+#else
+      // Narrower, non-touch displays (e.g. the Feather) only have room for a compact
+      // date and time, so drop the "Last Open" label, use the short numeric date
+      // format, and left-align it instead of centering.
+      std::string lastOpenText = formatShortDate(lastGateOpenTime) + ", " + timeStr;
+
+      arduino.setCursorX(0);
+      arduino.setCursorY(-arduino.charH());
+      arduino.print(lastOpenText.c_str(), messageColor, backgroundColor);
+#endif
    }
 
    arduino.setTextSize(savedTextSize);
@@ -907,6 +934,12 @@ void loop()
    if (tapped && !isOpen &&
        touchPoint.x >= gateStateRect.left() && touchPoint.x < gateStateRect.right() &&
        touchPoint.y >= gateStateRect.top() && touchPoint.y < gateStateRect.bottom())
+   {
+      postGateOpen();
+   }
+#else
+   // No touch hardware on this board: use button A to open the gate instead.
+   if (arduino.buttonA.wasPressed() && !isOpen)
    {
       postGateOpen();
    }
