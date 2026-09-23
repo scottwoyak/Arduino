@@ -7,9 +7,10 @@
 // setup/post/flush cycle.
 //
 // Uploads to InfluxDB as measurement "Sensors", tagged with site="Lake", location="Dock",
-// sensor="Temperature", and item=<Surface|Bottom 1|Bottom 2|Enclosure|CPU> identifying which
+// sensor="Temperature", and item=<Surface|Bottom 1|Bottom 2|Enclosure> identifying which
 // sensor the point came from. Fields are "temperature" and "humidity", each averaged over
-// SENSOR_AVERAGE_PERIOD_S before being posted.
+// SENSOR_AVERAGE_PERIOD_S before being posted. The CPU temperature is also uploaded
+// (item=CPU, temperature field only) via SketchConfig.includeCpuTemp.
 //
 // Checks for a firmware update periodically.
 //
@@ -20,7 +21,6 @@
 #include <array>
 
 #include "ArduinoBoard.h"
-#include "ESP32TempSensor.h"
 #include "I2CMultiplexor.h"
 #include "LibraryVersion.h"
 #include "SerialTable.h"
@@ -66,10 +66,8 @@ constexpr std::array SENSOR_CONFIGS = {
    SensorConfig{ 0, "Bottom 1" },
    SensorConfig{ 1, "Bottom 2" },
    SensorConfig{ 2, "Enclosure" },
-   SensorConfig{ 4, "CPU" },  // CPU uses the built-in ESP32 sensor; port is unused
 };
 constexpr uint8_t NUM_SENSORS = SENSOR_CONFIGS.size();
-constexpr uint8_t CPU_SENSOR_INDEX = NUM_SENSORS - 1;  // Last sensor is the built-in ESP32 CPU sensor
 constexpr uint16_t SENSOR_INTERVAL_MS = 200;
 constexpr float SENSOR_AVERAGE_PERIOD_S = 2.0f;  // 2 secs, equivalent to 10 samples at SENSOR_INTERVAL_MS
 
@@ -97,6 +95,7 @@ SketchConfig SKETCH_CONFIG = {
    .influx = INFLUX_CONFIG,
    .enableOTA = true,
    .enableRebooter = true,
+   .includeCpuTemp = true,
 };
 
 Monitor monitor(&arduino, SKETCH_CONFIG);
@@ -124,9 +123,8 @@ void onStatus(LoggerStatus& status)
 
 ///
 /// <summary>
-/// Prints a summary table of all detected sensors:
-/// port, direct I2C, or the built-in ESP32 sensor), its I2C address, sensor type, and
-/// its location/item tag.
+/// Prints a summary table of all detected sensors: I2C mux port, I2C address, sensor
+/// type, and location/item tag.
 /// </summary>
 ///
 void printSensorSummary()
@@ -147,18 +145,8 @@ void printSensorSummary()
          continue;
       }
 
-      String connection;
-      String address;
-      if (i == CPU_SENSOR_INDEX)
-      {
-         connection = "ESP32 Direct";
-         address = "";
-      }
-      else
-      {
-         connection = String("I2C Mux Port ") + SENSOR_CONFIGS[i].port;
-         address = String("0x") + String(sensors[i]->address(), HEX);
-      }
+      String connection = String("I2C Mux Port ") + SENSOR_CONFIGS[i].port;
+      String address = String("0x") + String(sensors[i]->address(), HEX);
 
       String tag = String(INFLUX_SITE) + "/" + INFLUX_LOCATION + "/" + SENSOR_CONFIGS[i].item;
 
@@ -177,7 +165,6 @@ void setup()
    monitor.addSensor("Bottom 1", []() { multi.select(SENSOR_CONFIGS[1].port); return sensors[1]->begin(true); }, nullptr, false);
    monitor.addSensor("Bottom 2", []() { multi.select(SENSOR_CONFIGS[2].port); return sensors[2]->begin(true); }, nullptr, false);
    monitor.addSensor("Enclosure", []() { multi.select(SENSOR_CONFIGS[3].port); return sensors[3]->begin(true); }, nullptr, false);
-   monitor.addSensor("CPU", []() { return sensors[CPU_SENSOR_INDEX]->begin(new ESP32TempSensor(), true); }, nullptr, false);
 
    monitor.begin();
    monitor.onStatus(onStatus);
