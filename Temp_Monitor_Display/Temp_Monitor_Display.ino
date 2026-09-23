@@ -53,6 +53,9 @@
 //     same temperature/humidity reading (see TempSensor::readAll()), sampled every
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //
+// - site=<from Serial prompt/Preferences>, location=<from Serial prompt/Preferences>, sensor=Temperature, item=CPU
+//     temperature: the ESP32 CPU temperature at upload time.
+//
 #include <string>
 
 // Declares which VLW font sizes this sketch actually uses (TEXT_SIZE_SMALL=2 and
@@ -149,6 +152,7 @@ SketchConfig MONITOR_CONFIG = {
    .influx = INFLUX_CONFIG,
    .enableOTA = true,
    .enableRebooter = true,
+   .includeCpuTemp = true,
 };
 
 Monitor monitor(&arduino, MONITOR_CONFIG);

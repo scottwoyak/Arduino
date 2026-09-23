@@ -48,6 +48,9 @@
 //     same temperature/humidity reading (see TempSensor::readAll()), sampled every
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //
+// - site=<from Serial prompt/Preferences>, location=<from Serial prompt/Preferences>, sensor=Temperature, item=CPU
+//     temperature: the ESP32 CPU temperature at upload time.
+//
 
 // This board is wired with an onboard NeoPixel status LED and no display or buttons.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
@@ -120,6 +123,7 @@ SketchConfig SKETCH_CONFIG = {
    .influx = INFLUX_CONFIG,
    .enableOTA = true,
    .enableRebooter = true,
+   .includeCpuTemp = true,
 };
 
 Monitor monitor(&arduino, SKETCH_CONFIG);
