@@ -181,7 +181,6 @@ class LoggerClass
    static inline std::string _version;
    static inline std::string _site;
    static inline std::string _location;
-   static inline std::string _sensor;
 
    /// <summary>Messages logged before the connection was up, sent once it completes.</summary>
    static inline std::vector<std::string> _pendingMessages;
@@ -241,8 +240,7 @@ class LoggerClass
          "\",\"sketch\":\"" + _sketchName +
          "\",\"version\":\"" + _version +
          "\",\"site\":\"" + _site +
-         "\",\"location\":\"" + _location +
-         "\",\"sensor\":\"" + _sensor + "\"}";
+         "\",\"location\":\"" + _location + "\"}";
 
       _send(message.c_str());
    }
@@ -265,7 +263,7 @@ class LoggerClass
    ///
    /// <summary>
    /// Returns "N/A" if the given string is empty; otherwise returns it unchanged. Used
-   /// for GetStatus fields (e.g. Site/Location/Sensor) that aren't set by every sketch.
+   /// for GetStatus fields (e.g. Site/Location) that aren't set by every sketch.
    /// </summary>
    /// <param name="value">String value to check.</param>
    /// <returns>"N/A" if value is empty; otherwise value.</returns>
@@ -312,7 +310,6 @@ class LoggerClass
          status.add("Device ID", std::string(WiFi.macAddress().c_str()));
          status.add("Site", _orNA(_site));
          status.add("Location", _orNA(_location));
-         status.add("Sensor", _orNA(_sensor));
          status.add("WiFi SSID", std::string(WiFi.SSID().c_str()));
          status.add("IP Address", std::string(WiFi.localIP().toString().c_str()));
          status.add("Signal Strength", std::to_string(WiFi.RSSI()) + " dBm");
@@ -417,15 +414,13 @@ public:
    /// <param name="version">Sketch version, sent in the handshake (may be nullptr if not tracked).</param>
    /// <param name="site">Resolved site name, sent in the handshake (may be nullptr if not used).</param>
    /// <param name="location">Resolved location name, sent in the handshake (may be nullptr if not used).</param>
-   /// <param name="sensor">Resolved sensor tag, sent in the handshake (may be nullptr if not used).</param>
    ///
-   static void begin(const char* sketchName, const char* version, const char* site = nullptr, const char* location = nullptr, const char* sensor = nullptr)
+   static void begin(const char* sketchName, const char* version, const char* site = nullptr, const char* location = nullptr)
    {
       _sketchName = sketchName != nullptr ? sketchName : "";
       _version = version != nullptr ? version : "";
       _site = site != nullptr ? site : "";
       _location = location != nullptr ? location : "";
-      _sensor = sensor != nullptr ? sensor : "";
 
       _webSocket.onEvent(_onEvent);
 

@@ -847,16 +847,16 @@ void setup()
       // clear out corrections
       sensor.setTempCorrectionF(0);
 
-      nowPoints[i] = new InfluxPoint("Sensors", { { "sensor", (String("Calibration ") + (i + 1)).c_str() }, { "item", "Now" } });
+      nowPoints[i] = new InfluxPoint("Sensors", { { "item", (String("Calibration ") + (i + 1) + " Now").c_str() } });
       nowFields[i] = nowPoints[i]->addValueField("temperature", 3);
 
-      shortAvgPoints[i] = new InfluxPoint("Sensors", { { "sensor", (String("Calibration ") + (i + 1)).c_str() }, { "item", "Short Average" } });
+      shortAvgPoints[i] = new InfluxPoint("Sensors", { { "item", (String("Calibration ") + (i + 1) + " Short Average").c_str() } });
       shortAvgFields[i] = shortAvgPoints[i]->addValueField("temperature", 3);
 
-      longAvgPoints[i] = new InfluxPoint("Sensors", { { "sensor", (String("Calibration ") + (i + 1)).c_str() }, { "item", "Long Average" } });
+      longAvgPoints[i] = new InfluxPoint("Sensors", { { "item", (String("Calibration ") + (i + 1) + " Long Average").c_str() } });
       longAvgFields[i] = longAvgPoints[i]->addValueField("temperature", 3);
 
-      correctionPoints[i] = new InfluxPoint("Sensors", { { "sensor", (String("Calibration ") + (i + 1)).c_str() }, { "item", "Correction" } });
+      correctionPoints[i] = new InfluxPoint("Sensors", { { "item", (String("Calibration ") + (i + 1) + " Correction").c_str() } });
       correctionFields[i] = correctionPoints[i]->addValueField("temperature", 4);
 
       arduino.preferences.putString((String(ID_KEY_PREFIX) + i).c_str(), sensorExists ? sensor.id() : "");

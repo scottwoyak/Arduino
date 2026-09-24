@@ -16,7 +16,7 @@
 /// bounded by a single view's series rather than by all views combined.
 /// 
 /// Telemetry flow: each sensor maps to five InfluxPoints (current plus the four averaging windows),
-/// all tagged with the sensor's location and a "stat" tag identifying which value they carry, each
+/// all tagged with the sensor's location and an "item" tag identifying which value they carry, each
 /// posting a single "temperature" field. On each upload interval, all active sensor points are
 /// posted individually. Wi-Fi connectivity is monitored continuously and triggers reset on loss.
 /// 
@@ -78,7 +78,7 @@ constexpr uint16_t SENSOR_READ_INTERVAL_MS = 500;
 constexpr auto INFLUX_MEASUREMENT = "Sensors";
 constexpr auto INFLUX_INTERVAL_S = 10;
 constexpr auto INFLUX_TEMPERATURE_FIELD_NAME = "temperature";
-constexpr auto INFLUX_STAT_TAG_NAME = "stat";
+constexpr auto INFLUX_ITEM_TAG_NAME = "item";
 constexpr auto INFLUX_STAT_CURRENT = "current";
 
 // Every uploadAllPoints() call queues up to this many points (one "current" point plus
@@ -250,14 +250,14 @@ void setup()
       currentPoints[i] = new InfluxPoint(INFLUX_MEASUREMENT);
       currentFields[i] = currentPoints[i]->addValueField(INFLUX_TEMPERATURE_FIELD_NAME, INFLUX_TEMP_DECIMAL_PLACES);
       currentPoints[i]->addTag("location", locations[i]);
-      currentPoints[i]->addTag(INFLUX_STAT_TAG_NAME, INFLUX_STAT_CURRENT);
+      currentPoints[i]->addTag(INFLUX_ITEM_TAG_NAME, INFLUX_STAT_CURRENT);
 
       for (uint8_t w = 0; w < NUM_WINDOWS; w++)
       {
          averagePoints[i][w] = new InfluxPoint(INFLUX_MEASUREMENT);
          averageFields[i][w] = averagePoints[i][w]->addTimeAverageField(AVERAGE_WINDOWS_S[w], INFLUX_TEMPERATURE_FIELD_NAME, INFLUX_TEMP_DECIMAL_PLACES);
          averagePoints[i][w]->addTag("location", locations[i]);
-         averagePoints[i][w]->addTag(INFLUX_STAT_TAG_NAME, AVERAGE_WINDOW_LABELS[w]);
+         averagePoints[i][w]->addTag(INFLUX_ITEM_TAG_NAME, AVERAGE_WINDOW_LABELS[w]);
       }
    }
 

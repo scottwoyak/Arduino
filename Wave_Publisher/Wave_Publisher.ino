@@ -24,18 +24,18 @@
 //
 // InfluxDB points uploaded (Measurement: Sensors, bucket=<selected>):
 //
-// - site=<selected>, location=<selected>, sensor=WaveHeight
+// - site=<selected>, location=<selected>
 //     avgDepth: rolling average of raw depth readings (depth->getDepth()) over the
 //     5 minute averaging window (DepthSensorBase::DEFAULT_AVERAGE_DURATION_M); only
 //     posted once that window is fully populated (depth->isAverageFull()).
 //
-// - site=<selected>, location=<selected>, sensor=WaveHeight, item=Enclosure
+// - site=<selected>, location=<selected>, item=Enclosure
 //     temperature: rolling average of the enclosure sensor's readTemperatureF(),
 //     sampled every SENSOR_INTERVAL_MS, over the last INFLUX_ROLLING_SAMPLES readings.
 //     humidity: rolling average of the enclosure sensor's readHumidity(), sampled every
 //     SENSOR_INTERVAL_MS, over the last INFLUX_ROLLING_SAMPLES readings.
 //
-// - site=<selected>, location=<selected>, sensor=WaveHeight, item=CPU
+// - site=<selected>, location=<selected>, item=CPU
 //     temperature: the ESP32 CPU temperature at upload time.
 //
 
@@ -76,8 +76,8 @@ constexpr uint8_t ECHO_PIN = 11;
 
 // ----------- InfluxDB site selection
 constexpr InfluxContext INFLUX_PROMPTS[] = {
-   { "Sensors", "Lake", "Dock", "WaveHeight" },
-   { "Testing", "WaveSite", "WaveLocation", "WaveHeight" },
+   { "Sensors", "Lake", "Dock" },
+   { "Testing", "Lake", "Dock" },
 };
 
 // ----------- Telemetry topic selection
@@ -167,7 +167,7 @@ void setup()
    publisher.onStatus(onStatus);
 
    // avgDepth isn't posted until the 5 minute averaging window is full (see loop())
-   InfluxPoint* devicePoint = publisher.addPoint("Sensors", { { "sensor", "WaveHeight" } });
+   InfluxPoint* devicePoint = publisher.addPoint("Sensors", {});
    averageDepthField = devicePoint->addValueField("avgDepth", INFLUX_AVG_DEPTH_DECIMALS);
    averageDepthField->setEnabled(false);
 

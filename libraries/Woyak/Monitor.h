@@ -226,7 +226,7 @@ protected:
       }
       _printAndLogStatus("Location... ", siteLocation().c_str());
 
-      return InfluxContext{ _bucketName.c_str(), _siteName.c_str(), _locationName.c_str(), _config.influx.context.sensor };
+      return InfluxContext{ _bucketName.c_str(), _siteName.c_str(), _locationName.c_str() };
    }
 
    ///

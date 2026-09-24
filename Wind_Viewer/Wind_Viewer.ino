@@ -72,7 +72,7 @@ std::string telemetryTopic;
 // This sketch's own version (e.g. "v1.0"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("v1.0");
+const auto VERSION = MakeVersion("v1.1");
 constexpr auto SKETCH_NAME = "Wind_Viewer";
 
 // ----------- Telemetry

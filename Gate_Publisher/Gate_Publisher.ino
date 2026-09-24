@@ -10,7 +10,7 @@
 //
 // InfluxDB points uploaded (Measurement: Sensors, bucket=<selected>):
 //
-// - site=Bragg, location=<selected>, sensor=Gate, item=CPU
+// - site=Bragg, location=<selected>, item=CPU
 //     temperature: rolling average of cpuTemp.readTemperatureF(), sampled every
 //     SENSOR_INTERVAL_MS, over the last INFLUX_ROLLING_SAMPLES readings.
 //
@@ -38,10 +38,10 @@ constexpr auto SKETCH_NAME = "Gate_Publisher";
 
 // ----------- InfluxDB site selection
 constexpr InfluxContext INFLUX_PROMPTS[] = {
-   { "Monitor", "Bragg", "Left", "Gate" },
-   { "Monitor", "Bragg", "Right", "Gate" },
-   { "Testing", "Bragg", "Left", "Gate" },
-   { "Testing", "Bragg", "Right", "Gate" },
+   { "Monitor", "Bragg", "Left" },
+   { "Monitor", "Bragg", "Right" },
+   { "Testing", "Bragg", "Left" },
+   { "Testing", "Bragg", "Right" },
 };
 
 // ----------- Telemetry topic selection

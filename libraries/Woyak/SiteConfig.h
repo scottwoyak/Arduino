@@ -26,9 +26,6 @@ struct InfluxContext
 
    /// <summary>Value for the "location" tag attached to points logged for this site.</summary>
    const char* location = nullptr;
-
-   /// <summary>Value for the "sensor" tag attached to points logged for this site.</summary>
-   const char* sensor = nullptr;
 };
 
 ///
@@ -43,7 +40,7 @@ struct InfluxContext
 ///
 struct InfluxConfig
 {
-   /// <summary>Fixed InfluxDB site+location(+sensor) entry used when prompts is empty (no selection prompt). Ignored if prompts is non-empty. If promptForContext is set (Monitor only), only its sensor field is used (bucket/site/location are prompted for instead).</summary>
+   /// <summary>Fixed InfluxDB site+location entry used when prompts is empty (no selection prompt). Ignored if prompts is non-empty. If promptForContext is set (Monitor only), bucket/site/location are prompted for instead.</summary>
    InfluxContext context = { INFLUXDB_BUCKET, nullptr, nullptr };
 
    /// <summary>Table of selectable InfluxDB site+location entries. Leave empty for a sketch with a single fixed site/location (see context) instead of a user-selectable table.</summary>
@@ -51,9 +48,6 @@ struct InfluxConfig
 
    /// <summary>Influx measurement name used for the standard enclosure/CPU points and any points added via addPoint().</summary>
    const char* measurement = "Sensors";
-
-   /// <summary>Influx measurement name used for the single startup/OTA log point.</summary>
-   const char* logMeasurement = "Log";
 
    /// <summary>How often (in seconds) queued Influx points are posted/flushed.</summary>
    uint16_t intervalS = 60;
@@ -118,8 +112,7 @@ private:
    ///
    /// <summary>
    /// Formats an InfluxContext entry with a labeled key="value" pair for each field,
-   /// e.g. Bucket="Monitor" Measurement="Sensors" Sensor="Gate" Site="Bragg"
-   /// Location="Left".
+   /// e.g. Bucket="Monitor" Measurement="Sensors" Site="Bragg" Location="Left".
    /// </summary>
    /// <param name="site">The entry to format.</param>
    /// <param name="measurement">Influx measurement name shared by all entries in the site table.</param>
@@ -127,7 +120,7 @@ private:
    ///
    static String describe(const InfluxContext& site, const char* measurement)
    {
-      return String("Bucket=\"") + site.bucket + "\" Measurement=\"" + measurement + "\" Sensor=\"" + (site.sensor != nullptr ? site.sensor : "") + "\" Site=\"" + site.site + "\" Location=\"" + site.location + "\"";
+      return String("Bucket=\"") + site.bucket + "\" Measurement=\"" + measurement + "\" Site=\"" + site.site + "\" Location=\"" + site.location + "\"";
    }
 
    ///
@@ -187,7 +180,6 @@ private:
          { "#", 5 },
          { "Bucket", 13 },
          { "Measurement", 15 },
-         { "Sensor", 11 },
          { "Site", 11 },
          { "Location", 13 },
       };
@@ -199,7 +191,7 @@ private:
       for (size_t i = 0; i < count; i++)
       {
          String number = String(i + 1) + (i == defaultIndex ? "*" : "");
-         table.printRow(number, sites[i].bucket, measurement, sites[i].sensor, sites[i].site, sites[i].location);
+         table.printRow(number, sites[i].bucket, measurement, sites[i].site, sites[i].location);
       }
       table.printDivider();
 
@@ -242,7 +234,6 @@ private:
          { "#", 5 },
          { "Bucket", 13 },
          { "Measurement", 15 },
-         { "Sensor", 11 },
          { "Site", 11 },
          { "Location", 13 },
       };
@@ -253,7 +244,7 @@ private:
       table.printHeader();
       for (size_t i = 0; i < count; i++)
       {
-         table.printRow(String(i + 1), sites[i].bucket, measurement, sites[i].sensor, sites[i].site, sites[i].location);
+         table.printRow(String(i + 1), sites[i].bucket, measurement, sites[i].site, sites[i].location);
       }
       table.printDivider();
 
@@ -296,7 +287,6 @@ private:
       preferences.end();
 
       size_t matchedIndex = 0;
-      bool hasMatch = false;
       if (hasSavedSite)
       {
          for (size_t i = 0; i < count; i++)
@@ -304,7 +294,6 @@ private:
             if (_site == sites[i].site && _location == sites[i].location)
             {
                matchedIndex = i;
-               hasMatch = true;
                break;
             }
          }
@@ -326,8 +315,6 @@ private:
          _bucket = selected.bucket;
          _site = selected.site;
          _location = selected.location;
-         matchedIndex = selectedIndex;
-         hasMatch = true;
 
          preferences.begin(_namespace, false);
          preferences.putString(BUCKET_KEY, _bucket);
@@ -336,8 +323,7 @@ private:
          preferences.end();
       }
 
-      const char* sensor = hasMatch ? sites[matchedIndex].sensor : nullptr;
-      return { _bucket.c_str(), _site.c_str(), _location.c_str(), sensor };
+      return { _bucket.c_str(), _site.c_str(), _location.c_str() };
    }
 };
 

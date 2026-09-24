@@ -7,8 +7,8 @@
 // setup/post/flush cycle.
 //
 // Uploads to InfluxDB as measurement "Sensors", tagged with site="Lake", location="Dock",
-// sensor="Temperature", and item=<Surface|Bottom 1|Bottom 2|Enclosure> identifying which
-// sensor the point came from. Fields are "temperature" and "humidity", each averaged over
+// and item=<Surface|Bottom 1|Bottom 2|Enclosure> identifying which sensor the point came
+// from. Fields are "temperature" and "humidity", each averaged over
 // SENSOR_AVERAGE_PERIOD_S before being posted. The CPU temperature is also uploaded
 // (item=CPU, temperature field only) via SketchConfig.includeCpuTemp.
 //
@@ -39,13 +39,12 @@ constexpr auto SKETCH_NAME = "Lake_Temp_Monitor";
 // Influx database settings
 constexpr auto INFLUX_SITE = "Lake";
 constexpr auto INFLUX_LOCATION = "Dock";
-constexpr auto INFLUX_SENSOR = "Temperature";
 constexpr auto INFLUX_INTERVAL_S = 15;  // Log data to InfluxDB every N seconds
 
 // ----------- InfluxDB bucket selection (production vs testing)
 constexpr InfluxContext INFLUX_PROMPTS[] = {
-   { INFLUXDB_BUCKET, INFLUX_SITE, INFLUX_LOCATION, INFLUX_SENSOR },
-   { "Testing", INFLUX_SITE, INFLUX_LOCATION, INFLUX_SENSOR },
+   { INFLUXDB_BUCKET, INFLUX_SITE, INFLUX_LOCATION },
+   { "Testing", INFLUX_SITE, INFLUX_LOCATION },
 };
 
 ///
@@ -93,9 +92,9 @@ SketchConfig SKETCH_CONFIG = {
    .version = VERSION,
    .preferencesNamespace = SKETCH_NAME,
    .influx = INFLUX_CONFIG,
+   .includeCpuTemp = true,
    .enableOTA = true,
    .enableRebooter = true,
-   .includeCpuTemp = true,
 };
 
 Monitor monitor(&arduino, SKETCH_CONFIG);
@@ -173,7 +172,7 @@ void setup()
 
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      InfluxPoint* point = monitor.addPoint({ { "sensor", INFLUX_SENSOR }, { "item", SENSOR_CONFIGS[i].item } });
+      InfluxPoint* point = monitor.addPoint({ { "item", SENSOR_CONFIGS[i].item } });
       tempFields[i] = point->addTimeAverageField(SENSOR_AVERAGE_PERIOD_S, "temperature", 3);
       humFields[i] = point->addTimeAverageField(SENSOR_AVERAGE_PERIOD_S, "humidity", 2);
    }

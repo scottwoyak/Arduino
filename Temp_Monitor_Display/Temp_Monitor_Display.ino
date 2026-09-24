@@ -44,7 +44,7 @@
 //
 // InfluxDB points uploaded (Measurement: Sensors):
 //
-// - site=<from Serial prompt/Preferences>, location=<from Serial prompt/Preferences>, sensor=Temperature
+// - site=<from Serial prompt/Preferences>, location=<from Serial prompt/Preferences>, item=Sensor
 //     temperature: time-averaged value of sensor.readTemperatureF(), sampled every
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //     humidity: time-averaged value of sensor.readHumidity(), sampled every
@@ -53,7 +53,7 @@
 //     same temperature/humidity reading (see TempSensor::readAll()), sampled every
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //
-// - site=<from Serial prompt/Preferences>, location=<from Serial prompt/Preferences>, sensor=Temperature, item=CPU
+// - site=<from Serial prompt/Preferences>, location=<from Serial prompt/Preferences>, item=CPU
 //     temperature: the ESP32 CPU temperature at upload time.
 //
 #include <string>
@@ -89,7 +89,6 @@
 // compiled VERSION without manually editing each sketch.
 const auto VERSION = MakeVersion("2.4");
 constexpr auto SKETCH_NAME = "Temp_Monitor_Display";
-constexpr auto INFLUX_SENSOR = "Temperature";
 constexpr auto PREFERENCES_NAMESPACE = "TempMonitor";
 constexpr uint8_t INFLUX_INTERVAL_S = 15;
 constexpr uint16_t SENSOR_INTERVAL_MS = 500;
@@ -135,12 +134,7 @@ FieldTable allValuesTable(&arduino, 0, 0, TEXT_SIZE_SMALL);
 // the display can be cleared exactly once when switching between it and the normal readout.
 bool wasAllValuesMode = false;
 
-InfluxContext INFLUX_CONTEXT = {
-   .sensor = INFLUX_SENSOR,
-};
-
 InfluxConfig INFLUX_CONFIG = {
-   .context = INFLUX_CONTEXT,
    .intervalS = INFLUX_INTERVAL_S,
    .promptForContext = true,
 };
@@ -150,9 +144,9 @@ SketchConfig MONITOR_CONFIG = {
    .version = VERSION,
    .preferencesNamespace = PREFERENCES_NAMESPACE,
    .influx = INFLUX_CONFIG,
+   .includeCpuTemp = true,
    .enableOTA = true,
    .enableRebooter = true,
-   .includeCpuTemp = true,
 };
 
 Monitor monitor(&arduino, MONITOR_CONFIG);
@@ -196,7 +190,7 @@ void setup()
    monitor.begin();
    monitor.onStatus(onStatus);
 
-   InfluxPoint* point = monitor.addPoint();
+   InfluxPoint* point = monitor.addPoint({ { "item", "Sensor" } });
    tempField = point->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
    humField = point->addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
    dewPointField = point->addTimeAverageField(INFLUX_INTERVAL_S, "dewPoint", INFLUX_TEMP_DECIMAL_PLACES);

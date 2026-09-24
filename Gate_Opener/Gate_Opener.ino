@@ -16,8 +16,8 @@
 //
 // Also uploads rolling-averaged enclosure temperature/humidity and a point-in-time
 // CPU temperature reading to InfluxDB on a fixed interval (Measurement: Sensors,
-// site=Bragg, location=Gate, sensor="Gate Opener", item=<Enclosure|CPU>). Startup/OTA
-// text is also logged to InfluxDB (Measurement: Log) directly via SketchBase.
+// site=Bragg, location=Gate, item=<Enclosure|CPU>). Startup/OTA
+// text is also logged to the LogServer via SketchBase.
 //
 // The device restarts automatically at midnight and checks for a firmware update
 // periodically.
@@ -53,7 +53,7 @@ bool gateTriggerRelay = false;
 TimerSecs gateRelayTriggerTimer(GATE_RELAY_TRIGGER_SECS);
 
 InfluxConfig INFLUX_CONFIG = {
-   .context = { INFLUXDB_BUCKET, "Bragg", "Gate", "Gate Opener" },
+   .context = { INFLUXDB_BUCKET, "Bragg", "Gate" },
 };
 
 SketchConfig MONITOR_CONFIG = {

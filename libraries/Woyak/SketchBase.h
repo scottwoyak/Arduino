@@ -157,9 +157,6 @@ protected:
    /// <summary>The resolved InfluxDB site, populated by begin().</summary>
    InfluxContext _site{};
 
-   /// <summary>The resolved "sensor" tag value, populated by begin() from the resolved site's sensor field.</summary>
-   const char* _influxSensor = nullptr;
-
    /// <summary>The resolved telemetry topic, populated by begin() (nullptr if not used).</summary>
    const char* _telemetryTopic = nullptr;
 
@@ -587,7 +584,7 @@ public:
    /// Creates and registers an additional Influx point (beyond the standard
    /// enclosure/CPU points), posted and flushed alongside them each upload cycle. The
    /// resolved site's "site" and "location" tags are added automatically; only
-   /// pass extra tags (e.g. "sensor", "item"). Must be called after begin(), once the
+   /// pass extra tags (e.g. "item"). Must be called after begin(), once the
    /// site has been resolved.
    /// </summary>
    /// <param name="measurement">Influx measurement name. Defaults to config.influx.measurement.</param>
@@ -618,27 +615,14 @@ public:
 
    ///
    /// <summary>
-   /// Overload of addPoint() for the common case of a single "sensor" tag.
-   /// </summary>
-   /// <param name="sensor">Value for the "sensor" tag.</param>
-   /// <returns>Pointer to the created point, owned by this instance.</returns>
-   ///
-   InfluxPoint* addPoint(const char* sensor)
-   {
-      return addPoint({ { "sensor", sensor } });
-   }
-
-   ///
-   /// <summary>
-   /// Overload of addPoint() for the common single-sensor case, using the resolved
-   /// "sensor" tag value (site().sensor if set, otherwise config.influx.context.sensor)
-   /// as the "sensor" tag value.
+   /// Overload of addPoint() for the common case of a point with no extra tags beyond
+   /// the resolved site's "site" and "location".
    /// </summary>
    /// <returns>Pointer to the created point, owned by this instance.</returns>
    ///
    InfluxPoint* addPoint()
    {
-      return addPoint(_influxSensor);
+      return addPoint({});
    }
 
    ///
@@ -747,7 +731,6 @@ public:
       {
          _site = _resolveFixedSite();
       }
-      _influxSensor = _site.sensor;
 
       if (hasTopicTable)
       {
@@ -766,8 +749,7 @@ public:
 
       std::string influxInfo = std::string("bucket=\"") + (_site.bucket != nullptr ? _site.bucket : "") +
                                "\" site=\"" + (_site.site != nullptr ? _site.site : "") +
-                               "\" location=\"" + (_site.location != nullptr ? _site.location : "") +
-                               "\" sensor=\"" + (_influxSensor != nullptr ? _influxSensor : "") + "\"";
+                               "\" location=\"" + (_site.location != nullptr ? _site.location : "") + "\"";
       std::string influxMessage = std::string("Influx: ") + influxInfo;
       if (SerialX::lastShutdownReason().length() > 0)
       {
@@ -824,14 +806,14 @@ public:
 
          if (_config.includeEnclosureTemp)
          {
-            InfluxPoint* enclosurePoint = addPoint(_config.influx.measurement, { { "sensor", _influxSensor }, { "item", "Enclosure" } });
+            InfluxPoint* enclosurePoint = addPoint(_config.influx.measurement, { { "item", "Enclosure" } });
             _enclosureTempField = enclosurePoint->addRollingAverageField(_config.influx.rollingSamples, "temperature", INFLUX_DECIMALS);
             _enclosureHumidityField = enclosurePoint->addRollingAverageField(_config.influx.rollingSamples, "humidity", INFLUX_DECIMALS);
          }
 
          if (_config.includeCpuTemp)
          {
-            InfluxPoint* cpuPoint = addPoint(_config.influx.measurement, { { "sensor", _influxSensor }, { "item", "CPU" } });
+            InfluxPoint* cpuPoint = addPoint(_config.influx.measurement, { { "item", "CPU" } });
             _cpuTempField = cpuPoint->addValueField("temperature", INFLUX_DECIMALS);
          }
 
@@ -850,7 +832,7 @@ public:
       // async like TelemetryClient, but this call blocks until its "Logging... " label
       // is completed by Logger::_onEvent(), so nothing else can log a line while it's
       // pending.
-      Logger.begin(_config.sketchName, _config.version, _site.site, _site.location, _influxSensor);
+      Logger.begin(_config.sketchName, _config.version, _site.site, _site.location);
       _arduino->waitForClient([]() { return Logger.isResolved(); }, []() { Logger.loop(); });
       Logger.onStatus(_onGetStatus);
 

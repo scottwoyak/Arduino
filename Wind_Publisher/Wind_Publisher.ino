@@ -11,13 +11,13 @@
 //
 // InfluxDB points uploaded (Measurement: Sensors, bucket=<selected>):
 //
-// - site=<selected>, location=<selected>, sensor=Wind, item=Enclosure
+// - site=<selected>, location=<selected>, item=Enclosure
 //     temperature: rolling average of the enclosure sensor's readTemperatureF(),
 //     sampled every SENSOR_INTERVAL_MS, over the last INFLUX_ROLLING_SAMPLES readings.
 //     humidity: rolling average of the enclosure sensor's readHumidity(), sampled every
 //     SENSOR_INTERVAL_MS, over the last INFLUX_ROLLING_SAMPLES readings.
 //
-// - site=<selected>, location=<selected>, sensor=Wind, item=CPU
+// - site=<selected>, location=<selected>, item=CPU
 //     temperature: the ESP32 CPU temperature at upload time.
 //
 // Note: wind speed is only streamed live over telemetry, not uploaded to InfluxDB.
@@ -44,9 +44,10 @@ constexpr auto SKETCH_NAME = "Wind_Publisher";
 
 // ----------- InfluxDB site selection
 constexpr InfluxContext INFLUX_PROMPTS[] = {
-   { "Monitor", "Lake", "Dock", "Wind" },
-   { "Monitor", "Bragg", "Studio", "Wind" },
-   { "Testing", "WindSite", "WindLocation", "Wind" },
+   { "Monitor", "Lake", "Dock" },
+   { "Monitor", "Bragg", "Studio" },
+   { "Testing", "Lake", "Dock" },
+   { "Testing", "Bragg", "Studio" },
 };
 
 // ----------- Telemetry topic selection

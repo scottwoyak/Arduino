@@ -39,7 +39,7 @@
 //
 // InfluxDB points uploaded (Measurement: Sensors):
 //
-// - site=<from Serial prompt/Preferences>, location=<from Serial prompt/Preferences>, sensor=Temperature
+// - site=<from Serial prompt/Preferences>, location=<from Serial prompt/Preferences>, item=Sensor
 //     temperature: time-averaged value of sensor.readTemperatureF(), sampled every
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //     humidity: time-averaged value of sensor.readHumidity(), sampled every
@@ -48,7 +48,7 @@
 //     same temperature/humidity reading (see TempSensor::readAll()), sampled every
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //
-// - site=<from Serial prompt/Preferences>, location=<from Serial prompt/Preferences>, sensor=Temperature, item=CPU
+// - site=<from Serial prompt/Preferences>, location=<from Serial prompt/Preferences>, item=CPU
 //     temperature: the ESP32 CPU temperature at upload time.
 //
 
@@ -69,21 +69,20 @@
 #error "This sketch requires a board with onboard NeoPixel LED support (e.g. Waveshare ESP32-S3-Zero)."
 #endif
 
-#include "TempSensor.h"
+#include "LibraryVersion.h"
 #include "SerialX.h"
+#include "TempSensor.h"
 #include "Timer.h"
 
 #include "WiFiSettings.h"
 
 #include "Monitor.h"
-#include "LibraryVersion.h"
 
 // This sketch's own version (e.g. "2.0"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
 const auto VERSION = MakeVersion("2.0");
 constexpr auto SKETCH_NAME = "Temp_Monitor";
-constexpr auto INFLUX_SENSOR = "Temperature";
 constexpr auto PREFERENCES_NAMESPACE = "TempMonitor";
 constexpr uint8_t INFLUX_INTERVAL_S = 15;
 constexpr uint16_t SENSOR_INTERVAL_MS = 500;
@@ -106,12 +105,7 @@ InfluxField* dewPointField = nullptr;
 InfluxField* absoluteHumidityField = nullptr;
 InfluxField* heatIndexField = nullptr;
 
-InfluxContext INFLUX_CONTEXT = {
-   .sensor = INFLUX_SENSOR,
-};
-
 InfluxConfig INFLUX_CONFIG = {
-   .context = INFLUX_CONTEXT,
    .intervalS = INFLUX_INTERVAL_S,
    .promptForContext = true,
 };
@@ -121,9 +115,9 @@ SketchConfig SKETCH_CONFIG = {
    .version = VERSION,
    .preferencesNamespace = PREFERENCES_NAMESPACE,
    .influx = INFLUX_CONFIG,
+   .includeCpuTemp = true,
    .enableOTA = true,
    .enableRebooter = true,
-   .includeCpuTemp = true,
 };
 
 Monitor monitor(&arduino, SKETCH_CONFIG);
@@ -167,7 +161,7 @@ void setup()
    monitor.begin();
    monitor.onStatus(onStatus);
 
-   InfluxPoint* point = monitor.addPoint();
+   InfluxPoint* point = monitor.addPoint({ { "item", "Sensor" } });
    tempField = point->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
    humField = point->addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
    dewPointField = point->addTimeAverageField(INFLUX_INTERVAL_S, "dewPoint", INFLUX_TEMP_DECIMAL_PLACES);
