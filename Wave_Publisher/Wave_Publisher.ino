@@ -1,8 +1,9 @@
 //
 // Wave Publisher
 //
-// Reads water depth from an ultrasonic (or MS5837 pressure) sensor and publishes live
-// wave height readings over a WebSocket telemetry connection.
+// Reads water depth from an ultrasonic or MS5837 pressure sensor and publishes live
+// wave height readings over a WebSocket telemetry connection. The sensor type is
+// prompted for at startup and remembered (see telemetry topic selection below).
 //
 // Behavior:
 // - Connects to WiFi, then opens a WebSocket connection to the telemetry server and
@@ -18,7 +19,10 @@
 //   or error.
 // - Checks for a firmware update periodically.
 //
-// The telemetry topic / InfluxDB site/location is one of the 2 entries in WAVE_SITES.
+// The telemetry topic selection (WAVE_TELEMETRY_TOPICS) doubles as the sensor type
+// selection: Waves/Ultrasonic uses the ultrasonic sensor, Waves/Pressure uses the
+// MS5837 pressure sensor. The InfluxDB site/location is chosen independently from
+// the 2 entries in INFLUX_PROMPTS.
 // See Publisher.h for the shared init/loop sequence, site selection, and InfluxDB
 // behavior.
 //
@@ -45,6 +49,8 @@
 // This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
 
+#include <cstring>
+
 #include "ArduinoBoard.h"
 #include "DepthSensorBase.h"
 #include "LibraryVersion.h"
@@ -59,31 +65,27 @@
 const auto VERSION = MakeVersion("v1.0");
 constexpr auto SKETCH_NAME = "Wave_Publisher";
 
-//#define USE_ULTRASONIC
-#define USE_MS5837
-
-#ifdef USE_ULTRASONIC
 #include "UltrasonicDepthSensor.h"
+#include "MS5837DepthSensor.h"
 
 // ----------- Ultrasonic sensor pins
 constexpr uint8_t TRIGGER_PIN = 10;
 constexpr uint8_t ECHO_PIN = 11;
-#endif
-
-#ifdef USE_MS5837
-#include "MS5837DepthSensor.h"
-#endif
 
 // ----------- InfluxDB site selection
 constexpr InfluxContext INFLUX_PROMPTS[] = {
-   { "Sensors", "Lake", "Dock" },
+   { "Monitor", "Lake", "Dock" },
    { "Testing", "Lake", "Dock" },
 };
 
-// ----------- Telemetry topic selection
+// ----------- Telemetry topic selection; also determines which physical depth sensor
+// is used (see the sensor init lambda in setup()).
+constexpr auto TOPIC_ULTRASONIC = "Waves/Ultrasonic";
+constexpr auto TOPIC_PRESSURE = "Waves/Pressure";
+
 constexpr const char* WAVE_TELEMETRY_TOPICS[] = {
-   "Waves/LakeP",
-   "Waves/Test",
+   TOPIC_ULTRASONIC,
+   TOPIC_PRESSURE,
 };
 
 constexpr uint8_t INFLUX_AVG_DEPTH_DECIMALS = 2;
@@ -103,15 +105,8 @@ constexpr uint16_t DEPTH_SAMPLE_INTERVAL_MS = 100;
 // external LED isn't plugged in.
 Arduino arduino;
 
-#ifdef USE_ULTRASONIC
-UltrasonicDepthSensor depthSensor(TRIGGER_PIN, ECHO_PIN);
-#endif
-
-#ifdef USE_MS5837
-MS5837DepthSensor depthSensor;
-#endif
-
-DepthSensorBase* const depth = &depthSensor;
+// Allocated in setup(), once the telemetry topic (and thus the sensor type) has been resolved.
+DepthSensorBase* depth = nullptr;
 
 InfluxConfig INFLUX_CONFIG = {
    .prompts = INFLUX_PROMPTS,
@@ -160,7 +155,19 @@ void setup()
    // solid on while starting up; switches to wave-height-based fading in loop() once wave data is available
    arduino.led.turnOn(1.0f);
 
-   publisher.addSensor("Depth Sensor", []() { return depth->begin(); });
+   // The telemetry topic (and thus the sensor type) is resolved by publisher.begin()
+   // before this lambda runs, so only the sensor that's actually wired is constructed.
+   publisher.addSensor("Depth Sensor", []() {
+      if (strcmp(publisher.telemetryTopic(), TOPIC_ULTRASONIC) == 0)
+      {
+         depth = new UltrasonicDepthSensor(TRIGGER_PIN, ECHO_PIN);
+      }
+      else
+      {
+         depth = new MS5837DepthSensor();
+      }
+      return depth->begin();
+   });
    publisher.setValueSource([]() { return depth->getDepth(); });
 
    publisher.begin();

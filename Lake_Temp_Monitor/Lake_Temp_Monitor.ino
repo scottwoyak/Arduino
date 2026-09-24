@@ -85,12 +85,17 @@ Timer sensorTimer(SENSOR_INTERVAL_MS);
 InfluxConfig INFLUX_CONFIG = {
    .prompts = INFLUX_PROMPTS,
    .intervalS = INFLUX_INTERVAL_S,
+   .batchPoints = true,
 };
+
+// Preferences (NVS) namespace names are limited to 15 characters; SKETCH_NAME
+// ("Lake_Temp_Monitor") exceeds that, so a shorter dedicated namespace is used instead.
+constexpr auto PREFERENCES_NAMESPACE = "LakeTempMonitor";
 
 SketchConfig SKETCH_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
-   .preferencesNamespace = SKETCH_NAME,
+   .preferencesNamespace = PREFERENCES_NAMESPACE,
    .influx = INFLUX_CONFIG,
    .includeCpuTemp = true,
    .enableOTA = true,

@@ -191,6 +191,9 @@ protected:
    /// <summary>Callback registered via onStatus(), invoked after the base fields added by _populateStatus() below.</summary>
    void (*_sketchStatusHandler)(LoggerStatus& status) = nullptr;
 
+   /// <summary>True once the Influx write buffer has been sized for the final point count (see loop()).</summary>
+   bool _writeOptionsApplied = false;
+
    /// <summary>The single SketchBase instance, used by _onGetStatus() to reach the instance whose fields it should add (Logger.onStatus() only accepts a captureless function pointer).</summary>
    inline static SketchBase* _instance = nullptr;
 
@@ -816,8 +819,6 @@ public:
             InfluxPoint* cpuPoint = addPoint(_config.influx.measurement, { { "item", "CPU" } });
             _cpuTempField = cpuPoint->addValueField("temperature", INFLUX_DECIMALS);
          }
-
-         _influx->client()->setWriteOptions(WriteOptions().batchSize(_points.size()).bufferSize(2 * _points.size()));
       }
 
       if (_config.enableOTA)
@@ -879,6 +880,18 @@ public:
 
       if (_usesInflux && _influx->ready() && _extraInfluxReadyCondition())
       {
+         if (!_writeOptionsApplied)
+         {
+            // Deferred from begin(): sketch-specific points (added via addPoint() in the
+            // sketch's own setup(), after monitor.begin()/publisher.begin() returns) aren't
+            // registered yet when begin() runs, so sizing the write buffer there would
+            // undercount _points.size() and cause the buffer to wrap and silently drop
+            // the earliest-queued points every cycle once the real point count is known.
+            size_t batchSize = _config.influx.batchPoints ? _points.size() : 1;
+            _influx->client()->setWriteOptions(WriteOptions().batchSize(batchSize).bufferSize(2 * _points.size()));
+            _writeOptionsApplied = true;
+         }
+
          if (_config.includeCpuTemp)
          {
             _cpuTempField->set(_cpuTempSensor.readTemperatureF());
@@ -887,14 +900,24 @@ public:
          for (InfluxPoint* point : _points)
          {
             point->post(_influx->client(), _postAsync());
+
+            // When not batching, flush after each point so a failure on one point
+            // (e.g. still warming up) doesn't prevent the others from being posted.
+            if (!_config.influx.batchPoints && !_influx->client()->flushBuffer())
+            {
+               Logger.log(std::string("InfluxDB flush failed: ") + _influx->client()->getLastErrorMessage().c_str(), LogSeverity::ERROR);
+            }
          }
 
-         // Points above were only queued into the write buffer (see the batchSize set in
-         // begin()), so flush now to post them together in a single HTTP request sharing
-         // one timestamp.
-         if (!_influx->client()->flushBuffer())
+         if (_config.influx.batchPoints)
          {
-            Logger.log(std::string("InfluxDB flush failed: ") + _influx->client()->getLastErrorMessage().c_str(), LogSeverity::ERROR);
+            // Points above were only queued into the write buffer (see the batchSize set
+            // above), so flush now to post them together in a single HTTP request sharing
+            // one timestamp.
+            if (!_influx->client()->flushBuffer())
+            {
+               Logger.log(std::string("InfluxDB flush failed: ") + _influx->client()->getLastErrorMessage().c_str(), LogSeverity::ERROR);
+            }
          }
       }
    }

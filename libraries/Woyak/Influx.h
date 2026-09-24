@@ -524,6 +524,7 @@ public:
       size_t disabledCount = 0;
       size_t invalidCount = 0;
       size_t warmingUpCount = 0;
+      std::string warmingUpFields;
       for (InfluxField* field : _fields)
       {
          if (!field->isEnabled())
@@ -542,6 +543,11 @@ public:
             else
             {
                warmingUpCount++;
+               if (!warmingUpFields.empty())
+               {
+                  warmingUpFields += ", ";
+               }
+               warmingUpFields += field->getName();
             }
             continue;
          }
@@ -557,7 +563,8 @@ public:
          // post quietly rather than logging it as an error.
          if (invalidCount == 0 && warmingUpCount > 0)
          {
-            Logger.log("InfluxDB post skipped: fields still warming up (" +
+            Logger.log(std::string("InfluxDB post skipped: fields still warming up (") +
+               _point.toLineProtocol().c_str() + " [" + warmingUpFields + "], " +
                std::to_string(warmingUpCount) + " pending)");
             return false;
          }

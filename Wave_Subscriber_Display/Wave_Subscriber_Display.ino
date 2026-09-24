@@ -1,20 +1,30 @@
 //
 // Wave Subscriber Display
 //
-// Subscribes to live lake wave-height telemetry over a WebSocket connection and renders
-// a smoothed rolling bar chart on the display.
+// Subscribes to live wave-height telemetry over a WebSocket connection and renders a
+// smoothed rolling bar chart on the display. The telemetry topic (Waves/Ultrasonic or
+// Waves/Pressure, matching Wave_Publisher's sensor-selected topics) is prompted for at
+// startup and remembered.
 //
 // Behavior:
 // - Connects to WiFi, then opens a WebSocket connection to the telemetry server and
 //   receives live wave sensor readings as they arrive.
 // - Applies short-term smoothing/buffering before updating the displayed value and chart.
 // - Resets the device on telemetry disconnect or error.
+// - Checks for a firmware update periodically.
 //
 
 // Undefine to use the remote server.
 //#define TELEMETRY_LOCAL
 
-constexpr auto TELEMETRY_TOPIC = "Waves/LakeP";
+#include <string>
+
+constexpr const char* TELEMETRY_TOPICS[] = { "Waves/Ultrasonic", "Waves/Pressure" };
+constexpr uint8_t NUM_TELEMETRY_TOPICS = 2;
+constexpr auto PREFERENCES_NAMESPACE = "WaveViewer";
+
+// Selected at startup via prompt in setup().
+std::string telemetryTopic;
 
 #include <iomanip>
 #include <sstream>
@@ -34,18 +44,25 @@ constexpr auto TELEMETRY_TOPIC = "Waves/LakeP";
 #include "BarChart.h"
 #include "MovingBarChart.h"
 #include "BufferedTimeSeries.h"
+#include "LibraryVersion.h"
 #include "RollingRate.h"
 #include "RollingStats.h"
 #include "SerialX.h"
 #include "Status.h"
 #include "TelemetryClient.h"
 #include "Timer.h"
-#include "Util.h"
 #include "WiFiSettings.h"
+#include "ViewerSketch.h"
+
+// This sketch's own version (e.g. "v1.0"); MakeVersion() appends the shared
+// LIBRARY_VERSION build number so shared library changes bump every sketch's
+// compiled VERSION without manually editing each sketch.
+const auto VERSION = MakeVersion("v1.0");
+constexpr auto SKETCH_NAME = "Wave_Subscriber_Display";
 
 // ----------- Telemetry
 Arduino arduino;
-NeoPixelStatus status(&arduino.neoPixel);
+ViewerSketch viewer(&arduino, SKETCH_NAME, VERSION, &arduino.status, true);
 RollingRate displayRate(100);
 RollingRate serverRate(100);
 RollingStats sensorReadings(500);
@@ -113,7 +130,7 @@ void displayHeader()
 {
    arduino.setCursor(0, 0);
    arduino.setTextSize(2);
-   arduino.println(TELEMETRY_TOPIC, Color::HEADING);
+   arduino.println(telemetryTopic, Color::HEADING);
 }
 
 ///
@@ -154,7 +171,7 @@ void displayFooter()
 #endif
 
    arduino.setCursor(arduino.width(), -arduino.charH());
-   arduino.printR(TELEMETRY_TOPIC, Color::GRAY);
+   arduino.printR(telemetryTopic, Color::GRAY);
 
    arduino.setTextSize(savedTextSize);
    arduino.setCursor(savedCursor);
@@ -191,23 +208,29 @@ public:
    }
 };
 
-WaveTelemetryHandler telemetryHandler(&status);
-TelemetrySubscriber client(TELEMETRY_TOPIC, &status, &telemetryHandler);
+WaveTelemetryHandler telemetryHandler(&arduino.status);
 
 void setup()
 {
    SerialX::begin();
    arduino.begin();
-   status.begin();
 
-   arduino.beginInit();
+   viewer.beginBanner();
+
+   telemetryTopic = viewer.resolveTopic(PREFERENCES_NAMESPACE, "Select telemetry topic:", TELEMETRY_TOPICS, NUM_TELEMETRY_TOPICS, true);
    displayFooter();
 
-   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
+   viewer.beginConnect();
 
-   arduino.initClient("WebSocket", []() { client.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, &status);
+   viewer.beginTelemetry(telemetryTopic.c_str(), &telemetryHandler);
+   viewer.onStatus([](LoggerStatus& status)
+   {
+      status.add("Topic", telemetryTopic.c_str());
+   });
 
    delay(1000); // provide time for the wave sensor to get a reading
+
+   Logger.logInitializationComplete();
 }
 
 float lastSensorReading = NAN;
@@ -215,15 +238,17 @@ unsigned long lastAcceptedMillis = 0;
 
 void loop()
 {
-   client.loop();
+   viewer.loop();
 
-   if (client.isStarted() == false)
+   TelemetrySubscriber* client = viewer.getClient();
+
+   if (client->isStarted() == false)
    {
       return;
    }
 
    // get value measured from the bottom of the graph
-   float sensorReading = client.getValue();
+   float sensorReading = client->getValue();
    float avgSensorReading = sensorReadings.get();
 
    if (newValueReceived && !isnan(sensorReading))

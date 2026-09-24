@@ -5,15 +5,17 @@
 #include <stdint.h>
 #include <span>
 #include "Format.h"
+#include "Logger.h"
 #include "SerialX.h"
 
 /// <summary>
-/// Lightweight fixed-width serial table helper.
+/// Lightweight fixed-width table helper.
 /// </summary>
 /// <remarks>
-/// Builds formatted, fixed-width table text (title, header, divider, rows) and prints it
-/// directly to Serial. The built text is also returned in case the caller wants to use it
-/// elsewhere (e.g. a display view).
+/// Builds formatted, fixed-width table text (title, header, divider, rows) and prints it,
+/// by default to Logger.log() (which also echoes to Serial and forwards to the LogServer),
+/// or to Serial only if toLogger is passed as false. The built text is also returned in
+/// case the caller wants to use it elsewhere (e.g. a display view).
 /// </remarks>
 class SerialTable
 {
@@ -121,15 +123,50 @@ private:
       return _pad(String(value), column.width);
    }
 
-   /// <summary>
-   /// Formats a C-string value with width-based alignment.
-   /// </summary>
-   static String _formatValue(const char* value, const Column& column)
-   {
-      return _pad(String(value), column.width);
-   }
+       /// <summary>
+       /// Formats a C-string value with width-based alignment.
+       /// </summary>
+       static String _formatValue(const char* value, const Column& column)
+       {
+          return _pad(String(value), column.width);
+       }
 
-public:
+       /// <summary>
+       /// Builds a divider line ('-' repeated across each column's width) without printing it.
+       /// </summary>
+       String _dividerText() const
+       {
+          String divider;
+          for (size_t i = 0; i < _columns.size(); i++)
+          {
+             for (size_t j = 0; j < _columns[i].width; j++)
+             {
+                divider += '-';
+             }
+          }
+
+          divider += '\n';
+          return divider;
+       }
+
+       /// <summary>
+       /// Prints text either to Logger (which also echoes to Serial) or directly to Serial only.
+       /// </summary>
+       /// <param name="text">Text to print.</param>
+       /// <param name="toLogger">If true, sends text to Logger.log(); if false, prints to Serial only.</param>
+       static void _print(const String& text, bool toLogger)
+       {
+          if (toLogger)
+          {
+             Logger.log(text.c_str());
+          }
+          else
+          {
+             SerialX::print(text);
+          }
+       }
+
+   public:
    /// <summary>
    /// Creates a serial table with title and fixed-width column metadata.
    /// </summary>
@@ -149,11 +186,12 @@ public:
    }
 
    /// <summary>
-   /// Prints the title, column header row, and divider row to Serial.
+   /// Prints the title, column header row, and divider row.
    /// </summary>
+   /// <param name="toLogger">If true (the default), sends the text to Logger.log() (which also echoes to Serial); if false, prints to Serial only.</param>
    /// <returns>The printed lines, each terminated with '\n', concatenated together.</returns>
    ///
-   String printHeader() const
+   String printHeader(bool toLogger = true) const
    {
       if (!_isConfigured())
       {
@@ -177,63 +215,61 @@ public:
       output += headerLine;
       output += '\n';
 
-      output += printDivider(false);
+      output += _dividerText();
 
-      SerialX::print(output);
+      _print(output, toLogger);
       return output;
    }
 
-   /// <summary>
-   /// Prints a divider row based on column widths to Serial.
-   /// </summary>
-   /// <param name="printToSerial">Whether to print the divider to Serial (true), or just build and return the divider text (false, used internally by printHeader to avoid double-printing).</param>
-   /// <returns>The printed divider line, terminated with '\n'.</returns>
-   ///
-   String printDivider(bool printToSerial = true) const
-   {
-      if (!_isConfigured())
-      {
-         return String();
-      }
+       /// <summary>
+       /// Prints a divider row based on column widths.
+       /// </summary>
+       /// <param name="toLogger">If true (the default), sends the text to Logger.log() (which also echoes to Serial); if false, prints to Serial only.</param>
+       /// <returns>The printed divider line, terminated with '\n'.</returns>
+       ///
+       String printDivider(bool toLogger = true) const
+       {
+          if (!_isConfigured())
+          {
+             return String();
+          }
 
-      String divider;
-      for (size_t i = 0; i < _columns.size(); i++)
-      {
-         for (size_t j = 0; j < _columns[i].width; j++)
-         {
-            divider += '-';
-         }
-      }
+          String divider = _dividerText();
+          _print(divider, toLogger);
+          return divider;
+       }
 
-      divider += '\n';
+       /// <summary>
+       /// Prints one row of values using configured columns.
+       /// </summary>
+       /// <param name="toLogger">If true (the default), sends the text to Logger.log() (which also echoes to Serial); if false, prints to Serial only.</param>
+       /// <returns>The printed row line, terminated with '\n'.</returns>
+       ///
+       template<typename... Args>
+       String printRow(bool toLogger, const Args&... values) const
+       {
+          if (!_isConfigured())
+          {
+             return String();
+          }
 
-      if (printToSerial)
-      {
-         SerialX::print(divider);
-      }
+          String line;
+          size_t index = 0;
+          _appendValues(line, index, values...);
+          line += '\n';
 
-      return divider;
-   }
+          _print(line, toLogger);
+          return line;
+       }
 
-   /// <summary>
-   /// Prints one row of values using configured columns to Serial.
-   /// </summary>
-   /// <returns>The printed row line, terminated with '\n'.</returns>
-   ///
-   template<typename... Args>
-   String printRow(const Args&... values) const
-   {
-      if (!_isConfigured())
-      {
-         return String();
-      }
-
-      String line;
-      size_t index = 0;
-      _appendValues(line, index, values...);
-      line += '\n';
-
-      SerialX::print(line);
-      return line;
-   }
-};
+       /// <summary>
+       /// Overload of printRow(bool, ...) defaulting toLogger to true.
+       /// </summary>
+       /// <returns>The printed row line, terminated with '\n'.</returns>
+       ///
+       template<typename... Args>
+       String printRow(const Args&... values) const
+       {
+          return printRow(true, values...);
+       }
+   };

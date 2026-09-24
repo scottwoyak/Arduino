@@ -58,9 +58,12 @@ struct InfluxConfig
    /// <summary>Monitor only: if true, prompts over Serial (or loads the saved values from Preferences) for a bucket (chosen from Monitor's shared BUCKET_OPTIONS list), a site (chosen from Monitor's shared SITE_OPTIONS list), and a free-text location, instead of using context.</summary>
    bool promptForContext = false;
 
-   /// <summary>Monitor only: seconds to wait before resetting after reportSensorFailure() is called.</summary>
-   uint8_t sensorFailureResetDelayS = 10;
-};
+       /// <summary>Monitor only: seconds to wait before resetting after reportSensorFailure() is called.</summary>
+       uint8_t sensorFailureResetDelayS = 10;
+
+       /// <summary>If true (the default), all points are queued and flushed together in a single HTTP request each post cycle, so one bad point can suppress the others if the batch write fails. Set to false to post/flush each point independently, so a single point failing (e.g. still warming up) doesn't affect whether the others get posted.</summary>
+       bool batchPoints = true;
+   };
 
 ///
 /// <summary>
@@ -187,13 +190,13 @@ private:
       Serial.println(header);
 
       SerialTable table(nullptr, COLUMNS);
-      table.printHeader();
+      table.printHeader(false);
       for (size_t i = 0; i < count; i++)
       {
          String number = String(i + 1) + (i == defaultIndex ? "*" : "");
-         table.printRow(number, sites[i].bucket, measurement, sites[i].site, sites[i].location);
+         table.printRow(false, number, sites[i].bucket, measurement, sites[i].site, sites[i].location);
       }
-      table.printDivider();
+      table.printDivider(false);
 
       size_t index = SerialX::readSelectionWithTimeout(count, defaultIndex, PROMPT_TIMEOUT_S * 1000UL);
 
@@ -241,12 +244,12 @@ private:
       Serial.println(header);
 
       SerialTable table(nullptr, COLUMNS);
-      table.printHeader();
+      table.printHeader(false);
       for (size_t i = 0; i < count; i++)
       {
-         table.printRow(String(i + 1), sites[i].bucket, measurement, sites[i].site, sites[i].location);
+         table.printRow(false, String(i + 1), sites[i].bucket, measurement, sites[i].site, sites[i].location);
       }
-      table.printDivider();
+      table.printDivider(false);
 
       String label = "Enter selection (1-" + String(count) + "): ";
       size_t index = (size_t)(SerialX::promptForInt(label, 1, (long)count) - 1);
@@ -382,13 +385,13 @@ private:
       Serial.println(header);
 
       SerialTable table(nullptr, COLUMNS);
-      table.printHeader();
+      table.printHeader(false);
       for (size_t i = 0; i < count; i++)
       {
          String number = String(i + 1) + (i == defaultIndex ? "*" : "");
-         table.printRow(number, topics[i]);
+         table.printRow(false, number, topics[i]);
       }
-      table.printDivider();
+      table.printDivider(false);
 
       size_t index = SerialX::readSelectionWithTimeout(count, defaultIndex, PROMPT_TIMEOUT_S * 1000UL);
 
@@ -429,12 +432,12 @@ private:
       Serial.println(header);
 
       SerialTable table(nullptr, COLUMNS);
-      table.printHeader();
+      table.printHeader(false);
       for (size_t i = 0; i < count; i++)
       {
-         table.printRow(String(i + 1), topics[i]);
+         table.printRow(false, String(i + 1), topics[i]);
       }
-      table.printDivider();
+      table.printDivider(false);
 
       String label = "Enter selection (1-" + String(count) + "): ";
       size_t index = (size_t)(SerialX::promptForInt(label, 1, (long)count) - 1);
