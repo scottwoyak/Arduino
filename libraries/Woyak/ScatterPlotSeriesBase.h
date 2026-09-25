@@ -113,8 +113,7 @@ protected:
          {
             delete[] newX;
             delete[] newY;
-            Util::setHaltReason("OOM allocating points in ScatterPlotSeries");
-            Util::reset();
+            Util::reset(0.0f, "OOM allocating points in ScatterPlotSeries");
             return;
          }
 
@@ -504,8 +503,7 @@ public:
 
          if (_x == nullptr || _y == nullptr)
          {
-            Util::setHaltReason("OOM allocating points in ScatterPlotSeries");
-            Util::reset();
+            Util::reset(0.0f, "OOM allocating points in ScatterPlotSeries");
          }
       }
    }

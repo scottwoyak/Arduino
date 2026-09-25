@@ -344,7 +344,7 @@ protected:
    {
       if (!_arduino->ensureWiFiConnected() && !_onWiFiLost())
       {
-         Util::reset(WIFI_LOST_RESET_DELAY_S);
+         Util::reset(WIFI_LOST_RESET_DELAY_S, "WiFi connection lost");
       }
 
       esp_task_wdt_reset();
@@ -389,7 +389,7 @@ protected:
          if (!success && sensor.fatal)
          {
             _status->setStatus(Status::FAILED);
-            Util::reset(_config.sensorFailureResetDelayS);
+            Util::reset(_config.sensorFailureResetDelayS, std::string("Sensor '") + sensor.label + "' failed to initialize");
          }
       }
    }

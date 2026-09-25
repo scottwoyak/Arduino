@@ -50,8 +50,7 @@ private:
       _previousBarHeights = new (std::nothrow) int16_t[_histogram.bins()];
       if (_previousBarHeights == nullptr)
       {
-         Util::setHaltReason("OOM allocating bar heights in HistogramPlot");
-         Util::reset();
+         Util::reset(0.0f, "OOM allocating bar heights in HistogramPlot");
          return false;
       }
 

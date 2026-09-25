@@ -50,8 +50,7 @@ private:
       T* newItems = new (std::nothrow) T[newCapacity];
       if (newItems == nullptr)
       {
-         Util::setHaltReason("OOM growing Vector");
-         Util::reset();
+         Util::reset(0.0f, "OOM growing Vector");
          return false;
       }
 

@@ -80,8 +80,7 @@ private:
       _binValues = new (std::nothrow) float[_numBins];
       if (_binValues == nullptr)
       {
-         Util::setHaltReason("OOM allocating binValues in TimedHistogram");
-         Util::reset();
+         Util::reset(0.0f, "OOM allocating binValues in TimedHistogram");
          return false;
       }
 
@@ -112,8 +111,7 @@ private:
       unsigned long* nextAges = new (std::nothrow) unsigned long[capacity];
       if (nextValues == nullptr || nextAges == nullptr)
       {
-         Util::setHaltReason("OOM allocating sample buffers in TimedHistogram");
-         Util::reset();
+         Util::reset(0.0f, "OOM allocating sample buffers in TimedHistogram");
          return false;
       }
 
@@ -186,8 +184,7 @@ public:
 
       if (_bins == nullptr)
       {
-         Util::setHaltReason("OOM allocating bins in TimedHistogram");
-         Util::reset();
+         Util::reset(0.0f, "OOM allocating bins in TimedHistogram");
          return;
       }
 
@@ -196,8 +193,7 @@ public:
          _bins[i] = new (std::nothrow) TimedBinBase<TimeFunc, 1>(_durationMs);
          if (_bins[i] == nullptr)
          {
-            Util::setHaltReason("OOM allocating TimedBinBase in TimedHistogram");
-            Util::reset();
+            Util::reset(0.0f, "OOM allocating TimedBinBase in TimedHistogram");
             return;
          }
       }

@@ -28,8 +28,7 @@ inline void OTAUpdater::_reportMissingPartitionAndHalt()
       _status->setStatus(Status::FAILED);
    }
 
-   Util::setHaltReason(MESSAGE);
-   Util::reset();
+   Util::reset(0.0f, MESSAGE);
 }
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED

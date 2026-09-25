@@ -39,7 +39,7 @@ private:
       if (localtime(&now)->tm_yday != _startDay)
       {
          Serial.println("Performing scheduled daily reboot");
-         Util::reset();
+         Util::reset(0.0f, "Scheduled daily reboot");
       }
    }
 

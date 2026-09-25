@@ -878,7 +878,7 @@ void setup()
    if (!influx.begin(arduino))
    {
       status.setStatus(Status::FAILED);
-      Util::reset(WIFI_RESET_DELAY_S);
+      Util::reset(WIFI_RESET_DELAY_S, "Influx failed to begin");
    }
 
    delay(INFLUX_INIT_DELAY_MS);
@@ -931,8 +931,7 @@ void setup()
 
    if (!shortAvgPlot || !longAvgPlot || !correctionPlot)
    {
-      Util::setHaltReason("OOM allocating scatter plots in Temp_Calibrator_Playground");
-      Util::reset();
+      Util::reset(0.0f, "OOM allocating scatter plots in Temp_Calibrator_Playground");
       return;
    }
 
@@ -950,8 +949,7 @@ void setup()
       TimedScatterPlotSeries* correctionSeriesForSensor = correctionPlot->createTimedSeries(TIME_WINDOW_PLOT_MS, plotWidth);
       if (!shortAvgSeriesForSensor || !longAvgSeriesForSensor || !correctionSeriesForSensor)
       {
-         Util::setHaltReason("OOM allocating scatter plot series in Temp_Calibrator_Playground");
-         Util::reset();
+         Util::reset(0.0f, "OOM allocating scatter plot series in Temp_Calibrator_Playground");
          return;
       }
 

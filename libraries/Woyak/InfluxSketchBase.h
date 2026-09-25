@@ -378,6 +378,11 @@ public:
       }
       _logMessage(influxMessage);
 
+      // Connect WiFi and enable OTA (which performs an immediate check) before sensor
+      // init, so a fatal sensor failure still leaves a chance to push an OTA fix on
+      // every reboot instead of boot-looping before WiFi/OTA is ever reachable.
+      _beginConnect();
+
       _initSensors();
 
       if (_influxConfig.includeCpuTemp)
@@ -390,8 +395,6 @@ public:
          _enclosureTempSensor.begin();
       }
 
-      _beginConnect();
-
       _usesInflux = _shouldUseInflux(hasSiteTable);
       if (_usesInflux)
       {
@@ -402,7 +405,7 @@ public:
             _logStatusEnd("FAILED");
             _status->setStatus(Status::FAILED);
             delay(1000); // time for LED to show
-            Util::reset();
+            Util::reset(0.0f, "Influx failed to begin");
          }
 
          _logStatusEnd("OK");

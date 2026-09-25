@@ -313,7 +313,7 @@ void setup()
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD);
    if (!influx.begin(&arduino))
    {
-      Util::reset(WIFI_RESET_DELAY_S);
+      Util::reset(WIFI_RESET_DELAY_S, "Influx failed to begin");
    }
 
    arduino.clearDisplay();
@@ -394,7 +394,7 @@ void loop()
    {
       arduino.println("WiFi connection lost");
       Serial.println("WiFi connection lost");
-      Util::reset(WIFI_RESET_DELAY_S);
+      Util::reset(WIFI_RESET_DELAY_S, "WiFi connection lost");
    }
 
    arduino.setCursor(0, 0);

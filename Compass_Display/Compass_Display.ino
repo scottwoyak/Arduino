@@ -51,7 +51,7 @@ void setup()
    if (!sensor.begin())
    {
       Serial.println("QMC5883P Not Found (no I2C ACK - check wiring)");
-      Util::reset(10);
+      Util::reset(10, "QMC5883P Not Found");
    }
 
    arduino.clearDisplay();

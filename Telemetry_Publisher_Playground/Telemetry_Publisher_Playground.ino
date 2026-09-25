@@ -232,7 +232,7 @@ public:
       }
       connected = false;
 
-      Util::reset(RECONNECT_COUNTDOWN_SECS);
+      Util::reset(RECONNECT_COUNTDOWN_SECS, std::string("Telemetry error: ") + message);
    }
 
    void onStarted() override
@@ -353,7 +353,7 @@ void loop()
 
    if (arduino.buttonA.wasPressed())
    {
-      Util::reset();
+      Util::reset(0.0f, "Manual reset (button A)");
    }
 
    table.selectNext(arduino.encoderA.delta());

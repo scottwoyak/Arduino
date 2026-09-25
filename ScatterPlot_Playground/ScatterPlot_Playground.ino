@@ -702,7 +702,7 @@ void loop()
 {
    if (arduino.buttonA.wasPressed())
    {
-      Util::reset();
+      Util::reset(0.0f, "Manual reset (button A)");
    }
 
    if (arduino.buttonB.wasPressed())

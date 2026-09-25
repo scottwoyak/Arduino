@@ -56,8 +56,7 @@ private:
      _previousBarHeights = new (std::nothrow) int16_t[binCount];
      if (_previousBarHeights == nullptr)
      {
-       Util::setHaltReason("OOM allocating bar heights in TimedHistogramPlot");
-       Util::reset();
+       Util::reset(0.0f, "OOM allocating bar heights in TimedHistogramPlot");
        return false;
      }
 

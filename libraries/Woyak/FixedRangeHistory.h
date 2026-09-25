@@ -50,8 +50,7 @@ public:
 
       if (_binSums == nullptr || _binCounts == nullptr)
       {
-         Util::setHaltReason("OOM allocating bins in FixedRangeHistory");
-         Util::reset();
+         Util::reset(0.0f, "OOM allocating bins in FixedRangeHistory");
          return;
       }
 
@@ -133,8 +132,7 @@ public:
    {
       if (!isfinite(x) || (x < _xMin) || (x > _xMax))
       {
-         Util::setHaltReason("FixedRangeHistory::add() x value outside locked range");
-         Util::reset();
+         Util::reset(0.0f, "FixedRangeHistory::add() x value outside locked range");
          return;
       }
 

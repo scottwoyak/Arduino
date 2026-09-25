@@ -446,8 +446,7 @@ void setup()
    size_t numCells = (size_t)gridColumns * gridRows;
    if (numCells < NUM_COLORS)
    {
-      Util::setHaltReason("Display too small to show every color");
-      Util::reset();
+      Util::reset(0.0f, "Display too small to show every color");
    }
 
    int16_t gridWidth = gridColumns * (cellSize + CELL_GAP) - CELL_GAP;

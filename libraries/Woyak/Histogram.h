@@ -66,8 +66,7 @@ private:
       _bins = new (std::nothrow) uint32_t[_binCount];
       if (_bins == nullptr)
       {
-         Util::setHaltReason("OOM allocating bins in Histogram");
-         Util::reset();
+         Util::reset(0.0f, "OOM allocating bins in Histogram");
          return false;
       }
 
@@ -210,8 +209,7 @@ public:
       float* sorted = new (std::nothrow) float[finiteCount];
       if (sorted == nullptr)
       {
-         Util::setHaltReason("OOM allocating sorted buffer in Histogram");
-         Util::reset();
+         Util::reset(0.0f, "OOM allocating sorted buffer in Histogram");
          return minBinCount;
       }
 

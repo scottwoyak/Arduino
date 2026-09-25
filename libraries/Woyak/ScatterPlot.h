@@ -572,8 +572,7 @@ private:
 
          if (newSeries == nullptr)
          {
-            Util::setHaltReason("OOM allocating series array in ScatterPlot");
-            Util::reset();
+            Util::reset(0.0f, "OOM allocating series array in ScatterPlot");
             return;
          }
 

@@ -364,8 +364,7 @@ public:
 
       if (_mask == nullptr || _prevMask == nullptr)
       {
-         Util::setHaltReason("OOM allocating DisplayBuffer mask");
-         Util::reset();
+         Util::reset(0.0f, "OOM allocating DisplayBuffer mask");
          return false;
       }
 

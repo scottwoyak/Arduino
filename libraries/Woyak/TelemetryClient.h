@@ -149,12 +149,12 @@ public:
 #endif
 
       _status->setStatus(Status::FAILED);
-      Util::reset(TELEMETRY_RESET_DELAY_S);
+      Util::reset(TELEMETRY_RESET_DELAY_S, std::string("Telemetry connection lost (") + reason + ")");
    }
 
    ///
    /// <summary>
-   /// Invoked when the WebSocket never successfully connected (e.g. the server isn't
+   /// Invoked when the WebSocket never successfully connected
    /// running, or it's unreachable) before the socket was torn down. Default
    /// implementation logs a clearer message than the raw low-level socket teardown
    /// reason, completes the "Telemetry..." label (if a display was supplied) with
@@ -178,12 +178,12 @@ public:
 #endif
 
       _status->setStatus(Status::FAILED);
-      Util::reset(TELEMETRY_RESET_DELAY_S);
+      Util::reset(TELEMETRY_RESET_DELAY_S, std::string("Could not connect to telemetry server (") + reason + ")");
    }
 
    ///
    /// <summary>
-   /// Invoked when the telemetry client reports an error. Default implementation logs
+   /// Invoked when the telemetry client reports an error.
    /// the message, draws it on the display (if one was supplied), sets the status to
    /// FAILED, and resets the device.
    /// </summary>
@@ -204,7 +204,7 @@ public:
 #endif
 
       _status->setStatus(Status::FAILED);
-      Util::reset(TELEMETRY_RESET_DELAY_S);
+      Util::reset(TELEMETRY_RESET_DELAY_S, std::string("Telemetry error: ") + message);
    }
 
    ///

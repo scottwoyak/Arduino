@@ -27,8 +27,7 @@
    { \
       if (!(condition)) \
       { \
-         Util::setHaltReason(String("Assertion failed: ") + #condition + " (" __FILE__ ":" + String(__LINE__) + ")"); \
-         Util::reset(); \
+         Util::reset(0.0f, String("Assertion failed: ") + #condition + " (" __FILE__ ":" + String(__LINE__) + ")"); \
       } \
    } while (0)
 
@@ -213,14 +212,19 @@ public:
 
 
    /// <summary>
-   /// Resets the device after an optional delay.
+   /// Resets the device after an optional delay, recording a reason so it's reported
+   /// as the "Reset reason" (in place of the generic hardware reset reason) via
+   /// checkTheLastShutdownReason() on the next boot.
    /// </summary>
    /// <param name="delaySecs">Seconds to delay before reset (default 0.0)</param>
+   /// <param name="reason">Reason for the reset (e.g. "Influx failed to begin" or "Scheduled daily reboot"), recorded via setHaltReason() and reported as the next boot's "Reset reason".</param>
    /// <remarks>
    /// This function does not return.
    /// </remarks>
-   static void reset(float delaySecs = 0.0f)
+   static void reset(float delaySecs, const String& reason)
    {
+      setHaltReason(reason);
+
       delay(static_cast<unsigned long>(1000.0f * delaySecs));
 
       // Deep sleep gives a more complete hardware-level reset than ESP.restart() (a soft
@@ -228,6 +232,34 @@ public:
       // re-running setup().
       esp_sleep_enable_timer_wakeup(1); // wake up almost immediately
       esp_deep_sleep_start();
+   }
+
+   /// <summary>
+   /// Overload of reset() accepting a std::string reason, since this codebase builds
+   /// many reset reasons via std::string concatenation (Arduino's String class doesn't
+   /// implicitly convert from std::string).
+   /// </summary>
+   /// <param name="delaySecs">Seconds to delay before reset</param>
+   /// <param name="reason">Reason for the reset, recorded via setHaltReason()</param>
+   /// <remarks>
+   /// This function does not return.
+   /// </remarks>
+   static void reset(float delaySecs, const std::string& reason)
+   {
+      reset(delaySecs, String(reason.c_str()));
+   }
+
+   /// <summary>
+   /// Overload of reset() accepting a raw C string reason.
+   /// </summary>
+   /// <param name="delaySecs">Seconds to delay before reset</param>
+   /// <param name="reason">Reason for the reset, recorded via setHaltReason()</param>
+   /// <remarks>
+   /// This function does not return.
+   /// </remarks>
+   static void reset(float delaySecs, const char* reason)
+   {
+      reset(delaySecs, String(reason));
    }
 
    /// <summary>
@@ -248,8 +280,6 @@ public:
    /// <returns>The previous halt reason, or an empty string if none was recorded.</returns>
    static String checkTheLastShutdownReason()
    {
-      Logger.log(std::string("Reset reason: ") + resetReasonString());
-
       String reason = "";
       Preferences preferences;
       preferences.begin("Woyak", false);
@@ -257,13 +287,22 @@ public:
       if (preferences.isKey("halt"))
       {
          reason = preferences.getString("halt", "");
-         if (reason.length() > 0)
-         {
-            Logger.log("Previous halt reason: " + reason);
-         }
          preferences.remove("halt");
       }
       preferences.end();
+
+      // Report the recorded failure reason (e.g. "Influx failed to begin") instead of
+      // the generic hardware reset reason (e.g. "Woke from deep sleep") whenever one was
+      // recorded, since that's far more useful for diagnosing why the device restarted.
+      if (reason.length() > 0)
+      {
+         Logger.log(std::string("Reset reason: ") + reason.c_str());
+      }
+      else
+      {
+         Logger.log(std::string("Reset reason: ") + resetReasonString());
+      }
+
       return reason;
    }
 

@@ -83,8 +83,7 @@ public:
 
       if (_binSums == nullptr || _binCounts == nullptr)
       {
-         Util::setHaltReason("OOM allocating bins in TimedAverageHistoryBase");
-         Util::reset();
+         Util::reset(0.0f, "OOM allocating bins in TimedAverageHistoryBase");
          return;
       }
 

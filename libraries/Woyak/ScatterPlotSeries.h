@@ -218,8 +218,7 @@ public:
       _binHistory = new (std::nothrow) FixedRangeHistory(xMin, xMax, numBins);
       if (_binHistory == nullptr)
       {
-         Util::setHaltReason("OOM allocating FixedRangeHistory in ScatterPlotSeries");
-         Util::reset();
+         Util::reset(0.0f, "OOM allocating FixedRangeHistory in ScatterPlotSeries");
          return;
       }
 
@@ -231,8 +230,7 @@ public:
 
       if (_x == nullptr || _y == nullptr)
       {
-         Util::setHaltReason("OOM allocating bin snapshot buffers in ScatterPlotSeries");
-         Util::reset();
+         Util::reset(0.0f, "OOM allocating bin snapshot buffers in ScatterPlotSeries");
          return;
       }
 
@@ -265,8 +263,7 @@ public:
 
       if (_x == nullptr || _y == nullptr)
       {
-         Util::setHaltReason("OOM allocating rolling buffers in ScatterPlotSeries");
-         Util::reset();
+         Util::reset(0.0f, "OOM allocating rolling buffers in ScatterPlotSeries");
          return;
       }
 

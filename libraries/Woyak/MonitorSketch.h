@@ -274,6 +274,6 @@ public:
    void reportSensorFailure()
    {
       _status->setStatus(Status::FAILED);
-      Util::reset(_config.sensorFailureResetDelayS);
+      Util::reset(_config.sensorFailureResetDelayS, "Sensor failure reported");
    }
 };

@@ -101,7 +101,7 @@ void initializeSensor(Adafruit_INA219& sensor, const char* name)
       feather.printlnC(name, Color::WHITE, Color::RED);
       feather.printlnC("Not Found", Color::WHITE, Color::RED);
 
-      Util::reset(WIFI_RESET_DELAY_S);
+      Util::reset(WIFI_RESET_DELAY_S, std::string(name) + " not found");
    }
 
    feather.printlnR("OK", Color::VALUE);
@@ -176,7 +176,7 @@ void setup()
    feather.initWifi(WIFI_SSID, WIFI_PASSWORD);
    if (!influx.begin(&feather))
    {
-      Util::reset(WIFI_RESET_DELAY_S);
+      Util::reset(WIFI_RESET_DELAY_S, "Influx failed to begin");
    }
    Influx::endInit(&feather);
 }

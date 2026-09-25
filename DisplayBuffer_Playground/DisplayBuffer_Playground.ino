@@ -306,8 +306,7 @@ bool regenerateImages()
 
    if (imageA == nullptr || imageB == nullptr)
    {
-      Util::setHaltReason("OOM allocating DisplayBuffer_Playground images");
-      Util::reset();
+      Util::reset(0.0f, "OOM allocating DisplayBuffer_Playground images");
       return false;
    }
 
@@ -427,7 +426,7 @@ void loop()
 {
    if (arduino.buttonA.wasPressed())
    {
-      Util::reset();
+      Util::reset(0.0f, "Manual reset (button A)");
    }
 
    // While buttonB is held, slow the loop down with a delay so individual frames can be

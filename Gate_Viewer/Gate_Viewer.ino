@@ -646,7 +646,7 @@ private:
          _status.clear();
          _started = false;
          Logger.log("Right gate telemetry disconnected", LogSeverity::ERROR);
-         Util::reset(TELEMETRY_RESET_DELAY_S);
+         Util::reset(TELEMETRY_RESET_DELAY_S, "Right gate telemetry disconnected");
          break;
 
       case WStype_CONNECTED:
