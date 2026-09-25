@@ -49,7 +49,7 @@
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //     humidity: time-averaged value of sensor.readHumidity(), sampled every
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
-//     dewPoint, absoluteHumidity, heatIndex: time-averaged values derived from the
+//     dewPoint, absoluteHumidity: time-averaged values derived from the
 //     same temperature/humidity reading (see TempSensor::readAll()), sampled every
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //
@@ -74,7 +74,6 @@
 #error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
 #endif
 
-#include "TempSensor.h"
 #include "SerialX.h"
 #include "Timer.h"
 #include "FieldTable.h"
@@ -82,48 +81,35 @@
 
 #include "WiFiSettings.h"
 
-#include "MonitorSketch.h"
+#include "TempMonitorSketch.h"
 
 // This sketch's own version (e.g. "2.4"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("2.4");
+const auto VERSION = MakeVersion("2.5");
 constexpr auto SKETCH_NAME = "Temp_Monitor_Display";
 constexpr auto PREFERENCES_NAMESPACE = "TempMonitor";
-constexpr uint8_t INFLUX_INTERVAL_S = 15;
-constexpr uint16_t SENSOR_INTERVAL_MS = 500;
 constexpr uint8_t SPACING = 8;
 constexpr uint8_t TEXT_SIZE_SMALL = 2;
 constexpr uint8_t VALUE_TEXT_SIZE = 4;
-constexpr uint8_t INFLUX_TEMP_DECIMAL_PLACES = 3;
-constexpr uint8_t INFLUX_HUMIDITY_DECIMAL_PLACES = 2;
 constexpr uint8_t STARTUP_DELAY_S = 5;
 
 Format humFormat("##.#%");
 Format tempFormat("###.## F");
 
 Arduino arduino;
-TempSensor sensor;
-Timer sensorTimer(SENSOR_INTERVAL_MS);
-
-InfluxField* tempField = nullptr;
-InfluxField* humField = nullptr;
-InfluxField* dewPointField = nullptr;
-InfluxField* absoluteHumidityField = nullptr;
-InfluxField* heatIndexField = nullptr;
 
 // Cached values
 // FieldTable reads these directly via pointer and only repaints a row's value when it changes.
 float allValuesTemp = NAN;
 
-// Backs the all-values table's humidity, dew point, absolute humidity, and heat index rows:
-// when there is no humidity sensor, these are set to a dash placeholder (rather than a NaN
-// float, which now renders as literal "nan" text) since none of these values can be computed
+// Backs the all-values table's humidity, dew point, and absolute humidity rows: when there
+// is no humidity sensor, these are set to a dash placeholder (rather than a NaN float,
+// which now renders as literal "nan" text) since none of these values can be computed
 // without a humidity reading.
 StringValue allValuesHum("##.#%");
 StringValue allValuesDewPoint("###.## F");
 StringValue allValuesAbsHum("##.#%");
-StringValue allValuesHeatIndex("###.## F");
 
 // Shows all 5 time-averaged readings with labels, GAP-aligned into a single value
 // column, while buttonA is held (see loop()). Positioned once headerHeight is known in
@@ -134,40 +120,7 @@ FieldTable allValuesTable(&arduino, 0, 0, TEXT_SIZE_SMALL);
 // the display can be cleared exactly once when switching between it and the normal readout.
 bool wasAllValuesMode = false;
 
-InfluxConfig INFLUX_CONFIG = {
-   .intervalS = INFLUX_INTERVAL_S,
-   .promptForContext = true,
-   .includeCpuTemp = true,
-};
-
-SketchConfig MONITOR_CONFIG = {
-   .sketchName = SKETCH_NAME,
-   .version = VERSION,
-   .preferencesNamespace = PREFERENCES_NAMESPACE,
-   .enableOTA = true,
-   .enableRebooter = true,
-};
-
-MonitorSketch monitor(&arduino, MONITOR_CONFIG, INFLUX_CONFIG);
-
-///
-/// <summary>
-/// Adds the most recent averaged sensor readings to a GetStatus reply, on top of
-/// Logger's/SketchBase's base fields.
-/// </summary>
-/// <param name="status">The in-progress status to add fields to.</param>
-///
-void onStatus(LoggerStatus& status)
-{
-   status.add("Temperature", tempField->get(), INFLUX_TEMP_DECIMAL_PLACES);
-   if (sensor.supportsHumidity())
-   {
-      status.add("Humidity", humField->get(), INFLUX_HUMIDITY_DECIMAL_PLACES);
-      status.add("Dew Point", dewPointField->get(), INFLUX_TEMP_DECIMAL_PLACES);
-      status.add("Absolute Humidity", absoluteHumidityField->get(), INFLUX_HUMIDITY_DECIMAL_PLACES);
-      status.add("Heat Index", heatIndexField->get(), INFLUX_TEMP_DECIMAL_PLACES);
-   }
-}
+TempMonitorSketch monitor(&arduino, SKETCH_NAME, VERSION, PREFERENCES_NAMESPACE);
 
 void setup()
 {
@@ -182,25 +135,13 @@ void setup()
 
    // Fall back to the internal ESP32 CPU temperature sensor if no external sensor is
    // found, so the device still reports a (less accurate) temperature reading instead
-   // of failing to start. Registered before begin() so the sensor is initialized before
-   // WiFi/Influx setup.
-   monitor.addSensor("Sensor", []() { return sensor.begin(false, true); }, []() { return sensor.type(); });
-
+   // of failing to start.
    monitor.begin();
-   monitor.onStatus(onStatus);
-
-   InfluxPoint* point = monitor.addPoint({ { "item", "Sensor" } });
-   tempField = point->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
-   humField = point->addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
-   dewPointField = point->addTimeAverageField(INFLUX_INTERVAL_S, "dewPoint", INFLUX_TEMP_DECIMAL_PLACES);
-   absoluteHumidityField = point->addTimeAverageField(INFLUX_INTERVAL_S, "absoluteHumidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
-   heatIndexField = point->addTimeAverageField(INFLUX_INTERVAL_S, "heatIndex", INFLUX_TEMP_DECIMAL_PLACES);
 
    allValuesTable.addRow("Temp", tempFormat.formatString().c_str(), &allValuesTemp);
    allValuesTable.addRow("Humidity", &allValuesHum);
    allValuesTable.addRow("Dew Pt", &allValuesDewPoint);
    allValuesTable.addRow("Abs Hum", &allValuesAbsHum);
-   allValuesTable.addRow("Heat Idx", &allValuesHeatIndex);
 
    int16_t tableHeaderHeight = arduino.charH(TEXT_SIZE_SMALL);
    int16_t tableFooterHeight = arduino.charH(TEXT_SIZE_SMALL);
@@ -218,25 +159,6 @@ void setup()
 
 ///
 /// <summary>
-/// Samples the sensor and updates the time-averaged Influx fields, once per
-/// SENSOR_INTERVAL_MS.
-/// </summary>
-///
-void updateSensorReadings()
-{
-   if (sensorTimer.ready())
-   {
-      Readings readings = sensor.readAll();
-      tempField->set(readings.tempF);
-      humField->set(readings.humidity);
-      dewPointField->set(readings.dewPointF);
-      absoluteHumidityField->set(readings.absoluteHumidity);
-      heatIndexField->set(readings.heatIndexF);
-   }
-}
-
-///
-/// <summary>
 /// Draws the header line ("Influx" + sensor type) at the top of the display.
 /// </summary>
 /// <returns>The header's height in pixels.</returns>
@@ -246,7 +168,7 @@ int16_t drawHeader()
    arduino.setCursor(0, 0);
    arduino.setTextSize(TEXT_SIZE_SMALL);
    arduino.print("Influx", Color::HEADING);
-   arduino.printR(sensor.type(), Color::GRAY);
+   arduino.printR(monitor.sensor().type(), Color::GRAY);
    arduino.println();
    return arduino.charH();
 }
@@ -295,19 +217,17 @@ void updateAllValuesMode(bool allValuesMode, int16_t headerHeight, int16_t foote
 void drawAllValuesReadout(float temp, float hum)
 {
    allValuesTemp = temp;
-   if (sensor.supportsHumidity())
+   if (monitor.sensor().supportsHumidity())
    {
       allValuesHum.set(humFormat.toString(hum));
-      allValuesDewPoint.set(tempFormat.toString(dewPointField->get()));
-      allValuesAbsHum.set(humFormat.toString(absoluteHumidityField->get()));
-      allValuesHeatIndex.set(tempFormat.toString(heatIndexField->get()));
+      allValuesDewPoint.set(tempFormat.toString(monitor.dewPoint()));
+      allValuesAbsHum.set(humFormat.toString(monitor.absoluteHumidity()));
    }
    else
    {
       allValuesHum.set(humFormat.toNoValueString());
       allValuesDewPoint.set(tempFormat.toNoValueString());
       allValuesAbsHum.set(humFormat.toNoValueString());
-      allValuesHeatIndex.set(tempFormat.toNoValueString());
    }
    allValuesTable.draw();
 }
@@ -330,7 +250,7 @@ void drawNormalReadout(float temp, float hum, int16_t headerHeight, int16_t foot
    arduino.printlnD(temp, tempFormat, Color::VALUE);
 
    arduino.setCursorY(arduino.getCursorY() + SPACING);
-   if (sensor.supportsHumidity())
+   if (monitor.sensor().supportsHumidity())
    {
       arduino.printlnD(hum, humFormat, Color::VALUE);
    }
@@ -344,13 +264,11 @@ void loop()
 {
    monitor.loop();
 
-   updateSensorReadings();
-
    int16_t headerHeight = drawHeader();
    int16_t footerHeight = arduino.charH(TEXT_SIZE_SMALL);
 
-   float temp = tempField->get();
-   float hum = humField->get();
+   float temp = monitor.temp();
+   float hum = monitor.humidity();
 
    bool allValuesMode = arduino.buttonA.isPressed();
    updateAllValuesMode(allValuesMode, headerHeight, footerHeight);

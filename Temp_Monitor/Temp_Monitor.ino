@@ -44,7 +44,7 @@
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //     humidity: time-averaged value of sensor.readHumidity(), sampled every
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
-//     dewPoint, absoluteHumidity, heatIndex: time-averaged values derived from the
+//     dewPoint, absoluteHumidity: time-averaged values derived from the
 //     same temperature/humidity reading (see TempSensor::readAll()), sampled every
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //
@@ -71,23 +71,18 @@
 
 #include "LibraryVersion.h"
 #include "SerialX.h"
-#include "TempSensor.h"
 #include "Timer.h"
 
 #include "WiFiSettings.h"
 
-#include "MonitorSketch.h"
+#include "TempMonitorSketch.h"
 
 // This sketch's own version (e.g. "2.0"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("2.0");
+const auto VERSION = MakeVersion("2.1");
 constexpr auto SKETCH_NAME = "Temp_Monitor";
 constexpr auto PREFERENCES_NAMESPACE = "TempMonitor";
-constexpr uint8_t INFLUX_INTERVAL_S = 15;
-constexpr uint16_t SENSOR_INTERVAL_MS = 500;
-constexpr uint8_t INFLUX_TEMP_DECIMAL_PLACES = 3;
-constexpr uint8_t INFLUX_HUMIDITY_DECIMAL_PLACES = 2;
 
 // Extra status LED wired directly to the board: signal on LED_STATUS_PIN, ground on
 // LED_STATUS_GROUND_PIN (held LOW), alongside the board's built-in RGB LED/NeoPixel status.
@@ -95,49 +90,9 @@ constexpr uint8_t LED_STATUS_PIN = 13;
 constexpr uint8_t LED_STATUS_GROUND_PIN = 12;
 
 Arduino arduino;
-TempSensor sensor;
-Timer sensorTimer(SENSOR_INTERVAL_MS);
 SingleLedStatus ledStatus(LED_STATUS_PIN);
 
-InfluxField* tempField = nullptr;
-InfluxField* humField = nullptr;
-InfluxField* dewPointField = nullptr;
-InfluxField* absoluteHumidityField = nullptr;
-InfluxField* heatIndexField = nullptr;
-
-InfluxConfig INFLUX_CONFIG = {
-   .intervalS = INFLUX_INTERVAL_S,
-   .promptForContext = true,
-   .includeCpuTemp = true,
-};
-
-SketchConfig SKETCH_CONFIG = {
-   .sketchName = SKETCH_NAME,
-   .version = VERSION,
-   .preferencesNamespace = PREFERENCES_NAMESPACE,
-   .enableOTA = true,
-   .enableRebooter = true,
-};
-
-MonitorSketch monitor(&arduino, SKETCH_CONFIG, INFLUX_CONFIG);
-
-///
-/// <summary>
-/// Adds the current sensor readings to a GetStatus reply, on top of Logger's/SketchBase's
-/// base fields. Reads the sensor live rather than reporting a cached value, since
-/// GetStatus is infrequent and can afford the read.
-/// </summary>
-/// <param name="status">The in-progress status to add fields to.</param>
-///
-void onStatus(LoggerStatus& status)
-{
-   Readings readings = sensor.readAll();
-   status.add("Temperature", readings.tempF, INFLUX_TEMP_DECIMAL_PLACES);
-   status.add("Humidity", readings.humidity, INFLUX_HUMIDITY_DECIMAL_PLACES);
-   status.add("Dew Point", readings.dewPointF, INFLUX_TEMP_DECIMAL_PLACES);
-   status.add("Absolute Humidity", readings.absoluteHumidity, INFLUX_HUMIDITY_DECIMAL_PLACES);
-   status.add("Heat Index", readings.heatIndexF, INFLUX_TEMP_DECIMAL_PLACES);
-}
+TempMonitorSketch monitor(&arduino, SKETCH_NAME, VERSION, PREFERENCES_NAMESPACE);
 
 void setup()
 {
@@ -147,25 +102,11 @@ void setup()
 
    Wire.begin();
 
-   // Fall back to the internal ESP32 CPU temperature sensor if no external sensor is
-   // found, so the device still reports a (less accurate) temperature reading instead
-   // of failing to start. Registered before begin() so the sensor is initialized before
-   // WiFi/Influx setup.
-   monitor.addSensor("Sensor", []() { return sensor.begin(false, true); }, []() { return sensor.type(); });
-
    // Registered before monitor.begin() (which calls arduino.begin()) so ledStatus.begin()
    // is invoked along with the board's built-in status indicators.
    arduino.addStatus(&ledStatus);
 
    monitor.begin();
-   monitor.onStatus(onStatus);
-
-   InfluxPoint* point = monitor.addPoint({ { "item", "Sensor" } });
-   tempField = point->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);
-   humField = point->addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
-   dewPointField = point->addTimeAverageField(INFLUX_INTERVAL_S, "dewPoint", INFLUX_TEMP_DECIMAL_PLACES);
-   absoluteHumidityField = point->addTimeAverageField(INFLUX_INTERVAL_S, "absoluteHumidity", INFLUX_HUMIDITY_DECIMAL_PLACES);
-   heatIndexField = point->addTimeAverageField(INFLUX_INTERVAL_S, "heatIndex", INFLUX_TEMP_DECIMAL_PLACES);
 
    Logger.logInitializationComplete();
 }
@@ -173,14 +114,4 @@ void setup()
 void loop()
 {
    monitor.loop();
-
-   if (sensorTimer.ready())
-   {
-      Readings readings = sensor.readAll();
-      tempField->set(readings.tempF);
-      humField->set(readings.humidity);
-      dewPointField->set(readings.dewPointF);
-      absoluteHumidityField->set(readings.absoluteHumidity);
-      heatIndexField->set(readings.heatIndexF);
-   }
 }
