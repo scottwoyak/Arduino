@@ -8,9 +8,8 @@
 //
 // Uploads to InfluxDB as measurement "Sensors", tagged with site="Lake", location="Dock",
 // and item=<Surface|Bottom 1|Bottom 2|Enclosure> identifying which sensor the point came
-// from. Fields are "temperature" and "humidity", each averaged over
-
-// via InfluxConfig.includeCpuTemp.
+// from. Fields are "temperature" and "humidity", each averaged over SENSOR_AVERAGE_PERIOD_S
+// seconds, plus a point-in-time CPU temperature reading via InfluxConfig.includeCpuTemp.
 //
 // Checks for a firmware update periodically.
 //
