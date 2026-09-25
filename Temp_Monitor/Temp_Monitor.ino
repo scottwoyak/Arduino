@@ -4,14 +4,14 @@
 // Temp_Monitor_Display, intended for a Waveshare ESP32-S3-Zero board with no display.
 //
 // Behavior:
-// - Uses the shared Monitor class (see Monitor.h) to own the boot/init sequence: status
+// - Uses the shared MonitorSketch class (see MonitorSketch.h) to own the boot/init sequence: status
 //   LED, sensor init hook, WiFi, daily rebooter, OTA, and the standard InfluxDB
 //   setup/post/flush cycle.
 // - This device's bucket/site/location is prompted for over Serial the first time it
 //   runs, then saved to Preferences (NVS) so it survives reboots and OTA firmware
 //   updates. On subsequent boots the saved value is used automatically, unless a Serial
 //   monitor is attached at boot, which offers a re-prompt. This is handled by the
-//   shared Monitor class (see Monitor.h) via SKETCH_CONFIG's promptForContext flag,
+//   shared MonitorSketch class (see MonitorSketch.h) via SKETCH_CONFIG's promptForContext flag,
 //   since this sketch prompts for a bucket/site (chosen from a fixed list) and a
 //   free-text location, rather than picking a single fixed SiteConfig entry.
 // - Samples temperature and humidity every SENSOR_INTERVAL_MS and accumulates
@@ -23,7 +23,7 @@
 //   downloads and installs it before restarting.
 //
 // Failure handling:
-// - Sensor initialization failure triggers a device reset after config.influx.sensorFailureResetDelayS seconds.
+// - Sensor initialization failure triggers a device reset after config.sensorFailureResetDelayS seconds.
 // - Influx initialization failure (handled by Monitor::begin()) triggers a device reset.
 // - Runtime InfluxDB post/flush failures are logged to Serial by Monitor::loop() and
 //   retried the following cycle.
@@ -76,7 +76,7 @@
 
 #include "WiFiSettings.h"
 
-#include "Monitor.h"
+#include "MonitorSketch.h"
 
 // This sketch's own version (e.g. "2.0"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
@@ -108,19 +108,18 @@ InfluxField* heatIndexField = nullptr;
 InfluxConfig INFLUX_CONFIG = {
    .intervalS = INFLUX_INTERVAL_S,
    .promptForContext = true,
+   .includeCpuTemp = true,
 };
 
 SketchConfig SKETCH_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = PREFERENCES_NAMESPACE,
-   .influx = INFLUX_CONFIG,
-   .includeCpuTemp = true,
    .enableOTA = true,
    .enableRebooter = true,
 };
 
-Monitor monitor(&arduino, SKETCH_CONFIG);
+MonitorSketch monitor(&arduino, SKETCH_CONFIG, INFLUX_CONFIG);
 
 ///
 /// <summary>

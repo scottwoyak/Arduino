@@ -1,38 +1,33 @@
 #pragma once
 
 // Requires the sketch to have already included, in order: ArduinoBoard.h (so the
-// board-specific Arduino type is defined), and WiFiSettings.h (so WIFI_SSID,
-// WIFI_PASSWORD, INFLUXDB_URL, and INFLUXDB_ORG are defined). This mirrors the include
-// order already used by Monitor-/Publisher-based sketches.
+// board-specific Arduino type is defined), and WiFiSettings.h (so WIFI_SSID and
+// WIFI_PASSWORD are defined). This mirrors the include order used by
+// InfluxSketchBase-derived (Monitor/Publisher) sketches.
 
 #include <functional>
+#include <string>
 #include <vector>
 
 #include <esp_task_wdt.h>
 
-#include "Influx.h"
-#include "ESP32TempSensor.h"
+#include "ArduinoBase.h"
 #include "Logger.h"
-#include "SerialX.h"
-#include "SiteConfig.h"
+#include "OTAUpdater.h"
 #include "Status.h"
-#include "TempSensor.h"
-#include "Timer.h"
 #include "Util.h"
 
 ///
 /// <summary>
-/// Configuration shared by Monitor and Publisher sketches: sketch identity, InfluxDB
-/// settings (see InfluxConfig), and Publisher's telemetry settings. Fields that only
-/// apply to one sketch type (e.g. telemetry for Publisher) are simply left at their
-/// default when not used.
+/// Configuration shared by every sketch built on SketchBase: sketch identity, OTA,
+/// rebooter, and CPU settings. Influx and telemetry settings are passed separately
+/// (as InfluxConfig/TelemetryConfig) to the derived classes that use them.
 /// </summary>
 ///
 /// Fields with a default value below only need to be specified by a sketch if it wants
 /// to override that default; use designated initializers and list only the fields that
 /// differ, e.g. { .sketchName = "Some_Monitor", .version = VERSION,
-/// .preferencesNamespace = "Some_Monitor", .influx = { .prompts = SOME_INFLUX_SITES },
-/// .includeCpuTemp = true }.
+/// .preferencesNamespace = "Some_Monitor", .enableOTA = true }.
 ///
 struct SketchConfig
 {
@@ -42,59 +37,36 @@ struct SketchConfig
    /// <summary>Sketch version string, printed at boot (if set) and used for OTA update checks. Leave null for a testing sketch that doesn't track a version or use OTA.</summary>
    const char* version = nullptr;
 
-   /// <summary>Preferences (NVS) namespace used to persist the selected site/location. Only needed if sites is non-empty.</summary>
+   /// <summary>Preferences (NVS) namespace used to persist prompted selections (Influx site, telemetry topic). Only needed if a derived class prompts.</summary>
    const char* preferencesNamespace = nullptr;
-
-   /// <summary>InfluxDB settings: measurement names, post cadence, rolling-average sample count, and site selection.</summary>
-   InfluxConfig influx;
-
-   /// <summary>Publisher only: telemetry settings (selectable topic table or fixed topic, decimals, publish cadence).</summary>
-   TelemetryConfig telemetry;
 
    /// <summary>CPU clock speed (in MHz) set once begin() completes, to reduce power draw/heat.</summary>
    uint8_t cpuFrequencyMhz = 80;
 
-   /// <summary>If true, capture and upload rolling-averaged enclosure temperature/humidity to InfluxDB.</summary>
-   bool includeEnclosureTemp = false;
-
-   /// <summary>If true, capture and upload the ESP32 CPU temperature to InfluxDB.</summary>
-   bool includeCpuTemp = false;
-
    /// <summary>If true, enable OTA firmware updates via arduino.enableOTA(). Sketches that need OTA (e.g. remotely deployed ones) must set this to true.</summary>
    bool enableOTA = false;
 
-   /// <summary>If true, enable the scheduled daily reboot via arduino.enableRebooter(). Sketches that need it (e.g. long-running deployed sketches) must set this to true.</summary>
-   bool enableRebooter = false;
-};
+       /// <summary>If true, enable the scheduled daily reboot via arduino.enableRebooter(). Sketches that need it (e.g. long-running deployed sketches) must set this to true.</summary>
+       bool enableRebooter = false;
+
+       /// <summary>Seconds to wait before resetting after a fatal sensor init failure (see addSensor()) or after reportSensorFailure() (MonitorSketch only) is called.</summary>
+       uint8_t sensorFailureResetDelayS = 10;
+   };
 
 ///
 /// <summary>
-/// Owns the initialization/loop logic shared by Monitor and Publisher: banner,
-/// force-prompt window, sensor init, site resolution, WiFi, rebooter, OTA, InfluxDB
-/// setup (including the single startup/OTA log point and the standard enclosure/CPU
-/// points), and the standard per-loop sensor sampling/Influx post cycle. Behavior that
-/// differs between Monitor (no telemetry) and Publisher (telemetry WebSocket client) is
-/// factored out into the protected virtual hooks below, overridden by each subclass.
+/// Owns the generic boot/init sequence shared by every sketch built on top of it:
+/// sketch name/version startup print, WiFi connect, OTA/rebooter enable, Logger
+/// connect, CPU clock speed, and the standard per-loop OTA/Logger/status-indicator/
+/// watchdog step. Concrete sketch base classes (InfluxSketchBase, ViewerSketch) derive
+/// from this and layer their own site/telemetry/sensor logic on top. A sketch
+/// constructs the derived class, calls begin() once from setup() (after registering any
+/// sketch-specific hooks), and calls loop() once from loop().
 /// </summary>
 ///
 class SketchBase : private OTAUpdateEventHandler
 {
 public:
-   /// <summary>How long to wait after boot for a buttonA press before proceeding.</summary>
-   static constexpr uint16_t FORCE_PROMPT_WINDOW_MS = 2000;
-
-   /// <summary>Decimal places used when posting the standard enclosure/CPU fields to InfluxDB.</summary>
-   static constexpr uint8_t INFLUX_DECIMALS = 2;
-
-   /// <summary>How often (in milliseconds) the standard enclosure temperature/humidity sensor is sampled.</summary>
-   static constexpr uint16_t SENSOR_INTERVAL_MS = 100;
-
-   /// <summary>ESP32 task watchdog timeout (in seconds); loop() resets it automatically.</summary>
-   static constexpr uint8_t WATCHDOG_INTERVAL_S = 60;
-
-   /// <summary>Seconds to wait before resetting after WiFi connectivity is lost and cannot be reestablished. See _onWiFiLost().</summary>
-   static constexpr uint8_t WIFI_LOST_RESET_DELAY_S = 10;
-
    ///
    /// <summary>
    /// One sensor to initialize during begin(), via arduino.initSensor(). If fatal is
@@ -110,301 +82,37 @@ public:
    };
 
 protected:
-   ///
-   /// <summary>
-   /// Determines whether the user should be offered a chance to re-prompt for a
-   /// site/bucket/location selection right now: automatically true if a Serial monitor
-   /// is attached at boot (e.g. the board is inside an enclosure and buttonA can't be
-   /// reached), since that's still bounded by a prompt timeout; otherwise gives the user
-   /// a short buttonA-held window to force it. buttonA is on GPIO0, a strapping pin:
-   /// holding it low during power-on/reset puts the chip into UART download mode instead
-   /// of running the sketch, so it can't be checked during boot - hence the window
-   /// approach instead of a simple boot-time check.
-   /// </summary>
-   /// <returns>True if the user should be prompted to reconfigure.</returns>
-   ///
-   bool _shouldForcePrompt()
-   {
-      if (Serial)
-      {
-         return true;
-      }
+   /// <summary>ESP32 task watchdog timeout (in seconds); loop() resets it automatically.</summary>
+   static constexpr uint8_t WATCHDOG_INTERVAL_S = 60;
 
-      Serial.println("Press buttonA now to reconfigure the site...");
-      return InfluxContextResolver::waitForForcePrompt(_arduino->buttonA, FORCE_PROMPT_WINDOW_MS);
-   }
+   /// <summary>Seconds to wait before resetting after WiFi connectivity is lost and cannot be reestablished. See _onWiFiLost().</summary>
+   static constexpr uint8_t WIFI_LOST_RESET_DELAY_S = 10;
 
-   /// <summary>Board wrapper.</summary>
-   Arduino* _arduino;
-
-   /// <summary>Status indicator driving visual feedback during begin()/loop(). Points at the board itself when it implements IStatus (e.g. WaveShare_ESP32_S3_Zero_Sensors's combined external RGB LED/onboard NeoPixel indicator); otherwise falls back to _ownedNeoPixelStatus, driven by the board's onboard NeoPixel LED.</summary>
-   IStatus* _status;
-
-#ifndef ARDUINO_STATUS_SUPPORTED
    /// <summary>Fallback status indicator, used when the board doesn't implement IStatus itself.</summary>
+#ifndef ARDUINO_STATUS_SUPPORTED
    NeoPixelStatus _ownedNeoPixelStatus;
 #endif
 
    /// <summary>Copy of the config passed to the constructor.</summary>
    SketchConfig _config;
 
-   /// <summary>Resolves/persists the chosen InfluxDB site entry.</summary>
-   InfluxContextResolver _siteResolver;
-
-   /// <summary>Resolves/persists the chosen telemetry topic.</summary>
-   TelemetryTopicResolver _topicResolver;
-
-   /// <summary>The resolved InfluxDB site, populated by begin().</summary>
-   InfluxContext _site{};
-
-   /// <summary>The resolved telemetry topic, populated by begin() (nullptr if not used).</summary>
-   const char* _telemetryTopic = nullptr;
-
    /// <summary>Sensors registered via addSensor(), run in order during begin().</summary>
    std::vector<SensorInit> _sensors;
 
-   /// <summary>Owned enclosure temperature/humidity sensor, used if config.includeEnclosureTemp is true.</summary>
-   TempSensor _enclosureTempSensor;
+   /// <summary>Board wrapper.</summary>
+   Arduino* _arduino;
 
-   /// <summary>Constructed by begin(), once the InfluxDB bucket has been resolved. Left nullptr if Influx isn't in use (see _shouldUseInflux()).</summary>
-   Influx* _influx = nullptr;
+   /// <summary>Status indicator driven through the WiFi/OTA phases of begin().</summary>
+   IStatus* _status;
 
-   /// <summary>True if Influx is in use; set by begin() from _shouldUseInflux().</summary>
-   bool _usesInflux = false;
-
-   /// <summary>Points registered via addPoint() (including the standard enclosure/CPU
-   /// points below); posted and flushed together each Influx upload cycle.</summary>
-   std::vector<InfluxPoint*> _points;
-
-   InfluxField* _enclosureTempField = nullptr;
-   InfluxField* _enclosureHumidityField = nullptr;
-   InfluxField* _cpuTempField = nullptr;
-
-   /// <summary>Owned CPU temperature sensor, used if config.includeCpuTemp is true.</summary>
-   ESP32TempSensor _cpuTempSensor;
-
-   Timer _sensorTimer;
-
-   /// <summary>Callback registered via setOnWiFiLostCallback(), used by _onWiFiLost().</summary>
-   std::function<bool()> _onWiFiLostCallback = nullptr;
-
-   /// <summary>Callback registered via onStatus(), invoked after the base fields added by _populateStatus() below.</summary>
+   /// <summary>Callback registered via onStatus(), invoked after any base fields added by _populateStatus() below.</summary>
    void (*_sketchStatusHandler)(LoggerStatus& status) = nullptr;
-
-   /// <summary>True once the Influx write buffer has been sized for the final point count (see loop()).</summary>
-   bool _writeOptionsApplied = false;
 
    /// <summary>The single SketchBase instance, used by _onGetStatus() to reach the instance whose fields it should add (Logger.onStatus() only accepts a captureless function pointer).</summary>
    inline static SketchBase* _instance = nullptr;
 
-   ///
-   /// <summary>
-   /// Adds base status fields (Influx bucket, registered sensors, standard
-   /// enclosure/CPU sensor flags, telemetry topic) to a GetStatus reply, then invokes
-   /// the sketch's own handler (registered via onStatus()), if any.
-   /// </summary>
-   /// <param name="status">The in-progress status to add fields to.</param>
-   ///
-   void _populateStatus(LoggerStatus& status)
-   {
-      status.add("Influx Bucket", _site.bucket != nullptr ? _site.bucket : "N/A");
-
-      for (const SensorInit& sensor : _sensors)
-      {
-         const char* label = (sensor.successLabelFunc != nullptr) ? sensor.successLabelFunc() : "OK";
-         status.add(sensor.label, label);
-      }
-
-      if (_config.includeEnclosureTemp)
-      {
-         status.add("Enclosure Temperature", _enclosureTempSensor.readTemperatureF(), INFLUX_DECIMALS);
-         status.add("Enclosure Humidity", _enclosureTempSensor.readHumidity(), INFLUX_DECIMALS);
-      }
-
-      if (_config.includeCpuTemp)
-      {
-         status.add("CPU Temperature", _cpuTempSensor.readTemperatureF(), INFLUX_DECIMALS);
-      }
-
-      if (_telemetryTopic != nullptr)
-      {
-         status.add("Telemetry Topic", _telemetryTopic);
-      }
-
-      if (_sketchStatusHandler != nullptr)
-      {
-         _sketchStatusHandler(status);
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Static trampoline registered with Logger.onStatus(), forwarding to the single
-   /// SketchBase instance's _populateStatus().
-   /// </summary>
-   /// <param name="status">The in-progress status to add fields to.</param>
-   ///
-   static void _onGetStatus(LoggerStatus& status)
-   {
-      if (_instance != nullptr)
-      {
-         _instance->_populateStatus(status);
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Returns the InfluxDB site to use when the config has no selectable influx.prompts
-   /// table (i.e. config.influx.prompts is empty). Monitor returns its influx.context;
-   /// Publisher returns an empty site (no Influx bucket) since it has no fixed-site
-   /// concept of its own.
-   /// </summary>
-   ///
-   virtual InfluxContext _resolveFixedSite() = 0;
-
-   ///
-   /// <summary>
-   /// Returns the telemetry topic to use when the config has no selectable
-   /// telemetry.prompts table (i.e. config.telemetry.prompts is empty). Publisher returns its
-   /// fixed config.telemetry.topic (and prints it to Serial); Monitor doesn't use
-   /// telemetry, so the default returns nullptr.
-   /// </summary>
-   ///
-   virtual const char* _resolveFixedTelemetryTopic()
-   {
-      return nullptr;
-   }
-
-   ///
-   /// <summary>
-   /// Returns whether Influx should be initialized this run. Monitor always uses Influx;
-   /// Publisher only does so when a selectable Influx site table resolved a bucket.
-   /// </summary>
-   /// <param name="hasSiteTable">True if config.influx.prompts is non-empty.</param>
-   ///
-   virtual bool _shouldUseInflux(bool hasSiteTable) = 0;
-
-   ///
-   /// <summary>Returns the telemetry status line logged/displayed once Influx begins successfully (e.g. "Telemetry topic: X"). Monitor doesn't use telemetry, so the default returns an empty string (nothing is logged/displayed).</summary>
-   ///
-   virtual std::string _buildTelemetryMessage()
-   {
-      return "";
-   }
-
-   ///
-   /// <summary>
-   /// Extension point run after OTA is enabled, at the end of begin(). Publisher uses
-   /// this to construct and start its telemetry WebSocket client; Monitor doesn't need
-   /// it.
-   /// </summary>
-   ///
-   virtual void _afterOTASetup()
-   {
-   }
-
-   ///
-   /// <summary>
-   /// Extension point run at the very start of loop(), before OTA polling. Publisher
-   /// uses this to publish the current value and poll its telemetry client; Monitor
-   /// doesn't need it.
-   /// </summary>
-   ///
-   virtual void _beforeOTACheck()
-   {
-   }
-
-   ///
-   /// <summary>
-   /// Extension point run when arduino.ensureWiFiConnected() reports the connection is
-   /// lost, before loop() resets the device. Defaults to the callback registered via
-   /// setOnWiFiLostCallback() (if any), or returns false if none was registered. Return
-   /// true if the loss was fully handled and loop() should skip its own default reset;
-   /// return false to let loop() reset the device after WIFI_LOST_RESET_DELAY_S seconds.
-   /// </summary>
-   /// <returns>True if the WiFi loss was fully handled and no reset is needed.</returns>
-   ///
-   virtual bool _onWiFiLost()
-   {
-      return _onWiFiLostCallback != nullptr ? _onWiFiLostCallback() : false;
-   }
-
-   ///
-   /// <summary>
-   /// Returns whether the standard Influx post/flush cycle should run this loop, beyond
-   /// the base _usesInflux/_influx->ready() check. Publisher also requires its telemetry
-   /// client to be started; Monitor has no extra condition.
-   /// </summary>
-   ///
-   virtual bool _extraInfluxReadyCondition()
-   {
-      return true;
-   }
-
-   ///
-   /// <summary>Returns the "async" flag passed to InfluxPoint::post() each loop.</summary>
-   ///
-   virtual bool _postAsync()
-   {
-      return false;
-   }
-
-   ///
-   /// <summary>
-   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater just before it downloads
-   /// and installs a newly detected firmware version. Logs the update before it starts.
-   /// </summary>
-   /// <param name="newVersion">The newly detected version string.</param>
-   ///
-   void onUpdateAvailable(const char* newVersion) override
-   {
-      std::string otaMessage = std::string("Updating from ") + _config.version + " to " + newVersion;
-      _logMessage(otaMessage);
-   }
-
-   ///
-   /// <summary>
-   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater when a detected update
-   /// fails to download/install. Logs the failure.
-   /// </summary>
-   /// <param name="newVersion">The version that failed to install.</param>
-   /// <param name="reason">The error reported by the underlying HTTP update client.</param>
-   ///
-   void onUpdateFailed(const char* newVersion, const char* reason) override
-   {
-      std::string otaMessage = std::string("Update to ") + newVersion + " failed: " + reason;
-      _logMessage(otaMessage, LogSeverity::ERROR);
-   }
-
-   ///
-   /// <summary>
-   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater when a detected update
-   /// downloads and installs successfully, just before the device restarts. Logs the
-   /// success.
-   /// </summary>
-   /// <param name="newVersion">The version that was successfully installed.</param>
-   ///
-   void onUpdateSucceeded(const char* newVersion) override
-   {
-      std::string otaMessage = std::string("Updated to ") + newVersion;
-      _logMessage(otaMessage);
-   }
-
-   ///
-   /// <summary>
-   /// OTAUpdateEventHandler implementation, invoked for OTA diagnostic messages that are
-   /// otherwise only printed to Serial (e.g. version check failures, missing OTA
-   /// partition). Mirrors them to the LogServer, tagging error-type messages as ERROR.
-   /// </summary>
-   /// <param name="message">The diagnostic message.</param>
-   ///
-   void onLogMessage(const char* message) override
-   {
-      std::string text(message);
-      bool isError = text.find("failed") != std::string::npos || text.find("no OTA download partition") != std::string::npos;
-
-      _logMessage(message, isError ? LogSeverity::ERROR : LogSeverity::INFO);
-   }
+   /// <summary>Callback registered via setOnWiFiLostCallback(), used by _onWiFiLost().</summary>
+   std::function<bool()> _onWiFiLostCallback = nullptr;
 
    ///
    /// <summary>
@@ -511,31 +219,276 @@ protected:
       Logger.log(result);
    }
 
+   ///
+   /// <summary>
+   /// Prints the sketch name/version startup lines to Serial and the display, as two
+   /// separate lines ("Sketch... " / "Version... "). Call once from begin(), before
+   /// _beginConnect().
+   /// </summary>
+   ///
+   void _printStartupInfo()
+   {
+      _arduino->beginInit();
+      Logger.log("Initializing");
+
+      _arduino->printlnInitStatus("Sketch... ", _config.sketchName);
+
+      const char* version = _config.version;
+      if (version != nullptr)
+      {
+         const char* versionText = (version[0] == 'v' || version[0] == 'V') ? version + 1 : version;
+         _arduino->printlnInitStatus("Version... ", versionText);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Connects to WiFi and enables OTA if configured. Call once from begin(), after
+   /// _printStartupInfo() (and, if needed, any sketch-specific prompting that must
+   /// happen before WiFi connects). Followed by any WiFi-dependent setup (e.g. a
+   /// telemetry client) and finally _beginLogger(), which starts the LogServer
+   /// connection.
+   /// </summary>
+   ///
+   void _beginConnect()
+   {
+      _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
+
+      if (_config.enableRebooter)
+      {
+         _arduino->enableRebooter();
+      }
+
+      if (_config.enableOTA)
+      {
+         _arduino->enableOTA(_config.version, _config.sketchName, _status, OTAUpdater::DEFAULT_CHECK_INTERVAL_SECS, this);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Starts the Logger connection. Call once from begin(), as the last setup step,
+   /// after _beginConnect() and any other WiFi-dependent setup (e.g. a telemetry
+   /// client), so nothing else can log a line while the LogServer connection is
+   /// pending.
+   /// </summary>
+   /// <param name="site">Optional site tag to associate with the LogServer connection (e.g. the resolved InfluxDB site).</param>
+   /// <param name="location">Optional location tag to associate with the LogServer connection.</param>
+   ///
+   void _beginLogger(const char* site = nullptr, const char* location = nullptr)
+   {
+      // Started last: blocks (via waitForClient()) until the "Logging... " label printed
+      // by begin() is completed by Logger::_onEvent(), so nothing else may log a line
+      // until then. Logger itself remains async.
+      Logger.begin(_config.sketchName, _config.version, site, location);
+      _arduino->waitForClient([]() { return Logger.isResolved(); }, []() { Logger.loop(); });
+
+      setCpuFrequencyMhz(_config.cpuFrequencyMhz);
+
+      Logger.onStatus(_onGetStatus);
+
+      esp_task_wdt_config_t twdtConfig = {
+         .timeout_ms = WATCHDOG_INTERVAL_S * 1000U,
+         .idle_core_mask = 0,
+         .trigger_panic = true,
+      };
+      esp_task_wdt_reconfigure(&twdtConfig);
+      esp_task_wdt_add(nullptr);
+   }
+
+   ///
+   /// <summary>
+   /// Adds base status fields to a GetStatus reply, then invokes the sketch's own
+   /// handler (registered via onStatus()), if any. Overridden by derived classes (e.g.
+   /// InfluxSketchBase) to add their own fields before calling this base version.
+   /// </summary>
+   /// <param name="status">The in-progress status to add fields to.</param>
+   ///
+   virtual void _populateStatus(LoggerStatus& status)
+   {
+      for (const SensorInit& sensor : _sensors)
+      {
+         const char* label = (sensor.successLabelFunc != nullptr) ? sensor.successLabelFunc() : "OK";
+         status.add(sensor.label, label);
+      }
+
+      if (_sketchStatusHandler != nullptr)
+      {
+         _sketchStatusHandler(status);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Static trampoline registered with Logger.onStatus(), forwarding to the single
+   /// SketchBase instance's _populateStatus().
+   /// </summary>
+   /// <param name="status">The in-progress status to add fields to.</param>
+   ///
+   static void _onGetStatus(LoggerStatus& status)
+   {
+      if (_instance != nullptr)
+      {
+         _instance->_populateStatus(status);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Runs the standard per-loop step shared by every sketch: OTA polling, Logger
+   /// polling, status indicator updates, and watchdog reset. Call once from loop(),
+   /// then layer any sketch-specific per-loop work on top.
+   /// </summary>
+   ///
+   void _loopStep()
+   {
+      if (!_arduino->ensureWiFiConnected() && !_onWiFiLost())
+      {
+         Util::reset(WIFI_LOST_RESET_DELAY_S);
+      }
+
+      esp_task_wdt_reset();
+
+      checkForOTA();
+
+      Logger.loop();
+
+      _arduino->updateStatusIndicators();
+   }
+
+   ///
+   /// <summary>
+   /// Extension point run when arduino.ensureWiFiConnected() reports the connection is
+   /// lost, before _loopStep() resets the device. Defaults to the callback registered
+   /// via setOnWiFiLostCallback() (if any), or returns false if none was registered.
+   /// Return true if the loss was fully handled and _loopStep() should skip its own
+   /// default reset; return false to let it reset the device after
+   /// WIFI_LOST_RESET_DELAY_S seconds.
+   /// </summary>
+   /// <returns>True if the WiFi loss was fully handled and no reset is needed.</returns>
+   ///
+   virtual bool _onWiFiLost()
+   {
+      return _onWiFiLostCallback != nullptr ? _onWiFiLostCallback() : false;
+   }
+
+   ///
+   /// <summary>
+   /// Runs each sensor registered via addSensor(), in order, via arduino.initSensor().
+   /// If a fatal sensor fails to initialize, sets the status to FAILED and resets the
+   /// device after config.sensorFailureResetDelayS seconds.
+   /// registering sensors.
+   /// </summary>
+   ///
+   void _initSensors()
+   {
+      for (const SensorInit& sensor : _sensors)
+      {
+         bool success = _arduino->initSensor(sensor.label, sensor.initFunc, sensor.successLabelFunc);
+
+         if (!success && sensor.fatal)
+         {
+            _status->setStatus(Status::FAILED);
+            Util::reset(_config.sensorFailureResetDelayS);
+         }
+      }
+   }
+
+   ///
+   /// <summary>
+   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater just before it downloads
+   /// and installs a newly detected firmware version. Logs the update before it starts.
+   /// </summary>
+   /// <param name="newVersion">The newly detected version string.</param>
+   ///
+   void onUpdateAvailable(const char* newVersion) override
+   {
+      std::string otaMessage = std::string("Updating from ") + _config.version + " to " + newVersion;
+      _logMessage(otaMessage);
+   }
+
+   ///
+   /// <summary>
+   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater when a detected update
+   /// fails to download/install. Logs the failure.
+   /// </summary>
+   /// <param name="newVersion">The version that failed to install.</param>
+   /// <param name="reason">The error reported by the underlying HTTP update client.</param>
+   ///
+   void onUpdateFailed(const char* newVersion, const char* reason) override
+   {
+      std::string otaMessage = std::string("Update to ") + newVersion + " failed: " + reason;
+      _logMessage(otaMessage, LogSeverity::ERROR);
+   }
+
+   ///
+   /// <summary>
+   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater when a detected update
+   /// downloads and installs successfully, just before the device restarts. Logs the
+   /// success.
+   /// </summary>
+   /// <param name="newVersion">The version that was successfully installed.</param>
+   ///
+   void onUpdateSucceeded(const char* newVersion) override
+   {
+      std::string otaMessage = std::string("Updated to ") + newVersion;
+      _logMessage(otaMessage);
+   }
+
+   ///
+   /// <summary>
+   /// OTAUpdateEventHandler implementation, invoked for OTA diagnostic messages that are
+   /// otherwise only printed to Serial (e.g. version check failures, missing OTA
+   /// partition). Mirrors them to the LogServer, tagging error-type messages as ERROR.
+   /// </summary>
+   /// <param name="message">The diagnostic message.</param>
+   ///
+   void onLogMessage(const char* message) override
+   {
+      std::string text(message);
+      bool isError = text.find("failed") != std::string::npos || text.find("no OTA download partition") != std::string::npos;
+
+      _logMessage(message, isError ? LogSeverity::ERROR : LogSeverity::INFO);
+   }
+
 public:
    ///
    /// <summary>
-   /// Creates a SketchBase bound to the given board and configuration. Register
-   /// sensors, extra Influx points, and loop hooks afterward, then call begin().
+   /// Creates a SketchBase bound to the given board and configuration.
    /// </summary>
    /// <param name="arduino">The board wrapper (used as the status indicator directly if it implements IStatus itself; otherwise its onboard NeoPixel LED is used).</param>
    /// <param name="config">Shared configuration.</param>
    ///
    SketchBase(Arduino* arduino, const SketchConfig& config)
-      : _arduino(arduino),
-#ifdef ARDUINO_STATUS_SUPPORTED
-        _status(arduino),
-#else
-        _status(&_ownedNeoPixelStatus),
+      : _config(config),
+#ifndef ARDUINO_STATUS_SUPPORTED
         _ownedNeoPixelStatus(&arduino->neoPixel),
 #endif
-        _config(config),
-        _siteResolver(config.preferencesNamespace),
-        _topicResolver(config.preferencesNamespace),
-        _sensorTimer(SENSOR_INTERVAL_MS)
+        _arduino(arduino),
+#ifdef ARDUINO_STATUS_SUPPORTED
+        _status(arduino)
+#else
+        _status(&_ownedNeoPixelStatus)
+#endif
    {
       ASSERT(arduino != nullptr);
+      ASSERT(_instance == nullptr);
 
       _instance = this;
+   }
+
+   ///
+   /// <summary>
+   /// Checks for a pending OTA firmware update. Call once from loop(), before any other
+   /// per-loop work. Does nothing if OTA wasn't enabled.
+   /// </summary>
+   ///
+   void checkForOTA()
+   {
+      if (_config.enableOTA)
+      {
+         _arduino->checkForOTA();
+      }
    }
 
    ///
@@ -554,371 +507,30 @@ public:
 
    ///
    /// <summary>
-   /// Registers a callback invoked when WiFi connectivity is lost and cannot be
-   /// reestablished (see _onWiFiLost()). Use this to show something on the display,
-   /// log a message, etc. before the device resets. Return true from the callback if
-   /// the loss was fully handled and loop() should skip its own default reset; return
-   /// false to let loop() reset the device after WIFI_LOST_RESET_DELAY_S seconds.
-   /// </summary>
-   /// <param name="callback">Called with no arguments; returns true if fully handled.</param>
-   ///
-   void setOnWiFiLostCallback(std::function<bool()> callback)
-   {
-      _onWiFiLostCallback = callback;
-   }
-
-   ///
-   /// <summary>
-   /// Registers a handler invoked when a "GetStatus" command is received, after the
-   /// base fields (Influx bucket, registered sensors, standard enclosure/CPU sensor
-   /// readings, telemetry topic) have been added, allowing the sketch to append its own
-   /// fields (e.g. live readings). Only one handler is supported; call once from
-   /// setup(), after begin().
+   /// Registers a handler invoked when a "GetStatus" command is received from the
+   /// LogServer, after any base fields added by _populateStatus() (e.g. InfluxSketchBase's
+   /// Influx bucket/sensor/telemetry fields). Only one handler is supported; call once
+   /// from setup(), after begin().
    /// </summary>
    /// <param name="handler">Function invoked with the in-progress status to add fields to.</param>
    ///
-   void onStatus(void (*handler)(LoggerStatus& status))
-   {
-      _sketchStatusHandler = handler;
-   }
-
-   ///
-   /// <summary>
-   /// Creates and registers an additional Influx point (beyond the standard
-   /// enclosure/CPU points), posted and flushed alongside them each upload cycle. The
-   /// resolved site's "site" and "location" tags are added automatically; only
-   /// pass extra tags (e.g. "item"). Must be called after begin(), once the
-   /// site has been resolved.
-   /// </summary>
-   /// <param name="measurement">Influx measurement name. Defaults to config.influx.measurement.</param>
-   /// <param name="tags">Additional key/value pairs to attach as Influx tags.</param>
-   /// <returns>Pointer to the created point, owned by this instance.</returns>
-   ///
-   InfluxPoint* addPoint(const char* measurement, const std::vector<std::pair<const char*, const char*>>& tags)
-   {
-      std::vector<std::pair<const char*, const char*>> allTags = { { "site", _site.site }, { "location", _site.location } };
-      allTags.insert(allTags.end(), tags.begin(), tags.end());
-
-      InfluxPoint* point = new InfluxPoint(measurement, allTags);
-      _points.push_back(point);
-      return point;
-   }
-
-   ///
-   /// <summary>
-   /// Overload of addPoint() that uses config.influx.measurement as the measurement name.
-   /// </summary>
-   /// <param name="tags">Additional key/value pairs to attach as Influx tags.</param>
-   /// <returns>Pointer to the created point, owned by this instance.</returns>
-   ///
-   InfluxPoint* addPoint(const std::vector<std::pair<const char*, const char*>>& tags)
-   {
-      return addPoint(_config.influx.measurement, tags);
-   }
-
-   ///
-   /// <summary>
-   /// Overload of addPoint() for the common case of a point with no extra tags beyond
-   /// the resolved site's "site" and "location".
-   /// </summary>
-   /// <returns>Pointer to the created point, owned by this instance.</returns>
-   ///
-   InfluxPoint* addPoint()
-   {
-      return addPoint({});
-   }
-
-   ///
-   /// <summary>Returns the resolved InfluxDB context (only valid after begin() returns).</summary>
-   ///
-   const InfluxContext& context() const
-   {
-      return _site;
-   }
-
-   ///
-   /// <summary>Returns the resolved telemetry topic (only valid after begin() returns; nullptr if not used).</summary>
-   ///
-   const char* telemetryTopic() const
-   {
-      return _telemetryTopic;
-   }
-
-   ///
-   /// <summary>Returns the Influx service, constructed by begin() (nullptr if Influx isn't in use).</summary>
-   ///
-   Influx* influx()
-   {
-      return _influx;
-   }
-
-   ///
-   /// <summary>
-   /// Sends a text log message to the LogServer, and also prints it to Serial.
-   /// </summary>
-   /// <param name="message">Message text to log.</param>
-   ///
-   void logMessage(const char* message)
-   {
-      _logMessage(message);
-   }
-
-   ///
-   /// <summary>
-   /// Runs the canonical initialization sequence: banner, board begin(), force-prompt
-   /// window, registered sensor inits, site resolution, WiFi, rebooter, OTA, and InfluxDB
-   /// setup (including the standard enclosure/CPU points). Call once from setup(), after
-   /// registering sensors/fields/hooks.
-   /// </summary>
-   ///
-   void begin()
-   {
-      SerialX::begin();
-
-      Serial.println();
-      Serial.println();
-
-      _arduino->begin(); // sets up the I2C bus/power rail and the RGB status LED
-
-      _status->setStatus(Status::STARTED);
-
-      std::string startingMessage = std::string("Starting ") + _config.sketchName;
-      if (_config.version != nullptr)
+      void onStatus(void (*handler)(LoggerStatus& status))
       {
-         startingMessage += std::string(" ") + _config.version;
-      }
-      _logMessage(startingMessage);
-
-      _printAndLog("Initializing");
-
-      std::string fullSketchLine = _config.sketchName;
-      if (_config.version != nullptr)
-      {
-         fullSketchLine += std::string(" ") + _config.version;
+         _sketchStatusHandler = handler;
       }
 
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-      std::string sketchLine = fullSketchLine;
-
-      // Shorten the sketch name (replacing the trailing space with ", ") if the full
-      // line doesn't fit in the remaining width of the row, e.g. "Temp..., v2.3".
-      int16_t availableWidth = _arduino->width() - _arduino->textWidth("Sketch...");
-      if (_config.version != nullptr && _arduino->textWidth(sketchLine) > availableWidth)
+      ///
+      /// <summary>
+      /// Registers a callback invoked when WiFi connectivity is lost and cannot be
+      /// reestablished (see _onWiFiLost()). Use this to show something on the display,
+      /// log a message, etc. before the device resets. Return true from the callback if
+      /// the loss was fully handled and loop() should skip its own default reset; return
+      /// false to let loop() reset the device after WIFI_LOST_RESET_DELAY_S seconds.
+      /// </summary>
+      /// <param name="callback">Called with no arguments; returns true if fully handled.</param>
+      ///
+      void setOnWiFiLostCallback(std::function<bool()> callback)
       {
-         std::string suffix = std::string("..., ") + _config.version;
-         std::string name = _config.sketchName;
-         while (name.length() > 0 && _arduino->textWidth(name + suffix) > availableWidth)
-         {
-            name.pop_back();
-         }
-         sketchLine = name + suffix;
+         _onWiFiLostCallback = callback;
       }
-
-      _arduino->print("Sketch... ", Color::LABEL);
-      _arduino->printlnR(sketchLine, Color::VALUE);
-#endif
-
-      bool hasSiteTable = _config.influx.prompts.size() > 0;
-      bool hasTopicTable = _config.telemetry.prompts.size() > 0;
-      bool forcePrompt = (hasSiteTable || hasTopicTable) ? _shouldForcePrompt() : false;
-
-      // Resolved before initWifi/Influx so the chosen bucket is known before Influx is
-      // constructed. Resolved here (before the sensor loop) purely so the telemetry/Influx
-      // info lines below can be printed/logged right after "Initializing", even though the
-      // actual WiFi/Influx connections are still made later, after sensor init.
-      if (hasSiteTable)
-      {
-         _site = _siteResolver.resolve(_arduino->preferences, _status, "Select an influx site (* = default):", _config.influx.measurement, _config.influx.prompts.data(), _config.influx.prompts.size(), forcePrompt);
-      }
-      else
-      {
-         _site = _resolveFixedSite();
-      }
-
-      if (hasTopicTable)
-      {
-         _telemetryTopic = _topicResolver.resolve(_arduino->preferences, _status, "Select a telemetry topic (* = default):", _config.telemetry.prompts.data(), _config.telemetry.prompts.size(), forcePrompt);
-      }
-      else
-      {
-         _telemetryTopic = _resolveFixedTelemetryTopic();
-      }
-
-      std::string telemetryMessage = _buildTelemetryMessage();
-      if (telemetryMessage.length() > 0)
-      {
-         _printAndLogStatus(telemetryMessage.c_str());
-      }
-
-      std::string influxInfo = std::string("bucket=\"") + (_site.bucket != nullptr ? _site.bucket : "") +
-                               "\" site=\"" + (_site.site != nullptr ? _site.site : "") +
-                               "\" location=\"" + (_site.location != nullptr ? _site.location : "") + "\"";
-      std::string influxMessage = std::string("Influx: ") + influxInfo;
-      if (SerialX::lastShutdownReason().length() > 0)
-      {
-         influxMessage += std::string(", last shutdown: ") + SerialX::lastShutdownReason().c_str();
-      }
-      _logMessage(influxMessage);
-
-      for (const SensorInit& sensor : _sensors)
-      {
-         bool success = _arduino->initSensor(sensor.label, sensor.initFunc, sensor.successLabelFunc);
-
-         if (!success && sensor.fatal)
-         {
-            _status->setStatus(Status::FAILED);
-            Util::reset(_config.influx.sensorFailureResetDelayS);
-         }
-      }
-
-      if (_config.includeCpuTemp)
-      {
-         _cpuTempSensor.begin();
-      }
-
-      if (_config.includeEnclosureTemp)
-      {
-         _enclosureTempSensor.begin();
-      }
-
-      _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
-
-      if (_config.enableRebooter)
-      {
-         _arduino->enableRebooter();
-      }
-
-      _usesInflux = _shouldUseInflux(hasSiteTable);
-      if (_usesInflux)
-      {
-         _influx = new Influx(_config.influx.intervalS, _status, INFLUXDB_URL, INFLUXDB_ORG, _site.bucket);
-         _logStatusStart("Influx... ");
-         if (!_influx->begin(_arduino))
-         {
-            _logStatusEnd("FAILED");
-            _status->setStatus(Status::FAILED);
-            delay(1000); // time for LED to show
-            Util::reset();
-         }
-
-         _logStatusEnd("OK");
-
-         std::string intervalMessage = std::string("Values measured every ") + std::to_string(SENSOR_INTERVAL_MS) +
-                                        " ms with an average uploaded every " + std::to_string(_config.influx.intervalS) + " seconds";
-         _logMessage(intervalMessage);
-
-         if (_config.includeEnclosureTemp)
-         {
-            InfluxPoint* enclosurePoint = addPoint(_config.influx.measurement, { { "item", "Enclosure" } });
-            _enclosureTempField = enclosurePoint->addRollingAverageField(_config.influx.rollingSamples, "temperature", INFLUX_DECIMALS);
-            _enclosureHumidityField = enclosurePoint->addRollingAverageField(_config.influx.rollingSamples, "humidity", INFLUX_DECIMALS);
-         }
-
-         if (_config.includeCpuTemp)
-         {
-            InfluxPoint* cpuPoint = addPoint(_config.influx.measurement, { { "item", "CPU" } });
-            _cpuTempField = cpuPoint->addValueField("temperature", INFLUX_DECIMALS);
-         }
-      }
-
-      if (_config.enableOTA)
-      {
-         _arduino->enableOTA(_config.version, _config.sketchName, _status, OTAUpdater::DEFAULT_CHECK_INTERVAL_SECS, this);
-      }
-
-      _afterOTASetup();
-
-      // Started last, after the telemetry connection (if any) has already fully
-      // resolved via waitForClient() in _afterOTASetup(). Logger.begin() itself remains
-      // async like TelemetryClient, but this call blocks until its "Logging... " label
-      // is completed by Logger::_onEvent(), so nothing else can log a line while it's
-      // pending.
-      Logger.begin(_config.sketchName, _config.version, _site.site, _site.location);
-      _arduino->waitForClient([]() { return Logger.isResolved(); }, []() { Logger.loop(); });
-      Logger.onStatus(_onGetStatus);
-
-      setCpuFrequencyMhz(_config.cpuFrequencyMhz);
-
-      esp_task_wdt_config_t twdtConfig = {
-         .timeout_ms = WATCHDOG_INTERVAL_S * 1000U,
-         .idle_core_mask = 0,
-         .trigger_panic = true,
-      };
-      esp_task_wdt_reconfigure(&twdtConfig);
-      esp_task_wdt_add(nullptr);
-   }
-
-   ///
-   /// <summary>
-   /// Runs the canonical per-loop sequence: OTA polling, standard sensor sampling, and
-   /// the Influx post/flush cycle. Call once from loop().
-   /// </summary>
-   ///
-   void loop()
-   {
-      esp_task_wdt_reset();
-
-      Logger.loop();
-
-      if (!_arduino->ensureWiFiConnected() && !_onWiFiLost())
-      {
-         Util::reset(WIFI_LOST_RESET_DELAY_S);
-      }
-
-      _beforeOTACheck();
-
-      _arduino->checkForOTA(); // Drives OTA update checks
-
-      if (_sensorTimer.ready())
-      {
-         if (_config.includeEnclosureTemp)
-         {
-            _enclosureTempField->set(_enclosureTempSensor.readTemperatureF());
-            _enclosureHumidityField->set(_enclosureTempSensor.readHumidity());
-         }
-      }
-
-      if (_usesInflux && _influx->ready() && _extraInfluxReadyCondition())
-      {
-         if (!_writeOptionsApplied)
-         {
-            // Deferred from begin(): sketch-specific points (added via addPoint() in the
-            // sketch's own setup(), after monitor.begin()/publisher.begin() returns) aren't
-            // registered yet when begin() runs, so sizing the write buffer there would
-            // undercount _points.size() and cause the buffer to wrap and silently drop
-            // the earliest-queued points every cycle once the real point count is known.
-            size_t batchSize = _config.influx.batchPoints ? _points.size() : 1;
-            _influx->client()->setWriteOptions(WriteOptions().batchSize(batchSize).bufferSize(2 * _points.size()));
-            _writeOptionsApplied = true;
-         }
-
-         if (_config.includeCpuTemp)
-         {
-            _cpuTempField->set(_cpuTempSensor.readTemperatureF());
-         }
-
-         for (InfluxPoint* point : _points)
-         {
-            point->post(_influx->client(), _postAsync());
-
-            // When not batching, flush after each point so a failure on one point
-            // (e.g. still warming up) doesn't prevent the others from being posted.
-            if (!_config.influx.batchPoints && !_influx->client()->flushBuffer())
-            {
-               Logger.log(std::string("InfluxDB flush failed: ") + _influx->client()->getLastErrorMessage().c_str(), LogSeverity::ERROR);
-            }
-         }
-
-         if (_config.influx.batchPoints)
-         {
-            // Points above were only queued into the write buffer (see the batchSize set
-            // above), so flush now to post them together in a single HTTP request sharing
-            // one timestamp.
-            if (!_influx->client()->flushBuffer())
-            {
-               Logger.log(std::string("InfluxDB flush failed: ") + _influx->client()->getLastErrorMessage().c_str(), LogSeverity::ERROR);
-            }
-         }
-      }
-   }
-};
+   };

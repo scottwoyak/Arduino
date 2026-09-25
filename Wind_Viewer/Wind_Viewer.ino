@@ -44,7 +44,6 @@
 #include <string>
 
 constexpr const char* TELEMETRY_TOPICS[] = { "Wind/Lake", "Wind/Bragg" };
-constexpr uint8_t NUM_TELEMETRY_TOPICS = 2;
 constexpr auto PREFERENCES_NAMESPACE = "WindViewer";
 
 // Selected at startup via prompt in setup().
@@ -77,7 +76,19 @@ constexpr auto SKETCH_NAME = "Wind_Viewer";
 
 // ----------- Telemetry
 Arduino arduino;
-ViewerSketch viewer(&arduino, SKETCH_NAME, VERSION, &arduino.status, true);
+
+SketchConfig SKETCH_CONFIG = {
+   .sketchName = SKETCH_NAME,
+   .version = VERSION,
+   .preferencesNamespace = PREFERENCES_NAMESPACE,
+   .enableOTA = true,
+};
+
+TelemetryConfig TELEMETRY_CONFIG = {
+   .prompts = TELEMETRY_TOPICS,
+};
+
+ViewerSketch viewer(&arduino, SKETCH_CONFIG, TELEMETRY_CONFIG);
 
 Format speedFormat("##.# mph", Format::Alignment::RIGHT);
 
@@ -219,7 +230,7 @@ void setup()
 
    viewer.beginBanner();
 
-   telemetryTopic = viewer.resolveTopic(PREFERENCES_NAMESPACE, "Select telemetry topic:", TELEMETRY_TOPICS, NUM_TELEMETRY_TOPICS, true);
+   telemetryTopic = viewer.resolveTopic(true);
 
    viewer.beginConnect();
 
@@ -235,10 +246,9 @@ void setup()
    histogramChart->setColorRange(&speedColorRange);
    rollingChart->setColorRange(&speedColorRange);
 
-   viewer.beginTelemetry(telemetryTopic.c_str(), &telemetryHandler);
+   viewer.beginTelemetry(&telemetryHandler);
    viewer.onStatus([](LoggerStatus& status)
    {
-      status.add("Topic", telemetryTopic.c_str());
       status.add("Wind Speed", viewer.getClient()->getValue(), 1);
    });
    delay(1000); // provide time for the wind meter to get a reading

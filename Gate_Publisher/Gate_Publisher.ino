@@ -6,7 +6,7 @@
 // rolling-averaged CPU temperature reading to InfluxDB on a fixed interval.
 //
 // The site is always "Bragg", but there are two gate locations: Left and Right. See
-// Publisher.h for the shared init/loop sequence, site selection, and InfluxDB behavior.
+// PublisherSketch.h for the shared init/loop sequence, site selection, and InfluxDB behavior.
 //
 // InfluxDB points uploaded (Measurement: Sensors, bucket=<selected>):
 //
@@ -28,7 +28,7 @@
 #include "MLX90393Magnetometer.h"
 #include "WiFiSettings.h"
 
-#include "Publisher.h"
+#include "PublisherSketch.h"
 
 // This sketch's own version (e.g. "1.2"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
@@ -119,6 +119,8 @@ float gateAngle()
 
 InfluxConfig INFLUX_CONFIG = {
    .prompts = INFLUX_PROMPTS,
+   .includeEnclosureTemp = false,
+   .includeCpuTemp = true,
 };
 
 TelemetryConfig TELEMETRY_CONFIG = {
@@ -130,15 +132,11 @@ SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = SKETCH_NAME,
-   .influx = INFLUX_CONFIG,
-   .telemetry = TELEMETRY_CONFIG,
-   .includeEnclosureTemp = false,
-   .includeCpuTemp = true,
    .enableOTA = true,
    .enableRebooter = true,
 };
 
-Publisher publisher(&arduino, PUBLISHER_CONFIG);
+PublisherSketch publisher(&arduino, PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
 
 ///
 /// <summary>

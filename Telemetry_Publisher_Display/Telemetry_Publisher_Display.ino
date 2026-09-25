@@ -33,7 +33,7 @@
 #define TEST_SENSOR_TYPE WaveTestSensor
 #include "TestSensor.h"
 
-#include "Publisher.h"
+#include "PublisherSketch.h"
 
 Arduino arduino;
 TestSensor sensor;
@@ -45,10 +45,10 @@ TelemetryConfig TELEMETRY_CONFIG = {
 
 SketchConfig PUBLISHER_CONFIG = {
    .sketchName = "Publisher",
-   .telemetry = TELEMETRY_CONFIG,
 };
 
-Publisher publisher(&arduino, PUBLISHER_CONFIG);
+// No Influx site table, so Influx isn't used.
+PublisherSketch publisher(&arduino, PUBLISHER_CONFIG, {}, TELEMETRY_CONFIG);
 
 // ----------- Display Items
 constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
@@ -61,9 +61,9 @@ ScatterPlot valuePlot(&arduino, Rect16{}, "##.#s", "###.###");
 TimedScatterPlotSeries* valueSeries = valuePlot.createTimedSeries(PLOT_SPAN_MS);
 constexpr uint8_t VALUE_SERIES_POINT_SIZE = 1;
 
-// Mirrors PUBLISHER_CONFIG.telemetry.publishIntervalMs so the plot is sampled at the same rate
+// Mirrors TELEMETRY_CONFIG.publishIntervalMs so the plot is sampled at the same rate
 // the telemetry value is published.
-Timer plotSampleTimer(PUBLISHER_CONFIG.telemetry.publishIntervalMs);
+Timer plotSampleTimer(TELEMETRY_CONFIG.publishIntervalMs);
 bool needsInitialDisplay = true;
 
 void setup()

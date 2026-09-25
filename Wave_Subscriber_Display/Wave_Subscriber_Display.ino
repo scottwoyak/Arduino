@@ -20,7 +20,6 @@
 #include <string>
 
 constexpr const char* TELEMETRY_TOPICS[] = { "Waves/Ultrasonic", "Waves/Pressure" };
-constexpr uint8_t NUM_TELEMETRY_TOPICS = 2;
 constexpr auto PREFERENCES_NAMESPACE = "WaveViewer";
 
 // Selected at startup via prompt in setup().
@@ -62,7 +61,19 @@ constexpr auto SKETCH_NAME = "Wave_Subscriber_Display";
 
 // ----------- Telemetry
 Arduino arduino;
-ViewerSketch viewer(&arduino, SKETCH_NAME, VERSION, &arduino.status, true);
+
+SketchConfig SKETCH_CONFIG = {
+   .sketchName = SKETCH_NAME,
+   .version = VERSION,
+   .preferencesNamespace = PREFERENCES_NAMESPACE,
+   .enableOTA = true,
+};
+
+TelemetryConfig TELEMETRY_CONFIG = {
+   .prompts = TELEMETRY_TOPICS,
+};
+
+ViewerSketch viewer(&arduino, SKETCH_CONFIG, TELEMETRY_CONFIG);
 RollingRate displayRate(100);
 RollingRate serverRate(100);
 RollingStats sensorReadings(500);
@@ -217,18 +228,14 @@ void setup()
 
    viewer.beginBanner();
 
-   telemetryTopic = viewer.resolveTopic(PREFERENCES_NAMESPACE, "Select telemetry topic:", TELEMETRY_TOPICS, NUM_TELEMETRY_TOPICS, true);
+   telemetryTopic = viewer.resolveTopic(true);
    displayFooter();
 
    viewer.beginConnect();
 
-   viewer.beginTelemetry(telemetryTopic.c_str(), &telemetryHandler);
-   viewer.onStatus([](LoggerStatus& status)
-   {
-      status.add("Topic", telemetryTopic.c_str());
-   });
+   viewer.beginTelemetry(&telemetryHandler);
 
-   delay(1000); // provide time for the wave sensor to get a reading
+   delay(1000);
 
    Logger.logInitializationComplete();
 }

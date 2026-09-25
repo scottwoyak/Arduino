@@ -23,7 +23,7 @@
 // selection: Waves/Ultrasonic uses the ultrasonic sensor, Waves/Pressure uses the
 // MS5837 pressure sensor. The InfluxDB site/location is chosen independently from
 // the 2 entries in INFLUX_PROMPTS.
-// See Publisher.h for the shared init/loop sequence, site selection, and InfluxDB
+// See PublisherSketch.h for the shared init/loop sequence, site selection, and InfluxDB
 // behavior.
 //
 // InfluxDB points uploaded (Measurement: Sensors, bucket=<selected>):
@@ -57,7 +57,7 @@
 #include "Timer.h"
 #include "WiFiSettings.h"
 
-#include "Publisher.h"
+#include "PublisherSketch.h"
 
 // This sketch's own version (e.g. "v1.0"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
@@ -110,6 +110,8 @@ DepthSensorBase* depth = nullptr;
 
 InfluxConfig INFLUX_CONFIG = {
    .prompts = INFLUX_PROMPTS,
+   .includeEnclosureTemp = true,
+   .includeCpuTemp = true,
 };
 
 TelemetryConfig TELEMETRY_CONFIG = {
@@ -122,15 +124,11 @@ SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = SKETCH_NAME,
-   .influx = INFLUX_CONFIG,
-   .telemetry = TELEMETRY_CONFIG,
-   .includeEnclosureTemp = true,
-   .includeCpuTemp = true,
    .enableOTA = true,
    .enableRebooter = true,
 };
 
-Publisher publisher(&arduino, PUBLISHER_CONFIG);
+PublisherSketch publisher(&arduino, PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
 
 // Registered after begin(), once the site has been resolved.
 InfluxField* averageDepthField = nullptr;

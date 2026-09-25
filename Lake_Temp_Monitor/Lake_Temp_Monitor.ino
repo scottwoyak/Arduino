@@ -2,15 +2,15 @@
 // Lake water temperature monitoring station with multi-sensor support.
 //
 // Monitors temperature and humidity at 5 different locations in a lake using I2C multiplexing.
-// Uses the shared Monitor class (see Monitor.h) to own the boot/init sequence: status LED,
+// Uses the shared MonitorSketch class (see MonitorSketch.h) to own the boot/init sequence: status LED,
 // per-sensor init, WiFi, daily rebooter, OTA, task watchdog, and the standard InfluxDB
 // setup/post/flush cycle.
 //
 // Uploads to InfluxDB as measurement "Sensors", tagged with site="Lake", location="Dock",
 // and item=<Surface|Bottom 1|Bottom 2|Enclosure> identifying which sensor the point came
 // from. Fields are "temperature" and "humidity", each averaged over
-// SENSOR_AVERAGE_PERIOD_S before being posted. The CPU temperature is also uploaded
-// (item=CPU, temperature field only) via SketchConfig.includeCpuTemp.
+
+// via InfluxConfig.includeCpuTemp.
 //
 // Checks for a firmware update periodically.
 //
@@ -28,7 +28,7 @@
 
 #include "WiFiSettings.h"
 
-#include "Monitor.h"
+#include "MonitorSketch.h"
 
 // This sketch's own version (e.g. "1.1"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
@@ -86,6 +86,7 @@ InfluxConfig INFLUX_CONFIG = {
    .prompts = INFLUX_PROMPTS,
    .intervalS = INFLUX_INTERVAL_S,
    .batchPoints = true,
+   .includeCpuTemp = true,
 };
 
 // Preferences (NVS) namespace names are limited to 15 characters; SKETCH_NAME
@@ -96,13 +97,11 @@ SketchConfig SKETCH_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = PREFERENCES_NAMESPACE,
-   .influx = INFLUX_CONFIG,
-   .includeCpuTemp = true,
    .enableOTA = true,
    .enableRebooter = true,
 };
 
-Monitor monitor(&arduino, SKETCH_CONFIG);
+MonitorSketch monitor(&arduino, SKETCH_CONFIG, INFLUX_CONFIG);
 
 ///
 /// <summary>

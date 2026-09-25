@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <span>
+#include <vector>
 #include "Format.h"
 #include "Logger.h"
 #include "SerialX.h"
@@ -262,14 +263,41 @@ private:
           return line;
        }
 
-       /// <summary>
-       /// Overload of printRow(bool, ...) defaulting toLogger to true.
-       /// </summary>
-       /// <returns>The printed row line, terminated with '\n'.</returns>
-       ///
-       template<typename... Args>
-       String printRow(const Args&... values) const
-       {
-          return printRow(true, values...);
-       }
-   };
+           /// <summary>
+           /// Overload of printRow(bool, ...) defaulting toLogger to true.
+           /// </summary>
+           /// <returns>The printed row line, terminated with '\n'.</returns>
+           ///
+           template<typename... Args>
+           String printRow(const Args&... values) const
+           {
+              return printRow(true, values...);
+           }
+
+           /// <summary>
+           /// Prints one row of values (one per configured column), given as a
+           /// dynamically-sized list rather than a fixed set of arguments. Useful when the
+           /// number of columns isn't known at compile time (e.g. a generic resolver).
+           /// </summary>
+           /// <param name="toLogger">If true, sends the text to Logger.log() (which also echoes to Serial); if false, prints to Serial only.</param>
+           /// <param name="values">Row values, one per configured column.</param>
+           /// <returns>The printed row line, terminated with '\n'.</returns>
+           ///
+           String printRow(bool toLogger, const std::vector<String>& values) const
+           {
+              if (!_isConfigured())
+              {
+                 return String();
+              }
+
+              String line;
+              for (size_t i = 0; i < values.size() && i < _columns.size(); i++)
+              {
+                 line += _formatValue(values[i], _columns[i]);
+              }
+              line += '\n';
+
+              _print(line, toLogger);
+              return line;
+           }
+       };

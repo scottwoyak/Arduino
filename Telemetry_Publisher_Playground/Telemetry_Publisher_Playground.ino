@@ -37,7 +37,7 @@
 #include "ValueEditor.h"
 #include "WiFiSettings.h"
 
-#include "Publisher.h"
+#include "PublisherSketch.h"
 
 // ----------- Telemetry topic
 // Fixed topic; this is a testing sketch with no enclosure, no InfluxDB upload, and no
@@ -261,10 +261,10 @@ TelemetryConfig TELEMETRY_CONFIG = {
 
 SketchConfig PUBLISHER_CONFIG = {
    .sketchName = "Publisher",
-   .telemetry = TELEMETRY_CONFIG,
 };
 
-Publisher publisher(&arduino, PUBLISHER_CONFIG);
+// No Influx site table, so Influx isn't used.
+PublisherSketch publisher(&arduino, PUBLISHER_CONFIG, {}, TELEMETRY_CONFIG);
 
 ///
 /// <summary>

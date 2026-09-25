@@ -6,7 +6,7 @@
 // humidity and a point-in-time CPU temperature reading to InfluxDB on a fixed interval.
 //
 // The telemetry topic / InfluxDB site/location is one of the 3 entries in WIND_SITES.
-// See Publisher.h for the shared init/loop sequence, site selection, and InfluxDB
+// See PublisherSketch.h for the shared init/loop sequence, site selection, and InfluxDB
 // behavior.
 //
 // InfluxDB points uploaded (Measurement: Sensors, bucket=<selected>):
@@ -34,7 +34,7 @@
 #include "WindMeter.h"
 #include "WiFiSettings.h"
 
-#include "Publisher.h"
+#include "PublisherSketch.h"
 
 // This sketch's own version (e.g. "1.2"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
@@ -69,6 +69,8 @@ WindMeter wind(WIND_SENSOR_PIN, arduino.ledPin(), LEDColor::CLEAR_PINK);
 
 InfluxConfig INFLUX_CONFIG = {
    .prompts = INFLUX_PROMPTS,
+   .includeEnclosureTemp = true,
+   .includeCpuTemp = true,
 };
 
 TelemetryConfig TELEMETRY_CONFIG = {
@@ -79,15 +81,11 @@ SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = SKETCH_NAME,
-   .influx = INFLUX_CONFIG,
-   .telemetry = TELEMETRY_CONFIG,
-   .includeEnclosureTemp = true,
-   .includeCpuTemp = true,
    .enableOTA = true,
    .enableRebooter = true,
 };
 
-Publisher publisher(&arduino, PUBLISHER_CONFIG);
+PublisherSketch publisher(&arduino, PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
 
 ///
 /// <summary>

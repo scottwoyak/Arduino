@@ -3,14 +3,14 @@
 // readings to InfluxDB on a fixed interval.
 //
 // Behavior:
-// - Uses the shared Monitor class (see Monitor.h) to own the boot/init sequence:
+// - Uses the shared MonitorSketch class (see MonitorSketch.h) to own the boot/init sequence:
 //   display init, status LED, sensor init hook, WiFi, daily rebooter, OTA, and the
 //   standard InfluxDB setup/post/flush cycle.
 // - This device's bucket/site/location is prompted for over Serial the first time it
 //   runs, then saved to Preferences (NVS) so it survives reboots and OTA firmware
 //   updates. On subsequent boots the saved value is used automatically, unless buttonA
 //   is held during a short window right after startup, which forces a re-prompt. This is
-//   handled by the shared Monitor class (see Monitor.h) via MONITOR_CONFIG's
+//   handled by the shared MonitorSketch class (see MonitorSketch.h) via MONITOR_CONFIG's
 //   promptForContext flag, since this sketch prompts for a bucket (from a fixed list) and
 //   free-text site/location, rather than picking a single fixed SiteConfig entry.
 // - Samples temperature and humidity every SENSOR_INTERVAL_MS and accumulates
@@ -26,7 +26,7 @@
 //   before restarting.
 //
 // Failure handling:
-// - Sensor initialization failure triggers a device reset after config.influx.sensorFailureResetDelayS seconds.
+// - Sensor initialization failure triggers a device reset after config.sensorFailureResetDelayS seconds.
 // - Influx initialization failure (handled by Monitor::begin()) triggers a device reset.
 // - Runtime InfluxDB post/flush failures are logged to Serial by Monitor::loop() and
 //   retried the following cycle.
@@ -82,7 +82,7 @@
 
 #include "WiFiSettings.h"
 
-#include "Monitor.h"
+#include "MonitorSketch.h"
 
 // This sketch's own version (e.g. "2.4"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
@@ -137,19 +137,18 @@ bool wasAllValuesMode = false;
 InfluxConfig INFLUX_CONFIG = {
    .intervalS = INFLUX_INTERVAL_S,
    .promptForContext = true,
+   .includeCpuTemp = true,
 };
 
 SketchConfig MONITOR_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = PREFERENCES_NAMESPACE,
-   .influx = INFLUX_CONFIG,
-   .includeCpuTemp = true,
    .enableOTA = true,
    .enableRebooter = true,
 };
 
-Monitor monitor(&arduino, MONITOR_CONFIG);
+MonitorSketch monitor(&arduino, MONITOR_CONFIG, INFLUX_CONFIG);
 
 ///
 /// <summary>

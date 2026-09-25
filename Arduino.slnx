@@ -16,6 +16,7 @@
     <File Path="libraries/Woyak/BME280TempSensor.h" />
     <File Path="libraries/Woyak/BufferedTimeSeries.h" />
     <File Path="libraries/Woyak/Button.h" />
+    <File Path="libraries/Woyak/TelemetryFeature.h" />
     <File Path="libraries/Woyak/TempCalibrator.h" />
     <File Path="libraries/Woyak/CapacitorDepthSensor.h" />
     <File Path="libraries/Woyak/CapacitorSensor.h" />
@@ -58,6 +59,8 @@
     <File Path="libraries/Woyak/IHistogramPlot.h" />
     <File Path="libraries/Woyak/IndexedEncoder.h" />
     <File Path="libraries/Woyak/Influx.h" />
+    <File Path="libraries/Woyak/InfluxConfig.h" />
+    <File Path="libraries/Woyak/InfluxSketchBase.h" />
     <File Path="libraries/Woyak/IPrinter.h" />
     <File Path="libraries/Woyak/IScatterPlotSeries.h" />
     <File Path="libraries/Woyak/ITempSensor.h" />
@@ -72,7 +75,7 @@
     <File Path="libraries/Woyak/Memory.h" />
     <File Path="libraries/Woyak/MinMaxValue.h" />
     <File Path="libraries/Woyak/ModulinoEncoder.h" />
-    <File Path="libraries/Woyak/Monitor.h" />
+    <File Path="libraries/Woyak/MonitorSketch.h" />
     <File Path="libraries/Woyak/MovingBarChart.h" />
     <File Path="libraries/Woyak/MS5837DepthSensor.h" />
     <File Path="libraries/Woyak/MS5837TempSensor.h" />
@@ -82,7 +85,8 @@
     <File Path="libraries/Woyak/OTAUpdater.h" />
     <File Path="libraries/Woyak/OTAUpdaterImpl.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
-    <File Path="libraries/Woyak/Publisher.h" />
+    <File Path="libraries/Woyak/PreferencesResolver.h" />
+    <File Path="libraries/Woyak/PublisherSketch.h" />
     <File Path="libraries/Woyak/QMC5883PMagnometer.h" />
     <File Path="libraries/Woyak/QuadratureEncoder.h" />
     <File Path="libraries/Woyak/Rate.h" />
@@ -109,7 +113,6 @@
     <File Path="libraries/Woyak/Scott48.h" />
     <File Path="libraries/Woyak/Scott56.h" />
     <File Path="libraries/Woyak/Scott64.h" />
-    <File Path="libraries/Woyak/SiteConfig.h" />
     <File Path="libraries/Woyak/SketchBase.h" />
     <File Path="libraries/Woyak/Slider.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />

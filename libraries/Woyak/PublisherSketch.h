@@ -5,22 +5,23 @@
 // WIFI_PASSWORD, TELEMETRY_HOST, TELEMETRY_PORT, INFLUXDB_URL, and INFLUXDB_ORG are
 // defined). This mirrors the include order already used by Gate/Wind/Wave_Publisher.
 
-#include "SketchBase.h"
+#include "InfluxSketchBase.h"
 #include "TelemetryClient.h"
+#include "TelemetryFeature.h"
 
 ///
 /// <summary>
 /// Owns the initialization and loop sequence shared by every Gate/Wind/Wave-style
-/// publisher sketch: banner, force-prompt window, sensor init, site resolution, WiFi,
-/// rebooter, OTA, InfluxDB setup (including a single startup log point with the sketch
-/// name, version, and telemetry topic), standard enclosure/CPU points, and the telemetry
-/// WebSocket client. A sketch registers its sensors, published value, extra Influx
-/// points, and per-loop work via the methods below before calling begin(), then calls
-/// begin() once from setup() and loop() once from loop(). Shared lifecycle logic lives
-/// in SketchBase; this class adds the telemetry-specific pieces on top.
+/// publisher sketch: startup print, force-prompt window, sensor init, site resolution,
+/// WiFi, rebooter, OTA, InfluxDB setup (including a single startup log point with the
+/// sketch name, version, and telemetry topic), standard enclosure/CPU points, and the
+/// telemetry WebSocket client. A sketch registers its sensors, published value, extra
+/// Influx points, and per-loop work via the methods below before calling begin(), then
+/// calls begin() once from setup() and loop() once from loop(). Shared lifecycle logic
+/// lives in InfluxSketchBase; this class adds the telemetry-specific pieces on top.
 /// </summary>
 ///
-class Publisher : public SketchBase
+class PublisherSketch : public InfluxSketchBase
 {
 private:
    /// <summary>Function that produces the value streamed over telemetry.</summary>
@@ -30,7 +31,7 @@ private:
    /// <summary>
    /// Default telemetry event handler used unless a custom handler is registered via
    /// setTelemetryHandler(). Extends TelemetryEventHandler with a single extra
-   /// onStarted() callback slot (see Publisher::setOnStartedCallback()) so a sketch can
+   /// onStarted() callback slot (see PublisherSketch::setOnStartedCallback()) so a sketch can
    /// run its own onStarted() logic (e.g. turning off the status LED) without
    /// subclassing TelemetryEventHandler and risking skipping base-class behavior that
    /// Publisher itself may rely on.
@@ -74,6 +75,12 @@ private:
    /// <summary>Custom handler registered via setTelemetryHandler(), used instead of _telemetryHandler if set.</summary>
    TelemetryEventHandler* _customTelemetryHandler = nullptr;
 
+   /// <summary>Telemetry settings, copied from the constructor argument.</summary>
+   TelemetryConfig _telemetryConfig;
+
+   /// <summary>Resolves the telemetry topic and connects the telemetry client.</summary>
+   TelemetryFeature _telemetryFeature;
+
    /// <summary>Constructed by begin(), once the telemetry topic has been resolved.</summary>
    TelemetryPublisher* _client = nullptr;
 
@@ -82,7 +89,7 @@ private:
 protected:
    ///
    /// <summary>
-   /// Publisher's fixed-site fallback (used when config.influx.prompts is empty): an empty
+   /// Publisher's fixed-site fallback (used when influxConfig.prompts is empty): an empty
    /// InfluxContext, since Publisher has no fixed Influx site of its own.
    /// </summary>
    ///
@@ -93,15 +100,39 @@ protected:
 
    ///
    /// <summary>
-   /// Publisher's fixed telemetry topic fallback (used when config.telemetry.prompts is
-   /// empty): the fixed config.telemetry.topic. Also prints the resolved telemetry topic
-   /// to Serial, since Publisher always has a topic to report even without a topic
-   /// table.
+   /// Returns whether the telemetry topic is selected from a prompt table.
    /// </summary>
+   /// <returns>True if telemetryConfig.prompts is non-empty.</returns>
    ///
-   const char* _resolveFixedTelemetryTopic() override
+   bool _hasExtraPrompts() override
    {
-      return _config.telemetry.topic;
+      return _telemetryFeature.hasPrompts();
+   }
+
+   ///
+   /// <summary>
+   /// Resolves the telemetry topic and reports it.
+   /// </summary>
+   /// <param name="forcePrompt">If true, always prompts even if a saved topic exists.</param>
+   ///
+   void _resolveExtra(bool forcePrompt) override
+   {
+      std::string telemetryMessage = std::string("Telemetry topic: ") + _telemetryFeature.resolve(_arduino, _status, forcePrompt);
+      _printAndLogStatus(telemetryMessage.c_str());
+   }
+
+   ///
+   /// <summary>
+   /// Adds the telemetry topic to a GetStatus reply, then defers to
+   /// InfluxSketchBase::_populateStatus().
+   /// </summary>
+   /// <param name="status">The in-progress status to add fields to.</param>
+   ///
+   void _populateStatus(LoggerStatus& status) override
+   {
+      _telemetryFeature.addStatus(status);
+
+      InfluxSketchBase::_populateStatus(status);
    }
 
    ///
@@ -110,14 +141,6 @@ protected:
    bool _shouldUseInflux(bool hasSiteTable) override
    {
       return hasSiteTable;
-   }
-
-   ///
-   /// <summary>Builds the telemetry topic status line logged/displayed once Influx begins successfully.</summary>
-   ///
-   std::string _buildTelemetryMessage() override
-   {
-      return std::string("Telemetry topic: ") + (_telemetryTopic != nullptr ? _telemetryTopic : "");
    }
 
    ///
@@ -136,9 +159,8 @@ protected:
    ///
    void _afterOTASetup() override
    {
-      _client = new TelemetryPublisher(_telemetryTopic, _config.telemetry.decimals, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
-      _arduino->initClient("Telemetry", [this]() { _client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, _status);
-      _arduino->waitForClient([this]() { return _client->isStarted(); }, [this]() { _client->loop(); });
+      _client = new TelemetryPublisher(_telemetryFeature.topic(), _telemetryConfig.decimals, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
+      _telemetryFeature.connect(_arduino, _status, _client);
    }
 
    ///
@@ -179,20 +201,25 @@ protected:
 public:
    ///
    /// <summary>
-   /// Creates a Publisher bound to the given board and configuration. Register sensors,
-   /// the value source, extra Influx points, and loop hooks afterward, then call begin().
+   /// Creates a PublisherSketch bound to the given board and configuration. Register
+   /// sensors, the value source, extra Influx points, and loop hooks afterward, then
+   /// call begin().
    /// </summary>
    /// <param name="arduino">The board wrapper (used as the status indicator directly if it implements IStatus itself; otherwise its onboard NeoPixel LED is used).</param>
-   /// <param name="config">Shared publisher configuration.</param>
+   /// <param name="config">Shared configuration.</param>
+   /// <param name="influxConfig">InfluxDB settings.</param>
+   /// <param name="telemetryConfig">Telemetry settings (topic table or fixed topic, decimals, publish cadence).</param>
    ///
-   Publisher(Arduino* arduino, const SketchConfig& config)
-      : SketchBase(arduino, config),
+   PublisherSketch(Arduino* arduino, const SketchConfig& config, const InfluxConfig& influxConfig, const TelemetryConfig& telemetryConfig)
+      : InfluxSketchBase(arduino, config, influxConfig),
 #ifdef ARDUINO_DISPLAY_SUPPORTED
         _telemetryHandler(_status, arduino),
 #else
         _telemetryHandler(_status),
 #endif
-        _publishTimer(config.telemetry.publishIntervalMs)
+        _telemetryConfig(telemetryConfig),
+        _telemetryFeature(config.preferencesNamespace, &_telemetryConfig),
+        _publishTimer(telemetryConfig.publishIntervalMs)
    {
    }
 
@@ -230,7 +257,7 @@ public:
    /// default TelemetryEventHandler::onStarted() behavior (status set to READY, etc.).
    /// Useful for sketch-specific startup completion behavior (e.g. turning off the
    /// status LED) without the risk of subclassing TelemetryEventHandler and missing
-   /// base-class behavior Publisher relies on. Ignored if a custom handler is
+   /// base-class behavior PublisherSketch relies on. Ignored if a custom handler is
    /// registered via setTelemetryHandler(), since that replaces this default handler
    /// entirely. Must be called before begin().
    /// </summary>
@@ -247,5 +274,13 @@ public:
    TelemetryPublisher* client()
    {
       return _client;
+   }
+
+   ///
+   /// <summary>Returns the resolved telemetry topic (only valid after begin() returns).</summary>
+   ///
+   const char* telemetryTopic() const
+   {
+      return _telemetryFeature.topic();
    }
 };

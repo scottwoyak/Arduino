@@ -101,7 +101,13 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 // ----------- Telemetry
 Arduino arduino;
 
-ViewerSketch viewer(&arduino, SKETCH_NAME, VERSION, &arduino.status, true);
+SketchConfig SKETCH_CONFIG = {
+   .sketchName = SKETCH_NAME,
+   .version = VERSION,
+   .enableOTA = true,
+};
+
+ViewerSketch viewer(&arduino, SKETCH_CONFIG);
 
 // ----------- Line geometry (left line anchored 50px from the left edge, right line
 // anchored 50px from the right edge of the display; the gate origin's Y position is

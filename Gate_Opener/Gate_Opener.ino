@@ -34,7 +34,7 @@
 #include "LibraryVersion.h"
 #include "WiFiSettings.h"
 
-#include "Monitor.h"
+#include "MonitorSketch.h"
 
 // This sketch's own version (e.g. "1.7"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
@@ -54,19 +54,18 @@ TimerSecs gateRelayTriggerTimer(GATE_RELAY_TRIGGER_SECS);
 
 InfluxConfig INFLUX_CONFIG = {
    .context = { INFLUXDB_BUCKET, "Bragg", "Gate" },
+   .includeEnclosureTemp = true,
+   .includeCpuTemp = true,
 };
 
 SketchConfig MONITOR_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
-   .influx = INFLUX_CONFIG,
-   .includeEnclosureTemp = true,
-   .includeCpuTemp = true,
    .enableOTA = true,
    .enableRebooter = true,
 };
 
-Monitor monitor(&arduino, MONITOR_CONFIG);
+MonitorSketch monitor(&arduino, MONITOR_CONFIG, INFLUX_CONFIG);
 
 ///
 /// <summary>

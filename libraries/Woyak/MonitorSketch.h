@@ -3,45 +3,45 @@
 // Requires the sketch to have already included, in order: ArduinoBoard.h (so the
 // board-specific Arduino type is defined), and WiFiSettings.h (so WIFI_SSID,
 // WIFI_PASSWORD, INFLUXDB_URL, and INFLUXDB_ORG are defined). This mirrors the include
-// order already used by Publisher-based sketches (see Publisher.h).
+// order already used by Publisher-based sketches (see PublisherSketch.h).
 
-#include "SketchBase.h"
+#include "InfluxSketchBase.h"
 #include "SerialX.h"
 
 ///
 /// <summary>
 /// Owns the initialization and loop sequence shared by every InfluxDB-only monitor
-/// sketch: banner, force-prompt window, sensor init, site resolution, WiFi, rebooter,
-/// OTA, InfluxDB setup (including a single startup log point with the sketch name,
-/// version, and Influx path), and the standard enclosure/CPU points. Unlike Publisher,
-/// Monitor doesn't stream any value over a telemetry WebSocket connection. A sketch
-/// registers its sensors, extra Influx points, and per-loop work via the methods below
-/// before calling begin(), then calls begin() once from setup() and loop() once from
-/// loop(). Shared lifecycle logic lives in SketchBase; this class only supplies the
-/// Monitor-specific hook overrides.
-///
-/// Site resolution defaults to a single fixed site/location (config.influx.context). If
-/// config.influx.promptForContext is set instead, Monitor prompts over Serial (or loads the
-/// saved values from Preferences) for a bucket (chosen from the shared BUCKET_OPTIONS
-/// list) and a site (chosen from the shared SITE_OPTIONS list) and location (entered as
-/// free text), persisting them to Preferences under config.preferencesNamespace. On
-/// boards with a button (ARDUINO_BUTTON_A_SUPPORTED), gives the user a short
-/// buttonA-held window right after boot to force a re-prompt; on boards without a
-/// button, automatically offers the re-prompt instead whenever a Serial monitor is
-/// attached at boot (e.g. the board is inside an enclosure).
+/// sketch: startup print, force-prompt window, sensor init, site resolution, WiFi,
+/// rebooter, OTA, InfluxDB setup (including a single startup log point with the sketch
+/// name, version, and Influx path), and the standard enclosure/CPU points. Unlike
+/// PublisherSketch, MonitorSketch doesn't stream any value over a telemetry WebSocket
+/// connection. A sketch registers its sensors, extra Influx points, and per-loop work
+/// via the methods below before calling begin(), then calls begin() once from setup()
+/// and loop() once from loop(). Shared lifecycle logic lives in InfluxSketchBase; this
+/// class only supplies the Monitor-specific hook overrides.
 /// </summary>
 ///
-class Monitor : public SketchBase
+/// Site resolution defaults to a single fixed site/location (influxConfig.context). If
+/// influxConfig.promptForContext is set instead, MonitorSketch prompts over Serial (or
+/// loads the saved values from Preferences) for a bucket (chosen from the shared
+/// BUCKET_OPTIONS list) and a site (chosen from the shared SITE_OPTIONS list) and
+/// location (entered as free text), persisting them to Preferences under
+/// config.preferencesNamespace. On boards with a button (ARDUINO_BUTTON_A_SUPPORTED),
+/// gives the user a short buttonA-held window right after boot to force a re-prompt; on
+/// boards without a button, automatically offers the re-prompt instead whenever a
+/// Serial monitor is attached at boot (e.g. the board is inside an enclosure).
+///
+class MonitorSketch : public InfluxSketchBase
 {
 private:
    static constexpr auto SITE_KEY = "site";
    static constexpr auto LOCATION_KEY = "location";
    static constexpr auto BUCKET_KEY = "bucket";
 
-   /// <summary>Bucket choices offered to every Monitor sketch that opts into bucket/site/location prompting (see config.influx.promptForContext).</summary>
+   /// <summary>Bucket choices offered to every Monitor sketch that opts into bucket/site/location prompting (see influxConfig.promptForContext).</summary>
    static constexpr const char* BUCKET_OPTIONS[] = { "Monitor", "Testing" };
 
-   /// <summary>Site choices offered to every Monitor sketch that opts into bucket/site/location prompting (see config.influx.promptForContext).</summary>
+   /// <summary>Site choices offered to every Monitor sketch that opts into bucket/site/location prompting (see influxConfig.promptForContext).</summary>
    static constexpr const char* SITE_OPTIONS[] = { "Bragg", "Lake" };
 
    String _siteName;
@@ -195,16 +195,16 @@ private:
 protected:
    ///
    /// <summary>
-   /// Returns config.influx.context unless config.influx.promptForContext is set, in which
+   /// Returns influxConfig.context unless influxConfig.promptForContext is set, in which
    /// case a bucket/site/location is prompted for over Serial (or loaded from
    /// Preferences) instead.
    /// </summary>
    ///
    InfluxContext _resolveFixedSite() override
    {
-      if (!_config.influx.promptForContext)
+      if (!_influxConfig.promptForContext)
       {
-         return _config.influx.context;
+         return _influxConfig.context;
       }
 
       bool hasSavedConfig = _hasSavedConfig();
@@ -240,21 +240,22 @@ protected:
 public:
    ///
    /// <summary>
-   /// Creates a Monitor bound to the given board and configuration. Register sensors,
-   /// extra Influx points, and loop hooks afterward, then call begin().
-   /// </summary>
+    /// Creates a MonitorSketch bound to the given board and configuration. Register
+    /// sensors, extra Influx points, and loop hooks afterward, then call begin().
+    /// </summary>
    /// <param name="arduino">The board wrapper (used as the status indicator directly if it implements IStatus itself; otherwise its onboard NeoPixel LED is used).</param>
-   /// <param name="config">Shared monitor configuration.</param>
+   /// <param name="config">Shared configuration.</param>
+   /// <param name="influxConfig">InfluxDB settings.</param>
    ///
-   Monitor(Arduino* arduino, const SketchConfig& config)
-      : SketchBase(arduino, config)
+   MonitorSketch(Arduino* arduino, const SketchConfig& config, const InfluxConfig& influxConfig)
+      : InfluxSketchBase(arduino, config, influxConfig)
    {
    }
 
    ///
    /// <summary>
    /// Formats this device's site and location as "Site/Location". Only valid once
-   /// begin() has resolved the site (i.e. config.influx.promptForContext was set).
+   /// begin() has resolved the site (i.e. influxConfig.promptForContext was set).
    /// </summary>
    /// <returns>The formatted "Site/Location" string.</returns>
    ///
@@ -266,13 +267,13 @@ public:
    ///
    /// <summary>
    /// Signals a fatal sensor initialization failure using the same status indicator and
-   /// config.influx.sensorFailureResetDelayS delay Monitor uses internally for its own
-   /// fatal init failures.
+    /// config.sensorFailureResetDelayS delay MonitorSketch uses internally for its
+    /// own fatal init failures.
    /// </summary>
    ///
    void reportSensorFailure()
    {
       _status->setStatus(Status::FAILED);
-      Util::reset(_config.influx.sensorFailureResetDelayS);
+      Util::reset(_config.sensorFailureResetDelayS);
    }
 };

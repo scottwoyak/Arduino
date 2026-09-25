@@ -2,8 +2,8 @@
 
 // Requires the sketch to have already included, in order: ArduinoBoard.h (so the
 // board-specific Arduino type is defined), and WiFiSettings.h (so WIFI_SSID and
-// WIFI_PASSWORD are defined). This mirrors the include order used by Monitor-/
-// Publisher-based sketches (see SketchBase.h).
+// WIFI_PASSWORD are defined). This mirrors the include order used by MonitorSketch-/
+// PublisherSketch-based sketches (see InfluxSketchBase.h).
 
 #include <functional>
 #include <string>
@@ -11,112 +11,98 @@
 #include "ArduinoBase.h"
 #include "Logger.h"
 #include "OTAUpdater.h"
-#include "SiteConfig.h"
+#include "SketchBase.h"
 #include "Status.h"
 #include "TelemetryClient.h"
+#include "TelemetryConfig.h"
+#include "TelemetryFeature.h"
 
 ///
 /// <summary>
 /// Owns the boot/init sequence shared by every display-only "Viewer" sketch (e.g.
-/// Gate_Viewer, Wind_Viewer): printing the sketch name/version banner to Serial and the
-/// display, connecting to WiFi, and (optionally) enabling OTA firmware updates. Unlike
-/// Monitor/Publisher (see SketchBase), a Viewer doesn't post to InfluxDB or track a
-/// site/location; it only renders telemetry it receives. A sketch constructs a
-/// ViewerSketch, calls begin() once from setup() (after registering its own telemetry
-/// client(s) and before any sketch-specific WiFi-dependent setup), and calls
-/// checkForOTA() once from loop().
+/// Gate_Viewer, Wind_Viewer): printing the sketch name/version startup info to Serial
+/// and the display, connecting to WiFi, and (optionally) enabling OTA firmware updates.
+/// Unlike MonitorSketch/PublisherSketch (see InfluxSketchBase), a Viewer doesn't post to
+/// InfluxDB or track a site/location; it only renders telemetry it receives. A sketch
+/// constructs a ViewerSketch, calls begin() once from setup() (after registering its own
+/// telemetry client(s) and before any sketch-specific WiFi-dependent setup), and calls
+/// loop() once from loop().
 /// </summary>
 ///
-class ViewerSketch : private OTAUpdateEventHandler
+class ViewerSketch : public SketchBase
 {
 protected:
-   /// <summary>Board wrapper.</summary>
-   Arduino* _arduino;
+   /// <summary>Telemetry settings, copied from the constructor argument.</summary>
+   TelemetryConfig _telemetryConfig;
 
-   /// <summary>Sketch name, printed at boot and used as the OTA update identifier.</summary>
-   const char* _sketchName;
+   /// <summary>Resolves the telemetry topic (from telemetryConfig) and connects the telemetry client.</summary>
+   TelemetryFeature _telemetryFeature;
 
-   /// <summary>Sketch version string, printed at boot and used for OTA update checks. Leave null to skip OTA entirely.</summary>
-   const char* _version;
-
-   /// <summary>Status indicator driven through the WiFi/OTA phases of begin().</summary>
-   IStatus* _status;
-
-   /// <summary>If true, enables OTA firmware updates via arduino.enableOTA() at the end of begin().</summary>
-   bool _enableOTA;
-
-   /// <summary>Resolves/persists the selected telemetry topic; constructed on first use by resolveTopic().</summary>
-   TelemetryTopicResolver* _topicResolver = nullptr;
-
-   /// <summary>Constructed by beginTelemetry(topic, handler), once the telemetry topic has been resolved.</summary>
+   /// <summary>Constructed by beginTelemetry(), once the telemetry topic has been resolved.</summary>
    TelemetrySubscriber* _client = nullptr;
 
-   public:
    ///
    /// <summary>
-   /// Creates a ViewerSketch bound to the given board, sketch identity, and status
-   /// indicator.
+   /// Adds the telemetry topic to a GetStatus reply, then defers to
+   /// SketchBase::_populateStatus().
+   /// </summary>
+   /// <param name="status">The in-progress status to add fields to.</param>
+   ///
+   void _populateStatus(LoggerStatus& status) override
+   {
+      _telemetryFeature.addStatus(status);
+
+      SketchBase::_populateStatus(status);
+   }
+
+public:
+   ///
+   /// <summary>
+   /// Creates a ViewerSketch bound to the given board and configuration.
    /// </summary>
    /// <param name="arduino">The board wrapper.</param>
-   /// <param name="sketchName">Sketch name, printed at boot and used as the OTA update identifier.</param>
-   /// <param name="version">Sketch version string, printed at boot and used for OTA update checks.</param>
-   /// <param name="status">Status indicator driven through the WiFi/OTA phases of begin().</param>
-   /// <param name="enableOTA">If true, enables OTA firmware updates at the end of begin().</param>
+   /// <param name="config">Shared configuration; preferencesNamespace is used by resolveTopic().</param>
+   /// <param name="telemetryConfig">Telemetry settings (topic table or fixed topic) used by resolveTopic(). Defaults to empty for a viewer that passes its topic directly to beginTelemetry(topic, handler).</param>
    ///
-   ViewerSketch(Arduino* arduino, const char* sketchName, const char* version, IStatus* status, bool enableOTA = false)
-      : _arduino(arduino), _sketchName(sketchName), _version(version), _status(status), _enableOTA(enableOTA)
+   ViewerSketch(Arduino* arduino, const SketchConfig& config, const TelemetryConfig& telemetryConfig = {})
+      : SketchBase(arduino, config),
+        _telemetryConfig(telemetryConfig),
+        _telemetryFeature(config.preferencesNamespace, &_telemetryConfig)
    {
-      ASSERT(arduino != nullptr);
    }
 
    ///
    /// <summary>
-   /// Prints the sketch name/version banner to Serial and the display. Call once from
-   /// setup(), before resolveTopic() if the sketch needs to prompt for a telemetry topic
-   /// after the banner but before WiFi connects (see beginConnect()).
+   /// Prints the sketch name/version startup info to Serial and the display. Call once
+   /// from setup(), before any sketch-specific prompting (e.g. resolveTopic()) that must
+   /// happen before WiFi connects, followed by beginConnect().
    /// </summary>
    ///
    void beginBanner()
    {
-      _arduino->beginInit();
-      Logger.log("Initializing");
-
-      _arduino->printlnInitStatus("Sketch... ", _sketchName);
-
-      if (_version != nullptr)
-      {
-         const char* versionText = (_version[0] == 'v' || _version[0] == 'V') ? _version + 1 : _version;
-         _arduino->printlnInitStatus("Version... ", versionText);
-      }
+      _printStartupInfo();
    }
 
    ///
    /// <summary>
-   /// Connects to WiFi, enables OTA if configured, and starts the Logger connection.
-   /// Call once from setup(), after beginBanner() (and, if needed, resolveTopic()).
+   /// Connects to WiFi, enables OTA if configured, and starts the Logger connection. Call
+   /// once from setup(), after beginBanner() and any prompting that must happen before
+   /// WiFi connects (e.g. resolveTopic()), and before registering any telemetry client
+   /// handlers.
    /// </summary>
    ///
    void beginConnect()
    {
-      _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
-
-      if (_enableOTA)
-      {
-         _arduino->enableOTA(_version, _sketchName, _status, OTAUpdater::DEFAULT_CHECK_INTERVAL_SECS, this);
-      }
-
-      // Started last, mirroring SketchBase's pattern: blocks (via waitForClient()) until
-      // the "Logging... " label printed by begin() is completed by Logger::_onEvent(),
-      // so nothing else may log a line until then. Logger itself remains async.
-      Logger.begin(_sketchName, _version);
-      _arduino->waitForClient([]() { return Logger.isResolved(); }, []() { Logger.loop(); });
+      _beginConnect();
+      _beginLogger();
    }
 
    ///
    /// <summary>
-   /// Prints the sketch name/version banner to Serial and the display, connects to
-   /// WiFi, and enables OTA if configured. Call once from setup(), after registering any
-   /// telemetry client handlers so they're ready to start connecting once WiFi is up.
+   /// Runs the standard boot sequence for a Viewer with a fixed telemetry topic (no
+   /// resolveTopic() prompting needed): beginBanner() followed immediately by
+   /// beginConnect(). Call once from setup(), after registering any telemetry client
+   /// handlers so they're ready to start connecting once WiFi is up.
    /// </summary>
    ///
    void begin()
@@ -125,86 +111,54 @@ protected:
       beginConnect();
    }
 
-   ///
-   /// <summary>
-   /// Checks for a pending OTA firmware update. Call once from loop(), before any other
-   /// per-loop work. Does nothing if OTA wasn't enabled.
-   /// </summary>
-   ///
-   void checkForOTA()
-   {
-      if (_enableOTA)
-      {
-         _arduino->checkForOTA();
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Registers a handler invoked when a "GetStatus" command is received from the
-   /// LogServer, allowing the sketch to report its own fields (e.g. the last received
-   /// telemetry value). Only one handler is supported; call once from setup(), after
-   /// begin(). Simply forwards to Logger.onStatus(), since a Viewer has no base fields
-   /// of its own to add first.
-   /// </summary>
-   /// <param name="handler">Function invoked with the in-progress status to add fields to.</param>
-   ///
-   void onStatus(void (*handler)(LoggerStatus& status))
-   {
-      Logger.onStatus(handler);
-   }
-
    void loop()
    {
-      checkForOTA();
-
-      Logger.loop();
+      _loopStep();
 
       if (_client != nullptr)
       {
          _client->loop();
       }
-
-      _arduino->updateStatusIndicators();
    }
 
    ///
    /// <summary>
-   /// Resolves which telemetry topic this viewer should subscribe to: the value saved
-   /// in Preferences (NVS) under preferencesNamespace, unless it hasn't been saved yet
-   /// or forcePrompt is true, in which case the user is prompted over Serial (from
-   /// topics) and the choice is saved for next time. Mirrors the topic resolution
-   /// SketchBase/TelemetryTopicResolver performs for Publisher sketches. Also reports
-   /// the resolved topic via printlnInitStatus(), so it shows up on the display like
-   /// other init status lines. Call once from setup(), after begin(), and before
-   /// constructing the telemetry client(s) and calling arduino.initClient().
+   /// Resolves which telemetry topic this viewer should subscribe to, from
+   /// telemetryConfig (a fixed topic, or a prompts table persisted in Preferences under
+   /// config.preferencesNamespace). Also reports the resolved topic as an init status
+   /// line. Call once from setup(), after beginBanner() and before beginConnect().
    /// </summary>
-   /// <param name="preferencesNamespace">Preferences (NVS) namespace to read/write.</param>
-   /// <param name="promptHeader">Prompt header text, e.g. "Select telemetry topic:".</param>
-   /// <param name="topics">Telemetry topic table to choose from.</param>
-   /// <param name="count">Number of entries in topics.</param>
    /// <param name="forcePrompt">If true, always prompts even if a saved topic exists.</param>
    /// <returns>The resolved topic, backed by this ViewerSketch's storage.</returns>
    ///
-   const char* resolveTopic(const char* preferencesNamespace, const char* promptHeader, const char* const topics[], size_t count, bool forcePrompt = false)
+   const char* resolveTopic(bool forcePrompt = false)
    {
-      if (_topicResolver == nullptr)
-      {
-         _topicResolver = new TelemetryTopicResolver(preferencesNamespace);
-      }
-
-      const char* topic = _topicResolver->resolve(_arduino->preferences, _status, promptHeader, topics, count, forcePrompt);
-      _arduino->printlnInitStatus("Topic... ", topic);
+      const char* topic = _telemetryFeature.resolve(_arduino, _status, forcePrompt);
+      _printAndLogStatus("Topic... ", topic);
       return topic;
    }
 
    ///
    /// <summary>
-   /// Constructs the TelemetrySubscriber for the given topic and begins connecting it,
-   /// printing the standard "Telemetry..." init status line (completed once the client
-   /// connects or fails) using this ViewerSketch's status indicator. Mirrors how
-   /// Publisher/SketchBase owns its telemetry client. Call once from setup(), after
-   /// resolveTopic() and any layout setup that depends on the topic.
+   /// Constructs the TelemetrySubscriber for the topic resolved by resolveTopic() and
+   /// connects it. Call once from setup(), after beginConnect() and any layout setup
+   /// that depends on the topic.
+   /// </summary>
+   /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
+   /// <returns>The constructed telemetry client, owned by this ViewerSketch.</returns>
+   ///
+   TelemetrySubscriber* beginTelemetry(TelemetryEventHandler* handler = nullptr)
+   {
+      ASSERT(_telemetryFeature.topic() != nullptr);
+
+      return beginTelemetry(_telemetryFeature.topic(), handler);
+   }
+
+   ///
+   /// <summary>
+   /// Constructs the TelemetrySubscriber for the given topic and connects it, printing
+   /// the standard "Telemetry..." init status line. Use for a viewer whose topic isn't
+   /// resolved via resolveTopic().
    /// </summary>
    /// <param name="topic">The telemetry topic to subscribe to.</param>
    /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
@@ -213,8 +167,7 @@ protected:
    TelemetrySubscriber* beginTelemetry(const char* topic, TelemetryEventHandler* handler = nullptr)
    {
       _client = new TelemetrySubscriber(topic, _status, handler);
-      _arduino->initClient("Telemetry", [this]() { _client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, _status);
-      _arduino->waitForClient([this]() { return _client->isStarted(); }, [this]() { _client->loop(); });
+      _telemetryFeature.connect(_arduino, _status, _client);
       return _client;
    }
 
@@ -228,92 +181,5 @@ protected:
    TelemetrySubscriber* getClient() const
    {
       return _client;
-   }
-
-private:
-   ///
-   /// <summary>
-   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater just before it
-   /// downloads and installs a newly detected firmware version. Logs the update before
-   /// it starts.
-   /// </summary>
-   /// <param name="newVersion">The newly detected version string.</param>
-   ///
-   void onUpdateAvailable(const char* newVersion) override
-   {
-      std::string otaMessage = std::string("Updating from ") + _version + " to " + newVersion;
-      _logMessage(otaMessage);
-   }
-
-   ///
-   /// <summary>
-   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater when a detected
-   /// update fails to download/install. Logs the failure at ERROR severity.
-   /// </summary>
-   /// <param name="newVersion">The version that failed to install.</param>
-   /// <param name="reason">The error reported by the underlying HTTP update client.</param>
-   ///
-   void onUpdateFailed(const char* newVersion, const char* reason) override
-   {
-      std::string otaMessage = std::string("Update to ") + newVersion + " failed: " + reason;
-      _logMessage(otaMessage, LogSeverity::ERROR);
-   }
-
-   ///
-   /// <summary>
-   /// OTAUpdateEventHandler implementation, invoked by OTAUpdater when a detected
-   /// update downloads and installs successfully, just before the device restarts.
-   /// Logs the success.
-   /// </summary>
-   /// <param name="newVersion">The version that was successfully installed.</param>
-   ///
-   void onUpdateSucceeded(const char* newVersion) override
-   {
-      std::string otaMessage = std::string("Updated to ") + newVersion;
-      _logMessage(otaMessage);
-   }
-
-   ///
-   /// <summary>
-   /// OTAUpdateEventHandler implementation, invoked for OTA diagnostic messages that
-   /// are otherwise only printed to Serial (e.g. version check failures, missing OTA
-   /// partition). Mirrors them to the LogServer, tagging error-type messages as ERROR.
-   /// </summary>
-   /// <param name="message">The diagnostic message.</param>
-   ///
-   void onLogMessage(const char* message) override
-   {
-      std::string text(message);
-      bool isError = text.find("failed") != std::string::npos || text.find("no OTA download partition") != std::string::npos;
-
-      _logMessage(message, isError ? LogSeverity::ERROR : LogSeverity::INFO);
-   }
-
-   ///
-   /// <summary>
-   /// Sends a text log message to the LogServer, tagged implicitly by the handshake
-   /// (deviceId/sketch/version) sent when the connection was established. Does nothing
-   /// (other than the Serial echo performed by Logger.log()) if the LogServer
-   /// connection isn't up yet.
-   /// </summary>
-   /// <param name="message">Message to log, both to the LogServer and Serial.</param>
-   /// <param name="severity">Severity of the message; ERROR is prefixed with "ERROR: ".</param>
-   ///
-   void _logMessage(const char* message, LogSeverity severity = LogSeverity::INFO)
-   {
-      Logger.log(message, severity);
-   }
-
-   ///
-   /// <summary>
-   /// Overload of _logMessage(const char*, LogSeverity) accepting a std::string so
-   /// callers don't need to call .c_str() themselves.
-   /// </summary>
-   /// <param name="message">Message to log, both to the LogServer and Serial.</param>
-   /// <param name="severity">Severity of the message; ERROR is prefixed with "ERROR: ".</param>
-   ///
-   void _logMessage(const std::string& message, LogSeverity severity = LogSeverity::INFO)
-   {
-      _logMessage(message.c_str(), severity);
    }
 };
