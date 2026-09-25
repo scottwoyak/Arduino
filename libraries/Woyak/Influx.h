@@ -524,12 +524,19 @@ public:
       size_t disabledCount = 0;
       size_t invalidCount = 0;
       size_t warmingUpCount = 0;
+      std::string disabledFields;
+      std::string invalidFields;
       std::string warmingUpFields;
       for (InfluxField* field : _fields)
       {
          if (!field->isEnabled())
          {
             disabledCount++;
+            if (!disabledFields.empty())
+            {
+               disabledFields += ", ";
+            }
+            disabledFields += field->getName();
             continue;
          }
 
@@ -537,19 +544,24 @@ public:
          if (std::isnan(value) || std::isinf(value))
          {
             if (field->hasData())
-            {
-               invalidCount++;
-            }
-            else
-            {
-               warmingUpCount++;
-               if (!warmingUpFields.empty())
                {
-                  warmingUpFields += ", ";
+                  invalidCount++;
+                  if (!invalidFields.empty())
+                  {
+                     invalidFields += ", ";
+                  }
+                  invalidFields += field->getName();
                }
-               warmingUpFields += field->getName();
-            }
-            continue;
+               else
+               {
+                  warmingUpCount++;
+                  if (!warmingUpFields.empty())
+                  {
+                     warmingUpFields += ", ";
+                  }
+                  warmingUpFields += field->getName();
+               }
+               continue;
          }
 
          _point.addField(field->getName().c_str(), value, field->getDecimalPlaces());
@@ -569,9 +581,12 @@ public:
             return false;
          }
 
+         std::string disabledDetail = disabledCount > 0 ? std::string(" [") + disabledFields + "]" : "";
+         std::string invalidDetail = invalidCount > 0 ? std::string(" [") + invalidFields + "]" : "";
+         std::string warmingUpDetail = warmingUpCount > 0 ? std::string(" [") + warmingUpFields + "]" : "";
          Logger.log("InfluxDB write failed: no valid field values to post (" +
-            std::to_string(disabledCount) + " disabled, " + std::to_string(invalidCount) + " NaN/Inf, " +
-            std::to_string(warmingUpCount) + " warming up)", LogSeverity::ERROR);
+            std::to_string(disabledCount) + " disabled" + disabledDetail + ", " + std::to_string(invalidCount) + " NaN/Inf" + invalidDetail + ", " +
+            std::to_string(warmingUpCount) + " warming up" + warmingUpDetail + ")", LogSeverity::ERROR);
          return false;
       }
 
