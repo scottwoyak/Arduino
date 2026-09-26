@@ -13,7 +13,7 @@
 /// as buttonA.
 /// </summary>
 ///
-class ViewerBoardS3 : public ArduinoWithDisplay
+class ViewerBoardS3 : public ArduinoWithDisplay, public IStatus
 {
 private:
    ///
@@ -80,8 +80,19 @@ public:
    /// </summary>
    /// <returns>Text size to use for headers.</returns>
    ///
-   uint8_t headerTextSize() override
-   {
-      return ArduinoWithDisplay::headerTextSize() + 1;
-   }
-};
+       uint8_t headerTextSize() override
+       {
+          return ArduinoWithDisplay::headerTextSize() + 1;
+       }
+
+       ///
+       /// <summary>
+       /// Updates the status indicator to reflect the specified status.
+       /// </summary>
+       /// <param name="status">The status value to display.</param>
+       ///
+       void setStatus(Status status) override
+       {
+          this->status.setStatus(status);
+       }
+   };

@@ -6,9 +6,9 @@
 // - Uses the shared MonitorSketch class (see MonitorSketch.h) to own the boot/init sequence:
 //   display init, status LED, sensor init hook, WiFi, daily rebooter, OTA, and the
 //   standard InfluxDB setup/post/flush cycle.
-// - This device's bucket/site/location is prompted for over Serial the first time it
+// - This device's bucket/site/location is prompted forfirst time it
 //   runs, then saved to Preferences (NVS) so it survives reboots and OTA firmware
-//   updates. On subsequent boots the saved value is used automatically, unless buttonA
+//   updates. On subsequent boots the saved value is used automatically, over Serial the  unless buttonA
 //   is held during a short window right after startup, which forces a re-prompt. This is
 //   handled by the shared MonitorSketch class (see MonitorSketch.h) via MONITOR_CONFIG's
 //   promptForContext flag, since this sketch prompts for a bucket (from a fixed list) and

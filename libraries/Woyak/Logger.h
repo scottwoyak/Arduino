@@ -37,6 +37,15 @@ constexpr uint8_t LOG_HEARTBEAT_DISCONNECT_COUNT = 2;
 
 ///
 /// <summary>
+/// How long (in milliseconds) LoggerClass waits after a disconnect before logging
+/// "Logging disconnected: ...". WebSocketsClient reconnects automatically and usually
+/// does so almost immediately, so brief drops within this grace period are not logged.
+/// </summary>
+///
+constexpr uint32_t LOG_DISCONNECT_GRACE_MS = 3000UL;
+
+///
+/// <summary>
 /// Severity of a log message passed to LoggerClass::log()/logPartial(). ERROR messages
 /// are prefixed with "ERROR: " by the Logger itself, so callers don't need to embed the
 /// prefix in their message text. Kept as a plain text prefix for now; may be replaced
@@ -184,6 +193,18 @@ class LoggerClass
 
    /// <summary>Messages logged before the connection was up, sent once it completes.</summary>
    static inline std::vector<std::string> _pendingMessages;
+
+   /// <summary>True while waiting to see if a disconnect resolves itself within the grace period.</summary>
+   static inline bool _disconnectPending = false;
+
+   /// <summary>True once the current disconnect has actually been logged (so a matching "reconnected" is logged too).</summary>
+   static inline bool _disconnectLogged = false;
+
+   /// <summary>Reason text captured from the disconnect event, logged if the grace period expires.</summary>
+   static inline std::string _pendingDisconnectReason;
+
+   /// <summary>millis() timestamp of the most recent disconnect, used to time the grace period.</summary>
+   static inline unsigned long _disconnectStartMs = 0;
 
    /// <summary>True if a logPartial() call is still awaiting its completing log() call.</summary>
    static inline bool _linePending = false;
@@ -356,10 +377,12 @@ class LoggerClass
                _everConnected = true;
                log(LOG_SERVER_HOST);
             }
-            else
+            else if (_disconnectLogged)
             {
                log("Logging reconnected");
             }
+            _disconnectPending = false;
+            _disconnectLogged = false;
             break;
 
          case WStype_DISCONNECTED:
@@ -372,7 +395,11 @@ class LoggerClass
             }
             else
             {
-               log(std::string("Logging disconnected: ") + (reason.empty() ? "unknown" : reason));
+               // WebSocketsClient reconnects on its own almost immediately in the common
+               // case, so hold off logging until the grace period expires (see loop()).
+               _pendingDisconnectReason = reason.empty() ? "unknown" : reason;
+               _disconnectPending = true;
+               _disconnectStartMs = millis();
             }
             break;
          }
@@ -451,6 +478,13 @@ public:
    static void loop()
    {
       _webSocket.loop();
+
+      if (_disconnectPending && !_connected && (millis() - _disconnectStartMs) >= LOG_DISCONNECT_GRACE_MS)
+      {
+         log(std::string("Logging disconnected: ") + _pendingDisconnectReason);
+         _disconnectPending = false;
+         _disconnectLogged = true;
+      }
    }
 
    ///
