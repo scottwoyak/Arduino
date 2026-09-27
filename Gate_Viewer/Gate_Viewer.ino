@@ -19,7 +19,9 @@
 // - Connects to WiFi, then opens two WebSocket connections to the telemetry server (one
 //   per gate topic) and receives live azimuth readings as they arrive.
 // - Redraws each line whenever a new value is received for its gate.
-// - Resets the device on telemetry disconnect or error.
+// - If a gate's telemetry topic disconnects or fails to connect, that gate's line is
+//   simply left undrawn while the connection keeps retrying in the background; the
+//   device is not reset and the other gate's line keeps updating normally.
 // - Checks for a firmware update periodically.
 //
 
@@ -79,7 +81,7 @@ constexpr uint16_t GATE_OPENER_PORT = 80;
 // This sketch's own version (e.g. "v1.06"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("v1.06");
+const auto VERSION = MakeVersion("v1.07");
 constexpr auto SKETCH_NAME = "Gate_Viewer";
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
@@ -645,8 +647,8 @@ private:
          _serverVersion.clear();
          _status.clear();
          _started = false;
-         Logger.log("Right gate telemetry disconnected", LogSeverity::ERROR);
-         Util::reset(TELEMETRY_RESET_DELAY_S, "Right gate telemetry disconnected");
+         _value = NAN;
+         Logger.log("Right gate telemetry disconnected; will keep retrying in the background", LogSeverity::ERROR);
          break;
 
       case WStype_CONNECTED:
@@ -766,12 +768,19 @@ RightGateSubscriber rightClient(RIGHT_TELEMETRY_TOPIC);
 ///
 /// <summary>
 /// Handles telemetry lifecycle events for this sketch: draws the header once started
-/// and redraws the azimuth line on each received value. Disconnect and error handling
-/// use the base class's default behavior.
+/// and redraws the azimuth line on each received value. Unlike the base class's default
+/// behavior, disconnects/failures/errors on the left gate topic do not reset the
+/// device; they're logged and the underlying WebSocket keeps retrying the connection
+/// in the background (see WebSocketsClient's built-in auto-reconnect), and the main
+/// loop simply stops drawing the left gate line (via isStarted()/getValue()) until it
+/// reconnects, so a single topic outage doesn't take down the whole viewer.
 /// </summary>
 ///
 class GateTelemetryHandler : public TelemetryEventHandler
 {
+private:
+   bool _initialized = false;
+
 public:
    explicit GateTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &arduino)
    {
@@ -780,6 +789,13 @@ public:
    void onStarted() override
    {
       TelemetryEventHandler::onStarted();
+
+      if (_initialized)
+      {
+         return;
+      }
+
+      _initialized = true;
 
       arduino.clearDisplay();
 
@@ -791,8 +807,24 @@ public:
 
       // Started only after the left client's SSL handshake completes, rather than
       // alongside it in setup(), so the two TLS handshakes don't run concurrently and
-      // risk starving the task watchdog.
+      // risk starving the task watchdog. Only done once (guarded by _initialized above)
+      // since onStarted() fires again on every left-gate reconnect.
       rightClient.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
+   }
+
+   void onDisconnected(const std::string& reason) override
+   {
+      Logger.log("Left gate telemetry disconnected (" + String(reason.c_str()) + "); will keep retrying in the background", LogSeverity::ERROR);
+   }
+
+   void onConnectionFailed(const std::string& reason) override
+   {
+      Logger.log("Left gate telemetry connection failed (" + String(reason.c_str()) + "); will keep retrying in the background", LogSeverity::ERROR);
+   }
+
+   void onError(const std::string& message) override
+   {
+      Logger.log("Left gate telemetry error: " + String(message.c_str()) + "; will keep retrying in the background", LogSeverity::ERROR);
    }
 };
 
@@ -831,7 +863,12 @@ void loop()
    TelemetrySubscriber* leftClient = viewer.getClient();
    rightClient.loop();
 
-   if (leftClient->isStarted() == false)
+   // Geometry (line endpoints, origins, etc.) is only computed once, the first time
+   // the left client starts (see GateTelemetryHandler::onStarted()); until then there's
+   // nothing to draw. After that, either topic can independently disconnect/reconnect
+   // in the background without resetting the device or blocking the other gate's line
+   // from updating (see leftAzimuth/rightAzimuth below).
+   if (lineLength == 0)
    {
       return;
    }
@@ -866,7 +903,7 @@ void loop()
       }
    }
 
-   float leftAzimuth = leftClient->getValue();
+   float leftAzimuth = leftClient->isStarted() ? leftClient->getValue() : NAN;
    float rightAzimuth = rightClient.isStarted() ? rightClient.getValue() : NAN;
 
    // Buffering disabled for now -- it wasn't producing the desired smoothing. Left here
