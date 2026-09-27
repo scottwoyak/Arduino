@@ -65,11 +65,11 @@
 .PARAMETER SketchName
 	The name of the sketch to publish (e.g. "Temp_Monitor"). Defaults to the name of
 	the current directory, so it can be invoked from Visual Studio with
-	$(ProjectDir) as the working directory and no explicit argument. If that default
-	doesn't resolve to a valid sketch directory (e.g. $(ProjectDir) resolved to the
-	solution directory because no document tab from the sketch's project was open),
-	the script falls back to asking the running Visual Studio instance for whichever
-	project is currently selected/active in Solution Explorer.
+	$(ProjectDir) as the working directory and no explicit argument. Whenever no
+	explicit -SketchName is supplied, that current-directory default is overridden by
+	asking the running Visual Studio instance for whichever project is set as the
+	solution's startup project, so publishing always targets the startup project
+	rather than whichever document tab/file happens to be active.
 
 .PARAMETER RepoRoot
 	Path to the root of the Arduino repo. Defaults to the parent of this script's
@@ -272,16 +272,17 @@ function Get-RunningDTE
 	return $dte
 }
 
-function Get-ActiveProjectDirectory
+function Get-StartupProjectDirectory
 {
 	# Visual Studio's $(ProjectDir) External Tools macro is resolved from the active
-	# *document* (tab), not the project selected in Solution Explorer, so it comes out
-	# empty/wrong whenever no tab from the sketch's project is open, or when the active
-	# tab belongs to a non-sketch project (e.g. a library header). As a fallback, ask the
-	# running Visual Studio instance directly, via its DTE automation object, for
-	# whichever project is currently selected/active in Solution Explorer. If multiple
-	# Visual Studio instances are running, an arbitrary one is used, so this is only used
-	# as a fallback, not the primary resolution path.
+	# *document* (tab), i.e. whichever file happens to be displayed/focused, not from
+	# the solution's configured startup project. That makes publishing accidentally
+	# depend on which file tab was last clicked (e.g. a library header), rather than
+	# which sketch the user actually intends to build/deploy. Instead, ask the running
+	# Visual Studio instance directly, via its DTE automation object, for the solution's
+	# startup project (Project > Set as Startup Project), which is a stable, explicit
+	# choice independent of the active document/tab. If multiple Visual Studio instances
+	# are running, an arbitrary one is used.
 	$dte = Get-RunningDTE
 	if (-not $dte)
 	{
@@ -290,23 +291,26 @@ function Get-ActiveProjectDirectory
 
 	try
 	{
-		$selectedProjects = $dte.ActiveSolutionProjects
-		if ($selectedProjects)
+		$startupProjectNames = $dte.Solution.SolutionBuild.StartupProjects
+		if ($startupProjectNames)
 		{
-			foreach ($project in $selectedProjects)
+			foreach ($uniqueName in $startupProjectNames)
 			{
-				if ($project -and $project.FullName)
+				foreach ($project in $dte.Solution.Projects)
 				{
-					return (Split-Path -Parent $project.FullName)
+					if ($project -and $project.UniqueName -eq $uniqueName -and $project.FullName)
+					{
+						return (Split-Path -Parent $project.FullName)
+					}
 				}
 			}
 		}
 
-		Write-Warning "Get-ActiveProjectDirectory: DTE.ActiveSolutionProjects is empty (no project selected in Solution Explorer)."
+		Write-Warning "Get-StartupProjectDirectory: DTE.Solution.SolutionBuild.StartupProjects is empty or unresolved (no startup project set)."
 	}
 	catch
 	{
-		Write-Warning "Get-ActiveProjectDirectory: failed to read ActiveSolutionProjects: $($_.Exception.Message)"
+		Write-Warning "Get-StartupProjectDirectory: failed to read StartupProjects: $($_.Exception.Message)"
 		return $null
 	}
 	finally
@@ -484,18 +488,18 @@ function Get-BoardId([string]$sketchDir, [string]$sketchName, [string]$binPath)
 }
 
 $sketchDir = Join-Path $RepoRoot $SketchName
-if ($SketchNameWasDefaulted -and (-not (Test-Path (Join-Path $sketchDir "$SketchName.ino"))))
+if ($SketchNameWasDefaulted)
 {
-	# The default (current-directory-derived) SketchName isn't a valid sketch, most
-	# likely because $(ProjectDir) didn't resolve to the intended sketch (e.g. no
-	# document tab from that project was open). Fall back to whichever project is
-	# actually selected/active in Visual Studio's Solution Explorer.
-	$activeProjectDir = Get-ActiveProjectDirectory
-	if ($activeProjectDir -and (Test-Path (Join-Path $activeProjectDir "$(Split-Path -Leaf $activeProjectDir).ino")))
+	# No explicit -SketchName was supplied, so don't trust the current-directory
+	# default (which tracks $(ProjectDir), i.e. whichever document tab/file is active).
+	# Always prefer the solution's startup project instead, so publishing targets a
+	# stable, explicit choice rather than the currently displayed file.
+	$startupProjectDir = Get-StartupProjectDirectory
+	if ($startupProjectDir -and (Test-Path (Join-Path $startupProjectDir "$(Split-Path -Leaf $startupProjectDir).ino")))
 	{
-		$SketchName = Split-Path -Leaf $activeProjectDir
-		$sketchDir = $activeProjectDir
-		Write-Host "Resolved sketch from Visual Studio's active project: '$SketchName'."
+		$SketchName = Split-Path -Leaf $startupProjectDir
+		$sketchDir = $startupProjectDir
+		Write-Host "Resolved sketch from Visual Studio's startup project: '$SketchName'."
 	}
 }
 
