@@ -59,6 +59,12 @@ struct LineState
 constexpr auto LEFT_TELEMETRY_TOPIC = "Gate/Left";
 constexpr auto RIGHT_TELEMETRY_TOPIC = "Gate/Right";
 
+// While a telemetry topic remains disconnected, the underlying WebSocket keeps
+// retrying in the background (often multiple times per minute), which would flood the
+// log with a message per attempt. RECONNECT_LOG_INTERVAL_S throttles that down to a
+// single "still down" summary at this cadence for as long as the outage continues.
+constexpr float RECONNECT_LOG_INTERVAL_S = 600.0f;
+
 constexpr auto GATE_OPENER_HOST = "192.168.1.9";
 constexpr uint16_t GATE_OPENER_PORT = 80;
 
@@ -633,6 +639,7 @@ private:
    std::string _status;
    bool _started = false;
    float _value = NAN;
+   ReconnectLogThrottle _reconnectLog{ _topic, RECONNECT_LOG_INTERVAL_S };
 
    void _sendText(const char* text)
    {
@@ -648,7 +655,7 @@ private:
          _status.clear();
          _started = false;
          _value = NAN;
-         Logger.log("Right gate telemetry disconnected; will keep retrying in the background", LogSeverity::ERROR);
+         _reconnectLog.reportFailure("Right gate telemetry disconnected; will keep retrying in the background");
          break;
 
       case WStype_CONNECTED:
@@ -667,11 +674,12 @@ private:
             _status = str;
             if (str.starts_with("ERR"))
             {
-               Logger.log("Right gate telemetry start failure: " + str, LogSeverity::ERROR);
+               _reconnectLog.reportFailure("Right gate telemetry start failure: " + str + "; will keep retrying");
             }
             else
             {
                _started = true;
+               _reconnectLog.reportSuccess();
                _sendText("get");
             }
          }
@@ -780,6 +788,33 @@ class GateTelemetryHandler : public TelemetryEventHandler
 {
 private:
    bool _initialized = false;
+   bool _reconnectFailureActive = false;
+   TimerSecs _reconnectLogTimer{ RECONNECT_LOG_INTERVAL_S };
+
+   ///
+   /// <summary>
+   /// Logs a reconnect-related failure, throttled so a persistent outage doesn't flood
+   /// the log with one message per retry attempt: the first failure since the last
+   /// successful connection is logged immediately with the detail message, and any
+   /// further failures are suppressed until RECONNECT_LOG_INTERVAL_S has elapsed, at
+   /// which point a single "still down" summary is logged instead.
+   /// </summary>
+   /// <param name="detail">Detail message to log for the first failure in a new outage.</param>
+   ///
+   void _logReconnectFailure(const std::string& detail)
+   {
+      if (!_reconnectFailureActive)
+      {
+         _reconnectFailureActive = true;
+         _reconnectLogTimer.reset();
+         Logger.log(detail, LogSeverity::ERROR);
+      }
+      else if (_reconnectLogTimer.ready())
+      {
+         _reconnectLogTimer.reset();
+         Logger.log(std::string("Haven't been able to reconnect to telemetry topic '") + LEFT_TELEMETRY_TOPIC + "' for the last 10 minutes", LogSeverity::ERROR);
+      }
+   }
 
 public:
    explicit GateTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &arduino)
@@ -789,6 +824,8 @@ public:
    void onStarted() override
    {
       TelemetryEventHandler::onStarted();
+
+      _reconnectFailureActive = false;
 
       if (_initialized)
       {
@@ -814,17 +851,17 @@ public:
 
    void onDisconnected(const std::string& reason) override
    {
-      Logger.log("Left gate telemetry disconnected (" + String(reason.c_str()) + "); will keep retrying in the background", LogSeverity::ERROR);
+      _logReconnectFailure(std::string("Left gate telemetry disconnected (") + reason + "); will keep retrying in the background");
    }
 
    void onConnectionFailed(const std::string& reason) override
    {
-      Logger.log("Left gate telemetry connection failed (" + String(reason.c_str()) + "); will keep retrying in the background", LogSeverity::ERROR);
+      _logReconnectFailure(std::string("Left gate telemetry connection failed (") + reason + "); will keep retrying in the background");
    }
 
    void onError(const std::string& message) override
    {
-      Logger.log("Left gate telemetry error: " + String(message.c_str()) + "; will keep retrying in the background", LogSeverity::ERROR);
+      _logReconnectFailure(std::string("Left gate telemetry error: ") + message + "; will keep retrying in the background");
    }
 };
 

@@ -460,10 +460,11 @@ public:
    /// <param name="config">Shared configuration.</param>
    ///
    SketchBase(Arduino* arduino, const SketchConfig& config)
-      : _config(config),
+      :
 #ifndef ARDUINO_STATUS_SUPPORTED
         _ownedNeoPixelStatus(&arduino->neoPixel),
 #endif
+        _config(config),
         _arduino(arduino),
 #ifdef ARDUINO_STATUS_SUPPORTED
         _status(arduino)

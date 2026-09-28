@@ -8,7 +8,8 @@
 // Behavior:
 // - Connects to WiFi, then opens a WebSocket connection to the telemetry server and
 //   subscribes to the configured topic.
-// - Resets the device on disconnect or telemetry error.
+// - On disconnect or telemetry error, keeps retrying in the background (throttled
+//   logging) instead of resetting the device.
 //
 // Uncomment TELEMETRY_LOCAL to use a local telemetry server instead of the remote.
 // Hardware: Feather ESP32 with WiFi and TFT display.
@@ -44,6 +45,13 @@ constexpr const char* TELEMETRY_TOPIC = "Test";
 
 constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
 
+// A dropped telemetry connection keeps retrying in the background (see
+// WebSocketsClient's built-in auto-reconnect) rather than resetting the device; without
+// throttling, a persistent outage would otherwise flood the log with a message per
+// retry attempt. RECONNECT_LOG_INTERVAL_S throttles that down to a single "still down"
+// summary every 10 minutes.
+constexpr float RECONNECT_LOG_INTERVAL_S = 600.0f;
+
 Arduino arduino;
 NeoPixelStatus status(&arduino.neoPixel);
 Timer rateDisplayTimer(RATE_UPDATE_INTERVAL_MS);
@@ -61,7 +69,48 @@ TimedScatterPlotSeries* valueSeries = valuePlot.createTimedSeries(PLOT_SPAN_MS);
 constexpr uint8_t VALUE_SERIES_POINT_SIZE = 1;
 float lastPlottedValue = NAN;
 
-TelemetryEventHandler telemetryHandler(&status, &arduino);
+///
+/// <summary>
+/// Handles telemetry lifecycle events for this sketch. Unlike the base class's default
+/// behavior, disconnects/failures/errors do not reset the device; they're logged
+/// (throttled) and the underlying WebSocket keeps retrying the connection in the
+/// background, while the main loop simply stops updating (via isStarted()) until it
+/// reconnects and re-displays the table/plot.
+/// </summary>
+///
+class SubscriberTelemetryHandler : public TelemetryEventHandler
+{
+private:
+   ReconnectLogThrottle _reconnectLog{ TELEMETRY_TOPIC, RECONNECT_LOG_INTERVAL_S };
+
+public:
+   explicit SubscriberTelemetryHandler(IStatus* status, ArduinoWithDisplay* display) : TelemetryEventHandler(status, display)
+   {
+   }
+
+   void onStarted() override
+   {
+      TelemetryEventHandler::onStarted();
+      _reconnectLog.reportSuccess();
+   }
+
+   void onDisconnected(const std::string& reason) override
+   {
+      _reconnectLog.reportFailure(std::string("Telemetry disconnected (") + reason + "); will keep retrying in the background");
+   }
+
+   void onConnectionFailed(const std::string& reason) override
+   {
+      _reconnectLog.reportFailure(std::string("Telemetry connection failed (") + reason + "); will keep retrying in the background");
+   }
+
+   void onError(const std::string& message) override
+   {
+      _reconnectLog.reportFailure(std::string("Telemetry error: ") + message + "; will keep retrying in the background");
+   }
+};
+
+SubscriberTelemetryHandler telemetryHandler(&status, &arduino);
 TelemetrySubscriber client(TELEMETRY_TOPIC, &status, &telemetryHandler);
 bool needsInitialDisplay = true;
 
@@ -129,7 +178,10 @@ void loop()
    if (!client.isStarted())
    {
       // waiting for the subscribe acknowledgement from the server; don't draw
-      // any data until the topic has been officially started
+      // any data until the topic has been officially started. Also make sure the
+      // table/plot get redrawn once it does (re)start, since a reconnect after a
+      // background outage clears the display again via needsInitialDisplay above.
+      needsInitialDisplay = true;
       return;
    }
 

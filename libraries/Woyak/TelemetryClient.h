@@ -6,6 +6,8 @@
 
 #include "RollingRate.h"
 #include "Status.h"
+#include "Stopwatch.h"
+#include "Timer.h"
 #include "Util.h"
 #include "Logger.h"
 
@@ -31,6 +33,80 @@ constexpr float TELEMETRY_RESET_DELAY_S = 10.0f;
 /// </summary>
 ///
 constexpr uint16_t TELEMETRY_RATE_NUM_SAMPLES = 50;
+
+///
+/// <summary>
+/// Throttles logging of telemetry reconnect failures (disconnects, failed connection
+/// attempts, errors) so a persistent outage doesn't flood the log with one message per
+/// retry attempt - the underlying WebSocket keeps retrying in the background, often
+/// multiple times per minute. The first failure since the last successful connection is
+/// logged immediately with a caller-supplied detail message; further failures are
+/// suppressed until the configured interval has elapsed, at which point a summary is
+/// logged reporting the total elapsed downtime so far, and so on for as long as the
+/// outage continues. Call reportSuccess() once the topic starts working again so the
+/// next failure is logged immediately. Useful both for TelemetryEventHandler overrides
+/// and for minimal/custom WebSocket clients (e.g. a sketch subscribing to a topic the
+/// telemetry server can't yet multiplex onto an existing TelemetrySubscriber's
+/// connection).
+/// </summary>
+///
+class ReconnectLogThrottle
+{
+private:
+   std::string _topic;
+   bool _failureActive = false;
+   TimerSecs _logTimer;
+   Stopwatch _outageStopwatch;
+
+public:
+   ///
+   /// <summary>
+   /// Initializes a new instance of the ReconnectLogThrottle class.
+   /// </summary>
+   /// <param name="topic">Telemetry topic name, used in the throttled "still down" summary message.</param>
+   /// <param name="intervalSecs">Minimum time between "still down" summary log messages, in seconds.</param>
+   ///
+   ReconnectLogThrottle(const std::string& topic, float intervalSecs)
+      : _topic(topic), _logTimer(intervalSecs)
+   {
+   }
+
+   ///
+   /// <summary>
+   /// Logs a reconnect-related failure, throttled as described in the class summary.
+   /// </summary>
+   /// <param name="detail">Detail message to log for the first failure in a new outage.</param>
+   ///
+   void reportFailure(const std::string& detail)
+   {
+      if (!_failureActive)
+      {
+         _failureActive = true;
+         _logTimer.reset();
+         _outageStopwatch.reset();
+         _outageStopwatch.start();
+         Logger.log(detail, LogSeverity::ERROR);
+      }
+      else if (_logTimer.ready())
+      {
+         _logTimer.reset();
+         uint16_t elapsedMinutes = (uint16_t)lround(_outageStopwatch.elapsedSecs() / 60.0);
+         Logger.log("Haven't been able to reconnect to telemetry topic '" + _topic + "' for the last " + std::to_string(elapsedMinutes) + " minutes", LogSeverity::ERROR);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Marks the topic as healthy again, so the next failure is logged immediately
+   /// instead of being throttled.
+   /// </summary>
+   ///
+   void reportSuccess()
+   {
+      _failureActive = false;
+      _outageStopwatch.stop();
+   }
+};
 
 ///
 /// <summary>

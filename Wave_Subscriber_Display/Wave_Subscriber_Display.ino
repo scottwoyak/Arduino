@@ -10,7 +10,8 @@
 // - Connects to WiFi, then opens a WebSocket connection to the telemetry server and
 //   receives live wave sensor readings as they arrive.
 // - Applies short-term smoothing/buffering before updating the displayed value and chart.
-// - Resets the device on telemetry disconnect or error.
+// - On telemetry disconnect/error, keeps retrying in the background (throttled logging)
+//   instead of resetting the device; the display simply stops updating until it reconnects.
 // - Checks for a firmware update periodically.
 //
 
@@ -109,6 +110,13 @@ constexpr unsigned long CHART_UPDATE_MS = 30;
 // average or the chart. Derived from a 6 cm max jump at the ~5 samples/sec telemetry rate.
 constexpr float MAX_RATE_CM_PER_SEC = 30;
 
+// A dropped telemetry connection keeps retrying in the background (see
+// WebSocketsClient's built-in auto-reconnect) rather than resetting the device; without
+// throttling, a persistent outage would otherwise flood the log with a message per
+// retry attempt. RECONNECT_LOG_INTERVAL_S throttles that down to a single "still down"
+// summary every 10 minutes.
+constexpr float RECONNECT_LOG_INTERVAL_S = 600.0f;
+
 BufferedTimeSeries waveHeight(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
 Timer logTimer(LOG_INTERVAL_MS);
 Timer chartTimer(CHART_UPDATE_MS);
@@ -191,11 +199,17 @@ void displayFooter()
 ///
 /// <summary>
 /// Handles telemetry lifecycle events for this sketch: clears the display once
-/// started, and resets the device on disconnect or error.
+/// started. Unlike the base class's default behavior, disconnects/failures/errors do
+/// not reset the device; they're logged (throttled) and the underlying WebSocket keeps
+/// retrying the connection in the background, while the main loop simply stops
+/// updating (via isStarted()) until it reconnects.
 /// </summary>
 ///
 class WaveTelemetryHandler : public TelemetryEventHandler
 {
+private:
+   ReconnectLogThrottle _reconnectLog{ telemetryTopic, RECONNECT_LOG_INTERVAL_S };
+
 public:
    explicit WaveTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &arduino)
    {
@@ -204,9 +218,25 @@ public:
    void onStarted() override
    {
       TelemetryEventHandler::onStarted();
+      _reconnectLog.reportSuccess();
       arduino.clearDisplay();
       displayHeader();
       displaySubheading();
+   }
+
+   void onDisconnected(const std::string& reason) override
+   {
+      _reconnectLog.reportFailure(std::string("Wave telemetry disconnected (") + reason + "); will keep retrying in the background");
+   }
+
+   void onConnectionFailed(const std::string& reason) override
+   {
+      _reconnectLog.reportFailure(std::string("Wave telemetry connection failed (") + reason + "); will keep retrying in the background");
+   }
+
+   void onError(const std::string& message) override
+   {
+      _reconnectLog.reportFailure(std::string("Wave telemetry error: ") + message + "; will keep retrying in the background");
    }
 
    void onReceiveText(const std::string& text) override

@@ -14,7 +14,8 @@
 // - Connects to WiFi, then opens a WebSocket connection to the telemetry server and
 //   receives live wind speed readings as they arrive.
 // - Tracks a windowed histogram of readings and a moving bar chart of recent readings.
-// - Resets the device on telemetry disconnect or error.
+// - On telemetry disconnect/error, keeps retrying in the background (throttled logging)
+//   instead of resetting the device; the display simply stops updating until it reconnects.
 // - Checks for a firmware update periodically.
 //
 
@@ -98,6 +99,14 @@ Format speedFormat("##.# mph", Format::Alignment::RIGHT);
 // and the 240x135 Feather ESP32-S3 TFT.
 constexpr uint8_t MIN_TEXT_SIZE = 2;
 constexpr uint8_t MAX_HEADER_TEXT_SIZE = 4;
+
+// ----------- Telemetry Reconnect Logging
+// A dropped telemetry connection keeps retrying in the background (see
+// WebSocketsClient's built-in auto-reconnect) rather than resetting the device; without
+// throttling, a persistent outage would otherwise flood the log with a message per
+// retry attempt. RECONNECT_LOG_INTERVAL_S throttles that down to a single "still down"
+// summary every 10 minutes.
+constexpr float RECONNECT_LOG_INTERVAL_S = 600.0f;
 constexpr uint8_t SPEED_NUM_CHARS = 8; // "##.# mph"
 constexpr uint8_t HEADER_PADDING = 6;
 constexpr uint8_t VALUES_AXIS_PADDING = 8;
@@ -191,12 +200,18 @@ void displayHeader()
 ///
 /// <summary>
 /// Handles telemetry lifecycle events for this sketch: draws the header once started
-/// and feeds the charts/stats on each received value. Disconnect and error handling use
-/// the base class's default behavior.
+/// and feeds the charts/stats on each received value. Unlike the base class's default
+/// behavior, disconnects/failures/errors do not reset the device; they're logged
+/// (throttled) and the underlying WebSocket keeps retrying the connection in the
+/// background, while the main loop simply stops updating (via isStarted()) until it
+/// reconnects.
 /// </summary>
 ///
 class WindTelemetryHandler : public TelemetryEventHandler
 {
+private:
+   ReconnectLogThrottle _reconnectLog{ telemetryTopic, RECONNECT_LOG_INTERVAL_S };
+
 public:
    explicit WindTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &arduino)
    {
@@ -206,8 +221,24 @@ public:
    {
       TelemetryEventHandler::onStarted();
 
+      _reconnectLog.reportSuccess();
       arduino.clearDisplay();
       displayHeader();
+   }
+
+   void onDisconnected(const std::string& reason) override
+   {
+      _reconnectLog.reportFailure(std::string("Wind telemetry disconnected (") + reason + "); will keep retrying in the background");
+   }
+
+   void onConnectionFailed(const std::string& reason) override
+   {
+      _reconnectLog.reportFailure(std::string("Wind telemetry connection failed (") + reason + "); will keep retrying in the background");
+   }
+
+   void onError(const std::string& message) override
+   {
+      _reconnectLog.reportFailure(std::string("Wind telemetry error: ") + message + "; will keep retrying in the background");
    }
 
    void onReceiveText(const std::string& text) override
