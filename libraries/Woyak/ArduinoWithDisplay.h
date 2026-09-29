@@ -1904,7 +1904,6 @@ public:
       _otaLoggingHandler.next = onUpdateAvailable;
       _ota->setHandler(&_otaLoggingHandler);
       _ota->setStatus(status);
-      _registerForceOTA();
       _ota->checkNow();
    }
 };

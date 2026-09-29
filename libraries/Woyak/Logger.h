@@ -213,8 +213,6 @@ class LoggerClass
    static inline void (*_commandHandler)(const char* command) = nullptr;
    /// <summary>Optional sketch-supplied handler that adds fields to a GetStatus reply (see onStatus()).</summary>
    static inline void (*_statusHandler)(LoggerStatus& status) = nullptr;
-   /// <summary>Optional handler invoked when a "ForceOTA" command is received (see onForceOTA()).</summary>
-   static inline void (*_forceOTAHandler)() = nullptr;
 
    ///
    /// <summary>
@@ -310,18 +308,6 @@ class LoggerClass
       {
          respond("Restarting");
          ESP.restart();
-      }
-      else if (strcasecmp(command, "ForceOTA") == 0)
-      {
-         if (_forceOTAHandler != nullptr)
-         {
-            respond("Forcing OTA update");
-            _forceOTAHandler();
-         }
-         else
-         {
-            respond("ForceOTA not supported: OTA is not enabled");
-         }
       }
       else if (strcasecmp(command, "GetStatus") == 0)
       {
@@ -525,20 +511,6 @@ public:
    static void onCommand(void (*handler)(const char* command))
    {
       _commandHandler = handler;
-   }
-
-   ///
-   /// <summary>
-   /// Registers a handler invoked when a "ForceOTA" command is received, which should
-   /// download and install the current OTA firmware regardless of version. If no
-   /// handler is registered (e.g. OTA wasn't enabled), the command replies that it
-   /// isn't supported instead of doing nothing silently.
-   /// </summary>
-   /// <param name="handler">Function invoked to force the OTA update check/install.</param>
-   ///
-   static void onForceOTA(void (*handler)())
-   {
-      _forceOTAHandler = handler;
    }
 
    ///
