@@ -462,6 +462,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Light_Display/Light_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Logger/Logger.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
