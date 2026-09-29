@@ -213,6 +213,10 @@ private:
    ReconnectLogThrottle _reconnectLog{ telemetryTopic, RECONNECT_LOG_INTERVAL_S };
 
 public:
+   // set on every (re)start; the main loop clears and redraws the display, so the
+   // "Telemetry... OK" init line printed during setup() is never wiped mid-init
+   bool needsInitialDisplay = true;
+
    explicit WindTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &arduino)
    {
    }
@@ -222,8 +226,7 @@ public:
       TelemetryEventHandler::onStarted();
 
       _reconnectLog.reportSuccess();
-      arduino.clearDisplay();
-      displayHeader();
+      needsInitialDisplay = true;
    }
 
    void onDisconnected(const std::string& reason) override
@@ -296,6 +299,13 @@ void loop()
    if (client->isStarted() == false)
    {
       return;
+   }
+
+   if (telemetryHandler.needsInitialDisplay)
+   {
+      telemetryHandler.needsInitialDisplay = false;
+      arduino.clearDisplay();
+      displayHeader();
    }
 
    float speed = client->getValue();

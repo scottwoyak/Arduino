@@ -105,19 +105,33 @@ public:
    /// <summary>
    /// Starts the given telemetry client's connection, printing the standard
    /// "Telemetry..." init status line, and blocks until it resolves (connects or fails).
-   /// The client itself remains async afterward.
+   /// The client itself remains async afterward. If it hasn't started within the
+   /// connect timeout, "FAILED" is reported but the client is left running so it keeps
+   /// retrying in the background; the caller decides how to proceed.
    /// </summary>
    /// <param name="arduino">The board wrapper.</param>
    /// <param name="status">Status indicator driven during the connection.</param>
    /// <param name="client">The telemetry client to connect, owned by the caller.</param>
+   /// <returns>True if the client started before the timeout; false otherwise.</returns>
    ///
-   void connect(Arduino* arduino, IStatus* status, TelemetryClient* client)
+   bool connect(Arduino* arduino, IStatus* status, TelemetryClient* client)
    {
       ASSERT(client != nullptr);
 
       _client = client;
       arduino->initClient("Telemetry", [this]() { _client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, status);
-      arduino->waitForClient([this]() { return _client->isStarted(); }, [this]() { _client->loop(); });
+      if (arduino->waitForClient([this]() { return _client->isStarted(); }, [this]() { _client->loop(); }))
+      {
+         std::string result = "OK, v" + _client->getServerVersion();
+         Logger.log(result);
+         arduino->printlnR(result.c_str(), Color::VALUE);
+         return true;
+      }
+
+      status->setStatus(Status::FAILED);
+      Logger.log("FAILED", LogSeverity::ERROR);
+      arduino->printlnR("FAILED", Color::RED);
+      return false;
    }
 
    ///

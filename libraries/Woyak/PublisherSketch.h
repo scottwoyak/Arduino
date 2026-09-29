@@ -160,7 +160,10 @@ protected:
    void _afterOTASetup() override
    {
       _client = new TelemetryPublisher(_telemetryFeature.topic(), _telemetryConfig.decimals, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
-      _telemetryFeature.connect(_arduino, _status, _client);
+      if (!_telemetryFeature.connect(_arduino, _status, _client) && _customTelemetryHandler == nullptr)
+      {
+         Util::reset(TELEMETRY_RESET_DELAY_S, "Could not connect to telemetry server");
+      }
    }
 
    ///

@@ -817,6 +817,10 @@ private:
    }
 
 public:
+   // set on the first start; the main loop clears the display, so the
+   // "Telemetry... OK" init line printed during setup() is never wiped mid-init
+   bool needsInitialClear = false;
+
    explicit GateTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &arduino)
    {
    }
@@ -834,7 +838,7 @@ public:
 
       _initialized = true;
 
-      arduino.clearDisplay();
+      needsInitialClear = true;
 
       leftLine = LineState{ GATE_ORIGIN_MARGIN };
       rightLine = LineState{ (int16_t)(arduino.width() - GATE_ORIGIN_MARGIN), 0, 0, 0, 0, false, NAN, true };
@@ -908,6 +912,12 @@ void loop()
    if (lineLength == 0)
    {
       return;
+   }
+
+   if (telemetryHandler.needsInitialClear)
+   {
+      telemetryHandler.needsInitialClear = false;
+      arduino.clearDisplay();
    }
 
    #ifdef ARDUINO_TOUCH_SUPPORTED

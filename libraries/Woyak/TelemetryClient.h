@@ -150,29 +150,6 @@ public:
 
    ///
    /// <summary>
-   /// Completes the "Telemetry..." label printed by ArduinoBase::initClient() with
-   /// "OK, v<version>", reporting the server's version greeting to Serial and, on
-   /// display-capable boards, the display as well. Called by TelemetryClient; not
-   /// virtual since it's not an event a sketch would want to customize.
-   /// </summary>
-   /// <param name="version">Server version reported by the telemetry server</param>
-   ///
-   void printServerVersion(const std::string& version)
-   {
-      std::string result = "OK, v" + version;
-
-      Logger.log(result);
-
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-      if (_display != nullptr)
-      {
-         _display->printlnR(result, Color::VALUE);
-      }
-#endif
-   }
-
-   ///
-   /// <summary>
    /// Invoked when the telemetry WebSocket connection is established. Default
    /// implementation does nothing.
    /// </summary>
@@ -185,9 +162,8 @@ public:
    /// <summary>
    /// Invoked when the telemetry client finishes starting up. Default implementation
    /// sets the status to READY. The "Telemetry..." label printed by
-   /// ArduinoBase::initClient() is already completed by printServerVersion() once the
-   /// server's version greeting arrives, so this method does not print anything further.
-   /// Overrides must call this base implementation (see class remarks).
+   /// ArduinoBase::initClient() is completed by TelemetryFeature::connect(), so this
+   /// method does not print anything. Overrides
    /// </summary>
    ///
    virtual void onStarted()
@@ -546,13 +522,8 @@ protected:
          if (_serverVersion.length() == 0)
          {
             // the first message received is a simple greeting with the server version;
-            // reported via the handler, which completes the "Telemetry..." label
-            // printed by ArduinoBase::initClient()
-
             // strip off the initial part "TelemetryServer v###"
             _serverVersion = str.substr(std::string("TelemetryServer v").length());
-
-            _handler->printServerVersion(_serverVersion);
          }
          else if (_status.length() == 0)
          {
