@@ -13,6 +13,7 @@
     <File Path="libraries/Woyak/Bar.h" />
     <File Path="libraries/Woyak/BarChart.h" />
     <File Path="libraries/Woyak/Battery.h" />
+    <File Path="libraries/Woyak/BH1750LightSensor.h" />
     <File Path="libraries/Woyak/BME280TempSensor.h" />
     <File Path="libraries/Woyak/BufferedTimeSeries.h" />
     <File Path="libraries/Woyak/Button.h" />
@@ -57,6 +58,7 @@
     <File Path="libraries/Woyak/IDepthSensor.h" />
     <File Path="libraries/Woyak/IEncoder.h" />
     <File Path="libraries/Woyak/IHistogramPlot.h" />
+    <File Path="libraries/Woyak/ILightSensor.h" />
     <File Path="libraries/Woyak/IndexedEncoder.h" />
     <File Path="libraries/Woyak/Influx.h" />
     <File Path="libraries/Woyak/InfluxConfig.h" />
@@ -70,6 +72,7 @@
     <File Path="libraries/Woyak/LGX_HosyondESP32S3.h" />
     <File Path="libraries/Woyak/LGX_ST7796S.h" />
     <File Path="libraries/Woyak/LibraryVersion.h" />
+    <File Path="libraries/Woyak/LightSensor.h" />
     <File Path="libraries/Woyak/Logger.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
     <File Path="libraries/Woyak/Memory.h" />
@@ -150,6 +153,7 @@
     <File Path="libraries/Woyak/ValueStore.h" />
     <File Path="libraries/Woyak/ValueStoreFram.h" />
     <File Path="libraries/Woyak/Vector.h" />
+    <File Path="libraries/Woyak/VEML7700LightSensor.h" />
     <File Path="libraries/Woyak/ViewerBoardS3.h" />
     <File Path="libraries/Woyak/ViewerSketch.h" />
     <File Path="libraries/Woyak/Waveshare_ESP32_S3_Zero.h" />

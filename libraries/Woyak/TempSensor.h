@@ -5,6 +5,7 @@
 #include "ITempSensor.h"
 #include "TempSensorCallibration.h"
 #include "Timer.h"
+#include "Util.h"
 
 // sensor types
 #include "BME280TempSensor.h"
@@ -71,6 +72,7 @@ private:
    // the actual sensor this class manages. Defaults to a NullSensor so
    // callers never need to guard against a null pointer.
    ITempSensor* _sensor = new NullSensor();
+   bool _beginCalled = false;
 
    ///
    /// <summary>
@@ -251,6 +253,9 @@ public:
    ///
    bool begin(bool print, bool allowEsp32Fallback)
    {
+      ASSERT(!_beginCalled);
+
+      _beginCalled = true;
       delete _sensor;
       _sensor = _create(print, allowEsp32Fallback);
 
@@ -285,6 +290,9 @@ public:
    ///
    bool begin(uint8_t oneWirePin, bool print)
    {
+      ASSERT(!_beginCalled);
+
+      _beginCalled = true;
       if (print) Serial.println("Creating DS18B20 sensor");
       delete _sensor;
       _sensor = new DS18B20TempSensor(oneWirePin);
@@ -301,6 +309,9 @@ public:
    ///
    bool begin(ITempSensor* sensor, bool print)
    {
+      ASSERT(!_beginCalled);
+
+      _beginCalled = true;
       if (print) Serial.println("Using provided sensor");
       delete _sensor;
       _sensor = sensor;

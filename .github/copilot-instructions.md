@@ -18,6 +18,7 @@
 - Use `Temp_Display.ino` as the reference/canonical sketch for code usage, formatting, and comment style conventions in this Arduino workspace. When cleaning up or writing other sketches, compare them against `Temp_Display.ino` as the style exemplar.
 - For Arduino sketches using the Woyak library, OTA firmware update URLs should follow a convention: version.txt lives alongside the firmware .bin in the same directory, so OTAUpdater derives the version-check URL automatically from the firmware URL rather than requiring both URLs to be specified separately.
 - Visual Micro's recent/saved boards list is stored in the registry at `HKCU\Software\Visual Micro\Options\Arduino General`, value 'Recent Board Names' (semicolon-separated entries like 'Display Name (fqbn_id)'). To remove a board: export the key with `reg export` as a backup, remove the entry from the list via PowerShell, then user restarts Visual Studio. Per-board option settings are under `HKCU\Software\Visual Micro\Options\Board Custom Options (custom_<package>_<board>_<option>)`.
+- After editing Arduino sketches/libraries, run the get_errors tool on the changed files to catch compile errors (no Visual Micro build needed), and re-check after further edits. Still do not run full builds automatically.
 
 ## General Coding Conventions
 - Do not make changes in libraries outside of the Woyak library; third-party libraries should remain untouched.
