@@ -75,6 +75,12 @@ private:
    /// <summary>Custom handler registered via setTelemetryHandler(), used instead of _telemetryHandler if set.</summary>
    TelemetryEventHandler* _customTelemetryHandler = nullptr;
 
+   /// <summary>Optional callback invoked once the Influx site has been resolved, before the telemetry topic is used.</summary>
+   void (*_siteResolvedHandler)(const InfluxContext&) = nullptr;
+
+   /// <summary>Location entered/loaded when influxConfig.promptForContext is set.</summary>
+   String _locationName;
+
    /// <summary>Telemetry settings, copied from the constructor argument.</summary>
    TelemetryConfig _telemetryConfig;
 
@@ -95,7 +101,47 @@ protected:
    ///
    InfluxContext _resolveFixedSite() override
    {
-      return {};
+      if (!_influxConfig.promptForContext)
+      {
+         return {};
+      }
+
+      static constexpr auto LOCATION_KEY = "location";
+      static constexpr uint16_t PROMPT_TIMEOUT_S = 10;
+
+      _arduino->preferences.begin(_config.preferencesNamespace, true);
+      bool hasSaved = _arduino->preferences.isKey(LOCATION_KEY);
+      if (hasSaved)
+      {
+         _locationName = _arduino->preferences.getString(LOCATION_KEY);
+      }
+      _arduino->preferences.end();
+
+      bool reconfigure = !hasSaved;
+      if (hasSaved && _shouldForcePrompt())
+      {
+         Serial.println("Reconfigure this device's location:");
+         Serial.println("  1: Keep saved: " + _locationName);
+         Serial.println("  2: Enter new value");
+         reconfigure = SerialX::readSelectionWithTimeout(2, 0, PROMPT_TIMEOUT_S * 1000UL) != 0;
+      }
+
+      if (reconfigure)
+      {
+         do
+         {
+            _locationName = SerialX::prompt("Enter location: ");
+         } while (_locationName.length() == 0);
+
+         _arduino->preferences.begin(_config.preferencesNamespace, false);
+         _arduino->preferences.putString(LOCATION_KEY, _locationName);
+         _arduino->preferences.end();
+      }
+      _printAndLogStatus("Location... ", _locationName.c_str());
+
+      InfluxContext site = _influxConfig.context;
+      site.location = _locationName.c_str();
+      return site;
    }
 
    ///
@@ -117,6 +163,11 @@ protected:
    ///
    void _resolveExtra(bool forcePrompt) override
    {
+      if (_siteResolvedHandler != nullptr)
+      {
+         _siteResolvedHandler(_site);
+      }
+
       std::string telemetryMessage = std::string("Telemetry topic: ") + _telemetryFeature.resolve(_arduino, _status, forcePrompt);
       _printAndLogStatus(telemetryMessage.c_str());
    }
@@ -140,7 +191,7 @@ protected:
    ///
    bool _shouldUseInflux(bool hasSiteTable) override
    {
-      return hasSiteTable;
+      return hasSiteTable || _influxConfig.promptForContext;
    }
 
    ///
@@ -238,6 +289,19 @@ public:
    void setValueSource(float (*valueFunc)())
    {
       _valueSource = valueFunc;
+   }
+
+   ///
+   /// <summary>
+   /// Registers a function called during begin() once the Influx site/location has been
+   /// resolved, before the telemetry topic is read. Lets a sketch build its telemetry
+   /// topic (e.g. into the buffer TelemetryConfig::topic points to) from the site.
+   /// </summary>
+   /// <param name="handler">Captureless function receiving the resolved site.</param>
+   ///
+   void onSiteResolved(void (*handler)(const InfluxContext&))
+   {
+      _siteResolvedHandler = handler;
    }
 
    ///

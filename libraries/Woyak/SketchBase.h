@@ -277,12 +277,36 @@ protected:
    ///
    void _beginLogger(const char* site = nullptr, const char* location = nullptr)
    {
-      // Started last: blocks (via waitForClient()) until the "Logging... " label printed
-      // by begin() is completed by Logger::_onEvent(), so nothing else may log a line
-      // until then. Logger itself remains async.
+      _beginLoggerConnection(site, location);
+      _finishLoggerSetup();
+   }
+
+   ///
+   /// <summary>
+   /// Starts the Logger connection and blocks (via waitForClient()) until the "Logging... "
+   /// label printed by begin() is completed by Logger::_onEvent(), so nothing else may log a
+   /// line until then. Logger itself remains async. Call right after _beginConnect() so
+   /// failures during the rest of initialization (e.g. sensors) are captured by the
+   /// LogServer, then call _finishLoggerSetup() as the last setup step.
+   /// </summary>
+   /// <param name="site">Optional site tag to associate with the LogServer connection.</param>
+   /// <param name="location">Optional location tag to associate with the LogServer connection.</param>
+   ///
+   void _beginLoggerConnection(const char* site = nullptr, const char* location = nullptr)
+   {
       Logger.begin(_config.sketchName, _config.version, site, location);
       _arduino->waitForClient([]() { return Logger.isResolved(); }, []() { Logger.loop(); });
+   }
 
+   ///
+   /// <summary>
+   /// Completes Logger setup once initialization is done: applies the CPU frequency,
+   /// registers the GetStatus handler, and enables the watchdog. Deferred until the end of
+   /// setup so the watchdog doesn't trip during the blocking init steps.
+   /// </summary>
+   ///
+   void _finishLoggerSetup()
+   {
       setCpuFrequencyMhz(_config.cpuFrequencyMhz);
 
       Logger.onStatus(_onGetStatus);
@@ -389,7 +413,10 @@ protected:
          if (!success && sensor.fatal)
          {
             _status->setStatus(Status::FAILED);
-            Util::reset(_config.sensorFailureResetDelayS, std::string("Sensor '") + sensor.label + "' failed to initialize");
+
+            std::string reason = std::string("Sensor '") + sensor.label + "' failed to initialize";
+            _printAndLogStatus(("Restarting in " + std::to_string(_config.sensorFailureResetDelayS) + "s").c_str(), reason + ". Restarting in " + std::to_string(_config.sensorFailureResetDelayS) + "s", Color::RED);
+            Util::reset(_config.sensorFailureResetDelayS, reason);
          }
       }
    }

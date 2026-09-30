@@ -383,6 +383,9 @@ public:
       // every reboot instead of boot-looping before WiFi/OTA is ever reachable.
       _beginConnect();
 
+      // Logging starts as soon as WiFi is up so failures in the remaining init steps are captured
+      _beginLoggerConnection(_site.site, _site.location);
+
       _initSensors();
 
       if (_influxConfig.includeCpuTemp)
@@ -410,7 +413,7 @@ public:
 
          _logStatusEnd("OK");
 
-         std::string intervalMessage = std::string("Values measured every ") + std::to_string(SENSOR_INTERVAL_MS) +
+         std::string intervalMessage = std::string("Values measured every ") + std::to_string(_influxConfig.sampleIntervalMs) +
             " ms with an average uploaded every " + std::to_string(_influxConfig.intervalS) + " seconds";
          _logMessage(intervalMessage);
 
@@ -430,7 +433,7 @@ public:
 
       _afterOTASetup();
 
-      _beginLogger(_site.site, _site.location);
+      _finishLoggerSetup();
    }
 
    ///

@@ -21,5 +21,5 @@ public:
    const char* type() const override { return "VEML7700"; }
    uint8_t address() override { return I2C_ADDRESS; }
    bool exists() override { return true; }
-   float readLux() override { return _sensor.readLux(VEML_LUX_NORMAL_NOWAIT); }
+   float readLux() override { return _sensor.readLux(VEML_LUX_AUTO); }
 };

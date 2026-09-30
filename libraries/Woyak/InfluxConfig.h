@@ -48,6 +48,9 @@ struct InfluxConfig
    /// <summary>How often (in seconds) queued Influx points are posted/flushed.</summary>
    uint16_t intervalS = 60;
 
+   /// <summary>How often (in milliseconds) the sketch's sensors are sampled; reported in the startup log message.</summary>
+   uint16_t sampleIntervalMs = 100;
+
    /// <summary>Number of samples averaged for the standard rolling-average enclosure temperature/humidity fields.</summary>
    size_t rollingSamples = 10;
 

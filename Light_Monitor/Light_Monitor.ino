@@ -1,0 +1,384 @@
+//
+// Light Monitor
+//
+// Uses a VL53L1X time-of-flight sensor to detect motion (the presence of people) and a
+// VEML7700 sensor to measure the ambient light level. Presence is anything detected
+// within PRESENCE_DISTANCE_MM (3 feet). The sensors are sampled once per second.
+//
+// Every INFLUX_INTERVAL_S seconds the following are uploaded to InfluxDB (standard bucket;
+// the site is always Bragg and the location is selected by the standard serial prompt):
+// - lux: average light level over the interval
+// - activity: percent of the interval where the distance reading was less than
+//   PRESENCE_DISTANCE_MM
+//
+// The raw readings are streamed live over WebSocket telemetry:
+// - Distance/<site>/<location>:
+// - Lux/<site>/<location>:
+//
+// The telemetry server doesn't support publishing multiple topics on one connection, and
+// TelemetryClient supports only a single connection, so the distance topic is published by
+// PublisherSketch and the lux topic by a second, minimal WebSocket client (see LuxPublisher).
+// See PublisherSketch.h for the shared init/loop sequence.
+//
+// Requires the Adafruit_VL53L1X and Adafruit_VEML7700_Library libraries.
+//
+
+// Uncomment to use local telemetry server instead of remote
+//#define TELEMETRY_LOCAL
+
+// This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
+#define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
+
+#include <Arduino.h>
+#include <Wire.h>
+
+#include <Adafruit_VL53L1X.h>
+#include <WebSocketsClient.h>
+
+#include "ArduinoBoard.h"
+#include "LibraryVersion.h"
+#include "Timer.h"
+#include "VEML7700LightSensor.h"
+#include "WiFiSettings.h"
+
+#include "PublisherSketch.h"
+
+// This sketch's own version (e.g. "v1.0"); MakeVersion() appends the shared
+// LIBRARY_VERSION build number so shared library changes bump every sketch's
+// compiled VERSION without manually editing each sketch.
+const auto VERSION = MakeVersion("v1.0");
+constexpr auto SKETCH_NAME = "Light_Monitor";
+
+// ----------- Telemetry
+constexpr auto DISTANCE_TOPIC_PREFIX = "Distance";
+constexpr auto LUX_TOPIC_PREFIX = "Lux";
+constexpr size_t MAX_TOPIC_LENGTH = 64;
+constexpr uint8_t LUX_DECIMALS = 1;
+constexpr uint16_t DISTANCE_PUBLISH_INTERVAL_MS = 100;
+constexpr float RECONNECT_LOG_INTERVAL_S = 300.0f;
+
+// ----------- Sampling and InfluxDB
+constexpr uint16_t SAMPLE_INTERVAL_MS = 1000;
+constexpr uint16_t INFLUX_INTERVAL_S = 15;
+constexpr uint8_t INFLUX_LUX_DECIMALS = 1;
+constexpr uint8_t INFLUX_PRESENCE_DECIMALS = 1;
+
+// Only the location is prompted for; the bucket is the standard INFLUXDB_BUCKET and the site is fixed to Bragg (see INFLUX_CONFIG).
+
+// ----------- Presence detection
+constexpr uint8_t VL53L1X_I2C_ADDRESS = 0x29;
+constexpr int16_t PRESENCE_DISTANCE_MM = 914; // 3 feet
+
+Arduino arduino;
+Adafruit_VL53L1X distanceSensor;
+VEML7700LightSensor luxSensor;
+
+int16_t distanceMm = -1;
+float lux = 0.0f;
+bool presentSinceSample = false;
+Timer sampleTimer(SAMPLE_INTERVAL_MS);
+
+// Registered after begin(), once the site has been resolved.
+InfluxField* luxField = nullptr;
+InfluxField* presenceField = nullptr;
+
+///
+/// <summary>
+/// Minimal, self-contained WebSocket publisher for the lux topic. A separate client is
+/// used here (rather than a second TelemetryPublisher) because TelemetryClient is built
+/// around a single global WebSocketsClient/static instance pointer and only supports one
+/// connection at a time; the telemetry server also doesn't support publishing to multiple
+/// topics on one connection.
+/// </summary>
+///
+class LuxPublisher
+{
+private:
+   WebSocketsClient _webSocket;
+   std::string _topic;
+   std::string _serverVersion;
+   std::string _status;
+   std::string _lastValue;
+   uint8_t _decimalPlaces;
+   float _value = NAN;
+   bool _started = false;
+   bool _ready = false;
+   ReconnectLogThrottle _reconnectLog{ _topic, RECONNECT_LOG_INTERVAL_S };
+
+   void _onEvent(WStype_t type, uint8_t* payload, size_t length)
+   {
+      switch (type)
+      {
+      case WStype_DISCONNECTED:
+         _serverVersion.clear();
+         _status.clear();
+         _lastValue.clear();
+         _started = false;
+         _ready = false;
+         _reconnectLog.reportFailure("Lux telemetry disconnected; will keep retrying in the background");
+         break;
+
+      case WStype_CONNECTED:
+         _webSocket.sendTXT(("Publish " + _topic).c_str());
+         break;
+
+      case WStype_TEXT:
+      {
+         std::string str((const char*)payload, length);
+
+         if (_serverVersion.length() == 0)
+         {
+            _serverVersion = str.substr(std::string("TelemetryServer v").length());
+         }
+         else if (_status.length() == 0)
+         {
+            _status = str;
+            if (str.starts_with("ERR"))
+            {
+               _reconnectLog.reportFailure("Lux telemetry start failure: " + str + "; will keep retrying");
+            }
+            else
+            {
+               _started = true;
+               _ready = true;
+               _reconnectLog.reportSuccess();
+            }
+         }
+         else
+         {
+            // the 'ok' response from us sending a value
+            _ready = true;
+         }
+      }
+      break;
+
+      default:
+         break;
+      }
+   }
+
+public:
+   ///
+   /// <summary>
+   /// Initializes a new instance of the LuxPublisher class.
+   /// </summary>
+   /// <param name="topic">The telemetry topic to publish to.</param>
+   /// <param name="decimalPlaces">The number of decimal places to publish values with.</param>
+   ///
+   LuxPublisher(const char* topic, uint8_t decimalPlaces) : _topic(topic), _decimalPlaces(decimalPlaces)
+   {
+   }
+
+   ///
+   /// <summary>
+   /// Sets the telemetry topic to publish to. Must be called before beginSSL().
+   /// </summary>
+   /// <param name="topic">The telemetry topic.</param>
+   ///
+   void setTopic(const char* topic)
+   {
+      _topic = topic;
+   }
+
+   ///
+   /// <summary>
+   /// Connects to the telemetry server over an encrypted (SSL) WebSocket connection. The
+   /// publish handshake is sent once connected.
+   /// </summary>
+   /// <param name="host">The server hostname or IP address.</param>
+   /// <param name="port">The server port.</param>
+   ///
+   void beginSSL(const char* host, uint16_t port)
+   {
+      _webSocket.onEvent([this](WStype_t type, uint8_t* payload, size_t length) { _onEvent(type, payload, length); });
+      _webSocket.beginSSL(host, port, TELEMETRY_PATH);
+   }
+
+   ///
+   /// <summary>
+   /// Sets the value to be published on the next loop() call, if it has changed.
+   /// </summary>
+   /// <param name="value">The value to publish.</param>
+   ///
+   void setValue(float value)
+   {
+      _value = value;
+   }
+
+   ///
+   /// <summary>
+   /// Publishes the current value if it changed and the server is ready for it, and
+   /// services the WebSocket connection. Must be called regularly from loop().
+   /// </summary>
+   ///
+   void loop()
+   {
+      if (_started && _ready)
+      {
+         String value(_value, (unsigned int)_decimalPlaces);
+         if (value != _lastValue.c_str())
+         {
+            _webSocket.sendTXT(value.c_str());
+            _lastValue = value.c_str();
+            _ready = false;
+         }
+      }
+
+      _webSocket.loop();
+   }
+};
+
+LuxPublisher luxPublisher("", LUX_DECIMALS);
+
+// Topic buffers, filled in once the site and location are known (see onSiteResolved()).
+char distanceTopic[MAX_TOPIC_LENGTH] = "";
+char luxTopic[MAX_TOPIC_LENGTH] = "";
+
+///
+/// <summary>
+/// Builds the telemetry topics as "Distance/site/location" and "Lux/site/location".
+/// </summary>
+/// <param name="site">The resolved InfluxDB site.</param>
+///
+void onSiteResolved(const InfluxContext& site)
+{
+   std::string suffix = std::string("/") + site.site + "/" + site.location;
+   strlcpy(distanceTopic, (std::string(DISTANCE_TOPIC_PREFIX) + suffix).c_str(), sizeof(distanceTopic));
+   strlcpy(luxTopic, (std::string(LUX_TOPIC_PREFIX) + suffix).c_str(), sizeof(luxTopic));
+   luxPublisher.setTopic(luxTopic);
+}
+
+///
+/// <summary>
+/// Gets the most recent distance measurement, for publishing over telemetry. The sensor
+/// itself is only read once per SAMPLE_INTERVAL_MS (see sampleSensors()).
+/// </summary>
+/// <returns>Distance in millimeters, or -1 if nothing is in range.</returns>
+///
+float readDistance()
+{
+   return distanceMm;
+}
+
+TelemetryConfig TELEMETRY_CONFIG = {
+   .topic = distanceTopic,
+   .decimals = 0,
+   .publishIntervalMs = DISTANCE_PUBLISH_INTERVAL_MS,
+};
+
+InfluxConfig INFLUX_CONFIG = {
+   .context = { INFLUXDB_BUCKET, "Bragg", nullptr },
+   .intervalS = INFLUX_INTERVAL_S,
+   .sampleIntervalMs = SAMPLE_INTERVAL_MS,
+   .promptForContext = true,
+   .includeEnclosureTemp = false,
+   .includeCpuTemp = false,
+};
+
+SketchConfig PUBLISHER_CONFIG = {
+   .sketchName = SKETCH_NAME,
+   .version = VERSION,
+   .preferencesNamespace = "LightMon",
+   .enableOTA = true,
+   .enableRebooter = true,
+};
+
+PublisherSketch publisher(&arduino, PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
+
+///
+/// <summary>
+/// Adds the current distance, light level, and light state to a GetStatus reply, on top
+/// of Logger's/SketchBase's base fields.
+/// </summary>
+/// <param name="status">The in-progress status to add fields to.</param>
+///
+void onStatus(LoggerStatus& status)
+{
+   status.add("Distance", (float)distanceMm, 0);
+   status.add("Lux", lux, LUX_DECIMALS);
+}
+
+///
+/// <summary>
+/// Gets whether the most recent distance reading is within PRESENCE_DISTANCE_MM. A failed
+/// reading (-1) means nothing is in range.
+/// </summary>
+/// <returns>True if someone is present.</returns>
+///
+bool isPresent()
+{
+   return distanceMm >= 0 && distanceMm < PRESENCE_DISTANCE_MM;
+}
+
+///
+/// <summary>
+/// Reads both sensors, and records the readings for telemetry and InfluxDB. Presence is
+/// recorded as 100 (present) or 0 so that its average is the percent of time present.
+/// </summary>
+///
+void sampleSensors()
+{
+   lux = luxSensor.readLux();
+   luxPublisher.setValue(lux);
+
+   luxField->set(lux);
+   presenceField->set(presentSinceSample ? 100.0f : 0.0f);
+   presentSinceSample = false;
+}
+
+///
+/// <summary>
+/// Reads every new distance measurement as it becomes available, and latches whether
+/// anyone was detected since the last 1 Hz sample so brief presence isn't missed.
+/// </summary>
+///
+void pollDistance()
+{
+   if (distanceSensor.dataReady())
+   {
+      distanceMm = distanceSensor.distance();
+      distanceSensor.clearInterrupt();
+
+      if (isPresent())
+      {
+         presentSinceSample = true;
+      }
+   }
+}
+
+void setup()
+{
+   // Adafruit_VL53L1X::begin() retries its I2C reads forever if the sensor doesn't respond,
+   // so check that it's present first instead of hanging
+   publisher.addSensor("VL53L1X", []() {
+      Wire.beginTransmission(VL53L1X_I2C_ADDRESS);
+      return Wire.endTransmission() == 0 && distanceSensor.begin() && distanceSensor.startRanging();
+   });
+   publisher.addSensor("VEML7700", []() { return luxSensor.begin(); });
+   publisher.setValueSource(readDistance);
+   publisher.onSiteResolved(onSiteResolved);
+
+   publisher.begin();
+   publisher.onStatus(onStatus);
+
+   InfluxPoint* point = publisher.addPoint();
+   luxField = point->addTimeAverageField(INFLUX_INTERVAL_S, "lux", INFLUX_LUX_DECIMALS);
+   presenceField = point->addTimeAverageField(INFLUX_INTERVAL_S, "activity", INFLUX_PRESENCE_DECIMALS);
+
+   luxPublisher.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
+
+   Logger.logInitializationComplete();
+}
+
+void loop()
+{
+   publisher.loop();
+   pollDistance();
+
+   if (sampleTimer.ready())
+   {
+      sampleSensors();
+   }
+
+   luxPublisher.loop();
+}
