@@ -1,13 +1,11 @@
 //
 // Gate Viewer
 //
-// Subscribes to live gate azimuth telemetry over WebSocket connections and renders both
+// Subscribes to live gate azimuth telemetry over a WebSocket connection and renders both
 // the left and right gate angles on a supported display board as lines anchored at the
 // lower corners of the display, with each line's angle matching its received azimuth
-// value (0-360 degrees) and a fixed length of half the display height. The telemetry
-// server does not yet support subscribing to multiple topics on a single connection, so
-// a second, minimal WebSocket client is used here just for the right gate topic instead
-// of a second TelemetrySubscriber instance.
+// value (0-360 degrees) and a fixed length of half the display height. Both gate topics
+// are subscribed on a single telemetry connection.
 //
 // On touch-capable boards (e.g. Viewer, Waveshare ESP32-S3 Touch LCD 4.3), tapping the
 // "CLOSED" banner opens the gate, and tapping the "Last Open" footer shows the opening
@@ -16,8 +14,8 @@
 // is unavailable on those boards.
 //
 // Behavior:
-// - Connects to WiFi, then opens two WebSocket connections to the telemetry server (one
-//   per gate topic) and receives live azimuth readings as they arrive.
+// - Connects to WiFi, then opens a single WebSocket connection to the telemetry server,
+//   subscribes to both gate topics, and receives live azimuth readings as they arrive.
 // - Redraws each line whenever a new value is received for its gate.
 // - If a gate's telemetry topic disconnects or fails to connect, that gate's line is
 //   simply left undrawn while the connection keeps retrying in the background; the
@@ -621,157 +619,8 @@ void displayLine(LineState& line, float azimuth, bool isOpen)
    line.lastAzimuth = azimuth;
 }
 
-///
-/// <summary>
-/// Minimal, self-contained WebSocket subscriber for the right gate topic. A separate,
-/// duplicate client is used here (rather than a second TelemetrySubscriber) because
-/// TelemetryClient is built around a single global WebSocketsClient/static instance
-/// pointer and only supports one connection at a time; the telemetry server also
-/// doesn't yet support subscribing to multiple topics on one connection.
-/// </summary>
-///
-class RightGateSubscriber
-{
-private:
-   WebSocketsClient _webSocket;
-   std::string _topic;
-   std::string _serverVersion;
-   std::string _status;
-   bool _started = false;
-   float _value = NAN;
-   ReconnectLogThrottle _reconnectLog{ _topic, RECONNECT_LOG_INTERVAL_S };
-
-   void _sendText(const char* text)
-   {
-      _webSocket.sendTXT(text);
-   }
-
-   void _onEvent(WStype_t type, uint8_t* payload, size_t length)
-   {
-      switch (type)
-      {
-      case WStype_DISCONNECTED:
-         _serverVersion.clear();
-         _status.clear();
-         _started = false;
-         _value = NAN;
-         _reconnectLog.reportFailure("Right gate telemetry disconnected; will keep retrying in the background");
-         break;
-
-      case WStype_CONNECTED:
-         break;
-
-      case WStype_TEXT:
-      {
-         std::string str((const char*)payload, length);
-
-         if (_serverVersion.length() == 0)
-         {
-            _serverVersion = str.substr(std::string("TelemetryServer v").length());
-         }
-         else if (_status.length() == 0)
-         {
-            _status = str;
-            if (str.starts_with("ERR"))
-            {
-               _reconnectLog.reportFailure("Right gate telemetry start failure: " + str + "; will keep retrying");
-            }
-            else
-            {
-               _started = true;
-               _reconnectLog.reportSuccess();
-               _sendText("get");
-            }
-         }
-         else
-         {
-            try
-            {
-               _value = std::stof(str);
-            }
-            catch (const std::exception&)
-            {
-               _value = NAN;
-            }
-
-            _sendText("get");
-         }
-      }
-      break;
-
-      default:
-         break;
-      }
-   }
-
-public:
-   ///
-   /// <summary>
-   /// Initializes a new instance of the RightGateSubscriber class.
-   /// </summary>
-   /// <param name="topic">The telemetry topic to subscribe to.</param>
-   ///
-   explicit RightGateSubscriber(const char* topic) : _topic(topic)
-   {
-   }
-
-   ///
-   /// <summary>
-   /// Connects to the telemetry server over an encrypted (SSL) WebSocket connection and
-   /// sends the subscribe handshake once connected.
-   /// </summary>
-   /// <param name="host">The server hostname or IP address.</param>
-   /// <param name="port">The server port.</param>
-   ///
-   void beginSSL(const char* host, uint16_t port)
-   {
-      _webSocket.onEvent([this](WStype_t type, uint8_t* payload, size_t length) { _onEvent(type, payload, length); });
-      _webSocket.beginSSL(host, port, "/ws");
-   }
-
-   ///
-   /// <summary>Gets whether the start/subscribe handshake has completed successfully.</summary>
-   /// <returns>True if started; false otherwise.</returns>
-   ///
-   bool isStarted() const
-   {
-      return _started;
-   }
-
-   ///
-   /// <summary>Gets the most recently received value for the subscribed topic.</summary>
-   /// <returns>The latest value, or NAN if none has been received yet.</returns>
-   ///
-   float getValue() const
-   {
-      return _value;
-   }
-
-   ///
-   /// <summary>Services the WebSocket connection. Must be called regularly from loop().</summary>
-   ///
-   void loop()
-   {
-      _webSocket.loop();
-
-      // sends the subscribe handshake once the connection completes; the base
-      // TelemetryClient sends this from its onConnected() callback, but this minimal
-      // client keeps its own started/subscribe flag instead of a callback
-      static bool subscribeSent = false;
-      if (_webSocket.isConnected() && !subscribeSent)
-      {
-         std::string cmd = "Subscribe " + _topic;
-         _sendText(cmd.c_str());
-         subscribeSent = true;
-      }
-      else if (!_webSocket.isConnected())
-      {
-         subscribeSent = false;
-      }
-   }
-};
-
-RightGateSubscriber rightClient(RIGHT_TELEMETRY_TOPIC);
+float leftValue = NAN;
+float rightValue = NAN;
 
 ///
 /// <summary>
@@ -846,11 +695,9 @@ public:
       gateOriginY = arduino.height() - 1 - GATE_ORIGIN_MARGIN;
       gateOriginRadius = (int16_t)lround(GATE_ORIGIN_RADIUS_REFERENCE * (float)arduino.width() / GATE_ORIGIN_RADIUS_REFERENCE_WIDTH);
 
-      // Started only after the left client's SSL handshake completes, rather than
-      // alongside it in setup(), so the two TLS handshakes don't run concurrently and
-      // risk starving the task watchdog. Only done once (guarded by _initialized above)
-      // since onStarted() fires again on every left-gate reconnect.
-      rightClient.beginSSL(TELEMETRY_HOST, TELEMETRY_PORT);
+      // Subscribe to the right gate topic on the same connection. Only done once
+      // (guarded by _initialized above); later reconnects reuse the updated topic list.
+      viewer.getClient()->setTopics({ LEFT_TELEMETRY_TOPIC, RIGHT_TELEMETRY_TOPIC });
    }
 
    void onDisconnected(const std::string& reason) override
@@ -885,7 +732,18 @@ void setup()
 
    viewer.begin();
 
-   viewer.beginTelemetry(LEFT_TELEMETRY_TOPIC, &telemetryHandler);
+   TelemetrySubscriber* client = viewer.beginTelemetry(LEFT_TELEMETRY_TOPIC, &telemetryHandler);
+   client->onSample([](const std::string& topic, double value, int64_t dtMicros)
+   {
+      if (topic == LEFT_TELEMETRY_TOPIC)
+      {
+         leftValue = (float)value;
+      }
+      else if (topic == RIGHT_TELEMETRY_TOPIC)
+      {
+         rightValue = (float)value;
+      }
+   });
    viewer.onStatus([](LoggerStatus& status)
    {
       status.add("Left Topic", LEFT_TELEMETRY_TOPIC);
@@ -901,8 +759,7 @@ void loop()
 {
    viewer.loop();
 
-   TelemetrySubscriber* leftClient = viewer.getClient();
-   rightClient.loop();
+   TelemetrySubscriber* client = viewer.getClient();
 
    // Geometry (line endpoints, origins, etc.) is only computed once, the first time
    // the left client starts (see GateTelemetryHandler::onStarted()); until then there's
@@ -950,8 +807,8 @@ void loop()
       }
    }
 
-   float leftAzimuth = leftClient->isStarted() ? leftClient->getValue() : NAN;
-   float rightAzimuth = rightClient.isStarted() ? rightClient.getValue() : NAN;
+   float leftAzimuth = client->isStarted() ? leftValue : NAN;
+   float rightAzimuth = client->isStarted() ? rightValue : NAN;
 
    // Buffering disabled for now -- it wasn't producing the desired smoothing. Left here
    // (commented out) in case it's revisited later.

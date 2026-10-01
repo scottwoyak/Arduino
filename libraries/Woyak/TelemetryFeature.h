@@ -1,8 +1,7 @@
 #pragma once
 
-// Requires the sketch to have already included, in order: ArduinoBoard.h (so the
-// board-specific Arduino type is defined), and WiFiSettings.h (so TELEMETRY_HOST and
-// TELEMETRY_PORT are defined).
+// Requires the sketch to have already included ArduinoBoard.h (so the Arduino class is
+// defined) and WiFiSettings.h (so the TELEMETRY_SERVER_* and token constants are defined).
 
 #include "Logger.h"
 #include "PreferencesResolver.h"
@@ -10,6 +9,21 @@
 #include "TelemetryClient.h"
 #include "TelemetryConfig.h"
 #include "Util.h"
+
+///
+/// <summary>
+/// Starts a telemetry client against the standard endpoints from WiFiSettings.h: the
+/// local Raspberry server, falling back to the production (Cloudflare) server, using the
+/// device or client token matching the client's role.
+/// </summary>
+/// <param name="client">The client to start.</param>
+///
+inline void beginTelemetryClient(TelemetryClient* client)
+{
+   client->setToken(client->getRole() == TelemetryClient::Role::DEVICE ? TELEMETRY_DEVICE_TOKEN : TELEMETRY_CLIENT_TOKEN);
+   client->setFallbackEndpoint(TELEMETRY_SERVER_PRODUCTION_HOST, TELEMETRY_SERVER_PRODUCTION_PORT, TELEMETRY_SERVER_PRODUCTION_USE_TLS);
+   client->begin(TELEMETRY_SERVER_RASPBERRY_HOST, TELEMETRY_SERVER_RASPBERRY_PORT, TELEMETRY_SERVER_RASPBERRY_USE_TLS);
+}
 
 ///
 /// <summary>
@@ -119,10 +133,10 @@ public:
       ASSERT(client != nullptr);
 
       _client = client;
-      arduino->initClient("Telemetry", [this]() { _client->beginSSL(TELEMETRY_HOST, TELEMETRY_PORT); }, status);
+      arduino->initClient("Telemetry", [this]() { beginTelemetryClient(_client); }, status);
       if (arduino->waitForClient([this]() { return _client->isStarted(); }, [this]() { _client->loop(); }))
       {
-         std::string result = "OK, v" + _client->getServerVersion();
+         std::string result = "OK";
          Logger.log(result);
          arduino->printlnR(result.c_str(), Color::VALUE);
          return true;

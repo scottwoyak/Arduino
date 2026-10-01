@@ -344,6 +344,20 @@ public:
    }
 
    ///
+   /// <summary>
+   /// Publishes a sample for an additional topic over the sketch's telemetry connection.
+   /// Dropped if the connection isn't ready.
+   /// </summary>
+   /// <param name="topic">Topic name.</param>
+   /// <param name="value">Sample value.</param>
+   /// <returns>True if the sample was sent; otherwise false.</returns>
+   ///
+   bool publish(const char* topic, double value)
+   {
+      return _client->publish(topic, value);
+   }
+
+   ///
    /// <summary>Returns the resolved telemetry topic (only valid after begin() returns).</summary>
    ///
    const char* telemetryTopic() const

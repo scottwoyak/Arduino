@@ -1,18 +1,14 @@
 //
 // Telemetry data publisher with display feedback.
 //
-// Publishes mock sensor test data to a telemetry server via WebSocket connection,
-// using a Publisher. This sketch has no enclosure and does not upload any
-// sensor/enclosure values to InfluxDB.
-// Displays connection status, topic, host, and message rate on a TFT display.
+// Publishes mock sensor test data to the DeviceHub TelemetryServer using
+// TelemetryClient. Displays the topic, server, and message rate on a TFT display,
+// along with a scatter plot of the published values.
 //
-// Uncomment TELEMETRY_LOCAL to use a local telemetry server instead of the remote.
+// Change the TELEMETRY_SERVER_* define below to select the server.
 // Change TEST_SENSOR_TYPE below to select a different mock sensor (see TestSensor.h for options).
 // Hardware: Feather ESP32 with WiFi and TFT display.
 //
-
-// Uncomment to use local telemetry server instead of remote
-//#define TELEMETRY_LOCAL
 
 #include <Arduino.h>
 
@@ -21,37 +17,44 @@
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
-#ifndef ARDUINO_NEOPIXEL_SUPPORTED
-#error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
-#endif
 
 #include "ScatterPlot.h"
+#include "SerialX.h"
 #include "Table.h"
+#include "TelemetryClient.h"
+#include "Timer.h"
 #include "WiFiSettings.h"
 
 // Selects the mock sensor used to generate published test data.
 #define TEST_SENSOR_TYPE WaveTestSensor
 #include "TestSensor.h"
 
-#include "PublisherSketch.h"
+// Selects the server: TELEMETRY_SERVER_LOCAL, TELEMETRY_SERVER_RASPBERRY or TELEMETRY_SERVER_PRODUCTION.
+#define TELEMETRY_SERVER_RASPBERRY
+
+#if defined(TELEMETRY_SERVER_LOCAL)
+constexpr auto SERVER_HOST = TELEMETRY_SERVER_LOCAL_HOST;
+constexpr uint16_t SERVER_PORT = TELEMETRY_SERVER_LOCAL_PORT;
+constexpr bool SERVER_USE_TLS = TELEMETRY_SERVER_LOCAL_USE_TLS;
+#elif defined(TELEMETRY_SERVER_RASPBERRY)
+constexpr auto SERVER_HOST = TELEMETRY_SERVER_RASPBERRY_HOST;
+constexpr uint16_t SERVER_PORT = TELEMETRY_SERVER_RASPBERRY_PORT;
+constexpr bool SERVER_USE_TLS = TELEMETRY_SERVER_RASPBERRY_USE_TLS;
+#else
+constexpr auto SERVER_HOST = TELEMETRY_SERVER_PRODUCTION_HOST;
+constexpr uint16_t SERVER_PORT = TELEMETRY_SERVER_PRODUCTION_PORT;
+constexpr bool SERVER_USE_TLS = TELEMETRY_SERVER_PRODUCTION_USE_TLS;
+#endif
+
+constexpr uint32_t BAUD_RATE = 115200;
+constexpr auto TOPIC = "Test";
+constexpr uint32_t PUBLISH_INTERVAL_MS = 10;
+constexpr uint32_t RATE_UPDATE_INTERVAL_MS = 1000;
 
 Arduino arduino;
 TestSensor sensor;
-
-TelemetryConfig TELEMETRY_CONFIG = {
-   .topic = "Test",
-   .decimals = 3,
-};
-
-SketchConfig PUBLISHER_CONFIG = {
-   .sketchName = "Publisher",
-};
-
-// No Influx site table, so Influx isn't used.
-PublisherSketch publisher(&arduino, PUBLISHER_CONFIG, {}, TELEMETRY_CONFIG);
-
-// ----------- Display Items
-constexpr unsigned long RATE_UPDATE_INTERVAL_MS = 1000;
+TelemetryClient client;
+Timer publishTimer(PUBLISH_INTERVAL_MS);
 Timer rateDisplayTimer(RATE_UPDATE_INTERVAL_MS);
 Table table(&arduino, 0, 0);
 
@@ -61,36 +64,57 @@ ScatterPlot valuePlot(&arduino, Rect16{}, "##.#s", "###.###");
 TimedScatterPlotSeries* valueSeries = valuePlot.createTimedSeries(PLOT_SPAN_MS);
 constexpr uint8_t VALUE_SERIES_POINT_SIZE = 1;
 
-// Mirrors TELEMETRY_CONFIG.publishIntervalMs so the plot is sampled at the same rate
-// the telemetry value is published.
-Timer plotSampleTimer(TELEMETRY_CONFIG.publishIntervalMs);
 bool needsInitialDisplay = true;
 
 void setup()
 {
+   SerialX::begin(BAUD_RATE);
+   arduino.begin();
+
    valueSeries->pointSize = VALUE_SERIES_POINT_SIZE;
 
-   publisher.addSensor("Test Sensor", []() { sensor.begin(); return true; });
-   publisher.setValueSource([]() { return sensor.get(); });
+   arduino.beginInit();
+   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, nullptr, false);
+   sensor.begin();
+   client.setToken(TELEMETRY_DEVICE_TOKEN);
+#if defined(TELEMETRY_SERVER_LOCAL) || defined(TELEMETRY_SERVER_RASPBERRY)
+   if (TELEMETRY_SERVER_PRODUCTION_ENABLED)
+   {
+      client.setFallbackEndpoint(
+         TELEMETRY_SERVER_PRODUCTION_HOST,
+         TELEMETRY_SERVER_PRODUCTION_PORT,
+         TELEMETRY_SERVER_PRODUCTION_USE_TLS);
+   }
+#endif
+   client.beginPublisher(SERVER_HOST, SERVER_PORT, SERVER_USE_TLS);
 
-   publisher.begin();
-   publisher.onStatus([](LoggerStatus& status) { status.add("Test Value", sensor.get(), 3); });
-
-   Logger.logInitializationComplete();
+   arduino.printlnInitStatus("Server", SERVER_HOST);
+   arduino.printlnInitStatus("Topic", TOPIC);
 }
 
 void loop()
 {
-   if (plotSampleTimer.ready())
+   client.loop();
+
+   if (publishTimer.ready())
    {
-      valueSeries->add(sensor.get());
+      float value = sensor.get();
+      client.publish(TOPIC, value);
+
+      if (!needsInitialDisplay)
+      {
+         valueSeries->add(value);
+      }
    }
 
-   publisher.loop();
+   if (!client.isReady())
+   {
+      // Redraw the table/plot once the connection (re)starts.
+      needsInitialDisplay = true;
+      return;
+   }
 
-   TelemetryPublisher* client = publisher.client();
-
-   if (client->isStarted() && needsInitialDisplay)
+   if (needsInitialDisplay)
    {
       arduino.clearDisplay();
       arduino.setCursor(0, 0);
@@ -99,18 +123,14 @@ void loop()
       arduino.moveCursorY(4);
 
       arduino.setTextSize(2);
+      table.clearRows();
       table.setPosition(0, arduino.getCursor().y);
       table.addRow("Topic", "                    ");
       table.addRow("Host", "                        ", Color::VALUE2);
       table.addRow("Rate", "###/s");
 
-      #ifdef TELEMETRY_LOCAL
-      constexpr auto HOST_LABEL = "local";
-#else
-      constexpr auto HOST_LABEL = "remote";
-#endif
-      table.setValue(0, client->getTopic(), Color::VALUE);
-      table.setValue(1, HOST_LABEL, Color::VALUE2);
+      table.setValue(0, TOPIC, Color::VALUE);
+      table.setValue(1, SERVER_HOST, Color::VALUE2);
       table.setValueNone(2);
       table.draw();
 
@@ -132,7 +152,7 @@ void loop()
 
    if (rateDisplayTimer.ready())
    {
-      table.setValue(2, client->getRate());
+      table.setValue(2, client.getRate());
    }
 
    table.draw();

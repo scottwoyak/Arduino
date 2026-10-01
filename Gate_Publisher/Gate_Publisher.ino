@@ -33,7 +33,7 @@
 // This sketch's own version (e.g. "1.2"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("1.2");
+const auto VERSION = MakeVersion("1.3");
 constexpr auto SKETCH_NAME = "Gate_Publisher";
 
 // ----------- InfluxDB site selection
@@ -71,7 +71,7 @@ float lastReportedAngle = 0.0f;
 // Minimum change (beyond the 0.5 degree rounding boundary) required before
 // lastReportedAngle is allowed to move, so noise near a x.5 boundary doesn't bounce
 // the published whole-degree value back and forth.
-constexpr float ANGLE_DEADBAND_DEGREES = 2.0f;
+constexpr float ANGLE_DEADBAND_DEGREES = 0.25f;
 
 ///
 /// <summary>

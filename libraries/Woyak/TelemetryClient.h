@@ -1,7 +1,10 @@
 #pragma once
 
+#include <functional>
 #include <string>
+#include <vector>
 
+#include <ArduinoJson.h>
 #include <WebSocketsClient.h>
 
 #include "RollingRate.h"
@@ -16,8 +19,6 @@
 #ifdef ARDUINO_DISPLAY_SUPPORTED
 #include "ArduinoWithDisplay.h"
 #endif
-
-WebSocketsClient webSocket;
 
 ///
 /// <summary>
@@ -290,284 +291,242 @@ public:
 
 ///
 /// <summary>
-/// Base class for WebSocket-based telemetry clients. Manages the connection lifecycle,
-/// the start/subscribe handshake with the telemetry server, and optional user callbacks.
-/// Subclasses (TelemetryPublisher, TelemetrySubscriber) implement the specific handshake
-/// and message handling behavior.
+/// Client for the DeviceHub TelemetryServer (WebSocket at /ws, optionally TLS).
 /// </summary>
+/// <remarks>
+/// A client is either a publisher (DEVICE role) or a subscriber (CLIENT role).
+/// Protocol (JSON text frames):
+///   Handshake, sent on connect: {"role":"device","token":"..."} or {"role":"client","token":"...","topics":["A","B"]}
+///   Server reply:               {"type":"ack",...}
+///   Publish (device to server): {"topic":"Test","value":1.23,"dt":100}
+///   Sample (server to client):  {"topic":"Test","value":1.23,"dt":100}
+/// Samples are only published once the server has acknowledged the handshake.
+/// The "dt" field is the number of microseconds since this client's previous publish.
+/// An optional fallback endpoint lets the client alternate between two servers (e.g. the
+/// public Cloudflare host and a LAN server) until one works.
+/// </remarks>
 ///
 class TelemetryClient
 {
-private:
-   std::string _serverVersion = "";
-   std::string _status = "";
-   std::string _topic;
-   bool _started = false;
-   bool _hasConnected = false;
-   bool _echoEnabled = false;
-   RollingRate _rate{ TELEMETRY_RATE_NUM_SAMPLES };
+public:
+   enum class Role
+   {
+      DEVICE,
+      CLIENT,
+   };
 
-   // user event handler; owned by this instance only when no handler was supplied
+   typedef std::function<void(const std::string& topic, double value, int64_t dtMicros)> SampleHandler;
+
+private:
+   WebSocketsClient _webSocket;
+   std::string _topic;
+   std::string _token;
+   std::string _path;
+   std::string _hosts[2];
+   uint16_t _ports[2] = { 0, 0 };
+   bool _tls[2] = { false, false };
+   uint8_t _numEndpoints = 0;
+   uint8_t _endpointIndex = 0;
+   bool _switching = false;
+   Timer _failoverTimer;
+   Role _role = Role::DEVICE;
+   std::vector<std::string> _topics;
+   SampleHandler _sampleHandler = nullptr;
+   bool _connected = false;
+   bool _hasConnected = false;
+   bool _ready = false;
+   float _value = NAN;
+   RollingRate _rate;
+   struct PublishTime
+   {
+      std::string topic;
+      uint32_t micros;
+   };
+   std::vector<PublishTime> _publishTimes;
+
+   // user event handler; owned by this instance only when created by the constructor
    TelemetryEventHandler* _handler = nullptr;
    bool _ownsHandler = false;
 
-   // static instance for handling callbacks from WebSocketClient
-   static TelemetryClient* _instance;
+   static constexpr uint32_t FAILOVER_TIMEOUT_MS = 6000;
+   static constexpr uint32_t RECONNECT_INTERVAL_MS = 2000;
+   static constexpr uint32_t HEARTBEAT_PING_MS = 15000;
+   static constexpr uint32_t HEARTBEAT_TIMEOUT_MS = 3000;
+   static constexpr uint8_t HEARTBEAT_FAILURES = 2;
 
-   ///
-   /// <summary>
-   /// Replaces all occurrences of a substring within a string, in place.
-   /// </summary>
-   /// <param name="str">String to modify</param>
-   /// <param name="from">Substring to search for</param>
-   /// <param name="to">Replacement substring</param>
-   ///
-   static void _replaceAll(std::string& str, const std::string& from, const std::string& to)
+   void _sendHandshake()
    {
-      if (from.empty())
+      JsonDocument doc;
+      doc["role"] = (_role == Role::DEVICE) ? "device" : "client";
+      if (!_token.empty())
+      {
+         doc["token"] = _token;
+      }
+      if (_role == Role::CLIENT)
+      {
+         JsonArray topics = doc["topics"].to<JsonArray>();
+         for (const std::string& topic : _topics)
+         {
+            topics.add(topic);
+         }
+      }
+
+      std::string json;
+      serializeJson(doc, json);
+      _webSocket.sendTXT(json.c_str());
+   }
+
+   void _handleMessage(const uint8_t* payload, size_t length)
+   {
+      JsonDocument doc;
+      DeserializationError error = deserializeJson(doc, payload, length);
+      if (error)
+      {
+         Logger.log(std::string("Telemetry: invalid message: ") + error.c_str(), LogSeverity::ERROR);
+         return;
+      }
+
+      const char* type = doc["type"];
+      if (type != nullptr)
+      {
+         if (strcmp(type, "ack") == 0)
+         {
+            _ready = true;
+            _rate.reset();
+            if (_handler != nullptr)
+            {
+               _handler->onStarted();
+            }
+         }
+         else if (strcmp(type, "error") == 0)
+         {
+            const char* message = doc["message"] | "unknown error";
+            if (_handler != nullptr)
+            {
+               _handler->onError(std::string("Telemetry: server error: ") + message);
+            }
+            else
+            {
+               Logger.log(std::string("Telemetry: server error: ") + message, LogSeverity::ERROR);
+            }
+         }
+         return;
+      }
+
+      const char* topic = doc["topic"];
+      if (topic == nullptr || !doc["value"].is<double>())
       {
          return;
       }
 
-      size_t startPos = 0;
-      while ((startPos = str.find(from, startPos)) != std::string::npos)
+      double value = doc["value"].as<double>();
+      _value = (float)value;
+      _rate.tick();
+      if (_sampleHandler != nullptr)
       {
-         str.replace(startPos, from.length(), to);
-         startPos += to.length(); // Move past the new replacement
+         _sampleHandler(topic, value, doc["dt"] | 0);
+      }
+      if (_handler != nullptr)
+      {
+         _handler->onReceiveText(std::to_string(value));
       }
    }
 
-   ///
-   /// <summary>
-   /// Logs a sent/received text message to Serial, quoted and with embedded newlines
-   /// escaped for single-line readability.
-   /// </summary>
-   /// <param name="prefix">Direction prefix to print before the quoted message (e.g. ">>> ").</param>
-   /// <param name="message">The message text to log.</param>
-   ///
-   static void _echoText(const char* prefix, const std::string& message)
+   void _onEvent(WStype_t type, uint8_t* payload, size_t length)
    {
-      std::string escaped = message;
-      _replaceAll(escaped, "\n", "\\n");
-      Serial.println((prefix + ("\"" + escaped + "\"")).c_str());
+      switch (type)
+      {
+      case WStype_CONNECTED:
+         _connected = true;
+         _hasConnected = true;
+         _ready = false;
+         _sendHandshake();
+         if (_handler != nullptr)
+         {
+            _handler->onConnected();
+         }
+         break;
+
+      case WStype_DISCONNECTED:
+      {
+         std::string reason = (payload != nullptr && length > 0) ? std::string((const char*)payload, length) : "";
+         bool wasConnected = _hasConnected;
+
+         _connected = false;
+         _hasConnected = false;
+         _ready = false;
+         _failoverTimer.reset();
+         _onDisconnected();
+
+         if (_handler != nullptr && !_switching)
+         {
+            if (wasConnected)
+            {
+               _handler->onDisconnected(reason);
+            }
+            else if (_numEndpoints == 1)
+            {
+               _handler->onConnectionFailed(reason);
+            }
+         }
+      }
+      break;
+
+      case WStype_TEXT:
+         _handleMessage(payload, length);
+         break;
+
+      default:
+         break;
+      }
    }
 
-   ///
-   /// <summary>
-   /// Static trampoline that forwards WebSocketsClient events to the singleton
-   /// TelemetryClient instance's _onEvent().
-   /// </summary>
-   /// <param name="type">The event type reported by WebSocketsClient.</param>
-   /// <param name="payload">The event payload, if any.</param>
-   /// <param name="length">The length of the payload, in bytes.</param>
-   ///
-   static void webSocketSubscriberEvent(WStype_t type, uint8_t* payload, size_t length)
+   void _connect()
    {
-      _instance->_onEvent(type, payload, length);
+      const char* host = _hosts[_endpointIndex].c_str();
+      if (_tls[_endpointIndex])
+      {
+         _webSocket.beginSSL(host, _ports[_endpointIndex], _path.c_str());
+      }
+      else
+      {
+         _webSocket.begin(host, _ports[_endpointIndex], _path.c_str());
+      }
+      _failoverTimer.reset();
    }
 
 protected:
    ///
    /// <summary>
-   /// Called when the WebSocket connection is lost. Subclasses should reset any
-   /// per-connection state here.
-   /// </summary>
-   /// <param name="reason">The disconnect reason reported by WebSocketsClient, if any.</param>
-   ///
-   virtual void _onDisconnected(const std::string& reason) = 0;
-
-   ///
-   /// <summary>
-   /// Called when the WebSocket connection is established. Subclasses should send
-   /// the initial handshake command (e.g. Publish/Subscribe) here.
+   /// Called when the WebSocket connection is lost or a connection attempt fails.
+   /// Subclasses should reset any per-connection state here.
    /// </summary>
    ///
-   virtual void _onConnected() = 0;
-
-   ///
-   /// <summary>
-   /// Called for each text message received after the start handshake has completed.
-   /// The default implementation does nothing.
-   /// </summary>
-   /// <param name="payload">The received message text.</param>
-   ///
-   virtual void _onText(const std::string& payload) { (void)payload; };
-
-   ///
-   /// <summary>
-   /// Called once per loop() call, after any pending start retry has been handled.
-   /// The default implementation does nothing.
-   /// </summary>
-   ///
-   virtual void _onLoop() {};
-
-   ///
-   /// <summary>
-   /// Records a tick for the rolling message rate tracker. Called just before the
-   /// handler's onSendText() so the rate reflects how often requests are made to the
-   /// server (each publish for TelemetryPublisher, each "get" for TelemetrySubscriber).
-   /// </summary>
-   ///
-   void tickRate()
+   virtual void _onDisconnected()
    {
-      _rate.tick();
    }
 
    ///
    /// <summary>
-   /// Called once the start handshake (Publish/Subscribe) has succeeded. The default
-   /// implementation does nothing.
+   /// Called once per loop() call.
    /// </summary>
    ///
-   virtual void _onStarted() {};
-
-   ///
-   /// <summary>
-   /// Sends a text message over the WebSocket connection, echoes it to Serial (if
-   /// enabled), and notifies the onSendText callback, if set.
-   /// </summary>
-   /// <param name="text">The message text to send.</param>
-   ///
-   void _sendText(const std::string& text)
+   virtual void _onLoop()
    {
-      webSocket.sendTXT(text.c_str());
-      tickRate();
-
-      if (_echoEnabled)
-      {
-         _echoText(">>> ", text);
-      }
-
-      _handler->onSendText(text);
    }
 
    ///
    /// <summary>
-   /// Overload of _sendText(const std::string&) accepting a String so callers don't
-   /// need to call .c_str() themselves.
+   /// Sets the role and topic used in the handshake.
    /// </summary>
-   /// <param name="text">The message text to send.</param>
+   /// <param name="role">DEVICE to publish, CLIENT to subscribe</param>
+   /// <param name="topic">Topic name</param>
    ///
-   void _sendText(const String& text)
+   void _setRole(Role role, const std::string& topic)
    {
-      _sendText(std::string(text.c_str()));
-   }
-
-   ///
-   /// <summary>
-   /// Overload of _sendText(const std::string&) accepting a const char* to disambiguate
-   /// string-literal calls between the std::string and String overloads.
-   /// </summary>
-   /// <param name="text">The message text to send.</param>
-   ///
-   void _sendText(const char* text)
-   {
-      _sendText(std::string(text));
-   }
-
-   ///
-   /// <summary>
-   /// Handles a raw WebSocketsClient event: dispatches connect/disconnect notifications,
-   /// and for text messages, processes the server version greeting, the start/subscribe
-   /// handshake response, or forwards the payload to _onText().
-   /// </summary>
-   /// <param name="type">The event type reported by WebSocketsClient.</param>
-   /// <param name="payload">The event payload, if any.</param>
-   /// <param name="length">The length of the payload, in bytes.</param>
-   ///
-   void _onEvent(WStype_t type, uint8_t* payload, size_t length)
-   {
-      switch (type)
-      {
-      case WStype_DISCONNECTED:
-      {
-         std::string reason = (payload != nullptr && length > 0) ? std::string((const char*)payload, length) : "";
-
-         // reset handshake state so the greeting and start/publish ack are
-         // recognized and re-processed correctly after reconnecting, instead
-         // of being routed to _onText() as ordinary payload data
-         _serverVersion.clear();
-         _status.clear();
-         _started = false;
-
-         _onDisconnected(reason);
-
-         if (_hasConnected)
-         {
-            _hasConnected = false;
-            _handler->onDisconnected(reason);
-         }
-         else
-         {
-            _handler->onConnectionFailed(reason);
-         }
-      }
-      break;
-
-      case WStype_CONNECTED:
-         // send the start/publish/subscribe handshake immediately; if it fails
-         // (e.g. topic still in use), the caller's onError callback is responsible
-         // for deciding how to recover (e.g. resetting the device after a delay).
-         _hasConnected = true;
-         _status.clear();
-         _onConnected();
-         _handler->onConnected();
-         break;
-
-      case WStype_TEXT:
-      {
-         //Serial.println((const char*)payload);
-         std::string str = (const char*)payload;
-
-         if (_serverVersion.length() == 0)
-         {
-            // the first message received is a simple greeting with the server version;
-            // strip off the initial part "TelemetryServer v###"
-            _serverVersion = str.substr(std::string("TelemetryServer v").length());
-         }
-         else if (_status.length() == 0)
-         {
-            // the second message is a response to the subscribe/publish request
-            _status = str;
-            if (str.starts_with("ERR"))
-            {
-               _handler->onError("Start failure: " + str);
-            }
-            else
-            {
-               _started = true;
-               _rate.reset();
-               _onStarted();
-               _handler->onStarted();
-            }
-         }
-         else
-         {
-            if (_echoEnabled)
-            {
-               _echoText("<<< ", str);
-            }
-
-            _onText(str);
-            _handler->onReceiveText(str);
-         }
-      }
-      break;
-
-      case WStype_BIN:
-         Serial.printf("[WS] Got Binary data\n");
-         break;
-
-      case WStype_PING:
-      case WStype_PONG:
-         // Keepalive frames; nothing to do.
-         break;
-
-      default:
-         Serial.print("Unhandled Socket Event Type: ");
-         Serial.println(type);
-         break;
-      }
+      _role = role;
+      _topic = topic;
+      _topics = { topic };
    }
 
 public:
@@ -575,25 +534,24 @@ public:
    /// <summary>
    /// Initializes a new instance of the TelemetryClient class.
    /// </summary>
-   /// <param name="topic">The telemetry topic to publish or subscribe to.</param>
+   /// <param name="status">Status indicator used by the default event handler. If nullptr and no handler is supplied, no handler is used.</param>
+   /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
    ///
-   explicit TelemetryClient(const std::string& topic, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
+   explicit TelemetryClient(IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
+      : _failoverTimer(FAILOVER_TIMEOUT_MS), _rate(TELEMETRY_RATE_NUM_SAMPLES)
    {
-      _instance = this;
-      _topic = topic;
-
       if (handler != nullptr)
       {
          _handler = handler;
       }
-      else
+      else if (status != nullptr)
       {
          _handler = new TelemetryEventHandler(status);
          _ownsHandler = true;
       }
    }
 
-   ~TelemetryClient()
+   virtual ~TelemetryClient()
    {
       if (_ownsHandler)
       {
@@ -603,22 +561,8 @@ public:
 
    ///
    /// <summary>
-   /// Gets the telemetry topic this client publishes or subscribes to.
-   /// </summary>
-   /// <returns>The topic name.</returns>
-   ///
-   const std::string& getTopic() const
-   {
-      return _topic;
-   }
-
-   ///
-   /// <summary>
    /// Replaces the event handler used by this client. Any previously owned default
-   /// handler (created when no handler was supplied to the constructor) is deleted.
-   /// Useful when the handler needs a reference to the client itself, since the
-   /// handler can be constructed and assigned after the client, avoiding a forward
-   /// declaration of the client in the sketch.
+   /// handler is deleted.
    /// </summary>
    /// <param name="handler">The new event handler; must not be nullptr.</param>
    ///
@@ -637,188 +581,315 @@ public:
 
    ///
    /// <summary>
-   /// Gets the URL of the connected WebSocket server.
+   /// Sets a fallback endpoint (e.g. a LAN server). If the primary endpoint isn't ready
+   /// within a few seconds, the client alternates between the two endpoints until one
+   /// works. Call before begin(), beginPublisher() or beginSubscriber().
+   /// </summary>
+   /// <param name="host">Fallback server host name or IP address</param>
+   /// <param name="port">Fallback server port</param>
+   /// <param name="useTls">True to connect with TLS (wss://)</param>
+   ///
+   void setFallbackEndpoint(const char* host, uint16_t port, bool useTls)
+   {
+      _hosts[1] = host;
+      _ports[1] = port;
+      _tls[1] = useTls;
+   }
+
+   ///
+   /// <summary>
+   /// Sets the authentication token sent in the handshake. Call before begin(),
+   /// beginPublisher() or beginSubscriber().
+   /// </summary>
+   /// <param name="token">Token issued for this client</param>
+   ///
+   void setToken(const char* token)
+   {
+      _token = token;
+   }
+
+   ///
+   /// <summary>
+   /// Connects using the role and topic already configured (see TelemetryPublisher and
+   /// TelemetrySubscriber). Connection completes asynchronously; call loop() regularly.
+   /// </summary>
+   /// <param name="host">Server host name or IP address</param>
+   /// <param name="port">Server port</param>
+   /// <param name="useTls">True to connect with TLS (wss://); false for plain ws://</param>
+   /// <param name="path">WebSocket path</param>
+   ///
+   void begin(const char* host, uint16_t port, bool useTls = false, const char* path = "/ws")
+   {
+      _path = path;
+      _hosts[0] = host;
+      _ports[0] = port;
+      _tls[0] = useTls;
+      _numEndpoints = (_ports[1] != 0) ? 2 : 1;
+      _endpointIndex = 0;
+      _connect();
+      _webSocket.onEvent([this](WStype_t type, uint8_t* payload, size_t length)
+      {
+         _onEvent(type, payload, length);
+      });
+      _webSocket.setReconnectInterval(RECONNECT_INTERVAL_MS);
+      _webSocket.enableHeartbeat(HEARTBEAT_PING_MS, HEARTBEAT_TIMEOUT_MS, HEARTBEAT_FAILURES);
+   }
+
+   ///
+   /// <summary>
+   /// Connects as a publisher. Connection completes asynchronously; call loop() regularly.
+   /// </summary>
+   /// <param name="host">Server host name or IP address</param>
+   /// <param name="port">Server port</param>
+   /// <param name="useTls">True to connect with TLS (wss://); false for plain ws://</param>
+   /// <param name="path">WebSocket path</param>
+   ///
+   void beginPublisher(const char* host, uint16_t port, bool useTls = false, const char* path = "/ws")
+   {
+      _role = Role::DEVICE;
+      begin(host, port, useTls, path);
+   }
+
+   ///
+   /// <summary>
+   /// Connects as a subscriber to the given topics. Connection completes asynchronously;
+   /// call loop() regularly.
+   /// </summary>
+   /// <param name="host">Server host name or IP address</param>
+   /// <param name="port">Server port</param>
+   /// <param name="topics">Topics to subscribe to. Empty subscribes to all topics.</param>
+   /// <param name="useTls">True to connect with TLS (wss://); false for plain ws://</param>
+   /// <param name="path">WebSocket path</param>
+   ///
+   void beginSubscriber(const char* host, uint16_t port, const std::vector<std::string>& topics, bool useTls = false, const char* path = "/ws")
+   {
+      _role = Role::CLIENT;
+      _topics = topics;
+      begin(host, port, useTls, path);
+   }
+
+   ///
+   /// <summary>
+   /// Sets the handler invoked for each received sample (subscribers only).
+   /// </summary>
+   /// <param name="handler">Handler called with the topic, value, and dt in microseconds</param>
+   ///
+   void onSample(SampleHandler handler)
+   {
+      _sampleHandler = handler;
+   }
+
+   ///
+   /// <summary>
+   /// Changes the subscribed topics on an existing subscriber connection.
+   /// </summary>
+   /// <param name="topics">New topics. Empty subscribes to all topics.</param>
+   ///
+   void setTopics(const std::vector<std::string>& topics)
+   {
+      _topics = topics;
+      if (_connected)
+      {
+         _sendHandshake();
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Services the WebSocket. Call every pass through loop().
+   /// </summary>
+   ///
+   void loop()
+   {
+      if (_numEndpoints > 1 && !_ready && _failoverTimer.ready())
+      {
+         _endpointIndex = (_endpointIndex + 1) % _numEndpoints;
+         _switching = true;
+         _webSocket.disconnect();
+         _switching = false;
+         _connect();
+      }
+
+      _onLoop();
+      _webSocket.loop();
+   }
+
+   ///
+   /// <summary>
+   /// Publishes a sample (publishers only). Dropped if the connection isn't ready.
+   /// </summary>
+   /// <param name="topic">Topic name</param>
+   /// <param name="value">Sample value</param>
+   /// <returns>True if the sample was sent; otherwise false.</returns>
+   ///
+   bool publish(const char* topic, double value)
+   {
+      if (!_ready)
+      {
+         return false;
+      }
+
+      uint32_t now = micros();
+
+      PublishTime* last = nullptr;
+      for (PublishTime& publishTime : _publishTimes)
+      {
+         if (publishTime.topic == topic)
+         {
+            last = &publishTime;
+            break;
+         }
+      }
+      uint32_t dtMicros = last != nullptr ? (now - last->micros) : 0;
+
+      JsonDocument doc;
+      doc["topic"] = topic;
+      doc["value"] = value;
+      doc["dt"] = dtMicros;
+
+      std::string json;
+      serializeJson(doc, json);
+      if (!_webSocket.sendTXT(json.c_str()))
+      {
+         return false;
+      }
+
+      if (last != nullptr)
+      {
+         last->micros = now;
+      }
+      else
+      {
+         _publishTimes.push_back({ topic, now });
+      }
+      _rate.tick();
+      return true;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the role of this client.
+   /// </summary>
+   /// <returns>DEVICE for publishers; CLIENT for subscribers</returns>
+   ///
+   Role getRole() const
+   {
+      return _role;
+   }
+
+   void setTopic(const std::string& topic)
+   {
+      _topic = topic;
+      _topics = { topic };
+   }
+
+   ///
+   /// <summary>
+   /// Gets the topic this client publishes or subscribes to (set by TelemetryPublisher / TelemetrySubscriber).
+   /// </summary>
+   /// <returns>The topic name, or empty if none was set.</returns>
+   ///
+   const std::string& getTopic() const
+   {
+      return _topic;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the URL of the endpoint currently being used.
    /// </summary>
    /// <returns>The server URL.</returns>
    ///
    std::string getUrl() const
    {
-      return webSocket.getUrl().c_str();
+      return std::string(_tls[_endpointIndex] ? "wss://" : "ws://") + _hosts[_endpointIndex] + ":" + std::to_string(_ports[_endpointIndex]) + _path;
    }
 
    ///
    /// <summary>
-   /// Gets whether the start/subscribe handshake has completed successfully.
+   /// Gets the most recently received value (subscribers only).
    /// </summary>
-   /// <returns>True if started; false otherwise.</returns>
+   /// <returns>The latest value, or NAN if none has been received yet.</returns>
    ///
-   bool isStarted() const
+   float getValue() const
    {
-      return _started;
+      return _value;
    }
 
    ///
    /// <summary>
-   /// Enables or disables Serial echo logging of sent/received text messages.
-   /// Disabled by default.
+   /// Returns whether the WebSocket is connected.
    /// </summary>
-   /// <param name="enabled">True to log sent/received text messages to Serial, false to suppress them.</param>
-   ///
-   void setEchoEnabled(bool enabled)
-   {
-      _echoEnabled = enabled;
-   }
-
-   ///
-   /// <summary>
-   /// Gets whether Serial echo logging of sent/received text is currently enabled.
-   /// </summary>
-   /// <returns>True if sent/received text messages are logged to Serial.</returns>
-   ///
-   bool isEchoEnabled() const
-   {
-      return _echoEnabled;
-   }
-
-   ///
-   /// <summary>
-   /// Gets whether the WebSocket connection is currently active.
-   /// </summary>
-   /// <returns>True if connected; false otherwise.</returns>
+   /// <returns>True if connected; otherwise false.</returns>
    ///
    bool isConnected() const
    {
-      return webSocket.isConnected();
+      return _connected;
    }
 
    ///
    /// <summary>
-   /// Gets the current message rate, in messages per second, based on the ticks
-   /// recorded for each received message.
+   /// Returns whether the server has acknowledged the handshake.
    /// </summary>
-   /// <returns>Messages per second, or 0 if not enough data has been collected yet.</returns>
+   /// <returns>True if ready to publish/receive; otherwise false.</returns>
+   ///
+   bool isReady() const
+   {
+      return _ready;
+   }
+
+   ///
+   /// <summary>
+   /// Same as isReady().
+   /// </summary>
+   /// <returns>True if the handshake has been acknowledged; otherwise false.</returns>
+   ///
+   bool isStarted() const
+   {
+      return _ready;
+   }
+
+   ///
+   /// <summary>
+   /// Returns the rolling rate of published (or received) samples.
+   /// </summary>
+   /// <returns>Samples per second</returns>
    ///
    float getRate() const
    {
       return _rate.get();
    }
-
-   ///
-   /// <summary>
-   /// Gets the server version reported in the initial greeting message.
-   /// </summary>
-   /// <returns>The server version string, or empty if not yet received.</returns>
-   ///
-   const std::string& getServerVersion() const
-   {
-      return _serverVersion;
-   }
-
-   ///
-   /// <summary>
-   /// Gets the status text returned by the server in response to the start/subscribe
-   /// handshake.
-   /// </summary>
-   /// <returns>The status text, or empty if not yet received.</returns>
-   ///
-   const std::string& getStatus() const
-   {
-      return _status;
-   }
-
-   ///
-   /// <summary>
-   /// Connects to the telemetry server over an unencrypted WebSocket connection.
-   /// </summary>
-   /// <param name="webSocketServerHost">The server hostname or IP address.</param>
-   /// <param name="webSocketServerPort">The server port.</param>
-   /// <param name="webSocketPath">The WebSocket path.</param>
-   ///
-   void begin(const char* webSocketServerHost, uint16_t webSocketServerPort, const char* webSocketPath = "/ws")
-   {
-      webSocket.begin(webSocketServerHost, webSocketServerPort, webSocketPath);
-      webSocket.onEvent(webSocketSubscriberEvent);
-   }
-
-   ///
-   /// <summary>
-   /// Connects to the telemetry server over an encrypted (SSL) WebSocket connection.
-   /// </summary>
-   /// <param name="webSocketServerHost">The server hostname or IP address.</param>
-   /// <param name="webSocketServerPort">The server port.</param>
-   /// <param name="webSocketPath">The WebSocket path.</param>
-   ///
-   void beginSSL(const char* webSocketServerHost, uint16_t webSocketServerPort, const char* webSocketPath = "/ws")
-   {
-      webSocket.beginSSL(webSocketServerHost, webSocketServerPort, webSocketPath);
-      webSocket.onEvent(webSocketSubscriberEvent);
-   }
-
-   ///
-   /// <summary>
-   /// Services the WebSocket connection. Must be called regularly from the sketch's
-   /// loop().
-   /// </summary>
-   ///
-   void loop()
-   {
-      _onLoop();
-      webSocket.loop();
-   }
 };
 
 ///
 /// <summary>
-/// TelemetryClient specialization that periodically publishes a value to a topic on
-/// the telemetry server, resending only when the value changes.
+/// TelemetryClient specialization that publishes a value to a topic, sending only when
+/// the value (at the configured decimal places) changes.
 /// </summary>
 ///
 class TelemetryPublisher : public TelemetryClient
 {
 private:
    uint8_t _decimalPlaces;
-   float _value = NAN;
+   float _pendingValue = NAN;
    std::string _lastValue = "";
-   bool _ready = false;
 
-   void _onDisconnected(const std::string& reason) override
+   void _onDisconnected() override
    {
-      (void)reason;
-      _ready = false;
       _lastValue = "";
-   }
-
-   void _onConnected() override
-   {
-      // initialize
-      std::string cmd = "Publish " + getTopic();
-      _sendText(cmd);
-   }
-
-   void _onText(const std::string& payload) override
-   {
-      // the 'ok' response from us sending a value
-      (void)payload;
-      _ready = true;
-   }
-
-   void _onStarted() override
-   {
-      _ready = true;
    }
 
    void _onLoop() override
    {
-      if (_ready)
+      if (!isReady() || isnan(_pendingValue))
       {
-         String value(_value, (unsigned int)_decimalPlaces);
+         return;
+      }
 
-         if (value != _lastValue.c_str())
-         {
-            _sendText(value);
-            _lastValue = value.c_str();
-            _ready = false;
-         }
+      String value(_pendingValue, (unsigned int)_decimalPlaces);
+      if (value != _lastValue.c_str() && publish(getTopic().c_str(), value.toDouble()))
+      {
+         _lastValue = value.c_str();
       }
    }
 
@@ -832,9 +903,10 @@ public:
    /// <param name="status">Status indicator used by the default event handler, if no handler is supplied.</param>
    /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
    ///
-   TelemetryPublisher(const std::string& topic, uint8_t decimalPlaces, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr) : TelemetryClient(topic, status, handler)
+   TelemetryPublisher(const std::string& topic, uint8_t decimalPlaces, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
+      : TelemetryClient(status, handler), _decimalPlaces(decimalPlaces)
    {
-      _decimalPlaces = decimalPlaces;
+      _setRole(Role::DEVICE, topic);
    }
 
    ///
@@ -845,52 +917,17 @@ public:
    ///
    void setValue(float value)
    {
-      _value = value;
+      _pendingValue = value;
    }
 };
 
-
 ///
 /// <summary>
-/// TelemetryClient specialization that subscribes to a topic on the telemetry server
-/// and continuously requests the latest published value.
+/// TelemetryClient specialization that subscribes to a single topic.
 /// </summary>
 ///
 class TelemetrySubscriber : public TelemetryClient
 {
-private:
-   float _value = NAN;
-
-   void _onDisconnected(const std::string& reason) override
-   {
-      (void)reason;
-   }
-
-   void _onConnected() override
-   {
-      // subscribe
-      std::string cmd = "Subscribe " + getTopic();
-      _sendText(cmd);
-
-      // request the first value
-      _sendText("get");
-   }
-
-   void _onText(const std::string& payload) override
-   {
-      try
-      {
-         _value = std::stof(payload);
-      }
-      catch (const std::exception& e)
-      {
-         _value = NAN;
-      }
-
-      // request the next value
-      _sendText("get");
-   }
-
 public:
    ///
    /// <summary>
@@ -900,20 +937,9 @@ public:
    /// <param name="status">Status indicator used by the default event handler, if no handler is supplied.</param>
    /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
    ///
-   TelemetrySubscriber(const std::string& topic, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr) : TelemetryClient(topic, status, handler)
+   TelemetrySubscriber(const std::string& topic, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
+      : TelemetryClient(status, handler)
    {
-   }
-
-   ///
-   /// <summary>
-   /// Gets the most recently received value for the subscribed topic.
-   /// </summary>
-   /// <returns>The latest value, or NAN if none has been received yet.</returns>
-   ///
-   float getValue()
-   {
-      return _value;
+      _setRole(Role::CLIENT, topic);
    }
 };
-
-TelemetryClient* TelemetryClient::_instance;
