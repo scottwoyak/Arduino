@@ -247,12 +247,16 @@ protected:
    /// _printStartupInfo() (and, if needed, any sketch-specific prompting that must
    /// happen before WiFi connects). Followed by any WiFi-dependent setup (e.g. a
    /// telemetry client) and finally _beginLogger(), which starts the LogServer
-   /// connection.
+   /// connection. If the initial WiFi connection fails, there's no point attempting
+   /// any of that WiFi-dependent setup, so the device resets immediately instead.
    /// </summary>
    ///
    void _beginConnect()
    {
-      _arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status);
+      if (!_arduino->initWifi(WIFI_SSID, WIFI_PASSWORD, _status))
+      {
+         Util::reset(WIFI_LOST_RESET_DELAY_S, "WiFi connect failed");
+      }
 
       if (_config.enableRebooter)
       {

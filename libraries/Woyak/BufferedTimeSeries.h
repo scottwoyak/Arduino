@@ -29,6 +29,11 @@ private:
    unsigned long _timeWindowMs = 1000; // total window length in ms
    unsigned int _resolutionMs = 50;    // nominal sampling resolution (used to size buffer)
 
+   // millis() recorded when the newest sample was stamped; used by _lastTimestamp() to
+   // keep "now" advancing smoothly between arrivals instead of freezing at the newest
+   // sample's stamped time.
+   unsigned long _lastSampleReceivedMillis = 0;
+
 public:
    /// <summary>
    /// Initializes a new instance specifying the time window to retain and an optional resolution.
@@ -61,7 +66,7 @@ public:
 
    void _trim()
    {
-      unsigned long now = millis();
+      unsigned long now = _lastTimestamp();
 
       // drop old entries that are older than the time window
       while (_count > 1)
@@ -81,20 +86,67 @@ public:
       }
    }
 
+   ///
+   /// <summary>
+   /// Returns the time basis used by _trim()/get()/ready() to evaluate the window:
+   /// the timestamp of the most recently stored sample, advanced by the local elapsed
+   /// time since that sample was received (or just millis() if the buffer is empty).
+   /// Advancing by local elapsed time keeps "now" moving smoothly between arrivals, so
+   /// get() keeps interpolating as time passes rather than freezing at the newest
+   /// sample's stamped time until the next sample arrives. This works consistently
+   /// whether samples are stamped via millis() (the default set(value) overload) or via
+   /// an accumulated, server-reported delta (set(value, dtMs)).
+   /// </summary>
+   ///
+   unsigned long _lastTimestamp() const
+   {
+      if (_count == 0) return millis();
+
+      size_t newestIdx = (_head + _bufferSize - 1) % _bufferSize;
+      unsigned long elapsedSinceReceived = Util::getSpan(_lastSampleReceivedMillis, millis());
+      return _data[newestIdx].time + elapsedSinceReceived;
+   }
+
+   /// <summary>
+   /// Pushes a new reading into the buffer stamped with the given timestamp. Old samples outside the time window are dropped.
+   /// </summary>
+   void _set(float value, unsigned long timestamp)
+   {
+      // write new datapoint
+      _data[_head].time = timestamp;
+      _data[_head].value = value;
+      _head = (_head + 1) % _bufferSize;
+      if (_count < _bufferSize) _count++;
+      _lastSampleReceivedMillis = millis();
+
+      _trim();
+   }
+
    /// <summary>
    /// Pushes a new reading into the buffer stamped with millis(). Old samples outside the time window are dropped.
    /// </summary>
    void set(float value)
    {
-      unsigned long now = millis();
+      _set(value, millis());
+   }
 
-      // write new datapoint
-      _data[_head].time = now;
-      _data[_head].value = value;
-      _head = (_head + 1) % _bufferSize;
-      if (_count < _bufferSize) _count++;
-
-      _trim();
+   ///
+   /// <summary>
+   /// Pushes a new reading into the buffer, stamped using an explicit elapsed time
+   /// since the previous sample rather than millis(). Intended for sources (e.g. a
+   /// telemetry server's reported "dt" between publishes) that can report the actual
+   /// elapsed time between samples more accurately than this device could by timing
+   /// receipt locally (which is skewed by network/processing jitter). The very first
+   /// sample seeds the clock from millis(), since there's no previous sample to
+   /// measure from.
+   /// </summary>
+   /// <param name="value">The sample value.</param>
+   /// <param name="dtMs">Elapsed time since the previous sample, in milliseconds.</param>
+   ///
+   void set(float value, unsigned long dtMs)
+   {
+      unsigned long timestamp = (_count == 0) ? millis() : _lastTimestamp() + dtMs;
+      _set(value, timestamp);
    }
 
    /// <summary>
@@ -113,7 +165,7 @@ public:
 
       // target is midpoint of the configured time window relative to now
       unsigned long halfWindow = _timeWindowMs / 2;
-      unsigned long now = millis();
+      unsigned long now = _lastTimestamp();
       unsigned long targetTime = now - halfWindow;
 
       // If target is outside stored range, return NaN
@@ -162,7 +214,7 @@ public:
 
       // target is midpoint of the configured time window relative to now
       unsigned long halfWindow = _timeWindowMs / 2;
-      unsigned long now = millis();
+      unsigned long now = _lastTimestamp();
       unsigned long targetTime = now - halfWindow;
 
       // If target is outside stored range, return NaN

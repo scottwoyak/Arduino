@@ -1,10 +1,14 @@
 //
-// Wave Subscriber Display
+// Wave Viewer
 //
 // Subscribes to live wave-height telemetry over a WebSocket connection and renders a
 // smoothed rolling bar chart on the display. The telemetry topic (Waves/Ultrasonic or
 // Waves/Pressure, matching Wave_Publisher's sensor-selected topics) is prompted for at
 // startup and remembered.
+//
+// The layout is computed at runtime from the display's dimensions, so the sketch runs on
+// any display size, e.g. the Hosyond ESP32-S3 4" 480x320 display (Viewer board, the
+// default) or the 240x135 display on the Feather ESP32-S3 TFT.
 //
 // Behavior:
 // - Connects to WiFi, then opens a WebSocket connection to the telemetry server and
@@ -17,6 +21,15 @@
 
 // Undefine to use the remote server.
 //#define TELEMETRY_LOCAL
+
+// Uncomment this to build for the Feather ESP32-S3 TFT instead of the Hosyond ESP32-S3
+// Viewer board.
+//#define ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT
+
+// Default: build for the Hosyond ESP32-S3 Viewer board's larger display. Also requires
+// selecting the generic "ESP32S3 Dev Module" board in Visual Micro (that board has no
+// dedicated board package entry).
+#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
 
 #include <string>
 
@@ -32,13 +45,7 @@ std::string telemetryTopic;
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
-#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
-#endif
-#ifndef ARDUINO_NEOPIXEL_SUPPORTED
-#error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
-#endif
-#ifndef ARDUINO_BUILTIN_LED_SUPPORTED
-#error "This sketch requires a board with a separate built-in LED (e.g. Feather ESP32-S3 or Feather M0)."
+#error "This sketch requires a board with a display (e.g. Hosyond ESP32-S3 Viewer or Feather ESP32-S3)."
 #endif
 
 #include "BarChart.h"
@@ -58,7 +65,7 @@ std::string telemetryTopic;
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
 const auto VERSION = MakeVersion("v1.0");
-constexpr auto SKETCH_NAME = "Wave_Subscriber_Display";
+constexpr auto SKETCH_NAME = "Wave_Viewer";
 
 // ----------- Telemetry
 Arduino arduino;
@@ -83,8 +90,15 @@ uint32_t receivedValueCount = 0;
 uint32_t rejectedSensorValueCount = 0;
 bool newValueReceived = false;
 
+// Elapsed time (reported by the telemetry server, via onSample) since the previous
+// sample for this topic; more accurate than timing receipt locally via millis(), since
+// it isn't affected by WiFi/processing jitter on this device.
+int64_t lastSampleDtMicros = 0;
+
+#ifdef ARDUINO_BUILTIN_LED_SUPPORTED
 // ----------- Built-in LED (flashes on each received telemetry value)
 constexpr uint16_t RECEIVE_LED_FLASH_MS = 20;
+#endif
 
 // ----------- Time Intervals
 
@@ -124,10 +138,13 @@ Timer chartTimer(CHART_UPDATE_MS);
 Format heightFormat("###.# cm", Format::Alignment::RIGHT);
 
 // ----------- Display layout
-constexpr uint16_t DISPLAY_HEIGHT = 135;
-constexpr uint16_t DISPLAY_WIDTH = 240;
-constexpr uint16_t HEADER_HEIGHT = 2 * 8 + 4; // one line of text size 2 plus padding
-constexpr uint16_t SUBHEADING_HEIGHT = 2 * 8 + 2; // one line of text size 2 plus padding
+// The layout is computed at runtime from the display's dimensions (see initLayout) so
+// that the sketch runs on displays of different sizes, e.g. the 480x320 Viewer board
+// and the 240x135 Feather ESP32-S3 TFT.
+constexpr uint8_t TEXT_SIZE = 2;
+constexpr uint8_t MIN_HEADER_TEXT_SIZE = 2;
+constexpr uint8_t MAX_HEADER_TEXT_SIZE = 4;
+constexpr uint8_t HEADER_PADDING = 4;
 
 // ----------- Rolling bar chart view
 constexpr Color LakeBlue = Color565::fromRGB(0, 0, 255);
@@ -137,8 +154,40 @@ constexpr Color LakeBlue = Color565::fromRGB(0, 0, 255);
 // the chart is given a range of 0..2*WAVE_HEIGHT_MAX and values are shifted by
 // +WAVE_HEIGHT_MAX before being plotted so that zero renders in the middle.
 constexpr float WAVE_HEIGHT_MAX = 15;
-constexpr Rect16 ROLLING_RECT(0, HEADER_HEIGHT + SUBHEADING_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT - SUBHEADING_HEIGHT);
-MovingBarChart waterLevelChart(ROLLING_RECT, RangeF(0, 2*WAVE_HEIGHT_MAX), LakeBlue, Color::BLACK);
+
+// Set by initLayout() once the display dimensions are known.
+uint8_t headerTextSize;
+Rect16 rollingRect;
+MovingBarChart* waterLevelChart = nullptr;
+
+///
+/// <summary>
+/// Computes the display layout and constructs the rolling chart from the display's
+/// actual dimensions, so the sketch renders correctly on displays of different sizes.
+/// Must be called after arduino.begin(), once the display has been initialized.
+/// </summary>
+///
+void initLayout()
+{
+   uint16_t displayWidth = arduino.width();
+   uint16_t displayHeight = arduino.height();
+
+   // use the largest header size where the topic still fits on a single line
+   headerTextSize = MIN_HEADER_TEXT_SIZE;
+   for (uint8_t size = MAX_HEADER_TEXT_SIZE; size > MIN_HEADER_TEXT_SIZE; size--)
+   {
+      if (arduino.charW(size) * telemetryTopic.length() <= displayWidth)
+      {
+         headerTextSize = size;
+         break;
+      }
+   }
+
+   uint16_t headerHeight = arduino.charH(headerTextSize) + HEADER_PADDING;
+
+   rollingRect = { 0, headerHeight, displayWidth, (uint16_t)(displayHeight - headerHeight) };
+   waterLevelChart = new MovingBarChart(rollingRect, RangeF(0, 2 * WAVE_HEIGHT_MAX), LakeBlue, Color::BLACK);
+}
 
 ///
 /// <summary>
@@ -148,52 +197,8 @@ MovingBarChart waterLevelChart(ROLLING_RECT, RangeF(0, 2*WAVE_HEIGHT_MAX), LakeB
 void displayHeader()
 {
    arduino.setCursor(0, 0);
-   arduino.setTextSize(2);
+   arduino.setTextSize(headerTextSize);
    arduino.println(telemetryTopic, Color::HEADING);
-}
-
-///
-/// <summary>
-/// Draws a subheading below the header indicating whether the telemetry server is
-/// local or remote.
-/// </summary>
-///
-void displaySubheading()
-{
-   arduino.setTextSize(2);
-#ifdef TELEMETRY_LOCAL
-   arduino.println("Local", Color::SUB_HEADING);
-#else
-   arduino.println("Remote", Color::SUB_HEADING);
-#endif
-}
-
-///
-/// <summary>
-/// Draws the server mode (Local/Remote) and telemetry topic as footer text at the
-/// bottom of the display, left and right aligned respectively. Only shown on the
-/// setup screen; it's cleared when the main display is drawn on telemetry start.
-/// </summary>
-///
-void displayFooter()
-{
-   Point16 savedCursor = arduino.getCursor();
-   uint8_t savedTextSize = arduino.getTextSize();
-
-   arduino.setTextSize(2);
-
-   arduino.setCursor(0, -arduino.charH());
-#ifdef TELEMETRY_LOCAL
-   arduino.print("Local", Color::GRAY);
-#else
-   arduino.print("Remote", Color::GRAY);
-#endif
-
-   arduino.setCursor(arduino.width(), -arduino.charH());
-   arduino.printR(telemetryTopic, Color::GRAY);
-
-   arduino.setTextSize(savedTextSize);
-   arduino.setCursor(savedCursor);
 }
 
 ///
@@ -246,8 +251,10 @@ public:
       serverRate.tick();
       newValueReceived = true;
 
+#ifdef ARDUINO_BUILTIN_LED_SUPPORTED
       // briefly flash the built-in LED to indicate a new value was received
       arduino.led.flash(RECEIVE_LED_FLASH_MS);
+#endif
    }
 };
 
@@ -258,14 +265,19 @@ void setup()
    SerialX::begin();
    arduino.begin();
 
+   initLayout();
+
    viewer.beginBanner();
 
    telemetryTopic = viewer.resolveTopic(true);
-   displayFooter();
 
    viewer.beginConnect();
 
    viewer.beginTelemetry(&telemetryHandler);
+   viewer.getClient()->onSample([](const std::string& topic, double value, int64_t dtMicros)
+   {
+      lastSampleDtMicros = dtMicros;
+   });
 
    delay(1000);
 
@@ -273,7 +285,6 @@ void setup()
 }
 
 float lastSensorReading = NAN;
-unsigned long lastAcceptedMillis = 0;
 
 void loop()
 {
@@ -291,7 +302,6 @@ void loop()
       telemetryHandler.needsInitialDisplay = false;
       arduino.clearDisplay();
       displayHeader();
-      displaySubheading();
    }
 
    // get value measured from the bottom of the graph
@@ -307,8 +317,8 @@ void loop()
          receivedValues += "\n";
       }
 
-      unsigned long elapsedMillis = millis() - lastAcceptedMillis;
-      float maxAllowedJump = MAX_RATE_CM_PER_SEC * (elapsedMillis / 1000.0f);
+      float elapsedSecs = lastSampleDtMicros / 1000000.0f;
+      float maxAllowedJump = MAX_RATE_CM_PER_SEC * elapsedSecs;
 
       if (!isnan(lastSensorReading) && fabs(sensorReading - lastSensorReading) > maxAllowedJump)
       {
@@ -322,13 +332,12 @@ void loop()
       else
       {
          lastSensorReading = sensorReading;
-         lastAcceptedMillis = millis();
 
          sensorReadings.set(sensorReading);
          avgSensorReading = sensorReadings.get();
 
          float delta = avgSensorReading - sensorReading;
-         waveHeight.set(delta);
+         waveHeight.set(delta, lastSampleDtMicros / 1000);
 
          std::ostringstream valueWithHeight;
          valueWithHeight << sensorReading << " (" << std::fixed << std::setprecision(1) << delta << ")";
@@ -344,16 +353,16 @@ void loop()
 
    if (chartTimer.ready())
    {
-      waterLevelChart.set(waveHeight.get() + WAVE_HEIGHT_MAX);
+      waterLevelChart->set(waveHeight.get() + WAVE_HEIGHT_MAX);
 
       // display values
       arduino.setCursor(0, 0);
       arduino.setTextSize(3);
       arduino.printlnR(waveHeight.get(), heightFormat, Color::VALUE);
-      arduino.setCursor(0, ROLLING_RECT.y);
+      arduino.setCursor(0, rollingRect.y);
 
       displayRate.tick();
-      waterLevelChart.draw(&arduino.display);
+      waterLevelChart->draw(&arduino.display);
    }
 
    if (logTimer.ready())
