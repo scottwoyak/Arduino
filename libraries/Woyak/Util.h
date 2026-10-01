@@ -6,7 +6,6 @@
 #include <esp_sleep.h>
 #include <string>
 #include "Format.h"
-#include "Logger.h"
 
 #if !defined ( BOARD_HAS_PIN_REMAP ) && !defined ( digitalPinToGPIONumber )
  #define digitalPinToGPIONumber(pin) (pin)
@@ -274,8 +273,10 @@ public:
    }
 
    /// <summary>
-   /// Prints the current boot's reset reason and checks for a previous halt reason in a
-   /// preferences object, printing it to Serial if found.
+   /// Checks for a previous halt reason recorded in a preferences object. Does not log
+   /// directly itself, since Logger depends on DeviceHubClient, which depends on Timer,
+   /// which depends on this file; callers should log the result themselves (see
+   /// SerialX::begin()).
    /// </summary>
    /// <returns>The previous halt reason, or an empty string if none was recorded.</returns>
    static String checkTheLastShutdownReason()
@@ -290,18 +291,6 @@ public:
          preferences.remove("halt");
       }
       preferences.end();
-
-      // Report the recorded failure reason (e.g. "Influx failed to begin") instead of
-      // the generic hardware reset reason (e.g. "Woke from deep sleep") whenever one was
-      // recorded, since that's far more useful for diagnosing why the device restarted.
-      if (reason.length() > 0)
-      {
-         Logger.log(std::string("Reset reason: ") + reason.c_str());
-      }
-      else
-      {
-         Logger.log(std::string("Reset reason: ") + resetReasonString());
-      }
 
       return reason;
    }

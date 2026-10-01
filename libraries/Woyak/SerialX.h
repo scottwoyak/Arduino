@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <limits.h>
+#include "Logger.h"
 #include "Util.h"
 
 namespace SerialX
@@ -59,6 +60,18 @@ namespace SerialX
       Serial.println();
 
 		_lastShutdownReason = Util::checkTheLastShutdownReason();
+
+		// Report the recorded failure reason (e.g. "Influx failed to begin") instead of
+		// the generic hardware reset reason (e.g. "Woke from deep sleep") whenever one was
+		// recorded, since that's far more useful for diagnosing why the device restarted.
+		if (_lastShutdownReason.length() > 0)
+		{
+			Logger.log(std::string("Reset reason: ") + _lastShutdownReason.c_str());
+		}
+		else
+		{
+			Logger.log(std::string("Reset reason: ") + Util::resetReasonString());
+		}
 	}
 
 	/// <summary>

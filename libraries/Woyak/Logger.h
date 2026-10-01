@@ -1,643 +1,198 @@
 #pragma once
 
-#include <iomanip>
-#include <sstream>
 #include <string>
 #include <vector>
 
-#include <WebSocketsClient.h>
-
-#include "WiFiSettings.h"
-#include "Format.h"
+#include "DeviceHubClient.h"
 
 ///
 /// <summary>
-/// How often (in milliseconds) LoggerClass proactively pings the LogServer, via
-/// WebSocketsClient::enableHeartbeat(). Keeps idle Logger connections detected/alive
-/// independent of the server's own ping cadence.
-/// </summary>
-///
-constexpr uint32_t LOG_HEARTBEAT_PING_INTERVAL_MS = 30000UL;
-
-///
-/// <summary>
-/// How long (in milliseconds) LoggerClass waits for a pong reply to its heartbeat
-/// ping before counting it as missed.
-/// </summary>
-///
-constexpr uint32_t LOG_HEARTBEAT_PONG_TIMEOUT_MS = 10000UL;
-
-///
-/// <summary>
-/// Number of consecutive missed heartbeat pongs before WebSocketsClient tears down
-/// and reconnects the LogServer connection.
-/// </summary>
-///
-constexpr uint8_t LOG_HEARTBEAT_DISCONNECT_COUNT = 2;
-
-///
-/// <summary>
-/// How long (in milliseconds) LoggerClass waits after a disconnect before logging
-/// "Logging disconnected: ...". WebSocketsClient reconnects automatically and usually
-/// does so almost immediately, so brief drops within this grace period are not logged.
-/// </summary>
-///
-constexpr uint32_t LOG_DISCONNECT_GRACE_MS = 3000UL;
-
-///
-/// <summary>
-/// Severity of a log message passed to LoggerClass::log()/logPartial(). ERROR messages
-/// are prefixed with "ERROR: " by the Logger itself, so callers don't need to embed the
-/// prefix in their message text. Kept as a plain text prefix for now; may be replaced
-/// with structured metadata (e.g. JSON) in the future.
-/// </summary>
-///
-enum class LogSeverity
-{
-   INFO,
-   ERROR
-};
-
-///
-/// <summary>
-/// Collects name/value pairs for a GetStatus reply (see LoggerClass::onStatus()). The
-/// base set of fields (sketch/version/site/location/etc.) is populated by
-/// LoggerClass itself; a sketch-registered handler can add its own fields (e.g. a wind
-/// sensor adding the current wind speed) before the reply is sent.
-/// </summary>
-///
-class LoggerStatus
-{
-   std::vector<std::string> _lines;
-
-public:
-   ///
-   /// <summary>
-   /// Adds a name/value pair to the status reply.
-   /// </summary>
-   /// <param name="name">Field name (e.g. "Wind Speed").</param>
-   /// <param name="value">Field value, already formatted as desired (e.g. "12.3 mph").</param>
-   ///
-   void add(const char* name, const std::string& value)
-   {
-      _lines.push_back(std::string(name) + ": " + value);
-   }
-
-   ///
-   /// <summary>
-   /// Overload of add(const char*, const std::string&) for callers holding a C string.
-   /// </summary>
-   /// <param name="name">Field name.</param>
-   /// <param name="value">Field value.</param>
-   ///
-   void add(const char* name, const char* value)
-   {
-      add(name, std::string(value));
-   }
-
-   ///
-   /// <summary>
-   /// Overload of add(const char*, const std::string&) for callers holding an int.
-   /// </summary>
-   /// <param name="name">Field name.</param>
-   /// <param name="value">Field value.</param>
-   ///
-   void add(const char* name, int value)
-   {
-      add(name, std::to_string(value));
-   }
-
-   ///
-   /// <summary>
-   /// Overload of add(const char*, const std::string&) for callers holding a uint32_t.
-   /// </summary>
-   /// <param name="name">Field name.</param>
-   /// <param name="value">Field value.</param>
-   ///
-   void add(const char* name, uint32_t value)
-   {
-      add(name, std::to_string(value));
-   }
-
-   ///
-   /// <summary>
-   /// Overload of add(const char*, const std::string&) for callers holding a float,
-   /// formatted to a fixed number of decimal places.
-   /// </summary>
-   /// <param name="name">Field name.</param>
-   /// <param name="value">Field value.</param>
-   /// <param name="decimals">Number of decimal places to format with.</param>
-   ///
-   void add(const char* name, float value, uint8_t decimals = 1)
-   {
-      std::ostringstream stream;
-      stream << std::fixed << std::setprecision(decimals) << value;
-      add(name, stream.str());
-   }
-
-   ///
-   /// <summary>
-   /// Overload of add(const char*, float, uint8_t) for callers holding a std::string
-   /// name (e.g. one built up via concatenation) rather than a const char*.
-   /// </summary>
-   /// <param name="name">Field name.</param>
-   /// <param name="value">Field value.</param>
-   /// <param name="decimals">Number of decimal places to format with.</param>
-   ///
-   void add(const std::string& name, float value, uint8_t decimals = 1)
-   {
-      add(name.c_str(), value, decimals);
-   }
-
-   ///
-   /// <summary>
-   /// Joins all added fields into the final reply text, one "Name: value" pair per line.
-   /// </summary>
-   /// <returns>The reply text.</returns>
-   ///
-   std::string toString() const
-   {
-      std::string result;
-      for (size_t i = 0; i < _lines.size(); i++)
-      {
-         if (i > 0)
-         {
-            result += "\n";
-         }
-         result += _lines[i];
-      }
-      return result;
-   }
-};
-
-///
-/// <summary>
-/// WebSocket client for the LogServer (C:\SourceCode\LogServer), used to send free-form
-/// text log messages from a sketch. On connect, sends a JSON handshake identifying the
-/// device (deviceId/sketch/version), then each log() call sends a single text message.
-/// Connection is best-effort: a dropped/failed connection is logged to Serial but does
-/// not reset the device, since text logging shouldn't be able to crash a sketch that
-/// otherwise works fine. All members are static since a sketch has a single LogServer
-/// connection; use the global Logger instance below (mirroring Serial), e.g. Logger.log(...).
+/// Thin delegating wrapper around DeviceHubClient (see DeviceHubClient.h) for the
+/// logging-specific portion of its API (log(), logPartial(), setTag()/setTags()).
+/// Connection lifecycle and command/status handling (begin(), loop(), isConnected(),
+/// onCommand(), onStatus(), respond(), etc.) are DeviceHubClient concerns, not logging,
+/// and are called directly via DeviceHubClient:: instead. All members are static since
+/// a sketch has a single Device Hub connection; use the global Logger instance below
+/// (mirroring Serial), e.g. Logger.log(...).
 /// </summary>
 ///
 class LoggerClass
 {
-   static inline WebSocketsClient _webSocket;
-   static inline bool _connected = false;
-   static inline bool _everConnected = false;
-   static inline std::string _sketchName;
-   static inline std::string _version;
-   static inline std::string _site;
-   static inline std::string _location;
-
-   /// <summary>Messages logged before the connection was up, sent once it completes.</summary>
-   static inline std::vector<std::string> _pendingMessages;
-
-   /// <summary>True while waiting to see if a disconnect resolves itself within the grace period.</summary>
-   static inline bool _disconnectPending = false;
-
-   /// <summary>True once the current disconnect has actually been logged (so a matching "reconnected" is logged too).</summary>
-   static inline bool _disconnectLogged = false;
-
-   /// <summary>Reason text captured from the disconnect event, logged if the grace period expires.</summary>
-   static inline std::string _pendingDisconnectReason;
-
-   /// <summary>millis() timestamp of the most recent disconnect, used to time the grace period.</summary>
-   static inline unsigned long _disconnectStartMs = 0;
-
-   /// <summary>True if a logPartial() call is still awaiting its completing log() call.</summary>
-   static inline bool _linePending = false;
-
-   /// <summary>Optional sketch-supplied handler for commands not recognized as built-in (see onCommand()).</summary>
-   static inline void (*_commandHandler)(const char* command) = nullptr;
-   /// <summary>Optional sketch-supplied handler that adds fields to a GetStatus reply (see onStatus()).</summary>
-   static inline void (*_statusHandler)(LoggerStatus& status) = nullptr;
-
-   ///
-   /// <summary>
-   /// Sends a text message over the WebSocket.
-   /// </summary>
-   /// <param name="message">Message text to send.</param>
-   ///
-   static void _send(const char* message)
-   {
-      _webSocket.sendTXT(message);
-   }
-
-   ///
-   /// <summary>
-   /// Sends a message fragment to the LogServer if connected, or queues it to be sent
-   /// once the connection completes. Used by logPartial()/log() to send message
-   /// fragments that the LogServer joins into a single entry until a fragment without
-   /// endLine set arrives.
-   /// </summary>
-   /// <param name="message">Message text to send or queue.</param>
-   ///
-   static void _sendOrQueue(const char* message)
-   {
-      if (_connected)
-      {
-         _send(message);
-      }
-      else
-      {
-         _pendingMessages.push_back(message);
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Sends the initial JSON handshake message identifying this device to the LogServer.
-   /// </summary>
-   ///
-   static void _sendHandshake()
-   {
-      std::string deviceId = WiFi.macAddress().c_str();
-
-      std::string message = "{\"deviceId\":\"" + deviceId +
-         "\",\"sketch\":\"" + _sketchName +
-         "\",\"version\":\"" + _version +
-         "\",\"site\":\"" + _site +
-         "\",\"location\":\"" + _location + "\"}";
-
-      _send(message.c_str());
-   }
-
-   ///
-   /// <summary>
-   /// Sends any messages that were logged before the connection finished coming up.
-   /// </summary>
-   ///
-   static void _flushPendingMessages()
-   {
-      for (const std::string& message : _pendingMessages)
-      {
-         _send(message.c_str());
-      }
-
-      _pendingMessages.clear();
-   }
-
-   ///
-   /// <summary>
-   /// Returns "N/A" if the given string is empty; otherwise returns it unchanged. Used
-   /// for GetStatus fields (e.g. Site/Location) that aren't set by every sketch.
-   /// </summary>
-   /// <param name="value">String value to check.</param>
-   /// <returns>"N/A" if value is empty; otherwise value.</returns>
-   ///
-   static const std::string& _orNA(const std::string& value)
-   {
-      static const std::string NOT_AVAILABLE = "N/A";
-      return value.empty() ? NOT_AVAILABLE : value;
-   }
-
-   ///
-   /// <summary>
-   /// Handles a command received from the LogServer. The built-in "GetStatus" command
-   /// is answered directly, populated with the base status fields plus any added by the
-   /// sketch-registered handler (see onStatus()); anything else is forwarded to the
-   /// sketch-supplied handler registered via onCommand(), if any.
-   /// </summary>
-   /// <param name="command">Command text received from the LogServer.</param>
-   ///
-   static void _handleCommand(const char* command)
-   {
-      if (strcasecmp(command, "Restart") == 0)
-      {
-         respond("Restarting");
-         ESP.restart();
-      }
-      else if (strcasecmp(command, "GetStatus") == 0)
-      {
-         LoggerStatus status;
-         status.add("Sketch", _sketchName);
-         status.add("Version", _version);
-         status.add("Device ID", std::string(WiFi.macAddress().c_str()));
-         status.add("Site", _orNA(_site));
-         status.add("Location", _orNA(_location));
-         status.add("WiFi SSID", std::string(WiFi.SSID().c_str()));
-         status.add("IP Address", std::string(WiFi.localIP().toString().c_str()));
-         status.add("Signal Strength", std::to_string(WiFi.RSSI()) + " dBm");
-         status.add("Uptime", std::string(formatDuration(millis()).c_str()));
-         status.add("Free Heap", std::string(formatBytes(ESP.getFreeHeap()).c_str()));
-
-         if (_statusHandler != nullptr)
-         {
-            _statusHandler(status);
-         }
-
-         respond(status.toString().c_str());
-      }
-      else if (_commandHandler != nullptr)
-      {
-         _commandHandler(command);
-      }
-      else
-      {
-         log(std::string("Unknown command: ") + command);
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Handles WebSocket lifecycle events: sends the handshake and any pending messages
-   /// on connect, and tracks the connected state so log() knows whether to queue or send
-   /// immediately.
-   /// </summary>
-   /// <param name="type">The event type reported by WebSocketsClient.</param>
-   /// <param name="payload">The event payload, if any.</param>
-   /// <param name="length">The length of the payload, in bytes.</param>
-   ///
-   static void _onEvent(WStype_t type, uint8_t* payload, size_t length)
-   {
-      switch (type)
-      {
-         case WStype_CONNECTED:
-            _connected = true;
-            _sendHandshake();
-            _flushPendingMessages();
-            if (!_everConnected)
-            {
-               _everConnected = true;
-               log(LOG_SERVER_HOST);
-            }
-            else if (_disconnectLogged)
-            {
-               log("Logging reconnected");
-            }
-            _disconnectPending = false;
-            _disconnectLogged = false;
-            break;
-
-         case WStype_DISCONNECTED:
-         {
-            _connected = false;
-            std::string reason = (payload != nullptr && length > 0) ? std::string((const char*)payload, length) : "";
-            if (!_everConnected)
-            {
-               log("failed");
-            }
-            else
-            {
-               // WebSocketsClient reconnects on its own almost immediately in the common
-               // case, so hold off logging until the grace period expires (see loop()).
-               _pendingDisconnectReason = reason.empty() ? "unknown" : reason;
-               _disconnectPending = true;
-               _disconnectStartMs = millis();
-            }
-            break;
-         }
-
-         case WStype_ERROR:
-         {
-            std::string reason = (payload != nullptr && length > 0) ? std::string((const char*)payload, length) : "";
-            log("Error: " + reason);
-            break;
-         }
-
-         case WStype_TEXT:
-         {
-            std::string command = (payload != nullptr && length > 0) ? std::string((const char*)payload, length) : "";
-            if (!command.empty())
-            {
-               _handleCommand(command.c_str());
-            }
-            break;
-         }
-
-         default:
-            break;
-      }
-   }
-
 public:
    ///
    /// <summary>
-   /// Connects to the LogServer (local or remote, per the LOG_SERVER_LOCAL define in
-   /// WiFiSettings.h) and registers the WebSocket event handler. The connection
-   /// completes asynchronously (mirroring TelemetryClient::begin()/beginSSL()); the
-   /// "Logging... " label printed here is completed later by _onEvent() once the
-   /// connection succeeds or fails. Call once from setup(), as the last init step
-   /// (after WiFi, Influx, sensors, etc.), so no other log lines can interleave with
-   /// the pending completion.
+   /// Sets the single default tag/component sent with subsequent log()/logPartial() calls
+   /// that don't specify their own tags (see DeviceHubClient::setTag()).
    /// </summary>
-   /// <param name="sketchName">Sketch name, sent in the handshake and used for identification on the server.</param>
-   /// <param name="version">Sketch version, sent in the handshake (may be nullptr if not tracked).</param>
-   /// <param name="site">Resolved site name, sent in the handshake (may be nullptr if not used).</param>
-   /// <param name="location">Resolved location name, sent in the handshake (may be nullptr if not used).</param>
+   /// <param name="tag">Tag text to use as the default from now on.</param>
    ///
-   static void begin(const char* sketchName, const char* version, const char* site = nullptr, const char* location = nullptr)
+   static void setTag(const char* tag)
    {
-      _sketchName = sketchName != nullptr ? sketchName : "";
-      _version = version != nullptr ? version : "";
-      _site = site != nullptr ? site : "";
-      _location = location != nullptr ? location : "";
-
-      _webSocket.onEvent(_onEvent);
-
-      logPartial("Logging... ");
-
-#ifdef LOG_SERVER_LOCAL
-      _webSocket.begin(LOG_SERVER_HOST, LOG_SERVER_PORT, LOG_SERVER_PATH);
-#else
-      // The remote LogServer is only reachable over TLS (port 443); certificate
-      // validation is skipped here since the WebSocketsClient library needs a pinned
-      // fingerprint or CA cert to validate, which this sketch does not maintain.
-      _webSocket.beginSSL(LOG_SERVER_HOST, LOG_SERVER_PORT, LOG_SERVER_PATH);
-#endif
-
-      // Proactively pings the LogServer so a dead/idle connection (e.g. a NAT/proxy
-      // timeout shorter than the server's own ping interval) is detected and
-      // reconnected quickly, rather than only being noticed the next time a message
-      // fails to send. Unlike TelemetryClient, Logger connections can otherwise sit
-      // idle for long stretches between log messages.
-      _webSocket.enableHeartbeat(LOG_HEARTBEAT_PING_INTERVAL_MS, LOG_HEARTBEAT_PONG_TIMEOUT_MS, LOG_HEARTBEAT_DISCONNECT_COUNT);
+      DeviceHubClient::setTag(tag);
    }
 
    ///
    /// <summary>
-   /// Drives the WebSocket connection; call once per loop() iteration.
+   /// Sets the default tags/components sent with subsequent log()/logPartial() calls
+   /// that don't specify their own tags (see DeviceHubClient::setTags()).
    /// </summary>
+   /// <param name="tags">Tags to use as the default from now on.</param>
    ///
-   static void loop()
+   static void setTags(const std::vector<std::string>& tags)
    {
-      _webSocket.loop();
-
-      if (_disconnectPending && !_connected && (millis() - _disconnectStartMs) >= LOG_DISCONNECT_GRACE_MS)
-      {
-         log(std::string("Logging disconnected: ") + _pendingDisconnectReason);
-         _disconnectPending = false;
-         _disconnectLogged = true;
-      }
+      DeviceHubClient::setTags(tags);
    }
 
    ///
    /// <summary>
-   /// Returns whether the WebSocket connection to the LogServer is currently up.
-   /// </summary>
-   /// <returns>True if connected; otherwise false.</returns>
-   ///
-   static bool isConnected()
-   {
-      return _connected;
-   }
-
-   ///
-   /// <summary>
-   /// Returns whether begin()'s initial connection attempt has resolved (its
-   /// "Logging... " label has been completed by _onEvent(), either with the server
-   /// host on success or "failed" on failure). Used by ArduinoBase::waitForClient() to
-   /// block until that label is complete, the same way a telemetry client's
-   /// isStarted() is used.
-   /// </summary>
-   /// <returns>True once the initial connection attempt has succeeded or failed.</returns>
-   ///
-   static bool isResolved()
-   {
-      return !_linePending;
-   }
-
-   ///
-   /// <summary>
-   /// Registers a handler invoked for commands received from the LogServer that aren't
-   /// one of the built-in commands ("GetStatus"). The handler should call
-   /// respond() to send a reply, if any. Only one handler is supported; call once from
-   /// setup(), after Logger.begin().
-   /// </summary>
-   /// <param name="handler">Function invoked with the received command text.</param>
-   ///
-   static void onCommand(void (*handler)(const char* command))
-   {
-      _commandHandler = handler;
-   }
-
-   ///
-   /// <summary>
-   /// Registers a handler invoked when a "GetStatus" command is received, after the base
-   /// status fields (sketch/version/site/location/etc.) have been added, allowing a
-   /// sketch to append its own fields (e.g. a wind sensor adding the current wind
-   /// speed). Only one handler is supported; call once from setup(), after Logger.begin().
-   /// </summary>
-   /// <param name="handler">Function invoked with the in-progress status to add fields to.</param>
-   ///
-   static void onStatus(void (*handler)(LoggerStatus& status))
-   {
-      _statusHandler = handler;
-   }
-
-   ///
-   /// <summary>
-   /// Sends a reply to the LogServer in response to a received command. Does nothing if
-   /// not currently connected, since a command can only have been received while connected.
-   /// </summary>
-   /// <param name="message">Reply text to send.</param>
-   ///
-   static void respond(const char* message)
-   {
-      if (_connected)
-      {
-         _send((std::string(message) + "\n").c_str());
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Sends a text log message to the LogServer if connected, or queues it to be sent
-   /// once the connection completes (e.g. messages logged during setup(), before the
-   /// WebSocket has had a chance to finish connecting). Completes the current log entry
-   /// (the LogServer treats a trailing newline as the end of an entry), so call this
-   /// last, after any logPartial() calls building up the same line. Always echoes to
-   /// Serial.
+   /// Sends a log message to the Device Hub (see DeviceHubClient::log()). Always echoes
+   /// to Serial.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; ERROR is prefixed with "ERROR: ".</param>
+   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="tags">Tags/components the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
-   static void log(const char* message, LogSeverity severity = LogSeverity::INFO)
+   static void log(const char* message, LogSeverity severity = LogSeverity::INFO, const std::vector<std::string>& tags = {})
    {
-      std::string text = severity == LogSeverity::ERROR ? "ERROR: " + std::string(message) : message;
-
-      _sendOrQueue((text + "\n").c_str());
-
-      if (!_linePending)
-      {
-         Serial.print("Logger ----- ");
-      }
-      Serial.println(text.c_str());
-
-      _linePending = false;
+      DeviceHubClient::log(message, severity, tags);
    }
 
    ///
    /// <summary>
-   /// Overload of log(const char*, LogSeverity) for callers holding a std::string.
+   /// Overload of log(const char*, LogSeverity, const std::vector<std::string>&) for callers passing a single tag.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; ERROR is prefixed with "ERROR: ".</param>
+   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="tag">Tag/component the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
-   static void log(const std::string& message, LogSeverity severity = LogSeverity::INFO)
+   static void log(const char* message, LogSeverity severity, const char* tag)
    {
-      log(message.c_str(), severity);
+      DeviceHubClient::log(message, severity, tag);
    }
 
    ///
    /// <summary>
-   /// Overload of log(const char*, LogSeverity) for callers holding an Arduino String.
+   /// Overload of log(const char*, LogSeverity, const std::vector<std::string>&) for callers holding a std::string.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; ERROR is prefixed with "ERROR: ".</param>
+   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="tags">Tags/components the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
-   static void log(const String& message, LogSeverity severity = LogSeverity::INFO)
+   static void log(const std::string& message, LogSeverity severity = LogSeverity::INFO, const std::vector<std::string>& tags = {})
    {
-      log(message.c_str(), severity);
+      DeviceHubClient::log(message, severity, tags);
    }
 
    ///
    /// <summary>
-   /// Sends a message fragment to the LogServer without completing the log entry,
-   /// allowing the result to be appended later via a subsequent logPartial()/log() call
-   /// (e.g. printing "WiFi... " now and "OK" once the connection result is known). The
-   /// LogServer joins fragments into a single entry until one is sent with a trailing
-   /// newline (see log()). Echoes to Serial the same way, without a trailing newline. A
-   /// partial fragment is never itself prefixed with "ERROR: " -- pass the severity on
-   /// the completing log() call instead, since that's what determines the prefix.
+   /// Overload of log(const char*, LogSeverity, const char*) for callers holding a std::string and a single tag.
    /// </summary>
-   /// <param name="message">Message fragment text to log.</param>
+   /// <param name="message">Message text to log.</param>
+   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="tag">Tag/component the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
-   static void logPartial(const char* message)
+   static void log(const std::string& message, LogSeverity severity, const char* tag)
    {
-      _sendOrQueue(message);
-
-      if (!_linePending)
-      {
-         Serial.print("Logger ----- ");
-      }
-      Serial.print(message);
-
-      _linePending = true;
+      DeviceHubClient::log(message, severity, tag);
    }
 
    ///
    /// <summary>
-   /// Overload of logPartial(const char*) for callers holding a std::string.
+   /// Overload of log(const char*, LogSeverity, const std::vector<std::string>&) for callers holding an Arduino String.
    /// </summary>
-   /// <param name="message">Message fragment text to log.</param>
+   /// <param name="message">Message text to log.</param>
+   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="tags">Tags/components the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
-   static void logPartial(const std::string& message)
+   static void log(const String& message, LogSeverity severity = LogSeverity::INFO, const std::vector<std::string>& tags = {})
    {
-      logPartial(message.c_str());
+      DeviceHubClient::log(message, severity, tags);
    }
 
    ///
    /// <summary>
-   /// Overload of logPartial(const char*) for callers holding an Arduino String.
+   /// Overload of log(const char*, LogSeverity, const char*) for callers holding an Arduino String and a single tag.
+   /// </summary>
+   /// <param name="message">Message text to log.</param>
+   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="tag">Tag/component the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
+   ///
+   static void log(const String& message, LogSeverity severity, const char* tag)
+   {
+      DeviceHubClient::log(message, severity, tag);
+   }
+
+   ///
+   /// <summary>
+   /// Sends a message fragment to the Device Hub without completing the log entry (see
+   /// DeviceHubClient::logPartial()).
    /// </summary>
    /// <param name="message">Message fragment text to log.</param>
+   /// <param name="tags">Tags/components the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
-   static void logPartial(const String& message)
+   static void logPartial(const char* message, const std::vector<std::string>& tags = {})
    {
-      logPartial(message.c_str());
+      DeviceHubClient::logPartial(message, tags);
+   }
+
+   ///
+   /// <summary>
+   /// Overload of logPartial(const char*, const std::vector<std::string>&) for callers passing a single tag.
+   /// </summary>
+   /// <param name="message">Message fragment text to log.</param>
+   /// <param name="tag">Tag/component the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
+   ///
+   static void logPartial(const char* message, const char* tag)
+   {
+      DeviceHubClient::logPartial(message, tag);
+   }
+
+   ///
+   /// <summary>
+   /// Overload of logPartial(const char*, const std::vector<std::string>&) for callers holding a std::string.
+   /// </summary>
+   /// <param name="message">Message fragment text to log.</param>
+   /// <param name="tags">Tags/components the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
+   ///
+   static void logPartial(const std::string& message, const std::vector<std::string>& tags = {})
+   {
+      DeviceHubClient::logPartial(message, tags);
+   }
+
+   ///
+   /// <summary>
+   /// Overload of logPartial(const char*, const char*) for callers holding a std::string and a single tag.
+   /// </summary>
+   /// <param name="message">Message fragment text to log.</param>
+   /// <param name="tag">Tag/component the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
+   ///
+   static void logPartial(const std::string& message, const char* tag)
+   {
+      DeviceHubClient::logPartial(message, tag);
+   }
+
+   ///
+   /// <summary>
+   /// Overload of logPartial(const char*, const std::vector<std::string>&) for callers holding an Arduino String.
+   /// </summary>
+   /// <param name="message">Message fragment text to log.</param>
+   /// <param name="tags">Tags/components the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
+   ///
+   static void logPartial(const String& message, const std::vector<std::string>& tags = {})
+   {
+      DeviceHubClient::logPartial(message, tags);
+   }
+
+   ///
+   /// <summary>
+   /// Overload of logPartial(const char*, const char*) for callers holding an Arduino String and a single tag.
+   /// </summary>
+   /// <param name="message">Message fragment text to log.</param>
+   /// <param name="tag">Tag/component the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
+   ///
+   static void logPartial(const String& message, const char* tag)
+   {
+      DeviceHubClient::logPartial(message, tag);
    }
 
    ///
@@ -649,17 +204,17 @@ public:
    ///
    static void logInitializationComplete()
    {
-      log("Initialization complete. Sketch running.");
+      DeviceHubClient::logInitializationComplete();
    }
 };
 
 ///
 /// <summary>
-/// Global Logger instance shared by the whole sketch (one physical board, one LogServer
+/// Global Logger instance shared by the whole sketch (one physical board, one Device Hub
 /// connection), mirroring Arduino's Serial global. Board-level helpers (see
 /// ArduinoBase::printlnInitStatus(), initWifi(), initSensor(), initClient()) log through
 /// this automatically, so callers only need to invoke those helpers once to update both
-/// the display/Serial and the LogServer.
+/// the display/Serial and the Device Hub.
 /// </summary>
 ///
 inline LoggerClass Logger;

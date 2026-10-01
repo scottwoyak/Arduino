@@ -678,6 +678,11 @@ public:
    {
       TelemetryEventHandler::onStarted();
 
+      if (_reconnectFailureActive)
+      {
+         Logger.log(std::string("Reconnected to telemetry topic '") + LEFT_TELEMETRY_TOPIC + "'");
+      }
+
       _reconnectFailureActive = false;
 
       if (_initialized)
@@ -752,7 +757,7 @@ void setup()
       status.add("Right Gate Angle", rightLine.lastAzimuth, 0);
    });
 
-   Logger.logInitializationComplete();
+   viewer.completeInitialization();
 }
 
 void loop()

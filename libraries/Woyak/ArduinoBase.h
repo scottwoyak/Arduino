@@ -473,7 +473,7 @@ public:
    /// returns true) or CLIENT_CONNECT_TIMEOUT_MS elapses, calling loopFunc() and
    /// yielding via delay(1) on each iteration so the WebSocket/OTA task watchdog is
    /// never starved. Used to sequence multiple async connections (e.g. Telemetry then
-   /// Logger) started via initClient()/Logger.begin() so their "label... " completion
+   /// Logger) started via initClient()/DeviceHubClient::begin() so their "label... " completion
    /// text can never interleave, without changing either client's own async nature.
    /// </summary>
    /// <param name="isDoneFunc">Returns true once the connection has succeeded or failed (its own callback prints the result).</param>

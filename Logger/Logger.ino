@@ -1,18 +1,15 @@
 //
 // Logger
 //
-// Connects to WiFi and opens a WebSocket connection to the LogServer
-// (C:\SourceCode\LogServer), either the local instance on the LAN or the remote
-// DigitalOcean-hosted instance (see WiFiSettings.h), via the shared Logger class (see
-// Logger.h). Once connected, Logger sends the initial JSON handshake identifying the
-// device (deviceId/sketch/version) automatically, then this sketch sends a heartbeat
-// text log message once per second. Also demonstrates handling a sketch-specific
-// command ("Ping") sent from the LogServer, in addition to Logger's built-in
-// "GetStatus" command.
+// Connects to WiFi and opens a WebSocket connection to the Device Hub (the same
+// server used for telemetry; see WiFiSettings.h and DeviceHubClient.h), trying the
+// local Raspberry instance first and falling back to the public production instance,
+// via the shared Logger class (see Logger.h). Once connected, Logger sends the initial
+// JSON handshake identifying the device (deviceId/sketch/version) automatically, then
+// this sketch sends a heartbeat log message once per second. Also demonstrates
+// handling a sketch-specific command ("Ping") sent from the Device Hub, in addition to
+// Logger's built-in "GetStatus" command.
 //
-
-// Uncomment to use the local LogServer instead of the remote one
-#define LOG_SERVER_LOCAL
 
 #include <string>
 
@@ -41,7 +38,7 @@ void onCommand(const char* command)
 {
    if (strcasecmp(command, "Hi") == 0)
    {
-      Logger.respond("Hello");
+      DeviceHubClient::respond("Hello");
    }
    else
    {
@@ -67,16 +64,16 @@ void setup()
    arduino.begin();
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD);
 
-   Logger.begin(SKETCH_NAME, VERSION);
-   Logger.onCommand(onCommand);
-   Logger.onStatus(onStatus);
+   DeviceHubClient::begin(SKETCH_NAME, VERSION);
+   DeviceHubClient::onCommand(onCommand);
+   DeviceHubClient::onStatus(onStatus);
 }
 
 void loop()
 {
-   Logger.loop();
+   DeviceHubClient::loop();
 
-   if (Logger.isConnected() && heartbeatTimer.ready())
+   if (DeviceHubClient::isConnected() && heartbeatTimer.ready())
    {
       std::string message = "Heartbeat from " + std::string(SKETCH_NAME) + " at " + std::to_string(millis()) + "ms";
       Logger.log(message);

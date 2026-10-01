@@ -13,6 +13,7 @@
 #include "Timer.h"
 #include "Util.h"
 #include "Logger.h"
+#include "WebSocketJsonClient.h"
 
 // Display-based error rendering is only available on boards with a display.
 // ARDUINO_DISPLAY_SUPPORTED is defined by ArduinoBoard.h when the target board has one.
@@ -306,7 +307,7 @@ public:
 /// public Cloudflare host and a LAN server) until one works.
 /// </remarks>
 ///
-class TelemetryClient
+class TelemetryClient : public WebSocketJsonClient
 {
 public:
    enum class Role
@@ -318,23 +319,10 @@ public:
    typedef std::function<void(const std::string& topic, double value, int64_t dtMicros)> SampleHandler;
 
 private:
-   WebSocketsClient _webSocket;
    std::string _topic;
-   std::string _token;
-   std::string _path;
-   std::string _hosts[2];
-   uint16_t _ports[2] = { 0, 0 };
-   bool _tls[2] = { false, false };
-   uint8_t _numEndpoints = 0;
-   uint8_t _endpointIndex = 0;
-   bool _switching = false;
-   Timer _failoverTimer;
    Role _role = Role::DEVICE;
    std::vector<std::string> _topics;
    SampleHandler _sampleHandler = nullptr;
-   bool _connected = false;
-   bool _hasConnected = false;
-   bool _ready = false;
    float _value = NAN;
    RollingRate _rate;
    struct PublishTime
@@ -348,8 +336,6 @@ private:
    TelemetryEventHandler* _handler = nullptr;
    bool _ownsHandler = false;
 
-   static constexpr uint32_t FAILOVER_TIMEOUT_MS = 6000;
-   static constexpr uint32_t RECONNECT_INTERVAL_MS = 2000;
    static constexpr uint32_t HEARTBEAT_PING_MS = 15000;
    static constexpr uint32_t HEARTBEAT_TIMEOUT_MS = 3000;
    static constexpr uint8_t HEARTBEAT_FAILURES = 2;
@@ -371,21 +357,37 @@ private:
          }
       }
 
-      std::string json;
-      serializeJson(doc, json);
-      _webSocket.sendTXT(json.c_str());
+      _sendJson(doc);
    }
 
-   void _handleMessage(const uint8_t* payload, size_t length)
+   void _onConnected() override
    {
-      JsonDocument doc;
-      DeserializationError error = deserializeJson(doc, payload, length);
-      if (error)
+      _sendHandshake();
+      if (_handler != nullptr)
       {
-         Logger.log(std::string("Telemetry: invalid message: ") + error.c_str(), LogSeverity::ERROR);
-         return;
+         _handler->onConnected();
       }
+   }
 
+   void _onDisconnected(const std::string& reason, bool wasConnected) override
+   {
+      _onTelemetryDisconnected();
+
+      if (_handler != nullptr)
+      {
+         if (wasConnected)
+         {
+            _handler->onDisconnected(reason);
+         }
+         else if (numEndpoints() == 1)
+         {
+            _handler->onConnectionFailed(reason);
+         }
+      }
+   }
+
+   void _onJsonMessage(JsonDocument& doc) override
+   {
       const char* type = doc["type"];
       if (type != nullptr)
       {
@@ -432,67 +434,9 @@ private:
       }
    }
 
-   void _onEvent(WStype_t type, uint8_t* payload, size_t length)
+   void _onError(const std::string& reason) override
    {
-      switch (type)
-      {
-      case WStype_CONNECTED:
-         _connected = true;
-         _hasConnected = true;
-         _ready = false;
-         _sendHandshake();
-         if (_handler != nullptr)
-         {
-            _handler->onConnected();
-         }
-         break;
-
-      case WStype_DISCONNECTED:
-      {
-         std::string reason = (payload != nullptr && length > 0) ? std::string((const char*)payload, length) : "";
-         bool wasConnected = _hasConnected;
-
-         _connected = false;
-         _hasConnected = false;
-         _ready = false;
-         _failoverTimer.reset();
-         _onDisconnected();
-
-         if (_handler != nullptr && !_switching)
-         {
-            if (wasConnected)
-            {
-               _handler->onDisconnected(reason);
-            }
-            else if (_numEndpoints == 1)
-            {
-               _handler->onConnectionFailed(reason);
-            }
-         }
-      }
-      break;
-
-      case WStype_TEXT:
-         _handleMessage(payload, length);
-         break;
-
-      default:
-         break;
-      }
-   }
-
-   void _connect()
-   {
-      const char* host = _hosts[_endpointIndex].c_str();
-      if (_tls[_endpointIndex])
-      {
-         _webSocket.beginSSL(host, _ports[_endpointIndex], _path.c_str());
-      }
-      else
-      {
-         _webSocket.begin(host, _ports[_endpointIndex], _path.c_str());
-      }
-      _failoverTimer.reset();
+      Logger.log(std::string("Telemetry: invalid message: ") + reason, LogSeverity::ERROR);
    }
 
 protected:
@@ -502,16 +446,7 @@ protected:
    /// Subclasses should reset any per-connection state here.
    /// </summary>
    ///
-   virtual void _onDisconnected()
-   {
-   }
-
-   ///
-   /// <summary>
-   /// Called once per loop() call.
-   /// </summary>
-   ///
-   virtual void _onLoop()
+   virtual void _onTelemetryDisconnected()
    {
    }
 
@@ -538,7 +473,7 @@ public:
    /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
    ///
    explicit TelemetryClient(IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
-      : _failoverTimer(FAILOVER_TIMEOUT_MS), _rate(TELEMETRY_RATE_NUM_SAMPLES)
+      : _rate(TELEMETRY_RATE_NUM_SAMPLES)
    {
       if (handler != nullptr)
       {
@@ -581,35 +516,6 @@ public:
 
    ///
    /// <summary>
-   /// Sets a fallback endpoint (e.g. a LAN server). If the primary endpoint isn't ready
-   /// within a few seconds, the client alternates between the two endpoints until one
-   /// works. Call before begin(), beginPublisher() or beginSubscriber().
-   /// </summary>
-   /// <param name="host">Fallback server host name or IP address</param>
-   /// <param name="port">Fallback server port</param>
-   /// <param name="useTls">True to connect with TLS (wss://)</param>
-   ///
-   void setFallbackEndpoint(const char* host, uint16_t port, bool useTls)
-   {
-      _hosts[1] = host;
-      _ports[1] = port;
-      _tls[1] = useTls;
-   }
-
-   ///
-   /// <summary>
-   /// Sets the authentication token sent in the handshake. Call before begin(),
-   /// beginPublisher() or beginSubscriber().
-   /// </summary>
-   /// <param name="token">Token issued for this client</param>
-   ///
-   void setToken(const char* token)
-   {
-      _token = token;
-   }
-
-   ///
-   /// <summary>
    /// Connects using the role and topic already configured (see TelemetryPublisher and
    /// TelemetrySubscriber). Connection completes asynchronously; call loop() regularly.
    /// </summary>
@@ -620,19 +526,7 @@ public:
    ///
    void begin(const char* host, uint16_t port, bool useTls = false, const char* path = "/ws")
    {
-      _path = path;
-      _hosts[0] = host;
-      _ports[0] = port;
-      _tls[0] = useTls;
-      _numEndpoints = (_ports[1] != 0) ? 2 : 1;
-      _endpointIndex = 0;
-      _connect();
-      _webSocket.onEvent([this](WStype_t type, uint8_t* payload, size_t length)
-      {
-         _onEvent(type, payload, length);
-      });
-      _webSocket.setReconnectInterval(RECONNECT_INTERVAL_MS);
-      _webSocket.enableHeartbeat(HEARTBEAT_PING_MS, HEARTBEAT_TIMEOUT_MS, HEARTBEAT_FAILURES);
+      WebSocketJsonClient::begin(host, port, useTls, path, HEARTBEAT_PING_MS, HEARTBEAT_TIMEOUT_MS, HEARTBEAT_FAILURES);
    }
 
    ///
@@ -688,30 +582,10 @@ public:
    void setTopics(const std::vector<std::string>& topics)
    {
       _topics = topics;
-      if (_connected)
+      if (isConnected())
       {
          _sendHandshake();
       }
-   }
-
-   ///
-   /// <summary>
-   /// Services the WebSocket. Call every pass through loop().
-   /// </summary>
-   ///
-   void loop()
-   {
-      if (_numEndpoints > 1 && !_ready && _failoverTimer.ready())
-      {
-         _endpointIndex = (_endpointIndex + 1) % _numEndpoints;
-         _switching = true;
-         _webSocket.disconnect();
-         _switching = false;
-         _connect();
-      }
-
-      _onLoop();
-      _webSocket.loop();
    }
 
    ///
@@ -724,7 +598,7 @@ public:
    ///
    bool publish(const char* topic, double value)
    {
-      if (!_ready)
+      if (!isReady())
       {
          return false;
       }
@@ -796,30 +670,6 @@ public:
 
    ///
    /// <summary>
-   /// Gets the URL of the endpoint currently being used.
-   /// </summary>
-   /// <returns>The server URL.</returns>
-   ///
-   std::string getUrl() const
-   {
-      return std::string(_tls[_endpointIndex] ? "wss://" : "ws://") + _hosts[_endpointIndex] + ":" + std::to_string(_ports[_endpointIndex]) + _path;
-   }
-
-   ///
-   /// <summary>
-   /// Indicates whether the client is currently connected to the primary endpoint
-   /// (the one passed to begin()) rather than the fallback endpoint set via
-   /// setFallbackEndpoint() (e.g. a LAN server vs. the public Cloudflare server).
-   /// </summary>
-   /// <returns>True if connected to the primary (first) endpoint; false if using the fallback.</returns>
-   ///
-   bool isDirectConnection() const
-   {
-      return _endpointIndex == 0;
-   }
-
-   ///
-   /// <summary>
    /// Gets the most recently received value (subscribers only).
    /// </summary>
    /// <returns>The latest value, or NAN if none has been received yet.</returns>
@@ -831,35 +681,13 @@ public:
 
    ///
    /// <summary>
-   /// Returns whether the WebSocket is connected.
-   /// </summary>
-   /// <returns>True if connected; otherwise false.</returns>
-   ///
-   bool isConnected() const
-   {
-      return _connected;
-   }
-
-   ///
-   /// <summary>
-   /// Returns whether the server has acknowledged the handshake.
-   /// </summary>
-   /// <returns>True if ready to publish/receive; otherwise false.</returns>
-   ///
-   bool isReady() const
-   {
-      return _ready;
-   }
-
-   ///
-   /// <summary>
    /// Same as isReady().
    /// </summary>
    /// <returns>True if the handshake has been acknowledged; otherwise false.</returns>
    ///
    bool isStarted() const
    {
-      return _ready;
+      return isReady();
    }
 
    ///
@@ -887,7 +715,7 @@ private:
    float _pendingValue = NAN;
    std::string _lastValue = "";
 
-   void _onDisconnected() override
+   void _onTelemetryDisconnected() override
    {
       _lastValue = "";
    }

@@ -199,7 +199,7 @@ protected:
    /// Constructs the telemetry WebSocket client and starts its connection, then blocks
    /// (via ArduinoBase::waitForClient()) until it resolves (connects or fails) before
    /// returning, so its "Telemetry... " label always completes before the next setup
-   /// step (Logger.begin()) can print anything. The telemetry client itself remains
+   /// step (DeviceHubClient::begin()) can print anything. The telemetry client itself remains
    /// fully async - only this setup-time wait is blocking - and Influx::endInit() is not
    /// called since the initialization display (WiFi, Time, Influx, and now Telemetry
    /// rows) is left on-screen so the connection's OK/FAILED result (printed by

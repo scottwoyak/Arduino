@@ -85,6 +85,9 @@ protected:
    /// <summary>ESP32 task watchdog timeout (in seconds); loop() resets it automatically.</summary>
    static constexpr uint8_t WATCHDOG_INTERVAL_S = 60;
 
+   /// <summary>Seconds the initialization info remains on the display before completeInitialization() clears it. See completeInitialization().</summary>
+   static constexpr uint8_t STARTUP_DELAY_S = 5;
+
    /// <summary>Seconds to wait before resetting after WiFi connectivity is lost and cannot be reestablished. See _onWiFiLost().</summary>
    static constexpr uint8_t WIFI_LOST_RESET_DELAY_S = 10;
 
@@ -108,7 +111,7 @@ protected:
    /// <summary>Callback registered via onStatus(), invoked after any base fields added by _populateStatus() below.</summary>
    void (*_sketchStatusHandler)(LoggerStatus& status) = nullptr;
 
-   /// <summary>The single SketchBase instance, used by _onGetStatus() to reach the instance whose fields it should add (Logger.onStatus() only accepts a captureless function pointer).</summary>
+   /// <summary>The single SketchBase instance, used by _onGetStatus() to reach the instance whose fields it should add (DeviceHubClient::onStatus() only accepts a captureless function pointer).</summary>
    inline static SketchBase* _instance = nullptr;
 
    /// <summary>Callback registered via setOnWiFiLostCallback(), used by _onWiFiLost().</summary>
@@ -287,7 +290,7 @@ protected:
 
    ///
    /// <summary>
-   /// Starts the Logger connection and blocks (via waitForClient()) until the "Logging... "
+   /// Starts the Logger connection and blocks (via waitForClient()) until the "Device Hub... "
    /// label printed by begin() is completed by Logger::_onEvent(), so nothing else may log a
    /// line until then. Logger itself remains async. Call right after _beginConnect() so
    /// failures during the rest of initialization (e.g. sensors) are captured by the
@@ -298,8 +301,26 @@ protected:
    ///
    void _beginLoggerConnection(const char* site = nullptr, const char* location = nullptr)
    {
-      Logger.begin(_config.sketchName, _config.version, site, location);
-      _arduino->waitForClient([]() { return Logger.isResolved(); }, []() { Logger.loop(); });
+      // DeviceHubClient::begin() only echoes its "Device Hub... " label to Serial/the Device
+      // Hub itself (it has no reference to the display, being a static-only API); print the
+      // label to the display here too, the same way ArduinoBase::initClient() does for other
+      // clients, so the completion text printed below has something to follow.
+      _arduino->print("Device Hub... ", Color::LABEL);
+
+      DeviceHubClient::begin(_config.sketchName, _config.version, site, location);
+      _arduino->waitForClient([]() { return DeviceHubClient::isResolved(); }, []() { DeviceHubClient::loop(); });
+
+      // DeviceHubClient::log() only echoes to Serial/the Device Hub itself (it has no
+      // reference to the display, being a static-only API); print the completion text to
+      // the display here too, the same way TelemetryFeature::connect() does for Telemetry.
+      if (DeviceHubClient::isConnected())
+      {
+         _arduino->printlnR(DeviceHubClient::isDirectConnection() ? "Direct" : "OK", Color::VALUE);
+      }
+      else
+      {
+         _arduino->printlnR("FAILED", Color::RED);
+      }
    }
 
    ///
@@ -313,7 +334,7 @@ protected:
    {
       setCpuFrequencyMhz(_config.cpuFrequencyMhz);
 
-      Logger.onStatus(_onGetStatus);
+      DeviceHubClient::onStatus(_onGetStatus);
 
       esp_task_wdt_config_t twdtConfig = {
          .timeout_ms = WATCHDOG_INTERVAL_S * 1000U,
@@ -348,7 +369,7 @@ protected:
 
    ///
    /// <summary>
-   /// Static trampoline registered with Logger.onStatus(), forwarding to the single
+   /// Static trampoline registered with DeviceHubClient::onStatus(), forwarding to the single
    /// SketchBase instance's _populateStatus().
    /// </summary>
    /// <param name="status">The in-progress status to add fields to.</param>
@@ -379,7 +400,7 @@ protected:
 
       checkForOTA();
 
-      Logger.loop();
+      DeviceHubClient::loop();
 
       _arduino->updateStatusIndicators();
    }
@@ -564,5 +585,25 @@ public:
       void setOnWiFiLostCallback(std::function<bool()> callback)
       {
          _onWiFiLostCallback = callback;
+      }
+
+      ///
+      /// <summary>
+      /// Completes the boot/init sequence: on display-capable boards, pauses for
+      /// STARTUP_DELAY_S seconds so the initialization info printed to the display remains
+      /// readable, then clears the display; serial-only boards have no init screen to
+      /// preserve, so the pause is skipped. Always logs the standard "initialization
+      /// complete" message. Call once, at the very end of the sketch's setup(), after any
+      /// sketch-specific setup (e.g. registering telemetry handlers, building tables) that
+      /// should still appear on the init screen.
+      /// </summary>
+      ///
+      void completeInitialization()
+      {
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+         delay(STARTUP_DELAY_S * 1000UL);
+         _arduino->clearDisplay();
+#endif
+         Logger.logInitializationComplete();
       }
    };

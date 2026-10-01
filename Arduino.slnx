@@ -29,6 +29,7 @@
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
     <File Path="libraries/Woyak/DepthSensorBase.h" />
     <File Path="libraries/Woyak/DeviceConfig.h" />
+    <File Path="libraries/Woyak/DeviceHubClient.h" />
     <File Path="libraries/Woyak/DisplayBuffer.h" />
     <File Path="libraries/Woyak/DisplayTextView.h" />
     <File Path="libraries/Woyak/DisplayValue.h" />
@@ -156,6 +157,7 @@
     <File Path="libraries/Woyak/ViewerBoardS3.h" />
     <File Path="libraries/Woyak/ViewerSketch.h" />
     <File Path="libraries/Woyak/Waveshare_ESP32_S3_Zero.h" />
+    <File Path="libraries/Woyak/WebSocketJsonClient.h" />
     <File Path="libraries/Woyak/WiFiSettings.h" />
     <File Path="libraries/Woyak/WiFiX.h" />
     <File Path="libraries/Woyak/WindMeter.h" />
