@@ -117,7 +117,6 @@
     <File Path="libraries/Woyak/Scott56.h" />
     <File Path="libraries/Woyak/Scott64.h" />
     <File Path="libraries/Woyak/SketchBase.h" />
-    <File Path="libraries/Woyak/Slider.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
     <File Path="libraries/Woyak/Stats.h" />
     <File Path="libraries/Woyak/Status.h" />

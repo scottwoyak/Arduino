@@ -3,7 +3,7 @@
 //
 // Subscribes to live wind speed telemetry over a WebSocket connection and renders it as
 // a moving bar chart across the bottom fifth of the display, with a windowed histogram
-// (and current-value slider) filling the space between it and the header.
+// (and current-value marker along its axis) filling the space between it and the header.
 //
 // The layout is computed at runtime from the display's dimensions, so the sketch runs on
 // any display size, e.g. the Hosyond ESP32-S3 4" 480x320 display (Viewer board), the
@@ -61,8 +61,8 @@ std::string telemetryTopic;
 #include "LibraryVersion.h"
 #include "MovingBarChart.h"
 #include "SerialX.h"
-#include "Slider.h"
 #include "Status.h"
+#include "Stopwatch.h"
 #include "TelemetryClient.h"
 #include "TimedHistogramChart.h"
 #include "Timer.h"
@@ -72,7 +72,7 @@ std::string telemetryTopic;
 // This sketch's own version (e.g. "v1.0"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("v1.1");
+const auto VERSION = MakeVersion("v1.2");
 constexpr auto SKETCH_NAME = "Wind_Viewer";
 
 // ----------- Telemetry
@@ -110,7 +110,6 @@ constexpr float RECONNECT_LOG_INTERVAL_S = 600.0f;
 constexpr uint8_t SPEED_NUM_CHARS = 8; // "##.# mph"
 constexpr uint8_t HEADER_PADDING = 6;
 constexpr uint8_t VALUES_AXIS_PADDING = 8;
-constexpr uint8_t SLIDER_HEIGHT = 3;
 
 // ----------- Rolling bar chart (bottom fifth of the display)
 constexpr RangeF GRAPH_RANGE = { 0, 30 };
@@ -131,7 +130,6 @@ uint8_t axisTextSize;
 Rect16 chartRect;
 MovingBarChart* rollingChart = nullptr;
 TimedHistogramChart* histogramChart = nullptr;
-HorizontalSlider* slider = nullptr;
 
 // Colors bars from lime green (low speed) through yellow, orange, and red (high speed).
 ColorRange speedColorRange;
@@ -142,6 +140,15 @@ ColorRange speedColorRange;
 // which arrive as more messages.
 constexpr uint16_t SAMPLE_INTERVAL_MS = 100;
 Timer sampleTimer(SAMPLE_INTERVAL_MS);
+
+// A network hiccup can cause the sensor to stop publishing for a few seconds; since
+// TelemetrySubscriber::getValue() simply keeps returning the last received value, the
+// 100ms sampleTimer above would otherwise keep re-sampling that stale value into the
+// histogram/rolling chart as if real data were still arriving. STALE_TIMEOUT_MS detects
+// this by tracking how long it's been since the last message actually arrived (reset in
+// WindTelemetryHandler::onReceiveText below) and is set well above the publisher's
+// publish interval so normal gaps between messages don't false-trigger.
+constexpr uint32_t STALE_TIMEOUT_MS = 2000;
 
 ///
 /// <summary>
@@ -180,9 +187,6 @@ void initLayout()
    chartRect = { 0, headerHeight, displayWidth, (uint16_t)(displayHeight - headerHeight - rollingChartHeight - valuesAxisHeight) };
    uint16_t numBins = chartRect.width * HISTOGRAM_BINS_PER_PIXEL;
    histogramChart = new TimedHistogramChart(chartRect, CHART_RANGE, numBins, HISTOGRAM_DURATION_S * 1000, Color::LIME, Color::BLACK);
-
-   Rect16 sliderRect = { 0, (uint16_t)(chartRect.bottom() + 2), displayWidth, SLIDER_HEIGHT };
-   slider = new HorizontalSlider(sliderRect, CHART_RANGE, Color::WHITE, Color::BLACK);
 }
 
 ///
@@ -211,6 +215,7 @@ class WindTelemetryHandler : public TelemetryEventHandler
 {
 private:
    ReconnectLogThrottle _reconnectLog{ telemetryTopic, RECONNECT_LOG_INTERVAL_S };
+   Stopwatch _sinceLastReceive{ false };
 
 public:
    // set on every (re)start; the main loop clears and redraws the display, so the
@@ -227,6 +232,10 @@ public:
 
       _reconnectLog.reportSuccess();
       needsInitialDisplay = true;
+      _sinceLastReceive.reset();
+      _sinceLastReceive.start();
+
+      Logger.log("Wind telemetry connected: " + String(viewer.getClient()->getUrl().c_str()));
    }
 
    void onDisconnected(const std::string& reason) override
@@ -244,14 +253,34 @@ public:
       _reconnectLog.reportFailure(std::string("Wind telemetry error: ") + message + "; will keep retrying in the background");
    }
 
+   ///
+   /// <summary>
+   /// Indicates whether telemetry has gone stale, i.e. no message has actually been
+   /// received in the last STALE_TIMEOUT_MS, so the last value returned by getValue() is
+   /// no longer trustworthy and should not be fed into the charts.
+   /// </summary>
+   /// <returns>true if no telemetry message has arrived recently; false otherwise</returns>
+   ///
+   bool isStale() const
+   {
+      return _sinceLastReceive.elapsedMillis() >= STALE_TIMEOUT_MS;
+   }
+
    void onReceiveText(const std::string& text) override
    {
       (void)text;
 
+      _sinceLastReceive.reset();
+
       // feed the charts/stats only when a new value has actually arrived, rather than
-      // every loop() iteration, so stale values aren't repeatedly re-sampled
+      // every loop() iteration, so stale values aren't repeatedly re-sampled. Skip NaN
+      // values (e.g. before the topic has actually been published) since the axis
+      // marker renders NaN as a solid red bar.
       float speed = viewer.getClient()->getValue();
-      slider->set(speed);
+      if (!isnan(speed))
+      {
+         histogramChart->setCurrentValue(speed);
+      }
    }
 };
 
@@ -284,6 +313,7 @@ void setup()
    viewer.onStatus([](LoggerStatus& status)
    {
       status.add("Wind Speed", viewer.getClient()->getValue(), 1);
+      status.add("Telemetry URL", viewer.getClient()->getUrl());
    });
    delay(1000); // provide time for the wind meter to get a reading
 
@@ -310,10 +340,12 @@ void loop()
 
    float speed = client->getValue();
 
-   // Skip sampling until the first real value has arrived; otherwise NAN placeholders
-   // get shifted into the rolling/histogram charts and take a full period to clear out,
-   // showing as red bars in the meantime.
-   if (sampleTimer.ready() && !isnan(speed))
+   // Skip sampling until the first real value has arrived, and stop sampling once
+   // telemetry has gone stale (no message received in a while); otherwise the last
+   // received value would keep getting re-sampled into the charts as if the sensor were
+   // steadily reporting it, when in fact a network hiccup has just stopped updates.
+   bool stale = telemetryHandler.isStale();
+   if (sampleTimer.ready() && !isnan(speed) && !stale)
    {
       histogramChart->set(speed);
       rollingChart->set(speed);
@@ -322,7 +354,14 @@ void loop()
    // display values
    arduino.setCursor(0, 0);
    arduino.setTextSize(headerTextSize);
-   arduino.printlnR(speed, speedFormat, speedColorRange.getColor(speed));
+   if (stale)
+   {
+      arduino.printlnR(speedFormat, Color::RED);
+   }
+   else
+   {
+      arduino.printlnR(speed, speedFormat, speedColorRange.getColor(speed));
+   }
 
    displayHistogram();
    rollingChart->draw(&arduino.display);
@@ -344,31 +383,25 @@ void displayHistogram()
    if (range.max < 5)
    {
       histogramChart->setVisibleRange(RangeF(0, 5));
-      slider->setRange(RangeF(0, 5));
    }
    else if (range.max < 10)
    {
       histogramChart->setVisibleRange(RangeF(0, 10));
-      slider->setRange(RangeF(0, 10));
    }
    else if (range.max < 15)
    {
       histogramChart->setVisibleRange(RangeF(0, 15));
-      slider->setRange(RangeF(0, 15));
    }
    else if (range.max < 20)
    {
       histogramChart->setVisibleRange(RangeF(0, 20));
-      slider->setRange(RangeF(0, 20));
    }
    else
    {
       histogramChart->setVisibleRange(RangeF(0, 30));
-      slider->setRange(RangeF(0, 30));
    }
 
    histogramChart->draw(&arduino.display);
-   slider->draw(&arduino.display);
 
    arduino.setTextSize(axisTextSize);
    arduino.setCursor(0, chartRect.bottom() + 3);
@@ -377,7 +410,5 @@ void displayHistogram()
    arduino.print(displayRange.min, AxisValueL, Color::GRAY);
    arduino.printC((displayRange.min + displayRange.max) / 2, AxisValueL, Color::GRAY);
    arduino.printR(displayRange.max, AxisValueR, Color::GRAY);
-   uint16_t y = chartRect.bottom() + 1;
-   arduino.display.drawLine(0, y, arduino.display.width(), y, (uint16_t)Color::GRAY);
 }
 

@@ -807,6 +807,19 @@ public:
 
    ///
    /// <summary>
+   /// Indicates whether the client is currently connected to the primary endpoint
+   /// (the one passed to begin()) rather than the fallback endpoint set via
+   /// setFallbackEndpoint() (e.g. a LAN server vs. the public Cloudflare server).
+   /// </summary>
+   /// <returns>True if connected to the primary (first) endpoint; false if using the fallback.</returns>
+   ///
+   bool isDirectConnection() const
+   {
+      return _endpointIndex == 0;
+   }
+
+   ///
+   /// <summary>
    /// Gets the most recently received value (subscribers only).
    /// </summary>
    /// <returns>The latest value, or NAN if none has been received yet.</returns>

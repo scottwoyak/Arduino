@@ -136,7 +136,10 @@ public:
       arduino->initClient("Telemetry", [this]() { beginTelemetryClient(_client); }, status);
       if (arduino->waitForClient([this]() { return _client->isStarted(); }, [this]() { _client->loop(); }))
       {
-         std::string result = "OK";
+         // "Direct" vs "OK" lets you tell at a glance (via serial/display) whether the
+         // connection went straight to the local/LAN server or had to fall back to the
+         // public (e.g. Cloudflare) endpoint - see TelemetryClient::isDirectConnection().
+         std::string result = _client->isDirectConnection() ? "Direct" : "OK";
          Logger.log(result);
          arduino->printlnR(result.c_str(), Color::VALUE);
          return true;

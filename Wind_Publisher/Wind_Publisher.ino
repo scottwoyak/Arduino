@@ -73,8 +73,13 @@ InfluxConfig INFLUX_CONFIG = {
    .includeCpuTemp = true,
 };
 
+// Caps publishing at 20 samples/sec rather than every loop() iteration, since faster
+// updates aren't useful and would just add WiFi/WebSocket send overhead.
+constexpr uint16_t TELEMETRY_PUBLISH_INTERVAL_MS = 1000 / 20;
+
 TelemetryConfig TELEMETRY_CONFIG = {
    .prompts = WIND_TELEMETRY_TOPICS,
+   .publishIntervalMs = TELEMETRY_PUBLISH_INTERVAL_MS,
 };
 
 SketchConfig PUBLISHER_CONFIG = {

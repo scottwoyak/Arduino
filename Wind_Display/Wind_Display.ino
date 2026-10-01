@@ -14,7 +14,6 @@
 #include "MultiBar.h"
 #include "RollingRate.h"
 #include "SerialX.h"
-#include "Slider.h"
 #include "TimedHistogramChart.h"
 #include "TimedStats.h"
 #include "Timer.h"
@@ -56,9 +55,6 @@ constexpr uint8_t VALUES_AXIS_HEIGHT = 16 + 6;
 constexpr Rect16 CHART_RECT(0, HEADER_HEIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT - HEADER_HEIGHT - VALUES_AXIS_HEIGHT);
 TimedHistogramChart histogramChart(CHART_RECT, CHART_RANGE, HISTOGRAM_NUM_BINS, HISTOGRAM_DURATION_S * 1000, Green2, Color::BLACK);
 
-constexpr Rect16 SLIDER_RECT(0, DISPLAY_HEIGHT - VALUES_AXIS_HEIGHT + 2, DISPLAY_WIDTH, 3);
-HorizontalSlider slider(SLIDER_RECT, CHART_RANGE, Color::WHITE, Color::BLACK);
-
 enum class Mode
 {
    MultiBar,
@@ -86,7 +82,7 @@ void loop()
    multiBar.set(speed);
    rollingChart.set(speed);
    histogramChart.set(speed);
-   slider.set(speed);
+   histogramChart.setCurrentValue(speed);
 
    // display values
    arduino.setCursor(0, 0);
@@ -160,31 +156,25 @@ void displayHistogram()
    if (range.max < 5)
    {
       histogramChart.setVisibleRange(RangeF(0, 5));
-      slider.setRange(RangeF(0, 5));
    }
    else if (range.max < 10)
    {
       histogramChart.setVisibleRange(RangeF(0, 10));
-      slider.setRange(RangeF(0, 10));
    }
    else if (range.max < 15)
    {
       histogramChart.setVisibleRange(RangeF(0, 15));
-      slider.setRange(RangeF(0, 15));
    }
    else if (range.max < 20)
    {
       histogramChart.setVisibleRange(RangeF(0, 20));
-      slider.setRange(RangeF(0, 20));
    }
    else
    {
       histogramChart.setVisibleRange(RangeF(0, 30));
-      slider.setRange(RangeF(0, 30));
    }
 
    histogramChart.draw(&arduino.display);
-   slider.draw(&arduino.display);
 
    arduino.setTextSize(2);
    arduino.setCursor(0, -15);
@@ -193,6 +183,4 @@ void displayHistogram()
    arduino.print(displayRange.min, AxisValueL, Color::GRAY);
    arduino.printC((displayRange.min + displayRange.max) / 2, AxisValueL, Color::GRAY);
    arduino.printR(displayRange.max, AxisValueR, Color::GRAY);
-   uint16_t y = DISPLAY_HEIGHT - VALUES_AXIS_HEIGHT + 1;
-   arduino.display.drawLine(0, y, arduino.display.width(), y, (uint16_t)Color::GRAY);
 }
