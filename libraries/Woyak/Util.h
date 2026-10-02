@@ -274,7 +274,7 @@ public:
 
    /// <summary>
    /// Checks for a previous halt reason recorded in a preferences object. Does not log
-   /// directly itself, since Logger depends on DeviceHubClient, which depends on Timer,
+   /// directly itself, since Logger depends on DeviceServerClient, which depends on Timer,
    /// which depends on this file; callers should log the result themselves (see
    /// SerialX::begin()).
    /// </summary>

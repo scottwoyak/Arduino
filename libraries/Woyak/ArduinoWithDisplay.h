@@ -1895,16 +1895,15 @@ public:
    /// <param name="version">This sketch's own version string (e.g. "v1.0").</param>
    /// <param name="sketchName">This sketch's name (e.g. "Wind_Publisher"), used to derive its release URLs.</param>
    /// <param name="status">Optional status indicator set to FAILED if no OTA download partition is found.</param>
-   /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; defaults to 10 minutes.</param>
    /// <param name="onUpdateAvailable">Optional handler, notified with the newly detected version string just before it's installed.</param>
    ///
-   void enableOTA(const char* version, const char* sketchName, IStatus* status = nullptr, float checkIntervalSecs = OTAUpdater::DEFAULT_CHECK_INTERVAL_SECS, OTAUpdateEventHandler* onUpdateAvailable = nullptr)
+   void enableOTA(const char* version, const char* sketchName,
+      IStatus* status = nullptr, OTAUpdateEventHandler* onUpdateAvailable = nullptr)
    {
-      _ota = new OTAUpdater(version, sketchName, this, checkIntervalSecs);
+      _ota = new OTAUpdater(version, this);
       _otaLoggingHandler.next = onUpdateAvailable;
       _ota->setHandler(&_otaLoggingHandler);
       _ota->setStatus(status);
-      _ota->checkNow();
    }
 };
 

@@ -17,6 +17,7 @@
     <File Path="libraries/Woyak/BME280TempSensor.h" />
     <File Path="libraries/Woyak/BufferedTimeSeries.h" />
     <File Path="libraries/Woyak/Button.h" />
+    <File Path="libraries/Woyak/TelemetryConfig.h" />
     <File Path="libraries/Woyak/TelemetryFeature.h" />
     <File Path="libraries/Woyak/TempCalibrator.h" />
     <File Path="libraries/Woyak/CapacitorDepthSensor.h" />
@@ -29,7 +30,7 @@
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
     <File Path="libraries/Woyak/DepthSensorBase.h" />
     <File Path="libraries/Woyak/DeviceConfig.h" />
-    <File Path="libraries/Woyak/DeviceHubClient.h" />
+    <File Path="libraries/Woyak/DeviceServerClient.h" />
     <File Path="libraries/Woyak/DisplayBuffer.h" />
     <File Path="libraries/Woyak/DisplayTextView.h" />
     <File Path="libraries/Woyak/DisplayValue.h" />
@@ -78,6 +79,7 @@
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
     <File Path="libraries/Woyak/Memory.h" />
     <File Path="libraries/Woyak/MinMaxValue.h" />
+    <File Path="libraries/Woyak/MLX90393Magnetometer.h" />
     <File Path="libraries/Woyak/ModulinoEncoder.h" />
     <File Path="libraries/Woyak/MonitorSketch.h" />
     <File Path="libraries/Woyak/MovingBarChart.h" />
@@ -156,14 +158,12 @@
     <File Path="libraries/Woyak/VEML7700LightSensor.h" />
     <File Path="libraries/Woyak/ViewerBoardS3.h" />
     <File Path="libraries/Woyak/ViewerSketch.h" />
+    <File Path="libraries/Woyak/Waveshare_ESP32S3_Touch_LCD_43.h" />
     <File Path="libraries/Woyak/Waveshare_ESP32_S3_Zero.h" />
     <File Path="libraries/Woyak/WebSocketJsonClient.h" />
     <File Path="libraries/Woyak/WiFiSettings.h" />
     <File Path="libraries/Woyak/WiFiX.h" />
     <File Path="libraries/Woyak/WindMeter.h" />
-  </Folder>
-  <Folder Name="/Libraries/LGX/">
-    <File Path="libraries/Woyak/LGX_HosyondESP32-32E.h" />
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/All_Tests/All_Tests.vcxproj">

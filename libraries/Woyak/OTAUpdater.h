@@ -44,8 +44,8 @@ public:
 
    ///
    /// <summary>
-   /// Invoked when checkNow()/loop() finds a newer version available, just before the
-   /// update is downloaded and installed.
+   /// Invoked when a pushed update is requested, just before the update is downloaded
+   /// and installed.
    /// </summary>
    /// <param name="newVersion">The newly detected version string.</param>
    ///
@@ -86,45 +86,29 @@ public:
 
 ///
 /// <summary>
-/// Adds over-the-air (OTA) firmware update support to a sketch: periodically (or on
-/// demand) fetches a small version text file, compares it to the sketch's own version,
-/// and if a newer version is available downloads and installs the firmware binary. On
-/// display-capable boards, shows the same progress screen used by OTA_Display.ino while
-/// the update downloads.
+/// Adds push-based over-the-air (OTA) firmware update support to a sketch: when an
+/// update is requested (e.g. by a Device Server "Update" command carrying a firmware URL),
+/// downloads and installs the firmware binary from that URL. Nothing is ever fetched
+/// automatically. On display-capable boards, shows the same progress screen used by
+/// OTA_Display.ino while the update downloads.
 /// </summary>
 /// <remarks>
 /// Usage:
 /// <code>
-/// OTAUpdater ota(VERSION, VERSION_URL, FIRMWARE_URL, &arduino);
+/// OTAUpdater ota(VERSION, &arduino);
 ///
 /// void loop()
 /// {
 ///    ota.loop();
 /// }
 /// </code>
-/// Call checkNow() instead of (or in addition to) loop() to trigger a check immediately,
-/// e.g. from a button press.
+/// Call requestUpdate() (e.g. when the Device Server pushes an "Update" command) to start
+/// an update; the download itself runs from loop().
 /// </remarks>
 ///
 class OTAUpdater
 {
-public:
-   // Default interval between periodic OTA checks, used when a sketch doesn't specify one.
-   static constexpr float DEFAULT_CHECK_INTERVAL_SECS = 10.0f * 60.0f;
-
 private:
-   // Base URL for this project's GitHub releases; each sketch publishes its firmware/version
-   // files as assets under a release tagged with its own sketch name (see _deriveUrls()).
-   static constexpr auto _RELEASES_BASE_URL = "https://github.com/scottwoyak/Arduino/releases/download";
-
-   // ARDUINO_BOARD_VARIANT_ID (defined per-branch in ArduinoBoard.h) identifies this
-   // sketch's physical wiring variant, so firmware asset names can be board-qualified
-   // (see _deriveUrls()), allowing a single release to host binaries for multiple boards.
-   // This is distinct from the raw ARDUINO_BOARD macro, since multiple wiring variants
-   // (e.g. Hosyond Viewer vs. generic Playground) can share the same underlying Arduino
-   // IDE board type.
-   static constexpr auto _BOARD_ID = ARDUINO_BOARD_VARIANT_ID;
-
    static constexpr uint8_t _HEADER_SIZE = 3;
    static constexpr uint8_t _TEXT_SIZE = 2;
    static constexpr int16_t _PROGRESS_BAR_HEIGHT = 12;
@@ -150,19 +134,19 @@ private:
    // forever with nothing to catch it; this fails with a clear error instead.
    static constexpr uint32_t _STALL_TIMEOUT_MS = 15000;
 
+   /// <summary>The OTAUpdater most recently constructed, targeted by requestActiveUpdate().</summary>
+   static inline OTAUpdater* _active = nullptr;
+
    const char* _version;
-   std::string _versionUrl;
    std::string _firmwareUrl;
-   TimerSecs _checkTimer;
 
-   // The originally configured check interval, in seconds. _checkTimer's own duration is
-   // repeatedly overwritten by _secsUntilNextAlignedCheck() (to land the *next* check on
-   // an aligned wall-clock boundary), so this is kept separately as the stable interval
-   // to align against; using _checkTimer's live duration for that calculation would
-   // otherwise compound each time it's re-armed, collapsing the interval towards zero.
-   unsigned long _checkIntervalSecs;
+   /// <summary>Name of the firmware being installed, parsed from the push URL (e.g. "Gate_Opener.ADAFRUIT_FEATHER_ESP32S3_TFT").</summary>
+   std::string _firmwareName;
 
-   /// <summary>Version detected by the last _isUpdateAvailable() call that returned true.</summary>
+   /// <summary>True once
+   bool _updateRequested = false;
+
+   /// <summary>Version being installed, as reported by the push request.</summary>
    std::string _availableVersion;
 
    /// <summary>Optional handler notified (with the newly detected version) once a newer version is found, just before the update is installed.</summary>
@@ -194,50 +178,26 @@ private:
 
    ///
    /// <summary>
-   /// Derives this sketch's firmware/version-check URLs from its name, per convention: each
-   /// sketch publishes to a release tagged with its own name (e.g. "Wind_Publisher"), with
-   /// "{sketchName}.{boardId}.ino.bin" and "{sketchName}.{boardId}.version.txt" as assets
-   /// alongside each other. Both the firmware and version-check asset names are
-   /// board-qualified (via ARDUINO_BOARD_VARIANT_ID, see _BOARD_ID) so a single release can host
-   /// independently-versioned binaries for multiple boards without one board's publish
-   /// causing another board to redownload an unchanged binary.
+   /// Extracts the firmware name from a download URL of the form
+   /// ".../api/firmware/{name}/{version}/download". For any other URL, falls back to the
+   /// last path segment (without any query string).
    /// </summary>
-   /// <param name="sketchName">This sketch's name (e.g. "Wind_Publisher"), also used as the release tag.</param>
-   /// <returns>The derived { firmwareUrl, versionUrl } pair.</returns>
+   /// <param name="url">The firmware download URL.</param>
+   /// <returns>The firmware name.</returns>
    ///
-   static std::pair<std::string, std::string> _deriveUrls(const char* sketchName)
+   static std::string _parseFirmwareName(const std::string& url)
    {
-      std::string releaseUrl = std::string(_RELEASES_BASE_URL) + "/" + sketchName + "/";
-      std::string boardQualifiedName = std::string(sketchName) + "." + _BOARD_ID;
-      return { releaseUrl + boardQualifiedName + ".ino.bin", releaseUrl + boardQualifiedName + ".version.txt" };
-   }
-
-   ///
-   /// <summary>
-   /// Computes the number of seconds from now until the next wall-clock boundary that is
-   /// an exact multiple of the configured check interval (e.g. every 10 minutes results in
-   /// checks landing on 6:00, 6:10, 6:20, etc). Falls back to the full interval if the
-   /// system clock isn't synced yet (time(nullptr) is unreasonably small).
-   /// </summary>
-   /// <returns>Seconds until the next aligned check.</returns>
-   ///
-   unsigned long _secsUntilNextAlignedCheck() const
-   {
-      unsigned long intervalSecs = _checkIntervalSecs;
-      if (intervalSecs == 0)
+      constexpr const char* MARKER = "/api/firmware/";
+      size_t start = url.find(MARKER);
+      if (start != std::string::npos)
       {
-         return 0;
+         start += strlen(MARKER);
+         size_t end = url.find('/', start);
+         return url.substr(start, end == std::string::npos ? std::string::npos : end - start);
       }
 
-      time_t now = time(nullptr);
-      if (now < 1000000000l)
-      {
-         // Clock not synced yet; fall back to a plain interval.
-         return intervalSecs;
-      }
-
-      unsigned long secsIntoInterval = static_cast<unsigned long>(now) % intervalSecs;
-      return (secsIntoInterval == 0) ? intervalSecs : (intervalSecs - secsIntoInterval);
+      std::string path = url.substr(0, url.find('?'));
+      return path.substr(path.rfind('/') + 1);
    }
 
    ///
@@ -287,103 +247,6 @@ private:
 
    ///
    /// <summary>
-   /// Fetches the version text file and returns whether it differs from this sketch's
-   /// own version (a fresh fetch failure is treated as "no update available"), unless
-   /// force is true, in which case an update is always reported as available (using the
-   /// current version as a fallback if the version check itself fails).
-   /// </summary>
-   /// <param name="force">If true, report an update as available regardless of the server's version.</param>
-   /// <returns>True if an update should be downloaded and installed.</returns>
-   ///
-   bool _isUpdateAvailable(bool force = false)
-   {
-      HTTPClient http;
-      http.begin(_versionUrl.c_str());
-      http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
-      int httpCode = http.GET();
-
-      if (httpCode != HTTP_CODE_OK)
-      {
-         _log((std::string("OTAUpdater: version check HTTP GET failed, code: ") + std::to_string(httpCode) + " (" + HTTPClient::errorToString(httpCode).c_str() + "), url: " + _versionUrl).c_str());
-         http.end();
-
-         if (force)
-         {
-            _availableVersion = _version;
-            _log("OTAUpdater: forcing update using current version (version check failed)");
-            return true;
-         }
-
-         return false;
-      }
-
-      String serverVersion = http.getString();
-      serverVersion.trim();
-      http.end();
-
-      // version.txt is a quoted string literal (so it can be #included directly as the
-      // local VERSION), so strip matching surrounding quotes before comparing.
-      if (serverVersion.length() >= 2 && serverVersion.startsWith("\"") && serverVersion.endsWith("\""))
-      {
-         serverVersion = serverVersion.substring(1, serverVersion.length() - 1);
-      }
-
-         bool updateAvailable = force || _isNewerVersion(serverVersion.c_str(), _version);
-         if (updateAvailable)
-         {
-            _availableVersion = serverVersion.c_str();
-         }
-
-         return updateAvailable;
-      }
-
-      ///
-      /// <summary>
-      /// Parses a "major.minor.build" version string into its numeric components,
-      /// tolerating an optional leading 'v'/'V' and missing trailing components (treated as
-      /// 0), e.g. "v2.1" is parsed as 2.1.0.
-      /// </summary>
-      /// <param name="version">Version string to parse.</param>
-      /// <returns>The parsed { major, minor, build } components.</returns>
-      ///
-      std::array<uint32_t, 3> _parseVersion(const char* version)
-      {
-         std::array<uint32_t, 3> parts = { 0, 0, 0 };
-
-         if (version == nullptr)
-         {
-            return parts;
-         }
-
-         if (*version == 'v' || *version == 'V')
-         {
-            version++;
-         }
-
-         sscanf(version, "%lu.%lu.%lu", &parts[0], &parts[1], &parts[2]);
-         return parts;
-      }
-
-      ///
-      /// <summary>
-      /// Compares two version strings by their major, minor, and build components (see
-      /// _parseVersion()) to determine whether candidateVersion is strictly newer than
-      /// currentVersion.
-      /// </summary>
-      /// <param name="candidateVersion">The version fetched from the server.</param>
-      /// <param name="currentVersion">This sketch's own version.</param>
-      /// <returns>True if candidateVersion is greater than currentVersion.</returns>
-      ///
-      bool _isNewerVersion(const char* candidateVersion, const char* currentVersion)
-      {
-         std::array<uint32_t, 3> candidate = _parseVersion(candidateVersion);
-         std::array<uint32_t, 3> current = _parseVersion(currentVersion);
-
-         return candidate > current;
-      }
-
-   ///
-   /// <summary>
    /// Called after each chunk is written to flash while the firmware download is in
    /// progress. Yields the CPU so other tasks get a chance to run between chunks and, on
    /// display-capable boards, also reports progress as a percentage and a fill bar
@@ -420,54 +283,45 @@ private:
 #endif
 
 public:
+public:
    ///
    /// <summary>
-   /// Constructs an OTAUpdater, without a display (serial-only boards). The firmware and
-   /// version-check URLs are both derived from sketchName per convention: this sketch
-   /// publishes to a GitHub release tagged with its own name, alongside a "version.txt".
+   /// Constructs an OTAUpdater, without a display (serial-only boards). Firmware is never
+   /// fetched automatically; an update is only installed after requestUpdate() is called
+   /// (e.g. when the Device Server pushes an "Update" command).
    /// </summary>
    /// <param name="version">This sketch's own version string (e.g. "v1.0").</param>
-   /// <param name="sketchName">This sketch's name (e.g. "Wind_Publisher"), used to derive its release URLs.</param>
-   /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; defaults to 10 minutes.</param>
    ///
-   OTAUpdater(const char* version, const char* sketchName, float checkIntervalSecs = DEFAULT_CHECK_INTERVAL_SECS)
-      : _version(version), _checkTimer(checkIntervalSecs), _checkIntervalSecs(static_cast<unsigned long>(checkIntervalSecs))
+   OTAUpdater(const char* version)
+	  : _version(version)
    {
-      std::tie(_firmwareUrl, _versionUrl) = _deriveUrls(sketchName);
-      _checkTimer.setDurationMs(_secsUntilNextAlignedCheck() * 1000UL);
+	  _active = this;
    }
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
    ///
    /// <summary>
-   /// Constructs an OTAUpdater that shows download progress on the given display. The
-   /// firmware and version-check URLs are both derived from sketchName per convention:
-   /// this sketch publishes to a GitHub release tagged with its own name, alongside a
-   /// "version.txt".
+   /// Constructs an OTAUpdater that shows download progress on the given display.
    /// </summary>
    /// <param name="version">This sketch's own version string (e.g. "v1.0").</param>
-   /// <param name="sketchName">This sketch's name (e.g. "Wind_Publisher"), used to derive its release URLs.</param>
    /// <param name="arduino">Display to show progress and results on while updating.</param>
-   /// <param name="checkIntervalSecs">How often (in seconds) loop() checks for an update; defaults to 10 minutes.</param>
    ///
-   OTAUpdater(const char* version, const char* sketchName, ArduinoWithDisplay* arduino, float checkIntervalSecs = DEFAULT_CHECK_INTERVAL_SECS)
-      : _version(version), _checkTimer(checkIntervalSecs), _checkIntervalSecs(static_cast<unsigned long>(checkIntervalSecs)), _arduino(arduino)
+   OTAUpdater(const char* version, ArduinoWithDisplay* arduino)
+	  : _version(version), _arduino(arduino)
    {
-      std::tie(_firmwareUrl, _versionUrl) = _deriveUrls(sketchName);
-      _checkTimer.setDurationMs(_secsUntilNextAlignedCheck() * 1000UL);
+	  _active = this;
    }
 #endif
 
    ///
    /// <summary>
-   /// Registers a handler notified whenever checkNow()/loop() finds a newer version
-   /// available, just before the update is downloaded and installed.
+   /// Registers a handler notified when a pushed update starts, fails, or succeeds.
    /// </summary>
-   /// <param name="handler">Handler to notify with the newly detected version string.</param>
+   /// <param name="handler">Handler to notify.</param>
    ///
    void setHandler(OTAUpdateEventHandler* handler)
    {
-      _handler = handler;
+	  _handler = handler;
    }
 
    ///
@@ -478,74 +332,86 @@ public:
    ///
    void setStatus(IStatus* status)
    {
-      _status = status;
+	  _status = status;
    }
 
    ///
    /// <summary>
-   /// Checks (over the version URL) whether a newer firmware version is available and, if
-   /// so, downloads and installs it, restarting the device on success. WiFi must already
-   /// be connected before calling this. Halts the device (see _reportMissingPartitionAndHalt())
-   /// if the running firmware has no OTA download partition to update into.
+   /// Requests an update on the active OTAUpdater (the most recently constructed one).
+   /// Does nothing if no OTAUpdater exists. Safe to call from a message callback; the
+   /// download itself is deferred to loop().
    /// </summary>
-   /// <param name="force">If true, downloads and installs the current OTA firmware regardless of version.</param>
+   /// <param name="url">URL of the firmware binary to download.</param>
+   /// <param name="version">Version being pushed, used for logging (may be nullptr).</param>
    ///
-   void checkNow(bool force = false)
+   static void requestActiveUpdate(const char* url, const char* version = nullptr)
    {
-      if (!_hasDownloadPartition())
-      {
-         _reportMissingPartitionAndHalt();
-      }
-
-      if (_isUpdateAvailable(force))
-      {
-         if (_handler != nullptr)
-         {
-            _handler->onUpdateAvailable(_availableVersion.c_str());
-         }
-
-         _log((std::string("OTAUpdater: Downloading ") + _availableVersion).c_str());
-
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-         // Clear immediately on detecting an update, rather than leaving whatever was on
-         // screen showing through the version check / HTTP connect delay that happens
-         // before _performUpdate() gets around to its own printInitHeader()/clearDisplay().
-         _clearDisplayIfPresent();
-#endif
-
-         if (_status != nullptr)
-         {
-            _status->setStatus(Status::UPDATING);
-         }
-
-         _performUpdate();
-
-         // Only reached if the update failed or wasn't actually applied (ESP.restart()
-         // is called directly on success), so restore the prior status.
-         if (_status != nullptr)
-         {
-            _status->setStatus(Status::READY);
-         }
-      }
+	  if (_active != nullptr)
+	  {
+		 _active->requestUpdate(url, version);
+	  }
    }
 
    ///
    /// <summary>
-   /// Call every loop() iteration to periodically check for an update, at the interval
-   /// configured in the constructor. Does nothing if checkIntervalSecs was 0.
+   /// Requests that the firmware at the given URL be downloaded and installed. The
+   /// download is deferred until the next loop() call.
+   /// </summary>
+   /// <param name="url">URL of the firmware binary to download.</param>
+   /// <param name="version">Version being pushed, used for logging (may be nullptr).</param>
+   ///
+   void requestUpdate(const char* url, const char* version = nullptr)
+   {
+	  _firmwareUrl = url;
+	  _firmwareName = _parseFirmwareName(_firmwareUrl);
+	  _availableVersion = (version != nullptr && *version != '\0') ? version : "pushed firmware";
+	  _updateRequested = true;
+   }
+
+   ///
+   /// <summary>
+   /// Call every loop() iteration. Downloads and installs the firmware if an update was
+   /// requested via requestUpdate(), restarting the device on success. Halts the device
+   /// if the running firmware has no OTA download partition to update into.
    /// </summary>
    ///
    void loop()
    {
-      if (_checkTimer.getDurationMs() != 0 && _checkTimer.ready())
-      {
-         checkNow();
+	  if (!_updateRequested)
+	  {
+		 return;
+	  }
+	  _updateRequested = false;
 
-         // Re-arm the timer so the *next* check lands on the next even wall-clock
-         // boundary (e.g. 6:00, 6:10, 6:20...) rather than drifting from whenever
-         // this check happened to run.
-         _checkTimer.setDurationMs(_secsUntilNextAlignedCheck() * 1000UL);
-      }
+	  if (!_hasDownloadPartition())
+	  {
+		 _reportMissingPartitionAndHalt();
+	  }
+
+	  if (_handler != nullptr)
+	  {
+		 _handler->onUpdateAvailable(_availableVersion.c_str());
+	  }
+
+	  _log((std::string("Updating firmware to ") + _firmwareName).c_str());
+	  _log("Downloading firmware");
+
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+	  _clearDisplayIfPresent();
+#endif
+
+	  if (_status != nullptr)
+	  {
+		 _status->setStatus(Status::UPDATING);
+	  }
+
+	  _performUpdate();
+
+	  // Only reached if the update failed (ESP.restart() is called directly on success).
+	  if (_status != nullptr)
+	  {
+		 _status->setStatus(Status::READY);
+	  }
    }
 };
 

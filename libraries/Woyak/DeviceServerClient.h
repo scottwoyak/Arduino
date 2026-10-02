@@ -9,15 +9,17 @@
 #include <WebSocketsClient.h>
 #include <WiFi.h>
 
+#include "ArduinoBoard.h"
 #include "Format.h"
+#include "OTAUpdater.h"
 #include "Timer.h"
 #include "WebSocketJsonClient.h"
 #include "WiFiSettings.h"
 
 ///
 /// <summary>
-/// Severity of a log message sent to the Device Hub. WARN and ERROR messages are
-/// prefixed with "WARN: "/"ERROR: " by DeviceHubClient itself, so callers don't need to
+/// Severity of a log message sent to the Device Server. WARN and ERROR messages are
+/// prefixed with "WARN: "/"ERROR: " by DeviceServerClient itself, so callers don't need to
 /// embed the prefix in their message text.
 /// </summary>
 ///
@@ -31,9 +33,9 @@ enum class LogSeverity
 
 ///
 /// <summary>
-/// Collects name/value pairs for a GetStatus reply (see DeviceHubClient::onStatus()).
+/// Collects name/value pairs for a GetStatus reply (see DeviceServerClient::onStatus()).
 /// The base set of fields (sketch/version/site/location/etc.) is populated by
-/// DeviceHubClient itself; a sketch-registered handler can add its own fields (e.g. a
+/// DeviceServerClient itself; a sketch-registered handler can add its own fields (e.g. a
 /// wind sensor adding the current wind speed) before the reply is sent.
 /// </summary>
 ///
@@ -143,13 +145,13 @@ public:
 
 ///
 /// <summary>
-/// WebSocket client for the DeviceHub (a separate server/process from TelemetryClient;
+/// WebSocket client for the DeviceServer (a separate server/process from TelemetryClient;
 /// see TelemetryClient.h), used to send log messages and respond to device-management
 /// commands. Unlike the old LogServer protocol (plain text frames), every message
-/// exchanged with the DeviceHub is a JSON object.
+/// exchanged with the DeviceServer is a JSON object.
 /// </summary>
 /// <remarks>
-/// Protocol (JSON text frames), reusing the DeviceHub's device role/token:
+/// Protocol (JSON text frames), reusing the DeviceServer's device role/token:
 ///   Handshake, sent on connect:  {"role":"device","token":"...","deviceId":"...","sketch":"...","version":"...","site":"...","location":"..."}
 ///   Server reply:                {"type":"ack"}
 ///   Log entry (device to hub):   {"type":"log","level":"Info"|"Warn"|"Error"|"Debug","tags":"wifi,reconnect","message":"...","final":true}
@@ -159,19 +161,19 @@ public:
 ///   {"type":"log","level":"Info","tags":"...","message":"Sensor... ","continued":true}
 ///   {"type":"log","message":"warming up... ","append":true,"continued":true}
 ///   {"type":"log","message":"OK","append":true}
-/// Connects to the local Raspberry DeviceHub first, falling back to the public
-/// (production) DeviceHub if the primary isn't reachable within FAILOVER_TIMEOUT_MS.
-/// The DeviceHub is a separate server/process from the TelemetryServer (see
+/// Connects to the local Raspberry DeviceServer first, falling back to the public
+/// (production) DeviceServer if the primary isn't reachable within FAILOVER_TIMEOUT_MS.
+/// The DeviceServer is a separate server/process from the TelemetryServer (see
 /// TelemetryClient.h) - a different .NET service with its own port - though both happen
 /// to use the same "/ws" WebSocket path convention.
 /// Connection is best-effort: a dropped/failed connection is logged to Serial but does
 /// not reset the device, since log delivery shouldn't be able to crash a sketch that
-/// otherwise works fine. All members are static since a sketch has a single DeviceHub
+/// otherwise works fine. All members are static since a sketch has a single DeviceServer
 /// log connection; use the global Logger instance (see Logger.h) rather than this class
 /// directly.
 /// </remarks>
 ///
-class DeviceHubClient
+class DeviceServerClient
 {
    static constexpr uint32_t HEARTBEAT_PING_MS = 30000;
    static constexpr uint32_t HEARTBEAT_TIMEOUT_MS = 10000;
@@ -180,7 +182,7 @@ class DeviceHubClient
    ///
    /// <summary>
    /// Instance-side connection, built on the shared WebSocketJsonClient plumbing
-   /// (connect/failover, reconnect/heartbeat, JSON framing). DeviceHubClient itself
+   /// (connect/failover, reconnect/heartbeat, JSON framing). DeviceServerClient itself
    /// stays a static-only API (see class remarks), so this single instance is held in
    /// a static member below.
    /// </summary>
@@ -190,29 +192,29 @@ class DeviceHubClient
    protected:
       void _onConnected() override
       {
-         DeviceHubClient::_debugPrint("Connected to " + getUrl() + ", sending handshake");
-         DeviceHubClient::_sendHandshake();
+         DeviceServerClient::_debugPrint("Connected to " + getUrl() + ", sending handshake");
+         DeviceServerClient::_sendHandshake();
       }
 
       void _onDisconnected(const std::string& reason, bool wasConnected) override
       {
-         DeviceHubClient::_debugPrint("Disconnected: " + (reason.empty() ? std::string("(no reason given)") : reason));
+         DeviceServerClient::_debugPrint("Disconnected: " + (reason.empty() ? std::string("(no reason given)") : reason));
 
-         if (!DeviceHubClient::_everConnected)
+         if (!DeviceServerClient::_everConnected)
          {
-            if (!DeviceHubClient::_initialFailureLogged)
+            if (!DeviceServerClient::_initialFailureLogged)
             {
-               DeviceHubClient::_initialFailureLogged = true;
-               DeviceHubClient::log(reason.empty() ? "FAILED" : std::string("FAILED: ") + reason);
+               DeviceServerClient::_initialFailureLogged = true;
+               DeviceServerClient::log(reason.empty() ? "FAILED" : std::string("FAILED: ") + reason);
             }
          }
          else
          {
             // WebSocketsClient reconnects on its own almost immediately in the common
             // case, so hold off logging until the grace period expires (see loop()).
-            DeviceHubClient::_pendingDisconnectReason = reason.empty() ? "unknown" : reason;
-            DeviceHubClient::_disconnectPending = true;
-            DeviceHubClient::_disconnectStartMs = millis();
+            DeviceServerClient::_pendingDisconnectReason = reason.empty() ? "unknown" : reason;
+            DeviceServerClient::_disconnectPending = true;
+            DeviceServerClient::_disconnectStartMs = millis();
          }
          (void)wasConnected;
       }
@@ -221,7 +223,7 @@ class DeviceHubClient
       {
          std::string received;
          serializeJson(doc, received);
-         DeviceHubClient::_debugPrint("Received: " + received);
+         DeviceServerClient::_debugPrint("Received: " + received);
 
          const char* type = doc["type"];
          if (type == nullptr)
@@ -232,43 +234,67 @@ class DeviceHubClient
          if (strcmp(type, "ack") == 0)
          {
             _ready = true;
-            DeviceHubClient::_flushPendingMessages();
-            if (!DeviceHubClient::_everConnected)
+            DeviceServerClient::_flushPendingMessages();
+            if (!DeviceServerClient::_everConnected)
             {
-               DeviceHubClient::_everConnected = true;
+               DeviceServerClient::_everConnected = true;
                // "Direct" vs "OK" lets you tell at a glance (via serial/display) whether the
                // connection went straight to the local/LAN server or had to fall back to the
                // public (e.g. Cloudflare) endpoint - see isDirectConnection(). Reported here,
                // once the handshake is actually acknowledged, rather than in _onConnected(),
                // since a plain WebSocket connect can succeed even if the handshake itself is
                // then rejected/ignored by the server (e.g. a bad token).
-               DeviceHubClient::log(isDirectConnection() ? "Direct" : "OK");
+               DeviceServerClient::log(isDirectConnection() ? "Direct" : "OK");
             }
-            else if (DeviceHubClient::_disconnectLogged)
+            else if (DeviceServerClient::_disconnectLogged)
             {
-               DeviceHubClient::log("Logging reconnected");
+               DeviceServerClient::log("Logging reconnected");
             }
-            DeviceHubClient::_disconnectPending = false;
-            DeviceHubClient::_disconnectLogged = false;
+            DeviceServerClient::_disconnectPending = false;
+            DeviceServerClient::_disconnectLogged = false;
          }
          else if (strcmp(type, "command") == 0)
          {
-            const char* command = doc["command"];
-            if (command != nullptr)
+            const char* command = doc["action"] | doc["command"].as<const char*>();
+            if (command == nullptr)
             {
-               DeviceHubClient::_handleCommand(command);
+               return;
             }
+
+            if (strcasecmp(command, "Update") == 0)
+            {
+               const char* url = doc["payload"]["url"];
+               if (url == nullptr)
+               {
+                  DeviceServerClient::log("Update command missing payload url");
+                  return;
+               }
+
+               DeviceServerClient::respond("Updating firmware");
+
+               // Behind a TLS proxy the server sees plain http and builds an http:// URL,
+               // so upgrade it when we reached the hub over TLS.
+               std::string downloadUrl = url;
+               if (DeviceServerClient::_connection.isTls() && downloadUrl.rfind("http://", 0) == 0)
+               {
+                  downloadUrl.insert(4, "s");
+               }
+               OTAUpdater::requestActiveUpdate(downloadUrl.c_str(), doc["payload"]["version"]);
+               return;
+            }
+
+            DeviceServerClient::_handleCommand(command);
          }
       }
 
       void _onError(const std::string& reason) override
       {
-         DeviceHubClient::_debugPrint("Error: " + reason);
-         DeviceHubClient::log("Error: " + reason);
+         DeviceServerClient::_debugPrint("Error: " + reason);
+         DeviceServerClient::log("Error: " + reason);
       }
    };
 
-   /// <summary>How long (in milliseconds) DeviceHubClient waits after a disconnect before logging "Logging disconnected: ...".</summary>
+   /// <summary>How long (in milliseconds) DeviceServerClient waits after a disconnect before logging "Logging disconnected: ...".</summary>
    static constexpr uint32_t DISCONNECT_GRACE_MS = 3000UL;
 
    static inline _Connection _connection;
@@ -297,7 +323,7 @@ class DeviceHubClient
    /// <summary>True if a logPartial() call is still awaiting its completing log() call.</summary>
    static inline bool _linePending = false;
 
-   /// <summary>True if detailed DeviceHub communication (connect/disconnect/send/receive) is echoed to Serial; see enableDebug().</summary>
+   /// <summary>True if detailed DeviceServer communication (connect/disconnect/send/receive) is echoed to Serial; see enableDebug().</summary>
    static inline bool _debugEnabled = false;
 
    /// <summary>Optional sketch-supplied handler for commands not recognized as built-in (see onCommand()).</summary>
@@ -310,9 +336,9 @@ class DeviceHubClient
 
    ///
    /// <summary>
-   /// Sends a log fragment to the DeviceHub if connected, or queues it to be sent once
+   /// Sends a log fragment to the DeviceServer if connected, or queues it to be sent once
    /// the connection completes. Used by logPartial()/log() to send message fragments
-   /// that the DeviceHub joins into a single entry: the first fragment has
+   /// that the DeviceServer joins into a single entry: the first fragment has
    /// "continued":true, later ones add "append":true, and the last one omits "continued".
    /// </summary>
    /// <param name="message">Message fragment text.</param>
@@ -360,7 +386,7 @@ class DeviceHubClient
 
    ///
    /// <summary>
-   /// Maps a LogSeverity to the capitalized level name sent to the DeviceHub (e.g.
+   /// Maps a LogSeverity to the capitalized level name sent to the DeviceServer (e.g.
    /// "Info", matching the server's Envelope.Level field).
    /// </summary>
    /// <param name="severity">Severity to map.</param>
@@ -384,7 +410,7 @@ class DeviceHubClient
 
    ///
    /// <summary>
-   /// Joins tags into the comma-separated string the DeviceHub expects on the wire (see
+   /// Joins tags into the comma-separated string the DeviceServer expects on the wire (see
    /// TagsParser.Join() server-side).
    /// </summary>
    /// <param name="tags">Tags to join.</param>
@@ -406,9 +432,9 @@ class DeviceHubClient
 
    ///
    /// <summary>
-   /// Prints a DeviceHub communication debug message to Serial, if enabled via
+   /// Prints a DeviceServer communication debug message to Serial, if enabled via
    /// enableDebug(). Used to trace connects/disconnects and sent/received messages
-   /// without cluttering normal Serial output (and without being sent to the DeviceHub
+   /// without cluttering normal Serial output (and without being sent to the DeviceServer
    /// itself, unlike log()).
    /// </summary>
    /// <param name="message">Debug message text.</param>
@@ -417,26 +443,27 @@ class DeviceHubClient
    {
       if (_debugEnabled)
       {
-         Serial.print("DeviceHub ----- ");
+         Serial.print("DeviceServer ----- ");
          Serial.println(message.c_str());
       }
    }
 
    ///
    /// <summary>
-   /// Sends the initial JSON handshake message identifying this device to the DeviceHub.
+   /// Sends the initial JSON handshake message identifying this device to the DeviceServer.
    /// </summary>
    ///
    static void _sendHandshake()
    {
       JsonDocument doc;
       doc["role"] = "device";
-      doc["token"] = DEVICE_HUB_TOKEN;
+      doc["token"] = DEVICE_SERVER_TOKEN;
       doc["deviceId"] = std::string(WiFi.macAddress().c_str());
       doc["sketch"] = _sketchName;
       doc["version"] = _version;
       doc["site"] = _site;
       doc["location"] = _location;
+      doc["board"] = ARDUINO_BOARD_VARIANT_ID;
 
       std::string sent;
       serializeJson(doc, sent);
@@ -476,12 +503,12 @@ class DeviceHubClient
 
    ///
    /// <summary>
-   /// Handles a command received from the DeviceHub. The built-in "GetStatus" command
+   /// Handles a command received from the DeviceServer. The built-in "GetStatus" command
    /// is answered directly, populated with the base status fields plus any added by the
    /// sketch-registered handler (see onStatus()); anything else is forwarded to the
    /// sketch-supplied handler registered via onCommand(), if any.
    /// </summary>
-   /// <param name="command">Command text received from the DeviceHub.</param>
+   /// <param name="command">Command text received from the DeviceServer.</param>
    ///
    static void _handleCommand(const char* command)
    {
@@ -524,9 +551,9 @@ class DeviceHubClient
 public:
    ///
    /// <summary>
-   /// Enables (or disables) detailed Serial tracing of DeviceHub communication:
+   /// Enables (or disables) detailed Serial tracing of DeviceServer communication:
    /// connects/disconnects, low-level errors, and every message sent/received/queued,
-   /// each printed as "DeviceHub ----- ...". Intended for diagnosing connection issues
+   /// each printed as "DeviceServer ----- ...". Intended for diagnosing connection issues
    /// (e.g. a handshake that's accepted locally but not acknowledged by the server);
    /// call before or after begin(), since it only affects Serial output. Off by default.
    /// </summary>
@@ -539,9 +566,9 @@ public:
 
    ///
    /// <summary>
-   /// Connects to the DeviceHub (local Raspberry server first, falling back to the
+   /// Connects to the DeviceServer (local Raspberry server first, falling back to the
    /// public production server if the primary isn't reachable within a few seconds) and
-   /// starts logging. The connection completes asynchronously; the "Device Hub... " label
+   /// starts logging. The connection completes asynchronously; the "Device Server... " label
    /// printed here is completed later once the connection succeeds or fails. Call once
    /// from setup(), as the last init step (after WiFi, Influx, sensors, etc.), so no
    /// other log lines can interleave with the pending completion.
@@ -558,12 +585,12 @@ public:
       _site = site != nullptr ? site : "";
       _location = location != nullptr ? location : "";
 
-      _connection.setToken(DEVICE_HUB_TOKEN);
-      _connection.setFallbackEndpoint(DEVICE_HUB_SERVER_PRODUCTION_HOST, DEVICE_HUB_SERVER_PRODUCTION_PORT, DEVICE_HUB_SERVER_PRODUCTION_USE_TLS);
+      _connection.setToken(DEVICE_SERVER_TOKEN);
+      _connection.setFallbackEndpoint(DEVICE_SERVER_SERVER_PRODUCTION_HOST, DEVICE_SERVER_SERVER_PRODUCTION_PORT, DEVICE_SERVER_SERVER_PRODUCTION_USE_TLS);
 
-      logPartial("Device Hub... ");
+      logPartial("Device Server... ");
 
-      _connection.begin(DEVICE_HUB_SERVER_RASPBERRY_HOST, DEVICE_HUB_SERVER_RASPBERRY_PORT, DEVICE_HUB_SERVER_RASPBERRY_USE_TLS, DEVICE_HUB_PATH,
+      _connection.begin(DEVICE_SERVER_SERVER_RASPBERRY_HOST, DEVICE_SERVER_SERVER_RASPBERRY_PORT, DEVICE_SERVER_SERVER_RASPBERRY_USE_TLS, DEVICE_SERVER_PATH,
          HEARTBEAT_PING_MS, HEARTBEAT_TIMEOUT_MS, HEARTBEAT_FAILURES);
    }
 
@@ -586,7 +613,7 @@ public:
 
    ///
    /// <summary>
-   /// Returns whether the WebSocket connection to the DeviceHub is currently up and has
+   /// Returns whether the WebSocket connection to the DeviceServer is currently up and has
    /// been acknowledged.
    /// </summary>
    /// <returns>True if connected and acknowledged; otherwise false.</returns>
@@ -612,7 +639,7 @@ public:
    ///
    /// <summary>
    /// Returns whether begin()'s initial connection attempt has resolved (its
-   /// "Device Hub... " label has been completed by _onEvent(), either with "Direct"/"OK"
+   /// "Device Server... " label has been completed by _onEvent(), either with "Direct"/"OK"
    /// on success or "FAILED" on failure). Used by ArduinoBase::waitForClient() to
    /// block until that label is complete, the same way a telemetry client's
    /// isStarted() is used.
@@ -626,7 +653,7 @@ public:
 
    ///
    /// <summary>
-   /// Registers a handler invoked for commands received from the DeviceHub that aren't
+   /// Registers a handler invoked for commands received from the DeviceServer that aren't
    /// one of the built-in commands ("GetStatus"). The handler should call respond() to
    /// send a reply, if any. Only one handler is supported; call once from setup(), after
    /// begin().
@@ -654,7 +681,7 @@ public:
 
    ///
    /// <summary>
-   /// Sends a reply to the DeviceHub in response to a received command. Does nothing if
+   /// Sends a reply to the DeviceServer in response to a received command. Does nothing if
    /// not currently connected, since a command can only have been received while connected.
    /// </summary>
    /// <param name="message">Reply text to send.</param>
@@ -700,7 +727,7 @@ public:
 
    ///
    /// <summary>
-   /// Sends a log message to the DeviceHub if connected, or queues it to be sent once
+   /// Sends a log message to the DeviceServer if connected, or queues it to be sent once
    /// the connection completes (e.g. messages logged during setup(), before the
    /// WebSocket has had a chance to finish connecting). Completes the current log entry
    /// (sent with "final":true), so call this last, after any logPartial() calls
@@ -793,10 +820,10 @@ public:
 
    ///
    /// <summary>
-   /// Sends a message fragment to the DeviceHub without completing the log entry,
+   /// Sends a message fragment to the DeviceServer without completing the log entry,
    /// allowing the result to be appended later via a subsequent logPartial()/log() call
    /// (e.g. printing "WiFi... " now and "OK" once the connection result is known). The
-   /// DeviceHub joins fragments into a single entry until one is sent with "final":true
+   /// DeviceServer joins fragments into a single entry until one is sent with "final":true
    /// (see log()). Echoes to Serial the same way, without a trailing newline. A partial
    /// fragment is never itself prefixed with "WARN: "/"ERROR: " -- pass the severity on
    /// the completing log() call instead, since that's what determines the prefix.

@@ -368,15 +368,15 @@ public:
 
       _resolveExtra(forcePrompt);
 
-      std::string influxInfo = std::string("bucket=\"") + (_site.bucket != nullptr ? _site.bucket : "") +
-         "\" site=\"" + (_site.site != nullptr ? _site.site : "") +
-         "\" location=\"" + (_site.location != nullptr ? _site.location : "") + "\"";
-      std::string influxMessage = std::string("Influx: ") + influxInfo;
+      std::string influxMessage = std::string("Influx:\n") +
+         "   bucket=\"" + (_site.bucket != nullptr ? _site.bucket : "") + "\"\n" +
+         "   site=\"" + (_site.site != nullptr ? _site.site : "") + "\"\n" +
+         "   location=\"" + (_site.location != nullptr ? _site.location : "") + "\"";
+      _logMessage(influxMessage);
       if (SerialX::lastShutdownReason().length() > 0)
       {
-         influxMessage += std::string(", last shutdown: ") + SerialX::lastShutdownReason().c_str();
+         _logMessage(std::string("Last shutdown: ") + SerialX::lastShutdownReason().c_str());
       }
-      _logMessage(influxMessage);
 
       // Connect WiFi and enable OTA (which performs an immediate check) before sensor
       // init, so a fatal sensor failure still leaves a chance to push an OTA fix on

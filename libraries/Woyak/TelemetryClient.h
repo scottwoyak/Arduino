@@ -292,7 +292,7 @@ public:
 
 ///
 /// <summary>
-/// Client for the DeviceHub TelemetryServer (WebSocket at /ws, optionally TLS).
+/// Client for the TelemetryServer (WebSocket at /ws, optionally TLS).
 /// </summary>
 /// <remarks>
 /// A client is either a publisher (DEVICE role) or a subscriber (CLIENT role).

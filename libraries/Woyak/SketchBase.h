@@ -111,7 +111,7 @@ protected:
    /// <summary>Callback registered via onStatus(), invoked after any base fields added by _populateStatus() below.</summary>
    void (*_sketchStatusHandler)(LoggerStatus& status) = nullptr;
 
-   /// <summary>The single SketchBase instance, used by _onGetStatus() to reach the instance whose fields it should add (DeviceHubClient::onStatus() only accepts a captureless function pointer).</summary>
+   /// <summary>The single SketchBase instance, used by _onGetStatus() to reach the instance whose fields it should add (DeviceServerClient::onStatus() only accepts a captureless function pointer).</summary>
    inline static SketchBase* _instance = nullptr;
 
    /// <summary>Callback registered via setOnWiFiLostCallback(), used by _onWiFiLost().</summary>
@@ -130,6 +130,18 @@ protected:
    void _logMessage(const char* message, LogSeverity severity = LogSeverity::INFO)
    {
       Logger.log(message, severity);
+   }
+
+   ///
+   /// <summary>
+   /// Sends a text log message tagged with "OTA".
+   /// </summary>
+   /// <param name="message">Message to log.</param>
+   /// <param name="severity">Severity of the message.</param>
+   ///
+   void _logOTA(const std::string& message, LogSeverity severity = LogSeverity::INFO)
+   {
+      Logger.log(message, severity, "OTA");
    }
 
    ///
@@ -268,7 +280,7 @@ protected:
 
       if (_config.enableOTA)
       {
-         _arduino->enableOTA(_config.version, _config.sketchName, _status, OTAUpdater::DEFAULT_CHECK_INTERVAL_SECS, this);
+         _arduino->enableOTA(_config.version, _config.sketchName, _status, this);
       }
    }
 
@@ -290,7 +302,7 @@ protected:
 
    ///
    /// <summary>
-   /// Starts the Logger connection and blocks (via waitForClient()) until the "Device Hub... "
+   /// Starts the Logger connection and blocks (via waitForClient()) until the "Device Server... "
    /// label printed by begin() is completed by Logger::_onEvent(), so nothing else may log a
    /// line until then. Logger itself remains async. Call right after _beginConnect() so
    /// failures during the rest of initialization (e.g. sensors) are captured by the
@@ -301,21 +313,21 @@ protected:
    ///
    void _beginLoggerConnection(const char* site = nullptr, const char* location = nullptr)
    {
-      // DeviceHubClient::begin() only echoes its "Device Hub... " label to Serial/the Device
+      // DeviceServerClient::begin() only echoes its "Device Server... " label to Serial/the Device
       // Hub itself (it has no reference to the display, being a static-only API); print the
       // label to the display here too, the same way ArduinoBase::initClient() does for other
       // clients, so the completion text printed below has something to follow.
-      _arduino->print("Device Hub... ", Color::LABEL);
+      _arduino->print("Device Server... ", Color::LABEL);
 
-      DeviceHubClient::begin(_config.sketchName, _config.version, site, location);
-      _arduino->waitForClient([]() { return DeviceHubClient::isResolved(); }, []() { DeviceHubClient::loop(); });
+      DeviceServerClient::begin(_config.sketchName, _config.version, site, location);
+      _arduino->waitForClient([]() { return DeviceServerClient::isResolved(); }, []() { DeviceServerClient::loop(); });
 
-      // DeviceHubClient::log() only echoes to Serial/the Device Hub itself (it has no
+      // DeviceServerClient::log() only echoes to Serial/the Device Server itself (it has no
       // reference to the display, being a static-only API); print the completion text to
       // the display here too, the same way TelemetryFeature::connect() does for Telemetry.
-      if (DeviceHubClient::isConnected())
+      if (DeviceServerClient::isConnected())
       {
-         _arduino->printlnR(DeviceHubClient::isDirectConnection() ? "Direct" : "OK", Color::VALUE);
+         _arduino->printlnR(DeviceServerClient::isDirectConnection() ? "Direct" : "OK", Color::VALUE);
       }
       else
       {
@@ -334,7 +346,7 @@ protected:
    {
       setCpuFrequencyMhz(_config.cpuFrequencyMhz);
 
-      DeviceHubClient::onStatus(_onGetStatus);
+      DeviceServerClient::onStatus(_onGetStatus);
 
       esp_task_wdt_config_t twdtConfig = {
          .timeout_ms = WATCHDOG_INTERVAL_S * 1000U,
@@ -369,7 +381,7 @@ protected:
 
    ///
    /// <summary>
-   /// Static trampoline registered with DeviceHubClient::onStatus(), forwarding to the single
+   /// Static trampoline registered with DeviceServerClient::onStatus(), forwarding to the single
    /// SketchBase instance's _populateStatus().
    /// </summary>
    /// <param name="status">The in-progress status to add fields to.</param>
@@ -400,7 +412,7 @@ protected:
 
       checkForOTA();
 
-      DeviceHubClient::loop();
+      DeviceServerClient::loop();
 
       _arduino->updateStatusIndicators();
    }
@@ -455,8 +467,6 @@ protected:
    ///
    void onUpdateAvailable(const char* newVersion) override
    {
-      std::string otaMessage = std::string("Updating from ") + _config.version + " to " + newVersion;
-      _logMessage(otaMessage);
    }
 
    ///
@@ -469,8 +479,6 @@ protected:
    ///
    void onUpdateFailed(const char* newVersion, const char* reason) override
    {
-      std::string otaMessage = std::string("Update to ") + newVersion + " failed: " + reason;
-      _logMessage(otaMessage, LogSeverity::ERROR);
    }
 
    ///
@@ -484,7 +492,17 @@ protected:
    void onUpdateSucceeded(const char* newVersion) override
    {
       std::string otaMessage = std::string("Updated to ") + newVersion;
-      _logMessage(otaMessage);
+      _logOTA(otaMessage);
+
+      // The device restarts right after this returns, so keep servicing the Device Server
+      // connection briefly to let the messages above actually get sent.
+      constexpr uint16_t RESTART_FLUSH_MS = 500;
+      TimerMillis flushTimer(RESTART_FLUSH_MS);
+      while (!flushTimer.expired())
+      {
+         DeviceServerClient::loop();
+         delay(10);
+      }
    }
 
    ///
@@ -498,9 +516,9 @@ protected:
    void onLogMessage(const char* message) override
    {
       std::string text(message);
-      bool isError = text.find("failed") != std::string::npos || text.find("no OTA download partition") != std::string::npos;
+      bool isError = text.find("failed") != std::string::npos || text.find("No OTA download partition") != std::string::npos;
 
-      _logMessage(message, isError ? LogSeverity::ERROR : LogSeverity::INFO);
+      _logOTA(text, isError ? LogSeverity::ERROR : LogSeverity::INFO);
    }
 
 public:

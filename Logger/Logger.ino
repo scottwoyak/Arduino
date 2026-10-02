@@ -1,13 +1,13 @@
 //
 // Logger
 //
-// Connects to WiFi and opens a WebSocket connection to the Device Hub (the same
-// server used for telemetry; see WiFiSettings.h and DeviceHubClient.h), trying the
+// Connects to WiFi and opens a WebSocket connection to the Device Server (the same
+// server used for telemetry; see WiFiSettings.h and DeviceServerClient.h), trying the
 // local Raspberry instance first and falling back to the public production instance,
 // via the shared Logger class (see Logger.h). Once connected, Logger sends the initial
 // JSON handshake identifying the device (deviceId/sketch/version) automatically, then
 // this sketch sends a heartbeat log message once per second. Also demonstrates
-// handling a sketch-specific command ("Ping") sent from the Device Hub, in addition to
+// handling a sketch-specific command ("Ping") sent from the Device Server, in addition to
 // Logger's built-in "GetStatus" command.
 //
 
@@ -38,7 +38,7 @@ void onCommand(const char* command)
 {
    if (strcasecmp(command, "Hi") == 0)
    {
-      DeviceHubClient::respond("Hello");
+      DeviceServerClient::respond("Hello");
    }
    else
    {
@@ -64,16 +64,16 @@ void setup()
    arduino.begin();
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD);
 
-   DeviceHubClient::begin(SKETCH_NAME, VERSION);
-   DeviceHubClient::onCommand(onCommand);
-   DeviceHubClient::onStatus(onStatus);
+   DeviceServerClient::begin(SKETCH_NAME, VERSION);
+   DeviceServerClient::onCommand(onCommand);
+   DeviceServerClient::onStatus(onStatus);
 }
 
 void loop()
 {
-   DeviceHubClient::loop();
+   DeviceServerClient::loop();
 
-   if (DeviceHubClient::isConnected() && heartbeatTimer.ready())
+   if (DeviceServerClient::isConnected() && heartbeatTimer.ready())
    {
       std::string message = "Heartbeat from " + std::string(SKETCH_NAME) + " at " + std::to_string(millis()) + "ms";
       Logger.log(message);

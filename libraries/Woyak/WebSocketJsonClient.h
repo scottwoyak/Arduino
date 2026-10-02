@@ -9,8 +9,8 @@
 
 ///
 /// <summary>
-/// Shared WebSocket/JSON plumbing for clients talking to the DeviceHub (TelemetryClient
-/// and DeviceHubClient): dual-endpoint connect/failover, reconnect/heartbeat setup, and
+/// Shared WebSocket/JSON plumbing for clients talking to the DeviceServer (TelemetryClient
+/// and DeviceServerClient): dual-endpoint connect/failover, reconnect/heartbeat setup, and
 /// JSON text-frame parsing/dispatch. Subclasses implement the handshake and message
 /// handling specific to their protocol by overriding _onConnected(), _onDisconnected(),
 /// and _onJsonMessage().
@@ -273,6 +273,17 @@ public:
    std::string getUrl() const
    {
       return std::string(_tls[_endpointIndex] ? "wss://" : "ws://") + _hosts[_endpointIndex] + ":" + std::to_string(_ports[_endpointIndex]) + _path;
+   }
+
+   ///
+   /// <summary>
+   /// Indicates whether the endpoint currently being used connects with TLS (wss://).
+   /// </summary>
+   /// <returns>True if the current endpoint uses TLS; otherwise false.</returns>
+   ///
+   bool isTls() const
+   {
+      return _tls[_endpointIndex];
    }
 
    ///

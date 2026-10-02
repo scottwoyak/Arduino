@@ -1,7 +1,7 @@
 //
 // Telemetry data publisher with display feedback.
 //
-// Publishes mock sensor test data to the DeviceHub TelemetryServer using
+// Publishes mock sensor test data to the TelemetryServer using
 // TelemetryClient. Displays the topic, server, and message rate on a TFT display,
 // along with a scatter plot of the published values.
 //

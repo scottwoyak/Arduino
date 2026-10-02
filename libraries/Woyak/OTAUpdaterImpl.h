@@ -10,7 +10,7 @@
 
 inline void OTAUpdater::_reportMissingPartitionAndHalt()
 {
-   constexpr auto MESSAGE = "OTAUpdater: no OTA download partition found";
+   constexpr auto MESSAGE = "No OTA download partition found";
 
    _log(MESSAGE);
 
@@ -251,7 +251,7 @@ inline void OTAUpdater::_performUpdate()
 
    if (ok)
    {
-      _log("OTAUpdater: update OK, restarting");
+      _log("Update succeeded, restarting");
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_arduino != nullptr)
       {
@@ -266,7 +266,7 @@ inline void OTAUpdater::_performUpdate()
    }
    else
    {
-      _log((std::string("OTAUpdater: update failed: ") + reason + ", url: " + _firmwareUrl).c_str());
+      _log((std::string("Update failed: ") + reason).c_str());
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_arduino != nullptr)
       {

@@ -1,7 +1,7 @@
 //
 // Telemetry Subscriber Display
 //
-// Subscribes to a topic on the DeviceHub TelemetryServer using TelemetryClient
+// Subscribes to a topic on the TelemetryServer using TelemetryClient
 // and displays the topic, server, and receive rate (how often values arrive from the
 // server) on the display, along with a scatter plot of the received values.
 //
