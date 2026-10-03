@@ -1,4 +1,4 @@
-//
+﻿//
 // Wind Viewer
 //
 // Subscribes to live wind speed telemetry over a WebSocket connection and renders it as
@@ -18,9 +18,6 @@
 //   instead of resetting the device; the display simply stops updating until it reconnects.
 // - Checks for a firmware update periodically.
 //
-
-// Uncomment to use local telemetry server instead of remote
-//#define TELEMETRY_LOCAL
 
 // Uncomment this to build for the Waveshare ESP32-S3-Touch-LCD-4.3B instead of the
 // Hosyond ESP32-S3 Viewer board. Also requires selecting the generic "ESP32S3 Dev
@@ -92,6 +89,8 @@ TelemetryConfig TELEMETRY_CONFIG = {
 ViewerSketch viewer(&arduino, SKETCH_CONFIG, TELEMETRY_CONFIG);
 
 Format speedFormat("##.# mph", Format::Alignment::RIGHT);
+Format AxisValueL("##.#", Format::Alignment::LEFT);
+Format AxisValueR("##.#", Format::Alignment::RIGHT);
 
 // ----------- Display layout
 // The layout is computed at runtime from the display's dimensions (see initLayout) so
@@ -234,8 +233,6 @@ public:
       needsInitialDisplay = true;
       _sinceLastReceive.reset();
       _sinceLastReceive.start();
-
-      Logger.log("Wind telemetry connected: " + String(viewer.getClient()->getUrl().c_str()));
    }
 
    void onDisconnected(const std::string& reason) override
@@ -366,9 +363,6 @@ void loop()
    displayHistogram();
    rollingChart->draw(&arduino.display);
 }
-
-Format AxisValueL("##.#", Format::Alignment::LEFT);
-Format AxisValueR("##.#", Format::Alignment::RIGHT);
 
 ///
 /// <summary>

@@ -9,13 +9,8 @@
 // display, same as Telemetry_Publisher_Display, but runs on a Playground board so the source
 // (mock test function) and publish rate can be selected/adjusted live: Encoder A cycles the
 // selected field and Encoder B adjusts its value.
+// Hardware:
 //
-// Uncomment TELEMETRY_LOCAL to use a local telemetry server instead of the remote.
-// Hardware: ESP32-S3 Dev Module wired as a Playground board (TFT display + rotary encoders).
-//
-
-// Uncomment to use local telemetry server instead of remote
-#define TELEMETRY_LOCAL
 
 #include <Arduino.h>
 #include <cmath>

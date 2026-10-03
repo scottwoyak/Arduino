@@ -1,4 +1,4 @@
-//
+﻿//
 // Wind Publisher
 //
 // Reads wind speed from an anemometer and publishes live readings over a WebSocket
@@ -22,9 +22,6 @@
 //
 // Note: wind speed is only streamed live over telemetry, not uploaded to InfluxDB.
 //
-
-// Uncomment to use local telemetry server instead of remote
-//#define TELEMETRY_LOCAL
 
 // This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS

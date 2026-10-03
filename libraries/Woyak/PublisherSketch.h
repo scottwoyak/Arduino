@@ -2,7 +2,7 @@
 
 // Requires the sketch to have already included, in order: ArduinoBoard.h (so the
 // board-specific Arduino type is defined), and WiFiSettings.h (so WIFI_SSID,
-// WIFI_PASSWORD, TELEMETRY_HOST, TELEMETRY_PORT, INFLUXDB_URL, and INFLUXDB_ORG are
+// WIFI_PASSWORD, INFLUXDB_URL, and INFLUXDB_ORG are
 // defined). This mirrors the include order already used by Gate/Wind/Wave_Publisher.
 
 #include "InfluxSketchBase.h"

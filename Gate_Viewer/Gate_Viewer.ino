@@ -1,4 +1,4 @@
-//
+﻿//
 // Gate Viewer
 //
 // Subscribes to live gate azimuth telemetry over a WebSocket connection and renders both
@@ -22,9 +22,6 @@
 //   device is not reset and the other gate's line keeps updating normally.
 // - Checks for a firmware update periodically.
 //
-
-// Uncomment to use local telemetry server instead of remote
-//#define TELEMETRY_LOCAL
 
 #include <cmath>
 #include <string>

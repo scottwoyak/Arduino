@@ -1,4 +1,4 @@
-//
+﻿//
 // Light Monitor
 //
 // Uses a VL53L1X time-of-flight sensor to detect motion (the presence of people) and a
@@ -20,9 +20,6 @@
 //
 // Requires the Adafruit_VL53L1X and Adafruit_VEML7700_Library libraries.
 //
-
-// Uncomment to use local telemetry server instead of remote
-//#define TELEMETRY_LOCAL
 
 // This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
 #define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS

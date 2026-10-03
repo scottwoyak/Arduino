@@ -202,7 +202,41 @@ private:
 
    ///
    /// <summary>
-   /// Checks whether the running firmware has a valid OTA download partition to update
+   /// Extracts the firmware version from a download URL of the form
+   /// ".../api/firmware/{name}/{version}/download".
+   /// </summary>
+   /// <param name="url">The firmware download URL.</param>
+   /// <returns>The version, or an empty string if the URL isn't of that form.</returns>
+   ///
+   static std::string _parseFirmwareVersion(const std::string& url)
+   {
+      constexpr const char* MARKER = "/api/firmware/";
+      size_t nameStart = url.find(MARKER);
+      if (nameStart == std::string::npos)
+      {
+         return "";
+      }
+
+      nameStart += strlen(MARKER);
+      size_t versionStart = url.find('/', nameStart);
+      if (versionStart == std::string::npos)
+      {
+         return "";
+      }
+
+      versionStart++;
+      size_t versionEnd = url.find('/', versionStart);
+      if (versionEnd == std::string::npos)
+      {
+         return "";
+      }
+
+      return url.substr(versionStart, versionEnd - versionStart);
+   }
+
+   ///
+   /// <summary>
+   /// Checks whether the running firmware has a valid OTA download partition
    /// into (i.e. the partition table defines more than one OTA app slot). Without one,
    /// httpUpdate.update() would fail anyway, so this is checked up front to fail fast
    /// with a clear message instead of a confusing download-time error.
@@ -364,7 +398,11 @@ public:
    {
 	  _firmwareUrl = url;
 	  _firmwareName = _parseFirmwareName(_firmwareUrl);
-	  _availableVersion = (version != nullptr && *version != '\0') ? version : "pushed firmware";
+	  _availableVersion = (version != nullptr && *version != '\0') ? version : _parseFirmwareVersion(_firmwareUrl);
+	  if (_availableVersion.empty())
+	  {
+		 _availableVersion = "pushed firmware";
+	  }
 	  _updateRequested = true;
    }
 
@@ -393,7 +431,7 @@ public:
 		 _handler->onUpdateAvailable(_availableVersion.c_str());
 	  }
 
-	  _log((std::string("Updating firmware to ") + _firmwareName).c_str());
+	  _log((std::string("Updating firmware to ") + _availableVersion).c_str());
 	  _log("Downloading firmware");
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED

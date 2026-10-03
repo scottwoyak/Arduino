@@ -1,4 +1,4 @@
-//
+﻿//
 // Wave Viewer
 //
 // Subscribes to live wave-height telemetry over a WebSocket connection and renders a
@@ -18,9 +18,6 @@
 //   instead of resetting the device; the display simply stops updating until it reconnects.
 // - Checks for a firmware update periodically.
 //
-
-// Undefine to use the remote server.
-//#define TELEMETRY_LOCAL
 
 // Uncomment this to build for the Feather ESP32-S3 TFT instead of the Hosyond ESP32-S3
 // Viewer board.

@@ -491,11 +491,10 @@ protected:
    ///
    void onUpdateSucceeded(const char* newVersion) override
    {
-      std::string otaMessage = std::string("Updated to ") + newVersion;
-      _logOTA(otaMessage);
-
       // The device restarts right after this returns, so keep servicing the Device Server
-      // connection briefly to let the messages above actually get sent.
+      // connection briefly to let any pending messages (e.g. "Updating firmware to ...") actually get sent.
+      Util::setHaltReason("Firmware Update");
+
       constexpr uint16_t RESTART_FLUSH_MS = 500;
       TimerMillis flushTimer(RESTART_FLUSH_MS);
       while (!flushTimer.expired())

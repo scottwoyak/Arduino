@@ -627,10 +627,6 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Wind_Display/Wind_Display.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
   <Project Path="Wind_Publisher/Wind_Publisher.vcxproj" Id="186959f5-b577-1198-e42b-9b18a512c68a">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

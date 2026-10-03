@@ -536,7 +536,7 @@ class DeviceServerClient
             _statusHandler(status);
          }
 
-         respond(status.toString().c_str());
+         log(status.toString());
       }
       else if (_commandHandler != nullptr)
       {

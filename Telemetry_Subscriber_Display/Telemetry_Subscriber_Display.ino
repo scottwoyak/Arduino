@@ -8,7 +8,8 @@
 // On disconnect the underlying WebSocket keeps retrying in the background, and the
 // display is redrawn once the subscription is acknowledged again.
 //
-// Change the TELEMETRY_SERVER_* define below to select the server.
+// Connects to the Raspberry Pi TelemetryServer, falling back to the production server if
+// it can't be reached.
 // Hardware: Feather ESP32 with WiFi and TFT display.
 //
 
@@ -20,6 +21,8 @@
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
 #endif
 
+#include "DeviceSketch.h"
+#include "LibraryVersion.h"
 #include "ScatterPlot.h"
 #include "SerialX.h"
 #include "Table.h"
@@ -27,28 +30,14 @@
 #include "Timer.h"
 #include "WiFiSettings.h"
 
-// Selects the server: TELEMETRY_SERVER_LOCAL, TELEMETRY_SERVER_RASPBERRY or TELEMETRY_SERVER_PRODUCTION.
-#define TELEMETRY_SERVER_RASPBERRY
-
-#if defined(TELEMETRY_SERVER_LOCAL)
-constexpr auto SERVER_HOST = TELEMETRY_SERVER_LOCAL_HOST;
-constexpr uint16_t SERVER_PORT = TELEMETRY_SERVER_LOCAL_PORT;
-constexpr bool SERVER_USE_TLS = TELEMETRY_SERVER_LOCAL_USE_TLS;
-#elif defined(TELEMETRY_SERVER_RASPBERRY)
-constexpr auto SERVER_HOST = TELEMETRY_SERVER_RASPBERRY_HOST;
-constexpr uint16_t SERVER_PORT = TELEMETRY_SERVER_RASPBERRY_PORT;
-constexpr bool SERVER_USE_TLS = TELEMETRY_SERVER_RASPBERRY_USE_TLS;
-#else
-constexpr auto SERVER_HOST = TELEMETRY_SERVER_PRODUCTION_HOST;
-constexpr uint16_t SERVER_PORT = TELEMETRY_SERVER_PRODUCTION_PORT;
-constexpr bool SERVER_USE_TLS = TELEMETRY_SERVER_PRODUCTION_USE_TLS;
-#endif
-
+const auto VERSION = MakeVersion("1.0");
+constexpr auto SKETCH_NAME = "Telemetry_Subscriber_Display";
 constexpr uint32_t BAUD_RATE = 115200;
 constexpr auto TOPIC = "Test";
 constexpr uint32_t RATE_UPDATE_INTERVAL_MS = 1000;
 
 Arduino arduino;
+DeviceSketch device(&arduino, { .sketchName = SKETCH_NAME, .version = VERSION, .enableOTA = true });
 TelemetryClient client;
 Timer rateDisplayTimer(RATE_UPDATE_INTERVAL_MS);
 Table table(&arduino, 0, 0);
@@ -77,26 +66,20 @@ void setup()
       }
    });
 
-   arduino.beginInit();
-   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, nullptr, false);
+   device.beginBanner();
+   device.beginConnect();
    client.setToken(TELEMETRY_CLIENT_TOKEN);
-#if defined(TELEMETRY_SERVER_LOCAL) || defined(TELEMETRY_SERVER_RASPBERRY)
-   if (TELEMETRY_SERVER_PRODUCTION_ENABLED)
-   {
-      client.setFallbackEndpoint(
-         TELEMETRY_SERVER_PRODUCTION_HOST,
-         TELEMETRY_SERVER_PRODUCTION_PORT,
-         TELEMETRY_SERVER_PRODUCTION_USE_TLS);
-   }
-#endif
-   client.beginSubscriber(SERVER_HOST, SERVER_PORT, { TOPIC }, SERVER_USE_TLS);
+   client.setFallbackEndpoint(TELEMETRY_SERVER_PRODUCTION_HOST, TELEMETRY_SERVER_PRODUCTION_PORT, TELEMETRY_SERVER_PRODUCTION_USE_TLS);
+   client.beginSubscriber(TELEMETRY_SERVER_RASPBERRY_HOST, TELEMETRY_SERVER_RASPBERRY_PORT, { TOPIC }, TELEMETRY_SERVER_RASPBERRY_USE_TLS);
 
-   arduino.printlnInitStatus("Server", SERVER_HOST);
    arduino.printlnInitStatus("Topic", TOPIC);
+
+   device.beginLogger();
 }
 
 void loop()
 {
+   device.loop();
    client.loop();
 
    if (!client.isReady())
@@ -122,7 +105,7 @@ void loop()
       table.addRow("Rate", "###/s");
 
       table.setValue(0, TOPIC, Color::VALUE);
-      table.setValue(1, SERVER_HOST, Color::VALUE2);
+      table.setValue(1, client.getUrl(), Color::VALUE2);
       table.setValueNone(2);
       table.draw();
 
