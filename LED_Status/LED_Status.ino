@@ -6,11 +6,11 @@
 /// Demonstrates the Status enum and RGBLEDStatus class for visual system state indication.
 /// 
 /// States tested:
-/// - NONE: Off
+/// - off(): Off
 /// - STARTED: Initializing
 /// - WIFI_CONNECTING: Connecting to WiFi
 /// - WEB_CONNECTING: Connecting to web service
-/// - READY: Operating normally
+/// - RUNNING: Operating normally
 /// 
 /// Hardware: ESP32 with common-cathode RGB LED on PWM pins.
 /// </remarks>
@@ -45,7 +45,7 @@ void setup()
 
 void loop()
 {
-   status.setStatus(Status::NONE);
+   status.off();
    delay(INTERVAL_OFF_MS);
 
    status.setStatus(Status::STARTED);
@@ -57,6 +57,6 @@ void loop()
    status.setStatus(Status::WEB_CONNECTING);
    delay(INTERVAL_WEB_CONNECTING_MS);
 
-   status.setStatus(Status::READY);
+   status.setStatus(Status::RUNNING);
    delay(INTERVAL_READY_MS);
 }

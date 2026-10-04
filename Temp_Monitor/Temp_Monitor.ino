@@ -64,9 +64,11 @@
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch is for boards without a display (e.g. Waveshare ESP32-S3-Zero); use Temp_Monitor_Display instead."
+#include "WrongBoard.h"
 #endif
 #ifndef ARDUINO_NEOPIXEL_SUPPORTED
 #error "This sketch requires a board with onboard NeoPixel LED support (e.g. Waveshare ESP32-S3-Zero)."
+#include "WrongBoard.h"
 #endif
 
 #include "LibraryVersion.h"

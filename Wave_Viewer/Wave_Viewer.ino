@@ -53,6 +53,7 @@ std::string telemetryTopic;
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Hosyond ESP32-S3 Viewer or Feather ESP32-S3)."
+#include "WrongBoard.h"
 #endif
 
 #include "BarChart.h"

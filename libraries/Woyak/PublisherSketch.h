@@ -320,7 +320,7 @@ public:
    ///
    /// <summary>
    /// Registers a callback invoked when telemetry finishes starting, run after the
-   /// default TelemetryEventHandler::onStarted() behavior (status set to READY, etc.).
+   /// default TelemetryEventHandler::onStarted() behavior (status set to RUNNING, etc.).
    /// Useful for sketch-specific startup completion behavior (e.g. turning off the
    /// status LED) without the risk of subclassing TelemetryEventHandler and missing
    /// base-class behavior PublisherSketch relies on. Ignored if a custom handler is

@@ -10,9 +10,11 @@
 
 #ifndef ARDUINO_PREFERENCES_SUPPORTED
 #error "FieldEditor requires a board with Preferences support."
+#include "WrongBoard.h"
 #endif
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "FieldEditor requires a board with a display."
+#include "WrongBoard.h"
 #endif
 
 ///

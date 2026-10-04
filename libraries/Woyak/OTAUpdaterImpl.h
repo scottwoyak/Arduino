@@ -262,6 +262,18 @@ inline void OTAUpdater::_performUpdate()
       {
          _handler->onUpdateSucceeded(_availableVersion.c_str());
       }
+      if (_status != nullptr)
+      {
+         _status->setStatus(Status::RESTARTING);
+      }
+      if (Util::onResetting != nullptr)
+      {
+         Util::onResetting();
+      }
+      else if (_status != nullptr)
+      {
+         delay(100);
+      }
       ESP.restart();
    }
    else

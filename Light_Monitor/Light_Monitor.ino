@@ -129,7 +129,6 @@ SketchConfig PUBLISHER_CONFIG = {
    .preferencesNamespace = "LightMon",
    .cpuFrequencyMhz = 80,
    .enableOTA = true,
-   .enableRebooter = true,
 };
 
 PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);

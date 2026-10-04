@@ -64,13 +64,16 @@
 
 #ifndef ARDUINO_BUTTON_A_SUPPORTED
 #error "This sketch requires a board with a Button A (e.g. Feather ESP32-S3 or Feather M0)."
+#include "WrongBoard.h"
 #endif
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#include "WrongBoard.h"
 #endif
 #if DEPTH_SENSOR_TYPE == DEPTH_SENSOR_CAPACITOR
 #ifndef ARDUINO_PLAYGROUND_SUPPORTED
 #error "The capacitor sensor's buffer size and filter controls require a Playground board (e.g. ESP32S3 Dev Module) with Encoder A and Encoder B."
+#include "WrongBoard.h"
 #endif
 #endif
 

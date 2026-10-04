@@ -4,6 +4,7 @@
 
 #include "ArduinoBase.h"
 #include "Button.h"
+#include "DeviceStateStatus.h"
 #include "LED.h"
 #include "MultiStatus.h"
 #include "Status.h"
@@ -90,6 +91,7 @@ private:
    uint8_t _ledPin;
    RGBLEDStatus _rgbStatus;
    NeoPixelStatus _neoPixelStatus;
+   DeviceStateStatus _deviceStateStatus;
 
    ///
    /// <summary>
@@ -199,6 +201,7 @@ public:
    {
       _status.addStatus(&_rgbStatus);
       _status.addStatus(&_neoPixelStatus);
+      _status.addStatus(&_deviceStateStatus);
    }
 
    ///
@@ -248,6 +251,16 @@ public:
    ///
    void setStatus(Status status) override
    {
-      _status.setStatus(status);
-   }
+         _status.setStatus(status);
+      }
+
+      ///
+      /// <summary>
+      /// Turns the combined status indicator (external RGB LED and onboard NeoPixel) off.
+      /// </summary>
+      ///
+      void off() override
+      {
+         _status.off();
+      }
 };

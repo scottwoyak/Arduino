@@ -3,6 +3,7 @@
 #include "LGX_HosyondESP32S3.h"
 #include "ArduinoWithDisplay.h"
 #include "Button.h"
+#include "DeviceStateStatus.h"
 #include "MultiStatus.h"
 #include <Preferences.h>
 
@@ -47,6 +48,8 @@ public:
    ///
    MultiStatus status;
 
+   DeviceStateStatus _deviceStateStatus;
+
    ///
    /// <summary>
    /// Initializes a new instance of the ViewerBoardS3 class.
@@ -54,6 +57,7 @@ public:
    ///
    ViewerBoardS3() : ArduinoWithDisplay(), buttonA(0)
    {
+      status.addStatus(&_deviceStateStatus);
    }
 
    ///
@@ -93,6 +97,16 @@ public:
        ///
        void setStatus(Status status) override
        {
-          this->status.setStatus(status);
-       }
+             this->status.setStatus(status);
+          }
+
+          ///
+          /// <summary>
+          /// Turns the status indicator off.
+          /// </summary>
+          ///
+          void off() override
+          {
+             this->status.off();
+          }
    };

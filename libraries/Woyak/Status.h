@@ -10,13 +10,13 @@
 ///
 enum Status
 {
-	NONE = 0,
 	STARTED = 1,
 	WIFI_CONNECTING = 2,
 	WEB_CONNECTING = 3,
-	READY = 4,
+	RUNNING = 4,
 	FAILED = 5,
 	UPDATING = 6,
+	RESTARTING = 7,
 };
 
 ///
@@ -35,11 +35,19 @@ public:
 
 	///
 	/// <summary>
-	/// Initializes the status indicator's underlying hardware. Leaves the status off
-	/// (as if Status::NONE) until a caller explicitly calls setStatus().
+	/// Initializes the status indicator's underlying hardware. Leaves the indicator off
+	/// until a caller explicitly calls setStatus().
 	/// </summary>
 	///
 	virtual void begin() = 0;
+
+	///
+	/// <summary>
+	/// Turns the indicator off (e.g. LEDs dark once startup is complete). This is not a
+	/// device state; the last reported status is unaffected for non-visual indicators.
+	/// </summary>
+	///
+	virtual void off() = 0;
 
 	///
 	/// <summary>
@@ -59,7 +67,7 @@ public:
 class SerialStatus : public IStatus
 {
 private:
-	Status _lastStatus = Status::NONE;
+	Status _lastStatus = Status::STARTED;
 	bool _hasLastStatus = false;
 
 	///
@@ -73,13 +81,13 @@ private:
 	{
 		switch (status)
 		{
-		case Status::NONE:            return "NONE";
 		case Status::STARTED:         return "STARTED";
 		case Status::WIFI_CONNECTING: return "WIFI_CONNECTING";
 		case Status::WEB_CONNECTING:  return "WEB_CONNECTING";
-		case Status::READY:           return "READY";
+		case Status::RUNNING:           return "RUNNING";
 		case Status::FAILED:          return "FAILED";
 		case Status::UPDATING:        return "UPDATING";
+		case Status::RESTARTING:      return "RESTARTING";
 		default:                      return "UNKNOWN";
 		}
 	}
@@ -92,6 +100,15 @@ public:
 	/// </summary>
 	///
 	void begin() override
+	{
+	}
+
+	///
+	/// <summary>
+	/// Does nothing; Serial has no "off" state.
+	/// </summary>
+	///
+	void off() override
 	{
 	}
 
@@ -157,20 +174,26 @@ public:
 
 	///
 	/// <summary>
+	/// Turns all three status LEDs off.
+	/// </summary>
+	///
+	void off() override
+	{
+		_powerLed.turnOff();
+		_wifiLed.turnOff();
+		_webLed.turnOff();
+	}
+
+	///
+	/// <summary>
 	/// Updates the discrete LEDs to represent the specified status.
 	/// </summary>
 	/// <param name="status">The status value to display.</param>
-   /// 
+	/// 
 	void setStatus(Status status) override
 	{
 		switch (status)
 		{
-		case Status::NONE:
-			_powerLed.turnOff();
-			_wifiLed.turnOff();
-			_webLed.turnOff();
-			break;
-
 		case Status::STARTED:
 			_powerLed.turnOn();
 			_wifiLed.turnOff();
@@ -189,7 +212,7 @@ public:
 			_webLed.blink(BLINK_INTERVAL_MS);
 			break;
 
-		case Status::READY:
+		case Status::RUNNING:
 			_powerLed.turnOn();
 			_wifiLed.turnOn();
 			_webLed.turnOn();
@@ -205,6 +228,12 @@ public:
 			_powerLed.turnOn();
 			_wifiLed.turnOn();
 			_webLed.blink(BLINK_INTERVAL_MS);
+			break;
+
+		case Status::RESTARTING:
+			_powerLed.blink(BLINK_INTERVAL_MS);
+			_wifiLed.turnOff();
+			_webLed.turnOff();
 			break;
 		}
 	}
@@ -222,7 +251,7 @@ private:
    /// <summary>Blink interval used to flash the LED rapidly on Status::FAILED.</summary>
    static constexpr uint16_t FAST_BLINK_INTERVAL_MS = 100;
 
-   /// <summary>Brightness level used for the solid-on Status::READY state.</summary>
+   /// <summary>Brightness level used for the solid-on Status::RUNNING state.</summary>
    static constexpr float READY_BRIGHTNESS = 0.01f;
 
    LED _led;
@@ -250,6 +279,16 @@ public:
 
    ///
    /// <summary>
+   /// Turns the status LED off.
+   /// </summary>
+   ///
+   void off() override
+   {
+      _led.turnOff();
+   }
+
+   ///
+   /// <summary>
    /// Updates the LED to represent the specified status: blinking while initializing
    /// or connecting, solid once ready, and rapidly flashing on failure.
    /// </summary>
@@ -259,18 +298,15 @@ public:
    {
       switch (status)
       {
-      case Status::NONE:
-         _led.turnOff();
-         break;
-
       case Status::STARTED:
       case Status::WIFI_CONNECTING:
       case Status::WEB_CONNECTING:
       case Status::UPDATING:
+      case Status::RESTARTING:
          _led.blink(BLINK_INTERVAL_MS);
          break;
 
-      case Status::READY:
+      case Status::RUNNING:
          _led.turnOn(READY_BRIGHTNESS);
          break;
 
@@ -317,6 +353,19 @@ public:
 
 	///
 	/// <summary>
+	/// Turns the RGB LED off, deferred to the next rising edge of any current blink cycle.
+	/// </summary>
+	///
+	void off() override
+	{
+		_led.runAtNextRisingEdge([this]()
+		{
+			_led.turnOff();
+		});
+	}
+
+	///
+	/// <summary>
 	/// Updates the RGB LED to represent the specified status.
 	/// </summary>
 	/// <param name="status">The status value to display.</param>
@@ -340,10 +389,6 @@ public:
 		{
 			switch (status)
 			{
-			case Status::NONE:
-				_led.turnOff();
-				break;
-
 			case Status::STARTED:
 				_led.setColor(1.0f, 1.0f, 1.0f);
 				_led.turnOn();
@@ -359,13 +404,18 @@ public:
 				_led.blink(BLINK_INTERVAL_MS);
 				break;
 
-			case Status::READY:
+			case Status::RUNNING:
 				_led.setColor(0.0f, 1.0f, 0.0f);
 				_led.turnOn();
 				break;
 
 			case Status::UPDATING:
 				_led.setColor(1.0f, 1.0f, 0.0f);
+				_led.blink(BLINK_INTERVAL_MS);
+				break;
+
+			case Status::RESTARTING:
+				_led.setColor(1.0f, 0.0f, 1.0f);
 				_led.blink(BLINK_INTERVAL_MS);
 				break;
 
@@ -461,6 +511,19 @@ public:
 
 	///
 	/// <summary>
+	/// Turns the NeoPixel off, deferred to the next rising edge of any current blink cycle.
+	/// </summary>
+	///
+	void off() override
+	{
+		_led->runAtNextRisingEdge([this]()
+		{
+			_led->turnOff();
+		});
+	}
+
+	///
+	/// <summary>
 	/// Updates the NeoPixel to represent the specified status.
 	/// </summary>
 	/// <param name="status">The status value to display.</param>
@@ -484,10 +547,6 @@ public:
 		{
 			switch (status)
 			{
-			case Status::NONE:
-				_led->turnOff();
-				break;
-
 			case Status::STARTED:
 				_led->setColor(1.0f, 1.0f, 1.0f);
 				_led->turnOn();
@@ -503,13 +562,18 @@ public:
 				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
-			case Status::READY:
+			case Status::RUNNING:
 				_led->setColor(0.0f, 1.0f, 0.0f);
 				_led->turnOn();
 				break;
 
 			case Status::UPDATING:
 				_led->setColor(1.0f, 1.0f, 0.0f);
+				_led->blink(BLINK_INTERVAL_MS);
+				break;
+
+			case Status::RESTARTING:
+				_led->setColor(1.0f, 0.0f, 1.0f);
 				_led->blink(BLINK_INTERVAL_MS);
 				break;
 

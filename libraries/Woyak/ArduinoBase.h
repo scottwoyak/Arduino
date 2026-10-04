@@ -403,7 +403,7 @@ public:
    /// <summary>
    /// Ensures WiFi is connected, reconnecting if needed, using the WiFiX instance created by
    /// initWifi(). Intended for periodic use from loop() to detect and recover from dropped
-   /// connections. Optionally drives an IStatus indicator through the WIFI_CONNECTING/READY
+   /// connections. Optionally drives an IStatus indicator through the WIFI_CONNECTING/RUNNING
    /// phases while reconnecting.
    /// </summary>
    /// <param name="status">Optional status indicator updated while reconnecting.</param>
@@ -413,7 +413,7 @@ public:
    {
       ASSERT(_wifiX != nullptr);
 
-      // Only drive the status indicator through WIFI_CONNECTING/READY when a (re)connect is
+      // Only drive the status indicator through WIFI_CONNECTING/RUNNING when a (re)connect is
       // actually needed. Calling setStatus() unconditionally every loop() iteration - even
       // when WiFi is already connected - hammers the NeoPixel driver (show() disables
       // interrupts while bit-banging) back-to-back with no throttling, which can starve other
@@ -432,7 +432,7 @@ public:
 
       if (status != nullptr && isConnected)
       {
-         status->setStatus(Status::READY);
+         status->setStatus(Status::RUNNING);
       }
 
       return isConnected;

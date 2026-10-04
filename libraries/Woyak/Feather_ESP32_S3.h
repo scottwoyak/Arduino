@@ -4,13 +4,14 @@
 #include "ArduinoWithDisplay.h"
 #include "Button.h"
 #include "MultiStatus.h"
+#include "DeviceStateStatus.h"
 #include <string>
 #include <Preferences.h>
 #include "LED.h"
 #include "Status.h"
 #include "LGFXUtil.h"
 
-class Feather_ESP32_S3 : public ArduinoWithDisplay
+class Feather_ESP32_S3 : public ArduinoWithDisplay, public IStatus
 {
 public:
    Button buttonA;
@@ -20,6 +21,7 @@ public:
 
 private:
    NeoPixelStatus _neoPixelStatus;
+   DeviceStateStatus _deviceStateStatus;
 
 public:
    ///
@@ -32,6 +34,7 @@ public:
    Feather_ESP32_S3() : ArduinoWithDisplay(), buttonA(0), _neoPixelStatus(&neoPixel),
       status(&_neoPixelStatus)
    {
+      status.addStatus(&_deviceStateStatus);
    }
 
 
@@ -43,6 +46,16 @@ public:
       neoPixel.begin();
       led.begin();
       status.begin();
+   }
+
+   void setStatus(Status status) override
+   {
+      this->status.setStatus(status);
+   }
+
+   void off() override
+   {
+      this->status.off();
    }
 
    void displayOn()

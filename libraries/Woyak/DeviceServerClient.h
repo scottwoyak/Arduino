@@ -252,6 +252,14 @@ class DeviceServerClient
                // since a plain WebSocket connect can succeed even if the handshake itself is
                // then rejected/ignored by the server (e.g. a bad token).
                DeviceServerClient::log(isDirectConnection() ? getHost() : "OK");
+
+                // A freshly booted device has no state (or only a connecting state), which would
+                // leave the server showing the previous one (e.g. RESTARTING). Being acknowledged
+                // by the hub means the device is up.
+                if (DeviceServerClient::_state.empty() || DeviceServerClient::_state == "STARTED" || DeviceServerClient::_state == "WIFI_CONNECTING" || DeviceServerClient::_state == "WEB_CONNECTING")
+                {
+                   DeviceServerClient::setState("RUNNING");
+                }
             }
             else if (DeviceServerClient::_disconnectLogged)
             {
@@ -287,7 +295,7 @@ class DeviceServerClient
                {
                   downloadUrl.insert(4, "s");
                }
-               OTAUpdater::requestActiveUpdate(downloadUrl.c_str(), doc["payload"]["version"]);
+               OTAUpdater::requestActiveUpdate(downloadUrl);
                return;
             }
 
@@ -354,6 +362,12 @@ class DeviceServerClient
    static inline void (*_commandHandler)(const char* command) = nullptr;
    /// <summary>Optional sketch-supplied handler that adds fields to a GetStatus reply (see onStatus()).</summary>
    static inline void (*_statusHandler)(LoggerStatus& status) = nullptr;
+
+   /// <summary>Most recent device state reported via setState(); empty until the first call.</summary>
+   static inline std::string _state;
+
+   /// <summary>Milliseconds reportRestarting() waits for the state message to be transmitted before the restart.</summary>
+   static constexpr uint32_t RESTART_FLUSH_MS = 100;
 
    /// <summary>Current default tags, sent with every log() / logPartial() call that doesn't specify its own tags (see setTag()/setTags()). Starts as {"Initializing"}, covering the sketch's boot/init sequence until logInitializationComplete() clears it.</summary>
    static inline std::vector<std::string> _tags = { "Initializing" };
@@ -491,6 +505,11 @@ class DeviceServerClient
       doc["ssid"] = std::string(WiFi.SSID().c_str());
       doc["ip"] = std::string(WiFi.localIP().toString().c_str());
 
+      if (!_state.empty())
+      {
+         doc["state"] = _state;
+      }
+
       std::string sent;
       serializeJson(doc, sent);
       _debugPrint("Sent: " + sent);
@@ -545,6 +564,7 @@ class DeviceServerClient
       if (strcasecmp(command, "Restart") == 0)
       {
          respond("Restarting");
+         reportRestarting();
          ESP.restart();
       }
       else if (strcasecmp(command, "GetStatus") == 0)
@@ -630,6 +650,9 @@ public:
       _connection.setFallbackEndpoint(DEVICE_SERVER_SERVER_PRODUCTION_HOST, DEVICE_SERVER_SERVER_PRODUCTION_PORT, DEVICE_SERVER_SERVER_PRODUCTION_USE_TLS);
 
       DeviceHealth::begin();
+
+      Util::onResetting = []() { reportRestarting(); };
+      OTAUpdater::onState = [](const char* state) { setState(state); };
 
       logPartial("Hub... ");
 
@@ -749,6 +772,46 @@ public:
          JsonDocument doc;
          doc["type"] = "response";
          doc["message"] = message;
+
+         _connection.sendJson(doc);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Reports the RESTARTING state and pauses briefly so the message is transmitted
+   /// before the device restarts. Call immediately before restarting.
+   /// </summary>
+   ///
+   static void reportRestarting()
+   {
+      setState("RESTARTING");
+      delay(RESTART_FLUSH_MS);
+   }
+
+   ///
+   /// <summary>
+   /// Records the device's current state (e.g. "RUNNING") and reports it to the DeviceServer
+   /// as {"type":"state","state":...}. The latest state is also included in the handshake,
+   /// so a state set before the connection comes up is delivered once it does. Does nothing
+   /// if the state hasn't changed.
+   /// </summary>
+   /// <param name="state">State label to report.</param>
+   ///
+   static void setState(const char* state)
+   {
+      if (_state == state)
+      {
+         return;
+      }
+
+      _state = state;
+
+      if (_connection.isConnected())
+      {
+         JsonDocument doc;
+         doc["type"] = "state";
+         doc["state"] = _state;
 
          _connection.sendJson(doc);
       }

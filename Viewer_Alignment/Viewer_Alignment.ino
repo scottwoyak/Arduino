@@ -20,6 +20,7 @@
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Viewer)."
+#include "WrongBoard.h"
 #endif
 
 constexpr uint8_t CROSSHAIR_THICKNESS = 2;

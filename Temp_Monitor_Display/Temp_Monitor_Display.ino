@@ -69,9 +69,11 @@
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#include "WrongBoard.h"
 #endif
 #ifndef ARDUINO_NEOPIXEL_SUPPORTED
 #error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
+#include "WrongBoard.h"
 #endif
 
 #include "SerialX.h"

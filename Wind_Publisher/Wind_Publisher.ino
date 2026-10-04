@@ -84,7 +84,6 @@ SketchConfig PUBLISHER_CONFIG = {
    .preferencesNamespace = SKETCH_NAME,
    .cpuFrequencyMhz = 80,
    .enableOTA = true,
-   .enableRebooter = true,
 };
 
 PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
@@ -120,7 +119,7 @@ void setup()
    // Turn off the status LED once telemetry finishes starting, since the sketch is
    // then fully up and running and no longer needs the LED for startup/connectivity
    // feedback.
-   sketch.setOnStartedCallback([]() { sketch.arduino.setStatus(Status::NONE); });
+   sketch.arduino.off();
 
    sketch.begin();
    sketch.onStatus(onStatus);

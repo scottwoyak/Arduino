@@ -3,6 +3,7 @@
 #include "../LovyanGFX/src/lgfx_user/LGFX_Waveshare_ESP32S3_Touch_LCD_43.h"
 #include "ArduinoWithDisplay.h"
 #include "Button.h"
+#include "DeviceStateStatus.h"
 #include "MultiStatus.h"
 #include "Status.h"
 #include <Preferences.h>
@@ -14,7 +15,7 @@
 /// for backlight control).
 /// </summary>
 ///
-class Waveshare_ESP32S3_Touch_LCD_43 : public ArduinoWithDisplay
+class Waveshare_ESP32S3_Touch_LCD_43 : public ArduinoWithDisplay, public IStatus
 {
 public:
    // Onboard BOOT button, wired to GPIO0.
@@ -31,8 +32,11 @@ public:
    ///
    MultiStatus status;
 
+   DeviceStateStatus _deviceStateStatus;
+
    Waveshare_ESP32S3_Touch_LCD_43() : ArduinoWithDisplay(), buttonA(DEFAULT_BUTTON_A_PIN)
    {
+      status.addStatus(&_deviceStateStatus);
    }
 
    void begin() override
@@ -47,6 +51,16 @@ public:
 
       buttonA.begin();
       status.begin();
+   }
+
+   void setStatus(Status status) override
+   {
+      this->status.setStatus(status);
+   }
+
+   void off() override
+   {
+      this->status.off();
    }
 
    ///

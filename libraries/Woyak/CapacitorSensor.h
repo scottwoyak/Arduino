@@ -4,6 +4,7 @@
 
 #if !defined(ARDUINO_ARCH_ESP32)
 #error "CapacitorSensor is only supported on ESP32 targets."
+#include "WrongBoard.h"
 #endif
 
 #include <esp_timer.h>

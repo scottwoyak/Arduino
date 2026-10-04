@@ -97,7 +97,6 @@ SketchConfig SKETCH_CONFIG = {
    .preferencesNamespace = PREFERENCES_NAMESPACE,
    .cpuFrequencyMhz = 80,
    .enableOTA = true,
-   .enableRebooter = true,
 };
 
 MonitorSketch sketch(SKETCH_CONFIG, INFLUX_CONFIG);

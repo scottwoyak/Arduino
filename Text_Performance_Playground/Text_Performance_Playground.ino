@@ -21,9 +21,11 @@
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#include "WrongBoard.h"
 #endif
 #ifndef ARDUINO_PLAYGROUND_SUPPORTED
 #error "This sketch requires a board with rotary encoders (e.g. an ESP32-S3 Playground setup)."
+#include "WrongBoard.h"
 #endif
 
 #include "Field.h"

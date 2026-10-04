@@ -112,7 +112,7 @@ public:
 		{
 			if (_status)
 			{
-				_status->setStatus(Status::READY);
+				_status->setStatus(Status::RUNNING);
 			}
 			return true;
 		}

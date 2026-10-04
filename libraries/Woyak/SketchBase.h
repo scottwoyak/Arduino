@@ -577,7 +577,7 @@ public:
    ///
    /// <summary>
    /// Gets the status indicator (LED) driven by this sketch. Pass it to a telemetry client
-   /// created directly by a sketch so the client can set the indicator to READY once connected.
+   /// created directly by a sketch so the client can set the indicator to RUNNING once connected.
    /// </summary>
    /// <returns>The status indicator.</returns>
    ///

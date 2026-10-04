@@ -371,6 +371,14 @@ public:
 
    ///
    /// <summary>
+   /// Optional callback invoked with a state label ("UPDATING", "RUNNING") as an update starts or fails,
+   /// so the state can be reported (e.g. to the DeviceServer) even without a status indicator.
+   /// </summary>
+   ///
+   static inline void (*onState)(const char*) = nullptr;
+
+   ///
+   /// <summary>
    /// Requests an update on the active OTAUpdater (the most recently constructed one).
    /// Does nothing if no OTAUpdater exists. Safe to call from a message callback; the
    /// download itself is deferred to loop().
@@ -384,6 +392,17 @@ public:
 	  {
 		 _active->requestUpdate(url, version);
 	  }
+   }
+
+   ///
+   /// <summary>
+   /// Requests an update on the active OTAUpdater (the most recently constructed one).
+   /// </summary>
+   /// <param name="url">URL of the firmware binary to download.</param>
+   ///
+   static void requestActiveUpdate(const std::string& url)
+   {
+	  requestActiveUpdate(url.c_str());
    }
 
    ///
@@ -404,6 +423,14 @@ public:
 		 _availableVersion = "pushed firmware";
 	  }
 	  _updateRequested = true;
+	  if (_status != nullptr)
+	  {
+		 _status->setStatus(Status::UPDATING);
+	  }
+	  if (onState != nullptr)
+	  {
+		 onState("UPDATING");
+	  }
    }
 
    ///
@@ -448,7 +475,11 @@ public:
 	  // Only reached if the update failed (ESP.restart() is called directly on success).
 	  if (_status != nullptr)
 	  {
-		 _status->setStatus(Status::READY);
+		 _status->setStatus(Status::RUNNING);
+	  }
+	  if (onState != nullptr)
+	  {
+		 onState("RUNNING");
 	  }
    }
 };

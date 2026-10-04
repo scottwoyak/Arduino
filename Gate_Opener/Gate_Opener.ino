@@ -62,7 +62,6 @@ SketchConfig MONITOR_CONFIG = {
    .version = VERSION,
    .cpuFrequencyMhz = 80,
    .enableOTA = true,
-   .enableRebooter = true,
 };
 
 MonitorSketch sketch(MONITOR_CONFIG, INFLUX_CONFIG);
@@ -210,7 +209,7 @@ void setup()
    std::string webServerMessage = std::string("Web Server: http://") + WiFi.localIP().toString().c_str();
    sketch.logMessage(webServerMessage.c_str());
 
-   sketch.arduino.setStatus(Status::READY);
+   sketch.arduino.setStatus(Status::RUNNING);
    updateGateStatus();
 
    Logger.logInitializationComplete();

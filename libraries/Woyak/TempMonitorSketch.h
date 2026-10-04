@@ -109,7 +109,7 @@ public:
    ///
    TempMonitorSketch(const char* sketchName, const char* version, const char* preferencesNamespace)
       : MonitorSketch(
-           SketchConfig{ .sketchName = sketchName, .version = version, .preferencesNamespace = preferencesNamespace, .cpuFrequencyMhz = 80, .enableOTA = true, .enableRebooter = true },
+           SketchConfig{ .sketchName = sketchName, .version = version, .preferencesNamespace = preferencesNamespace, .cpuFrequencyMhz = 80, .enableOTA = true },
            InfluxConfig{ .intervalS = INFLUX_INTERVAL_S, .promptForContext = true, .includeCpuTemp = true })
    {
       ASSERT(_tempInstance == nullptr);

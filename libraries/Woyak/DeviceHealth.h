@@ -2,6 +2,8 @@
 
 #include <ArduinoJson.h>
 #include <atomic>
+#include <cfloat>
+#include <cstdint>
 #include <WiFi.h>
 #include <time.h>
 
@@ -16,12 +18,12 @@
 /// DeviceServer in reply to a "GetHealth" command (see DeviceServerClient).
 /// </summary>
 /// <remarks>
-/// JSON keys: "rssi" (dBm), "cpuMhz", "tempF" (degrees F), "uptimeS", "freeHeap" (bytes), and
+/// "rssi" (dBm, max since the previous health report), "cpuMhz", "tempF" (degrees F, max since the previous health report),
 /// "localTime" (e.g. "8:44 PM"; omitted until the clock has been synchronized),
 /// "minFreeHeap" (lowest free heap since boot, bytes), "maxAllocHeap" (largest allocatable
 /// block, bytes), "wifiReconnects" (number
 /// of times WiFi has reconnected since begin() was called), "hubReconnects", "telemetryReconnects",
-/// "telemetryRate", "influxFailures", "stackFree" (min free stack, bytes), and "maxLoopMs".
+/// and "maxLoopMs" (longest loop gap since the previous health report).
 /// </remarks>
 ///
 class DeviceHealth
@@ -38,11 +40,39 @@ class DeviceHealth
       _wifiReconnects++;
    }
 
-   /// <summary>Longest gap between loop steps since boot (ms).</summary>
+   /// <summary>Longest gap between loop steps since the last health report (ms).</summary>
    static inline uint32_t _maxLoopMs = 0;
 
    /// <summary>Time of the previous loop step (ms).</summary>
    static inline uint32_t _lastLoopMs = 0;
+
+   /// <summary>Interval between RSSI/temperature samples taken from recordLoop() (ms).</summary>
+   static constexpr uint32_t SAMPLE_PERIOD_MS = 1000;
+
+   /// <summary>Time of the last RSSI/temperature sample (ms).</summary>
+   static inline uint32_t _lastSampleMs = 0;
+
+   /// <summary>Highest RSSI since the last health report (dBm).</summary>
+   static inline int32_t _maxRssi = INT32_MIN;
+
+   /// <summary>Highest CPU temperature since the last health report (F).</summary>
+   static inline float _maxTempF = -FLT_MAX;
+
+   /// <summary>Takes an RSSI and CPU temperature sample and updates the running maximums.</summary>
+   static void _sample()
+   {
+      int32_t rssi = WiFi.RSSI();
+      if (rssi > _maxRssi)
+      {
+         _maxRssi = rssi;
+      }
+
+      float tempF = CPUTemp::readF();
+      if (tempF > _maxTempF)
+      {
+         _maxTempF = tempF;
+      }
+   }
 
 public:
    /// <summary>Hub disconnects since boot (after the first successful connection).</summary>
@@ -73,6 +103,12 @@ public:
          _maxLoopMs = now - _lastLoopMs;
       }
       _lastLoopMs = now;
+
+      if (now - _lastSampleMs >= SAMPLE_PERIOD_MS)
+      {
+         _lastSampleMs = now;
+         _sample();
+      }
    }
 
    ///
@@ -94,9 +130,10 @@ public:
    ///
    static void fill(JsonDocument* doc)
    {
-      (*doc)["rssi"] = WiFi.RSSI();
+      _sample();
+      (*doc)["rssi"] = _maxRssi;
       (*doc)["cpuMhz"] = ESP.getCpuFreqMHz();
-      (*doc)["tempF"] = CPUTemp::readF();
+      (*doc)["tempF"] = _maxTempF;
       (*doc)["uptimeS"] = millis() / 1000;
       (*doc)["freeHeap"] = ESP.getFreeHeap();
       (*doc)["minFreeHeap"] = ESP.getMinFreeHeap();
@@ -108,6 +145,9 @@ public:
       (*doc)["influxFailures"] = influxFailures.load();
       (*doc)["stackFree"] = uxTaskGetStackHighWaterMark(nullptr);
       (*doc)["maxLoopMs"] = _maxLoopMs;
+      _maxLoopMs = 0;
+      _maxRssi = INT32_MIN;
+      _maxTempF = -FLT_MAX;
 
       time_t now = time(nullptr);
       if (now >= MIN_SYNCED_EPOCH)

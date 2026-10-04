@@ -211,6 +211,12 @@ public:
 
 
    /// <summary>
+   /// Optional callback invoked by reset() just before the device restarts (e.g. to report a
+   /// RESTARTING state to the DeviceServer). Set by DeviceServerClient::begin().
+   /// </summary>
+   static inline void (*onResetting)() = nullptr;
+
+   /// <summary>
    /// Resets the device after an optional delay, recording a reason so it's reported
    /// as the "Reset reason" (in place of the generic hardware reset reason) via
    /// checkTheLastShutdownReason() on the next boot.
@@ -223,6 +229,11 @@ public:
    static void reset(float delaySecs, const String& reason)
    {
       setHaltReason(reason);
+
+      if (onResetting != nullptr)
+      {
+         onResetting();
+      }
 
       delay(static_cast<unsigned long>(1000.0f * delaySecs));
 

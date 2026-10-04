@@ -72,6 +72,19 @@ public:
 
    ///
    /// <summary>
+   /// Turns all underlying status indicators off.
+   /// </summary>
+   ///
+   void off() override
+   {
+      for (IStatus* status : _statuses)
+      {
+         status->off();
+      }
+   }
+
+   ///
+   /// <summary>
    /// Updates all underlying status indicators to reflect the specified status.
    /// </summary>
    /// <param name="status">The status value to display.</param>

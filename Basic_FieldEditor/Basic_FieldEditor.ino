@@ -20,10 +20,12 @@
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. the ESP32-S3 Playground)."
+#include "WrongBoard.h"
 #endif
 
 #ifndef ARDUINO_PLAYGROUND_SUPPORTED
 #error "This sketch requires a board with encoders (e.g. the ESP32-S3 Playground)."
+#include "WrongBoard.h"
 #endif
 
 #include "ValueEditor.h"

@@ -165,14 +165,14 @@ public:
    ///
    /// <summary>
    /// Invoked when the telemetry client finishes starting up. Default implementation
-   /// sets the status to READY. The "Telemetry..." label printed by
+   /// sets the status to RUNNING. The "Telemetry..." label printed by
    /// ArduinoBase::initClient() is completed by TelemetryClient::connect(), so this
    /// method does not print anything. Overrides
    /// </summary>
    ///
    virtual void onStarted()
    {
-      _status->setStatus(Status::READY);
+      _status->setStatus(Status::RUNNING);
    }
 
    ///
