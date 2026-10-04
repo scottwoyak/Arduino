@@ -7,6 +7,7 @@
 //
 // Connects to the Raspberry Pi TelemetryServer, falling back to the production server if
 // it can't be reached.
+// Hold buttonA to suspend drawing the plot, which maximizes the publish rate.
 // Change TEST_SENSOR_TYPE
 // Hardware: Feather ESP32 with WiFi and TFT display.
 //
@@ -17,6 +18,10 @@
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
 #error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#endif
+
+#ifndef ARDUINO_BUTTON_A_SUPPORTED
+#error "This sketch requires a board with buttonA."
 #endif
 
 #include "DeviceSketch.h"
@@ -36,47 +41,62 @@ const auto VERSION = MakeVersion("1.0");
 constexpr auto SKETCH_NAME = "Telemetry_Publisher_Display";
 constexpr uint32_t BAUD_RATE = 115200;
 constexpr auto TOPIC = "Test";
+
+TelemetryConfig TELEMETRY_CONFIG = {
+   .topic = TOPIC,
+   .decimals = 3,
+   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
+   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
+   .deviceToken = TELEMETRY_DEVICE_TOKEN,
+   .clientToken = TELEMETRY_CLIENT_TOKEN,
+};
 constexpr uint32_t PUBLISH_INTERVAL_MS = 10;
 constexpr uint32_t RATE_UPDATE_INTERVAL_MS = 1000;
+constexpr unsigned long PLOT_SPAN_MS = 5000UL;
 
-Arduino arduino;
-DeviceSketch device(&arduino, { .sketchName = SKETCH_NAME, .version = VERSION, .enableOTA = true });
+SketchConfig SKETCH_CONFIG = {
+   .sketchName = SKETCH_NAME,
+   .version = VERSION,
+   .cpuFrequencyMhz = 240,
+   .enableOTA = true,
+};
+
+DeviceSketch sketch(SKETCH_CONFIG);
+
 TestSensor sensor;
-TelemetryClient client;
+TelemetryPublisher client(TELEMETRY_CONFIG, sketch.getStatus());
 Timer publishTimer(PUBLISH_INTERVAL_MS);
 Timer rateDisplayTimer(RATE_UPDATE_INTERVAL_MS);
-Table table(&arduino, 0, 0);
+Table table(&sketch.arduino, 0, 0);
 
 // ----------- Published Value Scatter Plot (bottom of display, 5 second rolling span)
-constexpr unsigned long PLOT_SPAN_MS = 5000UL;
-ScatterPlot valuePlot(&arduino, Rect16{}, "##.#s", "###.###");
+ScatterPlot valuePlot(&sketch.arduino, Rect16{}, "##.#s", "###.###");
 TimedScatterPlotSeries* valueSeries = valuePlot.createTimedSeries(PLOT_SPAN_MS);
 constexpr uint8_t VALUE_SERIES_POINT_SIZE = 1;
 
 bool needsInitialDisplay = true;
+bool plotNeedsDraw = false;
 
 void setup()
 {
    SerialX::begin(BAUD_RATE);
-   arduino.begin();
 
    valueSeries->pointSize = VALUE_SERIES_POINT_SIZE;
 
-   device.beginBanner();
-   device.beginConnect();
+   sketch.begin();
    sensor.begin();
-   client.setToken(TELEMETRY_DEVICE_TOKEN);
-   client.setFallbackEndpoint(TELEMETRY_SERVER_PRODUCTION_HOST, TELEMETRY_SERVER_PRODUCTION_PORT, TELEMETRY_SERVER_PRODUCTION_USE_TLS);
-   client.beginPublisher(TELEMETRY_SERVER_RASPBERRY_HOST, TELEMETRY_SERVER_RASPBERRY_PORT, TELEMETRY_SERVER_RASPBERRY_USE_TLS);
 
-   arduino.printlnInitStatus("Topic", TOPIC);
+   // Other sketch classes (PublisherSketch, ViewerSketch) print this topic line themselves.
+   sketch.arduino.printlnInitStatus("Topic... ", std::string("\"") + TOPIC + "\"");
+   client.connect(&sketch.arduino, sketch.getStatus());
 
-   device.beginLogger();
+   sketch.completeInitialization();
 }
 
 void loop()
 {
-   device.loop();
+   sketch.loop();
+
    client.loop();
 
    if (publishTimer.ready())
@@ -87,6 +107,7 @@ void loop()
       if (!needsInitialDisplay)
       {
          valueSeries->add(value);
+         plotNeedsDraw = true;
       }
    }
 
@@ -99,27 +120,27 @@ void loop()
 
    if (needsInitialDisplay)
    {
-      arduino.clearDisplay();
-      arduino.setCursor(0, 0);
-      arduino.setTextSize(3);
-      arduino.println("Publisher", Color::HEADING);
-      arduino.moveCursorY(4);
+      sketch.arduino.clearDisplay();
+      sketch.arduino.setCursor(0, 0);
+      sketch.arduino.setTextSize(3);
+      sketch.arduino.println("Publisher", Color::HEADING);
+      sketch.arduino.moveCursorY(4);
 
-      arduino.setTextSize(2);
+      sketch.arduino.setTextSize(2);
       table.clearRows();
-      table.setPosition(0, arduino.getCursor().y);
+      table.setPosition(0, sketch.arduino.getCursor().y);
       table.addRow("Topic", "                    ");
       table.addRow("Host", "                        ", Color::VALUE2);
       table.addRow("Rate", "###/s");
 
       table.setValue(0, TOPIC, Color::VALUE);
-      table.setValue(1, client.getUrl(), Color::VALUE2);
+      table.setValue(1, client.getHost(), Color::VALUE2);
       table.setValueNone(2);
       table.draw();
 
       constexpr int16_t PLOT_TOP_PADDING_PX = 5;
       int16_t plotTop = table.getRect().bottom() + PLOT_TOP_PADDING_PX;
-      valuePlot.setRect(0, plotTop, arduino.width(), arduino.height() - plotTop);
+      valuePlot.setRect(0, plotTop, sketch.arduino.width(), sketch.arduino.height() - plotTop);
       valuePlot.setYAxisFormat(sensor.getFormatStr().c_str());
       valuePlot.setShowXMinMaxValue(false);
       valuePlot.setShowXRangeValue(true);
@@ -141,5 +162,13 @@ void loop()
    table.draw();
 
    valueSeries->updateWindow(millis());
-   valuePlot.draw();
+
+   // Drawing the plot is by far the most expensive step in loop(), so only redraw it when a
+   // new point has been added. Holding buttonA suspends drawing entirely to show the maximum
+   // publish rate.
+   if (!sketch.arduino.buttonA.isPressed() && plotNeedsDraw)
+   {
+      plotNeedsDraw = false;
+      valuePlot.draw();
+   }
 }

@@ -2,7 +2,7 @@
 
 #include "ITempSensor.h"
 #include "Units.h"
-#include <driver/temperature_sensor.h>
+#include "CPUTemp.h"
 
 /// <summary>
 /// ESP32 built-in CPU temperature sensor.
@@ -14,10 +14,6 @@
 /// </remarks>
 class ESP32TempSensor : public ITempSensor
 {
-private:
-   /// <summary>Handle to the ESP32 temperature sensor driver.</summary>
-   temperature_sensor_handle_t _tempHandle = NULL;
-
 public:
    /// <summary>
    /// Constructs an ESP32TempSensor instance.
@@ -41,29 +37,20 @@ public:
    /// </summary>
    /// <returns>True if initialization succeeded; false otherwise.</returns>
    virtual bool begin()
-   { 
-      // Initialize the sensor and evaluate your expected temp range (e.g., 20°C to 100°C)
-      temperature_sensor_config_t temp_sensor_config = TEMPERATURE_SENSOR_CONFIG_DEFAULT(20, 100);
-      temperature_sensor_install(&temp_sensor_config, &_tempHandle);
-
-      // Enable the temperature sensor
-      temperature_sensor_enable(_tempHandle);
-
-      return true; 
+   {
+      return CPUTemp::begin();
    }
 
    /// <summary>Reads temperature in Fahrenheit.</summary>
    virtual float readTemperatureF() 
    { 
-      return Units::C2F(readTemperatureC()); 
+      return CPUTemp::readF();
    }
 
    /// <summary>Reads temperature in Celsius.</summary>
    virtual float readTemperatureC() 
    { 
-      float tempC = 0;
-      temperature_sensor_get_celsius(_tempHandle, &tempC);
-      return tempC; 
+      return CPUTemp::readC();
    }
 
    /// <summary>Not supported; returns NaN.</summary>

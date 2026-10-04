@@ -228,12 +228,11 @@ public:
    /// Creates an InfluxSketchBase bound to the given board and configuration. Register
    /// sensors, extra Influx points, and loop hooks afterward, then call begin().
    /// </summary>
-   /// <param name="arduino">The board wrapper (used as the status indicator directly if it implements IStatus itself; otherwise its onboard NeoPixel LED is used).</param>
    /// <param name="config">Shared configuration.</param>
    /// <param name="influxConfig">InfluxDB settings (site selection, measurement, post cadence, standard enclosure/CPU points).</param>
    ///
-   InfluxSketchBase(Arduino* arduino, const SketchConfig& config, const InfluxConfig& influxConfig)
-      : SketchBase(arduino, config),
+   InfluxSketchBase(const SketchConfig& config, const InfluxConfig& influxConfig)
+      : SketchBase(config),
       _influxConfig(influxConfig),
       _siteResolver(config.preferencesNamespace, SITE_KEYS),
       _sensorTimer(SENSOR_INTERVAL_MS)
@@ -327,7 +326,7 @@ public:
       Serial.println();
       Serial.println();
 
-      _arduino->begin(); // sets up the I2C bus/power rail and the RGB status LED
+      arduino.begin(); // sets up the I2C bus/power rail and the RGB status LED
 
       _status->setStatus(Status::STARTED);
 

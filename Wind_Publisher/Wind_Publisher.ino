@@ -1,4 +1,4 @@
-﻿//
+//
 // Wind Publisher
 //
 // Reads wind speed from an anemometer and publishes live readings over a WebSocket
@@ -59,11 +59,6 @@ constexpr uint8_t WIND_SENSOR_PIN = 11;
 constexpr uint8_t WIND_SENSOR_GROUND_PIN = 13; // held LOW to power the wind encoder/sensor
 constexpr uint8_t WIND_SENSOR_POWER_PIN = 12; // held HIGH to power the wind encoder/sensor
 
-// Uses WaveShare_ESP32_S3_Zero_Sensors's default I2C/RGB status LED/LED pins, which
-// match this sketch's wiring.
-Arduino arduino;
-WindMeter wind(WIND_SENSOR_PIN, arduino.ledPin(), LEDColor::CLEAR_PINK);
-
 InfluxConfig INFLUX_CONFIG = {
    .prompts = INFLUX_PROMPTS,
    .includeEnclosureTemp = true,
@@ -77,17 +72,26 @@ constexpr uint16_t TELEMETRY_PUBLISH_INTERVAL_MS = 1000 / 20;
 TelemetryConfig TELEMETRY_CONFIG = {
    .prompts = WIND_TELEMETRY_TOPICS,
    .publishIntervalMs = TELEMETRY_PUBLISH_INTERVAL_MS,
+   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
+   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
+   .deviceToken = TELEMETRY_DEVICE_TOKEN,
+   .clientToken = TELEMETRY_CLIENT_TOKEN,
 };
 
 SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = SKETCH_NAME,
+   .cpuFrequencyMhz = 80,
    .enableOTA = true,
    .enableRebooter = true,
 };
 
-PublisherSketch publisher(&arduino, PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
+PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
+
+// Uses WaveShare_ESP32_S3_Zero_Sensors's default I2C/RGB status LED/LED pins, which
+// match this sketch's wiring.
+WindMeter wind(WIND_SENSOR_PIN, sketch.arduino.ledPin(), LEDColor::CLEAR_PINK);
 
 ///
 /// <summary>
@@ -110,22 +114,22 @@ void setup()
    digitalWrite(WIND_SENSOR_GROUND_PIN, LOW);
    digitalWrite(WIND_SENSOR_POWER_PIN, HIGH);
 
-   publisher.addSensor("WindMeter", []() { wind.begin(); return true; });
-   publisher.setValueSource([]() { return wind.getSpeed(); });
+   sketch.addSensor("WindMeter", []() { wind.begin(); return true; });
+   sketch.setValueSource([]() { return wind.getSpeed(); });
 
    // Turn off the status LED once telemetry finishes starting, since the sketch is
    // then fully up and running and no longer needs the LED for startup/connectivity
    // feedback.
-   publisher.setOnStartedCallback([]() { arduino.setStatus(Status::NONE); });
+   sketch.setOnStartedCallback([]() { sketch.arduino.setStatus(Status::NONE); });
 
-   publisher.begin();
-   publisher.onStatus(onStatus);
+   sketch.begin();
+   sketch.onStatus(onStatus);
 
    Logger.logInitializationComplete();
 }
 
 void loop()
 {
-   publisher.loop();
+   sketch.loop();
 }
 

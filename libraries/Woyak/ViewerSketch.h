@@ -15,7 +15,7 @@
 #include "Status.h"
 #include "TelemetryClient.h"
 #include "TelemetryConfig.h"
-#include "TelemetryFeature.h"
+#include "TopicResolver.h"
 
 ///
 /// <summary>
@@ -36,7 +36,7 @@ protected:
    TelemetryConfig _telemetryConfig;
 
    /// <summary>Resolves the telemetry topic (from telemetryConfig) and connects the telemetry client.</summary>
-   TelemetryFeature _telemetryFeature;
+   TopicResolver _topicResolver;
 
    /// <summary>Constructed by beginTelemetry(), once the telemetry topic has been resolved.</summary>
    TelemetrySubscriber* _client = nullptr;
@@ -50,7 +50,7 @@ protected:
    ///
    void _populateStatus(LoggerStatus& status) override
    {
-      _telemetryFeature.addStatus(status);
+      _topicResolver.addStatus(status);
 
       SketchBase::_populateStatus(status);
    }
@@ -60,14 +60,13 @@ public:
    /// <summary>
    /// Creates a ViewerSketch bound to the given board and configuration.
    /// </summary>
-   /// <param name="arduino">The board wrapper.</param>
    /// <param name="config">Shared configuration; preferencesNamespace is used by resolveTopic().</param>
    /// <param name="telemetryConfig">Telemetry settings (topic table or fixed topic) used by resolveTopic(). Defaults to empty for a viewer that passes its topic directly to beginTelemetry(topic, handler).</param>
    ///
-   ViewerSketch(Arduino* arduino, const SketchConfig& config, const TelemetryConfig& telemetryConfig = {})
-      : SketchBase(arduino, config),
+   ViewerSketch(const SketchConfig& config, const TelemetryConfig& telemetryConfig = {})
+      : SketchBase(config),
         _telemetryConfig(telemetryConfig),
-        _telemetryFeature(config.preferencesNamespace, &_telemetryConfig)
+        _topicResolver(config.preferencesNamespace, &_telemetryConfig)
    {
    }
 
@@ -80,6 +79,7 @@ public:
    ///
    void beginBanner()
    {
+      arduino.begin();
       _printStartupInfo();
    }
 
@@ -133,8 +133,8 @@ public:
    ///
    const char* resolveTopic(bool forcePrompt = false)
    {
-      const char* topic = _telemetryFeature.resolve(_arduino, _status, forcePrompt);
-      _printAndLogStatus("Topic... ", topic);
+      const char* topic = _topicResolver.resolve(_arduino, _status, forcePrompt);
+      _printAndLogStatus("Topic... ", ("\"" + std::string(topic) + "\"").c_str());
       return topic;
    }
 
@@ -149,9 +149,9 @@ public:
    ///
    TelemetrySubscriber* beginTelemetry(TelemetryEventHandler* handler = nullptr)
    {
-      ASSERT(_telemetryFeature.topic() != nullptr);
+      ASSERT(_topicResolver.topic() != nullptr);
 
-      return beginTelemetry(_telemetryFeature.topic(), handler);
+      return beginTelemetry(_topicResolver.topic(), handler);
    }
 
    ///
@@ -166,8 +166,8 @@ public:
    ///
    TelemetrySubscriber* beginTelemetry(const char* topic, TelemetryEventHandler* handler = nullptr)
    {
-      _client = new TelemetrySubscriber(topic, _status, handler);
-      _telemetryFeature.connect(_arduino, _status, _client);
+      _client = new TelemetrySubscriber(topic, _telemetryConfig, _status, handler);
+      _client->connect(_arduino, _status);
       return _client;
    }
 

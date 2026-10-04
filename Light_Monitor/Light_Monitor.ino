@@ -1,4 +1,4 @@
-﻿//
+//
 // Light Monitor
 //
 // Uses a VL53L1X time-of-flight sensor to detect motion (the presence of people) and a
@@ -37,10 +37,10 @@
 
 #include "PublisherSketch.h"
 
-// This sketch's own version (e.g. "v1.0"); MakeVersion() appends the shared
+// This sketch's own version (e.g. "1.0"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("v1.0");
+const auto VERSION = MakeVersion("1.0");
 constexpr auto SKETCH_NAME = "Light_Monitor";
 
 // ----------- Telemetry
@@ -63,7 +63,6 @@ constexpr uint8_t INFLUX_PRESENCE_DECIMALS = 1;
 constexpr uint8_t VL53L1X_I2C_ADDRESS = 0x29;
 constexpr int16_t PRESENCE_DISTANCE_MM = 914; // 3 feet
 
-Arduino arduino;
 Adafruit_VL53L1X distanceSensor;
 VEML7700LightSensor luxSensor;
 
@@ -109,6 +108,10 @@ TelemetryConfig TELEMETRY_CONFIG = {
    .topic = distanceTopic,
    .decimals = 0,
    .publishIntervalMs = DISTANCE_PUBLISH_INTERVAL_MS,
+   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
+   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
+   .deviceToken = TELEMETRY_DEVICE_TOKEN,
+   .clientToken = TELEMETRY_CLIENT_TOKEN,
 };
 
 InfluxConfig INFLUX_CONFIG = {
@@ -124,11 +127,12 @@ SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = "LightMon",
+   .cpuFrequencyMhz = 80,
    .enableOTA = true,
    .enableRebooter = true,
 };
 
-PublisherSketch publisher(&arduino, PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
+PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
 
 ///
 /// <summary>
@@ -164,7 +168,7 @@ bool isPresent()
 void sampleSensors()
 {
    lux = luxSensor.readLux();
-   publisher.publish(luxTopic, lux);
+   sketch.publish(luxTopic, lux);
 
    luxField->set(lux);
    presenceField->set(presentSinceSample ? 100.0f : 0.0f);
@@ -195,18 +199,18 @@ void setup()
 {
    // Adafruit_VL53L1X::begin() retries its I2C reads forever if the sensor doesn't respond,
    // so check that it's present first instead of hanging
-   publisher.addSensor("VL53L1X", []() {
+   sketch.addSensor("VL53L1X", []() {
       Wire.beginTransmission(VL53L1X_I2C_ADDRESS);
       return Wire.endTransmission() == 0 && distanceSensor.begin() && distanceSensor.startRanging();
    });
-   publisher.addSensor("VEML7700", []() { return luxSensor.begin(); });
-   publisher.setValueSource(readDistance);
-   publisher.onSiteResolved(onSiteResolved);
+   sketch.addSensor("VEML7700", []() { return luxSensor.begin(); });
+   sketch.setValueSource(readDistance);
+   sketch.onSiteResolved(onSiteResolved);
 
-   publisher.begin();
-   publisher.onStatus(onStatus);
+   sketch.begin();
+   sketch.onStatus(onStatus);
 
-   InfluxPoint* point = publisher.addPoint();
+   InfluxPoint* point = sketch.addPoint();
    luxField = point->addTimeAverageField(INFLUX_INTERVAL_S, "lux", INFLUX_LUX_DECIMALS);
    presenceField = point->addTimeAverageField(INFLUX_INTERVAL_S, "activity", INFLUX_PRESENCE_DECIMALS);
 
@@ -215,7 +219,7 @@ void setup()
 
 void loop()
 {
-   publisher.loop();
+   sketch.loop();
    pollDistance();
 
    if (sampleTimer.ready())

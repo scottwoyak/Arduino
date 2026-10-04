@@ -4,6 +4,7 @@
 #include <InfluxDbCloud.h>
 #include <cmath>
 #include "ArduinoBase.h"
+#include "DeviceHealth.h"
 #include "RollingAverage.h"
 #include "Status.h"
 #include "TimedAverage.h"
@@ -600,6 +601,7 @@ public:
          return true;
       }
 
+      DeviceHealth::influxFailures++;
       Logger.log(std::string("InfluxDB write failed: ") + client->getLastErrorMessage().c_str(), LogSeverity::ERROR);
       return false;
    }

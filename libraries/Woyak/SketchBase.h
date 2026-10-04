@@ -12,6 +12,7 @@
 #include <esp_task_wdt.h>
 
 #include "ArduinoBase.h"
+#include "DeviceHealth.h"
 #include "Logger.h"
 #include "OTAUpdater.h"
 #include "Status.h"
@@ -40,8 +41,8 @@ struct SketchConfig
    /// <summary>Preferences (NVS) namespace used to persist prompted selections (Influx site, telemetry topic). Only needed if a derived class prompts.</summary>
    const char* preferencesNamespace = nullptr;
 
-   /// <summary>CPU clock speed (in MHz) set once begin() completes, to reduce power draw/heat.</summary>
-   uint8_t cpuFrequencyMhz = 80;
+   /// <summary>CPU clock speed (in MHz) set once begin() completes. Field-deployed sketches should set a lower value (e.g. 80) to reduce power draw/heat.</summary>
+   uint8_t cpuFrequencyMhz = 240;
 
    /// <summary>If true, enable OTA firmware updates via arduino.enableOTA(). Sketches that need OTA (e.g. remotely deployed ones) must set this to true.</summary>
    bool enableOTA = false;
@@ -67,6 +68,9 @@ struct SketchConfig
 class SketchBase : private OTAUpdateEventHandler
 {
 public:
+   /// <summary>Board wrapper, owned by the sketch. Declared first so it's constructed before the members below that use it.</summary>
+   Arduino arduino;
+
    ///
    /// <summary>
    /// One sensor to initialize during begin(), via arduino.initSensor(). If fatal is
@@ -246,7 +250,29 @@ protected:
       _arduino->beginInit();
       Logger.log("Initializing");
 
-      _arduino->printlnInitStatus("Sketch... ", _config.sketchName);
+      const char* sketchName = _config.sketchName;
+      if (_arduino->fitsOnDisplay("Sketch... ", sketchName))
+      {
+         _arduino->printlnInitStatus("Sketch... ", sketchName);
+      }
+      else
+      {
+         std::string abbreviation;
+         bool startOfWord = true;
+         for (const char* c = sketchName; *c != '\0'; c++)
+         {
+            if (*c == '_')
+            {
+               startOfWord = true;
+            }
+            else if (startOfWord)
+            {
+               abbreviation += *c;
+               startOfWord = false;
+            }
+         }
+         _arduino->printlnInitStatus("Sketch... ", abbreviation.c_str(), sketchName);
+      }
 
       const char* version = _config.version;
       if (version != nullptr)
@@ -302,7 +328,7 @@ protected:
 
    ///
    /// <summary>
-   /// Starts the Logger connection and blocks (via waitForClient()) until the "Device Server... "
+   /// Starts the Logger connection and blocks (via waitForClient()) until the "Hub... "
    /// label printed by begin() is completed by Logger::_onEvent(), so nothing else may log a
    /// line until then. Logger itself remains async. Call right after _beginConnect() so
    /// failures during the rest of initialization (e.g. sensors) are captured by the
@@ -313,21 +339,21 @@ protected:
    ///
    void _beginLoggerConnection(const char* site = nullptr, const char* location = nullptr)
    {
-      // DeviceServerClient::begin() only echoes its "Device Server... " label to Serial/the Device
+      // DeviceServerClient::begin() only echoes its "Hub... " label to Serial/the Device
       // Hub itself (it has no reference to the display, being a static-only API); print the
       // label to the display here too, the same way ArduinoBase::initClient() does for other
       // clients, so the completion text printed below has something to follow.
-      _arduino->print("Device Server... ", Color::LABEL);
+      _arduino->print("Hub... ", Color::LABEL);
 
       DeviceServerClient::begin(_config.sketchName, _config.version, site, location);
       _arduino->waitForClient([]() { return DeviceServerClient::isResolved(); }, []() { DeviceServerClient::loop(); });
 
       // DeviceServerClient::log() only echoes to Serial/the Device Server itself (it has no
       // reference to the display, being a static-only API); print the completion text to
-      // the display here too, the same way TelemetryFeature::connect() does for Telemetry.
+      // the display here too, the same way TelemetryClient::connect() does for Telemetry.
       if (DeviceServerClient::isConnected())
       {
-         _arduino->printlnR(DeviceServerClient::isDirectConnection() ? "Direct" : "OK", Color::VALUE);
+         _arduino->printlnR(DeviceServerClient::isDirectConnection() ? DeviceServerClient::getHost().c_str() : "OK", Color::VALUE);
       }
       else
       {
@@ -409,6 +435,7 @@ protected:
       }
 
       esp_task_wdt_reset();
+      DeviceHealth::recordLoop();
 
       checkForOTA();
 
@@ -523,28 +550,40 @@ protected:
 public:
    ///
    /// <summary>
-   /// Creates a SketchBase bound to the given board and configuration.
+   /// Creates a SketchBase with its own board wrapper (the "arduino" member), which is
+   /// used as the status indicator directly if it implements IStatus itself; otherwise
+   /// its onboard NeoPixel LED is used.
    /// </summary>
-   /// <param name="arduino">The board wrapper (used as the status indicator directly if it implements IStatus itself; otherwise its onboard NeoPixel LED is used).</param>
    /// <param name="config">Shared configuration.</param>
    ///
-   SketchBase(Arduino* arduino, const SketchConfig& config)
+   SketchBase(const SketchConfig& config)
       :
 #ifndef ARDUINO_STATUS_SUPPORTED
-        _ownedNeoPixelStatus(&arduino->neoPixel),
+        _ownedNeoPixelStatus(&arduino.neoPixel),
 #endif
         _config(config),
-        _arduino(arduino),
+        _arduino(&arduino),
 #ifdef ARDUINO_STATUS_SUPPORTED
-        _status(arduino)
+        _status(&arduino)
 #else
         _status(&_ownedNeoPixelStatus)
 #endif
    {
-      ASSERT(arduino != nullptr);
       ASSERT(_instance == nullptr);
 
       _instance = this;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the status indicator (LED) driven by this sketch. Pass it to a telemetry client
+   /// created directly by a sketch so the client can set the indicator to READY once connected.
+   /// </summary>
+   /// <returns>The status indicator.</returns>
+   ///
+   IStatus* getStatus() const
+   {
+      return _status;
    }
 
    ///

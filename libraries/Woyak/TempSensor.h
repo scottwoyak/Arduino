@@ -248,7 +248,7 @@ public:
    /// Detects and initializes a temperature sensor.
    /// </summary>
    /// <param name="print">True to print detection details to Serial.</param>
-   /// <param name="allowEsp32Fallback">True to fall back to the internal ESP32 CPU temperature sensor when no external sensor is detected; defaults to false since only one ESP32TempSensor can be installed per sketch.</param>
+   /// <param name="allowEsp32Fallback">True to fall back to the internal ESP32 CPU temperature sensor when no external sensor is detected; defaults to false.</param>
    /// <returns>True when initialization succeeds; otherwise false.</returns>
    ///
    bool begin(bool print, bool allowEsp32Fallback)

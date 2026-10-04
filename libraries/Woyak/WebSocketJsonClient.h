@@ -277,6 +277,17 @@ public:
 
    ///
    /// <summary>
+   /// Gets the host name of the endpoint currently being used (no scheme, port or path).
+   /// </summary>
+   /// <returns>The server host name.</returns>
+   ///
+   std::string getHost() const
+   {
+      return _hosts[_endpointIndex];
+   }
+
+   ///
+   /// <summary>
    /// Indicates whether the endpoint currently being used connects with TLS (wss://).
    /// </summary>
    /// <returns>True if the current endpoint uses TLS; otherwise false.</returns>

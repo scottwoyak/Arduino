@@ -1,4 +1,4 @@
-﻿//
+//
 // Wave Viewer
 //
 // Subscribes to live wave-height telemetry over a WebSocket connection and renders a
@@ -27,6 +27,16 @@
 // selecting the generic "ESP32S3 Dev Module" board in Visual Micro (that board has no
 // dedicated board package entry).
 #define ARDUINO_HOSYOND_ESP32_S3_VIEWER
+
+// Declares which VLW font sizes this sketch actually uses (2 and 4 - see
+// TEXT_SIZE/MIN_HEADER_TEXT_SIZE/MAX_HEADER_TEXT_SIZE below - plus 3, used for the
+// status text and as this board's DEFAULT_HEADING_SIZE in printInitHeader() during
+// boot), so ArduinoWithDisplay.h/Fonts/Roboto*.h only compile in the needed font data
+// instead of all 7 sizes, reducing flash usage.
+#define TEXT_SIZES_CUSTOM
+#define TEXT_SIZE_2
+#define TEXT_SIZE_3
+#define TEXT_SIZE_4
 
 #include <string>
 
@@ -58,15 +68,13 @@ std::string telemetryTopic;
 #include "WiFiSettings.h"
 #include "ViewerSketch.h"
 
-// This sketch's own version (e.g. "v1.0"); MakeVersion() appends the shared
+// This sketch's own version (e.g. "1.0"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("v1.0");
+const auto VERSION = MakeVersion("1.0");
 constexpr auto SKETCH_NAME = "Wave_Viewer";
 
 // ----------- Telemetry
-Arduino arduino;
-
 SketchConfig SKETCH_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
@@ -76,9 +84,13 @@ SketchConfig SKETCH_CONFIG = {
 
 TelemetryConfig TELEMETRY_CONFIG = {
    .prompts = TELEMETRY_TOPICS,
+   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
+   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
+   .deviceToken = TELEMETRY_DEVICE_TOKEN,
+   .clientToken = TELEMETRY_CLIENT_TOKEN,
 };
 
-ViewerSketch viewer(&arduino, SKETCH_CONFIG, TELEMETRY_CONFIG);
+ViewerSketch sketch(SKETCH_CONFIG, TELEMETRY_CONFIG);
 RollingRate displayRate(100);
 RollingRate serverRate(100);
 RollingStats sensorReadings(500);
@@ -166,21 +178,21 @@ MovingBarChart* waterLevelChart = nullptr;
 ///
 void initLayout()
 {
-   uint16_t displayWidth = arduino.width();
-   uint16_t displayHeight = arduino.height();
+   uint16_t displayWidth = sketch.arduino.width();
+   uint16_t displayHeight = sketch.arduino.height();
 
    // use the largest header size where the topic still fits on a single line
    headerTextSize = MIN_HEADER_TEXT_SIZE;
    for (uint8_t size = MAX_HEADER_TEXT_SIZE; size > MIN_HEADER_TEXT_SIZE; size--)
    {
-      if (arduino.charW(size) * telemetryTopic.length() <= displayWidth)
+      if (sketch.arduino.charW(size) * telemetryTopic.length() <= displayWidth)
       {
          headerTextSize = size;
          break;
       }
    }
 
-   uint16_t headerHeight = arduino.charH(headerTextSize) + HEADER_PADDING;
+   uint16_t headerHeight = sketch.arduino.charH(headerTextSize) + HEADER_PADDING;
 
    rollingRect = { 0, headerHeight, displayWidth, (uint16_t)(displayHeight - headerHeight) };
    waterLevelChart = new MovingBarChart(rollingRect, RangeF(0, 2 * WAVE_HEIGHT_MAX), LakeBlue, Color::BLACK);
@@ -193,9 +205,9 @@ void initLayout()
 ///
 void displayHeader()
 {
-   arduino.setCursor(0, 0);
-   arduino.setTextSize(headerTextSize);
-   arduino.println(telemetryTopic, Color::HEADING);
+   sketch.arduino.setCursor(0, 0);
+   sketch.arduino.setTextSize(headerTextSize);
+   sketch.arduino.println(telemetryTopic, Color::HEADING);
 }
 
 ///
@@ -217,7 +229,7 @@ public:
    // "Telemetry... OK" init line printed during setup() is never wiped mid-init
    bool needsInitialDisplay = true;
 
-   explicit WaveTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &arduino)
+   explicit WaveTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &sketch.arduino)
    {
    }
 
@@ -250,28 +262,27 @@ public:
 
 #ifdef ARDUINO_BUILTIN_LED_SUPPORTED
       // briefly flash the built-in LED to indicate a new value was received
-      arduino.led.flash(RECEIVE_LED_FLASH_MS);
+      sketch.arduino.led.flash(RECEIVE_LED_FLASH_MS);
 #endif
    }
 };
 
-WaveTelemetryHandler telemetryHandler(&arduino.status);
+WaveTelemetryHandler telemetryHandler(&sketch.arduino.status);
 
 void setup()
 {
    SerialX::begin();
-   arduino.begin();
+
+   sketch.beginBanner();
 
    initLayout();
 
-   viewer.beginBanner();
+   telemetryTopic = sketch.resolveTopic(true);
 
-   telemetryTopic = viewer.resolveTopic(true);
+   sketch.beginConnect();
 
-   viewer.beginConnect();
-
-   viewer.beginTelemetry(&telemetryHandler);
-   viewer.getClient()->onSample([](const std::string& topic, double value, int64_t dtMicros)
+   sketch.beginTelemetry(&telemetryHandler);
+   sketch.getClient()->onSample([](const std::string& topic, double value, int64_t dtMicros)
    {
       lastSampleDtMicros = dtMicros;
    });
@@ -285,9 +296,9 @@ float lastSensorReading = NAN;
 
 void loop()
 {
-   viewer.loop();
+   sketch.loop();
 
-   TelemetrySubscriber* client = viewer.getClient();
+   TelemetrySubscriber* client = sketch.getClient();
 
    if (client->isStarted() == false)
    {
@@ -297,7 +308,7 @@ void loop()
    if (telemetryHandler.needsInitialDisplay)
    {
       telemetryHandler.needsInitialDisplay = false;
-      arduino.clearDisplay();
+      sketch.arduino.clearDisplay();
       displayHeader();
    }
 
@@ -353,13 +364,13 @@ void loop()
       waterLevelChart->set(waveHeight.get() + WAVE_HEIGHT_MAX);
 
       // display values
-      arduino.setCursor(0, 0);
-      arduino.setTextSize(3);
-      arduino.printlnR(waveHeight.get(), heightFormat, Color::VALUE);
-      arduino.setCursor(0, rollingRect.y);
+      sketch.arduino.setCursor(0, 0);
+      sketch.arduino.setTextSize(3);
+      sketch.arduino.printlnR(waveHeight.get(), heightFormat, Color::VALUE);
+      sketch.arduino.setCursor(0, rollingRect.y);
 
       displayRate.tick();
-      waterLevelChart->draw(&arduino.display);
+      waterLevelChart->draw(&sketch.arduino.display);
    }
 
    if (logTimer.ready())

@@ -1,41 +1,24 @@
 #pragma once
 
 // Requires the sketch to have already included ArduinoBoard.h (so the Arduino class is
-// defined) and WiFiSettings.h (so the TELEMETRY_SERVER_* and token constants are defined).
+// defined).
 
 #include "Logger.h"
 #include "PreferencesResolver.h"
 #include "Status.h"
-#include "TelemetryClient.h"
 #include "TelemetryConfig.h"
 #include "Util.h"
 
 ///
 /// <summary>
-/// Starts a telemetry client against the standard endpoints from WiFiSettings.h: the
-/// local Raspberry server, falling back to the production (Cloudflare) server, using the
-/// device or client token matching the client's role.
-/// </summary>
-/// <param name="client">The client to start.</param>
-///
-inline void beginTelemetryClient(TelemetryClient* client)
-{
-   client->setToken(client->getRole() == TelemetryClient::Role::DEVICE ? TELEMETRY_DEVICE_TOKEN : TELEMETRY_CLIENT_TOKEN);
-   client->setFallbackEndpoint(TELEMETRY_SERVER_PRODUCTION_HOST, TELEMETRY_SERVER_PRODUCTION_PORT, TELEMETRY_SERVER_PRODUCTION_USE_TLS);
-   client->begin(TELEMETRY_SERVER_RASPBERRY_HOST, TELEMETRY_SERVER_RASPBERRY_PORT, TELEMETRY_SERVER_RASPBERRY_USE_TLS);
-}
-
-///
-/// <summary>
-/// Telemetry support shared by every sketch that publishes or subscribes to a telemetry
+/// Topic resolution shared by every sketch that publishes or subscribes to a telemetry
 /// topic (PublisherSketch, ViewerSketch): resolves the topic (either the fixed
 /// TelemetryConfig::topic, or one selected from TelemetryConfig::prompts and persisted
-/// in Preferences), connects the telemetry client, and reports the topic in GetStatus
-/// replies. Sketch base classes that need telemetry hold one of these as a member;
-/// those that don't (e.g. MonitorSketch) simply don't.
+/// in Preferences) and reports it in GetStatus replies. Sketch base classes that need
+/// telemetry hold one of these as a member.
 /// </summary>
 ///
-class TelemetryFeature
+class TopicResolver
 {
 private:
    static constexpr const char* TOPIC_KEYS[] = { "topic" };
@@ -46,17 +29,16 @@ private:
    const TelemetryConfig* _config;
    PreferencesResolver _resolver;
    const char* _topic = nullptr;
-   TelemetryClient* _client = nullptr;
 
 public:
    ///
    /// <summary>
-   /// Creates a TelemetryFeature for the given telemetry configuration.
+   /// Creates a TopicResolver for the given telemetry configuration.
    /// </summary>
    /// <param name="preferencesNamespace">Preferences (NVS) namespace used to persist the selected topic. Only needed if config->prompts is non-empty.</param>
    /// <param name="config">Telemetry configuration, owned by the caller and expected to outlive this object.</param>
    ///
-   TelemetryFeature(const char* preferencesNamespace, const TelemetryConfig* config)
+   TopicResolver(const char* preferencesNamespace, const TelemetryConfig* config)
       : _config(config),
         _resolver(preferencesNamespace, TOPIC_KEYS)
    {
@@ -113,42 +95,6 @@ public:
       }
 
       return _topic;
-   }
-
-   ///
-   /// <summary>
-   /// Starts the given telemetry client's connection, printing the standard
-   /// "Telemetry..." init status line, and blocks until it resolves (connects or fails).
-   /// The client itself remains async afterward. If it hasn't started within the
-   /// connect timeout, "FAILED" is reported but the client is left running so it keeps
-   /// retrying in the background; the caller decides how to proceed.
-   /// </summary>
-   /// <param name="arduino">The board wrapper.</param>
-   /// <param name="status">Status indicator driven during the connection.</param>
-   /// <param name="client">The telemetry client to connect, owned by the caller.</param>
-   /// <returns>True if the client started before the timeout; false otherwise.</returns>
-   ///
-   bool connect(Arduino* arduino, IStatus* status, TelemetryClient* client)
-   {
-      ASSERT(client != nullptr);
-
-      _client = client;
-      arduino->initClient("Telemetry", [this]() { beginTelemetryClient(_client); }, status);
-      if (arduino->waitForClient([this]() { return _client->isStarted(); }, [this]() { _client->loop(); }))
-      {
-         // "Direct" vs "OK" lets you tell at a glance (via serial/display) whether the
-         // connection went straight to the local/LAN server or had to fall back to the
-         // public (e.g. Cloudflare) endpoint - see TelemetryClient::isDirectConnection().
-         std::string result = _client->isDirectConnection() ? "Direct" : "OK";
-         Logger.log(result);
-         arduino->printlnR(result.c_str(), Color::VALUE);
-         return true;
-      }
-
-      status->setStatus(Status::FAILED);
-      Logger.log("FAILED", LogSeverity::ERROR);
-      arduino->printlnR("FAILED", Color::RED);
-      return false;
    }
 
    ///

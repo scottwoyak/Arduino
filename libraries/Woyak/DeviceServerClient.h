@@ -9,7 +9,8 @@
 #include <WebSocketsClient.h>
 #include <WiFi.h>
 
-#include "ArduinoBoard.h"
+#include "ArduinoBoardId.h"
+#include "DeviceHealth.h"
 #include "Format.h"
 #include "OTAUpdater.h"
 #include "Timer.h"
@@ -212,9 +213,15 @@ class DeviceServerClient
          {
             // WebSocketsClient reconnects on its own almost immediately in the common
             // case, so hold off logging until the grace period expires (see loop()).
+            DeviceHealth::hubReconnects++;
             DeviceServerClient::_pendingDisconnectReason = reason.empty() ? "unknown" : reason;
             DeviceServerClient::_disconnectPending = true;
             DeviceServerClient::_disconnectStartMs = millis();
+            if (!DeviceServerClient::_offline)
+            {
+               DeviceServerClient::_offline = true;
+               DeviceServerClient::_offlineSinceMs = millis();
+            }
          }
          (void)wasConnected;
       }
@@ -244,14 +251,15 @@ class DeviceServerClient
                // once the handshake is actually acknowledged, rather than in _onConnected(),
                // since a plain WebSocket connect can succeed even if the handshake itself is
                // then rejected/ignored by the server (e.g. a bad token).
-               DeviceServerClient::log(isDirectConnection() ? "Direct" : "OK");
+               DeviceServerClient::log(isDirectConnection() ? getHost() : "OK");
             }
             else if (DeviceServerClient::_disconnectLogged)
             {
-               DeviceServerClient::log("Logging reconnected");
-            }
-            DeviceServerClient::_disconnectPending = false;
-            DeviceServerClient::_disconnectLogged = false;
+                     DeviceServerClient::log("Logging reconnected after " + std::to_string((millis() - DeviceServerClient::_offlineSinceMs) / 1000) + " s");
+                  }
+                  DeviceServerClient::_offline = false;
+                  DeviceServerClient::_disconnectPending = false;
+                  DeviceServerClient::_disconnectLogged = false;
          }
          else if (strcmp(type, "command") == 0)
          {
@@ -305,8 +313,24 @@ class DeviceServerClient
    static inline std::string _site;
    static inline std::string _location;
 
-   /// <summary>Messages logged before the connection was up, sent once it completes. Each entry is a fully-formed JSON log message.</summary>
-   static inline std::vector<std::string> _pendingMessages;
+    /// <summary>A log message queued while disconnected
+   struct _PendingMessage
+   {
+      std::string json;
+      uint32_t occurredMs;
+   };
+
+   /// <summary>Messages logged before the connection was up, sent once it completes. Each entry's json is a fully-formed JSON log message.</summary>
+   static inline std::vector<_PendingMessage> _pendingMessages;
+
+   /// <summary>True from the first disconnect until the connection is acknowledged again.</summary>
+   static inline bool _offline = false;
+
+   /// <summary>millis() timestamp of the first disconnect of the current outage.</summary>
+   static inline uint32_t _offlineSinceMs = 0;
+
+   /// <summary>Milliseconds to back-date the next queued message by (e.g. the disconnect grace period).</summary>
+   static inline uint32_t _backdateMs = 0;
 
    /// <summary>True while waiting to see if a disconnect resolves itself within the grace period.</summary>
    static inline bool _disconnectPending = false;
@@ -380,7 +404,7 @@ class DeviceServerClient
       else
       {
          _debugPrint("Queued (not connected): " + json);
-         _pendingMessages.push_back(json);
+         _pendingMessages.push_back({ json, millis() - _backdateMs });
       }
    }
 
@@ -464,6 +488,8 @@ class DeviceServerClient
       doc["site"] = _site;
       doc["location"] = _location;
       doc["board"] = ARDUINO_BOARD_VARIANT_ID;
+      doc["ssid"] = std::string(WiFi.SSID().c_str());
+      doc["ip"] = std::string(WiFi.localIP().toString().c_str());
 
       std::string sent;
       serializeJson(doc, sent);
@@ -479,8 +505,12 @@ class DeviceServerClient
    ///
    static void _flushPendingMessages()
    {
-      for (const std::string& json : _pendingMessages)
+      for (const _PendingMessage& message : _pendingMessages)
       {
+         // The queued json is a serialized object ending in '}'; splice in the message age.
+         std::string json = message.json;
+         json.pop_back();
+         json += ",\"ageMs\":" + std::to_string(millis() - message.occurredMs) + "}";
          _connection.sendRaw(json);
       }
 
@@ -538,6 +568,17 @@ class DeviceServerClient
 
          log(status.toString());
       }
+      else if (strcasecmp(command, "GetHealth") == 0)
+      {
+         if (_connection.isConnected())
+         {
+            JsonDocument doc;
+            doc["type"] = "health";
+            DeviceHealth::fill(&doc);
+
+            _connection.sendJson(doc);
+         }
+      }
       else if (_commandHandler != nullptr)
       {
          _commandHandler(command);
@@ -568,7 +609,7 @@ public:
    /// <summary>
    /// Connects to the DeviceServer (local Raspberry server first, falling back to the
    /// public production server if the primary isn't reachable within a few seconds) and
-   /// starts logging. The connection completes asynchronously; the "Device Server... " label
+   /// starts logging. The connection completes asynchronously; the "Hub... " label
    /// printed here is completed later once the connection succeeds or fails. Call once
    /// from setup(), as the last init step (after WiFi, Influx, sensors, etc.), so no
    /// other log lines can interleave with the pending completion.
@@ -588,7 +629,9 @@ public:
       _connection.setToken(DEVICE_SERVER_TOKEN);
       _connection.setFallbackEndpoint(DEVICE_SERVER_SERVER_PRODUCTION_HOST, DEVICE_SERVER_SERVER_PRODUCTION_PORT, DEVICE_SERVER_SERVER_PRODUCTION_USE_TLS);
 
-      logPartial("Device Server... ");
+      DeviceHealth::begin();
+
+      logPartial("Hub... ");
 
       _connection.begin(DEVICE_SERVER_SERVER_RASPBERRY_HOST, DEVICE_SERVER_SERVER_RASPBERRY_PORT, DEVICE_SERVER_SERVER_RASPBERRY_USE_TLS, DEVICE_SERVER_PATH,
          HEARTBEAT_PING_MS, HEARTBEAT_TIMEOUT_MS, HEARTBEAT_FAILURES);
@@ -605,7 +648,9 @@ public:
 
       if (_disconnectPending && !_connection.isConnected() && (millis() - _disconnectStartMs) >= DISCONNECT_GRACE_MS)
       {
+         _backdateMs = millis() - _offlineSinceMs;
          log(std::string("Logging disconnected: ") + _pendingDisconnectReason);
+         _backdateMs = 0;
          _disconnectPending = false;
          _disconnectLogged = true;
       }
@@ -638,8 +683,19 @@ public:
 
    ///
    /// <summary>
+   /// Gets the host name of the endpoint currently being used (no scheme, port or path).
+   /// </summary>
+   /// <returns>The server host name.</returns>
+   ///
+   static std::string getHost()
+   {
+      return _connection.getHost();
+   }
+
+   ///
+   /// <summary>
    /// Returns whether begin()'s initial connection attempt has resolved (its
-   /// "Device Server... " label has been completed by _onEvent(), either with "Direct"/"OK"
+   /// "Hub... " label has been completed by _onEvent(), either with "Direct"/"OK"
    /// on success or "FAILED" on failure). Used by ArduinoBase::waitForClient() to
    /// block until that label is complete, the same way a telemetry client's
    /// isStarted() is used.

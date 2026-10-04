@@ -243,12 +243,11 @@ public:
     /// Creates a MonitorSketch bound to the given board and configuration. Register
     /// sensors, extra Influx points, and loop hooks afterward, then call begin().
     /// </summary>
-   /// <param name="arduino">The board wrapper (used as the status indicator directly if it implements IStatus itself; otherwise its onboard NeoPixel LED is used).</param>
    /// <param name="config">Shared configuration.</param>
    /// <param name="influxConfig">InfluxDB settings.</param>
    ///
-   MonitorSketch(Arduino* arduino, const SketchConfig& config, const InfluxConfig& influxConfig)
-      : InfluxSketchBase(arduino, config, influxConfig)
+   MonitorSketch(const SketchConfig& config, const InfluxConfig& influxConfig)
+      : InfluxSketchBase(config, influxConfig)
    {
    }
 

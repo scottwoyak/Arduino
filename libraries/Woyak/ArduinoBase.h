@@ -260,6 +260,40 @@ public:
       printlnInitStatus(label, value.c_str());
    }
 
+   ///
+   /// <summary>
+   /// Indicates whether a "label value" status line fits within the width of the display.
+   /// Always true by default (serial-only boards); ArduinoWithDisplay overrides this to
+   /// measure the text against the display width.
+   /// </summary>
+   /// <param name="label">The label text.</param>
+   /// <param name="value">The value text.</param>
+   /// <returns>True if the label and value fit on one display row; otherwise false.</returns>
+   ///
+   virtual bool fitsOnDisplay(const char* label, const char* value)
+   {
+      return true;
+   }
+
+   ///
+   /// <summary>
+   /// Variant of printlnInitStatus(label, value) that prints a (typically abbreviated)
+   /// value to the display while logging the full value, for values that may not fit on
+   /// the display.
+   /// </summary>
+   /// <param name="label">The label text to print and log.</param>
+   /// <param name="displayValue">The value text to print to the display.</param>
+   /// <param name="logValue">The value text to log.</param>
+   ///
+   void printlnInitStatus(const char* label, const char* displayValue, const char* logValue)
+   {
+      print(label, Color::LABEL);
+      printlnR(displayValue, Color::VALUE);
+
+      Logger.logPartial(label);
+      Logger.log(logValue);
+   }
+
 protected:
    ///
    /// <summary>

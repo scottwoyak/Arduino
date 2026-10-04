@@ -5,11 +5,23 @@
 
 ///
 /// <summary>
-/// Publisher's telemetry settings: either a table of selectable telemetry topics, or a
-/// single fixed topic, plus the decimal precision and publish cadence used when
-/// streaming the value over the WebSocket connection. Grouped together here (rather
-/// than left flat on SketchConfig) since these values are only used by Publisher
-/// sketches.
+/// One server endpoint (host, port, TLS) a telemetry client can connect to.
+/// </summary>
+///
+struct TelemetryEndpoint
+{
+   const char* host = nullptr;
+   uint16_t port = 0;
+   bool useTls = false;
+};
+
+///
+/// <summary>
+/// Telemetry settings for a sketch: the topic (a table of selectable topics, or a single
+/// fixed topic), the decimal precision and publish cadence used when streaming values,
+/// and the server to connect to (primary and optional fallback endpoint, WebSocket path
+/// and per-role authentication tokens). See TELEMETRY_RASPBERRY_ENDPOINT and similar in
+/// WiFiSettings.h for the standard server values.
 /// </summary>
 ///
 struct TelemetryConfig
@@ -25,4 +37,19 @@ struct TelemetryConfig
 
    /// <summary>How often (in milliseconds) the telemetry value source is read and published. 0 means every loop() iteration.</summary>
    uint16_t publishIntervalMs = 0;
+
+   /// <summary>Server endpoint tried first.</summary>
+   TelemetryEndpoint primary;
+
+   /// <summary>Server endpoint alternated with if the primary is not ready. Leave the port 0 for no fallback.</summary>
+   TelemetryEndpoint fallback;
+
+   /// <summary>Token sent by clients that publish.</summary>
+   const char* deviceToken = nullptr;
+
+   /// <summary>Token sent by clients that subscribe.</summary>
+   const char* clientToken = nullptr;
+
+   /// <summary>WebSocket path.</summary>
+   const char* path = "/ws";
 };

@@ -71,7 +71,6 @@ constexpr float SENSOR_AVERAGE_PERIOD_S = 2.0f;  // 2 secs, equivalent to 10 sam
 
 // Uses WaveShare_ESP32_S3_Zero_Sensors's default I2C/RGB status LED/LED pins, which
 // match this sketch's wiring.
-Arduino arduino;
 I2CMultiplexor multi;
 
 // Sensor arrays
@@ -96,11 +95,12 @@ SketchConfig SKETCH_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = PREFERENCES_NAMESPACE,
+   .cpuFrequencyMhz = 80,
    .enableOTA = true,
    .enableRebooter = true,
 };
 
-MonitorSketch monitor(&arduino, SKETCH_CONFIG, INFLUX_CONFIG);
+MonitorSketch sketch(SKETCH_CONFIG, INFLUX_CONFIG);
 
 ///
 /// <summary>
@@ -163,19 +163,19 @@ void setup()
       sensors[i] = new TempSensor();
    }
 
-   monitor.addSensor("Surface", []() { multi.select(SENSOR_CONFIGS[0].port); return sensors[0]->begin(true); }, nullptr, false);
-   monitor.addSensor("Bottom 1", []() { multi.select(SENSOR_CONFIGS[1].port); return sensors[1]->begin(true); }, nullptr, false);
-   monitor.addSensor("Bottom 2", []() { multi.select(SENSOR_CONFIGS[2].port); return sensors[2]->begin(true); }, nullptr, false);
-   monitor.addSensor("Enclosure", []() { multi.select(SENSOR_CONFIGS[3].port); return sensors[3]->begin(true); }, nullptr, false);
+   sketch.addSensor("Surface", []() { multi.select(SENSOR_CONFIGS[0].port); return sensors[0]->begin(true); }, nullptr, false);
+   sketch.addSensor("Bottom 1", []() { multi.select(SENSOR_CONFIGS[1].port); return sensors[1]->begin(true); }, nullptr, false);
+   sketch.addSensor("Bottom 2", []() { multi.select(SENSOR_CONFIGS[2].port); return sensors[2]->begin(true); }, nullptr, false);
+   sketch.addSensor("Enclosure", []() { multi.select(SENSOR_CONFIGS[3].port); return sensors[3]->begin(true); }, nullptr, false);
 
-   monitor.begin();
-   monitor.onStatus(onStatus);
+   sketch.begin();
+   sketch.onStatus(onStatus);
 
    printSensorSummary();
 
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      InfluxPoint* point = monitor.addPoint({ { "item", SENSOR_CONFIGS[i].item } });
+      InfluxPoint* point = sketch.addPoint({ { "item", SENSOR_CONFIGS[i].item } });
       tempFields[i] = point->addTimeAverageField(SENSOR_AVERAGE_PERIOD_S, "temperature", 3);
       humFields[i] = point->addTimeAverageField(SENSOR_AVERAGE_PERIOD_S, "humidity", 2);
    }
@@ -185,7 +185,7 @@ void setup()
 
 void loop()
 {
-   monitor.loop();
+   sketch.loop();
 
    if (sensorTimer.ready())
    {

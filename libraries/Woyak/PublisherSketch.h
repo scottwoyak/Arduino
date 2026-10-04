@@ -7,7 +7,7 @@
 
 #include "InfluxSketchBase.h"
 #include "TelemetryClient.h"
-#include "TelemetryFeature.h"
+#include "TopicResolver.h"
 
 ///
 /// <summary>
@@ -85,7 +85,7 @@ private:
    TelemetryConfig _telemetryConfig;
 
    /// <summary>Resolves the telemetry topic and connects the telemetry client.</summary>
-   TelemetryFeature _telemetryFeature;
+   TopicResolver _topicResolver;
 
    /// <summary>Constructed by begin(), once the telemetry topic has been resolved.</summary>
    TelemetryPublisher* _client = nullptr;
@@ -152,7 +152,7 @@ protected:
    ///
    bool _hasExtraPrompts() override
    {
-      return _telemetryFeature.hasPrompts();
+      return _topicResolver.hasPrompts();
    }
 
    ///
@@ -168,7 +168,7 @@ protected:
          _siteResolvedHandler(_site);
       }
 
-      std::string telemetryMessage = std::string("Telemetry topic: ") + _telemetryFeature.resolve(_arduino, _status, forcePrompt);
+      std::string telemetryMessage = std::string("Telemetry topic: ") + _topicResolver.resolve(_arduino, _status, forcePrompt);
       _printAndLogStatus(telemetryMessage.c_str());
    }
 
@@ -181,7 +181,7 @@ protected:
    ///
    void _populateStatus(LoggerStatus& status) override
    {
-      _telemetryFeature.addStatus(status);
+      _topicResolver.addStatus(status);
 
       InfluxSketchBase::_populateStatus(status);
    }
@@ -210,8 +210,8 @@ protected:
    ///
    void _afterOTASetup() override
    {
-      _client = new TelemetryPublisher(_telemetryFeature.topic(), _telemetryConfig.decimals, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
-      if (!_telemetryFeature.connect(_arduino, _status, _client) && _customTelemetryHandler == nullptr)
+      _client = new TelemetryPublisher(_topicResolver.topic(), _telemetryConfig, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
+      if (!_client->connect(_arduino, _status) && _customTelemetryHandler == nullptr)
       {
          Util::reset(TELEMETRY_RESET_DELAY_S, "Could not connect to telemetry server");
       }
@@ -259,20 +259,19 @@ public:
    /// sensors, the value source, extra Influx points, and loop hooks afterward, then
    /// call begin().
    /// </summary>
-   /// <param name="arduino">The board wrapper (used as the status indicator directly if it implements IStatus itself; otherwise its onboard NeoPixel LED is used).</param>
    /// <param name="config">Shared configuration.</param>
    /// <param name="influxConfig">InfluxDB settings.</param>
    /// <param name="telemetryConfig">Telemetry settings (topic table or fixed topic, decimals, publish cadence).</param>
    ///
-   PublisherSketch(Arduino* arduino, const SketchConfig& config, const InfluxConfig& influxConfig, const TelemetryConfig& telemetryConfig)
-      : InfluxSketchBase(arduino, config, influxConfig),
+   PublisherSketch(const SketchConfig& config, const InfluxConfig& influxConfig, const TelemetryConfig& telemetryConfig)
+      : InfluxSketchBase(config, influxConfig),
 #ifdef ARDUINO_DISPLAY_SUPPORTED
         _telemetryHandler(_status, arduino),
 #else
         _telemetryHandler(_status),
 #endif
         _telemetryConfig(telemetryConfig),
-        _telemetryFeature(config.preferencesNamespace, &_telemetryConfig),
+        _topicResolver(config.preferencesNamespace, &_telemetryConfig),
         _publishTimer(telemetryConfig.publishIntervalMs)
    {
    }
@@ -362,6 +361,6 @@ public:
    ///
    const char* telemetryTopic() const
    {
-      return _telemetryFeature.topic();
+      return _topicResolver.topic();
    }
 };

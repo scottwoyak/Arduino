@@ -1,4 +1,4 @@
-﻿//
+//
 // Gate Publisher
 //
 // Reads the compass azimuth from an MLX90393 3-axis hall effect sensor and publishes
@@ -51,7 +51,6 @@ constexpr const char* GATE_TELEMETRY_TOPICS[] = {
 
 // Uses WaveShare_ESP32_S3_Zero_Sensors's default I2C/RGB status LED/LED pins, which
 // match this sketch's wiring.
-Arduino arduino;
 MLX90393Magnetometer magnetometer;
 
 // Azimuth reading captured at startup, treated as the gate's zero (closed) angle.
@@ -123,17 +122,22 @@ InfluxConfig INFLUX_CONFIG = {
 TelemetryConfig TELEMETRY_CONFIG = {
    .prompts = GATE_TELEMETRY_TOPICS,
    .decimals = 0,
+   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
+   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
+   .deviceToken = TELEMETRY_DEVICE_TOKEN,
+   .clientToken = TELEMETRY_CLIENT_TOKEN,
 };
 
 SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = SKETCH_NAME,
+   .cpuFrequencyMhz = 80,
    .enableOTA = true,
    .enableRebooter = true,
 };
 
-PublisherSketch publisher(&arduino, PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
+PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
 
 ///
 /// <summary>
@@ -149,15 +153,15 @@ void onStatus(LoggerStatus& status)
 
 void setup()
 {
-   publisher.addSensor("MLX90393", []() { return magnetometer.begin(); });
-   publisher.setValueSource(gateAngle);
+   sketch.addSensor("MLX90393", []() { return magnetometer.begin(); });
+   sketch.setValueSource(gateAngle);
 
-   publisher.begin();
-   publisher.onStatus(onStatus);
+   sketch.begin();
+   sketch.onStatus(onStatus);
 
    // Zero the gate angle to the azimuth measured at startup, and pick the rotation
    // direction based on the resolved site's location (Left vs Right).
-   leftGate = strcmp(publisher.context().location, "Left") == 0;
+   leftGate = strcmp(sketch.context().location, "Left") == 0;
 
    magnetometer.read();
    zeroAzimuth = magnetometer.azimuth();
@@ -167,5 +171,5 @@ void setup()
 
 void loop()
 {
-   publisher.loop();
+   sketch.loop();
 }

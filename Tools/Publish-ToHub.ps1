@@ -1,13 +1,13 @@
 <#
 .SYNOPSIS
 	Uploads the compiled firmware for a single Arduino sketch to the Device Hub server
-	(DeviceServer), the equivalent of Publish-Release.ps1 but without GitHub.
+	(DeviceServer).
 
 .DESCRIPTION
 	1. Locates the sketch's most recently built <SketchName>.ino.bin under
 	   <SketchName>\build.
 	2. Computes the effective version (sketch MakeVersion("...") literal + LIBRARY_VERSION),
-	   matching Publish-Release.ps1 and the compile-time MakeVersion() logic.
+	   matching the compile-time MakeVersion() logic.
 	3. Resolves the board id from the binary (ARDUINO_BOARD_VARIANT_ID).
 	4. Prompts for confirmation, then POSTs multipart/form-data to
 	   <Server>/api/firmware/<SketchName>.<boardId> with fields 'version', 'notes'
@@ -18,8 +18,6 @@
 
 	Uses curl.exe (included with Windows) for the multipart upload, so it works in
 	Windows PowerShell 5.1 as well as PowerShell 7.
-
-	Publish-Release.ps1 is kept until all old sketches have been transitioned.
 
 	VISUAL STUDIO EXTERNAL TOOL:
 	  Title:       Publish To Hub
@@ -64,7 +62,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 # External Tools launches without an interactive console, so relaunch in a real console
-# window (see Publish-Release.ps1). SketchName is forwarded explicitly since the working
+# window. SketchName is forwarded explicitly since the working
 # directory changes; the defaulted flag preserves whether the caller specified it.
 if (-not $Relaunched)
 {

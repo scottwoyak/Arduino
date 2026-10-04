@@ -7,9 +7,11 @@
 #include <ArduinoJson.h>
 #include <WebSocketsClient.h>
 
+#include "DeviceHealth.h"
 #include "RollingRate.h"
 #include "Status.h"
 #include "Stopwatch.h"
+#include "TelemetryConfig.h"
 #include "Timer.h"
 #include "Util.h"
 #include "Logger.h"
@@ -164,7 +166,7 @@ public:
    /// <summary>
    /// Invoked when the telemetry client finishes starting up. Default implementation
    /// sets the status to READY. The "Telemetry..." label printed by
-   /// ArduinoBase::initClient() is completed by TelemetryFeature::connect(), so this
+   /// ArduinoBase::initClient() is completed by TelemetryClient::connect(), so this
    /// method does not print anything. Overrides
    /// </summary>
    ///
@@ -320,6 +322,7 @@ public:
 
 private:
    std::string _topic;
+   TelemetryConfig _config;
    Role _role = Role::DEVICE;
    std::vector<std::string> _topics;
    SampleHandler _sampleHandler = nullptr;
@@ -372,6 +375,10 @@ private:
    void _onDisconnected(const std::string& reason, bool wasConnected) override
    {
       _onTelemetryDisconnected();
+      if (wasConnected)
+      {
+         DeviceHealth::telemetryReconnects++;
+      }
 
       if (_handler != nullptr)
       {
@@ -424,6 +431,7 @@ private:
       double value = doc["value"].as<double>();
       _value = (float)value;
       _rate.tick();
+      DeviceHealth::telemetryRate = _rate.get();
       if (_sampleHandler != nullptr)
       {
          _sampleHandler(topic, value, doc["dt"] | 0);
@@ -459,6 +467,8 @@ protected:
    ///
    void _setRole(Role role, const std::string& topic)
    {
+      ASSERT(!topic.empty());
+
       _role = role;
       _topic = topic;
       _topics = { topic };
@@ -469,11 +479,13 @@ public:
    /// <summary>
    /// Initializes a new instance of the TelemetryClient class.
    /// </summary>
+   /// <param name="config">Telemetry settings; the server endpoints, path and tokens are used by begin().</param>
    /// <param name="status">Status indicator used by the default event handler. If nullptr and no handler is supplied, no handler is used.</param>
    /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
    ///
-   explicit TelemetryClient(IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
-      : _rate(TELEMETRY_RATE_NUM_SAMPLES)
+   explicit TelemetryClient(const TelemetryConfig& config, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
+      : _config(config),
+        _rate(TELEMETRY_RATE_NUM_SAMPLES)
    {
       if (handler != nullptr)
       {
@@ -531,7 +543,58 @@ public:
 
    ///
    /// <summary>
-   /// Connects as a publisher. Connection completes asynchronously; call loop() regularly.
+   /// Connects using the given server configuration: sets the token matching this
+   /// client's role and the fallback endpoint (if any), then connects to the primary
+   /// endpoint. Connection completes asynchronously; call loop() regularly.
+   /// </summary>
+   ///
+   void begin()
+   {
+      ASSERT(_config.primary.host != nullptr);
+
+      setToken(_role == Role::DEVICE ? _config.deviceToken : _config.clientToken);
+      if (_config.fallback.port != 0)
+      {
+         setFallbackEndpoint(_config.fallback.host, _config.fallback.port, _config.fallback.useTls);
+      }
+      begin(_config.primary.host, _config.primary.port, _config.primary.useTls, _config.path);
+   }
+
+   ///
+   /// <summary>
+   /// Starts this client's connection, printing the standard "Telemetry..." init status
+   /// line, and blocks until it resolves (connects or fails). The client itself remains
+   /// async afterward. If it hasn't started within the connect timeout, "FAILED" is
+   /// reported but the client is left running so it keeps retrying in the background;
+   /// the caller decides how to proceed. Requires ArduinoBoard.h to have been included.
+   /// </summary>
+   /// <param name="arduino">The board wrapper.</param>
+   /// <param name="status">Status indicator driven during the connection.</param>
+   /// <returns>True if the client started before the timeout; false otherwise.</returns>
+   ///
+   bool connect(Arduino* arduino, IStatus* status)
+   {
+      arduino->initClient("Telemetry", [this]() { begin(); }, status);
+      if (arduino->waitForClient([this]() { return isStarted(); }, [this]() { loop(); }))
+      {
+         // "Direct" vs "OK" lets you tell at a glance (via serial/display) whether the
+         // connection went straight to the local/LAN server or had to fall back to the
+         // public (e.g. Cloudflare) endpoint - see TelemetryClient::isDirectConnection().
+         std::string result = isDirectConnection() ? getHost() : "OK";
+         Logger.log(result);
+         arduino->printlnR(result.c_str(), Color::VALUE);
+         return true;
+      }
+
+      status->setStatus(Status::FAILED);
+      Logger.log("FAILED", LogSeverity::ERROR);
+      arduino->printlnR("FAILED", Color::RED);
+      return false;
+   }
+
+   ///
+   /// <summary>
+   /// Connects as a publisher.
    /// </summary>
    /// <param name="host">Server host name or IP address</param>
    /// <param name="port">Server port</param>
@@ -740,14 +803,27 @@ public:
    /// Initializes a new instance of the TelemetryPublisher class.
    /// </summary>
    /// <param name="topic">The telemetry topic to publish to.</param>
-   /// <param name="decimalPlaces">The number of decimal places to publish values with.</param>
+   /// <param name="config">Telemetry settings; decimals is the number of decimal places to publish values with.</param>
    /// <param name="status">Status indicator used by the default event handler, if no handler is supplied.</param>
    /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
    ///
-   TelemetryPublisher(const std::string& topic, uint8_t decimalPlaces, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
-      : TelemetryClient(status, handler), _decimalPlaces(decimalPlaces)
+   TelemetryPublisher(const std::string& topic, const TelemetryConfig& config, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
+      : TelemetryClient(config, status, handler), _decimalPlaces(config.decimals)
    {
       _setRole(Role::DEVICE, topic);
+   }
+
+   ///
+   /// <summary>
+   /// Initializes a new instance of the TelemetryPublisher class that publishes to config.topic.
+   /// </summary>
+   /// <param name="config">Telemetry settings, with topic set.</param>
+   /// <param name="status">Status indicator used by the default event handler, if no handler is supplied.</param>
+   /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
+   ///
+   explicit TelemetryPublisher(const TelemetryConfig& config, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
+      : TelemetryPublisher(config.topic, config, status, handler)
+   {
    }
 
    ///
@@ -778,9 +854,22 @@ public:
    /// <param name="status">Status indicator used by the default event handler, if no handler is supplied.</param>
    /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
    ///
-   TelemetrySubscriber(const std::string& topic, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
-      : TelemetryClient(status, handler)
+   TelemetrySubscriber(const std::string& topic, const TelemetryConfig& config, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
+      : TelemetryClient(config, status, handler)
    {
       _setRole(Role::CLIENT, topic);
+   }
+
+   ///
+   /// <summary>
+   /// Initializes a new instance of the TelemetrySubscriber class that subscribes to config.topic.
+   /// </summary>
+   /// <param name="config">Telemetry settings, with topic set.</param>
+   /// <param name="status">Status indicator used by the default event handler, if no handler is supplied.</param>
+   /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
+   ///
+   explicit TelemetrySubscriber(const TelemetryConfig& config, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
+      : TelemetrySubscriber(config.topic, config, status, handler)
+   {
    }
 };

@@ -1,4 +1,4 @@
-﻿//
+//
 // Wind Viewer
 //
 // Subscribes to live wind speed telemetry over a WebSocket connection and renders it as
@@ -66,15 +66,13 @@ std::string telemetryTopic;
 #include "WiFiSettings.h"
 #include "ViewerSketch.h"
 
-// This sketch's own version (e.g. "v1.0"); MakeVersion() appends the shared
+// This sketch's own version (e.g. "1.0"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("v1.2");
+const auto VERSION = MakeVersion("1.2");
 constexpr auto SKETCH_NAME = "Wind_Viewer";
 
 // ----------- Telemetry
-Arduino arduino;
-
 SketchConfig SKETCH_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
@@ -84,9 +82,13 @@ SketchConfig SKETCH_CONFIG = {
 
 TelemetryConfig TELEMETRY_CONFIG = {
    .prompts = TELEMETRY_TOPICS,
+   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
+   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
+   .deviceToken = TELEMETRY_DEVICE_TOKEN,
+   .clientToken = TELEMETRY_CLIENT_TOKEN,
 };
 
-ViewerSketch viewer(&arduino, SKETCH_CONFIG, TELEMETRY_CONFIG);
+ViewerSketch sketch(SKETCH_CONFIG, TELEMETRY_CONFIG);
 
 Format speedFormat("##.# mph", Format::Alignment::RIGHT);
 Format AxisValueL("##.#", Format::Alignment::LEFT);
@@ -159,8 +161,8 @@ constexpr uint32_t STALE_TIMEOUT_MS = 2000;
 ///
 void initLayout()
 {
-   uint16_t displayWidth = arduino.width();
-   uint16_t displayHeight = arduino.height();
+   uint16_t displayWidth = sketch.arduino.width();
+   uint16_t displayHeight = sketch.arduino.height();
 
    // use the largest header size where the topic and the right-aligned speed still fit
    // on a single line
@@ -168,7 +170,7 @@ void initLayout()
    for (uint8_t size = MAX_HEADER_TEXT_SIZE; size > MIN_TEXT_SIZE; size--)
    {
       uint16_t numChars = telemetryTopic.length() + SPEED_NUM_CHARS;
-      if (arduino.charW(size) * numChars <= displayWidth)
+      if (sketch.arduino.charW(size) * numChars <= displayWidth)
       {
          headerTextSize = size;
          break;
@@ -176,8 +178,8 @@ void initLayout()
    }
    axisTextSize = headerTextSize > MIN_TEXT_SIZE ? headerTextSize - 1 : MIN_TEXT_SIZE;
 
-   uint16_t headerHeight = arduino.charH(headerTextSize) + HEADER_PADDING;
-   uint16_t valuesAxisHeight = arduino.charH(axisTextSize) + VALUES_AXIS_PADDING;
+   uint16_t headerHeight = sketch.arduino.charH(headerTextSize) + HEADER_PADDING;
+   uint16_t valuesAxisHeight = sketch.arduino.charH(axisTextSize) + VALUES_AXIS_PADDING;
    uint16_t rollingChartHeight = displayHeight * ROLLING_CHART_HEIGHT_FRACTION;
 
    Rect16 graphRect = { 0, (uint16_t)(displayHeight - rollingChartHeight), displayWidth, rollingChartHeight };
@@ -195,9 +197,9 @@ void initLayout()
 ///
 void displayHeader()
 {
-   arduino.setCursor(0, 0);
-   arduino.setTextSize(headerTextSize);
-   arduino.println(telemetryTopic, Color::HEADING);
+   sketch.arduino.setCursor(0, 0);
+   sketch.arduino.setTextSize(headerTextSize);
+   sketch.arduino.println(telemetryTopic, Color::HEADING);
 }
 
 ///
@@ -221,7 +223,7 @@ public:
    // "Telemetry... OK" init line printed during setup() is never wiped mid-init
    bool needsInitialDisplay = true;
 
-   explicit WindTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &arduino)
+   explicit WindTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &sketch.arduino)
    {
    }
 
@@ -273,7 +275,7 @@ public:
       // every loop() iteration, so stale values aren't repeatedly re-sampled. Skip NaN
       // values (e.g. before the topic has actually been published) since the axis
       // marker renders NaN as a solid red bar.
-      float speed = viewer.getClient()->getValue();
+      float speed = sketch.getClient()->getValue();
       if (!isnan(speed))
       {
          histogramChart->setCurrentValue(speed);
@@ -281,18 +283,17 @@ public:
    }
 };
 
-WindTelemetryHandler telemetryHandler(&arduino.status);
+WindTelemetryHandler telemetryHandler(&sketch.arduino.status);
 
 void setup()
 {
    SerialX::begin();
-   arduino.begin();
 
-   viewer.beginBanner();
+   sketch.beginBanner();
 
-   telemetryTopic = viewer.resolveTopic(true);
+   telemetryTopic = sketch.resolveTopic(true);
 
-   viewer.beginConnect();
+   sketch.beginConnect();
 
    // the layout depends on the selected topic's length, so build it only once the
    // topic is known
@@ -306,11 +307,11 @@ void setup()
    histogramChart->setColorRange(&speedColorRange);
    rollingChart->setColorRange(&speedColorRange);
 
-   viewer.beginTelemetry(&telemetryHandler);
-   viewer.onStatus([](LoggerStatus& status)
+   sketch.beginTelemetry(&telemetryHandler);
+   sketch.onStatus([](LoggerStatus& status)
    {
-      status.add("Wind Speed", viewer.getClient()->getValue(), 1);
-      status.add("Telemetry URL", viewer.getClient()->getUrl());
+      status.add("Wind Speed", sketch.getClient()->getValue(), 1);
+      status.add("Telemetry URL", sketch.getClient()->getUrl());
    });
    delay(1000); // provide time for the wind meter to get a reading
 
@@ -319,9 +320,9 @@ void setup()
 
 void loop()
 {
-   viewer.loop();
+   sketch.loop();
 
-   TelemetrySubscriber* client = viewer.getClient();
+   TelemetrySubscriber* client = sketch.getClient();
 
    if (client->isStarted() == false)
    {
@@ -331,8 +332,10 @@ void loop()
    if (telemetryHandler.needsInitialDisplay)
    {
       telemetryHandler.needsInitialDisplay = false;
-      arduino.clearDisplay();
+      sketch.arduino.clearDisplay();
       displayHeader();
+      histogramChart->reset();
+      rollingChart->reset();
    }
 
    float speed = client->getValue();
@@ -349,19 +352,19 @@ void loop()
    }
 
    // display values
-   arduino.setCursor(0, 0);
-   arduino.setTextSize(headerTextSize);
+   sketch.arduino.setCursor(0, 0);
+   sketch.arduino.setTextSize(headerTextSize);
    if (stale)
    {
-      arduino.printlnR(speedFormat, Color::RED);
+      sketch.arduino.printlnR(speedFormat, Color::RED);
    }
    else
    {
-      arduino.printlnR(speed, speedFormat, speedColorRange.getColor(speed));
+      sketch.arduino.printlnR(speed, speedFormat, speedColorRange.getColor(speed));
    }
 
    displayHistogram();
-   rollingChart->draw(&arduino.display);
+   rollingChart->draw(&sketch.arduino.display);
 }
 
 ///
@@ -395,14 +398,14 @@ void displayHistogram()
       histogramChart->setVisibleRange(RangeF(0, 30));
    }
 
-   histogramChart->draw(&arduino.display);
+   histogramChart->draw(&sketch.arduino.display);
 
-   arduino.setTextSize(axisTextSize);
-   arduino.setCursor(0, chartRect.bottom() + 3);
+   sketch.arduino.setTextSize(axisTextSize);
+   sketch.arduino.setCursor(0, chartRect.bottom() + 3);
 
    RangeF displayRange = histogramChart->getVisibleRange();
-   arduino.print(displayRange.min, AxisValueL, Color::GRAY);
-   arduino.printC((displayRange.min + displayRange.max) / 2, AxisValueL, Color::GRAY);
-   arduino.printR(displayRange.max, AxisValueR, Color::GRAY);
+   sketch.arduino.print(displayRange.min, AxisValueL, Color::GRAY);
+   sketch.arduino.printC((displayRange.min + displayRange.max) / 2, AxisValueL, Color::GRAY);
+   sketch.arduino.printR(displayRange.max, AxisValueR, Color::GRAY);
 }
 

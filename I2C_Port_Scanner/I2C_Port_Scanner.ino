@@ -10,6 +10,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+
 #include "SerialX.h"
 
 constexpr uint8_t I2C_MIN_ADDR = 1;  // First valid 7-bit I2C address to probe

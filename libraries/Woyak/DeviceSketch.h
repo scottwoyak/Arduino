@@ -23,24 +23,24 @@ class DeviceSketch : public SketchBase
 public:
    ///
    /// <summary>
-   /// Creates a DeviceSketch bound to the given board and configuration.
+   /// Creates a DeviceSketch.
    /// </summary>
-   /// <param name="arduino">The board wrapper.</param>
    /// <param name="config">Shared configuration (sketch name/version, OTA, rebooter, CPU frequency).</param>
    ///
-   DeviceSketch(Arduino* arduino, const SketchConfig& config)
-      : SketchBase(arduino, config)
+   explicit DeviceSketch(const SketchConfig& config)
+      : SketchBase(config)
    {
    }
 
    ///
    /// <summary>
-   /// Prints the sketch name/version startup info to Serial and the display. Call once
-   /// from setup(), followed by beginConnect().
+   /// Initializes the board (arduino.begin()) and prints the sketch name/version startup
+   /// info to Serial and the display. Call once from setup(), followed by beginConnect().
    /// </summary>
    ///
    void beginBanner()
    {
+      arduino.begin();
       _printStartupInfo();
    }
 
@@ -62,7 +62,7 @@ public:
    /// <summary>
    /// Starts the Device Server connection (logging, GetStatus, remote update). Call once
    /// from setup(), as the last setup step, so no other log lines interleave with its
-   /// pending "Device Server... " completion.
+   /// pending "Hub... " completion.
    /// </summary>
    ///
    void beginLogger()

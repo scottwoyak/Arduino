@@ -8,7 +8,7 @@
 /// <summary>
 /// A MonitorSketch specialized for a single temperature/humidity sensor. Owns the
 /// temperature, humidity, dew point, and absolute humidity time-averaged Influx
-/// fields, samples the sensor, and reports the same values via GetStatus. Shared by
+/// fields, samples the sensor, and reports
 /// Temp_Monitor (headless) and Temp_Monitor_Display (with display); the display
 /// sketch layers its own rendering on top of the values this class already tracks.
 /// </summary>
@@ -37,7 +37,7 @@ private:
    InfluxField* _dewPointField = nullptr;
    InfluxField* _absoluteHumidityField = nullptr;
 
-   /// <summary>The single TempMonitorSketch instance, used by _onStatus()/_initSensor()/_sensorTypeLabel() to reach the instance (addSensor()/onStatus() only accept captureless function pointers).</summary>
+   /// <summary>The single instance, used by the static bridge functions _onHealth()/_initSensor()/_sensorTypeLabel() to reach the instance (addSensor()/DeviceHealth::extraFields only accept captureless function pointers).</summary>
    inline static TempMonitorSketch* _tempInstance = nullptr;
 
    ///
@@ -66,31 +66,31 @@ private:
 
    ///
    /// <summary>
-   /// Adds the current sensor field values to a GetStatus reply. Registered with
-   /// onStatus() from begin() since onStatus() only accepts a captureless function
+   /// Adds the current sensor field values to the health JSON. Registered with
+   /// DeviceHealth::extraFields from begin() since it only accepts a captureless function
    /// pointer.
    /// </summary>
-   /// <param name="status">The in-progress status to add fields to.</param>
+   /// <param name="doc">The health document to add fields to.</param>
    ///
-   static void _onStatus(LoggerStatus& status)
+   static void _onHealth(JsonDocument* doc)
    {
-      _tempInstance->_addToStatus(status);
+      _tempInstance->_addToHealth(doc);
    }
 
    ///
    /// <summary>
-   /// Adds this instance's current field values to a GetStatus reply.
+   /// Adds this instance's current field values to the health JSON.
    /// </summary>
-   /// <param name="status">The in-progress status to add fields to.</param>
+   /// <param name="doc">The health document to add fields to.</param>
    ///
-   void _addToStatus(LoggerStatus& status)
+   void _addToHealth(JsonDocument* doc)
    {
-      status.add("Temperature", temp(), INFLUX_TEMP_DECIMAL_PLACES);
+      (*doc)["temperature"] = temp();
       if (_sensor.supportsHumidity())
       {
-         status.add("Humidity", humidity(), INFLUX_HUMIDITY_DECIMAL_PLACES);
-         status.add("Dew Point", dewPoint(), INFLUX_TEMP_DECIMAL_PLACES);
-         status.add("Absolute Humidity", absoluteHumidity(), INFLUX_HUMIDITY_DECIMAL_PLACES);
+         (*doc)["humidity"] = humidity();
+         (*doc)["dewPoint"] = dewPoint();
+         (*doc)["absoluteHumidity"] = absoluteHumidity();
       }
    }
 
@@ -103,14 +103,13 @@ public:
    /// post interval/prompt-for-context/CPU temp are identical across all
    /// TempMonitorSketch-based sketches, so they are fixed internally rather than passed in.
    /// </summary>
-   /// <param name="arduino">The board wrapper (used as the status indicator directly if it implements IStatus itself; otherwise its onboard NeoPixel LED is used).</param>
    /// <param name="sketchName">Sketch name, printed at boot and used as the OTA update identifier.</param>
    /// <param name="version">Sketch version string, printed at boot and used for OTA update checks.</param>
    /// <param name="preferencesNamespace">Preferences (NVS) namespace used to persist the prompted Influx site/location.</param>
    ///
-   TempMonitorSketch(Arduino* arduino, const char* sketchName, const char* version, const char* preferencesNamespace)
-      : MonitorSketch(arduino,
-           SketchConfig{ .sketchName = sketchName, .version = version, .preferencesNamespace = preferencesNamespace, .enableOTA = true, .enableRebooter = true },
+   TempMonitorSketch(const char* sketchName, const char* version, const char* preferencesNamespace)
+      : MonitorSketch(
+           SketchConfig{ .sketchName = sketchName, .version = version, .preferencesNamespace = preferencesNamespace, .cpuFrequencyMhz = 80, .enableOTA = true, .enableRebooter = true },
            InfluxConfig{ .intervalS = INFLUX_INTERVAL_S, .promptForContext = true, .includeCpuTemp = true })
    {
       ASSERT(_tempInstance == nullptr);
@@ -122,7 +121,7 @@ public:
    /// <summary>
    /// Registers the sensor init hook, then runs MonitorSketch::begin() and registers
    /// the temperature/humidity/dew point/absolute humidity time-averaged Influx fields
-   /// and the GetStatus handler that reports them.
+   /// and the health hook that reports them.
    /// </summary>
    ///
    void begin()
@@ -135,7 +134,7 @@ public:
       addSensor("Sensor", _initSensor, _sensorTypeLabel);
 
       MonitorSketch::begin();
-      onStatus(_onStatus);
+      DeviceHealth::extraFields = _onHealth;
 
       InfluxPoint* point = addPoint({ { "item", "Sensor" } });
       _tempField = point->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);

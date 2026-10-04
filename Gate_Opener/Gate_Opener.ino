@@ -46,7 +46,6 @@ constexpr uint16_t WEB_SERVER_PORT = 80;
 constexpr uint8_t GATE_RELAY_PIN = 13; // pulsed HIGH to trigger the gate opener
 constexpr float GATE_RELAY_TRIGGER_SECS = 1.0f;
 
-Arduino arduino;
 WebServer server(WEB_SERVER_PORT);
 
 bool gateTriggerRelay = false;
@@ -61,28 +60,29 @@ InfluxConfig INFLUX_CONFIG = {
 SketchConfig MONITOR_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
+   .cpuFrequencyMhz = 80,
    .enableOTA = true,
    .enableRebooter = true,
 };
 
-MonitorSketch monitor(&arduino, MONITOR_CONFIG, INFLUX_CONFIG);
+MonitorSketch sketch(MONITOR_CONFIG, INFLUX_CONFIG);
 
 ///
 /// <summary>
 /// Updates the general-purpose LED to reflect the current gate state: on while OPEN,
 /// off while CLOSED. The combined RGB/NeoPixel status indicator is left alone here,
-/// since it only reflects connection status (see arduino.setStatus()).
+/// since it only reflects connection status (see sketch.arduino.setStatus()).
 /// </summary>
 ///
 void updateGateStatus()
 {
    if (gateTriggerRelay)
    {
-      arduino.led.turnOn();
+      sketch.arduino.led.turnOn();
    }
    else
    {
-      arduino.led.turnOff();
+      sketch.arduino.led.turnOff();
    }
 }
 
@@ -94,7 +94,7 @@ void updateGateStatus()
 ///
 void startGateRelayTrigger()
 {
-   monitor.logMessage("Gate Signal On");
+   sketch.logMessage("Gate Signal On");
    digitalWrite(GATE_RELAY_PIN, HIGH);
    gateRelayTriggerTimer.reset();
    gateTriggerRelay = true;
@@ -111,7 +111,7 @@ void checkGateRelayTrigger()
    {
       digitalWrite(GATE_RELAY_PIN, LOW);
       gateTriggerRelay = false;
-      monitor.logMessage("Gate Signal Off");
+      sketch.logMessage("Gate Signal Off");
 
       updateGateStatus();
    }
@@ -199,8 +199,8 @@ void setup()
    pinMode(GATE_RELAY_PIN, OUTPUT);
    digitalWrite(GATE_RELAY_PIN, LOW);
 
-   monitor.begin();
-   monitor.onStatus(onStatus);
+   sketch.begin();
+   sketch.onStatus(onStatus);
 
    server.on("/", HTTP_GET, handleRoot);
    server.on("/Gate", HTTP_GET, handleGetGate);
@@ -208,9 +208,9 @@ void setup()
    server.begin();
 
    std::string webServerMessage = std::string("Web Server: http://") + WiFi.localIP().toString().c_str();
-   monitor.logMessage(webServerMessage.c_str());
+   sketch.logMessage(webServerMessage.c_str());
 
-   arduino.setStatus(Status::READY);
+   sketch.arduino.setStatus(Status::READY);
    updateGateStatus();
 
    Logger.logInitializationComplete();
@@ -221,6 +221,6 @@ void loop()
    server.handleClient();
    checkGateRelayTrigger();
 
-   monitor.loop();
+   sketch.loop();
 }
 

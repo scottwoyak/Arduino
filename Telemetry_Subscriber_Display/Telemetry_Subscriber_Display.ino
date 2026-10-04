@@ -34,18 +34,33 @@ const auto VERSION = MakeVersion("1.0");
 constexpr auto SKETCH_NAME = "Telemetry_Subscriber_Display";
 constexpr uint32_t BAUD_RATE = 115200;
 constexpr auto TOPIC = "Test";
+
+TelemetryConfig TELEMETRY_CONFIG = {
+   .topic = TOPIC,
+   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
+   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
+   .deviceToken = TELEMETRY_DEVICE_TOKEN,
+   .clientToken = TELEMETRY_CLIENT_TOKEN,
+};
 constexpr uint32_t RATE_UPDATE_INTERVAL_MS = 1000;
 
-Arduino arduino;
-DeviceSketch device(&arduino, { .sketchName = SKETCH_NAME, .version = VERSION, .enableOTA = true });
-TelemetryClient client;
+SketchConfig SKETCH_CONFIG = {
+   .sketchName = SKETCH_NAME,
+   .version = VERSION,
+   .cpuFrequencyMhz = 240,
+   .enableOTA = true,
+};
+
+DeviceSketch sketch(SKETCH_CONFIG);
+
+TelemetrySubscriber client(TELEMETRY_CONFIG, sketch.getStatus());
 Timer rateDisplayTimer(RATE_UPDATE_INTERVAL_MS);
-Table table(&arduino, 0, 0);
+Table table(&sketch.arduino, 0, 0);
 
 // ----------- Received Value Scatter Plot (bottom of display, 5 second rolling span)
 constexpr unsigned long PLOT_SPAN_MS = 5000UL;
 constexpr auto VALUE_FORMAT = "###.###";
-ScatterPlot valuePlot(&arduino, Rect16{}, "##.#s", VALUE_FORMAT);
+ScatterPlot valuePlot(&sketch.arduino, Rect16{}, "##.#s", VALUE_FORMAT);
 TimedScatterPlotSeries* valueSeries = valuePlot.createTimedSeries(PLOT_SPAN_MS);
 constexpr uint8_t VALUE_SERIES_POINT_SIZE = 1;
 
@@ -54,7 +69,6 @@ bool needsInitialDisplay = true;
 void setup()
 {
    SerialX::begin(BAUD_RATE);
-   arduino.begin();
 
    valueSeries->pointSize = VALUE_SERIES_POINT_SIZE;
 
@@ -66,20 +80,20 @@ void setup()
       }
    });
 
-   device.beginBanner();
-   device.beginConnect();
-   client.setToken(TELEMETRY_CLIENT_TOKEN);
-   client.setFallbackEndpoint(TELEMETRY_SERVER_PRODUCTION_HOST, TELEMETRY_SERVER_PRODUCTION_PORT, TELEMETRY_SERVER_PRODUCTION_USE_TLS);
-   client.beginSubscriber(TELEMETRY_SERVER_RASPBERRY_HOST, TELEMETRY_SERVER_RASPBERRY_PORT, { TOPIC }, TELEMETRY_SERVER_RASPBERRY_USE_TLS);
+   sketch.beginBanner();
+   sketch.beginConnect();
 
-   arduino.printlnInitStatus("Topic", TOPIC);
+   // Other sketch classes (PublisherSketch, ViewerSketch) print this topic line themselves.
+   sketch.arduino.printlnInitStatus("Topic... ", std::string("\"") + TOPIC + "\"");
+   client.connect(&sketch.arduino, sketch.getStatus());
 
-   device.beginLogger();
+   sketch.beginLogger();
+   sketch.completeInitialization();
 }
 
 void loop()
 {
-   device.loop();
+   sketch.loop();
    client.loop();
 
    if (!client.isReady())
@@ -91,27 +105,27 @@ void loop()
 
    if (needsInitialDisplay)
    {
-      arduino.clearDisplay();
-      arduino.setCursor(0, 0);
-      arduino.setTextSize(3);
-      arduino.println("Subscriber", Color::HEADING);
-      arduino.moveCursorY(4);
+      sketch.arduino.clearDisplay();
+      sketch.arduino.setCursor(0, 0);
+      sketch.arduino.setTextSize(3);
+      sketch.arduino.println("Subscriber", Color::HEADING);
+      sketch.arduino.moveCursorY(4);
 
-      arduino.setTextSize(2);
+      sketch.arduino.setTextSize(2);
       table.clearRows();
-      table.setPosition(0, arduino.getCursor().y);
+      table.setPosition(0, sketch.arduino.getCursor().y);
       table.addRow("Topic", "                    ");
       table.addRow("Host", "                        ", Color::VALUE2);
       table.addRow("Rate", "###/s");
 
       table.setValue(0, TOPIC, Color::VALUE);
-      table.setValue(1, client.getUrl(), Color::VALUE2);
+      table.setValue(1, client.getHost(), Color::VALUE2);
       table.setValueNone(2);
       table.draw();
 
       constexpr int16_t PLOT_TOP_PADDING_PX = 5;
       int16_t plotTop = table.getRect().bottom() + PLOT_TOP_PADDING_PX;
-      valuePlot.setRect(0, plotTop, arduino.width(), arduino.height() - plotTop);
+      valuePlot.setRect(0, plotTop, sketch.arduino.width(), sketch.arduino.height() - plotTop);
       valuePlot.setYAxisFormat(VALUE_FORMAT);
       valuePlot.setShowXMinMaxValue(false);
       valuePlot.setShowXRangeValue(true);

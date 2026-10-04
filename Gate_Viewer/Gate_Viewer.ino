@@ -1,4 +1,4 @@
-﻿//
+//
 // Gate Viewer
 //
 // Subscribes to live gate azimuth telemetry over a WebSocket connection and renders both
@@ -79,10 +79,10 @@ constexpr uint16_t GATE_OPENER_PORT = 80;
 #include "ArduinoBoard.h"
 #include "LibraryVersion.h"
 
-// This sketch's own version (e.g. "v1.06"); MakeVersion() appends the shared
+// This sketch's own version (e.g. "1.06"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("v1.07");
+const auto VERSION = MakeVersion("1.07");
 constexpr auto SKETCH_NAME = "Gate_Viewer";
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
@@ -102,15 +102,20 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 #include "ViewerSketch.h"
 
 // ----------- Telemetry
-Arduino arduino;
-
 SketchConfig SKETCH_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .enableOTA = true,
 };
 
-ViewerSketch viewer(&arduino, SKETCH_CONFIG);
+TelemetryConfig TELEMETRY_CONFIG = {
+   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
+   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
+   .deviceToken = TELEMETRY_DEVICE_TOKEN,
+   .clientToken = TELEMETRY_CLIENT_TOKEN,
+};
+
+ViewerSketch sketch(SKETCH_CONFIG, TELEMETRY_CONFIG);
 
 // ----------- Line geometry (left line anchored 50px from the left edge, right line
 // anchored 50px from the right edge of the display; the gate origin's Y position is
@@ -204,16 +209,16 @@ public:
    ///
    void load()
    {
-      arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
+      sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
 
-      size_t savedSize = arduino.preferences.getBytesLength(HISTORY_PREFERENCES_KEY);
+      size_t savedSize = sketch.arduino.preferences.getBytesLength(HISTORY_PREFERENCES_KEY);
       if (savedSize > 0 && savedSize <= sizeof(_records))
       {
-         arduino.preferences.getBytes(HISTORY_PREFERENCES_KEY, _records, savedSize);
+         sketch.arduino.preferences.getBytes(HISTORY_PREFERENCES_KEY, _records, savedSize);
          _count = savedSize / sizeof(GateOpenRecord);
       }
 
-      arduino.preferences.end();
+      sketch.arduino.preferences.end();
 
       // Constant duplicated from TimeSync::isSynced() rather than depending on TimeSync
       // here, since a synced clock is what distinguishes a real timestamp from bogus
@@ -233,9 +238,9 @@ public:
       {
          _count = validCount;
 
-         arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
-         arduino.preferences.putBytes(HISTORY_PREFERENCES_KEY, _records, _count * sizeof(GateOpenRecord));
-         arduino.preferences.end();
+         sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+         sketch.arduino.preferences.putBytes(HISTORY_PREFERENCES_KEY, _records, _count * sizeof(GateOpenRecord));
+         sketch.arduino.preferences.end();
       }
    }
 
@@ -257,9 +262,9 @@ public:
       _records[0] = { time };
       _count = newCount;
 
-      arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
-      arduino.preferences.putBytes(HISTORY_PREFERENCES_KEY, _records, _count * sizeof(GateOpenRecord));
-      arduino.preferences.end();
+      sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+      sketch.arduino.preferences.putBytes(HISTORY_PREFERENCES_KEY, _records, _count * sizeof(GateOpenRecord));
+      sketch.arduino.preferences.end();
    }
 
    ///
@@ -366,10 +371,10 @@ constexpr Color GATE_OPEN_COLOR = (Color)Color565::fromRGB(255, 210, 0);
 ///
 void displayFooterAzimuths(float leftAzimuth, float rightAzimuth, bool isOpen)
 {
-   Point16 savedCursor = arduino.getCursor();
-   uint8_t savedTextSize = arduino.getTextSize();
+   Point16 savedCursor = sketch.arduino.getCursor();
+   uint8_t savedTextSize = sketch.arduino.getTextSize();
 
-   arduino.setTextSize(2);
+   sketch.arduino.setTextSize(2);
 
    Color backgroundColor = isOpen ? GATE_OPEN_COLOR : Color::BLACK;
    Color textColor = isOpen ? Color::BLACK : Color::DARKGRAY;
@@ -377,13 +382,13 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth, bool isOpen)
 
    // Draw the azimuth values inline with the origin circles rather than at the very
    // bottom of the display.
-   int16_t azimuthY = gateOriginY - arduino.charH() / 2;
+   int16_t azimuthY = gateOriginY - sketch.arduino.charH() / 2;
 
-   arduino.setCursor(0, azimuthY);
-   arduino.print(leftAzimuth, leftAzimuthFormat, textColor, backgroundColor);
+   sketch.arduino.setCursor(0, azimuthY);
+   sketch.arduino.print(leftAzimuth, leftAzimuthFormat, textColor, backgroundColor);
 
-   arduino.setCursor(arduino.width(), azimuthY);
-   arduino.printR(rightAzimuth, rightAzimuthFormat, textColor, backgroundColor);
+   sketch.arduino.setCursor(sketch.arduino.width(), azimuthY);
+   sketch.arduino.printR(rightAzimuth, rightAzimuthFormat, textColor, backgroundColor);
 
    lastOpenFooterVisible = (lastGateOpenTime != 0);
    if (lastOpenFooterVisible)
@@ -399,29 +404,29 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth, bool isOpen)
       std::string dateStr = formatFriendlyDate(lastGateOpenTime);
       std::string lastOpenText = std::string("Last Open: ") + timeStr + ", " + dateStr;
 
-      arduino.setCursorX(0);
-      arduino.setCursorY(-arduino.charH());
+      sketch.arduino.setCursorX(0);
+      sketch.arduino.setCursorY(-sketch.arduino.charH());
 
       // Tap target is at least double the text's height, extending equally above and
       // below it, to make it easier to tap without needing to make the text itself larger.
-      int16_t tapMargin = arduino.charH() / 2;
-      lastOpenFooterRect = Rect16(0, arduino.getCursor().y - tapMargin, arduino.width(), arduino.charH() + 2 * tapMargin);
+      int16_t tapMargin = sketch.arduino.charH() / 2;
+      lastOpenFooterRect = Rect16(0, sketch.arduino.getCursor().y - tapMargin, sketch.arduino.width(), sketch.arduino.charH() + 2 * tapMargin);
 
-      arduino.print(lastOpenText.c_str(), messageColor, backgroundColor);
+      sketch.arduino.print(lastOpenText.c_str(), messageColor, backgroundColor);
 #else
       // Narrower, non-touch displays (e.g. the Feather) only have room for a compact
       // date and time, so drop the "Last Open" label, use the short numeric date
       // format, and left-align it instead of centering.
       std::string lastOpenText = formatShortDate(lastGateOpenTime) + ", " + timeStr;
 
-      arduino.setCursorX(0);
-      arduino.setCursorY(-arduino.charH());
-      arduino.print(lastOpenText.c_str(), messageColor, backgroundColor);
+      sketch.arduino.setCursorX(0);
+      sketch.arduino.setCursorY(-sketch.arduino.charH());
+      sketch.arduino.print(lastOpenText.c_str(), messageColor, backgroundColor);
 #endif
    }
 
-   arduino.setTextSize(savedTextSize);
-   arduino.setCursor(savedCursor);
+   sketch.arduino.setTextSize(savedTextSize);
+   sketch.arduino.setCursor(savedCursor);
 }
 
 // ----------- History view (shown when the "Last Open" footer is tapped)
@@ -438,17 +443,17 @@ constexpr uint8_t HISTORY_ROW_TEXT_SIZE = 2;
 ///
 void displayHistoryView()
 {
-   arduino.clearDisplay();
+   sketch.arduino.clearDisplay();
 
-   arduino.setTextSize(HISTORY_TITLE_TEXT_SIZE);
-   arduino.setCursor(0, 0);
-   arduino.println("Gate History", Color::HEADING);
+   sketch.arduino.setTextSize(HISTORY_TITLE_TEXT_SIZE);
+   sketch.arduino.setCursor(0, 0);
+   sketch.arduino.println("Gate History", Color::HEADING);
 
-   arduino.setTextSize(HISTORY_ROW_TEXT_SIZE);
+   sketch.arduino.setTextSize(HISTORY_ROW_TEXT_SIZE);
 
    if (gateOpenHistory.count() == 0)
    {
-      arduino.println("No openings recorded", Color::GRAY);
+      sketch.arduino.println("No openings recorded", Color::GRAY);
    }
    else
    {
@@ -466,13 +471,13 @@ void displayHistoryView()
          std::string dateStr = formatFriendlyDate(record.time);
          std::string rowText = dateStr + " " + timeStr;
 
-         arduino.println(rowText.c_str(), Color::GRAY);
+         sketch.arduino.println(rowText.c_str(), Color::GRAY);
       }
    }
 
-   arduino.setTextSize(HISTORY_ROW_TEXT_SIZE);
-   arduino.setCursor(0, -arduino.charH(HISTORY_ROW_TEXT_SIZE));
-   arduino.print("Tap to return", Color::GRAY);
+   sketch.arduino.setTextSize(HISTORY_ROW_TEXT_SIZE);
+   sketch.arduino.setCursor(0, -sketch.arduino.charH(HISTORY_ROW_TEXT_SIZE));
+   sketch.arduino.print("Tap to return", Color::GRAY);
 }
 
 constexpr int16_t GATE_STATE_TOP_MARGIN = 10;
@@ -526,46 +531,46 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
    lastIsOpen = isOpen;
    everDrawn = true;
 
-   Point16 savedCursor = arduino.getCursor();
-   uint8_t savedTextSize = arduino.getTextSize();
+   Point16 savedCursor = sketch.arduino.getCursor();
+   uint8_t savedTextSize = sketch.arduino.getTextSize();
 
-   arduino.setTextSize(5);
+   sketch.arduino.setTextSize(5);
 
    Color backgroundColor = isOpen ? GATE_OPEN_COLOR : Color::BLACK;
 #ifdef ARDUINO_TOUCH_SUPPORTED
-   int16_t rowHeight = GATE_STATE_TOP_MARGIN + arduino.charH(5) + GATE_STATE_BOTTOM_MARGIN + arduino.charH(2);
+   int16_t rowHeight = GATE_STATE_TOP_MARGIN + sketch.arduino.charH(5) + GATE_STATE_BOTTOM_MARGIN + sketch.arduino.charH(2);
 #else
-   int16_t rowHeight = GATE_STATE_TOP_MARGIN + arduino.charH(5) + GATE_STATE_BOTTOM_MARGIN;
+   int16_t rowHeight = GATE_STATE_TOP_MARGIN + sketch.arduino.charH(5) + GATE_STATE_BOTTOM_MARGIN;
 #endif
-   arduino.fillRect(0, 0, arduino.width(), arduino.height(), backgroundColor);
+   sketch.arduino.fillRect(0, 0, sketch.arduino.width(), sketch.arduino.height(), backgroundColor);
 
    if (isOpen)
    {
-      arduino.setCursor(0, (rowHeight - arduino.charH(5)) / 2);
-      arduino.printlnC("OPEN", Color::BLACK, GATE_OPEN_COLOR);
+      sketch.arduino.setCursor(0, (rowHeight - sketch.arduino.charH(5)) / 2);
+      sketch.arduino.printlnC("OPEN", Color::BLACK, GATE_OPEN_COLOR);
 
       gateStateRect = { 0, 0, 0, 0 };
    }
    else
    {
-      arduino.setCursor(0, GATE_STATE_TOP_MARGIN);
-      arduino.printlnC("CLOSED", Color::GRAY, Color::BLACK);
+      sketch.arduino.setCursor(0, GATE_STATE_TOP_MARGIN);
+      sketch.arduino.printlnC("CLOSED", Color::GRAY, Color::BLACK);
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
-      arduino.setTextSize(2);
-      arduino.moveCursorY(-4);
-      arduino.printlnC("Tap to open", Color::GRAY, Color::BLACK);
+      sketch.arduino.setTextSize(2);
+      sketch.arduino.moveCursorY(-4);
+      sketch.arduino.printlnC("Tap to open", Color::GRAY, Color::BLACK);
 #endif
 
-      gateStateRect = { 0, 0, arduino.width(), (uint16_t)(gateOriginY - arduino.charH(2) / 2) };
+      gateStateRect = { 0, 0, sketch.arduino.width(), (uint16_t)(gateOriginY - sketch.arduino.charH(2) / 2) };
    }
 
-   arduino.setTextSize(2);
-   arduino.setCursor(arduino.width(), arduino.height() - arduino.charH());
-   arduino.printR(VERSION, Color::DARKGRAY, backgroundColor);
+   sketch.arduino.setTextSize(2);
+   sketch.arduino.setCursor(sketch.arduino.width(), sketch.arduino.height() - sketch.arduino.charH());
+   sketch.arduino.printR(VERSION, Color::DARKGRAY, backgroundColor);
 
-   arduino.setTextSize(savedTextSize);
-   arduino.setCursor(savedCursor);
+   sketch.arduino.setTextSize(savedTextSize);
+   sketch.arduino.setCursor(savedCursor);
 }
 
 ///
@@ -602,11 +607,11 @@ void displayLine(LineState& line, float azimuth, bool isOpen)
 
    if (line.lineDrawn)
    {
-      arduino.drawLine(line.lastStartX, line.lastStartY, line.lastEndX, line.lastEndY, eraseColor);
+      sketch.arduino.drawLine(line.lastStartX, line.lastStartY, line.lastEndX, line.lastEndY, eraseColor);
    }
 
-   arduino.drawLine(startX, startY, endX, endY, lineColor);
-   arduino.drawCircle(line.startX, gateOriginY, gateOriginRadius, lineColor);
+   sketch.arduino.drawLine(startX, startY, endX, endY, lineColor);
+   sketch.arduino.drawCircle(line.startX, gateOriginY, gateOriginRadius, lineColor);
 
    line.lastStartX = startX;
    line.lastStartY = startY;
@@ -667,7 +672,7 @@ public:
    // "Telemetry... OK" init line printed during setup() is never wiped mid-init
    bool needsInitialClear = false;
 
-   explicit GateTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &arduino)
+   explicit GateTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &sketch.arduino)
    {
    }
 
@@ -692,14 +697,14 @@ public:
       needsInitialClear = true;
 
       leftLine = LineState{ GATE_ORIGIN_MARGIN };
-      rightLine = LineState{ (int16_t)(arduino.width() - GATE_ORIGIN_MARGIN), 0, 0, 0, 0, false, NAN, true };
+      rightLine = LineState{ (int16_t)(sketch.arduino.width() - GATE_ORIGIN_MARGIN), 0, 0, 0, 0, false, NAN, true };
       lineLength = (rightLine.startX - leftLine.startX) / 2;
-      gateOriginY = arduino.height() - 1 - GATE_ORIGIN_MARGIN;
-      gateOriginRadius = (int16_t)lround(GATE_ORIGIN_RADIUS_REFERENCE * (float)arduino.width() / GATE_ORIGIN_RADIUS_REFERENCE_WIDTH);
+      gateOriginY = sketch.arduino.height() - 1 - GATE_ORIGIN_MARGIN;
+      gateOriginRadius = (int16_t)lround(GATE_ORIGIN_RADIUS_REFERENCE * (float)sketch.arduino.width() / GATE_ORIGIN_RADIUS_REFERENCE_WIDTH);
 
       // Subscribe to the right gate topic on the same connection. Only done once
       // (guarded by _initialized above); later reconnects reuse the updated topic list.
-      viewer.getClient()->setTopics({ LEFT_TELEMETRY_TOPIC, RIGHT_TELEMETRY_TOPIC });
+      sketch.getClient()->setTopics({ LEFT_TELEMETRY_TOPIC, RIGHT_TELEMETRY_TOPIC });
    }
 
    void onDisconnected(const std::string& reason) override
@@ -718,12 +723,11 @@ public:
    }
 };
 
-GateTelemetryHandler telemetryHandler(&arduino.status);
+GateTelemetryHandler telemetryHandler(&sketch.arduino.status);
 
 void setup()
 {
    SerialX::begin();
-   arduino.begin();
 
    gateOpenHistory.load();
 
@@ -732,9 +736,9 @@ void setup()
       lastGateOpenTime = gateOpenHistory.get(0).time;
    }
 
-   viewer.begin();
+   sketch.begin();
 
-   TelemetrySubscriber* client = viewer.beginTelemetry(LEFT_TELEMETRY_TOPIC, &telemetryHandler);
+   TelemetrySubscriber* client = sketch.beginTelemetry(LEFT_TELEMETRY_TOPIC, &telemetryHandler);
    client->onSample([](const std::string& topic, double value, int64_t dtMicros)
    {
       if (topic == LEFT_TELEMETRY_TOPIC)
@@ -746,7 +750,7 @@ void setup()
          rightValue = (float)value;
       }
    });
-   viewer.onStatus([](LoggerStatus& status)
+   sketch.onStatus([](LoggerStatus& status)
    {
       status.add("Left Topic", LEFT_TELEMETRY_TOPIC);
       status.add("Right Topic", RIGHT_TELEMETRY_TOPIC);
@@ -754,14 +758,14 @@ void setup()
       status.add("Right Gate Angle", rightLine.lastAzimuth, 0);
    });
 
-   viewer.completeInitialization();
+   sketch.completeInitialization();
 }
 
 void loop()
 {
-   viewer.loop();
+   sketch.loop();
 
-   TelemetrySubscriber* client = viewer.getClient();
+   TelemetrySubscriber* client = sketch.getClient();
 
    // Geometry (line endpoints, origins, etc.) is only computed once, the first time
    // the left client starts (see GateTelemetryHandler::onStarted()); until then there's
@@ -776,12 +780,12 @@ void loop()
    if (telemetryHandler.needsInitialClear)
    {
       telemetryHandler.needsInitialClear = false;
-      arduino.clearDisplay();
+      sketch.arduino.clearDisplay();
    }
 
    #ifdef ARDUINO_TOUCH_SUPPORTED
    lgfx::touch_point_t touchPoint;
-   bool touched = arduino.display.getTouch(&touchPoint) > 0;
+   bool touched = sketch.arduino.display.getTouch(&touchPoint) > 0;
 
    static bool wasTouched = false;
    bool tapped = touched && !wasTouched;
@@ -800,7 +804,7 @@ void loop()
       if (tapped || historyTimeoutTimer.ready())
       {
          showingHistory = false;
-         arduino.clearDisplay();
+         sketch.arduino.clearDisplay();
          forceRedraw = true;
       }
       else
@@ -888,7 +892,7 @@ void loop()
    }
 #else
    // No touch hardware on this board: use button A to open the gate instead.
-   if (arduino.buttonA.wasPressed() && !isOpen)
+   if (sketch.arduino.buttonA.wasPressed() && !isOpen)
    {
       postGateOpen();
    }

@@ -97,8 +97,6 @@ constexpr uint8_t STARTUP_DELAY_S = 5;
 Format humFormat("##.#%");
 Format tempFormat("###.## F");
 
-Arduino arduino;
-
 // Cached values
 // FieldTable reads these directly via pointer and only repaints a row's value when it changes.
 float allValuesTemp = NAN;
@@ -111,48 +109,48 @@ StringValue allValuesHum("##.#%");
 StringValue allValuesDewPoint("###.## F");
 StringValue allValuesAbsHum("##.#%");
 
+TempMonitorSketch sketch(SKETCH_NAME, VERSION, PREFERENCES_NAMESPACE);
+
 // Shows all 5 time-averaged readings with labels, GAP-aligned into a single value
 // column, while buttonA is held (see loop()). Positioned once headerHeight is known in
 // setup().
-FieldTable allValuesTable(&arduino, 0, 0, TEXT_SIZE_SMALL);
+FieldTable allValuesTable(&sketch.arduino, 0, 0, TEXT_SIZE_SMALL);
 
 // Tracks whether the buttonA-held all-values table was showing on the previous loop() so
 // the display can be cleared exactly once when switching between it and the normal readout.
 bool wasAllValuesMode = false;
 
-TempMonitorSketch monitor(&arduino, SKETCH_NAME, VERSION, PREFERENCES_NAMESPACE);
-
 void setup()
 {
    Wire.begin();
 
-   monitor.setOnWiFiLostCallback([]()
+   sketch.setOnWiFiLostCallback([]()
    {
-      arduino.clearDisplay();
-      arduino.println("WiFi connection lost", Color::RED);
+      sketch.arduino.clearDisplay();
+      sketch.arduino.println("WiFi connection lost", Color::RED);
       return false;
    });
 
    // Fall back to the internal ESP32 CPU temperature sensor if no external sensor is
    // found, so the device still reports a (less accurate) temperature reading instead
    // of failing to start.
-   monitor.begin();
+   sketch.begin();
 
    allValuesTable.addRow("Temp", tempFormat.formatString().c_str(), &allValuesTemp);
    allValuesTable.addRow("Humidity", &allValuesHum);
    allValuesTable.addRow("Dew Pt", &allValuesDewPoint);
    allValuesTable.addRow("Abs Hum", &allValuesAbsHum);
 
-   int16_t tableHeaderHeight = arduino.charH(TEXT_SIZE_SMALL);
-   int16_t tableFooterHeight = arduino.charH(TEXT_SIZE_SMALL);
-   int16_t tableAvailableHeight = arduino.height() - tableHeaderHeight - tableFooterHeight;
-   allValuesTable.setPosition(arduino.width() / 2, tableHeaderHeight + tableAvailableHeight / 2, Anchor::CENTER);
+   int16_t tableHeaderHeight = sketch.arduino.charH(TEXT_SIZE_SMALL);
+   int16_t tableFooterHeight = sketch.arduino.charH(TEXT_SIZE_SMALL);
+   int16_t tableAvailableHeight = sketch.arduino.height() - tableHeaderHeight - tableFooterHeight;
+   allValuesTable.setPosition(sketch.arduino.width() / 2, tableHeaderHeight + tableAvailableHeight / 2, Anchor::CENTER);
 
    // Pause so the initialization info on the display remains visible for a moment
    // before it's cleared and replaced with the live temperature/humidity readout.
    delay(STARTUP_DELAY_S * 1000UL);
 
-   arduino.clearDisplay();
+   sketch.arduino.clearDisplay();
 
    Logger.logInitializationComplete();
 }
@@ -165,12 +163,12 @@ void setup()
 ///
 int16_t drawHeader()
 {
-   arduino.setCursor(0, 0);
-   arduino.setTextSize(TEXT_SIZE_SMALL);
-   arduino.print("Influx", Color::HEADING);
-   arduino.printR(monitor.sensor().type(), Color::GRAY);
-   arduino.println();
-   return arduino.charH();
+   sketch.arduino.setCursor(0, 0);
+   sketch.arduino.setTextSize(TEXT_SIZE_SMALL);
+   sketch.arduino.print("Influx", Color::HEADING);
+   sketch.arduino.printR(sketch.sensor().type(), Color::GRAY);
+   sketch.arduino.println();
+   return sketch.arduino.charH();
 }
 
 ///
@@ -180,10 +178,10 @@ int16_t drawHeader()
 ///
 void drawFooter()
 {
-   arduino.setTextSize(TEXT_SIZE_SMALL);
-   arduino.setCursor(0, -arduino.charH());
-   arduino.print(monitor.siteLocation(), Color::CYAN);
-   arduino.printR(VERSION, Color::SUB_LABEL);
+   sketch.arduino.setTextSize(TEXT_SIZE_SMALL);
+   sketch.arduino.setCursor(0, -sketch.arduino.charH());
+   sketch.arduino.print(sketch.siteLocation(), Color::CYAN);
+   sketch.arduino.printR(VERSION, Color::SUB_LABEL);
 }
 
 ///
@@ -200,7 +198,7 @@ void updateAllValuesMode(bool allValuesMode, int16_t headerHeight, int16_t foote
 {
    if (allValuesMode != wasAllValuesMode)
    {
-      arduino.clear(Rect16{ 0, (uint16_t)headerHeight, arduino.width(), (uint16_t)(arduino.height() - headerHeight - footerHeight) });
+      sketch.arduino.clear(Rect16{ 0, (uint16_t)headerHeight, sketch.arduino.width(), (uint16_t)(sketch.arduino.height() - headerHeight - footerHeight) });
       allValuesTable.invalidate();
       wasAllValuesMode = allValuesMode;
    }
@@ -217,11 +215,11 @@ void updateAllValuesMode(bool allValuesMode, int16_t headerHeight, int16_t foote
 void drawAllValuesReadout(float temp, float hum)
 {
    allValuesTemp = temp;
-   if (monitor.sensor().supportsHumidity())
+   if (sketch.sensor().supportsHumidity())
    {
       allValuesHum.set(humFormat.toString(hum));
-      allValuesDewPoint.set(tempFormat.toString(monitor.dewPoint()));
-      allValuesAbsHum.set(humFormat.toString(monitor.absoluteHumidity()));
+      allValuesDewPoint.set(tempFormat.toString(sketch.dewPoint()));
+      allValuesAbsHum.set(humFormat.toString(sketch.absoluteHumidity()));
    }
    else
    {
@@ -243,34 +241,34 @@ void drawAllValuesReadout(float temp, float hum)
 ///
 void drawNormalReadout(float temp, float hum, int16_t headerHeight, int16_t footerHeight)
 {
-   arduino.setTextSize(VALUE_TEXT_SIZE);
-   int16_t valuesHeight = 2 * arduino.charH() + SPACING;
-   int16_t availableHeight = arduino.height() - headerHeight - footerHeight;
-   arduino.setCursorY(headerHeight + (availableHeight - valuesHeight) / 2);
-   arduino.printlnD(temp, tempFormat, Color::VALUE);
+   sketch.arduino.setTextSize(VALUE_TEXT_SIZE);
+   int16_t valuesHeight = 2 * sketch.arduino.charH() + SPACING;
+   int16_t availableHeight = sketch.arduino.height() - headerHeight - footerHeight;
+   sketch.arduino.setCursorY(headerHeight + (availableHeight - valuesHeight) / 2);
+   sketch.arduino.printlnD(temp, tempFormat, Color::VALUE);
 
-   arduino.setCursorY(arduino.getCursorY() + SPACING);
-   if (monitor.sensor().supportsHumidity())
+   sketch.arduino.setCursorY(sketch.arduino.getCursorY() + SPACING);
+   if (sketch.sensor().supportsHumidity())
    {
-      arduino.printlnD(hum, humFormat, Color::VALUE);
+      sketch.arduino.printlnD(hum, humFormat, Color::VALUE);
    }
    else
    {
-      arduino.printlnD(humFormat, Color::GRAY);
+      sketch.arduino.printlnD(humFormat, Color::GRAY);
    }
 }
 
 void loop()
 {
-   monitor.loop();
+   sketch.loop();
 
    int16_t headerHeight = drawHeader();
-   int16_t footerHeight = arduino.charH(TEXT_SIZE_SMALL);
+   int16_t footerHeight = sketch.arduino.charH(TEXT_SIZE_SMALL);
 
-   float temp = monitor.temp();
-   float hum = monitor.humidity();
+   float temp = sketch.temp();
+   float hum = sketch.humidity();
 
-   bool allValuesMode = arduino.buttonA.isPressed();
+   bool allValuesMode = sketch.arduino.buttonA.isPressed();
    updateAllValuesMode(allValuesMode, headerHeight, footerHeight);
 
    if (allValuesMode)

@@ -276,6 +276,20 @@ public:
 
    ///
    /// <summary>
+   /// Indicates whether a "label value" status line fits within the display width at the
+   /// current text size.
+   /// </summary>
+   /// <param name="label">The label text.</param>
+   /// <param name="value">The value text.</param>
+   /// <returns>True if the label and value fit on one display row; otherwise false.</returns>
+   ///
+   bool fitsOnDisplay(const char* label, const char* value) override
+   {
+      return textWidth(label) + textWidth(value) <= display.width();
+   }
+
+   ///
+   /// <summary>
    /// Sets the display rotation orientation.
    /// </summary>
    /// <param name="rotation">The desired rotation orientation.</param>

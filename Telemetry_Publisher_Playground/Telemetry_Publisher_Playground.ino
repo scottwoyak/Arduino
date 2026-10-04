@@ -40,8 +40,6 @@
 constexpr auto TELEMETRY_TOPIC = "Test";
 
 // ----------- The Board
-Arduino arduino;
-
 // ----------- Test Function Selection (source, selectable live via Encoder A/B)
 constexpr const char* TEST_FUNCTION_LABELS[] = { "Const", "Random", "Normal", "Sin", "Wave" };
 constexpr const char* PREF_NAMESPACE = "TelemetryPubPg";
@@ -84,6 +82,23 @@ EnumEditor sourceEditor(TEST_FUNCTION_LABELS, 0, "######");
 ScaledStepIntEditor targetEditor(
    MIN_PUBLISH_RATE_PER_SEC, MAX_PUBLISH_RATE_PER_SEC, DEFAULT_PUBLISH_RATE_PER_SEC, "###/s");
 
+TelemetryConfig TELEMETRY_CONFIG = {
+   .topic = TELEMETRY_TOPIC,
+   .decimals = 3,
+   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
+   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
+   .deviceToken = TELEMETRY_DEVICE_TOKEN,
+   .clientToken = TELEMETRY_CLIENT_TOKEN,
+};
+
+SketchConfig PUBLISHER_CONFIG = {
+   .sketchName = "Publisher",
+   .cpuFrequencyMhz = 80,
+};
+
+// No Influx site table, so Influx isn't used.
+PublisherSketch sketch(PUBLISHER_CONFIG, {}, TELEMETRY_CONFIG);
+
 // ----------- Status Table
 FieldTableEditor::Row tableCells[] =
 {
@@ -95,11 +110,11 @@ FieldTableEditor::Row tableCells[] =
    { "Sampling Rate", &targetEditor },
    { "Published Rate", &rateValueField },
 };
-FieldTableEditor table(&arduino, PREF_NAMESPACE, tableCells);
+FieldTableEditor table(&sketch.arduino, PREF_NAMESPACE, tableCells);
 
 // ----------- Value/Status Display
-DisplayValue value(&arduino, Format("###.###"), 5, DisplayValue::Alignment::DECIMAL);
-DisplayValue status(&arduino, Format(32, Format::Alignment::LEFT), 2, DisplayValue::Alignment::LEFT);
+DisplayValue value(&sketch.arduino, Format("###.###"), 5, DisplayValue::Alignment::DECIMAL);
+DisplayValue status(&sketch.arduino, Format(32, Format::Alignment::LEFT), 2, DisplayValue::Alignment::LEFT);
 float lastValue = NAN;
 std::string lastErrorMsg = "";
 std::string lastDrawnErrorMsg = "";
@@ -112,7 +127,7 @@ constexpr int16_t ERROR_AREA_HEIGHT_PX = 40;
 
 // ----------- Published Value Scatter Plot (bottom of display, 5 second rolling span)
 constexpr unsigned long PLOT_SPAN_MS = 5000UL;
-ScatterPlot valuePlot(&arduino, Rect16{}, "##.#s", "###.###");
+ScatterPlot valuePlot(&sketch.arduino, Rect16{}, "##.#s", "###.###");
 TimedScatterPlotSeries* valueSeries = valuePlot.createTimedSeries(PLOT_SPAN_MS);
 constexpr uint8_t VALUE_SERIES_POINT_SIZE = 2;
 constexpr uint8_t VALUE_SERIES_MAX_POINT_SIZE = 3;
@@ -126,7 +141,7 @@ constexpr uint8_t VALUE_SERIES_MAX_POINT_SIZE = 3;
 ///
 void clearErrorArea()
 {
-   arduino.fillRect(errorAreaX, errorAreaY, arduino.width() - errorAreaX, ERROR_AREA_HEIGHT_PX, Color::BLACK);
+   sketch.arduino.fillRect(errorAreaX, errorAreaY, sketch.arduino.width() - errorAreaX, ERROR_AREA_HEIGHT_PX, Color::BLACK);
    lastDrawnErrorMsg.clear();
 }
 
@@ -247,19 +262,7 @@ public:
    }
 };
 
-PlaygroundTelemetryHandler telemetryHandler(&arduino);
-
-TelemetryConfig TELEMETRY_CONFIG = {
-   .topic = TELEMETRY_TOPIC,
-   .decimals = 3,
-};
-
-SketchConfig PUBLISHER_CONFIG = {
-   .sketchName = "Publisher",
-};
-
-// No Influx site table, so Influx isn't used.
-PublisherSketch publisher(&arduino, PUBLISHER_CONFIG, {}, TELEMETRY_CONFIG);
+PlaygroundTelemetryHandler telemetryHandler(&sketch.arduino);
 
 ///
 /// <summary>
@@ -278,26 +281,26 @@ void setup()
 {
    valueSeries->pointSize = VALUE_SERIES_POINT_SIZE;
 
-   arduino.setTextSize(3);
-   arduino.setCursor(0, 0);
-   arduino.println("Publisher", Color::HEADING);
-   arduino.moveCursorY(4);
+   sketch.arduino.setTextSize(3);
+   sketch.arduino.setCursor(0, 0);
+   sketch.arduino.println("Publisher", Color::HEADING);
+   sketch.arduino.moveCursorY(4);
 
-   arduino.setTextSize(2);
-   Point16 tablePos = arduino.getCursor();
+   sketch.arduino.setTextSize(2);
+   Point16 tablePos = sketch.arduino.getCursor();
    table.setPosition(tablePos);
    table.load();
    selectTestFunction();
    publishTimer.setDurationMs(1000UL / targetEditor.get());
    table.draw();
 
-   int16_t valueAreaCenterX = arduino.width() * 3 / 4;
+   int16_t valueAreaCenterX = sketch.arduino.width() * 3 / 4;
    int16_t valueAreaCenterY = table.getRect().top() + table.getRect().height / 2;
 
-   arduino.setTextSize(5);
+   sketch.arduino.setTextSize(5);
    value.setPosition(valueAreaCenterX, valueAreaCenterY, VerticalAnchor::MIDDLE);
 
-   arduino.setTextSize(2);
+   sketch.arduino.setTextSize(2);
    constexpr int16_t MESSAGE_PADDING_PX = 5;
    constexpr int16_t ROW_GAP_PX = 4;
    int16_t messageAreaX = 0;
@@ -306,10 +309,10 @@ void setup()
 
    errorAreaX = messageAreaX;
    errorAreaY = messageTop + status.height() + ROW_GAP_PX;
-   arduino.display.setTextWrap(true);
+   sketch.arduino.display.setTextWrap(true);
 
    int16_t plotTop = table.getRect().bottom() + MESSAGE_PADDING_PX;
-   valuePlot.setRect(0, plotTop, arduino.width(), arduino.height() - plotTop);
+   valuePlot.setRect(0, plotTop, sketch.arduino.width(), sketch.arduino.height() - plotTop);
    valuePlot.setShowXMinMaxValue(false);
    valuePlot.setShowXRangeValue(true);
    valuePlot.setShowYRangeValue(false);
@@ -317,15 +320,15 @@ void setup()
    valueSeries->showPoints = true;
    valueSeries->showLines = false;
 
-   publisher.setTelemetryHandler(&telemetryHandler);
-   publisher.begin();
-   publisher.onStatus([](LoggerStatus& status)
+   sketch.setTelemetryHandler(&telemetryHandler);
+   sketch.begin();
+   sketch.onStatus([](LoggerStatus& status)
    {
       status.add("Source", TEST_FUNCTION_LABELS[sourceEditor.get()]);
       status.add("Last Value", lastValue, 3);
    });
 
-   Url url(publisher.client()->getUrl().c_str());
+   Url url(sketch.client()->getUrl().c_str());
    hostValue.set(url.getHost().c_str());
    table.draw();
 
@@ -346,14 +349,14 @@ void loop()
       }
    }
 
-   if (arduino.buttonA.wasPressed())
+   if (sketch.arduino.buttonA.wasPressed())
    {
       Util::reset(0.0f, "Manual reset (button A)");
    }
 
-   table.selectNext(arduino.encoderA.delta());
+   table.selectNext(sketch.arduino.encoderA.delta());
 
-   if (arduino.encoderB.button.wasPressed())
+   if (sketch.arduino.encoderB.button.wasPressed())
    {
       if (valueSeries->showLines)
       {
@@ -372,7 +375,7 @@ void loop()
       }
    }
 
-   int32_t adjustDelta = arduino.encoderB.delta();
+   int32_t adjustDelta = sketch.arduino.encoderB.delta();
    if (adjustDelta != 0)
    {
       table.adjustSelected(adjustDelta);
@@ -389,16 +392,16 @@ void loop()
    if (publishTimer.ready())
    {
       float sensorValue = sensor->get();
-      publisher.client()->setValue(sensorValue);
+      sketch.client()->setValue(sensorValue);
       lastValue = sensorValue;
       valueSeries->add(sensorValue);
    }
 
-   publisher.loop();
+   sketch.loop();
 
    if (rateDisplayTimer.ready())
    {
-      rateValueField.set(publisher.client()->getRate());
+      rateValueField.set(sketch.client()->getRate());
    }
 
    table.draw();
@@ -433,8 +436,8 @@ void loop()
       if (!lastErrorMsg.empty() && lastErrorMsg != lastDrawnErrorMsg)
       {
          clearErrorArea();
-         arduino.setCursor(errorAreaX, errorAreaY);
-         arduino.println(lastErrorMsg.c_str(), Color::RED);
+         sketch.arduino.setCursor(errorAreaX, errorAreaY);
+         sketch.arduino.println(lastErrorMsg.c_str(), Color::RED);
          lastDrawnErrorMsg = lastErrorMsg;
       }
    }

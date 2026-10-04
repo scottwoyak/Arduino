@@ -15,7 +15,7 @@
 
 ///
 /// <summary>
-/// Renders one or more ScatterPlotSeries/TimedScatterPlotSeries on the display as a
+/// Renders one or more
 /// shared-axis scatter plot. Callers create series via createSeries()/
 /// createRollingSeries()/createTimedSeries(), populate them by calling add() as data
 /// becomes available, and set each series' display flags (showPoints, showLines,
@@ -1201,7 +1201,14 @@ public:
       }
 
       bool axisChanged = !_hasRenderedFrame || (xMin != _axisXMin) || (xMax != _axisXMax) || (yMin != _axisYMin) || (yMax != _axisYMax);
-      bool needsFullRedraw = _forceFullRedraw || axisChanged;
+
+      // The X axis of a timed series scrolls every frame, but the axis chrome (labels) only
+      // needs repainting when something it actually displays changes.
+      bool labelsChanged = !_hasRenderedFrame
+         || (yMin != _axisYMin) || (yMax != _axisYMax)
+         || (_showXMinMaxValue && ((xMin != _axisXMin) || (xMax != _axisXMax)))
+         || (_showXRangeValue && ((xMax - xMin) != (_axisXMax - _axisXMin)));
+      bool needsFullRedraw = _forceFullRedraw || (axisChanged && labelsChanged);
 
       _display->setTextSize(2);
 
@@ -1243,6 +1250,13 @@ public:
       else if (_chartWidth < 20 || _chartHeight < 20)
       {
          return;
+      }
+      else
+      {
+         _axisXMin = xMin;
+         _axisXMax = xMax;
+         _axisYMin = yMin;
+         _axisYMax = yMax;
       }
 
       _displayBuffer.bind(_display, _chartLeft, _chartTop, _chartWidth, _chartHeight);

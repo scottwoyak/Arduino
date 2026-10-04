@@ -9,6 +9,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+
 #include "SerialX.h"
 
 constexpr uint8_t I2C_SDA = 7;

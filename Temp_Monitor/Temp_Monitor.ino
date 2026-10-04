@@ -10,7 +10,7 @@
 // - This device's bucket/site/location is prompted for over Serial the first time it
 //   runs, then saved to Preferences (NVS) so it survives reboots and OTA firmware
 //   updates. On subsequent boots the saved value is used automatically, unless a Serial
-//   monitor is attached at boot, which offers a re-prompt. This is handled by the
+//   sketch is attached at boot, which offers a re-prompt. This is handled by the
 //   shared MonitorSketch class (see MonitorSketch.h) via SKETCH_CONFIG's promptForContext flag,
 //   since this sketch prompts for a bucket/site (chosen from a fixed list) and a
 //   free-text location, rather than picking a single fixed SiteConfig entry.
@@ -89,10 +89,9 @@ constexpr auto PREFERENCES_NAMESPACE = "TempMonitor";
 constexpr uint8_t LED_STATUS_PIN = 13;
 constexpr uint8_t LED_STATUS_GROUND_PIN = 12;
 
-Arduino arduino;
 SingleLedStatus ledStatus(LED_STATUS_PIN);
 
-TempMonitorSketch monitor(&arduino, SKETCH_NAME, VERSION, PREFERENCES_NAMESPACE);
+TempMonitorSketch sketch(SKETCH_NAME, VERSION, PREFERENCES_NAMESPACE);
 
 void setup()
 {
@@ -102,16 +101,16 @@ void setup()
 
    Wire.begin();
 
-   // Registered before monitor.begin() (which calls arduino.begin()) so ledStatus.begin()
+   // Registered before sketch.begin() (which calls arduino.begin()) so ledStatus.begin()
    // is invoked along with the board's built-in status indicators.
-   arduino.addStatus(&ledStatus);
+   sketch.arduino.addStatus(&ledStatus);
 
-   monitor.begin();
+   sketch.begin();
 
    Logger.logInitializationComplete();
 }
 
 void loop()
 {
-   monitor.loop();
+   sketch.loop();
 }
