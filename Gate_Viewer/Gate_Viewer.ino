@@ -93,7 +93,7 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 #include <HTTPClient.h>
 #include <WebSocketsClient.h>
 
-// #include "BufferedTimeSeries.h" // unused while azimuth buffering is disabled
+#include "BufferedTimeSeries.h"
 #include "SerialX.h"
 #include "Status.h"
 #include "TelemetryClient.h"
@@ -146,20 +146,16 @@ int16_t gateOriginY = 0;
 // // Expected sample spacing (telemetry arrives at ~4 samples/sec on average, but with
 // // significant jitter -- gaps of up to ~500ms have been observed), used to size the
 // // azimuth buffers' interpolation resolution.
-// constexpr unsigned long BUFFER_RESOLUTION_MS = 250;
+constexpr unsigned long BUFFER_RESOLUTION_MS = 30;
 //
 // // Duration of history retained in the azimuth buffers. Wide enough to comfortably
 // // cover the largest observed gaps between samples (so ready()/get() don't
 // // intermittently fail and fall back to the raw, unsmoothed value mid-animation), at
 // // the cost of a bit more interpolation lag (half the window).
-// constexpr unsigned long BUFFER_TIME_SPAN_MS = 6 * BUFFER_RESOLUTION_MS;
+constexpr unsigned long BUFFER_TIME_SPAN_MS = 400;
 
-// Target animation frame rate for redrawing the gate lines.
-constexpr unsigned long CHART_UPDATE_MS = 1000 / 30;
-
-// BufferedTimeSeries leftAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
-// BufferedTimeSeries rightAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
-Timer chartTimer(CHART_UPDATE_MS);
+BufferedTimeSeries leftAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
+BufferedTimeSeries rightAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
 
 // ----------- Last open time (updated whenever the gate transitions from closed to
 // open; 0 until the gate has opened at least once since boot)
@@ -484,6 +480,14 @@ void displayHistoryView()
 constexpr int16_t GATE_STATE_TOP_MARGIN = 10;
 constexpr int16_t GATE_STATE_BOTTOM_MARGIN = 7;
 
+// Non-touch boards (e.g. the Feather's small 240x135 display) use smaller state text so the
+// gate lines don't draw over it.
+#ifdef ARDUINO_TOUCH_SUPPORTED
+constexpr uint8_t GATE_STATE_TEXT_SIZE = 5;
+#else
+constexpr uint8_t GATE_STATE_TEXT_SIZE = 3;
+#endif
+
 // ----------- Tap detection for the gate state banner, which posts an open request when
 // tapped while the gate is closed. Rect is only tappable while the gate is closed (the
 // banner shows "Tap to open" in that state).
@@ -535,19 +539,19 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
    Point16 savedCursor = sketch.arduino.getCursor();
    uint8_t savedTextSize = sketch.arduino.getTextSize();
 
-   sketch.arduino.setTextSize(5);
+   sketch.arduino.setTextSize(GATE_STATE_TEXT_SIZE);
 
    Color backgroundColor = isOpen ? GATE_OPEN_COLOR : Color::BLACK;
 #ifdef ARDUINO_TOUCH_SUPPORTED
-   int16_t rowHeight = GATE_STATE_TOP_MARGIN + sketch.arduino.charH(5) + GATE_STATE_BOTTOM_MARGIN + sketch.arduino.charH(2);
+   int16_t rowHeight = GATE_STATE_TOP_MARGIN + sketch.arduino.charH(GATE_STATE_TEXT_SIZE) + GATE_STATE_BOTTOM_MARGIN + sketch.arduino.charH(2);
 #else
-   int16_t rowHeight = GATE_STATE_TOP_MARGIN + sketch.arduino.charH(5) + GATE_STATE_BOTTOM_MARGIN;
+   int16_t rowHeight = GATE_STATE_TOP_MARGIN + sketch.arduino.charH(GATE_STATE_TEXT_SIZE) + GATE_STATE_BOTTOM_MARGIN;
 #endif
    sketch.arduino.fillRect(0, 0, sketch.arduino.width(), sketch.arduino.height(), backgroundColor);
 
    if (isOpen)
    {
-      sketch.arduino.setCursor(0, (rowHeight - sketch.arduino.charH(5)) / 2);
+      sketch.arduino.setCursor(0, (rowHeight - sketch.arduino.charH(GATE_STATE_TEXT_SIZE)) / 2);
       sketch.arduino.printlnC("OPEN", Color::BLACK, GATE_OPEN_COLOR);
 
       gateStateRect = { 0, 0, 0, 0 };
@@ -590,7 +594,8 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
 ///
 void displayLine(LineState& line, float azimuth, bool isOpen)
 {
-   if (azimuth == line.lastAzimuth)
+   constexpr float MIN_REDRAW_DEGREES = 0.1f;
+   if (!isnan(line.lastAzimuth) && fabsf(azimuth - line.lastAzimuth) <= MIN_REDRAW_DEGREES)
    {
       return;
    }
@@ -745,10 +750,14 @@ void setup()
       if (topic == LEFT_TELEMETRY_TOPIC)
       {
          leftValue = (float)value;
+         leftAzimuthBuffer.set(leftValue, dtMicros / 1000);
+         Serial.println(String("rx left=") + String(leftValue, 2) + " dt=" + String((int32_t)(dtMicros / 1000)));
       }
       else if (topic == RIGHT_TELEMETRY_TOPIC)
       {
          rightValue = (float)value;
+         rightAzimuthBuffer.set(rightValue, dtMicros / 1000);
+         Serial.println(String("rx right=") + String(rightValue, 2) + " dt=" + String((int32_t)(dtMicros / 1000)));
       }
    });
    sketch.onStatus([](LoggerStatus& status)
@@ -817,38 +826,16 @@ void loop()
    float leftAzimuth = client->isStarted() ? leftValue : NAN;
    float rightAzimuth = client->isStarted() ? rightValue : NAN;
 
-   // Buffering disabled for now -- it wasn't producing the desired smoothing. Left here
-   // (commented out) in case it's revisited later.
-   //
-   // // Push into the buffers whenever a new telemetry value arrives, and also periodically
-   // // (at BUFFER_RESOLUTION_MS) even when the value hasn't changed. Without the periodic
-   // // resample, a stationary gate (value unchanged for a long time) leaves only a single
-   // // stale point in the buffer; when motion resumes, interpolating between that old
-   // // stale point and the first fresh reading spans a huge time gap and produces a
-   // // distorted/jumped value instead of a smooth transition.
-   // static float lastPushedLeftAzimuth = NAN;
-   // static float lastPushedRightAzimuth = NAN;
-   // static unsigned long lastLeftPushMillis = 0;
-   // static unsigned long lastRightPushMillis = 0;
-   //
-   // bool leftChanged = !isnan(leftAzimuth) && leftAzimuth != lastPushedLeftAzimuth;
-   // if (!isnan(leftAzimuth) && (leftChanged || millis() - lastLeftPushMillis >= BUFFER_RESOLUTION_MS))
-   // {
-   //    leftAzimuthBuffer.set(leftAzimuth);
-   //    lastPushedLeftAzimuth = leftAzimuth;
-   //    lastLeftPushMillis = millis();
-   // }
-   //
-   // bool rightChanged = !isnan(rightAzimuth) && rightAzimuth != lastPushedRightAzimuth;
-   // if (!isnan(rightAzimuth) && (rightChanged || millis() - lastRightPushMillis >= BUFFER_RESOLUTION_MS))
-   // {
-   //    rightAzimuthBuffer.set(rightAzimuth);
-   //    lastPushedRightAzimuth = rightAzimuth;
-   //    lastRightPushMillis = millis();
-   // }
+   // Fall back to the raw value whenever the buffer doesn't yet have enough history to
+   // interpolate (e.g. right after startup, or while the gate is stationary and no new
+   // samples are arriving), so the line is still drawn instead of disappearing.
+   float displayLeftAzimuth = leftAzimuthBuffer.ready() ? leftAzimuthBuffer.get() : leftAzimuth;
+   float displayRightAzimuth = rightAzimuthBuffer.ready() ? rightAzimuthBuffer.get() : rightAzimuth;
 
-   constexpr float GATE_OPEN_THRESHOLD_DEGREES = 5.0f;
-   bool isOpen = (!isnan(leftAzimuth) && leftAzimuth > GATE_OPEN_THRESHOLD_DEGREES) || (!isnan(rightAzimuth) && rightAzimuth > GATE_OPEN_THRESHOLD_DEGREES);
+   // The gate is considered open whenever either displayed angle exceeds the threshold.
+   constexpr float GATE_OPEN_THRESHOLD_DEGREES = 3.0f;
+   bool isOpen = (!isnan(displayLeftAzimuth) && displayLeftAzimuth > GATE_OPEN_THRESHOLD_DEGREES) ||
+                 (!isnan(displayRightAzimuth) && displayRightAzimuth > GATE_OPEN_THRESHOLD_DEGREES);
 
    static bool lastIsOpen = false;
    static bool everDrawn = false;
@@ -899,17 +886,33 @@ void loop()
    }
 #endif
 
-   if (chartTimer.ready())
    {
-      // Buffering disabled for now (see comment above); use raw values directly.
-      float displayLeftAzimuth = leftAzimuth;
-      float displayRightAzimuth = rightAzimuth;
+      static uint32_t lastFrameMillis = 0;
+      static uint32_t fpsWindowStartMillis = 0;
+      static uint32_t fpsFrameCount = 0;
+      static float fps = 0;
 
-      // // Fall back to the raw value whenever the buffer doesn't yet have enough history to
-      // // interpolate (e.g. right after startup, or while the gate is stationary and no new
-      // // samples are arriving), so the line is still drawn instead of disappearing.
-      // float displayLeftAzimuth = leftAzimuthBuffer.ready() ? leftAzimuthBuffer.get() : leftAzimuth;
-      // float displayRightAzimuth = rightAzimuthBuffer.ready() ? rightAzimuthBuffer.get() : rightAzimuth;
+      uint32_t frameMillis = millis();
+      fpsFrameCount++;
+      if (frameMillis - fpsWindowStartMillis >= 1000)
+      {
+         fps = fpsFrameCount * 1000.0f / (frameMillis - fpsWindowStartMillis);
+         fpsWindowStartMillis = frameMillis;
+         fpsFrameCount = 0;
+      }
+
+      if (isOpen)
+      {
+         Serial.print("left=");
+         Serial.print(displayLeftAzimuth, 1);
+         Serial.print(" right=");
+         Serial.print(displayRightAzimuth, 1);
+         Serial.print(" dt=");
+         Serial.print(frameMillis - lastFrameMillis);
+         Serial.print("ms fps=");
+         Serial.println(fps, 1);
+      }
+      lastFrameMillis = frameMillis;
 
       if (!isnan(displayLeftAzimuth))
       {

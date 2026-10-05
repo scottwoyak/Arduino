@@ -119,7 +119,7 @@ void setup()
    // Turn off the status LED once telemetry finishes starting, since the sketch is
    // then fully up and running and no longer needs the LED for startup/connectivity
    // feedback.
-   sketch.arduino.off();
+   sketch.setOnStartedCallback([]() { sketch.arduino.off(); });
 
    sketch.begin();
    sketch.onStatus(onStatus);
