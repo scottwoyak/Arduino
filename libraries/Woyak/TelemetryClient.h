@@ -776,6 +776,8 @@ class TelemetryPublisher : public TelemetryClient
 private:
    uint8_t _decimalPlaces;
    float _pendingValue = NAN;
+   bool _pendingNew = false;
+   bool _sendEverySample = false;
    std::string _lastValue = "";
 
    void _onTelemetryDisconnected() override
@@ -791,10 +793,13 @@ private:
       }
 
       String value(_pendingValue, (unsigned int)_decimalPlaces);
-      if (value != _lastValue.c_str() && publish(getTopic().c_str(), value.toDouble()))
+      bool changed = value != _lastValue.c_str();
+      if ((changed || (_sendEverySample && _pendingNew)) && publish(getTopic().c_str(), value.toDouble()))
       {
          _lastValue = value.c_str();
       }
+
+      _pendingNew = false;
    }
 
 public:
@@ -835,6 +840,19 @@ public:
    void setValue(float value)
    {
       _pendingValue = value;
+      _pendingNew = true;
+   }
+
+   ///
+   /// <summary>
+   /// Sets whether every value passed to setValue() is published, even if it is unchanged
+   /// at the configured decimal places. When false, only changed values are published.
+   /// </summary>
+   /// <param name="enable">True to publish every sample.</param>
+   ///
+   void setSendEverySample(bool enable)
+   {
+      _sendEverySample = enable;
    }
 };
 

@@ -20,10 +20,9 @@
 /// <remarks>
 /// "rssi" (dBm, max since the previous health report), "cpuMhz", "tempF" (degrees F, max since the previous health report),
 /// "localTime" (e.g. "8:44 PM"; omitted until the clock has been synchronized),
-/// "minFreeHeap" (lowest free heap since boot, bytes), "maxAllocHeap" (largest allocatable
+/// "maxAllocHeap" (largest allocatable
 /// block, bytes), "wifiReconnects" (number
-/// of times WiFi has reconnected since begin() was called), "hubReconnects", "telemetryReconnects",
-/// and "maxLoopMs" (longest loop gap since the previous health report).
+/// of times WiFi has reconnected since begin() was called), "hubReconnects", and "telemetryReconnects".
 /// </remarks>
 ///
 class DeviceHealth
@@ -39,12 +38,6 @@ class DeviceHealth
    {
       _wifiReconnects++;
    }
-
-   /// <summary>Longest gap between loop steps since the last health report (ms).</summary>
-   static inline uint32_t _maxLoopMs = 0;
-
-   /// <summary>Time of the previous loop step (ms).</summary>
-   static inline uint32_t _lastLoopMs = 0;
 
    /// <summary>Interval between RSSI/temperature samples taken from recordLoop() (ms).</summary>
    static constexpr uint32_t SAMPLE_PERIOD_MS = 1000;
@@ -92,17 +85,12 @@ public:
 
    ///
    /// <summary>
-   /// Records a main-loop step; tracks the longest gap between steps.
+   /// Records a main-loop step; periodically samples RSSI and CPU temperature.
    /// </summary>
    ///
    static void recordLoop()
    {
       uint32_t now = millis();
-      if (_lastLoopMs != 0 && now - _lastLoopMs > _maxLoopMs)
-      {
-         _maxLoopMs = now - _lastLoopMs;
-      }
-      _lastLoopMs = now;
 
       if (now - _lastSampleMs >= SAMPLE_PERIOD_MS)
       {
@@ -136,7 +124,6 @@ public:
       (*doc)["tempF"] = _maxTempF;
       (*doc)["uptimeS"] = millis() / 1000;
       (*doc)["freeHeap"] = ESP.getFreeHeap();
-      (*doc)["minFreeHeap"] = ESP.getMinFreeHeap();
       (*doc)["maxAllocHeap"] = ESP.getMaxAllocHeap();
       (*doc)["wifiReconnects"] = _wifiReconnects.load();
       (*doc)["hubReconnects"] = hubReconnects.load();
@@ -144,8 +131,6 @@ public:
       (*doc)["telemetryRate"] = telemetryRate;
       (*doc)["influxFailures"] = influxFailures.load();
       (*doc)["stackFree"] = uxTaskGetStackHighWaterMark(nullptr);
-      (*doc)["maxLoopMs"] = _maxLoopMs;
-      _maxLoopMs = 0;
       _maxRssi = INT32_MIN;
       _maxTempF = -FLT_MAX;
 
