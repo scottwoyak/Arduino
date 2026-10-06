@@ -88,8 +88,8 @@ TelemetryConfig TELEMETRY_CONFIG = {
 ViewerSketch sketch(SKETCH_CONFIG, TELEMETRY_CONFIG);
 
 Format speedFormat("##.# mph", Format::Alignment::RIGHT);
-Format AxisValueL("##.#", Format::Alignment::LEFT);
-Format AxisValueR("##.#", Format::Alignment::RIGHT);
+Format axisValueL("##.#", Format::Alignment::LEFT);
+Format axisValueR("##.#", Format::Alignment::RIGHT);
 
 // ----------- Display layout
 // The layout is computed at runtime from the display's dimensions (see initLayout) so
@@ -321,7 +321,7 @@ void loop()
 
    TelemetrySubscriber* client = sketch.getClient();
 
-   if (client->isStarted() == false)
+   if (!client->isStarted())
    {
       return;
    }
@@ -341,7 +341,9 @@ void loop()
    // telemetry has gone stale (no message received in a while); otherwise the last
    // received value would keep getting re-sampled into the charts as if the sensor were
    // steadily reporting it, when in fact a network hiccup has just stopped updates.
-   bool stale = telemetryHandler.isStale();
+   // Calm wind (a speed of zero) is a legitimate steady value, and since the publisher
+   // only sends changes, no messages arrive while it persists, so it is never stale.
+   bool stale = telemetryHandler.isStale() && speed != 0;
    if (sampleTimer.ready() && !isnan(speed) && !stale)
    {
       histogramChart->set(speed);
@@ -401,8 +403,8 @@ void displayHistogram()
    sketch.arduino.setCursor(0, chartRect.bottom() + 3);
 
    RangeF displayRange = histogramChart->getVisibleRange();
-   sketch.arduino.print(displayRange.min, AxisValueL, Color::GRAY);
-   sketch.arduino.printC((displayRange.min + displayRange.max) / 2, AxisValueL, Color::GRAY);
-   sketch.arduino.printR(displayRange.max, AxisValueR, Color::GRAY);
+   sketch.arduino.print(displayRange.min, axisValueL, Color::GRAY);
+   sketch.arduino.printC((displayRange.min + displayRange.max) / 2, axisValueL, Color::GRAY);
+   sketch.arduino.printR(displayRange.max, axisValueR, Color::GRAY);
 }
 
