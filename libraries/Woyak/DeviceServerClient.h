@@ -317,6 +317,7 @@ class DeviceServerClient
    static inline bool _everConnected = false;
    static inline bool _initialFailureLogged = false;
    static inline std::string _sketchName;
+   static constexpr const char* BUILD_TIME = "BUILD@" __DATE__ " " __TIME__;
    static inline std::string _version;
    static inline std::string _site;
    static inline std::string _location;
@@ -499,6 +500,7 @@ class DeviceServerClient
       doc["deviceId"] = std::string(WiFi.macAddress().c_str());
       doc["sketch"] = _sketchName;
       doc["version"] = _version;
+      doc["buildTime"] = BUILD_TIME + 6;
       doc["site"] = _site;
       doc["location"] = _location;
       doc["board"] = ARDUINO_BOARD_VARIANT_ID;

@@ -421,7 +421,10 @@ if ($Token)
 {
 	$curlArgs += @("-H", "Authorization: Bearer $Token")
 }
+$binText = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($bin.FullName))
+$buildMatch = [regex]::Match($binText, 'BUILD@([A-Z][a-z]{2} [ 0-9]\d \d{4} \d\d:\d\d:\d\d)')
 $curlArgs += @("-F", "version=$version")
+if ($buildMatch.Success) { $curlArgs += @("-F", "buildTime=$($buildMatch.Groups[1].Value)") }
 if ($Notes)
 {
 	$curlArgs += @("-F", "notes=$Notes")

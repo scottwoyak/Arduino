@@ -57,7 +57,7 @@ $ErrorActionPreference = "Stop"
 
 function Wait-BeforeExit
 {
-	if (-not $NoPause)
+	if (-not $NoPause -and -not ([Environment]::GetCommandLineArgs() -contains "-NoExit"))
 	{
 		Read-Host "Press Enter to close" | Out-Null
 	}
@@ -120,7 +120,46 @@ function Test-AlreadyPublished($upload)
 	}
 	$checkArgs += $checkUrl
 	$code = (& curl.exe @checkArgs 2>&1) -join ""
-	return ($code -eq "200")
+	if ($code -ne "200")
+	{
+		return $false
+	}
+
+	# Same version already on the server; it is only up to date if the build time matches too.
+	if (-not $upload.BuildTime)
+	{
+		return $true
+	}
+	$latestArgs = @("--silent", "--max-time", "60")
+	if ($Token)
+	{
+		$latestArgs += @("-H", "Authorization: Bearer $Token")
+	}
+	$latestArgs += "$baseUrl/api/firmware/$([uri]::EscapeDataString($upload.Firmware))/latest"
+	try
+	{
+		$latest = (& curl.exe @latestArgs) -join "" | ConvertFrom-Json
+	}
+	catch
+	{
+		return $true
+	}
+	if ($latest.version -eq $upload.Version -and $latest.buildTime -ne $upload.BuildTime)
+	{
+		return $false
+	}
+	return $true
+}
+
+function Get-BuildTimeFromBinary([string]$binPath)
+{
+	$text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($binPath))
+	$m = [regex]::Match($text, 'BUILD@([A-Z][a-z]{2} [ 0-9]\d \d{4} \d\d:\d\d:\d\d)')
+	if ($m.Success)
+	{
+		return $m.Groups[1].Value
+	}
+	return $null
 }
 
 $libraryVersion = Get-LibraryVersion -repoRoot $RepoRoot
@@ -198,6 +237,7 @@ foreach ($dir in (Get-ChildItem -Path $RepoRoot -Directory | Sort-Object Name))
 			Board    = $boardId
 			Version  = $version
 			Built    = $bin.LastWriteTime
+			BuildTime = Get-BuildTimeFromBinary -binPath $bin.FullName
 			Bin      = $bin.FullName
 			Firmware = "$name.$boardId"
 		}
@@ -254,6 +294,10 @@ foreach ($u in $uploads)
 		$curlArgs += @("-H", "Authorization: Bearer $Token")
 	}
 	$curlArgs += @("-F", "version=$($u.Version)")
+	if ($u.BuildTime)
+	{
+		$curlArgs += @("-F", "buildTime=$($u.BuildTime)")
+	}
 	if ($Notes)
 	{
 		$curlArgs += @("-F", "notes=$Notes")

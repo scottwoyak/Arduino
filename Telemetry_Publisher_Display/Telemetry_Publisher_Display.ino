@@ -100,7 +100,7 @@ void loop()
    if (publishTimer.ready())
    {
       float value = sensor.get();
-      client.publish(TOPIC, value);
+      client.publish(TOPIC, value, TELEMETRY_CONFIG.decimals);
 
       if (!needsInitialDisplay)
       {

@@ -71,7 +71,23 @@ public:
 
    ///
    /// <summary>
-   /// Returns whether the system clock has already been synchronized (e.g. via sync() or
+   /// Starts an NTP sync using an automatically determined timezone, but does not wait for
+   /// it to complete (the SNTP client finishes in the background; poll isSynced()). Intended
+   /// for retrying after a failed syncWithAutoTimezone() without blocking the caller.
+   /// </summary>
+   /// <param name="ntpServer1">Primary NTP server</param>
+   /// <param name="ntpServer2">Secondary NTP server</param>
+   ///
+   static void startSyncWithAutoTimezone(const char* ntpServer1, const char* ntpServer2)
+   {
+      long utcOffsetSecs = _fetchUtcOffsetSecs(false);
+
+      configTime(utcOffsetSecs, 0, ntpServer1, ntpServer2);
+   }
+
+   ///
+   /// <summary>
+   /// Returns whether the system clock has already been synchronized
    /// syncWithAutoTimezone()). Useful to avoid re-syncing (and re-printing progress) when a
    /// caller isn't sure whether the clock was already synced earlier during startup.
    /// </summary>

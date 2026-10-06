@@ -163,7 +163,7 @@ bool isPresent()
 void sampleSensors()
 {
    lux = luxSensor.readLux();
-   sketch.publish(luxTopic, lux);
+   sketch.publish(luxTopic, lux, LUX_DECIMALS);
 
    luxField->set(lux);
    presenceField->set(presentSinceSample ? 100.0f : 0.0f);

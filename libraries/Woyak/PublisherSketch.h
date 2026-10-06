@@ -365,11 +365,12 @@ public:
    /// </summary>
    /// <param name="topic">Topic name.</param>
    /// <param name="value">Sample value.</param>
+   /// <param name="decimals">Number of decimal places for the value, or -1 to omit it from the message.</param>
    /// <returns>True if the sample was sent; otherwise false.</returns>
    ///
-   bool publish(const char* topic, double value)
+   bool publish(const char* topic, double value, int8_t decimals = -1)
    {
-      return _client->publish(topic, value);
+      return _client->publish(topic, value, decimals);
    }
 
    ///

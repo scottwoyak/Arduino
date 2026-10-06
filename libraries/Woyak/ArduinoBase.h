@@ -12,6 +12,7 @@
 #include "Rebooter.h"
 #include "Status.h"
 #include "TimeSync.h"
+#include "Timer.h"
 #include "Util.h"
 #include "WiFiX.h"
 
@@ -44,6 +45,14 @@ private:
 
    /// <summary>Scheduled daily reboot handler; self-driving via an internal timer once begin() is called.</summary>
    Rebooter _rebooter;
+
+   /// <summary>How often to retry a failed time sync (see ensureWiFiConnected()).</summary>
+   static constexpr float TIME_SYNC_RETRY_INTERVAL_M = 5.0f;
+
+   /// <summary>True if initWifi() was asked to sync time, so a failed sync gets retried.</summary>
+   bool _retryTimeSync = false;
+
+   TimerSecs _timeSyncRetryTimer = TimerSecs(TIME_SYNC_RETRY_INTERVAL_M * 60.0f);
 
 protected:
    /// <summary>OTA firmware update handler; only created after enableOTA() is called.</summary>
@@ -385,6 +394,8 @@ public:
          status->setStatus(Status::WEB_CONNECTING);
       }
 
+      _retryTimeSync = syncTime;
+
       if (syncTime)
       {
          print("Time... ", Color::LABEL);
@@ -413,7 +424,13 @@ public:
    {
       ASSERT(_wifiX != nullptr);
 
-      // Only drive the status indicator through WIFI_CONNECTING/RUNNING when a (re)connect is
+      if (_retryTimeSync && !TimeSync::isSynced() && _timeSyncRetryTimer.ready())
+      {
+         TimeSync::startSyncWithAutoTimezone("pool.ntp.org", "time.nist.gov");
+         Logger.log("Retrying time sync");
+      }
+
+      // Only drive
       // actually needed. Calling setStatus() unconditionally every loop() iteration - even
       // when WiFi is already connected - hammers the NeoPixel driver (show() disables
       // interrupts while bit-banging) back-to-back with no throttling, which can starve other
