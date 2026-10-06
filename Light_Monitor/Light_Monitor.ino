@@ -108,10 +108,6 @@ TelemetryConfig TELEMETRY_CONFIG = {
    .topic = distanceTopic,
    .decimals = 0,
    .publishIntervalMs = DISTANCE_PUBLISH_INTERVAL_MS,
-   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
-   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
-   .deviceToken = TELEMETRY_DEVICE_TOKEN,
-   .clientToken = TELEMETRY_CLIENT_TOKEN,
 };
 
 InfluxConfig INFLUX_CONFIG = {

@@ -113,10 +113,6 @@ TelemetryConfig TELEMETRY_CONFIG = {
    .prompts = WAVE_TELEMETRY_TOPICS,
    .decimals = 1,
    .publishIntervalMs = 33, // 30 per sec
-   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
-   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
-   .deviceToken = TELEMETRY_DEVICE_TOKEN,
-   .clientToken = TELEMETRY_CLIENT_TOKEN,
 };
 
 SketchConfig PUBLISHER_CONFIG = {

@@ -5,6 +5,7 @@
 #include "Button.h"
 #include "DeviceStateStatus.h"
 #include "MultiStatus.h"
+#include "Sound.h"
 #include <Preferences.h>
 
 ///
@@ -42,6 +43,13 @@ public:
 
    ///
    /// <summary>
+   /// Speaker; plays tones and MP3 sounds.
+   /// </summary>
+   ///
+   Sound sound;
+
+   ///
+   /// <summary>
    /// Status indicator; this board has no physical NeoPixel, so no underlying
    /// indicators are wired in for now.
    /// </summary>
@@ -73,6 +81,7 @@ public:
 
       ArduinoWithDisplay::begin();
 
+      sound.begin();
       buttonA.begin();
       status.begin();
    }

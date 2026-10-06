@@ -87,10 +87,6 @@ ScaledStepIntEditor targetEditor(
 TelemetryConfig TELEMETRY_CONFIG = {
    .topic = TELEMETRY_TOPIC,
    .decimals = 3,
-   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
-   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
-   .deviceToken = TELEMETRY_DEVICE_TOKEN,
-   .clientToken = TELEMETRY_CLIENT_TOKEN,
 };
 
 SketchConfig PUBLISHER_CONFIG = {

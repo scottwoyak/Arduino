@@ -3,17 +3,8 @@
 #include <span>
 #include <stdint.h>
 
-///
-/// <summary>
-/// One server endpoint (host, port, TLS) a telemetry client can connect to.
-/// </summary>
-///
-struct TelemetryEndpoint
-{
-   const char* host = nullptr;
-   uint16_t port = 0;
-   bool useTls = false;
-};
+#include "TelemetryEndpoint.h"
+#include "WiFiSettings.h"
 
 ///
 /// <summary>
@@ -39,17 +30,17 @@ struct TelemetryConfig
    uint16_t publishIntervalMs = 0;
 
    /// <summary>Server endpoint tried first.</summary>
-   TelemetryEndpoint primary;
+   TelemetryEndpoint primary = TELEMETRY_RASPBERRY_ENDPOINT;
 
    /// <summary>Server endpoint alternated with if the primary is not ready. Leave the port 0 for no fallback.</summary>
-   TelemetryEndpoint fallback;
+   TelemetryEndpoint fallback = TELEMETRY_PRODUCTION_ENDPOINT;
 
    /// <summary>Token sent by clients that publish.</summary>
-   const char* deviceToken = nullptr;
+   const char* deviceToken = TELEMETRY_DEVICE_TOKEN;
 
    /// <summary>Token sent by clients that subscribe.</summary>
-   const char* clientToken = nullptr;
+   const char* clientToken = TELEMETRY_CLIENT_TOKEN;
 
    /// <summary>WebSocket path.</summary>
-   const char* path = "/ws";
+   const char* path = TELEMETRY_PATH;
 };

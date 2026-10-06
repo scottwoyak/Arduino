@@ -85,10 +85,6 @@ SketchConfig SKETCH_CONFIG = {
 
 TelemetryConfig TELEMETRY_CONFIG = {
    .prompts = TELEMETRY_TOPICS,
-   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
-   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
-   .deviceToken = TELEMETRY_DEVICE_TOKEN,
-   .clientToken = TELEMETRY_CLIENT_TOKEN,
 };
 
 ViewerSketch sketch(SKETCH_CONFIG, TELEMETRY_CONFIG);

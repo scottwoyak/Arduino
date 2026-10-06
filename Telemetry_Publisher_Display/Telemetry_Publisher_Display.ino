@@ -47,10 +47,6 @@ constexpr auto TOPIC = "Test";
 TelemetryConfig TELEMETRY_CONFIG = {
    .topic = TOPIC,
    .decimals = 3,
-   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
-   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
-   .deviceToken = TELEMETRY_DEVICE_TOKEN,
-   .clientToken = TELEMETRY_CLIENT_TOKEN,
 };
 constexpr uint32_t PUBLISH_INTERVAL_MS = 10;
 constexpr uint32_t RATE_UPDATE_INTERVAL_MS = 1000;

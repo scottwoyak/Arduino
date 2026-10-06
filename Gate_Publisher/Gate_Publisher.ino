@@ -80,24 +80,32 @@ constexpr float ANGLE_DEADBAND_DEGREES = []()
    return step;
 }();
 
-// While the gate is closed the angle is reported as 0 until it exceeds this angle, which
-// hides sensor noise/drift at rest.
-constexpr float GATE_MOVING_START_DEGREES = 3.0f;
+// While the gate is closed the angle is reported as 0 until
+// positive angle changes exceeds this many degrees, which hides sensor noise/drift at
+// rest (noise bounces up and down, so its rises never accumulate).
+constexpr float GATE_MOVING_START_RISE_DEGREES = 2.0f;
 
 // Once moving, the gate is considered closed again (reported as 0) when the angle falls
-// below this angle. Lower than the start angle so the state doesn't chatter.
+// below this angle.
 constexpr float GATE_MOVING_STOP_DEGREES = 1.5f;
 
-// True once the angle has exceeded GATE_MOVING_START_DEGREES, until it falls back below
-// GATE_MOVING_STOP_DEGREES.
+// True once the angle has risen by more than GATE_MOVING_START_RISE_DEGREES, until it
+// falls back below GATE_MOVING_STOP_DEGREES.
 bool gateMoving = false;
+
+// Previous angle and running sum of consecutive positive changes, used while closed to
+// detect the start of movement.
+float lastClosedAngle = 0.0f;
+float closedRiseSum = 0.0f;
 
 ///
 /// <summary>
 /// Computes the gate's opening angle (0 to ~110 degrees) from the magnetometer's current
 /// azimuth, relative to the azimuth captured at startup (zeroAzimuth). The left gate
 /// rotates counter clockwise as it opens, and the right gate rotates clockwise, so the
-/// sign of the azimuth delta is flipped for the left gate. A deadband around
+/// sign of the azimuth delta is flipped for the left gate. While closed, 0 is reported
+/// until the angle has risen by more than GATE_MOVING_START_RISE_DEGREES, and once
+/// moving, until it falls below GATE_MOVING_STOP_DEGREES. A deadband around
 /// lastReportedAngle prevents sensor noise from jittering the published value.
 /// </summary>
 /// <returns>Gate angle in degrees, with 0 meaning fully closed.</returns>
@@ -129,22 +137,29 @@ float gateAngle()
 
    if (!gateMoving)
    {
-      if (angle <= GATE_MOVING_START_DEGREES)
+      float change = angle - lastClosedAngle;
+      lastClosedAngle = angle;
+      closedRiseSum = (change > 0.0f) ? closedRiseSum + change : 0.0f;
+
+      if (closedRiseSum <= GATE_MOVING_START_RISE_DEGREES)
       {
          lastReportedAngle = 0.0f;
          return lastReportedAngle;
       }
 
       gateMoving = true;
+      closedRiseSum = 0.0f;
    }
    else if (angle < GATE_MOVING_STOP_DEGREES)
    {
       gateMoving = false;
+      lastClosedAngle = angle;
+      closedRiseSum = 0.0f;
       lastReportedAngle = 0.0f;
       return lastReportedAngle;
    }
 
-   if (fabs(angle - lastReportedAngle) >= ANGLE_DEADBAND_DEGREES)
+   if (fabsf(angle - lastReportedAngle) >= ANGLE_DEADBAND_DEGREES)
    {
       lastReportedAngle = angle;
    }
@@ -161,10 +176,6 @@ InfluxConfig INFLUX_CONFIG = {
 TelemetryConfig TELEMETRY_CONFIG = {
    .prompts = GATE_TELEMETRY_TOPICS,
    .decimals = ANGLE_DECIMALS,
-   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
-   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
-   .deviceToken = TELEMETRY_DEVICE_TOKEN,
-   .clientToken = TELEMETRY_CLIENT_TOKEN,
 };
 
 SketchConfig PUBLISHER_CONFIG = {

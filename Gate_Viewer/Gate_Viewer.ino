@@ -94,6 +94,7 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 #include <WebSocketsClient.h>
 
 #include "BufferedTimeSeries.h"
+#include "RollingRate.h"
 #include "SerialX.h"
 #include "Status.h"
 #include "TelemetryClient.h"
@@ -109,14 +110,7 @@ SketchConfig SKETCH_CONFIG = {
    .enableOTA = true,
 };
 
-TelemetryConfig TELEMETRY_CONFIG = {
-   .primary = TELEMETRY_RASPBERRY_ENDPOINT,
-   .fallback = TELEMETRY_PRODUCTION_ENDPOINT,
-   .deviceToken = TELEMETRY_DEVICE_TOKEN,
-   .clientToken = TELEMETRY_CLIENT_TOKEN,
-};
-
-ViewerSketch sketch(SKETCH_CONFIG, TELEMETRY_CONFIG);
+ViewerSketch sketch(SKETCH_CONFIG);
 
 // ----------- Line geometry (left line anchored 50px from the left edge, right line
 // anchored 50px from the right edge of the display; the gate origin's Y position is
@@ -152,10 +146,95 @@ constexpr unsigned long BUFFER_RESOLUTION_MS = 30;
 // // cover the largest observed gaps between samples (so ready()/get() don't
 // // intermittently fail and fall back to the raw, unsmoothed value mid-animation), at
 // // the cost of a bit more interpolation lag (half the window).
-constexpr unsigned long BUFFER_TIME_SPAN_MS = 400;
+constexpr unsigned long BUFFER_TIME_SPAN_MS = 100;
 
 BufferedTimeSeries leftAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
 BufferedTimeSeries rightAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
+
+// ----------- Receive metrics (how fast each gate's telemetry actually arrives)
+
+// How often the receive metrics are printed to the serial log.
+constexpr float METRICS_LOG_INTERVAL_S = 5.0f;
+
+// Number of recent samples the receive rate is averaged over.
+constexpr uint16_t RATE_WINDOW_SAMPLES = 20;
+
+// A gap between samples longer than this is longer than the azimuth buffer can bridge,
+// so the displayed line falls back to the raw, unsmoothed value.
+constexpr int32_t BUFFER_GAP_LIMIT_MS = BUFFER_TIME_SPAN_MS / 2;
+
+///
+/// <summary>
+/// Receive statistics for one gate topic: a rolling sample rate, plus the min/max/average
+/// server-reported time between samples and the number of gaps too long for the azimuth
+/// buffer to bridge, over the current logging interval.
+/// </summary>
+///
+struct ReceiveMetrics
+{
+   RollingRate rate{ RATE_WINDOW_SAMPLES };
+   uint32_t count = 0;
+   uint32_t numLongGaps = 0;
+   int32_t minDtMs = INT32_MAX;
+   int32_t maxDtMs = 0;
+   int64_t totalDtMs = 0;
+
+   ///
+   /// <summary>
+   /// Records one received sample.
+   /// </summary>
+   /// <param name="dtMs">Server-reported time since the previous sample, in milliseconds.</param>
+   ///
+   void record(int32_t dtMs)
+   {
+      rate.tick();
+      count++;
+      totalDtMs += dtMs;
+      minDtMs = min(minDtMs, dtMs);
+      maxDtMs = max(maxDtMs, dtMs);
+      if (dtMs > BUFFER_GAP_LIMIT_MS)
+      {
+         numLongGaps++;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Clears the per-interval statistics (the rolling rate keeps running).
+   /// </summary>
+   ///
+   void resetInterval()
+   {
+      count = 0;
+      numLongGaps = 0;
+      minDtMs = INT32_MAX;
+      maxDtMs = 0;
+      totalDtMs = 0;
+   }
+
+   ///
+   /// <summary>
+   /// Formats the current statistics as a single log line.
+   /// </summary>
+   /// <param name="name">Label for the gate.</param>
+   /// <returns>The formatted line.</returns>
+   ///
+   String toString(const char* name) const
+   {
+      if (count == 0)
+      {
+         return String(name) + ": no samples";
+      }
+
+      return String(name) + ": " + String(rate.get(), 1) + "/s, n=" + String(count) +
+         ", dt min/avg/max=" + String(minDtMs) + "/" + String((int32_t)(totalDtMs / count)) + "/" + String(maxDtMs) +
+         " ms, gaps>" + String(BUFFER_GAP_LIMIT_MS) + "ms=" + String(numLongGaps);
+   }
+};
+
+ReceiveMetrics leftMetrics;
+ReceiveMetrics rightMetrics;
+TimerSecs metricsLogTimer(METRICS_LOG_INTERVAL_S);
 
 // ----------- Last open time (updated whenever the gate transitions from closed to
 // open; 0 until the gate has opened at least once since boot)
@@ -347,35 +426,26 @@ std::string formatShortDate(time_t time)
 
 ///
 /// <summary>
-/// Background/banner color used to indicate an open gate, halfway between orange and
-/// yellow.
-/// </summary>
-///
-constexpr Color GATE_OPEN_COLOR = (Color)Color565::fromRGB(255, 210, 0);
-
-///
-/// <summary>
 /// Draws both gates' azimuth values, left and right aligned respectively, inline with
 /// the origin circles, with no decimals and a degree symbol, and (once the gate has
 /// opened at least once since boot) the last time the gate was opened, shown as footer
-/// text centered at the bottom of the display. The background is black while closed
-/// and matches the gate-open banner color while open; the text is gray while closed
-/// and black while open.
+/// text centered at the bottom of the display. Always drawn in closed-state colors; the
+/// open state is shown by inverting the panel.
 /// </summary>
 /// <param name="leftAzimuth">Left gate's azimuth in degrees, or NAN if unavailable.</param>
 /// <param name="rightAzimuth">Right gate's azimuth in degrees, or NAN if unavailable.</param>
-/// <param name="isOpen">True if the gate is currently open; false if closed.</param>
 ///
-void displayFooterAzimuths(float leftAzimuth, float rightAzimuth, bool isOpen)
+void displayFooterAzimuths(float leftAzimuth, float rightAzimuth)
 {
    Point16 savedCursor = sketch.arduino.getCursor();
    uint8_t savedTextSize = sketch.arduino.getTextSize();
 
    sketch.arduino.setTextSize(2);
 
-   Color backgroundColor = isOpen ? GATE_OPEN_COLOR : Color::BLACK;
-   Color textColor = isOpen ? Color::BLACK : Color::DARKGRAY;
-   Color messageColor = isOpen ? Color::BLACK : Color::GRAY;
+   // Always drawn in closed-state colors; the open state is shown by inverting the panel.
+   Color backgroundColor = Color::BLACK;
+   Color textColor = Color::DARKGRAY;
+   Color messageColor = Color::GRAY;
 
    // Draw the azimuth values inline with the origin circles rather than at the very
    // bottom of the display.
@@ -516,8 +586,8 @@ void postGateOpen()
 /// display in size 5 text, with its background filling the full display width and a
 /// 10px top margin and 7px bottom margin. Closed is shown in gray text on a black
 /// background, with a "Tap to open" hint below it in size 2 gray text on touch-capable
-/// boards (omitted on display-only boards); open is shown in black text on an orange
-/// background. The firmware version is drawn in size 2 text in the lower right corner,
+/// boards (omitted on display-only boards); open is drawn the same way and shown by
+/// inverting the panel. The firmware version is drawn in size 2 text in the lower right corner,
 /// matching the state text color.
 /// </summary>
 /// <param name="isOpen">True if either gate's azimuth is greater than 10 degrees; false if both gates are at or below that threshold.</param>
@@ -541,7 +611,7 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
 
    sketch.arduino.setTextSize(GATE_STATE_TEXT_SIZE);
 
-   Color backgroundColor = isOpen ? GATE_OPEN_COLOR : Color::BLACK;
+   Color backgroundColor = Color::BLACK;
 #ifdef ARDUINO_TOUCH_SUPPORTED
    int16_t rowHeight = GATE_STATE_TOP_MARGIN + sketch.arduino.charH(GATE_STATE_TEXT_SIZE) + GATE_STATE_BOTTOM_MARGIN + sketch.arduino.charH(2);
 #else
@@ -552,7 +622,7 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
    if (isOpen)
    {
       sketch.arduino.setCursor(0, (rowHeight - sketch.arduino.charH(GATE_STATE_TEXT_SIZE)) / 2);
-      sketch.arduino.printlnC("OPEN", Color::BLACK, GATE_OPEN_COLOR);
+      sketch.arduino.printlnC("OPEN", Color::GRAY, Color::BLACK);
 
       gateStateRect = { 0, 0, 0, 0 };
    }
@@ -583,16 +653,15 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
 /// Draws a gate's azimuth line anchored at its origin below the value text, with a
 /// fixed length (see lineLength) and an angle matching the given azimuth. Only
 /// redraws (erasing the previous line first) when the azimuth has actually changed.
-/// The line and origin circle are drawn in black while the gate is open (orange
-/// background) and in white while closed (black background).
+/// The line and origin circle are always drawn in white on black; the open state is
+/// shown by inverting the panel.
 /// </summary>
 /// <param name="line">Per-gate line state to read/update.</param>
 /// <param name="azimuth">Angle in degrees (0-360); for non-mirrored lines 0 points right and
 /// 90 points up, while mirrored lines (see LineState::mirrorX) point left at 0 and still up
 /// at 90.</param>
-/// <param name="isOpen">True if the gate is currently open (orange background); false if closed (black background).</param>
 ///
-void displayLine(LineState& line, float azimuth, bool isOpen)
+void displayLine(LineState& line, float azimuth)
 {
    constexpr float MIN_REDRAW_DEGREES = 0.1f;
    if (!isnan(line.lastAzimuth) && fabsf(azimuth - line.lastAzimuth) <= MIN_REDRAW_DEGREES)
@@ -600,8 +669,8 @@ void displayLine(LineState& line, float azimuth, bool isOpen)
       return;
    }
 
-   Color lineColor = isOpen ? Color::BLACK : Color::WHITE;
-   Color eraseColor = isOpen ? GATE_OPEN_COLOR : Color::BLACK;
+   Color lineColor = Color::WHITE;
+   Color eraseColor = Color::BLACK;
 
    float azimuthRad = azimuth * (float)M_PI / 180.0f;
    float xDir = line.mirrorX ? -cos(azimuthRad) : cos(azimuthRad);
@@ -744,6 +813,10 @@ void setup()
 
    sketch.begin();
 
+#ifdef ARDUINO_SOUND_SUPPORTED
+   sketch.arduino.sound.volume = 2.0f;
+#endif
+
    TelemetrySubscriber* client = sketch.beginTelemetry(LEFT_TELEMETRY_TOPIC, &telemetryHandler);
    client->onSample([](const std::string& topic, double value, int64_t dtMicros)
    {
@@ -751,13 +824,14 @@ void setup()
       {
          leftValue = (float)value;
          leftAzimuthBuffer.set(leftValue, dtMicros / 1000);
-         Serial.println(String("rx left=") + String(leftValue, 2) + " dt=" + String((int32_t)(dtMicros / 1000)));
+         leftMetrics.record((int32_t)(dtMicros / 1000));
+         Serial.println(String("rx t=") + String(millis()) + " left=" + String(leftValue, 2) + " dt=" + String((int32_t)(dtMicros / 1000)));
       }
       else if (topic == RIGHT_TELEMETRY_TOPIC)
       {
          rightValue = (float)value;
          rightAzimuthBuffer.set(rightValue, dtMicros / 1000);
-         Serial.println(String("rx right=") + String(rightValue, 2) + " dt=" + String((int32_t)(dtMicros / 1000)));
+         rightMetrics.record((int32_t)(dtMicros / 1000));
       }
    });
    sketch.onStatus([](LoggerStatus& status)
@@ -766,6 +840,8 @@ void setup()
       status.add("Right Topic", RIGHT_TELEMETRY_TOPIC);
       status.add("Left Gate Angle", leftLine.lastAzimuth, 0);
       status.add("Right Gate Angle", rightLine.lastAzimuth, 0);
+      status.add("Left Rx Rate", leftMetrics.rate.get(), 1);
+      status.add("Right Rx Rate", rightMetrics.rate.get(), 1);
    });
 
    sketch.completeInitialization();
@@ -774,6 +850,15 @@ void setup()
 void loop()
 {
    sketch.loop();
+
+   if (metricsLogTimer.ready())
+   {
+      metricsLogTimer.reset();
+      Serial.println(leftMetrics.toString("Left rx"));
+      Serial.println(rightMetrics.toString("Right rx"));
+      leftMetrics.resetInterval();
+      rightMetrics.resetInterval();
+   }
 
    TelemetrySubscriber* client = sketch.getClient();
 
@@ -839,7 +924,8 @@ void loop()
 
    static bool lastIsOpen = false;
    static bool everDrawn = false;
-   if (!everDrawn || isOpen != lastIsOpen || forceRedraw)
+   bool stateChanged = !everDrawn || isOpen != lastIsOpen || forceRedraw;
+   if (stateChanged)
    {
       // the background was just repainted for the new state, so force both lines to redraw
       // in the correct color even if their azimuth hasn't changed
@@ -853,13 +939,24 @@ void loop()
          gateOpenHistory.add(lastGateOpenTime);
       }
 
+      #ifdef ARDUINO_SOUND_SUPPORTED
+      if (isOpen && !lastIsOpen && everDrawn)
+      {
+         sketch.arduino.sound.playNotificationAsync(3);
+      }
+      #endif
+
       lastIsOpen = isOpen;
       everDrawn = true;
    }
 
    displayGateState(isOpen, forceRedraw);
+   displayFooterAzimuths(leftAzimuth, rightAzimuth);
 
-   displayFooterAzimuths(leftAzimuth, rightAzimuth, isOpen);
+   if (stateChanged)
+   {
+      sketch.arduino.display.invertDisplay(isOpen);
+   }
 
    #ifdef ARDUINO_TOUCH_SUPPORTED
    if (tapped && lastOpenFooterVisible &&
@@ -867,6 +964,7 @@ void loop()
        touchPoint.y >= lastOpenFooterRect.top() && touchPoint.y < lastOpenFooterRect.bottom())
    {
       showingHistory = true;
+      sketch.arduino.display.invertDisplay(false);
       historyTimeoutTimer.reset();
       displayHistoryView();
       return;
@@ -903,10 +1001,12 @@ void loop()
 
       if (isOpen)
       {
-         Serial.print("left=");
+         Serial.print("disp t=");
+         Serial.print(frameMillis);
+         Serial.print(" rawL=");
+         Serial.print(leftAzimuth, 1);
+         Serial.print(" left=");
          Serial.print(displayLeftAzimuth, 1);
-         Serial.print(" right=");
-         Serial.print(displayRightAzimuth, 1);
          Serial.print(" dt=");
          Serial.print(frameMillis - lastFrameMillis);
          Serial.print("ms fps=");
@@ -916,12 +1016,20 @@ void loop()
 
       if (!isnan(displayLeftAzimuth))
       {
-         displayLine(leftLine, displayLeftAzimuth, isOpen);
+         displayLine(leftLine, displayLeftAzimuth);
       }
 
       if (!isnan(displayRightAzimuth))
       {
-         displayLine(rightLine, displayRightAzimuth, isOpen);
+         displayLine(rightLine, displayRightAzimuth);
+      }
+
+      if (isOpen)
+      {
+         Serial.print("drawn t=");
+         Serial.print(millis());
+         Serial.print(" drawMs=");
+         Serial.println(millis() - frameMillis);
       }
    }
 }
