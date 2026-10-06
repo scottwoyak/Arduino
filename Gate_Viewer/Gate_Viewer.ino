@@ -1,4 +1,4 @@
-//
+﻿//
 // Gate Viewer
 //
 // Subscribes to live gate azimuth telemetry over a WebSocket connection and renders both
@@ -19,7 +19,7 @@
 // - Redraws each line whenever a new value is received for its gate.
 // - If a gate's telemetry topic disconnects or fails to connect, that gate's line is
 //   simply left undrawn while the connection keeps retrying in the background; the
-//   device is not reset and the other gate's line keeps updating normally.
+//   device resets only if the outage lasts 10 minutes.
 // - Checks for a firmware update periodically.
 //
 
@@ -54,12 +54,6 @@ struct LineState
 constexpr auto LEFT_TELEMETRY_TOPIC = "Gate/Left";
 constexpr auto RIGHT_TELEMETRY_TOPIC = "Gate/Right";
 
-// While a telemetry topic remains disconnected, the underlying WebSocket keeps
-// retrying in the background (often multiple times per minute), which would flood the
-// log with a message per attempt. RECONNECT_LOG_INTERVAL_S throttles that down to a
-// single "still down" summary at this cadence for as long as the outage continues.
-constexpr float RECONNECT_LOG_INTERVAL_S = 600.0f;
-
 constexpr auto GATE_OPENER_HOST = "192.168.1.9";
 constexpr uint16_t GATE_OPENER_PORT = 80;
 
@@ -75,6 +69,10 @@ constexpr uint16_t GATE_OPENER_PORT = 80;
 #define TEXT_SIZE_3
 #define TEXT_SIZE_4
 #define TEXT_SIZE_5
+
+// Only compile in the notification sound this sketch plays (Morning), to save flash.
+#define SOUNDS_CUSTOM
+#define SOUND_MORNING
 
 #include "ArduinoBoard.h"
 #include "LibraryVersion.h"
@@ -702,45 +700,13 @@ float rightValue = NAN;
 ///
 /// <summary>
 /// Handles telemetry lifecycle events for this sketch: draws the header once started
-/// and redraws the azimuth line on each received value. Unlike the base class's default
-/// behavior, disconnects/failures/errors on the left gate topic do not reset the
-/// device; they're logged and the underlying WebSocket keeps retrying the connection
-/// in the background (see WebSocketsClient's built-in auto-reconnect), and the main
-/// loop simply stops drawing the left gate line (via isStarted()/getValue()) until it
-/// reconnects, so a single topic outage doesn't take down the whole viewer.
+/// and redraws the azimuth line on each received value. Disconnects and failed connections use the base class behavior: the WebSocket retries in the background and the device resets only after the outage lasts TELEMETRY_OUTAGE_RESET_M minutes.
 /// </summary>
 ///
 class GateTelemetryHandler : public TelemetryEventHandler
 {
 private:
    bool _initialized = false;
-   bool _reconnectFailureActive = false;
-   TimerSecs _reconnectLogTimer{ RECONNECT_LOG_INTERVAL_S };
-
-   ///
-   /// <summary>
-   /// Logs a reconnect-related failure, throttled so a persistent outage doesn't flood
-   /// the log with one message per retry attempt: the first failure since the last
-   /// successful connection is logged immediately with the detail message, and any
-   /// further failures are suppressed until RECONNECT_LOG_INTERVAL_S has elapsed, at
-   /// which point a single "still down" summary is logged instead.
-   /// </summary>
-   /// <param name="detail">Detail message to log for the first failure in a new outage.</param>
-   ///
-   void _logReconnectFailure(const std::string& detail)
-   {
-      if (!_reconnectFailureActive)
-      {
-         _reconnectFailureActive = true;
-         _reconnectLogTimer.reset();
-         Logger.log(detail, LogSeverity::ERROR);
-      }
-      else if (_reconnectLogTimer.ready())
-      {
-         _reconnectLogTimer.reset();
-         Logger.log(std::string("Haven't been able to reconnect to telemetry topic '") + LEFT_TELEMETRY_TOPIC + "' for the last 10 minutes", LogSeverity::ERROR);
-      }
-   }
 
 public:
    // set on the first start; the main loop clears the display, so the
@@ -754,13 +720,6 @@ public:
    void onStarted() override
    {
       TelemetryEventHandler::onStarted();
-
-      if (_reconnectFailureActive)
-      {
-         Logger.log(std::string("Reconnected to telemetry topic '") + LEFT_TELEMETRY_TOPIC + "'");
-      }
-
-      _reconnectFailureActive = false;
 
       if (_initialized)
       {
@@ -781,21 +740,6 @@ public:
       // (guarded by _initialized above); later reconnects reuse the updated topic list.
       sketch.getClient()->setTopics({ LEFT_TELEMETRY_TOPIC, RIGHT_TELEMETRY_TOPIC });
    }
-
-   void onDisconnected(const std::string& reason) override
-   {
-      _logReconnectFailure(std::string("Left gate telemetry disconnected (") + reason + "); will keep retrying in the background");
-   }
-
-   void onConnectionFailed(const std::string& reason) override
-   {
-      _logReconnectFailure(std::string("Left gate telemetry connection failed (") + reason + "); will keep retrying in the background");
-   }
-
-   void onError(const std::string& message) override
-   {
-      _logReconnectFailure(std::string("Left gate telemetry error: ") + message + "; will keep retrying in the background");
-   }
 };
 
 GateTelemetryHandler telemetryHandler(&sketch.arduino.status);
@@ -815,6 +759,7 @@ void setup()
 
 #ifdef ARDUINO_SOUND_SUPPORTED
    sketch.arduino.sound.volume = 2.0f;
+   sketch.arduino.sound.soundIndex = 5;
 #endif
 
    TelemetrySubscriber* client = sketch.beginTelemetry(LEFT_TELEMETRY_TOPIC, &telemetryHandler);
@@ -942,7 +887,7 @@ void loop()
       #ifdef ARDUINO_SOUND_SUPPORTED
       if (isOpen && !lastIsOpen && everDrawn)
       {
-         sketch.arduino.sound.playNotificationAsync(3);
+         sketch.arduino.sound.playNotificationAsync(2);
       }
       #endif
 

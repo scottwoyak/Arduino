@@ -33,6 +33,15 @@ constexpr float TELEMETRY_RESET_DELAY_S = 10.0f;
 
 ///
 /// <summary>
+/// Number of minutes the telemetry connection may stay down (dropped or never connected)
+/// while the WebSocket retries in the background before the outage is reported to the
+/// event handler, which by default resets the device.
+/// </summary>
+///
+constexpr float TELEMETRY_OUTAGE_RESET_M = 10.0f;
+
+///
+/// <summary>
 /// Number of samples used by TelemetryClient's rolling message rate tracker.
 /// </summary>
 ///
@@ -177,8 +186,9 @@ public:
 
    ///
    /// <summary>
-   /// Invoked when the telemetry WebSocket connection is lost. Default implementation
-   /// logs the reason, shows a standalone message on the display (if one was supplied)
+   /// Invoked when the telemetry connection has been down for TELEMETRY_OUTAGE_RESET_M
+   /// minutes after being lost (the client retries in the background until then).
+   /// Default implementation logs the reason,
    /// since a disconnect can happen at any time and not just while the "Telemetry..."
    /// label is still on screen, sets the status to FAILED, and resets the device.
    /// Overrides must call this base implementation (see class remarks).
@@ -210,8 +220,9 @@ public:
 
    ///
    /// <summary>
-   /// Invoked when the WebSocket never successfully connected
-   /// running, or it's unreachable) before the socket was torn down. Default
+   /// Invoked when the WebSocket has never successfully connected for
+   /// TELEMETRY_OUTAGE_RESET_M minutes (retried in the background until then; e.g. the
+   /// server isn't running, or it's unreachable). Default
    /// implementation logs a clearer message than the raw low-level socket teardown
    /// reason, completes the "Telemetry..." label (if a display was supplied) with
    /// "FAILED", sets the status to FAILED, and resets the device. Overrides must call
@@ -239,9 +250,9 @@ public:
 
    ///
    /// <summary>
-   /// Invoked when the telemetry client reports an error.
-   /// the message, draws it on the display (if one was supplied), sets the status to
-   /// FAILED, and resets the device.
+   /// Invoked when the telemetry client reports an error. Default implementation logs
+   /// the message, draws it on the display (if one was supplied), and sets the status to
+   /// FAILED. Does not reset the device.
    /// </summary>
    /// <param name="message">Error message reported by the telemetry client</param>
    ///
@@ -259,11 +270,10 @@ public:
       }
 #endif
 
-      _status->setStatus(Status::FAILED);
-      Util::reset(TELEMETRY_RESET_DELAY_S, std::string("Telemetry error: ") + message);
-   }
+            _status->setStatus(Status::FAILED);
+         }
 
-   ///
+         ///
    /// <summary>
    /// Invoked whenever a text message is sent. Default implementation does nothing;
    /// Serial echo logging of sent messages is handled independently by
@@ -339,6 +349,12 @@ private:
    TelemetryEventHandler* _handler = nullptr;
    bool _ownsHandler = false;
 
+   // set while an established connection has dropped and we are waiting for it to return
+   bool _dropActive = false;
+   bool _dropWasConnected = false;
+   std::string _dropReason;
+   Stopwatch _dropStopwatch;
+
    static constexpr uint32_t HEARTBEAT_PING_MS = 15000;
    static constexpr uint32_t HEARTBEAT_TIMEOUT_MS = 3000;
    static constexpr uint8_t HEARTBEAT_FAILURES = 2;
@@ -380,17 +396,17 @@ private:
          DeviceHealth::telemetryReconnects++;
       }
 
-      if (_handler != nullptr)
+      if (_dropActive)
       {
-         if (wasConnected)
-         {
-            _handler->onDisconnected(reason);
-         }
-         else if (numEndpoints() == 1)
-         {
-            _handler->onConnectionFailed(reason);
-         }
+         return;
       }
+
+      _dropActive = true;
+      _dropWasConnected = wasConnected;
+      _dropReason = reason;
+      _dropStopwatch.reset();
+      _dropStopwatch.start();
+      Logger.log(std::string(wasConnected ? "Telemetry connection lost (" : "Could not connect to telemetry server (") + reason + "); will keep retrying for up to " + std::to_string((int)TELEMETRY_OUTAGE_RESET_M) + " minutes", LogSeverity::WARN);
    }
 
    void _onJsonMessage(JsonDocument& doc) override
@@ -402,6 +418,12 @@ private:
          {
             _ready = true;
             _rate.reset();
+            if (_dropActive)
+            {
+               _dropActive = false;
+               _dropStopwatch.stop();
+               Logger.log("Telemetry reconnected");
+            }
             if (_handler != nullptr)
             {
                _handler->onStarted();
@@ -448,9 +470,30 @@ private:
    }
 
 protected:
-   ///
-   /// <summary>
-   /// Called when the WebSocket connection is lost or a connection attempt fails.
+    void _onLoop() override
+    {
+       if (_dropActive && _dropStopwatch.elapsedSecs() >= TELEMETRY_OUTAGE_RESET_M * 60.0f)
+       {
+          _dropActive = false;
+          _dropStopwatch.stop();
+          Logger.log("Telemetry did not reconnect within " + std::to_string((int)TELEMETRY_OUTAGE_RESET_M) + " minutes", LogSeverity::ERROR);
+          if (_handler != nullptr)
+          {
+             if (_dropWasConnected)
+             {
+                _handler->onDisconnected(_dropReason);
+             }
+             else
+             {
+                _handler->onConnectionFailed(_dropReason);
+             }
+          }
+       }
+    }
+
+    ///
+    /// <summary>
+    /// Called when the WebSocket connection is lost or a connection attempt fails.
    /// Subclasses should reset any per-connection state here.
    /// </summary>
    ///
@@ -792,6 +835,8 @@ private:
 
    void _onLoop() override
    {
+      TelemetryClient::_onLoop();
+
       if (!isReady() || isnan(_pendingValue))
       {
          return;

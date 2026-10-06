@@ -1,4 +1,4 @@
-//
+﻿//
 // Wind Viewer
 //
 // Subscribes to live wind speed telemetry over a WebSocket connection and renders it as
@@ -98,13 +98,6 @@ Format axisValueR("##.#", Format::Alignment::RIGHT);
 constexpr uint8_t MIN_TEXT_SIZE = 2;
 constexpr uint8_t MAX_HEADER_TEXT_SIZE = 4;
 
-// ----------- Telemetry Reconnect Logging
-// A dropped telemetry connection keeps retrying in the background (see
-// WebSocketsClient's built-in auto-reconnect) rather than resetting the device; without
-// throttling, a persistent outage would otherwise flood the log with a message per
-// retry attempt. RECONNECT_LOG_INTERVAL_S throttles that down to a single "still down"
-// summary every 10 minutes.
-constexpr float RECONNECT_LOG_INTERVAL_S = 600.0f;
 constexpr uint8_t SPEED_NUM_CHARS = 8; // "##.# mph"
 constexpr uint8_t HEADER_PADDING = 6;
 constexpr uint8_t VALUES_AXIS_PADDING = 8;
@@ -202,17 +195,12 @@ void displayHeader()
 ///
 /// <summary>
 /// Handles telemetry lifecycle events for this sketch: draws the header once started
-/// and feeds the charts/stats on each received value. Unlike the base class's default
-/// behavior, disconnects/failures/errors do not reset the device; they're logged
-/// (throttled) and the underlying WebSocket keeps retrying the connection in the
-/// background, while the main loop simply stops updating (via isStarted()) until it
-/// reconnects.
+/// and feeds the charts/stats on each received value. Disconnects and failed connections use the base class behavior: the WebSocket retries in the background and the device resets only after the outage lasts TELEMETRY_OUTAGE_RESET_M minutes.
 /// </summary>
 ///
 class WindTelemetryHandler : public TelemetryEventHandler
 {
 private:
-   ReconnectLogThrottle _reconnectLog{ telemetryTopic, RECONNECT_LOG_INTERVAL_S };
    Stopwatch _sinceLastReceive{ false };
 
 public:
@@ -227,26 +215,9 @@ public:
    void onStarted() override
    {
       TelemetryEventHandler::onStarted();
-
-      _reconnectLog.reportSuccess();
       needsInitialDisplay = true;
       _sinceLastReceive.reset();
       _sinceLastReceive.start();
-   }
-
-   void onDisconnected(const std::string& reason) override
-   {
-      _reconnectLog.reportFailure(std::string("Wind telemetry disconnected (") + reason + "); will keep retrying in the background");
-   }
-
-   void onConnectionFailed(const std::string& reason) override
-   {
-      _reconnectLog.reportFailure(std::string("Wind telemetry connection failed (") + reason + "); will keep retrying in the background");
-   }
-
-   void onError(const std::string& message) override
-   {
-      _reconnectLog.reportFailure(std::string("Wind telemetry error: ") + message + "; will keep retrying in the background");
    }
 
    ///

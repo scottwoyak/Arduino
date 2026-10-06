@@ -155,8 +155,8 @@ public:
 /// Protocol (JSON text frames), reusing the DeviceServer's device role/token:
 ///   Handshake, sent on connect:  {"role":"device","token":"...","deviceId":"...","sketch":"...","version":"...","site":"...","location":"..."}
 ///   Server reply:                {"type":"ack"}
-///   Log entry (device to hub):   {"type":"log","level":"Info"|"Warn"|"Error"|"Debug","tags":"wifi,reconnect","message":"...","final":true}
-///   Command (hub to device):     {"type":"command","command":"..."}
+///   Log message (device to hub): {"type":"log","level":"Info","tags":"wifi,reconnect","message":"..."}
+///   Command (hub to device):     {"type":"command","action":"...","payload":{...}}
 ///   Command response:            {"type":"response","message":"..."}
 /// A log entry built up via logPartial()/log() sends one JSON message per fragment:
 ///   {"type":"log","level":"Info","tags":"...","message":"Sensor... ","continued":true}
@@ -201,6 +201,12 @@ class DeviceServerClient
       {
          DeviceServerClient::_debugPrint("Disconnected: " + (reason.empty() ? std::string("(no reason given)") : reason));
 
+         if (!DeviceServerClient::_outageActive)
+         {
+            DeviceServerClient::_outageActive = true;
+            DeviceServerClient::_outageStartMs = millis();
+         }
+
          if (!DeviceServerClient::_everConnected)
          {
             if (!DeviceServerClient::_initialFailureLogged)
@@ -241,6 +247,7 @@ class DeviceServerClient
          if (strcmp(type, "ack") == 0)
          {
             _ready = true;
+            DeviceServerClient::_outageActive = false;
             DeviceServerClient::_flushPendingMessages();
             if (!DeviceServerClient::_everConnected)
             {
@@ -312,6 +319,18 @@ class DeviceServerClient
 
    /// <summary>How long (in milliseconds) DeviceServerClient waits after a disconnect before logging "Logging disconnected: ...".</summary>
    static constexpr uint32_t DISCONNECT_GRACE_MS = 3000UL;
+
+   /// <summary>Minutes the hub connection may stay down (dropped or never connected) before the device resets.</summary>
+   static constexpr uint32_t OUTAGE_RESET_M = 10UL;
+
+   /// <summary>Seconds Util::reset() waits before restarting after a prolonged hub outage.</summary>
+   static constexpr float OUTAGE_RESET_DELAY_S = 10.0f;
+
+   /// <summary>True while the hub connection is down and hasn't yet been acknowledged again.</summary>
+   static inline bool _outageActive = false;
+
+   /// <summary>millis() timestamp of the start of the current hub outage.</summary>
+   static inline unsigned long _outageStartMs = 0;
 
    static inline _Connection _connection;
    static inline bool _everConnected = false;
@@ -670,6 +689,12 @@ public:
    static void loop()
    {
       _connection.loop();
+
+      if (_outageActive && (millis() - _outageStartMs) >= OUTAGE_RESET_M * 60UL * 1000UL)
+      {
+         _outageActive = false;
+         Util::reset(OUTAGE_RESET_DELAY_S, "Hub unreachable");
+      }
 
       if (_disconnectPending && !_connection.isConnected() && (millis() - _disconnectStartMs) >= DISCONNECT_GRACE_MS)
       {

@@ -170,55 +170,81 @@
   <Folder Name="/Tests/">
     <Project Path="Tests/All_Tests/All_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/BufferedTimeSeries_Tests/BufferedTimeSeries_Tests.vcxproj" Id="a8d4f2c1-9b34-4e5f-8123-123456789abc">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/Histogram_Tests/Histogram_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/RollingAverage_Tests/RollingAverage_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/RollingMicros_Tests/RollingMicros_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/RollingRate_Tests/RollingRate_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/RollingStats_Tests/RollingStats_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/RollingStdDev_Tests/RollingStdDev_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/RollingValues_Tests/RollingValues_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/ScatterPlotSeries_Tests/ScatterPlotSeries_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/Stats_Tests/Stats_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/Stopwatch_Tests/Stopwatch_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/Tick_Tests/Tick_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/TimedAverageHistory_Tests/TimedAverageHistory_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
@@ -226,19 +252,27 @@
     </Project>
     <Project Path="Tests/TimedAverage_Tests/TimedAverage_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/TimedBin_Tests/TimedBin_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/TimedHistogram_Tests/TimedHistogram_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/TimedMinMax_Tests/TimedMinMax_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/TimedRate_Tests/TimedRate_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
@@ -246,19 +280,27 @@
     </Project>
     <Project Path="Tests/TimedStats_Tests/TimedStats_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/TimedValues_Tests/TimedValues_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/Timer_Tests/Timer_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
     <Project Path="Tests/Util_Tests/Util_Tests.vcxproj">
       <Platform Solution="*|Any CPU" Project="ARM" />
-      <Deploy />
+      <Deploy Solution="*|ARM" />
+      <Deploy Solution="*|ARM64" />
+      <Deploy Solution="Debug|Any CPU" />
     </Project>
   </Folder>
   <Project Path="Basic_DisplayValue/Basic_DisplayValue.vcxproj">
@@ -415,15 +457,21 @@
   </Project>
   <Project Path="Gate_Opener/Gate_Opener.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="Gate_Publisher/Gate_Publisher.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="Gate_Viewer/Gate_Viewer.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="I2C_Multiplexor_Scanner/I2C_Multiplexor_Scanner.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
@@ -447,7 +495,9 @@
   </Project>
   <Project Path="Lake_Temp_Monitor/Lake_Temp_Monitor.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="Led/Led.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
@@ -479,7 +529,9 @@
   </Project>
   <Project Path="Light_Monitor/Light_Monitor.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="Logger/Logger.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
@@ -555,7 +607,9 @@
   </Project>
   <Project Path="Sound/Sound.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="SR04_Display/SR04_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
@@ -567,15 +621,21 @@
   </Project>
   <Project Path="Telemetry_Publisher_Display/Telemetry_Publisher_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="Telemetry_Publisher_Playground/Telemetry_Publisher_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="Telemetry_Subscriber_Display/Telemetry_Subscriber_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="Temp_Calibrator_Playground/Temp_Calibrator_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
@@ -587,11 +647,15 @@
   </Project>
   <Project Path="Temp_Monitor/Temp_Monitor.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="Temp_Monitor_Display/Temp_Monitor_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="Temp_Serial/Temp_Serial.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
@@ -619,11 +683,15 @@
   </Project>
   <Project Path="Wave_Publisher/Wave_Publisher.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="Wave_Viewer/Wave_Viewer.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="WiFi_Display/WiFi_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
@@ -631,11 +699,15 @@
   </Project>
   <Project Path="Wind_Publisher/Wind_Publisher.vcxproj" Id="186959f5-b577-1198-e42b-9b18a512c68a">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="Wind_Viewer/Wind_Viewer.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
 </Solution>
 

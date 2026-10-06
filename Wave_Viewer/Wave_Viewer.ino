@@ -130,13 +130,6 @@ constexpr unsigned long CHART_UPDATE_MS = 30;
 // average or the chart. Derived from a 6 cm max jump at the ~5 samples/sec telemetry rate.
 constexpr float MAX_RATE_CM_PER_SEC = 30;
 
-// A dropped telemetry connection keeps retrying in the background (see
-// WebSocketsClient's built-in auto-reconnect) rather than resetting the device; without
-// throttling, a persistent outage would otherwise flood the log with a message per
-// retry attempt. RECONNECT_LOG_INTERVAL_S throttles that down to a single "still down"
-// summary every 10 minutes.
-constexpr float RECONNECT_LOG_INTERVAL_S = 600.0f;
-
 BufferedTimeSeries waveHeight(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
 Timer logTimer(LOG_INTERVAL_MS);
 Timer chartTimer(CHART_UPDATE_MS);
@@ -210,16 +203,12 @@ void displayHeader()
 ///
 /// <summary>
 /// Handles telemetry lifecycle events for this sketch: clears the display once
-/// started. Unlike the base class's default behavior, disconnects/failures/errors do
-/// not reset the device; they're logged (throttled) and the underlying WebSocket keeps
-/// retrying the connection in the background, while the main loop simply stops
-/// updating (via isStarted()) until it reconnects.
+/// started. Disconnects and failed connections use the base class behavior: the WebSocket retries in the background and the device resets only after the outage lasts TELEMETRY_OUTAGE_RESET_M minutes.
 /// </summary>
 ///
 class WaveTelemetryHandler : public TelemetryEventHandler
 {
 private:
-   ReconnectLogThrottle _reconnectLog{ telemetryTopic, RECONNECT_LOG_INTERVAL_S };
 
 public:
    // set on every (re)start; the main loop clears and redraws the display, so the
@@ -233,23 +222,7 @@ public:
    void onStarted() override
    {
       TelemetryEventHandler::onStarted();
-      _reconnectLog.reportSuccess();
-      needsInitialDisplay = true;
-   }
-
-   void onDisconnected(const std::string& reason) override
-   {
-      _reconnectLog.reportFailure(std::string("Wave telemetry disconnected (") + reason + "); will keep retrying in the background");
-   }
-
-   void onConnectionFailed(const std::string& reason) override
-   {
-      _reconnectLog.reportFailure(std::string("Wave telemetry connection failed (") + reason + "); will keep retrying in the background");
-   }
-
-   void onError(const std::string& message) override
-   {
-      _reconnectLog.reportFailure(std::string("Wave telemetry error: ") + message + "; will keep retrying in the background");
+            needsInitialDisplay = true;
    }
 
    void onReceiveText(const std::string& text) override

@@ -212,6 +212,7 @@ public:
    {
       Serial.println("Telemetry: WebSocket Disconnected: " + String(reason.c_str()));
       _onDisconnectedOrConnectionFailed();
+      TelemetryEventHandler::onDisconnected(reason);
    }
 
    ///
@@ -225,6 +226,7 @@ public:
    {
       Serial.println("Telemetry: WebSocket Connection Failed: " + String(reason.c_str()));
       _onDisconnectedOrConnectionFailed();
+      TelemetryEventHandler::onConnectionFailed(reason);
    }
 
    void onError(const std::string& message) override
@@ -240,7 +242,7 @@ public:
       }
       connected = false;
 
-      Util::reset(RECONNECT_COUNTDOWN_SECS, std::string("Telemetry error: ") + message);
+      TelemetryEventHandler::onError(message);
    }
 
    void onStarted() override

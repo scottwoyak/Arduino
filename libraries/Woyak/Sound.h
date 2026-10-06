@@ -13,7 +13,34 @@
 #define MINIMP3_IMPLEMENTATION
 #include "minimp3.h"
 
+// By default every sound is compiled in. A sketch can define SOUNDS_CUSTOM plus SOUND_<NAME>
+// (SOUND_CHIME, SOUND_HARP, SOUND_ANNOUNCE, SOUND_CAR_HORN, SOUND_ROOSTER, SOUND_MORNING,
+// SOUND_CHICKENS, SOUND_WAR_HORN) before including this file to compile in only the sounds
+// it uses, to save flash.
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_ANNOUNCE)
+#include "AnnounceMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_CAR_HORN)
+#include "CarHornMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_CHICKENS)
+#include "ChickensMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_HARP)
+#include "HarpMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_MORNING)
+#include "MorningRoosterMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_CHIME)
 #include "NotificationMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_ROOSTER)
+#include "RoosterMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_WAR_HORN)
+#include "WarHornMp3.h"
+#endif
 
 // MP3 decoding needs more stack than the Arduino default. Any sketch using Sound must
 // run its loop task with this larger stack.
@@ -44,9 +71,7 @@ private:
    static constexpr uint8_t ES8311_ADDRESS = 0x18;
 
    static constexpr uint32_t SAMPLE_RATE = 16000;
-   static constexpr float AMPLITUDE = 5000.0f;
    static constexpr uint8_t NUM_FRAME_SAMPLES = 64;
-   static constexpr uint16_t FADE_MILLIS = 40;
    static constexpr uint32_t ASYNC_STACK_BYTES = 32768;
 
    static constexpr float NOTE_C5 = 523.25f;
@@ -60,12 +85,13 @@ private:
    float _phase = 0;
    bool _began = false;
    volatile bool _playingAsync = false;
+   volatile bool _stopRequested = false;
    uint8_t _asyncRepeats = 1;
 
    static void _asyncTask(void* param)
    {
       Sound* self = (Sound*)param;
-      for (uint8_t i = 0; i < self->_asyncRepeats; i++)
+      for (uint8_t i = 0; i < self->_asyncRepeats && !self->_stopRequested; i++)
       {
          self->playNotification();
       }
@@ -127,7 +153,7 @@ private:
       _writeCodec(0x13, 0x10);
       _writeCodec(0x1C, 0x6A);
       _writeCodec(0x37, 0x08);
-      _writeCodec(0x32, 0xCF);
+      _writeCodec(0x32, 0xC5);
       _writeCodec(0x31, 0x00);
       _writeCodec(0x14, 0x1A);
       _writeCodec(0x17, 0xBF);
@@ -140,9 +166,64 @@ public:
    /// Playback volume scale (1.0 = unchanged; values above 1.0 amplify and clip).
    float volume = 0.25f;
 
+   /// Peak amplitude of generated tones (0 - 32767).
+   float toneAmplitude = 5000.0f;
+
+   /// Fade in/out duration of generated tones in milliseconds.
+   uint16_t fadeMillis = 40;
+
+   /// Number of selectable notification sounds.
+   static constexpr uint8_t NUM_SOUNDS = 8;
+
+   /// Index of the notification sound to play (0 = MP3, 1 = Harp, 2 = Announce, 3 = Car Horn,
+   /// 4 = Rooster, 5 = Morning Rooster, 6 = Chickens, 7 = War Horn).
+   uint8_t soundIndex = 0;
+
    ///
    /// <summary>
-   /// Enables the amplifier, configures the codec, and starts the I2S stream. Call once
+   /// Gets the display name of a notification sound.
+   /// </summary>
+   /// <param name="index">Sound index</param>
+   /// <returns>Sound name</returns>
+   ///
+   static const char* soundName(uint8_t index)
+   {
+      switch (index)
+      {
+      case 1:
+         return "Harp";
+      case 2:
+         return "Announce";
+      case 3:
+         return "Car Horn";
+      case 4:
+         return "Rooster";
+      case 5:
+         return "Morning";
+      case 6:
+         return "Chickens";
+      case 7:
+         return "War Horn";
+      default:
+         return "Chime";
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Sets the ES8311 codec's DAC volume register (0x00 = -95.5 dB, 0xBF = 0 dB, 0xFF = +32 dB,
+   /// in 0.5 dB steps).
+   /// </summary>
+   /// <param name="value">Raw DAC volume register value</param>
+   ///
+   void setDacVolume(uint8_t value)
+   {
+      _writeCodec(0x32, value);
+   }
+
+   ///
+   /// <summary>
+   /// Enables the amplifier, configures the codec, and starts the I2S stream.
    /// after the display/touch controller has initialized the I2C bus.
    /// </summary>
    ///
@@ -181,7 +262,7 @@ public:
       const float phaseStep = 2.0f * PI * frequency / SAMPLE_RATE;
       const uint32_t numFrames = SAMPLE_RATE * spanMillis / 1000 / NUM_FRAME_SAMPLES;
       const float totalSamples = (float)numFrames * NUM_FRAME_SAMPLES;
-      const float fadeSamples = SAMPLE_RATE * FADE_MILLIS / 1000.0f;
+      const float fadeSamples = SAMPLE_RATE * fadeMillis / 1000.0f;
 
       for (uint32_t i = 0; i < numFrames; i++)
       {
@@ -189,7 +270,7 @@ public:
          {
             const float n = (float)i * NUM_FRAME_SAMPLES + j;
             const float envelope = min(1.0f, min(n / fadeSamples, (totalSamples - n) / fadeSamples));
-            const int16_t sample = frequency > 0 ? (int16_t)(AMPLITUDE * envelope * sinf(_phase)) : 0;
+            const int16_t sample = frequency > 0 ? (int16_t)(toneAmplitude * envelope * sinf(_phase)) : 0;
             frame[j * 2] = sample;
             frame[j * 2 + 1] = sample;
             _phase += phaseStep;
@@ -225,7 +306,7 @@ public:
 
       mp3dec_init(&_decoder);
 
-      while (size > 0)
+      while (size > 0 && !_stopRequested)
       {
          const int numSamples = mp3dec_decode_frame(&_decoder, mp3, size, _pcm.data(), &info);
          if (info.frame_bytes == 0)
@@ -268,28 +349,110 @@ public:
 
    ///
    /// <summary>
-   /// Plays the built-in notification sound.
+   /// Plays in-memory 16 kHz mono 16-bit PCM audio, scaled by the volume.
    /// </summary>
+   /// <param name="pcm">Pointer to the samples</param>
+   /// <param name="numSamples">Number of samples</param>
    ///
-   void playNotification()
+   void playPcm(const int16_t* pcm, size_t numSamples)
    {
-      playMp3(NOTIFICATION_MP3, sizeof(NOTIFICATION_MP3));
+      if (!_began)
+      {
+         return;
+      }
+
+      std::array<int16_t, NUM_FRAME_SAMPLES * 2> frame;
+      size_t pos = 0;
+      while (pos < numSamples && !_stopRequested)
+      {
+         const size_t count = min((size_t)NUM_FRAME_SAMPLES, numSamples - pos);
+         for (size_t j = 0; j < count; j++)
+         {
+            const int16_t sample = (int16_t)constrain((int32_t)(pcm[pos + j] * volume), -32768, 32767);
+            frame[j * 2] = sample;
+            frame[j * 2 + 1] = sample;
+         }
+         _i2s.write((uint8_t*)frame.data(), count * 2 * sizeof(int16_t));
+         pos += count;
+      }
    }
 
    ///
    /// <summary>
-   /// Plays the built-in notification sound on a background task and returns immediately.
-   /// Ignored if a background notification is already playing. Don't call other play
-   /// methods while a background sound is playing.
+   /// Plays the currently selected notification sound.
+   /// </summary>
+   ///
+   void playNotification()
+   {
+      switch (soundIndex)
+      {
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_HARP)
+      case 1:
+         playMp3(HARP_MP3, sizeof(HARP_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_ANNOUNCE)
+      case 2:
+         playMp3(ANNOUNCE_MP3, sizeof(ANNOUNCE_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_CAR_HORN)
+      case 3:
+         playMp3(CAR_HORN_MP3, sizeof(CAR_HORN_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_ROOSTER)
+      case 4:
+         playMp3(ROOSTER_MP3, sizeof(ROOSTER_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_MORNING)
+      case 5:
+         playMp3(MORNING_ROOSTER_MP3, sizeof(MORNING_ROOSTER_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_CHICKENS)
+      case 6:
+         playMp3(CHICKENS_MP3, sizeof(CHICKENS_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_WAR_HORN)
+      case 7:
+         playMp3(WAR_HORN_MP3, sizeof(WAR_HORN_MP3));
+         break;
+#endif
+      default:
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_CHIME)
+         playMp3(NOTIFICATION_MP3, sizeof(NOTIFICATION_MP3));
+#endif
+         break;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Plays the currently selected notification sound on a background task and returns
+   /// immediately. If a background sound is already playing, it is stopped and restarted.
+   /// Don't call other play methods while a background sound is playing.
    /// </summary>
    /// <param name="repeats">Number of times to play the notification</param>
    ///
    void playNotificationAsync(uint8_t repeats = 1)
    {
-      if (!_began || _playingAsync)
+      if (!_began)
       {
          return;
       }
+
+      if (_playingAsync)
+      {
+         _stopRequested = true;
+         while (_playingAsync)
+         {
+            delay(1);
+         }
+      }
+      _stopRequested = false;
 
       _asyncRepeats = repeats;
       _playingAsync = true;

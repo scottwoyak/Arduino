@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // Requires the sketch to have already included, in order: ArduinoBoard.h (so the
 // board-specific Arduino type is defined), and WiFiSettings.h (so WIFI_SSID,
@@ -212,10 +212,7 @@ protected:
    void _afterOTASetup() override
    {
       _client = new TelemetryPublisher(_topicResolver.topic(), _telemetryConfig, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
-      if (!_client->connect(_arduino, _status) && _customTelemetryHandler == nullptr)
-      {
-         Util::reset(TELEMETRY_RESET_DELAY_S, "Could not connect to telemetry server");
-      }
+      _client->connect(_arduino, _status);
    }
 
    ///
