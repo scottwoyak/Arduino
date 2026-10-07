@@ -300,4 +300,56 @@ private:
               _print(line, toLogger);
               return line;
            }
+
+   ///
+   /// <summary>
+   /// Builds the title, column header row, and divider row without printing or logging them.
+   /// </summary>
+   /// <returns>The lines, each terminated with '\n', concatenated together.</returns>
+   ///
+   String formatHeader() const
+   {
+      if (!_isConfigured())
+      {
+         return String();
+      }
+
+      String output;
+      if (_title != nullptr)
+      {
+         output += _title;
+         output += '\n';
+      }
+
+      for (size_t i = 0; i < _columns.size(); i++)
+      {
+         output += _formatValue(_columns[i].title, _columns[i]);
+      }
+      output += '\n';
+
+      output += _dividerText();
+      return output;
+   }
+
+   ///
+   /// <summary>
+   /// Builds one row of values using configured columns without printing or logging it.
+   /// </summary>
+   /// <param name="values">Row values, one per configured column.</param>
+   /// <returns>The row line, terminated with '\n'.</returns>
+   ///
+   template<typename... Args>
+   String formatRow(const Args&... values) const
+   {
+      if (!_isConfigured())
+      {
+         return String();
+      }
+
+      String line;
+      size_t index = 0;
+      _appendValues(line, index, values...);
+      line += '\n';
+      return line;
+   }
        };

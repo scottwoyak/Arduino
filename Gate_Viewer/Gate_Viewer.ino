@@ -1,4 +1,4 @@
-﻿//
+//
 // Gate Viewer
 //
 // Subscribes to live gate azimuth telemetry over a WebSocket connection and renders both
@@ -778,15 +778,6 @@ void setup()
          rightAzimuthBuffer.set(rightValue, dtMicros / 1000);
          rightMetrics.record((int32_t)(dtMicros / 1000));
       }
-   });
-   sketch.onStatus([](LoggerStatus& status)
-   {
-      status.add("Left Topic", LEFT_TELEMETRY_TOPIC);
-      status.add("Right Topic", RIGHT_TELEMETRY_TOPIC);
-      status.add("Left Gate Angle", leftLine.lastAzimuth, 0);
-      status.add("Right Gate Angle", rightLine.lastAzimuth, 0);
-      status.add("Left Rx Rate", leftMetrics.rate.get(), 1);
-      status.add("Right Rx Rate", rightMetrics.rate.get(), 1);
    });
 
    sketch.completeInitialization();

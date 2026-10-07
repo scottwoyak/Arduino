@@ -7,8 +7,7 @@
 // via the shared Logger class (see Logger.h). Once connected, Logger sends the initial
 // JSON handshake identifying the device (deviceId/sketch/version) automatically, then
 // this sketch sends a heartbeat log message once per second. Also demonstrates
-// handling a sketch-specific command ("Ping") sent from the Device Server, in addition to
-// Logger's built-in "GetStatus" command.
+// handling a sketch-specific command ("Hi") sent from the Device Server.
 //
 
 #include <string>
@@ -29,8 +28,7 @@ TimerSecs heartbeatTimer(HEARTBEAT_PERIOD_S);
 
 ///
 /// <summary>
-/// Handles commands received from the LogServer that aren't one of Logger's built-in
-/// commands ("GetStatus").
+/// Handles commands received from the LogServer that aren't built-in commands.
 /// </summary>
 /// <param name="command">Command text received from the LogServer.</param>
 ///
@@ -46,17 +44,6 @@ void onCommand(const char* command)
    }
 }
 
-///
-/// <summary>
-/// Adds sketch-specific fields to a GetStatus reply, on top of Logger's base fields.
-/// </summary>
-/// <param name="status">The in-progress status to add fields to.</param>
-///
-void onStatus(LoggerStatus& status)
-{
-   status.add("Heartbeat Period", std::to_string(HEARTBEAT_PERIOD_S) + " secs");
-}
-
 void setup()
 {
    SerialX::begin();
@@ -66,7 +53,6 @@ void setup()
 
    DeviceServerClient::begin(SKETCH_NAME, VERSION);
    DeviceServerClient::onCommand(onCommand);
-   DeviceServerClient::onStatus(onStatus);
 }
 
 void loop()

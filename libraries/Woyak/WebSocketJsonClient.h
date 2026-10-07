@@ -111,6 +111,7 @@ protected:
    bool _hasConnected = false;
    bool _ready = false;
    uint8_t _endpointIndex = 0;
+   uint8_t _switchCount = 0;
    TimerMillis _failoverTimer{ FAILOVER_TIMEOUT_MS };
 
    ///
@@ -254,6 +255,10 @@ public:
       if (_numEndpoints > 1 && !_ready && _failoverTimer.ready())
       {
          _endpointIndex = (_endpointIndex + 1) % _numEndpoints;
+         if (_switchCount < 255)
+         {
+            _switchCount++;
+         }
          _switching = true;
          _webSocket.disconnect();
          _switching = false;
@@ -262,6 +267,18 @@ public:
 
       _onLoop();
       _webSocket.loop();
+   }
+
+   ///
+   /// <summary>
+   /// Indicates whether every configured endpoint has had a full failover timeout without
+   /// becoming ready (always true when only one endpoint is configured).
+   /// </summary>
+   /// <returns>True if all endpoints have been tried and failed; otherwise false.</returns>
+   ///
+   bool hasTriedAllEndpoints() const
+   {
+      return _numEndpoints <= 1 || _switchCount >= _numEndpoints;
    }
 
    ///

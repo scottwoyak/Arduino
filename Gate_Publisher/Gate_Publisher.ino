@@ -35,10 +35,8 @@ constexpr auto SKETCH_NAME = "Gate_Publisher";
 
 // ----------- InfluxDB site selection
 constexpr InfluxContext INFLUX_PROMPTS[] = {
-   { "Monitor", "Bragg", "Left" },
-   { "Monitor", "Bragg", "Right" },
-   { "Testing", "Bragg", "Left" },
-   { "Testing", "Bragg", "Right" },
+   { "Telemetry_30_Day", "Bragg", "Left" },
+   { "Telemetry_30_Day", "Bragg", "Right" },
 };
 
 // ----------- Telemetry topic selection
@@ -188,25 +186,12 @@ SketchConfig PUBLISHER_CONFIG = {
 
 PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
 
-///
-/// <summary>
-/// Adds the most recent gate angle to a GetStatus reply, on top of
-/// Logger's/SketchBase's base fields.
-/// </summary>
-/// <param name="status">The in-progress status to add fields to.</param>
-///
-void onStatus(LoggerStatus& status)
-{
-   status.add("Gate Angle", lastReportedAngle, 0);
-}
-
 void setup()
 {
    sketch.addSensor("MLX90393", []() { return magnetometer.begin(); });
    sketch.setValueSource(gateAngle);
 
    sketch.begin();
-   sketch.onStatus(onStatus);
 
    // Zero the gate angle to the azimuth measured at startup, and pick the rotation
    // direction based on the resolved site's location (Left vs Right).

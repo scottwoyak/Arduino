@@ -71,8 +71,7 @@ constexpr uint8_t ECHO_PIN = 11;
 
 // ----------- InfluxDB site selection
 constexpr InfluxContext INFLUX_PROMPTS[] = {
-   { "Monitor", "Lake", "Dock" },
-   { "Testing", "Lake", "Dock" },
+   { "Telemetry_30_Day", "Lake", "Dock" },
 };
 
 // ----------- Telemetry topic selection; also determines which physical depth sensor
@@ -95,6 +94,7 @@ constexpr float LED_WAVE_HEIGHT_LOW_CM = -10.0f;
 constexpr float LED_WAVE_HEIGHT_HIGH_CM = 10.0f;
 
 constexpr uint16_t DEPTH_SAMPLE_INTERVAL_MS = 100;
+constexpr uint16_t INFLUX_INTERVAL_S = 60;
 
 // Uses WaveShare_ESP32_S3_Zero_Sensors's default I2C/RGB status LED/LED pins, which
 // match this sketch's wiring. arduino itself implements IStatus and drives both the
@@ -129,19 +129,7 @@ PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
 InfluxField* averageDepthField = nullptr;
 
 Timer depthSampleTimer(DEPTH_SAMPLE_INTERVAL_MS);
-
-///
-/// <summary>
-/// Adds the current average depth and wave height readings to a GetStatus reply, on
-/// top of Logger's/SketchBase's base fields.
-/// </summary>
-/// <param name="status">The in-progress status to add fields to.</param>
-///
-void onStatus(LoggerStatus& status)
-{
-   status.add("Average Depth", depth->getAverageDepth(), INFLUX_AVG_DEPTH_DECIMALS);
-   status.add("Wave Height", depth->getWaveHeight(), INFLUX_AVG_DEPTH_DECIMALS);
-}
+TimerSecs uploadTimer(INFLUX_INTERVAL_S);
 
 void setup()
 {
@@ -164,7 +152,6 @@ void setup()
    sketch.setValueSource([]() { return depth->getDepth(); });
 
    sketch.begin();
-   sketch.onStatus(onStatus);
 
    // avgDepth isn't posted until the 5 minute averaging window is full (see loop())
    InfluxPoint* devicePoint = sketch.addPoint("Sensors", {});
@@ -192,5 +179,10 @@ void loop()
          averageDepthField->setEnabled(true);
          averageDepthField->set(depth->getAverageDepth());
       }
+   }
+
+   if (uploadTimer.ready())
+   {
+      sketch.postPoints();
    }
 }

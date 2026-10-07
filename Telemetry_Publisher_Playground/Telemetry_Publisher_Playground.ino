@@ -322,13 +322,8 @@ void setup()
 
    sketch.setTelemetryHandler(&telemetryHandler);
    sketch.begin();
-   sketch.onStatus([](LoggerStatus& status)
-   {
-      status.add("Source", TEST_FUNCTION_LABELS[sourceEditor.get()]);
-      status.add("Last Value", lastValue, 3);
-   });
 
-   Url url(sketch.client()->getUrl().c_str());
+   Url url
    hostValue.set(url.getHost().c_str());
    table.draw();
 

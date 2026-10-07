@@ -14,7 +14,7 @@
 /// Topic resolution shared by every sketch that publishes or subscribes to a telemetry
 /// topic (PublisherSketch, ViewerSketch): resolves the topic (either the fixed
 /// TelemetryConfig::topic, or one selected from TelemetryConfig::prompts and persisted
-/// in Preferences) and reports it in GetStatus replies. Sketch base classes that need
+/// in Preferences). Sketch base classes that need
 /// telemetry hold one of these as a member.
 /// </summary>
 ///
@@ -95,20 +95,6 @@ public:
       }
 
       return _topic;
-   }
-
-   ///
-   /// <summary>
-   /// Adds the resolved telemetry topic to a GetStatus reply, if one has been resolved.
-   /// </summary>
-   /// <param name="status">The in-progress status to add fields to.</param>
-   ///
-   void addStatus(LoggerStatus& status) const
-   {
-      if (_topic != nullptr)
-      {
-         status.add("Telemetry Topic", _topic);
-      }
    }
 
    ///

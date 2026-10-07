@@ -41,20 +41,6 @@ protected:
    /// <summary>Constructed by beginTelemetry(), once the telemetry topic has been resolved.</summary>
    TelemetrySubscriber* _client = nullptr;
 
-   ///
-   /// <summary>
-   /// Adds the telemetry topic to a GetStatus reply, then defers to
-   /// SketchBase::_populateStatus().
-   /// </summary>
-   /// <param name="status">The in-progress status to add fields to.</param>
-   ///
-   void _populateStatus(LoggerStatus& status) override
-   {
-      _topicResolver.addStatus(status);
-
-      SketchBase::_populateStatus(status);
-   }
-
 public:
    ///
    /// <summary>

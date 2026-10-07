@@ -38,12 +38,10 @@ constexpr auto SKETCH_NAME = "Lake_Temp_Monitor";
 // Influx database settings
 constexpr auto INFLUX_SITE = "Lake";
 constexpr auto INFLUX_LOCATION = "Dock";
-constexpr auto INFLUX_INTERVAL_S = 15;  // Log data to InfluxDB every N seconds
 
-// ----------- InfluxDB bucket selection (production vs testing)
+// ----------- InfluxDB bucket selection
 constexpr InfluxContext INFLUX_PROMPTS[] = {
    { INFLUXDB_BUCKET, INFLUX_SITE, INFLUX_LOCATION },
-   { "Testing", INFLUX_SITE, INFLUX_LOCATION },
 };
 
 ///
@@ -66,8 +64,10 @@ constexpr std::array SENSOR_CONFIGS = {
    SensorConfig{ 2, "Enclosure" },
 };
 constexpr uint8_t NUM_SENSORS = SENSOR_CONFIGS.size();
-constexpr uint16_t SENSOR_INTERVAL_MS = 200;
-constexpr float SENSOR_AVERAGE_PERIOD_S = 2.0f;  // 2 secs, equivalent to 10 samples at SENSOR_INTERVAL_MS
+// ----------- Timing (managed by this sketch, not by InfluxConfig)
+constexpr uint16_t SENSOR_INTERVAL_MS = 200;  // read the sensors every N ms
+constexpr uint16_t UPLOAD_INTERVAL_S = 15;    // upload to InfluxDB every N seconds
+constexpr float SENSOR_AVERAGE_PERIOD_S = UPLOAD_INTERVAL_S;  // each upload is the average over the whole upload interval
 
 // Uses WaveShare_ESP32_S3_Zero_Sensors's default I2C/RGB status LED/LED pins, which
 // match this sketch's wiring.
@@ -79,12 +79,10 @@ std::array<InfluxField*, NUM_SENSORS> tempFields;
 std::array<InfluxField*, NUM_SENSORS> humFields;
 
 Timer sensorTimer(SENSOR_INTERVAL_MS);
+TimerSecs uploadTimer(UPLOAD_INTERVAL_S);
 
 InfluxConfig INFLUX_CONFIG = {
    .prompts = INFLUX_PROMPTS,
-   .intervalS = INFLUX_INTERVAL_S,
-   .batchPoints = true,
-   .includeCpuTemp = true,
 };
 
 // Preferences (NVS) namespace names are limited to 15 characters; SKETCH_NAME
@@ -103,27 +101,6 @@ MonitorSketch sketch(SKETCH_CONFIG, INFLUX_CONFIG);
 
 ///
 /// <summary>
-/// Adds each sensor's current temperature/humidity readings to a GetStatus reply,
-/// on top of Logger's/SketchBase's base fields. Reads each sensor live rather than
-/// reporting a cached value, since GetStatus is infrequent and can afford the read.
-/// </summary>
-/// <param name="status">The in-progress status to add fields to.</param>
-///
-void onStatus(LoggerStatus& status)
-{
-   for (uint8_t i = 0; i < NUM_SENSORS; i++)
-   {
-      if (sensors[i]->exists())
-      {
-         multi.select(SENSOR_CONFIGS[i].port);
-         status.add(std::string(SENSOR_CONFIGS[i].item) + " Temperature", sensors[i]->readTemperatureF(), 3);
-         status.add(std::string(SENSOR_CONFIGS[i].item) + " Humidity", sensors[i]->readHumidity(), 2);
-      }
-   }
-}
-
-///
-/// <summary>
 /// Prints a summary table of all detected sensors: I2C mux port, I2C address, sensor
 /// type, and location/item tag.
 /// </summary>
@@ -137,7 +114,7 @@ void printSensorSummary()
       { "Tag", 18 },
    };
    SerialTable table("Detected Sensors", columns);
-   table.printHeader();
+   String output = table.formatHeader();
 
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
@@ -151,8 +128,10 @@ void printSensorSummary()
 
       String tag = String(INFLUX_SITE) + "/" + INFLUX_LOCATION + "/" + SENSOR_CONFIGS[i].item;
 
-      table.printRow(connection, address, sensors[i]->type(), tag);
+      output += table.formatRow(connection, address, sensors[i]->type(), tag);
    }
+
+   Logger.log(output);
 }
 
 void setup()
@@ -168,7 +147,6 @@ void setup()
    sketch.addSensor("Enclosure", []() { multi.select(SENSOR_CONFIGS[3].port); return sensors[3]->begin(true); }, nullptr, false);
 
    sketch.begin();
-   sketch.onStatus(onStatus);
 
    printSensorSummary();
 
@@ -197,5 +175,10 @@ void loop()
             humFields[i]->set(sensors[i]->readHumidity());
          }
       }
+   }
+
+   if (uploadTimer.ready())
+   {
+      sketch.postPoints();
    }
 }

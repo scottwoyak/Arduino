@@ -16,8 +16,8 @@
 class TempMonitorSketch : public MonitorSketch
 {
 public:
-   /// <summary>How often, in seconds, the time-averaged Influx fields are uploaded. Also used as InfluxConfig::intervalS by both Temp_Monitor sketches.</summary>
-   static constexpr uint8_t INFLUX_INTERVAL_S = 15;
+   /// <summary>How often, in seconds, the time-averaged Influx fields are uploaded (and the averaging period of those fields).</summary>
+   static constexpr uint8_t INFLUX_INTERVAL_S = 60;
 
    /// <summary>Decimal places used when uploading/reporting temperature and dew point.</summary>
    static constexpr uint8_t INFLUX_TEMP_DECIMAL_PLACES = 3;
@@ -27,9 +27,10 @@ public:
 
 private:
    /// <summary>How often, in milliseconds, updateReadings() samples the sensor.</summary>
-   static constexpr uint16_t SENSOR_INTERVAL_MS = 500;
+   static constexpr uint16_t SENSOR_INTERVAL_MS = 5000;
 
    TempSensor _sensor;
+    TimerSecs _uploadTimer{ INFLUX_INTERVAL_S };
    Timer _sensorTimer{ SENSOR_INTERVAL_MS };
 
    InfluxField* _tempField = nullptr;
@@ -109,9 +110,9 @@ public:
    ///
    TempMonitorSketch(const char* sketchName, const char* version, const char* preferencesNamespace)
       : MonitorSketch(
-           SketchConfig{ .sketchName = sketchName, .version = version, .preferencesNamespace = preferencesNamespace, .cpuFrequencyMhz = 80, .enableOTA = true },
-           InfluxConfig{ .intervalS = INFLUX_INTERVAL_S, .promptForContext = true, .includeCpuTemp = true })
-   {
+                    SketchConfig{ .sketchName = sketchName, .version = version, .preferencesNamespace = preferencesNamespace, .cpuFrequencyMhz = 80, .enableOTA = true },
+                    InfluxConfig{ .promptForContext = true, .includeCpuTemp = true })
+           {
       ASSERT(_tempInstance == nullptr);
 
       _tempInstance = this;
@@ -152,6 +153,11 @@ public:
    void loop()
    {
       MonitorSketch::loop();
+
+      if (_uploadTimer.ready())
+      {
+         postPoints();
+      }
 
       if (!_sensorTimer.ready())
       {

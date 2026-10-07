@@ -313,7 +313,7 @@ TimedScatterPlotSeries* correctionSeries[NUM_SENSORS] = { nullptr };
 Timer sensorReadTrigger(SAMPLE_INTERVAL_MS);
 TimerSecs prefsTrigger(PREFS_INTERVAL_S);
 
-Influx influx(INFLUX_INTERVAL_S, &status, INFLUXDB_URL, INFLUXDB_ORG, "Testing");
+Influx influx(INFLUX_INTERVAL_S, &status, INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET);
 
 InfluxPoint* nowPoints[NUM_SENSORS] = { nullptr };
 InfluxPoint* shortAvgPoints[NUM_SENSORS] = { nullptr };

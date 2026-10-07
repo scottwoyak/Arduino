@@ -5,6 +5,7 @@
 // WIFI_PASSWORD, INFLUXDB_URL, and INFLUXDB_ORG are defined). This mirrors the include
 // order already used by MonitorSketch-/PublisherSketch-based sketches.
 
+#include <WiFi.h>
 #include <functional>
 #include <vector>
 
@@ -40,8 +41,14 @@ public:
    /// <summary>Decimal places used when posting the standard enclosure/CPU fields to InfluxDB.</summary>
    static constexpr uint8_t INFLUX_DECIMALS = 2;
 
-   /// <summary>How often (in milliseconds) the standard enclosure temperature/humidity sensor is sampled.</summary>
-   static constexpr uint16_t SENSOR_INTERVAL_MS = 100;
+   /// <summary>How often (in seconds) the standard enclosure, CPU and WiFi values are sampled.</summary>
+   static constexpr uint16_t STANDARD_SAMPLE_INTERVAL_S = 1;
+
+   /// <summary>How often (in seconds) the standard enclosure, CPU and WiFi values are uploaded, as averages (and a minimum for WiFi RSSI) over that period.</summary>
+   static constexpr uint16_t STANDARD_UPLOAD_INTERVAL_S = 60;
+
+   /// <summary>Number of samples in each standard rolling window, covering exactly one upload interval.</summary>
+   static constexpr size_t NUM_STANDARD_SAMPLES = STANDARD_UPLOAD_INTERVAL_S / STANDARD_SAMPLE_INTERVAL_S;
 
    /// <summary>Preferences keys for the resolved InfluxDB site entry (bucket/site/location), in InfluxContext field order.</summary>
    static constexpr const char* SITE_KEYS[] = { "bucket", "site", "location" };
@@ -96,47 +103,121 @@ protected:
    /// <summary>True if Influx is in use; set by begin() from _shouldUseInflux().</summary>
    bool _usesInflux = false;
 
-   /// <summary>Points registered via addPoint() (including the standard enclosure/CPU
-   /// points below); posted and flushed together each Influx upload cycle.</summary>
+   /// <summary>Points registered via addPoint(); posted and flushed together when the sketch calls postPoints().</summary>
    std::vector<InfluxPoint*> _points;
+
+   /// <summary>Standard enclosure/CPU/WiFi points; posted and flushed together every STANDARD_UPLOAD_INTERVAL_S, independent of _points.</summary>
+   std::vector<InfluxPoint*> _standardPoints;
 
    InfluxField* _enclosureTempField = nullptr;
    InfluxField* _enclosureHumidityField = nullptr;
    InfluxField* _cpuTempField = nullptr;
+   InfluxField* _rssiField = nullptr;
+   InfluxField* _rssiMinField = nullptr;
 
    /// <summary>Owned CPU temperature sensor, used if influxConfig.includeCpuTemp is true.</summary>
    ESP32TempSensor _cpuTempSensor;
 
-   Timer _sensorTimer;
+   /// <summary>Paces sampling of the standard enclosure/CPU/WiFi values (STANDARD_SAMPLE_INTERVAL_S).</summary>
+   TimerSecs _sensorTimer;
+
+   /// <summary>Paces posting of the standard points (STANDARD_UPLOAD_INTERVAL_S).</summary>
+   TimerSecs _standardUploadTimer;
 
    /// <summary>True once the Influx write buffer has been sized for the final point count (see loop()).</summary>
    bool _writeOptionsApplied = false;
 
    ///
    /// <summary>
-   /// Adds Influx-specific status fields (Influx bucket, registered sensors, standard
-   /// enclosure/CPU sensor flags) to a GetStatus reply, then defers to
-   /// SketchBase::_populateStatus() to invoke the sketch's own handler (registered via
-   /// onStatus()), if any.
+   /// Creates an Influx point
+   /// this sketch's name, without registering it for posting.
    /// </summary>
-   /// <param name="status">The in-progress status to add fields to.</param>
+   /// <param name="measurement">Influx measurement name.</param>
+   /// <param name="tags">Additional key/value pairs to attach as Influx tags.</param>
+   /// <returns>Pointer to the created point, owned by this instance.</returns>
    ///
-   void _populateStatus(LoggerStatus& status) override
+   InfluxPoint* _createPoint(const char* measurement, const std::vector<std::pair<const char*, const char*>>& tags)
    {
-      status.add("Influx Bucket", _site.bucket != nullptr ? _site.bucket : "N/A");
+      std::vector<std::pair<const char*, const char*>> allTags = { { "site", _site.site }, { "location", _site.location }, { "sketch", _config.sketchName } };
+      allTags.insert(allTags.end(), tags.begin(), tags.end());
 
-      if (_influxConfig.includeEnclosureTemp)
+      return new InfluxPoint(measurement, allTags);
+   }
+
+   ///
+   /// <summary>
+   /// Creates one of the standard points (enclosure, CPU, WiFi) and registers it in
+   /// _standardPoints so it uploads every STANDARD_UPLOAD_INTERVAL_S.
+   /// </summary>
+   /// <param name="item">Value for the point's "item" tag.</param>
+   /// <returns>Pointer to the created point, owned by this instance.</returns>
+   ///
+   InfluxPoint* _addStandardPoint(const char* item)
+   {
+      InfluxPoint* point = _createPoint(_influxConfig.measurement, { { "item", item } });
+      _standardPoints.push_back(point);
+      return point;
+   }
+
+   ///
+   /// <summary>
+   /// Logs a failed InfluxDB flush along with the current WiFi signal strength.
+   /// </summary>
+   ///
+   void _logFlushFailure()
+   {
+      Logger.log(std::string("InfluxDB flush failed: ") + _influx->client()->getLastErrorMessage().c_str() + std::string(" (WiFi RSSI ") + std::to_string(WiFi.RSSI()) + " dBm)", LogSeverity::ERROR);
+   }
+
+   ///
+   /// <summary>
+   /// Sizes the Influx write buffer for the final point count, once, on first use.
+   /// Deferred from begin(): sketch-specific points (added via addPoint() in the
+   /// sketch's own setup(), after monitor.begin()/publisher.begin() returns) aren't
+   /// registered yet when begin() runs, so sizing the write buffer there would
+   /// undercount the points and cause the buffer to wrap and silently drop the
+   /// earliest-queued points every cycle.
+   /// </summary>
+   ///
+   void _applyWriteOptions()
+   {
+      if (_writeOptionsApplied)
       {
-         status.add("Enclosure Temperature", _enclosureTempSensor.readTemperatureF(), INFLUX_DECIMALS);
-         status.add("Enclosure Humidity", _enclosureTempSensor.readHumidity(), INFLUX_DECIMALS);
+         return;
       }
 
-      if (_influxConfig.includeCpuTemp)
+      size_t numPoints = _points.size() + _standardPoints.size();
+      _influx->client()->setWriteOptions(WriteOptions().batchSize(numPoints).bufferSize(2 * numPoints));
+      _writeOptionsApplied = true;
+   }
+
+   ///
+   /// <summary>
+   /// Posts the given points and flushes them to InfluxDB, logging any flush failure.
+   /// </summary>
+   /// <param name="points">Points to post.</param>
+   ///
+   void _postAndFlush(const std::vector<InfluxPoint*>& points)
+   {
+      if (points.empty())
       {
-         status.add("CPU Temperature", _cpuTempSensor.readTemperatureF(), INFLUX_DECIMALS);
+         return;
       }
 
-      SketchBase::_populateStatus(status);
+      _applyWriteOptions();
+
+      for (InfluxPoint* point : points)
+      {
+         point->post(_influx->client(), _postAsync());
+      }
+
+      // Points above were only queued into the write buffer (see the batchSize set in
+      // _applyWriteOptions()), so flush now to post them together in a single HTTP
+      // request sharing one timestamp.
+      if (!_influx->client()->flushBuffer())
+      {
+         _logFlushFailure();
+      }
    }
 
    ///
@@ -235,13 +316,15 @@ public:
       : SketchBase(config),
       _influxConfig(influxConfig),
       _siteResolver(config.preferencesNamespace, SITE_KEYS),
-      _sensorTimer(SENSOR_INTERVAL_MS)
+      _sensorTimer(STANDARD_SAMPLE_INTERVAL_S),
+      _standardUploadTimer(STANDARD_UPLOAD_INTERVAL_S)
    {}
 
    ///
    /// <summary>
    /// Creates and registers an additional Influx point (beyond the standard
-   /// enclosure/CPU points), posted and flushed alongside them each upload cycle. The
+   /// enclosure/CPU/WiFi points, which upload on their own schedule), posted and
+   /// flushed when the sketch calls postPoints(). The
    /// resolved site's "site" and "location" tags are added automatically; only
    /// pass extra tags (e.g. "item"). Must be called after begin(), once the
    /// site has been resolved.
@@ -252,12 +335,24 @@ public:
    ///
    InfluxPoint* addPoint(const char* measurement, const std::vector<std::pair<const char*, const char*>>& tags)
    {
-      std::vector<std::pair<const char*, const char*>> allTags = { { "site", _site.site }, { "location", _site.location } };
-      allTags.insert(allTags.end(), tags.begin(), tags.end());
-
-      InfluxPoint* point = new InfluxPoint(measurement, allTags);
+      InfluxPoint* point = _createPoint(measurement, tags);
       _points.push_back(point);
       return point;
+   }
+
+   ///
+   /// <summary>
+   /// Posts and flushes all points registered via addPoint(). The sketch owns the timing
+   /// of its custom points: call this on the sketch's own upload timer. (The standard
+   /// CPU/enclosure/WiFi points are posted automatically by loop().)
+   /// </summary>
+   ///
+   void postPoints()
+   {
+      if (_usesInflux && _extraInfluxReadyCondition())
+      {
+         _postAndFlush(_points);
+      }
    }
 
    ///
@@ -358,7 +453,9 @@ public:
 
          String header = String("Select an influx site (measurement=") + _influxConfig.measurement + ", * = default):";
          std::span<const String> resolved = _siteResolver.resolve(_arduino->preferences, _status, header.c_str(), SITE_COLUMNS, flattenedSites.data(), _influxConfig.prompts.size(), forcePrompt);
-         _site = { resolved[0].c_str(), resolved[1].c_str(), resolved[2].c_str() };
+         // The bucket is always INFLUXDB_BUCKET; a bucket saved to Preferences by an older
+         // build (e.g. "Monitor") is ignored.
+         _site = { INFLUXDB_BUCKET, resolved[1].c_str(), resolved[2].c_str() };
       }
       else
       {
@@ -400,7 +497,7 @@ public:
       _usesInflux = _shouldUseInflux(hasSiteTable);
       if (_usesInflux)
       {
-         _influx = new Influx(_influxConfig.intervalS, _status, INFLUXDB_URL, INFLUXDB_ORG, _site.bucket);
+         new Influx(STANDARD_UPLOAD_INTERVAL_S, _status,
          _logStatusStart("Influx... ");
          if (!_influx->begin(_arduino))
          {
@@ -412,21 +509,30 @@ public:
 
          _logStatusEnd("OK");
 
-         std::string intervalMessage = std::string("Values measured every ") + std::to_string(_influxConfig.sampleIntervalMs) +
-            " ms with an average uploaded every " + std::to_string(_influxConfig.intervalS) + " seconds";
+         std::string intervalMessage = std::string("Standard values (CPU, enclosure, WiFi) measured every ") + std::to_string(STANDARD_SAMPLE_INTERVAL_S) +
+            " s with an average uploaded every " + std::to_string(STANDARD_UPLOAD_INTERVAL_S) + " seconds";
          _logMessage(intervalMessage);
 
          if (_influxConfig.includeEnclosureTemp)
          {
-            InfluxPoint* enclosurePoint = addPoint(_influxConfig.measurement, { { "item", "Enclosure" } });
-            _enclosureTempField = enclosurePoint->addRollingAverageField(_influxConfig.rollingSamples, "temperature", INFLUX_DECIMALS);
-            _enclosureHumidityField = enclosurePoint->addRollingAverageField(_influxConfig.rollingSamples, "humidity", INFLUX_DECIMALS);
+            InfluxPoint* enclosurePoint = _addStandardPoint("Enclosure");
+            _enclosureTempField = enclosurePoint->addRollingAverageField(NUM_STANDARD_SAMPLES, "temperature", INFLUX_DECIMALS);
+            _enclosureHumidityField = enclosurePoint->addRollingAverageField(NUM_STANDARD_SAMPLES, "humidity", INFLUX_DECIMALS);
          }
 
          if (_influxConfig.includeCpuTemp)
          {
-            InfluxPoint* cpuPoint = addPoint(_influxConfig.measurement, { { "item", "CPU" } });
-            _cpuTempField = cpuPoint->addValueField("temperature", INFLUX_DECIMALS);
+            InfluxPoint* cpuPoint = _addStandardPoint("CPU");
+            _cpuTempField = cpuPoint->addRollingAverageField(NUM_STANDARD_SAMPLES, "temperature", INFLUX_DECIMALS);
+         }
+
+         if (_influxConfig.includeWiFiRssi)
+         {
+            InfluxPoint* wifiPoint = _addStandardPoint("WiFi");
+            _rssiField = wifiPoint->addRollingAverageField(NUM_STANDARD_SAMPLES, "rssi", 0);
+
+            InfluxPoint* wifiMinPoint = _addStandardPoint("WiFi_Min");
+            _rssiMinField = wifiMinPoint->addRollingMinField(NUM_STANDARD_SAMPLES, "rssi", 0);
          }
       }
 
@@ -454,49 +560,23 @@ public:
             _enclosureTempField->set(_enclosureTempSensor.readTemperatureF());
             _enclosureHumidityField->set(_enclosureTempSensor.readHumidity());
          }
-      }
-
-      if (_usesInflux && _influx->ready() && _extraInfluxReadyCondition())
-      {
-         if (!_writeOptionsApplied)
-         {
-            // Deferred from begin(): sketch-specific points (added via addPoint() in the
-            // sketch's own setup(), after monitor.begin()/publisher.begin() returns) aren't
-            // registered yet when begin() runs, so sizing the write buffer there would
-            // undercount _points.size() and cause the buffer to wrap and silently drop
-            // the earliest-queued points every cycle once the real point count is known.
-            size_t batchSize = _influxConfig.batchPoints ? _points.size() : 1;
-            _influx->client()->setWriteOptions(WriteOptions().batchSize(batchSize).bufferSize(2 * _points.size()));
-            _writeOptionsApplied = true;
-         }
 
          if (_influxConfig.includeCpuTemp)
          {
             _cpuTempField->set(_cpuTempSensor.readTemperatureF());
          }
 
-         for (InfluxPoint* point : _points)
+         if (_influxConfig.includeWiFiRssi)
          {
-            point->post(_influx->client(), _postAsync());
-
-            // When not batching, flush after each point so a failure on one point
-            // (e.g. still warming up) doesn't prevent the others from being posted.
-            if (!_influxConfig.batchPoints && !_influx->client()->flushBuffer())
-            {
-               Logger.log(std::string("InfluxDB flush failed: ") + _influx->client()->getLastErrorMessage().c_str(), LogSeverity::ERROR);
-            }
+            int32_t rssi = WiFi.RSSI();
+            _rssiField->set(rssi);
+            _rssiMinField->set(rssi);
          }
+      }
 
-         if (_influxConfig.batchPoints)
-         {
-            // Points above were only queued into the write buffer (see the batchSize set
-            // above), so flush now to post them together in a single HTTP request sharing
-            // one timestamp.
-            if (!_influx->client()->flushBuffer())
-            {
-               Logger.log(std::string("InfluxDB flush failed: ") + _influx->client()->getLastErrorMessage().c_str(), LogSeverity::ERROR);
-            }
-         }
+      if (_usesInflux && _standardUploadTimer.ready() && _extraInfluxReadyCondition())
+      {
+         _postAndFlush(_standardPoints);
       }
    }
 };

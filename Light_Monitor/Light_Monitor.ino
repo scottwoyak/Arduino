@@ -70,6 +70,7 @@ int16_t distanceMm = -1;
 float lux = 0.0f;
 bool presentSinceSample = false;
 Timer sampleTimer(SAMPLE_INTERVAL_MS);
+TimerSecs uploadTimer(INFLUX_INTERVAL_S);
 
 // Registered after begin(), once the site has been resolved.
 InfluxField* luxField = nullptr;
@@ -112,11 +113,8 @@ TelemetryConfig TELEMETRY_CONFIG = {
 
 InfluxConfig INFLUX_CONFIG = {
    .context = { INFLUXDB_BUCKET, "Bragg", nullptr },
-   .intervalS = INFLUX_INTERVAL_S,
-   .sampleIntervalMs = SAMPLE_INTERVAL_MS,
    .promptForContext = true,
    .includeEnclosureTemp = false,
-   .includeCpuTemp = false,
 };
 
 SketchConfig PUBLISHER_CONFIG = {
@@ -128,19 +126,6 @@ SketchConfig PUBLISHER_CONFIG = {
 };
 
 PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
-
-///
-/// <summary>
-/// Adds the current distance, light level, and light state to a GetStatus reply, on top
-/// of Logger's/SketchBase's base fields.
-/// </summary>
-/// <param name="status">The in-progress status to add fields to.</param>
-///
-void onStatus(LoggerStatus& status)
-{
-   status.add("Distance", (float)distanceMm, 0);
-   status.add("Lux", lux, LUX_DECIMALS);
-}
 
 ///
 /// <summary>
@@ -203,7 +188,6 @@ void setup()
    sketch.onSiteResolved(onSiteResolved);
 
    sketch.begin();
-   sketch.onStatus(onStatus);
 
    InfluxPoint* point = sketch.addPoint();
    luxField = point->addTimeAverageField(INFLUX_INTERVAL_S, "lux", INFLUX_LUX_DECIMALS);
@@ -220,5 +204,10 @@ void loop()
    if (sampleTimer.ready())
    {
       sampleSensors();
+   }
+
+   if (uploadTimer.ready())
+   {
+      sketch.postPoints();
    }
 }

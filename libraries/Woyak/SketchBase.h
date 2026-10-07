@@ -112,10 +112,7 @@ protected:
    /// <summary>Status indicator driven through the WiFi/OTA phases of begin().</summary>
    IStatus* _status;
 
-   /// <summary>Callback registered via onStatus(), invoked after any base fields added by _populateStatus() below.</summary>
-   void (*_sketchStatusHandler)(LoggerStatus& status) = nullptr;
-
-   /// <summary>The single SketchBase instance, used by _onGetStatus() to reach the instance whose fields it should add (DeviceServerClient::onStatus() only accepts a captureless function pointer).</summary>
+   /// <summary>The single SketchBase instance.</summary>
    inline static SketchBase* _instance = nullptr;
 
    /// <summary>Callback registered via setOnWiFiLostCallback(), used by _onWiFiLost().</summary>
@@ -363,8 +360,8 @@ protected:
 
    ///
    /// <summary>
-   /// Completes Logger setup once initialization is done: applies the CPU frequency,
-   /// registers the GetStatus handler, and enables the watchdog. Deferred until the end of
+   /// Completes Logger setup once initialization is done: applies the CPU frequency
+   /// and enables the watchdog. Deferred until the end of
    /// setup so the watchdog doesn't trip during the blocking init steps.
    /// </summary>
    ///
@@ -372,9 +369,7 @@ protected:
    {
       setCpuFrequencyMhz(_config.cpuFrequencyMhz);
 
-      DeviceServerClient::onStatus(_onGetStatus);
-
-      esp_task_wdt_config_t twdtConfig = {
+      esp_task_wdt_config_t
          .timeout_ms = WATCHDOG_INTERVAL_S * 1000U,
          .idle_core_mask = 0,
          .trigger_panic = true,
@@ -385,44 +380,7 @@ protected:
 
    ///
    /// <summary>
-   /// Adds base status fields to a GetStatus reply, then invokes the sketch's own
-   /// handler (registered via onStatus()), if any. Overridden by derived classes (e.g.
-   /// InfluxSketchBase) to add their own fields before calling this base version.
-   /// </summary>
-   /// <param name="status">The in-progress status to add fields to.</param>
-   ///
-   virtual void _populateStatus(LoggerStatus& status)
-   {
-      for (const SensorInit& sensor : _sensors)
-      {
-         const char* label = (sensor.successLabelFunc != nullptr) ? sensor.successLabelFunc() : "OK";
-         status.add(sensor.label, label);
-      }
-
-      if (_sketchStatusHandler != nullptr)
-      {
-         _sketchStatusHandler(status);
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Static trampoline registered with DeviceServerClient::onStatus(), forwarding to the single
-   /// SketchBase instance's _populateStatus().
-   /// </summary>
-   /// <param name="status">The in-progress status to add fields to.</param>
-   ///
-   static void _onGetStatus(LoggerStatus& status)
-   {
-      if (_instance != nullptr)
-      {
-         _instance->_populateStatus(status);
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Runs the standard per-loop step shared by every sketch: OTA polling, Logger
+   /// Runs the standard per-loop step
    /// polling, status indicator updates, and watchdog reset. Call once from loop(),
    /// then layer any sketch-specific per-loop work on top.
    /// </summary>
@@ -616,22 +574,8 @@ public:
 
    ///
    /// <summary>
-   /// Registers a handler invoked when a "GetStatus" command is received from the
-   /// LogServer, after any base fields added by _populateStatus() (e.g. InfluxSketchBase's
-   /// Influx bucket/sensor/telemetry fields). Only one handler is supported; call once
-   /// from setup(), after begin().
-   /// </summary>
-   /// <param name="handler">Function invoked with the in-progress status to add fields to.</param>
-   ///
-      void onStatus(void (*handler)(LoggerStatus& status))
-      {
-         _sketchStatusHandler = handler;
-      }
-
-      ///
-      /// <summary>
-      /// Registers a callback invoked when WiFi connectivity is lost and cannot be
-      /// reestablished (see _onWiFiLost()). Use this to show something on the display,
+   /// Registers a callback invoked when WiFi connectivity is lost and cannot be
+   /// reestablished (see _onWiFiLost()). Use this to show something on the display,
       /// log a message, etc. before the device resets. Return true from the callback if
       /// the loss was fully handled and loop() should skip its own default reset; return
       /// false to let loop() reset the device after WIFI_LOST_RESET_DELAY_S seconds.

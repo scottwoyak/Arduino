@@ -77,6 +77,12 @@ public:
    /// <summary>Most recent telemetry sample rate (samples/s).</summary>
    static inline volatile float telemetryRate = 0;
 
+   /// <summary>millis() when telemetryRate was last updated; the rate is reported as 0 once it goes stale.</summary>
+   static inline volatile uint32_t telemetryRateMs = 0;
+
+   /// <summary>Milliseconds without a telemetry sample after which the reported rate is 0.</summary>
+   static constexpr uint32_t TELEMETRY_RATE_STALE_MS = 5000;
+
    /// <summary>Failed InfluxDB writes since boot.</summary>
    static inline std::atomic<uint32_t> influxFailures{ 0 };
 
@@ -128,7 +134,7 @@ public:
       (*doc)["wifiReconnects"] = _wifiReconnects.load();
       (*doc)["hubReconnects"] = hubReconnects.load();
       (*doc)["telemetryReconnects"] = telemetryReconnects.load();
-      (*doc)["telemetryRate"] = telemetryRate;
+      (*doc)["telemetryRate"] = (millis() - telemetryRateMs > TELEMETRY_RATE_STALE_MS) ? 0.0f : telemetryRate;
       (*doc)["influxFailures"] = influxFailures.load();
       (*doc)["stackFree"] = uxTaskGetStackHighWaterMark(nullptr);
       _maxRssi = INT32_MIN;

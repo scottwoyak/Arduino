@@ -454,6 +454,7 @@ private:
       _value = (float)value;
       _rate.tick();
       DeviceHealth::telemetryRate = _rate.get();
+      DeviceHealth::telemetryRateMs = millis();
       if (_sampleHandler != nullptr)
       {
          _sampleHandler(topic, value, doc["dt"] | 0);

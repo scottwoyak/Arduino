@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 // Requires the sketch to have already included, in order: ArduinoBoard.h (so the
 // board-specific Arduino type is defined), and WiFiSettings.h (so WIFI_SSID,
@@ -171,20 +171,6 @@ protected:
 
       std::string telemetryMessage = std::string("Telemetry topic: ") + _topicResolver.resolve(_arduino, _status, forcePrompt);
       _printAndLogStatus(telemetryMessage.c_str());
-   }
-
-   ///
-   /// <summary>
-   /// Adds the telemetry topic to a GetStatus reply, then defers to
-   /// InfluxSketchBase::_populateStatus().
-   /// </summary>
-   /// <param name="status">The in-progress status to add fields to.</param>
-   ///
-   void _populateStatus(LoggerStatus& status) override
-   {
-      _topicResolver.addStatus(status);
-
-      InfluxSketchBase::_populateStatus(status);
    }
 
    ///

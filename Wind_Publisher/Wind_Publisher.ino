@@ -36,15 +36,13 @@
 // This sketch's own version (e.g. "1.2"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("1.2");
+const auto VERSION = MakeVersion("1.3");
 constexpr auto SKETCH_NAME = "Wind_Publisher";
 
 // ----------- InfluxDB site selection
 constexpr InfluxContext INFLUX_PROMPTS[] = {
-   { "Monitor", "Lake", "Dock" },
-   { "Monitor", "Bragg", "Studio" },
-   { "Testing", "Lake", "Dock" },
-   { "Testing", "Bragg", "Studio" },
+   { "Telemetry_30_Day", "Lake", "Dock" },
+   { "Telemetry_30_Day", "Bragg", "Studio" },
 };
 
 // ----------- Telemetry topic selection
@@ -88,19 +86,6 @@ PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
 // match this sketch's wiring.
 WindMeter wind(WIND_SENSOR_PIN, sketch.arduino.ledPin(), LEDColor::CLEAR_PINK);
 
-///
-/// <summary>
-/// Adds the current wind speed reading to a GetStatus reply, on top of
-/// Logger's/SketchBase's base fields. Reads the sensor live rather than reporting a
-/// cached value, since GetStatus is infrequent and can afford the read.
-/// </summary>
-/// <param name="status">The in-progress status to add fields to.</param>
-///
-void onStatus(LoggerStatus& status)
-{
-   status.add("Wind Speed", wind.getSpeed(), 1);
-}
-
 void setup()
 {
    // power the wind encoder/sensor
@@ -118,7 +103,6 @@ void setup()
    sketch.setOnStartedCallback([]() { sketch.arduino.off(); });
 
    sketch.begin();
-   sketch.onStatus(onStatus);
 
    Logger.logInitializationComplete();
 }

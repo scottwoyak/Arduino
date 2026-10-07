@@ -1,4 +1,4 @@
-﻿//
+//
 // Wind Viewer
 //
 // Subscribes to live wind speed telemetry over a WebSocket connection and renders it as
@@ -276,12 +276,7 @@ void setup()
    rollingChart->setColorRange(&speedColorRange);
 
    sketch.beginTelemetry(&telemetryHandler);
-   sketch.onStatus([](LoggerStatus& status)
-   {
-      status.add("Wind Speed", sketch.getClient()->getValue(), 1);
-      status.add("Telemetry URL", sketch.getClient()->getUrl());
-   });
-   delay(1000); // provide time for the wind meter to get a reading
+   delay(1000);
 
    Logger.logInitializationComplete();
 }

@@ -34,119 +34,7 @@ enum class LogSeverity
 
 ///
 /// <summary>
-/// Collects name/value pairs for a GetStatus reply (see DeviceServerClient::onStatus()).
-/// The base set of fields (sketch/version/site/location/etc.) is populated by
-/// DeviceServerClient itself; a sketch-registered handler can add its own fields (e.g. a
-/// wind sensor adding the current wind speed) before the reply is sent.
-/// </summary>
-///
-class LoggerStatus
-{
-   std::vector<std::string> _lines;
-
-public:
-   ///
-   /// <summary>
-   /// Adds a name/value pair to the status reply.
-   /// </summary>
-   /// <param name="name">Field name (e.g. "Wind Speed").</param>
-   /// <param name="value">Field value, already formatted as desired (e.g. "12.3 mph").</param>
-   ///
-   void add(const char* name, const std::string& value)
-   {
-      _lines.push_back(std::string(name) + ": " + value);
-   }
-
-   ///
-   /// <summary>
-   /// Overload of add(const char*, const std::string&) for callers holding a C string.
-   /// </summary>
-   /// <param name="name">Field name.</param>
-   /// <param name="value">Field value.</param>
-   ///
-   void add(const char* name, const char* value)
-   {
-      add(name, std::string(value));
-   }
-
-   ///
-   /// <summary>
-   /// Overload of add(const char*, const std::string&) for callers holding an int.
-   /// </summary>
-   /// <param name="name">Field name.</param>
-   /// <param name="value">Field value.</param>
-   ///
-   void add(const char* name, int value)
-   {
-      add(name, std::to_string(value));
-   }
-
-   ///
-   /// <summary>
-   /// Overload of add(const char*, const std::string&) for callers holding a uint32_t.
-   /// </summary>
-   /// <param name="name">Field name.</param>
-   /// <param name="value">Field value.</param>
-   ///
-   void add(const char* name, uint32_t value)
-   {
-      add(name, std::to_string(value));
-   }
-
-   ///
-   /// <summary>
-   /// Overload of add(const char*, const std::string&) for callers holding a float,
-   /// formatted to a fixed number of decimal places.
-   /// </summary>
-   /// <param name="name">Field name.</param>
-   /// <param name="value">Field value.</param>
-   /// <param name="decimals">Number of decimal places to format with.</param>
-   ///
-   void add(const char* name, float value, uint8_t decimals = 1)
-   {
-      std::ostringstream stream;
-      stream << std::fixed << std::setprecision(decimals) << value;
-      add(name, stream.str());
-   }
-
-   ///
-   /// <summary>
-   /// Overload of add(const char*, float, uint8_t) for callers holding a std::string
-   /// name (e.g. one built up via concatenation) rather than a const char*.
-   /// </summary>
-   /// <param name="name">Field name.</param>
-   /// <param name="value">Field value.</param>
-   /// <param name="decimals">Number of decimal places to format with.</param>
-   ///
-   void add(const std::string& name, float value, uint8_t decimals = 1)
-   {
-      add(name.c_str(), value, decimals);
-   }
-
-   ///
-   /// <summary>
-   /// Joins all added fields into the final reply text, one "Name: value" pair per line.
-   /// </summary>
-   /// <returns>The reply text.</returns>
-   ///
-   std::string toString() const
-   {
-      std::string result;
-      for (size_t i = 0; i < _lines.size(); i++)
-      {
-         if (i > 0)
-         {
-            result += "\n";
-         }
-         result += _lines[i];
-      }
-      return result;
-   }
-};
-
-///
-/// <summary>
-/// WebSocket client for the DeviceServer (a separate server/process from TelemetryClient;
+/// WebSocket client for the DeviceServer
 /// see TelemetryClient.h), used to send log messages and respond to device-management
 /// commands. Unlike the old LogServer protocol (plain text frames), every message
 /// exchanged with the DeviceServer is a JSON object.
@@ -209,7 +97,8 @@ class DeviceServerClient
 
          if (!DeviceServerClient::_everConnected)
          {
-            if (!DeviceServerClient::_initialFailureLogged)
+            // Failing on the primary endpoint isn't a failure yet; the fallback may still connect.
+            if (!DeviceServerClient::_initialFailureLogged && hasTriedAllEndpoints())
             {
                DeviceServerClient::_initialFailureLogged = true;
                DeviceServerClient::log(reason.empty() ? "FAILED" : std::string("FAILED: ") + reason);
@@ -380,8 +269,6 @@ class DeviceServerClient
 
    /// <summary>Optional sketch-supplied handler for commands not recognized as built-in (see onCommand()).</summary>
    static inline void (*_commandHandler)(const char* command) = nullptr;
-   /// <summary>Optional sketch-supplied handler that adds fields to a GetStatus reply (see onStatus()).</summary>
-   static inline void (*_statusHandler)(LoggerStatus& status) = nullptr;
 
    /// <summary>Most recent device state reported via setState(); empty until the first call.</summary>
    static inline std::string _state;
@@ -559,24 +446,9 @@ class DeviceServerClient
 
    ///
    /// <summary>
-   /// Returns "N/A" if the given string is empty; otherwise returns it unchanged. Used
-   /// for GetStatus fields (e.g. Site/Location) that aren't set by every sketch.
-   /// </summary>
-   /// <param name="value">String value to check.</param>
-   /// <returns>"N/A" if value is empty; otherwise value.</returns>
-   ///
-   static const std::string& _orNA(const std::string& value)
-   {
-      static const std::string NOT_AVAILABLE = "N/A";
-      return value.empty() ? NOT_AVAILABLE : value;
-   }
-
-   ///
-   /// <summary>
-   /// Handles a command received from the DeviceServer. The built-in "GetStatus" command
-   /// is answered directly, populated with the base status fields plus any added by the
-   /// sketch-registered handler (see onStatus()); anything else is forwarded to the
-   /// sketch-supplied handler registered via onCommand(), if any.
+   /// Handles a command received from the DeviceServer. Built-in commands are answered
+   /// directly; anything else is forwarded to the sketch-supplied handler registered via
+   /// onCommand(), if any.
    /// </summary>
    /// <param name="command">Command text received from the DeviceServer.</param>
    ///
@@ -587,27 +459,6 @@ class DeviceServerClient
          respond("Restarting");
          reportRestarting();
          ESP.restart();
-      }
-      else if (strcasecmp(command, "GetStatus") == 0)
-      {
-         LoggerStatus status;
-         status.add("Sketch", _sketchName);
-         status.add("Version", _version);
-         status.add("Device ID", std::string(WiFi.macAddress().c_str()));
-         status.add("Site", _orNA(_site));
-         status.add("Location", _orNA(_location));
-         status.add("WiFi SSID", std::string(WiFi.SSID().c_str()));
-         status.add("IP Address", std::string(WiFi.localIP().toString().c_str()));
-         status.add("Signal Strength", std::to_string(WiFi.RSSI()) + " dBm");
-         status.add("Uptime", std::string(formatDuration(millis()).c_str()));
-         status.add("Free Heap", std::string(formatBytes(ESP.getFreeHeap()).c_str()));
-
-         if (_statusHandler != nullptr)
-         {
-            _statusHandler(status);
-         }
-
-         log(status.toString());
       }
       else if (strcasecmp(command, "GetHealth") == 0)
       {
@@ -760,7 +611,7 @@ public:
    ///
    /// <summary>
    /// Registers a handler invoked for commands received from the DeviceServer that aren't
-   /// one of the built-in commands ("GetStatus"). The handler should call respond() to
+   /// one of the built-in commands. The handler should call respond() to
    /// send a reply, if any. Only one handler is supported; call once from setup(), after
    /// begin().
    /// </summary>
@@ -769,20 +620,6 @@ public:
    static void onCommand(void (*handler)(const char* command))
    {
       _commandHandler = handler;
-   }
-
-   ///
-   /// <summary>
-   /// Registers a handler invoked when a "GetStatus" command is received, after the base
-   /// status fields (sketch/version/site/location/etc.) have been added, allowing a
-   /// sketch to append its own fields (e.g. a wind sensor adding the current wind
-   /// speed). Only one handler is supported; call once from setup(), after begin().
-   /// </summary>
-   /// <param name="handler">Function invoked with the in-progress status to add fields to.</param>
-   ///
-   static void onStatus(void (*handler)(LoggerStatus& status))
-   {
-      _statusHandler = handler;
    }
 
    ///
