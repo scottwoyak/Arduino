@@ -18,6 +18,10 @@
 #include "Status.h"
 #include "Util.h"
 
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+#include "Table.h"
+#endif
+
 ///
 /// <summary>
 /// Configuration shared by every sketch built on SketchBase: sketch identity, OTA,
@@ -117,6 +121,141 @@ protected:
 
    /// <summary>Callback registered via setOnWiFiLostCallback(), used by _onWiFiLost().</summary>
    std::function<bool()> _onWiFiLostCallback = nullptr;
+
+   /// <summary>Seconds a Locate request lasts.</summary>
+   static constexpr uint8_t LOCATE_DURATION_S = 30;
+
+   /// <summary>Milliseconds between LED toggles while locating.</summary>
+   static constexpr uint16_t LOCATE_FLASH_INTERVAL_MS = 100;
+
+   /// <summary>True while a Locate request is active.</summary>
+   bool _locating = false;
+
+   /// <summary>Callback registered via setOnLocateEndCallback().</summary>
+   std::function<void()> _onLocateEndCallback = nullptr;
+
+   /// <summary>Ends the Locate request.</summary>
+   TimerSecs _locateTimer = TimerSecs(LOCATE_DURATION_S);
+
+   /// <summary>Paces the LED flashing while locating.</summary>
+   Timer _locateFlashTimer = Timer(LOCATE_FLASH_INTERVAL_MS);
+
+   /// <summary>Current LED state while flashing.</summary>
+   bool _locateLedOn = false;
+
+   /// <summary>Seconds last shown in the Locate countdown footer.</summary>
+   int16_t _locateShownSecs = -1;
+
+   ///
+   /// <summary>
+   /// Draws the gray countdown footer (seconds until the normal sketch returns), but only
+   /// when the displayed number of seconds changes.
+   /// </summary>
+   ///
+   void _drawLocateFooter()
+   {
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+      int16_t secs = (int16_t)ceilf(_locateTimer.remaining());
+      if (secs == _locateShownSecs)
+      {
+         return;
+      }
+      _locateShownSecs = secs;
+
+      std::string text = "Returning in " + std::to_string(secs) + "s ";
+      _arduino->setTextSize(2);
+      _arduino->setCursor(_arduino->width(), _arduino->height() - _arduino->charH());
+      _arduino->printR(text.c_str(), Color::DARKGRAY, Color::BLACK);
+#endif
+   }
+
+   ///
+   /// <summary>
+   /// Starts a Locate request. Boards with a display show the sketch name, version, IP and
+   /// MAC address; other boards rapidly flash their status LED. Lasts LOCATE_DURATION_S.
+   /// </summary>
+   ///
+   void _startLocate()
+   {
+      _locating = true;
+      _locateTimer.reset();
+      _locateFlashTimer.reset();
+      _locateLedOn = false;
+
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+      _arduino->clearDisplay();
+
+      std::string name = _config.sketchName;
+      std::string version = _config.version != nullptr ? _config.version : "";
+      std::string ip = WiFi.localIP().toString().c_str();
+      std::string mac = WiFi.macAddress().c_str();
+
+      Table table(_arduino, 0, 0);
+      table.addRow("Sketch", std::string(name.length(), ' '));
+      table.addRow("Version", std::string(version.length(), ' '));
+      table.addRow("IP", std::string(ip.length(), ' '));
+      table.addRow("MAC", std::string(mac.length(), ' '));
+      table.setValue(0, name);
+      table.setValue(1, version);
+      table.setValue(2, ip);
+      table.setValue(3, mac);
+      table.setPosition(_arduino->width() / 2, _arduino->height() / 2, Anchor::CENTER);
+      table.draw();
+
+      _locateShownSecs = -1;
+      _drawLocateFooter();
+#endif
+   }
+
+   ///
+   /// <summary>
+   /// Services an active Locate request: flashes the status LED on boards without a
+   /// display, and ends the request after LOCATE_DURATION_S. On display boards the display
+   /// is cleared at the end, then _onLocateEndCallback is invoked so the sketch can redraw.
+   /// </summary>
+   ///
+   void _updateLocate()
+   {
+      if (!_locating)
+      {
+         return;
+      }
+
+      if (_locateTimer.expired())
+      {
+         _locating = false;
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+         _arduino->clearDisplay();
+#else
+         _status->setStatus(Status::RUNNING);
+         _status->off();
+#endif
+         if (_onLocateEndCallback != nullptr)
+         {
+            _onLocateEndCallback();
+         }
+         return;
+      }
+
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+      _drawLocateFooter();
+#endif
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+      if (_locateFlashTimer.ready())
+      {
+         _locateLedOn = !_locateLedOn;
+         if (_locateLedOn)
+         {
+            _status->setStatus(Status::RUNNING);
+         }
+         else
+         {
+            _status->off();
+         }
+      }
+#endif
+   }
 
    ///
    /// <summary>
@@ -369,7 +508,7 @@ protected:
    {
       setCpuFrequencyMhz(_config.cpuFrequencyMhz);
 
-      esp_task_wdt_config_t
+      esp_task_wdt_config_t twdtConfig = {
          .timeout_ms = WATCHDOG_INTERVAL_S * 1000U,
          .idle_core_mask = 0,
          .trigger_panic = true,
@@ -400,6 +539,7 @@ protected:
       DeviceServerClient::loop();
 
       _arduino->updateStatusIndicators();
+      _updateLocate();
    }
 
    ///
@@ -530,6 +670,7 @@ public:
       ASSERT(_instance == nullptr);
 
       _instance = this;
+      DeviceServerClient::onLocate([]() { _instance->_startLocate(); });
    }
 
    ///
@@ -585,6 +726,31 @@ public:
       void setOnWiFiLostCallback(std::function<bool()> callback)
       {
          _onWiFiLostCallback = callback;
+      }
+
+      ///
+      /// <summary>
+      /// Gets whether a Locate request is active. Sketches that draw to the display should
+      /// skip their drawing while this is true so the locate info stays visible.
+      /// </summary>
+      /// <returns>True while locating.</returns>
+      ///
+      bool isLocating() const
+      {
+         return _locating;
+      }
+
+      ///
+      /// <summary>
+      /// Registers a callback invoked when a Locate request ends. On display boards the
+      /// display has just been cleared, so use this to redraw the sketch's static content
+      /// and force its next update to repaint everything.
+      /// </summary>
+      /// <param name="callback">Called with no arguments.</param>
+      ///
+      void setOnLocateEndCallback(std::function<void()> callback)
+      {
+         _onLocateEndCallback = callback;
       }
 
       ///

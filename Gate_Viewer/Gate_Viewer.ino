@@ -744,6 +744,9 @@ public:
 
 GateTelemetryHandler telemetryHandler(&sketch.arduino.status);
 
+// Set when a Locate request ends, so the next loop() repaints everything.
+bool redrawAfterLocate = false;
+
 void setup()
 {
    SerialX::begin();
@@ -780,12 +783,23 @@ void setup()
       }
    });
 
+   sketch.setOnLocateEndCallback([]()
+   {
+      telemetryHandler.needsInitialClear = true;
+      redrawAfterLocate = true;
+   });
+
    sketch.completeInitialization();
 }
 
 void loop()
 {
    sketch.loop();
+
+   if (sketch.isLocating())
+   {
+      return;
+   }
 
    if (metricsLogTimer.ready())
    {
@@ -829,7 +843,8 @@ void loop()
    static bool showingHistory = false;
    static TimerSecs historyTimeoutTimer(HISTORY_VIEW_TIMEOUT_S);
 
-   bool forceRedraw = false;
+   bool forceRedraw = redrawAfterLocate;
+   redrawAfterLocate = false;
    if (showingHistory)
    {
       if (tapped || historyTimeoutTimer.ready())

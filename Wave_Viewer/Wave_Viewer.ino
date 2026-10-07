@@ -252,6 +252,7 @@ void setup()
    sketch.beginConnect();
 
    sketch.beginTelemetry(&telemetryHandler);
+   sketch.setOnLocateEndCallback([]() { telemetryHandler.needsInitialDisplay = true; });
    sketch.getClient()->onSample([](const std::string& topic, double value, int64_t dtMicros)
    {
       lastSampleDtMicros = dtMicros;
@@ -268,6 +269,11 @@ void loop()
 {
    sketch.loop();
 
+   if (sketch.isLocating())
+   {
+      return;
+   }
+
    TelemetrySubscriber* client = sketch.getClient();
 
    if (client->isStarted() == false)
@@ -280,9 +286,10 @@ void loop()
       telemetryHandler.needsInitialDisplay = false;
       sketch.arduino.clearDisplay();
       displayHeader();
+      waterLevelChart->reset();
    }
 
-   // get value measured from the bottom of the graph
+   // get value
    float sensorReading = client->getValue();
    float avgSensorReading = sensorReadings.get();
 

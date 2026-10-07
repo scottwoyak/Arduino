@@ -497,7 +497,7 @@ public:
       _usesInflux = _shouldUseInflux(hasSiteTable);
       if (_usesInflux)
       {
-         new Influx(STANDARD_UPLOAD_INTERVAL_S, _status,
+         _influx = new Influx(STANDARD_UPLOAD_INTERVAL_S, _status, INFLUXDB_URL, INFLUXDB_ORG, _site.bucket);
          _logStatusStart("Influx... ");
          if (!_influx->begin(_arduino))
          {

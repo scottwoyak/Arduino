@@ -270,6 +270,9 @@ class DeviceServerClient
    /// <summary>Optional sketch-supplied handler for commands not recognized as built-in (see onCommand()).</summary>
    static inline void (*_commandHandler)(const char* command) = nullptr;
 
+   /// <summary>Handler invoked by the built-in "Locate" command (see onLocate()).</summary>
+   static inline void (*_locateHandler)() = nullptr;
+
    /// <summary>Most recent device state reported via setState(); empty until the first call.</summary>
    static inline std::string _state;
 
@@ -471,6 +474,14 @@ class DeviceServerClient
             _connection.sendJson(doc);
          }
       }
+      else if (strcasecmp(command, "Locate") == 0)
+      {
+         respond("Locating");
+         if (_locateHandler != nullptr)
+         {
+            _locateHandler();
+         }
+      }
       else if (_commandHandler != nullptr)
       {
          _commandHandler(command);
@@ -620,6 +631,18 @@ public:
    static void onCommand(void (*handler)(const char* command))
    {
       _commandHandler = handler;
+   }
+
+   ///
+   /// <summary>
+   /// Registers the handler invoked by the built-in "Locate" command, which asks the board
+   /// to do something visibly unique so it can be identified.
+   /// </summary>
+   /// <param name="handler">Function invoked when a Locate command is received.</param>
+   ///
+   static void onLocate(void (*handler)())
+   {
+      _locateHandler = handler;
    }
 
    ///

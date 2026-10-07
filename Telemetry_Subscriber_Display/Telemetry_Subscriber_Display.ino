@@ -84,6 +84,8 @@ void setup()
    sketch.arduino.printlnInitStatus("Topic... ", std::string("\"") + TOPIC + "\"");
    client.connect(&sketch.arduino, sketch.getStatus());
 
+   sketch.setOnLocateEndCallback([]() { needsInitialDisplay = true; });
+
    sketch.beginLogger();
    sketch.completeInitialization();
 }
@@ -92,6 +94,11 @@ void loop()
 {
    sketch.loop();
    client.loop();
+
+   if (sketch.isLocating())
+   {
+      return;
+   }
 
    if (!client.isReady())
    {
@@ -131,6 +138,7 @@ void loop()
       valueSeries->showPoints = true;
       valueSeries->showLines = false;
       valuePlot.clear();
+      valuePlot.invalidate();
 
       rateDisplayTimer.reset();
       needsInitialDisplay = false;
