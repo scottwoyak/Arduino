@@ -66,6 +66,7 @@
     <File Path="libraries/Woyak/Influx.h" />
     <File Path="libraries/Woyak/InfluxConfig.h" />
     <File Path="libraries/Woyak/InfluxSketchBase.h" />
+    <File Path="libraries/Woyak/InitializingDisplay.h" />
     <File Path="libraries/Woyak/IPrinter.h" />
     <File Path="libraries/Woyak/IScatterPlotSeries.h" />
     <File Path="libraries/Woyak/ITempSensor.h" />
@@ -485,6 +486,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="InitializingDisplay_Demo/InitializingDisplay_Demo.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Interrupt_Debugger/Interrupt_Debugger.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -570,6 +575,10 @@
     <Deploy />
   </Project>
   <Project Path="ScatterPlot_Playground/ScatterPlot_Playground.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="ScrollingText_Display/ScrollingText_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>

@@ -249,8 +249,8 @@ public:
    ///
    void printlnInitStatus(const char* label, const char* value)
    {
-      print(label, Color::LABEL);
-      printlnR(value, Color::VALUE);
+      printInitLabel(label);
+      printInitValue(value);
 
       Logger.logPartial(label);
       Logger.log(value);
@@ -296,17 +296,44 @@ public:
    ///
    void printlnInitStatus(const char* label, const char* displayValue, const char* logValue)
    {
-      print(label, Color::LABEL);
-      printlnR(displayValue, Color::VALUE);
+      printInitLabel(label);
+      printInitValue(displayValue);
 
       Logger.logPartial(label);
       Logger.log(logValue);
    }
 
+public:
+   ///
+   /// <summary>
+   /// Starts an initialization line by printing its label; the result is supplied later via
+   /// printInitValue(). Prints inline on serial-only boards; ArduinoWithDisplay overrides this
+   /// to use a scrolling InitializingDisplay.
+   /// </summary>
+   /// <param name="label">The label text.</param>
+   /// <param name="color">The label color.</param>
+   ///
+   virtual void printInitLabel(const char* label, Color color = Color::LABEL)
+   {
+      print(label, color);
+   }
+
+   ///
+   /// <summary>
+   /// Completes the line started by printInitLabel() with a right-aligned result.
+   /// </summary>
+   /// <param name="value">The result text.</param>
+   /// <param name="color">The result color.</param>
+   ///
+   virtual void printInitValue(const char* value, Color color = Color::VALUE)
+   {
+      printlnR(value, color);
+   }
+
 protected:
    ///
    /// <summary>
-   /// Display-drawing hook for printlnInitStatus(); no-op by default (serial-only boards).
+   /// Display-drawing hook for printlnInitStatus();
    /// ArduinoWithDisplay overrides this to render the status line to the display.
    /// </summary>
    /// <param name="str">The status text to print.</param>
@@ -368,7 +395,7 @@ public:
          status->setStatus(Status::WIFI_CONNECTING);
       }
 
-      print("WiFi... ", Color::LABEL);
+      printInitLabel("WiFi... ");
       Logger.logPartial("WiFi... ");
 
       if (_wifiX == nullptr)
@@ -378,15 +405,16 @@ public:
 
       if (!_wifiX->connect())
       {
-         printlnR("FAILED", Color::RED);
+         printInitValue("FAILED", Color::RED);
          Logger.log("FAILED");
 
          std::string message = std::string("WiFi connect failed: ") + WiFiX::statusString();
-         println(message.c_str(), Color::RED);
+         printInitLabel(message.c_str(), Color::RED);
+         printInitValue("");
          return false;
       }
 
-      printlnR(WiFi.localIP().toString().c_str(), Color::VALUE);
+      printInitValue(WiFi.localIP().toString().c_str());
       Logger.log(WiFi.localIP().toString());
 
       if (status != nullptr)
@@ -398,12 +426,12 @@ public:
 
       if (syncTime)
       {
-         print("Time... ", Color::LABEL);
+         printInitLabel("Time... ");
          Logger.logPartial("Time... ");
          TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nist.gov");
 
          Color timeColor = TimeSync::isSynced() ? Color::VALUE : Color::RED;
-         printlnR(TimeSync::localTimeString().c_str(), timeColor);
+         printInitValue(TimeSync::localTimeString().c_str(), timeColor);
          Logger.log(TimeSync::localTimeString());
       }
 
@@ -469,20 +497,19 @@ public:
    ///
    bool initSensor(const char* label, bool (*initFunc)(), const char* (*successLabelFunc)() = nullptr)
    {
-      print(label, Color::LABEL);
-      print("... ", Color::LABEL);
+      printInitLabel((std::string(label) + "... ").c_str());
       Logger.logPartial(std::string(label) + "... ");
 
       bool success = initFunc();
       if (success)
       {
          const char* successLabel = successLabelFunc != nullptr ? successLabelFunc() : "OK";
-         printlnR(successLabel, Color::VALUE);
+         printInitValue(successLabel);
          Logger.log(successLabel);
       }
       else
       {
-         printlnR("NOT FOUND", Color::RED);
+         printInitValue("NOT FOUND", Color::RED);
          Logger.log("NOT FOUND");
       }
       return success;
@@ -508,8 +535,7 @@ public:
          status->setStatus(Status::WEB_CONNECTING);
       }
 
-      print(label, Color::LABEL);
-      print("... ", Color::LABEL);
+      printInitLabel((std::string(label) + "... ").c_str());
       Logger.logPartial(std::string(label) + "... ");
       beginFunc();
    }

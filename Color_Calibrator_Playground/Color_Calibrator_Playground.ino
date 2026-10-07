@@ -479,7 +479,7 @@ public:
          if (!_fieldDrawn[0])
          {
             _arduino->setCursor(0, _sharedValueY);
-            _arduino->print(_sharedLabelText.c_str(), Color::LABEL);
+            _arduino->print(_sharedLabelText, Color::LABEL);
          }
 
          drawField(0, _sharedValueX, _sharedValueY, (int16_t)_arduino->width() - _sharedValueX,
@@ -536,7 +536,7 @@ public:
       // overlaps the bars.
       _sharedValueY = _barsTop + _barHeight + HEADING_MARGIN;
       _sharedLabelText = std::string(_sharedLabel) + " ";
-      _sharedValueX = _arduino->textWidth(_sharedLabelText.c_str());
+      _arduino->textWidth(_sharedLabelText)
 
       drawGrid();
       drawFields();

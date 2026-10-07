@@ -320,7 +320,7 @@ void setup()
 
    arduino.setTextSize(2);
    std::string uploadSample(uploadStatusFormat.length(), '0');
-   int16_t uploadX = arduino.width() - arduino.textWidth(uploadSample.c_str());
+   arduino.textWidth(uploadSample)
    int16_t uploadY = arduino.height() - arduino.charH();
    Point16 uploadPos(uploadX, uploadY);
    uploadStatusField = new Field(&arduino, uploadPos, uploadStatusFormat, 2);

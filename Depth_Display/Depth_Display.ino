@@ -194,7 +194,7 @@ void drawRangeLabel()
 {
    arduino.setTextSize(RANGE_LABEL_TEXT_SIZE);
    arduino.setCursor(rangeLabelX, rangeLabelY);
-   arduino.println(rangeLabelText.c_str(), Color::GRAY);
+   arduino.println(rangeLabelText, Color::GRAY);
 }
 
 ///
@@ -355,7 +355,7 @@ int16_t drawHeading()
    arduino.println("Water Depth", Color::HEADING);
 
    arduino.setTextSize(SUBTITLE_TEXT_SIZE);
-   arduino.println((std::string("Sensor: ") + SENSOR_TYPE_NAME).c_str(), Color::LABEL);
+   arduino.println(std::string("Sensor: ") + SENSOR_TYPE_NAME, Color::LABEL);
 
    return arduino.getCursorY();
 }
@@ -390,21 +390,21 @@ void setup()
 
    arduino.setTextSize(DEPTH_TEXT_SIZE);
    std::string depthCmSample(depthCmFormat.length(), '0');
-   int16_t depthCmWidth = arduino.textWidth(depthCmSample.c_str());
+   arduino.textWidth(depthCmSample)
    int16_t depthCmHeight = arduino.charH();
 
    arduino.setTextSize(DEPTH_TEXT_SIZE);
    std::string depthInSample(depthInFormat.length(), '0');
-   int16_t depthInWidth = arduino.textWidth(depthInSample.c_str());
+   arduino.textWidth(depthInSample)
    int16_t depthInHeight = arduino.charH();
 
    arduino.setTextSize(DEPTH_RANGE_TEXT_SIZE);
    std::string depthCmRangeSample(depthCmRangeFormat.length(), '0');
-   int16_t depthCmRangeWidth = arduino.textWidth(depthCmRangeSample.c_str());
+   arduino.textWidth(depthCmRangeSample)
    int16_t depthCmRangeHeight = arduino.charH();
 
    std::string depthInRangeSample(depthInRangeFormat.length(), '0');
-   int16_t depthInRangeWidth = arduino.textWidth(depthInRangeSample.c_str());
+   arduino.textWidth(depthInRangeSample)
    int16_t depthInRangeHeight = arduino.charH();
 
    arduino.setTextSize(RANGE_LABEL_TEXT_SIZE);
@@ -453,14 +453,14 @@ void setup()
 #if DEPTH_SENSOR_TYPE == DEPTH_SENSOR_CAPACITOR
    arduino.setTextSize(SUBTITLE_TEXT_SIZE);
    std::string bufferSample(bufferSizeFormat.length(), '0');
-   int16_t bufferWidth = arduino.textWidth(bufferSample.c_str());
+   arduino.textWidth(bufferSample)
    int16_t bufferX = arduino.width() - bufferWidth - DEPTH_BAR_WIDTH_PX;
    bufferSizeField = new DisplayValue(&arduino, bufferSizeFormat, SUBTITLE_TEXT_SIZE);
    bufferSizeField->setPosition(bufferX, 0);
    bufferSizeField->draw((int)capBufferSize, Color::GRAY);
 
    std::string filterSample(filterSizeFormat.length(), '0');
-   int16_t filterWidth = arduino.textWidth(filterSample.c_str());
+   arduino.textWidth(filterSample)
    int16_t filterX = arduino.width() - filterWidth - DEPTH_BAR_WIDTH_PX;
    int16_t filterY = arduino.charH();
    filterSizeField = new DisplayValue(&arduino, filterSizeFormat, SUBTITLE_TEXT_SIZE);

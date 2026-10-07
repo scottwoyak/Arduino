@@ -838,7 +838,7 @@ void drawCollectingHeader()
    Format highResFormat(sensor.getHighResFormatStr().c_str());
    std::string valueSample(highResFormat.length(), '0');
    int16_t cooldownLabelWidth = arduino.textWidth("Cooling Down: ");
-   int16_t cooldownValueWidth = arduino.textWidth(valueSample.c_str());
+   arduino.textWidth(valueSample)
    int16_t cooldownFieldX = DISPLAY_WIDTH - cooldownLabelWidth - cooldownValueWidth;
 
    if (cooldownField == nullptr)

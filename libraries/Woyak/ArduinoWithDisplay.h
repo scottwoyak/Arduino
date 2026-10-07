@@ -27,6 +27,8 @@ enum DisplayRotation
    LANDSCAPE_FLIP = 3,
 };
 
+class InitializingDisplay;
+
 ///
 /// <summary>
 /// Text size used for the "Initializing" header printed by printInitHeader().
@@ -806,12 +808,20 @@ public:
       setTextSize(headerTextSize());
       ArduinoBase::printInitHeader(str, textColor);
       moveCursorY(charH() / 2);
+      _initDisplayPending = true;
    }
 
+   void printInitLabel(const char* label, Color color = Color::LABEL) override;
+   void printInitValue(const char* value, Color color = Color::VALUE) override;
+
 protected:
+   InitializingDisplay* _initDisplay = nullptr;
+   bool _initDisplayPending = false;
+
    void _printlnInitStatusDisplay(const char* str, Color textColor) override
    {
-      println(str, textColor);
+      printInitLabel(str, textColor);
+      printInitValue("");
    }
 
 public:
@@ -1924,3 +1934,30 @@ public:
 // OTAUpdater's methods that call ArduinoWithDisplay's own methods must be defined
 // out-of-line, after this class is fully defined; see OTAUpdaterImpl.h.
 #include "OTAUpdaterImpl.h"
+
+// Scrolling initialization display used by printInitLabel()/printInitValue().
+#include "InitializingDisplay.h"
+
+inline void ArduinoWithDisplay::printInitLabel(const char* label, Color color)
+{
+   if (_initDisplay == nullptr)
+   {
+      _initDisplay = new InitializingDisplay(this);
+      _initDisplayPending = true;
+   }
+
+   if (_initDisplayPending)
+   {
+      _initDisplay->begin();
+      _initDisplayPending = false;
+   }
+
+   _initDisplay->printLabel(label, color);
+}
+
+inline void ArduinoWithDisplay::printInitValue(const char* value, Color color)
+{
+   ASSERT(_initDisplay != nullptr);
+
+   _initDisplay->setValue(value, color);
+}

@@ -165,7 +165,7 @@ protected:
       std::string text = "Returning in " + std::to_string(secs) + "s ";
       _arduino->setTextSize(2);
       _arduino->setCursor(_arduino->width(), _arduino->height() - _arduino->charH());
-      _arduino->printR(text.c_str(), Color::DARKGRAY, Color::BLACK);
+      _arduino->printR(text, Color::DARKGRAY, Color::BLACK);
 #endif
    }
 
@@ -360,7 +360,7 @@ protected:
    ///
    void _logStatusStart(const char* label)
    {
-      _arduino->print(label, Color::LABEL);
+      _arduino->printInitLabel(label);
       Logger.logPartial(label);
    }
 
@@ -370,7 +370,7 @@ protected:
    ///
    void _logStatusEnd(const char* result)
    {
-      _arduino->printlnR(result, Color::VALUE);
+      _arduino->printInitValue(result);
       Logger.log(result);
    }
 
@@ -479,7 +479,7 @@ protected:
       // Hub itself (it has no reference to the display, being a static-only API); print the
       // label to the display here too, the same way ArduinoBase::initClient() does for other
       // clients, so the completion text printed below has something to follow.
-      _arduino->print("Hub... ", Color::LABEL);
+      _arduino->printInitLabel("Hub... ");
 
       DeviceServerClient::begin(_config.sketchName, _config.version, site, location);
       _arduino->waitForClient([]() { return DeviceServerClient::isResolved(); }, []() { DeviceServerClient::loop(); });
@@ -489,11 +489,11 @@ protected:
       // the display here too, the same way TelemetryClient::connect() does for Telemetry.
       if (DeviceServerClient::isConnected())
       {
-         _arduino->printlnR(DeviceServerClient::isDirectConnection() ? DeviceServerClient::getHost().c_str() : "OK", Color::VALUE);
+         _arduino->printInitValue(DeviceServerClient::isDirectConnection() ? DeviceServerClient::getHost().c_str() : "OK");
       }
       else
       {
-         _arduino->printlnR("FAILED", Color::RED);
+         _arduino->printInitValue("FAILED", Color::RED);
       }
    }
 

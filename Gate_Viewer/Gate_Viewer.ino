@@ -477,7 +477,7 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth)
       int16_t tapMargin = sketch.arduino.charH() / 2;
       lastOpenFooterRect = Rect16(0, sketch.arduino.getCursor().y - tapMargin, sketch.arduino.width(), sketch.arduino.charH() + 2 * tapMargin);
 
-      sketch.arduino.print(lastOpenText.c_str(), messageColor, backgroundColor);
+      sketch.arduino.print(lastOpenText, messageColor, backgroundColor);
 #else
       // Narrower, non-touch displays (e.g. the Feather) only have room for a compact
       // date and time, so drop the "Last Open" label, use the short numeric date
@@ -486,7 +486,7 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth)
 
       sketch.arduino.setCursorX(0);
       sketch.arduino.setCursorY(-sketch.arduino.charH());
-      sketch.arduino.print(lastOpenText.c_str(), messageColor, backgroundColor);
+      sketch.arduino.print(lastOpenText, messageColor, backgroundColor);
 #endif
    }
 
@@ -536,7 +536,7 @@ void displayHistoryView()
          std::string dateStr = formatFriendlyDate(record.time);
          std::string rowText = dateStr + " " + timeStr;
 
-         sketch.arduino.println(rowText.c_str(), Color::GRAY);
+         sketch.arduino.println(rowText, Color::GRAY);
       }
    }
 

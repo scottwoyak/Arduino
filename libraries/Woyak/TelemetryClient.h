@@ -626,13 +626,13 @@ public:
          // public (e.g. Cloudflare) endpoint - see TelemetryClient::isDirectConnection().
          std::string result = isDirectConnection() ? getHost() : "OK";
          Logger.log(result);
-         arduino->printlnR(result.c_str(), Color::VALUE);
+         arduino->printInitValue(result.c_str());
          return true;
       }
 
       status->setStatus(Status::FAILED);
       Logger.log("FAILED", LogSeverity::ERROR);
-      arduino->printlnR("FAILED", Color::RED);
+      arduino->printInitValue("FAILED", Color::RED);
       return false;
    }
 
