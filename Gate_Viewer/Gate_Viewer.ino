@@ -762,7 +762,7 @@ void setup()
 
 #ifdef ARDUINO_SOUND_SUPPORTED
    sketch.arduino.sound.volume = 2.0f;
-   sketch.arduino.sound.soundIndex = 5;
+   sketch.arduino.sound.soundIndex = 2;
 #endif
 
    TelemetrySubscriber* client = sketch.beginTelemetry(LEFT_TELEMETRY_TOPIC, &telemetryHandler);

@@ -41,14 +41,14 @@ constexpr uint16_t TEST_TONE_MILLIS = 300;
 
 constexpr int16_t SLIDER_MARGIN = 20;
 constexpr int16_t SLIDER_TOP = 50;
-constexpr int16_t SLIDER_HEIGHT = 70;
+constexpr int16_t SLIDER_HEIGHT = 56;
 constexpr int16_t TRACK_HEIGHT = 8;
 constexpr int16_t KNOB_RADIUS = 14;
 
-constexpr int16_t SELECTOR_TOP = 200;
-constexpr int16_t SELECTOR_HEIGHT = 50;
+constexpr int16_t SELECTOR_TOP = SLIDER_TOP + 2 * SLIDER_HEIGHT + 4;
+constexpr int16_t SELECTOR_HEIGHT = 30;
 constexpr int16_t SELECTOR_GAP = 4;
-constexpr uint8_t SELECTOR_COLUMNS = 4;
+constexpr uint8_t SELECTOR_COLUMNS = 3;
 constexpr uint8_t SELECTOR_TEXT_SIZE = 2;
 
 constexpr uint16_t TRACK_COLOR = 0x7BEF;

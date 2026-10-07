@@ -14,20 +14,18 @@
 #include "minimp3.h"
 
 // By default every sound is compiled in. A sketch can define SOUNDS_CUSTOM plus SOUND_<NAME>
-// (SOUND_CHIME, SOUND_HARP, SOUND_ANNOUNCE, SOUND_CAR_HORN, SOUND_ROOSTER, SOUND_MORNING,
-// SOUND_CHICKENS, SOUND_WAR_HORN) before including this file to compile in only the sounds
-// it uses, to save flash.
+// (SOUND_CHIME, SOUND_ANNOUNCE, SOUND_MORNING, SOUND_WAR_HORN, SOUND_GJALLARHORN,
+// SOUND_CHICKENS, SOUND_RAVEN, SOUND_DANGER, SOUND_NUCLEAR, SOUND_OBLITERATE, SOUND_DANGER_2,
+// SOUND_BOND, SOUND_WHISTLE, SOUND_AMOK_TIME, SOUND_RED_ALERT) before including this file to
+// compile in only the sounds it uses, to save flash.
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_ANNOUNCE)
 #include "AnnounceMp3.h"
 #endif
-#if !defined(SOUNDS_CUSTOM) || defined(SOUND_CAR_HORN)
-#include "CarHornMp3.h"
-#endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_CHICKENS)
-#include "ChickensMp3.h"
+#include "Chickens2Mp3.h"
 #endif
-#if !defined(SOUNDS_CUSTOM) || defined(SOUND_HARP)
-#include "HarpMp3.h"
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_GJALLARHORN)
+#include "GjallarhornMp3.h"
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_MORNING)
 #include "MorningRoosterMp3.h"
@@ -35,11 +33,35 @@
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_CHIME)
 #include "NotificationMp3.h"
 #endif
-#if !defined(SOUNDS_CUSTOM) || defined(SOUND_ROOSTER)
-#include "RoosterMp3.h"
-#endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_WAR_HORN)
 #include "WarHornMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_RAVEN)
+#include "RavenMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_DANGER)
+#include "DangerMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_NUCLEAR)
+#include "NuclearMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_OBLITERATE)
+#include "ObliterateMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_DANGER_2)
+#include "Danger2Mp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_BOND)
+#include "BondMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_WHISTLE)
+#include "WhistleMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_AMOK_TIME)
+#include "AmokTimeMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_RED_ALERT)
+#include "RedAlertMp3.h"
 #endif
 
 // MP3 decoding needs more stack than the Arduino default. Any sketch using Sound must
@@ -173,10 +195,11 @@ public:
    uint16_t fadeMillis = 40;
 
    /// Number of selectable notification sounds.
-   static constexpr uint8_t NUM_SOUNDS = 8;
+   static constexpr uint8_t NUM_SOUNDS = 15;
 
-   /// Index of the notification sound to play (0 = MP3, 1 = Harp, 2 = Announce, 3 = Car Horn,
-   /// 4 = Rooster, 5 = Morning Rooster, 6 = Chickens, 7 = War Horn).
+   /// Index of the notification sound to play (0 = Chime, 1 = Announce, 2 = Rooster, 3 = War Horn,
+   /// 4 = Gjallarhorn, 5 = Chickens, 6 = Raven, 7 = Danger, 8 = Nuclear, 9 = Obliterate,
+   /// 10 = Danger 2, 11 = Bond, 12 = Whistle, 13 = Amok Time, 14 = Red Alert).
    uint8_t soundIndex = 0;
 
    ///
@@ -191,19 +214,33 @@ public:
       switch (index)
       {
       case 1:
-         return "Harp";
-      case 2:
          return "Announce";
-      case 3:
-         return "Car Horn";
-      case 4:
+      case 2:
          return "Rooster";
-      case 5:
-         return "Morning";
-      case 6:
-         return "Chickens";
-      case 7:
+      case 3:
          return "War Horn";
+      case 4:
+         return "Gjallarhorn";
+      case 5:
+         return "Chickens";
+      case 6:
+         return "Raven";
+      case 7:
+         return "Danger";
+      case 8:
+         return "Nuclear";
+      case 9:
+         return "Obliterate";
+      case 10:
+         return "Danger 2";
+      case 11:
+         return "Bond";
+      case 12:
+         return "Whistle";
+      case 13:
+         return "Amok Time";
+      case 14:
+         return "Red Alert";
       default:
          return "Chime";
       }
@@ -386,39 +423,74 @@ public:
    {
       switch (soundIndex)
       {
-#if !defined(SOUNDS_CUSTOM) || defined(SOUND_HARP)
-      case 1:
-         playMp3(HARP_MP3, sizeof(HARP_MP3));
-         break;
-#endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_ANNOUNCE)
-      case 2:
+      case 1:
          playMp3(ANNOUNCE_MP3, sizeof(ANNOUNCE_MP3));
          break;
 #endif
-#if !defined(SOUNDS_CUSTOM) || defined(SOUND_CAR_HORN)
-      case 3:
-         playMp3(CAR_HORN_MP3, sizeof(CAR_HORN_MP3));
-         break;
-#endif
-#if !defined(SOUNDS_CUSTOM) || defined(SOUND_ROOSTER)
-      case 4:
-         playMp3(ROOSTER_MP3, sizeof(ROOSTER_MP3));
-         break;
-#endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_MORNING)
-      case 5:
+      case 2:
          playMp3(MORNING_ROOSTER_MP3, sizeof(MORNING_ROOSTER_MP3));
          break;
 #endif
-#if !defined(SOUNDS_CUSTOM) || defined(SOUND_CHICKENS)
-      case 6:
-         playMp3(CHICKENS_MP3, sizeof(CHICKENS_MP3));
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_WAR_HORN)
+      case 3:
+         playMp3(WAR_HORN_MP3, sizeof(WAR_HORN_MP3));
          break;
 #endif
-#if !defined(SOUNDS_CUSTOM) || defined(SOUND_WAR_HORN)
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_GJALLARHORN)
+      case 4:
+         playMp3(GJALLARHORN_MP3, sizeof(GJALLARHORN_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_CHICKENS)
+      case 5:
+         playMp3(CHICKENS_2_MP3, sizeof(CHICKENS_2_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_RAVEN)
+      case 6:
+         playMp3(RAVEN_MP3, sizeof(RAVEN_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_DANGER)
       case 7:
-         playMp3(WAR_HORN_MP3, sizeof(WAR_HORN_MP3));
+         playMp3(DANGER_MP3, sizeof(DANGER_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_NUCLEAR)
+      case 8:
+         playMp3(NUCLEAR_MP3, sizeof(NUCLEAR_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_OBLITERATE)
+      case 9:
+         playMp3(OBLITERATE_MP3, sizeof(OBLITERATE_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_DANGER_2)
+      case 10:
+         playMp3(DANGER_2_MP3, sizeof(DANGER_2_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_BOND)
+      case 11:
+         playMp3(BOND_MP3, sizeof(BOND_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_WHISTLE)
+      case 12:
+         playMp3(WHISTLE_MP3, sizeof(WHISTLE_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_AMOK_TIME)
+      case 13:
+         playMp3(AMOK_TIME_MP3, sizeof(AMOK_TIME_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_RED_ALERT)
+      case 14:
+         playMp3(RED_ALERT_MP3, sizeof(RED_ALERT_MP3));
          break;
 #endif
       default:
