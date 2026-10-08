@@ -80,6 +80,7 @@
     <File Path="libraries/Woyak/Logger.h" />
     <File Path="libraries/Woyak/MCP9808TempSensor.h" />
     <File Path="libraries/Woyak/Memory.h" />
+    <File Path="libraries/Woyak/minimp3.h" />
     <File Path="libraries/Woyak/MinMaxValue.h" />
     <File Path="libraries/Woyak/MLX90393Magnetometer.h" />
     <File Path="libraries/Woyak/ModulinoEncoder.h" />
@@ -122,6 +123,7 @@
     <File Path="libraries/Woyak/Scott56.h" />
     <File Path="libraries/Woyak/Scott64.h" />
     <File Path="libraries/Woyak/SketchBase.h" />
+    <File Path="libraries/Woyak/Slider.h" />
     <File Path="libraries/Woyak/SolarTHPWeatherStation.h" />
     <File Path="libraries/Woyak/Stats.h" />
     <File Path="libraries/Woyak/Status.h" />

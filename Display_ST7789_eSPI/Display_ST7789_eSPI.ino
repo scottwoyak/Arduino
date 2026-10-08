@@ -2,8 +2,11 @@
 #include <TFT_eSPI.h>
 #include "RollingRate.h"
 
-#include "Scott16.h"
-#include "Scott32.h"
+// Only compile in the font sizes this sketch uses, to save flash.
+#define TEXT_SIZES_CUSTOM
+#define TEXT_SIZE_2
+#define TEXT_SIZE_4
+#include "Fonts/Roboto.h"
 
 TFT_eSPI display;
 RollingRate fps;
@@ -47,12 +50,12 @@ void loop()
    // functions (drawNumber, drawFloat) to manually align digits
    //
 
-   display.loadFont(Scott32);
+   display.loadFont(Roboto_32);
    display.println(random(9999));
    display.println(random(9999));
    display.println(random(9999));
 
-   display.loadFont(Scott16);
+   display.loadFont(Roboto_16);
    display.setCursor(0, display.height() - display.fontHeight());
 
 #endif

@@ -15,53 +15,95 @@
 
 // By default every sound is compiled in. A sketch can define SOUNDS_CUSTOM plus SOUND_<NAME>
 // (SOUND_CHIME, SOUND_ANNOUNCE, SOUND_MORNING, SOUND_WAR_HORN, SOUND_GJALLARHORN,
-// SOUND_CHICKENS, SOUND_RAVEN, SOUND_DANGER, SOUND_NUCLEAR, SOUND_OBLITERATE, SOUND_DANGER_2,
-// SOUND_BOND, SOUND_WHISTLE, SOUND_AMOK_TIME, SOUND_RED_ALERT) before including this file to
+// SOUND_CHICKENS, SOUND_RAVEN, SOUND_NUCLEAR, SOUND_OBLITERATE, SOUND_DANGER,
+// SOUND_BOND, SOUND_WHISTLE, SOUND_AMOK_TIME, SOUND_RED_ALERT, SOUND_BELLS_DONG,
+// SOUND_CATHEDRAL, SOUND_ASIAN_GONG, SOUND_UNDERTAKER, SOUND_GONG_MUSIC, SOUND_SIREN,
+// SOUND_SEWS, SOUND_LOTR_BATTLE, SOUND_JAWS, SOUND_HARRY_POTTER, SOUND_STAR_SPANGLED,
+// SOUND_CAFE_BELL, SOUND_DOOR_BELL, SOUND_OLD_DOOR_BELL) before including this file to
 // compile in only the sounds it uses, to save flash.
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_ANNOUNCE)
-#include "AnnounceMp3.h"
+#include "Sounds/AnnounceMp3.h"
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_CHICKENS)
-#include "Chickens2Mp3.h"
+#include "Sounds/ChickensMp3.h"
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_GJALLARHORN)
-#include "GjallarhornMp3.h"
+#include "Sounds/GjallarhornMp3.h"
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_MORNING)
-#include "MorningRoosterMp3.h"
+#include "Sounds/MorningRoosterMp3.h"
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_CHIME)
-#include "NotificationMp3.h"
+#include "Sounds/NotificationMp3.h"
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_WAR_HORN)
-#include "WarHornMp3.h"
+#include "Sounds/WarHornMp3.h"
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_RAVEN)
-#include "RavenMp3.h"
-#endif
-#if !defined(SOUNDS_CUSTOM) || defined(SOUND_DANGER)
-#include "DangerMp3.h"
+#include "Sounds/RavenMp3.h"
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_NUCLEAR)
-#include "NuclearMp3.h"
+#include "Sounds/NuclearMp3.h"
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_OBLITERATE)
-#include "ObliterateMp3.h"
+#include "Sounds/ObliterateMp3.h"
 #endif
-#if !defined(SOUNDS_CUSTOM) || defined(SOUND_DANGER_2)
-#include "Danger2Mp3.h"
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_DANGER)
+#include "Sounds/DangerMp3.h"
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_BOND)
-#include "BondMp3.h"
+#include "Sounds/BondMp3.h"
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_WHISTLE)
-#include "WhistleMp3.h"
+#include "Sounds/WhistleMp3.h"
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_AMOK_TIME)
-#include "AmokTimeMp3.h"
+#include "Sounds/AmokTimeMp3.h"
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_RED_ALERT)
-#include "RedAlertMp3.h"
+#include "Sounds/RedAlertMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_BELLS_DONG)
+#include "Sounds/BellsDongMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_CATHEDRAL)
+#include "Sounds/CathedralMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_ASIAN_GONG)
+#include "Sounds/AsianGongMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_UNDERTAKER)
+#include "Sounds/UndertakerMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_GONG_MUSIC)
+#include "Sounds/GongMusicMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_SIREN)
+#include "Sounds/SirenMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_SEWS)
+#include "Sounds/SewsMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_LOTR_BATTLE)
+#include "Sounds/LotrBattleMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_JAWS)
+#include "Sounds/JawsMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_HARRY_POTTER)
+#include "Sounds/HarryPotterMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_STAR_SPANGLED)
+#include "Sounds/StarSpangledMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_CAFE_BELL)
+#include "Sounds/CafeBellMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_DOOR_BELL)
+#include "Sounds/DoorBellMp3.h"
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_OLD_DOOR_BELL)
+#include "Sounds/OldDoorBellMp3.h"
 #endif
 
 // MP3 decoding needs more stack than the Arduino default. Any sketch using Sound must
@@ -109,13 +151,38 @@ private:
    volatile bool _playingAsync = false;
    volatile bool _stopRequested = false;
    uint8_t _asyncRepeats = 1;
+   float _asyncMaxSecs = 0;
 
    static void _asyncTask(void* param)
    {
       Sound* self = (Sound*)param;
-      for (uint8_t i = 0; i < self->_asyncRepeats && !self->_stopRequested; i++)
+      if (self->_asyncMaxSecs > 0)
       {
-         self->playNotification();
+         uint32_t maxMillis = (uint32_t)(self->_asyncMaxSecs * 1000.0f);
+         uint32_t start = millis();
+         uint32_t longest = 0;
+         while (!self->_stopRequested)
+         {
+            uint32_t playStart = millis();
+            self->playNotification();
+            uint32_t now = millis();
+            uint32_t duration = now - playStart;
+            if (duration > longest)
+            {
+               longest = duration;
+            }
+            if (duration == 0 || (now - start) + longest > maxMillis)
+            {
+               break;
+            }
+         }
+      }
+      else
+      {
+         for (uint8_t i = 0; i < self->_asyncRepeats && !self->_stopRequested; i++)
+         {
+            self->playNotification();
+         }
       }
       self->_playingAsync = false;
       vTaskDelete(nullptr);
@@ -195,11 +262,14 @@ public:
    uint16_t fadeMillis = 40;
 
    /// Number of selectable notification sounds.
-   static constexpr uint8_t NUM_SOUNDS = 15;
+   static constexpr uint8_t NUM_SOUNDS = 28;
 
    /// Index of the notification sound to play (0 = Chime, 1 = Announce, 2 = Rooster, 3 = War Horn,
-   /// 4 = Gjallarhorn, 5 = Chickens, 6 = Raven, 7 = Danger, 8 = Nuclear, 9 = Obliterate,
-   /// 10 = Danger 2, 11 = Bond, 12 = Whistle, 13 = Amok Time, 14 = Red Alert).
+   /// 4 = Gjallarhorn, 5 = Chickens, 6 = Raven, 7 = Nuclear, 8 = Obliterate, 9 = Danger,
+   /// 10 = Bond, 11 = Whistle, 12 = Amok Time, 13 = Red Alert, 14 = Bells Dong, 15 = Cathedral,
+   /// 16 = Asian Gong, 17 = Undertaker, 18 = Gong Music, 19 = Siren, 20 = SEWS, 21 = LOTR Battle,
+   /// 22 = Jaws, 23 = Harry Potter, 24 = Star Spangled, 25 = Cafe Bell, 26 = Door Bell,
+   /// 27 = Old Door Bell).
    uint8_t soundIndex = 0;
 
    ///
@@ -226,21 +296,47 @@ public:
       case 6:
          return "Raven";
       case 7:
-         return "Danger";
-      case 8:
          return "Nuclear";
-      case 9:
+      case 8:
          return "Obliterate";
+      case 9:
+         return "Danger";
       case 10:
-         return "Danger 2";
-      case 11:
          return "Bond";
-      case 12:
+      case 11:
          return "Whistle";
-      case 13:
+      case 12:
          return "Amok Time";
-      case 14:
+      case 13:
          return "Red Alert";
+      case 14:
+         return "Bells Dong";
+      case 15:
+         return "Cathedral";
+      case 16:
+         return "Asian Gong";
+      case 17:
+         return "Undertaker";
+      case 18:
+         return "Gong Music";
+      case 19:
+         return "Siren";
+      case 20:
+         return "SEWS";
+      case 21:
+         return "LOTR Battle";
+      case 22:
+         return "Jaws";
+      case 23:
+         return "Harry Potter";
+      case 24:
+         return "Star Spangled";
+      case 25:
+         return "Cafe Bell";
+      case 26:
+         return "Door Bell";
+      case 27:
+         return "Old Door Bell";
       default:
          return "Chime";
       }
@@ -445,7 +541,7 @@ public:
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_CHICKENS)
       case 5:
-         playMp3(CHICKENS_2_MP3, sizeof(CHICKENS_2_MP3));
+         playMp3(CHICKENS_MP3, sizeof(CHICKENS_MP3));
          break;
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_RAVEN)
@@ -453,44 +549,109 @@ public:
          playMp3(RAVEN_MP3, sizeof(RAVEN_MP3));
          break;
 #endif
-#if !defined(SOUNDS_CUSTOM) || defined(SOUND_DANGER)
-      case 7:
-         playMp3(DANGER_MP3, sizeof(DANGER_MP3));
-         break;
-#endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_NUCLEAR)
-      case 8:
+      case 7:
          playMp3(NUCLEAR_MP3, sizeof(NUCLEAR_MP3));
          break;
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_OBLITERATE)
-      case 9:
+      case 8:
          playMp3(OBLITERATE_MP3, sizeof(OBLITERATE_MP3));
          break;
 #endif
-#if !defined(SOUNDS_CUSTOM) || defined(SOUND_DANGER_2)
-      case 10:
-         playMp3(DANGER_2_MP3, sizeof(DANGER_2_MP3));
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_DANGER)
+      case 9:
+         playMp3(DANGER_MP3, sizeof(DANGER_MP3));
          break;
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_BOND)
-      case 11:
+      case 10:
          playMp3(BOND_MP3, sizeof(BOND_MP3));
          break;
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_WHISTLE)
-      case 12:
+      case 11:
          playMp3(WHISTLE_MP3, sizeof(WHISTLE_MP3));
          break;
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_AMOK_TIME)
-      case 13:
+      case 12:
          playMp3(AMOK_TIME_MP3, sizeof(AMOK_TIME_MP3));
          break;
 #endif
 #if !defined(SOUNDS_CUSTOM) || defined(SOUND_RED_ALERT)
-      case 14:
+      case 13:
          playMp3(RED_ALERT_MP3, sizeof(RED_ALERT_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_BELLS_DONG)
+      case 14:
+         playMp3(BELLS_DONG_MP3, sizeof(BELLS_DONG_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_CATHEDRAL)
+      case 15:
+         playMp3(CATHEDRAL_MP3, sizeof(CATHEDRAL_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_ASIAN_GONG)
+      case 16:
+         playMp3(ASIAN_GONG_MP3, sizeof(ASIAN_GONG_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_UNDERTAKER)
+      case 17:
+         playMp3(UNDERTAKER_MP3, sizeof(UNDERTAKER_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_GONG_MUSIC)
+      case 18:
+         playMp3(GONG_MUSIC_MP3, sizeof(GONG_MUSIC_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_SIREN)
+      case 19:
+         playMp3(SIREN_MP3, sizeof(SIREN_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_SEWS)
+      case 20:
+         playMp3(SEWS_MP3, sizeof(SEWS_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_LOTR_BATTLE)
+      case 21:
+         playMp3(LOTR_BATTLE_MP3, sizeof(LOTR_BATTLE_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_JAWS)
+      case 22:
+         playMp3(JAWS_MP3, sizeof(JAWS_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_HARRY_POTTER)
+      case 23:
+         playMp3(HARRY_POTTER_MP3, sizeof(HARRY_POTTER_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_STAR_SPANGLED)
+      case 24:
+         playMp3(STAR_SPANGLED_MP3, sizeof(STAR_SPANGLED_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_CAFE_BELL)
+      case 25:
+         playMp3(CAFE_BELL_MP3, sizeof(CAFE_BELL_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_DOOR_BELL)
+      case 26:
+         playMp3(DOOR_BELL_MP3, sizeof(DOOR_BELL_MP3));
+         break;
+#endif
+#if !defined(SOUNDS_CUSTOM) || defined(SOUND_OLD_DOOR_BELL)
+      case 27:
+         playMp3(OLD_DOOR_BELL_MP3, sizeof(OLD_DOOR_BELL_MP3));
          break;
 #endif
       default:
@@ -511,6 +672,26 @@ public:
    ///
    void playNotificationAsync(uint8_t repeats = 1)
    {
+      _startAsync(repeats, 0);
+   }
+
+   ///
+   /// <summary>
+   /// Plays the selected notification on a background task, repeating it as long as another
+   /// complete play fits within the time limit (capped at 6 seconds).
+   /// </summary>
+   /// <param name="maxSecs">Maximum total time in seconds</param>
+   ///
+   void playNotificationAsyncFor(float maxSecs)
+   {
+      _startAsync(1, maxSecs > MAX_REPEAT_SECS ? MAX_REPEAT_SECS : maxSecs);
+   }
+
+   static constexpr float MAX_REPEAT_SECS = 6.0f;
+
+private:
+   void _startAsync(uint8_t repeats, float maxSecs)
+   {
       if (!_began)
       {
          return;
@@ -527,6 +708,7 @@ public:
       _stopRequested = false;
 
       _asyncRepeats = repeats;
+      _asyncMaxSecs = maxSecs;
       _playingAsync = true;
       if (xTaskCreatePinnedToCore(_asyncTask, "SoundTask", ASYNC_STACK_BYTES, this, 1, nullptr, 0) != pdPASS)
       {
@@ -534,6 +716,7 @@ public:
       }
    }
 
+public:
    ///
    /// <summary>
    /// Plays a gentle rising four-note chime.

@@ -80,7 +80,7 @@ constexpr uint16_t GATE_OPENER_PORT = 80;
 // This sketch's own version (e.g. "1.06"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("1.07");
+const auto VERSION = MakeVersion("1.1");
 constexpr auto SKETCH_NAME = "Gate_Viewer";
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
