@@ -169,8 +169,7 @@ protected:
          _siteResolvedHandler(_site);
       }
 
-      std::string telemetryMessage = std::string("Telemetry topic: ") + _topicResolver.resolve(_arduino, _status, forcePrompt);
-      _printAndLogStatus(telemetryMessage.c_str());
+      _topicResolver.resolve(_arduino, _status, forcePrompt);
    }
 
    ///
@@ -252,7 +251,7 @@ public:
    PublisherSketch(const SketchConfig& config, const InfluxConfig& influxConfig, const TelemetryConfig& telemetryConfig)
       : InfluxSketchBase(config, influxConfig),
 #ifdef ARDUINO_DISPLAY_SUPPORTED
-        _telemetryHandler(_status, arduino),
+        _telemetryHandler(_status, &arduino),
 #else
         _telemetryHandler(_status),
 #endif

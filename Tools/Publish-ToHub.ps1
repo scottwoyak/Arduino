@@ -398,11 +398,10 @@ $firmwareName = "$SketchName.$boardId"
 $baseUrl = $Server.TrimEnd('/')
 $uploadUrl = "$baseUrl/api/firmware/$([uri]::EscapeDataString($firmwareName))"
 
-Write-Host "Sketch:   $SketchName"
-Write-Host "Board:    $boardId"
+Write-Host "Sketch:   $SketchName" -ForegroundColor Yellow
+Write-Host "Board:    $boardId" -ForegroundColor Yellow
 Write-Host "Version:  $version"
 Write-Host "Binary:   $($bin.FullName) ($($bin.Length) bytes, built $($bin.LastWriteTime))"
-Write-Host "Firmware: $firmwareName"
 Write-Host "Upload:   $uploadUrl"
 Write-Host ""
 

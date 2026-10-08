@@ -108,7 +108,7 @@ constexpr uint16_t GATE_OPENER_PORT = 80;
 // This sketch's own version (e.g. "1.06"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("1.1");
+const auto VERSION = MakeVersion("1.9");
 constexpr auto SKETCH_NAME = "Gate_Viewer";
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
@@ -172,18 +172,15 @@ int16_t gateOriginY = 0;
 
 // ----------- Azimuth buffering (smooths the gate line animation by interpolating
 // between received values rather than snapping to each new reading)
-//
-// Disabled for now -- it wasn't producing the desired smoothing. Left here (commented
-// out) in case it's revisited later.
 
-// // Expected sample spacing (telemetry arrives at up to ~100 samples/sec, i.e. every
-// // ~10ms), used to size the azimuth buffers' interpolation resolution.
+// Expected sample spacing (telemetry arrives at up to ~100 samples/sec, i.e. every
+// ~10ms), used to size the azimuth buffers' interpolation resolution.
 constexpr unsigned long BUFFER_RESOLUTION_MS = 10;
-//
-// // Duration of history retained in the azimuth buffers. Wide enough to cover jitter
-// // between samples (so ready()/get() don't intermittently fail and fall back to the
-// // raw, unsmoothed value mid-animation), at the cost of a bit more interpolation lag
-// // (half the window).
+
+// Duration of history retained in the azimuth buffers. Wide enough to cover jitter
+// between samples (so ready()/get() don't intermittently fail and fall back to the
+// raw, unsmoothed value mid-animation), at the cost of a bit more interpolation lag
+// (half the window).
 constexpr unsigned long BUFFER_TIME_SPAN_MS = 200;
 
 BufferedTimeSeries leftAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
@@ -709,6 +706,32 @@ void drawGear()
    sketch.arduino.display.fillCircle(cx, cy, GEAR_RADIUS * 3 / 10, (uint16_t)Color::BLACK);
 }
 
+bool gearVisible = true;
+
+///
+/// <summary>
+/// Shows or hides the gear icon (hidden by painting its area black), remembering the state.
+/// </summary>
+/// <param name="visible">True to draw the gear; false to erase it.</param>
+///
+void updateGear(bool visible)
+{
+   gearVisible = visible;
+   if (visible)
+   {
+      drawGear();
+   }
+   else
+   {
+      sketch.arduino.display.fillRect(
+         sketch.arduino.width() - GEAR_MARGIN - 2 * GEAR_RADIUS - 1,
+         GEAR_MARGIN - 1,
+         2 * GEAR_RADIUS + 2,
+         2 * GEAR_RADIUS + 2,
+         (uint16_t)Color::BLACK);
+   }
+}
+
 ///
 /// <summary>
 /// Gets the number of sound rows that fit in the list above the scroll arrows.
@@ -889,6 +912,31 @@ constexpr uint8_t GATE_STATE_TEXT_SIZE = 3;
 // banner shows "Tap to open" in that state).
 Rect16 gateStateRect;
 
+// ----------- Hold open button, shown below the "OPEN" banner on touch boards while the
+// gate is open. Tapping it holds the gate open (button then reads "Release") until tapped again.
+Rect16 holdButtonRect;
+bool gateHeldOpen = false;
+
+///
+/// <summary>
+/// Posts a command to the Gate_Opener's /Gate endpoint.
+/// </summary>
+/// <param name="command">"OPEN" to pulse the gate open, "HOLD" to hold it open, or "CLOSE" to release a hold.</param>
+///
+void postGateCommand(const char* command)
+{
+   HTTPClient http;
+   String url = String("http://") + GATE_OPENER_HOST + ":" + GATE_OPENER_PORT + "/Gate";
+   Serial.print("Gate ");
+   Serial.print(command);
+   Serial.print(" via ");
+   Serial.println(url);
+   http.begin(url);
+   http.addHeader("Content-Type", "text/plain");
+   http.POST(command);
+   http.end();
+}
+
 ///
 /// <summary>
 /// Posts "OPEN" to the Gate_Opener's /Gate endpoint to trigger the gate to open.
@@ -896,40 +944,170 @@ Rect16 gateStateRect;
 ///
 void postGateOpen()
 {
-   HTTPClient http;
-   String url = String("http://") + GATE_OPENER_HOST + ":" + GATE_OPENER_PORT + "/Gate";
-   Serial.print("Opening gate via ");
-   Serial.println(url);
-   http.begin(url);
-   http.addHeader("Content-Type", "text/plain");
-   http.POST("OPEN");
-   http.end();
+   postGateCommand("OPEN");
 }
+
+#ifdef ARDUINO_TOUCH_SUPPORTED
+constexpr auto HOLD_SUBTEXT_OPEN = "Tap to hold open";
+constexpr auto HOLD_SUBTEXT_CLOSE = "  Tap to close  ";
 
 ///
 /// <summary>
-/// Draws the overall gate state ("CLOSED" or "OPEN") centered at the top of the
-/// display in size 5 text, with its background filling the full display width and a
-/// 10px top margin and 7px bottom margin. Closed is shown in gray text on a black
-/// background, with a "Tap to open" hint below it in size 2 gray text on touch-capable
-/// boards (omitted on display-only boards); open is drawn the same way and shown by
-/// inverting the panel. The firmware version is drawn in size 2 text in the lower right corner,
-/// matching the state text color.
+/// Draws the hint beneath the "OPEN" banner: "Tap to hold open" or, while held, "Tap to
+/// close". Both strings are padded to the same width so redrawing one over the other
+/// fully overwrites it without clearing the screen, which avoids flicker.
 /// </summary>
-/// <param name="isOpen">True if either gate's azimuth is greater than 10 degrees; false if both gates are at or below that threshold.</param>
-/// <param name="forceRedraw">If true, redraws even if isOpen hasn't changed since the last call (e.g. after returning from the history view).</param>
 ///
-void displayGateState(bool isOpen, bool forceRedraw = false)
+void drawHoldSubtext()
 {
-   static bool lastIsOpen = false;
-   static bool everDrawn = false;
+   Point16 savedCursor = sketch.arduino.getCursor();
+   uint8_t savedTextSize = sketch.arduino.getTextSize();
 
-   if (everDrawn && !forceRedraw && isOpen == lastIsOpen)
+   sketch.arduino.setTextSize(2);
+   sketch.arduino.setCursor(0, GATE_STATE_TOP_MARGIN + sketch.arduino.charH(GATE_STATE_TEXT_SIZE));
+   sketch.arduino.printlnC(gateHeldOpen ? HOLD_SUBTEXT_CLOSE : HOLD_SUBTEXT_OPEN, Color::GRAY, Color::BLACK);
+
+   sketch.arduino.setTextSize(savedTextSize);
+   sketch.arduino.setCursor(savedCursor);
+}
+#endif
+
+///
+/// <summary>
+/// Gets the banner title for the open gate.
+/// </summary>
+/// <param name="motion">+1 if the gate is opening, -1 if closing, 0 if stationary.</param>
+/// <returns>"OPENING", "CLOSING", "HELD OPEN" or "OPEN".</returns>
+///
+const char* openTitle(int8_t motion)
+{
+   if (motion > 0)
+   {
+      return "OPENING";
+   }
+   if (motion < 0)
+   {
+      return "CLOSING";
+   }
+   return gateHeldOpen ? "HELD OPEN" : "OPEN";
+}
+
+int8_t gateDisplayedMotion = 0;
+
+///
+/// <summary>
+/// Immediately shows "OPENING" after an open request has been made, without waiting for the
+/// gate telemetry to report movement. Repainted by displayGateState() once the gate is
+/// reported open, or reverted by loop() if it never opens.
+/// </summary>
+///
+void showOpeningPending()
+{
+   Point16 savedCursor = sketch.arduino.getCursor();
+   uint8_t savedTextSize = sketch.arduino.getTextSize();
+
+   sketch.arduino.setTextSize(GATE_STATE_TEXT_SIZE);
+#ifdef ARDUINO_TOUCH_SUPPORTED
+   int16_t titleY = GATE_STATE_TOP_MARGIN;
+   sketch.arduino.fillRect(0, 0, sketch.arduino.width(), GATE_STATE_TOP_MARGIN + sketch.arduino.charH(GATE_STATE_TEXT_SIZE) + sketch.arduino.charH(2), Color::BLACK);
+#else
+   int16_t titleY = (GATE_STATE_TOP_MARGIN + GATE_STATE_BOTTOM_MARGIN) / 2;
+   sketch.arduino.fillRect(0, titleY, sketch.arduino.width(), sketch.arduino.charH(GATE_STATE_TEXT_SIZE), Color::BLACK);
+#endif
+   sketch.arduino.setCursor(0, titleY);
+   sketch.arduino.printlnC("OPENING", Color::GRAY, Color::BLACK);
+
+   sketch.arduino.setTextSize(savedTextSize);
+   sketch.arduino.setCursor(savedCursor);
+}
+
+#ifdef ARDUINO_TOUCH_SUPPORTED
+///
+/// <summary>
+/// While the gate is open, periodically asks the Gate_Opener whether it is holding the gate
+/// open, so every viewer shows "HELD OPEN" regardless of which one started the hold. Repaints
+/// the title and hint only when the held state changes.
+/// </summary>
+/// <param name="isOpen">True if the gate is currently open</param>
+///
+void pollGateHold(bool isOpen)
+{
+   constexpr uint32_t HOLD_POLL_SPAN_S = 4;
+   constexpr uint16_t HOLD_POLL_TIMEOUT_MS = 500;
+   static TimerSecs pollTimer(HOLD_POLL_SPAN_S);
+
+   if (!isOpen || !pollTimer.ready())
    {
       return;
    }
 
+   HTTPClient http;
+   String url = String("http://") + GATE_OPENER_HOST + ":" + GATE_OPENER_PORT + "/Gate";
+   http.setConnectTimeout(HOLD_POLL_TIMEOUT_MS);
+   http.setTimeout(HOLD_POLL_TIMEOUT_MS);
+   http.begin(url);
+   int code = http.GET();
+   String body = (code == 200) ? http.getString() : String();
+   http.end();
+
+   if (code != 200)
+   {
+      return;
+   }
+
+   body.trim();
+   bool held = body.equalsIgnoreCase("HOLD");
+   if (held == gateHeldOpen)
+   {
+      return;
+   }
+
+   gateHeldOpen = held;
+   Point16 savedCursor = sketch.arduino.getCursor();
+   uint8_t savedTextSize = sketch.arduino.getTextSize();
+   sketch.arduino.setTextSize(GATE_STATE_TEXT_SIZE);
+   sketch.arduino.fillRect(0, GATE_STATE_TOP_MARGIN, sketch.arduino.width(), sketch.arduino.charH(GATE_STATE_TEXT_SIZE), Color::BLACK);
+   sketch.arduino.setCursor(0, GATE_STATE_TOP_MARGIN);
+   sketch.arduino.printlnC(openTitle(gateDisplayedMotion), Color::GRAY, Color::BLACK);
+   drawHoldSubtext();
+#ifdef SETTINGS_SUPPORTED
+   if (gearVisible)
+   {
+      drawGear();
+   }
+#endif
+   sketch.arduino.setTextSize(savedTextSize);
+   sketch.arduino.setCursor(savedCursor);
+}
+#endif
+
+///
+/// <summary>
+/// Draws the overall gate state (CLOSED, or OPEN/OPENING/CLOSING/HELD OPEN) in size 5 text
+/// with a "Tap to ..." hint below it on touch-capable boards. Open is shown by inverting
+/// the panel. When only the open title changes, just the title row is repainted to avoid
+/// clearing the whole screen.
+/// </summary>
+/// <param name="isOpen">True if either gate's azimuth is above the open threshold.</param>
+/// <param name="forceRedraw">If true, redraws even if nothing changed since the last call (e.g. after returning from the history view).</param>
+/// <param name="motion">+1 if the gate is opening, -1 if closing, 0 if stationary.</param>
+///
+void displayGateState(bool isOpen, bool forceRedraw = false, int8_t motion = 0)
+{
+   static bool lastIsOpen = false;
+   static int8_t lastMotion = 0;
+   static bool everDrawn = false;
+
+   if (everDrawn && !forceRedraw && isOpen == lastIsOpen && motion == lastMotion)
+   {
+      return;
+   }
+
+   bool titleOnly = everDrawn && !forceRedraw && isOpen == lastIsOpen && isOpen;
+
    lastIsOpen = isOpen;
+   lastMotion = motion;
+   gateDisplayedMotion = motion;
    everDrawn = true;
 
    Point16 savedCursor = sketch.arduino.getCursor();
@@ -937,18 +1115,43 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
 
    sketch.arduino.setTextSize(GATE_STATE_TEXT_SIZE);
 
-   Color backgroundColor = Color::BLACK;
+   if (titleOnly)
+   {
+      // Only the OPEN/OPENING/CLOSING title changed, so repaint just that row.
 #ifdef ARDUINO_TOUCH_SUPPORTED
-   int16_t rowHeight = GATE_STATE_TOP_MARGIN + sketch.arduino.charH(GATE_STATE_TEXT_SIZE) + GATE_STATE_BOTTOM_MARGIN + sketch.arduino.charH(2);
+      int16_t titleY = GATE_STATE_TOP_MARGIN;
 #else
+      int16_t titleY = (GATE_STATE_TOP_MARGIN + GATE_STATE_BOTTOM_MARGIN) / 2;
+#endif
+      sketch.arduino.fillRect(0, titleY, sketch.arduino.width(), sketch.arduino.charH(GATE_STATE_TEXT_SIZE), Color::BLACK);
+      sketch.arduino.setCursor(0, titleY);
+                   sketch.arduino.printlnC(openTitle(motion), Color::GRAY, Color::BLACK);
+
+                   sketch.arduino.setTextSize(savedTextSize);
+      sketch.arduino.setCursor(savedCursor);
+      return;
+   }
+
+   Color backgroundColor = Color::BLACK;
+#ifndef ARDUINO_TOUCH_SUPPORTED
    int16_t rowHeight = GATE_STATE_TOP_MARGIN + sketch.arduino.charH(GATE_STATE_TEXT_SIZE) + GATE_STATE_BOTTOM_MARGIN;
 #endif
    sketch.arduino.fillRect(0, 0, sketch.arduino.width(), sketch.arduino.height(), backgroundColor);
 
    if (isOpen)
    {
+#ifdef ARDUINO_TOUCH_SUPPORTED
+      sketch.arduino.setCursor(0, GATE_STATE_TOP_MARGIN);
+      sketch.arduino.printlnC(openTitle(motion), Color::GRAY, Color::BLACK);
+
+      drawHoldSubtext();
+
+      // Tappable area spans the full width, from the top down to halfway down the display.
+      holdButtonRect = Rect16(0, 0, sketch.arduino.width(), sketch.arduino.height() * 3 / 4);
+#else
       sketch.arduino.setCursor(0, (rowHeight - sketch.arduino.charH(GATE_STATE_TEXT_SIZE)) / 2);
-      sketch.arduino.printlnC("OPEN", Color::GRAY, Color::BLACK);
+      sketch.arduino.printlnC(openTitle(motion), Color::GRAY, Color::BLACK);
+#endif
 
       gateStateRect = { 0, 0, 0, 0 };
    }
@@ -958,12 +1161,17 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
       sketch.arduino.printlnC("CLOSED", Color::GRAY, Color::BLACK);
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
+      // Tappable area spans the full width, from the top down to halfway down the display.
+      gateStateRect = Rect16(0, 0, sketch.arduino.width(), sketch.arduino.height() * 3 / 4);
+
       sketch.arduino.setTextSize(2);
       sketch.arduino.moveCursorY(-4);
       sketch.arduino.printlnC("Tap to open", Color::GRAY, Color::BLACK);
+#else
+      gateStateRect = { 0, 0, 0, 0 };
 #endif
 
-      gateStateRect = { 0, 0, sketch.arduino.width(), (uint16_t)(gateOriginY - sketch.arduino.charH(2) / 2) };
+      holdButtonRect = { 0, 0, 0, 0 };
    }
 
    sketch.arduino.setTextSize(2);
@@ -1209,7 +1417,7 @@ void loop()
    wasTouched = touched;
 #else
    // No touch hardware on this board: tap-to-open and the history view are unreachable.
-   constexpr bool tapped = false;
+   bool tapped = false;
 #endif
 
    static bool showingHistory = false;
@@ -1273,6 +1481,38 @@ void loop()
       isOpen = lastIsOpen;
    }
 
+   if (!isOpen)
+   {
+      gateHeldOpen = false;
+   }
+
+   // Direction of gate travel: +1 opening, -1 closing, 0 stationary (no change for 1 second).
+   constexpr float MOTION_MIN_DEGREES = 0.5f;
+   constexpr uint32_t MOTION_IDLE_MS = 1000;
+   static float lastMotionAzimuth = NAN;
+   static uint32_t lastMotionMs = 0;
+   static int8_t motion = 0;
+   float motionAzimuth = fmaxf(isnan(displayLeftAzimuth) ? 0.0f : displayLeftAzimuth, isnan(displayRightAzimuth) ? 0.0f : displayRightAzimuth);
+   if (isnan(lastMotionAzimuth))
+   {
+      lastMotionAzimuth = motionAzimuth;
+   }
+   else if (fabsf(motionAzimuth - lastMotionAzimuth) > MOTION_MIN_DEGREES)
+   {
+      motion = motionAzimuth > lastMotionAzimuth ? 1 : -1;
+      lastMotionAzimuth = motionAzimuth;
+      lastMotionMs = millis();
+   }
+   else if (motion != 0 && millis() - lastMotionMs > MOTION_IDLE_MS)
+   {
+      motion = 0;
+   }
+   constexpr float FULLY_OPEN_DEGREES = 80.0f;
+   if (motionAzimuth >= FULLY_OPEN_DEGREES)
+   {
+      motion = 0;
+   }
+
    static bool everDrawn = false;
    bool stateChanged = !everDrawn || isOpen != lastIsOpen || forceRedraw;
    if (stateChanged)
@@ -1300,20 +1540,43 @@ void loop()
       everDrawn = true;
    }
 
-   displayGateState(isOpen, forceRedraw);
+   displayGateState(isOpen, forceRedraw, isOpen ? motion : 0);
    displayFooterAzimuths(leftAzimuth, rightAzimuth);
 
        if (stateChanged)
        {
-   #ifdef SETTINGS_SUPPORTED
-          drawGear();
-   #endif
-          sketch.arduino.display.invertDisplay(isOpen);
-       }
+                 sketch.arduino.display.invertDisplay(isOpen);
+              }
+
+          // After an open request the panel is inverted right away, in anticipation of the gate
+          // moving. If the gate still isn't reported open after the timeout, revert.
+          static bool openPending = false;
+          static TimerSecs openPendingTimer(10.0f);
+          if (openPending && (isOpen || openPendingTimer.ready()))
+          {
+             openPending = false;
+             if (!isOpen)
+             {
+                sketch.arduino.display.invertDisplay(false);
+                displayGateState(false, true);
+                leftLine.lastAzimuth = NAN;
+                                 rightLine.lastAzimuth = NAN;
+                              }
+                           }
+
+                #ifdef SETTINGS_SUPPORTED
+                           // The gear is only shown while the gate is stationary and no open request is pending.
+                           // A full redraw (stateChanged) erases it, so redraw it whenever it should be visible.
+                           bool wantGear = motion == 0 && !openPending;
+                           if (wantGear != gearVisible || (stateChanged && wantGear))
+                           {
+                              updateGear(wantGear);
+                           }
+                #endif
 
        #ifdef ARDUINO_TOUCH_SUPPORTED
    #ifdef SETTINGS_SUPPORTED
-       if (tapped && onGear(touchPoint.x, touchPoint.y))
+       if (tapped && motion == 0 && !openPending && onGear(touchPoint.x, touchPoint.y))
        {
           showingSettings = true;
           sketch.arduino.display.invertDisplay(false);
@@ -1323,7 +1586,7 @@ void loop()
        }
    #endif
 
-       if (tapped && lastOpenFooterVisible &&
+       if (tapped && motion == 0 && !openPending && lastOpenFooterVisible &&
        touchPoint.x >= lastOpenFooterRect.left() && touchPoint.x < lastOpenFooterRect.right() &&
        touchPoint.y >= lastOpenFooterRect.top() && touchPoint.y < lastOpenFooterRect.bottom())
    {
@@ -1334,18 +1597,47 @@ void loop()
       return;
    }
 
-   if (tapped && !isOpen &&
+   if (tapped && isOpen && holdButtonRect.right() > holdButtonRect.left() &&
+       touchPoint.x >= holdButtonRect.left() && touchPoint.x < holdButtonRect.right() &&
+       touchPoint.y >= holdButtonRect.top() && touchPoint.y < holdButtonRect.bottom())
+   {
+      gateHeldOpen = !gateHeldOpen;
+      postGateCommand(gateHeldOpen ? "HOLD" : "CLOSE");
+      sketch.arduino.setTextSize(GATE_STATE_TEXT_SIZE);
+      sketch.arduino.fillRect(0, GATE_STATE_TOP_MARGIN, sketch.arduino.width(), sketch.arduino.charH(GATE_STATE_TEXT_SIZE), Color::BLACK);
+      sketch.arduino.setCursor(0, GATE_STATE_TOP_MARGIN);
+             sketch.arduino.printlnC(openTitle(gateDisplayedMotion), Color::GRAY, Color::BLACK);
+                    drawHoldSubtext();
+             #ifdef SETTINGS_SUPPORTED
+                    if (gearVisible)
+                    {
+                       drawGear();
+                    }
+             #endif
+                 }
+
+      pollGateHold(isOpen);
+
+      if (tapped && !isOpen &&
        touchPoint.x >= gateStateRect.left() && touchPoint.x < gateStateRect.right() &&
-       touchPoint.y >= gateStateRect.top() && touchPoint.y < gateStateRect.bottom())
-   {
-      postGateOpen();
-   }
-#else
-   // No touch hardware on this board: use button A to open the gate instead.
-   if (sketch.arduino.buttonA.wasPressed() && !isOpen)
-   {
-      postGateOpen();
-   }
+           touchPoint.y >= gateStateRect.top() && touchPoint.y < gateStateRect.bottom())
+               {
+                  sketch.arduino.display.invertDisplay(true);
+                  openPending = true;
+                  openPendingTimer.reset();
+                  showOpeningPending();
+                  postGateOpen();
+           }
+       #else
+           // No touch hardware on this board: use button A to open the gate instead.
+           if (sketch.arduino.buttonA.wasPressed() && !isOpen)
+           {
+              sketch.arduino.display.invertDisplay(true);
+              openPending = true;
+              openPendingTimer.reset();
+              showOpeningPending();
+              postGateOpen();
+           }
 #endif
 
    if (!isnan(displayLeftAzimuth) && displayLine(leftLine, displayLeftAzimuth))

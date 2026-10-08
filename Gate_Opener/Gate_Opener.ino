@@ -2,11 +2,12 @@
 // Gate Opener
 //
 // Hosts a small web server exposing a single "Gate" resource that can be read (GET)
-// or triggered to open (POST):
+// or commanded to open, hold open, or close (POST):
 //
 // - GET  /           displays a full-window "Open Gate" button.
-// - GET  /Gate       returns the current gate value ("OPEN" or "CLOSED").
-// - POST /Gate       triggers the gate to open; body must be "OPEN".
+// - GET  /Gate       returns the current gate value ("OPEN", "HOLD" or "CLOSED").
+// - POST /Gate       body "OPEN" pulses the gate open, "HOLD" holds it open until
+//                    "CLOSE" is posted.
 //
 // Hardware: Waveshare ESP32-S3-Zero with a custom-powered I2C bus and RGB LED status
 // indicator. The onboard NeoPixel/RGB status LED reflects connection status only
@@ -19,12 +20,13 @@
 // site=Bragg, location=Gate, item=<Enclosure|CPU>). Startup/OTA
 // text is also logged to the LogServer via SketchBase.
 //
-// The device restarts automatically at midnight and checks for a firmware update
-// periodically.
+// A held-open gate is released (relay off) each night at midnight. The device checks
+// for a firmware update periodically.
 //
 
 #include <Arduino.h>
 #include <string>
+
 #include <WebServer.h>
 
 // This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
@@ -32,14 +34,15 @@
 
 #include "ArduinoBoard.h"
 #include "LibraryVersion.h"
+#include "TimeSync.h"
 #include "WiFiSettings.h"
 
 #include "MonitorSketch.h"
 
-// This sketch's own version (e.g. "1.7"); MakeVersion() appends the shared
-// LIBRARY_VERSION build number so shared library changes bump every sketch's
+// This sketch's own version (e.g. "1.8"); MakeVersion() appends the shared
+// LIBRARY_VERSION build number
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("1.7");
+const auto VERSION = MakeVersion("1.8");
 constexpr auto SKETCH_NAME = "Gate_Opener";
 
 constexpr uint16_t WEB_SERVER_PORT = 80;
@@ -49,6 +52,7 @@ constexpr float GATE_RELAY_TRIGGER_SECS = 1.0f;
 WebServer server(WEB_SERVER_PORT);
 
 bool gateTriggerRelay = false;
+bool gateHeldOpen = false;
 TimerSecs gateRelayTriggerTimer(GATE_RELAY_TRIGGER_SECS);
 
 InfluxConfig INFLUX_CONFIG = {
@@ -106,7 +110,7 @@ void startGateRelayTrigger()
 ///
 void checkGateRelayTrigger()
 {
-   if (gateTriggerRelay && gateRelayTriggerTimer.ready())
+   if (gateTriggerRelay && !gateHeldOpen && gateRelayTriggerTimer.ready())
    {
       digitalWrite(GATE_RELAY_PIN, LOW);
       gateTriggerRelay = false;
@@ -114,6 +118,48 @@ void checkGateRelayTrigger()
 
       updateGateStatus();
    }
+}
+
+///
+/// <summary>
+/// Releases a held-open gate by turning the relay off. Does nothing if not held.
+/// </summary>
+///
+void releaseGateHold()
+{
+   if (gateHeldOpen)
+   {
+      gateHeldOpen = false;
+      digitalWrite(GATE_RELAY_PIN, LOW);
+      gateTriggerRelay = false;
+      sketch.logMessage("Gate Signal Off");
+      updateGateStatus();
+   }
+}
+
+///
+/// <summary>
+/// Releases any held-open gate when the local calendar day changes (midnight).
+/// </summary>
+///
+void checkMidnightRelease()
+{
+   static int lastDay = -1;
+
+   if (!TimeSync::isSynced())
+   {
+      return;
+   }
+
+   time_t now = time(nullptr);
+   struct tm timeInfo;
+   localtime_r(&now, &timeInfo);
+
+   if (lastDay != -1 && timeInfo.tm_yday != lastDay)
+   {
+      releaseGateHold();
+   }
+   lastDay = timeInfo.tm_yday;
 }
 
 ///
@@ -141,13 +187,13 @@ void handleRoot()
 ///
 void handleGetGate()
 {
-   server.send(200, "text/plain", gateTriggerRelay ? "OPEN" : "CLOSED");
+   server.send(200, "text/plain", gateHeldOpen ? "HOLD" : (gateTriggerRelay ? "OPEN" : "CLOSED"));
 }
 
 ///
 /// <summary>
-/// Handles POST /Gate by parsing the request body (must be "OPEN") and triggering the
-/// gate relay pulse. Responds with 400 for any other value.
+/// Handles POST /Gate by parsing the request body ("OPEN", "HOLD" or "CLOSE") and
+/// driving the gate relay accordingly. Responds with 400 for any other value.
 /// </summary>
 ///
 void handlePostGate()
@@ -158,15 +204,31 @@ void handlePostGate()
 
    if (value.equalsIgnoreCase("OPEN"))
    {
-      startGateRelayTrigger();
+      if (!gateHeldOpen)
+      {
+         startGateRelayTrigger();
+         updateGateStatus();
+      }
+   }
+   else if (value.equalsIgnoreCase("HOLD"))
+   {
+      gateHeldOpen = true;
+      if (!gateTriggerRelay)
+      {
+         startGateRelayTrigger();
+      }
       updateGateStatus();
+   }
+   else if (value.equalsIgnoreCase("CLOSE"))
+   {
+      releaseGateHold();
    }
    else
    {
       Serial.print("Gate: invalid value \"");
       Serial.print(value);
       Serial.println("\"");
-      server.send(400, "text/plain", "Value must be OPEN");
+      server.send(400, "text/plain", "Value must be OPEN, HOLD or CLOSE");
       return;
    }
 
@@ -177,7 +239,7 @@ void handlePostGate()
    }
    else
    {
-      server.send(200, "text/plain", "OPEN");
+      server.send(200, "text/plain", value);
    }
 }
 
@@ -206,6 +268,7 @@ void loop()
 {
    server.handleClient();
    checkGateRelayTrigger();
+   checkMidnightRelease();
 
    sketch.loop();
 }

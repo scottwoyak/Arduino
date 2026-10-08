@@ -133,6 +133,8 @@ public:
    {
       if (!_spriteCreated)
       {
+         // A full-width sprite is too big for internal RAM alongside WiFi/TLS
+         _sprite.setPsram(true);
          _arduino->createSprite(_sprite, _width, _height, _textSize);
          _spriteCreated = true;
       }

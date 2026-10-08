@@ -464,11 +464,14 @@ public:
 
       _resolveExtra(forcePrompt);
 
-      std::string influxMessage = std::string("Influx:\n") +
-         "   bucket=\"" + (_site.bucket != nullptr ? _site.bucket : "") + "\"\n" +
-         "   site=\"" + (_site.site != nullptr ? _site.site : "") + "\"\n" +
-         "   location=\"" + (_site.location != nullptr ? _site.location : "") + "\"";
-      _logMessage(influxMessage);
+      if (_shouldUseInflux(hasSiteTable))
+      {
+         std::string influxMessage = std::string("Influx:\n") +
+            "   bucket=\"" + (_site.bucket != nullptr ? _site.bucket : "") + "\"\n" +
+            "   site=\"" + (_site.site != nullptr ? _site.site : "") + "\"\n" +
+            "   location=\"" + (_site.location != nullptr ? _site.location : "") + "\"";
+         _logMessage(influxMessage);
+      }
       if (SerialX::lastShutdownReason().length() > 0)
       {
          _logMessage(std::string("Last shutdown: ") + SerialX::lastShutdownReason().c_str());
@@ -553,7 +556,7 @@ public:
 
       _loopStep();
 
-      if (_sensorTimer.ready())
+      if (_usesInflux && _sensorTimer.ready())
       {
          if (_influxConfig.includeEnclosureTemp)
          {
