@@ -32,6 +32,7 @@
     <File Path="libraries/Woyak/DeviceConfig.h" />
     <File Path="libraries/Woyak/DeviceHealth.h" />
     <File Path="libraries/Woyak/DeviceServerClient.h" />
+    <File Path="libraries/Woyak/DirtySprite.h" />
     <File Path="libraries/Woyak/DisplayBuffer.h" />
     <File Path="libraries/Woyak/DisplayTextView.h" />
     <File Path="libraries/Woyak/DisplayValue.h" />

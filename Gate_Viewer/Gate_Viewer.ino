@@ -23,6 +23,7 @@
 // - Checks for a firmware update periodically.
 //
 
+#include <array>
 #include <cmath>
 #include <string>
 
@@ -49,6 +50,11 @@ struct LineState
    bool lineDrawn = false;
    float lastAzimuth = NAN;
    bool mirrorX = false;
+   bool fullPush = true;
+   int16_t dirtyLeft = 0;
+   int16_t dirtyTop = 0;
+   int16_t dirtyRight = 0;
+   int16_t dirtyBottom = 0;
 };
 
 constexpr auto LEFT_TELEMETRY_TOPIC = "Gate/Left";
@@ -64,15 +70,37 @@ constexpr uint16_t GATE_OPENER_PORT = 80;
 // this board's DEFAULT_HEADING_SIZE used by printInitHeader() during boot), so
 // ArduinoWithDisplay.h/Fonts/Roboto*.h only compile in the needed font data instead of
 // all 7 sizes, reducing flash usage.
+// This sketch only uses monospaced text, so leave out the proportional Roboto fonts.
+#define NO_PROPORTIONAL_FONT
 #define TEXT_SIZES_CUSTOM
 #define TEXT_SIZE_2
 #define TEXT_SIZE_3
+#ifndef ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT
+// Sizes 4 and 5 are only used by the touch-only history/settings views and the larger
+// gate state banner, so the non-touch Feather doesn't need them.
 #define TEXT_SIZE_4
 #define TEXT_SIZE_5
+#endif
 
-// Only compile in the notification sound this sketch plays (Morning), to save flash.
+// Only compile in the notification sounds selectable in the settings view, to save flash.
 #define SOUNDS_CUSTOM
+#define SOUND_AMOK_TIME
+#define SOUND_BOND
+#define SOUND_CAFE_BELL
+#define SOUND_CATHEDRAL
+#define SOUND_CHICKENS
+#define SOUND_DANGER
+#define SOUND_GONG_MUSIC
+#define SOUND_LOTR_BATTLE
+#define SOUND_NUCLEAR
+#define SOUND_OBLITERATE
+#define SOUND_RAVEN
+#define SOUND_RED_ALERT
 #define SOUND_MORNING
+#define SOUND_SEWS
+#define SOUND_SIREN
+#define SOUND_UNDERTAKER
+#define SOUND_WHISTLE
 
 #include "ArduinoBoard.h"
 #include "LibraryVersion.h"
@@ -88,12 +116,19 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 #include "WrongBoard.h"
 #endif
 
+// The settings view (gear icon, volume slider and sound list) needs both touch and sound.
+#if defined(ARDUINO_TOUCH_SUPPORTED) && defined(ARDUINO_SOUND_SUPPORTED)
+#define SETTINGS_SUPPORTED
+#endif
+
 #include <HTTPClient.h>
 #include <WebSocketsClient.h>
 
 #include "BufferedTimeSeries.h"
+#include "DirtySprite.h"
 #include "RollingRate.h"
 #include "SerialX.h"
+#include "Slider.h"
 #include "Status.h"
 #include "TelemetryClient.h"
 #include "TimeSync.h"
@@ -124,6 +159,12 @@ constexpr int16_t GATE_ORIGIN_RADIUS_REFERENCE_WIDTH = 320;
 constexpr int16_t GATE_ORIGIN_RADIUS_REFERENCE = 10;
 int16_t gateOriginRadius = GATE_ORIGIN_RADIUS_REFERENCE;
 
+// Antialiased drawing: the line's half-width, the extra half-width used when erasing it (to
+// cover its soft edge pixels), and the thickness of the origin circle's ring.
+constexpr float GATE_LINE_RADIUS = 1.5f;
+constexpr float GATE_LINE_ERASE_PAD = 1.5f;
+constexpr int16_t GATE_CIRCLE_THICKNESS = 2;
+
 Format leftAzimuthFormat("###", Format::Alignment::LEFT);
 Format rightAzimuthFormat("###", Format::Alignment::RIGHT);
 int16_t lineLength = 0;
@@ -135,104 +176,18 @@ int16_t gateOriginY = 0;
 // Disabled for now -- it wasn't producing the desired smoothing. Left here (commented
 // out) in case it's revisited later.
 
-// // Expected sample spacing (telemetry arrives at ~4 samples/sec on average, but with
-// // significant jitter -- gaps of up to ~500ms have been observed), used to size the
-// // azimuth buffers' interpolation resolution.
-constexpr unsigned long BUFFER_RESOLUTION_MS = 30;
+// // Expected sample spacing (telemetry arrives at up to ~100 samples/sec, i.e. every
+// // ~10ms), used to size the azimuth buffers' interpolation resolution.
+constexpr unsigned long BUFFER_RESOLUTION_MS = 10;
 //
-// // Duration of history retained in the azimuth buffers. Wide enough to comfortably
-// // cover the largest observed gaps between samples (so ready()/get() don't
-// // intermittently fail and fall back to the raw, unsmoothed value mid-animation), at
-// // the cost of a bit more interpolation lag (half the window).
-constexpr unsigned long BUFFER_TIME_SPAN_MS = 100;
+// // Duration of history retained in the azimuth buffers. Wide enough to cover jitter
+// // between samples (so ready()/get() don't intermittently fail and fall back to the
+// // raw, unsmoothed value mid-animation), at the cost of a bit more interpolation lag
+// // (half the window).
+constexpr unsigned long BUFFER_TIME_SPAN_MS = 200;
 
 BufferedTimeSeries leftAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
 BufferedTimeSeries rightAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
-
-// ----------- Receive metrics (how fast each gate's telemetry actually arrives)
-
-// How often the receive metrics are printed to the serial log.
-constexpr float METRICS_LOG_INTERVAL_S = 5.0f;
-
-// Number of recent samples the receive rate is averaged over.
-constexpr uint16_t RATE_WINDOW_SAMPLES = 20;
-
-// A gap between samples longer than this is longer than the azimuth buffer can bridge,
-// so the displayed line falls back to the raw, unsmoothed value.
-constexpr int32_t BUFFER_GAP_LIMIT_MS = BUFFER_TIME_SPAN_MS / 2;
-
-///
-/// <summary>
-/// Receive statistics for one gate topic: a rolling sample rate, plus the min/max/average
-/// server-reported time between samples and the number of gaps too long for the azimuth
-/// buffer to bridge, over the current logging interval.
-/// </summary>
-///
-struct ReceiveMetrics
-{
-   RollingRate rate{ RATE_WINDOW_SAMPLES };
-   uint32_t count = 0;
-   uint32_t numLongGaps = 0;
-   int32_t minDtMs = INT32_MAX;
-   int32_t maxDtMs = 0;
-   int64_t totalDtMs = 0;
-
-   ///
-   /// <summary>
-   /// Records one received sample.
-   /// </summary>
-   /// <param name="dtMs">Server-reported time since the previous sample, in milliseconds.</param>
-   ///
-   void record(int32_t dtMs)
-   {
-      rate.tick();
-      count++;
-      totalDtMs += dtMs;
-      minDtMs = min(minDtMs, dtMs);
-      maxDtMs = max(maxDtMs, dtMs);
-      if (dtMs > BUFFER_GAP_LIMIT_MS)
-      {
-         numLongGaps++;
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Clears the per-interval statistics (the rolling rate keeps running).
-   /// </summary>
-   ///
-   void resetInterval()
-   {
-      count = 0;
-      numLongGaps = 0;
-      minDtMs = INT32_MAX;
-      maxDtMs = 0;
-      totalDtMs = 0;
-   }
-
-   ///
-   /// <summary>
-   /// Formats the current statistics as a single log line.
-   /// </summary>
-   /// <param name="name">Label for the gate.</param>
-   /// <returns>The formatted line.</returns>
-   ///
-   String toString(const char* name) const
-   {
-      if (count == 0)
-      {
-         return String(name) + ": no samples";
-      }
-
-      return String(name) + ": " + String(rate.get(), 1) + "/s, n=" + String(count) +
-         ", dt min/avg/max=" + String(minDtMs) + "/" + String((int32_t)(totalDtMs / count)) + "/" + String(maxDtMs) +
-         " ms, gaps>" + String(BUFFER_GAP_LIMIT_MS) + "ms=" + String(numLongGaps);
-   }
-};
-
-ReceiveMetrics leftMetrics;
-ReceiveMetrics rightMetrics;
-TimerSecs metricsLogTimer(METRICS_LOG_INTERVAL_S);
 
 // ----------- Last open time (updated whenever the gate transitions from closed to
 // open; 0 until the gate has opened at least once since boot)
@@ -368,14 +323,59 @@ LineState rightLine{ 0, 0, 0, 0, 0, false, NAN, true };
 
 ///
 /// <summary>
-/// Formats a time_t as a friendly date string, e.g. "Aug 12th", using a 3-letter
-/// month abbreviation and an ordinal day suffix (st/nd/rd/th).
+/// Gets how many calendar days ago a time was, relative to the current time.
+/// </summary>
+/// <param name="time">Time to compare.</param>
+/// <returns>0 for today, 1 for yesterday, etc.; -1 if the clock isn't synced or the time is in the future.</returns>
+///
+int daysAgo(time_t time)
+{
+   if (!TimeSync::isSynced())
+   {
+      return -1;
+   }
+
+   time_t nowTime = ::time(nullptr);
+   struct tm nowInfo;
+   struct tm thenInfo;
+   localtime_r(&nowTime, &nowInfo);
+   localtime_r(&time, &thenInfo);
+
+   // Normalize both to local midnight; tm_isdst = -1 lets mktime resolve DST.
+   nowInfo.tm_hour = nowInfo.tm_min = nowInfo.tm_sec = 0;
+   thenInfo.tm_hour = thenInfo.tm_min = thenInfo.tm_sec = 0;
+   nowInfo.tm_isdst = -1;
+   thenInfo.tm_isdst = -1;
+   double days = difftime(mktime(&nowInfo), mktime(&thenInfo)) / 86400.0;
+   if (days < -0.5)
+   {
+      return -1;
+   }
+
+   return (int)lround(days);
+}
+
+///
+/// <summary>
+/// Formats a time_t as a friendly date string: "Today" or "Yesterday" for recent dates,
+/// otherwise e.g. "Aug 12th", using a 3-letter month abbreviation and an ordinal day
+/// suffix (st/nd/rd/th).
 /// </summary>
 /// <param name="time">Time to format.</param>
-/// <returns>Friendly date string, e.g. "Aug 12th".</returns>
+/// <returns>Friendly date string, e.g. "Today", "Yesterday" or "Aug 12th".</returns>
 ///
 std::string formatFriendlyDate(time_t time)
 {
+   int days = daysAgo(time);
+   if (days == 0)
+   {
+      return "Today";
+   }
+   if (days == 1)
+   {
+      return "Yesterday";
+   }
+
    static constexpr const char* MONTH_NAMES[12] = {
       "Jan", "Feb", "Mar", "Apr", "May", "Jun",
       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
@@ -408,14 +408,25 @@ std::string formatFriendlyDate(time_t time)
 
 ///
 /// <summary>
-/// Formats a time_t as a compact numeric date string, e.g. "9/22", for narrower
+/// Formats a time_t as a compact date string, "Today" or "Yesterday" for recent dates,
+/// otherwise numeric, e.g. "9/22", for narrower
 /// displays that don't have room for formatFriendlyDate()'s longer form.
 /// </summary>
 /// <param name="time">Time to format.</param>
-/// <returns>Compact date string, e.g. "9/22".</returns>
+/// <returns>Compact date string, e.g. "Today" or "9/22".</returns>
 ///
 std::string formatShortDate(time_t time)
 {
+   int days = daysAgo(time);
+   if (days == 0)
+   {
+      return "Today";
+   }
+   if (days == 1)
+   {
+      return "Yesterday";
+   }
+
    struct tm timeInfo;
    localtime_r(&time, &timeInfo);
 
@@ -442,18 +453,7 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth)
 
    // Always drawn in closed-state colors; the open state is shown by inverting the panel.
    Color backgroundColor = Color::BLACK;
-   Color textColor = Color::DARKGRAY;
    Color messageColor = Color::GRAY;
-
-   // Draw the azimuth values inline with the origin circles rather than at the very
-   // bottom of the display.
-   int16_t azimuthY = gateOriginY - sketch.arduino.charH() / 2;
-
-   sketch.arduino.setCursor(0, azimuthY);
-   sketch.arduino.print(leftAzimuth, leftAzimuthFormat, textColor, backgroundColor);
-
-   sketch.arduino.setCursor(sketch.arduino.width(), azimuthY);
-   sketch.arduino.printR(rightAzimuth, rightAzimuthFormat, textColor, backgroundColor);
 
    lastOpenFooterVisible = (lastGateOpenTime != 0);
    if (lastOpenFooterVisible)
@@ -499,6 +499,44 @@ constexpr uint16_t HISTORY_VIEW_TIMEOUT_S = 15;
 constexpr uint8_t HISTORY_TITLE_TEXT_SIZE = 4;
 constexpr uint8_t HISTORY_ROW_TEXT_SIZE = 2;
 
+#ifdef ARDUINO_TOUCH_SUPPORTED
+// ----------- Gear/close icon geometry (shared by the main, history and settings views)
+constexpr int16_t GEAR_RADIUS = 16;
+constexpr int16_t GEAR_MARGIN = 6;
+constexpr int16_t GEAR_TAP_SIZE = 56;
+
+///
+/// <summary>
+/// Draws the close icon (an X) in the upper right corner of the history and settings views.
+/// </summary>
+///
+void drawCloseIcon()
+{
+   const int16_t cx = sketch.arduino.width() - GEAR_MARGIN - GEAR_RADIUS;
+   const int16_t cy = GEAR_MARGIN + GEAR_RADIUS;
+   const int16_t d = GEAR_RADIUS * 7 / 10;
+
+   for (int16_t offset = -1; offset <= 1; offset++)
+   {
+      sketch.arduino.display.drawLine(cx - d + offset, cy - d, cx + d + offset, cy + d, (uint16_t)Color::GRAY);
+      sketch.arduino.display.drawLine(cx - d + offset, cy + d, cx + d + offset, cy - d, (uint16_t)Color::GRAY);
+   }
+}
+
+///
+/// <summary>
+/// Determines whether a touch is on the gear icon (or, in the history and settings views, its close icon).
+/// </summary>
+/// <param name="x">Touch x coordinate.</param>
+/// <param name="y">Touch y coordinate.</param>
+/// <returns>True if the touch is within the gear's tap target.</returns>
+///
+bool onGear(int16_t x, int16_t y)
+{
+   return x >= sketch.arduino.width() - GEAR_TAP_SIZE && y < GEAR_TAP_SIZE;
+}
+#endif
+
 ///
 /// <summary>
 /// Draws a full-screen list of up to GATE_OPEN_HISTORY_SIZE recorded gate-opening
@@ -513,6 +551,10 @@ void displayHistoryView()
    sketch.arduino.setTextSize(HISTORY_TITLE_TEXT_SIZE);
    sketch.arduino.setCursor(0, 0);
    sketch.arduino.println("Gate History", Color::HEADING);
+
+#ifdef ARDUINO_TOUCH_SUPPORTED
+   drawCloseIcon();
+#endif
 
    sketch.arduino.setTextSize(HISTORY_ROW_TEXT_SIZE);
 
@@ -544,6 +586,292 @@ void displayHistoryView()
    sketch.arduino.setCursor(0, -sketch.arduino.charH(HISTORY_ROW_TEXT_SIZE));
    sketch.arduino.print("Tap to return", Color::GRAY);
 }
+
+#ifdef SETTINGS_SUPPORTED
+// ----------- Settings view (shown when the gear icon in the upper right is tapped)
+constexpr auto VOLUME_PREFERENCES_KEY = "volume";
+constexpr auto SOUND_PREFERENCES_KEY = "sound";
+constexpr float DEFAULT_VOLUME = 2.0f;
+constexpr float MAX_VOLUME = 2.5f;
+
+// The slider shows volume as 0-1; the sound's actual volume is this times MAX_VOLUME.
+float settingsVolume = DEFAULT_VOLUME / MAX_VOLUME;
+constexpr uint8_t DEFAULT_SOUND_INDEX = 5;
+
+// Sound indices (see Sound::soundIndex) selectable in the settings view, in display order.
+constexpr std::array<uint8_t, 17> SETTINGS_SOUNDS = {
+   12, // Amok Time
+   10, // Bond
+   25, // Cafe Bell
+   15, // Cathedral
+   5,  // Chickens
+   9,  // Danger
+   18, // Gong Music
+   21, // LOTR Battle
+   7,  // Nuclear
+   8,  // Obliterate
+   6,  // Raven
+   13, // Red Alert
+   2,  // Rooster
+   20, // SEWS
+   19, // Siren
+   17, // Undertaker
+   11, // Whistle
+};
+constexpr uint8_t NUM_SETTINGS_SOUNDS = SETTINGS_SOUNDS.size();
+
+constexpr uint8_t SETTINGS_TEXT_SIZE = 2;
+constexpr int16_t SETTINGS_SLIDER_Y = 64;
+constexpr int16_t SETTINGS_SLIDER_HEIGHT = 56;
+constexpr int16_t SETTINGS_LIST_TOP = SETTINGS_SLIDER_Y + SETTINGS_SLIDER_HEIGHT + 10;
+constexpr int16_t SETTINGS_ROW_HEIGHT = 30;
+constexpr int16_t SETTINGS_ROW_GAP = 4;
+constexpr int16_t SETTINGS_ARROW_HEIGHT = 36;
+constexpr int16_t SETTINGS_ARROW_SIZE = 10;
+
+Slider settingsVolumeSlider(
+   &sketch.arduino,
+   "Volume",
+   2,
+   "",
+   0.0f,
+   1.0f,
+   &settingsVolume,
+   0,
+   SETTINGS_SLIDER_Y,
+   0,
+   SETTINGS_SLIDER_HEIGHT);
+
+LGFX_Sprite settingsListSprite(&sketch.arduino.display);
+bool settingsListSpriteCreated = false;
+uint8_t settingsListFirst = 0;
+
+///
+/// <summary>
+/// Loads the saved volume and sound selection from Preferences and applies them. Falls
+/// back to the defaults if nothing is saved or the saved sound isn't selectable.
+/// </summary>
+///
+void loadSettings()
+{
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
+   float volume = sketch.arduino.preferences.getFloat(VOLUME_PREFERENCES_KEY, DEFAULT_VOLUME);
+   uint8_t soundIndex = sketch.arduino.preferences.getUChar(SOUND_PREFERENCES_KEY, DEFAULT_SOUND_INDEX);
+   sketch.arduino.preferences.end();
+
+   bool soundValid = false;
+   for (uint8_t index : SETTINGS_SOUNDS)
+   {
+      soundValid = soundValid || index == soundIndex;
+   }
+
+   sketch.arduino.sound.volume = constrain(volume, 0.0f, MAX_VOLUME);
+   settingsVolume = sketch.arduino.sound.volume / MAX_VOLUME;
+   sketch.arduino.sound.soundIndex = soundValid ? soundIndex : DEFAULT_SOUND_INDEX;
+}
+
+///
+/// <summary>
+/// Saves the current volume and sound selection to Preferences.
+/// </summary>
+///
+void saveSettings()
+{
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+   sketch.arduino.preferences.putFloat(VOLUME_PREFERENCES_KEY, sketch.arduino.sound.volume);
+   sketch.arduino.preferences.putUChar(SOUND_PREFERENCES_KEY, sketch.arduino.sound.soundIndex);
+   sketch.arduino.preferences.end();
+}
+
+///
+/// <summary>
+/// Draws the gear icon in the upper right corner of the display.
+/// </summary>
+///
+void drawGear()
+{
+   const int16_t cx = sketch.arduino.width() - GEAR_MARGIN - GEAR_RADIUS;
+   const int16_t cy = GEAR_MARGIN + GEAR_RADIUS;
+   const uint16_t color = (uint16_t)Color::GRAY;
+
+   constexpr uint8_t NUM_TEETH = 8;
+   for (uint8_t i = 0; i < NUM_TEETH; i++)
+   {
+      const float angle = i * 2.0f * (float)M_PI / NUM_TEETH;
+      sketch.arduino.display.fillCircle(
+         cx + (int16_t)lround(GEAR_RADIUS * 0.8f * cos(angle)),
+         cy + (int16_t)lround(GEAR_RADIUS * 0.8f * sin(angle)),
+         GEAR_RADIUS / 5,
+         color);
+   }
+
+   sketch.arduino.display.fillCircle(cx, cy, GEAR_RADIUS * 7 / 10, color);
+   sketch.arduino.display.fillCircle(cx, cy, GEAR_RADIUS * 3 / 10, (uint16_t)Color::BLACK);
+}
+
+///
+/// <summary>
+/// Gets the number of sound rows that fit in the list above the scroll arrows.
+/// </summary>
+/// <returns>Number of visible rows.</returns>
+///
+uint8_t settingsVisibleRows()
+{
+   return (sketch.arduino.height() - SETTINGS_LIST_TOP - SETTINGS_ARROW_HEIGHT) / SETTINGS_ROW_HEIGHT;
+}
+
+///
+/// <summary>
+/// Gets the y coordinate (relative to the top of the list) where the scroll arrows start.
+/// </summary>
+/// <returns>Arrow top in pixels.</returns>
+///
+int16_t settingsArrowY()
+{
+   return settingsVisibleRows() * SETTINGS_ROW_HEIGHT;
+}
+
+///
+/// <summary>
+/// Draws the scrollable sound list and its up/down scroll buttons, highlighting the
+/// selected sound.
+/// </summary>
+///
+void drawSettingsList()
+{
+   const int16_t width = sketch.arduino.width();
+   const int16_t listHeight = sketch.arduino.height() - SETTINGS_LIST_TOP;
+   const uint8_t visibleRows = settingsVisibleRows();
+   const int16_t arrowY = settingsArrowY();
+
+   if (!settingsListSpriteCreated)
+   {
+      // The list sprite is large (~220 KB), too big for internal RAM alongside WiFi/TLS
+      settingsListSprite.setPsram(true);
+      sketch.arduino.createSprite(settingsListSprite, width, listHeight, SETTINGS_TEXT_SIZE);
+      settingsListSpriteCreated = true;
+   }
+
+   settingsListSprite.fillScreen((uint16_t)Color::BLACK);
+   for (uint8_t row = 0; row < visibleRows; row++)
+   {
+      const uint8_t i = settingsListFirst + row;
+      if (i >= NUM_SETTINGS_SOUNDS)
+      {
+         break;
+      }
+
+      const int16_t y = row * SETTINGS_ROW_HEIGHT;
+      const uint16_t fillColor = (uint16_t)(SETTINGS_SOUNDS[i] == sketch.arduino.sound.soundIndex ? Color::BLUE : Color::DARKGRAY);
+      const char* name = Sound::soundName(SETTINGS_SOUNDS[i]);
+      settingsListSprite.fillRect(0, y, width, SETTINGS_ROW_HEIGHT - SETTINGS_ROW_GAP, fillColor);
+      settingsListSprite.setTextColor((uint16_t)Color::WHITE, fillColor);
+      settingsListSprite.setCursor(
+         (width - settingsListSprite.textWidth(name)) / 2,
+         y + (SETTINGS_ROW_HEIGHT - SETTINGS_ROW_GAP - sketch.arduino.charH(SETTINGS_TEXT_SIZE)) / 2);
+      settingsListSprite.print(name);
+   }
+
+   const int16_t halfWidth = width / 2;
+   const int16_t arrowH = listHeight - arrowY;
+   const bool canUp = settingsListFirst > 0;
+   const bool canDown = settingsListFirst + visibleRows < NUM_SETTINGS_SOUNDS;
+   const uint16_t upColor = (uint16_t)(canUp ? Color::WHITE : Color::DARKGRAY);
+   const uint16_t downColor = (uint16_t)(canDown ? Color::WHITE : Color::DARKGRAY);
+
+   settingsListSprite.fillRect(0, arrowY, halfWidth - SETTINGS_ROW_GAP / 2, arrowH, (uint16_t)Color::DIMGRAY);
+   settingsListSprite.fillRect(halfWidth + SETTINGS_ROW_GAP / 2, arrowY, halfWidth - SETTINGS_ROW_GAP / 2, arrowH, (uint16_t)Color::DIMGRAY);
+
+   const int16_t upCx = halfWidth / 2;
+   const int16_t downCx = halfWidth + halfWidth / 2;
+   const int16_t cy = arrowY + arrowH / 2;
+   constexpr int16_t T = SETTINGS_ARROW_SIZE;
+   settingsListSprite.fillTriangle(upCx, cy - T, upCx - T, cy + T, upCx + T, cy + T, upColor);
+   settingsListSprite.fillTriangle(downCx, cy + T, downCx - T, cy - T, downCx + T, cy - T, downColor);
+   settingsListSprite.pushSprite(0, SETTINGS_LIST_TOP);
+}
+
+///
+/// <summary>
+/// Draws the full-screen settings view: title, close icon, volume slider and sound list.
+/// </summary>
+///
+void displaySettingsView()
+{
+   sketch.arduino.clearDisplay();
+
+   sketch.arduino.setTextSize(HISTORY_TITLE_TEXT_SIZE);
+   sketch.arduino.setCursor(0, 0);
+   sketch.arduino.println("Settings", Color::HEADING);
+
+   drawCloseIcon();
+
+   settingsVolumeSlider.setWidth(sketch.arduino.width());
+   settingsVolumeSlider.draw();
+   drawSettingsList();
+}
+
+///
+/// <summary>
+/// Handles touch input while the settings view is shown: dragging the volume slider,
+/// selecting and scrolling the sound list. Changes are saved and the selected sound is
+/// played as feedback.
+/// </summary>
+/// <param name="touched">True if the display is currently touched.</param>
+/// <param name="tapped">True if a new touch just started.</param>
+/// <param name="x">Touch x coordinate.</param>
+/// <param name="y">Touch y coordinate.</param>
+/// <returns>True if the user closed the settings view.</returns>
+///
+bool updateSettingsView(bool touched, bool tapped, int16_t x, int16_t y)
+{
+   if (tapped && onGear(x, y))
+   {
+      return true;
+   }
+
+   const bool volumeReleased = settingsVolumeSlider.update(touched, x, y);
+   sketch.arduino.sound.volume = settingsVolume * MAX_VOLUME;
+   if (volumeReleased)
+   {
+      saveSettings();
+      sketch.arduino.sound.playNotificationAsync();
+   }
+
+   if (tapped && y >= SETTINGS_LIST_TOP)
+   {
+      const int16_t listY = y - SETTINGS_LIST_TOP;
+      const uint8_t visibleRows = settingsVisibleRows();
+      if (listY >= settingsArrowY())
+      {
+         const bool up = x < sketch.arduino.width() / 2;
+         if (up && settingsListFirst > 0)
+         {
+            settingsListFirst--;
+            drawSettingsList();
+         }
+         else if (!up && settingsListFirst + visibleRows < NUM_SETTINGS_SOUNDS)
+         {
+            settingsListFirst++;
+            drawSettingsList();
+         }
+      }
+      else
+      {
+         const uint8_t index = settingsListFirst + listY / SETTINGS_ROW_HEIGHT;
+         if (index < NUM_SETTINGS_SOUNDS)
+         {
+            sketch.arduino.sound.soundIndex = SETTINGS_SOUNDS[index];
+            saveSettings();
+            drawSettingsList();
+            sketch.arduino.sound.playNotificationAsync();
+         }
+      }
+   }
+
+   return false;
+}
+#endif
 
 constexpr int16_t GATE_STATE_TOP_MARGIN = 10;
 constexpr int16_t GATE_STATE_BOTTOM_MARGIN = 7;
@@ -659,16 +987,13 @@ void displayGateState(bool isOpen, bool forceRedraw = false)
 /// 90 points up, while mirrored lines (see LineState::mirrorX) point left at 0 and still up
 /// at 90.</param>
 ///
-void displayLine(LineState& line, float azimuth)
+bool displayLine(LineState& line, float azimuth)
 {
    constexpr float MIN_REDRAW_DEGREES = 0.1f;
    if (!isnan(line.lastAzimuth) && fabsf(azimuth - line.lastAzimuth) <= MIN_REDRAW_DEGREES)
    {
-      return;
+      return false;
    }
-
-   Color lineColor = Color::WHITE;
-   Color eraseColor = Color::BLACK;
 
    float azimuthRad = azimuth * (float)M_PI / 180.0f;
    float xDir = line.mirrorX ? -cos(azimuthRad) : cos(azimuthRad);
@@ -678,13 +1003,26 @@ void displayLine(LineState& line, float azimuth)
    int16_t endX = line.startX + (int16_t)lround(lineLength * xDir);
    int16_t endY = gateOriginY - (int16_t)lround(lineLength * yDir);
 
+   // Region that changed: bounds of the old and new line, padded for line width and
+   // antialiasing. A full push is used when there's no previous line to compare with
+   // (e.g. first draw, or after the background was repainted).
+   constexpr int16_t DIRTY_PAD = 4;
+   line.fullPush = isnan(line.lastAzimuth) || !line.lineDrawn;
+   int16_t minX = min<int16_t>(startX, endX);
+   int16_t maxX = max<int16_t>(startX, endX);
+   int16_t minY = min<int16_t>(startY, endY);
+   int16_t maxY = max<int16_t>(startY, endY);
    if (line.lineDrawn)
    {
-      sketch.arduino.drawLine(line.lastStartX, line.lastStartY, line.lastEndX, line.lastEndY, eraseColor);
+      minX = min<int16_t>(minX, min<int16_t>(line.lastStartX, line.lastEndX));
+      maxX = max<int16_t>(maxX, max<int16_t>(line.lastStartX, line.lastEndX));
+      minY = min<int16_t>(minY, min<int16_t>(line.lastStartY, line.lastEndY));
+      maxY = max<int16_t>(maxY, max<int16_t>(line.lastStartY, line.lastEndY));
    }
-
-   sketch.arduino.drawLine(startX, startY, endX, endY, lineColor);
-   sketch.arduino.drawCircle(line.startX, gateOriginY, gateOriginRadius, lineColor);
+   line.dirtyLeft = minX - DIRTY_PAD;
+   line.dirtyTop = minY - DIRTY_PAD;
+   line.dirtyRight = maxX + DIRTY_PAD;
+   line.dirtyBottom = maxY + DIRTY_PAD;
 
    line.lastStartX = startX;
    line.lastStartY = startY;
@@ -692,6 +1030,48 @@ void displayLine(LineState& line, float azimuth)
    line.lastEndY = endY;
    line.lineDrawn = true;
    line.lastAzimuth = azimuth;
+   return true;
+}
+
+///
+/// <summary>
+/// Composes one gate's line and origin circle in its own off-screen sprite covering that
+/// gate's half of the display, and pushes it in one operation, avoiding flicker. Each gate
+/// only draws within its own half, so only the gate that changed needs to be rendered.
+/// </summary>
+/// <param name="line">Gate line state to render (mirrorX identifies the right gate).</param>
+///
+void renderLine(LineState& line)
+{
+   static DirtySprite sprites[2];
+
+   const int16_t displayWidth = sketch.arduino.width();
+   const int16_t halfWidth = displayWidth / 2;
+   const int16_t x0 = line.mirrorX ? halfWidth : 0;
+   const int16_t width = line.mirrorX ? displayWidth - halfWidth : halfWidth;
+   DirtySprite& dirtySprite = sprites[line.mirrorX ? 1 : 0];
+
+   const int16_t top = max<int16_t>(0, gateOriginY - lineLength - 4);
+   const int16_t bottom = min<int16_t>(sketch.arduino.height(), gateOriginY + gateOriginRadius + 2);
+   dirtySprite.begin(&sketch.arduino.display, x0, top, width, bottom - top);
+
+   lgfx::LGFX_Sprite* sprite = dirtySprite.sprite();
+   sprite->fillSprite((uint16_t)Color::BLACK);
+   dirtySprite.drawAntialiasedRing(line.startX - x0, gateOriginY - top, gateOriginRadius, GATE_CIRCLE_THICKNESS);
+
+   if (line.lineDrawn)
+   {
+      sprite->drawWideLine(line.lastStartX - x0, line.lastStartY - top, line.lastEndX - x0, line.lastEndY - top, GATE_LINE_RADIUS, (uint16_t)Color::WHITE);
+   }
+
+   if (line.fullPush)
+   {
+      dirtySprite.push();
+   }
+   else
+   {
+      dirtySprite.push(line.dirtyLeft, line.dirtyTop, line.dirtyRight, line.dirtyBottom);
+   }
 }
 
 float leftValue = NAN;
@@ -765,6 +1145,10 @@ void setup()
    sketch.arduino.sound.soundIndex = 2;
 #endif
 
+#ifdef SETTINGS_SUPPORTED
+   loadSettings();
+#endif
+
    TelemetrySubscriber* client = sketch.beginTelemetry(LEFT_TELEMETRY_TOPIC, &telemetryHandler);
    client->onSample([](const std::string& topic, double value, int64_t dtMicros)
    {
@@ -772,15 +1156,12 @@ void setup()
       {
          leftValue = (float)value;
          leftAzimuthBuffer.set(leftValue, dtMicros / 1000);
-         leftMetrics.record((int32_t)(dtMicros / 1000));
-         Serial.println(String("rx t=") + String(millis()) + " left=" + String(leftValue, 2) + " dt=" + String((int32_t)(dtMicros / 1000)));
-      }
+               }
       else if (topic == RIGHT_TELEMETRY_TOPIC)
       {
          rightValue = (float)value;
          rightAzimuthBuffer.set(rightValue, dtMicros / 1000);
-         rightMetrics.record((int32_t)(dtMicros / 1000));
-      }
+               }
    });
 
    sketch.setOnLocateEndCallback([]()
@@ -799,15 +1180,6 @@ void loop()
    if (sketch.isLocating())
    {
       return;
-   }
-
-   if (metricsLogTimer.ready())
-   {
-      metricsLogTimer.reset();
-      Serial.println(leftMetrics.toString("Left rx"));
-      Serial.println(rightMetrics.toString("Right rx"));
-      leftMetrics.resetInterval();
-      rightMetrics.resetInterval();
    }
 
    TelemetrySubscriber* client = sketch.getClient();
@@ -845,11 +1217,31 @@ void loop()
 
    bool forceRedraw = redrawAfterLocate;
    redrawAfterLocate = false;
+
+   #ifdef SETTINGS_SUPPORTED
+   static bool showingSettings = false;
+   if (showingSettings)
+   {
+      if (updateSettingsView(touched, tapped, touchPoint.x, touchPoint.y))
+      {
+         showingSettings = false;
+         tapped = false;
+         sketch.arduino.clearDisplay();
+         forceRedraw = true;
+      }
+      else
+      {
+         return;
+      }
+   }
+   #endif
+
    if (showingHistory)
    {
       if (tapped || historyTimeoutTimer.ready())
       {
          showingHistory = false;
+         tapped = false;
          sketch.arduino.clearDisplay();
          forceRedraw = true;
       }
@@ -870,10 +1262,17 @@ void loop()
 
    // The gate is considered open whenever either displayed angle exceeds the threshold.
    constexpr float GATE_OPEN_THRESHOLD_DEGREES = 3.0f;
+   static bool lastIsOpen = false;
    bool isOpen = (!isnan(displayLeftAzimuth) && displayLeftAzimuth > GATE_OPEN_THRESHOLD_DEGREES) ||
                  (!isnan(displayRightAzimuth) && displayRightAzimuth > GATE_OPEN_THRESHOLD_DEGREES);
 
-   static bool lastIsOpen = false;
+   // With no data (e.g. telemetry dropped), keep the previous state rather than treating it
+   // as closed, so a reconnect doesn't look like the gate opening again.
+   if (isnan(displayLeftAzimuth) && isnan(displayRightAzimuth))
+   {
+      isOpen = lastIsOpen;
+   }
+
    static bool everDrawn = false;
    bool stateChanged = !everDrawn || isOpen != lastIsOpen || forceRedraw;
    if (stateChanged)
@@ -904,13 +1303,27 @@ void loop()
    displayGateState(isOpen, forceRedraw);
    displayFooterAzimuths(leftAzimuth, rightAzimuth);
 
-   if (stateChanged)
-   {
-      sketch.arduino.display.invertDisplay(isOpen);
-   }
+       if (stateChanged)
+       {
+   #ifdef SETTINGS_SUPPORTED
+          drawGear();
+   #endif
+          sketch.arduino.display.invertDisplay(isOpen);
+       }
 
-   #ifdef ARDUINO_TOUCH_SUPPORTED
-   if (tapped && lastOpenFooterVisible &&
+       #ifdef ARDUINO_TOUCH_SUPPORTED
+   #ifdef SETTINGS_SUPPORTED
+       if (tapped && onGear(touchPoint.x, touchPoint.y))
+       {
+          showingSettings = true;
+          sketch.arduino.display.invertDisplay(false);
+          settingsListFirst = 0;
+          displaySettingsView();
+          return;
+       }
+   #endif
+
+       if (tapped && lastOpenFooterVisible &&
        touchPoint.x >= lastOpenFooterRect.left() && touchPoint.x < lastOpenFooterRect.right() &&
        touchPoint.y >= lastOpenFooterRect.top() && touchPoint.y < lastOpenFooterRect.bottom())
    {
@@ -935,52 +1348,13 @@ void loop()
    }
 #endif
 
+   if (!isnan(displayLeftAzimuth) && displayLine(leftLine, displayLeftAzimuth))
    {
-      static uint32_t lastFrameMillis = 0;
-      static uint32_t fpsWindowStartMillis = 0;
-      static uint32_t fpsFrameCount = 0;
-      static float fps = 0;
-
-      uint32_t frameMillis = millis();
-      fpsFrameCount++;
-      if (frameMillis - fpsWindowStartMillis >= 1000)
-      {
-         fps = fpsFrameCount * 1000.0f / (frameMillis - fpsWindowStartMillis);
-         fpsWindowStartMillis = frameMillis;
-         fpsFrameCount = 0;
-      }
-
-      if (isOpen)
-      {
-         Serial.print("disp t=");
-         Serial.print(frameMillis);
-         Serial.print(" rawL=");
-         Serial.print(leftAzimuth, 1);
-         Serial.print(" left=");
-         Serial.print(displayLeftAzimuth, 1);
-         Serial.print(" dt=");
-         Serial.print(frameMillis - lastFrameMillis);
-         Serial.print("ms fps=");
-         Serial.println(fps, 1);
-      }
-      lastFrameMillis = frameMillis;
-
-      if (!isnan(displayLeftAzimuth))
-      {
-         displayLine(leftLine, displayLeftAzimuth);
-      }
-
-      if (!isnan(displayRightAzimuth))
-      {
-         displayLine(rightLine, displayRightAzimuth);
-      }
-
-      if (isOpen)
-      {
-         Serial.print("drawn t=");
-         Serial.print(millis());
-         Serial.print(" drawMs=");
-         Serial.println(millis() - frameMillis);
-      }
+      renderLine(leftLine);
    }
+
+   if (!isnan(displayRightAzimuth) && displayLine(rightLine, displayRightAzimuth))
+   {
+         renderLine(rightLine);
+      }
 }

@@ -266,7 +266,21 @@ public:
       }
 
       _onLoop();
-      _webSocket.loop();
+
+      // WebSocketsClient::loop() handles at most one incoming frame per call, so drain
+      // the socket within a small time budget; otherwise a fast publisher (or a slow
+      // main loop) builds an ever-growing backlog that delays pongs and live data.
+      constexpr uint32_t DRAIN_BUDGET_MS = 10;
+      constexpr uint8_t MAX_FRAMES_PER_LOOP = 50;
+      const uint32_t start = millis();
+      for (uint8_t i = 0; i < MAX_FRAMES_PER_LOOP; i++)
+      {
+         _webSocket.loop();
+         if (millis() - start >= DRAIN_BUDGET_MS)
+         {
+            break;
+         }
+      }
    }
 
    ///

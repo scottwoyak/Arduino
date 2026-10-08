@@ -9,8 +9,18 @@
 #include "ArduinoBase.h"
 #include "ColorX.h"
 #include "Format.h"
-#include "Fonts/Roboto.h"
 #include "Fonts/RobotoMonoBold.h"
+
+// Sketches that only use monospaced text can define NO_PROPORTIONAL_FONT to leave out the
+// proportional Roboto font data and save flash. Requesting a proportional font then fails
+// the ASSERT in setTextSize()/createSprite().
+#ifdef NO_PROPORTIONAL_FONT
+#define PROPORTIONAL_FONT(size) ((const uint8_t*)nullptr)
+#else
+#include "Fonts/Roboto.h"
+#define PROPORTIONAL_FONT(size) (Roboto[size])
+#endif
+
 #include "OTAUpdater.h"
 #include "Structs.h"
 
@@ -392,7 +402,7 @@ public:
       // A null entry means this size was compiled out via TEXT_SIZES_CUSTOM/TEXT_SIZE_n
       // in the sketch; loadFont() would crash trying to read through it, so fail loudly
       // here instead so the missing TEXT_SIZE_n define is obvious.
-      ASSERT((mono ? RobotoMonoBold[size] : Roboto[size]) != nullptr);
+      ASSERT((mono ? RobotoMonoBold[size] : PROPORTIONAL_FONT(size)) != nullptr);
 
       if (mono)
       {
@@ -401,7 +411,7 @@ public:
       }
       else
       {
-         display.loadFont(Roboto[size]);
+         display.loadFont(PROPORTIONAL_FONT(size));
       }
 
       //printFontMetrics();
@@ -457,7 +467,7 @@ public:
       size = constrain(size, 0, 7);
 
       // See setTextSize() for why this guards against a compiled-out font size.
-      ASSERT((mono ? RobotoMonoBold[size] : Roboto[size]) != nullptr);
+      ASSERT((mono ? RobotoMonoBold[size] : PROPORTIONAL_FONT(size)) != nullptr);
 
       // load our own copy of the font rather than sharing the display's runtime font
       // pointer, which can be freed out from under us if the display later loads a
@@ -468,7 +478,7 @@ public:
       }
       else
       {
-         sprite.loadFont(Roboto[size]);
+         sprite.loadFont(PROPORTIONAL_FONT(size));
       }
 
       if (mono)
