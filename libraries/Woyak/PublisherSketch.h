@@ -209,8 +209,10 @@ protected:
       {
          _client->setSendEverySample(_streaming);
 
-         // without a delay, the waveshare crashes
+         // without a delay, the waveshare crashes (not needed on Playground boards)
+         #ifndef ARDUINO_PLAYGROUND_SUPPORTED
          delay(1);
+#endif
 
          if (_publishTimer.ready() && _valueSource != nullptr)
          {

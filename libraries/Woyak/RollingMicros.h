@@ -193,6 +193,41 @@ public:
    }
 
    /// <summary>
+   /// Counts the most recent samples that fall within a time window ending at the newest sample.
+   /// </summary>
+   /// <param name="windowMicros">Length of the window in microseconds.</param>
+   /// <param name="spanMicros">Receives the time between the oldest sample counted and the newest sample.</param>
+   /// <returns>Number of samples within the window (0 if no samples have been recorded).</returns>
+   uint16_t getCountWithin(unsigned long windowMicros, unsigned long* spanMicros) const
+   {
+      uint16_t count = getCount();
+      *spanMicros = 0;
+      if (count == 0)
+      {
+         return 0;
+      }
+
+      unsigned long last = getLastMicros();
+      uint16_t newest = _index == 0 ? (_numSamples - 1) : _index - 1;
+      uint16_t used = 1;
+
+      while (used < count)
+      {
+         uint16_t i = (newest + _numSamples - used) % _numSamples;
+         unsigned long age = last - _micros[i];
+         if (age > windowMicros)
+         {
+            break;
+         }
+
+         *spanMicros = age;
+         used++;
+      }
+
+      return used;
+   }
+
+   /// <summary>
    /// Gets the number of samples currently stored in the buffer.
    /// </summary>
    /// <returns>Count of recorded samples (0 to numSamples).</returns>

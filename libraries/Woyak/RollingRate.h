@@ -52,4 +52,16 @@ public:
    {
       return _rMicros.getCount();
    }
+
+   float get(float windowSecs) const
+   {
+      unsigned long spanMicros;
+      uint16_t count = _rMicros.getCountWithin((unsigned long)(windowSecs * 1000000.0f), &spanMicros);
+      if (count < 2 || spanMicros == 0)
+      {
+         return 0;
+      }
+
+      return (count - 1) / (spanMicros / 1000000.0f);
+   }
 };

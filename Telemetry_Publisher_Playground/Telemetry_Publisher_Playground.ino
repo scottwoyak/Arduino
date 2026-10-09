@@ -9,7 +9,6 @@
 // display, same as Telemetry_Publisher_Display, but runs on a Playground board so the source
 // (mock test function) and publish rate can be selected/adjusted live: Encoder A cycles the
 // selected field and Encoder B adjusts its value.
-// Hardware:
 //
 
 #include <Arduino.h>
@@ -28,21 +27,23 @@
 
 #include "DisplayValue.h"
 #include "FieldTableEditor.h"
+#include "LibraryVersion.h"
 #include "ScatterPlot.h"
 #include "TestSensor.h"
-#include "Url.h"
 #include "ValueEditor.h"
 #include "WiFiSettings.h"
 
 #include "PublisherSketch.h"
+
+const auto VERSION = MakeVersion("1.0");
+constexpr auto SKETCH_NAME = "Telemetry_Publisher_Playground";
 
 // ----------- Telemetry topic
 // Fixed topic; this is a testing sketch with no enclosure, no InfluxDB upload, and no
 // selectable site configuration.
 constexpr auto TELEMETRY_TOPIC = "Test";
 
-// ----------- The Board
-// ----------- Test Function Selection (source, selectable live via Encoder A/B)
+// ----------- Test Function Selection
 constexpr const char* TEST_FUNCTION_LABELS[] = { "Const", "Random", "Normal", "Sin", "Wave" };
 constexpr const char* PREF_NAMESPACE = "TelemetryPubPg";
 ConstantTestSensor constantSensor;
@@ -56,8 +57,8 @@ ITestSensor* sensor = nullptr;
 // ----------- Publish Rate (adjustable live with Encoder A/B)
 constexpr long DEFAULT_PUBLISH_RATE_PER_SEC = 10;
 constexpr long MIN_PUBLISH_RATE_PER_SEC = 1;
-constexpr long MAX_PUBLISH_RATE_PER_SEC = 200;
-Timer publishTimer(1000UL / DEFAULT_PUBLISH_RATE_PER_SEC);
+constexpr long MAX_PUBLISH_RATE_PER_SEC = 500;
+TimerMicros publishTimer(1000000UL / DEFAULT_PUBLISH_RATE_PER_SEC);
 
 // ----------- Reconnect/Retry Tracking
 constexpr float RECONNECT_COUNTDOWN_SECS = 10.0f;
@@ -81,17 +82,22 @@ Color statusColor = Color::BLUE;
 StringValue topicValue("##################", TELEMETRY_TOPIC);
 StringValue hostValue("##################", " ");
 EnumEditor sourceEditor(TEST_FUNCTION_LABELS, 0, "######");
+constexpr const char* DISPLAY_LABELS[] = { "Off", "On" };
+EnumEditor displayEditor(DISPLAY_LABELS, 1, "###");
 ScaledStepIntEditor targetEditor(
    MIN_PUBLISH_RATE_PER_SEC, MAX_PUBLISH_RATE_PER_SEC, DEFAULT_PUBLISH_RATE_PER_SEC, "###/s");
 
 TelemetryConfig TELEMETRY_CONFIG = {
    .topic = TELEMETRY_TOPIC,
    .decimals = 3,
+   .maxPublishRatePerSec = MAX_PUBLISH_RATE_PER_SEC,
 };
 
 SketchConfig PUBLISHER_CONFIG = {
-   .sketchName = "Publisher",
-   .cpuFrequencyMhz = 80,
+   .sketchName = SKETCH_NAME,
+   .version = VERSION,
+   .preferencesNamespace = PREF_NAMESPACE,
+   .enableOTA = true,
 };
 
 // No Influx site table, so Influx isn't used.
@@ -105,8 +111,9 @@ FieldTableEditor::Row tableCells[] =
    { "Topic", &topicValue },
    { "Published Content" },
    { "Source", &sourceEditor },
-   { "Sampling Rate", &targetEditor },
-   { "Published Rate", &rateValueField },
+   { "Sampling", &targetEditor },
+   { "Published", &rateValueField },
+   { "Plot/Value", &displayEditor },
 };
 FieldTableEditor table(&sketch.arduino, PREF_NAMESPACE, tableCells);
 
@@ -117,6 +124,11 @@ float lastValue = NAN;
 std::string lastErrorMsg = "";
 std::string lastDrawnErrorMsg = "";
 bool plotVisible = false;
+
+// Set once setup() has positioned the table/value/status/error areas. Telemetry events can
+// fire during sketch.begin(), before that, when these areas still sit at (0, 0) and clearing
+// them would erase the init screen.
+bool layoutReady = false;
 
 // ----------- Error Message Area (plain print, manually cleared, so long messages can wrap)
 int16_t errorAreaX = 0;
@@ -139,6 +151,11 @@ constexpr uint8_t VALUE_SERIES_MAX_POINT_SIZE = 3;
 ///
 void clearErrorArea()
 {
+   if (!layoutReady)
+   {
+      return;
+   }
+
    sketch.arduino.fillRect(errorAreaX, errorAreaY, sketch.arduino.width() - errorAreaX, ERROR_AREA_HEIGHT_PX, Color::BLACK);
    lastDrawnErrorMsg.clear();
 }
@@ -174,7 +191,7 @@ private:
 
       retryCount++;
 
-      if (connected)
+      if (connected && layoutReady)
       {
          // switching from drawing value to drawing status; erase the stale number
          value.clear();
@@ -183,13 +200,12 @@ private:
    }
 
 public:
-   explicit PlaygroundTelemetryHandler(IStatus* status) : TelemetryEventHandler(status)
+   explicit PlaygroundTelemetryHandler(IStatus* status, ArduinoWithDisplay* display) : TelemetryEventHandler(status, display)
    {
    }
 
    void onConnected() override
    {
-      Serial.println("Telemetry: WebSocket Connected");
       statusText = "Publishing Topic...";
       statusColor = Color::LIME;
       disconnected = false;
@@ -235,7 +251,7 @@ public:
       lastErrorMsg = message;
       statusColor = Color::RED;
 
-      if (connected)
+      if (connected && layoutReady)
       {
          // switching from drawing value to drawing status; erase the stale number
          value.clear();
@@ -255,14 +271,19 @@ public:
 
       // status's sprite is wider than value's, so switching from drawing status to
       // drawing value would otherwise leave stale status text visible around value
-      status.clear();
+      if (layoutReady)
+      {
+         status.clear();
+      }
       clearErrorArea();
 
       rateDisplayTimer.reset();
+
+      TelemetryEventHandler::onStarted();
    }
 };
 
-PlaygroundTelemetryHandler telemetryHandler(&sketch.arduino);
+PlaygroundTelemetryHandler telemetryHandler(sketch.getStatus(), &sketch.arduino);
 
 ///
 /// <summary>
@@ -279,20 +300,25 @@ void selectTestFunction()
 
 void setup()
 {
+   sketch.setTelemetryHandler(&telemetryHandler);
+   sketch.begin();
+
    valueSeries->pointSize = VALUE_SERIES_POINT_SIZE;
+
+   hostValue.set(DeviceServerClient::getHost().c_str());
+   sketch.completeInitialization();
 
    sketch.arduino.setTextSize(3);
    sketch.arduino.setCursor(0, 0);
-   sketch.arduino.println("Publisher", Color::HEADING);
-   sketch.arduino.moveCursorY(4);
+   sketch.arduino.println("Publisher Playground", Color::HEADING);
+   sketch.arduino.moveCursorY(sketch.arduino.charH() / 4);
 
    sketch.arduino.setTextSize(2);
    Point16 tablePos = sketch.arduino.getCursor();
    table.setPosition(tablePos);
    table.load();
    selectTestFunction();
-   publishTimer.setDurationMs(1000UL / targetEditor.get());
-   table.draw();
+   publishTimer.setDurationMs(1000000UL / targetEditor.get());
 
    int16_t valueAreaCenterX = sketch.arduino.width() * 3 / 4;
    int16_t valueAreaCenterY = table.getRect().top() + table.getRect().height / 2;
@@ -313,6 +339,7 @@ void setup()
 
    int16_t plotTop = table.getRect().bottom() + MESSAGE_PADDING_PX;
    valuePlot.setRect(0, plotTop, sketch.arduino.width(), sketch.arduino.height() - plotTop);
+   valuePlot.setColors(Color::BLACK, Color::BLACK, Color::GRAY, Color::GRAY);
    valuePlot.setShowXMinMaxValue(false);
    valuePlot.setShowXRangeValue(true);
    valuePlot.setShowYRangeValue(false);
@@ -320,14 +347,7 @@ void setup()
    valueSeries->showPoints = true;
    valueSeries->showLines = false;
 
-   sketch.setTelemetryHandler(&telemetryHandler);
-   sketch.begin();
-
-   Url url
-   hostValue.set(url.getHost().c_str());
-   table.draw();
-
-   Logger.logInitializationComplete();
+   layoutReady = true;
 }
 
 void loop()
@@ -381,15 +401,28 @@ void loop()
          selectTestFunction();
       }
 
-      publishTimer.setDurationMs(1000UL / targetEditor.get());
+      publishTimer.setDurationMs(1000000UL / targetEditor.get());
+
+      if (displayEditor.hasChanged())
+      {
+         value.clear();
+         valuePlot.clear();
+         plotVisible = false;
+      }
    }
+
+   const bool showPlotAndValue = displayEditor.get() == 1;
 
    if (publishTimer.ready())
    {
       float sensorValue = sensor->get();
       sketch.client()->setValue(sensorValue);
       lastValue = sensorValue;
-      valueSeries->add(sensorValue);
+
+      if (showPlotAndValue)
+      {
+         valueSeries->add(sensorValue);
+      }
    }
 
    sketch.loop();
@@ -401,9 +434,9 @@ void loop()
 
    table.draw();
 
-   // Only show the plot once the error message area is clear; otherwise a long wrapped
-   // error message could overlap the plot region above it.
-   if (connected && lastErrorMsg.empty())
+   // Only show
+   // error message
+   if (showPlotAndValue && connected && lastErrorMsg.empty())
    {
       if (!plotVisible)
       {
@@ -422,7 +455,10 @@ void loop()
 
    if (connected)
    {
-      value.draw(lastValue, Color::VALUE);
+      if (showPlotAndValue && !isnan(lastValue))
+      {
+         value.draw(lastValue, Color::VALUE);
+      }
    }
    else
    {

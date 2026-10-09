@@ -22,9 +22,6 @@
 #include "Table.h"
 #endif
 
-///
-/// <summary>
-/// Configuration shared by every sketch built on SketchBase: sketch identity, OTA,
 /// rebooter, and CPU settings. Influx and telemetry settings are passed separately
 /// (as InfluxConfig/TelemetryConfig) to the derived classes that use them.
 /// </summary>

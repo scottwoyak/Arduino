@@ -128,7 +128,11 @@ private:
       ValueBase* value = nullptr;
       std::string lastValue;
 
-      // Set only for rows backed directly by a caller-owned float (see the Row(label,
+      // Colors last drawn by FieldTableEditor, so it can skip repainting unchanged rows.
+      Color lastValueColor = Color::VALUE;
+      Color lastBackgroundColor = Color::BLACK;
+
+      // Set only for rows backed directly
       // formatStr, value) constructor); draw() reads *valuePtr itself and lastFloatValue
       // caches the most recently drawn value so draw() can skip repainting rows whose
       // value hasn't changed.

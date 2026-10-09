@@ -42,10 +42,17 @@ constexpr float TELEMETRY_OUTAGE_RESET_M = 10.0f;
 
 ///
 /// <summary>
-/// Number of samples used by TelemetryClient's rolling message rate tracker.
+/// Maximum number of samples kept by TelemetryClient's rolling message rate tracker.
 /// </summary>
 ///
-constexpr uint16_t TELEMETRY_RATE_NUM_SAMPLES = 50;
+constexpr uint16_t TELEMETRY_RATE_NUM_SAMPLES = 1000;
+
+///
+/// <summary>
+/// Time window, in seconds, over which TelemetryClient averages its message rate.
+/// </summary>
+///
+constexpr float TELEMETRY_RATE_WINDOW_S = 2.0f;
 
 ///
 /// <summary>
@@ -453,7 +460,7 @@ private:
       double value = doc["value"].as<double>();
       _value = (float)value;
       _rate.tick();
-      DeviceHealth::telemetryRate = _rate.get();
+      DeviceHealth::telemetryRate = _rate.get(TELEMETRY_RATE_WINDOW_S);
       DeviceHealth::telemetryRateMs = millis();
       if (_sampleHandler != nullptr)
       {
@@ -810,7 +817,7 @@ public:
    ///
    float getRate() const
    {
-      return _rate.get();
+      return _rate.get(TELEMETRY_RATE_WINDOW_S);
    }
 };
 
@@ -824,6 +831,8 @@ class TelemetryPublisher : public TelemetryClient
 {
 private:
    uint8_t _decimalPlaces;
+   uint32_t _minIntervalMicros;
+   uint32_t _lastPublishMicros = 0;
    float _pendingValue = NAN;
    bool _pendingNew = false;
    bool _sendEverySample = false;
@@ -843,11 +852,18 @@ private:
          return;
       }
 
+      uint32_t now = micros();
+      if (_minIntervalMicros > 0 && (now - _lastPublishMicros) < _minIntervalMicros)
+      {
+         return;
+      }
+
       String value(_pendingValue, (unsigned int)_decimalPlaces);
       bool changed = value != _lastValue.c_str();
       if ((changed || (_sendEverySample && _pendingNew)) && publish(getTopic().c_str(), value.toDouble(), _decimalPlaces))
       {
          _lastValue = value.c_str();
+         _lastPublishMicros = now;
       }
 
       _pendingNew = false;
@@ -864,7 +880,7 @@ public:
    /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
    ///
    TelemetryPublisher(const std::string& topic, const TelemetryConfig& config, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
-      : TelemetryClient(config, status, handler), _decimalPlaces(config.decimals)
+      : TelemetryClient(config, status, handler), _decimalPlaces(config.decimals), _minIntervalMicros(config.maxPublishRatePerSec == 0 ? 0 : 1000000UL / config.maxPublishRatePerSec)
    {
       _setRole(Role::DEVICE, topic);
    }

@@ -86,18 +86,6 @@ public:
       status.begin();
    }
 
-   ///
-   /// <summary>
-   /// Uses one text size larger than the base default for initialization headers,
-   /// since the ViewerBoardS3's larger 4" display has room for bigger text.
-   /// </summary>
-   /// <returns>Text size to use for headers.</returns>
-   ///
-       uint8_t headerTextSize() override
-       {
-          return ArduinoWithDisplay::headerTextSize() + 1;
-       }
-
        ///
        /// <summary>
        /// Updates the status indicator to reflect the specified status.

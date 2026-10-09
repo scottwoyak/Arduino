@@ -29,6 +29,9 @@ struct TelemetryConfig
    /// <summary>How often (in milliseconds) the telemetry value source is read and published. 0 means every loop() iteration.</summary>
    uint16_t publishIntervalMs = 0;
 
+   /// <summary>Maximum rate (messages per second) a publisher sends values. Values set faster are held and only the latest is sent when the next slot opens. 0 means no cap.</summary>
+   uint16_t maxPublishRatePerSec = 30;
+
    /// <summary>Server endpoint tried first.</summary>
    TelemetryEndpoint primary = TELEMETRY_RASPBERRY_ENDPOINT;
 

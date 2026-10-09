@@ -48,6 +48,13 @@ constexpr uint8_t TEXT_SIZE_HEADER = 2;
 
 ///
 /// <summary>
+/// Minimum display height, in pixels, at which headers use a larger text size.
+/// </summary>
+///
+constexpr uint16_t LARGE_DISPLAY_MIN_HEIGHT = 320;
+
+///
+/// <summary>
 /// Arduino platform with integrated display support for graphics and text rendering.
 /// </summary>
 ///
@@ -297,7 +304,14 @@ public:
    ///
    bool fitsOnDisplay(const char* label, const char* value) override
    {
-      return textWidth(label) + textWidth(value) <= display.width();
+      // Init status rows are drawn at the InitializingDisplay's default size (2), which
+      // may differ from the current size (e.g. the larger header size).
+      uint8_t originalSize = _textSize;
+      setTextSize(2);
+      bool fits = textWidth(label) + textWidth(value) <= display.width();
+      setTextSize(originalSize);
+
+      return fits;
    }
 
    ///
@@ -313,12 +327,25 @@ public:
 
    ///
    /// <summary>
+   /// Gets a counter that increments every time the display (or a region of it) is cleared,
+   /// so cached drawing (e.g. DisplayValue) can tell when its pixels may have been erased.
+   /// </summary>
+   /// <returns>The number of clears performed so far.</returns>
+   ///
+   uint32_t clearCount() const
+   {
+      return _clearCount;
+   }
+
+   ///
+   /// <summary>
    /// Clears the display by filling it with the specified color and resetting cursor to origin.
    /// </summary>
    /// <param name="color">The fill color; defaults to black.</param>
    ///
    virtual void clearDisplay(Color color = Color::BLACK)
    {
+      _clearCount++;
       display.fillScreen((uint16_t)color);
       display.setCursor(0, 0);
    }
@@ -332,6 +359,7 @@ public:
    ///
    void clear(Rect16 rect, Color color = Color::BLACK)
    {
+      _clearCount++;
       display.fillRect(rect.x, rect.y, rect.width, rect.height, (uint16_t)color);
    }
 
@@ -817,7 +845,7 @@ public:
       clearDisplay();
       setTextSize(headerTextSize());
       ArduinoBase::printInitHeader(str, textColor);
-      moveCursorY(charH() / 2);
+      moveCursorY(charH() / 4);
       _initDisplayPending = true;
    }
 
@@ -826,6 +854,7 @@ public:
 
 protected:
    InitializingDisplay* _initDisplay = nullptr;
+   uint32_t _clearCount = 0;
    bool _initDisplayPending = false;
 
    void _printlnInitStatusDisplay(const char* str, Color textColor) override
@@ -838,14 +867,14 @@ public:
    ///
    /// <summary>
    /// Gets the text size used for headers printed by printInitHeader() (e.g. the
-   /// "Initializing" header shown during setup). Boards with larger displays can
-   /// override this to use a bigger header text size.
+   /// "Initializing" header shown during setup). Displays at least
+   /// LARGE_DISPLAY_MIN_HEIGHT pixels tall automatically use one size larger.
    /// </summary>
    /// <returns>Text size to use for headers.</returns>
    ///
    virtual uint8_t headerTextSize()
    {
-      return TEXT_SIZE_HEADER;
+      return height() >= LARGE_DISPLAY_MIN_HEIGHT ? TEXT_SIZE_HEADER + 1 : TEXT_SIZE_HEADER;
    }
 
    void printC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)

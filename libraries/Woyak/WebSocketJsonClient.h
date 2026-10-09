@@ -105,7 +105,16 @@ protected:
    static constexpr uint32_t FAILOVER_TIMEOUT_MS = 6000;
    static constexpr uint32_t RECONNECT_INTERVAL_MS = 2000;
 
-   WebSocketsClient _webSocket;
+   class DrainableWebSocketsClient : public WebSocketsClient
+   {
+   public:
+      bool hasPendingData()
+      {
+         return _client.tcp != nullptr && _client.tcp->available() > 0;
+      }
+   };
+
+   DrainableWebSocketsClient _webSocket;
    std::string _token;
    bool _connected = false;
    bool _hasConnected = false;
@@ -273,7 +282,8 @@ public:
       constexpr uint32_t DRAIN_BUDGET_MS = 10;
       constexpr uint8_t MAX_FRAMES_PER_LOOP = 50;
       const uint32_t start = millis();
-      for (uint8_t i = 0; i < MAX_FRAMES_PER_LOOP; i++)
+      _webSocket.loop();
+      for (uint8_t i = 1; i < MAX_FRAMES_PER_LOOP && _webSocket.hasPendingData(); i++)
       {
          _webSocket.loop();
          if (millis() - start >= DRAIN_BUDGET_MS)

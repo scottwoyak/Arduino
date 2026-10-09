@@ -17,8 +17,9 @@
 /// The sprite is created lazily on first use (the first draw() call), so it picks up
 /// the display's font metrics once the caller has set up its font size.
 /// The position is set via setPosition() and is assumed to stay constant until changed.
-/// Every call to draw() unconditionally redraws the sprite, so callers are free to pass
-/// a different value and/or color on each call.
+/// draw() skips the redraw when the text and colors are unchanged since the last draw(),
+/// so callers can call it every loop. Call invalidate() if something else may have
+/// painted over the value's region.
 /// </remarks>
 ///
 class DisplayValue
@@ -54,6 +55,14 @@ private:
    // previous frame left outside the new sprite's bounds - otherwise leftover pixels (e.g.
    // an old '-' sign) never get overwritten since pushSprite() only erases its own bounds.
    int16_t _lastPushX = INT16_MIN;
+
+   // The last text/colors drawn, so draw() can skip identical redraws (which would
+   // otherwise cost a sprite fill, text render and SPI push for no visible change).
+   std::string _lastDrawn;
+   Color _lastValueColor = Color::VALUE;
+   Color _lastBackgroundColor = Color::BLACK;
+   bool _hasDrawn = false;
+   uint32_t _lastClearCount = 0;
 
    ///
    /// <summary>
@@ -157,6 +166,16 @@ private:
       }
 
       std::string trimmed = _trimmedValue(value);
+      if (_hasDrawn && _display->clearCount() == _lastClearCount && trimmed == _lastDrawn && valueColor == _lastValueColor && backgroundColor == _lastBackgroundColor)
+      {
+         return;
+      }
+      _lastDrawn = trimmed;
+      _lastValueColor = valueColor;
+      _lastBackgroundColor = backgroundColor;
+      _hasDrawn = true;
+      _lastClearCount = _display->clearCount();
+
       int16_t textWidth = (int16_t)_sprite.textWidth(trimmed.c_str());
       int16_t spriteWidth = _sprite.width();
       int16_t textX = _alignedTextX(trimmed, textWidth, spriteWidth);
@@ -170,21 +189,31 @@ private:
          pushX -= (int16_t)_display->charW(_textSize) * (int16_t)charsBeforeDecimal;
       }
 
-      // If this sprite's footprint has shifted since the previous draw() (only possible
-      // with Alignment::DECIMAL, since every other alignment keeps pushX fixed at _x),
-      // erase the previous position first so pixels outside the new sprite's bounds
-      // (e.g. a '-' sign that is no longer present) don't linger on screen.
-      if ((_lastPushX != INT16_MIN) && (_lastPushX != pushX))
-      {
-         _display->fillRect(_lastPushX, _y, _sprite.width(), _sprite.height(), backgroundColor);
-      }
-      _lastPushX = pushX;
-
       _sprite.fillScreen((uint16_t)backgroundColor);
       _sprite.setTextColor((uint16_t)valueColor, (uint16_t)backgroundColor);
       _sprite.setCursor(textX, 0);
       _sprite.print(trimmed.c_str());
       _sprite.pushSprite(pushX, _y);
+
+      // If this sprite's footprint has shifted since the previous draw() (only possible
+      // with Alignment::DECIMAL, since every other alignment keeps pushX fixed at _x),
+      // erase only the part of the previous footprint the new sprite doesn't cover, after
+      // pushing, so pixels outside the new bounds (e.g. a '-' sign that is no longer
+      // present) don't linger on screen and the value never blanks momentarily.
+      if ((_lastPushX != INT16_MIN) && (_lastPushX != pushX))
+      {
+         int16_t shift = pushX - _lastPushX;
+         if (shift > 0)
+         {
+            _display->fillRect(_lastPushX, _y, min(shift, spriteWidth), _sprite.height(), backgroundColor);
+         }
+         else
+         {
+            int16_t strip = min((int16_t)-shift, spriteWidth);
+            _display->fillRect(_lastPushX + spriteWidth - strip, _y, strip, _sprite.height(), backgroundColor);
+         }
+      }
+      _lastPushX = pushX;
    }
 
 public:
@@ -291,6 +320,7 @@ public:
 
       _x = x;
       _y = y;
+      _hasDrawn = false;
    }
 
    ///
@@ -304,6 +334,17 @@ public:
    void setPosition(Point16 pos, VerticalAnchor anchor = VerticalAnchor::TOP)
    {
       setPosition(pos.x, pos.y, anchor);
+   }
+
+   ///
+   /// <summary>
+   /// Forces the next draw() to repaint even if the text and colors are unchanged, e.g.
+   /// after the display was cleared or something else painted over the value's region.
+   /// </summary>
+   ///
+   void invalidate()
+   {
+      _hasDrawn = false;
    }
 
    ///
@@ -348,6 +389,7 @@ public:
          _display->fillRect(_lastPushX, _y, _sprite.width(), _sprite.height(), backgroundColor);
       }
       _lastPushX = _x;
+      _hasDrawn = false;
 
       _sprite.fillScreen((uint16_t)backgroundColor);
       _sprite.pushSprite(_x, _y);

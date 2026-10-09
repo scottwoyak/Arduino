@@ -84,8 +84,6 @@ void setup()
    sketch.begin();
    sensor.begin();
 
-   // Other sketch classes (PublisherSketch, ViewerSketch) print this topic line themselves.
-   sketch.arduino.printlnInitStatus("Topic... ", std::string("\"") + TOPIC + "\"");
    client.connect(&sketch.arduino, sketch.getStatus());
 
    sketch.setOnLocateEndCallback([]() { needsInitialDisplay = true; });
@@ -147,6 +145,7 @@ void loop()
       int16_t plotTop = table.getRect().bottom() + PLOT_TOP_PADDING_PX;
       valuePlot.setRect(0, plotTop, sketch.arduino.width(), sketch.arduino.height() - plotTop);
       valuePlot.setYAxisFormat(sensor.getFormatStr().c_str());
+      valuePlot.setColors(Color::BLACK, Color::BLACK, Color::GRAY, Color::GRAY);
       valuePlot.setShowXMinMaxValue(false);
       valuePlot.setShowXRangeValue(true);
       valuePlot.setShowYRangeValue(false);

@@ -88,6 +88,7 @@ private:
    const char* _prefNamespace;
    std::span<FieldInfo> _fields;
    uint8_t _selectedIndex = 0;
+   static constexpr const char* SELECTED_KEY = "sel";
    char _keyBuffer[10];
 
    Preferences* _preferences()
@@ -107,15 +108,45 @@ private:
    ///
    const char* _keyFor(const FieldInfo& field)
    {
-      // Simple FNV-1a hash of the key, truncated to fit Preferences' short key limit.
+      snprintf(_keyBuffer, sizeof(_keyBuffer), "f%08lx", static_cast<unsigned long>(_hashFor(field)));
+      return _keyBuffer;
+   }
+
+   ///
+   /// <summary>
+   /// Computes the FNV-1a hash of a field's key.
+   /// </summary>
+   /// <param name="field">Field to hash.</param>
+   /// <returns>Hash of the field's key.</returns>
+   ///
+   uint32_t _hashFor(const FieldInfo& field) const
+   {
       uint32_t hash = 2166136261u;
       for (const char* p = field.key; *p != '\0'; p++)
       {
          hash ^= static_cast<uint8_t>(*p);
          hash *= 16777619u;
       }
-      snprintf(_keyBuffer, sizeof(_keyBuffer), "f%08lx", static_cast<unsigned long>(hash));
-      return _keyBuffer;
+      return hash;
+   }
+
+   ///
+   /// <summary>
+   /// Persists which field is currently selected (as a key hash, so it stays valid when
+   /// setFields() swaps the tracked fields).
+   /// </summary>
+   ///
+   void _saveSelection()
+   {
+      if (_selectedIndex >= _fields.size())
+      {
+         return;
+      }
+
+      Preferences* prefs = _preferences();
+      prefs->begin(_prefNamespace, false);
+      prefs->putUInt(SELECTED_KEY, _hashFor(_fields[_selectedIndex]));
+      prefs->end();
    }
 
    ///
@@ -219,7 +250,12 @@ public:
             break;
          }
       }
+      uint8_t previousIndex = _selectedIndex;
       _selectedIndex = static_cast<uint8_t>(newIndex);
+      if (_selectedIndex != previousIndex)
+      {
+         _saveSelection();
+      }
    }
 
    ///
@@ -337,7 +373,21 @@ public:
          double value = prefs->getDouble(_keyFor(_fields[i]), defaultValue);
          field->setNumericValue(value, /* markAsChanged */ false);
       }
+
+      uint32_t selectedHash = prefs->getUInt(SELECTED_KEY, 0);
       prefs->end();
+
+      if (selectedHash != 0)
+      {
+         for (uint8_t i = 0; i < _fields.size(); i++)
+         {
+            if (_fields[i].value != nullptr && _fields[i].value->isEditable() && _hashFor(_fields[i]) == selectedHash)
+            {
+               _selectedIndex = i;
+               break;
+            }
+         }
+      }
    }
 
    ///

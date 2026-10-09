@@ -131,6 +131,7 @@ void loop()
       int16_t plotTop = table.getRect().bottom() + PLOT_TOP_PADDING_PX;
       valuePlot.setRect(0, plotTop, sketch.arduino.width(), sketch.arduino.height() - plotTop);
       valuePlot.setYAxisFormat(VALUE_FORMAT);
+      valuePlot.setColors(Color::BLACK, Color::BLACK, Color::GRAY, Color::GRAY);
       valuePlot.setShowXMinMaxValue(false);
       valuePlot.setShowXRangeValue(true);
       valuePlot.setShowYRangeValue(false);
@@ -151,6 +152,9 @@ void loop()
 
    table.draw();
 
-   valueSeries->updateWindow(millis());
-   valuePlot.draw();
+   if (!sketch.arduino.buttonA.isPressed())
+   {
+      valueSeries->updateWindow(millis());
+      valuePlot.draw();
+   }
 }

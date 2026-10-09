@@ -343,7 +343,17 @@ public:
          int16_t fieldIndex = _fieldIndexForRow(i);
          _editor.colorsFor(static_cast<uint8_t>(fieldIndex), valueColor, valueBackgroundColor);
 
-         _table._drawDataRow(_rows[i].rowIndex, value->valueText(), valueColor, valueBackgroundColor);
+         std::string text = value->valueText();
+         FieldTable::RowContents& row = *_table._rows[_rows[i].rowIndex];
+         if (row.drawn && text == row.lastValue && valueColor == row.lastValueColor && valueBackgroundColor == row.lastBackgroundColor)
+         {
+            continue;
+         }
+
+         _table._drawDataRow(_rows[i].rowIndex, text, valueColor, valueBackgroundColor);
+         row.lastValue = text;
+         row.lastValueColor = valueColor;
+         row.lastBackgroundColor = valueBackgroundColor;
       }
    }
 
