@@ -25,21 +25,22 @@
 /// then monitor the Influx stream for per-location current/averaged temperature values.
 /// </remarks>
 
-#include "ESP32_S3_Playground.h"
 #include <array>
 
+#include "ArduinoBoard.h"
 #include "TempSensor.h"
 #include "SerialX.h"
-#include "Influx.h"
-#include "Status.h"
 #include "I2CMultiplexor.h"
 #include "Timer.h"
 #include "Table.h"
 #include "Field.h"
 #include "Util.h"
+#include "LibraryVersion.h"
 
 #include "WiFiSettings.h"
 #include "ScatterPlot.h"
+
+#include "MonitorSketch.h"
 
 Format tempFormat(" ##.###");
 Format uploadStatusFormat(7, Format::Alignment::RIGHT);
@@ -73,31 +74,34 @@ constexpr Color SENSOR_PLOT_COLORS[NUM_SENSORS] = {
 
 constexpr uint8_t INFLUX_TEMP_DECIMAL_PLACES = 3;
 constexpr uint8_t SENSOR_CORRECTION_DECIMAL_PLACES = 3;
-constexpr uint8_t WIFI_RESET_DELAY_S = 10;
 constexpr uint16_t SENSOR_READ_INTERVAL_MS = 500;
 constexpr auto INFLUX_MEASUREMENT = "Sensors";
 constexpr auto INFLUX_INTERVAL_S = 10;
+constexpr auto SKETCH_NAME = "Muti_Temp_Playground";
+const auto VERSION = MakeVersion("1.0");
 constexpr auto INFLUX_TEMPERATURE_FIELD_NAME = "temperature";
 constexpr auto INFLUX_ITEM_TAG_NAME = "item";
 constexpr auto INFLUX_STAT_CURRENT = "current";
-
-// Every uploadAllPoints() call queues up to this many points (one "current" point plus
-// one point per averaging window, per sensor). Setting the write batch size to this
-// count means writePoint() only buffers each point instead of sending it immediately;
-// they are all still separate Influx points/timestamps, just posted together in a
-// single HTTP request when flushed at the end of uploadAllPoints().
-constexpr uint8_t INFLUX_POINTS_PER_SENSOR = NUM_WINDOWS + 1;
-constexpr uint8_t INFLUX_BATCH_SIZE = NUM_SENSORS * INFLUX_POINTS_PER_SENSOR;
 
 // Averaging windows, in seconds, displayed/uploaded alongside the current value
 constexpr float AVERAGE_WINDOWS_S[NUM_WINDOWS] = { 10, 60, 120, 300, 600 };
 constexpr const char* AVERAGE_WINDOW_LABELS[NUM_WINDOWS] = { "10s", "1m", "2m", "5m", "10m" };
 
-ESP32_S3_Playground arduino;
-NeoPixelStatus status(&arduino.neoPixel);
+InfluxConfig INFLUX_CONFIG = {
+   .context = { INFLUXDB_BUCKET_7_DAY, "Test", "Multi-Temp" },
+   .measurement = INFLUX_MEASUREMENT,
+};
+
+SketchConfig MONITOR_CONFIG = {
+   .sketchName = SKETCH_NAME,
+   .version = VERSION,
+   .enableOTA = true,
+};
+
+MonitorSketch sketch(MONITOR_CONFIG, INFLUX_CONFIG);
 I2CMultiplexor multi;
-Influx influx(INFLUX_INTERVAL_S, &status);
 Timer sensorTimer(SENSOR_READ_INTERVAL_MS);
+TimerSecs influxTimer(INFLUX_INTERVAL_S);
 
 TempSensor* sensors[NUM_SENSORS];
 InfluxPoint* currentPoints[NUM_SENSORS];
@@ -124,14 +128,14 @@ const char* locations[NUM_SENSORS] = {
 
 std::array tableColumns = {
    Table::Column(""),
-   Table::Column("Now", tempFormat.formatString().c_str(), tempFormat.alignment()),
-   Table::Column(AVERAGE_WINDOW_LABELS[0], tempFormat.formatString().c_str(), tempFormat.alignment()),
-   Table::Column(AVERAGE_WINDOW_LABELS[1], tempFormat.formatString().c_str(), tempFormat.alignment()),
-   Table::Column(AVERAGE_WINDOW_LABELS[2], tempFormat.formatString().c_str(), tempFormat.alignment()),
-   Table::Column(AVERAGE_WINDOW_LABELS[3], tempFormat.formatString().c_str(), tempFormat.alignment()),
-   Table::Column(AVERAGE_WINDOW_LABELS[4], tempFormat.formatString().c_str(), tempFormat.alignment()),
+   Table::Column("Now", tempFormat.formatString().c_str(), Table::Alignment::RIGHT),
+   Table::Column(AVERAGE_WINDOW_LABELS[0], tempFormat.formatString().c_str(), Table::Alignment::RIGHT),
+   Table::Column(AVERAGE_WINDOW_LABELS[1], tempFormat.formatString().c_str(), Table::Alignment::RIGHT),
+   Table::Column(AVERAGE_WINDOW_LABELS[2], tempFormat.formatString().c_str(), Table::Alignment::RIGHT),
+   Table::Column(AVERAGE_WINDOW_LABELS[3], tempFormat.formatString().c_str(), Table::Alignment::RIGHT),
+   Table::Column(AVERAGE_WINDOW_LABELS[4], tempFormat.formatString().c_str(), Table::Alignment::RIGHT),
 };
-Table sensorTable(&arduino, 0, 0, tableColumns, 2, Color::WHITE);
+Table sensorTable(&sketch.arduino, 0, 0, tableColumns);
 bool sensorTableBuilt = false;
 
 Rect16 plotRect;
@@ -176,7 +180,7 @@ void activatePlotView(uint8_t plotView)
    deactivatePlotView();
 
    unsigned long plotHistoryMs = 120*1000;
-   activePlot = new ScatterPlot(&arduino, plotRect, "-######", tempFormat.formatString());
+   activePlot = new ScatterPlot(&sketch.arduino, plotRect, "-######", tempFormat.formatString());
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       TimedScatterPlotSeries* series = activePlot->createTimedSeries(plotHistoryMs, plotRect.width);
@@ -197,86 +201,21 @@ void activatePlotView(uint8_t plotView)
    activePlotView = plotView;
 }
 
-///
-/// <summary>
-/// Posts the current-value and time-averaged Influx points for every detected sensor.
-/// </summary>
-/// <returns>True if all points posted successfully</returns>
-///
-bool uploadAllPoints()
-{
-   bool allSucceeded = true;
-
-   for (uint8_t i = 0; i < NUM_SENSORS; i++)
-   {
-      if (!sensors[i]->exists())
-      {
-         continue;
-      }
-
-      if (!currentPoints[i]->post(influx.client()))
-      {
-         allSucceeded = false;
-      }
-
-      for (uint8_t w = 0; w < NUM_WINDOWS; w++)
-      {
-         if (!averagePoints[i][w]->post(influx.client()))
-         {
-            allSucceeded = false;
-         }
-      }
-   }
-
-   // All points above were only queued into the write buffer (see INFLUX_BATCH_SIZE), so
-   // flush now to post everything in a single HTTP request sharing one write timestamp.
-   if (!client.flushBuffer())
-   {
-      allSucceeded = false;
-   }
-
-   return allSucceeded;
-}
-
 void setup()
 {
-   SerialX::begin();
    Wire.begin();
 
+   sketch.begin();
+
+   sketch.arduino.setTextSize(2);
+   sketch.arduino.display.setTextWrap(false);
+   pinMode(BUILTIN_LED, OUTPUT);
+
+   sketch.arduino.print("Sensors... ", Color::LABEL);
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
       sensors[i] = new TempSensor();
 
-      currentPoints[i] = new InfluxPoint(INFLUX_MEASUREMENT);
-      currentFields[i] = currentPoints[i]->addValueField(INFLUX_TEMPERATURE_FIELD_NAME, INFLUX_TEMP_DECIMAL_PLACES);
-      currentPoints[i]->addTag("location", locations[i]);
-      currentPoints[i]->addTag(INFLUX_ITEM_TAG_NAME, INFLUX_STAT_CURRENT);
-
-      for (uint8_t w = 0; w < NUM_WINDOWS; w++)
-      {
-         averagePoints[i][w] = new InfluxPoint(INFLUX_MEASUREMENT);
-         averageFields[i][w] = averagePoints[i][w]->addTimeAverageField(AVERAGE_WINDOWS_S[w], INFLUX_TEMPERATURE_FIELD_NAME, INFLUX_TEMP_DECIMAL_PLACES);
-         averagePoints[i][w]->addTag("location", locations[i]);
-         averagePoints[i][w]->addTag(INFLUX_ITEM_TAG_NAME, AVERAGE_WINDOW_LABELS[w]);
-      }
-   }
-
-   client.setWriteOptions(WriteOptions().batchSize(INFLUX_BATCH_SIZE).bufferSize(2 * INFLUX_BATCH_SIZE));
-
-   arduino.begin();
-   arduino.setTextSize(2);
-   arduino.display.setTextWrap(false);
-   pinMode(BUILTIN_LED, OUTPUT);
-
-   status.begin();
-
-   arduino.clearDisplay();
-   arduino.println("Initializing", Color::HEADING);
-   arduino.moveCursorY(arduino.charH() / 2);
-
-   arduino.print("Sensors... ", Color::LABEL);
-   for (uint8_t i = 0; i < NUM_SENSORS; i++)
-   {
       Serial.println();
       Serial.print("Sensor ");
       Serial.print(i);
@@ -292,6 +231,15 @@ void setup()
          }
          else
          {
+            // The sketch owns the "location" tag, so each sensor's name goes in "probe".
+            currentPoints[i] = sketch.addPoint({ { "probe", locations[i] }, { INFLUX_ITEM_TAG_NAME, INFLUX_STAT_CURRENT } });
+            currentFields[i] = currentPoints[i]->addValueField(INFLUX_TEMPERATURE_FIELD_NAME, INFLUX_TEMP_DECIMAL_PLACES);
+            for (uint8_t w = 0; w < NUM_WINDOWS; w++)
+            {
+               averagePoints[i][w] = sketch.addPoint({ { "probe", locations[i] }, { INFLUX_ITEM_TAG_NAME, AVERAGE_WINDOW_LABELS[w] } });
+               averageFields[i][w] = averagePoints[i][w]->addTimeAverageField(AVERAGE_WINDOWS_S[w], INFLUX_TEMPERATURE_FIELD_NAME, INFLUX_TEMP_DECIMAL_PLACES);
+            }
+
             Serial.print("         Type: ");
             Serial.println(sensors[i]->type());
             Serial.print("      Address: ");
@@ -304,39 +252,33 @@ void setup()
       }
       else
       {
-         status.setStatus(Color::RED);
          Serial.println("FAILED");
+         sketch.reportSensorFailure();
       }
    }
-   arduino.printlnR("ok", Color::VALUE);
+   sketch.arduino.printlnR("ok", Color::VALUE);
 
-   arduino.initWifi(WIFI_SSID, WIFI_PASSWORD);
-   if (!influx.begin(&arduino))
-   {
-      Util::reset(WIFI_RESET_DELAY_S, "Influx failed to begin");
-   }
+   sketch.completeInitialization();
 
-   arduino.clearDisplay();
-
-   arduino.setTextSize(2);
+   sketch.arduino.setTextSize(2);
    std::string uploadSample(uploadStatusFormat.length(), '0');
-   arduino.textWidth(uploadSample)
-   int16_t uploadY = arduino.height() - arduino.charH();
+   int16_t uploadX = sketch.arduino.width() - sketch.arduino.textWidth(uploadSample);
+   int16_t uploadY = sketch.arduino.height() - sketch.arduino.charH();
    Point16 uploadPos(uploadX, uploadY);
-   uploadStatusField = new Field(&arduino, uploadPos, uploadStatusFormat, 2);
+   uploadStatusField = new Field(&sketch.arduino, uploadPos, uploadStatusFormat, 2);
    uploadStatusField->draw("", Color::LABEL, Color::GRAY);
 
-   int16_t plotTop = arduino.charH() * 2;
-   int16_t plotHeight = arduino.height() - plotTop;
-   plotRect = { 0, static_cast<uint16_t>(plotTop), arduino.width(), static_cast<uint16_t>(plotHeight) };
+   int16_t plotTop = sketch.arduino.charH() * 2;
+   int16_t plotHeight = sketch.arduino.height() - plotTop;
+   plotRect = { 0, static_cast<uint16_t>(plotTop), sketch.arduino.width(), static_cast<uint16_t>(plotHeight) };
 }
 
 void loop()
 {
-   const bool showType = arduino.buttonA.isPressed();
+   const bool showType = sketch.arduino.buttonA.isPressed();
    static bool lastShowType = showType;
 
-   int32_t viewDelta = arduino.encoderA.delta();
+   int32_t viewDelta = sketch.arduino.encoderA.delta();
    if (viewDelta != 0)
    {
       int8_t newView = (static_cast<int8_t>(viewMode) + static_cast<int8_t>(viewDelta)) % NUM_VIEWS;
@@ -355,12 +297,12 @@ void loop()
          activatePlotView(static_cast<uint8_t>(viewMode) - 1);
       }
 
-      arduino.clearDisplay();
+      sketch.arduino.clearDisplay();
    }
 
    if (showType != lastShowType)
    {
-      arduino.clearDisplay();
+      sketch.arduino.clearDisplay();
       lastShowType = showType;
    }
 
@@ -390,47 +332,42 @@ void loop()
    }
 
 
-   if (!arduino.ensureWiFiConnected(&status))
-   {
-      arduino.println("WiFi connection lost");
-      Serial.println("WiFi connection lost");
-      Util::reset(WIFI_RESET_DELAY_S, "WiFi connection lost");
-   }
+   sketch.loop();
 
-   arduino.setCursor(0, 0);
-   arduino.setTextSize(3);
-   arduino.print("Mutli-Temp Monitor", Color::HEADING);
+   sketch.arduino.setCursor(0, 0);
+   sketch.arduino.setTextSize(3);
+   sketch.arduino.print("Mutli-Temp Monitor", Color::HEADING);
    if (viewMode != ViewMode::TABLE)
    {
       const char* rangeLabel = (activePlotView == 0) ? "Now" : AVERAGE_WINDOW_LABELS[activePlotView - 1];
-      arduino.print(" - ", Color::HEADING);
-      arduino.print(rangeLabel, Color::HEADING);
+      sketch.arduino.print(" - ", Color::HEADING);
+      sketch.arduino.print(rangeLabel, Color::HEADING);
    }
-   arduino.println();
-   arduino.setTextSize(2);
-   arduino.moveCursorY(arduino.charH() / 3);
+   sketch.arduino.println();
+   sketch.arduino.setTextSize(2);
+   sketch.arduino.moveCursorY(sketch.arduino.charH() / 3);
 
    if (showType)
    {
       for (uint8_t i = 0; i < NUM_SENSORS; i++)
       {
-         arduino.print(i, Color::GRAY);
-         arduino.print(" ");
+         sketch.arduino.print(i, Color::GRAY);
+         sketch.arduino.print(" ");
 
          if (!sensors[i]->exists())
          {
-            arduino.println("----", Color::GRAY);
+            sketch.arduino.println("----", Color::GRAY);
             continue;
          }
 
-         arduino.println(sensors[i]->type(), Color::VALUE);
+         sketch.arduino.println(sensors[i]->type(), Color::VALUE);
       }
    }
    else if (viewMode == ViewMode::TABLE)
    {
       if (!sensorTableBuilt)
       {
-         sensorTable.setPosition(arduino.getCursorX(), arduino.getCursorY());
+         sensorTable.setPosition(sketch.arduino.getCursorX(), sketch.arduino.getCursorY());
          for (uint8_t i = 0; i < NUM_SENSORS; i++)
          {
             char label[4];
@@ -444,7 +381,7 @@ void loop()
       {
          if (!sensors[i]->exists())
          {
-            for (size_t c = 0; c < ARRAY_SIZE(tableColumns); c++)
+            for (uint8_t c = 0; c < tableColumns.size(); c++)
             {
                sensorTable.setValueNone(i, c, Color::GRAY, '-');
             }
@@ -473,37 +410,14 @@ void loop()
       activePlot->draw();
    }
 
-   if (influx.ready())
+   if (influxTimer.ready())
    {
       digitalWrite(BUILTIN_LED, HIGH);
       uploadStatusField->draw("Upload", Color::LABEL, Color::GRAY);
 
-      bool writeFailed = !uploadAllPoints();
+      sketch.postPoints();
 
-      if (writeFailed && client.getLastStatusCode() <= 0)
-      {
-         // A transport-level failure (no HTTP status at all) usually means the reused
-         // connection went stale (e.g. the server closed an idle keep-alive). Force a
-         // fresh connection and retry once before giving up.
-         Serial.println("InfluxDB write failed at transport level, reconnecting and retrying...");
-         client.validateConnection();
-         writeFailed = !uploadAllPoints();
-      }
-
-      if (writeFailed)
-      {
-         Serial.println("InfluxDB write failed: ");
-         Serial.println(client.getLastErrorMessage());
-         Serial.print("   HTTP status: ");
-         Serial.println(client.getLastStatusCode());
-         Serial.print("   WiFi status: ");
-         Serial.println(WiFiX::statusString());
-         Serial.print("   Free heap: ");
-         Serial.println(ESP.getFreeHeap());
-      }
-
-                   digitalWrite(BUILTIN_LED, LOW);
-                   uploadStatusField->clear(Color::GRAY);
-                }
-             }
-
+      digitalWrite(BUILTIN_LED, LOW);
+      uploadStatusField->clear(Color::GRAY);
+   }
+}
