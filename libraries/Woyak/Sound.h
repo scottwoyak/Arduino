@@ -8,6 +8,8 @@
 
 #include <LovyanGFX.hpp>
 
+#include "Logger.h"
+
 #define MINIMP3_ONLY_MP3
 #define MINIMP3_NO_SIMD
 #define MINIMP3_IMPLEMENTATION
@@ -150,6 +152,7 @@ private:
    bool _began = false;
    volatile bool _playingAsync = false;
    volatile bool _stopRequested = false;
+   volatile uint32_t _numWriteFailures = 0;
    uint8_t _asyncRepeats = 1;
    float _asyncMaxSecs = 0;
 
@@ -190,7 +193,23 @@ private:
 
    ///
    /// <summary>
-   /// Writes a single ES8311 codec register. Uses the same I2C driver as the touch
+   /// Writes audio data to I2S, counting short writes so they can be logged later from a
+   /// non-playback task (see _startAsync()).
+   /// </summary>
+   /// <param name="data">Bytes to write</param>
+   /// <param name="size">Number of bytes</param>
+   ///
+   void _writeI2s(const uint8_t* data, size_t size)
+   {
+      if (_i2s.write(data, size) != size)
+      {
+         _numWriteFailures = _numWriteFailures + 1;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Writes a single ES8311 codec register.
    /// controller (which owns the bus), so the two don't conflict.
    /// </summary>
    /// <param name="reg">Register address</param>
@@ -200,7 +219,7 @@ private:
    {
       if (!lgfx::i2c::writeRegister8(I2C_PORT, ES8311_ADDRESS, reg, value, 0, I2C_FREQUENCY).has_value())
       {
-         Serial.printf("Codec write to reg 0x%02X failed\n", reg);
+         Logger.log("Codec write to reg " + std::to_string(reg) + " failed", LogSeverity::ERROR, "Sound");
       }
    }
 
@@ -373,7 +392,7 @@ public:
       _began = _i2s.begin(I2S_MODE_STD, SAMPLE_RATE, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO);
       if (!_began)
       {
-         Serial.println("I2S begin failed");
+         Logger.log("I2S begin failed", LogSeverity::ERROR, "Sound");
       }
    }
 
@@ -413,13 +432,13 @@ public:
             }
          }
 
-         _i2s.write((uint8_t*)frame.data(), sizeof(frame));
+         _writeI2s((uint8_t*)frame.data(), sizeof(frame));
       }
    }
 
    ///
    /// <summary>
-   /// Plays an in-memory MP3 file (mono or stereo, any sample rate), resampled to the
+   /// Plays an in-memory MP3
    /// codec's rate using nearest-sample.
    /// </summary>
    /// <param name="mp3">Pointer to the MP3 file bytes</param>
@@ -467,7 +486,7 @@ public:
 
             if (numOut == NUM_FRAME_SAMPLES)
             {
-               _i2s.write((uint8_t*)frame.data(), sizeof(frame));
+               _writeI2s((uint8_t*)frame.data(), sizeof(frame));
                numOut = 0;
             }
          }
@@ -476,7 +495,7 @@ public:
 
       if (numOut > 0)
       {
-         _i2s.write((uint8_t*)frame.data(), numOut * 2 * sizeof(int16_t));
+         _writeI2s((uint8_t*)frame.data(), numOut * 2 * sizeof(int16_t));
       }
    }
 
@@ -505,7 +524,7 @@ public:
             frame[j * 2] = sample;
             frame[j * 2 + 1] = sample;
          }
-         _i2s.write((uint8_t*)frame.data(), count * 2 * sizeof(int16_t));
+         _writeI2s((uint8_t*)frame.data(), count * 2 * sizeof(int16_t));
          pos += count;
       }
    }
@@ -694,7 +713,14 @@ private:
    {
       if (!_began)
       {
+         Logger.log("Can't play sound: I2S not started", LogSeverity::ERROR, "Sound");
          return;
+      }
+
+      if (_numWriteFailures > 0)
+      {
+         Logger.log(std::to_string(_numWriteFailures) + " I2S writes failed or were short since last sound", LogSeverity::ERROR, "Sound");
+         _numWriteFailures = 0;
       }
 
       if (_playingAsync)
@@ -713,6 +739,12 @@ private:
       if (xTaskCreatePinnedToCore(_asyncTask, "SoundTask", ASYNC_STACK_BYTES, this, 1, nullptr, 0) != pdPASS)
       {
          _playingAsync = false;
+         Logger.log(
+            "SoundTask creation failed: free heap " + std::to_string(ESP.getFreeHeap()) +
+            ", largest free block " + std::to_string(ESP.getMaxAllocHeap()) +
+            " (need " + std::to_string(ASYNC_STACK_BYTES) + ")",
+            LogSeverity::ERROR,
+            "Sound");
       }
    }
 

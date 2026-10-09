@@ -225,12 +225,12 @@ void handlePostGate()
    }
    else
    {
-      Serial.print("Gate: invalid value \"");
-      Serial.print(value);
-      Serial.println("\"");
+      Logger.log("Invalid gate command \"" + std::string(value.c_str()) + "\" from " + std::string(server.client().remoteIP().toString().c_str()), LogSeverity::WARN, "Gate");
       server.send(400, "text/plain", "Value must be OPEN, HOLD or CLOSE");
       return;
    }
+
+   Logger.log("Gate command " + std::string(value.c_str()) + " from " + std::string(server.client().remoteIP().toString().c_str()), LogSeverity::INFO, "Gate");
 
    if (redirect)
    {

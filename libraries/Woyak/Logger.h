@@ -49,7 +49,7 @@ public:
    /// to Serial.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="severity">Severity of the message, sent to the server as its level.</param>
    /// <param name="tags">Tags/components the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
    static void log(const char* message, LogSeverity severity = LogSeverity::INFO, const std::vector<std::string>& tags = {})
@@ -62,7 +62,7 @@ public:
    /// Overload of log(const char*, LogSeverity, const std::vector<std::string>&) for callers passing a single tag.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="severity">Severity of the message, sent to the server as its level.</param>
    /// <param name="tag">Tag/component the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
    static void log(const char* message, LogSeverity severity, const char* tag)
@@ -75,7 +75,7 @@ public:
    /// Overload of log(const char*, LogSeverity, const std::vector<std::string>&) for callers holding a std::string.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="severity">Severity of the message, sent to the server as its level.</param>
    /// <param name="tags">Tags/components the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
    static void log(const std::string& message, LogSeverity severity = LogSeverity::INFO, const std::vector<std::string>& tags = {})
@@ -88,7 +88,7 @@ public:
    /// Overload of log(const char*, LogSeverity, const char*) for callers holding a std::string and a single tag.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="severity">Severity of the message, sent to the server as its level.</param>
    /// <param name="tag">Tag/component the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
    static void log(const std::string& message, LogSeverity severity, const char* tag)
@@ -101,7 +101,7 @@ public:
    /// Overload of log(const char*, LogSeverity, const std::vector<std::string>&) for callers holding an Arduino String.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="severity">Severity of the message, sent to the server as its level.</param>
    /// <param name="tags">Tags/components the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
    static void log(const String& message, LogSeverity severity = LogSeverity::INFO, const std::vector<std::string>& tags = {})
@@ -114,7 +114,7 @@ public:
    /// Overload of log(const char*, LogSeverity, const char*) for callers holding an Arduino String and a single tag.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="severity">Severity of the message, sent to the server as its level.</param>
    /// <param name="tag">Tag/component the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
    static void log(const String& message, LogSeverity severity, const char* tag)

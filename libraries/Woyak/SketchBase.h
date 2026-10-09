@@ -140,6 +140,60 @@ protected:
    /// <summary>Current LED state while flashing.</summary>
    bool _locateLedOn = false;
 
+   /// <summary>Number of WiFi disconnect events not yet logged (set from the WiFi event task).</summary>
+   static inline volatile uint32_t _wifiDisconnects = 0;
+
+   /// <summary>Reason code of the most recent WiFi disconnect event.</summary>
+   static inline volatile uint8_t _wifiDisconnectReason = 0;
+
+   /// <summary>Set when WiFi obtains an IP address; cleared once logged.</summary>
+   static inline volatile bool _wifiGotIp = false;
+
+   ///
+   /// <summary>
+   /// WiFi event callback. Runs on the WiFi event task, so it only records state; the
+   /// loop task logs it (see _logWiFiEvents()) since Logger isn't thread safe.
+   /// </summary>
+   /// <param name="event">The WiFi event</param>
+   /// <param name="info">Event details</param>
+   ///
+   static void _onWiFiEvent(arduino_event_id_t event, arduino_event_info_t info)
+   {
+      if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED)
+      {
+         _wifiDisconnectReason = info.wifi_sta_disconnected.reason;
+         _wifiDisconnects = _wifiDisconnects + 1;
+      }
+      else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP)
+      {
+         _wifiGotIp = true;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Logs any WiFi disconnects and reconnects recorded by _onWiFiEvent(). Call from the loop task.
+   /// </summary>
+   ///
+   void _logWiFiEvents()
+   {
+      const uint32_t numDisconnects = _wifiDisconnects;
+      if (numDisconnects > 0)
+      {
+         _wifiDisconnects = 0;
+         Logger.log(
+            "WiFi disconnected " + std::to_string(numDisconnects) + " time(s), last reason code " + std::to_string(_wifiDisconnectReason),
+            LogSeverity::WARN,
+            "WiFi");
+      }
+
+      if (_wifiGotIp)
+      {
+         _wifiGotIp = false;
+         Logger.log("WiFi connected, RSSI " + std::to_string(WiFi.RSSI()) + " dBm", LogSeverity::INFO, "WiFi");
+      }
+   }
+
    /// <summary>Seconds last shown in the Locate countdown footer.</summary>
    int16_t _locateShownSecs = -1;
 
@@ -262,7 +316,7 @@ protected:
    /// connection isn't up yet.
    /// </summary>
    /// <param name="message">Message to log, both to the LogServer and Serial.</param>
-   /// <param name="severity">Severity of the message; ERROR is prefixed with "ERROR: ".</param>
+   /// <param name="severity">Severity of the message, sent to the server as its level.</param>
    ///
    void _logMessage(const char* message, LogSeverity severity = LogSeverity::INFO)
    {
@@ -287,7 +341,7 @@ protected:
    /// callers don't need to call .c_str() themselves.
    /// </summary>
    /// <param name="message">Message to log, both to the LogServer and Serial.</param>
-   /// <param name="severity">Severity of the message; ERROR is prefixed with "ERROR: ".</param>
+   /// <param name="severity">Severity of the message, sent to the server as its level.</param>
    ///
    void _logMessage(const std::string& message, LogSeverity severity = LogSeverity::INFO)
    {
@@ -432,6 +486,8 @@ protected:
          Util::reset(WIFI_LOST_RESET_DELAY_S, "WiFi connect failed");
       }
 
+      WiFi.onEvent(_onWiFiEvent);
+
       if (_config.enableRebooter)
       {
          _arduino->enableRebooter();
@@ -530,6 +586,8 @@ protected:
 
       esp_task_wdt_reset();
       DeviceHealth::recordLoop();
+
+      _logWiFiEvents();
 
       checkForOTA();
 

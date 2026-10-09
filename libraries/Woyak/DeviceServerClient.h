@@ -19,9 +19,8 @@
 
 ///
 /// <summary>
-/// Severity of a log message sent to the Device Server. WARN and ERROR messages are
-/// prefixed with "WARN: "/"ERROR: " by DeviceServerClient itself, so callers don't need to
-/// embed the prefix in their message text.
+/// Severity of a log message sent to the Device Server. The severity is sent as the
+/// message's "level" field; it is never added to the message text.
 /// </summary>
 ///
 enum class LogSeverity
@@ -202,7 +201,7 @@ class DeviceServerClient
       void _onError(const std::string& reason) override
       {
          DeviceServerClient::_debugPrint("Error: " + reason);
-         DeviceServerClient::log("Error: " + reason);
+         DeviceServerClient::log("WebSocket error: " + reason, LogSeverity::ERROR);
       }
    };
 
@@ -740,21 +739,18 @@ public:
    /// building up the same line. Always echoes to Serial.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="severity">Severity of the message, sent to the server as its level.</param>
    /// <param name="tags">Tags/components the message is associated with; defaults to the current tags set via setTag()/setTags() (or {"Initializing"} until logInitializationComplete()).</param>
    ///
    static void log(const char* message, LogSeverity severity = LogSeverity::INFO, const std::vector<std::string>& tags = {})
    {
-      std::string prefix = severity == LogSeverity::ERROR ? "ERROR: " : severity == LogSeverity::WARN ? "WARN: " : "";
-      std::string text = prefix + message;
-
-      _sendOrQueueLog(text, severity, !tags.empty() ? tags : _tags, true);
+      _sendOrQueueLog(message, severity, !tags.empty() ? tags : _tags, true);
 
       if (!_linePending)
       {
          Serial.print("Logger ----- ");
       }
-      Serial.println(text.c_str());
+      Serial.println(message);
 
       _linePending = false;
    }
@@ -764,7 +760,7 @@ public:
    /// Overload of log(const char*, LogSeverity, const std::vector<std::string>&) for callers passing a single tag.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="severity">Severity of the message, sent to the server as its level.</param>
    /// <param name="tag">Tag/component the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
    static void log(const char* message, LogSeverity severity, const char* tag)
@@ -777,7 +773,7 @@ public:
    /// Overload of log(const char*, LogSeverity, const std::vector<std::string>&) for callers holding a std::string.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="severity">Severity of the message, sent to the server as its level.</param>
    /// <param name="tags">Tags/components the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
    static void log(const std::string& message, LogSeverity severity = LogSeverity::INFO, const std::vector<std::string>& tags = {})
@@ -790,7 +786,7 @@ public:
    /// Overload of log(const char*, LogSeverity, const char*) for callers holding a std::string and a single tag.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="severity">Severity of the message, sent to the server as its level.</param>
    /// <param name="tag">Tag/component the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
    static void log(const std::string& message, LogSeverity severity, const char* tag)
@@ -803,7 +799,7 @@ public:
    /// Overload of log(const char*, LogSeverity, const std::vector<std::string>&) for callers holding an Arduino String.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="severity">Severity of the message, sent to the server as its level.</param>
    /// <param name="tags">Tags/components the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
    static void log(const String& message, LogSeverity severity = LogSeverity::INFO, const std::vector<std::string>& tags = {})
@@ -816,7 +812,7 @@ public:
    /// Overload of log(const char*, LogSeverity, const char*) for callers holding an Arduino String and a single tag.
    /// </summary>
    /// <param name="message">Message text to log.</param>
-   /// <param name="severity">Severity of the message; WARN/ERROR are prefixed with "WARN: "/"ERROR: ".</param>
+   /// <param name="severity">Severity of the message, sent to the server as its level.</param>
    /// <param name="tag">Tag/component the message is associated with; defaults to the current tags set via setTag()/setTags().</param>
    ///
    static void log(const String& message, LogSeverity severity, const char* tag)
@@ -830,9 +826,8 @@ public:
    /// allowing the result to be appended later via a subsequent logPartial()/log() call
    /// (e.g. printing "WiFi... " now and "OK" once the connection result is known). The
    /// DeviceServer joins fragments into a single entry until one is sent with "final":true
-   /// (see log()). Echoes to Serial the same way, without a trailing newline. A partial
-   /// fragment is never itself prefixed with "WARN: "/"ERROR: " -- pass the severity on
-   /// the completing log() call instead, since that's what determines the prefix.
+   /// (see log()). Echoes to Serial the same way, without a trailing newline. Pass the
+   /// severity on the completing log() call instead, since that's what determines the level.
    /// </summary>
    /// <param name="message">Message fragment text to log.</param>
    /// <param name="tags">Tags/components the message is associated with; defaults to the current tags set via setTag()/setTags().</param>

@@ -933,8 +933,20 @@ void postGateCommand(const char* command)
    Serial.println(url);
    http.begin(url);
    http.addHeader("Content-Type", "text/plain");
-   http.POST(command);
+   int code = http.POST(command);
    http.end();
+
+   if (code == HTTP_CODE_OK)
+   {
+      Logger.log(std::string("Gate ") + command + " request sent", LogSeverity::INFO, "Gate");
+   }
+   else
+   {
+      Logger.log(
+         std::string("Gate ") + command + " request failed: " + HTTPClient::errorToString(code).c_str() + " (" + std::to_string(code) + ")",
+         LogSeverity::ERROR,
+         "Gate");
+   }
 }
 
 ///
@@ -1050,9 +1062,24 @@ void pollGateHold(bool isOpen)
    String body = (code == 200) ? http.getString() : String();
    http.end();
 
+   static bool pollFailing = false;
    if (code != 200)
    {
+      if (!pollFailing)
+      {
+         pollFailing = true;
+         Logger.log(
+            std::string("Gate opener hold-state poll failed: ") + HTTPClient::errorToString(code).c_str() + " (" + std::to_string(code) + ")",
+            LogSeverity::WARN,
+            "Gate");
+      }
       return;
+   }
+
+   if (pollFailing)
+   {
+      pollFailing = false;
+      Logger.log("Gate opener hold-state poll recovered", LogSeverity::INFO, "Gate");
    }
 
    body.trim();
@@ -1335,6 +1362,9 @@ GateTelemetryHandler telemetryHandler(&sketch.arduino.status);
 // Set when a Locate request ends, so the next loop() repaints everything.
 bool redrawAfterLocate = false;
 
+constexpr uint32_t HEAP_LOG_INTERVAL_MS = 10 * 60 * 1000;
+Timer heapLogTimer(HEAP_LOG_INTERVAL_MS);
+
 void setup()
 {
    SerialX::begin();
@@ -1384,6 +1414,16 @@ void setup()
 void loop()
 {
    sketch.loop();
+
+   if (heapLogTimer.ready())
+   {
+      Logger.log(
+         "Heap: free " + std::to_string(ESP.getFreeHeap()) +
+         ", largest free block " + std::to_string(ESP.getMaxAllocHeap()) +
+         ", min free " + std::to_string(ESP.getMinFreeHeap()),
+         LogSeverity::INFO,
+         "Heap");
+   }
 
    if (sketch.isLocating())
    {
