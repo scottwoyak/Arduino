@@ -108,7 +108,7 @@ constexpr uint16_t GATE_OPENER_PORT = 80;
 // This sketch's own version (e.g. "1.06"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("1.9");
+const auto VERSION = MakeVersion("1.10");
 constexpr auto SKETCH_NAME = "Gate_Viewer";
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
@@ -124,9 +124,7 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 #include <HTTPClient.h>
 #include <WebSocketsClient.h>
 
-#include "BufferedTimeSeries.h"
 #include "DirtySprite.h"
-#include "RollingRate.h"
 #include "SerialX.h"
 #include "Slider.h"
 #include "Status.h"
@@ -169,22 +167,6 @@ Format leftAzimuthFormat("###", Format::Alignment::LEFT);
 Format rightAzimuthFormat("###", Format::Alignment::RIGHT);
 int16_t lineLength = 0;
 int16_t gateOriginY = 0;
-
-// ----------- Azimuth buffering (smooths the gate line animation by interpolating
-// between received values rather than snapping to each new reading)
-
-// Expected sample spacing (telemetry arrives at up to ~100 samples/sec, i.e. every
-// ~10ms), used to size the azimuth buffers' interpolation resolution.
-constexpr unsigned long BUFFER_RESOLUTION_MS = 10;
-
-// Duration of history retained in the azimuth buffers. Wide enough to cover jitter
-// between samples (so ready()/get() don't intermittently fail and fall back to the
-// raw, unsmoothed value mid-animation), at the cost of a bit more interpolation lag
-// (half the window).
-constexpr unsigned long BUFFER_TIME_SPAN_MS = 200;
-
-BufferedTimeSeries leftAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
-BufferedTimeSeries rightAzimuthBuffer(BUFFER_TIME_SPAN_MS, BUFFER_RESOLUTION_MS);
 
 // ----------- Last open time (updated whenever the gate transitions from closed to
 // open; 0 until the gate has opened at least once since boot)
@@ -927,10 +909,6 @@ void postGateCommand(const char* command)
 {
    HTTPClient http;
    String url = String("http://") + GATE_OPENER_HOST + ":" + GATE_OPENER_PORT + "/Gate";
-   Serial.print("Gate ");
-   Serial.print(command);
-   Serial.print(" via ");
-   Serial.println(url);
    http.begin(url);
    http.addHeader("Content-Type", "text/plain");
    int code = http.POST(command);
@@ -1005,6 +983,8 @@ const char* openTitle(int8_t motion)
 }
 
 int8_t gateDisplayedMotion = 0;
+extern float leftValue;
+extern float rightValue;
 
 ///
 /// <summary>
@@ -1036,11 +1016,11 @@ void showOpeningPending()
 #ifdef ARDUINO_TOUCH_SUPPORTED
 ///
 /// <summary>
-/// While the gate is open, periodically asks the Gate_Opener whether it is holding the gate
+/// While the gate is fully open (open and not moving), periodically asks the Gate_Opener whether it is holding the gate
 /// open, so every viewer shows "HELD OPEN" regardless of which one started the hold. Repaints
 /// the title and hint only when the held state changes.
 /// </summary>
-/// <param name="isOpen">True if the gate is currently open</param>
+/// <param name="isOpen">True if the gate is open and stationary</param>
 ///
 void pollGateHold(bool isOpen)
 {
@@ -1393,12 +1373,10 @@ void setup()
       if (topic == LEFT_TELEMETRY_TOPIC)
       {
          leftValue = (float)value;
-         leftAzimuthBuffer.set(leftValue, dtMicros / 1000);
                }
       else if (topic == RIGHT_TELEMETRY_TOPIC)
       {
          rightValue = (float)value;
-         rightAzimuthBuffer.set(rightValue, dtMicros / 1000);
                }
    });
 
@@ -1502,23 +1480,82 @@ void loop()
    float leftAzimuth = client->isStarted() ? leftValue : NAN;
    float rightAzimuth = client->isStarted() ? rightValue : NAN;
 
-   // Fall back to the raw value whenever the buffer doesn't yet have enough history to
-   // interpolate (e.g. right after startup, or while the gate is stationary and no new
-   // samples are arriving), so the line is still drawn instead of disappearing.
-   float displayLeftAzimuth = leftAzimuthBuffer.ready() ? leftAzimuthBuffer.get() : leftAzimuth;
-   float displayRightAzimuth = rightAzimuthBuffer.ready() ? rightAzimuthBuffer.get() : rightAzimuth;
+   float displayLeftAzimuth = leftAzimuth;
+   float displayRightAzimuth = rightAzimuth;
 
    // The gate is considered open whenever either displayed angle exceeds the threshold.
-   constexpr float GATE_OPEN_THRESHOLD_DEGREES = 3.0f;
+   // After a tap the gate is expected to move, so any reported movement counts as open.
+   // The gate mechanism itself introduces about a half second delay (measured at best
+   // ~630 ms from relay on to the first reported movement) before the gate starts moving, so
+   // the viewer can't show movement sooner. Because of that, after a tap the panel is shown
+   // as opening right away (openPending) rather than waiting for the angle to change.
+   static bool openPending = false;
+   static TimerSecs openPendingTimer(10.0f);
+
+   // A resting gate jitters around a degree or so, so the gate is not declared open by an angle.
+   // It opens only after a sustained rise (GATE_OPEN_RISE_DEGREES within GATE_OPEN_RISE_WINDOW_MS)
+   // above the recent low, and it closes once the angle falls below the larger
+   // GATE_CLOSE_DEGREES. After a tap, any reported angle above 0 counts as open.
+   constexpr float GATE_CLOSE_DEGREES = 3.0f;
+   constexpr float GATE_OPEN_RISE_DEGREES = 2.0f;
+   constexpr uint32_t GATE_OPEN_RISE_WINDOW_MS = 1000;
    static bool lastIsOpen = false;
-   bool isOpen = (!isnan(displayLeftAzimuth) && displayLeftAzimuth > GATE_OPEN_THRESHOLD_DEGREES) ||
-                 (!isnan(displayRightAzimuth) && displayRightAzimuth > GATE_OPEN_THRESHOLD_DEGREES);
+   static bool reachedCloseAngle = false;
+   static uint32_t openedMs = 0;
+   constexpr uint32_t GATE_CLOSE_GRACE_MS = 10000;
+   static float riseBaseline = NAN;
+   static uint32_t riseBaselineMs = 0;
+
+   float peakAzimuth = fmaxf(isnan(leftAzimuth) ? 0.0f : leftAzimuth, isnan(rightAzimuth) ? 0.0f : rightAzimuth);
 
    // With no data (e.g. telemetry dropped), keep the previous state rather than treating it
    // as closed, so a reconnect doesn't look like the gate opening again.
-   if (isnan(displayLeftAzimuth) && isnan(displayRightAzimuth))
+   bool isOpen = lastIsOpen;
+   if (!isnan(leftAzimuth) || !isnan(rightAzimuth))
    {
-      isOpen = lastIsOpen;
+      if (lastIsOpen)
+      {
+            riseBaseline = NAN;
+            // A gate that just opened starts below the close angle, so it can't close until it
+            // has first passed that angle (or the grace period expires).
+            if (peakAzimuth >= GATE_CLOSE_DEGREES)
+            {
+               reachedCloseAngle = true;
+            }
+            isOpen = peakAzimuth >= GATE_CLOSE_DEGREES || (!reachedCloseAngle && millis() - openedMs < GATE_CLOSE_GRACE_MS);
+         }
+      else if (openPending)
+      {
+         isOpen = peakAzimuth > 0.0f;
+      }
+      else
+      {
+         uint32_t nowMs = millis();
+         if (isnan(riseBaseline) || peakAzimuth < riseBaseline || nowMs - riseBaselineMs > GATE_OPEN_RISE_WINDOW_MS)
+         {
+            riseBaseline = peakAzimuth;
+            riseBaselineMs = nowMs;
+         }
+               isOpen = peakAzimuth - riseBaseline >= GATE_OPEN_RISE_DEGREES;
+            }
+
+            if (isOpen && !lastIsOpen)
+            {
+               reachedCloseAngle = false;
+               openedMs = millis();
+            }
+         }
+
+   if (!isOpen && !openPending)
+   {
+      if (!isnan(displayLeftAzimuth))
+      {
+         displayLeftAzimuth = 0.0f;
+      }
+      if (!isnan(displayRightAzimuth))
+      {
+         displayRightAzimuth = 0.0f;
+      }
    }
 
    if (!isOpen)
@@ -1532,7 +1569,8 @@ void loop()
    static float lastMotionAzimuth = NAN;
    static uint32_t lastMotionMs = 0;
    static int8_t motion = 0;
-   float motionAzimuth = fmaxf(isnan(displayLeftAzimuth) ? 0.0f : displayLeftAzimuth, isnan(displayRightAzimuth) ? 0.0f : displayRightAzimuth);
+   // Motion uses the raw telemetry, which the publisher now reports continuously.
+   float motionAzimuth = fmaxf(isnan(leftAzimuth) ? 0.0f : leftAzimuth, isnan(rightAzimuth) ? 0.0f : rightAzimuth);
    if (isnan(lastMotionAzimuth))
    {
       lastMotionAzimuth = motionAzimuth;
@@ -1548,7 +1586,7 @@ void loop()
       motion = 0;
    }
    constexpr float FULLY_OPEN_DEGREES = 80.0f;
-   if (motionAzimuth >= FULLY_OPEN_DEGREES)
+   if (motionAzimuth >= FULLY_OPEN_DEGREES || (!isOpen && !openPending && motionAzimuth < GATE_CLOSE_DEGREES && !lastIsOpen))
    {
       motion = 0;
    }
@@ -1590,8 +1628,6 @@ void loop()
 
           // After an open request the panel is inverted right away, in anticipation of the gate
           // moving. If the gate still isn't reported open after the timeout, revert.
-          static bool openPending = false;
-          static TimerSecs openPendingTimer(10.0f);
           if (openPending && (isOpen || openPendingTimer.ready()))
           {
              openPending = false;
@@ -1605,9 +1641,9 @@ void loop()
                            }
 
                 #ifdef SETTINGS_SUPPORTED
-                           // The gear is only shown while the gate is stationary and no open request is pending.
+                           // The gear is only shown while the gate is closed and no open request is pending.
                            // A full redraw (stateChanged) erases it, so redraw it whenever it should be visible.
-                           bool wantGear = motion == 0 && !openPending;
+                           bool wantGear = !isOpen && motion == 0 && !openPending;
                            if (wantGear != gearVisible || (stateChanged && wantGear))
                            {
                               updateGear(wantGear);
@@ -1656,7 +1692,7 @@ void loop()
              #endif
                  }
 
-      pollGateHold(isOpen);
+      pollGateHold(isOpen && motion == 0);
 
       if (tapped && !isOpen &&
        touchPoint.x >= gateStateRect.left() && touchPoint.x < gateStateRect.right() &&

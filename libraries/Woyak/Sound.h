@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <ESP_I2S.h>
+#include <esp_heap_caps.h>
 
 #include <array>
 #include <cmath>
@@ -146,8 +147,11 @@ private:
    static constexpr float NOTE_C6 = 1046.50f;
 
    I2SClass _i2s;
-   mp3dec_t _decoder;
-   std::array<int16_t, MINIMP3_MAX_SAMPLES_PER_FRAME> _pcm;
+   mp3dec_t* _decoder = nullptr;
+   int16_t* _pcm = nullptr;
+   uint8_t* _mp3Cache = nullptr;
+   const uint8_t* _mp3Source = nullptr;
+   size_t _mp3CacheSize = 0;
    float _phase = 0;
    bool _began = false;
    volatile bool _playingAsync = false;
@@ -155,10 +159,23 @@ private:
    volatile uint32_t _numWriteFailures = 0;
    uint8_t _asyncRepeats = 1;
    float _asyncMaxSecs = 0;
+   TaskHandle_t _asyncTaskHandle = nullptr;
+   StaticTask_t _asyncTaskBuffer;
+   StackType_t* _asyncStack = nullptr;
 
    static void _asyncTask(void* param)
    {
       Sound* self = (Sound*)param;
+      while (true)
+      {
+         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+         self->_runAsync();
+      }
+   }
+
+   void _runAsync()
+   {
+      Sound* self = this;
       if (self->_asyncMaxSecs > 0)
       {
          uint32_t maxMillis = (uint32_t)(self->_asyncMaxSecs * 1000.0f);
@@ -187,8 +204,16 @@ private:
             self->playNotification();
          }
       }
+      Serial.print("[Mem] t=");
+      Serial.print(millis() / 1000);
+      Serial.print("s SoundTask done, sound index ");
+      Serial.print(self->soundIndex);
+      Serial.print(": stack unused at minimum ");
+      Serial.print(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t));
+      Serial.print(" of ");
+      Serial.print(ASYNC_STACK_BYTES);
+      Serial.println(" bytes");
       self->_playingAsync = false;
-      vTaskDelete(nullptr);
    }
 
    ///
@@ -381,6 +406,17 @@ public:
    ///
    void begin()
    {
+      if (_decoder == nullptr)
+      {
+         _decoder = (mp3dec_t*)heap_caps_malloc(sizeof(mp3dec_t), MALLOC_CAP_SPIRAM);
+         _pcm = (int16_t*)heap_caps_malloc(MINIMP3_MAX_SAMPLES_PER_FRAME * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+         if (_decoder == nullptr || _pcm == nullptr)
+         {
+            Logger.log("PSRAM allocation of MP3 decoder buffers failed", LogSeverity::ERROR, "Sound");
+            return;
+         }
+      }
+
       pinMode(AMP_ENABLE_PIN, OUTPUT);
       digitalWrite(AMP_ENABLE_PIN, LOW);
 
@@ -456,11 +492,31 @@ public:
       uint8_t numOut = 0;
       float srcPos = 0;
 
-      mp3dec_init(&_decoder);
+      if (_mp3Source != mp3)
+      {
+         if (_mp3Cache != nullptr)
+         {
+            heap_caps_free(_mp3Cache);
+            _mp3Cache = nullptr;
+            _mp3Source = nullptr;
+         }
+         _mp3Cache = (uint8_t*)heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+         if (_mp3Cache == nullptr)
+         {
+            Logger.log("PSRAM allocation of " + std::to_string(size) + " bytes for sound failed", LogSeverity::ERROR, "Sound");
+            return;
+         }
+         memcpy(_mp3Cache, mp3, size);
+         _mp3Source = mp3;
+         _mp3CacheSize = size;
+      }
+      mp3 = _mp3Cache;
+
+      mp3dec_init(_decoder);
 
       while (size > 0 && !_stopRequested)
       {
-         const int numSamples = mp3dec_decode_frame(&_decoder, mp3, size, _pcm.data(), &info);
+         const int numSamples = mp3dec_decode_frame(_decoder, mp3, size, _pcm, &info);
          if (info.frame_bytes == 0)
          {
             break;
@@ -735,17 +791,42 @@ private:
 
       _asyncRepeats = repeats;
       _asyncMaxSecs = maxSecs;
-      _playingAsync = true;
-      if (xTaskCreatePinnedToCore(_asyncTask, "SoundTask", ASYNC_STACK_BYTES, this, 1, nullptr, 0) != pdPASS)
+
+      if (_asyncTaskHandle == nullptr)
       {
-         _playingAsync = false;
-         Logger.log(
-            "SoundTask creation failed: free heap " + std::to_string(ESP.getFreeHeap()) +
-            ", largest free block " + std::to_string(ESP.getMaxAllocHeap()) +
-            " (need " + std::to_string(ASYNC_STACK_BYTES) + ")",
-            LogSeverity::ERROR,
-            "Sound");
+         _asyncStack = (StackType_t*)heap_caps_malloc(ASYNC_STACK_BYTES, MALLOC_CAP_SPIRAM);
+         if (_asyncStack != nullptr)
+         {
+            _asyncTaskHandle = xTaskCreateStaticPinnedToCore(
+               _asyncTask,
+               "SoundTask",
+               ASYNC_STACK_BYTES / sizeof(StackType_t),
+               this,
+               1,
+               _asyncStack,
+               &_asyncTaskBuffer,
+               0);
+         }
+         if (_asyncTaskHandle == nullptr)
+         {
+            Logger.log(
+               "SoundTask creation failed: PSRAM stack of " + std::to_string(ASYNC_STACK_BYTES) + " bytes unavailable",
+               LogSeverity::ERROR,
+               "Sound");
+            return;
+         }
       }
+
+      _playingAsync = true;
+      Serial.print("[Mem] t=");
+      Serial.print(millis() / 1000);
+      Serial.print("s SoundTask notify, sound index ");
+      Serial.print(soundIndex);
+      Serial.print(": free ");
+      Serial.print(ESP.getFreeHeap());
+      Serial.print(", largest ");
+      Serial.println(ESP.getMaxAllocHeap());
+      xTaskNotifyGive(_asyncTaskHandle);
    }
 
 public:

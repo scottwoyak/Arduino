@@ -30,7 +30,7 @@
 // This sketch's own version (e.g. "1.2"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("1.5");
+const auto VERSION = MakeVersion("1.6");
 constexpr auto SKETCH_NAME = "Gate_Publisher";
 
 // ----------- InfluxDB site selection
@@ -58,55 +58,18 @@ float zeroAzimuth = 0.0f;
 // false if it's the right gate (rotates clockwise as it opens).
 bool leftGate = true;
 
-// Last angle returned by gateAngle(), used as a deadband anchor so sensor noise doesn't
-// jitter the published value.
-float lastReportedAngle = 0.0f;
-
 // Number of decimal places the angle is published with.
 constexpr uint8_t ANGLE_DECIMALS = 1;
-
-// Minimum change in angle required before lastReportedAngle is allowed to move. Derived
-// from ANGLE_DECIMALS so it always matches the smallest step that can be published
-// (e.g. 1 decimal -> 0.1 degrees).
-constexpr float ANGLE_DEADBAND_DEGREES = []()
-{
-   float step = 1.0f;
-   for (uint8_t i = 0; i < ANGLE_DECIMALS; i++)
-   {
-      step /= 10.0f;
-   }
-   return step;
-}();
-
-// While the gate is closed the angle is reported as 0 until
-// positive angle changes exceeds this many degrees, which hides sensor noise/drift at
-// rest (noise bounces up and down, so its rises never accumulate).
-constexpr float GATE_MOVING_START_RISE_DEGREES = 2.0f;
-
-// Once moving, the gate is considered closed again (reported as 0) when the angle falls
-// below this angle.
-constexpr float GATE_MOVING_STOP_DEGREES = 1.5f;
-
-// True once the angle has risen by more than GATE_MOVING_START_RISE_DEGREES, until it
-// falls back below GATE_MOVING_STOP_DEGREES.
-bool gateMoving = false;
-
-// Previous angle and running sum of consecutive positive changes, used while closed to
-// detect the start of movement.
-float lastClosedAngle = 0.0f;
-float closedRiseSum = 0.0f;
 
 ///
 /// <summary>
 /// Computes the gate's opening angle (0 to ~110 degrees) from the magnetometer's current
 /// azimuth, relative to the azimuth captured at startup (zeroAzimuth). The left gate
 /// rotates counter clockwise as it opens, and the right gate rotates clockwise, so the
-/// sign of the azimuth delta is flipped for the left gate. While closed, 0 is reported
-/// until the angle has risen by more than GATE_MOVING_START_RISE_DEGREES, and once
-/// moving, until it falls below GATE_MOVING_STOP_DEGREES. A deadband around
-/// lastReportedAngle prevents sensor noise from jittering the published value.
+/// sign of the azimuth delta is flipped for the left gate. The angle is reported as
+/// measured; deciding whether the gate is open or closed is left to the viewer.
 /// </summary>
-/// <returns>Gate angle in degrees, with 0 meaning fully closed.</returns>
+/// <returns>Gate angle in degrees, never negative.</returns>
 ///
 float gateAngle()
 {
@@ -133,36 +96,7 @@ float gateAngle()
       angle = 0.0f;
    }
 
-   if (!gateMoving)
-   {
-      float change = angle - lastClosedAngle;
-      lastClosedAngle = angle;
-      closedRiseSum = (change > 0.0f) ? closedRiseSum + change : 0.0f;
-
-      if (closedRiseSum <= GATE_MOVING_START_RISE_DEGREES)
-      {
-         lastReportedAngle = 0.0f;
-         return lastReportedAngle;
-      }
-
-      gateMoving = true;
-      closedRiseSum = 0.0f;
-   }
-   else if (angle < GATE_MOVING_STOP_DEGREES)
-   {
-      gateMoving = false;
-      lastClosedAngle = angle;
-      closedRiseSum = 0.0f;
-      lastReportedAngle = 0.0f;
-      return lastReportedAngle;
-   }
-
-   if (fabsf(angle - lastReportedAngle) >= ANGLE_DEADBAND_DEGREES)
-   {
-      lastReportedAngle = angle;
-   }
-
-   return lastReportedAngle;
+   return angle;
 }
 
 InfluxConfig INFLUX_CONFIG = {
@@ -206,6 +140,4 @@ void setup()
 void loop()
 {
    sketch.loop();
-
-   sketch.setStreaming(gateMoving);
 }

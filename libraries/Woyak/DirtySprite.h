@@ -22,7 +22,7 @@ private:
 public:
    ///
    /// <summary>
-   /// Creates the sprite (in internal RAM if possible, otherwise PSRAM). Does nothing if
+   /// Creates the sprite in PSRAM. Does nothing if
    /// already created.
    /// </summary>
    /// <param name="display">Display the sprite is pushed to.</param>
@@ -42,13 +42,9 @@ public:
       _x = x;
       _y = y;
       _sprite = new lgfx::LGFX_Sprite(display);
-      _sprite->setColorDepth(16);
-      _sprite->setPsram(false);
-      if (!_sprite->createSprite(width, height))
-      {
-         _sprite->setPsram(true);
-         _sprite->createSprite(width, height);
-      }
+      _sprite->setColorDepth(lgfx::grayscale_8bit);
+      _sprite->setPsram(true);
+      _sprite->createSprite(width, height);
    }
 
    ///

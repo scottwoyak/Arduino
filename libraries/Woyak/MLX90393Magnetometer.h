@@ -42,10 +42,10 @@ public:
       _sensor.setResolution(MLX90393_X, MLX90393_RES_16);
       _sensor.setResolution(MLX90393_Y, MLX90393_RES_16);
       _sensor.setResolution(MLX90393_Z, MLX90393_RES_16);
-      // OSR_0/FILTER_6 keeps the conversion time (13.36 ms, per the driver's tconv
-      // table) plus its fixed 10 ms delay low enough for a ~30 Hz sample rate, using
-      // the strongest filtering that still fits.
-      _sensor.setOversampling(MLX90393_OSR_0);
+      // OSR_1/FILTER_6 has a conversion time of 26.04 ms (per the driver's tconv
+      // table) plus its fixed 10 ms delay, for a ~28 Hz sample rate. This trades speed
+      // for lower noise compared to OSR_0 (13.36 ms).
+      _sensor.setOversampling(MLX90393_OSR_1);
       _sensor.setFilter(MLX90393_FILTER_6);
 
       return true;

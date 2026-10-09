@@ -541,6 +541,7 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
+  <Project Path="LittleBearPublisher/LittleBearPublisher.csproj" />
   <Project Path="Logger/Logger.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

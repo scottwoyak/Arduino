@@ -97,15 +97,15 @@ void updateGateStatus()
 ///
 void startGateRelayTrigger()
 {
-   sketch.logMessage("Gate Signal On");
    digitalWrite(GATE_RELAY_PIN, HIGH);
    gateRelayTriggerTimer.reset();
    gateTriggerRelay = true;
+   sketch.logMessage("Gate Signal On");
 }
 
 ///
 /// <summary>
-/// Ends the gate relay pulse once GATE_RELAY_TRIGGER_SECS has elapsed since it started.
+/// Ends the gate relay pulse once
 /// </summary>
 ///
 void checkGateRelayTrigger()
@@ -230,7 +230,7 @@ void handlePostGate()
       return;
    }
 
-   Logger.log("Gate command " + std::string(value.c_str()) + " from " + std::string(server.client().remoteIP().toString().c_str()), LogSeverity::INFO, "Gate");
+   std::string clientIp = std::string(server.client().remoteIP().toString().c_str());
 
    if (redirect)
    {
@@ -241,6 +241,8 @@ void handlePostGate()
    {
       server.send(200, "text/plain", value);
    }
+
+   Logger.log("Gate command " + std::string(value.c_str()) + " from " + clientIp, LogSeverity::INFO, "Gate");
 }
 
 void setup()
