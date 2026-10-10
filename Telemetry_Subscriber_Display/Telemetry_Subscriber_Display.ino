@@ -13,7 +13,12 @@
 // Hardware: Feather ESP32 with WiFi and TFT display.
 //
 
+// Comment out to stop printing each received sample (timestamp in ms, value) to Serial.
+#define PRINT_SAMPLES
+
 #include <Arduino.h>
+#include <Preferences.h>
+#include <array>
 
 #include "ArduinoBoard.h"
 
@@ -34,10 +39,14 @@
 const auto VERSION = MakeVersion("1.0");
 constexpr auto SKETCH_NAME = "Telemetry_Subscriber_Display";
 constexpr uint32_t BAUD_RATE = 115200;
-constexpr auto TOPIC = "Test";
+constexpr std::array<const char*, 4> TOPICS = { "Test", "Gate/Left", "Gate/Right", "Wind/Bragg" };
+uint8_t topicIndex = 0;
+constexpr auto PREFERENCES_NAMESPACE = "Subscriber";
+constexpr auto TOPIC_INDEX_KEY = "topicIndex";
+Preferences preferences;
 
 TelemetryConfig TELEMETRY_CONFIG = {
-   .topic = TOPIC,
+   .topic = TOPICS[0],
 };
 constexpr uint32_t RATE_UPDATE_INTERVAL_MS = 1000;
 
@@ -69,8 +78,22 @@ void setup()
 
    valueSeries->pointSize = VALUE_SERIES_POINT_SIZE;
 
+   preferences.begin(PREFERENCES_NAMESPACE);
+   topicIndex = preferences.getUChar(TOPIC_INDEX_KEY, 0);
+   if (topicIndex >= TOPICS.size())
+   {
+      topicIndex = 0;
+   }
+   client.setTopic(TOPICS[topicIndex]);
+
    client.onSample([](const std::string& topic, double value, int64_t dtMicros)
    {
+#ifdef PRINT_SAMPLES
+      Serial.print(millis());
+      Serial.print(", ");
+      Serial.println(value, 3);
+#endif
+
       if (!needsInitialDisplay)
       {
          valueSeries->add(value);
@@ -81,7 +104,7 @@ void setup()
    sketch.beginConnect();
 
    // Other sketch classes (PublisherSketch, ViewerSketch) print this topic line themselves.
-   sketch.arduino.printlnInitStatus("Topic... ", std::string("\"") + TOPIC + "\"");
+   sketch.arduino.printlnInitStatus("Topic... ", std::string("\"") + TOPICS[topicIndex] + "\"");
    client.connect(&sketch.arduino, sketch.getStatus());
 
    sketch.setOnLocateEndCallback([]() { needsInitialDisplay = true; });
@@ -98,6 +121,15 @@ void loop()
    if (sketch.isLocating())
    {
       return;
+   }
+
+   if (sketch.arduino.buttonA.wasPressed())
+   {
+      topicIndex = (topicIndex + 1) % TOPICS.size();
+      preferences.putUChar(TOPIC_INDEX_KEY, topicIndex);
+      client.setTopic(TOPICS[topicIndex]);
+      client.setTopics({ TOPICS[topicIndex] });
+      needsInitialDisplay = true;
    }
 
    if (!client.isReady())
@@ -122,7 +154,7 @@ void loop()
       table.addRow("Host", "                        ", Color::VALUE2);
       table.addRow("Rate", "###/s");
 
-      table.setValue(0, TOPIC, Color::VALUE);
+      table.setValue(0, TOPICS[topicIndex], Color::VALUE);
       table.setValue(1, client.getHost(), Color::VALUE2);
       table.setValueNone(2);
       table.draw();
