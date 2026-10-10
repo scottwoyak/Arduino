@@ -90,6 +90,7 @@ public:
       if (isnan(_value))
       {
          display->fillRect(_rect.x, _rect.y, _rect.width, _rect.height, (uint16_t)Color::RED);
+         _lastValue = NAN;
       }
       else if (_value == _lastValue)
       {

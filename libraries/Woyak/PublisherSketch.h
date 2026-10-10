@@ -78,6 +78,12 @@ private:
    /// <summary>Optional callback invoked once the Influx site has been resolved, before the telemetry topic is used.</summary>
    void (*_siteResolvedHandler)(const InfluxContext&) = nullptr;
 
+   /// <summary>Site choices offered when influxConfig.promptForContext is set.</summary>
+   static constexpr const char* SITE_OPTIONS[] = { "Bragg", "Lake" };
+
+   /// <summary>Site selected/loaded when influxConfig.promptForContext is set.</summary>
+   String _siteName;
+
    /// <summary>Location entered/loaded when influxConfig.promptForContext is set.</summary>
    String _locationName;
 
@@ -107,13 +113,15 @@ protected:
          return {};
       }
 
+      static constexpr auto SITE_KEY = "site";
       static constexpr auto LOCATION_KEY = "location";
       static constexpr uint16_t PROMPT_TIMEOUT_S = 10;
 
       _arduino->preferences.begin(_config.preferencesNamespace, true);
-      bool hasSaved = _arduino->preferences.isKey(LOCATION_KEY);
+      bool hasSaved = _arduino->preferences.isKey(SITE_KEY) && _arduino->preferences.isKey(LOCATION_KEY);
       if (hasSaved)
       {
+         _siteName = _arduino->preferences.getString(SITE_KEY);
          _locationName = _arduino->preferences.getString(LOCATION_KEY);
       }
       _arduino->preferences.end();
@@ -121,26 +129,40 @@ protected:
       bool reconfigure = !hasSaved;
       if (hasSaved && _shouldForcePrompt())
       {
-         Serial.println("Reconfigure this device's location:");
-         Serial.println("  1: Keep saved: " + _locationName);
-         Serial.println("  2: Enter new value");
+         Serial.println("Reconfigure this device's site/location:");
+         Serial.println("  1: Keep saved: " + _siteName + "/" + _locationName);
+         Serial.println("  2: Enter new values");
          reconfigure = SerialX::readSelectionWithTimeout(2, 0, PROMPT_TIMEOUT_S * 1000UL) != 0;
       }
 
       if (reconfigure)
       {
+         Serial.println("Select a site:");
+         for (size_t i = 0; i < std::size(SITE_OPTIONS); i++)
+         {
+            Serial.print("  ");
+            Serial.print(i + 1);
+            Serial.print(": ");
+            Serial.println(SITE_OPTIONS[i]);
+         }
+         String label = "Enter selection (1-" + String(std::size(SITE_OPTIONS)) + "): ";
+         long selection = SerialX::promptForInt(label, 1, (long)std::size(SITE_OPTIONS));
+         _siteName = SITE_OPTIONS[selection - 1];
+
          do
          {
             _locationName = SerialX::prompt("Enter location: ");
          } while (_locationName.length() == 0);
 
          _arduino->preferences.begin(_config.preferencesNamespace, false);
+         _arduino->preferences.putString(SITE_KEY, _siteName);
          _arduino->preferences.putString(LOCATION_KEY, _locationName);
          _arduino->preferences.end();
       }
-      _printAndLogStatus("Location... ", _locationName.c_str());
+      _printAndLogStatus("Location... ", (std::string(_siteName.c_str()) + "/" + _locationName.c_str()).c_str());
 
       InfluxContext site = _influxConfig.context;
+      site.site = _siteName.c_str();
       site.location = _locationName.c_str();
       return site;
    }

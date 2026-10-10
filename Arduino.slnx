@@ -94,6 +94,7 @@
     <File Path="libraries/Woyak/MultiStatus.h" />
     <File Path="libraries/Woyak/OTAUpdater.h" />
     <File Path="libraries/Woyak/OTAUpdaterImpl.h" />
+    <File Path="libraries/Woyak/PMS5003.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
     <File Path="libraries/Woyak/PreferencesResolver.h" />
     <File Path="libraries/Woyak/PublisherSketch.h" />
@@ -307,6 +308,14 @@
       <Deploy Solution="Debug|Any CPU" />
     </Project>
   </Folder>
+  <Project Path="Air_Monitor_Display/Air_Monitor_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
+  <Project Path="Air_Viewer/Air_Viewer.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Basic_DisplayValue/Basic_DisplayValue.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

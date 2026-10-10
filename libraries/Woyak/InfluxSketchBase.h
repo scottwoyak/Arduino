@@ -36,7 +36,7 @@ class InfluxSketchBase : public SketchBase
 {
 public:
    /// <summary>How long to wait after boot for a buttonA press before proceeding.</summary>
-   static constexpr uint16_t FORCE_PROMPT_WINDOW_MS = 2000;
+   static constexpr uint16_t FORCE_PROMPT_WINDOW_MS = 5000;
 
    /// <summary>Decimal places used when posting the standard enclosure/CPU fields to InfluxDB.</summary>
    static constexpr uint8_t INFLUX_DECIMALS = 2;

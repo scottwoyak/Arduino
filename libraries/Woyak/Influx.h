@@ -495,7 +495,11 @@ public:
    {
       for (const auto& tag : tags)
       {
-         _point.addTag(tag.first, tag.second);
+         // InfluxDB rejects tags with an empty value, so omit tags that have none
+         if (tag.second != nullptr && tag.second[0] != '\0')
+         {
+            _point.addTag(tag.first, tag.second);
+         }
       }
    }
 
@@ -634,7 +638,16 @@ public:
                continue;
          }
 
-         _point.addField(field->getName().c_str(), value, field->getDecimalPlaces());
+         // String(float, 0) pads single digit values with a leading space (e.g. "voc= 0"),
+         // which InfluxDB rejects, so whole-number fields are written as integers instead.
+         if (field->getDecimalPlaces() == 0)
+         {
+            _point.addField(field->getName().c_str(), lroundf(value));
+         }
+         else
+         {
+            _point.addField(field->getName().c_str(), value, field->getDecimalPlaces());
+         }
          validFieldCount++;
       }
 
