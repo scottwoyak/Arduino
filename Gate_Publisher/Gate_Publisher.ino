@@ -23,6 +23,7 @@
 #include "ArduinoBoard.h"
 #include "LibraryVersion.h"
 #include "MLX90393Magnetometer.h"
+#include "Timer.h"
 #include "WiFiSettings.h"
 
 #include "PublisherSketch.h"
@@ -61,6 +62,19 @@ bool leftGate = true;
 // Number of decimal places the angle is published with.
 constexpr uint8_t ANGLE_DECIMALS = 1;
 
+// ----------- Jitter suppression
+// A resting gate jitters by up to ~0.6 degrees. At rest, a steady anchor angle is published.
+// Once the angle moves PUBLISH_DEADBAND_DEG or more from the anchor, the gate is moving and
+// every reading is published. It's at rest again after SETTLE_MS without a further move
+// of that size. The Gate_Viewer needs a 2 degree rise to detect opening, so this doesn't
+// delay detection.
+constexpr float PUBLISH_DEADBAND_DEG = 1.0f;
+constexpr uint32_t SETTLE_MS = 1000;
+
+float anchorAngle = NAN;
+bool moving = false;
+Timer settleTimer(SETTLE_MS);
+
 ///
 /// <summary>
 /// Computes the gate's opening angle (0 to ~110 degrees) from the magnetometer's current
@@ -71,7 +85,7 @@ constexpr uint8_t ANGLE_DECIMALS = 1;
 /// </summary>
 /// <returns>Gate angle in degrees, never negative.</returns>
 ///
-float gateAngle()
+float rawGateAngle()
 {
    magnetometer.read();
 
@@ -97,6 +111,37 @@ float gateAngle()
    }
 
    return angle;
+}
+
+///
+/// <summary>
+/// Returns the angle to publish: a steady anchor angle while at rest (so jitter isn't
+/// published), or the live angle while the gate is moving.
+/// </summary>
+/// <returns>Gate angle in degrees.</returns>
+///
+float gateAngle()
+{
+   float angle = rawGateAngle();
+
+   if (isnan(anchorAngle))
+   {
+      anchorAngle = angle;
+   }
+
+   if (fabsf(angle - anchorAngle) >= PUBLISH_DEADBAND_DEG)
+   {
+      anchorAngle = angle;
+      moving = true;
+      settleTimer.reset();
+   }
+   else if (moving && settleTimer.ready())
+   {
+      moving = false;
+      anchorAngle = angle;
+   }
+
+   return moving ? angle : anchorAngle;
 }
 
 InfluxConfig INFLUX_CONFIG = {

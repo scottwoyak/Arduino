@@ -1342,9 +1342,6 @@ GateTelemetryHandler telemetryHandler(&sketch.arduino.status);
 // Set when a Locate request ends, so the next loop() repaints everything.
 bool redrawAfterLocate = false;
 
-constexpr uint32_t HEAP_LOG_INTERVAL_MS = 10 * 60 * 1000;
-Timer heapLogTimer(HEAP_LOG_INTERVAL_MS);
-
 void setup()
 {
    SerialX::begin();
@@ -1392,16 +1389,6 @@ void setup()
 void loop()
 {
    sketch.loop();
-
-   if (heapLogTimer.ready())
-   {
-      Logger.log(
-         "Heap: free " + std::to_string(ESP.getFreeHeap()) +
-         ", largest free block " + std::to_string(ESP.getMaxAllocHeap()) +
-         ", min free " + std::to_string(ESP.getMinFreeHeap()),
-         LogSeverity::INFO,
-         "Heap");
-   }
 
    if (sketch.isLocating())
    {
