@@ -74,49 +74,90 @@ private:
 
    ///
    /// <summary>
-   /// Prompts the user over Serial to pick an Influx bucket from BUCKET_LABELS. Blocks
-   /// until a valid selection is entered.
+   /// Prompts the user over Serial to pick a combined Influx bucket + site from a
+   /// flattened list of BUCKET_LABELS x SITE_OPTIONS pairs (one prompt instead of two
+   /// separate bucket and site prompts), formatted as "Bucket=<label>    Site=<site>"
+   /// with the Site= column aligned across rows. Blocks until a valid selection is
+   /// entered. Stores the chosen bucket into _bucketName and the chosen site into
+   /// _siteName.
    /// </summary>
-   /// <returns>The chosen bucket name.</returns>
    ///
-   const char* _promptForBucket()
+   void _promptForSiteAndBucket()
    {
-      Serial.println("Select an Influx bucket:");
-      for (size_t i = 0; i < std::size(BUCKET_LABELS); i++)
+      constexpr size_t NUM_COMBINATIONS = std::size(BUCKET_LABELS) * std::size(SITE_OPTIONS);
+
+      size_t maxBucketLabelLen = 0;
+      for (size_t b = 0; b < std::size(BUCKET_LABELS); b++)
       {
-         Serial.print("  ");
-         Serial.print(i + 1);
-         Serial.print(": ");
-         Serial.println(BUCKET_LABELS[i]);
+         maxBucketLabelLen = max(maxBucketLabelLen, strlen(BUCKET_LABELS[b]));
       }
 
-      String label = "Enter selection (1-" + String(std::size(BUCKET_LABELS)) + "): ";
-      long selection = SerialX::promptForInt(label, 1, (long)std::size(BUCKET_LABELS));
-      return BUCKET_NAMES[selection - 1];
+      Serial.println("Select a bucket/site:");
+      size_t index = 0;
+      for (size_t b = 0; b < std::size(BUCKET_LABELS); b++)
+      {
+         String bucketField = String("Bucket=") + BUCKET_LABELS[b];
+         while (bucketField.length() < strlen("Bucket=") + maxBucketLabelLen)
+         {
+            bucketField += " ";
+         }
+
+         for (size_t s = 0; s < std::size(SITE_OPTIONS); s++)
+         {
+            Serial.print("  ");
+            Serial.print(index + 1);
+            Serial.print(": ");
+            Serial.print(bucketField);
+            Serial.print("    Site=");
+            Serial.println(SITE_OPTIONS[s]);
+            index++;
+         }
+      }
+
+      String label = "Enter selection (1-" + String(NUM_COMBINATIONS) + "): ";
+      long selection = SerialX::promptForInt(label, 1, (long)NUM_COMBINATIONS) - 1;
+
+      _bucketName = BUCKET_NAMES[selection / std::size(SITE_OPTIONS)];
+      _siteName = SITE_OPTIONS[selection % std::size(SITE_OPTIONS)];
    }
 
    ///
    /// <summary>
    /// Prompts the user over Serial for a site and location, storing them into _siteName
-   /// and _locationName. If influxConfig.promptForBucket is set, the bucket is prompted
-   /// for first, storing it into _bucketName. The site is chosen from SITE_OPTIONS.
-   /// Blocks until both the site and location are entered/selected non-empty.
+   /// and _locationName. If influxConfig.promptForBucket is set, the site and bucket are
+   /// chosen together from a single combined prompt (see _promptForSiteAndBucket());
+   /// otherwise the site alone is chosen from SITE_OPTIONS. If _locationName already
+   /// holds a previously saved value (i.e. this is a reconfigure of an existing saved
+   /// config), entering a blank line (or spaces only) keeps that previous value instead
+   /// of requiring it to be retyped. Blocks until both the site and location are
+   /// entered/selected non-empty.
    /// </summary>
    ///
    void _promptForSiteLocation()
    {
       if (_influxConfig.promptForBucket)
       {
-         _bucketName = _promptForBucket();
+         _promptForSiteAndBucket();
+      }
+      else
+      {
+         Serial.println("Configure this device's site/location:");
+         _siteName = _promptForSite();
       }
 
-      Serial.println("Configure this device's site/location:");
-
-      _siteName = _promptForSite();
+      String previousLocation = _locationName;
+      String prompt = previousLocation.length() > 0
+         ? "Enter location (blank to keep \"" + previousLocation + "\"): "
+         : "Enter location: ";
 
       do
       {
-         _locationName = SerialX::prompt("Enter location: ");
+         _locationName = SerialX::prompt(prompt);
+         _locationName.trim();
+         if (_locationName.length() == 0 && previousLocation.length() > 0)
+         {
+            _locationName = previousLocation;
+         }
       } while (_locationName.length() == 0);
    }
 
@@ -242,7 +283,12 @@ protected:
       {
          _loadSavedConfig();
       }
-      _printAndLogStatus("Location... ", siteLocation().c_str());
+      std::string locationStatus = siteLocation();
+      if (_influxConfig.promptForBucket)
+      {
+         locationStatus += " (" + _bucketName + ")";
+      }
+      _printAndLogStatus("Location... ", locationStatus.c_str());
 
       return InfluxContext{ _bucketName.c_str(), _siteName.c_str(), _locationName.c_str() };
    }
