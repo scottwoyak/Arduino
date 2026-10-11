@@ -75,6 +75,22 @@ namespace SerialX
 	}
 
 	/// <summary>
+	/// Discards any bytes currently sitting in the Serial input buffer. Used before
+	/// blocking prompts start waiting for input, so stray/leftover bytes - e.g. extra
+	/// keystrokes typed after a previous prompt already timed out and moved on, or an
+	/// accidental keypress while nobody was watching the monitor - aren't silently
+	/// consumed as the answer to a later prompt, which otherwise makes that later
+	/// prompt appear to "not display"/get skipped.
+	/// </summary>
+	inline void _flushInput()
+	{
+		while (Serial.available())
+		{
+			Serial.read();
+		}
+	}
+
+	/// <summary>
 	/// Prints a label, then blocks until a line of text is entered over Serial, echoing
 	/// it back and returning it trimmed of leading/trailing whitespace. Used for simple
 	/// interactive setup-time prompts (e.g. site/location configuration).
@@ -83,6 +99,7 @@ namespace SerialX
 	/// <returns>The entered text, trimmed of leading/trailing whitespace.</returns>
 	inline String prompt(const char* label)
 	{
+		_flushInput();
 		Serial.print(label);
 
 		while (!Serial.available())
@@ -201,6 +218,8 @@ namespace SerialX
 	/// <returns>The 0-based index for the chosen (or default) entry.</returns>
 	inline size_t readSelectionWithTimeout(size_t count, size_t defaultIndex, uint32_t timeoutMs)
 	{
+		_flushInput();
+
 		Serial.print("Enter selection (1-");
 		Serial.print(count);
 		Serial.print("), defaults to ");

@@ -16,6 +16,7 @@
 #include "Logger.h"
 #include "OTAUpdater.h"
 #include "Status.h"
+#include "TelemetryClient.h"
 #include "Util.h"
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
@@ -725,6 +726,7 @@ public:
       ASSERT(_instance == nullptr);
 
       _instance = this;
+      TelemetryClient::setSketchInfo(_config.sketchName, _config.version);
       DeviceServerClient::onLocate([]() { _instance->_startLocate(); });
    }
 

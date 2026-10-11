@@ -48,6 +48,9 @@ struct InfluxConfig
    /// <summary>Monitor only: if true, prompts over Serial (or loads the saved values from Preferences) for a site (chosen from Monitor's shared SITE_OPTIONS list) and a free-text location, instead of using context.</summary>
    bool promptForContext = false;
 
+   /// <summary>Monitor only, requires promptForContext: if true, also prompts over Serial (or loads the saved value from Preferences) for which InfluxDB bucket (e.g. 30 day vs. 7 day retention) to upload to, instead of always using INFLUXDB_BUCKET.</summary>
+   bool promptForBucket = false;
+
    /// <summary>If true, capture and upload rolling-averaged enclosure temperature/humidity to InfluxDB.</summary>
    bool includeEnclosureTemp = false;
 

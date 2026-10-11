@@ -38,7 +38,7 @@ private:
    InfluxField* _dewPointField = nullptr;
    InfluxField* _absoluteHumidityField = nullptr;
 
-   /// <summary>The single instance, used by the static bridge functions _onHealth()/_initSensor()/_sensorTypeLabel() to reach the instance (addSensor()/DeviceHealth::extraFields only accept captureless function pointers).</summary>
+   /// <summary>The single instance, used by the static bridge functions _initSensor()/_sensorTypeLabel() to reach the instance (addSensor() only accepts captureless function pointers).</summary>
    inline static TempMonitorSketch* _tempInstance = nullptr;
 
    ///
@@ -65,37 +65,7 @@ private:
       return _tempInstance->_sensor.type();
    }
 
-   ///
-   /// <summary>
-   /// Adds the current sensor field values to the health JSON. Registered with
-   /// DeviceHealth::extraFields from begin() since it only accepts a captureless function
-   /// pointer.
-   /// </summary>
-   /// <param name="doc">The health document to add fields to.</param>
-   ///
-   static void _onHealth(JsonDocument* doc)
-   {
-      _tempInstance->_addToHealth(doc);
-   }
-
-   ///
-   /// <summary>
-   /// Adds this instance's current field values to the health JSON.
-   /// </summary>
-   /// <param name="doc">The health document to add fields to.</param>
-   ///
-   void _addToHealth(JsonDocument* doc)
-   {
-      (*doc)["temperature"] = temp();
-      if (_sensor.supportsHumidity())
-      {
-         (*doc)["humidity"] = humidity();
-         (*doc)["dewPoint"] = dewPoint();
-         (*doc)["absoluteHumidity"] = absoluteHumidity();
-      }
-   }
-
-public:
+   public:
    ///
    /// <summary>
    /// Creates a TempMonitorSketch bound to the given board. Register any extra loop
@@ -111,7 +81,7 @@ public:
    TempMonitorSketch(const char* sketchName, const char* version, const char* preferencesNamespace)
       : MonitorSketch(
                     SketchConfig{ .sketchName = sketchName, .version = version, .preferencesNamespace = preferencesNamespace, .cpuFrequencyMhz = 80, .enableOTA = true },
-                    InfluxConfig{ .promptForContext = true, .includeCpuTemp = true })
+                    InfluxConfig{ .promptForContext = true, .promptForBucket = true, .includeCpuTemp = true })
            {
       ASSERT(_tempInstance == nullptr);
 
@@ -135,7 +105,6 @@ public:
       addSensor("Sensor", _initSensor, _sensorTypeLabel);
 
       MonitorSketch::begin();
-      DeviceHealth::extraFields = _onHealth;
 
       InfluxPoint* point = addPoint({ { "item", "Sensor" } });
       _tempField = point->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_TEMP_DECIMAL_PLACES);

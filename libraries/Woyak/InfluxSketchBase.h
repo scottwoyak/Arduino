@@ -141,7 +141,7 @@ protected:
       std::vector<std::pair<const char*, const char*>> allTags = { { "site", _site.site }, { "location", _site.location }, { "sketch", _config.sketchName } };
       allTags.insert(allTags.end(), tags.begin(), tags.end());
 
-      return new InfluxPoint(measurement, allTags);
+      return new InfluxPoint(measurement, allTags, tags.size());
    }
 
    ///
@@ -303,6 +303,68 @@ protected:
       return false;
    }
 
+   /// <summary>The single instance, used by the static _onHealth() bridge to reach the instance (DeviceHealth::extraFields only accepts a captureless function pointer).</summary>
+   inline static InfluxSketchBase* _influxSketchInstance = nullptr;
+
+   ///
+   /// <summary>
+   /// Adds the given points' measurement/extra tags/current field values to the "influxPoints" array in the health JSON.
+   /// </summary>
+   /// <param name="points">Points to describe.</param>
+   /// <param name="array">JSON array to append each point's description to.</param>
+   ///
+   static void _addPointsToHealth(const std::vector<InfluxPoint*>& points, JsonArray array)
+   {
+      for (InfluxPoint* point : points)
+      {
+         JsonObject pointObj = array.add<JsonObject>();
+         pointObj["measurement"] = point->getMeasurement();
+
+         JsonObject tagsObj = pointObj["tags"].to<JsonObject>();
+         for (const auto& tag : point->getExtraTags())
+         {
+            tagsObj[tag.first] = tag.second;
+         }
+
+         JsonObject fieldsObj = pointObj["fields"].to<JsonObject>();
+         for (InfluxField* field : point->getFields())
+         {
+            if (field->isEnabled() && field->hasData())
+            {
+               fieldsObj[field->getName()] = field->get();
+            }
+         }
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Adds the generic "influxPoints" array to the health JSON, describing every
+   /// registered Influx point (both custom points added via addPoint() and the standard
+   /// CPU/WiFi/WiFi_Min/Enclosure points).
+   /// </summary>
+   /// <param name="doc">The health document to add the array to.</param>
+   ///
+   void _addToHealth(JsonDocument* doc)
+   {
+      JsonArray array = (*doc)["influxPoints"].to<JsonArray>();
+      _addPointsToHealth(_points, array);
+      _addPointsToHealth(_standardPoints, array);
+   }
+
+   ///
+   /// <summary>
+   /// Adds the generic "influxPoints" array to the health JSON. Registered with
+   /// DeviceHealth::extraFields from begin() since it only accepts a captureless function
+   /// pointer.
+   /// </summary>
+   /// <param name="doc">The health document to add the array to.</param>
+   ///
+   static void _onHealth(JsonDocument* doc)
+   {
+      _influxSketchInstance->_addToHealth(doc);
+   }
+
 public:
    ///
    /// <summary>
@@ -318,7 +380,11 @@ public:
       _siteResolver(config.preferencesNamespace, SITE_KEYS),
       _sensorTimer(STANDARD_SAMPLE_INTERVAL_S),
       _standardUploadTimer(STANDARD_UPLOAD_INTERVAL_S)
-   {}
+   {
+      ASSERT(_influxSketchInstance == nullptr);
+
+      _influxSketchInstance = this;
+   }
 
    ///
    /// <summary>
@@ -542,6 +608,8 @@ public:
       _afterOTASetup();
 
       _finishLoggerSetup();
+
+      DeviceHealth::extraFields = _onHealth;
    }
 
    ///

@@ -36,12 +36,18 @@ class MonitorSketch : public InfluxSketchBase
 private:
    static constexpr auto SITE_KEY = "site";
    static constexpr auto LOCATION_KEY = "location";
+   static constexpr auto BUCKET_KEY = "bucket";
 
    /// <summary>Site choices offered to every Monitor sketch that opts into site/location prompting (see influxConfig.promptForContext).</summary>
    static constexpr const char* SITE_OPTIONS[] = { "Bragg", "Lake" };
 
+   /// <summary>Bucket choices (display label -> Influx bucket name) offered when influxConfig.promptForBucket is set.</summary>
+   static constexpr const char* BUCKET_LABELS[] = { "30 Day", "7 Day" };
+   static constexpr const char* BUCKET_NAMES[] = { INFLUXDB_BUCKET, INFLUXDB_BUCKET_7_DAY };
+
    String _siteName;
    String _locationName;
+   std::string _bucketName = INFLUXDB_BUCKET;
 
    ///
    /// <summary>
@@ -68,13 +74,42 @@ private:
 
    ///
    /// <summary>
+   /// Prompts the user over Serial to pick an Influx bucket from BUCKET_LABELS. Blocks
+   /// until a valid selection is entered.
+   /// </summary>
+   /// <returns>The chosen bucket name.</returns>
+   ///
+   const char* _promptForBucket()
+   {
+      Serial.println("Select an Influx bucket:");
+      for (size_t i = 0; i < std::size(BUCKET_LABELS); i++)
+      {
+         Serial.print("  ");
+         Serial.print(i + 1);
+         Serial.print(": ");
+         Serial.println(BUCKET_LABELS[i]);
+      }
+
+      String label = "Enter selection (1-" + String(std::size(BUCKET_LABELS)) + "): ";
+      long selection = SerialX::promptForInt(label, 1, (long)std::size(BUCKET_LABELS));
+      return BUCKET_NAMES[selection - 1];
+   }
+
+   ///
+   /// <summary>
    /// Prompts the user over Serial for a site and location, storing them into _siteName
-   /// and _locationName. The site is chosen from SITE_OPTIONS. Blocks until both are
-   /// entered/selected non-empty.
+   /// and _locationName. If influxConfig.promptForBucket is set, the bucket is prompted
+   /// for first, storing it into _bucketName. The site is chosen from SITE_OPTIONS.
+   /// Blocks until both the site and location are entered/selected non-empty.
    /// </summary>
    ///
    void _promptForSiteLocation()
    {
+      if (_influxConfig.promptForBucket)
+      {
+         _bucketName = _promptForBucket();
+      }
+
       Serial.println("Configure this device's site/location:");
 
       _siteName = _promptForSite();
@@ -98,8 +133,14 @@ private:
    {
       static constexpr uint16_t PROMPT_TIMEOUT_S = 10;
 
+      String savedLabel = "Keep saved: " + _siteName + "/" + _locationName;
+      if (_influxConfig.promptForBucket)
+      {
+         savedLabel += String(" (") + _bucketName.c_str() + ")";
+      }
+
       String options[] = {
-         "Keep saved: " + _siteName + "/" + _locationName,
+         savedLabel,
          "Enter new values",
       };
 
@@ -129,6 +170,10 @@ private:
       _arduino->preferences.begin(_config.preferencesNamespace, false);
       _arduino->preferences.putString(SITE_KEY, _siteName);
       _arduino->preferences.putString(LOCATION_KEY, _locationName);
+      if (_influxConfig.promptForBucket)
+      {
+         _arduino->preferences.putString(BUCKET_KEY, _bucketName.c_str());
+      }
       _arduino->preferences.end();
    }
 
@@ -158,6 +203,10 @@ private:
       _arduino->preferences.begin(_config.preferencesNamespace, true);
       _siteName = _arduino->preferences.getString(SITE_KEY);
       _locationName = _arduino->preferences.getString(LOCATION_KEY);
+      if (_influxConfig.promptForBucket)
+      {
+         _bucketName = _arduino->preferences.getString(BUCKET_KEY, INFLUXDB_BUCKET).c_str();
+      }
       _arduino->preferences.end();
    }
 
@@ -195,7 +244,7 @@ protected:
       }
       _printAndLogStatus("Location... ", siteLocation().c_str());
 
-      return InfluxContext{ INFLUXDB_BUCKET, _siteName.c_str(), _locationName.c_str() };
+      return InfluxContext{ _bucketName.c_str(), _siteName.c_str(), _locationName.c_str() };
    }
 
    ///

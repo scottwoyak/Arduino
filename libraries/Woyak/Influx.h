@@ -474,6 +474,12 @@ private:
    /// <summary>Owned collection of fields contributing values to each post.</summary>
    std::vector<InfluxField*> _fields;
 
+   /// <summary>Influx measurement name, kept for generic health reporting.</summary>
+   std::string _measurement;
+
+   /// <summary>Extra tags (e.g. "item"), excluding the common site/location/sketch tags, kept for generic health reporting.</summary>
+   std::vector<std::pair<std::string, std::string>> _extraTags;
+
    InfluxPoint(const InfluxPoint&) = delete;
    InfluxPoint& operator=(const InfluxPoint&) = delete;
 
@@ -482,7 +488,7 @@ public:
    /// Creates an InfluxPoint for the given measurement name.
    /// </summary>
    /// <param name="measurement">Influx measurement name</param>
-   InfluxPoint(const char* measurement) : _point(measurement)
+   InfluxPoint(const char* measurement) : _point(measurement), _measurement(measurement)
    {
    }
 
@@ -491,14 +497,23 @@ public:
    /// </summary>
    /// <param name="measurement">Influx measurement name</param>
    /// <param name="tags">Key/value pairs to attach as Influx tags</param>
-   InfluxPoint(const char* measurement, const std::vector<std::pair<const char*, const char*>>& tags) : _point(measurement)
+   /// <param name="extraTagCount">Number of trailing entries in "tags" that are extra (sketch-specific) tags, kept for generic health reporting; leading entries are treated as common tags (e.g. site/location/sketch) and are not recorded</param>
+   InfluxPoint(const char* measurement, const std::vector<std::pair<const char*, const char*>>& tags, size_t extraTagCount = 0) : _point(measurement), _measurement(measurement)
    {
-      for (const auto& tag : tags)
+      size_t commonTagCount = tags.size() - extraTagCount;
+      for (size_t i = 0; i < tags.size(); i++)
       {
+         const auto& tag = tags[i];
+
          // InfluxDB rejects tags with an empty value, so omit tags that have none
          if (tag.second != nullptr && tag.second[0] != '\0')
          {
             _point.addTag(tag.first, tag.second);
+
+            if (i >= commonTagCount)
+            {
+               _extraTags.emplace_back(tag.first, tag.second);
+            }
          }
       }
    }
@@ -519,6 +534,34 @@ public:
    void addTag(const String& name, const String& value)
    {
       _point.addTag(name, value);
+      _extraTags.emplace_back(name.c_str(), value.c_str());
+   }
+
+   /// <summary>
+   /// Returns the Influx measurement name for this point.
+   /// </summary>
+   /// <returns>Measurement name</returns>
+   const std::string& getMeasurement() const
+   {
+      return _measurement;
+   }
+
+   /// <summary>
+   /// Returns the point's extra tags (e.g. "item"), excluding the common site/location/sketch tags.
+   /// </summary>
+   /// <returns>Extra tag name/value pairs</returns>
+   const std::vector<std::pair<std::string, std::string>>& getExtraTags() const
+   {
+      return _extraTags;
+   }
+
+   /// <summary>
+   /// Returns the fields registered on this point.
+   /// </summary>
+   /// <returns>Field collection</returns>
+   const std::vector<InfluxField*>& getFields() const
+   {
+      return _fields;
    }
 
    /// <summary>

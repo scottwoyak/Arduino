@@ -316,7 +316,7 @@ public:
 /// <remarks>
 /// A client is either a publisher (DEVICE role) or a subscriber (CLIENT role).
 /// Protocol (JSON text frames):
-///   Handshake, sent on connect: {"role":"device","token":"..."} or {"role":"client","token":"...","topics":["A","B"]}
+///   Handshake, sent on connect: {"role":"device","mac":"AA:BB:CC:DD:EE:FF","description":"...","token":"..."} or {"role":"client","mac":"AA:BB:CC:DD:EE:FF","description":"...","token":"...","topics":["A","B"]}
 ///   Server reply:               {"type":"ack",...}
 ///   Publish (device to server): {"topic":"Test","value":1.23,"dt":100}
 ///   Sample (server to client):  {"topic":"Test","value":1.23,"dt":100}
@@ -366,10 +366,17 @@ private:
    static constexpr uint32_t HEARTBEAT_TIMEOUT_MS = 3000;
    static constexpr uint8_t HEARTBEAT_FAILURES = 2;
 
+   // Sketch name/version, combined into _description by setSketchInfo() (called by
+   // SketchBase's constructor) and sent in every handshake so the server can identify
+   // which firmware is connecting.
+   static inline std::string _description;
+
    void _sendHandshake()
    {
       JsonDocument doc;
       doc["role"] = (_role == Role::DEVICE) ? "device" : "client";
+      doc["mac"] = std::string(WiFi.macAddress().c_str());
+      doc["description"] = _description;
       if (!_token.empty())
       {
          doc["token"] = _token;
@@ -526,6 +533,20 @@ protected:
    }
 
 public:
+   ///
+   /// <summary>
+   /// Sets the sketch name/version sent (combined into a single description string) in
+   /// every handshake. Call once at startup (SketchBase's constructor does this
+   /// automatically) before any TelemetryClient connects.
+   /// </summary>
+   /// <param name="sketchName">Sketch name, as passed to SketchConfig.</param>
+   /// <param name="version">Sketch version, as passed to SketchConfig.</param>
+   ///
+   static void setSketchInfo(const char* sketchName, const char* version)
+   {
+      _description = std::string(sketchName != nullptr ? sketchName : "") + " " + (version != nullptr ? version : "");
+   }
+
    ///
    /// <summary>
    /// Initializes a new instance of the TelemetryClient class.

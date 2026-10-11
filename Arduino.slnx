@@ -310,11 +310,15 @@
   </Folder>
   <Project Path="Air_Monitor_Display/Air_Monitor_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="Air_Viewer/Air_Viewer.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="Basic_DisplayValue/Basic_DisplayValue.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
@@ -569,7 +573,9 @@
   </Project>
   <Project Path="Muti_Temp_Playground/Muti_Temp_Playground.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
+    <Deploy Solution="*|ARM" />
+    <Deploy Solution="*|ARM64" />
+    <Deploy Solution="Debug|Any CPU" />
   </Project>
   <Project Path="OTA_Display/OTA_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
