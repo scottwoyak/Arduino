@@ -35,7 +35,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{c5bc2f07-d8ae-4dcf-aede-3dddf1846b20}</ProjectGuid>
+    <ProjectGuid>{00000000-0000-0000-0000-000000000072}</ProjectGuid>
     <Keyword>Linux</Keyword>
     <RootNamespace>Potentiometer</RootNamespace>
     <ProjectName>Potentiometer</ProjectName>
