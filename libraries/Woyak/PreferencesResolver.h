@@ -102,6 +102,8 @@ private:
          {
             return true;
          }
+
+         delay(10);
       }
       return false;
    }

@@ -216,6 +216,84 @@ private:
       return _tempCorrectionA + _tempCorrectionB * rawTempF + _tempCorrectionC * rawTempF * rawTempF;
    }
 
+   ///
+   /// <summary>
+   /// Verifies that the just-initialized _sensor actually produces a usable reading,
+   /// catching sensors that detect/begin() successfully but then fail every subsequent
+   /// read (e.g. a flaky I2C connection) rather than silently reporting NaN forever.
+   /// </summary>
+   /// <param name="print">True to print verification failure details to Serial.</param>
+   /// <returns>True if temperature (and humidity, when supported) read back as finite values.</returns>
+   ///
+   bool _verifyReadable(bool print)
+   {
+      float tempF = _sensor->readTemperatureF();
+      bool tempOk = isfinite(tempF);
+
+      bool humOk = true;
+      float hum = NAN;
+      if (_sensor->supportsHumidity())
+      {
+         hum = _sensor->readHumidity();
+         humOk = isfinite(hum);
+      }
+
+      if (!tempOk || !humOk)
+      {
+         if (print)
+         {
+            Serial.print("  Sensor detected but failed verification read (tempF=");
+            Serial.print(tempF);
+            if (_sensor->supportsHumidity())
+            {
+               Serial.print(", humidity=");
+               Serial.print(hum);
+            }
+            Serial.println(")");
+         }
+         return false;
+      }
+
+      return true;
+   }
+
+   ///
+   /// <summary>
+   /// Calls _sensor->begin(), verifies it can actually be read (see _verifyReadable()),
+   /// and applies any matching temperature correction. Shared by every begin() overload
+   /// once _sensor has been assigned.
+   /// </summary>
+   /// <param name="print">True to print verification/correction details to Serial.</param>
+   /// <returns>True when initialization succeeds and the sensor can be read; otherwise false.</returns>
+   ///
+   bool _completeBegin(bool print)
+   {
+      bool status = _sensor->begin();
+
+      if (status)
+      {
+         status = _verifyReadable(print);
+      }
+
+      if (status)
+      {
+         std::string id = _sensor->id();
+         for (int i = 0; i < NUM_CORRECTIONS; i++)
+         {
+            if (id == CORRECTIONS[i].id)
+            {
+               _tempCorrectionA = CORRECTIONS[i].tempA;
+               _tempCorrectionB = CORRECTIONS[i].tempB;
+               _tempCorrectionC = CORRECTIONS[i].tempC;
+               _hasTempCorrection = true;
+               break;
+            }
+         }
+      }
+
+      return status;
+   }
+
 public:
 
    ~TempSensor()
@@ -259,25 +337,7 @@ public:
       delete _sensor;
       _sensor = _create(print, allowEsp32Fallback);
 
-      bool status = _sensor->begin();
-
-      if (status)
-      {
-         std::string id = _sensor->id();
-         for (int i = 0; i < NUM_CORRECTIONS; i++)
-         {
-            if (id == CORRECTIONS[i].id)
-            {
-               _tempCorrectionA = CORRECTIONS[i].tempA;
-               _tempCorrectionB = CORRECTIONS[i].tempB;
-               _tempCorrectionC = CORRECTIONS[i].tempC;
-               _hasTempCorrection = true;
-               break;
-            }
-         }
-      }
-
-      return status;
+      return _completeBegin(print);
    }
 
    ///
@@ -296,7 +356,7 @@ public:
       if (print) Serial.println("Creating DS18B20 sensor");
       delete _sensor;
       _sensor = new DS18B20TempSensor(oneWirePin);
-      return _sensor->begin();
+      return _completeBegin(print);
    }
 
    ///
@@ -315,7 +375,7 @@ public:
       if (print) Serial.println("Using provided sensor");
       delete _sensor;
       _sensor = sensor;
-      return _sensor->begin();
+      return _completeBegin(print);
    }
 
    ///

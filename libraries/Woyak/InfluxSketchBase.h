@@ -339,14 +339,16 @@ protected:
 
    ///
    /// <summary>
-   /// Adds the generic "influxPoints" array to the health JSON, describing every
-   /// registered Influx point (both custom points added via addPoint() and the standard
-   /// CPU/WiFi/WiFi_Min/Enclosure points).
+   /// Adds the resolved "influxBucket" string and the generic "influxPoints" array to
+   /// the health JSON, describing every registered Influx point (both custom points
+   /// added via addPoint() and the standard CPU/WiFi/WiFi_Min/Enclosure points).
    /// </summary>
    /// <param name="doc">The health document to add the array to.</param>
    ///
    void _addToHealth(JsonDocument* doc)
    {
+      (*doc)["influxBucket"] = _site.bucket;
+
       JsonArray array = (*doc)["influxPoints"].to<JsonArray>();
       _addPointsToHealth(_points, array);
       _addPointsToHealth(_standardPoints, array);

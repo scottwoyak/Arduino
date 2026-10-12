@@ -70,7 +70,9 @@ private:
    void _drawRow(size_t index)
    {
       const Line& line = _lines[index];
-      size_t padding = _maxChars() - line.label.length() - line.value.length();
+      size_t maxChars = _maxChars();
+      size_t textLength = line.label.length() + line.value.length();
+      size_t padding = textLength < maxChars ? maxChars - textLength : 0;
 
       _display->setTextSize(_textSize);
       _display->setCursor(0, _top + (int16_t)index * _display->charH(_textSize));
@@ -153,6 +155,11 @@ public:
       if (line.label.length() > maxLabelChars)
       {
          line.label.resize(maxLabelChars);
+      }
+
+      if (line.value.length() > _maxChars())
+      {
+         line.value.resize(_maxChars());
       }
 
       _drawRow(_lines.size() - 1);

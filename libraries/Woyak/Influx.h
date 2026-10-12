@@ -480,6 +480,12 @@ private:
    /// <summary>Extra tags (e.g. "item"), excluding the common site/location/sketch tags, kept for generic health reporting.</summary>
    std::vector<std::pair<std::string, std::string>> _extraTags;
 
+   /// <summary>Number of consecutive post() calls skipped solely because every field was still warming up (no samples yet).</summary>
+   uint16_t _consecutiveWarmingUpSkips = 0;
+
+   /// <summary>Number of consecutive warming-up skips tolerated as normal startup behavior before escalating to an error log, flagging a sensor that never recovers rather than one that's merely still warming up.</summary>
+   static constexpr uint16_t MAX_WARMING_UP_SKIPS = 3;
+
    InfluxPoint(const InfluxPoint&) = delete;
    InfluxPoint& operator=(const InfluxPoint&) = delete;
 
@@ -701,9 +707,20 @@ public:
          // post quietly rather than logging it as an error.
          if (invalidCount == 0 && warmingUpCount > 0)
          {
-            Logger.log(std::string("InfluxDB post skipped: fields still warming up (") +
-               _point.toLineProtocol().c_str() + " [" + warmingUpFields + "], " +
-               std::to_string(warmingUpCount) + " pending)");
+            _consecutiveWarmingUpSkips++;
+            if (_consecutiveWarmingUpSkips <= MAX_WARMING_UP_SKIPS)
+            {
+               Logger.log(std::string("InfluxDB post skipped: fields still warming up (") +
+                  _point.toLineProtocol().c_str() + " [" + warmingUpFields + "], " +
+                  std::to_string(warmingUpCount) + " pending)");
+            }
+            else
+            {
+               Logger.log(std::string("InfluxDB post still skipped after ") + std::to_string(_consecutiveWarmingUpSkips) +
+                  " consecutive uploads: fields never received a valid sample (" +
+                  _point.toLineProtocol().c_str() + " [" + warmingUpFields + "], " +
+                  std::to_string(warmingUpCount) + " pending) - check the sensor is actually being read", LogSeverity::ERROR);
+            }
             return false;
          }
 
@@ -720,6 +737,8 @@ public:
       {
          Serial.println(_point.toLineProtocol());
       }
+
+      _consecutiveWarmingUpSkips = 0;
 
       if (client->writePoint(_point))
       {
