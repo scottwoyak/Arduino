@@ -17,8 +17,8 @@ internal sealed class MainForm : Form
 
     private readonly ListView _list = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = true, HideSelection = false };
     private readonly Button _refreshButton = new() { Text = "Refresh", AutoSize = true };
-    private readonly Button _uploadSelectedButton = new() { Text = "Publish Selected", AutoSize = true, Enabled = false };
-    private readonly Button _uploadAllButton = new() { Text = "Publish", AutoSize = true, Enabled = false };
+    private readonly Button _uploadSelectedButton = new() { Text = "Publish", AutoSize = true, Enabled = false };
+    private readonly Button _uploadAllButton = new() { Text = "Publish All", AutoSize = true, Enabled = false };
     private readonly CheckBox _autoUploadCheckBox = new() { Text = "Auto-upload", AutoSize = true, Padding = new Padding(8, 6, 0, 0) };
     private const int LogVisibleLines = 4;
 
@@ -41,7 +41,7 @@ internal sealed class MainForm : Form
         _scanner = new FirmwareScanner(repoRoot);
         _readyFont = new Font(_list.Font, FontStyle.Bold);
 
-        Text = "Little Bear Publisher";
+        Text = $"Little Bear Publisher - build {GetBuildStamp()}";
         Icon = _appIcon;
         _tray.Icon = _appIcon;
         Width = 900;
@@ -52,10 +52,11 @@ internal sealed class MainForm : Form
         _list.Columns.Add("Board", 230);
         _list.Columns.Add("Version", 90);
         _list.Columns.Add("Built", 140);
-        _list.Columns.Add("Server", 300);
+        _list.Columns.Add("Server Version", 110);
+        _list.Columns.Add("Server Built", 140);
         RestoreWindowBounds();
 
-        _log.Height = TextRenderer.MeasureText("Ag", _log.Font).Height * LogVisibleLines + _log.Margin.Vertical + 6;
+        _log.Height = GetTextBoxHeightForLines(_log, LogVisibleLines);
         _log.MinimumSize = new Size(0, _log.Height);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(4), WrapContents = false };
@@ -83,10 +84,14 @@ internal sealed class MainForm : Form
         ToolStripMenuItem uploadAnyway = new("Publish");
         uploadAnyway.Click += async (_, _) => await UploadAsync(SelectedUploadableItems());
         listMenu.Items.Add(uploadAnyway);
+        ToolStripMenuItem deleteSelected = new("Delete");
+        deleteSelected.Click += async (_, _) => await DeleteAsync(SelectedPublishedItems());
+        listMenu.Items.Add(deleteSelected);
         listMenu.Opening += (_, e) =>
         {
             uploadAnyway.Enabled = !_busy;
-            e.Cancel = SelectedUploadableItems().Count == 0;
+            deleteSelected.Enabled = !_busy;
+            e.Cancel = SelectedUploadableItems().Count == 0 && SelectedPublishedItems().Count == 0;
         };
         _list.ContextMenuStrip = listMenu;
 
@@ -230,6 +235,33 @@ internal sealed class MainForm : Form
         return new Icon(stream);
     }
 
+    /// <summary>
+    /// Computes the height a multiline TextBox needs to show exactly <paramref name="lines"/> lines,
+    /// matching the given box's font and border style (borders/internal padding vary by style).
+    /// </summary>
+    private static int GetTextBoxHeightForLines(TextBox textBox, int lines)
+    {
+        using TextBox measure = new()
+        {
+            Multiline = true,
+            Font = textBox.Font,
+            BorderStyle = textBox.BorderStyle,
+            Lines = Enumerable.Repeat("", lines).ToArray(),
+        };
+
+        return measure.GetPreferredSize(new Size(textBox.Width, 0)).Height;
+    }
+
+    /// <summary>
+    /// Returns the running executable's last-write time, used as a visible identifier
+    /// in the titlebar so it's obvious whether a freshly built binary is actually running.
+    /// </summary>
+    private static string GetBuildStamp()
+    {
+        string exePath = Environment.ProcessPath ?? Application.ExecutablePath;
+        return File.GetLastWriteTime(exePath).ToString("yyyy-MM-dd HH:mm:ss");
+    }
+
     private void ShowWindow()
     {
         Show();
@@ -308,7 +340,7 @@ internal sealed class MainForm : Form
 
     private void UpdateSortHeaders()
     {
-        string[] titles = ["Sketch", "Board", "Version", "Built", "Server"];
+        string[] titles = ["Sketch", "Board", "Version", "Built", "Server Version", "Server Built"];
         for (int i = 0; i < _list.Columns.Count; i++)
         {
             _list.Columns[i].Text = i == _sortColumn ? $"{titles[i]} {(_sortAscending ? "\u25B2" : "\u25BC")}" : titles[i];
@@ -327,7 +359,8 @@ internal sealed class MainForm : Form
             1 => (a, b) => string.Compare(a.Board, b.Board, StringComparison.OrdinalIgnoreCase),
             2 => (a, b) => CompareVersions(a.Version, b.Version),
             3 => (a, b) => a.Built.CompareTo(b.Built),
-            4 => (a, b) => string.Compare(a.ServerInfo, b.ServerInfo, StringComparison.OrdinalIgnoreCase),
+            4 => (a, b) => string.Compare(a.ServerVersion, b.ServerVersion, StringComparison.OrdinalIgnoreCase),
+            5 => (a, b) => string.Compare(a.ServerBuildTime, b.ServerBuildTime, StringComparison.OrdinalIgnoreCase),
             _ => (a, b) => string.Compare(a.Sketch, b.Sketch, StringComparison.OrdinalIgnoreCase),
         };
 
@@ -354,7 +387,8 @@ internal sealed class MainForm : Form
             row.SubItems.Add(item.Board);
             row.SubItems.Add(item.Version);
             row.SubItems.Add(item.Status == FirmwareStatus.Skipped ? "" : DateText.Format(item.Built));
-            row.SubItems.Add(item.ServerInfo);
+            row.SubItems.Add(item.ServerVersion ?? "");
+            row.SubItems.Add(item.ServerBuildTime ?? "");
             if (item.Status == FirmwareStatus.Ready)
             {
                 row.ForeColor = Color.DarkGreen;
@@ -410,6 +444,15 @@ internal sealed class MainForm : Form
             .ToList();
     }
 
+    private List<FirmwareItem> SelectedPublishedItems()
+    {
+        return _list.SelectedItems
+            .Cast<ListViewItem>()
+            .Select(r => (FirmwareItem)r.Tag!)
+            .Where(i => i.ServerVersion is not null)
+            .ToList();
+    }
+
     private void UpdateButtons()
     {
         _refreshButton.Enabled = !_busy;
@@ -433,6 +476,41 @@ internal sealed class MainForm : Form
                 Log($"Uploading {item.Firmware} {item.Version}...");
                 var (ok, detail) = await _hub.UploadAsync(item, null);
                 Log(ok ? $"OK     {item.Firmware} {item.Version}" : $"FAILED {item.Firmware}: {detail}");
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+
+        await RefreshAsync();
+    }
+
+    private async Task DeleteAsync(List<FirmwareItem> items)
+    {
+        if (_busy || items.Count == 0)
+        {
+            return;
+        }
+
+        string message = items.Count == 1
+            ? $"Delete {items[0].Firmware} {items[0].ServerVersion} from the server?"
+            : $"Delete {items.Count} published firmware versions from the server?";
+        if (MessageBox.Show(this, message, "Delete Firmware", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+        {
+            return;
+        }
+
+        _busy = true;
+        UpdateButtons();
+        try
+        {
+            foreach (var item in items)
+            {
+                string version = item.ServerVersion!;
+                Log($"Deleting {item.Firmware} {version}...");
+                var (ok, detail) = await _hub.DeleteAsync(item.Firmware, version);
+                Log(ok ? $"OK     deleted {item.Firmware} {version}" : $"FAILED {item.Firmware}: {detail}");
             }
         }
         finally

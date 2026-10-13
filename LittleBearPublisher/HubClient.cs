@@ -23,33 +23,26 @@ internal sealed class HubClient
 
     /// <summary>
     /// True when the server already has this version, and (if known) the same build time.
+    /// Relies on the server's latest-version metadata already recorded on <paramref name="item"/>
+    /// (via <see cref="GetLatestAsync"/>) rather than probing the download endpoint, since that
+    /// endpoint does not reliably validate the requested version segment.
     /// </summary>
-    public async Task<bool> IsAlreadyPublishedAsync(FirmwareItem item)
+    public Task<bool> IsAlreadyPublishedAsync(FirmwareItem item)
     {
-        string name = Uri.EscapeDataString(item.Firmware);
-        try
+        if (item.ServerVersion == null)
         {
-            string downloadUrl = $"{Server}/api/firmware/{name}/{Uri.EscapeDataString(item.Version)}/download";
-            using (var response = await _http.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead))
-            {
-                if (response.StatusCode != System.Net.HttpStatusCode.OK)
-                {
-                    return false;
-                }
-            }
-
-            if (item.BuildTime == null)
-            {
-                return true;
-            }
-
-            var (version, buildTime) = await GetLatestAsync(item.Firmware);
-            return version == null || !(version == item.Version && buildTime != item.BuildTime);
+            // Server has no version info for this firmware; assume the known local
+            // version is newer rather than treating it as already published.
+            return Task.FromResult(false);
         }
-        catch
+
+        if (item.ServerVersion != item.Version)
         {
-            return false;
+            return Task.FromResult(false);
         }
+
+        bool alreadyPublished = item.BuildTime == null || item.ServerBuildTime == item.BuildTime;
+        return Task.FromResult(alreadyPublished);
     }
 
     /// <summary>
@@ -98,6 +91,27 @@ internal sealed class HubClient
             form.Add(binary, "binary", Path.GetFileName(item.BinPath));
 
             using var response = await _http.PostAsync($"{Server}/api/firmware/{Uri.EscapeDataString(item.Firmware)}", form);
+            string body = await response.Content.ReadAsStringAsync();
+            return (response.IsSuccessStatusCode, response.IsSuccessStatusCode ? body : $"{(int)response.StatusCode}: {body}");
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Deletes one published firmware version from the server.
+    /// </summary>
+    /// <param name="firmware">The firmware name, e.g. "Sketch.Board".</param>
+    /// <param name="version">The version to delete.</param>
+    /// <returns>Success flag and the server response or error text.</returns>
+    public async Task<(bool Ok, string Detail)> DeleteAsync(string firmware, string version)
+    {
+        try
+        {
+            string url = $"{Server}/api/firmware/{Uri.EscapeDataString(firmware)}/{Uri.EscapeDataString(version)}";
+            using var response = await _http.DeleteAsync(url);
             string body = await response.Content.ReadAsStringAsync();
             return (response.IsSuccessStatusCode, response.IsSuccessStatusCode ? body : $"{(int)response.StatusCode}: {body}");
         }

@@ -20,10 +20,11 @@ internal sealed class FirmwareScanner
         "ESP32S3_DEV_PLAYGROUND",
     ];
 
-    private static readonly Regex LibraryVersionRegex = new("LIBRARY_VERSION\\s*=\\s*\"([^\"]+)\"");
+    private static readonly Regex LibraryVersionRegex = new("LIBRARY_VERSION\\s+\"([^\"]+)\"");
     private static readonly Regex MakeVersionRegex = new("MakeVersion\\(\"([^\"]+)\"\\)");
     private static readonly Regex EnableOtaRegex = new(@"enableOTA\s*=\s*true");
     private static readonly Regex BuildTimeRegex = new(@"BUILD@([A-Z][a-z]{2} [ 0-9]\d \d{4} \d\d:\d\d:\d\d)");
+    private static readonly Regex VersionMarkerRegex = new(@"VERSION@([0-9][0-9.]*)");
 
     private readonly string _repoRoot;
 
@@ -123,15 +124,38 @@ internal sealed class FirmwareScanner
                 }
 
                 var buildMatch = BuildTimeRegex.Match(text);
+                var versionMarkerMatch = VersionMarkerRegex.Match(text);
+                bool isStale = bin.LastWriteTime < sourceTime;
+
+                // Prefer the version actually embedded in this binary at compile time over the
+                // one recomputed from current source, since a stale (not-yet-rebuilt) binary may
+                // no longer match current source/LIBRARY_VERSION content. When the marker is
+                // missing (e.g. the binary predates this marker feature, or is otherwise stale),
+                // don't claim it was built with the *current* LIBRARY_VERSION - that overstates
+                // what we actually know. Show the shared build number as unknown instead.
+                string resolvedVersion;
+                if (versionMarkerMatch.Success)
+                {
+                    resolvedVersion = versionMarkerMatch.Groups[1].Value;
+                }
+                else if (isStale)
+                {
+                    resolvedVersion = $"{versionMatch.Groups[1].Value}.?";
+                }
+                else
+                {
+                    resolvedVersion = version;
+                }
+
                 var item = new FirmwareItem
                 {
                     Sketch = name,
                     Board = boardId,
-                    Version = version,
+                    Version = resolvedVersion,
                     Built = bin.LastWriteTime,
                     BuildTime = buildMatch.Success ? buildMatch.Groups[1].Value : null,
                     BinPath = bin.FullName,
-                    IsStale = bin.LastWriteTime < sourceTime,
+                    IsStale = isStale,
                 };
 
                 (item.ServerVersion, item.ServerBuildTime) = await hub.GetLatestAsync(item.Firmware);

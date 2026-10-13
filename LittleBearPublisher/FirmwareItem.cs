@@ -35,13 +35,6 @@ internal sealed class FirmwareItem
     public string Firmware => $"{Sketch}.{Board}";
 
     /// <summary>
-    /// Version and build date currently published on the server, formatted for display.
-    /// </summary>
-    public string ServerInfo => ServerVersion is null
-        ? ""
-        : ServerBuildTime is null ? ServerVersion : $"{ServerVersion} ({ServerBuildTime})";
-
-    /// <summary>
     /// Identifies this exact build so a notification is only shown once per build.
     /// </summary>
     public string Key => $"{Firmware}|{Version}|{BuildTime ?? Built.Ticks.ToString()}";
