@@ -777,6 +777,8 @@ public:
          _publishTimes.push_back({ topic, now });
       }
       _rate.tick();
+      DeviceHealth::telemetryRate = _rate.get(TELEMETRY_RATE_WINDOW_S);
+      DeviceHealth::telemetryRateMs = millis();
       return true;
    }
 

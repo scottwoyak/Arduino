@@ -25,6 +25,7 @@
 
 #include <array>
 #include <cmath>
+#include <sstream>
 #include <string>
 
 ///
@@ -65,16 +66,13 @@ constexpr uint16_t GATE_OPENER_PORT = 80;
 
 #define ARDUINO_HOSYOND_ESP32_S3_VIEWER
 
-// Declares which VLW font sizes this sketch actually uses (2, 4, and 5 - see
-// setTextSize()/HISTORY_TITLE_TEXT_SIZE/HISTORY_ROW_TEXT_SIZE below - plus 3, which is
-// this board's DEFAULT_HEADING_SIZE used by printInitHeader() during boot), so
-// ArduinoWithDisplay.h/Fonts/Roboto*.h only compile in the needed font data instead of
-// all 7 sizes, reducing flash usage.
+// Declares which VLW font sizes this sketch actually uses (4 and 5 - see
+// HISTORY_TITLE_TEXT_SIZE/HISTORY_ROW_TEXT_SIZE below; 2 and 3 are always included
+// regardless, see ArduinoWithDisplay.h), so ArduinoWithDisplay.h/Fonts/Roboto*.h only
+// compile in the needed font data instead of all 7 sizes, reducing flash usage.
 // This sketch only uses monospaced text, so leave out the proportional Roboto fonts.
 #define NO_PROPORTIONAL_FONT
 #define TEXT_SIZES_CUSTOM
-#define TEXT_SIZE_2
-#define TEXT_SIZE_3
 #ifndef ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT
 // Sizes 4 and 5 are only used by the touch-only history/settings views and the larger
 // gate state banner, so the non-touch Feather doesn't need them.
@@ -1342,6 +1340,88 @@ GateTelemetryHandler telemetryHandler(&sketch.arduino.status);
 // Set when a Locate request ends, so the next loop() repaints everything.
 bool redrawAfterLocate = false;
 
+#ifdef ARDUINO_SOUND_SUPPORTED
+/// <summary>Commands registered with DeviceServerClient, appended to the "Help" command's listing.</summary>
+constexpr DeviceServerClient::CommandInfo SOUND_COMMANDS[] = {
+   { "PlaySound <index>", "Previews the given notification sound without changing the selected default (see ListSounds)" },
+   { "ListSounds", "Lists all available notification sound indices and names" },
+   { "GetSound", "Reports the currently selected default notification sound" },
+   { "SetSound <index>", "Persists the given sound index as the default; requires Restart to take effect" },
+};
+
+///
+/// <summary>
+/// Handles the "PlaySound"/"ListSounds"/"GetSound"/"SetSound" commands received from the
+/// DeviceServer, letting the DeviceServer preview, list, and remotely change this device's
+/// notification sound. PlaySound previews a sound without persisting it; SetSound persists
+/// a new default but requires a "Restart" command to take effect.
+/// </summary>
+/// <param name="command">Command text received from the DeviceServer.</param>
+///
+void onSoundCommand(const char* command)
+{
+   std::istringstream stream(command);
+   std::string verb;
+   stream >> verb;
+
+   if (strcasecmp(verb.c_str(), "PlaySound") == 0)
+   {
+      int index = -1;
+      stream >> index;
+      if (index < 0 || index >= Sound::NUM_SOUNDS)
+      {
+         DeviceServerClient::respond(("Error: index must be between 0 and " + std::to_string(Sound::NUM_SOUNDS - 1)).c_str());
+      }
+      else
+      {
+         uint8_t previous = sketch.arduino.sound.soundIndex;
+         sketch.arduino.sound.soundIndex = (uint8_t)index;
+         sketch.arduino.sound.playNotification();
+         sketch.arduino.sound.soundIndex = previous;
+         DeviceServerClient::respond(("Played " + std::to_string(index) + "=" + Sound::soundName((uint8_t)index)).c_str());
+      }
+   }
+   else if (strcasecmp(verb.c_str(), "ListSounds") == 0)
+   {
+      std::string text;
+      for (uint8_t i = 0; i < Sound::NUM_SOUNDS; i++)
+      {
+         if (i > 0)
+         {
+            text += ", ";
+         }
+         text += std::to_string(i) + "=" + Sound::soundName(i);
+      }
+      DeviceServerClient::respond(text.c_str());
+   }
+   else if (strcasecmp(verb.c_str(), "GetSound") == 0)
+   {
+      uint8_t index = sketch.arduino.sound.soundIndex;
+      DeviceServerClient::respond((std::to_string(index) + "=" + Sound::soundName(index)).c_str());
+   }
+   else if (strcasecmp(verb.c_str(), "SetSound") == 0)
+   {
+      int index = -1;
+      stream >> index;
+      if (index < 0 || index >= Sound::NUM_SOUNDS)
+      {
+         DeviceServerClient::respond(("Error: index must be between 0 and " + std::to_string(Sound::NUM_SOUNDS - 1)).c_str());
+      }
+      else
+      {
+         sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+         sketch.arduino.preferences.putUChar(SOUND_PREFERENCES_KEY, (uint8_t)index);
+         sketch.arduino.preferences.end();
+         DeviceServerClient::respond(("Saved sound=" + std::to_string(index) + "=" + Sound::soundName((uint8_t)index) + ". Restart required to apply.").c_str());
+      }
+   }
+   else
+   {
+      DeviceServerClient::respond(("Unhandled command: " + std::string(command)).c_str());
+   }
+}
+#endif
+
 void setup()
 {
    SerialX::begin();
@@ -1362,6 +1442,10 @@ void setup()
 
 #ifdef SETTINGS_SUPPORTED
    loadSettings();
+#endif
+
+#ifdef ARDUINO_SOUND_SUPPORTED
+   DeviceServerClient::onCommand(onSoundCommand, SOUND_COMMANDS, std::size(SOUND_COMMANDS));
 #endif
 
    TelemetrySubscriber* client = sketch.beginTelemetry(LEFT_TELEMETRY_TOPIC, &telemetryHandler);

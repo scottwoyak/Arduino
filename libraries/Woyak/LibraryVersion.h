@@ -12,7 +12,7 @@
 /// (e.g. "2.4.1").
 /// </summary>
 ///
-constexpr auto LIBRARY_VERSION = "164";
+constexpr auto LIBRARY_VERSION = "170";
 
 ///
 /// <summary>

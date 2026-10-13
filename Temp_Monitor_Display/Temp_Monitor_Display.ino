@@ -58,11 +58,11 @@
 //
 #include <string>
 
-// Declares which VLW font sizes this sketch actually uses (TEXT_SIZE_SMALL=2 and
-// VALUE_TEXT_SIZE=4 below), so ArduinoWithDisplay.h/Fonts/Roboto*.h only compile in
-// the needed font data instead of all 7 sizes, reducing flash usage.
+// Declares which VLW font sizes this sketch actually uses (VALUE_TEXT_SIZE=4 below;
+// TEXT_SIZE_SMALL=2 is always included regardless, see ArduinoWithDisplay.h), so
+// ArduinoWithDisplay.h/Fonts/Roboto*.h only compile in the needed font data instead of
+// all 7 sizes, reducing flash usage.
 #define TEXT_SIZES_CUSTOM
-#define TEXT_SIZE_2
 #define TEXT_SIZE_4
 
 #include "ArduinoBoard.h"

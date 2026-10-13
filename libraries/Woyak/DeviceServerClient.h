@@ -8,6 +8,7 @@
 #include <ArduinoJson.h>
 #include <WebSocketsClient.h>
 #include <WiFi.h>
+#include <Wire.h>
 
 #include "ArduinoBoardId.h"
 #include "DeviceHealth.h"
@@ -15,6 +16,7 @@
 #include "OTAUpdater.h"
 #include "Timer.h"
 #include "WebSocketJsonClient.h"
+#include "WebSocketStream.h"
 #include "WiFiSettings.h"
 
 ///
@@ -43,8 +45,19 @@ enum class LogSeverity
 ///   Handshake, sent on connect:  {"role":"device","token":"...","deviceId":"...","sketch":"...","version":"...","site":"...","location":"..."}
 ///   Server reply:                {"type":"ack"}
 ///   Log message (device to hub): {"type":"log","level":"Info","tags":"wifi,reconnect","message":"..."}
-///   Command (hub to device):     {"type":"command","action":"...","payload":{...}}
+///   Command (hub to device):     {"type":"command","action":"readPin 14"}
 ///   Command response:            {"type":"response","message":"..."}
+///   Shell output (device to hub):{"type":"shellOutput","text":"..."}
+///   Shell input (hub to device): {"type":"shellInput","text":"..."}
+/// Commands are plain text, like a shell: a verb optionally followed by space-separated
+/// arguments (e.g. "readPin 14"), rather than a separate JSON payload object. Send "Help"
+/// to get a list of all commands understood by the device (built-in plus any registered
+/// via onCommand()).
+/// The shell channel is a separate, independent raw text channel (see onShellLine()/
+/// shell()) that mimics Serial: "shellInput" text is delivered to a single registered
+/// handler and appended to a Stream-like buffer, and text written to shell() is sent
+/// out as "shellOutput". It is never mixed with the command/response channel; a shell
+/// session requires no handshake and is simply available for the life of the connection.
 /// A log entry built up via logPartial()/log() sends one JSON message per fragment:
 ///   {"type":"log","level":"Info","tags":"...","message":"Sensor... ","continued":true}
 ///   {"type":"log","message":"warming up... ","append":true,"continued":true}
@@ -196,6 +209,14 @@ class DeviceServerClient
 
             DeviceServerClient::_handleCommand(command);
          }
+         else if (strcmp(type, "shellInput") == 0)
+         {
+            const char* text = doc["text"];
+            if (text != nullptr)
+            {
+               DeviceServerClient::_handleShellInput(text);
+            }
+         }
       }
 
       void _onError(const std::string& reason) override
@@ -268,6 +289,504 @@ class DeviceServerClient
 
    /// <summary>Optional sketch-supplied handler for commands not recognized as built-in (see onCommand()).</summary>
    static inline void (*_commandHandler)(const char* command) = nullptr;
+
+   /// <summary>Optional sketch-supplied handler for raw shell input lines (see onShellLine()).</summary>
+   static inline void (*_shellHandler)(const char* line) = nullptr;
+
+   /// <summary>Serial-like stream backed by the "shellInput"/"shellOutput" messages; see shell().</summary>
+   static inline WebSocketStream _shell;
+
+   /// <summary>True while a line received over the shell channel is being dispatched through
+   /// _handleCommand(), so respond() routes its reply to "shellOutput" instead of "response".</summary>
+   static inline bool _inShellCommand = false;
+
+   /// <summary>When set (via promptShellLine()), the next line received over the shell
+   /// channel is treated as the answer to a pending interactive prompt instead of being
+   /// dispatched as a command.</summary>
+   static inline void (*_pendingPromptCallback)(const char* line) = nullptr;
+
+   ///
+   /// <summary>
+   /// Describes one command for the built-in "Help" listing: its usage (verb plus any
+   /// arguments, e.g. "readPin <pin>") and a short description of what it does.
+   /// </summary>
+   ///
+public:
+   struct CommandInfo
+   {
+      const char* usage;
+      const char* description;
+   };
+
+private:
+   /// <summary>Built-in commands, listed by "Help" first, in this order.</summary>
+   static constexpr CommandInfo _BUILTIN_COMMANDS[] = {
+      { "Help [-l]", "Lists all commands understood by this device (-l for a brief usage-only listing)" },
+      { "Restart", "Restarts the device" },
+      { "GetHealth", "Reports WiFi/CPU/memory health as a JSON message" },
+      { "Locate", "Asks the device to do something visibly identifiable" },
+      { "I2CScan", "Scans the I2C bus and lists responding addresses" },
+      { "I2CRead <address> <reg>", "Reads a register from an I2C device" },
+      { "I2CWrite <address> <reg> <value>", "Writes a value to a register on an I2C device" },
+      { "ReadPin [pin]", "Reads the digital state of a GPIO pin, or all pins if omitted" },
+      { "WritePin <pin> <HIGH|LOW>", "Sets a GPIO pin's digital output state" },
+      { "GetPinMode <pin>", "Reports whether a GPIO pin is configured as INPUT or OUTPUT" },
+      { "SetPinMode <pin> <INPUT|OUTPUT|INPUT_PULLUP>", "Sets a GPIO pin's mode" },
+      { "AnalogRead <pin>", "Reads the analog (ADC) value of a pin" },
+      { "GetUptime", "Reports how long the device has been running since boot" },
+      { "GetInfo", "Reports the sketch name, version, board type, build time, uptime, IP address, and site/location" },
+      { "GetWifiInfo", "Reports the current WiFi SSID, signal strength, and IP address" },
+      { "GetResetReason", "Reports the reason the device last reset/rebooted" },
+      { "GetMemory", "Reports free heap and largest allocatable block" },
+      { "GetCpuInfo", "Reports chip model/revision/cores, CPU frequency, flash size, and internal temperature" },
+      { "GetVersion", "Reports the sketch's firmware version" },
+   };
+
+   /// <summary>Extra commands registered by the sketch via onCommand(), listed by "Help" after the built-ins.</summary>
+   static inline const CommandInfo* _sketchCommands = nullptr;
+
+   /// <summary>Number of entries in _sketchCommands.</summary>
+   static inline size_t _sketchCommandCount = 0;
+
+   ///
+   /// <summary>
+   /// Splits a command string into its verb and arguments, e.g. "readPin 14" into
+   /// "readPin" and {"14"}.
+   /// </summary>
+   /// <param name="command">Full command text received from the DeviceServer.</param>
+   /// <param name="args">Receives the space-separated arguments following the verb.</param>
+   /// <returns>The command verb (leading token).</returns>
+   ///
+   static std::string _parseCommand(const char* command, std::vector<std::string>& args)
+   {
+      std::istringstream stream(command);
+      std::string verb;
+      stream >> verb;
+
+      std::string arg;
+      while (stream >> arg)
+      {
+         args.push_back(arg);
+      }
+
+      return verb;
+   }
+
+   ///
+   /// <summary>
+   /// Builds and sends the response text for the "Help" command: usage and description
+   /// of every built-in command, followed by any sketch-registered commands. When
+   /// listOnly is true ("Help -l"), only the usage of each command is listed, without
+   /// its description.
+   /// </summary>
+   /// <param name="listOnly">If true, lists only command usage, omitting descriptions.</param>
+   ///
+   static void _respondHelp(bool listOnly)
+   {
+      std::ostringstream text;
+      for (const CommandInfo& info : _BUILTIN_COMMANDS)
+      {
+         text << info.usage;
+         if (!listOnly)
+         {
+            text << " - " << info.description;
+         }
+         text << "\n";
+      }
+
+      for (size_t i = 0; i < _sketchCommandCount; i++)
+      {
+         text << _sketchCommands[i].usage;
+         if (!listOnly)
+         {
+            text << " - " << _sketchCommands[i].description;
+         }
+         text << "\n";
+      }
+
+      std::string message = text.str();
+      if (!message.empty())
+      {
+         message.pop_back();
+      }
+
+      respond(message.c_str());
+   }
+
+   ///
+   /// <summary>
+   /// Scans the I2C bus for responding devices and returns a text summary.
+   /// </summary>
+   /// <returns>A description of the addresses found, or a "no devices" message.</returns>
+   ///
+   static std::string _i2cScan()
+   {
+      std::ostringstream text;
+      uint8_t found = 0;
+
+      for (uint8_t address = 1; address < 127; address++)
+      {
+         Wire.beginTransmission(address);
+         if (Wire.endTransmission() == 0)
+         {
+            if (found > 0)
+            {
+               text << ", ";
+            }
+
+            text << "0x" << std::hex << std::uppercase << static_cast<int>(address);
+            found++;
+         }
+      }
+
+      if (found == 0)
+      {
+         return "No I2C devices found";
+      }
+
+      std::ostringstream result;
+      result << "Found " << std::dec << static_cast<int>(found) << " I2C device(s): " << text.str();
+      return result.str();
+   }
+
+   ///
+   /// <summary>
+   /// Reads and reports the digital state of a GPIO pin. If no pin is specified, reports
+   /// the state of every valid GPIO pin on the board instead.
+   /// </summary>
+   /// <param name="args">Command arguments; args[0] is the pin number, or omitted to read all pins.</param>
+   /// <returns>A description of the pin's state(s).</returns>
+   ///
+   static std::string _readPin(const std::vector<std::string>& args)
+   {
+      if (args.empty())
+      {
+         std::ostringstream result;
+         for (uint8_t pin = 0; pin < SOC_GPIO_PIN_COUNT; pin++)
+         {
+            if (!digitalPinIsValid(pin))
+            {
+               continue;
+            }
+
+            if (result.tellp() > 0)
+            {
+               result << "\n";
+            }
+            result << "Pin " << static_cast<int>(pin) << " = " << (digitalRead(pin) == HIGH ? "HIGH" : "LOW");
+         }
+         return result.str();
+      }
+
+      int pin = atoi(args[0].c_str());
+      std::ostringstream result;
+      result << "Pin " << pin << " = " << (digitalRead(pin) == HIGH ? "HIGH" : "LOW");
+      return result.str();
+   }
+
+   ///
+   /// <summary>
+   /// Reports whether a GPIO pin is currently configured as INPUT or OUTPUT. Based on the
+   /// ESP32 GPIO output-enable registers, so it can't distinguish INPUT from INPUT_PULLUP/
+   /// INPUT_PULLDOWN.
+   /// </summary>
+   /// <param name="args">Command arguments; args[0] is the pin number.</param>
+   /// <returns>A description of the pin's configured mode, or an error message if the argument is missing/invalid.</returns>
+   ///
+   static std::string _getPinMode(const std::vector<std::string>& args)
+   {
+      if (args.empty())
+      {
+         return "GetPinMode requires a pin number, e.g. \"GetPinMode 14\"";
+      }
+
+      int pin = atoi(args[0].c_str());
+      bool isOutput = (pin < 32) ? ((GPIO.enable & (1UL << pin)) != 0) : ((GPIO.enable1.data & (1UL << (pin - 32))) != 0);
+
+      std::ostringstream result;
+      result << "Pin " << pin << " = " << (isOutput ? "OUTPUT" : "INPUT");
+      return result.str();
+   }
+
+   ///
+   /// <summary>
+   /// Sets a GPIO pin's digital output state.
+   /// </summary>
+   /// <param name="args">Command arguments; args[0] is the pin number, args[1] is HIGH or LOW.</param>
+   /// <returns>A description of the result, or an error message if an argument is missing/invalid.</returns>
+   ///
+   static std::string _writePin(const std::vector<std::string>& args)
+   {
+      if (args.size() < 2)
+      {
+         return "WritePin requires a pin number and HIGH/LOW, e.g. \"WritePin 14 HIGH\"";
+      }
+
+      int pin = atoi(args[0].c_str());
+      if (strcasecmp(args[1].c_str(), "HIGH") == 0)
+      {
+         digitalWrite(pin, HIGH);
+      }
+      else if (strcasecmp(args[1].c_str(), "LOW") == 0)
+      {
+         digitalWrite(pin, LOW);
+      }
+      else
+      {
+         return "WritePin's second argument must be HIGH or LOW";
+      }
+
+      std::ostringstream result;
+      result << "Pin " << pin << " set to " << args[1];
+      return result.str();
+   }
+
+   ///
+   /// <summary>
+   /// Sets a GPIO pin's mode (INPUT, OUTPUT, or INPUT_PULLUP).
+   /// </summary>
+   /// <param name="args">Command arguments; args[0] is the pin number, args[1] is the mode.</param>
+   /// <returns>A description of the result, or an error message if an argument is missing/invalid.</returns>
+   ///
+   static std::string _setPinMode(const std::vector<std::string>& args)
+   {
+      if (args.size() < 2)
+      {
+         return "SetPinMode requires a pin number and mode, e.g. \"SetPinMode 14 OUTPUT\"";
+      }
+
+      int pin = atoi(args[0].c_str());
+      uint8_t mode;
+      if (strcasecmp(args[1].c_str(), "INPUT") == 0)
+      {
+         mode = INPUT;
+      }
+      else if (strcasecmp(args[1].c_str(), "OUTPUT") == 0)
+      {
+         mode = OUTPUT;
+      }
+      else if (strcasecmp(args[1].c_str(), "INPUT_PULLUP") == 0)
+      {
+         mode = INPUT_PULLUP;
+      }
+      else
+      {
+         return "SetPinMode's second argument must be INPUT, OUTPUT, or INPUT_PULLUP";
+      }
+
+      pinMode(pin, mode);
+
+      std::ostringstream result;
+      result << "Pin " << pin << " mode set to " << args[1];
+      return result.str();
+   }
+
+   ///
+   /// <summary>
+   /// Reads the analog (ADC) value of a pin.
+   /// </summary>
+   /// <param name="args">Command arguments; args[0] is the pin number.</param>
+   /// <returns>A description of the pin's analog reading, or an error message if the argument is missing.</returns>
+   ///
+   static std::string _analogRead(const std::vector<std::string>& args)
+   {
+      if (args.empty())
+      {
+         return "AnalogRead requires a pin number, e.g. \"AnalogRead 14\"";
+      }
+
+      int pin = atoi(args[0].c_str());
+      std::ostringstream result;
+      result << "Pin " << pin << " = " << analogRead(pin);
+      return result.str();
+   }
+
+   ///
+   /// <summary>
+   /// Reads a register from an I2C device.
+   /// </summary>
+   /// <param name="args">Command arguments; args[0] is the I2C address, args[1] is the register.</param>
+   /// <returns>A description of the register's value, or an error message if an argument is missing/invalid.</returns>
+   ///
+   static std::string _i2cRead(const std::vector<std::string>& args)
+   {
+      if (args.size() < 2)
+      {
+         return "I2CRead requires an address and register, e.g. \"I2CRead 0x23 0x10\"";
+      }
+
+      uint8_t address = static_cast<uint8_t>(strtol(args[0].c_str(), nullptr, 0));
+      uint8_t reg = static_cast<uint8_t>(strtol(args[1].c_str(), nullptr, 0));
+
+      Wire.beginTransmission(address);
+      Wire.write(reg);
+      if (Wire.endTransmission(false) != 0)
+      {
+         return "I2CRead failed: no response from device at that address";
+      }
+
+      if (Wire.requestFrom(address, (uint8_t)1) != 1)
+      {
+         return "I2CRead failed: no data returned";
+      }
+
+      uint8_t value = Wire.read();
+      std::ostringstream result;
+      result << "0x" << std::hex << std::uppercase << static_cast<int>(address) << " reg 0x" << static_cast<int>(reg) << " = 0x" << static_cast<int>(value);
+      return result.str();
+   }
+
+   ///
+   /// <summary>
+   /// Writes a value to a register on an I2C device.
+   /// </summary>
+   /// <param name="args">Command arguments; args[0] is the I2C address, args[1] is the register, args[2] is the value.</param>
+   /// <returns>A description of the result, or an error message if an argument is missing/invalid.</returns>
+   ///
+   static std::string _i2cWrite(const std::vector<std::string>& args)
+   {
+      if (args.size() < 3)
+      {
+         return "I2CWrite requires an address, register, and value, e.g. \"I2CWrite 0x23 0x10 0x01\"";
+      }
+
+      uint8_t address = static_cast<uint8_t>(strtol(args[0].c_str(), nullptr, 0));
+      uint8_t reg = static_cast<uint8_t>(strtol(args[1].c_str(), nullptr, 0));
+      uint8_t value = static_cast<uint8_t>(strtol(args[2].c_str(), nullptr, 0));
+
+      Wire.beginTransmission(address);
+      Wire.write(reg);
+      Wire.write(value);
+      if (Wire.endTransmission() != 0)
+      {
+         return "I2CWrite failed: no response from device at that address";
+      }
+
+      std::ostringstream result;
+      result << "0x" << std::hex << std::uppercase << static_cast<int>(address) << " reg 0x" << static_cast<int>(reg) << " set to 0x" << static_cast<int>(value);
+      return result.str();
+   }
+
+   ///
+   /// <summary>
+   /// Reports how long the device has been running since boot.
+   /// </summary>
+   /// <returns>A description of the uptime in seconds.</returns>
+   ///
+   static std::string _getUptime()
+   {
+      std::ostringstream result;
+      result << "Uptime: " << (millis() / 1000) << "s";
+      return result.str();
+   }
+
+   ///
+   /// <summary>
+   /// Reports the sketch name, version, board variant, build time, uptime, IP
+   /// address, and resolved site/location (if any), for identifying what's running
+   /// on a device at a glance.
+   /// </summary>
+   /// <returns>A description of the sketch/board identity.</returns>
+   ///
+   static std::string _getInfo()
+   {
+      std::ostringstream result;
+      result << "Sketch: " << (_sketchName.empty() ? "(unknown)" : _sketchName) << "\n"
+             << "Version: " << (_version.empty() ? "(unknown)" : _version) << "\n"
+#if defined(ARDUINO_BOARD_VARIANT_ID)
+             << "Board: " << ARDUINO_BOARD_VARIANT_ID << "\n"
+#else
+             << "Board: " << ARDUINO_BOARD << "\n"
+#endif
+             << "Build time: " << BUILD_TIME << "\n"
+             << "Uptime: " << (millis() / 1000) << "s\n"
+             << "IP address: " << (WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "(not connected)");
+
+      if (!_site.empty() || !_location.empty())
+      {
+         result << "\nSite: " << (_site.empty() ? "(none)" : _site) << ", Location: " << (_location.empty() ? "(none)" : _location);
+      }
+
+      return result.str();
+   }
+
+   ///
+   /// <summary>
+   /// Reports the current WiFi SSID, signal strength, and IP address.
+   /// </summary>
+   /// <returns>A description of the WiFi connection.</returns>
+   ///
+   static std::string _getWifiInfo()
+   {
+      std::ostringstream result;
+      result << "SSID: " << WiFi.SSID().c_str() << "\n"
+             << "RSSI: " << WiFi.RSSI() << " dBm\n"
+             << "IP: " << WiFi.localIP().toString().c_str();
+      return result.str();
+   }
+
+   ///
+   /// <summary>
+   /// Reports the reason the device last reset/rebooted.
+   /// </summary>
+   /// <returns>A description of the reset reason.</returns>
+   ///
+   static std::string _getResetReason()
+   {
+      std::ostringstream result;
+      result << "Reset reason: " << Util::resetReasonString();
+      return result.str();
+   }
+
+   ///
+   /// <summary>
+   /// Reports heap, PSRAM (if present), and flash usage diagnostics.
+   /// </summary>
+   /// <returns>A description of the device's current memory usage.</returns>
+   ///
+   static std::string _getMemory()
+   {
+      std::ostringstream result;
+      result << "Free heap: " << ESP.getFreeHeap() << " / " << ESP.getHeapSize() << " bytes\n"
+             << "Min free heap seen: " << ESP.getMinFreeHeap() << " bytes\n"
+             << "Largest allocatable block: " << ESP.getMaxAllocHeap() << " bytes\n"
+             << "Sketch size: " << ESP.getSketchSize() << " bytes, free: " << ESP.getFreeSketchSpace() << " bytes";
+
+      if (ESP.getPsramSize() > 0)
+      {
+         result << "\nFree PSRAM: " << ESP.getFreePsram() << " / " << ESP.getPsramSize() << " bytes";
+      }
+
+      return result.str();
+   }
+
+   ///
+   /// <summary>
+   /// Reports chip model/revision/cores, CPU frequency, flash size, and internal
+   /// temperature sensor reading.
+   /// </summary>
+   /// <returns>A description of the device's CPU/chip diagnostics.</returns>
+   ///
+   static std::string _getCpuInfo()
+   {
+      std::ostringstream result;
+      result << "Chip: " << ESP.getChipModel() << " rev " << ESP.getChipRevision() << ", " << (int)ESP.getChipCores() << " core(s)\n"
+             << "CPU frequency: " << ESP.getCpuFreqMHz() << " MHz\n"
+             << "Flash size: " << ESP.getFlashChipSize() << " bytes\n"
+             << "Internal temperature: " << temperatureRead() << " C";
+      return result.str();
+   }
+
+   ///
+   /// <summary>
+   /// Reports the sketch's firmware version.
+   /// </summary>
+   /// <returns>The sketch's version string.</returns>
+   ///
+   static std::string _getVersion()
+   {
+      return _version.empty() ? "No version set" : _version;
+   }
 
    /// <summary>Handler invoked by the built-in "Locate" command (see onLocate()).</summary>
    static inline void (*_locateHandler)() = nullptr;
@@ -456,30 +975,104 @@ class DeviceServerClient
    ///
    static void _handleCommand(const char* command)
    {
-      if (strcasecmp(command, "Restart") == 0)
+      std::vector<std::string> args;
+      std::string verb = _parseCommand(command, args);
+
+      if (strcasecmp(verb.c_str(), "Restart") == 0)
       {
          respond("Restarting");
          reportRestarting();
          ESP.restart();
       }
-      else if (strcasecmp(command, "GetHealth") == 0)
+      else if (strcasecmp(verb.c_str(), "GetHealth") == 0)
       {
-         if (_connection.isConnected())
-         {
-            JsonDocument doc;
-            doc["type"] = "health";
-            DeviceHealth::fill(&doc);
+         JsonDocument doc;
+         doc["type"] = "health";
+         DeviceHealth::fill(&doc);
 
+         if (_inShellCommand)
+         {
+            std::string text;
+            serializeJson(doc, text);
+            _sendShellOutput(text.c_str());
+         }
+         else if (_connection.isConnected())
+         {
             _connection.sendJson(doc);
          }
       }
-      else if (strcasecmp(command, "Locate") == 0)
+      else if (strcasecmp(verb.c_str(), "Locate") == 0)
       {
          respond("Locating");
          if (_locateHandler != nullptr)
          {
             _locateHandler();
          }
+      }
+      else if (strcasecmp(verb.c_str(), "Help") == 0)
+      {
+         bool listOnly = !args.empty() && strcasecmp(args[0].c_str(), "-l") == 0;
+         _respondHelp(listOnly);
+      }
+      else if (strcasecmp(verb.c_str(), "I2CScan") == 0)
+      {
+         respond(_i2cScan().c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "I2CRead") == 0)
+      {
+         respond(_i2cRead(args).c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "I2CWrite") == 0)
+      {
+         respond(_i2cWrite(args).c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "ReadPin") == 0)
+      {
+         respond(_readPin(args).c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "WritePin") == 0)
+      {
+         respond(_writePin(args).c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "GetPinMode") == 0)
+      {
+         respond(_getPinMode(args).c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "SetPinMode") == 0)
+      {
+         respond(_setPinMode(args).c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "AnalogRead") == 0)
+      {
+         respond(_analogRead(args).c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "GetUptime") == 0)
+      {
+         respond(_getUptime().c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "GetInfo") == 0)
+      {
+         respond(_getInfo().c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "GetWifiInfo") == 0)
+      {
+         respond(_getWifiInfo().c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "GetResetReason") == 0)
+      {
+         respond(_getResetReason().c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "GetMemory") == 0)
+      {
+         respond(_getMemory().c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "GetCpuInfo") == 0)
+      {
+         respond(_getCpuInfo().c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "GetVersion") == 0)
+      {
+         respond(_getVersion().c_str());
       }
       else if (_commandHandler != nullptr)
       {
@@ -488,6 +1081,62 @@ class DeviceServerClient
       else
       {
          log(std::string("Unknown command: ") + command);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Handles a line of raw text received from the DeviceServer over the separate shell
+   /// channel (see onShellLine()/shell()). By default, the line is dispatched through the
+   /// same built-in/sketch-registered command table as the "command"/"response" channel
+   /// (see _handleCommand()), so every command (Help, GetHealth, ReadPin, sketch-specific
+   /// commands registered via onCommand(), etc.) also works when typed into the shell;
+   /// any respond() call made while handling it is sent as "shellOutput" instead of
+   /// "response". The line is also appended to the shell stream (for code reading via
+   /// shell() as a Stream) and forwarded to the sketch-registered line handler, if any,
+   /// for additional/custom raw handling. Empty or whitespace-only lines are ignored
+   /// entirely (not dispatched as a command, not appended to the shell stream) unless a
+   /// prompt is pending (see promptShellLine()), since a blank answer is meaningful there
+   /// (e.g. accepting a default value) and must still reach the callback.
+   /// </summary>
+   /// <param name="line">Line of text received from the DeviceServer's shell channel.</param>
+   ///
+   static void _handleShellInput(const char* line)
+   {
+      bool isBlank = true;
+      for (const char* p = line; *p != '\0'; p++)
+      {
+         if (!isspace((unsigned char)*p))
+         {
+            isBlank = false;
+            break;
+         }
+      }
+      if (isBlank && _pendingPromptCallback == nullptr)
+      {
+         return;
+      }
+
+      _shell._onInput(line);
+
+      if (_pendingPromptCallback != nullptr)
+      {
+         void (*callback)(const char* line) = _pendingPromptCallback;
+         _pendingPromptCallback = nullptr;
+
+         _inShellCommand = true;
+         callback(line);
+         _inShellCommand = false;
+         return;
+      }
+
+      _inShellCommand = true;
+      _handleCommand(line);
+      _inShellCommand = false;
+
+      if (_shellHandler != nullptr)
+      {
+         _shellHandler(line);
       }
    }
 
@@ -537,6 +1186,8 @@ public:
       OTAUpdater::onState = [](const char* state) { setState(state); };
 
       logPartial("Hub... ");
+
+      _shell.begin(_sendShellOutput);
 
       _connection.begin(DEVICE_SERVER_SERVER_RASPBERRY_HOST, DEVICE_SERVER_SERVER_RASPBERRY_PORT, DEVICE_SERVER_SERVER_RASPBERRY_USE_TLS, DEVICE_SERVER_PATH,
          HEARTBEAT_PING_MS, HEARTBEAT_TIMEOUT_MS, HEARTBEAT_FAILURES);
@@ -626,10 +1277,77 @@ public:
    /// begin().
    /// </summary>
    /// <param name="handler">Function invoked with the received command text.</param>
+   /// <param name="help">Optional array describing the sketch's own commands (usage and description), appended to the "Help" command's listing; must outlive the sketch.</param>
+   /// <param name="helpCount">Number of entries in help.</param>
    ///
-   static void onCommand(void (*handler)(const char* command))
+   static void onCommand(void (*handler)(const char* command), const CommandInfo* help = nullptr, size_t helpCount = 0)
    {
       _commandHandler = handler;
+      _sketchCommands = help;
+      _sketchCommandCount = helpCount;
+   }
+
+   ///
+   /// <summary>
+   /// Registers a handler invoked for each line of raw text received from the
+   /// DeviceServer's separate shell channel (see shell()). Unlike onCommand(), this is
+   /// never dispatched through the built-in command table/Help listing; it's a
+   /// completely independent, unparsed text channel the sketch can use however it
+   /// likes (e.g. its own mini-REPL). Only one handler is supported; call once from
+   /// setup(), after begin().
+   /// </summary>
+   /// <param name="handler">Function invoked with each line of text received from the shell channel.</param>
+   ///
+   static void onShellLine(void (*handler)(const char* line))
+   {
+      _shellHandler = handler;
+   }
+
+   ///
+   /// <summary>
+   /// Returns the Stream-like object backed by the DeviceServer's shell channel: text
+   /// written to it (print()/println()/etc.) is sent out as "shellOutput" messages, and
+   /// "shellInput" text received from the DeviceServer is queued for available()/read()/
+   /// peek(). Lets existing Serial-based prompt/shell code run unmodified against the
+   /// WebSocket connection instead, by writing it against Stream/Print.
+   /// </summary>
+   /// <returns>The shell stream.</returns>
+   ///
+   static WebSocketStream& shell()
+   {
+      return _shell;
+   }
+
+   ///
+   /// <summary>
+   /// Requests that the next line of text received over the shell channel be delivered to
+   /// callback instead of being dispatched as a command. Lets a command handler mirror a
+   /// blocking Serial-style prompt (e.g. SerialX::prompt()) without actually blocking: the
+   /// handler sends its prompt text (e.g. via shell()), calls promptShellLine() with a
+   /// callback to resume with the answer, then returns immediately. The callback runs as
+   /// if it were handling a shell command (respond() routes to "shellOutput"), so it can
+   /// chain further prompts by calling promptShellLine() again, or call respond() to finish.
+   /// Only one pending prompt is supported at a time; a new call replaces any previous one.
+   /// </summary>
+   /// <param name="callback">Function invoked with the next shell input line as the prompt answer.</param>
+   ///
+   static void promptShellLine(void (*callback)(const char* line))
+   {
+      _pendingPromptCallback = callback;
+   }
+
+   ///
+   /// <summary>
+   /// Returns true while a command received over the shell channel is being handled (see
+   /// _handleShellInput()/respond()). Lets a command handler decide whether it's safe to
+   /// start an interactive prompt via promptShellLine(), which only makes sense for shell
+   /// input (there's no equivalent for the formal command/response channel).
+   /// </summary>
+   /// <returns>True if the command currently being handled arrived over the shell channel.</returns>
+   ///
+   static bool isShellCommand()
+   {
+      return _inShellCommand;
    }
 
    ///
@@ -648,16 +1366,50 @@ public:
    /// <summary>
    /// Sends a reply to the DeviceServer in response to a received command. Does nothing if
    /// not currently connected, since a command can only have been received while connected.
+   /// If the command currently being handled arrived over the shell channel (see
+   /// _handleShellInput()), the reply is sent as "shellOutput" text (with a trailing
+   /// newline, so the DeviceServer starts a fresh ">" prompt) instead of a formal
+   /// "response" message, so the two channels never get mixed.
    /// </summary>
    /// <param name="message">Reply text to send.</param>
    ///
    static void respond(const char* message)
    {
+      if (_inShellCommand)
+      {
+         // Finalized command replies (unlike interactive prompts) always end with a
+         // newline, so the DeviceServer shows a fresh ">" prompt instead of leaving the
+         // cursor sitting at the end of the response.
+         _sendShellOutput((std::string(message) + "\n").c_str());
+         return;
+      }
+
       if (_connection.isConnected())
       {
          JsonDocument doc;
          doc["type"] = "response";
          doc["message"] = message;
+
+         _connection.sendJson(doc);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Sends a line of text to the DeviceServer over the separate shell channel (see
+   /// shell()/onShellLine()). Does nothing if not currently connected. Passed as the
+   /// send callback to the shell stream's begin(); not normally called directly, write
+   /// to shell() instead.
+   /// </summary>
+   /// <param name="text">Line of shell output text to send (no trailing newline).</param>
+   ///
+   static void _sendShellOutput(const char* text)
+   {
+      if (_connection.isConnected())
+      {
+         JsonDocument doc;
+         doc["type"] = "shellOutput";
+         doc["text"] = text;
 
          _connection.sendJson(doc);
       }

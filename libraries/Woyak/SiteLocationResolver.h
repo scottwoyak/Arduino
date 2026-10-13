@@ -2,7 +2,10 @@
 
 #include <Preferences.h>
 #include <span>
+#include <sstream>
 
+#include "ConfigCommandHandler.h"
+#include "DeviceServerClient.h"
 #include "SerialX.h"
 
 ///
@@ -12,20 +15,21 @@
 /// Mirrors the site/location prompting flow used by MonitorSketch/PublisherSketch, for
 /// sketches (e.g. viewers) that aren't InfluxDB-enabled but still want a clear,
 /// non-generic site/location selection prompt instead of picking from a table of
-/// pre-built topic strings.
+/// pre-built topic strings. Command registration, validation/persistence, and the
+/// interactive shell SetConfig prompt flow are shared via ConfigCommandHandler.
 /// </summary>
 ///
-class SiteLocationResolver
+class SiteLocationResolver : public ConfigCommandHandler
 {
 private:
-   static constexpr auto SITE_KEY = "site";
-   static constexpr auto LOCATION_KEY = "location";
    static constexpr uint16_t PROMPT_TIMEOUT_S = 10;
 
-   const char* _preferencesNamespace;
-   std::span<const char* const> _siteOptions;
-   String _siteName;
-   String _locationName;
+   /// <summary>Commands registered via enableConfigCommands(), listed by "Help" after the built-ins.</summary>
+   static constexpr DeviceServerClient::CommandInfo CONFIG_COMMANDS[] = {
+      { "GetConfig", "Reports the current site and location" },
+      { "SetConfig <site|location> <value>", "Persists a new site/location value; requires Restart to take effect" },
+      { "SetConfig", "From the shell only: prompts for a new site/location, like the serial setup prompt" },
+   };
 
    ///
    /// <summary>
@@ -152,8 +156,9 @@ public:
    /// <param name="siteOptions">Site choices offered to the user; location is entered as free text.</param>
    ///
    SiteLocationResolver(const char* preferencesNamespace, std::span<const char* const> siteOptions)
-      : _preferencesNamespace(preferencesNamespace), _siteOptions(siteOptions)
    {
+      _preferencesNamespace = preferencesNamespace;
+      _siteOptions = siteOptions;
    }
 
    ///
@@ -161,12 +166,19 @@ public:
    /// Resolves the site/location: returns the saved values unless none are saved yet or
    /// forcePrompt is true, in which case the user is prompted over Serial (offering to
    /// keep the saved values first, if any exist) and the result is saved for next time.
+   /// Also registers the "GetConfig"/"SetConfig" commands with DeviceServerClient (see
+   /// _enableConfigCommands()), so sketches get remote site/location management for free;
+   /// don't call this if the sketch registers its own DeviceServerClient::onCommand()
+   /// handler, since only one is supported.
    /// </summary>
    /// <param name="preferences">Preferences instance to read/write (e.g. arduino.preferences).</param>
    /// <param name="forcePrompt">If true, always offers to reconfigure even if saved values exist.</param>
    ///
    void resolve(Preferences& preferences, bool forcePrompt)
    {
+      _commandPreferences = &preferences;
+      _enableConfigCommands(CONFIG_COMMANDS, std::size(CONFIG_COMMANDS));
+
       bool hasSavedConfig = _hasSavedConfig(preferences);
       bool reconfigure = forcePrompt;
 
@@ -188,18 +200,43 @@ public:
    }
 
    ///
-   /// <summary>Returns the resolved site name (empty until resolve() is called).</summary>
+   /// <summary>
+   /// Returns the site choices offered to the user, for validating a remotely-supplied
+   /// site name before persisting it.
+   /// </summary>
    ///
-   const String& site() const
+   std::span<const char* const> siteOptions() const
    {
-      return _siteName;
+      return _siteOptions;
    }
 
    ///
-   /// <summary>Returns the resolved location name (empty until resolve() is called).</summary>
+   /// <summary>
+   /// Persists a new site to Preferences. Does not affect the in-memory resolved value
+   /// returned by site() until the next resolve() (e.g. after a restart).
+   /// </summary>
+   /// <param name="preferences">Preferences instance to write.</param>
+   /// <param name="site">The new site name.</param>
    ///
-   const String& location() const
+   void setSite(Preferences& preferences, const char* site)
    {
-      return _locationName;
+      preferences.begin(_preferencesNamespace, false);
+      preferences.putString(SITE_KEY, site);
+      preferences.end();
+   }
+
+   ///
+   /// <summary>
+   /// Persists a new location to Preferences. Does not affect the in-memory resolved
+   /// value returned by location() until the next resolve() (e.g. after a restart).
+   /// </summary>
+   /// <param name="preferences">Preferences instance to write.</param>
+   /// <param name="location">The new location name.</param>
+   ///
+   void setLocation(Preferences& preferences, const char* location)
+   {
+      preferences.begin(_preferencesNamespace, false);
+      preferences.putString(LOCATION_KEY, location);
+      preferences.end();
    }
 };

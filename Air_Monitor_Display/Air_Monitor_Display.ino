@@ -33,9 +33,10 @@
 //
 
 // Declares which VLW font sizes this sketch actually uses, so only the needed font data
-// is compiled in.
+// is compiled in. TEXT_SIZE_2 and TEXT_SIZE_3 are always included regardless (see
+// ArduinoWithDisplay.h), since printInitHeader() can pick either one at runtime, and this
+// sketch's own FieldTable also happens to use size 2.
 #define TEXT_SIZES_CUSTOM
-#define TEXT_SIZE_2
 
 #include "ArduinoBoard.h"
 

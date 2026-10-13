@@ -491,6 +491,22 @@ public:
 
       arduino.begin(); // sets up the I2C bus/power rail and the RGB status LED
 
+      // If the previous boot crashed (panic/watchdog, or a failed ASSERT - see
+      // Util::isAssertHaltReason()) before it ran long enough to be considered stable
+      // (Util::wasPastSafeModeGracePeriod()), don't run any more of the normal startup
+      // sequence below (site prompts, display status, sensors) since one of those steps may be
+      // the cause. Instead connect only WiFi/the Device Server and stay reachable for a remote
+      // Restart or firmware Update. A crash that happens after the grace period (e.g. a
+      // transient sensor/Influx hiccup during normal operation) just restarts normally instead.
+      bool crashed = Util::isCrashResetReason() || Util::isAssertHaltReason(SerialX::lastShutdownReason());
+      bool enterSafeMode = crashed && !Util::wasPastSafeModeGracePeriod();
+      Util::clearSafeModeGracePeriod();
+
+      if (enterSafeMode)
+      {
+         _runSafeMode();
+      }
+
       _status->setStatus(Status::STARTED);
 
       std::string startingMessage = std::string("Starting ") + _config.sketchName;

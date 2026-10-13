@@ -10,6 +10,7 @@
 // handling a sketch-specific command ("Hi") sent from the Device Server.
 //
 
+#include <iterator>
 #include <string>
 
 #include "ArduinoBoard.h"
@@ -25,6 +26,11 @@ constexpr float HEARTBEAT_PERIOD_S = 10.0f;
 
 Arduino arduino;
 TimerSecs heartbeatTimer(HEARTBEAT_PERIOD_S);
+
+/// <summary>Sketch-specific commands, appended to the "Help" command's listing.</summary>
+constexpr DeviceServerClient::CommandInfo COMMANDS[] = {
+   { "Hi", "Replies with Hello" },
+};
 
 ///
 /// <summary>
@@ -52,7 +58,7 @@ void setup()
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD);
 
    DeviceServerClient::begin(SKETCH_NAME, VERSION);
-   DeviceServerClient::onCommand(onCommand);
+   DeviceServerClient::onCommand(onCommand, COMMANDS, std::size(COMMANDS));
 }
 
 void loop()

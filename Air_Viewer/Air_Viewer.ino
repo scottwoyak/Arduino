@@ -20,11 +20,10 @@
 // selecting the generic "ESP32S3 Dev Module" board in Visual Micro.
 #define ARDUINO_HOSYOND_ESP32_S3_VIEWER
 
+// TEXT_SIZE_2 and TEXT_SIZE_3 are always included regardless (see ArduinoWithDisplay.h).
 #define TEXT_SIZES_CUSTOM
-#define TEXT_SIZE_2
-#define TEXT_SIZE_3
 
-#include <string>
+
 
 #include "ArduinoBoard.h"
 
@@ -36,7 +35,6 @@
 #include "Bar.h"
 #include "LibraryVersion.h"
 #include "SerialX.h"
-#include "SiteLocationResolver.h"
 #include "Status.h"
 #include "TelemetryClient.h"
 #include "Timer.h"
@@ -91,8 +89,7 @@ TelemetryConfig TELEMETRY_CONFIG = {
    .topic = "unresolved",
 };
 
-ViewerSketch sketch(SKETCH_CONFIG, TELEMETRY_CONFIG);
-SiteLocationResolver siteLocationResolver(PREFERENCES_NAMESPACE, SITE_OPTIONS);
+ViewerSketch sketch(SKETCH_CONFIG, TELEMETRY_CONFIG, SITE_OPTIONS);
 Timer displayTimer(DISPLAY_UPDATE_MS);
 
 constexpr Color TIER_COLORS[NUM_TIERS] = {
@@ -207,7 +204,7 @@ void drawStatic()
    sketch.arduino.setTextSize(HEADER_TEXT_SIZE);
    sketch.arduino.println("Air Quality", Color::HEADING);
 
-   std::string location = std::string(siteLocationResolver.site().c_str()) + "/" + std::string(siteLocationResolver.location().c_str());
+   std::string location = sketch.siteLocation();
    uint16_t locationWidth = location.length() * sketch.arduino.charW(TEXT_SIZE);
    sketch.arduino.setTextSize(TEXT_SIZE);
    sketch.arduino.setCursor(sketch.arduino.width() - locationWidth, 0);
@@ -229,14 +226,12 @@ void setup()
 
    initLayout();
 
-   siteLocationResolver.resolve(sketch.arduino.preferences, true);
-   std::string suffix = "/" + std::string(siteLocationResolver.site().c_str()) + "/" + std::string(siteLocationResolver.location().c_str());
+   sketch.resolveSiteLocation(true);
+   std::string suffix = "/" + sketch.siteLocation();
    for (uint8_t i = 0; i < NUM_BARS; i++)
    {
       telemetryTopics[i] = std::string(TOPIC_ITEMS[i]) + suffix;
    }
-   Serial.print("Location... ");
-   Serial.println(suffix.c_str());
 
    sketch.beginConnect();
 

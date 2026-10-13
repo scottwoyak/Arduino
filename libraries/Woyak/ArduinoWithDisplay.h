@@ -6,6 +6,21 @@
 #define ARDUINO_DISPLAY_SUPPORTED
 #endif
 
+// headerTextSize() (below) picks between TEXT_SIZE_HEADER and TEXT_SIZE_HEADER + 1 at
+// runtime, based on the board's display height, which a sketch can't know at compile time.
+// So these two sizes must always be compiled in, even for sketches that opt into a custom,
+// reduced TEXT_SIZE_n list via TEXT_SIZES_CUSTOM (see Fonts/RobotoMonoBold.h/Roboto.h) -
+// otherwise a sketch that only ever draws its own text at a size it did include can still
+// crash during startup when printInitHeader() requests the other header size.
+#ifdef TEXT_SIZES_CUSTOM
+#ifndef TEXT_SIZE_2
+#define TEXT_SIZE_2
+#endif
+#ifndef TEXT_SIZE_3
+#define TEXT_SIZE_3
+#endif
+#endif
+
 #include "ArduinoBase.h"
 #include "ColorX.h"
 #include "Format.h"

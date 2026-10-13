@@ -5,6 +5,9 @@
 // WIFI_PASSWORD, INFLUXDB_URL, and INFLUXDB_ORG are defined). This mirrors the include
 // order already used by Publisher-based sketches (see PublisherSketch.h).
 
+#include <sstream>
+
+#include "ConfigCommandHandler.h"
 #include "InfluxSketchBase.h"
 #include "SerialX.h"
 
@@ -31,11 +34,9 @@
 /// boards without a button, automatically offers the re-prompt instead whenever a
 /// Serial monitor is attached at boot (e.g. the board is inside an enclosure).
 ///
-class MonitorSketch : public InfluxSketchBase
+class MonitorSketch : public InfluxSketchBase, public ConfigCommandHandler
 {
 private:
-   static constexpr auto SITE_KEY = "site";
-   static constexpr auto LOCATION_KEY = "location";
    static constexpr auto BUCKET_KEY = "bucket";
 
    /// <summary>Site choices offered to every Monitor sketch that opts into site/location prompting (see influxConfig.promptForContext).</summary>
@@ -45,9 +46,177 @@ private:
    static constexpr const char* BUCKET_LABELS[] = { "30 Day", "7 Day" };
    static constexpr const char* BUCKET_NAMES[] = { INFLUXDB_BUCKET, INFLUXDB_BUCKET_7_DAY };
 
-   String _siteName;
-   String _locationName;
    std::string _bucketName = INFLUXDB_BUCKET;
+
+   /// <summary>Commands registered via enableConfigCommands(), listed by "Help" after the built-ins.</summary>
+   static constexpr DeviceServerClient::CommandInfo CONFIG_COMMANDS[] = {
+      { "GetConfig", "Reports the current site, location, and (if applicable) bucket" },
+      { "SetConfig <site|location|bucket> <value>", "Persists a new site/location/bucket value; requires Restart to take effect" },
+      { "SetConfig", "From the shell only: prompts for a new site/location, like the serial setup prompt" },
+   };
+
+   ///
+   /// <summary>
+   /// Returns the "bucket=..." GetConfig line when influxConfig.promptForBucket is set;
+   /// otherwise empty. See ConfigCommandHandler::_extraConfigText().
+   /// </summary>
+   /// <returns>The extra config text, or empty.</returns>
+   ///
+   std::string _extraConfigText() override
+   {
+      if (_influxConfig.promptForBucket)
+      {
+         return "bucket=" + _bucketName;
+      }
+      return std::string();
+   }
+
+   ///
+   /// <summary>
+   /// Persists a new bucket value to Preferences, validating it against BUCKET_NAMES.
+   /// See ConfigCommandHandler::_trySetExtraConfig().
+   /// </summary>
+   /// <param name="key">The config key, already known not to be "site" or "location".</param>
+   /// <param name="value">The new value.</param>
+   /// <param name="result">Set to the response message when the key is "bucket".</param>
+   /// <returns>True if the key was "bucket"; otherwise false.</returns>
+   ///
+   bool _trySetExtraConfig(const std::string& key, const std::string& value, std::string& result) override
+   {
+      if (strcasecmp(key.c_str(), "bucket") != 0)
+      {
+         return false;
+      }
+
+      if (!_influxConfig.promptForBucket)
+      {
+         result = "Error: this device doesn't support changing bucket";
+         return true;
+      }
+
+      bool valid = false;
+      for (const char* bucketName : BUCKET_NAMES)
+      {
+         if (strcasecmp(bucketName, value.c_str()) == 0)
+         {
+            valid = true;
+            break;
+         }
+      }
+      if (!valid)
+      {
+         result = "Error: unknown bucket \"" + value + "\"";
+         return true;
+      }
+
+      _persistString(BUCKET_KEY, value.c_str());
+      result = "Saved bucket=\"" + value + "\". Restart required to apply.";
+      return true;
+   }
+
+   ///
+   /// <summary>
+   /// Returns true when influxConfig.promptForBucket is set, so the interactive shell
+   /// "SetConfig" flow (see ConfigCommandHandler::_onInteractiveLocationAnswer()) chains
+   /// a bucket selection prompt after site/location. See ConfigCommandHandler::_hasExtraInteractivePrompt().
+   /// </summary>
+   /// <returns>True if a bucket prompt should follow the location prompt; otherwise false.</returns>
+   ///
+   bool _hasExtraInteractivePrompt() override
+   {
+      return _influxConfig.promptForBucket;
+   }
+
+   ///
+   /// <summary>
+   /// Writes the "Select a bucket" prompt (30 Day / 7 Day) to the shell channel and
+   /// registers _onInteractiveBucketAnswer() to handle the next shell input line as the
+   /// answer. See ConfigCommandHandler::_sendExtraPrompt().
+   /// </summary>
+   ///
+   void _sendExtraPrompt() override
+   {
+      DeviceServerClient::shell().println("Select a bucket:");
+      for (size_t i = 0; i < std::size(BUCKET_LABELS); i++)
+      {
+         DeviceServerClient::shell().print("  ");
+         DeviceServerClient::shell().print(i + 1);
+         DeviceServerClient::shell().print(": ");
+         DeviceServerClient::shell().println(BUCKET_LABELS[i]);
+      }
+
+      String label = "Enter selection (1-" + String(std::size(BUCKET_LABELS)) + ")";
+      for (size_t i = 0; i < std::size(BUCKET_NAMES); i++)
+      {
+         if (strcmp(BUCKET_NAMES[i], _bucketName.c_str()) == 0)
+         {
+            label += " [" + String(BUCKET_LABELS[i]) + "]";
+            break;
+         }
+      }
+      label += ": ";
+      DeviceServerClient::shell().print(label);
+      DeviceServerClient::shell().flushOutput();
+
+      DeviceServerClient::promptShellLine(_onInteractiveBucketAnswer);
+   }
+
+   ///
+   /// <summary>
+   /// Handles the answer to the interactive SetConfig bucket prompt sent via
+   /// promptShellLine(): a blank answer keeps the current bucket, otherwise validates
+   /// the selection (reprompting if invalid), then persists the chosen bucket and
+   /// completes the interactive "SetConfig" flow.
+   /// </summary>
+   /// <param name="line">The shell input line entered in response to the bucket prompt.</param>
+   ///
+   static void _onInteractiveBucketAnswer(const char* line)
+   {
+      MonitorSketch* self = static_cast<MonitorSketch*>(_configInstance);
+
+      String input = String(line);
+      input.trim();
+
+      const char* chosenBucket;
+      if (input.length() == 0)
+      {
+         chosenBucket = self->_bucketName.c_str();
+      }
+      else
+      {
+         long selection = input.toInt();
+         if (selection < 1 || selection > (long)std::size(BUCKET_NAMES))
+         {
+            DeviceServerClient::shell().println("Invalid selection.");
+            self->_sendExtraPrompt();
+            return;
+         }
+
+         chosenBucket = BUCKET_NAMES[selection - 1];
+      }
+
+      self->_applyInteractiveConfig(BUCKET_KEY, chosenBucket);
+      self->_finishInteractiveConfig();
+   }
+
+   ///
+   /// <summary>
+   /// Registers the "GetConfig"/"SetConfig" commands with DeviceServerClient, letting the
+   /// DeviceServer list and remotely change this device's persisted site/location (and
+   /// bucket, if influxConfig.promptForBucket is set). Called automatically by
+   /// _resolveFixedSite() once the site/location have been resolved, so sketches get
+   /// remote site/location management for free with no setup() changes needed. Only one
+   /// DeviceServerClient::onCommand() handler is supported, so don't use promptForContext
+   /// if the sketch registers its own handler.
+   /// </summary>
+   ///
+   void enableConfigCommands()
+   {
+      _preferencesNamespace = _config.preferencesNamespace;
+      _siteOptions = SITE_OPTIONS;
+      _commandPreferences = &_arduino->preferences;
+      _enableConfigCommands(CONFIG_COMMANDS, std::size(CONFIG_COMMANDS));
+   }
 
    ///
    /// <summary>
@@ -283,6 +452,9 @@ protected:
       {
          _loadSavedConfig();
       }
+
+      enableConfigCommands();
+
       std::string locationStatus = siteLocation();
       if (_influxConfig.promptForBucket)
       {

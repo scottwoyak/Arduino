@@ -6,11 +6,13 @@
 // PublisherSketch-based sketches (see InfluxSketchBase.h).
 
 #include <functional>
+#include <span>
 #include <string>
 
 #include "ArduinoBase.h"
 #include "Logger.h"
 #include "OTAUpdater.h"
+#include "SiteLocationResolver.h"
 #include "SketchBase.h"
 #include "Status.h"
 #include "TelemetryClient.h"
@@ -23,10 +25,9 @@
 /// Gate_Viewer, Wind_Viewer): printing the sketch name/version startup info to Serial
 /// and the display, connecting to WiFi, and (optionally) enabling OTA firmware updates.
 /// Unlike MonitorSketch/PublisherSketch (see InfluxSketchBase), a Viewer doesn't post to
-/// InfluxDB or track a site/location; it only renders telemetry it receives. A sketch
-/// constructs a ViewerSketch, calls begin() once from setup() (after registering its own
-/// telemetry client(s) and before any sketch-specific WiFi-dependent setup), and calls
-/// loop() once from loop().
+/// InfluxDB; it only renders telemetry it receives. A sketch constructs a ViewerSketch,
+/// calls begin() once from setup() (after registering its own telemetry client(s) and
+/// before any sketch-specific WiFi-dependent setup), and calls loop() once from loop().
 /// </summary>
 ///
 class ViewerSketch : public SketchBase
@@ -38,6 +39,9 @@ protected:
    /// <summary>Resolves the telemetry topic (from telemetryConfig) and connects the telemetry client.</summary>
    TopicResolver _topicResolver;
 
+   /// <summary>Resolves a free-text site/location pair, if siteOptions is non-empty; see resolveSiteLocation().</summary>
+   SiteLocationResolver _siteLocationResolver;
+
    /// <summary>Constructed by beginTelemetry(), once the telemetry topic has been resolved.</summary>
    TelemetrySubscriber* _client = nullptr;
 
@@ -46,19 +50,21 @@ public:
    /// <summary>
    /// Creates a ViewerSketch bound to the given board and configuration.
    /// </summary>
-   /// <param name="config">Shared configuration; preferencesNamespace is used by resolveTopic().</param>
+   /// <param name="config">Shared configuration; preferencesNamespace is used by resolveTopic()/resolveSiteLocation().</param>
    /// <param name="telemetryConfig">Telemetry settings (topic table or fixed topic) used by resolveTopic(). Defaults to empty for a viewer that passes its topic directly to beginTelemetry(topic, handler).</param>
+   /// <param name="siteOptions">Site choices offered by resolveSiteLocation(); location is entered as free text. Leave empty for a viewer that doesn't prompt for a site/location.</param>
    ///
-   ViewerSketch(const SketchConfig& config, const TelemetryConfig& telemetryConfig = {})
+   ViewerSketch(const SketchConfig& config, const TelemetryConfig& telemetryConfig = {}, std::span<const char* const> siteOptions = {})
       : SketchBase(config),
         _telemetryConfig(telemetryConfig),
-        _topicResolver(config.preferencesNamespace, &_telemetryConfig)
+        _topicResolver(config.preferencesNamespace, &_telemetryConfig),
+        _siteLocationResolver(config.preferencesNamespace, siteOptions)
    {
    }
 
    ///
    /// <summary>
-   /// Prints the sketch name/version startup info to Serial and the display. Call once
+   /// Prints the sketch name/version startup info to Serial and the display.
    /// from setup(), before any sketch-specific prompting (e.g. resolveTopic()) that must
    /// happen before WiFi connects, followed by beginConnect().
    /// </summary>
@@ -122,6 +128,49 @@ public:
       const char* topic = _topicResolver.resolve(_arduino, _status, forcePrompt);
       _printAndLogStatus("Topic... ", ("\"" + std::string(topic) + "\"").c_str());
       return topic;
+   }
+
+   ///
+   /// <summary>
+   /// Resolves this viewer's site/location (see SiteLocationResolver::resolve()), prompting
+   /// over Serial (or loading the saved values from Preferences) if needed, and registers
+   /// the "GetConfig"/"SetConfig" commands with DeviceServerClient so the resolved values
+   /// can be reported/changed remotely. Also reports the resolved site/location as an init
+   /// status line. Call once from setup(), after beginBanner() and before beginConnect().
+   /// Only applies if siteOptions was non-empty in the constructor. Only one
+   /// DeviceServerClient::onCommand() handler is supported, so don't call this if the
+   /// sketch registers its own handler.
+   /// </summary>
+   /// <param name="forcePrompt">If true, always offers to reconfigure even if saved values exist.</param>
+   ///
+   void resolveSiteLocation(bool forcePrompt = false)
+   {
+      _siteLocationResolver.resolve(_arduino->preferences, forcePrompt);
+      _printAndLogStatus("Location... ", siteLocation().c_str());
+   }
+
+   ///
+   /// <summary>Returns the resolved site name (empty until resolveSiteLocation() is called).</summary>
+   ///
+   const String& site() const
+   {
+      return _siteLocationResolver.site();
+   }
+
+   ///
+   /// <summary>Returns the resolved location name (empty until resolveSiteLocation() is called).</summary>
+   ///
+   const String& location() const
+   {
+      return _siteLocationResolver.location();
+   }
+
+   ///
+   /// <summary>Returns the resolved "site/location" string (empty until resolveSiteLocation() is called).</summary>
+   ///
+   std::string siteLocation() const
+   {
+      return std::string(site().c_str()) + "/" + location().c_str();
    }
 
    ///

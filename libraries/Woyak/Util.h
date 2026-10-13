@@ -43,12 +43,78 @@ constexpr size_t arraySize(const T (&)[N])
 
 #define ARRAY_SIZE(array) arraySize(array)
 
+///
+/// <summary>
+/// Set true once a boot has been running long enough (see Util::SAFE_MODE_GRACE_PERIOD_S)
+/// to be considered stable, so a later crash doesn't trigger safe mode. Lives in RTC "noinit"
+/// memory so it survives the panic/watchdog reset itself (unlike regular globals, which are
+/// reinitialized), but is still cleared by a power-on/brownout reset, which is desired since
+/// that's an entirely fresh boot attempt.
+/// </summary>
+///
+RTC_NOINIT_ATTR static bool _util_pastSafeModeGracePeriod;
+
 /// <summary>
 /// Utility functions for common operations.
 /// </summary>
 class Util
 {
 public:
+   ///
+   /// <summary>
+   /// Seconds a boot must run past begin() before a subsequent crash is considered
+   /// "recovered" (restart normally) rather than a startup failure (enter safe mode). See
+   /// wasPastSafeModeGracePeriod()/isPastSafeModeGracePeriod().
+   /// </summary>
+   ///
+   static constexpr float SAFE_MODE_GRACE_PERIOD_S = 30.0f;
+
+   ///
+   /// <summary>
+   /// Clears the safe-mode grace-period flag. Call once at the very start of begin(), after
+   /// checking Util::wasPastSafeModeGracePeriod(), so this boot starts tracking its own
+   /// uptime from a clean state.
+   /// </summary>
+   ///
+   static void clearSafeModeGracePeriod()
+   {
+      _util_pastSafeModeGracePeriod = false;
+   }
+
+   ///
+   /// <summary>
+   /// Returns whether the *previous* boot had survived past Util::SAFE_MODE_GRACE_PERIOD_S
+   /// before this boot started, i.e. whether a crash that led to this boot happened after the
+   /// sketch had already proven itself stable. Must be called before
+   /// Util::clearSafeModeGracePeriod(), at the very start of begin().
+   /// </summary>
+   /// <returns>True if the previous boot had already passed the grace period.</returns>
+   ///
+   static bool wasPastSafeModeGracePeriod()
+   {
+      return _util_pastSafeModeGracePeriod;
+   }
+
+   ///
+   /// <summary>
+   /// Returns true once the current boot has survived past Util::SAFE_MODE_GRACE_PERIOD_S,
+   /// meaning a crash from this point on should just restart normally instead of entering
+   /// safe mode. Must be polled periodically (e.g. from the main loop) since there's no
+   /// background timer; checks elapsed time via millis() the first time it's called after
+   /// the grace period has elapsed, then remembers the result.
+   /// </summary>
+   /// <returns>True if the grace period has already elapsed (or elapsed as of this call).</returns>
+   ///
+   static bool isPastSafeModeGracePeriod()
+   {
+      if (!_util_pastSafeModeGracePeriod && millis() >= static_cast<unsigned long>(SAFE_MODE_GRACE_PERIOD_S * 1000.0f))
+      {
+         _util_pastSafeModeGracePeriod = true;
+      }
+
+      return _util_pastSafeModeGracePeriod;
+   }
+
    /// <summary>
    /// Returns a random float value that fits within the given format, i.e. one whose
    /// whole-number digit count doesn't exceed what the format can display (e.g. a
@@ -215,6 +281,47 @@ public:
    /// RESTARTING state to the DeviceServer). Set by DeviceServerClient::begin().
    /// </summary>
    static inline void (*onResetting)() = nullptr;
+
+   /// <summary>
+   /// Returns true if the given reset reason indicates the previous boot crashed (panic or
+   /// watchdog timeout) rather than an intentional restart. Util::reset() always restarts via
+   /// deep sleep (ESP_RST_DEEPSLEEP) or ESP.restart() (ESP_RST_SW), so neither overlaps with
+   /// these crash reasons; callers can use this to trigger a safe-mode boot that bypasses
+   /// risky sketch-specific initialization and connects only to WiFi/the Device Server.
+   /// </summary>
+   /// <param name="reason">Reset reason to classify; defaults to the current boot's reason</param>
+   /// <returns>True if the reason is ESP_RST_PANIC, ESP_RST_TASK_WDT, ESP_RST_INT_WDT, or ESP_RST_WDT</returns>
+   static bool isCrashResetReason(esp_reset_reason_t reason = esp_reset_reason())
+   {
+      switch (reason)
+      {
+      case ESP_RST_PANIC:
+      case ESP_RST_TASK_WDT:
+      case ESP_RST_INT_WDT:
+      case ESP_RST_WDT:
+         return true;
+      default:
+         return false;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Returns whether a recorded halt reason (see setHaltReason()/checkTheLastShutdownReason())
+   /// came from a failed ASSERT. An ASSERT failure resets via deep sleep (see reset()), so the
+   /// hardware reset reason on the next boot is ESP_RST_DEEPSLEEP rather than one of the panic/
+   /// watchdog reasons isCrashResetReason() checks for; without this, an ASSERT failure during
+   /// early init would never be classified as a crash and so would never trigger safe mode,
+   /// letting the device reboot-loop into the same assertion forever instead of falling back to
+   /// safe mode.
+   /// </summary>
+   /// <param name="haltReason">Halt reason recorded for the previous boot (e.g. via SerialX::lastShutdownReason()).</param>
+   /// <returns>True if haltReason was recorded by a failed ASSERT.</returns>
+   ///
+   static bool isAssertHaltReason(const String& haltReason)
+   {
+      return haltReason.startsWith("Assertion failed:");
+   }
 
    /// <summary>
    /// Resets the device after an optional delay, recording a reason so it's reported

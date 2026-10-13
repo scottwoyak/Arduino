@@ -502,6 +502,34 @@ protected:
 
    ///
    /// <summary>
+   /// Runs a minimal recovery boot used when the previous boot crashed (see
+   /// Util::isCrashResetReason()) before it ran long enough to be considered stable (see
+   /// Util::wasPastSafeModeGracePeriod()). Skips all sketch-specific initialization (sensors,
+   /// site prompts, display status rendering) that might be the cause of the crash, and
+   /// instead only connects WiFi and the Device Server, then loops forever servicing
+   /// OTA/remote commands so the device stays reachable for a Restart or firmware Update.
+   /// Call instead of (not in addition to) the rest of begin() when safe mode is warranted.
+   /// This function does not return.
+   /// </summary>
+   ///
+   void _runSafeMode()
+   {
+      Util::setHaltReason("");
+
+      _printStartupInfo();
+      _printAndLogStatus("Safe mode... ", std::string("Entering safe mode (last reset: ") + Util::resetReasonString() + ")", Color::RED);
+
+      _beginConnect();
+      _beginLogger();
+
+      for (;;)
+      {
+         _loopStep();
+      }
+   }
+
+   ///
+   /// <summary>
    /// Starts the Logger connection. Call once from begin(), as the last setup step,
    /// after _beginConnect() and any other WiFi-dependent setup (e.g. a telemetry
    /// client), so nothing else can log a line while the LogServer connection is
@@ -580,6 +608,8 @@ protected:
    ///
    void _loopStep()
    {
+      Util::isPastSafeModeGracePeriod();
+
       if (!_arduino->ensureWiFiConnected() && !_onWiFiLost())
       {
          Util::reset(WIFI_LOST_RESET_DELAY_S, "WiFi connection lost");

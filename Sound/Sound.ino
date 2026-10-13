@@ -15,10 +15,9 @@
 
 #define ARDUINO_HOSYOND_ESP32_S3_VIEWER
 
-// Only compile in the font sizes this sketch uses, to save flash.
+// Only compile in the font sizes this sketch uses, to save flash. TEXT_SIZE_2 and
+// TEXT_SIZE_3 are always included regardless (see ArduinoWithDisplay.h).
 #define TEXT_SIZES_CUSTOM
-#define TEXT_SIZE_2
-#define TEXT_SIZE_3
 #define TEXT_SIZE_4
 
 #include "ArduinoBoard.h"

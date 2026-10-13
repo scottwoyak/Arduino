@@ -28,14 +28,11 @@
 // dedicated board package entry).
 #define ARDUINO_HOSYOND_ESP32_S3_VIEWER
 
-// Declares which VLW font sizes this sketch actually uses (2 and 4 - see
-// TEXT_SIZE/MIN_HEADER_TEXT_SIZE/MAX_HEADER_TEXT_SIZE below - plus 3, used for the
-// status text and as this board's DEFAULT_HEADING_SIZE in printInitHeader() during
-// boot), so ArduinoWithDisplay.h/Fonts/Roboto*.h only compile in the needed font data
-// instead of all 7 sizes, reducing flash usage.
+// Declares which VLW font sizes this sketch actually uses (4 - see
+// TEXT_SIZE/MAX_HEADER_TEXT_SIZE below; 2 and 3 are always included regardless, see
+// ArduinoWithDisplay.h), so ArduinoWithDisplay.h/Fonts/Roboto*.h only compile in the
+// needed font data instead of all 7 sizes, reducing flash usage.
 #define TEXT_SIZES_CUSTOM
-#define TEXT_SIZE_2
-#define TEXT_SIZE_3
 #define TEXT_SIZE_4
 
 #include <string>
