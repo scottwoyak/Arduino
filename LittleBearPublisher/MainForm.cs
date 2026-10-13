@@ -18,8 +18,11 @@ internal sealed class MainForm : Form
     private readonly ListView _list = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = true, HideSelection = false };
     private readonly Button _refreshButton = new() { Text = "Refresh", AutoSize = true };
     private readonly Button _uploadSelectedButton = new() { Text = "Publish Selected", AutoSize = true, Enabled = false };
-    private readonly Button _uploadAllButton = new() { Text = "Publish All", AutoSize = true, Enabled = false };
-    private readonly TextBox _log = new() { Dock = DockStyle.Bottom, Height = 120, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical };
+    private readonly Button _uploadAllButton = new() { Text = "Publish", AutoSize = true, Enabled = false };
+    private readonly CheckBox _autoUploadCheckBox = new() { Text = "Auto-upload", AutoSize = true, Padding = new Padding(8, 6, 0, 0) };
+    private const int LogVisibleLines = 4;
+
+    private readonly TextBox _log = new() { Dock = DockStyle.Bottom, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical };
     private readonly Icon _appIcon = LoadAppIcon();
     private readonly Font _readyFont;
     private readonly NotifyIcon _tray = new() { Visible = true };
@@ -49,12 +52,14 @@ internal sealed class MainForm : Form
         _list.Columns.Add("Board", 230);
         _list.Columns.Add("Version", 90);
         _list.Columns.Add("Built", 140);
-        _list.Columns.Add("Status", 90);
-        _list.Columns.Add("Detail", 300);
-        RestoreBounds();
+        _list.Columns.Add("Server", 300);
+        RestoreWindowBounds();
+
+        _log.Height = TextRenderer.MeasureText("Ag", _log.Font).Height * LogVisibleLines + _log.Margin.Vertical + 6;
+        _log.MinimumSize = new Size(0, _log.Height);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(4), WrapContents = false };
-        buttons.Controls.AddRange([_refreshButton, _uploadSelectedButton, _uploadAllButton]);
+        buttons.Controls.AddRange([_refreshButton, _uploadSelectedButton, _uploadAllButton, _autoUploadCheckBox]);
 
         Controls.Add(_list);
         Controls.Add(_log);
@@ -111,12 +116,12 @@ internal sealed class MainForm : Form
         "LittleBearPublisher",
         "window.json");
 
-    private sealed record WindowSettings(int X, int Y, int Width, int Height, bool Maximized, int[]? ColumnWidths = null, int SortColumn = -1, bool SortAscending = true);
+    private sealed record WindowSettings(int X, int Y, int Width, int Height, bool Maximized, int[]? ColumnWidths = null, int SortColumn = -1, bool SortAscending = true, bool AutoUpload = false);
 
     /// <summary>
     /// Restores the last saved window position and size, if it is still on a connected screen.
     /// </summary>
-    private void RestoreBounds()
+    private void RestoreWindowBounds()
     {
         try
         {
@@ -145,6 +150,8 @@ internal sealed class MainForm : Form
                 _sortAscending = saved.SortAscending;
                 UpdateSortHeaders();
             }
+
+            _autoUploadCheckBox.Checked = saved.AutoUpload;
 
             if (saved.Width < 300 || saved.Height < 200)
             {
@@ -190,7 +197,8 @@ internal sealed class MainForm : Form
                         WindowState == FormWindowState.Maximized,
                         _list.Columns.Cast<ColumnHeader>().Select(c => c.Width).ToArray(),
                         _sortColumn,
-                        _sortAscending)));
+                        _sortAscending,
+                        _autoUploadCheckBox.Checked)));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -256,6 +264,7 @@ internal sealed class MainForm : Form
             return;
         }
 
+        List<FirmwareItem> newlyReady = [];
         _busy = true;
         UpdateButtons();
         try
@@ -265,7 +274,7 @@ internal sealed class MainForm : Form
                 _rescanRequested = false;
                 _items = await _scanner.ScanAsync(_hub, false);
                 PopulateList();
-                NotifyNewReady();
+                newlyReady = NotifyNewReady();
             }
             while (_rescanRequested);
         }
@@ -277,6 +286,11 @@ internal sealed class MainForm : Form
         {
             _busy = false;
             UpdateButtons();
+        }
+
+        if (_autoUploadCheckBox.Checked && newlyReady.Count > 0)
+        {
+            await UploadAsync(newlyReady);
         }
     }
 
@@ -294,7 +308,7 @@ internal sealed class MainForm : Form
 
     private void UpdateSortHeaders()
     {
-        string[] titles = ["Sketch", "Board", "Version", "Built", "Status", "Detail"];
+        string[] titles = ["Sketch", "Board", "Version", "Built", "Server"];
         for (int i = 0; i < _list.Columns.Count; i++)
         {
             _list.Columns[i].Text = i == _sortColumn ? $"{titles[i]} {(_sortAscending ? "\u25B2" : "\u25BC")}" : titles[i];
@@ -313,8 +327,7 @@ internal sealed class MainForm : Form
             1 => (a, b) => string.Compare(a.Board, b.Board, StringComparison.OrdinalIgnoreCase),
             2 => (a, b) => CompareVersions(a.Version, b.Version),
             3 => (a, b) => a.Built.CompareTo(b.Built),
-            4 => (a, b) => a.Status.CompareTo(b.Status),
-            5 => (a, b) => string.Compare(a.Detail, b.Detail, StringComparison.OrdinalIgnoreCase),
+            4 => (a, b) => string.Compare(a.ServerInfo, b.ServerInfo, StringComparison.OrdinalIgnoreCase),
             _ => (a, b) => string.Compare(a.Sketch, b.Sketch, StringComparison.OrdinalIgnoreCase),
         };
 
@@ -341,8 +354,7 @@ internal sealed class MainForm : Form
             row.SubItems.Add(item.Board);
             row.SubItems.Add(item.Version);
             row.SubItems.Add(item.Status == FirmwareStatus.Skipped ? "" : DateText.Format(item.Built));
-            row.SubItems.Add(item.Status.ToString());
-            row.SubItems.Add(item.Detail);
+            row.SubItems.Add(item.ServerInfo);
             if (item.Status == FirmwareStatus.Ready)
             {
                 row.ForeColor = Color.DarkGreen;
@@ -361,7 +373,11 @@ internal sealed class MainForm : Form
         UpdateButtons();
     }
 
-    private void NotifyNewReady()
+    /// <summary>
+    /// Marks freshly-ready firmware as seen, shows a tray notification for it (when hidden),
+    /// and returns it so the caller can auto-upload it if that option is enabled.
+    /// </summary>
+    private List<FirmwareItem> NotifyNewReady()
     {
         var fresh = _items.Where(i => i.Status == FirmwareStatus.Ready && _notified.Add(i.Key)).ToList();
         if (fresh.Count > 0 && !Visible)
@@ -372,6 +388,8 @@ internal sealed class MainForm : Form
                 string.Join(", ", fresh.Select(i => $"{i.Firmware} {i.Version}")),
                 ToolTipIcon.Info);
         }
+
+        return fresh;
     }
 
     private List<FirmwareItem> SelectedUploadableItems()

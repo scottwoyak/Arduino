@@ -43,22 +43,33 @@ internal sealed class HubClient
                 return true;
             }
 
-            try
-            {
-                string json = await _http.GetStringAsync($"{Server}/api/firmware/{name}/latest");
-                using var doc = JsonDocument.Parse(json);
-                string? version = doc.RootElement.TryGetProperty("version", out var v) ? v.GetString() : null;
-                string? buildTime = doc.RootElement.TryGetProperty("buildTime", out var b) ? b.GetString() : null;
-                return !(version == item.Version && buildTime != item.BuildTime);
-            }
-            catch
-            {
-                return true;
-            }
+            var (version, buildTime) = await GetLatestAsync(item.Firmware);
+            return version == null || !(version == item.Version && buildTime != item.BuildTime);
         }
         catch
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Gets the version and build time of the firmware currently published on the server, if any.
+    /// </summary>
+    /// <param name="firmware">The firmware name, e.g. "Sketch.Board".</param>
+    /// <returns>The server's version and build time, or (null, null) if unavailable.</returns>
+    public async Task<(string? Version, string? BuildTime)> GetLatestAsync(string firmware)
+    {
+        try
+        {
+            string json = await _http.GetStringAsync($"{Server}/api/firmware/{Uri.EscapeDataString(firmware)}/latest");
+            using var doc = JsonDocument.Parse(json);
+            string? version = doc.RootElement.TryGetProperty("version", out var v) ? v.GetString() : null;
+            string? buildTime = doc.RootElement.TryGetProperty("buildTime", out var b) ? b.GetString() : null;
+            return (version, buildTime);
+        }
+        catch
+        {
+            return (null, null);
         }
     }
 

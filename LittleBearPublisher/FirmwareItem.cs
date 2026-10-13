@@ -7,7 +7,6 @@ internal enum FirmwareStatus
 {
     Ready,
     UpToDate,
-    Stale,
     Skipped,
 }
 
@@ -24,8 +23,23 @@ internal sealed class FirmwareItem
     public string BinPath { get; init; } = "";
     public FirmwareStatus Status { get; set; }
     public string Detail { get; set; } = "";
+    public string? ServerVersion { get; set; }
+    public string? ServerBuildTime { get; set; }
+
+    /// <summary>
+    /// True when the binary was built before the source (or shared library) last changed.
+    /// This is informational only; it does not affect whether the binary can be uploaded.
+    /// </summary>
+    public bool IsStale { get; set; }
 
     public string Firmware => $"{Sketch}.{Board}";
+
+    /// <summary>
+    /// Version and build date currently published on the server, formatted for display.
+    /// </summary>
+    public string ServerInfo => ServerVersion is null
+        ? ""
+        : ServerBuildTime is null ? ServerVersion : $"{ServerVersion} ({ServerBuildTime})";
 
     /// <summary>
     /// Identifies this exact build so a notification is only shown once per build.

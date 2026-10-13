@@ -131,14 +131,12 @@ internal sealed class FirmwareScanner
                     Built = bin.LastWriteTime,
                     BuildTime = buildMatch.Success ? buildMatch.Groups[1].Value : null,
                     BinPath = bin.FullName,
+                    IsStale = bin.LastWriteTime < sourceTime,
                 };
 
-                if (bin.LastWriteTime < sourceTime)
-                {
-                    item.Status = FirmwareStatus.Stale;
-                    item.Detail = $"last build: {DateText.Format(bin.LastWriteTime)}";
-                }
-                else if (!reupload && await hub.IsAlreadyPublishedAsync(item))
+                (item.ServerVersion, item.ServerBuildTime) = await hub.GetLatestAsync(item.Firmware);
+
+                if (!reupload && await hub.IsAlreadyPublishedAsync(item))
                 {
                     item.Status = FirmwareStatus.UpToDate;
                     item.Detail = "already on server";
