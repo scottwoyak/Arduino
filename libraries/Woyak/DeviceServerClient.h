@@ -5,10 +5,12 @@
 #include <string>
 #include <vector>
 
+#include <Arduino.h>
 #include <ArduinoJson.h>
 #include <WebSocketsClient.h>
 #include <WiFi.h>
 #include <Wire.h>
+#include <driver/gpio.h>
 
 #include "ArduinoBoardId.h"
 #include "DeviceHealth.h"
@@ -330,7 +332,7 @@ private:
       { "I2CWrite <address> <reg> <value>", "Writes a value to a register on an I2C device" },
       { "ReadPin [pin]", "Reads the digital state of a GPIO pin, or all pins if omitted" },
       { "WritePin <pin> <HIGH|LOW>", "Sets a GPIO pin's digital output state" },
-      { "GetPinMode <pin>", "Reports whether a GPIO pin is configured as INPUT or OUTPUT" },
+      { "GetPinMode [pin]", "Reports whether a GPIO pin is configured as INPUT or OUTPUT, or all pins if omitted" },
       { "SetPinMode <pin> <INPUT|OUTPUT|INPUT_PULLUP>", "Sets a GPIO pin's mode" },
       { "AnalogRead <pin>", "Reads the analog (ADC) value of a pin" },
       { "GetUptime", "Reports how long the device has been running since boot" },
@@ -488,20 +490,42 @@ private:
    /// <summary>
    /// Reports whether a GPIO pin is currently configured as INPUT or OUTPUT. Based on the
    /// ESP32 GPIO output-enable registers, so it can't distinguish INPUT from INPUT_PULLUP/
-   /// INPUT_PULLDOWN.
+   /// INPUT_PULLDOWN. If no pin is specified, reports the mode of every valid GPIO pin on
+   /// the board instead.
    /// </summary>
-   /// <param name="args">Command arguments; args[0] is the pin number.</param>
-   /// <returns>A description of the pin's configured mode, or an error message if the argument is missing/invalid.</returns>
+   /// <param name="args">Command arguments; args[0] is the pin number, or omitted to report all pins.</param>
+   /// <returns>A description of the pin's configured mode(s).</returns>
    ///
    static std::string _getPinMode(const std::vector<std::string>& args)
    {
       if (args.empty())
       {
-         return "GetPinMode requires a pin number, e.g. \"GetPinMode 14\"";
+         std::ostringstream result;
+         for (uint8_t pin = 0; pin < SOC_GPIO_PIN_COUNT; pin++)
+         {
+            if (!digitalPinIsValid(pin))
+            {
+               continue;
+            }
+
+            gpio_io_config_t ioConfig = {};
+            gpio_get_io_config(static_cast<gpio_num_t>(pin), &ioConfig);
+            bool isOutput = ioConfig.oe;
+
+            if (result.tellp() > 0)
+            {
+               result << "\n";
+            }
+            result << "Pin " << static_cast<int>(pin) << " = " << (isOutput ? "OUTPUT" : "INPUT");
+         }
+         return result.str();
       }
 
       int pin = atoi(args[0].c_str());
-      bool isOutput = (pin < 32) ? ((GPIO.enable & (1UL << pin)) != 0) : ((GPIO.enable1.data & (1UL << (pin - 32))) != 0);
+
+      gpio_io_config_t ioConfig = {};
+      gpio_get_io_config(static_cast<gpio_num_t>(pin), &ioConfig);
+      bool isOutput = ioConfig.oe;
 
       std::ostringstream result;
       result << "Pin " << pin << " = " << (isOutput ? "OUTPUT" : "INPUT");
@@ -676,7 +700,7 @@ private:
    static std::string _getUptime()
    {
       std::ostringstream result;
-      result << "Uptime: " << (millis() / 1000) << "s";
+      result << "Uptime: " << formatDuration(millis()).c_str();
       return result.str();
    }
 
@@ -699,7 +723,7 @@ private:
              << "Board: " << ARDUINO_BOARD << "\n"
 #endif
              << "Build time: " << BUILD_TIME << "\n"
-             << "Uptime: " << (millis() / 1000) << "s\n"
+             << "Uptime: " << formatDuration(millis()).c_str() << "\n"
              << "IP address: " << (WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "(not connected)");
 
       if (!_site.empty() || !_location.empty())
@@ -747,14 +771,14 @@ private:
    static std::string _getMemory()
    {
       std::ostringstream result;
-      result << "Free heap: " << ESP.getFreeHeap() << " / " << ESP.getHeapSize() << " bytes\n"
-             << "Min free heap seen: " << ESP.getMinFreeHeap() << " bytes\n"
-             << "Largest allocatable block: " << ESP.getMaxAllocHeap() << " bytes\n"
-             << "Sketch size: " << ESP.getSketchSize() << " bytes, free: " << ESP.getFreeSketchSpace() << " bytes";
+      result << "Free heap: " << formatBytes(ESP.getFreeHeap()).c_str() << " / " << formatBytes(ESP.getHeapSize()).c_str() << "\n"
+             << "Min free heap seen: " << formatBytes(ESP.getMinFreeHeap()).c_str() << "\n"
+             << "Largest allocatable block: " << formatBytes(ESP.getMaxAllocHeap()).c_str() << "\n"
+             << "Sketch size: " << formatBytes(ESP.getSketchSize()).c_str() << ", free: " << formatBytes(ESP.getFreeSketchSpace()).c_str();
 
       if (ESP.getPsramSize() > 0)
       {
-         result << "\nFree PSRAM: " << ESP.getFreePsram() << " / " << ESP.getPsramSize() << " bytes";
+         result << "\nFree PSRAM: " << formatBytes(ESP.getFreePsram()).c_str() << " / " << formatBytes(ESP.getPsramSize()).c_str();
       }
 
       return result.str();
@@ -772,7 +796,7 @@ private:
       std::ostringstream result;
       result << "Chip: " << ESP.getChipModel() << " rev " << ESP.getChipRevision() << ", " << (int)ESP.getChipCores() << " core(s)\n"
              << "CPU frequency: " << ESP.getCpuFreqMHz() << " MHz\n"
-             << "Flash size: " << ESP.getFlashChipSize() << " bytes\n"
+             << "Flash size: " << formatBytes(ESP.getFlashChipSize()).c_str() << "\n"
              << "Internal temperature: " << temperatureRead() << " C";
       return result.str();
    }

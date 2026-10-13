@@ -40,8 +40,8 @@
 
 #include "ArduinoBoard.h"
 
-#ifndef ARDUINO_DISPLAY_SUPPORTED
-#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#if !defined(ADAFRUIT_FEATHER_M0) && !defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+#error "This sketch is restricted to Feather boards (e.g. Feather ESP32-S3 TFT or Feather M0)."
 #include "WrongBoard.h"
 #endif
 

@@ -14,6 +14,12 @@
 #include <Arduino.h>
 #include <cmath>
 
+// Declares which VLW font sizes this sketch actually uses, so only the needed font data
+// is compiled in. TEXT_SIZE_2 and TEXT_SIZE_3 are always included regardless (see
+// ArduinoWithDisplay.h); this sketch also uses setTextSize(5).
+#define TEXT_SIZES_CUSTOM
+#define TEXT_SIZE_5
+
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
