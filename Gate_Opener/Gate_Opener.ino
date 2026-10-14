@@ -25,6 +25,7 @@
 //
 
 #include <Arduino.h>
+#include <sstream>
 #include <string>
 
 #include <WebServer.h>
@@ -42,7 +43,7 @@
 // This sketch's own version (e.g. "1.8"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("1.8");
+const auto VERSION = MakeVersion("1.10");
 constexpr auto SKETCH_NAME = "Gate_Opener";
 
 constexpr uint16_t WEB_SERVER_PORT = 80;
@@ -245,12 +246,72 @@ void handlePostGate()
    Logger.log("Gate command " + std::string(value.c_str()) + " from " + clientIp, LogSeverity::INFO, "Gate");
 }
 
+///
+/// <summary>
+/// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
+/// </summary>
+///
+static constexpr DeviceServerClient::CommandInfo GATE_COMMANDS[] = {
+   { "GateOpen", "Pulses the gate open, unless currently held open" },
+   { "GateHold", "Holds the gate open until GateClose is issued" },
+   { "GateClose", "Releases a held-open gate (or clears a pending open pulse)" },
+};
+
+///
+/// <summary>
+/// Handles the "GateOpen"/"GateHold"/"GateClose" commands registered via
+/// DeviceServerClient::onCommand(), driving the gate relay the same way the /Gate POST
+/// endpoint does.
+/// </summary>
+/// <param name="command">Full command text received from the DeviceServer.</param>
+///
+static void onGateCommand(const char* command)
+{
+   std::istringstream stream(command);
+   std::string verb;
+   stream >> verb;
+
+   if (strcasecmp(verb.c_str(), "GateOpen") == 0)
+   {
+      if (!gateHeldOpen)
+      {
+         startGateRelayTrigger();
+         updateGateStatus();
+      }
+      sketch.logMessage("Gate command GateOpen");
+      DeviceServerClient::respond("OPEN");
+   }
+   else if (strcasecmp(verb.c_str(), "GateHold") == 0)
+   {
+      gateHeldOpen = true;
+      if (!gateTriggerRelay)
+      {
+         startGateRelayTrigger();
+      }
+      updateGateStatus();
+      sketch.logMessage("Gate command GateHold");
+      DeviceServerClient::respond("HOLD");
+   }
+   else if (strcasecmp(verb.c_str(), "GateClose") == 0)
+   {
+      releaseGateHold();
+      sketch.logMessage("Gate command GateClose");
+      DeviceServerClient::respond("CLOSED");
+   }
+   else
+   {
+      DeviceServerClient::respond((std::string("Unhandled command: ") + command).c_str());
+   }
+}
+
 void setup()
 {
    pinMode(GATE_RELAY_PIN, OUTPUT);
    digitalWrite(GATE_RELAY_PIN, LOW);
 
    sketch.begin();
+
+   DeviceServerClient::onCommand(onGateCommand, GATE_COMMANDS, std::size(GATE_COMMANDS));
 
    server.on("/", HTTP_GET, handleRoot);
    server.on("/Gate", HTTP_GET, handleGetGate);

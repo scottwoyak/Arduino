@@ -60,6 +60,7 @@ namespace SerialX
       Serial.println();
 
 		_lastShutdownReason = Util::checkTheLastShutdownReason();
+		DeviceServerClient::setLastShutdownReason(_lastShutdownReason.c_str());
 
 		// Report the recorded failure reason (e.g. "Influx failed to begin") instead of
 		// the generic hardware reset reason (e.g. "Woke from deep sleep") whenever one was

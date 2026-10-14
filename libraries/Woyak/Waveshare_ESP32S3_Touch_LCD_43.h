@@ -53,7 +53,7 @@ public:
       status.begin();
    }
 
-   void setStatus(Status status) override
+   void _applyStatus(Status status) override
    {
       this->status.setStatus(status);
    }

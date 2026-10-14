@@ -30,6 +30,10 @@ protected:
 	/// <summary>Blink interval used by derived classes for animated status indicators.</summary>
 	static constexpr uint16_t BLINK_INTERVAL_MS = 300;
 
+private:
+	/// <summary>The most recently applied status, as reported through setStatus().</summary>
+	Status _currentStatus = Status::STARTED;
+
 public:
 	virtual ~IStatus() = default;
 
@@ -51,11 +55,49 @@ public:
 
 	///
 	/// <summary>
-	/// Updates the indicator to reflect the specified status.
+	/// Returns the most recently applied status (see setStatus()).
+	/// </summary>
+	/// <returns>The current status.</returns>
+	///
+	Status currentStatus() const
+	{
+		return _currentStatus;
+	}
+
+	///
+	/// <summary>
+	/// Updates the indicator to reflect the specified status, then records it as the
+	/// current one (see currentStatus()).
 	/// </summary>
 	/// <param name="status">The status value to display.</param>
-   ///
-	virtual void setStatus(Status status) = 0;
+	///
+	void setStatus(Status status)
+	{
+		_applyStatus(status);
+		_currentStatus = status;
+	}
+
+	///
+	/// <summary>
+	/// Re-applies the specified status to the indicator without changing currentStatus().
+	/// Useful for transient visual effects (e.g. flashing) that shouldn't be remembered
+	/// as the device's actual status.
+	/// </summary>
+	/// <param name="status">The status value to momentarily display.</param>
+	///
+	void applyTransient(Status status)
+	{
+		_applyStatus(status);
+	}
+
+protected:
+	///
+	/// <summary>
+	/// Applies the specified status to the underlying hardware/indicator.
+	/// </summary>
+	/// <param name="status">The status value to display.</param>
+	///
+	virtual void _applyStatus(Status status) = 0;
 };
 
 ///
@@ -67,7 +109,6 @@ public:
 class SerialStatus : public IStatus
 {
 private:
-	Status _lastStatus = Status::STARTED;
 	bool _hasLastStatus = false;
 
 	///
@@ -119,14 +160,13 @@ public:
 	/// </summary>
 	/// <param name="status">The status value to display.</param>
 	///
-	void setStatus(Status status) override
+	void _applyStatus(Status status) override
 	{
-		if (_hasLastStatus && status == _lastStatus)
+		if (_hasLastStatus && status == currentStatus())
 		{
 			return;
 		}
 
-		_lastStatus = status;
 		_hasLastStatus = true;
 
 		Serial.print("Status: ");
@@ -190,7 +230,7 @@ public:
 	/// </summary>
 	/// <param name="status">The status value to display.</param>
 	/// 
-	void setStatus(Status status) override
+	void _applyStatus(Status status) override
 	{
 		switch (status)
 		{
@@ -294,28 +334,28 @@ public:
    /// </summary>
    /// <param name="status">The status value to display.</param>
    ///
-   void setStatus(Status status) override
-   {
-      switch (status)
-      {
-      case Status::STARTED:
-      case Status::WIFI_CONNECTING:
-      case Status::WEB_CONNECTING:
-      case Status::UPDATING:
-      case Status::RESTARTING:
-         _led.blink(BLINK_INTERVAL_MS);
-         break;
+       void _applyStatus(Status status) override
+       {
+          switch (status)
+          {
+          case Status::STARTED:
+          case Status::WIFI_CONNECTING:
+          case Status::WEB_CONNECTING:
+          case Status::UPDATING:
+          case Status::RESTARTING:
+             _led.blink(BLINK_INTERVAL_MS);
+             break;
 
-      case Status::RUNNING:
-         _led.turnOn(READY_BRIGHTNESS);
-         break;
+          case Status::RUNNING:
+             _led.turnOn(READY_BRIGHTNESS);
+             break;
 
-      case Status::FAILED:
-         _led.blink(FAST_BLINK_INTERVAL_MS);
-         break;
-      }
-   }
-};
+          case Status::FAILED:
+             _led.blink(FAST_BLINK_INTERVAL_MS);
+             break;
+          }
+       }
+   };
 
 ///
 /// <summary>
@@ -370,7 +410,7 @@ public:
 	/// </summary>
 	/// <param name="status">The status value to display.</param>
    ///
-	void setStatus(Status status) override
+	void _applyStatus(Status status) override
 	{
 		// FAILED is applied immediately (rather than deferred to the next rising edge)
 		// since it's normally followed by a blocking delay/reset; waiting for the next
@@ -528,7 +568,7 @@ public:
 	/// </summary>
 	/// <param name="status">The status value to display.</param>
    /// 
-	void setStatus(Status status) override
+	void _applyStatus(Status status) override
 	{
 		// FAILED is applied immediately (rather than deferred to the next rising edge)
 		// since it's normally followed by a blocking delay/reset; waiting for the next

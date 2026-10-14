@@ -89,7 +89,7 @@ public:
    /// </summary>
    /// <param name="status">The status value to display.</param>
    ///
-   void setStatus(Status status) override
+   void _applyStatus(Status status) override
    {
       for (IStatus* s : _statuses)
       {

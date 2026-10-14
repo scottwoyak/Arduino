@@ -251,6 +251,8 @@ class DeviceServerClient
    static inline std::string _version;
    static inline std::string _site;
    static inline std::string _location;
+   /// <summary>The recorded reason for the previous shutdown (e.g. "Firmware Update"), set via setLastShutdownReason(); empty if none was recorded.</summary>
+   static inline std::string _lastShutdownReason;
 
     /// <summary>A log message queued while disconnected
    struct _PendingMessage
@@ -323,7 +325,7 @@ public:
 private:
    /// <summary>Built-in commands, listed by "Help" first, in this order.</summary>
    static constexpr CommandInfo _BUILTIN_COMMANDS[] = {
-      { "Help [-l]", "Lists all commands understood by this device (-l for a brief usage-only listing)" },
+      { "Help [-l] [-b|-s]", "Lists all commands understood by this device (-l for a brief usage-only listing, -b for only built-in commands, -s for only commands registered by the sketch)" },
       { "Restart", "Restarts the device" },
       { "GetHealth", "Reports WiFi/CPU/memory health as a JSON message" },
       { "Locate", "Asks the device to do something visibly identifiable" },
@@ -334,7 +336,7 @@ private:
       { "WritePin <pin> <HIGH|LOW>", "Sets a GPIO pin's digital output state" },
       { "GetPinMode [pin]", "Reports whether a GPIO pin is configured as INPUT or OUTPUT, or all pins if omitted" },
       { "SetPinMode <pin> <INPUT|OUTPUT|INPUT_PULLUP>", "Sets a GPIO pin's mode" },
-      { "AnalogRead <pin>", "Reads the analog (ADC) value of a pin" },
+      { "AnalogRead [pin]", "Reads the analog (ADC) value of a pin, or all analog-capable pins if omitted" },
       { "GetUptime", "Reports how long the device has been running since boot" },
       { "GetInfo", "Reports the sketch name, version, board type, build time, uptime, IP address, and site/location" },
       { "GetWifiInfo", "Reports the current WiFi SSID, signal strength, and IP address" },
@@ -379,31 +381,41 @@ private:
    /// Builds and sends the response text for the "Help" command: usage and description
    /// of every built-in command, followed by any sketch-registered commands. When
    /// listOnly is true ("Help -l"), only the usage of each command is listed, without
-   /// its description.
+   /// its description. When builtinOnly is true ("Help -b"), only built-in commands are
+   /// listed. When sketchOnly is true ("Help -s"), only sketch-registered commands are
+   /// listed. builtinOnly and sketchOnly are mutually exclusive; if both are set, sketchOnly wins.
    /// </summary>
    /// <param name="listOnly">If true, lists only command usage, omitting descriptions.</param>
+   /// <param name="builtinOnly">If true, omits sketch-registered commands and lists only built-in ones.</param>
+   /// <param name="sketchOnly">If true, omits built-in commands and lists only sketch-registered ones.</param>
    ///
-   static void _respondHelp(bool listOnly)
+   static void _respondHelp(bool listOnly, bool builtinOnly, bool sketchOnly)
    {
       std::ostringstream text;
-      for (const CommandInfo& info : _BUILTIN_COMMANDS)
+      if (!sketchOnly)
       {
-         text << info.usage;
-         if (!listOnly)
+         for (const CommandInfo& info : _BUILTIN_COMMANDS)
          {
-            text << " - " << info.description;
+            text << info.usage;
+            if (!listOnly)
+            {
+               text << " - " << info.description;
+            }
+            text << "\n";
          }
-         text << "\n";
       }
 
-      for (size_t i = 0; i < _sketchCommandCount; i++)
+      if (!builtinOnly)
       {
-         text << _sketchCommands[i].usage;
-         if (!listOnly)
+         for (size_t i = 0; i < _sketchCommandCount; i++)
          {
-            text << " - " << _sketchCommands[i].description;
+            text << _sketchCommands[i].usage;
+            if (!listOnly)
+            {
+               text << " - " << _sketchCommands[i].description;
+            }
+            text << "\n";
          }
-         text << "\n";
       }
 
       std::string message = text.str();
@@ -607,16 +619,31 @@ private:
 
    ///
    /// <summary>
-   /// Reads the analog (ADC) value of a pin.
+   /// Reads the analog (ADC) value of a pin. If no pin is specified, reads every valid
+   /// analog-capable GPIO pin on the board instead.
    /// </summary>
-   /// <param name="args">Command arguments; args[0] is the pin number.</param>
-   /// <returns>A description of the pin's analog reading, or an error message if the argument is missing.</returns>
+   /// <param name="args">Command arguments; args[0] is the pin number, or omitted to read all analog pins.</param>
+   /// <returns>A description of the pin's analog reading(s).</returns>
    ///
    static std::string _analogRead(const std::vector<std::string>& args)
    {
       if (args.empty())
       {
-         return "AnalogRead requires a pin number, e.g. \"AnalogRead 14\"";
+         std::ostringstream result;
+         for (uint8_t pin = 0; pin < SOC_GPIO_PIN_COUNT; pin++)
+         {
+            if (!digitalPinIsValid(pin) || digitalPinToAnalogChannel(pin) < 0)
+            {
+               continue;
+            }
+
+            if (result.tellp() > 0)
+            {
+               result << "\n";
+            }
+            result << "Pin " << static_cast<int>(pin) << " = " << analogRead(pin);
+         }
+         return result.str();
       }
 
       int pin = atoi(args[0].c_str());
@@ -742,8 +769,11 @@ private:
    ///
    static std::string _getWifiInfo()
    {
+      // Uses the configured SSID (WIFI_SSID) rather than WiFi.SSID(), which queries the
+      // driver's AP info synchronously and has been observed to briefly disrupt the WiFi
+      // connection; RSSI()/localIP() are cheap local reads and don't have this problem.
       std::ostringstream result;
-      result << "SSID: " << WiFi.SSID().c_str() << "\n"
+      result << "SSID: " << WIFI_SSID << "\n"
              << "RSSI: " << WiFi.RSSI() << " dBm\n"
              << "IP: " << WiFi.localIP().toString().c_str();
       return result.str();
@@ -758,7 +788,7 @@ private:
    static std::string _getResetReason()
    {
       std::ostringstream result;
-      result << "Reset reason: " << Util::resetReasonString();
+      result << "Reset reason: " << (_lastShutdownReason.empty() ? Util::resetReasonString() : _lastShutdownReason.c_str());
       return result.str();
    }
 
@@ -1035,8 +1065,25 @@ private:
       }
       else if (strcasecmp(verb.c_str(), "Help") == 0)
       {
-         bool listOnly = !args.empty() && strcasecmp(args[0].c_str(), "-l") == 0;
-         _respondHelp(listOnly);
+         bool listOnly = false;
+         bool builtinOnly = false;
+         bool sketchOnly = false;
+         for (const std::string& arg : args)
+         {
+            if (strcasecmp(arg.c_str(), "-l") == 0)
+            {
+               listOnly = true;
+            }
+            else if (strcasecmp(arg.c_str(), "-b") == 0)
+            {
+               builtinOnly = true;
+            }
+            else if (strcasecmp(arg.c_str(), "-s") == 0)
+            {
+               sketchOnly = true;
+            }
+         }
+         _respondHelp(listOnly, builtinOnly, sketchOnly);
       }
       else if (strcasecmp(verb.c_str(), "I2CScan") == 0)
       {
@@ -1291,6 +1338,20 @@ public:
    static bool isResolved()
    {
       return !_linePending;
+   }
+
+   ///
+   /// <summary>
+   /// Records the reason reported for the device's previous shutdown (e.g. "Firmware
+   /// Update"), so GetResetReason/GetInfo report it in place of the generic hardware
+   /// reset reason. Called by SerialX::begin() with the value recorded via
+   /// Util::setHaltReason() on the previous boot (see SerialX::lastShutdownReason()).
+   /// </summary>
+   /// <param name="reason">The recorded shutdown reason, or empty if none was recorded.</param>
+   ///
+   static void setLastShutdownReason(const char* reason)
+   {
+      _lastShutdownReason = reason;
    }
 
    ///

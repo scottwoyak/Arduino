@@ -264,6 +264,8 @@ protected:
    /// Services an active Locate request: flashes the status LED on boards without a
    /// display, and ends the request after LOCATE_DURATION_S. On display boards the display
    /// is cleared at the end, then _onLocateEndCallback is invoked so the sketch can redraw.
+   /// The flashing is transient and never changes the tracked current status, so once
+   /// Locate ends the LED is simply re-applied to whatever status is current.
    /// </summary>
    ///
    void _updateLocate()
@@ -279,8 +281,7 @@ protected:
 #ifdef ARDUINO_DISPLAY_SUPPORTED
          _arduino->clearDisplay();
 #else
-         _status->setStatus(Status::RUNNING);
-         _status->off();
+         _status->setStatus(_status->currentStatus());
 #endif
          if (_onLocateEndCallback != nullptr)
          {
@@ -299,7 +300,7 @@ protected:
          _locateLedOn = !_locateLedOn;
          if (_locateLedOn)
          {
-            _status->setStatus(Status::RUNNING);
+            _status->applyTransient(_status->currentStatus());
          }
          else
          {
