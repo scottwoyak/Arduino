@@ -302,13 +302,6 @@ void setup()
    sketch.setValueSource([]() { return pms.pm25(); });
    sketch.onSiteResolved(onSiteResolved);
 
-   sketch.setOnWiFiLostCallback([]()
-   {
-      sketch.arduino.clearDisplay();
-      sketch.arduino.println("WiFi connection lost", Color::RED);
-      return false;
-   });
-
    sketch.begin();
 
    InfluxPoint* point = sketch.addPoint({ { "item", "PMS5003" } });

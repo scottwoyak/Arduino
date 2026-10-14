@@ -18,8 +18,9 @@
 // - Continuously renders the latest averaged temperature and humidity values centered
 //   on the display at large text size, with location and version in the header/footer.
 // - Verifies Wi-Fi connectivity each loop (handled by SketchBase::loop()); on loss,
-//   clears the display and shows "WiFi connection lost" (via setOnWiFiLostCallback())
-//   before resetting the device after SketchBase::WIFI_LOST_RESET_DELAY_S seconds.
+//   clears the display and shows "WiFi connection lost" (SketchBase's default
+//   _onWiFiLost() behavior) before resetting the device after
+//   SketchBase::WIFI_LOST_RESET_DELAY_S seconds.
 // - Posts telemetry to InfluxDB every INFLUX_INTERVAL_S seconds (handled by Monitor::loop()).
 // - Checks for a firmware update periodically and, if a newer
 //   version is published, downloads and installs it (showing progress on the display)
@@ -125,13 +126,6 @@ bool wasAllValuesMode = false;
 void setup()
 {
    Wire.begin();
-
-   sketch.setOnWiFiLostCallback([]()
-   {
-      sketch.arduino.clearDisplay();
-      sketch.arduino.println("WiFi connection lost", Color::RED);
-      return false;
-   });
 
    // Fall back to the internal ESP32 CPU temperature sensor if no external sensor is
    // found, so the device still reports a (less accurate) temperature reading instead

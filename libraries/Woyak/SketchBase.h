@@ -632,17 +632,34 @@ protected:
    ///
    /// <summary>
    /// Extension point run when arduino.ensureWiFiConnected() reports the connection is
-   /// lost, before _loopStep() resets the device. Defaults to the callback registered
-   /// via setOnWiFiLostCallback() (if any), or returns false if none was registered.
-   /// Return true if the loss was fully handled and _loopStep() should skip its own
-   /// default reset; return false to let it reset the device after
-   /// WIFI_LOST_RESET_DELAY_S seconds.
+   /// lost, before _loopStep() resets the device. Runs the callback registered via
+   /// setOnWiFiLostCallback() (if any); otherwise, on display-capable boards, falls back
+   /// to clearing the display and showing "WiFi connection lost" so the standard
+   /// behavior doesn't have to be duplicated in every sketch. Return true if the loss
+   /// was fully handled and _loopStep() should skip its own default reset; return false
+   /// to let it reset the device after WIFI_LOST_RESET_DELAY_S seconds.
    /// </summary>
    /// <returns>True if the WiFi loss was fully handled and no reset is needed.</returns>
    ///
    virtual bool _onWiFiLost()
    {
-      return _onWiFiLostCallback != nullptr ? _onWiFiLostCallback() : false;
+      if (_onWiFiLostCallback != nullptr)
+      {
+         return _onWiFiLostCallback();
+      }
+
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+      constexpr auto WIFI_LOST_MESSAGE = "WiFi connection lost";
+      constexpr uint8_t WIFI_LOST_TEXT_SIZE = 2;
+
+      _arduino->clearDisplay();
+      _arduino->setTextSize(WIFI_LOST_TEXT_SIZE);
+      _arduino->setCursor(
+         (_arduino->width() - _arduino->textWidth(WIFI_LOST_MESSAGE)) / 2,
+         (_arduino->height() - _arduino->charH()) / 2);
+      _arduino->println(WIFI_LOST_MESSAGE, Color::RED);
+#endif
+      return false;
    }
 
    ///
@@ -804,17 +821,19 @@ public:
    ///
    /// <summary>
    /// Registers a callback invoked when WiFi connectivity is lost and cannot be
-   /// reestablished (see _onWiFiLost()). Use this to show something on the display,
-      /// log a message, etc. before the device resets. Return true from the callback if
-      /// the loss was fully handled and loop() should skip its own default reset; return
-      /// false to let loop() reset the device after WIFI_LOST_RESET_DELAY_S seconds.
-      /// </summary>
-      /// <param name="callback">Called with no arguments; returns true if fully handled.</param>
-      ///
-      void setOnWiFiLostCallback(std::function<bool()> callback)
-      {
-         _onWiFiLostCallback = callback;
-      }
+   /// reestablished (see _onWiFiLost()), overriding the default behavior (on
+   /// display-capable boards, clearing the display and showing "WiFi connection lost").
+   /// Use this only if a sketch needs custom handling - e.g. different display content,
+   /// extra logging, or to fully handle the loss itself. Return true from the callback
+   /// if the loss was fully handled and loop() should skip its own default reset; return
+   /// false to let loop() reset the device after WIFI_LOST_RESET_DELAY_S seconds.
+   /// </summary>
+   /// <param name="callback">Called with no arguments; returns true if fully handled.</param>
+   ///
+   void setOnWiFiLostCallback(std::function<bool()> callback)
+   {
+      _onWiFiLostCallback = callback;
+   }
 
       ///
       /// <summary>
