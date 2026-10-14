@@ -48,6 +48,9 @@ class DeviceHealth
    /// <summary>Highest RSSI since the last health report (dBm).</summary>
    static inline int32_t _maxRssi = INT32_MIN;
 
+   /// <summary>Most recent RSSI sample (dBm), independent of the since-last-report maximum above; see lastRssi().</summary>
+   static inline int32_t _lastRssi = 0;
+
    /// <summary>Highest CPU temperature since the last health report (F).</summary>
    static inline float _maxTempF = -FLT_MAX;
 
@@ -55,6 +58,7 @@ class DeviceHealth
    static void _sample()
    {
       int32_t rssi = WiFi.RSSI();
+      _lastRssi = rssi;
       if (rssi > _maxRssi)
       {
          _maxRssi = rssi;
@@ -88,6 +92,17 @@ public:
 
    /// <summary>Optional sketch-supplied callback that adds extra sketch-specific values (e.g. sensor readings) to the health JSON in fill().</summary>
    static inline void (*extraFields)(JsonDocument* doc) = nullptr;
+
+   ///
+   /// <summary>
+   /// Most recent RSSI sample (dBm), updated every SAMPLE_PERIOD_MS by recordLoop().
+   /// Safe to call from any context (e.g. a shell command handler) since it just returns
+   /// a cached value instead of querying the WiFi driver synchronously, which has been
+   /// observed to briefly disrupt the WiFi connection.
+   /// </summary>
+   /// <returns>The most recent RSSI sample, in dBm.</returns>
+   ///
+   static int32_t lastRssi() { return _lastRssi; }
 
    ///
    /// <summary>

@@ -17,8 +17,8 @@
 /// and persistence timing, but share the command registration, validation, persistence,
 /// and interactive prompting logic here. Subclasses may add extra config keys (e.g.
 /// MonitorSketch's "bucket") by overriding _extraConfigText() and _trySetExtraConfig().
-/// Only one DeviceServerClient::onCommand() handler is supported at a time, so don't use
-/// a subclass of this class if the sketch registers its own handler.
+/// Only one DeviceServerClient::onCommand()/onConfigCommand() handler is supported at a
+/// time, so don't use a subclass of this class if the sketch registers its own handler.
 /// </summary>
 ///
 class ConfigCommandHandler
@@ -396,18 +396,20 @@ protected:
 
    ///
    /// <summary>
-   /// Registers the "GetConfig"/"SetConfig" commands with DeviceServerClient, letting the
-   /// DeviceServer list and remotely change this device's persisted config. Changes made
-   /// via "SetConfig" are saved to Preferences but require a "Restart" command to take
-   /// effect, since site/location are only resolved at boot.
+   /// Registers the "GetConfig"/"SetConfig" commands with DeviceServerClient via
+   /// onConfigCommand(), letting the DeviceServer list and remotely change this device's
+   /// persisted config. Changes made via "SetConfig" are saved to Preferences but
+   /// require a "Restart" command to take effect, since site/location are only resolved
+   /// at boot. Listed alongside the built-ins (not under "Help -s"), since these commands
+   /// are shared across sketches rather than custom to this one.
    /// </summary>
-   /// <param name="commands">The subclass's CommandInfo array, listed by "Help" after the built-ins.</param>
+   /// <param name="commands">The subclass's CommandInfo array, listed by "Help" alongside the built-ins.</param>
    /// <param name="count">Number of entries in commands.</param>
    ///
    void _enableConfigCommands(const DeviceServerClient::CommandInfo* commands, size_t count)
    {
       _configInstance = this;
-      DeviceServerClient::onCommand(_onConfigCommand, commands, count);
+      DeviceServerClient::onConfigCommand(_onConfigCommand, commands, count);
    }
 
 public:

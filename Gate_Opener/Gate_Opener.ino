@@ -252,14 +252,14 @@ void handlePostGate()
 /// </summary>
 ///
 static constexpr DeviceServerClient::CommandInfo GATE_COMMANDS[] = {
-   { "GateOpen", "Pulses the gate open, unless currently held open" },
-   { "GateHold", "Holds the gate open until GateClose is issued" },
-   { "GateClose", "Releases a held-open gate (or clears a pending open pulse)" },
+   { "Open", "Pulses the gate open, unless currently held open" },
+   { "Hold", "Holds the gate open until Close is issued" },
+   { "Close", "Releases a held-open gate (or clears a pending open pulse)" },
 };
 
 ///
 /// <summary>
-/// Handles the "GateOpen"/"GateHold"/"GateClose" commands registered via
+/// Handles the "Open"/"Hold"/"Close" commands registered via
 /// DeviceServerClient::onCommand(), driving the gate relay the same way the /Gate POST
 /// endpoint does.
 /// </summary>
@@ -271,17 +271,17 @@ static void onGateCommand(const char* command)
    std::string verb;
    stream >> verb;
 
-   if (strcasecmp(verb.c_str(), "GateOpen") == 0)
+   if (strcasecmp(verb.c_str(), "Open") == 0)
    {
       if (!gateHeldOpen)
       {
          startGateRelayTrigger();
          updateGateStatus();
       }
-      sketch.logMessage("Gate command GateOpen");
+      sketch.logMessage("Gate command Open");
       DeviceServerClient::respond("OPEN");
    }
-   else if (strcasecmp(verb.c_str(), "GateHold") == 0)
+   else if (strcasecmp(verb.c_str(), "Hold") == 0)
    {
       gateHeldOpen = true;
       if (!gateTriggerRelay)
@@ -289,13 +289,13 @@ static void onGateCommand(const char* command)
          startGateRelayTrigger();
       }
       updateGateStatus();
-      sketch.logMessage("Gate command GateHold");
+      sketch.logMessage("Gate command Hold");
       DeviceServerClient::respond("HOLD");
    }
-   else if (strcasecmp(verb.c_str(), "GateClose") == 0)
+   else if (strcasecmp(verb.c_str(), "Close") == 0)
    {
       releaseGateHold();
-      sketch.logMessage("Gate command GateClose");
+      sketch.logMessage("Gate command Close");
       DeviceServerClient::respond("CLOSED");
    }
    else

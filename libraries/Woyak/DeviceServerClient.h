@@ -13,6 +13,7 @@
 #include <driver/gpio.h>
 
 #include "ArduinoBoardId.h"
+#include "CPUTemp.h"
 #include "DeviceHealth.h"
 #include "Format.h"
 #include "OTAUpdater.h"
@@ -352,6 +353,12 @@ private:
    /// <summary>Number of entries in _sketchCommands.</summary>
    static inline size_t _sketchCommandCount = 0;
 
+   /// <summary>Common/shared commands registered via onCommand(isConfigCommand=true) (e.g. GetConfig/SetConfig). Listed alongside the built-ins, but excluded by "Help -s" since they aren't custom to the sketch.</summary>
+   static inline const CommandInfo* _configCommands = nullptr;
+
+   /// <summary>Number of entries in _configCommands.</summary>
+   static inline size_t _configCommandCount = 0;
+
    ///
    /// <summary>
    /// Splits a command string into its verb and arguments, e.g. "readPin 14" into
@@ -400,6 +407,16 @@ private:
             if (!listOnly)
             {
                text << " - " << info.description;
+            }
+            text << "\n";
+         }
+
+         for (size_t i = 0; i < _configCommandCount; i++)
+         {
+            text << _configCommands[i].usage;
+            if (!listOnly)
+            {
+               text << " - " << _configCommands[i].description;
             }
             text << "\n";
          }
@@ -769,12 +786,13 @@ private:
    ///
    static std::string _getWifiInfo()
    {
-      // Uses the configured SSID (WIFI_SSID) rather than WiFi.SSID(), which queries the
-      // driver's AP info synchronously and has been observed to briefly disrupt the WiFi
-      // connection; RSSI()/localIP() are cheap local reads and don't have this problem.
+      // Uses the configured SSID (WIFI_SSID) rather than WiFi.SSID(), and a cached RSSI
+      // sample (DeviceHealth::lastRssi()) rather than WiFi.RSSI(), since both query the
+      // driver synchronously and have been observed to briefly disrupt the WiFi
+      // connection; localIP() is a cheap local read and doesn't have this problem.
       std::ostringstream result;
       result << "SSID: " << WIFI_SSID << "\n"
-             << "RSSI: " << WiFi.RSSI() << " dBm\n"
+             << "RSSI: " << DeviceHealth::lastRssi() << " dBm\n"
              << "IP: " << WiFi.localIP().toString().c_str();
       return result.str();
    }
@@ -817,7 +835,11 @@ private:
    ///
    /// <summary>
    /// Reports chip model/revision/cores, CPU frequency, flash size, and internal
-   /// temperature sensor reading.
+   /// temperature sensor reading. Uses CPUTemp::readC() rather than Arduino's
+   /// temperatureRead() directly, since the underlying ESP32 temperature sensor driver
+   /// can only be installed once per sketch and CPUTemp is the shared owner of that
+   /// driver (see DeviceHealth/ESP32TempSensor); calling temperatureRead() here would
+   /// conflict with an already-installed driver and read back NAN.
    /// </summary>
    /// <returns>A description of the device's CPU/chip diagnostics.</returns>
    ///
@@ -827,7 +849,7 @@ private:
       result << "Chip: " << ESP.getChipModel() << " rev " << ESP.getChipRevision() << ", " << (int)ESP.getChipCores() << " core(s)\n"
              << "CPU frequency: " << ESP.getCpuFreqMHz() << " MHz\n"
              << "Flash size: " << formatBytes(ESP.getFlashChipSize()).c_str() << "\n"
-             << "Internal temperature: " << temperatureRead() << " C";
+             << "Internal temperature: " << CPUTemp::readC() << " C";
       return result.str();
    }
 
@@ -1370,6 +1392,27 @@ public:
       _commandHandler = handler;
       _sketchCommands = help;
       _sketchCommandCount = helpCount;
+   }
+
+   ///
+   /// <summary>
+   /// Registers a handler invoked for commands received from the DeviceServer that aren't
+   /// one of the built-in commands, for commands shared across many sketches (e.g.
+   /// GetConfig/SetConfig registered by ConfigCommandHandler) rather than custom to this
+   /// particular sketch. Behaves exactly like onCommand(), except the given commands are
+   /// listed alongside the built-ins (and omitted by "Help -s", which lists only
+   /// sketch-specific custom commands). Only one handler is supported (shared with
+   /// onCommand()); call once from setup(), after begin().
+   /// </summary>
+   /// <param name="handler">Function invoked with the received command text.</param>
+   /// <param name="help">Array describing the shared commands (usage and description), appended to the "Help" command's listing; must outlive the sketch.</param>
+   /// <param name="helpCount">Number of entries in help.</param>
+   ///
+   static void onConfigCommand(void (*handler)(const char* command), const CommandInfo* help, size_t helpCount)
+   {
+      _commandHandler = handler;
+      _configCommands = help;
+      _configCommandCount = helpCount;
    }
 
    ///
