@@ -559,7 +559,7 @@ float settingsVolume = DEFAULT_VOLUME / MAX_VOLUME;
 constexpr uint8_t DEFAULT_SOUND_INDEX = 5;
 
 // Sound indices (see Sound::soundIndex) selectable in the settings view, in display order.
-constexpr std::array<uint8_t, 27> SETTINGS_SOUNDS = {
+constexpr std::array<uint8_t, 28> SETTINGS_SOUNDS = {
    1,  // Announce
    12, // Amok Time
    16, // Asian Gong
@@ -586,6 +586,7 @@ constexpr std::array<uint8_t, 27> SETTINGS_SOUNDS = {
    19, // Siren
    24, // Star Spangled
    17, // Undertaker
+   3,  // War Horn
    11, // Whistle
 };
 constexpr uint8_t NUM_SETTINGS_SOUNDS = SETTINGS_SOUNDS.size();
@@ -1413,8 +1414,8 @@ bool redrawAfterLocate = false;
 #ifdef ARDUINO_SOUND_SUPPORTED
 /// <summary>Commands registered with DeviceServerClient, appended to the "Help" command's listing.</summary>
 constexpr DeviceServerClient::CommandInfo SOUND_COMMANDS[] = {
-   { "PlaySound <index>", "Previews the given notification sound without changing the selected default (see ListSounds)" },
-   { "ListSounds", "Lists all available notification sound indices and names" },
+   { "PlaySound [index]", "Previews the given notification sound (or the currently selected one if omitted) without changing the selected default (see ListSounds)" },
+   { "ListSounds", "Lists all available notification sound indices and names, one per line" },
    { "GetSound", "Reports the currently selected default notification sound" },
    { "SetSound <index>", "Persists the given sound index as the default; requires Restart to take effect" },
    { "GetVolume", "Reports the currently selected volume (0.0 - MAX_VOLUME)" },
@@ -1441,6 +1442,12 @@ void onSoundCommand(const char* command)
    {
       int index = -1;
       stream >> index;
+      if (stream.fail())
+      {
+         // No index specified: preview the currently selected default sound.
+         index = sketch.arduino.sound.soundIndex;
+      }
+
       if (index < 0 || index >= Sound::NUM_SOUNDS)
       {
          DeviceServerClient::respond(("Error: index must be between 0 and " + std::to_string(Sound::NUM_SOUNDS - 1)).c_str());
@@ -1456,14 +1463,17 @@ void onSoundCommand(const char* command)
    }
    else if (strcasecmp(verb.c_str(), "ListSounds") == 0)
    {
+      // Listed in the same order as the settings view (see SETTINGS_SOUNDS), not raw
+      // index order, so indices reported here match what's shown/selectable in the UI.
       std::string text;
-      for (uint8_t i = 0; i < Sound::NUM_SOUNDS; i++)
+      for (uint8_t i = 0; i < NUM_SETTINGS_SOUNDS; i++)
       {
          if (i > 0)
          {
-            text += ", ";
+            text += "\n";
          }
-         text += std::to_string(i) + "=" + Sound::soundName(i);
+         uint8_t index = SETTINGS_SOUNDS[i];
+         text += std::to_string(index) + "=" + Sound::soundName(index);
       }
       DeviceServerClient::respond(text.c_str());
    }
