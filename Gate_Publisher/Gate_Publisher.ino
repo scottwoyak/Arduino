@@ -23,6 +23,8 @@
 #include "ArduinoBoard.h"
 #include "LibraryVersion.h"
 #include "MLX90393Magnetometer.h"
+#include "Preferences.h"
+#include "RollingAverage.h"
 #include "Timer.h"
 #include "WiFiSettings.h"
 
@@ -61,6 +63,49 @@ bool leftGate = true;
 
 // Number of decimal places the angle is published with.
 constexpr uint8_t ANGLE_DECIMALS = 1;
+
+// ----------- Zero (closed) azimuth persistence
+// The gate's closed-position azimuth can drift slightly over time (e.g. magnetometer or
+// mounting shifts), so it's continuously re-averaged whenever the gate is at rest and
+// reporting (close to) a zero angle, and the averaged value is periodically saved to
+// preferences. At startup, the saved value is used as the initial zeroAzimuth instead
+// of whatever position the gate happens to be in, so a reboot while the gate is open
+// doesn't re-zero it to the wrong angle.
+constexpr const char* ZERO_AZIMUTH_KEY = "zeroAzimuth";
+constexpr size_t ZERO_AZIMUTH_SAMPLES = 20;
+constexpr float ZERO_ANGLE_CAPTURE_DEG = 1.0f;
+constexpr uint32_t ZERO_AZIMUTH_SAVE_INTERVAL_S = 60;
+
+RollingAverage zeroAzimuthAverage(ZERO_AZIMUTH_SAMPLES);
+Timer zeroAzimuthSaveTimer(ZERO_AZIMUTH_SAVE_INTERVAL_S * 1000UL);
+Preferences gatePreferences;
+
+///
+/// <summary>
+/// Loads the previously saved zero (closed) azimuth from preferences, if any.
+/// </summary>
+/// <returns>The saved azimuth in degrees, or NAN if none has been saved yet.</returns>
+///
+float loadSavedZeroAzimuth()
+{
+   gatePreferences.begin(SKETCH_NAME, true);
+   float saved = gatePreferences.isKey(ZERO_AZIMUTH_KEY) ? gatePreferences.getFloat(ZERO_AZIMUTH_KEY) : NAN;
+   gatePreferences.end();
+   return saved;
+}
+
+///
+/// <summary>
+/// Saves the given zero (closed) azimuth to preferences.
+/// </summary>
+/// <param name="azimuth">The azimuth in degrees to save.</param>
+///
+void saveZeroAzimuth(float azimuth)
+{
+   gatePreferences.begin(SKETCH_NAME, false);
+   gatePreferences.putFloat(ZERO_AZIMUTH_KEY, azimuth);
+   gatePreferences.end();
+}
 
 // ----------- Jitter suppression
 // A resting gate jitters by up to ~0.6 degrees. At rest, a steady anchor angle is published.
@@ -101,6 +146,15 @@ float rawGateAngle()
    }
 
    float angle = leftGate ? -delta : delta;
+
+   // While the gate is at (or very near) its closed position, the current raw azimuth
+   // is a fresh sample of the true zero (closed) angle, so fold it into the rolling
+   // average that gets periodically saved for use as the starting zeroAzimuth on the
+   // next boot.
+   if (fabsf(angle) <= ZERO_ANGLE_CAPTURE_DEG)
+   {
+      zeroAzimuthAverage.set(rawAzimuth);
+   }
 
    // The gate should never report a negative angle (past fully closed). If it does,
    // treat the current position as the new zero (closed) angle instead.
@@ -172,12 +226,14 @@ void setup()
 
    sketch.begin();
 
-   // Zero the gate angle to the azimuth measured at startup, and pick the rotation
+   // Zero the gate angle to the saved zero (closed) azimuth, if one has been recorded
+   // yet, otherwise fall back to the azimuth measured at startup. Pick the rotation
    // direction based on the resolved site's location (Left vs Right).
    leftGate = strcmp(sketch.context().location, "Left") == 0;
 
    magnetometer.read();
-   zeroAzimuth = magnetometer.azimuth();
+   float savedZeroAzimuth = loadSavedZeroAzimuth();
+   zeroAzimuth = isnan(savedZeroAzimuth) ? magnetometer.azimuth() : savedZeroAzimuth;
 
    Logger.logInitializationComplete();
 }
@@ -185,4 +241,9 @@ void setup()
 void loop()
 {
    sketch.loop();
+
+   if (zeroAzimuthSaveTimer.ready() && zeroAzimuthAverage.count() > 0)
+   {
+      saveZeroAzimuth(zeroAzimuthAverage.average());
+   }
 }
