@@ -108,27 +108,29 @@ uint16_t barCenters[NUM_BARS] = {};
 uint16_t valueY = 0;
 uint16_t labelY = 0;
 uint16_t tierY = 0;
-bool needsInitialDisplay = true;
 bool topicsSet = false;
 std::string telemetryTopics[NUM_BARS];
 
 ///
 /// <summary>
 /// Handles telemetry lifecycle events: subscribes to all of the air topics on the
-/// connection once started, and flags the display for a full redraw.
+/// connection once started, and resets per-bar tracking state on every (re)connect.
 /// </summary>
 ///
-class AirTelemetryHandler : public TelemetryEventHandler
+class AirTelemetryHandler : public TelemetryViewerEventHandler
 {
 public:
-   explicit AirTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &sketch.arduino)
+   explicit AirTelemetryHandler(IStatus* status) : TelemetryViewerEventHandler(status, &sketch.arduino)
    {
    }
 
-   void onStarted() override
+   void onReconnected() override
    {
-      TelemetryEventHandler::onStarted();
-      needsInitialDisplay = true;
+      for (uint8_t i = 0; i < NUM_BARS; i++)
+      {
+         pmBars[i]->reset();
+         drawnValues[i] = -1;
+      }
 
       if (!topicsSet)
       {
@@ -213,8 +215,6 @@ void drawStatic()
    for (uint8_t i = 0; i < NUM_BARS; i++)
    {
       printCentered(LABELS[i], barCenters[i], labelY, Color::HEADING);
-      pmBars[i]->reset();
-      drawnValues[i] = -1;
    }
 }
 
@@ -246,7 +246,7 @@ void setup()
          }
       }
    });
-   sketch.setOnLocateEndCallback([]() { needsInitialDisplay = true; });
+   sketch.setOnLocateEndCallback([]() { telemetryHandler.needsFullRedraw = true; });
 
    delay(1000);
 
@@ -267,9 +267,9 @@ void loop()
       return;
    }
 
-   if (needsInitialDisplay)
+   if (telemetryHandler.needsFullRedraw)
    {
-      needsInitialDisplay = false;
+      telemetryHandler.needsFullRedraw = false;
       drawStatic();
    }
 

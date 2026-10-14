@@ -203,23 +203,18 @@ void displayHeader()
 /// started. Disconnects and failed connections use the base class behavior: the WebSocket retries in the background and the device resets only after the outage lasts TELEMETRY_OUTAGE_RESET_M minutes.
 /// </summary>
 ///
-class WaveTelemetryHandler : public TelemetryEventHandler
+class WaveTelemetryHandler : public TelemetryViewerEventHandler
 {
 private:
 
 public:
-   // set on every (re)start; the main loop clears and redraws the display, so the
-   // "Telemetry... OK" init line printed during setup() is never wiped mid-init
-   bool needsInitialDisplay = true;
-
-   explicit WaveTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &sketch.arduino)
+   explicit WaveTelemetryHandler(IStatus* status) : TelemetryViewerEventHandler(status, &sketch.arduino)
    {
    }
 
-   void onStarted() override
+   void onReconnected() override
    {
-      TelemetryEventHandler::onStarted();
-            needsInitialDisplay = true;
+      waterLevelChart->reset();
    }
 
    void onReceiveText(const std::string& text) override
@@ -249,7 +244,7 @@ void setup()
    sketch.beginConnect();
 
    sketch.beginTelemetry(&telemetryHandler);
-   sketch.setOnLocateEndCallback([]() { telemetryHandler.needsInitialDisplay = true; });
+   sketch.setOnLocateEndCallback([]() { telemetryHandler.needsFullRedraw = true; });
    sketch.getClient()->onSample([](const std::string& topic, double value, int64_t dtMicros)
    {
       lastSampleDtMicros = dtMicros;
@@ -278,12 +273,11 @@ void loop()
       return;
    }
 
-   if (telemetryHandler.needsInitialDisplay)
+   if (telemetryHandler.needsFullRedraw)
    {
-      telemetryHandler.needsInitialDisplay = false;
+      telemetryHandler.needsFullRedraw = false;
       sketch.arduino.clearDisplay();
       displayHeader();
-      waterLevelChart->reset();
    }
 
    // get value

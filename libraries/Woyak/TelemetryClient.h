@@ -309,6 +309,60 @@ public:
    }
 };
 
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+///
+/// <summary>
+/// TelemetryEventHandler specialization for subscriber "viewer" sketches that render
+/// telemetry values on a display (e.g. Air_Viewer, Wind_Viewer, Wave_Viewer). Tracks
+/// whether the static, mostly-unchanging parts of the screen (header, labels, etc.)
+/// need a full clear and redraw, separately from a telemetry (re)connection: every
+/// successful connect/reconnect calls onStarted(), but that by itself should only
+/// reset per-value tracking state (via onReconnected()), not repaint the whole screen -
+/// a flaky connection that reconnects repeatedly would otherwise flicker the display
+/// once per reconnect. needsFullRedraw is set true initially (first draw after
+/// startup) and should also be set true from a Locate-end callback, since Locate
+/// overwrites the whole screen.
+/// </summary>
+///
+class TelemetryViewerEventHandler : public TelemetryEventHandler
+{
+public:
+   // Set initially (for the first draw after setup()) and whenever the whole screen
+   // needs to be cleared and redrawn (e.g. after Locate ends). Not set on telemetry
+   // reconnection; see onReconnected().
+   bool needsFullRedraw = true;
+
+   ///
+   /// <summary>
+   /// Initializes a new instance of the TelemetryViewerEventHandler class.
+   /// </summary>
+   /// <param name="status">Status indicator updated by the default event handling.</param>
+   /// <param name="display">Display used to draw error messages and by onDisconnected()/onConnectionFailed().</param>
+   ///
+   explicit TelemetryViewerEventHandler(IStatus* status, ArduinoWithDisplay* display) : TelemetryEventHandler(status, display)
+   {
+   }
+
+   void onStarted() override
+   {
+      TelemetryEventHandler::onStarted();
+      onReconnected();
+   }
+
+   ///
+   /// <summary>
+   /// Invoked every time the telemetry client (re)starts, including the first start.
+   /// Default implementation does nothing. Override to reset per-value tracking state
+   /// (e.g. drawn values, bar positions) so stale values redraw cleanly, without
+   /// forcing a full clearDisplay()/redraw of the static screen content.
+   /// </summary>
+   ///
+   virtual void onReconnected()
+   {
+   }
+};
+#endif
+
 ///
 /// <summary>
 /// Client for the TelemetryServer (WebSocket at /ws, optionally TLS).

@@ -195,24 +195,20 @@ void displayHeader()
 /// and feeds the charts/stats on each received value. Disconnects and failed connections use the base class behavior: the WebSocket retries in the background and the device resets only after the outage lasts TELEMETRY_OUTAGE_RESET_M minutes.
 /// </summary>
 ///
-class WindTelemetryHandler : public TelemetryEventHandler
+class WindTelemetryHandler : public TelemetryViewerEventHandler
 {
 private:
    Stopwatch _sinceLastReceive{ false };
 
 public:
-   // set on every (re)start; the main loop clears and redraws the display, so the
-   // "Telemetry... OK" init line printed during setup() is never wiped mid-init
-   bool needsInitialDisplay = true;
-
-   explicit WindTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &sketch.arduino)
+   explicit WindTelemetryHandler(IStatus* status) : TelemetryViewerEventHandler(status, &sketch.arduino)
    {
    }
 
-   void onStarted() override
+   void onReconnected() override
    {
-      TelemetryEventHandler::onStarted();
-      needsInitialDisplay = true;
+      histogramChart->reset();
+      rollingChart->reset();
       _sinceLastReceive.reset();
       _sinceLastReceive.start();
    }
@@ -273,7 +269,7 @@ void setup()
    rollingChart->setColorRange(&speedColorRange);
 
    sketch.beginTelemetry(&telemetryHandler);
-   sketch.setOnLocateEndCallback([]() { telemetryHandler.needsInitialDisplay = true; });
+   sketch.setOnLocateEndCallback([]() { telemetryHandler.needsFullRedraw = true; });
    delay(1000);
 
    Logger.logInitializationComplete();
@@ -295,13 +291,11 @@ void loop()
       return;
    }
 
-   if (telemetryHandler.needsInitialDisplay)
+   if (telemetryHandler.needsFullRedraw)
    {
-      telemetryHandler.needsInitialDisplay = false;
+      telemetryHandler.needsFullRedraw = false;
       sketch.arduino.clearDisplay();
       displayHeader();
-      histogramChart->reset();
-      rollingChart->reset();
    }
 
    float speed = client->getValue();
