@@ -80,25 +80,8 @@ constexpr uint16_t GATE_OPENER_PORT = 80;
 #define TEXT_SIZE_5
 #endif
 
-// Only compile in the notification sounds selectable in the settings view, to save flash.
-#define SOUNDS_CUSTOM
-#define SOUND_AMOK_TIME
-#define SOUND_BOND
-#define SOUND_CAFE_BELL
-#define SOUND_CATHEDRAL
-#define SOUND_CHICKENS
-#define SOUND_DANGER
-#define SOUND_GONG_MUSIC
-#define SOUND_LOTR_BATTLE
-#define SOUND_NUCLEAR
-#define SOUND_OBLITERATE
-#define SOUND_RAVEN
-#define SOUND_RED_ALERT
-#define SOUND_MORNING
-#define SOUND_SEWS
-#define SOUND_SIREN
-#define SOUND_UNDERTAKER
-#define SOUND_WHISTLE
+// All notification sounds are compiled in (no SOUNDS_CUSTOM restriction) so every sound
+// is selectable in the settings view.
 
 #include "ArduinoBoard.h"
 #include "LibraryVersion.h"
@@ -576,22 +559,32 @@ float settingsVolume = DEFAULT_VOLUME / MAX_VOLUME;
 constexpr uint8_t DEFAULT_SOUND_INDEX = 5;
 
 // Sound indices (see Sound::soundIndex) selectable in the settings view, in display order.
-constexpr std::array<uint8_t, 17> SETTINGS_SOUNDS = {
+constexpr std::array<uint8_t, 27> SETTINGS_SOUNDS = {
+   1,  // Announce
    12, // Amok Time
+   16, // Asian Gong
+   14, // Bells Dong
    10, // Bond
    25, // Cafe Bell
    15, // Cathedral
    5,  // Chickens
+   0,  // Chime
    9,  // Danger
+   26, // Door Bell
+   4,  // Gjallarhorn
    18, // Gong Music
+   23, // Harry Potter
+   22, // Jaws
    21, // LOTR Battle
    7,  // Nuclear
    8,  // Obliterate
+   27, // Old Door Bell
    6,  // Raven
    13, // Red Alert
    2,  // Rooster
    20, // SEWS
    19, // Siren
+   24, // Star Spangled
    17, // Undertaker
    11, // Whistle
 };
@@ -934,6 +927,83 @@ void postGateOpen()
 {
    postGateCommand("OPEN");
 }
+
+#ifdef ARDUINO_TOUCH_SUPPORTED
+// ----------- Open confirmation prompt (shown when the "CLOSED" banner is tapped, before
+// any command is actually sent to the Gate_Opener). Offers exactly three choices: OPEN,
+// HOLD OPEN and CANCEL.
+bool showingOpenPrompt = false;
+Rect16 openPromptOpenRect;
+Rect16 openPromptHoldRect;
+Rect16 openPromptCancelRect;
+
+constexpr uint8_t OPEN_PROMPT_TITLE_TEXT_SIZE = 3;
+constexpr uint8_t OPEN_PROMPT_BUTTON_TEXT_SIZE = 3;
+constexpr int16_t OPEN_PROMPT_TITLE_TOP_MARGIN = 10;
+constexpr int16_t OPEN_PROMPT_BUTTON_GAP = 10;
+constexpr int16_t OPEN_PROMPT_BUTTON_SIDE_MARGIN = 20;
+
+///
+/// <summary>
+/// Draws one full-width button in the open confirmation prompt, remembering its tap
+/// target rect.
+/// </summary>
+/// <param name="rect">Receives the button's tap target.</param>
+/// <param name="top">Y coordinate of the button's top edge.</param>
+/// <param name="height">Button height.</param>
+/// <param name="label">Button text.</param>
+/// <param name="color">Border and text color.</param>
+///
+void drawOpenPromptButton(Rect16& rect, int16_t top, int16_t height, const char* label, Color color)
+{
+   rect = Rect16(OPEN_PROMPT_BUTTON_SIDE_MARGIN, top, sketch.arduino.width() - 2 * OPEN_PROMPT_BUTTON_SIDE_MARGIN, height);
+
+   sketch.arduino.display.drawRoundRect(rect.left(), rect.top(), rect.width, rect.height, 8, (uint16_t)color);
+
+   sketch.arduino.setTextSize(OPEN_PROMPT_BUTTON_TEXT_SIZE);
+   sketch.arduino.setCursor(rect.left(), rect.top() + (rect.height - sketch.arduino.charH(OPEN_PROMPT_BUTTON_TEXT_SIZE)) / 2);
+   sketch.arduino.printlnC(label, color, Color::BLACK);
+}
+
+///
+/// <summary>
+/// Draws the full-screen open confirmation prompt, offering OPEN, HOLD OPEN and CANCEL.
+/// Shown instead of immediately opening the gate when the "CLOSED" banner is tapped.
+/// </summary>
+///
+void displayOpenPrompt()
+{
+   sketch.arduino.clearDisplay();
+
+   sketch.arduino.setTextSize(OPEN_PROMPT_TITLE_TEXT_SIZE);
+   sketch.arduino.setCursor(0, OPEN_PROMPT_TITLE_TOP_MARGIN);
+   sketch.arduino.printlnC("Open gate?", Color::HEADING, Color::BLACK);
+
+   int16_t buttonHeight = sketch.arduino.charH(OPEN_PROMPT_BUTTON_TEXT_SIZE) + 2 * OPEN_PROMPT_BUTTON_GAP;
+   int16_t top = OPEN_PROMPT_TITLE_TOP_MARGIN + sketch.arduino.charH(OPEN_PROMPT_TITLE_TEXT_SIZE) + OPEN_PROMPT_BUTTON_GAP;
+
+   drawOpenPromptButton(openPromptOpenRect, top, buttonHeight, "OPEN", Color::GRAY);
+   top += buttonHeight + OPEN_PROMPT_BUTTON_GAP;
+
+   drawOpenPromptButton(openPromptHoldRect, top, buttonHeight, "HOLD OPEN", Color::GRAY);
+   top += buttonHeight + OPEN_PROMPT_BUTTON_GAP;
+
+   drawOpenPromptButton(openPromptCancelRect, top, buttonHeight, "CANCEL", Color::GRAY);
+}
+
+///
+/// <summary>
+/// Returns true if the given touch point falls within rect.
+/// </summary>
+/// <param name="rect">Tap target to test.</param>
+/// <param name="x">Touch x coordinate.</param>
+/// <param name="y">Touch y coordinate.</param>
+///
+bool inRect(const Rect16& rect, int16_t x, int16_t y)
+{
+   return x >= rect.left() && x < rect.right() && y >= rect.top() && y < rect.bottom();
+}
+#endif
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
 constexpr auto HOLD_SUBTEXT_OPEN = "Tap to hold open";
@@ -1347,6 +1417,9 @@ constexpr DeviceServerClient::CommandInfo SOUND_COMMANDS[] = {
    { "ListSounds", "Lists all available notification sound indices and names" },
    { "GetSound", "Reports the currently selected default notification sound" },
    { "SetSound <index>", "Persists the given sound index as the default; requires Restart to take effect" },
+   { "GetVolume", "Reports the currently selected volume (0.0 - MAX_VOLUME)" },
+   { "SetVolume <volume>", "Persists the given volume (0.0 - MAX_VOLUME) as the default and applies it immediately" },
+   { "GetHistory", "Reports recorded gate-opening timestamps, most recent first" },
 };
 
 ///
@@ -1413,6 +1486,57 @@ void onSoundCommand(const char* command)
          sketch.arduino.preferences.putUChar(SOUND_PREFERENCES_KEY, (uint8_t)index);
          sketch.arduino.preferences.end();
          DeviceServerClient::respond(("Saved sound=" + std::to_string(index) + "=" + Sound::soundName((uint8_t)index) + ". Restart required to apply.").c_str());
+      }
+   }
+   else if (strcasecmp(verb.c_str(), "GetVolume") == 0)
+   {
+      DeviceServerClient::respond(std::to_string(sketch.arduino.sound.volume).c_str());
+   }
+   else if (strcasecmp(verb.c_str(), "SetVolume") == 0)
+   {
+      float volume = -1.0f;
+      stream >> volume;
+      if (volume < 0.0f || volume > MAX_VOLUME)
+      {
+         DeviceServerClient::respond(("Error: volume must be between 0.0 and " + std::to_string(MAX_VOLUME)).c_str());
+      }
+      else
+      {
+         sketch.arduino.sound.volume = volume;
+         settingsVolume = volume / MAX_VOLUME;
+
+         sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+         sketch.arduino.preferences.putFloat(VOLUME_PREFERENCES_KEY, volume);
+         sketch.arduino.preferences.end();
+
+         DeviceServerClient::respond(("Saved volume=" + std::to_string(volume)).c_str());
+      }
+   }
+   else if (strcasecmp(verb.c_str(), "GetHistory") == 0)
+   {
+      if (gateOpenHistory.count() == 0)
+      {
+         DeviceServerClient::respond("No openings recorded");
+      }
+      else
+      {
+         std::string text;
+         for (size_t i = 0; i < gateOpenHistory.count(); i++)
+         {
+            if (i > 0)
+            {
+               text += ", ";
+            }
+
+            const GateOpenRecord& record = gateOpenHistory.get(i);
+            struct tm timeInfo;
+            localtime_r(&record.time, &timeInfo);
+
+            char timeBuffer[32];
+            strftime(timeBuffer, sizeof(timeBuffer), "%Y-%m-%d %H:%M:%S", &timeInfo);
+            text += timeBuffer;
+         }
+         DeviceServerClient::respond(text.c_str());
       }
    }
    else
@@ -1512,6 +1636,13 @@ void loop()
    static bool showingHistory = false;
    static TimerSecs historyTimeoutTimer(HISTORY_VIEW_TIMEOUT_S);
 
+   // The gate mechanism itself introduces about a half second delay (measured at best
+   // ~630 ms from relay on to the first reported movement) before the gate starts moving, so
+   // the viewer can't show movement sooner. Because of that, after a tap the panel is shown
+   // as opening right away (openPending) rather than waiting for the angle to change.
+   static bool openPending = false;
+   static TimerSecs openPendingTimer(10.0f);
+
    bool forceRedraw = redrawAfterLocate;
    redrawAfterLocate = false;
 
@@ -1548,6 +1679,48 @@ void loop()
       }
    }
 
+   #ifdef ARDUINO_TOUCH_SUPPORTED
+   if (showingOpenPrompt)
+   {
+      if (tapped && inRect(openPromptOpenRect, touchPoint.x, touchPoint.y))
+      {
+         showingOpenPrompt = false;
+         sketch.arduino.clearDisplay();
+         forceRedraw = true;
+         sketch.arduino.display.invertDisplay(true);
+         openPending = true;
+         openPendingTimer.reset();
+         showOpeningPending();
+         postGateOpen();
+         tapped = false;
+      }
+      else if (tapped && inRect(openPromptHoldRect, touchPoint.x, touchPoint.y))
+      {
+         showingOpenPrompt = false;
+         sketch.arduino.clearDisplay();
+         forceRedraw = true;
+         gateHeldOpen = true;
+         sketch.arduino.display.invertDisplay(true);
+         openPending = true;
+         openPendingTimer.reset();
+         showOpeningPending();
+         postGateCommand("HOLD");
+         tapped = false;
+      }
+      else if (tapped && inRect(openPromptCancelRect, touchPoint.x, touchPoint.y))
+      {
+         showingOpenPrompt = false;
+         sketch.arduino.clearDisplay();
+         forceRedraw = true;
+         tapped = false;
+      }
+      else
+      {
+         return;
+      }
+   }
+#endif
+
    float leftAzimuth = client->isStarted() ? leftValue : NAN;
    float rightAzimuth = client->isStarted() ? rightValue : NAN;
 
@@ -1556,12 +1729,6 @@ void loop()
 
    // The gate is considered open whenever either displayed angle exceeds the threshold.
    // After a tap the gate is expected to move, so any reported movement counts as open.
-   // The gate mechanism itself introduces about a half second delay (measured at best
-   // ~630 ms from relay on to the first reported movement) before the gate starts moving, so
-   // the viewer can't show movement sooner. Because of that, after a tap the panel is shown
-   // as opening right away (openPending) rather than waiting for the angle to change.
-   static bool openPending = false;
-   static TimerSecs openPendingTimer(10.0f);
 
    // A resting gate jitters around a degree or so, so the gate is not declared open by an angle.
    // It opens only after a sustained rise (GATE_OPEN_RISE_DEGREES within GATE_OPEN_RISE_WINDOW_MS)
@@ -1768,13 +1935,10 @@ void loop()
       if (tapped && !isOpen &&
        touchPoint.x >= gateStateRect.left() && touchPoint.x < gateStateRect.right() &&
            touchPoint.y >= gateStateRect.top() && touchPoint.y < gateStateRect.bottom())
-               {
-                  sketch.arduino.display.invertDisplay(true);
-                  openPending = true;
-                  openPendingTimer.reset();
-                  showOpeningPending();
-                  postGateOpen();
-           }
+              {
+                 showingOpenPrompt = true;
+                 displayOpenPrompt();
+          }
        #else
            // No touch hardware on this board: use button A to open the gate instead.
            if (sketch.arduino.buttonA.wasPressed() && !isOpen)
