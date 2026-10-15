@@ -26,6 +26,7 @@ private:
       { "Topic", 24 },
    };
 
+   const char* _preferencesNamespace;
    const TelemetryConfig* _config;
    PreferencesResolver _resolver;
    const char* _topic = nullptr;
@@ -39,7 +40,8 @@ public:
    /// <param name="config">Telemetry configuration, owned by the caller and expected to outlive this object.</param>
    ///
    TopicResolver(const char* preferencesNamespace, const TelemetryConfig* config)
-      : _config(config),
+      : _preferencesNamespace(preferencesNamespace),
+        _config(config),
         _resolver(preferencesNamespace, TOPIC_KEYS)
    {
       ASSERT(config != nullptr);
@@ -106,5 +108,49 @@ public:
    const char* topic() const
    {
       return _topic;
+   }
+
+   ///
+   /// <summary>
+   /// Persists a new telemetry topic to Preferences, validated against config.prompts.
+   /// Does not take effect until the device is restarted, since the topic is only
+   /// resolved at boot. Only valid when hasPrompts() is true, since a fixed topic
+   /// (config.topic) isn't remotely changeable.
+   /// </summary>
+   /// <param name="newTopic">The new topic to select, matched case-sensitively against config.prompts.</param>
+   /// <returns>A response message describing the result.</returns>
+   ///
+   std::string trySetTopic(const std::string& newTopic)
+   {
+      if (!hasPrompts())
+      {
+         return "Error: this device doesn't support changing the telemetry topic";
+      }
+
+      if (newTopic.empty())
+      {
+         return "Error: value must not be empty";
+      }
+
+      bool valid = false;
+      for (const char* option : _config->prompts)
+      {
+         if (strcmp(option, newTopic.c_str()) == 0)
+         {
+            valid = true;
+            break;
+         }
+      }
+      if (!valid)
+      {
+         return "Error: unknown topic \"" + newTopic + "\"";
+      }
+
+      Preferences preferences;
+      preferences.begin(_preferencesNamespace, false);
+      preferences.putString(TOPIC_KEYS[0], newTopic.c_str());
+      preferences.end();
+
+      return "Saved topic=\"" + newTopic + "\". Restart required to apply.";
    }
 };

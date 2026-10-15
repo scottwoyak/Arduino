@@ -93,6 +93,12 @@ class DeviceServerClient
    ///
    class _Connection : public WebSocketJsonClient
    {
+   public:
+      _Connection()
+      {
+         _outageTimeoutM = DeviceServerClient::OUTAGE_RESET_M;
+      }
+
    protected:
       void _onConnected() override
       {
@@ -103,12 +109,6 @@ class DeviceServerClient
       void _onDisconnected(const std::string& reason, bool wasConnected) override
       {
          DeviceServerClient::_debugPrint("Disconnected: " + (reason.empty() ? std::string("(no reason given)") : reason));
-
-         if (!DeviceServerClient::_outageActive)
-         {
-            DeviceServerClient::_outageActive = true;
-            DeviceServerClient::_outageStartMs = millis();
-         }
 
          if (!DeviceServerClient::_everConnected)
          {
@@ -151,7 +151,7 @@ class DeviceServerClient
          if (strcmp(type, "ack") == 0)
          {
             _ready = true;
-            DeviceServerClient::_outageActive = false;
+            _clearOutage();
             DeviceServerClient::_flushPendingMessages();
             if (!DeviceServerClient::_everConnected)
             {
@@ -227,6 +227,18 @@ class DeviceServerClient
          DeviceServerClient::_debugPrint("Error: " + reason);
          DeviceServerClient::log("WebSocket error: " + reason, LogSeverity::ERROR);
       }
+
+      void _onHandshakeAckTimeout() override
+      {
+         DeviceServerClient::log(std::string("Hub: no handshake ack from ") + getUrl() + " within " + std::to_string(HANDSHAKE_ACK_TIMEOUT_MS) + "ms; forcing reconnect", LogSeverity::WARN);
+      }
+
+      void _onOutageExpired(const std::string& reason, bool wasConnected) override
+      {
+         (void)reason;
+         (void)wasConnected;
+         Util::reset(DeviceServerClient::OUTAGE_RESET_DELAY_S, "Hub unreachable");
+      }
    };
 
    /// <summary>How long (in milliseconds) DeviceServerClient waits after a disconnect before logging "Logging disconnected: ...".</summary>
@@ -237,12 +249,6 @@ class DeviceServerClient
 
    /// <summary>Seconds Util::reset() waits before restarting after a prolonged hub outage.</summary>
    static constexpr float OUTAGE_RESET_DELAY_S = 10.0f;
-
-   /// <summary>True while the hub connection is down and hasn't yet been acknowledged again.</summary>
-   static inline bool _outageActive = false;
-
-   /// <summary>millis() timestamp of the start of the current hub outage.</summary>
-   static inline unsigned long _outageStartMs = 0;
 
    static inline _Connection _connection;
    static inline bool _everConnected = false;
@@ -1294,12 +1300,6 @@ public:
    static void loop()
    {
       _connection.loop();
-
-      if (_outageActive && (millis() - _outageStartMs) >= OUTAGE_RESET_M * 60UL * 1000UL)
-      {
-         _outageActive = false;
-         Util::reset(OUTAGE_RESET_DELAY_S, "Hub unreachable");
-      }
 
       if (_disconnectPending && !_connection.isConnected() && (millis() - _disconnectStartMs) >= DISCONNECT_GRACE_MS)
       {

@@ -410,12 +410,6 @@ private:
    TelemetryEventHandler* _handler = nullptr;
    bool _ownsHandler = false;
 
-   // set while an established connection has dropped and we are waiting for it to return
-   bool _dropActive = false;
-   bool _dropWasConnected = false;
-   std::string _dropReason;
-   Stopwatch _dropStopwatch;
-
    static constexpr uint32_t HEARTBEAT_PING_MS = 15000;
    static constexpr uint32_t HEARTBEAT_TIMEOUT_MS = 3000;
    static constexpr uint8_t HEARTBEAT_FAILURES = 2;
@@ -464,16 +458,6 @@ private:
          DeviceHealth::telemetryReconnects++;
       }
 
-      if (_dropActive)
-      {
-         return;
-      }
-
-      _dropActive = true;
-      _dropWasConnected = wasConnected;
-      _dropReason = reason;
-      _dropStopwatch.reset();
-      _dropStopwatch.start();
       Logger.log(std::string(wasConnected ? "Telemetry connection lost (" : "Could not connect to telemetry server (") + reason + "); will keep retrying for up to " + std::to_string((int)TELEMETRY_OUTAGE_RESET_M) + " minutes", LogSeverity::WARN);
    }
 
@@ -486,12 +470,11 @@ private:
          {
             _ready = true;
             _rate.reset();
-            if (_dropActive)
+            if (_outageActive)
             {
-               _dropActive = false;
-               _dropStopwatch.stop();
                Logger.log("Telemetry reconnected");
             }
+            _clearOutage();
             if (_handler != nullptr)
             {
                _handler->onStarted();
@@ -538,29 +521,29 @@ private:
       Logger.log(std::string("Telemetry: invalid message: ") + reason, LogSeverity::ERROR);
    }
 
+   void _onHandshakeAckTimeout() override
+   {
+      Logger.log(std::string("Telemetry: no handshake ack from ") + getUrl() + " within " + std::to_string(HANDSHAKE_ACK_TIMEOUT_MS) + "ms; forcing reconnect", LogSeverity::WARN);
+   }
+
 protected:
-    void _onLoop() override
+    void _onOutageExpired(const std::string& reason, bool wasConnected) override
     {
-       if (_dropActive && _dropStopwatch.elapsedSecs() >= TELEMETRY_OUTAGE_RESET_M * 60.0f)
+       Logger.log("Telemetry did not reconnect within " + std::to_string((int)TELEMETRY_OUTAGE_RESET_M) + " minutes", LogSeverity::ERROR);
+       if (_handler != nullptr)
        {
-          _dropActive = false;
-          _dropStopwatch.stop();
-          Logger.log("Telemetry did not reconnect within " + std::to_string((int)TELEMETRY_OUTAGE_RESET_M) + " minutes", LogSeverity::ERROR);
-          if (_handler != nullptr)
+          if (wasConnected)
           {
-             if (_dropWasConnected)
-             {
-                _handler->onDisconnected(_dropReason);
-             }
-             else
-             {
-                _handler->onConnectionFailed(_dropReason);
-             }
+             _handler->onDisconnected(reason);
+          }
+          else
+          {
+             _handler->onConnectionFailed(reason);
           }
        }
     }
 
-    ///
+     ///
     /// <summary>
     /// Called when the WebSocket connection is lost or a connection attempt fails.
    /// Subclasses should reset any per-connection state here.
@@ -613,6 +596,8 @@ public:
       : _config(config),
         _rate(TELEMETRY_RATE_NUM_SAMPLES)
    {
+      _outageTimeoutM = TELEMETRY_OUTAGE_RESET_M;
+
       if (handler != nullptr)
       {
          _handler = handler;

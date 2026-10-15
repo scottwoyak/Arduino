@@ -5,6 +5,7 @@
 #include <ArduinoJson.h>
 #include <WebSocketsClient.h>
 
+#include "Stopwatch.h"
 #include "Timer.h"
 
 ///
@@ -54,6 +55,7 @@ private:
             _connected = true;
             _hasConnected = true;
             _ready = false;
+            _handshakeAckTimer.reset();
             _onConnected();
             break;
 
@@ -69,6 +71,14 @@ private:
 
             if (!_switching)
             {
+               if (!_outageActive)
+               {
+                  _outageActive = true;
+                  _outageWasConnected = wasConnected;
+                  _outageReason = reason;
+                  _outageStopwatch.reset();
+                  _outageStopwatch.start();
+               }
                _onDisconnected(reason, wasConnected);
             }
             break;
@@ -105,6 +115,22 @@ protected:
    static constexpr uint32_t FAILOVER_TIMEOUT_MS = 6000;
    static constexpr uint32_t RECONNECT_INTERVAL_MS = 2000;
 
+   ///
+   /// <summary>
+   /// Maximum time, in milliseconds, to wait for the server's "ack" handshake reply
+   /// after the WebSocket connection itself reports WStype_CONNECTED before treating the
+   /// connection as dead and forcing a reconnect. Guards against a "zombie" connection:
+   /// the server can cancel/abandon a connection (e.g. mid-handshake, under load, or
+   /// during its own restart) without ever sending a proper WebSocket close frame, in
+   /// which case the underlying WebSocketsClient library never raises
+   /// WStype_DISCONNECTED and would otherwise leave the client connected-but-never-ready
+   /// indefinitely, with no retry and no outage detection by subclasses (e.g.
+   /// TelemetryClient's TELEMETRY_OUTAGE_RESET_M watchdog, which only starts counting
+   /// once a real disconnect is observed).
+   /// </summary>
+   ///
+   static constexpr uint32_t HANDSHAKE_ACK_TIMEOUT_MS = 8000;
+
    class DrainableWebSocketsClient : public WebSocketsClient
    {
    public:
@@ -122,6 +148,27 @@ protected:
    uint8_t _endpointIndex = 0;
    uint8_t _switchCount = 0;
    TimerMillis _failoverTimer{ FAILOVER_TIMEOUT_MS };
+   TimerMillis _handshakeAckTimer{ HANDSHAKE_ACK_TIMEOUT_MS };
+
+   ///
+   /// <summary>
+   /// Number of minutes an outage (dropped or never-established connection) may persist,
+   /// with the WebSocket retrying in the background, before _onOutageExpired() is invoked.
+   /// Subclasses may change this (e.g. in their constructor) if they need a different
+   /// duration than DEFAULT_OUTAGE_TIMEOUT_M.
+   /// </summary>
+   ///
+   static constexpr float DEFAULT_OUTAGE_TIMEOUT_M = 10.0f;
+
+   float _outageTimeoutM = DEFAULT_OUTAGE_TIMEOUT_M;
+
+   // set from the first disconnect/connection-failure until the outage is cleared (via
+   // _clearOutage(), typically called by a subclass once its handshake is acknowledged
+   // again) or _onOutageExpired() fires
+   bool _outageActive = false;
+   bool _outageWasConnected = false;
+   std::string _outageReason;
+   Stopwatch _outageStopwatch;
 
    ///
    /// <summary>
@@ -186,15 +233,57 @@ protected:
 
    ///
    /// <summary>
+   /// Invoked when the connection has been established (WStype_CONNECTED) but no ack
+   /// has been received within HANDSHAKE_ACK_TIMEOUT_MS, immediately before the socket
+   /// is forcibly disconnected to trigger a retry. Default implementation does nothing;
+   /// subclasses may override to log diagnostics (e.g. endpoint URL, role, topic).
+   /// </summary>
+   ///
+   virtual void _onHandshakeAckTimeout()
+   {
+   }
+
+   ///
+   /// <summary>
    /// Invoked once per loop() call, after endpoint failover and the WebSocket's own
    /// loop() have run. Default implementation does nothing.
    /// </summary>
    ///
-   virtual void _onLoop()
-   {
-   }
+       virtual void _onLoop()
+       {
+       }
 
-public:
+       ///
+       /// <summary>
+       /// Invoked once an outage (dropped or never-established connection) has persisted
+       /// for _outageTimeoutM minutes without being cleared via _clearOutage(). Default
+       /// implementation does nothing; subclasses typically override to log/report the
+       /// outage and/or reset the device. The base class clears _outageActive right before
+       /// calling this, so overrides don't need to.
+       /// </summary>
+       /// <param name="reason">Low-level reason reported for the outage's initial disconnect/failed connection.</param>
+       /// <param name="wasConnected">True if the connection had previously been established (a real disconnect); false if it never connected.</param>
+       ///
+       virtual void _onOutageExpired(const std::string& reason, bool wasConnected)
+       {
+          (void)reason;
+          (void)wasConnected;
+       }
+
+       ///
+       /// <summary>
+       /// Clears the current outage, if any (e.g. once a subclass's handshake has been
+       /// acknowledged again). Call from _onJsonMessage() or wherever the subclass
+       /// considers the connection fully restored.
+       /// </summary>
+       ///
+       void _clearOutage()
+       {
+          _outageActive = false;
+          _outageStopwatch.stop();
+       }
+
+   public:
    virtual ~WebSocketJsonClient() = default;
 
    ///
@@ -261,6 +350,12 @@ public:
    ///
    void loop()
    {
+      if (_connected && !_ready && _handshakeAckTimer.ready())
+      {
+         _onHandshakeAckTimeout();
+         _webSocket.disconnect();
+      }
+
       if (_numEndpoints > 1 && !_ready && _failoverTimer.ready())
       {
          _endpointIndex = (_endpointIndex + 1) % _numEndpoints;
@@ -272,6 +367,13 @@ public:
          _webSocket.disconnect();
          _switching = false;
          _connect();
+      }
+
+      if (_outageActive && _outageStopwatch.elapsedSecs() >= _outageTimeoutM * 60.0f)
+      {
+         _outageActive = false;
+         _outageStopwatch.stop();
+         _onOutageExpired(_outageReason, _outageWasConnected);
       }
 
       _onLoop();

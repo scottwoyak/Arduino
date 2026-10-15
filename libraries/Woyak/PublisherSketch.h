@@ -9,6 +9,8 @@
 #include "TelemetryClient.h"
 #include "TopicResolver.h"
 
+#include <sstream>
+
 ///
 /// <summary>
 /// Owns the initialization and loop sequence shared by every Gate/Wind/Wave-style
@@ -93,13 +95,70 @@ private:
    /// <summary>Resolves the telemetry topic and connects the telemetry client.</summary>
    TopicResolver _topicResolver;
 
-   /// <summary>Constructed by begin(), once the telemetry topic has been resolved.</summary>
-   TelemetryPublisher* _client = nullptr;
-   bool _streaming = false;
+       /// <summary>Constructed by begin(), once the telemetry topic has been resolved.</summary>
+       TelemetryPublisher* _client = nullptr;
+       bool _streaming = false;
 
-   Timer _publishTimer;
+       Timer _publishTimer;
 
-protected:
+       /// <summary>Optional sketch-supplied handler for commands not recognized by PublisherSketch's own GetTopic/SetTopic/GetTelemetryStatus commands, registered via setCommandHandler().</summary>
+       void (*_customCommandHandler)(const char* command) = nullptr;
+
+       /// <summary>The single instance, used by the static _onPublisherCommand() bridge function (DeviceServerClient::onCommand() only accepts a captureless function pointer).</summary>
+       inline static PublisherSketch* _publisherInstance = nullptr;
+
+       /// <summary>Commands handled directly by PublisherSketch, listed by "Help" alongside the built-ins.</summary>
+       static constexpr DeviceServerClient::CommandInfo PUBLISHER_COMMANDS[] = {
+          { "GetTopic", "Reports the current telemetry topic" },
+          { "SetTopic <topic>", "Persists a new telemetry topic (only if the sketch offers a topic table); requires Restart to take effect" },
+          { "GetTelemetryStatus", "Reports whether the telemetry WebSocket is connected/ready, the resolved topic, and the current publish rate" },
+       };
+
+       ///
+       /// <summary>
+       /// Handles the "GetTopic"/"SetTopic"/"GetTelemetryStatus" commands registered by
+       /// begin(), forwarding anything else to the sketch's own command handler (see
+       /// setCommandHandler()), if any. Registered with DeviceServerClient::onCommand()
+       /// since it only accepts a captureless function pointer.
+       /// </summary>
+       /// <param name="command">Full command text received from the DeviceServer.</param>
+       ///
+       static void _onPublisherCommand(const char* command)
+       {
+          std::istringstream stream(command);
+          std::string verb;
+          stream >> verb;
+
+          if (strcasecmp(verb.c_str(), "GetTopic") == 0)
+          {
+             DeviceServerClient::respond(_publisherInstance->_topicResolver.topic());
+          }
+          else if (strcasecmp(verb.c_str(), "SetTopic") == 0)
+          {
+             std::string value;
+             std::getline(stream >> std::ws, value);
+             DeviceServerClient::respond(_publisherInstance->_topicResolver.trySetTopic(value).c_str());
+          }
+          else if (strcasecmp(verb.c_str(), "GetTelemetryStatus") == 0)
+          {
+             TelemetryPublisher* client = _publisherInstance->_client;
+             std::string result = std::string("topic=\"") + client->getTopic() + "\"\n" +
+                "connected=" + (client->isConnected() ? "true" : "false") + "\n" +
+                "ready=" + (client->isReady() ? "true" : "false") + "\n" +
+                "rate=" + std::to_string(client->getRate()) + " samples/s";
+             DeviceServerClient::respond(result.c_str());
+          }
+          else if (_publisherInstance->_customCommandHandler != nullptr)
+          {
+             _publisherInstance->_customCommandHandler(command);
+          }
+          else
+          {
+             DeviceServerClient::respond((std::string("Unhandled command: ") + command).c_str());
+          }
+       }
+
+   protected:
    ///
    /// <summary>
    /// Publisher's fixed-site fallback (used when influxConfig.prompts is empty): an empty
@@ -220,6 +279,9 @@ protected:
    {
       _client = new TelemetryPublisher(_topicResolver.topic(), _telemetryConfig, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
       _client->connect(_arduino, _status);
+
+      _publisherInstance = this;
+      DeviceServerClient::onCommand(_onPublisherCommand, PUBLISHER_COMMANDS, std::size(PUBLISHER_COMMANDS));
    }
 
    ///
@@ -354,6 +416,22 @@ public:
    void setOnStartedCallback(std::function<void()> callback)
    {
       _telemetryHandler.setOnStartedCallback(callback);
+   }
+
+   ///
+   /// <summary>
+   /// Registers a handler for commands not recognized by PublisherSketch's own
+   /// GetTopic/SetTopic/GetTelemetryStatus commands. Must be called before begin(),
+   /// since that's when the combined command handler is registered with
+   /// DeviceServerClient. Only one handler may be active at a time; DeviceServerClient
+   /// itself only accepts a single onCommand() registration, which PublisherSketch
+   /// occupies with its own dispatcher.
+   /// </summary>
+   /// <param name="handler">Function invoked with the full command text for any command PublisherSketch doesn't itself handle.</param>
+   ///
+   void setCommandHandler(void (*handler)(const char* command))
+   {
+      _customCommandHandler = handler;
    }
 
    ///
