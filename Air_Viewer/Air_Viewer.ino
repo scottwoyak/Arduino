@@ -221,7 +221,7 @@ void drawBarBackground(uint8_t i)
 
 // Thickness of the value marker line, and half-width/height of the diamond drawn at its
 // center, in pixels.
-constexpr uint16_t VALUE_LINE_THICKNESS = 4;
+constexpr uint16_t VALUE_LINE_THICKNESS = 3;
 constexpr uint16_t VALUE_DIAMOND_HALF = 8;
 
 ///
