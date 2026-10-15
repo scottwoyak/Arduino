@@ -554,6 +554,9 @@ constexpr auto SOUND_PREFERENCES_KEY = "sound";
 constexpr float DEFAULT_VOLUME = 2.0f;
 constexpr float MAX_VOLUME = 2.5f;
 
+// Lowest volume the slider/SetVolume command can select.
+constexpr float MIN_VOLUME = 0.0f;
+
 // The slider shows volume as 0-1; the sound's actual volume is this times MAX_VOLUME.
 float settingsVolume = DEFAULT_VOLUME / MAX_VOLUME;
 constexpr uint8_t DEFAULT_SOUND_INDEX = 5;
@@ -605,7 +608,7 @@ Slider settingsVolumeSlider(
    "Volume",
    2,
    "",
-   0.0f,
+   MIN_VOLUME / MAX_VOLUME,
    1.0f,
    &settingsVolume,
    0,
@@ -636,7 +639,7 @@ void loadSettings()
       soundValid = soundValid || index == soundIndex;
    }
 
-   sketch.arduino.sound.volume = constrain(volume, 0.0f, MAX_VOLUME);
+   sketch.arduino.sound.volume = constrain(volume, MIN_VOLUME, MAX_VOLUME);
    settingsVolume = sketch.arduino.sound.volume / MAX_VOLUME;
    sketch.arduino.sound.soundIndex = soundValid ? soundIndex : DEFAULT_SOUND_INDEX;
 }
@@ -1506,9 +1509,9 @@ void onSoundCommand(const char* command)
    {
       float volume = -1.0f;
       stream >> volume;
-      if (volume < 0.0f || volume > MAX_VOLUME)
+      if (volume < MIN_VOLUME || volume > MAX_VOLUME)
       {
-         DeviceServerClient::respond(("Error: volume must be between 0.0 and " + std::to_string(MAX_VOLUME)).c_str());
+         DeviceServerClient::respond(("Error: volume must be between " + std::to_string(MIN_VOLUME) + " and " + std::to_string(MAX_VOLUME)).c_str());
       }
       else
       {
@@ -1579,6 +1582,7 @@ void setup()
 #endif
 
 #ifdef ARDUINO_SOUND_SUPPORTED
+   Serial.printf("Loaded volume=%f soundIndex=%u\n", sketch.arduino.sound.volume, sketch.arduino.sound.soundIndex);
    DeviceServerClient::onCommand(onSoundCommand, SOUND_COMMANDS, std::size(SOUND_COMMANDS));
 #endif
 

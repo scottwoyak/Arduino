@@ -51,6 +51,7 @@
 #include <VOCGasIndexAlgorithm.h>
 #include <Wire.h>
 
+#include "AirQualityTiers.h"
 #include "FieldTable.h"
 #include "LibraryVersion.h"
 #include "PMS5003.h"
@@ -210,67 +211,35 @@ private:
    Color(*_colorFor)(float);
 };
 
-///
-/// <summary>
-/// Picks a color from ascending thresholds: green up to the first limit, then yellow,
-/// orange, and red beyond the last limit.
-/// </summary>
-/// <param name="value">The value to rate.</param>
-/// <param name="greenMax">Highest value still rated green.</param>
-/// <param name="yellowMax">Highest value still rated yellow.</param>
-/// <param name="orangeMax">Highest value still rated orange.</param>
-/// <returns>The rating color.</returns>
-///
-Color rateHighIsBad(float value, float greenMax, float yellowMax, float orangeMax)
-{
-   if (isnan(value))
-   {
-      return Color::VALUE;
-   }
-   if (value <= greenMax)
-   {
-      return Color::LIME;
-   }
-   if (value <= yellowMax)
-   {
-      return Color::YELLOW;
-   }
-   if (value <= orangeMax)
-   {
-      return Color::ORANGE;
-   }
-   return Color::RED;
-}
-
 Color co2Color(float value)
 {
-   return rateHighIsBad(value, 800, 1000, 1500);
+   return AirQualityTiers::colorFor(value, AirQualityTiers::CO2_LIMITS);
 }
 
 Color vocColor(float value)
 {
-   return rateHighIsBad(value, 150, 250, 400);
+   return AirQualityTiers::colorFor(value, AirQualityTiers::VOC_LIMITS);
 }
 
 Color noxColor(float value)
 {
-   return rateHighIsBad(value, 20, 100, 300);
+   return AirQualityTiers::colorFor(value, AirQualityTiers::NOX_LIMITS);
 }
 
 // PM ratings use EPA AQI breakpoints (ug/m3).
 Color pm1Color(float value)
 {
-   return rateHighIsBad(value, 9, 35.4f, 55.4f);
+   return AirQualityTiers::colorFor(value, AirQualityTiers::PM25_LIMITS);
 }
 
 Color pm25Color(float value)
 {
-   return rateHighIsBad(value, 9, 35.4f, 55.4f);
+   return AirQualityTiers::colorFor(value, AirQualityTiers::PM25_LIMITS);
 }
 
 Color pm10Color(float value)
 {
-   return rateHighIsBad(value, 54, 154, 254);
+   return AirQualityTiers::colorFor(value, AirQualityTiers::PM10_LIMITS);
 }
 
 ColoredValue pm1Value("### ug/m3", &pm1, pm1Color);

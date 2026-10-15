@@ -32,7 +32,7 @@
 #include "WrongBoard.h"
 #endif
 
-#include "Bar.h"
+#include "AirQualityTiers.h"
 #include "LibraryVersion.h"
 #include "SerialX.h"
 #include "Status.h"
@@ -41,7 +41,7 @@
 #include "WiFiSettings.h"
 #include "ViewerSketch.h"
 
-const auto VERSION = MakeVersion("1.0");
+const auto VERSION = MakeVersion("1.1");
 constexpr auto SKETCH_NAME = "Air_Viewer";
 constexpr auto PREFERENCES_NAMESPACE = "AirViewer";
 
@@ -57,25 +57,25 @@ constexpr const char* LABELS[NUM_BARS] = { "PM1.0", "PM2.5", "PM10", "CO2", "VOC
 // Value represented by a full-height bar, per bar; larger values are clamped.
 constexpr float BAR_MAXES[NUM_BARS] = { 100, 100, 100, 2000, 500, 500 };
 
-// Air quality tiers, from best to worst. Names are shortened to fit under a bar.
-constexpr uint8_t NUM_TIERS = 6;
+// Air quality tiers, from best to worst (see AirQualityTiers.h, shared with
+// Air_Monitor_Display.ino so the two sketches can't drift apart). TIER_CHARS is
+// display-specific padding width, not part of the shared tier data.
+constexpr uint8_t NUM_TIERS = AirQualityTiers::NUM_TIERS;
 constexpr uint8_t TIER_CHARS = 6;
-constexpr const char* TIER_NAMES[NUM_TIERS] = { "Good", "Mod", "Sens", "Bad", "V.Bad", "Haz" };
 
-// Upper limit of each tier except the last, per bar. PM1.0 has no standard, so it uses
-// the PM2.5 limits. PM values are in ug/m3, CO2 in ppm, VOC/NOx are gas index values.
-constexpr float TIER_LIMITS[NUM_BARS][NUM_TIERS - 1] = {
-   { 9, 35, 55, 125, 225 },
-   { 9, 35, 55, 125, 225 },
-   { 54, 154, 254, 354, 424 },
-   { 800, 1000, 1500, 2000, 5000 },
-   { 150, 250, 350, 400, 450 },
-   { 20, 100, 200, 300, 400 },
+// Upper limit of each tier except the last, per bar; PM1.0 has no standard, so it uses
+// the PM2.5 limits (see AirQualityTiers.h).
+constexpr const float* TIER_LIMITS[NUM_BARS] = {
+   AirQualityTiers::PM25_LIMITS,
+   AirQualityTiers::PM25_LIMITS,
+   AirQualityTiers::PM10_LIMITS,
+   AirQualityTiers::CO2_LIMITS,
+   AirQualityTiers::VOC_LIMITS,
+   AirQualityTiers::NOX_LIMITS,
 };
 
 constexpr uint8_t TEXT_SIZE = 2;
 constexpr uint8_t HEADER_TEXT_SIZE = 3;
-constexpr uint8_t VALUE_CHARS = 4;
 constexpr uint16_t DISPLAY_UPDATE_MS = 100;
 
 SketchConfig SKETCH_CONFIG = {
@@ -92,18 +92,14 @@ TelemetryConfig TELEMETRY_CONFIG = {
 ViewerSketch sketch(SKETCH_CONFIG, TELEMETRY_CONFIG, SITE_OPTIONS);
 Timer displayTimer(DISPLAY_UPDATE_MS);
 
-constexpr Color TIER_COLORS[NUM_TIERS] = {
-   Color565::fromRGB(0, 200, 0),
-   Color565::fromRGB(255, 200, 0),
-   Color565::fromRGB(255, 126, 0),
-   Color565::fromRGB(255, 0, 0),
-   Color565::fromRGB(143, 63, 151),
-   Color565::fromRGB(160, 0, 50),
-};
-
 float values[NUM_BARS] = { NAN, NAN, NAN, NAN, NAN, NAN };
 float drawnValues[NUM_BARS] = { -1, -1, -1, -1, -1, -1 };
-VerticalBar* pmBars[NUM_BARS] = {};
+
+// Y position of each bar's last-drawn value marker (see drawValueLine()), or UINT16_MAX
+// if no marker has been drawn yet; used to erase only the marker's old position instead
+// of refilling the whole bar background on every update, which caused visible flicker.
+uint16_t lastMarkerY[NUM_BARS] = { UINT16_MAX, UINT16_MAX, UINT16_MAX, UINT16_MAX, UINT16_MAX, UINT16_MAX };
+Rect16 barRects[NUM_BARS] = {};
 uint16_t barCenters[NUM_BARS] = {};
 uint16_t valueY = 0;
 uint16_t labelY = 0;
@@ -128,8 +124,8 @@ public:
    {
       for (uint8_t i = 0; i < NUM_BARS; i++)
       {
-         pmBars[i]->reset();
          drawnValues[i] = -1;
+         lastMarkerY[i] = UINT16_MAX;
       }
 
       if (!topicsSet)
@@ -172,9 +168,99 @@ void initLayout()
    for (uint8_t i = 0; i < NUM_BARS; i++)
    {
       barCenters[i] = slotWidth * i + slotWidth / 2;
-      Rect16 rect = { (uint16_t)(barCenters[i] - barWidth / 2), barTop, barWidth, barHeight };
-      pmBars[i] = new VerticalBar(rect, RangeF(0, BAR_MAXES[i]), TIER_COLORS[0], Color::BLACK);
+      barRects[i] = { (uint16_t)(barCenters[i] - barWidth / 2), barTop, barWidth, barHeight };
    }
+}
+
+///
+/// <summary>
+/// Fills the portion of a bar's background (bounded by [yTop, yBottom)) with its tier
+/// bands, so only that slice needs to be touched (e.g. to erase the old value marker)
+/// instead of refilling the whole bar.
+/// </summary>
+/// <param name="i">Index of the bar to draw.</param>
+/// <param name="yTop">Top (inclusive) of the y range to redraw.</param>
+/// <param name="yBottom">Bottom (exclusive) of the y range to redraw.</param>
+///
+void drawBarBackgroundRange(uint8_t i, uint16_t yTop, uint16_t yBottom)
+{
+   const Rect16& rect = barRects[i];
+   float lowerLimit = 0;
+
+   for (uint8_t tier = 0; tier < NUM_TIERS; tier++)
+   {
+      float upperLimit = (tier < NUM_TIERS - 1) ? min(TIER_LIMITS[i][tier], BAR_MAXES[i]) : BAR_MAXES[i];
+
+      uint16_t bandTop = rect.y + rect.height - (uint16_t)(upperLimit / BAR_MAXES[i] * rect.height);
+      uint16_t bandBottom = rect.y + rect.height - (uint16_t)(lowerLimit / BAR_MAXES[i] * rect.height);
+
+      uint16_t drawTop = max(bandTop, yTop);
+      uint16_t drawBottom = min(bandBottom, yBottom);
+      if (drawBottom > drawTop)
+      {
+         sketch.arduino.display.fillRect(rect.x, drawTop, rect.width, drawBottom - drawTop, (uint16_t)AirQualityTiers::TIER_COLORS[tier]);
+      }
+
+      lowerLimit = upperLimit;
+   }
+}
+
+///
+/// <summary>
+/// Fills a bar's entire background with horizontal bands, one per air quality tier,
+/// showing where each tier's value range falls within the bar's height. This lets the
+/// current value's line (drawn on top) be compared visually against the other tiers.
+/// </summary>
+/// <param name="i">Index of the bar to draw.</param>
+///
+void drawBarBackground(uint8_t i)
+{
+   const Rect16& rect = barRects[i];
+   drawBarBackgroundRange(i, rect.y, rect.y + rect.height);
+}
+
+// Thickness of the value marker line, and half-width/height of the diamond drawn at its
+// center, in pixels.
+constexpr uint16_t VALUE_LINE_THICKNESS = 4;
+constexpr uint16_t VALUE_DIAMOND_HALF = 8;
+
+///
+/// <summary>
+/// Draws a thick white line across a bar at the height corresponding to the current
+/// value, with a white diamond centered on the bar, so it can be visually compared
+/// against the tier bands and stands out clearly against the dimmed tier colors. Only
+/// erases the previous marker's position (rather than refilling the whole bar), to
+/// avoid visible flicker on every value update.
+/// </summary>
+/// <param name="i">Index of the bar to draw.</param>
+/// <param name="value">Current value to mark.</param>
+///
+void drawValueLine(uint8_t i, float value)
+{
+   const Rect16& rect = barRects[i];
+   float clampedValue = constrain(value, 0, BAR_MAXES[i]);
+   uint16_t y = rect.y + rect.height - (uint16_t)(clampedValue / BAR_MAXES[i] * rect.height);
+   y = min(y, (uint16_t)(rect.y + rect.height - 1));
+
+   constexpr uint16_t MARKER_HALF = max((uint16_t)(VALUE_LINE_THICKNESS / 2), VALUE_DIAMOND_HALF);
+   if (lastMarkerY[i] != UINT16_MAX)
+   {
+      uint16_t eraseTop = (lastMarkerY[i] >= rect.y + MARKER_HALF) ? lastMarkerY[i] - MARKER_HALF : rect.y;
+      uint16_t eraseBottom = min((uint16_t)(lastMarkerY[i] + MARKER_HALF + 1), (uint16_t)(rect.y + rect.height));
+      drawBarBackgroundRange(i, eraseTop, eraseBottom);
+   }
+   lastMarkerY[i] = y;
+
+   uint16_t top = (y >= rect.y + VALUE_LINE_THICKNESS / 2) ? y - VALUE_LINE_THICKNESS / 2 : rect.y;
+   uint16_t centerX = barCenters[i];
+
+   // Clip the marker line and diamond to the bar's rect so the diamond's points (which
+   // can extend above/below the bar) don't draw over the label/tier text above and below.
+   sketch.arduino.display.setClipRect(rect.x, rect.y, rect.width, rect.height);
+   sketch.arduino.display.fillRect(rect.x, top, rect.width, VALUE_LINE_THICKNESS, (uint16_t)Color::WHITE);
+   sketch.arduino.display.fillTriangle(centerX - VALUE_DIAMOND_HALF, y, centerX, y - VALUE_DIAMOND_HALF, centerX + VALUE_DIAMOND_HALF, y, (uint16_t)Color::WHITE);
+   sketch.arduino.display.fillTriangle(centerX - VALUE_DIAMOND_HALF, y, centerX, y + VALUE_DIAMOND_HALF, centerX + VALUE_DIAMOND_HALF, y, (uint16_t)Color::WHITE);
+   sketch.arduino.display.clearClipRect();
 }
 
 ///
@@ -214,6 +300,7 @@ void drawStatic()
 
    for (uint8_t i = 0; i < NUM_BARS; i++)
    {
+      drawBarBackground(i);
       printCentered(LABELS[i], barCenters[i], labelY, Color::HEADING);
    }
 }
@@ -294,22 +381,16 @@ void loop()
          tier++;
       }
 
-      pmBars[i]->setColor(TIER_COLORS[tier]);
-      pmBars[i]->set(value);
-      pmBars[i]->draw(&sketch.arduino.display);
+      drawValueLine(i, value);
 
       std::string text = std::to_string((int)lround(value));
-      while (text.length() < VALUE_CHARS)
-      {
-         text += " ";
-      }
-      printCentered(text, barCenters[i], valueY, Color::VALUE);
+      printCentered(text, barCenters[i], valueY, Color::WHITE);
 
-      std::string tierName = TIER_NAMES[tier];
+      std::string tierName = AirQualityTiers::TIER_NAMES[tier];
       while (tierName.length() < TIER_CHARS)
       {
          tierName = " " + tierName + " ";
       }
-      printCentered(tierName, barCenters[i], tierY, TIER_COLORS[tier]);
+      printCentered(tierName, barCenters[i], tierY, AirQualityTiers::TIER_COLORS[tier]);
    }
 }
