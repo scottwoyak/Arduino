@@ -86,6 +86,40 @@ PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
 // match this sketch's wiring.
 WindMeter wind(WIND_SENSOR_PIN, sketch.arduino.ledPin(), LEDColor::CLEAR_PINK);
 
+///
+/// <summary>
+/// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
+/// </summary>
+///
+static constexpr DeviceServerClient::CommandInfo WIND_PUBLISHER_COMMANDS[] = {
+   { "GetReadings", "Reports the current wind speed in mph" },
+};
+
+///
+/// <summary>
+/// Handles the "GetReadings" command registered via sketch.setCommandHandler().
+/// </summary>
+/// <param name="command">Full command text received from the DeviceServer.</param>
+///
+static void onWindPublisherCommand(const char* command)
+{
+   std::istringstream stream(command);
+   std::string verb;
+   stream >> verb;
+
+   if (strcasecmp(verb.c_str(), "GetReadings") == 0)
+   {
+      std::ostringstream text;
+      text.precision(1);
+      text << std::fixed << "speed=" << wind.getSpeed() << " mph";
+      DeviceServerClient::respond(text.str().c_str());
+   }
+   else
+   {
+      DeviceServerClient::respond((std::string("Unhandled command: ") + command).c_str());
+   }
+}
+
 void setup()
 {
    // power the wind encoder/sensor
@@ -96,6 +130,7 @@ void setup()
 
    sketch.addSensor("WindMeter", []() { wind.begin(); return true; });
    sketch.setValueSource([]() { return wind.getSpeed(); });
+   sketch.setCommandHandler(onWindPublisherCommand, WIND_PUBLISHER_COMMANDS, std::size(WIND_PUBLISHER_COMMANDS));
 
    // Turn off the status LED once telemetry finishes starting, since the sketch is
    // then fully up and running and no longer needs the LED for startup/connectivity

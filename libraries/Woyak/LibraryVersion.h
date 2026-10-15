@@ -13,7 +13,7 @@
 /// participate in compile-time string literal concatenation inside MakeVersion(...).
 /// </summary>
 ///
-#define LIBRARY_VERSION "176"
+#define LIBRARY_VERSION "178"
 
 ///
 /// <summary>

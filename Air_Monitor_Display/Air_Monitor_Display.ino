@@ -249,6 +249,93 @@ ColoredValue co2Value("#### ppm", &co2, co2Color);
 ColoredValue vocValue("###", &vocIndex, vocColor);
 ColoredValue noxValue("###", &noxIndex, noxColor);
 FieldTable table(&sketch.arduino, 0, 0, TEXT_SIZE_SMALL);
+
+///
+/// <summary>
+/// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
+/// </summary>
+///
+static constexpr DeviceServerClient::CommandInfo AIR_MONITOR_COMMANDS[] = {
+   { "GetReadings", "Reports the latest PM1.0, PM2.5, PM10, CO2, temperature, humidity, VOC, NOx, and SGP41 conditioning state" },
+   { "ForceCalibration [ppm]", "Performs SCD41 forced CO2 recalibration at the given reference ppm (default 400)" },
+};
+
+///
+/// <summary>
+/// Handles the "GetReadings"/"ForceCalibration" commands registered via
+/// sketch.setCommandHandler().
+/// </summary>
+/// <param name="command">Full command text received from the DeviceServer.</param>
+///
+static void onAirMonitorCommand(const char* command)
+{
+   std::istringstream stream(command);
+   std::string verb;
+   stream >> verb;
+
+   if (strcasecmp(verb.c_str(), "GetReadings") == 0)
+   {
+      auto formatVal = [](float val, int decimals, const char* unit) -> std::string
+      {
+         if (isnan(val))
+         {
+            return "NAN";
+         }
+         std::ostringstream out;
+         out.precision(decimals);
+         out << std::fixed << val;
+         if (unit != nullptr && unit[0] != '\0')
+         {
+            out << " " << unit;
+         }
+         return out.str();
+      };
+
+      std::string text =
+         "pm1=" + formatVal(pm1, 0, "ug/m3") + "\n" +
+         "pm25=" + formatVal(pm25, 0, "ug/m3") + "\n" +
+         "pm10=" + formatVal(pm10, 0, "ug/m3") + "\n" +
+         "co2=" + formatVal(co2, 0, "ppm") + "\n" +
+         "temperature=" + formatVal(tempF, 1, "F") + "\n" +
+         "humidity=" + formatVal(humidity, 1, "%") + "\n" +
+         "voc=" + formatVal(vocIndex, 0, "") + "\n" +
+         "nox=" + formatVal(noxIndex, 0, "") + "\n" +
+         "sgpConditioned=" + (sgpConditioned ? "true" : "false");
+      DeviceServerClient::respond(text.c_str());
+   }
+   else if (strcasecmp(verb.c_str(), "ForceCalibration") == 0)
+   {
+      int targetPpm = 400;
+      if (stream >> targetPpm)
+      {
+         if (targetPpm < 400 || targetPpm > 2000)
+         {
+            DeviceServerClient::respond("Error: target ppm must be between 400 and 2000");
+            return;
+         }
+      }
+
+      scd41.stopPeriodicMeasurement();
+      uint16_t frcCorrection = 0;
+      int16_t err = scd41.performForcedRecalibration((uint16_t)targetPpm, frcCorrection);
+      scd41.startPeriodicMeasurement();
+
+      if (err != 0 || frcCorrection == 0xFFFF)
+      {
+         DeviceServerClient::respond("Error: SCD41 forced recalibration failed");
+      }
+      else
+      {
+         int32_t correctionPpm = (int32_t)frcCorrection - 0x8000;
+         DeviceServerClient::respond(("Calibrated CO2 to " + std::to_string(targetPpm) + " ppm (correction=" + std::to_string(correctionPpm) + " ppm)").c_str());
+      }
+   }
+   else
+   {
+      DeviceServerClient::respond((std::string("Unhandled command: ") + command).c_str());
+   }
+}
+
 void setup()
 {
    Wire.begin();
@@ -270,6 +357,7 @@ void setup()
    });
    sketch.setValueSource([]() { return pms.pm25(); });
    sketch.onSiteResolved(onSiteResolved);
+   sketch.setCommandHandler(onAirMonitorCommand, AIR_MONITOR_COMMANDS, std::size(AIR_MONITOR_COMMANDS));
 
    sketch.begin();
 

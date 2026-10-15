@@ -24,6 +24,8 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <array>
+#include <sstream>
+#include <string>
 
 #include "ArduinoBoard.h"
 
@@ -32,6 +34,7 @@
 #include "WrongBoard.h"
 #endif
 
+#include "DeviceServerClient.h"
 #include "DeviceSketch.h"
 #include "LibraryVersion.h"
 #include "ScatterPlot.h"
@@ -77,6 +80,97 @@ constexpr uint8_t VALUE_SERIES_POINT_SIZE = 1;
 
 bool needsInitialDisplay = true;
 
+/// <summary>Commands registered with DeviceServerClient, appended to the "Help" command's listing.</summary>
+constexpr DeviceServerClient::CommandInfo SUBSCRIBER_COMMANDS[] = {
+   { "GetTopic", "Reports the current telemetry topic and lists all available topics" },
+   { "SetTopic <topic>", "Persists and switches to the given telemetry topic immediately" },
+   { "GetTelemetryStatus", "Reports whether the telemetry WebSocket is connected/ready, the current topic, and the receive rate" },
+};
+
+///
+/// <summary>
+/// Switches the active subscription topic by index, persists it in Preferences, and
+/// triggers a display redraw.
+/// </summary>
+/// <param name="newIndex">Index into TOPICS.</param>
+///
+void selectTopicIndex(uint8_t newIndex)
+{
+   topicIndex = newIndex;
+   preferences.putUChar(TOPIC_INDEX_KEY, topicIndex);
+   client.setTopic(TOPICS[topicIndex]);
+   client.setTopics({ TOPICS[topicIndex] });
+   needsInitialDisplay = true;
+}
+
+///
+/// <summary>
+/// Handles custom DeviceServer commands for inspecting and changing the subscribed topic.
+/// </summary>
+/// <param name="command">Full command text received from the DeviceServer.</param>
+///
+void onSubscriberCommand(const char* command)
+{
+   std::istringstream stream(command);
+   std::string verb;
+   stream >> verb;
+
+   if (strcasecmp(verb.c_str(), "GetTopic") == 0)
+   {
+      std::ostringstream text;
+      for (size_t i = 0; i < TOPICS.size(); i++)
+      {
+         if (i > 0)
+         {
+            text << "\n";
+         }
+         text << TOPICS[i];
+         if (i == topicIndex)
+         {
+            text << " (selected)";
+         }
+      }
+      DeviceServerClient::respond(text.str().c_str());
+      return;
+   }
+
+   if (strcasecmp(verb.c_str(), "SetTopic") == 0)
+   {
+      std::string value;
+      std::getline(stream >> std::ws, value);
+      if (value.empty())
+      {
+         DeviceServerClient::respond("Error: SetTopic requires a topic name");
+         return;
+      }
+
+      for (uint8_t i = 0; i < TOPICS.size(); i++)
+      {
+         if (strcasecmp(TOPICS[i], value.c_str()) == 0)
+         {
+            selectTopicIndex(i);
+            DeviceServerClient::respond((std::string("Switched to topic=\"") + TOPICS[i] + "\"").c_str());
+            return;
+         }
+      }
+
+      DeviceServerClient::respond((std::string("Error: unknown topic \"") + value + "\"").c_str());
+      return;
+   }
+
+   if (strcasecmp(verb.c_str(), "GetTelemetryStatus") == 0)
+   {
+      std::string result = std::string("topic=\"") + client.getTopic() + "\"\n" +
+         "connected=" + (client.isConnected() ? "true" : "false") + "\n" +
+         "ready=" + (client.isReady() ? "true" : "false") + "\n" +
+         "rate=" + std::to_string(client.getRate()) + " samples/s";
+      DeviceServerClient::respond(result.c_str());
+      return;
+   }
+
+   DeviceServerClient::respond((std::string("Unknown command: ") + verb).c_str());
+}
+
 void setup()
 {
    SerialX::begin(BAUD_RATE);
@@ -113,6 +207,7 @@ void setup()
    client.connect(&sketch.arduino, sketch.getStatus());
 
    sketch.setOnLocateEndCallback([]() { needsInitialDisplay = true; });
+   DeviceServerClient::onCommand(onSubscriberCommand, SUBSCRIBER_COMMANDS, std::size(SUBSCRIBER_COMMANDS));
 
    sketch.beginLogger();
    sketch.completeInitialization();
@@ -130,11 +225,7 @@ void loop()
 
    if (sketch.arduino.buttonA.wasPressed())
    {
-      topicIndex = (topicIndex + 1) % TOPICS.size();
-      preferences.putUChar(TOPIC_INDEX_KEY, topicIndex);
-      client.setTopic(TOPICS[topicIndex]);
-      client.setTopics({ TOPICS[topicIndex] });
-      needsInitialDisplay = true;
+      selectTopicIndex((topicIndex + 1) % TOPICS.size());
    }
 
    if (!client.isReady())

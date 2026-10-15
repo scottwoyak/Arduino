@@ -175,6 +175,43 @@ void pollDistance()
    }
 }
 
+///
+/// <summary>
+/// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
+/// </summary>
+///
+static constexpr DeviceServerClient::CommandInfo LIGHT_MONITOR_COMMANDS[] = {
+   { "GetReadings", "Reports the latest distance, ambient light (lux), and presence state" },
+};
+
+///
+/// <summary>
+/// Handles the "GetReadings" command registered via sketch.setCommandHandler().
+/// </summary>
+/// <param name="command">Full command text received from the DeviceServer.</param>
+///
+static void onLightMonitorCommand(const char* command)
+{
+   std::istringstream stream(command);
+   std::string verb;
+   stream >> verb;
+
+   if (strcasecmp(verb.c_str(), "GetReadings") == 0)
+   {
+      std::ostringstream text;
+      text.precision(1);
+      text << std::fixed
+           << "distance=" << distanceMm << " mm\n"
+           << "lux=" << lux << "\n"
+           << "present=" << (isPresent() ? "true" : "false");
+      DeviceServerClient::respond(text.str().c_str());
+   }
+   else
+   {
+      DeviceServerClient::respond((std::string("Unhandled command: ") + command).c_str());
+   }
+}
+
 void setup()
 {
    // Adafruit_VL53L1X::begin() retries its I2C reads forever if the sensor doesn't respond,
@@ -186,6 +223,7 @@ void setup()
    sketch.addSensor("VEML7700", []() { return luxSensor.begin(); });
    sketch.setValueSource(readDistance);
    sketch.onSiteResolved(onSiteResolved);
+   sketch.setCommandHandler(onLightMonitorCommand, LIGHT_MONITOR_COMMANDS, std::size(LIGHT_MONITOR_COMMANDS));
 
    sketch.begin();
 

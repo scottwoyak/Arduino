@@ -161,12 +161,13 @@ protected:
    ///
    /// <summary>
    /// Handles the "GetConfig"/"SetConfig" commands registered via _enableConfigCommands().
-   /// Registered with DeviceServerClient::onCommand() since it only accepts a captureless
-   /// function pointer.
+   /// Registered with DeviceServerClient::onConfigCommand() since it only accepts a
+   /// captureless function pointer.
    /// </summary>
    /// <param name="command">Full command text received from the DeviceServer.</param>
+   /// <returns>True if the command was recognized and handled; otherwise false.</returns>
    ///
-   static void _onConfigCommand(const char* command)
+   static bool _onConfigCommand(const char* command)
    {
       std::istringstream stream(command);
       std::string verb;
@@ -175,8 +176,9 @@ protected:
       if (strcasecmp(verb.c_str(), "GetConfig") == 0)
       {
          DeviceServerClient::respond(_configInstance->_getConfigText().c_str());
+         return true;
       }
-      else if (strcasecmp(verb.c_str(), "SetConfig") == 0)
+      if (strcasecmp(verb.c_str(), "SetConfig") == 0)
       {
          std::string key;
          stream >> key;
@@ -191,17 +193,15 @@ protected:
             {
                DeviceServerClient::respond("Error: usage SetConfig <key> <value> (issue SetConfig with no arguments from the shell to be prompted instead)");
             }
-            return;
+            return true;
          }
 
          std::string value;
          std::getline(stream >> std::ws, value);
          DeviceServerClient::respond(_configInstance->_setConfig(key, value).c_str());
+         return true;
       }
-      else
-      {
-         DeviceServerClient::respond((std::string("Unhandled command: ") + command).c_str());
-      }
+      return false;
    }
 
    ///

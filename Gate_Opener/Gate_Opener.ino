@@ -252,6 +252,7 @@ void handlePostGate()
 /// </summary>
 ///
 static constexpr DeviceServerClient::CommandInfo GATE_COMMANDS[] = {
+   { "GetState", "Reports the current gate state (OPEN, HOLD, or CLOSED)" },
    { "Open", "Pulses the gate open, unless currently held open" },
    { "Hold", "Holds the gate open until Close is issued" },
    { "Close", "Releases a held-open gate (or clears a pending open pulse)" },
@@ -259,9 +260,9 @@ static constexpr DeviceServerClient::CommandInfo GATE_COMMANDS[] = {
 
 ///
 /// <summary>
-/// Handles the "Open"/"Hold"/"Close" commands registered via
-/// DeviceServerClient::onCommand(), driving the gate relay the same way the /Gate POST
-/// endpoint does.
+/// Handles the "GetState"/"Open"/"Hold"/"Close" commands registered via
+/// DeviceServerClient::onCommand(), reporting or driving the gate relay the same way the
+/// /Gate HTTP endpoint does.
 /// </summary>
 /// <param name="command">Full command text received from the DeviceServer.</param>
 ///
@@ -271,7 +272,11 @@ static void onGateCommand(const char* command)
    std::string verb;
    stream >> verb;
 
-   if (strcasecmp(verb.c_str(), "Open") == 0)
+   if (strcasecmp(verb.c_str(), "GetState") == 0)
+   {
+      DeviceServerClient::respond(gateHeldOpen ? "HOLD" : (gateTriggerRelay ? "OPEN" : "CLOSED"));
+   }
+   else if (strcasecmp(verb.c_str(), "Open") == 0)
    {
       if (!gateHeldOpen)
       {

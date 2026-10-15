@@ -101,10 +101,7 @@ private:
 
        Timer _publishTimer;
 
-       /// <summary>Optional sketch-supplied handler for commands not recognized by PublisherSketch's own GetTopic/SetTopic/GetTelemetryStatus commands, registered via setCommandHandler().</summary>
-       void (*_customCommandHandler)(const char* command) = nullptr;
-
-       /// <summary>The single instance, used by the static _onPublisherCommand() bridge function (DeviceServerClient::onCommand() only accepts a captureless function pointer).</summary>
+       /// <summary>The single instance, used by the static _onPublisherCommand() bridge function (DeviceServerClient::onConfigCommand() only accepts a captureless function pointer).</summary>
        inline static PublisherSketch* _publisherInstance = nullptr;
 
        /// <summary>Commands handled directly by PublisherSketch, listed by "Help" alongside the built-ins.</summary>
@@ -117,13 +114,13 @@ private:
        ///
        /// <summary>
        /// Handles the "GetTopic"/"SetTopic"/"GetTelemetryStatus" commands registered by
-       /// begin(), forwarding anything else to the sketch's own command handler (see
-       /// setCommandHandler()), if any. Registered with DeviceServerClient::onCommand()
-       /// since it only accepts a captureless function pointer.
+       /// begin(). Registered with DeviceServerClient::onConfigCommand() since it only
+       /// accepts a captureless function pointer.
        /// </summary>
        /// <param name="command">Full command text received from the DeviceServer.</param>
+       /// <returns>True if the command was recognized and handled; otherwise false.</returns>
        ///
-       static void _onPublisherCommand(const char* command)
+       static bool _onPublisherCommand(const char* command)
        {
           std::istringstream stream(command);
           std::string verb;
@@ -132,14 +129,16 @@ private:
           if (strcasecmp(verb.c_str(), "GetTopic") == 0)
           {
              DeviceServerClient::respond(_publisherInstance->_topicResolver.topic());
+             return true;
           }
-          else if (strcasecmp(verb.c_str(), "SetTopic") == 0)
+          if (strcasecmp(verb.c_str(), "SetTopic") == 0)
           {
              std::string value;
              std::getline(stream >> std::ws, value);
              DeviceServerClient::respond(_publisherInstance->_topicResolver.trySetTopic(value).c_str());
+             return true;
           }
-          else if (strcasecmp(verb.c_str(), "GetTelemetryStatus") == 0)
+          if (strcasecmp(verb.c_str(), "GetTelemetryStatus") == 0)
           {
              TelemetryPublisher* client = _publisherInstance->_client;
              std::string result = std::string("topic=\"") + client->getTopic() + "\"\n" +
@@ -147,15 +146,9 @@ private:
                 "ready=" + (client->isReady() ? "true" : "false") + "\n" +
                 "rate=" + std::to_string(client->getRate()) + " samples/s";
              DeviceServerClient::respond(result.c_str());
+             return true;
           }
-          else if (_publisherInstance->_customCommandHandler != nullptr)
-          {
-             _publisherInstance->_customCommandHandler(command);
-          }
-          else
-          {
-             DeviceServerClient::respond((std::string("Unhandled command: ") + command).c_str());
-          }
+          return false;
        }
 
    protected:
@@ -281,7 +274,7 @@ private:
       _client->connect(_arduino, _status);
 
       _publisherInstance = this;
-      DeviceServerClient::onCommand(_onPublisherCommand, PUBLISHER_COMMANDS, std::size(PUBLISHER_COMMANDS));
+      DeviceServerClient::onConfigCommand(_onPublisherCommand, PUBLISHER_COMMANDS, std::size(PUBLISHER_COMMANDS));
    }
 
    ///
@@ -420,18 +413,16 @@ public:
 
    ///
    /// <summary>
-   /// Registers a handler for commands not recognized by PublisherSketch's own
-   /// GetTopic/SetTopic/GetTelemetryStatus commands. Must be called before begin(),
-   /// since that's when the combined command handler is registered with
-   /// DeviceServerClient. Only one handler may be active at a time; DeviceServerClient
-   /// itself only accepts a single onCommand() registration, which PublisherSketch
-   /// occupies with its own dispatcher.
+   /// Registers a handler for sketch-specific commands not recognized as built-in or
+   /// shared config/telemetry commands.
    /// </summary>
-   /// <param name="handler">Function invoked with the full command text for any command PublisherSketch doesn't itself handle.</param>
+   /// <param name="handler">Function invoked with the full command text for any sketch-specific command.</param>
+   /// <param name="help">Optional array describing the sketch's own commands (usage and description), appended to the "Help" command's listing; must outlive the sketch.</param>
+   /// <param name="helpCount">Number of entries in help.</param>
    ///
-   void setCommandHandler(void (*handler)(const char* command))
+   void setCommandHandler(void (*handler)(const char* command), const DeviceServerClient::CommandInfo* help = nullptr, size_t helpCount = 0)
    {
-      _customCommandHandler = handler;
+      DeviceServerClient::onCommand(handler, help, helpCount);
    }
 
    ///

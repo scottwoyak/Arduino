@@ -358,6 +358,15 @@ protected:
 
       if (_numEndpoints > 1 && !_ready && _failoverTimer.ready())
       {
+         if (!_outageActive)
+         {
+            _outageActive = true;
+            _outageWasConnected = _hasConnected;
+            _outageReason = "failover timeout";
+            _outageStopwatch.reset();
+            _outageStopwatch.start();
+         }
+
          _endpointIndex = (_endpointIndex + 1) % _numEndpoints;
          if (_switchCount < 255)
          {

@@ -359,11 +359,15 @@ private:
    /// <summary>Number of entries in _sketchCommands.</summary>
    static inline size_t _sketchCommandCount = 0;
 
-   /// <summary>Common/shared commands registered via onCommand(isConfigCommand=true) (e.g. GetConfig/SetConfig). Listed alongside the built-ins, but excluded by "Help -s" since they aren't custom to the sketch.</summary>
-   static inline const CommandInfo* _configCommands = nullptr;
+   struct _ConfigCommandSet
+   {
+      bool (*handler)(const char* command);
+      const CommandInfo* help;
+      size_t helpCount;
+   };
 
-   /// <summary>Number of entries in _configCommands.</summary>
-   static inline size_t _configCommandCount = 0;
+   /// <summary>Common/shared command sets registered via onConfigCommand() (e.g. GetConfig/SetConfig, GetTopic/SetTopic). Listed alongside the built-ins, but excluded by "Help -s" since they aren't custom to the sketch.</summary>
+   static inline std::vector<_ConfigCommandSet> _configCommandSets;
 
    ///
    /// <summary>
@@ -417,14 +421,17 @@ private:
             text << "\n";
          }
 
-         for (size_t i = 0; i < _configCommandCount; i++)
+         for (const _ConfigCommandSet& set : _configCommandSets)
          {
-            text << _configCommands[i].usage;
-            if (!listOnly)
+            for (size_t i = 0; i < set.helpCount; i++)
             {
-               text << " - " << _configCommands[i].description;
+               text << set.help[i].usage;
+               if (!listOnly)
+               {
+                  text << " - " << set.help[i].description;
+               }
+               text << "\n";
             }
-            text << "\n";
          }
       }
 
@@ -1013,6 +1020,12 @@ private:
       doc["site"] = _site;
       doc["location"] = _location;
       doc["board"] = ARDUINO_BOARD_VARIANT_ID;
+      doc["chipModel"] = ESP.getChipModel();
+      doc["chipRevision"] = ESP.getChipRevision();
+      doc["chipCores"] = ESP.getChipCores();
+      doc["cpuMhz"] = ESP.getCpuFreqMHz();
+      doc["flashSize"] = ESP.getFlashChipSize();
+      doc["psramSize"] = ESP.getPsramSize();
       doc["ssid"] = std::string(WiFi.SSID().c_str());
       doc["ip"] = std::string(WiFi.localIP().toString().c_str());
 
@@ -1173,13 +1186,24 @@ private:
       {
          respond(_getVersion().c_str());
       }
-      else if (_commandHandler != nullptr)
-      {
-         _commandHandler(command);
-      }
       else
       {
-         log(std::string("Unknown command: ") + command);
+         for (const _ConfigCommandSet& set : _configCommandSets)
+         {
+            if (set.handler != nullptr && set.handler(command))
+            {
+               return;
+            }
+         }
+
+         if (_commandHandler != nullptr)
+         {
+            _commandHandler(command);
+         }
+         else
+         {
+            respond((std::string("Unhandled command: ") + command).c_str());
+         }
       }
    }
 
@@ -1398,21 +1422,29 @@ public:
    /// <summary>
    /// Registers a handler invoked for commands received from the DeviceServer that aren't
    /// one of the built-in commands, for commands shared across many sketches (e.g.
-   /// GetConfig/SetConfig registered by ConfigCommandHandler) rather than custom to this
-   /// particular sketch. Behaves exactly like onCommand(), except the given commands are
-   /// listed alongside the built-ins (and omitted by "Help -s", which lists only
-   /// sketch-specific custom commands). Only one handler is supported (shared with
-   /// onCommand()); call once from setup(), after begin().
+   /// GetConfig/SetConfig registered by ConfigCommandHandler, or GetTopic/SetTopic
+   /// registered by PublisherSketch/ViewerSketch) rather than custom to this particular
+   /// sketch. The handler returns true if it recognized and handled the command, or false
+   /// to let subsequent config handlers and the sketch's onCommand() handler try it. The
+   /// given commands are listed alongside the built-ins (and omitted by "Help -s", which
+   /// lists only sketch-specific custom commands).
    /// </summary>
-   /// <param name="handler">Function invoked with the received command text.</param>
+   /// <param name="handler">Function invoked with the received command text; returns true if handled.</param>
    /// <param name="help">Array describing the shared commands (usage and description), appended to the "Help" command's listing; must outlive the sketch.</param>
    /// <param name="helpCount">Number of entries in help.</param>
    ///
-   static void onConfigCommand(void (*handler)(const char* command), const CommandInfo* help, size_t helpCount)
+   static void onConfigCommand(bool (*handler)(const char* command), const CommandInfo* help, size_t helpCount)
    {
-      _commandHandler = handler;
-      _configCommands = help;
-      _configCommandCount = helpCount;
+      for (_ConfigCommandSet& existing : _configCommandSets)
+      {
+         if (existing.handler == handler)
+         {
+            existing.help = help;
+            existing.helpCount = helpCount;
+            return;
+         }
+      }
+      _configCommandSets.push_back({ handler, help, helpCount });
    }
 
    ///

@@ -134,6 +134,57 @@ void printSensorSummary()
    Logger.log(output);
 }
 
+///
+/// <summary>
+/// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
+/// </summary>
+///
+static constexpr DeviceServerClient::CommandInfo LAKE_TEMP_COMMANDS[] = {
+   { "GetReadings", "Reports the latest temperature and humidity for each detected sensor" },
+};
+
+///
+/// <summary>
+/// Handles the "GetReadings" command registered via DeviceServerClient::onCommand().
+/// </summary>
+/// <param name="command">Full command text received from the DeviceServer.</param>
+///
+static void onLakeTempCommand(const char* command)
+{
+   std::istringstream stream(command);
+   std::string verb;
+   stream >> verb;
+
+   if (strcasecmp(verb.c_str(), "GetReadings") == 0)
+   {
+      std::ostringstream text;
+      text.precision(1);
+      text << std::fixed;
+      for (uint8_t i = 0; i < NUM_SENSORS; i++)
+      {
+         if (i > 0)
+         {
+            text << "\n";
+         }
+         text << SENSOR_CONFIGS[i].item << " (Port " << (int)SENSOR_CONFIGS[i].port << "): ";
+         if (!sensors[i]->exists())
+         {
+            text << "not detected";
+         }
+         else
+         {
+            multi.select(SENSOR_CONFIGS[i].port);
+            text << sensors[i]->readTemperatureF() << " F, " << sensors[i]->readHumidity() << " %";
+         }
+      }
+      DeviceServerClient::respond(text.str().c_str());
+   }
+   else
+   {
+      DeviceServerClient::respond((std::string("Unhandled command: ") + command).c_str());
+   }
+}
+
 void setup()
 {
    for (uint8_t i = 0; i < NUM_SENSORS; i++)
@@ -147,6 +198,8 @@ void setup()
    sketch.addSensor("Enclosure", []() { multi.select(SENSOR_CONFIGS[3].port); return sensors[3]->begin(true); }, nullptr, false);
 
    sketch.begin();
+
+   DeviceServerClient::onCommand(onLakeTempCommand, LAKE_TEMP_COMMANDS, std::size(LAKE_TEMP_COMMANDS));
 
    printSensorSummary();
 

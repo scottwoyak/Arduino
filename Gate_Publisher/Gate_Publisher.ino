@@ -219,10 +219,68 @@ SketchConfig PUBLISHER_CONFIG = {
 
 PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
 
+///
+/// <summary>
+/// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
+/// </summary>
+///
+static constexpr DeviceServerClient::CommandInfo GATE_PUBLISHER_COMMANDS[] = {
+   { "GetReadings", "Reports the current gate angle, raw azimuth, zero azimuth, and motion state" },
+   { "Zero", "Captures the current magnetometer azimuth as the zero (closed) angle and persists it" },
+};
+
+///
+/// <summary>
+/// Handles the "GetReadings"/"Zero" commands registered via sketch.setCommandHandler().
+/// </summary>
+/// <param name="command">Full command text received from the DeviceServer.</param>
+///
+static void onGatePublisherCommand(const char* command)
+{
+   std::istringstream stream(command);
+   std::string verb;
+   stream >> verb;
+
+   if (strcasecmp(verb.c_str(), "GetReadings") == 0)
+   {
+      float angle = rawGateAngle();
+      float published = moving ? angle : (isnan(anchorAngle) ? angle : anchorAngle);
+      std::ostringstream text;
+      text.precision(1);
+      text << std::fixed
+           << "angle=" << published << " deg\n"
+           << "rawAngle=" << angle << " deg\n"
+           << "rawAzimuth=" << magnetometer.azimuth() << " deg\n"
+           << "zeroAzimuth=" << zeroAzimuth << " deg\n"
+           << "moving=" << (moving ? "true" : "false");
+      DeviceServerClient::respond(text.str().c_str());
+   }
+   else if (strcasecmp(verb.c_str(), "Zero") == 0)
+   {
+      magnetometer.read();
+      zeroAzimuth = magnetometer.azimuth();
+      zeroAzimuthAverage.reset();
+      zeroAzimuthAverage.set(zeroAzimuth);
+      anchorAngle = 0.0f;
+      moving = false;
+      saveZeroAzimuth(zeroAzimuth);
+
+      std::ostringstream text;
+      text.precision(1);
+      text << std::fixed << "Zeroed gate at azimuth " << zeroAzimuth << " deg";
+      DeviceServerClient::respond(text.str().c_str());
+   }
+   else
+   {
+      DeviceServerClient::respond((std::string("Unhandled command: ") + command).c_str());
+   }
+}
+
 void setup()
 {
    sketch.addSensor("MLX90393", []() { return magnetometer.begin(); });
    sketch.setValueSource(gateAngle);
+   sketch.setCommandHandler(onGatePublisherCommand, GATE_PUBLISHER_COMMANDS, std::size(GATE_PUBLISHER_COMMANDS));
 
    sketch.begin();
 

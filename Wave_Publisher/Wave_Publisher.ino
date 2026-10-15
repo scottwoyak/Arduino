@@ -131,6 +131,49 @@ InfluxField* averageDepthField = nullptr;
 Timer depthSampleTimer(DEPTH_SAMPLE_INTERVAL_MS);
 TimerSecs uploadTimer(INFLUX_INTERVAL_S);
 
+///
+/// <summary>
+/// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
+/// </summary>
+///
+static constexpr DeviceServerClient::CommandInfo WAVE_PUBLISHER_COMMANDS[] = {
+   { "GetReadings", "Reports the current depth, wave height, average depth, and averaging window status" },
+};
+
+///
+/// <summary>
+/// Handles the "GetReadings" command registered via sketch.setCommandHandler().
+/// </summary>
+/// <param name="command">Full command text received from the DeviceServer.</param>
+///
+static void onWavePublisherCommand(const char* command)
+{
+   std::istringstream stream(command);
+   std::string verb;
+   stream >> verb;
+
+   if (strcasecmp(verb.c_str(), "GetReadings") == 0)
+   {
+      float rawDepth = depth != nullptr ? depth->getDepth() : NAN;
+      float waveHeight = depth != nullptr ? depth->getWaveHeight() : NAN;
+      float avgDepth = depth != nullptr ? depth->getAverageDepth() : NAN;
+      bool avgFull = depth != nullptr && depth->isAverageFull();
+
+      std::ostringstream text;
+      text.precision(2);
+      text << std::fixed
+           << "depth=" << rawDepth << " cm\n"
+           << "waveHeight=" << waveHeight << " cm\n"
+           << "averageDepth=" << avgDepth << " cm\n"
+           << "averageFull=" << (avgFull ? "true" : "false");
+      DeviceServerClient::respond(text.str().c_str());
+   }
+   else
+   {
+      DeviceServerClient::respond((std::string("Unhandled command: ") + command).c_str());
+   }
+}
+
 void setup()
 {
    // solid on while starting up; switches to wave-height-based fading in loop() once wave data is available
@@ -150,6 +193,7 @@ void setup()
       return depth->begin();
    });
    sketch.setValueSource([]() { return depth->getDepth(); });
+   sketch.setCommandHandler(onWavePublisherCommand, WAVE_PUBLISHER_COMMANDS, std::size(WAVE_PUBLISHER_COMMANDS));
 
    sketch.begin();
 

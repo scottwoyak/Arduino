@@ -892,6 +892,8 @@ public:
 class TelemetryPublisher : public TelemetryClient
 {
 private:
+   static constexpr float REPUBLISH_INTERVAL_S = 10.0f;
+
    uint8_t _decimalPlaces;
    uint32_t _minIntervalMicros;
    uint32_t _lastPublishMicros = 0;
@@ -899,6 +901,7 @@ private:
    bool _pendingNew = false;
    bool _sendEverySample = false;
    std::string _lastValue = "";
+   TimerSecs _republishTimer{ REPUBLISH_INTERVAL_S };
 
    void _onTelemetryDisconnected() override
    {
@@ -922,10 +925,11 @@ private:
 
       String value(_pendingValue, (unsigned int)_decimalPlaces);
       bool changed = value != _lastValue.c_str();
-      if ((changed || (_sendEverySample && _pendingNew)) && publish(getTopic().c_str(), value.toDouble(), _decimalPlaces))
+      if ((changed || (_sendEverySample && _pendingNew) || _republishTimer.ready()) && publish(getTopic().c_str(), value.toDouble(), _decimalPlaces))
       {
          _lastValue = value.c_str();
          _lastPublishMicros = now;
+         _republishTimer.reset();
       }
 
       _pendingNew = false;

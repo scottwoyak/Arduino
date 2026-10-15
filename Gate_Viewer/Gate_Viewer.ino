@@ -274,6 +274,17 @@ public:
    {
       return _records[index];
    }
+
+   ///
+   /// <summary>Clears all recorded gate-opening events and removes the persisted history from Preferences.</summary>
+   ///
+   void clear()
+   {
+      _count = 0;
+      sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+      sketch.arduino.preferences.remove(HISTORY_PREFERENCES_KEY);
+      sketch.arduino.preferences.end();
+   }
 };
 
 GateOpenHistory gateOpenHistory;
@@ -1054,6 +1065,7 @@ const char* openTitle(int8_t motion)
    return gateHeldOpen ? "HELD OPEN" : "OPEN";
 }
 
+bool gateDisplayedIsOpen = false;
 int8_t gateDisplayedMotion = 0;
 extern float leftValue;
 extern float rightValue;
@@ -1186,6 +1198,7 @@ void displayGateState(bool isOpen, bool forceRedraw = false, int8_t motion = 0)
 
    lastIsOpen = isOpen;
    lastMotion = motion;
+   gateDisplayedIsOpen = isOpen;
    gateDisplayedMotion = motion;
    everDrawn = true;
 
@@ -1338,7 +1351,14 @@ void renderLine(LineState& line)
    const int16_t width = line.mirrorX ? displayWidth - halfWidth : halfWidth;
    DirtySprite& dirtySprite = sprites[line.mirrorX ? 1 : 0];
 
-   const int16_t top = max<int16_t>(0, gateOriginY - lineLength - 4);
+#ifdef ARDUINO_TOUCH_SUPPORTED
+   const int16_t minTop = 0;
+#else
+   // Keep the sprite below the gate state banner on small non-touch displays (e.g. Feather
+   // 240x135) so a full sprite push doesn't overwrite the "OPEN"/"CLOSED" title.
+   const int16_t minTop = GATE_STATE_TOP_MARGIN + sketch.arduino.charH(GATE_STATE_TEXT_SIZE);
+#endif
+   const int16_t top = max<int16_t>(minTop, gateOriginY - lineLength - 4);
    const int16_t bottom = min<int16_t>(sketch.arduino.height(), gateOriginY + gateOriginRadius + 2);
    dirtySprite.begin(&sketch.arduino.display, x0, top, width, bottom - top);
 
@@ -1417,6 +1437,7 @@ bool redrawAfterLocate = false;
 #ifdef ARDUINO_SOUND_SUPPORTED
 /// <summary>Commands registered with DeviceServerClient, appended to the "Help" command's listing.</summary>
 constexpr DeviceServerClient::CommandInfo SOUND_COMMANDS[] = {
+   { "GetState", "Reports the current gate state (CLOSED, OPEN, OPENING, CLOSING, or HELD OPEN) and left/right angles" },
    { "PlaySound [index]", "Previews the given notification sound (or the currently selected one if omitted) without changing the selected default (see ListSounds)" },
    { "ListSounds", "Lists all available notification sound indices and names, one per line" },
    { "GetSound", "Reports the currently selected default notification sound" },
@@ -1424,12 +1445,13 @@ constexpr DeviceServerClient::CommandInfo SOUND_COMMANDS[] = {
    { "GetVolume", "Reports the currently selected volume (0.0 - MAX_VOLUME)" },
    { "SetVolume <volume>", "Persists the given volume (0.0 - MAX_VOLUME) as the default and applies it immediately" },
    { "GetHistory", "Reports recorded gate-opening timestamps, most recent first" },
+   { "ClearHistory", "Clears all recorded gate-opening timestamps" },
 };
 
 ///
 /// <summary>
-/// Handles the "PlaySound"/"ListSounds"/"GetSound"/"SetSound" commands received from the
-/// DeviceServer, letting the DeviceServer preview, list, and remotely change this device's
+/// Handles the custom commands received from the DeviceServer, letting the DeviceServer
+/// inspect gate state/history and preview, list, or remotely change this device's
 /// notification sound. PlaySound previews a sound without persisting it; SetSound persists
 /// a new default but requires a "Restart" command to take effect.
 /// </summary>
@@ -1441,7 +1463,34 @@ void onSoundCommand(const char* command)
    std::string verb;
    stream >> verb;
 
-   if (strcasecmp(verb.c_str(), "PlaySound") == 0)
+   if (strcasecmp(verb.c_str(), "GetState") == 0)
+   {
+      const char* state = gateDisplayedIsOpen ? openTitle(gateDisplayedMotion) : "CLOSED";
+      std::ostringstream text;
+      text.precision(1);
+      text << std::fixed
+           << "state=" << state << "\n"
+           << "leftAngle=";
+      if (isnan(leftValue))
+      {
+         text << "NAN";
+      }
+      else
+      {
+         text << leftValue << " deg";
+      }
+      text << "\nrightAngle=";
+      if (isnan(rightValue))
+      {
+         text << "NAN";
+      }
+      else
+      {
+         text << rightValue << " deg";
+      }
+      DeviceServerClient::respond(text.str().c_str());
+   }
+   else if (strcasecmp(verb.c_str(), "PlaySound") == 0)
    {
       int index = -1;
       stream >> index;
@@ -1555,6 +1604,14 @@ void onSoundCommand(const char* command)
          }
          DeviceServerClient::respond(text.c_str());
       }
+   }
+   else if (strcasecmp(verb.c_str(), "ClearHistory") == 0)
+   {
+      gateOpenHistory.clear();
+      lastGateOpenTime = 0;
+      lastOpenFooterVisible = false;
+      redrawAfterLocate = true;
+      DeviceServerClient::respond("Cleared gate open history");
    }
    else
    {
@@ -1976,6 +2033,6 @@ void loop()
 
    if (!isnan(displayRightAzimuth) && displayLine(rightLine, displayRightAzimuth))
    {
-         renderLine(rightLine);
-      }
+      renderLine(rightLine);
+   }
 }

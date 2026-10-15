@@ -7,9 +7,11 @@
 
 #include <functional>
 #include <span>
+#include <sstream>
 #include <string>
 
 #include "ArduinoBase.h"
+#include "DeviceServerClient.h"
 #include "Logger.h"
 #include "OTAUpdater.h"
 #include "SiteLocationResolver.h"
@@ -44,6 +46,58 @@ protected:
 
    /// <summary>Constructed by beginTelemetry(), once the telemetry topic has been resolved.</summary>
    TelemetrySubscriber* _client = nullptr;
+
+   /// <summary>The single instance, used by the static _onViewerCommand() bridge function (DeviceServerClient::onConfigCommand() only accepts a captureless function pointer).</summary>
+   inline static ViewerSketch* _viewerInstance = nullptr;
+
+   /// <summary>Commands handled directly by ViewerSketch, listed by "Help" alongside the built-ins.</summary>
+   static constexpr DeviceServerClient::CommandInfo VIEWER_COMMANDS[] = {
+      { "GetTopic", "Reports the current telemetry topic" },
+      { "SetTopic <topic>", "Persists a new telemetry topic (only if the sketch offers a topic table); requires Restart to take effect" },
+      { "GetTelemetryStatus", "Reports whether the telemetry WebSocket is connected/ready, the resolved topic, and the current receive rate" },
+   };
+
+   ///
+   /// <summary>
+   /// Handles the "GetTopic"/"SetTopic"/"GetTelemetryStatus" commands registered by
+   /// beginTelemetry(). Registered with DeviceServerClient::onConfigCommand() since it
+   /// only accepts a captureless function pointer.
+   /// </summary>
+   /// <param name="command">Full command text received from the DeviceServer.</param>
+   /// <returns>True if the command was recognized and handled; otherwise false.</returns>
+   ///
+   static bool _onViewerCommand(const char* command)
+   {
+      std::istringstream stream(command);
+      std::string verb;
+      stream >> verb;
+
+      if (strcasecmp(verb.c_str(), "GetTopic") == 0)
+      {
+         const char* resolved = _viewerInstance->_topicResolver.topic();
+         std::string topic = resolved != nullptr ? resolved : (_viewerInstance->_client != nullptr ? _viewerInstance->_client->getTopic() : "");
+         DeviceServerClient::respond(topic.c_str());
+         return true;
+      }
+      if (strcasecmp(verb.c_str(), "SetTopic") == 0)
+      {
+         std::string value;
+         std::getline(stream >> std::ws, value);
+         DeviceServerClient::respond(_viewerInstance->_topicResolver.trySetTopic(value).c_str());
+         return true;
+      }
+      if (strcasecmp(verb.c_str(), "GetTelemetryStatus") == 0)
+      {
+         TelemetrySubscriber* client = _viewerInstance->_client;
+         std::string result = std::string("topic=\"") + client->getTopic() + "\"\n" +
+            "connected=" + (client->isConnected() ? "true" : "false") + "\n" +
+            "ready=" + (client->isReady() ? "true" : "false") + "\n" +
+            "rate=" + std::to_string(client->getRate()) + " samples/s";
+         DeviceServerClient::respond(result.c_str());
+         return true;
+      }
+      return false;
+   }
 
 public:
    ///
@@ -203,6 +257,9 @@ public:
    {
       _client = new TelemetrySubscriber(topic, _telemetryConfig, _status, handler);
       _client->connect(_arduino, _status);
+
+      _viewerInstance = this;
+      DeviceServerClient::onConfigCommand(_onViewerCommand, VIEWER_COMMANDS, std::size(VIEWER_COMMANDS));
       return _client;
    }
 
