@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sstream>
+
 #include "MonitorSketch.h"
 #include "TempSensor.h"
 #include "Timer.h"
@@ -8,7 +10,7 @@
 /// <summary>
 /// A MonitorSketch specialized for a single temperature/humidity sensor. Owns the
 /// temperature, humidity, dew point, and absolute humidity time-averaged Influx
-/// fields, samples the sensor, and reports
+/// fields, samples the sensor, and exposes a "GetReadings" DeviceServer command. Shared by
 /// Temp_Monitor (headless) and Temp_Monitor_Display (with display); the display
 /// sketch layers its own rendering on top of the values this class already tracks.
 /// </summary>
@@ -30,7 +32,7 @@ private:
    static constexpr uint16_t SENSOR_INTERVAL_MS = 5000;
 
    TempSensor _sensor;
-    TimerSecs _uploadTimer{ INFLUX_INTERVAL_S };
+   TimerSecs _uploadTimer{ INFLUX_INTERVAL_S };
    Timer _sensorTimer{ SENSOR_INTERVAL_MS };
 
    InfluxField* _tempField = nullptr;
@@ -38,8 +40,13 @@ private:
    InfluxField* _dewPointField = nullptr;
    InfluxField* _absoluteHumidityField = nullptr;
 
-   /// <summary>The single instance, used by the static bridge functions _initSensor()/_sensorTypeLabel() to reach the instance (addSensor() only accepts captureless function pointers).</summary>
+   /// <summary>The single instance, used by the static bridge functions _initSensor()/_sensorTypeLabel()/_onCommand() to reach the instance.</summary>
    inline static TempMonitorSketch* _tempInstance = nullptr;
+
+   /// <summary>Commands registered with DeviceServerClient, listed by "Help" after the built-ins.</summary>
+   static constexpr DeviceServerClient::CommandInfo COMMANDS[] = {
+      { "GetReadings", "Reports the latest temperature, humidity, dew point, and absolute humidity" },
+   };
 
    ///
    /// <summary>
@@ -63,6 +70,45 @@ private:
    static const char* _sensorTypeLabel()
    {
       return _tempInstance->_sensor.type();
+   }
+
+   ///
+   /// <summary>
+   /// Handles the "GetReadings" command registered with DeviceServerClient::onCommand().
+   /// </summary>
+   /// <param name="command">Full command text received from the DeviceServer.</param>
+   ///
+   static void _onCommand(const char* command)
+   {
+      std::istringstream stream(command);
+      std::string verb;
+      stream >> verb;
+
+      if (strcasecmp(verb.c_str(), "GetReadings") == 0)
+      {
+         auto formatVal = [](float val, int decimals, const char* unit) -> std::string
+         {
+            if (isnan(val))
+            {
+               return "NAN";
+            }
+            std::ostringstream out;
+            out.precision(decimals);
+            out << std::fixed << val << " " << unit;
+            return out.str();
+         };
+
+         std::string text =
+            "temperature=" + formatVal(_tempInstance->temp(), 1, "F") + "\n" +
+            "humidity=" + formatVal(_tempInstance->humidity(), 1, "%") + "\n" +
+            "dewPoint=" + formatVal(_tempInstance->dewPoint(), 1, "F") + "\n" +
+            "absoluteHumidity=" + formatVal(_tempInstance->absoluteHumidity(), 2, "g/m3");
+         DeviceServerClient::respond(text.c_str());
+      }
+      else
+      {
+         DeviceServerClient::respond((std::string("Unhandled command: ") + command).c_str());
+      }
    }
 
    public:
@@ -92,7 +138,7 @@ private:
    /// <summary>
    /// Registers the sensor init hook, then runs MonitorSketch::begin() and registers
    /// the temperature/humidity/dew point/absolute humidity time-averaged Influx fields
-   /// and the health hook that reports them.
+   /// and the "GetReadings" DeviceServer command.
    /// </summary>
    ///
    void begin()
@@ -103,6 +149,7 @@ private:
       // initialized before WiFi/Influx setup. Uses static bridge functions rather than
       // capturing lambdas since addSensor() only accepts captureless function pointers.
       addSensor("Sensor", _initSensor, _sensorTypeLabel);
+      DeviceServerClient::onCommand(_onCommand, COMMANDS, std::size(COMMANDS));
 
       MonitorSketch::begin();
 

@@ -54,14 +54,13 @@ protected:
    static constexpr DeviceServerClient::CommandInfo VIEWER_COMMANDS[] = {
       { "GetTopic", "Reports the current telemetry topic" },
       { "SetTopic <topic>", "Persists a new telemetry topic (only if the sketch offers a topic table); requires Restart to take effect" },
-      { "GetTelemetryStatus", "Reports whether the telemetry WebSocket is connected/ready, the resolved topic, and the current receive rate" },
    };
 
    ///
    /// <summary>
-   /// Handles the "GetTopic"/"SetTopic"/"GetTelemetryStatus" commands registered by
-   /// beginTelemetry(). Registered with DeviceServerClient::onConfigCommand() since it
-   /// only accepts a captureless function pointer.
+   /// Handles the "GetTopic"/"SetTopic" commands registered by beginTelemetry().
+   /// Registered with DeviceServerClient::onConfigCommand() since it only accepts a
+   /// captureless function pointer.
    /// </summary>
    /// <param name="command">Full command text received from the DeviceServer.</param>
    /// <returns>True if the command was recognized and handled; otherwise false.</returns>
@@ -84,16 +83,6 @@ protected:
          std::string value;
          std::getline(stream >> std::ws, value);
          DeviceServerClient::respond(_viewerInstance->_topicResolver.trySetTopic(value).c_str());
-         return true;
-      }
-      if (strcasecmp(verb.c_str(), "GetTelemetryStatus") == 0)
-      {
-         TelemetrySubscriber* client = _viewerInstance->_client;
-         std::string result = std::string("topic=\"") + client->getTopic() + "\"\n" +
-            "connected=" + (client->isConnected() ? "true" : "false") + "\n" +
-            "ready=" + (client->isReady() ? "true" : "false") + "\n" +
-            "rate=" + std::to_string(client->getRate()) + " samples/s";
-         DeviceServerClient::respond(result.c_str());
          return true;
       }
       return false;

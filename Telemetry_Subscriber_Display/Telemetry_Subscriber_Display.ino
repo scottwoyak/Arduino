@@ -22,9 +22,7 @@
 #define TEXT_SIZES_CUSTOM
 
 #include <Arduino.h>
-#include <Preferences.h>
 #include <array>
-#include <sstream>
 #include <string>
 
 #include "ArduinoBoard.h"
@@ -34,8 +32,6 @@
 #include "WrongBoard.h"
 #endif
 
-#include "DeviceServerClient.h"
-#include "DeviceSketch.h"
 #include "LibraryVersion.h"
 #include "ScatterPlot.h"
 #include "SerialX.h"
@@ -43,31 +39,32 @@
 #include "TelemetryClient.h"
 #include "Timer.h"
 #include "WiFiSettings.h"
+#include "ViewerSketch.h"
 
 const auto VERSION = MakeVersion("1.0");
 constexpr auto SKETCH_NAME = "Telemetry_Subscriber_Display";
 constexpr uint32_t BAUD_RATE = 115200;
 constexpr std::array<const char*, 4> TOPICS = { "Test", "Gate/Left", "Gate/Right", "Wind/Bragg" };
-uint8_t topicIndex = 0;
 constexpr auto PREFERENCES_NAMESPACE = "Subscriber";
-constexpr auto TOPIC_INDEX_KEY = "topicIndex";
-Preferences preferences;
+
+// Selected at startup via prompt in setup().
+std::string telemetryTopic;
 
 TelemetryConfig TELEMETRY_CONFIG = {
-   .topic = TOPICS[0],
+   .prompts = TOPICS,
 };
 constexpr uint32_t RATE_UPDATE_INTERVAL_MS = 1000;
 
 SketchConfig SKETCH_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
+   .preferencesNamespace = PREFERENCES_NAMESPACE,
    .cpuFrequencyMhz = 240,
    .enableOTA = true,
 };
 
-DeviceSketch sketch(SKETCH_CONFIG);
+ViewerSketch sketch(SKETCH_CONFIG, TELEMETRY_CONFIG);
 
-TelemetrySubscriber client(TELEMETRY_CONFIG, sketch.getStatus());
 Timer rateDisplayTimer(RATE_UPDATE_INTERVAL_MS);
 Table table(&sketch.arduino, 0, 0);
 
@@ -80,112 +77,20 @@ constexpr uint8_t VALUE_SERIES_POINT_SIZE = 1;
 
 bool needsInitialDisplay = true;
 
-/// <summary>Commands registered with DeviceServerClient, appended to the "Help" command's listing.</summary>
-constexpr DeviceServerClient::CommandInfo SUBSCRIBER_COMMANDS[] = {
-   { "GetTopic", "Reports the current telemetry topic and lists all available topics" },
-   { "SetTopic <topic>", "Persists and switches to the given telemetry topic immediately" },
-   { "GetTelemetryStatus", "Reports whether the telemetry WebSocket is connected/ready, the current topic, and the receive rate" },
-};
-
-///
-/// <summary>
-/// Switches the active subscription topic by index, persists it in Preferences, and
-/// triggers a display redraw.
-/// </summary>
-/// <param name="newIndex">Index into TOPICS.</param>
-///
-void selectTopicIndex(uint8_t newIndex)
-{
-   topicIndex = newIndex;
-   preferences.putUChar(TOPIC_INDEX_KEY, topicIndex);
-   client.setTopic(TOPICS[topicIndex]);
-   client.setTopics({ TOPICS[topicIndex] });
-   needsInitialDisplay = true;
-}
-
-///
-/// <summary>
-/// Handles custom DeviceServer commands for inspecting and changing the subscribed topic.
-/// </summary>
-/// <param name="command">Full command text received from the DeviceServer.</param>
-///
-void onSubscriberCommand(const char* command)
-{
-   std::istringstream stream(command);
-   std::string verb;
-   stream >> verb;
-
-   if (strcasecmp(verb.c_str(), "GetTopic") == 0)
-   {
-      std::ostringstream text;
-      for (size_t i = 0; i < TOPICS.size(); i++)
-      {
-         if (i > 0)
-         {
-            text << "\n";
-         }
-         text << TOPICS[i];
-         if (i == topicIndex)
-         {
-            text << " (selected)";
-         }
-      }
-      DeviceServerClient::respond(text.str().c_str());
-      return;
-   }
-
-   if (strcasecmp(verb.c_str(), "SetTopic") == 0)
-   {
-      std::string value;
-      std::getline(stream >> std::ws, value);
-      if (value.empty())
-      {
-         DeviceServerClient::respond("Error: SetTopic requires a topic name");
-         return;
-      }
-
-      for (uint8_t i = 0; i < TOPICS.size(); i++)
-      {
-         if (strcasecmp(TOPICS[i], value.c_str()) == 0)
-         {
-            selectTopicIndex(i);
-            DeviceServerClient::respond((std::string("Switched to topic=\"") + TOPICS[i] + "\"").c_str());
-            return;
-         }
-      }
-
-      DeviceServerClient::respond((std::string("Error: unknown topic \"") + value + "\"").c_str());
-      return;
-   }
-
-   if (strcasecmp(verb.c_str(), "GetTelemetryStatus") == 0)
-   {
-      std::string result = std::string("topic=\"") + client.getTopic() + "\"\n" +
-         "connected=" + (client.isConnected() ? "true" : "false") + "\n" +
-         "ready=" + (client.isReady() ? "true" : "false") + "\n" +
-         "rate=" + std::to_string(client.getRate()) + " samples/s";
-      DeviceServerClient::respond(result.c_str());
-      return;
-   }
-
-   DeviceServerClient::respond((std::string("Unknown command: ") + verb).c_str());
-}
-
 void setup()
 {
    SerialX::begin(BAUD_RATE);
 
    valueSeries->pointSize = VALUE_SERIES_POINT_SIZE;
 
-   preferences.begin(PREFERENCES_NAMESPACE);
-   topicIndex = preferences.getUChar(TOPIC_INDEX_KEY, 0);
-   if (topicIndex >= TOPICS.size())
-   {
-      topicIndex = 0;
-   }
-   client.setTopic(TOPICS[topicIndex]);
+   sketch.beginBanner();
 
-   client.onSample([](const std::string& topic, double value, int64_t dtMicros)
+   telemetryTopic = sketch.resolveTopic(true);
+
+   sketch.beginConnect();
+
+   TelemetrySubscriber* client = sketch.beginTelemetry();
+   client->onSample([](const std::string& topic, double value, int64_t dtMicros)
    {
 #ifdef PRINT_SAMPLES
       Serial.print(millis());
@@ -199,36 +104,22 @@ void setup()
       }
    });
 
-   sketch.beginBanner();
-   sketch.beginConnect();
-
-   // Other sketch classes (PublisherSketch, ViewerSketch) print this topic line themselves.
-   sketch.arduino.printlnInitStatus("Topic... ", std::string("\"") + TOPICS[topicIndex] + "\"");
-   client.connect(&sketch.arduino, sketch.getStatus());
-
    sketch.setOnLocateEndCallback([]() { needsInitialDisplay = true; });
-   DeviceServerClient::onCommand(onSubscriberCommand, SUBSCRIBER_COMMANDS, std::size(SUBSCRIBER_COMMANDS));
-
-   sketch.beginLogger();
    sketch.completeInitialization();
 }
 
 void loop()
 {
    sketch.loop();
-   client.loop();
 
    if (sketch.isLocating())
    {
       return;
    }
 
-   if (sketch.arduino.buttonA.wasPressed())
-   {
-      selectTopicIndex((topicIndex + 1) % TOPICS.size());
-   }
+   TelemetrySubscriber* client = sketch.getClient();
 
-   if (!client.isReady())
+   if (!client->isReady())
    {
       // Redraw the table/plot once the subscription (re)starts.
       needsInitialDisplay = true;
@@ -250,8 +141,8 @@ void loop()
       table.addRow("Host", "                        ", Color::VALUE2);
       table.addRow("Rate", "###/s");
 
-      table.setValue(0, TOPICS[topicIndex], Color::VALUE);
-      table.setValue(1, client.getHost(), Color::VALUE2);
+      table.setValue(0, telemetryTopic, Color::VALUE);
+      table.setValue(1, client->getHost(), Color::VALUE2);
       table.setValueNone(2);
       table.draw();
 
@@ -275,7 +166,7 @@ void loop()
 
    if (rateDisplayTimer.ready())
    {
-      table.setValue(2, client.getRate());
+      table.setValue(2, client->getRate());
    }
 
    table.draw();

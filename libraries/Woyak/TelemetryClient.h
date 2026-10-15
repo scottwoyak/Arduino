@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -8,6 +9,7 @@
 #include <WebSocketsClient.h>
 
 #include "DeviceHealth.h"
+#include "DeviceServerClient.h"
 #include "RollingRate.h"
 #include "Status.h"
 #include "Stopwatch.h"
@@ -419,6 +421,39 @@ private:
    // which firmware is connecting.
    static inline std::string _description;
 
+   /// <summary>The most recently started TelemetryClient instance, targeted by _onTelemetryCommand().</summary>
+   static inline TelemetryClient* _activeClient = nullptr;
+
+   /// <summary>Command registered with DeviceServerClient by begin(), listed alongside the built-ins.</summary>
+   static constexpr DeviceServerClient::CommandInfo TELEMETRY_COMMANDS[] = {
+      { "GetTelemetryStatus", "Reports whether the telemetry WebSocket is connected/ready, the current topic, and the sample rate" },
+   };
+
+   ///
+   /// <summary>
+   /// Handles the "GetTelemetryStatus" command registered by begin().
+   /// </summary>
+   /// <param name="command">Full command text received from the DeviceServer.</param>
+   /// <returns>True if the command was recognized and handled; otherwise false.</returns>
+   ///
+   static bool _onTelemetryCommand(const char* command)
+   {
+      std::istringstream stream(command);
+      std::string verb;
+      stream >> verb;
+
+      if (strcasecmp(verb.c_str(), "GetTelemetryStatus") == 0)
+      {
+         std::string result = std::string("topic=\"") + _activeClient->getTopic() + "\"\n" +
+            "connected=" + (_activeClient->isConnected() ? "true" : "false") + "\n" +
+            "ready=" + (_activeClient->isReady() ? "true" : "false") + "\n" +
+            "rate=" + std::to_string(_activeClient->getRate()) + " samples/s";
+         DeviceServerClient::respond(result.c_str());
+         return true;
+      }
+      return false;
+   }
+
    void _sendHandshake()
    {
       JsonDocument doc;
@@ -649,6 +684,8 @@ public:
    ///
    void begin(const char* host, uint16_t port, bool useTls = false, const char* path = "/ws")
    {
+      _activeClient = this;
+      DeviceServerClient::onConfigCommand(_onTelemetryCommand, TELEMETRY_COMMANDS, std::size(TELEMETRY_COMMANDS));
       WebSocketJsonClient::begin(host, port, useTls, path, HEARTBEAT_PING_MS, HEARTBEAT_TIMEOUT_MS, HEARTBEAT_FAILURES);
    }
 
