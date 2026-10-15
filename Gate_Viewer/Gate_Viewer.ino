@@ -1477,6 +1477,10 @@ void onSoundCommand(const char* command)
          }
          uint8_t index = SETTINGS_SOUNDS[i];
          text += std::to_string(index) + "=" + Sound::soundName(index);
+         if (index == sketch.arduino.sound.soundIndex)
+         {
+            text += " (selected)";
+         }
       }
       DeviceServerClient::respond(text.c_str());
    }
@@ -1538,7 +1542,7 @@ void onSoundCommand(const char* command)
          {
             if (i > 0)
             {
-               text += ", ";
+               text += "\n";
             }
 
             const GateOpenRecord& record = gateOpenHistory.get(i);
