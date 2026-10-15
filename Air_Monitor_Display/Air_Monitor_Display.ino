@@ -398,11 +398,19 @@ void loop()
          vocIndex = vocAlgorithm.process(rawVoc);
          noxIndex = noxAlgorithm.process(rawNox);
 
-         vocField->set(vocIndex);
-         noxField->set(noxIndex);
-
-         sketch.publish(vocTopic, vocIndex, 0);
-         sketch.publish(noxTopic, noxIndex, 0);
+         // The gas index algorithms report 0 during their initial blackout period (see
+         // GasIndexAlgorithm_INITIAL_BLACKOUT), before they've established a baseline.
+         // That's not a real reading, so don't upload or publish it.
+         if (vocIndex != 0)
+         {
+            vocField->set(vocIndex);
+            sketch.publish(vocTopic, vocIndex, 0);
+         }
+         if (noxIndex != 0)
+         {
+            noxField->set(noxIndex);
+            sketch.publish(noxTopic, noxIndex, 0);
+         }
       }
    }
 
