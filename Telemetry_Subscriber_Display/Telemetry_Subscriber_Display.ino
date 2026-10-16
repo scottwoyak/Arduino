@@ -52,6 +52,7 @@ std::string telemetryTopic;
 
 TelemetryConfig TELEMETRY_CONFIG = {
    .prompts = TOPICS,
+   .topic = TOPICS[0],
 };
 constexpr uint32_t RATE_UPDATE_INTERVAL_MS = 1000;
 
@@ -85,7 +86,7 @@ void setup()
 
    sketch.beginBanner();
 
-   telemetryTopic = sketch.resolveTopic(true);
+   telemetryTopic = sketch.resolveTopic();
 
    sketch.beginConnect();
 

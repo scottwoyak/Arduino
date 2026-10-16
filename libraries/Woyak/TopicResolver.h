@@ -88,6 +88,16 @@ public:
 
       if (hasPrompts())
       {
+         if (_config->topic != nullptr)
+         {
+            arduino->preferences.begin(_preferencesNamespace, false);
+            if (!arduino->preferences.isKey(TOPIC_KEYS[0]))
+            {
+               arduino->preferences.putString(TOPIC_KEYS[0], _config->topic);
+            }
+            arduino->preferences.end();
+         }
+
          std::span<const String> resolved = _resolver.resolve(arduino->preferences, status, "Select a telemetry topic (* = default):", TOPIC_COLUMNS, _config->prompts.data(), _config->prompts.size(), forcePrompt);
          _topic = resolved[0].c_str();
       }

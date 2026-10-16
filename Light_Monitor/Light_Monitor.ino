@@ -40,7 +40,7 @@
 // This sketch's own version (e.g. "1.0"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("1.0");
+const auto VERSION = MakeVersion("1.1");
 constexpr auto SKETCH_NAME = "Light_Monitor";
 
 // ----------- Telemetry
