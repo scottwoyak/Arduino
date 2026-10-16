@@ -136,53 +136,34 @@ void printSensorSummary()
 
 ///
 /// <summary>
-/// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
+/// Formats the latest temperature and humidity for each detected sensor for the
+/// "GetReadings" command registered via sketch.onReadings().
 /// </summary>
+/// <returns>Formatted readings text.</returns>
 ///
-static constexpr DeviceServerClient::CommandInfo LAKE_TEMP_COMMANDS[] = {
-   { "GetReadings", "Reports the latest temperature and humidity for each detected sensor" },
-};
-
-///
-/// <summary>
-/// Handles the "GetReadings" command registered via DeviceServerClient::onCommand().
-/// </summary>
-/// <param name="command">Full command text received from the DeviceServer.</param>
-///
-static void onLakeTempCommand(const char* command)
+static std::string getReadings()
 {
-   std::istringstream stream(command);
-   std::string verb;
-   stream >> verb;
-
-   if (strcasecmp(verb.c_str(), "GetReadings") == 0)
+   std::ostringstream text;
+   text.precision(1);
+   text << std::fixed;
+   for (uint8_t i = 0; i < NUM_SENSORS; i++)
    {
-      std::ostringstream text;
-      text.precision(1);
-      text << std::fixed;
-      for (uint8_t i = 0; i < NUM_SENSORS; i++)
+      if (i > 0)
       {
-         if (i > 0)
-         {
-            text << "\n";
-         }
-         text << SENSOR_CONFIGS[i].item << " (Port " << (int)SENSOR_CONFIGS[i].port << "): ";
-         if (!sensors[i]->exists())
-         {
-            text << "not detected";
-         }
-         else
-         {
-            multi.select(SENSOR_CONFIGS[i].port);
-            text << sensors[i]->readTemperatureF() << " F, " << sensors[i]->readHumidity() << " %";
-         }
+         text << "\n";
       }
-      DeviceServerClient::respond(text.str().c_str());
+      text << SENSOR_CONFIGS[i].item << " (Port " << (int)SENSOR_CONFIGS[i].port << "): ";
+      if (!sensors[i]->exists())
+      {
+         text << "not detected";
+      }
+      else
+      {
+         multi.select(SENSOR_CONFIGS[i].port);
+         text << sensors[i]->readTemperatureF() << " F, " << sensors[i]->readHumidity() << " %";
+      }
    }
-   else
-   {
-      DeviceServerClient::respond((std::string("Unhandled command: ") + command).c_str());
-   }
+   return text.str();
 }
 
 void setup()
@@ -196,10 +177,9 @@ void setup()
    sketch.addSensor("Bottom 1", []() { multi.select(SENSOR_CONFIGS[1].port); return sensors[1]->begin(true); }, nullptr, false);
    sketch.addSensor("Bottom 2", []() { multi.select(SENSOR_CONFIGS[2].port); return sensors[2]->begin(true); }, nullptr, false);
    sketch.addSensor("Enclosure", []() { multi.select(SENSOR_CONFIGS[3].port); return sensors[3]->begin(true); }, nullptr, false);
+   sketch.onReadings(getReadings, "Reports the latest temperature and humidity for each detected sensor");
 
    sketch.begin();
-
-   DeviceServerClient::onCommand(onLakeTempCommand, LAKE_TEMP_COMMANDS, std::size(LAKE_TEMP_COMMANDS));
 
    printSensorSummary();
 

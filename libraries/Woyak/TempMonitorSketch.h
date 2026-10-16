@@ -40,13 +40,8 @@ private:
    InfluxField* _dewPointField = nullptr;
    InfluxField* _absoluteHumidityField = nullptr;
 
-   /// <summary>The single instance, used by the static bridge functions _initSensor()/_sensorTypeLabel()/_onCommand() to reach the instance.</summary>
+   /// <summary>The single instance, used by the static bridge functions _initSensor()/_sensorTypeLabel() to reach the instance.</summary>
    inline static TempMonitorSketch* _tempInstance = nullptr;
-
-   /// <summary>Commands registered with DeviceServerClient, listed by "Help" after the built-ins.</summary>
-   static constexpr DeviceServerClient::CommandInfo COMMANDS[] = {
-      { "GetReadings", "Reports the latest temperature, humidity, dew point, and absolute humidity" },
-   };
 
    ///
    /// <summary>
@@ -74,41 +69,30 @@ private:
 
    ///
    /// <summary>
-   /// Handles the "GetReadings" command registered with DeviceServerClient::onCommand().
+   /// Formats the latest temperature, humidity, dew point, and absolute humidity for the
+   /// "GetReadings" command registered via onReadings().
    /// </summary>
-   /// <param name="command">Full command text received from the DeviceServer.</param>
+   /// <returns>Formatted readings text.</returns>
    ///
-   static void _onCommand(const char* command)
+   std::string _getReadings() const
    {
-      std::istringstream stream(command);
-      std::string verb;
-      stream >> verb;
-
-      if (strcasecmp(verb.c_str(), "GetReadings") == 0)
+      auto formatVal = [](float val, int decimals, const char* unit) -> std::string
       {
-         auto formatVal = [](float val, int decimals, const char* unit) -> std::string
+         if (isnan(val))
          {
-            if (isnan(val))
-            {
-               return "NAN";
-            }
-            std::ostringstream out;
-            out.precision(decimals);
-            out << std::fixed << val << " " << unit;
-            return out.str();
-         };
+            return "NAN";
+         }
+         std::ostringstream out;
+         out.precision(decimals);
+         out << std::fixed << val << " " << unit;
+         return out.str();
+      };
 
-         std::string text =
-            "temperature=" + formatVal(_tempInstance->temp(), 1, "F") + "\n" +
-            "humidity=" + formatVal(_tempInstance->humidity(), 1, "%") + "\n" +
-            "dewPoint=" + formatVal(_tempInstance->dewPoint(), 1, "F") + "\n" +
-            "absoluteHumidity=" + formatVal(_tempInstance->absoluteHumidity(), 2, "g/m3");
-         DeviceServerClient::respond(text.c_str());
-      }
-      else
-      {
-         DeviceServerClient::respond((std::string("Unhandled command: ") + command).c_str());
-      }
+      return
+         "temperature=" + formatVal(temp(), 1, "F") + "\n" +
+         "humidity=" + formatVal(humidity(), 1, "%") + "\n" +
+         "dewPoint=" + formatVal(dewPoint(), 1, "F") + "\n" +
+         "absoluteHumidity=" + formatVal(absoluteHumidity(), 2, "g/m3");
    }
 
    public:
@@ -149,7 +133,7 @@ private:
       // initialized before WiFi/Influx setup. Uses static bridge functions rather than
       // capturing lambdas since addSensor() only accepts captureless function pointers.
       addSensor("Sensor", _initSensor, _sensorTypeLabel);
-      DeviceServerClient::onCommand(_onCommand, COMMANDS, std::size(COMMANDS));
+      onReadings([this]() { return _getReadings(); }, "Reports the latest temperature, humidity, dew point, and absolute humidity");
 
       MonitorSketch::begin();
 

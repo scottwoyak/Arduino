@@ -252,7 +252,7 @@ void handlePostGate()
 /// </summary>
 ///
 static constexpr DeviceServerClient::CommandInfo GATE_COMMANDS[] = {
-   { "GetState", "Reports the current gate state (OPEN, HOLD, or CLOSED)" },
+   { "GetState", "Reports the current gate state (OPEN, HOLD, or CLOSED)", { "gs" } },
    { "Open", "Pulses the gate open, unless currently held open" },
    { "Hold", "Holds the gate open until Close is issued" },
    { "Close", "Releases a held-open gate (or clears a pending open pulse)" },

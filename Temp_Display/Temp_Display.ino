@@ -1,12 +1,17 @@
 //
-// Temperature and humidity display for Feather boards.
+// Temperature and humidity display.
 //
 // Continuously reads a connected sensor and shows the temperature and humidity, centered
 // on the display, along with the sensor's type/address and read rate.
 //
 // Define ONE_WIRE_PIN to use a DS18B20 sensor; otherwise an I2C temperature/humidity
-// sensor is auto-detected. Hardware: Feather display board with supported sensor.
+// sensor is auto-detected. Hardware: Hosyond ESP32-S3 Viewer or Feather display board
+// with supported sensor.
 //
+
+// Default: build for the Hosyond ESP32-S3 Viewer board. Also requires selecting the
+// generic "ESP32S3 Dev Module" board in Visual Micro.
+#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -14,7 +19,7 @@
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
-#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#error "This sketch requires a board with a display (e.g. Hosyond ESP32-S3 Viewer, Feather ESP32-S3, or Feather M0)."
 #include "WrongBoard.h"
 #endif
 
@@ -49,8 +54,8 @@ void setup()
 {
    SerialX::begin();
 
-   Wire.begin();
    arduino.begin();
+   Wire.begin();
 
    // Initialize temperature sensor
    #ifdef ONE_WIRE_PIN

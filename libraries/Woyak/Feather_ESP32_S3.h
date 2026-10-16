@@ -7,6 +7,7 @@
 #include "DeviceStateStatus.h"
 #include <string>
 #include <Preferences.h>
+#include <Wire.h>
 #include "LED.h"
 #include "Status.h"
 #include "LGFXUtil.h"
@@ -41,6 +42,8 @@ public:
    void begin()
    {
       ArduinoWithDisplay::begin();
+
+      Wire.begin();
 
       buttonA.begin();
       neoPixel.begin();

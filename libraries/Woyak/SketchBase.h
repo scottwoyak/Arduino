@@ -6,6 +6,7 @@
 // InfluxSketchBase-derived (Monitor/Publisher) sketches.
 
 #include <functional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -131,6 +132,85 @@ protected:
 
    /// <summary>Callback registered via setOnLocateEndCallback().</summary>
    std::function<void()> _onLocateEndCallback = nullptr;
+
+   /// <summary>Callback registered via onReadings() to return the formatted sensor readings.</summary>
+   std::function<std::string()> _readingsHandler = nullptr;
+
+   /// <summary>Help description for the GetReadings command registered via onReadings().</summary>
+   const char* _readingsDescription = "Reports the latest sensor readings";
+
+   /// <summary>Sketch-specific command handler registered via setCommandHandler().</summary>
+   void (*_customCommandHandler)(const char* command) = nullptr;
+
+   /// <summary>Sketch-specific command metadata registered via setCommandHandler().</summary>
+   const DeviceServerClient::CommandInfo* _customCommands = nullptr;
+
+   /// <summary>Number of entries in _customCommands.</summary>
+   size_t _customCommandCount = 0;
+
+   /// <summary>Combined command metadata passed to DeviceServerClient::onCommand().</summary>
+   std::vector<DeviceServerClient::CommandInfo> _registeredCommands;
+
+   ///
+   /// <summary>
+   /// Dispatches sketch-specific commands received from DeviceServerClient. Handles
+   /// "GetReadings" if registered via onReadings(); forwards all other commands to the
+   /// handler registered via setCommandHandler(), or replies "Unknown command" if none.
+   /// </summary>
+   /// <param name="command">Full command text received from the DeviceServer.</param>
+   ///
+   static void _dispatchSketchCommand(const char* command)
+   {
+      ASSERT(_instance != nullptr);
+
+      std::istringstream stream(command);
+      std::string verb;
+      stream >> verb;
+
+      if (_instance->_readingsHandler != nullptr && strcasecmp(verb.c_str(), "GetReadings") == 0)
+      {
+         std::string text = _instance->_readingsHandler();
+         DeviceServerClient::respond(text.c_str());
+         return;
+      }
+
+      if (_instance->_customCommandHandler != nullptr)
+      {
+         _instance->_customCommandHandler(command);
+         return;
+      }
+
+      DeviceServerClient::respond((std::string("Unknown command: ") + command).c_str());
+   }
+
+   ///
+   /// <summary>
+   /// Rebuilds the combined sketch command table (GetReadings plus any commands registered
+   /// via setCommandHandler()) and updates DeviceServerClient::onCommand().
+   /// </summary>
+   ///
+   void _refreshRegisteredCommands()
+   {
+      _registeredCommands.clear();
+
+      if (_readingsHandler != nullptr)
+      {
+         _registeredCommands.push_back(DeviceServerClient::CommandInfo{ "GetReadings", _readingsDescription, { "gr" } });
+      }
+
+      if (_customCommands != nullptr)
+      {
+         for (size_t i = 0; i < _customCommandCount; i++)
+         {
+            _registeredCommands.push_back(_customCommands[i]);
+         }
+      }
+
+      if (_readingsHandler != nullptr || _customCommandHandler != nullptr)
+      {
+         DeviceServerClient::onCommand(_dispatchSketchCommand, _registeredCommands.data(), _registeredCommands.size());
+      }
+   }
 
    /// <summary>Ends the Locate request.</summary>
    TimerSecs _locateTimer = TimerSecs(LOCATE_DURATION_S);
@@ -858,6 +938,39 @@ public:
       void setOnLocateEndCallback(std::function<void()> callback)
       {
          _onLocateEndCallback = callback;
+      }
+
+      ///
+      /// <summary>
+      /// Registers a callback that returns the formatted sensor readings text for the
+      /// "GetReadings" (alias "gr") command, and automatically registers and dispatches the
+      /// command with DeviceServerClient.
+      /// </summary>
+      /// <param name="handler">Callback invoked with no arguments; returns the readings response text.</param>
+      /// <param name="description">Optional help description for GetReadings.</param>
+      ///
+      void onReadings(std::function<std::string()> handler, const char* description = "Reports the latest sensor readings")
+      {
+         _readingsHandler = handler;
+         _readingsDescription = description != nullptr ? description : "Reports the latest sensor readings";
+         _refreshRegisteredCommands();
+      }
+
+      ///
+      /// <summary>
+      /// Registers a handler for sketch-specific commands not recognized as built-in,
+      /// shared config/telemetry, or GetReadings commands.
+      /// </summary>
+      /// <param name="handler">Function invoked with the full command text for any sketch-specific command.</param>
+      /// <param name="help">Optional array describing the sketch's own commands, appended to the "Help" command's listing; must outlive the sketch.</param>
+      /// <param name="helpCount">Number of entries in help.</param>
+      ///
+      void setCommandHandler(void (*handler)(const char* command), const DeviceServerClient::CommandInfo* help = nullptr, size_t helpCount = 0)
+      {
+         _customCommandHandler = handler;
+         _customCommands = help;
+         _customCommandCount = helpCount;
+         _refreshRegisteredCommands();
       }
 
       ///

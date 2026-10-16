@@ -252,18 +252,62 @@ FieldTable table(&sketch.arduino, 0, 0, TEXT_SIZE_SMALL);
 
 ///
 /// <summary>
+/// Formats the latest PM1.0, PM2.5, PM10, CO2, temperature, humidity, VOC, NOx, and
+/// SGP41 conditioning state for the "GetReadings" command registered via
+/// sketch.onReadings().
+/// </summary>
+/// <returns>Formatted readings text.</returns>
+///
+static std::string getReadings()
+{
+   auto formatVal = [](float val, int decimals, const char* unit) -> std::string
+   {
+      if (isnan(val))
+      {
+         return "NAN";
+      }
+      std::ostringstream out;
+      out.precision(decimals);
+      out << std::fixed << val;
+      if (unit != nullptr && unit[0] != '\0')
+      {
+         out << " " << unit;
+      }
+      return out.str();
+   };
+
+   return
+      "pm1=" + formatVal(pm1, 0, "ug/m3") + "\n" +
+      "pm25=" + formatVal(pm25, 0, "ug/m3") + "\n" +
+      "pm10=" + formatVal(pm10, 0, "ug/m3") + "\n" +
+      "co2=" + formatVal(co2, 0, "ppm") + "\n" +
+      "temperature=" + formatVal(tempF, 1, "F") + "\n" +
+      "humidity=" + formatVal(humidity, 1, "%") + "\n" +
+      "voc=" + formatVal(vocIndex, 0, "") + "\n" +
+      "nox=" + formatVal(noxIndex, 0, "") + "\n" +
+      "sgpConditioned=" + (sgpConditioned ? "true" : "false");
+}
+
+///
+/// <summary>
 /// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
 /// </summary>
 ///
 static constexpr DeviceServerClient::CommandInfo AIR_MONITOR_COMMANDS[] = {
-   { "GetReadings", "Reports the latest PM1.0, PM2.5, PM10, CO2, temperature, humidity, VOC, NOx, and SGP41 conditioning state" },
-   { "ForceCalibration [ppm]", "Performs SCD41 forced CO2 recalibration at the given reference ppm (default 400)" },
+   {
+      "ForceCalibration",
+      "Performs SCD41 forced CO2 recalibration at the given reference ppm",
+      { "fc" },
+      {
+         { "ppm", "Reference CO2 in ppm (400-2000)", false, "400" },
+      },
+      true,
+   },
 };
 
 ///
 /// <summary>
-/// Handles the "GetReadings"/"ForceCalibration" commands registered via
-/// sketch.setCommandHandler().
+/// Handles the "ForceCalibration" command registered via sketch.setCommandHandler().
 /// </summary>
 /// <param name="command">Full command text received from the DeviceServer.</param>
 ///
@@ -273,37 +317,7 @@ static void onAirMonitorCommand(const char* command)
    std::string verb;
    stream >> verb;
 
-   if (strcasecmp(verb.c_str(), "GetReadings") == 0)
-   {
-      auto formatVal = [](float val, int decimals, const char* unit) -> std::string
-      {
-         if (isnan(val))
-         {
-            return "NAN";
-         }
-         std::ostringstream out;
-         out.precision(decimals);
-         out << std::fixed << val;
-         if (unit != nullptr && unit[0] != '\0')
-         {
-            out << " " << unit;
-         }
-         return out.str();
-      };
-
-      std::string text =
-         "pm1=" + formatVal(pm1, 0, "ug/m3") + "\n" +
-         "pm25=" + formatVal(pm25, 0, "ug/m3") + "\n" +
-         "pm10=" + formatVal(pm10, 0, "ug/m3") + "\n" +
-         "co2=" + formatVal(co2, 0, "ppm") + "\n" +
-         "temperature=" + formatVal(tempF, 1, "F") + "\n" +
-         "humidity=" + formatVal(humidity, 1, "%") + "\n" +
-         "voc=" + formatVal(vocIndex, 0, "") + "\n" +
-         "nox=" + formatVal(noxIndex, 0, "") + "\n" +
-         "sgpConditioned=" + (sgpConditioned ? "true" : "false");
-      DeviceServerClient::respond(text.c_str());
-   }
-   else if (strcasecmp(verb.c_str(), "ForceCalibration") == 0)
+   if (strcasecmp(verb.c_str(), "ForceCalibration") == 0)
    {
       int targetPpm = 400;
       if (stream >> targetPpm)
@@ -357,6 +371,7 @@ void setup()
    });
    sketch.setValueSource([]() { return pms.pm25(); });
    sketch.onSiteResolved(onSiteResolved);
+   sketch.onReadings(getReadings, "Reports the latest PM1.0, PM2.5, PM10, CO2, temperature, humidity, VOC, NOx, and SGP41 conditioning state");
    sketch.setCommandHandler(onAirMonitorCommand, AIR_MONITOR_COMMANDS, std::size(AIR_MONITOR_COMMANDS));
 
    sketch.begin();

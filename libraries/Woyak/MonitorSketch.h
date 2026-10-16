@@ -50,9 +50,16 @@ private:
 
    /// <summary>Commands registered via enableConfigCommands(), listed by "Help" after the built-ins.</summary>
    static constexpr DeviceServerClient::CommandInfo CONFIG_COMMANDS[] = {
-      { "GetConfig", "Reports the current site, location, and (if applicable) bucket" },
-      { "SetConfig <site|location|bucket> <value>", "Persists a new site/location/bucket value; requires Restart to take effect" },
-      { "SetConfig", "From the shell only: prompts for a new site/location, like the serial setup prompt" },
+      { "GetConfig", "Reports the current site, location, and (if applicable) bucket", { "gc" } },
+      {
+         "SetConfig",
+         "Persists a new site/location/bucket value (or prompts interactively from the shell if omitted); requires Restart to take effect",
+         { "sc" },
+         {
+            { "key", "Config key (site, location, or bucket)", false },
+            { "value", "New value for the key", false },
+         },
+      },
    };
 
    ///

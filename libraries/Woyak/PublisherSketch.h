@@ -106,8 +106,15 @@ private:
 
        /// <summary>Commands handled directly by PublisherSketch, listed by "Help" alongside the built-ins.</summary>
        static constexpr DeviceServerClient::CommandInfo PUBLISHER_COMMANDS[] = {
-          { "GetTopic", "Reports the current telemetry topic" },
-          { "SetTopic <topic>", "Persists a new telemetry topic (only if the sketch offers a topic table); requires Restart to take effect" },
+          { "GetTopic", "Reports the current telemetry topic", { "gt" } },
+          {
+             "SetTopic",
+             "Persists a new telemetry topic (only if the sketch offers a topic table); requires Restart to take effect",
+             { "st" },
+             {
+                { "topic", "Telemetry topic name", true },
+             },
+          },
        };
 
        ///
@@ -398,20 +405,6 @@ public:
    void setOnStartedCallback(std::function<void()> callback)
    {
       _telemetryHandler.setOnStartedCallback(callback);
-   }
-
-   ///
-   /// <summary>
-   /// Registers a handler for sketch-specific commands not recognized as built-in or
-   /// shared config/telemetry commands.
-   /// </summary>
-   /// <param name="handler">Function invoked with the full command text for any sketch-specific command.</param>
-   /// <param name="help">Optional array describing the sketch's own commands (usage and description), appended to the "Help" command's listing; must outlive the sketch.</param>
-   /// <param name="helpCount">Number of entries in help.</param>
-   ///
-   void setCommandHandler(void (*handler)(const char* command), const DeviceServerClient::CommandInfo* help = nullptr, size_t helpCount = 0)
-   {
-      DeviceServerClient::onCommand(handler, help, helpCount);
    }
 
    ///

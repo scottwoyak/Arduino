@@ -1,12 +1,16 @@
 #pragma once
 
+#include <Preferences.h>
+#include <Wire.h>
+
+// LGX_HosyondESP32S3.h must be included before ArduinoWithDisplay.h because
+// ArduinoWithDisplay declares a member of type LGFX.
 #include "LGX_HosyondESP32S3.h"
 #include "ArduinoWithDisplay.h"
 #include "Button.h"
 #include "DeviceStateStatus.h"
 #include "MultiStatus.h"
 #include "Sound.h"
-#include <Preferences.h>
 
 ///
 /// <summary>
@@ -27,6 +31,9 @@ private:
    static constexpr uint8_t TOUCH_RESET_PIN = 18;
 
 public:
+   static constexpr uint8_t DEFAULT_SDA_PIN = 16;
+   static constexpr uint8_t DEFAULT_SCL_PIN = 15;
+
    ///
    /// <summary>
    /// BOOT pushbutton, wired to GPIO0.
@@ -70,8 +77,8 @@ public:
 
    ///
    /// <summary>
-   /// Initializes the display, the FT6336U touch controller's RST line, and the BOOT
-   /// button.
+   /// Initializes the display, the FT6336U touch controller's RST line, the I2C bus,
+   /// and the BOOT button.
    /// </summary>
    ///
    void begin() override
@@ -79,7 +86,13 @@ public:
       pinMode(TOUCH_RESET_PIN, OUTPUT);
       digitalWrite(TOUCH_RESET_PIN, HIGH);
 
+      // On boards with non-standard I2C pins, set them before calling Wire.begin()
+      // with no arguments so it picks them up as its defaults.
+      Wire.setPins(DEFAULT_SDA_PIN, DEFAULT_SCL_PIN);
+
       ArduinoWithDisplay::begin();
+
+      Wire.begin();
 
       sound.begin();
       buttonA.begin();

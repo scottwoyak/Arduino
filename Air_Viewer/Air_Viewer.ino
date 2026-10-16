@@ -33,6 +33,7 @@
 #endif
 
 #include "AirQualityTiers.h"
+#include "DisplayValue.h"
 #include "LibraryVersion.h"
 #include "SerialX.h"
 #include "Status.h"
@@ -61,7 +62,7 @@ constexpr float BAR_MAXES[NUM_BARS] = { 100, 100, 100, 2000, 500, 500 };
 // Air_Monitor_Display.ino so the two sketches can't drift apart). TIER_CHARS is
 // display-specific padding width, not part of the shared tier data.
 constexpr uint8_t NUM_TIERS = AirQualityTiers::NUM_TIERS;
-constexpr uint8_t TIER_CHARS = 6;
+constexpr uint8_t TIER_CHARS = 5;
 
 // Upper limit of each tier except the last, per bar; PM1.0 has no standard, so it uses
 // the PM2.5 limits (see AirQualityTiers.h).
@@ -106,6 +107,8 @@ uint16_t labelY = 0;
 uint16_t tierY = 0;
 bool topicsSet = false;
 std::string telemetryTopics[NUM_BARS];
+DisplayValue* valueFields[NUM_BARS] = {};
+DisplayValue* tierFields[NUM_BARS] = {};
 
 ///
 /// <summary>
@@ -165,10 +168,19 @@ void initLayout()
    uint16_t slotWidth = displayWidth / NUM_BARS;
    uint16_t barWidth = slotWidth * 2 / 3;
 
+   Format valueFormat("####");
+   Format tierFormat(TIER_CHARS);
+
    for (uint8_t i = 0; i < NUM_BARS; i++)
    {
       barCenters[i] = slotWidth * i + slotWidth / 2;
       barRects[i] = { (uint16_t)(barCenters[i] - barWidth / 2), barTop, barWidth, barHeight };
+
+      valueFields[i] = new DisplayValue(&sketch.arduino, valueFormat, TEXT_SIZE, DisplayValue::Alignment::CENTER);
+      valueFields[i]->setPosition(barCenters[i], valueY);
+
+      tierFields[i] = new DisplayValue(&sketch.arduino, tierFormat, TEXT_SIZE, DisplayValue::Alignment::CENTER);
+      tierFields[i]->setPosition(barCenters[i], tierY);
    }
 }
 
@@ -302,6 +314,8 @@ void drawStatic()
    {
       drawBarBackground(i);
       printCentered(LABELS[i], barCenters[i], labelY, Color::HEADING);
+      drawnValues[i] = -1;
+      lastMarkerY[i] = UINT16_MAX;
    }
 }
 
@@ -383,14 +397,7 @@ void loop()
 
       drawValueLine(i, value);
 
-      std::string text = std::to_string((int)lround(value));
-      printCentered(text, barCenters[i], valueY, Color::WHITE);
-
-      std::string tierName = AirQualityTiers::TIER_NAMES[tier];
-      while (tierName.length() < TIER_CHARS)
-      {
-         tierName = " " + tierName + " ";
-      }
-      printCentered(tierName, barCenters[i], tierY, AirQualityTiers::TIER_COLORS[tier]);
+      valueFields[i]->draw((int)lround(value), Color::WHITE);
+      tierFields[i]->draw(AirQualityTiers::TIER_NAMES[tier], AirQualityTiers::TIER_COLORS[tier]);
    }
 }

@@ -1437,15 +1437,36 @@ bool redrawAfterLocate = false;
 #ifdef ARDUINO_SOUND_SUPPORTED
 /// <summary>Commands registered with DeviceServerClient, appended to the "Help" command's listing.</summary>
 constexpr DeviceServerClient::CommandInfo SOUND_COMMANDS[] = {
-   { "GetState", "Reports the current gate state (CLOSED, OPEN, OPENING, CLOSING, or HELD OPEN) and left/right angles" },
-   { "PlaySound [index]", "Previews the given notification sound (or the currently selected one if omitted) without changing the selected default (see ListSounds)" },
-   { "ListSounds", "Lists all available notification sound indices and names, one per line" },
+   { "GetState", "Reports the current gate state (CLOSED, OPEN, OPENING, CLOSING, or HELD OPEN) and left/right angles", { "gs" } },
+   {
+      "PlaySound",
+      "Previews the given notification sound (or the currently selected one if omitted) without changing the selected default (see ListSounds)",
+      { "ps" },
+      {
+         { "index", "Sound index to preview, or omitted for current default", false },
+      },
+   },
+   { "ListSounds", "Lists all available notification sound indices and names, one per line", { "ls" } },
    { "GetSound", "Reports the currently selected default notification sound" },
-   { "SetSound <index>", "Persists the given sound index as the default; requires Restart to take effect" },
+   {
+      "SetSound",
+      "Persists the given sound index as the default; requires Restart to take effect",
+      { "ss" },
+      {
+         { "index", "Sound index to set as default", true },
+      },
+   },
    { "GetVolume", "Reports the currently selected volume (0.0 - MAX_VOLUME)" },
-   { "SetVolume <volume>", "Persists the given volume (0.0 - MAX_VOLUME) as the default and applies it immediately" },
+   {
+      "SetVolume",
+      "Persists the given volume (0.0 - MAX_VOLUME) as the default and applies it immediately",
+      { "sv" },
+      {
+         { "volume", "Volume level (0.0 - MAX_VOLUME)", true },
+      },
+   },
    { "GetHistory", "Reports recorded gate-opening timestamps, most recent first" },
-   { "ClearHistory", "Clears all recorded gate-opening timestamps" },
+   { "ClearHistory", "Clears all recorded gate-opening timestamps", { "ch" }, {}, true },
 };
 
 ///

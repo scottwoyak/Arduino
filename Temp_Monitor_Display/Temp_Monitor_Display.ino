@@ -39,7 +39,7 @@
 //   prompted-for) site/location printed after WiFi connects.
 //
 // Usage:
-// - Flash to an Adafruit Feather ESP32-S3 TFT.
+// - Flash to a Hosyond ESP32-S3 Viewer board or Adafruit Feather ESP32-S3 TFT.
 // - Power on and allow initialization to complete.
 // - Observe live values on the display and periodic telemetry uploads in InfluxDB.
 //
@@ -57,6 +57,15 @@
 // - site=<from Serial prompt/Preferences>, location=<from Serial prompt/Preferences>, item=CPU
 //     temperature: the ESP32 CPU temperature at upload time.
 //
+
+// Uncomment this to build for the Feather ESP32-S3 TFT instead of the Hosyond ESP32-S3
+// Viewer board.
+//#define ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT
+
+// Default: build for the Hosyond ESP32-S3 Viewer board. Also requires selecting the
+// generic "ESP32S3 Dev Module" board in Visual Micro.
+#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
+
 #include <string>
 
 // Declares which VLW font sizes this sketch actually uses (VALUE_TEXT_SIZE=4 below;
@@ -69,11 +78,7 @@
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
-#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
-#include "WrongBoard.h"
-#endif
-#ifndef ARDUINO_NEOPIXEL_SUPPORTED
-#error "This sketch requires a board with onboard NeoPixel LED support (e.g. Feather ESP32-S3 or Waveshare ESP32-S3-Zero)."
+#error "This sketch requires a board with a display (e.g. Hosyond ESP32-S3 Viewer, Feather ESP32-S3, or Feather M0)."
 #include "WrongBoard.h"
 #endif
 
@@ -125,8 +130,6 @@ bool wasAllValuesMode = false;
 
 void setup()
 {
-   Wire.begin();
-
    // Fall back to the internal ESP32 CPU temperature sensor if no external sensor is
    // found, so the device still reports a (less accurate) temperature reading instead
    // of failing to start.

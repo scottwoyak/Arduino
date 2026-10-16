@@ -20,6 +20,7 @@
 - Visual Micro's recent/saved boards list is stored in the registry at `HKCU\Software\Visual Micro\Options\Arduino General`, value 'Recent Board Names' (semicolon-separated entries like 'Display Name (fqbn_id)'). To remove a board: export the key with `reg export` as a backup, remove the entry from the list via PowerShell, then user restarts Visual Studio. Per-board option settings are under `HKCU\Software\Visual Micro\Options\Board Custom Options (custom_<package>_<board>_<option>)`.
 - After editing Arduino sketches/libraries, run the get_errors tool on the changed files to catch compile errors (no Visual Micro build needed), and re-check after further edits. Still do not run full builds automatically.
 - When a sketch object is created from a class like DeviceSketch (ViewerSketch, MonitorSketch, PublisherSketch, etc.), name the variable "sketch" (e.g. `DeviceSketch sketch(...)`), not "device"/"viewer"/etc.
+- In sketch naming conventions, a `_Display` sketch (e.g., Temp_Monitor_Display, Air_Monitor_Display, Temp_Display) both collects/populates local sensor information and displays it on screen, whereas a `_Viewer` sketch (e.g., Wind_Viewer, Air_Viewer, Wave_Viewer, Gate_Viewer) only displays remote information without collecting sensor data itself. Sketch names reflect this functional role rather than which display board they run on.
 
 ## General Coding Conventions
 - Do not make changes in libraries outside of the Woyak library; third-party libraries should remain untouched.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cctype>
 #include <iomanip>
 #include <sstream>
 #include <string>
@@ -34,6 +35,38 @@ enum class LogSeverity
    INFO,
    WARN,
    ERROR
+};
+
+///
+/// <summary>
+/// Describes a single command argument or flag for the built-in "Help" listing.
+/// </summary>
+///
+struct CommandArg
+{
+   const char* name = nullptr;
+   const char* description = nullptr;
+   bool required = true;
+   const char* defaultValue = nullptr;
+};
+
+///
+/// <summary>
+/// Describes one command for the built-in "Help" listing: its canonical name, short
+/// description, optional aliases, optional arguments, and whether the UI should
+/// prompt for confirmation before executing it.
+/// </summary>
+///
+struct CommandInfo
+{
+   static constexpr size_t MAX_ALIASES = 4;
+   static constexpr size_t MAX_ARGS = 6;
+
+   const char* name = nullptr;
+   const char* description = nullptr;
+   const char* aliases[MAX_ALIASES] = {};
+   CommandArg args[MAX_ARGS] = {};
+   bool confirm = false;
 };
 
 ///
@@ -316,41 +349,96 @@ class DeviceServerClient
    /// dispatched as a command.</summary>
    static inline void (*_pendingPromptCallback)(const char* line) = nullptr;
 
-   ///
-   /// <summary>
-   /// Describes one command for the built-in "Help" listing: its usage (verb plus any
-   /// arguments, e.g. "readPin <pin>") and a short description of what it does.
-   /// </summary>
-   ///
-public:
-   struct CommandInfo
-   {
-      const char* usage;
-      const char* description;
-   };
+   public:
+   using CommandArg = ::CommandArg;
+   using CommandInfo = ::CommandInfo;
 
 private:
    /// <summary>Built-in commands, listed by "Help" first, in this order.</summary>
    static constexpr CommandInfo _BUILTIN_COMMANDS[] = {
-      { "Help [-l] [-b|-s]", "Lists all commands understood by this device (-l for a brief usage-only listing, -b for only built-in commands, -s for only commands registered by the sketch)" },
-      { "Restart", "Restarts the device" },
-      { "GetHealth", "Reports WiFi/CPU/memory health as a JSON message" },
+      {
+         "Help",
+         "Lists all commands understood by this device",
+         { "?" },
+         {
+            { "-b", "Built-in commands only", false },
+            { "-s", "Sketch commands only", false },
+            { "-l", "Include descriptions", false },
+            { "-j", "Output as JSON", false },
+         },
+      },
+      { "Restart", "Restarts the device", { "reboot" }, {}, true },
+      { "GetHealth", "Reports WiFi/CPU/memory health as a JSON message", { "gh" } },
       { "Locate", "Asks the device to do something visibly identifiable" },
       { "I2CScan", "Scans the I2C bus and lists responding addresses" },
-      { "I2CRead <address> <reg>", "Reads a register from an I2C device" },
-      { "I2CWrite <address> <reg> <value>", "Writes a value to a register on an I2C device" },
-      { "ReadPin [pin]", "Reads the digital state of a GPIO pin, or all pins if omitted" },
-      { "WritePin <pin> <HIGH|LOW>", "Sets a GPIO pin's digital output state" },
-      { "GetPinMode [pin]", "Reports whether a GPIO pin is configured as INPUT or OUTPUT, or all pins if omitted" },
-      { "SetPinMode <pin> <INPUT|OUTPUT|INPUT_PULLUP>", "Sets a GPIO pin's mode" },
-      { "AnalogRead [pin]", "Reads the analog (ADC) value of a pin, or all analog-capable pins if omitted" },
-      { "GetUptime", "Reports how long the device has been running since boot" },
-      { "GetInfo", "Reports the sketch name, version, board type, build time, uptime, IP address, and site/location" },
-      { "GetWifiInfo", "Reports the current WiFi SSID, signal strength, and IP address" },
-      { "GetResetReason", "Reports the reason the device last reset/rebooted" },
-      { "GetMemory", "Reports free heap and largest allocatable block" },
-      { "GetCpuInfo", "Reports chip model/revision/cores, CPU frequency, flash size, and internal temperature" },
-      { "GetVersion", "Reports the sketch's firmware version" },
+      {
+         "I2CRead",
+         "Reads a register from an I2C device",
+         {},
+         {
+            { "address", "I2C device address (e.g. 0x23)", true },
+            { "reg", "Register address (e.g. 0x10)", true },
+         },
+      },
+      {
+         "I2CWrite",
+         "Writes a value to a register on an I2C device",
+         {},
+         {
+            { "address", "I2C device address (e.g. 0x23)", true },
+            { "reg", "Register address (e.g. 0x10)", true },
+            { "value", "Byte value to write (e.g. 0x01)", true },
+         },
+      },
+      {
+         "ReadPin",
+         "Reads the digital state of a GPIO pin, or all pins if omitted",
+         { "rp" },
+         {
+            { "pin", "GPIO pin number, or omitted for all pins", false },
+         },
+      },
+      {
+         "WritePin",
+         "Sets a GPIO pin's digital output state",
+         { "wp" },
+         {
+            { "pin", "GPIO pin number", true },
+            { "state", "HIGH or LOW", true },
+         },
+      },
+      {
+         "GetPinMode",
+         "Reports whether a GPIO pin is configured as INPUT or OUTPUT, or all pins if omitted",
+         { "gpm" },
+         {
+            { "pin", "GPIO pin number, or omitted for all pins", false },
+         },
+      },
+      {
+         "SetPinMode",
+         "Sets a GPIO pin's mode",
+         { "spm" },
+         {
+            { "pin", "GPIO pin number", true },
+            { "mode", "INPUT, OUTPUT, or INPUT_PULLUP", true },
+         },
+      },
+      {
+         "AnalogRead",
+         "Reads the analog (ADC) value of a pin, or all analog-capable pins if omitted",
+         { "ar" },
+         {
+            { "pin", "GPIO pin number, or omitted for all analog pins", false },
+         },
+      },
+      { "GetUptime", "Reports how long the device has been running since boot", { "gu" } },
+      { "GetInfo", "Reports the sketch name, version, board type, build time, uptime, IP address, and site/location", { "gi" } },
+      { "GetWifiInfo", "Reports the current WiFi SSID, signal strength, and IP address", { "gwi" } },
+      { "GetResetReason", "Reports the reason the device last reset/rebooted", { "grr" } },
+      { "GetMemory", "Reports free heap and largest allocatable block", { "gm" } },
+      { "GetCpuInfo", "Reports chip model/revision/cores, CPU frequency, flash size, and internal temperature", { "gci" } },
+      { "GetVersion", "Reports the sketch's firmware version", { "gv" } },
    };
 
    /// <summary>Extra commands registered by the sketch via onCommand(), listed by "Help" after the built-ins.</summary>
@@ -395,56 +483,233 @@ private:
 
    ///
    /// <summary>
-   /// Builds and sends the response text for the "Help" command: usage and description
-   /// of every built-in command, followed by any sketch-registered commands. When
-   /// listOnly is true ("Help -l"), only the usage of each command is listed, without
-   /// its description. When builtinOnly is true ("Help -b"), only built-in commands are
-   /// listed. When sketchOnly is true ("Help -s"), only sketch-registered commands are
-   /// listed. builtinOnly and sketchOnly are mutually exclusive; if both are set, sketchOnly wins.
+   /// Checks whether verb matches info's canonical name or any of its aliases (case-insensitive).
    /// </summary>
-   /// <param name="listOnly">If true, lists only command usage, omitting descriptions.</param>
+   /// <param name="info">Command metadata entry to check.</param>
+   /// <param name="verb">Verb token from the received command.</param>
+   /// <returns>True if verb matches the command's name or an alias; otherwise false.</returns>
+   ///
+   static bool _matchesCommand(const CommandInfo& info, const char* verb)
+   {
+      if (strcasecmp(verb, info.name) == 0)
+      {
+         return true;
+      }
+      for (size_t i = 0; i < CommandInfo::MAX_ALIASES && info.aliases[i] != nullptr; i++)
+      {
+         if (strcasecmp(verb, info.aliases[i]) == 0)
+         {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   ///
+   /// <summary>
+   /// Resolves a command verb (or alias) to the canonical command name across built-in,
+   /// config, and sketch-registered commands. Returns verb unchanged if no match is found.
+   /// </summary>
+   /// <param name="verb">Verb token from the received command.</param>
+   /// <returns>The canonical command name if matched; otherwise verb.</returns>
+   ///
+   static std::string _resolveCommandName(const std::string& verb)
+   {
+      for (const CommandInfo& info : _BUILTIN_COMMANDS)
+      {
+         if (_matchesCommand(info, verb.c_str()))
+         {
+            return info.name;
+         }
+      }
+
+      for (const _ConfigCommandSet& set : _configCommandSets)
+      {
+         for (size_t i = 0; i < set.helpCount; i++)
+         {
+            if (_matchesCommand(set.help[i], verb.c_str()))
+            {
+               return set.help[i].name;
+            }
+         }
+      }
+
+      for (size_t i = 0; i < _sketchCommandCount; i++)
+      {
+         if (_matchesCommand(_sketchCommands[i], verb.c_str()))
+         {
+            return _sketchCommands[i].name;
+         }
+      }
+
+      return verb;
+   }
+
+   ///
+   /// <summary>
+   /// Appends a single command's text representation to a Help stream.
+   /// </summary>
+   /// <param name="text">Destination output stream.</param>
+   /// <param name="info">Command metadata to format.</param>
+   /// <param name="includeDescriptions">If true, appends the command's description.</param>
+   ///
+   static void _appendCommandText(std::ostringstream& text, const CommandInfo& info, bool includeDescriptions)
+   {
+      text << info.name;
+      for (size_t i = 0; i < CommandInfo::MAX_ARGS && info.args[i].name != nullptr; i++)
+      {
+         const CommandArg& arg = info.args[i];
+         if (arg.name[0] == '-')
+         {
+            text << " [" << arg.name << "]";
+         }
+         else if (arg.required)
+         {
+            text << " <" << arg.name << ">";
+         }
+         else
+         {
+            text << " [" << arg.name << "]";
+         }
+      }
+      if (info.aliases[0] != nullptr)
+      {
+         text << " (";
+         for (size_t i = 0; i < CommandInfo::MAX_ALIASES && info.aliases[i] != nullptr; i++)
+         {
+            if (i > 0)
+            {
+               text << ", ";
+            }
+            text << info.aliases[i];
+         }
+         text << ")";
+      }
+      if (includeDescriptions && info.description != nullptr && info.description[0] != '\0')
+      {
+         text << " - " << info.description;
+      }
+      text << "\n";
+   }
+
+   ///
+   /// <summary>
+   /// Appends a single command's JSON object representation to a Help JSON array.
+   /// </summary>
+   /// <param name="root">Destination JSON array.</param>
+   /// <param name="info">Command metadata to serialize.</param>
+   /// <param name="isSketch">True if this is a sketch-specific command; false for built-in/shared commands.</param>
+   ///
+   static void _appendCommandJson(JsonArray& root, const CommandInfo& info, bool isSketch)
+   {
+      JsonObject obj = root.add<JsonObject>();
+      obj["name"] = info.name;
+      obj["desc"] = info.description;
+      obj["sketch"] = isSketch;
+      if (info.confirm)
+      {
+         obj["confirm"] = true;
+      }
+      if (info.aliases[0] != nullptr)
+      {
+         JsonArray aliases = obj["aliases"].to<JsonArray>();
+         for (size_t i = 0; i < CommandInfo::MAX_ALIASES && info.aliases[i] != nullptr; i++)
+         {
+            aliases.add(info.aliases[i]);
+         }
+      }
+      if (info.args[0].name != nullptr)
+      {
+         JsonArray args = obj["args"].to<JsonArray>();
+         for (size_t i = 0; i < CommandInfo::MAX_ARGS && info.args[i].name != nullptr; i++)
+         {
+            JsonObject argObj = args.add<JsonObject>();
+            argObj["name"] = info.args[i].name;
+            argObj["desc"] = info.args[i].description;
+            argObj["required"] = info.args[i].required;
+            if (info.args[i].defaultValue != nullptr)
+            {
+               argObj["default"] = info.args[i].defaultValue;
+            }
+         }
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Builds and sends the response for the "Help" command: every built-in and shared
+   /// command, followed by any sketch-registered commands. By default, outputs a brief
+   /// usage-only text listing; when includeDescriptions is true ("Help -l"), appends each
+   /// command's description. When jsonOutput is true ("Help -j"), outputs a JSON array of
+   /// command metadata objects instead. When builtinOnly is true ("Help -b"), only
+   /// built-in/shared commands are listed. When sketchOnly is true ("Help -s"), only
+   /// sketch-registered commands are listed. builtinOnly and sketchOnly are mutually
+   /// exclusive; if both are set, sketchOnly wins.
+   /// </summary>
+   /// <param name="includeDescriptions">If true, includes command descriptions in text output.</param>
    /// <param name="builtinOnly">If true, omits sketch-registered commands and lists only built-in ones.</param>
    /// <param name="sketchOnly">If true, omits built-in commands and lists only sketch-registered ones.</param>
+   /// <param name="jsonOutput">If true, formats the response as a JSON array.</param>
    ///
-   static void _respondHelp(bool listOnly, bool builtinOnly, bool sketchOnly)
+   static void _respondHelp(bool includeDescriptions, bool builtinOnly, bool sketchOnly, bool jsonOutput)
    {
+      if (jsonOutput)
+      {
+         JsonDocument doc;
+         JsonArray root = doc.to<JsonArray>();
+
+         if (!sketchOnly)
+         {
+            for (const CommandInfo& info : _BUILTIN_COMMANDS)
+            {
+               _appendCommandJson(root, info, false);
+            }
+
+            for (const _ConfigCommandSet& set : _configCommandSets)
+            {
+               for (size_t i = 0; i < set.helpCount; i++)
+               {
+                  _appendCommandJson(root, set.help[i], false);
+               }
+            }
+         }
+
+         if (!builtinOnly || sketchOnly)
+         {
+            for (size_t i = 0; i < _sketchCommandCount; i++)
+            {
+               _appendCommandJson(root, _sketchCommands[i], true);
+            }
+         }
+
+         std::string json;
+         serializeJson(doc, json);
+         respond(json.c_str());
+         return;
+      }
+
       std::ostringstream text;
       if (!sketchOnly)
       {
          for (const CommandInfo& info : _BUILTIN_COMMANDS)
          {
-            text << info.usage;
-            if (!listOnly)
-            {
-               text << " - " << info.description;
-            }
-            text << "\n";
+            _appendCommandText(text, info, includeDescriptions);
          }
 
          for (const _ConfigCommandSet& set : _configCommandSets)
          {
             for (size_t i = 0; i < set.helpCount; i++)
             {
-               text << set.help[i].usage;
-               if (!listOnly)
-               {
-                  text << " - " << set.help[i].description;
-               }
-               text << "\n";
+               _appendCommandText(text, set.help[i], includeDescriptions);
             }
          }
       }
 
-      if (!builtinOnly)
+      if (!builtinOnly || sketchOnly)
       {
          for (size_t i = 0; i < _sketchCommandCount; i++)
          {
-            text << _sketchCommands[i].usage;
-            if (!listOnly)
-            {
-               text << " - " << _sketchCommands[i].description;
-            }
-            text << "\n";
+            _appendCommandText(text, _sketchCommands[i], includeDescriptions);
          }
       }
 
@@ -848,7 +1113,7 @@ private:
    ///
    /// <summary>
    /// Reports chip model/revision/cores, CPU frequency, flash size, and internal
-   /// temperature sensor reading. Uses CPUTemp::readC() rather than Arduino's
+   /// temperature sensor reading. Uses CPUTemp::readF() rather than Arduino's
    /// temperatureRead() directly, since the underlying ESP32 temperature sensor driver
    /// can only be installed once per sketch and CPUTemp is the shared owner of that
    /// driver (see DeviceHealth/ESP32TempSensor); calling temperatureRead() here would
@@ -862,7 +1127,7 @@ private:
       result << "Chip: " << ESP.getChipModel() << " rev " << ESP.getChipRevision() << ", " << (int)ESP.getChipCores() << " core(s)\n"
              << "CPU frequency: " << ESP.getCpuFreqMHz() << " MHz\n"
              << "Flash size: " << formatBytes(ESP.getFlashChipSize()).c_str() << "\n"
-             << "Internal temperature: " << CPUTemp::readC() << " C";
+             << "Internal temperature: " << CPUTemp::readF() << " F";
       return result.str();
    }
 
@@ -1071,7 +1336,8 @@ private:
    static void _handleCommand(const char* command)
    {
       std::vector<std::string> args;
-      std::string verb = _parseCommand(command, args);
+      std::string rawVerb = _parseCommand(command, args);
+      std::string verb = _resolveCommandName(rawVerb);
 
       if (strcasecmp(verb.c_str(), "Restart") == 0)
       {
@@ -1106,14 +1372,15 @@ private:
       }
       else if (strcasecmp(verb.c_str(), "Help") == 0)
       {
-         bool listOnly = false;
+         bool includeDescriptions = false;
          bool builtinOnly = false;
          bool sketchOnly = false;
+         bool jsonOutput = false;
          for (const std::string& arg : args)
          {
             if (strcasecmp(arg.c_str(), "-l") == 0)
             {
-               listOnly = true;
+               includeDescriptions = true;
             }
             else if (strcasecmp(arg.c_str(), "-b") == 0)
             {
@@ -1123,8 +1390,12 @@ private:
             {
                sketchOnly = true;
             }
+            else if (strcasecmp(arg.c_str(), "-j") == 0)
+            {
+               jsonOutput = true;
+            }
          }
-         _respondHelp(listOnly, builtinOnly, sketchOnly);
+         _respondHelp(includeDescriptions, builtinOnly, sketchOnly, jsonOutput);
       }
       else if (strcasecmp(verb.c_str(), "I2CScan") == 0)
       {
@@ -1188,9 +1459,23 @@ private:
       }
       else
       {
+         // If an alias was used, rewrite the leading verb to the canonical command name
+         // before forwarding to config/sketch handlers so they only need to match the
+         // canonical name.
+         const char* cursor = command;
+         while (*cursor != '\0' && std::isspace(static_cast<unsigned char>(*cursor)))
+         {
+            cursor++;
+         }
+         while (*cursor != '\0' && !std::isspace(static_cast<unsigned char>(*cursor)))
+         {
+            cursor++;
+         }
+         std::string normalizedCommand = verb + cursor;
+
          for (const _ConfigCommandSet& set : _configCommandSets)
          {
-            if (set.handler != nullptr && set.handler(command))
+            if (set.handler != nullptr && set.handler(normalizedCommand.c_str()))
             {
                return;
             }
@@ -1198,7 +1483,7 @@ private:
 
          if (_commandHandler != nullptr)
          {
-            _commandHandler(command);
+            _commandHandler(normalizedCommand.c_str());
          }
          else
          {
