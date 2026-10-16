@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vector>
+#include <deque>
 
 #include <Arduino.h>
 
@@ -87,7 +87,7 @@ public:
       }
 
       char c = _inQueue.front();
-      _inQueue.erase(_inQueue.begin());
+      _inQueue.pop_front();
       return (unsigned char)c;
    }
 
@@ -111,7 +111,7 @@ public:
 
 private:
    void (*_sendText)(const char* text) = nullptr;
-   std::vector<char> _inQueue;
+   std::deque<char> _inQueue;
    std::string _outBuffer;
 
    ///

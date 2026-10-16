@@ -3,16 +3,17 @@
 // readings to InfluxDB on a fixed interval.
 //
 // Behavior:
-// - Uses the shared MonitorSketch class (see MonitorSketch.h) to own the boot/init sequence:
-//   display init, status LED, sensor init hook, WiFi, daily rebooter, OTA, and the
+// - Uses the shared TempMonitorSketch class (see TempMonitorSketch.h) to own the boot/init sequence:
+//   display init, status indicator, sensor init hook, WiFi, OTA, and the
 //   standard InfluxDB setup/post/flush cycle.
-// - This device's bucket/site/location is prompted forfirst time it
+// - This device's bucket/site/location is prompted for over Serial the first time it
 //   runs, then saved to Preferences (NVS) so it survives reboots and OTA firmware
-//   updates. On subsequent boots the saved value is used automatically, over Serial the  unless buttonA
+//   updates. On subsequent boots the saved value is used automatically, unless buttonA
 //   is held during a short window right after startup, which forces a re-prompt. This is
-//   handled by the shared MonitorSketch class (see MonitorSketch.h) via MONITOR_CONFIG's
-//   promptForContext flag, since this sketch prompts for a bucket (from a fixed list) and
-//   free-text site/location, rather than picking a single fixed SiteConfig entry.
+//   handled by the shared MonitorSketch class (see MonitorSketch.h) via InfluxConfig's
+//   promptForContext/promptForBucket flags, since this sketch prompts for a bucket/site
+//   (from fixed lists) and a free-text location, rather than picking a single fixed
+//   InfluxContext entry.
 // - Samples temperature and humidity every SENSOR_INTERVAL_MS and accumulates
 //   time-averaged values for the next upload.
 // - Continuously renders the latest averaged temperature and humidity values centered
@@ -21,22 +22,22 @@
 //   clears the display and shows "WiFi connection lost" (SketchBase's default
 //   _onWiFiLost() behavior) before resetting the device after
 //   SketchBase::WIFI_LOST_RESET_DELAY_S seconds.
-// - Posts telemetry to InfluxDB every INFLUX_INTERVAL_S seconds (handled by Monitor::loop()).
-// - Checks for a firmware update periodically and, if a newer
-//   version is published, downloads and installs it (showing progress on the display)
-//   before restarting.
+// - Posts telemetry to InfluxDB every INFLUX_INTERVAL_S seconds (handled by TempMonitorSketch::loop()).
+// - Supports push-based OTA firmware updates: when an update is requested, downloads
+//   and installs it (showing progress on the display) before restarting.
 //
 // Failure handling:
-// - Sensor initialization failure triggers a device reset after config.sensorFailureResetDelayS seconds.
-// - Influx initialization failure (handled by Monitor::begin()) triggers a device reset.
-// - Runtime InfluxDB post/flush failures are logged to Serial by Monitor::loop() and
-//   retried the following cycle.
+// - Sensor initialization falls back to the internal ESP32 CPU temperature sensor if no
+//   external sensor is detected.
+// - Influx initialization failure (handled by InfluxSketchBase::begin()) triggers a device reset.
+// - Runtime InfluxDB post/flush failures are logged to Serial and retried the following cycle.
 //
 // Outputs:
-// - Display: centered temperature (###.## F) and humidity (##.#%) at text size 4;
-//   site/location and version shown at small size in the bottom-left and bottom-right corners.
-// - Serial: sensor type, address, and ID printed during initialization; the resolved (or
-//   prompted-for) site/location printed after WiFi connects.
+// - Display: centered temperature (###.## F) and humidity (##.#%) at text size 4 (or all
+//   4 values in a table while buttonA is held); site/location and version shown at small
+//   size in the bottom-left and bottom-right corners.
+// - Serial: sensor type printed during initialization; the resolved (or
+//   prompted-for) bucket/site/location printed during startup.
 //
 // Usage:
 // - Flash to a Hosyond ESP32-S3 Viewer board or Adafruit Feather ESP32-S3 TFT.
@@ -55,7 +56,7 @@
 //     SENSOR_INTERVAL_MS, averaged over the INFLUX_INTERVAL_S upload interval.
 //
 // - site=<from Serial prompt/Preferences>, location=<from Serial prompt/Preferences>, item=CPU
-//     temperature: the ESP32 CPU temperature at upload time.
+//     temperature: rolling average of the ESP32 CPU temperature (F).
 //
 
 // Uncomment this to build for the Feather ESP32-S3 TFT instead of the Hosyond ESP32-S3
@@ -65,8 +66,6 @@
 // Default: build for the Hosyond ESP32-S3 Viewer board. Also requires selecting the
 // generic "ESP32S3 Dev Module" board in Visual Micro.
 #define ARDUINO_HOSYOND_ESP32_S3_VIEWER
-
-#include <string>
 
 // Declares which VLW font sizes this sketch actually uses (VALUE_TEXT_SIZE=4 below;
 // TEXT_SIZE_SMALL=2 is always included regardless, see ArduinoWithDisplay.h), so
@@ -82,13 +81,9 @@
 #include "WrongBoard.h"
 #endif
 
-#include "SerialX.h"
-#include "Timer.h"
 #include "FieldTable.h"
 #include "LibraryVersion.h"
-
 #include "WiFiSettings.h"
-
 #include "TempMonitorSketch.h"
 
 // This sketch's own version (e.g. "2.4"); MakeVersion() appends the shared
@@ -119,42 +114,14 @@ StringValue allValuesAbsHum("##.#%");
 
 TempMonitorSketch sketch(SKETCH_NAME, VERSION, PREFERENCES_NAMESPACE);
 
-// Shows all 5 time-averaged readings with labels, GAP-aligned into a single value
+// Shows all 4 time-averaged readings with labels, GAP-aligned into a single value
 // column, while buttonA is held (see loop()). Positioned once headerHeight is known in
 // setup().
-FieldTable allValuesTable(&sketch.arduino, 0, 0, TEXT_SIZE_SMALL);
+FieldTable allValuesTable(&sketch.arduino, 0, 0);
 
 // Tracks whether the buttonA-held all-values table was showing on the previous loop() so
 // the display can be cleared exactly once when switching between it and the normal readout.
 bool wasAllValuesMode = false;
-
-void setup()
-{
-   // Fall back to the internal ESP32 CPU temperature sensor if no external sensor is
-   // found, so the device still reports a (less accurate) temperature reading instead
-   // of failing to start.
-   sketch.begin();
-
-   allValuesTable.addRow("Temp", tempFormat.formatString().c_str(), &allValuesTemp);
-   allValuesTable.addRow("Humidity", &allValuesHum);
-   allValuesTable.addRow("Dew Pt", &allValuesDewPoint);
-   allValuesTable.addRow("Abs Hum", &allValuesAbsHum);
-
-   int16_t tableHeaderHeight = sketch.arduino.charH(TEXT_SIZE_SMALL);
-   int16_t tableFooterHeight = sketch.arduino.charH(TEXT_SIZE_SMALL);
-   int16_t tableAvailableHeight = sketch.arduino.height() - tableHeaderHeight - tableFooterHeight;
-   allValuesTable.setPosition(sketch.arduino.width() / 2, tableHeaderHeight + tableAvailableHeight / 2, Anchor::CENTER);
-
-   sketch.setOnLocateEndCallback([]() { allValuesTable.invalidate(); });
-
-   // Pause so the initialization info
-   // before it's cleared and replaced with the live temperature/humidity readout.
-   delay(STARTUP_DELAY_S * 1000UL);
-
-   sketch.arduino.clearDisplay();
-
-   Logger.logInitializationComplete();
-}
 
 ///
 /// <summary>
@@ -207,7 +174,7 @@ void updateAllValuesMode(bool allValuesMode, int16_t headerHeight, int16_t foote
 
 ///
 /// <summary>
-/// Shows all 5 time-averaged readings with labels, column-aligned via FieldTable,
+/// Shows all 4 time-averaged readings with labels, column-aligned via FieldTable,
 /// while buttonA is held.
 /// </summary>
 /// <param name="temp">Current time-averaged temperature.</param>
@@ -257,6 +224,37 @@ void drawNormalReadout(float temp, float hum, int16_t headerHeight, int16_t foot
    {
       sketch.arduino.printlnD(humFormat, Color::GRAY);
    }
+}
+
+void setup()
+{
+   // Fall back to the internal ESP32 CPU temperature sensor if no external sensor is
+   // found, so the device still reports a (less accurate) temperature reading instead
+   // of failing to start.
+   sketch.begin();
+
+   allValuesTable.addRow("Temp", tempFormat.formatString().c_str(), &allValuesTemp);
+   allValuesTable.addRow("Humidity", &allValuesHum);
+   allValuesTable.addRow("Dew Pt", &allValuesDewPoint);
+   allValuesTable.addRow("Abs Hum", &allValuesAbsHum);
+
+   int16_t tableHeaderHeight = sketch.arduino.charH(TEXT_SIZE_SMALL);
+   int16_t tableFooterHeight = sketch.arduino.charH(TEXT_SIZE_SMALL);
+   int16_t tableAvailableHeight = sketch.arduino.height() - tableHeaderHeight - tableFooterHeight;
+   allValuesTable.setPosition(sketch.arduino.width() / 2, tableHeaderHeight + tableAvailableHeight / 2, Anchor::CENTER);
+
+   sketch.setOnLocateEndCallback([]()
+   {
+      allValuesTable.invalidate();
+   });
+
+   // Pause so the initialization info stays visible on the display
+   // before it's cleared and replaced with the live temperature/humidity readout.
+   delay(STARTUP_DELAY_S * 1000UL);
+
+   sketch.arduino.clearDisplay();
+
+   Logger.logInitializationComplete();
 }
 
 void loop()

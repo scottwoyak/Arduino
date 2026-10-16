@@ -318,6 +318,77 @@ public:
 
    ///
    /// <summary>
+   /// Gets the stable GUID of a notification sound, which remains constant even if the
+   /// sound's display name or list position changes.
+   /// </summary>
+   /// <param name="index">Sound index</param>
+   /// <returns>Sound GUID</returns>
+   ///
+   static const char* soundId(uint8_t index)
+   {
+      switch (index)
+      {
+      case 1:
+         return "b7e4c9a1-3f28-4d62-9c15-8a0e7b54d201";
+      case 2:
+         return "e3a91f40-6b82-47d9-a52e-1c94f08d6302";
+      case 3:
+         return "4f8c2d17-9e05-43b8-8d61-7a35c20e9403";
+      case 4:
+         return "9a1d5e82-2c47-4f10-b389-6e40d71a8504";
+      case 5:
+         return "c6b30a49-8d14-42e7-95a2-3f18e62b7605";
+      case 6:
+         return "1e7f4b28-5a93-4c06-8e74-2b59a83c6706";
+      case 7:
+         return "7d2a9c63-1f58-48b1-a403-9c61b40d5807";
+      case 8:
+         return "f0c58e14-7b29-4e65-91d8-4a72c51e4908";
+      case 9:
+         return "3b9e6d51-4c80-41a2-87f5-5d83e92f3a09";
+      case 10:
+         return "8c4a1f76-0e32-49d4-b619-6f94a03b2b10";
+      case 11:
+         return "d5f13b98-6a71-45c0-92e4-7105b14c1c11";
+      case 12:
+         return "2a6c8e05-9f43-4b17-8c30-8216c25d0d12";
+      case 13:
+         return "6e0b4d29-3c15-47f8-a951-9327d36e9e13";
+      case 14:
+         return "b1d79a42-8e60-43c9-9407-a438e47f8f14";
+      case 15:
+         return "5c8e2f67-1b94-4a31-8f26-b549f5807015";
+      case 16:
+         return "a93f0c81-5d26-4e73-b148-c65a06916116";
+      case 17:
+         return "0d4b7e13-2f89-46a5-9c62-d76b17a25217";
+      case 18:
+         return "e71a5b36-9c02-4d84-8379-e87c28b34318";
+      case 19:
+         return "4b2d9c58-7e14-40f6-a590-f98d39c43419";
+      case 20:
+         return "9f6e1a70-3b48-48c2-9705-0a9e4ad52520";
+      case 21:
+         return "c38a4f92-0d51-4e19-8a23-1baf5be61621";
+      case 22:
+         return "1a5c7d04-6f83-42b0-b416-2cb06cf70722";
+      case 23:
+         return "7e9b2e18-4a37-49d5-9f38-3dc17d08f823";
+      case 24:
+         return "d04f8a25-1c69-45e1-8257-4ed28e19e924";
+      case 25:
+         return "3c1e6b49-8f20-4b74-a681-5fe39f2ada25";
+      case 26:
+         return "8a7d0f62-5e91-43c8-9042-60f4a03bcb26";
+      case 27:
+         return "f52b3c84-2a16-4f09-b893-7105b14cdc27";
+      default:
+         return "64c09e30-7d52-41a8-8514-09f8a73c1000";
+      }
+   }
+
+   ///
+   /// <summary>
    /// Gets the display name of a notification sound.
    /// </summary>
    /// <param name="index">Sound index</param>

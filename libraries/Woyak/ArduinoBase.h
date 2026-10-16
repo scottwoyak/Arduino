@@ -377,14 +377,14 @@ public:
    /// Connects to WiFi via WiFiX (WiFiMulti-based), printing a "WiFi..." label and "OK"/"FAILED"
    /// based on the result, to Serial and, on display-capable boards, the display as well.
    /// Optionally drives an IStatus indicator through the WIFI_CONNECTING phase. Once connected,
-   /// the status indicator (if provided) is advanced to WEB_CONNECTING to reflect the next
+   /// the status indicator (if provided) is advanced to SERVICES_CONNECTING to reflect the next
    /// initialization phase, and the system clock is synced via NTP (auto-detecting the local
    /// timezone), printing a "Time..." label with the resulting synchronized time; needed for
    /// calendar-based features like Rebooter's midnight reboot to fire at the correct wall-clock time.
    /// </summary>
    /// <param name="ssid">The WiFi network name.</param>
    /// <param name="password">The WiFi network password.</param>
-   /// <param name="status">Optional status indicator updated to WIFI_CONNECTING while connecting, then WEB_CONNECTING once connected.</param>
+   /// <param name="status">Optional status indicator updated to WIFI_CONNECTING while connecting, then SERVICES_CONNECTING once connected.</param>
    /// <param name="syncTime">True to sync the system clock via NTP after connecting.</param>
    /// <returns>True if the WiFi connection succeeded; otherwise false.</returns>
    ///
@@ -419,7 +419,7 @@ public:
 
       if (status != nullptr)
       {
-         status->setStatus(Status::WEB_CONNECTING);
+         status->setStatus(Status::SERVICES_CONNECTING);
       }
 
       _retryTimeSync = syncTime;
@@ -521,18 +521,18 @@ public:
    /// label to Serial and, on display-capable boards, the display as well. The actual
    /// success/failure text is left to the sketch's existing async callback (e.g.
    /// onStarted/onConnected) since that completion is library-specific and asynchronous.
-   /// Optionally drives an IStatus indicator through the WEB_CONNECTING phase.
+   /// Optionally drives an IStatus indicator through the SERVICES_CONNECTING phase.
    /// </summary>
    /// <param name="label">The client/service label to print (e.g. "WebSocket").</param>
    /// <param name="beginFunc">Function that starts the client/service connection. May be a
    /// capturing lambda or std::function (e.g. one bound to a member object).</param>
-   /// <param name="status">Optional status indicator updated to WEB_CONNECTING while connecting.</param>
+   /// <param name="status">Optional status indicator updated to SERVICES_CONNECTING while connecting.</param>
    ///
    void initClient(const char* label, std::function<void()> beginFunc, IStatus* status = nullptr)
    {
       if (status != nullptr)
       {
-         status->setStatus(Status::WEB_CONNECTING);
+         status->setStatus(Status::SERVICES_CONNECTING);
       }
 
       printInitLabel((std::string(label) + "... ").c_str());

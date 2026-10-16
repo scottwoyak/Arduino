@@ -9,7 +9,7 @@
 /// - off(): Off
 /// - STARTED: Initializing
 /// - WIFI_CONNECTING: Connecting to WiFi
-/// - WEB_CONNECTING: Connecting to web service
+/// - SERVICES_CONNECTING: Connecting to web services
 /// - RUNNING: Operating normally
 /// 
 /// Hardware: ESP32 with common-cathode RGB LED on PWM pins.
@@ -33,7 +33,7 @@ constexpr uint8_t BLUE_PIN = 3;
 constexpr unsigned long INTERVAL_OFF_MS = 1000;
 constexpr unsigned long INTERVAL_STARTED_MS = 1000;
 constexpr unsigned long INTERVAL_WIFI_CONNECTING_MS = 2000;
-constexpr unsigned long INTERVAL_WEB_CONNECTING_MS = 2000;
+constexpr unsigned long INTERVAL_SERVICES_CONNECTING_MS = 2000;
 constexpr unsigned long INTERVAL_READY_MS = 5000;
 
 RGBLEDStatus status(RED_PIN, GREEN_PIN, BLUE_PIN);
@@ -54,8 +54,8 @@ void loop()
    status.setStatus(Status::WIFI_CONNECTING);
    delay(INTERVAL_WIFI_CONNECTING_MS);
 
-   status.setStatus(Status::WEB_CONNECTING);
-   delay(INTERVAL_WEB_CONNECTING_MS);
+   status.setStatus(Status::SERVICES_CONNECTING);
+   delay(INTERVAL_SERVICES_CONNECTING_MS);
 
    status.setStatus(Status::RUNNING);
    delay(INTERVAL_READY_MS);

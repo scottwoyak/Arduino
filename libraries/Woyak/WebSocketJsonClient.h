@@ -353,10 +353,34 @@ protected:
       if (_connected && !_ready && _handshakeAckTimer.ready())
       {
          _onHandshakeAckTimeout();
-         _webSocket.disconnect();
+         if (_numEndpoints > 1)
+         {
+            if (!_outageActive)
+            {
+               _outageActive = true;
+               _outageWasConnected = _hasConnected;
+               _outageReason = "handshake ack timeout";
+               _outageStopwatch.reset();
+               _outageStopwatch.start();
+            }
+
+            _endpointIndex = (_endpointIndex + 1) % _numEndpoints;
+            if (_switchCount < 255)
+            {
+               _switchCount++;
+            }
+            _switching = true;
+            _webSocket.disconnect();
+            _switching = false;
+            _connect();
+         }
+         else
+         {
+            _webSocket.disconnect();
+         }
       }
 
-      if (_numEndpoints > 1 && !_ready && _failoverTimer.ready())
+      if (_numEndpoints > 1 && !_connected && !_ready && _failoverTimer.ready())
       {
          if (!_outageActive)
          {

@@ -113,7 +113,6 @@ protected:
    InfluxField* _enclosureHumidityField = nullptr;
    InfluxField* _cpuTempField = nullptr;
    InfluxField* _rssiField = nullptr;
-   InfluxField* _rssiMinField = nullptr;
 
    /// <summary>Owned CPU temperature sensor, used if influxConfig.includeCpuTemp is true.</summary>
    ESP32TempSensor _cpuTempSensor;
@@ -166,6 +165,7 @@ protected:
    ///
    void _logFlushFailure()
    {
+      DeviceHealth::influxFailures++;
       Logger.log(std::string("InfluxDB flush failed: ") + _influx->client()->getLastErrorMessage().c_str() + std::string(" (WiFi RSSI ") + std::to_string(WiFi.RSSI()) + " dBm)", LogSeverity::ERROR);
    }
 
@@ -187,7 +187,15 @@ protected:
       }
 
       size_t numPoints = _points.size() + _standardPoints.size();
-      _influx->client()->setWriteOptions(WriteOptions().batchSize(numPoints).bufferSize(2 * numPoints));
+      if (numPoints == 0)
+      {
+         return;
+      }
+
+      // Set batchSize to 2 * numPoints so writePoint() never auto-flushes mid-loop (even if
+      // a previous flush left points buffered); _postAndFlush() always flushes explicitly at
+      // the end of the cycle so all points in a batch share a single HTTP request/timestamp.
+      _influx->client()->setWriteOptions(WriteOptions().batchSize(2 * numPoints).bufferSize(2 * numPoints));
       _writeOptionsApplied = true;
    }
 
@@ -341,7 +349,7 @@ protected:
    /// <summary>
    /// Adds the resolved "influxBucket" string and the generic "influxPoints" array to
    /// the health JSON, describing every registered Influx point (both custom points
-   /// added via addPoint() and the standard CPU/WiFi/WiFi_Min/Enclosure points).
+   /// added via addPoint() and the standard CPU/WiFi/Enclosure points).
    /// </summary>
    /// <param name="doc">The health document to add the array to.</param>
    ///
@@ -616,10 +624,7 @@ public:
          if (_influxConfig.includeWiFiRssi)
          {
             InfluxPoint* wifiPoint = _addStandardPoint("WiFi");
-            _rssiField = wifiPoint->addRollingAverageField(NUM_STANDARD_SAMPLES, "rssi", 0);
-
-            InfluxPoint* wifiMinPoint = _addStandardPoint("WiFi_Min");
-            _rssiMinField = wifiMinPoint->addRollingMinField(NUM_STANDARD_SAMPLES, "rssi", 0);
+            _rssiField = wifiPoint->addRollingMinField(NUM_STANDARD_SAMPLES, "rssi", 0);
          }
       }
 
@@ -657,9 +662,7 @@ public:
 
          if (_influxConfig.includeWiFiRssi)
          {
-            int32_t rssi = WiFi.RSSI();
-            _rssiField->set(rssi);
-            _rssiMinField->set(rssi);
+            _rssiField->set(WiFi.RSSI());
          }
       }
 

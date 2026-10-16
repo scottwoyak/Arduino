@@ -12,7 +12,7 @@ enum Status
 {
 	STARTED = 1,
 	WIFI_CONNECTING = 2,
-	WEB_CONNECTING = 3,
+	SERVICES_CONNECTING = 3,
 	RUNNING = 4,
 	FAILED = 5,
 	UPDATING = 6,
@@ -122,14 +122,14 @@ private:
 	{
 		switch (status)
 		{
-		case Status::STARTED:         return "STARTED";
-		case Status::WIFI_CONNECTING: return "WIFI_CONNECTING";
-		case Status::WEB_CONNECTING:  return "WEB_CONNECTING";
-		case Status::RUNNING:           return "RUNNING";
-		case Status::FAILED:          return "FAILED";
-		case Status::UPDATING:        return "UPDATING";
-		case Status::RESTARTING:      return "RESTARTING";
-		default:                      return "UNKNOWN";
+		case Status::STARTED:             return "STARTED";
+		case Status::WIFI_CONNECTING:     return "WIFI_CONNECTING";
+		case Status::SERVICES_CONNECTING: return "SERVICES_CONNECTING";
+		case Status::RUNNING:             return "RUNNING";
+		case Status::FAILED:              return "FAILED";
+		case Status::UPDATING:            return "UPDATING";
+		case Status::RESTARTING:          return "RESTARTING";
+		default:                          return "UNKNOWN";
 		}
 	}
 
@@ -246,7 +246,7 @@ public:
 			_webLed.turnOff();
 			break;
 
-		case Status::WEB_CONNECTING:
+		case Status::SERVICES_CONNECTING:
 			_powerLed.turnOn();
 			_wifiLed.turnOn();
 			_webLed.blink(BLINK_INTERVAL_MS);
@@ -340,7 +340,7 @@ public:
           {
           case Status::STARTED:
           case Status::WIFI_CONNECTING:
-          case Status::WEB_CONNECTING:
+          case Status::SERVICES_CONNECTING:
           case Status::UPDATING:
           case Status::RESTARTING:
              _led.blink(BLINK_INTERVAL_MS);
@@ -423,7 +423,7 @@ public:
 		}
 
 		// Deferred to the next rising edge of any current blink cycle so a color
-		// change (e.g. blue WIFI_CONNECTING -> green WEB_CONNECTING) doesn't cut the
+		// change (e.g. blue WIFI_CONNECTING -> green SERVICES_CONNECTING) doesn't cut the
 		// LED's current on/off phase short.
 		_led.runAtNextRisingEdge([this, status]()
 		{
@@ -439,7 +439,7 @@ public:
 				_led.blink(BLINK_INTERVAL_MS);
 				break;
 
-			case Status::WEB_CONNECTING:
+			case Status::SERVICES_CONNECTING:
 				_led.setColor(0.0f, 1.0f, 0.0f);
 				_led.blink(BLINK_INTERVAL_MS);
 				break;
@@ -581,7 +581,7 @@ public:
 		}
 
 		// Deferred to the next rising edge of any current blink cycle so a color
-		// change (e.g. blue WIFI_CONNECTING -> green WEB_CONNECTING) doesn't cut the
+		// change (e.g. blue WIFI_CONNECTING -> green SERVICES_CONNECTING) doesn't cut the
 		// LED's current on/off phase short.
 		_led->runAtNextRisingEdge([this, status]()
 		{
@@ -597,7 +597,7 @@ public:
 				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
-			case Status::WEB_CONNECTING:
+			case Status::SERVICES_CONNECTING:
 				_led->setColor(0.0f, 1.0f, 0.0f);
 				_led->blink(BLINK_INTERVAL_MS);
 				break;

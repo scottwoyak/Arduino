@@ -185,7 +185,6 @@ class DeviceServerClient
          {
             _ready = true;
             _clearOutage();
-            DeviceServerClient::_flushPendingMessages();
             if (!DeviceServerClient::_everConnected)
             {
                DeviceServerClient::_everConnected = true;
@@ -195,23 +194,37 @@ class DeviceServerClient
                // once the handshake is actually acknowledged, rather than in _onConnected(),
                // since a plain WebSocket connect can succeed even if the handshake itself is
                // then rejected/ignored by the server (e.g. a bad token).
+               // Logged before _flushPendingMessages() so if another log occurred while waiting
+               // for the handshake ack, "Hub... " still completes cleanly in order.
                DeviceServerClient::log(isDirectConnection() ? getHost() : "OK");
+               DeviceServerClient::_flushPendingMessages();
 
-                // A freshly booted device has no state (or only a connecting state), which would
-                // leave the server showing the previous one (e.g. RESTARTING). Being acknowledged
-                // by the hub means the device is up.
-                if (DeviceServerClient::_state.empty() || DeviceServerClient::_state == "STARTED" || DeviceServerClient::_state == "WIFI_CONNECTING" || DeviceServerClient::_state == "WEB_CONNECTING")
-                {
-                   DeviceServerClient::setState("RUNNING");
-                }
+               // A freshly booted device has no state (or only a connecting state), which would
+               // leave the server showing the previous one (e.g. RESTARTING). Being acknowledged
+               // by the hub means the device is up.
+               if (DeviceServerClient::_state.empty() || DeviceServerClient::_state == "STARTED" || DeviceServerClient::_state == "WIFI_CONNECTING" || DeviceServerClient::_state == "SERVICES_CONNECTING")
+               {
+                  DeviceServerClient::setState("RUNNING");
+               }
+               else
+               {
+                  JsonDocument stateDoc;
+                  stateDoc["type"] = "state";
+                  stateDoc["state"] = DeviceServerClient::_state;
+                  sendJson(stateDoc);
+               }
             }
-            else if (DeviceServerClient::_disconnectLogged)
+            else
             {
-                     DeviceServerClient::log("Logging reconnected after " + std::to_string((millis() - DeviceServerClient::_offlineSinceMs) / 1000) + " s");
-                  }
-                  DeviceServerClient::_offline = false;
-                  DeviceServerClient::_disconnectPending = false;
-                  DeviceServerClient::_disconnectLogged = false;
+               DeviceServerClient::_flushPendingMessages();
+               if (DeviceServerClient::_disconnectLogged)
+               {
+                  DeviceServerClient::log("Logging reconnected after " + std::to_string((millis() - DeviceServerClient::_offlineSinceMs) / 1000) + " s");
+               }
+            }
+            DeviceServerClient::_offline = false;
+            DeviceServerClient::_disconnectPending = false;
+            DeviceServerClient::_disconnectLogged = false;
          }
          else if (strcmp(type, "command") == 0)
          {
@@ -258,12 +271,19 @@ class DeviceServerClient
       void _onError(const std::string& reason) override
       {
          DeviceServerClient::_debugPrint("Error: " + reason);
-         DeviceServerClient::log("WebSocket error: " + reason, LogSeverity::ERROR);
+         if (DeviceServerClient::isResolved())
+         {
+            DeviceServerClient::log("WebSocket error: " + reason, LogSeverity::ERROR);
+         }
       }
 
       void _onHandshakeAckTimeout() override
       {
-         DeviceServerClient::log(std::string("Hub: no handshake ack from ") + getUrl() + " within " + std::to_string(HANDSHAKE_ACK_TIMEOUT_MS) + "ms; forcing reconnect", LogSeverity::WARN);
+         DeviceServerClient::_debugPrint(std::string("Hub: no handshake ack from ") + getUrl() + " within " + std::to_string(HANDSHAKE_ACK_TIMEOUT_MS) + "ms; forcing reconnect");
+         if (DeviceServerClient::isResolved())
+         {
+            DeviceServerClient::log(std::string("Hub: no handshake ack from ") + getUrl() + " within " + std::to_string(HANDSHAKE_ACK_TIMEOUT_MS) + "ms; forcing reconnect", LogSeverity::WARN);
+         }
       }
 
       void _onOutageExpired(const std::string& reason, bool wasConnected) override
@@ -300,6 +320,9 @@ class DeviceServerClient
       std::string json;
       uint32_t occurredMs;
    };
+
+   /// <summary>Maximum number of log messages retained in _pendingMessages while the hub is disconnected, preventing unbounded heap growth during prolonged outages.</summary>
+   static constexpr size_t MAX_PENDING_MESSAGES = 100;
 
    /// <summary>Messages logged before the connection was up, sent once it completes. Each entry's json is a fully-formed JSON log message.</summary>
    static inline std::vector<_PendingMessage> _pendingMessages;
@@ -1192,14 +1215,18 @@ private:
       std::string json;
       serializeJson(doc, json);
 
-      if (_connection.isConnected())
+      if (isConnected())
       {
          _debugPrint("Sent: " + json);
          _connection.sendRaw(json);
       }
       else
       {
-         _debugPrint("Queued (not connected): " + json);
+         _debugPrint("Queued (not ready): " + json);
+         if (_pendingMessages.size() >= MAX_PENDING_MESSAGES)
+         {
+            _pendingMessages.erase(_pendingMessages.begin());
+         }
          _pendingMessages.push_back({ json, millis() - _backdateMs });
       }
    }
@@ -1291,7 +1318,7 @@ private:
       doc["cpuMhz"] = ESP.getCpuFreqMHz();
       doc["flashSize"] = ESP.getFlashChipSize();
       doc["psramSize"] = ESP.getPsramSize();
-      doc["ssid"] = std::string(WiFi.SSID().c_str());
+      doc["ssid"] = WIFI_SSID;
       doc["ip"] = std::string(WiFi.localIP().toString().c_str());
 
       if (!_state.empty())
@@ -1357,7 +1384,7 @@ private:
             serializeJson(doc, text);
             _sendShellOutput(text.c_str());
          }
-         else if (_connection.isConnected())
+         else if (isConnected())
          {
             _connection.sendJson(doc);
          }
@@ -1610,7 +1637,7 @@ public:
    {
       _connection.loop();
 
-      if (_disconnectPending && !_connection.isConnected() && (millis() - _disconnectStartMs) >= DISCONNECT_GRACE_MS)
+      if (_disconnectPending && !isConnected() && (millis() - _disconnectStartMs) >= DISCONNECT_GRACE_MS)
       {
          _backdateMs = millis() - _offlineSinceMs;
          log(std::string("Logging disconnected: ") + _pendingDisconnectReason);
@@ -1829,7 +1856,7 @@ public:
          return;
       }
 
-      if (_connection.isConnected())
+      if (isConnected())
       {
          JsonDocument doc;
          doc["type"] = "response";
@@ -1850,7 +1877,7 @@ public:
    ///
    static void _sendShellOutput(const char* text)
    {
-      if (_connection.isConnected())
+      if (isConnected())
       {
          JsonDocument doc;
          doc["type"] = "shellOutput";
@@ -1890,7 +1917,7 @@ public:
 
       _state = state;
 
-      if (_connection.isConnected())
+      if (isConnected())
       {
          JsonDocument doc;
          doc["type"] = "state";

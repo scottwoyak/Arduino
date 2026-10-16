@@ -24,14 +24,14 @@ private:
    {
       switch (status)
       {
-      case Status::STARTED:         return "STARTED";
-      case Status::WIFI_CONNECTING: return "WIFI_CONNECTING";
-      case Status::WEB_CONNECTING:  return "WEB_CONNECTING";
-      case Status::RUNNING:           return "RUNNING";
-      case Status::FAILED:          return "FAILED";
-      case Status::UPDATING:        return "UPDATING";
-      case Status::RESTARTING:      return "RESTARTING";
-      default:                      return "UNKNOWN";
+      case Status::STARTED:             return "STARTED";
+      case Status::WIFI_CONNECTING:     return "WIFI_CONNECTING";
+      case Status::SERVICES_CONNECTING: return "SERVICES_CONNECTING";
+      case Status::RUNNING:             return "RUNNING";
+      case Status::FAILED:              return "FAILED";
+      case Status::UPDATING:            return "UPDATING";
+      case Status::RESTARTING:          return "RESTARTING";
+      default:                          return "UNKNOWN";
       }
    }
 

@@ -572,10 +572,14 @@ constexpr float MIN_VOLUME = 0.0f;
 float settingsVolume = DEFAULT_VOLUME / MAX_VOLUME;
 constexpr uint8_t DEFAULT_SOUND_INDEX = 5;
 
-// Sound indices (see Sound::soundIndex) selectable in the settings view, in display order.
+// Sound indices (see Sound::soundIndex) selectable in the settings view, in alphabetical
+// display order. External commands (ListSounds/GetSound/SetSound/PlaySound) expose 1-based
+// positions (1..NUM_SETTINGS_SOUNDS) into this array, while Preferences persists the
+// selected sound's stable GUID (see Sound::soundId) so adding, removing, or renaming
+// sounds doesn't shift the saved selection.
 constexpr std::array<uint8_t, 28> SETTINGS_SOUNDS = {
-   1,  // Announce
    12, // Amok Time
+   1,  // Announce
    16, // Asian Gong
    14, // Bells Dong
    10, // Bond
@@ -605,6 +609,26 @@ constexpr std::array<uint8_t, 28> SETTINGS_SOUNDS = {
 };
 constexpr uint8_t NUM_SETTINGS_SOUNDS = SETTINGS_SOUNDS.size();
 
+///
+/// <summary>
+/// Gets the 1-based alphabetical list position (1..NUM_SETTINGS_SOUNDS) for a raw
+/// Sound::soundIndex, or 1 if not found.
+/// </summary>
+/// <param name="rawSoundIndex">Raw Sound::soundIndex value.</param>
+/// <returns>1-based position in SETTINGS_SOUNDS.</returns>
+///
+uint8_t toDisplaySoundIndex(uint8_t rawSoundIndex)
+{
+   for (uint8_t i = 0; i < NUM_SETTINGS_SOUNDS; i++)
+   {
+      if (SETTINGS_SOUNDS[i] == rawSoundIndex)
+      {
+         return i + 1;
+      }
+   }
+   return 1;
+}
+
 constexpr uint8_t SETTINGS_TEXT_SIZE = 2;
 constexpr int16_t SETTINGS_SLIDER_Y = 64;
 constexpr int16_t SETTINGS_SLIDER_HEIGHT = 56;
@@ -633,38 +657,63 @@ uint8_t settingsListFirst = 0;
 
 ///
 /// <summary>
-/// Loads the saved volume and sound selection from Preferences and applies them. Falls
-/// back to the defaults if nothing is saved or the saved sound isn't selectable.
+/// Loads the saved volume and sound selection (stored by stable sound GUID) from
+/// Preferences and applies them, migrating a legacy UChar sound index if present. Falls
+/// back to the defaults if nothing is saved or the saved sound GUID isn't in SETTINGS_SOUNDS.
 /// </summary>
 ///
 void loadSettings()
 {
    sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
    float volume = sketch.arduino.preferences.getFloat(VOLUME_PREFERENCES_KEY, DEFAULT_VOLUME);
-   uint8_t soundIndex = sketch.arduino.preferences.getUChar(SOUND_PREFERENCES_KEY, DEFAULT_SOUND_INDEX);
+   PreferenceType soundType = sketch.arduino.preferences.getType(SOUND_PREFERENCES_KEY);
+   String savedSoundId;
+   bool migrateLegacyIndex = false;
+   if (soundType == PT_U8)
+   {
+      uint8_t legacySoundIndex = sketch.arduino.preferences.getUChar(SOUND_PREFERENCES_KEY, DEFAULT_SOUND_INDEX);
+      savedSoundId = Sound::soundId(legacySoundIndex);
+      migrateLegacyIndex = true;
+   }
+   else
+   {
+      savedSoundId = sketch.arduino.preferences.getString(SOUND_PREFERENCES_KEY, Sound::soundId(DEFAULT_SOUND_INDEX));
+   }
    sketch.arduino.preferences.end();
 
-   bool soundValid = false;
+   if (migrateLegacyIndex)
+   {
+      sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+      sketch.arduino.preferences.remove(SOUND_PREFERENCES_KEY);
+      sketch.arduino.preferences.putString(SOUND_PREFERENCES_KEY, savedSoundId);
+      sketch.arduino.preferences.end();
+   }
+
+   uint8_t resolvedSoundIndex = DEFAULT_SOUND_INDEX;
    for (uint8_t index : SETTINGS_SOUNDS)
    {
-      soundValid = soundValid || index == soundIndex;
+      if (savedSoundId.equalsIgnoreCase(Sound::soundId(index)))
+      {
+         resolvedSoundIndex = index;
+         break;
+      }
    }
 
    sketch.arduino.sound.volume = constrain(volume, MIN_VOLUME, MAX_VOLUME);
    settingsVolume = sketch.arduino.sound.volume / MAX_VOLUME;
-   sketch.arduino.sound.soundIndex = soundValid ? soundIndex : DEFAULT_SOUND_INDEX;
+   sketch.arduino.sound.soundIndex = resolvedSoundIndex;
 }
 
 ///
 /// <summary>
-/// Saves the current volume and sound selection to Preferences.
+/// Saves the current volume and sound selection (by stable sound GUID) to Preferences.
 /// </summary>
 ///
 void saveSettings()
 {
    sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
    sketch.arduino.preferences.putFloat(VOLUME_PREFERENCES_KEY, sketch.arduino.sound.volume);
-   sketch.arduino.preferences.putUChar(SOUND_PREFERENCES_KEY, sketch.arduino.sound.soundIndex);
+   sketch.arduino.preferences.putString(SOUND_PREFERENCES_KEY, Sound::soundId(sketch.arduino.sound.soundIndex));
    sketch.arduino.preferences.end();
 }
 
@@ -1513,31 +1562,31 @@ void onSoundCommand(const char* command)
    }
    else if (strcasecmp(verb.c_str(), "PlaySound") == 0)
    {
-      int index = -1;
-      stream >> index;
+      int displayIndex = -1;
+      stream >> displayIndex;
       if (stream.fail())
       {
          // No index specified: preview the currently selected default sound.
-         index = sketch.arduino.sound.soundIndex;
+         displayIndex = toDisplaySoundIndex(sketch.arduino.sound.soundIndex);
       }
 
-      if (index < 0 || index >= Sound::NUM_SOUNDS)
+      if (displayIndex < 1 || displayIndex > NUM_SETTINGS_SOUNDS)
       {
-         DeviceServerClient::respond(("Error: index must be between 0 and " + std::to_string(Sound::NUM_SOUNDS - 1)).c_str());
+         DeviceServerClient::respond(("Error: index must be between 1 and " + std::to_string(NUM_SETTINGS_SOUNDS)).c_str());
       }
       else
       {
+         uint8_t rawIndex = SETTINGS_SOUNDS[displayIndex - 1];
          uint8_t previous = sketch.arduino.sound.soundIndex;
-         sketch.arduino.sound.soundIndex = (uint8_t)index;
+         sketch.arduino.sound.soundIndex = rawIndex;
          sketch.arduino.sound.playNotification();
          sketch.arduino.sound.soundIndex = previous;
-         DeviceServerClient::respond(("Played " + std::to_string(index) + "=" + Sound::soundName((uint8_t)index)).c_str());
+         DeviceServerClient::respond(("Played " + std::to_string(displayIndex) + "=" + Sound::soundName(rawIndex)).c_str());
       }
    }
    else if (strcasecmp(verb.c_str(), "ListSounds") == 0)
    {
-      // Listed in the same order as the settings view (see SETTINGS_SOUNDS), not raw
-      // index order, so indices reported here match what's shown/selectable in the UI.
+      // Listed in alphabetical order (1..NUM_SETTINGS_SOUNDS) matching the settings view.
       std::string text;
       for (uint8_t i = 0; i < NUM_SETTINGS_SOUNDS; i++)
       {
@@ -1545,9 +1594,9 @@ void onSoundCommand(const char* command)
          {
             text += "\n";
          }
-         uint8_t index = SETTINGS_SOUNDS[i];
-         text += std::to_string(index) + "=" + Sound::soundName(index);
-         if (index == sketch.arduino.sound.soundIndex)
+         uint8_t rawIndex = SETTINGS_SOUNDS[i];
+         text += std::to_string(i + 1) + "=" + Sound::soundName(rawIndex);
+         if (rawIndex == sketch.arduino.sound.soundIndex)
          {
             text += " (selected)";
          }
@@ -1556,23 +1605,25 @@ void onSoundCommand(const char* command)
    }
    else if (strcasecmp(verb.c_str(), "GetSound") == 0)
    {
-      uint8_t index = sketch.arduino.sound.soundIndex;
-      DeviceServerClient::respond((std::to_string(index) + "=" + Sound::soundName(index)).c_str());
+      uint8_t rawIndex = sketch.arduino.sound.soundIndex;
+      uint8_t displayIndex = toDisplaySoundIndex(rawIndex);
+      DeviceServerClient::respond((std::to_string(displayIndex) + "=" + Sound::soundName(rawIndex)).c_str());
    }
    else if (strcasecmp(verb.c_str(), "SetSound") == 0)
    {
-      int index = -1;
-      stream >> index;
-      if (index < 0 || index >= Sound::NUM_SOUNDS)
+      int displayIndex = -1;
+      stream >> displayIndex;
+      if (displayIndex < 1 || displayIndex > NUM_SETTINGS_SOUNDS)
       {
-         DeviceServerClient::respond(("Error: index must be between 0 and " + std::to_string(Sound::NUM_SOUNDS - 1)).c_str());
+         DeviceServerClient::respond(("Error: index must be between 1 and " + std::to_string(NUM_SETTINGS_SOUNDS)).c_str());
       }
       else
       {
+         uint8_t rawIndex = SETTINGS_SOUNDS[displayIndex - 1];
          sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
-         sketch.arduino.preferences.putUChar(SOUND_PREFERENCES_KEY, (uint8_t)index);
+         sketch.arduino.preferences.putString(SOUND_PREFERENCES_KEY, Sound::soundId(rawIndex));
          sketch.arduino.preferences.end();
-         DeviceServerClient::respond(("Saved sound=" + std::to_string(index) + "=" + Sound::soundName((uint8_t)index) + ". Restart required to apply.").c_str());
+         DeviceServerClient::respond(("Saved sound=" + std::to_string(displayIndex) + "=" + Sound::soundName(rawIndex) + ". Restart required to apply.").c_str());
       }
    }
    else if (strcasecmp(verb.c_str(), "GetVolume") == 0)

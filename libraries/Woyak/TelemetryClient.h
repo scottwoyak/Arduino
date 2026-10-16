@@ -7,6 +7,7 @@
 
 #include <ArduinoJson.h>
 #include <WebSocketsClient.h>
+#include <esp_timer.h>
 
 #include "DeviceHealth.h"
 #include "DeviceServerClient.h"
@@ -404,7 +405,7 @@ private:
    struct PublishTime
    {
       std::string topic;
-      uint32_t micros;
+      int64_t micros;
    };
    std::vector<PublishTime> _publishTimes;
 
@@ -444,6 +445,12 @@ private:
 
       if (strcasecmp(verb.c_str(), "GetTelemetryStatus") == 0)
       {
+         if (_activeClient == nullptr)
+         {
+            DeviceServerClient::respond("No active telemetry client");
+            return true;
+         }
+
          std::string result = std::string("topic=\"") + _activeClient->getTopic() + "\"\n" +
             "connected=" + (_activeClient->isConnected() ? "true" : "false") + "\n" +
             "ready=" + (_activeClient->isReady() ? "true" : "false") + "\n" +
@@ -487,6 +494,7 @@ private:
 
    void _onDisconnected(const std::string& reason, bool wasConnected) override
    {
+      _publishTimes.clear();
       _onTelemetryDisconnected();
       if (wasConnected)
       {
@@ -646,6 +654,11 @@ public:
 
    virtual ~TelemetryClient()
    {
+      if (_activeClient == this)
+      {
+         _activeClient = nullptr;
+      }
+
       if (_ownsHandler)
       {
          delete _handler;
@@ -815,7 +828,7 @@ public:
          return false;
       }
 
-      uint32_t now = micros();
+      int64_t now = esp_timer_get_time();
 
       PublishTime* last = nullptr;
       for (PublishTime& publishTime : _publishTimes)
@@ -826,7 +839,7 @@ public:
             break;
          }
       }
-      uint32_t dtMicros = last != nullptr ? (now - last->micros) : 0;
+      int64_t dtMicros = last != nullptr ? (now - last->micros) : 0;
 
       JsonDocument doc;
       doc["topic"] = topic;
@@ -933,7 +946,8 @@ private:
 
    uint8_t _decimalPlaces;
    uint32_t _minIntervalMicros;
-   uint32_t _lastPublishMicros = 0;
+   int64_t _lastPublishMicros = 0;
+   bool _hasPublished = false;
    float _pendingValue = NAN;
    bool _pendingNew = false;
    bool _sendEverySample = false;
@@ -943,6 +957,7 @@ private:
    void _onTelemetryDisconnected() override
    {
       _lastValue = "";
+      _hasPublished = false;
    }
 
    void _onLoop() override
@@ -954,22 +969,29 @@ private:
          return;
       }
 
-      uint32_t now = micros();
-      if (_minIntervalMicros > 0 && (now - _lastPublishMicros) < _minIntervalMicros)
+      int64_t now = esp_timer_get_time();
+      if (_hasPublished && _minIntervalMicros > 0 && (now - _lastPublishMicros) < _minIntervalMicros)
       {
          return;
       }
 
       String value(_pendingValue, (unsigned int)_decimalPlaces);
       bool changed = value != _lastValue.c_str();
-      if ((changed || (_sendEverySample && _pendingNew) || _republishTimer.ready()) && publish(getTopic().c_str(), value.toDouble(), _decimalPlaces))
+      if (changed || (_sendEverySample && _pendingNew) || _republishTimer.ready())
       {
-         _lastValue = value.c_str();
-         _lastPublishMicros = now;
-         _republishTimer.reset();
+         if (publish(getTopic().c_str(), value.toDouble(), _decimalPlaces))
+         {
+            _lastValue = value.c_str();
+            _lastPublishMicros = now;
+            _hasPublished = true;
+            _republishTimer.reset();
+            _pendingNew = false;
+         }
       }
-
-      _pendingNew = false;
+      else
+      {
+         _pendingNew = false;
+      }
    }
 
 public:

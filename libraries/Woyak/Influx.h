@@ -100,7 +100,7 @@ public:
 
 		if (_status)
 		{
-			_status->setStatus(Status::WEB_CONNECTING);
+			_status->setStatus(Status::SERVICES_CONNECTING);
 		}
 
 		if (!TimeSync::isSynced())
@@ -506,7 +506,7 @@ public:
    /// <param name="extraTagCount">Number of trailing entries in "tags" that are extra (sketch-specific) tags, kept for generic health reporting; leading entries are treated as common tags (e.g. site/location/sketch) and are not recorded</param>
    InfluxPoint(const char* measurement, const std::vector<std::pair<const char*, const char*>>& tags, size_t extraTagCount = 0) : _point(measurement), _measurement(measurement)
    {
-      size_t commonTagCount = tags.size() - extraTagCount;
+      size_t commonTagCount = extraTagCount <= tags.size() ? (tags.size() - extraTagCount) : 0;
       for (size_t i = 0; i < tags.size(); i++)
       {
          const auto& tag = tags[i];
