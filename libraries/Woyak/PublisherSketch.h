@@ -106,7 +106,7 @@ private:
 
        /// <summary>Commands handled directly by PublisherSketch, listed by "Help" alongside the built-ins.</summary>
        static constexpr DeviceServerClient::CommandInfo PUBLISHER_COMMANDS[] = {
-          { "GetTopic", "Reports the current telemetry topic", { "gt" } },
+          { "GetTopic", "Reports the current telemetry topic", { "gt" }, {}, false, { "Telemetry" } },
           {
              "SetTopic",
              "Persists a new telemetry topic (only if the sketch offers a topic table); requires Restart to take effect",
@@ -114,6 +114,8 @@ private:
              {
                 { "topic", "Telemetry topic name", true },
              },
+             false,
+             { "Telemetry" },
           },
        };
 

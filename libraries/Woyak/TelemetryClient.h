@@ -427,7 +427,7 @@ private:
 
    /// <summary>Command registered with DeviceServerClient by begin(), listed alongside the built-ins.</summary>
    static constexpr DeviceServerClient::CommandInfo TELEMETRY_COMMANDS[] = {
-      { "GetTelemetryStatus", "Reports whether the telemetry WebSocket is connected/ready, the current topic, and the sample rate", { "gts" } },
+      { "GetTelemetryStatus", "Reports whether the telemetry WebSocket is connected/ready, the current topic, and the sample rate", { "gts" }, {}, false, { "Telemetry" } },
    };
 
    ///

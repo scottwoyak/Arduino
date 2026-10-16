@@ -61,12 +61,14 @@ struct CommandInfo
 {
    static constexpr size_t MAX_ALIASES = 4;
    static constexpr size_t MAX_ARGS = 6;
+   static constexpr size_t MAX_TAGS = 4;
 
    const char* name = nullptr;
    const char* description = nullptr;
    const char* aliases[MAX_ALIASES] = {};
    CommandArg args[MAX_ARGS] = {};
    bool confirm = false;
+   const char* tags[MAX_TAGS] = {};
 };
 
 ///
@@ -185,6 +187,7 @@ class DeviceServerClient
          {
             _ready = true;
             _clearOutage();
+            DeviceServerClient::_flushPendingMessages();
             if (!DeviceServerClient::_everConnected)
             {
                DeviceServerClient::_everConnected = true;
@@ -194,10 +197,7 @@ class DeviceServerClient
                // once the handshake is actually acknowledged, rather than in _onConnected(),
                // since a plain WebSocket connect can succeed even if the handshake itself is
                // then rejected/ignored by the server (e.g. a bad token).
-               // Logged before _flushPendingMessages() so if another log occurred while waiting
-               // for the handshake ack, "Hub... " still completes cleanly in order.
                DeviceServerClient::log(isDirectConnection() ? getHost() : "OK");
-               DeviceServerClient::_flushPendingMessages();
 
                // A freshly booted device has no state (or only a connecting state), which would
                // leave the server showing the previous one (e.g. RESTARTING). Being acknowledged
@@ -214,13 +214,9 @@ class DeviceServerClient
                   sendJson(stateDoc);
                }
             }
-            else
+            else if (DeviceServerClient::_disconnectLogged)
             {
-               DeviceServerClient::_flushPendingMessages();
-               if (DeviceServerClient::_disconnectLogged)
-               {
-                  DeviceServerClient::log("Logging reconnected after " + std::to_string((millis() - DeviceServerClient::_offlineSinceMs) / 1000) + " s");
-               }
+               DeviceServerClient::log("Logging reconnected after " + std::to_string((millis() - DeviceServerClient::_offlineSinceMs) / 1000) + " s");
             }
             DeviceServerClient::_offline = false;
             DeviceServerClient::_disconnectPending = false;
@@ -389,11 +385,13 @@ private:
             { "-l", "Include descriptions", false },
             { "-j", "Output as JSON", false },
          },
+         false,
+         { "System" },
       },
-      { "Restart", "Restarts the device", { "reboot" }, {}, true },
-      { "GetHealth", "Reports WiFi/CPU/memory health as a JSON message", { "gh" } },
-      { "Locate", "Asks the device to do something visibly identifiable" },
-      { "I2CScan", "Scans the I2C bus and lists responding addresses" },
+      { "Restart", "Restarts the device", { "reboot" }, {}, true, { "System" } },
+      { "GetHealth", "Reports WiFi/CPU/memory health as a JSON message", { "gh" }, {}, false, { "Diagnostics" } },
+      { "Locate", "Asks the device to do something visibly identifiable", {}, {}, false, { "System" } },
+      { "I2CScan", "Scans the I2C bus and lists responding addresses", {}, {}, false, { "I2C" } },
       {
          "I2CRead",
          "Reads a register from an I2C device",
@@ -402,6 +400,8 @@ private:
             { "address", "I2C device address (e.g. 0x23)", true },
             { "reg", "Register address (e.g. 0x10)", true },
          },
+         false,
+         { "I2C" },
       },
       {
          "I2CWrite",
@@ -412,6 +412,8 @@ private:
             { "reg", "Register address (e.g. 0x10)", true },
             { "value", "Byte value to write (e.g. 0x01)", true },
          },
+         false,
+         { "I2C" },
       },
       {
          "ReadPin",
@@ -420,6 +422,8 @@ private:
          {
             { "pin", "GPIO pin number, or omitted for all pins", false },
          },
+         false,
+         { "Pins" },
       },
       {
          "WritePin",
@@ -429,6 +433,8 @@ private:
             { "pin", "GPIO pin number", true },
             { "state", "HIGH or LOW", true },
          },
+         false,
+         { "Pins" },
       },
       {
          "GetPinMode",
@@ -437,6 +443,8 @@ private:
          {
             { "pin", "GPIO pin number, or omitted for all pins", false },
          },
+         false,
+         { "Pins" },
       },
       {
          "SetPinMode",
@@ -446,6 +454,8 @@ private:
             { "pin", "GPIO pin number", true },
             { "mode", "INPUT, OUTPUT, or INPUT_PULLUP", true },
          },
+         false,
+         { "Pins" },
       },
       {
          "AnalogRead",
@@ -454,14 +464,16 @@ private:
          {
             { "pin", "GPIO pin number, or omitted for all analog pins", false },
          },
+         false,
+         { "Pins" },
       },
-      { "GetUptime", "Reports how long the device has been running since boot", { "gu" } },
-      { "GetInfo", "Reports the sketch name, version, board type, build time, uptime, IP address, and site/location", { "gi" } },
-      { "GetWifiInfo", "Reports the current WiFi SSID, signal strength, and IP address", { "gwi" } },
-      { "GetResetReason", "Reports the reason the device last reset/rebooted", { "grr" } },
-      { "GetMemory", "Reports free heap and largest allocatable block", { "gm" } },
-      { "GetCpuInfo", "Reports chip model/revision/cores, CPU frequency, flash size, and internal temperature", { "gci" } },
-      { "GetVersion", "Reports the sketch's firmware version", { "gv" } },
+      { "GetUptime", "Reports how long the device has been running since boot", { "gu" }, {}, false, { "Diagnostics" } },
+      { "GetInfo", "Reports the sketch name, version, board type, build time, uptime, IP address, and site/location", { "gi" }, {}, false, { "Diagnostics" } },
+      { "GetWifiInfo", "Reports the current WiFi SSID, signal strength, and IP address", { "gwi" }, {}, false, { "Diagnostics" } },
+      { "GetResetReason", "Reports the reason the device last reset/rebooted", { "grr" }, {}, false, { "Diagnostics" } },
+      { "GetMemory", "Reports free heap and largest allocatable block", { "gm" }, {}, false, { "Diagnostics" } },
+      { "GetCpuInfo", "Reports chip model/revision/cores, CPU frequency, flash size, and internal temperature", { "gci" }, {}, false, { "Diagnostics" } },
+      { "GetVersion", "Reports the sketch's firmware version", { "gv" }, {}, false, { "Diagnostics" } },
    };
 
    /// <summary>Extra commands registered by the sketch via onCommand(), listed by "Help" after the built-ins.</summary>
@@ -621,14 +633,26 @@ private:
    /// </summary>
    /// <param name="root">Destination JSON array.</param>
    /// <param name="info">Command metadata to serialize.</param>
-   /// <param name="isSketch">True if this is a sketch-specific command; false for built-in/shared commands.</param>
+   /// <param name="defaultTag">Fallback tag added when info.tags is empty (e.g. "Sketch" for sketch-registered commands).</param>
    ///
-   static void _appendCommandJson(JsonArray& root, const CommandInfo& info, bool isSketch)
+   static void _appendCommandJson(JsonArray& root, const CommandInfo& info, const char* defaultTag = nullptr)
    {
       JsonObject obj = root.add<JsonObject>();
       obj["name"] = info.name;
       obj["desc"] = info.description;
-      obj["sketch"] = isSketch;
+      if (info.tags[0] != nullptr)
+      {
+         JsonArray tags = obj["tags"].to<JsonArray>();
+         for (size_t i = 0; i < CommandInfo::MAX_TAGS && info.tags[i] != nullptr; i++)
+         {
+            tags.add(info.tags[i]);
+         }
+      }
+      else if (defaultTag != nullptr)
+      {
+         JsonArray tags = obj["tags"].to<JsonArray>();
+         tags.add(defaultTag);
+      }
       if (info.confirm)
       {
          obj["confirm"] = true;
@@ -685,14 +709,14 @@ private:
          {
             for (const CommandInfo& info : _BUILTIN_COMMANDS)
             {
-               _appendCommandJson(root, info, false);
+               _appendCommandJson(root, info);
             }
 
             for (const _ConfigCommandSet& set : _configCommandSets)
             {
                for (size_t i = 0; i < set.helpCount; i++)
                {
-                  _appendCommandJson(root, set.help[i], false);
+                  _appendCommandJson(root, set.help[i]);
                }
             }
          }
@@ -701,7 +725,7 @@ private:
          {
             for (size_t i = 0; i < _sketchCommandCount; i++)
             {
-               _appendCommandJson(root, _sketchCommands[i], true);
+               _appendCommandJson(root, _sketchCommands[i], "Sketch");
             }
          }
 

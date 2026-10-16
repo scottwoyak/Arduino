@@ -195,7 +195,7 @@ protected:
 
       if (_readingsHandler != nullptr)
       {
-         _registeredCommands.push_back(DeviceServerClient::CommandInfo{ "GetReadings", _readingsDescription, { "gr" } });
+         _registeredCommands.push_back(DeviceServerClient::CommandInfo{ "GetReadings", _readingsDescription, { "gr" }, {}, false, { "Sketch" } });
       }
 
       if (_customCommands != nullptr)

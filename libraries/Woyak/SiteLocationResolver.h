@@ -26,7 +26,7 @@ private:
 
    /// <summary>Commands registered via enableConfigCommands(), listed by "Help" after the built-ins.</summary>
    static constexpr DeviceServerClient::CommandInfo CONFIG_COMMANDS[] = {
-      { "GetConfig", "Reports the current site and location", { "gc" } },
+      { "GetConfig", "Reports the current site and location", { "gc" }, {}, false, { "Config" } },
       {
          "SetConfig",
          "Persists a new site/location value (or prompts interactively from the shell if omitted); requires Restart to take effect",
@@ -35,6 +35,8 @@ private:
             { "key", "Config key (site or location)", false },
             { "value", "New value for the key", false },
          },
+         false,
+         { "Config" },
       },
    };
 

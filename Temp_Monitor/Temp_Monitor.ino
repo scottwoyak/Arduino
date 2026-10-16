@@ -59,8 +59,6 @@
 // Uncomment this to log to the local LogServer instead of the remote one.
 //#define LOG_SERVER_LOCAL
 
-#include <esp_pm.h>
-
 #include "ArduinoBoard.h"
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
@@ -79,7 +77,7 @@
 // This sketch's own version (e.g. "2.0"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("2.2");
+const auto VERSION = MakeVersion("2.3");
 constexpr auto SKETCH_NAME = "Temp_Monitor";
 constexpr auto PREFERENCES_NAMESPACE = "TempMonitor";
 
@@ -88,16 +86,11 @@ constexpr auto PREFERENCES_NAMESPACE = "TempMonitor";
 constexpr uint8_t LED_STATUS_PIN = 13;
 constexpr uint8_t LED_STATUS_GROUND_PIN = 12;
 
-// CPU frequency used by TempMonitorSketch (see SketchConfig::cpuFrequencyMhz), passed
-// to esp_pm_configure() below so automatic light sleep doesn't fight the sketch's
-// fixed clock speed.
-constexpr uint8_t CPU_FREQ_MHZ = 80;
-
-// How long loop() yields to the idle task each pass so the ESP32 can drop into
-// automatic light sleep between sensor samples (sampled only every few seconds),
-// reducing CPU temperature. This sketch has no display/buttons to service, so a
-// headless device without a display can afford to sleep aggressively between loop()
-// passes; Temp_Monitor_Display does not do this since it needs to stay responsive.
+// How long loop() yields to the FreeRTOS idle task each pass so the CPU core halts
+// (via WAITI) between sensor samples, while WIFI_PS_MAX_MODEM + reduced TX power keep
+// the 2.4 GHz radio cool. This sketch has no display/buttons to service, so a headless
+// device can afford to yield between loop() passes; Temp_Monitor_Display does not do
+// this since it needs to stay responsive.
 constexpr uint8_t LOOP_SLEEP_MS = 100;
 
 SingleLedStatus ledStatus(LED_STATUS_PIN);
@@ -116,16 +109,12 @@ void setup()
 
    sketch.begin();
 
-   // Allow the idle task to put the CPU into automatic light sleep whenever loop()
-   // yields (see the delay() in loop() below). WiFi stays connected via modem sleep,
-   // so this does not disrupt WiFi/OTA/Influx timing, but reduces CPU temperature
-   // between the infrequent sensor samples/uploads this sketch performs.
-   esp_pm_config_t pmConfig{ .max_freq_mhz = CPU_FREQ_MHZ, .min_freq_mhz = CPU_FREQ_MHZ, .light_sleep_enable = true };
-   esp_err_t pmResult = esp_pm_configure(&pmConfig);
-   if (pmResult != ESP_OK)
-   {
-      Logger.log("Failed to enable automatic light sleep", LogSeverity::WARN);
-   }
+   // Enable maximum WiFi modem sleep (sleeps across the AP's full DTIM interval rather
+   // than waking on every 100 ms beacon) and step TX power down from the 19.5 dBm max to
+   // 15 dBm (~half the RF amplifier dissipation), since the WiFi radio is the primary
+   // heat source on the ESP32-S3.
+   WiFi.setSleep(WIFI_PS_MAX_MODEM);
+   WiFi.setTxPower(WIFI_POWER_15dBm);
 
    Logger.logInitializationComplete();
 }
@@ -134,7 +123,7 @@ void loop()
 {
    sketch.loop();
 
-   // Yield to the idle task so the CPU can enter automatic light sleep (configured
-   // in setup() above) instead of busy-spinning between sensor samples.
+   // Yield to the FreeRTOS idle task (which halts the CPU core via WAITI) instead of
+   // busy-spinning between sensor samples.
    delay(LOOP_SLEEP_MS);
 }

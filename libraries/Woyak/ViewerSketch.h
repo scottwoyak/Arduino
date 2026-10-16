@@ -52,7 +52,7 @@ protected:
 
    /// <summary>Commands handled directly by ViewerSketch, listed by "Help" alongside the built-ins.</summary>
    static constexpr DeviceServerClient::CommandInfo VIEWER_COMMANDS[] = {
-      { "GetTopic", "Reports the current telemetry topic", { "gt" } },
+      { "GetTopic", "Reports the current telemetry topic", { "gt" }, {}, false, { "Telemetry" } },
       {
          "SetTopic",
          "Persists a new telemetry topic (only if the sketch offers a topic table); requires Restart to take effect",
@@ -60,6 +60,8 @@ protected:
          {
             { "topic", "Telemetry topic name", true },
          },
+         false,
+         { "Telemetry" },
       },
    };
 
