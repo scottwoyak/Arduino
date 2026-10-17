@@ -581,7 +581,7 @@ constexpr uint8_t NUM_LEDS = 1;
 #if defined ARDUINO_WAVESHARE_ESP32_S3_ZERO
 constexpr int16_t NEOPIXEL_LED_PIN = 21;
 constexpr neoPixelType NEOPIXEL_LED_TYPE = NEO_RGB + NEO_KHZ800;
-#elif defined ARDUINO_ESP32S3_DEV
+#elif defined(ARDUINO_ESP32S3_DEV) || defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER)
 constexpr int16_t NEOPIXEL_LED_PIN = 48;
 constexpr neoPixelType NEOPIXEL_LED_TYPE = NEO_GRB + NEO_KHZ800;
 #else
@@ -621,6 +621,7 @@ public:
    ///
    NeoPixelLED()
    {
+      _level = constrain(255 * 0.05f, 0, 255);
    }
 
    ///

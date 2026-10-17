@@ -9,8 +9,10 @@
 #include "ArduinoWithDisplay.h"
 #include "Button.h"
 #include "DeviceStateStatus.h"
+#include "LED.h"
 #include "MultiStatus.h"
 #include "Sound.h"
+#include "Status.h"
 
 ///
 /// <summary>
@@ -57,20 +59,30 @@ public:
 
    ///
    /// <summary>
-   /// Status indicator; this board has no physical NeoPixel, so no underlying
-   /// indicators are wired in for now.
+   /// Onboard WS2812 NeoPixel LED (GPIO48).
+   /// </summary>
+   ///
+   NeoPixelLED neoPixel;
+
+private:
+   NeoPixelStatus _neoPixelStatus;
+   DeviceStateStatus _deviceStateStatus;
+
+public:
+   ///
+   /// <summary>
+   /// Status indicator that drives the onboard NeoPixel.
    /// </summary>
    ///
    MultiStatus status;
-
-   DeviceStateStatus _deviceStateStatus;
 
    ///
    /// <summary>
    /// Initializes a new instance of the ViewerBoardS3 class.
    /// </summary>
    ///
-   ViewerBoardS3() : ArduinoWithDisplay(), buttonA(0)
+   ViewerBoardS3() : ArduinoWithDisplay(), buttonA(0), _neoPixelStatus(&neoPixel),
+      status(&_neoPixelStatus)
    {
       status.addStatus(&_deviceStateStatus);
    }
@@ -78,7 +90,7 @@ public:
    ///
    /// <summary>
    /// Initializes the display, the FT6336U touch controller's RST line, the I2C bus,
-   /// and the BOOT button.
+   /// the speaker, the BOOT button, and the onboard NeoPixel status indicator.
    /// </summary>
    ///
    void begin() override
@@ -96,6 +108,7 @@ public:
 
       sound.begin();
       buttonA.begin();
+      neoPixel.begin();
       status.begin();
    }
 
