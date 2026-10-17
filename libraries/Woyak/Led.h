@@ -2,8 +2,13 @@
 
 #include <Arduino.h>
 #include <functional>
+
+#include "ArduinoBoardId.h"
 #include "Util.h"
+
+#ifdef ARDUINO_NEOPIXEL_SUPPORTED
 #include <Adafruit_NeoPixel.h>
+#endif
 
 ///
 /// <summary>
@@ -563,6 +568,8 @@ public:
    }
 };
 
+#ifdef ARDUINO_NEOPIXEL_SUPPORTED
+
 ///
 /// <summary>
 /// Number of LEDs managed by a single NeoPixelLED instance.
@@ -702,3 +709,5 @@ public:
       _apply();
    }
 };
+
+#endif // ARDUINO_NEOPIXEL_SUPPORTED

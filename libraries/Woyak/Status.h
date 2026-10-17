@@ -467,6 +467,8 @@ public:
 	}
 };
 
+#ifdef ARDUINO_NEOPIXEL_SUPPORTED
+
 ///
 /// <summary>
 /// Uses a NeoPixel LED to indicate startup and connectivity states with built-in color helpers.
@@ -650,3 +652,5 @@ public:
 		_led->turnOn();
 	}
 };
+
+#endif // ARDUINO_NEOPIXEL_SUPPORTED

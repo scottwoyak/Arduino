@@ -1,45 +1,73 @@
-#include <Adafruit_ST7789.h>
+//
+// ST7789V2 display test sketch for the Waveshare ESP32-S3-Touch-LCD-1.9 board.
+//
+// Continuously renders random numbers, touch coordinates (when touched), and frame
+// rate on the 1.9" 170x320 ST7789V2 display using LovyanGFX and the Woyak board wrapper.
+//
+
+#include <Arduino.h>
+
+// Only compile in the font sizes this sketch uses, to save flash.
+#define TEXT_SIZES_CUSTOM
+#define TEXT_SIZE_2
+#define TEXT_SIZE_4
+#define NO_PROPORTIONAL_FONT
+
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display."
+#include "WrongBoard.h"
+#endif
+
 #include "RollingRate.h"
+#include "SerialX.h"
 
-// if any of the TFT defines are not found, it is because the correct board
-// is not selected. Needs to be Adafruit Feather ESP32-S3
-Adafruit_ST7789 display(TFT_CS, TFT_DC, TFT_RST);
+Arduino arduino;
 RollingRate fps(100);
+Format valueFormat("####", Format::Alignment::LEFT);
+Format fpsFormat("###.#/s", Format::Alignment::RIGHT);
+Format coordFormat("###", Format::Alignment::LEFT);
 
-// The setup() function runs once each time the micro-controller starts
 void setup()
 {
-   // initialize TFT
-   pinMode(TFT_BACKLITE, OUTPUT);
-   digitalWrite(TFT_BACKLITE, HIGH);
+   SerialX::begin();
+   arduino.begin();
 
-   // turn on the TFT / I2C power supply
-   pinMode(TFT_I2C_POWER, OUTPUT);
-   digitalWrite(TFT_I2C_POWER, HIGH);
-   delay(10);
-
-   display.init(135, 240); // Init ST7789 240x135
-   display.setRotation(3);
-   display.fillScreen(ST77XX_BLACK);
-   display.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-   display.setTextSize(2);
+   Serial.println("--- Waveshare ESP32-S3-Touch-LCD-1.9 Display Settings ---");
+   Serial.printf("Display Width: %d px\n", arduino.width());
+   Serial.printf("Display Height: %d px\n", arduino.height());
 }
 
-
-// Add the main program code into the continuous loop() function
 void loop()
 {
    fps.tick();
 
-   display.setTextSize(4);
-   display.setCursor(0, 0);
-   display.println(random(9999));
-   display.println(random(9999));
-   display.println(random(9999));
+   arduino.setTextSize(4);
+   arduino.setCursor(0, 0);
+   arduino.println((uint16_t)random(9999), valueFormat);
+   arduino.println((uint16_t)random(9999), valueFormat);
+   arduino.println((uint16_t)random(9999), valueFormat);
 
-   display.setTextSize(2);
-   display.setCursor(0, display.height() - 16);
-   display.print(fps.get(), 1);
-   display.print(" fps ");
+   arduino.setTextSize(2);
+   int16_t footerY = arduino.height() - arduino.charH();
 
+   lgfx::touch_point_t touchPoint;
+   if (arduino.display.getTouch(&touchPoint) > 0)
+   {
+      arduino.setCursor(0, footerY);
+      arduino.print("T:", Color::LIGHTBLUE);
+      arduino.print(touchPoint.x, coordFormat, Color::LIGHTBLUE);
+      arduino.print(",", Color::LIGHTBLUE);
+      arduino.print(touchPoint.y, coordFormat, Color::LIGHTBLUE);
+   }
+   else
+   {
+      arduino.setCursor(0, footerY);
+      arduino.print("         ");
+   }
+
+   arduino.setCursorY(footerY);
+   arduino.printlnR(fps.get(), fpsFormat, Color::LIGHTGRAY);
 }
+

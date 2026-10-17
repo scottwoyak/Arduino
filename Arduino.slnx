@@ -252,7 +252,7 @@
       <Deploy Solution="*|ARM64" />
       <Deploy Solution="Debug|Any CPU" />
     </Project>
-    <Project Path="Tests/TimedAverageHistory_Tests/TimedAverageHistory_Tests.vcxproj">
+    <Project Path="Tests/TimedAverageHistory_Tests/TimedAverageHistory_Tests.vcxproj" Id="00000000-0000-0000-0000-000000000105">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
@@ -280,7 +280,7 @@
       <Deploy Solution="*|ARM64" />
       <Deploy Solution="Debug|Any CPU" />
     </Project>
-    <Project Path="Tests/TimedRate_Tests/TimedRate_Tests.vcxproj">
+    <Project Path="Tests/TimedRate_Tests/TimedRate_Tests.vcxproj" Id="00000000-0000-0000-0000-000000000109">
       <Platform Solution="*|Any CPU" Project="ARM" />
       <Deploy />
     </Project>
@@ -321,155 +321,155 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
-  <Project Path="Basic_DisplayValue/Basic_DisplayValue.vcxproj">
+  <Project Path="Basic_DisplayValue/Basic_DisplayValue.vcxproj" Id="00000000-0000-0000-0000-000000000004">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Basic_Field/Basic_Field.vcxproj">
+  <Project Path="Basic_Field/Basic_Field.vcxproj" Id="00000000-0000-0000-0000-000000000005">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Basic_FieldEditor/Basic_FieldEditor.vcxproj">
+  <Project Path="Basic_FieldEditor/Basic_FieldEditor.vcxproj" Id="00000000-0000-0000-0000-000000000006">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Basic_FieldTable/Basic_FieldTable.vcxproj">
+  <Project Path="Basic_FieldTable/Basic_FieldTable.vcxproj" Id="00000000-0000-0000-0000-000000000007">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Basic_FieldTableEditor/Basic_FieldTableEditor.vcxproj">
+  <Project Path="Basic_FieldTableEditor/Basic_FieldTableEditor.vcxproj" Id="00000000-0000-0000-0000-000000000008">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Basic_ScatterPlot/Basic_ScatterPlot.vcxproj">
+  <Project Path="Basic_ScatterPlot/Basic_ScatterPlot.vcxproj" Id="00000000-0000-0000-0000-000000000009">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Basic_Table/Basic_Table.vcxproj">
+  <Project Path="Basic_Table/Basic_Table.vcxproj" Id="00000000-0000-0000-0000-000000000010">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Battery_Display/Battery_Display.vcxproj">
+  <Project Path="Battery_Display/Battery_Display.vcxproj" Id="00000000-0000-0000-0000-000000000011">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Bluetooth_Sensor_Display/Bluetooth_Sensor_Display.vcxproj">
+  <Project Path="Bluetooth_Sensor_Display/Bluetooth_Sensor_Display.vcxproj" Id="00000000-0000-0000-0000-000000000012">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Bluetooth_Viewer_Display/Bluetooth_Viewer_Display.vcxproj">
+  <Project Path="Bluetooth_Viewer_Display/Bluetooth_Viewer_Display.vcxproj" Id="00000000-0000-0000-0000-000000000013">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Board/Board.vcxproj">
+  <Project Path="Board/Board.vcxproj" Id="00000000-0000-0000-0000-000000000014">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Buttons_Display/Buttons_Display.vcxproj">
+  <Project Path="Buttons_Display/Buttons_Display.vcxproj" Id="00000000-0000-0000-0000-000000000017">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Button_Display/Button_Display.vcxproj">
+  <Project Path="Button_Display/Button_Display.vcxproj" Id="00000000-0000-0000-0000-000000000016">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Capacitor_Display/Capacitor_Display.vcxproj">
+  <Project Path="Capacitor_Display/Capacitor_Display.vcxproj" Id="00000000-0000-0000-0000-000000000018">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Capacitor_Playground/Capacitor_Playground.vcxproj">
+  <Project Path="Capacitor_Playground/Capacitor_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000019">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Capacitor_Wiring_Test/Capacitor_Wiring_Test.vcxproj">
+  <Project Path="Capacitor_Wiring_Test/Capacitor_Wiring_Test.vcxproj" Id="00000000-0000-0000-0000-000000000020">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Color_Calibrator_Playground/Color_Calibrator_Playground.vcxproj">
+  <Project Path="Color_Calibrator_Playground/Color_Calibrator_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000021">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Color_Playground/Color_Playground.vcxproj">
+  <Project Path="Color_Playground/Color_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000022">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Compass_Display/Compass_Display.vcxproj">
+  <Project Path="Compass_Display/Compass_Display.vcxproj" Id="00000000-0000-0000-0000-000000000023">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Counter_Display/Counter_Display.vcxproj">
+  <Project Path="Counter_Display/Counter_Display.vcxproj" Id="00000000-0000-0000-0000-000000000026">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="DallasTemperature_Display/DallasTemperature_Display.vcxproj">
+  <Project Path="DallasTemperature_Display/DallasTemperature_Display.vcxproj" Id="00000000-0000-0000-0000-000000000027">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Depth_Display/Depth_Display.vcxproj">
+  <Project Path="Depth_Display/Depth_Display.vcxproj" Id="00000000-0000-0000-0000-000000000028">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="DisplayBuffer_Playground/DisplayBuffer_Playground.vcxproj">
+  <Project Path="DisplayBuffer_Playground/DisplayBuffer_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000035">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="DisplayValue_Playground/DisplayValue_Playground.vcxproj">
+  <Project Path="DisplayValue_Playground/DisplayValue_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000036">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Display_SH1107/Display_SH1107.vcxproj">
+  <Project Path="Display_SH1107/Display_SH1107.vcxproj" Id="00000000-0000-0000-0000-000000000029">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Display_ST7789/Display_ST7789.vcxproj">
+  <Project Path="Display_ST7789/Display_ST7789.vcxproj" Id="00000000-0000-0000-0000-000000000030">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Display_ST7789_eSPI/Display_ST7789_eSPI.vcxproj">
+  <Project Path="Display_ST7789_eSPI/Display_ST7789_eSPI.vcxproj" Id="00000000-0000-0000-0000-000000000031">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Display_ST7789_LovyanGFX/Display_ST7789_LovyanGFX.vcxproj">
+  <Project Path="Display_ST7789_LovyanGFX/Display_ST7789_LovyanGFX.vcxproj" Id="00000000-0000-0000-0000-000000000032">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Display_ST7796S/Display_ST7796S.vcxproj">
+  <Project Path="Display_ST7796S/Display_ST7796S.vcxproj" Id="00000000-0000-0000-0000-000000000033">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Display_ST7796S_LovylanGFX/Display_ST7796S_LovylanGFX.vcxproj">
+  <Project Path="Display_ST7796S_LovylanGFX/Display_ST7796S_LovylanGFX.vcxproj" Id="00000000-0000-0000-0000-000000000034">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Distance_Display/Distance_Display.vcxproj">
+  <Project Path="Distance_Display/Distance_Display.vcxproj" Id="00000000-0000-0000-0000-000000000037">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Encoder_Display/Encoder_Display.vcxproj">
+  <Project Path="Encoder_Display/Encoder_Display.vcxproj" Id="00000000-0000-0000-0000-000000000038">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Feather_ESP32_TFT/Feather_ESP32_TFT.vcxproj">
+  <Project Path="Feather_ESP32_TFT/Feather_ESP32_TFT.vcxproj" Id="00000000-0000-0000-0000-000000000039">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Feather_M0_OLED/Feather_M0_OLED.vcxproj">
+  <Project Path="Feather_M0_OLED/Feather_M0_OLED.vcxproj" Id="00000000-0000-0000-0000-000000000040">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Field_Playground/Field_Playground.vcxproj">
+  <Project Path="Field_Playground/Field_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000041">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Font_Display/Font_Display.vcxproj">
+  <Project Path="Font_Display/Font_Display.vcxproj" Id="00000000-0000-0000-0000-000000000042">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Font_Spacing_Display/Font_Spacing_Display.vcxproj">
+  <Project Path="Font_Spacing_Display/Font_Spacing_Display.vcxproj" Id="00000000-0000-0000-0000-000000000043">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Format_Display/Format_Display.vcxproj">
+  <Project Path="Format_Display/Format_Display.vcxproj" Id="00000000-0000-0000-0000-000000000044">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -491,27 +491,27 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
-  <Project Path="I2C_Multiplexor_Scanner/I2C_Multiplexor_Scanner.vcxproj">
+  <Project Path="I2C_Multiplexor_Scanner/I2C_Multiplexor_Scanner.vcxproj" Id="00000000-0000-0000-0000-000000000049">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="I2C_Port_Scanner/I2C_Port_Scanner.vcxproj">
+  <Project Path="I2C_Port_Scanner/I2C_Port_Scanner.vcxproj" Id="00000000-0000-0000-0000-000000000050">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="INA219_Display/INA219_Display.vcxproj">
+  <Project Path="INA219_Display/INA219_Display.vcxproj" Id="00000000-0000-0000-0000-000000000051">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="InitializingDisplay_Demo/InitializingDisplay_Demo.vcxproj">
+  <Project Path="InitializingDisplay_Demo/InitializingDisplay_Demo.vcxproj" Id="00000000-0000-0000-0000-000000000052">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Interrupt_Debugger/Interrupt_Debugger.vcxproj">
+  <Project Path="Interrupt_Debugger/Interrupt_Debugger.vcxproj" Id="00000000-0000-0000-0000-000000000053">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Interrupt_Display/Interrupt_Display.vcxproj">
+  <Project Path="Interrupt_Display/Interrupt_Display.vcxproj" Id="00000000-0000-0000-0000-000000000054">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -521,31 +521,31 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
-  <Project Path="Led/Led.vcxproj">
+  <Project Path="Led/Led.vcxproj" Id="00000000-0000-0000-0000-000000000056">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="LED_Calibrator_Playground/LED_Calibrator_Playground.vcxproj">
+  <Project Path="LED_Calibrator_Playground/LED_Calibrator_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000057">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="LED_FastLED/LED_FastLED.vcxproj">
+  <Project Path="LED_FastLED/LED_FastLED.vcxproj" Id="00000000-0000-0000-0000-000000000058">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="LED_NeoPixel/LED_NeoPixel.vcxproj">
+  <Project Path="LED_NeoPixel/LED_NeoPixel.vcxproj" Id="00000000-0000-0000-0000-000000000059">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="LED_RGB/LED_RGB.vcxproj">
+  <Project Path="LED_RGB/LED_RGB.vcxproj" Id="00000000-0000-0000-0000-000000000060">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Led_Status/Led_Status.vcxproj">
+  <Project Path="Led_Status/Led_Status.vcxproj" Id="00000000-0000-0000-0000-000000000061">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Light_Display/Light_Display.vcxproj">
+  <Project Path="Light_Display/Light_Display.vcxproj" Id="00000000-0000-0000-0000-000000000062">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -555,19 +555,19 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
-  <Project Path="Logger/Logger.vcxproj">
+  <Project Path="Logger/Logger.vcxproj" Id="00000000-0000-0000-0000-000000000064">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Memory_Usage/Memory_Usage.vcxproj">
+  <Project Path="Memory_Usage/Memory_Usage.vcxproj" Id="00000000-0000-0000-0000-000000000065">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="MLX90393_Display/MLX90393_Display.vcxproj">
+  <Project Path="MLX90393_Display/MLX90393_Display.vcxproj" Id="00000000-0000-0000-0000-000000000066">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="MS5837_Display/MS5837_Display.vcxproj">
+  <Project Path="MS5837_Display/MS5837_Display.vcxproj" Id="00000000-0000-0000-0000-000000000067">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -577,15 +577,15 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
-  <Project Path="OTA_Display/OTA_Display.vcxproj">
+  <Project Path="OTA_Display/OTA_Display.vcxproj" Id="00000000-0000-0000-0000-000000000069">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Pin_Display/Pin_Display.vcxproj">
+  <Project Path="Pin_Display/Pin_Display.vcxproj" Id="00000000-0000-0000-0000-000000000070">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Playground/Playground.vcxproj">
+  <Project Path="Playground/Playground.vcxproj" Id="00000000-0000-0000-0000-000000000071">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -595,7 +595,7 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
-  <Project Path="ScatterPlot_Playground/ScatterPlot_Playground.vcxproj">
+  <Project Path="ScatterPlot_Playground/ScatterPlot_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000079">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -603,35 +603,35 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Sensor_Averaging_Playground/Sensor_Averaging_Playground.vcxproj">
+  <Project Path="Sensor_Averaging_Playground/Sensor_Averaging_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000081">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Sensor_Capture_Playground/Sensor_Capture_Playground.vcxproj">
+  <Project Path="Sensor_Capture_Playground/Sensor_Capture_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000082">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Sensor_Noise_Playground/Sensor_Noise_Playground.vcxproj">
+  <Project Path="Sensor_Noise_Playground/Sensor_Noise_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000083">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Sensor_Warm_Up_Playground/Sensor_Warm_Up_Playground.vcxproj">
+  <Project Path="Sensor_Warm_Up_Playground/Sensor_Warm_Up_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000084">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Serial/Serial.vcxproj">
+  <Project Path="Serial/Serial.vcxproj" Id="00000000-0000-0000-0000-000000000085">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="SevenSegment/SevenSegment.vcxproj">
+  <Project Path="SevenSegment/SevenSegment.vcxproj" Id="00000000-0000-0000-0000-000000000088">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Seven_Segment_TM1637/Seven_Segment_TM1637.vcxproj">
+  <Project Path="Seven_Segment_TM1637/Seven_Segment_TM1637.vcxproj" Id="00000000-0000-0000-0000-000000000086">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Seven_Segment_VK16K33/Seven_Segment_VK16K33.vcxproj">
+  <Project Path="Seven_Segment_VK16K33/Seven_Segment_VK16K33.vcxproj" Id="00000000-0000-0000-0000-000000000087">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -641,11 +641,11 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
-  <Project Path="SR04_Display/SR04_Display.vcxproj">
+  <Project Path="SR04_Display/SR04_Display.vcxproj" Id="00000000-0000-0000-0000-000000000090">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Table_Playground/Table_Playground.vcxproj">
+  <Project Path="Table_Playground/Table_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000093">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -667,7 +667,7 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
-  <Project Path="Temp_Calibrator_Playground/Temp_Calibrator_Playground.vcxproj">
+  <Project Path="Temp_Calibrator_Playground/Temp_Calibrator_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000097">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -689,27 +689,27 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
-  <Project Path="Temp_Serial/Temp_Serial.vcxproj">
+  <Project Path="Temp_Serial/Temp_Serial.vcxproj" Id="00000000-0000-0000-0000-000000000101">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Text_Performance_Playground/Text_Performance_Playground.vcxproj">
+  <Project Path="Text_Performance_Playground/Text_Performance_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000102">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Viewer/Viewer.vcxproj">
+  <Project Path="Viewer/Viewer.vcxproj" Id="00000000-0000-0000-0000-000000000115">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Viewer_Alignment/Viewer_Alignment.vcxproj">
+  <Project Path="Viewer_Alignment/Viewer_Alignment.vcxproj" Id="00000000-0000-0000-0000-000000000116">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Viewer_Touch/Viewer_Touch.vcxproj">
+  <Project Path="Viewer_Touch/Viewer_Touch.vcxproj" Id="00000000-0000-0000-0000-000000000117">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Wave_Display/Wave_Display.vcxproj">
+  <Project Path="Wave_Display/Wave_Display.vcxproj" Id="00000000-0000-0000-0000-000000000118">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -725,7 +725,7 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
-  <Project Path="WiFi_Display/WiFi_Display.vcxproj">
+  <Project Path="WiFi_Display/WiFi_Display.vcxproj" Id="00000000-0000-0000-0000-000000000121">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
