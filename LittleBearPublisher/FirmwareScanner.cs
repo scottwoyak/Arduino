@@ -9,17 +9,23 @@ namespace LittleBearPublisher;
 /// </summary>
 internal sealed class FirmwareScanner
 {
-    private static readonly string[] KnownBoardIds =
+    private static readonly string[] FallbackBoardIds =
     [
         "ADAFRUIT_FEATHER_M0",
         "ADAFRUIT_FEATHER_ESP32S3_TFT",
+        "WAVESHARE_ESP32S3_ZERO_SENSORS",
+        "WAVESHARE_ESP32S3_ZERO",
+        "WAVESHARE_ESP32S3_TOUCH_LCD_43",
+        "WAVESHARE_ESP32S3_TOUCH_LCD_19",
+        "HOSYOND_ESP32S3_TOUCH_LCD_40",
+        "ESP32S3_DEV_PLAYGROUND",
         "WAVESHARE_ESP32_S3_ZERO_SENSORS",
         "WAVESHARE_ESP32_S3_ZERO",
-        "WAVESHARE_ESP32S3_TOUCH_LCD_43",
         "HOSYOND_ESP32_S3_VIEWER",
-        "ESP32S3_DEV_PLAYGROUND",
     ];
 
+    private static readonly Regex BoardVariantIdRegex = new("ARDUINO_BOARD_VARIANT_ID\\s+\"([^\"]+)\"");
+    private static readonly Regex BoardMarkerRegex = new(@"BOARD@([A-Za-z0-9_]+)");
     private static readonly Regex LibraryVersionRegex = new("LIBRARY_VERSION\\s+\"([^\"]+)\"");
     private static readonly Regex MakeVersionRegex = new("MakeVersion\\(\"([^\"]+)\"\\)");
     private static readonly Regex EnableOtaRegex = new(@"enableOTA\s*=\s*true");
@@ -50,6 +56,7 @@ internal sealed class FirmwareScanner
         }
         string libraryVersion = libraryMatch.Groups[1].Value;
         DateTime libraryVersionTime = File.GetLastWriteTime(libraryHeader);
+        IReadOnlyList<string> knownBoardIds = LoadKnownBoardIds();
 
         foreach (string dir in Directory.EnumerateDirectories(_repoRoot).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
         {
@@ -78,12 +85,6 @@ internal sealed class FirmwareScanner
                     .ToList();
             }
 
-            if (bins.Count == 0)
-            {
-                items.Add(new FirmwareItem { Sketch = name, Status = FirmwareStatus.Skipped, Detail = "no build output" });
-                continue;
-            }
-
             var versionMatch = MakeVersionRegex.Match(inoText);
             if (!versionMatch.Success)
             {
@@ -98,7 +99,7 @@ internal sealed class FirmwareScanner
                 sourceTime = libraryVersionTime;
             }
 
-            var seenBoards = new HashSet<string>();
+            var seenBoards = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var bin in bins)
             {
                 string text;
@@ -112,7 +113,7 @@ internal sealed class FirmwareScanner
                     continue;
                 }
 
-                string? boardId = GetBoardId(text);
+                string? boardId = GetBoardId(text, knownBoardIds);
                 if (boardId == null)
                 {
                     items.Add(new FirmwareItem { Sketch = name, Status = FirmwareStatus.Skipped, Detail = $"unknown board id in {bin.FullName}" });
@@ -163,7 +164,6 @@ internal sealed class FirmwareScanner
                 if (!reupload && await hub.IsAlreadyPublishedAsync(item))
                 {
                     item.Status = FirmwareStatus.UpToDate;
-                    item.Detail = "already on server";
                 }
                 else
                 {
@@ -171,16 +171,164 @@ internal sealed class FirmwareScanner
                 }
                 items.Add(item);
             }
+
+            foreach (string configuredBoard in FirmwareBuilder.GetSupportedBoards(_repoRoot, name, inoText))
+            {
+                if (!seenBoards.Add(configuredBoard))
+                {
+                    continue;
+                }
+
+                var missingItem = new FirmwareItem
+                {
+                    Sketch = name,
+                    Board = configuredBoard,
+                    Status = FirmwareStatus.Skipped,
+                    Detail = "no build output",
+                };
+                (missingItem.ServerVersion, missingItem.ServerBuildTime) = await hub.GetLatestAsync(missingItem.Firmware);
+                items.Add(missingItem);
+            }
         }
 
         return items;
     }
 
-    private static string? GetBoardId(string binText)
+    /// <summary>
+    /// Scans a single (sketch, board) target and updates <paramref name="item"/> in place
+    /// with its newly compiled binary's version, build time, and publish readiness.
+    /// </summary>
+    public async Task RefreshItemAsync(FirmwareItem item, HubClient hub)
     {
-        foreach (string candidate in KnownBoardIds)
+        string libraryHeader = Path.Combine(_repoRoot, "libraries", "Woyak", "LibraryVersion.h");
+        var libraryMatch = LibraryVersionRegex.Match(await File.ReadAllTextAsync(libraryHeader));
+        if (!libraryMatch.Success)
         {
-            if (Regex.IsMatch(binText, $"[^A-Za-z0-9_]{candidate}[^A-Za-z0-9_]"))
+            return;
+        }
+        string libraryVersion = libraryMatch.Groups[1].Value;
+        DateTime libraryVersionTime = File.GetLastWriteTime(libraryHeader);
+        IReadOnlyList<string> knownBoardIds = LoadKnownBoardIds();
+
+        string dir = Path.Combine(_repoRoot, item.Sketch);
+        string inoPath = Path.Combine(dir, item.Sketch + ".ino");
+        if (!File.Exists(inoPath))
+        {
+            return;
+        }
+
+        string inoText = await File.ReadAllTextAsync(inoPath);
+        var versionMatch = MakeVersionRegex.Match(inoText);
+        if (!versionMatch.Success)
+        {
+            return;
+        }
+        string version = $"{versionMatch.Groups[1].Value}.{libraryVersion}";
+
+        DateTime sourceTime = File.GetLastWriteTime(inoPath);
+        if (libraryVersionTime > sourceTime)
+        {
+            sourceTime = libraryVersionTime;
+        }
+
+        string buildsRoot = Path.Combine(dir, "build");
+        string publishRoot = Path.Combine(buildsRoot, "_publish") + Path.DirectorySeparatorChar;
+        if (!Directory.Exists(buildsRoot))
+        {
+            return;
+        }
+
+        var bins = Directory.EnumerateFiles(buildsRoot, item.Sketch + ".ino.bin", SearchOption.AllDirectories)
+            .Where(f => !f.StartsWith(publishRoot, StringComparison.OrdinalIgnoreCase))
+            .Select(f => new FileInfo(f))
+            .OrderByDescending(f => f.LastWriteTime);
+
+        foreach (var bin in bins)
+        {
+            string text;
+            try
+            {
+                text = Encoding.Latin1.GetString(await File.ReadAllBytesAsync(bin.FullName));
+            }
+            catch (IOException)
+            {
+                continue;
+            }
+
+            string? boardId = GetBoardId(text, knownBoardIds);
+            if (!string.Equals(boardId, item.Board, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var buildMatch = BuildTimeRegex.Match(text);
+            var versionMarkerMatch = VersionMarkerRegex.Match(text);
+            bool isStale = bin.LastWriteTime < sourceTime;
+
+            string resolvedVersion;
+            if (versionMarkerMatch.Success)
+            {
+                resolvedVersion = versionMarkerMatch.Groups[1].Value;
+            }
+            else if (isStale)
+            {
+                resolvedVersion = $"{versionMatch.Groups[1].Value}.?";
+            }
+            else
+            {
+                resolvedVersion = version;
+            }
+
+            item.Version = resolvedVersion;
+            item.Built = bin.LastWriteTime;
+            item.BuildTime = buildMatch.Success ? buildMatch.Groups[1].Value : null;
+            item.BinPath = bin.FullName;
+            item.IsStale = isStale;
+            item.Status = await hub.IsAlreadyPublishedAsync(item) ? FirmwareStatus.UpToDate : FirmwareStatus.Ready;
+            return;
+        }
+    }
+
+    private IReadOnlyList<string> LoadKnownBoardIds()
+    {
+        var ids = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        string boardIdHeader = Path.Combine(_repoRoot, "libraries", "Woyak", "ArduinoBoardId.h");
+        if (File.Exists(boardIdHeader))
+        {
+            foreach (Match match in BoardVariantIdRegex.Matches(File.ReadAllText(boardIdHeader)))
+            {
+                string id = match.Groups[1].Value;
+                if (seen.Add(id))
+                {
+                    ids.Add(id);
+                }
+            }
+        }
+
+        foreach (string id in FallbackBoardIds)
+        {
+            if (seen.Add(id))
+            {
+                ids.Add(id);
+            }
+        }
+
+        return ids;
+    }
+
+    private static string? GetBoardId(string binText, IReadOnlyList<string> knownBoardIds)
+    {
+        var markerMatch = BoardMarkerRegex.Match(binText);
+        if (markerMatch.Success)
+        {
+            return markerMatch.Groups[1].Value;
+        }
+
+        foreach (string candidate in knownBoardIds)
+        {
+            if (Regex.IsMatch(binText, $"[^A-Za-z0-9_]{Regex.Escape(candidate)}[^A-Za-z0-9_]"))
             {
                 return candidate;
             }

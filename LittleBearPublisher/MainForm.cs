@@ -11,12 +11,18 @@ internal sealed class MainForm : Form
     private readonly string _repoRoot;
     private readonly HubClient _hub;
     private readonly FirmwareScanner _scanner;
+    private readonly FirmwareBuilder _builder;
     private readonly FileSystemWatcher _watcher;
     private readonly System.Windows.Forms.Timer _debounce = new() { Interval = DebounceMs };
     private readonly HashSet<string> _notified = [];
+    private readonly Dictionary<string, (string Error, DateTime BinBuilt)> _failedStatus = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly ListView _list = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = true, HideSelection = false };
     private readonly Button _refreshButton = new() { Text = "Refresh", AutoSize = true };
+    private readonly Button _buildSelectedButton = new() { Text = "Build", AutoSize = true, Enabled = false };
+    private readonly Button _buildSketchButton = new() { Text = "Build Sketch", AutoSize = true, Enabled = false };
+    private readonly Button _buildAllButton = new() { Text = "Build All", AutoSize = true, Enabled = false };
+    private readonly Button _haltButton = new() { Text = "Halt", AutoSize = true, Enabled = false };
     private readonly Button _uploadSelectedButton = new() { Text = "Publish", AutoSize = true, Enabled = false };
     private readonly Button _uploadAllButton = new() { Text = "Publish All", AutoSize = true, Enabled = false };
     private readonly CheckBox _autoUploadCheckBox = new() { Text = "Auto-upload", AutoSize = true, Padding = new Padding(8, 6, 0, 0) };
@@ -29,6 +35,7 @@ internal sealed class MainForm : Form
 
     private List<FirmwareItem> _items = [];
     private bool _busy;
+    private CancellationTokenSource? _buildCts;
     private bool _rescanRequested;
     private bool _exiting;
     private int _sortColumn = -1;
@@ -39,6 +46,7 @@ internal sealed class MainForm : Form
         _repoRoot = repoRoot;
         _hub = hub;
         _scanner = new FirmwareScanner(repoRoot);
+        _builder = new FirmwareBuilder(repoRoot);
         _readyFont = new Font(_list.Font, FontStyle.Bold);
 
         Text = $"Little Bear Publisher - build {GetBuildStamp()}";
@@ -54,13 +62,14 @@ internal sealed class MainForm : Form
         _list.Columns.Add("Built", 140);
         _list.Columns.Add("Server Version", 110);
         _list.Columns.Add("Server Built", 140);
+        _list.Columns.Add("Status", 140);
         RestoreWindowBounds();
 
         _log.Height = GetTextBoxHeightForLines(_log, LogVisibleLines);
         _log.MinimumSize = new Size(0, _log.Height);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(4), WrapContents = false };
-        buttons.Controls.AddRange([_refreshButton, _uploadSelectedButton, _uploadAllButton, _autoUploadCheckBox]);
+        buttons.Controls.AddRange([_refreshButton, _buildSelectedButton, _buildSketchButton, _buildAllButton, _haltButton, _uploadSelectedButton, _uploadAllButton, _autoUploadCheckBox]);
 
         Controls.Add(_list);
         Controls.Add(_log);
@@ -75,12 +84,23 @@ internal sealed class MainForm : Form
         _tray.BalloonTipClicked += (_, _) => ShowWindow();
 
         _refreshButton.Click += async (_, _) => await RefreshAsync();
+        _buildSelectedButton.Click += async (_, _) => await BuildAsync(SelectedBuildableItems());
+        _buildSketchButton.Click += async (_, _) => await BuildAsync(SelectedSketchItems());
+        _buildAllButton.Click += async (_, _) => await BuildAsync(AllBuildableItems());
+        _haltButton.Click += (_, _) => HaltBuild();
         _uploadSelectedButton.Click += async (_, _) => await UploadAsync(SelectedReadyItems());
         _uploadAllButton.Click += async (_, _) => await UploadAsync(_items.Where(i => i.Status == FirmwareStatus.Ready).ToList());
         _list.SelectedIndexChanged += (_, _) => UpdateButtons();
         _list.ColumnClick += (_, e) => SortBy(e.Column);
 
         ContextMenuStrip listMenu = new();
+        ToolStripMenuItem buildSelected = new("Build");
+        buildSelected.Click += async (_, _) => await BuildAsync(SelectedBuildableItems());
+        listMenu.Items.Add(buildSelected);
+        ToolStripMenuItem buildSketch = new("Build Sketch (All Boards)");
+        buildSketch.Click += async (_, _) => await BuildAsync(SelectedSketchItems());
+        listMenu.Items.Add(buildSketch);
+        listMenu.Items.Add(new ToolStripSeparator());
         ToolStripMenuItem uploadAnyway = new("Publish");
         uploadAnyway.Click += async (_, _) => await UploadAsync(SelectedUploadableItems());
         listMenu.Items.Add(uploadAnyway);
@@ -89,9 +109,14 @@ internal sealed class MainForm : Form
         listMenu.Items.Add(deleteSelected);
         listMenu.Opening += (_, e) =>
         {
-            uploadAnyway.Enabled = !_busy;
-            deleteSelected.Enabled = !_busy;
-            e.Cancel = SelectedUploadableItems().Count == 0 && SelectedPublishedItems().Count == 0;
+            bool hasBuildable = SelectedBuildableItems().Count > 0;
+            bool hasUploadable = SelectedUploadableItems().Count > 0;
+            bool hasPublished = SelectedPublishedItems().Count > 0;
+            buildSelected.Enabled = !_busy && hasBuildable;
+            buildSketch.Enabled = !_busy && SelectedSketchItems().Count > 0;
+            uploadAnyway.Enabled = !_busy && hasUploadable;
+            deleteSelected.Enabled = !_busy && hasPublished;
+            e.Cancel = !hasBuildable && !hasUploadable && !hasPublished;
         };
         _list.ContextMenuStrip = listMenu;
 
@@ -141,9 +166,10 @@ internal sealed class MainForm : Form
                 return;
             }
 
-            if (saved.ColumnWidths is not null && saved.ColumnWidths.Length == _list.Columns.Count)
+            if (saved.ColumnWidths is not null)
             {
-                for (int i = 0; i < saved.ColumnWidths.Length; i++)
+                int count = Math.Min(saved.ColumnWidths.Length, _list.Columns.Count);
+                for (int i = 0; i < count; i++)
                 {
                     _list.Columns[i].Width = saved.ColumnWidths[i];
                 }
@@ -223,6 +249,7 @@ internal sealed class MainForm : Form
         }
 
         _watcher.Dispose();
+        _buildCts?.Cancel();
         _tray.Visible = false;
         _tray.Dispose();
         base.OnFormClosing(e);
@@ -305,8 +332,22 @@ internal sealed class MainForm : Form
             {
                 _rescanRequested = false;
                 _items = await _scanner.ScanAsync(_hub, false);
+                foreach (var item in _items)
+                {
+                    if (_failedStatus.TryGetValue(item.Firmware, out var failure))
+                    {
+                        if (item.Built > failure.BinBuilt)
+                        {
+                            _failedStatus.Remove(item.Firmware);
+                        }
+                        else
+                        {
+                            item.Detail = failure.Error;
+                        }
+                    }
+                }
                 PopulateList();
-                newlyReady = NotifyNewReady();
+                newlyReady.AddRange(NotifyNewReady());
             }
             while (_rescanRequested);
         }
@@ -340,7 +381,7 @@ internal sealed class MainForm : Form
 
     private void UpdateSortHeaders()
     {
-        string[] titles = ["Sketch", "Board", "Version", "Built", "Server Version", "Server Built"];
+        string[] titles = ["Sketch", "Board", "Version", "Built", "Server Version", "Server Built", "Status"];
         for (int i = 0; i < _list.Columns.Count; i++)
         {
             _list.Columns[i].Text = i == _sortColumn ? $"{titles[i]} {(_sortAscending ? "\u25B2" : "\u25BC")}" : titles[i];
@@ -361,6 +402,7 @@ internal sealed class MainForm : Form
             3 => (a, b) => a.Built.CompareTo(b.Built),
             4 => (a, b) => string.Compare(a.ServerVersion, b.ServerVersion, StringComparison.OrdinalIgnoreCase),
             5 => (a, b) => string.Compare(a.ServerBuildTime, b.ServerBuildTime, StringComparison.OrdinalIgnoreCase),
+            6 => (a, b) => string.Compare(a.StatusText, b.StatusText, StringComparison.OrdinalIgnoreCase),
             _ => (a, b) => string.Compare(a.Sketch, b.Sketch, StringComparison.OrdinalIgnoreCase),
         };
 
@@ -389,15 +431,8 @@ internal sealed class MainForm : Form
             row.SubItems.Add(item.Status == FirmwareStatus.Skipped ? "" : DateText.Format(item.Built));
             row.SubItems.Add(item.ServerVersion ?? "");
             row.SubItems.Add(item.ServerBuildTime ?? "");
-            if (item.Status == FirmwareStatus.Ready)
-            {
-                row.ForeColor = Color.DarkGreen;
-                row.Font = _readyFont;
-            }
-            else
-            {
-                row.ForeColor = Color.Gray;
-            }
+            row.SubItems.Add(item.StatusText);
+            ApplyRowStyle(row, item);
             _list.Items.Add(row);
         }
         _list.EndUpdate();
@@ -405,6 +440,50 @@ internal sealed class MainForm : Form
         int ready = _items.Count(i => i.Status == FirmwareStatus.Ready);
         _tray.Text = ready == 0 ? "Little Bear Publisher: nothing to upload" : $"Little Bear Publisher: {ready} ready";
         UpdateButtons();
+    }
+
+    private void ApplyRowStyle(ListViewItem row, FirmwareItem item)
+    {
+        if (_failedStatus.ContainsKey(item.Firmware))
+        {
+            row.ForeColor = Color.Firebrick;
+            row.Font = _readyFont;
+        }
+        else if (item.Status == FirmwareStatus.Ready)
+        {
+            row.ForeColor = Color.DarkGreen;
+            row.Font = _readyFont;
+        }
+        else
+        {
+            row.ForeColor = Color.Gray;
+            row.Font = _list.Font;
+        }
+    }
+
+    private void SetRowStatus(FirmwareItem item, string status, bool isError = false)
+    {
+        if (isError)
+        {
+            _failedStatus[item.Firmware] = (status, item.Built);
+        }
+        else
+        {
+            _failedStatus.Remove(item.Firmware);
+        }
+
+        item.Detail = status;
+        foreach (ListViewItem row in _list.Items)
+        {
+            if (ReferenceEquals(row.Tag, item) && row.SubItems.Count > 6)
+            {
+                row.SubItems[2].Text = item.Version;
+                row.SubItems[3].Text = item.Status == FirmwareStatus.Skipped && item.Built == default ? "" : DateText.Format(item.Built);
+                row.SubItems[6].Text = status;
+                ApplyRowStyle(row, item);
+                break;
+            }
+        }
     }
 
     /// <summary>
@@ -424,6 +503,39 @@ internal sealed class MainForm : Form
         }
 
         return fresh;
+    }
+
+    private List<FirmwareItem> SelectedBuildableItems()
+    {
+        return _list.SelectedItems
+            .Cast<ListViewItem>()
+            .Select(r => (FirmwareItem)r.Tag!)
+            .Where(i => i.Board.Length > 0)
+            .ToList();
+    }
+
+    private List<FirmwareItem> SelectedSketchItems()
+    {
+        HashSet<string> selectedSketches = _list.SelectedItems
+            .Cast<ListViewItem>()
+            .Select(r => ((FirmwareItem)r.Tag!).Sketch)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (selectedSketches.Count == 0)
+        {
+            return [];
+        }
+
+        return _items
+            .Where(i => i.Board.Length > 0 && selectedSketches.Contains(i.Sketch))
+            .ToList();
+    }
+
+    private List<FirmwareItem> AllBuildableItems()
+    {
+        return _items
+            .Where(i => i.Board.Length > 0)
+            .ToList();
     }
 
     private List<FirmwareItem> SelectedUploadableItems()
@@ -456,8 +568,114 @@ internal sealed class MainForm : Form
     private void UpdateButtons()
     {
         _refreshButton.Enabled = !_busy;
+        _buildSelectedButton.Enabled = !_busy && SelectedBuildableItems().Count > 0;
+        _buildSketchButton.Enabled = !_busy && SelectedSketchItems().Count > 0;
+        _buildAllButton.Enabled = !_busy && AllBuildableItems().Count > 0;
+        _haltButton.Enabled = _buildCts is { IsCancellationRequested: false };
         _uploadSelectedButton.Enabled = !_busy && SelectedReadyItems().Count > 0;
         _uploadAllButton.Enabled = !_busy && _items.Any(i => i.Status == FirmwareStatus.Ready);
+    }
+
+    private void HaltBuild()
+    {
+        if (_buildCts is { IsCancellationRequested: false })
+        {
+            _buildCts.Cancel();
+            _haltButton.Enabled = false;
+            Log("Halting build...");
+        }
+    }
+
+    private async Task BuildAsync(List<FirmwareItem> items)
+    {
+        if (_busy || items.Count == 0)
+        {
+            return;
+        }
+
+        _busy = true;
+        _buildCts = new CancellationTokenSource();
+        CancellationToken cancellationToken = _buildCts.Token;
+        UpdateButtons();
+        try
+        {
+            for (int index = 1; index < items.Count; index++)
+            {
+                SetRowStatus(items[index], "Queued to build");
+            }
+
+            for (int index = 0; index < items.Count; index++)
+            {
+                var item = items[index];
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    SetRowStatus(item, "Build halted");
+                    continue;
+                }
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                string currentPhase = "Starting...";
+                void UpdateBuildingStatus()
+                {
+                    SetRowStatus(item, $"Building ({(int)sw.Elapsed.TotalSeconds}s): {currentPhase}");
+                }
+
+                using var timer = new System.Windows.Forms.Timer { Interval = 1000 };
+                timer.Tick += (_, _) => UpdateBuildingStatus();
+                timer.Start();
+
+                var progress = new Progress<string>(step =>
+                {
+                    currentPhase = step;
+                    UpdateBuildingStatus();
+                });
+
+                UpdateBuildingStatus();
+                Log($"Building ({index + 1}/{items.Count}) {item.Firmware}...");
+                try
+                {
+                    var (ok, detail) = await _builder.BuildAsync(item.Sketch, item.Board, progress, cancellationToken);
+                    timer.Stop();
+                    int elapsedSecs = (int)sw.Elapsed.TotalSeconds;
+                    if (ok)
+                    {
+                        await _scanner.RefreshItemAsync(item, _hub);
+                    }
+                    SetRowStatus(item, ok ? $"Built ({elapsedSecs}s)" : $"Build failed: {detail}", isError: !ok);
+                    Log(ok ? $"OK     built {item.Firmware} in {elapsedSecs}s" : $"FAILED {item.Firmware}: {detail}");
+
+                    if (ok && _autoUploadCheckBox.Checked && item.Status == FirmwareStatus.Ready)
+                    {
+                        _notified.Add(item.Key);
+                        SetRowStatus(item, "Uploading...");
+                        Log($"Uploading {item.Firmware} {item.Version}...");
+                        var (uploadOk, uploadDetail) = await _hub.UploadAsync(item, null);
+                        SetRowStatus(item, uploadOk ? "Uploaded" : $"Upload failed: {uploadDetail}", isError: !uploadOk);
+                        Log(uploadOk ? $"OK     {item.Firmware} {item.Version}" : $"FAILED {item.Firmware}: {uploadDetail}");
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    timer.Stop();
+                    SetRowStatus(item, "Build halted");
+                    Log($"HALTED {item.Firmware} after {(int)sw.Elapsed.TotalSeconds}s");
+                    for (int rest = index + 1; rest < items.Count; rest++)
+                    {
+                        SetRowStatus(items[rest], "Build halted");
+                    }
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            _buildCts.Dispose();
+            _buildCts = null;
+            _busy = false;
+            UpdateButtons();
+        }
+
+        await RefreshAsync();
     }
 
     private async Task UploadAsync(List<FirmwareItem> items)
@@ -471,10 +689,17 @@ internal sealed class MainForm : Form
         UpdateButtons();
         try
         {
+            for (int index = 1; index < items.Count; index++)
+            {
+                SetRowStatus(items[index], "Queued to upload");
+            }
+
             foreach (var item in items)
             {
+                SetRowStatus(item, "Uploading...");
                 Log($"Uploading {item.Firmware} {item.Version}...");
                 var (ok, detail) = await _hub.UploadAsync(item, null);
+                SetRowStatus(item, ok ? "Uploaded" : $"Upload failed: {detail}", isError: !ok);
                 Log(ok ? $"OK     {item.Firmware} {item.Version}" : $"FAILED {item.Firmware}: {detail}");
             }
         }
@@ -508,8 +733,10 @@ internal sealed class MainForm : Form
             foreach (var item in items)
             {
                 string version = item.ServerVersion!;
+                SetRowStatus(item, "Deleting...");
                 Log($"Deleting {item.Firmware} {version}...");
                 var (ok, detail) = await _hub.DeleteAsync(item.Firmware, version);
+                SetRowStatus(item, ok ? "Deleted" : $"Delete failed: {detail}", isError: !ok);
                 Log(ok ? $"OK     deleted {item.Firmware} {version}" : $"FAILED {item.Firmware}: {detail}");
             }
         }
@@ -523,6 +750,11 @@ internal sealed class MainForm : Form
 
     private void Log(string message)
     {
-        _log.AppendText($"{DateTime.Now:T}  {message}{Environment.NewLine}");
+        if (_log.TextLength > 0)
+        {
+            _log.AppendText(Environment.NewLine);
+        }
+
+        _log.AppendText($"{DateTime.Now:T}  {message}");
     }
 }
