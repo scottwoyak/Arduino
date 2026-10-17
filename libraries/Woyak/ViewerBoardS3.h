@@ -59,7 +59,7 @@ public:
 
    ///
    /// <summary>
-   /// Onboard WS2812 NeoPixel LED (GPIO48).
+   /// Onboard WS2812 NeoPixel LED (GPIO42).
    /// </summary>
    ///
    NeoPixelLED neoPixel;

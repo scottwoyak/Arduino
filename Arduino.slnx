@@ -577,6 +577,10 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
+  <Project Path="NeoPixel_Strip/NeoPixel_Strip.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="OTA_Display/OTA_Display.vcxproj" Id="00000000-0000-0000-0000-000000000069">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
