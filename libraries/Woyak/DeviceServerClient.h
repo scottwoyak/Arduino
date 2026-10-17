@@ -80,9 +80,10 @@ struct CommandInfo
 /// </summary>
 /// <remarks>
 /// Protocol (JSON text frames), reusing the DeviceServer's device role/token:
-///   Handshake, sent on connect:  {"role":"device","token":"...","deviceId":"...","sketch":"...","version":"...","site":"...","location":"..."}
-///   Server reply:                {"type":"ack"}
-///   Log message (device to hub): {"type":"log","level":"Info","tags":"wifi,reconnect","message":"..."}
+///   Handshake, sent on connect:  {"type":"hello","role":"device","token":"...","deviceId":"...","sketch":"...","version":"...","site":"...","location":"...","commands":[...]}
+///   Server reply:                {"type":"ack","role":"device"}
+///   Log message (device to hub): {"type":"log","level":"Information","tags":["wifi","reconnect"],"message":"..."}
+///   Health (device to hub):      {"type":"health","data":{...}}
 ///   Command (hub to device):     {"type":"command","action":"readPin 14"}
 ///   Command response:            {"type":"response","message":"..."}
 ///   Shell output (device to hub):{"type":"shellOutput","text":"..."}
@@ -97,7 +98,7 @@ struct CommandInfo
 /// out as "shellOutput". It is never mixed with the command/response channel; a shell
 /// session requires no handshake and is simply available for the life of the connection.
 /// A log entry built up via logPartial()/log() sends one JSON message per fragment:
-///   {"type":"log","level":"Info","tags":"...","message":"Sensor... ","continued":true}
+///   {"type":"log","level":"Information","tags":["..."],"message":"Sensor... ","continued":true}
 ///   {"type":"log","message":"warming up... ","append":true,"continued":true}
 ///   {"type":"log","message":"OK","append":true}
 /// Connects to the local Raspberry DeviceServer first, falling back to the public
@@ -239,6 +240,9 @@ class DeviceServerClient
                   return;
                }
 
+               const char* version = doc["payload"]["version"];
+               const char* name = doc["payload"]["name"];
+
                DeviceServerClient::respond("Updating firmware");
 
                // Behind a TLS proxy the server sees plain http and builds an http:// URL,
@@ -248,7 +252,7 @@ class DeviceServerClient
                {
                   downloadUrl.insert(4, "s");
                }
-               OTAUpdater::requestActiveUpdate(downloadUrl);
+               OTAUpdater::requestActiveUpdate(downloadUrl, version, name);
                return;
             }
 
@@ -634,12 +638,14 @@ private:
    /// <param name="root">Destination JSON array.</param>
    /// <param name="info">Command metadata to serialize.</param>
    /// <param name="defaultTag">Fallback tag added when info.tags is empty (e.g. "Sketch" for sketch-registered commands).</param>
+   /// <param name="isSketch">True if this command is custom to the sketch rather than built-in/shared.</param>
    ///
-   static void _appendCommandJson(JsonArray& root, const CommandInfo& info, const char* defaultTag = nullptr)
+   static void _appendCommandJson(JsonArray& root, const CommandInfo& info, const char* defaultTag = nullptr, bool isSketch = false)
    {
       JsonObject obj = root.add<JsonObject>();
       obj["name"] = info.name;
       obj["desc"] = info.description;
+      obj["sketch"] = isSketch;
       if (info.tags[0] != nullptr)
       {
          JsonArray tags = obj["tags"].to<JsonArray>();
@@ -684,6 +690,41 @@ private:
 
    ///
    /// <summary>
+   /// Populates a JSON array with command metadata objects for the selected command categories.
+   /// </summary>
+   /// <param name="root">Destination JSON array.</param>
+   /// <param name="builtinOnly">If true, omits sketch-registered commands and lists only built-in/shared ones.</param>
+   /// <param name="sketchOnly">If true, omits built-in/shared commands and lists only sketch-registered ones.</param>
+   ///
+   static void _populateCommandsJson(JsonArray& root, bool builtinOnly = false, bool sketchOnly = false)
+   {
+      if (!sketchOnly)
+      {
+         for (const CommandInfo& info : _BUILTIN_COMMANDS)
+         {
+            _appendCommandJson(root, info);
+         }
+
+         for (const _ConfigCommandSet& set : _configCommandSets)
+         {
+            for (size_t i = 0; i < set.helpCount; i++)
+            {
+               _appendCommandJson(root, set.help[i]);
+            }
+         }
+      }
+
+      if (!builtinOnly || sketchOnly)
+      {
+         for (size_t i = 0; i < _sketchCommandCount; i++)
+         {
+            _appendCommandJson(root, _sketchCommands[i], "Sketch", true);
+         }
+      }
+   }
+
+   ///
+   /// <summary>
    /// Builds and sends the response for the "Help" command: every built-in and shared
    /// command, followed by any sketch-registered commands. By default, outputs a brief
    /// usage-only text listing; when includeDescriptions is true ("Help -l"), appends each
@@ -704,30 +745,7 @@ private:
       {
          JsonDocument doc;
          JsonArray root = doc.to<JsonArray>();
-
-         if (!sketchOnly)
-         {
-            for (const CommandInfo& info : _BUILTIN_COMMANDS)
-            {
-               _appendCommandJson(root, info);
-            }
-
-            for (const _ConfigCommandSet& set : _configCommandSets)
-            {
-               for (size_t i = 0; i < set.helpCount; i++)
-               {
-                  _appendCommandJson(root, set.help[i]);
-               }
-            }
-         }
-
-         if (!builtinOnly || sketchOnly)
-         {
-            for (size_t i = 0; i < _sketchCommandCount; i++)
-            {
-               _appendCommandJson(root, _sketchCommands[i], "Sketch");
-            }
-         }
+         _populateCommandsJson(root, builtinOnly, sketchOnly);
 
          std::string json;
          serializeJson(doc, json);
@@ -1224,7 +1242,11 @@ private:
       if (!append)
       {
          doc["level"] = _levelName(severity);
-         doc["tags"] = _joinTags(tags);
+         JsonArray tagsArray = doc["tags"].to<JsonArray>();
+         for (const std::string& tag : tags)
+         {
+            tagsArray.add(tag);
+         }
       }
       doc["message"] = message;
       if (append)
@@ -1257,11 +1279,11 @@ private:
 
    ///
    /// <summary>
-   /// Maps a LogSeverity to the capitalized level name sent to the DeviceServer (e.g.
-   /// "Info", matching the server's Envelope.Level field).
+   /// Maps a LogSeverity to the canonical level name sent to the DeviceServer (e.g.
+   /// "Information", matching the server's Envelope.Level field).
    /// </summary>
    /// <param name="severity">Severity to map.</param>
-   /// <returns>The level name ("Debug", "Info", "Warn", or "Error").</returns>
+   /// <returns>The level name ("Debug", "Information", "Warning", or "Error").</returns>
    ///
    static const char* _levelName(LogSeverity severity)
    {
@@ -1270,35 +1292,13 @@ private:
          case LogSeverity::DEBUG:
             return "Debug";
          case LogSeverity::WARN:
-            return "Warn";
+            return "Warning";
          case LogSeverity::ERROR:
             return "Error";
          case LogSeverity::INFO:
          default:
-            return "Info";
+            return "Information";
       }
-   }
-
-   ///
-   /// <summary>
-   /// Joins tags into the comma-separated string the DeviceServer expects on the wire (see
-   /// TagsParser.Join() server-side).
-   /// </summary>
-   /// <param name="tags">Tags to join.</param>
-   /// <returns>Comma-separated tags, or an empty string if there are none.</returns>
-   ///
-   static std::string _joinTags(const std::vector<std::string>& tags)
-   {
-      std::string result;
-      for (size_t i = 0; i < tags.size(); i++)
-      {
-         if (i > 0)
-         {
-            result += ",";
-         }
-         result += tags[i];
-      }
-      return result;
    }
 
    ///
@@ -1327,14 +1327,21 @@ private:
    static void _sendHandshake()
    {
       JsonDocument doc;
+      doc["type"] = "hello";
       doc["role"] = "device";
       doc["token"] = DEVICE_SERVER_TOKEN;
       doc["deviceId"] = std::string(WiFi.macAddress().c_str());
       doc["sketch"] = _sketchName;
       doc["version"] = _version;
       doc["buildTime"] = BUILD_TIME + 6;
-      doc["site"] = _site;
-      doc["location"] = _location;
+      if (!_site.empty())
+      {
+         doc["site"] = _site;
+      }
+      if (!_location.empty())
+      {
+         doc["location"] = _location;
+      }
       doc["board"] = ARDUINO_BOARD_VARIANT_ID;
       doc["chipModel"] = ESP.getChipModel();
       doc["chipRevision"] = ESP.getChipRevision();
@@ -1349,6 +1356,28 @@ private:
       {
          doc["state"] = _state;
       }
+
+      JsonArray commands = doc["commands"].to<JsonArray>();
+      _populateCommandsJson(commands);
+
+      std::string sent;
+      serializeJson(doc, sent);
+      _debugPrint("Sent: " + sent);
+
+      _connection.sendJson(doc);
+   }
+
+   ///
+   /// <summary>
+   /// Sends a dynamic commands update message to the DeviceServer.
+   /// </summary>
+   ///
+   static void _sendCommands()
+   {
+      JsonDocument doc;
+      doc["type"] = "commands";
+      JsonArray commands = doc["commands"].to<JsonArray>();
+      _populateCommandsJson(commands);
 
       std::string sent;
       serializeJson(doc, sent);
@@ -1398,9 +1427,12 @@ private:
       }
       else if (strcasecmp(verb.c_str(), "GetHealth") == 0)
       {
+         JsonDocument dataDoc;
+         DeviceHealth::fill(&dataDoc);
+
          JsonDocument doc;
          doc["type"] = "health";
-         DeviceHealth::fill(&doc);
+         doc["data"] = dataDoc.as<JsonObject>();
 
          if (_inShellCommand)
          {
@@ -1752,6 +1784,11 @@ public:
       _commandHandler = handler;
       _sketchCommands = help;
       _sketchCommandCount = helpCount;
+
+      if (_connection.isConnected())
+      {
+         _sendCommands();
+      }
    }
 
    ///
@@ -1777,10 +1814,18 @@ public:
          {
             existing.help = help;
             existing.helpCount = helpCount;
+            if (_connection.isConnected())
+            {
+               _sendCommands();
+            }
             return;
          }
       }
       _configCommandSets.push_back({ handler, help, helpCount });
+      if (_connection.isConnected())
+      {
+         _sendCommands();
+      }
    }
 
    ///

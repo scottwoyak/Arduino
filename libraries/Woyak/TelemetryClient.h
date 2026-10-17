@@ -373,10 +373,11 @@ public:
 /// <remarks>
 /// A client is either a publisher (DEVICE role) or a subscriber (CLIENT role).
 /// Protocol (JSON text frames):
-///   Handshake, sent on connect: {"role":"device","mac":"AA:BB:CC:DD:EE:FF","description":"...","token":"..."} or {"role":"client","mac":"AA:BB:CC:DD:EE:FF","description":"...","token":"...","topics":["A","B"]}
-///   Server reply:               {"type":"ack",...}
-///   Publish (device to server): {"topic":"Test","value":1.23,"dt":100}
-///   Sample (server to client):  {"topic":"Test","value":1.23,"dt":100}
+///   Handshake, sent on connect: {"type":"hello","role":"device","deviceId":"AA:BB:CC:DD:EE:FF","description":"...","token":"..."} or {"type":"hello","role":"client","deviceId":"AA:BB:CC:DD:EE:FF","description":"...","token":"...","topics":["A","B"]}
+///   Server reply:               {"type":"ack","role":"device"} or {"type":"ack","role":"client","topics":["A","B"]}
+///   Subscribe (client to server): {"type":"subscribe","topics":["A","B"]}
+///   Publish (device to server): {"type":"sample","topic":"Test","value":1.23,"dt":100,"decimals":2}
+///   Sample (server to client):  {"type":"sample","topic":"Test","value":1.23,"dt":100,"decimals":2}
 /// Samples are only published once the server has acknowledged the handshake.
 /// The "dt" field is the number of microseconds since this client's previous publish.
 /// An optional fallback endpoint lets the client alternate between two servers (e.g. the
@@ -464,8 +465,9 @@ private:
    void _sendHandshake()
    {
       JsonDocument doc;
+      doc["type"] = "hello";
       doc["role"] = (_role == Role::DEVICE) ? "device" : "client";
-      doc["mac"] = std::string(WiFi.macAddress().c_str());
+      doc["deviceId"] = std::string(WiFi.macAddress().c_str());
       doc["description"] = _description;
       if (!_token.empty())
       {
@@ -478,6 +480,19 @@ private:
          {
             topics.add(topic);
          }
+      }
+
+      _sendJson(doc);
+   }
+
+   void _sendSubscribe()
+   {
+      JsonDocument doc;
+      doc["type"] = "subscribe";
+      JsonArray topics = doc["topics"].to<JsonArray>();
+      for (const std::string& topic : _topics)
+      {
+         topics.add(topic);
       }
 
       _sendJson(doc);
@@ -522,8 +537,9 @@ private:
             {
                _handler->onStarted();
             }
+            return;
          }
-         else if (strcmp(type, "error") == 0)
+         if (strcmp(type, "error") == 0)
          {
             const char* message = doc["message"] | "unknown error";
             if (_handler != nullptr)
@@ -534,8 +550,12 @@ private:
             {
                Logger.log(std::string("Telemetry: server error: ") + message, LogSeverity::ERROR);
             }
+            return;
          }
-         return;
+         if (strcmp(type, "sample") != 0)
+         {
+            return;
+         }
       }
 
       const char* topic = doc["topic"];
@@ -806,9 +826,9 @@ public:
    void setTopics(const std::vector<std::string>& topics)
    {
       _topics = topics;
-      if (isConnected())
+      if (_role == Role::CLIENT && isConnected())
       {
-         _sendHandshake();
+         _sendSubscribe();
       }
    }
 
@@ -818,7 +838,7 @@ public:
    /// </summary>
    /// <param name="topic">Topic name</param>
    /// <param name="value">Sample value</param>
-   /// <param name="decimals">Number of decimal places for the value, or -1 to omit it from the message</param>
+   /// <param name="decimals">Number of decimal places for the value (0..15), or -1 to omit it from the message</param>
    /// <returns>True if the sample was sent; otherwise false.</returns>
    ///
    bool publish(const char* topic, double value, int8_t decimals = -1)
@@ -842,10 +862,11 @@ public:
       int64_t dtMicros = last != nullptr ? (now - last->micros) : 0;
 
       JsonDocument doc;
+      doc["type"] = "sample";
       doc["topic"] = topic;
       doc["value"] = value;
       doc["dt"] = dtMicros;
-      if (decimals >= 0)
+      if (decimals >= 0 && decimals <= 15)
       {
          doc["decimals"] = decimals;
       }

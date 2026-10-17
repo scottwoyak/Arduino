@@ -378,45 +378,49 @@ public:
    static inline void (*onState)(const char*) = nullptr;
 
    ///
-   /// <summary>
-   /// Requests an update on the active OTAUpdater (the most recently constructed one).
-   /// Does nothing if no OTAUpdater exists. Safe to call from a message callback; the
-   /// download itself is deferred to loop().
-   /// </summary>
-   /// <param name="url">URL of the firmware binary to download.</param>
-   /// <param name="version">Version being pushed, used for logging (may be nullptr).</param>
-   ///
-   static void requestActiveUpdate(const char* url, const char* version = nullptr)
-   {
+	/// <summary>
+	/// Requests an update on the active OTAUpdater (the most recently constructed one).
+	/// Does nothing if no OTAUpdater exists. Safe to call from a message callback; the
+	/// download itself is deferred to loop().
+	/// </summary>
+	/// <param name="url">URL of the firmware binary to download.</param>
+	/// <param name="version">Version being pushed, used for logging (may be nullptr).</param>
+	/// <param name="name">Firmware name being pushed (may be nullptr).</param>
+	///
+	static void requestActiveUpdate(const char* url, const char* version = nullptr, const char* name = nullptr)
+	{
 	  if (_active != nullptr)
 	  {
-		 _active->requestUpdate(url, version);
+		 _active->requestUpdate(url, version, name);
 	  }
-   }
+	}
 
-   ///
-   /// <summary>
-   /// Requests an update on the active OTAUpdater (the most recently constructed one).
-   /// </summary>
-   /// <param name="url">URL of the firmware binary to download.</param>
-   ///
-   static void requestActiveUpdate(const std::string& url)
-   {
-	  requestActiveUpdate(url.c_str());
-   }
+	///
+	/// <summary>
+	/// Requests an update on the active OTAUpdater (the most recently constructed one).
+	/// </summary>
+	/// <param name="url">URL of the firmware binary to download.</param>
+	/// <param name="version">Version being pushed, used for logging (may be nullptr).</param>
+	/// <param name="name">Firmware name being pushed (may be nullptr).</param>
+	///
+	static void requestActiveUpdate(const std::string& url, const char* version = nullptr, const char* name = nullptr)
+	{
+	  requestActiveUpdate(url.c_str(), version, name);
+	}
 
-   ///
-   /// <summary>
-   /// Requests that the firmware at the given URL be downloaded and installed. The
-   /// download is deferred until the next loop() call.
-   /// </summary>
-   /// <param name="url">URL of the firmware binary to download.</param>
-   /// <param name="version">Version being pushed, used for logging (may be nullptr).</param>
-   ///
-   void requestUpdate(const char* url, const char* version = nullptr)
-   {
+	///
+	/// <summary>
+	/// Requests that the firmware at the given URL be downloaded and installed. The
+	/// download is deferred until the next loop() call.
+	/// </summary>
+	/// <param name="url">URL of the firmware binary to download.</param>
+	/// <param name="version">Version being pushed, used for logging (may be nullptr).</param>
+	/// <param name="name">Firmware name being pushed (may be nullptr).</param>
+	///
+	void requestUpdate(const char* url, const char* version = nullptr, const char* name = nullptr)
+	{
 	  _firmwareUrl = url;
-	  _firmwareName = _parseFirmwareName(_firmwareUrl);
+	  _firmwareName = (name != nullptr && *name != '\0') ? name : _parseFirmwareName(_firmwareUrl);
 	  _availableVersion = (version != nullptr && *version != '\0') ? version : _parseFirmwareVersion(_firmwareUrl);
 	  if (_availableVersion.empty())
 	  {
