@@ -44,7 +44,7 @@ public:
    /// <summary>How often (in seconds) the standard enclosure, CPU and WiFi values are sampled.</summary>
    static constexpr uint16_t STANDARD_SAMPLE_INTERVAL_S = 1;
 
-   /// <summary>How often (in seconds) the standard enclosure, CPU and WiFi values are uploaded, as averages (and a minimum for WiFi RSSI) over that period.</summary>
+   /// <summary>How often (in seconds) the standard enclosure, CPU and WiFi values are uploaded, as averages over that period.</summary>
    static constexpr uint16_t STANDARD_UPLOAD_INTERVAL_S = 60;
 
    /// <summary>Number of samples in each standard rolling window, covering exactly one upload interval.</summary>
@@ -619,7 +619,7 @@ public:
          if (_influxConfig.includeWiFiRssi)
          {
             InfluxPoint* wifiPoint = _addStandardPoint("WiFi");
-            _rssiField = wifiPoint->addRollingMinField(NUM_STANDARD_SAMPLES, "rssi", 0);
+            _rssiField = wifiPoint->addRollingAverageField(NUM_STANDARD_SAMPLES, "rssi", 0);
          }
       }
 

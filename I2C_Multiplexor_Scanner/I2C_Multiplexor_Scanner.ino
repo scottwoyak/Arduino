@@ -26,7 +26,7 @@ void setup()
 {
    SerialX::begin();
 
-#if defined ARDUINO_WAVESHARE_ESP32_S3_ZERO
+#if defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO) || defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS)
    #pragma message "Detected Waveshare ESP32-S3-Zero"
    Wire.begin(I2C_SDA, I2C_SCL);
 #else

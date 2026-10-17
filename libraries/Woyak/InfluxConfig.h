@@ -57,6 +57,6 @@ struct InfluxConfig
    /// <summary>If true, capture and upload the ESP32 CPU temperature to InfluxDB.</summary>
    bool includeCpuTemp = true;
 
-   /// <summary>If true, capture and upload the rolling minimum WiFi RSSI to InfluxDB.</summary>
+   /// <summary>If true, capture and upload the rolling-averaged WiFi RSSI to InfluxDB.</summary>
    bool includeWiFiRssi = true;
 };

@@ -20,7 +20,7 @@
 #include "Status.h"
 #include "Waveshare_ESP32_S3_Zero.h"
 
-#ifdef ARDUINO_WAVESHARE_ESP32_S3_ZERO
+#if defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO) || defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS)
 constexpr uint8_t RED_PIN = WaveShare_ESP32_S3_Zero_Sensors::DEFAULT_RED_LED_PIN;
 constexpr uint8_t GREEN_PIN = WaveShare_ESP32_S3_Zero_Sensors::DEFAULT_GREEN_LED_PIN;
 constexpr uint8_t BLUE_PIN = WaveShare_ESP32_S3_Zero_Sensors::DEFAULT_BLUE_LED_PIN;

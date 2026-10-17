@@ -20,7 +20,7 @@ constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 
-#elif defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS)
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS) || defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS)
 
 #include "Waveshare_ESP32_S3_Zero.h"
 using Arduino = WaveShare_ESP32_S3_Zero_Sensors;
@@ -52,7 +52,7 @@ constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 
-#elif defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER)
+#elif defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40) || defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER)
 
 #include "ViewerBoardS3.h"
 using Arduino = ViewerBoardS3;
@@ -61,7 +61,7 @@ constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 constexpr uint8_t DEFAULT_CONTENT_SIZE = 3;
 
-#elif defined(ARDUINO_ESP32S3_DEV)
+#elif defined(ARDUINO_ESP32S3_DEV_PLAYGROUND)
 
 #include "ESP32_S3_Playground.h"
 using Arduino = ESP32_S3_Playground;

@@ -220,7 +220,7 @@ public:
    }
 };
 
-WaveTelemetryHandler telemetryHandler(&sketch.arduino.status);
+WaveTelemetryHandler telemetryHandler(sketch.getStatus());
 
 void setup()
 {

@@ -308,6 +308,9 @@ class DeviceServerClient
    static inline bool _initialFailureLogged = false;
    static inline std::string _sketchName;
    static constexpr const char* BUILD_TIME = "BUILD@" __DATE__ " " __TIME__;
+#if defined(ARDUINO_BOARD_VARIANT_ID)
+   static constexpr const char* BOARD_ID_MARKER = "BOARD@" ARDUINO_BOARD_VARIANT_ID;
+#endif
    static inline std::string _version;
    static inline std::string _site;
    static inline std::string _location;
@@ -1342,7 +1345,9 @@ private:
       {
          doc["location"] = _location;
       }
-      doc["board"] = ARDUINO_BOARD_VARIANT_ID;
+#if defined(ARDUINO_BOARD_VARIANT_ID)
+      doc["board"] = BOARD_ID_MARKER + 6;
+#endif
       doc["chipModel"] = ESP.getChipModel();
       doc["chipRevision"] = ESP.getChipRevision();
       doc["chipCores"] = ESP.getChipCores();

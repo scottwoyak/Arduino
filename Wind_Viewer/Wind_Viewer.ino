@@ -238,7 +238,7 @@ public:
    }
 };
 
-WindTelemetryHandler telemetryHandler(&sketch.arduino.status);
+WindTelemetryHandler telemetryHandler(sketch.getStatus());
 
 void setup()
 {

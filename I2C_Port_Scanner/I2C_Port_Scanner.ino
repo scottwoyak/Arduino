@@ -23,7 +23,7 @@ void setup()
 
    // On boards with non-standard I2C pins, set them before calling Wire.begin()
    // with no arguments so it picks them up as its defaults.
-   #if defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO)
+   #if defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO) || defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS)
       Wire.setPins(10, 11);
    #endif
    Wire.begin();

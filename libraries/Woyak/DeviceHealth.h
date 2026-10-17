@@ -18,7 +18,7 @@
 /// DeviceServer in reply to a "GetHealth" command (see DeviceServerClient).
 /// </summary>
 /// <remarks>
-/// "rssi" (dBm, min since the previous health report), "cpuMhz", "tempF" (degrees F, max since the previous health report),
+/// "rssi" (dBm, average since the previous health report), "cpuMhz", "tempF" (degrees F, max since the previous health report),
 /// "localTime" (e.g. "8:44 PM"; omitted until the clock has been synchronized),
 /// "maxAllocHeap" (largest allocatable
 /// block, bytes), "wifiReconnects" (number
@@ -45,24 +45,25 @@ class DeviceHealth
    /// <summary>Time of the last RSSI/temperature sample (ms).</summary>
    static inline uint32_t _lastSampleMs = 0;
 
-   /// <summary>Lowest (weakest) RSSI since the last health report (dBm).</summary>
-   static inline int32_t _minRssi = INT32_MAX;
+   /// <summary>Sum of RSSI samples since the last health report (dBm).</summary>
+   static inline int64_t _rssiSum = 0;
 
-   /// <summary>Most recent RSSI sample (dBm), independent of the since-last-report minimum above; see lastRssi().</summary>
+   /// <summary>Number of RSSI samples accumulated since the last health report.</summary>
+   static inline uint32_t _rssiCount = 0;
+
+   /// <summary>Most recent RSSI sample (dBm), independent of the since-last-report average above; see lastRssi().</summary>
    static inline int32_t _lastRssi = 0;
 
    /// <summary>Highest CPU temperature since the last health report (F).</summary>
    static inline float _maxTempF = -FLT_MAX;
 
-   /// <summary>Takes an RSSI and CPU temperature sample and updates the running min/max.</summary>
+   /// <summary>Takes an RSSI and CPU temperature sample and updates the running accumulators.</summary>
    static void _sample()
    {
       int32_t rssi = WiFi.RSSI();
       _lastRssi = rssi;
-      if (rssi < _minRssi)
-      {
-         _minRssi = rssi;
-      }
+      _rssiSum += rssi;
+      _rssiCount++;
 
       float tempF = CPUTemp::readF();
       if (tempF > _maxTempF)
@@ -140,7 +141,7 @@ public:
    static void fill(JsonDocument* doc)
    {
       _sample();
-      (*doc)["rssi"] = _minRssi;
+      (*doc)["rssi"] = (int32_t)lround((double)_rssiSum / _rssiCount);
       (*doc)["cpuMhz"] = ESP.getCpuFreqMHz();
       (*doc)["tempF"] = _maxTempF;
       (*doc)["uptimeS"] = millis() / 1000;
@@ -152,7 +153,8 @@ public:
       (*doc)["telemetryRate"] = (millis() - telemetryRateMs > TELEMETRY_RATE_STALE_MS) ? 0.0f : telemetryRate;
       (*doc)["influxFailures"] = influxFailures.load();
       (*doc)["stackFree"] = uxTaskGetStackHighWaterMark(nullptr);
-      _minRssi = INT32_MAX;
+      _rssiSum = 0;
+      _rssiCount = 0;
       _maxTempF = -FLT_MAX;
 
       time_t now = time(nullptr);

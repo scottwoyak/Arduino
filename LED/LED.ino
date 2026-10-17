@@ -4,7 +4,7 @@
 #include "LED.h"
 #include "Waveshare_ESP32_S3_Zero.h"
 
-#ifdef ARDUINO_WAVESHARE_ESP32_S3_ZERO
+#if defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO) || defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS)
 constexpr uint8_t LED_PIN = WaveShare_ESP32_S3_Zero_Sensors::DEFAULT_LED_PIN;
 #else
 constexpr uint8_t LED_PIN = BUILTIN_LED;

@@ -578,10 +578,10 @@ public:
 constexpr uint8_t NUM_LEDS = 1;
 
 // Data pin and color order for the onboard NeoPixel, auto-detected based on the target board.
-#if defined ARDUINO_WAVESHARE_ESP32_S3_ZERO
+#if defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO) || defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS) || defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS)
 constexpr int16_t NEOPIXEL_LED_PIN = 21;
 constexpr neoPixelType NEOPIXEL_LED_TYPE = NEO_RGB + NEO_KHZ800;
-#elif defined(ARDUINO_ESP32S3_DEV) || defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER)
+#elif defined(ARDUINO_ESP32S3_DEV_PLAYGROUND) || defined(ARDUINO_ESP32S3_DEV) || defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40) || defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER)
 constexpr int16_t NEOPIXEL_LED_PIN = 48;
 constexpr neoPixelType NEOPIXEL_LED_TYPE = NEO_GRB + NEO_KHZ800;
 #else

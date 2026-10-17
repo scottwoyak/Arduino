@@ -132,11 +132,11 @@ public:
             topics.push_back(telemetryTopics[i]);
          }
          sketch.getClient()->setTopics(topics);
-      }
-   }
-};
+       }
+    }
+ };
 
-AirTelemetryHandler telemetryHandler(&sketch.arduino.status);
+AirTelemetryHandler telemetryHandler(sketch.getStatus());
 
 ///
 /// <summary>

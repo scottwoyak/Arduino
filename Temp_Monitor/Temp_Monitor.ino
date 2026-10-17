@@ -53,9 +53,6 @@
 //     temperature: rolling average of the ESP32 CPU temperature (F).
 //
 
-// This board is wired with an onboard NeoPixel status LED and no display or buttons.
-#define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
-
 // Uncomment this to log to the local LogServer instead of the remote one.
 //#define LOG_SERVER_LOCAL
 

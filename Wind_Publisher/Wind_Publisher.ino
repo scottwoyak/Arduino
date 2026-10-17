@@ -23,9 +23,6 @@
 // Note: wind speed is only streamed live over telemetry, not uploaded to InfluxDB.
 //
 
-// This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
-#define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
-
 #include "ArduinoBoard.h"
 #include "LibraryVersion.h"
 #include "WindMeter.h"

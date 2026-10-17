@@ -14,9 +14,6 @@
 // Checks for a firmware update periodically.
 //
 
-// This board is wired with a custom-powered I2C bus and an RGB LED status indicator.
-#define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
-
 #include <array>
 
 #include "ArduinoBoard.h"

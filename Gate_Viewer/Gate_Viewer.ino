@@ -1476,7 +1476,7 @@ public:
    }
 };
 
-GateTelemetryHandler telemetryHandler(&sketch.arduino.status);
+GateTelemetryHandler telemetryHandler(sketch.getStatus());
 
 // Set when a Locate request ends, so the next loop() repaints everything.
 bool redrawAfterLocate = false;
@@ -2065,15 +2065,15 @@ void loop()
       sketch.arduino.setTextSize(GATE_STATE_TEXT_SIZE);
       sketch.arduino.fillRect(0, GATE_STATE_TOP_MARGIN, sketch.arduino.width(), sketch.arduino.charH(GATE_STATE_TEXT_SIZE), Color::BLACK);
       sketch.arduino.setCursor(0, GATE_STATE_TOP_MARGIN);
-             sketch.arduino.printlnC(openTitle(gateDisplayedMotion), Color::GRAY, Color::BLACK);
-                    drawHoldSubtext();
-             #ifdef SETTINGS_SUPPORTED
-                    if (gearVisible)
-                    {
-                       drawGear();
-                    }
-             #endif
-                 }
+      sketch.arduino.printlnC(openTitle(gateDisplayedMotion), Color::GRAY, Color::BLACK);
+      drawHoldSubtext();
+#ifdef SETTINGS_SUPPORTED
+      if (gearVisible)
+      {
+         drawGear();
+      }
+#endif
+   }
 
       pollGateHold(isOpen && motion == 0);
 

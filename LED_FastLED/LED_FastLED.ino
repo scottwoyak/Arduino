@@ -48,7 +48,7 @@ void setup()
    SerialX::begin();
 
    // Initialize FastLED for the onboard NeoPixel
-#if defined ARDUINO_WAVESHARE_ESP32_S3_ZERO
+#if defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO) || defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS)
    FastLED.addLeds<WS2812B, 21, RGB>(leds, NUM_LEDS);
 #else
    FastLED.addLeds<NEOPIXEL, PIN_NEOPIXEL>(leds, NUM_LEDS);

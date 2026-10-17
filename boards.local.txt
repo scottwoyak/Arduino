@@ -120,7 +120,7 @@ hosyond_esp32_s3_touch_lcd_40.build.target=esp32s3
 hosyond_esp32_s3_touch_lcd_40.build.mcu=esp32s3
 hosyond_esp32_s3_touch_lcd_40.build.core=esp32
 hosyond_esp32_s3_touch_lcd_40.build.variant=esp32s3
-hosyond_esp32_s3_touch_lcd_40.build.board=HOSYOND_ESP32_S3_VIEWER
+hosyond_esp32_s3_touch_lcd_40.build.board=HOSYOND_ESP32S3_TOUCH_LCD_40
 
 hosyond_esp32_s3_touch_lcd_40.build.usb_mode=1
 hosyond_esp32_s3_touch_lcd_40.build.cdc_on_boot=1
@@ -175,4 +175,184 @@ hosyond_esp32_s3_touch_lcd_40.menu.UploadSpeed.921600=921600
 hosyond_esp32_s3_touch_lcd_40.menu.UploadSpeed.921600.upload.speed=921600
 hosyond_esp32_s3_touch_lcd_40.menu.UploadSpeed.115200=115200
 hosyond_esp32_s3_touch_lcd_40.menu.UploadSpeed.115200.upload.speed=115200
+
+##############################################################
+
+waveshare_esp32_s3_zero_sensors.name=Waveshare ESP32-S3-Zero (Sensors)
+waveshare_esp32_s3_zero_sensors.vid.0=0x303a
+waveshare_esp32_s3_zero_sensors.pid.0=0x822B
+waveshare_esp32_s3_zero_sensors.upload_port.0.vid=0x303a
+waveshare_esp32_s3_zero_sensors.upload_port.0.pid=0x822B
+
+waveshare_esp32_s3_zero_sensors.bootloader.tool=esptool_py
+waveshare_esp32_s3_zero_sensors.bootloader.tool.default=esptool_py
+
+waveshare_esp32_s3_zero_sensors.upload.tool=esptool_py
+waveshare_esp32_s3_zero_sensors.upload.tool.default=esptool_py
+waveshare_esp32_s3_zero_sensors.upload.tool.network=esp_ota
+
+waveshare_esp32_s3_zero_sensors.upload.maximum_size=1966080
+waveshare_esp32_s3_zero_sensors.upload.maximum_data_size=327680
+waveshare_esp32_s3_zero_sensors.upload.flags=
+waveshare_esp32_s3_zero_sensors.upload.erase_cmd=
+waveshare_esp32_s3_zero_sensors.upload.extra_flags=
+waveshare_esp32_s3_zero_sensors.upload.use_1200bps_touch=false
+waveshare_esp32_s3_zero_sensors.upload.wait_for_upload_port=false
+
+waveshare_esp32_s3_zero_sensors.serial.disableDTR=false
+waveshare_esp32_s3_zero_sensors.serial.disableRTS=false
+
+waveshare_esp32_s3_zero_sensors.build.tarch=xtensa
+waveshare_esp32_s3_zero_sensors.build.bootloader_addr=0x0
+waveshare_esp32_s3_zero_sensors.build.target=esp32s3
+waveshare_esp32_s3_zero_sensors.build.mcu=esp32s3
+waveshare_esp32_s3_zero_sensors.build.core=esp32
+waveshare_esp32_s3_zero_sensors.build.variant=waveshare_esp32_s3_zero
+waveshare_esp32_s3_zero_sensors.build.board=WAVESHARE_ESP32S3_ZERO_SENSORS
+
+waveshare_esp32_s3_zero_sensors.build.usb_mode=1
+waveshare_esp32_s3_zero_sensors.build.cdc_on_boot=1
+waveshare_esp32_s3_zero_sensors.build.msc_on_boot=0
+waveshare_esp32_s3_zero_sensors.build.dfu_on_boot=0
+waveshare_esp32_s3_zero_sensors.build.f_cpu=240000000L
+waveshare_esp32_s3_zero_sensors.build.flash_size=4MB
+waveshare_esp32_s3_zero_sensors.build.flash_freq=80m
+waveshare_esp32_s3_zero_sensors.build.flash_mode=dio
+waveshare_esp32_s3_zero_sensors.build.boot=qio
+waveshare_esp32_s3_zero_sensors.build.boot_freq=80m
+waveshare_esp32_s3_zero_sensors.build.partitions=min_spiffs
+waveshare_esp32_s3_zero_sensors.build.defines=-DBOARD_HAS_PSRAM
+waveshare_esp32_s3_zero_sensors.build.loop_core=-DARDUINO_RUNNING_CORE=1
+waveshare_esp32_s3_zero_sensors.build.event_core=-DARDUINO_EVENT_RUNNING_CORE=1
+waveshare_esp32_s3_zero_sensors.build.psram_type=qspi
+waveshare_esp32_s3_zero_sensors.build.memory_type={build.boot}_{build.psram_type}
+
+waveshare_esp32_s3_zero_sensors.menu.USBMode.hwcdc=Hardware CDC and JTAG
+waveshare_esp32_s3_zero_sensors.menu.USBMode.hwcdc.build.usb_mode=1
+waveshare_esp32_s3_zero_sensors.menu.USBMode.default=USB-OTG (TinyUSB)
+waveshare_esp32_s3_zero_sensors.menu.USBMode.default.build.usb_mode=0
+
+waveshare_esp32_s3_zero_sensors.menu.CDCOnBoot.default=Enabled
+waveshare_esp32_s3_zero_sensors.menu.CDCOnBoot.default.build.cdc_on_boot=1
+waveshare_esp32_s3_zero_sensors.menu.CDCOnBoot.cdc=Disabled
+waveshare_esp32_s3_zero_sensors.menu.CDCOnBoot.cdc.build.cdc_on_boot=0
+
+waveshare_esp32_s3_zero_sensors.menu.PSRAM.enabled=Enabled
+waveshare_esp32_s3_zero_sensors.menu.PSRAM.enabled.build.defines=-DBOARD_HAS_PSRAM
+waveshare_esp32_s3_zero_sensors.menu.PSRAM.enabled.build.psram_type=qspi
+waveshare_esp32_s3_zero_sensors.menu.PSRAM.disabled=Disabled
+waveshare_esp32_s3_zero_sensors.menu.PSRAM.disabled.build.defines=
+waveshare_esp32_s3_zero_sensors.menu.PSRAM.disabled.build.psram_type=qspi
+
+waveshare_esp32_s3_zero_sensors.menu.PartitionScheme.min_spiffs=Minimal SPIFFS (1.9MB APP with OTA/128KB SPIFFS)
+waveshare_esp32_s3_zero_sensors.menu.PartitionScheme.min_spiffs.build.partitions=min_spiffs
+waveshare_esp32_s3_zero_sensors.menu.PartitionScheme.min_spiffs.upload.maximum_size=1966080
+waveshare_esp32_s3_zero_sensors.menu.PartitionScheme.default=Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)
+waveshare_esp32_s3_zero_sensors.menu.PartitionScheme.default.build.partitions=default
+waveshare_esp32_s3_zero_sensors.menu.PartitionScheme.default.upload.maximum_size=1310720
+waveshare_esp32_s3_zero_sensors.menu.PartitionScheme.huge_app=Huge APP (3MB No OTA/1MB SPIFFS)
+waveshare_esp32_s3_zero_sensors.menu.PartitionScheme.huge_app.build.partitions=huge_app
+waveshare_esp32_s3_zero_sensors.menu.PartitionScheme.huge_app.upload.maximum_size=3145728
+
+waveshare_esp32_s3_zero_sensors.menu.UploadSpeed.921600=921600
+waveshare_esp32_s3_zero_sensors.menu.UploadSpeed.921600.upload.speed=921600
+waveshare_esp32_s3_zero_sensors.menu.UploadSpeed.115200=115200
+waveshare_esp32_s3_zero_sensors.menu.UploadSpeed.115200.upload.speed=115200
+
+##############################################################
+
+esp32s3_dev_playground.name=ESP32-S3 Playground
+esp32s3_dev_playground.vid.0=0x303a
+esp32s3_dev_playground.pid.0=0x1001
+esp32s3_dev_playground.upload_port.0.vid=0x303a
+esp32s3_dev_playground.upload_port.0.pid=0x1001
+
+esp32s3_dev_playground.bootloader.tool=esptool_py
+esp32s3_dev_playground.bootloader.tool.default=esptool_py
+
+esp32s3_dev_playground.upload.tool=esptool_py
+esp32s3_dev_playground.upload.tool.default=esptool_py
+esp32s3_dev_playground.upload.tool.network=esp_ota
+
+esp32s3_dev_playground.upload.maximum_size=3145728
+esp32s3_dev_playground.upload.maximum_data_size=327680
+esp32s3_dev_playground.upload.flags=
+esp32s3_dev_playground.upload.erase_cmd=
+esp32s3_dev_playground.upload.extra_flags=
+esp32s3_dev_playground.upload.use_1200bps_touch=false
+esp32s3_dev_playground.upload.wait_for_upload_port=false
+
+esp32s3_dev_playground.serial.disableDTR=false
+esp32s3_dev_playground.serial.disableRTS=false
+
+esp32s3_dev_playground.build.tarch=xtensa
+esp32s3_dev_playground.build.bootloader_addr=0x0
+esp32s3_dev_playground.build.target=esp32s3
+esp32s3_dev_playground.build.mcu=esp32s3
+esp32s3_dev_playground.build.core=esp32
+esp32s3_dev_playground.build.variant=esp32s3
+esp32s3_dev_playground.build.board=ESP32S3_DEV_PLAYGROUND
+
+esp32s3_dev_playground.build.usb_mode=1
+esp32s3_dev_playground.build.cdc_on_boot=1
+esp32s3_dev_playground.build.msc_on_boot=0
+esp32s3_dev_playground.build.dfu_on_boot=0
+esp32s3_dev_playground.build.f_cpu=240000000L
+esp32s3_dev_playground.build.flash_size=16MB
+esp32s3_dev_playground.build.flash_freq=80m
+esp32s3_dev_playground.build.flash_mode=dio
+esp32s3_dev_playground.build.boot=qio
+esp32s3_dev_playground.build.boot_freq=80m
+esp32s3_dev_playground.build.partitions=app3M_fat9M_16MB
+esp32s3_dev_playground.build.defines=-DBOARD_HAS_PSRAM
+esp32s3_dev_playground.build.loop_core=-DARDUINO_RUNNING_CORE=1
+esp32s3_dev_playground.build.event_core=-DARDUINO_EVENT_RUNNING_CORE=1
+esp32s3_dev_playground.build.psram_type=opi
+esp32s3_dev_playground.build.memory_type={build.boot}_{build.psram_type}
+
+esp32s3_dev_playground.menu.USBMode.hwcdc=Hardware CDC and JTAG
+esp32s3_dev_playground.menu.USBMode.hwcdc.build.usb_mode=1
+esp32s3_dev_playground.menu.USBMode.default=USB-OTG (TinyUSB)
+esp32s3_dev_playground.menu.USBMode.default.build.usb_mode=0
+
+esp32s3_dev_playground.menu.CDCOnBoot.cdc=Enabled
+esp32s3_dev_playground.menu.CDCOnBoot.cdc.build.cdc_on_boot=1
+esp32s3_dev_playground.menu.CDCOnBoot.default=Disabled
+esp32s3_dev_playground.menu.CDCOnBoot.default.build.cdc_on_boot=0
+
+esp32s3_dev_playground.menu.PSRAM.opi=OPI PSRAM
+esp32s3_dev_playground.menu.PSRAM.opi.build.defines=-DBOARD_HAS_PSRAM
+esp32s3_dev_playground.menu.PSRAM.opi.build.psram_type=opi
+esp32s3_dev_playground.menu.PSRAM.enabled=QSPI PSRAM
+esp32s3_dev_playground.menu.PSRAM.enabled.build.defines=-DBOARD_HAS_PSRAM
+esp32s3_dev_playground.menu.PSRAM.enabled.build.psram_type=qspi
+esp32s3_dev_playground.menu.PSRAM.disabled=Disabled
+esp32s3_dev_playground.menu.PSRAM.disabled.build.defines=
+esp32s3_dev_playground.menu.PSRAM.disabled.build.psram_type=qspi
+
+esp32s3_dev_playground.menu.FlashSize.16M=16MB (128Mb)
+esp32s3_dev_playground.menu.FlashSize.16M.build.flash_size=16MB
+esp32s3_dev_playground.menu.FlashSize.8M=8MB (64Mb)
+esp32s3_dev_playground.menu.FlashSize.8M.build.flash_size=8MB
+esp32s3_dev_playground.menu.FlashSize.4M=4MB (32Mb)
+esp32s3_dev_playground.menu.FlashSize.4M.build.flash_size=4MB
+
+esp32s3_dev_playground.menu.PartitionScheme.app3M_fat9M_16MB=16M Flash (3MB APP/9.9MB FATFS)
+esp32s3_dev_playground.menu.PartitionScheme.app3M_fat9M_16MB.build.partitions=app3M_fat9M_16MB
+esp32s3_dev_playground.menu.PartitionScheme.app3M_fat9M_16MB.upload.maximum_size=3145728
+esp32s3_dev_playground.menu.PartitionScheme.default_8MB=8M with spiffs (3MB APP/1.5MB SPIFFS)
+esp32s3_dev_playground.menu.PartitionScheme.default_8MB.build.partitions=default_8MB
+esp32s3_dev_playground.menu.PartitionScheme.default_8MB.upload.maximum_size=3342336
+esp32s3_dev_playground.menu.PartitionScheme.min_spiffs=Minimal SPIFFS (1.9MB APP with OTA/128KB SPIFFS)
+esp32s3_dev_playground.menu.PartitionScheme.min_spiffs.build.partitions=min_spiffs
+esp32s3_dev_playground.menu.PartitionScheme.min_spiffs.upload.maximum_size=1966080
+esp32s3_dev_playground.menu.PartitionScheme.default=Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)
+esp32s3_dev_playground.menu.PartitionScheme.default.build.partitions=default
+esp32s3_dev_playground.menu.PartitionScheme.default.upload.maximum_size=1310720
+
+esp32s3_dev_playground.menu.UploadSpeed.921600=921600
+esp32s3_dev_playground.menu.UploadSpeed.921600.upload.speed=921600
+esp32s3_dev_playground.menu.UploadSpeed.115200=115200
+esp32s3_dev_playground.menu.UploadSpeed.115200.upload.speed=115200
+
 
