@@ -42,12 +42,14 @@ private:
 
    ///
    /// <summary>
-   /// Prompts the user over Serial to pick a site from _siteOptions. Blocks until a
-   /// valid selection is entered.
+   /// Prompts the user (via touch screen when supported, and over Serial) to pick a site
+   /// from _siteOptions. Blocks until a valid selection is entered.
    /// </summary>
+   /// <param name="arduino">The board wrapper, used for touch or display status output.</param>
    /// <returns>The chosen site name.</returns>
    ///
-   String _promptForSite()
+   template <typename TArduino>
+   String _promptForSite(TArduino* arduino)
    {
       Serial.println("Select a site:");
       for (size_t i = 0; i < _siteOptions.size(); i++)
@@ -58,40 +60,83 @@ private:
          Serial.println(_siteOptions[i]);
       }
 
+#ifdef ARDUINO_TOUCH_SUPPORTED
+      if (arduino != nullptr)
+      {
+         std::vector<String> labels;
+         labels.reserve(_siteOptions.size());
+         for (const char* opt : _siteOptions)
+         {
+            labels.push_back(opt);
+         }
+         size_t chosen = arduino->promptTouchOption("Select Site", labels);
+         return _siteOptions[chosen];
+      }
+#else
+      if (arduino != nullptr)
+      {
+         arduino->printDisplayInitLabel("Site... ");
+         arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
+      }
+#endif
+
       String label = "Enter selection (1-" + String(_siteOptions.size()) + "): ";
       long selection = SerialX::promptForInt(label, 1, (long)_siteOptions.size());
+
+#ifndef ARDUINO_TOUCH_SUPPORTED
+      if (arduino != nullptr)
+      {
+         arduino->printDisplayInitValue(_siteOptions[selection - 1]);
+      }
+#endif
+
       return _siteOptions[selection - 1];
    }
 
    ///
    /// <summary>
-   /// Prompts the user over Serial for a site and location, storing them into
-   /// _siteName and _locationName. The site is chosen from _siteOptions. Blocks until
-   /// both are entered/selected non-empty.
+   /// Prompts the user for a site (via touch screen or Serial) and location (over Serial),
+   /// storing them into _siteName and _locationName. The site is chosen from _siteOptions.
+   /// Blocks until both are entered/selected non-empty.
    /// </summary>
+   /// <param name="arduino">The board wrapper, used for touch or display status output.</param>
    ///
-   void _promptForSiteLocation()
+   template <typename TArduino>
+   void _promptForSiteLocation(TArduino* arduino)
    {
       Serial.println("Select the air monitor location to display:");
 
-      _siteName = _promptForSite();
+      _siteName = _promptForSite(arduino);
+
+      if (arduino != nullptr)
+      {
+         arduino->printDisplayInitLabel("Location... ");
+         arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
+      }
 
       do
       {
          _locationName = SerialX::prompt("Enter location: ");
       } while (_locationName.length() == 0);
+
+      if (arduino != nullptr)
+      {
+         arduino->printDisplayInitValue(_locationName.c_str());
+      }
    }
 
    ///
    /// <summary>
-   /// Asks the user, over Serial, whether to keep the currently loaded saved
-   /// site/location or enter new values instead. Call only after _loadSavedConfig() has
-   /// populated _siteName/_locationName. Waits up to PROMPT_TIMEOUT_S seconds for a
-   /// response, defaulting to "keep saved" if none arrives.
+   /// Asks the user (via touch screen when supported, and over Serial) whether to keep
+   /// the currently loaded saved site/location or enter new values instead. Call only
+   /// after _loadSavedConfig() has populated _siteName/_locationName. Waits up to
+   /// PROMPT_TIMEOUT_S seconds for a response, defaulting to "keep saved" if none arrives.
    /// </summary>
+   /// <param name="arduino">The board wrapper, used for touch or display status output.</param>
    /// <returns>True if the saved configuration should be kept; false to reconfigure.</returns>
    ///
-   bool _promptKeepSavedConfig()
+   template <typename TArduino>
+   bool _promptKeepSavedConfig(TArduino* arduino)
    {
       String options[] = {
          "Keep saved: " + _siteName + "/" + _locationName,
@@ -107,7 +152,30 @@ private:
          Serial.println(options[i]);
       }
 
+#ifdef ARDUINO_TOUCH_SUPPORTED
+      if (arduino != nullptr)
+      {
+         std::vector<String> labels = { options[0], options[1] };
+         size_t selection = arduino->promptTouchOption("Reconfigure Location?", labels, 0, PROMPT_TIMEOUT_S * 1000UL);
+         return selection == 0;
+      }
+#else
+      if (arduino != nullptr)
+      {
+         arduino->printDisplayInitLabel("Config... ");
+         arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
+      }
+#endif
+
       size_t selection = SerialX::readSelectionWithTimeout(std::size(options), 0, PROMPT_TIMEOUT_S * 1000UL);
+
+#ifndef ARDUINO_TOUCH_SUPPORTED
+      if (arduino != nullptr)
+      {
+         arduino->printDisplayInitValue("OK");
+      }
+#endif
+
       return selection == 0;
    }
 
@@ -180,11 +248,13 @@ public:
    /// don't call this if the sketch registers its own DeviceServerClient::onCommand()
    /// handler, since only one is supported.
    /// </summary>
-   /// <param name="preferences">Preferences instance to read/write (e.g. arduino.preferences).</param>
+   /// <param name="arduino">The board wrapper, used for Preferences, touch selection, and display status.</param>
    /// <param name="forcePrompt">If true, always offers to reconfigure even if saved values exist.</param>
    ///
-   void resolve(Preferences& preferences, bool forcePrompt)
+   template <typename TArduino>
+   void resolve(TArduino* arduino, bool forcePrompt)
    {
+      Preferences& preferences = arduino->preferences;
       _commandPreferences = &preferences;
       _enableConfigCommands(CONFIG_COMMANDS, std::size(CONFIG_COMMANDS));
 
@@ -194,12 +264,12 @@ public:
       if (reconfigure && hasSavedConfig)
       {
          _loadSavedConfig(preferences);
-         reconfigure = !_promptKeepSavedConfig();
+         reconfigure = !_promptKeepSavedConfig(arduino);
       }
 
       if (reconfigure || !hasSavedConfig)
       {
-         _promptForSiteLocation();
+         _promptForSiteLocation(arduino);
          _saveConfig(preferences);
       }
       else

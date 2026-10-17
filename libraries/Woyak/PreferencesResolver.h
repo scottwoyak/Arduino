@@ -68,7 +68,39 @@ private:
       table.printDivider(false);
    }
 
-   public:
+   ///
+   /// <summary>
+   /// Builds touch-button option labels from a flattened entry table: single-field
+   /// entries use the field directly; multi-field entries (e.g. bucket/site/location)
+   /// join fields 1..N (or all fields) with "/".
+   /// </summary>
+   /// <param name="entries">Flattened row-major entry table.</param>
+   /// <param name="entryCount">Number of entries in the table.</param>
+   /// <param name="fieldsPerEntry">Number of fields per entry.</param>
+   /// <returns>Vector of formatted button labels, one per entry.</returns>
+   ///
+   static std::vector<String> _buildOptionLabels(const char* const* entries, size_t entryCount, size_t fieldsPerEntry)
+   {
+      std::vector<String> labels;
+      labels.reserve(entryCount);
+      size_t startField = fieldsPerEntry == 3 ? 1 : 0;
+      for (size_t i = 0; i < entryCount; i++)
+      {
+         String label;
+         for (size_t f = startField; f < fieldsPerEntry; f++)
+         {
+            if (f > startField)
+            {
+               label += "/";
+            }
+            label += entries[i * fieldsPerEntry + f];
+         }
+         labels.push_back(label);
+      }
+      return labels;
+   }
+
+public:
    ///
    /// <summary>
    /// Creates a PreferencesResolver that persists its choice under the given
@@ -108,16 +140,51 @@ private:
       return false;
    }
 
+   ///
+   /// <summary>
+   /// Blocks for up to windowMs after boot, giving the user a chance to press buttonA or
+   /// touch the display (on touch-capable boards) to force a configuration re-prompt.
+   /// </summary>
+   /// <param name="arduino">The board wrapper to poll for buttonA and/or touch input.</param>
+   /// <param name="windowMs">How long to wait for input, in milliseconds.</param>
+   /// <returns>True if buttonA was pressed or the screen was touched within the window.</returns>
+   ///
+   template <typename TArduino>
+   static bool waitForForcePrompt(TArduino* arduino, uint16_t windowMs)
+   {
+      Timer forcePromptTimer(windowMs);
+      while (!forcePromptTimer.ready())
+      {
+#ifdef ARDUINO_BUTTON_A_SUPPORTED
+         if (arduino->buttonA.isPressed())
+         {
+            return true;
+         }
+#endif
+#ifdef ARDUINO_TOUCH_SUPPORTED
+         lgfx::touch_point_t tp;
+         if (arduino->display.getTouch(&tp) > 0)
+         {
+            return true;
+         }
+#endif
+         delay(10);
+      }
+      return false;
+   }
+
    /// <summary>How long to wait for a selection before falling back to the current default, in seconds.</summary>
    static constexpr uint16_t PROMPT_TIMEOUT_S = 10;
 
    ///
    /// <summary>
-   /// Prompts the user over Serial to pick an entry from the given table (marking
-   /// defaultIndex as the current default) and returns its index. Falls back to
-   /// defaultIndex if no valid selection is entered within PROMPT_TIMEOUT_S, so an
-   /// automatically triggered prompt can't hang the device forever.
+   /// Prompts the user (via touch screen when supported, and over Serial) to pick an
+   /// entry from the given table (marking defaultIndex as the current default) and
+   /// returns its index. Falls back to defaultIndex if no valid selection is entered
+   /// within PROMPT_TIMEOUT_S, so an automatically triggered prompt can't hang the
+   /// device forever.
    /// </summary>
+   /// <param name="arduino">The board wrapper, used for touch or display status output.</param>
    /// <param name="header">Prompt header text, e.g. "Select a gate location:".</param>
    /// <param name="columns">Column metadata for each field.</param>
    /// <param name="entries">Flattened row-major entry table (entryCount * fieldsPerEntry fields).</param>
@@ -126,34 +193,75 @@ private:
    /// <param name="defaultIndex">Index used if the timeout elapses or the input is invalid.</param>
    /// <returns>Index into entries for the chosen (or default) entry.</returns>
    ///
-   static uint8_t promptForIndex(const char* header, std::span<const SerialTable::Column> columns, const char* const* entries, size_t entryCount, size_t fieldsPerEntry, size_t defaultIndex)
+   template <typename TArduino>
+   static uint8_t promptForIndex(TArduino* arduino, const char* header, std::span<const SerialTable::Column> columns, const char* const* entries, size_t entryCount, size_t fieldsPerEntry, size_t defaultIndex)
    {
       _printTable(header, columns, entries, entryCount, fieldsPerEntry, defaultIndex);
 
+#ifdef ARDUINO_TOUCH_SUPPORTED
+      if (arduino != nullptr)
+      {
+         std::vector<String> labels = _buildOptionLabels(entries, entryCount, fieldsPerEntry);
+         String title = String("Select ") + columns[columns.size() - 1].title;
+         size_t chosen = arduino->promptTouchOption(title.c_str(), labels, defaultIndex, PROMPT_TIMEOUT_S * 1000UL);
+         return (uint8_t)chosen;
+      }
+#else
+      if (arduino != nullptr)
+      {
+         arduino->printDisplayInitLabel("Config... ");
+         arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
+      }
+#endif
+
       size_t index = SerialX::readSelectionWithTimeout(entryCount, defaultIndex, PROMPT_TIMEOUT_S * 1000UL);
+
+#ifndef ARDUINO_TOUCH_SUPPORTED
+      if (arduino != nullptr)
+      {
+         arduino->printDisplayInitValue("OK");
+      }
+#endif
 
       return (uint8_t)index;
    }
 
    ///
    /// <summary>
-   /// Prompts the user over Serial to pick an entry from the given table, with no
-   /// default and no timeout: used when there is no saved entry yet, so the device
-   /// can't proceed with a meaningless default. If a Serial monitor is attached, this
-   /// blocks (reprompting on invalid input) until a valid selection is entered. If no
-   /// Serial monitor is attached, there's no way to prompt, so status is set to
-   /// Status::FAILED (solid red) and this blocks forever.
+   /// Prompts the user (via touch screen when supported, and over Serial) to pick an
+   /// entry from the given table, with no default and no timeout: used when there is no
+   /// saved entry yet, so the device can't proceed with a meaningless default.
    /// </summary>
-   /// <param name="status">Status indicator to set to Status::FAILED if no Serial monitor is attached.</param>
+   /// <param name="arduino">The board wrapper, used for touch or display status output.</param>
+   /// <param name="status">Status indicator to set to Status::FAILED if no Serial monitor is attached on a non-touch board.</param>
    /// <param name="header">Prompt header text, e.g. "Select a gate location:".</param>
    /// <param name="columns">Column metadata for each field.</param>
    /// <param name="entries">Flattened row-major entry table (entryCount * fieldsPerEntry fields).</param>
    /// <param name="entryCount">Number of entries in the table.</param>
    /// <param name="fieldsPerEntry">Number of fields per entry.</param>
-   /// <returns>Index into entries for the chosen entry. Never returns if no Serial monitor is attached.</returns>
+   /// <returns>Index into entries for the chosen entry.</returns>
    ///
-   static uint8_t promptForRequiredIndex(IStatus* status, const char* header, std::span<const SerialTable::Column> columns, const char* const* entries, size_t entryCount, size_t fieldsPerEntry)
+   template <typename TArduino>
+   static uint8_t promptForRequiredIndex(TArduino* arduino, IStatus* status, const char* header, std::span<const SerialTable::Column> columns, const char* const* entries, size_t entryCount, size_t fieldsPerEntry)
    {
+      _printTable(header, columns, entries, entryCount, fieldsPerEntry, SIZE_MAX);
+
+#ifdef ARDUINO_TOUCH_SUPPORTED
+      if (arduino != nullptr)
+      {
+         std::vector<String> labels = _buildOptionLabels(entries, entryCount, fieldsPerEntry);
+         String title = String("Select ") + columns[columns.size() - 1].title;
+         size_t chosen = arduino->promptTouchOption(title.c_str(), labels);
+         return (uint8_t)chosen;
+      }
+#endif
+
+      if (arduino != nullptr)
+      {
+         arduino->printDisplayInitLabel("Config... ");
+         arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
+      }
+
       if (!Serial)
       {
          status->setStatus(Status::FAILED);
@@ -163,10 +271,13 @@ private:
          }
       }
 
-      _printTable(header, columns, entries, entryCount, fieldsPerEntry, SIZE_MAX);
-
       String label = "Enter selection (1-" + String(entryCount) + "): ";
       size_t index = (size_t)(SerialX::promptForInt(label, 1, (long)entryCount) - 1);
+
+      if (arduino != nullptr)
+      {
+         arduino->printDisplayInitValue("OK");
+      }
 
       return (uint8_t)index;
    }
@@ -175,12 +286,12 @@ private:
    /// <summary>
    /// Resolves which entry to use: returns the entry saved in Preferences, unless not
    /// all fields have been saved yet or forcePrompt is true, in which case the user is
-   /// prompted over Serial (from entries) and the choice is saved for next time. If
+   /// prompted (via touch screen or Serial) and the choice is saved for next time. If
    /// there is no saved entry yet, the user must make a selection (see
    /// promptForRequiredIndex) rather than falling back to a default after a timeout.
    /// </summary>
-   /// <param name="preferences">Preferences instance to read/write (e.g. arduino.preferences).</param>
-   /// <param name="status">Status indicator, set to Status::FAILED if there's no saved entry and no Serial monitor is attached.</param>
+   /// <param name="arduino">The board wrapper, used for Preferences, touch selection, and display status.</param>
+   /// <param name="status">Status indicator, set to Status::FAILED if there's no saved entry and no Serial monitor is attached on a non-touch board.</param>
    /// <param name="promptHeader">Prompt header text used if the user must be asked.</param>
    /// <param name="columns">Column metadata for each field, shown in the prompt table.</param>
    /// <param name="entries">Flattened row-major entry table (entryCount * fieldsPerEntry fields).</param>
@@ -188,8 +299,10 @@ private:
    /// <param name="forcePrompt">If true, always prompts even if a saved entry exists.</param>
    /// <returns>The resolved field values, backed by this resolver's storage.</returns>
    ///
-   std::span<const String> resolve(Preferences& preferences, IStatus* status, const char* promptHeader, std::span<const SerialTable::Column> columns, const char* const* entries, size_t entryCount, bool forcePrompt)
+   template <typename TArduino>
+   std::span<const String> resolve(TArduino* arduino, IStatus* status, const char* promptHeader, std::span<const SerialTable::Column> columns, const char* const* entries, size_t entryCount, bool forcePrompt)
    {
+      Preferences& preferences = arduino->preferences;
       size_t fieldsPerEntry = _keys.size();
 
       preferences.begin(_namespace, true);
@@ -234,11 +347,11 @@ private:
          uint8_t selectedIndex;
          if (hasSavedEntry)
          {
-            selectedIndex = promptForIndex(promptHeader, columns, entries, entryCount, fieldsPerEntry, matchedIndex);
+            selectedIndex = promptForIndex(arduino, promptHeader, columns, entries, entryCount, fieldsPerEntry, matchedIndex);
          }
          else
          {
-            selectedIndex = promptForRequiredIndex(status, promptHeader, columns, entries, entryCount, fieldsPerEntry);
+            selectedIndex = promptForRequiredIndex(arduino, status, promptHeader, columns, entries, entryCount, fieldsPerEntry);
          }
 
          for (size_t f = 0; f < fieldsPerEntry; f++)

@@ -70,9 +70,8 @@
 #define ARDUINO_BOARD_VARIANT_ID "WAVESHARE_ESP32S3_TOUCH_LCD_19"
 
 #elif defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER)
-// Hosyond ESP32-S3 dev board (builtin 4" ST7796S display with FT6336U capacitive
-// touch, BOOT button as buttonA). Selected via manual #define since it shares the
-// "ESP32S3 Dev Module" Arduino IDE board type with ARDUINO_ESP32S3_DEV (Playground).
+// Hosyond 4.0 ESP32-S3-Touch-LCD board (builtin 4" ST7796S display with FT6336U
+// capacitive touch, ES8311 audio codec, BOOT button as buttonA).
 
 #define ARDUINO_BUTTON_SUPPORTED
 #define ARDUINO_BUTTON_A_SUPPORTED

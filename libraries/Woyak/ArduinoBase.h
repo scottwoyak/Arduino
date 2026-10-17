@@ -330,6 +330,38 @@ public:
       printlnR(value, color);
    }
 
+   ///
+   /// <summary>
+   /// Starts an initialization line on the display only (without printing to Serial);
+   /// used when the caller is about to block on a Serial prompt and wants the display to
+   /// show a status indicator (e.g. "Waiting for Serial") while Serial shows the interactive
+   /// prompt itself.
+   /// </summary>
+   /// <param name="label">The label text.</param>
+   /// <param name="color">The label color.</param>
+   ///
+   virtual void printDisplayInitLabel(const char* label, Color color = Color::LABEL)
+   {
+      (void)label;
+      (void)color;
+   }
+
+   ///
+   /// <summary>
+   /// Updates the right-aligned result on the display only (without printing to Serial) for
+   /// the most recently added display init line. Can be called multiple times on the same
+   /// line (e.g. to show "Waiting for Serial" while blocking and then replace it with the
+   /// resolved value once entered).
+   /// </summary>
+   /// <param name="value">The result text.</param>
+   /// <param name="color">The result color.</param>
+   ///
+   virtual void printDisplayInitValue(const char* value, Color color = Color::VALUE)
+   {
+      (void)value;
+      (void)color;
+   }
+
 protected:
    ///
    /// <summary>

@@ -76,13 +76,8 @@ protected:
    ///
    bool _shouldForcePrompt()
    {
-      if (Serial)
-      {
-         return true;
-      }
-
-      Serial.println("Press buttonA now to reconfigure the site...");
-      return PreferencesResolver::waitForForcePrompt(_arduino->buttonA, FORCE_PROMPT_WINDOW_MS);
+      Serial.println("Press buttonA or touch the screen now to reconfigure the site...");
+      return PreferencesResolver::waitForForcePrompt(_arduino, FORCE_PROMPT_WINDOW_MS);
    }
 
    /// <summary>InfluxDB settings, copied from the constructor argument.</summary>
@@ -544,7 +539,7 @@ public:
          }
 
          String header = String("Select an influx site (measurement=") + _influxConfig.measurement + ", * = default):";
-         std::span<const String> resolved = _siteResolver.resolve(_arduino->preferences, _status, header.c_str(), SITE_COLUMNS, flattenedSites.data(), _influxConfig.prompts.size(), forcePrompt);
+         std::span<const String> resolved = _siteResolver.resolve(_arduino, _status, header.c_str(), SITE_COLUMNS, flattenedSites.data(), _influxConfig.prompts.size(), forcePrompt);
          // The bucket is always INFLUXDB_BUCKET; a bucket saved to Preferences by an older
          // build (e.g. "Monitor") is ignored.
          _site = { INFLUXDB_BUCKET, resolved[1].c_str(), resolved[2].c_str() };

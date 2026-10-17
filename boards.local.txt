@@ -87,3 +87,92 @@ waveshare_esp32_s3_touch_lcd_19.menu.UploadSpeed.921600=921600
 waveshare_esp32_s3_touch_lcd_19.menu.UploadSpeed.921600.upload.speed=921600
 waveshare_esp32_s3_touch_lcd_19.menu.UploadSpeed.115200=115200
 waveshare_esp32_s3_touch_lcd_19.menu.UploadSpeed.115200.upload.speed=115200
+
+##############################################################
+
+hosyond_esp32_s3_touch_lcd_40.name=Hosyond 4.0 ESP32-S3-Touch-LCD
+hosyond_esp32_s3_touch_lcd_40.vid.0=0x303a
+hosyond_esp32_s3_touch_lcd_40.pid.0=0x1001
+hosyond_esp32_s3_touch_lcd_40.upload_port.0.vid=0x303a
+hosyond_esp32_s3_touch_lcd_40.upload_port.0.pid=0x1001
+
+hosyond_esp32_s3_touch_lcd_40.bootloader.tool=esptool_py
+hosyond_esp32_s3_touch_lcd_40.bootloader.tool.default=esptool_py
+
+hosyond_esp32_s3_touch_lcd_40.upload.tool=esptool_py
+hosyond_esp32_s3_touch_lcd_40.upload.tool.default=esptool_py
+hosyond_esp32_s3_touch_lcd_40.upload.tool.network=esp_ota
+
+hosyond_esp32_s3_touch_lcd_40.upload.maximum_size=3145728
+hosyond_esp32_s3_touch_lcd_40.upload.maximum_data_size=327680
+hosyond_esp32_s3_touch_lcd_40.upload.flags=
+hosyond_esp32_s3_touch_lcd_40.upload.erase_cmd=
+hosyond_esp32_s3_touch_lcd_40.upload.extra_flags=
+hosyond_esp32_s3_touch_lcd_40.upload.use_1200bps_touch=false
+hosyond_esp32_s3_touch_lcd_40.upload.wait_for_upload_port=false
+
+hosyond_esp32_s3_touch_lcd_40.serial.disableDTR=false
+hosyond_esp32_s3_touch_lcd_40.serial.disableRTS=false
+
+hosyond_esp32_s3_touch_lcd_40.build.tarch=xtensa
+hosyond_esp32_s3_touch_lcd_40.build.bootloader_addr=0x0
+hosyond_esp32_s3_touch_lcd_40.build.target=esp32s3
+hosyond_esp32_s3_touch_lcd_40.build.mcu=esp32s3
+hosyond_esp32_s3_touch_lcd_40.build.core=esp32
+hosyond_esp32_s3_touch_lcd_40.build.variant=esp32s3
+hosyond_esp32_s3_touch_lcd_40.build.board=HOSYOND_ESP32_S3_VIEWER
+
+hosyond_esp32_s3_touch_lcd_40.build.usb_mode=1
+hosyond_esp32_s3_touch_lcd_40.build.cdc_on_boot=1
+hosyond_esp32_s3_touch_lcd_40.build.msc_on_boot=0
+hosyond_esp32_s3_touch_lcd_40.build.dfu_on_boot=0
+hosyond_esp32_s3_touch_lcd_40.build.f_cpu=240000000L
+hosyond_esp32_s3_touch_lcd_40.build.flash_size=16MB
+hosyond_esp32_s3_touch_lcd_40.build.flash_freq=80m
+hosyond_esp32_s3_touch_lcd_40.build.flash_mode=dio
+hosyond_esp32_s3_touch_lcd_40.build.boot=qio
+hosyond_esp32_s3_touch_lcd_40.build.boot_freq=80m
+hosyond_esp32_s3_touch_lcd_40.build.partitions=app3M_fat9M_16MB
+hosyond_esp32_s3_touch_lcd_40.build.defines=-DBOARD_HAS_PSRAM
+hosyond_esp32_s3_touch_lcd_40.build.loop_core=
+hosyond_esp32_s3_touch_lcd_40.build.event_core=
+hosyond_esp32_s3_touch_lcd_40.build.psram_type=opi
+hosyond_esp32_s3_touch_lcd_40.build.memory_type={build.boot}_{build.psram_type}
+
+hosyond_esp32_s3_touch_lcd_40.menu.USBMode.hwcdc=Hardware CDC and JTAG
+hosyond_esp32_s3_touch_lcd_40.menu.USBMode.hwcdc.build.usb_mode=1
+hosyond_esp32_s3_touch_lcd_40.menu.USBMode.default=USB-OTG (TinyUSB)
+hosyond_esp32_s3_touch_lcd_40.menu.USBMode.default.build.usb_mode=0
+
+hosyond_esp32_s3_touch_lcd_40.menu.CDCOnBoot.cdc=Enabled
+hosyond_esp32_s3_touch_lcd_40.menu.CDCOnBoot.cdc.build.cdc_on_boot=1
+hosyond_esp32_s3_touch_lcd_40.menu.CDCOnBoot.default=Disabled
+hosyond_esp32_s3_touch_lcd_40.menu.CDCOnBoot.default.build.cdc_on_boot=0
+
+hosyond_esp32_s3_touch_lcd_40.menu.PSRAM.opi=OPI PSRAM
+hosyond_esp32_s3_touch_lcd_40.menu.PSRAM.opi.build.defines=-DBOARD_HAS_PSRAM
+hosyond_esp32_s3_touch_lcd_40.menu.PSRAM.opi.build.psram_type=opi
+hosyond_esp32_s3_touch_lcd_40.menu.PSRAM.disabled=Disabled
+hosyond_esp32_s3_touch_lcd_40.menu.PSRAM.disabled.build.defines=
+hosyond_esp32_s3_touch_lcd_40.menu.PSRAM.disabled.build.psram_type=qspi
+
+hosyond_esp32_s3_touch_lcd_40.menu.FlashSize.16M=16MB (128Mb)
+hosyond_esp32_s3_touch_lcd_40.menu.FlashSize.16M.build.flash_size=16MB
+hosyond_esp32_s3_touch_lcd_40.menu.FlashSize.8M=8MB (64Mb)
+hosyond_esp32_s3_touch_lcd_40.menu.FlashSize.8M.build.flash_size=8MB
+
+hosyond_esp32_s3_touch_lcd_40.menu.PartitionScheme.app3M_fat9M_16MB=16M Flash (3MB APP/9.9MB FATFS)
+hosyond_esp32_s3_touch_lcd_40.menu.PartitionScheme.app3M_fat9M_16MB.build.partitions=app3M_fat9M_16MB
+hosyond_esp32_s3_touch_lcd_40.menu.PartitionScheme.app3M_fat9M_16MB.upload.maximum_size=3145728
+hosyond_esp32_s3_touch_lcd_40.menu.PartitionScheme.default_8MB=8M with spiffs (3MB APP/1.5MB SPIFFS)
+hosyond_esp32_s3_touch_lcd_40.menu.PartitionScheme.default_8MB.build.partitions=default_8MB
+hosyond_esp32_s3_touch_lcd_40.menu.PartitionScheme.default_8MB.upload.maximum_size=3342336
+hosyond_esp32_s3_touch_lcd_40.menu.PartitionScheme.default=Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)
+hosyond_esp32_s3_touch_lcd_40.menu.PartitionScheme.default.build.partitions=default
+hosyond_esp32_s3_touch_lcd_40.menu.PartitionScheme.default.upload.maximum_size=1310720
+
+hosyond_esp32_s3_touch_lcd_40.menu.UploadSpeed.921600=921600
+hosyond_esp32_s3_touch_lcd_40.menu.UploadSpeed.921600.upload.speed=921600
+hosyond_esp32_s3_touch_lcd_40.menu.UploadSpeed.115200=115200
+hosyond_esp32_s3_touch_lcd_40.menu.UploadSpeed.115200.upload.speed=115200
+

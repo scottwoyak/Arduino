@@ -53,7 +53,7 @@ public:
 		 cfg.panel_height = 320;
 		 cfg.offset_x = 35;
 		 cfg.offset_y = 0;
-		 cfg.offset_rotation = 0;
+		 cfg.offset_rotation = 2; // rotated 180 degrees relative to LovyanGFX's default orientation
 		 cfg.dummy_read_pixel = 8;
 		 cfg.dummy_read_bits = 1;
 		 cfg.readable = false;

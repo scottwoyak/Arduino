@@ -98,7 +98,7 @@ public:
             arduino->preferences.end();
          }
 
-         std::span<const String> resolved = _resolver.resolve(arduino->preferences, status, "Select a telemetry topic (* = default):", TOPIC_COLUMNS, _config->prompts.data(), _config->prompts.size(), forcePrompt);
+         std::span<const String> resolved = _resolver.resolve(arduino, status, "Select a telemetry topic (* = default):", TOPIC_COLUMNS, _config->prompts.data(), _config->prompts.size(), forcePrompt);
          _topic = resolved[0].c_str();
       }
       else

@@ -13,8 +13,6 @@
 // Hardware: Hosyond 4" ESP32-S3 Viewer board with a speaker connected to the horn connector.
 //
 
-#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
-
 // Only compile in the font sizes this sketch uses, to save flash. TEXT_SIZE_2 and
 // TEXT_SIZE_3 are always included regardless (see ArduinoWithDisplay.h).
 #define TEXT_SIZES_CUSTOM

@@ -19,15 +19,6 @@
 // - Checks for a firmware update periodically.
 //
 
-// Uncomment this to build for the Feather ESP32-S3 TFT instead of the Hosyond ESP32-S3
-// Viewer board.
-//#define ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT
-
-// Default: build for the Hosyond ESP32-S3 Viewer board's larger display. Also requires
-// selecting the generic "ESP32S3 Dev Module" board in Visual Micro (that board has no
-// dedicated board package entry).
-#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
-
 // Declares which VLW font sizes this sketch actually uses (4 - see
 // TEXT_SIZE/MAX_HEADER_TEXT_SIZE below; 2 and 3 are always included regardless, see
 // ArduinoWithDisplay.h), so ArduinoWithDisplay.h/Fonts/Roboto*.h only compile in the
@@ -239,7 +230,7 @@ void setup()
 
    initLayout();
 
-   telemetryTopic = sketch.resolveTopic(true);
+   telemetryTopic = sketch.resolveTopic();
 
    sketch.beginConnect();
 

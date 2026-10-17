@@ -229,8 +229,8 @@ private:
 
    ///
    /// <summary>
-   /// Prompts the user over Serial to pick a site from SITE_OPTIONS. Blocks until a
-   /// valid selection is entered.
+   /// Prompts the user (via touch screen when supported, and over Serial) to pick a site
+   /// from SITE_OPTIONS. Blocks until a valid selection is entered.
    /// </summary>
    /// <returns>The chosen site name.</returns>
    ///
@@ -245,19 +245,34 @@ private:
          Serial.println(SITE_OPTIONS[i]);
       }
 
+#ifdef ARDUINO_TOUCH_SUPPORTED
+      std::vector<String> labels;
+      labels.reserve(std::size(SITE_OPTIONS));
+      for (const char* opt : SITE_OPTIONS)
+      {
+         labels.push_back(opt);
+      }
+      size_t chosen = _arduino->promptTouchOption("Select Site", labels);
+      return SITE_OPTIONS[chosen];
+#else
+      _arduino->printDisplayInitLabel("Site... ");
+      _arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
+
       String label = "Enter selection (1-" + String(std::size(SITE_OPTIONS)) + "): ";
       long selection = SerialX::promptForInt(label, 1, (long)std::size(SITE_OPTIONS));
+      _arduino->printDisplayInitValue(SITE_OPTIONS[selection - 1]);
       return SITE_OPTIONS[selection - 1];
+#endif
    }
 
    ///
    /// <summary>
-   /// Prompts the user over Serial to pick a combined Influx bucket + site from a
-   /// flattened list of BUCKET_LABELS x SITE_OPTIONS pairs (one prompt instead of two
-   /// separate bucket and site prompts), formatted as "Bucket=<label>    Site=<site>"
-   /// with the Site= column aligned across rows. Blocks until a valid selection is
-   /// entered. Stores the chosen bucket into _bucketName and the chosen site into
-   /// _siteName.
+   /// Prompts the user (via touch screen when supported, and over Serial) to pick a
+   /// combined Influx bucket + site from a flattened list of BUCKET_LABELS x SITE_OPTIONS
+   /// pairs (one prompt instead of two separate bucket and site prompts), formatted as
+   /// "Bucket=<label>    Site=<site>" with the Site= column aligned across rows. Blocks
+   /// until a valid selection is entered. Stores the chosen bucket into _bucketName and
+   /// the chosen site into _siteName.
    /// </summary>
    ///
    void _promptForSiteAndBucket()
@@ -271,6 +286,7 @@ private:
       }
 
       Serial.println("Select a bucket/site:");
+      std::vector<String> touchLabels;
       size_t index = 0;
       for (size_t b = 0; b < std::size(BUCKET_LABELS); b++)
       {
@@ -288,12 +304,21 @@ private:
             Serial.print(bucketField);
             Serial.print("    Site=");
             Serial.println(SITE_OPTIONS[s]);
+            touchLabels.push_back(String(BUCKET_LABELS[b]) + " / " + SITE_OPTIONS[s]);
             index++;
          }
       }
 
+#ifdef ARDUINO_TOUCH_SUPPORTED
+      size_t selection = _arduino->promptTouchOption("Select Bucket / Site", touchLabels);
+#else
+      _arduino->printDisplayInitLabel("Bucket/Site... ");
+      _arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
+
       String label = "Enter selection (1-" + String(NUM_COMBINATIONS) + "): ";
-      long selection = SerialX::promptForInt(label, 1, (long)NUM_COMBINATIONS) - 1;
+      size_t selection = (size_t)(SerialX::promptForInt(label, 1, (long)NUM_COMBINATIONS) - 1);
+      _arduino->printDisplayInitValue(touchLabels[selection].c_str());
+#endif
 
       _bucketName = BUCKET_NAMES[selection / std::size(SITE_OPTIONS)];
       _siteName = SITE_OPTIONS[selection % std::size(SITE_OPTIONS)];
@@ -301,14 +326,14 @@ private:
 
    ///
    /// <summary>
-   /// Prompts the user over Serial for a site and location, storing them into _siteName
-   /// and _locationName. If influxConfig.promptForBucket is set, the site and bucket are
-   /// chosen together from a single combined prompt (see _promptForSiteAndBucket());
-   /// otherwise the site alone is chosen from SITE_OPTIONS. If _locationName already
-   /// holds a previously saved value (i.e. this is a reconfigure of an existing saved
-   /// config), entering a blank line (or spaces only) keeps that previous value instead
-   /// of requiring it to be retyped. Blocks until both the site and location are
-   /// entered/selected non-empty.
+   /// Prompts the user for a site (via touch screen or Serial) and location (over Serial),
+   /// storing them into _siteName and _locationName. If influxConfig.promptForBucket is
+   /// set, the site and bucket are chosen together from a single combined prompt (see
+   /// _promptForSiteAndBucket()); otherwise the site alone is chosen from SITE_OPTIONS.
+   /// If _locationName already holds a previously saved value (i.e. this is a reconfigure
+   /// of an existing saved config), entering a blank line (or spaces only) keeps that
+   /// previous value instead of requiring it to be retyped. Blocks until both the site and
+   /// location are entered/selected non-empty.
    /// </summary>
    ///
    void _promptForSiteLocation()
@@ -328,6 +353,9 @@ private:
          ? "Enter location (blank to keep \"" + previousLocation + "\"): "
          : "Enter location: ";
 
+      _arduino->printDisplayInitLabel("Location... ");
+      _arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
+
       do
       {
          _locationName = SerialX::prompt(prompt);
@@ -337,13 +365,15 @@ private:
             _locationName = previousLocation;
          }
       } while (_locationName.length() == 0);
+
+      _arduino->printDisplayInitValue(_locationName.c_str());
    }
 
    ///
    /// <summary>
-   /// Asks the user, over Serial, whether to keep the currently loaded saved
-   /// site/location or enter new values instead. Call only after
-   /// _loadSavedConfig() has populated _siteName/_locationName. Waits up to
+   /// Asks the user (via touch screen when supported, and over Serial) whether to keep
+   /// the currently loaded saved site/location or enter new values instead. Call only
+   /// after _loadSavedConfig() has populated _siteName/_locationName. Waits up to
    /// PROMPT_TIMEOUT_S seconds for a response, defaulting to "keep saved" if none arrives.
    /// </summary>
    /// <returns>True if the saved configuration should be kept; false to reconfigure.</returns>
@@ -372,8 +402,18 @@ private:
          Serial.println(options[i]);
       }
 
-      size_t selection = SerialX::readSelectionWithTimeout(std::size(options), 0, PROMPT_TIMEOUT_S * 1000UL);
+#ifdef ARDUINO_TOUCH_SUPPORTED
+      std::vector<String> labels = { options[0], options[1] };
+      size_t selection = _arduino->promptTouchOption("Reconfigure Site?", labels, 0, PROMPT_TIMEOUT_S * 1000UL);
       return selection == 0;
+#else
+      _arduino->printDisplayInitLabel("Config... ");
+      _arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
+
+      size_t selection = SerialX::readSelectionWithTimeout(std::size(options), 0, PROMPT_TIMEOUT_S * 1000UL);
+      _arduino->printDisplayInitValue("OK");
+      return selection == 0;
+#endif
    }
 
    ///

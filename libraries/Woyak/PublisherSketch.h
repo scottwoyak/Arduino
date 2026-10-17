@@ -179,10 +179,20 @@ private:
       bool reconfigure = !hasSaved;
       if (hasSaved && _shouldForcePrompt())
       {
+         String savedLabel = "Keep saved: " + _siteName + "/" + _locationName;
          Serial.println("Reconfigure this device's site/location:");
-         Serial.println("  1: Keep saved: " + _siteName + "/" + _locationName);
+         Serial.println("  1: " + savedLabel);
          Serial.println("  2: Enter new values");
+
+#ifdef ARDUINO_TOUCH_SUPPORTED
+         std::vector<String> labels = { savedLabel, "Enter new values" };
+         reconfigure = _arduino->promptTouchOption("Reconfigure Site?", labels, 0, PROMPT_TIMEOUT_S * 1000UL) != 0;
+#else
+         _arduino->printDisplayInitLabel("Config... ");
+         _arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
          reconfigure = SerialX::readSelectionWithTimeout(2, 0, PROMPT_TIMEOUT_S * 1000UL) != 0;
+         _arduino->printDisplayInitValue("OK");
+#endif
       }
 
       if (reconfigure)
@@ -195,14 +205,33 @@ private:
             Serial.print(": ");
             Serial.println(SITE_OPTIONS[i]);
          }
+
+#ifdef ARDUINO_TOUCH_SUPPORTED
+         std::vector<String> siteLabels;
+         for (const char* opt : SITE_OPTIONS)
+         {
+            siteLabels.push_back(opt);
+         }
+         size_t chosen = _arduino->promptTouchOption("Select Site", siteLabels);
+         _siteName = SITE_OPTIONS[chosen];
+#else
+         _arduino->printDisplayInitLabel("Site... ");
+         _arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
          String label = "Enter selection (1-" + String(std::size(SITE_OPTIONS)) + "): ";
          long selection = SerialX::promptForInt(label, 1, (long)std::size(SITE_OPTIONS));
          _siteName = SITE_OPTIONS[selection - 1];
+         _arduino->printDisplayInitValue(_siteName.c_str());
+#endif
+
+         _arduino->printDisplayInitLabel("Location... ");
+         _arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
 
          do
          {
             _locationName = SerialX::prompt("Enter location: ");
          } while (_locationName.length() == 0);
+
+         _arduino->printDisplayInitValue(_locationName.c_str());
 
          _arduino->preferences.begin(_config.preferencesNamespace, false);
          _arduino->preferences.putString(SITE_KEY, _siteName);

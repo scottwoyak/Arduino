@@ -177,6 +177,12 @@ public:
    ///
    const char* resolveTopic(bool forcePrompt = false)
    {
+      if (!forcePrompt)
+      {
+         Serial.println("Press buttonA or touch the screen now to reconfigure the topic...");
+         forcePrompt = PreferencesResolver::waitForForcePrompt(_arduino, 2000);
+      }
+
       const char* topic = _topicResolver.resolve(_arduino, _status, forcePrompt);
       _printAndLogStatus("Topic... ", ("\"" + std::string(topic) + "\"").c_str());
       return topic;
@@ -185,7 +191,7 @@ public:
    ///
    /// <summary>
    /// Resolves this viewer's site/location (see SiteLocationResolver::resolve()), prompting
-   /// over Serial (or loading the saved values from Preferences) if needed, and registers
+   /// (or loading the saved values from Preferences) if needed, and registers
    /// the "GetConfig"/"SetConfig" commands with DeviceServerClient so the resolved values
    /// can be reported/changed remotely. Also reports the resolved site/location as an init
    /// status line. Call once from setup(), after beginBanner() and before beginConnect().
@@ -197,7 +203,13 @@ public:
    ///
    void resolveSiteLocation(bool forcePrompt = false)
    {
-      _siteLocationResolver.resolve(_arduino->preferences, forcePrompt);
+      if (!forcePrompt)
+      {
+         Serial.println("Press buttonA or touch the screen now to reconfigure the location...");
+         forcePrompt = PreferencesResolver::waitForForcePrompt(_arduino, 2000);
+      }
+
+      _siteLocationResolver.resolve(_arduino, forcePrompt);
       _printAndLogStatus("Location... ", siteLocation().c_str());
    }
 

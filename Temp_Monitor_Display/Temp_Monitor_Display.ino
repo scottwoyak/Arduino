@@ -59,14 +59,6 @@
 //     temperature: rolling average of the ESP32 CPU temperature (F).
 //
 
-// Uncomment this to build for the Feather ESP32-S3 TFT instead of the Hosyond ESP32-S3
-// Viewer board.
-//#define ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT
-
-// Default: build for the Hosyond ESP32-S3 Viewer board. Also requires selecting the
-// generic "ESP32S3 Dev Module" board in Visual Micro.
-#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
-
 // Declares which VLW font sizes this sketch actually uses (VALUE_TEXT_SIZE=4 below;
 // TEXT_SIZE_SMALL=2 is always included regardless, see ArduinoWithDisplay.h), so
 // ArduinoWithDisplay.h/Fonts/Roboto*.h only compile in the needed font data instead of

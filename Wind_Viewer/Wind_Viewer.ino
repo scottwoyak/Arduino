@@ -20,14 +20,8 @@
 //
 
 // Uncomment this to build for the Waveshare ESP32-S3-Touch-LCD-4.3B instead of the
-// Hosyond ESP32-S3 Viewer board. Also requires selecting the generic "ESP32S3 Dev
-// Module" board in Visual Micro (that board has no dedicated board package entry).
+// selected Visual Micro board (that board has no dedicated board package entry).
 //#define ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_43
-
-// Default: build for the Hosyond ESP32-S3 Viewer board. Also requires selecting the
-// generic "ESP32S3 Dev Module" board in Visual Micro (that board has no dedicated
-// board package entry).
-#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
 
 // Declares which VLW font sizes this sketch actually uses (4 - see MAX_HEADER_TEXT_SIZE
 // below; 2 and 3 are always included regardless, see ArduinoWithDisplay.h), so
@@ -252,7 +246,7 @@ void setup()
 
    sketch.beginBanner();
 
-   telemetryTopic = sketch.resolveTopic(true);
+   telemetryTopic = sketch.resolveTopic();
 
    sketch.beginConnect();
 

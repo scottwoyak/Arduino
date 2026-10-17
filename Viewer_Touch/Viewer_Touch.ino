@@ -7,8 +7,6 @@
 // so both horizontal and vertical touch alignment can be verified.
 //
 
-#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
-
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED

@@ -64,8 +64,6 @@ constexpr auto RIGHT_TELEMETRY_TOPIC = "Gate/Right";
 constexpr auto GATE_OPENER_HOST = "192.168.1.9";
 constexpr uint16_t GATE_OPENER_PORT = 80;
 
-#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
-
 // Declares which VLW font sizes this sketch actually uses (4 and 5 - see
 // HISTORY_TITLE_TEXT_SIZE/HISTORY_ROW_TEXT_SIZE below; 2 and 3 are always included
 // regardless, see ArduinoWithDisplay.h), so ArduinoWithDisplay.h/Fonts/Roboto*.h only

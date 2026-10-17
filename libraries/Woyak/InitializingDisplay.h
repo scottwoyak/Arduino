@@ -175,4 +175,18 @@ public:
       _lines.clear();
       _display->fillRect(0, _top, _display->width(), _display->height() - _top, Color::BLACK);
    }
+
+   ///
+   /// <summary>
+   /// Redraws all currently stored initialization lines in place (e.g. after a temporary
+   /// full-screen touch menu has cleared the display and redrawn the header).
+   /// </summary>
+   ///
+   void redraw()
+   {
+      for (size_t i = 0; i < _lines.size(); i++)
+      {
+         _drawRow(i);
+      }
+   }
 };

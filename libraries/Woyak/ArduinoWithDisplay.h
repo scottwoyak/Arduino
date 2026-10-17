@@ -866,6 +866,17 @@ public:
 
    void printInitLabel(const char* label, Color color = Color::LABEL) override;
    void printInitValue(const char* value, Color color = Color::VALUE) override;
+   void printDisplayInitLabel(const char* label, Color color = Color::LABEL) override;
+   void printDisplayInitValue(const char* value, Color color = Color::VALUE) override;
+   void restoreInitDisplay(const char* header = "Initializing");
+
+#ifdef ARDUINO_TOUCH_SUPPORTED
+   size_t promptTouchOption(
+      const char* title,
+      const std::vector<String>& options,
+      size_t defaultIndex = SIZE_MAX,
+      uint32_t timeoutMs = 0);
+#endif
 
 protected:
    InitializingDisplay* _initDisplay = nullptr;
@@ -2015,3 +2026,205 @@ inline void ArduinoWithDisplay::printInitValue(const char* value, Color color)
 
    _initDisplay->setValue(value, color);
 }
+
+inline void ArduinoWithDisplay::printDisplayInitLabel(const char* label, Color color)
+{
+   printInitLabel(label, color);
+}
+
+inline void ArduinoWithDisplay::printDisplayInitValue(const char* value, Color color)
+{
+   printInitValue(value, color);
+}
+
+inline void ArduinoWithDisplay::restoreInitDisplay(const char* header)
+{
+   clearDisplay();
+   setTextSize(headerTextSize());
+   ArduinoBase::printInitHeader(header, Color::HEADING);
+   moveCursorY(charH() / 4);
+   _initDisplayPending = false;
+   if (_initDisplay != nullptr)
+   {
+      _initDisplay->redraw();
+   }
+}
+
+#ifdef ARDUINO_TOUCH_SUPPORTED
+inline size_t ArduinoWithDisplay::promptTouchOption(
+   const char* title,
+   const std::vector<String>& options,
+   size_t defaultIndex,
+   uint32_t timeoutMs)
+{
+   ASSERT(!options.empty());
+
+   clearDisplay();
+   uint8_t titleSize = headerTextSize();
+   setTextSize(titleSize);
+   setCursor(0, 0);
+   _println(title, Color::HEADING, Color::BLACK);
+
+   int16_t topY = getCursorY() + 4;
+   int16_t availH = height() - topY - 4;
+   size_t count = options.size();
+
+   constexpr int16_t MARGIN_X = 8;
+   constexpr int16_t GAP_Y = 6;
+   int16_t buttonW = width() - 2 * MARGIN_X;
+   int16_t maxButtonH = height() >= LARGE_DISPLAY_MIN_HEIGHT ? 52 : 36;
+   int16_t totalGaps = (int16_t)(count > 1 ? (count - 1) * GAP_Y : 0);
+   int16_t buttonH = (availH - totalGaps) / (int16_t)count;
+   if (buttonH > maxButtonH)
+   {
+      buttonH = maxButtonH;
+   }
+   if (buttonH < charH(2) + 4)
+   {
+      buttonH = charH(2) + 4;
+   }
+
+   uint8_t btnTextSize = (height() >= LARGE_DISPLAY_MIN_HEIGHT && buttonH >= charH(3) + 10) ? 3 : 2;
+
+   auto drawButton = [&](size_t idx, bool pressed)
+   {
+      int16_t by = topY + (int16_t)idx * (buttonH + GAP_Y);
+      Color bg = pressed ? Color::LIGHTBLUE : (idx == defaultIndex ? Color::DARKGREEN : Color::BLUE);
+      display.fillRoundRect(MARGIN_X, by, buttonW, buttonH, 6, (uint16_t)bg);
+      display.drawRoundRect(MARGIN_X, by, buttonW, buttonH, 6, (uint16_t)Color::WHITE);
+
+      setTextSize(btnTextSize);
+      display.setTextColor((uint16_t)Color::WHITE, (uint16_t)bg);
+      int16_t tw = display.textWidth(options[idx].c_str());
+      int16_t tx = MARGIN_X + (buttonW - tw) / 2;
+      if (tx < MARGIN_X + 4)
+      {
+         tx = MARGIN_X + 4;
+      }
+      int16_t ty = by + (buttonH - charH(btnTextSize)) / 2;
+      display.setCursor(tx, ty);
+      display.print(options[idx].c_str());
+   };
+
+   for (size_t i = 0; i < count; i++)
+   {
+      drawButton(i, false);
+   }
+
+   lgfx::touch_point_t tp;
+   while (display.getTouch(&tp) > 0)
+   {
+      delay(10);
+   }
+
+   while (Serial.available())
+   {
+      Serial.read();
+   }
+
+   if (timeoutMs > 0 && defaultIndex < count)
+   {
+      Serial.print("Enter selection (1-");
+      Serial.print(count);
+      Serial.print("), or tap screen (defaults to ");
+      Serial.print(defaultIndex + 1);
+      Serial.print(" after ");
+      Serial.print(timeoutMs / 1000);
+      Serial.println("s): ");
+   }
+   else
+   {
+      Serial.print("Enter selection (1-");
+      Serial.print(count);
+      Serial.print(") or tap screen: ");
+   }
+
+   size_t pressedIdx = SIZE_MAX;
+   uint32_t start = millis();
+
+   while (true)
+   {
+      if (timeoutMs > 0 && defaultIndex < count && (millis() - start >= timeoutMs))
+      {
+         Serial.println("No input - using default.");
+         restoreInitDisplay();
+         return defaultIndex;
+      }
+
+      bool touched = display.getTouch(&tp) > 0;
+      if (touched)
+      {
+         start = millis();
+         size_t hitIdx = SIZE_MAX;
+         for (size_t i = 0; i < count; i++)
+         {
+            int16_t by = topY + (int16_t)i * (buttonH + GAP_Y);
+            if (tp.x >= MARGIN_X && tp.x < MARGIN_X + buttonW && tp.y >= by && tp.y < by + buttonH)
+            {
+               hitIdx = i;
+               break;
+            }
+         }
+
+         if (hitIdx != pressedIdx)
+         {
+            if (pressedIdx != SIZE_MAX)
+            {
+               drawButton(pressedIdx, false);
+            }
+            pressedIdx = hitIdx;
+            if (pressedIdx != SIZE_MAX)
+            {
+               drawButton(pressedIdx, true);
+            }
+         }
+      }
+      else if (pressedIdx != SIZE_MAX)
+      {
+         size_t chosen = pressedIdx;
+         Serial.println(chosen + 1);
+         restoreInitDisplay();
+         return chosen;
+      }
+
+      if (Serial.available())
+      {
+         String input = Serial.readStringUntil('\n');
+         input.trim();
+         Serial.println(input);
+
+         if (input.length() == 0 && defaultIndex < count)
+         {
+            restoreInitDisplay();
+            return defaultIndex;
+         }
+
+         bool isNumeric = input.length() > 0;
+         for (size_t i = 0; i < input.length(); i++)
+         {
+            if (!isDigit(input[i]))
+            {
+               isNumeric = false;
+               break;
+            }
+         }
+
+         if (isNumeric)
+         {
+            long value = input.toInt();
+            if (value >= 1 && value <= (long)count)
+            {
+               restoreInitDisplay();
+               return (size_t)(value - 1);
+            }
+         }
+
+         Serial.print("Invalid selection, enter 1-");
+         Serial.print(count);
+         Serial.print(": ");
+      }
+
+      delay(10);
+   }
+}
+#endif

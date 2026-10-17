@@ -12,14 +12,6 @@
 // default) or the 240x135 display on the Feather ESP32-S3 TFT.
 //
 
-// Uncomment this to build for the Feather ESP32-S3 TFT instead of the Hosyond ESP32-S3
-// Viewer board.
-//#define ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT
-
-// Default: build for the Hosyond ESP32-S3 Viewer board's larger display. Also requires
-// selecting the generic "ESP32S3 Dev Module" board in Visual Micro.
-#define ARDUINO_HOSYOND_ESP32_S3_VIEWER
-
 // TEXT_SIZE_2 and TEXT_SIZE_3 are always included regardless (see ArduinoWithDisplay.h).
 #define TEXT_SIZES_CUSTOM
 
@@ -327,7 +319,7 @@ void setup()
 
    initLayout();
 
-   sketch.resolveSiteLocation(true);
+   sketch.resolveSiteLocation();
    std::string suffix = "/" + sketch.siteLocation();
    for (uint8_t i = 0; i < NUM_BARS; i++)
    {
