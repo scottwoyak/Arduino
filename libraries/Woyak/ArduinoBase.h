@@ -487,7 +487,7 @@ public:
       if (_retryTimeSync && !TimeSync::isSynced() && _timeSyncRetryTimer.ready())
       {
          TimeSync::startSyncWithAutoTimezone("pool.ntp.org", "time.nist.gov");
-         Logger.log("Retrying time sync");
+         Logger.log("Retrying time sync", LogSeverity::INFO, "Time");
       }
 
       // Only drive

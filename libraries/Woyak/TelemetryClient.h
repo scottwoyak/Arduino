@@ -108,13 +108,13 @@ public:
          _logTimer.reset();
          _outageStopwatch.reset();
          _outageStopwatch.start();
-         Logger.log(detail, LogSeverity::ERROR);
+         Logger.log(detail, LogSeverity::ERROR, "Telemetry");
       }
       else if (_logTimer.ready())
       {
          _logTimer.reset();
          uint16_t elapsedMinutes = (uint16_t)lround(_outageStopwatch.elapsedSecs() / 60.0);
-         Logger.log("Haven't been able to reconnect to telemetry topic '" + _topic + "' for the last " + std::to_string(elapsedMinutes) + " minutes", LogSeverity::ERROR);
+         Logger.log("Haven't been able to reconnect to telemetry topic '" + _topic + "' for the last " + std::to_string(elapsedMinutes) + " minutes", LogSeverity::ERROR, "Telemetry");
       }
    }
 
@@ -207,7 +207,7 @@ public:
    ///
    virtual void onDisconnected(const std::string& reason)
    {
-      Logger.log("Telemetry connection lost (" + String(reason.c_str()) + "). Restarting in " + String(int(TELEMETRY_RESET_DELAY_S)) + "s", LogSeverity::ERROR);
+      Logger.log("Telemetry connection lost (" + String(reason.c_str()) + "). Restarting in " + String(int(TELEMETRY_RESET_DELAY_S)) + "s", LogSeverity::ERROR, "Telemetry");
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
@@ -242,7 +242,7 @@ public:
    ///
    virtual void onConnectionFailed(const std::string& reason)
    {
-      Logger.log("Could not connect to telemetry server (" + String(reason.c_str()) + "). Restarting in " + String(int(TELEMETRY_RESET_DELAY_S)) + "s", LogSeverity::ERROR);
+      Logger.log("Could not connect to telemetry server (" + String(reason.c_str()) + "). Restarting in " + String(int(TELEMETRY_RESET_DELAY_S)) + "s", LogSeverity::ERROR, "Telemetry");
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
@@ -268,7 +268,7 @@ public:
    ///
    virtual void onError(const std::string& message)
    {
-      Logger.log(message, LogSeverity::ERROR);
+      Logger.log(message, LogSeverity::ERROR, "Telemetry");
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (_display != nullptr)
@@ -516,7 +516,7 @@ private:
          DeviceHealth::telemetryReconnects++;
       }
 
-      Logger.log(std::string(wasConnected ? "Telemetry connection lost (" : "Could not connect to telemetry server (") + reason + "); will keep retrying for up to " + std::to_string((int)TELEMETRY_OUTAGE_RESET_M) + " minutes", LogSeverity::WARN);
+      Logger.log(std::string(wasConnected ? "Telemetry connection lost (" : "Could not connect to telemetry server (") + reason + "); will keep retrying for up to " + std::to_string((int)TELEMETRY_OUTAGE_RESET_M) + " minutes", LogSeverity::WARN, "Telemetry");
    }
 
    void _onJsonMessage(JsonDocument& doc) override
@@ -530,7 +530,7 @@ private:
             _rate.reset();
             if (_outageActive)
             {
-               Logger.log("Telemetry reconnected");
+               Logger.log("Telemetry reconnected", LogSeverity::INFO, "Telemetry");
             }
             _clearOutage();
             if (_handler != nullptr)
@@ -548,7 +548,7 @@ private:
             }
             else
             {
-               Logger.log(std::string("Telemetry: server error: ") + message, LogSeverity::ERROR);
+               Logger.log(std::string("Telemetry: server error: ") + message, LogSeverity::ERROR, "Telemetry");
             }
             return;
          }
@@ -581,18 +581,18 @@ private:
 
    void _onError(const std::string& reason) override
    {
-      Logger.log(std::string("Telemetry: invalid message: ") + reason, LogSeverity::ERROR);
+      Logger.log(std::string("Telemetry: invalid message: ") + reason, LogSeverity::ERROR, "Telemetry");
    }
 
    void _onHandshakeAckTimeout() override
    {
-      Logger.log(std::string("Telemetry: no handshake ack from ") + getUrl() + " within " + std::to_string(HANDSHAKE_ACK_TIMEOUT_MS) + "ms; forcing reconnect", LogSeverity::WARN);
+      Logger.log(std::string("Telemetry: no handshake ack from ") + getUrl() + " within " + std::to_string(HANDSHAKE_ACK_TIMEOUT_MS) + "ms; forcing reconnect", LogSeverity::WARN, "Telemetry");
    }
 
 protected:
     void _onOutageExpired(const std::string& reason, bool wasConnected) override
     {
-       Logger.log("Telemetry did not reconnect within " + std::to_string((int)TELEMETRY_OUTAGE_RESET_M) + " minutes", LogSeverity::ERROR);
+       Logger.log("Telemetry did not reconnect within " + std::to_string((int)TELEMETRY_OUTAGE_RESET_M) + " minutes", LogSeverity::ERROR, "Telemetry");
        if (_handler != nullptr)
        {
           if (wasConnected)

@@ -184,7 +184,7 @@ private:
       {
          if (print)
          {
-            Logger.log("TimeSync: timezone lookup failed, code: " + String(httpCode), LogSeverity::ERROR);
+            Logger.log("TimeSync: timezone lookup failed, code: " + String(httpCode), LogSeverity::ERROR, "Time");
          }
          http.end();
          return 0;
@@ -199,7 +199,7 @@ private:
       {
          if (print)
          {
-            Logger.log("TimeSync: timezone lookup parse failed: " + String(error.c_str()), LogSeverity::ERROR);
+            Logger.log("TimeSync: timezone lookup parse failed: " + String(error.c_str()), LogSeverity::ERROR, "Time");
          }
          return 0;
       }
@@ -209,7 +209,7 @@ private:
       {
          if (print)
          {
-            Logger.log("TimeSync: timezone lookup failed: " + String(doc["message"].as<const char*>()), LogSeverity::ERROR);
+            Logger.log("TimeSync: timezone lookup failed: " + String(doc["message"].as<const char*>()), LogSeverity::ERROR, "Time");
          }
          return 0;
       }

@@ -217,7 +217,7 @@ class DeviceServerClient
             }
             else if (DeviceServerClient::_disconnectLogged)
             {
-               DeviceServerClient::log("Logging reconnected after " + std::to_string((millis() - DeviceServerClient::_offlineSinceMs) / 1000) + " s");
+               DeviceServerClient::log("Logging reconnected after " + std::to_string((millis() - DeviceServerClient::_offlineSinceMs) / 1000) + " s", LogSeverity::INFO, "Hub");
             }
             DeviceServerClient::_offline = false;
             DeviceServerClient::_disconnectPending = false;
@@ -236,7 +236,7 @@ class DeviceServerClient
                const char* url = doc["payload"]["url"];
                if (url == nullptr)
                {
-                  DeviceServerClient::log("Update command missing payload url");
+                  DeviceServerClient::log("Update command missing payload url", LogSeverity::ERROR, "OTA");
                   return;
                }
 
@@ -273,7 +273,7 @@ class DeviceServerClient
          DeviceServerClient::_debugPrint("Error: " + reason);
          if (DeviceServerClient::isResolved())
          {
-            DeviceServerClient::log("WebSocket error: " + reason, LogSeverity::ERROR);
+            DeviceServerClient::log("WebSocket error: " + reason, LogSeverity::ERROR, "Hub");
          }
       }
 
@@ -282,7 +282,7 @@ class DeviceServerClient
          DeviceServerClient::_debugPrint(std::string("Hub: no handshake ack from ") + getUrl() + " within " + std::to_string(HANDSHAKE_ACK_TIMEOUT_MS) + "ms; forcing reconnect");
          if (DeviceServerClient::isResolved())
          {
-            DeviceServerClient::log(std::string("Hub: no handshake ack from ") + getUrl() + " within " + std::to_string(HANDSHAKE_ACK_TIMEOUT_MS) + "ms; forcing reconnect", LogSeverity::WARN);
+            DeviceServerClient::log(std::string("Hub: no handshake ack from ") + getUrl() + " within " + std::to_string(HANDSHAKE_ACK_TIMEOUT_MS) + "ms; forcing reconnect", LogSeverity::WARN, "Hub");
          }
       }
 
@@ -1701,7 +1701,7 @@ public:
       if (_disconnectPending && !isConnected() && (millis() - _disconnectStartMs) >= DISCONNECT_GRACE_MS)
       {
          _backdateMs = millis() - _offlineSinceMs;
-         log(std::string("Logging disconnected: ") + _pendingDisconnectReason);
+         log(std::string("Logging disconnected: ") + _pendingDisconnectReason, LogSeverity::WARN, "Hub");
          _backdateMs = 0;
          _disconnectPending = false;
          _disconnectLogged = true;

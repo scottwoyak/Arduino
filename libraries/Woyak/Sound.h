@@ -244,7 +244,7 @@ private:
    {
       if (!lgfx::i2c::writeRegister8(I2C_PORT, ES8311_ADDRESS, reg, value, 0, I2C_FREQUENCY).has_value())
       {
-         Logger.log("Codec write to reg " + std::to_string(reg) + " failed", LogSeverity::ERROR, "Sound");
+         Logger.log("Codec write to reg " + std::to_string(reg) + " failed", LogSeverity::ERROR);
       }
    }
 
@@ -483,7 +483,7 @@ public:
          _pcm = (int16_t*)heap_caps_malloc(MINIMP3_MAX_SAMPLES_PER_FRAME * sizeof(int16_t), MALLOC_CAP_SPIRAM);
          if (_decoder == nullptr || _pcm == nullptr)
          {
-            Logger.log("PSRAM allocation of MP3 decoder buffers failed", LogSeverity::ERROR, "Sound");
+            Logger.log("PSRAM allocation of MP3 decoder buffers failed", LogSeverity::ERROR);
             return;
          }
       }
@@ -499,7 +499,7 @@ public:
       _began = _i2s.begin(I2S_MODE_STD, SAMPLE_RATE, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO);
       if (!_began)
       {
-         Logger.log("I2S begin failed", LogSeverity::ERROR, "Sound");
+         Logger.log("I2S begin failed", LogSeverity::ERROR);
       }
    }
 
@@ -574,7 +574,7 @@ public:
          _mp3Cache = (uint8_t*)heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
          if (_mp3Cache == nullptr)
          {
-            Logger.log("PSRAM allocation of " + std::to_string(size) + " bytes for sound failed", LogSeverity::ERROR, "Sound");
+            Logger.log("PSRAM allocation of " + std::to_string(size) + " bytes for sound failed", LogSeverity::ERROR);
             return;
          }
          memcpy(_mp3Cache, mp3, size);
@@ -840,13 +840,13 @@ private:
    {
       if (!_began)
       {
-         Logger.log("Can't play sound: I2S not started", LogSeverity::ERROR, "Sound");
+         Logger.log("Can't play sound: I2S not started", LogSeverity::ERROR);
          return;
       }
 
       if (_numWriteFailures > 0)
       {
-         Logger.log(std::to_string(_numWriteFailures) + " I2S writes failed or were short since last sound", LogSeverity::ERROR, "Sound");
+         Logger.log(std::to_string(_numWriteFailures) + " I2S writes failed or were short since last sound", LogSeverity::ERROR);
          _numWriteFailures = 0;
       }
 
@@ -882,8 +882,7 @@ private:
          {
             Logger.log(
                "SoundTask creation failed: PSRAM stack of " + std::to_string(ASYNC_STACK_BYTES) + " bytes unavailable",
-               LogSeverity::ERROR,
-               "Sound");
+               LogSeverity::ERROR);
             return;
          }
       }

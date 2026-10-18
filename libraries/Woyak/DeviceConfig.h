@@ -101,7 +101,7 @@ private:
 
       if (httpCode != HTTP_CODE_OK)
       {
-         Logger.log("DeviceConfig: HTTP GET failed, code: " + String(httpCode), LogSeverity::ERROR);
+         Logger.log("DeviceConfig: HTTP GET failed, code: " + String(httpCode), LogSeverity::ERROR, "Config");
          http.end();
          return _Result::FETCH_FAILED;
       }
@@ -113,8 +113,8 @@ private:
       DeserializationError error = deserializeJson(doc, payload);
       if (error)
       {
-         Logger.log("DeviceConfig: JSON parse failed: " + String(error.c_str()), LogSeverity::ERROR);
-         Logger.log("DeviceConfig: Response payload was: " + payload, LogSeverity::ERROR);
+         Logger.log("DeviceConfig: JSON parse failed: " + String(error.c_str()), LogSeverity::ERROR, "Config");
+         Logger.log("DeviceConfig: Response payload was: " + payload, LogSeverity::ERROR, "Config");
          return _Result::FETCH_FAILED;
       }
 

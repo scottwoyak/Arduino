@@ -161,7 +161,7 @@ protected:
    void _logFlushFailure()
    {
       DeviceHealth::influxFailures++;
-      Logger.log(std::string("InfluxDB flush failed: ") + _influx->client()->getLastErrorMessage().c_str() + std::string(" (WiFi RSSI ") + std::to_string(WiFi.RSSI()) + " dBm)", LogSeverity::ERROR);
+      Logger.log(std::string("InfluxDB flush failed: ") + _influx->client()->getLastErrorMessage().c_str() + std::string(" (WiFi RSSI ") + std::to_string(WiFi.RSSI()) + " dBm)", LogSeverity::ERROR, "Influx");
    }
 
    ///

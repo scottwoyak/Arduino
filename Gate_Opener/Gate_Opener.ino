@@ -223,7 +223,7 @@ void handlePostGate()
    }
    else
    {
-      Logger.log("Invalid gate command \"" + std::string(value.c_str()) + "\" from " + std::string(server.client().remoteIP().toString().c_str()), LogSeverity::WARN, "Gate");
+      Logger.log("Invalid gate command \"" + std::string(value.c_str()) + "\" from " + std::string(server.client().remoteIP().toString().c_str()), LogSeverity::WARN);
       server.send(400, "text/plain", "Value must be OPEN, HOLD or CLOSE");
       return;
    }
@@ -240,7 +240,7 @@ void handlePostGate()
       server.send(200, "text/plain", value);
    }
 
-   Logger.log("Gate command " + std::string(value.c_str()) + " from " + clientIp, LogSeverity::INFO, "Gate");
+   Logger.log("Gate command " + std::string(value.c_str()) + " from " + clientIp);
 }
 
 ///

@@ -969,14 +969,13 @@ void postGateCommand(const char* command)
 
    if (code == HTTP_CODE_OK)
    {
-      Logger.log(std::string("Gate ") + command + " request sent", LogSeverity::INFO, "Gate");
+      Logger.log(std::string("Gate ") + command + " request sent");
    }
    else
    {
       Logger.log(
          std::string("Gate ") + command + " request failed: " + HTTPClient::errorToString(code).c_str() + " (" + std::to_string(code) + ")",
-         LogSeverity::ERROR,
-         "Gate");
+         LogSeverity::ERROR);
    }
 }
 
@@ -1181,8 +1180,7 @@ void pollGateHold(bool isOpen)
          pollFailing = true;
          Logger.log(
             std::string("Gate opener hold-state poll failed: ") + HTTPClient::errorToString(code).c_str() + " (" + std::to_string(code) + ")",
-            LogSeverity::WARN,
-            "Gate");
+            LogSeverity::WARN);
       }
       return;
    }
@@ -1190,7 +1188,7 @@ void pollGateHold(bool isOpen)
    if (pollFailing)
    {
       pollFailing = false;
-      Logger.log("Gate opener hold-state poll recovered", LogSeverity::INFO, "Gate");
+      Logger.log("Gate opener hold-state poll recovered");
    }
 
    body.trim();

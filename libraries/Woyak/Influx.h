@@ -635,7 +635,7 @@ public:
    {
       if (client == nullptr)
       {
-         Logger.log("InfluxDB write failed: client is null", LogSeverity::ERROR);
+         Logger.log("InfluxDB write failed: client is null", LogSeverity::ERROR, "Influx");
          return false;
       }
 
@@ -712,14 +712,14 @@ public:
             {
                Logger.log(std::string("InfluxDB post skipped: fields still warming up (") +
                   _point.toLineProtocol().c_str() + " [" + warmingUpFields + "], " +
-                  std::to_string(warmingUpCount) + " pending)");
+                  std::to_string(warmingUpCount) + " pending)", LogSeverity::INFO, "Influx");
             }
             else
             {
                Logger.log(std::string("InfluxDB post still skipped after ") + std::to_string(_consecutiveWarmingUpSkips) +
                   " consecutive uploads: fields never received a valid sample (" +
                   _point.toLineProtocol().c_str() + " [" + warmingUpFields + "], " +
-                  std::to_string(warmingUpCount) + " pending) - check the sensor is actually being read", LogSeverity::ERROR);
+                  std::to_string(warmingUpCount) + " pending) - check the sensor is actually being read", LogSeverity::ERROR, "Influx");
             }
             return false;
          }
@@ -729,7 +729,7 @@ public:
          std::string warmingUpDetail = warmingUpCount > 0 ? std::string(" [") + warmingUpFields + "]" : "";
          Logger.log("InfluxDB write failed: no valid field values to post (" +
             std::to_string(disabledCount) + " disabled" + disabledDetail + ", " + std::to_string(invalidCount) + " NaN/Inf" + invalidDetail + ", " +
-            std::to_string(warmingUpCount) + " warming up" + warmingUpDetail + ")", LogSeverity::ERROR);
+            std::to_string(warmingUpCount) + " warming up" + warmingUpDetail + ")", LogSeverity::ERROR, "Influx");
          return false;
       }
 
@@ -746,7 +746,7 @@ public:
       }
 
       DeviceHealth::influxFailures++;
-      Logger.log(std::string("InfluxDB write failed: ") + client->getLastErrorMessage().c_str(), LogSeverity::ERROR);
+      Logger.log(std::string("InfluxDB write failed: ") + client->getLastErrorMessage().c_str(), LogSeverity::ERROR, "Influx");
       return false;
    }
 };
