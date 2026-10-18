@@ -20,11 +20,8 @@ internal sealed class MainForm : Form
     private readonly ListView _list = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = true, HideSelection = false };
     private readonly Button _refreshButton = new() { Text = "Refresh", AutoSize = true };
     private readonly Button _buildSelectedButton = new() { Text = "Build", AutoSize = true, Enabled = false };
-    private readonly Button _buildSketchButton = new() { Text = "Build Sketch", AutoSize = true, Enabled = false };
-    private readonly Button _buildAllButton = new() { Text = "Build All", AutoSize = true, Enabled = false };
     private readonly Button _haltButton = new() { Text = "Halt", AutoSize = true, Enabled = false };
     private readonly Button _uploadSelectedButton = new() { Text = "Publish", AutoSize = true, Enabled = false };
-    private readonly Button _uploadAllButton = new() { Text = "Publish All", AutoSize = true, Enabled = false };
     private readonly CheckBox _autoUploadCheckBox = new() { Text = "Auto-upload", AutoSize = true, Padding = new Padding(8, 6, 0, 0) };
     private const int LogVisibleLines = 4;
 
@@ -69,7 +66,7 @@ internal sealed class MainForm : Form
         _log.MinimumSize = new Size(0, _log.Height);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(4), WrapContents = false };
-        buttons.Controls.AddRange([_refreshButton, _buildSelectedButton, _buildSketchButton, _buildAllButton, _haltButton, _uploadSelectedButton, _uploadAllButton, _autoUploadCheckBox]);
+        buttons.Controls.AddRange([_refreshButton, _buildSelectedButton, _haltButton, _uploadSelectedButton, _autoUploadCheckBox]);
 
         Controls.Add(_list);
         Controls.Add(_log);
@@ -85,11 +82,8 @@ internal sealed class MainForm : Form
 
         _refreshButton.Click += async (_, _) => await RefreshAsync();
         _buildSelectedButton.Click += async (_, _) => await BuildAsync(SelectedBuildableItems());
-        _buildSketchButton.Click += async (_, _) => await BuildAsync(SelectedSketchItems());
-        _buildAllButton.Click += async (_, _) => await BuildAsync(AllBuildableItems());
         _haltButton.Click += (_, _) => HaltBuild();
-        _uploadSelectedButton.Click += async (_, _) => await UploadAsync(SelectedReadyItems());
-        _uploadAllButton.Click += async (_, _) => await UploadAsync(_items.Where(i => i.Status == FirmwareStatus.Ready).ToList());
+        _uploadSelectedButton.Click += async (_, _) => await UploadAsync(SelectedUploadableItems());
         _list.SelectedIndexChanged += (_, _) => UpdateButtons();
         _list.ColumnClick += (_, e) => SortBy(e.Column);
 
@@ -479,6 +473,8 @@ internal sealed class MainForm : Form
             {
                 row.SubItems[2].Text = item.Version;
                 row.SubItems[3].Text = item.Status == FirmwareStatus.Skipped && item.Built == default ? "" : DateText.Format(item.Built);
+                row.SubItems[4].Text = item.ServerVersion ?? "";
+                row.SubItems[5].Text = item.ServerBuildTime ?? "";
                 row.SubItems[6].Text = status;
                 ApplyRowStyle(row, item);
                 break;
@@ -531,28 +527,12 @@ internal sealed class MainForm : Form
             .ToList();
     }
 
-    private List<FirmwareItem> AllBuildableItems()
-    {
-        return _items
-            .Where(i => i.Board.Length > 0)
-            .ToList();
-    }
-
     private List<FirmwareItem> SelectedUploadableItems()
     {
         return _list.SelectedItems
             .Cast<ListViewItem>()
             .Select(r => (FirmwareItem)r.Tag!)
             .Where(i => i.BinPath.Length > 0)
-            .ToList();
-    }
-
-    private List<FirmwareItem> SelectedReadyItems()
-    {
-        return _list.SelectedItems
-            .Cast<ListViewItem>()
-            .Select(r => (FirmwareItem)r.Tag!)
-            .Where(i => i.Status == FirmwareStatus.Ready)
             .ToList();
     }
 
@@ -569,11 +549,8 @@ internal sealed class MainForm : Form
     {
         _refreshButton.Enabled = !_busy;
         _buildSelectedButton.Enabled = !_busy && SelectedBuildableItems().Count > 0;
-        _buildSketchButton.Enabled = !_busy && SelectedSketchItems().Count > 0;
-        _buildAllButton.Enabled = !_busy && AllBuildableItems().Count > 0;
         _haltButton.Enabled = _buildCts is { IsCancellationRequested: false };
-        _uploadSelectedButton.Enabled = !_busy && SelectedReadyItems().Count > 0;
-        _uploadAllButton.Enabled = !_busy && _items.Any(i => i.Status == FirmwareStatus.Ready);
+        _uploadSelectedButton.Enabled = !_busy && SelectedUploadableItems().Count > 0;
     }
 
     private void HaltBuild()
@@ -650,6 +627,12 @@ internal sealed class MainForm : Form
                         SetRowStatus(item, "Uploading...");
                         Log($"Uploading {item.Firmware} {item.Version}...");
                         var (uploadOk, uploadDetail) = await _hub.UploadAsync(item, null);
+                        if (uploadOk)
+                        {
+                            item.ServerVersion = item.Version;
+                            item.ServerBuildTime = item.BuildTime;
+                            item.Status = FirmwareStatus.UpToDate;
+                        }
                         SetRowStatus(item, uploadOk ? "Uploaded" : $"Upload failed: {uploadDetail}", isError: !uploadOk);
                         Log(uploadOk ? $"OK     {item.Firmware} {item.Version}" : $"FAILED {item.Firmware}: {uploadDetail}");
                     }
@@ -699,6 +682,12 @@ internal sealed class MainForm : Form
                 SetRowStatus(item, "Uploading...");
                 Log($"Uploading {item.Firmware} {item.Version}...");
                 var (ok, detail) = await _hub.UploadAsync(item, null);
+                if (ok)
+                {
+                    item.ServerVersion = item.Version;
+                    item.ServerBuildTime = item.BuildTime;
+                    item.Status = FirmwareStatus.UpToDate;
+                }
                 SetRowStatus(item, ok ? "Uploaded" : $"Upload failed: {detail}", isError: !ok);
                 Log(ok ? $"OK     {item.Firmware} {item.Version}" : $"FAILED {item.Firmware}: {detail}");
             }
