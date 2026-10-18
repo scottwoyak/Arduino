@@ -2,6 +2,7 @@
 
 #include "LGX_FeatherESP32_S3_TFT.h"
 #include "ArduinoWithDisplay.h"
+#include "Battery.h"
 #include "Button.h"
 #include "MultiStatus.h"
 #include "DeviceStateStatus.h"
@@ -15,6 +16,7 @@
 class Feather_ESP32_S3 : public ArduinoWithDisplay, public IStatus
 {
 public:
+   Battery battery;
    Button buttonA;
    Preferences preferences;
    NeoPixelLED neoPixel;
@@ -45,6 +47,7 @@ public:
 
       Wire.begin();
 
+      battery.begin();
       buttonA.begin();
       neoPixel.begin();
       led.begin();

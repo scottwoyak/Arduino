@@ -1,121 +1,236 @@
 #pragma once
 
+#include <Arduino.h>
+#include <array>
 #include <cmath>
 
-#include "RollingStats.h"
-#include "Util.h"
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+#include <Adafruit_MAX1704X.h>
+#include <Wire.h>
+#endif
 
+#include "ArduinoBoardId.h"
+
+///
 /// <summary>
-/// Monitors battery voltage and estimates charge percentage.
+/// On-demand battery monitor supporting both I2C fuel-gauge boards (Adafruit Feather
+/// ESP32-S3 TFT with MAX17048) and ADC voltage-divider boards (Hosyond 4.0 ESP32-S3,
+/// Waveshare ESP32-S3 Touch LCD 1.9 / 4.3, Adafruit Feather M0, or a custom pin/divider).
 /// </summary>
-/// <remarks>
-/// Tracks battery voltage using a rolling statistics filter for stable readings.
-/// Can optionally estimate and calibrate the fully-charged voltage level for accurate
-/// percentage calculations. Call read() frequently (e.g., in loop) for continuous monitoring.
-/// </remarks>
+///
 class Battery
 {
 private:
-   uint8_t _batteryVoltsPin;
-   RollingStats _batteryVolts;
-   float _lastVolts;
-   uint8_t _consecutiveUnchangedVolts;
-   float _fullChargeVolts;
+   static constexpr uint8_t NUM_LIPO_CURVE_POINTS = 11;
 
-public:
-   /// <summary>
-   /// Constructs a Battery monitor on the specified analog pin.
-   /// </summary>
-   /// <param name="batteryVoltsPin">Analog pin for reading battery voltage (default pin 7)</param>
-   Battery(uint8_t batteryVoltsPin = 7)
-      : _batteryVoltsPin(batteryVoltsPin),
-      _batteryVolts(1, 5),
-      _lastVolts(0),
-      _consecutiveUnchangedVolts(0),
-      _fullChargeVolts(NAN)
+   // Standard 1S LiPo voltage-to-SoC lookup table from 0% to 100% in 10% increments.
+   static constexpr std::array<float, NUM_LIPO_CURVE_POINTS> LIPO_VOLTS_CURVE =
    {
-   }
+      3.30f, //   0%
+      3.58f, //  10%
+      3.68f, //  20%
+      3.74f, //  30%
+      3.77f, //  40%
+      3.80f, //  50%
+      3.84f, //  60%
+      3.91f, //  70%
+      3.98f, //  80%
+      4.08f, //  90%
+      4.20f  // 100%
+   };
 
+   static constexpr uint8_t ADC_RESOLUTION_BITS = 12;
+   static constexpr uint16_t ADC_MAX_COUNTS = (1 << ADC_RESOLUTION_BITS);
+   static constexpr float ADC_REF_VOLTS = 3.3f;
+
+   ///
    /// <summary>
-   /// Initializes the battery monitor and sets analog read resolution.
+   /// Converts a 1S LiPo cell voltage to an estimated state-of-charge percentage using
+   /// piecewise linear interpolation over LIPO_VOLTS_CURVE.
    /// </summary>
-   /// <remarks>
-   /// Performs an initial voltage read. Call once during setup().
-   /// </remarks>
-   void begin()
+   /// <param name="volts">Measured cell voltage in volts.</param>
+   /// <returns>Estimated battery percentage (0.0 to 100.0).</returns>
+   ///
+   static float _voltsToPercent(float volts)
    {
-      analogReadResolution(12);
-
-      // do an initial read
-      read();
-   }
-
-   /// <summary>
-   /// Reads the current battery voltage. Call frequently (e.g., in loop).
-   /// </summary>
-   void read()
-   {
-      _batteryVolts.set(Util::readVolts(_batteryVoltsPin));
-   }
-
-   /// <summary>
-   /// Updates the full-charge voltage estimate based on voltage stability.
-   /// </summary>
-   /// <remarks>
-   /// Automatically detects when battery voltage stabilizes and stores the stable voltage
-   /// as the reference for 100% charge. This improves percentage accuracy over time.
-   /// </remarks>
-   void updateFullChargeEstimate()
-   {
-      // try to detect when we're fully charged and record the volts so we
-      // can properly compute 100% charge
-      if (fabsf(_lastVolts - _batteryVolts.get()) < 0.01f)
+      if (volts <= LIPO_VOLTS_CURVE[0])
       {
-         _consecutiveUnchangedVolts++;
+         return 0.0f;
+      }
 
-         if ((_consecutiveUnchangedVolts >= 4) && (_batteryVolts.get() > 4.0f))
+      if (volts >= LIPO_VOLTS_CURVE[NUM_LIPO_CURVE_POINTS - 1])
+      {
+         return 100.0f;
+      }
+
+      for (uint8_t i = 0; i < NUM_LIPO_CURVE_POINTS - 1; i++)
+      {
+         float vLow = LIPO_VOLTS_CURVE[i];
+         float vHigh = LIPO_VOLTS_CURVE[i + 1];
+         if (volts <= vHigh)
          {
-            _fullChargeVolts = _batteryVolts.get();
+            float fraction = (volts - vLow) / (vHigh - vLow);
+            return (i + fraction) * 10.0f;
          }
       }
-      else
-      {
-         _lastVolts = _batteryVolts.get();
-         _consecutiveUnchangedVolts = 0;
-      }
+
+      return 100.0f;
    }
 
+public:
+#if defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40) || defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER)
+   static constexpr int8_t DEFAULT_PIN = 9;
+   static constexpr float DEFAULT_VOLTAGE_DIVIDER = 2.0f;
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_43)
+   static constexpr int8_t DEFAULT_PIN = 6;
+   static constexpr float DEFAULT_VOLTAGE_DIVIDER = 3.0f;
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_19)
+   static constexpr int8_t DEFAULT_PIN = 4;
+   static constexpr float DEFAULT_VOLTAGE_DIVIDER = 3.0f;
+#elif defined(ADAFRUIT_FEATHER_M0)
+   static constexpr int8_t DEFAULT_PIN = 9;
+   static constexpr float DEFAULT_VOLTAGE_DIVIDER = 2.0f;
+#else
+   static constexpr int8_t DEFAULT_PIN = -1;
+   static constexpr float DEFAULT_VOLTAGE_DIVIDER = 2.0f;
+#endif
+
+private:
+   int8_t _pin = DEFAULT_PIN;
+   float _voltageDivider = DEFAULT_VOLTAGE_DIVIDER;
+   bool _ready = false;
+
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+   Adafruit_MAX17048 _fuelGauge;
+#endif
+
+public:
+   ///
    /// <summary>
-   /// Gets the voltage stored as the fully-charged reference.
+   /// Initializes a new instance of the Battery class using the board's default battery
+   /// monitoring configuration, or a custom ADC pin and voltage divider ratio.
    /// </summary>
-   /// <returns>Full charge voltage in volts, or NaN if not yet calibrated</returns>
-   float getFullChargeVolts()
+   /// <param name="pin">Analog input pin wired to the battery voltage divider (or -1 if unused).</param>
+   /// <param name="voltageDivider">Voltage divider multiplier (e.g. 2.0 for 100k/100k, 3.0 for 200k/100k).</param>
+   ///
+   Battery(int8_t pin = DEFAULT_PIN, float voltageDivider = DEFAULT_VOLTAGE_DIVIDER)
    {
-      return _fullChargeVolts;
+      _pin = pin;
+      _voltageDivider = voltageDivider;
    }
 
+   ///
    /// <summary>
-   /// Gets the current smoothed battery voltage.
+   /// Initializes the battery monitor hardware (I2C MAX17048 fuel gauge on Feather ESP32-S3,
+   /// or 12-bit ADC resolution on voltage-divider boards).
    /// </summary>
-   /// <returns>Battery voltage in volts</returns>
-   float getBatteryVolts()
+   /// <returns>True if the battery monitor is ready; false if initialization failed.</returns>
+   ///
+   bool begin()
    {
-      return _batteryVolts.get();
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+      if (_pin < 0)
+      {
+         _ready = _fuelGauge.begin();
+         return _ready;
+      }
+#endif
+
+      if (_pin < 0)
+      {
+         _ready = false;
+         return false;
+      }
+
+      analogReadResolution(ADC_RESOLUTION_BITS);
+      pinMode(_pin, INPUT);
+      _ready = true;
+      return true;
    }
 
+   ///
    /// <summary>
-   /// Gets the estimated battery charge percentage.
+   /// Reads the current battery voltage on demand.
    /// </summary>
-   /// <returns>Charge percentage from 0 to 100. Uses calibrated full-charge voltage if available.</returns>
-   float getPercent()
+   /// <returns>Battery voltage in volts, or NAN if unavailable.</returns>
+   ///
+   float readVolts()
    {
-      if (_fullChargeVolts > 0)
+      if (!_ready && !begin())
       {
-         return Util::voltsToPercent(_batteryVolts.get(), _fullChargeVolts);
+         return NAN;
       }
-      else
+
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+      if (_pin < 0)
       {
-         return Util::voltsToPercent(_batteryVolts.get());
+         return _fuelGauge.cellVoltage();
       }
+#endif
+
+#if defined(ARDUINO_ARCH_ESP32)
+      return analogReadMilliVolts(_pin) * 0.001f * _voltageDivider;
+#else
+      return analogRead(_pin) * _voltageDivider * ADC_REF_VOLTS / ADC_MAX_COUNTS;
+#endif
+   }
+
+   ///
+   /// <summary>
+   /// Reads the estimated battery state of charge on demand.
+   /// </summary>
+   /// <returns>Battery charge percentage (0.0 to 100.0), or NAN if unavailable.</returns>
+   ///
+   float readPercent()
+   {
+      if (!_ready && !begin())
+      {
+         return NAN;
+      }
+
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+      if (_pin < 0)
+      {
+         float percent = _fuelGauge.cellPercent();
+         if (!isfinite(percent))
+         {
+            return NAN;
+         }
+
+         return constrain(percent, 0.0f, 100.0f);
+      }
+#endif
+
+      float volts = readVolts();
+      if (!isfinite(volts))
+      {
+         return NAN;
+      }
+
+      return _voltsToPercent(volts);
+   }
+
+   ///
+   /// <summary>
+   /// Reads the battery charge/discharge rate in percent per hour on boards with a hardware
+   /// fuel gauge (MAX17048). Returns NAN on ADC voltage-divider boards.
+   /// </summary>
+   /// <returns>Charge rate in %/hr (positive when charging, negative when draining), or NAN if unsupported.</returns>
+   ///
+   float readChargeRate()
+   {
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+      if (_pin < 0)
+      {
+         if (!_ready && !begin())
+         {
+            return NAN;
+         }
+
+         return _fuelGauge.chargeRate();
+      }
+#endif
+
+      return NAN;
    }
 };

@@ -189,40 +189,6 @@ public:
    }
 
    /// <summary>
-   /// Reads ADC input and converts to voltage accounting for voltage divider.
-   /// </summary>
-   /// <param name="pin">Analog input pin</param>
-   /// <param name="resolution">ADC resolution in counts (ESP32: 4096, others: 1024)</param>
-   /// <param name="voltageDivider">Voltage divider ratio (e.g., 2.0 for 2:1 divider)</param>
-   /// <returns>Voltage in volts</returns>
-   static float readVolts(uint8_t pin, uint16_t resolution = 4096, float voltageDivider = 2.0f)
-   {
-      float volts = analogRead(pin);
-      volts *= voltageDivider; // compensate for voltage divider
-      volts *= 3.3f; // multiply by 3.3V, our reference voltage
-      volts /= resolution; // convert to voltage
-      return volts;
-   }
-
-   /// <summary>
-   /// Converts battery voltage to charge percentage.
-   /// </summary>
-   /// <param name="volts">Battery voltage</param>
-   /// <param name="fullChargeVolts">Voltage when fully charged (e.g., 4.1V for Li-Ion)</param>
-   /// <returns>Charge percentage 0-100%</returns>
-   /// <remarks>
-   /// Uses linear interpolation between MIN_VOLTS (3.3V) and fullChargeVolts.
-   /// Result is clamped to 0-100%.
-   /// </remarks>
-   static float voltsToPercent(float volts, float fullChargeVolts = 4.1f)
-   {
-      const float MIN_VOLTS = 3.3f;
-      float percent = 100.0f * (volts - MIN_VOLTS) / (fullChargeVolts - MIN_VOLTS);
-      percent = constrain(percent, 0.0f, 100.0f);
-      return percent;
-   }
-
-   /// <summary>
    /// Calculates elapsed time between two clock readings, handling wraparound.
    /// Uses unsigned arithmetic: if end &lt; start (clock wrapped), the result
    /// is still correct due to modulo 2^32 arithmetic.

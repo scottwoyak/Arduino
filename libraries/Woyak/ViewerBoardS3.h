@@ -7,6 +7,7 @@
 // ArduinoWithDisplay declares a member of type LGFX.
 #include "LGX_HosyondESP32S3.h"
 #include "ArduinoWithDisplay.h"
+#include "Battery.h"
 #include "Button.h"
 #include "DeviceStateStatus.h"
 #include "LED.h"
@@ -35,6 +36,13 @@ private:
 public:
    static constexpr uint8_t DEFAULT_SDA_PIN = 16;
    static constexpr uint8_t DEFAULT_SCL_PIN = 15;
+
+   ///
+   /// <summary>
+   /// Onboard battery voltage monitor (GPIO9 via 2:1 voltage divider).
+   /// </summary>
+   ///
+   Battery battery;
 
    ///
    /// <summary>
@@ -107,6 +115,7 @@ public:
       Wire.begin();
 
       sound.begin();
+      battery.begin();
       buttonA.begin();
       neoPixel.begin();
       status.begin();

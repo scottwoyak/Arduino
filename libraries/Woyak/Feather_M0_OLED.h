@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ArduinoWithDisplay.h"
+#include "Battery.h"
 #include "Button.h"
 #include "LED.h"
 #include <Adafruit_SH110X.h>
@@ -133,6 +134,7 @@ class Feather_M0_OLED : public ArduinoWithDisplay
 {
 public:
    SW_SH1107 display;
+   Battery battery;
    Button buttonA;
    Button buttonB;
    Button buttonC;
@@ -148,6 +150,7 @@ public:
    /// </summary>
    void begin()
    {
+      battery.begin();
       buttonA.begin();
       buttonB.begin();
       buttonC.begin();

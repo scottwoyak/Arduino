@@ -2,6 +2,7 @@
 
 #include "../LovyanGFX/src/lgfx_user/LGFX_Waveshare_ESP32S3_Touch_LCD_43.h"
 #include "ArduinoWithDisplay.h"
+#include "Battery.h"
 #include "Button.h"
 #include "DeviceStateStatus.h"
 #include "MultiStatus.h"
@@ -21,6 +22,7 @@ public:
    // Onboard BOOT button, wired to GPIO0.
    static constexpr uint8_t DEFAULT_BUTTON_A_PIN = 0;
 
+   Battery battery;
    Preferences preferences;
    Button buttonA;
 
@@ -49,6 +51,7 @@ public:
       // this board's actual mounting (no additional flip needed).
       display.setRotation(DisplayRotation::PORTRAIT);
 
+      battery.begin();
       buttonA.begin();
       status.begin();
    }

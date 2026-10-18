@@ -1,5 +1,6 @@
 #pragma once
 
+#include <SPI.h>
 #include <LovyanGFX.hpp>
 
 /// <summary>

@@ -7,6 +7,7 @@
 // because ArduinoWithDisplay declares a member of type LGFX.
 #include "LGX_Waveshare_ESP32S3_Touch_LCD_19.h"
 #include "ArduinoWithDisplay.h"
+#include "Battery.h"
 #include "Button.h"
 #include "DeviceStateStatus.h"
 #include "MultiStatus.h"
@@ -24,6 +25,13 @@ public:
    static constexpr uint8_t DEFAULT_BUTTON_A_PIN = 0;
    static constexpr uint8_t DEFAULT_SDA_PIN = 47;
    static constexpr uint8_t DEFAULT_SCL_PIN = 48;
+
+   ///
+   /// <summary>
+   /// Onboard battery voltage monitor (GPIO4 via 3:1 voltage divider).
+   /// </summary>
+   ///
+   Battery battery;
 
    ///
    /// <summary>
@@ -72,6 +80,7 @@ public:
 
       Wire.begin();
 
+      battery.begin();
       buttonA.begin();
       status.begin();
    }

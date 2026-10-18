@@ -1,6 +1,7 @@
 #pragma once
 
 #define LGFX_USE_V1
+#include <SPI.h>
 #include <LovyanGFX.hpp>
 #include "Util.h"
 

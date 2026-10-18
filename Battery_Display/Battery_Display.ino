@@ -1,33 +1,35 @@
-/// <summary>
-/// Battery status display for Feather displays.
-/// </summary>
-/// <remarks>
-/// Monitors battery voltage, charge percentage, and charge rate from a MAX17048 fuel gauge IC
-/// and displays the information on a TFT display. Indicates charging/draining state when
-/// the charge rate exceeds 1%/hour.
-/// 
-/// Hardware: Feather ESP32 with TFT display and MAX17048 battery fuel gauge (I2C).
-/// </remarks>
+//
+// Battery status display.
+//
+// Monitors battery voltage, charge percentage, and charge rate (when supported by a
+// hardware fuel gauge) via the board's Battery instance and displays the information on
+// the TFT display. Indicates charging/draining state when the charge rate exceeds 1%/hour.
+//
 
 #include <Arduino.h>
-#include <Wire.h>
-#include <Adafruit_MAX1704X.h>
+#include <cmath>
 
 #include "ArduinoBoard.h"
 
-#ifndef ARDUINO_DISPLAY_SUPPORTED
-#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Feather M0)."
+#if !defined(ARDUINO_DISPLAY_SUPPORTED) || !defined(ARDUINO_BATTERY_SUPPORTED)
+#error "This sketch requires a board with a display and battery support."
 #include "WrongBoard.h"
 #endif
 
 #include "SerialX.h"
+#include "TimedAverage.h"
+#include "Timer.h"
 
 constexpr float MIN_CHARGE_RATE_FOR_STATUS = 1.0f;  // %/hour threshold for showing charge state
+constexpr unsigned long VOLTS_AVERAGE_SPAN_MS = 1000;
+constexpr float DISPLAY_UPDATE_RATE = 5.0f;
 
 Arduino arduino;
-Adafruit_MAX17048 battery;
+TimedAverage voltsAverage(VOLTS_AVERAGE_SPAN_MS);
+TimedAverage percentAverage(VOLTS_AVERAGE_SPAN_MS);
+RateTimer displayTimer(DISPLAY_UPDATE_RATE);
 
-Format batteryVoltsFormat("#.#v");
+Format batteryVoltsFormat("#.##v");
 Format percentFormat("###%");
 Format chargeRateFormat("+###%/hr");
 
@@ -35,12 +37,10 @@ void setup()
 {
    SerialX::begin();
    arduino.begin();
-   Wire.begin();
 
-   // Wait for battery fuel gauge to initialize
-   while (!battery.begin())
+   while (!arduino.battery.begin())
    {
-      Serial.println("Looking for battery fuel gauge...");
+      Serial.println("Looking for battery monitor...");
       delay(1000);
    }
 
@@ -49,34 +49,45 @@ void setup()
 
 void loop()
 {
+   voltsAverage.set(arduino.battery.readVolts());
+   percentAverage.set(arduino.battery.readPercent());
+
+   if (!displayTimer.ready())
+   {
+      return;
+   }
+
    arduino.setCursor(0, 0);
    arduino.setTextSize(3);
    arduino.println("Battery Info", Color::HEADING);
    arduino.moveCursorY(arduino.charH() / 4);
 
    // Display battery voltage
-   arduino.println("Volts: ", battery.cellVoltage(), batteryVoltsFormat);
+   arduino.println("Volts: ", voltsAverage.average(), batteryVoltsFormat);
    arduino.moveCursorY(arduino.charH() / 4);
 
    // Display charge percentage
-   arduino.print("State: ", battery.cellPercent(), percentFormat);
+   arduino.print("State: ", percentAverage.average(), percentFormat);
    uint16_t x = arduino.display.getCursorX();
    arduino.println();
    arduino.moveCursorY(arduino.charH() / 4);
 
-   // Display charge rate and status
-   arduino.setTextSize(2);
-   arduino.setCursorX(x);
-   float chargeRate = battery.chargeRate();
-   arduino.println(" Rate: ", chargeRate, chargeRateFormat);
-   arduino.setCursorX(x);
+   // Display charge rate and status when supported by the board's battery monitor
+   float chargeRate = arduino.battery.readChargeRate();
+   if (isfinite(chargeRate))
+   {
+      arduino.setTextSize(2);
+      arduino.setCursorX(x);
+      arduino.println(" Rate: ", chargeRate, chargeRateFormat);
+      arduino.setCursorX(x);
 
-   if (fabs(chargeRate) >= MIN_CHARGE_RATE_FOR_STATUS)
-   {
-      arduino.println(chargeRate > 0 ? "Charging" : "Draining", Color::VALUE2);
-   }
-   else
-   {
-      arduino.println("        ");  // Clear line
+      if (fabs(chargeRate) >= MIN_CHARGE_RATE_FOR_STATUS)
+      {
+         arduino.println(chargeRate > 0 ? "Charging" : "Draining", Color::VALUE2);
+      }
+      else
+      {
+         arduino.println("        ");  // Clear line
+      }
    }
 }
