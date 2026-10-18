@@ -481,7 +481,9 @@ private:
 	NeoPixelLED* _led;
 
 public:
-   ///
+	using IStatus::setStatus;
+
+	///
 	/// <summary>
 	/// Initializes the status indicator with a NeoPixel LED.
 	/// </summary>
@@ -498,6 +500,20 @@ public:
 			_led = new NeoPixelLED();
 			_autoCreatedLED = true;
 		}
+	}
+
+	///
+	/// <summary>
+	/// Initializes the status indicator with an internally created NeoPixel LED on the
+	/// specified data pin.
+	/// </summary>
+	/// <param name="pin">GPIO data pin for the NeoPixel.</param>
+	/// <param name="type">NeoPixel color order and frequency flags.</param>
+	///
+	NeoPixelStatus(int16_t pin, neoPixelType type = NEO_GRB + NEO_KHZ800)
+	{
+		_led = new NeoPixelLED(pin, type);
+		_autoCreatedLED = true;
 	}
 
 	///

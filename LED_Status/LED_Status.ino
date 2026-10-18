@@ -1,34 +1,24 @@
-/// <summary>
-/// RGB LED status indicator demonstration.
-/// </summary>
-/// <remarks>
-/// Cycles through various system status states and displays them using RGB LED colors.
-/// Demonstrates the Status enum and RGBLEDStatus class for visual system state indication.
-/// 
-/// States tested:
-/// - off(): Off
-/// - STARTED: Initializing
-/// - WIFI_CONNECTING: Connecting to WiFi
-/// - SERVICES_CONNECTING: Connecting to web services
-/// - RUNNING: Operating normally
-/// 
-/// Hardware: ESP32 with common-cathode RGB LED on PWM pins.
-/// </remarks>
+//
+// NeoPixel status indicator demonstration.
+//
+// Cycles through various system status states and displays them using a NeoPixel LED.
+// Demonstrates the Status enum and NeoPixelStatus class for visual system state indication.
+//
+// States tested:
+// - off(): Off
+// - STARTED: Initializing
+// - WIFI_CONNECTING: Connecting to WiFi
+// - SERVICES_CONNECTING: Connecting to web services
+// - RUNNING: Operating normally
+//
+// Hardware: ESP32 with a WS2812B/NeoPixel LED on GPIO 10.
+//
 
 #include <Arduino.h>
 
 #include "Status.h"
-#include "Waveshare_ESP32_S3_Zero.h"
 
-#if defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO) || defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS)
-constexpr uint8_t RED_PIN = WaveShare_ESP32_S3_Zero_Sensors::DEFAULT_RED_LED_PIN;
-constexpr uint8_t GREEN_PIN = WaveShare_ESP32_S3_Zero_Sensors::DEFAULT_GREEN_LED_PIN;
-constexpr uint8_t BLUE_PIN = WaveShare_ESP32_S3_Zero_Sensors::DEFAULT_BLUE_LED_PIN;
-#else
-constexpr uint8_t RED_PIN = 1;
-constexpr uint8_t GREEN_PIN = 2;
-constexpr uint8_t BLUE_PIN = 3;
-#endif
+constexpr int16_t NEOPIXEL_PIN = 10;
 
 constexpr unsigned long INTERVAL_OFF_MS = 1000;
 constexpr unsigned long INTERVAL_STARTED_MS = 1000;
@@ -36,7 +26,7 @@ constexpr unsigned long INTERVAL_WIFI_CONNECTING_MS = 2000;
 constexpr unsigned long INTERVAL_SERVICES_CONNECTING_MS = 2000;
 constexpr unsigned long INTERVAL_READY_MS = 5000;
 
-RGBLEDStatus status(RED_PIN, GREEN_PIN, BLUE_PIN);
+NeoPixelStatus status(NEOPIXEL_PIN);
 
 void setup()
 {

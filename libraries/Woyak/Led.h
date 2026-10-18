@@ -612,6 +612,8 @@ private:
    // channel immediately, which can silently fail that early, leaving the
    // NeoPixel dark. Deferring setup to begin() (called from setup()) avoids this.
    Adafruit_NeoPixel _pixel;
+   int16_t _neoPixelPin = NEOPIXEL_LED_PIN;
+   neoPixelType _neoPixelType = NEOPIXEL_LED_TYPE;
    uint8_t _red = 0;
    uint8_t _green = 0;
    uint8_t _blue = 0;
@@ -619,11 +621,16 @@ private:
 public:
    ///
    /// <summary>
-   /// Constructs a NeoPixelLED controller using the platform's default/auto-detected data pin.
+   /// Constructs a NeoPixelLED controller using the specified data pin and color order
+   /// (defaults to the platform's auto-detected onboard NeoPixel pin and type).
    /// </summary>
+   /// <param name="pin">GPIO data pin for the NeoPixel</param>
+   /// <param name="type">NeoPixel color order and frequency flags</param>
    ///
-   NeoPixelLED()
+   NeoPixelLED(int16_t pin = NEOPIXEL_LED_PIN, neoPixelType type = NEOPIXEL_LED_TYPE)
    {
+      _neoPixelPin = pin;
+      _neoPixelType = type;
       _level = constrain(255 * 0.05f, 0, 255);
    }
 
@@ -640,8 +647,11 @@ public:
       // Some boards (e.g. Adafruit Feather ESP32-S3 TFT) gate power to the onboard
       // NeoPixel behind a separate switched pin, which must be driven on before the
       // NeoPixel will light.
-      pinMode(NEOPIXEL_POWER, OUTPUT);
-      digitalWrite(NEOPIXEL_POWER, NEOPIXEL_POWER_ON);
+      if (_neoPixelPin == NEOPIXEL_LED_PIN)
+      {
+         pinMode(NEOPIXEL_POWER, OUTPUT);
+         digitalWrite(NEOPIXEL_POWER, NEOPIXEL_POWER_ON);
+      }
 #endif
 
       #if defined(ESP32) && ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
@@ -653,9 +663,9 @@ public:
       espInit();
 #endif
 
-      _pixel.updateType(NEOPIXEL_LED_TYPE);
+      _pixel.updateType(_neoPixelType);
       _pixel.updateLength(NUM_LEDS);
-      _pixel.setPin(NEOPIXEL_LED_PIN);
+      _pixel.setPin(_neoPixelPin);
       _pixel.begin();
       _apply(); // start with the led off
    }
