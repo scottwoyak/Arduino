@@ -1,11 +1,11 @@
 //
 // Sketch for the Hosyond ESP32-S3 4" display (Viewer board), also usable on the
-// Waveshare ESP32-S3-Touch-LCD-4.3B.
+// Waveshare ESP32-S3-Touch-LCD-4.3B and Waveshare ESP32-S3-Touch-LCD-2.8.
 //
 
 // Uncomment this to build for the Waveshare ESP32-S3-Touch-LCD-4.3B instead of the
 // selected Visual Micro board (that board has no dedicated board package entry).
-#define ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_43
+//#define ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_43
 
 #include "ArduinoBoard.h"
 
