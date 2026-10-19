@@ -16,7 +16,7 @@
 ///
 /// <summary>
 /// Waveshare ESP32-S3-Touch-LCD-2.8 board wrapper. 2.8" 240x320 ST7789T3 TFT display
-/// with CST328 capacitive touch controller, using the BOOT button (GPIO0) as buttonA.
+/// with CST3530 capacitive touch controller, using the BOOT button (GPIO0) as buttonA.
 /// </summary>
 ///
 class Waveshare_ESP32S3_Touch_LCD_28 : public ArduinoWithDisplay, public IStatus

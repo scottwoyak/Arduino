@@ -20,13 +20,14 @@ Arduino arduino;
 
 constexpr auto TITLE = "Touch Demo";
 
-constexpr uint8_t TITLE_TEXT_SIZE = 4;
-constexpr uint8_t BUTTON_TEXT_SIZE = 3;
+constexpr uint8_t TITLE_TEXT_SIZE = DEFAULT_HEADING_SIZE;
+constexpr uint8_t BUTTON_TEXT_SIZE = DEFAULT_CONTENT_SIZE;
 
-constexpr uint16_t BUTTON_WIDTH = 180;
-constexpr uint16_t BUTTON_HEIGHT = 100;
-constexpr uint16_t BUTTON_COL_GAP = 30;
-constexpr uint16_t BUTTON_ROW_GAP = 30;
+constexpr int16_t SCREEN_MARGIN = 12;
+constexpr int16_t BUTTON_COL_GAP = 16;
+constexpr int16_t BUTTON_ROW_GAP = 16;
+constexpr int16_t MAX_BUTTON_WIDTH = 180;
+constexpr int16_t MAX_BUTTON_HEIGHT = 100;
 
 Color NORMAL_COLOR = Color::BLUE;
 Color PRESSED_COLOR = Color::LIGHTBLUE;
@@ -116,19 +117,19 @@ public:
 };
 
 TouchButton button1(
-   Rect16(0, 0, BUTTON_WIDTH, BUTTON_HEIGHT),
+   Rect16(0, 0, 0, 0),
    "Button 1");
 
 TouchButton button2(
-   Rect16(0, 0, BUTTON_WIDTH, BUTTON_HEIGHT),
+   Rect16(0, 0, 0, 0),
    "Button 2");
 
 TouchButton button3(
-   Rect16(0, 0, BUTTON_WIDTH, BUTTON_HEIGHT),
+   Rect16(0, 0, 0, 0),
    "Button 3");
 
 TouchButton button4(
-   Rect16(0, 0, BUTTON_WIDTH, BUTTON_HEIGHT),
+   Rect16(0, 0, 0, 0),
    "Button 4");
 
 ///
@@ -148,15 +149,22 @@ void setup()
    SerialX::begin();
    arduino.begin();
 
-   int16_t totalWidth = BUTTON_WIDTH * 2 + BUTTON_COL_GAP;
-   int16_t totalHeight = BUTTON_HEIGHT * 2 + BUTTON_ROW_GAP;
-   int16_t left = (arduino.width() - totalWidth) / 2;
-   int16_t top = (arduino.height() - totalHeight) / 2;
+   int16_t headerHeight = arduino.charH(TITLE_TEXT_SIZE) + SCREEN_MARGIN;
+   int16_t availWidth = arduino.width() - SCREEN_MARGIN * 2;
+   int16_t availHeight = arduino.height() - headerHeight - SCREEN_MARGIN;
 
-   button1 = TouchButton(Rect16(left, top, BUTTON_WIDTH, BUTTON_HEIGHT), "Button 1");
-   button2 = TouchButton(Rect16(left + BUTTON_WIDTH + BUTTON_COL_GAP, top, BUTTON_WIDTH, BUTTON_HEIGHT), "Button 2");
-   button3 = TouchButton(Rect16(left, top + BUTTON_HEIGHT + BUTTON_ROW_GAP, BUTTON_WIDTH, BUTTON_HEIGHT), "Button 3");
-   button4 = TouchButton(Rect16(left + BUTTON_WIDTH + BUTTON_COL_GAP, top + BUTTON_HEIGHT + BUTTON_ROW_GAP, BUTTON_WIDTH, BUTTON_HEIGHT), "Button 4");
+   int16_t buttonWidth = min<int16_t>(MAX_BUTTON_WIDTH, (availWidth - BUTTON_COL_GAP) / 2);
+   int16_t buttonHeight = min<int16_t>(MAX_BUTTON_HEIGHT, (availHeight - BUTTON_ROW_GAP) / 2);
+
+   int16_t totalWidth = buttonWidth * 2 + BUTTON_COL_GAP;
+   int16_t totalHeight = buttonHeight * 2 + BUTTON_ROW_GAP;
+   int16_t left = (arduino.width() - totalWidth) / 2;
+   int16_t top = headerHeight + (availHeight - totalHeight) / 2;
+
+   button1 = TouchButton(Rect16(left, top, buttonWidth, buttonHeight), "Button 1");
+   button2 = TouchButton(Rect16(left + buttonWidth + BUTTON_COL_GAP, top, buttonWidth, buttonHeight), "Button 2");
+   button3 = TouchButton(Rect16(left, top + buttonHeight + BUTTON_ROW_GAP, buttonWidth, buttonHeight), "Button 3");
+   button4 = TouchButton(Rect16(left + buttonWidth + BUTTON_COL_GAP, top + buttonHeight + BUTTON_ROW_GAP, buttonWidth, buttonHeight), "Button 4");
 
    arduino.clearDisplay();
    displayHeader();
