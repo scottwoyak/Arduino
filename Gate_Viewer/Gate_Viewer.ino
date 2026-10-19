@@ -87,7 +87,7 @@ constexpr uint16_t GATE_OPENER_PORT = 80;
 // This sketch's own version (e.g. "1.06"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("1.10");
+const auto VERSION = MakeVersion("1.11");
 constexpr auto SKETCH_NAME = "Gate_Viewer";
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
@@ -108,6 +108,7 @@ constexpr auto SKETCH_NAME = "Gate_Viewer";
 #include "Slider.h"
 #include "Status.h"
 #include "TelemetryClient.h"
+#include "TimedAverage.h"
 #include "TimeSync.h"
 #include "Timer.h"
 #include "WiFiSettings.h"
@@ -1116,6 +1117,71 @@ int8_t gateDisplayedMotion = 0;
 extern float leftValue;
 extern float rightValue;
 
+#ifdef ARDUINO_BATTERY_SUPPORTED
+Format batteryPercentFormat("###%");
+
+///
+/// <summary>
+/// Samples the battery charge percentage and, when a battery is connected, draws it in the
+/// upper-left corner of the display in gray text. Only redraws when the rounded percentage
+/// (or connection state) changes, or when forceRedraw is true.
+/// </summary>
+/// <param name="forceRedraw">True to repaint even if the percentage hasn't changed.</param>
+///
+void displayBattery(bool forceRedraw = false)
+{
+   constexpr float BATTERY_SAMPLE_RATE = 10.0f;
+   constexpr unsigned long BATTERY_AVERAGE_SPAN_MS = 1000;
+
+   static RateTimer sampleTimer(BATTERY_SAMPLE_RATE);
+   static TimedAverage percentAverage(BATTERY_AVERAGE_SPAN_MS);
+   static bool everSampled = false;
+   static int lastDisplayedPercent = -1;
+   static int currentPercent = -1;
+
+   if (!everSampled || sampleTimer.ready())
+   {
+      everSampled = true;
+      float percent = sketch.arduino.battery.readPercent();
+      if (isfinite(percent))
+      {
+         percentAverage.set(percent);
+         currentPercent = (int)lroundf(percentAverage.average());
+      }
+      else
+      {
+         percentAverage.reset();
+         currentPercent = -1;
+      }
+   }
+
+   if (!forceRedraw && currentPercent == lastDisplayedPercent)
+   {
+      return;
+   }
+
+   lastDisplayedPercent = currentPercent;
+
+   Point16 savedCursor = sketch.arduino.getCursor();
+   uint8_t savedTextSize = sketch.arduino.getTextSize();
+
+   sketch.arduino.setTextSize(2);
+   sketch.arduino.setCursor(0, 0);
+
+   if (currentPercent >= 0)
+   {
+      sketch.arduino.print((float)currentPercent, batteryPercentFormat, Color::GRAY, Color::BLACK);
+   }
+   else if (!forceRedraw)
+   {
+      sketch.arduino.print("    ", Color::GRAY, Color::BLACK);
+   }
+
+   sketch.arduino.setTextSize(savedTextSize);
+   sketch.arduino.setCursor(savedCursor);
+}
+#endif
+
 ///
 /// <summary>
 /// Immediately shows "OPENING" after an open request has been made, without waiting for the
@@ -1138,6 +1204,10 @@ void showOpeningPending()
 #endif
    sketch.arduino.setCursor(0, titleY);
    sketch.arduino.printlnC("OPENING", Color::GRAY, Color::BLACK);
+
+#ifdef ARDUINO_BATTERY_SUPPORTED
+   displayBattery(true);
+#endif
 
    sketch.arduino.setTextSize(savedTextSize);
    sketch.arduino.setCursor(savedCursor);
@@ -1206,6 +1276,9 @@ void pollGateHold(bool isOpen)
    sketch.arduino.setCursor(0, GATE_STATE_TOP_MARGIN);
    sketch.arduino.printlnC(openTitle(gateDisplayedMotion), Color::GRAY, Color::BLACK);
    drawHoldSubtext();
+#ifdef ARDUINO_BATTERY_SUPPORTED
+   displayBattery(true);
+#endif
 #ifdef SETTINGS_SUPPORTED
    if (gearVisible)
    {
@@ -1264,6 +1337,10 @@ void displayGateState(bool isOpen, bool forceRedraw = false, int8_t motion = 0)
       sketch.arduino.setCursor(0, titleY);
                    sketch.arduino.printlnC(openTitle(motion), Color::GRAY, Color::BLACK);
 
+#ifdef ARDUINO_BATTERY_SUPPORTED
+      displayBattery(true);
+#endif
+
                    sketch.arduino.setTextSize(savedTextSize);
       sketch.arduino.setCursor(savedCursor);
       return;
@@ -1314,6 +1391,10 @@ void displayGateState(bool isOpen, bool forceRedraw = false, int8_t motion = 0)
    sketch.arduino.setTextSize(2);
    sketch.arduino.setCursor(sketch.arduino.width(), sketch.arduino.height() - sketch.arduino.charH());
    sketch.arduino.printR(VERSION, Color::DARKGRAY, backgroundColor);
+
+#ifdef ARDUINO_BATTERY_SUPPORTED
+   displayBattery(true);
+#endif
 
    sketch.arduino.setTextSize(savedTextSize);
    sketch.arduino.setCursor(savedCursor);
@@ -2001,6 +2082,9 @@ void loop()
 
    displayGateState(isOpen, forceRedraw, isOpen ? motion : 0);
    displayFooterAzimuths(leftAzimuth, rightAzimuth);
+#ifdef ARDUINO_BATTERY_SUPPORTED
+   displayBattery(forceRedraw);
+#endif
 
        if (stateChanged)
        {
@@ -2065,6 +2149,9 @@ void loop()
       sketch.arduino.setCursor(0, GATE_STATE_TOP_MARGIN);
       sketch.arduino.printlnC(openTitle(gateDisplayedMotion), Color::GRAY, Color::BLACK);
       drawHoldSubtext();
+#ifdef ARDUINO_BATTERY_SUPPORTED
+      displayBattery(true);
+#endif
 #ifdef SETTINGS_SUPPORTED
       if (gearVisible)
       {
