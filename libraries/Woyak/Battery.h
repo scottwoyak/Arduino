@@ -42,6 +42,7 @@ private:
    static constexpr uint8_t ADC_RESOLUTION_BITS = 12;
    static constexpr uint16_t ADC_MAX_COUNTS = (1 << ADC_RESOLUTION_BITS);
    static constexpr float ADC_REF_VOLTS = 3.3f;
+   static constexpr uint8_t ADC_SAMPLE_COUNT = 8;
 
    // Valid 1S LiPo operating window used by isConnected() to distinguish a connected
    // cell (~3.0V-4.2V) from an unattached/switched-off battery rail that either drops
@@ -49,10 +50,12 @@ private:
    static constexpr float MIN_CONNECTED_VOLTS = 2.5f;
    static constexpr float MAX_CONNECTED_VOLTS = 4.5f;
 
-   // On ADC voltage-divider boards, active charging pushes the sensed rail up against
-   // the charger's ~4.20V regulation ceiling (typically >= 4.17V), whereas a battery
-   // powering the board + display on its own sags below ~4.14V even when 100% full.
-   static constexpr float MIN_ADC_CHARGING_VOLTS = 4.17f;
+   // On ADC voltage-divider boards, active charging pushes the sensed rail up toward
+   // the charger's ~4.16V-4.20V regulation ceiling, whereas a battery powering the
+   // board + display on its own sags below ~4.10V even when 100% full. Hysteresis
+   // prevents noise near the threshold from toggling between Charging and ~97%.
+   static constexpr float MIN_ADC_CHARGING_VOLTS = 4.14f;
+   static constexpr float MIN_ADC_CHARGING_HOLD_VOLTS = 4.11f;
    static constexpr float MIN_FUEL_GAUGE_CHARGE_RATE = 1.0f;
 
    ///
@@ -126,10 +129,32 @@ private:
    int8_t _pin = DEFAULT_PIN;
    float _voltageDivider = DEFAULT_VOLTAGE_DIVIDER;
    bool _ready = false;
+   bool _adcCharging = false;
 
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
    Adafruit_MAX17048 _fuelGauge;
 #endif
+
+   ///
+   /// <summary>
+   /// Updates and returns the latched ADC charging state with hysteresis for a given
+   /// measured battery voltage.
+   /// </summary>
+   /// <param name="volts">Measured battery voltage in volts.</param>
+   /// <returns>True if the ADC voltage indicates the battery is charging.</returns>
+   ///
+   bool _updateAdcCharging(float volts)
+   {
+      if (!_isVoltsConnected(volts))
+      {
+         _adcCharging = false;
+         return false;
+      }
+
+      float threshold = _adcCharging ? MIN_ADC_CHARGING_HOLD_VOLTS : MIN_ADC_CHARGING_VOLTS;
+      _adcCharging = (volts >= threshold);
+      return _adcCharging;
+   }
 
 public:
    ///
@@ -196,9 +221,21 @@ public:
 #endif
 
 #if defined(ARDUINO_ARCH_ESP32)
-      return analogReadMilliVolts(_pin) * 0.001f * _voltageDivider;
+      uint32_t totalMilliVolts = 0;
+      for (uint8_t i = 0; i < ADC_SAMPLE_COUNT; i++)
+      {
+         totalMilliVolts += analogReadMilliVolts(_pin);
+      }
+
+      return (totalMilliVolts / static_cast<float>(ADC_SAMPLE_COUNT)) * 0.001f * _voltageDivider;
 #else
-      return analogRead(_pin) * _voltageDivider * ADC_REF_VOLTS / ADC_MAX_COUNTS;
+      uint32_t totalCounts = 0;
+      for (uint8_t i = 0; i < ADC_SAMPLE_COUNT; i++)
+      {
+         totalCounts += analogRead(_pin);
+      }
+
+      return (totalCounts / static_cast<float>(ADC_SAMPLE_COUNT)) * _voltageDivider * ADC_REF_VOLTS / ADC_MAX_COUNTS;
 #endif
    }
 
@@ -220,7 +257,7 @@ public:
    /// <summary>
    /// Checks whether the battery is currently charging. On fuel-gauge boards (MAX17048),
    /// uses the positive charge rate; on ADC voltage-divider boards, detects when the
-   /// charger holds the battery rail at or near its 4.20V CV regulation ceiling (>= 4.17V).
+   /// charger holds the battery rail at or near its ~4.16V-4.20V regulation ceiling.
    /// </summary>
    /// <returns>True if the battery is connected and charging; otherwise false.</returns>
    ///
@@ -229,6 +266,7 @@ public:
       float volts = readVolts();
       if (!_isVoltsConnected(volts))
       {
+         _adcCharging = false;
          return false;
       }
 
@@ -240,7 +278,7 @@ public:
       }
 #endif
 
-      return volts >= MIN_ADC_CHARGING_VOLTS;
+      return _updateAdcCharging(volts);
    }
 
    ///
@@ -261,6 +299,7 @@ public:
       float volts = readVolts();
       if (!_isVoltsConnected(volts))
       {
+         _adcCharging = false;
          return NAN;
       }
 
@@ -277,7 +316,7 @@ public:
       }
 #endif
 
-      if (volts >= MIN_ADC_CHARGING_VOLTS)
+      if (_updateAdcCharging(volts))
       {
          return NAN;
       }

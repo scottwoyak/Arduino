@@ -28,6 +28,7 @@ Arduino arduino;
 TimedAverage voltsAverage(VOLTS_AVERAGE_SPAN_MS);
 TimedAverage percentAverage(VOLTS_AVERAGE_SPAN_MS);
 RateTimer displayTimer(DISPLAY_UPDATE_RATE);
+TimerSecs serialLogTimer(1.0f);
 
 Format batteryVoltsFormat("#.##v");
 Format percentFormat("###%");
@@ -49,15 +50,28 @@ void setup()
 
 void loop()
 {
+   float rawVolts = arduino.battery.readVolts();
+   voltsAverage.set(rawVolts);
    bool connected = arduino.battery.isConnected();
+   bool charging = arduino.battery.isCharging();
    if (connected)
    {
-      voltsAverage.set(arduino.battery.readVolts());
       float percent = arduino.battery.readPercent();
       if (isfinite(percent))
       {
          percentAverage.set(percent);
       }
+   }
+
+   if (serialLogTimer.ready())
+   {
+      const char* state = !connected ? "Disconnected" : (charging ? "Charging" : "Battery");
+      Serial.printf(
+         "[%lus] raw=%.3fV  avg=%.3fV  state=%s\n",
+         millis() / 1000UL,
+         rawVolts,
+         voltsAverage.average(),
+         state);
    }
 
    if (!displayTimer.ready())
@@ -70,30 +84,29 @@ void loop()
    arduino.println("Battery Info", Color::HEADING);
    arduino.moveCursorY(arduino.charH() / 4);
 
-   if (!connected)
-   {
-      arduino.println("Disconnected        ", Color::RED);
-      arduino.moveCursorY(arduino.charH() / 4);
-      arduino.println("                    ");
-      return;
-   }
-
    // Display battery voltage
    arduino.println("Volts: ", voltsAverage.average(), batteryVoltsFormat);
    arduino.moveCursorY(arduino.charH() / 4);
 
-   // Display charge state / percentage
-   float chargeRate = arduino.battery.readChargeRate();
-   if (!isfinite(chargeRate) && arduino.battery.isCharging())
+   if (!connected)
    {
       arduino.print("State: ", Color::LABEL);
-      arduino.println("Charging   ", Color::VALUE2);
+      arduino.println("Disconnected", Color::RED);
+      return;
+   }
+
+   // Display charge state / percentage
+   float chargeRate = arduino.battery.readChargeRate();
+   if (!isfinite(chargeRate) && charging)
+   {
+      arduino.print("State: ", Color::LABEL);
+      arduino.println("Charging    ", Color::VALUE2);
       return;
    }
 
    arduino.print("State: ", percentAverage.average(), percentFormat);
    uint16_t x = arduino.display.getCursorX();
-   arduino.println("    ");
+   arduino.println("        ");
    arduino.moveCursorY(arduino.charH() / 4);
 
    // Display charge rate and status when supported by the board's battery monitor
