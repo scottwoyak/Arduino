@@ -32,7 +32,7 @@ ESP32_S3_Playground arduino;
 
 // ----------- Text Sizes
 constexpr uint8_t HEADING_SIZE = DEFAULT_HEADING_SIZE;
-constexpr uint8_t CONTENT_TEXT_SIZE = DEFAULT_CONTENT_SIZE;
+constexpr uint8_t CONTENT_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 
 // ----------- Preferences Namespace
 constexpr const char* PREF_NAMESPACE = "LedCalibratorPg";

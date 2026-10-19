@@ -176,36 +176,62 @@ public:
          char buffer[16];
          strftime(buffer, sizeof(buffer), "%I:%M %p", &timeInfo);
 
-                         // Strip a leading zero from the hour, e.g. "09:45 AM" -> "9:45 AM".
-                         (*doc)["localTime"] = (buffer[0] == '0') ? buffer + 1 : buffer;
-                      }
+                                   // Strip a leading zero from the hour, e.g. "09:45 AM" -> "9:45 AM".
+                                   (*doc)["localTime"] = (buffer[0] == '0') ? buffer + 1 : buffer;
+                                }
 
-               #ifdef ARDUINO_BATTERY_SUPPORTED
-                      if (battery != nullptr)
-                      {
-                         bool connected = battery->isConnected();
-                         (*doc)["batteryConnected"] = connected;
-                         if (connected)
-                         {
-                            (*doc)["batteryCharging"] = battery->isCharging();
-                            (*doc)["batteryVolts"] = roundf(battery->readVolts() * 100.0f) * 0.01f;
+                         #ifdef ARDUINO_BATTERY_SUPPORTED
+                               if (battery != nullptr)
+                               {
+                                  bool connected = battery->isConnected();
+                                  BatteryChargingState chargingState = battery->readChargingState();
+                                  (*doc)["batteryConnected"] = connected;
 
-                            float percent = battery->readPercent();
-                            if (isfinite(percent))
-                            {
-                               (*doc)["batteryPercent"] = (int32_t)lroundf(percent);
-                            }
+                                  if (chargingState == BatteryChargingState::BadCharger)
+                                  {
+                                     (*doc)["batteryVolts"] = roundf(battery->readVolts() * 100.0f) * 0.01f;
+                                     (*doc)["batteryState"] = "Bad Charger";
+                                  }
+                                  else if (connected)
+                                  {
+                                     (*doc)["batteryVolts"] = roundf(battery->readVolts() * 100.0f) * 0.01f;
 
-                            float chargeRate = battery->readChargeRate();
-                            if (isfinite(chargeRate))
-                            {
-                               (*doc)["batteryChargeRate"] = roundf(chargeRate * 10.0f) * 0.1f;
-                            }
-                         }
-                      }
-               #endif
+                                     float percent = battery->readPercent();
+                                     if (isfinite(percent))
+                                     {
+                                        (*doc)["batteryPercent"] = (int32_t)lroundf(percent);
+                                     }
 
-                      if (extraFields != nullptr)
+                                     if (chargingState == BatteryChargingState::Yes)
+                                     {
+                                        (*doc)["batteryCharging"] = true;
+                                        (*doc)["batteryState"] = "Charging";
+                                     }
+                                     else if (chargingState == BatteryChargingState::Full)
+                                     {
+                                        (*doc)["batteryCharging"] = false;
+                                        (*doc)["batteryState"] = "Full";
+                                     }
+                                     else if (chargingState == BatteryChargingState::No)
+                                     {
+                                        (*doc)["batteryCharging"] = false;
+                                        (*doc)["batteryState"] = "Discharging";
+                                     }
+                                     else
+                                     {
+                                        (*doc)["batteryState"] = "Unknown";
+                                     }
+
+                                     float chargeRate = battery->readChargeRate();
+                                     if (isfinite(chargeRate))
+                                     {
+                                        (*doc)["batteryChargeRate"] = roundf(chargeRate * 10.0f) * 0.1f;
+                                     }
+                                  }
+                               }
+                         #endif
+
+                                if (extraFields != nullptr)
       {
          extraFields(doc);
       }

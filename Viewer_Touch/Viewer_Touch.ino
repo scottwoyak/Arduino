@@ -21,7 +21,7 @@ Arduino arduino;
 constexpr auto TITLE = "Touch Demo";
 
 constexpr uint8_t TITLE_TEXT_SIZE = DEFAULT_HEADING_SIZE;
-constexpr uint8_t BUTTON_TEXT_SIZE = DEFAULT_CONTENT_SIZE;
+constexpr uint8_t BUTTON_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 
 constexpr int16_t SCREEN_MARGIN = 12;
 constexpr int16_t BUTTON_COL_GAP = 16;
