@@ -56,9 +56,9 @@ internal sealed class MainForm : Form
         _list.Columns.Add("Sketch", 190);
         _list.Columns.Add("Board", 230);
         _list.Columns.Add("Version", 90);
-        _list.Columns.Add("Built", 140);
+        _list.Columns.Add("Build Date", 140);
         _list.Columns.Add("Server Version", 110);
-        _list.Columns.Add("Server Built", 140);
+        _list.Columns.Add("Server Build Date", 140);
         _list.Columns.Add("Status", 140);
         RestoreWindowBounds();
 
@@ -295,6 +295,7 @@ internal sealed class MainForm : Form
         bool relevant =
             (path.EndsWith(".ino.bin", StringComparison.OrdinalIgnoreCase) ||
              path.EndsWith(".ino", StringComparison.OrdinalIgnoreCase) ||
+             path.EndsWith(".vcxproj", StringComparison.OrdinalIgnoreCase) ||
              path.EndsWith("LibraryVersion.h", StringComparison.OrdinalIgnoreCase)) &&
             !path.Contains($"{Path.DirectorySeparatorChar}_publish{Path.DirectorySeparatorChar}") &&
             !path.StartsWith(Path.Combine(_repoRoot, "LittleBearPublisher") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
@@ -375,7 +376,7 @@ internal sealed class MainForm : Form
 
     private void UpdateSortHeaders()
     {
-        string[] titles = ["Sketch", "Board", "Version", "Built", "Server Version", "Server Built", "Status"];
+        string[] titles = ["Sketch", "Board", "Version", "Build Date", "Server Version", "Server Build Date", "Status"];
         for (int i = 0; i < _list.Columns.Count; i++)
         {
             _list.Columns[i].Text = i == _sortColumn ? $"{titles[i]} {(_sortAscending ? "\u25B2" : "\u25BC")}" : titles[i];
@@ -391,11 +392,11 @@ internal sealed class MainForm : Form
 
         Comparison<FirmwareItem> compare = _sortColumn switch
         {
-            1 => (a, b) => string.Compare(a.Board, b.Board, StringComparison.OrdinalIgnoreCase),
+            1 => (a, b) => string.Compare(a.BoardName, b.BoardName, StringComparison.OrdinalIgnoreCase),
             2 => (a, b) => CompareVersions(a.Version, b.Version),
             3 => (a, b) => a.Built.CompareTo(b.Built),
             4 => (a, b) => string.Compare(a.ServerVersion, b.ServerVersion, StringComparison.OrdinalIgnoreCase),
-            5 => (a, b) => string.Compare(a.ServerBuildTime, b.ServerBuildTime, StringComparison.OrdinalIgnoreCase),
+            5 => (a, b) => CompareBuildTimes(a.ServerBuildTime, b.ServerBuildTime),
             6 => (a, b) => string.Compare(a.StatusText, b.StatusText, StringComparison.OrdinalIgnoreCase),
             _ => (a, b) => string.Compare(a.Sketch, b.Sketch, StringComparison.OrdinalIgnoreCase),
         };
@@ -413,6 +414,18 @@ internal sealed class MainForm : Form
             : string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
     }
 
+    private static int CompareBuildTimes(string? a, string? b)
+    {
+        bool hasA = DateText.TryParse(a, out DateTime da);
+        bool hasB = DateText.TryParse(b, out DateTime db);
+        if (hasA && hasB)
+        {
+            return da.CompareTo(db);
+        }
+
+        return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
     private void PopulateList()
     {
         _list.BeginUpdate();
@@ -420,11 +433,11 @@ internal sealed class MainForm : Form
         foreach (var item in SortedItems())
         {
             var row = new ListViewItem(item.Sketch) { Tag = item };
-            row.SubItems.Add(item.Board);
+            row.SubItems.Add(item.BoardName);
             row.SubItems.Add(item.Version);
             row.SubItems.Add(item.Status == FirmwareStatus.Skipped ? "" : DateText.Format(item.Built));
             row.SubItems.Add(item.ServerVersion ?? "");
-            row.SubItems.Add(item.ServerBuildTime ?? "");
+            row.SubItems.Add(DateText.Format(item.ServerBuildTime));
             row.SubItems.Add(item.StatusText);
             ApplyRowStyle(row, item);
             _list.Items.Add(row);
@@ -474,7 +487,7 @@ internal sealed class MainForm : Form
                 row.SubItems[2].Text = item.Version;
                 row.SubItems[3].Text = item.Status == FirmwareStatus.Skipped && item.Built == default ? "" : DateText.Format(item.Built);
                 row.SubItems[4].Text = item.ServerVersion ?? "";
-                row.SubItems[5].Text = item.ServerBuildTime ?? "";
+                row.SubItems[5].Text = DateText.Format(item.ServerBuildTime);
                 row.SubItems[6].Text = status;
                 ApplyRowStyle(row, item);
                 break;

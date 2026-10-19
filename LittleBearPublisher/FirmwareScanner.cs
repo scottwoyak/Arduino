@@ -75,15 +75,24 @@ internal sealed class FirmwareScanner
 
             string buildsRoot = Path.Combine(dir, "build");
             string publishRoot = Path.Combine(buildsRoot, "_publish") + Path.DirectorySeparatorChar;
-            var bins = new List<FileInfo>();
+            string vmBuildsRoot = Path.Combine(Path.GetTempPath(), "VMBuilds", name);
+            var candidateBins = new List<FileInfo>();
             if (Directory.Exists(buildsRoot))
             {
-                bins = Directory.EnumerateFiles(buildsRoot, name + ".ino.bin", SearchOption.AllDirectories)
-                    .Where(f => !f.StartsWith(publishRoot, StringComparison.OrdinalIgnoreCase))
-                    .Select(f => new FileInfo(f))
-                    .OrderByDescending(f => f.LastWriteTime)
-                    .ToList();
+                candidateBins.AddRange(
+                    Directory.EnumerateFiles(buildsRoot, name + ".ino.bin", SearchOption.AllDirectories)
+                        .Where(f => !f.StartsWith(publishRoot, StringComparison.OrdinalIgnoreCase))
+                        .Select(f => new FileInfo(f)));
             }
+            if (Directory.Exists(vmBuildsRoot))
+            {
+                candidateBins.AddRange(
+                    Directory.EnumerateFiles(vmBuildsRoot, name + ".ino.bin", SearchOption.AllDirectories)
+                        .Select(f => new FileInfo(f)));
+            }
+            var bins = candidateBins
+                .OrderByDescending(f => f.LastWriteTime)
+                .ToList();
 
             var versionMatch = MakeVersionRegex.Match(inoText);
             if (!versionMatch.Success)
@@ -152,6 +161,7 @@ internal sealed class FirmwareScanner
                 {
                     Sketch = name,
                     Board = boardId,
+                    BoardName = FirmwareBuilder.GetBoardDisplayName(_repoRoot, boardId),
                     Version = resolvedVersion,
                     Built = bin.LastWriteTime,
                     BuildTime = buildMatch.Success ? buildMatch.Groups[1].Value : null,
@@ -183,6 +193,7 @@ internal sealed class FirmwareScanner
                 {
                     Sketch = name,
                     Board = configuredBoard,
+                    BoardName = FirmwareBuilder.GetBoardDisplayName(_repoRoot, configuredBoard),
                     Status = FirmwareStatus.Skipped,
                     Detail = "no build output",
                 };

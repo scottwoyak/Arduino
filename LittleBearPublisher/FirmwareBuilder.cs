@@ -10,45 +10,66 @@ namespace LittleBearPublisher;
 /// </summary>
 internal sealed class FirmwareBuilder
 {
-    internal sealed record BoardConfig(string BoardId, string BuildFolder, string DefaultFqbn);
+    internal sealed record BoardConfig(string BoardId, string DisplayName, string BuildFolder, string DefaultFqbn);
 
     private static readonly Regex BuildBoardLineRegex = new(@"^([A-Za-z0-9_]+)\.build\.board\s*=\s*([A-Za-z0-9_]+)\s*$", RegexOptions.Multiline);
+    private static readonly Regex BoardNameLineRegex = new(@"^([A-Za-z0-9_]+)\.name\s*=\s*(.+?)\s*$", RegexOptions.Multiline);
     private static readonly Regex ConditionalBoardIdRegex = new(@"defined\s*\(\s*(?:ARDUINO_)?([A-Za-z0-9_]+)\s*\)[\s\S]*?#define\s+ARDUINO_BOARD_VARIANT_ID\s+""([^""]+)""");
+    private static readonly Regex VcxprojBoardMacroRegex = new(@"ARDUINO_BOARD=([A-Za-z0-9_]+)");
 
     private static readonly Dictionary<string, BoardConfig> DefaultBoardConfigs = new(StringComparer.OrdinalIgnoreCase)
     {
+        ["ADAFRUIT_FEATHER_M0"] = new(
+            "ADAFRUIT_FEATHER_M0",
+            "Adafruit Feather M0",
+            "adafruit.samd.adafruit_feather_m0",
+            "adafruit:samd:adafruit_feather_m0"),
+
         ["ADAFRUIT_FEATHER_ESP32S3_TFT"] = new(
             "ADAFRUIT_FEATHER_ESP32S3_TFT",
+            "Adafruit Feather ESP32-S3 TFT",
             "esp32.esp32.adafruit_feather_esp32s3_tft",
             "esp32:esp32:adafruit_feather_esp32s3_tft:UploadSpeed=921600,USBMode=default,CDCOnBoot=cdc,MSCOnBoot=default,DFUOnBoot=default,UploadMode=cdc,CPUFreq=240,FlashMode=qio,FlashSize=4M,DebugLevel=none,PSRAM=enabled,LoopCore=1,EventsCore=1,ZigbeeMode=default"),
 
         ["WAVESHARE_ESP32S3_ZERO_SENSORS"] = new(
             "WAVESHARE_ESP32S3_ZERO_SENSORS",
+            "Waveshare ESP32-S3-Zero (Sensors)",
             "esp32.esp32.waveshare_esp32_s3_zero_sensors",
             "esp32:esp32:waveshare_esp32_s3_zero_sensors:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=default,PartitionScheme=min_spiffs,PSRAM=enabled"),
 
         ["WAVESHARE_ESP32S3_ZERO"] = new(
             "WAVESHARE_ESP32S3_ZERO",
+            "Waveshare ESP32-S3-Zero",
             "esp32.esp32.waveshare_esp32_s3_zero",
             "esp32:esp32:waveshare_esp32_s3_zero:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=default,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=qio,PartitionScheme=min_spiffs,DebugLevel=none,PSRAM=enabled,LoopCore=1,EventsCore=1"),
 
         ["HOSYOND_ESP32S3_TOUCH_LCD_40"] = new(
             "HOSYOND_ESP32S3_TOUCH_LCD_40",
+            "Hosyond 4.0 ESP32-S3-Touch-LCD",
             "esp32.esp32.hosyond_esp32_s3_touch_lcd_40",
             "esp32:esp32:hosyond_esp32_s3_touch_lcd_40:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi"),
 
         ["WAVESHARE_ESP32S3_TOUCH_LCD_19"] = new(
             "WAVESHARE_ESP32S3_TOUCH_LCD_19",
+            "Waveshare 1.9 ESP32-S3-Touch-LCD",
             "esp32.esp32.waveshare_esp32_s3_touch_lcd_19",
             "esp32:esp32:waveshare_esp32_s3_touch_lcd_19:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,PartitionScheme=default,PSRAM=opi"),
 
+        ["WAVESHARE_ESP32S3_TOUCH_LCD_28"] = new(
+            "WAVESHARE_ESP32S3_TOUCH_LCD_28",
+            "Waveshare 2.8 ESP32-S3-Touch-LCD",
+            "esp32.esp32.waveshare_esp32_s3_touch_lcd_28",
+            "esp32:esp32:waveshare_esp32_s3_touch_lcd_28:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=default,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=enabled"),
+
         ["WAVESHARE_ESP32S3_TOUCH_LCD_43"] = new(
             "WAVESHARE_ESP32S3_TOUCH_LCD_43",
+            "Waveshare ESP32-S3-Touch-LCD-4.3",
             "esp32.esp32.esp32s3",
             "esp32:esp32:esp32s3:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=cdc,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=16M,PartitionScheme=min_spiffs,DebugLevel=none,PSRAM=enabled,LoopCore=1,EventsCore=1,JTAGAdapter=default,ZigbeeMode=default"),
 
         ["ESP32S3_DEV_PLAYGROUND"] = new(
             "ESP32S3_DEV_PLAYGROUND",
+            "ESP32-S3 Playground",
             "esp32.esp32.esp32s3_dev_playground",
             "esp32:esp32:esp32s3_dev_playground:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi"),
     };
@@ -114,6 +135,28 @@ internal sealed class FirmwareBuilder
             }
         }
 
+        string vcxprojPath = Path.Combine(repoRoot, sketch, sketch + ".vcxproj");
+        if (File.Exists(vcxprojPath))
+        {
+            try
+            {
+                Dictionary<string, string> macroToVariantId = LoadMacroToVariantId(repoRoot);
+                foreach (Match m in VcxprojBoardMacroRegex.Matches(File.ReadAllText(vcxprojPath)))
+                {
+                    string token = m.Groups[1].Value;
+                    string variantId = macroToVariantId.TryGetValue(token, out string? mapped) ? mapped : token;
+                    if (configs.ContainsKey(variantId) && seen.Add(variantId))
+                    {
+                        discovered.Add(variantId);
+                    }
+                }
+            }
+            catch (IOException)
+            {
+                // Ignore if locked while Visual Studio is saving.
+            }
+        }
+
         IReadOnlyList<string> fallback = GetDefaultSketchBoards(sketch, inoText);
         foreach (string board in fallback)
         {
@@ -158,12 +201,8 @@ internal sealed class FirmwareBuilder
         return ["WAVESHARE_ESP32S3_ZERO"];
     }
 
-    private static Dictionary<string, BoardConfig> LoadBoardConfigs(string repoRoot)
+    private static Dictionary<string, string> LoadMacroToVariantId(string repoRoot)
     {
-        var configs = new Dictionary<string, BoardConfig>(DefaultBoardConfigs, StringComparer.OrdinalIgnoreCase);
-
-        // Map build.board macro token (e.g. HOSYOND_ESP32S3_TOUCH_LCD_40) to ARDUINO_BOARD_VARIANT_ID
-        // from ArduinoBoardId.h when they differ, or use the build.board token directly.
         var macroToVariantId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         string boardIdHeader = Path.Combine(repoRoot, "libraries", "Woyak", "ArduinoBoardId.h");
         if (File.Exists(boardIdHeader))
@@ -174,10 +213,38 @@ internal sealed class FirmwareBuilder
             }
         }
 
+        return macroToVariantId;
+    }
+
+    /// <summary>
+    /// Returns the human-readable board name (matching Visual Studio's board selector) for <paramref name="boardId"/>.
+    /// </summary>
+    public static string GetBoardDisplayName(string repoRoot, string boardId)
+    {
+        Dictionary<string, BoardConfig> configs = LoadBoardConfigs(repoRoot);
+        return configs.TryGetValue(boardId, out BoardConfig? config) && !string.IsNullOrWhiteSpace(config.DisplayName)
+            ? config.DisplayName
+            : boardId;
+    }
+
+    private static Dictionary<string, BoardConfig> LoadBoardConfigs(string repoRoot)
+    {
+        var configs = new Dictionary<string, BoardConfig>(DefaultBoardConfigs, StringComparer.OrdinalIgnoreCase);
+
+        // Map build.board macro token (e.g. HOSYOND_ESP32S3_TOUCH_LCD_40) to ARDUINO_BOARD_VARIANT_ID
+        // from ArduinoBoardId.h when they differ, or use the build.board token directly.
+        Dictionary<string, string> macroToVariantId = LoadMacroToVariantId(repoRoot);
+
         string boardsLocalPath = Path.Combine(repoRoot, "boards.local.txt");
         if (File.Exists(boardsLocalPath))
         {
             string text = File.ReadAllText(boardsLocalPath);
+            var namesByBoardKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (Match m in BoardNameLineRegex.Matches(text))
+            {
+                namesByBoardKey[m.Groups[1].Value] = m.Groups[2].Value.Trim();
+            }
+
             foreach (Match m in BuildBoardLineRegex.Matches(text))
             {
                 string boardKey = m.Groups[1].Value;
@@ -187,12 +254,16 @@ internal sealed class FirmwareBuilder
                     : buildBoardToken;
 
                 string buildFolder = $"esp32.esp32.{boardKey}";
-                string defaultFqbn = configs.TryGetValue(variantId, out BoardConfig? existing) &&
+                configs.TryGetValue(variantId, out BoardConfig? existing);
+                string displayName = namesByBoardKey.TryGetValue(boardKey, out string? parsedName)
+                    ? parsedName
+                    : existing?.DisplayName ?? variantId;
+                string defaultFqbn = existing != null &&
                                      existing.DefaultFqbn.StartsWith($"esp32:esp32:{boardKey}:", StringComparison.OrdinalIgnoreCase)
                     ? existing.DefaultFqbn
                     : $"esp32:esp32:{boardKey}";
 
-                configs[variantId] = new BoardConfig(variantId, buildFolder, defaultFqbn);
+                configs[variantId] = new BoardConfig(variantId, displayName, buildFolder, defaultFqbn);
             }
         }
 
@@ -473,7 +544,7 @@ internal sealed class FirmwareBuilder
                     string? fqbn = fqbnProp.GetString();
                     if (!string.IsNullOrWhiteSpace(fqbn))
                     {
-                        return new BoardConfig(boardId, folderName, fqbn);
+                        return new BoardConfig(boardId, boardId, folderName, fqbn);
                     }
                 }
             }

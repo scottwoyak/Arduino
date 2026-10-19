@@ -17,6 +17,7 @@ internal sealed class FirmwareItem
 {
     public required string Sketch { get; init; }
     public string Board { get; init; } = "";
+    public string BoardName { get; init; } = "";
     public string Version { get; set; } = "";
     public DateTime Built { get; set; }
     public string? BuildTime { get; set; }
