@@ -9,7 +9,6 @@ using Arduino = Feather_M0_OLED;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 2;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 1;
-constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 
 #elif defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
 
@@ -18,7 +17,6 @@ using Arduino = Feather_ESP32_S3;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
-constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 
 #elif defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS) || defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS)
 
@@ -41,7 +39,6 @@ using Arduino = Waveshare_ESP32S3_Touch_LCD_43;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
-constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 
 #elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_19)
 
@@ -50,7 +47,6 @@ using Arduino = Waveshare_ESP32S3_Touch_LCD_19;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
-constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 
 #elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_28) || defined(ARDUINO_WAVESHARE_ESP32_S3_TOUCH_LCD_28)
 
@@ -59,24 +55,21 @@ using Arduino = Waveshare_ESP32S3_Touch_LCD_28;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
-constexpr uint8_t DEFAULT_CONTENT_SIZE = 2;
 
 #elif defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40) || defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER)
 
 #include "ViewerBoardS3.h"
 using Arduino = ViewerBoardS3;
 
-constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
-constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
-constexpr uint8_t DEFAULT_CONTENT_SIZE = 3;
+constexpr uint8_t DEFAULT_HEADING_SIZE = 4;
+constexpr uint8_t DEFAULT_TEXT_SIZE = 3;
 
 #elif defined(ARDUINO_ESP32S3_DEV_PLAYGROUND)
 
 #include "ESP32_S3_Playground.h"
 using Arduino = ESP32_S3_Playground;
 
-constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
-constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
-constexpr uint8_t DEFAULT_CONTENT_SIZE = 3;
+constexpr uint8_t DEFAULT_HEADING_SIZE = 4;
+constexpr uint8_t DEFAULT_TEXT_SIZE = 3;
 
 #endif

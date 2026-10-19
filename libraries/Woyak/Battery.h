@@ -13,6 +13,20 @@
 
 ///
 /// <summary>
+/// Battery charging/health state indicator supporting both hardware fuel gauges and
+/// ADC voltage-trend, full-charge, and over-voltage (bad charger) detection.
+/// </summary>
+///
+enum class BatteryChargingState : uint8_t
+{
+   Unknown = 0,
+   No = 1,
+   Yes = 2,
+   BadCharger = 3
+};
+
+///
+/// <summary>
 /// On-demand battery monitor supporting both I2C fuel-gauge boards (Adafruit Feather
 /// ESP32-S3 TFT with MAX17048) and ADC voltage-divider boards (Hosyond 4.0 ESP32-S3,
 /// Waveshare ESP32-S3 Touch LCD 1.9 / 2.8 / 4.3, Adafruit Feather M0, or a custom pin/divider).
@@ -50,12 +64,31 @@ private:
    static constexpr float MIN_CONNECTED_VOLTS = 2.5f;
    static constexpr float MAX_CONNECTED_VOLTS = 4.5f;
 
-   // On ADC voltage-divider boards, active charging pushes the sensed rail up toward
-   // the charger's ~4.16V-4.20V regulation ceiling, whereas a battery powering the
-   // board + display on its own sags below ~4.10V even when 100% full. Hysteresis
-   // prevents noise near the threshold from toggling between Charging and ~97%.
-   static constexpr float MIN_ADC_CHARGING_VOLTS = 4.14f;
-   static constexpr float MIN_ADC_CHARGING_HOLD_VOLTS = 4.11f;
+   // When no battery is attached on a TP4054-based ADC board (e.g. Hosyond 4.0) while
+   // powered over USB, the TP4054 repeatedly charges the 10uF output capacitor to ~4.16V,
+   // terminates, and restarts at ~4.08V as the 200k divider drains the capacitor, creating
+   // a continuous ~65-80mV sawtooth oscillation near 4.1V across every window.
+   // Unplugging or plugging in USB with a real battery attached causes a single one-way
+   // voltage step (~50-150mV) in one window, followed by stable readings in subsequent
+   // windows; requiring 2 consecutive high-ripple windows prevents a USB plug/unplug
+   // transition from ever triggering a false "No Battery" state.
+   static constexpr uint32_t RIPPLE_WINDOW_MS = 1000;
+   static constexpr uint8_t MIN_RIPPLE_SAMPLES_FOR_VALID = 5;
+   static constexpr float RIPPLE_DISCONNECT_VOLTS = 0.055f;
+   static constexpr float RIPPLE_CONNECT_VOLTS = 0.035f;
+   static constexpr float MIN_RIPPLE_FLOAT_VOLTS = 3.95f;
+   static constexpr uint8_t RIPPLE_DISCONNECT_WINDOWS_REQUIRED = 2;
+   static constexpr uint8_t UNPLUGGED_PROBE_SAMPLE_COUNT = 25;
+   static constexpr uint8_t UNPLUGGED_PROBE_DELAY_MS = 10;
+
+   // Pseudo charging detection on ADC voltage-divider boards:
+   // - Compares window average voltage over time: rising by >= 4mV indicates Charging (Yes),
+   //   falling by >= 4mV indicates Draining (No).
+   // - Once a connected battery reaches the TP4054 full-charge CV plateau (>= 4.18V) and
+   //   stops rising, it is considered fully charged (Charging = No).
+   static constexpr float TREND_DEADBAND_VOLTS = 0.004f;
+   static constexpr float FULL_CHARGE_VOLTS = 4.18f;
+
    static constexpr float MIN_FUEL_GAUGE_CHARGE_RATE = 1.0f;
 
    ///
@@ -68,6 +101,19 @@ private:
    static bool _isVoltsConnected(float volts)
    {
       return isfinite(volts) && volts >= MIN_CONNECTED_VOLTS && volts <= MAX_CONNECTED_VOLTS;
+   }
+
+   ///
+   /// <summary>
+   /// Checks whether a measured voltage exceeds the maximum safe 1S LiPo ceiling,
+   /// indicating a faulty charger or power-path circuit leaking ~5V onto the battery rail.
+   /// </summary>
+   /// <param name="volts">Measured voltage in volts.</param>
+   /// <returns>True if the voltage exceeds MAX_CONNECTED_VOLTS.</returns>
+   ///
+   static bool _isVoltsBadCharger(float volts)
+   {
+      return isfinite(volts) && volts > MAX_CONNECTED_VOLTS;
    }
 
    ///
@@ -129,7 +175,17 @@ private:
    int8_t _pin = DEFAULT_PIN;
    float _voltageDivider = DEFAULT_VOLTAGE_DIVIDER;
    bool _ready = false;
-   bool _adcCharging = false;
+   uint32_t _windowStartMs = 0;
+   float _windowMinVolts = NAN;
+   float _windowMaxVolts = NAN;
+   double _windowSumVolts = 0.0;
+   uint16_t _windowSampleCount = 0;
+   float _lastRippleVolts = 0.0f;
+   bool _hasRippleMeasurement = false;
+   bool _rippleDisconnected = false;
+   uint8_t _consecutiveRippleWindows = 0;
+   float _trendBaselineVolts = NAN;
+   BatteryChargingState _adcChargingState = BatteryChargingState::Unknown;
 
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
    Adafruit_MAX17048 _fuelGauge;
@@ -137,23 +193,205 @@ private:
 
    ///
    /// <summary>
-   /// Updates and returns the latched ADC charging state with hysteresis for a given
-   /// measured battery voltage.
+   /// Resets the voltage-trend charging state when the battery is disconnected.
    /// </summary>
-   /// <param name="volts">Measured battery voltage in volts.</param>
-   /// <returns>True if the ADC voltage indicates the battery is charging.</returns>
    ///
-   bool _updateAdcCharging(float volts)
+   void _resetAdcChargingTrend()
    {
-      if (!_isVoltsConnected(volts))
+      _trendBaselineVolts = NAN;
+      _adcChargingState = BatteryChargingState::Unknown;
+   }
+
+   ///
+   /// <summary>
+   /// Updates the pseudo charging state from the completed window's average voltage.
+   /// </summary>
+   /// <param name="windowAvgVolts">Average voltage across the completed window.</param>
+   ///
+   void _updateAdcChargingTrend(float windowAvgVolts)
+   {
+      if (_rippleDisconnected || !_isVoltsConnected(windowAvgVolts))
       {
-         _adcCharging = false;
-         return false;
+         _resetAdcChargingTrend();
+         return;
       }
 
-      float threshold = _adcCharging ? MIN_ADC_CHARGING_HOLD_VOLTS : MIN_ADC_CHARGING_VOLTS;
-      _adcCharging = (volts >= threshold);
-      return _adcCharging;
+      if (!isfinite(_trendBaselineVolts))
+      {
+         _trendBaselineVolts = windowAvgVolts;
+         if (windowAvgVolts >= FULL_CHARGE_VOLTS)
+         {
+            _adcChargingState = BatteryChargingState::No;
+         }
+         return;
+      }
+
+      float delta = windowAvgVolts - _trendBaselineVolts;
+      if (delta >= TREND_DEADBAND_VOLTS)
+      {
+         // Voltage is measurably rising -> actively charging (unless saturated at full charge)
+         _adcChargingState = (windowAvgVolts >= FULL_CHARGE_VOLTS)
+            ? BatteryChargingState::No
+            : BatteryChargingState::Yes;
+         _trendBaselineVolts = windowAvgVolts;
+      }
+      else if (delta <= -TREND_DEADBAND_VOLTS)
+      {
+         // Voltage is measurably falling -> draining / not charging
+         _adcChargingState = BatteryChargingState::No;
+         _trendBaselineVolts = windowAvgVolts;
+      }
+      else if (windowAvgVolts >= FULL_CHARGE_VOLTS)
+      {
+         // Holding steady on the 4.18V-4.20V CV plateau -> fully charged (charging complete)
+         _adcChargingState = BatteryChargingState::No;
+         _trendBaselineVolts = windowAvgVolts;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Reads a single multisampled ADC battery voltage without updating ripple state.
+   /// </summary>
+   /// <returns>Sampled voltage in volts.</returns>
+   ///
+   float _sampleAdcVolts()
+   {
+#if defined(ARDUINO_ARCH_ESP32)
+      uint32_t totalMilliVolts = 0;
+      for (uint8_t i = 0; i < ADC_SAMPLE_COUNT; i++)
+      {
+         totalMilliVolts += analogReadMilliVolts(_pin);
+      }
+
+      return (totalMilliVolts / static_cast<float>(ADC_SAMPLE_COUNT)) * 0.001f * _voltageDivider;
+#else
+      uint32_t totalCounts = 0;
+      for (uint8_t i = 0; i < ADC_SAMPLE_COUNT; i++)
+      {
+         totalCounts += analogRead(_pin);
+      }
+
+      return (totalCounts / static_cast<float>(ADC_SAMPLE_COUNT)) * _voltageDivider * ADC_REF_VOLTS / ADC_MAX_COUNTS;
+#endif
+   }
+
+   ///
+   /// <summary>
+   /// Records an ADC voltage sample into the rolling ripple window used to detect the
+   /// TP4054 no-battery sawtooth oscillation (~4.08V-4.16V) and voltage trend.
+   /// </summary>
+   /// <param name="volts">Measured battery voltage in volts.</param>
+   ///
+   void _recordAdcSample(float volts)
+   {
+      if (!isfinite(volts))
+      {
+         return;
+      }
+
+      uint32_t now = millis();
+      if (_windowSampleCount == 0)
+      {
+         _windowStartMs = now;
+         _windowMinVolts = volts;
+         _windowMaxVolts = volts;
+         _windowSumVolts = volts;
+         _windowSampleCount = 1;
+         return;
+      }
+
+      if (now - _windowStartMs >= RIPPLE_WINDOW_MS)
+      {
+         if (_windowSampleCount >= MIN_RIPPLE_SAMPLES_FOR_VALID)
+         {
+            _lastRippleVolts = _windowMaxVolts - _windowMinVolts;
+            _hasRippleMeasurement = true;
+            float threshold = _rippleDisconnected ? RIPPLE_CONNECT_VOLTS : RIPPLE_DISCONNECT_VOLTS;
+            bool windowHasRipple = (_windowMinVolts >= MIN_RIPPLE_FLOAT_VOLTS) && (_lastRippleVolts > threshold);
+
+            if (windowHasRipple)
+            {
+               if (_consecutiveRippleWindows < RIPPLE_DISCONNECT_WINDOWS_REQUIRED)
+               {
+                  _consecutiveRippleWindows++;
+               }
+               if (_consecutiveRippleWindows >= RIPPLE_DISCONNECT_WINDOWS_REQUIRED)
+               {
+                  _rippleDisconnected = true;
+               }
+            }
+            else
+            {
+               _consecutiveRippleWindows = 0;
+               _rippleDisconnected = false;
+            }
+
+            float windowAvgVolts = static_cast<float>(_windowSumVolts / _windowSampleCount);
+            _updateAdcChargingTrend(windowAvgVolts);
+         }
+
+         _windowStartMs = now;
+         _windowMinVolts = volts;
+         _windowMaxVolts = volts;
+         _windowSumVolts = volts;
+         _windowSampleCount = 1;
+         return;
+      }
+
+      if (volts < _windowMinVolts)
+      {
+         _windowMinVolts = volts;
+      }
+      if (volts > _windowMaxVolts)
+      {
+         _windowMaxVolts = volts;
+      }
+      _windowSumVolts += volts;
+      _windowSampleCount++;
+   }
+
+   ///
+   /// <summary>
+   /// Checks whether the ADC battery rail is exhibiting the TP4054 no-battery sawtooth
+   /// ripple (> 55mV peak-to-peak across consecutive windows).
+   /// </summary>
+   /// <returns>True if no-battery charger sawtooth ripple is present; false if stable.</returns>
+   ///
+   bool _hasNoBatteryRipple()
+   {
+      uint32_t now = millis();
+      if (_hasRippleMeasurement && (now - _windowStartMs < RIPPLE_WINDOW_MS * 2))
+      {
+         return _rippleDisconnected;
+      }
+
+      float minVolts = _sampleAdcVolts();
+      float maxVolts = minVolts;
+      _recordAdcSample(minVolts);
+
+      for (uint8_t i = 1; i < UNPLUGGED_PROBE_SAMPLE_COUNT; i++)
+      {
+         delay(UNPLUGGED_PROBE_DELAY_MS);
+         float v = _sampleAdcVolts();
+         _recordAdcSample(v);
+
+         if (v < minVolts)
+         {
+            minVolts = v;
+         }
+         if (v > maxVolts)
+         {
+            maxVolts = v;
+         }
+      }
+
+      _lastRippleVolts = maxVolts - minVolts;
+      _hasRippleMeasurement = true;
+      bool probeHasRipple = (minVolts >= MIN_RIPPLE_FLOAT_VOLTS) && (_lastRippleVolts > RIPPLE_DISCONNECT_VOLTS);
+      _consecutiveRippleWindows = probeHasRipple ? RIPPLE_DISCONNECT_WINDOWS_REQUIRED : 0;
+      _rippleDisconnected = probeHasRipple;
+      return _rippleDisconnected;
    }
 
 public:
@@ -220,74 +458,113 @@ public:
       }
 #endif
 
-#if defined(ARDUINO_ARCH_ESP32)
-      uint32_t totalMilliVolts = 0;
-      for (uint8_t i = 0; i < ADC_SAMPLE_COUNT; i++)
-      {
-         totalMilliVolts += analogReadMilliVolts(_pin);
-      }
-
-      return (totalMilliVolts / static_cast<float>(ADC_SAMPLE_COUNT)) * 0.001f * _voltageDivider;
-#else
-      uint32_t totalCounts = 0;
-      for (uint8_t i = 0; i < ADC_SAMPLE_COUNT; i++)
-      {
-         totalCounts += analogRead(_pin);
-      }
-
-      return (totalCounts / static_cast<float>(ADC_SAMPLE_COUNT)) * _voltageDivider * ADC_REF_VOLTS / ADC_MAX_COUNTS;
-#endif
+      float volts = _sampleAdcVolts();
+      _recordAdcSample(volts);
+      return volts;
    }
 
    ///
    /// <summary>
    /// Checks whether a battery is currently connected (and switched on) by verifying that
    /// the measured battery rail voltage is within the valid 1S LiPo operating window
-   /// (2.5V to 4.5V). When no battery is attached while powered over USB, boards like the
-   /// Hosyond 4.0 float the sensed rail up to ~5.17V.
+   /// (2.5V to 4.5V) and is not exhibiting the TP4054 no-battery sawtooth ripple (~4.08V-4.16V).
    /// </summary>
    /// <returns>True if a battery is detected; false if disconnected or unavailable.</returns>
    ///
    bool isConnected()
    {
-      return _isVoltsConnected(readVolts());
-   }
-
-   ///
-   /// <summary>
-   /// Checks whether the battery is currently charging. On fuel-gauge boards (MAX17048),
-   /// uses the positive charge rate; on ADC voltage-divider boards, detects when the
-   /// charger holds the battery rail at or near its ~4.16V-4.20V regulation ceiling.
-   /// </summary>
-   /// <returns>True if the battery is connected and charging; otherwise false.</returns>
-   ///
-   bool isCharging()
-   {
       float volts = readVolts();
       if (!_isVoltsConnected(volts))
       {
-         _adcCharging = false;
+         _resetAdcChargingTrend();
          return false;
       }
 
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
       if (_pin < 0)
       {
-         float rate = readChargeRate();
-         return isfinite(rate) && rate >= MIN_FUEL_GAUGE_CHARGE_RATE;
+         return true;
       }
 #endif
 
-      return _updateAdcCharging(volts);
+      if (_hasNoBatteryRipple())
+      {
+         _resetAdcChargingTrend();
+         return false;
+      }
+
+      return true;
    }
 
    ///
    /// <summary>
-   /// Reads the estimated battery state of charge on demand. On ADC voltage-divider
-   /// boards, returns NAN while actively charging because the charger holds the sensed
-   /// rail at ~4.20V regardless of the underlying cell state of charge.
+   /// Checks whether the battery rail voltage exceeds the maximum safe 1S LiPo ceiling
+   /// (> 4.5V), indicating a faulty charger or power-path circuit.
    /// </summary>
-   /// <returns>Battery charge percentage (0.0 to 100.0), or NAN if disconnected, charging on an ADC board, or unavailable.</returns>
+   /// <returns>True if over-voltage is detected on the battery rail; otherwise false.</returns>
+   ///
+   bool hasBadCharger()
+   {
+      return _isVoltsBadCharger(readVolts());
+   }
+
+   ///
+   /// <summary>
+   /// Returns the charging state indicator (Yes, No, Unknown, or BadCharger). On fuel-gauge
+   /// boards (MAX17048), uses the hardware charge rate; on ADC voltage-divider boards,
+   /// uses voltage trend (rising vs. falling), full-charge plateau detection (>= 4.18V),
+   /// and over-voltage detection (> 4.5V).
+   /// </summary>
+   /// <returns>BatteryChargingState::Yes, No, Unknown, or BadCharger.</returns>
+   ///
+   BatteryChargingState readChargingState()
+   {
+      float volts = readVolts();
+      if (_isVoltsBadCharger(volts))
+      {
+         _resetAdcChargingTrend();
+         return BatteryChargingState::BadCharger;
+      }
+
+      if (!isConnected())
+      {
+         return BatteryChargingState::Unknown;
+      }
+
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+      if (_pin < 0)
+      {
+         float rate = readChargeRate();
+         if (!isfinite(rate))
+         {
+            return BatteryChargingState::Unknown;
+         }
+
+         return (rate >= MIN_FUEL_GAUGE_CHARGE_RATE)
+            ? BatteryChargingState::Yes
+            : BatteryChargingState::No;
+      }
+#endif
+
+      return _adcChargingState;
+   }
+
+   ///
+   /// <summary>
+   /// Checks whether the battery is currently charging.
+   /// </summary>
+   /// <returns>True if charging is detected; otherwise false.</returns>
+   ///
+   bool isCharging()
+   {
+      return readChargingState() == BatteryChargingState::Yes;
+   }
+
+   ///
+   /// <summary>
+   /// Reads the estimated battery state of charge on demand.
+   /// </summary>
+   /// <returns>Battery charge percentage (0.0 to 100.0), or NAN if disconnected or unavailable.</returns>
    ///
    float readPercent()
    {
@@ -299,7 +576,6 @@ public:
       float volts = readVolts();
       if (!_isVoltsConnected(volts))
       {
-         _adcCharging = false;
          return NAN;
       }
 
@@ -316,7 +592,7 @@ public:
       }
 #endif
 
-      if (_updateAdcCharging(volts))
+      if (_hasNoBatteryRipple())
       {
          return NAN;
       }
@@ -346,5 +622,17 @@ public:
 #endif
 
       return NAN;
+   }
+
+   ///
+   /// <summary>
+   /// Returns the most recently measured peak-to-peak ADC voltage ripple (in volts) across
+   /// the ripple detection window.
+   /// </summary>
+   /// <returns>Peak-to-peak voltage ripple in volts.</returns>
+   ///
+   float readRippleVolts() const
+   {
+      return _lastRippleVolts;
    }
 };
