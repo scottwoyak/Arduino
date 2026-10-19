@@ -5,8 +5,13 @@
 #include <cfloat>
 #include <cstdint>
 #include <WiFi.h>
+#include <cmath>
 #include <time.h>
 
+#include "ArduinoBoardId.h"
+#ifdef ARDUINO_BATTERY_SUPPORTED
+#include "Battery.h"
+#endif
 #include "CPUTemp.h"
 #include "Units.h"
 #include "Util.h"
@@ -91,6 +96,11 @@ public:
    /// <summary>Failed InfluxDB writes since boot.</summary>
    static inline std::atomic<uint32_t> influxFailures{ 0 };
 
+#ifdef ARDUINO_BATTERY_SUPPORTED
+   /// <summary>Optional board Battery instance, wired in by SketchBase on boards with battery support.</summary>
+   static inline Battery* battery = nullptr;
+#endif
+
    /// <summary>Optional sketch-supplied callback that adds extra sketch-specific values (e.g. sensor readings) to the health JSON in fill().</summary>
    static inline void (*extraFields)(JsonDocument* doc) = nullptr;
 
@@ -166,11 +176,36 @@ public:
          char buffer[16];
          strftime(buffer, sizeof(buffer), "%I:%M %p", &timeInfo);
 
-         // Strip a leading zero from the hour, e.g. "09:45 AM" -> "9:45 AM".
-         (*doc)["localTime"] = (buffer[0] == '0') ? buffer + 1 : buffer;
-      }
+                         // Strip a leading zero from the hour, e.g. "09:45 AM" -> "9:45 AM".
+                         (*doc)["localTime"] = (buffer[0] == '0') ? buffer + 1 : buffer;
+                      }
 
-      if (extraFields != nullptr)
+               #ifdef ARDUINO_BATTERY_SUPPORTED
+                      if (battery != nullptr)
+                      {
+                         bool connected = battery->isConnected();
+                         (*doc)["batteryConnected"] = connected;
+                         if (connected)
+                         {
+                            (*doc)["batteryCharging"] = battery->isCharging();
+                            (*doc)["batteryVolts"] = roundf(battery->readVolts() * 100.0f) * 0.01f;
+
+                            float percent = battery->readPercent();
+                            if (isfinite(percent))
+                            {
+                               (*doc)["batteryPercent"] = (int32_t)lroundf(percent);
+                            }
+
+                            float chargeRate = battery->readChargeRate();
+                            if (isfinite(chargeRate))
+                            {
+                               (*doc)["batteryChargeRate"] = roundf(chargeRate * 10.0f) * 0.1f;
+                            }
+                         }
+                      }
+               #endif
+
+                      if (extraFields != nullptr)
       {
          extraFields(doc);
       }

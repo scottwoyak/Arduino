@@ -43,6 +43,30 @@ private:
    static constexpr uint16_t ADC_MAX_COUNTS = (1 << ADC_RESOLUTION_BITS);
    static constexpr float ADC_REF_VOLTS = 3.3f;
 
+   // Valid 1S LiPo operating window used by isConnected() to distinguish a connected
+   // cell (~3.0V-4.2V) from an unattached/switched-off battery rail that either drops
+   // near 0V or floats up to the ~5V USB rail.
+   static constexpr float MIN_CONNECTED_VOLTS = 2.5f;
+   static constexpr float MAX_CONNECTED_VOLTS = 4.5f;
+
+   // On ADC voltage-divider boards, active charging pushes the sensed rail up against
+   // the charger's ~4.20V regulation ceiling (typically >= 4.17V), whereas a battery
+   // powering the board + display on its own sags below ~4.14V even when 100% full.
+   static constexpr float MIN_ADC_CHARGING_VOLTS = 4.17f;
+   static constexpr float MIN_FUEL_GAUGE_CHARGE_RATE = 1.0f;
+
+   ///
+   /// <summary>
+   /// Checks whether a measured voltage falls within the valid 1S LiPo operating range.
+   /// </summary>
+   /// <param name="volts">Measured voltage in volts.</param>
+   /// <returns>True if the voltage indicates a connected 1S LiPo battery.</returns>
+   ///
+   static bool _isVoltsConnected(float volts)
+   {
+      return isfinite(volts) && volts >= MIN_CONNECTED_VOLTS && volts <= MAX_CONNECTED_VOLTS;
+   }
+
    ///
    /// <summary>
    /// Converts a 1S LiPo cell voltage to an estimated state-of-charge percentage using
@@ -180,13 +204,62 @@ public:
 
    ///
    /// <summary>
-   /// Reads the estimated battery state of charge on demand.
+   /// Checks whether a battery is currently connected (and switched on) by verifying that
+   /// the measured battery rail voltage is within the valid 1S LiPo operating window
+   /// (2.5V to 4.5V). When no battery is attached while powered over USB, boards like the
+   /// Hosyond 4.0 float the sensed rail up to ~5.17V.
    /// </summary>
-   /// <returns>Battery charge percentage (0.0 to 100.0), or NAN if unavailable.</returns>
+   /// <returns>True if a battery is detected; false if disconnected or unavailable.</returns>
+   ///
+   bool isConnected()
+   {
+      return _isVoltsConnected(readVolts());
+   }
+
+   ///
+   /// <summary>
+   /// Checks whether the battery is currently charging. On fuel-gauge boards (MAX17048),
+   /// uses the positive charge rate; on ADC voltage-divider boards, detects when the
+   /// charger holds the battery rail at or near its 4.20V CV regulation ceiling (>= 4.17V).
+   /// </summary>
+   /// <returns>True if the battery is connected and charging; otherwise false.</returns>
+   ///
+   bool isCharging()
+   {
+      float volts = readVolts();
+      if (!_isVoltsConnected(volts))
+      {
+         return false;
+      }
+
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+      if (_pin < 0)
+      {
+         float rate = readChargeRate();
+         return isfinite(rate) && rate >= MIN_FUEL_GAUGE_CHARGE_RATE;
+      }
+#endif
+
+      return volts >= MIN_ADC_CHARGING_VOLTS;
+   }
+
+   ///
+   /// <summary>
+   /// Reads the estimated battery state of charge on demand. On ADC voltage-divider
+   /// boards, returns NAN while actively charging because the charger holds the sensed
+   /// rail at ~4.20V regardless of the underlying cell state of charge.
+   /// </summary>
+   /// <returns>Battery charge percentage (0.0 to 100.0), or NAN if disconnected, charging on an ADC board, or unavailable.</returns>
    ///
    float readPercent()
    {
       if (!_ready && !begin())
+      {
+         return NAN;
+      }
+
+      float volts = readVolts();
+      if (!_isVoltsConnected(volts))
       {
          return NAN;
       }
@@ -204,8 +277,7 @@ public:
       }
 #endif
 
-      float volts = readVolts();
-      if (!isfinite(volts))
+      if (volts >= MIN_ADC_CHARGING_VOLTS)
       {
          return NAN;
       }

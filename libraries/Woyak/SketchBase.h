@@ -856,6 +856,9 @@ public:
       _instance = this;
       TelemetryClient::setSketchInfo(_config.sketchName, _config.version);
       DeviceServerClient::onLocate([]() { _instance->_startLocate(); });
+#ifdef ARDUINO_BATTERY_SUPPORTED
+      DeviceHealth::battery = &arduino.battery;
+#endif
    }
 
    ///
