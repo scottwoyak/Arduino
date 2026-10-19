@@ -271,11 +271,34 @@ internal sealed class FirmwareBuilder
     }
 
     /// <summary>
+    /// Touches the sketch's .ino file once before building so that __DATE__ / __TIME__ (BUILD@)
+    /// and MakeVersion (VERSION@) in the .ino translation unit are recompiled into the output binary.
+    /// </summary>
+    public void TouchSketch(string sketch)
+    {
+        string inoPath = Path.Combine(_repoRoot, sketch, sketch + ".ino");
+        if (!File.Exists(inoPath))
+        {
+            return;
+        }
+
+        try
+        {
+            File.SetLastWriteTimeUtc(inoPath, DateTime.UtcNow);
+        }
+        catch (IOException)
+        {
+            // Ignore if locked; arduino-cli will still attempt compilation.
+        }
+    }
+
+    /// <summary>
     /// Compiles one (sketch, boardId) target using arduino-cli.
     /// </summary>
     public async Task<(bool Ok, string Detail)> BuildAsync(
         string sketch,
         string boardId,
+        int jobs = 0,
         IProgress<string>? progress = null,
         CancellationToken cancellationToken = default)
     {
@@ -308,18 +331,6 @@ internal sealed class FirmwareBuilder
 
         Directory.CreateDirectory(buildDir);
 
-        // Touch the .ino file if LibraryVersion.h is newer or if we are rebuilding so that
-        // __DATE__ / __TIME__ (BUILD@) and MakeVersion (VERSION@) in the .ino translation unit
-        // are always recompiled into the output binary.
-        try
-        {
-            File.SetLastWriteTimeUtc(inoPath, DateTime.UtcNow);
-        }
-        catch (IOException)
-        {
-            // Ignore if locked; arduino-cli will still attempt compilation.
-        }
-
         var psi = new ProcessStartInfo
         {
             FileName = cliPath,
@@ -337,6 +348,11 @@ internal sealed class FirmwareBuilder
         psi.ArgumentList.Add(buildDir);
         psi.ArgumentList.Add("--libraries");
         psi.ArgumentList.Add(librariesDir);
+        if (jobs > 0)
+        {
+            psi.ArgumentList.Add("--jobs");
+            psi.ArgumentList.Add(jobs.ToString());
+        }
         psi.ArgumentList.Add("-v");
         psi.ArgumentList.Add(sketchDir);
 

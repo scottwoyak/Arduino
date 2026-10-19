@@ -576,6 +576,8 @@ internal sealed class MainForm : Form
         }
     }
 
+    private static readonly int MaxParallelBuilds = Math.Clamp(Environment.ProcessorCount / 4, 2, 8);
+
     private async Task BuildAsync(List<FirmwareItem> items)
     {
         if (_busy || items.Count == 0)
@@ -589,79 +591,24 @@ internal sealed class MainForm : Form
         UpdateButtons();
         try
         {
-            for (int index = 1; index < items.Count; index++)
+            // Touch each distinct sketch .ino once up front so concurrent builds of the same
+            // sketch for different boards don't modify the source timestamp mid-build.
+            foreach (string sketch in items.Select(i => i.Sketch).Distinct(StringComparer.OrdinalIgnoreCase))
             {
-                SetRowStatus(items[index], "Queued to build");
+                _builder.TouchSketch(sketch);
             }
 
-            for (int index = 0; index < items.Count; index++)
+            foreach (var item in items)
             {
-                var item = items[index];
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    SetRowStatus(item, "Build halted");
-                    continue;
-                }
-
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                string currentPhase = "Starting...";
-                void UpdateBuildingStatus()
-                {
-                    SetRowStatus(item, $"Building ({(int)sw.Elapsed.TotalSeconds}s): {currentPhase}");
-                }
-
-                using var timer = new System.Windows.Forms.Timer { Interval = 1000 };
-                timer.Tick += (_, _) => UpdateBuildingStatus();
-                timer.Start();
-
-                var progress = new Progress<string>(step =>
-                {
-                    currentPhase = step;
-                    UpdateBuildingStatus();
-                });
-
-                UpdateBuildingStatus();
-                Log($"Building ({index + 1}/{items.Count}) {item.Firmware}...");
-                try
-                {
-                    var (ok, detail) = await _builder.BuildAsync(item.Sketch, item.Board, progress, cancellationToken);
-                    timer.Stop();
-                    int elapsedSecs = (int)sw.Elapsed.TotalSeconds;
-                    if (ok)
-                    {
-                        await _scanner.RefreshItemAsync(item, _hub);
-                    }
-                    SetRowStatus(item, ok ? $"Built ({elapsedSecs}s)" : $"Build failed: {detail}", isError: !ok);
-                    Log(ok ? $"OK     built {item.Firmware} in {elapsedSecs}s" : $"FAILED {item.Firmware}: {detail}");
-
-                    if (ok && _autoUploadCheckBox.Checked && item.Status == FirmwareStatus.Ready)
-                    {
-                        _notified.Add(item.Key);
-                        SetRowStatus(item, "Uploading...");
-                        Log($"Uploading {item.Firmware} {item.Version}...");
-                        var (uploadOk, uploadDetail) = await _hub.UploadAsync(item, null);
-                        if (uploadOk)
-                        {
-                            item.ServerVersion = item.Version;
-                            item.ServerBuildTime = item.BuildTime;
-                            item.Status = FirmwareStatus.UpToDate;
-                        }
-                        SetRowStatus(item, uploadOk ? "Uploaded" : $"Upload failed: {uploadDetail}", isError: !uploadOk);
-                        Log(uploadOk ? $"OK     {item.Firmware} {item.Version}" : $"FAILED {item.Firmware}: {uploadDetail}");
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    timer.Stop();
-                    SetRowStatus(item, "Build halted");
-                    Log($"HALTED {item.Firmware} after {(int)sw.Elapsed.TotalSeconds}s");
-                    for (int rest = index + 1; rest < items.Count; rest++)
-                    {
-                        SetRowStatus(items[rest], "Build halted");
-                    }
-                    break;
-                }
+                SetRowStatus(item, "Queued to build");
             }
+
+            int parallelBuilds = Math.Min(MaxParallelBuilds, items.Count);
+            int jobsPerBuild = Math.Max(2, Environment.ProcessorCount / parallelBuilds);
+
+            using var semaphore = new SemaphoreSlim(parallelBuilds, parallelBuilds);
+            var tasks = items.Select((item, index) => BuildSingleItemAsync(item, index + 1, items.Count, jobsPerBuild, semaphore, cancellationToken)).ToList();
+            await Task.WhenAll(tasks);
         }
         finally
         {
@@ -672,6 +619,92 @@ internal sealed class MainForm : Form
         }
 
         await RefreshAsync();
+    }
+
+    private async Task BuildSingleItemAsync(
+        FirmwareItem item,
+        int itemNumber,
+        int totalCount,
+        int jobsPerBuild,
+        SemaphoreSlim semaphore,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await semaphore.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            SetRowStatus(item, "Build halted");
+            return;
+        }
+
+        try
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                SetRowStatus(item, "Build halted");
+                return;
+            }
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            string currentPhase = "Starting...";
+            void UpdateBuildingStatus()
+            {
+                SetRowStatus(item, $"Building ({(int)sw.Elapsed.TotalSeconds}s): {currentPhase}");
+            }
+
+            using var timer = new System.Windows.Forms.Timer { Interval = 1000 };
+            timer.Tick += (_, _) => UpdateBuildingStatus();
+            timer.Start();
+
+            var progress = new Progress<string>(step =>
+            {
+                currentPhase = step;
+                UpdateBuildingStatus();
+            });
+
+            UpdateBuildingStatus();
+            Log($"Building ({itemNumber}/{totalCount}) {item.Firmware}...");
+            try
+            {
+                var (ok, detail) = await _builder.BuildAsync(item.Sketch, item.Board, jobsPerBuild, progress, cancellationToken);
+                timer.Stop();
+                int elapsedSecs = (int)sw.Elapsed.TotalSeconds;
+                if (ok)
+                {
+                    await _scanner.RefreshItemAsync(item, _hub);
+                }
+                SetRowStatus(item, ok ? $"Built ({elapsedSecs}s)" : $"Build failed: {detail}", isError: !ok);
+                Log(ok ? $"OK     built {item.Firmware} in {elapsedSecs}s" : $"FAILED {item.Firmware}: {detail}");
+
+                if (ok && _autoUploadCheckBox.Checked && item.Status == FirmwareStatus.Ready)
+                {
+                    _notified.Add(item.Key);
+                    SetRowStatus(item, "Uploading...");
+                    Log($"Uploading {item.Firmware} {item.Version}...");
+                    var (uploadOk, uploadDetail) = await _hub.UploadAsync(item, null);
+                    if (uploadOk)
+                    {
+                        item.ServerVersion = item.Version;
+                        item.ServerBuildTime = item.BuildTime;
+                        item.Status = FirmwareStatus.UpToDate;
+                    }
+                    SetRowStatus(item, uploadOk ? "Uploaded" : $"Upload failed: {uploadDetail}", isError: !uploadOk);
+                    Log(uploadOk ? $"OK     {item.Firmware} {item.Version}" : $"FAILED {item.Firmware}: {uploadDetail}");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                timer.Stop();
+                SetRowStatus(item, "Build halted");
+                Log($"HALTED {item.Firmware} after {(int)sw.Elapsed.TotalSeconds}s");
+            }
+        }
+        finally
+        {
+            semaphore.Release();
+        }
     }
 
     private async Task UploadAsync(List<FirmwareItem> items)
