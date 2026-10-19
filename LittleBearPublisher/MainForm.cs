@@ -13,6 +13,7 @@ internal sealed class MainForm : Form
     private readonly FirmwareScanner _scanner;
     private readonly FirmwareBuilder _builder;
     private readonly FileSystemWatcher _watcher;
+    private readonly FileSystemWatcher? _vmBuildsWatcher;
     private readonly System.Windows.Forms.Timer _debounce = new() { Interval = DebounceMs };
     private readonly HashSet<string> _notified = [];
     private readonly Dictionary<string, (string Error, DateTime BinBuilt)> _failedStatus = new(StringComparer.OrdinalIgnoreCase);
@@ -99,18 +100,17 @@ internal sealed class MainForm : Form
         uploadAnyway.Click += async (_, _) => await UploadAsync(SelectedUploadableItems());
         listMenu.Items.Add(uploadAnyway);
         ToolStripMenuItem deleteSelected = new("Delete");
-        deleteSelected.Click += async (_, _) => await DeleteAsync(SelectedPublishedItems());
+        deleteSelected.Click += async (_, _) => await DeleteAsync(SelectedUploadableItems());
         listMenu.Items.Add(deleteSelected);
         listMenu.Opening += (_, e) =>
         {
             bool hasBuildable = SelectedBuildableItems().Count > 0;
             bool hasUploadable = SelectedUploadableItems().Count > 0;
-            bool hasPublished = SelectedPublishedItems().Count > 0;
             buildSelected.Enabled = !_busy && hasBuildable;
             buildSketch.Enabled = !_busy && SelectedSketchItems().Count > 0;
             uploadAnyway.Enabled = !_busy && hasUploadable;
-            deleteSelected.Enabled = !_busy && hasPublished;
-            e.Cancel = !hasBuildable && !hasUploadable && !hasPublished;
+            deleteSelected.Enabled = !_busy && hasUploadable;
+            e.Cancel = !hasBuildable && !hasUploadable;
         };
         _list.ContextMenuStrip = listMenu;
 
@@ -130,6 +130,19 @@ internal sealed class MainForm : Form
         _watcher.Created += (_, e) => OnPathChanged(e.FullPath);
         _watcher.Renamed += (_, e) => OnPathChanged(e.FullPath);
         _watcher.EnableRaisingEvents = true;
+
+        string vmBuildsRoot = Path.Combine(Path.GetTempPath(), "VMBuilds");
+        Directory.CreateDirectory(vmBuildsRoot);
+        _vmBuildsWatcher = new FileSystemWatcher(vmBuildsRoot)
+        {
+            IncludeSubdirectories = true,
+            InternalBufferSize = 64 * 1024,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
+        };
+        _vmBuildsWatcher.Changed += (_, e) => OnPathChanged(e.FullPath);
+        _vmBuildsWatcher.Created += (_, e) => OnPathChanged(e.FullPath);
+        _vmBuildsWatcher.Renamed += (_, e) => OnPathChanged(e.FullPath);
+        _vmBuildsWatcher.EnableRaisingEvents = true;
 
         Shown += async (_, _) => await RefreshAsync();
         Log($"Watching {repoRoot}; server {hub.Server}");
@@ -243,6 +256,7 @@ internal sealed class MainForm : Form
         }
 
         _watcher.Dispose();
+        _vmBuildsWatcher?.Dispose();
         _buildCts?.Cancel();
         _tray.Visible = false;
         _tray.Dispose();
@@ -295,7 +309,6 @@ internal sealed class MainForm : Form
         bool relevant =
             (path.EndsWith(".ino.bin", StringComparison.OrdinalIgnoreCase) ||
              path.EndsWith(".ino", StringComparison.OrdinalIgnoreCase) ||
-             path.EndsWith(".vcxproj", StringComparison.OrdinalIgnoreCase) ||
              path.EndsWith("LibraryVersion.h", StringComparison.OrdinalIgnoreCase)) &&
             !path.Contains($"{Path.DirectorySeparatorChar}_publish{Path.DirectorySeparatorChar}") &&
             !path.StartsWith(Path.Combine(_repoRoot, "LittleBearPublisher") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
@@ -549,15 +562,6 @@ internal sealed class MainForm : Form
             .ToList();
     }
 
-    private List<FirmwareItem> SelectedPublishedItems()
-    {
-        return _list.SelectedItems
-            .Cast<ListViewItem>()
-            .Select(r => (FirmwareItem)r.Tag!)
-            .Where(i => i.ServerVersion is not null)
-            .ToList();
-    }
-
     private void UpdateButtons()
     {
         _refreshButton.Enabled = !_busy;
@@ -754,9 +758,9 @@ internal sealed class MainForm : Form
         }
 
         string message = items.Count == 1
-            ? $"Delete {items[0].Firmware} {items[0].ServerVersion} from the server?"
-            : $"Delete {items.Count} published firmware versions from the server?";
-        if (MessageBox.Show(this, message, "Delete Firmware", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+            ? $"Delete local build output for {items[0].Sketch} ({items[0].BoardName})?"
+            : $"Delete local build output for {items.Count} selected items?";
+        if (MessageBox.Show(this, message, "Delete Local Build", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
         {
             return;
         }
@@ -767,12 +771,11 @@ internal sealed class MainForm : Form
         {
             foreach (var item in items)
             {
-                string version = item.ServerVersion!;
                 SetRowStatus(item, "Deleting...");
-                Log($"Deleting {item.Firmware} {version}...");
-                var (ok, detail) = await _hub.DeleteAsync(item.Firmware, version);
+                Log($"Deleting local build for {item.Firmware}...");
+                var (ok, detail) = _scanner.DeleteLocalBuilds(item);
                 SetRowStatus(item, ok ? "Deleted" : $"Delete failed: {detail}", isError: !ok);
-                Log(ok ? $"OK     deleted {item.Firmware} {version}" : $"FAILED {item.Firmware}: {detail}");
+                Log(ok ? $"OK     deleted local build for {item.Firmware}" : $"FAILED {item.Firmware}: {detail}");
             }
         }
         finally

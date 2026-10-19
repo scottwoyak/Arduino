@@ -15,7 +15,6 @@ internal sealed class FirmwareBuilder
     private static readonly Regex BuildBoardLineRegex = new(@"^([A-Za-z0-9_]+)\.build\.board\s*=\s*([A-Za-z0-9_]+)\s*$", RegexOptions.Multiline);
     private static readonly Regex BoardNameLineRegex = new(@"^([A-Za-z0-9_]+)\.name\s*=\s*(.+?)\s*$", RegexOptions.Multiline);
     private static readonly Regex ConditionalBoardIdRegex = new(@"defined\s*\(\s*(?:ARDUINO_)?([A-Za-z0-9_]+)\s*\)[\s\S]*?#define\s+ARDUINO_BOARD_VARIANT_ID\s+""([^""]+)""");
-    private static readonly Regex VcxprojBoardMacroRegex = new(@"ARDUINO_BOARD=([A-Za-z0-9_]+)");
 
     private static readonly Dictionary<string, BoardConfig> DefaultBoardConfigs = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -74,131 +73,11 @@ internal sealed class FirmwareBuilder
             "esp32:esp32:esp32s3_dev_playground:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi"),
     };
 
-    /// <summary>
-    /// Explicit mapping of OTA-enabled sketches to the boards they support.
-    /// </summary>
-    private static readonly Dictionary<string, string[]> SketchBoards = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["Air_Monitor_Display"] = ["ADAFRUIT_FEATHER_ESP32S3_TFT"],
-        ["Air_Viewer"] = ["HOSYOND_ESP32S3_TOUCH_LCD_40"],
-        ["Gate_Opener"] = ["WAVESHARE_ESP32S3_ZERO_SENSORS"],
-        ["Gate_Publisher"] = ["WAVESHARE_ESP32S3_ZERO_SENSORS"],
-        ["Gate_Viewer"] = ["ADAFRUIT_FEATHER_ESP32S3_TFT", "HOSYOND_ESP32S3_TOUCH_LCD_40"],
-        ["Lake_Temp_Monitor"] = ["WAVESHARE_ESP32S3_ZERO_SENSORS"],
-        ["Light_Monitor"] = ["WAVESHARE_ESP32S3_ZERO_SENSORS"],
-        ["Muti_Temp_Playground"] = ["ESP32S3_DEV_PLAYGROUND"],
-        ["Telemetry_Publisher_Display"] = ["ADAFRUIT_FEATHER_ESP32S3_TFT"],
-        ["Telemetry_Publisher_Playground"] = ["ESP32S3_DEV_PLAYGROUND"],
-        ["Telemetry_Subscriber_Display"] = ["ADAFRUIT_FEATHER_ESP32S3_TFT"],
-        ["Temp_Monitor"] = ["WAVESHARE_ESP32S3_ZERO_SENSORS"],
-        ["Temp_Monitor_Display"] = ["ADAFRUIT_FEATHER_ESP32S3_TFT", "HOSYOND_ESP32S3_TOUCH_LCD_40"],
-        ["Wave_Publisher"] = ["WAVESHARE_ESP32S3_ZERO_SENSORS"],
-        ["Wave_Viewer"] = ["HOSYOND_ESP32S3_TOUCH_LCD_40"],
-        ["Wind_Publisher"] = ["WAVESHARE_ESP32S3_ZERO_SENSORS"],
-        ["Wind_Viewer"] = ["ADAFRUIT_FEATHER_ESP32S3_TFT", "HOSYOND_ESP32S3_TOUCH_LCD_40"],
-    };
-
     private readonly string _repoRoot;
 
     public FirmwareBuilder(string repoRoot)
     {
         _repoRoot = repoRoot;
-    }
-
-    /// <summary>
-    /// Returns the configured board IDs for <paramref name="sketch"/>. Discovers boards from
-    /// existing build subdirectories (build.options.json) first, then merges with the explicit
-    /// sketch mapping or category fallback.
-    /// </summary>
-    public static IReadOnlyList<string> GetSupportedBoards(string repoRoot, string sketch, string? inoText = null)
-    {
-        Dictionary<string, BoardConfig> configs = LoadBoardConfigs(repoRoot);
-        var discovered = new List<string>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        string buildsRoot = Path.Combine(repoRoot, sketch, "build");
-        if (Directory.Exists(buildsRoot))
-        {
-            foreach (string subDir in Directory.EnumerateDirectories(buildsRoot))
-            {
-                string folderName = Path.GetFileName(subDir);
-                if (string.Equals(folderName, "_publish", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                BoardConfig? match = configs.Values.FirstOrDefault(c => string.Equals(c.BuildFolder, folderName, StringComparison.OrdinalIgnoreCase));
-                if (match != null && seen.Add(match.BoardId))
-                {
-                    discovered.Add(match.BoardId);
-                }
-            }
-        }
-
-        string vcxprojPath = Path.Combine(repoRoot, sketch, sketch + ".vcxproj");
-        if (File.Exists(vcxprojPath))
-        {
-            try
-            {
-                Dictionary<string, string> macroToVariantId = LoadMacroToVariantId(repoRoot);
-                foreach (Match m in VcxprojBoardMacroRegex.Matches(File.ReadAllText(vcxprojPath)))
-                {
-                    string token = m.Groups[1].Value;
-                    string variantId = macroToVariantId.TryGetValue(token, out string? mapped) ? mapped : token;
-                    if (configs.ContainsKey(variantId) && seen.Add(variantId))
-                    {
-                        discovered.Add(variantId);
-                    }
-                }
-            }
-            catch (IOException)
-            {
-                // Ignore if locked while Visual Studio is saving.
-            }
-        }
-
-        IReadOnlyList<string> fallback = GetDefaultSketchBoards(sketch, inoText);
-        foreach (string board in fallback)
-        {
-            if (seen.Add(board))
-            {
-                discovered.Add(board);
-            }
-        }
-
-        return discovered;
-    }
-
-    private static IReadOnlyList<string> GetDefaultSketchBoards(string sketch, string? inoText)
-    {
-        if (SketchBoards.TryGetValue(sketch, out string[]? boards))
-        {
-            return boards;
-        }
-
-        if (inoText != null &&
-            (inoText.Contains("ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS", StringComparison.Ordinal) ||
-             inoText.Contains("ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS", StringComparison.Ordinal)))
-        {
-            return ["WAVESHARE_ESP32S3_ZERO_SENSORS"];
-        }
-
-        if (sketch.EndsWith("_Playground", StringComparison.OrdinalIgnoreCase))
-        {
-            return ["ESP32S3_DEV_PLAYGROUND"];
-        }
-
-        if (sketch.EndsWith("_Viewer", StringComparison.OrdinalIgnoreCase))
-        {
-            return ["ADAFRUIT_FEATHER_ESP32S3_TFT", "HOSYOND_ESP32S3_TOUCH_LCD_40"];
-        }
-
-        if (sketch.EndsWith("_Display", StringComparison.OrdinalIgnoreCase))
-        {
-            return ["ADAFRUIT_FEATHER_ESP32S3_TFT"];
-        }
-
-        return ["WAVESHARE_ESP32S3_ZERO"];
     }
 
     private static Dictionary<string, string> LoadMacroToVariantId(string repoRoot)

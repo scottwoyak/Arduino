@@ -181,25 +181,6 @@ internal sealed class FirmwareScanner
                 }
                 items.Add(item);
             }
-
-            foreach (string configuredBoard in FirmwareBuilder.GetSupportedBoards(_repoRoot, name, inoText))
-            {
-                if (!seenBoards.Add(configuredBoard))
-                {
-                    continue;
-                }
-
-                var missingItem = new FirmwareItem
-                {
-                    Sketch = name,
-                    Board = configuredBoard,
-                    BoardName = FirmwareBuilder.GetBoardDisplayName(_repoRoot, configuredBoard),
-                    Status = FirmwareStatus.Skipped,
-                    Detail = "no build output",
-                };
-                (missingItem.ServerVersion, missingItem.ServerBuildTime) = await hub.GetLatestAsync(missingItem.Firmware);
-                items.Add(missingItem);
-            }
         }
 
         return items;
@@ -244,15 +225,23 @@ internal sealed class FirmwareScanner
 
         string buildsRoot = Path.Combine(dir, "build");
         string publishRoot = Path.Combine(buildsRoot, "_publish") + Path.DirectorySeparatorChar;
-        if (!Directory.Exists(buildsRoot))
+        string vmBuildsRoot = Path.Combine(Path.GetTempPath(), "VMBuilds", item.Sketch);
+        var candidateBins = new List<FileInfo>();
+        if (Directory.Exists(buildsRoot))
         {
-            return;
+            candidateBins.AddRange(
+                Directory.EnumerateFiles(buildsRoot, item.Sketch + ".ino.bin", SearchOption.AllDirectories)
+                    .Where(f => !f.StartsWith(publishRoot, StringComparison.OrdinalIgnoreCase))
+                    .Select(f => new FileInfo(f)));
+        }
+        if (Directory.Exists(vmBuildsRoot))
+        {
+            candidateBins.AddRange(
+                Directory.EnumerateFiles(vmBuildsRoot, item.Sketch + ".ino.bin", SearchOption.AllDirectories)
+                    .Select(f => new FileInfo(f)));
         }
 
-        var bins = Directory.EnumerateFiles(buildsRoot, item.Sketch + ".ino.bin", SearchOption.AllDirectories)
-            .Where(f => !f.StartsWith(publishRoot, StringComparison.OrdinalIgnoreCase))
-            .Select(f => new FileInfo(f))
-            .OrderByDescending(f => f.LastWriteTime);
+        var bins = candidateBins.OrderByDescending(f => f.LastWriteTime);
 
         foreach (var bin in bins)
         {
@@ -297,6 +286,92 @@ internal sealed class FirmwareScanner
             item.IsStale = isStale;
             item.Status = await hub.IsAlreadyPublishedAsync(item) ? FirmwareStatus.UpToDate : FirmwareStatus.Ready;
             return;
+        }
+    }
+
+    /// <summary>
+    /// Deletes all local build folders (under &lt;Sketch&gt;\build and %TEMP%\VMBuilds\&lt;Sketch&gt;)
+    /// whose compiled binary matches <paramref name="item"/>'s board.
+    /// </summary>
+    public (bool Ok, string Detail) DeleteLocalBuilds(FirmwareItem item)
+    {
+        IReadOnlyList<string> knownBoardIds = LoadKnownBoardIds();
+        string sketchDir = Path.Combine(_repoRoot, item.Sketch);
+        string buildsRoot = Path.Combine(sketchDir, "build");
+        string publishRoot = Path.Combine(buildsRoot, "_publish") + Path.DirectorySeparatorChar;
+        string vmBuildsRoot = Path.Combine(Path.GetTempPath(), "VMBuilds", item.Sketch);
+
+        var candidateBins = new List<string>();
+        if (Directory.Exists(buildsRoot))
+        {
+            candidateBins.AddRange(
+                Directory.EnumerateFiles(buildsRoot, item.Sketch + ".ino.bin", SearchOption.AllDirectories)
+                    .Where(f => !f.StartsWith(publishRoot, StringComparison.OrdinalIgnoreCase)));
+        }
+        if (Directory.Exists(vmBuildsRoot))
+        {
+            candidateBins.AddRange(
+                Directory.EnumerateFiles(vmBuildsRoot, item.Sketch + ".ino.bin", SearchOption.AllDirectories));
+        }
+
+        var dirsToDelete = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string binPath in candidateBins)
+        {
+            try
+            {
+                string text = Encoding.Latin1.GetString(File.ReadAllBytes(binPath));
+                string? boardId = GetBoardId(text, knownBoardIds);
+                if (!string.Equals(boardId, item.Board, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string? binDir = Path.GetDirectoryName(binPath);
+                if (string.IsNullOrEmpty(binDir))
+                {
+                    continue;
+                }
+
+                // In VMBuilds, the binary is in ...\<Sketch>\<board>\Release\<Sketch>.ino.bin;
+                // delete the <board> directory rather than leaving an empty parent.
+                if (binDir.StartsWith(vmBuildsRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    string relative = Path.GetRelativePath(vmBuildsRoot, binDir);
+                    string topSubFolder = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
+                    dirsToDelete.Add(Path.Combine(vmBuildsRoot, topSubFolder));
+                }
+                else if (binDir.StartsWith(buildsRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    string relative = Path.GetRelativePath(buildsRoot, binDir);
+                    string topSubFolder = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
+                    dirsToDelete.Add(Path.Combine(buildsRoot, topSubFolder));
+                }
+                else
+                {
+                    dirsToDelete.Add(binDir);
+                }
+            }
+            catch (Exception ex)
+            {
+                return (false, ex.Message);
+            }
+        }
+
+        try
+        {
+            foreach (string dir in dirsToDelete)
+            {
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, recursive: true);
+                }
+            }
+
+            return (true, $"Deleted {dirsToDelete.Count} folder(s)");
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
         }
     }
 
