@@ -48,6 +48,14 @@ using Arduino = Waveshare_ESP32S3_Touch_LCD_19;
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_20) || defined(ARDUINO_WAVESHARE_ESP32_S3_TOUCH_LCD_20)
+
+#include "Waveshare_ESP32S3_Touch_LCD_20.h"
+using Arduino = Waveshare_ESP32S3_Touch_LCD_20;
+
+constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
+constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
+
 #elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_28) || defined(ARDUINO_WAVESHARE_ESP32_S3_TOUCH_LCD_28)
 
 #include "Waveshare_ESP32S3_Touch_LCD_28.h"
