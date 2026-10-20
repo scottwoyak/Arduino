@@ -295,7 +295,7 @@ class DeviceServerClient
    };
 
    /// <summary>How long (in milliseconds) DeviceServerClient waits after a disconnect before logging "Logging disconnected: ...".</summary>
-   static constexpr uint32_t DISCONNECT_GRACE_MS = 3000UL;
+   static constexpr uint32_t DISCONNECT_GRACE_MS = 10000UL;
 
    /// <summary>Minutes the hub connection may stay down (dropped or never connected) before the device resets.</summary>
    static constexpr uint32_t OUTAGE_RESET_M = 10UL;
