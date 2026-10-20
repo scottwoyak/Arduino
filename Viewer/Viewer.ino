@@ -1,6 +1,6 @@
 //
 // Sketch for the Hosyond ESP32-S3 4" display (Viewer board), also usable on the
-// Waveshare ESP32-S3-Touch-LCD-4.3B and Waveshare ESP32-S3-Touch-LCD-2.8.
+// Waveshare ESP32-S3-Touch-LCD-4.3B, 2.8, 2.0, and 1.9 boards.
 //
 
 // Uncomment this to build for the Waveshare ESP32-S3-Touch-LCD-4.3B instead of the

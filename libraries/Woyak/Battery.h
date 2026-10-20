@@ -29,7 +29,7 @@ enum class BatteryChargingState : uint8_t
 /// <summary>
 /// On-demand battery monitor supporting both I2C fuel-gauge boards (Adafruit Feather
 /// ESP32-S3 TFT with MAX17048) and ADC voltage-divider boards (Hosyond 4.0 ESP32-S3,
-/// Waveshare ESP32-S3 Touch LCD 1.9 / 2.8 / 4.3, Adafruit Feather M0, or a custom pin/divider).
+/// Waveshare ESP32-S3 Touch LCD 1.9 / 2.0 / 2.8 / 4.3, Adafruit Feather M0, or a custom pin/divider).
 /// </summary>
 ///
 class Battery
@@ -159,6 +159,9 @@ public:
    static constexpr float DEFAULT_VOLTAGE_DIVIDER = 3.0f;
 #elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_19)
    static constexpr int8_t DEFAULT_PIN = 4;
+   static constexpr float DEFAULT_VOLTAGE_DIVIDER = 3.0f;
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_20) || defined(ARDUINO_WAVESHARE_ESP32_S3_TOUCH_LCD_20)
+   static constexpr int8_t DEFAULT_PIN = 5;
    static constexpr float DEFAULT_VOLTAGE_DIVIDER = 3.0f;
 #elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_28) || defined(ARDUINO_WAVESHARE_ESP32_S3_TOUCH_LCD_28)
    static constexpr int8_t DEFAULT_PIN = 8;
