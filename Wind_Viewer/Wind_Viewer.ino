@@ -263,7 +263,6 @@ void setup()
    rollingChart->setColorRange(&speedColorRange);
 
    sketch.beginTelemetry(&telemetryHandler);
-   sketch.setOnLocateEndCallback([]() { telemetryHandler.needsFullRedraw = true; });
    delay(1000);
 
    Logger.logInitializationComplete();
@@ -272,11 +271,6 @@ void setup()
 void loop()
 {
    sketch.loop();
-
-   if (sketch.isLocating())
-   {
-      return;
-   }
 
    TelemetrySubscriber* client = sketch.getClient();
 

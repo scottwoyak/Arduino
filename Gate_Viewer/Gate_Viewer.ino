@@ -1544,8 +1544,8 @@ public:
 
 GateTelemetryHandler telemetryHandler(sketch.getStatus());
 
-// Set when a Locate request ends, so the next loop() repaints everything.
-bool redrawAfterLocate = false;
+// Set when ClearHistory is invoked, so the next loop() repaints everything.
+bool needsFullRedraw = false;
 
 #ifdef ARDUINO_SOUND_SUPPORTED
 /// <summary>Commands registered with DeviceServerClient, appended to the "Help" command's listing.</summary>
@@ -1746,7 +1746,7 @@ void onSoundCommand(const char* command)
       gateOpenHistory.clear();
       lastGateOpenTime = 0;
       lastOpenFooterVisible = false;
-      redrawAfterLocate = true;
+      needsFullRedraw = true;
       DeviceServerClient::respond("Cleared gate open history");
    }
    else
@@ -1796,23 +1796,12 @@ void setup()
                }
    });
 
-   sketch.setOnLocateEndCallback([]()
-   {
-      telemetryHandler.needsInitialClear = true;
-      redrawAfterLocate = true;
-   });
-
    sketch.completeInitialization();
 }
 
 void loop()
 {
    sketch.loop();
-
-   if (sketch.isLocating())
-   {
-      return;
-   }
 
    TelemetrySubscriber* client = sketch.getClient();
 
@@ -1854,8 +1843,8 @@ void loop()
    static bool openPending = false;
    static TimerSecs openPendingTimer(10.0f);
 
-   bool forceRedraw = redrawAfterLocate;
-   redrawAfterLocate = false;
+   bool forceRedraw = needsFullRedraw;
+   needsFullRedraw = false;
 
    #ifdef SETTINGS_SUPPORTED
    static bool showingSettings = false;

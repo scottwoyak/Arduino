@@ -169,11 +169,6 @@ void setup()
    table.addRow("State:", "###########");
    table.addRow("Rate:", "+###%/hr");
 
-   sketch.setOnLocateEndCallback([]()
-   {
-      drawStaticHeading();
-   });
-
    sketch.completeInitialization();
 
    drawStaticHeading();
@@ -225,7 +220,7 @@ void loop()
          stateText);
    }
 
-   if (sketch.isLocating() || !displayTimer.ready())
+   if (!displayTimer.ready())
    {
       return;
    }

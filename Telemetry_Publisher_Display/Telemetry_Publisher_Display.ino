@@ -91,8 +91,6 @@ void setup()
 
    client.connect(&sketch.arduino, sketch.getStatus());
 
-   sketch.setOnLocateEndCallback([]() { needsInitialDisplay = true; });
-
    sketch.completeInitialization();
 }
 
@@ -112,11 +110,6 @@ void loop()
          valueSeries->add(value);
          plotNeedsDraw = true;
       }
-   }
-
-   if (sketch.isLocating())
-   {
-      return;
    }
 
    if (!client.isReady())

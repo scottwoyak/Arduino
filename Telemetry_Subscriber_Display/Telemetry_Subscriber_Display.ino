@@ -105,18 +105,12 @@ void setup()
       }
    });
 
-   sketch.setOnLocateEndCallback([]() { needsInitialDisplay = true; });
    sketch.completeInitialization();
 }
 
 void loop()
 {
    sketch.loop();
-
-   if (sketch.isLocating())
-   {
-      return;
-   }
 
    TelemetrySubscriber* client = sketch.getClient();
 

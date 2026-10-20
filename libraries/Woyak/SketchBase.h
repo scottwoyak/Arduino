@@ -20,10 +20,6 @@
 #include "TelemetryClient.h"
 #include "Util.h"
 
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-#include "Table.h"
-#endif
-
 /// rebooter, and CPU settings. Influx and telemetry settings are passed separately
 /// (as InfluxConfig/TelemetryConfig) to the derived classes that use them.
 /// </summary>
@@ -124,14 +120,16 @@ protected:
    /// <summary>Seconds a Locate request lasts.</summary>
    static constexpr uint8_t LOCATE_DURATION_S = 30;
 
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+   /// <summary>Milliseconds between display invert toggles while locating.</summary>
+   static constexpr uint16_t LOCATE_FLASH_INTERVAL_MS = 1000;
+#else
    /// <summary>Milliseconds between LED toggles while locating.</summary>
    static constexpr uint16_t LOCATE_FLASH_INTERVAL_MS = 100;
+#endif
 
    /// <summary>True while a Locate request is active.</summary>
    bool _locating = false;
-
-   /// <summary>Callback registered via setOnLocateEndCallback().</summary>
-   std::function<void()> _onLocateEndCallback = nullptr;
 
    /// <summary>Callback registered via onReadings() to return the formatted sensor readings.</summary>
    std::function<std::string()> _readingsHandler = nullptr;
@@ -215,11 +213,19 @@ protected:
    /// <summary>Ends the Locate request.</summary>
    TimerSecs _locateTimer = TimerSecs(LOCATE_DURATION_S);
 
-   /// <summary>Paces the LED flashing while locating.</summary>
+   /// <summary>Paces the display invert or LED flashing while locating.</summary>
    Timer _locateFlashTimer = Timer(LOCATE_FLASH_INTERVAL_MS);
 
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+   /// <summary>Panel invert state saved when Locate starts, restored when Locate ends.</summary>
+   bool _locateSavedInvert = false;
+
+   /// <summary>Current invert toggle state while locating.</summary>
+   bool _locateInverted = false;
+#else
    /// <summary>Current LED state while flashing.</summary>
    bool _locateLedOn = false;
+#endif
 
    /// <summary>Number of WiFi disconnect events not yet logged (set from the WiFi event task).</summary>
    static inline volatile uint32_t _wifiDisconnects = 0;
@@ -275,77 +281,34 @@ protected:
       }
    }
 
-   /// <summary>Seconds last shown in the Locate countdown footer.</summary>
-   int16_t _locateShownSecs = -1;
-
    ///
    /// <summary>
-   /// Draws the gray countdown footer (seconds until the normal sketch returns), but only
-   /// when the displayed number of seconds changes.
-   /// </summary>
-   ///
-   void _drawLocateFooter()
-   {
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-      int16_t secs = (int16_t)ceilf(_locateTimer.remaining());
-      if (secs == _locateShownSecs)
-      {
-         return;
-      }
-      _locateShownSecs = secs;
-
-      std::string text = "Returning in " + std::to_string(secs) + "s ";
-      _arduino->setTextSize(2);
-      _arduino->setCursor(_arduino->width(), _arduino->height() - _arduino->charH());
-      _arduino->printR(text, Color::DARKGRAY, Color::BLACK);
-#endif
-   }
-
-   ///
-   /// <summary>
-   /// Starts a Locate request. Boards with a display show the sketch name, version, IP and
-   /// MAC address; other boards rapidly flash their status LED. Lasts LOCATE_DURATION_S.
+   /// Starts a Locate request. Boards with a display invert their screen once per second;
+   /// other boards rapidly flash their status LED. Lasts LOCATE_DURATION_S.
    /// </summary>
    ///
    void _startLocate()
    {
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+      if (!_locating)
+      {
+         _locateSavedInvert = _arduino->display.getInvert();
+      }
+      _locateInverted = !_locateSavedInvert;
+      _arduino->display.invertDisplay(_locateInverted);
+#else
+      _locateLedOn = false;
+#endif
       _locating = true;
       _locateTimer.reset();
       _locateFlashTimer.reset();
-      _locateLedOn = false;
-
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-      _arduino->clearDisplay();
-
-      std::string name = _config.sketchName;
-      std::string version = _config.version != nullptr ? _config.version : "";
-      std::string ip = WiFi.localIP().toString().c_str();
-      std::string mac = WiFi.macAddress().c_str();
-
-      Table table(_arduino, 0, 0);
-      table.addRow("Sketch", std::string(name.length(), ' '));
-      table.addRow("Version", std::string(version.length(), ' '));
-      table.addRow("IP", std::string(ip.length(), ' '));
-      table.addRow("MAC", std::string(mac.length(), ' '));
-      table.setValue(0, name);
-      table.setValue(1, version);
-      table.setValue(2, ip);
-      table.setValue(3, mac);
-      table.setPosition(_arduino->width() / 2, _arduino->height() / 2, Anchor::CENTER);
-      table.draw();
-
-      _locateShownSecs = -1;
-      _drawLocateFooter();
-#endif
    }
 
    ///
    /// <summary>
-   /// Services an active Locate request: flashes the status LED on boards without a
-   /// display, and ends the request after LOCATE_DURATION_S. On display boards the display
-   /// is cleared at the end, then _onLocateEndCallback is invoked so the sketch can redraw.
-   /// The flashing is transient and never changes the tracked current status, so once
-   /// Locate ends the LED is simply re-applied to whatever status is current.
+   /// Services an active Locate request: toggles display inversion once per second on
+   /// display boards (or flashes the status LED on boards without a display), and ends the
+   /// request after LOCATE_DURATION_S, restoring the previous state.
    /// </summary>
    ///
    void _updateLocate()
@@ -359,24 +322,30 @@ protected:
       {
          _locating = false;
 #ifdef ARDUINO_DISPLAY_SUPPORTED
-         _arduino->clearDisplay();
+         _arduino->display.invertDisplay(_locateSavedInvert);
 #else
          _status->setStatus(_status->currentStatus());
 #endif
-         if (_onLocateEndCallback != nullptr)
-         {
-            _onLocateEndCallback();
-         }
          return;
       }
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
-      _drawLocateFooter();
+      // If the sketch changed its own inversion state while locating (e.g. Gate_Viewer
+      // opening/closing the gate), track that new baseline and keep toggling around it.
+      bool currentInvert = _arduino->display.getInvert();
+      if (currentInvert != _locateInverted)
+      {
+         _locateSavedInvert = currentInvert;
+         _locateInverted = currentInvert;
+      }
 #endif
 
-#ifndef ARDUINO_DISPLAY_SUPPORTED
       if (_locateFlashTimer.ready())
       {
+#ifdef ARDUINO_DISPLAY_SUPPORTED
+         _locateInverted = !_locateInverted;
+         _arduino->display.invertDisplay(_locateInverted);
+#else
          _locateLedOn = !_locateLedOn;
          if (_locateLedOn)
          {
@@ -386,8 +355,8 @@ protected:
          {
             _status->off();
          }
-      }
 #endif
+      }
    }
 
    ///
@@ -920,27 +889,13 @@ public:
 
       ///
       /// <summary>
-      /// Gets whether a Locate request is active. Sketches that draw to the display should
-      /// skip their drawing while this is true so the locate info stays visible.
+      /// Gets whether a Locate request is active.
       /// </summary>
       /// <returns>True while locating.</returns>
       ///
       bool isLocating() const
       {
          return _locating;
-      }
-
-      ///
-      /// <summary>
-      /// Registers a callback invoked when a Locate request ends. On display boards the
-      /// display has just been cleared, so use this to redraw the sketch's static content
-      /// and force its next update to repaint everything.
-      /// </summary>
-      /// <param name="callback">Called with no arguments.</param>
-      ///
-      void setOnLocateEndCallback(std::function<void()> callback)
-      {
-         _onLocateEndCallback = callback;
       }
 
       ///

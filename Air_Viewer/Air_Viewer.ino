@@ -339,7 +339,6 @@ void setup()
          }
       }
    });
-   sketch.setOnLocateEndCallback([]() { telemetryHandler.needsFullRedraw = true; });
 
    delay(1000);
 
@@ -349,11 +348,6 @@ void setup()
 void loop()
 {
    sketch.loop();
-
-   if (sketch.isLocating())
-   {
-      return;
-   }
 
    if (sketch.getClient()->isStarted() == false)
    {

@@ -235,7 +235,6 @@ void setup()
    sketch.beginConnect();
 
    sketch.beginTelemetry(&telemetryHandler);
-   sketch.setOnLocateEndCallback([]() { telemetryHandler.needsFullRedraw = true; });
    sketch.getClient()->onSample([](const std::string& topic, double value, int64_t dtMicros)
    {
       lastSampleDtMicros = dtMicros;
@@ -251,11 +250,6 @@ float lastSensorReading = NAN;
 void loop()
 {
    sketch.loop();
-
-   if (sketch.isLocating())
-   {
-      return;
-   }
 
    TelemetrySubscriber* client = sketch.getClient();
 

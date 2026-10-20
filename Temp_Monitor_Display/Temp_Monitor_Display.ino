@@ -235,11 +235,6 @@ void setup()
    int16_t tableAvailableHeight = sketch.arduino.height() - tableHeaderHeight - tableFooterHeight;
    allValuesTable.setPosition(sketch.arduino.width() / 2, tableHeaderHeight + tableAvailableHeight / 2, Anchor::CENTER);
 
-   sketch.setOnLocateEndCallback([]()
-   {
-      allValuesTable.invalidate();
-   });
-
    // Pause so the initialization info stays visible on the display
    // before it's cleared and replaced with the live temperature/humidity readout.
    delay(STARTUP_DELAY_S * 1000UL);
@@ -252,11 +247,6 @@ void setup()
 void loop()
 {
    sketch.loop();
-
-   if (sketch.isLocating())
-   {
-      return;
-   }
 
    int16_t headerHeight = drawHeader();
    int16_t footerHeight = sketch.arduino.charH(TEXT_SIZE_SMALL);

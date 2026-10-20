@@ -463,8 +463,6 @@ void setup()
    table.addRow("NOx", &noxValue);
    table.setPosition(sketch.arduino.width() / 2, sketch.arduino.height() / 2, Anchor::CENTER);
 
-   sketch.setOnLocateEndCallback([]() { table.invalidate(); });
-
    // Pause so the initialization info can be read before it's replaced with the table.
    delay(STARTUP_DELAY_S * 1000UL);
 
@@ -502,11 +500,6 @@ void drawFooter()
 void loop()
 {
    sketch.loop();
-
-   if (sketch.isLocating())
-   {
-      return;
-   }
 
    if (pms.read())
    {

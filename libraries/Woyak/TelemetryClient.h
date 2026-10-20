@@ -323,16 +323,14 @@ public:
 /// reset per-value tracking state (via onReconnected()), not repaint the whole screen -
 /// a flaky connection that reconnects repeatedly would otherwise flicker the display
 /// once per reconnect. needsFullRedraw is set true initially (first draw after
-/// startup) and should also be set true from a Locate-end callback, since Locate
-/// overwrites the whole screen.
+/// startup).
 /// </summary>
 ///
 class TelemetryViewerEventHandler : public TelemetryEventHandler
 {
 public:
    // Set initially (for the first draw after setup()) and whenever the whole screen
-   // needs to be cleared and redrawn (e.g. after Locate ends). Not set on telemetry
-   // reconnection; see onReconnected().
+   // needs to be cleared and redrawn. Not set on telemetry reconnection; see onReconnected().
    bool needsFullRedraw = true;
 
    ///
