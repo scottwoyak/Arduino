@@ -223,15 +223,29 @@ private:
          _arduino->printDisplayInitValue(_siteName.c_str());
 #endif
 
+         #ifdef ARDUINO_TOUCH_SUPPORTED
+         _locationName = _arduino->promptTouchText("Enter Location", _locationName);
+#else
          _arduino->printDisplayInitLabel("Location... ");
          _arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
 
+         String previousLocation = _locationName;
+         String prompt = previousLocation.length() > 0
+            ? "Enter location (blank to keep \"" + previousLocation + "\"): "
+            : "Enter location: ";
+
          do
          {
-            _locationName = SerialX::prompt("Enter location: ");
+            _locationName = SerialX::prompt(prompt);
+            _locationName.trim();
+            if (_locationName.length() == 0 && previousLocation.length() > 0)
+            {
+               _locationName = previousLocation;
+            }
          } while (_locationName.length() == 0);
 
          _arduino->printDisplayInitValue(_locationName.c_str());
+#endif
 
          _arduino->preferences.begin(_config.preferencesNamespace, false);
          _arduino->preferences.putString(SITE_KEY, _siteName);

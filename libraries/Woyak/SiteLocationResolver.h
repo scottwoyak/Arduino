@@ -95,9 +95,9 @@ private:
 
    ///
    /// <summary>
-   /// Prompts the user for a site (via touch screen or Serial) and location (over Serial),
-   /// storing them into _siteName and _locationName. The site is chosen from _siteOptions.
-   /// Blocks until both are entered/selected non-empty.
+   /// Prompts the user for a site and location (via touch screen when supported, and over
+   /// Serial), storing them into _siteName and _locationName. The site is chosen from
+   /// _siteOptions. Blocks until both are entered/selected non-empty.
    /// </summary>
    /// <param name="arduino">The board wrapper, used for touch or display status output.</param>
    ///
@@ -108,15 +108,33 @@ private:
 
       _siteName = _promptForSite(arduino);
 
+#ifdef ARDUINO_TOUCH_SUPPORTED
+      if (arduino != nullptr)
+      {
+         _locationName = arduino->promptTouchText("Enter Location", _locationName);
+         return;
+      }
+#endif
+
       if (arduino != nullptr)
       {
          arduino->printDisplayInitLabel("Location... ");
          arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
       }
 
+      String previousLocation = _locationName;
+      String prompt = previousLocation.length() > 0
+         ? "Enter location (blank to keep \"" + previousLocation + "\"): "
+         : "Enter location: ";
+
       do
       {
-         _locationName = SerialX::prompt("Enter location: ");
+         _locationName = SerialX::prompt(prompt);
+         _locationName.trim();
+         if (_locationName.length() == 0 && previousLocation.length() > 0)
+         {
+            _locationName = previousLocation;
+         }
       } while (_locationName.length() == 0);
 
       if (arduino != nullptr)

@@ -222,7 +222,14 @@ private:
    void enableConfigCommands()
    {
       _preferencesNamespace = _config.preferencesNamespace;
-      _siteOptions = SITE_OPTIONS;
+      if (_influxConfig.context.site == nullptr || _influxConfig.context.site[0] == '\0')
+      {
+         _siteOptions = SITE_OPTIONS;
+      }
+      else
+      {
+         _siteOptions = {};
+      }
       _commandPreferences = &_arduino->preferences;
       _enableConfigCommands(CONFIG_COMMANDS, std::size(CONFIG_COMMANDS));
    }
@@ -267,87 +274,78 @@ private:
 
    ///
    /// <summary>
-   /// Prompts the user (via touch screen when supported, and over Serial) to pick a
-   /// combined Influx bucket + site from a flattened list of BUCKET_LABELS x SITE_OPTIONS
-   /// pairs (one prompt instead of two separate bucket and site prompts), formatted as
-   /// "Bucket=<label>    Site=<site>" with the Site= column aligned across rows. Blocks
-   /// until a valid selection is entered. Stores the chosen bucket into _bucketName and
-   /// the chosen site into _siteName.
+   /// Prompts the user (via touch screen when supported, and over Serial) to pick an
+   /// Influx bucket from BUCKET_LABELS / BUCKET_NAMES. Blocks until a valid selection is
+   /// entered.
    /// </summary>
+   /// <returns>The chosen Influx bucket name.</returns>
    ///
-   void _promptForSiteAndBucket()
+   std::string _promptForBucket()
    {
-      size_t maxBucketLabelLen = 0;
-      for (size_t b = 0; b < std::size(BUCKET_LABELS); b++)
+      Serial.println("Select a bucket:");
+      for (size_t i = 0; i < std::size(BUCKET_LABELS); i++)
       {
-         maxBucketLabelLen = max(maxBucketLabelLen, strlen(BUCKET_LABELS[b]));
-      }
-
-      Serial.println("Select a bucket/site:");
-      std::vector<String> touchLabels;
-      size_t index = 0;
-      for (size_t b = 0; b < std::size(BUCKET_LABELS); b++)
-      {
-         String bucketField = String("Bucket=") + BUCKET_LABELS[b];
-         while (bucketField.length() < strlen("Bucket=") + maxBucketLabelLen)
-         {
-            bucketField += " ";
-         }
-
-         for (size_t s = 0; s < std::size(SITE_OPTIONS); s++)
-         {
-            Serial.print("  ");
-            Serial.print(index + 1);
-            Serial.print(": ");
-            Serial.print(bucketField);
-            Serial.print("    Site=");
-            Serial.println(SITE_OPTIONS[s]);
-            touchLabels.push_back(String(BUCKET_LABELS[b]) + " / " + SITE_OPTIONS[s]);
-            index++;
-         }
+         Serial.print("  ");
+         Serial.print(i + 1);
+         Serial.print(": ");
+         Serial.println(BUCKET_LABELS[i]);
       }
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
-      size_t selection = _arduino->promptTouchOption("Select Bucket / Site", touchLabels);
+      std::vector<String> labels;
+      labels.reserve(std::size(BUCKET_LABELS));
+      for (const char* opt : BUCKET_LABELS)
+      {
+         labels.push_back(opt);
+      }
+      size_t chosen = _arduino->promptTouchOption("Select Bucket", labels);
+      return BUCKET_NAMES[chosen];
 #else
-      constexpr size_t NUM_COMBINATIONS = std::size(BUCKET_LABELS) * std::size(SITE_OPTIONS);
-
-      _arduino->printDisplayInitLabel("Bucket/Site... ");
+      _arduino->printDisplayInitLabel("Bucket... ");
       _arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
 
-      String label = "Enter selection (1-" + String(NUM_COMBINATIONS) + "): ";
-      size_t selection = (size_t)(SerialX::promptForInt(label, 1, (long)NUM_COMBINATIONS) - 1);
-      _arduino->printDisplayInitValue(touchLabels[selection].c_str());
+      String label = "Enter selection (1-" + String(std::size(BUCKET_LABELS)) + "): ";
+      long selection = SerialX::promptForInt(label, 1, (long)std::size(BUCKET_LABELS));
+      _arduino->printDisplayInitValue(BUCKET_LABELS[selection - 1]);
+      return BUCKET_NAMES[selection - 1];
 #endif
-
-      _bucketName = BUCKET_NAMES[selection / std::size(SITE_OPTIONS)];
-      _siteName = SITE_OPTIONS[selection % std::size(SITE_OPTIONS)];
    }
 
    ///
    /// <summary>
-   /// Prompts the user for a site (via touch screen or Serial) and location (over Serial),
-   /// storing them into _siteName and _locationName. If influxConfig.promptForBucket is
-   /// set, the site and bucket are chosen together from a single combined prompt (see
-   /// _promptForSiteAndBucket()); otherwise the site alone is chosen from SITE_OPTIONS.
-   /// If _locationName already holds a previously saved value (i.e. this is a reconfigure
-   /// of an existing saved config), entering a blank line (or spaces only) keeps that
-   /// previous value instead of requiring it to be retyped. Blocks until both the site and
-   /// location are entered/selected non-empty.
+   /// Prompts the user for a bucket (if influxConfig.promptForBucket is set), site (unless
+   /// fixed via influxConfig.context.site), and location (via touch screen when supported,
+   /// and over Serial), storing them into _bucketName, _siteName, and _locationName. If
+   /// _locationName already holds a previously saved value (i.e. this is a reconfigure of
+   /// an existing saved config), the touch keyboard pre-populates it and Serial allows
+   /// entering a blank line to keep it instead of requiring it to be retyped. Blocks until
+   /// all values are entered/selected non-empty.
    /// </summary>
    ///
    void _promptForSiteLocation()
    {
+      Serial.println("Configure this device's site/location:");
       if (_influxConfig.promptForBucket)
       {
-         _promptForSiteAndBucket();
+         _bucketName = _promptForBucket();
+      }
+      else if (_influxConfig.context.bucket != nullptr && _influxConfig.context.bucket[0] != '\0')
+      {
+         _bucketName = _influxConfig.context.bucket;
+      }
+
+      if (_influxConfig.context.site != nullptr && _influxConfig.context.site[0] != '\0')
+      {
+         _siteName = _influxConfig.context.site;
       }
       else
       {
-         Serial.println("Configure this device's site/location:");
          _siteName = _promptForSite();
       }
 
+#ifdef ARDUINO_TOUCH_SUPPORTED
+      _locationName = _arduino->promptTouchText("Enter Location", _locationName);
+#else
       String previousLocation = _locationName;
       String prompt = previousLocation.length() > 0
          ? "Enter location (blank to keep \"" + previousLocation + "\"): "
@@ -367,6 +365,7 @@ private:
       } while (_locationName.length() == 0);
 
       _arduino->printDisplayInitValue(_locationName.c_str());
+#endif
    }
 
    ///
@@ -427,7 +426,10 @@ private:
       _promptForSiteLocation();
 
       _arduino->preferences.begin(_config.preferencesNamespace, false);
-      _arduino->preferences.putString(SITE_KEY, _siteName);
+      if (_influxConfig.context.site == nullptr || _influxConfig.context.site[0] == '\0')
+      {
+         _arduino->preferences.putString(SITE_KEY, _siteName);
+      }
       _arduino->preferences.putString(LOCATION_KEY, _locationName);
       if (_influxConfig.promptForBucket)
       {
@@ -445,7 +447,8 @@ private:
    bool _hasSavedConfig()
    {
       _arduino->preferences.begin(_config.preferencesNamespace, true);
-      bool hasSavedConfig = _arduino->preferences.isKey(SITE_KEY) && _arduino->preferences.isKey(LOCATION_KEY);
+      bool hasFixedSite = _influxConfig.context.site != nullptr && _influxConfig.context.site[0] != '\0';
+      bool hasSavedConfig = (hasFixedSite || _arduino->preferences.isKey(SITE_KEY)) && _arduino->preferences.isKey(LOCATION_KEY);
       _arduino->preferences.end();
 
       return hasSavedConfig;
@@ -460,11 +463,22 @@ private:
    void _loadSavedConfig()
    {
       _arduino->preferences.begin(_config.preferencesNamespace, true);
-      _siteName = _arduino->preferences.getString(SITE_KEY);
+      if (_influxConfig.context.site != nullptr && _influxConfig.context.site[0] != '\0')
+      {
+         _siteName = _influxConfig.context.site;
+      }
+      else
+      {
+         _siteName = _arduino->preferences.getString(SITE_KEY);
+      }
       _locationName = _arduino->preferences.getString(LOCATION_KEY);
       if (_influxConfig.promptForBucket)
       {
          _bucketName = _arduino->preferences.getString(BUCKET_KEY, INFLUXDB_BUCKET).c_str();
+      }
+      else if (_influxConfig.context.bucket != nullptr && _influxConfig.context.bucket[0] != '\0')
+      {
+         _bucketName = _influxConfig.context.bucket;
       }
       _arduino->preferences.end();
    }

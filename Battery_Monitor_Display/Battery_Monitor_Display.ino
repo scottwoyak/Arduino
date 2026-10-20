@@ -10,9 +10,10 @@
 // - Uses the shared MonitorSketch class (see MonitorSketch.h) to own the boot/init
 //   sequence: display init, status LED, WiFi, OTA, and the standard InfluxDB setup/post/
 //   flush cycle.
-// - This device's bucket/site/location is prompted for over Serial the first time it
-//   runs, then saved to Preferences (NVS) so it survives reboots and OTA firmware
-//   updates. Hold buttonA right after startup to force a re-prompt.
+// - Uses the 7-day retention bucket and site "Bragg"; the device's location is prompted
+//   for (via touch keyboard or over Serial) the first time it runs, then saved to
+//   Preferences (NVS) so it survives reboots and OTA firmware updates. Hold buttonA right
+//   after startup to force a re-prompt.
 // - Samples battery voltage, percentage, ripple, and charge rate every SAMPLE_INTERVAL_MS
 //   and accumulates 1-minute time-averaged values for InfluxDB upload.
 // - Continuously updates the TFT display table and logs a 1-second diagnostic line to
@@ -58,8 +59,8 @@ SketchConfig SKETCH_CONFIG = {
 };
 
 InfluxConfig INFLUX_CONFIG = {
+   .context = { INFLUXDB_BUCKET_7_DAY, "Bragg", nullptr },
    .promptForContext = true,
-   .promptForBucket = true,
    .includeCpuTemp = true,
 };
 

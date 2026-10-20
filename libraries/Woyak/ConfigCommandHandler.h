@@ -112,6 +112,11 @@ protected:
 
       if (strcasecmp(key.c_str(), "site") == 0)
       {
+         if (_siteOptions.empty())
+         {
+            return "Error: this device doesn't support changing site";
+         }
+
          bool valid = false;
          for (const char* option : _siteOptions)
          {
@@ -253,6 +258,13 @@ protected:
    ///
    void _sendSitePrompt()
    {
+      if (_siteOptions.empty())
+      {
+         _pendingSiteSelection = "";
+         _sendLocationPrompt();
+         return;
+      }
+
       DeviceServerClient::shell().println("Select a site:");
       for (size_t i = 0; i < _siteOptions.size(); i++)
       {
@@ -354,7 +366,10 @@ protected:
          }
       }
 
-      _configInstance->_applyInteractiveConfig("site", _configInstance->_pendingSiteSelection.c_str());
+      if (!_configInstance->_pendingSiteSelection.isEmpty())
+      {
+         _configInstance->_applyInteractiveConfig("site", _configInstance->_pendingSiteSelection.c_str());
+      }
       _configInstance->_applyInteractiveConfig("location", location.c_str());
 
       if (_configInstance->_hasExtraInteractivePrompt())
