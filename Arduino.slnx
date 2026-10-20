@@ -315,6 +315,10 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
+  <Project Path="Air_Subscriber_Fan/Air_Subscriber_Fan.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Air_Viewer/Air_Viewer.vcxproj" Id="00000000-0000-0000-0000-000000000002">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy Solution="*|ARM" />

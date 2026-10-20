@@ -17,8 +17,8 @@
 //
 // Outputs:
 // - Display: table of the current PM1.0, PM2.5, and PM10 concentrations (ug/m3).
-// - Telemetry: topics are item/site/location, published as PM1.0, PM2.5, PM10, CO2, VOC
-//   and NOx (e.g. "PM2.5/site/location").
+// - Telemetry: topics are item/site/location, published as PM1.0, PM2.5, PM10, CO2, VOC,
+//   NOx, and AirQuality (worst 0-5 tier across all active readings, e.g. "AirQuality/site/location").
 //
 // Wiring:
 // - PMS5003 TX -> board RX pin, PMS5003 RX -> board TX pin, 5V and GND.
@@ -72,6 +72,7 @@ constexpr auto PM10_TOPIC_PREFIX = "PM10";
 constexpr auto CO2_TOPIC_PREFIX = "CO2";
 constexpr auto VOC_TOPIC_PREFIX = "VOC";
 constexpr auto NOX_TOPIC_PREFIX = "NOx";
+constexpr auto AIR_QUALITY_TOPIC_PREFIX = "AirQuality";
 constexpr uint16_t SGP41_CONDITIONING_S = 10;
 constexpr size_t MAX_TOPIC_LENGTH = 64;
 constexpr uint8_t TELEMETRY_DECIMAL_PLACES = 0;
@@ -94,6 +95,7 @@ char pm10Topic[MAX_TOPIC_LENGTH] = "";
 char co2Topic[MAX_TOPIC_LENGTH] = "";
 char vocTopic[MAX_TOPIC_LENGTH] = "";
 char noxTopic[MAX_TOPIC_LENGTH] = "";
+char airQualityTopic[MAX_TOPIC_LENGTH] = "";
 
 ///
 /// <summary>
@@ -118,6 +120,7 @@ void onSiteResolved(const InfluxContext& site)
    strlcpy(co2Topic, (std::string(CO2_TOPIC_PREFIX) + suffix).c_str(), sizeof(co2Topic));
    strlcpy(vocTopic, (std::string(VOC_TOPIC_PREFIX) + suffix).c_str(), sizeof(vocTopic));
    strlcpy(noxTopic, (std::string(NOX_TOPIC_PREFIX) + suffix).c_str(), sizeof(noxTopic));
+   strlcpy(airQualityTopic, (std::string(AIR_QUALITY_TOPIC_PREFIX) + suffix).c_str(), sizeof(airQualityTopic));
 }
 
 TelemetryConfig TELEMETRY_CONFIG = {
@@ -252,9 +255,64 @@ FieldTable table(&sketch.arduino, 0, 0, TEXT_SIZE_SMALL);
 
 ///
 /// <summary>
-/// Formats the latest PM1.0, PM2.5, PM10, CO2, temperature, humidity, VOC, NOx, and
-/// SGP41 conditioning state for the "GetReadings" command registered via
-/// sketch.onReadings().
+/// Computes the worst (highest) air quality tier (0-5) across all active sensor readings,
+/// or -1 if no sensor has produced a valid reading yet.
+/// </summary>
+/// <returns>Worst tier index (0-5), or -1 if no readings are available.</returns>
+///
+int8_t getWorstTier()
+{
+   struct MetricRating
+   {
+      float value;
+      const float* limits;
+   };
+
+   const MetricRating metrics[] = {
+      { pm1, AirQualityTiers::PM25_LIMITS },
+      { pm25, AirQualityTiers::PM25_LIMITS },
+      { pm10, AirQualityTiers::PM10_LIMITS },
+      { co2, AirQualityTiers::CO2_LIMITS },
+      { vocIndex > 0 ? vocIndex : NAN, AirQualityTiers::VOC_LIMITS },
+      { noxIndex > 0 ? noxIndex : NAN, AirQualityTiers::NOX_LIMITS },
+   };
+
+   int8_t worstTier = -1;
+   for (const MetricRating& metric : metrics)
+   {
+      if (!isnan(metric.value))
+      {
+         int8_t tier = AirQualityTiers::tierFor(metric.value, metric.limits);
+         if (tier > worstTier)
+         {
+            worstTier = tier;
+         }
+      }
+   }
+
+   return worstTier;
+}
+
+///
+/// <summary>
+/// Publishes the current worst air quality tier (0-5) over telemetry if at least one
+/// sensor reading is available.
+/// </summary>
+///
+void publishAirQuality()
+{
+   int8_t worstTier = getWorstTier();
+   if (worstTier >= 0)
+   {
+      sketch.publish(airQualityTopic, worstTier, 0);
+   }
+}
+
+///
+/// <summary>
+/// Formats the latest PM1.0, PM2.5, PM10, CO2, temperature, humidity, VOC, NOx,
+/// airQuality tier, and SGP41 conditioning state for the "GetReadings" command registered
+/// via sketch.onReadings().
 /// </summary>
 /// <returns>Formatted readings text.</returns>
 ///
@@ -276,6 +334,11 @@ static std::string getReadings()
       return out.str();
    };
 
+   int8_t worstTier = getWorstTier();
+   std::string airQualityText = worstTier >= 0
+      ? std::to_string(worstTier) + " (" + AirQualityTiers::TIER_NAMES[worstTier] + ")"
+      : "NAN";
+
    return
       "pm1=" + formatVal(pm1, 0, "ug/m3") + "\n" +
       "pm25=" + formatVal(pm25, 0, "ug/m3") + "\n" +
@@ -285,6 +348,7 @@ static std::string getReadings()
       "humidity=" + formatVal(humidity, 1, "%") + "\n" +
       "voc=" + formatVal(vocIndex, 0, "") + "\n" +
       "nox=" + formatVal(noxIndex, 0, "") + "\n" +
+      "airQuality=" + airQualityText + "\n" +
       "sgpConditioned=" + (sgpConditioned ? "true" : "false");
 }
 
@@ -456,6 +520,7 @@ void loop()
 
       sketch.publish(pm1Topic, pm1, TELEMETRY_DECIMAL_PLACES);
       sketch.publish(pm10Topic, pm10, TELEMETRY_DECIMAL_PLACES);
+      publishAirQuality();
    }
 
    bool dataReady = false;
@@ -477,6 +542,7 @@ void loop()
          humidityField->set(humidity);
 
          sketch.publish(co2Topic, co2, 0);
+         publishAirQuality();
       }
    }
 
@@ -513,6 +579,10 @@ void loop()
          {
             noxField->set(noxIndex);
             sketch.publish(noxTopic, noxIndex, 0);
+         }
+         if (vocIndex != 0 || noxIndex != 0)
+         {
+            publishAirQuality();
          }
       }
    }
