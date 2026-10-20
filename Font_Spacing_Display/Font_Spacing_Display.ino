@@ -1,4 +1,6 @@
 
+#define INCLUDE_PROPORTIONAL_FONT
+
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_BUTTON_SUPPORTED

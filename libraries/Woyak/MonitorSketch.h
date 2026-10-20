@@ -277,8 +277,6 @@ private:
    ///
    void _promptForSiteAndBucket()
    {
-      constexpr size_t NUM_COMBINATIONS = std::size(BUCKET_LABELS) * std::size(SITE_OPTIONS);
-
       size_t maxBucketLabelLen = 0;
       for (size_t b = 0; b < std::size(BUCKET_LABELS); b++)
       {
@@ -312,6 +310,8 @@ private:
 #ifdef ARDUINO_TOUCH_SUPPORTED
       size_t selection = _arduino->promptTouchOption("Select Bucket / Site", touchLabels);
 #else
+      constexpr size_t NUM_COMBINATIONS = std::size(BUCKET_LABELS) * std::size(SITE_OPTIONS);
+
       _arduino->printDisplayInitLabel("Bucket/Site... ");
       _arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
 

@@ -398,6 +398,10 @@ private:
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
       if (_pin < 0)
       {
+         if (_fuelGauge.isHibernating())
+         {
+            _fuelGauge.wake();
+         }
          return _fuelGauge.cellVoltage();
       }
 #endif
@@ -436,6 +440,7 @@ private:
       {
          if (_windowSampleCount >= MIN_RIPPLE_SAMPLES_FOR_VALID)
          {
+            bool wasDisconnected = _rippleDisconnected;
             _lastRippleVolts = _windowMaxVolts - _windowMinVolts;
             _hasRippleMeasurement = true;
             float disconnectThreshold = _isFuelGauge() ? FUEL_GAUGE_RIPPLE_DISCONNECT_VOLTS : ADC_RIPPLE_DISCONNECT_VOLTS;
@@ -475,8 +480,28 @@ private:
                }
             }
 
-            float windowAvgVolts = static_cast<float>(_windowSumVolts / _windowSampleCount);
-            _updateAdcChargingTrend(windowAvgVolts);
+            if (wasDisconnected && !_rippleDisconnected)
+            {
+               // Just transitioned from no-battery (~4.18V charger float) to connected
+               // battery: reset the voltage-trend baseline and re-seed the fuel gauge
+               // so the initial voltage drop from the float rail to the battery's true
+               // voltage isn't misinterpreted as discharging.
+               _resetAdcChargingTrend();
+               _voltsAverage.reset();
+               _voltsAverage.set(volts);
+               _percentAverage.reset();
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+               if (_pin < 0)
+               {
+                  _fuelGauge.quickStart();
+               }
+#endif
+            }
+            else
+            {
+               float windowAvgVolts = static_cast<float>(_windowSumVolts / _windowSampleCount);
+               _updateAdcChargingTrend(windowAvgVolts);
+            }
          }
 
          _windowStartMs = now;
@@ -600,6 +625,11 @@ public:
             _ready = _fuelGauge.begin();
             if (_ready)
             {
+               // Disable MAX17048 auto-hibernation (default HIBRT enters 45-second sample
+               // intervals after 6 minutes of low CRATE, freezing VCELL and hiding the
+               // no-battery charger sawtooth ripple).
+               _fuelGauge.wake();
+
                // Adafruit_MAX17048::begin() issues a soft POR reset, after which VCELL reads
                // 0.000V until the first internal ADC conversion completes (~125-250ms).
                uint32_t startMs = millis();
@@ -762,15 +792,13 @@ public:
             return BatteryChargingState::No;
          }
 
-         if (_adcChargingState == BatteryChargingState::Yes)
+         if (volts >= FULL_CHARGE_VOLTS)
          {
             _unlock();
-            return BatteryChargingState::Yes;
+            return BatteryChargingState::Full;
          }
 
-         BatteryChargingState state = (volts >= FULL_CHARGE_VOLTS)
-            ? BatteryChargingState::Full
-            : BatteryChargingState::No;
+         BatteryChargingState state = _adcChargingState;
          _unlock();
          return state;
       }

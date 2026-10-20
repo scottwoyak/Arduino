@@ -91,7 +91,7 @@ public:
    ///
    InitializingDisplay(
       ArduinoWithDisplay* display,
-      uint8_t textSize = 2)
+      uint8_t textSize = DEFAULT_TEXT_SIZE)
    {
       ASSERT(display != nullptr);
 

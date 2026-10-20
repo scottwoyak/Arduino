@@ -68,8 +68,6 @@ constexpr uint16_t GATE_OPENER_PORT = 80;
 // HISTORY_TITLE_TEXT_SIZE/HISTORY_ROW_TEXT_SIZE below; 2 and 3 are always included
 // regardless, see ArduinoWithDisplay.h), so ArduinoWithDisplay.h/Fonts/Roboto*.h only
 // compile in the needed font data instead of all 7 sizes, reducing flash usage.
-// This sketch only uses monospaced text, so leave out the proportional Roboto fonts.
-#define NO_PROPORTIONAL_FONT
 #define TEXT_SIZES_CUSTOM
 #ifndef ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT
 // Sizes 4 and 5 are only used by the touch-only history/settings views and the larger

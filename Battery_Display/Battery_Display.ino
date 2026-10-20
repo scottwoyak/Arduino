@@ -116,7 +116,7 @@ void loop()
    }
 
    // Display battery state (Charging, Discharging, Full, Bad Charger, or Unknown)
-   if (connected)
+   if (connected || chargingState == BatteryChargingState::BadCharger)
    {
       table.setLabelColor(2, Color::LABEL);
       table.setValue(2, stateText, stateColor);

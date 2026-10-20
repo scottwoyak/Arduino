@@ -11,7 +11,6 @@
 #define TEXT_SIZES_CUSTOM
 #define TEXT_SIZE_2
 #define TEXT_SIZE_4
-#define NO_PROPORTIONAL_FONT
 
 #include "ArduinoBoard.h"
 

@@ -47,7 +47,6 @@ constexpr uint16_t SAMPLE_INTERVAL_MS = 1000;
 constexpr uint8_t INFLUX_INTERVAL_S = 60;
 constexpr uint8_t VOLTS_DECIMAL_PLACES = 3;
 constexpr uint8_t PERCENT_DECIMAL_PLACES = 1;
-constexpr uint8_t CHARGE_RATE_DECIMAL_PLACES = 1;
 constexpr float DISPLAY_UPDATE_RATE = 5.0f;
 
 SketchConfig SKETCH_CONFIG = {
@@ -68,8 +67,6 @@ MonitorSketch sketch(SKETCH_CONFIG, INFLUX_CONFIG);
 
 InfluxField* voltsField = nullptr;
 InfluxField* percentField = nullptr;
-InfluxField* rippleField = nullptr;
-InfluxField* chargeRateField = nullptr;
 
 Timer sampleTimer(SAMPLE_INTERVAL_MS);
 TimerSecs uploadTimer(INFLUX_INTERVAL_S);
@@ -163,10 +160,8 @@ void setup()
    sketch.begin();
 
    InfluxPoint* point = sketch.addPoint({ { "item", "Battery" } });
-   voltsField = point->addTimeAverageField(INFLUX_INTERVAL_S, "volts", VOLTS_DECIMAL_PLACES);
-   percentField = point->addTimeAverageField(INFLUX_INTERVAL_S, "percent", PERCENT_DECIMAL_PLACES);
-   rippleField = point->addTimeAverageField(INFLUX_INTERVAL_S, "rippleVolts", VOLTS_DECIMAL_PLACES);
-   chargeRateField = point->addTimeAverageField(INFLUX_INTERVAL_S, "chargeRate", CHARGE_RATE_DECIMAL_PLACES);
+   voltsField = point->addTimeAverageField(INFLUX_INTERVAL_S, "batteryVolts", VOLTS_DECIMAL_PLACES);
+   percentField = point->addTimeAverageField(INFLUX_INTERVAL_S, "batteryPercent", PERCENT_DECIMAL_PLACES);
 
    table.addRow("Volts:", "#.##v");
    table.addRow("Charge:", "##########");
@@ -202,17 +197,9 @@ void loop()
       {
          voltsField->set(avgVolts);
       }
-      if (isfinite(rippleVolts))
-      {
-         rippleField->set(rippleVolts);
-      }
       if (connected && isfinite(avgPercent))
       {
          percentField->set(avgPercent);
-      }
-      if (connected && hasChargeRate)
-      {
-         chargeRateField->set(chargeRate);
       }
    }
 

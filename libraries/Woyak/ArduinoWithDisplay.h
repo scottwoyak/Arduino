@@ -6,18 +6,23 @@
 #define ARDUINO_DISPLAY_SUPPORTED
 #endif
 
-// headerTextSize() (below) picks between TEXT_SIZE_HEADER and TEXT_SIZE_HEADER + 1 at
-// runtime, based on the board's display height, which a sketch can't know at compile time.
-// So these two sizes must always be compiled in, even for sketches that opt into a custom,
-// reduced TEXT_SIZE_n list via TEXT_SIZES_CUSTOM (see Fonts/RobotoMonoBold.h/Roboto.h) -
-// otherwise a sketch that only ever draws its own text at a size it did include can still
-// crash during startup when printInitHeader() requests the other header size.
+#include "ArduinoBoardId.h"
+
+// Ensure the board's default heading and text sizes are always compiled in when a sketch
+// opts into a custom, reduced TEXT_SIZE_n list via TEXT_SIZES_CUSTOM (see
+// Fonts/RobotoMonoBold.h/Roboto.h) so printInitHeader() and InitializingDisplay always
+// have their required fonts available at startup.
 #ifdef TEXT_SIZES_CUSTOM
 #ifndef TEXT_SIZE_2
 #define TEXT_SIZE_2
 #endif
 #ifndef TEXT_SIZE_3
 #define TEXT_SIZE_3
+#endif
+#if defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40) || defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER) || defined(ARDUINO_ESP32S3_DEV_PLAYGROUND)
+#ifndef TEXT_SIZE_4
+#define TEXT_SIZE_4
+#endif
 #endif
 #endif
 
@@ -26,14 +31,15 @@
 #include "Format.h"
 #include "Fonts/RobotoMonoBold.h"
 
-// Sketches that only use monospaced text can define NO_PROPORTIONAL_FONT to leave out the
-// proportional Roboto font data and save flash. Requesting a proportional font then fails
-// the ASSERT in setTextSize()/createSprite().
-#ifdef NO_PROPORTIONAL_FONT
-#define PROPORTIONAL_FONT(size) ((const uint8_t*)nullptr)
-#else
+// Proportional Roboto font data is excluded by default to save flash. Sketches that use
+// proportional text can define INCLUDE_PROPORTIONAL_FONT before including ArduinoBoard.h.
+// Requesting a proportional font without INCLUDE_PROPORTIONAL_FONT fails the ASSERT in
+// setTextSize()/createSprite().
+#ifdef INCLUDE_PROPORTIONAL_FONT
 #include "Fonts/Roboto.h"
 #define PROPORTIONAL_FONT(size) (Roboto[size])
+#else
+#define PROPORTIONAL_FONT(size) ((const uint8_t*)nullptr)
 #endif
 
 #include "OTAUpdater.h"
@@ -53,13 +59,6 @@ enum DisplayRotation
 };
 
 class InitializingDisplay;
-
-///
-/// <summary>
-/// Text size used for the "Initializing" header printed by printInitHeader().
-/// </summary>
-///
-constexpr uint8_t TEXT_SIZE_HEADER = 2;
 
 ///
 /// <summary>
@@ -319,10 +318,10 @@ public:
    ///
    bool fitsOnDisplay(const char* label, const char* value) override
    {
-      // Init status rows are drawn at the InitializingDisplay's default size (2), which
-      // may differ from the current size (e.g. the larger header size).
+      // Init status rows are drawn at InitializingDisplay's default size (DEFAULT_TEXT_SIZE),
+      // which may differ from the current size (e.g. the larger header size).
       uint8_t originalSize = _textSize;
-      setTextSize(2);
+      setTextSize(DEFAULT_TEXT_SIZE);
       bool fits = textWidth(label) + textWidth(value) <= display.width();
       setTextSize(originalSize);
 
@@ -893,14 +892,13 @@ public:
    ///
    /// <summary>
    /// Gets the text size used for headers printed by printInitHeader() (e.g. the
-   /// "Initializing" header shown during setup). Displays at least
-   /// LARGE_DISPLAY_MIN_HEIGHT pixels tall automatically use one size larger.
+   /// "Initializing" header shown during setup).
    /// </summary>
    /// <returns>Text size to use for headers.</returns>
    ///
    virtual uint8_t headerTextSize()
    {
-      return height() >= LARGE_DISPLAY_MIN_HEIGHT ? TEXT_SIZE_HEADER + 1 : TEXT_SIZE_HEADER;
+      return DEFAULT_HEADING_SIZE;
    }
 
    void printC(const char* str, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
