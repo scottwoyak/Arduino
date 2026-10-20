@@ -32,7 +32,6 @@ ESP32_S3_Playground arduino;
 
 // ----------- Text Sizes
 constexpr uint8_t HEADING_SIZE = DEFAULT_HEADING_SIZE;
-constexpr uint8_t CONTENT_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 
 // ----------- Preferences Namespace
 constexpr const char* PREF_NAMESPACE = "LedCalibratorPg";
@@ -95,7 +94,7 @@ Table::Row ROWS[] = {
    { "5" },
    { "Overall" },
 };
-Table table(&arduino, 0, 0, COLUMNS, ROWS, CONTENT_TEXT_SIZE);
+Table table(&arduino, 0, 0, COLUMNS, ROWS);
 
 ///
 /// <summary>

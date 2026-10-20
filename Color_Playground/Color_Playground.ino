@@ -60,7 +60,7 @@ FieldTable::Row infoRows[] =
    FieldTable::Row("RGB", &selectedRGBValue),
    FieldTable::Row("HSV", &selectedHSVValue),
 };
-FieldTable infoTable(&arduino, 0, 0, infoRows, CONTENT_TEXT_SIZE);
+FieldTable infoTable(&arduino, 0, 0, infoRows);
 
 // ----------- Sorting: cycles through Name/Hue/Saturation/Value/Luminance order via
 // encoderA's button; encoderB's button reverses the current order.

@@ -124,11 +124,13 @@ public:
    {
       uint32_t now = millis();
 
-      if (now - _lastSampleMs >= SAMPLE_PERIOD_MS)
+      if (now - _lastSampleMs < SAMPLE_PERIOD_MS)
       {
-         _lastSampleMs = now;
-         _sample();
+         return;
       }
+
+      _lastSampleMs = now;
+      _sample();
    }
 
    ///
@@ -185,18 +187,17 @@ public:
                                {
                                   bool connected = battery->isConnected();
                                   BatteryChargingState chargingState = battery->readChargingState();
-                                  (*doc)["batteryConnected"] = connected;
 
                                   if (chargingState == BatteryChargingState::BadCharger)
                                   {
-                                     (*doc)["batteryVolts"] = roundf(battery->readVolts() * 100.0f) * 0.01f;
+                                     (*doc)["batteryVolts"] = roundf(battery->readAverageVolts() * 100.0f) * 0.01f;
                                      (*doc)["batteryState"] = "Bad Charger";
                                   }
                                   else if (connected)
                                   {
-                                     (*doc)["batteryVolts"] = roundf(battery->readVolts() * 100.0f) * 0.01f;
+                                     (*doc)["batteryVolts"] = roundf(battery->readAverageVolts() * 100.0f) * 0.01f;
 
-                                     float percent = battery->readPercent();
+                                     float percent = battery->readAveragePercent();
                                      if (isfinite(percent))
                                      {
                                         (*doc)["batteryPercent"] = (int32_t)lroundf(percent);

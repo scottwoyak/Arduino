@@ -353,6 +353,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Battery_Monitor_Display/Battery_Monitor_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Bluetooth_Sensor_Display/Bluetooth_Sensor_Display.vcxproj" Id="00000000-0000-0000-0000-000000000012">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

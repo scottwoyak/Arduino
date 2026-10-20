@@ -36,7 +36,6 @@ Arduino arduino;
 
 // ----------- Text Sizes
 constexpr uint8_t HEADER_SIZE = DEFAULT_HEADING_SIZE;
-constexpr uint8_t CONTENT_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 constexpr uint8_t FOOTER_TEXT_SIZE = 2;
 
 // ----------- Content
@@ -53,7 +52,7 @@ std::array rows = {
    FieldTable::Row("Temperature", "###.#", &temperature),
    FieldTable::Row("Humidity", "###.#", &humidity),
 };
-FieldTable table(&arduino, 0, 0, rows, CONTENT_TEXT_SIZE);
+FieldTable table(&arduino, 0, 0, rows);
 
 // ----------- Rate readout (lower right)
 constexpr uint16_t RATE_NUM_SAMPLES = 200;

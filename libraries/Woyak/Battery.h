@@ -10,6 +10,7 @@
 #endif
 
 #include "ArduinoBoardId.h"
+#include "TimedAverage.h"
 
 ///
 /// <summary>
@@ -65,22 +66,33 @@ private:
    static constexpr float MIN_CONNECTED_VOLTS = 2.5f;
    static constexpr float MAX_CONNECTED_VOLTS = 4.5f;
 
-   // When no battery is attached on a TP4054-based ADC board (e.g. Hosyond 4.0) while
-   // powered over USB, the TP4054 repeatedly charges the 10uF output capacitor to ~4.16V,
-   // terminates, and restarts at ~4.08V as the 200k divider drains the capacitor, creating
-   // a continuous ~65-80mV sawtooth oscillation near 4.1V across every window.
+   // When no battery is attached on a charger-backed battery rail (e.g. TP4054 on Hosyond 4.0
+   // or MCP73831 + MAX17048 on Feather ESP32-S3 TFT) while powered over USB, the charger IC
+   // repeatedly charges the 10uF output capacitor to ~4.16V-4.20V, terminates, and restarts at
+   // ~4.08V-4.10V as the divider or fuel gauge drains the capacitor, creating a continuous
+   // sawtooth oscillation near 4.1V-4.2V across every window.
+   // On the MAX17048 fuel gauge, its internal 125ms delta-sigma integration and 250ms register
+   // update interval reduce steady-state connected noise to <= 3mV while partially attenuating
+   // the no-battery sawtooth to ~15-95mV.
    // Unplugging or plugging in USB with a real battery attached causes a single one-way
    // voltage step (~50-150mV) in one window, followed by stable readings in subsequent
    // windows; requiring 2 consecutive high-ripple windows prevents a USB plug/unplug
    // transition from ever triggering a false "No Battery" state.
    static constexpr uint32_t RIPPLE_WINDOW_MS = 1000;
+   static constexpr uint32_t SAMPLE_PERIOD_MS = 100;
    static constexpr uint8_t MIN_RIPPLE_SAMPLES_FOR_VALID = 5;
-   static constexpr float RIPPLE_DISCONNECT_VOLTS = 0.055f;
-   static constexpr float RIPPLE_CONNECT_VOLTS = 0.035f;
+   static constexpr float ADC_RIPPLE_DISCONNECT_VOLTS = 0.055f;
+   static constexpr float ADC_RIPPLE_CONNECT_VOLTS = 0.035f;
+   static constexpr float FUEL_GAUGE_RIPPLE_DISCONNECT_VOLTS = 0.012f;
+   static constexpr float FUEL_GAUGE_RIPPLE_CONNECT_VOLTS = 0.005f;
    static constexpr float MIN_RIPPLE_FLOAT_VOLTS = 3.95f;
    static constexpr uint8_t RIPPLE_DISCONNECT_WINDOWS_REQUIRED = 2;
-   static constexpr uint8_t UNPLUGGED_PROBE_SAMPLE_COUNT = 25;
-   static constexpr uint8_t UNPLUGGED_PROBE_DELAY_MS = 10;
+   static constexpr uint8_t RIPPLE_CONNECT_WINDOWS_REQUIRED = 3;
+   static constexpr uint8_t ADC_UNPLUGGED_PROBE_SAMPLE_COUNT = 25;
+   static constexpr uint8_t ADC_UNPLUGGED_PROBE_DELAY_MS = 10;
+   static constexpr uint8_t FUEL_GAUGE_UNPLUGGED_PROBE_SAMPLE_COUNT = 35;
+   static constexpr uint8_t FUEL_GAUGE_UNPLUGGED_PROBE_DELAY_MS = 25;
+   static constexpr uint16_t FUEL_GAUGE_STARTUP_TIMEOUT_MS = 500;
 
    // Pseudo charging detection on ADC voltage-divider boards:
    // - Compares window average voltage over time: rising by >= 4mV indicates Charging (Yes),
@@ -185,12 +197,106 @@ private:
    bool _hasRippleMeasurement = false;
    bool _rippleDisconnected = false;
    uint8_t _consecutiveRippleWindows = 0;
+   uint8_t _consecutiveCalmWindows = 0;
    float _trendBaselineVolts = NAN;
    BatteryChargingState _adcChargingState = BatteryChargingState::Unknown;
+   TimedAverage _voltsAverage{ RIPPLE_WINDOW_MS };
+   TimedAverage _percentAverage{ RIPPLE_WINDOW_MS };
 
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
    Adafruit_MAX17048 _fuelGauge;
 #endif
+
+#if defined(ARDUINO_ARCH_ESP32)
+   TimerHandle_t _sampleTimerHandle = nullptr;
+   SemaphoreHandle_t _mutex = nullptr;
+
+   ///
+   /// <summary>
+   /// Acquires the reentrant mutex protecting hardware sampling and rolling averages.
+   /// </summary>
+   ///
+   void _lock() const
+   {
+      if (_mutex != nullptr)
+      {
+         xSemaphoreTakeRecursive(_mutex, portMAX_DELAY);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Releases the reentrant mutex protecting hardware sampling and rolling averages.
+   /// </summary>
+   ///
+   void _unlock() const
+   {
+      if (_mutex != nullptr)
+      {
+         xSemaphoreGiveRecursive(_mutex);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// FreeRTOS software timer callback that periodically samples the battery so the
+   /// rolling voltage/percentage averages and ripple/trend windows stay populated.
+   /// </summary>
+   /// <param name="xTimer">The FreeRTOS timer handle whose user data is the owning Battery instance.</param>
+   ///
+   static void _timerCallback(TimerHandle_t xTimer)
+   {
+      Battery* battery = static_cast<Battery*>(pvTimerGetTimerID(xTimer));
+      battery->readPercent();
+   }
+
+   ///
+   /// <summary>
+   /// Creates and starts the periodic FreeRTOS software timer if it has not already been started.
+   /// </summary>
+   ///
+   void _startTimer()
+   {
+      if (_mutex == nullptr)
+      {
+         _mutex = xSemaphoreCreateRecursiveMutex();
+      }
+
+      if (_sampleTimerHandle == nullptr)
+      {
+         _sampleTimerHandle = xTimerCreate(
+            "BatteryTimer",
+            pdMS_TO_TICKS(SAMPLE_PERIOD_MS),
+            pdTRUE,
+            this,
+            _timerCallback);
+
+         if (_sampleTimerHandle != nullptr)
+         {
+            xTimerStart(_sampleTimerHandle, 0);
+         }
+      }
+   }
+#else
+   void _lock() const {}
+   void _unlock() const {}
+   void _startTimer() {}
+#endif
+
+   ///
+   /// <summary>
+   /// Checks whether this instance uses the onboard I2C fuel gauge rather than an ADC pin.
+   /// </summary>
+   /// <returns>True when using the hardware fuel gauge; false when using an ADC pin.</returns>
+   ///
+   bool _isFuelGauge() const
+   {
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+      return _pin < 0;
+#else
+      return false;
+#endif
+   }
 
    ///
    /// <summary>
@@ -279,8 +385,27 @@ private:
 
    ///
    /// <summary>
-   /// Records an ADC voltage sample into the rolling ripple window used to detect the
-   /// TP4054 no-battery sawtooth oscillation (~4.08V-4.16V) and voltage trend.
+   /// Reads a single raw battery voltage sample from the active hardware source (I2C fuel
+   /// gauge or multisampled ADC pin) without updating ripple state.
+   /// </summary>
+   /// <returns>Sampled voltage in volts.</returns>
+   ///
+   float _sampleVolts()
+   {
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+      if (_pin < 0)
+      {
+         return _fuelGauge.cellVoltage();
+      }
+#endif
+
+      return _sampleAdcVolts();
+   }
+
+   ///
+   /// <summary>
+   /// Records a voltage sample into the rolling ripple window used to detect the charger
+   /// no-battery sawtooth oscillation (~4.08V-4.20V) and voltage trend.
    /// </summary>
    /// <param name="volts">Measured battery voltage in volts.</param>
    ///
@@ -290,6 +415,8 @@ private:
       {
          return;
       }
+
+      _voltsAverage.set(volts);
 
       uint32_t now = millis();
       if (_windowSampleCount == 0)
@@ -308,11 +435,15 @@ private:
          {
             _lastRippleVolts = _windowMaxVolts - _windowMinVolts;
             _hasRippleMeasurement = true;
-            float threshold = _rippleDisconnected ? RIPPLE_CONNECT_VOLTS : RIPPLE_DISCONNECT_VOLTS;
-            bool windowHasRipple = (_windowMinVolts >= MIN_RIPPLE_FLOAT_VOLTS) && (_lastRippleVolts > threshold);
+            float disconnectThreshold = _isFuelGauge() ? FUEL_GAUGE_RIPPLE_DISCONNECT_VOLTS : ADC_RIPPLE_DISCONNECT_VOLTS;
+            float connectThreshold = _isFuelGauge() ? FUEL_GAUGE_RIPPLE_CONNECT_VOLTS : ADC_RIPPLE_CONNECT_VOLTS;
+            float threshold = _rippleDisconnected ? connectThreshold : disconnectThreshold;
+            bool inFloatRange = (_windowMinVolts >= MIN_RIPPLE_FLOAT_VOLTS);
+            bool windowHasRipple = inFloatRange && (_lastRippleVolts > threshold);
 
             if (windowHasRipple)
             {
+               _consecutiveCalmWindows = 0;
                if (_consecutiveRippleWindows < RIPPLE_DISCONNECT_WINDOWS_REQUIRED)
                {
                   _consecutiveRippleWindows++;
@@ -322,10 +453,23 @@ private:
                   _rippleDisconnected = true;
                }
             }
+            else if (!inFloatRange)
+            {
+               _consecutiveRippleWindows = 0;
+               _consecutiveCalmWindows = RIPPLE_CONNECT_WINDOWS_REQUIRED;
+               _rippleDisconnected = false;
+            }
             else
             {
                _consecutiveRippleWindows = 0;
-               _rippleDisconnected = false;
+               if (_consecutiveCalmWindows < RIPPLE_CONNECT_WINDOWS_REQUIRED)
+               {
+                  _consecutiveCalmWindows++;
+               }
+               if (_consecutiveCalmWindows >= RIPPLE_CONNECT_WINDOWS_REQUIRED)
+               {
+                  _rippleDisconnected = false;
+               }
             }
 
             float windowAvgVolts = static_cast<float>(_windowSumVolts / _windowSampleCount);
@@ -354,8 +498,8 @@ private:
 
    ///
    /// <summary>
-   /// Checks whether the ADC battery rail is exhibiting the TP4054 no-battery sawtooth
-   /// ripple (> 55mV peak-to-peak across consecutive windows).
+   /// Checks whether the battery rail is exhibiting the charger no-battery sawtooth ripple
+   /// across consecutive windows.
    /// </summary>
    /// <returns>True if no-battery charger sawtooth ripple is present; false if stable.</returns>
    ///
@@ -367,31 +511,57 @@ private:
          return _rippleDisconnected;
       }
 
-      float minVolts = _sampleAdcVolts();
-      float maxVolts = minVolts;
-      _recordAdcSample(minVolts);
+      uint8_t probeSamples = _isFuelGauge() ? FUEL_GAUGE_UNPLUGGED_PROBE_SAMPLE_COUNT : ADC_UNPLUGGED_PROBE_SAMPLE_COUNT;
+      uint8_t probeDelayMs = _isFuelGauge() ? FUEL_GAUGE_UNPLUGGED_PROBE_DELAY_MS : ADC_UNPLUGGED_PROBE_DELAY_MS;
+      float disconnectThreshold = _isFuelGauge() ? FUEL_GAUGE_RIPPLE_DISCONNECT_VOLTS : ADC_RIPPLE_DISCONNECT_VOLTS;
 
-      for (uint8_t i = 1; i < UNPLUGGED_PROBE_SAMPLE_COUNT; i++)
+      float lastVolts = _sampleVolts();
+      float minVolts = lastVolts;
+      float maxVolts = lastVolts;
+      double sumVolts = lastVolts;
+      uint8_t sampleCount = 1;
+
+      if (minVolts >= MIN_RIPPLE_FLOAT_VOLTS)
       {
-         delay(UNPLUGGED_PROBE_DELAY_MS);
-         float v = _sampleAdcVolts();
-         _recordAdcSample(v);
+         for (uint8_t i = 1; i < probeSamples; i++)
+         {
+            delay(probeDelayMs);
+            lastVolts = _sampleVolts();
+            sumVolts += lastVolts;
+            sampleCount++;
 
-         if (v < minVolts)
-         {
-            minVolts = v;
-         }
-         if (v > maxVolts)
-         {
-            maxVolts = v;
+            if (lastVolts < minVolts)
+            {
+               minVolts = lastVolts;
+            }
+            if (lastVolts > maxVolts)
+            {
+               maxVolts = lastVolts;
+            }
+            if (minVolts < MIN_RIPPLE_FLOAT_VOLTS)
+            {
+               break;
+            }
          }
       }
 
       _lastRippleVolts = maxVolts - minVolts;
       _hasRippleMeasurement = true;
-      bool probeHasRipple = (minVolts >= MIN_RIPPLE_FLOAT_VOLTS) && (_lastRippleVolts > RIPPLE_DISCONNECT_VOLTS);
+      bool probeHasRipple = (minVolts >= MIN_RIPPLE_FLOAT_VOLTS) && (_lastRippleVolts > disconnectThreshold);
       _consecutiveRippleWindows = probeHasRipple ? RIPPLE_DISCONNECT_WINDOWS_REQUIRED : 0;
+      _consecutiveCalmWindows = probeHasRipple ? 0 : RIPPLE_CONNECT_WINDOWS_REQUIRED;
       _rippleDisconnected = probeHasRipple;
+
+      float probeAvgVolts = static_cast<float>(sumVolts / sampleCount);
+      _voltsAverage.set(probeAvgVolts);
+      _updateAdcChargingTrend(probeAvgVolts);
+
+      _windowStartMs = millis();
+      _windowMinVolts = lastVolts;
+      _windowMaxVolts = lastVolts;
+      _windowSumVolts = lastVolts;
+      _windowSampleCount = 1;
+
       return _rippleDisconnected;
    }
 
@@ -422,7 +592,25 @@ public:
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
       if (_pin < 0)
       {
-         _ready = _fuelGauge.begin();
+         if (!_ready || !_fuelGauge.isDeviceReady())
+         {
+            _ready = _fuelGauge.begin();
+            if (_ready)
+            {
+               // Adafruit_MAX17048::begin() issues a soft POR reset, after which VCELL reads
+               // 0.000V until the first internal ADC conversion completes (~125-250ms).
+               uint32_t startMs = millis();
+               while (_fuelGauge.cellVoltage() <= 0.0f && (millis() - startMs < FUEL_GAUGE_STARTUP_TIMEOUT_MS))
+               {
+                  delay(10);
+               }
+            }
+         }
+
+         if (_ready)
+         {
+            _startTimer();
+         }
          return _ready;
       }
 #endif
@@ -436,6 +624,7 @@ public:
       analogReadResolution(ADC_RESOLUTION_BITS);
       pinMode(_pin, INPUT);
       _ready = true;
+      _startTimer();
       return true;
    }
 
@@ -447,53 +636,63 @@ public:
    ///
    float readVolts()
    {
+      _lock();
       if (!_ready && !begin())
       {
+         _unlock();
          return NAN;
       }
 
-#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
-      if (_pin < 0)
-      {
-         return _fuelGauge.cellVoltage();
-      }
-#endif
-
-      float volts = _sampleAdcVolts();
+      float volts = _sampleVolts();
       _recordAdcSample(volts);
+      _unlock();
       return volts;
+   }
+
+   ///
+   /// <summary>
+   /// Reads the time-averaged battery voltage over the 1-second smoothing window.
+   /// </summary>
+   /// <returns>Time-averaged battery voltage in volts, or NAN if unavailable.</returns>
+   ///
+   float readAverageVolts()
+   {
+      _lock();
+      float volts = readVolts();
+      float avg = _voltsAverage.average();
+      _unlock();
+      return isfinite(avg) ? avg : volts;
    }
 
    ///
    /// <summary>
    /// Checks whether a battery is currently connected (and switched on) by verifying that
    /// the measured battery rail voltage is within the valid 1S LiPo operating window
-   /// (2.5V to 4.5V) and is not exhibiting the TP4054 no-battery sawtooth ripple (~4.08V-4.16V).
+   /// (2.5V to 4.5V) and is not exhibiting the charger no-battery sawtooth ripple (~4.08V-4.20V).
    /// </summary>
    /// <returns>True if a battery is detected; false if disconnected or unavailable.</returns>
    ///
    bool isConnected()
    {
+      _lock();
       float volts = readVolts();
       if (!_isVoltsConnected(volts))
       {
          _resetAdcChargingTrend();
+         _percentAverage.reset();
+         _unlock();
          return false;
       }
-
-#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
-      if (_pin < 0)
-      {
-         return true;
-      }
-#endif
 
       if (_hasNoBatteryRipple())
       {
          _resetAdcChargingTrend();
+         _percentAverage.reset();
+         _unlock();
          return false;
       }
 
+      _unlock();
       return true;
    }
 
@@ -506,7 +705,10 @@ public:
    ///
    bool hasBadCharger()
    {
-      return _isVoltsBadCharger(readVolts());
+      _lock();
+      bool bad = _isVoltsBadCharger(readVolts());
+      _unlock();
+      return bad;
    }
 
    ///
@@ -520,15 +722,18 @@ public:
    ///
    BatteryChargingState readChargingState()
    {
+      _lock();
       float volts = readVolts();
       if (_isVoltsBadCharger(volts))
       {
          _resetAdcChargingTrend();
+         _unlock();
          return BatteryChargingState::BadCharger;
       }
 
       if (!isConnected())
       {
+         _unlock();
          return BatteryChargingState::Unknown;
       }
 
@@ -538,21 +743,39 @@ public:
          float rate = readChargeRate();
          if (!isfinite(rate))
          {
+            _unlock();
             return BatteryChargingState::Unknown;
          }
 
          if (rate >= MIN_FUEL_GAUGE_CHARGE_RATE)
          {
+            _unlock();
             return BatteryChargingState::Yes;
          }
 
-         return (volts >= FULL_CHARGE_VOLTS)
+         if (rate <= -MIN_FUEL_GAUGE_CHARGE_RATE)
+         {
+            _unlock();
+            return BatteryChargingState::No;
+         }
+
+         if (_adcChargingState == BatteryChargingState::Yes)
+         {
+            _unlock();
+            return BatteryChargingState::Yes;
+         }
+
+         BatteryChargingState state = (volts >= FULL_CHARGE_VOLTS)
             ? BatteryChargingState::Full
             : BatteryChargingState::No;
+         _unlock();
+         return state;
       }
 #endif
 
-      return _adcChargingState;
+      BatteryChargingState state = _adcChargingState;
+      _unlock();
+      return state;
    }
 
    ///
@@ -574,36 +797,72 @@ public:
    ///
    float readPercent()
    {
+      _lock();
       if (!_ready && !begin())
       {
+         _unlock();
          return NAN;
       }
 
       float volts = readVolts();
       if (!_isVoltsConnected(volts))
       {
+         _percentAverage.reset();
+         _unlock();
          return NAN;
       }
-
-#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
-      if (_pin < 0)
-      {
-         float percent = _fuelGauge.cellPercent();
-         if (!isfinite(percent))
-         {
-            return NAN;
-         }
-
-         return constrain(percent, 0.0f, 100.0f);
-      }
-#endif
 
       if (_hasNoBatteryRipple())
       {
+         _percentAverage.reset();
+         _unlock();
          return NAN;
       }
 
-      return _voltsToPercent(volts);
+      float percent = NAN;
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+      if (_pin < 0)
+      {
+         float rawPercent = _fuelGauge.cellPercent();
+         if (isfinite(rawPercent))
+         {
+            percent = constrain(rawPercent, 0.0f, 100.0f);
+         }
+      }
+      else
+#endif
+      {
+         percent = _voltsToPercent(volts);
+      }
+
+      if (isfinite(percent))
+      {
+         _percentAverage.set(percent);
+      }
+
+      _unlock();
+      return percent;
+   }
+
+   ///
+   /// <summary>
+   /// Reads the time-averaged battery charge percentage over the 1-second smoothing window.
+   /// </summary>
+   /// <returns>Time-averaged battery charge percentage (0.0 to 100.0), or NAN if disconnected or unavailable.</returns>
+   ///
+   float readAveragePercent()
+   {
+      _lock();
+      float percent = readPercent();
+      if (!isfinite(percent))
+      {
+         _unlock();
+         return NAN;
+      }
+
+      float avg = _percentAverage.average();
+      _unlock();
+      return isfinite(avg) ? avg : percent;
    }
 
    ///
@@ -618,12 +877,16 @@ public:
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
       if (_pin < 0)
       {
+         _lock();
          if (!_ready && !begin())
          {
+            _unlock();
             return NAN;
          }
 
-         return _fuelGauge.chargeRate();
+         float rate = _fuelGauge.chargeRate();
+         _unlock();
+         return rate;
       }
 #endif
 
@@ -639,6 +902,9 @@ public:
    ///
    float readRippleVolts() const
    {
-      return _lastRippleVolts;
+      _lock();
+      float ripple = _lastRippleVolts;
+      _unlock();
+      return ripple;
    }
 };

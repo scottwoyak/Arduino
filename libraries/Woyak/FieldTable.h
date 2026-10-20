@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ArduinoBoard.h"
 #include "ArduinoWithDisplay.h"
 #include "Anchor.h"
 #include "ValueEditor.h"
@@ -333,7 +334,7 @@ public:
    /// <param name="y">The Y coordinate of the table's top-left corner.</param>
    /// <param name="textSize">The text size applied to every row's label and value.</param>
    ///
-   FieldTable(ArduinoWithDisplay* display, int16_t x, int16_t y, uint8_t textSize = 2)
+   FieldTable(ArduinoWithDisplay* display, int16_t x, int16_t y, uint8_t textSize = DEFAULT_TEXT_SIZE)
       : _display(display), _x(x), _y(y), _textSize(textSize)
    {
    }
@@ -349,7 +350,7 @@ public:
    /// <param name="rows">Row label/format metadata, one entry per row to add.</param>
    /// <param name="textSize">The text size applied to every row's label and value.</param>
    ///
-   FieldTable(ArduinoWithDisplay* display, int16_t x, int16_t y, std::span<const Row> rows, uint8_t textSize = 2)
+   FieldTable(ArduinoWithDisplay* display, int16_t x, int16_t y, std::span<const Row> rows, uint8_t textSize = DEFAULT_TEXT_SIZE)
       : _display(display), _x(x), _y(y), _textSize(textSize)
    {
       addRows(rows);

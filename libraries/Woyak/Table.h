@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ArduinoBoard.h"
 #include "ArduinoWithDisplay.h"
 #include "Anchor.h"
 #include "Format.h"
@@ -599,7 +600,7 @@ public:
    /// <param name="textSize">The text size applied automatically before drawing labels and values.</param>
    /// <param name="labelAlignment">Alignment of the row label text within its reserved column width (default: RIGHT).</param>
    ///
-   Table(ArduinoWithDisplay* display, int16_t x, int16_t y, uint8_t textSize = 2,
+   Table(ArduinoWithDisplay* display, int16_t x, int16_t y, uint8_t textSize = DEFAULT_TEXT_SIZE,
       Alignment labelAlignment = Alignment::RIGHT)
       : _display(display), _x(x), _y(y), _labelWidth(0), _labelAlignment(labelAlignment), _textSize(textSize),
         _columns(), _headerColor(Color::TABLE_HEADER)
@@ -621,7 +622,7 @@ public:
    /// <param name="labelAlignment">Alignment of the row label text within its reserved column width (default: RIGHT).</param>
    ///
    Table(ArduinoWithDisplay* display, int16_t x, int16_t y, std::span<const ValueRow> rows,
-      uint8_t textSize = 2, Alignment labelAlignment = Alignment::RIGHT)
+      uint8_t textSize = DEFAULT_TEXT_SIZE, Alignment labelAlignment = Alignment::RIGHT)
       : _display(display), _x(x), _y(y), _labelWidth(0), _labelAlignment(labelAlignment), _textSize(textSize),
         _columns(), _headerColor(Color::TABLE_HEADER)
    {
@@ -643,7 +644,7 @@ public:
    /// <param name="headerColor">The color used to draw the column header row (unless a column overrides it).</param>
    ///
    Table(ArduinoWithDisplay* display, int16_t x, int16_t y, std::span<const Column> columns,
-      uint8_t textSize = 2, Color headerColor = Color::TABLE_HEADER)
+      uint8_t textSize = DEFAULT_TEXT_SIZE, Color headerColor = Color::TABLE_HEADER)
       : _display(display), _x(x), _y(y), _labelWidth(0),
         _labelAlignment(columns.empty() ? Alignment::LEFT : _fromFormatAlignment(columns[0].format.alignment())),
         _textSize(textSize), _columns(columns), _headerColor(headerColor)
@@ -666,7 +667,7 @@ public:
    /// <param name="headerColor">The color used to draw the column header row (unless a column overrides it).</param>
    ///
    Table(ArduinoWithDisplay* display, int16_t x, int16_t y, std::span<const Column> columns,
-      std::span<const Row> rows, uint8_t textSize = 2, Color headerColor = Color::TABLE_HEADER)
+      std::span<const Row> rows, uint8_t textSize = DEFAULT_TEXT_SIZE, Color headerColor = Color::TABLE_HEADER)
       : _display(display), _x(x), _y(y), _labelWidth(0),
         _labelAlignment(columns.empty() ? Alignment::LEFT : _fromFormatAlignment(columns[0].format.alignment())),
         _textSize(textSize), _columns(columns), _headerColor(headerColor)

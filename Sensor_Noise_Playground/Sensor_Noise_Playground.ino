@@ -78,7 +78,7 @@ Format rateFormat("####/s", Format::Alignment::RIGHT);
 constexpr const char* COUNT_FORMAT = "######";
 constexpr const char* SAMPLE_TIME_FORMAT = "#### ms";
 constexpr const char* STDDEV_PERCENT_FORMAT = "##.##%";
-Table noiseTable(&arduino, 0, 0, 3);
+Table noiseTable(&arduino, 0, 0);
 Field* targetRateField = nullptr;
 Field* actualRateField = nullptr;
 ScatterPlot scatterPlot(&arduino, CONTENT_RECT, "##.#s", sensor.getFormatStr());

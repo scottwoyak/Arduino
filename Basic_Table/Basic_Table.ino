@@ -32,7 +32,6 @@ Arduino arduino;
 
 // ----------- Text Sizes
 constexpr uint8_t HEADER_SIZE = DEFAULT_HEADING_SIZE;
-constexpr uint8_t CONTENT_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 constexpr uint8_t FOOTER_TEXT_SIZE = 2;
 
 // ----------- Content
@@ -46,7 +45,7 @@ std::array columns = {
    Table::Column("Value", "###.#"),
    Table::Column("StdDev", "#.##"),
 };
-Table table(&arduino, 0, 0, columns, rows, CONTENT_TEXT_SIZE);
+Table table(&arduino, 0, 0, columns, rows);
 
 // ----------- Rate readout (lower right)
 constexpr uint16_t RATE_NUM_SAMPLES = 200;

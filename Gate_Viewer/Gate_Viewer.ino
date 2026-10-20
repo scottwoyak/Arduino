@@ -1131,10 +1131,8 @@ Format batteryPercentFormat("###%");
 void displayBattery(bool forceRedraw = false)
 {
    constexpr float BATTERY_SAMPLE_RATE = 10.0f;
-   constexpr unsigned long BATTERY_AVERAGE_SPAN_MS = 1000;
 
    static RateTimer sampleTimer(BATTERY_SAMPLE_RATE);
-   static TimedAverage percentAverage(BATTERY_AVERAGE_SPAN_MS);
    static bool everSampled = false;
    static int lastDisplayedPercent = -1;
    static int currentPercent = -1;
@@ -1142,17 +1140,8 @@ void displayBattery(bool forceRedraw = false)
    if (!everSampled || sampleTimer.ready())
    {
       everSampled = true;
-      float percent = sketch.arduino.battery.readPercent();
-      if (isfinite(percent))
-      {
-         percentAverage.set(percent);
-         currentPercent = (int)lroundf(percentAverage.average());
-      }
-      else
-      {
-         percentAverage.reset();
-         currentPercent = -1;
-      }
+      float percent = sketch.arduino.battery.readAveragePercent();
+      currentPercent = isfinite(percent) ? (int)lroundf(percent) : -1;
    }
 
    if (!forceRedraw && currentPercent == lastDisplayedPercent)
