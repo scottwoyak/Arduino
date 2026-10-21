@@ -1,5 +1,5 @@
-
 #define INCLUDE_PROPORTIONAL_FONT
+#define TEXT_SIZES_ALL
 
 #include "ArduinoBoard.h"
 

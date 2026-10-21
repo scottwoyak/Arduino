@@ -28,6 +28,8 @@
 #include <cmath>
 #include <sstream>
 
+#include <Adafruit_INA219.h>
+
 #include "ArduinoBoard.h"
 
 #if !defined(ARDUINO_DISPLAY_SUPPORTED) || !defined(ARDUINO_BATTERY_SUPPORTED)
@@ -53,6 +55,7 @@ constexpr uint16_t SAMPLE_INTERVAL_MS = 1000;
 constexpr uint8_t INFLUX_INTERVAL_S = 5;
 constexpr uint8_t UPLOADS_PER_SCENARIO = 12; // 12 * 5s = 60s of data per scenario
 constexpr uint8_t VOLTS_DECIMAL_PLACES = 3;
+constexpr uint8_t CURRENT_DECIMAL_PLACES = 1;
 constexpr uint8_t PERCENT_DECIMAL_PLACES = 1;
 constexpr uint8_t RATE_DECIMAL_PLACES = 2;
 constexpr float DISPLAY_UPDATE_RATE = 5.0f;
@@ -103,6 +106,7 @@ InfluxConfig INFLUX_CONFIG = {
 MonitorSketch sketch(SKETCH_CONFIG, INFLUX_CONFIG);
 
 InfluxField* voltsField = nullptr;
+InfluxField* currentMaField = nullptr;
 InfluxField* minVoltsField = nullptr;
 InfluxField* maxVoltsField = nullptr;
 InfluxField* spanVoltsField = nullptr;
@@ -278,6 +282,7 @@ std::string getReadings()
    bool connected = sketch.arduino.battery.isConnected();
    float rawVolts = sketch.arduino.battery.readVolts();
    float avgVolts = sketch.arduino.battery.readAverageVolts();
+   float avgCurrentMa = sketch.arduino.battery.readAverageCurrentMa();
    float avgPercent = connected ? sketch.arduino.battery.readAveragePercent() : NAN;
    float rippleVolts = sketch.arduino.battery.readRippleVolts();
    float chargeRate = sketch.arduino.battery.readChargeRate();
@@ -292,6 +297,10 @@ std::string getReadings()
    out << "volts=" << avgVolts << " V (raw " << rawVolts << " V)\n";
    out << "ripple=" << rippleVolts << " V\n";
    out.precision(1);
+   if (isfinite(avgCurrentMa))
+   {
+      out << "current=" << avgCurrentMa << " mA\n";
+   }
    if (isfinite(avgPercent))
    {
       out << "percent=" << avgPercent << " %\n";
@@ -328,6 +337,7 @@ void setup()
 
    InfluxPoint* point = sketch.addPoint({ { "item", "Battery" } });
    voltsField = point->addTimeAverageField(INFLUX_INTERVAL_S, "batteryVolts", VOLTS_DECIMAL_PLACES);
+   currentMaField = point->addTimeAverageField(INFLUX_INTERVAL_S, "batteryCurrentMa", CURRENT_DECIMAL_PLACES);
    minVoltsField = point->addValueField("batteryMinVolts", VOLTS_DECIMAL_PLACES);
    maxVoltsField = point->addValueField("batteryMaxVolts", VOLTS_DECIMAL_PLACES);
    spanVoltsField = point->addValueField("batterySpanVolts", VOLTS_DECIMAL_PLACES);
@@ -371,6 +381,8 @@ void loop()
 
    float rawVolts = sketch.arduino.battery.readVolts();
    float avgVolts = sketch.arduino.battery.readAverageVolts();
+   float avgCurrentMa = sketch.arduino.battery.readAverageCurrentMa();
+   bool hasCurrent = isfinite(avgCurrentMa);
    bool connected = sketch.arduino.battery.isConnected();
    float avgPercent = connected ? sketch.arduino.battery.readAveragePercent() : NAN;
    float rawPercent = sketch.arduino.battery.readRawPercent();
@@ -389,6 +401,10 @@ void loop()
       if (isfinite(avgVolts))
       {
          voltsField->set(avgVolts);
+      }
+      if (hasCurrent)
+      {
+         currentMaField->set(avgCurrentMa);
       }
       if (connected && isfinite(avgPercent))
       {
@@ -491,14 +507,14 @@ void loop()
    {
       const char* charge = !connected ? "No Battery" : "Connected";
       Serial.printf(
-         "[%lus] step=%u(%u/%u)  raw=%.3fV  avg=%.3fV  ripple=%.3fV  charge=%s  state=%s\n",
+         "[%lus] step=%u(%u/%u)  raw=%.3fV  avg=%.3fV  current=%.1fmA  charge=%s  state=%s\n",
          millis() / 1000UL,
          currentScenario,
          scenarioUploads,
          UPLOADS_PER_SCENARIO,
          rawVolts,
          avgVolts,
-         rippleVolts,
+         avgCurrentMa,
          charge,
          stateText);
    }
@@ -511,14 +527,20 @@ void loop()
    // Row 0: Battery voltage
    table.setValue(0, avgVolts, Color::VALUE);
 
-   // Row 1: Battery charge percentage (and charge rate when available) or No Battery
+   // Row 1: Battery charge percentage (and current in mA when available) or No Battery
    if (!connected)
    {
       table.setValue(1, "No Battery", Color::RED);
    }
+   else if (hasCurrent)
+   {
+      int pct = static_cast<int>(roundf(avgPercent));
+      int currentInt = static_cast<int>(roundf(avgCurrentMa));
+      String chargeStr = String(pct) + "% " + (currentInt >= 0 ? "+" : "") + String(currentInt) + "mA";
+      table.setValue(1, chargeStr, Color::VALUE);
+   }
    else if (hasChargeRate)
    {
-      char chargeBuf[16];
       int pct = (int)roundf(avgPercent);
       int rate = (int)roundf(chargeRate);
       String chargeStr = String(pct) + "% " + (rate >= 0 ? "+" : "") + String(rate) + "%/h";

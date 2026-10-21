@@ -11,6 +11,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+#define TEXT_SIZE_4
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED

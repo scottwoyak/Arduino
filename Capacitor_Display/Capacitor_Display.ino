@@ -1,11 +1,13 @@
 //
 // Displays capacitor charge time and raw sampling rate on a Feather display.
 //
-// Reads rolling-average capacitor charge time in microseconds from CapacitorSensor,
+// Reads rolling-age capacitor charge time in microseconds from CapacitorSensor,
 // updates the main value at a fixed cadence, and renders a footer row with raw sensor rate.
 //
 
 #include <Arduino.h>
+
+#define TEXT_SIZE_5
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED

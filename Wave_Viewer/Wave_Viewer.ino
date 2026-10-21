@@ -19,11 +19,9 @@
 // - Checks for a firmware update periodically.
 //
 
-// Declares which VLW font sizes this sketch actually uses (4 - see
+// Declares which extra VLW font sizes this sketch actually uses (4 - see
 // TEXT_SIZE/MAX_HEADER_TEXT_SIZE below; 2 and 3 are always included regardless, see
-// ArduinoWithDisplay.h), so ArduinoWithDisplay.h/Fonts/Roboto*.h only compile in the
-// needed font data instead of all 7 sizes, reducing flash usage.
-#define TEXT_SIZES_CUSTOM
+// ArduinoWithDisplay.h).
 #define TEXT_SIZE_4
 
 #include <string>

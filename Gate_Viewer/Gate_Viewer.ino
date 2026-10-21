@@ -23,10 +23,52 @@
 // - Checks for a firmware update periodically.
 //
 
+#include <Arduino.h>
 #include <array>
 #include <cmath>
 #include <sstream>
 #include <string>
+
+#include <HTTPClient.h>
+
+// Declares which extra VLW font sizes this sketch actually uses (4 and 5 - see
+// HISTORY_TITLE_TEXT_SIZE/HISTORY_ROW_TEXT_SIZE below; 2 and 3 are always included
+// regardless, see ArduinoWithDisplay.h), so ArduinoWithDisplay.h/Fonts/Roboto*.h only
+// compile in the needed font data instead of all 7 sizes, reducing flash usage.
+#ifndef ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT
+// Sizes 4 and 5 are only used by the touch-only history/settings views and the larger
+// gate state banner, so the non-touch Feather doesn't need them.
+#define TEXT_SIZE_4
+#define TEXT_SIZE_5
+#endif
+
+// All notification sounds are compiled in (no SOUNDS_CUSTOM restriction) so every sound
+// is selectable in the settings view.
+
+#include "ArduinoBoard.h"
+
+#ifndef ARDUINO_DISPLAY_SUPPORTED
+#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Viewer)."
+#include "WrongBoard.h"
+#endif
+
+// The settings view (gear icon, volume slider and sound list) needs both touch and sound.
+#if defined(ARDUINO_TOUCH_SUPPORTED) && defined(ARDUINO_SOUND_SUPPORTED)
+#define SETTINGS_SUPPORTED
+#endif
+
+#include "DirtySprite.h"
+#include "LibraryVersion.h"
+#include "SerialX.h"
+#include "Slider.h"
+#include "Status.h"
+#include "TelemetryClient.h"
+#include "TimeSync.h"
+#include "Timer.h"
+
+#include "WiFiSettings.h"
+
+#include "ViewerSketch.h"
 
 ///
 /// <summary>
@@ -64,53 +106,11 @@ constexpr auto RIGHT_TELEMETRY_TOPIC = "Gate/Right";
 constexpr auto GATE_OPENER_HOST = "192.168.1.9";
 constexpr uint16_t GATE_OPENER_PORT = 80;
 
-// Declares which VLW font sizes this sketch actually uses (4 and 5 - see
-// HISTORY_TITLE_TEXT_SIZE/HISTORY_ROW_TEXT_SIZE below; 2 and 3 are always included
-// regardless, see ArduinoWithDisplay.h), so ArduinoWithDisplay.h/Fonts/Roboto*.h only
-// compile in the needed font data instead of all 7 sizes, reducing flash usage.
-#define TEXT_SIZES_CUSTOM
-#ifndef ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT
-// Sizes 4 and 5 are only used by the touch-only history/settings views and the larger
-// gate state banner, so the non-touch Feather doesn't need them.
-#define TEXT_SIZE_4
-#define TEXT_SIZE_5
-#endif
-
-// All notification sounds are compiled in (no SOUNDS_CUSTOM restriction) so every sound
-// is selectable in the settings view.
-
-#include "ArduinoBoard.h"
-#include "LibraryVersion.h"
-
 // This sketch's own version (e.g. "1.06"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
 const auto VERSION = MakeVersion("1.11");
 constexpr auto SKETCH_NAME = "Gate_Viewer";
-
-#ifndef ARDUINO_DISPLAY_SUPPORTED
-#error "This sketch requires a board with a display (e.g. Feather ESP32-S3 or Viewer)."
-#include "WrongBoard.h"
-#endif
-
-// The settings view (gear icon, volume slider and sound list) needs both touch and sound.
-#if defined(ARDUINO_TOUCH_SUPPORTED) && defined(ARDUINO_SOUND_SUPPORTED)
-#define SETTINGS_SUPPORTED
-#endif
-
-#include <HTTPClient.h>
-#include <WebSocketsClient.h>
-
-#include "DirtySprite.h"
-#include "SerialX.h"
-#include "Slider.h"
-#include "Status.h"
-#include "TelemetryClient.h"
-#include "TimedAverage.h"
-#include "TimeSync.h"
-#include "Timer.h"
-#include "WiFiSettings.h"
-#include "ViewerSketch.h"
 
 // ----------- Telemetry
 SketchConfig SKETCH_CONFIG = {
@@ -135,14 +135,10 @@ constexpr int16_t GATE_ORIGIN_RADIUS_REFERENCE_WIDTH = 320;
 constexpr int16_t GATE_ORIGIN_RADIUS_REFERENCE = 10;
 int16_t gateOriginRadius = GATE_ORIGIN_RADIUS_REFERENCE;
 
-// Antialiased drawing: the line's half-width, the extra half-width used when erasing it (to
-// cover its soft edge pixels), and the thickness of the origin circle's ring.
+// Antialiased drawing: the line's half-width and the thickness of the origin circle's ring.
 constexpr float GATE_LINE_RADIUS = 1.5f;
-constexpr float GATE_LINE_ERASE_PAD = 1.5f;
 constexpr int16_t GATE_CIRCLE_THICKNESS = 2;
 
-Format leftAzimuthFormat("###", Format::Alignment::LEFT);
-Format rightAzimuthFormat("###", Format::Alignment::RIGHT);
 int16_t lineLength = 0;
 int16_t gateOriginY = 0;
 
@@ -158,7 +154,7 @@ Rect16 lastOpenFooterRect;
 
 constexpr auto PREFERENCES_NAMESPACE = SKETCH_NAME;
 constexpr auto HISTORY_PREFERENCES_KEY = "history";
-constexpr size_t GATE_OPEN_HISTORY_SIZE = 10;
+constexpr size_t NUM_GATE_OPEN_RECORDS = 10;
 
 ///
 /// <summary>
@@ -172,7 +168,7 @@ struct GateOpenRecord
 
 ///
 /// <summary>
-/// Persists the most recent GATE_OPEN_HISTORY_SIZE gate-opening events (combined across
+/// Persists the most recent NUM_GATE_OPEN_RECORDS gate-opening events (combined across
 /// both gates) to Preferences (NVS) as a fixed-size blob, newest entry first. Held
 /// entirely in RAM between load() and save() calls; save() is only called when a new
 /// event is appended, since opens are infrequent.
@@ -181,7 +177,7 @@ struct GateOpenRecord
 class GateOpenHistory
 {
 private:
-   GateOpenRecord _records[GATE_OPEN_HISTORY_SIZE] = {};
+   std::array<GateOpenRecord, NUM_GATE_OPEN_RECORDS> _records = {};
    size_t _count = 0;
 
 public:
@@ -200,7 +196,7 @@ public:
       size_t savedSize = sketch.arduino.preferences.getBytesLength(HISTORY_PREFERENCES_KEY);
       if (savedSize > 0 && savedSize <= sizeof(_records))
       {
-         sketch.arduino.preferences.getBytes(HISTORY_PREFERENCES_KEY, _records, savedSize);
+         sketch.arduino.preferences.getBytes(HISTORY_PREFERENCES_KEY, _records.data(), savedSize);
          _count = savedSize / sizeof(GateOpenRecord);
       }
 
@@ -209,7 +205,7 @@ public:
       // Constant duplicated from TimeSync::isSynced() rather than depending on TimeSync
       // here, since a synced clock is what distinguishes a real timestamp from bogus
       // pre-sync data.
-      constexpr time_t MIN_VALID_TIME = 1000000000l;
+      constexpr time_t MIN_VALID_TIME = 1000000000L;
 
       size_t validCount = 0;
       for (size_t i = 0; i < _count; i++)
@@ -225,7 +221,7 @@ public:
          _count = validCount;
 
          sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
-         sketch.arduino.preferences.putBytes(HISTORY_PREFERENCES_KEY, _records, _count * sizeof(GateOpenRecord));
+         sketch.arduino.preferences.putBytes(HISTORY_PREFERENCES_KEY, _records.data(), _count * sizeof(GateOpenRecord));
          sketch.arduino.preferences.end();
       }
    }
@@ -240,7 +236,7 @@ public:
    ///
    void add(time_t time)
    {
-      size_t newCount = (_count < GATE_OPEN_HISTORY_SIZE) ? (_count + 1) : GATE_OPEN_HISTORY_SIZE;
+      size_t newCount = (_count < NUM_GATE_OPEN_RECORDS) ? (_count + 1) : NUM_GATE_OPEN_RECORDS;
       for (size_t i = newCount - 1; i > 0; i--)
       {
          _records[i] = _records[i - 1];
@@ -249,12 +245,14 @@ public:
       _count = newCount;
 
       sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
-      sketch.arduino.preferences.putBytes(HISTORY_PREFERENCES_KEY, _records, _count * sizeof(GateOpenRecord));
+      sketch.arduino.preferences.putBytes(HISTORY_PREFERENCES_KEY, _records.data(), _count * sizeof(GateOpenRecord));
       sketch.arduino.preferences.end();
    }
 
    ///
-   /// <summary>Gets the number of recorded events, from 0 up to GATE_OPEN_HISTORY_SIZE.</summary>
+   /// <summary>
+   /// Gets the number of recorded events, from 0 up to NUM_GATE_OPEN_RECORDS.
+   /// </summary>
    /// <returns>Recorded event count.</returns>
    ///
    size_t count() const
@@ -263,17 +261,21 @@ public:
    }
 
    ///
-   /// <summary>Gets a recorded event, with index 0 being the most recent.</summary>
+   /// <summary>
+   /// Gets a recorded event, with index 0 being the most recent.
+   /// </summary>
    /// <param name="index">Index from 0 (most recent) to count() - 1 (oldest).</param>
    /// <returns>The recorded event at the given index.</returns>
    ///
-   const GateOpenRecord& get(size_t index) const
+   const GateOpenRecord* get(size_t index) const
    {
-      return _records[index];
+      return &_records[index];
    }
 
    ///
-   /// <summary>Clears all recorded gate-opening events and removes the persisted history from Preferences.</summary>
+   /// <summary>
+   /// Clears all recorded gate-opening events and removes the persisted history from Preferences.
+   /// </summary>
    ///
    void clear()
    {
@@ -344,7 +346,8 @@ std::string formatFriendlyDate(time_t time)
       return "Yesterday";
    }
 
-   static constexpr const char* MONTH_NAMES[12] = {
+   static constexpr uint8_t NUM_MONTHS = 12;
+   static constexpr std::array<const char*, NUM_MONTHS> MONTH_NAMES = {
       "Jan", "Feb", "Mar", "Apr", "May", "Jun",
       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
    };
@@ -403,16 +406,12 @@ std::string formatShortDate(time_t time)
 
 ///
 /// <summary>
-/// Draws both gates' azimuth values, left and right aligned respectively, inline with
-/// the origin circles, with no decimals and a degree symbol, and (once the gate has
-/// opened at least once since boot) the last time the gate was opened, shown as footer
-/// text centered at the bottom of the display. Always drawn in closed-state colors; the
-/// open state is shown by inverting the panel.
+/// Draws (once the gate has opened at least once since boot) the last time the gate was
+/// opened, shown as footer text at the bottom of the display. Always drawn in closed-state
+/// colors; the open state is shown by inverting the panel.
 /// </summary>
-/// <param name="leftAzimuth">Left gate's azimuth in degrees, or NAN if unavailable.</param>
-/// <param name="rightAzimuth">Right gate's azimuth in degrees, or NAN if unavailable.</param>
 ///
-void displayFooterAzimuths(float leftAzimuth, float rightAzimuth)
+void displayFooterAzimuths()
 {
    Point16 savedCursor = sketch.arduino.getCursor();
    uint8_t savedTextSize = sketch.arduino.getTextSize();
@@ -420,7 +419,6 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth)
    sketch.arduino.setTextSize(2);
 
    // Always drawn in closed-state colors; the open state is shown by inverting the panel.
-   Color backgroundColor = Color::BLACK;
    Color messageColor = Color::GRAY;
 
    lastOpenFooterVisible = (lastGateOpenTime != 0);
@@ -443,9 +441,14 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth)
       // Tap target is at least double the text's height, extending equally above and
       // below it, to make it easier to tap without needing to make the text itself larger.
       int16_t tapMargin = sketch.arduino.charH() / 2;
-      lastOpenFooterRect = Rect16(0, sketch.arduino.getCursor().y - tapMargin, sketch.arduino.width(), sketch.arduino.charH() + 2 * tapMargin);
+      lastOpenFooterRect = Rect16{
+         0,
+         (uint16_t)(sketch.arduino.getCursor().y - tapMargin),
+         sketch.arduino.width(),
+         (uint16_t)(sketch.arduino.charH() + 2 * tapMargin)
+      };
 
-      sketch.arduino.print(lastOpenText, messageColor, backgroundColor);
+      sketch.arduino.print(lastOpenText, messageColor);
 #else
       // Narrower, non-touch displays (e.g. the Feather) only have room for a compact
       // date and time, so drop the "Last Open" label, use the short numeric date
@@ -454,7 +457,7 @@ void displayFooterAzimuths(float leftAzimuth, float rightAzimuth)
 
       sketch.arduino.setCursorX(0);
       sketch.arduino.setCursorY(-sketch.arduino.charH());
-      sketch.arduino.print(lastOpenText, messageColor, backgroundColor);
+      sketch.arduino.print(lastOpenText, messageColor);
 #endif
    }
 
@@ -507,8 +510,8 @@ bool onGear(int16_t x, int16_t y)
 
 ///
 /// <summary>
-/// Draws a full-screen list of up to GATE_OPEN_HISTORY_SIZE recorded gate-opening
-/// events, most recent first, each showing the friendly date, time, and which gate
+/// Draws a full-screen list of up to NUM_GATE_OPEN_RECORDS recorded gate-opening
+/// events, most recent first, each showing the friendly date and time the gate
 /// opened. Drawn once; the caller is responsible for returning to the main view.
 /// </summary>
 ///
@@ -534,16 +537,16 @@ void displayHistoryView()
    {
       for (size_t i = 0; i < gateOpenHistory.count(); i++)
       {
-         const GateOpenRecord& record = gateOpenHistory.get(i);
+         const GateOpenRecord* record = gateOpenHistory.get(i);
 
          struct tm timeInfo;
-         localtime_r(&record.time, &timeInfo);
+         localtime_r(&record->time, &timeInfo);
 
          char timeBuffer[16];
          strftime(timeBuffer, sizeof(timeBuffer), "%I:%M %p", &timeInfo);
          const char* timeStr = (timeBuffer[0] == '0') ? timeBuffer + 1 : timeBuffer;
 
-         std::string dateStr = formatFriendlyDate(record.time);
+         std::string dateStr = formatFriendlyDate(record->time);
          std::string rowText = dateStr + " " + timeStr;
 
          sketch.arduino.println(rowText, Color::GRAY);
@@ -645,8 +648,7 @@ Slider settingsVolumeSlider(
    &settingsVolume,
    0,
    SETTINGS_SLIDER_Y,
-   0,
-   SETTINGS_SLIDER_HEIGHT);
+   0);
 
 LGFX_Sprite settingsListSprite(&sketch.arduino.display);
 bool settingsListSpriteCreated = false;
@@ -1014,15 +1016,24 @@ constexpr int16_t OPEN_PROMPT_BUTTON_SIDE_MARGIN = 20;
 /// <param name="label">Button text.</param>
 /// <param name="color">Border and text color.</param>
 ///
-void drawOpenPromptButton(Rect16& rect, int16_t top, int16_t height, const char* label, Color color)
+void drawOpenPromptButton(
+   Rect16* rect,
+   int16_t top,
+   int16_t height,
+   const char* label,
+   Color color)
 {
-   rect = Rect16(OPEN_PROMPT_BUTTON_SIDE_MARGIN, top, sketch.arduino.width() - 2 * OPEN_PROMPT_BUTTON_SIDE_MARGIN, height);
+   *rect = Rect16(
+      OPEN_PROMPT_BUTTON_SIDE_MARGIN,
+      top,
+      sketch.arduino.width() - 2 * OPEN_PROMPT_BUTTON_SIDE_MARGIN,
+      height);
 
-   sketch.arduino.display.drawRoundRect(rect.left(), rect.top(), rect.width, rect.height, 8, (uint16_t)color);
+   sketch.arduino.display.drawRoundRect(rect->left(), rect->top(), rect->width, rect->height, 8, (uint16_t)color);
 
    sketch.arduino.setTextSize(OPEN_PROMPT_BUTTON_TEXT_SIZE);
-   sketch.arduino.setCursor(rect.left(), rect.top() + (rect.height - sketch.arduino.charH(OPEN_PROMPT_BUTTON_TEXT_SIZE)) / 2);
-   sketch.arduino.printlnC(label, color, Color::BLACK);
+   sketch.arduino.setCursor(rect->left(), rect->top() + (rect->height - sketch.arduino.charH(OPEN_PROMPT_BUTTON_TEXT_SIZE)) / 2);
+   sketch.arduino.printlnC(label, color);
 }
 
 ///
@@ -1037,18 +1048,18 @@ void displayOpenPrompt()
 
    sketch.arduino.setTextSize(OPEN_PROMPT_TITLE_TEXT_SIZE);
    sketch.arduino.setCursor(0, OPEN_PROMPT_TITLE_TOP_MARGIN);
-   sketch.arduino.printlnC("Open gate?", Color::HEADING, Color::BLACK);
+   sketch.arduino.printlnC("Open gate?", Color::HEADING);
 
    int16_t buttonHeight = sketch.arduino.charH(OPEN_PROMPT_BUTTON_TEXT_SIZE) + 2 * OPEN_PROMPT_BUTTON_GAP;
    int16_t top = OPEN_PROMPT_TITLE_TOP_MARGIN + sketch.arduino.charH(OPEN_PROMPT_TITLE_TEXT_SIZE) + OPEN_PROMPT_BUTTON_GAP;
 
-   drawOpenPromptButton(openPromptOpenRect, top, buttonHeight, "OPEN", Color::GRAY);
+   drawOpenPromptButton(&openPromptOpenRect, top, buttonHeight, "OPEN", Color::GRAY);
    top += buttonHeight + OPEN_PROMPT_BUTTON_GAP;
 
-   drawOpenPromptButton(openPromptHoldRect, top, buttonHeight, "HOLD OPEN", Color::GRAY);
+   drawOpenPromptButton(&openPromptHoldRect, top, buttonHeight, "HOLD OPEN", Color::GRAY);
    top += buttonHeight + OPEN_PROMPT_BUTTON_GAP;
 
-   drawOpenPromptButton(openPromptCancelRect, top, buttonHeight, "CANCEL", Color::GRAY);
+   drawOpenPromptButton(&openPromptCancelRect, top, buttonHeight, "CANCEL", Color::GRAY);
 }
 
 ///
@@ -1058,6 +1069,7 @@ void displayOpenPrompt()
 /// <param name="rect">Tap target to test.</param>
 /// <param name="x">Touch x coordinate.</param>
 /// <param name="y">Touch y coordinate.</param>
+/// <returns>True if the touch point is inside the rect.</returns>
 ///
 bool inRect(const Rect16& rect, int16_t x, int16_t y)
 {
@@ -1083,7 +1095,7 @@ void drawHoldSubtext()
 
    sketch.arduino.setTextSize(2);
    sketch.arduino.setCursor(0, GATE_STATE_TOP_MARGIN + sketch.arduino.charH(GATE_STATE_TEXT_SIZE));
-   sketch.arduino.printlnC(gateHeldOpen ? HOLD_SUBTEXT_CLOSE : HOLD_SUBTEXT_OPEN, Color::GRAY, Color::BLACK);
+   sketch.arduino.printlnC(gateHeldOpen ? HOLD_SUBTEXT_CLOSE : HOLD_SUBTEXT_OPEN, Color::GRAY);
 
    sketch.arduino.setTextSize(savedTextSize);
    sketch.arduino.setCursor(savedCursor);
@@ -1112,8 +1124,8 @@ const char* openTitle(int8_t motion)
 
 bool gateDisplayedIsOpen = false;
 int8_t gateDisplayedMotion = 0;
-extern float leftValue;
-extern float rightValue;
+float leftValue = NAN;
+float rightValue = NAN;
 
 #ifdef ARDUINO_BATTERY_SUPPORTED
 Format batteryPercentFormat("###%");
@@ -1157,11 +1169,11 @@ void displayBattery(bool forceRedraw = false)
 
    if (currentPercent >= 0)
    {
-      sketch.arduino.print((float)currentPercent, batteryPercentFormat, Color::GRAY, Color::BLACK);
+      sketch.arduino.print((float)currentPercent, batteryPercentFormat, Color::GRAY);
    }
    else if (!forceRedraw)
    {
-      sketch.arduino.print("    ", Color::GRAY, Color::BLACK);
+      sketch.arduino.print("    ", Color::GRAY);
    }
 
    sketch.arduino.setTextSize(savedTextSize);
@@ -1190,7 +1202,7 @@ void showOpeningPending()
    sketch.arduino.fillRect(0, titleY, sketch.arduino.width(), sketch.arduino.charH(GATE_STATE_TEXT_SIZE), Color::BLACK);
 #endif
    sketch.arduino.setCursor(0, titleY);
-   sketch.arduino.printlnC("OPENING", Color::GRAY, Color::BLACK);
+   sketch.arduino.printlnC("OPENING", Color::GRAY);
 
 #ifdef ARDUINO_BATTERY_SUPPORTED
    displayBattery(true);
@@ -1207,7 +1219,7 @@ void showOpeningPending()
 /// open, so every viewer shows "HELD OPEN" regardless of which one started the hold. Repaints
 /// the title and hint only when the held state changes.
 /// </summary>
-/// <param name="isOpen">True if the gate is open and stationary</param>
+/// <param name="isOpen">True if the gate is open and stationary.</param>
 ///
 void pollGateHold(bool isOpen)
 {
@@ -1226,11 +1238,11 @@ void pollGateHold(bool isOpen)
    http.setTimeout(HOLD_POLL_TIMEOUT_MS);
    http.begin(url);
    int code = http.GET();
-   String body = (code == 200) ? http.getString() : String();
+   String body = (code == HTTP_CODE_OK) ? http.getString() : String();
    http.end();
 
    static bool pollFailing = false;
-   if (code != 200)
+   if (code != HTTP_CODE_OK)
    {
       if (!pollFailing)
       {
@@ -1261,7 +1273,7 @@ void pollGateHold(bool isOpen)
    sketch.arduino.setTextSize(GATE_STATE_TEXT_SIZE);
    sketch.arduino.fillRect(0, GATE_STATE_TOP_MARGIN, sketch.arduino.width(), sketch.arduino.charH(GATE_STATE_TEXT_SIZE), Color::BLACK);
    sketch.arduino.setCursor(0, GATE_STATE_TOP_MARGIN);
-   sketch.arduino.printlnC(openTitle(gateDisplayedMotion), Color::GRAY, Color::BLACK);
+   sketch.arduino.printlnC(openTitle(gateDisplayedMotion), Color::GRAY);
    drawHoldSubtext();
 #ifdef ARDUINO_BATTERY_SUPPORTED
    displayBattery(true);
@@ -1317,33 +1329,33 @@ void displayGateState(bool isOpen, bool forceRedraw = false, int8_t motion = 0)
       // Only the OPEN/OPENING/CLOSING title changed, so repaint just that row.
 #ifdef ARDUINO_TOUCH_SUPPORTED
       int16_t titleY = GATE_STATE_TOP_MARGIN;
+      sketch.arduino.fillRect(0, 0, sketch.arduino.width(), GATE_STATE_TOP_MARGIN + sketch.arduino.charH(GATE_STATE_TEXT_SIZE) + sketch.arduino.charH(2), Color::BLACK);
 #else
       int16_t titleY = (GATE_STATE_TOP_MARGIN + GATE_STATE_BOTTOM_MARGIN) / 2;
-#endif
       sketch.arduino.fillRect(0, titleY, sketch.arduino.width(), sketch.arduino.charH(GATE_STATE_TEXT_SIZE), Color::BLACK);
+#endif
       sketch.arduino.setCursor(0, titleY);
-                   sketch.arduino.printlnC(openTitle(motion), Color::GRAY, Color::BLACK);
+      sketch.arduino.printlnC(openTitle(motion), Color::GRAY);
 
 #ifdef ARDUINO_BATTERY_SUPPORTED
       displayBattery(true);
 #endif
 
-                   sketch.arduino.setTextSize(savedTextSize);
+      sketch.arduino.setTextSize(savedTextSize);
       sketch.arduino.setCursor(savedCursor);
       return;
    }
 
-   Color backgroundColor = Color::BLACK;
 #ifndef ARDUINO_TOUCH_SUPPORTED
    int16_t rowHeight = GATE_STATE_TOP_MARGIN + sketch.arduino.charH(GATE_STATE_TEXT_SIZE) + GATE_STATE_BOTTOM_MARGIN;
 #endif
-   sketch.arduino.fillRect(0, 0, sketch.arduino.width(), sketch.arduino.height(), backgroundColor);
+   sketch.arduino.fillRect(0, 0, sketch.arduino.width(), sketch.arduino.height(), Color::BLACK);
 
    if (isOpen)
    {
 #ifdef ARDUINO_TOUCH_SUPPORTED
       sketch.arduino.setCursor(0, GATE_STATE_TOP_MARGIN);
-      sketch.arduino.printlnC(openTitle(motion), Color::GRAY, Color::BLACK);
+      sketch.arduino.printlnC(openTitle(motion), Color::GRAY);
 
       drawHoldSubtext();
 
@@ -1351,7 +1363,7 @@ void displayGateState(bool isOpen, bool forceRedraw = false, int8_t motion = 0)
       holdButtonRect = Rect16(0, 0, sketch.arduino.width(), sketch.arduino.height() * 3 / 4);
 #else
       sketch.arduino.setCursor(0, (rowHeight - sketch.arduino.charH(GATE_STATE_TEXT_SIZE)) / 2);
-      sketch.arduino.printlnC(openTitle(motion), Color::GRAY, Color::BLACK);
+      sketch.arduino.printlnC(openTitle(motion), Color::GRAY);
 #endif
 
       gateStateRect = { 0, 0, 0, 0 };
@@ -1359,7 +1371,7 @@ void displayGateState(bool isOpen, bool forceRedraw = false, int8_t motion = 0)
    else
    {
       sketch.arduino.setCursor(0, GATE_STATE_TOP_MARGIN);
-      sketch.arduino.printlnC("CLOSED", Color::GRAY, Color::BLACK);
+      sketch.arduino.printlnC("CLOSED", Color::GRAY);
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
       // Tappable area spans the full width, from the top down to halfway down the display.
@@ -1367,7 +1379,7 @@ void displayGateState(bool isOpen, bool forceRedraw = false, int8_t motion = 0)
 
       sketch.arduino.setTextSize(2);
       sketch.arduino.moveCursorY(-4);
-      sketch.arduino.printlnC("Tap to open", Color::GRAY, Color::BLACK);
+      sketch.arduino.printlnC("Tap to open", Color::GRAY);
 #else
       gateStateRect = { 0, 0, 0, 0 };
 #endif
@@ -1377,7 +1389,7 @@ void displayGateState(bool isOpen, bool forceRedraw = false, int8_t motion = 0)
 
    sketch.arduino.setTextSize(2);
    sketch.arduino.setCursor(sketch.arduino.width(), sketch.arduino.height() - sketch.arduino.charH());
-   sketch.arduino.printR(VERSION, Color::DARKGRAY, backgroundColor);
+   sketch.arduino.printR(VERSION, Color::DARKGRAY);
 
 #ifdef ARDUINO_BATTERY_SUPPORTED
    displayBattery(true);
@@ -1392,6 +1404,7 @@ void displayGateState(bool isOpen, bool forceRedraw = false, int8_t motion = 0)
 /// Draws a gate's azimuth line anchored at its origin below the value text, with a
 /// fixed length (see lineLength) and an angle matching the given azimuth. Only
 /// redraws (erasing the previous line first) when the azimuth has actually changed.
+///
 /// The line and origin circle are always drawn in white on black; the open state is
 /// shown by inverting the panel.
 /// </summary>
@@ -1399,50 +1412,51 @@ void displayGateState(bool isOpen, bool forceRedraw = false, int8_t motion = 0)
 /// <param name="azimuth">Angle in degrees (0-360); for non-mirrored lines 0 points right and
 /// 90 points up, while mirrored lines (see LineState::mirrorX) point left at 0 and still up
 /// at 90.</param>
+/// <returns>True if the line endpoint changed and should be rendered.</returns>
 ///
-bool displayLine(LineState& line, float azimuth)
+bool displayLine(LineState* line, float azimuth)
 {
    constexpr float MIN_REDRAW_DEGREES = 0.1f;
-   if (!isnan(line.lastAzimuth) && fabsf(azimuth - line.lastAzimuth) <= MIN_REDRAW_DEGREES)
+   if (!isnan(line->lastAzimuth) && fabsf(azimuth - line->lastAzimuth) <= MIN_REDRAW_DEGREES)
    {
       return false;
    }
 
    float azimuthRad = azimuth * (float)M_PI / 180.0f;
-   float xDir = line.mirrorX ? -cos(azimuthRad) : cos(azimuthRad);
+   float xDir = line->mirrorX ? -cos(azimuthRad) : cos(azimuthRad);
    float yDir = sin(azimuthRad);
-   int16_t startX = line.startX + (int16_t)lround(gateOriginRadius * xDir);
+   int16_t startX = line->startX + (int16_t)lround(gateOriginRadius * xDir);
    int16_t startY = gateOriginY - (int16_t)lround(gateOriginRadius * yDir);
-   int16_t endX = line.startX + (int16_t)lround(lineLength * xDir);
+   int16_t endX = line->startX + (int16_t)lround(lineLength * xDir);
    int16_t endY = gateOriginY - (int16_t)lround(lineLength * yDir);
 
    // Region that changed: bounds of the old and new line, padded for line width and
    // antialiasing. A full push is used when there's no previous line to compare with
    // (e.g. first draw, or after the background was repainted).
    constexpr int16_t DIRTY_PAD = 4;
-   line.fullPush = isnan(line.lastAzimuth) || !line.lineDrawn;
+   line->fullPush = isnan(line->lastAzimuth) || !line->lineDrawn;
    int16_t minX = min<int16_t>(startX, endX);
    int16_t maxX = max<int16_t>(startX, endX);
    int16_t minY = min<int16_t>(startY, endY);
    int16_t maxY = max<int16_t>(startY, endY);
-   if (line.lineDrawn)
+   if (line->lineDrawn)
    {
-      minX = min<int16_t>(minX, min<int16_t>(line.lastStartX, line.lastEndX));
-      maxX = max<int16_t>(maxX, max<int16_t>(line.lastStartX, line.lastEndX));
-      minY = min<int16_t>(minY, min<int16_t>(line.lastStartY, line.lastEndY));
-      maxY = max<int16_t>(maxY, max<int16_t>(line.lastStartY, line.lastEndY));
+      minX = min<int16_t>(minX, min<int16_t>(line->lastStartX, line->lastEndX));
+      maxX = max<int16_t>(maxX, max<int16_t>(line->lastStartX, line->lastEndX));
+      minY = min<int16_t>(minY, min<int16_t>(line->lastStartY, line->lastEndY));
+      maxY = max<int16_t>(maxY, max<int16_t>(line->lastStartY, line->lastEndY));
    }
-   line.dirtyLeft = minX - DIRTY_PAD;
-   line.dirtyTop = minY - DIRTY_PAD;
-   line.dirtyRight = maxX + DIRTY_PAD;
-   line.dirtyBottom = maxY + DIRTY_PAD;
+   line->dirtyLeft = minX - DIRTY_PAD;
+   line->dirtyTop = minY - DIRTY_PAD;
+   line->dirtyRight = maxX + DIRTY_PAD;
+   line->dirtyBottom = maxY + DIRTY_PAD;
 
-   line.lastStartX = startX;
-   line.lastStartY = startY;
-   line.lastEndX = endX;
-   line.lastEndY = endY;
-   line.lineDrawn = true;
-   line.lastAzimuth = azimuth;
+   line->lastStartX = startX;
+   line->lastStartY = startY;
+   line->lastEndX = endX;
+   line->lastEndY = endY;
+   line->lineDrawn = true;
+   line->lastAzimuth = azimuth;
    return true;
 }
 
@@ -1454,15 +1468,16 @@ bool displayLine(LineState& line, float azimuth)
 /// </summary>
 /// <param name="line">Gate line state to render (mirrorX identifies the right gate).</param>
 ///
-void renderLine(LineState& line)
+void renderLine(const LineState* line)
 {
-   static DirtySprite sprites[2];
+   static constexpr uint8_t NUM_GATE_SPRITES = 2;
+   static std::array<DirtySprite, NUM_GATE_SPRITES> sprites;
 
    const int16_t displayWidth = sketch.arduino.width();
    const int16_t halfWidth = displayWidth / 2;
-   const int16_t x0 = line.mirrorX ? halfWidth : 0;
-   const int16_t width = line.mirrorX ? displayWidth - halfWidth : halfWidth;
-   DirtySprite& dirtySprite = sprites[line.mirrorX ? 1 : 0];
+   const int16_t x0 = line->mirrorX ? halfWidth : 0;
+   const int16_t width = line->mirrorX ? displayWidth - halfWidth : halfWidth;
+   DirtySprite* dirtySprite = &sprites[line->mirrorX ? 1 : 0];
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
    const int16_t minTop = 0;
@@ -1473,29 +1488,32 @@ void renderLine(LineState& line)
 #endif
    const int16_t top = max<int16_t>(minTop, gateOriginY - lineLength - 4);
    const int16_t bottom = min<int16_t>(sketch.arduino.height(), gateOriginY + gateOriginRadius + 2);
-   dirtySprite.begin(&sketch.arduino.display, x0, top, width, bottom - top);
+   dirtySprite->begin(&sketch.arduino.display, x0, top, width, bottom - top);
 
-   lgfx::LGFX_Sprite* sprite = dirtySprite.sprite();
+   lgfx::LGFX_Sprite* sprite = dirtySprite->sprite();
    sprite->fillSprite((uint16_t)Color::BLACK);
-   dirtySprite.drawAntialiasedRing(line.startX - x0, gateOriginY - top, gateOriginRadius, GATE_CIRCLE_THICKNESS);
+   dirtySprite->drawAntialiasedRing(line->startX - x0, gateOriginY - top, gateOriginRadius, GATE_CIRCLE_THICKNESS);
 
-   if (line.lineDrawn)
+   if (line->lineDrawn)
    {
-      sprite->drawWideLine(line.lastStartX - x0, line.lastStartY - top, line.lastEndX - x0, line.lastEndY - top, GATE_LINE_RADIUS, (uint16_t)Color::WHITE);
+      sprite->drawWideLine(
+         line->lastStartX - x0,
+         line->lastStartY - top,
+         line->lastEndX - x0,
+         line->lastEndY - top,
+         GATE_LINE_RADIUS,
+         (uint16_t)Color::WHITE);
    }
 
-   if (line.fullPush)
+   if (line->fullPush)
    {
-      dirtySprite.push();
+      dirtySprite->push();
    }
    else
    {
-      dirtySprite.push(line.dirtyLeft, line.dirtyTop, line.dirtyRight, line.dirtyBottom);
+      dirtySprite->push(line->dirtyLeft, line->dirtyTop, line->dirtyRight, line->dirtyBottom);
    }
 }
-
-float leftValue = NAN;
-float rightValue = NAN;
 
 ///
 /// <summary>
@@ -1513,10 +1531,22 @@ public:
    // "Telemetry... OK" init line printed during setup() is never wiped mid-init
    bool needsInitialClear = false;
 
+   ///
+   /// <summary>
+   /// Initializes a new instance of the GateTelemetryHandler class.
+   /// </summary>
+   /// <param name="status">Status indicator interface.</param>
+   ///
    explicit GateTelemetryHandler(IStatus* status) : TelemetryEventHandler(status, &sketch.arduino)
    {
    }
 
+   ///
+   /// <summary>
+   /// Called when the telemetry connection is started; initializes gate line geometry and
+   /// subscribes to both gate topics on the first connection.
+   /// </summary>
+   ///
    void onStarted() override
    {
       TelemetryEventHandler::onStarted();
@@ -1548,8 +1578,13 @@ GateTelemetryHandler telemetryHandler(sketch.getStatus());
 bool needsFullRedraw = false;
 
 #ifdef ARDUINO_SOUND_SUPPORTED
-/// <summary>Commands registered with DeviceServerClient, appended to the "Help" command's listing.</summary>
-constexpr DeviceServerClient::CommandInfo SOUND_COMMANDS[] = {
+///
+/// <summary>
+/// Commands registered with DeviceServerClient, appended to the "Help" command's listing.
+/// </summary>
+///
+constexpr uint8_t NUM_SOUND_COMMANDS = 9;
+const std::array<DeviceServerClient::CommandInfo, NUM_SOUND_COMMANDS> SOUND_COMMANDS = {{
    { "GetState", "Reports the current gate state (CLOSED, OPEN, OPENING, CLOSING, or HELD OPEN) and left/right angles", { "gs" } },
    {
       "PlaySound",
@@ -1580,7 +1615,7 @@ constexpr DeviceServerClient::CommandInfo SOUND_COMMANDS[] = {
    },
    { "GetHistory", "Reports recorded gate-opening timestamps, most recent first" },
    { "ClearHistory", "Clears all recorded gate-opening timestamps", { "ch" }, {}, true },
-};
+}};
 
 ///
 /// <summary>
@@ -1730,9 +1765,9 @@ void onSoundCommand(const char* command)
                text += "\n";
             }
 
-            const GateOpenRecord& record = gateOpenHistory.get(i);
+            const GateOpenRecord* record = gateOpenHistory.get(i);
             struct tm timeInfo;
-            localtime_r(&record.time, &timeInfo);
+            localtime_r(&record->time, &timeInfo);
 
             char timeBuffer[32];
             strftime(timeBuffer, sizeof(timeBuffer), "%Y-%m-%d %H:%M:%S", &timeInfo);
@@ -1766,7 +1801,7 @@ void setup()
 
    if (gateOpenHistory.count() > 0)
    {
-      lastGateOpenTime = gateOpenHistory.get(0).time;
+      lastGateOpenTime = gateOpenHistory.get(0)->time;
    }
 
 #ifdef ARDUINO_SOUND_SUPPORTED
@@ -1780,7 +1815,7 @@ void setup()
 
 #ifdef ARDUINO_SOUND_SUPPORTED
    Serial.printf("Loaded volume=%f soundIndex=%u\n", sketch.arduino.sound.volume, sketch.arduino.sound.soundIndex);
-   DeviceServerClient::onCommand(onSoundCommand, SOUND_COMMANDS, std::size(SOUND_COMMANDS));
+   DeviceServerClient::onCommand(onSoundCommand, SOUND_COMMANDS.data(), NUM_SOUND_COMMANDS);
 #endif
 
    TelemetrySubscriber* client = sketch.beginTelemetry(LEFT_TELEMETRY_TOPIC, &telemetryHandler);
@@ -1789,11 +1824,11 @@ void setup()
       if (topic == LEFT_TELEMETRY_TOPIC)
       {
          leftValue = (float)value;
-               }
+      }
       else if (topic == RIGHT_TELEMETRY_TOPIC)
       {
          rightValue = (float)value;
-               }
+      }
    });
 
    sketch.completeInitialization();
@@ -1821,7 +1856,7 @@ void loop()
       sketch.arduino.clearDisplay();
    }
 
-   #ifdef ARDUINO_TOUCH_SUPPORTED
+#ifdef ARDUINO_TOUCH_SUPPORTED
    lgfx::touch_point_t touchPoint;
    bool touched = sketch.arduino.display.getTouch(&touchPoint) > 0;
 
@@ -1840,13 +1875,14 @@ void loop()
    // ~630 ms from relay on to the first reported movement) before the gate starts moving, so
    // the viewer can't show movement sooner. Because of that, after a tap the panel is shown
    // as opening right away (openPending) rather than waiting for the angle to change.
+   constexpr float OPEN_PENDING_TIMEOUT_S = 10.0f;
    static bool openPending = false;
-   static TimerSecs openPendingTimer(10.0f);
+   static TimerSecs openPendingTimer(OPEN_PENDING_TIMEOUT_S);
 
    bool forceRedraw = needsFullRedraw;
    needsFullRedraw = false;
 
-   #ifdef SETTINGS_SUPPORTED
+#ifdef SETTINGS_SUPPORTED
    static bool showingSettings = false;
    if (showingSettings)
    {
@@ -1862,7 +1898,7 @@ void loop()
          return;
       }
    }
-   #endif
+#endif
 
    if (showingHistory)
    {
@@ -1879,7 +1915,7 @@ void loop()
       }
    }
 
-   #ifdef ARDUINO_TOUCH_SUPPORTED
+#ifdef ARDUINO_TOUCH_SUPPORTED
    if (showingOpenPrompt)
    {
       if (tapped && inRect(openPromptOpenRect, touchPoint.x, touchPoint.y))
@@ -1931,16 +1967,16 @@ void loop()
    // After a tap the gate is expected to move, so any reported movement counts as open.
 
    // A resting gate jitters around a degree or so, so the gate is not declared open by an angle.
-   // It opens only after a sustained rise (GATE_OPEN_RISE_DEGREES within GATE_OPEN_RISE_WINDOW_MS)
+   // It opens only after a sustained rise (GATE_OPEN_RISE_DEGREES within GATE_OPEN_RISE_SPAN_MS)
    // above the recent low, and it closes once the angle falls below the larger
    // GATE_CLOSE_DEGREES. After a tap, any reported angle above 0 counts as open.
    constexpr float GATE_CLOSE_DEGREES = 3.0f;
    constexpr float GATE_OPEN_RISE_DEGREES = 2.0f;
-   constexpr uint32_t GATE_OPEN_RISE_WINDOW_MS = 1000;
+   constexpr uint32_t GATE_OPEN_RISE_SPAN_MS = 1000;
+   constexpr uint32_t GATE_CLOSE_GRACE_S = 10;
    static bool lastIsOpen = false;
    static bool reachedCloseAngle = false;
    static uint32_t openedMs = 0;
-   constexpr uint32_t GATE_CLOSE_GRACE_MS = 10000;
    static float riseBaseline = NAN;
    static uint32_t riseBaselineMs = 0;
 
@@ -1953,15 +1989,15 @@ void loop()
    {
       if (lastIsOpen)
       {
-            riseBaseline = NAN;
-            // A gate that just opened starts below the close angle, so it can't close until it
-            // has first passed that angle (or the grace period expires).
-            if (peakAzimuth >= GATE_CLOSE_DEGREES)
-            {
-               reachedCloseAngle = true;
-            }
-            isOpen = peakAzimuth >= GATE_CLOSE_DEGREES || (!reachedCloseAngle && millis() - openedMs < GATE_CLOSE_GRACE_MS);
+         riseBaseline = NAN;
+         // A gate that just opened starts below the close angle, so it can't close until it
+         // has first passed that angle (or the grace period expires).
+         if (peakAzimuth >= GATE_CLOSE_DEGREES)
+         {
+            reachedCloseAngle = true;
          }
+         isOpen = peakAzimuth >= GATE_CLOSE_DEGREES || (!reachedCloseAngle && millis() - openedMs < GATE_CLOSE_GRACE_S * 1000);
+      }
       else if (openPending)
       {
          isOpen = peakAzimuth > 0.0f;
@@ -1969,20 +2005,20 @@ void loop()
       else
       {
          uint32_t nowMs = millis();
-         if (isnan(riseBaseline) || peakAzimuth < riseBaseline || nowMs - riseBaselineMs > GATE_OPEN_RISE_WINDOW_MS)
+         if (isnan(riseBaseline) || peakAzimuth < riseBaseline || nowMs - riseBaselineMs > GATE_OPEN_RISE_SPAN_MS)
          {
             riseBaseline = peakAzimuth;
             riseBaselineMs = nowMs;
          }
-               isOpen = peakAzimuth - riseBaseline >= GATE_OPEN_RISE_DEGREES;
-            }
+         isOpen = peakAzimuth - riseBaseline >= GATE_OPEN_RISE_DEGREES;
+      }
 
-            if (isOpen && !lastIsOpen)
-            {
-               reachedCloseAngle = false;
-               openedMs = millis();
-            }
-         }
+      if (isOpen && !lastIsOpen)
+      {
+         reachedCloseAngle = false;
+         openedMs = millis();
+      }
+   }
 
    if (!isOpen && !openPending)
    {
@@ -2045,67 +2081,66 @@ void loop()
          gateOpenHistory.add(lastGateOpenTime);
       }
 
-      #ifdef ARDUINO_SOUND_SUPPORTED
+#ifdef ARDUINO_SOUND_SUPPORTED
       if (isOpen && !lastIsOpen && everDrawn)
       {
          sketch.arduino.sound.playNotificationAsync(2);
       }
-      #endif
+#endif
 
       lastIsOpen = isOpen;
       everDrawn = true;
    }
 
    displayGateState(isOpen, forceRedraw, isOpen ? motion : 0);
-   displayFooterAzimuths(leftAzimuth, rightAzimuth);
+   displayFooterAzimuths();
 #ifdef ARDUINO_BATTERY_SUPPORTED
    displayBattery(forceRedraw);
 #endif
 
-       if (stateChanged)
-       {
-                 sketch.arduino.display.invertDisplay(isOpen);
-              }
+   if (stateChanged)
+   {
+      sketch.arduino.display.invertDisplay(isOpen);
+   }
 
-          // After an open request the panel is inverted right away, in anticipation of the gate
-          // moving. If the gate still isn't reported open after the timeout, revert.
-          if (openPending && (isOpen || openPendingTimer.ready()))
-          {
-             openPending = false;
-             if (!isOpen)
-             {
-                sketch.arduino.display.invertDisplay(false);
-                displayGateState(false, true);
-                leftLine.lastAzimuth = NAN;
-                                 rightLine.lastAzimuth = NAN;
-                              }
-                           }
+   // After an open request the panel is inverted right away, in anticipation of the
+   // gate moving. If the gate still isn't reported open after the timeout, revert.
+   if (openPending && (isOpen || openPendingTimer.ready()))
+   {
+      openPending = false;
+      if (!isOpen)
+      {
+         sketch.arduino.display.invertDisplay(false);
+         displayGateState(false, true);
+         leftLine.lastAzimuth = NAN;
+         rightLine.lastAzimuth = NAN;
+      }
+   }
 
-                #ifdef SETTINGS_SUPPORTED
-                           // The gear is only shown while the gate is closed and no open request is pending.
-                           // A full redraw (stateChanged) erases it, so redraw it whenever it should be visible.
-                           bool wantGear = !isOpen && motion == 0 && !openPending;
-                           if (wantGear != gearVisible || (stateChanged && wantGear))
-                           {
-                              updateGear(wantGear);
-                           }
-                #endif
+#ifdef SETTINGS_SUPPORTED
+   // The gear is only shown while the gate is closed and no open request is pending.
+   // A full redraw (stateChanged) erases it, so redraw it whenever it should be visible.
+   bool wantGear = !isOpen && motion == 0 && !openPending;
+   if (wantGear != gearVisible || (stateChanged && wantGear))
+   {
+      updateGear(wantGear);
+   }
+#endif
 
-       #ifdef ARDUINO_TOUCH_SUPPORTED
-   #ifdef SETTINGS_SUPPORTED
-       if (tapped && motion == 0 && !openPending && onGear(touchPoint.x, touchPoint.y))
-       {
-          showingSettings = true;
-          sketch.arduino.display.invertDisplay(false);
-          settingsListFirst = 0;
-          displaySettingsView();
-          return;
-       }
-   #endif
+#ifdef ARDUINO_TOUCH_SUPPORTED
+#ifdef SETTINGS_SUPPORTED
+   if (tapped && motion == 0 && !openPending && onGear(touchPoint.x, touchPoint.y))
+   {
+      showingSettings = true;
+      sketch.arduino.display.invertDisplay(false);
+      settingsListFirst = 0;
+      displaySettingsView();
+      return;
+   }
+#endif
 
-       if (tapped && motion == 0 && !openPending && lastOpenFooterVisible &&
-       touchPoint.x >= lastOpenFooterRect.left() && touchPoint.x < lastOpenFooterRect.right() &&
-       touchPoint.y >= lastOpenFooterRect.top() && touchPoint.y < lastOpenFooterRect.bottom())
+   if (tapped && motion == 0 && !openPending && lastOpenFooterVisible &&
+       inRect(lastOpenFooterRect, touchPoint.x, touchPoint.y))
    {
       showingHistory = true;
       sketch.arduino.display.invertDisplay(false);
@@ -2115,15 +2150,14 @@ void loop()
    }
 
    if (tapped && isOpen && holdButtonRect.right() > holdButtonRect.left() &&
-       touchPoint.x >= holdButtonRect.left() && touchPoint.x < holdButtonRect.right() &&
-       touchPoint.y >= holdButtonRect.top() && touchPoint.y < holdButtonRect.bottom())
+       inRect(holdButtonRect, touchPoint.x, touchPoint.y))
    {
       gateHeldOpen = !gateHeldOpen;
       postGateCommand(gateHeldOpen ? "HOLD" : "CLOSE");
       sketch.arduino.setTextSize(GATE_STATE_TEXT_SIZE);
       sketch.arduino.fillRect(0, GATE_STATE_TOP_MARGIN, sketch.arduino.width(), sketch.arduino.charH(GATE_STATE_TEXT_SIZE), Color::BLACK);
       sketch.arduino.setCursor(0, GATE_STATE_TOP_MARGIN);
-      sketch.arduino.printlnC(openTitle(gateDisplayedMotion), Color::GRAY, Color::BLACK);
+      sketch.arduino.printlnC(openTitle(gateDisplayedMotion), Color::GRAY);
       drawHoldSubtext();
 #ifdef ARDUINO_BATTERY_SUPPORTED
       displayBattery(true);
@@ -2136,34 +2170,32 @@ void loop()
 #endif
    }
 
-      pollGateHold(isOpen && motion == 0);
+   pollGateHold(isOpen && motion == 0);
 
-      if (tapped && !isOpen &&
-       touchPoint.x >= gateStateRect.left() && touchPoint.x < gateStateRect.right() &&
-           touchPoint.y >= gateStateRect.top() && touchPoint.y < gateStateRect.bottom())
-              {
-                 showingOpenPrompt = true;
-                 displayOpenPrompt();
-          }
-       #else
-           // No touch hardware on this board: use button A to open the gate instead.
-           if (sketch.arduino.buttonA.wasPressed() && !isOpen)
-           {
-              sketch.arduino.display.invertDisplay(true);
-              openPending = true;
-              openPendingTimer.reset();
-              showOpeningPending();
-              postGateOpen();
-           }
+   if (tapped && !isOpen && inRect(gateStateRect, touchPoint.x, touchPoint.y))
+   {
+      showingOpenPrompt = true;
+      displayOpenPrompt();
+   }
+#else
+   // No touch hardware on this board: use button A to open the gate instead.
+   if (sketch.arduino.buttonA.wasPressed() && !isOpen)
+   {
+      sketch.arduino.display.invertDisplay(true);
+      openPending = true;
+      openPendingTimer.reset();
+      showOpeningPending();
+      postGateOpen();
+   }
 #endif
 
-   if (!isnan(displayLeftAzimuth) && displayLine(leftLine, displayLeftAzimuth))
+   if (!isnan(displayLeftAzimuth) && displayLine(&leftLine, displayLeftAzimuth))
    {
-      renderLine(leftLine);
+      renderLine(&leftLine);
    }
 
-   if (!isnan(displayRightAzimuth) && displayLine(rightLine, displayRightAzimuth))
+   if (!isnan(displayRightAzimuth) && displayLine(&rightLine, displayRightAzimuth))
    {
-      renderLine(rightLine);
+      renderLine(&rightLine);
    }
 }

@@ -12,6 +12,10 @@
 //   Make Digits Monospace: True
 //
 
+#if !defined(TEXT_SIZES_ALL) && !defined(TEXT_SIZES_CUSTOM)
+#define TEXT_SIZES_CUSTOM
+#endif
+
 #if !defined(TEXT_SIZES_CUSTOM) || defined(TEXT_SIZE_1)
 const uint8_t RobotoMonoBold_8[] PROGMEM = {
 0x00, 0x00, 0x00, 0x5E, 0x00, 0x00, 0x00, 0x0B, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 

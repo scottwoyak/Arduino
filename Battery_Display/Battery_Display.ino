@@ -9,6 +9,8 @@
 #include <Arduino.h>
 #include <cmath>
 
+#include <Adafruit_INA219.h>
+
 #include "ArduinoBoard.h"
 
 #if !defined(ARDUINO_DISPLAY_SUPPORTED) || !defined(ARDUINO_BATTERY_SUPPORTED)
@@ -47,9 +49,9 @@ void setup()
 
    table.setPosition(0, arduino.getCursorY());
    table.addRow("Volts:", "#.##v");
+   table.addRow("Current:", "+####.#mA");
    table.addRow("Charge:", "##########");
    table.addRow("State:", "###########");
-   table.addRow("Rate:", "+###%/hr");
 
    Serial.println("Battery Display - Ready");
 }
@@ -58,11 +60,11 @@ void loop()
 {
    float rawVolts = arduino.battery.readVolts();
    float avgVolts = arduino.battery.readAverageVolts();
+   float avgCurrentMa = arduino.battery.readAverageCurrentMa();
+   bool hasCurrent = isfinite(avgCurrentMa);
    bool connected = arduino.battery.isConnected();
    float avgPercent = connected ? arduino.battery.readAveragePercent() : NAN;
    BatteryChargingState chargingState = arduino.battery.readChargingState();
-   float chargeRate = arduino.battery.readChargeRate();
-   bool hasChargeRate = isfinite(chargeRate);
 
    const char* stateText = "Unknown";
    Color stateColor = Color::VALUE;
@@ -88,11 +90,11 @@ void loop()
    {
       const char* charge = !connected ? "No Battery" : "Connected";
       Serial.printf(
-         "[%lus] raw=%.3fV  avg=%.3fV  ripple=%.3fV  charge=%s  state=%s\n",
+         "[%lus] raw=%.3fV  avg=%.3fV  current=%.1fmA  charge=%s  state=%s\n",
          millis() / 1000UL,
          rawVolts,
          avgVolts,
-         arduino.battery.readRippleVolts(),
+         avgCurrentMa,
          charge,
          stateText);
    }
@@ -105,33 +107,33 @@ void loop()
    // Display battery voltage
    table.setValue(0, avgVolts, Color::VALUE);
 
-   // Display battery charge (percentage or No Battery)
-   if (!connected)
+   // Display signed battery current (+mA = charging, -mA = discharging)
+   if (hasCurrent)
    {
-      table.setValue(1, "No Battery", Color::RED);
+      table.setLabelColor(1, Color::LABEL);
+      table.setValue(1, avgCurrentMa, Color::VALUE);
    }
    else
    {
-      table.setValue(1, String((int)roundf(avgPercent)) + "%", Color::VALUE);
+      table.setLabelColor(1, Color::BLACK);
+      table.setValue(1, "", Color::BLACK);
+   }
+
+   // Display battery charge (percentage or No Battery)
+   if (!connected)
+   {
+      table.setValue(2, "No Battery", Color::RED);
+   }
+   else
+   {
+      table.setValue(2, String((int)roundf(avgPercent)) + "%", Color::VALUE);
    }
 
    // Display battery state (Charging, Discharging, Full, Bad Charger, or Unknown)
    if (connected || chargingState == BatteryChargingState::BadCharger)
    {
-      table.setLabelColor(2, Color::LABEL);
-      table.setValue(2, stateText, stateColor);
-   }
-   else
-   {
-      table.setLabelColor(2, Color::BLACK);
-      table.setValue(2, "", Color::BLACK);
-   }
-
-   // Display charge rate when supported by the board's battery monitor
-   if (connected && hasChargeRate)
-   {
       table.setLabelColor(3, Color::LABEL);
-      table.setValue(3, chargeRate, Color::VALUE);
+      table.setValue(3, stateText, stateColor);
    }
    else
    {

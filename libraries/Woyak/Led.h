@@ -471,7 +471,7 @@ private:
       xTaskCreate(
          _taskFunc,     // task function
          "BlinkTask",   // only used for debugging
-         2048,          // stack size (words)
+         4096,          // stack size (bytes)
          this,          // parameter
          1,             // priority
          nullptr);      // task handle (not needed)
@@ -800,12 +800,11 @@ public:
    ///
    virtual void begin() override
    {
-      LED::begin();
-
       if (_strip != nullptr)
       {
          _strip->begin();
          _apply();
+         LED::begin();
          return;
       }
 
@@ -820,7 +819,7 @@ public:
       }
 #endif
 
-      #if defined(ESP32) && ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+#if defined(ESP32) && ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
       // The empty Adafruit_NeoPixel constructor used above (see the comment on
       // _pixel) skips espInit(), which the (n, pin, type) constructor normally
       // calls to create the RMT show_mutex on ESP-IDF >= 5. Without that mutex,
@@ -834,6 +833,11 @@ public:
       _pixel.setPin(_neoPixelPin);
       _pixel.begin();
       _apply(); // start with the led off
+
+      // Start the background blink task only after the pixel buffer and RMT
+      // mutex are fully initialized, so _taskFunc can't race with begin() or
+      // call _apply() before _pixel is ready.
+      LED::begin();
    }
 
    ///

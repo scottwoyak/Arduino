@@ -45,6 +45,8 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <Wire.h>
+
+#define TEXT_SIZE_4
 #include "ArduinoBoard.h"
 #include "Bar.h"
 #include "DisplayValue.h"

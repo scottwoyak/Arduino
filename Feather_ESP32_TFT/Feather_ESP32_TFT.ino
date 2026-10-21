@@ -1,3 +1,4 @@
+#define TEXT_SIZE_5
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_BUTTON_SUPPORTED

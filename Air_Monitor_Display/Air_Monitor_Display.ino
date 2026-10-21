@@ -32,12 +32,6 @@
 //     temperature: the ESP32 CPU temperature at upload time.
 //
 
-// Declares which VLW font sizes this sketch actually uses, so only the needed font data
-// is compiled in. TEXT_SIZE_2 and TEXT_SIZE_3 are always included regardless (see
-// ArduinoWithDisplay.h), since printInitHeader() can pick either one at runtime, and this
-// sketch's own FieldTable also happens to use size 2.
-#define TEXT_SIZES_CUSTOM
-
 #include "ArduinoBoard.h"
 
 #if !defined(ADAFRUIT_FEATHER_M0) && !defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
@@ -356,7 +350,6 @@ static std::string getReadings()
 /// <summary>
 /// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
 /// </summary>
-///
 static constexpr DeviceServerClient::CommandInfo AIR_MONITOR_COMMANDS[] = {
    {
       "ForceCalibration",
@@ -374,7 +367,6 @@ static constexpr DeviceServerClient::CommandInfo AIR_MONITOR_COMMANDS[] = {
 /// Handles the "ForceCalibration" command registered via sketch.setCommandHandler().
 /// </summary>
 /// <param name="command">Full command text received from the DeviceServer.</param>
-///
 static void onAirMonitorCommand(const char* command)
 {
    std::istringstream stream(command);

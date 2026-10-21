@@ -9,15 +9,10 @@
 // it can't be reached.
 // Hold buttonA to suspend drawing the plot, which maximizes the publish rate.
 // Change TEST_SENSOR_TYPE
-// Hardware: Feather ESP32 with WiFi and TFT display.
+// Hardware: Feather ESP32-S3 TFT.
 //
 
 #include <Arduino.h>
-
-// Declares which VLW font sizes this sketch actually uses, so only the needed font data
-// is compiled in. TEXT_SIZE_2 and TEXT_SIZE_3 are always included regardless (see
-// ArduinoWithDisplay.h), and this sketch only ever calls setTextSize(2) and setTextSize(3).
-#define TEXT_SIZES_CUSTOM
 
 #include "ArduinoBoard.h"
 

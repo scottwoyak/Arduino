@@ -1,9 +1,7 @@
-
 #include <TFT_eSPI.h>
 #include "RollingRate.h"
 
 // Only compile in the font sizes this sketch uses, to save flash.
-#define TEXT_SIZES_CUSTOM
 #define TEXT_SIZE_2
 #define TEXT_SIZE_4
 #include "Fonts/Roboto.h"

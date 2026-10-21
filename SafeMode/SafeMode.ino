@@ -16,8 +16,6 @@
 //   restart" checkbox and a "Restart" button.
 //
 
-#define TEXT_SIZES_CUSTOM
-
 #include "ArduinoBoard.h"
 
 #if !defined(ARDUINO_DISPLAY_SUPPORTED) || !defined(ARDUINO_TOUCH_SUPPORTED)

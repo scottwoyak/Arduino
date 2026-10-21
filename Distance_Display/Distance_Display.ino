@@ -14,6 +14,7 @@
 
 #include <Adafruit_VL53L1X.h>
 
+#define TEXT_SIZE_4
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED

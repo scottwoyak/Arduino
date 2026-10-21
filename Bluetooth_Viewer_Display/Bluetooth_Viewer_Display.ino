@@ -7,6 +7,7 @@
 // Runs on ESP32-S3 with a Feather ESP32-S3 TFT display.
 //
 
+#define TEXT_SIZE_5
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED

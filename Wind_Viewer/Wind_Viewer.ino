@@ -23,11 +23,8 @@
 // selected Visual Micro board (that board has no dedicated board package entry).
 //#define ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_43
 
-// Declares which VLW font sizes this sketch actually uses (4 - see MAX_HEADER_TEXT_SIZE
-// below; 2 and 3 are always included regardless, see ArduinoWithDisplay.h), so
-// ArduinoWithDisplay.h/Fonts/Roboto*.h only compile in the needed font data instead of
-// all 7 sizes, reducing flash usage.
-#define TEXT_SIZES_CUSTOM
+// Declares which extra VLW font sizes this sketch actually uses (4 - see MAX_HEADER_TEXT_SIZE
+// below; 2 and 3 are always included regardless, see ArduinoWithDisplay.h).
 #define TEXT_SIZE_4
 
 #include <string>

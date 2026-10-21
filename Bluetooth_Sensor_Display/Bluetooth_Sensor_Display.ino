@@ -8,6 +8,8 @@
 //
 
 #include <Arduino.h>
+
+#define TEXT_SIZE_5
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
@@ -44,6 +46,7 @@ volatile bool connected = false;
 
 int16_t valueY = 0;
 
+///
 ///
 /// <summary>
 /// Callback tracking server connect/disconnect events.

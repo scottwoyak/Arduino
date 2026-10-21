@@ -1,12 +1,12 @@
 #include "LGX_Hosyond_ST7796.h"
+
+// Only compile in the font sizes this sketch uses, to save flash.
+#define TEXT_SIZE_2
+#define TEXT_SIZE_4
 #include "ArduinoWithDisplay.h"
 
 ArduinoWithDisplay arduino;
 
-// Only compile in the font sizes this sketch uses, to save flash.
-#define TEXT_SIZES_CUSTOM
-#define TEXT_SIZE_2
-#define TEXT_SIZE_4
 #include "Fonts/Roboto.h"
 #include "RollingRate.h"
 

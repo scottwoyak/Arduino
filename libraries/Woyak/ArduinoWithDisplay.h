@@ -8,10 +8,16 @@
 
 #include "ArduinoBoardId.h"
 
-// Ensure the board's default heading and text sizes are always compiled in when a sketch
-// opts into a custom, reduced TEXT_SIZE_n list via TEXT_SIZES_CUSTOM (see
-// Fonts/RobotoMonoBold.h/Roboto.h) so printInitHeader() and InitializingDisplay always
-// have their required fonts available at startup.
+// By default, only compile in the board's standard heading and body text sizes (via
+// TEXT_SIZES_CUSTOM) so unused large VLW fonts (sizes 5-7, ~185 KB) are excluded from flash.
+// Sketches that need additional sizes can #define TEXT_SIZE_4, TEXT_SIZE_5, etc. (or
+// #define TEXT_SIZES_ALL) before including ArduinoBoard.h.
+#ifndef TEXT_SIZES_ALL
+#ifndef TEXT_SIZES_CUSTOM
+#define TEXT_SIZES_CUSTOM
+#endif
+#endif
+
 #ifdef TEXT_SIZES_CUSTOM
 #ifndef TEXT_SIZE_2
 #define TEXT_SIZE_2

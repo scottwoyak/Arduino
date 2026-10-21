@@ -4,9 +4,11 @@
 #include <array>
 #include <cmath>
 
+#include <Adafruit_INA219.h>
+#include <Wire.h>
+
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
 #include <Adafruit_MAX1704X.h>
-#include <Wire.h>
 #endif
 
 #if defined(ARDUINO_ARCH_ESP32)
@@ -14,7 +16,7 @@
 #endif
 
 #include "ArduinoBoardId.h"
-#include "TimedAverage.h"
+#include "RollingAverage.h"
 
 ///
 /// <summary>
@@ -131,6 +133,17 @@ private:
 
    static constexpr float MIN_FUEL_GAUGE_CHARGE_RATE = 1.0f;
 
+   // INA219 current-based state thresholds (with VIN+ on Battery+ and VIN- on Board JST+,
+   // discharging current is negative and charging current is positive after sign inversion):
+   // - Current >= +5.0 mA: actively charging (Yes)
+   // - Current <= -5.0 mA: actively discharging (No)
+   // - |Current| < 5.0 mA and voltage >= 4.05V: charge terminated / full (Full)
+   // - |Current| < 2.0 mA and voltage < 2.5V (or no current with float rail): disconnected
+   static constexpr float INA219_CHARGE_CURRENT_THRESHOLD_MA = 5.0f;
+   static constexpr float INA219_DISCHARGE_CURRENT_THRESHOLD_MA = -5.0f;
+   static constexpr float INA219_IDLE_CURRENT_THRESHOLD_MA = 2.0f;
+   static constexpr float INA219_FULL_MIN_VOLTS = 4.05f;
+
    ///
    /// <summary>
    /// Checks whether a measured voltage falls within the valid 1S LiPo operating range.
@@ -234,6 +247,8 @@ private:
    int8_t _pin = DEFAULT_PIN;
    float _voltageDivider = DEFAULT_VOLTAGE_DIVIDER;
    bool _ready = false;
+   bool _hasIna219 = false;
+   bool _hasFuelGauge = false;
    uint32_t _windowStartMs = 0;
    float _windowMinVolts = NAN;
    float _windowMaxVolts = NAN;
@@ -256,91 +271,23 @@ private:
    uint8_t _consecutiveCalmWindows = 0;
    uint8_t _consecutiveRisingWindows = 0;
    uint16_t _plateauFlatWindows = 0;
+   static constexpr size_t SMOOTHING_SAMPLE_COUNT = 10;
+
    float _fullChargeVolts = DEFAULT_FULL_CHARGE_VOLTS;
    float _trendBaselineVolts = NAN;
    BatteryChargingState _adcChargingState = BatteryChargingState::Unknown;
-   TimedAverage _voltsAverage{ RIPPLE_WINDOW_MS };
-   TimedAverage _percentAverage{ RIPPLE_WINDOW_MS };
+   RollingAverage _voltsAverage{ SMOOTHING_SAMPLE_COUNT };
+   RollingAverage _percentAverage{ SMOOTHING_SAMPLE_COUNT };
+   RollingAverage _currentAverage{ SMOOTHING_SAMPLE_COUNT };
+   Adafruit_INA219 _ina219;
 
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
    Adafruit_MAX17048 _fuelGauge;
 #endif
 
-#if defined(ARDUINO_ARCH_ESP32)
-   TimerHandle_t _sampleTimerHandle = nullptr;
-   SemaphoreHandle_t _mutex = nullptr;
-
-   ///
-   /// <summary>
-   /// Acquires the reentrant mutex protecting hardware sampling and rolling averages.
-   /// </summary>
-   ///
-   void _lock() const
-   {
-      if (_mutex != nullptr)
-      {
-         xSemaphoreTakeRecursive(_mutex, portMAX_DELAY);
-      }
-   }
-
-   ///
-   /// <summary>
-   /// Releases the reentrant mutex protecting hardware sampling and rolling averages.
-   /// </summary>
-   ///
-   void _unlock() const
-   {
-      if (_mutex != nullptr)
-      {
-         xSemaphoreGiveRecursive(_mutex);
-      }
-   }
-
-   ///
-   /// <summary>
-   /// FreeRTOS software timer callback that periodically samples the battery so the
-   /// rolling voltage/percentage averages and ripple/trend windows stay populated.
-   /// </summary>
-   /// <param name="xTimer">The FreeRTOS timer handle whose user data is the owning Battery instance.</param>
-   ///
-   static void _timerCallback(TimerHandle_t xTimer)
-   {
-      Battery* battery = static_cast<Battery*>(pvTimerGetTimerID(xTimer));
-      battery->readPercent();
-   }
-
-   ///
-   /// <summary>
-   /// Creates and starts the periodic FreeRTOS software timer if it has not already been started.
-   /// </summary>
-   ///
-   void _startTimer()
-   {
-      if (_mutex == nullptr)
-      {
-         _mutex = xSemaphoreCreateRecursiveMutex();
-      }
-
-      if (_sampleTimerHandle == nullptr)
-      {
-         _sampleTimerHandle = xTimerCreate(
-            "BatteryTimer",
-            pdMS_TO_TICKS(SAMPLE_PERIOD_MS),
-            pdTRUE,
-            this,
-            _timerCallback);
-
-         if (_sampleTimerHandle != nullptr)
-         {
-            xTimerStart(_sampleTimerHandle, 0);
-         }
-      }
-   }
-#else
    void _lock() const {}
    void _unlock() const {}
    void _startTimer() {}
-#endif
 
    ///
    /// <summary>
@@ -351,7 +298,7 @@ private:
    bool _isFuelGauge() const
    {
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
-      return _pin < 0;
+      return _pin < 0 && _hasFuelGauge;
 #else
       return false;
 #endif
@@ -545,13 +492,42 @@ private:
 
    ///
    /// <summary>
-   /// Reads a single raw battery voltage sample from the active hardware source (I2C fuel
-   /// gauge or multisampled ADC pin) without updating ripple state.
+   /// Reads the battery-side terminal voltage (VIN+) and signed battery current (mA, where
+   /// positive is charging into the battery and negative is discharging out of the battery)
+   /// from the INA219 sensor.
+   /// </summary>
+   /// <returns>Sampled battery voltage in volts.</returns>
+   ///
+   float _sampleIna219Volts()
+   {
+      float busVolts = _ina219.getBusVoltage_V();
+      float shuntMilliVolts = _ina219.getShuntVoltage_mV();
+      // With VIN+ wired to Battery+ and VIN- wired to Board JST+:
+      // - V(VIN+) = V(VIN-) + Vshunt = busVolts + (shuntMilliVolts * 0.001f)
+      // - INA219 getCurrent_mA() is positive when current flows from Battery+ to Board
+      //   (discharging), so negate it so positive = charging and negative = discharging.
+      float rawCurrentMa = _ina219.getCurrent_mA();
+      if (isfinite(rawCurrentMa))
+      {
+         _currentAverage.set(-rawCurrentMa);
+      }
+      return busVolts + (shuntMilliVolts * 0.001f);
+   }
+
+   ///
+   /// <summary>
+   /// Reads a single raw battery voltage sample from the active hardware source (INA219,
+   /// I2C fuel gauge, or multisampled ADC pin) without updating ripple state.
    /// </summary>
    /// <returns>Sampled voltage in volts.</returns>
    ///
    float _sampleVolts()
    {
+      if (_hasIna219)
+      {
+         return _sampleIna219Volts();
+      }
+
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
       if (_pin < 0)
       {
@@ -671,7 +647,7 @@ private:
                _voltsAverage.set(volts);
                _percentAverage.reset();
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
-               if (_pin < 0)
+               if (_isFuelGauge())
                {
                   _fuelGauge.quickStart();
                }
@@ -841,48 +817,30 @@ public:
    {
       _loadCalibration();
 
-#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
-      if (_pin < 0)
+      if (!_hasIna219)
       {
-         if (!_ready || !_fuelGauge.isDeviceReady())
-         {
-            _ready = _fuelGauge.begin();
-            if (_ready)
-            {
-               // Disable MAX17048 auto-hibernation (default HIBRT enters 45-second sample
-               // intervals after 6 minutes of low CRATE, freezing VCELL and hiding the
-               // no-battery charger sawtooth ripple).
-               _fuelGauge.wake();
+         _hasIna219 = _ina219.begin();
+      }
 
-               // Adafruit_MAX17048::begin() issues a soft POR reset, after which VCELL reads
-               // 0.000V until the first internal ADC conversion completes (~125-250ms).
-               uint32_t startMs = millis();
-               while (_fuelGauge.cellVoltage() <= 0.0f && (millis() - startMs < FUEL_GAUGE_STARTUP_TIMEOUT_MS))
-               {
-                  delay(10);
-               }
+      if (_hasIna219)
+      {
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+         if (_pin < 0 && !_hasFuelGauge)
+         {
+            _hasFuelGauge = _fuelGauge.begin();
+            if (_hasFuelGauge)
+            {
+               _fuelGauge.wake();
             }
          }
-
-         if (_ready)
-         {
-            _startTimer();
-         }
-         return _ready;
-      }
 #endif
-
-      if (_pin < 0)
-      {
-         _ready = false;
-         return false;
+         _ready = true;
+         _startTimer();
+         return true;
       }
 
-      analogReadResolution(ADC_RESOLUTION_BITS);
-      pinMode(_pin, INPUT);
-      _ready = true;
-      _startTimer();
-      return true;
+      _ready = false;
+      return false;
    }
 
    ///
@@ -932,6 +890,12 @@ public:
    bool isConnected()
    {
       _lock();
+      if (!_ready && !begin())
+      {
+         _unlock();
+         return false;
+      }
+
       float volts = readVolts();
       if (!_isVoltsConnected(volts))
       {
@@ -939,6 +903,32 @@ public:
          _percentAverage.reset();
          _unlock();
          return false;
+      }
+
+      if (_hasIna219)
+      {
+         // When the battery is switched off or unplugged on the VIN+ side, or when the
+         // charger rail sits idle with ~0 mA and sawtooth ripple on VIN-, check current:
+         // any real charging (>= +5 mA) or discharging (<= -5 mA) current proves a battery
+         // is physically connected. If current is near zero (< 2 mA), only consider it
+         // connected if the rail is calm (not oscillating like an unloaded charger cap).
+         float currentMa = readAverageCurrentMa();
+         if (isfinite(currentMa) && fabsf(currentMa) >= INA219_IDLE_CURRENT_THRESHOLD_MA)
+         {
+            _unlock();
+            return true;
+         }
+
+         if (_hasNoBatteryRipple())
+         {
+            _resetAdcChargingTrend();
+            _percentAverage.reset();
+            _unlock();
+            return false;
+         }
+
+         _unlock();
+         return true;
       }
 
       if (_hasNoBatteryRipple())
@@ -970,16 +960,67 @@ public:
 
    ///
    /// <summary>
-   /// Returns the charging state indicator (Yes, No, Unknown, or BadCharger). On fuel-gauge
-   /// boards (MAX17048), uses the hardware charge rate; on ADC voltage-divider boards,
-   /// uses voltage trend (rising vs. falling), full-charge plateau detection (>= 4.18V),
-   /// and over-voltage detection (> 4.5V).
+   /// Reads the instantaneous signed battery current in milliamps from the INA219 sensor
+   /// (positive when charging into the battery, negative when discharging from the battery).
    /// </summary>
-   /// <returns>BatteryChargingState::Yes, No, Unknown, or BadCharger.</returns>
+   /// <returns>Signed battery current in mA, or NAN if no INA219 is present.</returns>
+   ///
+   float readCurrentMa()
+   {
+      _lock();
+      if (!_ready && !begin())
+      {
+         _unlock();
+         return NAN;
+      }
+
+      if (!_hasIna219)
+      {
+         _unlock();
+         return NAN;
+      }
+
+      float currentMa = -_ina219.getCurrent_mA();
+      if (isfinite(currentMa))
+      {
+         _currentAverage.set(currentMa);
+      }
+      _unlock();
+      return currentMa;
+   }
+
+   ///
+   /// <summary>
+   /// Reads the time-averaged signed battery current in milliamps over the 1-second smoothing
+   /// window (positive when charging, negative when discharging).
+   /// </summary>
+   /// <returns>Time-averaged signed battery current in mA, or NAN if no INA219 is present.</returns>
+   ///
+   float readAverageCurrentMa()
+   {
+      _lock();
+      float currentMa = readCurrentMa();
+      float avg = _currentAverage.average();
+      _unlock();
+      return isfinite(avg) ? avg : currentMa;
+   }
+
+   ///
+   /// <summary>
+   /// Returns the charging state indicator (Yes, No, Full, Unknown, or BadCharger).
+   /// When an INA219 current sensor is present, uses signed battery current directly.
+   /// </summary>
+   /// <returns>BatteryChargingState::Yes, No, Full, Unknown, or BadCharger.</returns>
    ///
    BatteryChargingState readChargingState()
    {
       _lock();
+      if (!_ready && !begin())
+      {
+         _unlock();
+         return BatteryChargingState::Unknown;
+      }
+
       float volts = readVolts();
       if (_isVoltsBadCharger(volts))
       {
@@ -990,6 +1031,38 @@ public:
 
       if (!isConnected())
       {
+         _unlock();
+         return BatteryChargingState::Unknown;
+      }
+
+      if (_hasIna219)
+      {
+         float currentMa = readAverageCurrentMa();
+         float avgVolts = readAverageVolts();
+         float checkVolts = isfinite(avgVolts) ? avgVolts : volts;
+
+         if (isfinite(currentMa))
+         {
+            if (currentMa >= INA219_CHARGE_CURRENT_THRESHOLD_MA)
+            {
+               _unlock();
+               return BatteryChargingState::Yes;
+            }
+
+            if (currentMa <= INA219_DISCHARGE_CURRENT_THRESHOLD_MA)
+            {
+               _unlock();
+               return BatteryChargingState::No;
+            }
+
+            if (checkVolts >= INA219_FULL_MIN_VOLTS)
+            {
+               _saveFullChargeVolts(checkVolts);
+               _unlock();
+               return BatteryChargingState::Full;
+            }
+         }
+
          _unlock();
          return BatteryChargingState::Unknown;
       }
@@ -1096,7 +1169,7 @@ public:
 
       float percent = NAN;
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
-      if (_pin < 0)
+      if (_isFuelGauge())
       {
          float rawPercent = _fuelGauge.cellPercent();
          float curvePercent = _voltsToPercent(volts, _fullChargeVolts);
@@ -1158,7 +1231,7 @@ public:
    float readChargeRate()
    {
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
-      if (_pin < 0)
+      if (_isFuelGauge())
       {
          _lock();
          if (!_ready && !begin())
@@ -1281,7 +1354,7 @@ public:
       }
 
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
-      if (_pin < 0)
+      if (_isFuelGauge())
       {
          float rawPercent = _fuelGauge.cellPercent();
          _unlock();

@@ -12,11 +12,6 @@
 // default) or the 240x135 display on the Feather ESP32-S3 TFT.
 //
 
-// TEXT_SIZE_2 and TEXT_SIZE_3 are always included regardless (see ArduinoWithDisplay.h).
-#define TEXT_SIZES_CUSTOM
-
-
-
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED

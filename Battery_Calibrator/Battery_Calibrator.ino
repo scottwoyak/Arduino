@@ -8,10 +8,10 @@
 // Guided 4-Step Flow (no button presses required):
 // 1. Pre-Charge to Full (Phase 1):
 //    - Starts here automatically from any initial battery state.
-//    - Prompts "Plug In Pwr" if discharging, then shows "1:Chg->Full" while charging up
+//    - Prompts "Plug In USB" if discharging, then shows "Charging to Full" while charging up
 //      to a confirmed full plateau (18 full uploads = 3 minutes at Full).
 //    - Once full, plays a tone, saves Phase 2 (Discharge) to NVS, and displays
-//      "UNPLUG PWR!" in green.
+//      "Unplug USB" in green.
 // 2. Full Discharge to Cutoff (Phase 2):
 //    - As soon as you unplug power (detected automatically when state becomes Discharging,
 //      or after a power-transition reset), advances to Phase 3 in NVS so the subsequent
@@ -24,13 +24,14 @@
 //    - Logs the entire 0% -> 100% charge curve every 10 seconds until the battery reaches
 //      Full and holds it for 18 uploads (3 minutes).
 // 4. Calibration Complete (Phase 4):
-//    - Plays a completion tone and displays "DONE! Calibrated".
+//    - Plays a completion tone and displays "Calibration Complete" ("Cal Complete" on Feather).
 //    - (Optional: pressing buttonA or tapping the screen when Done restarts at Phase 1.)
 //
 
 #include <Arduino.h>
 #include <cmath>
 #include <sstream>
+#include <string>
 
 #include "ArduinoBoard.h"
 
@@ -40,7 +41,6 @@
 #endif
 
 #include "LibraryVersion.h"
-#include "SerialX.h"
 #include "Stopwatch.h"
 #include "Table.h"
 #include "Timer.h"
@@ -54,33 +54,41 @@ constexpr auto SKETCH_NAME = "Battery_Calibrator";
 constexpr auto PREFERENCES_NAMESPACE = "BatteryCal";
 constexpr auto PHASE_PREF_KEY = "phase";
 
-constexpr uint16_t SAMPLE_INTERVAL_MS = 1000;
+constexpr float SAMPLE_RATE = 1.0f;
+constexpr float SERIAL_LOG_RATE = 1.0f;
 constexpr uint8_t INFLUX_INTERVAL_S = 10;
-constexpr uint16_t FULL_SOAK_DURATION_S = 180;      // 3 min at Full
+constexpr uint16_t FULL_SOAK_SPAN_S = 180;          // 3 min at Full
 constexpr uint8_t DISCHARGE_CONFIRM_UPLOADS = 3;    // 3 uploads * 10s = 30s discharging before arming reboot-into-Charge
 constexpr uint8_t VOLTS_DECIMAL_PLACES = 3;
+constexpr uint8_t CURRENT_DECIMAL_PLACES = 1;
 constexpr uint8_t PERCENT_DECIMAL_PLACES = 1;
 constexpr uint8_t RATE_DECIMAL_PLACES = 2;
 constexpr float DISPLAY_UPDATE_RATE = 5.0f;
+constexpr float PHASE_TONE_FREQ_HZ = 880.0f;
+constexpr uint16_t PHASE_TONE_DURATION_MS = 150;
 
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+constexpr auto HEADING_TEXT = "Bat Calibrator";
 constexpr auto TABLE_TEXT_FORMAT = "###############";
-constexpr auto DETAILS_UNPLUG_POWER = "UNPLUG PWR!";
+constexpr auto DETAILS_UNPLUG_POWER = "Unplug USB";
 constexpr auto DETAILS_CONNECT_BATTERY = "Connect Batt";
-constexpr auto DETAILS_PLUG_IN_POWER = "Plug In Pwr";
-constexpr auto DETAILS_CHARGE_TO_FULL = "Chg->Full";
-constexpr auto DETAILS_DISCHARGING = "Dischg";
-constexpr auto DETAILS_CHARGING = "Charging";
-constexpr auto DETAILS_DONE = "DONE! Calib";
-#else
-constexpr auto TABLE_TEXT_FORMAT = "#####################";
-constexpr auto DETAILS_UNPLUG_POWER = "Unplug Power!";
-constexpr auto DETAILS_CONNECT_BATTERY = "Connect Battery";
-constexpr auto DETAILS_PLUG_IN_POWER = "Plug In Power";
+constexpr auto DETAILS_PLUG_IN_POWER = "Plug In USB";
 constexpr auto DETAILS_CHARGE_TO_FULL = "Charging to Full";
+constexpr auto DETAILS_FULL_CONFIRMING_PREFIX = "Confirming ";
 constexpr auto DETAILS_DISCHARGING = "Discharging";
 constexpr auto DETAILS_CHARGING = "Charging";
-constexpr auto DETAILS_DONE = "Done! Calibrated";
+constexpr auto DETAILS_DONE = "Cal Complete";
+#else
+constexpr auto HEADING_TEXT = "Battery Calibrator";
+constexpr auto TABLE_TEXT_FORMAT = "#####################";
+constexpr auto DETAILS_UNPLUG_POWER = "Unplug USB";
+constexpr auto DETAILS_CONNECT_BATTERY = "Connect Battery";
+constexpr auto DETAILS_PLUG_IN_POWER = "Plug In USB";
+constexpr auto DETAILS_CHARGE_TO_FULL = "Charging to Full";
+constexpr auto DETAILS_FULL_CONFIRMING_PREFIX = "Full: Confirming ";
+constexpr auto DETAILS_DISCHARGING = "Discharging";
+constexpr auto DETAILS_CHARGING = "Charging";
+constexpr auto DETAILS_DONE = "Calibration Complete";
 #endif
 
 ///
@@ -113,6 +121,7 @@ InfluxConfig INFLUX_CONFIG = {
 MonitorSketch sketch(SKETCH_CONFIG, INFLUX_CONFIG);
 
 InfluxField* voltsField = nullptr;
+InfluxField* currentMaField = nullptr;
 InfluxField* minVoltsField = nullptr;
 InfluxField* maxVoltsField = nullptr;
 InfluxField* spanVoltsField = nullptr;
@@ -149,10 +158,10 @@ CalibrationPhase currentPhase = CalibrationPhase::PreCharge;
 bool touchWasDown = false;
 
 Stopwatch phaseStopwatch;
-Timer sampleTimer(SAMPLE_INTERVAL_MS);
+RateTimer sampleTimer(SAMPLE_RATE);
 TimerSecs uploadTimer(INFLUX_INTERVAL_S);
 RateTimer displayTimer(DISPLAY_UPDATE_RATE);
-TimerSecs serialLogTimer(1.0f);
+RateTimer serialLogTimer(SERIAL_LOG_RATE);
 Table table(&sketch.arduino, 0, 0);
 
 ///
@@ -244,9 +253,10 @@ void loadPhase()
    sketch.arduino.preferences.end();
 
    if (saved < static_cast<uint8_t>(CalibrationPhase::PreCharge) ||
-       saved > static_cast<uint8_t>(CalibrationPhase::Done))
+       saved >= static_cast<uint8_t>(CalibrationPhase::Done))
    {
       saved = static_cast<uint8_t>(CalibrationPhase::PreCharge);
+      saveNextBootPhase(CalibrationPhase::PreCharge);
    }
 
    currentPhase = static_cast<CalibrationPhase>(saved);
@@ -268,7 +278,7 @@ void setPhase(CalibrationPhase phase)
 
    Serial.printf("\n=== CALIBRATION PHASE: %s ===\n", formatPhase(currentPhase));
 #ifdef ARDUINO_SOUND_SUPPORTED
-   sketch.arduino.sound.playTone(880.0f, 150);
+   sketch.arduino.sound.playTone(PHASE_TONE_FREQ_HZ, PHASE_TONE_DURATION_MS);
 #endif
 }
 
@@ -367,6 +377,7 @@ std::string getReadings()
    bool connected = sketch.arduino.battery.isConnected();
    float rawVolts = sketch.arduino.battery.readVolts();
    float avgVolts = sketch.arduino.battery.readAverageVolts();
+   float avgCurrentMa = sketch.arduino.battery.readAverageCurrentMa();
    float avgPercent = connected ? sketch.arduino.battery.readAveragePercent() : NAN;
    float rippleVolts = sketch.arduino.battery.readRippleVolts();
    float chargeRate = sketch.arduino.battery.readChargeRate();
@@ -385,6 +396,10 @@ std::string getReadings()
    }
    out << "ripple=" << rippleVolts << " V\n";
    out.precision(1);
+   if (isfinite(avgCurrentMa))
+   {
+      out << "current=" << avgCurrentMa << " mA\n";
+   }
    if (isfinite(avgPercent))
    {
       out << "percent=" << avgPercent << " %\n";
@@ -406,7 +421,7 @@ void drawStaticHeading()
 {
    sketch.arduino.setCursor(0, 0);
    sketch.arduino.setTextSize(DEFAULT_HEADING_SIZE);
-   sketch.arduino.println("Battery Cal", Color::HEADING);
+   sketch.arduino.println(HEADING_TEXT, Color::HEADING);
 #if !defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
    sketch.arduino.moveCursorY(sketch.arduino.charH() / 4);
 #endif
@@ -423,6 +438,7 @@ void setup()
 
    InfluxPoint* point = sketch.addPoint({ { "item", "Battery" } });
    voltsField = point->addTimeAverageField(INFLUX_INTERVAL_S, "batteryVolts", VOLTS_DECIMAL_PLACES);
+   currentMaField = point->addTimeAverageField(INFLUX_INTERVAL_S, "batteryCurrentMa", CURRENT_DECIMAL_PLACES);
    minVoltsField = point->addValueField("batteryMinVolts", VOLTS_DECIMAL_PLACES);
    maxVoltsField = point->addValueField("batteryMaxVolts", VOLTS_DECIMAL_PLACES);
    spanVoltsField = point->addValueField("batterySpanVolts", VOLTS_DECIMAL_PLACES);
@@ -441,7 +457,6 @@ void setup()
    fullVoltsField = point->addValueField("batteryFullVolts", VOLTS_DECIMAL_PLACES);
 
    table.addRow("Volts:", "#.###v");
-   table.addRow("Range:", TABLE_TEXT_FORMAT);
    table.addRow("State:", TABLE_TEXT_FORMAT);
    table.addRow("Details:", TABLE_TEXT_FORMAT);
    table.addRow("Elapsed:", TABLE_TEXT_FORMAT);
@@ -473,6 +488,8 @@ void loop()
 
    float rawVolts = sketch.arduino.battery.readVolts();
    float avgVolts = sketch.arduino.battery.readAverageVolts();
+   float avgCurrentMa = sketch.arduino.battery.readAverageCurrentMa();
+   bool hasCurrent = isfinite(avgCurrentMa);
    bool connected = sketch.arduino.battery.isConnected();
    float avgPercent = connected ? sketch.arduino.battery.readAveragePercent() : NAN;
    float rawPercent = sketch.arduino.battery.readRawPercent();
@@ -515,6 +532,10 @@ void loop()
       if (isfinite(avgVolts))
       {
          voltsField->set(avgVolts);
+      }
+      if (hasCurrent)
+      {
+         currentMaField->set(avgCurrentMa);
       }
       if (connected && isfinite(avgPercent))
       {
@@ -564,11 +585,11 @@ void loop()
       {
          if (connected && chargingState == BatteryChargingState::Full)
          {
-            if (fullSoakSecs < FULL_SOAK_DURATION_S)
+            if (fullSoakSecs < FULL_SOAK_SPAN_S)
             {
                fullSoakSecs++;
             }
-            if (fullSoakSecs >= FULL_SOAK_DURATION_S && !waitingForUnplug)
+            if (fullSoakSecs >= FULL_SOAK_SPAN_S && !waitingForUnplug)
             {
                waitingForUnplug = true;
                // Pre-save Discharge to NVS so if unplugging causes a board reset, it boots
@@ -576,7 +597,7 @@ void loop()
                saveNextBootPhase(CalibrationPhase::Discharge);
                Serial.println("\n>>> PRE-CHARGE COMPLETE! UNPLUG EXTERNAL POWER NOW <<<");
 #ifdef ARDUINO_SOUND_SUPPORTED
-               sketch.arduino.sound.playTone(880.0f, 150);
+               sketch.arduino.sound.playTone(PHASE_TONE_FREQ_HZ, PHASE_TONE_DURATION_MS);
 #endif
             }
          }
@@ -585,11 +606,11 @@ void loop()
       {
          if (connected && chargingState == BatteryChargingState::Full)
          {
-            if (fullSoakSecs < FULL_SOAK_DURATION_S)
+            if (fullSoakSecs < FULL_SOAK_SPAN_S)
             {
                fullSoakSecs++;
             }
-            if (fullSoakSecs >= FULL_SOAK_DURATION_S)
+            if (fullSoakSecs >= FULL_SOAK_SPAN_S)
             {
                Serial.println("\n>>> FULL CHARGE CALIBRATION COMPLETE! <<<");
                setPhase(CalibrationPhase::Done);
@@ -627,7 +648,7 @@ void loop()
       connectedField->set((connected && intervalAllConnected) ? 1.0f : 0.0f);
       stateField->set(static_cast<float>(chargingState));
       phaseField->set(static_cast<float>(currentPhase));
-      elapsedSecsField->set(static_cast<float>(elapsedSecs));
+      elapsedSecsField->set(elapsedSecs);
       fullVoltsField->set(sketch.arduino.battery.readFullChargeVolts());
 
       sketch.postPoints();
@@ -660,7 +681,7 @@ void loop()
    if (serialLogTimer.ready())
    {
       Serial.printf(
-         "[%lus] phase=%s(%lus, #%lu)  volts=%.3fV [%.3f..%.3fV]  pct=%.1f%%  state=%s\n",
+         "[%lus] phase=%s(%lus, #%lu)  volts=%.3fV [%.3f..%.3fV]  current=%.1fmA  pct=%.1f%%  state=%s\n",
          millis() / 1000UL,
          formatPhase(currentPhase),
          static_cast<unsigned long>(elapsedSecs),
@@ -668,6 +689,7 @@ void loop()
          avgVolts,
          sessionMinVolts,
          sessionMaxVolts,
+         avgCurrentMa,
          avgPercent,
          stateText);
    }
@@ -678,90 +700,86 @@ void loop()
    }
 
    // Row 0: Live battery voltage
-   table.setValue(0, avgVolts, Color::VALUE);
+   table.setValue(0, avgVolts);
 
-   // Row 1: Session min..max voltage range across the current calibration phase
-   if (isfinite(sessionMinVolts) && isfinite(sessionMaxVolts))
-   {
-      String rangeStr = String(sessionMinVolts, 2) + "-" + String(sessionMaxVolts, 2) + "v";
-      table.setValue(1, rangeStr, Color::VALUE);
-   }
-   else
-   {
-      table.setValue(1, "---", Color::GRAY);
-   }
-
-   // Row 2: Battery state + current percentage (or No Battery)
+   // Row 1: Battery state + current percentage / mA (or No Battery)
    if (!connected)
    {
-      table.setValue(2, "No Battery", Color::RED);
+      table.setValue(1, "No Battery", Color::RED);
+   }
+   else if (hasCurrent)
+   {
+      int16_t pct = static_cast<int16_t>(roundf(avgPercent));
+      int16_t currentInt = static_cast<int16_t>(roundf(avgCurrentMa));
+      String statePctStr = String(pct) + "% " + (currentInt >= 0 ? "+" : "") + String(currentInt) + "mA";
+      table.setValue(1, statePctStr, stateColor);
    }
    else
    {
-      int pct = static_cast<int>(roundf(avgPercent));
+      int16_t pct = static_cast<int16_t>(roundf(avgPercent));
       String statePctStr = String(stateText) + " " + String(pct) + "%";
-      table.setValue(2, statePctStr, stateColor);
+      table.setValue(1, statePctStr, stateColor);
    }
 
-   // Row 3: Guided calibration details / instruction status
+   // Row 2: Guided calibration details / instruction status
    if (currentPhase == CalibrationPhase::PreCharge)
    {
       if (waitingForUnplug)
       {
-         table.setValue(3, DETAILS_UNPLUG_POWER, Color::LIME);
+         table.setValue(2, DETAILS_UNPLUG_POWER, Color::LIME);
       }
       else if (!connected)
       {
-         table.setValue(3, DETAILS_CONNECT_BATTERY, Color::RED);
+         table.setValue(2, DETAILS_CONNECT_BATTERY, Color::RED);
       }
       else if (chargingState == BatteryChargingState::No)
       {
-         table.setValue(3, DETAILS_PLUG_IN_POWER, Color::LIME);
+         table.setValue(2, DETAILS_PLUG_IN_POWER, Color::LIME);
       }
       else if (fullSoakSecs == 0)
       {
-         table.setValue(3, DETAILS_CHARGE_TO_FULL, Color::YELLOW);
+         table.setValue(2, DETAILS_CHARGE_TO_FULL, Color::YELLOW);
       }
       else
       {
-         uint16_t remSecs = FULL_SOAK_DURATION_S - fullSoakSecs;
-         table.setValue(3, String("Full ") + String(remSecs) + "s", Color::YELLOW);
+         uint16_t remSecs = FULL_SOAK_SPAN_S - fullSoakSecs;
+         table.setValue(2, String(DETAILS_FULL_CONFIRMING_PREFIX) + String(remSecs) + "s", Color::YELLOW);
       }
    }
    else if (currentPhase == CalibrationPhase::Discharge)
    {
       if (chargingState == BatteryChargingState::Yes || chargingState == BatteryChargingState::Full)
       {
-         table.setValue(3, DETAILS_UNPLUG_POWER, Color::LIME);
+         table.setValue(2, DETAILS_UNPLUG_POWER, Color::LIME);
       }
       else
       {
-         table.setValue(3, DETAILS_DISCHARGING, Color::YELLOW);
+         table.setValue(2, DETAILS_DISCHARGING, Color::YELLOW);
       }
    }
    else if (currentPhase == CalibrationPhase::Charge)
    {
       if (chargingState == BatteryChargingState::No)
       {
-         table.setValue(3, DETAILS_PLUG_IN_POWER, Color::LIME);
+         table.setValue(2, DETAILS_PLUG_IN_POWER, Color::LIME);
       }
       else if (fullSoakSecs == 0)
       {
-         table.setValue(3, DETAILS_CHARGING, Color::YELLOW);
+         table.setValue(2, DETAILS_CHARGING, Color::YELLOW);
       }
       else
       {
-         uint16_t remSecs = FULL_SOAK_DURATION_S - fullSoakSecs;
-         table.setValue(3, String("Full ") + String(remSecs) + "s", Color::YELLOW);
+         uint16_t remSecs = FULL_SOAK_SPAN_S - fullSoakSecs;
+         table.setValue(2, String(DETAILS_FULL_CONFIRMING_PREFIX) + String(remSecs) + "s", Color::YELLOW);
       }
    }
    else
    {
-      table.setValue(3, DETAILS_DONE, Color::LIME);
+      table.setValue(2, DETAILS_DONE, Color::LIME);
    }
 
-   // Row 4: Elapsed time in the current calibration phase
-   table.setValue(4, formatElapsed(elapsedSecs), Color::VALUE);
+   // Row 3: Elapsed time in the current calibration phase
+   table.setValue(3, formatElapsed(elapsedSecs));
 
    table.draw();
 }
