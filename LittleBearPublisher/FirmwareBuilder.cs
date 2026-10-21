@@ -106,6 +106,48 @@ internal sealed class FirmwareBuilder
             : boardId;
     }
 
+    /// <summary>
+    /// Returns the board IDs corresponding to existing build subdirectories under &lt;Sketch&gt;\build.
+    /// </summary>
+    public static IReadOnlyList<string> GetConfiguredBuildFolderBoards(string repoRoot, string sketch)
+    {
+        string buildsRoot = Path.Combine(repoRoot, sketch, "build");
+        if (!Directory.Exists(buildsRoot))
+        {
+            return [];
+        }
+
+        Dictionary<string, BoardConfig> configs = LoadBoardConfigs(repoRoot);
+        var boards = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string subDir in Directory.EnumerateDirectories(buildsRoot))
+        {
+            string folderName = Path.GetFileName(subDir);
+            if (string.Equals(folderName, "_publish", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            BoardConfig? match = configs.Values.FirstOrDefault(c => string.Equals(c.BuildFolder, folderName, StringComparison.OrdinalIgnoreCase));
+            if (match != null && seen.Add(match.BoardId))
+            {
+                boards.Add(match.BoardId);
+            }
+        }
+
+        return boards;
+    }
+
+    /// <summary>
+    /// Returns the build folder name (e.g. "esp32.esp32.waveshare_esp32_s3_zero_sensors") for <paramref name="boardId"/>, if known.
+    /// </summary>
+    public static string? GetBuildFolderName(string repoRoot, string boardId)
+    {
+        Dictionary<string, BoardConfig> configs = LoadBoardConfigs(repoRoot);
+        return configs.TryGetValue(boardId, out BoardConfig? config) ? config.BuildFolder : null;
+    }
+
     private static Dictionary<string, BoardConfig> LoadBoardConfigs(string repoRoot)
     {
         var configs = new Dictionary<string, BoardConfig>(DefaultBoardConfigs, StringComparer.OrdinalIgnoreCase);

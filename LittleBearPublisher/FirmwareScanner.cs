@@ -186,6 +186,25 @@ internal sealed class FirmwareScanner
                 }
                 items.Add(item);
             }
+
+            foreach (string configuredBoard in FirmwareBuilder.GetConfiguredBuildFolderBoards(_repoRoot, name))
+            {
+                if (!seenBoards.Add(configuredBoard))
+                {
+                    continue;
+                }
+
+                var missingItem = new FirmwareItem
+                {
+                    Sketch = name,
+                    Board = configuredBoard,
+                    BoardName = FirmwareBuilder.GetBoardDisplayName(_repoRoot, configuredBoard),
+                    Status = FirmwareStatus.Skipped,
+                    Detail = "no build output",
+                };
+                (missingItem.ServerVersion, missingItem.ServerBuildTime) = await hub.GetLatestAsync(missingItem.Firmware);
+                items.Add(missingItem);
+            }
         }
 
         return items;
@@ -323,6 +342,16 @@ internal sealed class FirmwareScanner
         }
 
         var dirsToDelete = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string? configuredFolder = FirmwareBuilder.GetBuildFolderName(_repoRoot, item.Board);
+        if (!string.IsNullOrEmpty(configuredFolder))
+        {
+            string configuredPath = Path.Combine(buildsRoot, configuredFolder);
+            if (Directory.Exists(configuredPath))
+            {
+                dirsToDelete.Add(configuredPath);
+            }
+        }
+
         foreach (string binPath in candidateBins)
         {
             try

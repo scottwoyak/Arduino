@@ -100,7 +100,7 @@ internal sealed class MainForm : Form
         uploadAnyway.Click += async (_, _) => await UploadAsync(SelectedUploadableItems());
         listMenu.Items.Add(uploadAnyway);
         ToolStripMenuItem deleteSelected = new("Delete");
-        deleteSelected.Click += async (_, _) => await DeleteAsync(SelectedUploadableItems());
+        deleteSelected.Click += async (_, _) => await DeleteAsync(SelectedBuildableItems());
         listMenu.Items.Add(deleteSelected);
         listMenu.Opening += (_, e) =>
         {
@@ -109,7 +109,7 @@ internal sealed class MainForm : Form
             buildSelected.Enabled = !_busy && hasBuildable;
             buildSketch.Enabled = !_busy && SelectedSketchItems().Count > 0;
             uploadAnyway.Enabled = !_busy && hasUploadable;
-            deleteSelected.Enabled = !_busy && hasUploadable;
+            deleteSelected.Enabled = !_busy && hasBuildable;
             e.Cancel = !hasBuildable && !hasUploadable;
         };
         _list.ContextMenuStrip = listMenu;
