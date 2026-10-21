@@ -83,6 +83,8 @@ protected:
    unsigned long _nextToggleMs = 0;
    bool _flashActive = false;
    unsigned long _flashEnd = 0;
+   volatile bool _flashRequested = false;
+   volatile uint16_t _flashDurationMs = 0;
    bool _pendingStopBlink = false;
    bool _pendingIsOn = false;
    bool _hasPendingAction = false;
@@ -263,6 +265,31 @@ public:
 
    ///
    /// <summary>
+   /// Requests a non-blocking LED flash from an interrupt service routine (ISR). The
+   /// hardware update is deferred to the next loop() iteration on the LED's background
+   /// task, since PWM/RMT drivers are not safe to invoke from interrupt context.
+   /// </summary>
+   /// <param name="durationMs">How long the LED should stay on, in milliseconds</param>
+   ///
+   void ARDUINO_ISR_ATTR flashFromISR(uint16_t durationMs)
+   {
+      _flashDurationMs = durationMs;
+      _flashRequested = true;
+   }
+
+   ///
+   /// <summary>
+   /// Gets whether the LED is currently on.
+   /// </summary>
+   /// <returns>True if the LED is currently on; false otherwise.</returns>
+   ///
+   bool isOn() const
+   {
+      return _isOn;
+   }
+
+   ///
+   /// <summary>
    /// Schedules a state-changing action (e.g. setColor()+turnOn()/turnOff()/blink()) to
    /// run at the next off-\>on transition of the current blink cycle, so switching between
    /// two different blinking states (or a blinking state and a solid color) doesn't cut
@@ -340,6 +367,12 @@ public:
    ///
    virtual void loop()
    {
+      if (_flashRequested)
+      {
+         _flashRequested = false;
+         flash(_flashDurationMs);
+      }
+
       if (_flashActive)
       {
          if ((long)(millis() - _flashEnd) >= 0)
@@ -578,7 +611,7 @@ public:
 constexpr uint8_t NUM_LEDS = 1;
 
 // Data pin and color order for the onboard NeoPixel, auto-detected based on the target board.
-#if defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO) || defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS) || defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS)
+#if defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO) || defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS) || defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS) || defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2) || defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS2)
 constexpr int16_t NEOPIXEL_LED_PIN = 21;
 constexpr neoPixelType NEOPIXEL_LED_TYPE = NEO_RGB + NEO_KHZ800;
 #elif defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40) || defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER)
@@ -594,11 +627,115 @@ constexpr neoPixelType NEOPIXEL_LED_TYPE = NEO_GRB + NEO_KHZ800;
 
 ///
 /// <summary>
+/// Manages a multi-pixel WS2812/NeoPixel strip shared across multiple NeoPixelLED
+/// instances (e.g. when pixel 0 is a status indicator and pixel 1 is a general-purpose
+/// LED on the same data pin).
+/// </summary>
+/// <remarks>
+/// Guards pixel updates and show() calls with a FreeRTOS mutex so independent
+/// NeoPixelLED background tasks can safely update their own pixel indices concurrently.
+/// </remarks>
+///
+class NeoPixelStrip
+{
+private:
+   Adafruit_NeoPixel _pixels;
+   uint16_t _numLeds;
+   int16_t _pin;
+   neoPixelType _type;
+   SemaphoreHandle_t _mutex = nullptr;
+   bool _initialized = false;
+
+public:
+   ///
+   /// <summary>
+   /// Constructs a NeoPixelStrip for a chain of addressable LEDs on a single data pin.
+   /// </summary>
+   /// <param name="numLeds">Number of NeoPixels in the strip</param>
+   /// <param name="pin">GPIO data pin for the strip</param>
+   /// <param name="type">NeoPixel color order and frequency flags</param>
+   ///
+   NeoPixelStrip(uint16_t numLeds, int16_t pin, neoPixelType type = NEO_GRB + NEO_KHZ800)
+      : _numLeds(numLeds),
+        _pin(pin),
+        _type(type)
+   {
+   }
+
+   ///
+   /// <summary>
+   /// Gets the GPIO data pin assigned to the strip.
+   /// </summary>
+   /// <returns>The strip's GPIO data pin.</returns>
+   ///
+   int16_t pin() const
+   {
+      return _pin;
+   }
+
+   ///
+   /// <summary>
+   /// Configures and initializes the underlying Adafruit_NeoPixel strip. Safe to call
+   /// multiple times; subsequent calls after the first are no-ops.
+   /// </summary>
+   ///
+   void begin()
+   {
+      if (_initialized)
+      {
+         return;
+      }
+
+      _initialized = true;
+      _mutex = xSemaphoreCreateMutex();
+
+#if defined(ESP32) && ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+      espInit();
+#endif
+
+      _pixels.updateType(_type);
+      _pixels.updateLength(_numLeds);
+      _pixels.setPin(_pin);
+      _pixels.begin();
+      _pixels.clear();
+      _pixels.show();
+   }
+
+   ///
+   /// <summary>
+   /// Updates a single pixel's color in the strip buffer and latches the strip.
+   /// </summary>
+   /// <param name="pixelIndex">Zero-based index of the pixel in the strip</param>
+   /// <param name="r">Scaled red channel value (0-255)</param>
+   /// <param name="g">Scaled green channel value (0-255)</param>
+   /// <param name="b">Scaled blue channel value (0-255)</param>
+   ///
+   void setPixelColorAndShow(uint16_t pixelIndex, uint8_t r, uint8_t g, uint8_t b)
+   {
+      if (_mutex != nullptr)
+      {
+         xSemaphoreTake(_mutex, portMAX_DELAY);
+      }
+
+      _pixels.setPixelColor(pixelIndex, r, g, b);
+      _pixels.show();
+
+      if (_mutex != nullptr)
+      {
+         xSemaphoreGive(_mutex);
+      }
+   }
+};
+
+///
+/// <summary>
 /// NeoPixel/WS2812B addressable LED controller using the Adafruit_NeoPixel library.
 /// </summary>
 /// <remarks>
-/// Manages a single NeoPixel LED with full RGB color control through the Adafruit_NeoPixel
-/// library. The data pin and color order are auto-detected based on the target board.
+/// Manages either a standalone single NeoPixel LED or one pixel on a shared
+/// NeoPixelStrip, with full RGB color control. Defaults to white (255, 255, 255) so
+/// standard LED methods (turnOn(), flash(), blink(), setLevel()) light the pixel even
+/// when setColor() has not been called.
 /// </remarks>
 ///
 class NeoPixelLED : public LED
@@ -612,11 +749,13 @@ private:
    // channel immediately, which can silently fail that early, leaving the
    // NeoPixel dark. Deferring setup to begin() (called from setup()) avoids this.
    Adafruit_NeoPixel _pixel;
+   NeoPixelStrip* _strip = nullptr;
+   uint16_t _pixelIndex = 0;
    int16_t _neoPixelPin = NEOPIXEL_LED_PIN;
    neoPixelType _neoPixelType = NEOPIXEL_LED_TYPE;
-   uint8_t _red = 0;
-   uint8_t _green = 0;
-   uint8_t _blue = 0;
+   uint8_t _red = 255;
+   uint8_t _green = 255;
+   uint8_t _blue = 255;
 
 public:
    ///
@@ -636,12 +775,39 @@ public:
 
    ///
    /// <summary>
+   /// Constructs a NeoPixelLED controller targeting a single pixel on a shared
+   /// NeoPixelStrip.
+   /// </summary>
+   /// <param name="strip">The shared NeoPixelStrip that owns the underlying hardware pin</param>
+   /// <param name="pixelIndex">Zero-based index of the pixel controlled by this instance</param>
+   /// <param name="color">Optional LED color/calibration preset</param>
+   ///
+   NeoPixelLED(NeoPixelStrip* strip, uint16_t pixelIndex, LEDColor color = LEDColor::UNKNOWN)
+      : LED(0, color),
+        _strip(strip),
+        _pixelIndex(pixelIndex)
+   {
+      ASSERT(strip != nullptr);
+
+      _neoPixelPin = strip->pin();
+      _level = constrain(255 * 0.05f, 0, 255);
+   }
+
+   ///
+   /// <summary>
    /// Configures and initializes the Adafruit_NeoPixel library for the NeoPixel LED.
    /// </summary>
    ///
    virtual void begin() override
    {
       LED::begin();
+
+      if (_strip != nullptr)
+      {
+         _strip->begin();
+         _apply();
+         return;
+      }
 
 #ifdef NEOPIXEL_POWER
       // Some boards (e.g. Adafruit Feather ESP32-S3 TFT) gate power to the onboard
@@ -684,11 +850,19 @@ public:
    virtual void _apply() override
    {
       uint8_t brightness = _isOn ? (uint8_t)(_level * _calibrationFactor) : 0;
-      _pixel.setPixelColor(0,
-         (uint16_t)_red * brightness / 255,
-         (uint16_t)_green * brightness / 255,
-         (uint16_t)_blue * brightness / 255);
-      _pixel.show();
+      uint8_t r = (uint16_t)_red * brightness / 255;
+      uint8_t g = (uint16_t)_green * brightness / 255;
+      uint8_t b = (uint16_t)_blue * brightness / 255;
+
+      if (_strip != nullptr)
+      {
+         _strip->setPixelColorAndShow(_pixelIndex, r, g, b);
+      }
+      else
+      {
+         _pixel.setPixelColor(0, r, g, b);
+         _pixel.show();
+      }
    }
 
    ///

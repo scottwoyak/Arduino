@@ -17,6 +17,11 @@ using Arduino = Feather_ESP32_S3;
 #include "Waveshare_ESP32_S3_Zero.h"
 using Arduino = WaveShare_ESP32_S3_Zero_Sensors;
 
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2) || defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS2)
+
+#include "Waveshare_ESP32_S3_Zero.h"
+using Arduino = WaveShare_ESP32_S3_Zero_Sensors2;
+
 #elif defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO)
 
 #include "Waveshare_ESP32_S3_Zero.h"

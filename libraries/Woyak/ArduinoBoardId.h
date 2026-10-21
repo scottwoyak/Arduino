@@ -52,6 +52,18 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
 // This board has no onboard display, so no text-size defaults are defined.
 
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2) || defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS2)
+// Waveshare ESP32-S3-Zero wired with a custom-powered I2C bus and a 2-LED NeoPixel strip
+// for status (pixel 0) and general-purpose LED (pixel 1).
+
+#define ARDUINO_NEOPIXEL_SUPPORTED
+#define ARDUINO_PREFERENCES_SUPPORTED
+#define ARDUINO_STATUS_SUPPORTED
+
+#define ARDUINO_BOARD_VARIANT_ID "WAVESHARE_ESP32S3_ZERO_SENSORS2"
+
+// This board has no onboard display, so no text-size defaults are defined.
+
 #elif defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO)
 
 #define ARDUINO_NEOPIXEL_SUPPORTED
