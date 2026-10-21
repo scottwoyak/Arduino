@@ -85,7 +85,9 @@ namespace SerialX
 			}
 		}
 
-		Util::armSetupWatchdog("Serial");
+		// Clear the previous boot's RTC setup flag now that it has been captured above;
+		// SketchBase arms the setup watchdog for the current boot during _checkSafeMode().
+		Util::completeSetupWatchdog();
 		DeviceServerClient::setLastShutdownReason(_lastShutdownReason.c_str());
 
 		// Report the recorded failure reason (e.g. "Influx failed to begin") instead of
