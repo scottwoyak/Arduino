@@ -354,7 +354,7 @@ hosyond_esp32_s3_touch_lcd_40.menu.UploadSpeed.115200.upload.speed=115200
 
 ##############################################################
 
-waveshare_esp32_s3_zero_sensors.name=Waveshare ESP32-S3-Zero (Sensors)
+waveshare_esp32_s3_zero_sensors.name=Waveshare (Sensors)
 waveshare_esp32_s3_zero_sensors.vid.0=0x303a
 waveshare_esp32_s3_zero_sensors.pid.0=0x822B
 waveshare_esp32_s3_zero_sensors.upload_port.0.vid=0x303a
@@ -437,7 +437,7 @@ waveshare_esp32_s3_zero_sensors.menu.UploadSpeed.115200.upload.speed=115200
 
 ##############################################################
 
-waveshare_esp32_s3_zero_sensors2.name=Waveshare ESP32-S3-Zero (Sensors 2)
+waveshare_esp32_s3_zero_sensors2.name=Waveshare (Sensors2)
 waveshare_esp32_s3_zero_sensors2.vid.0=0x303a
 waveshare_esp32_s3_zero_sensors2.pid.0=0x822B
 waveshare_esp32_s3_zero_sensors2.upload_port.0.vid=0x303a

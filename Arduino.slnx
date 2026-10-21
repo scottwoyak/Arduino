@@ -553,6 +553,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="LED_Sensors2/LED_Sensors2.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Led_Status/Led_Status.vcxproj" Id="00000000-0000-0000-0000-000000000061">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
