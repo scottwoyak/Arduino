@@ -27,6 +27,9 @@ private:
    /// <summary>Preferences namespace used to persist the resolved entry.</summary>
    const char* _namespace;
 
+   /// <summary>Optional legacy per-sketch Preferences namespace to migrate from if _namespace has no saved entry yet.</summary>
+   const char* _legacyNamespace = nullptr;
+
    /// <summary>Preferences keys, one per field (fieldsPerEntry == _keys.size()).</summary>
    std::vector<const char*> _keys;
 
@@ -109,8 +112,8 @@ public:
    /// <param name="preferencesNamespace">Preferences (NVS) namespace to read/write.</param>
    /// <param name="keys">Preferences keys, one per field (fieldsPerEntry == keys.size()).</param>
    ///
-   PreferencesResolver(const char* preferencesNamespace, std::span<const char* const> keys)
-      : _namespace(preferencesNamespace), _keys(keys.begin(), keys.end()), _values(keys.size())
+   PreferencesResolver(const char* preferencesNamespace, std::span<const char* const> keys, const char* legacyNamespace = nullptr)
+      : _namespace(preferencesNamespace), _legacyNamespace(legacyNamespace), _keys(keys.begin(), keys.end()), _values(keys.size())
    {
    }
 
@@ -320,7 +323,36 @@ public:
       }
       preferences.end();
 
-      size_t matchedIndex = 0;
+      if (!hasSavedEntry && _legacyNamespace != nullptr && strcmp(_legacyNamespace, _namespace) != 0)
+      {
+         preferences.begin(_legacyNamespace, true);
+         bool hasLegacyEntry = true;
+         for (const char* key : _keys)
+         {
+            hasLegacyEntry &= preferences.isKey(key);
+         }
+         if (hasLegacyEntry)
+         {
+            for (size_t f = 0; f < fieldsPerEntry; f++)
+            {
+               _values[f] = preferences.getString(_keys[f]);
+            }
+         }
+         preferences.end();
+
+         if (hasLegacyEntry)
+         {
+            hasSavedEntry = true;
+            preferences.begin(_namespace, false);
+            for (size_t f = 0; f < fieldsPerEntry; f++)
+            {
+               preferences.putString(_keys[f], _values[f]);
+            }
+            preferences.end();
+         }
+      }
+
+      size_t matchedIndex = SIZE_MAX;
       if (hasSavedEntry)
       {
          for (size_t i = 0; i < entryCount; i++)
@@ -339,6 +371,11 @@ public:
                matchedIndex = i;
                break;
             }
+         }
+
+         if (matchedIndex == SIZE_MAX)
+         {
+            hasSavedEntry = false;
          }
       }
 

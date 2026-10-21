@@ -50,6 +50,9 @@ public:
    /// <summary>Number of samples in each standard rolling window, covering exactly one upload interval.</summary>
    static constexpr size_t NUM_STANDARD_SAMPLES = STANDARD_UPLOAD_INTERVAL_S / STANDARD_SAMPLE_INTERVAL_S;
 
+   /// <summary>Shared Preferences (NVS) namespace used to persist device-level Influx site/location/bucket across all sketches on the same board.</summary>
+   static constexpr auto DEVICE_CONFIG_NAMESPACE = "Device";
+
    /// <summary>Preferences keys for the resolved InfluxDB site entry (bucket/site/location), in InfluxContext field order.</summary>
    static constexpr const char* SITE_KEYS[] = { "bucket", "site", "location" };
 
@@ -382,7 +385,7 @@ public:
    InfluxSketchBase(const SketchConfig& config, const InfluxConfig& influxConfig)
       : SketchBase(config),
       _influxConfig(influxConfig),
-      _siteResolver(config.preferencesNamespace, SITE_KEYS),
+      _siteResolver(DEVICE_CONFIG_NAMESPACE, SITE_KEYS, config.preferencesNamespace),
       _sensorTimer(STANDARD_SAMPLE_INTERVAL_S),
       _standardUploadTimer(STANDARD_UPLOAD_INTERVAL_S)
    {

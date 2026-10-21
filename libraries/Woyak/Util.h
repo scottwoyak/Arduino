@@ -351,7 +351,7 @@ public:
    static void setHaltReason(const String& reason)
    {
       Preferences preferences;
-      preferences.begin("Woyak", false);
+      preferences.begin("Device", false);
       preferences.putString("halt", reason);
       preferences.end();
    }
@@ -367,7 +367,7 @@ public:
    {
       String reason = "";
       Preferences preferences;
-      preferences.begin("Woyak", false);
+      preferences.begin("Device", false);
       // Note: Not all implementation of Preferences have isKey, but ESP32 does.
       if (preferences.isKey("halt"))
       {

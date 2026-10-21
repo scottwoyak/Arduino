@@ -221,7 +221,7 @@ private:
    ///
    void enableConfigCommands()
    {
-      _preferencesNamespace = _config.preferencesNamespace;
+      _preferencesNamespace = DEVICE_CONFIG_NAMESPACE;
       if (_influxConfig.context.site == nullptr || _influxConfig.context.site[0] == '\0')
       {
          _siteOptions = SITE_OPTIONS;
@@ -425,7 +425,7 @@ private:
    {
       _promptForSiteLocation();
 
-      _arduino->preferences.begin(_config.preferencesNamespace, false);
+      _arduino->preferences.begin(DEVICE_CONFIG_NAMESPACE, false);
       if (_influxConfig.context.site == nullptr || _influxConfig.context.site[0] == '\0')
       {
          _arduino->preferences.putString(SITE_KEY, _siteName);
@@ -446,10 +446,38 @@ private:
    ///
    bool _hasSavedConfig()
    {
-      _arduino->preferences.begin(_config.preferencesNamespace, true);
       bool hasFixedSite = _influxConfig.context.site != nullptr && _influxConfig.context.site[0] != '\0';
+
+      _arduino->preferences.begin(DEVICE_CONFIG_NAMESPACE, true);
       bool hasSavedConfig = (hasFixedSite || _arduino->preferences.isKey(SITE_KEY)) && _arduino->preferences.isKey(LOCATION_KEY);
       _arduino->preferences.end();
+
+      if (!hasSavedConfig && _config.preferencesNamespace != nullptr && strcmp(_config.preferencesNamespace, DEVICE_CONFIG_NAMESPACE) != 0)
+      {
+         _arduino->preferences.begin(_config.preferencesNamespace, true);
+         bool hasLegacy = (hasFixedSite || _arduino->preferences.isKey(SITE_KEY)) && _arduino->preferences.isKey(LOCATION_KEY);
+         String legacySite = _arduino->preferences.isKey(SITE_KEY) ? _arduino->preferences.getString(SITE_KEY) : "";
+         String legacyLocation = _arduino->preferences.getString(LOCATION_KEY);
+         bool hasLegacyBucket = _arduino->preferences.isKey(BUCKET_KEY);
+         String legacyBucket = hasLegacyBucket ? _arduino->preferences.getString(BUCKET_KEY) : "";
+         _arduino->preferences.end();
+
+         if (hasLegacy)
+         {
+            _arduino->preferences.begin(DEVICE_CONFIG_NAMESPACE, false);
+            if (legacySite.length() > 0)
+            {
+               _arduino->preferences.putString(SITE_KEY, legacySite);
+            }
+            _arduino->preferences.putString(LOCATION_KEY, legacyLocation);
+            if (hasLegacyBucket && legacyBucket.length() > 0)
+            {
+               _arduino->preferences.putString(BUCKET_KEY, legacyBucket);
+            }
+            _arduino->preferences.end();
+            hasSavedConfig = true;
+         }
+      }
 
       return hasSavedConfig;
    }
@@ -462,7 +490,7 @@ private:
    ///
    void _loadSavedConfig()
    {
-      _arduino->preferences.begin(_config.preferencesNamespace, true);
+      _arduino->preferences.begin(DEVICE_CONFIG_NAMESPACE, true);
       if (_influxConfig.context.site != nullptr && _influxConfig.context.site[0] != '\0')
       {
          _siteName = _influxConfig.context.site;

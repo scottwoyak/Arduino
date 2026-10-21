@@ -23,6 +23,7 @@ class SiteLocationResolver : public ConfigCommandHandler
 {
 private:
    static constexpr uint16_t PROMPT_TIMEOUT_S = 10;
+   const char* _legacyNamespace = nullptr;
 
    /// <summary>Commands registered via enableConfigCommands(), listed by "Help" after the built-ins.</summary>
    static constexpr DeviceServerClient::CommandInfo CONFIG_COMMANDS[] = {
@@ -210,6 +211,24 @@ private:
       bool hasSavedConfig = preferences.isKey(SITE_KEY) && preferences.isKey(LOCATION_KEY);
       preferences.end();
 
+      if (!hasSavedConfig && _legacyNamespace != nullptr && strcmp(_legacyNamespace, _preferencesNamespace) != 0)
+      {
+         preferences.begin(_legacyNamespace, true);
+         bool hasLegacy = preferences.isKey(SITE_KEY) && preferences.isKey(LOCATION_KEY);
+         String legacySite = hasLegacy ? preferences.getString(SITE_KEY) : "";
+         String legacyLocation = hasLegacy ? preferences.getString(LOCATION_KEY) : "";
+         preferences.end();
+
+         if (hasLegacy)
+         {
+            preferences.begin(_preferencesNamespace, false);
+            preferences.putString(SITE_KEY, legacySite);
+            preferences.putString(LOCATION_KEY, legacyLocation);
+            preferences.end();
+            hasSavedConfig = true;
+         }
+      }
+
       return hasSavedConfig;
    }
 
@@ -250,9 +269,10 @@ public:
    /// <param name="preferencesNamespace">Preferences (NVS) namespace used to persist the selected site/location.</param>
    /// <param name="siteOptions">Site choices offered to the user; location is entered as free text.</param>
    ///
-   SiteLocationResolver(const char* preferencesNamespace, std::span<const char* const> siteOptions)
+   SiteLocationResolver(const char* preferencesNamespace, std::span<const char* const> siteOptions, const char* legacyNamespace = nullptr)
    {
       _preferencesNamespace = preferencesNamespace;
+      _legacyNamespace = legacyNamespace;
       _siteOptions = siteOptions;
    }
 

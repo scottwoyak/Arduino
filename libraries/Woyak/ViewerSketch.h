@@ -110,7 +110,7 @@ public:
       : SketchBase(config),
         _telemetryConfig(telemetryConfig),
         _topicResolver(config.preferencesNamespace, &_telemetryConfig),
-        _siteLocationResolver(config.preferencesNamespace, siteOptions)
+        _siteLocationResolver("Device", siteOptions, config.preferencesNamespace)
    {
    }
 

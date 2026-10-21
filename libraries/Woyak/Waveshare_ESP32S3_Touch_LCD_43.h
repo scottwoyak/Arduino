@@ -51,7 +51,9 @@ public:
       // this board's actual mounting (no additional flip needed).
       display.setRotation(DisplayRotation::PORTRAIT);
 
+#ifdef ARDUINO_BATTERY_SUPPORTED
       battery.begin();
+#endif
       buttonA.begin();
       status.begin();
    }

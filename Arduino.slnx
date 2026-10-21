@@ -353,6 +353,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Battery_Calibrator/Battery_Calibrator.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Battery_Display/Battery_Display.vcxproj" Id="00000000-0000-0000-0000-000000000011">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

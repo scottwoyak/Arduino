@@ -115,7 +115,9 @@ public:
       Wire.begin();
 
       sound.begin();
+#ifdef ARDUINO_BATTERY_SUPPORTED
       battery.begin();
+#endif
       buttonA.begin();
       neoPixel.begin();
       status.begin();

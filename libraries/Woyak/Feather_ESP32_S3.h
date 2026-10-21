@@ -47,7 +47,9 @@ public:
 
       Wire.begin();
 
+#ifdef ARDUINO_BATTERY_SUPPORTED
       battery.begin();
+#endif
       buttonA.begin();
       neoPixel.begin();
       led.begin();

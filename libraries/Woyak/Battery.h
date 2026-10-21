@@ -9,6 +9,10 @@
 #include <Wire.h>
 #endif
 
+#if defined(ARDUINO_ARCH_ESP32)
+#include <Preferences.h>
+#endif
+
 #include "ArduinoBoardId.h"
 #include "TimedAverage.h"
 
@@ -83,9 +87,11 @@ private:
    static constexpr uint8_t MIN_RIPPLE_SAMPLES_FOR_VALID = 5;
    static constexpr float ADC_RIPPLE_DISCONNECT_VOLTS = 0.055f;
    static constexpr float ADC_RIPPLE_CONNECT_VOLTS = 0.035f;
-   static constexpr float FUEL_GAUGE_RIPPLE_DISCONNECT_VOLTS = 0.012f;
-   static constexpr float FUEL_GAUGE_RIPPLE_CONNECT_VOLTS = 0.005f;
+   static constexpr float FUEL_GAUGE_RIPPLE_DISCONNECT_VOLTS = 0.024f;
+   static constexpr float FUEL_GAUGE_RIPPLE_CONNECT_VOLTS = 0.020f;
    static constexpr float MIN_RIPPLE_FLOAT_VOLTS = 3.95f;
+   static constexpr float ADC_MIN_RIPPLE_PEAK_VOLTS = 4.14f;
+   static constexpr float FUEL_GAUGE_MIN_RIPPLE_PEAK_VOLTS = 4.175f;
    static constexpr uint8_t RIPPLE_DISCONNECT_WINDOWS_REQUIRED = 2;
    static constexpr uint8_t RIPPLE_CONNECT_WINDOWS_REQUIRED = 3;
    static constexpr uint8_t ADC_UNPLUGGED_PROBE_SAMPLE_COUNT = 25;
@@ -94,13 +100,34 @@ private:
    static constexpr uint8_t FUEL_GAUGE_UNPLUGGED_PROBE_DELAY_MS = 25;
    static constexpr uint16_t FUEL_GAUGE_STARTUP_TIMEOUT_MS = 500;
 
-   // Pseudo charging detection on ADC voltage-divider boards:
-   // - Compares window average voltage over time: rising by >= 4mV indicates Charging (Yes),
-   //   falling by >= 4mV indicates Draining (No).
-   // - Once a connected battery reaches the TP4054 full-charge CV plateau (>= 4.18V) and
-   //   stops rising, it is considered fully charged (Charging = No).
-   static constexpr float TREND_DEADBAND_VOLTS = 0.004f;
-   static constexpr float FULL_CHARGE_VOLTS = 4.18f;
+   // Pseudo charging detection and adaptive full-charge plateau learning:
+   // - Compares window average voltage over time: rising above the deadband across
+   //   consecutive windows indicates Charging (Yes), falling below the deadband indicates
+   //   Draining (No).
+   // - Different batteries and boards reach slightly different topped-off voltages due to
+   //   cell age/internal resistance, load current, and ADC voltage-divider tolerances.
+   //   When charging in the upper voltage region (>= 4.08V) and the voltage stops rising
+   //   for PLATEAU_FULL_WINDOWS_REQUIRED (180s = 3 minutes), the battery has reached its
+   //   actual CV/termination plateau: it transitions to Full and updates the learned
+   //   full-charge voltage in NVS (Preferences) so both Full detection and the 0-100%
+   //   voltage curve automatically adapt to that specific battery and board.
+   // - On the Feather MAX17048 + MCP73831, if a nearly-full battery (>= 4.10V) is connected
+   //   after the MCP73831 has terminated charge, the charger rests in standby while 5V
+   //   supplies the load (holding the battery flat with <= 6mV window span), which also
+   //   represents a Full/standby state until 5V is unplugged (span jumps to >= 14mV).
+   static constexpr const char* PREFERENCES_NAMESPACE = "Device";
+   static constexpr const char* FULL_VOLTS_PREF_KEY = "fullVolts";
+   static constexpr float ADC_TREND_DEADBAND_VOLTS = 0.008f;
+   static constexpr float FUEL_GAUGE_TREND_DEADBAND_VOLTS = 0.004f;
+   static constexpr uint8_t TREND_RISE_WINDOWS_REQUIRED = 2;
+   static constexpr float DEFAULT_FULL_CHARGE_VOLTS = 4.185f;
+   static constexpr float MIN_LEARNED_FULL_VOLTS = 4.080f;
+   static constexpr float MAX_LEARNED_FULL_VOLTS = 4.240f;
+   static constexpr float SAVE_FULL_VOLTS_TOLERANCE = 0.003f;
+   static constexpr uint16_t PLATEAU_FULL_WINDOWS_REQUIRED = 180;
+   static constexpr float FUEL_GAUGE_STANDBY_FULL_VOLTS = 4.100f;
+   static constexpr float FUEL_GAUGE_STANDBY_MAX_SPAN_VOLTS = 0.006f;
+   static constexpr float FULL_CHARGE_PERCENT = 99.5f;
 
    static constexpr float MIN_FUEL_GAUGE_CHARGE_RATE = 1.0f;
 
@@ -132,19 +159,35 @@ private:
    ///
    /// <summary>
    /// Converts a 1S LiPo cell voltage to an estimated state-of-charge percentage using
-   /// piecewise linear interpolation over LIPO_VOLTS_CURVE.
+   /// piecewise linear interpolation over LIPO_VOLTS_CURVE, scaled between the 0% cutoff
+   /// (3.30V) and the board/battery's calibrated full-charge ceiling.
    /// </summary>
    /// <param name="volts">Measured cell voltage in volts.</param>
+   /// <param name="fullChargeVolts">Calibrated 100% full-charge voltage for this battery/board.</param>
    /// <returns>Estimated battery percentage (0.0 to 100.0).</returns>
    ///
-   static float _voltsToPercent(float volts)
+   static float _voltsToPercent(float volts, float fullChargeVolts = LIPO_VOLTS_CURVE[NUM_LIPO_CURVE_POINTS - 1])
    {
-      if (volts <= LIPO_VOLTS_CURVE[0])
+      constexpr float minCurveVolts = LIPO_VOLTS_CURVE[0];
+      constexpr float maxCurveVolts = LIPO_VOLTS_CURVE[NUM_LIPO_CURVE_POINTS - 1];
+
+      if (volts <= minCurveVolts)
       {
          return 0.0f;
       }
 
-      if (volts >= LIPO_VOLTS_CURVE[NUM_LIPO_CURVE_POINTS - 1])
+      float effectiveFullVolts = (isfinite(fullChargeVolts) && fullChargeVolts >= MIN_LEARNED_FULL_VOLTS)
+         ? fullChargeVolts
+         : maxCurveVolts;
+      if (volts >= effectiveFullVolts)
+      {
+         return 100.0f;
+      }
+
+      float normalizedVolts = minCurveVolts
+         + (volts - minCurveVolts) * ((maxCurveVolts - minCurveVolts) / (effectiveFullVolts - minCurveVolts));
+
+      if (normalizedVolts >= maxCurveVolts)
       {
          return 100.0f;
       }
@@ -153,9 +196,9 @@ private:
       {
          float vLow = LIPO_VOLTS_CURVE[i];
          float vHigh = LIPO_VOLTS_CURVE[i + 1];
-         if (volts <= vHigh)
+         if (normalizedVolts <= vHigh)
          {
-            float fraction = (volts - vLow) / (vHigh - vLow);
+            float fraction = (normalizedVolts - vLow) / (vHigh - vLow);
             return (i + fraction) * 10.0f;
          }
       }
@@ -194,13 +237,26 @@ private:
    uint32_t _windowStartMs = 0;
    float _windowMinVolts = NAN;
    float _windowMaxVolts = NAN;
+   float _windowLastVolts = NAN;
+   float _windowRiseVolts = 0.0f;
+   float _windowFallVolts = 0.0f;
    double _windowSumVolts = 0.0;
    uint16_t _windowSampleCount = 0;
+   float _lastWindowMinVolts = NAN;
+   float _lastWindowMaxVolts = NAN;
+   float _lastWindowSpanVolts = 0.0f;
+   float _lastWindowRiseVolts = 0.0f;
+   float _lastWindowFallVolts = 0.0f;
    float _lastRippleVolts = 0.0f;
    bool _hasRippleMeasurement = false;
    bool _rippleDisconnected = false;
+   bool _seenRippleRise = false;
+   bool _seenRippleFall = false;
    uint8_t _consecutiveRippleWindows = 0;
    uint8_t _consecutiveCalmWindows = 0;
+   uint8_t _consecutiveRisingWindows = 0;
+   uint16_t _plateauFlatWindows = 0;
+   float _fullChargeVolts = DEFAULT_FULL_CHARGE_VOLTS;
    float _trendBaselineVolts = NAN;
    BatteryChargingState _adcChargingState = BatteryChargingState::Unknown;
    TimedAverage _voltsAverage{ RIPPLE_WINDOW_MS };
@@ -303,18 +359,69 @@ private:
 
    ///
    /// <summary>
+   /// Loads the persisted full-charge plateau voltage for this battery/board from NVS.
+   /// </summary>
+   ///
+   void _loadCalibration()
+   {
+#if defined(ARDUINO_ARCH_ESP32)
+      Preferences prefs;
+      if (prefs.begin(PREFERENCES_NAMESPACE, true))
+      {
+         float savedFull = prefs.getFloat(FULL_VOLTS_PREF_KEY, NAN);
+         prefs.end();
+         if (isfinite(savedFull) && savedFull >= MIN_LEARNED_FULL_VOLTS && savedFull <= MAX_LEARNED_FULL_VOLTS)
+         {
+            _fullChargeVolts = savedFull;
+         }
+      }
+#endif
+   }
+
+   ///
+   /// <summary>
+   /// Saves a newly observed full-charge plateau voltage to NVS if it differs meaningfully
+   /// from the currently stored value.
+   /// </summary>
+   /// <param name="fullVolts">Measured full-charge plateau voltage in volts.</param>
+   ///
+   void _saveFullChargeVolts(float fullVolts)
+   {
+      float clamped = constrain(fullVolts, MIN_LEARNED_FULL_VOLTS, MAX_LEARNED_FULL_VOLTS);
+      if (fabsf(clamped - _fullChargeVolts) < SAVE_FULL_VOLTS_TOLERANCE)
+      {
+         _fullChargeVolts = clamped;
+         return;
+      }
+
+      _fullChargeVolts = clamped;
+#if defined(ARDUINO_ARCH_ESP32)
+      Preferences prefs;
+      if (prefs.begin(PREFERENCES_NAMESPACE, false))
+      {
+         prefs.putFloat(FULL_VOLTS_PREF_KEY, _fullChargeVolts);
+         prefs.end();
+      }
+#endif
+   }
+
+   ///
+   /// <summary>
    /// Resets the voltage-trend charging state when the battery is disconnected.
    /// </summary>
    ///
    void _resetAdcChargingTrend()
    {
       _trendBaselineVolts = NAN;
+      _consecutiveRisingWindows = 0;
+      _plateauFlatWindows = 0;
       _adcChargingState = BatteryChargingState::Unknown;
    }
 
    ///
    /// <summary>
-   /// Updates the pseudo charging state from the completed window's average voltage.
+   /// Updates the pseudo charging state and adaptive full-charge ceiling from the completed
+   /// window's average voltage.
    /// </summary>
    /// <param name="windowAvgVolts">Average voltage across the completed window.</param>
    ///
@@ -326,36 +433,86 @@ private:
          return;
       }
 
+      bool fuelGaugeStandbyFull = _isFuelGauge()
+         && (windowAvgVolts >= FUEL_GAUGE_STANDBY_FULL_VOLTS)
+         && (_lastWindowSpanVolts > 0.0f)
+         && (_lastWindowSpanVolts <= FUEL_GAUGE_STANDBY_MAX_SPAN_VOLTS);
+
       if (!isfinite(_trendBaselineVolts))
       {
          _trendBaselineVolts = windowAvgVolts;
-         if (windowAvgVolts >= FULL_CHARGE_VOLTS)
+         _consecutiveRisingWindows = 0;
+         _plateauFlatWindows = 0;
+         if (windowAvgVolts >= _fullChargeVolts || fuelGaugeStandbyFull || (_isFuelGauge() && _percentAverage.average() >= FULL_CHARGE_PERCENT))
          {
             _adcChargingState = BatteryChargingState::Full;
          }
          return;
       }
 
+      float deadband = _isFuelGauge() ? FUEL_GAUGE_TREND_DEADBAND_VOLTS : ADC_TREND_DEADBAND_VOLTS;
       float delta = windowAvgVolts - _trendBaselineVolts;
-      if (delta >= TREND_DEADBAND_VOLTS)
+      if (delta >= deadband)
       {
-         // Voltage is measurably rising -> actively charging (unless saturated at full charge)
-         _adcChargingState = (windowAvgVolts >= FULL_CHARGE_VOLTS)
-            ? BatteryChargingState::Full
-            : BatteryChargingState::Yes;
-         _trendBaselineVolts = windowAvgVolts;
+         if (_consecutiveRisingWindows < TREND_RISE_WINDOWS_REQUIRED)
+         {
+            _consecutiveRisingWindows++;
+         }
+
+         // Require 2 consecutive rising windows before switching from Discharging to Charging
+         // so a single 1-second WiFi TX voltage sag and rebound does not flip the state.
+         if (_adcChargingState != BatteryChargingState::No || _consecutiveRisingWindows >= TREND_RISE_WINDOWS_REQUIRED)
+         {
+            _plateauFlatWindows = 0;
+            if (windowAvgVolts > _fullChargeVolts && windowAvgVolts <= MAX_LEARNED_FULL_VOLTS)
+            {
+               // Battery climbed higher than the previous learned ceiling -> raise ceiling.
+               _saveFullChargeVolts(windowAvgVolts);
+            }
+
+            _adcChargingState = (windowAvgVolts >= DEFAULT_FULL_CHARGE_VOLTS)
+               ? BatteryChargingState::Full
+               : BatteryChargingState::Yes;
+            _trendBaselineVolts = windowAvgVolts;
+         }
       }
-      else if (delta <= -TREND_DEADBAND_VOLTS)
+      else if (delta <= -deadband)
       {
          // Voltage is measurably falling -> draining / not charging
+         _consecutiveRisingWindows = 0;
+         _plateauFlatWindows = 0;
          _adcChargingState = BatteryChargingState::No;
          _trendBaselineVolts = windowAvgVolts;
       }
-      else if (windowAvgVolts >= FULL_CHARGE_VOLTS)
+      else
       {
-         // Holding steady on the 4.18V-4.20V CV plateau -> fully charged (charging complete)
-         _adcChargingState = BatteryChargingState::Full;
-         _trendBaselineVolts = windowAvgVolts;
+         _consecutiveRisingWindows = 0;
+
+         // If the battery is charging (or sitting on the low-ripple 5V rail) in the upper
+         // voltage region (>= 4.08V) and its voltage has stopped rising for 3 minutes, it
+         // has reached this battery/board's actual full-charge plateau.
+         if ((_adcChargingState == BatteryChargingState::Yes || fuelGaugeStandbyFull) && windowAvgVolts >= MIN_LEARNED_FULL_VOLTS)
+         {
+            if (_plateauFlatWindows < PLATEAU_FULL_WINDOWS_REQUIRED)
+            {
+               _plateauFlatWindows++;
+            }
+            if (_plateauFlatWindows >= PLATEAU_FULL_WINDOWS_REQUIRED)
+            {
+               _saveFullChargeVolts(windowAvgVolts);
+               _adcChargingState = BatteryChargingState::Full;
+               _trendBaselineVolts = windowAvgVolts;
+               return;
+            }
+         }
+
+         if (windowAvgVolts >= _fullChargeVolts || fuelGaugeStandbyFull || (_isFuelGauge() && _percentAverage.average() >= FULL_CHARGE_PERCENT && _adcChargingState != BatteryChargingState::No))
+         {
+            // Holding steady at or above the calibrated full-charge plateau (or on the
+            // MCP73831 post-termination standby plateau while 5V powers the load) -> Full.
+            _adcChargingState = BatteryChargingState::Full;
+            _trendBaselineVolts = windowAvgVolts;
+         }
       }
    }
 
@@ -431,6 +588,9 @@ private:
          _windowStartMs = now;
          _windowMinVolts = volts;
          _windowMaxVolts = volts;
+         _windowLastVolts = volts;
+         _windowRiseVolts = 0.0f;
+         _windowFallVolts = 0.0f;
          _windowSumVolts = volts;
          _windowSampleCount = 1;
          return;
@@ -441,22 +601,38 @@ private:
          if (_windowSampleCount >= MIN_RIPPLE_SAMPLES_FOR_VALID)
          {
             bool wasDisconnected = _rippleDisconnected;
-            _lastRippleVolts = _windowMaxVolts - _windowMinVolts;
-            _hasRippleMeasurement = true;
             float disconnectThreshold = _isFuelGauge() ? FUEL_GAUGE_RIPPLE_DISCONNECT_VOLTS : ADC_RIPPLE_DISCONNECT_VOLTS;
             float connectThreshold = _isFuelGauge() ? FUEL_GAUGE_RIPPLE_CONNECT_VOLTS : ADC_RIPPLE_CONNECT_VOLTS;
             float threshold = _rippleDisconnected ? connectThreshold : disconnectThreshold;
-            bool inFloatRange = (_windowMinVolts >= MIN_RIPPLE_FLOAT_VOLTS);
-            bool windowHasRipple = inFloatRange && (_lastRippleVolts > threshold);
+
+            // A charger no-battery sawtooth oscillates between ~4.08V and the ~4.16V-4.20V
+            // regulation ceiling, exhibiting both upward recharge ramps and downward drain.
+            // A real battery when USB is unplugged drops monotonically under load without
+            // recharging back up to the charger ceiling.
+            float minPeakVolts = _isFuelGauge() ? FUEL_GAUGE_MIN_RIPPLE_PEAK_VOLTS : ADC_MIN_RIPPLE_PEAK_VOLTS;
+            bool inFloatRange = (_windowMinVolts >= MIN_RIPPLE_FLOAT_VOLTS) && (_windowMaxVolts >= minPeakVolts);
+            bool windowRises = (_windowRiseVolts > threshold);
+            bool windowFalls = (_windowFallVolts > threshold);
+            float rawSpanVolts = _windowMaxVolts - _windowMinVolts;
+            _lastWindowMinVolts = _windowMinVolts;
+            _lastWindowMaxVolts = _windowMaxVolts;
+            _lastWindowSpanVolts = rawSpanVolts;
+            _lastWindowRiseVolts = _windowRiseVolts;
+            _lastWindowFallVolts = _windowFallVolts;
+            _lastRippleVolts = (windowRises || _seenRippleRise) ? rawSpanVolts : std::min(rawSpanVolts, _windowRiseVolts);
+            _hasRippleMeasurement = true;
+            bool windowHasRipple = inFloatRange && (rawSpanVolts > threshold) && (windowRises || windowFalls);
 
             if (windowHasRipple)
             {
                _consecutiveCalmWindows = 0;
+               _seenRippleRise = _seenRippleRise || windowRises;
+               _seenRippleFall = _seenRippleFall || windowFalls;
                if (_consecutiveRippleWindows < RIPPLE_DISCONNECT_WINDOWS_REQUIRED)
                {
                   _consecutiveRippleWindows++;
                }
-               if (_consecutiveRippleWindows >= RIPPLE_DISCONNECT_WINDOWS_REQUIRED)
+               if (_consecutiveRippleWindows >= RIPPLE_DISCONNECT_WINDOWS_REQUIRED && _seenRippleRise && _seenRippleFall)
                {
                   _rippleDisconnected = true;
                }
@@ -464,12 +640,16 @@ private:
             else if (!inFloatRange)
             {
                _consecutiveRippleWindows = 0;
+               _seenRippleRise = false;
+               _seenRippleFall = false;
                _consecutiveCalmWindows = RIPPLE_CONNECT_WINDOWS_REQUIRED;
                _rippleDisconnected = false;
             }
             else
             {
                _consecutiveRippleWindows = 0;
+               _seenRippleRise = false;
+               _seenRippleFall = false;
                if (_consecutiveCalmWindows < RIPPLE_CONNECT_WINDOWS_REQUIRED)
                {
                   _consecutiveCalmWindows++;
@@ -507,10 +687,23 @@ private:
          _windowStartMs = now;
          _windowMinVolts = volts;
          _windowMaxVolts = volts;
+         _windowRiseVolts = (volts > _windowLastVolts) ? (volts - _windowLastVolts) : 0.0f;
+         _windowFallVolts = (volts < _windowLastVolts) ? (_windowLastVolts - volts) : 0.0f;
+         _windowLastVolts = volts;
          _windowSumVolts = volts;
          _windowSampleCount = 1;
          return;
       }
+
+      if (volts > _windowLastVolts)
+      {
+         _windowRiseVolts += (volts - _windowLastVolts);
+      }
+      else if (volts < _windowLastVolts)
+      {
+         _windowFallVolts += (_windowLastVolts - volts);
+      }
+      _windowLastVolts = volts;
 
       if (volts < _windowMinVolts)
       {
@@ -546,6 +739,8 @@ private:
       float lastVolts = _sampleVolts();
       float minVolts = lastVolts;
       float maxVolts = lastVolts;
+      float riseVolts = 0.0f;
+      float fallVolts = 0.0f;
       double sumVolts = lastVolts;
       uint8_t sampleCount = 1;
 
@@ -554,7 +749,16 @@ private:
          for (uint8_t i = 1; i < probeSamples; i++)
          {
             delay(probeDelayMs);
-            lastVolts = _sampleVolts();
+            float sample = _sampleVolts();
+            if (sample > lastVolts)
+            {
+               riseVolts += (sample - lastVolts);
+            }
+            else if (sample < lastVolts)
+            {
+               fallVolts += (lastVolts - sample);
+            }
+            lastVolts = sample;
             sumVolts += lastVolts;
             sampleCount++;
 
@@ -573,10 +777,25 @@ private:
          }
       }
 
-      _lastRippleVolts = maxVolts - minVolts;
+      float rawSpanVolts = maxVolts - minVolts;
+      bool probeRises = (riseVolts > disconnectThreshold);
+      bool probeFalls = (fallVolts > disconnectThreshold);
+      _lastWindowMinVolts = minVolts;
+      _lastWindowMaxVolts = maxVolts;
+      _lastWindowSpanVolts = rawSpanVolts;
+      _lastWindowRiseVolts = riseVolts;
+      _lastWindowFallVolts = fallVolts;
+      _lastRippleVolts = probeRises ? rawSpanVolts : std::min(rawSpanVolts, riseVolts);
       _hasRippleMeasurement = true;
-      bool probeHasRipple = (minVolts >= MIN_RIPPLE_FLOAT_VOLTS) && (_lastRippleVolts > disconnectThreshold);
+      float minPeakVolts = _isFuelGauge() ? FUEL_GAUGE_MIN_RIPPLE_PEAK_VOLTS : ADC_MIN_RIPPLE_PEAK_VOLTS;
+      bool probeHasRipple = (minVolts >= MIN_RIPPLE_FLOAT_VOLTS)
+         && (maxVolts >= minPeakVolts)
+         && (rawSpanVolts > disconnectThreshold)
+         && probeRises
+         && probeFalls;
       _consecutiveRippleWindows = probeHasRipple ? RIPPLE_DISCONNECT_WINDOWS_REQUIRED : 0;
+      _seenRippleRise = probeHasRipple;
+      _seenRippleFall = probeHasRipple;
       _consecutiveCalmWindows = probeHasRipple ? 0 : RIPPLE_CONNECT_WINDOWS_REQUIRED;
       _rippleDisconnected = probeHasRipple;
 
@@ -587,6 +806,9 @@ private:
       _windowStartMs = millis();
       _windowMinVolts = lastVolts;
       _windowMaxVolts = lastVolts;
+      _windowLastVolts = lastVolts;
+      _windowRiseVolts = 0.0f;
+      _windowFallVolts = 0.0f;
       _windowSumVolts = lastVolts;
       _windowSampleCount = 1;
 
@@ -617,6 +839,8 @@ public:
    ///
    bool begin()
    {
+      _loadCalibration();
+
 #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
       if (_pin < 0)
       {
@@ -786,16 +1010,36 @@ public:
             return BatteryChargingState::Yes;
          }
 
-         if (rate <= -MIN_FUEL_GAUGE_CHARGE_RATE)
+         float avgVolts = _voltsAverage.average();
+         float checkVolts = isfinite(avgVolts) ? avgVolts : volts;
+         float percent = readAveragePercent();
+         bool standbyFull = (checkVolts >= FUEL_GAUGE_STANDBY_FULL_VOLTS)
+            && (_lastWindowSpanVolts > 0.0f)
+            && (_lastWindowSpanVolts <= FUEL_GAUGE_STANDBY_MAX_SPAN_VOLTS)
+            && (_adcChargingState != BatteryChargingState::No);
+         bool atFullCharge = (checkVolts >= _fullChargeVolts)
+            || standbyFull
+            || (isfinite(percent) && percent >= FULL_CHARGE_PERCENT);
+
+         if (_adcChargingState == BatteryChargingState::No && checkVolts < _fullChargeVolts && !standbyFull)
          {
+            // Voltage has measurably dropped off the charger plateau -> discharging.
             _unlock();
             return BatteryChargingState::No;
          }
 
-         if (volts >= FULL_CHARGE_VOLTS)
+         if (atFullCharge)
          {
+            // On the charger plateau (>= 4.185V) or steady at 100% SoC without a voltage drop:
+            // ignore negative MAX17048 CRATE slope lag after voltage steps or charge termination.
             _unlock();
             return BatteryChargingState::Full;
+         }
+
+         if (rate <= -MIN_FUEL_GAUGE_CHARGE_RATE)
+         {
+            _unlock();
+            return BatteryChargingState::No;
          }
 
          BatteryChargingState state = _adcChargingState;
@@ -855,15 +1099,23 @@ public:
       if (_pin < 0)
       {
          float rawPercent = _fuelGauge.cellPercent();
+         float curvePercent = _voltsToPercent(volts, _fullChargeVolts);
          if (isfinite(rawPercent))
          {
-            percent = constrain(rawPercent, 0.0f, 100.0f);
+            // If this battery/board's learned full-charge plateau is lower than the
+            // MAX17048's factory 4.20V model (e.g. ~4.13V after MCP73831 termination),
+            // scale rawPercent up so reaching the saved _fullChargeVolts reports 100%.
+            percent = constrain(std::max(rawPercent, curvePercent), 0.0f, 100.0f);
+         }
+         else
+         {
+            percent = curvePercent;
          }
       }
       else
 #endif
       {
-         percent = _voltsToPercent(volts);
+         percent = _voltsToPercent(volts, _fullChargeVolts);
       }
 
       if (isfinite(percent))
@@ -937,5 +1189,124 @@ public:
       float ripple = _lastRippleVolts;
       _unlock();
       return ripple;
+   }
+
+   ///
+   /// <summary>
+   /// Returns the minimum voltage recorded during the most recently completed ripple window.
+   /// </summary>
+   /// <returns>Minimum window voltage in volts, or NAN if no window has completed yet.</returns>
+   ///
+   float readWindowMinVolts() const
+   {
+      _lock();
+      float val = _lastWindowMinVolts;
+      _unlock();
+      return val;
+   }
+
+   ///
+   /// <summary>
+   /// Returns the maximum voltage recorded during the most recently completed ripple window.
+   /// </summary>
+   /// <returns>Maximum window voltage in volts, or NAN if no window has completed yet.</returns>
+   ///
+   float readWindowMaxVolts() const
+   {
+      _lock();
+      float val = _lastWindowMaxVolts;
+      _unlock();
+      return val;
+   }
+
+   ///
+   /// <summary>
+   /// Returns the raw peak-to-peak voltage span (max - min) recorded during the most
+   /// recently completed ripple window, prior to directional sawtooth gating.
+   /// </summary>
+   /// <returns>Raw window voltage span in volts.</returns>
+   ///
+   float readWindowSpanVolts() const
+   {
+      _lock();
+      float val = _lastWindowSpanVolts;
+      _unlock();
+      return val;
+   }
+
+   ///
+   /// <summary>
+   /// Returns the cumulative upward voltage step sum recorded during the most recently
+   /// completed ripple window.
+   /// </summary>
+   /// <returns>Cumulative upward voltage change in volts.</returns>
+   ///
+   float readWindowRiseVolts() const
+   {
+      _lock();
+      float val = _lastWindowRiseVolts;
+      _unlock();
+      return val;
+   }
+
+   ///
+   /// <summary>
+   /// Returns the cumulative downward voltage step sum recorded during the most recently
+   /// completed ripple window.
+   /// </summary>
+   /// <returns>Cumulative downward voltage change in volts.</returns>
+   ///
+   float readWindowFallVolts() const
+   {
+      _lock();
+      float val = _lastWindowFallVolts;
+      _unlock();
+      return val;
+   }
+
+   ///
+   /// <summary>
+   /// Reads the raw state-of-charge percentage from the fuel gauge or voltage curve without
+   /// gating on isConnected(), for diagnostic logging.
+   /// </summary>
+   /// <returns>Raw battery percentage (0.0 to 100.0), or NAN if hardware is unavailable.</returns>
+   ///
+   float readRawPercent()
+   {
+      _lock();
+      if (!_ready && !begin())
+      {
+         _unlock();
+         return NAN;
+      }
+
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+      if (_pin < 0)
+      {
+         float rawPercent = _fuelGauge.cellPercent();
+         _unlock();
+         return isfinite(rawPercent) ? constrain(rawPercent, 0.0f, 100.0f) : NAN;
+      }
+#endif
+
+      float volts = _sampleVolts();
+      float fullVolts = _fullChargeVolts;
+      _unlock();
+      return isfinite(volts) ? _voltsToPercent(volts, fullVolts) : NAN;
+   }
+
+   ///
+   /// <summary>
+   /// Returns the currently calibrated 100% full-charge plateau voltage (in volts) for this
+   /// battery and board.
+   /// </summary>
+   /// <returns>Calibrated full-charge plateau voltage in volts.</returns>
+   ///
+   float readFullChargeVolts() const
+   {
+      _lock();
+      float val = _fullChargeVolts;
+      _unlock();
+      return val;
    }
 };

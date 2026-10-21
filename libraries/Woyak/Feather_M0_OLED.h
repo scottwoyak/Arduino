@@ -150,7 +150,9 @@ public:
    /// </summary>
    void begin()
    {
+#ifdef ARDUINO_BATTERY_SUPPORTED
       battery.begin();
+#endif
       buttonA.begin();
       buttonB.begin();
       buttonC.begin();

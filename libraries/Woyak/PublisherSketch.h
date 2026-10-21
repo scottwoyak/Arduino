@@ -167,7 +167,7 @@ private:
       static constexpr auto LOCATION_KEY = "location";
       static constexpr uint16_t PROMPT_TIMEOUT_S = 10;
 
-      _arduino->preferences.begin(_config.preferencesNamespace, true);
+      _arduino->preferences.begin(DEVICE_CONFIG_NAMESPACE, true);
       bool hasSaved = _arduino->preferences.isKey(SITE_KEY) && _arduino->preferences.isKey(LOCATION_KEY);
       if (hasSaved)
       {
@@ -175,6 +175,27 @@ private:
          _locationName = _arduino->preferences.getString(LOCATION_KEY);
       }
       _arduino->preferences.end();
+
+      if (!hasSaved && _config.preferencesNamespace != nullptr && strcmp(_config.preferencesNamespace, DEVICE_CONFIG_NAMESPACE) != 0)
+      {
+         _arduino->preferences.begin(_config.preferencesNamespace, true);
+         bool hasLegacy = _arduino->preferences.isKey(SITE_KEY) && _arduino->preferences.isKey(LOCATION_KEY);
+         if (hasLegacy)
+         {
+            _siteName = _arduino->preferences.getString(SITE_KEY);
+            _locationName = _arduino->preferences.getString(LOCATION_KEY);
+         }
+         _arduino->preferences.end();
+
+         if (hasLegacy)
+         {
+            _arduino->preferences.begin(DEVICE_CONFIG_NAMESPACE, false);
+            _arduino->preferences.putString(SITE_KEY, _siteName);
+            _arduino->preferences.putString(LOCATION_KEY, _locationName);
+            _arduino->preferences.end();
+            hasSaved = true;
+         }
+      }
 
       bool reconfigure = !hasSaved;
       if (hasSaved && _shouldForcePrompt())
@@ -247,7 +268,7 @@ private:
          _arduino->printDisplayInitValue(_locationName.c_str());
 #endif
 
-         _arduino->preferences.begin(_config.preferencesNamespace, false);
+         _arduino->preferences.begin(DEVICE_CONFIG_NAMESPACE, false);
          _arduino->preferences.putString(SITE_KEY, _siteName);
          _arduino->preferences.putString(LOCATION_KEY, _locationName);
          _arduino->preferences.end();
