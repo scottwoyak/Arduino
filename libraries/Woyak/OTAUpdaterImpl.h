@@ -240,14 +240,18 @@ inline void OTAUpdater::_performUpdate()
    }
 
    // Restore the task watchdog torn down by esp_task_wdt_deinit() above, with the same
-   // config Arduino-ESP32 uses at boot (idle tasks on both cores, panic on timeout).
+   // config SketchBase uses (60s timeout, panic on timeout) and re-subscribe the loop task.
    esp_task_wdt_config_t wdtConfig
    {
-      .timeout_ms = CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000,
-      .idle_core_mask = (1 << 0) | (1 << 1),
+      .timeout_ms = Util::SETUP_WATCHDOG_TIMEOUT_S * 1000U,
+      .idle_core_mask = 0,
       .trigger_panic = true,
    };
    esp_task_wdt_init(&wdtConfig);
+   if (esp_task_wdt_status(nullptr) != ESP_OK)
+   {
+      esp_task_wdt_add(nullptr);
+   }
 
    if (ok)
    {

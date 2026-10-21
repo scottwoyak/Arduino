@@ -79,9 +79,8 @@ SketchConfig PUBLISHER_CONFIG = {
 
 PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
 
-// Uses WaveShare_ESP32_S3_Zero_Sensors's default I2C/RGB status LED/LED pins, which
-// match this sketch's wiring.
-WindMeter wind(WIND_SENSOR_PIN, sketch.arduino.ledPin(), LEDColor::CLEAR_PINK);
+// Uses the board's general-purpose LED (discrete LED on Sensors, NeoPixel pixel 1 on Sensors2).
+WindMeter wind(WIND_SENSOR_PIN, &sketch.arduino.led, LEDColor::CLEAR_PINK);
 
 ///
 /// <summary>

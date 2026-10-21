@@ -611,6 +611,10 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
+  <Project Path="SafeMode/SafeMode.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="ScatterPlot_Playground/ScatterPlot_Playground.vcxproj" Id="00000000-0000-0000-0000-000000000079">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

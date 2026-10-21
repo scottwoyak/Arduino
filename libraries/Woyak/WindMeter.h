@@ -37,8 +37,9 @@ private:
    static constexpr unsigned long DEBOUNCE_TIME_MICROS = 100;
 
    uint8_t _pin;
-   uint8_t _ledPin;
-   float _ledCalibrationFactor;
+   uint8_t _ledPin = 0;
+   LED* _led = nullptr;
+   float _ledCalibrationFactor = 1.0f;
    volatile unsigned long _lastHighMicros = 0;
    volatile unsigned long _period = 0;
    volatile unsigned long _microsAtStateChange = 0;
@@ -174,9 +175,16 @@ private:
          if (_ticks >= TICKS_PER_ROTATION)
          {
             _ticks = 0;
-            _ledState = true;
-            _ledStateChanged = true;
-            _ledOffTime = millis() + LED_FLASH_MS;
+            if (_led != nullptr)
+            {
+               _led->flashFromISR(LED_FLASH_MS);
+            }
+            else
+            {
+               _ledState = true;
+               _ledStateChanged = true;
+               _ledOffTime = millis() + LED_FLASH_MS;
+            }
          }
       }
    }
@@ -184,7 +192,7 @@ private:
 public:
    ///
    /// <summary>
-   /// Constructs a WindMeter monitoring the specified pin, with an optional LED that
+   /// Constructs a WindMeter monitoring the specified pin, with an optional LED pin that
    /// flashes once per rotation.
    /// </summary>
    /// <param name="sensorPin">GPIO pin connected to the anemometer's switch.</param>
@@ -200,13 +208,33 @@ public:
 
    ///
    /// <summary>
+   /// Constructs a WindMeter monitoring the specified pin, driving an existing LED
+   /// instance (discrete LED or NeoPixelLED) once per rotation.
+   /// </summary>
+   /// <param name="sensorPin">GPIO pin connected to the anemometer's switch.</param>
+   /// <param name="led">LED instance to flash once per rotation (may be null to disable).</param>
+   /// <param name="ledColor">LED color/lens tint used to seed the LED's calibration factor (see ledColorCalibrationFactor()); defaults to LEDColor::UNKNOWN (no scaling).</param>
+   ///
+   WindMeter(uint8_t sensorPin, LED* led, LEDColor ledColor = LEDColor::UNKNOWN)
+   {
+      _pin = sensorPin;
+      _led = led;
+      _ledCalibrationFactor = ledColorCalibrationFactor(ledColor);
+      if (_led != nullptr && ledColor != LEDColor::UNKNOWN)
+      {
+         _led->setCalibrationFactor(_ledCalibrationFactor);
+      }
+   }
+
+   ///
+   /// <summary>
    /// Initializes the anemometer pin and attaches the change interrupt.
    /// </summary>
    ///
    void begin()
    {
-      // set up the led pin
-      if (_ledPin > 0)
+      // set up the led pin when driving a raw GPIO pin directly
+      if (_led == nullptr && _ledPin > 0)
       {
          pinMode(_ledPin, OUTPUT);
          digitalWrite(_ledPin, LOW);
@@ -217,8 +245,11 @@ public:
       attachInterruptArg(digitalPinToInterrupt(_pin), WindMeter::_interruptTickHandler, this, CHANGE);
 
       // start the timer that applies rotation-indicator LED changes outside of
-      // interrupt context
-      _startTimer();
+      // interrupt context when driving a raw GPIO pin directly
+      if (_led == nullptr)
+      {
+         _startTimer();
+      }
    }
 
    ///
@@ -254,6 +285,11 @@ public:
    ///
    bool isLedOn()
    {
+      if (_led != nullptr)
+      {
+         return _led->isOn();
+      }
+
       return _ledState;
    }
 };

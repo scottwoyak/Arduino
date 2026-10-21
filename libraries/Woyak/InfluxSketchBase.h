@@ -53,12 +53,11 @@ public:
    /// <summary>Shared Preferences (NVS) namespace used to persist device-level Influx site/location/bucket across all sketches on the same board.</summary>
    static constexpr auto DEVICE_CONFIG_NAMESPACE = "Device";
 
-   /// <summary>Preferences keys for the resolved InfluxDB site entry (bucket/site/location), in InfluxContext field order.</summary>
-   static constexpr const char* SITE_KEYS[] = { "bucket", "site", "location" };
+   /// <summary>Preferences keys for the resolved InfluxDB site entry (site/location).</summary>
+   static constexpr const char* SITE_KEYS[] = { "site", "location" };
 
    /// <summary>Column metadata for the resolved InfluxDB site entry, matching SITE_KEYS order.</summary>
    static constexpr SerialTable::Column SITE_COLUMNS[] = {
-      { "Bucket", 13 },
       { "Site", 11 },
       { "Location", 13 },
    };
@@ -495,23 +494,10 @@ public:
       Serial.println();
       Serial.println();
 
+      _checkSafeMode();
+
+      Util::setSetupStep("Board begin");
       arduino.begin(); // sets up the I2C bus/power rail and the RGB status LED
-
-      // If the previous boot crashed (panic/watchdog, or a failed ASSERT - see
-      // Util::isAssertHaltReason()) before it ran long enough to be considered stable
-      // (Util::wasPastSafeModeGracePeriod()), don't run any more of the normal startup
-      // sequence below (site prompts, display status, sensors) since one of those steps may be
-      // the cause. Instead connect only WiFi/the Device Server and stay reachable for a remote
-      // Restart or firmware Update. A crash that happens after the grace period (e.g. a
-      // transient sensor/Influx hiccup during normal operation) just restarts normally instead.
-      bool crashed = Util::isCrashResetReason() || Util::isAssertHaltReason(SerialX::lastShutdownReason());
-      bool enterSafeMode = crashed && !Util::wasPastSafeModeGracePeriod();
-      Util::clearSafeModeGracePeriod();
-
-      if (enterSafeMode)
-      {
-         _runSafeMode();
-      }
 
       _status->setStatus(Status::STARTED);
 
@@ -524,6 +510,24 @@ public:
 
       _printStartupInfo();
 
+      // Erase any obsolete "Monitor" bucket saved by an older build.
+      _arduino->preferences.begin(DEVICE_CONFIG_NAMESPACE, false);
+      if (_arduino->preferences.isKey("bucket") && _arduino->preferences.getString("bucket") == "Monitor")
+      {
+         _arduino->preferences.remove("bucket");
+      }
+      _arduino->preferences.end();
+
+      if (_config.preferencesNamespace != nullptr && strcmp(_config.preferencesNamespace, DEVICE_CONFIG_NAMESPACE) != 0)
+      {
+         _arduino->preferences.begin(_config.preferencesNamespace, false);
+         if (_arduino->preferences.isKey("bucket") && _arduino->preferences.getString("bucket") == "Monitor")
+         {
+            _arduino->preferences.remove("bucket");
+         }
+         _arduino->preferences.end();
+      }
+
       bool hasSiteTable = _influxConfig.prompts.size() > 0;
       bool forcePrompt = (hasSiteTable || _hasExtraPrompts()) ? _shouldForcePrompt() : false;
 
@@ -533,10 +537,10 @@ public:
       // actual WiFi/Influx connections are still made later, after sensor init.
       if (hasSiteTable)
       {
+         Util::setSetupStep("Site configuration");
          std::vector<const char*> flattenedSites;
          for (const InfluxContext& site : _influxConfig.prompts)
          {
-            flattenedSites.push_back(site.bucket);
             flattenedSites.push_back(site.site);
             flattenedSites.push_back(site.location);
          }
@@ -545,13 +549,14 @@ public:
          std::span<const String> resolved = _siteResolver.resolve(_arduino, _status, header.c_str(), SITE_COLUMNS, flattenedSites.data(), _influxConfig.prompts.size(), forcePrompt);
          // The bucket is always INFLUXDB_BUCKET; a bucket saved to Preferences by an older
          // build (e.g. "Monitor") is ignored.
-         _site = { INFLUXDB_BUCKET, resolved[1].c_str(), resolved[2].c_str() };
+         _site = { INFLUXDB_BUCKET, resolved[0].c_str(), resolved[1].c_str() };
       }
       else
       {
          _site = _resolveFixedSite();
       }
 
+      Util::setSetupStep("Topic configuration");
       _resolveExtra(forcePrompt);
 
       if (_shouldUseInflux(hasSiteTable))
@@ -579,17 +584,20 @@ public:
 
       if (_influxConfig.includeCpuTemp)
       {
+         Util::setSetupStep("CPU temperature sensor");
          _cpuTempSensor.begin();
       }
 
       if (_influxConfig.includeEnclosureTemp)
       {
+         Util::setSetupStep("Enclosure temperature sensor");
          _enclosureTempSensor.begin();
       }
 
       _usesInflux = _shouldUseInflux(hasSiteTable);
       if (_usesInflux)
       {
+         Util::setSetupStep("Influx");
          _influx = new Influx(STANDARD_UPLOAD_INTERVAL_S, _status, INFLUXDB_URL, INFLUXDB_ORG, _site.bucket);
          _logStatusStart("Influx... ");
          if (!_influx->begin(_arduino))

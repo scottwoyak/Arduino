@@ -4,6 +4,8 @@
 #include <Preferences.h>
 #include <esp_system.h>
 #include <esp_sleep.h>
+#include <esp_task_wdt.h>
+#include <cstring>
 #include <string>
 #include "Format.h"
 
@@ -54,11 +56,30 @@ constexpr size_t arraySize(const T (&)[N])
 ///
 RTC_NOINIT_ATTR static bool _util_pastSafeModeGracePeriod;
 
+/// <summary>Magic value confirming that _util_setupStep was initialized prior to a watchdog reset.</summary>
+static constexpr uint32_t _UTIL_SETUP_STEP_MAGIC = 0x574F594B;
+
+/// <summary>Guards _util_setupStep against uninitialized RTC memory after power-on/brownout resets.</summary>
+RTC_NOINIT_ATTR static uint32_t _util_setupStepMagic;
+
+/// <summary>True while setup is in progress and the setup watchdog is tracking initialization steps.</summary>
+RTC_NOINIT_ATTR static bool _util_inSetup;
+
+/// <summary>Name of the most recent initialization step started before a setup watchdog reset.</summary>
+RTC_NOINIT_ATTR static char _util_setupStep[64];
+
 /// <summary>
 /// Utility functions for common operations.
 /// </summary>
 class Util
 {
+private:
+   /// <summary>True once armSetupWatchdog() has subscribed the current task on this boot.</summary>
+   static inline bool _setupWatchdogArmed = false;
+
+   /// <summary>True if the previous boot was still in setup when it reset, captured the first time armSetupWatchdog() is called on this boot before _util_inSetup is overwritten.</summary>
+   static inline bool _wasInSetupOnBoot = false;
+
 public:
    ///
    /// <summary>
@@ -68,6 +89,166 @@ public:
    /// </summary>
    ///
    static constexpr float SAFE_MODE_GRACE_PERIOD_S = 30.0f;
+
+   ///
+   /// <summary>
+   /// Seconds a required configuration prompt (no saved default) waits for user input
+   /// before resetting the device into safe mode so it doesn't stay stranded offline.
+   /// </summary>
+   ///
+   static constexpr uint16_t REQUIRED_PROMPT_TIMEOUT_S = 60;
+
+   ///
+   /// <summary>
+   /// Seconds of inactivity allowed within any individual initialization step before the
+   /// task watchdog resets the device into safe mode. Advancing to the next step (via
+   /// setSetupStep()) or recording progress (via feedSetupWatchdog()) renews this window.
+   /// </summary>
+   ///
+   static constexpr uint8_t SETUP_WATCHDOG_TIMEOUT_S = 60;
+
+   /// <summary>Halt reason recorded when a required configuration prompt times out waiting for user input.</summary>
+   static constexpr const char* PROMPT_TIMEOUT_HALT_REASON = "Configuration prompt timed out";
+
+   /// <summary>Halt reason recorded when a required configuration prompt cannot be shown because no Serial monitor is attached.</summary>
+   static constexpr const char* PROMPT_NO_SERIAL_HALT_REASON = "Configuration prompt requires Serial connection";
+
+   /// <summary>Halt reason recorded when Safe Mode is explicitly requested via a remote command.</summary>
+   static constexpr const char* SAFE_MODE_REQUESTED_HALT_REASON = "Safe Mode requested remotely";
+
+   ///
+   /// <summary>
+   /// Returns whether the previous boot was still in setup (i.e. completeSetupWatchdog() had
+   /// not yet been called) when it reset. Safe to call both before and after
+   /// armSetupWatchdog() has been called on the current boot.
+   /// </summary>
+   /// <returns>True if the previous boot reset while setup was still in progress.</returns>
+   ///
+   static bool wasInSetup()
+   {
+      if (_setupWatchdogArmed)
+      {
+         return _wasInSetupOnBoot;
+      }
+
+      return _util_setupStepMagic == _UTIL_SETUP_STEP_MAGIC && _util_inSetup;
+   }
+
+   ///
+   /// <summary>
+   /// Returns the initialization step that was in progress if the previous boot was reset
+   /// by the task watchdog while still in setup, or an empty string otherwise. Call before
+   /// armSetupWatchdog() (which overwrites the recorded step for the current boot).
+   /// </summary>
+   /// <returns>The hung initialization step name, or an empty string.</returns>
+   ///
+   static String lastSetupWatchdogStep()
+   {
+      if (esp_reset_reason() == ESP_RST_TASK_WDT &&
+          wasInSetup() &&
+          _util_setupStep[0] != '\0')
+      {
+         _util_setupStep[sizeof(_util_setupStep) - 1] = '\0';
+         return String(_util_setupStep);
+      }
+
+      return "";
+   }
+
+   ///
+   /// <summary>
+   /// Arms the ESP32 task watchdog at the start of initialization with a per-step
+   /// inactivity timeout of SETUP_WATCHDOG_TIMEOUT_S seconds, and records the initial
+   /// step name in RTC noinit memory so a hang during setup can be identified on the next
+   /// boot. Safe to call more than once (e.g. from SerialX::begin() and SketchBase).
+   /// </summary>
+   /// <param name="initialStep">Initial setup step label to record.</param>
+   ///
+   static void armSetupWatchdog(const char* initialStep = "startup")
+   {
+      if (!_setupWatchdogArmed)
+      {
+         _wasInSetupOnBoot = _util_setupStepMagic == _UTIL_SETUP_STEP_MAGIC && _util_inSetup;
+      }
+
+      _util_setupStepMagic = _UTIL_SETUP_STEP_MAGIC;
+      _util_inSetup = true;
+      setSetupStep(initialStep);
+
+      if (!_setupWatchdogArmed)
+      {
+         esp_task_wdt_config_t twdtConfig = {
+            .timeout_ms = SETUP_WATCHDOG_TIMEOUT_S * 1000U,
+            .idle_core_mask = 0,
+            .trigger_panic = true,
+         };
+         esp_task_wdt_reconfigure(&twdtConfig);
+         if (esp_task_wdt_status(nullptr) != ESP_OK)
+         {
+            esp_task_wdt_add(nullptr);
+         }
+         _setupWatchdogArmed = true;
+      }
+
+      esp_task_wdt_reset();
+   }
+
+   ///
+   /// <summary>
+   /// Records the name of the initialization step currently starting (stripping any
+   /// trailing "... " suffix used by display/log init labels) and feeds the setup
+   /// watchdog so the new step gets a full SETUP_WATCHDOG_TIMEOUT_S window.
+   /// </summary>
+   /// <param name="step">Name or label of the initialization step starting now.</param>
+   ///
+   static void setSetupStep(const char* step)
+   {
+      if (step != nullptr && _util_setupStepMagic == _UTIL_SETUP_STEP_MAGIC)
+      {
+         size_t len = strlen(step);
+         while (len > 0 && (step[len - 1] == ' ' || step[len - 1] == '.'))
+         {
+            len--;
+         }
+         if (len >= sizeof(_util_setupStep))
+         {
+            len = sizeof(_util_setupStep) - 1;
+         }
+         memcpy(_util_setupStep, step, len);
+         _util_setupStep[len] = '\0';
+      }
+
+      feedSetupWatchdog();
+   }
+
+   ///
+   /// <summary>
+   /// Feeds the task watchdog if it has been armed, renewing the current step's
+   /// inactivity window during long-running or interactive setup operations.
+   /// </summary>
+   ///
+   static void feedSetupWatchdog()
+   {
+      if (_setupWatchdogArmed)
+      {
+         esp_task_wdt_reset();
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Marks setup as complete for watchdog step-tracking purposes and feeds the watchdog.
+   /// </summary>
+   ///
+   static void completeSetupWatchdog()
+   {
+      _util_inSetup = false;
+      if (_util_setupStepMagic == _UTIL_SETUP_STEP_MAGIC)
+      {
+         _util_setupStep[0] = '\0';
+      }
+      feedSetupWatchdog();
+   }
 
    ///
    /// <summary>
@@ -287,6 +468,22 @@ public:
    static bool isAssertHaltReason(const String& haltReason)
    {
       return haltReason.startsWith("Assertion failed:");
+   }
+
+   ///
+   /// <summary>
+   /// Returns whether a recorded halt reason should trigger safe mode on the next boot
+   /// (a failed ASSERT, or an unanswered required configuration prompt).
+   /// </summary>
+   /// <param name="haltReason">Halt reason recorded for the previous boot (e.g. via SerialX::lastShutdownReason()).</param>
+   /// <returns>True if haltReason warrants entering safe mode.</returns>
+   ///
+   static bool isSafeModeHaltReason(const String& haltReason)
+   {
+      return isAssertHaltReason(haltReason) ||
+         haltReason == PROMPT_TIMEOUT_HALT_REASON ||
+         haltReason == PROMPT_NO_SERIAL_HALT_REASON ||
+         haltReason == SAFE_MODE_REQUESTED_HALT_REASON;
    }
 
    /// <summary>

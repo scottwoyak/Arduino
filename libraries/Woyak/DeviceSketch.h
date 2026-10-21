@@ -40,6 +40,8 @@ public:
    ///
    void beginBanner()
    {
+      _checkSafeMode();
+      Util::setSetupStep("Board begin");
       arduino.begin();
       _printStartupInfo();
    }

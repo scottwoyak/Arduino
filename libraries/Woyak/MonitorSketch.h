@@ -470,7 +470,7 @@ private:
                _arduino->preferences.putString(SITE_KEY, legacySite);
             }
             _arduino->preferences.putString(LOCATION_KEY, legacyLocation);
-            if (hasLegacyBucket && legacyBucket.length() > 0)
+            if (hasLegacyBucket && legacyBucket.length() > 0 && legacyBucket != "Monitor")
             {
                _arduino->preferences.putString(BUCKET_KEY, legacyBucket);
             }

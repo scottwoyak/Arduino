@@ -16,6 +16,7 @@
 #include "DeviceHealth.h"
 #include "Logger.h"
 #include "OTAUpdater.h"
+#include "SerialX.h"
 #include "Status.h"
 #include "TelemetryClient.h"
 #include "Util.h"
@@ -130,6 +131,15 @@ protected:
 
    /// <summary>True while a Locate request is active.</summary>
    bool _locating = false;
+
+   /// <summary>True when running in headless Safe Mode (board/display not initialized).</summary>
+   bool _safeModeActive = false;
+
+   /// <summary>Optional subheader text printed below the "Initializing" header during _printStartupInfo().</summary>
+   const char* _initSubheader = nullptr;
+
+   /// <summary>Color used when printing _initSubheader.</summary>
+   Color _initSubheaderColor = Color::WHITE;
 
    /// <summary>Callback registered via onReadings() to return the formatted sensor readings.</summary>
    std::function<std::string()> _readingsHandler = nullptr;
@@ -289,6 +299,11 @@ protected:
    ///
    void _startLocate()
    {
+      if (_safeModeActive)
+      {
+         return;
+      }
+
 #ifdef ARDUINO_DISPLAY_SUPPORTED
       if (!_locating)
       {
@@ -488,6 +503,11 @@ protected:
       _arduino->beginInit();
       Logger.log("Initializing");
 
+      if (_initSubheader != nullptr)
+      {
+         _arduino->printlnInitStatus(_initSubheader, _initSubheaderColor);
+      }
+
       const char* sketchName = _config.sketchName;
       if (_arduino->fitsOnDisplay("Sketch... ", sketchName))
       {
@@ -552,30 +572,115 @@ protected:
 
    ///
    /// <summary>
-   /// Runs a minimal recovery boot used when the previous boot crashed (see
-   /// Util::isCrashResetReason()) before it ran long enough to be considered stable (see
-   /// Util::wasPastSafeModeGracePeriod()). Skips all sketch-specific initialization (sensors,
-   /// site prompts, display status rendering) that might be the cause of the crash, and
-   /// instead only connects WiFi and the Device Server, then loops forever servicing
-   /// OTA/remote commands so the device stays reachable for a Restart or firmware Update.
-   /// Call instead of (not in addition to) the rest of begin() when safe mode is warranted.
-   /// This function does not return.
+   /// Checks whether the previous boot crashed (panic/watchdog), halted for a safe-mode
+   /// reason (failed ASSERT or unanswered required configuration prompt - see
+   /// Util::isSafeModeHaltReason()), or called Util::reset() during setup (e.g. sensor or
+   /// Influx initialization failure) before it ran long enough to be considered stable
+   /// (Util::wasPastSafeModeGracePeriod()), and if so enters _runSafeMode() instead of
+   /// continuing normal initialization.
+   /// </summary>
+   ///
+   void _checkSafeMode()
+   {
+      bool wasInSetup = SerialX::wasInSetupOnLastReset() || Util::wasInSetup();
+      Util::armSetupWatchdog("Safe Mode check");
+
+      const String& lastReason = SerialX::lastShutdownReason();
+      bool requestedSafeMode = lastReason == Util::SAFE_MODE_REQUESTED_HALT_REASON;
+      bool setupHaltFailure = wasInSetup && lastReason.length() > 0 && lastReason != "WiFi connect failed";
+      bool shouldEnterSafeMode = Util::isCrashResetReason() || Util::isSafeModeHaltReason(lastReason) || setupHaltFailure;
+      bool enterSafeMode = requestedSafeMode || (shouldEnterSafeMode && !Util::wasPastSafeModeGracePeriod());
+      Util::clearSafeModeGracePeriod();
+
+      if (enterSafeMode)
+      {
+         _runSafeMode();
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Runs a minimal headless recovery boot used when the previous boot crashed (see
+   /// Util::isCrashResetReason()) or halted for a safe-mode reason (see
+   /// Util::isSafeModeHaltReason()) before it ran long enough to be considered stable (see
+   /// Util::wasPastSafeModeGracePeriod()), or when Safe Mode was requested remotely. Skips all
+   /// board/display/peripheral and sketch-specific initialization (arduino.begin(), sensors,
+   /// site prompts, display status rendering) that might be the cause of the failure, and
+   /// instead only connects WiFi and the Device Server, then loops forever servicing OTA/remote
+   /// commands so the device stays reachable for a Restart or firmware Update. Call before
+   /// arduino.begin() when safe mode is warranted. This function does not return.
    /// </summary>
    ///
    void _runSafeMode()
    {
+      _safeModeActive = true;
       Util::setHaltReason("");
+      DeviceServerClient::setSafeMode(true);
+#ifdef ARDUINO_BATTERY_SUPPORTED
+      DeviceHealth::battery = nullptr;
+#endif
 
-      _printStartupInfo();
-      _printAndLogStatus("Safe mode... ", std::string("Entering safe mode (last reset: ") + Util::resetReasonString() + ")", Color::RED);
+      const char* reason = SerialX::lastShutdownReason().length() > 0
+         ? SerialX::lastShutdownReason().c_str()
+         : Util::resetReasonString();
 
-      _beginConnect();
-      _beginLogger();
+      Logger.log("Initializing");
+      Logger.log(std::string("Sketch... ") + _config.sketchName);
+      if (_config.version != nullptr)
+      {
+         const char* versionText = (_config.version[0] == 'v' || _config.version[0] == 'V') ? _config.version + 1 : _config.version;
+         Logger.log(std::string("Version... ") + versionText);
+      }
+      Logger.log(std::string("Entering safe mode (last reset: ") + reason + ")");
+
+      _beginConnectHeadless();
+      _beginLoggerHeadless();
+      DeviceServerClient::setState("FAILED");
 
       for (;;)
       {
          _loopStep();
       }
+   }
+
+   ///
+   /// <summary>
+   /// Connects to WiFi and enables headless OTA/rebooter without touching the display or
+   /// status hardware. Used exclusively by _runSafeMode().
+   /// </summary>
+   ///
+   void _beginConnectHeadless()
+   {
+      if (!_arduino->initWifiHeadless(WIFI_SSID, WIFI_PASSWORD))
+      {
+         Util::reset(WIFI_LOST_RESET_DELAY_S, "WiFi connect failed");
+      }
+
+      WiFi.onEvent(_onWiFiEvent);
+
+      if (_config.enableRebooter)
+      {
+         _arduino->enableRebooter();
+      }
+
+      if (_config.enableOTA)
+      {
+         _arduino->ArduinoBase::enableOTA(_config.version, _config.sketchName, nullptr, this);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Starts the Logger (Device Hub) connection headlessly without touching the display,
+   /// then finishes watchdog/CPU setup. Used exclusively by _runSafeMode().
+   /// </summary>
+   ///
+   void _beginLoggerHeadless()
+   {
+      Util::setSetupStep("Hub... ");
+      DeviceServerClient::begin(_config.sketchName, _config.version);
+      _arduino->waitForClient([]() { return DeviceServerClient::isResolved(); }, []() { DeviceServerClient::loop(); });
+      _finishLoggerSetup();
    }
 
    ///
@@ -646,7 +751,11 @@ protected:
          .trigger_panic = true,
       };
       esp_task_wdt_reconfigure(&twdtConfig);
-      esp_task_wdt_add(nullptr);
+      if (esp_task_wdt_status(nullptr) != ESP_OK)
+      {
+         esp_task_wdt_add(nullptr);
+      }
+      Util::completeSetupWatchdog();
    }
 
    ///
@@ -658,6 +767,7 @@ protected:
    ///
    void _loopStep()
    {
+      Util::completeSetupWatchdog();
       Util::isPastSafeModeGracePeriod();
 
       if (!_arduino->ensureWiFiConnected() && !_onWiFiLost())
@@ -674,8 +784,11 @@ protected:
 
       DeviceServerClient::loop();
 
-      _arduino->updateStatusIndicators();
-      _updateLocate();
+      if (!_safeModeActive)
+      {
+         _arduino->updateStatusIndicators();
+         _updateLocate();
+      }
    }
 
    ///
@@ -692,6 +805,11 @@ protected:
    ///
    virtual bool _onWiFiLost()
    {
+      if (_safeModeActive)
+      {
+         return false;
+      }
+
       if (_onWiFiLostCallback != nullptr)
       {
          return _onWiFiLostCallback();
@@ -858,6 +976,20 @@ public:
 
    ///
    /// <summary>
+   /// Sets an optional subheader line to print directly below the "Initializing" header
+   /// during begin(). Call before begin() / beginBanner().
+   /// </summary>
+   /// <param name="subheader">Subheader text to display and log, or nullptr for none.</param>
+   /// <param name="color">Display color for the subheader line.</param>
+   ///
+   void setInitSubheader(const char* subheader, Color color = Color::WHITE)
+   {
+      _initSubheader = subheader;
+      _initSubheaderColor = color;
+   }
+
+   ///
+   /// <summary>
    /// Registers a sensor to be initialized (via arduino.initSensor()) during begin().
    /// </summary>
    /// <param name="label">Sensor label printed during initialization.</param>
@@ -944,10 +1076,12 @@ public:
       ///
       void completeInitialization()
       {
+         Util::feedSetupWatchdog();
 #ifdef ARDUINO_DISPLAY_SUPPORTED
          delay(STARTUP_DELAY_S * 1000UL);
          _arduino->clearDisplay();
 #endif
          Logger.logInitializationComplete();
+         Util::completeSetupWatchdog();
       }
    };

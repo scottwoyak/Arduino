@@ -123,6 +123,8 @@ public:
    ///
    void beginBanner()
    {
+      _checkSafeMode();
+      Util::setSetupStep("Board begin");
       arduino.begin();
       _printStartupInfo();
    }
@@ -183,6 +185,7 @@ public:
          forcePrompt = PreferencesResolver::waitForForcePrompt(_arduino, 2000);
       }
 
+      Util::setSetupStep("Topic configuration");
       const char* topic = _topicResolver.resolve(_arduino, _status, forcePrompt);
       _printAndLogStatus("Topic... ", ("\"" + std::string(topic) + "\"").c_str());
       return topic;
@@ -209,6 +212,7 @@ public:
          forcePrompt = PreferencesResolver::waitForForcePrompt(_arduino, 2000);
       }
 
+      Util::setSetupStep("Location configuration");
       _siteLocationResolver.resolve(_arduino, forcePrompt);
       _printAndLogStatus("Location... ", siteLocation().c_str());
    }

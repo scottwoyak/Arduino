@@ -315,6 +315,7 @@ public:
    ///
    virtual void printInitLabel(const char* label, Color color = Color::LABEL)
    {
+      Util::setSetupStep(label);
       print(label, color);
    }
 
@@ -327,6 +328,7 @@ public:
    ///
    virtual void printInitValue(const char* value, Color color = Color::VALUE)
    {
+      Util::feedSetupWatchdog();
       printlnR(value, color);
    }
 
@@ -472,6 +474,52 @@ public:
 
    ///
    /// <summary>
+   /// Connects to WiFi via WiFiX without touching the display or any status indicator,
+   /// logging progress only through Logger (which echoes to Serial). Used by Safe Mode so
+   /// the device can connect to WiFi even when the display or board peripherals haven't
+   /// been initialized.
+   /// </summary>
+   /// <param name="ssid">The WiFi network name.</param>
+   /// <param name="password">The WiFi network password.</param>
+   /// <param name="syncTime">True to sync the system clock via NTP after connecting.</param>
+   /// <returns>True if the WiFi connection succeeded; otherwise false.</returns>
+   ///
+   bool initWifiHeadless(const char* ssid, const char* password, bool syncTime = false)
+   {
+      Util::setSetupStep("WiFi... ");
+      Logger.logPartial("WiFi... ");
+
+      if (_wifiX == nullptr)
+      {
+         _wifiX = new WiFiX(ssid, password);
+      }
+
+      if (!_wifiX->connect())
+      {
+         Logger.log("FAILED");
+         Logger.log(std::string("WiFi connect failed: ") + WiFiX::statusString(), LogSeverity::ERROR);
+         return false;
+      }
+
+      Util::feedSetupWatchdog();
+      Logger.log(WiFi.localIP().toString());
+
+      _retryTimeSync = syncTime;
+
+      if (syncTime)
+      {
+         Util::setSetupStep("Time... ");
+         Logger.logPartial("Time... ");
+         TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nist.gov");
+         Util::feedSetupWatchdog();
+         Logger.log(TimeSync::localTimeString());
+      }
+
+      return true;
+   }
+
+   ///
+   /// <summary>
    /// Ensures WiFi is connected, reconnecting if needed, using the WiFiX instance created by
    /// initWifi(). Intended for periodic use from loop() to detect and recover from dropped
    /// connections. Optionally drives an IStatus indicator through the WIFI_CONNECTING/RUNNING
@@ -596,10 +644,12 @@ public:
             return false;
          }
 
+         Util::feedSetupWatchdog();
          loopFunc();
          delay(1);
       }
 
+      Util::feedSetupWatchdog();
       return true;
    }
 

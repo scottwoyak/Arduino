@@ -1760,14 +1760,14 @@ void setup()
 {
    SerialX::begin();
 
+   sketch.begin();
+
    gateOpenHistory.load();
 
    if (gateOpenHistory.count() > 0)
    {
       lastGateOpenTime = gateOpenHistory.get(0).time;
    }
-
-   sketch.begin();
 
 #ifdef ARDUINO_SOUND_SUPPORTED
    sketch.arduino.sound.volume = 2.0f;

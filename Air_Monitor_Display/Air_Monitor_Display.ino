@@ -416,8 +416,6 @@ static void onAirMonitorCommand(const char* command)
 
 void setup()
 {
-   Wire.begin();
-
    sketch.addSensor("PMS5003", []() { return pms.begin(&Serial1, PMS_RX_PIN, PMS_TX_PIN); });
    sketch.addSensor("SCD41", []()
    {

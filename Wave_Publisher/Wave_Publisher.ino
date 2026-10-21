@@ -154,9 +154,6 @@ static std::string getReadings()
 
 void setup()
 {
-   // solid on while starting up; switches to wave-height-based fading in loop() once wave data is available
-   sketch.arduino.led.turnOn(1.0f);
-
    // The telemetry topic (and thus the sensor type) is resolved by sketch.begin()
    // before this lambda runs, so only the sensor that's actually wired is constructed.
    sketch.addSensor("Depth Sensor", []() {
@@ -174,6 +171,9 @@ void setup()
    sketch.onReadings(getReadings, "Reports the current depth, wave height, average depth, and averaging window status");
 
    sketch.begin();
+
+   // solid on until wave data is available; switches to wave-height-based fading in loop()
+   sketch.arduino.led.turnOn(1.0f);
 
    // avgDepth isn't posted until the 5 minute averaging window is full (see loop())
    InfluxPoint* devicePoint = sketch.addPoint("Sensors", {});

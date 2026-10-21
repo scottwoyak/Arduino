@@ -24,6 +24,12 @@ namespace SerialX
 	inline String _lastShutdownReason = "";
 
 	/// <summary>
+	/// True if the previous boot was still in setup when it reset, captured during begin()
+	/// before armSetupWatchdog() overwrites the RTC setup flag for the current boot.
+	/// </summary>
+	inline bool _wasInSetupOnLastReset = false;
+
+	/// <summary>
 	/// Returns the previous halt reason recorded during begin(), or an empty string if
 	/// none was recorded (e.g. a normal power-on/reset).
 	/// </summary>
@@ -31,6 +37,15 @@ namespace SerialX
 	inline String lastShutdownReason()
 	{
 		return _lastShutdownReason;
+	}
+
+	/// <summary>
+	/// Returns whether the previous boot was still in setup when it reset.
+	/// </summary>
+	/// <returns>True if the previous boot reset before setup completed.</returns>
+	inline bool wasInSetupOnLastReset()
+	{
+		return _wasInSetupOnLastReset;
 	}
 
 	/// <summary>
@@ -59,7 +74,18 @@ namespace SerialX
       delay(1000);
       Serial.println();
 
+		_wasInSetupOnLastReset = Util::wasInSetup();
 		_lastShutdownReason = Util::checkTheLastShutdownReason();
+		if (_lastShutdownReason.length() == 0)
+		{
+			String setupStep = Util::lastSetupWatchdogStep();
+			if (setupStep.length() > 0)
+			{
+				_lastShutdownReason = String("Watchdog detected a hang for initialization step '") + setupStep + "'";
+			}
+		}
+
+		Util::armSetupWatchdog("Serial");
 		DeviceServerClient::setLastShutdownReason(_lastShutdownReason.c_str());
 
 		// Report the recorded failure reason (e.g. "Influx failed to begin") instead of
@@ -93,23 +119,45 @@ namespace SerialX
 
 	/// <summary>
 	/// Prints a label, then blocks until a line of text is entered over Serial, echoing
-	/// it back and returning it trimmed of leading/trailing whitespace. Used for simple
-	/// interactive setup-time prompts (e.g. site/location configuration).
+	/// it back and returning it trimmed of leading/trailing whitespace. If no Serial
+	/// monitor is attached, or no input arrives within Util::REQUIRED_PROMPT_TIMEOUT_S
+	/// seconds, resets the device into safe mode so it doesn't stay stranded offline.
+	/// Used for simple interactive setup-time prompts (e.g. site/location configuration).
 	/// </summary>
 	/// <param name="label">The prompt label to print before waiting for input (e.g. "Enter site: ").</param>
 	/// <returns>The entered text, trimmed of leading/trailing whitespace.</returns>
 	inline String prompt(const char* label)
 	{
+		if (!Serial)
+		{
+			Util::reset(0.0f, Util::PROMPT_NO_SERIAL_HALT_REASON);
+		}
+
 		_flushInput();
+		Util::feedSetupWatchdog();
 		Serial.print(label);
 
+		uint32_t start = millis();
+		constexpr uint32_t TIMEOUT_MS = Util::REQUIRED_PROMPT_TIMEOUT_S * 1000UL;
 		while (!Serial.available())
 		{
+			Util::feedSetupWatchdog();
+			if (!Serial)
+			{
+				Util::reset(0.0f, Util::PROMPT_NO_SERIAL_HALT_REASON);
+			}
+			if (millis() - start >= TIMEOUT_MS)
+			{
+				Serial.println();
+				Serial.println("No input - entering safe mode.");
+				Util::reset(0.0f, Util::PROMPT_TIMEOUT_HALT_REASON);
+			}
 			delay(10);
 		}
 		String input = Serial.readStringUntil('\n');
 		input.trim();
 		Serial.println(input);
+		Util::feedSetupWatchdog();
 
 		return input;
 	}
@@ -232,6 +280,7 @@ namespace SerialX
 		uint32_t start = millis();
 		while (!Serial.available())
 		{
+			Util::feedSetupWatchdog();
 			if (millis() - start >= timeoutMs)
 			{
 				Serial.println("No input - using default.");
@@ -243,6 +292,7 @@ namespace SerialX
 		String input = Serial.readStringUntil('\n');
 		input.trim();
 		Serial.println(input);
+		Util::feedSetupWatchdog();
 
 		if (input.length() == 0)
 		{

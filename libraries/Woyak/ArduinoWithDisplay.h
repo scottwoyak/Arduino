@@ -2006,6 +2006,8 @@ public:
 
 inline void ArduinoWithDisplay::printInitLabel(const char* label, Color color)
 {
+   Util::setSetupStep(label);
+
    if (_initDisplay == nullptr)
    {
       _initDisplay = new InitializingDisplay(this);
@@ -2025,6 +2027,7 @@ inline void ArduinoWithDisplay::printInitValue(const char* value, Color color)
 {
    ASSERT(_initDisplay != nullptr);
 
+   Util::feedSetupWatchdog();
    _initDisplay->setValue(value, color);
 }
 
@@ -2142,20 +2145,31 @@ inline size_t ArduinoWithDisplay::promptTouchOption(
 
    size_t pressedIdx = SIZE_MAX;
    uint32_t start = millis();
+   uint32_t effectiveTimeoutMs = timeoutMs > 0 ? timeoutMs : (Util::REQUIRED_PROMPT_TIMEOUT_S * 1000UL);
+   Util::setSetupStep(title);
 
    while (true)
    {
-      if (timeoutMs > 0 && defaultIndex < count && (millis() - start >= timeoutMs))
+      Util::feedSetupWatchdog();
+
+      if (millis() - start >= effectiveTimeoutMs)
       {
-         Serial.println("No input - using default.");
-         restoreInitDisplay();
-         return defaultIndex;
+         if (defaultIndex < count)
+         {
+            Serial.println("No input - using default.");
+            restoreInitDisplay();
+            return defaultIndex;
+         }
+
+         Serial.println("No input - entering safe mode.");
+         Util::reset(0.0f, Util::PROMPT_TIMEOUT_HALT_REASON);
       }
 
       bool touched = display.getTouch(&tp) > 0;
       if (touched)
       {
          start = millis();
+         Util::feedSetupWatchdog();
          size_t hitIdx = SIZE_MAX;
          for (size_t i = 0; i < count; i++)
          {
@@ -2190,6 +2204,8 @@ inline size_t ArduinoWithDisplay::promptTouchOption(
 
       if (Serial.available())
       {
+         start = millis();
+         Util::feedSetupWatchdog();
          String input = Serial.readStringUntil('\n');
          input.trim();
          Serial.println(input);
@@ -2488,12 +2504,25 @@ inline String ArduinoWithDisplay::promptTouchText(
    }
 
    size_t pressedIdx = SIZE_MAX;
+   uint32_t start = millis();
+   constexpr uint32_t TIMEOUT_MS = Util::REQUIRED_PROMPT_TIMEOUT_S * 1000UL;
+   Util::setSetupStep(title);
 
    while (true)
    {
+      Util::feedSetupWatchdog();
+
+      if (millis() - start >= TIMEOUT_MS)
+      {
+         Serial.println("No input - entering safe mode.");
+         Util::reset(0.0f, Util::PROMPT_TIMEOUT_HALT_REASON);
+      }
+
       bool touched = display.getTouch(&tp) > 0;
       if (touched)
       {
+         start = millis();
+         Util::feedSetupWatchdog();
          size_t hitIdx = SIZE_MAX;
          for (size_t i = 0; i < keyCount; i++)
          {
@@ -2610,17 +2639,19 @@ inline String ArduinoWithDisplay::promptTouchText(
                restoreInitDisplay();
                return trimmed;
             }
-            drawKey(idx, false);
-         }
-      }
+                  drawKey(idx, false);
+               }
+            }
 
-      if (Serial.available())
-      {
-         String input = Serial.readStringUntil('\n');
-         input.trim();
-         Serial.println(input);
+            if (Serial.available())
+            {
+               start = millis();
+               Util::feedSetupWatchdog();
+               String input = Serial.readStringUntil('\n');
+               input.trim();
+               Serial.println(input);
 
-         if (input.length() == 0 && value.length() > 0)
+               if (input.length() == 0 && value.length() > 0)
          {
             String trimmed = value;
             trimmed.trim();

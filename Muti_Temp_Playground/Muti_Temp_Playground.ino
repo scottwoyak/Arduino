@@ -203,8 +203,6 @@ void activatePlotView(uint8_t plotView)
 
 void setup()
 {
-   Wire.begin();
-
    sketch.begin();
 
    sketch.arduino.setTextSize(2);

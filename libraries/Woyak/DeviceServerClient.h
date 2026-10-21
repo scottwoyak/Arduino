@@ -317,6 +317,9 @@ class DeviceServerClient
    /// <summary>The recorded reason for the previous shutdown (e.g. "Firmware Update"), set via setLastShutdownReason(); empty if none was recorded.</summary>
    static inline std::string _lastShutdownReason;
 
+   /// <summary>True when the device booted into Safe Mode, sent in the handshake.</summary>
+   static inline bool _safeMode = false;
+
     /// <summary>A log message queued while disconnected
    struct _PendingMessage
    {
@@ -396,6 +399,7 @@ private:
          { "System" },
       },
       { "Restart", "Restarts the device", { "reboot" }, {}, true, { "System" } },
+      { "SafeMode", "Restarts the device into Safe Mode", { "sm" }, {}, true, { "System" } },
       { "GetHealth", "Reports WiFi/CPU/memory health as a JSON message", { "gh" }, {}, false, { "Diagnostics" } },
       { "Locate", "Asks the device to do something visibly identifiable", {}, {}, false, { "System" } },
       { "I2CScan", "Scans the I2C bus and lists responding addresses", {}, {}, false, { "I2C" } },
@@ -1106,7 +1110,12 @@ private:
    {
       std::ostringstream result;
       result << "Sketch: " << (_sketchName.empty() ? "(unknown)" : _sketchName) << "\n"
-             << "Version: " << (_version.empty() ? "(unknown)" : _version) << "\n"
+             << "Version: " << (_version.empty() ? "(unknown)" : _version) << "\n";
+      if (_safeMode)
+      {
+         result << "Safe mode: yes (" << (_lastShutdownReason.empty() ? Util::resetReasonString() : _lastShutdownReason.c_str()) << ")\n";
+      }
+      result
 #if defined(ARDUINO_BOARD_VARIANT_ID)
              << "Board: " << ARDUINO_BOARD_VARIANT_ID << "\n"
 #else
@@ -1356,6 +1365,8 @@ private:
       doc["psramSize"] = ESP.getPsramSize();
       doc["ssid"] = WIFI_SSID;
       doc["ip"] = std::string(WiFi.localIP().toString().c_str());
+      doc["safeMode"] = _safeMode;
+      doc["resetReason"] = _lastShutdownReason.empty() ? Util::resetReasonString() : _lastShutdownReason.c_str();
 
       if (!_state.empty())
       {
@@ -1429,6 +1440,11 @@ private:
          respond("Restarting");
          reportRestarting();
          ESP.restart();
+      }
+      else if (strcasecmp(verb.c_str(), "SafeMode") == 0)
+      {
+         respond("Entering Safe Mode");
+         Util::reset(0.0f, Util::SAFE_MODE_REQUESTED_HALT_REASON);
       }
       else if (strcasecmp(verb.c_str(), "GetHealth") == 0)
       {
@@ -1757,6 +1773,18 @@ public:
    static bool isResolved()
    {
       return !_linePending;
+   }
+
+   ///
+   /// <summary>
+   /// Records whether the device booted into Safe Mode, so the handshake and GetInfo
+   /// identify it as running in Safe Mode.
+   /// </summary>
+   /// <param name="safeMode">True if running in Safe Mode.</param>
+   ///
+   static void setSafeMode(bool safeMode = true)
+   {
+      _safeMode = safeMode;
    }
 
    ///

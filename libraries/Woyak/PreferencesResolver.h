@@ -155,9 +155,11 @@ public:
    template <typename TArduino>
    static bool waitForForcePrompt(TArduino* arduino, uint16_t windowMs)
    {
+      Util::setSetupStep("Force prompt window");
       Timer forcePromptTimer(windowMs);
       while (!forcePromptTimer.ready())
       {
+         Util::feedSetupWatchdog();
 #ifdef ARDUINO_BUTTON_A_SUPPORTED
          if (arduino->buttonA.isPressed())
          {
@@ -268,10 +270,7 @@ public:
       if (!Serial)
       {
          status->setStatus(Status::FAILED);
-         while (true)
-         {
-            delay(1000);
-         }
+         Util::reset(0.0f, Util::PROMPT_NO_SERIAL_HALT_REASON);
       }
 
       String label = "Enter selection (1-" + String(entryCount) + "): ";

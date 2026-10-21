@@ -157,14 +157,19 @@ internal sealed class FirmwareScanner
                     resolvedVersion = version;
                 }
 
+                string? buildTime = buildMatch.Success ? buildMatch.Groups[1].Value : null;
+                DateTime built = DateText.TryParse(buildTime, out DateTime parsedBuildTime)
+                    ? parsedBuildTime
+                    : bin.LastWriteTime;
+
                 var item = new FirmwareItem
                 {
                     Sketch = name,
                     Board = boardId,
                     BoardName = FirmwareBuilder.GetBoardDisplayName(_repoRoot, boardId),
                     Version = resolvedVersion,
-                    Built = bin.LastWriteTime,
-                    BuildTime = buildMatch.Success ? buildMatch.Groups[1].Value : null,
+                    Built = built,
+                    BuildTime = buildTime,
                     BinPath = bin.FullName,
                     IsStale = isStale,
                 };
@@ -279,9 +284,12 @@ internal sealed class FirmwareScanner
                 resolvedVersion = version;
             }
 
+            string? buildTime = buildMatch.Success ? buildMatch.Groups[1].Value : null;
             item.Version = resolvedVersion;
-            item.Built = bin.LastWriteTime;
-            item.BuildTime = buildMatch.Success ? buildMatch.Groups[1].Value : null;
+            item.Built = DateText.TryParse(buildTime, out DateTime parsedBuildTime)
+                ? parsedBuildTime
+                : bin.LastWriteTime;
+            item.BuildTime = buildTime;
             item.BinPath = bin.FullName;
             item.IsStale = isStale;
             item.Status = await hub.IsAlreadyPublishedAsync(item) ? FirmwareStatus.UpToDate : FirmwareStatus.Ready;
