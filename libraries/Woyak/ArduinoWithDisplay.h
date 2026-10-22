@@ -8,13 +8,15 @@
 
 #include "ArduinoBoardId.h"
 
-// By default, only compile in the board's standard heading and body text sizes (via
-// TEXT_SIZES_CUSTOM) so unused large VLW fonts (sizes 5-7, ~185 KB) are excluded from flash.
-// Sketches that need additional sizes can #define TEXT_SIZE_4, TEXT_SIZE_5, etc. (or
-// #define TEXT_SIZES_ALL) before including ArduinoBoard.h.
-#ifndef TEXT_SIZES_ALL
-#ifndef TEXT_SIZES_CUSTOM
+// Memory-constrained boards with small displays (e.g. Adafruit Feather M0 and Feather ESP32-S3 TFT)
+// default to TEXT_SIZES_CUSTOM so unused large VLW fonts (sizes 5-7, ~185 KB) are excluded from flash.
+// Boards with 16 MB flash / larger displays default to TEXT_SIZES_ALL unless a sketch explicitly
+// defines TEXT_SIZES_CUSTOM before including ArduinoBoard.h.
+#if !defined(TEXT_SIZES_ALL) && !defined(TEXT_SIZES_CUSTOM)
+#if defined(ADAFRUIT_FEATHER_M0) || defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
 #define TEXT_SIZES_CUSTOM
+#else
+#define TEXT_SIZES_ALL
 #endif
 #endif
 
@@ -24,11 +26,6 @@
 #endif
 #ifndef TEXT_SIZE_3
 #define TEXT_SIZE_3
-#endif
-#if defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40) || defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER) || defined(ARDUINO_ESP32S3_DEV_PLAYGROUND)
-#ifndef TEXT_SIZE_4
-#define TEXT_SIZE_4
-#endif
 #endif
 #endif
 

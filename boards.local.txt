@@ -88,6 +88,19 @@ waveshare_esp32_s3_touch_lcd_19.menu.UploadSpeed.921600.upload.speed=921600
 waveshare_esp32_s3_touch_lcd_19.menu.UploadSpeed.115200=115200
 waveshare_esp32_s3_touch_lcd_19.menu.UploadSpeed.115200.upload.speed=115200
 
+waveshare_esp32_s3_touch_lcd_19.menu.DebugLevel.error=Error
+waveshare_esp32_s3_touch_lcd_19.menu.DebugLevel.error.build.code_debug=1
+waveshare_esp32_s3_touch_lcd_19.menu.DebugLevel.none=None
+waveshare_esp32_s3_touch_lcd_19.menu.DebugLevel.none.build.code_debug=0
+waveshare_esp32_s3_touch_lcd_19.menu.DebugLevel.warn=Warn
+waveshare_esp32_s3_touch_lcd_19.menu.DebugLevel.warn.build.code_debug=2
+waveshare_esp32_s3_touch_lcd_19.menu.DebugLevel.info=Info
+waveshare_esp32_s3_touch_lcd_19.menu.DebugLevel.info.build.code_debug=3
+waveshare_esp32_s3_touch_lcd_19.menu.DebugLevel.debug=Debug
+waveshare_esp32_s3_touch_lcd_19.menu.DebugLevel.debug.build.code_debug=4
+waveshare_esp32_s3_touch_lcd_19.menu.DebugLevel.verbose=Verbose
+waveshare_esp32_s3_touch_lcd_19.menu.DebugLevel.verbose.build.code_debug=5
+
 ##############################################################
 
 waveshare_esp32_s3_touch_lcd_20.name=Waveshare 2.0 ESP32-S3-Touch-LCD
@@ -175,6 +188,19 @@ waveshare_esp32_s3_touch_lcd_20.menu.UploadSpeed.921600=921600
 waveshare_esp32_s3_touch_lcd_20.menu.UploadSpeed.921600.upload.speed=921600
 waveshare_esp32_s3_touch_lcd_20.menu.UploadSpeed.115200=115200
 waveshare_esp32_s3_touch_lcd_20.menu.UploadSpeed.115200.upload.speed=115200
+
+waveshare_esp32_s3_touch_lcd_20.menu.DebugLevel.error=Error
+waveshare_esp32_s3_touch_lcd_20.menu.DebugLevel.error.build.code_debug=1
+waveshare_esp32_s3_touch_lcd_20.menu.DebugLevel.none=None
+waveshare_esp32_s3_touch_lcd_20.menu.DebugLevel.none.build.code_debug=0
+waveshare_esp32_s3_touch_lcd_20.menu.DebugLevel.warn=Warn
+waveshare_esp32_s3_touch_lcd_20.menu.DebugLevel.warn.build.code_debug=2
+waveshare_esp32_s3_touch_lcd_20.menu.DebugLevel.info=Info
+waveshare_esp32_s3_touch_lcd_20.menu.DebugLevel.info.build.code_debug=3
+waveshare_esp32_s3_touch_lcd_20.menu.DebugLevel.debug=Debug
+waveshare_esp32_s3_touch_lcd_20.menu.DebugLevel.debug.build.code_debug=4
+waveshare_esp32_s3_touch_lcd_20.menu.DebugLevel.verbose=Verbose
+waveshare_esp32_s3_touch_lcd_20.menu.DebugLevel.verbose.build.code_debug=5
 
 ##############################################################
 
@@ -264,6 +290,123 @@ waveshare_esp32_s3_touch_lcd_28.menu.UploadSpeed.921600.upload.speed=921600
 waveshare_esp32_s3_touch_lcd_28.menu.UploadSpeed.115200=115200
 waveshare_esp32_s3_touch_lcd_28.menu.UploadSpeed.115200.upload.speed=115200
 
+waveshare_esp32_s3_touch_lcd_28.menu.DebugLevel.error=Error
+waveshare_esp32_s3_touch_lcd_28.menu.DebugLevel.error.build.code_debug=1
+waveshare_esp32_s3_touch_lcd_28.menu.DebugLevel.none=None
+waveshare_esp32_s3_touch_lcd_28.menu.DebugLevel.none.build.code_debug=0
+waveshare_esp32_s3_touch_lcd_28.menu.DebugLevel.warn=Warn
+waveshare_esp32_s3_touch_lcd_28.menu.DebugLevel.warn.build.code_debug=2
+waveshare_esp32_s3_touch_lcd_28.menu.DebugLevel.info=Info
+waveshare_esp32_s3_touch_lcd_28.menu.DebugLevel.info.build.code_debug=3
+waveshare_esp32_s3_touch_lcd_28.menu.DebugLevel.debug=Debug
+waveshare_esp32_s3_touch_lcd_28.menu.DebugLevel.debug.build.code_debug=4
+waveshare_esp32_s3_touch_lcd_28.menu.DebugLevel.verbose=Verbose
+waveshare_esp32_s3_touch_lcd_28.menu.DebugLevel.verbose.build.code_debug=5
+
+##############################################################
+
+waveshare_esp32_s3_touch_lcd_35.name=Waveshare 3.5 ESP32-S3-Touch-LCD
+waveshare_esp32_s3_touch_lcd_35.vid.0=0x303a
+waveshare_esp32_s3_touch_lcd_35.pid.0=0x1001
+waveshare_esp32_s3_touch_lcd_35.upload_port.0.vid=0x303a
+waveshare_esp32_s3_touch_lcd_35.upload_port.0.pid=0x1001
+
+waveshare_esp32_s3_touch_lcd_35.bootloader.tool=esptool_py
+waveshare_esp32_s3_touch_lcd_35.bootloader.tool.default=esptool_py
+
+waveshare_esp32_s3_touch_lcd_35.upload.tool=esptool_py
+waveshare_esp32_s3_touch_lcd_35.upload.tool.default=esptool_py
+waveshare_esp32_s3_touch_lcd_35.upload.tool.network=esp_ota
+
+waveshare_esp32_s3_touch_lcd_35.upload.maximum_size=3145728
+waveshare_esp32_s3_touch_lcd_35.upload.maximum_data_size=327680
+waveshare_esp32_s3_touch_lcd_35.upload.flags=
+waveshare_esp32_s3_touch_lcd_35.upload.erase_cmd=
+waveshare_esp32_s3_touch_lcd_35.upload.extra_flags=
+waveshare_esp32_s3_touch_lcd_35.upload.use_1200bps_touch=false
+waveshare_esp32_s3_touch_lcd_35.upload.wait_for_upload_port=false
+
+waveshare_esp32_s3_touch_lcd_35.serial.disableDTR=false
+waveshare_esp32_s3_touch_lcd_35.serial.disableRTS=false
+
+waveshare_esp32_s3_touch_lcd_35.build.tarch=xtensa
+waveshare_esp32_s3_touch_lcd_35.build.bootloader_addr=0x0
+waveshare_esp32_s3_touch_lcd_35.build.target=esp32s3
+waveshare_esp32_s3_touch_lcd_35.build.mcu=esp32s3
+waveshare_esp32_s3_touch_lcd_35.build.core=esp32
+waveshare_esp32_s3_touch_lcd_35.build.variant=esp32s3
+waveshare_esp32_s3_touch_lcd_35.build.board=WAVESHARE_ESP32S3_TOUCH_LCD_35
+
+waveshare_esp32_s3_touch_lcd_35.build.usb_mode=1
+waveshare_esp32_s3_touch_lcd_35.build.cdc_on_boot=1
+waveshare_esp32_s3_touch_lcd_35.build.msc_on_boot=0
+waveshare_esp32_s3_touch_lcd_35.build.dfu_on_boot=0
+waveshare_esp32_s3_touch_lcd_35.build.f_cpu=240000000L
+waveshare_esp32_s3_touch_lcd_35.build.flash_size=16MB
+waveshare_esp32_s3_touch_lcd_35.build.flash_freq=80m
+waveshare_esp32_s3_touch_lcd_35.build.flash_mode=dio
+waveshare_esp32_s3_touch_lcd_35.build.boot=qio
+waveshare_esp32_s3_touch_lcd_35.build.boot_freq=80m
+waveshare_esp32_s3_touch_lcd_35.build.partitions=app3M_fat9M_16MB
+waveshare_esp32_s3_touch_lcd_35.build.defines=-DBOARD_HAS_PSRAM
+waveshare_esp32_s3_touch_lcd_35.build.loop_core=
+waveshare_esp32_s3_touch_lcd_35.build.event_core=
+waveshare_esp32_s3_touch_lcd_35.build.psram_type=opi
+waveshare_esp32_s3_touch_lcd_35.build.memory_type={build.boot}_{build.psram_type}
+
+waveshare_esp32_s3_touch_lcd_35.menu.USBMode.hwcdc=Hardware CDC and JTAG
+waveshare_esp32_s3_touch_lcd_35.menu.USBMode.hwcdc.build.usb_mode=1
+waveshare_esp32_s3_touch_lcd_35.menu.USBMode.default=USB-OTG (TinyUSB)
+waveshare_esp32_s3_touch_lcd_35.menu.USBMode.default.build.usb_mode=0
+
+waveshare_esp32_s3_touch_lcd_35.menu.CDCOnBoot.cdc=Enabled
+waveshare_esp32_s3_touch_lcd_35.menu.CDCOnBoot.cdc.build.cdc_on_boot=1
+waveshare_esp32_s3_touch_lcd_35.menu.CDCOnBoot.default=Disabled
+waveshare_esp32_s3_touch_lcd_35.menu.CDCOnBoot.default.build.cdc_on_boot=0
+
+waveshare_esp32_s3_touch_lcd_35.menu.PSRAM.opi=OPI PSRAM
+waveshare_esp32_s3_touch_lcd_35.menu.PSRAM.opi.build.defines=-DBOARD_HAS_PSRAM
+waveshare_esp32_s3_touch_lcd_35.menu.PSRAM.opi.build.psram_type=opi
+waveshare_esp32_s3_touch_lcd_35.menu.PSRAM.qspi=QSPI PSRAM
+waveshare_esp32_s3_touch_lcd_35.menu.PSRAM.qspi.build.defines=-DBOARD_HAS_PSRAM
+waveshare_esp32_s3_touch_lcd_35.menu.PSRAM.qspi.build.psram_type=qspi
+waveshare_esp32_s3_touch_lcd_35.menu.PSRAM.disabled=Disabled
+waveshare_esp32_s3_touch_lcd_35.menu.PSRAM.disabled.build.defines=
+waveshare_esp32_s3_touch_lcd_35.menu.PSRAM.disabled.build.psram_type=opi
+
+waveshare_esp32_s3_touch_lcd_35.menu.FlashSize.16M=16MB (128Mb)
+waveshare_esp32_s3_touch_lcd_35.menu.FlashSize.16M.build.flash_size=16MB
+waveshare_esp32_s3_touch_lcd_35.menu.FlashSize.8M=8MB (64Mb)
+waveshare_esp32_s3_touch_lcd_35.menu.FlashSize.8M.build.flash_size=8MB
+
+waveshare_esp32_s3_touch_lcd_35.menu.PartitionScheme.app3M_fat9M_16MB=16M Flash (3MB APP/9.9MB FATFS)
+waveshare_esp32_s3_touch_lcd_35.menu.PartitionScheme.app3M_fat9M_16MB.build.partitions=app3M_fat9M_16MB
+waveshare_esp32_s3_touch_lcd_35.menu.PartitionScheme.app3M_fat9M_16MB.upload.maximum_size=3145728
+waveshare_esp32_s3_touch_lcd_35.menu.PartitionScheme.default_8MB=8M with spiffs (3MB APP/1.5MB SPIFFS)
+waveshare_esp32_s3_touch_lcd_35.menu.PartitionScheme.default_8MB.build.partitions=default_8MB
+waveshare_esp32_s3_touch_lcd_35.menu.PartitionScheme.default_8MB.upload.maximum_size=3342336
+waveshare_esp32_s3_touch_lcd_35.menu.PartitionScheme.default=Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)
+waveshare_esp32_s3_touch_lcd_35.menu.PartitionScheme.default.build.partitions=default
+waveshare_esp32_s3_touch_lcd_35.menu.PartitionScheme.default.upload.maximum_size=1310720
+
+waveshare_esp32_s3_touch_lcd_35.menu.UploadSpeed.921600=921600
+waveshare_esp32_s3_touch_lcd_35.menu.UploadSpeed.921600.upload.speed=921600
+waveshare_esp32_s3_touch_lcd_35.menu.UploadSpeed.115200=115200
+waveshare_esp32_s3_touch_lcd_35.menu.UploadSpeed.115200.upload.speed=115200
+
+waveshare_esp32_s3_touch_lcd_35.menu.DebugLevel.error=Error
+waveshare_esp32_s3_touch_lcd_35.menu.DebugLevel.error.build.code_debug=1
+waveshare_esp32_s3_touch_lcd_35.menu.DebugLevel.none=None
+waveshare_esp32_s3_touch_lcd_35.menu.DebugLevel.none.build.code_debug=0
+waveshare_esp32_s3_touch_lcd_35.menu.DebugLevel.warn=Warn
+waveshare_esp32_s3_touch_lcd_35.menu.DebugLevel.warn.build.code_debug=2
+waveshare_esp32_s3_touch_lcd_35.menu.DebugLevel.info=Info
+waveshare_esp32_s3_touch_lcd_35.menu.DebugLevel.info.build.code_debug=3
+waveshare_esp32_s3_touch_lcd_35.menu.DebugLevel.debug=Debug
+waveshare_esp32_s3_touch_lcd_35.menu.DebugLevel.debug.build.code_debug=4
+waveshare_esp32_s3_touch_lcd_35.menu.DebugLevel.verbose=Verbose
+waveshare_esp32_s3_touch_lcd_35.menu.DebugLevel.verbose.build.code_debug=5
+
 ##############################################################
 
 hosyond_esp32_s3_touch_lcd_40.name=Hosyond 4.0 ESP32-S3-Touch-LCD
@@ -352,6 +495,19 @@ hosyond_esp32_s3_touch_lcd_40.menu.UploadSpeed.921600.upload.speed=921600
 hosyond_esp32_s3_touch_lcd_40.menu.UploadSpeed.115200=115200
 hosyond_esp32_s3_touch_lcd_40.menu.UploadSpeed.115200.upload.speed=115200
 
+hosyond_esp32_s3_touch_lcd_40.menu.DebugLevel.error=Error
+hosyond_esp32_s3_touch_lcd_40.menu.DebugLevel.error.build.code_debug=1
+hosyond_esp32_s3_touch_lcd_40.menu.DebugLevel.none=None
+hosyond_esp32_s3_touch_lcd_40.menu.DebugLevel.none.build.code_debug=0
+hosyond_esp32_s3_touch_lcd_40.menu.DebugLevel.warn=Warn
+hosyond_esp32_s3_touch_lcd_40.menu.DebugLevel.warn.build.code_debug=2
+hosyond_esp32_s3_touch_lcd_40.menu.DebugLevel.info=Info
+hosyond_esp32_s3_touch_lcd_40.menu.DebugLevel.info.build.code_debug=3
+hosyond_esp32_s3_touch_lcd_40.menu.DebugLevel.debug=Debug
+hosyond_esp32_s3_touch_lcd_40.menu.DebugLevel.debug.build.code_debug=4
+hosyond_esp32_s3_touch_lcd_40.menu.DebugLevel.verbose=Verbose
+hosyond_esp32_s3_touch_lcd_40.menu.DebugLevel.verbose.build.code_debug=5
+
 ##############################################################
 
 waveshare_esp32_s3_zero_sensors.name=Waveshare (Sensors)
@@ -435,6 +591,19 @@ waveshare_esp32_s3_zero_sensors.menu.UploadSpeed.921600.upload.speed=921600
 waveshare_esp32_s3_zero_sensors.menu.UploadSpeed.115200=115200
 waveshare_esp32_s3_zero_sensors.menu.UploadSpeed.115200.upload.speed=115200
 
+waveshare_esp32_s3_zero_sensors.menu.DebugLevel.error=Error
+waveshare_esp32_s3_zero_sensors.menu.DebugLevel.error.build.code_debug=1
+waveshare_esp32_s3_zero_sensors.menu.DebugLevel.none=None
+waveshare_esp32_s3_zero_sensors.menu.DebugLevel.none.build.code_debug=0
+waveshare_esp32_s3_zero_sensors.menu.DebugLevel.warn=Warn
+waveshare_esp32_s3_zero_sensors.menu.DebugLevel.warn.build.code_debug=2
+waveshare_esp32_s3_zero_sensors.menu.DebugLevel.info=Info
+waveshare_esp32_s3_zero_sensors.menu.DebugLevel.info.build.code_debug=3
+waveshare_esp32_s3_zero_sensors.menu.DebugLevel.debug=Debug
+waveshare_esp32_s3_zero_sensors.menu.DebugLevel.debug.build.code_debug=4
+waveshare_esp32_s3_zero_sensors.menu.DebugLevel.verbose=Verbose
+waveshare_esp32_s3_zero_sensors.menu.DebugLevel.verbose.build.code_debug=5
+
 ##############################################################
 
 waveshare_esp32_s3_zero_sensors2.name=Waveshare (Sensors2)
@@ -517,6 +686,19 @@ waveshare_esp32_s3_zero_sensors2.menu.UploadSpeed.921600=921600
 waveshare_esp32_s3_zero_sensors2.menu.UploadSpeed.921600.upload.speed=921600
 waveshare_esp32_s3_zero_sensors2.menu.UploadSpeed.115200=115200
 waveshare_esp32_s3_zero_sensors2.menu.UploadSpeed.115200.upload.speed=115200
+
+waveshare_esp32_s3_zero_sensors2.menu.DebugLevel.error=Error
+waveshare_esp32_s3_zero_sensors2.menu.DebugLevel.error.build.code_debug=1
+waveshare_esp32_s3_zero_sensors2.menu.DebugLevel.none=None
+waveshare_esp32_s3_zero_sensors2.menu.DebugLevel.none.build.code_debug=0
+waveshare_esp32_s3_zero_sensors2.menu.DebugLevel.warn=Warn
+waveshare_esp32_s3_zero_sensors2.menu.DebugLevel.warn.build.code_debug=2
+waveshare_esp32_s3_zero_sensors2.menu.DebugLevel.info=Info
+waveshare_esp32_s3_zero_sensors2.menu.DebugLevel.info.build.code_debug=3
+waveshare_esp32_s3_zero_sensors2.menu.DebugLevel.debug=Debug
+waveshare_esp32_s3_zero_sensors2.menu.DebugLevel.debug.build.code_debug=4
+waveshare_esp32_s3_zero_sensors2.menu.DebugLevel.verbose=Verbose
+waveshare_esp32_s3_zero_sensors2.menu.DebugLevel.verbose.build.code_debug=5
 
 ##############################################################
 
@@ -613,5 +795,18 @@ esp32s3_dev_playground.menu.UploadSpeed.921600=921600
 esp32s3_dev_playground.menu.UploadSpeed.921600.upload.speed=921600
 esp32s3_dev_playground.menu.UploadSpeed.115200=115200
 esp32s3_dev_playground.menu.UploadSpeed.115200.upload.speed=115200
+
+esp32s3_dev_playground.menu.DebugLevel.error=Error
+esp32s3_dev_playground.menu.DebugLevel.error.build.code_debug=1
+esp32s3_dev_playground.menu.DebugLevel.none=None
+esp32s3_dev_playground.menu.DebugLevel.none.build.code_debug=0
+esp32s3_dev_playground.menu.DebugLevel.warn=Warn
+esp32s3_dev_playground.menu.DebugLevel.warn.build.code_debug=2
+esp32s3_dev_playground.menu.DebugLevel.info=Info
+esp32s3_dev_playground.menu.DebugLevel.info.build.code_debug=3
+esp32s3_dev_playground.menu.DebugLevel.debug=Debug
+esp32s3_dev_playground.menu.DebugLevel.debug.build.code_debug=4
+esp32s3_dev_playground.menu.DebugLevel.verbose=Verbose
+esp32s3_dev_playground.menu.DebugLevel.verbose.build.code_debug=5
 
 

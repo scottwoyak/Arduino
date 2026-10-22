@@ -54,11 +54,23 @@ internal sealed class FirmwareBuilder
             "esp32.esp32.waveshare_esp32_s3_touch_lcd_19",
             "esp32:esp32:waveshare_esp32_s3_touch_lcd_19:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,PartitionScheme=default,PSRAM=opi"),
 
+        ["WAVESHARE_ESP32S3_TOUCH_LCD_20"] = new(
+            "WAVESHARE_ESP32S3_TOUCH_LCD_20",
+            "Waveshare 2.0 ESP32-S3-Touch-LCD",
+            "esp32.esp32.waveshare_esp32_s3_touch_lcd_20",
+            "esp32:esp32:waveshare_esp32_s3_touch_lcd_20:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi"),
+
         ["WAVESHARE_ESP32S3_TOUCH_LCD_28"] = new(
             "WAVESHARE_ESP32S3_TOUCH_LCD_28",
             "Waveshare 2.8 ESP32-S3-Touch-LCD",
             "esp32.esp32.waveshare_esp32_s3_touch_lcd_28",
             "esp32:esp32:waveshare_esp32_s3_touch_lcd_28:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=default,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=enabled"),
+
+        ["WAVESHARE_ESP32S3_TOUCH_LCD_35"] = new(
+            "WAVESHARE_ESP32S3_TOUCH_LCD_35",
+            "Waveshare 3.5 ESP32-S3-Touch-LCD",
+            "esp32.esp32.waveshare_esp32_s3_touch_lcd_35",
+            "esp32:esp32:waveshare_esp32_s3_touch_lcd_35:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi"),
 
         ["WAVESHARE_ESP32S3_TOUCH_LCD_43"] = new(
             "WAVESHARE_ESP32S3_TOUCH_LCD_43",

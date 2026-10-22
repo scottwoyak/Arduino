@@ -1,6 +1,6 @@
 //
 // Sketch for the Hosyond ESP32-S3 4" display (Viewer board), also usable on the
-// Waveshare ESP32-S3-Touch-LCD-4.3B, 2.8, 2.0, and 1.9 boards.
+// Waveshare ESP32-S3-Touch-LCD-4.3B, 3.5, 2.8, 2.0, and 1.9 boards.
 //
 
 // Uncomment this to build for the Waveshare ESP32-S3-Touch-LCD-4.3B instead of the
@@ -20,6 +20,7 @@
 
 #include "Field.h"
 #include "RollingRate.h"
+#include "SerialX.h"
 
 Arduino arduino;
 RollingRate fps(100);
@@ -34,6 +35,8 @@ Field fpsField(&arduino, Point16(0, 0), "###.# fps", FPS_TEXT_SIZE);
 
 void setup()
 {
+   SerialX::begin();
+
    arduino.begin();
 
    int16_t buttonY = arduino.charH(COUNTER_TEXT_SIZE) + arduino.charH(COUNTER_TEXT_SIZE) / 4;
