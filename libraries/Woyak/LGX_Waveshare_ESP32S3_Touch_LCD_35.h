@@ -193,10 +193,12 @@ private:
 
    // TCA9554 I/O expander on the shared I2C bus (GPIO8/GPIO7).
    // Pin EXIO1 drives the ST7796S LCD reset line (active-low).
+   // Pin EXIO7 enables the NS4150B speaker power amplifier (active-high).
    static constexpr uint8_t TCA9554_I2C_ADDR = 0x20;
    static constexpr uint8_t TCA9554_OUTPUT_PORT_REG = 0x01;
    static constexpr uint8_t TCA9554_CONFIG_PORT_REG = 0x03;
    static constexpr uint8_t TCA9554_LCD_RST_BIT = (1 << 1);
+   static constexpr uint8_t TCA9554_PA_EN_BIT = (1 << 7);
 
    lgfx::Panel_ST7796 _panel_instance;
    lgfx::Bus_SPI _bus_instance;
@@ -261,11 +263,12 @@ private:
       uint8_t cfgReg = 0xFF;
       _readTCA9554Reg(TCA9554_CONFIG_PORT_REG, &cfgReg);
 
-      // Configure EXIO1 as an output (0 = output, 1 = input) while leaving all other
-      // expander pins untouched, then pulse EXIO1 HIGH -> LOW -> HIGH to reset the LCD.
-      outReg |= TCA9554_LCD_RST_BIT;
+      // Configure EXIO1 (LCD reset) and EXIO7 (speaker amplifier enable) as outputs
+      // (0 = output, 1 = input) while leaving all other expander pins untouched, then
+      // pulse EXIO1 HIGH -> LOW -> HIGH to reset the LCD while keeping EXIO7 HIGH.
+      outReg |= (TCA9554_LCD_RST_BIT | TCA9554_PA_EN_BIT);
       _writeTCA9554Reg(TCA9554_OUTPUT_PORT_REG, outReg);
-      cfgReg &= ~TCA9554_LCD_RST_BIT;
+      cfgReg &= ~(TCA9554_LCD_RST_BIT | TCA9554_PA_EN_BIT);
       _writeTCA9554Reg(TCA9554_CONFIG_PORT_REG, cfgReg);
       delay(10);
 

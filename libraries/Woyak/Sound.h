@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <ESP_I2S.h>
+#include <Wire.h>
 #include <esp_heap_caps.h>
 
 #include <array>
@@ -115,24 +116,25 @@ SET_LOOP_TASK_STACK_SIZE(32 * 1024);
 
 ///
 /// <summary>
-/// Plays tones and in-memory MP3 files on the Hosyond 4" ESP32-S3 board's speaker. The
-/// speaker is driven by an ES8311 audio codec (configured over the I2C bus shared with
-/// the touch controller) and an FM8002E amplifier (enabled by IO1, active low). Audio
-/// data is streamed to the codec over I2S, with the codec clocked from the MCLK pin.
-/// All play methods block until the sound has finished.
+/// Plays tones and in-memory MP3 files on boards with an ES8311 audio codec. Audio data
+/// is streamed to the codec over I2S, with the codec clocked from the MCLK pin and
+/// configured over I2C. All play methods block until the sound has finished unless the
+/// async variants are used.
 /// </summary>
 ///
 class Sound
 {
+public:
+   static constexpr int8_t DEFAULT_AMP_ENABLE_PIN = 1;
+   static constexpr uint8_t DEFAULT_I2S_MCLK_PIN = 4;
+   static constexpr uint8_t DEFAULT_I2S_BCLK_PIN = 5;
+   static constexpr uint8_t DEFAULT_I2S_DOUT_PIN = 8;
+   static constexpr uint8_t DEFAULT_I2S_LRCK_PIN = 7;
+   static constexpr uint8_t DEFAULT_I2S_DIN_PIN = 6;
+   static constexpr uint8_t DEFAULT_I2C_SDA_PIN = 16;
+   static constexpr uint8_t DEFAULT_I2C_SCL_PIN = 15;
+
 private:
-   static constexpr uint8_t AMP_ENABLE_PIN = 1;
-   static constexpr uint8_t I2S_MCLK_PIN = 4;
-   static constexpr uint8_t I2S_BCLK_PIN = 5;
-   static constexpr uint8_t I2S_DOUT_PIN = 8;
-   static constexpr uint8_t I2S_LRCK_PIN = 7;
-   static constexpr uint8_t I2S_DIN_PIN = 6;
-   static constexpr uint8_t I2C_SDA_PIN = 16;
-   static constexpr uint8_t I2C_SCL_PIN = 15;
    static constexpr uint8_t I2C_PORT = 0;
    static constexpr uint32_t I2C_FREQUENCY = 400000;
    static constexpr uint8_t ES8311_ADDRESS = 0x18;
@@ -146,6 +148,15 @@ private:
    static constexpr float NOTE_G5 = 783.99f;
    static constexpr float NOTE_C6 = 1046.50f;
 
+   int8_t _ampEnablePin;
+   uint8_t _mclkPin;
+   uint8_t _bclkPin;
+   uint8_t _doutPin;
+   uint8_t _lrckPin;
+   uint8_t _dinPin;
+   uint8_t _sdaPin;
+   uint8_t _sclPin;
+   bool _useWire;
    I2SClass _i2s;
    mp3dec_t* _decoder = nullptr;
    int16_t* _pcm = nullptr;
@@ -234,14 +245,25 @@ private:
 
    ///
    /// <summary>
-   /// Writes a single ES8311 codec register.
-   /// controller (which owns the bus), so the two don't conflict.
+   /// Writes a single ES8311 codec register using the I2C driver that owns the bus.
    /// </summary>
    /// <param name="reg">Register address</param>
    /// <param name="value">Value to write</param>
    ///
    void _writeCodec(uint8_t reg, uint8_t value)
    {
+      if (_useWire)
+      {
+         Wire.beginTransmission(ES8311_ADDRESS);
+         Wire.write(reg);
+         Wire.write(value);
+         if (Wire.endTransmission(true) != 0)
+         {
+            Logger.log("Codec write to reg " + std::to_string(reg) + " failed", LogSeverity::ERROR);
+         }
+         return;
+      }
+
       if (!lgfx::i2c::writeRegister8(I2C_PORT, ES8311_ADDRESS, reg, value, 0, I2C_FREQUENCY).has_value())
       {
          Logger.log("Codec write to reg " + std::to_string(reg) + " failed", LogSeverity::ERROR);
@@ -315,6 +337,43 @@ public:
    /// 22 = Jaws, 23 = Harry Potter, 24 = Star Spangled, 25 = Cafe Bell, 26 = Door Bell,
    /// 27 = Old Door Bell).
    uint8_t soundIndex = 0;
+
+   ///
+   /// <summary>
+   /// Initializes a new instance of the Sound class with the specified pin assignments.
+   /// Defaults match the Hosyond 4" ESP32-S3 Viewer board.
+   /// </summary>
+   /// <param name="ampEnablePin">Active-low GPIO pin enabling the speaker amplifier, or -1 if none</param>
+   /// <param name="mclkPin">I2S master clock pin</param>
+   /// <param name="bclkPin">I2S bit clock pin</param>
+   /// <param name="doutPin">I2S data-out pin (ESP32 to codec)</param>
+   /// <param name="lrckPin">I2S word-select (LRCK) pin</param>
+   /// <param name="dinPin">I2S data-in pin (codec to ESP32)</param>
+   /// <param name="sdaPin">I2C data pin for the ES8311 codec</param>
+   /// <param name="sclPin">I2C clock pin for the ES8311 codec</param>
+   /// <param name="useWire">True to access the ES8311 codec via Arduino's Wire instead of lgfx::i2c</param>
+   ///
+   Sound(
+      int8_t ampEnablePin = DEFAULT_AMP_ENABLE_PIN,
+      uint8_t mclkPin = DEFAULT_I2S_MCLK_PIN,
+      uint8_t bclkPin = DEFAULT_I2S_BCLK_PIN,
+      uint8_t doutPin = DEFAULT_I2S_DOUT_PIN,
+      uint8_t lrckPin = DEFAULT_I2S_LRCK_PIN,
+      uint8_t dinPin = DEFAULT_I2S_DIN_PIN,
+      uint8_t sdaPin = DEFAULT_I2C_SDA_PIN,
+      uint8_t sclPin = DEFAULT_I2C_SCL_PIN,
+      bool useWire = false)
+      : _ampEnablePin(ampEnablePin),
+        _mclkPin(mclkPin),
+        _bclkPin(bclkPin),
+        _doutPin(doutPin),
+        _lrckPin(lrckPin),
+        _dinPin(dinPin),
+        _sdaPin(sdaPin),
+        _sclPin(sclPin),
+        _useWire(useWire)
+   {
+   }
 
    ///
    /// <summary>
@@ -488,14 +547,24 @@ public:
          }
       }
 
-      pinMode(AMP_ENABLE_PIN, OUTPUT);
-      digitalWrite(AMP_ENABLE_PIN, LOW);
+      if (_ampEnablePin >= 0)
+      {
+         pinMode(_ampEnablePin, OUTPUT);
+         digitalWrite(_ampEnablePin, LOW);
+      }
 
-      lgfx::i2c::init(I2C_PORT, I2C_SDA_PIN, I2C_SCL_PIN);
+      if (_useWire)
+      {
+         Wire.begin(_sdaPin, _sclPin, I2C_FREQUENCY);
+      }
+      else
+      {
+         lgfx::i2c::init(I2C_PORT, _sdaPin, _sclPin);
+      }
 
       _beginCodec();
 
-      _i2s.setPins(I2S_BCLK_PIN, I2S_LRCK_PIN, I2S_DOUT_PIN, I2S_DIN_PIN, I2S_MCLK_PIN);
+      _i2s.setPins(_bclkPin, _lrckPin, _doutPin, _dinPin, _mclkPin);
       _began = _i2s.begin(I2S_MODE_STD, SAMPLE_RATE, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO);
       if (!_began)
       {
