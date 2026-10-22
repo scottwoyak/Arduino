@@ -58,12 +58,8 @@
 
 #include "ArduinoBoard.h"
 
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-#error "This sketch is for boards without a display (e.g. Waveshare ESP32-S3-Zero); use Temp_Monitor_Display instead."
-#include "WrongBoard.h"
-#endif
-#ifndef ARDUINO_NEOPIXEL_SUPPORTED
-#error "This sketch requires a board with onboard NeoPixel LED support (e.g. Waveshare ESP32-S3-Zero)."
+#if !defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS) && !defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS) && !defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2) && !defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS2)
+#error "This sketch requires the Waveshare (Sensors) or Waveshare (Sensors2) board."
 #include "WrongBoard.h"
 #endif
 

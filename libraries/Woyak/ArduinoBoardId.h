@@ -137,7 +137,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 // Hosyond 4.0 ESP32-S3-Touch-LCD board (builtin 4" ST7796S display with FT6336U
 // capacitive touch, ES8311 audio codec, BOOT button as buttonA).
 
-// #define ARDUINO_BATTERY_SUPPORTED
+#define ARDUINO_BATTERY_SUPPORTED
 #define ARDUINO_BUTTON_SUPPORTED
 #define ARDUINO_BUTTON_A_SUPPORTED
 #define ARDUINO_DISPLAY_SUPPORTED

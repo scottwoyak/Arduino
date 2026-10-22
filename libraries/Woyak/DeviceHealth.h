@@ -185,18 +185,21 @@ public:
                          #ifdef ARDUINO_BATTERY_SUPPORTED
                                if (battery != nullptr)
                                {
+                                  float volts = battery->readAverageVolts();
+                                  if (isfinite(volts))
+                                  {
+                                     (*doc)["batteryVolts"] = roundf(volts * 100.0f) * 0.01f;
+                                  }
+
                                   bool connected = battery->isConnected();
                                   BatteryChargingState chargingState = battery->readChargingState();
 
                                   if (chargingState == BatteryChargingState::BadCharger)
                                   {
-                                     (*doc)["batteryVolts"] = roundf(battery->readAverageVolts() * 100.0f) * 0.01f;
                                      (*doc)["batteryState"] = "Bad Charger";
                                   }
                                   else if (connected)
                                   {
-                                     (*doc)["batteryVolts"] = roundf(battery->readAverageVolts() * 100.0f) * 0.01f;
-
                                      float percent = battery->readAveragePercent();
                                      if (isfinite(percent))
                                      {

@@ -157,7 +157,7 @@ bool armedChargeOnNextBoot = false;
 CalibrationPhase currentPhase = CalibrationPhase::PreCharge;
 bool touchWasDown = false;
 
-Stopwatch phaseStopwatch;
+Stopwatch phaseStopwatch(StopwatchPrecision::Millis);
 RateTimer sampleTimer(SAMPLE_RATE);
 TimerSecs uploadTimer(INFLUX_INTERVAL_S);
 RateTimer displayTimer(DISPLAY_UPDATE_RATE);
@@ -512,6 +512,19 @@ void loop()
        connected &&
        chargingState == BatteryChargingState::No)
    {
+      setPhase(CalibrationPhase::Discharge);
+   }
+
+   // If a mid-discharge reset/brownout occurred while Phase 3 (Charge) was pre-armed in NVS,
+   // the board will boot into Charge while still running on battery without external power.
+   // Revert to Phase 2 (Discharge) so it keeps logging the discharge until external power is
+   // actually connected.
+   if (currentPhase == CalibrationPhase::Charge &&
+       phaseUploads == 0 &&
+       connected &&
+       chargingState == BatteryChargingState::No)
+   {
+      Serial.println("\n>>> BOOTED INTO CHARGE WHILE STILL DISCHARGING; REVERTING TO PHASE 2 (DISCHARGE) <<<");
       setPhase(CalibrationPhase::Discharge);
    }
 

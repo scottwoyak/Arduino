@@ -27,6 +27,11 @@
 #include <Adafruit_VL53L1X.h>
 
 #include "ArduinoBoard.h"
+
+#if !defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS) && !defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS) && !defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2) && !defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS2)
+#error "This sketch requires the Waveshare (Sensors) or Waveshare (Sensors2) board."
+#include "WrongBoard.h"
+#endif
 #include "LibraryVersion.h"
 #include "Timer.h"
 #include "VEML7700LightSensor.h"

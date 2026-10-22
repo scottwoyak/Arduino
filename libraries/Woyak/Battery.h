@@ -839,6 +839,30 @@ public:
          return true;
       }
 
+#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
+      if (_pin < 0)
+      {
+         if (!_hasFuelGauge)
+         {
+            _hasFuelGauge = _fuelGauge.begin();
+            if (_hasFuelGauge)
+            {
+               _fuelGauge.wake();
+            }
+         }
+         _ready = _hasFuelGauge;
+         return _ready;
+      }
+#endif
+
+      if (_pin >= 0)
+      {
+         analogReadResolution(ADC_RESOLUTION_BITS);
+         pinMode(_pin, INPUT);
+         _ready = true;
+         return true;
+      }
+
       _ready = false;
       return false;
    }
@@ -859,7 +883,14 @@ public:
       }
 
       float volts = _sampleVolts();
-      _recordAdcSample(volts);
+      if (_hasIna219)
+      {
+         _recordAdcSample(volts);
+      }
+      else if (isfinite(volts))
+      {
+         _voltsAverage.set(volts);
+      }
       _unlock();
       return volts;
    }
@@ -896,6 +927,12 @@ public:
          return false;
       }
 
+      if (!_hasIna219)
+      {
+         _unlock();
+         return false;
+      }
+
       float volts = readVolts();
       if (!_isVoltsConnected(volts))
       {
@@ -905,28 +942,14 @@ public:
          return false;
       }
 
-      if (_hasIna219)
+      // When the battery is switched off or unplugged on the VIN+ side, or when the
+      // charger rail sits idle with ~0 mA and sawtooth ripple on VIN-, check current:
+      // any real charging (>= +5 mA) or discharging (<= -5 mA) current proves a battery
+      // is physically connected. If current is near zero (< 2 mA), only consider it
+      // connected if the rail is calm (not oscillating like an unloaded charger cap).
+      float currentMa = readAverageCurrentMa();
+      if (isfinite(currentMa) && fabsf(currentMa) >= INA219_IDLE_CURRENT_THRESHOLD_MA)
       {
-         // When the battery is switched off or unplugged on the VIN+ side, or when the
-         // charger rail sits idle with ~0 mA and sawtooth ripple on VIN-, check current:
-         // any real charging (>= +5 mA) or discharging (<= -5 mA) current proves a battery
-         // is physically connected. If current is near zero (< 2 mA), only consider it
-         // connected if the rail is calm (not oscillating like an unloaded charger cap).
-         float currentMa = readAverageCurrentMa();
-         if (isfinite(currentMa) && fabsf(currentMa) >= INA219_IDLE_CURRENT_THRESHOLD_MA)
-         {
-            _unlock();
-            return true;
-         }
-
-         if (_hasNoBatteryRipple())
-         {
-            _resetAdcChargingTrend();
-            _percentAverage.reset();
-            _unlock();
-            return false;
-         }
-
          _unlock();
          return true;
       }
@@ -1029,101 +1052,46 @@ public:
          return BatteryChargingState::BadCharger;
       }
 
+      if (!_hasIna219)
+      {
+         _unlock();
+         return BatteryChargingState::Unknown;
+      }
+
       if (!isConnected())
       {
          _unlock();
          return BatteryChargingState::Unknown;
       }
 
-      if (_hasIna219)
+      float currentMa = readAverageCurrentMa();
+      float avgVolts = readAverageVolts();
+      float checkVolts = isfinite(avgVolts) ? avgVolts : volts;
+
+      if (isfinite(currentMa))
       {
-         float currentMa = readAverageCurrentMa();
-         float avgVolts = readAverageVolts();
-         float checkVolts = isfinite(avgVolts) ? avgVolts : volts;
-
-         if (isfinite(currentMa))
-         {
-            if (currentMa >= INA219_CHARGE_CURRENT_THRESHOLD_MA)
-            {
-               _unlock();
-               return BatteryChargingState::Yes;
-            }
-
-            if (currentMa <= INA219_DISCHARGE_CURRENT_THRESHOLD_MA)
-            {
-               _unlock();
-               return BatteryChargingState::No;
-            }
-
-            if (checkVolts >= INA219_FULL_MIN_VOLTS)
-            {
-               _saveFullChargeVolts(checkVolts);
-               _unlock();
-               return BatteryChargingState::Full;
-            }
-         }
-
-         _unlock();
-         return BatteryChargingState::Unknown;
-      }
-
-#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
-      if (_pin < 0)
-      {
-         float rate = readChargeRate();
-         if (!isfinite(rate))
-         {
-            _unlock();
-            return BatteryChargingState::Unknown;
-         }
-
-         if (rate >= MIN_FUEL_GAUGE_CHARGE_RATE)
+         if (currentMa >= INA219_CHARGE_CURRENT_THRESHOLD_MA)
          {
             _unlock();
             return BatteryChargingState::Yes;
          }
 
-         float avgVolts = _voltsAverage.average();
-         float checkVolts = isfinite(avgVolts) ? avgVolts : volts;
-         float percent = readAveragePercent();
-         bool standbyFull = (checkVolts >= FUEL_GAUGE_STANDBY_FULL_VOLTS)
-            && (_lastWindowSpanVolts > 0.0f)
-            && (_lastWindowSpanVolts <= FUEL_GAUGE_STANDBY_MAX_SPAN_VOLTS)
-            && (_adcChargingState != BatteryChargingState::No);
-         bool atFullCharge = (checkVolts >= _fullChargeVolts)
-            || standbyFull
-            || (isfinite(percent) && percent >= FULL_CHARGE_PERCENT);
-
-         if (_adcChargingState == BatteryChargingState::No && checkVolts < _fullChargeVolts && !standbyFull)
+         if (currentMa <= INA219_DISCHARGE_CURRENT_THRESHOLD_MA)
          {
-            // Voltage has measurably dropped off the charger plateau -> discharging.
             _unlock();
             return BatteryChargingState::No;
          }
 
-         if (atFullCharge)
+         if (checkVolts >= INA219_FULL_MIN_VOLTS)
          {
-            // On the charger plateau (>= 4.185V) or steady at 100% SoC without a voltage drop:
-            // ignore negative MAX17048 CRATE slope lag after voltage steps or charge termination.
+            _saveFullChargeVolts(checkVolts);
             _unlock();
             return BatteryChargingState::Full;
          }
-
-         if (rate <= -MIN_FUEL_GAUGE_CHARGE_RATE)
-         {
-            _unlock();
-            return BatteryChargingState::No;
-         }
-
-         BatteryChargingState state = _adcChargingState;
-         _unlock();
-         return state;
       }
-#endif
 
-      BatteryChargingState state = _adcChargingState;
       _unlock();
-      return state;
+      return BatteryChargingState::Unknown;
    }
 
    ///
@@ -1147,6 +1115,12 @@ public:
    {
       _lock();
       if (!_ready && !begin())
+      {
+         _unlock();
+         return NAN;
+      }
+
+      if (!_hasIna219)
       {
          _unlock();
          return NAN;
