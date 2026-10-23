@@ -73,6 +73,7 @@ DeviceSketch sketch(SKETCH_CONFIG);
 bool relayTriggered = false;
 bool relayHeldOn = false;
 bool relayDetected = false;
+bool unexpectedRelayDetected = false;
 TimerSecs relayTriggerTimer(RELAY_TRIGGER_S);
 
 ///
@@ -112,14 +113,16 @@ void checkRelayDetection()
          sketch.arduino.led.turnOn();
          if (!relayTriggered)
          {
+            unexpectedRelayDetected = true;
             Logger.log("!!! UNEXPECTED RELAY TRIGGER DETECTED (RELAY_DETECTION_PIN HIGH WHILE RELAY OFF) !!!", LogSeverity::ERROR);
          }
       }
       else
       {
          sketch.arduino.led.turnOff();
-         if (!relayTriggered)
+         if (unexpectedRelayDetected)
          {
+            unexpectedRelayDetected = false;
             Logger.log("Unexpected relay trigger cleared (RELAY_DETECTION_PIN LOW)", LogSeverity::WARN);
          }
       }
