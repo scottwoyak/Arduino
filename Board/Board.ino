@@ -35,7 +35,7 @@ void setup()
 
    arduino.begin();
 
-   arduino.neoPixel.setColor(1.0f, 1.0f, 1.0f);
+   arduino.neoPixel.setColor(Color::WHITE);
    arduino.neoPixel.setLevel(LED_BRIGHTNESS);
    arduino.neoPixel.blink(BLINK_INTERVAL_MS);
 }

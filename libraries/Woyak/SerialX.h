@@ -34,7 +34,7 @@ namespace SerialX
 	/// none was recorded (e.g. a normal power-on/reset).
 	/// </summary>
 	/// <returns>The previous halt reason, or an empty string if none was recorded.</returns>
-	inline String lastShutdownReason()
+	inline const String& lastShutdownReason()
 	{
 		return _lastShutdownReason;
 	}

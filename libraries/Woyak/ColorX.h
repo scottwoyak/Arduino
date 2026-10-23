@@ -384,7 +384,7 @@ namespace Color565
    /// <param name="color">Color value (16-bit)</param>
    /// <returns>Red component (0-255)</returns>
    ///
-   uint8_t getR(uint16_t color)
+   constexpr uint8_t getR(uint16_t color)
    {
       return (uint8_t) (255 * ((color >> 11) & 0x1F) / 31.0);
    }
@@ -396,7 +396,7 @@ namespace Color565
    /// <param name="color">Color value</param>
    /// <returns>Red component (0-255)</returns>
    ///
-   uint8_t getR(Color color) { return getR((uint16_t)color); }
+   constexpr uint8_t getR(Color color) { return getR((uint16_t)color); }
 
    ///
    /// <summary>
@@ -405,7 +405,7 @@ namespace Color565
    /// <param name="color">Color value (16-bit)</param>
    /// <returns>Green component (0-255)</returns>
    ///
-   uint8_t getG(uint16_t color)
+   constexpr uint8_t getG(uint16_t color)
    {
       return (uint8_t) (255 * ((color >> 5) & 0x3F) / 63.0);
    }
@@ -417,7 +417,7 @@ namespace Color565
    /// <param name="color">Color value</param>
    /// <returns>Green component (0-255)</returns>
    ///
-   uint8_t getG(Color color) { return getG((uint16_t)color); }
+   constexpr uint8_t getG(Color color) { return getG((uint16_t)color); }
 
    ///
    /// <summary>
@@ -426,7 +426,7 @@ namespace Color565
    /// <param name="color">Color value (16-bit)</param>
    /// <returns>Blue component (0-255)</returns>
    ///
-   uint8_t getB(uint16_t color)
+   constexpr uint8_t getB(uint16_t color)
    {
       return (uint8_t) (255 * ((color & 0x1F) / 31.0));
    }
@@ -438,7 +438,7 @@ namespace Color565
    /// <param name="color">Color value</param>
    /// <returns>Blue component (0-255)</returns>
    ///
-   uint8_t getB(Color color) { return getB((uint16_t)color); }
+   constexpr uint8_t getB(Color color) { return getB((uint16_t)color); }
 
    ///
    /// <summary>

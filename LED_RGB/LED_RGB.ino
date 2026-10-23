@@ -106,31 +106,31 @@ void applyColor(ColorMode color)
    switch (color)
    {
       case ColorMode::Red:
-         led.setColor(1.0f, 0.0f, 0.0f);
+         led.setColor(Color::RED);
          break;
 
       case ColorMode::Yellow:
-         led.setColor(1.0f, 1.0f, 0.0f);
+         led.setColor(Color::YELLOW);
          break;
 
       case ColorMode::Green:
-         led.setColor(0.0f, 1.0f, 0.0f);
+         led.setColor(Color::LIME);
          break;
 
       case ColorMode::Cyan:
-         led.setColor(0.0f, 1.0f, 1.0f);
+         led.setColor(Color::CYAN);
          break;
 
       case ColorMode::Blue:
-         led.setColor(0.0f, 0.0f, 1.0f);
+         led.setColor(Color::BLUE);
          break;
 
       case ColorMode::Magenta:
-         led.setColor(1.0f, 0.0f, 1.0f);
+         led.setColor(Color::MAGENTA);
          break;
 
       case ColorMode::White:
-         led.setColor(1.0f, 1.0f, 1.0f);
+         led.setColor(Color::WHITE);
          break;
 
       default:

@@ -48,16 +48,6 @@ constexpr uint8_t RELAY_DETECTION_PIN = 10; // HIGH when the relay output is det
 constexpr uint8_t RELAY_PIN = 13; // pulsed HIGH to trigger the relay
 constexpr float RELAY_TRIGGER_S = 1.0f;
 
-constexpr float LED_MAGENTA_R = 1.0f;
-constexpr float LED_MAGENTA_G = 0.0f;
-constexpr float LED_MAGENTA_B = 1.0f;
-
-#if defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2)
-constexpr uint8_t LED_ORANGE_R = 255;
-constexpr uint8_t LED_ORANGE_G = 80;
-constexpr uint8_t LED_ORANGE_B = 0;
-#endif
-
 ///
 /// <summary>
 /// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
@@ -280,12 +270,9 @@ void setup()
 
    sketch.arduino.statusLed.runAtNextRisingEdge([]()
    {
-      sketch.arduino.statusLed.setColor(LED_MAGENTA_R, LED_MAGENTA_G, LED_MAGENTA_B);
+      sketch.arduino.statusLed.setColor(Color::MAGENTA);
       updateRelayStatus();
    });
-#if defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2)
-   sketch.arduino.led.setColor(LED_ORANGE_R, LED_ORANGE_G, LED_ORANGE_B);
-#endif
    sketch.arduino.led.turnOff();
    checkRelayDetection();
 

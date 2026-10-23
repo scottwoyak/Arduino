@@ -30,16 +30,14 @@ constexpr uint16_t COLOR_CYCLE_INTERVAL_MS = 2000;
 struct TestColor
 {
    const char* name;
-   uint8_t r;
-   uint8_t g;
-   uint8_t b;
+   Color color;
 };
 
 constexpr std::array<TestColor, 4> TEST_COLORS = {{
-   { "Orange",  255,  80,   0 },
-   { "Yellow",  255, 255,   0 },
-   { "Cyan",      0, 255, 255 },
-   { "Magenta", 255,   0, 255 },
+   { "Orange",  Color::ORANGE },
+   { "Yellow",  Color::YELLOW },
+   { "Cyan",    Color::CYAN },
+   { "Magenta", Color::MAGENTA },
 }};
 
 WaveShare_ESP32_S3_Zero_Sensors2 arduino;
@@ -53,12 +51,12 @@ size_t currentColorIndex = 0;
 ///
 void applyCurrentColor()
 {
-   const TestColor& color = TEST_COLORS[currentColorIndex];
+   const TestColor& entry = TEST_COLORS[currentColorIndex];
 
    Serial.print("LED color: ");
-   Serial.println(color.name);
+   Serial.println(entry.name);
 
-   arduino.led.setColor(color.r, color.g, color.b);
+   arduino.led.setColor(entry.color);
 }
 
 ///

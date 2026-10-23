@@ -614,15 +614,15 @@ protected:
    void _runSafeMode()
    {
       _safeModeActive = true;
+      String reason = SerialX::lastShutdownReason().length() > 0
+         ? SerialX::lastShutdownReason()
+         : String(Util::resetReasonString());
+
       Util::setHaltReason("");
       DeviceServerClient::setSafeMode(true);
 #ifdef ARDUINO_BATTERY_SUPPORTED
       DeviceHealth::battery = nullptr;
 #endif
-
-      const char* reason = SerialX::lastShutdownReason().length() > 0
-         ? SerialX::lastShutdownReason().c_str()
-         : Util::resetReasonString();
 
       Logger.log("Initializing");
       Logger.log(std::string("Sketch... ") + _config.sketchName);
@@ -631,7 +631,7 @@ protected:
          const char* versionText = (_config.version[0] == 'v' || _config.version[0] == 'V') ? _config.version + 1 : _config.version;
          Logger.log(std::string("Version... ") + versionText);
       }
-      Logger.log(std::string("Entering safe mode (last reset: ") + reason + ")");
+      Logger.log(std::string("Entering safe mode (last reset: ") + reason.c_str() + ")");
 
       _beginConnectHeadless();
       _beginLoggerHeadless();

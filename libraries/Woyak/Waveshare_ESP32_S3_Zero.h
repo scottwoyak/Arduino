@@ -303,8 +303,8 @@ public:
            i2cAuxGroundPin,
            i2cAuxPowerPin,
            ledPin),
-        statusLed(redPin, greenPin, bluePin),
         _rgbStatus(&statusLed),
+        statusLed(redPin, greenPin, bluePin),
         led(ledPin)
    {
       _status.addStatus(&_rgbStatus);
@@ -387,8 +387,8 @@ public:
            i2cAuxPowerPin,
            ledPin),
         _strip(NUM_STRIP_LEDS, ledPin, stripType),
-        statusLed(&_strip, STATUS_PIXEL_INDEX),
         _stripStatus(&statusLed),
+        statusLed(&_strip, STATUS_PIXEL_INDEX),
         led(&_strip, LED_PIXEL_INDEX)
    {
       _status.addStatus(&_stripStatus);

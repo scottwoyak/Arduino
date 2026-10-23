@@ -4,6 +4,7 @@
 #include <functional>
 
 #include "ArduinoBoardId.h"
+#include "ColorX.h"
 #include "Util.h"
 
 #ifdef ARDUINO_NEOPIXEL_SUPPORTED
@@ -599,6 +600,22 @@ public:
       _blueLevel = constrain(blueLevel, 0.0f, 1.0f);
       _apply();
    }
+
+#ifdef COLOR_565
+   ///
+   /// <summary>
+   /// Sets the RGB color using a named Color value.
+   /// </summary>
+   /// <param name="color">Color value</param>
+   ///
+   void setColor(Color color)
+   {
+      setColor(
+         Color565::getR(color) / 255.0f,
+         Color565::getG(color) / 255.0f,
+         Color565::getB(color) / 255.0f);
+   }
+#endif
 };
 
 #ifdef ARDUINO_NEOPIXEL_SUPPORTED
@@ -736,7 +753,7 @@ public:
 /// </summary>
 /// <remarks>
 /// Manages either a standalone single NeoPixel LED or one pixel on a shared
-/// NeoPixelStrip, with full RGB color control. Defaults to white (255, 255, 255) so
+/// NeoPixelStrip, with full RGB color control. Defaults to orange (255, 80, 0) so
 /// standard LED methods (turnOn(), flash(), blink(), setLevel()) light the pixel even
 /// when setColor() has not been called.
 /// </remarks>
@@ -757,8 +774,8 @@ private:
    int16_t _neoPixelPin = NEOPIXEL_LED_PIN;
    neoPixelType _neoPixelType = NEOPIXEL_LED_TYPE;
    uint8_t _red = 255;
-   uint8_t _green = 255;
-   uint8_t _blue = 255;
+   uint8_t _green = 80;
+   uint8_t _blue = 0;
 
 public:
    ///
@@ -903,6 +920,22 @@ public:
       _blue = b;
       _apply();
    }
+
+#ifdef COLOR_565
+   ///
+   /// <summary>
+   /// Sets the NeoPixel RGB color using a named Color value.
+   /// </summary>
+   /// <param name="color">Color value</param>
+   ///
+   void setColor(Color color)
+   {
+      setColor(
+         Color565::getR(color),
+         Color565::getG(color),
+         Color565::getB(color));
+   }
+#endif
 };
 
 #endif // ARDUINO_NEOPIXEL_SUPPORTED

@@ -107,7 +107,14 @@ private:
    {
       Serial.println("Select the air monitor location to display:");
 
-      _siteName = _promptForSite(arduino);
+      if (_siteOptions.size() == 1)
+      {
+         _siteName = _siteOptions[0];
+      }
+      else
+      {
+         _siteName = _promptForSite(arduino);
+      }
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
       if (arduino != nullptr)
@@ -241,7 +248,14 @@ private:
    void _loadSavedConfig(Preferences& preferences)
    {
       preferences.begin(_preferencesNamespace, true);
-      _siteName = preferences.getString(SITE_KEY);
+      if (_siteOptions.size() == 1)
+      {
+         _siteName = _siteOptions[0];
+      }
+      else
+      {
+         _siteName = preferences.getString(SITE_KEY);
+      }
       _locationName = preferences.getString(LOCATION_KEY);
       preferences.end();
    }

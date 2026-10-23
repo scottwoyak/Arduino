@@ -442,7 +442,7 @@ public:
 		// blink transition could mean the color change never gets a chance to run.
 		if (status == Status::FAILED)
 		{
-			_led->setColor(1.0f, 0.0f, 0.0f);
+			_led->setColor(Color::RED);
 			_led->turnOnNow();
 			return;
 		}
@@ -455,32 +455,32 @@ public:
 			switch (status)
 			{
 			case Status::STARTED:
-				_led->setColor(1.0f, 1.0f, 1.0f);
+				_led->setColor(Color::WHITE);
 				_led->turnOn();
 				break;
 
 			case Status::WIFI_CONNECTING:
-				_led->setColor(0.0f, 0.0f, 1.0f);
+				_led->setColor(Color::BLUE);
 				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
 			case Status::SERVICES_CONNECTING:
-				_led->setColor(0.0f, 1.0f, 0.0f);
+				_led->setColor(Color::LIME);
 				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
 			case Status::RUNNING:
-				_led->setColor(0.0f, 1.0f, 0.0f);
+				_led->setColor(Color::LIME);
 				_led->turnOn();
 				break;
 
 			case Status::UPDATING:
-				_led->setColor(1.0f, 1.0f, 0.0f);
+				_led->setColor(Color::YELLOW);
 				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
 			case Status::RESTARTING:
-				_led->setColor(1.0f, 0.0f, 1.0f);
+				_led->setColor(Color::MAGENTA);
 				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
@@ -618,7 +618,7 @@ public:
 		// blink transition could mean the color change never gets a chance to run.
 		if (status == Status::FAILED)
 		{
-			_led->setColor(1.0f, 0.0f, 0.0f);
+			_led->setColor(Color::RED);
 			_led->turnOnNow();
 			return;
 		}
@@ -631,32 +631,32 @@ public:
 			switch (status)
 			{
 			case Status::STARTED:
-				_led->setColor(1.0f, 1.0f, 1.0f);
+				_led->setColor(Color::WHITE);
 				_led->turnOn();
 				break;
 
 			case Status::WIFI_CONNECTING:
-				_led->setColor(0.0f, 0.0f, 1.0f);
+				_led->setColor(Color::BLUE);
 				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
 			case Status::SERVICES_CONNECTING:
-				_led->setColor(0.0f, 1.0f, 0.0f);
+				_led->setColor(Color::LIME);
 				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
 			case Status::RUNNING:
-				_led->setColor(0.0f, 1.0f, 0.0f);
+				_led->setColor(Color::LIME);
 				_led->turnOn();
 				break;
 
 			case Status::UPDATING:
-				_led->setColor(1.0f, 1.0f, 0.0f);
+				_led->setColor(Color::YELLOW);
 				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
 			case Status::RESTARTING:
-				_led->setColor(1.0f, 0.0f, 1.0f);
+				_led->setColor(Color::MAGENTA);
 				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
@@ -667,7 +667,7 @@ public:
 		});
 	}
 
-   ///
+	///
 	/// <summary>
 	/// Sets a custom NeoPixel status color using normalized RGB channel values.
 	/// </summary>
@@ -686,10 +686,10 @@ public:
 	/// Sets a custom NeoPixel status color from a 16-bit display color value.
 	/// </summary>
 	/// <param name="color">The color to apply to the NeoPixel.</param>
-   /// 
+	/// 
 	void setStatus(Color color)
 	{
-		_led->setColor(Color565::getR(color), Color565::getG(color), Color565::getB(color));
+		_led->setColor(color);
 		_led->turnOn();
 	}
 };

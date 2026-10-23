@@ -265,6 +265,13 @@ protected:
          return;
       }
 
+      if (_siteOptions.size() == 1)
+      {
+         _pendingSiteSelection = _siteOptions[0];
+         _sendLocationPrompt();
+         return;
+      }
+
       DeviceServerClient::shell().println("Select a site:");
       for (size_t i = 0; i < _siteOptions.size(); i++)
       {
