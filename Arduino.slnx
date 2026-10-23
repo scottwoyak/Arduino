@@ -72,6 +72,7 @@
     <File Path="libraries/Woyak/IPrinter.h" />
     <File Path="libraries/Woyak/IScatterPlotSeries.h" />
     <File Path="libraries/Woyak/ITempSensor.h" />
+    <File Path="libraries/Woyak/LD2410.h" />
     <File Path="libraries/Woyak/Led.h" />
     <File Path="libraries/Woyak/LGFXUtil.h" />
     <File Path="libraries/Woyak/LGX_FeatherESP32_S3_TFT.h" />
@@ -532,6 +533,10 @@
     <Deploy Solution="*|ARM" />
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
+  </Project>
+  <Project Path="LD2410_Display/LD2410_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
   </Project>
   <Project Path="Led/Led.vcxproj" Id="00000000-0000-0000-0000-000000000056">
     <Platform Solution="*|Any CPU" Project="ARM" />
