@@ -40,7 +40,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 1;
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
-#elif defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS) || defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS)
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS)
 // Waveshare ESP32-S3-Zero wired with a custom-powered I2C bus and an RGB LED status
 // indicator (see WaveShare_ESP32_S3_Zero_Sensors constructor for required pins).
 
@@ -52,7 +52,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
 // This board has no onboard display, so no text-size defaults are defined.
 
-#elif defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2) || defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS2)
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2)
 // Waveshare ESP32-S3-Zero wired with a custom-powered I2C bus and a 2-LED NeoPixel strip
 // for status (pixel 0) and general-purpose LED (pixel 1).
 
@@ -103,7 +103,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
-#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_20) || defined(ARDUINO_WAVESHARE_ESP32_S3_TOUCH_LCD_20)
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_20)
 
 // #define ARDUINO_BATTERY_SUPPORTED
 #define ARDUINO_BUTTON_SUPPORTED
@@ -118,7 +118,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
-#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_28) || defined(ARDUINO_WAVESHARE_ESP32_S3_TOUCH_LCD_28)
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_28)
 
 // #define ARDUINO_BATTERY_SUPPORTED
 #define ARDUINO_BUTTON_SUPPORTED
@@ -133,7 +133,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
-#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_35) || defined(ARDUINO_WAVESHARE_ESP32_S3_TOUCH_LCD_35)
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_35)
 
 // #define ARDUINO_BATTERY_SUPPORTED
 #define ARDUINO_BUTTON_SUPPORTED
@@ -149,7 +149,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
-#elif defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40) || defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER)
+#elif defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40)
 // Hosyond 4.0 ESP32-S3-Touch-LCD board (builtin 4" ST7796S display with FT6336U
 // capacitive touch, ES8311 audio codec, BOOT button as buttonA).
 

@@ -13,7 +13,7 @@
 
 // On the Waveshare ESP32-S3-Zero, use the sensors board wrapper for its custom I2C pins.
 #if defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO)
-#define ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
+#define ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS
 #endif
 
 #include "ArduinoBoard.h"
@@ -40,7 +40,7 @@ void setup()
    // The board wrapper's begin() handles any needed I2C bus setup.
    arduino.begin();
 
-#ifdef ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS
+#ifdef ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS
    Serial.print("I2C SDA pin: ");
    Serial.println(arduino.sdaPin());
    Serial.print("I2C SCL pin: ");

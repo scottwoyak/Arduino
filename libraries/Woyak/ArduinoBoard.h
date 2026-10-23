@@ -12,12 +12,12 @@ using Arduino = Feather_M0_OLED;
 #include "Feather_ESP32_S3.h"
 using Arduino = Feather_ESP32_S3;
 
-#elif defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS) || defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS)
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS)
 
 #include "Waveshare_ESP32_S3_Zero.h"
 using Arduino = WaveShare_ESP32_S3_Zero_Sensors;
 
-#elif defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2) || defined(ARDUINO_WAVESHARE_ESP32_S3_ZERO_SENSORS2)
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2)
 
 #include "Waveshare_ESP32_S3_Zero.h"
 using Arduino = WaveShare_ESP32_S3_Zero_Sensors2;
@@ -37,22 +37,22 @@ using Arduino = Waveshare_ESP32S3_Touch_LCD_43;
 #include "Waveshare_ESP32S3_Touch_LCD_19.h"
 using Arduino = Waveshare_ESP32S3_Touch_LCD_19;
 
-#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_20) || defined(ARDUINO_WAVESHARE_ESP32_S3_TOUCH_LCD_20)
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_20)
 
 #include "Waveshare_ESP32S3_Touch_LCD_20.h"
 using Arduino = Waveshare_ESP32S3_Touch_LCD_20;
 
-#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_28) || defined(ARDUINO_WAVESHARE_ESP32_S3_TOUCH_LCD_28)
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_28)
 
 #include "Waveshare_ESP32S3_Touch_LCD_28.h"
 using Arduino = Waveshare_ESP32S3_Touch_LCD_28;
 
-#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_35) || defined(ARDUINO_WAVESHARE_ESP32_S3_TOUCH_LCD_35)
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_35)
 
 #include "Waveshare_ESP32S3_Touch_LCD_35.h"
 using Arduino = Waveshare_ESP32S3_Touch_LCD_35;
 
-#elif defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40) || defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER)
+#elif defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40)
 
 #include "ViewerBoardS3.h"
 using Arduino = ViewerBoardS3;

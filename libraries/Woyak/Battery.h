@@ -220,7 +220,7 @@ private:
    }
 
 public:
-#if defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40) || defined(ARDUINO_HOSYOND_ESP32_S3_VIEWER)
+#if defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40)
    static constexpr int8_t DEFAULT_PIN = 9;
    static constexpr float DEFAULT_VOLTAGE_DIVIDER = 2.0f;
 #elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_43)
@@ -229,10 +229,10 @@ public:
 #elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_19)
    static constexpr int8_t DEFAULT_PIN = 4;
    static constexpr float DEFAULT_VOLTAGE_DIVIDER = 3.0f;
-#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_20) || defined(ARDUINO_WAVESHARE_ESP32_S3_TOUCH_LCD_20)
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_20)
    static constexpr int8_t DEFAULT_PIN = 5;
    static constexpr float DEFAULT_VOLTAGE_DIVIDER = 3.0f;
-#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_28) || defined(ARDUINO_WAVESHARE_ESP32_S3_TOUCH_LCD_28)
+#elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_28)
    static constexpr int8_t DEFAULT_PIN = 8;
    static constexpr float DEFAULT_VOLTAGE_DIVIDER = 3.0f;
 #elif defined(ADAFRUIT_FEATHER_M0)
