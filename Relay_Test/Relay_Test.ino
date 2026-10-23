@@ -10,10 +10,10 @@
 // Hardware: Waveshare ESP32-S3-Zero (Sensors or Sensors2) with a custom-powered I2C bus.
 // The status LED (3-pin RGB LED on Sensors, first NeoPixel on Sensors2) reflects
 // connection status during startup (white while starting up, blue while connecting to
-// WiFi, green while connecting to services); once ready (Status::RUNNING), the status
-// LED lights up in magenta while the relay is ON, and the second LED (general-purpose
-// LED on Sensors, second NeoPixel on Sensors2) lights up while RELAY_DETECTION_PIN is
-// HIGH (in orange on Sensors2).
+// WiFi, green while connecting to services) and stays green once ready (Status::RUNNING);
+// while the relay is ON, the status LED turns magenta, then returns to the current status
+// setting when the relay turns OFF. The second LED (general-purpose LED on Sensors, second
+// NeoPixel on Sensors2) lights up while RELAY_DETECTION_PIN is HIGH (in orange on Sensors2).
 //
 // Logs a message to the LogServer via Logger each time the relay turns on or off, and
 // logs an error alert if RELAY_DETECTION_PIN goes HIGH while the relay was not commanded
@@ -77,19 +77,20 @@ TimerSecs relayTriggerTimer(RELAY_TRIGGER_S);
 
 ///
 /// <summary>
-/// Updates the first LED to reflect the current relay state once ready: magenta while ON,
-/// off while OFF.
+/// Updates the status LED to reflect the current relay state: magenta while ON, or
+/// restores the current status setting while OFF.
 /// </summary>
 ///
 void updateRelayStatus()
 {
    if (relayTriggered)
    {
+      sketch.arduino.statusLed.setColor(Color::MAGENTA);
       sketch.arduino.statusLed.turnOn();
    }
    else
    {
-      sketch.arduino.statusLed.turnOff();
+      sketch.arduino.setStatus(sketch.arduino.currentStatus());
    }
 }
 
@@ -267,12 +268,6 @@ void setup()
    sketch.begin();
 
    sketch.arduino.setStatus(Status::RUNNING);
-
-   sketch.arduino.statusLed.runAtNextRisingEdge([]()
-   {
-      sketch.arduino.statusLed.setColor(Color::MAGENTA);
-      updateRelayStatus();
-   });
    sketch.arduino.led.turnOff();
    checkRelayDetection();
 
