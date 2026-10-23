@@ -45,19 +45,21 @@ class Battery
 private:
    static constexpr uint8_t NUM_LIPO_CURVE_POINTS = 11;
 
-   // Standard 1S LiPo voltage-to-SoC lookup table from 0% to 100% in 10% increments.
+   // Empirical 1S LiPo open-circuit voltage (OCV) to SoC lookup table from 0% to 100%
+   // in 10% increments, derived from full discharge (15.14h, 1387.7 mAh) and full CC/CV
+   // charge calibration runs with IR compensation (V_ocv = V_meas - I_A * R_internal).
    static constexpr std::array<float, NUM_LIPO_CURVE_POINTS> LIPO_VOLTS_CURVE =
    {
-      3.30f, //   0%
-      3.58f, //  10%
-      3.68f, //  20%
-      3.74f, //  30%
-      3.77f, //  40%
-      3.80f, //  50%
-      3.84f, //  60%
-      3.91f, //  70%
-      3.98f, //  80%
-      4.08f, //  90%
+      3.15f, //   0%
+      3.51f, //  10%
+      3.61f, //  20%
+      3.71f, //  30%
+      3.81f, //  40%
+      3.87f, //  50%
+      3.92f, //  60%
+      4.00f, //  70%
+      4.05f, //  80%
+      4.09f, //  90%
       4.20f  // 100%
    };
 
@@ -122,7 +124,7 @@ private:
    static constexpr float ADC_TREND_DEADBAND_VOLTS = 0.008f;
    static constexpr float FUEL_GAUGE_TREND_DEADBAND_VOLTS = 0.004f;
    static constexpr uint8_t TREND_RISE_WINDOWS_REQUIRED = 2;
-   static constexpr float DEFAULT_FULL_CHARGE_VOLTS = 4.185f;
+   static constexpr float DEFAULT_FULL_CHARGE_VOLTS = 4.200f;
    static constexpr float MIN_LEARNED_FULL_VOLTS = 4.080f;
    static constexpr float MAX_LEARNED_FULL_VOLTS = 4.240f;
    static constexpr float SAVE_FULL_VOLTS_TOLERANCE = 0.003f;
@@ -143,6 +145,11 @@ private:
    static constexpr float INA219_DISCHARGE_CURRENT_THRESHOLD_MA = -5.0f;
    static constexpr float INA219_IDLE_CURRENT_THRESHOLD_MA = 2.0f;
    static constexpr float INA219_FULL_MIN_VOLTS = 4.05f;
+
+   // Effective series resistance (cell internal resistance + JST harness + INA219 0.1-ohm
+   // shunt) used to convert terminal voltage under load/charge current into open-circuit
+   // voltage: V_ocv = V_measured - (I_mA * 0.001f) * INA219_INTERNAL_RESISTANCE_OHMS.
+   static constexpr float INA219_INTERNAL_RESISTANCE_OHMS = 0.65f;
 
    ///
    /// <summary>
@@ -367,6 +374,26 @@ private:
 
    ///
    /// <summary>
+   /// Compensates a measured battery terminal voltage for the voltage drop/rise across the
+   /// cell and harness resistance under load or charging current to estimate open-circuit
+   /// voltage (OCV).
+   /// </summary>
+   /// <param name="volts">Measured terminal voltage in volts.</param>
+   /// <param name="currentMa">Signed battery current in mA (positive = charging, negative = discharging).</param>
+   /// <returns>Estimated open-circuit voltage in volts.</returns>
+   ///
+   static float _compensateOcvVolts(float volts, float currentMa)
+   {
+      if (!isfinite(volts) || !isfinite(currentMa))
+      {
+         return volts;
+      }
+
+      return volts - (currentMa * 0.001f) * INA219_INTERNAL_RESISTANCE_OHMS;
+   }
+
+   ///
+   /// <summary>
    /// Updates the pseudo charging state and adaptive full-charge ceiling from the completed
    /// window's average voltage.
    /// </summary>
@@ -374,6 +401,11 @@ private:
    ///
    void _updateAdcChargingTrend(float windowAvgVolts)
    {
+      if (_hasIna219)
+      {
+         return;
+      }
+
       if (_rippleDisconnected || !_isVoltsConnected(windowAvgVolts))
       {
          _resetAdcChargingTrend();
@@ -1141,29 +1173,11 @@ public:
          return NAN;
       }
 
-      float percent = NAN;
-#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
-      if (_isFuelGauge())
-      {
-         float rawPercent = _fuelGauge.cellPercent();
-         float curvePercent = _voltsToPercent(volts, _fullChargeVolts);
-         if (isfinite(rawPercent))
-         {
-            // If this battery/board's learned full-charge plateau is lower than the
-            // MAX17048's factory 4.20V model (e.g. ~4.13V after MCP73831 termination),
-            // scale rawPercent up so reaching the saved _fullChargeVolts reports 100%.
-            percent = constrain(std::max(rawPercent, curvePercent), 0.0f, 100.0f);
-         }
-         else
-         {
-            percent = curvePercent;
-         }
-      }
-      else
-#endif
-      {
-         percent = _voltsToPercent(volts, _fullChargeVolts);
-      }
+      float avgVolts = _voltsAverage.average();
+      float sampleVolts = isfinite(avgVolts) ? avgVolts : volts;
+      float currentMa = _currentAverage.average();
+      float ocvVolts = _compensateOcvVolts(sampleVolts, currentMa);
+      float percent = _voltsToPercent(ocvVolts);
 
       if (isfinite(percent))
       {
