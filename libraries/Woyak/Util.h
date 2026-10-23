@@ -43,6 +43,7 @@ constexpr size_t arraySize(const T (&)[N])
    return N;
 }
 
+#undef ARRAY_SIZE
 #define ARRAY_SIZE(array) arraySize(array)
 
 ///
