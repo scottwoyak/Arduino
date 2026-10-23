@@ -365,20 +365,45 @@ public:
 class RGBLEDStatus : public IStatus
 {
 private:
-	RGBLED _led;
+	bool _autoCreatedLED = false;
+	RGBLED* _led;
 
 public:
 	///
 	/// <summary>
 	/// Initializes the status indicator with a single RGB LED.
 	/// </summary>
+	/// <param name="led">The RGB LED instance to use.</param>
+	///
+	RGBLEDStatus(RGBLED* led) : _led(led)
+	{
+	}
+
+	///
+	/// <summary>
+	/// Initializes the status indicator with an internally created RGB LED.
+	/// </summary>
 	/// <param name="redPin">The red channel pin.</param>
 	/// <param name="greenPin">The green channel pin.</param>
 	/// <param name="bluePin">The blue channel pin.</param>
 	///
 	RGBLEDStatus(uint8_t redPin, uint8_t greenPin, uint8_t bluePin)
-		: _led(redPin, greenPin, bluePin)
 	{
+		_led = new RGBLED(redPin, greenPin, bluePin);
+		_autoCreatedLED = true;
+	}
+
+	///
+	/// <summary>
+	/// Destroys the status indicator, releasing the internally created RGB LED if any.
+	/// </summary>
+	///
+	~RGBLEDStatus() override
+	{
+		if (_autoCreatedLED)
+		{
+			delete _led;
+		}
 	}
 
 	///
@@ -388,7 +413,7 @@ public:
 	///
 	void begin() override
 	{
-		_led.begin();
+		_led->begin();
 	}
 
 	///
@@ -398,9 +423,9 @@ public:
 	///
 	void off() override
 	{
-		_led.runAtNextRisingEdge([this]()
+		_led->runAtNextRisingEdge([this]()
 		{
-			_led.turnOff();
+			_led->turnOff();
 		});
 	}
 
@@ -409,7 +434,7 @@ public:
 	/// Updates the RGB LED to represent the specified status.
 	/// </summary>
 	/// <param name="status">The status value to display.</param>
-   ///
+	///
 	void _applyStatus(Status status) override
 	{
 		// FAILED is applied immediately (rather than deferred to the next rising edge)
@@ -417,46 +442,46 @@ public:
 		// blink transition could mean the color change never gets a chance to run.
 		if (status == Status::FAILED)
 		{
-			_led.setColor(1.0f, 0.0f, 0.0f);
-			_led.turnOnNow();
+			_led->setColor(1.0f, 0.0f, 0.0f);
+			_led->turnOnNow();
 			return;
 		}
 
 		// Deferred to the next rising edge of any current blink cycle so a color
 		// change (e.g. blue WIFI_CONNECTING -> green SERVICES_CONNECTING) doesn't cut the
 		// LED's current on/off phase short.
-		_led.runAtNextRisingEdge([this, status]()
+		_led->runAtNextRisingEdge([this, status]()
 		{
 			switch (status)
 			{
 			case Status::STARTED:
-				_led.setColor(1.0f, 1.0f, 1.0f);
-				_led.turnOn();
+				_led->setColor(1.0f, 1.0f, 1.0f);
+				_led->turnOn();
 				break;
 
 			case Status::WIFI_CONNECTING:
-				_led.setColor(0.0f, 0.0f, 1.0f);
-				_led.blink(BLINK_INTERVAL_MS);
+				_led->setColor(0.0f, 0.0f, 1.0f);
+				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
 			case Status::SERVICES_CONNECTING:
-				_led.setColor(0.0f, 1.0f, 0.0f);
-				_led.blink(BLINK_INTERVAL_MS);
+				_led->setColor(0.0f, 1.0f, 0.0f);
+				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
 			case Status::RUNNING:
-				_led.setColor(0.0f, 1.0f, 0.0f);
-				_led.turnOn();
+				_led->setColor(0.0f, 1.0f, 0.0f);
+				_led->turnOn();
 				break;
 
 			case Status::UPDATING:
-				_led.setColor(1.0f, 1.0f, 0.0f);
-				_led.blink(BLINK_INTERVAL_MS);
+				_led->setColor(1.0f, 1.0f, 0.0f);
+				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
 			case Status::RESTARTING:
-				_led.setColor(1.0f, 0.0f, 1.0f);
-				_led.blink(BLINK_INTERVAL_MS);
+				_led->setColor(1.0f, 0.0f, 1.0f);
+				_led->blink(BLINK_INTERVAL_MS);
 				break;
 
 			case Status::FAILED:

@@ -259,6 +259,14 @@ private:
 public:
    ///
    /// <summary>
+   /// 3-pin RGB status LED. Driven through the startup/connectivity status sequence by
+   /// default, and also available for direct control by the sketch.
+   /// </summary>
+   ///
+   RGBLED statusLed;
+
+   ///
+   /// <summary>
    /// General-purpose LED on the pin returned by ledPin(). Available for sketches that
    /// want a managed LED (begin()/turnOn()/turnOff()/blink()) rather than driving the
    /// pin directly.
@@ -295,7 +303,8 @@ public:
            i2cAuxGroundPin,
            i2cAuxPowerPin,
            ledPin),
-        _rgbStatus(redPin, greenPin, bluePin),
+        statusLed(redPin, greenPin, bluePin),
+        _rgbStatus(&statusLed),
         led(ledPin)
    {
       _status.addStatus(&_rgbStatus);
@@ -332,10 +341,18 @@ public:
 
 private:
    NeoPixelStrip _strip;
-   NeoPixelLED _statusNeoPixel;
    NeoPixelStatus _stripStatus;
 
 public:
+   ///
+   /// <summary>
+   /// Status addressable LED on pixel 0 of the 2-LED NeoPixel strip. Driven through the
+   /// startup/connectivity status sequence by default, and also available for direct
+   /// control by the sketch.
+   /// </summary>
+   ///
+   NeoPixelLED statusLed;
+
    ///
    /// <summary>
    /// General-purpose addressable LED on pixel 1 of the 2-LED NeoPixel strip. Supports
@@ -370,8 +387,8 @@ public:
            i2cAuxPowerPin,
            ledPin),
         _strip(NUM_STRIP_LEDS, ledPin, stripType),
-        _statusNeoPixel(&_strip, STATUS_PIXEL_INDEX),
-        _stripStatus(&_statusNeoPixel),
+        statusLed(&_strip, STATUS_PIXEL_INDEX),
+        _stripStatus(&statusLed),
         led(&_strip, LED_PIXEL_INDEX)
    {
       _status.addStatus(&_stripStatus);
@@ -388,7 +405,7 @@ public:
    {
       WaveShare_ESP32_S3_Zero_SensorsBase::begin();
       _strip.begin();
-      _statusNeoPixel.begin();
+      statusLed.begin();
       _status.begin();
       led.begin();
    }

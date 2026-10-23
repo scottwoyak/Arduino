@@ -615,6 +615,10 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
+  <Project Path="Relay_Test/Relay_Test.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="SafeMode/SafeMode.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
