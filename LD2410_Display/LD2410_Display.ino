@@ -3,8 +3,10 @@
 //
 // Continuously reads target telemetry from an HLK-LD2410C 24 GHz mmWave radar sensor over
 // UART (Serial1 on the board's RX/TX pins at 256000 baud) along with the digital OUT pin
-// on GPIO 5, and displays the presence state, moving/stationary/overall distances and
-// signal energies, digital OUT pin state, and UART frame rate on the TFT display.
+// on GPIO 5. Displays "Moving: <N> cm" and "Still: <N> cm" readouts on the left, two
+// vertical bar graphs on the right whose heights represent distance (0 - 600 cm) and whose
+// colors represent signal energy (0 - 100%), and the digital OUT pin state and UART frame
+// rate along the bottom.
 //
 // Hardware: Feather ESP32-S3 TFT with an HLK-LD2410C sensor wired to 5V (USB), GND,
 // OUT -> GPIO 5, sensor TX -> Feather RX, and sensor RX -> Feather TX.
@@ -20,6 +22,8 @@
 #include "WrongBoard.h"
 #endif
 
+#include "Bar.h"
+#include "ColorRange.h"
 #include "DisplayValue.h"
 #include "LD2410.h"
 #include "RollingRate.h"
@@ -38,19 +42,20 @@ constexpr uint8_t FOOTER_SIZE = 2;
 
 // ----------- Sensor
 constexpr uint16_t RATE_NUM_SAMPLES = 20;
+constexpr float MAX_DISTANCE_CM = 600.0f;
 LD2410 sensor(RX, TX, OUT_PIN);
 RollingRate frameRate(RATE_NUM_SAMPLES);
 
 // ----------- Display Items
-Format stateFormat("######", Format::Alignment::RIGHT);
+constexpr int16_t BAR_WIDTH_PX = 30;
+constexpr int16_t BAR_GAP_PX = 16;
+constexpr int16_t BAR_RIGHT_MARGIN_PX = 6;
+constexpr int16_t BAR_TOP_GAP_PX = 2;
+constexpr int16_t BAR_BOTTOM_GAP_PX = 5;
+
 Format outFormat("####");
 Format rateFormat("####/s", Format::Alignment::RIGHT);
 
-DisplayValue stateValue(
-   &arduino,
-   stateFormat,
-   FOOTER_SIZE,
-   DisplayValue::Alignment::RIGHT);
 DisplayValue outValue(&arduino, outFormat, FOOTER_SIZE);
 DisplayValue rateValue(
    &arduino,
@@ -58,40 +63,15 @@ DisplayValue rateValue(
    FOOTER_SIZE,
    DisplayValue::Alignment::RIGHT);
 
-std::array columns = {
-   Table::Column(""),
-   Table::Column("Dist", "#### cm", Table::Alignment::RIGHT),
-   Table::Column("Energy", "###%", Table::Alignment::RIGHT),
-};
-std::array rows = {
-   Table::Row("Moving"),
-   Table::Row("Still"),
-   Table::Row("Detect"),
-};
-Table table(&arduino, 0, 0, columns, rows);
+constexpr std::array<Table::ValueRow, 2> ROWS = {{
+   { "Moving:", "### cm" },
+   { "Still:", "### cm" },
+}};
+Table table(&arduino, 0, 0, ROWS);
 
-///
-/// <summary>
-/// Selects the display color corresponding to the current radar target state.
-/// </summary>
-/// <param name="state">The current LD2410 target state.</param>
-/// <returns>Display color representing the target state.</returns>
-///
-Color targetStateColor(LD2410::TargetState state)
-{
-   switch (state)
-   {
-      case LD2410::TargetState::MOVING:
-         return Color::ORANGE;
-      case LD2410::TargetState::STATIONARY:
-         return Color::YELLOW;
-      case LD2410::TargetState::BOTH:
-         return Color::GREEN;
-      case LD2410::TargetState::NONE:
-      default:
-         return Color::GRAY;
-   }
-}
+ColorRange energyColorRange;
+VerticalBar* movingBar = nullptr;
+VerticalBar* stillBar = nullptr;
 
 void setup()
 {
@@ -100,7 +80,11 @@ void setup()
    arduino.begin();
    sensor.begin();
 
-   // Heading on the top left, with the target state badge on the top right
+   energyColorRange.addStop(0.0f, Color::DARKGRAY);
+   energyColorRange.addStop(1.0f, Color::ORANGE);
+   energyColorRange.addStop(100.0f, Color::YELLOW);
+
+   // Heading on the top left
    arduino.clearDisplay();
    arduino.setTextSize(HEADER_SIZE);
    arduino.setCursor(0, 0);
@@ -110,31 +94,49 @@ void setup()
    int16_t footerHeight = arduino.charH(FOOTER_SIZE);
    int16_t footerY = arduino.height() - footerHeight;
 
-   stateValue.setPosition(arduino.width(), headingHeight / 2, VerticalAnchor::MIDDLE);
-
-   // Center the distance/energy table in the space between the heading and footer
+   // Place "Moving: <N> cm" and "Still: <N> cm" vertically centered on the left
    int16_t availableHeight = footerY - headingHeight;
-   int16_t tableWidth = table.getWidth();
    int16_t tableHeight = table.getRect().height;
-   int16_t tableX = (arduino.width() - tableWidth) / 2;
    int16_t tableY = headingHeight + (availableHeight - tableHeight) / 2;
-   table.setPosition(tableX, tableY);
+   table.setPosition(0, tableY);
+
+   // Two vertical bars on the right: Moving (left bar) and Still (right bar)
+   arduino.setTextSize(FOOTER_SIZE);
+   int16_t labelHeight = arduino.charH(FOOTER_SIZE);
+   int16_t stillFrameX = arduino.width() - BAR_RIGHT_MARGIN_PX - (BAR_WIDTH_PX + 2);
+   int16_t movingFrameX = stillFrameX - BAR_GAP_PX - (BAR_WIDTH_PX + 2);
+   int16_t frameY = labelHeight + BAR_TOP_GAP_PX;
+   int16_t frameHeight = (footerY - BAR_BOTTOM_GAP_PX) - frameY;
+
+   int16_t labelWidth = 3 * arduino.charW(FOOTER_SIZE);
+   arduino.setCursor(movingFrameX + ((BAR_WIDTH_PX + 2) - labelWidth) / 2, 0);
+   arduino.print("Mov", Color::LABEL);
+   arduino.setCursor(stillFrameX + ((BAR_WIDTH_PX + 2) - labelWidth) / 2, 0);
+   arduino.print("Stl", Color::LABEL);
+
+   arduino.display.drawRect(movingFrameX, frameY, BAR_WIDTH_PX + 2, frameHeight, (uint16_t)Color::DARKGRAY);
+   arduino.display.drawRect(stillFrameX, frameY, BAR_WIDTH_PX + 2, frameHeight, (uint16_t)Color::DARKGRAY);
+
+   Rect16 movingBarRect(movingFrameX + 1, frameY + 1, BAR_WIDTH_PX, frameHeight - 2);
+   Rect16 stillBarRect(stillFrameX + 1, frameY + 1, BAR_WIDTH_PX, frameHeight - 2);
+   RangeF distanceRange(MAX_DISTANCE_CM, 0.0f);
+
+   movingBar = new VerticalBar(movingBarRect, distanceRange, Color::DARKGRAY, Color::BLACK);
+   stillBar = new VerticalBar(stillBarRect, distanceRange, Color::DARKGRAY, Color::BLACK);
+   movingBar->clear();
+   stillBar->clear();
+   movingBar->draw(&arduino.display);
+   stillBar->draw(&arduino.display);
 
    // Footer: digital OUT pin state on the lower left, UART frame rate on the lower right
-   arduino.setTextSize(FOOTER_SIZE);
    arduino.setCursor(0, footerY);
    arduino.print("OUT: ", Color::LABEL);
    outValue.setPosition(arduino.getCursorX(), footerY);
    rateValue.setPosition(arduino.width(), footerY);
 
    // Show initial placeholders before the first UART frame arrives
-   stateValue.draw("NoUART", Color::RED);
-   table.setValueNone(0, 0, Color::GRAY);
-   table.setValueNone(0, 1, Color::GRAY);
-   table.setValueNone(1, 0, Color::GRAY);
-   table.setValueNone(1, 1, Color::GRAY);
-   table.setValueNone(2, 0, Color::GRAY);
-   table.setValue(2, 1, "", Color::BLACK);
+   table.setValueNone(0, Color::GRAY);
+   table.setValueNone(1, Color::GRAY);
    table.draw();
 }
 
@@ -160,26 +162,25 @@ void loop()
 
    frameRate.tick();
 
-   LD2410::TargetState state = sensor.targetState();
-   stateValue.draw(sensor.targetStateText(), targetStateColor(state));
+   uint16_t movingDist = sensor.movingDistanceCm();
+   uint8_t movingEnergy = sensor.movingEnergy();
+   Color movingColor = energyColorRange.getColor(movingEnergy);
 
-   bool hasMoving = (state == LD2410::TargetState::MOVING) || (state == LD2410::TargetState::BOTH);
-   bool hasStationary = (state == LD2410::TargetState::STATIONARY) || (state == LD2410::TargetState::BOTH);
-   bool hasTarget = sensor.isPresent();
+   uint16_t stillDist = sensor.stationaryDistanceCm();
+   uint8_t stillEnergy = sensor.stationaryEnergy();
+   Color stillColor = energyColorRange.getColor(stillEnergy);
 
-   Color movingColor = hasMoving ? Color::VALUE : Color::GRAY;
-   Color stationaryColor = hasStationary ? Color::VALUE : Color::GRAY;
-   Color detectColor = hasTarget ? Color::VALUE : Color::GRAY;
-
-   table.setValue(0, 0, sensor.movingDistanceCm(), movingColor);
-   table.setValue(0, 1, sensor.movingEnergy(), movingColor);
-
-   table.setValue(1, 0, sensor.stationaryDistanceCm(), stationaryColor);
-   table.setValue(1, 1, sensor.stationaryEnergy(), stationaryColor);
-
-   table.setValue(2, 0, sensor.detectionDistanceCm(), detectColor);
-   table.setValue(2, 1, "", Color::BLACK);
+   table.setValue(0, movingDist, movingColor);
+   table.setValue(1, stillDist, stillColor);
    table.draw();
+
+   movingBar->setColor(movingColor);
+   movingBar->set((movingEnergy > 0 || movingDist > 0) ? movingDist : MAX_DISTANCE_CM);
+   movingBar->draw(&arduino.display);
+
+   stillBar->setColor(stillColor);
+   stillBar->set((stillEnergy > 0 || stillDist > 0) ? stillDist : MAX_DISTANCE_CM);
+   stillBar->draw(&arduino.display);
 
    rateValue.draw(frameRate.get(), Color::LIGHTGRAY);
 }

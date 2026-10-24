@@ -620,6 +620,10 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
+  <Project Path="Presence_Publisher_Display/Presence_Publisher_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Relay_Test/Relay_Test.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
