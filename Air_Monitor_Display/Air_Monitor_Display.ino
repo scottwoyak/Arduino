@@ -70,6 +70,7 @@ constexpr auto AIR_QUALITY_TOPIC_PREFIX = "AirQuality";
 constexpr uint16_t SGP41_CONDITIONING_S = 10;
 constexpr size_t MAX_TOPIC_LENGTH = 64;
 constexpr uint8_t TELEMETRY_DECIMAL_PLACES = 0;
+constexpr uint8_t AIR_QUALITY_DECIMAL_PLACES = 2;
 constexpr uint8_t TEXT_SIZE_SMALL = 2;
 constexpr uint8_t STARTUP_DELAY_S = 5;
 constexpr uint8_t INFLUX_INTERVAL_S = 60;
@@ -249,8 +250,48 @@ FieldTable table(&sketch.arduino, 0, 0, TEXT_SIZE_SMALL);
 
 ///
 /// <summary>
-/// Computes the worst (highest) air quality tier (0-5) across all active sensor readings,
-/// or -1 if no sensor has produced a valid reading yet.
+/// Computes the worst (highest) fractional air quality score (0.00-5.00) across all
+/// active sensor readings, or NAN if no sensor has produced a valid reading yet.
+/// </summary>
+/// <returns>Worst fractional air quality score (0.00-5.00), or NAN if no readings are available.</returns>
+///
+float getWorstAirQualityScore()
+{
+   struct MetricRating
+   {
+      float value;
+      const float* limits;
+   };
+
+   const MetricRating metrics[] = {
+      { pm1, AirQualityTiers::PM25_LIMITS },
+      { pm25, AirQualityTiers::PM25_LIMITS },
+      { pm10, AirQualityTiers::PM10_LIMITS },
+      { co2, AirQualityTiers::CO2_LIMITS },
+      { vocIndex > 0 ? vocIndex : NAN, AirQualityTiers::VOC_LIMITS },
+      { noxIndex > 0 ? noxIndex : NAN, AirQualityTiers::NOX_LIMITS },
+   };
+
+   float worstScore = NAN;
+   for (const MetricRating& metric : metrics)
+   {
+      if (!isnan(metric.value))
+      {
+         float score = AirQualityTiers::scoreFor(metric.value, metric.limits);
+         if (isnan(worstScore) || score > worstScore)
+         {
+            worstScore = score;
+         }
+      }
+   }
+
+   return worstScore;
+}
+
+///
+/// <summary>
+/// Computes the worst (highest) discrete air quality tier (0-5) across all active sensor
+/// readings, or -1 if no sensor has produced a valid reading yet.
 /// </summary>
 /// <returns>Worst tier index (0-5), or -1 if no readings are available.</returns>
 ///
@@ -289,24 +330,24 @@ int8_t getWorstTier()
 
 ///
 /// <summary>
-/// Publishes the current worst air quality tier (0-5) over telemetry if at least one
-/// sensor reading is available.
+/// Publishes the current worst fractional air quality score (0.00-5.00) over telemetry if
+/// at least one sensor reading is available.
 /// </summary>
 ///
 void publishAirQuality()
 {
-   int8_t worstTier = getWorstTier();
-   if (worstTier >= 0)
+   float worstScore = getWorstAirQualityScore();
+   if (!isnan(worstScore))
    {
-      sketch.publish(airQualityTopic, worstTier, 0);
+      sketch.publish(airQualityTopic, worstScore, AIR_QUALITY_DECIMAL_PLACES);
    }
 }
 
 ///
 /// <summary>
 /// Formats the latest PM1.0, PM2.5, PM10, CO2, temperature, humidity, VOC, NOx,
-/// airQuality tier, and SGP41 conditioning state for the "GetReadings" command registered
-/// via sketch.onReadings().
+/// airQuality score/tier, and SGP41 conditioning state for the "GetReadings" command
+/// registered via sketch.onReadings().
 /// </summary>
 /// <returns>Formatted readings text.</returns>
 ///
@@ -329,8 +370,9 @@ static std::string getReadings()
    };
 
    int8_t worstTier = getWorstTier();
-   std::string airQualityText = worstTier >= 0
-      ? std::to_string(worstTier) + " (" + AirQualityTiers::TIER_NAMES[worstTier] + ")"
+   float worstScore = getWorstAirQualityScore();
+   std::string airQualityText = (worstTier >= 0 && !isnan(worstScore))
+      ? formatVal(worstScore, AIR_QUALITY_DECIMAL_PLACES, "") + " (" + AirQualityTiers::TIER_NAMES[worstTier] + ")"
       : "NAN";
 
    return

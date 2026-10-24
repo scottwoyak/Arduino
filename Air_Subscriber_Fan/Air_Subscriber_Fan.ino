@@ -18,8 +18,10 @@
 //
 
 #include <Arduino.h>
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <iomanip>
 #include <sstream>
 #include <string>
 
@@ -63,6 +65,7 @@ TimerSecs fanTimer(0.0f);
 
 std::string airQualityTopic;
 int8_t currentTier = -1;
+float currentScore = NAN;
 bool fanOn = false;
 
 ///
@@ -90,19 +93,22 @@ constexpr std::array<DeviceServerClient::CommandInfo, NUM_FAN_COMMANDS> FAN_COMM
 
 ///
 /// <summary>
-/// Formats a tier index (0-5) with its tier name for logging.
+/// Formats the current air quality score (2 decimal places) and discrete tier name for logging.
 /// </summary>
-/// <param name="tier">Tier index.</param>
+/// <param name="score">Fractional air quality score.</param>
+/// <param name="tier">Discrete tier index (0-5).</param>
 /// <returns>Formatted tier description.</returns>
 ///
-std::string formatTier(int8_t tier)
+std::string formatTier(float score, int8_t tier)
 {
+	std::ostringstream out;
+	out << std::fixed << std::setprecision(2) << score;
 	if (tier >= 0 && tier < AirQualityTiers::NUM_TIERS)
 	{
-		return std::to_string(tier) + " (" + AirQualityTiers::TIER_NAMES[tier] + ")";
+		out << " (" << AirQualityTiers::TIER_NAMES[tier] << ")";
 	}
 
-	return std::to_string(tier);
+	return out.str();
 }
 
 ///
@@ -163,7 +169,7 @@ void onFanCommand(const char* command)
 			uint32_t secs = remainingSecs % 60;
 			state += " (" + std::to_string(mins) + "m " + std::to_string(secs) + "s remaining)";
 		}
-		std::string tierText = currentTier >= 0 ? formatTier(currentTier) : "none";
+		std::string tierText = currentTier >= 0 ? formatTier(currentScore, currentTier) : "none";
 		DeviceServerClient::respond((state + ", tier = " + tierText).c_str());
 	}
 	else if (strcasecmp(verb.c_str(), "On") == 0)
@@ -238,7 +244,9 @@ void setup()
 			return;
 		}
 
-		currentTier = lround(value);
+		currentScore = static_cast<float>(value);
+		int tier = static_cast<int>(std::floor(value));
+		currentTier = static_cast<int8_t>(std::clamp(tier, 0, static_cast<int>(AirQualityTiers::NUM_TIERS - 1)));
 
 		if (currentTier >= 1)
 		{
@@ -250,7 +258,7 @@ void setup()
 
 			if (!fanOn)
 			{
-				setFanState(true, "tier = " + formatTier(currentTier));
+				setFanState(true, "tier = " + formatTier(currentScore, currentTier));
 			}
 		}
 	});
@@ -267,7 +275,7 @@ void loop()
 		std::string reason = "timer expired";
 		if (currentTier >= 0)
 		{
-			reason += ", tier = " + formatTier(currentTier);
+			reason += ", tier = " + formatTier(currentScore, currentTier);
 		}
 		setFanState(false, reason);
 	}

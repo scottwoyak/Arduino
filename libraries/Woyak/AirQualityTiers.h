@@ -66,6 +66,41 @@ public:
 
    ///
    /// <summary>
+   /// Computes a continuous fractional tier score in [0.0, NUM_TIERS - 1] by linearly
+   /// interpolating the value within the tier's lower and upper limits. Values at or
+   /// below the first tier's upper limit map to [0.0, 1.0], each subsequent bounded tier
+   /// maps to [tier, tier + 1.0], and values in the final (unbounded) tier return
+   /// NUM_TIERS - 1 (5.0).
+   /// </summary>
+   /// <param name="value">The value to rate.</param>
+   /// <param name="limits">Upper limit of each tier except the last (NUM_TIERS - 1 entries).</param>
+   /// <returns>Continuous tier score in [0.0, NUM_TIERS - 1].</returns>
+   ///
+   static float scoreFor(float value, const float* limits)
+   {
+      if (value <= 0.0f)
+      {
+         return 0.0f;
+      }
+
+      uint8_t tier = tierFor(value, limits);
+      if (tier >= NUM_TIERS - 1)
+      {
+         return static_cast<float>(NUM_TIERS - 1);
+      }
+
+      float lower = (tier == 0) ? 0.0f : limits[tier - 1];
+      float upper = limits[tier];
+      if (upper <= lower)
+      {
+         return static_cast<float>(tier);
+      }
+
+      return tier + (value - lower) / (upper - lower);
+   }
+
+   ///
+   /// <summary>
    /// Picks a tier's color for a value, given its ascending per-tier upper limits.
    /// Returns Color::VALUE for NAN, so an unavailable reading doesn't appear rated.
    /// </summary>
