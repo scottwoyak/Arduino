@@ -480,7 +480,7 @@ private:
       },
       { "GetUptime", "Reports how long the device has been running since boot", { "gu" }, {}, false, { "Diagnostics" } },
       { "GetInfo", "Reports the sketch name, version, board type, build time, uptime, IP address, and site/location", { "gi" }, {}, false, { "Diagnostics" } },
-      { "GetWifiInfo", "Reports the current WiFi SSID, signal strength, and IP address", { "gwi" }, {}, false, { "Diagnostics" } },
+      { "GetWifiInfo", "Reports the current WiFi SSID, signal strength, IP address, and MAC address", { "gwi" }, {}, false, { "Diagnostics" } },
       { "GetResetReason", "Reports the reason the device last reset/rebooted", { "grr" }, {}, false, { "Diagnostics" } },
       { "GetMemory", "Reports free heap and largest allocatable block", { "gm" }, {}, false, { "Diagnostics" } },
       { "GetCpuInfo", "Reports chip model/revision/cores, CPU frequency, flash size, and internal temperature", { "gci" }, {}, false, { "Diagnostics" } },
@@ -1135,7 +1135,7 @@ private:
 
    ///
    /// <summary>
-   /// Reports the current WiFi SSID, signal strength, and IP address.
+   /// Reports the current WiFi SSID, signal strength, IP address, and MAC address.
    /// </summary>
    /// <returns>A description of the WiFi connection.</returns>
    ///
@@ -1148,7 +1148,8 @@ private:
       std::ostringstream result;
       result << "SSID: " << WIFI_SSID << "\n"
              << "RSSI: " << DeviceHealth::lastRssi() << " dBm\n"
-             << "IP: " << WiFi.localIP().toString().c_str();
+             << "IP: " << WiFi.localIP().toString().c_str() << "\n"
+             << "MAC: " << WiFi.macAddress().c_str();
       return result.str();
    }
 

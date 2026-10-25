@@ -103,7 +103,7 @@ struct LineState
 constexpr auto LEFT_TELEMETRY_TOPIC = "Gate/Left";
 constexpr auto RIGHT_TELEMETRY_TOPIC = "Gate/Right";
 
-constexpr auto GATE_OPENER_HOST = "192.168.1.9";
+constexpr auto GATE_OPENER_HOST = "gate.home";
 constexpr uint16_t GATE_OPENER_PORT = 80;
 
 // This sketch's own version (e.g. "1.06"); MakeVersion() appends the shared

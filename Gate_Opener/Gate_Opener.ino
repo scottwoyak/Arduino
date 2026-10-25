@@ -9,11 +9,12 @@
 // - POST /Gate       body "OPEN" pulses the gate open, "HOLD" holds it open until
 //                    "CLOSE" is posted.
 //
-// Hardware: Waveshare ESP32-S3-Zero with a custom-powered I2C bus and RGB LED status
-// indicator. The onboard NeoPixel/RGB status LED reflects connection status only
-// (white while starting up, blue while connecting to WiFi, green once ready, red on
-// failure); the general-purpose LED lights up while the gate is OPEN. The relay module
-// is powered directly (GND/VCC) and triggered via GATE_RELAY_PIN.
+// Hardware: Waveshare ESP32-S3-Zero (Sensors2) with a custom-powered I2C bus and a 2-LED
+// WS2812 NeoPixel strip. The status LED (pixel 0 on the strip, mirrored on the onboard
+// NeoPixel) reflects connection status only (white while starting up, blue while
+// connecting to WiFi, green once ready, red on failure); the general-purpose LED (pixel 1
+// on the strip) lights up while the gate is OPEN. The relay module is powered directly
+// (GND/VCC) and triggered via GATE_RELAY_PIN.
 //
 // Also uploads rolling-averaged enclosure temperature/humidity and a point-in-time
 // CPU temperature reading to InfluxDB on a fixed interval (Measurement: Sensors,
@@ -32,8 +33,8 @@
 
 #include "ArduinoBoard.h"
 
-#if !defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS) && !defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2)
-#error "This sketch requires the Waveshare (Sensors) or Waveshare (Sensors2) board."
+#if !defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2)
+#error "This sketch requires the Waveshare (Sensors2) board."
 #include "WrongBoard.h"
 #endif
 #include "LibraryVersion.h"
@@ -76,7 +77,7 @@ MonitorSketch sketch(MONITOR_CONFIG, INFLUX_CONFIG);
 ///
 /// <summary>
 /// Updates the general-purpose LED to reflect the current gate state: on while OPEN,
-/// off while CLOSED. The combined RGB/NeoPixel status indicator is left alone here,
+/// off while CLOSED. The combined NeoPixel status indicator is left alone here,
 /// since it only reflects connection status (see sketch.arduino.setStatus()).
 /// </summary>
 ///
