@@ -58,7 +58,7 @@
 // This sketch's own version (e.g. "1.0"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("1.0");
+const auto VERSION = MakeVersion("1.1");
 constexpr auto SKETCH_NAME = "Air_Monitor_Display";
 constexpr auto PM1_TOPIC_PREFIX = "PM1.0";
 constexpr auto PM25_TOPIC_PREFIX = "PM2.5";
@@ -140,10 +140,13 @@ VOCGasIndexAlgorithm vocAlgorithm;
 NOxGasIndexAlgorithm noxAlgorithm;
 
 InfluxField* co2Field = nullptr;
+InfluxField* co2QualityField = nullptr;
 InfluxField* scdTempField = nullptr;
 InfluxField* humidityField = nullptr;
 InfluxField* vocField = nullptr;
+InfluxField* vocQualityField = nullptr;
 InfluxField* noxField = nullptr;
+InfluxField* noxQualityField = nullptr;
 
 Timer sgpTimer(1000);
 bool sgpConditioned = false;
@@ -158,8 +161,12 @@ float lastTempC = 25.0f;
 float lastHumidity = 50.0f;
 
 InfluxField* pm1Field = nullptr;
+InfluxField* pm1QualityField = nullptr;
 InfluxField* pm25Field = nullptr;
+InfluxField* pm25QualityField = nullptr;
 InfluxField* pm10Field = nullptr;
+InfluxField* pm10QualityField = nullptr;
+InfluxField* airQualityField = nullptr;
 
 Timer influxTimer(INFLUX_INTERVAL_S * 1000UL);
 
@@ -330,8 +337,8 @@ int8_t getWorstTier()
 
 ///
 /// <summary>
-/// Publishes the current worst fractional air quality score (0.00-5.00) over telemetry if
-/// at least one sensor reading is available.
+/// Records the current worst fractional air quality score (0.00-5.00) for InfluxDB and
+/// publishes it over telemetry if at least one sensor reading is available.
 /// </summary>
 ///
 void publishAirQuality()
@@ -339,6 +346,7 @@ void publishAirQuality()
    float worstScore = getWorstAirQualityScore();
    if (!isnan(worstScore))
    {
+      airQualityField->set(worstScore);
       sketch.publish(airQualityTopic, worstScore, AIR_QUALITY_DECIMAL_PLACES);
    }
 }
@@ -474,8 +482,11 @@ void setup()
 
    InfluxPoint* point = sketch.addPoint({ { "item", "PMS5003" } });
    pm1Field = point->addTimeAverageField(INFLUX_INTERVAL_S, "pm1", INFLUX_DECIMAL_PLACES);
+   pm1QualityField = point->addTimeAverageField(INFLUX_INTERVAL_S, "pm1Quality", AIR_QUALITY_DECIMAL_PLACES);
    pm25Field = point->addTimeAverageField(INFLUX_INTERVAL_S, "pm25", INFLUX_DECIMAL_PLACES);
+   pm25QualityField = point->addTimeAverageField(INFLUX_INTERVAL_S, "pm25Quality", AIR_QUALITY_DECIMAL_PLACES);
    pm10Field = point->addTimeAverageField(INFLUX_INTERVAL_S, "pm10", INFLUX_DECIMAL_PLACES);
+   pm10QualityField = point->addTimeAverageField(INFLUX_INTERVAL_S, "pm10Quality", AIR_QUALITY_DECIMAL_PLACES);
 
    table.addRow("PM1.0", &pm1Value);
    table.addRow("PM2.5", &pm25Value);
@@ -483,12 +494,18 @@ void setup()
 
    InfluxPoint* scdPoint = sketch.addPoint({ { "item", "SCD41" } });
    co2Field = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "co2", 0);
+   co2QualityField = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "co2Quality", AIR_QUALITY_DECIMAL_PLACES);
    scdTempField = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_DECIMAL_PLACES);
    humidityField = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_DECIMAL_PLACES);
 
    InfluxPoint* sgpPoint = sketch.addPoint({ { "item", "SGP41" } });
    vocField = sgpPoint->addTimeAverageField(INFLUX_INTERVAL_S, "voc", 0);
+   vocQualityField = sgpPoint->addTimeAverageField(INFLUX_INTERVAL_S, "vocQuality", AIR_QUALITY_DECIMAL_PLACES);
    noxField = sgpPoint->addTimeAverageField(INFLUX_INTERVAL_S, "nox", 0);
+   noxQualityField = sgpPoint->addTimeAverageField(INFLUX_INTERVAL_S, "noxQuality", AIR_QUALITY_DECIMAL_PLACES);
+
+   InfluxPoint* airQualityPoint = sketch.addPoint();
+   airQualityField = airQualityPoint->addTimeAverageField(INFLUX_INTERVAL_S, "airQuality", AIR_QUALITY_DECIMAL_PLACES);
 
    table.addRow("CO2", &co2Value);
    table.addRow("VOC", &vocValue);
@@ -540,8 +557,11 @@ void loop()
       pm10 = pms.pm10();
 
       pm1Field->set(pm1);
+      pm1QualityField->set(AirQualityTiers::scoreFor(pm1, AirQualityTiers::PM25_LIMITS));
       pm25Field->set(pm25);
+      pm25QualityField->set(AirQualityTiers::scoreFor(pm25, AirQualityTiers::PM25_LIMITS));
       pm10Field->set(pm10);
+      pm10QualityField->set(AirQualityTiers::scoreFor(pm10, AirQualityTiers::PM10_LIMITS));
 
       sketch.publish(pm1Topic, pm1, TELEMETRY_DECIMAL_PLACES);
       sketch.publish(pm10Topic, pm10, TELEMETRY_DECIMAL_PLACES);
@@ -563,6 +583,7 @@ void loop()
          humidity = rh;
 
          co2Field->set(co2);
+         co2QualityField->set(AirQualityTiers::scoreFor(co2, AirQualityTiers::CO2_LIMITS));
          scdTempField->set(tempF);
          humidityField->set(humidity);
 
@@ -598,11 +619,13 @@ void loop()
          if (vocIndex != 0)
          {
             vocField->set(vocIndex);
+            vocQualityField->set(AirQualityTiers::scoreFor(vocIndex, AirQualityTiers::VOC_LIMITS));
             sketch.publish(vocTopic, vocIndex, 0);
          }
          if (noxIndex != 0)
          {
             noxField->set(noxIndex);
+            noxQualityField->set(AirQualityTiers::scoreFor(noxIndex, AirQualityTiers::NOX_LIMITS));
             sketch.publish(noxTopic, noxIndex, 0);
          }
          if (vocIndex != 0 || noxIndex != 0)
