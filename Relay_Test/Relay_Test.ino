@@ -97,9 +97,10 @@ void updateRelayStatus()
 
 ///
 /// <summary>
-/// Polls RELAY_DETECTION_PIN and updates the second LED (sketch.arduino.led) to light up
-/// while the detection pin is HIGH and turn off while it is LOW. Logs a loud error message
-/// if the relay detection pin goes HIGH while the relay was not triggered by this sketch.
+/// Polls RELAY_DETECTION_PIN and updates the second LED (sketch.arduino.led on Sensors,
+/// sketch.arduino.led2 on Sensors2) to light up while the detection pin is HIGH and turn
+/// off while it is LOW. Logs a loud error message if the relay detection pin goes HIGH
+/// while the relay was not triggered by this sketch.
 /// </summary>
 ///
 void checkRelayDetection()
@@ -110,7 +111,11 @@ void checkRelayDetection()
       relayDetected = detected;
       if (relayDetected)
       {
+#if defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2)
+         sketch.arduino.led2.turnOn();
+#else
          sketch.arduino.led.turnOn();
+#endif
          if (!relayTriggered)
          {
             unexpectedRelayDetected = true;
@@ -119,7 +124,11 @@ void checkRelayDetection()
       }
       else
       {
+#if defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2)
+         sketch.arduino.led2.turnOff();
+#else
          sketch.arduino.led.turnOff();
+#endif
          if (unexpectedRelayDetected)
          {
             unexpectedRelayDetected = false;
@@ -271,7 +280,11 @@ void setup()
    sketch.begin();
 
    sketch.arduino.setStatus(Status::RUNNING);
+#if defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS2)
+   sketch.arduino.led2.turnOff();
+#else
    sketch.arduino.led.turnOff();
+#endif
    checkRelayDetection();
 
    sketch.completeInitialization();

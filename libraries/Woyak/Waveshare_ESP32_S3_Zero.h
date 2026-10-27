@@ -327,16 +327,17 @@ public:
 ///
 /// <summary>
 /// WaveShare ESP32-S3-Zero board wrapper (revision 2) wired with a custom I2C bus and a
-/// 2-LED WS2812 NeoPixel strip on DEFAULT_LED_PIN (GPIO 6), where pixel 0 is the external
-/// status indicator and pixel 1 is the general-purpose LED.
+/// 3-LED WS2812 NeoPixel strip on DEFAULT_LED_PIN (GPIO 6), where pixel 0 is the external
+/// status indicator and pixels 1 and 2 are general-purpose LEDs (led2 and led3).
 /// </summary>
 ///
 class WaveShare_ESP32_S3_Zero_Sensors2 : public WaveShare_ESP32_S3_Zero_SensorsBase
 {
 public:
-   static constexpr uint16_t NUM_STRIP_LEDS = 2;
+   static constexpr uint16_t NUM_STRIP_LEDS = 3;
    static constexpr uint16_t STATUS_PIXEL_INDEX = 0;
-   static constexpr uint16_t LED_PIXEL_INDEX = 1;
+   static constexpr uint16_t LED2_PIXEL_INDEX = 1;
+   static constexpr uint16_t LED3_PIXEL_INDEX = 2;
    static constexpr neoPixelType DEFAULT_STRIP_TYPE = NEO_GRB + NEO_KHZ800;
 
 private:
@@ -346,7 +347,7 @@ private:
 public:
    ///
    /// <summary>
-   /// Status addressable LED on pixel 0 of the 2-LED NeoPixel strip. Driven through the
+   /// Status addressable LED on pixel 0 of the 3-LED NeoPixel strip. Driven through the
    /// startup/connectivity status sequence by default, and also available for direct
    /// control by the sketch.
    /// </summary>
@@ -355,12 +356,21 @@ public:
 
    ///
    /// <summary>
-   /// General-purpose addressable LED on pixel 1 of the 2-LED NeoPixel strip. Supports
+   /// General-purpose addressable LED on pixel 1 of the 3-LED NeoPixel strip. Supports
    /// both the standard LED interface (turnOn()/turnOff()/blink()/flash()/setLevel())
    /// and RGB color selection via setColor().
    /// </summary>
    ///
-   NeoPixelLED led;
+   NeoPixelLED led2;
+
+   ///
+   /// <summary>
+   /// General-purpose addressable LED on pixel 2 of the 3-LED NeoPixel strip. Supports
+   /// both the standard LED interface (turnOn()/turnOff()/blink()/flash()/setLevel())
+   /// and RGB color selection via setColor().
+   /// </summary>
+   ///
+   NeoPixelLED led3;
 
    ///
    /// <summary>
@@ -370,8 +380,8 @@ public:
    /// <param name="sclPin">I2C clock pin</param>
    /// <param name="i2cAuxGroundPin">Pin held LOW to power the enclosure temperature sensor</param>
    /// <param name="i2cAuxPowerPin">Pin held HIGH to power the enclosure temperature sensor</param>
-   /// <param name="ledPin">GPIO data pin for the 2-LED NeoPixel strip</param>
-   /// <param name="stripType">NeoPixel color order and frequency flags for the 2-LED strip</param>
+   /// <param name="ledPin">GPIO data pin for the 3-LED NeoPixel strip</param>
+   /// <param name="stripType">NeoPixel color order and frequency flags for the 3-LED strip</param>
    ///
    WaveShare_ESP32_S3_Zero_Sensors2(
       uint8_t sdaPin = DEFAULT_SDA_PIN,
@@ -389,7 +399,8 @@ public:
         _strip(NUM_STRIP_LEDS, ledPin, stripType),
         _stripStatus(&statusLed),
         statusLed(&_strip, STATUS_PIXEL_INDEX),
-        led(&_strip, LED_PIXEL_INDEX)
+        led2(&_strip, LED2_PIXEL_INDEX),
+        led3(&_strip, LED3_PIXEL_INDEX)
    {
       _status.addStatus(&_stripStatus);
    }
@@ -397,7 +408,7 @@ public:
    ///
    /// <summary>
    /// Powers the enclosure temperature sensor, sets the custom I2C pins, initializes
-   /// the base board and 2-LED NeoPixel strip, and starts the status and general-purpose
+   /// the base board and 3-LED NeoPixel strip, and starts the status and general-purpose
    /// LEDs.
    /// </summary>
    ///
@@ -407,6 +418,7 @@ public:
       _strip.begin();
       statusLed.begin();
       _status.begin();
-      led.begin();
+      led2.begin();
+      led3.begin();
    }
 };

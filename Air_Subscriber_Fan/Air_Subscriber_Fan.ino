@@ -162,11 +162,11 @@ void setFanState(bool on, const std::string& reason)
 	digitalWrite(FAN_PIN, fanOn ? HIGH : LOW);
 	if (fanOn)
 	{
-		sketch.arduino.led.turnOn();
+		sketch.arduino.led2.turnOn();
 	}
 	else
 	{
-		sketch.arduino.led.turnOff();
+		sketch.arduino.led2.turnOff();
 	}
 	Logger.log(std::string("Fan turned ") + (fanOn ? "ON" : "OFF") + " (" + reason + ")", LogSeverity::INFO, "Fan");
 }

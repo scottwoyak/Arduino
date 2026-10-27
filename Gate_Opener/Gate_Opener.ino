@@ -9,10 +9,10 @@
 // - POST /Gate       body "OPEN" pulses the gate open, "HOLD" holds it open until
 //                    "CLOSE" is posted.
 //
-// Hardware: Waveshare ESP32-S3-Zero (Sensors2) with a custom-powered I2C bus and a 2-LED
+// Hardware: Waveshare ESP32-S3-Zero (Sensors2) with a custom-powered I2C bus and a 3-LED
 // WS2812 NeoPixel strip. The status LED (pixel 0 on the strip, mirrored on the onboard
 // NeoPixel) reflects connection status only (white while starting up, blue while
-// connecting to WiFi, green once ready, red on failure); the general-purpose LED (pixel 1
+// connecting to WiFi, green once ready, red on failure); the second LED (led2, pixel 1
 // on the strip) lights up while the gate is OPEN. The relay module is powered directly
 // (GND/VCC) and triggered via GATE_RELAY_PIN.
 //
@@ -85,11 +85,11 @@ void updateGateStatus()
 {
    if (gateTriggerRelay)
    {
-      sketch.arduino.led.turnOn();
+      sketch.arduino.led2.turnOn();
    }
    else
    {
-      sketch.arduino.led.turnOff();
+      sketch.arduino.led2.turnOff();
    }
 }
 

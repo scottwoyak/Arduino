@@ -556,13 +556,16 @@ public:
 
 	///
 	/// <summary>
-	/// Initializes the NeoPixel using the default brightness level. The NeoPixel
+	/// Initializes the NeoPixel using its configured brightness level. The NeoPixel
 	/// stays off until setStatus() is called.
 	/// </summary>
 	///
 	void begin() override
 	{
-		begin(0.05f);
+		if (_autoCreatedLED)
+		{
+			_led->begin();
+		}
 	}
 
 	///

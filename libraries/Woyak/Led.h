@@ -810,7 +810,7 @@ public:
       ASSERT(strip != nullptr);
 
       _neoPixelPin = strip->pin();
-      _level = constrain(255 * 0.05f, 0, 255);
+      _level = constrain(255 * 0.5f, 0, 255);
    }
 
    ///

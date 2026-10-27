@@ -9,8 +9,8 @@
 //    - SERVICES_CONNECTING (blinking green)
 //    - RUNNING (solid green)
 // 2. While RUNNING stays solid green on the status pixel, blinks the
-//    general-purpose LED pixel (pixel 1 on GPIO 6) and cycles its color
-//    every 2 seconds through Orange, Yellow, Cyan, and Magenta.
+//    general-purpose LED pixels (led2 and led3 on pixels 1 and 2 of GPIO 6) and cycles
+//    their colors every 2 seconds through Orange, Yellow, Cyan, and Magenta.
 //
 
 #include <Arduino.h>
@@ -46,7 +46,7 @@ size_t currentColorIndex = 0;
 
 ///
 /// <summary>
-/// Applies the current color from TEST_COLORS to the general-purpose LED and logs it to Serial.
+/// Applies the current color from TEST_COLORS to the general-purpose LEDs and logs it to Serial.
 /// </summary>
 ///
 void applyCurrentColor()
@@ -56,7 +56,8 @@ void applyCurrentColor()
    Serial.print("LED color: ");
    Serial.println(entry.name);
 
-   arduino.led.setColor(entry.color);
+   arduino.led2.setColor(entry.color);
+   arduino.led3.setColor(entry.color);
 }
 
 ///
@@ -66,7 +67,8 @@ void applyCurrentColor()
 ///
 void startCycle()
 {
-   arduino.led.turnOff();
+   arduino.led2.turnOff();
+   arduino.led3.turnOff();
 
    Serial.println("LED_Sensors2 - Running status startup sequence...");
 
@@ -85,10 +87,11 @@ void startCycle()
    Serial.println("Status: RUNNING");
    arduino.setStatus(Status::RUNNING);
 
-   // Start blinking the general-purpose LED (pixel 1) and apply the first color.
+   // Start blinking the general-purpose LEDs (pixels 1 and 2) and apply the first color.
    currentColorIndex = 0;
    applyCurrentColor();
-   arduino.led.blink(BLINK_INTERVAL_MS);
+   arduino.led2.blink(BLINK_INTERVAL_MS);
+   arduino.led3.blink(BLINK_INTERVAL_MS);
    colorTimer.reset();
 }
 
