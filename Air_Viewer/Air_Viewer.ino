@@ -155,7 +155,8 @@ void initLayout()
    uint16_t slotWidth = displayWidth / NUM_BARS;
    uint16_t barWidth = slotWidth * 2 / 3;
 
-   Format valueFormat("####");
+   Format decimalValueFormat("###.#");
+   Format intValueFormat("####");
    Format tierFormat(TIER_CHARS);
 
    for (uint8_t i = 0; i < NUM_BARS; i++)
@@ -163,7 +164,8 @@ void initLayout()
       barCenters[i] = slotWidth * i + slotWidth / 2;
       barRects[i] = { (uint16_t)(barCenters[i] - barWidth / 2), barTop, barWidth, barHeight };
 
-      valueFields[i] = new DisplayValue(&sketch.arduino, valueFormat, TEXT_SIZE, DisplayValue::Alignment::CENTER);
+      bool useDecimal = (i <= 2 || i == 5);
+      valueFields[i] = new DisplayValue(&sketch.arduino, useDecimal ? decimalValueFormat : intValueFormat, TEXT_SIZE, DisplayValue::Alignment::CENTER);
       valueFields[i]->setPosition(barCenters[i], valueY);
 
       tierFields[i] = new DisplayValue(&sketch.arduino, tierFormat, TEXT_SIZE, DisplayValue::Alignment::CENTER);
@@ -378,7 +380,7 @@ void loop()
 
       drawValueLine(i, value);
 
-      valueFields[i]->draw((int)lround(value), Color::WHITE);
+      valueFields[i]->draw(value, Color::WHITE);
       tierFields[i]->draw(AirQualityTiers::TIER_NAMES[tier], AirQualityTiers::TIER_COLORS[tier]);
    }
 }

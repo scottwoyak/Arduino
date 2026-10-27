@@ -31,19 +31,22 @@
 #include "LibraryVersion.h"
 #include "Logger.h"
 #include "SerialX.h"
+#include "Stopwatch.h"
 #include "TelemetryClient.h"
 #include "Timer.h"
 #include "ViewerSketch.h"
 
 #include "WiFiSettings.h"
 
-const auto VERSION = MakeVersion("1.0");
+const auto VERSION = MakeVersion("1.1");
 constexpr auto SKETCH_NAME = "Air_Subscriber_Fan";
 constexpr auto PREFERENCES_NAMESPACE = "AirSubFan";
 constexpr auto AIR_QUALITY_TOPIC_PREFIX = "AirQuality";
 
 constexpr uint8_t FAN_PIN = 5;
 constexpr uint8_t BAD_AIR_RUN_M = 10;
+constexpr float DEFAULT_TRIGGER_LEVEL = 1.0f;
+constexpr auto TRIGGER_LEVEL_PREF_KEY = "triggerLevel";
 
 // Site for the air monitor to subscribe to; location is entered as free text.
 constexpr std::array<const char*, 1> SITE_OPTIONS = { "Bragg" };
@@ -62,10 +65,12 @@ TelemetryConfig TELEMETRY_CONFIG = {
 
 ViewerSketch sketch(SKETCH_CONFIG, TELEMETRY_CONFIG, SITE_OPTIONS);
 TimerSecs fanTimer(0.0f);
+Stopwatch fanOnStopwatch(false, StopwatchPrecision::Millis);
 
 std::string airQualityTopic;
 int8_t currentTier = -1;
 float currentScore = NAN;
+float triggerLevel = DEFAULT_TRIGGER_LEVEL;
 bool fanOn = false;
 
 ///
@@ -73,9 +78,18 @@ bool fanOn = false;
 /// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
 /// </summary>
 ///
-constexpr uint8_t NUM_FAN_COMMANDS = 7;
+constexpr uint8_t NUM_FAN_COMMANDS = 9;
 constexpr std::array<DeviceServerClient::CommandInfo, NUM_FAN_COMMANDS> FAN_COMMANDS = {{
 	{ "GetState", "Reports the current fan state, remaining run timer, and air quality tier", { "gs" } },
+	{ "GetTriggerLevel", "Reports the air quality score threshold that triggers the fan", { "gtl" } },
+	{
+		"SetTriggerLevel",
+		"Sets and persists the air quality score threshold (0.0-5.0) that triggers the fan",
+		{ "stl" },
+		{
+			{ "level", "Trigger air quality score (0.0-5.0)", true },
+		},
+	},
 	{
 		"On",
 		"Turns the fan on for the given number of minutes (default 1)",
@@ -113,6 +127,20 @@ std::string formatTier(float score, int8_t tier)
 
 ///
 /// <summary>
+/// Formats an air quality score to 1 decimal place for logging.
+/// </summary>
+/// <param name="score">Fractional air quality score.</param>
+/// <returns>Formatted score string.</returns>
+///
+std::string formatScore(float score)
+{
+	std::ostringstream out;
+	out << std::fixed << std::setprecision(1) << score;
+	return out.str();
+}
+
+///
+/// <summary>
 /// Sets the fan control pin and LED state and logs transitions.
 /// </summary>
 /// <param name="on">True to turn the fan on (HIGH); false to turn it off (LOW).</param>
@@ -120,6 +148,16 @@ std::string formatTier(float score, int8_t tier)
 ///
 void setFanState(bool on, const std::string& reason)
 {
+	if (on && !fanOn)
+	{
+		fanOnStopwatch.reset();
+		fanOnStopwatch.start();
+	}
+	else if (!on)
+	{
+		fanOnStopwatch.stop();
+	}
+
 	fanOn = on;
 	digitalWrite(FAN_PIN, fanOn ? HIGH : LOW);
 	if (fanOn)
@@ -149,6 +187,37 @@ void startManualFanRun(uint16_t minutes)
 
 ///
 /// <summary>
+/// Loads the persisted trigger quality level from Preferences, falling back to DEFAULT_TRIGGER_LEVEL.
+/// </summary>
+///
+void loadTriggerLevel()
+{
+	sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
+	float saved = sketch.arduino.preferences.getFloat(TRIGGER_LEVEL_PREF_KEY, DEFAULT_TRIGGER_LEVEL);
+	sketch.arduino.preferences.end();
+
+	if (!std::isnan(saved) && saved >= 0.0f && saved <= static_cast<float>(AirQualityTiers::NUM_TIERS - 1))
+	{
+		triggerLevel = saved;
+	}
+}
+
+///
+/// <summary>
+/// Persists the trigger quality level to Preferences.
+/// </summary>
+/// <param name="level">New trigger quality level.</param>
+///
+void saveTriggerLevel(float level)
+{
+	triggerLevel = level;
+	sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+	sketch.arduino.preferences.putFloat(TRIGGER_LEVEL_PREF_KEY, triggerLevel);
+	sketch.arduino.preferences.end();
+}
+
+///
+/// <summary>
 /// Handles the fan control commands registered via sketch.setCommandHandler().
 /// </summary>
 /// <param name="command">Full command text received from the DeviceServer.</param>
@@ -170,7 +239,24 @@ void onFanCommand(const char* command)
 			state += " (" + std::to_string(mins) + "m " + std::to_string(secs) + "s remaining)";
 		}
 		std::string tierText = currentTier >= 0 ? formatTier(currentScore, currentTier) : "none";
-		DeviceServerClient::respond((state + ", tier = " + tierText).c_str());
+		DeviceServerClient::respond((state + ", tier = " + tierText + ", trigger = " + formatScore(triggerLevel)).c_str());
+	}
+	else if (strcasecmp(verb.c_str(), "GetTriggerLevel") == 0)
+	{
+		DeviceServerClient::respond(("triggerLevel = " + formatScore(triggerLevel)).c_str());
+	}
+	else if (strcasecmp(verb.c_str(), "SetTriggerLevel") == 0)
+	{
+		float level = NAN;
+		std::string extra;
+		constexpr float MAX_LEVEL = AirQualityTiers::NUM_TIERS - 1;
+		if (!(stream >> level) || (stream >> extra) || std::isnan(level) || level < 0.0f || level > MAX_LEVEL)
+		{
+			DeviceServerClient::respond("Error: level must be a number between 0.0 and 5.0");
+			return;
+		}
+		saveTriggerLevel(level);
+		DeviceServerClient::respond(("Saved triggerLevel = " + formatScore(triggerLevel)).c_str());
 	}
 	else if (strcasecmp(verb.c_str(), "On") == 0)
 	{
@@ -225,6 +311,8 @@ void setup()
 	pinMode(FAN_PIN, OUTPUT);
 	digitalWrite(FAN_PIN, LOW);
 
+	loadTriggerLevel();
+
 	sketch.setCommandHandler(onFanCommand, FAN_COMMANDS.data(), FAN_COMMANDS.size());
 	sketch.beginBanner();
 
@@ -248,7 +336,7 @@ void setup()
 		int tier = static_cast<int>(std::floor(value));
 		currentTier = static_cast<int8_t>(std::clamp(tier, 0, static_cast<int>(AirQualityTiers::NUM_TIERS - 1)));
 
-		if (currentTier >= 1)
+		if (currentScore >= triggerLevel)
 		{
 			constexpr float BAD_AIR_RUN_S = BAD_AIR_RUN_M * 60.0f;
 			if (!fanOn || fanTimer.remaining() < BAD_AIR_RUN_S)
@@ -258,7 +346,7 @@ void setup()
 
 			if (!fanOn)
 			{
-				setFanState(true, "tier = " + formatTier(currentScore, currentTier));
+				setFanState(true, "trigger quality level = " + formatScore(currentScore));
 			}
 		}
 	});
@@ -272,10 +360,11 @@ void loop()
 
 	if (fanOn && fanTimer.ready())
 	{
-		std::string reason = "timer expired";
-		if (currentTier >= 0)
+		uint32_t onMins = static_cast<uint32_t>(std::round(fanOnStopwatch.elapsedSecs() / 60.0));
+		std::string reason = "on for " + std::to_string(onMins) + " mins";
+		if (!std::isnan(currentScore))
 		{
-			reason += ", tier = " + formatTier(currentScore, currentTier);
+			reason += ", quality level = " + formatScore(currentScore);
 		}
 		setFanState(false, reason);
 	}

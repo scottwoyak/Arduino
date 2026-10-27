@@ -69,7 +69,7 @@ constexpr auto NOX_TOPIC_PREFIX = "NOx";
 constexpr auto AIR_QUALITY_TOPIC_PREFIX = "AirQuality";
 constexpr uint16_t SGP41_CONDITIONING_S = 10;
 constexpr size_t MAX_TOPIC_LENGTH = 64;
-constexpr uint8_t TELEMETRY_DECIMAL_PLACES = 0;
+constexpr uint8_t TELEMETRY_DECIMAL_PLACES = 1;
 constexpr uint8_t AIR_QUALITY_DECIMAL_PLACES = 2;
 constexpr uint8_t TEXT_SIZE_SMALL = 2;
 constexpr uint8_t STARTUP_DELAY_S = 5;
@@ -247,12 +247,12 @@ Color pm10Color(float value)
    return AirQualityTiers::colorFor(value, AirQualityTiers::PM10_LIMITS);
 }
 
-ColoredValue pm1Value("### ug/m3", &pm1, pm1Color);
-ColoredValue pm25Value("### ug/m3", &pm25, pm25Color);
-ColoredValue pm10Value("### ug/m3", &pm10, pm10Color);
+ColoredValue pm1Value("###.# ug/m3", &pm1, pm1Color);
+ColoredValue pm25Value("###.# ug/m3", &pm25, pm25Color);
+ColoredValue pm10Value("###.# ug/m3", &pm10, pm10Color);
 ColoredValue co2Value("#### ppm", &co2, co2Color);
 ColoredValue vocValue("###", &vocIndex, vocColor);
-ColoredValue noxValue("###", &noxIndex, noxColor);
+ColoredValue noxValue("###.#", &noxIndex, noxColor);
 FieldTable table(&sketch.arduino, 0, 0, TEXT_SIZE_SMALL);
 
 ///
@@ -384,14 +384,14 @@ static std::string getReadings()
       : "NAN";
 
    return
-      "pm1=" + formatVal(pm1, 0, "ug/m3") + "\n" +
-      "pm25=" + formatVal(pm25, 0, "ug/m3") + "\n" +
-      "pm10=" + formatVal(pm10, 0, "ug/m3") + "\n" +
+      "pm1=" + formatVal(pm1, 1, "ug/m3") + "\n" +
+      "pm25=" + formatVal(pm25, 1, "ug/m3") + "\n" +
+      "pm10=" + formatVal(pm10, 1, "ug/m3") + "\n" +
       "co2=" + formatVal(co2, 0, "ppm") + "\n" +
       "temperature=" + formatVal(tempF, 1, "F") + "\n" +
       "humidity=" + formatVal(humidity, 1, "%") + "\n" +
       "voc=" + formatVal(vocIndex, 0, "") + "\n" +
-      "nox=" + formatVal(noxIndex, 0, "") + "\n" +
+      "nox=" + formatVal(noxIndex, 1, "") + "\n" +
       "airQuality=" + airQualityText + "\n" +
       "sgpConditioned=" + (sgpConditioned ? "true" : "false");
 }
@@ -473,7 +473,7 @@ void setup()
       uint16_t serial[3];
       return sgp41.getSerialNumber(serial) == 0;
    });
-   sketch.setValueSource([]() { return pms.pm25(); });
+   sketch.setValueSource([]() { return pm25; });
    sketch.onSiteResolved(onSiteResolved);
    sketch.onReadings(getReadings, "Reports the latest PM1.0, PM2.5, PM10, CO2, temperature, humidity, VOC, NOx, and SGP41 conditioning state");
    sketch.setCommandHandler(onAirMonitorCommand, AIR_MONITOR_COMMANDS, std::size(AIR_MONITOR_COMMANDS));
@@ -493,15 +493,15 @@ void setup()
    table.addRow("PM10", &pm10Value);
 
    InfluxPoint* scdPoint = sketch.addPoint({ { "item", "SCD41" } });
-   co2Field = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "co2", 0);
-   co2QualityField = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "co2Quality", AIR_QUALITY_DECIMAL_PLACES);
+   co2Field = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "co2", INFLUX_DECIMAL_PLACES);
+   co2QualityField = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "co2Quality", 3);
    scdTempField = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_DECIMAL_PLACES);
    humidityField = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_DECIMAL_PLACES);
 
    InfluxPoint* sgpPoint = sketch.addPoint({ { "item", "SGP41" } });
-   vocField = sgpPoint->addTimeAverageField(INFLUX_INTERVAL_S, "voc", 0);
+   vocField = sgpPoint->addTimeAverageField(INFLUX_INTERVAL_S, "voc", INFLUX_DECIMAL_PLACES);
    vocQualityField = sgpPoint->addTimeAverageField(INFLUX_INTERVAL_S, "vocQuality", AIR_QUALITY_DECIMAL_PLACES);
-   noxField = sgpPoint->addTimeAverageField(INFLUX_INTERVAL_S, "nox", 0);
+   noxField = sgpPoint->addTimeAverageField(INFLUX_INTERVAL_S, "nox", INFLUX_DECIMAL_PLACES);
    noxQualityField = sgpPoint->addTimeAverageField(INFLUX_INTERVAL_S, "noxQuality", AIR_QUALITY_DECIMAL_PLACES);
 
    InfluxPoint* airQualityPoint = sketch.addPoint();
@@ -552,16 +552,16 @@ void loop()
 
    if (pms.read())
    {
-      pm1 = pms.pm1();
-      pm25 = pms.pm25();
-      pm10 = pms.pm10();
+      pm1Field->set(pms.pm1());
+      pm1QualityField->set(AirQualityTiers::scoreFor(pms.pm1(), AirQualityTiers::PM25_LIMITS));
+      pm25Field->set(pms.pm25());
+      pm25QualityField->set(AirQualityTiers::scoreFor(pms.pm25(), AirQualityTiers::PM25_LIMITS));
+      pm10Field->set(pms.pm10());
+      pm10QualityField->set(AirQualityTiers::scoreFor(pms.pm10(), AirQualityTiers::PM10_LIMITS));
 
-      pm1Field->set(pm1);
-      pm1QualityField->set(AirQualityTiers::scoreFor(pm1, AirQualityTiers::PM25_LIMITS));
-      pm25Field->set(pm25);
-      pm25QualityField->set(AirQualityTiers::scoreFor(pm25, AirQualityTiers::PM25_LIMITS));
-      pm10Field->set(pm10);
-      pm10QualityField->set(AirQualityTiers::scoreFor(pm10, AirQualityTiers::PM10_LIMITS));
+      pm1 = pm1Field->get();
+      pm25 = pm25Field->get();
+      pm10 = pm10Field->get();
 
       sketch.publish(pm1Topic, pm1, TELEMETRY_DECIMAL_PLACES);
       sketch.publish(pm10Topic, pm10, TELEMETRY_DECIMAL_PLACES);
@@ -611,7 +611,7 @@ void loop()
       else if (sgp41.measureRawSignals(rhTicks, tempTicks, rawVoc, rawNox) == 0)
       {
          vocIndex = vocAlgorithm.process(rawVoc);
-         noxIndex = noxAlgorithm.process(rawNox);
+         int32_t rawNoxIndex = noxAlgorithm.process(rawNox);
 
          // The gas index algorithms report 0 during their initial blackout period (see
          // GasIndexAlgorithm_INITIAL_BLACKOUT), before they've established a baseline.
@@ -622,13 +622,18 @@ void loop()
             vocQualityField->set(AirQualityTiers::scoreFor(vocIndex, AirQualityTiers::VOC_LIMITS));
             sketch.publish(vocTopic, vocIndex, 0);
          }
-         if (noxIndex != 0)
+         if (rawNoxIndex != 0)
          {
-            noxField->set(noxIndex);
-            noxQualityField->set(AirQualityTiers::scoreFor(noxIndex, AirQualityTiers::NOX_LIMITS));
-            sketch.publish(noxTopic, noxIndex, 0);
+            noxField->set(rawNoxIndex);
+            noxQualityField->set(AirQualityTiers::scoreFor(rawNoxIndex, AirQualityTiers::NOX_LIMITS));
+            noxIndex = noxField->get();
+            sketch.publish(noxTopic, noxIndex, TELEMETRY_DECIMAL_PLACES);
          }
-         if (vocIndex != 0 || noxIndex != 0)
+         else
+         {
+            noxIndex = 0;
+         }
+         if (vocIndex != 0 || rawNoxIndex != 0)
          {
             publishAirQuality();
          }

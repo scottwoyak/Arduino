@@ -45,22 +45,22 @@ class Battery
 private:
    static constexpr uint8_t NUM_LIPO_CURVE_POINTS = 11;
 
-   // Empirical 1S LiPo open-circuit voltage (OCV) to SoC lookup table from 0% to 100%
-   // in 10% increments, derived from full discharge (15.14h, 1387.7 mAh) and full CC/CV
-   // charge calibration runs with IR compensation (V_ocv = V_meas - I_A * R_internal).
+   // Empirical 1S LiPo open-circuit voltage (OCV) to SoC lookup table from 0% (3.30V)
+   // to 100% (4.15V) in 10% increments, derived from full discharge and CC/CV charge
+   // calibration runs with IR compensation (V_ocv = V_meas - I_A * R_internal).
    static constexpr std::array<float, NUM_LIPO_CURVE_POINTS> LIPO_VOLTS_CURVE =
    {
-      3.15f, //   0%
-      3.51f, //  10%
+      3.30f, //   0%
+      3.52f, //  10%
       3.61f, //  20%
       3.71f, //  30%
-      3.81f, //  40%
-      3.87f, //  50%
-      3.92f, //  60%
-      4.00f, //  70%
-      4.05f, //  80%
-      4.09f, //  90%
-      4.20f  // 100%
+      3.80f, //  40%
+      3.86f, //  50%
+      3.91f, //  60%
+      3.98f, //  70%
+      4.03f, //  80%
+      4.08f, //  90%
+      4.15f  // 100%
    };
 
    static constexpr uint8_t ADC_RESOLUTION_BITS = 12;
@@ -139,12 +139,13 @@ private:
    // discharging current is negative and charging current is positive after sign inversion):
    // - Current >= +5.0 mA: actively charging (Yes)
    // - Current <= -5.0 mA: actively discharging (No)
-   // - |Current| < 5.0 mA and voltage >= 4.05V: charge terminated / full (Full)
+   // - |Current| < 5.0 mA, voltage >= 4.12V, and calm rail (window span <= 30 mV): charge terminated / full (Full)
    // - |Current| < 2.0 mA and voltage < 2.5V (or no current with float rail): disconnected
    static constexpr float INA219_CHARGE_CURRENT_THRESHOLD_MA = 5.0f;
    static constexpr float INA219_DISCHARGE_CURRENT_THRESHOLD_MA = -5.0f;
    static constexpr float INA219_IDLE_CURRENT_THRESHOLD_MA = 2.0f;
-   static constexpr float INA219_FULL_MIN_VOLTS = 4.05f;
+   static constexpr float INA219_FULL_MIN_VOLTS = 4.12f;
+   static constexpr float INA219_FULL_MAX_SPAN_VOLTS = 0.030f;
 
    // Effective series resistance (cell internal resistance + JST harness + INA219 0.1-ohm
    // shunt) used to convert terminal voltage under load/charge current into open-circuit
@@ -1102,19 +1103,28 @@ public:
 
       if (isfinite(currentMa))
       {
-         if (currentMa >= INA219_CHARGE_CURRENT_THRESHOLD_MA)
-         {
-            _unlock();
-            return BatteryChargingState::Yes;
-         }
-
          if (currentMa <= INA219_DISCHARGE_CURRENT_THRESHOLD_MA)
          {
             _unlock();
             return BatteryChargingState::No;
          }
 
-         if (checkVolts >= INA219_FULL_MIN_VOLTS)
+         bool calmRail = !_hasRippleMeasurement || (_lastWindowSpanVolts <= INA219_FULL_MAX_SPAN_VOLTS);
+         float ocvVolts = _compensateOcvVolts(checkVolts, currentMa);
+         if (calmRail && ocvVolts >= LIPO_VOLTS_CURVE[NUM_LIPO_CURVE_POINTS - 1])
+         {
+            _saveFullChargeVolts(ocvVolts);
+            _unlock();
+            return BatteryChargingState::Full;
+         }
+
+         if (currentMa >= INA219_CHARGE_CURRENT_THRESHOLD_MA)
+         {
+            _unlock();
+            return BatteryChargingState::Yes;
+         }
+
+         if (calmRail && checkVolts >= INA219_FULL_MIN_VOLTS)
          {
             _saveFullChargeVolts(checkVolts);
             _unlock();

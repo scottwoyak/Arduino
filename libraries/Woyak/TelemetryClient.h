@@ -405,8 +405,10 @@ private:
    {
       std::string topic;
       int64_t micros;
+      std::string lastValue;
    };
    std::vector<PublishTime> _publishTimes;
+   bool _sendEverySample = false;
 
    // user event handler; owned by this instance only when created by the constructor
    TelemetryEventHandler* _handler = nullptr;
@@ -832,7 +834,22 @@ public:
 
    ///
    /// <summary>
-   /// Publishes a sample (publishers only). Dropped if the connection isn't ready.
+   /// Sets whether every value passed to publish() or setValue() is published, even if it
+   /// is unchanged at the configured decimal places. When false, only changed values are
+   /// published.
+   /// </summary>
+   /// <param name="enable">True to publish every sample.</param>
+   ///
+   void setSendEverySample(bool enable)
+   {
+      _sendEverySample = enable;
+   }
+
+   ///
+   /// <summary>
+   /// Publishes a sample (publishers only) when the formatted value for the topic has
+   /// changed (or when setSendEverySample(true) is enabled). Dropped if the connection
+   /// isn't ready.
    /// </summary>
    /// <param name="topic">Topic name</param>
    /// <param name="value">Sample value</param>
@@ -841,12 +858,14 @@ public:
    ///
    bool publish(const char* topic, double value, int8_t decimals = -1)
    {
-      if (!isReady())
+      if (!isReady() || std::isnan(value))
       {
          return false;
       }
 
-      int64_t now = esp_timer_get_time();
+      String formatted = (decimals >= 0 && decimals <= 15)
+         ? String(value, static_cast<unsigned int>(decimals))
+         : String(value, 6);
 
       PublishTime* last = nullptr;
       for (PublishTime& publishTime : _publishTimes)
@@ -857,12 +876,19 @@ public:
             break;
          }
       }
+
+      if (!_sendEverySample && last != nullptr && last->lastValue == formatted.c_str())
+      {
+         return false;
+      }
+
+      int64_t now = esp_timer_get_time();
       int64_t dtMicros = last != nullptr ? (now - last->micros) : 0;
 
       JsonDocument doc;
       doc["type"] = "sample";
       doc["topic"] = topic;
-      doc["value"] = value;
+      doc["value"] = formatted.toDouble();
       doc["dt"] = dtMicros;
       if (decimals >= 0 && decimals <= 15)
       {
@@ -879,10 +905,11 @@ public:
       if (last != nullptr)
       {
          last->micros = now;
+         last->lastValue = formatted.c_str();
       }
       else
       {
-         _publishTimes.push_back({ topic, now });
+         _publishTimes.push_back({ topic, now, formatted.c_str() });
       }
       _rate.tick();
       DeviceHealth::telemetryRate = _rate.get(TELEMETRY_RATE_WINDOW_S);
@@ -961,21 +988,15 @@ public:
 class TelemetryPublisher : public TelemetryClient
 {
 private:
-   static constexpr float REPUBLISH_INTERVAL_S = 10.0f;
-
    uint8_t _decimalPlaces;
    uint32_t _minIntervalMicros;
    int64_t _lastPublishMicros = 0;
    bool _hasPublished = false;
    float _pendingValue = NAN;
    bool _pendingNew = false;
-   bool _sendEverySample = false;
-   std::string _lastValue = "";
-   TimerSecs _republishTimer{ REPUBLISH_INTERVAL_S };
 
    void _onTelemetryDisconnected() override
    {
-      _lastValue = "";
       _hasPublished = false;
    }
 
@@ -983,7 +1004,7 @@ private:
    {
       TelemetryClient::_onLoop();
 
-      if (!isReady() || isnan(_pendingValue))
+      if (!isReady() || !_pendingNew || isnan(_pendingValue))
       {
          return;
       }
@@ -994,22 +1015,11 @@ private:
          return;
       }
 
-      String value(_pendingValue, (unsigned int)_decimalPlaces);
-      bool changed = value != _lastValue.c_str();
-      if (changed || (_sendEverySample && _pendingNew) || _republishTimer.ready())
+      _pendingNew = false;
+      if (publish(getTopic().c_str(), _pendingValue, _decimalPlaces))
       {
-         if (publish(getTopic().c_str(), value.toDouble(), _decimalPlaces))
-         {
-            _lastValue = value.c_str();
-            _lastPublishMicros = now;
-            _hasPublished = true;
-            _republishTimer.reset();
-            _pendingNew = false;
-         }
-      }
-      else
-      {
-         _pendingNew = false;
+         _lastPublishMicros = now;
+         _hasPublished = true;
       }
    }
 
@@ -1052,18 +1062,6 @@ public:
    {
       _pendingValue = value;
       _pendingNew = true;
-   }
-
-   ///
-   /// <summary>
-   /// Sets whether every value passed to setValue() is published, even if it is unchanged
-   /// at the configured decimal places. When false, only changed values are published.
-   /// </summary>
-   /// <param name="enable">True to publish every sample.</param>
-   ///
-   void setSendEverySample(bool enable)
-   {
-      _sendEverySample = enable;
    }
 };
 

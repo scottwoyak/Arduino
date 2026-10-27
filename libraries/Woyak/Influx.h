@@ -688,10 +688,13 @@ public:
          }
 
          // String(float, 0) pads single digit values with a leading space (e.g. "voc= 0"),
-         // which InfluxDB rejects, so whole-number fields are written as integers instead.
+         // which InfluxDB rejects. Round to a whole number and write as a float (with 1
+         // decimal place, e.g. "450.0") rather than an integer ("450i") so changing a
+         // field's decimal places later never causes an InfluxDB integer/float schema
+         // type conflict.
          if (field->getDecimalPlaces() == 0)
          {
-            _point.addField(field->getName().c_str(), lroundf(value));
+            _point.addField(field->getName().c_str(), roundf(value), 1);
          }
          else
          {
