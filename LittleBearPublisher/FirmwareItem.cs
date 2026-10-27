@@ -24,6 +24,7 @@ internal sealed class FirmwareItem
     public string BinPath { get; set; } = "";
     public FirmwareStatus Status { get; set; }
     public string Detail { get; set; } = "";
+    public string ErrorDetails { get; set; } = "";
     public string? ServerVersion { get; set; }
     public string? ServerBuildTime { get; set; }
 

@@ -16,9 +16,11 @@ internal sealed class MainForm : Form
     private readonly FileSystemWatcher? _vmBuildsWatcher;
     private readonly System.Windows.Forms.Timer _debounce = new() { Interval = DebounceMs };
     private readonly HashSet<string> _notified = [];
-    private readonly Dictionary<string, (string Error, DateTime BinBuilt)> _failedStatus = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (string Error, string ErrorDetails, DateTime BinBuilt)> _failedStatus = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly ListView _list = new() { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = true, HideSelection = false };
+    private readonly ToolTip _errorToolTip = new() { AutoPopDelay = 30000, InitialDelay = 300, ReshowDelay = 100 };
+    private ListViewItem? _toolTipRow;
     private readonly Button _refreshButton = new() { Text = "Refresh", AutoSize = true };
     private readonly Button _buildSelectedButton = new() { Text = "Build", AutoSize = true, Enabled = false };
     private readonly Button _haltButton = new() { Text = "Halt", AutoSize = true, Enabled = false };
@@ -87,6 +89,8 @@ internal sealed class MainForm : Form
         _uploadSelectedButton.Click += async (_, _) => await UploadAsync(SelectedUploadableItems());
         _list.SelectedIndexChanged += (_, _) => UpdateButtons();
         _list.ColumnClick += (_, e) => SortBy(e.Column);
+        _list.MouseMove += (_, e) => UpdateListToolTip(e.Location);
+        _list.MouseLeave += (_, _) => ClearListToolTip();
 
         ContextMenuStrip listMenu = new();
         ToolStripMenuItem buildSelected = new("Build");
@@ -258,6 +262,7 @@ internal sealed class MainForm : Form
         _watcher.Dispose();
         _vmBuildsWatcher?.Dispose();
         _buildCts?.Cancel();
+        _errorToolTip.Dispose();
         _tray.Visible = false;
         _tray.Dispose();
         base.OnFormClosing(e);
@@ -294,7 +299,7 @@ internal sealed class MainForm : Form
     private static string GetBuildStamp()
     {
         string exePath = Environment.ProcessPath ?? Application.ExecutablePath;
-        return File.GetLastWriteTime(exePath).ToString("yyyy-MM-dd HH:mm:ss");
+        return File.GetLastWriteTime(exePath).ToString("yyyy-MM-dd h:mm:ss tt");
     }
 
     private void ShowWindow()
@@ -351,6 +356,7 @@ internal sealed class MainForm : Form
                         else
                         {
                             item.Detail = failure.Error;
+                            item.ErrorDetails = failure.ErrorDetails;
                         }
                     }
                 }
@@ -441,6 +447,7 @@ internal sealed class MainForm : Form
 
     private void PopulateList()
     {
+        _toolTipRow = null;
         _list.BeginUpdate();
         _list.Items.Clear();
         foreach (var item in SortedItems())
@@ -481,11 +488,12 @@ internal sealed class MainForm : Form
         }
     }
 
-    private void SetRowStatus(FirmwareItem item, string status, bool isError = false)
+    private void SetRowStatus(FirmwareItem item, string status, bool isError = false, string? errorDetails = null)
     {
+        string resolvedErrorDetails = isError ? (errorDetails ?? status) : "";
         if (isError)
         {
-            _failedStatus[item.Firmware] = (status, item.Built);
+            _failedStatus[item.Firmware] = (status, resolvedErrorDetails, item.Built);
         }
         else
         {
@@ -493,6 +501,7 @@ internal sealed class MainForm : Form
         }
 
         item.Detail = status;
+        item.ErrorDetails = resolvedErrorDetails;
         foreach (ListViewItem row in _list.Items)
         {
             if (ReferenceEquals(row.Tag, item) && row.SubItems.Count > 6)
@@ -503,9 +512,32 @@ internal sealed class MainForm : Form
                 row.SubItems[5].Text = DateText.Format(item.ServerBuildTime);
                 row.SubItems[6].Text = status;
                 ApplyRowStyle(row, item);
+                if (ReferenceEquals(row, _toolTipRow))
+                {
+                    _toolTipRow = null;
+                }
                 break;
             }
         }
+    }
+
+    private void UpdateListToolTip(Point location)
+    {
+        ListViewItem? row = _list.GetItemAt(location.X, location.Y);
+        if (ReferenceEquals(row, _toolTipRow))
+        {
+            return;
+        }
+
+        _toolTipRow = row;
+        string? tip = (row?.Tag as FirmwareItem)?.ErrorDetails;
+        _errorToolTip.SetToolTip(_list, string.IsNullOrEmpty(tip) ? null : tip);
+    }
+
+    private void ClearListToolTip()
+    {
+        _toolTipRow = null;
+        _errorToolTip.SetToolTip(_list, null);
     }
 
     /// <summary>
@@ -595,13 +627,6 @@ internal sealed class MainForm : Form
         UpdateButtons();
         try
         {
-            // Touch each distinct sketch .ino once up front so concurrent builds of the same
-            // sketch for different boards don't modify the source timestamp mid-build.
-            foreach (string sketch in items.Select(i => i.Sketch).Distinct(StringComparer.OrdinalIgnoreCase))
-            {
-                _builder.TouchSketch(sketch);
-            }
-
             foreach (var item in items)
             {
                 SetRowStatus(item, "Queued to build");
@@ -672,14 +697,14 @@ internal sealed class MainForm : Form
             Log($"Building ({itemNumber}/{totalCount}) {item.Firmware}...");
             try
             {
-                var (ok, detail) = await _builder.BuildAsync(item.Sketch, item.Board, jobsPerBuild, progress, cancellationToken);
+                var (ok, detail, fullError) = await _builder.BuildAsync(item.Sketch, item.Board, jobsPerBuild, progress, cancellationToken);
                 timer.Stop();
                 int elapsedSecs = (int)sw.Elapsed.TotalSeconds;
                 if (ok)
                 {
                     await _scanner.RefreshItemAsync(item, _hub);
                 }
-                SetRowStatus(item, ok ? $"Built ({elapsedSecs}s)" : $"Build failed: {detail}", isError: !ok);
+                SetRowStatus(item, ok ? $"Built ({elapsedSecs}s)" : $"Build failed: {detail}", isError: !ok, errorDetails: fullError);
                 Log(ok ? $"OK     built {item.Firmware} in {elapsedSecs}s" : $"FAILED {item.Firmware}: {detail}");
 
                 if (ok && _autoUploadCheckBox.Checked && item.Status == FirmwareStatus.Ready)

@@ -204,31 +204,44 @@ internal sealed class FirmwareBuilder
     }
 
     /// <summary>
-    /// Touches the sketch's .ino file once before building so that __DATE__ / __TIME__ (BUILD@)
-    /// and MakeVersion (VERSION@) in the .ino translation unit are recompiled into the output binary.
+    /// Deletes the cached sketch object file in <paramref name="buildDir"/> so that arduino-cli
+    /// always recompiles the .ino translation unit (updating __DATE__ / __TIME__ for BUILD@ and
+    /// MakeVersion for VERSION@) while keeping precompiled core and library archives cached.
     /// </summary>
-    public void TouchSketch(string sketch)
+    private static void InvalidateSketchObject(string buildDir, string sketch)
     {
-        string inoPath = Path.Combine(_repoRoot, sketch, sketch + ".ino");
-        if (!File.Exists(inoPath))
+        string sketchBuildDir = Path.Combine(buildDir, "sketch");
+        if (!Directory.Exists(sketchBuildDir))
         {
             return;
         }
 
-        try
+        foreach (string suffix in new[] { ".ino.cpp.o", ".ino.cpp.d" })
         {
-            File.SetLastWriteTimeUtc(inoPath, DateTime.UtcNow);
-        }
-        catch (IOException)
-        {
-            // Ignore if locked; arduino-cli will still attempt compilation.
+            string path = Path.Combine(sketchBuildDir, sketch + suffix);
+            try
+            {
+                if (File.Exists(path))
+                {
+                    FileAttributes attrs = File.GetAttributes(path);
+                    if ((attrs & FileAttributes.ReadOnly) != 0)
+                    {
+                        File.SetAttributes(path, attrs & ~FileAttributes.ReadOnly);
+                    }
+                    File.Delete(path);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Ignore if locked; arduino-cli will still attempt compilation.
+            }
         }
     }
 
     /// <summary>
     /// Compiles one (sketch, boardId) target using arduino-cli.
     /// </summary>
-    public async Task<(bool Ok, string Detail)> BuildAsync(
+    public async Task<(bool Ok, string Detail, string FullError)> BuildAsync(
         string sketch,
         string boardId,
         int jobs = 0,
@@ -242,20 +255,23 @@ internal sealed class FirmwareBuilder
             config = FindConfigFromExistingBuilds(sketchDir, boardId);
             if (config == null)
             {
-                return (false, $"No board configuration defined for '{boardId}'.");
+                string msg = $"No board configuration defined for '{boardId}'.";
+                return (false, msg, msg);
             }
         }
 
         string? cliPath = FindArduinoCli();
         if (cliPath == null)
         {
-            return (false, "Could not locate arduino-cli.exe.");
+            const string msg = "Could not locate arduino-cli.exe.";
+            return (false, msg, msg);
         }
 
         string inoPath = Path.Combine(sketchDir, sketch + ".ino");
         if (!File.Exists(inoPath))
         {
-            return (false, $"Sketch file not found: {inoPath}");
+            string msg = $"Sketch file not found: {inoPath}";
+            return (false, msg, msg);
         }
 
         string buildDir = ResolveBuildDirectory(sketchDir, config);
@@ -263,6 +279,7 @@ internal sealed class FirmwareBuilder
         string librariesDir = Path.Combine(_repoRoot, "libraries");
 
         Directory.CreateDirectory(buildDir);
+        InvalidateSketchObject(buildDir, sketch);
 
         var psi = new ProcessStartInfo
         {
@@ -335,7 +352,7 @@ internal sealed class FirmwareBuilder
 
             if (process.ExitCode == 0)
             {
-                return (true, "Built successfully");
+                return (true, "Built successfully", "");
             }
 
             string errorText;
@@ -351,17 +368,18 @@ internal sealed class FirmwareBuilder
                 }
             }
 
-            string firstErrorLine = errorText
-                .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            string[] errorLines = errorText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+            string firstErrorLine = errorLines
                 .FirstOrDefault(l => l.Contains("error:", StringComparison.OrdinalIgnoreCase))
-                ?? errorText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).LastOrDefault()
+                ?? errorLines.LastOrDefault()
                 ?? $"exit code {process.ExitCode}";
 
-            return (false, firstErrorLine);
+            string fullError = errorText.Length > 0 ? errorText : firstErrorLine;
+            return (false, firstErrorLine, fullError);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return (false, ex.Message);
+            return (false, ex.Message, ex.Message);
         }
     }
 

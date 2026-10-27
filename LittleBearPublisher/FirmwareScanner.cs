@@ -401,10 +401,7 @@ internal sealed class FirmwareScanner
         {
             foreach (string dir in dirsToDelete)
             {
-                if (Directory.Exists(dir))
-                {
-                    Directory.Delete(dir, recursive: true);
-                }
+                DeleteDirectoryRecursive(dir);
             }
 
             return (true, $"Deleted {dirsToDelete.Count} folder(s)");
@@ -413,6 +410,30 @@ internal sealed class FirmwareScanner
         {
             return (false, ex.Message);
         }
+    }
+
+    private static void DeleteDirectoryRecursive(string path)
+    {
+        var dirInfo = new DirectoryInfo(path);
+        if (!dirInfo.Exists)
+        {
+            return;
+        }
+
+        foreach (FileSystemInfo entry in dirInfo.EnumerateFileSystemInfos("*", SearchOption.AllDirectories))
+        {
+            if ((entry.Attributes & FileAttributes.ReadOnly) != 0)
+            {
+                entry.Attributes &= ~FileAttributes.ReadOnly;
+            }
+        }
+
+        if ((dirInfo.Attributes & FileAttributes.ReadOnly) != 0)
+        {
+            dirInfo.Attributes &= ~FileAttributes.ReadOnly;
+        }
+
+        dirInfo.Delete(recursive: true);
     }
 
     private IReadOnlyList<string> LoadKnownBoardIds()
