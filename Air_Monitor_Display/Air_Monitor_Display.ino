@@ -70,7 +70,7 @@ constexpr auto AIR_QUALITY_TOPIC_PREFIX = "AirQuality";
 constexpr uint16_t SGP41_CONDITIONING_S = 10;
 constexpr size_t MAX_TOPIC_LENGTH = 64;
 constexpr uint8_t TELEMETRY_DECIMAL_PLACES = 1;
-constexpr uint8_t AIR_QUALITY_DECIMAL_PLACES = 2;
+constexpr uint8_t AIR_QUALITY_DECIMAL_PLACES = 3;
 constexpr uint8_t TEXT_SIZE_SMALL = 2;
 constexpr uint8_t STARTUP_DELAY_S = 5;
 constexpr uint8_t INFLUX_INTERVAL_S = 60;
@@ -494,7 +494,7 @@ void setup()
 
    InfluxPoint* scdPoint = sketch.addPoint({ { "item", "SCD41" } });
    co2Field = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "co2", INFLUX_DECIMAL_PLACES);
-   co2QualityField = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "co2Quality", 3);
+   co2QualityField = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "co2Quality", AIR_QUALITY_DECIMAL_PLACES);
    scdTempField = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "temperature", INFLUX_DECIMAL_PLACES);
    humidityField = scdPoint->addTimeAverageField(INFLUX_INTERVAL_S, "humidity", INFLUX_DECIMAL_PLACES);
 
