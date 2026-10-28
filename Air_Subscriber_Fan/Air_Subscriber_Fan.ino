@@ -9,12 +9,11 @@
 // Behavior:
 // - Prompts for the target location on first boot (or when buttonA is held at startup)
 //   and saves the selection in Preferences (site is always "Bragg").
-// - Turns the fan pin HIGH immediately when a received AirQuality tier is >= 1 (outside
-//   the green/Good tier) and sets (or extends) the fan run timer to 10 minutes. Each
-//   subsequent bad-air sample keeps resetting the timer back to at least 10 minutes, so
-//   the fan stays on while air quality is bad and for 10 minutes after it returns to 0.
-// - Exposes DeviceServer commands (GetState, On [minutes], On1, On10, On20, On30, Off) to
-//   inspect or manually run/stop the fan for a timed duration.
+// - Turns the fan pin HIGH immediately when a received AirQuality score is >= triggerOn
+//   and keeps it on until the score drops <= triggerOff and FAN_OFF_DELAY_M minutes
+//   have elapsed.
+// - Exposes DeviceServer commands (GetState, GetTriggerOn, SetTriggerOn, GetTriggerOff,
+//   SetTriggerOff, On [minutes], Off) to inspect or manually run/stop the fan.
 //
 
 #include <Arduino.h>
@@ -38,15 +37,17 @@
 
 #include "WiFiSettings.h"
 
-const auto VERSION = MakeVersion("1.1");
+const auto VERSION = MakeVersion("1.3");
 constexpr auto SKETCH_NAME = "Air_Subscriber_Fan";
 constexpr auto PREFERENCES_NAMESPACE = "AirSubFan";
 constexpr auto AIR_QUALITY_TOPIC_PREFIX = "AirQuality";
 
 constexpr uint8_t FAN_PIN = 5;
-constexpr uint8_t BAD_AIR_RUN_M = 10;
-constexpr float DEFAULT_TRIGGER_LEVEL = 1.0f;
-constexpr auto TRIGGER_LEVEL_PREF_KEY = "triggerLevel";
+constexpr uint8_t FAN_OFF_DELAY_M = 0;
+constexpr float DEFAULT_TRIGGER_ON = 1.0f;
+constexpr float DEFAULT_TRIGGER_OFF = 0.8f;
+constexpr auto TRIGGER_ON_PREF_KEY = "triggerOn";
+constexpr auto TRIGGER_OFF_PREF_KEY = "triggerOff";
 
 // Site for the air monitor to subscribe to; location is entered as free text.
 constexpr std::array<const char*, 1> SITE_OPTIONS = { "Bragg" };
@@ -70,7 +71,8 @@ Stopwatch fanOnStopwatch(false, StopwatchPrecision::Millis);
 std::string airQualityTopic;
 int8_t currentTier = -1;
 float currentScore = NAN;
-float triggerLevel = DEFAULT_TRIGGER_LEVEL;
+float triggerOn = DEFAULT_TRIGGER_ON;
+float triggerOff = DEFAULT_TRIGGER_OFF;
 bool fanOn = false;
 
 ///
@@ -78,16 +80,25 @@ bool fanOn = false;
 /// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
 /// </summary>
 ///
-constexpr uint8_t NUM_FAN_COMMANDS = 9;
+constexpr uint8_t NUM_FAN_COMMANDS = 7;
 constexpr std::array<DeviceServerClient::CommandInfo, NUM_FAN_COMMANDS> FAN_COMMANDS = {{
 	{ "GetState", "Reports the current fan state, remaining run timer, and air quality tier", { "gs" } },
-	{ "GetTriggerLevel", "Reports the air quality score threshold that triggers the fan", { "gtl" } },
+	{ "GetTriggerOn", "Reports the air quality score threshold that turns the fan on", { "gton" } },
 	{
-		"SetTriggerLevel",
-		"Sets and persists the air quality score threshold (0.0-5.0) that triggers the fan",
-		{ "stl" },
+		"SetTriggerOn",
+		"Sets and persists the air quality score threshold (0.0-5.0) that turns the fan on",
+		{ "ston" },
 		{
-			{ "level", "Trigger air quality score (0.0-5.0)", true },
+			{ "level", "Trigger-on air quality score (0.0-5.0)", true },
+		},
+	},
+	{ "GetTriggerOff", "Reports the air quality score threshold that turns the fan off", { "gtoff" } },
+	{
+		"SetTriggerOff",
+		"Sets and persists the air quality score threshold (0.0-5.0) that turns the fan off",
+		{ "stoff" },
+		{
+			{ "level", "Trigger-off air quality score (0.0-5.0)", true },
 		},
 	},
 	{
@@ -98,10 +109,6 @@ constexpr std::array<DeviceServerClient::CommandInfo, NUM_FAN_COMMANDS> FAN_COMM
 			{ "minutes", "Duration in minutes", false, "1" },
 		},
 	},
-	{ "On1", "Turns the fan on for 1 minute" },
-	{ "On10", "Turns the fan on for 10 minutes" },
-	{ "On20", "Turns the fan on for 20 minutes" },
-	{ "On30", "Turns the fan on for 30 minutes" },
 	{ "Off", "Turns the fan off and clears the run timer" },
 }};
 
@@ -187,32 +194,55 @@ void startManualFanRun(uint16_t minutes)
 
 ///
 /// <summary>
-/// Loads the persisted trigger quality level from Preferences, falling back to DEFAULT_TRIGGER_LEVEL.
+/// Loads the persisted triggerOn and triggerOff quality levels from Preferences, falling
+/// back to DEFAULT_TRIGGER_ON and DEFAULT_TRIGGER_OFF.
 /// </summary>
 ///
-void loadTriggerLevel()
+void loadTriggerLevels()
 {
+	constexpr float MAX_LEVEL = AirQualityTiers::NUM_TIERS - 1;
+
 	sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
-	float saved = sketch.arduino.preferences.getFloat(TRIGGER_LEVEL_PREF_KEY, DEFAULT_TRIGGER_LEVEL);
+	float savedOn = sketch.arduino.preferences.getFloat(TRIGGER_ON_PREF_KEY, DEFAULT_TRIGGER_ON);
+	float savedOff = sketch.arduino.preferences.getFloat(TRIGGER_OFF_PREF_KEY, DEFAULT_TRIGGER_OFF);
 	sketch.arduino.preferences.end();
 
-	if (!std::isnan(saved) && saved >= 0.0f && saved <= static_cast<float>(AirQualityTiers::NUM_TIERS - 1))
+	if (!std::isnan(savedOn) && savedOn >= 0.0f && savedOn <= MAX_LEVEL)
 	{
-		triggerLevel = saved;
+		triggerOn = savedOn;
+	}
+
+	if (!std::isnan(savedOff) && savedOff >= 0.0f && savedOff <= MAX_LEVEL)
+	{
+		triggerOff = savedOff;
 	}
 }
 
 ///
 /// <summary>
-/// Persists the trigger quality level to Preferences.
+/// Persists the trigger-on quality level to Preferences.
 /// </summary>
-/// <param name="level">New trigger quality level.</param>
+/// <param name="level">New trigger-on quality level.</param>
 ///
-void saveTriggerLevel(float level)
+void saveTriggerOn(float level)
 {
-	triggerLevel = level;
+	triggerOn = level;
 	sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
-	sketch.arduino.preferences.putFloat(TRIGGER_LEVEL_PREF_KEY, triggerLevel);
+	sketch.arduino.preferences.putFloat(TRIGGER_ON_PREF_KEY, triggerOn);
+	sketch.arduino.preferences.end();
+}
+
+///
+/// <summary>
+/// Persists the trigger-off quality level to Preferences.
+/// </summary>
+/// <param name="level">New trigger-off quality level.</param>
+///
+void saveTriggerOff(float level)
+{
+	triggerOff = level;
+	sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+	sketch.arduino.preferences.putFloat(TRIGGER_OFF_PREF_KEY, triggerOff);
 	sketch.arduino.preferences.end();
 }
 
@@ -231,7 +261,7 @@ void onFanCommand(const char* command)
 	if (strcasecmp(verb.c_str(), "GetState") == 0)
 	{
 		std::string state = fanOn ? "ON" : "OFF";
-		if (fanOn)
+		if (fanOn && fanTimer.getDurationMs() > 0)
 		{
 			uint32_t remainingSecs = std::ceil(fanTimer.remaining());
 			uint32_t mins = remainingSecs / 60;
@@ -239,13 +269,13 @@ void onFanCommand(const char* command)
 			state += " (" + std::to_string(mins) + "m " + std::to_string(secs) + "s remaining)";
 		}
 		std::string tierText = currentTier >= 0 ? formatTier(currentScore, currentTier) : "none";
-		DeviceServerClient::respond((state + ", tier = " + tierText + ", trigger = " + formatScore(triggerLevel)).c_str());
+		DeviceServerClient::respond((state + ", Air Quality = " + tierText + ", triggerOn = " + formatScore(triggerOn) + ", triggerOff = " + formatScore(triggerOff)).c_str());
 	}
-	else if (strcasecmp(verb.c_str(), "GetTriggerLevel") == 0)
+	else if (strcasecmp(verb.c_str(), "GetTriggerOn") == 0)
 	{
-		DeviceServerClient::respond(("triggerLevel = " + formatScore(triggerLevel)).c_str());
+		DeviceServerClient::respond(("triggerOn = " + formatScore(triggerOn)).c_str());
 	}
-	else if (strcasecmp(verb.c_str(), "SetTriggerLevel") == 0)
+	else if (strcasecmp(verb.c_str(), "SetTriggerOn") == 0)
 	{
 		float level = NAN;
 		std::string extra;
@@ -255,8 +285,25 @@ void onFanCommand(const char* command)
 			DeviceServerClient::respond("Error: level must be a number between 0.0 and 5.0");
 			return;
 		}
-		saveTriggerLevel(level);
-		DeviceServerClient::respond(("Saved triggerLevel = " + formatScore(triggerLevel)).c_str());
+		saveTriggerOn(level);
+		DeviceServerClient::respond(("Saved triggerOn = " + formatScore(triggerOn)).c_str());
+	}
+	else if (strcasecmp(verb.c_str(), "GetTriggerOff") == 0)
+	{
+		DeviceServerClient::respond(("triggerOff = " + formatScore(triggerOff)).c_str());
+	}
+	else if (strcasecmp(verb.c_str(), "SetTriggerOff") == 0)
+	{
+		float level = NAN;
+		std::string extra;
+		constexpr float MAX_LEVEL = AirQualityTiers::NUM_TIERS - 1;
+		if (!(stream >> level) || (stream >> extra) || std::isnan(level) || level < 0.0f || level > MAX_LEVEL)
+		{
+			DeviceServerClient::respond("Error: level must be a number between 0.0 and 5.0");
+			return;
+		}
+		saveTriggerOff(level);
+		DeviceServerClient::respond(("Saved triggerOff = " + formatScore(triggerOff)).c_str());
 	}
 	else if (strcasecmp(verb.c_str(), "On") == 0)
 	{
@@ -277,24 +324,9 @@ void onFanCommand(const char* command)
 		}
 		startManualFanRun(minutes);
 	}
-	else if (strcasecmp(verb.c_str(), "On1") == 0)
-	{
-		startManualFanRun(1);
-	}
-	else if (strcasecmp(verb.c_str(), "On10") == 0)
-	{
-		startManualFanRun(10);
-	}
-	else if (strcasecmp(verb.c_str(), "On20") == 0)
-	{
-		startManualFanRun(20);
-	}
-	else if (strcasecmp(verb.c_str(), "On30") == 0)
-	{
-		startManualFanRun(30);
-	}
 	else if (strcasecmp(verb.c_str(), "Off") == 0)
 	{
+		fanTimer.setDurationMs(0);
 		setFanState(false, "command Off");
 		DeviceServerClient::respond("OFF");
 	}
@@ -304,6 +336,23 @@ void onFanCommand(const char* command)
 	}
 }
 
+///
+/// <summary>
+/// Turns the fan off and logs how long it was on and the current air quality score.
+/// </summary>
+///
+void turnFanOffWithElapsedReason()
+{
+	fanTimer.setDurationMs(0);
+	uint32_t onMins = static_cast<uint32_t>(std::round(fanOnStopwatch.elapsedSecs() / 60.0));
+	std::string reason = "on for " + std::to_string(onMins) + " mins";
+	if (!std::isnan(currentScore))
+	{
+		reason += ", quality level = " + formatScore(currentScore);
+	}
+	setFanState(false, reason);
+}
+
 void setup()
 {
 	SerialX::begin();
@@ -311,7 +360,7 @@ void setup()
 	pinMode(FAN_PIN, OUTPUT);
 	digitalWrite(FAN_PIN, LOW);
 
-	loadTriggerLevel();
+	loadTriggerLevels();
 
 	sketch.setCommandHandler(onFanCommand, FAN_COMMANDS.data(), FAN_COMMANDS.size());
 	sketch.beginBanner();
@@ -336,18 +385,22 @@ void setup()
 		int tier = static_cast<int>(std::floor(value));
 		currentTier = static_cast<int8_t>(std::clamp(tier, 0, static_cast<int>(AirQualityTiers::NUM_TIERS - 1)));
 
-		if (currentScore >= triggerLevel)
+		if (currentScore >= triggerOn || (fanOn && currentScore > triggerOff))
 		{
-			constexpr float BAD_AIR_RUN_S = BAD_AIR_RUN_M * 60.0f;
-			if (!fanOn || fanTimer.remaining() < BAD_AIR_RUN_S)
+			constexpr float FAN_OFF_DELAY_S = FAN_OFF_DELAY_M * 60.0f;
+			if (FAN_OFF_DELAY_M > 0 && (!fanOn || fanTimer.remaining() < FAN_OFF_DELAY_S))
 			{
-				fanTimer.setDurationMs(BAD_AIR_RUN_M * 60UL * 1000UL);
+				fanTimer.setDurationMs(FAN_OFF_DELAY_M * 60UL * 1000UL);
 			}
 
-			if (!fanOn)
+			if (!fanOn && currentScore >= triggerOn)
 			{
 				setFanState(true, "trigger quality level = " + formatScore(currentScore));
 			}
+		}
+		else if (fanOn && currentScore <= triggerOff && fanTimer.getDurationMs() == 0)
+		{
+			turnFanOffWithElapsedReason();
 		}
 	});
 
@@ -358,14 +411,17 @@ void loop()
 {
 	sketch.loop();
 
-	if (fanOn && fanTimer.ready())
+	if (fanOn && fanTimer.getDurationMs() > 0 && fanTimer.ready())
 	{
-		uint32_t onMins = static_cast<uint32_t>(std::round(fanOnStopwatch.elapsedSecs() / 60.0));
-		std::string reason = "on for " + std::to_string(onMins) + " mins";
-		if (!std::isnan(currentScore))
+		if (std::isnan(currentScore) || currentScore <= triggerOff)
 		{
-			reason += ", quality level = " + formatScore(currentScore);
+			turnFanOffWithElapsedReason();
 		}
-		setFanState(false, reason);
+		else if (FAN_OFF_DELAY_M == 0)
+		{
+			// Manual timer expired while air quality is still above triggerOff; keep the
+			// fan running until the score drops to or below triggerOff.
+			fanTimer.setDurationMs(0);
+		}
 	}
 }
