@@ -38,8 +38,10 @@ inline void OTAUpdater::_reportMissingPartitionAndHalt()
 
 inline void OTAUpdater::_onUpdateProgress(int current, int total)
 {
-   // Give other tasks (including the idle tasks, whose watchdog is disabled for the
-   // duration of the download in _performUpdate() below) a chance to run between chunks.
+   // Feed the task watchdog as chunks arrive so downloads that take longer than the 60s
+   // watchdog window keep running as long as progress is being made, and yield so other
+   // tasks get a chance to run between chunks.
+   esp_task_wdt_reset();
    yield();
 
 #ifdef ARDUINO_DISPLAY_SUPPORTED
@@ -136,16 +138,7 @@ inline void OTAUpdater::_performUpdate()
    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
    http.setTimeout(_CONNECT_TIMEOUT_MS);
 
-   // Flash writes during the update briefly halt execution on the *other* core (both
-   // cores' flash caches must be disabled together while writing), which can starve that
-   // core's idle task long enough to miss its task watchdog window and panic-reset the
-   // device mid-download. Fully deinitializing the task watchdog timer for the duration
-   // of the download (instead of just unsubscribing the idle tasks via
-   // disableCore0WDT()/disableCore1WDT()) avoids that panic *and* stops the watchdog's
-   // own timer, so its idle-task hook has nothing left to fire on and no longer spams
-   // Serial with "task not found" errors while disabled. Re-initialized below once the
-   // download returns (a successful update instead reboots directly).
-   esp_task_wdt_deinit();
+   esp_task_wdt_reset();
 
    if (!http.begin(client, _firmwareUrl.c_str()))
    {
@@ -154,6 +147,8 @@ inline void OTAUpdater::_performUpdate()
    else
    {
       int httpCode = http.GET();
+      esp_task_wdt_reset();
+
       if (httpCode != HTTP_CODE_OK)
       {
          reason = "HTTP GET failed, code: " + std::to_string(httpCode);
@@ -171,6 +166,7 @@ inline void OTAUpdater::_performUpdate()
          }
          else
          {
+            esp_task_wdt_reset();
             WiFiClient* stream = http.getStreamPtr();
             constexpr size_t CHUNK_SIZE = 4096;
 
@@ -239,19 +235,7 @@ inline void OTAUpdater::_performUpdate()
       http.end();
    }
 
-   // Restore the task watchdog torn down by esp_task_wdt_deinit() above, with the same
-   // config SketchBase uses (60s timeout, panic on timeout) and re-subscribe the loop task.
-   esp_task_wdt_config_t wdtConfig
-   {
-      .timeout_ms = Util::SETUP_WATCHDOG_TIMEOUT_S * 1000U,
-      .idle_core_mask = 0,
-      .trigger_panic = true,
-   };
-   esp_task_wdt_init(&wdtConfig);
-   if (esp_task_wdt_status(nullptr) != ESP_OK)
-   {
-      esp_task_wdt_add(nullptr);
-   }
+   esp_task_wdt_reset();
 
    if (ok)
    {

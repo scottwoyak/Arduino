@@ -128,10 +128,8 @@ private:
    static constexpr uint32_t _CONNECT_TIMEOUT_MS = 15000;
 
    // Maximum time to wait for more data to arrive between chunks while downloading, once
-   // the connection is established. The task watchdog is deinitialized for the whole
-   // download (see esp_task_wdt_deinit() in _performUpdate()), so a stall here (e.g. the
-   // server stops sending data but keeps the TCP connection open) would otherwise hang
-   // forever with nothing to catch it; this fails with a clear error instead.
+   // the connection is established. If the server stops sending data while keeping the
+   // TCP connection open, this fails cleanly before the 60s task watchdog trips.
    static constexpr uint32_t _STALL_TIMEOUT_MS = 15000;
 
    /// <summary>The OTAUpdater most recently constructed, targeted by requestActiveUpdate().</summary>
@@ -282,9 +280,9 @@ private:
    ///
    /// <summary>
    /// Called after each chunk is written to flash while the firmware download is in
-   /// progress. Yields the CPU so other tasks get a chance to run between chunks and, on
-   /// display-capable boards, also reports progress as a percentage and a fill bar
-   /// (throttled to redraw only when the percentage changes, to minimize SPI writes).
+   /// progress. Feeds the task watchdog, yields the CPU so other tasks get a chance to
+   /// run between chunks, and, on display-capable boards, reports progress as a
+   /// percentage and a fill bar.
    /// </summary>
    /// <param name="current">Number of bytes downloaded so far.</param>
    /// <param name="total">Total number of bytes to download.</param>
@@ -297,10 +295,9 @@ private:
    /// write loop, showing progress and the final result on the display (if present).
    /// Restarts the device on success. Progress is drawn only between chunk writes, so a
    /// display SPI transaction is never in flight while flash writes (which briefly disable
-   /// both cores' flash caches) are happening. Also temporarily disables both cores'
-   /// idle-task watchdogs for the duration of the (blocking) download, since flash writes
-   /// during the update briefly halt the other core and could otherwise starve its idle
-   /// task long enough to trip the task watchdog and panic-reset the device mid-download.
+   /// both cores' flash caches) are happening. Feeds the task watchdog as stages and
+   /// chunks complete so slow downloads can take longer than the watchdog window without
+   /// resetting, while a true hang still recovers the device.
    /// </summary>
    ///
    void _performUpdate();
