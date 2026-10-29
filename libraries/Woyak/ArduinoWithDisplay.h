@@ -134,6 +134,7 @@ public:
 
 private:
    uint8_t _textSize = 1;
+   DisplayRotation _rotation = DisplayRotation::LANDSCAPE;
 
    // hardcoded character width/height (in pixels) for each RobotoMonoBold font size
    // index (1-7, index 0 is unused since there is no font size 0), measured once on
@@ -174,7 +175,7 @@ public:
    {
       display.init();
 
-      display.setRotation(DisplayRotation::LANDSCAPE);
+      display.setRotation((uint8_t)_rotation);
       display.fillScreen((uint16_t)Color::BLACK);
 
       display.setTextColor((uint16_t)Color::WHITE, (uint16_t)Color::BLACK);
@@ -339,6 +340,7 @@ public:
    ///
    void setRotation(DisplayRotation rotation)
    {
+      _rotation = rotation;
       display.setRotation((uint8_t)rotation);
    }
 

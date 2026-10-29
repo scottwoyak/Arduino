@@ -167,11 +167,13 @@ private:
       static constexpr auto LOCATION_KEY = "location";
       static constexpr uint16_t PROMPT_TIMEOUT_S = 10;
 
+      bool hasFixedSite = _influxConfig.context.site != nullptr && _influxConfig.context.site[0] != '\0';
+
       _arduino->preferences.begin(DEVICE_CONFIG_NAMESPACE, true);
-      bool hasSaved = _arduino->preferences.isKey(SITE_KEY) && _arduino->preferences.isKey(LOCATION_KEY);
+      bool hasSaved = (hasFixedSite || _arduino->preferences.isKey(SITE_KEY)) && _arduino->preferences.isKey(LOCATION_KEY);
       if (hasSaved)
       {
-         _siteName = _arduino->preferences.getString(SITE_KEY);
+         _siteName = hasFixedSite ? _influxConfig.context.site : _arduino->preferences.getString(SITE_KEY);
          _locationName = _arduino->preferences.getString(LOCATION_KEY);
       }
       _arduino->preferences.end();
@@ -179,10 +181,10 @@ private:
       if (!hasSaved && _config.preferencesNamespace != nullptr && strcmp(_config.preferencesNamespace, DEVICE_CONFIG_NAMESPACE) != 0)
       {
          _arduino->preferences.begin(_config.preferencesNamespace, true);
-         bool hasLegacy = _arduino->preferences.isKey(SITE_KEY) && _arduino->preferences.isKey(LOCATION_KEY);
+         bool hasLegacy = (hasFixedSite || _arduino->preferences.isKey(SITE_KEY)) && _arduino->preferences.isKey(LOCATION_KEY);
          if (hasLegacy)
          {
-            _siteName = _arduino->preferences.getString(SITE_KEY);
+            _siteName = hasFixedSite ? _influxConfig.context.site : _arduino->preferences.getString(SITE_KEY);
             _locationName = _arduino->preferences.getString(LOCATION_KEY);
          }
          _arduino->preferences.end();
@@ -190,7 +192,10 @@ private:
          if (hasLegacy)
          {
             _arduino->preferences.begin(DEVICE_CONFIG_NAMESPACE, false);
-            _arduino->preferences.putString(SITE_KEY, _siteName);
+            if (_siteName.length() > 0)
+            {
+               _arduino->preferences.putString(SITE_KEY, _siteName);
+            }
             _arduino->preferences.putString(LOCATION_KEY, _locationName);
             _arduino->preferences.end();
             hasSaved = true;
@@ -218,31 +223,38 @@ private:
 
       if (reconfigure)
       {
-         Serial.println("Select a site:");
-         for (size_t i = 0; i < std::size(SITE_OPTIONS); i++)
+         if (hasFixedSite)
          {
-            Serial.print("  ");
-            Serial.print(i + 1);
-            Serial.print(": ");
-            Serial.println(SITE_OPTIONS[i]);
+            _siteName = _influxConfig.context.site;
          }
+         else
+         {
+            Serial.println("Select a site:");
+            for (size_t i = 0; i < std::size(SITE_OPTIONS); i++)
+            {
+               Serial.print("  ");
+               Serial.print(i + 1);
+               Serial.print(": ");
+               Serial.println(SITE_OPTIONS[i]);
+            }
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
-         std::vector<String> siteLabels;
-         for (const char* opt : SITE_OPTIONS)
-         {
-            siteLabels.push_back(opt);
-         }
-         size_t chosen = _arduino->promptTouchOption("Select Site", siteLabels);
-         _siteName = SITE_OPTIONS[chosen];
+            std::vector<String> siteLabels;
+            for (const char* opt : SITE_OPTIONS)
+            {
+               siteLabels.push_back(opt);
+            }
+            size_t chosen = _arduino->promptTouchOption("Select Site", siteLabels);
+            _siteName = SITE_OPTIONS[chosen];
 #else
-         _arduino->printDisplayInitLabel("Site... ");
-         _arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
-         String label = "Enter selection (1-" + String(std::size(SITE_OPTIONS)) + "): ";
-         long selection = SerialX::promptForInt(label, 1, (long)std::size(SITE_OPTIONS));
-         _siteName = SITE_OPTIONS[selection - 1];
-         _arduino->printDisplayInitValue(_siteName.c_str());
+            _arduino->printDisplayInitLabel("Site... ");
+            _arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
+            String label = "Enter selection (1-" + String(std::size(SITE_OPTIONS)) + "): ";
+            long selection = SerialX::promptForInt(label, 1, (long)std::size(SITE_OPTIONS));
+            _siteName = SITE_OPTIONS[selection - 1];
+            _arduino->printDisplayInitValue(_siteName.c_str());
 #endif
+         }
 
          #ifdef ARDUINO_TOUCH_SUPPORTED
          _locationName = _arduino->promptTouchText("Enter Location", _locationName);
