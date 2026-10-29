@@ -43,24 +43,34 @@ enum class BatteryChargingState : uint8_t
 class Battery
 {
 private:
-   static constexpr uint8_t NUM_LIPO_CURVE_POINTS = 11;
+   static constexpr uint8_t NUM_LIPO_CURVE_POINTS = 21;
 
-   // Empirical 1S LiPo open-circuit voltage (OCV) to SoC lookup table from 0% (3.30V)
-   // to 100% (4.15V) in 10% increments, derived from full discharge and CC/CV charge
-   // calibration runs with IR compensation (V_ocv = V_meas - I_A * R_internal).
+   // Empirical 1S LiPo open-circuit voltage (OCV) to SoC lookup table from 0% (3.100V)
+   // to 100% (4.179V) in 5% increments, derived from full discharge (1389 mAh) and CC/CV
+   // charge (1438 mAh) calibration runs with IR compensation (V_ocv = V_meas - I_A * R_internal).
    static constexpr std::array<float, NUM_LIPO_CURVE_POINTS> LIPO_VOLTS_CURVE =
    {
-      3.30f, //   0%
-      3.52f, //  10%
-      3.61f, //  20%
-      3.71f, //  30%
-      3.80f, //  40%
-      3.86f, //  50%
-      3.91f, //  60%
-      3.98f, //  70%
-      4.03f, //  80%
-      4.08f, //  90%
-      4.15f  // 100%
+      3.100f, //   0%
+      3.410f, //   5%
+      3.474f, //  10%
+      3.537f, //  15%
+      3.594f, //  20%
+      3.641f, //  25%
+      3.683f, //  30%
+      3.741f, //  35%
+      3.796f, //  40%
+      3.834f, //  45%
+      3.865f, //  50%
+      3.894f, //  55%
+      3.920f, //  60%
+      3.948f, //  65%
+      3.989f, //  70%
+      4.030f, //  75%
+      4.052f, //  80%
+      4.069f, //  85%
+      4.088f, //  90%
+      4.106f, //  95%
+      4.179f  // 100%
    };
 
    static constexpr uint8_t ADC_RESOLUTION_BITS = 12;
@@ -150,7 +160,7 @@ private:
    // Effective series resistance (cell internal resistance + JST harness + INA219 0.1-ohm
    // shunt) used to convert terminal voltage under load/charge current into open-circuit
    // voltage: V_ocv = V_measured - (I_mA * 0.001f) * INA219_INTERNAL_RESISTANCE_OHMS.
-   static constexpr float INA219_INTERNAL_RESISTANCE_OHMS = 0.65f;
+   static constexpr float INA219_INTERNAL_RESISTANCE_OHMS = 0.39f;
 
    ///
    /// <summary>
@@ -181,7 +191,7 @@ private:
    /// <summary>
    /// Converts a 1S LiPo cell voltage to an estimated state-of-charge percentage using
    /// piecewise linear interpolation over LIPO_VOLTS_CURVE, scaled between the 0% cutoff
-   /// (3.30V) and the board/battery's calibrated full-charge ceiling.
+   /// (3.100V) and the board/battery's calibrated full-charge ceiling.
    /// </summary>
    /// <param name="volts">Measured cell voltage in volts.</param>
    /// <param name="fullChargeVolts">Calibrated 100% full-charge voltage for this battery/board.</param>
@@ -191,6 +201,7 @@ private:
    {
       constexpr float minCurveVolts = LIPO_VOLTS_CURVE[0];
       constexpr float maxCurveVolts = LIPO_VOLTS_CURVE[NUM_LIPO_CURVE_POINTS - 1];
+      constexpr float stepPercent = 100.0f / (NUM_LIPO_CURVE_POINTS - 1);
 
       if (volts <= minCurveVolts)
       {
@@ -220,7 +231,7 @@ private:
          if (normalizedVolts <= vHigh)
          {
             float fraction = (normalizedVolts - vLow) / (vHigh - vLow);
-            return (i + fraction) * 10.0f;
+            return (i + fraction) * stepPercent;
          }
       }
 
@@ -1109,21 +1120,13 @@ public:
             return BatteryChargingState::No;
          }
 
-         bool calmRail = !_hasRippleMeasurement || (_lastWindowSpanVolts <= INA219_FULL_MAX_SPAN_VOLTS);
-         float ocvVolts = _compensateOcvVolts(checkVolts, currentMa);
-         if (calmRail && ocvVolts >= LIPO_VOLTS_CURVE[NUM_LIPO_CURVE_POINTS - 1])
-         {
-            _saveFullChargeVolts(ocvVolts);
-            _unlock();
-            return BatteryChargingState::Full;
-         }
-
          if (currentMa >= INA219_CHARGE_CURRENT_THRESHOLD_MA)
          {
             _unlock();
             return BatteryChargingState::Yes;
          }
 
+         bool calmRail = !_hasRippleMeasurement || (_lastWindowSpanVolts <= INA219_FULL_MAX_SPAN_VOLTS);
          if (calmRail && checkVolts >= INA219_FULL_MIN_VOLTS)
          {
             _saveFullChargeVolts(checkVolts);
