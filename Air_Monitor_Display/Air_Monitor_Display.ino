@@ -77,6 +77,21 @@ constexpr uint8_t INFLUX_INTERVAL_S = 60;
 constexpr uint8_t INFLUX_DECIMAL_PLACES = 1;
 constexpr uint8_t PMS_RX_PIN = RX;
 constexpr uint8_t PMS_TX_PIN = TX;
+constexpr auto PREFERENCES_NAMESPACE = "AirMonitor";
+constexpr auto VOC_STATE0_PREF_KEY = "vocState0";
+constexpr auto VOC_STATE1_PREF_KEY = "vocState1";
+constexpr uint8_t VOC_CALIBRATION_M = 180;
+
+// VOC algorithm tuning for a poorly ventilated 3D-printer room: keep the standard 100
+// baseline offset, extend offset/gain learning from 12 h to 168 h (7 days) so sustained
+// prints do not rapidly become the "normal" baseline, and raise gating to the maximum
+// 3000 min (50 h) so elevated VOC events freeze baseline adaptation.
+constexpr int32_t VOC_INDEX_OFFSET = 100;
+constexpr int32_t VOC_LEARNING_TIME_OFFSET_H = 168;
+constexpr int32_t VOC_LEARNING_TIME_GAIN_H = 168;
+constexpr int32_t VOC_GATING_MAX_DURATION_M = 3000;
+constexpr int32_t VOC_STD_INITIAL = 50;
+constexpr int32_t VOC_GAIN_FACTOR = 230;
 
 InfluxConfig INFLUX_CONFIG = {
    .promptForContext = true,
@@ -126,7 +141,7 @@ TelemetryConfig TELEMETRY_CONFIG = {
 SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
-   .preferencesNamespace = "AirMonitor",
+   .preferencesNamespace = PREFERENCES_NAMESPACE,
    .cpuFrequencyMhz = 80,
    .enableOTA = true,
 };
@@ -169,6 +184,8 @@ InfluxField* pm10QualityField = nullptr;
 InfluxField* airQualityField = nullptr;
 
 Timer influxTimer(INFLUX_INTERVAL_S * 1000UL);
+Timer vocCalibrationTimer(VOC_CALIBRATION_M * 60UL * 1000UL);
+bool vocCalibrating = false;
 
 // FieldTable reads these directly via pointer and only repaints a row's value when it changes.
 float pm1 = NAN;
@@ -398,13 +415,133 @@ static std::string getReadings()
 
 ///
 /// <summary>
+/// Applies the 3D-printer-room tuning parameters to the host VOC algorithm and restores a
+/// previously saved clean-air baseline from Preferences if one exists.
+/// </summary>
+/// <returns>True if a saved baseline was found and restored.</returns>
+///
+bool initVocAlgorithm()
+{
+   vocAlgorithm.set_tuning_parameters(
+      VOC_INDEX_OFFSET,
+      VOC_LEARNING_TIME_OFFSET_H,
+      VOC_LEARNING_TIME_GAIN_H,
+      VOC_GATING_MAX_DURATION_M,
+      VOC_STD_INITIAL,
+      VOC_GAIN_FACTOR);
+
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
+   float state0 = sketch.arduino.preferences.getFloat(VOC_STATE0_PREF_KEY, NAN);
+   float state1 = sketch.arduino.preferences.getFloat(VOC_STATE1_PREF_KEY, NAN);
+   sketch.arduino.preferences.end();
+
+   if (!isnan(state0) && !isnan(state1) && state0 > 0.0f && state1 > 0.0f)
+   {
+      vocAlgorithm.set_states(state0, state1);
+      return true;
+   }
+
+   return false;
+}
+
+///
+/// <summary>
+/// Saves the current SGP41 VOC algorithm state to Preferences as the clean-air baseline.
+/// </summary>
+/// <returns>True if the state is valid and was saved to Preferences.</returns>
+///
+bool saveSgp41VocBaseline()
+{
+   float state0 = 0.0f;
+   float state1 = 0.0f;
+   vocAlgorithm.get_states(state0, state1);
+   if (state0 <= 0.0f || state1 <= 0.0f)
+   {
+      return false;
+   }
+
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+   size_t written0 = sketch.arduino.preferences.putFloat(VOC_STATE0_PREF_KEY, state0);
+   size_t written1 = sketch.arduino.preferences.putFloat(VOC_STATE1_PREF_KEY, state1);
+   sketch.arduino.preferences.end();
+
+   return written0 > 0 && written1 > 0;
+}
+
+///
+/// <summary>
+/// Executes the clean-air calibration cycle: recalibrates SCD41 CO2 to targetPpm, clears
+/// any saved SGP41 VOC baseline, resets VOC learning, and starts the automatic
+/// baseline-save timer.
+/// </summary>
+/// <param name="targetPpm">Reference CO2 in ppm (400-2000).</param>
+///
+static void executeCalibration(int targetPpm)
+{
+   std::ostringstream result;
+
+   scd41.stopPeriodicMeasurement();
+   uint16_t frcCorrection = 0;
+   int16_t err = scd41.performForcedRecalibration(static_cast<uint16_t>(targetPpm), frcCorrection);
+   scd41.startPeriodicMeasurement();
+
+   if (err != 0 || frcCorrection == 0xFFFF)
+   {
+      result << "SCD41 CO2 recalibration failed. ";
+   }
+   else
+   {
+      int32_t correctionPpm = static_cast<int32_t>(frcCorrection) - 0x8000;
+      result << "Calibrated CO2 to " << targetPpm << " ppm (correction=" << correctionPpm << " ppm). ";
+   }
+
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+   sketch.arduino.preferences.remove(VOC_STATE0_PREF_KEY);
+   sketch.arduino.preferences.remove(VOC_STATE1_PREF_KEY);
+   sketch.arduino.preferences.end();
+
+   initVocAlgorithm();
+   vocIndex = NAN;
+   vocCalibrating = true;
+   vocCalibrationTimer.reset();
+
+   result << "Started " << static_cast<int>(VOC_CALIBRATION_M)
+          << "-minute SGP41 VOC clean-air calibration; baseline will be saved automatically when complete.";
+   DeviceServerClient::respond(result.str().c_str());
+}
+
+static int pendingCalibrationPpm = 400;
+
+///
+/// <summary>
+/// Handles the y/n confirmation answer for the interactive shell "Calibrate" prompt.
+/// </summary>
+/// <param name="line">User response entered in the shell.</param>
+///
+static void onCalibrateConfirm(const char* line)
+{
+   String input = String(line);
+   input.trim();
+
+   if (input.equalsIgnoreCase("y") || input.equalsIgnoreCase("yes"))
+   {
+      executeCalibration(pendingCalibrationPpm);
+   }
+   else
+   {
+      DeviceServerClient::respond("Calibration canceled.");
+   }
+}
+
+///
+/// <summary>
 /// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
 /// </summary>
 static constexpr DeviceServerClient::CommandInfo AIR_MONITOR_COMMANDS[] = {
    {
-      "ForceCalibration",
-      "Performs SCD41 forced CO2 recalibration at the given reference ppm",
-      { "fc" },
+      "Calibrate",
+      "Calibrates CO2 to the reference ppm and runs a 3-hour clean-air VOC baseline calibration",
+      { "cal", "fc" },
       {
          { "ppm", "Reference CO2 in ppm (400-2000)", false, "400" },
       },
@@ -414,7 +551,7 @@ static constexpr DeviceServerClient::CommandInfo AIR_MONITOR_COMMANDS[] = {
 
 ///
 /// <summary>
-/// Handles the "ForceCalibration" command registered via sketch.setCommandHandler().
+/// Handles custom commands registered via sketch.setCommandHandler().
 /// </summary>
 /// <param name="command">Full command text received from the DeviceServer.</param>
 static void onAirMonitorCommand(const char* command)
@@ -423,7 +560,7 @@ static void onAirMonitorCommand(const char* command)
    std::string verb;
    stream >> verb;
 
-   if (strcasecmp(verb.c_str(), "ForceCalibration") == 0)
+   if (strcasecmp(verb.c_str(), "Calibrate") == 0)
    {
       int targetPpm = 400;
       if (stream >> targetPpm)
@@ -435,20 +572,25 @@ static void onAirMonitorCommand(const char* command)
          }
       }
 
-      scd41.stopPeriodicMeasurement();
-      uint16_t frcCorrection = 0;
-      int16_t err = scd41.performForcedRecalibration((uint16_t)targetPpm, frcCorrection);
-      scd41.startPeriodicMeasurement();
+      if (DeviceServerClient::isShellCommand())
+      {
+         pendingCalibrationPpm = targetPpm;
+         DeviceServerClient::shell().println("Clean-air calibration will:");
+         DeviceServerClient::shell().print("  1. Recalibrate the SCD41 CO2 sensor to ");
+         DeviceServerClient::shell().print(targetPpm);
+         DeviceServerClient::shell().println(" ppm.");
+         DeviceServerClient::shell().println("  2. Clear the saved VOC baseline and restart SGP41 VOC learning.");
+         DeviceServerClient::shell().print("  3. Automatically save the new clean-air VOC baseline after ");
+         DeviceServerClient::shell().print(VOC_CALIBRATION_M);
+         DeviceServerClient::shell().println(" minutes (3 hours).");
+         DeviceServerClient::shell().println("Ensure the room is well ventilated and the 3D printer remains off for the next 3 hours.");
+         DeviceServerClient::shell().print("Continue? (y/N): ");
+         DeviceServerClient::shell().flushOutput();
+         DeviceServerClient::promptShellLine(onCalibrateConfirm);
+         return;
+      }
 
-      if (err != 0 || frcCorrection == 0xFFFF)
-      {
-         DeviceServerClient::respond("Error: SCD41 forced recalibration failed");
-      }
-      else
-      {
-         int32_t correctionPpm = (int32_t)frcCorrection - 0x8000;
-         DeviceServerClient::respond(("Calibrated CO2 to " + std::to_string(targetPpm) + " ppm (correction=" + std::to_string(correctionPpm) + " ppm)").c_str());
-      }
+      executeCalibration(targetPpm);
    }
    else
    {
@@ -458,6 +600,8 @@ static void onAirMonitorCommand(const char* command)
 
 void setup()
 {
+   initVocAlgorithm();
+
    sketch.addSensor("PMS5003", []() { return pms.begin(&Serial1, PMS_RX_PIN, PMS_TX_PIN); });
    sketch.addSensor("SCD41", []()
    {
@@ -637,6 +781,19 @@ void loop()
          {
             publishAirQuality();
          }
+      }
+   }
+
+   if (vocCalibrating && vocCalibrationTimer.ready())
+   {
+      vocCalibrating = false;
+      if (saveSgp41VocBaseline())
+      {
+         Logger.log("Saved clean-air SGP41 VOC baseline to Preferences");
+      }
+      else
+      {
+         Logger.log("Failed to save SGP41 VOC baseline to Preferences", LogSeverity::ERROR);
       }
    }
 

@@ -95,6 +95,21 @@ constexpr uint8_t INFLUX_DECIMAL_PLACES = 1;
 constexpr uint16_t DISPLAY_UPDATE_MS = 100;
 constexpr uint8_t SCD41_SDA_PIN = 11;
 constexpr uint8_t SCD41_SCL_PIN = 10;
+constexpr auto PREFERENCES_NAMESPACE = "AirQuality";
+constexpr auto VOC_STATE_PREF_KEY = "vocState";
+constexpr uint8_t SEN55_VOC_STATE_SIZE = 8;
+constexpr uint8_t VOC_CALIBRATION_M = 180;
+
+// VOC algorithm tuning for a poorly ventilated 3D-printer room: keep the standard 100
+// baseline offset, extend offset/gain learning from 12 h to 168 h (7 days) so sustained
+// prints do not rapidly become the "normal" baseline, and raise gating to the maximum
+// 3000 min (50 h) so elevated VOC events freeze baseline adaptation.
+constexpr int16_t VOC_INDEX_OFFSET = 100;
+constexpr int16_t VOC_LEARNING_TIME_OFFSET_H = 168;
+constexpr int16_t VOC_LEARNING_TIME_GAIN_H = 168;
+constexpr int16_t VOC_GATING_MAX_DURATION_M = 3000;
+constexpr int16_t VOC_STD_INITIAL = 50;
+constexpr int16_t VOC_GAIN_FACTOR = 230;
 
 constexpr uint8_t NUM_BARS = 7;
 constexpr const char* LABELS[NUM_BARS] = { "1.0", "2.5", "4.0", "10", "CO2", "VOC", "NOx" };
@@ -171,7 +186,7 @@ TelemetryConfig TELEMETRY_CONFIG = {
 SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
-   .preferencesNamespace = "AirQuality",
+   .preferencesNamespace = PREFERENCES_NAMESPACE,
    .cpuFrequencyMhz = 80,
    .enableOTA = true,
 };
@@ -207,6 +222,8 @@ InfluxField* airQualityField = nullptr;
 
 Timer influxTimer(INFLUX_INTERVAL_S * 1000UL);
 Timer displayTimer(DISPLAY_UPDATE_MS);
+Timer vocCalibrationTimer(VOC_CALIBRATION_M * 60UL * 1000UL);
+bool vocCalibrating = false;
 
 float pm1 = NAN;
 float pm25 = NAN;
@@ -567,14 +584,139 @@ static std::string getReadings()
 
 ///
 /// <summary>
+/// Restores a previously saved clean-air SEN55 VOC algorithm state from Preferences, if
+/// present. Must be called while the SEN55 is in idle mode before startMeasurement().
+/// </summary>
+/// <returns>True if a saved state was found and applied to the SEN55.</returns>
+///
+bool restoreSen55VocBaseline()
+{
+   uint8_t state[SEN55_VOC_STATE_SIZE] = {};
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
+   size_t readLen = sketch.arduino.preferences.getBytes(VOC_STATE_PREF_KEY, state, sizeof(state));
+   sketch.arduino.preferences.end();
+
+   if (readLen != sizeof(state))
+   {
+      return false;
+   }
+
+   return sen55.setVocAlgorithmState(state, sizeof(state)) == 0;
+}
+
+///
+/// <summary>
+/// Saves the current SEN55 VOC algorithm state to Preferences as the clean-air baseline.
+/// </summary>
+/// <returns>True if the state was read and saved successfully.</returns>
+///
+bool saveSen55VocBaseline()
+{
+   uint8_t state[SEN55_VOC_STATE_SIZE] = {};
+   if (sen55.getVocAlgorithmState(state, sizeof(state)) != 0)
+   {
+      return false;
+   }
+
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+   size_t written = sketch.arduino.preferences.putBytes(VOC_STATE_PREF_KEY, state, sizeof(state));
+   sketch.arduino.preferences.end();
+
+   return written == sizeof(state);
+}
+
+///
+/// <summary>
+/// Executes the clean-air calibration cycle: optionally recalibrates SCD41 CO2 to
+/// targetPpm, clears any saved SEN55 VOC baseline, resets SEN55 VOC learning, and starts
+/// the automatic baseline-save timer.
+/// </summary>
+/// <param name="targetPpm">Reference CO2 in ppm (400-2000).</param>
+///
+static void executeCalibration(int targetPpm)
+{
+   std::ostringstream result;
+
+   if (scd41Available)
+   {
+      scd41.stopPeriodicMeasurement();
+      uint16_t frcCorrection = 0;
+      int16_t err = scd41.performForcedRecalibration(static_cast<uint16_t>(targetPpm), frcCorrection);
+      scd41.startPeriodicMeasurement();
+
+      if (err != 0 || frcCorrection == 0xFFFF)
+      {
+         result << "SCD41 CO2 recalibration failed. ";
+      }
+      else
+      {
+         int32_t correctionPpm = static_cast<int32_t>(frcCorrection) - 0x8000;
+         result << "Calibrated CO2 to " << targetPpm << " ppm (correction=" << correctionPpm << " ppm). ";
+      }
+   }
+
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+   sketch.arduino.preferences.remove(VOC_STATE_PREF_KEY);
+   sketch.arduino.preferences.end();
+
+   if (sen55Available)
+   {
+      sen55.deviceReset();
+      sen55.setVocAlgorithmTuningParameters(
+         VOC_INDEX_OFFSET,
+         VOC_LEARNING_TIME_OFFSET_H,
+         VOC_LEARNING_TIME_GAIN_H,
+         VOC_GATING_MAX_DURATION_M,
+         VOC_STD_INITIAL,
+         VOC_GAIN_FACTOR);
+      sen55.startMeasurement();
+      vocIndex = NAN;
+      vocCalibrating = true;
+      vocCalibrationTimer.reset();
+      result << "Started " << static_cast<int>(VOC_CALIBRATION_M)
+             << "-minute SEN55 VOC clean-air calibration; baseline will be saved automatically when complete.";
+   }
+   else
+   {
+      result << "Cleared saved VOC baseline (SEN55 not found).";
+   }
+
+   DeviceServerClient::respond(result.str().c_str());
+}
+
+static int pendingCalibrationPpm = 400;
+
+///
+/// <summary>
+/// Handles the y/n confirmation answer for the interactive shell "Calibrate" prompt.
+/// </summary>
+/// <param name="line">User response entered in the shell.</param>
+///
+static void onCalibrateConfirm(const char* line)
+{
+   String input = String(line);
+   input.trim();
+
+   if (input.equalsIgnoreCase("y") || input.equalsIgnoreCase("yes"))
+   {
+      executeCalibration(pendingCalibrationPpm);
+   }
+   else
+   {
+      DeviceServerClient::respond("Calibration canceled.");
+   }
+}
+
+///
+/// <summary>
 /// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
 /// </summary>
 ///
 static constexpr DeviceServerClient::CommandInfo AIR_QUALITY_COMMANDS[] = {
    {
-      "ForceCalibration",
-      "Performs SCD41 forced CO2 recalibration at the given reference ppm",
-      { "fc" },
+      "Calibrate",
+      "Calibrates CO2 to the reference ppm and runs a 3-hour clean-air VOC baseline calibration",
+      { "cal", "fc" },
       {
          { "ppm", "Reference CO2 in ppm (400-2000)", false, "400" },
       },
@@ -584,7 +726,7 @@ static constexpr DeviceServerClient::CommandInfo AIR_QUALITY_COMMANDS[] = {
 
 ///
 /// <summary>
-/// Handles the "ForceCalibration" command registered via sketch.setCommandHandler().
+/// Handles custom commands registered via sketch.setCommandHandler().
 /// </summary>
 /// <param name="command">Full command text received from the DeviceServer.</param>
 ///
@@ -594,14 +736,8 @@ static void onAirQualityCommand(const char* command)
    std::string verb;
    stream >> verb;
 
-   if (strcasecmp(verb.c_str(), "ForceCalibration") == 0)
+   if (strcasecmp(verb.c_str(), "Calibrate") == 0)
    {
-      if (!scd41Available)
-      {
-         DeviceServerClient::respond("Error: SCD41 sensor was not found");
-         return;
-      }
-
       int targetPpm = 400;
       if (stream >> targetPpm)
       {
@@ -612,20 +748,28 @@ static void onAirQualityCommand(const char* command)
          }
       }
 
-      scd41.stopPeriodicMeasurement();
-      uint16_t frcCorrection = 0;
-      int16_t err = scd41.performForcedRecalibration(static_cast<uint16_t>(targetPpm), frcCorrection);
-      scd41.startPeriodicMeasurement();
+      if (DeviceServerClient::isShellCommand())
+      {
+         pendingCalibrationPpm = targetPpm;
+         DeviceServerClient::shell().println("Clean-air calibration will:");
+         if (scd41Available)
+         {
+            DeviceServerClient::shell().print("  1. Recalibrate the SCD41 CO2 sensor to ");
+            DeviceServerClient::shell().print(targetPpm);
+            DeviceServerClient::shell().println(" ppm.");
+         }
+         DeviceServerClient::shell().println("  2. Clear the saved VOC baseline and restart SEN55 VOC learning.");
+         DeviceServerClient::shell().print("  3. Automatically save the new clean-air VOC baseline after ");
+         DeviceServerClient::shell().print(VOC_CALIBRATION_M);
+         DeviceServerClient::shell().println(" minutes (3 hours).");
+         DeviceServerClient::shell().println("Ensure the room is well ventilated and the 3D printer remains off for the next 3 hours.");
+         DeviceServerClient::shell().print("Continue? (y/N): ");
+         DeviceServerClient::shell().flushOutput();
+         DeviceServerClient::promptShellLine(onCalibrateConfirm);
+         return;
+      }
 
-      if (err != 0 || frcCorrection == 0xFFFF)
-      {
-         DeviceServerClient::respond("Error: SCD41 forced recalibration failed");
-      }
-      else
-      {
-         int32_t correctionPpm = static_cast<int32_t>(frcCorrection) - 0x8000;
-         DeviceServerClient::respond(("Calibrated CO2 to " + std::to_string(targetPpm) + " ppm (correction=" + std::to_string(correctionPpm) + " ppm)").c_str());
-      }
+      executeCalibration(targetPpm);
    }
    else
    {
@@ -642,6 +786,14 @@ void setup()
       {
          return false;
       }
+      sen55.setVocAlgorithmTuningParameters(
+         VOC_INDEX_OFFSET,
+         VOC_LEARNING_TIME_OFFSET_H,
+         VOC_LEARNING_TIME_GAIN_H,
+         VOC_GATING_MAX_DURATION_M,
+         VOC_STD_INITIAL,
+         VOC_GAIN_FACTOR);
+      restoreSen55VocBaseline();
       sen55Available = sen55.startMeasurement() == 0;
       return sen55Available;
    }, nullptr, false);
@@ -834,6 +986,19 @@ void loop()
 
          sketch.publish(co2Topic, co2, 0);
          publishAirQuality();
+      }
+   }
+
+   if (vocCalibrating && vocCalibrationTimer.ready())
+   {
+      vocCalibrating = false;
+      if (saveSen55VocBaseline())
+      {
+         Logger.log("Saved clean-air SEN55 VOC baseline to Preferences");
+      }
+      else
+      {
+         Logger.log("Failed to save SEN55 VOC baseline to Preferences", LogSeverity::ERROR);
       }
    }
 
