@@ -23,6 +23,7 @@
 
 #include <Arduino.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <sstream>
 #include <string>
@@ -40,6 +41,7 @@
 
 #include "Bar.h"
 #include "FieldTable.h"
+#include "Influx.h"
 #include "LibraryVersion.h"
 #include "MovingBarChart.h"
 #include "SerialX.h"
@@ -48,7 +50,7 @@
 #include "WiFiSettings.h"
 #include "ViewerSketch.h"
 
-const auto VERSION = MakeVersion("1.0");
+const auto VERSION = MakeVersion("1.01");
 constexpr auto SKETCH_NAME = "Solar_Viewer";
 
 // ----------- Enphase IQ Gateway Configuration
@@ -72,8 +74,15 @@ constexpr auto ENPHASE_CONS_JWT_TOKEN = "eyJraWQiOiI3ZDEwMDA1ZC03ODk5LTRkMGQtYmN
 
 constexpr auto ENPHASE_PRODUCTION_PATH = "/production.json";
 constexpr auto ENPHASE_PDM_ENERGY_PATH = "/ivp/pdm/energy";
+constexpr auto ENPHASE_METERS_READINGS_PATH = "/ivp/meters/readings";
+constexpr uint32_t GW2_NET_CONSUMPTION_EID = 704643584UL;
 constexpr uint16_t HTTP_TIMEOUT_MS = 10000;
 constexpr uint8_t POLL_INTERVAL_S = 5;
+constexpr uint8_t INFLUX_UPLOAD_INTERVAL_S = 30;
+constexpr auto INFLUX_MEASUREMENT = "Solar";
+constexpr auto INFLUX_SITE = "Bragg";
+constexpr auto PREFERENCES_NAMESPACE = "SolarViewer";
+constexpr auto INFLUX_LOG_PREF_KEY = "influxLog";
 
 // Full-scale power (in kW) and daily energy (in kWh) for the vertical bar gauges.
 constexpr float MAX_POWER_KW = 20.0f;
@@ -101,16 +110,39 @@ constexpr Color DELTA_NEGATIVE_COLOR = Color::RED;
 SketchConfig SKETCH_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
+   .preferencesNamespace = PREFERENCES_NAMESPACE,
    .enableOTA = true,
    .enableRebooter = true,
 };
 
 ViewerSketch sketch(SKETCH_CONFIG);
 Timer pollTimer(POLL_INTERVAL_S * 1000UL);
+Influx influx(INFLUX_UPLOAD_INTERVAL_S);
+bool influxReady = false;
+bool influxLoggingEnabled = false;
 
 ///
 /// <summary>
-/// Holds the latest production and consumption readings parsed from the Enphase gateways.
+/// Commands registered with DeviceServerClient, listed by "Help" after the built-ins.
+/// </summary>
+///
+constexpr uint8_t NUM_SOLAR_COMMANDS = 2;
+constexpr std::array<DeviceServerClient::CommandInfo, NUM_SOLAR_COMMANDS> SOLAR_COMMANDS = {{
+   { "GetInfluxLogging", "Reports whether InfluxDB logging is enabled on this device", { "gil" } },
+   {
+      "SetInfluxLogging",
+      "Enables or disables InfluxDB logging (on/off) and persists the setting in Preferences",
+      { "sil", "LogToInflux" },
+      {
+         { "enabled", "Enable or disable InfluxDB logging (on/off, true/false, 1/0)", true },
+      },
+   },
+}};
+
+///
+/// <summary>
+/// Holds the latest production, consumption, and raw gateway diagnostic readings parsed
+/// from both Enphase gateways.
 /// </summary>
 ///
 struct SolarReadings
@@ -119,6 +151,44 @@ struct SolarReadings
    float productionTodayKwh = NAN;
    float consumptionKw = NAN;
    float consumptionTodayKwh = NAN;
+
+   // Gateway 1 (Solar Production) raw metrics
+   float gw1EimWatts = NAN;
+   float gw1InvWatts = NAN;
+   float gw1PcuWhToday = NAN;
+   double gw1EimWhLifetime = NAN;
+   float gw1Voltage = NAN;
+   float gw1Current = NAN;
+   float gw1PowerFactor = NAN;
+
+   // Gateway 2 (Consumption / Net CT) /production.json metrics
+   float gw2Watts = NAN;
+   float gw2WhToday = NAN;
+   double gw2WhLifetime = NAN;
+   float gw2ReactiveVar = NAN;
+   float gw2ApparentVa = NAN;
+   float gw2PowerFactor = NAN;
+   float gw2Voltage = NAN;
+   float gw2Current = NAN;
+
+   // Gateway 2 /ivp/meters/readings monotonic accumulators and split-phase L1/L2 channels
+   double gw2WhDlvd = NAN;
+   double gw2WhRcvd = NAN;
+   float gw2L1Watts = NAN;
+   float gw2L1ReactiveVar = NAN;
+   float gw2L1Voltage = NAN;
+   float gw2L1Current = NAN;
+   float gw2L1PowerFactor = NAN;
+   double gw2L1WhDlvd = NAN;
+   double gw2L1WhRcvd = NAN;
+   float gw2L2Watts = NAN;
+   float gw2L2ReactiveVar = NAN;
+   float gw2L2Voltage = NAN;
+   float gw2L2Current = NAN;
+   float gw2L2PowerFactor = NAN;
+   double gw2L2WhDlvd = NAN;
+   double gw2L2WhRcvd = NAN;
+
    bool valid = false;
 };
 
@@ -488,14 +558,37 @@ bool fetchSolarReadings(SolarReadings* readings)
             continue;
          }
 
-         if (strcmp(type, "eim") == 0 && entry["wNow"].is<float>())
+         if (strcmp(type, "eim") == 0)
          {
-            prodWatts = entry["wNow"].as<float>();
-            break;
+            if (entry["wNow"].is<float>())
+            {
+               prodWatts = entry["wNow"].as<float>();
+               readings->gw1EimWatts = prodWatts;
+            }
+            if (entry["whLifetime"].is<double>())
+            {
+               readings->gw1EimWhLifetime = entry["whLifetime"].as<double>();
+            }
+            if (entry["rmsVoltage"].is<float>())
+            {
+               readings->gw1Voltage = entry["rmsVoltage"].as<float>();
+            }
+            if (entry["rmsCurrent"].is<float>())
+            {
+               readings->gw1Current = entry["rmsCurrent"].as<float>();
+            }
+            if (entry["pwrFactor"].is<float>())
+            {
+               readings->gw1PowerFactor = entry["pwrFactor"].as<float>();
+            }
          }
-         else if (strcmp(type, "inverters") == 0 && isnan(prodWatts) && entry["wNow"].is<float>())
+         else if (strcmp(type, "inverters") == 0 && entry["wNow"].is<float>())
          {
-            prodWatts = entry["wNow"].as<float>();
+            readings->gw1InvWatts = entry["wNow"].as<float>();
+            if (isnan(prodWatts))
+            {
+               prodWatts = readings->gw1InvWatts;
+            }
          }
       }
    }
@@ -507,6 +600,7 @@ bool fetchSolarReadings(SolarReadings* readings)
       if (pcuWhToday.is<float>())
       {
          prodWhToday = pcuWhToday.as<float>();
+         readings->gw1PcuWhToday = prodWhToday;
       }
    }
 
@@ -525,16 +619,105 @@ bool fetchSolarReadings(SolarReadings* readings)
          {
             if (entry["wNow"].is<float>())
             {
-               // Gateway 2's consumption CTs report home load with negative polarity
-               consWatts = std::fabs(entry["wNow"].as<float>());
+               readings->gw2Watts = entry["wNow"].as<float>();
             }
             if (entry["whToday"].is<float>())
             {
-               consWhToday = std::fabs(entry["whToday"].as<float>());
+               readings->gw2WhToday = entry["whToday"].as<float>();
+            }
+            if (entry["whLifetime"].is<double>())
+            {
+               readings->gw2WhLifetime = entry["whLifetime"].as<double>();
+            }
+            if (entry["reactPwr"].is<float>())
+            {
+               readings->gw2ReactiveVar = entry["reactPwr"].as<float>();
+            }
+            if (entry["apprntPwr"].is<float>())
+            {
+               readings->gw2ApparentVa = entry["apprntPwr"].as<float>();
+            }
+            if (entry["pwrFactor"].is<float>())
+            {
+               readings->gw2PowerFactor = entry["pwrFactor"].as<float>();
+            }
+            if (entry["rmsVoltage"].is<float>())
+            {
+               readings->gw2Voltage = entry["rmsVoltage"].as<float>();
+            }
+            if (entry["rmsCurrent"].is<float>())
+            {
+               readings->gw2Current = entry["rmsCurrent"].as<float>();
             }
             break;
          }
       }
+   }
+
+   // 4. Raw monotonic energy accumulators and per-phase (L1/L2) CT readings from Gateway 2 (/ivp/meters/readings)
+   if (fetchGatewayJson(ENPHASE_CONS_HOST, ENPHASE_METERS_READINGS_PATH, ENPHASE_CONS_JWT_TOKEN, &doc))
+   {
+      JsonArray metersArray = doc.as<JsonArray>();
+      for (JsonObject meter : metersArray)
+      {
+         uint32_t eid = meter["eid"] | 0UL;
+         if (eid != GW2_NET_CONSUMPTION_EID)
+         {
+            continue;
+         }
+
+         if (meter["actEnergyDlvd"].is<double>())
+         {
+            readings->gw2WhDlvd = meter["actEnergyDlvd"].as<double>();
+         }
+         if (meter["actEnergyRcvd"].is<double>())
+         {
+            readings->gw2WhRcvd = meter["actEnergyRcvd"].as<double>();
+         }
+
+         JsonArray channels = meter["channels"].as<JsonArray>();
+         if (channels.size() >= 2)
+         {
+            JsonObject ch1 = channels[0];
+            readings->gw2L1Watts = ch1["activePower"] | NAN;
+            readings->gw2L1ReactiveVar = ch1["reactivePower"] | NAN;
+            readings->gw2L1Voltage = ch1["voltage"] | NAN;
+            readings->gw2L1Current = ch1["current"] | NAN;
+            readings->gw2L1PowerFactor = ch1["pwrFactor"] | NAN;
+            readings->gw2L1WhDlvd = ch1["actEnergyDlvd"] | static_cast<double>(NAN);
+            readings->gw2L1WhRcvd = ch1["actEnergyRcvd"] | static_cast<double>(NAN);
+
+            JsonObject ch2 = channels[1];
+            readings->gw2L2Watts = ch2["activePower"] | NAN;
+            readings->gw2L2ReactiveVar = ch2["reactivePower"] | NAN;
+            readings->gw2L2Voltage = ch2["voltage"] | NAN;
+            readings->gw2L2Current = ch2["current"] | NAN;
+            readings->gw2L2PowerFactor = ch2["pwrFactor"] | NAN;
+            readings->gw2L2WhDlvd = ch2["actEnergyDlvd"] | static_cast<double>(NAN);
+            readings->gw2L2WhRcvd = ch2["actEnergyRcvd"] | static_cast<double>(NAN);
+         }
+         break;
+      }
+   }
+
+   // Compensate display consumption using Gateway 1 solar production + signed Gateway 2 net meter flow
+   // (when exporting, gw2Watts is negative so Usage = Solar - Export; when importing, Usage = Solar + Import).
+   if (!isnan(prodWatts) && !isnan(readings->gw2Watts))
+   {
+      consWatts = prodWatts + readings->gw2Watts;
+   }
+   else if (!isnan(readings->gw2Watts))
+   {
+      consWatts = readings->gw2Watts;
+   }
+
+   if (!isnan(prodWhToday) && !isnan(readings->gw2WhToday))
+   {
+      consWhToday = prodWhToday + readings->gw2WhToday;
+   }
+   else if (!isnan(readings->gw2WhToday))
+   {
+      consWhToday = readings->gw2WhToday;
    }
 
    if (isnan(prodWatts) && isnan(consWatts))
@@ -562,6 +745,196 @@ bool fetchSolarReadings(SolarReadings* readings)
 
    readings->valid = true;
    return true;
+}
+
+///
+/// <summary>
+/// Loads the persisted InfluxDB logging setting from Preferences (defaulting to false so
+/// only an explicitly enabled viewer uploads to InfluxDB).
+/// </summary>
+///
+void loadInfluxLoggingSetting()
+{
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
+   influxLoggingEnabled = sketch.arduino.preferences.getBool(INFLUX_LOG_PREF_KEY, false);
+   sketch.arduino.preferences.end();
+}
+
+///
+/// <summary>
+/// Persists the InfluxDB logging setting to Preferences and initializes the InfluxDB
+/// client if logging is enabled for the first time since boot.
+/// </summary>
+/// <param name="enabled">True to enable InfluxDB uploads; false to disable them.</param>
+///
+void saveInfluxLoggingSetting(bool enabled)
+{
+   influxLoggingEnabled = enabled;
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+   sketch.arduino.preferences.putBool(INFLUX_LOG_PREF_KEY, influxLoggingEnabled);
+   sketch.arduino.preferences.end();
+
+   if (influxLoggingEnabled && !influxReady)
+   {
+      influxReady = influx.begin(sketch.arduino);
+   }
+}
+
+///
+/// <summary>
+/// Adds a float field to an InfluxDB Point if the value is finite.
+/// </summary>
+/// <param name="point">Target InfluxDB Point.</param>
+/// <param name="name">Field name.</param>
+/// <param name="value">Field value.</param>
+/// <param name="decimalPlaces">Number of decimal places.</param>
+///
+void addFiniteField(Point* point, const char* name, float value, int decimalPlaces = 2)
+{
+   if (!std::isnan(value) && !std::isinf(value))
+   {
+      point->addField(name, value, decimalPlaces);
+   }
+}
+
+///
+/// <summary>
+/// Adds a double-precision field to an InfluxDB Point if the value is finite (used for
+/// large lifetime Wh accumulators that exceed 32-bit float mantissa precision).
+/// </summary>
+/// <param name="point">Target InfluxDB Point.</param>
+/// <param name="name">Field name.</param>
+/// <param name="value">Field value.</param>
+/// <param name="decimalPlaces">Number of decimal places.</param>
+///
+void addFiniteDoubleField(Point* point, const char* name, double value, int decimalPlaces = 3)
+{
+   if (!std::isnan(value) && !std::isinf(value))
+   {
+      point->addField(name, value, decimalPlaces);
+   }
+}
+
+///
+/// <summary>
+/// Writes the latest solar and raw Enphase gateway diagnostic metrics to InfluxDB when
+/// InfluxDB logging is enabled on this device.
+/// </summary>
+/// <param name="readings">The solar readings to upload.</param>
+///
+void postSolarToInflux(const SolarReadings& readings)
+{
+   if (!influxLoggingEnabled || !influxReady || !readings.valid)
+   {
+      return;
+   }
+
+   Point point(INFLUX_MEASUREMENT);
+   point.addTag("site", INFLUX_SITE);
+   point.addTag("sketch", SKETCH_NAME);
+
+   // Display-level computed values
+   addFiniteField(&point, "prod_kw", readings.productionKw, 3);
+   addFiniteField(&point, "cons_kw", readings.consumptionKw, 3);
+   addFiniteField(&point, "net_kw", netPowerKw, 3);
+   addFiniteField(&point, "prod_today_kwh", readings.productionTodayKwh, 3);
+   addFiniteField(&point, "cons_today_kwh", readings.consumptionTodayKwh, 3);
+   addFiniteField(&point, "net_today_kwh", netEnergyKwh, 3);
+
+   // Gateway 1 (Solar Production) raw metrics
+   addFiniteField(&point, "gw1_eim_w", readings.gw1EimWatts, 2);
+   addFiniteField(&point, "gw1_inv_w", readings.gw1InvWatts, 1);
+   addFiniteField(&point, "gw1_pcu_wh_today", readings.gw1PcuWhToday, 1);
+   addFiniteDoubleField(&point, "gw1_eim_wh_lifetime", readings.gw1EimWhLifetime, 3);
+   addFiniteField(&point, "gw1_voltage", readings.gw1Voltage, 2);
+   addFiniteField(&point, "gw1_current", readings.gw1Current, 2);
+   addFiniteField(&point, "gw1_pf", readings.gw1PowerFactor, 3);
+
+   // Gateway 2 (/production.json) raw metrics
+   addFiniteField(&point, "gw2_w", readings.gw2Watts, 2);
+   addFiniteField(&point, "gw2_wh_today", readings.gw2WhToday, 1);
+   addFiniteDoubleField(&point, "gw2_wh_lifetime", readings.gw2WhLifetime, 3);
+   addFiniteField(&point, "gw2_react_var", readings.gw2ReactiveVar, 2);
+   addFiniteField(&point, "gw2_apprnt_va", readings.gw2ApparentVa, 2);
+   addFiniteField(&point, "gw2_pf", readings.gw2PowerFactor, 3);
+   addFiniteField(&point, "gw2_voltage", readings.gw2Voltage, 2);
+   addFiniteField(&point, "gw2_current", readings.gw2Current, 2);
+
+   // Gateway 2 (/ivp/meters/readings) monotonic accumulators and L1/L2 split-phase channels
+   addFiniteDoubleField(&point, "gw2_wh_dlvd", readings.gw2WhDlvd, 3);
+   addFiniteDoubleField(&point, "gw2_wh_rcvd", readings.gw2WhRcvd, 3);
+   addFiniteField(&point, "gw2_l1_w", readings.gw2L1Watts, 2);
+   addFiniteField(&point, "gw2_l1_react_var", readings.gw2L1ReactiveVar, 2);
+   addFiniteField(&point, "gw2_l1_v", readings.gw2L1Voltage, 2);
+   addFiniteField(&point, "gw2_l1_a", readings.gw2L1Current, 2);
+   addFiniteField(&point, "gw2_l1_pf", readings.gw2L1PowerFactor, 3);
+   addFiniteDoubleField(&point, "gw2_l1_wh_dlvd", readings.gw2L1WhDlvd, 3);
+   addFiniteDoubleField(&point, "gw2_l1_wh_rcvd", readings.gw2L1WhRcvd, 3);
+   addFiniteField(&point, "gw2_l2_w", readings.gw2L2Watts, 2);
+   addFiniteField(&point, "gw2_l2_react_var", readings.gw2L2ReactiveVar, 2);
+   addFiniteField(&point, "gw2_l2_v", readings.gw2L2Voltage, 2);
+   addFiniteField(&point, "gw2_l2_a", readings.gw2L2Current, 2);
+   addFiniteField(&point, "gw2_l2_pf", readings.gw2L2PowerFactor, 3);
+   addFiniteDoubleField(&point, "gw2_l2_wh_dlvd", readings.gw2L2WhDlvd, 3);
+   addFiniteDoubleField(&point, "gw2_l2_wh_rcvd", readings.gw2L2WhRcvd, 3);
+
+   if (!influx.client()->writePoint(point))
+   {
+      DeviceHealth::influxFailures++;
+      Logger.log(std::string("Solar InfluxDB write failed: ") + influx.client()->getLastErrorMessage().c_str(), LogSeverity::WARN);
+   }
+}
+
+///
+/// <summary>
+/// Handles the custom commands registered via sketch.setCommandHandler().
+/// </summary>
+/// <param name="command">Full command text received from the DeviceServer.</param>
+///
+void onSolarCommand(const char* command)
+{
+   std::istringstream stream(command);
+   std::string verb;
+   stream >> verb;
+
+   if (strcasecmp(verb.c_str(), "GetInfluxLogging") == 0)
+   {
+      DeviceServerClient::respond(influxLoggingEnabled ? "ON" : "OFF");
+   }
+   else if (strcasecmp(verb.c_str(), "SetInfluxLogging") == 0)
+   {
+      std::string arg;
+      std::string extra;
+      if (!(stream >> arg) || (stream >> extra))
+      {
+         DeviceServerClient::respond("Error: specify ON or OFF (or true/false, 1/0)");
+         return;
+      }
+
+      bool enabled = false;
+      if (strcasecmp(arg.c_str(), "on") == 0 || strcasecmp(arg.c_str(), "true") == 0 || arg == "1")
+      {
+         enabled = true;
+      }
+      else if (strcasecmp(arg.c_str(), "off") == 0 || strcasecmp(arg.c_str(), "false") == 0 || arg == "0")
+      {
+         enabled = false;
+      }
+      else
+      {
+         DeviceServerClient::respond("Error: specify ON or OFF (or true/false, 1/0)");
+         return;
+      }
+
+      saveInfluxLoggingSetting(enabled);
+      std::string msg = std::string("InfluxDB logging ") + (influxLoggingEnabled ? "ENABLED" : "DISABLED");
+      Logger.log(msg);
+      DeviceServerClient::respond(msg.c_str());
+   }
+   else
+   {
+      DeviceServerClient::respond((std::string("Unhandled command: ") + command).c_str());
+   }
 }
 
 ///
@@ -631,7 +1004,13 @@ std::string formatReadings()
           << latestReadings.productionTodayKwh << " kWh today), "
           << "Consumption: " << latestReadings.consumptionKw << " kW ("
           << latestReadings.consumptionTodayKwh << " kWh today), "
-          << "Net: " << (latestReadings.productionKw - latestReadings.consumptionKw) << " kW";
+          << "Net: " << (latestReadings.productionKw - latestReadings.consumptionKw) << " kW, "
+          << "InfluxLogging: " << (influxLoggingEnabled ? "ON" : "OFF") << " | "
+          << "GW1[eim=" << latestReadings.gw1EimWatts << "W, inv=" << latestReadings.gw1InvWatts
+          << "W, pcuToday=" << latestReadings.gw1PcuWhToday << "Wh] "
+          << "GW2[wNow=" << latestReadings.gw2Watts << "W, L1=" << latestReadings.gw2L1Watts
+          << "W, L2=" << latestReadings.gw2L2Watts << "W, whToday=" << latestReadings.gw2WhToday
+          << "Wh, dlvd=" << latestReadings.gw2WhDlvd << "Wh, rcvd=" << latestReadings.gw2WhRcvd << "Wh]";
    return stream.str();
 }
 
@@ -639,8 +1018,16 @@ void setup()
 {
    SerialX::begin();
 
+   loadInfluxLoggingSetting();
+
    sketch.onReadings(formatReadings, "Reports the latest Enphase solar production and consumption readings");
+   sketch.setCommandHandler(onSolarCommand, SOLAR_COMMANDS.data(), NUM_SOLAR_COMMANDS);
    sketch.begin();
+
+   if (influxLoggingEnabled)
+   {
+      influxReady = influx.begin(sketch.arduino);
+   }
 
    initLayout();
 
@@ -651,6 +1038,7 @@ void setup()
    {
       sketch.getStatus()->setStatus(Status::RUNNING);
       updateDisplay(latestReadings);
+      postSolarToInflux(latestReadings);
    }
    pollTimer.reset();
 }
@@ -668,5 +1056,9 @@ void loop()
    {
       sketch.getStatus()->setStatus(Status::RUNNING);
       updateDisplay(latestReadings);
+      if (influxLoggingEnabled && influx.ready())
+      {
+         postSolarToInflux(latestReadings);
+      }
    }
 }
