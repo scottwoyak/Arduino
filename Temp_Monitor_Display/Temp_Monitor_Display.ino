@@ -81,7 +81,7 @@ const auto VERSION = MakeVersion("2.6");
 constexpr auto SKETCH_NAME = "Temp_Monitor_Display";
 constexpr auto PREFERENCES_NAMESPACE = "TempMonitor";
 constexpr uint8_t SPACING = 8;
-constexpr uint8_t TEXT_SIZE_SMALL = 2;
+constexpr uint8_t TEXT_SIZE_SMALL = DEFAULT_FOOTER_SIZE;
 constexpr uint8_t VALUE_TEXT_SIZE = 4;
 constexpr uint8_t STARTUP_DELAY_S = 5;
 

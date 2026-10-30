@@ -126,7 +126,7 @@ Format heightFormat("###.# cm", Format::Alignment::RIGHT);
 // The layout is computed at runtime from the display's dimensions (see initLayout) so
 // that the sketch runs on displays of different sizes, e.g. the 480x320 Viewer board
 // and the 240x135 Feather ESP32-S3 TFT.
-constexpr uint8_t TEXT_SIZE = 2;
+constexpr uint8_t TEXT_SIZE = DEFAULT_TEXT_SIZE;
 constexpr uint8_t MIN_HEADER_TEXT_SIZE = 2;
 constexpr uint8_t MAX_HEADER_TEXT_SIZE = 4;
 constexpr uint8_t HEADER_PADDING = 4;

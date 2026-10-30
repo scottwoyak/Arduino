@@ -24,10 +24,10 @@
 ESP32_S3_Playground arduino;
 
 // ----------- Layout
-constexpr uint8_t HEADER_TEXT_SIZE = 3;
-constexpr uint8_t SUBHEADING_TEXT_SIZE = 2;
-constexpr uint8_t CONTENT_TEXT_SIZE = 2;
-constexpr uint8_t INSTRUCTIONS_TEXT_SIZE = 2;
+constexpr uint8_t HEADER_TEXT_SIZE = DEFAULT_HEADING_SIZE;
+constexpr uint8_t SUBHEADING_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
+constexpr uint8_t CONTENT_TEXT_SIZE = DEFAULT_TEXT_SIZE;
+constexpr uint8_t INSTRUCTIONS_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
 int16_t headerHeight = 0;
 int16_t contentY = 0;
 int16_t instructionsY = 0;

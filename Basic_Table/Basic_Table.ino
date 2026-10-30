@@ -32,7 +32,7 @@ Arduino arduino;
 
 // ----------- Text Sizes
 constexpr uint8_t HEADER_SIZE = DEFAULT_HEADING_SIZE;
-constexpr uint8_t FOOTER_TEXT_SIZE = 2;
+constexpr uint8_t FOOTER_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
 
 // ----------- Content
 std::array rows = {

@@ -31,8 +31,8 @@ Arduino arduino;
 
 constexpr auto TITLE = "Sound";
 
-constexpr uint8_t TITLE_TEXT_SIZE = 4;
-constexpr uint8_t LABEL_TEXT_SIZE = 2;
+constexpr uint8_t TITLE_TEXT_SIZE = DEFAULT_HEADING_SIZE;
+constexpr uint8_t LABEL_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 
 constexpr float NOTE_C5 = 523.25f;
 constexpr uint16_t TEST_TONE_MILLIS = 300;
@@ -47,7 +47,7 @@ constexpr int16_t LIST_TOP = 0;
 constexpr int16_t LIST_ROW_HEIGHT = 30;
 constexpr int16_t LIST_GAP = 4;
 constexpr int16_t LIST_ARROW_HEIGHT = 36;
-constexpr uint8_t LIST_TEXT_SIZE = 2;
+constexpr uint8_t LIST_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 
 ///
 /// <summary>

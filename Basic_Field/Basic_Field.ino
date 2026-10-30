@@ -28,7 +28,7 @@
 Arduino arduino;
 
 // ----------- Content
-constexpr uint8_t FIELD_TEXT_SIZE = 3;
+constexpr uint8_t FIELD_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 constexpr uint8_t NUM_FIELDS = 3;
 Format fieldFormats[NUM_FIELDS] = { Format("###.#"), Format("###.##"), Format("#.##") };
 const char* fieldLabels[NUM_FIELDS] = { "Speed", "Acceleration", "Position" };
@@ -39,7 +39,7 @@ Field fields[NUM_FIELDS] = {
 };
 
 // ----------- Rate readout (lower right)
-constexpr uint8_t FOOTER_TEXT_SIZE = 2;
+constexpr uint8_t FOOTER_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
 constexpr uint16_t RATE_NUM_SAMPLES = 200;
 RollingRate rate(RATE_NUM_SAMPLES);
 Format rateFormat("####/s");
@@ -52,7 +52,7 @@ void setup()
    arduino.begin();
 
    arduino.setCursor(0, 0);
-   arduino.setTextSize(3);
+   arduino.setTextSize(DEFAULT_HEADING_SIZE);
    arduino.println("Field", Color::HEADING);
 
    int16_t groupHeight = NUM_FIELDS * arduino.charH(FIELD_TEXT_SIZE);

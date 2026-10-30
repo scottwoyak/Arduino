@@ -27,8 +27,8 @@
 Arduino arduino;
 
 // ----------- Text Sizes
-constexpr uint8_t HEADER_SIZE = 3;
-constexpr uint8_t TABLE_SIZE = 2;
+constexpr uint8_t HEADER_SIZE = DEFAULT_HEADING_SIZE;
+constexpr uint8_t TABLE_SIZE = DEFAULT_TEXT_SIZE;
 constexpr uint8_t AZIMUTH_SIZE = 4;
 constexpr uint8_t HEADER_GAP_PX = 10;
 

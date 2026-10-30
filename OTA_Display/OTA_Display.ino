@@ -27,8 +27,8 @@
 // URL of the firmware .bin to download when an update is requested.
 constexpr auto FIRMWARE_URL = "https://github.com/scottwoyak/Arduino/releases/download/OTA_Display/OTA_Display.ino.bin";
 
-constexpr uint8_t HEADER_SIZE = 3;
-constexpr uint8_t TEXT_SIZE = 2;
+constexpr uint8_t HEADER_SIZE = DEFAULT_HEADING_SIZE;
+constexpr uint8_t TEXT_SIZE = DEFAULT_TEXT_SIZE;
 
 constexpr int16_t PROGRESS_BAR_HEIGHT = 12;
 constexpr int16_t PROGRESS_BAR_MARGIN = 4;

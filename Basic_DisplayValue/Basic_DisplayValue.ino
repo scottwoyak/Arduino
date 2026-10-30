@@ -26,13 +26,13 @@
 Arduino arduino;
 
 // ----------- Content
-constexpr uint8_t VALUES_TEXT_SIZE = 3;
+constexpr uint8_t VALUES_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 constexpr uint8_t NUM_VALUES = 3;
 Format valueFormats[NUM_VALUES] = { Format("###.#"), Format("###.##"), Format("##.#")};
 DisplayValue* values[NUM_VALUES];
 
 // ----------- Rate readout (lower right)
-constexpr uint8_t RATE_TEXT_SIZE = 2;
+constexpr uint8_t RATE_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
 constexpr uint16_t RATE_NUM_SAMPLES = 100;
 RollingRate rate(RATE_NUM_SAMPLES);
 Format rateFormat("####/s");

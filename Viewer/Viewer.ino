@@ -26,8 +26,8 @@ Arduino arduino;
 RollingRate fps(100);
 
 constexpr uint8_t COUNTER_TEXT_SIZE = 5;
-constexpr uint8_t BUTTON_TEXT_SIZE = 3;
-constexpr uint8_t FPS_TEXT_SIZE = 3;
+constexpr uint8_t BUTTON_TEXT_SIZE = DEFAULT_TEXT_SIZE;
+constexpr uint8_t FPS_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 
 Field counterField(&arduino, Point16(0, 0), "########", COUNTER_TEXT_SIZE);
 Field buttonField(&arduino, Point16(0, 0), "ButtonA:", Format(5), BUTTON_TEXT_SIZE, Field::Alignment::LEFT);

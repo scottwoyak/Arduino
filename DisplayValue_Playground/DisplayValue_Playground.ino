@@ -19,8 +19,8 @@
 ESP32_S3_Playground arduino;
 
 // ----------- Layout
-constexpr uint8_t HEADING_TEXT_SIZE = 4;
-constexpr uint8_t FIELD_TEXT_SIZE = 3;
+constexpr uint8_t HEADING_TEXT_SIZE = DEFAULT_HEADING_SIZE;
+constexpr uint8_t FIELD_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 
 // ----------- Field Value
 Format valueFormat("##.#");

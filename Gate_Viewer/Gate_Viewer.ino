@@ -416,7 +416,7 @@ void displayFooterAzimuths()
    Point16 savedCursor = sketch.arduino.getCursor();
    uint8_t savedTextSize = sketch.arduino.getTextSize();
 
-   sketch.arduino.setTextSize(2);
+   sketch.arduino.setTextSize(DEFAULT_FOOTER_SIZE);
 
    // Always drawn in closed-state colors; the open state is shown by inverting the panel.
    Color messageColor = Color::GRAY;
@@ -467,8 +467,8 @@ void displayFooterAzimuths()
 
 // ----------- History view (shown when the "Last Open" footer is tapped)
 constexpr uint16_t HISTORY_VIEW_TIMEOUT_S = 15;
-constexpr uint8_t HISTORY_TITLE_TEXT_SIZE = 4;
-constexpr uint8_t HISTORY_ROW_TEXT_SIZE = 2;
+constexpr uint8_t HISTORY_TITLE_TEXT_SIZE = DEFAULT_HEADING_SIZE;
+constexpr uint8_t HISTORY_ROW_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
 // ----------- Gear/close icon geometry (shared by the main, history and settings views)
@@ -629,7 +629,7 @@ uint8_t toDisplaySoundIndex(uint8_t rawSoundIndex)
    return 1;
 }
 
-constexpr uint8_t SETTINGS_TEXT_SIZE = 2;
+constexpr uint8_t SETTINGS_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 constexpr int16_t SETTINGS_SLIDER_Y = 64;
 constexpr int16_t SETTINGS_SLIDER_HEIGHT = 56;
 constexpr int16_t SETTINGS_LIST_TOP = SETTINGS_SLIDER_Y + SETTINGS_SLIDER_HEIGHT + 10;

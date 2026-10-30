@@ -51,9 +51,9 @@ const char* MODE_NAMES[NUM_MODES] = { "Default", "Smooth Fonts", "Sprites" };
 // ----------- Text sizes
 constexpr uint8_t MIN_NUMBER_TEXT_SIZE = 1;
 constexpr uint8_t MAX_NUMBER_TEXT_SIZE = 7;
-constexpr uint8_t HEADING_TEXT_SIZE = 3;
-constexpr uint8_t SUB_HEADING_TEXT_SIZE = 2;
-constexpr uint8_t RATE_TEXT_SIZE = 2;
+constexpr uint8_t HEADING_TEXT_SIZE = DEFAULT_HEADING_SIZE;
+constexpr uint8_t SUB_HEADING_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
+constexpr uint8_t RATE_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
 
 // ----------- The Board
 Arduino arduino;

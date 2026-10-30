@@ -37,7 +37,7 @@ ScatterPlot scatterPlot(&arduino, Rect16{}, X_AXIS_FORMAT, VALUE_FORMAT);
 ScatterPlotSeries* series = scatterPlot.createRollingSeries(NUM_SAMPLES);
 
 // ----------- Rate readout (upper right)
-constexpr uint8_t RATE_TEXT_SIZE = 2;
+constexpr uint8_t RATE_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
 constexpr uint16_t RATE_NUM_SAMPLES = 100;
 RollingRate rate(RATE_NUM_SAMPLES);
 Format rateFormat("####/s");

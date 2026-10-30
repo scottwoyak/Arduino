@@ -61,8 +61,8 @@ constexpr const float* TIER_LIMITS[NUM_BARS] = {
 constexpr uint16_t VALUE_LINE_THICKNESS = 3;
 constexpr uint16_t VALUE_DIAMOND_HALF = 8;
 
-constexpr uint8_t TEXT_SIZE = 2;
-constexpr uint8_t HEADER_TEXT_SIZE = 3;
+constexpr uint8_t TEXT_SIZE = DEFAULT_TEXT_SIZE;
+constexpr uint8_t HEADER_TEXT_SIZE = DEFAULT_HEADING_SIZE;
 constexpr uint16_t DISPLAY_UPDATE_MS = 100;
 
 SketchConfig SKETCH_CONFIG = {

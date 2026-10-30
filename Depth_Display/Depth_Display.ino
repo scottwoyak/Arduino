@@ -138,13 +138,13 @@ constexpr float DEFAULT_MAX_DEPTH_CM = DEFAULT_FULL_DEPTH_FEET * CENTIMETERS_PER
 #elif DEPTH_SENSOR_TYPE == DEPTH_SENSOR_CAPACITOR
 constexpr float DEFAULT_MAX_DEPTH_CM = 91.44f; // 36 inches
 #endif
-constexpr uint8_t TITLE_TEXT_SIZE = 3;
-constexpr uint8_t SUBTITLE_TEXT_SIZE = 2;
+constexpr uint8_t TITLE_TEXT_SIZE = DEFAULT_HEADING_SIZE;
+constexpr uint8_t SUBTITLE_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 constexpr uint8_t DEPTH_TEXT_SIZE = 4;
 constexpr uint8_t DEPTH_RANGE_TEXT_SIZE = DEPTH_TEXT_SIZE;
-constexpr uint8_t RANGE_LABEL_TEXT_SIZE = 2;
+constexpr uint8_t RANGE_LABEL_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
 std::string rangeLabelText;
-constexpr uint8_t RATE_TEXT_SIZE = 2;
+constexpr uint8_t RATE_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
 constexpr uint16_t DEPTH_BAR_WIDTH_PX = 10;
 
 ///

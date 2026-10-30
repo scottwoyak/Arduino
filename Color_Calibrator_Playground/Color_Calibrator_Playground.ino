@@ -73,8 +73,8 @@
 
 // ----------- Layout
 constexpr uint8_t HEADING_TEXT_SIZE = DEFAULT_HEADING_SIZE;
-constexpr uint8_t SUBHEADING_TEXT_SIZE = 2;
-constexpr uint8_t CALIBRATION_TEXT_SIZE = 2;
+constexpr uint8_t SUBHEADING_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
+constexpr uint8_t CALIBRATION_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
 constexpr int16_t BAR_GAP = 1; // pixels, black separator line between adjacent bars/blocks
 constexpr int16_t HEADING_MARGIN = 8; // pixels between the heading and the grid, and between the grid and the calibration table
 constexpr int16_t TABLE_GAP = 16; // pixels between the editable calibration table and the read-only reference table

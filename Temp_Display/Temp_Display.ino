@@ -31,9 +31,9 @@
 Arduino arduino;
 
 // ----------- Text Sizes
-constexpr uint8_t HEADER_SIZE = 3;
+constexpr uint8_t HEADER_SIZE = DEFAULT_HEADING_SIZE;
 constexpr uint8_t VALUE_SIZE = 4;
-constexpr uint8_t FOOTER_SIZE = 2;
+constexpr uint8_t FOOTER_SIZE = DEFAULT_FOOTER_SIZE;
 
 // ----------- Sensor
 TempSensor sensor;

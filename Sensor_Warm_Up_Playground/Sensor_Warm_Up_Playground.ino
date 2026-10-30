@@ -131,8 +131,8 @@ constexpr size_t NUM_COOLDOWN_ROLLING_SAMPLES = 4;
 // ----------- Display Geometry
 constexpr uint16_t DISPLAY_WIDTH = 480;
 constexpr uint16_t DISPLAY_HEIGHT = 320;
-constexpr uint8_t TITLE_TEXT_SIZE = 3;
-constexpr uint8_t BODY_TEXT_SIZE = 2;
+constexpr uint8_t TITLE_TEXT_SIZE = DEFAULT_HEADING_SIZE;
+constexpr uint8_t BODY_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 
 // ----------- Scatter Plot
 constexpr uint16_t DISPLAY_UPDATE_INTERVAL_MS = 100;

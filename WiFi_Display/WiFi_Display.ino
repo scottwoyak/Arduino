@@ -45,8 +45,8 @@ enum class Mode
 Mode mode = Mode::SCANNING;
 
 // ----------- Text Sizes
-constexpr uint8_t HEADER_SIZE = 3;
-constexpr uint8_t ROW_SIZE = 2;
+constexpr uint8_t HEADER_SIZE = DEFAULT_HEADING_SIZE;
+constexpr uint8_t ROW_SIZE = DEFAULT_TEXT_SIZE;
 constexpr uint8_t DETAIL_SIZE = ROW_SIZE + 1;
 
 // ----------- Scan Results

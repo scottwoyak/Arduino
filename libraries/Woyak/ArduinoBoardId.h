@@ -23,6 +23,7 @@
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 2;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 1;
+constexpr uint8_t DEFAULT_FOOTER_SIZE = 1;
 
 #elif defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S3_TFT)
 
@@ -39,6 +40,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 1;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
+constexpr uint8_t DEFAULT_FOOTER_SIZE = 2;
 
 #elif defined(ARDUINO_WAVESHARE_ESP32S3_ZERO_SENSORS)
 // Waveshare ESP32-S3-Zero wired with a custom-powered I2C bus and an RGB LED status
@@ -87,6 +89,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
+constexpr uint8_t DEFAULT_FOOTER_SIZE = 2;
 
 #elif defined(ARDUINO_WAVESHARE_ESP32C6_LCD_147)
 
@@ -102,6 +105,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
+constexpr uint8_t DEFAULT_FOOTER_SIZE = 2;
 
 #elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_19)
 
@@ -117,6 +121,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
+constexpr uint8_t DEFAULT_FOOTER_SIZE = 2;
 
 #elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_20)
 
@@ -132,6 +137,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
+constexpr uint8_t DEFAULT_FOOTER_SIZE = 2;
 
 #elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_28)
 
@@ -147,6 +153,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
+constexpr uint8_t DEFAULT_FOOTER_SIZE = 2;
 
 #elif defined(ARDUINO_WAVESHARE_ESP32S3_TOUCH_LCD_35)
 
@@ -163,6 +170,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
+constexpr uint8_t DEFAULT_FOOTER_SIZE = 2;
 
 #elif defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40)
 // Hosyond 4.0 ESP32-S3-Touch-LCD board (builtin 4" ST7796S display with FT6336U
@@ -182,6 +190,7 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 4;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 3;
+constexpr uint8_t DEFAULT_FOOTER_SIZE = 2;
 
 #elif defined(ARDUINO_ESP32S3_DEV_PLAYGROUND)
 // ESP32-S3 Dev Module wired up as a Playground setup
@@ -199,9 +208,11 @@ constexpr uint8_t DEFAULT_TEXT_SIZE = 3;
 
 constexpr uint8_t DEFAULT_HEADING_SIZE = 4;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 3;
+constexpr uint8_t DEFAULT_FOOTER_SIZE = 2;
 
 #else
 #warning "No Arduino Board Type Defined"
 constexpr uint8_t DEFAULT_HEADING_SIZE = 3;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 2;
+constexpr uint8_t DEFAULT_FOOTER_SIZE = 2;
 #endif

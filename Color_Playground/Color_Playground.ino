@@ -24,8 +24,8 @@
 #include <cmath>
 #include <string>
 
-constexpr uint8_t CONTENT_TEXT_SIZE = 3;
-constexpr uint8_t SUBHEADING_TEXT_SIZE = 2;
+constexpr uint8_t CONTENT_TEXT_SIZE = DEFAULT_TEXT_SIZE;
+constexpr uint8_t SUBHEADING_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
 constexpr int16_t CELL_GAP = 3; // pixels between adjacent grid squares
 constexpr int16_t CELL_SIZE = 20; // pixels, width/height of each color square
 constexpr int16_t HEADING_MARGIN = 8; // pixels between the heading and the grid, and between the grid and the info table
