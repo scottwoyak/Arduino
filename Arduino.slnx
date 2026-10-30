@@ -676,6 +676,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Solar_Viewer/Solar_Viewer.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Sound/Sound.vcxproj" Id="00000000-0000-0000-0000-000000000089">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy Solution="*|ARM" />

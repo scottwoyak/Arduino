@@ -94,8 +94,10 @@ public:
       /// as its own section row (see addSection()) at that position in the array.
       /// </summary>
       /// <param name="section">The section header text.</param>
+      /// <param name="labelColor">The color to draw the section header text (default: Color::SECTION_HEADER).</param>
       ///
-      constexpr Row(const char* section) : label(section) {}
+      constexpr Row(const char* section, Color labelColor = Color::SECTION_HEADER)
+         : label(section), labelColor(labelColor) {}
 
       ValueBase* value = nullptr;
       float* valuePtr = nullptr;
@@ -141,39 +143,39 @@ private:
       float lastFloatValue = NAN;
 
       // Data row constructor: owns a Field for GAP-aligned label/value rendering.
-      RowContents(ArduinoWithDisplay* display, const char* label, const char* formatStr, uint8_t textSize, Color labelColor)
-         : isSection(false), label(label), field(new Field(display, label, formatStr, textSize, Field::Alignment::GAP)),
+      RowContents(ArduinoWithDisplay* display, const char* label, const char* formatStr, uint8_t textSize, Color labelColor, DisplayValue::Alignment valueAlignment = DisplayValue::Alignment::LEFT)
+         : isSection(false), label(label), field(new Field(display, label, formatStr, textSize, Field::Alignment::GAP, valueAlignment)),
            labelColor(labelColor), labelLength((uint8_t)strlen(label))
       {
       }
 
       // Data row constructor taking an already-parsed Format: used internally by
       // FieldTableEditor, which owns parsed Format instances per field.
-      RowContents(ArduinoWithDisplay* display, const char* label, const Format& format, uint8_t textSize, Color labelColor)
-         : isSection(false), label(label), field(new Field(display, label, format, textSize, Field::Alignment::GAP)),
+      RowContents(ArduinoWithDisplay* display, const char* label, const Format& format, uint8_t textSize, Color labelColor, DisplayValue::Alignment valueAlignment = DisplayValue::Alignment::LEFT)
+         : isSection(false), label(label), field(new Field(display, label, format, textSize, Field::Alignment::GAP, valueAlignment)),
            labelColor(labelColor), labelLength((uint8_t)strlen(label))
       {
       }
 
       // Data row constructor backed by a ValueBase: draw() pulls the value from the
       // value itself instead of the caller pushing it in via a per-row draw call.
-      RowContents(ArduinoWithDisplay* display, const char* label, ValueBase* value, uint8_t textSize, Color labelColor)
-         : isSection(false), label(label), field(new Field(display, label, value->format(), textSize, Field::Alignment::GAP)),
+      RowContents(ArduinoWithDisplay* display, const char* label, ValueBase* value, uint8_t textSize, Color labelColor, DisplayValue::Alignment valueAlignment = DisplayValue::Alignment::LEFT)
+         : isSection(false), label(label), field(new Field(display, label, value->format(), textSize, Field::Alignment::GAP, valueAlignment)),
            labelColor(labelColor), labelLength((uint8_t)strlen(label)), value(value)
       {
       }
 
       // Data row constructor backed directly by a caller-owned float: draw() pulls the
       // value from *valuePtr itself instead of the caller pushing it in via a per-row draw call.
-      RowContents(ArduinoWithDisplay* display, const char* label, const char* formatStr, float* value, uint8_t textSize, Color labelColor)
-         : isSection(false), label(label), field(new Field(display, label, formatStr, textSize, Field::Alignment::GAP)),
+      RowContents(ArduinoWithDisplay* display, const char* label, const char* formatStr, float* value, uint8_t textSize, Color labelColor, DisplayValue::Alignment valueAlignment = DisplayValue::Alignment::LEFT)
+         : isSection(false), label(label), field(new Field(display, label, formatStr, textSize, Field::Alignment::GAP, valueAlignment)),
            labelColor(labelColor), labelLength((uint8_t)strlen(label)), valuePtr(value)
       {
       }
 
       // Section header row constructor: no Field, just the header label text.
-      RowContents(const char* label)
-         : isSection(true), label(label), field(nullptr), labelColor(Color::SECTION_HEADER), labelLength((uint8_t)strlen(label))
+      RowContents(const char* label, Color labelColor = Color::SECTION_HEADER)
+         : isSection(true), label(label), field(nullptr), labelColor(labelColor), labelLength((uint8_t)strlen(label))
       {
       }
 
@@ -187,6 +189,9 @@ private:
    int16_t _x;
    int16_t _y;
    uint8_t _textSize;
+   uint8_t _sectionTextSize;
+   int16_t _sectionGapPx = -1;
+   DisplayValue::Alignment _valueAlignment = DisplayValue::Alignment::LEFT;
    bool _showSections = true;
    bool _layoutDirty = true;
    int16_t _totalHeight = 0;
@@ -216,7 +221,7 @@ private:
    {
       (void)valueColor;
 
-      RowContents* row = new RowContents(_display, label, formatStr, _textSize, labelColor);
+      RowContents* row = new RowContents(_display, label, formatStr, _textSize, labelColor, _valueAlignment);
       if (row->labelLength > _maxLabelLength)
       {
          _maxLabelLength = row->labelLength;
@@ -239,7 +244,7 @@ private:
    ///
    void addRow(const char* label, const Format& format, Color labelColor = Color::LABEL)
    {
-      RowContents* row = new RowContents(_display, label, format, _textSize, labelColor);
+      RowContents* row = new RowContents(_display, label, format, _textSize, labelColor, _valueAlignment);
       if (row->labelLength > _maxLabelLength)
       {
          _maxLabelLength = row->labelLength;
@@ -256,10 +261,11 @@ private:
    /// row. Counts toward rowIndex arguments the same as a data row added via addRow().
    /// </summary>
    /// <param name="section">The section header text.</param>
+   /// <param name="labelColor">The color to draw the section header text (default: Color::SECTION_HEADER).</param>
    ///
-   void addSection(const char* section)
+   void addSection(const char* section, Color labelColor = Color::SECTION_HEADER)
    {
-      _rows.push_back(new RowContents(section));
+      _rows.push_back(new RowContents(section, labelColor));
       _layoutDirty = true;
    }
 
@@ -280,7 +286,8 @@ private:
       }
 
       int16_t rowHeight = _display->charH(_textSize);
-      int16_t halfRow = rowHeight / 2;
+      int16_t sectionRowHeight = _display->charH(_sectionTextSize);
+      int16_t sectionGap = _sectionGapPx >= 0 ? _sectionGapPx : (rowHeight / 2);
       int16_t y = 0;
 
       // Data rows are indented one character to the right of the table's own X
@@ -289,13 +296,31 @@ private:
       int16_t charW = _display->charW(_textSize);
       int16_t gapX = _x + charW + (int16_t)(_maxLabelLength * charW);
 
+      int16_t decimalAnchorOffset = 0;
+      if (_valueAlignment == DisplayValue::Alignment::DECIMAL)
+      {
+         size_t maxDecimalOffset = 0;
+         for (const RowContents* row : _rows)
+         {
+            if (!row->isSection)
+            {
+               size_t offset = row->field->format().decimalOffset();
+               if (offset > maxDecimalOffset)
+               {
+                  maxDecimalOffset = offset;
+               }
+            }
+         }
+         decimalAnchorOffset = (int16_t)(maxDecimalOffset * charW);
+      }
+
       for (size_t i = 0; i < _rows.size(); i++)
       {
          RowContents& row = *_rows[i];
 
          if (_showSections && row.isSection && i > 0)
          {
-            y += halfRow;
+            y += sectionGap;
          }
 
          row.yOffset = y;
@@ -303,6 +328,7 @@ private:
 
          if (!row.isSection)
          {
+            row.field->setDecimalAnchorOffset(decimalAnchorOffset);
             row.field->setPosition(Point16(gapX, _y + y));
          }
 
@@ -311,7 +337,7 @@ private:
             continue;
          }
 
-         y += rowHeight;
+         y += row.isSection ? sectionRowHeight : rowHeight;
       }
 
       _totalHeight = y;
@@ -335,7 +361,7 @@ public:
    /// <param name="textSize">The text size applied to every row's label and value.</param>
    ///
    FieldTable(ArduinoWithDisplay* display, int16_t x, int16_t y, uint8_t textSize = DEFAULT_TEXT_SIZE)
-      : _display(display), _x(x), _y(y), _textSize(textSize)
+      : _display(display), _x(x), _y(y), _textSize(textSize), _sectionTextSize(textSize)
    {
    }
 
@@ -351,7 +377,7 @@ public:
    /// <param name="textSize">The text size applied to every row's label and value.</param>
    ///
    FieldTable(ArduinoWithDisplay* display, int16_t x, int16_t y, std::span<const Row> rows, uint8_t textSize = DEFAULT_TEXT_SIZE)
-      : _display(display), _x(x), _y(y), _textSize(textSize)
+      : _display(display), _x(x), _y(y), _textSize(textSize), _sectionTextSize(textSize)
    {
       addRows(rows);
    }
@@ -409,7 +435,7 @@ public:
    ///
    void addRow(const char* label, ValueBase* value, Color labelColor = Color::LABEL)
    {
-      RowContents* row = new RowContents(_display, label, value, _textSize, labelColor);
+      RowContents* row = new RowContents(_display, label, value, _textSize, labelColor, _valueAlignment);
       if (row->labelLength > _maxLabelLength)
       {
          _maxLabelLength = row->labelLength;
@@ -432,7 +458,7 @@ public:
    ///
    void addRow(const char* label, const char* formatStr, float* value, Color labelColor = Color::LABEL)
    {
-      RowContents* row = new RowContents(_display, label, formatStr, value, _textSize, labelColor);
+      RowContents* row = new RowContents(_display, label, formatStr, value, _textSize, labelColor, _valueAlignment);
       if (row->labelLength > _maxLabelLength)
       {
          _maxLabelLength = row->labelLength;
@@ -468,7 +494,7 @@ public:
          }
          else if (row.formatStr == nullptr)
          {
-            addSection(row.label);
+            addSection(row.label, row.labelColor);
          }
          else
          {
@@ -514,6 +540,45 @@ public:
    void setShowSections(bool showSections)
    {
       _showSections = showSections;
+      _layoutDirty = true;
+   }
+
+   ///
+   /// <summary>
+   /// Sets the text size applied to section header rows (defaults to the table's main
+   /// text size).
+   /// </summary>
+   /// <param name="sectionTextSize">The text size for section header rows.</param>
+   ///
+   void setSectionTextSize(uint8_t sectionTextSize)
+   {
+      _sectionTextSize = sectionTextSize;
+      _layoutDirty = true;
+   }
+
+   ///
+   /// <summary>
+   /// Sets the vertical pixel gap inserted before each section header row after the
+   /// first (defaults to half a data-row height when not explicitly set).
+   /// </summary>
+   /// <param name="sectionGapPx">Vertical spacing in pixels before subsequent sections.</param>
+   ///
+   void setSectionGap(int16_t sectionGapPx)
+   {
+      _sectionGapPx = sectionGapPx;
+      _layoutDirty = true;
+   }
+
+   ///
+   /// <summary>
+   /// Sets the alignment applied to values in rows added after this call (defaults to
+   /// DisplayValue::Alignment::LEFT).
+   /// </summary>
+   /// <param name="valueAlignment">The alignment to apply to row values.</param>
+   ///
+   void setValueAlignment(DisplayValue::Alignment valueAlignment)
+   {
+      _valueAlignment = valueAlignment;
       _layoutDirty = true;
    }
 
@@ -604,6 +669,7 @@ public:
    int16_t getWidth()
    {
       int16_t charW = _display->charW(_textSize);
+      int16_t sectionCharW = _display->charW(_sectionTextSize);
 
       // Matches the gap-aligned row layout in _relayout() (one extra character width to
       // the right of the label column for the label/value gap) plus the single-space
@@ -612,21 +678,87 @@ public:
       int16_t labelWidth = (int16_t)(2 * charW) + (int16_t)(_maxLabelLength * charW);
 
       int16_t maxValueWidth = 0;
+      int16_t maxSectionWidth = 0;
+      size_t maxDecimalOffset = 0;
+      size_t maxAfterDecimalLen = 0;
+
       for (const RowContents* row : _rows)
       {
          if (row->isSection)
          {
+            if (_showSections)
+            {
+               int16_t sectionWidth = (int16_t)(row->labelLength * sectionCharW);
+               if (sectionWidth > maxSectionWidth)
+               {
+                  maxSectionWidth = sectionWidth;
+               }
+            }
             continue;
          }
 
-         int16_t valueWidth = row->field->valueWidth();
-         if (valueWidth > maxValueWidth)
+         if (_valueAlignment == DisplayValue::Alignment::DECIMAL)
          {
-            maxValueWidth = valueWidth;
+            const Format& fmt = row->field->format();
+            size_t decOffset = fmt.decimalOffset();
+            size_t afterDecLen = fmt.length() > decOffset ? (fmt.length() - decOffset) : 0;
+            if (decOffset > maxDecimalOffset)
+            {
+               maxDecimalOffset = decOffset;
+            }
+            if (afterDecLen > maxAfterDecimalLen)
+            {
+               maxAfterDecimalLen = afterDecLen;
+            }
+         }
+         else
+         {
+            int16_t valueWidth = row->field->valueWidth();
+            if (valueWidth > maxValueWidth)
+            {
+               maxValueWidth = valueWidth;
+            }
          }
       }
 
-      return labelWidth + maxValueWidth;
+      if (_valueAlignment == DisplayValue::Alignment::DECIMAL)
+      {
+         maxValueWidth = (int16_t)((maxDecimalOffset + maxAfterDecimalLen) * charW);
+      }
+
+      int16_t dataWidth = labelWidth + maxValueWidth;
+      return maxSectionWidth > dataWidth ? maxSectionWidth : dataWidth;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the top Y coordinate on screen of the row at the given index.
+   /// </summary>
+   /// <param name="rowIndex">Zero-based index of the row.</param>
+   /// <returns>The top Y coordinate of the row, in pixels.</returns>
+   ///
+   int16_t getRowY(size_t rowIndex)
+   {
+      ASSERT(rowIndex < _rows.size());
+
+      _relayout();
+      return _y + _rows[rowIndex]->yOffset;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the pixel height of the row at the given index.
+   /// </summary>
+   /// <param name="rowIndex">Zero-based index of the row.</param>
+   /// <returns>The height of the row, in pixels.</returns>
+   ///
+   int16_t getRowHeight(size_t rowIndex) const
+   {
+      ASSERT(rowIndex < _rows.size());
+
+      return _rows[rowIndex]->isSection
+         ? _display->charH(_sectionTextSize)
+         : _display->charH(_textSize);
    }
 
    ///
@@ -724,7 +856,7 @@ public:
          return;
       }
 
-      _display->setTextSize(_textSize, true);
+      _display->setTextSize(_sectionTextSize, true);
       _display->setCursor(_x, _y + row.yOffset);
       _display->println(row.label, row.labelColor, Color::BLACK);
       row.drawn = true;

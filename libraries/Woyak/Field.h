@@ -43,6 +43,7 @@ private:
    ArduinoWithDisplay* _display;
    int16_t _x;
    int16_t _y;
+   int16_t _decimalAnchorOffset = 0;
    String _label;
    bool _labelDirty = true;
    uint8_t _textSize;
@@ -65,10 +66,11 @@ public:
    ///
    Field(ArduinoWithDisplay* display, Point16 pos,
                 const char* label, const char* formatStr, uint8_t textSize,
-                Alignment alignment = Alignment::LEFT)
+                Alignment alignment = Alignment::LEFT,
+                DisplayValue::Alignment valueAlignment = DisplayValue::Alignment::LEFT)
       : _display(display), _label(label),
         _textSize(textSize), _alignment(alignment),
-        _value(display, Format(formatStr), _textSize)
+        _value(display, Format(formatStr), _textSize, valueAlignment)
    {
       setPosition(pos);
    }
@@ -105,11 +107,13 @@ public:
    /// <param name="textSize">The font size used to draw the label and value text.</param>
    /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
    /// edge (RIGHT), or the position of the gap separating label and value (GAP).</param>
+   /// <param name="valueAlignment">Controls how the value text is aligned within its fixed width.</param>
    ///
    Field(ArduinoWithDisplay* display,
                 const char* label, const char* formatStr, uint8_t textSize,
-                Alignment alignment = Alignment::LEFT)
-      : Field(display, Point16(0, 0), label, formatStr, textSize, alignment)
+                Alignment alignment = Alignment::LEFT,
+                DisplayValue::Alignment valueAlignment = DisplayValue::Alignment::LEFT)
+      : Field(display, Point16(0, 0), label, formatStr, textSize, alignment, valueAlignment)
    {
    }
 
@@ -126,13 +130,15 @@ public:
    /// <param name="textSize">The font size used to draw the label and value text.</param>
    /// <param name="alignment">Controls whether x is the field's left edge (LEFT), right
    /// edge (RIGHT), or the position of the gap separating label and value (GAP).</param>
+   /// <param name="valueAlignment">Controls how the value text is aligned within its fixed width.</param>
    ///
    Field(ArduinoWithDisplay* display,
                 const char* label, const Format& format, uint8_t textSize,
-                Alignment alignment = Alignment::LEFT)
+                Alignment alignment = Alignment::LEFT,
+                DisplayValue::Alignment valueAlignment = DisplayValue::Alignment::LEFT)
       : _display(display), _label(label),
         _textSize(textSize), _alignment(alignment),
-        _value(display, format, _textSize)
+        _value(display, format, _textSize, valueAlignment)
    {
       setPosition(Point16(0, 0));
    }
@@ -284,12 +290,36 @@ public:
             _display->print(" ", labelColor);
          }
 
-         _value.setPosition(_display->getCursorX(), _y);
+         _value.setPosition(_display->getCursorX() + _decimalAnchorOffset, _y);
 
          _labelDirty = false;
       }
 
       _value.draw(value, valueColor, backgroundColor);
+   }
+
+   ///
+   /// <summary>
+   /// Sets an X offset added to the value's position after the label separator (used by
+   /// FieldTable when decimal-aligning values across rows).
+   /// </summary>
+   /// <param name="offset">Pixel offset added to the value anchor X coordinate.</param>
+   ///
+   void setDecimalAnchorOffset(int16_t offset)
+   {
+      _decimalAnchorOffset = offset;
+      _labelDirty = true;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the Format object used by this field's value.
+   /// </summary>
+   /// <returns>The field's Format.</returns>
+   ///
+   const Format& format() const
+   {
+      return _value.format();
    }
 
    ///

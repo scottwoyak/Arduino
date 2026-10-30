@@ -55,6 +55,7 @@ private:
    // previous frame left outside the new sprite's bounds - otherwise leftover pixels (e.g.
    // an old '-' sign) never get overwritten since pushSprite() only erases its own bounds.
    int16_t _lastPushX = INT16_MIN;
+   int16_t _lastPushWidth = 0;
 
    // The last text/colors drawn, so draw() can skip identical redraws (which would
    // otherwise cost a sprite fill, text render and SPI push for no visible change).
@@ -177,43 +178,54 @@ private:
       _lastClearCount = _display->clearCount();
 
       int16_t textWidth = (int16_t)_sprite.textWidth(trimmed.c_str());
-      int16_t spriteWidth = _sprite.width();
-      int16_t textX = _alignedTextX(trimmed, textWidth, spriteWidth);
+      int16_t pushWidth = _sprite.width();
+      int16_t textX = _alignedTextX(trimmed, textWidth, pushWidth);
 
       int16_t pushX = _x;
       if (_alignment == Alignment::DECIMAL)
       {
          // shift the sprite left by the width of the characters preceding the decimal
-         // point, so the decimal point itself lands at the stored anchor position _x
+         // point, so the decimal point itself lands at the stored anchor position _x, and
+         // clip the pushed width to the trimmed text so the sprite's unused right-side
+         // capacity (sized for the maximum possible prefix length) doesn't extend past
+         // the end of the value into adjacent UI elements
          size_t charsBeforeDecimal = _charsBeforeDecimal(trimmed);
          pushX -= (int16_t)_display->charW(_textSize) * (int16_t)charsBeforeDecimal;
+         pushWidth = min(pushWidth, (int16_t)(_display->charW(_textSize) * trimmed.length()));
       }
 
       _sprite.fillScreen((uint16_t)backgroundColor);
       _sprite.setTextColor((uint16_t)valueColor, (uint16_t)backgroundColor);
       _sprite.setCursor(textX, 0);
       _sprite.print(trimmed.c_str());
+      _display->display.setClipRect(pushX, _y, pushWidth, _sprite.height());
       _sprite.pushSprite(pushX, _y);
+      _display->display.clearClipRect();
 
       // If this sprite's footprint has shifted since the previous draw() (only possible
       // with Alignment::DECIMAL, since every other alignment keeps pushX fixed at _x),
       // erase only the part of the previous footprint the new sprite doesn't cover, after
       // pushing, so pixels outside the new bounds (e.g. a '-' sign that is no longer
       // present) don't linger on screen and the value never blanks momentarily.
-      if ((_lastPushX != INT16_MIN) && (_lastPushX != pushX))
+      if (_lastPushX != INT16_MIN)
       {
-         int16_t shift = pushX - _lastPushX;
-         if (shift > 0)
+         int16_t leftClear = pushX - _lastPushX;
+         if (leftClear > 0)
          {
-            _display->fillRect(_lastPushX, _y, min(shift, spriteWidth), _sprite.height(), backgroundColor);
+            _display->fillRect(_lastPushX, _y, min(leftClear, _lastPushWidth), _sprite.height(), backgroundColor);
          }
-         else
+
+         int16_t lastRight = _lastPushX + _lastPushWidth;
+         int16_t newRight = pushX + pushWidth;
+         int16_t rightClear = lastRight - newRight;
+         if (rightClear > 0)
          {
-            int16_t strip = min((int16_t)-shift, spriteWidth);
-            _display->fillRect(_lastPushX + spriteWidth - strip, _y, strip, _sprite.height(), backgroundColor);
+            int16_t strip = min(rightClear, _lastPushWidth);
+            _display->fillRect(lastRight - strip, _y, strip, _sprite.height(), backgroundColor);
          }
       }
       _lastPushX = pushX;
+      _lastPushWidth = pushWidth;
    }
 
 public:
@@ -260,6 +272,28 @@ public:
    int16_t height() const
    {
       return (int16_t)_display->charH(_textSize);
+   }
+
+   ///
+   /// <summary>
+   /// Gets the Format object used by this DisplayValue.
+   /// </summary>
+   /// <returns>The value's Format.</returns>
+   ///
+   const Format& format() const
+   {
+      return _format;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the alignment used by this DisplayValue.
+   /// </summary>
+   /// <returns>The value's Alignment.</returns>
+   ///
+   Alignment alignment() const
+   {
+      return _alignment;
    }
 
    ///
@@ -382,16 +416,18 @@ public:
          _createSprite();
       }
 
-      // If the last draw() pushed the sprite to a shifted DECIMAL position, erase that
-      // region too, since it may fall outside the sprite's normal (_x, _y) footprint.
-      if ((_lastPushX != INT16_MIN) && (_lastPushX != _x))
+      if (_lastPushX != INT16_MIN)
       {
-         _display->fillRect(_lastPushX, _y, _sprite.width(), _sprite.height(), backgroundColor);
+         _display->fillRect(_lastPushX, _y, _lastPushWidth, _sprite.height(), backgroundColor);
       }
-      _lastPushX = _x;
+      _lastPushX = INT16_MIN;
+      _lastPushWidth = 0;
       _hasDrawn = false;
 
-      _sprite.fillScreen((uint16_t)backgroundColor);
-      _sprite.pushSprite(_x, _y);
+      if (_alignment != Alignment::DECIMAL)
+      {
+         _sprite.fillScreen((uint16_t)backgroundColor);
+         _sprite.pushSprite(_x, _y);
+      }
    }
 };

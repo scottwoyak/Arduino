@@ -12,7 +12,7 @@
 class MovingBarChart
 {
 private:
-   VerticalBar** _bars;
+   Bar** _bars;
    uint16_t _numBars;
    ColorRange* _colorRange = nullptr;
 
@@ -29,13 +29,46 @@ public:
    MovingBarChart(Rect16 rect, RangeF range, Color color, Color backgroundColor)
    {
       _numBars = rect.width;
-      _bars = new VerticalBar*[_numBars];
+      _bars = new Bar*[_numBars];
 
       Rect16 barRect(rect.x, rect.y, 1, rect.height);
       for (uint16_t i = 0; i < _numBars; i++)
       {
          barRect.x = rect.x + i;
          _bars[i] = new VerticalBar(barRect, range, color, backgroundColor);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Initializes a new center-zero instance of the MovingBarChart class, with one
+   /// CenterZeroVerticalBar per pixel of width. Positive values fill upward from the
+   /// vertical midpoint in the positive color; negative values fill downward in the
+   /// negative color.
+   /// </summary>
+   /// <param name="rect">Bounding rectangle of the chart.</param>
+   /// <param name="range">Symmetric value range mapped across each bar's height, with 0 at the vertical midpoint.</param>
+   /// <param name="positiveColor">Color used to fill upward when the value is above zero.</param>
+   /// <param name="negativeColor">Color used to fill downward when the value is below zero.</param>
+   /// <param name="backgroundColor">Color used to render the unfilled portion of each bar.</param>
+   /// <param name="centerLineColor">Color used to draw the horizontal zero line at the vertical midpoint.</param>
+   ///
+   MovingBarChart(
+      Rect16 rect,
+      RangeF range,
+      Color positiveColor,
+      Color negativeColor,
+      Color backgroundColor,
+      Color centerLineColor = Color::WHITE)
+   {
+      _numBars = rect.width;
+      _bars = new Bar*[_numBars];
+
+      Rect16 barRect(rect.x, rect.y, 1, rect.height);
+      for (uint16_t i = 0; i < _numBars; i++)
+      {
+         barRect.x = rect.x + i;
+         _bars[i] = new CenterZeroVerticalBar(barRect, range, positiveColor, negativeColor, backgroundColor, centerLineColor);
       }
    }
 
