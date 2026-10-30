@@ -592,6 +592,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Mouse_Trap/Mouse_Trap.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="MS5837_Display/MS5837_Display.vcxproj" Id="00000000-0000-0000-0000-000000000067">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
