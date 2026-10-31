@@ -245,6 +245,36 @@ private:
 
    ///
    /// <summary>
+   /// Enables or disables the external speaker amplifier (active-low).
+   /// </summary>
+   /// <param name="enabled">True to enable the amplifier; false to shut it down</param>
+   ///
+   void _setAmplifierEnabled(bool enabled)
+   {
+      if (_ampEnablePin >= 0)
+      {
+         digitalWrite(_ampEnablePin, enabled ? LOW : HIGH);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Writes silent frames to clear the I2S DMA transmit buffer before shutting down the
+   /// speaker amplifier so no non-zero sample remains latched on the codec output.
+   /// </summary>
+   ///
+   void _flushSilence()
+   {
+      static constexpr uint8_t SILENCE_FRAMES = 16;
+      std::array<int16_t, NUM_FRAME_SAMPLES * 2> silentFrame = {};
+      for (uint8_t i = 0; i < SILENCE_FRAMES; i++)
+      {
+         _writeI2s((const uint8_t*)silentFrame.data(), sizeof(silentFrame));
+      }
+   }
+
+   ///
+   /// <summary>
    /// Writes a single ES8311 codec register using the I2C driver that owns the bus.
    /// </summary>
    /// <param name="reg">Register address</param>
@@ -550,7 +580,7 @@ public:
       if (_ampEnablePin >= 0)
       {
          pinMode(_ampEnablePin, OUTPUT);
-         digitalWrite(_ampEnablePin, LOW);
+         _setAmplifierEnabled(false);
       }
 
       if (_useWire)
@@ -586,6 +616,8 @@ public:
          return;
       }
 
+      _setAmplifierEnabled(true);
+
       std::array<int16_t, NUM_FRAME_SAMPLES * 2> frame;
       const float phaseStep = 2.0f * PI * frequency / SAMPLE_RATE;
       const uint32_t numFrames = SAMPLE_RATE * spanMillis / 1000 / NUM_FRAME_SAMPLES;
@@ -610,6 +642,9 @@ public:
 
          _writeI2s((uint8_t*)frame.data(), sizeof(frame));
       }
+
+      _flushSilence();
+      _setAmplifierEnabled(false);
    }
 
    ///
@@ -654,6 +689,8 @@ public:
 
       mp3dec_init(_decoder);
 
+      _setAmplifierEnabled(true);
+
       while (size > 0 && !_stopRequested)
       {
          const int numSamples = mp3dec_decode_frame(_decoder, mp3, size, _pcm, &info);
@@ -693,6 +730,9 @@ public:
       {
          _writeI2s((uint8_t*)frame.data(), numOut * 2 * sizeof(int16_t));
       }
+
+      _flushSilence();
+      _setAmplifierEnabled(false);
    }
 
    ///
@@ -709,6 +749,8 @@ public:
          return;
       }
 
+      _setAmplifierEnabled(true);
+
       std::array<int16_t, NUM_FRAME_SAMPLES * 2> frame;
       size_t pos = 0;
       while (pos < numSamples && !_stopRequested)
@@ -723,6 +765,9 @@ public:
          _writeI2s((uint8_t*)frame.data(), count * 2 * sizeof(int16_t));
          pos += count;
       }
+
+      _flushSilence();
+      _setAmplifierEnabled(false);
    }
 
    ///
