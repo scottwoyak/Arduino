@@ -4,7 +4,8 @@
 // Monitors an SR602 PIR motion sensor on GPIO 8 and drives a trap-door servo on GPIO 7.
 // Starts with the trap door open (0 degrees) and armed. When motion is detected while the
 // trap is open, the servo moves to the closed position (90 degrees), logs a trigger
-// message to the LogServer, and ignores further motion until reopened via command.
+// message to the LogServer, and ignores further motion until reopened via command or button.
+// Pressing the button on GPIO 9 toggles the trap between open and closed.
 //
 // Exposes DeviceServer commands:
 // - GetState (gs): Reports the current trap state ("OPEN" or "CLOSED").
@@ -30,6 +31,7 @@
 #endif
 
 #include "LibraryVersion.h"
+#include "Button.h"
 
 #include "WiFiSettings.h"
 
@@ -40,6 +42,7 @@ constexpr auto SKETCH_NAME = "Mouse_Trap";
 
 constexpr uint8_t SERVO_PIN = 7;
 constexpr uint8_t MOTION_PIN = 8;
+constexpr uint8_t BUTTON_PIN = 9;
 
 constexpr uint8_t SERVO_OPEN_DEGREES = 0;
 constexpr uint8_t SERVO_CLOSED_DEGREES = 90;
@@ -71,6 +74,7 @@ SketchConfig SKETCH_CONFIG = {
 };
 
 DeviceSketch sketch(SKETCH_CONFIG);
+Button button(BUTTON_PIN);
 
 bool trapClosed = false;
 bool motionDetected = false;
@@ -162,6 +166,28 @@ void checkMotionSensor()
 
 ///
 /// <summary>
+/// Polls the button on BUTTON_PIN and toggles the trap between open and closed when pressed.
+/// </summary>
+///
+void checkButton()
+{
+   if (button.wasPressed())
+   {
+      if (trapClosed)
+      {
+         openTrap();
+         Logger.log("Mouse trap opened by button");
+      }
+      else
+      {
+         closeTrap();
+         Logger.log("Mouse trap closed by button");
+      }
+   }
+}
+
+///
+/// <summary>
 /// Handles the "GetState"/"Open"/"Close" commands registered via sketch.setCommandHandler().
 /// </summary>
 /// <param name="command">Full command text received from the DeviceServer.</param>
@@ -197,6 +223,7 @@ static void onTrapCommand(const char* command)
 void setup()
 {
    pinMode(MOTION_PIN, INPUT_PULLDOWN);
+   button.begin();
    ledcAttach(SERVO_PIN, SERVO_PWM_FREQ_HZ, SERVO_PWM_RESOLUTION_BITS);
    setServoDegrees(SERVO_OPEN_DEGREES);
 
@@ -213,6 +240,7 @@ void setup()
 
 void loop()
 {
+   checkButton();
    checkMotionSensor();
 
    sketch.loop();

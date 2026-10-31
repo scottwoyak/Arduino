@@ -600,6 +600,17 @@ public:
 
    ///
    /// <summary>
+   /// Gets the current secondary top (upward) fill magnitude.
+   /// </summary>
+   /// <returns>The current secondary top magnitude, or NAN if hidden.</returns>
+   ///
+   float getTop() const
+   {
+      return _topValue;
+   }
+
+   ///
+   /// <summary>
    /// Sets the non-negative magnitude for the secondary top (upward) fill.
    /// </summary>
    /// <param name="value">Non-negative magnitude above the center line, or NAN to hide.</param>
@@ -607,6 +618,17 @@ public:
    void setTop(float value)
    {
       _topValue = value;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the current secondary bottom (downward) fill magnitude.
+   /// </summary>
+   /// <returns>The current secondary bottom magnitude, or NAN if hidden.</returns>
+   ///
+   float getBottom() const
+   {
+      return _bottomValue;
    }
 
    ///

@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <ctime>
 #include <sstream>
 #include <string>
 
@@ -50,7 +51,7 @@
 #include "WiFiSettings.h"
 #include "ViewerSketch.h"
 
-const auto VERSION = MakeVersion("1.01");
+const auto VERSION = MakeVersion("1.02");
 constexpr auto SKETCH_NAME = "Solar_Viewer";
 
 // ----------- Enphase IQ Gateway Configuration
@@ -83,6 +84,9 @@ constexpr auto INFLUX_MEASUREMENT = "Solar";
 constexpr auto INFLUX_SITE = "Bragg";
 constexpr auto PREFERENCES_NAMESPACE = "SolarViewer";
 constexpr auto INFLUX_LOG_PREF_KEY = "influxLog";
+constexpr auto BASELINE_DAY_PREF_KEY = "baseDay";
+constexpr auto BASELINE_GW1_WH_PREF_KEY = "baseGw1Wh";
+constexpr auto BASELINE_GW2_WH_PREF_KEY = "baseGw2Wh";
 
 // Full-scale power (in kW) and daily energy (in kWh) for the vertical bar gauges.
 constexpr float MAX_POWER_KW = 20.0f;
@@ -99,6 +103,10 @@ constexpr int16_t SIDE_MARGIN_LARGE_PX = 16;
 constexpr int16_t SIDE_MARGIN_SMALL_PX = 4;
 constexpr int16_t BAR_FRAME_INSET_PX = 1;
 constexpr int16_t ZERO_TICK_LENGTH_PX = 4;
+constexpr int16_t ROLLING_LABEL_GAP_PX = 4;
+constexpr uint8_t ROLLING_LABEL_CHARS = 3;
+constexpr uint16_t ROLLING_CHART_SPAN_M = 60;
+constexpr auto ROLLING_SPAN_LABEL_TEXT = "1 hr";
 
 constexpr Color PRODUCTION_COLOR = Color565::fromRGB(0, 72, 0);
 constexpr Color CONSUMPTION_COLOR = Color565::fromRGB(72, 0, 0);
@@ -120,6 +128,9 @@ Timer pollTimer(POLL_INTERVAL_S * 1000UL);
 Influx influx(INFLUX_UPLOAD_INTERVAL_S);
 bool influxReady = false;
 bool influxLoggingEnabled = false;
+int32_t baselineDayId = -1;
+double baselineGw1WhLifetime = NAN;
+double baselineGw2WhLifetime = NAN;
 
 ///
 /// <summary>
@@ -296,7 +307,15 @@ MovingBarChart* rollingChart = nullptr;
 
 Rect16 nowFrameRect;
 Rect16 todayFrameRect;
+Rect16 rollingChartRect;
+int16_t rollingLabelRightX = 0;
+int16_t rollingRightLabelX = 0;
 bool isLargeDisplay = false;
+Timer rollingColumnTimer(POLL_INTERVAL_S * 1000UL);
+float rollingColumnSum = 0.0f;
+float rollingProdSum = 0.0f;
+float rollingConsSum = 0.0f;
+uint16_t rollingColumnSamples = 0;
 
 ///
 /// <summary>
@@ -391,14 +410,55 @@ void initLayout()
 
    int16_t rollingChartY = tableRect.y + tableRect.height + OUTER_MARGIN_PX;
    int16_t rollingChartHeight = max(static_cast<int16_t>(16), static_cast<int16_t>(displayHeight - rollingChartY));
-   Rect16 rollingRect(0, rollingChartY, displayWidth, rollingChartHeight);
+   int16_t charWidth = sketch.arduino.charW(TABLE_TEXT_SIZE);
+   rollingLabelRightX = charWidth * ROLLING_LABEL_CHARS;
+   int16_t rollingChartX = rollingLabelRightX + ROLLING_LABEL_GAP_PX;
+   int16_t rightLabelWidth = static_cast<int16_t>(strlen(ROLLING_SPAN_LABEL_TEXT)) * charWidth;
+   rollingRightLabelX = displayWidth - rightLabelWidth;
+   int16_t rollingChartRight = rollingRightLabelX - ROLLING_LABEL_GAP_PX;
+   int16_t rollingChartWidth = max(static_cast<int16_t>(16), static_cast<int16_t>(rollingChartRight - rollingChartX));
+   rollingChartRect = Rect16(rollingChartX, rollingChartY, rollingChartWidth, rollingChartHeight);
+   uint32_t columnPeriodMs = (ROLLING_CHART_SPAN_M * 60UL * 1000UL) / static_cast<uint32_t>(rollingChartWidth);
+   rollingColumnTimer.setDurationMs(max(1000UL, columnPeriodMs));
    rollingChart = new MovingBarChart(
-      rollingRect,
+      rollingChartRect,
       powerRange,
       DELTA_POSITIVE_COLOR,
       DELTA_NEGATIVE_COLOR,
       Color::BLACK,
       Color::GRAY);
+   rollingChart->setSecondaryColors(PRODUCTION_COLOR, CONSUMPTION_COLOR);
+}
+
+///
+/// <summary>
+/// Draws the right-aligned Y-axis labels ("20", "0", and "-20") in gray to the left of
+/// the bottom rolling chart and the "1 hr" X-axis span label on the far right of the
+/// zero line.
+/// </summary>
+///
+void drawRollingChartLabels()
+{
+   int16_t charWidth = sketch.arduino.charW(TABLE_TEXT_SIZE);
+   int16_t charHeight = sketch.arduino.charH(TABLE_TEXT_SIZE);
+
+   int16_t topY = rollingChartRect.y;
+   int16_t centerY = rollingChartRect.y + (rollingChartRect.height - charHeight) / 2;
+   int16_t bottomY = rollingChartRect.y + rollingChartRect.height - charHeight;
+
+   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+
+   sketch.arduino.setCursor(rollingLabelRightX - 2 * charWidth, topY);
+   sketch.arduino.print("20", Color::GRAY);
+
+   sketch.arduino.setCursor(rollingLabelRightX - charWidth, centerY);
+   sketch.arduino.print("0", Color::GRAY);
+
+   sketch.arduino.setCursor(rollingLabelRightX - 3 * charWidth, bottomY);
+   sketch.arduino.print("-20", Color::GRAY);
+
+   sketch.arduino.setCursor(rollingRightLabelX, centerY);
+   sketch.arduino.print(ROLLING_SPAN_LABEL_TEXT, Color::GRAY);
 }
 
 ///
@@ -447,13 +507,19 @@ void drawStatic()
    sketch.arduino.setCursor(0, 0);
    sketch.arduino.println("Solar Monitor", Color::HEADING);
 
-   // Bar frames
+   // Bar frames and rolling chart Y-axis labels
    drawBarFrame(nowFrameRect);
    drawBarFrame(todayFrameRect);
+   drawRollingChartLabels();
 
    nowBar->clear();
    todayBar->clear();
    rollingChart->clear();
+   rollingColumnSum = 0.0f;
+   rollingProdSum = 0.0f;
+   rollingConsSum = 0.0f;
+   rollingColumnSamples = 0;
+   rollingColumnTimer.reset();
 
    nowBar->draw(&sketch.arduino.display);
    todayBar->draw(&sketch.arduino.display);
@@ -527,6 +593,96 @@ bool fetchGatewayJson(const char* host, const char* path, const char* jwtToken, 
    }
 
    return true;
+}
+
+///
+/// <summary>
+/// Returns the current local calendar day encoded as (year * 1000 + yday), or -1 if the
+/// system clock has not yet been synchronized via NTP.
+/// </summary>
+/// <returns>Encoded local calendar day, or -1 if time is not synced.</returns>
+///
+int32_t currentLocalDayId()
+{
+   if (!TimeSync::isSynced())
+   {
+      return -1;
+   }
+
+   time_t now = time(nullptr);
+   struct tm timeInfo;
+   localtime_r(&now, &timeInfo);
+   return static_cast<int32_t>(timeInfo.tm_year) * 1000 + static_cast<int32_t>(timeInfo.tm_yday);
+}
+
+///
+/// <summary>
+/// Loads the persisted midnight lifetime Wh baselines from Preferences.
+/// </summary>
+///
+void loadDailyBaseline()
+{
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
+   baselineDayId = sketch.arduino.preferences.getInt(BASELINE_DAY_PREF_KEY, -1);
+   baselineGw1WhLifetime = sketch.arduino.preferences.getDouble(BASELINE_GW1_WH_PREF_KEY, NAN);
+   baselineGw2WhLifetime = sketch.arduino.preferences.getDouble(BASELINE_GW2_WH_PREF_KEY, NAN);
+   sketch.arduino.preferences.end();
+}
+
+///
+/// <summary>
+/// Updates and persists the start-of-day lifetime Wh baselines whenever the local calendar
+/// day advances (at midnight) or when no baseline exists yet for the current day.
+/// When initializing mid-day on first boot, seeds Gateway 1's baseline using its reported
+/// daily production (gw1PcuWhToday) if available so Today production starts with the
+/// full day's accumulated solar energy.
+/// </summary>
+/// <param name="readings">Latest raw gateway readings containing lifetime Wh accumulators.</param>
+///
+void updateDailyBaseline(const SolarReadings& readings)
+{
+   int32_t todayId = currentLocalDayId();
+   if (todayId < 0 || std::isnan(readings.gw1EimWhLifetime) || std::isnan(readings.gw2WhLifetime))
+   {
+      return;
+   }
+
+   bool dayChanged = (baselineDayId != todayId);
+   bool missingBaseline = std::isnan(baselineGw1WhLifetime) || std::isnan(baselineGw2WhLifetime);
+   if (!dayChanged && !missingBaseline)
+   {
+      return;
+   }
+
+   time_t now = time(nullptr);
+   struct tm timeInfo;
+   localtime_r(&now, &timeInfo);
+   bool nearMidnight = (timeInfo.tm_hour == 0 && timeInfo.tm_min < 5);
+
+   // At midnight rollover, snapshot both lifetime counters directly.
+   // If initializing for the very first time mid-day, back-calculate GW1's midnight
+   // baseline from gw1PcuWhToday so Today solar doesn't start at 0 mid-day.
+   if (!nearMidnight && missingBaseline && !std::isnan(readings.gw1PcuWhToday) && readings.gw1PcuWhToday > 0.0f)
+   {
+      baselineGw1WhLifetime = readings.gw1EimWhLifetime - static_cast<double>(readings.gw1PcuWhToday);
+   }
+   else
+   {
+      baselineGw1WhLifetime = readings.gw1EimWhLifetime;
+   }
+
+   baselineGw2WhLifetime = readings.gw2WhLifetime;
+   baselineDayId = todayId;
+
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+   sketch.arduino.preferences.putInt(BASELINE_DAY_PREF_KEY, baselineDayId);
+   sketch.arduino.preferences.putDouble(BASELINE_GW1_WH_PREF_KEY, baselineGw1WhLifetime);
+   sketch.arduino.preferences.putDouble(BASELINE_GW2_WH_PREF_KEY, baselineGw2WhLifetime);
+   sketch.arduino.preferences.end();
+
+   Logger.log("Saved daily solar baseline for dayId=" + std::to_string(baselineDayId) +
+      ": gw1BaseWh=" + std::to_string(baselineGw1WhLifetime) +
+      ", gw2BaseWh=" + std::to_string(baselineGw2WhLifetime));
 }
 
 ///
@@ -711,13 +867,27 @@ bool fetchSolarReadings(SolarReadings* readings)
       consWatts = readings->gw2Watts;
    }
 
-   if (!isnan(prodWhToday) && !isnan(readings->gw2WhToday))
+   // Compute Today display values from the hardware lifetime Wh accumulators relative to midnight's
+   // persisted baseline (bypassing Gateway 2's defective whToday counter).
+   updateDailyBaseline(*readings);
+
+   float netGridWhToday = readings->gw2WhToday;
+   if (!std::isnan(readings->gw1EimWhLifetime) && !std::isnan(baselineGw1WhLifetime))
    {
-      consWhToday = prodWhToday + readings->gw2WhToday;
+      prodWhToday = static_cast<float>(readings->gw1EimWhLifetime - baselineGw1WhLifetime);
    }
-   else if (!isnan(readings->gw2WhToday))
+   if (!std::isnan(readings->gw2WhLifetime) && !std::isnan(baselineGw2WhLifetime))
    {
-      consWhToday = readings->gw2WhToday;
+      netGridWhToday = static_cast<float>(readings->gw2WhLifetime - baselineGw2WhLifetime);
+   }
+
+   if (!isnan(prodWhToday) && !isnan(netGridWhToday))
+   {
+      consWhToday = prodWhToday + netGridWhToday;
+   }
+   else if (!isnan(netGridWhToday))
+   {
+      consWhToday = netGridWhToday;
    }
 
    if (isnan(prodWatts) && isnan(consWatts))
@@ -966,15 +1136,35 @@ void updateDisplay(const SolarReadings& readings)
 
    if (!isnan(readings.productionKw) && !isnan(readings.consumptionKw))
    {
-      netPowerKw = readings.productionKw - readings.consumptionKw;
+      float roundedProdKw = std::round(readings.productionKw * 10.0f) / 10.0f;
+      float roundedConsKw = std::round(readings.consumptionKw * 10.0f) / 10.0f;
+      netPowerKw = roundedProdKw - roundedConsKw;
       nowBar->set(netPowerKw);
-      rollingChart->set(netPowerKw);
-      rollingChart->draw(&sketch.arduino.display);
+
+      rollingColumnSum += netPowerKw;
+      rollingProdSum += readings.productionKw;
+      rollingConsSum += readings.consumptionKw;
+      rollingColumnSamples++;
+      if (rollingColumnTimer.ready())
+      {
+         float invSamples = 1.0f / static_cast<float>(rollingColumnSamples);
+         rollingChart->set(
+            rollingColumnSum * invSamples,
+            rollingProdSum * invSamples,
+            rollingConsSum * invSamples);
+         rollingChart->draw(&sketch.arduino.display);
+         rollingColumnSum = 0.0f;
+         rollingProdSum = 0.0f;
+         rollingConsSum = 0.0f;
+         rollingColumnSamples = 0;
+      }
    }
 
    if (!isnan(readings.productionTodayKwh) && !isnan(readings.consumptionTodayKwh))
    {
-      netEnergyKwh = readings.productionTodayKwh - readings.consumptionTodayKwh;
+      float roundedProdKwh = std::round(readings.productionTodayKwh * 10.0f) / 10.0f;
+      float roundedConsKwh = std::round(readings.consumptionTodayKwh * 10.0f) / 10.0f;
+      netEnergyKwh = roundedProdKwh - roundedConsKwh;
       todayBar->set(netEnergyKwh);
    }
 
@@ -1019,6 +1209,7 @@ void setup()
    SerialX::begin();
 
    loadInfluxLoggingSetting();
+   loadDailyBaseline();
 
    sketch.onReadings(formatReadings, "Reports the latest Enphase solar production and consumption readings");
    sketch.setCommandHandler(onSolarCommand, SOLAR_COMMANDS.data(), NUM_SOLAR_COMMANDS);

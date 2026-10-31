@@ -15,6 +15,7 @@ private:
    Bar** _bars;
    uint16_t _numBars;
    ColorRange* _colorRange = nullptr;
+   bool _isCenterZero = false;
 
 public:
    ///
@@ -61,6 +62,7 @@ public:
       Color backgroundColor,
       Color centerLineColor = Color::WHITE)
    {
+      _isCenterZero = true;
       _numBars = rect.width;
       _bars = new Bar*[_numBars];
 
@@ -105,21 +107,69 @@ public:
 
    ///
    /// <summary>
+   /// Configures the secondary top (upward) and bottom (downward) fill colors on all bars
+   /// in a center-zero chart.
+   /// </summary>
+   /// <param name="topFillColor">Color of the secondary top (upward) fill.</param>
+   /// <param name="bottomFillColor">Color of the secondary bottom (downward) fill.</param>
+   ///
+   void setSecondaryColors(Color topFillColor, Color bottomFillColor)
+   {
+      if (!_isCenterZero)
+      {
+         return;
+      }
+
+      for (uint16_t i = 0; i < _numBars; i++)
+      {
+         static_cast<CenterZeroVerticalBar*>(_bars[i])->setSecondaryColors(topFillColor, bottomFillColor);
+      }
+   }
+
+   ///
+   /// <summary>
    /// Shifts all bars left by one and sets the newest (rightmost) bar to the given value.
    /// </summary>
    /// <param name="value">The new value for the rightmost bar.</param>
    ///
    void set(float value)
    {
+      set(value, NAN, NAN);
+   }
+
+   ///
+   /// <summary>
+   /// Shifts all bars left by one and sets the newest (rightmost) bar's main signed value
+   /// along with its secondary top (upward) and bottom (downward) magnitudes.
+   /// </summary>
+   /// <param name="value">The new signed value for the rightmost bar.</param>
+   /// <param name="topValue">Non-negative magnitude for the secondary top fill, or NAN to hide.</param>
+   /// <param name="bottomValue">Non-negative magnitude for the secondary bottom fill, or NAN to hide.</param>
+   ///
+   void set(float value, float topValue, float bottomValue)
+   {
       for (uint16_t i = 0; i < _numBars - 1; i++)
       {
          _bars[i]->set(_bars[i + 1]->get());
+         if (_isCenterZero)
+         {
+            CenterZeroVerticalBar* dst = static_cast<CenterZeroVerticalBar*>(_bars[i]);
+            CenterZeroVerticalBar* src = static_cast<CenterZeroVerticalBar*>(_bars[i + 1]);
+            dst->setTop(src->getTop());
+            dst->setBottom(src->getBottom());
+         }
          if (_colorRange != nullptr)
          {
             _bars[i]->setColor(_bars[i + 1]->getColor());
          }
       }
       _bars[_numBars - 1]->set(value);
+      if (_isCenterZero)
+      {
+         CenterZeroVerticalBar* last = static_cast<CenterZeroVerticalBar*>(_bars[_numBars - 1]);
+         last->setTop(topValue);
+         last->setBottom(bottomValue);
+      }
       if (_colorRange != nullptr)
       {
          _bars[_numBars - 1]->setColor(_colorRange->getColor(value));
