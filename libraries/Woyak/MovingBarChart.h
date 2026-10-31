@@ -163,17 +163,48 @@ public:
             _bars[i]->setColor(_bars[i + 1]->getColor());
          }
       }
-      _bars[_numBars - 1]->set(value);
+      setAt(_numBars - 1, value, topValue, bottomValue);
+   }
+
+   ///
+   /// <summary>
+   /// Sets the main signed value and secondary top (upward) and bottom (downward)
+   /// magnitudes at a specific column index without shifting the chart.
+   /// </summary>
+   /// <param name="index">Zero-based bar column index.</param>
+   /// <param name="value">The signed value for the column.</param>
+   /// <param name="topValue">Non-negative magnitude for the secondary top fill, or NAN to hide.</param>
+   /// <param name="bottomValue">Non-negative magnitude for the secondary bottom fill, or NAN to hide.</param>
+   ///
+   void setAt(uint16_t index, float value, float topValue = NAN, float bottomValue = NAN)
+   {
+      if (index >= _numBars)
+      {
+         return;
+      }
+
+      _bars[index]->set(value);
       if (_isCenterZero)
       {
-         CenterZeroVerticalBar* last = static_cast<CenterZeroVerticalBar*>(_bars[_numBars - 1]);
-         last->setTop(topValue);
-         last->setBottom(bottomValue);
+         CenterZeroVerticalBar* bar = static_cast<CenterZeroVerticalBar*>(_bars[index]);
+         bar->setTop(topValue);
+         bar->setBottom(bottomValue);
       }
       if (_colorRange != nullptr)
       {
-         _bars[_numBars - 1]->setColor(_colorRange->getColor(value));
+         _bars[index]->setColor(_colorRange->getColor(value));
       }
+   }
+
+   ///
+   /// <summary>
+   /// Gets the number of single-pixel bar columns in the chart.
+   /// </summary>
+   /// <returns>The number of bar columns.</returns>
+   ///
+   uint16_t getNumBars() const
+   {
+      return _numBars;
    }
 
    ///

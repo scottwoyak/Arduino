@@ -885,4 +885,100 @@ esp32s3_dev_playground.menu.DebugLevel.debug.build.code_debug=4
 esp32s3_dev_playground.menu.DebugLevel.verbose=Verbose
 esp32s3_dev_playground.menu.DebugLevel.verbose.build.code_debug=5
 
+##############################################################
+
+waveshare_esp32_p4_touch_lcd_43.name=Waveshare 4.3 ESP32-P4-Touch-LCD
+waveshare_esp32_p4_touch_lcd_43.vid.0=0x303a
+waveshare_esp32_p4_touch_lcd_43.pid.0=0x1001
+waveshare_esp32_p4_touch_lcd_43.upload_port.0.vid=0x303a
+waveshare_esp32_p4_touch_lcd_43.upload_port.0.pid=0x1001
+
+waveshare_esp32_p4_touch_lcd_43.bootloader.tool=esptool_py
+waveshare_esp32_p4_touch_lcd_43.bootloader.tool.default=esptool_py
+
+waveshare_esp32_p4_touch_lcd_43.upload.tool=esptool_py
+waveshare_esp32_p4_touch_lcd_43.upload.tool.default=esptool_py
+waveshare_esp32_p4_touch_lcd_43.upload.tool.network=esp_ota
+
+waveshare_esp32_p4_touch_lcd_43.upload.maximum_size=4718592
+waveshare_esp32_p4_touch_lcd_43.upload.maximum_data_size=327680
+waveshare_esp32_p4_touch_lcd_43.upload.flags=
+waveshare_esp32_p4_touch_lcd_43.upload.erase_cmd=
+waveshare_esp32_p4_touch_lcd_43.upload.extra_flags=
+waveshare_esp32_p4_touch_lcd_43.upload.use_1200bps_touch=false
+waveshare_esp32_p4_touch_lcd_43.upload.wait_for_upload_port=false
+
+waveshare_esp32_p4_touch_lcd_43.serial.disableDTR=false
+waveshare_esp32_p4_touch_lcd_43.serial.disableRTS=false
+
+waveshare_esp32_p4_touch_lcd_43.build.tarch=riscv32
+waveshare_esp32_p4_touch_lcd_43.build.target=esp
+waveshare_esp32_p4_touch_lcd_43.build.mcu=esp32p4
+waveshare_esp32_p4_touch_lcd_43.build.core=esp32
+waveshare_esp32_p4_touch_lcd_43.build.variant=esp32p4
+waveshare_esp32_p4_touch_lcd_43.build.chip_variant=esp32p4
+waveshare_esp32_p4_touch_lcd_43.build.board=WAVESHARE_ESP32P4_TOUCH_LCD_43
+waveshare_esp32_p4_touch_lcd_43.build.bootloader_addr=0x2000
+waveshare_esp32_p4_touch_lcd_43.build.usb_mode=1
+waveshare_esp32_p4_touch_lcd_43.build.cdc_on_boot=0
+waveshare_esp32_p4_touch_lcd_43.build.msc_on_boot=0
+waveshare_esp32_p4_touch_lcd_43.build.dfu_on_boot=0
+waveshare_esp32_p4_touch_lcd_43.build.f_cpu=400000000L
+waveshare_esp32_p4_touch_lcd_43.build.flash_size=32MB
+waveshare_esp32_p4_touch_lcd_43.build.flash_freq=80m
+waveshare_esp32_p4_touch_lcd_43.build.img_freq=80m
+waveshare_esp32_p4_touch_lcd_43.build.flash_mode=dio
+waveshare_esp32_p4_touch_lcd_43.build.boot=qio
+waveshare_esp32_p4_touch_lcd_43.build.partitions=large_fat_32MB
+waveshare_esp32_p4_touch_lcd_43.build.defines=-DBOARD_HAS_PSRAM
+
+waveshare_esp32_p4_touch_lcd_43.menu.ChipVariant.postv3=v3.00 or newer
+waveshare_esp32_p4_touch_lcd_43.menu.ChipVariant.postv3.build.chip_variant=esp32p4
+waveshare_esp32_p4_touch_lcd_43.menu.ChipVariant.postv3.build.f_cpu=400000000L
+waveshare_esp32_p4_touch_lcd_43.menu.ChipVariant.prev3=Before v3.00
+waveshare_esp32_p4_touch_lcd_43.menu.ChipVariant.prev3.build.chip_variant=esp32p4_es
+waveshare_esp32_p4_touch_lcd_43.menu.ChipVariant.prev3.build.f_cpu=360000000L
+
+waveshare_esp32_p4_touch_lcd_43.menu.USBMode.hwcdc=Hardware CDC and JTAG
+waveshare_esp32_p4_touch_lcd_43.menu.USBMode.hwcdc.build.usb_mode=1
+waveshare_esp32_p4_touch_lcd_43.menu.USBMode.default=USB-OTG (TinyUSB)
+waveshare_esp32_p4_touch_lcd_43.menu.USBMode.default.build.usb_mode=0
+
+waveshare_esp32_p4_touch_lcd_43.menu.CDCOnBoot.cdc=Enabled
+waveshare_esp32_p4_touch_lcd_43.menu.CDCOnBoot.cdc.build.cdc_on_boot=1
+waveshare_esp32_p4_touch_lcd_43.menu.CDCOnBoot.default=Disabled
+waveshare_esp32_p4_touch_lcd_43.menu.CDCOnBoot.default.build.cdc_on_boot=0
+
+waveshare_esp32_p4_touch_lcd_43.menu.PartitionScheme.app5M_fat24M_32MB=32M Flash (4.8MB APP/22MB FATFS)
+waveshare_esp32_p4_touch_lcd_43.menu.PartitionScheme.app5M_fat24M_32MB.build.partitions=large_fat_32MB
+waveshare_esp32_p4_touch_lcd_43.menu.PartitionScheme.app5M_fat24M_32MB.upload.maximum_size=4718592
+waveshare_esp32_p4_touch_lcd_43.menu.PartitionScheme.app13M_data7M_32MB=32M Flash (13MB APP/6.75MB SPIFFS)
+waveshare_esp32_p4_touch_lcd_43.menu.PartitionScheme.app13M_data7M_32MB.build.partitions=default_32MB
+waveshare_esp32_p4_touch_lcd_43.menu.PartitionScheme.app13M_data7M_32MB.upload.maximum_size=13107200
+waveshare_esp32_p4_touch_lcd_43.menu.PartitionScheme.huge_app=Huge APP (3MB No OTA/1MB SPIFFS)
+waveshare_esp32_p4_touch_lcd_43.menu.PartitionScheme.huge_app.build.partitions=huge_app
+waveshare_esp32_p4_touch_lcd_43.menu.PartitionScheme.huge_app.upload.maximum_size=3145728
+waveshare_esp32_p4_touch_lcd_43.menu.PartitionScheme.default=Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)
+waveshare_esp32_p4_touch_lcd_43.menu.PartitionScheme.default.build.partitions=default
+waveshare_esp32_p4_touch_lcd_43.menu.PartitionScheme.default.upload.maximum_size=1310720
+
+waveshare_esp32_p4_touch_lcd_43.menu.UploadSpeed.921600=921600
+waveshare_esp32_p4_touch_lcd_43.menu.UploadSpeed.921600.upload.speed=921600
+waveshare_esp32_p4_touch_lcd_43.menu.UploadSpeed.115200=115200
+waveshare_esp32_p4_touch_lcd_43.menu.UploadSpeed.115200.upload.speed=115200
+
+waveshare_esp32_p4_touch_lcd_43.menu.DebugLevel.error=Error
+waveshare_esp32_p4_touch_lcd_43.menu.DebugLevel.error.build.code_debug=1
+waveshare_esp32_p4_touch_lcd_43.menu.DebugLevel.none=None
+waveshare_esp32_p4_touch_lcd_43.menu.DebugLevel.none.build.code_debug=0
+waveshare_esp32_p4_touch_lcd_43.menu.DebugLevel.warn=Warn
+waveshare_esp32_p4_touch_lcd_43.menu.DebugLevel.warn.build.code_debug=2
+waveshare_esp32_p4_touch_lcd_43.menu.DebugLevel.info=Info
+waveshare_esp32_p4_touch_lcd_43.menu.DebugLevel.info.build.code_debug=3
+waveshare_esp32_p4_touch_lcd_43.menu.DebugLevel.debug=Debug
+waveshare_esp32_p4_touch_lcd_43.menu.DebugLevel.debug.build.code_debug=4
+waveshare_esp32_p4_touch_lcd_43.menu.DebugLevel.verbose=Verbose
+waveshare_esp32_p4_touch_lcd_43.menu.DebugLevel.verbose.build.code_debug=5
+
+
 

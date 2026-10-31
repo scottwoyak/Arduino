@@ -57,6 +57,11 @@ using Arduino = Waveshare_ESP32S3_Touch_LCD_28;
 #include "Waveshare_ESP32S3_Touch_LCD_35.h"
 using Arduino = Waveshare_ESP32S3_Touch_LCD_35;
 
+#elif defined(ARDUINO_WAVESHARE_ESP32P4_TOUCH_LCD_43)
+
+#include "Waveshare_ESP32P4_Touch_LCD_43.h"
+using Arduino = Waveshare_ESP32P4_Touch_LCD_43;
+
 #elif defined(ARDUINO_HOSYOND_ESP32S3_TOUCH_LCD_40)
 
 #include "ViewerBoardS3.h"
