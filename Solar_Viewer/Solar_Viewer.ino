@@ -4,17 +4,13 @@
 // Polls two Enphase IQ Gateways (Envoys) over the local network via HTTPS using JWT
 // bearer tokens and renders a live view of solar production and home consumption.
 //
-// The main area above the bottom rolling chart is split horizontally:
-// - Left side: A sectioned FieldTable showing the numeric Production, Consumption, and Net
-//   values (with inline kW and kWh units) for both "Now" and "Today" in LIME and TOMATO.
-// - Right side: Two center-zero horizontal bars horizontally aligned with the "Now" and
-//   "Today" table sections. Each bar renders the Net Delta as a filled bar (filling
-//   rightward in LIME for net export and leftward in RED for net import) and fills
-//   Production (right of zero) and Consumption (left of zero) behind the net bar in
-//   darker shades of green and red.
-//
-// Along the bottom of the display, a center-zero rolling bar chart shows the recent
-// history of the "Now" net delta (production - consumption).
+// The screen is divided vertically into two sections under the "Solar Monitor" title:
+// - "Now": A 1-hour center-zero rolling bar chart of recent power (production, usage, and
+//   signed net delta in kW), followed by a single-row table of live Solar, Usage, and Net
+//   kW readings.
+// - "Today": A 24-hour center-zero chart anchored at local midnight on the left showing
+//   cumulative daily energy (production, usage, and signed net delta in kWh) across the
+//   day, followed by a single-row table of Today's Solar, Usage, and Net kWh totals.
 //
 // The layout adapts at runtime to the display's dimensions, supporting both large
 // displays (e.g. the 480x320 Hosyond ESP32-S3 Viewer board) and compact displays
@@ -41,7 +37,7 @@
 #endif
 
 #include "Bar.h"
-#include "FieldTable.h"
+#include "Field.h"
 #include "Influx.h"
 #include "LibraryVersion.h"
 #include "MovingBarChart.h"
@@ -98,19 +94,20 @@ constexpr auto NOW_SECTION_TEXT = "Now";
 constexpr auto TODAY_SECTION_TEXT = "Today";
 constexpr uint8_t HEADING_TEXT_SIZE = DEFAULT_HEADING_SIZE;
 constexpr uint8_t TABLE_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
-constexpr int16_t OUTER_MARGIN_PX = 6;
-constexpr int16_t SIDE_MARGIN_LARGE_PX = 16;
-constexpr int16_t SIDE_MARGIN_SMALL_PX = 4;
-constexpr int16_t BAR_FRAME_INSET_PX = 1;
-constexpr int16_t ZERO_TICK_LENGTH_PX = 4;
-constexpr int16_t ROLLING_LABEL_GAP_PX = 4;
-constexpr uint8_t ROLLING_LABEL_CHARS = 3;
+constexpr int16_t OUTER_MARGIN_PX = 4;
+constexpr int16_t ROW_GAP_PX = 3;
+constexpr int16_t SECTION_GAP_LARGE_PX = 20;
+constexpr int16_t SECTION_GAP_SMALL_PX = 6;
+constexpr int16_t HEADING_GAP_PX = 4;
+constexpr int16_t CHART_LABEL_GAP_PX = 4;
+constexpr uint8_t TODAY_LABEL_CHARS = 4;
+constexpr float ROTATED_HEADING_ANGLE_DEG = 270.0f;
 constexpr uint16_t ROLLING_CHART_SPAN_M = 60;
-constexpr auto ROLLING_SPAN_LABEL_TEXT = "1 hr";
+constexpr uint32_t SECONDS_PER_DAY = 24UL * 60UL * 60UL;
 
 constexpr Color PRODUCTION_COLOR = Color565::fromRGB(0, 72, 0);
 constexpr Color CONSUMPTION_COLOR = Color565::fromRGB(72, 0, 0);
-constexpr Color BAR_BACKGROUND_COLOR = Color565::fromRGB(24, 24, 24);
+constexpr Color TODAY_GRID_COLOR = Color565::fromRGB(48, 48, 48);
 constexpr Color DELTA_POSITIVE_COLOR = Color::LIME;
 constexpr Color DELTA_NEGATIVE_COLOR = Color::RED;
 
@@ -209,79 +206,6 @@ float netEnergyKwh = NAN;
 
 ///
 /// <summary>
-/// ValueBase adapter that formats a float variable and dynamically colors it via a
-/// callback for display inside a FieldTable.
-/// </summary>
-///
-class ColoredValue : public ValueBase
-{
-private:
-   const float* _value;
-   Color(*_colorFor)(float);
-
-public:
-   ///
-   /// <summary>
-   /// Initializes a new instance of the ColoredValue class.
-   /// </summary>
-   /// <param name="format">Format pattern used to render the value.</param>
-   /// <param name="value">Caller-owned variable holding the current value.</param>
-   /// <param name="colorFor">Callback mapping a value to its display color.</param>
-   ///
-   ColoredValue(const char* format, const float* value, Color(*colorFor)(float))
-      : ValueBase(format), _value(value), _colorFor(colorFor)
-   {
-   }
-
-   std::string valueText() override
-   {
-      if (isnan(*_value))
-      {
-         return _format.toNoValueString();
-      }
-
-      return _format.toString(*_value);
-   }
-
-   bool hasColor() const override
-   {
-      return true;
-   }
-
-   Color color() const override
-   {
-      return _colorFor(*_value);
-   }
-};
-
-///
-/// <summary>
-/// Returns the display color for production values.
-/// </summary>
-/// <param name="value">The production value.</param>
-/// <returns>The display color.</returns>
-///
-Color prodValueColor(float value)
-{
-   (void)value;
-   return DELTA_POSITIVE_COLOR;
-}
-
-///
-/// <summary>
-/// Returns the display color for consumption values.
-/// </summary>
-/// <param name="value">The consumption value.</param>
-/// <returns>The display color.</returns>
-///
-Color consValueColor(float value)
-{
-   (void)value;
-   return Color::TOMATO;
-}
-
-///
-/// <summary>
 /// Returns the display color for signed net delta values.
 /// </summary>
 /// <param name="value">The signed net delta value.</param>
@@ -292,24 +216,27 @@ Color deltaValueColor(float value)
    return value >= 0.0f ? DELTA_POSITIVE_COLOR : Color::TOMATO;
 }
 
-ColoredValue prodPowerValue("##.# kW", &latestReadings.productionKw, prodValueColor);
-ColoredValue consPowerValue("##.# kW", &latestReadings.consumptionKw, consValueColor);
-ColoredValue deltaPowerValue("+##.# kW", &netPowerKw, deltaValueColor);
-ColoredValue prodEnergyValue("###.# kWh", &latestReadings.productionTodayKwh, prodValueColor);
-ColoredValue consEnergyValue("###.# kWh", &latestReadings.consumptionTodayKwh, consValueColor);
-ColoredValue deltaEnergyValue("+###.# kWh", &netEnergyKwh, deltaValueColor);
+Field nowSolarField(&sketch.arduino, "Solar", "##.# kW", TABLE_TEXT_SIZE);
+Field nowUsageField(&sketch.arduino, "Usage", "##.# kW", TABLE_TEXT_SIZE);
+Field nowNetField(&sketch.arduino, "Net", "##.# kW", TABLE_TEXT_SIZE);
 
-FieldTable table(&sketch.arduino, 0, 0, TABLE_TEXT_SIZE);
+Field todaySolarField(&sketch.arduino, "Solar", "###.# kWh", TABLE_TEXT_SIZE);
+Field todayUsageField(&sketch.arduino, "Usage", "###.# kWh", TABLE_TEXT_SIZE);
+Field todayNetField(&sketch.arduino, "Net", "###.# kWh", TABLE_TEXT_SIZE);
 
-CenterZeroHorizontalBar* nowBar = nullptr;
-CenterZeroHorizontalBar* todayBar = nullptr;
 MovingBarChart* rollingChart = nullptr;
+MovingBarChart* todayChart = nullptr;
 
-Rect16 nowFrameRect;
-Rect16 todayFrameRect;
 Rect16 rollingChartRect;
-int16_t rollingLabelRightX = 0;
-int16_t rollingRightLabelX = 0;
+Rect16 todayChartRect;
+int16_t nowSectionTopY = 0;
+int16_t nowSectionHeight = 0;
+int16_t todaySectionTopY = 0;
+int16_t todaySectionHeight = 0;
+int16_t headingColWidth = 0;
+uint8_t sectionTextSize = TABLE_TEXT_SIZE;
+int16_t chartLabelRightX = 0;
+int32_t todayChartDayId = -1;
 bool isLargeDisplay = false;
 Timer rollingColumnTimer(POLL_INTERVAL_S * 1000UL);
 float rollingColumnSum = 0.0f;
@@ -319,24 +246,75 @@ uint16_t rollingColumnSamples = 0;
 
 ///
 /// <summary>
-/// Computes an inset bar rectangle inside a 1-pixel border frame.
+/// Positions three inline "Label Value" fields across a single horizontal row starting at
+/// leftX: the first field left-aligned at leftX, the second field horizontally centered
+/// between leftX and displayWidth, and the third field right-aligned against displayWidth.
 /// </summary>
-/// <param name="frameRect">The outer frame rectangle.</param>
-/// <returns>The inset rectangle for the bar fill area.</returns>
+/// <param name="leftField">Leftmost field (Solar).</param>
+/// <param name="centerField">Center field (Usage).</param>
+/// <param name="rightField">Rightmost field (Net).</param>
+/// <param name="leftX">Left X coordinate of the row region (to the right of the rotated heading).</param>
+/// <param name="y">Top Y coordinate of the row.</param>
+/// <param name="displayWidth">Total display width in pixels.</param>
+/// <param name="charWidth">Character width in pixels at TABLE_TEXT_SIZE.</param>
 ///
-Rect16 makeBarRect(const Rect16& frameRect)
+void positionOneRowFields(
+   Field* leftField,
+   Field* centerField,
+   Field* rightField,
+   int16_t leftX,
+   int16_t y,
+   int16_t displayWidth,
+   int16_t charWidth)
 {
-   return Rect16(
-      frameRect.x + BAR_FRAME_INSET_PX,
-      frameRect.y + BAR_FRAME_INSET_PX,
-      frameRect.width - 2 * BAR_FRAME_INSET_PX,
-      frameRect.height - 2 * BAR_FRAME_INSET_PX);
+   ASSERT(leftField != nullptr);
+   ASSERT(centerField != nullptr);
+   ASSERT(rightField != nullptr);
+
+   int16_t availableWidth = displayWidth - leftX;
+   int16_t centerFieldWidth = static_cast<int16_t>((strlen(centerField->label()) + 1) * charWidth) + centerField->valueWidth();
+   int16_t rightFieldWidth = static_cast<int16_t>((strlen(rightField->label()) + 1) * charWidth) + rightField->valueWidth();
+
+   leftField->setPosition(leftX, y);
+   centerField->setPosition(leftX + (availableWidth - centerFieldWidth) / 2, y);
+   rightField->setPosition(displayWidth - rightFieldWidth, y);
 }
 
 ///
 /// <summary>
-/// Computes the responsive display layout and constructs the left-side FieldTable and
-/// right-side horizontal bar gauges aligned with the table sections.
+/// Draws a section heading rotated 90 degrees counter-clockwise (reading bottom-to-top)
+/// within the left heading column, vertically centered along the section.
+/// </summary>
+/// <param name="text">Heading text to draw.</param>
+/// <param name="sectionTopY">Top Y coordinate of the section.</param>
+/// <param name="sectionHeight">Total pixel height of the section.</param>
+///
+void drawRotatedSectionHeading(const char* text, int16_t sectionTopY, int16_t sectionHeight)
+{
+   int16_t charW = sketch.arduino.charW(sectionTextSize);
+   int16_t charH = sketch.arduino.charH(sectionTextSize);
+   int16_t spriteW = static_cast<int16_t>(strlen(text)) * charW;
+   int16_t spriteH = charH;
+
+   LGFX_Sprite sprite(&sketch.arduino.display);
+   sketch.arduino.createSprite(sprite, spriteW, spriteH, sectionTextSize);
+   sprite.fillScreen(static_cast<uint16_t>(Color::BLACK));
+   sprite.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(Color::BLACK));
+   sprite.setCursor(0, 0);
+   sprite.print(text);
+   sprite.setPivot(spriteW / 2.0f, spriteH / 2.0f);
+
+   float dstX = headingColWidth / 2.0f;
+   float dstY = sectionTopY + sectionHeight / 2.0f;
+   sprite.pushRotateZoom(dstX, dstY, ROTATED_HEADING_ANGLE_DEG, 1.0f, 1.0f);
+   sprite.deleteSprite();
+}
+
+///
+/// <summary>
+/// Computes the responsive display layout for the "Now" section (rotated left heading,
+/// 1-hour rolling chart, and 1-row Solar/Usage/Net table) and the "Today" section
+/// (rotated left heading, 24-hour midnight-anchored chart, and 1-row Solar/Usage/Net table).
 /// </summary>
 ///
 void initLayout()
@@ -345,80 +323,52 @@ void initLayout()
    int16_t displayHeight = sketch.arduino.height();
    isLargeDisplay = displayHeight >= LARGE_DISPLAY_MIN_HEIGHT;
 
-   int16_t sideMargin = isLargeDisplay ? SIDE_MARGIN_LARGE_PX : SIDE_MARGIN_SMALL_PX;
-
    int16_t titleHeight = sketch.arduino.charH(HEADING_TEXT_SIZE);
    int16_t rowHeight = sketch.arduino.charH(TABLE_TEXT_SIZE);
+   int16_t charWidth = sketch.arduino.charW(TABLE_TEXT_SIZE);
 
-   // Populate the left-side table rows (grouped into Now and Today sections)
-   table.setSectionTextSize(TABLE_TEXT_SIZE + 1);
-   table.setSectionGap(rowHeight);
-   table.setValueAlignment(DisplayValue::Alignment::DECIMAL);
-   FieldTable::Row rows[] = {
-      FieldTable::Row(NOW_SECTION_TEXT, Color::WHITE),
-      FieldTable::Row("Solar", &prodPowerValue, Color::GRAY),
-      FieldTable::Row("Usage", &consPowerValue, Color::GRAY),
-      FieldTable::Row("Net", &deltaPowerValue, Color::GRAY),
-      FieldTable::Row(TODAY_SECTION_TEXT, Color::WHITE),
-      FieldTable::Row("Solar", &prodEnergyValue, Color::GRAY),
-      FieldTable::Row("Usage", &consEnergyValue, Color::GRAY),
-      FieldTable::Row("Net", &deltaEnergyValue, Color::GRAY),
-   };
-   table.addRows(rows);
+   sectionTextSize = isLargeDisplay ? static_cast<uint8_t>(TABLE_TEXT_SIZE + 1) : TABLE_TEXT_SIZE;
+   headingColWidth = sketch.arduino.charH(sectionTextSize);
+   int16_t topGap = isLargeDisplay ? OUTER_MARGIN_PX : 1;
+   int16_t itemGap = isLargeDisplay ? ROW_GAP_PX : 1;
+   int16_t sectionGap = isLargeDisplay ? SECTION_GAP_LARGE_PX : SECTION_GAP_SMALL_PX;
 
-   int16_t contentTopY = titleHeight + OUTER_MARGIN_PX;
-   table.setPosition(
-      0,
-      contentTopY,
-      Anchor::TOP_LEFT);
+   // Place content (Y-axis labels + chart, and the one-row value tables) to the right of
+   // the rotated section heading column.
+   int16_t contentLeftX = headingColWidth + HEADING_GAP_PX;
+   chartLabelRightX = contentLeftX + charWidth * TODAY_LABEL_CHARS;
+   int16_t chartX = chartLabelRightX + CHART_LABEL_GAP_PX;
+   int16_t chartWidth = max(static_cast<int16_t>(16), static_cast<int16_t>(displayWidth - chartX));
 
-   // Place two horizontal bars ("Now" and "Today") to the right of the table,
-   // vertically spanning the data rows of each corresponding table section
-   Rect16 tableRect = table.getRect();
-   int16_t barX = tableRect.x + tableRect.width + sideMargin;
-   int16_t barWidth = max(static_cast<int16_t>(16), static_cast<int16_t>(displayWidth - sideMargin - barX));
+   // With the headings rotated on the left, all remaining vertical space goes to the two
+   // charts and two single-row tables.
+   int16_t fixedHeight = titleHeight + topGap +
+      itemGap + rowHeight + sectionGap +
+      itemGap + rowHeight;
+   int16_t totalChartHeight = max(static_cast<int16_t>(32), static_cast<int16_t>(displayHeight - fixedHeight));
+   int16_t nowChartHeight = totalChartHeight / 2;
+   int16_t todayChartHeight = totalChartHeight - nowChartHeight;
 
-   // Row indices: 0 = "Now", 1..3 = Now Prod/Cons/Net, 4 = "Today", 5..7 = Today Prod/Cons/Net
-   int16_t nowTopY = table.getRowY(1);
-   int16_t nowBottomY = table.getRowY(3) + table.getRowHeight(3);
-   int16_t todayTopY = table.getRowY(5);
-   int16_t todayBottomY = table.getRowY(7) + table.getRowHeight(7);
+   int16_t rollingChartY = titleHeight + topGap;
+   int16_t nowRowY = rollingChartY + nowChartHeight + itemGap;
+   nowSectionTopY = rollingChartY;
+   nowSectionHeight = (nowRowY + rowHeight) - rollingChartY;
 
-   nowFrameRect = Rect16(barX, nowTopY, barWidth, nowBottomY - nowTopY);
-   todayFrameRect = Rect16(barX, todayTopY, barWidth, todayBottomY - todayTopY);
+   int16_t todayChartY = nowRowY + rowHeight + sectionGap;
+   int16_t todayRowY = todayChartY + todayChartHeight + itemGap;
+   todaySectionTopY = todayChartY;
+   todaySectionHeight = (todayRowY + rowHeight) - todayChartY;
+
+   rollingChartRect = Rect16(chartX, rollingChartY, chartWidth, nowChartHeight);
+   todayChartRect = Rect16(chartX, todayChartY, chartWidth, todayChartHeight);
+
+   positionOneRowFields(&nowSolarField, &nowUsageField, &nowNetField, chartX, nowRowY, displayWidth, charWidth);
+   positionOneRowFields(&todaySolarField, &todayUsageField, &todayNetField, chartX, todayRowY, displayWidth, charWidth);
 
    RangeF powerRange(-MAX_POWER_KW, MAX_POWER_KW);
    RangeF energyRange(-MAX_ENERGY_KWH, MAX_ENERGY_KWH);
 
-   nowBar = new CenterZeroHorizontalBar(
-      makeBarRect(nowFrameRect),
-      powerRange,
-      DELTA_POSITIVE_COLOR,
-      DELTA_NEGATIVE_COLOR,
-      BAR_BACKGROUND_COLOR);
-   nowBar->setSecondaryColors(PRODUCTION_COLOR, CONSUMPTION_COLOR);
-   nowBar->setShowCenterLine(false);
-
-   todayBar = new CenterZeroHorizontalBar(
-      makeBarRect(todayFrameRect),
-      energyRange,
-      DELTA_POSITIVE_COLOR,
-      DELTA_NEGATIVE_COLOR,
-      BAR_BACKGROUND_COLOR);
-   todayBar->setSecondaryColors(PRODUCTION_COLOR, CONSUMPTION_COLOR);
-   todayBar->setShowCenterLine(false);
-
-   int16_t rollingChartY = tableRect.y + tableRect.height + OUTER_MARGIN_PX;
-   int16_t rollingChartHeight = max(static_cast<int16_t>(16), static_cast<int16_t>(displayHeight - rollingChartY));
-   int16_t charWidth = sketch.arduino.charW(TABLE_TEXT_SIZE);
-   rollingLabelRightX = charWidth * ROLLING_LABEL_CHARS;
-   int16_t rollingChartX = rollingLabelRightX + ROLLING_LABEL_GAP_PX;
-   int16_t rightLabelWidth = static_cast<int16_t>(strlen(ROLLING_SPAN_LABEL_TEXT)) * charWidth;
-   rollingRightLabelX = displayWidth - rightLabelWidth;
-   int16_t rollingChartRight = rollingRightLabelX - ROLLING_LABEL_GAP_PX;
-   int16_t rollingChartWidth = max(static_cast<int16_t>(16), static_cast<int16_t>(rollingChartRight - rollingChartX));
-   rollingChartRect = Rect16(rollingChartX, rollingChartY, rollingChartWidth, rollingChartHeight);
-   uint32_t columnPeriodMs = (ROLLING_CHART_SPAN_M * 60UL * 1000UL) / static_cast<uint32_t>(rollingChartWidth);
+   uint32_t columnPeriodMs = (ROLLING_CHART_SPAN_M * 60UL * 1000UL) / static_cast<uint32_t>(chartWidth);
    rollingColumnTimer.setDurationMs(max(1000UL, columnPeriodMs));
    rollingChart = new MovingBarChart(
       rollingChartRect,
@@ -428,74 +378,72 @@ void initLayout()
       Color::BLACK,
       Color::GRAY);
    rollingChart->setSecondaryColors(PRODUCTION_COLOR, CONSUMPTION_COLOR);
+
+   todayChart = new MovingBarChart(
+      todayChartRect,
+      energyRange,
+      DELTA_POSITIVE_COLOR,
+      DELTA_NEGATIVE_COLOR,
+      Color::BLACK,
+      Color::GRAY);
+   todayChart->setSecondaryColors(PRODUCTION_COLOR, CONSUMPTION_COLOR);
 }
 
 ///
 /// <summary>
-/// Draws the right-aligned Y-axis labels ("20", "0", and "-20") in gray to the left of
-/// the bottom rolling chart and the "1 hr" X-axis span label on the far right of the
-/// zero line.
+/// Draws the right-aligned Y-axis labels (top, "0", and bottom) in gray to the left of a
+/// center-zero chart.
 /// </summary>
+/// <param name="chartRect">Bounding rectangle of the chart.</param>
+/// <param name="topLabel">Top positive full-scale label text.</param>
+/// <param name="bottomLabel">Bottom negative full-scale label text.</param>
 ///
-void drawRollingChartLabels()
+void drawChartLabels(
+   const Rect16& chartRect,
+   const char* topLabel,
+   const char* bottomLabel)
 {
    int16_t charWidth = sketch.arduino.charW(TABLE_TEXT_SIZE);
    int16_t charHeight = sketch.arduino.charH(TABLE_TEXT_SIZE);
 
-   int16_t topY = rollingChartRect.y;
-   int16_t centerY = rollingChartRect.y + (rollingChartRect.height - charHeight) / 2;
-   int16_t bottomY = rollingChartRect.y + rollingChartRect.height - charHeight;
+   int16_t topY = chartRect.y;
+   int16_t centerY = chartRect.y + (chartRect.height - charHeight) / 2;
+   int16_t bottomY = chartRect.y + chartRect.height - charHeight;
 
    sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
 
-   sketch.arduino.setCursor(rollingLabelRightX - 2 * charWidth, topY);
-   sketch.arduino.print("20", Color::GRAY);
+   int16_t topChars = static_cast<int16_t>(strlen(topLabel));
+   sketch.arduino.setCursor(chartLabelRightX - topChars * charWidth, topY);
+   sketch.arduino.print(topLabel, Color::GRAY);
 
-   sketch.arduino.setCursor(rollingLabelRightX - charWidth, centerY);
+   sketch.arduino.setCursor(chartLabelRightX - charWidth, centerY);
    sketch.arduino.print("0", Color::GRAY);
 
-   sketch.arduino.setCursor(rollingLabelRightX - 3 * charWidth, bottomY);
-   sketch.arduino.print("-20", Color::GRAY);
-
-   sketch.arduino.setCursor(rollingRightLabelX, centerY);
-   sketch.arduino.print(ROLLING_SPAN_LABEL_TEXT, Color::GRAY);
+   int16_t bottomChars = static_cast<int16_t>(strlen(bottomLabel));
+   sketch.arduino.setCursor(chartLabelRightX - bottomChars * charWidth, bottomY);
+   sketch.arduino.print(bottomLabel, Color::GRAY);
 }
 
 ///
 /// <summary>
-/// Draws a 1-pixel frame rectangle on the display with top and bottom outside tick
-/// marks at the horizontal zero midpoint.
+/// Draws faint vertical reference lines across the Today 24-hour chart at 06:00 (25%),
+/// 12:00 (50%), and 18:00 (75%).
 /// </summary>
-/// <param name="frameRect">The rectangle to draw.</param>
 ///
-void drawBarFrame(const Rect16& frameRect)
+void drawTodayGridLines()
 {
-   uint16_t frameColor = static_cast<uint16_t>(Color::DARKGRAY);
-   uint16_t tickColor = static_cast<uint16_t>(Color::GRAY);
-   sketch.arduino.display.drawRect(
-      frameRect.x,
-      frameRect.y,
-      frameRect.width,
-      frameRect.height,
-      frameColor);
-
-   int16_t centerX = frameRect.x + frameRect.width / 2;
-   sketch.arduino.display.drawFastVLine(
-      centerX,
-      frameRect.y - ZERO_TICK_LENGTH_PX,
-      ZERO_TICK_LENGTH_PX,
-      tickColor);
-   sketch.arduino.display.drawFastVLine(
-      centerX,
-      frameRect.y + frameRect.height,
-      ZERO_TICK_LENGTH_PX,
-      tickColor);
+   uint16_t gridColor = static_cast<uint16_t>(TODAY_GRID_COLOR);
+   for (uint8_t quarter = 1; quarter <= 3; quarter++)
+   {
+      int16_t lineX = todayChartRect.x + (todayChartRect.width * quarter) / 4;
+      sketch.arduino.display.drawFastVLine(lineX, todayChartRect.y, todayChartRect.height, gridColor);
+   }
 }
 
 ///
 /// <summary>
-/// Draws the static screen elements (title and horizontal bar frames) and resets the
-/// dynamic fields for a full redraw.
+/// Draws the static screen elements (title, section headings, and chart labels) and
+/// resets the dynamic fields and charts for a full redraw.
 /// </summary>
 ///
 void drawStatic()
@@ -507,26 +455,40 @@ void drawStatic()
    sketch.arduino.setCursor(0, 0);
    sketch.arduino.println("Solar Monitor", Color::HEADING);
 
-   // Bar frames and rolling chart Y-axis labels
-   drawBarFrame(nowFrameRect);
-   drawBarFrame(todayFrameRect);
-   drawRollingChartLabels();
+   // Rotated section headings on the left
+   drawRotatedSectionHeading(NOW_SECTION_TEXT, nowSectionTopY, nowSectionHeight);
+   drawRotatedSectionHeading(TODAY_SECTION_TEXT, todaySectionTopY, todaySectionHeight);
 
-   nowBar->clear();
-   todayBar->clear();
+   // Chart Y-axis labels
+   drawChartLabels(rollingChartRect, "20", "-20");
+   drawChartLabels(todayChartRect, "200", "-200");
+
    rollingChart->clear();
+   todayChart->clear();
+   todayChartDayId = currentLocalDayId();
    rollingColumnSum = 0.0f;
    rollingProdSum = 0.0f;
    rollingConsSum = 0.0f;
    rollingColumnSamples = 0;
    rollingColumnTimer.reset();
 
-   nowBar->draw(&sketch.arduino.display);
-   todayBar->draw(&sketch.arduino.display);
    rollingChart->draw(&sketch.arduino.display);
+   todayChart->draw(&sketch.arduino.display);
+   drawTodayGridLines();
 
-   table.invalidate();
-   table.draw();
+   nowSolarField.invalidate();
+   nowUsageField.invalidate();
+   nowNetField.invalidate();
+   todaySolarField.invalidate();
+   todayUsageField.invalidate();
+   todayNetField.invalidate();
+
+   nowSolarField.draw(latestReadings.productionKw, Color::GRAY, DELTA_POSITIVE_COLOR);
+   nowUsageField.draw(latestReadings.consumptionKw, Color::GRAY, Color::TOMATO);
+   nowNetField.draw(fabsf(netPowerKw), Color::GRAY, deltaValueColor(netPowerKw));
+   todaySolarField.draw(latestReadings.productionTodayKwh, Color::GRAY, DELTA_POSITIVE_COLOR);
+   todayUsageField.draw(latestReadings.consumptionTodayKwh, Color::GRAY, Color::TOMATO);
+   todayNetField.draw(fabsf(netEnergyKwh), Color::GRAY, deltaValueColor(netEnergyKwh));
 }
 
 ///
@@ -1109,37 +1071,18 @@ void onSolarCommand(const char* command)
 
 ///
 /// <summary>
-/// Updates the horizontal bars, rolling chart, and left-side FieldTable with the latest
-/// solar readings.
+/// Updates the 1-hour rolling chart, the 24-hour midnight-anchored Today chart, and the
+/// Now/Today one-row Field tables with the latest solar readings.
 /// </summary>
 /// <param name="readings">The solar readings to render.</param>
 ///
 void updateDisplay(const SolarReadings& readings)
 {
-   if (!isnan(readings.productionKw))
-   {
-      nowBar->setRight(readings.productionKw);
-   }
-   if (!isnan(readings.productionTodayKwh))
-   {
-      todayBar->setRight(readings.productionTodayKwh);
-   }
-
-   if (!isnan(readings.consumptionKw))
-   {
-      nowBar->setLeft(readings.consumptionKw);
-   }
-   if (!isnan(readings.consumptionTodayKwh))
-   {
-      todayBar->setLeft(readings.consumptionTodayKwh);
-   }
-
    if (!isnan(readings.productionKw) && !isnan(readings.consumptionKw))
    {
       float roundedProdKw = std::round(readings.productionKw * 10.0f) / 10.0f;
       float roundedConsKw = std::round(readings.consumptionKw * 10.0f) / 10.0f;
       netPowerKw = roundedProdKw - roundedConsKw;
-      nowBar->set(netPowerKw);
 
       rollingColumnSum += netPowerKw;
       rollingProdSum += readings.productionKw;
@@ -1165,12 +1108,47 @@ void updateDisplay(const SolarReadings& readings)
       float roundedProdKwh = std::round(readings.productionTodayKwh * 10.0f) / 10.0f;
       float roundedConsKwh = std::round(readings.consumptionTodayKwh * 10.0f) / 10.0f;
       netEnergyKwh = roundedProdKwh - roundedConsKwh;
-      todayBar->set(netEnergyKwh);
+
+      if (TimeSync::isSynced())
+      {
+         int32_t dayId = currentLocalDayId();
+         if (todayChartDayId != dayId)
+         {
+            todayChart->clear();
+            todayChartDayId = dayId;
+         }
+
+         time_t now = time(nullptr);
+         struct tm timeInfo;
+         localtime_r(&now, &timeInfo);
+         uint32_t secondsSinceMidnight =
+            static_cast<uint32_t>(timeInfo.tm_hour) * 3600UL +
+            static_cast<uint32_t>(timeInfo.tm_min) * 60UL +
+            static_cast<uint32_t>(timeInfo.tm_sec);
+
+         uint16_t numCols = todayChart->getNumBars();
+         if (numCols > 0)
+         {
+            uint16_t colIndex = static_cast<uint16_t>(
+               min(static_cast<uint32_t>(numCols - 1), (secondsSinceMidnight * numCols) / SECONDS_PER_DAY));
+            todayChart->setAt(
+               colIndex,
+               netEnergyKwh,
+               readings.productionTodayKwh,
+               readings.consumptionTodayKwh);
+            todayChart->draw(&sketch.arduino.display);
+            drawTodayGridLines();
+         }
+      }
    }
 
-   nowBar->draw(&sketch.arduino.display);
-   todayBar->draw(&sketch.arduino.display);
-   table.draw();
+   nowSolarField.draw(readings.productionKw, Color::GRAY, DELTA_POSITIVE_COLOR);
+   nowUsageField.draw(readings.consumptionKw, Color::GRAY, Color::TOMATO);
+   nowNetField.draw(fabsf(netPowerKw), Color::GRAY, deltaValueColor(netPowerKw));
+
+   todaySolarField.draw(readings.productionTodayKwh, Color::GRAY, DELTA_POSITIVE_COLOR);
+   todayUsageField.draw(readings.consumptionTodayKwh, Color::GRAY, Color::TOMATO);
+   todayNetField.draw(fabsf(netEnergyKwh), Color::GRAY, deltaValueColor(netEnergyKwh));
 }
 
 ///
