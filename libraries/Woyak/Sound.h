@@ -157,6 +157,7 @@ private:
    uint8_t _sdaPin;
    uint8_t _sclPin;
    bool _useWire;
+   bool _ampActiveLow;
    I2SClass _i2s;
    mp3dec_t* _decoder = nullptr;
    int16_t* _pcm = nullptr;
@@ -245,7 +246,7 @@ private:
 
    ///
    /// <summary>
-   /// Enables or disables the external speaker amplifier (active-low).
+   /// Enables or disables the external speaker amplifier.
    /// </summary>
    /// <param name="enabled">True to enable the amplifier; false to shut it down</param>
    ///
@@ -253,7 +254,8 @@ private:
    {
       if (_ampEnablePin >= 0)
       {
-         digitalWrite(_ampEnablePin, enabled ? LOW : HIGH);
+         bool activeHigh = !_ampActiveLow;
+         digitalWrite(_ampEnablePin, (enabled == activeHigh) ? HIGH : LOW);
       }
    }
 
@@ -382,6 +384,7 @@ public:
    /// <param name="sdaPin">I2C data pin for the ES8311 codec</param>
    /// <param name="sclPin">I2C clock pin for the ES8311 codec</param>
    /// <param name="useWire">True to access the ES8311 codec via Arduino's Wire instead of lgfx::i2c</param>
+   /// <param name="ampActiveLow">True if the amplifier enable pin is active-low; false if active-high</param>
    ///
    Sound(
       int8_t ampEnablePin = DEFAULT_AMP_ENABLE_PIN,
@@ -392,7 +395,8 @@ public:
       uint8_t dinPin = DEFAULT_I2S_DIN_PIN,
       uint8_t sdaPin = DEFAULT_I2C_SDA_PIN,
       uint8_t sclPin = DEFAULT_I2C_SCL_PIN,
-      bool useWire = false)
+      bool useWire = false,
+      bool ampActiveLow = true)
       : _ampEnablePin(ampEnablePin),
         _mclkPin(mclkPin),
         _bclkPin(bclkPin),
@@ -401,7 +405,8 @@ public:
         _dinPin(dinPin),
         _sdaPin(sdaPin),
         _sclPin(sclPin),
-        _useWire(useWire)
+        _useWire(useWire),
+        _ampActiveLow(ampActiveLow)
    {
    }
 
