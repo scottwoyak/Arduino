@@ -659,6 +659,9 @@ bool fetchSolarReadings(SolarReadings* readings)
 {
    ASSERT(readings != nullptr);
 
+   SolarReadings previousReadings = *readings;
+   *readings = SolarReadings();
+
    JsonDocument doc;
    float prodWatts = NAN;
    float prodWhToday = NAN;
@@ -820,13 +823,23 @@ bool fetchSolarReadings(SolarReadings* readings)
 
    // Compensate display consumption using Gateway 1 solar production + signed Gateway 2 net meter flow
    // (when exporting, gw2Watts is negative so Usage = Solar - Export; when importing, Usage = Solar + Import).
-   if (!isnan(prodWatts) && !isnan(readings->gw2Watts))
+   // Only use the previous poll's Gateway 2 reading as a fallback if Gateway 2 failed to respond this cycle
+   // AND that previous reading is non-negative (since combining a stale negative export reading with a new
+   // lower solar production value can falsely clamp Usage to 0).
+   float gw2NetWatts = readings->gw2Watts;
+   if (isnan(gw2NetWatts) && !isnan(readings->gw2L1Watts) && !isnan(readings->gw2L2Watts))
    {
-      consWatts = prodWatts + readings->gw2Watts;
+      gw2NetWatts = readings->gw2L1Watts + readings->gw2L2Watts;
+      readings->gw2Watts = gw2NetWatts;
    }
-   else if (!isnan(readings->gw2Watts))
+
+   if (!isnan(prodWatts) && !isnan(gw2NetWatts))
    {
-      consWatts = readings->gw2Watts;
+      consWatts = prodWatts + gw2NetWatts;
+   }
+   else if (!isnan(gw2NetWatts))
+   {
+      consWatts = gw2NetWatts;
    }
 
    // Compute Today display values from the hardware lifetime Wh accumulators relative to midnight's
@@ -854,26 +867,23 @@ bool fetchSolarReadings(SolarReadings* readings)
 
    if (isnan(prodWatts) && isnan(consWatts))
    {
+      *readings = previousReadings;
       Logger.log("Enphase poll failed to retrieve both production and consumption wNow", LogSeverity::WARN);
       return false;
    }
 
-   if (!isnan(prodWatts))
-   {
-      readings->productionKw = max(0.0f, prodWatts / WATTS_PER_KW);
-   }
-   if (!isnan(prodWhToday))
-   {
-      readings->productionTodayKwh = max(0.0f, prodWhToday / WATTS_PER_KW);
-   }
-   if (!isnan(consWatts))
-   {
-      readings->consumptionKw = max(0.0f, consWatts / WATTS_PER_KW);
-   }
-   if (!isnan(consWhToday))
-   {
-      readings->consumptionTodayKwh = max(0.0f, consWhToday / WATTS_PER_KW);
-   }
+   readings->productionKw = !isnan(prodWatts)
+      ? max(0.0f, prodWatts / WATTS_PER_KW)
+      : previousReadings.productionKw;
+   readings->productionTodayKwh = !isnan(prodWhToday)
+      ? max(0.0f, prodWhToday / WATTS_PER_KW)
+      : previousReadings.productionTodayKwh;
+   readings->consumptionKw = (!isnan(consWatts) && consWatts >= 0.0f)
+      ? (consWatts / WATTS_PER_KW)
+      : previousReadings.consumptionKw;
+   readings->consumptionTodayKwh = (!isnan(consWhToday) && consWhToday >= 0.0f)
+      ? (consWhToday / WATTS_PER_KW)
+      : previousReadings.consumptionTodayKwh;
 
    readings->valid = true;
    return true;
