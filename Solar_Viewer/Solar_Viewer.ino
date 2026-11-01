@@ -74,7 +74,7 @@ constexpr auto ENPHASE_PDM_ENERGY_PATH = "/ivp/pdm/energy";
 constexpr auto ENPHASE_METERS_READINGS_PATH = "/ivp/meters/readings";
 constexpr uint32_t GW2_NET_CONSUMPTION_EID = 704643584UL;
 constexpr uint16_t HTTP_TIMEOUT_MS = 10000;
-constexpr uint8_t POLL_INTERVAL_S = 5;
+constexpr uint8_t POLL_INTERVAL_S = 15;
 constexpr uint8_t INFLUX_UPLOAD_INTERVAL_S = 30;
 constexpr auto INFLUX_MEASUREMENT = "Solar";
 constexpr auto INFLUX_SITE = "Bragg";
@@ -83,6 +83,10 @@ constexpr auto INFLUX_LOG_PREF_KEY = "influxLog";
 constexpr auto BASELINE_DAY_PREF_KEY = "baseDay";
 constexpr auto BASELINE_GW1_WH_PREF_KEY = "baseGw1Wh";
 constexpr auto BASELINE_GW2_WH_PREF_KEY = "baseGw2Wh";
+constexpr auto TODAY_CHART_DAY_PREF_KEY = "todayDay";
+constexpr auto TODAY_CHART_BINS_PREF_KEY = "todayBins";
+constexpr uint16_t EMPTY_TENTHS_KWH = 0xFFFF;
+constexpr uint16_t MAX_TODAY_CHART_COLS = 480;
 
 // Full-scale power (in kW) and daily energy (in kWh) for the vertical bar gauges.
 constexpr float MAX_POWER_KW = 20.0f;
@@ -206,6 +210,25 @@ float netEnergyKwh = NAN;
 
 ///
 /// <summary>
+/// Maintains a persistent HTTPS connection and cached Envoy sessionId cookie for a single
+/// Enphase IQ Gateway so polls reuse both the TLS socket and the authenticated session.
+/// </summary>
+///
+struct GatewayClient
+{
+   const char* host = nullptr;
+   const char* jwtToken = nullptr;
+   WiFiClientSecure tlsClient;
+   HTTPClient http;
+   std::string sessionCookie;
+   bool configured = false;
+};
+
+GatewayClient prodGateway = { .host = ENPHASE_PROD_HOST, .jwtToken = ENPHASE_PROD_JWT_TOKEN };
+GatewayClient consGateway = { .host = ENPHASE_CONS_HOST, .jwtToken = ENPHASE_CONS_JWT_TOKEN };
+
+///
+/// <summary>
 /// Returns the display color for signed net delta values.
 /// </summary>
 /// <param name="value">The signed net delta value.</param>
@@ -224,8 +247,21 @@ Field todaySolarField(&sketch.arduino, "Solar", "###.# kWh", TABLE_TEXT_SIZE);
 Field todayUsageField(&sketch.arduino, "Usage", "###.# kWh", TABLE_TEXT_SIZE);
 Field todayNetField(&sketch.arduino, "Net", "###.# kWh", TABLE_TEXT_SIZE);
 
+///
+/// <summary>
+/// Stores a single column of the 24-hour Today chart in tenths of a kWh (or
+/// EMPTY_TENTHS_KWH when the column has not yet been recorded today).
+/// </summary>
+///
+struct TodayChartSample
+{
+   uint16_t prodTenthsKwh = EMPTY_TENTHS_KWH;
+   uint16_t consTenthsKwh = EMPTY_TENTHS_KWH;
+};
+
 MovingBarChart* rollingChart = nullptr;
 MovingBarChart* todayChart = nullptr;
+std::array<TodayChartSample, MAX_TODAY_CHART_COLS> todayChartSamples;
 
 Rect16 rollingChartRect;
 Rect16 todayChartRect;
@@ -442,6 +478,142 @@ void drawTodayGridLines()
 
 ///
 /// <summary>
+/// Returns the current local calendar day encoded as (year * 1000 + yday), or -1 if the
+/// system clock has not yet been synchronized via NTP.
+/// </summary>
+/// <returns>Encoded local calendar day, or -1 if time is not synced.</returns>
+///
+int32_t currentLocalDayId()
+{
+   if (!TimeSync::isSynced())
+   {
+      return -1;
+   }
+
+   time_t now = time(nullptr);
+   struct tm timeInfo;
+   localtime_r(&now, &timeInfo);
+   return static_cast<int32_t>(timeInfo.tm_year) * 1000 + static_cast<int32_t>(timeInfo.tm_yday);
+}
+
+///
+/// <summary>
+/// Clears all in-memory Today chart column samples to their unrecorded state.
+/// </summary>
+///
+void clearTodayChartSamples()
+{
+   todayChartSamples.fill({ EMPTY_TENTHS_KWH, EMPTY_TENTHS_KWH });
+}
+
+///
+/// <summary>
+/// Applies any persisted Today chart column samples for the current day into todayChart.
+/// </summary>
+///
+void populateTodayChartFromSamples()
+{
+   uint16_t numCols = min(todayChart->getNumBars(), MAX_TODAY_CHART_COLS);
+   for (uint16_t i = 0; i < numCols; i++)
+   {
+      const TodayChartSample& sample = todayChartSamples[i];
+      if (sample.prodTenthsKwh != EMPTY_TENTHS_KWH && sample.consTenthsKwh != EMPTY_TENTHS_KWH)
+      {
+         float prodKwh = sample.prodTenthsKwh * 0.1f;
+         float consKwh = sample.consTenthsKwh * 0.1f;
+         float netKwh = prodKwh - consKwh;
+         todayChart->setAt(i, netKwh, prodKwh, consKwh);
+      }
+   }
+}
+
+///
+/// <summary>
+/// Clears the in-memory and Preferences-persisted Today chart samples for a new calendar day.
+/// </summary>
+/// <param name="dayId">The new encoded local calendar day ID.</param>
+///
+void resetTodayChartHistory(int32_t dayId)
+{
+   clearTodayChartSamples();
+   todayChartDayId = dayId;
+
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+   sketch.arduino.preferences.putInt(TODAY_CHART_DAY_PREF_KEY, todayChartDayId);
+   sketch.arduino.preferences.remove(TODAY_CHART_BINS_PREF_KEY);
+   sketch.arduino.preferences.end();
+}
+
+///
+/// <summary>
+/// Loads the persisted Today chart column samples from Preferences if they match today's
+/// local calendar day; otherwise resets the stored samples for the new day.
+/// </summary>
+///
+void loadTodayChartHistory()
+{
+   clearTodayChartSamples();
+
+   int32_t todayId = currentLocalDayId();
+   uint16_t numCols = min(todayChart->getNumBars(), MAX_TODAY_CHART_COLS);
+   size_t expectedBytes = static_cast<size_t>(numCols) * sizeof(TodayChartSample);
+
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
+   int32_t savedDayId = sketch.arduino.preferences.getInt(TODAY_CHART_DAY_PREF_KEY, -1);
+   size_t savedBytes = sketch.arduino.preferences.getBytesLength(TODAY_CHART_BINS_PREF_KEY);
+   if (todayId >= 0 && savedDayId == todayId && savedBytes == expectedBytes)
+   {
+      sketch.arduino.preferences.getBytes(TODAY_CHART_BINS_PREF_KEY, todayChartSamples.data(), expectedBytes);
+      sketch.arduino.preferences.end();
+      todayChartDayId = todayId;
+      return;
+   }
+   sketch.arduino.preferences.end();
+
+   if (todayId >= 0)
+   {
+      resetTodayChartHistory(todayId);
+   }
+}
+
+///
+/// <summary>
+/// Records a Today chart column sample in memory and persists the updated array to
+/// Preferences whenever the column's 0.1 kWh rounded values change.
+/// </summary>
+/// <param name="colIndex">Zero-based column index in todayChart.</param>
+/// <param name="prodKwh">Cumulative daily solar production in kWh.</param>
+/// <param name="consKwh">Cumulative daily home consumption in kWh.</param>
+///
+void recordTodayChartSample(uint16_t colIndex, float prodKwh, float consKwh)
+{
+   uint16_t numCols = min(todayChart->getNumBars(), MAX_TODAY_CHART_COLS);
+   if (colIndex >= numCols)
+   {
+      return;
+   }
+
+   uint16_t prodTenths = static_cast<uint16_t>(std::clamp(std::lround(prodKwh * 10.0f), 0L, 65534L));
+   uint16_t consTenths = static_cast<uint16_t>(std::clamp(std::lround(consKwh * 10.0f), 0L, 65534L));
+
+   TodayChartSample& existing = todayChartSamples[colIndex];
+   if (existing.prodTenthsKwh == prodTenths && existing.consTenthsKwh == consTenths)
+   {
+      return;
+   }
+
+   existing.prodTenthsKwh = prodTenths;
+   existing.consTenthsKwh = consTenths;
+
+   size_t numBytes = static_cast<size_t>(numCols) * sizeof(TodayChartSample);
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+   sketch.arduino.preferences.putInt(TODAY_CHART_DAY_PREF_KEY, todayChartDayId);
+   sketch.arduino.preferences.putBytes(TODAY_CHART_BINS_PREF_KEY, todayChartSamples.data(), numBytes);
+   sketch.arduino.preferences.end();
+}
+
+///
+/// <summary>
 /// Draws the static screen elements (title, section headings, and chart labels) and
 /// resets the dynamic fields and charts for a full redraw.
 /// </summary>
@@ -465,7 +637,7 @@ void drawStatic()
 
    rollingChart->clear();
    todayChart->clear();
-   todayChartDayId = currentLocalDayId();
+   populateTodayChartFromSamples();
    rollingColumnSum = 0.0f;
    rollingProdSum = 0.0f;
    rollingConsSum = 0.0f;
@@ -493,52 +665,125 @@ void drawStatic()
 
 ///
 /// <summary>
-/// Performs an HTTPS GET request against an Enphase gateway and parses the JSON response.
+/// Extracts the "sessionId=..." cookie pair from a Set-Cookie response header if present.
 /// </summary>
-/// <param name="host">Gateway hostname or IP address.</param>
+/// <param name="setCookieHeader">Raw Set-Cookie header value.</param>
+/// <param name="cookieOut">Receives the extracted "sessionId=..." string when found.</param>
+///
+void extractSessionCookie(const String& setCookieHeader, std::string* cookieOut)
+{
+   ASSERT(cookieOut != nullptr);
+
+   int sessionPos = setCookieHeader.indexOf("sessionId=");
+   if (sessionPos < 0)
+   {
+      return;
+   }
+
+   int endPos = setCookieHeader.indexOf(';', sessionPos);
+   String cookiePair = (endPos >= 0)
+      ? setCookieHeader.substring(sessionPos, endPos)
+      : setCookieHeader.substring(sessionPos);
+   cookiePair.trim();
+   if (!cookiePair.isEmpty())
+   {
+      *cookieOut = cookiePair.c_str();
+   }
+}
+
+///
+/// <summary>
+/// Performs an HTTPS GET request against an Enphase gateway using a persistent TLS client
+/// and cached sessionId cookie (falling back to the Bearer JWT token only on initial login
+/// or session expiration) and parses the JSON response.
+/// </summary>
+/// <param name="gateway">Target gateway client state (host, JWT, TLS socket, and session cookie).</param>
 /// <param name="path">URL path to request.</param>
-/// <param name="jwtToken">Bearer JWT token for the target gateway.</param>
 /// <param name="doc">Receives the parsed JSON document.</param>
 /// <returns>True if the HTTP request and JSON deserialization succeeded; otherwise false.</returns>
 ///
-bool fetchGatewayJson(const char* host, const char* path, const char* jwtToken, JsonDocument* doc)
+bool fetchGatewayJson(GatewayClient* gateway, const char* path, JsonDocument* doc)
 {
-   ASSERT(host != nullptr);
+   ASSERT(gateway != nullptr);
    ASSERT(path != nullptr);
-   ASSERT(jwtToken != nullptr);
    ASSERT(doc != nullptr);
 
-   WiFiClientSecure secureClient;
-   secureClient.setInsecure();
-   secureClient.setTimeout(HTTP_TIMEOUT_MS / 1000);
-
-   HTTPClient http;
-   http.useHTTP10(true);
-   http.setTimeout(HTTP_TIMEOUT_MS);
-   http.setConnectTimeout(HTTP_TIMEOUT_MS);
-
-   std::string url = std::string("https://") + host + path;
-   if (!http.begin(secureClient, url.c_str()))
+   if (!gateway->configured)
    {
-      Logger.log(std::string("Enphase HTTP begin failed for ") + url, LogSeverity::WARN);
-      return false;
+      gateway->tlsClient.setInsecure();
+      gateway->tlsClient.setTimeout(HTTP_TIMEOUT_MS / 1000);
+      gateway->http.setReuse(true);
+      gateway->http.setTimeout(HTTP_TIMEOUT_MS);
+      gateway->http.setConnectTimeout(HTTP_TIMEOUT_MS);
+      gateway->configured = true;
    }
 
-   std::string authHeader = std::string("Bearer ") + jwtToken;
-   http.addHeader("Authorization", authHeader.c_str());
-   http.addHeader("Accept", "application/json");
-   http.addHeader("Connection", "close");
+   std::string url = std::string("https://") + gateway->host + path;
+   int httpCode = 0;
 
-   int httpCode = http.GET();
+   for (uint8_t attempt = 0; attempt < 2; attempt++)
+   {
+      bool hadOpenSocket = gateway->tlsClient.connected();
+      bool usedCookie = !gateway->sessionCookie.empty();
+
+      if (!gateway->http.begin(gateway->tlsClient, url.c_str()))
+      {
+         Logger.log(std::string("Enphase HTTP begin failed for ") + url, LogSeverity::WARN);
+         gateway->tlsClient.stop();
+         return false;
+      }
+
+      const char* headerKeys[] = { "Set-Cookie" };
+      gateway->http.collectHeaders(headerKeys, 1);
+
+      if (usedCookie)
+      {
+         gateway->http.addHeader("Cookie", gateway->sessionCookie.c_str());
+      }
+      else
+      {
+         std::string authHeader = std::string("Bearer ") + gateway->jwtToken;
+         gateway->http.addHeader("Authorization", authHeader.c_str());
+      }
+      gateway->http.addHeader("Accept", "application/json");
+
+      httpCode = gateway->http.GET();
+
+      if (gateway->http.hasHeader("Set-Cookie"))
+      {
+         extractSessionCookie(gateway->http.header("Set-Cookie"), &gateway->sessionCookie);
+      }
+
+      // If the gateway closed the idle keep-alive socket between polls, reconnect and retry once.
+      if (httpCode < 0 && hadOpenSocket && attempt == 0)
+      {
+         gateway->http.end();
+         gateway->tlsClient.stop();
+         continue;
+      }
+
+      // If the cached sessionId cookie expired (e.g. after a gateway reboot), re-authenticate with the JWT.
+      if ((httpCode == HTTP_CODE_UNAUTHORIZED || httpCode == HTTP_CODE_FORBIDDEN) && usedCookie && attempt == 0)
+      {
+         gateway->sessionCookie.clear();
+         gateway->http.end();
+         gateway->tlsClient.stop();
+         continue;
+      }
+
+      break;
+   }
+
    if (httpCode != HTTP_CODE_OK)
    {
       Logger.log("Enphase HTTP GET failed (" + url + "): " + std::to_string(httpCode), LogSeverity::WARN);
-      http.end();
+      gateway->http.end();
+      gateway->tlsClient.stop();
       return false;
    }
 
-   String payload = http.getString();
-   http.end();
+   String payload = gateway->http.getString();
+   gateway->http.end();
 
    if (payload.isEmpty())
    {
@@ -555,26 +800,6 @@ bool fetchGatewayJson(const char* host, const char* path, const char* jwtToken, 
    }
 
    return true;
-}
-
-///
-/// <summary>
-/// Returns the current local calendar day encoded as (year * 1000 + yday), or -1 if the
-/// system clock has not yet been synchronized via NTP.
-/// </summary>
-/// <returns>Encoded local calendar day, or -1 if time is not synced.</returns>
-///
-int32_t currentLocalDayId()
-{
-   if (!TimeSync::isSynced())
-   {
-      return -1;
-   }
-
-   time_t now = time(nullptr);
-   struct tm timeInfo;
-   localtime_r(&now, &timeInfo);
-   return static_cast<int32_t>(timeInfo.tm_year) * 1000 + static_cast<int32_t>(timeInfo.tm_yday);
 }
 
 ///
@@ -651,11 +876,15 @@ void updateDailyBaseline(const SolarReadings& readings)
 /// <summary>
 /// Queries both Enphase IQ Gateways over HTTPS (Gateway 1 for solar production and daily
 /// energy, Gateway 2 for home consumption) and populates the latest readings.
+/// Secondary endpoints (/ivp/pdm/energy on Gateway 1 and /ivp/meters/readings on Gateway 2)
+/// are only queried when <paramref name="includeExtendedMetrics"/> is true, when seeding a
+/// missing daily baseline, or as a fallback when Gateway 2's primary endpoint fails.
 /// </summary>
 /// <param name="readings">Receives the parsed production and consumption readings.</param>
+/// <param name="includeExtendedMetrics">True to also query secondary diagnostic endpoints.</param>
 /// <returns>True if at least one gateway reading succeeded; otherwise false.</returns>
 ///
-bool fetchSolarReadings(SolarReadings* readings)
+bool fetchSolarReadings(SolarReadings* readings, bool includeExtendedMetrics = false)
 {
    ASSERT(readings != nullptr);
 
@@ -667,7 +896,7 @@ bool fetchSolarReadings(SolarReadings* readings)
    float prodWhToday = NAN;
 
    // 1. Production live power from Gateway 1 (/production.json)
-   if (fetchGatewayJson(ENPHASE_PROD_HOST, ENPHASE_PRODUCTION_PATH, ENPHASE_PROD_JWT_TOKEN, &doc))
+   if (fetchGatewayJson(&prodGateway, ENPHASE_PRODUCTION_PATH, &doc))
    {
       JsonArray productionArray = doc["production"].as<JsonArray>();
       for (JsonObject entry : productionArray)
@@ -714,22 +943,34 @@ bool fetchSolarReadings(SolarReadings* readings)
       }
    }
 
-   // 2. Production daily energy from Gateway 1 (/ivp/pdm/energy, since eim whToday on GW1 reports lifetime Wh)
-   if (fetchGatewayJson(ENPHASE_PROD_HOST, ENPHASE_PDM_ENERGY_PATH, ENPHASE_PROD_JWT_TOKEN, &doc))
+   // 2. Production daily energy from Gateway 1 (/ivp/pdm/energy). Only needed when extended
+   // InfluxDB metrics are requested, when seeding a missing daily baseline on first boot, or
+   // when gw1EimWhLifetime was unavailable from /production.json.
+   bool needGw1PdmEnergy = includeExtendedMetrics ||
+      std::isnan(baselineGw1WhLifetime) ||
+      std::isnan(readings->gw1EimWhLifetime);
+   if (needGw1PdmEnergy)
    {
-      JsonVariant pcuWhToday = doc["production"]["pcu"]["wattHoursToday"];
-      if (pcuWhToday.is<float>())
+      if (fetchGatewayJson(&prodGateway, ENPHASE_PDM_ENERGY_PATH, &doc))
       {
-         prodWhToday = pcuWhToday.as<float>();
-         readings->gw1PcuWhToday = prodWhToday;
+         JsonVariant pcuWhToday = doc["production"]["pcu"]["wattHoursToday"];
+         if (pcuWhToday.is<float>())
+         {
+            prodWhToday = pcuWhToday.as<float>();
+            readings->gw1PcuWhToday = prodWhToday;
+         }
       }
+   }
+   else
+   {
+      readings->gw1PcuWhToday = previousReadings.gw1PcuWhToday;
    }
 
    // 3. Consumption live power and daily energy from Gateway 2 (/production.json)
    float consWatts = NAN;
    float consWhToday = NAN;
 
-   if (fetchGatewayJson(ENPHASE_CONS_HOST, ENPHASE_PRODUCTION_PATH, ENPHASE_CONS_JWT_TOKEN, &doc))
+   if (fetchGatewayJson(&consGateway, ENPHASE_PRODUCTION_PATH, &doc))
    {
       JsonArray consumptionArray = doc["consumption"].as<JsonArray>();
       for (JsonObject entry : consumptionArray)
@@ -775,8 +1016,12 @@ bool fetchSolarReadings(SolarReadings* readings)
       }
    }
 
-   // 4. Raw monotonic energy accumulators and per-phase (L1/L2) CT readings from Gateway 2 (/ivp/meters/readings)
-   if (fetchGatewayJson(ENPHASE_CONS_HOST, ENPHASE_METERS_READINGS_PATH, ENPHASE_CONS_JWT_TOKEN, &doc))
+   // 4. Raw monotonic energy accumulators and per-phase (L1/L2) CT readings from Gateway 2
+   // (/ivp/meters/readings). Only queried when extended InfluxDB metrics are requested or as
+   // a fallback if Gateway 2's /production.json request failed.
+   bool needGw2MetersReadings = includeExtendedMetrics || isnan(readings->gw2Watts);
+   if (needGw2MetersReadings &&
+       fetchGatewayJson(&consGateway, ENPHASE_METERS_READINGS_PATH, &doc))
    {
       JsonArray metersArray = doc.as<JsonArray>();
       for (JsonObject meter : metersArray)
@@ -831,6 +1076,26 @@ bool fetchSolarReadings(SolarReadings* readings)
    {
       gw2NetWatts = readings->gw2L1Watts + readings->gw2L2Watts;
       readings->gw2Watts = gw2NetWatts;
+   }
+
+   if (!needGw2MetersReadings)
+   {
+      readings->gw2WhDlvd = previousReadings.gw2WhDlvd;
+      readings->gw2WhRcvd = previousReadings.gw2WhRcvd;
+      readings->gw2L1Watts = previousReadings.gw2L1Watts;
+      readings->gw2L1ReactiveVar = previousReadings.gw2L1ReactiveVar;
+      readings->gw2L1Voltage = previousReadings.gw2L1Voltage;
+      readings->gw2L1Current = previousReadings.gw2L1Current;
+      readings->gw2L1PowerFactor = previousReadings.gw2L1PowerFactor;
+      readings->gw2L1WhDlvd = previousReadings.gw2L1WhDlvd;
+      readings->gw2L1WhRcvd = previousReadings.gw2L1WhRcvd;
+      readings->gw2L2Watts = previousReadings.gw2L2Watts;
+      readings->gw2L2ReactiveVar = previousReadings.gw2L2ReactiveVar;
+      readings->gw2L2Voltage = previousReadings.gw2L2Voltage;
+      readings->gw2L2Current = previousReadings.gw2L2Current;
+      readings->gw2L2PowerFactor = previousReadings.gw2L2PowerFactor;
+      readings->gw2L2WhDlvd = previousReadings.gw2L2WhDlvd;
+      readings->gw2L2WhRcvd = previousReadings.gw2L2WhRcvd;
    }
 
    if (!isnan(prodWatts) && !isnan(gw2NetWatts))
@@ -1125,7 +1390,7 @@ void updateDisplay(const SolarReadings& readings)
          if (todayChartDayId != dayId)
          {
             todayChart->clear();
-            todayChartDayId = dayId;
+            resetTodayChartHistory(dayId);
          }
 
          time_t now = time(nullptr);
@@ -1146,6 +1411,7 @@ void updateDisplay(const SolarReadings& readings)
                netEnergyKwh,
                readings.productionTodayKwh,
                readings.consumptionTodayKwh);
+            recordTodayChartSample(colIndex, readings.productionTodayKwh, readings.consumptionTodayKwh);
             todayChart->draw(&sketch.arduino.display);
             drawTodayGridLines();
          }
@@ -1209,11 +1475,12 @@ void setup()
    }
 
    initLayout();
+   loadTodayChartHistory();
 
    sketch.completeInitialization();
    drawStatic();
 
-   if (fetchSolarReadings(&latestReadings))
+   if (fetchSolarReadings(&latestReadings, true))
    {
       sketch.getStatus()->setStatus(Status::RUNNING);
       updateDisplay(latestReadings);
@@ -1231,11 +1498,12 @@ void loop()
       return;
    }
 
-   if (fetchSolarReadings(&latestReadings))
+   bool uploadToInflux = influxLoggingEnabled && influx.ready();
+   if (fetchSolarReadings(&latestReadings, uploadToInflux))
    {
       sketch.getStatus()->setStatus(Status::RUNNING);
       updateDisplay(latestReadings);
-      if (influxLoggingEnabled && influx.ready())
+      if (uploadToInflux)
       {
          postSolarToInflux(latestReadings);
       }
