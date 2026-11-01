@@ -438,8 +438,6 @@ public:
    ///
    void setTextSize(uint8_t size, bool mono = true)
    {
-      _textSize = size;
-
       // LGFX uses setTextSize to set a scaling factor. We instead load a properly
       // sized font. Make sure to set the scaling factor back to 1
       display.setTextSize(1);
@@ -447,8 +445,15 @@ public:
       size = constrain(size, 0, 7);
 
       // A null entry means this size was compiled out via TEXT_SIZES_CUSTOM/TEXT_SIZE_n
-      // in the sketch; loadFont() would crash trying to read through it, so fail loudly
-      // here instead so the missing TEXT_SIZE_n define is obvious.
+      // in the sketch; fall back to size 2 (which is always compiled in) rather than
+      // crashing when loadFont() tries to read through nullptr.
+      if ((mono ? RobotoMonoBold[size] : PROPORTIONAL_FONT(size)) == nullptr)
+      {
+         size = 2;
+      }
+
+      _textSize = size;
+
       ASSERT((mono ? RobotoMonoBold[size] : PROPORTIONAL_FONT(size)) != nullptr);
 
       if (mono)
@@ -513,7 +518,12 @@ public:
 
       size = constrain(size, 0, 7);
 
-      // See setTextSize() for why this guards against a compiled-out font size.
+      // See setTextSize() for why this falls back to size 2 when a font size was compiled out.
+      if ((mono ? RobotoMonoBold[size] : PROPORTIONAL_FONT(size)) == nullptr)
+      {
+         size = 2;
+      }
+
       ASSERT((mono ? RobotoMonoBold[size] : PROPORTIONAL_FONT(size)) != nullptr);
 
       // load our own copy of the font rather than sharing the display's runtime font
