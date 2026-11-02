@@ -51,10 +51,10 @@ const auto VERSION = MakeVersion("1.02");
 constexpr auto SKETCH_NAME = "Solar_Viewer";
 
 // ----------- Enphase IQ Gateway Configuration
-// Gateway 1 (envoy.local / 192.168.1.222, SN 202202116226): Solar production array & inverters.
-// Gateway 2 (envoy-2.local / 192.168.1.62, SN 202451018055): Home consumption CTs.
+// Gateway 1 (envoy.local, SN 202202116226): Solar production array & inverters.
+// Gateway 2 (envoy-2.local, SN 202451018055): Home consumption CTs.
 #ifndef ENPHASE_PROD_HOST
-constexpr auto ENPHASE_PROD_HOST = "192.168.1.222";
+constexpr auto ENPHASE_PROD_HOST = "solar-production.home";
 #endif
 
 #ifndef ENPHASE_PROD_JWT_TOKEN
@@ -62,7 +62,7 @@ constexpr auto ENPHASE_PROD_JWT_TOKEN = "eyJraWQiOiI3ZDEwMDA1ZC03ODk5LTRkMGQtYmN
 #endif
 
 #ifndef ENPHASE_CONS_HOST
-constexpr auto ENPHASE_CONS_HOST = "192.168.1.62";
+constexpr auto ENPHASE_CONS_HOST = "solar-consumption.home";
 #endif
 
 #ifndef ENPHASE_CONS_JWT_TOKEN
@@ -73,7 +73,7 @@ constexpr auto ENPHASE_PRODUCTION_PATH = "/production.json";
 constexpr auto ENPHASE_PDM_ENERGY_PATH = "/ivp/pdm/energy";
 constexpr auto ENPHASE_METERS_READINGS_PATH = "/ivp/meters/readings";
 constexpr uint32_t GW2_NET_CONSUMPTION_EID = 704643584UL;
-constexpr uint16_t HTTP_TIMEOUT_MS = 10000;
+constexpr uint16_t HTTP_TIMEOUT_MS = 4000;
 constexpr uint8_t POLL_INTERVAL_S = 15;
 constexpr uint8_t INFLUX_UPLOAD_INTERVAL_S = 30;
 constexpr auto INFLUX_MEASUREMENT = "Solar";
@@ -210,18 +210,16 @@ float netEnergyKwh = NAN;
 
 ///
 /// <summary>
-/// Maintains a persistent HTTPS connection and cached Envoy sessionId cookie for a single
-/// Enphase IQ Gateway so polls reuse both the TLS socket and the authenticated session.
+/// Holds the host, JWT token, and cached Envoy sessionId cookie for a single Enphase IQ
+/// Gateway so polls reuse the authenticated session without holding persistent TLS sockets
+/// in memory between polls.
 /// </summary>
 ///
 struct GatewayClient
 {
    const char* host = nullptr;
    const char* jwtToken = nullptr;
-   WiFiClientSecure tlsClient;
-   HTTPClient http;
    std::string sessionCookie;
-   bool configured = false;
 };
 
 GatewayClient prodGateway = { .host = ENPHASE_PROD_HOST, .jwtToken = ENPHASE_PROD_JWT_TOKEN };
@@ -693,11 +691,11 @@ void extractSessionCookie(const String& setCookieHeader, std::string* cookieOut)
 
 ///
 /// <summary>
-/// Performs an HTTPS GET request against an Enphase gateway using a persistent TLS client
-/// and cached sessionId cookie (falling back to the Bearer JWT token only on initial login
-/// or session expiration) and parses the JSON response.
+/// Performs an HTTPS GET request against an Enphase gateway using a cached sessionId
+/// cookie (falling back to the Bearer JWT token only on initial login or session
+/// expiration) and parses the JSON response.
 /// </summary>
-/// <param name="gateway">Target gateway client state (host, JWT, TLS socket, and session cookie).</param>
+/// <param name="gateway">Target gateway client state (host, JWT, and session cookie).</param>
 /// <param name="path">URL path to request.</param>
 /// <param name="doc">Receives the parsed JSON document.</param>
 /// <returns>True if the HTTP request and JSON deserialization succeeded; otherwise false.</returns>
@@ -708,82 +706,75 @@ bool fetchGatewayJson(GatewayClient* gateway, const char* path, JsonDocument* do
    ASSERT(path != nullptr);
    ASSERT(doc != nullptr);
 
-   if (!gateway->configured)
-   {
-      gateway->tlsClient.setInsecure();
-      gateway->tlsClient.setTimeout(HTTP_TIMEOUT_MS / 1000);
-      gateway->http.setReuse(true);
-      gateway->http.setTimeout(HTTP_TIMEOUT_MS);
-      gateway->http.setConnectTimeout(HTTP_TIMEOUT_MS);
-      gateway->configured = true;
-   }
-
    std::string url = std::string("https://") + gateway->host + path;
    int httpCode = 0;
+   String payload;
 
    for (uint8_t attempt = 0; attempt < 2; attempt++)
    {
-      bool hadOpenSocket = gateway->tlsClient.connected();
-      bool usedCookie = !gateway->sessionCookie.empty();
+      sketch.loop();
 
-      if (!gateway->http.begin(gateway->tlsClient, url.c_str()))
+      WiFiClientSecure secureClient;
+      secureClient.setInsecure();
+      secureClient.setTimeout(HTTP_TIMEOUT_MS / 1000);
+
+      HTTPClient http;
+      http.useHTTP10(true);
+      http.setTimeout(HTTP_TIMEOUT_MS);
+      http.setConnectTimeout(HTTP_TIMEOUT_MS);
+
+      if (!http.begin(secureClient, url.c_str()))
       {
          Logger.log(std::string("Enphase HTTP begin failed for ") + url, LogSeverity::WARN);
-         gateway->tlsClient.stop();
          return false;
       }
 
       const char* headerKeys[] = { "Set-Cookie" };
-      gateway->http.collectHeaders(headerKeys, 1);
+      http.collectHeaders(headerKeys, 1);
 
+      bool usedCookie = !gateway->sessionCookie.empty();
       if (usedCookie)
       {
-         gateway->http.addHeader("Cookie", gateway->sessionCookie.c_str());
+         http.addHeader("Cookie", gateway->sessionCookie.c_str());
       }
       else
       {
          std::string authHeader = std::string("Bearer ") + gateway->jwtToken;
-         gateway->http.addHeader("Authorization", authHeader.c_str());
+         http.addHeader("Authorization", authHeader.c_str());
       }
-      gateway->http.addHeader("Accept", "application/json");
+      http.addHeader("Accept", "application/json");
+      http.addHeader("Connection", "close");
 
-      httpCode = gateway->http.GET();
+      httpCode = http.GET();
 
-      if (gateway->http.hasHeader("Set-Cookie"))
+      if (http.hasHeader("Set-Cookie"))
       {
-         extractSessionCookie(gateway->http.header("Set-Cookie"), &gateway->sessionCookie);
-      }
-
-      // If the gateway closed the idle keep-alive socket between polls, reconnect and retry once.
-      if (httpCode < 0 && hadOpenSocket && attempt == 0)
-      {
-         gateway->http.end();
-         gateway->tlsClient.stop();
-         continue;
+         extractSessionCookie(http.header("Set-Cookie"), &gateway->sessionCookie);
       }
 
       // If the cached sessionId cookie expired (e.g. after a gateway reboot), re-authenticate with the JWT.
       if ((httpCode == HTTP_CODE_UNAUTHORIZED || httpCode == HTTP_CODE_FORBIDDEN) && usedCookie && attempt == 0)
       {
          gateway->sessionCookie.clear();
-         gateway->http.end();
-         gateway->tlsClient.stop();
+         http.end();
          continue;
       }
 
+      if (httpCode == HTTP_CODE_OK)
+      {
+         payload = http.getString();
+      }
+
+      http.end();
+      sketch.loop();
       break;
    }
 
    if (httpCode != HTTP_CODE_OK)
    {
       Logger.log("Enphase HTTP GET failed (" + url + "): " + std::to_string(httpCode), LogSeverity::WARN);
-      gateway->http.end();
-      gateway->tlsClient.stop();
       return false;
    }
-
-   String payload = gateway->http.getString();
-   gateway->http.end();
 
    if (payload.isEmpty())
    {
