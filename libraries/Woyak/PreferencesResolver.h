@@ -249,6 +249,7 @@ public:
    template <typename TArduino>
    static uint8_t promptForRequiredIndex(TArduino* arduino, IStatus* status, const char* header, std::span<const SerialTable::Column> columns, const char* const* entries, size_t entryCount, size_t fieldsPerEntry)
    {
+      (void)status;
       _printTable(header, columns, entries, entryCount, fieldsPerEntry, SIZE_MAX);
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
@@ -265,12 +266,6 @@ public:
       {
          arduino->printDisplayInitLabel("Config... ");
          arduino->printDisplayInitValue("Waiting for Serial", Color::YELLOW);
-      }
-
-      if (!Serial)
-      {
-         status->setStatus(Status::FAILED);
-         Util::reset(0.0f, Util::PROMPT_NO_SERIAL_HALT_REASON);
       }
 
       String label = "Enter selection (1-" + String(entryCount) + "): ";

@@ -5,6 +5,7 @@
     <Platform Name="ARM64" />
   </Configurations>
   <Folder Name="/Libraries/">
+    <File Path="libraries/Woyak/ADS1115.h" />
     <File Path="libraries/Woyak/AirQualityTiers.h" />
     <File Path="libraries/Woyak/Anchor.h" />
     <File Path="libraries/Woyak/ArduinoBase.h" />
@@ -27,6 +28,7 @@
     <File Path="libraries/Woyak/CountdownTimer.h" />
     <File Path="libraries/Woyak/Counter.h" />
     <File Path="libraries/Woyak/CPUTemp.h" />
+    <File Path="libraries/Woyak/CTPowerSensor.h" />
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
     <File Path="libraries/Woyak/DepthSensorBase.h" />
@@ -627,6 +629,10 @@
     <Deploy Solution="*|ARM" />
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
+  </Project>
+  <Project Path="Power_Publisher/Power_Publisher.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
   </Project>
   <Project Path="Presence_Publisher_Display/Presence_Publisher_Display.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />

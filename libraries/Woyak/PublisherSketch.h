@@ -5,6 +5,7 @@
 // WIFI_PASSWORD, INFLUXDB_URL, and INFLUXDB_ORG are
 // defined). This mirrors the include order already used by Gate/Wind/Wave_Publisher.
 
+#include "ConfigCommandHandler.h"
 #include "InfluxSketchBase.h"
 #include "TelemetryClient.h"
 #include "TopicResolver.h"
@@ -23,7 +24,7 @@
 /// lives in InfluxSketchBase; this class adds the telemetry-specific pieces on top.
 /// </summary>
 ///
-class PublisherSketch : public InfluxSketchBase
+class PublisherSketch : public InfluxSketchBase, public ConfigCommandHandler
 {
 private:
    /// <summary>Function that produces the value streamed over telemetry.</summary>
@@ -83,11 +84,21 @@ private:
    /// <summary>Site choices offered when influxConfig.promptForContext is set.</summary>
    static constexpr const char* SITE_OPTIONS[] = { "Bragg", "Lake" };
 
-   /// <summary>Site selected/loaded when influxConfig.promptForContext is set.</summary>
-   String _siteName;
-
-   /// <summary>Location entered/loaded when influxConfig.promptForContext is set.</summary>
-   String _locationName;
+   /// <summary>Commands registered via enableConfigCommands() when influxConfig.promptForContext is set, listed by "Help" alongside the built-ins.</summary>
+   static constexpr DeviceServerClient::CommandInfo CONFIG_COMMANDS[] = {
+      { "GetConfig", "Reports the current site and location", { "gc" }, {}, false, { "Config" } },
+      {
+         "SetConfig",
+         "Persists a new site/location value (or prompts interactively from the shell if omitted); requires Restart to take effect",
+         { "sc" },
+         {
+            { "key", "Config key (site or location)", false },
+            { "value", "New value for the key", false },
+         },
+         false,
+         { "Config" },
+      },
+   };
 
    /// <summary>Telemetry settings, copied from the constructor argument.</summary>
    TelemetryConfig _telemetryConfig;
@@ -168,6 +179,16 @@ private:
       static constexpr uint16_t PROMPT_TIMEOUT_S = 10;
 
       bool hasFixedSite = _influxConfig.context.site != nullptr && _influxConfig.context.site[0] != '\0';
+
+      if (_skipBaseLocation && hasFixedSite)
+      {
+         _siteName = _influxConfig.context.site;
+         _preferencesNamespace = DEVICE_CONFIG_NAMESPACE;
+         _siteOptions = {};
+         _commandPreferences = &_arduino->preferences;
+         _enableConfigCommands(CONFIG_COMMANDS, std::size(CONFIG_COMMANDS));
+         return { _influxConfig.context.bucket, _siteName.c_str(), "" };
+      }
 
       _arduino->preferences.begin(DEVICE_CONFIG_NAMESPACE, true);
       bool hasSaved = (hasFixedSite || _arduino->preferences.isKey(SITE_KEY)) && _arduino->preferences.isKey(LOCATION_KEY);
@@ -285,6 +306,19 @@ private:
          _arduino->preferences.putString(LOCATION_KEY, _locationName);
          _arduino->preferences.end();
       }
+
+      _preferencesNamespace = DEVICE_CONFIG_NAMESPACE;
+      if (hasFixedSite)
+      {
+         _siteOptions = {};
+      }
+      else
+      {
+         _siteOptions = SITE_OPTIONS;
+      }
+      _commandPreferences = &_arduino->preferences;
+      _enableConfigCommands(CONFIG_COMMANDS, std::size(CONFIG_COMMANDS));
+
       _printAndLogStatus("Location... ", (std::string(_siteName.c_str()) + "/" + _locationName.c_str()).c_str());
 
       InfluxContext site = _influxConfig.context;
@@ -321,11 +355,11 @@ private:
    }
 
    ///
-   /// <summary>Publisher only uses Influx when a selectable site table resolved a bucket.</summary>
+   /// <summary>Publisher only uses Influx when a selectable site table or context resolved a bucket.</summary>
    ///
    bool _shouldUseInflux(bool hasSiteTable) override
    {
-      return hasSiteTable || _influxConfig.promptForContext;
+      return hasSiteTable || (_influxConfig.promptForContext && _site.bucket != nullptr && _site.bucket[0] != '\0');
    }
 
    ///

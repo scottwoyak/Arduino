@@ -121,20 +121,19 @@ namespace SerialX
 
 	/// <summary>
 	/// Prints a label, then blocks until a line of text is entered over Serial, echoing
-	/// it back and returning it trimmed of leading/trailing whitespace. If no Serial
-	/// monitor is attached, or no input arrives within Util::REQUIRED_PROMPT_TIMEOUT_S
-	/// seconds, resets the device into safe mode so it doesn't stay stranded offline.
+	/// it back and returning it trimmed of leading/trailing whitespace. If no input
+	/// arrives within Util::REQUIRED_PROMPT_TIMEOUT_S seconds, resets the device into
+	/// safe mode (using PROMPT_NO_SERIAL_HALT_REASON if no Serial connection is detected,
+	/// or PROMPT_TIMEOUT_HALT_REASON otherwise) so it doesn't stay stranded offline.
+	/// Always prints the prompt label first before waiting, since native USB CDC (TinyUSB)
+	/// only reports operator bool() == true when the host asserts both DTR and RTS, even
+	/// when a serial monitor is open and receiving output.
 	/// Used for simple interactive setup-time prompts (e.g. site/location configuration).
 	/// </summary>
 	/// <param name="label">The prompt label to print before waiting for input (e.g. "Enter site: ").</param>
 	/// <returns>The entered text, trimmed of leading/trailing whitespace.</returns>
 	inline String prompt(const char* label)
 	{
-		if (!Serial)
-		{
-			Util::reset(0.0f, Util::PROMPT_NO_SERIAL_HALT_REASON);
-		}
-
 		_flushInput();
 		Util::feedSetupWatchdog();
 		Serial.print(label);
@@ -144,15 +143,11 @@ namespace SerialX
 		while (!Serial.available())
 		{
 			Util::feedSetupWatchdog();
-			if (!Serial)
-			{
-				Util::reset(0.0f, Util::PROMPT_NO_SERIAL_HALT_REASON);
-			}
 			if (millis() - start >= TIMEOUT_MS)
 			{
 				Serial.println();
 				Serial.println("No input - entering safe mode.");
-				Util::reset(0.0f, Util::PROMPT_TIMEOUT_HALT_REASON);
+				Util::reset(0.0f, Serial ? Util::PROMPT_TIMEOUT_HALT_REASON : Util::PROMPT_NO_SERIAL_HALT_REASON);
 			}
 			delay(10);
 		}

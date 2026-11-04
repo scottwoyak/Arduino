@@ -42,6 +42,18 @@ protected:
    /// <summary>The single instance, used by the static _onConfigCommand() bridge function (DeviceServerClient::onCommand() only accepts a captureless function pointer).</summary>
    inline static ConfigCommandHandler* _configInstance = nullptr;
 
+   /// <summary>Optional sketch-supplied callback returning extra "key=value" lines for GetConfig.</summary>
+   std::string (*_extraConfigTextCallback)() = nullptr;
+
+   /// <summary>Optional sketch-supplied callback handling extra keys in SetConfig.</summary>
+   bool (*_extraSetConfigCallback)(const std::string& key, const std::string& value, std::string& result) = nullptr;
+
+   /// <summary>Optional sketch-supplied callback invoked during the interactive SetConfig shell flow after site/location are collected.</summary>
+   void (*_extraInteractivePromptCallback)() = nullptr;
+
+   /// <summary>True if the sketch replaces the single "location" key with its own custom location keys (e.g. location1..location3).</summary>
+   bool _skipBaseLocation = false;
+
    ///
    /// <summary>
    /// Returns additional "key=value" line(s) to append to the GetConfig response, or
@@ -52,6 +64,10 @@ protected:
    ///
    virtual std::string _extraConfigText()
    {
+      if (_extraConfigTextCallback != nullptr)
+      {
+         return _extraConfigTextCallback();
+      }
       return std::string();
    }
 
@@ -67,6 +83,10 @@ protected:
    ///
    virtual bool _trySetExtraConfig(const std::string& key, const std::string& value, std::string& result)
    {
+      if (_extraSetConfigCallback != nullptr)
+      {
+         return _extraSetConfigCallback(key, value, result);
+      }
       (void)key;
       (void)value;
       (void)result;
@@ -82,7 +102,11 @@ protected:
    ///
    std::string _getConfigText()
    {
-      std::string text = std::string("site=") + _siteName.c_str() + "\nlocation=" + _locationName.c_str();
+      std::string text = std::string("site=") + _siteName.c_str();
+      if (!_skipBaseLocation)
+      {
+         text += std::string("\nlocation=") + _locationName.c_str();
+      }
       std::string extra = _extraConfigText();
       if (!extra.empty())
       {
@@ -136,6 +160,10 @@ protected:
       }
       else if (strcasecmp(key.c_str(), "location") == 0)
       {
+         if (_skipBaseLocation)
+         {
+            return "Error: use location1, location2, or location3 on this device";
+         }
          _persistString(LOCATION_KEY, value.c_str());
          return "Saved location=\"" + value + "\"." + (includeRestartNote ? " Restart required to apply." : "");
       }
@@ -329,13 +357,23 @@ protected:
 
    ///
    /// <summary>
-   /// Writes the "Enter location" prompt to the shell channel, showing the current
-   /// location (if any) as the default, and registers _onInteractiveLocationAnswer() to
-   /// handle the next shell input line as the answer.
+   /// Writes the "Enter location" prompt to the shell channel (unless skipped via
+   /// _skipBaseLocation), showing the current location (if any) as the default, and
+   /// registers _onInteractiveLocationAnswer() to handle the next shell input line as the answer.
    /// </summary>
    ///
    void _sendLocationPrompt()
    {
+      if (_skipBaseLocation && _hasExtraInteractivePrompt())
+      {
+         if (!_pendingSiteSelection.isEmpty())
+         {
+            _applyInteractiveConfig("site", _pendingSiteSelection.c_str());
+         }
+         _sendExtraPrompt();
+         return;
+      }
+
       String label = "Enter location";
       if (_locationName.length() > 0)
       {
@@ -391,29 +429,30 @@ protected:
 
    ///
    /// <summary>
-   /// Returns true if a subclass has an extra interactive prompt (e.g. MonitorSketch's
-   /// bucket) to show after the location step completes, during the interactive shell
-   /// "SetConfig" flow. Overridden by subclasses that add extra config keys they want
-   /// included in that flow.
+   /// Returns true if a subclass or sketch callback has an extra interactive prompt (e.g.
+   /// MonitorSketch's bucket or a sketch's multi-channel configuration) to show after the
+   /// location step completes, during the interactive shell "SetConfig" flow.
    /// </summary>
    /// <returns>True if _sendExtraPrompt() should be called next; otherwise false.</returns>
    ///
    virtual bool _hasExtraInteractivePrompt()
    {
-      return false;
+      return _extraInteractivePromptCallback != nullptr;
    }
 
    ///
    /// <summary>
-   /// Sends the subclass's extra interactive prompt (e.g. MonitorSketch's bucket
-   /// selection) and registers the callback for its answer. Only called when
-   /// _hasExtraInteractivePrompt() returns true. The override is responsible for calling
-   /// DeviceServerClient::respond() once done (typically with "Restart required to
-   /// apply.").
+   /// Sends the subclass's or sketch's extra interactive prompt and registers the callback
+   /// for its answer. Only called when _hasExtraInteractivePrompt() returns true. The
+   /// override or callback is responsible for calling finishInteractiveConfig() once done.
    /// </summary>
    ///
    virtual void _sendExtraPrompt()
    {
+      if (_extraInteractivePromptCallback != nullptr)
+      {
+         _extraInteractivePromptCallback();
+      }
    }
 
    ///
@@ -451,5 +490,56 @@ public:
    const String& location() const
    {
       return _locationName;
+   }
+
+   ///
+   /// <summary>
+   /// Appends a "key=value" line to the in-progress interactive SetConfig summary without
+   /// re-invoking _setConfig() (useful when a custom interactive prompt flow persists its
+   /// own values directly).
+   /// </summary>
+   /// <param name="key">Config key name.</param>
+   /// <param name="value">Config value string.</param>
+   ///
+   void addInteractiveSummaryLine(const std::string& key, const std::string& value)
+   {
+      if (!_pendingInteractiveSummary.empty())
+      {
+         _pendingInteractiveSummary += "\n";
+      }
+      _pendingInteractiveSummary += key + "=" + value;
+   }
+
+   ///
+   /// <summary>
+   /// Completes the interactive SetConfig flow: prints the accumulated "key=value"
+   /// summary and responds that a restart is required.
+   /// </summary>
+   ///
+   void finishInteractiveConfig()
+   {
+      _finishInteractiveConfig();
+   }
+
+   ///
+   /// <summary>
+   /// Registers sketch-specific callbacks to extend "GetConfig" and "SetConfig"
+   /// with additional configuration keys and optional interactive shell prompts.
+   /// </summary>
+   /// <param name="getExtraText">Returns extra "key=value" lines for GetConfig.</param>
+   /// <param name="setExtraKey">Validates and persists an extra key for SetConfig, returning true if the key was recognized.</param>
+   /// <param name="interactivePrompt">Optional callback invoked during no-arg shell SetConfig after site/location are entered.</param>
+   /// <param name="skipBaseLocation">If true, skips the single "location" prompt/key in favor of the sketch's custom location keys.</param>
+   ///
+   void onExtraConfig(
+      std::string (*getExtraText)(),
+      bool (*setExtraKey)(const std::string& key, const std::string& value, std::string& result),
+      void (*interactivePrompt)() = nullptr,
+      bool skipBaseLocation = false)
+   {
+      _extraConfigTextCallback = getExtraText;
+      _extraSetConfigCallback = setExtraKey;
+      _extraInteractivePromptCallback = interactivePrompt;
+      _skipBaseLocation = skipBaseLocation;
    }
 };
