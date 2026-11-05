@@ -129,13 +129,13 @@ protected:
    ///
    std::string _setConfig(const std::string& key, const std::string& value, bool includeRestartNote = true)
    {
-      if (value.empty())
-      {
-         return "Error: value must not be empty";
-      }
-
       if (strcasecmp(key.c_str(), "site") == 0)
       {
+         if (value.empty())
+         {
+            return "Error: value must not be empty";
+         }
+
          if (_siteOptions.empty())
          {
             return "Error: this device doesn't support changing site";
@@ -160,6 +160,11 @@ protected:
       }
       else if (strcasecmp(key.c_str(), "location") == 0)
       {
+         if (value.empty())
+         {
+            return "Error: value must not be empty";
+         }
+
          if (_skipBaseLocation)
          {
             return "Error: use location1, location2, or location3 on this device";
@@ -172,6 +177,11 @@ protected:
       if (_trySetExtraConfig(key, value, result))
       {
          return result;
+      }
+
+      if (value.empty())
+      {
+         return "Error: value must not be empty";
       }
 
       return "Error: unknown config key \"" + key + "\"";
@@ -231,7 +241,11 @@ protected:
 
          std::string value;
          std::getline(stream >> std::ws, value);
-         DeviceServerClient::respond(_configInstance->_setConfig(key, value).c_str());
+         std::string response = _configInstance->_setConfig(key, value);
+         if (!response.empty())
+         {
+            DeviceServerClient::respond(response.c_str());
+         }
          return true;
       }
       return false;

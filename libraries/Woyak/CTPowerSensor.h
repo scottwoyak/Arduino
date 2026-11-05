@@ -33,11 +33,19 @@ class CTPowerSensor
 public:
    ///
    /// <summary>
-   /// Maximum number of differential CT channels supported on a single ADS1115 using
+   /// Maximum number of differential CT channels supported directly on a single ADS1115 using
    /// AIN3 as the shared reference pin (AIN0-AIN3, AIN1-AIN3, AIN2-AIN3).
    /// </summary>
    ///
    static constexpr size_t MAX_CHANNELS = 3;
+
+   ///
+   /// <summary>
+   /// Maximum number of CT channels supported when using an external 16-channel analog
+   /// multiplexer (e.g. CD74HC4067) routed into ADS1115 AIN0 with AIN3 as the shared reference.
+   /// </summary>
+   ///
+   static constexpr size_t MAX_MUX_CHANNELS = 16;
 
    ///
    /// <summary>
@@ -49,6 +57,7 @@ public:
    static constexpr float CORE_30A = 30.0f;
    static constexpr float CORE_50A = 50.0f;
    static constexpr float CORE_100A = 100.0f;
+   static constexpr float CORE_150A = 150.0f;
    static constexpr float CORE_200A = 200.0f;
    static constexpr float CORE_500A = 500.0f;
 
@@ -66,10 +75,12 @@ public:
       const char* name = nullptr;
       float ampsPerVolt = CORE_100A;
       ADS1115::Mux mux = ADS1115::Mux::DIFF_A0_A3;
+      uint8_t externalMuxChannel = 0;
    };
 
 private:
    static constexpr uint8_t SAMPLES_PER_RMS_SLICE = 43; // 43 x 1.163 ms = 50 ms (3 full AC cycles at 60 Hz)
+   static constexpr uint8_t SAMPLES_PER_PROBE = 2;      // 2 samples (~2.3 ms) to check DC offset on unplugged channels
    static constexpr size_t NUM_TRACE_SLICES = 20;       // Up to 20 x 50 ms = 1.0 second window (scaled by channel count)
 
    static constexpr std::array<ADS1115::Mux, MAX_CHANNELS> DEFAULT_SHARED_A3_MUXES = {
@@ -83,20 +94,27 @@ private:
       const char* name = "";
       float ampsPerVolt = CORE_100A;
       ADS1115::Mux mux = ADS1115::Mux::DIFF_A0_A3;
+      uint8_t externalMuxChannel = 0;
       std::array<float, NUM_TRACE_SLICES> traceAmps = {};
       size_t traceWriteIndex = 0;
       size_t traceCount = 0;
       float dcVolts = 0.0f;
       float rmsVolts = 0.0f;
       float rawAmps = 0.0f;
-      bool connected = true;
+      float latchedAmps = 0.0f;
+      bool connected = false;
+      bool latchedConnected = false;
    };
 
    ADS1115 _adc;
    size_t _numChannels = 1;
-   std::array<ChannelState, MAX_CHANNELS> _channels = {};
+   std::array<ChannelState, MAX_MUX_CHANNELS> _channels = {};
    size_t _activeChannel = 0;
+   size_t _probeCursor = 0;
+   bool _probingUnconnected = false;
    uint8_t _SettleSamplesRemaining = 0;
+   bool _useExternalMux = false;
+   std::array<uint8_t, 4> _muxSelectPins = { 0, 0, 0, 0 };
 
    float _lineVoltageV = DEFAULT_LINE_VOLTAGE_V;
    float _noiseFloorAmps = DEFAULT_NOISE_FLOOR_AMPS;
@@ -123,30 +141,174 @@ private:
 
    ///
    /// <summary>
-   /// Returns the number of 50 ms slices retained per channel to span a ~1.0-second window.
-   /// When 1 channel is active, 20 slices = 1.0 s; when 2 channels are active, 10 slices per
-   /// channel = 1.0 s; when 3 channels are active, 7 slices per channel = 1.05 s.
+   /// Counts how many enabled channels are currently detected as connected.
    /// </summary>
-   /// <returns>Number of slices per channel in a 1-second window.</returns>
+   /// <returns>Number of connected channels (at least 1 for window sizing).</returns>
+   ///
+   size_t _connectedChannelCount() const
+   {
+      size_t connectedCount = 0;
+      for (size_t i = 0; i < _numChannels; i++)
+      {
+         if (_channels[i].connected)
+         {
+            connectedCount++;
+         }
+      }
+      return connectedCount > 0 ? connectedCount : 1;
+   }
+
+   ///
+   /// <summary>
+   /// Returns the number of 50 ms slices retained per channel to span a ~200 ms window
+   /// based on the number of actively connected channels.
+   /// </summary>
+   /// <returns>Number of slices per channel in a window.</returns>
    ///
    size_t _slicesPerChannelWindow() const
    {
       if (_numChannels <= 1)
       {
-         return NUM_TRACE_SLICES;
+         return 4;
       }
-      if (_numChannels == 2)
+
+      return 1;
+   }
+
+   ///
+   /// <summary>
+   /// Latches the latest per-channel current and connection states simultaneously at the end
+   /// of each complete pass of the connected channels so display and telemetry reads see all
+   /// channels update in lockstep on the same frame.
+   /// </summary>
+   ///
+   void _latchPassSnapshot()
+   {
+      for (size_t i = 0; i < _numChannels; i++)
       {
-         return 10;
+         ChannelState& ch = _channels[i];
+         ch.latchedConnected = ch.connected;
+         if (!ch.connected || ch.traceCount == 0)
+         {
+            ch.latchedAmps = 0.0f;
+            continue;
+         }
+
+         float sum = 0.0f;
+         for (size_t j = 0; j < ch.traceCount; j++)
+         {
+            sum += ch.traceAmps[j];
+         }
+         float avg = sum / ch.traceCount;
+         ch.latchedAmps = avg < _noiseFloorAmps ? 0.0f : avg;
       }
-      return 7;
+   }
+
+   ///
+   /// <summary>
+   /// Drives the 4-bit CD74HC4067 address lines (S0..S3) to select the specified external
+   /// multiplexer channel (0 to 15).
+   /// </summary>
+   /// <param name="muxChannel">External multiplexer channel index (0 to 15).</param>
+   ///
+   void _applyExternalMuxChannel(uint8_t muxChannel)
+   {
+      for (size_t bit = 0; bit < _muxSelectPins.size(); bit++)
+      {
+         digitalWrite(_muxSelectPins[bit], ((muxChannel >> bit) & 0x01) ? HIGH : LOW);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Switches the active multiplexer channel and sets the settling sample counter.
+   /// </summary>
+   /// <param name="nextChannel">Next logical channel index to select.</param>
+   /// <param name="probeMode">True if the next channel is an unconnected DC-offset probe.</param>
+   ///
+   void _selectChannel(size_t nextChannel, bool probeMode)
+   {
+      _activeChannel = nextChannel;
+      _probingUnconnected = probeMode;
+      if (_useExternalMux)
+      {
+         _applyExternalMuxChannel(_channels[_activeChannel].externalMuxChannel);
+         _SettleSamplesRemaining = 1;
+      }
+      else
+      {
+         _adc.setMux(_channels[_activeChannel].mux);
+         _SettleSamplesRemaining = 2;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Advances to the next channel to sample. Connected channels are sampled in a tight round-robin
+   /// loop with full 50 ms RMS slices; after a full pass of connected channels, all channels are
+   /// latched together and one unconnected channel is probed for just 2 samples (~3.5 ms total)
+   /// to check if a CT was newly plugged in.
+   /// </summary>
+   ///
+   void _advanceChannel()
+   {
+      if (_numChannels <= 1)
+      {
+         _latchPassSnapshot();
+         _probingUnconnected = false;
+         return;
+      }
+
+      // If we just finished a quick probe on an unconnected channel (and it didn't just become
+      // connected), return to the first connected channel for the next pass.
+      if (_probingUnconnected)
+      {
+         for (size_t i = 0; i < _numChannels; i++)
+         {
+            if (_channels[i].connected)
+            {
+               _selectChannel(i, false);
+               return;
+            }
+         }
+      }
+      else
+      {
+         // Look for the next connected channel in the current pass.
+         for (size_t next = _activeChannel + 1; next < _numChannels; next++)
+         {
+            if (_channels[next].connected)
+            {
+               _selectChannel(next, false);
+               return;
+            }
+         }
+
+         // Completed a full pass of all connected channels: latch their readings simultaneously!
+         _latchPassSnapshot();
+      }
+
+      // End of connected pass (or no channels connected yet): probe the next unconnected channel.
+      for (size_t step = 0; step < _numChannels; step++)
+      {
+         size_t candidate = (_probeCursor + step) % _numChannels;
+         if (!_channels[candidate].connected)
+         {
+            _probeCursor = (candidate + 1) % _numChannels;
+            _selectChannel(candidate, true);
+            return;
+         }
+      }
+
+      // All channels are connected: wrap around to channel 0.
+      _selectChannel(0, false);
    }
 
    ///
    /// <summary>
    /// Reads one differential voltage sample from the ADS1115 and, every SAMPLES_PER_RMS_SLICE
-   /// samples (50 ms), computes the RMS current for the active channel and advances the
-   /// multiplexer to the next enabled channel if multi-channel mode is active.
+   /// samples (50 ms) for connected channels (or SAMPLES_PER_PROBE samples for unconnected
+   /// channels), updates channel state and advances the multiplexer.
    /// </summary>
    ///
    void _onSampleTick()
@@ -167,7 +329,7 @@ private:
       }
 
       // After switching the ADS1115 mux in continuous mode, discard the in-flight conversion
-      // from the previous channel so the new channel's 50 ms slice only contains settled samples.
+      // from the previous channel so the new channel's slice only contains settled samples.
       if (_SettleSamplesRemaining > 0)
       {
          _SettleSamplesRemaining--;
@@ -177,6 +339,34 @@ private:
       _sliceSumVolts += volts;
       _sliceSumVoltsSquared += static_cast<double>(volts) * volts;
       _sliceSampleCount++;
+
+      if (_probingUnconnected && _sliceSampleCount >= SAMPLES_PER_PROBE)
+      {
+         ChannelState& ch = _channels[_activeChannel];
+         float dcOffsetVolts = static_cast<float>(_sliceSumVolts / _sliceSampleCount);
+         bool isPluggedIn = std::fabs(dcOffsetVolts) < UNPLUGGED_DC_OFFSET_THRESHOLD_V;
+
+         if (isPluggedIn)
+         {
+            // Newly plugged-in channel detected! Upgrade this probe directly into a full 50 ms RMS slice.
+            ch.connected = true;
+            _probingUnconnected = false;
+            return;
+         }
+
+         ch.dcVolts = dcOffsetVolts;
+         ch.connected = false;
+         ch.rmsVolts = 0.0f;
+         ch.rawAmps = 0.0f;
+         ch.traceCount = 0;
+         ch.traceWriteIndex = 0;
+
+         _sliceSumVolts = 0.0;
+         _sliceSumVoltsSquared = 0.0;
+         _sliceSampleCount = 0;
+         _advanceChannel();
+         return;
+      }
 
       if (_sliceSampleCount >= SAMPLES_PER_RMS_SLICE)
       {
@@ -202,23 +392,31 @@ private:
          ch.rmsVolts = sliceRmsVolts;
          ch.rawAmps = sliceAmps;
 
-         ch.traceAmps[ch.traceWriteIndex] = sliceAmps;
-         ch.traceWriteIndex = (ch.traceWriteIndex + 1) % windowSlices;
-         if (ch.traceCount < windowSlices)
+         if (isPluggedIn)
          {
-            ch.traceCount++;
+            if (ch.traceCount > windowSlices)
+            {
+               ch.traceCount = windowSlices;
+            }
+            ch.traceWriteIndex = ch.traceWriteIndex % windowSlices;
+            ch.traceAmps[ch.traceWriteIndex] = sliceAmps;
+            ch.traceWriteIndex = (ch.traceWriteIndex + 1) % windowSlices;
+            if (ch.traceCount < windowSlices)
+            {
+               ch.traceCount++;
+            }
+         }
+         else
+         {
+            ch.traceCount = 0;
+            ch.traceWriteIndex = 0;
          }
 
          _sliceSumVolts = 0.0;
          _sliceSumVoltsSquared = 0.0;
          _sliceSampleCount = 0;
 
-         if (_numChannels > 1)
-         {
-            _activeChannel = (_activeChannel + 1) % _numChannels;
-            _adc.setMux(_channels[_activeChannel].mux);
-            _SettleSamplesRemaining = 2;
-         }
+         _advanceChannel();
       }
    }
 
@@ -280,17 +478,76 @@ public:
          _channels[i].name = channelConfigs[i].name != nullptr ? channelConfigs[i].name : "";
          _channels[i].ampsPerVolt = channelConfigs[i].ampsPerVolt;
          _channels[i].mux = channelConfigs[i].mux;
+         _channels[i].externalMuxChannel = channelConfigs[i].externalMuxChannel;
       }
    }
 
    ///
    /// <summary>
-   /// Initializes the underlying ADS1115 ADC and starts the 860 Hz background sampling timer.
+   /// Creates a multi-channel (1 to 16 CTs) split-core power sensor using an external 16-channel
+   /// analog multiplexer (e.g. CD74HC4067) routed to ADS1115 AIN0 with AIN3 as the shared 1.65V reference.
+   /// </summary>
+   /// <param name="muxSelectPins">4 GPIO pins connected to the multiplexer S0, S1, S2, S3 address lines.</param>
+   /// <param name="channelConfigs">Array of per-channel configurations.</param>
+   /// <param name="numChannels">Number of enabled channels (1 to 16).</param>
+   /// <param name="lineVoltageV">Nominal AC line voltage in volts (default 120.0f).</param>
+   /// <param name="i2cAddress">ADS1115 I2C address (default 0x48).</param>
+   /// <param name="adcMux">ADS1115 differential input channel pair (default AIN0 - AIN3).</param>
+   ///
+   CTPowerSensor(
+      const std::array<uint8_t, 4>& muxSelectPins,
+      const ChannelConfig* channelConfigs,
+      size_t numChannels,
+      float lineVoltageV = DEFAULT_LINE_VOLTAGE_V,
+      uint8_t i2cAddress = ADS1115::ADDRESS_GND,
+      ADS1115::Mux adcMux = ADS1115::Mux::DIFF_A0_A3)
+      : _adc(
+           i2cAddress,
+           adcMux,
+           ADS1115::Gain::FS_2_048V,
+           ADS1115::DataRate::SPS_860),
+        _useExternalMux(true),
+        _muxSelectPins(muxSelectPins)
+   {
+      ASSERT(channelConfigs != nullptr);
+      ASSERT(numChannels >= 1 && numChannels <= MAX_MUX_CHANNELS);
+
+      _numChannels = numChannels;
+      _lineVoltageV = lineVoltageV;
+
+      for (size_t i = 0; i < MAX_MUX_CHANNELS; i++)
+      {
+         _channels[i].mux = adcMux;
+         _channels[i].externalMuxChannel = static_cast<uint8_t>(i);
+      }
+
+      for (size_t i = 0; i < _numChannels; i++)
+      {
+         _channels[i].name = channelConfigs[i].name != nullptr ? channelConfigs[i].name : "";
+         _channels[i].ampsPerVolt = channelConfigs[i].ampsPerVolt;
+         _channels[i].mux = adcMux;
+         _channels[i].externalMuxChannel = channelConfigs[i].externalMuxChannel;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Initializes the underlying ADS1115 ADC (and external multiplexer address pins if used)
+   /// and starts the 860 Hz background sampling timer.
    /// </summary>
    /// <returns>True if the ADS1115 initialized and the background timer started; false otherwise.</returns>
    ///
    bool begin()
    {
+      if (_useExternalMux)
+      {
+         for (uint8_t pin : _muxSelectPins)
+         {
+            pinMode(pin, OUTPUT);
+         }
+         _applyExternalMuxChannel(_channels[0].externalMuxChannel);
+      }
+
       if (!_adc.begin())
       {
          return false;
@@ -312,7 +569,7 @@ public:
 
    ///
    /// <summary>
-   /// Gets the number of enabled CT channels (1 to 3).
+   /// Gets the number of enabled CT channels (1 to 16).
    /// </summary>
    /// <returns>Number of enabled channels.</returns>
    ///
@@ -323,13 +580,14 @@ public:
 
    ///
    /// <summary>
-   /// Sets the number of enabled CT channels (1 to 3).
+   /// Sets the number of enabled CT channels.
    /// </summary>
-   /// <param name="numChannels">Number of enabled channels (1 to MAX_CHANNELS).</param>
+   /// <param name="numChannels">Number of enabled channels (1 to MAX_MUX_CHANNELS).</param>
    ///
    void setChannelCount(size_t numChannels)
    {
-      ASSERT(numChannels >= 1 && numChannels <= MAX_CHANNELS);
+      size_t maxCount = _useExternalMux ? MAX_MUX_CHANNELS : MAX_CHANNELS;
+      ASSERT(numChannels >= 1 && numChannels <= maxCount);
 
       _numChannels = numChannels;
       if (_activeChannel >= _numChannels)
@@ -347,7 +605,7 @@ public:
    ///
    const char* channelName(size_t channel) const
    {
-      ASSERT(channel < MAX_CHANNELS);
+      ASSERT(channel < MAX_MUX_CHANNELS);
 
       return _channels[channel].name;
    }
@@ -356,12 +614,12 @@ public:
    /// <summary>
    /// Sets the name/suffix for the specified channel index.
    /// </summary>
-   /// <param name="channel">Channel index (0 to MAX_CHANNELS - 1).</param>
+   /// <param name="channel">Channel index (0 to MAX_MUX_CHANNELS - 1).</param>
    /// <param name="name">Channel name/suffix string.</param>
    ///
    void setChannelName(size_t channel, const char* name)
    {
-      ASSERT(channel < MAX_CHANNELS);
+      ASSERT(channel < MAX_MUX_CHANNELS);
       ASSERT(name != nullptr);
 
       _channels[channel].name = name;
@@ -370,29 +628,57 @@ public:
    ///
    /// <summary>
    /// Sets the split-core CT rating in Amps per 1.0V RMS (e.g. CORE_30A or CORE_100A) for a channel.
+   /// If the rating changes, any buffered trace slices for that channel are rescaled immediately.
    /// </summary>
    /// <param name="ampsPerVolt">Amps per 1.0V RMS sensor output.</param>
    /// <param name="channel">Channel index (default 0).</param>
    ///
    void setCoreRating(float ampsPerVolt, size_t channel = 0)
    {
-      ASSERT(channel < MAX_CHANNELS);
+      ASSERT(channel < MAX_MUX_CHANNELS);
 
-      _channels[channel].ampsPerVolt = ampsPerVolt;
+      ChannelState& ch = _channels[channel];
+      if (ch.ampsPerVolt > 0.0f && ch.ampsPerVolt != ampsPerVolt)
+      {
+         float scale = ampsPerVolt / ch.ampsPerVolt;
+         for (size_t i = 0; i < ch.traceCount; i++)
+         {
+            ch.traceAmps[i] *= scale;
+         }
+         ch.rawAmps *= scale;
+         ch.latchedAmps *= scale;
+      }
+
+      ch.ampsPerVolt = ampsPerVolt;
    }
 
    ///
    /// <summary>
    /// Sets the ADS1115 differential input multiplexer channel for the specified logical channel.
    /// </summary>
-   /// <param name="channel">Channel index (0 to MAX_CHANNELS - 1).</param>
+   /// <param name="channel">Channel index (0 to MAX_MUX_CHANNELS - 1).</param>
    /// <param name="mux">ADS1115 differential mux setting.</param>
    ///
    void setChannelMux(size_t channel, ADS1115::Mux mux)
    {
-      ASSERT(channel < MAX_CHANNELS);
+      ASSERT(channel < MAX_MUX_CHANNELS);
 
       _channels[channel].mux = mux;
+   }
+
+   ///
+   /// <summary>
+   /// Sets the external 16-channel analog multiplexer index (0 to 15) for the specified logical channel.
+   /// </summary>
+   /// <param name="channel">Logical channel index (0 to MAX_MUX_CHANNELS - 1).</param>
+   /// <param name="externalMuxChannel">Physical multiplexer input index (0 to 15).</param>
+   ///
+   void setExternalMuxChannel(size_t channel, uint8_t externalMuxChannel)
+   {
+      ASSERT(channel < MAX_MUX_CHANNELS);
+      ASSERT(externalMuxChannel < MAX_MUX_CHANNELS);
+
+      _channels[channel].externalMuxChannel = externalMuxChannel;
    }
 
    ///
@@ -404,7 +690,7 @@ public:
    ///
    float coreRating(size_t channel = 0) const
    {
-      ASSERT(channel < MAX_CHANNELS);
+      ASSERT(channel < MAX_MUX_CHANNELS);
 
       return _channels[channel].ampsPerVolt;
    }
@@ -444,31 +730,17 @@ public:
 
    ///
    /// <summary>
-   /// Gets the smoothed RMS current in Amps for the specified channel averaged across the
-   /// 1.0-second window.
+   /// Gets the smoothed RMS current in Amps for the specified channel from the latest
+   /// synchronized pass snapshot.
    /// </summary>
    /// <param name="channel">Channel index (default 0).</param>
    /// <returns>Smoothed RMS current in Amps.</returns>
    ///
    float amps(size_t channel = 0) const
    {
-      ASSERT(channel < MAX_CHANNELS);
+      ASSERT(channel < MAX_MUX_CHANNELS);
 
-      const ChannelState& ch = _channels[channel];
-      size_t count = ch.traceCount;
-      if (count == 0)
-      {
-         return 0.0f;
-      }
-
-      float sum = 0.0f;
-      for (size_t i = 0; i < count; i++)
-      {
-         sum += ch.traceAmps[i];
-      }
-
-      float avg = sum / count;
-      return avg < _noiseFloorAmps ? 0.0f : avg;
+      return _channels[channel].latchedAmps;
    }
 
    ///
@@ -521,7 +793,7 @@ public:
    ///
    float rawAmps(size_t channel = 0) const
    {
-      ASSERT(channel < MAX_CHANNELS);
+      ASSERT(channel < MAX_MUX_CHANNELS);
 
       return _channels[channel].rawAmps;
    }
@@ -536,7 +808,7 @@ public:
    ///
    float rmsVolts(size_t channel = 0) const
    {
-      ASSERT(channel < MAX_CHANNELS);
+      ASSERT(channel < MAX_MUX_CHANNELS);
 
       return _channels[channel].rmsVolts;
    }
@@ -551,7 +823,7 @@ public:
    ///
    float dcVolts(size_t channel = 0) const
    {
-      ASSERT(channel < MAX_CHANNELS);
+      ASSERT(channel < MAX_MUX_CHANNELS);
 
       return _channels[channel].dcVolts;
    }
@@ -566,9 +838,9 @@ public:
    ///
    bool isConnected(size_t channel = 0) const
    {
-      ASSERT(channel < MAX_CHANNELS);
+      ASSERT(channel < MAX_MUX_CHANNELS);
 
-      return _channels[channel].connected;
+      return _channels[channel].latchedConnected;
    }
 
    ///

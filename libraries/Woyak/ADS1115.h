@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+#include "I2CMutex.h"
 #include "Util.h"
 
 ///
@@ -151,6 +152,7 @@ public:
    ///
    bool begin(uint32_t i2cClockHz = DEFAULT_I2C_CLOCK_HZ)
    {
+      I2CScopedLock lock;
       Wire.setClock(i2cClockHz);
       return setMux(_mux);
    }
@@ -165,6 +167,7 @@ public:
    ///
    bool setMux(Mux mux)
    {
+      I2CScopedLock lock;
       _mux = mux;
 
       uint16_t config = static_cast<uint16_t>(_mux) |
@@ -208,6 +211,12 @@ public:
    bool readCounts(int16_t* rawCounts) const
    {
       ASSERT(rawCounts != nullptr);
+
+      I2CScopedLock lock(0);
+      if (!lock.locked())
+      {
+         return false;
+      }
 
       if (Wire.requestFrom(_address, static_cast<uint8_t>(2)) != 2)
       {

@@ -23,6 +23,7 @@
 - In sketch naming conventions, a `_Display` sketch (e.g., Temp_Monitor_Display, Air_Monitor_Display, Temp_Display) both collects/populates local sensor information and displays it on screen, whereas a `_Viewer` sketch (e.g., Wind_Viewer, Air_Viewer, Wave_Viewer, Gate_Viewer) only displays remote information without collecting sensor data itself. Sketch names reflect this functional role rather than which display board they run on.
 - Custom ESP32 board definitions are maintained in `C:\SourceCode\Arduino\boards.local.txt`. Because Visual Micro only parses `boards.txt` (and ignores `boards.local.txt`, unlike Arduino IDE / `arduino-cli`), the contents of `C:\SourceCode\Arduino\boards.local.txt` must also be synced to the custom section at the bottom of `C:\Users\scott\AppData\Local\Arduino15\packages\esp32\hardware\esp32\<version>\boards.txt` (starting at the `# Custom local board definitions for Woyak Arduino workspace` header block) in addition to keeping the `boards.local.txt` hardlink in that directory. When adding or modifying custom boards, update `C:\SourceCode\Arduino\boards.local.txt`, sync the custom block at the end of the active ESP32 `<version>\boards.txt`, and run Rescan in Visual Micro (and re-apply if the ESP32 package version is upgraded). Also, if Visual Micro Rescan fails with `Error setting value to 'Platforms' on 'Visual.Micro.ContentAPI.contributions.packages.ContributedPackage'`, fix `installed.json` in `arduino15\packages\...\hardware\...\<version>\installed.json` by replacing `"platforms": null` with `"platforms": []`.
 - When using display boards, utilize the shared constants `DEFAULT_HEADING_SIZE`, `DEFAULT_TEXT_SIZE`, and `DEFAULT_FOOTER_SIZE` defined in `ArduinoBoardId.h` for heading, body/table/label text, and footer/rate/small text instead of hardcoding text sizes.
+- Do not use LaTeX math formatting in responses because the Visual Studio chat window does not render LaTeX; use plain text and standard Unicode characters (like Ω, ×, ±) instead.
 
 ## General Coding Conventions
 - Do not make changes in libraries outside of the Woyak library; third-party libraries should remain untouched.
@@ -66,36 +67,26 @@
 ## Documentation Comment Style
 - User prefers Visual Studio XML documentation comments (`/// <summary>`, `<param>`, `<returns>`) for class and method documentation. These are XML documentation comments used for IntelliSense.
 - Wrap XML doc-comment blocks for classes, methods, properties, and enums in bare `///` lines: a blank `///` line before the block and a blank `///` line after it. Example:
-  ```cpp
+// /
+/// <summary>
+/// Brief description here.
+/// </summary>
   ///
-  /// <summary>
-  /// Brief description here.
-  /// </summary>
-  ///
-  class MyClass
-  ```
-- When documenting namespace functions and class static/member methods, always include complete parameter documentation with `<param>` tags and return value documentation with `<returns>` tags, even for simple inline functions. Example:
-  ```cpp
-  ///
-  /// <summary>
-  /// Convert C to F.
-  /// </summary>
-  /// <param name="celsius">Temperature in Celsius</param>
-  /// <returns>Temperature in Fahrenheit</returns>
-  ///
-  ```
-- A wrapped `/// <summary>` doc-comment block needs a blank line before it, separating it from the previous sibling declaration (e.g. between documented enum members), UNLESS it immediately follows a scope-opener (`{`), an access specifier (`public:`/`private:`/`protected:`), or a `// -----------` section-header comment.
+  class MyClass- When documenting namespace functions and class static/member methods, always include complete parameter documentation with `<param>` tags and return value documentation with `<returns>` tags, even for simple inline functions. Example:
+// /
+/// <summary>
+/// Convert C to F.
+/// </summary>
+/// <param name="celsius">Temperature in Celsius</param>
+/// <returns>Temperature in Fahrenheit</returns>
+///- A wrapped `/// <summary>` doc-comment block needs a blank line before it, separating it from the previous sibling declaration (e.g. between documented enum members), UNLESS it immediately follows a scope-opener (`{`), an access specifier (`public:`/`private:`/`protected:`), or a `// -----------` section-header comment.
 - Do NOT add per-member doc comments to enum values, struct members, or class fields whose names and types are self-evident (e.g. `PORTRAIT`, or a `label` field in a struct). Only add a single wrapped `///` XML summary comment on the parent declaration itself.
-- For `.ino` sketch files, use a top-of-file `//` line-comment block (not XML `///` doc comments) describing what the sketch does, with blank `//` lines separating sections. Format as:
-  ```cpp
-  //
-  // Brief description of what this sketch does.
-  //
-  // Optional longer description of the sketch's purpose, key features,
-  // hardware setup, etc.
-  //
-  ```
-- Do not add XML docs for `setup()` or `loop()` functions unless explicitly requested; they're self-explanatory.
+- For `.ino` sketch files, use a top-of-file `//` line-comment block (not XML `///` doc comments) describing what the sketch does, with blank `//` lines separating sections. Format as://
+// Brief description of what this sketch does.
+//
+// Optional longer description of the sketch's purpose, key features,
+// hardware setup, etc.
+  //- Do not add XML docs for `setup()` or `loop()` functions unless explicitly requested; they're self-explanatory.
 - Keep section comments in the style `// ----------- COMMENT` where they already exist (e.g. grouping overloads by type in library headers); do not remove them during cleanup.
 - When a pointer or condition should never be false/null at runtime (i.e. it isn't a legitimately optional value, but rather something that indicates a bug if violated), prefer failing loudly with the `ASSERT(condition)` macro (defined in `libraries/Woyak/Util.h`, built on `Util::setHaltReason()` + `Util::reset()`) instead of a defensive `if (ptr != nullptr)` guard/no-op that would hide the underlying bug. Reserve plain null checks for values that are genuinely optional.
 - Place `ASSERT` statements as early as possible in a function — before any early-return guard clauses and before all other statements — so invariants are checked before any other work happens, even if a guard clause would otherwise make the assert unreachable in some cases. Whenever an `ASSERT` (or a contiguous run of `ASSERT` statements) is immediately followed by a non-`ASSERT` line, leave a blank line between the last `ASSERT` in that run and the next line of code. This applies to every such run in a function, not just the first one at the top (e.g. `ASSERT` -> code -> another `ASSERT` -> code still needs a blank line after each `ASSERT` run).

@@ -61,6 +61,7 @@
     <File Path="libraries/Woyak/I2C.h" />
     <File Path="libraries/Woyak/I2CMultiplexor.h" />
     <File Path="libraries/Woyak/HDC302xTempSensor.h" />
+    <File Path="libraries/Woyak/I2CMutex.h" />
     <File Path="libraries/Woyak/I2CTempSensor.h" />
     <File Path="libraries/Woyak/IDepthSensor.h" />
     <File Path="libraries/Woyak/IEncoder.h" />
@@ -629,6 +630,10 @@
     <Deploy Solution="*|ARM" />
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
+  </Project>
+  <Project Path="PowerMulti_Publisher/PowerMulti_Publisher.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
   </Project>
   <Project Path="Power_Publisher/Power_Publisher.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
