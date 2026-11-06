@@ -9,6 +9,7 @@
 #include "ESP32TempSensor.h"
 #include "CapacitorSensor.h"
 #include "CapacitorDepthSensor.h"
+#include "Util.h"
 
 class ESP32TempTestSensor;
 class TempSensorTestSensor;
@@ -76,7 +77,7 @@ namespace TestSensorConfig
    static constexpr float SIN_MIN_PERIOD_S = 1.0f;
    static constexpr float SIN_MAX_PERIOD_S = 60.0f;
    static constexpr float SIN_PERIOD_STEP_S = 1.0f;
-   static constexpr const char* SIN_FORMAT = "###.#";
+   static constexpr const char* SIN_FORMAT = "###.###";
     // Fixed time increment applied per sample when SinTestSensor uses TimeSource::FIXED_STEP,
    // so the wave advances in perfectly even steps regardless of actual loop/sampling jitter.
    static constexpr float SIN_FIXED_STEP_S = 0.05f;
@@ -103,7 +104,7 @@ namespace TestSensorConfig
    static constexpr float WAVE_MIN_PERIOD_S = 1.0f;
    static constexpr float WAVE_MAX_PERIOD_S = 60.0f;
    static constexpr float WAVE_PERIOD_STEP_S = 1.0f;
-   static constexpr const char* WAVE_FORMAT = "###.#";
+   static constexpr const char* WAVE_FORMAT = "###.###";
 
    // ----- temp sensor (physical sensor)
    static constexpr const char* TEMP_FORMAT = "###.##F";
@@ -421,7 +422,12 @@ protected:
    ///
    float _sinValue(float midpoint, float amplitude, float periodS) const
    {
-      float elapsedS = static_cast<float>(millis() - _startMs) / 1000.0f;
+      if (periodS <= 0.0f)
+      {
+         return midpoint;
+      }
+
+      float elapsedS = static_cast<float>(fmod(static_cast<double>(Util::millisSince(_startMs)) / 1000.0, static_cast<double>(periodS)));
       return _sinValue(midpoint, amplitude, periodS, elapsedS);
    }
 
@@ -786,13 +792,14 @@ public:
    };
 
 private:
-   // Accumulated phase (in radians) and the elapsed-time value it was last advanced to.
-   // Advancing phase incrementally (rather than computing it directly from total elapsed
-   // time / periodS) means a live change to periodS only changes the rate at which phase
-   // accumulates from here on, so the wave continues smoothly from its current value
-   // instead of jumping to a different point in the cycle.
+   // Accumulated phase (in radians) and the timestamp it was last advanced to.
+   // Advancing phase incrementally from the unsigned millisecond delta (rather than
+   // converting total elapsed millis() since begin() to a float) means a live change to
+   // periodS continues smoothly from the current phase, and avoids float mantissa precision
+   // loss once uptime exceeds a few hours (where float(millis() - _startMs) loses 1 ms
+   // resolution and eventually quantizes 10 ms ticks to 0).
    float _phaseRadians = 0.0f;
-   float _lastElapsedS = 0.0f;
+   unsigned long _lastSampleMs = 0;
 
    uint16_t _samplingRatePerSec() const override
    {
@@ -804,17 +811,14 @@ private:
    /// Advances the accumulated phase by the time elapsed since the last call, at a rate
    /// determined by the current periodS, and returns the new phase.
    /// </summary>
-   /// <param name="elapsedS">Total elapsed time, in seconds, since begin().</param>
+   /// <param name="deltaS">Time elapsed, in seconds, since the last sample.</param>
    /// <returns>The accumulated phase, in radians.</returns>
    ///
-   float _advancePhase(float elapsedS)
+   float _advancePhase(float deltaS)
    {
-      float deltaS = elapsedS - _lastElapsedS;
-      _lastElapsedS = elapsedS;
-
       if (periodS > 0.0f)
       {
-         _phaseRadians += (deltaS / periodS) * (2.0f * PI);
+         _phaseRadians = fmodf(_phaseRadians + (deltaS / periodS) * (2.0f * PI), 2.0f * PI);
       }
 
       return _phaseRadians;
@@ -822,17 +826,21 @@ private:
 
    float _getValue() override
    {
-      float elapsedS;
+      unsigned long nowMs = millis();
+      unsigned long deltaMs = Util::getSpan(_lastSampleMs, nowMs);
+      _lastSampleMs = nowMs;
+
+      float deltaS;
       if (timeSource == TIME_SOURCE_FIXED_STEP)
       {
-         elapsedS = static_cast<float>(_sampleIndex) * TestSensorConfig::SIN_FIXED_STEP_S;
+         deltaS = (_sampleIndex == 0) ? 0.0f : TestSensorConfig::SIN_FIXED_STEP_S;
       }
       else
       {
-         elapsedS = static_cast<float>(millis() - _startMs) / 1000.0f;
+         deltaS = static_cast<float>(deltaMs) / 1000.0f;
       }
 
-      float radians = _advancePhase(elapsedS);
+      float radians = _advancePhase(deltaS);
       return TestSensorConfig::SIN_MEAN + (sinf(radians) * TestSensorConfig::SIN_AMPLITUDE);
    }
 
@@ -846,8 +854,9 @@ public:
    bool begin() override
    {
       _phaseRadians = 0.0f;
-      _lastElapsedS = 0.0f;
-      return MockTestSensorBase::begin();
+      bool result = MockTestSensorBase::begin();
+      _lastSampleMs = _startMs;
+      return result;
    }
 
    ///
@@ -901,12 +910,13 @@ public:
 class WaveTestSensor : public MockTestSensorBase
 {
 private:
-   // Accumulated phase (in radians) for each wave component, and the elapsed-time value
-   // they were last advanced to. See SinTestSensor::_advancePhase for why phase is
-   // accumulated incrementally rather than computed directly from total elapsed time.
+   // Accumulated phase (in radians) for each wave component, and the timestamp they were
+   // last advanced to. Computing deltaS from unsigned millisecond subtraction (nowMs -
+   // _lastSampleMs) rather than subtracting two total-elapsed-seconds floats preserves full
+   // sub-millisecond resolution regardless of how many days the sketch has been running.
    float _primaryPhaseRadians = 0.0f;
    float _chopPhaseRadians = 0.0f;
-   float _lastElapsedS = 0.0f;
+   unsigned long _lastSampleMs = 0;
 
    // Per-cycle random multipliers (see _randomFactor()) applied to each component's period
    // and amplitude, re-rolled every time that component completes a cycle (_advancePhase()
@@ -966,9 +976,9 @@ private:
 
    float _getValue() override
    {
-      float elapsedS = static_cast<float>(millis() - _startMs) / 1000.0f;
-      float deltaS = elapsedS - _lastElapsedS;
-      _lastElapsedS = elapsedS;
+      unsigned long nowMs = millis();
+      float deltaS = static_cast<float>(Util::getSpan(_lastSampleMs, nowMs)) / 1000.0f;
+      _lastSampleMs = nowMs;
 
       _advancePhase(_primaryPhaseRadians, periodS, _primaryPeriodFactor, _primaryAmplitudeFactor, deltaS);
       _advancePhase(_chopPhaseRadians, periodS / TestSensorConfig::WAVE_CHOP_PERIOD_DIVISOR, _chopPeriodFactor, _chopAmplitudeFactor, deltaS);
@@ -989,12 +999,13 @@ public:
    {
       _primaryPhaseRadians = 0.0f;
       _chopPhaseRadians = 0.0f;
-      _lastElapsedS = 0.0f;
       _primaryPeriodFactor = 1.0f;
       _primaryAmplitudeFactor = 1.0f;
       _chopPeriodFactor = 1.0f;
       _chopAmplitudeFactor = 1.0f;
-      return MockTestSensorBase::begin();
+      bool result = MockTestSensorBase::begin();
+      _lastSampleMs = _startMs;
+      return result;
    }
 
    ///

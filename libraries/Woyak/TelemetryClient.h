@@ -408,7 +408,6 @@ private:
       std::string lastValue;
    };
    std::vector<PublishTime> _publishTimes;
-   bool _sendEverySample = false;
 
    // user event handler; owned by this instance only when created by the constructor
    TelemetryEventHandler* _handler = nullptr;
@@ -834,22 +833,8 @@ public:
 
    ///
    /// <summary>
-   /// Sets whether every value passed to publish() or setValue() is published, even if it
-   /// is unchanged at the configured decimal places. When false, only changed values are
-   /// published.
-   /// </summary>
-   /// <param name="enable">True to publish every sample.</param>
-   ///
-   void setSendEverySample(bool enable)
-   {
-      _sendEverySample = enable;
-   }
-
-   ///
-   /// <summary>
    /// Publishes a sample (publishers only) when the formatted value for the topic has
-   /// changed (or when setSendEverySample(true) is enabled). Dropped if the connection
-   /// isn't ready.
+   /// changed. Dropped if the connection isn't ready.
    /// </summary>
    /// <param name="topic">Topic name</param>
    /// <param name="value">Sample value</param>
@@ -877,7 +862,7 @@ public:
          }
       }
 
-      if (!_sendEverySample && last != nullptr && last->lastValue == formatted.c_str())
+      if (last != nullptr && last->lastValue == formatted.c_str())
       {
          return false;
       }

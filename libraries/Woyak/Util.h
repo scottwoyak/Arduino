@@ -394,6 +394,16 @@ public:
    }
 
    /// <summary>
+   /// Calculates milliseconds elapsed since the given starting time.
+   /// </summary>
+   /// <param name="start">Starting timestamp from a prior millis() call</param>
+   /// <returns>Milliseconds elapsed</returns>
+   static unsigned long millisSince(unsigned long start)
+   {
+      return getSpan(start, millis());
+   }
+
+   /// <summary>
    /// Formats a floating-point value to a target number of significant digits.
    /// </summary>
    /// <param name="value">Value to format.</param>

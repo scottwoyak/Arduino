@@ -24,7 +24,53 @@ class TimedScatterPlotSeries : public ScatterPlotSeriesBase
    friend class ScatterPlot;
 
 private:
+   // 32-bit float has a 24-bit significand (exact integers up to 16,777,216 ms, or ~4.66
+   // hours). Storing raw millis() directly in float* _x loses 1 ms resolution after 4.66
+   // hours and reaches 16 ms quantization after ~1.55 days (134.2M ms), which both
+   // quantizes plotted X positions and causes (xMax - xMin) for non-power-of-two window
+   // spans (e.g. 5000 ms) to jitter between adjacent float multiples (e.g. 4992 and 5008),
+   // triggering a full axis/label redraw in ScatterPlot::draw() on nearly every frame.
+   // Rebasing X coordinates relative to _epochMs in fixed steps keeps all stored float X
+   // values below REBASE_THRESHOLD_MS (< 2^23), preserving exact 1 ms float precision
+   // indefinitely and across millis() 32-bit rollover.
+   static constexpr unsigned long REBASE_THRESHOLD_MS = 8000000UL;
+   static constexpr unsigned long REBASE_STEP_MS = 4000000UL;
+
    unsigned long _historyMs;
+   unsigned long _epochMs = 0;
+
+   void _rebaseIfNeeded(unsigned long nowMs)
+   {
+      unsigned long relNowMs = Util::getSpan(_epochMs, nowMs);
+      if (relNowMs < REBASE_THRESHOLD_MS)
+      {
+         return;
+      }
+
+      unsigned long shiftMs = ((relNowMs - REBASE_STEP_MS) / REBASE_STEP_MS) * REBASE_STEP_MS;
+      _epochMs += shiftMs;
+
+      float shiftFloat = static_cast<float>(shiftMs);
+      for (size_t i = 0; i < _count; i++)
+      {
+         _x[i] -= shiftFloat;
+      }
+
+      if (isfinite(_xMin)) _xMin -= shiftFloat;
+      if (isfinite(_xMax)) _xMax -= shiftFloat;
+      if (isfinite(_maxSampleX)) _maxSampleX -= shiftFloat;
+      if (_hasFixedXRange)
+      {
+         _fixedXMin -= shiftFloat;
+         _fixedXMax -= shiftFloat;
+      }
+   }
+
+protected:
+   void _clearDerivedState() override
+   {
+      _epochMs = 0;
+   }
 
 public:
    ///
@@ -47,7 +93,9 @@ public:
    ///
    void add(float value) override
    {
-      _appendRaw(static_cast<float>(millis()), value);
+      unsigned long nowMs = millis();
+      _rebaseIfNeeded(nowMs);
+      _appendRaw(static_cast<float>(Util::getSpan(_epochMs, nowMs)), value);
    }
 
    ///
@@ -61,10 +109,13 @@ public:
    ///
    void updateWindow(unsigned long nowMs)
    {
-      unsigned long cutoff = (nowMs > _historyMs) ? (nowMs - _historyMs) : 0;
+      _rebaseIfNeeded(nowMs);
+      unsigned long relNowMs = Util::getSpan(_epochMs, nowMs);
+      unsigned long relCutoffMs = (relNowMs > _historyMs) ? (relNowMs - _historyMs) : 0;
+      float cutoffFloat = static_cast<float>(relCutoffMs);
 
       size_t evictCount = 0;
-      while (evictCount < _count && _x[evictCount] < static_cast<float>(cutoff))
+      while (evictCount < _count && _x[evictCount] < cutoffFloat)
       {
          evictCount++;
       }
@@ -103,6 +154,6 @@ public:
          _stdDevFiniteCount = 0;
       }
 
-      setFixedXRange(static_cast<float>(cutoff), static_cast<float>(nowMs));
+      setFixedXRange(cutoffFloat, static_cast<float>(relNowMs));
    }
 };

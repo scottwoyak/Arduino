@@ -108,7 +108,6 @@ private:
 
        /// <summary>Constructed by begin(), once the telemetry topic has been resolved.</summary>
        TelemetryPublisher* _client = nullptr;
-       bool _streaming = false;
 
        Timer _publishTimer;
 
@@ -392,8 +391,6 @@ private:
    {
       if (_client->isStarted())
       {
-         _client->setSendEverySample(_streaming);
-
          // without a delay, the waveshare crashes (not needed on Playground boards)
          #ifndef ARDUINO_PLAYGROUND_SUPPORTED
          delay(1);
@@ -413,7 +410,7 @@ private:
    ///
    bool _extraInfluxReadyCondition() override
    {
-      return _client->isStarted() && !_streaming;
+      return _client->isStarted();
    }
 
    ///
@@ -460,19 +457,6 @@ public:
    void setValueSource(float (*valueFunc)())
    {
       _valueSource = valueFunc;
-   }
-
-   ///
-   /// <summary>
-   /// Enables or disables streaming mode. While streaming, every sample is published over
-   /// telemetry (even if unchanged) and InfluxDB activity is suspended, so network work
-   /// doesn't delay the live stream.
-   /// </summary>
-   /// <param name="streaming">True to stream every sample and suspend Influx.</param>
-   ///
-   void setStreaming(bool streaming)
-   {
-      _streaming = streaming;
    }
 
    ///
