@@ -417,6 +417,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Consumption_Meter/Consumption_Meter.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Counter_Display/Counter_Display.vcxproj" Id="00000000-0000-0000-0000-000000000026">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

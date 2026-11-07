@@ -59,6 +59,7 @@ public:
    static constexpr float CORE_100A = 100.0f;
    static constexpr float CORE_150A = 150.0f;
    static constexpr float CORE_200A = 200.0f;
+   static constexpr float CORE_213A = 10000.0f / 47.0f; // 500A:50mA (10000:1) CT with 47 ohm burden resistor (~212.77 A/V)
    static constexpr float CORE_500A = 500.0f;
 
    static constexpr float DEFAULT_LINE_VOLTAGE_V = 120.0f;

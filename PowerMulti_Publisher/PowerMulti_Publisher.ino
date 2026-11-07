@@ -635,7 +635,7 @@ bool displayReady = false;
 constexpr int16_t GEAR_RADIUS = 16;
 constexpr int16_t GEAR_MARGIN = 6;
 constexpr int16_t GEAR_TAP_SIZE = 56;
-constexpr std::array<float, 8> AMP_RATING_OPTIONS = {
+constexpr std::array<float, 9> AMP_RATING_OPTIONS = {
    CTPowerSensor::CORE_15A,
    CTPowerSensor::CORE_20A,
    CTPowerSensor::CORE_30A,
@@ -643,6 +643,7 @@ constexpr std::array<float, 8> AMP_RATING_OPTIONS = {
    CTPowerSensor::CORE_100A,
    CTPowerSensor::CORE_150A,
    CTPowerSensor::CORE_200A,
+   CTPowerSensor::CORE_213A,
    CTPowerSensor::CORE_500A,
 };
 
