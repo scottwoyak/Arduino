@@ -106,7 +106,7 @@ constexpr uint16_t TELEMETRY_PUBLISH_INTERVAL_MS = DISPLAY_UPDATE_INTERVAL_MS;
 
 // ----------- Display Layout
 constexpr uint8_t HEADER_SIZE = DEFAULT_HEADING_SIZE;
-constexpr uint8_t TABLE_TEXT_SIZE = 2;
+constexpr uint8_t TABLE_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 constexpr uint8_t FOOTER_SIZE = DEFAULT_FOOTER_SIZE;
 constexpr size_t LOCATION_COL_WIDTH = 16;
 
@@ -645,7 +645,8 @@ bool displayReady = false;
 constexpr int16_t GEAR_RADIUS = 16;
 constexpr int16_t GEAR_MARGIN = 6;
 constexpr int16_t GEAR_TAP_SIZE = 56;
-constexpr std::array<float, 9> AMP_RATING_OPTIONS = {
+constexpr size_t NUM_AMP_OPTIONS = 9;
+constexpr std::array<float, NUM_AMP_OPTIONS> AMP_RATING_OPTIONS = {
    AD7606PowerSensor::CORE_15A,
    AD7606PowerSensor::CORE_20A,
    AD7606PowerSensor::CORE_30A,
@@ -657,8 +658,20 @@ constexpr std::array<float, 9> AMP_RATING_OPTIONS = {
    AD7606PowerSensor::CORE_500A,
 };
 
+constexpr int16_t SETTINGS_MARGIN_X = 8;
+constexpr int16_t SETTINGS_GAP = 8;
+constexpr int16_t SETTINGS_CORNER_RADIUS = 8;
+constexpr size_t CHANNEL_GRID_COLS = 4;
+constexpr size_t CHANNEL_GRID_ROWS = 2;
+constexpr size_t AMP_GRID_COLS = 3;
+constexpr size_t AMP_GRID_ROWS = 3;
+
 bool showingSettings = false;
 bool wasTouching = false;
+size_t selectedSettingsChannel = 0;
+std::array<Rect16, NUM_CT_INPUTS> channelBoxRects = {};
+Rect16 labelBoxRect;
+std::array<Rect16, NUM_AMP_OPTIONS> ampBoxRects = {};
 
 ///
 /// <summary>
@@ -719,6 +732,20 @@ bool onGear(int16_t x, int16_t y)
 
 ///
 /// <summary>
+/// Returns true if the given touch point falls within rect.
+/// </summary>
+/// <param name="rect">Tap target to test.</param>
+/// <param name="x">Touch x coordinate.</param>
+/// <param name="y">Touch y coordinate.</param>
+/// <returns>True if the touch point is inside the rect.</returns>
+///
+bool inRect(const Rect16& rect, int16_t x, int16_t y)
+{
+   return x >= rect.left() && x < rect.right() && y >= rect.top() && y < rect.bottom();
+}
+
+///
+/// <summary>
 /// Draws the static frame (heading, gear icon, and version footer) for the main power view.
 /// </summary>
 ///
@@ -738,9 +765,36 @@ void drawMainFrame()
 
 ///
 /// <summary>
-/// Draws the 8-row touch configuration view showing each channel's index, location, and
-/// CT amp rating. Tapping a row's location side edits the location; tapping the right side
-/// selects the CT amp rating; tapping the top-right X returns to the live power table.
+/// Draws a pencil edit icon centered at (cx, cy).
+/// </summary>
+/// <param name="cx">Center x coordinate.</param>
+/// <param name="cy">Center y coordinate.</param>
+/// <param name="color">Icon stroke color.</param>
+///
+void drawEditIcon(int16_t cx, int16_t cy, Color color)
+{
+   const uint16_t c = static_cast<uint16_t>(color);
+   const int16_t x0 = cx - 9;
+   const int16_t y0 = cy + 9;
+
+   // Pencil shaft (diagonal body from bottom-left to top-right)
+   sketch.arduino.display.drawLine(x0 + 3, y0 - 7, x0 + 13, y0 - 17, c);
+   sketch.arduino.display.drawLine(x0 + 7, y0 - 3, x0 + 17, y0 - 13, c);
+   sketch.arduino.display.drawLine(x0 + 13, y0 - 17, x0 + 17, y0 - 13, c);
+   sketch.arduino.display.drawLine(x0 + 11, y0 - 15, x0 + 15, y0 - 11, c);
+   sketch.arduino.display.drawLine(x0 + 3, y0 - 7, x0 + 7, y0 - 3, c);
+
+   // Pencil tip (pointing to bottom-left)
+   sketch.arduino.display.drawLine(x0 + 3, y0 - 7, x0, y0, c);
+   sketch.arduino.display.drawLine(x0 + 7, y0 - 3, x0, y0, c);
+}
+
+///
+/// <summary>
+/// Draws the touch configuration view:
+/// - Upper portion: 8 channel squares (2x4 grid) with the selected channel highlighted.
+/// - Bottom portion: the selected channel's editable location label box (with edit icon)
+///   and a 3x3 grid of CT amp rating boxes with the active rating highlighted.
 /// </summary>
 ///
 void drawSettingsView()
@@ -751,89 +805,132 @@ void drawSettingsView()
    sketch.arduino.println("Configure", Color::HEADING);
    drawCloseIcon();
 
-   Format cfgAmpsFormat(" #### A", Format::Alignment::RIGHT);
-   sketch.arduino.setCursorY(valueStartY);
-   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+   const int16_t screenW = sketch.arduino.width();
+   const int16_t screenH = sketch.arduino.height();
+   const int16_t contentW = screenW - 2 * SETTINGS_MARGIN_X;
+   int16_t y = sketch.arduino.getCursorY() + SETTINGS_GAP;
+
+   // Upper portion: 8 squares (4 columns x 2 rows) for channels 1-8
+   sketch.arduino.setTextSize(FOOTER_SIZE);
+   sketch.arduino.setCursor(SETTINGS_MARGIN_X, y);
+   sketch.arduino.println("Channel", Color::SUB_LABEL);
+   y = sketch.arduino.getCursorY() + 4;
+
+   const int16_t chSquareSize = (contentW - static_cast<int16_t>(CHANNEL_GRID_COLS - 1) * SETTINGS_GAP) / static_cast<int16_t>(CHANNEL_GRID_COLS);
+   sketch.arduino.setTextSize(HEADER_SIZE);
+   const int16_t chNumH = sketch.arduino.charH(HEADER_SIZE);
 
    for (size_t i = 0; i < NUM_CT_INPUTS; i++)
    {
-      bool hasLoc = ctLocations[i][0] != '\0';
-      const char* locText = hasLoc ? ctLocations[i] : "(tap to set)";
-      Color locColor = hasLoc ? Color::LABEL : Color::GRAY;
+      const size_t col = i % CHANNEL_GRID_COLS;
+      const size_t row = i / CHANNEL_GRID_COLS;
+      const int16_t bx = SETTINGS_MARGIN_X + static_cast<int16_t>(col) * (chSquareSize + SETTINGS_GAP);
+      const int16_t by = y + static_cast<int16_t>(row) * (chSquareSize + SETTINGS_GAP);
+      channelBoxRects[i] = Rect16(bx, by, chSquareSize, chSquareSize);
 
-      sketch.arduino.print(static_cast<int>(i + 1), rowIndexFormat, Color::SUB_LABEL);
-      sketch.arduino.print(locText, rowLocationFormat, locColor);
-      sketch.arduino.printlnR(static_cast<int>(ctAmps[i] + 0.5f), cfgAmpsFormat, Color::VALUE2);
+      const bool selected = (i == selectedSettingsChannel);
+      const bool configured = (ctLocations[i][0] != '\0');
+      const Color bg = selected ? Color::DARKGREEN : (configured ? Color::DARKBLUE : Color::BLACK);
+      const Color border = selected ? Color::WHITE : (configured ? Color::LIGHTBLUE : Color::GRAY);
+      const Color textColor = (selected || configured) ? Color::WHITE : Color::GRAY;
+
+      sketch.arduino.display.fillRoundRect(bx, by, chSquareSize, chSquareSize, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(bg));
+      sketch.arduino.display.drawRoundRect(bx, by, chSquareSize, chSquareSize, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(border));
+      if (selected)
+      {
+         sketch.arduino.display.drawRoundRect(bx + 1, by + 1, chSquareSize - 2, chSquareSize - 2, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(border));
+      }
+
+      String numStr = String(i + 1);
+      sketch.arduino.display.setTextColor(static_cast<uint16_t>(textColor), static_cast<uint16_t>(bg));
+      const int16_t tw = sketch.arduino.display.textWidth(numStr.c_str());
+      sketch.arduino.display.setCursor(bx + (chSquareSize - tw) / 2, by + (chSquareSize - chNumH) / 2);
+      sketch.arduino.display.print(numStr.c_str());
    }
 
-   int16_t footerHeight = sketch.arduino.charH(FOOTER_SIZE);
+   y += static_cast<int16_t>(CHANNEL_GRID_ROWS) * chSquareSize + static_cast<int16_t>(CHANNEL_GRID_ROWS - 1) * SETTINGS_GAP + 6 * SETTINGS_GAP;
+
+   // Selected channel's name field with inline edit icon
+   const int16_t labelBoxH = sketch.arduino.charH(TABLE_TEXT_SIZE) + 28;
+   labelBoxRect = Rect16(SETTINGS_MARGIN_X, y, contentW, labelBoxH);
+   sketch.arduino.display.fillRoundRect(labelBoxRect.left(), labelBoxRect.top(), labelBoxRect.width, labelBoxRect.height, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(Color::DARKBLUE));
+   sketch.arduino.display.drawRoundRect(labelBoxRect.left(), labelBoxRect.top(), labelBoxRect.width, labelBoxRect.height, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(Color::WHITE));
+
+   const bool hasLoc = ctLocations[selectedSettingsChannel][0] != '\0';
+   const char* locText = hasLoc ? ctLocations[selectedSettingsChannel] : "(tap to set)";
+   const Color locColor = hasLoc ? Color::WHITE : Color::LIGHTGRAY;
+   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+   sketch.arduino.display.setTextColor(static_cast<uint16_t>(locColor), static_cast<uint16_t>(Color::DARKBLUE));
+   const int16_t locTw = sketch.arduino.display.textWidth(locText);
+   int16_t locTx = labelBoxRect.left() + (labelBoxRect.width - locTw) / 2;
+   if (locTx < labelBoxRect.left() + 12)
+   {
+      locTx = labelBoxRect.left() + 12;
+   }
+   sketch.arduino.display.setCursor(locTx, labelBoxRect.top() + (labelBoxRect.height - sketch.arduino.charH(TABLE_TEXT_SIZE)) / 2);
+   sketch.arduino.display.print(locText);
+   drawEditIcon(labelBoxRect.right() - 24, labelBoxRect.top() + labelBoxRect.height / 2, Color::LIGHTGRAY);
+
+   y += labelBoxH + 2 * SETTINGS_GAP;
+
+   // Selected channel's amp rating section (3x3 grid of boxes)
    sketch.arduino.setTextSize(FOOTER_SIZE);
-   sketch.arduino.setCursor(0, sketch.arduino.height() - footerHeight);
-   sketch.arduino.print("Tap Loc or Amps to edit", Color::GRAY);
+   sketch.arduino.setCursor(SETTINGS_MARGIN_X, y);
+   sketch.arduino.println("Amp Rating", Color::SUB_LABEL);
+   y = sketch.arduino.getCursorY() + 4;
+
+   const int16_t availAmpH = screenH - y - SETTINGS_MARGIN_X;
+   int16_t ampBoxH = (availAmpH - static_cast<int16_t>(AMP_GRID_ROWS - 1) * SETTINGS_GAP) / static_cast<int16_t>(AMP_GRID_ROWS);
+   if (ampBoxH > 84)
+   {
+      ampBoxH = 84;
+   }
+   const int16_t ampBoxW = (contentW - static_cast<int16_t>(AMP_GRID_COLS - 1) * SETTINGS_GAP) / static_cast<int16_t>(AMP_GRID_COLS);
+
+   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+   const int16_t ampTextH = sketch.arduino.charH(TABLE_TEXT_SIZE);
+   const float currentAmps = ctAmps[selectedSettingsChannel];
+
+   for (size_t i = 0; i < NUM_AMP_OPTIONS; i++)
+   {
+      const size_t col = i % AMP_GRID_COLS;
+      const size_t row = i / AMP_GRID_COLS;
+      const int16_t bx = SETTINGS_MARGIN_X + static_cast<int16_t>(col) * (ampBoxW + SETTINGS_GAP);
+      const int16_t by = y + static_cast<int16_t>(row) * (ampBoxH + SETTINGS_GAP);
+      ampBoxRects[i] = Rect16(bx, by, ampBoxW, ampBoxH);
+
+      const bool selected = (std::fabs(currentAmps - AMP_RATING_OPTIONS[i]) < 0.5f);
+      const Color bg = selected ? Color::DARKGREEN : Color::BLUE;
+      const Color border = selected ? Color::WHITE : Color::GRAY;
+
+      sketch.arduino.display.fillRoundRect(bx, by, ampBoxW, ampBoxH, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(bg));
+      sketch.arduino.display.drawRoundRect(bx, by, ampBoxW, ampBoxH, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(border));
+      if (selected)
+      {
+         sketch.arduino.display.drawRoundRect(bx + 1, by + 1, ampBoxW - 2, ampBoxH - 2, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(border));
+      }
+
+      String ampStr = String(static_cast<int>(AMP_RATING_OPTIONS[i] + 0.5f)) + " A";
+      sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(bg));
+      const int16_t tw = sketch.arduino.display.textWidth(ampStr.c_str());
+      sketch.arduino.display.setCursor(bx + (ampBoxW - tw) / 2, by + (ampBoxH - ampTextH) / 2);
+      sketch.arduino.display.print(ampStr.c_str());
+   }
 }
 
 ///
 /// <summary>
-/// Opens the on-screen touch prompt to edit the location (including Clear) for a channel.
+/// Opens the on-screen touch keyboard directly to edit the location for a channel.
 /// </summary>
 /// <param name="ch">Channel index (0 to 7).</param>
 ///
 void editChannelLocationTouch(size_t ch)
 {
-   if (ctLocations[ch][0] != '\0')
-   {
-      String menuTitle = "Ch " + String(ch + 1) + ": " + String(ctLocations[ch]);
-      std::vector<String> actions = { "Edit Name", "Clear Location", "Cancel" };
-      size_t choice = sketch.arduino.promptTouchOption(menuTitle.c_str(), actions, 0);
-      if (choice == 1)
-      {
-         saveCtLocation(ch, "");
-         return;
-      }
-      if (choice == 2)
-      {
-         return;
-      }
-   }
-
    String kbTitle = "Location " + String(ch + 1) + " (- to clear)";
    String entered = sketch.arduino.promptTouchText(kbTitle.c_str(), String(ctLocations[ch]));
    entered.trim();
    bool clear = (entered == "-" || entered.equalsIgnoreCase("none") || entered.equalsIgnoreCase("off"));
    saveCtLocation(ch, clear ? "" : entered.c_str());
-}
-
-///
-/// <summary>
-/// Opens the on-screen touch option list to select the CT amp rating for a channel.
-/// </summary>
-/// <param name="ch">Channel index (0 to 7).</param>
-///
-void editChannelAmpsTouch(size_t ch)
-{
-   std::vector<String> options;
-   size_t defaultIdx = 2; // 30A default
-   for (size_t i = 0; i < AMP_RATING_OPTIONS.size(); i++)
-   {
-      int ratingInt = static_cast<int>(AMP_RATING_OPTIONS[i] + 0.5f);
-      options.push_back(String(ratingInt) + " A");
-      if (std::fabs(ctAmps[ch] - AMP_RATING_OPTIONS[i]) < 0.5f)
-      {
-         defaultIdx = i;
-      }
-   }
-
-   String title = "Amps Ch " + String(ch + 1);
-   if (ctLocations[ch][0] != '\0')
-   {
-      title += " (" + String(ctLocations[ch]) + ")";
-   }
-
-   size_t chosen = sketch.arduino.promptTouchOption(title.c_str(), options, defaultIdx);
-   if (chosen < AMP_RATING_OPTIONS.size())
-   {
-      saveCtAmps(ch, AMP_RATING_OPTIONS[chosen]);
-   }
 }
 #endif
 
@@ -925,28 +1022,41 @@ void handleTouch()
       return;
    }
 
-   int16_t rowH = sketch.arduino.charH(TABLE_TEXT_SIZE);
-   if (tp.y >= valueStartY && tp.y < valueStartY + static_cast<int16_t>(NUM_CT_INPUTS) * rowH)
+   for (size_t i = 0; i < NUM_CT_INPUTS; i++)
    {
-      size_t row = static_cast<size_t>((tp.y - valueStartY) / rowH);
-      if (row < NUM_CT_INPUTS)
+      if (inRect(channelBoxRects[i], tp.x, tp.y))
       {
-         int16_t ampsColX = sketch.arduino.width() * 2 / 3;
-         if (tp.x >= ampsColX)
+         if (selectedSettingsChannel != i)
          {
-            editChannelAmpsTouch(row);
+            selectedSettingsChannel = i;
+            drawSettingsView();
          }
-         else
-         {
-            editChannelLocationTouch(row);
-         }
+         return;
+      }
+   }
 
-         while (sketch.arduino.display.getTouch(&tp) > 0)
+   if (inRect(labelBoxRect, tp.x, tp.y))
+   {
+      editChannelLocationTouch(selectedSettingsChannel);
+      while (sketch.arduino.display.getTouch(&tp) > 0)
+      {
+         delay(10);
+      }
+      wasTouching = false;
+      drawSettingsView();
+      return;
+   }
+
+   for (size_t i = 0; i < NUM_AMP_OPTIONS; i++)
+   {
+      if (inRect(ampBoxRects[i], tp.x, tp.y))
+      {
+         if (std::fabs(ctAmps[selectedSettingsChannel] - AMP_RATING_OPTIONS[i]) >= 0.5f)
          {
-            delay(10);
+            saveCtAmps(selectedSettingsChannel, AMP_RATING_OPTIONS[i]);
+            drawSettingsView();
          }
-         wasTouching = false;
-         drawSettingsView();
+         return;
       }
    }
 }
