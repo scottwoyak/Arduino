@@ -4,26 +4,30 @@
 // Measures AC current and apparent power simultaneously across 8 split-core current
 // transformer (CT) sensors using an Analog Devices AD7606 8-channel, 16-bit bipolar
 // simultaneous-sampling ADC in 4-wire serial (SPI/DOUTA) mode. Displays live power (Watts)
-// and RMS current (Amps) on the Hosyond 4.0" ST7796S touch display and publishes per-channel
-// power readings over WebSocket telemetry to Power/<location>.
+// and RMS current (Amps) on the touch display and publishes per-channel power readings over
+// WebSocket telemetry to Power/<location>.
 //
-// Hardware & AD7606 Serial Mode Wiring (using the 4 external Hosyond GPIOs: 2, 3, 14, 21):
+// Hardware & AD7606 Serial Mode Wiring (Waveshare ESP32-P4 4.3" Touch LCD):
 // - Set the AD7606 breakout board mode jumper to SER (Serial / SPI mode):
 //     * PAR/SER (PS) jumper -> SER (HIGH / 3.3V)
 //     * RANGE jumper -> +/-5V (LOW / GND)
 //     * OS0, OS1, OS2 -> GND (no oversampling, fastest 4 us conversion)
-// - Power connections:
-//     * AVCC (5V) -> 5V rail from the Hosyond board
-//     * VDRIVE (VIO) -> 3.3V rail from the Hosyond board (sets 3.3V logic levels)
-//     * GND / AGND -> GND
-// - 4-Pin Control & Serial Data connections (same 4 GPIOs used in PowerMulti_Publisher):
-//     * CONVSTA + CONVSTB (tied together) -> GPIO2
-//     * RD / SCLK -> GPIO3
-//     * DB7 / DOUTA (MISO) -> GPIO14
-//     * CS -> GPIO21
-//     * RST -> Tie to GND (0V)
-//     * BUSY -> Leave unconnected (AD7606 converts in <4 us; driver waits 5 us after CONVST)
-//     * DB15 -> Tie to GND (selects normal serial output instead of byte-parallel)
+//     * DB15 -> GND (selects normal serial output instead of byte-parallel)
+// - Wiring from the 40-pin GPIO header (Row A is the upper row of labels, listed by column;
+//   all signals are on Row A except 5V, which is only on Row B):
+//
+//     Waveshare pin   Header position    Wire color   AD7606 pin
+//     -------------   ----------------   ----------   ------------------------------------
+//     GPIO30          Row A, column 10   orange       RST (pulsed at startup to reset)
+//     GPIO29          Row A, column 11   gray         BUSY
+//     3V3             Row A, column 12   red          VDRIVE (VIO, sets 3.3V logic levels)
+//     GPIO28          Row A, column 13   white        CS
+//     GPIO4           Row A, column 14   blue         DB7 / DOUTA (MISO)
+//     GPIO3           Row A, column 15   yellow       RD / SCLK
+//     GND             Row A, column 16   black        GND / AGND
+//     GPIO2           Row A, column 17   purple       CONVSTA + CONVSTB (tied together)
+//     5V              Row B, column 19   red          AVCC
+//
 // - CT Input connections (V1..V8 and AGND; NO 1.65V bias divider needed!):
 //     * Connect each CT's S1 (signal) wire to V1..V8
 //     * Connect each CT's S2 (return) wire directly to AGND (GND)
@@ -48,8 +52,8 @@
 #define TEXT_SIZE_4
 #include "ArduinoBoard.h"
 
-#ifndef ARDUINO_DISPLAY_SUPPORTED
-#error "This sketch requires a board with a display (e.g. Hosyond ESP32-S3 4.0 Touch LCD)."
+#ifndef ARDUINO_WAVESHARE_ESP32P4_TOUCH_LCD_43
+#error "This sketch requires the Waveshare ESP32-P4 4.3 Touch LCD board."
 #include "WrongBoard.h"
 #endif
 
@@ -64,16 +68,16 @@ const auto VERSION = MakeVersion("1.0");
 constexpr auto SKETCH_NAME = "Consumption_Meter";
 constexpr auto PREF_NAMESPACE = "ConsMeter";
 
-// ----------- AD7606 8-Channel Configuration (GPIO2, GPIO3, GPIO14, GPIO21)
+// ----------- AD7606 8-Channel Configuration
 constexpr size_t NUM_CT_INPUTS = AD7606PowerSensor::MAX_CHANNELS;
 constexpr size_t MAX_LOCATION_LENGTH = 32;
 
 constexpr uint8_t PIN_AD7606_CONVST = 2;
 constexpr uint8_t PIN_AD7606_SCLK = 3;
-constexpr uint8_t PIN_AD7606_MISO = 14;
-constexpr uint8_t PIN_AD7606_CS = 21;
-constexpr int8_t PIN_AD7606_RESET = -1;
-constexpr int8_t PIN_AD7606_BUSY = -1;
+constexpr uint8_t PIN_AD7606_MISO = 4;
+constexpr uint8_t PIN_AD7606_CS = 28;
+constexpr int8_t PIN_AD7606_BUSY = 29;
+constexpr int8_t PIN_AD7606_RESET = 30;
 
 constexpr std::array<const char*, NUM_CT_INPUTS> DEFAULT_CT_LOCATIONS = {
    "1", "", "", "", "", "", "", "",

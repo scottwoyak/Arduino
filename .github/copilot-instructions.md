@@ -24,6 +24,7 @@
 - Custom ESP32 board definitions are maintained in `C:\SourceCode\Arduino\boards.local.txt`. Because Visual Micro only parses `boards.txt` (and ignores `boards.local.txt`, unlike Arduino IDE / `arduino-cli`), the contents of `C:\SourceCode\Arduino\boards.local.txt` must also be synced to the custom section at the bottom of `C:\Users\scott\AppData\Local\Arduino15\packages\esp32\hardware\esp32\<version>\boards.txt` (starting at the `# Custom local board definitions for Woyak Arduino workspace` header block) in addition to keeping the `boards.local.txt` hardlink in that directory. When adding or modifying custom boards, update `C:\SourceCode\Arduino\boards.local.txt`, sync the custom block at the end of the active ESP32 `<version>\boards.txt`, and run Rescan in Visual Micro (and re-apply if the ESP32 package version is upgraded). Also, if Visual Micro Rescan fails with `Error setting value to 'Platforms' on 'Visual.Micro.ContentAPI.contributions.packages.ContributedPackage'`, fix `installed.json` in `arduino15\packages\...\hardware\...\<version>\installed.json` by replacing `"platforms": null` with `"platforms": []`.
 - When using display boards, utilize the shared constants `DEFAULT_HEADING_SIZE`, `DEFAULT_TEXT_SIZE`, and `DEFAULT_FOOTER_SIZE` defined in `ArduinoBoardId.h` for heading, body/table/label text, and footer/rate/small text instead of hardcoding text sizes.
 - Do not use LaTeX math formatting in responses because the Visual Studio chat window does not render LaTeX; use plain text and standard Unicode characters (like Ω, ×, ±) instead.
+- Follow the wire color standard: white for CS, blue for MISO or SDA, green for MOSI, yellow for any clock signal (SCL, SCLK, etc.), red for VCC (5V or 3.3V), and black for GND.
 
 ## General Coding Conventions
 - Do not make changes in libraries outside of the Woyak library; third-party libraries should remain untouched.
@@ -99,9 +100,7 @@ When the user asks for 'cleanup' (with no other file specified), apply it to the
 - Don't break existing functionality.
 - Do not automatically build or run tests as part of cleanup (see Environment & Workflow); ask the user to compile/test and report back if verification is needed.
 
-### File Structure Template (.ino sketches)
-```cpp
-//
+### File Structure Template (.ino sketches)//
 // Brief description of what this sketch does.
 //
 // Optional longer description of the sketch's purpose, key features,
@@ -156,8 +155,6 @@ float helperFunction(float param1)
 {
    return param1 * 2.0f;
 }
-```
-
 ### Cleanup Rules
 
 #### 1. Include Organization
@@ -201,14 +198,10 @@ float helperFunction(float param1)
 ### Common Issues to Fix
 
 #### Issue: Inconsistent Include Order
-**Before:**
-```cpp
-#include <Arduino.h>
+**Before:**#include <Arduino.h>
 #include "Status.h"
 #include <string>
 #include "Feather_ESP32_S3.h"
-```
-
 **After:**
 ```cpp
 #include <Arduino.h>
@@ -224,7 +217,6 @@ float helperFunction(float param1)
 #include "RollingStats.h"  // Never used in sketch
 #include "Influx.h"        // Only used once for WiFi
 ```
-
 **After:**
 ```cpp
 // Remove RollingStats.h entirely
@@ -243,7 +235,6 @@ float readValue() {
    return analogRead(A0) * 3.3 / 4096;
 }
 ```
-
 **After:**
 ```cpp
 void setup()
@@ -273,7 +264,6 @@ void readSensor() {
    }
 }
 ```
-
 **After:**
 ```cpp
 constexpr uint8_t SENSOR_COUNT = 5;

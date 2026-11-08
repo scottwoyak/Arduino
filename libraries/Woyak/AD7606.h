@@ -136,7 +136,24 @@ public:
       }
 
       int16_t counts[NUM_CHANNELS] = {};
-      readAllCounts(counts);
+      if (!readAllCounts(counts))
+      {
+         Serial.printf(
+            "AD7606::begin failed: BUSY(GPIO%d)=%d MISO(GPIO%d)=%d\n",
+            _pinBusy,
+            _pinBusy >= 0 ? digitalRead(_pinBusy) : -1,
+            _pinMiso,
+            digitalRead(_pinMiso));
+         return false;
+      }
+
+      Serial.printf(
+         "AD7606::begin OK: BUSY(GPIO%d)=%d MISO(GPIO%d)=%d ch0=%d\n",
+         _pinBusy,
+         _pinBusy >= 0 ? digitalRead(_pinBusy) : -1,
+         _pinMiso,
+         digitalRead(_pinMiso),
+         counts[0]);
       return true;
    }
 
@@ -159,13 +176,15 @@ public:
 
       if (_pinBusy >= 0)
       {
-         // Give AD7606 ~1 us to assert BUSY HIGH, then wait up to 20 us for BUSY to fall LOW.
-         // If BUSY is still HIGH (e.g. due to a board pull-up or UART pin circuit), fall back
-         // to reading DOUTA anyway after the 5 us conversion time completes.
+         // Wait up to 20 us for BUSY to fall LOW (~4 us conversion time with no oversampling).
          delayMicroseconds(1);
          uint32_t startMicros = micros();
-         while (digitalRead(_pinBusy) == HIGH && (micros() - startMicros) < 20)
+         while (digitalRead(_pinBusy) == HIGH)
          {
+            if ((micros() - startMicros) > 20)
+            {
+               return false;
+            }
          }
       }
       else

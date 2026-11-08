@@ -9,7 +9,9 @@
 
 // sensor types
 #include "BME280TempSensor.h"
+#if !defined(CONFIG_IDF_TARGET_ESP32P4) && !defined(ARDUINO_WAVESHARE_ESP32P4_TOUCH_LCD_43)
 #include "DS18B20TempSensor.h"
+#endif
 #include "HDC302xTempSensor.h"
 #include "MCP9808TempSensor.h"
 #include "MS5837TempSensor.h"
@@ -340,6 +342,7 @@ public:
       return _completeBegin(print);
    }
 
+#if !defined(CONFIG_IDF_TARGET_ESP32P4) && !defined(ARDUINO_WAVESHARE_ESP32P4_TOUCH_LCD_43)
    ///
    /// <summary>
    /// Initializes a DS18B20 temperature sensor on the specified one-wire pin.
@@ -358,6 +361,7 @@ public:
       _sensor = new DS18B20TempSensor(oneWirePin);
       return _completeBegin(print);
    }
+#endif
 
    ///
    /// <summary>
