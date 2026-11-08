@@ -3,13 +3,13 @@
  * libhelix_HMP3DECODER
  *
  *  Created on: 26.10.2018
- *  Updated on: 16.07.2026
+ *  Updated on: 25.10.2026
  */
 #include "mp3_decoder.h"
 
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 
-bool MP3Decoder::init() {
+bool MP3Decoder::init(size_t outBuffSize) {
     m_MP3DecInfo.alloc("m_MP3DecInfo");
     m_FrameHeader.alloc("m_FrameHeader");
     m_SideInfo.alloc("m_SideInfo");
@@ -27,6 +27,7 @@ bool MP3Decoder::init() {
         return false;
     }
     clear();
+    m_outBuffSize = outBuffSize;
     return true;
 }
 
@@ -955,7 +956,7 @@ std::vector<uint32_t> MP3Decoder::getMetadataBlockPicture() {
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 const char* MP3Decoder::arg2() {
-    return ""; // nothing todo
+    return nullptr; // nothing todo
 }
 // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
 int32_t MP3Decoder::val1() {
@@ -3358,7 +3359,7 @@ int16_t MP3Decoder::ClipToShort(int32_t x, int32_t fracBits) {
     return x;
 #endif
 
-#if (defined CONFIG_IDF_TARGET_ESP32P4)
+#if (defined CONFIG_IDF_TARGET_ESP32P4 || defined CONFIG_IDF_TARGET_ESP32S31)
     int32_t sign;
 
     /* assumes you've already rounded (x += (1 << (fracBits-1))) */

@@ -2,6 +2,8 @@
 
 #include "Arduino.h"
 #include <algorithm>
+#include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -85,11 +87,11 @@ class ps_ptr {
   private:
     std::unique_ptr<T[], PsramDeleter> mem;
     size_t                             allocated_size = 0;
-    char*                              name = nullptr;  // member for object name
-    static inline T                    dummy{};         // For invalid accesses
-    size_t                             length_ = 0;     // actual number of characters
-    size_t                             m_fifoWrite = 0; // fifo functionality for arrays
-    size_t                             m_fifoRead = 0;  // fifo functionality for arrays
+    char*                              name = nullptr;     // member for object name
+    static inline T                    dummy{};            // For invalid accesses
+    size_t                             m_fifoWrite = 0;    // fifo functionality for arrays
+    size_t                             m_fifoRead = 0;     // fifo functionality for arrays
+    size_t                             m_num_elements = 0; // number of elements in calloc ->  number of T elements in FIFO
 
   public:
     // Auxiliary function for setting the name
@@ -160,8 +162,14 @@ class ps_ptr {
     ps_ptr(ps_ptr&& other) noexcept { // move-constructor
         mem = std::move(other.mem);
         allocated_size = other.allocated_size;
+        m_num_elements = other.m_num_elements;
+        m_fifoRead = other.m_fifoRead;
+        m_fifoWrite = other.m_fifoWrite;
         name = other.name;
         other.allocated_size = 0;
+        other.m_num_elements = 0;
+        other.m_fifoRead = 0;
+        other.m_fifoWrite = 0;
         other.name = nullptr;
     }
 
@@ -177,6 +185,139 @@ class ps_ptr {
 
     // 🆕 alloc constructor, e.g. ps_ptr<char>buff(1024)
     explicit ps_ptr(size_t n) { alloc(n); }
+
+  private:
+    // template for to_int8/16/32/64 and for to_uint8/16/32/64  (base 10 or 16)
+    template <typename U> U to_integer(int base = 10) const {
+        static_assert(std::is_same_v<T, char>, "to_integer is only valid for ps_ptr<char>");
+
+        using Limits = std::numeric_limits<U>;
+        using Unsigned = std::make_unsigned_t<U>;
+
+        if (!mem || !get()) {
+            log_e("to_integer: No valid string data");
+            return 0;
+        }
+
+        if (base != 10 && base != 16) {
+            log_e("to_integer: Unsupported base %i", base);
+            return 0;
+        }
+
+        const char* str = get();
+        const char* p = str;
+
+        if (*p == '\0') {
+            log_e("to_integer: Empty string");
+            return 0;
+        }
+
+        // -------------------------------------------------------------
+        // Sign
+        // -------------------------------------------------------------
+
+        bool negative = false;
+
+        if (*p == '+' || *p == '-') {
+            negative = (*p == '-');
+            ++p;
+        }
+
+        // -------------------------------------------------------------
+        // Automatically recognise 0x / 0X as hexadecimal
+        // -------------------------------------------------------------
+
+        if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+
+            base = 16;
+            p += 2;
+        }
+
+        // A sign or 0x must be followed by at least one digit
+        if (*p == '\0') {
+            log_e("to_integer: Invalid numeric value in '%s'", str);
+            return 0;
+        }
+
+        // -------------------------------------------------------------
+        // Negative values are not permitted for unsigned types
+        // -------------------------------------------------------------
+
+        if constexpr (std::is_unsigned_v<U>) {
+            if (negative) {
+                log_e("to_integer: Negative value '%s' is not valid", str);
+                return 0;
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Maximum permitted positive value
+        //
+        // For signed integers, +INT_MAX may be used.
+        // For negative numbers, INT_MIN may also be used.
+        // -------------------------------------------------------------
+
+        Unsigned limit;
+
+        if constexpr (std::is_signed_v<U>) {
+            if (negative) {
+                // Absolute value of INT_MIN
+                limit = static_cast<Unsigned>(-(Limits::min() + 1)) + 1;
+            } else {
+                limit = static_cast<Unsigned>(Limits::max());
+            }
+        } else {
+            limit = Limits::max();
+        }
+
+        Unsigned result = 0;
+
+        // -------------------------------------------------------------
+        // Evaluate characters whilst checking for overflow
+        // -------------------------------------------------------------
+
+        for (; *p; ++p) {
+            Unsigned digit;
+
+            if (*p >= '0' && *p <= '9') {
+                digit = static_cast<Unsigned>(*p - '0');
+            } else if (base == 16 && *p >= 'a' && *p <= 'f') {
+                digit = static_cast<Unsigned>(*p - 'a' + 10);
+            } else if (base == 16 && *p >= 'A' && *p <= 'F') {
+                digit = static_cast<Unsigned>(*p - 'A' + 10);
+            } else {
+                log_e("to_integer: Invalid numeric value in '%s' for base %i", str, base);
+                return 0;
+            }
+
+            if (result > (limit - digit) / base) {
+                log_e("to_integer: Value in '%s' exceeds range", str);
+                return 0;
+            }
+
+            result = result * base + digit;
+        }
+
+        // -------------------------------------------------------------
+        // Return result
+        // -------------------------------------------------------------
+
+        if constexpr (std::is_signed_v<U>) {
+
+            if (negative) {
+                // Sonderfall INT_MIN
+                if (result == limit) { return Limits::min(); }
+
+                return static_cast<U>(-static_cast<std::make_signed_t<Unsigned>>(result));
+            }
+
+            return static_cast<U>(result);
+        } else {
+            return static_cast<U>(result);
+        }
+    }
+
+  public:
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
     // 📌📌📌  A L L O C  📌📌📌
 
@@ -229,31 +370,30 @@ class ps_ptr {
      * Chooses between PSRAM (if available) and DRAM.
      * @param num_elements The number of elements to allocate space for.
      */
+
     bool calloc(std::size_t num_elements, const char* alloc_name = nullptr, bool usePSRAM = true) {
         size_t total_size = num_elements * sizeof(T);
-        total_size = (total_size + 15) & ~15; // Align to 16 bytes, consistent with your alloc()
+        total_size = (total_size + 15) & ~15;
+        reset();
 
-        reset(); // Release of the previously held memory
         if (alloc_name) { set_name(alloc_name); }
-        void* raw_mem = nullptr;
 
-        if (psramFound() && usePSRAM) { // Check at the runtime whether PSRAM is available
+        void* raw_mem = nullptr;
+        if (psramFound() && usePSRAM) {
             raw_mem = ps_malloc(total_size);
         } else {
             raw_mem = malloc(total_size);
         }
-
         if (raw_mem) {
-            // Initialize memory with zeros how Calloc () does it
             memset(raw_mem, 0, total_size);
-
-            // Connect the allocated memory to the Unique_PTR
             mem.reset(static_cast<T*>(raw_mem));
             allocated_size = total_size;
+            // Important: number of actual FIFO elements
+            m_num_elements = num_elements;
         } else {
-            // Error treatment for storage allocation
             printf("OOM: failed to calloc %zu bytes for %s\n", total_size, name ? name : "unnamed");
-            allocated_size = 0; // Sicherstellen, dass allocated_size 0 ist, wenn Allokation fehlschlägt
+            allocated_size = 0;
+            m_num_elements = 0;
             return false;
         }
         return true;
@@ -548,7 +688,7 @@ class ps_ptr {
     //   url = "A+Test.mp3"; url.urldecode(); // → "A Test.mp3"
 
     void urldecode() {
-        if(strlen() == 0) return;
+        if (strlen() == 0) return;
         static_assert(std::is_same_v<T, char>, "urldecode() is only valid for ps_ptr<char>");
         if (!mem || !get()) {
             log_e("urldecode: No valid string data");
@@ -733,16 +873,17 @@ class ps_ptr {
     // 📌📌📌  P U S H _ B A C K   📌📌📌
     // append individual characters
     // ps_ptr<char>s; s = "abc"; s.push_back('1); -> abc1
-
     void push_back(char c) {
-        if (length + 1 >= capacity()) {
-            // Wenn zu klein, Kapazität verdoppeln (wie std::string)
-            size_t new_cap = (capacity() == 0) ? 16 : capacity() * 2;
-            reserve(new_cap);
-        }
+        if constexpr (std::is_same_v<T, char>) {
+            if (!mem) { reserve(16); }
 
-        mem.get()[length++] = c;
-        mem.get()[length] = '\0';
+            size_t len = std::strlen(mem.get());
+
+            if (len + 1 >= capacity()) { reserve(capacity() == 0 ? 16 : capacity() * 2); }
+
+            mem.get()[len] = c;
+            mem.get()[len + 1] = '\0';
+        }
     }
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
     // 📌📌📌  A S S I G N _ V E C T O R  📌📌📌
@@ -753,9 +894,6 @@ class ps_ptr {
         if (mem) std::memcpy(mem.get(), out.data(), out.size());
     }
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-    // 📌📌📌  L E N G T H   📌📌📌
-    size_t length() const { return length_; }
-    // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
     // 📌📌📌  C A P A C I T Y   📌📌📌
     size_t capacity() const { return allocated_size ? allocated_size - 1 : 0; }
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
@@ -764,9 +902,9 @@ class ps_ptr {
         if (new_cap + 1 <= allocated_size) return; // genug Platz vorhanden
 
         char*  old_data = mem.release();
-        size_t old_len = length();
-
+        size_t old_len = old_data ? std::strlen(old_data) : 0;
         size_t new_size = new_cap + 1; // +1 für '\0'
+
         if (psramFound())
             mem.reset(static_cast<char*>(ps_malloc(new_size)));
         else
@@ -779,15 +917,11 @@ class ps_ptr {
         }
 
         if (old_data) {
-            if (old_len > 0)
-                std::memcpy(mem.get(), old_data, old_len + 1);
-            else
-                mem.get()[0] = '\0';
+            std::memcpy(mem.get(), old_data, old_len + 1);
             free(old_data);
         } else {
             mem.get()[0] = '\0';
         }
-
         allocated_size = new_size;
     }
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
@@ -810,6 +944,12 @@ class ps_ptr {
         std::string_view sv(str); // C++17, sicherer als strlen
         return sv.starts_with(prefix);
     }
+
+    template <typename U = T>
+        requires std::is_same_v<U, char>
+    bool starts_with(const ps_ptr<char>& prefix) const {
+        return starts_with(prefix.c_get());
+    }
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
     // 📌📌📌  E N D S _ W I T H   📌📌📌
 
@@ -830,6 +970,13 @@ class ps_ptr {
         std::string_view sv(str); // C++17, sicherer als strlen
         return sv.ends_with(prefix);
     }
+
+    template <typename U = T>
+        requires std::is_same_v<U, char>
+    bool ends_with(const ps_ptr<char>& prefix) const {
+        return ends_with(prefix.c_get());
+    }
+
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
     // 📌📌📌  S T A R T S _ W I T H _ I C A S E   📌📌📌
 
@@ -853,6 +1000,13 @@ class ps_ptr {
 
         return strncasecmp_local(str, prefix, prefix_len) == 0;
     }
+
+    template <typename U = T>
+        requires std::is_same_v<U, char>
+    bool starts_with_icase(const ps_ptr<char>& prefix) const {
+        return starts_with_icase(prefix.c_get());
+    }
+
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
     // 📌📌📌  E N D S _ W I T H _ I C A S E   📌📌📌
 
@@ -876,6 +1030,13 @@ class ps_ptr {
 
         return strncasecmp_local(str + str_len - suffix_len, suffix, suffix_len) == 0;
     }
+
+    template <typename U = T>
+        requires std::is_same_v<U, char>
+    bool ends_with_icase(const ps_ptr<char>& prefix) const {
+        return ends_with_icase(prefix.c_get());
+    }
+
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
     // 📌📌📌  E Q U A L S   📌📌📌
     // my_ps_ptr t1, t2;
@@ -1305,19 +1466,86 @@ class ps_ptr {
 
         return -1;
     }
-    // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-    // 📌📌📌  S U B S T R  📌📌📌
     ps_ptr<char> substr(size_t pos, size_t count = std::string::npos) const {
         const char* src = mem.get();
         if (!src) return ps_ptr<char>{};
 
         size_t len = std::strlen(src);
-        if (pos >= len) return ps_ptr<char>{}; // empty back
+
+        if (pos > len) return ps_ptr<char>{};
 
         size_t n = (count == std::string::npos || pos + count > len) ? (len - pos) : count;
 
         return ps_ptr<char>(src + pos, n);
     }
+    // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // 📌📌📌  C O U N T _ O F   📌📌📌
+
+    // ps_ptr<char> str("Nordsee");
+    // str.count_of('e');  // 2
+    // str.count_of('N');  // 1
+    // str.count_of('o');  // 1
+    // str.count_of('x');  // 0
+
+    // Specialized version: only for T = char (count occurrences of a character)
+    template <typename U = T>
+        requires std::is_same_v<U, char>
+    int count_of(char ch, std::size_t start = 0) const {
+        if (!mem) return -1;
+
+        const char* str = static_cast<const char*>(mem.get());
+        std::size_t len = std::strlen(str);
+        if (start >= len) return -1;
+
+        int count = 0;
+
+        for (std::size_t i = start; i < len; ++i) {
+            if (str[i] == ch) { ++count; }
+        }
+
+        return count;;
+    }
+
+    // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // 📌📌📌  S P L I T  📌📌📌
+
+    // ps_ptr<char> myLoc;
+    // myLoc.assign("Africa/Djibouti&11.60|43.15");
+    // auto parts = myLoc.split("&|");
+    //
+    // if (parts.size() == 3) {
+    //     printf("location=%s", parts[0].c_get());
+    //     printf("lat=%s",      parts[1].c_get());
+    //     printf("long=%s",     parts[2].c_get());
+    // }
+    //
+    // result:
+    // parts[0] = "Africa/Djibouti"
+    // parts[1] = "11.60"
+    // parts[2] = "43.15"
+
+    std::vector<ps_ptr<char>> split(const char* delimiters) const {
+        std::vector<ps_ptr<char>> result;
+
+        const char* src = mem.get();
+        if (!src || !delimiters) return result;
+
+        size_t len = std::strlen(src);
+        size_t start = 0;
+
+        for (size_t i = 0; i < len; i++) {
+            // Is the current character a separator?
+            if (std::strchr(delimiters, src[i])) {
+                result.push_back(substr(start, i - start));
+                start = i + 1;
+            }
+        }
+        // Remaining text after the last separator
+        result.push_back(substr(start));
+
+        return result;
+    }
+
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
     // 📌📌📌  T O L O W E R C A S E  📌📌📌
 
@@ -1772,7 +2000,9 @@ class ps_ptr {
     // 📌📌📌   A T    📌📌📌
 
     // Special method for ps_ptr<ps_ptr<T>>
-    template <typename U = T> auto at(size_t index) -> typename std::enable_if<std::is_same<U, ps_ptr<typename U::element_type>>::value, ps_ptr<typename U::element_type>&>::type { return static_cast<ps_ptr<typename U::element_type>*>(get())[index]; }
+    template <typename U = T> auto at(size_t index) -> typename std::enable_if<std::is_same<U, ps_ptr<typename U::element_type>>::value, ps_ptr<typename U::element_type>&>::type {
+        return static_cast<ps_ptr<typename U::element_type>*>(get())[index];
+    }
     using element_type = T;
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
     // 📌📌📌  A S  📌📌📌
@@ -1819,6 +2049,8 @@ class ps_ptr {
         this->assign(temp.get());
         return true;
     }
+
+    bool insert(const ps_ptr<char>& insertStr, std::size_t pos) { return insert(insertStr.c_get(), pos); }
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
     // 📌📌📌  S H R I N K _ T O _ F I T  📌📌📌
 
@@ -1836,9 +2068,8 @@ class ps_ptr {
         this->assign(temp.get());
     }
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-    // 📌📌📌  T O _ U I N T 6 4  📌📌📌
-    // Retrieves the numeric value (uint64_t) from the stored string, parsing it as a number in the specified base (default: 16 for hexadecimal).
-    // Example: If the stored string is "0x12345678", returns 0x12345678.
+    // 📌📌📌  T O _ U I N T 8 / 1 6 / 3 2 / 6 4  📌📌📌
+    // Retrieves the numeric value (e.g. uint64_t) from the stored string, parsing it as a number in the specified base (default: 16 for hexadecimal).
     // If the string is empty, null, or invalid, returns 0 and logs an error.
 
     // ps_ptr<char> mediaSeqStr = "227213779";
@@ -1847,123 +2078,74 @@ class ps_ptr {
     // ps_ptr<char> addr = "0x1A3B";
     // uint64_t val = addr.to_uint64(16);
 
-    template <typename U = T>
-        requires std::is_same_v<U, char>
-    uint64_t to_uint64(int base = 10) const {
-        static_assert(std::is_same_v<T, char>, "to_uint64 is only valid for ps_ptr<char>");
-        if (!mem || !get()) {
-            log_e("to_uint64: No valid string data");
-            return 0;
-        }
-        const char* str = get();
-        char*       end = nullptr;
-        uint64_t    result = std::strtoull(str, &end, base);
-        if (end == str) {
-            log_e("to_uint64: Invalid numeric value in '%s' for base %d", str, base);
-            return 0;
-        }
-        return result;
-    }
+    uint64_t to_uint64(int base = 10) const { return to_integer<uint64_t>(base); }
+    uint32_t to_uint32(int base = 10) const { return to_integer<uint32_t>(base); }
+    uint16_t to_uint16(int base = 10) const { return to_integer<uint16_t>(base); }
+    uint8_t  to_uint8(int base = 10) const { return to_integer<uint8_t>(base); }
+
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-    // 📌📌📌  T O _ U I N T 3 2  📌📌📌
-    // Retrieves the numeric value (uint32_t) from the stored string, parsing it as a number in the specified base (default: 10 for decimal).
-    // Example: If the stored string is "0x1A3B", returns 0x1A3B (6715) for base 16.
-    // If the string is empty, null, invalid, or exceeds UINT32_MAX (4294967295), returns 0 and logs an error.
-    // Usage:
-    //   ps_ptr<char> size = "227213779"; uint32_t val = size.to_uint32(10); // Returns 227213779
-    //   ps_ptr<char> addr = "0x1A3B"; uint32_t val = addr.to_uint32(16); // Returns 6715
-    uint32_t to_uint32(int base = 10) const {
-        static_assert(std::is_same_v<T, char>, "to_uint32 is only valid for ps_ptr<char>");
-        if (!mem || !get()) {
-            log_e("to_uint32: No valid string data");
-            return 0;
-        }
-        const char*   str = get();
-        char*         end = nullptr;
-        unsigned long result = std::strtoul(str, &end, base);
-        if (end == str) {
-            log_e("to_uint32: Invalid numeric value in '%s' for base %i", str, base);
-            return 0;
-        }
-        if (result > UINT32_MAX) {
-            log_e("to_uint32: Value in '%s' exceeds UINT32_MAX (%u) for base %i", str, UINT32_MAX, base);
-            return 0;
-        }
-        return static_cast<uint32_t>(result);
-    }
-    // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-    // 📌📌📌  T O _ I N T 3 2  📌📌📌
+    // 📌📌📌  T O _ I N T 8 / 1 6/ 3 2 / 6 4  📌📌📌
     // Retrieves the numeric value (int32_t) from the stored string, parsing it as a number in the specified base (default: 10 for decimal).
     // Example:
     //   ps_ptr<char> temp = "-12345"; int32_t val = temp.to_int32(10); // Returns -12345
     //   ps_ptr<char> hex  = "0x7FFF"; int32_t val = hex.to_int32(16); // Returns 32767
     // If the string is empty, null, invalid, or exceeds INT32 range (-2147483648 ... 2147483647), returns 0 and logs an error.
 
-    int32_t to_int32(int base = 10) const {
-        static_assert(std::is_same_v<T, char>, "to_int32 is only valid for ps_ptr<char>");
+    int64_t to_int64(int base = 10) const { return to_integer<int64_t>(base); }
+    int32_t to_int32(int base = 10) const { return to_integer<int32_t>(base); }
+    int16_t to_int16(int base = 10) const { return to_integer<int16_t>(base); }
+    int8_t  to_int8(int base = 10) const { return to_integer<int8_t>(base); }
+
+    // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // 📌📌📌  T O F L O A T  📌📌📌
+    float to_float() const {
+        static_assert(std::is_same_v<T, char>, "toFloat() is only valid for ps_ptr<char>");
+
         if (!mem || !get()) {
-            log_e("to_int32: No valid string data");
-            return 0;
+            log_e("toFloat: No valid string data");
+            return 0.0f;
         }
 
         const char* str = get();
-        char*       end = nullptr;
-        long        result = std::strtol(str, &end, base);
-        if (result == 0 && errno == EINVAL) {
-            log_e("invalid content %s", str);
-            return 0;
+
+        // no leading spaces
+        if (std::isspace(static_cast<unsigned char>(*str))) {
+            log_e("toFloat: Leading whitespace is not allowed in '%s'", str);
+            return 0.0f;
         }
 
+        char* end = nullptr;
+
+        errno = 0;
+        float value = std::strtof(str, &end);
+
+        // is not a number
         if (end == str) {
-            log_e("to_int32: Invalid numeric value in '%s' for base %i", str, base);
-            return 0;
+            log_e("toFloat: Invalid numeric value '%s'", str);
+            return 0.0f;
         }
 
-        if (result < INT32_MIN || result > INT32_MAX) {
-            log_e("to_int32: Value in '%s' exceeds INT32 range (%ld..%ld) for base %i", str, (long)INT32_MIN, (long)INT32_MAX, base);
-            return 0;
+        // no other chars backwards
+        if (*end != '\0') {
+            log_e("toFloat: Invalid character '%c' in '%s'", *end, str);
+            return 0.0f;
         }
 
-        return static_cast<int32_t>(result);
+        // Overflow / Underflow
+        if (errno == ERANGE) {
+            log_e("toFloat: Value out of range '%s'", str);
+            return 0.0f;
+        }
+
+        // NaN and Infinity are not allowed
+        if (!std::isfinite(value)) {
+            log_e("toFloat: Non-finite value '%s'", str);
+            return 0.0f;
+        }
+        return value;
     }
+
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-    // 📌📌📌  T O _ I N T 6 4  📌📌📌
-    // Retrieves the numeric value (int64_t) from the stored string, parsing it as a number
-    // in the specified base (default: 10 for decimal).
-    //
-    // Examples:
-    //   ps_ptr<char> val1 = "9223372036854775807"; int64_t v1 = val1.to_int64();  // OK
-    //   ps_ptr<char> val2 = "-1234567890123";     int64_t v2 = val2.to_int64();  // OK
-    //   ps_ptr<char> val3 = "0x7FFFFFFFFFFFFFFF"; int64_t v3 = val3.to_int64(16); // OK
-    //
-    // If the string is empty, invalid, or exceeds INT64 range (-9223372036854775808 .. 9223372036854775807),
-    // returns 0 and logs an error.
-
-    int64_t to_int64(int base = 10) const {
-        static_assert(std::is_same_v<T, char>, "to_int64 is only valid for ps_ptr<char>");
-        if (!mem || !get()) {
-            log_e("to_int64: No valid string data");
-            return 0;
-        }
-
-        const char* str = get();
-        char*       end = nullptr;
-        long long   result = std::strtoll(str, &end, base);
-
-        if (end == str) {
-            log_e("to_int64: Invalid numeric value in '%s' for base %i", str, base);
-            return 0;
-        }
-
-        if (result < INT64_MIN || result > INT64_MAX) {
-            log_e("to_int64: Value in '%s' exceeds INT64 range (%lld..%lld) for base %i", str, (long long)INT64_MIN, (long long)INT64_MAX, base);
-            return 0;
-        }
-
-        return static_cast<int64_t>(result);
-    }
-    // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
-
     // 📌📌📌  B I G _ E N D I A N  📌📌📌
     // Reads up to 8 bytes from a uint8_t array in big-endian order and stores the value as a hexadecimal string (e.g., "0x12345678").
     // Example: uint8_t data[] = {0x12, 0x34, 0x56, 0x78}; → stores "0x12345678"
@@ -2239,10 +2421,7 @@ class ps_ptr {
     // 📌📌📌  C L E A R   📌📌📌
 
     void clear() {
-        if (mem && allocated_size > 0) {
-            std::memset(mem.get(), 0, allocated_size);
-            length_ = 0;
-        }
+        if (mem && allocated_size > 0) { std::memset(mem.get(), 0, allocated_size); }
     }
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
     // 📌📌📌  S I Z E   📌📌📌
@@ -2270,20 +2449,20 @@ class ps_ptr {
     // uint b = delay_line.fifo_pop();
 
     template <typename U> void fifo_push(const U& value) {
-        if (!mem || !allocated_size) return;
+        if (!mem || !allocated_size || m_num_elements == 0) return;
 
         mem[m_fifoWrite] = value;
 
-        if (++m_fifoWrite == allocated_size) m_fifoWrite = 0;
+        if (++m_fifoWrite == m_num_elements) m_fifoWrite = 0;
     }
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
     // 📌📌📌  F I F O _ P O P   📌📌📌
     template <typename U = T> U fifo_pop() {
-        if (!mem || !allocated_size) return U{};
+        if (!mem || !allocated_size || m_num_elements == 0) return U{};
 
         U value = mem[m_fifoRead];
 
-        if (++m_fifoRead == allocated_size) m_fifoRead = 0;
+        if (++m_fifoRead == m_num_elements) m_fifoRead = 0;
 
         return value;
     }
@@ -2332,7 +2511,8 @@ class ps_ptr {
 
         uint8_t items_per_line = 30;
 
-        static const char* sym[32] = {"NUL", "SOH", "STX", "ETX", "EOT", "ENQ", "ACK", "BEL", "BS ", "TAB", "LF ", "VT ", "FF ", "CR ", "SO ", "SI ", "DLE", "DC1", "DC2", "DC3", "DC4", "NAK", "SYN", "ETB", "CAN", "EM ", "SUB", "ESC", "FS ", "GS ", "RS ", "US "};
+        static const char* sym[32] = {"NUL", "SOH", "STX", "ETX", "EOT", "ENQ", "ACK", "BEL", "BS ", "TAB", "LF ", "VT ", "FF ", "CR ", "SO ", "SI ",
+                                      "DLE", "DC1", "DC2", "DC3", "DC4", "NAK", "SYN", "ETB", "CAN", "EM ", "SUB", "ESC", "FS ", "GS ", "RS ", "US "};
 
         const uint8_t* buff = reinterpret_cast<const uint8_t*>(get());
         if (!name)
@@ -2398,8 +2578,7 @@ class ps_ptr {
         return *this;
     }
 
-    // Move-Assignment-Operator
-    ps_ptr& operator=(ps_ptr&& other) noexcept {
+    ps_ptr& operator=(ps_ptr&& other) noexcept { // Move-Assignment-Operator
         if (this != &other) {
             if (name) {
                 free(name);
@@ -2407,8 +2586,14 @@ class ps_ptr {
             }
             mem = std::move(other.mem);
             allocated_size = other.allocated_size;
+            m_num_elements = other.m_num_elements;
+            m_fifoRead = other.m_fifoRead;
+            m_fifoWrite = other.m_fifoWrite;
             name = other.name;
             other.allocated_size = 0;
+            other.m_num_elements = 0;
+            other.m_fifoRead = 0;
+            other.m_fifoWrite = 0;
             other.name = nullptr;
         }
         return *this;
@@ -2487,6 +2672,10 @@ class ps_ptr {
     // —————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
     // 📌📌📌  F O R M A T  📌📌📌 (fmt lib within class)
     // ——————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+
+    // {:<20}     align left 20 chars fill up with spaces
+    // {:>20}     align right
+    // {:^20}     center
 
     template <typename V> std::string to_string_any(const V& v) {
         using Raw = std::remove_cv_t<std::remove_reference_t<V>>;
@@ -2603,6 +2792,7 @@ class ps_ptr {
         int  precision = -1;
         char fill = ' ';
         char type = 0;
+        char align = 0; // '<' left, '>' right, '^' center
         bool upper = false;
         bool align_right = false;
     };
@@ -2610,11 +2800,17 @@ class ps_ptr {
     inline format_spec parse_format(const char* fmt) {
         format_spec fs;
 
-        // {:02}
+        // {:...}
         if (*fmt == ':') {
             ++fmt;
 
-            //  Right-aligned?
+            // Alignment
+            if (*fmt == '<' || *fmt == '>' || *fmt == '^') {
+                fs.align = *fmt;
+                ++fmt;
+            }
+
+            // {: -20}
             if (*fmt == '-') {
                 fs.align_right = true;
                 ++fmt;
@@ -2636,6 +2832,7 @@ class ps_ptr {
             if (*fmt == '.') {
                 ++fmt;
                 fs.precision = 0;
+
                 while (isdigit(*fmt)) {
                     fs.precision = fs.precision * 10 + (*fmt - '0');
                     ++fmt;
@@ -2645,7 +2842,8 @@ class ps_ptr {
             // type
             if (*fmt) {
                 fs.type = *fmt;
-                if (*fmt == 'X') fs.upper = true;
+
+                if (*fmt == 'X') { fs.upper = true; }
             }
         }
         return fs;
@@ -2654,80 +2852,88 @@ class ps_ptr {
     template <typename V> std::string format_value(const V& value, const format_spec& fs) {
         char buf[64];
 
-        // bool ist in C++ ein Integraltyp, soll hier aber als Text ausgegeben werden.
-        if constexpr (std::is_same_v<std::remove_cv_t<std::remove_reference_t<V>>, bool>) { return value ? "true" : "false"; }
+        using value_type = std::remove_cv_t<std::remove_reference_t<V>>;
+
+        // BOOL
+        if constexpr (std::is_same_v<value_type, bool>) {
+            std::string s = value ? "true" : "false";
+            apply_width(s, fs, false);
+            return s;
+        }
 
         // ps_ptr<char>
-        if constexpr (std::is_same_v<std::remove_cv_t<std::remove_reference_t<V>>, ps_ptr<char>>) {
+        if constexpr (std::is_same_v<value_type, ps_ptr<char>>) {
             const char* str = value.c_get();
-            return str ? std::string(str) : std::string("");
+            std::string s = str ? std::string(str) : std::string("");
+            apply_width(s, fs, false);
+            return s;
         }
 
-        // CHAR - separate Behandlung vor is_integral_v
-        if constexpr (std::is_same_v<std::remove_cv_t<std::remove_reference_t<V>>, char>) {
-            if (fs.type == 'c' || fs.type == 0) { // 'c' oder kein Specifier
+        // CHAR
+        if constexpr (std::is_same_v<value_type, char>) {
+            if (fs.type == 'c' || fs.type == 0) {
                 buf[0] = value;
                 buf[1] = '\0';
-                return buf;
+
+                std::string s = buf;
+                apply_width(s, fs, false);
+                return s;
             }
         }
 
+        // INTEGER
         if constexpr (std::is_integral_v<V>) {
+
             // HEX
-            if (fs.type == 'X') {
-                if (fs.width > 0) {
+            if (fs.type == 'X' || fs.type == 'x') {
+
+                if (fs.fill == '0' && fs.width > 0 && fs.align == 0) {
+
                     const int safe_width = (fs.width > 30) ? 30 : fs.width;
-                    snprintf(buf, sizeof(buf), "%0*llX", safe_width, (unsigned long long)value);
-                } else {
-                    snprintf(buf, sizeof(buf), "%llX", (unsigned long long)value);
+
+                    if (fs.type == 'X') {
+                        snprintf(buf, sizeof(buf), "%0*llX", safe_width, (unsigned long long)value);
+                    } else {
+                        snprintf(buf, sizeof(buf), "%0*llx", safe_width, (unsigned long long)value);
+                    }
+
+                    return std::string(buf);
                 }
-                std::string s = buf;
-                apply_width(s, fs, true);
-                return s;
-            }
-            // HEX
-            if (fs.type == 'x') {
-                if (fs.width > 0) {
-                    const int safe_width = (fs.width > 30) ? 30 : fs.width;
-                    snprintf(buf, sizeof(buf), "%0*llx", safe_width, (unsigned long long)value);
+
+                if (fs.type == 'X') {
+                    snprintf(buf, sizeof(buf), "%llX", (unsigned long long)value);
                 } else {
                     snprintf(buf, sizeof(buf), "%llx", (unsigned long long)value);
                 }
+
                 std::string s = buf;
                 apply_width(s, fs, true);
                 return s;
             }
 
-            // Integer mit Padding
-            if (fs.width > 0) {
-                const int safe_width = (fs.width > 30) ? 30 : fs.width;
-                if (fs.fill == '0') {
-                    snprintf(buf, sizeof(buf), "%0*lld", safe_width, (long long)value);
-                } else {
-                    snprintf(buf, sizeof(buf), "%*lld", safe_width, (long long)value);
-                }
-                std::string s = buf;
-                apply_width(s, fs, true);
-                return s;
-            }
-            std::string s = to_string_any(value);
-            apply_width(s, fs, true);
-            return s;
-        }
-        // FLOAT
-        if constexpr (std::is_floating_point_v<V>) {
-            if (fs.precision >= 0) {
-                snprintf(buf, sizeof(buf), "%.*f", fs.precision, value);
-                std::string s = buf;
-                apply_width(s, fs, true);
-                return s;
-            }
-            snprintf(buf, sizeof(buf), "%g", value);
+            // INTEGER
+            snprintf(buf, sizeof(buf), "%lld", (long long)value);
+
             std::string s = buf;
             apply_width(s, fs, true);
             return s;
         }
 
+        // FLOAT
+        if constexpr (std::is_floating_point_v<V>) {
+
+            if (fs.precision >= 0) {
+                snprintf(buf, sizeof(buf), "%.*f", fs.precision, value);
+            } else {
+                snprintf(buf, sizeof(buf), "%g", value);
+            }
+
+            std::string s = buf;
+            apply_width(s, fs, true);
+            return s;
+        }
+
+        // sonstige Typen
         std::string s = to_string_any(value);
         apply_width(s, fs, false);
         return s;
@@ -2768,10 +2974,30 @@ class ps_ptr {
 
     inline void apply_width(std::string& s, const format_spec& fs, bool numeric = false) {
         if (fs.width <= 0) return;
-
         if ((int)s.size() >= fs.width) return;
+
         size_t missing = fs.width - s.size();
-        // Always fill in the numbers at the top
+        // explicit alignment
+        if (fs.align == '<') {
+            s.append(missing, fs.fill);
+            return;
+        }
+
+        if (fs.align == '>') {
+            s.insert(s.begin(), missing, fs.fill);
+            return;
+        }
+
+        if (fs.align == '^') {
+            size_t left = missing / 2;
+            size_t right = missing - left;
+
+            s.insert(s.begin(), left, fs.fill);
+            s.append(right, fs.fill);
+            return;
+        }
+
+        // Numbers are right-aligned by default
         if (numeric) {
             s.insert(s.begin(), missing, fs.fill);
             return;

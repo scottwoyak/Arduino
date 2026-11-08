@@ -536,6 +536,7 @@ int32_t NeaacDecoder::NeAACDecInit(NeAACDecHandle hpDecoder, uint8_t* buffer, ui
         hDecoder->downSampledSBR = 1;
     }
 #endif
+    if (can_decode_ot(hDecoder->object_type) < 0) return -1;
     /* must be done before frameLength is divided by 2 for LD */
 #ifdef SSR_DEC
     if (hDecoder->object_type == SSR)
@@ -546,10 +547,6 @@ int32_t NeaacDecoder::NeAACDecInit(NeAACDecHandle hpDecoder, uint8_t* buffer, ui
 #ifdef LD_DEC
     if (hDecoder->object_type == LD) hDecoder->frameLength >>= 1;
 #endif
-    if (can_decode_ot(hDecoder->object_type) < 0) {
-        ret = -1;
-        goto exit;
-    }
     ret = bits;
     goto exit;
 exit:
@@ -3201,10 +3198,13 @@ void NeaacDecoder::gen_rand_vector(real_t* spec, int16_t scale_factor, uint16_t 
 void NeaacDecoder::pns_decode(ic_stream* ics_left, ic_stream* ics_right, real_t* spec_left, real_t* spec_right, uint16_t frame_len, uint8_t channel_pair, uint8_t object_type,
                               /* RNG states */ uint32_t* __r1, uint32_t* __r2) {
     uint8_t  g, sfb, b;
-    uint16_t size, offs;
+    uint16_t begin, end;
+
     uint8_t  group = 0;
     uint16_t nshort = frame_len >> 3;
-    uint8_t  sub = 0;
+
+    uint8_t sub = 0;
+
 #ifdef FIXED_POINT
     /* IMDCT scaling */
     if (object_type == LD) {
@@ -3215,12 +3215,17 @@ void NeaacDecoder::pns_decode(ic_stream* ics_left, ic_stream* ics_right, real_t*
         else
             sub = 10 /*10*/;
     }
+#else
+    (void)object_type;
 #endif
+
     for (g = 0; g < ics_left->num_window_groups; g++) {
         /* Do perceptual noise substitution decoding */
         for (b = 0; b < ics_left->window_group_length[g]; b++) {
+            uint16_t base = group * nshort;
             for (sfb = 0; sfb < ics_left->max_sfb; sfb++) {
                 uint32_t r1_dep = 0, r2_dep = 0;
+
                 if (is_noise(ics_left, g, sfb)) {
 #ifdef LTP_DEC
                     /* Simultaneous use of LTP and PNS is not prevented in the
@@ -3231,19 +3236,25 @@ void NeaacDecoder::pns_decode(ic_stream* ics_left, ic_stream* ics_right, real_t*
                     ics_left->ltp.long_used[sfb] = 0;
                     ics_left->ltp2.long_used[sfb] = 0;
 #endif
+
 #ifdef MAIN_DEC
                     /* For scalefactor bands coded using PNS the corresponding
                        predictors are switched to "off".
                     */
                     ics_left->pred.prediction_used[sfb] = 0;
 #endif
-                    offs = ics_left->swb_offset[sfb];
-                    size = min(ics_left->swb_offset[sfb + 1], ics_left->swb_offset_max) - offs;
+                    /* swb_offset_max is per-window, not per-frame; clamping
+                       group>0 offsets against it zeroed out begin/end. */
+                    begin = min<uint16_t>(base + ics_left->swb_offset[sfb], frame_len);
+                    end = min<uint16_t>(base + ics_left->swb_offset[sfb + 1], frame_len);
+
                     r1_dep = *__r1;
                     r2_dep = *__r2;
+
                     /* Generate random vector */
-                    gen_rand_vector(&spec_left[(group * nshort) + offs], ics_left->scale_factors[g][sfb], size, sub, __r1, __r2);
+                    gen_rand_vector(&spec_left[begin], ics_left->scale_factors[g][sfb], end - begin, sub, __r1, __r2);
                 }
+
                 /* From the spec:
                    If the same scalefactor band and group is coded by perceptual noise
                    substitution in both channels of a channel pair, the correlation of
@@ -3267,17 +3278,22 @@ void NeaacDecoder::pns_decode(ic_stream* ics_left, ic_stream* ics_right, real_t*
                     /* See comment above. */
                     ics_right->pred.prediction_used[sfb] = 0;
 #endif
+
                     if (channel_pair && is_noise(ics_left, g, sfb) && (((ics_left->ms_mask_present == 1) && (ics_left->ms_used[g][sfb])) || (ics_left->ms_mask_present == 2))) {
                         /*uint16_t c;*/
-                        offs = ics_right->swb_offset[sfb];
-                        size = min(ics_right->swb_offset[sfb + 1], ics_right->swb_offset_max) - offs;
+
+                        begin = min<uint16_t>(base + ics_right->swb_offset[sfb], frame_len);
+                        end = min<uint16_t>(base + ics_right->swb_offset[sfb + 1], frame_len);
+
                         /* Generate random vector dependent on left channel*/
-                        gen_rand_vector(&spec_right[(group * nshort) + offs], ics_right->scale_factors[g][sfb], size, sub, &r1_dep, &r2_dep);
+                        gen_rand_vector(&spec_right[begin], ics_right->scale_factors[g][sfb], end - begin, sub, &r1_dep, &r2_dep);
+
                     } else /*if (ics_left->ms_mask_present == 0)*/ {
-                        offs = ics_right->swb_offset[sfb];
-                        size = min(ics_right->swb_offset[sfb + 1], ics_right->swb_offset_max) - offs;
+                        begin = min<uint16_t>(base + ics_right->swb_offset[sfb], frame_len);
+                        end = min<uint16_t>(base + ics_right->swb_offset[sfb + 1], frame_len);
+
                         /* Generate random vector */
-                        gen_rand_vector(&spec_right[(group * nshort) + offs], ics_right->scale_factors[g][sfb], size, sub, __r1, __r2);
+                        gen_rand_vector(&spec_right[begin], ics_right->scale_factors[g][sfb], end - begin, sub, __r1, __r2);
                     }
                 }
             } /* sfb */
@@ -3779,16 +3795,25 @@ void NeaacDecoder::faad_mdct_init(uint16_t mdct_len, uint16_t N) {
 void NeaacDecoder::faad_mdct_end(uint16_t mdct_len) {
     switch (mdct_len) {
         case 256:
+#ifndef FIXED_POINT
+            if (m_ccft256) faad_free(&m_ccft256->tab);
+#endif
             m_work256.reset();
             m_ccft256.reset();
             m_mdct256.reset();
             break;
         case 1024:
+#ifndef FIXED_POINT
+            if (m_ccft1024) faad_free(&m_ccft1024->tab);
+#endif
             m_work1024.reset();
             m_ccft1024.reset();
             m_mdct1024.reset();
             break;
         case 2048:
+#ifndef FIXED_POINT
+            if (m_ccft2048) faad_free(&m_ccft2048->tab);
+#endif
             m_work2048.reset();
             m_ccft2048.reset();
             m_mdct2048.reset();
@@ -6677,6 +6702,7 @@ uint8_t NeaacDecoder::window_grouping_info(NeAACDecStruct* hDecoder, ic_stream* 
 #ifdef LD_DEC
             }
 #endif
+            if (ics->num_swb > 0 && ics->swb_offset[ics->num_swb] < ics->swb_offset[ics->num_swb - 1]) { return 32; }
             return 0;
         case EIGHT_SHORT_SEQUENCE:
             ics->num_windows = 8;
@@ -6810,6 +6836,12 @@ uint8_t NeaacDecoder::quant_to_spec(NeAACDecStruct* hDecoder, ic_stream* ics, in
         for (sfb = 0; sfb < ics->num_swb; sfb++) {
             int32_t exp, frac;
             width = ics->swb_offset[sfb + 1] - ics->swb_offset[sfb];
+            if (width + 3 >= 1024) {
+                // quant_data contains 1024 uint16_t, the k iterator + 3
+                // should never reach more 1024
+                error = 17;
+                continue;
+            }
             /* this could be scalefactor for IS or PNS, those can be negative or bigger then 255 */
             /* just ignore them */
             if (ics->scale_factors[g][sfb] < 0 || ics->scale_factors[g][sfb] > 255) {
@@ -7146,6 +7178,7 @@ uint8_t NeaacDecoder::reconstruct_single_channel(NeAACDecStruct* hDecoder, ic_st
             ics->ltp.lag = hDecoder->ltp_lag[sce->channel];
         }
     #endif
+        if (!hDecoder->lt_pred_stat[sce->channel]) return 35; // Long term prediction not initialised
         /* long term prediction */
         lt_prediction(ics, &(ics->ltp), spec_coef, hDecoder->lt_pred_stat[sce->channel], hDecoder->fb, ics->window_shape, hDecoder->window_shape_prev[sce->channel], hDecoder->sf_index,
                       hDecoder->object_type, hDecoder->frameLength);
@@ -7288,6 +7321,7 @@ uint8_t NeaacDecoder::reconstruct_channel_pair(NeAACDecStruct* hDecoder, ic_stre
 #ifdef MAIN_DEC
     /* MAIN object type prediction */
     if (hDecoder->object_type == MAIN) {
+        if (!hDecoder->pred_stat[cpe->channel] || !hDecoder->pred_stat[cpe->paired_channel]) return 33;
         /* intra channel prediction */
         ic_prediction(ics1, spec_coef1, hDecoder->pred_stat[cpe->channel], hDecoder->frameLength, hDecoder->sf_index);
         ic_prediction(ics2, spec_coef2, hDecoder->pred_stat[cpe->paired_channel], hDecoder->frameLength, hDecoder->sf_index);
@@ -7315,6 +7349,7 @@ uint8_t NeaacDecoder::reconstruct_channel_pair(NeAACDecStruct* hDecoder, ic_stre
             ltp2->lag = hDecoder->ltp_lag[cpe->paired_channel];
         }
     #endif
+        if (!hDecoder->lt_pred_stat[cpe->channel] || !hDecoder->lt_pred_stat[cpe->paired_channel]) return 35; // Long term prediction not initialised
         /* long term prediction */
         lt_prediction(ics1, ltp1, spec_coef1, hDecoder->lt_pred_stat[cpe->channel], hDecoder->fb, ics1->window_shape, hDecoder->window_shape_prev[cpe->channel], hDecoder->sf_index,
                       hDecoder->object_type, hDecoder->frameLength);
@@ -11858,7 +11893,8 @@ uint8_t NeaacDecoder::sbr_process_channel(sbr_info* sbr, real_t* channel_buf, qm
             for (k = 0; k < kx_band + bsco_band; k++) { QMF_RE(X[l][k]) = QMF_RE(sbr->Xsbr[ch][l + sbr->tHFAdj][k]); }
             for (k = kx_band + bsco_band; k < min(kx_band + M_band, 63); k++) { QMF_RE(X[l][k]) = QMF_RE(sbr->Xsbr[ch][l + sbr->tHFAdj][k]); }
             for (k = max(kx_band + bsco_band, kx_band + M_band); k < 64; k++) { QMF_RE(X[l][k]) = 0; }
-            /* kx_band can be 0 (kx_prev on the first frame's leading slots),  which would make kx_band - 1 + bsco_band index X[l][-1]. There is no band below 0 to add in that case, so skip the overlap. */
+            /* kx_band can be 0 (kx_prev on the first frame's leading slots),  which would make kx_band - 1 + bsco_band index X[l][-1]. There is no band below 0 to add in that case, so skip the
+             * overlap. */
             if (kx_band + bsco_band > 0) { QMF_RE(X[l][kx_band - 1 + bsco_band]) += QMF_RE(sbr->Xsbr[ch][l + sbr->tHFAdj][kx_band - 1 + bsco_band]); }
     #endif
         }

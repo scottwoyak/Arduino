@@ -1,7 +1,7 @@
 # ESP32-audioI2S
 
 :warning: **This library only works on multi-core chips like ESP32-S3, ESP32-S31 and ESP32-P4. <br>
-The ESP32 is suitable to a limited extent. <br>
+The ESP32 is suitable to a limited extent. <ins>PSRAM is required!</ins><br>
 It does not work on the ESP32-S2, ESP32-C3 etc** :warning:
 
 Supported codecs: wav, mp3, aac, flac, opus, vorbis <br>
@@ -11,7 +11,7 @@ Container formats: ogg, mp4, m3u8 <br>
 
 The output sample rate can be set to a fixed value of 44.1 or 48 kHz if required by the external I²S device
 
-Works with MAX98357A (3 Watt amplifier with DAC), connected three lines (DOUT, BLCK, LRC) to I2S. The I2S output frequency is always 48kHz, regardless of the input source, so Bluetooth devices can also be connected without any problems.
+Works with [MAX98357A](https://github.com/schreibfaul1/ESP32-audioI2S/discussions/1406) (3 Watt amplifier with DAC), connected three lines (DOUT, BLCK, LRC) to I2S. The I2S output frequency is always 48kHz, regardless of the input source, so Bluetooth devices can also be connected without any problems.
 For stereo are two MAX98357A necessary. AudioI2S works with UDA1334A (Adafruit I2S Stereo Decoder Breakout Board), PCM5102A and CS4344.
 Other HW may work but not tested. Plays also icy-streams, GoogleTTS and OpenAIspeech. Can be compiled with Arduino IDE. [WIKI](https://github.com/schreibfaul1/ESP32-audioI2S/wiki)
 
@@ -67,8 +67,8 @@ void my_audio_info(Audio::msg_t m) {
         case Audio::evt_streamtitle:    Serial.printf("stream title: %s\n", m.msg); break;
         case Audio::evt_icylogo:        Serial.printf("icy logo: ... %s\n", m.msg); break;
         case Audio::evt_icydescription: Serial.printf("icy descr: .. %s\n", m.msg); break;
-        case Audio::evt_image: for(int i = 0; i < m.vec.size(); i += 2){
-                                        Serial.printf("cover image:  segment %02i, pos %07lu, len %05lu\n", i / 2, m.vec[i], m.vec[i + 1]);} break; // APIC
+        case Audio::evt_image: for(int i = 0; i < m.vec1.size(); i += 2){
+                                        Serial.printf("cover image:  segment %02i, pos %07lu, len %05lu\n", i / 2, m.vec1[i], m.vec1[i + 1]);} break; // APIC
         case Audio::evt_lyrics:         Serial.printf("sync lyrics:  %s\n", m.msg); break;
         case Audio::evt_log   :         Serial.printf("audio_logs:   %s\n", m.msg); break;
         default:                        Serial.printf("message:..... %s\n", m.msg); break;
