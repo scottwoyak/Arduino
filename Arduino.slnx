@@ -97,10 +97,12 @@
     <File Path="libraries/Woyak/MultiBar.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
     <File Path="libraries/Woyak/MultiStatus.h" />
+    <File Path="libraries/Woyak/MuxADSPowerSensor.h" />
     <File Path="libraries/Woyak/OTAUpdater.h" />
     <File Path="libraries/Woyak/OTAUpdaterImpl.h" />
     <File Path="libraries/Woyak/PMS5003.h" />
     <File Path="libraries/Woyak/Potentiometer.h" />
+    <File Path="libraries/Woyak/PowerSensorBase.h" />
     <File Path="libraries/Woyak/PreferencesResolver.h" />
     <File Path="libraries/Woyak/PublisherSketch.h" />
     <File Path="libraries/Woyak/QMC5883PMagnometer.h" />

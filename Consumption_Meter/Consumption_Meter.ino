@@ -1,40 +1,35 @@
 //
 // Consumption Meter
 //
-// Measures AC current and apparent power simultaneously across 8 split-core current
-// transformer (CT) sensors using an Analog Devices AD7606 8-channel, 16-bit bipolar
-// simultaneous-sampling ADC in 4-wire serial (SPI/DOUTA) mode. Displays live power (Watts)
-// and RMS current (Amps) on the touch display and publishes per-channel power readings over
-// WebSocket telemetry to Power/<location>.
+// Measures AC current and apparent power across 8 split-core current transformer (CT)
+// sensors. Displays live power (Watts) and RMS current (Amps) on the touch display and
+// publishes per-channel power readings over WebSocket telemetry to Power/<location>.
 //
-// Hardware & AD7606 Serial Mode Wiring (Waveshare ESP32-P4 4.3" Touch LCD):
-// - Set the AD7606 breakout board mode jumper to SER (Serial / SPI mode):
-//     * PAR/SER (PS) jumper -> SER (HIGH / 3.3V)
-//     * RANGE jumper -> +/-5V (LOW / GND)
-//     * OS0, OS1, OS2 -> GND (no oversampling, fastest 4 us conversion)
-//     * DB15 -> GND (selects normal serial output instead of byte-parallel)
-// - Wiring from the 40-pin GPIO header (Row A is the upper row of labels, listed by column;
-//   all signals are on Row A except 5V, which is only on Row B):
+// The ADC hardware is selected with POWER_SENSOR_TYPE (both derive from PowerSensorBase):
+//   POWER_SENSOR_MUX_ADS - 74HC4067 16:1 mux + ADS1015 (I2C), channels sampled in turn
+//   POWER_SENSOR_AD7606  - AD7606 simultaneous-sampling ADC (on hold; BUSY was stuck high
+//                          on both boards tested)
 //
-//     Waveshare pin   Header position    Wire color   AD7606 pin
-//     -------------   ----------------   ----------   ------------------------------------
-//     GPIO30          Row A, column 10   orange       RST (pulsed at startup to reset)
-//     GPIO29          Row A, column 11   gray         BUSY
-//     3V3             Row A, column 12   red          VDRIVE (VIO, sets 3.3V logic levels)
-//     GPIO28          Row A, column 13   white        CS
-//     GPIO4           Row A, column 14   blue         DB7 / DOUTA (MISO)
-//     GPIO3           Row A, column 15   yellow       RD / SCLK
-//     GND             Row A, column 16   black        GND / AGND
-//     GPIO2           Row A, column 17   purple       CONVSTA + CONVSTB (tied together)
-//     5V              Row B, column 19   red          AVCC
+// Mux + ADS1015 wiring (Waveshare ESP32-P4 4.3" Touch LCD, 40-pin header):
+//     Wire color   Waveshare pin          Connects to
+//     ----------   --------------------   ---------------------------------------------
+//     blue         GPIO29                 ADS1015 SDA (dedicated Wire1 bus)
+//     yellow       GPIO30                 ADS1015 SCL
+//     purple       GPIO2                  74HC4067 S0
+//     orange       GPIO3                  74HC4067 S1
+//     brown        GPIO4                  74HC4067 S2
+//     white        GPIO28                 74HC4067 S3
+//     red          3V3                    74HC4067 VCC, ADS1015 VDD, bias divider
+//     black        GND                    74HC4067 GND and EN, ADS1015 GND and ADDR (and 1M resistor from A0)
+//     green        (module to module)     74HC4067 SIG -> ADS1015 A0 (with 1M pull-down to GND for unplug detect)
+//     (jumper)     (bias to ADS1015)      1.65V bias junction -> ADS1015 A3 (differential ref)
+//   CT cables go to mux C0..C7. Each CT cable has its own burden resistor. All channels
+//   share one 1.65V bias connected to ADS1015 A3 (DIFF_A0_A3): CT S2 -> bias/A3, CT S1 -> mux.
 //
-// - CT Input connections (V1..V8 and AGND; NO 1.65V bias divider needed!):
-//     * Connect each CT's S1 (signal) wire to V1..V8
-//     * Connect each CT's S2 (return) wire directly to AGND (GND)
-//     * For current-output CTs (e.g. 100A:33.3mA w/ 30 ohm, 150A:50mA w/ 20 ohm, or
-//       500A:50mA w/ 47 ohm), connect the burden resistor directly across Vx and AGND.
-//     * Optional unplugged-CT detection: connect a 2.2M ohm resistor from each Vx to 3.3V
-//       (pulls open inputs to ~+1.0V DC against AD7606's internal 1M ohm to AGND).
+// AD7606 serial mode wiring (when POWER_SENSOR_AD7606 is selected):
+//     GPIO28 (white) CS, GPIO30 (orange) RST, GPIO4 (blue) DB7/DOUTA, GPIO3 (yellow) RD/SCLK,
+//     GPIO29 (gray) BUSY, GPIO2 (purple) CONVSTA+CONVSTB, GND (black), 3V3 (red) VIO,
+//     5V (red) AVCC. RANGE, OS0-OS2 and DB15 to GND. CT S2 to AGND, burden across Vx and AGND.
 //
 
 #include <Arduino.h>
@@ -50,6 +45,7 @@
 #define TEXT_SIZE_2
 #define TEXT_SIZE_3
 #define TEXT_SIZE_4
+#define TEXT_SIZE_5
 #include "ArduinoBoard.h"
 
 #ifndef ARDUINO_WAVESHARE_ESP32P4_TOUCH_LCD_43
@@ -58,6 +54,7 @@
 #endif
 
 #include "AD7606PowerSensor.h"
+#include "MuxADSPowerSensor.h"
 #include "Format.h"
 #include "LibraryVersion.h"
 #include "PublisherSketch.h"
@@ -69,8 +66,20 @@ constexpr auto SKETCH_NAME = "Consumption_Meter";
 constexpr auto PREF_NAMESPACE = "ConsMeter";
 
 // ----------- AD7606 8-Channel Configuration
-constexpr size_t NUM_CT_INPUTS = AD7606PowerSensor::MAX_CHANNELS;
+constexpr size_t NUM_CT_INPUTS = PowerSensorBase::MAX_CHANNELS;
 constexpr size_t MAX_LOCATION_LENGTH = 32;
+
+// Select the ADC hardware: 1 = 74HC4067 mux + ADS1015, 2 = AD7606
+#define POWER_SENSOR_MUX_ADS 1
+#define POWER_SENSOR_AD7606 2
+#define POWER_SENSOR_TYPE POWER_SENSOR_MUX_ADS
+
+constexpr uint8_t PIN_MUX_S0 = 2;
+constexpr uint8_t PIN_MUX_S1 = 3;
+constexpr uint8_t PIN_MUX_S2 = 4;
+constexpr uint8_t PIN_MUX_S3 = 28;
+constexpr uint8_t PIN_ADS_SDA = 29;
+constexpr uint8_t PIN_ADS_SCL = 30;
 
 constexpr uint8_t PIN_AD7606_CONVST = 2;
 constexpr uint8_t PIN_AD7606_SCLK = 3;
@@ -84,8 +93,8 @@ constexpr std::array<const char*, NUM_CT_INPUTS> DEFAULT_CT_LOCATIONS = {
 };
 
 constexpr std::array<float, NUM_CT_INPUTS> DEFAULT_CT_AMPS = {
-   AD7606PowerSensor::CORE_150A, AD7606PowerSensor::CORE_150A, AD7606PowerSensor::CORE_100A, AD7606PowerSensor::CORE_100A,
-   AD7606PowerSensor::CORE_30A,  AD7606PowerSensor::CORE_30A,  AD7606PowerSensor::CORE_30A,  AD7606PowerSensor::CORE_30A,
+   PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_150A, PowerSensorBase::CORE_100A, PowerSensorBase::CORE_100A,
+   PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,
 };
 
 constexpr std::array<const char*, NUM_CT_INPUTS> PREF_KEY_CT_LOCATION = {
@@ -108,7 +117,7 @@ constexpr uint16_t TELEMETRY_PUBLISH_INTERVAL_MS = DISPLAY_UPDATE_INTERVAL_MS;
 constexpr uint8_t HEADER_SIZE = DEFAULT_HEADING_SIZE;
 constexpr uint8_t TABLE_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 constexpr uint8_t FOOTER_SIZE = DEFAULT_FOOTER_SIZE;
-constexpr size_t LOCATION_COL_WIDTH = 16;
+constexpr size_t LOCATION_COL_WIDTH = 12;
 
 std::array<char[MAX_LOCATION_LENGTH], NUM_CT_INPUTS> ctLocations = {};
 std::array<char[8], NUM_CT_INPUTS> defaultChannelNames = {
@@ -118,16 +127,17 @@ std::array<float, NUM_CT_INPUTS> ctAmps = DEFAULT_CT_AMPS;
 std::array<char[MAX_TOPIC_LENGTH], NUM_CT_INPUTS> channelTopics = {};
 char primaryTelemetryTopic[MAX_TOPIC_LENGTH] = "Power/1";
 size_t primaryTelemetryChannel = 0;
-std::array<AD7606PowerSensor::ChannelConfig, NUM_CT_INPUTS> initialChannelConfig = {
-   AD7606PowerSensor::ChannelConfig{ "1", AD7606PowerSensor::CORE_150A },
-   AD7606PowerSensor::ChannelConfig{ "2", AD7606PowerSensor::CORE_150A },
-   AD7606PowerSensor::ChannelConfig{ "3", AD7606PowerSensor::CORE_100A },
-   AD7606PowerSensor::ChannelConfig{ "4", AD7606PowerSensor::CORE_100A },
-   AD7606PowerSensor::ChannelConfig{ "5", AD7606PowerSensor::CORE_30A },
-   AD7606PowerSensor::ChannelConfig{ "6", AD7606PowerSensor::CORE_30A },
-   AD7606PowerSensor::ChannelConfig{ "7", AD7606PowerSensor::CORE_30A },
-   AD7606PowerSensor::ChannelConfig{ "8", AD7606PowerSensor::CORE_30A },
+std::array<PowerSensorBase::ChannelConfig, NUM_CT_INPUTS> initialChannelConfig = {
+   PowerSensorBase::ChannelConfig{ "1", PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "2", PowerSensorBase::CORE_150A },
+   PowerSensorBase::ChannelConfig{ "3", PowerSensorBase::CORE_100A },
+   PowerSensorBase::ChannelConfig{ "4", PowerSensorBase::CORE_100A },
+   PowerSensorBase::ChannelConfig{ "5", PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "6", PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "7", PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "8", PowerSensorBase::CORE_30A },
 };
+#if POWER_SENSOR_TYPE == POWER_SENSOR_AD7606
 AD7606PowerSensor powerSensor(
    PIN_AD7606_CONVST,
    PIN_AD7606_SCLK,
@@ -135,10 +145,22 @@ AD7606PowerSensor powerSensor(
    PIN_AD7606_CS,
    initialChannelConfig.data(),
    NUM_CT_INPUTS,
-   AD7606PowerSensor::DEFAULT_LINE_VOLTAGE_V,
+   PowerSensorBase::DEFAULT_LINE_VOLTAGE_V,
    AD7606::Range::BIPOLAR_5V,
    PIN_AD7606_BUSY,
    PIN_AD7606_RESET);
+#else
+MuxADSPowerSensor powerSensor(
+   PIN_MUX_S0,
+   PIN_MUX_S1,
+   PIN_MUX_S2,
+   PIN_MUX_S3,
+   PIN_ADS_SDA,
+   PIN_ADS_SCL,
+   initialChannelConfig.data(),
+   NUM_CT_INPUTS,
+   PowerSensorBase::DEFAULT_LINE_VOLTAGE_V);
+#endif
 
 size_t interactivePromptIndex = 0;
 void sendNextLocationPrompt();
@@ -647,15 +669,15 @@ constexpr int16_t GEAR_MARGIN = 6;
 constexpr int16_t GEAR_TAP_SIZE = 56;
 constexpr size_t NUM_AMP_OPTIONS = 9;
 constexpr std::array<float, NUM_AMP_OPTIONS> AMP_RATING_OPTIONS = {
-   AD7606PowerSensor::CORE_15A,
-   AD7606PowerSensor::CORE_20A,
-   AD7606PowerSensor::CORE_30A,
-   AD7606PowerSensor::CORE_50A,
-   AD7606PowerSensor::CORE_100A,
-   AD7606PowerSensor::CORE_150A,
-   AD7606PowerSensor::CORE_200A,
-   AD7606PowerSensor::CORE_213A,
-   AD7606PowerSensor::CORE_500A,
+   PowerSensorBase::CORE_15A,
+   PowerSensorBase::CORE_20A,
+   PowerSensorBase::CORE_30A,
+   PowerSensorBase::CORE_50A,
+   PowerSensorBase::CORE_100A,
+   PowerSensorBase::CORE_150A,
+   PowerSensorBase::CORE_200A,
+   PowerSensorBase::CORE_213A,
+   PowerSensorBase::CORE_500A,
 };
 
 constexpr int16_t SETTINGS_MARGIN_X = 8;
@@ -1066,7 +1088,7 @@ void setup()
 {
    loadChannelConfig();
 
-   sketch.addSensor("AD7606", []() { return powerSensor.begin(); });
+   sketch.addSensor("PowerSensor", []() { return powerSensor.begin(); });
    sketch.setValueSource([]() { return powerSensor.watts(primaryTelemetryChannel); });
    sketch.onSiteResolved(onSiteResolved);
    sketch.onExtraConfig(getExtraConfigText, trySetExtraConfig, startInteractiveChannelPrompts, true);

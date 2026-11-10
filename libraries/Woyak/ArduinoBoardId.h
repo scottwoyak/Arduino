@@ -185,7 +185,7 @@ constexpr uint8_t DEFAULT_FOOTER_SIZE = 2;
 
 #define ARDUINO_BOARD_VARIANT_ID "WAVESHARE_ESP32P4_TOUCH_LCD_43"
 
-constexpr uint8_t DEFAULT_HEADING_SIZE = 4;
+constexpr uint8_t DEFAULT_HEADING_SIZE = 5;
 constexpr uint8_t DEFAULT_TEXT_SIZE = 3;
 constexpr uint8_t DEFAULT_FOOTER_SIZE = 2;
 
