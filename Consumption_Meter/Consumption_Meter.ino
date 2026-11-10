@@ -3,7 +3,7 @@
 //
 // Measures AC current and apparent power across 8 split-core current transformer (CT)
 // sensors. Displays live power (Watts) and RMS current (Amps) on the touch display and
-// publishes per-channel power readings over WebSocket telemetry to Power/<location>.
+// publishes per-channel power readings over WebSocket telemetry to Power/<location>/<circuit>.
 //
 // The ADC hardware is selected with POWER_SENSOR_TYPE (both derive from PowerSensorBase):
 //   POWER_SENSOR_MUX_ADS - 74HC4067 16:1 mux + ADS1015 (I2C), channels sampled in turn
@@ -192,18 +192,26 @@ PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
 
 ///
 /// <summary>
-/// Rebuilds the per-channel telemetry topics as "Power/<channelLocation>" for each configured CT
-/// and updates the active TelemetryPublisher topic immediately if already running.
+/// Rebuilds the per-channel telemetry topics as "Power/<location>/<circuit>" for each
+/// configured CT and updates the active TelemetryPublisher topic immediately if already
+/// running.
 /// </summary>
 ///
 void refreshTelemetryTopics()
 {
+   std::string deviceLocation = sketch.location().c_str();
+   std::string topicPrefix = std::string(POWER_TOPIC_PREFIX) + "/";
+   if (!deviceLocation.empty())
+   {
+      topicPrefix += deviceLocation + "/";
+   }
+
    bool foundPrimary = false;
    for (size_t i = 0; i < NUM_CT_INPUTS; i++)
    {
       if (ctLocations[i][0] != '\0')
       {
-         std::string fullTopic = std::string(POWER_TOPIC_PREFIX) + "/" + ctLocations[i];
+         std::string fullTopic = topicPrefix + ctLocations[i];
          strlcpy(channelTopics[i], fullTopic.c_str(), sizeof(channelTopics[i]));
          if (!foundPrimary)
          {
@@ -221,7 +229,7 @@ void refreshTelemetryTopics()
    if (!foundPrimary)
    {
       primaryTelemetryChannel = 0;
-      std::string fallbackTopic = std::string(POWER_TOPIC_PREFIX) + "/1";
+      std::string fallbackTopic = topicPrefix + "1";
       strlcpy(primaryTelemetryTopic, fallbackTopic.c_str(), sizeof(primaryTelemetryTopic));
    }
 
@@ -328,6 +336,33 @@ bool isClearLocationValue(const char* text)
 
 ///
 /// <summary>
+/// Returns the 0-based channel index that already uses the given circuit name, or -1 if
+/// the name is empty or unique among all other channels on this meter.
+/// </summary>
+/// <param name="inputIndex">Channel index being edited (0 to 7).</param>
+/// <param name="loc">Candidate circuit name.</param>
+/// <returns>Conflicting channel index (0 to 7), or -1 if unique.</returns>
+///
+int findDuplicateChannel(size_t inputIndex, const char* loc)
+{
+   if (loc == nullptr || loc[0] == '\0')
+   {
+      return -1;
+   }
+
+   for (size_t i = 0; i < NUM_CT_INPUTS; i++)
+   {
+      if (i != inputIndex && ctLocations[i][0] != '\0' && strcasecmp(ctLocations[i], loc) == 0)
+      {
+         return static_cast<int>(i);
+      }
+   }
+
+   return -1;
+}
+
+///
+/// <summary>
 /// Handles the shell answer for a single-channel location prompt ("sc <1-8>").
 /// Pressing Return (empty input) keeps the previous location; "-", "none", or "off" clears it.
 /// </summary>
@@ -341,6 +376,15 @@ void onSingleChannelLocationAnswer(const char* line)
    if (input.length() > 0)
    {
       const char* newLoc = isClearLocationValue(input.c_str()) ? "" : input.c_str();
+      int duplicateChannel = findDuplicateChannel(interactivePromptIndex, newLoc);
+      if (duplicateChannel >= 0)
+      {
+         DeviceServerClient::shell().println(
+            ("Error: \"" + String(newLoc) + "\" is already used by channel " + String(duplicateChannel + 1) + ".").c_str());
+         sendSingleChannelLocationPrompt();
+         return;
+      }
+
       saveCtLocation(interactivePromptIndex, newLoc);
    }
 
@@ -428,6 +472,15 @@ void onInteractiveLocationItemAnswer(const char* line)
    if (input.length() > 0)
    {
       const char* newLoc = isClearLocationValue(input.c_str()) ? "" : input.c_str();
+      int duplicateChannel = findDuplicateChannel(interactivePromptIndex, newLoc);
+      if (duplicateChannel >= 0)
+      {
+         DeviceServerClient::shell().println(
+            ("Error: \"" + String(newLoc) + "\" is already used by channel " + String(duplicateChannel + 1) + ".").c_str());
+         sendNextLocationPrompt();
+         return;
+      }
+
       saveCtLocation(interactivePromptIndex, newLoc);
    }
 
@@ -610,6 +663,13 @@ bool trySetExtraConfig(const std::string& key, const std::string& value, std::st
 
          bool clear = isClearLocationValue(value.c_str());
          const char* newLoc = clear ? "" : value.c_str();
+         int duplicateChannel = findDuplicateChannel(i, newLoc);
+         if (duplicateChannel >= 0)
+         {
+            result = "Error: \"" + value + "\" is already used by l" + std::to_string(duplicateChannel + 1);
+            return true;
+         }
+
          saveCtLocation(i, newLoc);
          result = shortLocKey + "=" + (clear ? "(unused)" : value);
          return true;
@@ -643,7 +703,8 @@ bool trySetExtraConfig(const std::string& key, const std::string& value, std::st
 
 ///
 /// <summary>
-/// Builds the per-channel telemetry topics as "Power/<channelLocation>" for each configured CT.
+/// Builds the per-channel telemetry topics as "Power/<location>/<circuit>" once the
+/// device's site and location have been resolved.
 /// </summary>
 /// <param name="site">The resolved site/location context.</param>
 ///
@@ -949,10 +1010,24 @@ void drawSettingsView()
 void editChannelLocationTouch(size_t ch)
 {
    String kbTitle = "Location " + String(ch + 1) + " (- to clear)";
-   String entered = sketch.arduino.promptTouchText(kbTitle.c_str(), String(ctLocations[ch]));
-   entered.trim();
-   bool clear = (entered == "-" || entered.equalsIgnoreCase("none") || entered.equalsIgnoreCase("off"));
-   saveCtLocation(ch, clear ? "" : entered.c_str());
+   String initialText = String(ctLocations[ch]);
+
+   while (true)
+   {
+      String entered = sketch.arduino.promptTouchText(kbTitle.c_str(), initialText);
+      entered.trim();
+      bool clear = isClearLocationValue(entered.c_str());
+      const char* newLoc = clear ? "" : entered.c_str();
+      int duplicateChannel = findDuplicateChannel(ch, newLoc);
+      if (duplicateChannel < 0)
+      {
+         saveCtLocation(ch, newLoc);
+         return;
+      }
+
+      kbTitle = "Used by Ch " + String(duplicateChannel + 1) + " - try again";
+      initialText = entered;
+   }
 }
 #endif
 
@@ -1091,7 +1166,7 @@ void setup()
    sketch.addSensor("PowerSensor", []() { return powerSensor.begin(); });
    sketch.setValueSource([]() { return powerSensor.watts(primaryTelemetryChannel); });
    sketch.onSiteResolved(onSiteResolved);
-   sketch.onExtraConfig(getExtraConfigText, trySetExtraConfig, startInteractiveChannelPrompts, true);
+   sketch.onExtraConfig(getExtraConfigText, trySetExtraConfig, startInteractiveChannelPrompts);
    sketch.onReadings(
       []() { return powerSensor.formatReadings(); },
       "Reports the latest power (W), RMS current (A), and sensor RMS voltage (V)");
