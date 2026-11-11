@@ -117,7 +117,7 @@ public:
       uint8_t pinMiso,
       uint8_t pinCs,
       const ChannelConfig* channelConfigs,
-      size_t numChannels = MAX_CHANNELS,
+      size_t numChannels = AD7606::NUM_CHANNELS,
       float lineVoltageV = DEFAULT_LINE_VOLTAGE_V,
       AD7606::Range range = AD7606::Range::BIPOLAR_5V,
       int8_t pinBusy = -1,
@@ -125,7 +125,7 @@ public:
       : _adc(pinConvst, pinSclk, pinMiso, pinCs, range, pinBusy, pinReset)
    {
       ASSERT(channelConfigs != nullptr);
-      ASSERT(numChannels >= 1 && numChannels <= MAX_CHANNELS);
+      ASSERT(numChannels >= 1 && numChannels <= AD7606::NUM_CHANNELS);
 
       _numChannels = numChannels;
       _lineVoltageV = lineVoltageV;

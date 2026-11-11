@@ -1,7 +1,7 @@
 //
 // Consumption Meter
 //
-// Measures AC current and apparent power across 8 split-core current transformer (CT)
+// Measures AC current and apparent power across up to 16 split-core current transformer (CT)
 // sensors. Displays live power (Watts) and RMS current (Amps) on the touch display and
 // publishes per-channel power readings over WebSocket telemetry to Power/<location>/<circuit>.
 //
@@ -20,10 +20,10 @@
 //     brown        GPIO4                  74HC4067 S2
 //     white        GPIO28                 74HC4067 S3
 //     red          3V3                    74HC4067 VCC, ADS1015 VDD, bias divider
-//     black        GND                    74HC4067 GND and EN, ADS1015 GND and ADDR (and 1M resistor from A0)
-//     green        (module to module)     74HC4067 SIG -> ADS1015 A0 (with 1M pull-down to GND for unplug detect)
+//     black        GND                    74HC4067 GND and EN, ADS1015 GND and ADDR (and 1M/470k resistor from A0)
+//     green        (module to module)     74HC4067 SIG -> ADS1015 A0 (with 1M/470k pull-down to GND for unplug detect)
 //     (jumper)     (bias to ADS1015)      1.65V bias junction -> ADS1015 A3 (differential ref)
-//   CT cables go to mux C0..C7. Each CT cable has its own burden resistor. All channels
+//   CT cables go to mux C0..C15. Each CT cable has its own burden resistor. All channels
 //   share one 1.65V bias connected to ADS1015 A3 (DIFF_A0_A3): CT S2 -> bias/A3, CT S1 -> mux.
 //
 // AD7606 serial mode wiring (when POWER_SENSOR_AD7606 is selected):
@@ -65,14 +65,18 @@ const auto VERSION = MakeVersion("1.0");
 constexpr auto SKETCH_NAME = "Consumption_Meter";
 constexpr auto PREF_NAMESPACE = "ConsMeter";
 
-// ----------- AD7606 8-Channel Configuration
-constexpr size_t NUM_CT_INPUTS = PowerSensorBase::MAX_CHANNELS;
-constexpr size_t MAX_LOCATION_LENGTH = 32;
-
 // Select the ADC hardware: 1 = 74HC4067 mux + ADS1015, 2 = AD7606
 #define POWER_SENSOR_MUX_ADS 1
 #define POWER_SENSOR_AD7606 2
 #define POWER_SENSOR_TYPE POWER_SENSOR_MUX_ADS
+
+// ----------- 16-Channel Configuration
+#if POWER_SENSOR_TYPE == POWER_SENSOR_AD7606
+constexpr size_t NUM_CT_INPUTS = AD7606::NUM_CHANNELS;
+#else
+constexpr size_t NUM_CT_INPUTS = PowerSensorBase::MAX_CHANNELS;
+#endif
+constexpr size_t MAX_LOCATION_LENGTH = 32;
 
 constexpr uint8_t PIN_MUX_S0 = 2;
 constexpr uint8_t PIN_MUX_S1 = 3;
@@ -88,21 +92,26 @@ constexpr uint8_t PIN_AD7606_CS = 28;
 constexpr int8_t PIN_AD7606_BUSY = 29;
 constexpr int8_t PIN_AD7606_RESET = 30;
 
-constexpr std::array<const char*, NUM_CT_INPUTS> DEFAULT_CT_LOCATIONS = {
+constexpr std::array<const char*, PowerSensorBase::MAX_CHANNELS> DEFAULT_CT_LOCATIONS = {
    "1", "", "", "", "", "", "", "",
+   "",  "", "", "", "", "", "", "",
 };
 
-constexpr std::array<float, NUM_CT_INPUTS> DEFAULT_CT_AMPS = {
+constexpr std::array<float, PowerSensorBase::MAX_CHANNELS> DEFAULT_CT_AMPS = {
    PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_150A, PowerSensorBase::CORE_100A, PowerSensorBase::CORE_100A,
+   PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,
+   PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,
    PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,
 };
 
-constexpr std::array<const char*, NUM_CT_INPUTS> PREF_KEY_CT_LOCATION = {
-   "loc1", "loc2", "loc3", "loc4", "loc5", "loc6", "loc7", "loc8",
+constexpr std::array<const char*, PowerSensorBase::MAX_CHANNELS> PREF_KEY_CT_LOCATION = {
+   "loc1", "loc2",  "loc3",  "loc4",  "loc5",  "loc6",  "loc7",  "loc8",
+   "loc9", "loc10", "loc11", "loc12", "loc13", "loc14", "loc15", "loc16",
 };
 
-constexpr std::array<const char*, NUM_CT_INPUTS> PREF_KEY_CT_AMPS = {
-   "amps1", "amps2", "amps3", "amps4", "amps5", "amps6", "amps7", "amps8",
+constexpr std::array<const char*, PowerSensorBase::MAX_CHANNELS> PREF_KEY_CT_AMPS = {
+   "amps1", "amps2",  "amps3",  "amps4",  "amps5",  "amps6",  "amps7",  "amps8",
+   "amps9", "amps10", "amps11", "amps12", "amps13", "amps14", "amps15", "amps16",
 };
 
 constexpr uint16_t DISPLAY_UPDATE_INTERVAL_MS = 200; // 5 updates per second
@@ -120,22 +129,31 @@ constexpr uint8_t FOOTER_SIZE = DEFAULT_FOOTER_SIZE;
 constexpr size_t LOCATION_COL_WIDTH = 12;
 
 std::array<char[MAX_LOCATION_LENGTH], NUM_CT_INPUTS> ctLocations = {};
-std::array<char[8], NUM_CT_INPUTS> defaultChannelNames = {
-   "1", "2", "3", "4", "5", "6", "7", "8",
+std::array<char[8], PowerSensorBase::MAX_CHANNELS> defaultChannelNames = {
+   "1", "2",  "3",  "4",  "5",  "6",  "7",  "8",
+   "9", "10", "11", "12", "13", "14", "15", "16",
 };
-std::array<float, NUM_CT_INPUTS> ctAmps = DEFAULT_CT_AMPS;
+std::array<float, NUM_CT_INPUTS> ctAmps = {};
 std::array<char[MAX_TOPIC_LENGTH], NUM_CT_INPUTS> channelTopics = {};
 char primaryTelemetryTopic[MAX_TOPIC_LENGTH] = "Power/1";
 size_t primaryTelemetryChannel = 0;
-std::array<PowerSensorBase::ChannelConfig, NUM_CT_INPUTS> initialChannelConfig = {
-   PowerSensorBase::ChannelConfig{ "1", PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "2", PowerSensorBase::CORE_150A },
-   PowerSensorBase::ChannelConfig{ "3", PowerSensorBase::CORE_100A },
-   PowerSensorBase::ChannelConfig{ "4", PowerSensorBase::CORE_100A },
-   PowerSensorBase::ChannelConfig{ "5", PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "6", PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "7", PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "8", PowerSensorBase::CORE_30A },
+std::array<PowerSensorBase::ChannelConfig, PowerSensorBase::MAX_CHANNELS> initialChannelConfig = {
+   PowerSensorBase::ChannelConfig{ "1",  PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "2",  PowerSensorBase::CORE_150A },
+   PowerSensorBase::ChannelConfig{ "3",  PowerSensorBase::CORE_100A },
+   PowerSensorBase::ChannelConfig{ "4",  PowerSensorBase::CORE_100A },
+   PowerSensorBase::ChannelConfig{ "5",  PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "6",  PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "7",  PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "8",  PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "9",  PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "10", PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "11", PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "12", PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "13", PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "14", PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "15", PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "16", PowerSensorBase::CORE_30A },
 };
 #if POWER_SENSOR_TYPE == POWER_SENSOR_AD7606
 AD7606PowerSensor powerSensor(
@@ -745,7 +763,7 @@ constexpr int16_t SETTINGS_MARGIN_X = 8;
 constexpr int16_t SETTINGS_GAP = 8;
 constexpr int16_t SETTINGS_CORNER_RADIUS = 8;
 constexpr size_t CHANNEL_GRID_COLS = 4;
-constexpr size_t CHANNEL_GRID_ROWS = 2;
+constexpr size_t CHANNEL_GRID_ROWS = (NUM_CT_INPUTS + CHANNEL_GRID_COLS - 1) / CHANNEL_GRID_COLS;
 constexpr size_t AMP_GRID_COLS = 3;
 constexpr size_t AMP_GRID_ROWS = 3;
 
@@ -893,23 +911,24 @@ void drawSettingsView()
    const int16_t contentW = screenW - 2 * SETTINGS_MARGIN_X;
    int16_t y = sketch.arduino.getCursorY() + SETTINGS_GAP;
 
-   // Upper portion: 8 squares (4 columns x 2 rows) for channels 1-8
+   // Upper portion: 16 channel boxes (4 columns x 4 rows) for channels 1-16
    sketch.arduino.setTextSize(FOOTER_SIZE);
    sketch.arduino.setCursor(SETTINGS_MARGIN_X, y);
    sketch.arduino.println("Channel", Color::SUB_LABEL);
    y = sketch.arduino.getCursorY() + 4;
 
-   const int16_t chSquareSize = (contentW - static_cast<int16_t>(CHANNEL_GRID_COLS - 1) * SETTINGS_GAP) / static_cast<int16_t>(CHANNEL_GRID_COLS);
-   sketch.arduino.setTextSize(HEADER_SIZE);
-   const int16_t chNumH = sketch.arduino.charH(HEADER_SIZE);
+   const int16_t chBoxW = (contentW - static_cast<int16_t>(CHANNEL_GRID_COLS - 1) * SETTINGS_GAP) / static_cast<int16_t>(CHANNEL_GRID_COLS);
+   const int16_t chBoxH = CHANNEL_GRID_ROWS > 2 ? 68 : chBoxW;
+   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+   const int16_t chNumH = sketch.arduino.charH(TABLE_TEXT_SIZE);
 
    for (size_t i = 0; i < NUM_CT_INPUTS; i++)
    {
       const size_t col = i % CHANNEL_GRID_COLS;
       const size_t row = i / CHANNEL_GRID_COLS;
-      const int16_t bx = SETTINGS_MARGIN_X + static_cast<int16_t>(col) * (chSquareSize + SETTINGS_GAP);
-      const int16_t by = y + static_cast<int16_t>(row) * (chSquareSize + SETTINGS_GAP);
-      channelBoxRects[i] = Rect16(bx, by, chSquareSize, chSquareSize);
+      const int16_t bx = SETTINGS_MARGIN_X + static_cast<int16_t>(col) * (chBoxW + SETTINGS_GAP);
+      const int16_t by = y + static_cast<int16_t>(row) * (chBoxH + SETTINGS_GAP);
+      channelBoxRects[i] = Rect16(bx, by, chBoxW, chBoxH);
 
       const bool selected = (i == selectedSettingsChannel);
       const bool configured = (ctLocations[i][0] != '\0');
@@ -917,21 +936,21 @@ void drawSettingsView()
       const Color border = selected ? Color::WHITE : (configured ? Color::LIGHTBLUE : Color::GRAY);
       const Color textColor = (selected || configured) ? Color::WHITE : Color::GRAY;
 
-      sketch.arduino.display.fillRoundRect(bx, by, chSquareSize, chSquareSize, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(bg));
-      sketch.arduino.display.drawRoundRect(bx, by, chSquareSize, chSquareSize, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(border));
+      sketch.arduino.display.fillRoundRect(bx, by, chBoxW, chBoxH, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(bg));
+      sketch.arduino.display.drawRoundRect(bx, by, chBoxW, chBoxH, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(border));
       if (selected)
       {
-         sketch.arduino.display.drawRoundRect(bx + 1, by + 1, chSquareSize - 2, chSquareSize - 2, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(border));
+         sketch.arduino.display.drawRoundRect(bx + 1, by + 1, chBoxW - 2, chBoxH - 2, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(border));
       }
 
       String numStr = String(i + 1);
       sketch.arduino.display.setTextColor(static_cast<uint16_t>(textColor), static_cast<uint16_t>(bg));
       const int16_t tw = sketch.arduino.display.textWidth(numStr.c_str());
-      sketch.arduino.display.setCursor(bx + (chSquareSize - tw) / 2, by + (chSquareSize - chNumH) / 2);
+      sketch.arduino.display.setCursor(bx + (chBoxW - tw) / 2, by + (chBoxH - chNumH) / 2);
       sketch.arduino.display.print(numStr.c_str());
    }
 
-   y += static_cast<int16_t>(CHANNEL_GRID_ROWS) * chSquareSize + static_cast<int16_t>(CHANNEL_GRID_ROWS - 1) * SETTINGS_GAP + 6 * SETTINGS_GAP;
+   y += static_cast<int16_t>(CHANNEL_GRID_ROWS) * chBoxH + static_cast<int16_t>(CHANNEL_GRID_ROWS - 1) * SETTINGS_GAP + 2 * SETTINGS_GAP;
 
    // Selected channel's name field with inline edit icon
    const int16_t labelBoxH = sketch.arduino.charH(TABLE_TEXT_SIZE) + 28;

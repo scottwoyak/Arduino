@@ -2263,9 +2263,10 @@ inline size_t ArduinoWithDisplay::promptTouchOption(
 ///
 /// <summary>
 /// Prompts the user to enter a non-empty text string via an on-screen touch QWERTY
-/// keyboard (or over Serial if connected). Supports Shift/Caps toggle, Space,
-/// Backspace, and OK, and optionally pre-populates the input box with an initial value.
-/// Restores the initialization display before returning.
+/// keyboard (or over Serial if connected). Supports Shift/Caps toggle, 123/ABC mode
+/// toggle for numbers and symbols, Space, Backspace, and OK, and optionally
+/// pre-populates the input box with an initial value. Restores the initialization
+/// display before returning.
 /// </summary>
 /// <param name="title">Heading text drawn at the top of the screen.</param>
 /// <param name="initialValue">Optional initial text pre-populated into the input box.</param>
@@ -2279,6 +2280,7 @@ inline String ArduinoWithDisplay::promptTouchText(
    {
       CHAR,
       SHIFT,
+      MODE,
       BACKSPACE,
       SPACE,
       OK,
@@ -2300,6 +2302,7 @@ inline String ArduinoWithDisplay::promptTouchText(
    // Start shifted when empty so the first letter is capitalized by default.
    bool shifted = (value.length() == 0);
    bool capsLock = false;
+   bool numberMode = false;
 
    clearDisplay();
    uint8_t titleSize = headerTextSize();
@@ -2310,7 +2313,7 @@ inline String ArduinoWithDisplay::promptTouchText(
    constexpr int16_t MARGIN_X = 6;
    constexpr int16_t GAP_X = 4;
    constexpr int16_t GAP_Y = 4;
-   constexpr size_t MAX_KEYS = 30;
+   constexpr size_t MAX_KEYS = 32;
 
    uint8_t keyTextSize = (height() >= LARGE_DISPLAY_MIN_HEIGHT) ? 3 : 2;
    int16_t boxY = getCursorY() + 2;
@@ -2346,41 +2349,69 @@ inline String ArduinoWithDisplay::promptTouchText(
    int16_t sideKeyW = (row0W - row2LettersW - 2 * GAP_X) / 2;
    int16_t row2LettersStartX = row0StartX + sideKeyW + GAP_X;
 
+   int16_t modeKeyW = sideKeyW;
    int16_t okKeyW = (row0W - 5 * stdKeyW - GAP_X) / 2;
-   int16_t spaceKeyW = row0W - okKeyW - GAP_X;
+   int16_t spaceKeyW = row0W - modeKeyW - okKeyW - 2 * GAP_X;
 
    KeyDef keys[MAX_KEYS];
    size_t keyCount = 0;
 
-   static constexpr const char* ROW0 = "QWERTYUIOP";
-   static constexpr const char* ROW1 = "ASDFGHJKL";
-   static constexpr const char* ROW2 = "ZXCVBNM";
+   static constexpr const char* ALPHA_ROW0 = "QWERTYUIOP";
+   static constexpr const char* ALPHA_ROW1 = "ASDFGHJKL";
+   static constexpr const char* ALPHA_ROW2 = "ZXCVBNM";
+
+   static constexpr const char* NUM_ROW0 = "1234567890";
+   static constexpr const char* NUM_ROW1 = "-/:;()$&@";
+   static constexpr const char* NUM_ROW2 = ".,?!'\"#";
 
    int16_t y0 = kbTopY;
-   for (size_t i = 0; i < 10; i++)
-   {
-      keys[keyCount++] = { (int16_t)(row0StartX + (int16_t)i * (stdKeyW + GAP_X)), y0, stdKeyW, keyH, KeyAction::CHAR, ROW0[i] };
-   }
-
    int16_t y1 = y0 + keyH + GAP_Y;
-   for (size_t i = 0; i < 9; i++)
-   {
-      keys[keyCount++] = { (int16_t)(row1StartX + (int16_t)i * (stdKeyW + GAP_X)), y1, stdKeyW, keyH, KeyAction::CHAR, ROW1[i] };
-   }
-
    int16_t y2 = y1 + keyH + GAP_Y;
-   keys[keyCount++] = { row0StartX, y2, sideKeyW, keyH, KeyAction::SHIFT, 0 };
-   for (size_t i = 0; i < 7; i++)
-   {
-      keys[keyCount++] = { (int16_t)(row2LettersStartX + (int16_t)i * (stdKeyW + GAP_X)), y2, stdKeyW, keyH, KeyAction::CHAR, ROW2[i] };
-   }
-   int16_t backX = row2LettersStartX + 7 * stdKeyW + 7 * GAP_X;
-   int16_t backW = row0StartX + row0W - backX;
-   keys[keyCount++] = { backX, y2, backW, keyH, KeyAction::BACKSPACE, 0 };
-
    int16_t y3 = y2 + keyH + GAP_Y;
-   keys[keyCount++] = { row0StartX, y3, spaceKeyW, keyH, KeyAction::SPACE, ' ' };
-   keys[keyCount++] = { (int16_t)(row0StartX + spaceKeyW + GAP_X), y3, okKeyW, keyH, KeyAction::OK, 0 };
+
+   auto buildKeys = [&]()
+   {
+      keyCount = 0;
+      const char* r0 = numberMode ? NUM_ROW0 : ALPHA_ROW0;
+      const char* r1 = numberMode ? NUM_ROW1 : ALPHA_ROW1;
+      const char* r2 = numberMode ? NUM_ROW2 : ALPHA_ROW2;
+
+      for (size_t i = 0; i < 10; i++)
+      {
+         keys[keyCount++] = { static_cast<int16_t>(row0StartX + static_cast<int16_t>(i) * (stdKeyW + GAP_X)), y0, stdKeyW, keyH, KeyAction::CHAR, r0[i] };
+      }
+
+      for (size_t i = 0; i < 9; i++)
+      {
+         keys[keyCount++] = { static_cast<int16_t>(row1StartX + static_cast<int16_t>(i) * (stdKeyW + GAP_X)), y1, stdKeyW, keyH, KeyAction::CHAR, r1[i] };
+      }
+
+      if (numberMode)
+      {
+         keys[keyCount++] = { row0StartX, y2, sideKeyW, keyH, KeyAction::CHAR, '_' };
+      }
+      else
+      {
+         keys[keyCount++] = { row0StartX, y2, sideKeyW, keyH, KeyAction::SHIFT, 0 };
+      }
+
+      for (size_t i = 0; i < 7; i++)
+      {
+         keys[keyCount++] = { static_cast<int16_t>(row2LettersStartX + static_cast<int16_t>(i) * (stdKeyW + GAP_X)), y2, stdKeyW, keyH, KeyAction::CHAR, r2[i] };
+      }
+
+      int16_t backX = row2LettersStartX + 7 * stdKeyW + 7 * GAP_X;
+      int16_t backW = row0StartX + row0W - backX;
+      keys[keyCount++] = { backX, y2, backW, keyH, KeyAction::BACKSPACE, 0 };
+
+      keys[keyCount++] = { row0StartX, y3, modeKeyW, keyH, KeyAction::MODE, 0 };
+      int16_t spaceX = row0StartX + modeKeyW + GAP_X;
+      keys[keyCount++] = { spaceX, y3, spaceKeyW, keyH, KeyAction::SPACE, ' ' };
+      int16_t okX = spaceX + spaceKeyW + GAP_X;
+      keys[keyCount++] = { okX, y3, okKeyW, keyH, KeyAction::OK, 0 };
+   };
+
+   buildKeys();
 
    auto hasNonSpace = [&]() -> bool
    {
@@ -2396,11 +2427,11 @@ inline String ArduinoWithDisplay::promptTouchText(
 
    auto drawTextBox = [&]()
    {
-      display.fillRoundRect(MARGIN_X, boxY, boxW, boxH, 4, (uint16_t)Color::BLACK);
-      display.drawRoundRect(MARGIN_X, boxY, boxW, boxH, 4, (uint16_t)Color::WHITE);
+      display.fillRoundRect(MARGIN_X, boxY, boxW, boxH, 4, static_cast<uint16_t>(Color::BLACK));
+      display.drawRoundRect(MARGIN_X, boxY, boxW, boxH, 4, static_cast<uint16_t>(Color::WHITE));
 
       setTextSize(keyTextSize);
-      display.setTextColor((uint16_t)Color::VALUE, (uint16_t)Color::BLACK);
+      display.setTextColor(static_cast<uint16_t>(Color::VALUE), static_cast<uint16_t>(Color::BLACK));
 
       String displayStr = value + "_";
       int16_t maxTextW = boxW - 12;
@@ -2433,24 +2464,39 @@ inline String ArduinoWithDisplay::promptTouchText(
       {
          bg = (shifted || capsLock) ? Color::DARKCYAN : Color::DARKSLATEGRAY;
       }
+      else if (k.action == KeyAction::MODE)
+      {
+         bg = numberMode ? Color::DARKCYAN : Color::DARKSLATEGRAY;
+      }
       else if (k.action == KeyAction::BACKSPACE)
       {
          bg = Color::DARKSLATEGRAY;
       }
 
-      display.fillRoundRect(k.x, k.y, k.w, k.h, 5, (uint16_t)bg);
-      display.drawRoundRect(k.x, k.y, k.w, k.h, 5, (uint16_t)Color::WHITE);
+      display.fillRoundRect(k.x, k.y, k.w, k.h, 5, static_cast<uint16_t>(bg));
+      display.drawRoundRect(k.x, k.y, k.w, k.h, 5, static_cast<uint16_t>(Color::WHITE));
 
       char labelBuf[8] = {};
       if (k.action == KeyAction::CHAR)
       {
-         bool upper = shifted || capsLock;
-         labelBuf[0] = upper ? k.ch : (char)(k.ch - 'A' + 'a');
+         if (k.ch >= 'A' && k.ch <= 'Z')
+         {
+            bool upper = shifted || capsLock;
+            labelBuf[0] = upper ? k.ch : static_cast<char>(k.ch - 'A' + 'a');
+         }
+         else
+         {
+            labelBuf[0] = k.ch;
+         }
          labelBuf[1] = '\0';
       }
       else if (k.action == KeyAction::SHIFT)
       {
          strcpy(labelBuf, capsLock ? "CAPS" : (shifted ? "SHFT" : "shft"));
+      }
+      else if (k.action == KeyAction::MODE)
+      {
+         strcpy(labelBuf, numberMode ? "ABC" : "123");
       }
       else if (k.action == KeyAction::BACKSPACE)
       {
@@ -2473,7 +2519,7 @@ inline String ArduinoWithDisplay::promptTouchText(
          setTextSize(labelSize);
       }
 
-      display.setTextColor((uint16_t)fg, (uint16_t)bg);
+      display.setTextColor(static_cast<uint16_t>(fg), static_cast<uint16_t>(bg));
       int16_t tw = display.textWidth(labelBuf);
       int16_t tx = k.x + (k.w - tw) / 2;
       int16_t ty = k.y + (k.h - charH(labelSize)) / 2;
@@ -2571,12 +2617,16 @@ inline String ArduinoWithDisplay::promptTouchText(
 
          if (k.action == KeyAction::CHAR)
          {
-            bool upper = shifted || capsLock;
-            char c = upper ? k.ch : (char)(k.ch - 'A' + 'a');
+            char c = k.ch;
+            if (c >= 'A' && c <= 'Z')
+            {
+               bool upper = shifted || capsLock;
+               c = upper ? c : static_cast<char>(c - 'A' + 'a');
+            }
             value += c;
             drawTextBox();
 
-            if (shifted && !capsLock)
+            if (!numberMode && shifted && !capsLock)
             {
                shifted = false;
                drawAllKeys();
@@ -2601,7 +2651,10 @@ inline String ArduinoWithDisplay::promptTouchText(
             if (!capsLock && !shifted)
             {
                shifted = true;
-               drawAllKeys();
+               if (!numberMode)
+               {
+                  drawAllKeys();
+               }
             }
          }
          else if (k.action == KeyAction::BACKSPACE)
@@ -2615,7 +2668,18 @@ inline String ArduinoWithDisplay::promptTouchText(
             if (!capsLock && shifted != autoShift)
             {
                shifted = autoShift;
-               drawAllKeys();
+               if (!numberMode)
+               {
+                  drawAllKeys();
+               }
+               else
+               {
+                  drawKey(idx, false);
+                  if (hasNonSpace() != prevValid)
+                  {
+                     drawKey(keyCount - 1, false);
+                  }
+               }
             }
             else
             {
@@ -2644,6 +2708,12 @@ inline String ArduinoWithDisplay::promptTouchText(
             }
             drawAllKeys();
          }
+         else if (k.action == KeyAction::MODE)
+         {
+            numberMode = !numberMode;
+            buildKeys();
+            drawAllKeys();
+         }
          else if (k.action == KeyAction::OK)
          {
             String trimmed = value;
@@ -2654,19 +2724,19 @@ inline String ArduinoWithDisplay::promptTouchText(
                restoreInitDisplay();
                return trimmed;
             }
-                  drawKey(idx, false);
-               }
-            }
+            drawKey(idx, false);
+         }
+      }
 
-            if (Serial.available())
-            {
-               start = millis();
-               Util::feedSetupWatchdog();
-               String input = Serial.readStringUntil('\n');
-               input.trim();
-               Serial.println(input);
+      if (Serial.available())
+      {
+         start = millis();
+         Util::feedSetupWatchdog();
+         String input = Serial.readStringUntil('\n');
+         input.trim();
+         Serial.println(input);
 
-               if (input.length() == 0 && value.length() > 0)
+         if (input.length() == 0 && value.length() > 0)
          {
             String trimmed = value;
             trimmed.trim();

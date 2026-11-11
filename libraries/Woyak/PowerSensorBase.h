@@ -27,7 +27,7 @@ public:
    /// Maximum number of CT channels supported by any implementation.
    /// </summary>
    ///
-   static constexpr size_t MAX_CHANNELS = 8;
+   static constexpr size_t MAX_CHANNELS = 16;
 
    static constexpr float CORE_15A = CTPowerSensor::CORE_15A;
    static constexpr float CORE_20A = CTPowerSensor::CORE_20A;
