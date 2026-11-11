@@ -92,13 +92,6 @@ size_t interactivePromptIndex = 0;
 void sendNextLocationPrompt();
 void sendNextAmpsPrompt();
 
-// Uses promptForContext with bucket = nullptr so PublisherSketch prompts for and persists
-// the device location without connecting or uploading to InfluxDB.
-InfluxConfig INFLUX_CONFIG = {
-   .context = { nullptr, "Bragg", nullptr },
-   .promptForContext = true,
-};
-
 TelemetryConfig TELEMETRY_CONFIG = {
    .topic = channelTopics[0],
    .decimals = POWER_DECIMALS,
@@ -113,7 +106,7 @@ SketchConfig PUBLISHER_CONFIG = {
    .enableOTA = true,
 };
 
-PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
+PublisherSketch sketch(PUBLISHER_CONFIG, TELEMETRY_CONFIG);
 
 ///
 /// <summary>
@@ -401,11 +394,9 @@ bool trySetExtraConfig(const std::string& key, const std::string& value, std::st
 /// <summary>
 /// Builds the per-channel telemetry topics as "Power/<channelLocation>" for each enabled CT.
 /// </summary>
-/// <param name="site">The resolved site/location context.</param>
 ///
-void onSiteResolved(const InfluxContext& site)
+void onSiteResolved()
 {
-   (void)site;
    size_t count = powerSensor.channelCount();
    for (size_t i = 0; i < count; i++)
    {

@@ -81,6 +81,9 @@ private:
    /// <summary>Optional callback invoked once the Influx site has been resolved, before the telemetry topic is used.</summary>
    void (*_siteResolvedHandler)(const InfluxContext&) = nullptr;
 
+   /// <summary>Optional parameterless callback invoked once the site/location has been resolved, before the telemetry topic is used.</summary>
+   void (*_siteResolvedSimpleHandler)() = nullptr;
+
    /// <summary>Site choices offered when influxConfig.promptForContext is set.</summary>
    static constexpr const char* SITE_OPTIONS[] = { "Bragg", "Lake" };
 
@@ -350,6 +353,11 @@ private:
          _siteResolvedHandler(_site);
       }
 
+      if (_siteResolvedSimpleHandler != nullptr)
+      {
+         _siteResolvedSimpleHandler();
+      }
+
       _topicResolver.resolve(_arduino, _status, forcePrompt);
    }
 
@@ -447,6 +455,21 @@ public:
 
    ///
    /// <summary>
+   /// Creates a telemetry-only PublisherSketch (no InfluxDB upload) that prompts for and
+   /// persists the device location under a fixed site (or prompts for site as well when
+   /// fixedSite is nullptr).
+   /// </summary>
+   /// <param name="config">Shared configuration.</param>
+   /// <param name="telemetryConfig">Telemetry settings (topic table or fixed topic, decimals, publish cadence).</param>
+   /// <param name="fixedSite">Fixed site name (defaults to "Bragg"), or nullptr to prompt for site.</param>
+   ///
+   PublisherSketch(const SketchConfig& config, const TelemetryConfig& telemetryConfig, const char* fixedSite = "Bragg")
+      : PublisherSketch(config, InfluxConfig{ .context = { nullptr, fixedSite, nullptr }, .promptForContext = true }, telemetryConfig)
+   {
+   }
+
+   ///
+   /// <summary>
    /// Registers the function that produces the value streamed over telemetry at the
    /// configured publish cadence. If the underlying sensor needs to be read/refreshed
    /// first (e.g. calling read() on a driver before x()/y()/etc. return updated values),
@@ -470,6 +493,18 @@ public:
    void onSiteResolved(void (*handler)(const InfluxContext&))
    {
       _siteResolvedHandler = handler;
+   }
+
+   ///
+   /// <summary>
+   /// Registers a parameterless function called during begin() once the device's site and
+   /// location have been resolved, before the telemetry topic is read.
+   /// </summary>
+   /// <param name="handler">Captureless function invoked after site/location resolution.</param>
+   ///
+   void onSiteResolved(void (*handler)())
+   {
+      _siteResolvedSimpleHandler = handler;
    }
 
    ///

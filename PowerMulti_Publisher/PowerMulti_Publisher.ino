@@ -136,12 +136,6 @@ void sendNextAmpsPrompt();
 void sendSingleChannelLocationPrompt();
 void sendSingleChannelAmpsPrompt();
 
-// Uses promptForContext with bucket = nullptr so PublisherSketch skips InfluxDB upload.
-InfluxConfig INFLUX_CONFIG = {
-   .context = { nullptr, "Bragg", nullptr },
-   .promptForContext = true,
-};
-
 TelemetryConfig TELEMETRY_CONFIG = {
    .topic = primaryTelemetryTopic,
    .decimals = POWER_DECIMALS,
@@ -156,7 +150,7 @@ SketchConfig PUBLISHER_CONFIG = {
    .enableOTA = true,
 };
 
-PublisherSketch sketch(PUBLISHER_CONFIG, INFLUX_CONFIG, TELEMETRY_CONFIG);
+PublisherSketch sketch(PUBLISHER_CONFIG, TELEMETRY_CONFIG);
 
 ///
 /// <summary>
@@ -609,18 +603,6 @@ bool trySetExtraConfig(const std::string& key, const std::string& value, std::st
    return false;
 }
 
-///
-/// <summary>
-/// Builds the per-channel telemetry topics as "Power/<channelLocation>" for each configured CT.
-/// </summary>
-/// <param name="site">The resolved site/location context.</param>
-///
-void onSiteResolved(const InfluxContext& site)
-{
-   (void)site;
-   refreshTelemetryTopics();
-}
-
 Format rowIndexFormat("## ", Format::Alignment::RIGHT);
 Format rowLocationFormat(LOCATION_COL_WIDTH, Format::Alignment::LEFT);
 Format rowAmpsFormat(" ###.# A", Format::Alignment::RIGHT);
@@ -948,7 +930,7 @@ void setup()
 
    sketch.addSensor("ADS1115", []() { return powerSensor.begin(); });
    sketch.setValueSource([]() { return powerSensor.watts(primaryTelemetryChannel); });
-   sketch.onSiteResolved(onSiteResolved);
+   sketch.onSiteResolved(refreshTelemetryTopics);
    sketch.onExtraConfig(getExtraConfigText, trySetExtraConfig, startInteractiveChannelPrompts, true);
    sketch.onReadings(
       []() { return powerSensor.formatReadings(); },
