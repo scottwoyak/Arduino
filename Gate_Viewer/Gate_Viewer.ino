@@ -109,7 +109,7 @@ constexpr uint16_t GATE_OPENER_PORT = 80;
 // This sketch's own version (e.g. "1.06"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("1.11");
+const auto VERSION = MakeVersion("1.12");
 constexpr auto SKETCH_NAME = "Gate_Viewer";
 
 // ----------- Telemetry
@@ -993,7 +993,8 @@ void postGateOpen()
 #ifdef ARDUINO_TOUCH_SUPPORTED
 // ----------- Open confirmation prompt (shown when the "CLOSED" banner is tapped, before
 // any command is actually sent to the Gate_Opener). Offers exactly three choices: OPEN,
-// HOLD OPEN and CANCEL.
+// HOLD OPEN and CANCEL, and auto-dismisses back to the main view after OPEN_PROMPT_TIMEOUT_S.
+constexpr uint16_t OPEN_PROMPT_TIMEOUT_S = 60;
 bool showingOpenPrompt = false;
 Rect16 openPromptOpenRect;
 Rect16 openPromptHoldRect;
@@ -1050,8 +1051,9 @@ void displayOpenPrompt()
    sketch.arduino.setCursor(0, OPEN_PROMPT_TITLE_TOP_MARGIN);
    sketch.arduino.printlnC("Open gate?", Color::HEADING);
 
-   int16_t buttonHeight = sketch.arduino.charH(OPEN_PROMPT_BUTTON_TEXT_SIZE) + 2 * OPEN_PROMPT_BUTTON_GAP;
    int16_t top = OPEN_PROMPT_TITLE_TOP_MARGIN + sketch.arduino.charH(OPEN_PROMPT_TITLE_TEXT_SIZE) + OPEN_PROMPT_BUTTON_GAP;
+   int16_t availableHeight = sketch.arduino.height() - top - OPEN_PROMPT_BUTTON_GAP;
+   int16_t buttonHeight = (availableHeight - 2 * OPEN_PROMPT_BUTTON_GAP) / 3;
 
    drawOpenPromptButton(&openPromptOpenRect, top, buttonHeight, "OPEN", Color::GRAY);
    top += buttonHeight + OPEN_PROMPT_BUTTON_GAP;
@@ -1916,6 +1918,7 @@ void loop()
    }
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
+   static TimerSecs openPromptTimeoutTimer(OPEN_PROMPT_TIMEOUT_S);
    if (showingOpenPrompt)
    {
       if (tapped && inRect(openPromptOpenRect, touchPoint.x, touchPoint.y))
@@ -1943,7 +1946,7 @@ void loop()
          postGateCommand("HOLD");
          tapped = false;
       }
-      else if (tapped && inRect(openPromptCancelRect, touchPoint.x, touchPoint.y))
+      else if ((tapped && inRect(openPromptCancelRect, touchPoint.x, touchPoint.y)) || openPromptTimeoutTimer.ready())
       {
          showingOpenPrompt = false;
          sketch.arduino.clearDisplay();
@@ -2175,6 +2178,7 @@ void loop()
    if (tapped && !isOpen && inRect(gateStateRect, touchPoint.x, touchPoint.y))
    {
       showingOpenPrompt = true;
+      openPromptTimeoutTimer.reset();
       displayOpenPrompt();
    }
 #else
