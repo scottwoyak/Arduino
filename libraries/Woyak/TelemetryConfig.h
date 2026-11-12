@@ -32,6 +32,9 @@ struct TelemetryConfig
    /// <summary>Maximum rate (messages per second) a publisher sends values. Values set faster are held and only the latest is sent when the next slot opens. 0 means no cap.</summary>
    uint16_t maxPublishRatePerSec = 30;
 
+   /// <summary>Maximum time (in seconds) an unchanged value for a topic is suppressed before being republished anyway so the server does not expire idle topics. 0 suppresses unchanged values indefinitely.</summary>
+   uint16_t republishIntervalS = 30;
+
    /// <summary>Server endpoint tried first.</summary>
    TelemetryEndpoint primary = TELEMETRY_RASPBERRY_ENDPOINT;
 

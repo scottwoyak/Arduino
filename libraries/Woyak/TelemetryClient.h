@@ -834,7 +834,8 @@ public:
    ///
    /// <summary>
    /// Publishes a sample (publishers only) when the formatted value for the topic has
-   /// changed. Dropped if the connection isn't ready.
+   /// changed, or once republishIntervalS has elapsed since the topic's previous send.
+   /// Dropped if the connection isn't ready.
    /// </summary>
    /// <param name="topic">Topic name</param>
    /// <param name="value">Sample value</param>
@@ -862,12 +863,15 @@ public:
          }
       }
 
+      int64_t now = esp_timer_get_time();
       if (last != nullptr && last->lastValue == formatted.c_str())
       {
-         return false;
+         if (_config.republishIntervalS == 0 || (now - last->micros) < _config.republishIntervalS * 1000000LL)
+         {
+            return false;
+         }
       }
 
-      int64_t now = esp_timer_get_time();
       int64_t dtMicros = last != nullptr ? (now - last->micros) : 0;
 
       JsonDocument doc;
@@ -966,8 +970,8 @@ public:
 
 ///
 /// <summary>
-/// TelemetryClient specialization that publishes a value to a topic, sending only when
-/// the value (at the configured decimal places) changes.
+/// TelemetryClient specialization that publishes a value to a topic, sending when the
+/// value (at the configured decimal places) changes or republishIntervalS elapses.
 /// </summary>
 ///
 class TelemetryPublisher : public TelemetryClient
@@ -1039,7 +1043,8 @@ public:
 
    ///
    /// <summary>
-   /// Sets the value to be published on the next loop() call, if it has changed.
+   /// Sets the value to be published on the next loop() call, if it has changed or once
+   /// republishIntervalS has elapsed.
    /// </summary>
    /// <param name="value">The value to publish.</param>
    ///
