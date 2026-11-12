@@ -19,6 +19,8 @@
 // - Display: table of the current PM1.0, PM2.5, and PM10 concentrations (ug/m3).
 // - Telemetry: topics are item/site/location, published as PM1.0, PM2.5, PM10, CO2, VOC,
 //   NOx, and AirQuality (worst 0-5 tier across all active readings, e.g. "AirQuality/site/location").
+//   Each metric also has a unitless 0-5 score topic with a Quality suffix, e.g.
+//   "PM2.5Quality/site/location"; raw topics remain unchanged.
 //
 // Wiring:
 // - PMS5003 TX -> board RX pin, PMS5003 RX -> board TX pin, 5V and GND.
@@ -106,6 +108,12 @@ char co2Topic[MAX_TOPIC_LENGTH] = "";
 char vocTopic[MAX_TOPIC_LENGTH] = "";
 char noxTopic[MAX_TOPIC_LENGTH] = "";
 char airQualityTopic[MAX_TOPIC_LENGTH] = "";
+char pm1QualityTopic[MAX_TOPIC_LENGTH] = "";
+char pm25QualityTopic[MAX_TOPIC_LENGTH] = "";
+char pm10QualityTopic[MAX_TOPIC_LENGTH] = "";
+char co2QualityTopic[MAX_TOPIC_LENGTH] = "";
+char vocQualityTopic[MAX_TOPIC_LENGTH] = "";
+char noxQualityTopic[MAX_TOPIC_LENGTH] = "";
 
 extern PublisherSketch sketch;
 
@@ -133,6 +141,12 @@ void onSiteResolved(const InfluxContext& site)
    strlcpy(vocTopic, (std::string(VOC_TOPIC_PREFIX) + suffix).c_str(), sizeof(vocTopic));
    strlcpy(noxTopic, (std::string(NOX_TOPIC_PREFIX) + suffix).c_str(), sizeof(noxTopic));
    strlcpy(airQualityTopic, (std::string(AIR_QUALITY_TOPIC_PREFIX) + suffix).c_str(), sizeof(airQualityTopic));
+   strlcpy(pm1QualityTopic, (std::string(PM1_TOPIC_PREFIX) + "Quality" + suffix).c_str(), sizeof(pm1QualityTopic));
+   strlcpy(pm25QualityTopic, (std::string(PM25_TOPIC_PREFIX) + "Quality" + suffix).c_str(), sizeof(pm25QualityTopic));
+   strlcpy(pm10QualityTopic, (std::string(PM10_TOPIC_PREFIX) + "Quality" + suffix).c_str(), sizeof(pm10QualityTopic));
+   strlcpy(co2QualityTopic, (std::string(CO2_TOPIC_PREFIX) + "Quality" + suffix).c_str(), sizeof(co2QualityTopic));
+   strlcpy(vocQualityTopic, (std::string(VOC_TOPIC_PREFIX) + "Quality" + suffix).c_str(), sizeof(vocQualityTopic));
+   strlcpy(noxQualityTopic, (std::string(NOX_TOPIC_PREFIX) + "Quality" + suffix).c_str(), sizeof(noxQualityTopic));
 
    sketch.createTopic(pm1Topic, TelemetryTopicMetadata{ .unit = TelemetryUnits::MICROGRAMS_PER_CUBIC_METER, .description = "PM1.0 particulate matter concentration", .decimals = TELEMETRY_DECIMAL_PLACES });
    sketch.createTopic(pm25Topic, TelemetryTopicMetadata{ .unit = TelemetryUnits::MICROGRAMS_PER_CUBIC_METER, .description = "PM2.5 particulate matter concentration", .decimals = TELEMETRY_DECIMAL_PLACES });
@@ -141,6 +155,12 @@ void onSiteResolved(const InfluxContext& site)
    sketch.createTopic(vocTopic, TelemetryTopicMetadata{ .description = "Volatile organic compounds index", .decimals = 0 });
    sketch.createTopic(noxTopic, TelemetryTopicMetadata{ .description = "Nitrogen oxides index", .decimals = TELEMETRY_DECIMAL_PLACES });
    sketch.createTopic(airQualityTopic, TelemetryTopicMetadata{ .description = "Worst air quality score across active sensors", .decimals = AIR_QUALITY_DECIMAL_PLACES });
+   sketch.createTopic(pm1QualityTopic, TelemetryTopicMetadata{ .description = "PM1.0 air quality score (0-5; higher is worse)", .decimals = AIR_QUALITY_DECIMAL_PLACES });
+   sketch.createTopic(pm25QualityTopic, TelemetryTopicMetadata{ .description = "PM2.5 air quality score (0-5; higher is worse)", .decimals = AIR_QUALITY_DECIMAL_PLACES });
+   sketch.createTopic(pm10QualityTopic, TelemetryTopicMetadata{ .description = "PM10 air quality score (0-5; higher is worse)", .decimals = AIR_QUALITY_DECIMAL_PLACES });
+   sketch.createTopic(co2QualityTopic, TelemetryTopicMetadata{ .description = "CO2 air quality score (0-5; higher is worse)", .decimals = AIR_QUALITY_DECIMAL_PLACES });
+   sketch.createTopic(vocQualityTopic, TelemetryTopicMetadata{ .description = "VOC air quality score (0-5; higher is worse)", .decimals = AIR_QUALITY_DECIMAL_PLACES });
+   sketch.createTopic(noxQualityTopic, TelemetryTopicMetadata{ .description = "NOx air quality score (0-5; higher is worse)", .decimals = AIR_QUALITY_DECIMAL_PLACES });
 }
 
 TelemetryConfig TELEMETRY_CONFIG = {
@@ -721,6 +741,9 @@ void loop()
 
       sketch.submit(pm1Topic, pm1);
       sketch.submit(pm10Topic, pm10);
+      sketch.submit(pm1QualityTopic, AirQualityTiers::scoreFor(pm1, AirQualityTiers::PM25_LIMITS));
+      sketch.submit(pm25QualityTopic, AirQualityTiers::scoreFor(pm25, AirQualityTiers::PM25_LIMITS));
+      sketch.submit(pm10QualityTopic, AirQualityTiers::scoreFor(pm10, AirQualityTiers::PM10_LIMITS));
       publishAirQuality();
    }
 
@@ -744,6 +767,7 @@ void loop()
          humidityField->set(humidity);
 
          sketch.submit(co2Topic, co2);
+         sketch.submit(co2QualityTopic, AirQualityTiers::scoreFor(co2, AirQualityTiers::CO2_LIMITS));
          publishAirQuality();
       }
    }
@@ -777,6 +801,7 @@ void loop()
             vocField->set(vocIndex);
             vocQualityField->set(AirQualityTiers::scoreFor(vocIndex, AirQualityTiers::VOC_LIMITS));
             sketch.submit(vocTopic, vocIndex);
+            sketch.submit(vocQualityTopic, AirQualityTiers::scoreFor(vocIndex, AirQualityTiers::VOC_LIMITS));
          }
          if (rawNoxIndex != 0)
          {
@@ -784,6 +809,7 @@ void loop()
             noxQualityField->set(AirQualityTiers::scoreFor(rawNoxIndex, AirQualityTiers::NOX_LIMITS));
             noxIndex = noxField->get();
             sketch.submit(noxTopic, noxIndex);
+            sketch.submit(noxQualityTopic, AirQualityTiers::scoreFor(noxIndex, AirQualityTiers::NOX_LIMITS));
          }
          else
          {
