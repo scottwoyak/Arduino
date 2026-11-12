@@ -409,8 +409,6 @@ protected:
          _onOutageExpired(_outageReason, _outageWasConnected);
       }
 
-      _onLoop();
-
       // WebSocketsClient::loop() handles at most one incoming frame per call, so drain
       // the socket within a small time budget; otherwise a fast publisher (or a slow
       // main loop) builds an ever-growing backlog that delays pongs and live data.
@@ -426,6 +424,8 @@ protected:
             break;
          }
       }
+
+      _onLoop();
    }
 
    ///

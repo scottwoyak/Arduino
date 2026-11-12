@@ -403,6 +403,7 @@ private:
    {
       UNSENT,
       PENDING,
+      TIMED_OUT,
       APPROVED,
       REJECTED,
    };
@@ -569,8 +570,8 @@ protected:
       {
          if (definition.state == TopicState::PENDING && definition.ackTimer.ready())
          {
-            definition.state = TopicState::REJECTED;
-            _reportTopicError("Topic creation acknowledgment timed out: " + definition.topic);
+            definition.state = TopicState::TIMED_OUT;
+            Logger.log("Topic creation acknowledgment timed out; still waiting: " + definition.topic, LogSeverity::WARN, "Telemetry");
          }
          if (definition.state != TopicState::UNSENT)
          {
@@ -662,11 +663,16 @@ protected:
             const char* topic = doc["topic"];
             const char* status = doc["status"];
             TopicDefinition* definition = topic != nullptr ? _findTopic(topic) : nullptr;
-            if (definition == nullptr || definition->state != TopicState::PENDING || status == nullptr ||
+            if (definition == nullptr ||
+               (definition->state != TopicState::PENDING && definition->state != TopicState::TIMED_OUT) || status == nullptr ||
                (strcmp(status, "created") != 0 && strcmp(status, "updated") != 0 && strcmp(status, "unchanged") != 0))
             {
                _reportTopicError("Invalid or unexpected topic acknowledgment");
                return;
+            }
+            if (definition->state == TopicState::TIMED_OUT)
+            {
+               Logger.log("Delayed topic creation acknowledgment received: " + definition->topic, LogSeverity::INFO, "Telemetry");
             }
             definition->state = definition->metadataChanged ? TopicState::UNSENT : TopicState::APPROVED;
             return;
@@ -1026,6 +1032,8 @@ public:
    /// <summary>
    /// Retains a topic definition and requests approval after the hello handshake.
    /// Repeating an unchanged definition is harmless. Definitions replay after reconnects.
+   /// Timed-out requests remain outstanding and may be approved by a late acknowledgment;
+   /// metadata updates wait for that response before another creation request is sent.
    /// </summary>
    /// <param name="topic">Nonempty topic name owned by this publisher.</param>
    /// <param name="metadata">Complete attributes; omitted fields clear previous attributes.</param>
@@ -1054,7 +1062,7 @@ public:
 
       definition->metadata = metadata;
       definition->lastValue.clear();
-      if (definition->state == TopicState::PENDING)
+      if (definition->state == TopicState::PENDING || definition->state == TopicState::TIMED_OUT)
       {
          definition->metadataChanged = true;
       }
