@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <functional>
 #include <sstream>
 #include <string>
@@ -374,10 +375,13 @@ public:
 ///   Handshake, sent on connect: {"type":"hello","role":"device","deviceId":"AA:BB:CC:DD:EE:FF","description":"...","token":"..."} or {"type":"hello","role":"client","deviceId":"AA:BB:CC:DD:EE:FF","description":"...","token":"...","topics":["A","B"]}
 ///   Server reply:               {"type":"ack","role":"device"} or {"type":"ack","role":"client","topics":["A","B"]}
 ///   Subscribe (client to server): {"type":"subscribe","topics":["A","B"]}
-///   Publish (device to server): {"type":"sample","topic":"Test","value":1.23,"dt":100,"decimals":2}
-///   Sample (server to client):  {"type":"sample","topic":"Test","value":1.23,"dt":100,"decimals":2}
-/// Samples are only published once the server has acknowledged the handshake.
-/// The "dt" field is the number of microseconds since this client's previous publish.
+///   Create (device to server): {"type":"createTopic","topic":"Test","metadata":{"unit":"W","decimals":2}}
+///   Topic approval: {"type":"topicAck","topic":"Test","status":"created"} (or "updated"/"unchanged")
+///   Topic rejection: {"type":"topicError","requestType":"createTopic","topic":"Test","code":"forbidden","message":"..."}
+///   Sample (either direction): {"type":"sample","topic":"Test","value":1.23,"dt":100}
+///   Metadata (server to client): {"type":"topic","topic":"Test","metadata":{"unit":"W","decimals":2}}
+/// Samples are submitted only after the handshake and topic creation are acknowledged.
+/// The "dt" field is microseconds since this topic's previous sample on this connection, or 0 for its first.
 /// An optional fallback endpoint lets the client alternate between two servers (e.g. the
 /// public Cloudflare host and a LAN server) until one works.
 /// </remarks>
@@ -392,22 +396,43 @@ public:
    };
 
    typedef std::function<void(const std::string& topic, double value, int64_t dtMicros)> SampleHandler;
+   typedef std::function<void(const std::string& topic, const TelemetryTopicMetadata& metadata)> TopicHandler;
 
 private:
+   enum class TopicState
+   {
+      UNSENT,
+      PENDING,
+      APPROVED,
+      REJECTED,
+   };
+
+   struct TopicDefinition
+   {
+      std::string topic;
+      TelemetryTopicMetadata metadata;
+      TopicState state = TopicState::UNSENT;
+      bool metadataChanged = false;
+      bool hasSubmitted = false;
+      int64_t micros = 0;
+      double lastSample = 0.0;
+      std::string lastValue;
+      TimerMillis ackTimer{ HANDSHAKE_ACK_TIMEOUT_MS };
+   };
+
    std::string _topic;
    TelemetryConfig _config;
    Role _role = Role::DEVICE;
    std::vector<std::string> _topics;
    SampleHandler _sampleHandler = nullptr;
+   TopicHandler _topicHandler = nullptr;
    float _value = NAN;
    RollingRate _rate;
-   struct PublishTime
-   {
-      std::string topic;
-      int64_t micros;
-      std::string lastValue;
-   };
-   std::vector<PublishTime> _publishTimes;
+   std::vector<TopicDefinition> _topicDefinitions;
+
+   static constexpr float CONNECTION_WARNING_INTERVAL_M = 1.0f;
+   TimerSecs _connectionWarningTimer{ CONNECTION_WARNING_INTERVAL_M * 60.0f };
+   bool _connectionWarningLogged = false;
 
    // user event handler; owned by this instance only when created by the constructor
    TelemetryEventHandler* _handler = nullptr;
@@ -497,8 +522,95 @@ private:
       _sendJson(doc);
    }
 
+   TopicDefinition* _findTopic(const char* topic)
+   {
+      for (TopicDefinition& definition : _topicDefinitions)
+      {
+         if (definition.topic == topic)
+         {
+            return &definition;
+         }
+      }
+      return nullptr;
+   }
+
+   void _resetTopics()
+   {
+      for (TopicDefinition& definition : _topicDefinitions)
+      {
+         definition.state = TopicState::UNSENT;
+         definition.hasSubmitted = false;
+         definition.metadataChanged = false;
+      }
+   }
+
+   void _reportTopicError(const std::string& message)
+   {
+      if (_handler != nullptr)
+      {
+         _handler->onError(message);
+      }
+      else
+      {
+         Logger.log(message, LogSeverity::ERROR, "Telemetry");
+      }
+   }
+
+protected:
+   void _onLoop() override
+   {
+      WebSocketJsonClient::_onLoop();
+      if (!isReady() || _role != Role::DEVICE)
+      {
+         return;
+      }
+
+      for (TopicDefinition& definition : _topicDefinitions)
+      {
+         if (definition.state == TopicState::PENDING && definition.ackTimer.ready())
+         {
+            definition.state = TopicState::REJECTED;
+            _reportTopicError("Topic creation acknowledgment timed out: " + definition.topic);
+         }
+         if (definition.state != TopicState::UNSENT)
+         {
+            continue;
+         }
+
+         JsonDocument doc;
+         doc["type"] = "createTopic";
+         doc["topic"] = definition.topic;
+         JsonObject metadata = doc["metadata"].to<JsonObject>();
+         if (!definition.metadata.unit.empty())
+         {
+            metadata["unit"] = definition.metadata.unit;
+         }
+         if (!definition.metadata.description.empty())
+         {
+            metadata["description"] = definition.metadata.description;
+         }
+         if (definition.metadata.decimals >= 0)
+         {
+            metadata["decimals"] = definition.metadata.decimals;
+         }
+
+         std::string json;
+         serializeJson(doc, json);
+         definition.state = TopicState::PENDING;
+         definition.metadataChanged = false;
+         definition.ackTimer.reset();
+         if (!_webSocket.sendTXT(json.c_str()))
+         {
+            definition.state = TopicState::REJECTED;
+            _reportTopicError("Could not send topic creation: " + definition.topic);
+         }
+      }
+   }
+
+   private:
    void _onConnected() override
    {
+      _resetTopics();
       _sendHandshake();
       if (_handler != nullptr)
       {
@@ -508,14 +620,20 @@ private:
 
    void _onDisconnected(const std::string& reason, bool wasConnected) override
    {
-      _publishTimes.clear();
+      _resetTopics();
       _onTelemetryDisconnected();
       if (wasConnected)
       {
          DeviceHealth::telemetryReconnects++;
       }
 
-      Logger.log(std::string(wasConnected ? "Telemetry connection lost (" : "Could not connect to telemetry server (") + reason + "); will keep retrying for up to " + std::to_string((int)TELEMETRY_OUTAGE_RESET_M) + " minutes", LogSeverity::WARN, "Telemetry");
+      // Report the first failure immediately, then at most once per minute until the handshake succeeds.
+      if (!_connectionWarningLogged || _connectionWarningTimer.ready())
+      {
+         _connectionWarningLogged = true;
+         _connectionWarningTimer.reset();
+         Logger.log(std::string(wasConnected ? "Telemetry connection lost (" : "Could not connect to telemetry server (") + reason + "); will keep retrying for up to " + std::to_string((int)TELEMETRY_OUTAGE_RESET_M) + " minutes", LogSeverity::WARN, "Telemetry");
+      }
    }
 
    void _onJsonMessage(JsonDocument& doc) override
@@ -527,6 +645,7 @@ private:
          {
             _ready = true;
             _rate.reset();
+            _connectionWarningLogged = false;
             if (_outageActive)
             {
                Logger.log("Telemetry reconnected", LogSeverity::INFO, "Telemetry");
@@ -535,6 +654,67 @@ private:
             if (_handler != nullptr)
             {
                _handler->onStarted();
+            }
+            return;
+         }
+         if (strcmp(type, "topicAck") == 0)
+         {
+            const char* topic = doc["topic"];
+            const char* status = doc["status"];
+            TopicDefinition* definition = topic != nullptr ? _findTopic(topic) : nullptr;
+            if (definition == nullptr || definition->state != TopicState::PENDING || status == nullptr ||
+               (strcmp(status, "created") != 0 && strcmp(status, "updated") != 0 && strcmp(status, "unchanged") != 0))
+            {
+               _reportTopicError("Invalid or unexpected topic acknowledgment");
+               return;
+            }
+            definition->state = definition->metadataChanged ? TopicState::UNSENT : TopicState::APPROVED;
+            return;
+         }
+         if (strcmp(type, "topicError") == 0)
+         {
+            const char* topic = doc["topic"] | "";
+            const char* requestType = doc["requestType"] | "";
+            const char* code = doc["code"] | "unknown";
+            const char* message = doc["message"] | "unknown topic error";
+            TopicDefinition* definition = _findTopic(topic);
+            if (definition != nullptr)
+            {
+               if (strcmp(requestType, "createTopic") == 0)
+               {
+                  definition->state = definition->metadataChanged ? TopicState::UNSENT : TopicState::REJECTED;
+               }
+               else if (strcmp(code, "invalid_sample") != 0)
+               {
+                  definition->state = TopicState::REJECTED;
+               }
+            }
+            _reportTopicError(std::string("Topic '") + topic + "' " + requestType + " rejected (" + code + "): " + message);
+            return;
+         }
+         if (strcmp(type, "topic") == 0)
+         {
+            const char* topic = doc["topic"];
+            if (topic == nullptr || !doc["metadata"].is<JsonObject>())
+            {
+               _reportTopicError("Invalid topic metadata message");
+               return;
+            }
+            TelemetryTopicMetadata metadata;
+            metadata.unit = doc["metadata"]["unit"] | "";
+            metadata.description = doc["metadata"]["description"] | "";
+            if (!doc["metadata"]["decimals"].isNull())
+            {
+               if (!doc["metadata"]["decimals"].is<int>() || doc["metadata"]["decimals"].as<int>() < 0 || doc["metadata"]["decimals"].as<int>() > 15)
+               {
+                  _reportTopicError("Invalid topic decimal precision");
+                  return;
+               }
+               metadata.decimals = doc["metadata"]["decimals"].as<int8_t>();
+            }
+            if (_topicHandler != nullptr)
+            {
+               _topicHandler(topic, metadata);
             }
             return;
          }
@@ -818,6 +998,17 @@ public:
 
    ///
    /// <summary>
+   /// Registers a subscriber callback for topic definitions and metadata updates.
+   /// </summary>
+   /// <param name="handler">Handler receiving the topic and its complete attributes.</param>
+   ///
+   void onTopic(TopicHandler handler)
+   {
+      _topicHandler = handler;
+   }
+
+   ///
+   /// <summary>
    /// Changes the subscribed topics on an existing subscriber connection.
    /// </summary>
    /// <param name="topics">New topics. Empty subscribes to all topics.</param>
@@ -833,73 +1024,118 @@ public:
 
    ///
    /// <summary>
-   /// Publishes a sample (publishers only) when the formatted value for the topic has
-   /// changed, or once republishIntervalS has elapsed since the topic's previous send.
-   /// Dropped if the connection isn't ready.
+   /// Retains a topic definition and requests approval after the hello handshake.
+   /// Repeating an unchanged definition is harmless. Definitions replay after reconnects.
    /// </summary>
-   /// <param name="topic">Topic name</param>
-   /// <param name="value">Sample value</param>
-   /// <param name="decimals">Number of decimal places for the value (0..15), or -1 to omit it from the message</param>
-   /// <returns>True if the sample was sent; otherwise false.</returns>
+   /// <param name="topic">Nonempty topic name owned by this publisher.</param>
+   /// <param name="metadata">Complete attributes; omitted fields clear previous attributes.</param>
    ///
-   bool publish(const char* topic, double value, int8_t decimals = -1)
+   void createTopic(const char* topic, const TelemetryTopicMetadata& metadata)
    {
-      if (!isReady() || std::isnan(value))
+      ASSERT(_role == Role::DEVICE);
+      ASSERT(topic != nullptr && topic[0] != '\0');
+      ASSERT(metadata.decimals >= -1 && metadata.decimals <= 15);
+
+      TopicDefinition* definition = _findTopic(topic);
+      if (definition == nullptr)
+      {
+         _topicDefinitions.push_back({ topic, metadata });
+         return;
+      }
+      if (definition->metadata.unit == metadata.unit && definition->metadata.description == metadata.description &&
+         definition->metadata.decimals == metadata.decimals)
+      {
+         if (definition->state == TopicState::REJECTED)
+         {
+            definition->state = TopicState::UNSENT;
+         }
+         return;
+      }
+
+      definition->metadata = metadata;
+      definition->lastValue.clear();
+      if (definition->state == TopicState::PENDING)
+      {
+         definition->metadataChanged = true;
+      }
+      else
+      {
+         definition->state = TopicState::UNSENT;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Reports whether a topic's current definition is approved on this connection.
+   /// </summary>
+   /// <param name="topic">Nonempty topic name.</param>
+   /// <returns>True only after a successful topicAck for the current metadata.</returns>
+   ///
+   bool isTopicReady(const char* topic)
+   {
+      ASSERT(topic != nullptr && topic[0] != '\0');
+
+      TopicDefinition* definition = _findTopic(topic);
+      return isReady() && definition != nullptr && definition->state == TopicState::APPROVED;
+   }
+
+   ///
+   /// <summary>
+   /// Submits an unrounded numeric sample after topic approval. Insignificant changes
+   /// are suppressed using metadata precision until republishIntervalS elapses.
+   /// </summary>
+   /// <param name="topic">Previously created topic name.</param>
+   /// <param name="value">Sample value; NAN indicates an unavailable reading.</param>
+   /// <returns>True if sent; false if unavailable, unchanged, disconnected, or unapproved.</returns>
+   ///
+   bool submit(const char* topic, double value)
+   {
+      ASSERT(_role == Role::DEVICE);
+      ASSERT(topic != nullptr && topic[0] != '\0');
+
+      TopicDefinition* definition = _findTopic(topic);
+      ASSERT(definition != nullptr);
+
+      if (!isReady() || definition->state != TopicState::APPROVED || std::isnan(value))
       {
          return false;
       }
-
-      String formatted = (decimals >= 0 && decimals <= 15)
-         ? String(value, static_cast<unsigned int>(decimals))
-         : String(value, 6);
-
-      PublishTime* last = nullptr;
-      for (PublishTime& publishTime : _publishTimes)
+      if (!std::isfinite(value))
       {
-         if (publishTime.topic == topic)
-         {
-            last = &publishTime;
-            break;
-         }
+         _reportTopicError(std::string("Nonfinite sample for topic: ") + topic);
+         return false;
       }
 
+      const int8_t decimals = definition->metadata.decimals;
+      String formatted = decimals >= 0 ? String(value, static_cast<unsigned int>(decimals)) : String();
+      const bool unchanged = decimals >= 0 ? definition->lastValue == formatted.c_str() : definition->lastSample == value;
       int64_t now = esp_timer_get_time();
-      if (last != nullptr && last->lastValue == formatted.c_str())
+      if (definition->hasSubmitted && unchanged)
       {
-         if (_config.republishIntervalS == 0 || (now - last->micros) < _config.republishIntervalS * 1000000LL)
+         if (_config.republishIntervalS == 0 || (now - definition->micros) < _config.republishIntervalS * 1000000LL)
          {
             return false;
          }
       }
 
-      int64_t dtMicros = last != nullptr ? (now - last->micros) : 0;
-
       JsonDocument doc;
       doc["type"] = "sample";
       doc["topic"] = topic;
-      doc["value"] = formatted.toDouble();
-      doc["dt"] = dtMicros;
-      if (decimals >= 0 && decimals <= 15)
-      {
-         doc["decimals"] = decimals;
-      }
+      doc["value"] = value;
+      doc["dt"] = definition->hasSubmitted ? now - definition->micros : 0;
 
       std::string json;
       serializeJson(doc, json);
       if (!_webSocket.sendTXT(json.c_str()))
       {
+         _reportTopicError(std::string("Could not send sample for topic: ") + topic);
          return false;
       }
 
-      if (last != nullptr)
-      {
-         last->micros = now;
-         last->lastValue = formatted.c_str();
-      }
-      else
-      {
-         _publishTimes.push_back({ topic, now, formatted.c_str() });
-      }
+      definition->micros = now;
+      definition->lastValue = formatted.c_str();
+      definition->lastSample = value;
+      definition->hasSubmitted = true;
       _rate.tick();
       DeviceHealth::telemetryRate = _rate.get(TELEMETRY_RATE_WINDOW_S);
       DeviceHealth::telemetryRateMs = millis();
@@ -917,8 +1153,17 @@ public:
       return _role;
    }
 
-   void setTopic(const std::string& topic)
+   ///
+   /// <summary>
+   /// Selects the primary topic locally. Publishers also declare the selected topic.
+   /// Subscribers use setTopics() to change their server-side subscription.
+   /// </summary>
+   /// <param name="topic">Nonempty primary topic name.</param>
+   ///
+   virtual void setTopic(const std::string& topic)
    {
+      ASSERT(!topic.empty());
+
       _topic = topic;
       _topics = { topic };
    }
@@ -977,7 +1222,7 @@ public:
 class TelemetryPublisher : public TelemetryClient
 {
 private:
-   uint8_t _decimalPlaces;
+   TelemetryTopicMetadata _primaryMetadata;
    uint32_t _minIntervalMicros;
    int64_t _lastPublishMicros = 0;
    bool _hasPublished = false;
@@ -993,7 +1238,7 @@ private:
    {
       TelemetryClient::_onLoop();
 
-      if (!isReady() || !_pendingNew || isnan(_pendingValue))
+      if (!isTopicReady(getTopic().c_str()) || !_pendingNew || isnan(_pendingValue))
       {
          return;
       }
@@ -1005,7 +1250,7 @@ private:
       }
 
       _pendingNew = false;
-      if (publish(getTopic().c_str(), _pendingValue, _decimalPlaces))
+      if (submit(getTopic().c_str(), _pendingValue))
       {
          _lastPublishMicros = now;
          _hasPublished = true;
@@ -1017,15 +1262,22 @@ public:
    /// <summary>
    /// Initializes a new instance of the TelemetryPublisher class.
    /// </summary>
-   /// <param name="topic">The telemetry topic to publish to.</param>
-   /// <param name="config">Telemetry settings; decimals is the number of decimal places to publish values with.</param>
+   /// <param name="topic">The primary telemetry topic to create and submit values to.</param>
+   /// <param name="config">Connection, metadata, change-suppression precision, and cadence settings.</param>
    /// <param name="status">Status indicator used by the default event handler, if no handler is supplied.</param>
    /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
    ///
    TelemetryPublisher(const std::string& topic, const TelemetryConfig& config, IStatus* status = nullptr, TelemetryEventHandler* handler = nullptr)
-      : TelemetryClient(config, status, handler), _decimalPlaces(config.decimals), _minIntervalMicros(config.maxPublishRatePerSec == 0 ? 0 : 1000000UL / config.maxPublishRatePerSec)
+      : TelemetryClient(config, status, handler)
    {
+      ASSERT(config.unit != nullptr);
+      ASSERT(config.description != nullptr);
+      ASSERT(config.decimals <= 15);
+
+      _primaryMetadata = { config.unit, config.description, static_cast<int8_t>(config.decimals) };
+      _minIntervalMicros = config.maxPublishRatePerSec == 0 ? 0 : 1000000UL / config.maxPublishRatePerSec;
       _setRole(Role::DEVICE, topic);
+      createTopic(topic.c_str(), _primaryMetadata);
    }
 
    ///
@@ -1043,10 +1295,31 @@ public:
 
    ///
    /// <summary>
-   /// Sets the value to be published on the next loop() call, if it has changed or once
-   /// republishIntervalS has elapsed.
+   /// Selects and creates the primary topic using the configured attributes.
+   /// Discards any queued value belonging to the previous primary topic.
    /// </summary>
-   /// <param name="value">The value to publish.</param>
+   /// <param name="topic">Nonempty primary topic name.</param>
+   ///
+   void setTopic(const std::string& topic) override
+   {
+      ASSERT(!topic.empty());
+
+      if (getTopic() == topic)
+      {
+         return;
+      }
+      TelemetryClient::setTopic(topic);
+      _pendingNew = false;
+      _hasPublished = false;
+      createTopic(topic.c_str(), _primaryMetadata);
+   }
+
+   ///
+   /// <summary>
+   /// Queues the latest primary value until its topic is approved and the rate cap allows
+   /// submission. Unchanged values are suppressed until republishIntervalS elapses.
+   /// </summary>
+   /// <param name="value">The value to submit.</param>
    ///
    void setValue(float value)
    {

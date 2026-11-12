@@ -2,16 +2,32 @@
 
 #include <span>
 #include <stdint.h>
+#include <string>
 
 #include "TelemetryEndpoint.h"
+#include "TelemetryUnits.h"
 #include "WiFiSettings.h"
 
 ///
 /// <summary>
-/// Telemetry settings for a sketch: the topic (a table of selectable topics, or a single
-/// fixed topic), the decimal precision and publish cadence used when streaming values,
-/// and the server to connect to (primary and optional fallback endpoint, WebSocket path
-/// and per-role authentication tokens). See TELEMETRY_RASPBERRY_ENDPOINT and similar in
+/// Owned topic attributes sent during creation, separately from numeric samples.
+/// Use TelemetryUnits constants for physical units; leave dimensionless units empty.
+/// Empty strings and a decimals value of -1 omit the corresponding attributes.
+/// </summary>
+///
+struct TelemetryTopicMetadata
+{
+   std::string unit;
+   std::string description;
+   int8_t decimals = -1;
+};
+
+///
+/// <summary>
+/// Telemetry settings for a sketch: the primary topic (selectable or fixed), its metadata,
+/// change-suppression precision and publish cadence, and the server to connect to
+/// (primary and optional fallback endpoint, WebSocket path and per-role authentication
+/// tokens). See TELEMETRY_RASPBERRY_ENDPOINT and similar in
 /// WiFiSettings.h for the standard server values.
 /// </summary>
 ///
@@ -23,8 +39,14 @@ struct TelemetryConfig
    /// <summary>Fixed telemetry topic used when prompts is empty (no selection prompt). Ignored if prompts is non-empty.</summary>
    const char* topic = nullptr;
 
-   /// <summary>Decimal places used when publishing the telemetry value over the WebSocket connection.</summary>
+   /// <summary>Preferred display precision, also used to suppress insignificant sample changes without rounding transmitted values.</summary>
    uint8_t decimals = 2;
+
+   /// <summary>Primary topic unit, or an empty string to omit it.</summary>
+   const char* unit = "";
+
+   /// <summary>Primary topic description, or an empty string to omit it.</summary>
+   const char* description = "";
 
    /// <summary>How often (in milliseconds) the telemetry value source is read and published. 0 means every loop() iteration.</summary>
    uint16_t publishIntervalMs = 0;

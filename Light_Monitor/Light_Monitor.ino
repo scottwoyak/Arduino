@@ -82,6 +82,8 @@ InfluxField* presenceField = nullptr;
 char distanceTopic[MAX_TOPIC_LENGTH] = "";
 char luxTopic[MAX_TOPIC_LENGTH] = "";
 
+extern PublisherSketch sketch;
+
 ///
 /// <summary>
 /// Builds the telemetry topics as "Distance/site/location" and "Lux/site/location".
@@ -93,6 +95,9 @@ void onSiteResolved(const InfluxContext& site)
    std::string suffix = std::string("/") + site.site + "/" + site.location;
    strlcpy(distanceTopic, (std::string(DISTANCE_TOPIC_PREFIX) + suffix).c_str(), sizeof(distanceTopic));
    strlcpy(luxTopic, (std::string(LUX_TOPIC_PREFIX) + suffix).c_str(), sizeof(luxTopic));
+
+   sketch.createTopic(distanceTopic, TelemetryTopicMetadata{ .unit = TelemetryUnits::MILLIMETERS, .description = "Distance to the nearest detected object", .decimals = 0 });
+   sketch.createTopic(luxTopic, TelemetryTopicMetadata{ .unit = TelemetryUnits::LUX, .description = "Ambient illuminance", .decimals = LUX_DECIMALS });
 }
 
 ///
@@ -110,6 +115,8 @@ float readDistance()
 TelemetryConfig TELEMETRY_CONFIG = {
    .topic = distanceTopic,
    .decimals = 0,
+   .unit = TelemetryUnits::MILLIMETERS,
+   .description = "Distance to the nearest detected object",
    .publishIntervalMs = DISTANCE_PUBLISH_INTERVAL_MS,
 };
 
@@ -150,7 +157,7 @@ bool isPresent()
 void sampleSensors()
 {
    lux = luxSensor.readLux();
-   sketch.publish(luxTopic, lux, LUX_DECIMALS);
+   sketch.submit(luxTopic, lux);
 
    luxField->set(lux);
    presenceField->set(presentSinceSample ? 100.0f : 0.0f);

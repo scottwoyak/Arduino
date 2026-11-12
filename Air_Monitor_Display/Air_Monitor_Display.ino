@@ -107,6 +107,8 @@ char vocTopic[MAX_TOPIC_LENGTH] = "";
 char noxTopic[MAX_TOPIC_LENGTH] = "";
 char airQualityTopic[MAX_TOPIC_LENGTH] = "";
 
+extern PublisherSketch sketch;
+
 ///
 /// <summary>
 /// Builds the telemetry topics as "item/site/location".
@@ -131,11 +133,21 @@ void onSiteResolved(const InfluxContext& site)
    strlcpy(vocTopic, (std::string(VOC_TOPIC_PREFIX) + suffix).c_str(), sizeof(vocTopic));
    strlcpy(noxTopic, (std::string(NOX_TOPIC_PREFIX) + suffix).c_str(), sizeof(noxTopic));
    strlcpy(airQualityTopic, (std::string(AIR_QUALITY_TOPIC_PREFIX) + suffix).c_str(), sizeof(airQualityTopic));
+
+   sketch.createTopic(pm1Topic, TelemetryTopicMetadata{ .unit = TelemetryUnits::MICROGRAMS_PER_CUBIC_METER, .description = "PM1.0 particulate matter concentration", .decimals = TELEMETRY_DECIMAL_PLACES });
+   sketch.createTopic(pm25Topic, TelemetryTopicMetadata{ .unit = TelemetryUnits::MICROGRAMS_PER_CUBIC_METER, .description = "PM2.5 particulate matter concentration", .decimals = TELEMETRY_DECIMAL_PLACES });
+   sketch.createTopic(pm10Topic, TelemetryTopicMetadata{ .unit = TelemetryUnits::MICROGRAMS_PER_CUBIC_METER, .description = "PM10 particulate matter concentration", .decimals = TELEMETRY_DECIMAL_PLACES });
+   sketch.createTopic(co2Topic, TelemetryTopicMetadata{ .unit = TelemetryUnits::PARTS_PER_MILLION, .description = "Carbon dioxide concentration", .decimals = 0 });
+   sketch.createTopic(vocTopic, TelemetryTopicMetadata{ .description = "Volatile organic compounds index", .decimals = 0 });
+   sketch.createTopic(noxTopic, TelemetryTopicMetadata{ .description = "Nitrogen oxides index", .decimals = TELEMETRY_DECIMAL_PLACES });
+   sketch.createTopic(airQualityTopic, TelemetryTopicMetadata{ .description = "Worst air quality score across active sensors", .decimals = AIR_QUALITY_DECIMAL_PLACES });
 }
 
 TelemetryConfig TELEMETRY_CONFIG = {
    .topic = pm25Topic,
    .decimals = TELEMETRY_DECIMAL_PLACES,
+   .unit = TelemetryUnits::MICROGRAMS_PER_CUBIC_METER,
+   .description = "PM2.5 particulate matter concentration",
 };
 
 SketchConfig PUBLISHER_CONFIG = {
@@ -364,7 +376,7 @@ void publishAirQuality()
    if (!isnan(worstScore))
    {
       airQualityField->set(worstScore);
-      sketch.publish(airQualityTopic, worstScore, AIR_QUALITY_DECIMAL_PLACES);
+      sketch.submit(airQualityTopic, worstScore);
    }
 }
 
@@ -707,8 +719,8 @@ void loop()
       pm25 = pm25Field->get();
       pm10 = pm10Field->get();
 
-      sketch.publish(pm1Topic, pm1, TELEMETRY_DECIMAL_PLACES);
-      sketch.publish(pm10Topic, pm10, TELEMETRY_DECIMAL_PLACES);
+      sketch.submit(pm1Topic, pm1);
+      sketch.submit(pm10Topic, pm10);
       publishAirQuality();
    }
 
@@ -731,7 +743,7 @@ void loop()
          scdTempField->set(tempF);
          humidityField->set(humidity);
 
-         sketch.publish(co2Topic, co2, 0);
+         sketch.submit(co2Topic, co2);
          publishAirQuality();
       }
    }
@@ -764,14 +776,14 @@ void loop()
          {
             vocField->set(vocIndex);
             vocQualityField->set(AirQualityTiers::scoreFor(vocIndex, AirQualityTiers::VOC_LIMITS));
-            sketch.publish(vocTopic, vocIndex, 0);
+            sketch.submit(vocTopic, vocIndex);
          }
          if (rawNoxIndex != 0)
          {
             noxField->set(rawNoxIndex);
             noxQualityField->set(AirQualityTiers::scoreFor(rawNoxIndex, AirQualityTiers::NOX_LIMITS));
             noxIndex = noxField->get();
-            sketch.publish(noxTopic, noxIndex, TELEMETRY_DECIMAL_PLACES);
+            sketch.submit(noxTopic, noxIndex);
          }
          else
          {

@@ -47,6 +47,7 @@ constexpr auto TOPIC = "Test";
 TelemetryConfig TELEMETRY_CONFIG = {
    .topic = TOPIC,
    .decimals = 3,
+   .description = "Simulated wave test sensor reading",
 };
 constexpr uint32_t PUBLISH_INTERVAL_MS = 10;
 constexpr uint32_t RATE_UPDATE_INTERVAL_MS = 1000;
@@ -98,7 +99,7 @@ void loop()
    if (publishTimer.ready())
    {
       float value = sensor.get();
-      client.publish(TOPIC, value, TELEMETRY_CONFIG.decimals);
+      client.submit(TOPIC, value);
 
       if (!needsInitialDisplay)
       {

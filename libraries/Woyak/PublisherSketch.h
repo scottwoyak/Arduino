@@ -11,6 +11,7 @@
 #include "TopicResolver.h"
 
 #include <sstream>
+#include <vector>
 
 ///
 /// <summary>
@@ -108,6 +109,13 @@ private:
 
    /// <summary>Resolves the telemetry topic and connects the telemetry client.</summary>
    TopicResolver _topicResolver;
+
+   struct TopicDefinition
+   {
+      std::string topic;
+      TelemetryTopicMetadata metadata;
+   };
+   std::vector<TopicDefinition> _pendingTopics;
 
        /// <summary>Constructed by begin(), once the telemetry topic has been resolved.</summary>
        TelemetryPublisher* _client = nullptr;
@@ -386,6 +394,11 @@ private:
    void _afterOTASetup() override
    {
       _client = new TelemetryPublisher(_topicResolver.topic(), _telemetryConfig, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
+      for (const TopicDefinition& definition : _pendingTopics)
+      {
+         _client->createTopic(definition.topic.c_str(), definition.metadata);
+      }
+      _pendingTopics.clear();
       _client->connect(_arduino, _status);
 
       _publisherInstance = this;
@@ -548,17 +561,48 @@ public:
 
    ///
    /// <summary>
-   /// Publishes a sample for an additional topic over the sketch's telemetry connection.
-   /// Dropped if the connection isn't ready.
+   /// Creates or updates a topic's complete metadata. May be called before begin().
+   /// Definitions are retained and automatically sent again after reconnecting.
    /// </summary>
-   /// <param name="topic">Topic name.</param>
-   /// <param name="value">Sample value.</param>
-   /// <param name="decimals">Number of decimal places for the value, or -1 to omit it from the message.</param>
-   /// <returns>True if the sample was sent; otherwise false.</returns>
+   /// <param name="topic">Nonempty topic name.</param>
+   /// <param name="metadata">Complete topic attributes; omitted attributes are cleared.</param>
    ///
-   bool publish(const char* topic, double value, int8_t decimals = -1)
+   void createTopic(const char* topic, const TelemetryTopicMetadata& metadata)
    {
-      return _client->publish(topic, value, decimals);
+      ASSERT(topic != nullptr && topic[0] != '\0');
+      ASSERT(metadata.decimals >= -1 && metadata.decimals <= 15);
+
+      if (_client != nullptr)
+      {
+         _client->createTopic(topic, metadata);
+         return;
+      }
+
+      for (TopicDefinition& definition : _pendingTopics)
+      {
+         if (definition.topic == topic)
+         {
+            definition.metadata = metadata;
+            return;
+         }
+      }
+      _pendingTopics.push_back({ topic, metadata });
+   }
+
+   ///
+   /// <summary>
+   /// Submits a numeric sample for a previously created topic. Samples are sent only
+   /// after the server approves that topic on the current connection.
+   /// </summary>
+   /// <param name="topic">Previously created topic name.</param>
+   /// <param name="value">Sample value; NAN indicates an unavailable reading.</param>
+   /// <returns>True if sent; false if unavailable, unchanged, disconnected, or unapproved.</returns>
+   ///
+   bool submit(const char* topic, double value)
+   {
+      ASSERT(_client != nullptr);
+
+      return _client->submit(topic, value);
    }
 
    ///

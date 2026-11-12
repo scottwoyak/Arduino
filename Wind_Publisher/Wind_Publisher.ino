@@ -71,6 +71,8 @@ constexpr uint16_t TELEMETRY_PUBLISH_INTERVAL_MS = 1000 / 20;
 
 TelemetryConfig TELEMETRY_CONFIG = {
    .prompts = WIND_TELEMETRY_TOPICS,
+   .unit = TelemetryUnits::MILES_PER_HOUR,
+   .description = "Wind speed",
    .publishIntervalMs = TELEMETRY_PUBLISH_INTERVAL_MS,
 };
 

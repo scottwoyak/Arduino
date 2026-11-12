@@ -114,6 +114,8 @@ InfluxConfig INFLUX_CONFIG = {
 TelemetryConfig TELEMETRY_CONFIG = {
    .prompts = WAVE_TELEMETRY_TOPICS,
    .decimals = 1,
+   .unit = TelemetryUnits::CENTIMETERS,
+   .description = "Water depth measured by the selected sensor",
    .publishIntervalMs = 33, // 30 per sec
 };
 

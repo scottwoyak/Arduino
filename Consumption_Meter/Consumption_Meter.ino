@@ -137,6 +137,7 @@ std::array<float, NUM_CT_INPUTS> ctAmps = {};
 std::array<char[MAX_TOPIC_LENGTH], NUM_CT_INPUTS> channelTopics = {};
 char primaryTelemetryTopic[MAX_TOPIC_LENGTH] = "Power/1";
 size_t primaryTelemetryChannel = 0;
+bool telemetryTopicsResolved = false;
 std::array<PowerSensorBase::ChannelConfig, PowerSensorBase::MAX_CHANNELS> initialChannelConfig = {
    PowerSensorBase::ChannelConfig{ "1",  PowerSensorBase::CORE_30A },
    PowerSensorBase::ChannelConfig{ "2",  PowerSensorBase::CORE_150A },
@@ -189,6 +190,8 @@ void sendSingleChannelAmpsPrompt();
 TelemetryConfig TELEMETRY_CONFIG = {
    .topic = primaryTelemetryTopic,
    .decimals = POWER_DECIMALS,
+   .unit = TelemetryUnits::WATTS,
+   .description = "Electrical power for this circuit",
    .publishIntervalMs = TELEMETRY_PUBLISH_INTERVAL_MS,
 };
 
@@ -225,6 +228,10 @@ void refreshTelemetryTopics()
       {
          std::string fullTopic = topicPrefix + ctLocations[i];
          strlcpy(channelTopics[i], fullTopic.c_str(), sizeof(channelTopics[i]));
+         if (telemetryTopicsResolved)
+         {
+            sketch.createTopic(channelTopics[i], TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
+         }
          if (!foundPrimary)
          {
             primaryTelemetryChannel = i;
@@ -243,6 +250,10 @@ void refreshTelemetryTopics()
       primaryTelemetryChannel = 0;
       std::string fallbackTopic = topicPrefix + "1";
       strlcpy(primaryTelemetryTopic, fallbackTopic.c_str(), sizeof(primaryTelemetryTopic));
+      if (telemetryTopicsResolved)
+      {
+         sketch.createTopic(primaryTelemetryTopic, TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
+      }
    }
 
    if (sketch.client() != nullptr)
@@ -1165,7 +1176,10 @@ void setup()
 
    sketch.addSensor("PowerSensor", []() { return powerSensor.begin(); });
    sketch.setValueSource([]() { return powerSensor.watts(primaryTelemetryChannel); });
-   sketch.onSiteResolved(refreshTelemetryTopics);
+   sketch.onSiteResolved([]() {
+      telemetryTopicsResolved = true;
+      refreshTelemetryTopics();
+   });
    sketch.onExtraConfig(getExtraConfigText, trySetExtraConfig, startInteractiveChannelPrompts);
    sketch.onReadings(
       []() { return powerSensor.formatReadings(); },
@@ -1214,7 +1228,7 @@ void loop()
       {
          if (i != primaryTelemetryChannel && channelTopics[i][0] != '\0')
          {
-            sketch.publish(channelTopics[i], powerSensor.watts(i), POWER_DECIMALS);
+            sketch.submit(channelTopics[i], powerSensor.watts(i));
          }
       }
    }

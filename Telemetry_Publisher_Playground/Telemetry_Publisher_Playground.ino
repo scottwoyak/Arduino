@@ -93,6 +93,7 @@ ScaledStepIntEditor targetEditor(
 TelemetryConfig TELEMETRY_CONFIG = {
    .topic = TELEMETRY_TOPIC,
    .decimals = 3,
+   .description = "Generated mock sensor test value",
    .maxPublishRatePerSec = MAX_PUBLISH_RATE_PER_SEC,
 };
 

@@ -209,6 +209,8 @@ InfluxConfig INFLUX_CONFIG = {
 TelemetryConfig TELEMETRY_CONFIG = {
    .prompts = GATE_TELEMETRY_TOPICS,
    .decimals = ANGLE_DECIMALS,
+   .unit = TelemetryUnits::DEGREES,
+   .description = "Gate opening angle",
 };
 
 SketchConfig PUBLISHER_CONFIG = {

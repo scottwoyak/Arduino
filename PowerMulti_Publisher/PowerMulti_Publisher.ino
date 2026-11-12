@@ -139,6 +139,8 @@ void sendSingleChannelAmpsPrompt();
 TelemetryConfig TELEMETRY_CONFIG = {
    .topic = primaryTelemetryTopic,
    .decimals = POWER_DECIMALS,
+   .unit = TelemetryUnits::WATTS,
+   .description = "Electrical power for this circuit",
    .publishIntervalMs = TELEMETRY_PUBLISH_INTERVAL_MS,
 };
 
@@ -167,6 +169,7 @@ void refreshTelemetryTopics()
       {
          std::string fullTopic = std::string(POWER_TOPIC_PREFIX) + "/" + ctLocations[i];
          strlcpy(channelTopics[i], fullTopic.c_str(), sizeof(channelTopics[i]));
+         sketch.createTopic(channelTopics[i], TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
          if (!foundPrimary)
          {
             primaryTelemetryChannel = i;
@@ -185,6 +188,7 @@ void refreshTelemetryTopics()
       primaryTelemetryChannel = 0;
       std::string fallbackTopic = std::string(POWER_TOPIC_PREFIX) + "/1";
       strlcpy(primaryTelemetryTopic, fallbackTopic.c_str(), sizeof(primaryTelemetryTopic));
+      sketch.createTopic(primaryTelemetryTopic, TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
    }
 
    if (sketch.client() != nullptr)
@@ -979,7 +983,7 @@ void loop()
       {
          if (i != primaryTelemetryChannel && channelTopics[i][0] != '\0')
          {
-            sketch.publish(channelTopics[i], powerSensor.watts(i), POWER_DECIMALS);
+            sketch.submit(channelTopics[i], powerSensor.watts(i));
          }
       }
    }
