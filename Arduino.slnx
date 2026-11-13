@@ -476,6 +476,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="Enphase_Display/Enphase_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Feather_ESP32_TFT/Feather_ESP32_TFT.vcxproj" Id="00000000-0000-0000-0000-000000000039">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

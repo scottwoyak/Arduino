@@ -1,9 +1,10 @@
 //
 // Consumption Meter
 //
-// Measures AC current and apparent power across up to 16 split-core current transformer (CT)
-// sensors. Displays live power (Watts) and RMS current (Amps) on the touch display and
-// publishes per-channel power readings over WebSocket telemetry to Power/<location>/<circuit>.
+// Measures AC current across up to 16 split-core current transformer (CT) sensors.
+// Displays RMS current (A) and estimated apparent power (VA) on the touch display and
+// publishes RMS current to Current/<location>/<circuit>. Apparent power uses nominal
+// voltage; real watts and power-flow direction are not measured.
 //
 // The ADC hardware is selected with POWER_SENSOR_TYPE (both derive from PowerSensorBase):
 //   POWER_SENSOR_MUX_ADS - 74HC4067 16:1 mux + ADS1015 (I2C), channels sampled in turn
@@ -117,9 +118,9 @@ constexpr std::array<const char*, PowerSensorBase::MAX_CHANNELS> PREF_KEY_CT_AMP
 constexpr uint16_t DISPLAY_UPDATE_INTERVAL_MS = 200; // 5 updates per second
 
 // ----------- Telemetry Configuration
-constexpr auto POWER_TOPIC_PREFIX = "Power";
+constexpr auto CURRENT_TOPIC_PREFIX = "Current";
 constexpr size_t MAX_TOPIC_LENGTH = 64;
-constexpr uint8_t POWER_DECIMALS = 0;
+constexpr uint8_t CURRENT_DECIMALS = 2;
 constexpr uint16_t TELEMETRY_PUBLISH_INTERVAL_MS = DISPLAY_UPDATE_INTERVAL_MS;
 
 // ----------- Display Layout
@@ -135,7 +136,7 @@ std::array<char[8], PowerSensorBase::MAX_CHANNELS> defaultChannelNames = {
 };
 std::array<float, NUM_CT_INPUTS> ctAmps = {};
 std::array<char[MAX_TOPIC_LENGTH], NUM_CT_INPUTS> channelTopics = {};
-char primaryTelemetryTopic[MAX_TOPIC_LENGTH] = "Power/1";
+char primaryTelemetryTopic[MAX_TOPIC_LENGTH] = "Current/1";
 size_t primaryTelemetryChannel = 0;
 bool telemetryTopicsResolved = false;
 std::array<PowerSensorBase::ChannelConfig, PowerSensorBase::MAX_CHANNELS> initialChannelConfig = {
@@ -189,9 +190,9 @@ void sendSingleChannelAmpsPrompt();
 
 TelemetryConfig TELEMETRY_CONFIG = {
    .topic = primaryTelemetryTopic,
-   .decimals = POWER_DECIMALS,
-   .unit = TelemetryUnits::WATTS,
-   .description = "Electrical power for this circuit",
+   .decimals = CURRENT_DECIMALS,
+   .unit = TelemetryUnits::AMPS,
+   .description = "RMS current for this circuit; power-flow direction is not measured",
    .publishIntervalMs = TELEMETRY_PUBLISH_INTERVAL_MS,
 };
 
@@ -207,7 +208,7 @@ PublisherSketch sketch(PUBLISHER_CONFIG, TELEMETRY_CONFIG);
 
 ///
 /// <summary>
-/// Rebuilds the per-channel telemetry topics as "Power/<location>/<circuit>" for each
+/// Rebuilds the per-channel RMS current topics as "Current/<location>/<circuit>" for each
 /// configured CT and updates the active TelemetryPublisher topic immediately if already
 /// running.
 /// </summary>
@@ -215,7 +216,7 @@ PublisherSketch sketch(PUBLISHER_CONFIG, TELEMETRY_CONFIG);
 void refreshTelemetryTopics()
 {
    std::string deviceLocation = sketch.location().c_str();
-   std::string topicPrefix = std::string(POWER_TOPIC_PREFIX) + "/";
+   std::string topicPrefix = std::string(CURRENT_TOPIC_PREFIX) + "/";
    if (!deviceLocation.empty())
    {
       topicPrefix += deviceLocation + "/";
@@ -230,7 +231,7 @@ void refreshTelemetryTopics()
          strlcpy(channelTopics[i], fullTopic.c_str(), sizeof(channelTopics[i]));
          if (telemetryTopicsResolved)
          {
-            sketch.createTopic(channelTopics[i], TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
+            sketch.createTopic(channelTopics[i], TelemetryTopicMetadata{ .unit = TelemetryUnits::AMPS, .description = "RMS current for this circuit; power-flow direction is not measured", .decimals = CURRENT_DECIMALS });
          }
          if (!foundPrimary)
          {
@@ -252,7 +253,7 @@ void refreshTelemetryTopics()
       strlcpy(primaryTelemetryTopic, fallbackTopic.c_str(), sizeof(primaryTelemetryTopic));
       if (telemetryTopicsResolved)
       {
-         sketch.createTopic(primaryTelemetryTopic, TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
+         sketch.createTopic(primaryTelemetryTopic, TelemetryTopicMetadata{ .unit = TelemetryUnits::AMPS, .description = "RMS current for this circuit; power-flow direction is not measured", .decimals = CURRENT_DECIMALS });
       }
    }
 
@@ -264,9 +265,9 @@ void refreshTelemetryTopics()
 
 ///
 /// <summary>
-/// Updates all 8 AD7606 channels (V1..V8) on powerSensor so every channel is
-/// continuously sampled for connection status, Amps, and Watts regardless of whether a
-/// location string is assigned.
+/// Updates all physical CT channels on powerSensor so every channel is
+/// continuously sampled for connection status, RMS current, and estimated apparent power
+/// regardless of whether a location string is assigned.
 /// </summary>
 ///
 void applyChannelConfigToSensor()
@@ -727,7 +728,7 @@ bool trySetExtraConfig(const std::string& key, const std::string& value, std::st
 Format rowIndexFormat("## ", Format::Alignment::RIGHT);
 Format rowLocationFormat(LOCATION_COL_WIDTH, Format::Alignment::LEFT);
 Format rowAmpsFormat(" ###.# A", Format::Alignment::RIGHT);
-Format rowWattsFormat(" ##### W", Format::Alignment::RIGHT);
+Format rowApparentPowerFormat("##### VA", Format::Alignment::RIGHT);
 
 Timer updateTimer(DISPLAY_UPDATE_INTERVAL_MS);
 int16_t valueStartY = 0;
@@ -1048,7 +1049,7 @@ void editChannelLocationTouch(size_t ch)
 /// Column 1: Channel number (1-8)
 /// Column 2: Configured location name
 /// Column 3: RMS current in Amps (or gray dashes if unplugged)
-/// Column 4: Apparent power in Watts (or gray dashes if unplugged)
+/// Column 4: Estimated apparent power in VA (or gray dashes if unplugged)
 /// </summary>
 ///
 void updateDisplay()
@@ -1078,12 +1079,12 @@ void updateDisplay()
       if (connected)
       {
          sketch.arduino.print(powerSensor.amps(i), rowAmpsFormat, Color::VALUE2);
-         sketch.arduino.printlnR(powerSensor.watts(i), rowWattsFormat, Color::VALUE);
+         sketch.arduino.printlnR(powerSensor.apparentPower(i), rowApparentPowerFormat, Color::VALUE);
       }
       else
       {
          sketch.arduino.print(rowAmpsFormat.toNoValueString().c_str(), Color::GRAY);
-         sketch.arduino.printlnR(rowWattsFormat.toNoValueString().c_str(), Color::GRAY);
+         sketch.arduino.printlnR(rowApparentPowerFormat.toNoValueString().c_str(), Color::GRAY);
       }
    }
 }
@@ -1175,7 +1176,7 @@ void setup()
    loadChannelConfig();
 
    sketch.addSensor("PowerSensor", []() { return powerSensor.begin(); });
-   sketch.setValueSource([]() { return powerSensor.watts(primaryTelemetryChannel); });
+   sketch.setValueSource([]() { return powerSensor.amps(primaryTelemetryChannel); });
    sketch.onSiteResolved([]() {
       telemetryTopicsResolved = true;
       refreshTelemetryTopics();
@@ -1183,7 +1184,7 @@ void setup()
    sketch.onExtraConfig(getExtraConfigText, trySetExtraConfig, startInteractiveChannelPrompts);
    sketch.onReadings(
       []() { return powerSensor.formatReadings(); },
-      "Reports the latest power (W), RMS current (A), and sensor RMS voltage (V)");
+      "Reports RMS current (A), estimated apparent power (VA), and sensor RMS voltage (V)");
    sketch.arduino.setRotation(DisplayRotation::PORTRAIT_FLIP);
 
    sketch.begin();
@@ -1228,7 +1229,7 @@ void loop()
       {
          if (i != primaryTelemetryChannel && channelTopics[i][0] != '\0')
          {
-            sketch.submit(channelTopics[i], powerSensor.watts(i));
+            sketch.submit(channelTopics[i], powerSensor.amps(i));
          }
       }
    }

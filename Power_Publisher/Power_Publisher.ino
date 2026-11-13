@@ -5,9 +5,9 @@
 // sensors (e.g. SCT-013-030 30A/1V, SCT-013-100 100A/1V, or SCT023R 100A:50mA with 20 ohm
 // burden resistor) connected to a single ADS1115 16-bit ADC over I2C using AIN3 as the
 // shared 1.65V mid-supply differential reference (AIN0-AIN3, AIN1-AIN3, AIN2-AIN3).
-// Displays live power (Watts) and RMS current (Amps) on the Feather TFT display and
-// publishes per-channel power readings over WebSocket telemetry to Power/<location>/<channel>
-// (or Power/<location> when a single channel with an empty suffix is configured).
+// Displays estimated apparent power (VA) and RMS current (A) on the Feather TFT display
+// and publishes RMS current to Current/<channelLocation>.
+// Apparent power uses nominal voltage; real watts and power-flow direction are not measured.
 //
 // Hardware & Shared-A3 Differential Wiring (up to 3 CTs on 1 ADS1115):
 // - Feather ESP32-S3 TFT connected to the ADS1115 over I2C (STEMMA QT / SDA, SCL, 3.3V, GND)
@@ -72,9 +72,9 @@ constexpr std::array<const char*, CTPowerSensor::MAX_CHANNELS> PREF_KEY_CT_AMPS 
 constexpr uint16_t DISPLAY_UPDATE_INTERVAL_MS = 200; // 5 updates per second
 
 // ----------- Telemetry Configuration
-constexpr auto POWER_TOPIC_PREFIX = "Power";
+constexpr auto CURRENT_TOPIC_PREFIX = "Current";
 constexpr size_t MAX_TOPIC_LENGTH = 64;
-constexpr uint8_t POWER_DECIMALS = 0;
+constexpr uint8_t CURRENT_DECIMALS = 2;
 constexpr uint16_t TELEMETRY_PUBLISH_INTERVAL_MS = DISPLAY_UPDATE_INTERVAL_MS;
 
 // ----------- Display Layout
@@ -94,9 +94,9 @@ void sendNextAmpsPrompt();
 
 TelemetryConfig TELEMETRY_CONFIG = {
    .topic = channelTopics[0],
-   .decimals = POWER_DECIMALS,
-   .unit = TelemetryUnits::WATTS,
-   .description = "Electrical power for this circuit",
+   .decimals = CURRENT_DECIMALS,
+   .unit = TelemetryUnits::AMPS,
+   .description = "RMS current for this circuit; power-flow direction is not measured",
    .publishIntervalMs = TELEMETRY_PUBLISH_INTERVAL_MS,
 };
 
@@ -394,7 +394,7 @@ bool trySetExtraConfig(const std::string& key, const std::string& value, std::st
 
 ///
 /// <summary>
-/// Builds the per-channel telemetry topics as "Power/<channelLocation>" for each enabled CT.
+/// Builds the per-channel RMS current topics as "Current/<channelLocation>" for each enabled CT.
 /// </summary>
 ///
 void onSiteResolved()
@@ -403,15 +403,15 @@ void onSiteResolved()
    for (size_t i = 0; i < count; i++)
    {
       const char* loc = powerSensor.channelName(i);
-      std::string fullTopic = std::string(POWER_TOPIC_PREFIX) + "/" + (loc != nullptr && loc[0] != '\0' ? loc : "1");
+      std::string fullTopic = std::string(CURRENT_TOPIC_PREFIX) + "/" + (loc != nullptr && loc[0] != '\0' ? loc : "1");
       strlcpy(channelTopics[i], fullTopic.c_str(), sizeof(channelTopics[i]));
-      sketch.createTopic(channelTopics[i], TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
+      sketch.createTopic(channelTopics[i], TelemetryTopicMetadata{ .unit = TelemetryUnits::AMPS, .description = "RMS current for this circuit; power-flow direction is not measured", .decimals = CURRENT_DECIMALS });
    }
 }
 
-Format singleWattsFormat("##### W", Format::Alignment::CENTER);
+Format singleApparentPowerFormat("##### VA", Format::Alignment::CENTER);
 Format singleAmpsFormat("###.# A", Format::Alignment::CENTER);
-Format rowWattsFormat("##### W");
+Format rowApparentPowerFormat("##### VA");
 Format rowAmpsFormat(" ###.# A");
 
 Timer updateTimer(DISPLAY_UPDATE_INTERVAL_MS);
@@ -420,9 +420,9 @@ bool displayReady = false;
 
 ///
 /// <summary>
-/// Renders the current power (Watts) and RMS current (Amps) on the TFT display.
-/// In single-channel mode, renders large centered Watts and Amps. In multi-channel mode,
-/// renders one row per enabled CT channel with its configured name, Watts, and Amps.
+/// Renders estimated apparent power (VA) and RMS current (A) on the TFT display.
+/// In single-channel mode, renders large centered VA and Amps. In multi-channel mode,
+/// renders one row per enabled CT channel with its configured name, VA, and Amps.
 /// </summary>
 ///
 void updateDisplay()
@@ -437,7 +437,7 @@ void updateDisplay()
    if (powerSensor.channelCount() == 1)
    {
       sketch.arduino.setTextSize(SINGLE_VALUE_SIZE);
-      sketch.arduino.printlnC(powerSensor.watts(0), singleWattsFormat, Color::VALUE);
+      sketch.arduino.printlnC(powerSensor.apparentPower(0), singleApparentPowerFormat, Color::VALUE);
       sketch.arduino.printlnC(powerSensor.amps(0), singleAmpsFormat, Color::VALUE2);
    }
    else
@@ -446,7 +446,7 @@ void updateDisplay()
       for (size_t i = 0; i < powerSensor.channelCount(); i++)
       {
          sketch.arduino.print(std::string(powerSensor.channelName(i)) + ": ", Color::LABEL);
-         sketch.arduino.print(powerSensor.watts(i), rowWattsFormat, Color::VALUE);
+         sketch.arduino.print(powerSensor.apparentPower(i), rowApparentPowerFormat, Color::VALUE);
          sketch.arduino.printlnR(powerSensor.amps(i), rowAmpsFormat, Color::VALUE2);
       }
    }
@@ -457,12 +457,12 @@ void setup()
    loadChannelConfig();
 
    sketch.addSensor("ADS1115", []() { return powerSensor.begin(); });
-   sketch.setValueSource([]() { return powerSensor.watts(0); });
+   sketch.setValueSource([]() { return powerSensor.amps(0); });
    sketch.onSiteResolved(onSiteResolved);
    sketch.onExtraConfig(getExtraConfigText, trySetExtraConfig, startInteractiveChannelPrompts, true);
    sketch.onReadings(
       []() { return powerSensor.formatReadings(); },
-      "Reports the latest power (W), RMS current (A), and sensor RMS voltage (V)");
+      "Reports RMS current (A), estimated apparent power (VA), and sensor RMS voltage (V)");
 
    sketch.begin();
    sketch.completeInitialization();
@@ -499,7 +499,7 @@ void loop()
 
       for (size_t i = 1; i < powerSensor.channelCount(); i++)
       {
-         sketch.submit(channelTopics[i], powerSensor.watts(i));
+         sketch.submit(channelTopics[i], powerSensor.amps(i));
       }
    }
 

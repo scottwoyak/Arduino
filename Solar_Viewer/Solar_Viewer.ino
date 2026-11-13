@@ -226,10 +226,6 @@ std::array<TodayChartSample, MAX_TODAY_CHART_COLS> todayChartSamples;
 
 Rect16 rollingChartRect;
 Rect16 todayChartRect;
-int16_t nowSectionTopY = 0;
-int16_t nowSectionHeight = 0;
-int16_t todaySectionTopY = 0;
-int16_t todaySectionHeight = 0;
 int16_t headingColWidth = 0;
 uint8_t sectionTextSize = TABLE_TEXT_SIZE;
 int16_t chartLabelRightX = 0;
@@ -255,8 +251,7 @@ Color deltaValueColor(float value)
 
 ///
 /// <summary>
-/// Draws a single metric Field, showing a gray dash placeholder until a finite reading
-/// has been received.
+/// Draws a single metric Field, showing "---" in gray when the value is NAN (not yet known).
 /// </summary>
 /// <param name="field">Target display Field.</param>
 /// <param name="value">Current metric value, or NAN if not yet received.</param>
@@ -268,7 +263,8 @@ void drawMetricField(Field* field, float value, Color activeColor)
 
    if (std::isnan(value))
    {
-      field->draw(field->format().toNoValueString(), Color::GRAY, Color::GRAY);
+      std::string placeholder = field->format().prefix() + "---" + field->format().postfix();
+      field->draw(placeholder, Color::GRAY, Color::GRAY);
    }
    else
    {
@@ -331,13 +327,12 @@ void positionOneRowFields(
 ///
 /// <summary>
 /// Draws a section heading rotated 90 degrees counter-clockwise (reading bottom-to-top)
-/// within the left heading column, vertically centered along the section.
+/// within the left heading column, vertically centered next to its chart.
 /// </summary>
 /// <param name="text">Heading text to draw.</param>
-/// <param name="sectionTopY">Top Y coordinate of the section.</param>
-/// <param name="sectionHeight">Total pixel height of the section.</param>
+/// <param name="chartRect">Bounding rectangle of the section's chart.</param>
 ///
-void drawRotatedSectionHeading(const char* text, int16_t sectionTopY, int16_t sectionHeight)
+void drawRotatedSectionHeading(const char* text, const Rect16& chartRect)
 {
    int16_t charW = sketch.arduino.charW(sectionTextSize);
    int16_t charH = sketch.arduino.charH(sectionTextSize);
@@ -353,7 +348,7 @@ void drawRotatedSectionHeading(const char* text, int16_t sectionTopY, int16_t se
    sprite.setPivot(spriteW / 2.0f, spriteH / 2.0f);
 
    float dstX = headingColWidth / 2.0f;
-   float dstY = sectionTopY + sectionHeight / 2.0f;
+   float dstY = chartRect.y + chartRect.height / 2.0f;
    sprite.pushRotateZoom(dstX, dstY, ROTATED_HEADING_ANGLE_DEG, 1.0f, 1.0f);
    sprite.deleteSprite();
 }
@@ -399,13 +394,9 @@ void initLayout()
 
    int16_t rollingChartY = titleHeight + topGap;
    int16_t nowRowY = rollingChartY + nowChartHeight + itemGap;
-   nowSectionTopY = rollingChartY;
-   nowSectionHeight = (nowRowY + rowHeight) - rollingChartY;
 
    int16_t todayChartY = nowRowY + rowHeight + sectionGap;
    int16_t todayRowY = todayChartY + todayChartHeight + itemGap;
-   todaySectionTopY = todayChartY;
-   todaySectionHeight = (todayRowY + rowHeight) - todayChartY;
 
    rollingChartRect = Rect16(chartX, rollingChartY, chartWidth, nowChartHeight);
    todayChartRect = Rect16(chartX, todayChartY, chartWidth, todayChartHeight);
@@ -739,8 +730,8 @@ void drawStatic()
    sketch.arduino.println("Solar Monitor", Color::HEADING);
 
    // Rotated section headings on the left
-   drawRotatedSectionHeading(NOW_SECTION_TEXT, nowSectionTopY, nowSectionHeight);
-   drawRotatedSectionHeading(TODAY_SECTION_TEXT, todaySectionTopY, todaySectionHeight);
+   drawRotatedSectionHeading(NOW_SECTION_TEXT, rollingChartRect);
+   drawRotatedSectionHeading(TODAY_SECTION_TEXT, todayChartRect);
 
    // Chart Y-axis labels
    drawChartLabels(rollingChartRect, "20", "-20");
@@ -846,7 +837,7 @@ std::string formatReadings()
    {
       if (std::isnan(value))
       {
-         return "N/A";
+         return std::string("--- ") + unit;
       }
 
       std::ostringstream out;

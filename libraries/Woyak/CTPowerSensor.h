@@ -12,7 +12,7 @@
 
 ///
 /// <summary>
-/// Measures AC current (Amps) and apparent power (Watts) across up to 3 split-core current
+/// Measures RMS current (A) and estimates apparent power (VA) across up to 3 split-core current
 /// transformers (such as the SCT-013-030 30A/1V, SCT-013-100 100A/1V, or SCT023R 100A:50mA)
 /// connected to a single ADS1115 16-bit ADC using AIN3 as the shared 1.65V mid-supply
 /// differential reference (DIFF_A0_A3, DIFF_A1_A3, DIFF_A2_A3).
@@ -698,7 +698,7 @@ public:
 
    ///
    /// <summary>
-   /// Sets the nominal AC line voltage used to compute apparent power in Watts.
+   /// Sets the nominal AC line voltage used to estimate apparent power in VA.
    /// </summary>
    /// <param name="lineVoltageV">AC line voltage in volts (e.g. 120.0f or 240.0f).</param>
    ///
@@ -746,15 +746,27 @@ public:
 
    ///
    /// <summary>
-   /// Gets the smoothed apparent power in Watts (amps(channel) * lineVoltage()) for the
-   /// specified channel across the 1.0-second window.
+   /// Estimates apparent power using RMS current and the configured nominal voltage.
+   /// This is not a measurement of real power or power-flow direction.
    /// </summary>
    /// <param name="channel">Channel index (default 0).</param>
-   /// <returns>Smoothed apparent power in Watts.</returns>
+   /// <returns>Estimated apparent power in VA.</returns>
+   ///
+   float apparentPower(size_t channel = 0) const
+   {
+      return amps(channel) * _lineVoltageV;
+   }
+
+   ///
+   /// <summary>
+   /// Compatibility alias for apparentPower(); this value is VA, not watts.
+   /// </summary>
+   /// <param name="channel">Channel index (default 0).</param>
+   /// <returns>Estimated apparent power in VA.</returns>
    ///
    float watts(size_t channel = 0) const
    {
-      return amps(channel) * _lineVoltageV;
+      return apparentPower(channel);
    }
 
    ///
@@ -775,13 +787,24 @@ public:
 
    ///
    /// <summary>
-   /// Gets the total smoothed apparent power in Watts summed across all enabled channels.
+   /// Sums estimated apparent power across all enabled channels using nominal voltage.
    /// </summary>
-   /// <returns>Total smoothed apparent power in Watts.</returns>
+   /// <returns>Total estimated apparent power in VA.</returns>
+   ///
+   float totalApparentPower() const
+   {
+      return totalAmps() * _lineVoltageV;
+   }
+
+   ///
+   /// <summary>
+   /// Compatibility alias for totalApparentPower(); this value is VA, not watts.
+   /// </summary>
+   /// <returns>Total estimated apparent power in VA.</returns>
    ///
    float totalWatts() const
    {
-      return totalAmps() * _lineVoltageV;
+      return totalApparentPower();
    }
 
    ///
@@ -872,7 +895,7 @@ public:
       if (_numChannels > 1)
       {
          text.precision(1);
-         text << "totalPower=" << totalWatts() << " W\n"
+         text << "totalApparentPower=" << totalApparentPower() << " VA\n"
               << "totalCurrent=" << totalAmps() << " A\n";
       }
 
@@ -885,11 +908,11 @@ public:
             : (std::string("ch") + std::to_string(chIdx + 1) + "(" + ch.name + ").");
 
          float chAmps = amps(chIdx);
-         float chWatts = chAmps * _lineVoltageV;
+         float chApparentPower = apparentPower(chIdx);
 
          text.precision(1);
          text << prefix << "connected=" << (ch.connected ? "true" : "false") << "\n"
-              << prefix << "power=" << chWatts << " W\n"
+              << prefix << "apparentPower=" << chApparentPower << " VA\n"
               << prefix << "current=" << chAmps << " A\n"
               << prefix << "rawCurrent=" << ch.rawAmps << " A\n";
          text.precision(4);
