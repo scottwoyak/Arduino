@@ -157,7 +157,7 @@ public:
    /// </summary>
    /// <param name="status">Status indicator updated by the default event handling.</param>
 #ifdef ARDUINO_DISPLAY_SUPPORTED
-   /// <param name="display">Optional display used to draw error messages by default onError() handling.</param>
+   /// <param name="display">Optional display used to report fatal outages before resetting.</param>
 #endif
    ///
 #ifdef ARDUINO_DISPLAY_SUPPORTED
@@ -261,30 +261,19 @@ public:
 
    ///
    /// <summary>
-   /// Invoked when the telemetry client reports an error. Default implementation logs
-   /// the message, draws it on the display (if one was supplied), and sets the status to
-   /// FAILED. Does not reset the device.
+   /// Invoked when the telemetry client reports a nonfatal error. Default implementation
+   /// logs the message and sets the status to FAILED without resetting the device or
+   /// changing the display, preserving static content and incremental rendering state.
    /// </summary>
    /// <param name="message">Error message reported by the telemetry client</param>
    ///
    virtual void onError(const std::string& message)
    {
       Logger.log(message, LogSeverity::ERROR, "Telemetry");
+      _status->setStatus(Status::FAILED);
+   }
 
-#ifdef ARDUINO_DISPLAY_SUPPORTED
-      if (_display != nullptr)
-      {
-         _display->setTextSize(2);
-         _display->clearDisplay();
-         _display->display.setTextWrap(true);
-         _display->println(message, Color::RED);
-      }
-#endif
-
-            _status->setStatus(Status::FAILED);
-         }
-
-         ///
+   ///
    /// <summary>
    /// Invoked whenever a text message is sent. Default implementation does nothing;
    /// Serial echo logging of sent messages is handled independently by
@@ -339,7 +328,7 @@ public:
    /// Initializes a new instance of the TelemetryViewerEventHandler class.
    /// </summary>
    /// <param name="status">Status indicator updated by the default event handling.</param>
-   /// <param name="display">Display used to draw error messages and by onDisconnected()/onConnectionFailed().</param>
+   /// <param name="display">Display used to report fatal outages by onDisconnected()/onConnectionFailed().</param>
    ///
    explicit TelemetryViewerEventHandler(IStatus* status, ArduinoWithDisplay* display) : TelemetryEventHandler(status, display)
    {
