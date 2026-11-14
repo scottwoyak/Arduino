@@ -316,6 +316,10 @@
       <Deploy Solution="Debug|Any CPU" />
     </Project>
   </Folder>
+  <Project Path="AC_Voltage_Display/AC_Voltage_Display.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="Air_Monitor_Display/Air_Monitor_Display.vcxproj" Id="00000000-0000-0000-0000-000000000001">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy Solution="*|ARM" />
