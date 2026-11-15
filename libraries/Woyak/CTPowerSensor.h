@@ -55,6 +55,7 @@ public:
    static constexpr float CORE_15A = 15.0f;
    static constexpr float CORE_20A = 20.0f;
    static constexpr float CORE_30A = 30.0f;
+   static constexpr float CORE_40A = 40.0f; // 20A:25mA (800:1, e.g. SCT006) CT with 20 ohm burden resistor
    static constexpr float CORE_50A = 50.0f;
    static constexpr float CORE_100A = 100.0f;
    static constexpr float CORE_150A = 150.0f;

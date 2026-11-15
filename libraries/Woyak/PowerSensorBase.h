@@ -11,12 +11,13 @@
 
 ///
 /// <summary>
-/// Abstract base class for multi-channel AC current and apparent power sensors built from
-/// split-core current transformers (CTs).
+/// Abstract base class for multi-channel AC current and power sensors built from split-core
+/// current transformers (CTs), optionally paired with a live AC line voltage sensor for true
+/// real power (Watts) measurement.
 ///
-/// The base class owns the per-channel configuration, RMS slice latching, noise-floor handling,
-/// trace averaging and reporting. Derived classes implement the hardware-specific ADC sampling
-/// and call _latchSlice() once per channel every time a new RMS slice is available.
+/// The base class owns the per-channel configuration, RMS and real-power slice latching,
+/// noise-floor handling, trace averaging, and reporting. Derived classes implement the
+/// hardware-specific ADC sampling and record slices per channel as new measurements complete.
 /// </summary>
 ///
 class PowerSensorBase
@@ -32,6 +33,7 @@ public:
    static constexpr float CORE_15A = CTPowerSensor::CORE_15A;
    static constexpr float CORE_20A = CTPowerSensor::CORE_20A;
    static constexpr float CORE_30A = CTPowerSensor::CORE_30A;
+   static constexpr float CORE_40A = CTPowerSensor::CORE_40A;
    static constexpr float CORE_50A = CTPowerSensor::CORE_50A;
    static constexpr float CORE_100A = CTPowerSensor::CORE_100A;
    static constexpr float CORE_150A = CTPowerSensor::CORE_150A;
@@ -63,12 +65,16 @@ protected:
       double sumV = 0.0;
       double sumV2 = 0.0;
       std::array<float, NUM_TRACE_SLICES> traceAmps = {};
+      std::array<float, NUM_TRACE_SLICES> traceWatts = {};
       size_t traceWriteIndex = 0;
       size_t traceCount = 0;
       float dcVolts = 0.0f;
       float rmsVolts = 0.0f;
       float rawAmps = 0.0f;
       float latchedAmps = 0.0f;
+      float rawSignedWatts = 0.0f;
+      float latchedWatts = 0.0f;
+      bool hasRealPower = false;
       bool connected = false;
       bool latchedConnected = false;
    };
@@ -91,9 +97,9 @@ protected:
 
    ///
    /// <summary>
-   /// Latches the latest per-channel current and connection states simultaneously at the end
-   /// of each complete pass of the connected channels so display and telemetry reads see all
-   /// channels update in lockstep on the same frame.
+   /// Latches the latest per-channel current, real power, and connection states simultaneously
+   /// at the end of each complete pass of the connected channels so display and telemetry reads
+   /// see all channels update in lockstep on the same frame.
    /// </summary>
    ///
    void _latchPassSnapshot()
@@ -105,16 +111,29 @@ protected:
          if (!ch.connected || ch.traceCount == 0)
          {
             ch.latchedAmps = 0.0f;
+            ch.latchedWatts = 0.0f;
             continue;
          }
 
-         float sum = 0.0f;
+         float sumAmps = 0.0f;
+         float sumWatts = 0.0f;
          for (size_t j = 0; j < ch.traceCount; j++)
          {
-            sum += ch.traceAmps[j];
+            sumAmps += ch.traceAmps[j];
+            sumWatts += ch.traceWatts[j];
          }
-         float avg = sum / ch.traceCount;
-         ch.latchedAmps = avg < _noiseFloorAmps ? 0.0f : avg;
+
+         float avgAmps = sumAmps / ch.traceCount;
+         if (avgAmps < _noiseFloorAmps)
+         {
+            ch.latchedAmps = 0.0f;
+            ch.latchedWatts = 0.0f;
+         }
+         else
+         {
+            ch.latchedAmps = avgAmps;
+            ch.latchedWatts = ch.hasRealPower ? (sumWatts / ch.traceCount) : (avgAmps * _lineVoltageV);
+         }
       }
    }
 
@@ -158,16 +177,26 @@ protected:
 
    ///
    /// <summary>
-   /// Records one RMS slice for a channel: applies the CT rating and noise floor, updates the
-   /// trace buffer and connection state, and optionally latches the smoothed current immediately.
+   /// Records one RMS (and optional real-power) slice for a channel: applies the CT rating and
+   /// noise floor, updates the trace buffers and connection state, and optionally latches the
+   /// smoothed current and power immediately.
    /// </summary>
    /// <param name="channel">Channel index.</param>
    /// <param name="meanVolts">Mean (DC) voltage of the slice.</param>
    /// <param name="rmsVolts">RMS voltage of the AC component of the slice.</param>
    /// <param name="connected">True if a CT is detected on the channel.</param>
-   /// <param name="latchImmediately">True to update latchedAmps/latchedConnected immediately.</param>
+   /// <param name="latchImmediately">True to update latchedAmps/latchedWatts/latchedConnected immediately.</param>
+   /// <param name="hasRealPower">True if signedRealWatts contains a synchronous V*I real-power measurement.</param>
+   /// <param name="signedRealWatts">Signed real power in Watts for this slice when hasRealPower is true.</param>
    ///
-   void _recordSlice(size_t channel, float meanVolts, float rmsVolts, bool connected, bool latchImmediately = true)
+   void _recordSlice(
+      size_t channel,
+      float meanVolts,
+      float rmsVolts,
+      bool connected,
+      bool latchImmediately = true,
+      bool hasRealPower = false,
+      float signedRealWatts = 0.0f)
    {
       ChannelState& ch = _channels[channel];
       size_t windowSlices = _slicesPerChannelWindow();
@@ -178,10 +207,15 @@ protected:
          sliceAmps = 0.0f;
       }
 
+      float cleanSignedWatts = (connected && hasRealPower && sliceAmps > 0.0f) ? signedRealWatts : 0.0f;
+      float sliceWatts = std::fabs(cleanSignedWatts);
+
       ch.dcVolts = meanVolts;
       ch.connected = connected;
       ch.rmsVolts = connected ? rmsVolts : 0.0f;
       ch.rawAmps = sliceAmps;
+      ch.hasRealPower = hasRealPower;
+      ch.rawSignedWatts = cleanSignedWatts;
 
       if (connected)
       {
@@ -191,6 +225,7 @@ protected:
          }
          ch.traceWriteIndex = ch.traceWriteIndex % windowSlices;
          ch.traceAmps[ch.traceWriteIndex] = sliceAmps;
+         ch.traceWatts[ch.traceWriteIndex] = sliceWatts;
          ch.traceWriteIndex = (ch.traceWriteIndex + 1) % windowSlices;
          if (ch.traceCount < windowSlices)
          {
@@ -208,17 +243,30 @@ protected:
          if (!connected || ch.traceCount == 0)
          {
             ch.latchedAmps = 0.0f;
+            ch.latchedWatts = 0.0f;
             ch.latchedConnected = false;
             return;
          }
 
-         float sum = 0.0f;
+         float sumAmps = 0.0f;
+         float sumWatts = 0.0f;
          for (size_t j = 0; j < ch.traceCount; j++)
          {
-            sum += ch.traceAmps[j];
+            sumAmps += ch.traceAmps[j];
+            sumWatts += ch.traceWatts[j];
          }
-         float avg = sum / ch.traceCount;
-         ch.latchedAmps = avg < _noiseFloorAmps ? 0.0f : avg;
+
+         float avgAmps = sumAmps / ch.traceCount;
+         if (avgAmps < _noiseFloorAmps)
+         {
+            ch.latchedAmps = 0.0f;
+            ch.latchedWatts = 0.0f;
+         }
+         else
+         {
+            ch.latchedAmps = avgAmps;
+            ch.latchedWatts = hasRealPower ? (sumWatts / ch.traceCount) : (avgAmps * _lineVoltageV);
+         }
          ch.latchedConnected = true;
       }
    }
@@ -256,6 +304,40 @@ public:
    /// <returns>Measured samples per second.</returns>
    ///
    virtual uint32_t sampleRate() const = 0;
+
+   ///
+   /// <summary>
+   /// Returns true if this power sensor includes a live AC voltage channel for real-power
+   /// measurement rather than relying solely on a nominal voltage constant.
+   /// </summary>
+   /// <returns>True if hardware AC voltage sensing is supported.</returns>
+   ///
+   virtual bool hasVoltageSensor() const { return false; }
+
+   ///
+   /// <summary>
+   /// Returns true if the live AC voltage sensor is currently connected and detecting a valid
+   /// mains AC waveform.
+   /// </summary>
+   /// <returns>True if live AC voltage is valid.</returns>
+   ///
+   virtual bool voltageConnected() const { return false; }
+
+   ///
+   /// <summary>
+   /// Gets the raw AC RMS signal voltage (in ADC volts) measured at the voltage sensor input.
+   /// </summary>
+   /// <returns>AC RMS voltage at the ADC pin in volts.</returns>
+   ///
+   virtual float voltageSensorRmsVolts() const { return 0.0f; }
+
+   ///
+   /// <summary>
+   /// Gets the mean DC bias voltage (in ADC volts) measured at the voltage sensor input.
+   /// </summary>
+   /// <returns>DC bias voltage at the ADC pin in volts.</returns>
+   ///
+   virtual float voltageSensorDcVolts() const { return 0.0f; }
 
    ///
    /// <summary>
@@ -329,9 +411,12 @@ public:
          for (size_t i = 0; i < ch.traceCount; i++)
          {
             ch.traceAmps[i] *= scale;
+            ch.traceWatts[i] *= scale;
          }
          ch.rawAmps *= scale;
          ch.latchedAmps *= scale;
+         ch.rawSignedWatts *= scale;
+         ch.latchedWatts *= scale;
       }
 
       ch.ampsPerVolt = ampsPerVolt;
@@ -353,7 +438,7 @@ public:
 
    ///
    /// <summary>
-   /// Sets the nominal AC line voltage used to compute apparent power.
+   /// Sets the nominal AC line voltage used when live AC voltage sensing is not active.
    /// </summary>
    /// <param name="lineVoltageV">AC line voltage in volts.</param>
    ///
@@ -364,7 +449,8 @@ public:
 
    ///
    /// <summary>
-   /// Gets the configured AC line voltage.
+   /// Gets the active AC line voltage (live measured RMS line voltage when a voltage sensor is
+   /// connected, otherwise the configured nominal voltage).
    /// </summary>
    /// <returns>AC line voltage in volts.</returns>
    ///
@@ -400,11 +486,10 @@ public:
 
    ///
    /// <summary>
-   /// Estimates apparent power using RMS current and the configured nominal voltage.
-   /// This is not a measurement of real power or power-flow direction.
+   /// Computes apparent power (VA) using RMS current and the active line voltage.
    /// </summary>
    /// <param name="channel">Channel index (default 0).</param>
-   /// <returns>Estimated apparent power in VA.</returns>
+   /// <returns>Apparent power in VA.</returns>
    ///
    float apparentPower(size_t channel = 0) const
    {
@@ -413,14 +498,64 @@ public:
 
    ///
    /// <summary>
-   /// Compatibility alias for apparentPower(); this value is VA, not watts.
+   /// Gets the smoothed real power magnitude in Watts when synchronous V*I sensing is active,
+   /// or falls back to apparentPower() on current-only sensor implementations.
    /// </summary>
    /// <param name="channel">Channel index (default 0).</param>
-   /// <returns>Estimated apparent power in VA.</returns>
+   /// <returns>Power in Watts (or VA fallback when no voltage sensor is present).</returns>
+   ///
+   float realPower(size_t channel = 0) const
+   {
+      ASSERT(channel < MAX_CHANNELS);
+
+      return _channels[channel].hasRealPower ? _channels[channel].latchedWatts : apparentPower(channel);
+   }
+
+   ///
+   /// <summary>
+   /// Gets the smoothed power in Watts for a channel (true real power when a voltage sensor is
+   /// active, or apparent power otherwise).
+   /// </summary>
+   /// <param name="channel">Channel index (default 0).</param>
+   /// <returns>Channel power in Watts.</returns>
    ///
    float watts(size_t channel = 0) const
    {
-      return apparentPower(channel);
+      return realPower(channel);
+   }
+
+   ///
+   /// <summary>
+   /// Gets the most recent slice's signed real power in Watts (preserving CT orientation /
+   /// split-phase L1 vs L2 sign relative to the AC voltage reference).
+   /// </summary>
+   /// <param name="channel">Channel index (default 0).</param>
+   /// <returns>Signed real power in Watts.</returns>
+   ///
+   float signedWatts(size_t channel = 0) const
+   {
+      ASSERT(channel < MAX_CHANNELS);
+
+      return _channels[channel].rawSignedWatts;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the power factor (0.0 to 1.0) for a channel when real power sensing is active.
+   /// </summary>
+   /// <param name="channel">Channel index (default 0).</param>
+   /// <returns>Power factor between 0.0 and 1.0.</returns>
+   ///
+   float powerFactor(size_t channel = 0) const
+   {
+      float va = apparentPower(channel);
+      if (va <= 0.0f)
+      {
+         return 0.0f;
+      }
+
+      float pf = realPower(channel) / va;
+      return pf > 1.0f ? 1.0f : pf;
    }
 
    ///
@@ -441,9 +576,9 @@ public:
 
    ///
    /// <summary>
-   /// Sums estimated apparent power across all enabled channels using nominal voltage.
+   /// Sums apparent power across all enabled channels.
    /// </summary>
-   /// <returns>Total estimated apparent power in VA.</returns>
+   /// <returns>Total apparent power in VA.</returns>
    ///
    float totalApparentPower() const
    {
@@ -452,13 +587,30 @@ public:
 
    ///
    /// <summary>
-   /// Compatibility alias for totalApparentPower(); this value is VA, not watts.
+   /// Sums real power across all enabled channels.
    /// </summary>
-   /// <returns>Total estimated apparent power in VA.</returns>
+   /// <returns>Total real power in Watts.</returns>
+   ///
+   float totalRealPower() const
+   {
+      float total = 0.0f;
+      for (size_t i = 0; i < _numChannels; i++)
+      {
+         total += realPower(i);
+      }
+      return total;
+   }
+
+   ///
+   /// <summary>
+   /// Gets total power across all enabled channels (real power in Watts when a voltage sensor
+   /// is present, otherwise apparent power in VA).
+   /// </summary>
+   /// <returns>Total power in Watts.</returns>
    ///
    float totalWatts() const
    {
-      return totalApparentPower();
+      return hasVoltageSensor() ? totalRealPower() : totalApparentPower();
    }
 
    ///
@@ -530,9 +682,23 @@ public:
       text << "channels=" << _numChannels << "\n"
            << "sampleRate=" << sampleRate() << "/s\n";
 
+      if (hasVoltageSensor())
+      {
+         text << "voltageConnected=" << (voltageConnected() ? "true" : "false") << "\n";
+         text.precision(1);
+         text << "lineVoltage=" << lineVoltage() << " V\n";
+         text.precision(4);
+         text << "voltageSensorRms=" << voltageSensorRmsVolts() << " V\n"
+              << "voltageSensorDc=" << voltageSensorDcVolts() << " V\n";
+      }
+
       if (_numChannels > 1)
       {
          text.precision(1);
+         if (hasVoltageSensor())
+         {
+            text << "totalPower=" << totalRealPower() << " W\n";
+         }
          text << "totalApparentPower=" << totalApparentPower() << " VA\n"
               << "totalCurrent=" << totalAmps() << " A\n";
       }
@@ -548,9 +714,20 @@ public:
          float chApparentPower = apparentPower(chIdx);
 
          text.precision(1);
-         text << prefix << "connected=" << (ch.latchedConnected ? "true" : "false") << "\n"
-              << prefix << "apparentPower=" << chApparentPower << " VA\n"
-              << prefix << "current=" << chAmps << " A\n"
+         text << prefix << "connected=" << (ch.latchedConnected ? "true" : "false") << "\n";
+         if (hasVoltageSensor())
+         {
+            text << prefix << "power=" << realPower(chIdx) << " W\n"
+                 << prefix << "signedPower=" << ch.rawSignedWatts << " W\n";
+         }
+         text << prefix << "apparentPower=" << chApparentPower << " VA\n";
+         if (hasVoltageSensor())
+         {
+            text.precision(2);
+            text << prefix << "powerFactor=" << powerFactor(chIdx) << "\n";
+            text.precision(1);
+         }
+         text << prefix << "current=" << chAmps << " A\n"
               << prefix << "rawCurrent=" << ch.rawAmps << " A\n";
          text.precision(4);
          text << prefix << "sensorRms=" << ch.rmsVolts << " V\n"

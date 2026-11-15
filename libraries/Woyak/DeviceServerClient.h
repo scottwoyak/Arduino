@@ -1804,6 +1804,23 @@ public:
 
    ///
    /// <summary>
+   /// Updates the device's location reported in GetInfo and the DeviceServer handshake,
+   /// re-sending the handshake immediately if already connected so the server reflects
+   /// the updated location without requiring a reboot.
+   /// </summary>
+   /// <param name="location">New location string.</param>
+   ///
+   static void setLocation(const char* location)
+   {
+      _location = location != nullptr ? location : "";
+      if (_connection.isReady())
+      {
+         _sendHandshake();
+      }
+   }
+
+   ///
+   /// <summary>
    /// Registers a handler invoked for commands received from the DeviceServer that aren't
    /// one of the built-in commands. The handler should call respond() to
    /// send a reply, if any. Only one handler is supported; call once from setup(), after

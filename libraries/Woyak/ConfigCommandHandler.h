@@ -508,6 +508,25 @@ public:
 
    ///
    /// <summary>
+   /// Updates the resolved location name in memory, persists it to Preferences, and
+   /// notifies DeviceServerClient immediately.
+   /// </summary>
+   /// <param name="location">Non-empty new location string.</param>
+   ///
+   virtual void setLocation(const char* location)
+   {
+      if (location == nullptr || location[0] == '\0' || _commandPreferences == nullptr || _preferencesNamespace == nullptr)
+      {
+         return;
+      }
+
+      _locationName = location;
+      _persistString(LOCATION_KEY, location);
+      DeviceServerClient::setLocation(location);
+   }
+
+   ///
+   /// <summary>
    /// Appends a "key=value" line to the in-progress interactive SetConfig summary without
    /// re-invoking _setConfig() (useful when a custom interactive prompt flow persists its
    /// own values directly).

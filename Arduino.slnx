@@ -98,6 +98,7 @@
     <File Path="libraries/Woyak/MultiBar.h" />
     <File Path="libraries/Woyak/Multiplexer.h" />
     <File Path="libraries/Woyak/MultiStatus.h" />
+    <File Path="libraries/Woyak/MuxAdcPowerSensor.h" />
     <File Path="libraries/Woyak/MuxADSPowerSensor.h" />
     <File Path="libraries/Woyak/OTAUpdater.h" />
     <File Path="libraries/Woyak/OTAUpdaterImpl.h" />

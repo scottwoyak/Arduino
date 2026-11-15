@@ -612,4 +612,16 @@ public:
    {
       return _topicResolver.topic();
    }
+
+   ///
+   /// <summary>
+   /// Updates the device's location in memory, Preferences, InfluxContext, and DeviceServerClient.
+   /// </summary>
+   /// <param name="location">Non-empty new location string.</param>
+   ///
+   void setLocation(const char* location) override
+   {
+      ConfigCommandHandler::setLocation(location);
+      _site.location = _locationName.c_str();
+   }
 };

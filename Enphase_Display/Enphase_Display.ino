@@ -77,10 +77,12 @@ constexpr uint8_t POLL_INTERVAL_S = 30;
 constexpr auto PREFERENCES_NAMESPACE = "EnphaseDisplay";
 constexpr auto BASELINE_DAY_PREF_KEY = "baseDay";
 constexpr auto BASELINE_GW1_WH_PREF_KEY = "baseGw1Wh";
+constexpr auto BASELINE_GW2_WH_PREF_KEY = "baseGw2Wh";
 constexpr auto TODAY_CHART_DAY_PREF_KEY = "todayDay";
 constexpr auto TODAY_CHART_BINS_PREF_KEY = "todayBins";
 constexpr uint16_t EMPTY_TENTHS_KWH = 0xFFFF;
 constexpr uint16_t MAX_TODAY_CHART_COLS = 480;
+constexpr uint8_t NEAR_MIDNIGHT_WINDOW_M = 15;
 
 // Full-scale power (in kW) and daily energy (in kWh) for the vertical bar gauges.
 constexpr float MAX_POWER_KW = 20.0f;
@@ -104,10 +106,10 @@ constexpr uint16_t ROLLING_CHART_SPAN_M = 60;
 constexpr uint32_t SECONDS_PER_DAY = 24UL * 60UL * 60UL;
 
 constexpr Color PRODUCTION_COLOR = Color565::fromRGB(0, 72, 0);
-constexpr Color CONSUMPTION_COLOR = Color565::fromRGB(72, 0, 0);
+constexpr Color CONSUMPTION_COLOR = Color565::fromRGB(0, 48, 128);
 constexpr Color TODAY_GRID_COLOR = Color565::fromRGB(48, 48, 48);
 constexpr Color DELTA_POSITIVE_COLOR = Color::LIME;
-constexpr Color DELTA_NEGATIVE_COLOR = Color::RED;
+constexpr Color DELTA_NEGATIVE_COLOR = Color::DODGERBLUE;
 
 // ----------- Sketch & State
 SketchConfig SKETCH_CONFIG = {
@@ -122,6 +124,7 @@ ViewerSketch sketch(SKETCH_CONFIG);
 Timer pollTimer(POLL_INTERVAL_S * 1000UL);
 int32_t baselineDayId = -1;
 double baselineGw1WhLifetime = NAN;
+double baselineGw2WhLifetime = NAN;
 
 ///
 /// <summary>
@@ -134,6 +137,7 @@ struct SolarReadings
    float productionTodayKwh = NAN;
    float consumptionKw = NAN;
    float consumptionTodayKwh = NAN;
+   int32_t dayId = -1;
    bool valid = false;
 };
 
@@ -163,11 +167,11 @@ GatewayClient consGateway = { .host = ENPHASE_CONS_HOST, .jwtToken = ENPHASE_CON
 /// Returns the display color for signed net delta values.
 /// </summary>
 /// <param name="value">The signed net delta value.</param>
-/// <returns>LIME when non-negative, TOMATO when negative.</returns>
+/// <returns>DELTA_POSITIVE_COLOR when non-negative, DELTA_NEGATIVE_COLOR when negative.</returns>
 ///
 Color deltaValueColor(float value)
 {
-   return value >= 0.0f ? DELTA_POSITIVE_COLOR : Color::TOMATO;
+   return value >= 0.0f ? DELTA_POSITIVE_COLOR : DELTA_NEGATIVE_COLOR;
 }
 
 Field nowSolarField(&sketch.arduino, "Solar", "##.# kW", TABLE_TEXT_SIZE);
@@ -210,11 +214,11 @@ void drawMetricField(Field* field, float value, Color activeColor)
 void drawFields(const SolarReadings& readings)
 {
    drawMetricField(&nowSolarField, readings.productionKw, DELTA_POSITIVE_COLOR);
-   drawMetricField(&nowUsageField, readings.consumptionKw, Color::TOMATO);
+   drawMetricField(&nowUsageField, readings.consumptionKw, DELTA_NEGATIVE_COLOR);
    drawMetricField(&nowNetField, std::isnan(netPowerKw) ? NAN : fabsf(netPowerKw), deltaValueColor(netPowerKw));
 
    drawMetricField(&todaySolarField, readings.productionTodayKwh, DELTA_POSITIVE_COLOR);
-   drawMetricField(&todayUsageField, readings.consumptionTodayKwh, Color::TOMATO);
+   drawMetricField(&todayUsageField, readings.consumptionTodayKwh, DELTA_NEGATIVE_COLOR);
    drawMetricField(&todayNetField, std::isnan(netEnergyKwh) ? NAN : fabsf(netEnergyKwh), deltaValueColor(netEnergyKwh));
 }
 
@@ -440,6 +444,38 @@ void drawTodayGridLines()
 
 ///
 /// <summary>
+/// Captures the current NTP-synced local calendar day ID and elapsed seconds since local
+/// midnight from a single clock read.
+/// </summary>
+/// <param name="dayIdOut">Receives (year * 1000 + yday), or -1 if NTP is not synced.</param>
+/// <param name="secondsSinceMidnightOut">Receives seconds elapsed since local 00:00:00, or 0 if not synced.</param>
+/// <returns>True if the system clock is synced via NTP; otherwise false.</returns>
+///
+bool getCurrentLocalDayAndSeconds(int32_t* dayIdOut, uint32_t* secondsSinceMidnightOut)
+{
+   ASSERT(dayIdOut != nullptr);
+   ASSERT(secondsSinceMidnightOut != nullptr);
+
+   if (!TimeSync::isSynced())
+   {
+      *dayIdOut = -1;
+      *secondsSinceMidnightOut = 0;
+      return false;
+   }
+
+   time_t now = time(nullptr);
+   struct tm timeInfo;
+   localtime_r(&now, &timeInfo);
+   *dayIdOut = static_cast<int32_t>(timeInfo.tm_year) * 1000 + static_cast<int32_t>(timeInfo.tm_yday);
+   *secondsSinceMidnightOut =
+      static_cast<uint32_t>(timeInfo.tm_hour) * 3600UL +
+      static_cast<uint32_t>(timeInfo.tm_min) * 60UL +
+      static_cast<uint32_t>(timeInfo.tm_sec);
+   return true;
+}
+
+///
+/// <summary>
 /// Returns the current local calendar day encoded as (year * 1000 + yday), or -1 if the
 /// system clock has not yet been synchronized via NTP.
 /// </summary>
@@ -447,15 +483,10 @@ void drawTodayGridLines()
 ///
 int32_t currentLocalDayId()
 {
-   if (!TimeSync::isSynced())
-   {
-      return -1;
-   }
-
-   time_t now = time(nullptr);
-   struct tm timeInfo;
-   localtime_r(&now, &timeInfo);
-   return static_cast<int32_t>(timeInfo.tm_year) * 1000 + static_cast<int32_t>(timeInfo.tm_yday);
+   int32_t dayId = -1;
+   uint32_t secondsSinceMidnight = 0;
+   getCurrentLocalDayAndSeconds(&dayId, &secondsSinceMidnight);
+   return dayId;
 }
 
 ///
@@ -466,6 +497,47 @@ int32_t currentLocalDayId()
 void clearTodayChartSamples()
 {
    todayChartSamples.fill({ EMPTY_TENTHS_KWH, EMPTY_TENTHS_KWH });
+}
+
+///
+/// <summary>
+/// Repairs any un-reset previous-night carryover spikes in loaded Today chart samples by
+/// enforcing cumulative non-decreasing daily energy from midnight forward.
+/// </summary>
+/// <param name="numCols">Number of active columns in todayChart.</param>
+/// <returns>True if any sample was modified; otherwise false.</returns>
+///
+bool sanitizeTodayChartSamples(uint16_t numCols)
+{
+   constexpr uint16_t RESET_DROP_THRESHOLD_TENTHS_KWH = 5;
+   uint16_t minProdAhead = EMPTY_TENTHS_KWH;
+   uint16_t minConsAhead = EMPTY_TENTHS_KWH;
+   bool modified = false;
+
+   for (int32_t i = static_cast<int32_t>(numCols) - 1; i >= 0; i--)
+   {
+      TodayChartSample& sample = todayChartSamples[static_cast<size_t>(i)];
+      if (sample.prodTenthsKwh == EMPTY_TENTHS_KWH || sample.consTenthsKwh == EMPTY_TENTHS_KWH)
+      {
+         continue;
+      }
+
+      if (minProdAhead != EMPTY_TENTHS_KWH && sample.prodTenthsKwh > minProdAhead)
+      {
+         sample.prodTenthsKwh = (sample.prodTenthsKwh > minProdAhead + RESET_DROP_THRESHOLD_TENTHS_KWH) ? 0 : minProdAhead;
+         modified = true;
+      }
+      minProdAhead = sample.prodTenthsKwh;
+
+      if (minConsAhead != EMPTY_TENTHS_KWH && sample.consTenthsKwh > minConsAhead)
+      {
+         sample.consTenthsKwh = (sample.consTenthsKwh > minConsAhead + RESET_DROP_THRESHOLD_TENTHS_KWH) ? 0 : minConsAhead;
+         modified = true;
+      }
+      minConsAhead = sample.consTenthsKwh;
+   }
+
+   return modified;
 }
 
 ///
@@ -528,6 +600,13 @@ void loadTodayChartHistory()
       sketch.arduino.preferences.getBytes(TODAY_CHART_BINS_PREF_KEY, todayChartSamples.data(), expectedBytes);
       sketch.arduino.preferences.end();
       todayChartDayId = todayId;
+
+      if (sanitizeTodayChartSamples(numCols))
+      {
+         sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+         sketch.arduino.preferences.putBytes(TODAY_CHART_BINS_PREF_KEY, todayChartSamples.data(), expectedBytes);
+         sketch.arduino.preferences.end();
+      }
       return;
    }
    sketch.arduino.preferences.end();
@@ -754,7 +833,7 @@ bool fetchGatewayJson(GatewayClient* gateway, const char* path, JsonDocument* do
 
 ///
 /// <summary>
-/// Loads the persisted midnight solar production lifetime Wh baseline from Preferences.
+/// Loads the persisted midnight production and consumption lifetime Wh baselines from Preferences.
 /// </summary>
 ///
 void loadDailyBaseline()
@@ -762,61 +841,90 @@ void loadDailyBaseline()
    sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
    baselineDayId = sketch.arduino.preferences.getInt(BASELINE_DAY_PREF_KEY, -1);
    baselineGw1WhLifetime = sketch.arduino.preferences.getDouble(BASELINE_GW1_WH_PREF_KEY, NAN);
+   baselineGw2WhLifetime = sketch.arduino.preferences.getDouble(BASELINE_GW2_WH_PREF_KEY, NAN);
    sketch.arduino.preferences.end();
 }
 
 ///
 /// <summary>
-/// Updates and persists Gateway 1's start-of-day lifetime Wh baseline whenever the local
-/// calendar day advances (at midnight) or when no baseline exists yet for the current day.
-/// When initializing mid-day on first boot, seeds Gateway 1's baseline using its reported
-/// daily production (gw1PcuWhToday) if available so Today production starts with the
-/// full day's accumulated solar energy.
+/// Updates and persists start-of-day lifetime Wh baselines for both gateways whenever the
+/// local calendar day advances (at midnight) or when a baseline is missing on first boot.
+/// Using lifetime Wh counters ensures both daily totals start cleanly at 0.0 kWh at local
+/// midnight even when an Enphase gateway's internal whToday rollup resets several minutes
+/// after midnight. When initializing for the first time mid-day, seeds each baseline from
+/// the gateway's reported daily Wh so Today totals preserve the day's accumulated energy.
 /// </summary>
-/// <param name="gw1EimWhLifetime">Gateway 1 EIM lifetime Wh accumulator.</param>
-/// <param name="gw1PcuWhToday">Gateway 1 PCU reported daily Wh (or NAN if not queried).</param>
+/// <param name="todayId">Current encoded local calendar day ID, or -1 if time is not synced.</param>
+/// <param name="secondsSinceMidnight">Elapsed seconds since local midnight.</param>
+/// <param name="gw1EimWhLifetime">Gateway 1 EIM lifetime production Wh accumulator.</param>
+/// <param name="gw1PcuWhToday">Gateway 1 PCU reported daily production Wh (or NAN if not queried).</param>
+/// <param name="gw2EimWhLifetime">Gateway 2 EIM lifetime consumption Wh accumulator.</param>
+/// <param name="gw2ReportedWhToday">Gateway 2 EIM reported daily consumption Wh.</param>
 ///
-void updateDailyBaseline(double gw1EimWhLifetime, float gw1PcuWhToday)
+void updateDailyBaselines(
+   int32_t todayId,
+   uint32_t secondsSinceMidnight,
+   double gw1EimWhLifetime,
+   float gw1PcuWhToday,
+   double gw2EimWhLifetime,
+   float gw2ReportedWhToday)
 {
-   int32_t todayId = currentLocalDayId();
-   if (todayId < 0 || std::isnan(gw1EimWhLifetime))
+   if (todayId < 0)
    {
       return;
    }
 
-   bool dayChanged = (baselineDayId != todayId);
-   bool missingBaseline = std::isnan(baselineGw1WhLifetime);
-   if (!dayChanged && !missingBaseline)
+   bool changed = false;
+   if (baselineDayId != todayId)
+   {
+      baselineDayId = todayId;
+      baselineGw1WhLifetime = NAN;
+      baselineGw2WhLifetime = NAN;
+      changed = true;
+   }
+
+   bool nearMidnight = secondsSinceMidnight < (NEAR_MIDNIGHT_WINDOW_M * 60UL);
+
+   if (std::isnan(baselineGw1WhLifetime) && !std::isnan(gw1EimWhLifetime))
+   {
+      if (!nearMidnight && !std::isnan(gw1PcuWhToday) && gw1PcuWhToday > 0.0f)
+      {
+         baselineGw1WhLifetime = gw1EimWhLifetime - static_cast<double>(gw1PcuWhToday);
+      }
+      else
+      {
+         baselineGw1WhLifetime = gw1EimWhLifetime;
+      }
+      changed = true;
+   }
+
+   if (std::isnan(baselineGw2WhLifetime) && !std::isnan(gw2EimWhLifetime))
+   {
+      if (!nearMidnight && !std::isnan(gw2ReportedWhToday) && gw2ReportedWhToday > 0.0f)
+      {
+         baselineGw2WhLifetime = gw2EimWhLifetime - static_cast<double>(gw2ReportedWhToday);
+      }
+      else
+      {
+         baselineGw2WhLifetime = gw2EimWhLifetime;
+      }
+      changed = true;
+   }
+
+   if (!changed)
    {
       return;
    }
-
-   time_t now = time(nullptr);
-   struct tm timeInfo;
-   localtime_r(&now, &timeInfo);
-   bool nearMidnight = (timeInfo.tm_hour == 0 && timeInfo.tm_min < 5);
-
-   // At midnight rollover, snapshot Gateway 1's lifetime counter directly.
-   // If initializing for the very first time mid-day, back-calculate GW1's midnight
-   // baseline from gw1PcuWhToday so Today solar doesn't start at 0 mid-day.
-   if (!nearMidnight && missingBaseline && !std::isnan(gw1PcuWhToday) && gw1PcuWhToday > 0.0f)
-   {
-      baselineGw1WhLifetime = gw1EimWhLifetime - static_cast<double>(gw1PcuWhToday);
-   }
-   else
-   {
-      baselineGw1WhLifetime = gw1EimWhLifetime;
-   }
-
-   baselineDayId = todayId;
 
    sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
    sketch.arduino.preferences.putInt(BASELINE_DAY_PREF_KEY, baselineDayId);
    sketch.arduino.preferences.putDouble(BASELINE_GW1_WH_PREF_KEY, baselineGw1WhLifetime);
+   sketch.arduino.preferences.putDouble(BASELINE_GW2_WH_PREF_KEY, baselineGw2WhLifetime);
    sketch.arduino.preferences.end();
 
-   Logger.log("Saved daily solar baseline for dayId=" + std::to_string(baselineDayId) +
-      ": gw1BaseWh=" + std::to_string(baselineGw1WhLifetime));
+   Logger.log("Saved daily baselines for dayId=" + std::to_string(baselineDayId) +
+      ": gw1BaseWh=" + std::to_string(baselineGw1WhLifetime) +
+      ", gw2BaseWh=" + std::to_string(baselineGw2WhLifetime));
 }
 
 ///
@@ -872,10 +980,17 @@ bool fetchSolarReadings(SolarReadings* readings)
       }
    }
 
+   int32_t preCheckDayId = -1;
+   uint32_t preCheckSecs = 0;
+   bool preCheckSynced = getCurrentLocalDayAndSeconds(&preCheckDayId, &preCheckSecs);
+   bool preCheckNearMidnight = preCheckSynced && (preCheckSecs < (NEAR_MIDNIGHT_WINDOW_M * 60UL));
+   bool needGw1MiddaySeed = !preCheckNearMidnight &&
+      (std::isnan(baselineGw1WhLifetime) || (preCheckSynced && baselineDayId != preCheckDayId));
+
    // 2. Production daily energy from Gateway 1 (/ivp/pdm/energy). Only needed when
-   // /production.json succeeded and we are seeding a missing daily baseline on first boot
-   // (or if whLifetime was unavailable from /production.json).
-   if (gw1Ok && (std::isnan(baselineGw1WhLifetime) || std::isnan(gw1EimWhLifetime)))
+   // /production.json succeeded and we are seeding a missing daily baseline mid-day on
+   // first boot (or if whLifetime was unavailable from /production.json).
+   if (gw1Ok && (needGw1MiddaySeed || std::isnan(gw1EimWhLifetime)))
    {
       if (fetchGatewayJson(&prodGateway, ENPHASE_PDM_ENERGY_PATH, &doc))
       {
@@ -888,15 +1003,11 @@ bool fetchSolarReadings(SolarReadings* readings)
       }
    }
 
-   updateDailyBaseline(gw1EimWhLifetime, gw1PcuWhToday);
-   if (!std::isnan(gw1EimWhLifetime) && !std::isnan(baselineGw1WhLifetime))
-   {
-      prodWhToday = static_cast<float>(gw1EimWhLifetime - baselineGw1WhLifetime);
-   }
-
-   // 3. Consumption live power and daily energy from Gateway 2 (/production.json)
+   // 3. Consumption live power and lifetime/daily energy from Gateway 2 (/production.json)
    float consWatts = NAN;
    float consWhToday = NAN;
+   double gw2EimWhLifetime = NAN;
+   float gw2ReportedWhToday = NAN;
 
    if (fetchGatewayJson(&consGateway, ENPHASE_PRODUCTION_PATH, &doc))
    {
@@ -911,9 +1022,13 @@ bool fetchSolarReadings(SolarReadings* readings)
             {
                consWatts = entry["wNow"].as<float>();
             }
+            if (entry["whLifetime"].is<double>())
+            {
+               gw2EimWhLifetime = entry["whLifetime"].as<double>();
+            }
             if (entry["whToday"].is<float>())
             {
-               consWhToday = entry["whToday"].as<float>();
+               gw2ReportedWhToday = entry["whToday"].as<float>();
             }
             break;
          }
@@ -927,18 +1042,50 @@ bool fetchSolarReadings(SolarReadings* readings)
       return false;
    }
 
+   int32_t pollDayId = -1;
+   uint32_t secondsSinceMidnight = 0;
+   getCurrentLocalDayAndSeconds(&pollDayId, &secondsSinceMidnight);
+
+   updateDailyBaselines(
+      pollDayId,
+      secondsSinceMidnight,
+      gw1EimWhLifetime,
+      gw1PcuWhToday,
+      gw2EimWhLifetime,
+      gw2ReportedWhToday);
+
+   if (!std::isnan(gw1EimWhLifetime) && !std::isnan(baselineGw1WhLifetime))
+   {
+      prodWhToday = static_cast<float>(gw1EimWhLifetime - baselineGw1WhLifetime);
+   }
+
+   if (!std::isnan(gw2EimWhLifetime) && !std::isnan(baselineGw2WhLifetime))
+   {
+      consWhToday = static_cast<float>(gw2EimWhLifetime - baselineGw2WhLifetime);
+   }
+   else if (!std::isnan(gw2ReportedWhToday))
+   {
+      // Fallback if whLifetime was unavailable: ignore un-reset previous-night whToday right after midnight.
+      bool nearMidnight = (pollDayId >= 0) && (secondsSinceMidnight < (NEAR_MIDNIGHT_WINDOW_M * 60UL));
+      float maxPlausibleWh = MAX_POWER_KW * WATTS_PER_KW * ((secondsSinceMidnight + POLL_INTERVAL_S) / 3600.0f);
+      consWhToday = (nearMidnight && gw2ReportedWhToday > maxPlausibleWh) ? 0.0f : gw2ReportedWhToday;
+   }
+
+   bool sameDayAsPrevious = (pollDayId >= 0) && (previousReadings.dayId == pollDayId);
+
    readings->productionKw = !isnan(prodWatts)
       ? max(0.0f, prodWatts / WATTS_PER_KW)
       : previousReadings.productionKw;
    readings->productionTodayKwh = !isnan(prodWhToday)
       ? max(0.0f, prodWhToday / WATTS_PER_KW)
-      : previousReadings.productionTodayKwh;
+      : (sameDayAsPrevious ? previousReadings.productionTodayKwh : NAN);
    readings->consumptionKw = !isnan(consWatts)
       ? max(0.0f, consWatts / WATTS_PER_KW)
       : previousReadings.consumptionKw;
    readings->consumptionTodayKwh = !isnan(consWhToday)
       ? max(0.0f, consWhToday / WATTS_PER_KW)
-      : previousReadings.consumptionTodayKwh;
+      : (sameDayAsPrevious ? previousReadings.consumptionTodayKwh : NAN);
+   readings->dayId = pollDayId;
 
    readings->valid = true;
    return true;
@@ -978,29 +1125,28 @@ void updateDisplay(const SolarReadings& readings)
       }
    }
 
-   if (!isnan(readings.productionTodayKwh) && !isnan(readings.consumptionTodayKwh))
+   int32_t dayId = -1;
+   uint32_t secondsSinceMidnight = 0;
+   bool timeSynced = getCurrentLocalDayAndSeconds(&dayId, &secondsSinceMidnight);
+   if (timeSynced && todayChartDayId != dayId)
+   {
+      todayChart->clear();
+      resetTodayChartHistory(dayId);
+      todayChart->draw(&sketch.arduino.display);
+      drawTodayGridLines();
+      netEnergyKwh = NAN;
+   }
+
+   if (!isnan(readings.productionTodayKwh) &&
+       !isnan(readings.consumptionTodayKwh) &&
+       (!timeSynced || readings.dayId == dayId))
    {
       float roundedProdKwh = std::round(readings.productionTodayKwh * 10.0f) / 10.0f;
       float roundedConsKwh = std::round(readings.consumptionTodayKwh * 10.0f) / 10.0f;
       netEnergyKwh = roundedProdKwh - roundedConsKwh;
 
-      if (TimeSync::isSynced())
+      if (timeSynced)
       {
-         int32_t dayId = currentLocalDayId();
-         if (todayChartDayId != dayId)
-         {
-            todayChart->clear();
-            resetTodayChartHistory(dayId);
-         }
-
-         time_t now = time(nullptr);
-         struct tm timeInfo;
-         localtime_r(&now, &timeInfo);
-         uint32_t secondsSinceMidnight =
-            static_cast<uint32_t>(timeInfo.tm_hour) * 3600UL +
-            static_cast<uint32_t>(timeInfo.tm_min) * 60UL +
-            static_cast<uint32_t>(timeInfo.tm_sec);
-
          uint16_t numCols = todayChart->getNumBars();
          if (numCols > 0)
          {
@@ -1018,7 +1164,13 @@ void updateDisplay(const SolarReadings& readings)
       }
    }
 
-   drawFields(readings);
+   SolarReadings displayReadings = readings;
+   if (timeSynced && readings.dayId != dayId)
+   {
+      displayReadings.productionTodayKwh = NAN;
+      displayReadings.consumptionTodayKwh = NAN;
+   }
+   drawFields(displayReadings);
 }
 
 ///

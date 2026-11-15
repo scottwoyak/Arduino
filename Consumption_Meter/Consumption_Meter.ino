@@ -1,36 +1,33 @@
 //
 // Consumption Meter
 //
-// Measures AC current across up to 16 split-core current transformer (CT) sensors.
-// Displays RMS current (A) and estimated apparent power (VA) on the touch display and
-// publishes RMS current to Current/<location>/<circuit>. Apparent power uses nominal
-// voltage; real watts and power-flow direction are not measured.
+// Measures real AC power (Watts) and RMS current (Amps) across up to 16 split-core current
+// transformer (CT) sensors alongside live AC line voltage from a ZMPT101B sensor. Displays
+// live line voltage (V), per-channel RMS current (A), and real power (W) on the touch display
+// and publishes per-channel power readings over WebSocket telemetry to Power/<location>/<circuit>.
 //
-// The ADC hardware is selected with POWER_SENSOR_TYPE (both derive from PowerSensorBase):
-//   POWER_SENSOR_MUX_ADS - 74HC4067 16:1 mux + ADS1015 (I2C), channels sampled in turn
-//   POWER_SENSOR_AD7606  - AD7606 simultaneous-sampling ADC (on hold; BUSY was stuck high
-//                          on both boards tested)
+// The ADC hardware is selected with POWER_SENSOR_TYPE (all derive from PowerSensorBase):
+//   POWER_SENSOR_MUX_ADC - 74HC4067 16:1 mux + ZMPT101B on ESP32-P4 internal ADC1 (default)
+//   POWER_SENSOR_MUX_ADS - 74HC4067 16:1 mux + ADS1015 (I2C), current/apparent power only
+//   POWER_SENSOR_AD7606  - AD7606 simultaneous-sampling ADC (on hold; BUSY was stuck high)
 //
-// Mux + ADS1015 wiring (Waveshare ESP32-P4 4.3" Touch LCD, 40-pin header):
-//     Wire color   Waveshare pin          Connects to
-//     ----------   --------------------   ---------------------------------------------
-//     blue         GPIO29                 ADS1015 SDA (dedicated Wire1 bus)
-//     yellow       GPIO30                 ADS1015 SCL
-//     purple       GPIO2                  74HC4067 S0
-//     orange       GPIO3                  74HC4067 S1
-//     brown        GPIO4                  74HC4067 S2
-//     white        GPIO28                 74HC4067 S3
-//     red          3V3                    74HC4067 VCC, ADS1015 VDD, bias divider
-//     black        GND                    74HC4067 GND and EN, ADS1015 GND and ADDR (and 1M/470k resistor from A0)
-//     green        (module to module)     74HC4067 SIG -> ADS1015 A0 (with 1M/470k pull-down to GND for unplug detect)
-//     (jumper)     (bias to ADS1015)      1.65V bias junction -> ADS1015 A3 (differential ref)
-//   CT cables go to mux C0..C15. Each CT cable has its own burden resistor. All channels
-//   share one 1.65V bias connected to ADS1015 A3 (DIFF_A0_A3): CT S2 -> bias/A3, CT S1 -> mux.
-//
-// AD7606 serial mode wiring (when POWER_SENSOR_AD7606 is selected):
-//     GPIO28 (white) CS, GPIO30 (orange) RST, GPIO4 (blue) DB7/DOUTA, GPIO3 (yellow) RD/SCLK,
-//     GPIO29 (gray) BUSY, GPIO2 (purple) CONVSTA+CONVSTB, GND (black), 3V3 (red) VIO,
-//     5V (red) AVCC. RANGE, OS0-OS2 and DB15 to GND. CT S2 to AGND, burden across Vx and AGND.
+// Mux + ESP32-P4 ADC1 + ZMPT101B wiring (Waveshare ESP32-P4 4.3" Touch LCD, 40-pin header):
+//     P4 Pin / GPIO   Wire color   PCB connection
+//     -------------   ----------   -----------------------------------------------------------
+//     GPIO2           purple       74HC4067 S0
+//     GPIO3           orange       74HC4067 S1
+//     GPIO4           brown        74HC4067 S2
+//     GPIO28          white        74HC4067 S3
+//     GPIO22          green        74HC4067 SIG (+ 470k-1M pull-down to GND for unplug detect)
+//     GPIO21          blue         ZMPT101B OUT (direct; optional 470k-1M pull-down to GND)
+//     5V              red          LM2596HV OUT+ (pre-adjusted to 5.00V DC before connecting)
+//     3V3             red          74HC4067 VCC, ZMPT101B VCC, top 10k leg of 1.65V bias
+//     GND             black        LM2596HV OUT-, 74HC4067 GND & EN, ZMPT101B GND, bottom 10k
+//                                  leg + 10uF (-) cap of 1.65V bias, pull-down resistor(s)
+//   On PCB: 9V AC wall-wart feeds LM2596HV AC input and ZMPT101B AC terminals in parallel.
+//   CT S2 returns tie to the 1.65V bias node; CT S1 signals go to 74HC4067 C0..C15 (20A
+//   option uses CORE_40A for 20A:25mA SCT006 + 20 ohm burden; 500A option uses CORE_213A
+//   for 500A:50mA + 47 ohm burden).
 //
 
 #include <Arduino.h>
@@ -55,21 +52,24 @@
 #endif
 
 #include "AD7606PowerSensor.h"
-#include "MuxADSPowerSensor.h"
+#include "DisplayValue.h"
 #include "Format.h"
 #include "LibraryVersion.h"
+#include "MuxADSPowerSensor.h"
+#include "MuxAdcPowerSensor.h"
 #include "PublisherSketch.h"
 #include "Timer.h"
 #include "WiFiSettings.h"
 
-const auto VERSION = MakeVersion("1.0");
+const auto VERSION = MakeVersion("1.2");
 constexpr auto SKETCH_NAME = "Consumption_Meter";
 constexpr auto PREF_NAMESPACE = "ConsMeter";
 
-// Select the ADC hardware: 1 = 74HC4067 mux + ADS1015, 2 = AD7606
+// Select the ADC hardware: 1 = 74HC4067 + ADS1015, 2 = AD7606, 3 = 74HC4067 + P4 ADC1 + ZMPT101B
 #define POWER_SENSOR_MUX_ADS 1
 #define POWER_SENSOR_AD7606 2
-#define POWER_SENSOR_TYPE POWER_SENSOR_MUX_ADS
+#define POWER_SENSOR_MUX_ADC 3
+#define POWER_SENSOR_TYPE POWER_SENSOR_MUX_ADC
 
 // ----------- 16-Channel Configuration
 #if POWER_SENSOR_TYPE == POWER_SENSOR_AD7606
@@ -83,6 +83,8 @@ constexpr uint8_t PIN_MUX_S0 = 2;
 constexpr uint8_t PIN_MUX_S1 = 3;
 constexpr uint8_t PIN_MUX_S2 = 4;
 constexpr uint8_t PIN_MUX_S3 = 28;
+constexpr uint8_t PIN_MUX_SIG = 22;
+constexpr uint8_t PIN_AC_VOLTAGE = 21;
 constexpr uint8_t PIN_ADS_SDA = 29;
 constexpr uint8_t PIN_ADS_SCL = 30;
 
@@ -93,13 +95,32 @@ constexpr uint8_t PIN_AD7606_CS = 28;
 constexpr int8_t PIN_AD7606_BUSY = 29;
 constexpr int8_t PIN_AD7606_RESET = 30;
 
+///
+/// <summary>
+/// Maps a CT's nominal current label (in Amps) to its calibration scale (Amps per 1.0V RMS).
+/// </summary>
+///
+struct CtRatingOption
+{
+   uint16_t ratedAmps;
+   float ampsPerVolt;
+};
+
+constexpr size_t NUM_AMP_OPTIONS = 4;
+constexpr std::array<CtRatingOption, NUM_AMP_OPTIONS> AMP_RATING_OPTIONS = { {
+   { 20,  PowerSensorBase::CORE_40A  }, // YHDC SCT006 20A:25mA + 20 ohm burden (40.0 A/V)
+   { 30,  PowerSensorBase::CORE_30A  }, // SCT-013-030 30A/1V (30.0 A/V)
+   { 100, PowerSensorBase::CORE_100A }, // SCT-013-100 100A/1V (100.0 A/V)
+   { 500, PowerSensorBase::CORE_213A }, // 500A:50mA + 47 ohm burden (~212.8 A/V)
+} };
+
 constexpr std::array<const char*, PowerSensorBase::MAX_CHANNELS> DEFAULT_CT_LOCATIONS = {
    "1", "", "", "", "", "", "", "",
    "",  "", "", "", "", "", "", "",
 };
 
 constexpr std::array<float, PowerSensorBase::MAX_CHANNELS> DEFAULT_CT_AMPS = {
-   PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_150A, PowerSensorBase::CORE_100A, PowerSensorBase::CORE_100A,
+   PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_100A, PowerSensorBase::CORE_100A,
    PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,
    PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,
    PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,
@@ -114,13 +135,14 @@ constexpr std::array<const char*, PowerSensorBase::MAX_CHANNELS> PREF_KEY_CT_AMP
    "amps1", "amps2",  "amps3",  "amps4",  "amps5",  "amps6",  "amps7",  "amps8",
    "amps9", "amps10", "amps11", "amps12", "amps13", "amps14", "amps15", "amps16",
 };
+constexpr auto PREF_KEY_VOLTAGE_SCALE = "vScale";
 
 constexpr uint16_t DISPLAY_UPDATE_INTERVAL_MS = 200; // 5 updates per second
 
 // ----------- Telemetry Configuration
-constexpr auto CURRENT_TOPIC_PREFIX = "Current";
+constexpr auto POWER_TOPIC_PREFIX = "Power";
 constexpr size_t MAX_TOPIC_LENGTH = 64;
-constexpr uint8_t CURRENT_DECIMALS = 2;
+constexpr uint8_t POWER_DECIMALS = 0;
 constexpr uint16_t TELEMETRY_PUBLISH_INTERVAL_MS = DISPLAY_UPDATE_INTERVAL_MS;
 
 // ----------- Display Layout
@@ -136,12 +158,12 @@ std::array<char[8], PowerSensorBase::MAX_CHANNELS> defaultChannelNames = {
 };
 std::array<float, NUM_CT_INPUTS> ctAmps = {};
 std::array<char[MAX_TOPIC_LENGTH], NUM_CT_INPUTS> channelTopics = {};
-char primaryTelemetryTopic[MAX_TOPIC_LENGTH] = "Current/1";
+char primaryTelemetryTopic[MAX_TOPIC_LENGTH] = "Power/1";
 size_t primaryTelemetryChannel = 0;
 bool telemetryTopicsResolved = false;
 std::array<PowerSensorBase::ChannelConfig, PowerSensorBase::MAX_CHANNELS> initialChannelConfig = {
    PowerSensorBase::ChannelConfig{ "1",  PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "2",  PowerSensorBase::CORE_150A },
+   PowerSensorBase::ChannelConfig{ "2",  PowerSensorBase::CORE_30A },
    PowerSensorBase::ChannelConfig{ "3",  PowerSensorBase::CORE_100A },
    PowerSensorBase::ChannelConfig{ "4",  PowerSensorBase::CORE_100A },
    PowerSensorBase::ChannelConfig{ "5",  PowerSensorBase::CORE_30A },
@@ -169,7 +191,7 @@ AD7606PowerSensor powerSensor(
    AD7606::Range::BIPOLAR_5V,
    PIN_AD7606_BUSY,
    PIN_AD7606_RESET);
-#else
+#elif POWER_SENSOR_TYPE == POWER_SENSOR_MUX_ADS
 MuxADSPowerSensor powerSensor(
    PIN_MUX_S0,
    PIN_MUX_S1,
@@ -177,6 +199,17 @@ MuxADSPowerSensor powerSensor(
    PIN_MUX_S3,
    PIN_ADS_SDA,
    PIN_ADS_SCL,
+   initialChannelConfig.data(),
+   NUM_CT_INPUTS,
+   PowerSensorBase::DEFAULT_LINE_VOLTAGE_V);
+#else
+MuxAdcPowerSensor powerSensor(
+   PIN_MUX_S0,
+   PIN_MUX_S1,
+   PIN_MUX_S2,
+   PIN_MUX_S3,
+   PIN_MUX_SIG,
+   PIN_AC_VOLTAGE,
    initialChannelConfig.data(),
    NUM_CT_INPUTS,
    PowerSensorBase::DEFAULT_LINE_VOLTAGE_V);
@@ -190,9 +223,9 @@ void sendSingleChannelAmpsPrompt();
 
 TelemetryConfig TELEMETRY_CONFIG = {
    .topic = primaryTelemetryTopic,
-   .decimals = CURRENT_DECIMALS,
-   .unit = TelemetryUnits::AMPS,
-   .description = "RMS current for this circuit; power-flow direction is not measured",
+   .decimals = POWER_DECIMALS,
+   .unit = TelemetryUnits::WATTS,
+   .description = "Electrical power for this circuit",
    .publishIntervalMs = TELEMETRY_PUBLISH_INTERVAL_MS,
 };
 
@@ -208,7 +241,7 @@ PublisherSketch sketch(PUBLISHER_CONFIG, TELEMETRY_CONFIG);
 
 ///
 /// <summary>
-/// Rebuilds the per-channel RMS current topics as "Current/<location>/<circuit>" for each
+/// Rebuilds the per-channel telemetry topics as "Power/<location>/<circuit>" for each
 /// configured CT and updates the active TelemetryPublisher topic immediately if already
 /// running.
 /// </summary>
@@ -216,7 +249,7 @@ PublisherSketch sketch(PUBLISHER_CONFIG, TELEMETRY_CONFIG);
 void refreshTelemetryTopics()
 {
    std::string deviceLocation = sketch.location().c_str();
-   std::string topicPrefix = std::string(CURRENT_TOPIC_PREFIX) + "/";
+   std::string topicPrefix = std::string(POWER_TOPIC_PREFIX) + "/";
    if (!deviceLocation.empty())
    {
       topicPrefix += deviceLocation + "/";
@@ -231,7 +264,7 @@ void refreshTelemetryTopics()
          strlcpy(channelTopics[i], fullTopic.c_str(), sizeof(channelTopics[i]));
          if (telemetryTopicsResolved)
          {
-            sketch.createTopic(channelTopics[i], TelemetryTopicMetadata{ .unit = TelemetryUnits::AMPS, .description = "RMS current for this circuit; power-flow direction is not measured", .decimals = CURRENT_DECIMALS });
+            sketch.createTopic(channelTopics[i], TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
          }
          if (!foundPrimary)
          {
@@ -253,7 +286,7 @@ void refreshTelemetryTopics()
       strlcpy(primaryTelemetryTopic, fallbackTopic.c_str(), sizeof(primaryTelemetryTopic));
       if (telemetryTopicsResolved)
       {
-         sketch.createTopic(primaryTelemetryTopic, TelemetryTopicMetadata{ .unit = TelemetryUnits::AMPS, .description = "RMS current for this circuit; power-flow direction is not measured", .decimals = CURRENT_DECIMALS });
+         sketch.createTopic(primaryTelemetryTopic, TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
       }
    }
 
@@ -265,9 +298,9 @@ void refreshTelemetryTopics()
 
 ///
 /// <summary>
-/// Updates all physical CT channels on powerSensor so every channel is
-/// continuously sampled for connection status, RMS current, and estimated apparent power
-/// regardless of whether a location string is assigned.
+/// Updates all physical CT channels on powerSensor so every channel is continuously sampled
+/// for connection status, RMS current, and real power regardless of whether a location string
+/// is assigned.
 /// </summary>
 ///
 void applyChannelConfigToSensor()
@@ -285,8 +318,8 @@ void applyChannelConfigToSensor()
 
 ///
 /// <summary>
-/// Loads persisted per-input locations and CT current ratings from Preferences and
-/// configures the enabled channels on powerSensor.
+/// Loads persisted per-input locations, CT current ratings, and AC voltage calibration scale
+/// from Preferences and configures powerSensor.
 /// </summary>
 ///
 void loadChannelConfig()
@@ -302,6 +335,14 @@ void loadChannelConfig()
       float savedAmps = prefs.getFloat(PREF_KEY_CT_AMPS[i], DEFAULT_CT_AMPS[i]);
       ctAmps[i] = savedAmps > 0.0f ? savedAmps : DEFAULT_CT_AMPS[i];
    }
+
+#if POWER_SENSOR_TYPE == POWER_SENSOR_MUX_ADC
+   float savedVScale = prefs.getFloat(PREF_KEY_VOLTAGE_SCALE, MuxAdcPowerSensor::DEFAULT_VOLTAGE_SCALE);
+   if (savedVScale > 0.0f)
+   {
+      powerSensor.setVoltageScale(savedVScale);
+   }
+#endif
 
    prefs.end();
    applyChannelConfigToSensor();
@@ -327,10 +368,52 @@ void saveCtLocation(size_t inputIndex, const char* loc)
 
 ///
 /// <summary>
+/// Converts a user-entered nominal CT amp rating (20, 30, 100, 500) into its hardware
+/// Amps-per-Volt scale, or passes custom calibration values through unchanged.
+/// </summary>
+/// <param name="enteredAmps">Nominal CT rating or custom Amps-per-Volt value.</param>
+/// <returns>Calibration scale in Amps per 1.0V RMS.</returns>
+///
+float resolveCtAmpsPerVolt(float enteredAmps)
+{
+   for (const auto& option : AMP_RATING_OPTIONS)
+   {
+      if (std::fabs(enteredAmps - option.ratedAmps) < 0.05f)
+      {
+         return option.ampsPerVolt;
+      }
+   }
+
+   return enteredAmps;
+}
+
+///
+/// <summary>
+/// Converts a stored Amps-per-Volt scale back to its nominal CT amp label (20, 30, 100, 500)
+/// for GetConfig and shell prompts, or rounds custom calibration values to the nearest integer.
+/// </summary>
+/// <param name="ampsPerVolt">Stored Amps-per-Volt scale.</param>
+/// <returns>Display integer current rating in Amps.</returns>
+///
+int displayAmpsForScale(float ampsPerVolt)
+{
+   for (const auto& option : AMP_RATING_OPTIONS)
+   {
+      if (std::fabs(ampsPerVolt - option.ampsPerVolt) < 0.5f)
+      {
+         return option.ratedAmps;
+      }
+   }
+
+   return static_cast<int>(ampsPerVolt + 0.5f);
+}
+
+///
+/// <summary>
 /// Persists a single CT input's current rating (Amps per 1.0V RMS) in Preferences.
 /// </summary>
-/// <param name="inputIndex">Channel index (0 to 7).</param>
-/// <param name="amps">Rated current in Amps (e.g. 30, 50, 100, 150, 200, 213, 500).</param>
+/// <param name="inputIndex">Channel index (0 to 15).</param>
+/// <param name="amps">Calibration scale in Amps per 1.0V RMS.</param>
 ///
 void saveCtAmps(size_t inputIndex, float amps)
 {
@@ -451,25 +534,25 @@ void onSingleChannelAmpsAnswer(const char* line)
          sendSingleChannelAmpsPrompt();
          return;
       }
-      rating = parsed;
+      rating = resolveCtAmpsPerVolt(parsed);
       saveCtAmps(interactivePromptIndex, rating);
    }
 
    std::string locSummary = ctLocations[interactivePromptIndex][0] != '\0' ? ctLocations[interactivePromptIndex] : "(unused)";
    std::string summary =
       "l" + std::to_string(interactivePromptIndex + 1) + "=" + locSummary +
-      ", a" + std::to_string(interactivePromptIndex + 1) + "=" + std::to_string(static_cast<int>(rating + 0.5f));
+      ", a" + std::to_string(interactivePromptIndex + 1) + "=" + std::to_string(displayAmpsForScale(rating));
    DeviceServerClient::respond(summary.c_str());
 }
 
 ///
 /// <summary>
-/// Sends the interactive shell prompt for a single channel's CT amp rating ("sc <1-8>").
+/// Sends the interactive shell prompt for a single channel's CT amp rating ("sc <1-16>").
 /// </summary>
 ///
 void sendSingleChannelAmpsPrompt()
 {
-   int currentAmps = static_cast<int>(ctAmps[interactivePromptIndex] + 0.5f);
+   int currentAmps = displayAmpsForScale(ctAmps[interactivePromptIndex]);
    String label = "Enter a" + String(interactivePromptIndex + 1);
    if (ctLocations[interactivePromptIndex][0] != '\0')
    {
@@ -560,13 +643,13 @@ void onInteractiveAmpsItemAnswer(const char* line)
          sendNextAmpsPrompt();
          return;
       }
-      rating = parsed;
+      rating = resolveCtAmpsPerVolt(parsed);
    }
 
    saveCtAmps(interactivePromptIndex, rating);
    sketch.addInteractiveSummaryLine(
       "a" + std::to_string(interactivePromptIndex + 1),
-      std::to_string(static_cast<int>(rating + 0.5f)));
+      std::to_string(displayAmpsForScale(rating)));
 
    interactivePromptIndex++;
    if (interactivePromptIndex < NUM_CT_INPUTS)
@@ -581,7 +664,7 @@ void onInteractiveAmpsItemAnswer(const char* line)
 
 ///
 /// <summary>
-/// Sends the interactive shell prompt for CT amp rating 1..8 (skipping unused inputs).
+/// Sends the interactive shell prompt for CT amp rating 1..16 (skipping unused inputs).
 /// </summary>
 ///
 void sendNextAmpsPrompt()
@@ -597,7 +680,7 @@ void sendNextAmpsPrompt()
       return;
    }
 
-   int currentAmps = static_cast<int>(ctAmps[interactivePromptIndex] + 0.5f);
+   int currentAmps = displayAmpsForScale(ctAmps[interactivePromptIndex]);
    String label = "Enter a" + String(interactivePromptIndex + 1) + " (" + String(ctLocations[interactivePromptIndex]) + ") [" + String(currentAmps) + "]: ";
    DeviceServerClient::shell().print(label);
    DeviceServerClient::shell().flushOutput();
@@ -606,7 +689,7 @@ void sendNextAmpsPrompt()
 
 ///
 /// <summary>
-/// Starts the 8-item location and amps prompt sequence during interactive SetConfig.
+/// Starts the 16-item location and amps prompt sequence during interactive SetConfig.
 /// </summary>
 ///
 void startInteractiveChannelPrompts()
@@ -618,7 +701,7 @@ void startInteractiveChannelPrompts()
 ///
 /// <summary>
 /// Returns extra "key=value" configuration lines for the GetConfig command reporting
-/// the 8 CT locations (l1..l8) and 8 CT amp ratings (a1..a8).
+/// the 16 CT locations (l1..l16) and 16 CT amp ratings (a1..a16).
 /// </summary>
 /// <returns>Multi-line key=value string for GetConfig.</returns>
 ///
@@ -632,17 +715,41 @@ std::string getExtraConfigText()
          out << "\n";
       }
       out << "l" << (i + 1) << "=" << ctLocations[i]
-          << "\na" << (i + 1) << "=" << static_cast<int>(ctAmps[i] + 0.5f);
+          << "\na" << (i + 1) << "=" << displayAmpsForScale(ctAmps[i]);
    }
+#if POWER_SENSOR_TYPE == POWER_SENSOR_MUX_ADC
+   out << std::fixed;
+   out.precision(1);
+   out << "\nvScale=" << powerSensor.voltageScale();
+#endif
    return out.str();
 }
+
+#if POWER_SENSOR_TYPE == POWER_SENSOR_MUX_ADC
+///
+/// <summary>
+/// Persists the ZMPT101B AC voltage calibration scale in Preferences and applies it immediately.
+/// </summary>
+/// <param name="scale">AC line volts per 1.0V RMS at ZMPT101B OUT.</param>
+///
+void saveVoltageScale(float scale)
+{
+   Preferences prefs;
+   prefs.begin(PREF_NAMESPACE, false);
+   prefs.putFloat(PREF_KEY_VOLTAGE_SCALE, scale);
+   prefs.end();
+
+   powerSensor.setVoltageScale(scale);
+}
+#endif
 
 ///
 /// <summary>
 /// Handles extra SetConfig keys (applied immediately without requiring a restart):
-/// - Channel number "1".."8" with no value: interactively prompts for that channel's location and amps
-/// - Direct keys "l1".."l8" (or "location1".."location8"; use "-", "none", or "off" to clear)
-/// - Direct keys "a1".."a8" (or "amps1".."amps8")
+/// - Channel number "1".."16" with no value: interactively prompts for that channel's location and amps
+/// - Direct keys "l1".."l16" (or "location1".."location16"; use "-", "none", or "off" to clear)
+/// - Direct keys "a1".."a16" (or "amps1".."amps16")
+/// - "vcal" with actual AC line voltage (e.g. "vcal=120.1") or "vscale" with raw V/V scale
 /// </summary>
 /// <param name="key">Config key passed to SetConfig.</param>
 /// <param name="value">New value string.</param>
@@ -651,6 +758,53 @@ std::string getExtraConfigText()
 ///
 bool trySetExtraConfig(const std::string& key, const std::string& value, std::string& result)
 {
+#if POWER_SENSOR_TYPE == POWER_SENSOR_MUX_ADC
+   if (strcasecmp(key.c_str(), "vcal") == 0)
+   {
+      float actualVolts = std::strtof(value.c_str(), nullptr);
+      if (actualVolts <= 0.0f)
+      {
+         result = "Error: vcal must be the measured AC line voltage in volts (e.g. 120.1)";
+         return true;
+      }
+      if (!powerSensor.voltageConnected() || powerSensor.voltageSensorRmsVolts() <= 0.0f)
+      {
+         result = "Error: AC voltage sensor is not currently detecting an AC signal";
+         return true;
+      }
+
+      float newScale = actualVolts / powerSensor.voltageSensorRmsVolts();
+      saveVoltageScale(newScale);
+
+      std::ostringstream msg;
+      msg << std::fixed;
+      msg.precision(1);
+      msg << "Calibrated AC voltage to " << actualVolts << " V (vScale=" << newScale << ")";
+      result = msg.str();
+      return true;
+   }
+
+   if (strcasecmp(key.c_str(), "vscale") == 0)
+   {
+      float newScale = strcasecmp(value.c_str(), "default") == 0
+         ? MuxAdcPowerSensor::DEFAULT_VOLTAGE_SCALE
+         : std::strtof(value.c_str(), nullptr);
+      if (newScale <= 0.0f)
+      {
+         result = "Error: vscale must be > 0 (or 'default' for 1200.0)";
+         return true;
+      }
+
+      saveVoltageScale(newScale);
+      std::ostringstream msg;
+      msg << std::fixed;
+      msg.precision(1);
+      msg << "vScale=" << newScale;
+      result = msg.str();
+      return true;
+   }
+#endif
+
    char* endPtr = nullptr;
    long channelNum = std::strtol(key.c_str(), &endPtr, 10);
    if (endPtr != key.c_str() && *endPtr == '\0')
@@ -709,15 +863,16 @@ bool trySetExtraConfig(const std::string& key, const std::string& value, std::st
             return true;
          }
 
-         float rating = std::strtof(value.c_str(), nullptr);
-         if (rating <= 0.0f)
+         float entered = std::strtof(value.c_str(), nullptr);
+         if (entered <= 0.0f)
          {
-            result = "Error: " + shortAmpsKey + " must be a positive current rating (e.g. 30, 50, 100, 150, 200, 213, 500)";
+            result = "Error: " + shortAmpsKey + " must be a positive current rating (e.g. 20, 30, 100, 500)";
             return true;
          }
 
+         float rating = resolveCtAmpsPerVolt(entered);
          saveCtAmps(i, rating);
-         result = shortAmpsKey + "=" + std::to_string(static_cast<int>(rating + 0.5f));
+         result = shortAmpsKey + "=" + std::to_string(displayAmpsForScale(rating));
          return true;
       }
    }
@@ -725,47 +880,59 @@ bool trySetExtraConfig(const std::string& key, const std::string& value, std::st
    return false;
 }
 
+constexpr float LINE_VOLTAGE_DISPLAY_HYSTERESIS_V = 0.08f;
 Format rowIndexFormat("## ", Format::Alignment::RIGHT);
 Format rowLocationFormat(LOCATION_COL_WIDTH, Format::Alignment::LEFT);
 Format rowAmpsFormat(" ###.# A", Format::Alignment::RIGHT);
-Format rowApparentPowerFormat("##### VA", Format::Alignment::RIGHT);
+Format rowWattsFormat(" ##### W", Format::Alignment::RIGHT);
+Format lineVoltageFormat("###.# V", Format::Alignment::RIGHT);
+DisplayValue lineVoltageField(
+   &sketch.arduino,
+   lineVoltageFormat,
+   TABLE_TEXT_SIZE,
+   DisplayValue::Alignment::RIGHT);
+float displayedLineVoltage = NAN;
 
 Timer updateTimer(DISPLAY_UPDATE_INTERVAL_MS);
 int16_t valueStartY = 0;
 bool displayReady = false;
 
+///
+/// <summary>
+/// Draws the footer row with the device location in the lower left and firmware version in the lower right.
+/// </summary>
+///
+void drawFooter()
+{
+   sketch.arduino.setTextSize(FOOTER_SIZE);
+   sketch.arduino.setCursor(0, sketch.arduino.height() - sketch.arduino.charH());
+   sketch.arduino.print(sketch.location(), Color::CYAN);
+   sketch.arduino.printR(VERSION, Color::LIGHTGRAY);
+}
+
 #ifdef ARDUINO_TOUCH_SUPPORTED
-// ----------- Gear/close icon & Touch Settings UI
+// ----------- Gear icon & Touch Settings UI
 constexpr int16_t GEAR_RADIUS = 16;
 constexpr int16_t GEAR_MARGIN = 6;
 constexpr int16_t GEAR_TAP_SIZE = 56;
-constexpr size_t NUM_AMP_OPTIONS = 9;
-constexpr std::array<float, NUM_AMP_OPTIONS> AMP_RATING_OPTIONS = {
-   PowerSensorBase::CORE_15A,
-   PowerSensorBase::CORE_20A,
-   PowerSensorBase::CORE_30A,
-   PowerSensorBase::CORE_50A,
-   PowerSensorBase::CORE_100A,
-   PowerSensorBase::CORE_150A,
-   PowerSensorBase::CORE_200A,
-   PowerSensorBase::CORE_213A,
-   PowerSensorBase::CORE_500A,
-};
 
 constexpr int16_t SETTINGS_MARGIN_X = 8;
 constexpr int16_t SETTINGS_GAP = 8;
 constexpr int16_t SETTINGS_CORNER_RADIUS = 8;
 constexpr size_t CHANNEL_GRID_COLS = 4;
 constexpr size_t CHANNEL_GRID_ROWS = (NUM_CT_INPUTS + CHANNEL_GRID_COLS - 1) / CHANNEL_GRID_COLS;
-constexpr size_t AMP_GRID_COLS = 3;
-constexpr size_t AMP_GRID_ROWS = 3;
+constexpr size_t AMP_GRID_COLS = 4;
+constexpr size_t AMP_GRID_ROWS = 1;
 
 bool showingSettings = false;
 bool wasTouching = false;
 size_t selectedSettingsChannel = 0;
 std::array<Rect16, NUM_CT_INPUTS> channelBoxRects = {};
+std::array<bool, NUM_CT_INPUTS> settingsChannelConnected = {};
 Rect16 labelBoxRect;
 std::array<Rect16, NUM_AMP_OPTIONS> ampBoxRects = {};
+Rect16 deviceLocationBoxRect;
+Rect16 okBoxRect;
 
 ///
 /// <summary>
@@ -795,29 +962,11 @@ void drawGear()
 
 ///
 /// <summary>
-/// Draws the close icon (an X) in the upper right corner of the settings view.
-/// </summary>
-///
-void drawCloseIcon()
-{
-   const int16_t cx = sketch.arduino.width() - GEAR_MARGIN - GEAR_RADIUS;
-   const int16_t cy = GEAR_MARGIN + GEAR_RADIUS;
-   const int16_t d = GEAR_RADIUS * 7 / 10;
-
-   for (int16_t offset = -1; offset <= 1; offset++)
-   {
-      sketch.arduino.display.drawLine(cx - d + offset, cy - d, cx + d + offset, cy + d, static_cast<uint16_t>(Color::GRAY));
-      sketch.arduino.display.drawLine(cx - d + offset, cy + d, cx + d + offset, cy - d, static_cast<uint16_t>(Color::GRAY));
-   }
-}
-
-///
-/// <summary>
-/// Determines whether a touch is within the upper-right gear/close icon tap target.
+/// Determines whether a touch is within the upper-right gear icon tap target.
 /// </summary>
 /// <param name="x">Touch x coordinate.</param>
 /// <param name="y">Touch y coordinate.</param>
-/// <returns>True if the touch is within the gear/close tap area.</returns>
+/// <returns>True if the touch is within the gear tap area.</returns>
 ///
 bool onGear(int16_t x, int16_t y)
 {
@@ -840,7 +989,7 @@ bool inRect(const Rect16& rect, int16_t x, int16_t y)
 
 ///
 /// <summary>
-/// Draws the static frame (heading, gear icon, and version footer) for the main power view.
+/// Draws the static frame (heading, gear icon, and location/version footer) for the main power view.
 /// </summary>
 ///
 void drawMainFrame()
@@ -850,11 +999,7 @@ void drawMainFrame()
    sketch.arduino.setCursor(0, 0);
    sketch.arduino.println("Power", Color::HEADING);
    drawGear();
-
-   int16_t footerHeight = sketch.arduino.charH(FOOTER_SIZE);
-   sketch.arduino.setTextSize(FOOTER_SIZE);
-   sketch.arduino.setCursor(0, sketch.arduino.height() - footerHeight);
-   sketch.arduino.printR(VERSION, Color::LIGHTGRAY);
+   drawFooter();
 }
 
 ///
@@ -885,10 +1030,46 @@ void drawEditIcon(int16_t cx, int16_t cy, Color color)
 
 ///
 /// <summary>
+/// Draws a single channel box in the settings 4x4 grid. Border and channel number are white
+/// when a CT is physically plugged in, or gray when unplugged, regardless of label assignment.
+/// </summary>
+/// <param name="index">Channel index (0 to 15).</param>
+///
+void drawSettingsChannelBox(size_t index)
+{
+   const Rect16& rect = channelBoxRects[index];
+   const bool selected = (index == selectedSettingsChannel);
+   const bool configured = (ctLocations[index][0] != '\0');
+   const bool connected = powerSensor.isConnected(index);
+   settingsChannelConnected[index] = connected;
+
+   const Color bg = selected ? Color::DARKGREEN : (configured ? Color::DARKBLUE : Color::BLACK);
+   const Color fg = connected ? Color::WHITE : Color::GRAY;
+
+   sketch.arduino.display.fillRoundRect(rect.left(), rect.top(), rect.width, rect.height, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(bg));
+   sketch.arduino.display.drawRoundRect(rect.left(), rect.top(), rect.width, rect.height, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(fg));
+   if (selected)
+   {
+      sketch.arduino.display.drawRoundRect(rect.left() + 1, rect.top() + 1, rect.width - 2, rect.height - 2, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(fg));
+   }
+
+   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+   const int16_t chNumH = sketch.arduino.charH(TABLE_TEXT_SIZE);
+   String numStr = String(index + 1);
+   sketch.arduino.display.setTextColor(static_cast<uint16_t>(fg), static_cast<uint16_t>(bg));
+   const int16_t tw = sketch.arduino.display.textWidth(numStr.c_str());
+   sketch.arduino.display.setCursor(rect.left() + (rect.width - tw) / 2, rect.top() + (rect.height - chNumH) / 2);
+   sketch.arduino.display.print(numStr.c_str());
+}
+
+///
+/// <summary>
 /// Draws the touch configuration view:
-/// - Upper portion: 8 channel squares (2x4 grid) with the selected channel highlighted.
-/// - Bottom portion: the selected channel's editable location label box (with edit icon)
-///   and a 3x3 grid of CT amp rating boxes with the active rating highlighted.
+/// - Upper portion: 16 channel squares (4x4 grid) with plugged-in CTs shown in white and
+///   the selected channel highlighted.
+/// - Middle portion: the selected channel's editable location label box (with edit icon)
+///   and a row of 4 CT amp rating boxes (20A, 30A, 100A, 500A) with the active rating highlighted.
+/// - Lower right: an "OK" button to return to the main power view.
 /// </summary>
 ///
 void drawSettingsView()
@@ -897,7 +1078,6 @@ void drawSettingsView()
    sketch.arduino.setTextSize(HEADER_SIZE);
    sketch.arduino.setCursor(0, 0);
    sketch.arduino.println("Configure", Color::HEADING);
-   drawCloseIcon();
 
    const int16_t screenW = sketch.arduino.width();
    const int16_t screenH = sketch.arduino.height();
@@ -912,8 +1092,6 @@ void drawSettingsView()
 
    const int16_t chBoxW = (contentW - static_cast<int16_t>(CHANNEL_GRID_COLS - 1) * SETTINGS_GAP) / static_cast<int16_t>(CHANNEL_GRID_COLS);
    const int16_t chBoxH = CHANNEL_GRID_ROWS > 2 ? 68 : chBoxW;
-   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
-   const int16_t chNumH = sketch.arduino.charH(TABLE_TEXT_SIZE);
 
    for (size_t i = 0; i < NUM_CT_INPUTS; i++)
    {
@@ -922,25 +1100,7 @@ void drawSettingsView()
       const int16_t bx = SETTINGS_MARGIN_X + static_cast<int16_t>(col) * (chBoxW + SETTINGS_GAP);
       const int16_t by = y + static_cast<int16_t>(row) * (chBoxH + SETTINGS_GAP);
       channelBoxRects[i] = Rect16(bx, by, chBoxW, chBoxH);
-
-      const bool selected = (i == selectedSettingsChannel);
-      const bool configured = (ctLocations[i][0] != '\0');
-      const Color bg = selected ? Color::DARKGREEN : (configured ? Color::DARKBLUE : Color::BLACK);
-      const Color border = selected ? Color::WHITE : (configured ? Color::LIGHTBLUE : Color::GRAY);
-      const Color textColor = (selected || configured) ? Color::WHITE : Color::GRAY;
-
-      sketch.arduino.display.fillRoundRect(bx, by, chBoxW, chBoxH, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(bg));
-      sketch.arduino.display.drawRoundRect(bx, by, chBoxW, chBoxH, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(border));
-      if (selected)
-      {
-         sketch.arduino.display.drawRoundRect(bx + 1, by + 1, chBoxW - 2, chBoxH - 2, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(border));
-      }
-
-      String numStr = String(i + 1);
-      sketch.arduino.display.setTextColor(static_cast<uint16_t>(textColor), static_cast<uint16_t>(bg));
-      const int16_t tw = sketch.arduino.display.textWidth(numStr.c_str());
-      sketch.arduino.display.setCursor(bx + (chBoxW - tw) / 2, by + (chBoxH - chNumH) / 2);
-      sketch.arduino.display.print(numStr.c_str());
+      drawSettingsChannelBox(i);
    }
 
    y += static_cast<int16_t>(CHANNEL_GRID_ROWS) * chBoxH + static_cast<int16_t>(CHANNEL_GRID_ROWS - 1) * SETTINGS_GAP + 2 * SETTINGS_GAP;
@@ -968,13 +1128,46 @@ void drawSettingsView()
 
    y += labelBoxH + 2 * SETTINGS_GAP;
 
-   // Selected channel's amp rating section (3x3 grid of boxes)
+   // Lower-right OK button and lower-left editable device location box
+   const int16_t okBoxW = chBoxW;
+   const int16_t okBoxH = chBoxH;
+   okBoxRect = Rect16(screenW - SETTINGS_MARGIN_X - okBoxW, screenH - SETTINGS_MARGIN_X - okBoxH, okBoxW, okBoxH);
+   sketch.arduino.display.fillRoundRect(okBoxRect.left(), okBoxRect.top(), okBoxRect.width, okBoxRect.height, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(Color::DARKGREEN));
+   sketch.arduino.display.drawRoundRect(okBoxRect.left(), okBoxRect.top(), okBoxRect.width, okBoxRect.height, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(Color::WHITE));
+
+   const int16_t deviceLocBoxW = okBoxRect.left() - SETTINGS_MARGIN_X - 2 * SETTINGS_GAP;
+   deviceLocationBoxRect = Rect16(SETTINGS_MARGIN_X, okBoxRect.top(), deviceLocBoxW, okBoxH);
+   const int16_t deviceLocLabelY = deviceLocationBoxRect.top() - 4 - sketch.arduino.charH(FOOTER_SIZE);
+
+   sketch.arduino.setTextSize(FOOTER_SIZE);
+   sketch.arduino.setCursor(SETTINGS_MARGIN_X, deviceLocLabelY);
+   sketch.arduino.println("Location", Color::SUB_LABEL);
+
+   sketch.arduino.display.fillRoundRect(deviceLocationBoxRect.left(), deviceLocationBoxRect.top(), deviceLocationBoxRect.width, deviceLocationBoxRect.height, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(Color::DARKBLUE));
+   sketch.arduino.display.drawRoundRect(deviceLocationBoxRect.left(), deviceLocationBoxRect.top(), deviceLocationBoxRect.width, deviceLocationBoxRect.height, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(Color::WHITE));
+
+   const bool hasDeviceLoc = sketch.location().length() > 0;
+   const char* deviceLocText = hasDeviceLoc ? sketch.location().c_str() : "(tap to set)";
+   const Color deviceLocColor = hasDeviceLoc ? Color::WHITE : Color::LIGHTGRAY;
+   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+   sketch.arduino.display.setTextColor(static_cast<uint16_t>(deviceLocColor), static_cast<uint16_t>(Color::DARKBLUE));
+   const int16_t devLocTw = sketch.arduino.display.textWidth(deviceLocText);
+   int16_t devLocTx = deviceLocationBoxRect.left() + (deviceLocationBoxRect.width - devLocTw) / 2;
+   if (devLocTx < deviceLocationBoxRect.left() + 12)
+   {
+      devLocTx = deviceLocationBoxRect.left() + 12;
+   }
+   sketch.arduino.display.setCursor(devLocTx, deviceLocationBoxRect.top() + (deviceLocationBoxRect.height - sketch.arduino.charH(TABLE_TEXT_SIZE)) / 2);
+   sketch.arduino.display.print(deviceLocText);
+   drawEditIcon(deviceLocationBoxRect.right() - 24, deviceLocationBoxRect.top() + deviceLocationBoxRect.height / 2, Color::LIGHTGRAY);
+
+   // Selected channel's amp rating section (4 boxes: 20A, 30A, 100A, 500A)
    sketch.arduino.setTextSize(FOOTER_SIZE);
    sketch.arduino.setCursor(SETTINGS_MARGIN_X, y);
    sketch.arduino.println("Amp Rating", Color::SUB_LABEL);
    y = sketch.arduino.getCursorY() + 4;
 
-   const int16_t availAmpH = screenH - y - SETTINGS_MARGIN_X;
+   const int16_t availAmpH = deviceLocLabelY - y - 2 * SETTINGS_GAP;
    int16_t ampBoxH = (availAmpH - static_cast<int16_t>(AMP_GRID_ROWS - 1) * SETTINGS_GAP) / static_cast<int16_t>(AMP_GRID_ROWS);
    if (ampBoxH > 84)
    {
@@ -994,7 +1187,7 @@ void drawSettingsView()
       const int16_t by = y + static_cast<int16_t>(row) * (ampBoxH + SETTINGS_GAP);
       ampBoxRects[i] = Rect16(bx, by, ampBoxW, ampBoxH);
 
-      const bool selected = (std::fabs(currentAmps - AMP_RATING_OPTIONS[i]) < 0.5f);
+      const bool selected = (std::fabs(currentAmps - AMP_RATING_OPTIONS[i].ampsPerVolt) < 0.5f);
       const Color bg = selected ? Color::DARKGREEN : Color::BLUE;
       const Color border = selected ? Color::WHITE : Color::GRAY;
 
@@ -1005,11 +1198,33 @@ void drawSettingsView()
          sketch.arduino.display.drawRoundRect(bx + 1, by + 1, ampBoxW - 2, ampBoxH - 2, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(border));
       }
 
-      String ampStr = String(static_cast<int>(AMP_RATING_OPTIONS[i] + 0.5f)) + " A";
+      String ampStr = String(AMP_RATING_OPTIONS[i].ratedAmps) + " A";
       sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(bg));
       const int16_t tw = sketch.arduino.display.textWidth(ampStr.c_str());
       sketch.arduino.display.setCursor(bx + (ampBoxW - tw) / 2, by + (ampBoxH - ampTextH) / 2);
       sketch.arduino.display.print(ampStr.c_str());
+   }
+
+   sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(Color::DARKGREEN));
+   const int16_t okTw = sketch.arduino.display.textWidth("OK");
+   sketch.arduino.display.setCursor(okBoxRect.left() + (okBoxRect.width - okTw) / 2, okBoxRect.top() + (okBoxRect.height - ampTextH) / 2);
+   sketch.arduino.display.print("OK");
+}
+
+///
+/// <summary>
+/// Opens the on-screen touch keyboard to edit the device location, persists the new value,
+/// and refreshes telemetry topics immediately.
+/// </summary>
+///
+void editDeviceLocationTouch()
+{
+   String entered = sketch.arduino.promptTouchText("Enter Location", sketch.location());
+   entered.trim();
+   if (entered.length() > 0 && entered != sketch.location())
+   {
+      sketch.setLocation(entered.c_str());
+      refreshTelemetryTopics();
    }
 }
 
@@ -1045,11 +1260,11 @@ void editChannelLocationTouch(size_t ch)
 
 ///
 /// <summary>
-/// Renders a 4-column table of all 8 AD7606 inputs on the display:
-/// Column 1: Channel number (1-8)
+/// Renders live AC voltage in the header and a 4-column table of all 16 CT inputs on the display:
+/// Column 1: Channel number (1-16)
 /// Column 2: Configured location name
 /// Column 3: RMS current in Amps (or gray dashes if unplugged)
-/// Column 4: Estimated apparent power in VA (or gray dashes if unplugged)
+/// Column 4: Real power in Watts (or gray dashes if unplugged)
 /// </summary>
 ///
 void updateDisplay()
@@ -1062,9 +1277,35 @@ void updateDisplay()
 #ifdef ARDUINO_TOUCH_SUPPORTED
    if (showingSettings)
    {
+      for (size_t i = 0; i < NUM_CT_INPUTS; i++)
+      {
+         if (powerSensor.isConnected(i) != settingsChannelConnected[i])
+         {
+            drawSettingsChannelBox(i);
+         }
+      }
       return;
    }
 #endif
+
+   if (powerSensor.hasVoltageSensor())
+   {
+      if (powerSensor.voltageConnected())
+      {
+         float liveVolts = powerSensor.lineVoltage();
+         if (std::isnan(displayedLineVoltage) ||
+             std::fabs(liveVolts - displayedLineVoltage) >= LINE_VOLTAGE_DISPLAY_HYSTERESIS_V)
+         {
+            displayedLineVoltage = liveVolts;
+         }
+         lineVoltageField.draw(displayedLineVoltage, Color::VALUE);
+      }
+      else
+      {
+         displayedLineVoltage = NAN;
+         lineVoltageField.draw(lineVoltageFormat.toNoValueString(), Color::GRAY);
+      }
+   }
 
    sketch.arduino.setCursorY(valueStartY);
    sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
@@ -1079,12 +1320,12 @@ void updateDisplay()
       if (connected)
       {
          sketch.arduino.print(powerSensor.amps(i), rowAmpsFormat, Color::VALUE2);
-         sketch.arduino.printlnR(powerSensor.apparentPower(i), rowApparentPowerFormat, Color::VALUE);
+         sketch.arduino.printlnR(powerSensor.watts(i), rowWattsFormat, Color::VALUE);
       }
       else
       {
          sketch.arduino.print(rowAmpsFormat.toNoValueString().c_str(), Color::GRAY);
-         sketch.arduino.printlnR(rowApparentPowerFormat.toNoValueString().c_str(), Color::GRAY);
+         sketch.arduino.printlnR(rowWattsFormat.toNoValueString().c_str(), Color::GRAY);
       }
    }
 }
@@ -1123,7 +1364,7 @@ void handleTouch()
       return;
    }
 
-   if (onGear(tp.x, tp.y))
+   if (inRect(okBoxRect, tp.x, tp.y))
    {
       showingSettings = false;
       drawMainFrame();
@@ -1156,13 +1397,25 @@ void handleTouch()
       return;
    }
 
+   if (inRect(deviceLocationBoxRect, tp.x, tp.y))
+   {
+      editDeviceLocationTouch();
+      while (sketch.arduino.display.getTouch(&tp) > 0)
+      {
+         delay(10);
+      }
+      wasTouching = false;
+      drawSettingsView();
+      return;
+   }
+
    for (size_t i = 0; i < NUM_AMP_OPTIONS; i++)
    {
       if (inRect(ampBoxRects[i], tp.x, tp.y))
       {
-         if (std::fabs(ctAmps[selectedSettingsChannel] - AMP_RATING_OPTIONS[i]) >= 0.5f)
+         if (std::fabs(ctAmps[selectedSettingsChannel] - AMP_RATING_OPTIONS[i].ampsPerVolt) >= 0.5f)
          {
-            saveCtAmps(selectedSettingsChannel, AMP_RATING_OPTIONS[i]);
+            saveCtAmps(selectedSettingsChannel, AMP_RATING_OPTIONS[i].ampsPerVolt);
             drawSettingsView();
          }
          return;
@@ -1176,7 +1429,7 @@ void setup()
    loadChannelConfig();
 
    sketch.addSensor("PowerSensor", []() { return powerSensor.begin(); });
-   sketch.setValueSource([]() { return powerSensor.amps(primaryTelemetryChannel); });
+   sketch.setValueSource([]() { return powerSensor.watts(primaryTelemetryChannel); });
    sketch.onSiteResolved([]() {
       telemetryTopicsResolved = true;
       refreshTelemetryTopics();
@@ -1184,7 +1437,7 @@ void setup()
    sketch.onExtraConfig(getExtraConfigText, trySetExtraConfig, startInteractiveChannelPrompts);
    sketch.onReadings(
       []() { return powerSensor.formatReadings(); },
-      "Reports RMS current (A), estimated apparent power (VA), and sensor RMS voltage (V)");
+      "Reports real power (W), RMS current (A), power factor, and AC line voltage (V)");
    sketch.arduino.setRotation(DisplayRotation::PORTRAIT_FLIP);
 
    sketch.begin();
@@ -1196,8 +1449,13 @@ void setup()
    sketch.arduino.println("Power", Color::HEADING);
 #ifdef ARDUINO_TOUCH_SUPPORTED
    drawGear();
+   int16_t voltageRightX = sketch.arduino.width() - GEAR_TAP_SIZE - 8;
+#else
+   int16_t voltageRightX = sketch.arduino.width();
 #endif
    int16_t headingHeight = sketch.arduino.charH();
+   lineVoltageField.setPosition(voltageRightX, headingHeight / 2, VerticalAnchor::MIDDLE);
+
    int16_t footerHeight = sketch.arduino.charH(FOOTER_SIZE);
    int16_t valuesHeight = static_cast<int16_t>(NUM_CT_INPUTS) * sketch.arduino.charH(TABLE_TEXT_SIZE);
    int16_t availableHeight = sketch.arduino.height() - headingHeight - footerHeight;
@@ -1207,9 +1465,7 @@ void setup()
       valueStartY = headingHeight;
    }
 
-   sketch.arduino.setTextSize(FOOTER_SIZE);
-   sketch.arduino.setCursor(0, sketch.arduino.height() - footerHeight);
-   sketch.arduino.printR(VERSION, Color::LIGHTGRAY);
+   drawFooter();
 
    displayReady = true;
    updateDisplay();
@@ -1229,7 +1485,7 @@ void loop()
       {
          if (i != primaryTelemetryChannel && channelTopics[i][0] != '\0')
          {
-            sketch.submit(channelTopics[i], powerSensor.amps(i));
+            sketch.submit(channelTopics[i], powerSensor.watts(i));
          }
       }
    }
