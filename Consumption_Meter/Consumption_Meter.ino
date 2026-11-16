@@ -4,7 +4,8 @@
 // Measures real AC power (Watts) and RMS current (Amps) across up to 16 split-core current
 // transformer (CT) sensors alongside live AC line voltage from a ZMPT101B sensor. Displays
 // live line voltage (V), per-channel RMS current (A), and real power (W) on the touch display
-// and publishes per-channel power readings over WebSocket telemetry to Power/<location>/<circuit>.
+// and publishes per-channel power readings over WebSocket telemetry to Power/<location>/<circuit>
+// and per-channel RMS current readings to Current/<location>/<circuit>.
 //
 // The ADC hardware is selected with POWER_SENSOR_TYPE (all derive from PowerSensorBase):
 //   POWER_SENSOR_MUX_ADC - 74HC4067 16:1 mux + ZMPT101B on ESP32-P4 internal ADC1 (default)
@@ -61,7 +62,7 @@
 #include "Timer.h"
 #include "WiFiSettings.h"
 
-const auto VERSION = MakeVersion("1.2");
+const auto VERSION = MakeVersion("1.3");
 constexpr auto SKETCH_NAME = "Consumption_Meter";
 constexpr auto PREF_NAMESPACE = "ConsMeter";
 
@@ -141,8 +142,10 @@ constexpr uint16_t DISPLAY_UPDATE_INTERVAL_MS = 200; // 5 updates per second
 
 // ----------- Telemetry Configuration
 constexpr auto POWER_TOPIC_PREFIX = "Power";
+constexpr auto CURRENT_TOPIC_PREFIX = "Current";
 constexpr size_t MAX_TOPIC_LENGTH = 64;
 constexpr uint8_t POWER_DECIMALS = 0;
+constexpr uint8_t CURRENT_DECIMALS = 2;
 constexpr uint16_t TELEMETRY_PUBLISH_INTERVAL_MS = DISPLAY_UPDATE_INTERVAL_MS;
 
 // ----------- Display Layout
@@ -158,6 +161,7 @@ std::array<char[8], PowerSensorBase::MAX_CHANNELS> defaultChannelNames = {
 };
 std::array<float, NUM_CT_INPUTS> ctAmps = {};
 std::array<char[MAX_TOPIC_LENGTH], NUM_CT_INPUTS> channelTopics = {};
+std::array<char[MAX_TOPIC_LENGTH], NUM_CT_INPUTS> currentTopics = {};
 char primaryTelemetryTopic[MAX_TOPIC_LENGTH] = "Power/1";
 size_t primaryTelemetryChannel = 0;
 bool telemetryTopicsResolved = false;
@@ -241,18 +245,20 @@ PublisherSketch sketch(PUBLISHER_CONFIG, TELEMETRY_CONFIG);
 
 ///
 /// <summary>
-/// Rebuilds the per-channel telemetry topics as "Power/<location>/<circuit>" for each
-/// configured CT and updates the active TelemetryPublisher topic immediately if already
-/// running.
+/// Rebuilds the per-channel telemetry topics as "Power/<location>/<circuit>" and
+/// "Current/<location>/<circuit>" for each configured CT and updates the active
+/// TelemetryPublisher topic immediately if already running.
 /// </summary>
 ///
 void refreshTelemetryTopics()
 {
    std::string deviceLocation = sketch.location().c_str();
    std::string topicPrefix = std::string(POWER_TOPIC_PREFIX) + "/";
+   std::string currentTopicPrefix = std::string(CURRENT_TOPIC_PREFIX) + "/";
    if (!deviceLocation.empty())
    {
       topicPrefix += deviceLocation + "/";
+      currentTopicPrefix += deviceLocation + "/";
    }
 
    bool foundPrimary = false;
@@ -262,9 +268,12 @@ void refreshTelemetryTopics()
       {
          std::string fullTopic = topicPrefix + ctLocations[i];
          strlcpy(channelTopics[i], fullTopic.c_str(), sizeof(channelTopics[i]));
+         std::string fullCurrentTopic = currentTopicPrefix + ctLocations[i];
+         strlcpy(currentTopics[i], fullCurrentTopic.c_str(), sizeof(currentTopics[i]));
          if (telemetryTopicsResolved)
          {
             sketch.createTopic(channelTopics[i], TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
+            sketch.createTopic(currentTopics[i], TelemetryTopicMetadata{ .unit = TelemetryUnits::AMPS, .description = "RMS current for this circuit", .decimals = CURRENT_DECIMALS });
          }
          if (!foundPrimary)
          {
@@ -276,6 +285,7 @@ void refreshTelemetryTopics()
       else
       {
          channelTopics[i][0] = '\0';
+         currentTopics[i][0] = '\0';
       }
    }
 
@@ -1486,6 +1496,10 @@ void loop()
          if (i != primaryTelemetryChannel && channelTopics[i][0] != '\0')
          {
             sketch.submit(channelTopics[i], powerSensor.watts(i));
+         }
+         if (currentTopics[i][0] != '\0')
+         {
+            sketch.submit(currentTopics[i], powerSensor.amps(i));
          }
       }
    }
