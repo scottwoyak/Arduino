@@ -2,9 +2,16 @@
 // Consumption Meter
 //
 // Measures real AC power (Watts) and RMS current (Amps) across up to 16 split-core current
-// transformer (CT) sensors alongside live AC line voltage from a ZMPT101B sensor. Displays
-// live line voltage (V), per-channel RMS current (A), and real power (W) on the touch display
-// and publishes per-channel power readings over WebSocket telemetry to Power/<location>/<circuit>
+// transformer (CT) sensors alongside live AC line voltage from a ZMPT101B sensor, with
+// automatic quadrature phase compensation and bidirectional polarity on Solar* circuits
+// (positive when generating, negative for nighttime standby draw). Supports split-phase
+// "<Prefix>Red" / "<Prefix>Black" / "<Prefix>White" panel triplets: when one hot leg and
+// White neutral are clamped and an unclamped port is named for the missing hot leg, the
+// missing hot leg's current and power are derived automatically; "*White" neutral channels
+// are shown on the display but excluded from WebSocket telemetry. Displays live line
+// voltage (V), per-channel RMS current (A), and real power (W) on the touch display
+// (dimming to 10% brightness when idle and restoring full brightness on touch) and
+// publishes per-channel power readings over WebSocket telemetry to Power/<location>/<circuit>
 // and per-channel RMS current readings to Current/<location>/<circuit>.
 //
 // The ADC hardware is selected with POWER_SENSOR_TYPE (all derive from PowerSensorBase):
@@ -62,7 +69,7 @@
 #include "Timer.h"
 #include "WiFiSettings.h"
 
-const auto VERSION = MakeVersion("1.3");
+const auto VERSION = MakeVersion("1.5");
 constexpr auto SKETCH_NAME = "Consumption_Meter";
 constexpr auto PREF_NAMESPACE = "ConsMeter";
 
@@ -136,9 +143,24 @@ constexpr std::array<const char*, PowerSensorBase::MAX_CHANNELS> PREF_KEY_CT_AMP
    "amps1", "amps2",  "amps3",  "amps4",  "amps5",  "amps6",  "amps7",  "amps8",
    "amps9", "amps10", "amps11", "amps12", "amps13", "amps14", "amps15", "amps16",
 };
+constexpr std::array<const char*, PowerSensorBase::MAX_CHANNELS> PREF_KEY_CH_PHASE_DEG = {
+   "phDeg1", "phDeg2",  "phDeg3",  "phDeg4",  "phDeg5",  "phDeg6",  "phDeg7",  "phDeg8",
+   "phDeg9", "phDeg10", "phDeg11", "phDeg12", "phDeg13", "phDeg14", "phDeg15", "phDeg16",
+};
+constexpr std::array<const char*, PowerSensorBase::MAX_CHANNELS> PREF_KEY_CH_PHASE_MODE = {
+   "phMod1", "phMod2",  "phMod3",  "phMod4",  "phMod5",  "phMod6",  "phMod7",  "phMod8",
+   "phMod9", "phMod10", "phMod11", "phMod12", "phMod13", "phMod14", "phMod15", "phMod16",
+};
+constexpr std::array<const char*, PowerSensorBase::MAX_CHANNELS> PREF_KEY_CH_POLARITY = {
+   "chPol1", "chPol2",  "chPol3",  "chPol4",  "chPol5",  "chPol6",  "chPol7",  "chPol8",
+   "chPol9", "chPol10", "chPol11", "chPol12", "chPol13", "chPol14", "chPol15", "chPol16",
+};
 constexpr auto PREF_KEY_VOLTAGE_SCALE = "vScale";
+constexpr auto PREF_KEY_BOARD_PHASE_DEG = "phBoard";
+constexpr auto PREF_KEY_BOARD_PHASE_MODE = "phMode";
 
 constexpr uint16_t DISPLAY_UPDATE_INTERVAL_MS = 200; // 5 updates per second
+constexpr uint16_t AUTO_CAL_SAVE_INTERVAL_M = 30;    // Throttle gradual phase-drift NVS saves to 30 minutes
 
 // ----------- Telemetry Configuration
 constexpr auto POWER_TOPIC_PREFIX = "Power";
@@ -162,6 +184,8 @@ std::array<char[8], PowerSensorBase::MAX_CHANNELS> defaultChannelNames = {
 std::array<float, NUM_CT_INPUTS> ctAmps = {};
 std::array<char[MAX_TOPIC_LENGTH], NUM_CT_INPUTS> channelTopics = {};
 std::array<char[MAX_TOPIC_LENGTH], NUM_CT_INPUTS> currentTopics = {};
+std::array<char[MAX_TOPIC_LENGTH], PowerSensorBase::MAX_DERIVED_CHANNELS> derivedPowerTopics = {};
+std::array<char[MAX_TOPIC_LENGTH], PowerSensorBase::MAX_DERIVED_CHANNELS> derivedCurrentTopics = {};
 char primaryTelemetryTopic[MAX_TOPIC_LENGTH] = "Power/1";
 size_t primaryTelemetryChannel = 0;
 bool telemetryTopicsResolved = false;
@@ -246,8 +270,10 @@ PublisherSketch sketch(PUBLISHER_CONFIG, TELEMETRY_CONFIG);
 ///
 /// <summary>
 /// Rebuilds the per-channel telemetry topics as "Power/<location>/<circuit>" and
-/// "Current/<location>/<circuit>" for each configured CT and updates the active
-/// TelemetryPublisher topic immediately if already running.
+/// "Current/<location>/<circuit>" for each configured non-neutral CT (excluding "*White"
+/// neutral channels), registers any auto-synthesized split-phase derived channels (such as
+/// "<Prefix>Black" from "<Prefix>Red" + "<Prefix>White"), and updates the active
+/// TelemetryPublisher topic immediately if running.
 /// </summary>
 ///
 void refreshTelemetryTopics()
@@ -264,7 +290,7 @@ void refreshTelemetryTopics()
    bool foundPrimary = false;
    for (size_t i = 0; i < NUM_CT_INPUTS; i++)
    {
-      if (ctLocations[i][0] != '\0')
+      if (ctLocations[i][0] != '\0' && !powerSensor.isWhiteChannel(i))
       {
          std::string fullTopic = topicPrefix + ctLocations[i];
          strlcpy(channelTopics[i], fullTopic.c_str(), sizeof(channelTopics[i]));
@@ -286,6 +312,28 @@ void refreshTelemetryTopics()
       {
          channelTopics[i][0] = '\0';
          currentTopics[i][0] = '\0';
+      }
+   }
+
+   size_t numDerived = powerSensor.derivedChannelCount();
+   for (size_t d = 0; d < PowerSensorBase::MAX_DERIVED_CHANNELS; d++)
+   {
+      if (d < numDerived && powerSensor.derivedChannelName(d)[0] != '\0')
+      {
+         std::string fullTopic = topicPrefix + powerSensor.derivedChannelName(d);
+         strlcpy(derivedPowerTopics[d], fullTopic.c_str(), sizeof(derivedPowerTopics[d]));
+         std::string fullCurrentTopic = currentTopicPrefix + powerSensor.derivedChannelName(d);
+         strlcpy(derivedCurrentTopics[d], fullCurrentTopic.c_str(), sizeof(derivedCurrentTopics[d]));
+         if (telemetryTopicsResolved)
+         {
+            sketch.createTopic(derivedPowerTopics[d], TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
+            sketch.createTopic(derivedCurrentTopics[d], TelemetryTopicMetadata{ .unit = TelemetryUnits::AMPS, .description = "RMS current for this circuit", .decimals = CURRENT_DECIMALS });
+         }
+      }
+      else
+      {
+         derivedPowerTopics[d][0] = '\0';
+         derivedCurrentTopics[d][0] = '\0';
       }
    }
 
@@ -326,10 +374,68 @@ void applyChannelConfigToSensor()
    refreshTelemetryTopics();
 }
 
+#if POWER_SENSOR_TYPE == POWER_SENSOR_MUX_ADC
+Timer autoCalSaveTimer(AUTO_CAL_SAVE_INTERVAL_M * 60UL * 1000UL);
+
 ///
 /// <summary>
-/// Loads persisted per-input locations, CT current ratings, and AC voltage calibration scale
-/// from Preferences and configures powerSensor.
+/// Persists auto-learned voltage-to-CT phase shift and solar channel polarities in Preferences.
+/// </summary>
+///
+void saveAutoCalibration()
+{
+   Preferences prefs;
+   prefs.begin(PREF_NAMESPACE, false);
+   prefs.putFloat(PREF_KEY_BOARD_PHASE_DEG, powerSensor.phaseShiftDeg());
+   prefs.putUChar(PREF_KEY_BOARD_PHASE_MODE, static_cast<uint8_t>(powerSensor.boardPhaseCalMode()));
+
+   for (size_t i = 0; i < NUM_CT_INPUTS; i++)
+   {
+      if (powerSensor.isSolarChannel(i))
+      {
+         prefs.putFloat(PREF_KEY_CH_PHASE_DEG[i], powerSensor.channelPhaseShiftDeg(i));
+         prefs.putUChar(PREF_KEY_CH_PHASE_MODE[i], static_cast<uint8_t>(powerSensor.solarChannelCalMode(i)));
+         prefs.putChar(PREF_KEY_CH_POLARITY[i], powerSensor.channelPolarity(i));
+      }
+      else if (powerSensor.isWhiteChannel(i))
+      {
+         if (prefs.isKey(PREF_KEY_CH_PHASE_DEG[i]))
+         {
+            prefs.remove(PREF_KEY_CH_PHASE_DEG[i]);
+         }
+         if (prefs.isKey(PREF_KEY_CH_PHASE_MODE[i]))
+         {
+            prefs.remove(PREF_KEY_CH_PHASE_MODE[i]);
+         }
+         prefs.putChar(PREF_KEY_CH_POLARITY[i], powerSensor.channelPolarity(i));
+      }
+      else
+      {
+         if (prefs.isKey(PREF_KEY_CH_PHASE_DEG[i]))
+         {
+            prefs.remove(PREF_KEY_CH_PHASE_DEG[i]);
+         }
+         if (prefs.isKey(PREF_KEY_CH_PHASE_MODE[i]))
+         {
+            prefs.remove(PREF_KEY_CH_PHASE_MODE[i]);
+         }
+         if (prefs.isKey(PREF_KEY_CH_POLARITY[i]))
+         {
+            prefs.remove(PREF_KEY_CH_POLARITY[i]);
+         }
+      }
+   }
+
+   prefs.end();
+   powerSensor.markCalibrationSaved();
+   autoCalSaveTimer.reset();
+}
+#endif
+
+///
+/// <summary>
+/// Loads persisted per-input locations, CT current ratings, AC voltage calibration scale,
+/// and auto-learned phase/solar polarity from Preferences and configures powerSensor.
 /// </summary>
 ///
 void loadChannelConfig()
@@ -339,41 +445,100 @@ void loadChannelConfig()
 
    for (size_t i = 0; i < NUM_CT_INPUTS; i++)
    {
-      String savedLoc = prefs.getString(PREF_KEY_CT_LOCATION[i], DEFAULT_CT_LOCATIONS[i]);
+      String savedLoc = prefs.isKey(PREF_KEY_CT_LOCATION[i])
+         ? prefs.getString(PREF_KEY_CT_LOCATION[i], DEFAULT_CT_LOCATIONS[i])
+         : String(DEFAULT_CT_LOCATIONS[i]);
       strlcpy(ctLocations[i], savedLoc.c_str(), sizeof(ctLocations[i]));
 
-      float savedAmps = prefs.getFloat(PREF_KEY_CT_AMPS[i], DEFAULT_CT_AMPS[i]);
+      float savedAmps = prefs.isKey(PREF_KEY_CT_AMPS[i])
+         ? prefs.getFloat(PREF_KEY_CT_AMPS[i], DEFAULT_CT_AMPS[i])
+         : DEFAULT_CT_AMPS[i];
       ctAmps[i] = savedAmps > 0.0f ? savedAmps : DEFAULT_CT_AMPS[i];
    }
 
 #if POWER_SENSOR_TYPE == POWER_SENSOR_MUX_ADC
-   float savedVScale = prefs.getFloat(PREF_KEY_VOLTAGE_SCALE, MuxAdcPowerSensor::DEFAULT_VOLTAGE_SCALE);
-   if (savedVScale > 0.0f)
+   if (prefs.isKey(PREF_KEY_VOLTAGE_SCALE))
    {
-      powerSensor.setVoltageScale(savedVScale);
+      float savedVScale = prefs.getFloat(PREF_KEY_VOLTAGE_SCALE, MuxAdcPowerSensor::DEFAULT_VOLTAGE_SCALE);
+      if (savedVScale > 0.0f)
+      {
+         powerSensor.setVoltageScale(savedVScale);
+      }
+   }
+#endif
+
+   applyChannelConfigToSensor();
+
+#if POWER_SENSOR_TYPE == POWER_SENSOR_MUX_ADC
+   if (prefs.isKey(PREF_KEY_BOARD_PHASE_DEG) && prefs.isKey(PREF_KEY_BOARD_PHASE_MODE))
+   {
+      float savedBoardPhase = prefs.getFloat(PREF_KEY_BOARD_PHASE_DEG, MuxAdcPowerSensor::DEFAULT_PHASE_SHIFT_DEG);
+      uint8_t savedBoardModeRaw = prefs.getUChar(PREF_KEY_BOARD_PHASE_MODE, 0);
+      MuxAdcPowerSensor::PhaseCalMode savedBoardMode = savedBoardModeRaw == 1
+         ? MuxAdcPowerSensor::PhaseCalMode::NIGHT_AUTO
+         : MuxAdcPowerSensor::PhaseCalMode::NOMINAL;
+      powerSensor.restoreBoardPhaseCalibration(savedBoardPhase, savedBoardMode);
+   }
+
+   for (size_t i = 0; i < NUM_CT_INPUTS; i++)
+   {
+      if (!powerSensor.isSolarChannel(i) && !powerSensor.isWhiteChannel(i))
+      {
+         continue;
+      }
+
+      float savedChPhase = prefs.isKey(PREF_KEY_CH_PHASE_DEG[i])
+         ? prefs.getFloat(PREF_KEY_CH_PHASE_DEG[i], MuxAdcPowerSensor::DEFAULT_PHASE_SHIFT_DEG)
+         : MuxAdcPowerSensor::DEFAULT_PHASE_SHIFT_DEG;
+      uint8_t savedChModeRaw = prefs.isKey(PREF_KEY_CH_PHASE_MODE[i])
+         ? prefs.getUChar(PREF_KEY_CH_PHASE_MODE[i], 0)
+         : 0;
+      MuxAdcPowerSensor::PhaseCalMode savedChMode = savedChModeRaw == 1
+         ? MuxAdcPowerSensor::PhaseCalMode::NIGHT_AUTO
+         : MuxAdcPowerSensor::PhaseCalMode::NOMINAL;
+      int8_t savedPolarity = prefs.isKey(PREF_KEY_CH_POLARITY[i])
+         ? prefs.getChar(PREF_KEY_CH_POLARITY[i], 0)
+         : 0;
+      powerSensor.restoreChannelAutoCalibration(i, savedChPhase, savedChMode, savedPolarity);
    }
 #endif
 
    prefs.end();
-   applyChannelConfigToSensor();
 }
 
 ///
 /// <summary>
 /// Persists a single CT input's location string (empty string disables telemetry for that channel).
 /// </summary>
-/// <param name="inputIndex">Channel index (0 to 7).</param>
+/// <param name="inputIndex">Channel index (0 to 15).</param>
 /// <param name="loc">Location string (or empty to disable).</param>
 ///
 void saveCtLocation(size_t inputIndex, const char* loc)
 {
+   bool changed = strcmp(ctLocations[inputIndex], loc) != 0;
+
    Preferences prefs;
    prefs.begin(PREF_NAMESPACE, false);
    prefs.putString(PREF_KEY_CT_LOCATION[inputIndex], loc);
    prefs.end();
 
+   #if POWER_SENSOR_TYPE == POWER_SENSOR_MUX_ADC
+   if (changed)
+   {
+      powerSensor.resetChannelAutoCalibration(inputIndex);
+   }
+#endif
+
    strlcpy(ctLocations[inputIndex], loc, sizeof(ctLocations[inputIndex]));
    applyChannelConfigToSensor();
+
+#if POWER_SENSOR_TYPE == POWER_SENSOR_MUX_ADC
+   if (changed)
+   {
+      powerSensor.resetChannelAutoCalibration(inputIndex);
+      saveAutoCalibration();
+   }
+#endif
 }
 
 ///
@@ -427,6 +592,8 @@ int displayAmpsForScale(float ampsPerVolt)
 ///
 void saveCtAmps(size_t inputIndex, float amps)
 {
+   bool changed = std::fabs(ctAmps[inputIndex] - amps) >= 0.01f;
+
    Preferences prefs;
    prefs.begin(PREF_NAMESPACE, false);
    prefs.putFloat(PREF_KEY_CT_AMPS[inputIndex], amps);
@@ -434,6 +601,14 @@ void saveCtAmps(size_t inputIndex, float amps)
 
    ctAmps[inputIndex] = amps;
    applyChannelConfigToSensor();
+
+#if POWER_SENSOR_TYPE == POWER_SENSOR_MUX_ADC
+   if (changed)
+   {
+      powerSensor.resetChannelAutoCalibration(inputIndex);
+      saveAutoCalibration();
+   }
+#endif
 }
 
 ///
@@ -731,6 +906,8 @@ std::string getExtraConfigText()
    out << std::fixed;
    out.precision(1);
    out << "\nvScale=" << powerSensor.voltageScale();
+   out.precision(2);
+   out << "\nphase=" << powerSensor.phaseShiftDeg() << " deg (" << powerSensor.phaseCalibrationMode() << ")";
 #endif
    return out.str();
 }
@@ -760,6 +937,7 @@ void saveVoltageScale(float scale)
 /// - Direct keys "l1".."l16" (or "location1".."location16"; use "-", "none", or "off" to clear)
 /// - Direct keys "a1".."a16" (or "amps1".."amps16")
 /// - "vcal" with actual AC line voltage (e.g. "vcal=120.1") or "vscale" with raw V/V scale
+/// - "phase=auto" to clear saved phase/polarity learning and immediately re-learn automatically
 /// </summary>
 /// <param name="key">Config key passed to SetConfig.</param>
 /// <param name="value">New value string.</param>
@@ -769,6 +947,20 @@ void saveVoltageScale(float scale)
 bool trySetExtraConfig(const std::string& key, const std::string& value, std::string& result)
 {
 #if POWER_SENSOR_TYPE == POWER_SENSOR_MUX_ADC
+   if (strcasecmp(key.c_str(), "phase") == 0)
+   {
+      if (strcasecmp(value.c_str(), "auto") != 0 && strcasecmp(value.c_str(), "reset") != 0)
+      {
+         result = "Error: phase calibration is automatic; use phase=auto to reset and re-learn";
+         return true;
+      }
+
+      powerSensor.resetAllAutoCalibration();
+      saveAutoCalibration();
+      result = "Reset phase and CT polarity to automatic learning";
+      return true;
+   }
+
    if (strcasecmp(key.c_str(), "vcal") == 0)
    {
       float actualVolts = std::strtof(value.c_str(), nullptr);
@@ -905,7 +1097,26 @@ float displayedLineVoltage = NAN;
 
 Timer updateTimer(DISPLAY_UPDATE_INTERVAL_MS);
 int16_t valueStartY = 0;
+size_t displayedDerivedCount = 0;
 bool displayReady = false;
+
+///
+/// <summary>
+/// Computes the vertical start coordinate to center the physical + derived channel rows
+/// between the top heading and bottom footer.
+/// </summary>
+/// <returns>Top Y pixel coordinate for the first table row.</returns>
+///
+int16_t computeTableStartY()
+{
+   int16_t headingHeight = sketch.arduino.charH(HEADER_SIZE);
+   int16_t footerHeight = sketch.arduino.charH(FOOTER_SIZE);
+   size_t totalRows = NUM_CT_INPUTS + powerSensor.derivedChannelCount();
+   int16_t valuesHeight = static_cast<int16_t>(totalRows) * sketch.arduino.charH(TABLE_TEXT_SIZE);
+   int16_t availableHeight = sketch.arduino.height() - headingHeight - footerHeight;
+   int16_t startY = headingHeight + (availableHeight - valuesHeight) / 2;
+   return startY < headingHeight ? headingHeight : startY;
+}
 
 ///
 /// <summary>
@@ -922,6 +1133,9 @@ void drawFooter()
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
 // ----------- Gear icon & Touch Settings UI
+constexpr uint16_t DISPLAY_DIM_TIMEOUT_S = 60;
+constexpr float DISPLAY_DIM_LEVEL = 0.10f;
+
 constexpr int16_t GEAR_RADIUS = 16;
 constexpr int16_t GEAR_MARGIN = 6;
 constexpr int16_t GEAR_TAP_SIZE = 56;
@@ -934,6 +1148,8 @@ constexpr size_t CHANNEL_GRID_ROWS = (NUM_CT_INPUTS + CHANNEL_GRID_COLS - 1) / C
 constexpr size_t AMP_GRID_COLS = 4;
 constexpr size_t AMP_GRID_ROWS = 1;
 
+Timer displayDimTimer(DISPLAY_DIM_TIMEOUT_S * 1000UL);
+bool displayDimmed = false;
 bool showingSettings = false;
 bool wasTouching = false;
 size_t selectedSettingsChannel = 0;
@@ -1010,6 +1226,9 @@ void drawMainFrame()
    sketch.arduino.println("Power", Color::HEADING);
    drawGear();
    drawFooter();
+   displayedLineVoltage = NAN;
+   displayedDerivedCount = powerSensor.derivedChannelCount();
+   valueStartY = computeTableStartY();
 }
 
 ///
@@ -1050,7 +1269,7 @@ void drawSettingsChannelBox(size_t index)
    const Rect16& rect = channelBoxRects[index];
    const bool selected = (index == selectedSettingsChannel);
    const bool configured = (ctLocations[index][0] != '\0');
-   const bool connected = powerSensor.isConnected(index);
+   const bool connected = powerSensor.isPhysicallyConnected(index);
    settingsChannelConnected[index] = connected;
 
    const Color bg = selected ? Color::DARKGREEN : (configured ? Color::DARKBLUE : Color::BLACK);
@@ -1289,7 +1508,7 @@ void updateDisplay()
    {
       for (size_t i = 0; i < NUM_CT_INPUTS; i++)
       {
-         if (powerSensor.isConnected(i) != settingsChannelConnected[i])
+         if (powerSensor.isPhysicallyConnected(i) != settingsChannelConnected[i])
          {
             drawSettingsChannelBox(i);
          }
@@ -1297,6 +1516,20 @@ void updateDisplay()
       return;
    }
 #endif
+
+   if (powerSensor.derivedChannelCount() != displayedDerivedCount)
+   {
+      int16_t headingHeight = sketch.arduino.charH(HEADER_SIZE);
+      int16_t footerHeight = sketch.arduino.charH(FOOTER_SIZE);
+      sketch.arduino.display.fillRect(
+         0,
+         headingHeight,
+         sketch.arduino.width(),
+         sketch.arduino.height() - headingHeight - footerHeight,
+         static_cast<uint16_t>(Color::BLACK));
+      displayedDerivedCount = powerSensor.derivedChannelCount();
+      valueStartY = computeTableStartY();
+   }
 
    if (powerSensor.hasVoltageSensor())
    {
@@ -1338,13 +1571,31 @@ void updateDisplay()
          sketch.arduino.printlnR(rowWattsFormat.toNoValueString().c_str(), Color::GRAY);
       }
    }
+
+   size_t numDerived = powerSensor.derivedChannelCount();
+   for (size_t d = 0; d < numDerived; d++)
+   {
+      sketch.arduino.print(" + ", Color::SUB_LABEL);
+      sketch.arduino.print(powerSensor.derivedChannelName(d), rowLocationFormat, Color::LABEL);
+
+      if (powerSensor.isDerivedConnected(d))
+      {
+         sketch.arduino.print(powerSensor.derivedAmps(d), rowAmpsFormat, Color::VALUE2);
+         sketch.arduino.printlnR(powerSensor.derivedWatts(d), rowWattsFormat, Color::VALUE);
+      }
+      else
+      {
+         sketch.arduino.print(rowAmpsFormat.toNoValueString().c_str(), Color::GRAY);
+         sketch.arduino.printlnR(rowWattsFormat.toNoValueString().c_str(), Color::GRAY);
+      }
+   }
 }
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
 ///
 /// <summary>
-/// Polls capacitive touch input to open/close the gear settings view and edit any
-/// channel's location or CT amp rating on-screen.
+/// Polls capacitive touch input to dim the backlight after inactivity, wake to full
+/// brightness on touch, and open/close the gear settings view to edit channel settings.
 /// </summary>
 ///
 void handleTouch()
@@ -1359,8 +1610,25 @@ void handleTouch()
    bool tapped = touched && !wasTouching;
    wasTouching = touched;
 
+   if (touched)
+   {
+      displayDimTimer.reset();
+   }
+
    if (!tapped)
    {
+      if (!displayDimmed && displayDimTimer.ready())
+      {
+         sketch.arduino.displayLevel(DISPLAY_DIM_LEVEL);
+         displayDimmed = true;
+      }
+      return;
+   }
+
+   if (displayDimmed)
+   {
+      sketch.arduino.displayOn();
+      displayDimmed = false;
       return;
    }
 
@@ -1403,6 +1671,7 @@ void handleTouch()
          delay(10);
       }
       wasTouching = false;
+      displayDimTimer.reset();
       drawSettingsView();
       return;
    }
@@ -1415,6 +1684,7 @@ void handleTouch()
          delay(10);
       }
       wasTouching = false;
+      displayDimTimer.reset();
       drawSettingsView();
       return;
    }
@@ -1466,19 +1736,16 @@ void setup()
    int16_t headingHeight = sketch.arduino.charH();
    lineVoltageField.setPosition(voltageRightX, headingHeight / 2, VerticalAnchor::MIDDLE);
 
-   int16_t footerHeight = sketch.arduino.charH(FOOTER_SIZE);
-   int16_t valuesHeight = static_cast<int16_t>(NUM_CT_INPUTS) * sketch.arduino.charH(TABLE_TEXT_SIZE);
-   int16_t availableHeight = sketch.arduino.height() - headingHeight - footerHeight;
-   valueStartY = headingHeight + (availableHeight - valuesHeight) / 2;
-   if (valueStartY < headingHeight)
-   {
-      valueStartY = headingHeight;
-   }
+   displayedDerivedCount = powerSensor.derivedChannelCount();
+   valueStartY = computeTableStartY();
 
    drawFooter();
 
    displayReady = true;
    updateDisplay();
+#ifdef ARDUINO_TOUCH_SUPPORTED
+   displayDimTimer.reset();
+#endif
 }
 
 void loop()
@@ -1502,7 +1769,28 @@ void loop()
             sketch.submit(currentTopics[i], powerSensor.amps(i));
          }
       }
+
+      size_t numDerived = powerSensor.derivedChannelCount();
+      for (size_t d = 0; d < numDerived; d++)
+      {
+         if (derivedPowerTopics[d][0] != '\0')
+         {
+            sketch.submit(derivedPowerTopics[d], powerSensor.derivedWatts(d));
+         }
+         if (derivedCurrentTopics[d][0] != '\0')
+         {
+            sketch.submit(derivedCurrentTopics[d], powerSensor.derivedAmps(d));
+         }
+      }
    }
+
+#if POWER_SENSOR_TYPE == POWER_SENSOR_MUX_ADC
+   if (powerSensor.hasUrgentCalibrationUpdate() ||
+       (powerSensor.hasCalibrationDriftUpdate() && autoCalSaveTimer.ready()))
+   {
+      saveAutoCalibration();
+   }
+#endif
 
    sketch.loop();
 }

@@ -32,7 +32,19 @@
 class MuxAdcPowerSensor : public PowerSensorBase
 {
 public:
+   ///
+   /// <summary>
+   /// Source of the active voltage-to-CT phase compensation angle.
+   /// </summary>
+   ///
+   enum class PhaseCalMode : uint8_t
+   {
+      NOMINAL = 0,
+      NIGHT_AUTO = 1
+   };
+
    static constexpr float DEFAULT_VOLTAGE_SCALE = 120.0f / 0.100f; // 120.0V line per 0.100V RMS at ZMPT101B OUT
+   static constexpr float DEFAULT_PHASE_SHIFT_DEG = 31.0f;         // Nominal 9V AC wall-wart + ZMPT101B phase lead at 60 Hz
    static constexpr float MIN_CONNECTED_BIAS_V = 0.85f;
    static constexpr float MAX_CONNECTED_BIAS_V = 2.45f;
    static constexpr float MIN_VALID_VOLTAGE_BIAS_V = 0.50f;
@@ -40,6 +52,46 @@ public:
    static constexpr float MIN_VALID_VOLTAGE_RMS_V = 0.015f;
 
 private:
+   static constexpr double AC_LINE_FREQ_HZ = 60.0;
+   static constexpr double QUARTER_CYCLE_MICROS = 1000000.0 / (4.0 * AC_LINE_FREQ_HZ); // 4,166.67 micros (90 deg at 60 Hz)
+   static constexpr size_t VOLTAGE_HISTORY_SIZE = 16;
+   static constexpr float DEG_TO_RAD_F = 0.01745329252f;
+   static constexpr float RAD_TO_DEG_F = 57.295779513f;
+   static constexpr float DEFAULT_PHASE_SHIFT_RAD = DEFAULT_PHASE_SHIFT_DEG * DEG_TO_RAD_F;
+   static constexpr float MIN_AUTO_PHASE_RAD = -20.0f * DEG_TO_RAD_F;
+   static constexpr float MAX_AUTO_PHASE_RAD = 50.0f * DEG_TO_RAD_F;
+   static constexpr float NIGHT_TARE_LOSS_RAD = 0.0052f;      // ~0.30 deg microinverter RC bleed-to-EMI-cap loss ratio
+   static constexpr float NIGHT_MIN_CAPACITIVE_VA = 50.0f;
+   static constexpr float NIGHT_INITIAL_MAX_PF = 0.18f;
+   static constexpr float NIGHT_TRACKING_MAX_PF = 0.04f;
+   static constexpr float NIGHT_MIN_REACTIVE_RATIO = 0.90f;
+   static constexpr float NIGHT_INITIAL_SUSCEPTANCE_TOL = 0.025f;
+   static constexpr float NIGHT_TRACKING_SUSCEPTANCE_TOL = 0.015f;
+   static constexpr uint8_t NIGHT_INITIAL_STEADY_SLICES = 16;
+   static constexpr uint8_t NIGHT_TRACKING_STEADY_SLICES = 32;
+   static constexpr float NIGHT_PHASE_EMA_ALPHA = 0.05f;
+   static constexpr float PHASE_DRIFT_SAVE_RAD = 0.05f * DEG_TO_RAD_F;
+   static constexpr float DAY_POLARITY_MIN_WATTS = 200.0f;
+   static constexpr float DAY_POLARITY_MIN_PF = 0.30f;
+   static constexpr uint8_t DAY_POLARITY_STEADY_SLICES = 6;
+
+   struct VoltageHistoryPoint
+   {
+      int64_t timeMicros = 0;
+      double dv = 0.0;
+   };
+
+   struct SolarAutoCalState
+   {
+      float phaseRad = DEFAULT_PHASE_SHIFT_RAD;
+      float savedPhaseRad = DEFAULT_PHASE_SHIFT_RAD;
+      PhaseCalMode calMode = PhaseCalMode::NOMINAL;
+      float nightMeanSusceptance = 0.0f;
+      uint8_t nightSteadyCount = 0;
+      int8_t dayCandidatePolarity = 0;
+      uint8_t dayPolarityCount = 0;
+   };
+
    static constexpr uint32_t SAMPLE_INTERVAL_MICROS = 1000; // 1,000 Hz (50 sample pairs per 50 ms = 16.7 per 60 Hz cycle)
    static constexpr double RMS_SLICE_SPAN_MICROS = 50000.0; // Exact 50.000 ms (3.0000 cycles at 60 Hz)
    static constexpr double PROBE_SPAN_MICROS = 3000.0;      // 3.0 ms settled window to check DC bias on unplugged channels
@@ -77,14 +129,29 @@ private:
    bool _probingUnconnected = false;
    uint8_t _settleSamplesRemaining = 0;
 
+   std::array<VoltageHistoryPoint, VOLTAGE_HISTORY_SIZE> _voltageHistory = {};
+   size_t _voltageHistoryHead = 0;
+   size_t _voltageHistoryCount = 0;
+
    bool _chHasPrev = false;
    double _chPrevDV = 0.0;
+   double _chPrevDVQ = 0.0;
    double _chPrevDI = 0.0;
    double _chElapsedMicros = 0.0;
    double _chSumDV = 0.0;
+   double _chSumDV2 = 0.0;
+   double _chSumDVQ = 0.0;
+   double _chSumDVQ2 = 0.0;
    double _chSumDI = 0.0;
    double _chSumDI2 = 0.0;
    double _chSumDVI = 0.0;
+   double _chSumDVQI = 0.0;
+
+   std::array<SolarAutoCalState, MAX_CHANNELS> _solarCal = {};
+   volatile float _boardPhaseShiftRad = DEFAULT_PHASE_SHIFT_RAD;
+   volatile PhaseCalMode _boardPhaseCalMode = PhaseCalMode::NOMINAL;
+   volatile bool _calibrationUrgentDirty = false;
+   volatile bool _calibrationDriftDirty = false;
 
    bool _voltHasPrev = false;
    double _voltPrevDV = 0.0;
@@ -118,6 +185,25 @@ private:
 
    ///
    /// <summary>
+   /// Converts a PhaseCalMode enum value to a compact display/telemetry string.
+   /// </summary>
+   /// <param name="mode">Phase calibration mode.</param>
+   /// <returns>Human-readable mode string.</returns>
+   ///
+   static const char* _phaseCalModeText(PhaseCalMode mode)
+   {
+      switch (mode)
+      {
+         case PhaseCalMode::NIGHT_AUTO:
+            return "auto";
+         case PhaseCalMode::NOMINAL:
+         default:
+            return "nominal";
+      }
+   }
+
+   ///
+   /// <summary>
    /// Resets the active CT channel's per-slice trapezoidal accumulators.
    /// </summary>
    ///
@@ -125,17 +211,22 @@ private:
    {
       _chHasPrev = false;
       _chPrevDV = 0.0;
+      _chPrevDVQ = 0.0;
       _chPrevDI = 0.0;
       _chElapsedMicros = 0.0;
       _chSumDV = 0.0;
+      _chSumDV2 = 0.0;
+      _chSumDVQ = 0.0;
+      _chSumDVQ2 = 0.0;
       _chSumDI = 0.0;
       _chSumDI2 = 0.0;
       _chSumDVI = 0.0;
+      _chSumDVQI = 0.0;
    }
 
    ///
    /// <summary>
-   /// Resets the continuous AC voltage window's trapezoidal accumulators.
+   /// Resets the continuous AC voltage window's trapezoidal accumulators and delay history.
    /// </summary>
    ///
    void _resetVoltageAccumulators()
@@ -145,6 +236,239 @@ private:
       _voltWinElapsedMicros = 0.0;
       _voltWinSumDV = 0.0;
       _voltWinSumDV2 = 0.0;
+      _voltageHistoryHead = 0;
+      _voltageHistoryCount = 0;
+   }
+
+   ///
+   /// <summary>
+   /// Records the latest mid-rail-referenced voltage sample and linearly interpolates the
+   /// voltage waveform delayed by 1/4 of a 60 Hz cycle (4,166.67 micros = 90 degrees).
+   /// </summary>
+   /// <param name="nowMicros">Timestamp of the current sample in microseconds.</param>
+   /// <param name="dv">Current mid-rail-referenced voltage sample.</param>
+   /// <param name="outDvQuarter">Receives the interpolated 90-degree delayed voltage sample.</param>
+   /// <returns>True once at least 1/4 cycle of continuous voltage history is available.</returns>
+   ///
+   bool _recordAndInterpolateQuarterCycleVoltage(int64_t nowMicros, double dv, double* outDvQuarter)
+   {
+      ASSERT(outDvQuarter != nullptr);
+
+      if (_voltageHistoryCount > 0)
+      {
+         size_t prevIdx = (_voltageHistoryHead + VOLTAGE_HISTORY_SIZE - 1) % VOLTAGE_HISTORY_SIZE;
+         int64_t gapMicros = nowMicros - _voltageHistory[prevIdx].timeMicros;
+         if (gapMicros <= 0 || gapMicros > static_cast<int64_t>(MAX_VALID_DT_MICROS))
+         {
+            _voltageHistoryHead = 0;
+            _voltageHistoryCount = 0;
+         }
+      }
+
+      _voltageHistory[_voltageHistoryHead] = { nowMicros, dv };
+      _voltageHistoryHead = (_voltageHistoryHead + 1) % VOLTAGE_HISTORY_SIZE;
+      if (_voltageHistoryCount < VOLTAGE_HISTORY_SIZE)
+      {
+         _voltageHistoryCount++;
+      }
+
+      if (_voltageHistoryCount < 6)
+      {
+         return false;
+      }
+
+      double targetMicros = static_cast<double>(nowMicros) - QUARTER_CYCLE_MICROS;
+      for (size_t age = 1; age < _voltageHistoryCount; age++)
+      {
+         size_t newerIdx = (_voltageHistoryHead + VOLTAGE_HISTORY_SIZE - age) % VOLTAGE_HISTORY_SIZE;
+         size_t olderIdx = (_voltageHistoryHead + VOLTAGE_HISTORY_SIZE - age - 1) % VOLTAGE_HISTORY_SIZE;
+         const VoltageHistoryPoint& newerPt = _voltageHistory[newerIdx];
+         const VoltageHistoryPoint& olderPt = _voltageHistory[olderIdx];
+         if (olderPt.timeMicros <= targetMicros && targetMicros <= newerPt.timeMicros)
+         {
+            double spanMicros = static_cast<double>(newerPt.timeMicros - olderPt.timeMicros);
+            if (spanMicros <= 0.0 || spanMicros > MAX_VALID_DT_MICROS)
+            {
+               return false;
+            }
+
+            double frac = (targetMicros - static_cast<double>(olderPt.timeMicros)) / spanMicros;
+            *outDvQuarter = olderPt.dv + frac * (newerPt.dv - olderPt.dv);
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   ///
+   /// <summary>
+   /// Recomputes the board-level phase compensation angle as the mean of all auto-calibrated
+   /// solar channels so non-solar circuits share the learned transformer + ZMPT101B phase shift.
+   /// </summary>
+   ///
+   void _recomputeBoardPhaseShift()
+   {
+      float sumRad = 0.0f;
+      size_t count = 0;
+      for (size_t i = 0; i < _numChannels; i++)
+      {
+         if (_channels[i].isSolar && _solarCal[i].calMode == PhaseCalMode::NIGHT_AUTO)
+         {
+            sumRad += _solarCal[i].phaseRad;
+            count++;
+         }
+      }
+
+      if (count > 0)
+      {
+         _boardPhaseShiftRad = sumRad / count;
+         _boardPhaseCalMode = PhaseCalMode::NIGHT_AUTO;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Automatically learns CT/leg polarity and exact voltage-to-CT phase shift on bidirectional
+   /// solar channels using steady nighttime microinverter EMI capacitance and daytime export.
+   /// </summary>
+   /// <param name="channel">Active channel index.</param>
+   /// <param name="sliceAmps">Measured RMS current in Amps for this slice.</param>
+   /// <param name="rawP">Uncompensated in-phase real power in Watts.</param>
+   /// <param name="rawQ">Uncompensated quadrature reactive power in VAR.</param>
+   /// <param name="ioCorrP">Phase-compensated signed real power in Watts (updated if phase refines).</param>
+   /// <param name="ioCorrQ">Phase-compensated signed reactive power in VAR (updated if phase refines).</param>
+   ///
+   void _updateSolarAutoCalibration(
+      size_t channel,
+      float sliceAmps,
+      float rawP,
+      float rawQ,
+      float* ioCorrP,
+      float* ioCorrQ)
+   {
+      ASSERT(ioCorrP != nullptr);
+      ASSERT(ioCorrQ != nullptr);
+
+      ChannelState& ch = _channels[channel];
+      if (!ch.isSolar || _lineVoltageV < 80.0f)
+      {
+         return;
+      }
+
+      SolarAutoCalState& st = _solarCal[channel];
+      float va = sliceAmps * _lineVoltageV;
+      float corrP = *ioCorrP;
+      float corrQ = *ioCorrQ;
+
+      // 1. Daytime export polarity check: unambiguous solar generation >= 200 W locks/heals sign.
+      if (va >= DAY_POLARITY_MIN_WATTS &&
+          std::fabs(corrP) >= DAY_POLARITY_MIN_WATTS &&
+          (std::fabs(corrP) / va) >= DAY_POLARITY_MIN_PF)
+      {
+         int8_t candidate = corrP >= 0.0f ? 1 : -1;
+         if (candidate == st.dayCandidatePolarity)
+         {
+            if (st.dayPolarityCount < DAY_POLARITY_STEADY_SLICES)
+            {
+               st.dayPolarityCount++;
+            }
+         }
+         else
+         {
+            st.dayCandidatePolarity = candidate;
+            st.dayPolarityCount = 1;
+         }
+
+         if (st.dayPolarityCount >= DAY_POLARITY_STEADY_SLICES && ch.polaritySign != candidate)
+         {
+            ch.polaritySign = candidate;
+            _calibrationUrgentDirty = true;
+         }
+      }
+      else
+      {
+         st.dayPolarityCount = 0;
+      }
+
+      // 2. Nighttime sleeping-microinverter check: pure passive EMI capacitance + bleed loss.
+      bool isInitialCal = (st.calMode == PhaseCalMode::NOMINAL);
+      float maxPfGate = isInitialCal ? NIGHT_INITIAL_MAX_PF : NIGHT_TRACKING_MAX_PF;
+      float susceptanceTol = isInitialCal ? NIGHT_INITIAL_SUSCEPTANCE_TOL : NIGHT_TRACKING_SUSCEPTANCE_TOL;
+      uint8_t requiredSlices = isInitialCal ? NIGHT_INITIAL_STEADY_SLICES : NIGHT_TRACKING_STEADY_SLICES;
+
+      if (va >= NIGHT_MIN_CAPACITIVE_VA &&
+          (std::fabs(corrP) / va) <= maxPfGate &&
+          (std::fabs(corrQ) / va) >= NIGHT_MIN_REACTIVE_RATIO &&
+          std::fabs(rawQ) > 1.0f)
+      {
+         float susceptance = sliceAmps / _lineVoltageV;
+         if (st.nightSteadyCount == 0)
+         {
+            st.nightMeanSusceptance = susceptance;
+            st.nightSteadyCount = 1;
+            return;
+         }
+
+         float relDiff = std::fabs(susceptance - st.nightMeanSusceptance) / st.nightMeanSusceptance;
+         if (relDiff > susceptanceTol)
+         {
+            st.nightMeanSusceptance = susceptance;
+            st.nightSteadyCount = 1;
+            return;
+         }
+
+         st.nightMeanSusceptance += 0.15f * (susceptance - st.nightMeanSusceptance);
+         if (st.nightSteadyCount < requiredSlices)
+         {
+            st.nightSteadyCount++;
+         }
+
+         if (st.nightSteadyCount < requiredSlices)
+         {
+            return;
+         }
+
+         float measuredPhi = std::atan(-rawP / rawQ) - NIGHT_TARE_LOSS_RAD;
+         if (measuredPhi >= MIN_AUTO_PHASE_RAD && measuredPhi <= MAX_AUTO_PHASE_RAD)
+         {
+            if (isInitialCal)
+            {
+               st.phaseRad = measuredPhi;
+               st.savedPhaseRad = measuredPhi;
+               st.calMode = PhaseCalMode::NIGHT_AUTO;
+               _recomputeBoardPhaseShift();
+               _calibrationUrgentDirty = true;
+            }
+            else
+            {
+               st.phaseRad += NIGHT_PHASE_EMA_ALPHA * (measuredPhi - st.phaseRad);
+               _recomputeBoardPhaseShift();
+               if (std::fabs(st.phaseRad - st.savedPhaseRad) >= PHASE_DRIFT_SAVE_RAD)
+               {
+                  _calibrationDriftDirty = true;
+               }
+            }
+
+            float cosPhi = std::cos(st.phaseRad);
+            float sinPhi = std::sin(st.phaseRad);
+            corrP = (rawP * cosPhi) + (rawQ * sinPhi);
+            corrQ = (rawQ * cosPhi) - (rawP * sinPhi);
+            *ioCorrP = corrP;
+            *ioCorrQ = corrQ;
+         }
+
+         int8_t nightPolarity = corrQ >= 0.0f ? 1 : -1;
+         if (ch.polaritySign != nightPolarity)
+         {
+            ch.polaritySign = nightPolarity;
+            _calibrationUrgentDirty = true;
+         }
+      }
+      else
+      {
+         st.nightSteadyCount = 0;
+      }
    }
 
    ///
@@ -450,18 +774,25 @@ private:
       double di = iVolts - NOMINAL_MIDRAIL_V;
       _updateVoltageWindow(dv, dtMicros);
 
+      double dvQuarter = 0.0;
+      bool hasQuarterV = _recordAndInterpolateQuarterCycleVoltage(nowMicros, dv, &dvQuarter);
+
       if (_settleSamplesRemaining > 0)
       {
          _settleSamplesRemaining--;
          return;
       }
 
-      if (!_chHasPrev || dtMicros <= 0.0 || dtMicros > MAX_VALID_DT_MICROS)
+      if (!hasQuarterV || !_chHasPrev || dtMicros <= 0.0 || dtMicros > MAX_VALID_DT_MICROS)
       {
          _resetChannelAccumulators();
-         _chPrevDV = dv;
-         _chPrevDI = di;
-         _chHasPrev = true;
+         if (hasQuarterV)
+         {
+            _chPrevDV = dv;
+            _chPrevDVQ = dvQuarter;
+            _chPrevDI = di;
+            _chHasPrev = true;
+         }
          return;
       }
 
@@ -470,6 +801,7 @@ private:
          _chSumDI += 0.5 * (_chPrevDI + di) * dtMicros;
          _chElapsedMicros += dtMicros;
          _chPrevDV = dv;
+         _chPrevDVQ = dvQuarter;
          _chPrevDI = di;
 
          if (_chElapsedMicros >= PROBE_SPAN_MICROS)
@@ -481,17 +813,19 @@ private:
                _probingUnconnected = false;
                _resetChannelAccumulators();
                _chPrevDV = dv;
+               _chPrevDVQ = dvQuarter;
                _chPrevDI = di;
                _chHasPrev = true;
                return;
             }
 
             _resetChannelAccumulators();
-            _recordSlice(_activeChannel, dcVolts, 0.0f, false, false, true, 0.0f);
+            _recordSlice(_activeChannel, dcVolts, 0.0f, false, false, _voltageConnected, 0.0f, 0.0f);
             _advanceChannel();
             if (_settleSamplesRemaining == 0)
             {
                _chPrevDV = dv;
+               _chPrevDVQ = dvQuarter;
                _chPrevDI = di;
                _chHasPrev = true;
             }
@@ -502,11 +836,16 @@ private:
       if ((_chElapsedMicros + dtMicros) < RMS_SLICE_SPAN_MICROS)
       {
          _chSumDV += 0.5 * (_chPrevDV + dv) * dtMicros;
+         _chSumDV2 += 0.5 * ((_chPrevDV * _chPrevDV) + (dv * dv)) * dtMicros;
+         _chSumDVQ += 0.5 * (_chPrevDVQ + dvQuarter) * dtMicros;
+         _chSumDVQ2 += 0.5 * ((_chPrevDVQ * _chPrevDVQ) + (dvQuarter * dvQuarter)) * dtMicros;
          _chSumDI += 0.5 * (_chPrevDI + di) * dtMicros;
          _chSumDI2 += 0.5 * ((_chPrevDI * _chPrevDI) + (di * di)) * dtMicros;
          _chSumDVI += 0.5 * ((_chPrevDV * _chPrevDI) + (dv * di)) * dtMicros;
+         _chSumDVQI += 0.5 * ((_chPrevDVQ * _chPrevDI) + (dvQuarter * di)) * dtMicros;
          _chElapsedMicros += dtMicros;
          _chPrevDV = dv;
+         _chPrevDVQ = dvQuarter;
          _chPrevDI = di;
          return;
       }
@@ -514,47 +853,71 @@ private:
       double dt1 = RMS_SLICE_SPAN_MICROS - _chElapsedMicros;
       double alpha = dt1 / dtMicros;
       double dvMid = _chPrevDV + alpha * (dv - _chPrevDV);
+      double dvQMid = _chPrevDVQ + alpha * (dvQuarter - _chPrevDVQ);
       double diMid = _chPrevDI + alpha * (di - _chPrevDI);
 
       _chSumDV += 0.5 * (_chPrevDV + dvMid) * dt1;
+      _chSumDV2 += 0.5 * ((_chPrevDV * _chPrevDV) + (dvMid * dvMid)) * dt1;
+      _chSumDVQ += 0.5 * (_chPrevDVQ + dvQMid) * dt1;
+      _chSumDVQ2 += 0.5 * ((_chPrevDVQ * _chPrevDVQ) + (dvQMid * dvQMid)) * dt1;
       _chSumDI += 0.5 * (_chPrevDI + diMid) * dt1;
       _chSumDI2 += 0.5 * ((_chPrevDI * _chPrevDI) + (diMid * diMid)) * dt1;
       _chSumDVI += 0.5 * ((_chPrevDV * _chPrevDI) + (dvMid * diMid)) * dt1;
+      _chSumDVQI += 0.5 * ((_chPrevDVQ * _chPrevDI) + (dvQMid * diMid)) * dt1;
 
       double meanDV = _chSumDV / RMS_SLICE_SPAN_MICROS;
+      double meanDVQ = _chSumDVQ / RMS_SLICE_SPAN_MICROS;
       double meanDI = _chSumDI / RMS_SLICE_SPAN_MICROS;
+      double varV = (_chSumDV2 / RMS_SLICE_SPAN_MICROS) - (meanDV * meanDV);
+      double varVQ = (_chSumDVQ2 / RMS_SLICE_SPAN_MICROS) - (meanDVQ * meanDVQ);
       double varI = (_chSumDI2 / RMS_SLICE_SPAN_MICROS) - (meanDI * meanDI);
       if (varI < 0.0)
       {
          varI = 0.0;
       }
       double covVI = (_chSumDVI / RMS_SLICE_SPAN_MICROS) - (meanDV * meanDI);
+      double covVQI = (_chSumDVQI / RMS_SLICE_SPAN_MICROS) - (meanDVQ * meanDI);
+      if (varV > 1e-8 && varVQ > 1e-8)
+      {
+         covVQI *= std::sqrt(varV / varVQ);
+      }
 
       _resetChannelAccumulators();
 
       float iDcVolts = static_cast<float>(NOMINAL_MIDRAIL_V + meanDI);
       float iRmsVolts = static_cast<float>(std::sqrt(varI));
       bool connected = _isCtBiasConnected(iDcVolts);
-      float ampsPerVolt = _channels[_activeChannel].ampsPerVolt;
+      ChannelState& activeCh = _channels[_activeChannel];
+      float ampsPerVolt = activeCh.ampsPerVolt;
+      float sliceAmps = connected ? (iRmsVolts * ampsPerVolt) : 0.0f;
 
+      bool hasRealPower = _voltageConnected;
       float signedWatts = 0.0f;
-      if (connected)
+      float signedVars = 0.0f;
+      if (connected && hasRealPower && sliceAmps >= _noiseFloorAmps)
       {
-         if (_voltageConnected)
+         float rawP = static_cast<float>(covVI) * _voltageScale * ampsPerVolt;
+         float rawQ = static_cast<float>(covVQI) * _voltageScale * ampsPerVolt;
+         float phi = (activeCh.isSolar && _solarCal[_activeChannel].calMode != PhaseCalMode::NOMINAL)
+            ? _solarCal[_activeChannel].phaseRad
+            : static_cast<float>(_boardPhaseShiftRad);
+         float cosPhi = std::cos(phi);
+         float sinPhi = std::sin(phi);
+         signedWatts = (rawP * cosPhi) + (rawQ * sinPhi);
+         signedVars = (rawQ * cosPhi) - (rawP * sinPhi);
+
+         if (activeCh.isSolar)
          {
-            signedWatts = static_cast<float>(covVI) * _voltageScale * ampsPerVolt;
-         }
-         else
-         {
-            signedWatts = (iRmsVolts * ampsPerVolt) * _nominalLineVoltageV;
+            _updateSolarAutoCalibration(_activeChannel, sliceAmps, rawP, rawQ, &signedWatts, &signedVars);
          }
       }
 
-      _recordSlice(_activeChannel, iDcVolts, iRmsVolts, connected, false, true, signedWatts);
+      _recordSlice(_activeChannel, iDcVolts, iRmsVolts, connected, false, hasRealPower, signedWatts, signedVars);
       _advanceChannel();
       if (_settleSamplesRemaining == 0)
       {
          _chPrevDV = dv;
+         _chPrevDVQ = dvQuarter;
          _chPrevDI = di;
          _chHasPrev = true;
       }
@@ -625,7 +988,8 @@ public:
 
       for (size_t i = 0; i < _numChannels; i++)
       {
-         _channels[i].name = channelConfigs[i].name != nullptr ? channelConfigs[i].name : "";
+         const char* chName = channelConfigs[i].name != nullptr ? channelConfigs[i].name : "";
+         setChannelName(i, chName);
          _channels[i].ampsPerVolt = channelConfigs[i].ampsPerVolt;
       }
    }
@@ -884,8 +1248,10 @@ public:
             for (size_t j = 0; j < ch.traceCount; j++)
             {
                ch.traceWatts[j] *= ratio;
+               ch.traceVars[j] *= ratio;
             }
             ch.rawSignedWatts *= ratio;
+            ch.rawReactiveVars *= ratio;
             ch.latchedWatts *= ratio;
          }
       }
@@ -902,5 +1268,269 @@ public:
    float voltageScale() const
    {
       return _voltageScale;
+   }
+
+   ///
+   /// <summary>
+   /// Returns true because MuxAdcPowerSensor performs quadrature phase compensation.
+   /// </summary>
+   /// <returns>Always true.</returns>
+   ///
+   bool hasPhaseCompensation() const override
+   {
+      return true;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the active board-level AC voltage phase compensation angle in degrees.
+   /// </summary>
+   /// <returns>Board-level phase compensation angle in degrees.</returns>
+   ///
+   float phaseShiftDeg() const override
+   {
+      return static_cast<float>(_boardPhaseShiftRad) * RAD_TO_DEG_F;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the active board-level phase calibration mode label ("nominal" or "auto").
+   /// </summary>
+   /// <returns>Board phase calibration mode string.</returns>
+   ///
+   const char* phaseCalibrationMode() const override
+   {
+      return _phaseCalModeText(_boardPhaseCalMode);
+   }
+
+   ///
+   /// <summary>
+   /// Gets the active phase compensation angle in degrees for a specific channel.
+   /// </summary>
+   /// <param name="channel">Channel index.</param>
+   /// <returns>Channel phase compensation angle in degrees.</returns>
+   ///
+   float channelPhaseShiftDeg(size_t channel) const override
+   {
+      ASSERT(channel < MAX_CHANNELS);
+
+      if (_channels[channel].isSolar && _solarCal[channel].calMode != PhaseCalMode::NOMINAL)
+      {
+         return _solarCal[channel].phaseRad * RAD_TO_DEG_F;
+      }
+      return phaseShiftDeg();
+   }
+
+   ///
+   /// <summary>
+   /// Gets the phase calibration mode label ("nominal" or "auto") for a specific channel.
+   /// </summary>
+   /// <param name="channel">Channel index.</param>
+   /// <returns>Channel phase calibration mode string.</returns>
+   ///
+   const char* channelPhaseCalibrationMode(size_t channel) const override
+   {
+      ASSERT(channel < MAX_CHANNELS);
+
+      if (_channels[channel].isSolar)
+      {
+         return _phaseCalModeText(_solarCal[channel].calMode);
+      }
+      return phaseCalibrationMode();
+   }
+
+   ///
+   /// <summary>
+   /// Gets the board-level phase calibration mode enum.
+   /// </summary>
+   /// <returns>Board PhaseCalMode value.</returns>
+   ///
+   PhaseCalMode boardPhaseCalMode() const
+   {
+      return _boardPhaseCalMode;
+   }
+
+   ///
+   /// <summary>
+   /// Gets a channel's solar auto-calibration mode enum.
+   /// </summary>
+   /// <param name="channel">Channel index.</param>
+   /// <returns>Channel PhaseCalMode value.</returns>
+   ///
+   PhaseCalMode solarChannelCalMode(size_t channel) const
+   {
+      ASSERT(channel < MAX_CHANNELS);
+
+      return _solarCal[channel].calMode;
+   }
+
+   ///
+   /// <summary>
+   /// Restores persisted board-level phase calibration from non-volatile storage.
+   /// </summary>
+   /// <param name="phaseDeg">Saved board phase angle in degrees.</param>
+   /// <param name="mode">Saved board PhaseCalMode.</param>
+   ///
+   void restoreBoardPhaseCalibration(float phaseDeg, PhaseCalMode mode)
+   {
+      float phaseRad = phaseDeg * DEG_TO_RAD_F;
+      if (mode != PhaseCalMode::NOMINAL && phaseRad >= MIN_AUTO_PHASE_RAD && phaseRad <= MAX_AUTO_PHASE_RAD)
+      {
+         _boardPhaseShiftRad = phaseRad;
+         _boardPhaseCalMode = PhaseCalMode::NIGHT_AUTO;
+      }
+      else
+      {
+         _boardPhaseShiftRad = DEFAULT_PHASE_SHIFT_RAD;
+         _boardPhaseCalMode = PhaseCalMode::NOMINAL;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Restores persisted per-channel solar phase and polarity calibration from non-volatile storage.
+   /// </summary>
+   /// <param name="channel">Channel index.</param>
+   /// <param name="phaseDeg">Saved channel phase angle in degrees.</param>
+   /// <param name="mode">Saved channel PhaseCalMode.</param>
+   /// <param name="polaritySign">Saved solar polarity multiplier (-1, 0, or +1).</param>
+   ///
+   void restoreChannelAutoCalibration(size_t channel, float phaseDeg, PhaseCalMode mode, int8_t polaritySign)
+   {
+      ASSERT(channel < MAX_CHANNELS);
+
+      setChannelPolarity(channel, polaritySign);
+
+      SolarAutoCalState& st = _solarCal[channel];
+      float phaseRad = phaseDeg * DEG_TO_RAD_F;
+      if (_channels[channel].isSolar &&
+          mode != PhaseCalMode::NOMINAL &&
+          phaseRad >= MIN_AUTO_PHASE_RAD &&
+          phaseRad <= MAX_AUTO_PHASE_RAD)
+      {
+         st.phaseRad = phaseRad;
+         st.savedPhaseRad = phaseRad;
+         st.calMode = PhaseCalMode::NIGHT_AUTO;
+      }
+      else
+      {
+         st.phaseRad = DEFAULT_PHASE_SHIFT_RAD;
+         st.savedPhaseRad = DEFAULT_PHASE_SHIFT_RAD;
+         st.calMode = PhaseCalMode::NOMINAL;
+      }
+
+      _recomputeBoardPhaseShift();
+   }
+
+   ///
+   /// <summary>
+   /// Resets learned phase and polarity calibration for a single channel (e.g. when renamed).
+   /// </summary>
+   /// <param name="channel">Channel index.</param>
+   ///
+   void resetChannelAutoCalibration(size_t channel)
+   {
+      ASSERT(channel < MAX_CHANNELS);
+
+      ChannelState& ch = _channels[channel];
+      if (ch.splitRole == SplitPhaseRole::RED || ch.splitRole == SplitPhaseRole::BLACK)
+      {
+         for (size_t i = 0; i < _numChannels; i++)
+         {
+            if (_channels[i].splitRole == SplitPhaseRole::WHITE && _sameSplitPhasePrefix(&ch, &_channels[i]))
+            {
+               _channels[i].polaritySign = 0;
+               _channels[i].polarityCandidateCount = 0;
+               _channels[i].polarityCandidateSign = 0;
+            }
+         }
+      }
+
+      ch.polaritySign = 0;
+      ch.hotLegSign = 0;
+      ch.polarityCandidateCount = 0;
+      ch.polarityCandidateSign = 0;
+      _solarCal[channel] = SolarAutoCalState();
+
+      bool anyAuto = false;
+      for (size_t i = 0; i < _numChannels; i++)
+      {
+         if (_channels[i].isSolar && _solarCal[i].calMode == PhaseCalMode::NIGHT_AUTO)
+         {
+            anyAuto = true;
+            break;
+         }
+      }
+
+      if (anyAuto)
+      {
+         _recomputeBoardPhaseShift();
+      }
+      else
+      {
+         _boardPhaseShiftRad = DEFAULT_PHASE_SHIFT_RAD;
+         _boardPhaseCalMode = PhaseCalMode::NOMINAL;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Resets all learned phase and polarity calibration back to nominal defaults for re-learning.
+   /// </summary>
+   ///
+   void resetAllAutoCalibration()
+   {
+      for (size_t i = 0; i < MAX_CHANNELS; i++)
+      {
+         _channels[i].polaritySign = 0;
+         _channels[i].hotLegSign = 0;
+         _channels[i].polarityCandidateCount = 0;
+         _channels[i].polarityCandidateSign = 0;
+         _solarCal[i] = SolarAutoCalState();
+      }
+
+      _boardPhaseShiftRad = DEFAULT_PHASE_SHIFT_RAD;
+      _boardPhaseCalMode = PhaseCalMode::NOMINAL;
+      _calibrationUrgentDirty = false;
+      _calibrationDriftDirty = false;
+      _polarityDirty = false;
+   }
+
+   ///
+   /// <summary>
+   /// Returns true when a newly locked calibration mode or polarity change should be saved immediately.
+   /// </summary>
+   /// <returns>True if an urgent calibration save is pending.</returns>
+   ///
+   bool hasUrgentCalibrationUpdate() const
+   {
+      return _calibrationUrgentDirty || _polarityDirty;
+   }
+
+   ///
+   /// <summary>
+   /// Returns true when gradual phase tracking has drifted far enough from the last saved value to persist.
+   /// </summary>
+   /// <returns>True if a throttled drift save is pending.</returns>
+   ///
+   bool hasCalibrationDriftUpdate() const
+   {
+      return _calibrationDriftDirty;
+   }
+
+   ///
+   /// <summary>
+   /// Marks the current calibration values as persisted to non-volatile storage.
+   /// </summary>
+   ///
+   void markCalibrationSaved()
+   {
+      _calibrationUrgentDirty = false;
+      _calibrationDriftDirty = false;
+      _polarityDirty = false;
+      for (size_t i = 0; i < _numChannels; i++)
+      {
+         _solarCal[i].savedPhaseRad = _solarCal[i].phaseRad;
+      }
    }
 };

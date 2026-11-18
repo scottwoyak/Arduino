@@ -132,7 +132,7 @@ public:
 
       for (size_t i = 0; i < _numChannels; i++)
       {
-         _channels[i].name = channelConfigs[i].name != nullptr ? channelConfigs[i].name : "";
+         setChannelName(i, channelConfigs[i].name != nullptr ? channelConfigs[i].name : "");
          _channels[i].ampsPerVolt = channelConfigs[i].ampsPerVolt;
       }
    }
