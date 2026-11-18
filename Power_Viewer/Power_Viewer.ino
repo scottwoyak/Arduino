@@ -1,5 +1,5 @@
 //
-// Solar Viewer
+// Power Viewer
 //
 // Subscribes to live solar production and home power consumption telemetry published by
 // the Power Hub (Power/Total, Power/TotalDaily, Solar/Total, and Solar/TotalDaily) over a
@@ -47,8 +47,9 @@
 #include "ViewerSketch.h"
 
 const auto VERSION = MakeVersion("1.03");
-constexpr auto SKETCH_NAME = "Solar_Viewer";
-constexpr auto PREFERENCES_NAMESPACE = "SolarViewer";
+constexpr auto SKETCH_NAME = "Power_Viewer";
+constexpr auto PREFERENCES_NAMESPACE = SKETCH_NAME;
+constexpr auto LEGACY_PREFERENCES_NAMESPACE = "SolarViewer";
 
 // ----------- Telemetry Configuration
 constexpr auto POWER_TOTAL_TOPIC = "Power/Total";
@@ -561,17 +562,39 @@ void loadTodayChartHistory()
    uint16_t numCols = min(todayChart->getNumBars(), MAX_TODAY_CHART_COLS);
    size_t expectedBytes = static_cast<size_t>(numCols) * sizeof(TodayChartSample);
 
-   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true);
-   int32_t savedDayId = sketch.arduino.preferences.getInt(TODAY_CHART_DAY_PREF_KEY, -1);
-   size_t savedBytes = sketch.arduino.preferences.getBytesLength(TODAY_CHART_BINS_PREF_KEY);
-   if (todayId >= 0 && savedDayId == todayId && savedBytes == expectedBytes)
+   if (sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true))
    {
-      sketch.arduino.preferences.getBytes(TODAY_CHART_BINS_PREF_KEY, todayChartSamples.data(), expectedBytes);
+      int32_t savedDayId = sketch.arduino.preferences.getInt(TODAY_CHART_DAY_PREF_KEY, -1);
+      size_t savedBytes = sketch.arduino.preferences.getBytesLength(TODAY_CHART_BINS_PREF_KEY);
+      if (todayId >= 0 && savedDayId == todayId && savedBytes == expectedBytes)
+      {
+         sketch.arduino.preferences.getBytes(TODAY_CHART_BINS_PREF_KEY, todayChartSamples.data(), expectedBytes);
+         sketch.arduino.preferences.end();
+         todayChartDayId = todayId;
+         return;
+      }
       sketch.arduino.preferences.end();
-      todayChartDayId = todayId;
-      return;
    }
-   sketch.arduino.preferences.end();
+
+   Preferences legacyPrefs;
+   if (todayId >= 0 && legacyPrefs.begin(LEGACY_PREFERENCES_NAMESPACE, true))
+   {
+      int32_t legacyDayId = legacyPrefs.getInt(TODAY_CHART_DAY_PREF_KEY, -1);
+      size_t legacyBytes = legacyPrefs.getBytesLength(TODAY_CHART_BINS_PREF_KEY);
+      if (legacyDayId == todayId && legacyBytes == expectedBytes)
+      {
+         legacyPrefs.getBytes(TODAY_CHART_BINS_PREF_KEY, todayChartSamples.data(), expectedBytes);
+         legacyPrefs.end();
+
+         todayChartDayId = todayId;
+         sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+         sketch.arduino.preferences.putInt(TODAY_CHART_DAY_PREF_KEY, todayChartDayId);
+         sketch.arduino.preferences.putBytes(TODAY_CHART_BINS_PREF_KEY, todayChartSamples.data(), expectedBytes);
+         sketch.arduino.preferences.end();
+         return;
+      }
+      legacyPrefs.end();
+   }
 
    if (todayId >= 0)
    {

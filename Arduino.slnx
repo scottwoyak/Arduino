@@ -425,10 +425,6 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Consumption_Meter/Consumption_Meter.vcxproj">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
   <Project Path="Counter_Display/Counter_Display.vcxproj" Id="00000000-0000-0000-0000-000000000026">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
@@ -647,11 +643,11 @@
     <Deploy Solution="*|ARM64" />
     <Deploy Solution="Debug|Any CPU" />
   </Project>
-  <Project Path="PowerMulti_Publisher/PowerMulti_Publisher.vcxproj">
+  <Project Path="Power_Publisher/Power_Publisher.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
-  <Project Path="Power_Publisher/Power_Publisher.vcxproj">
+  <Project Path="Power_Viewer/Power_Viewer.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
@@ -704,10 +700,6 @@
     <Deploy />
   </Project>
   <Project Path="Seven_Segment_VK16K33/Seven_Segment_VK16K33.vcxproj" Id="00000000-0000-0000-0000-000000000087">
-    <Platform Solution="*|Any CPU" Project="ARM" />
-    <Deploy />
-  </Project>
-  <Project Path="Solar_Viewer/Solar_Viewer.vcxproj">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
