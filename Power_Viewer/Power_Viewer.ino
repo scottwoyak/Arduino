@@ -2,12 +2,12 @@
 // Power Viewer
 //
 // Subscribes to live solar production and home power consumption telemetry published by
-// the Power Hub (Power/Total, Power/TotalDaily, Solar/Total, and Solar/TotalDaily) over a
+// the Power Hub (Power/Total, Power/TotalDaily, Power/Solar, and Power/SolarDaily) over a
 // WebSocket connection and renders a live view of solar production, home usage, and net
 // flow.
 //
-// The screen is divided vertically into two sections under the "Solar Monitor" title:
-// - "Now": A 1-hour center-zero rolling bar chart of recent power (production, usage, and
+// The screen is divided vertically into two sections under the "Power" title:
+// - "Live": A 10-minute center-zero rolling bar chart of recent power (production, usage, and
 //   signed net delta in kW), followed by a single-row table of live Solar, Usage, and Net
 //   kW readings.
 // - "Today": A 24-hour center-zero chart anchored at local midnight on the left showing
@@ -54,11 +54,11 @@ constexpr auto LEGACY_PREFERENCES_NAMESPACE = "SolarViewer";
 // ----------- Telemetry Configuration
 constexpr auto POWER_TOTAL_TOPIC = "Power/Total";
 constexpr auto POWER_DAILY_TOPIC = "Power/TotalDaily";
-constexpr auto SOLAR_TOTAL_TOPIC = "Solar/Total";
-constexpr auto SOLAR_DAILY_TOPIC = "Solar/TotalDaily";
+constexpr auto POWER_SOLAR_TOPIC = "Power/Solar";
+constexpr auto POWER_SOLAR_DAILY_TOPIC = "Power/SolarDaily";
 
 constexpr uint16_t DISPLAY_UPDATE_MS = 200;
-constexpr uint16_t CHART_SAMPLE_MS = 1000;
+constexpr uint16_t CHART_SAMPLE_MS = 200;
 constexpr auto TODAY_CHART_DAY_PREF_KEY = "todayDay";
 constexpr auto TODAY_CHART_BINS_PREF_KEY = "todayBins";
 constexpr uint16_t EMPTY_TENTHS_KWH = 0xFFFF;
@@ -70,7 +70,7 @@ constexpr float MAX_ENERGY_KWH = 200.0f;
 constexpr float WATTS_PER_KW = 1000.0f;
 
 // ----------- Display Configuration
-constexpr auto NOW_SECTION_TEXT = "Now";
+constexpr auto LIVE_SECTION_TEXT = "Live";
 constexpr auto TODAY_SECTION_TEXT = "Today";
 constexpr uint8_t HEADING_TEXT_SIZE = DEFAULT_HEADING_SIZE;
 constexpr uint8_t TABLE_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
@@ -82,14 +82,14 @@ constexpr int16_t HEADING_GAP_PX = 4;
 constexpr int16_t CHART_LABEL_GAP_PX = 4;
 constexpr uint8_t TODAY_LABEL_CHARS = 4;
 constexpr float ROTATED_HEADING_ANGLE_DEG = 270.0f;
-constexpr uint16_t ROLLING_CHART_SPAN_M = 60;
+constexpr uint16_t ROLLING_CHART_SPAN_M = 10;
 constexpr uint32_t SECONDS_PER_DAY = 24UL * 60UL * 60UL;
 
 constexpr Color PRODUCTION_COLOR = Color565::fromRGB(0, 72, 0);
-constexpr Color CONSUMPTION_COLOR = Color565::fromRGB(72, 0, 0);
+constexpr Color CONSUMPTION_COLOR = Color565::fromRGB(0, 48, 128);
 constexpr Color TODAY_GRID_COLOR = Color565::fromRGB(48, 48, 48);
 constexpr Color DELTA_POSITIVE_COLOR = Color::LIME;
-constexpr Color DELTA_NEGATIVE_COLOR = Color::RED;
+constexpr Color DELTA_NEGATIVE_COLOR = Color::DODGERBLUE;
 
 // ----------- Sketch & State
 SketchConfig SKETCH_CONFIG = {
@@ -179,8 +179,8 @@ public:
       _configured = true;
       client->onSample(onTelemetrySample);
       client->setTopics({
-         SOLAR_TOTAL_TOPIC,
-         SOLAR_DAILY_TOPIC,
+         POWER_SOLAR_TOPIC,
+         POWER_SOLAR_DAILY_TOPIC,
          POWER_TOTAL_TOPIC,
          POWER_DAILY_TOPIC,
       });
@@ -243,11 +243,11 @@ uint16_t rollingColumnSamples = 0;
 /// Returns the display color for signed net delta values.
 /// </summary>
 /// <param name="value">The signed net delta value.</param>
-/// <returns>LIME when non-negative, TOMATO when negative.</returns>
+/// <returns>DELTA_POSITIVE_COLOR when non-negative, DELTA_NEGATIVE_COLOR when negative.</returns>
 ///
 Color deltaValueColor(float value)
 {
-   return value >= 0.0f ? DELTA_POSITIVE_COLOR : Color::TOMATO;
+   return value >= 0.0f ? DELTA_POSITIVE_COLOR : DELTA_NEGATIVE_COLOR;
 }
 
 ///
@@ -275,17 +275,17 @@ void drawMetricField(Field* field, float value, Color activeColor)
 
 ///
 /// <summary>
-/// Renders all six Now and Today Solar/Usage/Net value fields.
+/// Renders all six Live and Today Solar/Usage/Net value fields.
 /// </summary>
 ///
 void drawFields()
 {
    drawMetricField(&nowSolarField, latestReadings.productionKw, DELTA_POSITIVE_COLOR);
-   drawMetricField(&nowUsageField, latestReadings.consumptionKw, Color::TOMATO);
+   drawMetricField(&nowUsageField, latestReadings.consumptionKw, DELTA_NEGATIVE_COLOR);
    drawMetricField(&nowNetField, std::isnan(netPowerKw) ? NAN : fabsf(netPowerKw), deltaValueColor(netPowerKw));
 
    drawMetricField(&todaySolarField, latestReadings.productionTodayKwh, DELTA_POSITIVE_COLOR);
-   drawMetricField(&todayUsageField, latestReadings.consumptionTodayKwh, Color::TOMATO);
+   drawMetricField(&todayUsageField, latestReadings.consumptionTodayKwh, DELTA_NEGATIVE_COLOR);
    drawMetricField(&todayNetField, std::isnan(netEnergyKwh) ? NAN : fabsf(netEnergyKwh), deltaValueColor(netEnergyKwh));
 }
 
@@ -356,8 +356,8 @@ void drawRotatedSectionHeading(const char* text, const Rect16& chartRect)
 
 ///
 /// <summary>
-/// Computes the responsive display layout for the "Now" section (rotated left heading,
-/// 1-hour rolling chart, and 1-row Solar/Usage/Net table) and the "Today" section
+/// Computes the responsive display layout for the "Live" section (rotated left heading,
+/// 10-minute rolling chart, and 1-row Solar/Usage/Net table) and the "Today" section
 /// (rotated left heading, 24-hour midnight-anchored chart, and 1-row Solar/Usage/Net table).
 /// </summary>
 ///
@@ -409,7 +409,7 @@ void initLayout()
    RangeF energyRange(-MAX_ENERGY_KWH, MAX_ENERGY_KWH);
 
    uint32_t columnPeriodMs = (ROLLING_CHART_SPAN_M * 60UL * 1000UL) / static_cast<uint32_t>(chartWidth);
-   rollingColumnTimer.setDurationMs(max(1000UL, columnPeriodMs));
+   rollingColumnTimer.setDurationMs(max(static_cast<uint32_t>(CHART_SAMPLE_MS), columnPeriodMs));
    rollingChart = new MovingBarChart(
       rollingChartRect,
       powerRange,
@@ -705,8 +705,8 @@ void updateTodayChart()
 
 ///
 /// <summary>
-/// Samples the current live solar production and home consumption once per second and
-/// advances the 1-hour rolling power chart whenever a column interval completes.
+/// Samples the current live solar production and home consumption and advances the
+/// 10-minute rolling power chart whenever a column interval completes.
 /// </summary>
 ///
 void sampleRollingChart()
@@ -750,10 +750,10 @@ void drawStatic()
    // Top screen title
    sketch.arduino.setTextSize(HEADING_TEXT_SIZE);
    sketch.arduino.setCursor(0, 0);
-   sketch.arduino.println("Solar Monitor", Color::HEADING);
+   sketch.arduino.println("Power", Color::HEADING);
 
    // Rotated section headings on the left
-   drawRotatedSectionHeading(NOW_SECTION_TEXT, rollingChartRect);
+   drawRotatedSectionHeading(LIVE_SECTION_TEXT, rollingChartRect);
    drawRotatedSectionHeading(TODAY_SECTION_TEXT, todayChartRect);
 
    // Chart Y-axis labels
@@ -787,12 +787,12 @@ void drawStatic()
 
 ///
 /// <summary>
-/// Receives incoming telemetry samples for Solar/Total, Solar/TotalDaily, Power/Total,
+/// Receives incoming telemetry samples for Power/Solar, Power/SolarDaily, Power/Total,
 /// and Power/TotalDaily, converting live Watts topics to kW and keeping daily kWh topics
 /// in kWh.
 /// </summary>
 /// <param name="topic">Telemetry topic name.</param>
-/// <param name="value">Sample value (Watts for */Total, kWh for */TotalDaily).</param>
+/// <param name="value">Sample value (Watts for Power/Solar and Power/Total, kWh for *Daily).</param>
 /// <param name="dtMicros">Elapsed microseconds since the publisher's previous sample on this topic.</param>
 ///
 void onTelemetrySample(const std::string& topic, double value, int64_t dtMicros)
@@ -804,11 +804,11 @@ void onTelemetrySample(const std::string& topic, double value, int64_t dtMicros)
       return;
    }
 
-   if (topic == SOLAR_TOTAL_TOPIC)
+   if (topic == POWER_SOLAR_TOPIC)
    {
       latestReadings.productionKw = max(0.0f, static_cast<float>(value) / WATTS_PER_KW);
    }
-   else if (topic == SOLAR_DAILY_TOPIC)
+   else if (topic == POWER_SOLAR_DAILY_TOPIC)
    {
       latestReadings.productionTodayKwh = max(0.0f, static_cast<float>(value));
    }
@@ -890,7 +890,7 @@ void setup()
    initLayout();
    loadTodayChartHistory();
 
-   TelemetrySubscriber* client = sketch.beginTelemetry(SOLAR_TOTAL_TOPIC, &telemetryHandler);
+   TelemetrySubscriber* client = sketch.beginTelemetry(POWER_SOLAR_TOPIC, &telemetryHandler);
    telemetryHandler.configure(client);
 
    sketch.completeInitialization();
