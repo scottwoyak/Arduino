@@ -14,6 +14,18 @@ struct RangeU16
    uint16_t max;
 };
 
+struct Point16
+{
+   int16_t x;
+   int16_t y;
+
+   Point16() = default;
+
+   Point16(int16_t x, int16_t y) : x(x), y(y)
+   {
+   }
+};
+
 struct Rect16
 {
    uint16_t x;
@@ -64,17 +76,33 @@ struct Rect16
    {
       return y + height;
    }
-};
 
-struct Point16
-{
-   int16_t x;
-   int16_t y;
-
-   Point16() = default;
-
-   Point16(int16_t x, int16_t y) : x(x), y(y)
+   ///
+   /// <summary>
+   /// Returns whether the coordinate (px, py) lies inside this rectangle [left, right) x [top, bottom).
+   /// </summary>
+   /// <param name="px">Point X coordinate in pixels.</param>
+   /// <param name="py">Point Y coordinate in pixels.</param>
+   /// <returns>True if (px, py) falls within this rectangle; otherwise false.</returns>
+   ///
+   bool contains(int32_t px, int32_t py) const
    {
+      return px >= static_cast<int32_t>(left()) &&
+             px < static_cast<int32_t>(right()) &&
+             py >= static_cast<int32_t>(top()) &&
+             py < static_cast<int32_t>(bottom());
+   }
+
+   ///
+   /// <summary>
+   /// Returns whether the given point lies inside this rectangle [left, right) x [top, bottom).
+   /// </summary>
+   /// <param name="pt">Point to test.</param>
+   /// <returns>True if pt falls within this rectangle; otherwise false.</returns>
+   ///
+   bool contains(Point16 pt) const
+   {
+      return contains(pt.x, pt.y);
    }
 };
 

@@ -46,6 +46,7 @@
 #include "DisplayBuffer.h"
 #include "DisplayValue.h"
 #include "Field.h"
+#include "FieldRow.h"
 #include "LibraryVersion.h"
 #include "MovingBarChart.h"
 #include "SerialX.h"
@@ -75,7 +76,6 @@ constexpr auto POWER_BARN_DAILY_TOPIC = "Power/BarnDaily";
 
 constexpr uint16_t DISPLAY_UPDATE_MS = 200;
 constexpr uint16_t CHART_SAMPLE_MS = 200;
-constexpr uint16_t TOUCH_DEBOUNCE_MS = 200;
 constexpr auto TODAY_CHART_DAY_PREF_KEY = "todayDay";
 constexpr auto TODAY_CHART_BINS_PREF_KEY = "todayBins";
 constexpr auto TODAY_BREAKDOWN_BINS_PREF_KEY = "todaySubBins";
@@ -211,11 +211,6 @@ bool readingsDirty = false;
 LiveViewMode liveViewMode = LiveViewMode::SUMMARY;
 TodayViewMode todayViewMode = TodayViewMode::SUMMARY;
 
-#ifdef ARDUINO_TOUCH_SUPPORTED
-bool wasTouching = false;
-Timer touchDebounceTimer(TOUCH_DEBOUNCE_MS);
-#endif
-
 void onTelemetrySample(const std::string& topic, double value, int64_t dtMicros);
 
 ///
@@ -289,6 +284,7 @@ SolarTelemetryHandler telemetryHandler(sketch.getStatus());
 Field nowSolarField(&sketch.arduino, "Solar", "##.# kW", TABLE_TEXT_SIZE);
 Field nowUsageField(&sketch.arduino, "Usage", "##.# kW", TABLE_TEXT_SIZE);
 Field nowNetField(&sketch.arduino, "Net", "##.# kW", TABLE_TEXT_SIZE);
+FieldRow nowSummaryRow(&nowSolarField, &nowUsageField, &nowNetField, Color::GRAY);
 
 std::array<DisplayValue, NUM_LIVE_BARS> liveBarValues = {
    DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
@@ -300,10 +296,12 @@ std::array<DisplayValue, NUM_LIVE_BARS> liveBarValues = {
 Field todaySolarField(&sketch.arduino, "Solar", "###.# kWh", TABLE_TEXT_SIZE);
 Field todayUsageField(&sketch.arduino, "Usage", "###.# kWh", TABLE_TEXT_SIZE);
 Field todayNetField(&sketch.arduino, "Net", "###.# kWh", TABLE_TEXT_SIZE);
+FieldRow todaySummaryRow(&todaySolarField, &todayUsageField, &todayNetField, Color::GRAY);
 
 Field todayHouseField(&sketch.arduino, "House", "###.# kWh", TABLE_TEXT_SIZE);
 Field todayGarageField(&sketch.arduino, "Garage", "###.# kWh", TABLE_TEXT_SIZE);
 Field todayBarnField(&sketch.arduino, "Barn", "###.# kWh", TABLE_TEXT_SIZE);
+FieldRow todayBreakdownRow(&todayHouseField, &todayGarageField, &todayBarnField, Color::GRAY);
 
 constexpr std::array<const char*, NUM_LIVE_BARS> LIVE_BAR_LABELS = { "Solar", "House", "Garage", "Barn" };
 constexpr std::array<Color, NUM_LIVE_BARS> LIVE_BAR_COLORS = { SOLAR_COLOR, HOUSE_COLOR, GARAGE_COLOR, BARN_COLOR };
@@ -373,52 +371,6 @@ Color deltaValueColor(float value)
 
 ///
 /// <summary>
-/// Draws a single metric Field, showing "---" in gray when the value is NAN (not yet known).
-/// </summary>
-/// <param name="field">Target display Field.</param>
-/// <param name="value">Current metric value, or NAN if not yet received.</param>
-/// <param name="activeColor">Value color used when the reading is valid.</param>
-///
-void drawMetricField(Field* field, float value, Color activeColor)
-{
-   ASSERT(field != nullptr);
-
-   if (std::isnan(value))
-   {
-      std::string placeholder = field->format().prefix() + "---" + field->format().postfix();
-      field->draw(placeholder, Color::GRAY, Color::GRAY);
-   }
-   else
-   {
-      field->draw(value, Color::GRAY, activeColor);
-   }
-}
-
-///
-/// <summary>
-/// Draws a single right-aligned DisplayValue, showing "---" in gray when the value is NAN.
-/// </summary>
-/// <param name="displayValue">Target DisplayValue widget.</param>
-/// <param name="value">Current metric value, or NAN if not yet received.</param>
-/// <param name="activeColor">Value color used when the reading is valid.</param>
-///
-void drawMetricValue(DisplayValue* displayValue, float value, Color activeColor)
-{
-   ASSERT(displayValue != nullptr);
-
-   if (std::isnan(value))
-   {
-      std::string placeholder = displayValue->format().prefix() + "---" + displayValue->format().postfix();
-      displayValue->draw(placeholder, Color::GRAY);
-   }
-   else
-   {
-      displayValue->draw(value, activeColor);
-   }
-}
-
-///
-/// <summary>
 /// Updates and renders the dynamic widgets for the active "Live" section mode.
 /// </summary>
 ///
@@ -426,9 +378,13 @@ void drawLiveDynamic()
 {
    if (liveViewMode == LiveViewMode::SUMMARY)
    {
-      drawMetricField(&nowSolarField, latestReadings.productionKw, DELTA_POSITIVE_COLOR);
-      drawMetricField(&nowUsageField, latestReadings.consumptionKw, DELTA_NEGATIVE_COLOR);
-      drawMetricField(&nowNetField, std::isnan(netPowerKw) ? NAN : fabsf(netPowerKw), deltaValueColor(netPowerKw));
+      nowSummaryRow.draw(
+         latestReadings.productionKw,
+         DELTA_POSITIVE_COLOR,
+         latestReadings.consumptionKw,
+         DELTA_NEGATIVE_COLOR,
+         std::isnan(netPowerKw) ? NAN : fabsf(netPowerKw),
+         deltaValueColor(netPowerKw));
    }
    else
    {
@@ -443,7 +399,7 @@ void drawLiveDynamic()
          float kw = barValues[i];
          liveBars[i]->set(std::isnan(kw) ? 0.0f : kw);
          liveBars[i]->draw(&sketch.arduino.display);
-         drawMetricValue(&liveBarValues[i], kw, LIVE_BAR_COLORS[i]);
+         liveBarValues[i].draw(kw, LIVE_BAR_COLORS[i]);
       }
    }
 }
@@ -457,15 +413,23 @@ void drawTodayFields()
 {
    if (todayViewMode == TodayViewMode::SUMMARY)
    {
-      drawMetricField(&todaySolarField, latestReadings.productionTodayKwh, DELTA_POSITIVE_COLOR);
-      drawMetricField(&todayUsageField, latestReadings.consumptionTodayKwh, DELTA_NEGATIVE_COLOR);
-      drawMetricField(&todayNetField, std::isnan(netEnergyKwh) ? NAN : fabsf(netEnergyKwh), deltaValueColor(netEnergyKwh));
+      todaySummaryRow.draw(
+         latestReadings.productionTodayKwh,
+         DELTA_POSITIVE_COLOR,
+         latestReadings.consumptionTodayKwh,
+         DELTA_NEGATIVE_COLOR,
+         std::isnan(netEnergyKwh) ? NAN : fabsf(netEnergyKwh),
+         deltaValueColor(netEnergyKwh));
    }
    else
    {
-      drawMetricField(&todayHouseField, latestReadings.houseTodayKwh, HOUSE_COLOR);
-      drawMetricField(&todayGarageField, latestReadings.garageTodayKwh, GARAGE_COLOR);
-      drawMetricField(&todayBarnField, latestReadings.barnTodayKwh, BARN_COLOR);
+      todayBreakdownRow.draw(
+         latestReadings.houseTodayKwh,
+         HOUSE_COLOR,
+         latestReadings.garageTodayKwh,
+         GARAGE_COLOR,
+         latestReadings.barnTodayKwh,
+         BARN_COLOR);
    }
 }
 
@@ -478,74 +442,6 @@ void drawFields()
 {
    drawLiveDynamic();
    drawTodayFields();
-}
-
-///
-/// <summary>
-/// Positions three inline "Label Value" fields across a single horizontal row starting at
-/// leftX: the first field left-aligned at leftX, the third field right-aligned against
-/// displayWidth, and the second field centered evenly in the space between them.
-/// </summary>
-/// <param name="leftField">Leftmost field.</param>
-/// <param name="centerField">Center field.</param>
-/// <param name="rightField">Rightmost field.</param>
-/// <param name="leftX">Left X coordinate of the row region.</param>
-/// <param name="y">Top Y coordinate of the row.</param>
-/// <param name="displayWidth">Total display width in pixels.</param>
-/// <param name="charWidth">Character width in pixels at TABLE_TEXT_SIZE.</param>
-///
-void positionOneRowFields(
-   Field* leftField,
-   Field* centerField,
-   Field* rightField,
-   int16_t leftX,
-   int16_t y,
-   int16_t displayWidth,
-   int16_t charWidth)
-{
-   ASSERT(leftField != nullptr);
-   ASSERT(centerField != nullptr);
-   ASSERT(rightField != nullptr);
-
-   int16_t leftFieldWidth = static_cast<int16_t>((strlen(leftField->label()) + 1) * charWidth) + leftField->valueWidth();
-   int16_t centerFieldWidth = static_cast<int16_t>((strlen(centerField->label()) + 1) * charWidth) + centerField->valueWidth();
-   int16_t rightFieldWidth = static_cast<int16_t>((strlen(rightField->label()) + 1) * charWidth) + rightField->valueWidth();
-
-   int16_t leftEnd = leftX + leftFieldWidth;
-   int16_t rightStart = displayWidth - rightFieldWidth;
-
-   leftField->setPosition(leftX, y);
-   centerField->setPosition(leftEnd + ((rightStart - leftEnd) - centerFieldWidth) / 2, y);
-   rightField->setPosition(rightStart, y);
-}
-
-///
-/// <summary>
-/// Draws a section heading rotated 90 degrees counter-clockwise (reading bottom-to-top)
-/// within the left heading column, vertically centered next to its chart.
-/// </summary>
-/// <param name="text">Heading text to draw.</param>
-/// <param name="chartRect">Bounding rectangle of the section's chart.</param>
-///
-void drawRotatedSectionHeading(const char* text, const Rect16& chartRect)
-{
-   int16_t charW = sketch.arduino.charW(sectionTextSize);
-   int16_t charH = sketch.arduino.charH(sectionTextSize);
-   int16_t spriteW = static_cast<int16_t>(strlen(text)) * charW;
-   int16_t spriteH = charH;
-
-   LGFX_Sprite sprite(&sketch.arduino.display);
-   sketch.arduino.createSprite(sprite, spriteW, spriteH, sectionTextSize);
-   sprite.fillScreen(static_cast<uint16_t>(Color::BLACK));
-   sprite.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(Color::BLACK));
-   sprite.setCursor(0, 0);
-   sprite.print(text);
-   sprite.setPivot(spriteW / 2.0f, spriteH / 2.0f);
-
-   float dstX = headingColWidth / 2.0f;
-   float dstY = chartRect.y + chartRect.height / 2.0f;
-   sprite.pushRotateZoom(dstX, dstY, ROTATED_HEADING_ANGLE_DEG, 1.0f, 1.0f);
-   sprite.deleteSprite();
 }
 
 ///
@@ -604,9 +500,9 @@ void initLayout()
    liveTouchRect = Rect16(0, rollingChartY, displayWidth, splitY - rollingChartY);
    todayTouchRect = Rect16(0, splitY, displayWidth, displayHeight - splitY);
 
-   positionOneRowFields(&nowSolarField, &nowUsageField, &nowNetField, chartX, nowRowY, displayWidth, charWidth);
-   positionOneRowFields(&todaySolarField, &todayUsageField, &todayNetField, chartX, todayRowY, displayWidth, charWidth);
-   positionOneRowFields(&todayHouseField, &todayGarageField, &todayBarnField, contentLeftX, todayRowY, displayWidth, charWidth);
+   nowSummaryRow.setBounds(chartX, nowRowY, chartWidth);
+   todaySummaryRow.setBounds(chartX, todayRowY, chartWidth);
+   todayBreakdownRow.setBounds(contentLeftX, todayRowY, displayWidth - contentLeftX);
 
    // Layout for the Live Breakdown 4-row horizontal bar view (Label + 0-20 kW Bar + kW value)
    int16_t barGap = isLargeDisplay ? BAR_ROW_GAP_LARGE_PX : BAR_ROW_GAP_SMALL_PX;
@@ -1272,9 +1168,7 @@ void renderLiveSection(bool clearArea)
       rollingChart->reset();
       rollingChart->draw(&sketch.arduino.display);
 
-      nowSolarField.invalidate();
-      nowUsageField.invalidate();
-      nowNetField.invalidate();
+      nowSummaryRow.invalidate();
    }
    else
    {
@@ -1317,18 +1211,14 @@ void renderTodaySection(bool clearArea)
       todayChart->draw(&sketch.arduino.display);
       drawTodayGridLines();
 
-      todaySolarField.invalidate();
-      todayUsageField.invalidate();
-      todayNetField.invalidate();
+      todaySummaryRow.invalidate();
    }
    else
    {
       drawChartLabels(todayChartRect, "200", "100", "0");
       drawTodayBreakdownPlot(DisplayBuffer::RedrawMode::FULL);
 
-      todayHouseField.invalidate();
-      todayGarageField.invalidate();
-      todayBarnField.invalidate();
+      todayBreakdownRow.invalidate();
    }
 
    drawTodayFields();
@@ -1353,8 +1243,19 @@ void drawStatic()
    sketch.arduino.println("Power", Color::HEADING);
 
    // Rotated section headings on the left
-   drawRotatedSectionHeading(LIVE_SECTION_TEXT, rollingChartRect);
-   drawRotatedSectionHeading(TODAY_SECTION_TEXT, todayChartRect);
+   float headingCenterX = headingColWidth / 2.0f;
+   sketch.arduino.drawRotatedText(
+      LIVE_SECTION_TEXT,
+      headingCenterX,
+      rollingChartRect.y + rollingChartRect.height / 2.0f,
+      ROTATED_HEADING_ANGLE_DEG,
+      sectionTextSize);
+   sketch.arduino.drawRotatedText(
+      TODAY_SECTION_TEXT,
+      headingCenterX,
+      todayChartRect.y + todayChartRect.height / 2.0f,
+      ROTATED_HEADING_ANGLE_DEG,
+      sectionTextSize);
 
    if (firstDraw)
    {
@@ -1375,47 +1276,22 @@ void drawStatic()
    updateTodayChart();
 }
 
-#ifdef ARDUINO_TOUCH_SUPPORTED
-///
-/// <summary>
-/// Returns whether the touch coordinate (x, y) lies inside rect.
-/// </summary>
-/// <param name="rect">Target rectangle.</param>
-/// <param name="x">Touch X coordinate in pixels.</param>
-/// <param name="y">Touch Y coordinate in pixels.</param>
-/// <returns>True if (x, y) falls within rect; otherwise false.</returns>
-///
-bool inRect(const Rect16& rect, int16_t x, int16_t y)
-{
-   return x >= rect.x && x < (rect.x + rect.width) &&
-          y >= rect.y && y < (rect.y + rect.height);
-}
-
 ///
 /// <summary>
 /// Polls the touch panel for debounced taps in the top ("Live") or bottom ("Today")
-/// sections, requiring a clean finger release before accepting another tap, then
-/// toggles the tapped section's view mode, persists the updated selection, and redraws
-/// only that section.
+/// sections, toggling the tapped section's view mode, persisting the updated selection,
+/// and redrawing only that section.
 /// </summary>
 ///
 void handleTouch()
 {
-   lgfx::touch_point_t tp;
-   bool touched = sketch.arduino.display.getTouch(&tp) > 0;
-   bool tapped = touched && !wasTouching && touchDebounceTimer.remaining() == 0;
-   if (touched)
-   {
-      touchDebounceTimer.reset();
-   }
-   wasTouching = touched;
-
-   if (!tapped)
+   Point16 tap;
+   if (!sketch.arduino.pollTap(&tap))
    {
       return;
    }
 
-   if (inRect(liveTouchRect, tp.x, tp.y))
+   if (liveTouchRect.contains(tap))
    {
       liveViewMode = (liveViewMode == LiveViewMode::SUMMARY)
          ? LiveViewMode::BREAKDOWN
@@ -1423,7 +1299,7 @@ void handleTouch()
       saveViewPreferences();
       renderLiveSection(true);
    }
-   else if (inRect(todayTouchRect, tp.x, tp.y))
+   else if (todayTouchRect.contains(tap))
    {
       todayViewMode = (todayViewMode == TodayViewMode::SUMMARY)
          ? TodayViewMode::BREAKDOWN
@@ -1432,7 +1308,6 @@ void handleTouch()
       renderTodaySection(true);
    }
 }
-#endif
 
 ///
 /// <summary>
@@ -1581,12 +1456,10 @@ void loop()
 {
    sketch.loop();
 
-#ifdef ARDUINO_TOUCH_SUPPORTED
    if (!telemetryHandler.needsFullRedraw)
    {
       handleTouch();
    }
-#endif
 
    TelemetrySubscriber* client = sketch.getClient();
    if (!client->isStarted())

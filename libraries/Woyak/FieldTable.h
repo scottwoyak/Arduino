@@ -903,13 +903,14 @@ public:
          }
          else if (row.valuePtr != nullptr)
          {
-            if (row.drawn && *row.valuePtr == row.lastFloatValue)
+            float current = *row.valuePtr;
+            if (row.drawn && (current == row.lastFloatValue || (std::isnan(current) && std::isnan(row.lastFloatValue))))
             {
                continue;
             }
 
-            _drawDataRow(i, *row.valuePtr, Color::VALUE, Color::BLACK);
-            row.lastFloatValue = *row.valuePtr;
+            _drawDataRow(i, current, Color::VALUE, Color::BLACK);
+            row.lastFloatValue = current;
          }
       }
    }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 #include "ArduinoWithDisplay.h"
 #include "Anchor.h"
 #include "Format.h"
@@ -228,6 +230,32 @@ private:
       _lastPushWidth = pushWidth;
    }
 
+   ///
+   /// <summary>
+   /// Formats and renders a floating-point value via the sprite, automatically rendering
+   /// NAN as a gray "---" placeholder (retaining any format prefix/postfix).
+   /// </summary>
+   /// <param name="value">Floating-point value to display, or NAN when unavailable.</param>
+   /// <param name="valueColor">Color used when the value is not NAN.</param>
+   /// <param name="backgroundColor">Background color drawn behind the value.</param>
+   ///
+   void _drawFloatingPoint(double value, Color valueColor, Color backgroundColor)
+   {
+      ASSERT(_display != nullptr);
+
+      if (std::isnan(value))
+      {
+         size_t affixLen = _format.prefix().length() + _format.postfix().length();
+         size_t availLen = _format.length() > affixLen ? (_format.length() - affixLen) : 0;
+         size_t dashCount = min<size_t>(3, availLen);
+         std::string placeholder = _format.prefix() + std::string(dashCount, '-') + _format.postfix();
+         _drawSprite(_format.toString(placeholder), Color::GRAY, backgroundColor);
+         return;
+      }
+
+      _drawSprite(_format.toString(value), valueColor, backgroundColor);
+   }
+
 public:
    ///
    /// <summary>
@@ -379,6 +407,34 @@ public:
    void invalidate()
    {
       _hasDrawn = false;
+   }
+
+   ///
+   /// <summary>
+   /// Sets a float value to display and draws it via the sprite, rendering "---" (with any
+   /// format prefix/postfix) in Color::GRAY when the value is NAN.
+   /// </summary>
+   /// <param name="value">Float value to display, or NAN when not yet available.</param>
+   /// <param name="valueColor">Color used to draw the value text when not NAN.</param>
+   /// <param name="backgroundColor">Background color drawn behind the value.</param>
+   ///
+   void draw(float value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      _drawFloatingPoint(value, valueColor, backgroundColor);
+   }
+
+   ///
+   /// <summary>
+   /// Sets a double value to display and draws it via the sprite, rendering "---" (with any
+   /// format prefix/postfix) in Color::GRAY when the value is NAN.
+   /// </summary>
+   /// <param name="value">Double value to display, or NAN when not yet available.</param>
+   /// <param name="valueColor">Color used to draw the value text when not NAN.</param>
+   /// <param name="backgroundColor">Background color drawn behind the value.</param>
+   ///
+   void draw(double value, Color valueColor = Color::VALUE, Color backgroundColor = Color::BLACK)
+   {
+      _drawFloatingPoint(value, valueColor, backgroundColor);
    }
 
    ///

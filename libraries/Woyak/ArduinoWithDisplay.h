@@ -133,8 +133,13 @@ public:
    }
 
 private:
+   static constexpr uint32_t TAP_DEBOUNCE_MS = 200;
+
    uint8_t _textSize = 1;
    DisplayRotation _rotation = DisplayRotation::LANDSCAPE;
+   bool _tapWasTouching = false;
+   bool _tapHasSeenTouch = false;
+   Timer _tapDebounceTimer{ TAP_DEBOUNCE_MS };
 
    // hardcoded character width/height (in pixels) for each RobotoMonoBold font size
    // index (1-7, index 0 is unused since there is no font size 0), measured once on
@@ -554,6 +559,115 @@ public:
          // TFT_eSPI & LGFX guess at the space width. Make it the monospace value
          font->spaceWidth = maxAdvance;
       }
+   }
+
+   ///
+   /// <summary>
+   /// Renders text into a temporary off-screen sprite at the given font size and pushes it
+   /// rotated around (centerX, centerY). Useful for vertical section headings or axis titles
+   /// (e.g. angleDeg = 270.0f for bottom-to-top text).
+   /// </summary>
+   /// <param name="text">Null-terminated string to render.</param>
+   /// <param name="centerX">Destination X coordinate of the rotated text's center.</param>
+   /// <param name="centerY">Destination Y coordinate of the rotated text's center.</param>
+   /// <param name="angleDeg">Clockwise rotation angle in degrees (e.g. 270.0f for bottom-to-top).</param>
+   /// <param name="size">Font size index (1-7) used to render the text.</param>
+   /// <param name="textColor">Foreground text color (default: Color::WHITE).</param>
+   /// <param name="backgroundColor">Background fill color behind the glyphs (default: Color::BLACK).</param>
+   ///
+   void drawRotatedText(
+      const char* text,
+      float centerX,
+      float centerY,
+      float angleDeg,
+      uint8_t size,
+      Color textColor = Color::WHITE,
+      Color backgroundColor = Color::BLACK)
+   {
+      ASSERT(text != nullptr);
+
+      if (text[0] == '\0')
+      {
+         return;
+      }
+
+      int16_t spriteW = static_cast<int16_t>(strlen(text)) * charW(size);
+      int16_t spriteH = charH(size);
+
+      LGFX_Sprite sprite(&display);
+      createSprite(sprite, spriteW, spriteH, size);
+      sprite.fillScreen(static_cast<uint16_t>(backgroundColor));
+      sprite.setTextColor(static_cast<uint16_t>(textColor), static_cast<uint16_t>(backgroundColor));
+      sprite.setCursor(0, 0);
+      sprite.print(text);
+      sprite.setPivot(spriteW / 2.0f, spriteH / 2.0f);
+      sprite.pushRotateZoom(centerX, centerY, angleDeg, 1.0f, 1.0f);
+      sprite.deleteSprite();
+   }
+
+   ///
+   /// <summary>
+   /// Polls the touch controller once and updates the debounced tap state machine. Returns
+   /// whether a finger is currently touching the screen, optionally writing the active touch
+   /// coordinates to touchOut and whether a new debounced tap began on this poll to tappedOut.
+   /// Safe to call unconditionally on non-touch boards (always returns false).
+   /// </summary>
+   /// <param name="touchOut">Optional point receiving the current touch coordinates when touched.</param>
+   /// <param name="tappedOut">Optional flag set to true when a new debounced tap began on this poll.</param>
+   /// <returns>True while a finger is touching the display; otherwise false.</returns>
+   ///
+   bool pollTouch(Point16* touchOut = nullptr, bool* tappedOut = nullptr)
+   {
+#ifdef ARDUINO_TOUCH_SUPPORTED
+      lgfx::touch_point_t tp;
+      bool touched = display.getTouch(&tp) > 0;
+      bool tapped = touched && !_tapWasTouching && (!_tapHasSeenTouch || _tapDebounceTimer.remaining() == 0);
+      if (touched)
+      {
+         _tapHasSeenTouch = true;
+         _tapDebounceTimer.reset();
+         if (touchOut != nullptr)
+         {
+            *touchOut = Point16(tp.x, tp.y);
+         }
+      }
+      _tapWasTouching = touched;
+
+      if (tappedOut != nullptr)
+      {
+         *tappedOut = tapped;
+      }
+
+      return touched;
+#else
+      (void)touchOut;
+      if (tappedOut != nullptr)
+      {
+         *tappedOut = false;
+      }
+      return false;
+#endif
+   }
+
+   ///
+   /// <summary>
+   /// Polls the touch controller for a clean, debounced single tap, requiring the finger to
+   /// stay off the screen for at least TAP_DEBOUNCE_MS before another tap can fire. Safe to
+   /// call unconditionally on non-touch boards (always returns false).
+   /// </summary>
+   /// <param name="tapOut">Optional point receiving the tap's screen coordinates when true is returned.</param>
+   /// <returns>True when a new debounced tap began on this poll; otherwise false.</returns>
+   ///
+   bool pollTap(Point16* tapOut = nullptr)
+   {
+      Point16 pt;
+      bool tapped = false;
+      pollTouch(&pt, &tapped);
+      if (tapped && tapOut != nullptr)
+      {
+         *tapOut = pt;
+      }
+      return tapped;
    }
 
    ///

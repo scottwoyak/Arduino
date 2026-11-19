@@ -40,6 +40,7 @@
 
 #include "Bar.h"
 #include "Field.h"
+#include "FieldRow.h"
 #include "LibraryVersion.h"
 #include "MovingBarChart.h"
 #include "SerialX.h"
@@ -177,33 +178,12 @@ Color deltaValueColor(float value)
 Field nowSolarField(&sketch.arduino, "Solar", "##.# kW", TABLE_TEXT_SIZE);
 Field nowUsageField(&sketch.arduino, "Usage", "##.# kW", TABLE_TEXT_SIZE);
 Field nowNetField(&sketch.arduino, "Net", "##.# kW", TABLE_TEXT_SIZE);
+FieldRow nowSummaryRow(&nowSolarField, &nowUsageField, &nowNetField, Color::GRAY);
 
 Field todaySolarField(&sketch.arduino, "Solar", "###.# kWh", TABLE_TEXT_SIZE);
 Field todayUsageField(&sketch.arduino, "Usage", "###.# kWh", TABLE_TEXT_SIZE);
 Field todayNetField(&sketch.arduino, "Net", "###.# kWh", TABLE_TEXT_SIZE);
-
-///
-/// <summary>
-/// Draws a single metric Field, showing "---" in gray when the value is NAN (not yet known).
-/// </summary>
-/// <param name="field">Target display Field.</param>
-/// <param name="value">Current metric value, or NAN if not yet received.</param>
-/// <param name="activeColor">Value color used when the reading is valid.</param>
-///
-void drawMetricField(Field* field, float value, Color activeColor)
-{
-   ASSERT(field != nullptr);
-
-   if (std::isnan(value))
-   {
-      std::string placeholder = field->format().prefix() + "---" + field->format().postfix();
-      field->draw(placeholder, Color::GRAY, Color::GRAY);
-   }
-   else
-   {
-      field->draw(value, Color::GRAY, activeColor);
-   }
-}
+FieldRow todaySummaryRow(&todaySolarField, &todayUsageField, &todayNetField, Color::GRAY);
 
 ///
 /// <summary>
@@ -213,13 +193,21 @@ void drawMetricField(Field* field, float value, Color activeColor)
 ///
 void drawFields(const SolarReadings& readings)
 {
-   drawMetricField(&nowSolarField, readings.productionKw, DELTA_POSITIVE_COLOR);
-   drawMetricField(&nowUsageField, readings.consumptionKw, DELTA_NEGATIVE_COLOR);
-   drawMetricField(&nowNetField, std::isnan(netPowerKw) ? NAN : fabsf(netPowerKw), deltaValueColor(netPowerKw));
+   nowSummaryRow.draw(
+      readings.productionKw,
+      DELTA_POSITIVE_COLOR,
+      readings.consumptionKw,
+      DELTA_NEGATIVE_COLOR,
+      std::isnan(netPowerKw) ? NAN : fabsf(netPowerKw),
+      deltaValueColor(netPowerKw));
 
-   drawMetricField(&todaySolarField, readings.productionTodayKwh, DELTA_POSITIVE_COLOR);
-   drawMetricField(&todayUsageField, readings.consumptionTodayKwh, DELTA_NEGATIVE_COLOR);
-   drawMetricField(&todayNetField, std::isnan(netEnergyKwh) ? NAN : fabsf(netEnergyKwh), deltaValueColor(netEnergyKwh));
+   todaySummaryRow.draw(
+      readings.productionTodayKwh,
+      DELTA_POSITIVE_COLOR,
+      readings.consumptionTodayKwh,
+      DELTA_NEGATIVE_COLOR,
+      std::isnan(netEnergyKwh) ? NAN : fabsf(netEnergyKwh),
+      deltaValueColor(netEnergyKwh));
 }
 
 ///
@@ -250,71 +238,6 @@ float rollingColumnSum = 0.0f;
 float rollingProdSum = 0.0f;
 float rollingConsSum = 0.0f;
 uint16_t rollingColumnSamples = 0;
-
-///
-/// <summary>
-/// Positions three inline "Label Value" fields across a single horizontal row starting at
-/// leftX: the first field left-aligned at leftX, the second field horizontally centered
-/// between leftX and displayWidth, and the third field right-aligned against displayWidth.
-/// </summary>
-/// <param name="leftField">Leftmost field (Solar).</param>
-/// <param name="centerField">Center field (Usage).</param>
-/// <param name="rightField">Rightmost field (Net).</param>
-/// <param name="leftX">Left X coordinate of the row region (to the right of the rotated heading).</param>
-/// <param name="y">Top Y coordinate of the row.</param>
-/// <param name="displayWidth">Total display width in pixels.</param>
-/// <param name="charWidth">Character width in pixels at TABLE_TEXT_SIZE.</param>
-///
-void positionOneRowFields(
-   Field* leftField,
-   Field* centerField,
-   Field* rightField,
-   int16_t leftX,
-   int16_t y,
-   int16_t displayWidth,
-   int16_t charWidth)
-{
-   ASSERT(leftField != nullptr);
-   ASSERT(centerField != nullptr);
-   ASSERT(rightField != nullptr);
-
-   int16_t availableWidth = displayWidth - leftX;
-   int16_t centerFieldWidth = static_cast<int16_t>((strlen(centerField->label()) + 1) * charWidth) + centerField->valueWidth();
-   int16_t rightFieldWidth = static_cast<int16_t>((strlen(rightField->label()) + 1) * charWidth) + rightField->valueWidth();
-
-   leftField->setPosition(leftX, y);
-   centerField->setPosition(leftX + (availableWidth - centerFieldWidth) / 2, y);
-   rightField->setPosition(displayWidth - rightFieldWidth, y);
-}
-
-///
-/// <summary>
-/// Draws a section heading rotated 90 degrees counter-clockwise (reading bottom-to-top)
-/// within the left heading column, vertically centered next to its chart.
-/// </summary>
-/// <param name="text">Heading text to draw.</param>
-/// <param name="chartRect">Bounding rectangle of the section's chart.</param>
-///
-void drawRotatedSectionHeading(const char* text, const Rect16& chartRect)
-{
-   int16_t charW = sketch.arduino.charW(sectionTextSize);
-   int16_t charH = sketch.arduino.charH(sectionTextSize);
-   int16_t spriteW = static_cast<int16_t>(strlen(text)) * charW;
-   int16_t spriteH = charH;
-
-   LGFX_Sprite sprite(&sketch.arduino.display);
-   sketch.arduino.createSprite(sprite, spriteW, spriteH, sectionTextSize);
-   sprite.fillScreen(static_cast<uint16_t>(Color::BLACK));
-   sprite.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(Color::BLACK));
-   sprite.setCursor(0, 0);
-   sprite.print(text);
-   sprite.setPivot(spriteW / 2.0f, spriteH / 2.0f);
-
-   float dstX = headingColWidth / 2.0f;
-   float dstY = chartRect.y + chartRect.height / 2.0f;
-   sprite.pushRotateZoom(dstX, dstY, ROTATED_HEADING_ANGLE_DEG, 1.0f, 1.0f);
-   sprite.deleteSprite();
-}
 
 ///
 /// <summary>
@@ -364,8 +287,8 @@ void initLayout()
    rollingChartRect = Rect16(chartX, rollingChartY, chartWidth, nowChartHeight);
    todayChartRect = Rect16(chartX, todayChartY, chartWidth, todayChartHeight);
 
-   positionOneRowFields(&nowSolarField, &nowUsageField, &nowNetField, chartX, nowRowY, displayWidth, charWidth);
-   positionOneRowFields(&todaySolarField, &todayUsageField, &todayNetField, chartX, todayRowY, displayWidth, charWidth);
+   nowSummaryRow.setBounds(chartX, nowRowY, chartWidth);
+   todaySummaryRow.setBounds(chartX, todayRowY, chartWidth);
 
    RangeF powerRange(-MAX_POWER_KW, MAX_POWER_KW);
    RangeF energyRange(-MAX_ENERGY_KWH, MAX_ENERGY_KWH);
@@ -669,8 +592,19 @@ void drawStatic()
    sketch.arduino.println("Enphase Monitor", Color::HEADING);
 
    // Rotated section headings on the left
-   drawRotatedSectionHeading(NOW_SECTION_TEXT, rollingChartRect);
-   drawRotatedSectionHeading(TODAY_SECTION_TEXT, todayChartRect);
+   float headingCenterX = headingColWidth / 2.0f;
+   sketch.arduino.drawRotatedText(
+      NOW_SECTION_TEXT,
+      headingCenterX,
+      rollingChartRect.y + rollingChartRect.height / 2.0f,
+      ROTATED_HEADING_ANGLE_DEG,
+      sectionTextSize);
+   sketch.arduino.drawRotatedText(
+      TODAY_SECTION_TEXT,
+      headingCenterX,
+      todayChartRect.y + todayChartRect.height / 2.0f,
+      ROTATED_HEADING_ANGLE_DEG,
+      sectionTextSize);
 
    // Chart Y-axis labels
    drawChartLabels(rollingChartRect, "20", "-20");
@@ -689,12 +623,8 @@ void drawStatic()
    todayChart->draw(&sketch.arduino.display);
    drawTodayGridLines();
 
-   nowSolarField.invalidate();
-   nowUsageField.invalidate();
-   nowNetField.invalidate();
-   todaySolarField.invalidate();
-   todayUsageField.invalidate();
-   todayNetField.invalidate();
+   nowSummaryRow.invalidate();
+   todaySummaryRow.invalidate();
 
    drawFields(latestReadings);
 }

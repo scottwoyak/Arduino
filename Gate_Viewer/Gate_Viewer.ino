@@ -1063,20 +1063,6 @@ void displayOpenPrompt()
 
    drawOpenPromptButton(&openPromptCancelRect, top, buttonHeight, "CANCEL", Color::GRAY);
 }
-
-///
-/// <summary>
-/// Returns true if the given touch point falls within rect.
-/// </summary>
-/// <param name="rect">Tap target to test.</param>
-/// <param name="x">Touch x coordinate.</param>
-/// <param name="y">Touch y coordinate.</param>
-/// <returns>True if the touch point is inside the rect.</returns>
-///
-bool inRect(const Rect16& rect, int16_t x, int16_t y)
-{
-   return x >= rect.left() && x < rect.right() && y >= rect.top() && y < rect.bottom();
-}
 #endif
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
@@ -1858,17 +1844,10 @@ void loop()
       sketch.arduino.clearDisplay();
    }
 
-#ifdef ARDUINO_TOUCH_SUPPORTED
-   lgfx::touch_point_t touchPoint;
-   bool touched = sketch.arduino.display.getTouch(&touchPoint) > 0;
-
-   static bool wasTouched = false;
-   bool tapped = touched && !wasTouched;
-   wasTouched = touched;
-#else
-   // No touch hardware on this board: tap-to-open and the history view are unreachable.
+   Point16 touchPoint(0, 0);
    bool tapped = false;
-#endif
+   bool touched = sketch.arduino.pollTouch(&touchPoint, &tapped);
+   (void)touched;
 
    static bool showingHistory = false;
    static TimerSecs historyTimeoutTimer(HISTORY_VIEW_TIMEOUT_S);
@@ -1921,7 +1900,7 @@ void loop()
    static TimerSecs openPromptTimeoutTimer(OPEN_PROMPT_TIMEOUT_S);
    if (showingOpenPrompt)
    {
-      if (tapped && inRect(openPromptOpenRect, touchPoint.x, touchPoint.y))
+      if (tapped && openPromptOpenRect.contains(touchPoint))
       {
          showingOpenPrompt = false;
          sketch.arduino.clearDisplay();
@@ -1933,7 +1912,7 @@ void loop()
          postGateOpen();
          tapped = false;
       }
-      else if (tapped && inRect(openPromptHoldRect, touchPoint.x, touchPoint.y))
+      else if (tapped && openPromptHoldRect.contains(touchPoint))
       {
          showingOpenPrompt = false;
          sketch.arduino.clearDisplay();
@@ -1946,7 +1925,7 @@ void loop()
          postGateCommand("HOLD");
          tapped = false;
       }
-      else if ((tapped && inRect(openPromptCancelRect, touchPoint.x, touchPoint.y)) || openPromptTimeoutTimer.ready())
+      else if ((tapped && openPromptCancelRect.contains(touchPoint)) || openPromptTimeoutTimer.ready())
       {
          showingOpenPrompt = false;
          sketch.arduino.clearDisplay();
@@ -2143,7 +2122,7 @@ void loop()
 #endif
 
    if (tapped && motion == 0 && !openPending && lastOpenFooterVisible &&
-       inRect(lastOpenFooterRect, touchPoint.x, touchPoint.y))
+       lastOpenFooterRect.contains(touchPoint))
    {
       showingHistory = true;
       sketch.arduino.display.invertDisplay(false);
@@ -2153,7 +2132,7 @@ void loop()
    }
 
    if (tapped && isOpen && holdButtonRect.right() > holdButtonRect.left() &&
-       inRect(holdButtonRect, touchPoint.x, touchPoint.y))
+       holdButtonRect.contains(touchPoint))
    {
       gateHeldOpen = !gateHeldOpen;
       postGateCommand(gateHeldOpen ? "HOLD" : "CLOSE");
@@ -2175,7 +2154,7 @@ void loop()
 
    pollGateHold(isOpen && motion == 0);
 
-   if (tapped && !isOpen && inRect(gateStateRect, touchPoint.x, touchPoint.y))
+   if (tapped && !isOpen && gateStateRect.contains(touchPoint))
    {
       showingOpenPrompt = true;
       openPromptTimeoutTimer.reset();

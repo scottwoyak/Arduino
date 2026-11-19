@@ -226,13 +226,7 @@ public:
 
       if (_alignment == Alignment::RIGHT)
       {
-         int16_t totalWidth = _value.width();
-         if (_label.length() > 0)
-         {
-            size_t labelWithSepLen = _label.length() + 1; // + gap
-            totalWidth += (int16_t)(labelWithSepLen * _display->charW(_textSize));
-         }
-         x = x - totalWidth;
+         x = x - width();
       }
       else if (_alignment == Alignment::GAP && _label.length() > 0)
       {
@@ -262,7 +256,7 @@ public:
    /// <summary>
    /// Sets the value to display and draws the field. The first call renders the label
    /// directly to the display and the value via the DisplayValue's sprite; later calls
-   /// redraw only the value.
+   /// redraw only the value. Floating-point NAN values render as a gray "---" placeholder.
    /// </summary>
    /// <param name="value">The new value to display, formatted through the field's Format object.</param>
    /// <param name="labelColor">The color used to draw the label text; only applies the first
@@ -332,6 +326,35 @@ public:
    int16_t valueWidth() const
    {
       return _value.width();
+   }
+
+   ///
+   /// <summary>
+   /// Returns the total pixel width of the entire field (label + single-character space
+   /// separator when a label is present + fixed-width value sprite).
+   /// </summary>
+   /// <returns>The full field width in pixels.</returns>
+   ///
+   int16_t width() const
+   {
+      int16_t totalWidth = _value.width();
+      if (_label.length() > 0)
+      {
+         size_t labelWithSepLen = _label.length() + 1;
+         totalWidth += static_cast<int16_t>(labelWithSepLen * _display->charW(_textSize));
+      }
+      return totalWidth;
+   }
+
+   ///
+   /// <summary>
+   /// Returns the pixel height of the field.
+   /// </summary>
+   /// <returns>The field's height in pixels.</returns>
+   ///
+   int16_t height() const
+   {
+      return _value.height();
    }
 
    ///

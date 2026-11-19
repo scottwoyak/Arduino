@@ -49,6 +49,7 @@
     <File Path="libraries/Woyak/FeedTimer.h" />
     <File Path="libraries/Woyak/Field.h" />
     <File Path="libraries/Woyak/FieldEditor.h" />
+    <File Path="libraries/Woyak/FieldRow.h" />
     <File Path="libraries/Woyak/FieldTable.h" />
     <File Path="libraries/Woyak/FieldTableEditor.h" />
     <File Path="libraries/Woyak/FilteredRollingAverage.h" />

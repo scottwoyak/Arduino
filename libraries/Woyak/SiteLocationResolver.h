@@ -341,6 +341,8 @@ public:
       return _siteOptions;
    }
 
+   using ConfigCommandHandler::setLocation;
+
    ///
    /// <summary>
    /// Persists a new site to Preferences. Does not affect the in-memory resolved value

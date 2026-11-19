@@ -89,13 +89,12 @@ public:
    /// <summary>
    /// Returns true if the given touch point falls within the button's bounds.
    /// </summary>
-   /// <param name="x">Touch X coordinate</param>
-   /// <param name="y">Touch Y coordinate</param>
+   /// <param name="pt">Touch point coordinates</param>
    /// <returns>True if the point is inside the button</returns>
    ///
-   bool contains(int16_t x, int16_t y) const
+   bool contains(Point16 pt) const
    {
-      return x >= _rect.left() && x < _rect.right() && y >= _rect.top() && y < _rect.bottom();
+      return _rect.contains(pt);
    }
 
    ///
@@ -176,11 +175,11 @@ void setup()
 
 void loop()
 {
-   lgfx::touch_point_t touchPoint;
-   bool touched = arduino.display.getTouch(&touchPoint) > 0;
+   Point16 touchPoint;
+   bool touched = arduino.pollTouch(&touchPoint);
 
-   button1.update(touched && button1.contains(touchPoint.x, touchPoint.y));
-   button2.update(touched && button2.contains(touchPoint.x, touchPoint.y));
-   button3.update(touched && button3.contains(touchPoint.x, touchPoint.y));
-   button4.update(touched && button4.contains(touchPoint.x, touchPoint.y));
+   button1.update(touched && button1.contains(touchPoint));
+   button2.update(touched && button2.contains(touchPoint));
+   button3.update(touched && button3.contains(touchPoint));
+   button4.update(touched && button4.contains(touchPoint));
 }
