@@ -2,17 +2,25 @@
 // Power Viewer
 //
 // Subscribes to live solar production and home power consumption telemetry published by
-// the Power Hub (Power/Total, Power/TotalDaily, Power/Solar, and Power/SolarDaily) over a
-// WebSocket connection and renders a live view of solar production, home usage, and net
-// flow.
+// the Power Hub (Power/Total, Power/TotalDaily, Power/Solar, Power/SolarDaily, and the
+// per-building Power/House*, Power/Garage*, and Power/Barn* topics) over a WebSocket
+// connection and renders a dual-section live and daily view.
 //
-// The screen is divided vertically into two sections under the "Power" title:
-// - "Live": A 10-minute center-zero rolling bar chart of recent power (production, usage, and
-//   signed net delta in kW), followed by a single-row table of live Solar, Usage, and Net
-//   kW readings.
-// - "Today": A 24-hour center-zero chart anchored at local midnight on the left showing
-//   cumulative daily energy (production, usage, and signed net delta in kWh) across the
-//   day, followed by a single-row table of Today's Solar, Usage, and Net kWh totals.
+// The screen is divided vertically into two independently tappable sections under the
+// "Power" title, with the selected mode for each section persisted in Preferences:
+// - "Live" (tap top section to toggle):
+//   1. Summary: A 10-minute center-zero rolling bar chart of recent power (production,
+//      usage, and signed net delta in kW), followed by a single-row table of live Solar,
+//      Usage, and Net kW readings.
+//   2. Breakdown: Four 0-20 kW horizontal bar rows showing live power for Solar, House,
+//      Garage, and Barn with right-aligned kW readouts.
+// - "Today" (tap bottom section to toggle):
+//   1. Summary: A 24-hour center-zero chart anchored at local midnight showing cumulative
+//      daily energy (production, usage, and signed net delta in kWh), followed by Today's
+//      Solar, Usage, and Net kWh totals.
+//   2. Breakdown: A 24-hour 0-200 kWh X-Y line plot anchored at local midnight showing
+//      cumulative daily kWh for House, Garage, and Barn, followed by Today's House,
+//      Garage, and Barn kWh totals.
 //
 // The layout adapts at runtime to the display's dimensions, supporting both large
 // displays (e.g. the 480x320 Hosyond ESP32-S3 Viewer board) and compact displays
@@ -35,6 +43,8 @@
 #endif
 
 #include "Bar.h"
+#include "DisplayBuffer.h"
+#include "DisplayValue.h"
 #include "Field.h"
 #include "LibraryVersion.h"
 #include "MovingBarChart.h"
@@ -46,7 +56,7 @@
 #include "WiFiSettings.h"
 #include "ViewerSketch.h"
 
-const auto VERSION = MakeVersion("1.03");
+const auto VERSION = MakeVersion("1.05");
 constexpr auto SKETCH_NAME = "Power_Viewer";
 constexpr auto PREFERENCES_NAMESPACE = SKETCH_NAME;
 constexpr auto LEGACY_PREFERENCES_NAMESPACE = "SolarViewer";
@@ -56,15 +66,27 @@ constexpr auto POWER_TOTAL_TOPIC = "Power/Total";
 constexpr auto POWER_DAILY_TOPIC = "Power/TotalDaily";
 constexpr auto POWER_SOLAR_TOPIC = "Power/Solar";
 constexpr auto POWER_SOLAR_DAILY_TOPIC = "Power/SolarDaily";
+constexpr auto POWER_HOUSE_TOPIC = "Power/House";
+constexpr auto POWER_HOUSE_DAILY_TOPIC = "Power/HouseDaily";
+constexpr auto POWER_GARAGE_TOPIC = "Power/Garage";
+constexpr auto POWER_GARAGE_DAILY_TOPIC = "Power/GarageDaily";
+constexpr auto POWER_BARN_TOPIC = "Power/Barn";
+constexpr auto POWER_BARN_DAILY_TOPIC = "Power/BarnDaily";
 
 constexpr uint16_t DISPLAY_UPDATE_MS = 200;
 constexpr uint16_t CHART_SAMPLE_MS = 200;
+constexpr uint16_t TOUCH_DEBOUNCE_MS = 200;
 constexpr auto TODAY_CHART_DAY_PREF_KEY = "todayDay";
 constexpr auto TODAY_CHART_BINS_PREF_KEY = "todayBins";
+constexpr auto TODAY_BREAKDOWN_BINS_PREF_KEY = "todaySubBins";
+constexpr auto LIVE_VIEW_PREF_KEY = "liveView";
+constexpr auto TODAY_VIEW_PREF_KEY = "todayView";
 constexpr uint16_t EMPTY_TENTHS_KWH = 0xFFFF;
 constexpr uint16_t MAX_TODAY_CHART_COLS = 480;
+constexpr uint16_t NUM_TODAY_BREAKDOWN_BINS = 240;
+constexpr uint8_t NUM_LIVE_BARS = 4;
 
-// Full-scale power (in kW) and daily energy (in kWh) for the vertical bar gauges.
+// Full-scale power (in kW) and daily energy (in kWh) for the charts and bar gauges.
 constexpr float MAX_POWER_KW = 20.0f;
 constexpr float MAX_ENERGY_KWH = 200.0f;
 constexpr float WATTS_PER_KW = 1000.0f;
@@ -80,6 +102,10 @@ constexpr int16_t SECTION_GAP_LARGE_PX = 20;
 constexpr int16_t SECTION_GAP_SMALL_PX = 6;
 constexpr int16_t HEADING_GAP_PX = 4;
 constexpr int16_t CHART_LABEL_GAP_PX = 4;
+constexpr int16_t BAR_ROW_GAP_LARGE_PX = 10;
+constexpr int16_t BAR_ROW_GAP_SMALL_PX = 3;
+constexpr int16_t BAR_MAX_HEIGHT_LARGE_PX = 22;
+constexpr uint8_t LIVE_BAR_LABEL_CHARS = 6;
 constexpr uint8_t TODAY_LABEL_CHARS = 4;
 constexpr float ROTATED_HEADING_ANGLE_DEG = 270.0f;
 constexpr uint16_t ROLLING_CHART_SPAN_M = 10;
@@ -88,8 +114,20 @@ constexpr uint32_t SECONDS_PER_DAY = 24UL * 60UL * 60UL;
 constexpr Color PRODUCTION_COLOR = Color565::fromRGB(0, 72, 0);
 constexpr Color CONSUMPTION_COLOR = Color565::fromRGB(0, 48, 128);
 constexpr Color TODAY_GRID_COLOR = Color565::fromRGB(48, 48, 48);
+constexpr Color BAR_TRACK_COLOR = Color565::fromRGB(32, 32, 32);
 constexpr Color DELTA_POSITIVE_COLOR = Color::LIME;
 constexpr Color DELTA_NEGATIVE_COLOR = Color::DODGERBLUE;
+constexpr Color SOLAR_COLOR = Color::LIME;
+constexpr Color HOUSE_COLOR = Color::DODGERBLUE;
+constexpr Color GARAGE_COLOR = Color::ORANGE;
+constexpr Color BARN_COLOR = Color::VIOLET;
+
+constexpr uint8_t PLOT_LAYER_AXIS = 1;
+constexpr uint8_t PLOT_LAYER_GRID = 2;
+constexpr uint8_t PLOT_LAYER_HOUSE = 3;
+constexpr uint8_t PLOT_LAYER_GARAGE = 4;
+constexpr uint8_t PLOT_LAYER_BARN = 5;
+constexpr uint8_t PLOT_MAX_LAYER = PLOT_LAYER_BARN;
 
 // ----------- Sketch & State
 SketchConfig SKETCH_CONFIG = {
@@ -106,8 +144,30 @@ Timer chartSampleTimer(CHART_SAMPLE_MS);
 
 ///
 /// <summary>
-/// Holds the latest solar production and home consumption power and daily energy readings
-/// received from telemetry.
+/// Display modes for the top ("Live") section.
+/// </summary>
+///
+enum class LiveViewMode : uint8_t
+{
+   SUMMARY = 0,
+   BREAKDOWN = 1,
+};
+
+///
+/// <summary>
+/// Display modes for the bottom ("Today") section.
+/// </summary>
+///
+enum class TodayViewMode : uint8_t
+{
+   SUMMARY = 0,
+   BREAKDOWN = 1,
+};
+
+///
+/// <summary>
+/// Holds the latest solar production, whole-home consumption, and per-building (House,
+/// Garage, and Barn) power and daily energy readings received from telemetry.
 /// </summary>
 ///
 struct SolarReadings
@@ -116,6 +176,12 @@ struct SolarReadings
    float productionTodayKwh = NAN;
    float consumptionKw = NAN;
    float consumptionTodayKwh = NAN;
+   float houseKw = NAN;
+   float houseTodayKwh = NAN;
+   float garageKw = NAN;
+   float garageTodayKwh = NAN;
+   float barnKw = NAN;
+   float barnTodayKwh = NAN;
 
    ///
    /// <summary>
@@ -128,7 +194,13 @@ struct SolarReadings
       return !std::isnan(productionKw) ||
          !std::isnan(productionTodayKwh) ||
          !std::isnan(consumptionKw) ||
-         !std::isnan(consumptionTodayKwh);
+         !std::isnan(consumptionTodayKwh) ||
+         !std::isnan(houseKw) ||
+         !std::isnan(houseTodayKwh) ||
+         !std::isnan(garageKw) ||
+         !std::isnan(garageTodayKwh) ||
+         !std::isnan(barnKw) ||
+         !std::isnan(barnTodayKwh);
    }
 };
 
@@ -136,14 +208,21 @@ SolarReadings latestReadings;
 float netPowerKw = NAN;
 float netEnergyKwh = NAN;
 bool readingsDirty = false;
+LiveViewMode liveViewMode = LiveViewMode::SUMMARY;
+TodayViewMode todayViewMode = TodayViewMode::SUMMARY;
+
+#ifdef ARDUINO_TOUCH_SUPPORTED
+bool wasTouching = false;
+Timer touchDebounceTimer(TOUCH_DEBOUNCE_MS);
+#endif
 
 void onTelemetrySample(const std::string& topic, double value, int64_t dtMicros);
 
 ///
 /// <summary>
 /// Handles telemetry WebSocket lifecycle events: configures the sample callback and
-/// subscribes to all four solar and power topics on the connection, and flags a full
-/// screen redraw if an error message overwrote the display.
+/// subscribes to all solar, total, and per-building power topics on the connection, and
+/// flags a full screen redraw if an error message overwrote the display.
 /// </summary>
 ///
 class SolarTelemetryHandler : public TelemetryViewerEventHandler
@@ -162,8 +241,8 @@ public:
 
    ///
    /// <summary>
-   /// Registers the sample handler and subscribes the client to all four solar and power
-   /// telemetry topics once.
+   /// Registers the sample handler and subscribes the client to all solar, total, and
+   /// per-building power telemetry topics once.
    /// </summary>
    /// <param name="client">Active telemetry subscriber client.</param>
    ///
@@ -183,6 +262,12 @@ public:
          POWER_SOLAR_DAILY_TOPIC,
          POWER_TOTAL_TOPIC,
          POWER_DAILY_TOPIC,
+         POWER_HOUSE_TOPIC,
+         POWER_HOUSE_DAILY_TOPIC,
+         POWER_GARAGE_TOPIC,
+         POWER_GARAGE_DAILY_TOPIC,
+         POWER_BARN_TOPIC,
+         POWER_BARN_DAILY_TOPIC,
       });
    }
 
@@ -205,13 +290,27 @@ Field nowSolarField(&sketch.arduino, "Solar", "##.# kW", TABLE_TEXT_SIZE);
 Field nowUsageField(&sketch.arduino, "Usage", "##.# kW", TABLE_TEXT_SIZE);
 Field nowNetField(&sketch.arduino, "Net", "##.# kW", TABLE_TEXT_SIZE);
 
+std::array<DisplayValue, NUM_LIVE_BARS> liveBarValues = {
+   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+};
+
 Field todaySolarField(&sketch.arduino, "Solar", "###.# kWh", TABLE_TEXT_SIZE);
 Field todayUsageField(&sketch.arduino, "Usage", "###.# kWh", TABLE_TEXT_SIZE);
 Field todayNetField(&sketch.arduino, "Net", "###.# kWh", TABLE_TEXT_SIZE);
 
+Field todayHouseField(&sketch.arduino, "House", "###.# kWh", TABLE_TEXT_SIZE);
+Field todayGarageField(&sketch.arduino, "Garage", "###.# kWh", TABLE_TEXT_SIZE);
+Field todayBarnField(&sketch.arduino, "Barn", "###.# kWh", TABLE_TEXT_SIZE);
+
+constexpr std::array<const char*, NUM_LIVE_BARS> LIVE_BAR_LABELS = { "Solar", "House", "Garage", "Barn" };
+constexpr std::array<Color, NUM_LIVE_BARS> LIVE_BAR_COLORS = { SOLAR_COLOR, HOUSE_COLOR, GARAGE_COLOR, BARN_COLOR };
+
 ///
 /// <summary>
-/// Stores a single column of the 24-hour Today chart in tenths of a kWh (or
+/// Stores a single column of the 24-hour Summary Today chart in tenths of a kWh (or
 /// EMPTY_TENTHS_KWH when the column has not yet been recorded today).
 /// </summary>
 ///
@@ -221,13 +320,35 @@ struct TodayChartSample
    uint16_t consTenthsKwh = EMPTY_TENTHS_KWH;
 };
 
+///
+/// <summary>
+/// Stores a single time bin of the 24-hour Breakdown Today X-Y plot for House, Garage,
+/// and Barn in tenths of a kWh (or EMPTY_TENTHS_KWH when not yet recorded today).
+/// </summary>
+///
+struct TodayBreakdownSample
+{
+   uint16_t houseTenthsKwh = EMPTY_TENTHS_KWH;
+   uint16_t garageTenthsKwh = EMPTY_TENTHS_KWH;
+   uint16_t barnTenthsKwh = EMPTY_TENTHS_KWH;
+};
+
 MovingBarChart* rollingChart = nullptr;
 MovingBarChart* todayChart = nullptr;
+std::array<HorizontalBar*, NUM_LIVE_BARS> liveBars = { nullptr, nullptr, nullptr, nullptr };
+std::array<int16_t, NUM_LIVE_BARS> liveBarTextY = { 0, 0, 0, 0 };
+DisplayBuffer todayBreakdownBuffer;
 std::array<TodayChartSample, MAX_TODAY_CHART_COLS> todayChartSamples;
+std::array<TodayBreakdownSample, NUM_TODAY_BREAKDOWN_BINS> todayBreakdownSamples;
 
 Rect16 rollingChartRect;
 Rect16 todayChartRect;
+Rect16 liveSectionRect;
+Rect16 todaySectionRect;
+Rect16 liveTouchRect;
+Rect16 todayTouchRect;
 int16_t headingColWidth = 0;
+int16_t contentLeftX = 0;
 uint8_t sectionTextSize = TABLE_TEXT_SIZE;
 int16_t chartLabelRightX = 0;
 int32_t todayChartDayId = -1;
@@ -275,30 +396,100 @@ void drawMetricField(Field* field, float value, Color activeColor)
 
 ///
 /// <summary>
-/// Renders all six Live and Today Solar/Usage/Net value fields.
+/// Draws a single right-aligned DisplayValue, showing "---" in gray when the value is NAN.
+/// </summary>
+/// <param name="displayValue">Target DisplayValue widget.</param>
+/// <param name="value">Current metric value, or NAN if not yet received.</param>
+/// <param name="activeColor">Value color used when the reading is valid.</param>
+///
+void drawMetricValue(DisplayValue* displayValue, float value, Color activeColor)
+{
+   ASSERT(displayValue != nullptr);
+
+   if (std::isnan(value))
+   {
+      std::string placeholder = displayValue->format().prefix() + "---" + displayValue->format().postfix();
+      displayValue->draw(placeholder, Color::GRAY);
+   }
+   else
+   {
+      displayValue->draw(value, activeColor);
+   }
+}
+
+///
+/// <summary>
+/// Updates and renders the dynamic widgets for the active "Live" section mode.
+/// </summary>
+///
+void drawLiveDynamic()
+{
+   if (liveViewMode == LiveViewMode::SUMMARY)
+   {
+      drawMetricField(&nowSolarField, latestReadings.productionKw, DELTA_POSITIVE_COLOR);
+      drawMetricField(&nowUsageField, latestReadings.consumptionKw, DELTA_NEGATIVE_COLOR);
+      drawMetricField(&nowNetField, std::isnan(netPowerKw) ? NAN : fabsf(netPowerKw), deltaValueColor(netPowerKw));
+   }
+   else
+   {
+      const std::array<float, NUM_LIVE_BARS> barValues = {
+         latestReadings.productionKw,
+         latestReadings.houseKw,
+         latestReadings.garageKw,
+         latestReadings.barnKw,
+      };
+      for (uint8_t i = 0; i < NUM_LIVE_BARS; i++)
+      {
+         float kw = barValues[i];
+         liveBars[i]->set(std::isnan(kw) ? 0.0f : kw);
+         liveBars[i]->draw(&sketch.arduino.display);
+         drawMetricValue(&liveBarValues[i], kw, LIVE_BAR_COLORS[i]);
+      }
+   }
+}
+
+///
+/// <summary>
+/// Updates and renders the dynamic value row for the active "Today" section mode.
+/// </summary>
+///
+void drawTodayFields()
+{
+   if (todayViewMode == TodayViewMode::SUMMARY)
+   {
+      drawMetricField(&todaySolarField, latestReadings.productionTodayKwh, DELTA_POSITIVE_COLOR);
+      drawMetricField(&todayUsageField, latestReadings.consumptionTodayKwh, DELTA_NEGATIVE_COLOR);
+      drawMetricField(&todayNetField, std::isnan(netEnergyKwh) ? NAN : fabsf(netEnergyKwh), deltaValueColor(netEnergyKwh));
+   }
+   else
+   {
+      drawMetricField(&todayHouseField, latestReadings.houseTodayKwh, HOUSE_COLOR);
+      drawMetricField(&todayGarageField, latestReadings.garageTodayKwh, GARAGE_COLOR);
+      drawMetricField(&todayBarnField, latestReadings.barnTodayKwh, BARN_COLOR);
+   }
+}
+
+///
+/// <summary>
+/// Updates and renders the dynamic value widgets for both the Live and Today sections.
 /// </summary>
 ///
 void drawFields()
 {
-   drawMetricField(&nowSolarField, latestReadings.productionKw, DELTA_POSITIVE_COLOR);
-   drawMetricField(&nowUsageField, latestReadings.consumptionKw, DELTA_NEGATIVE_COLOR);
-   drawMetricField(&nowNetField, std::isnan(netPowerKw) ? NAN : fabsf(netPowerKw), deltaValueColor(netPowerKw));
-
-   drawMetricField(&todaySolarField, latestReadings.productionTodayKwh, DELTA_POSITIVE_COLOR);
-   drawMetricField(&todayUsageField, latestReadings.consumptionTodayKwh, DELTA_NEGATIVE_COLOR);
-   drawMetricField(&todayNetField, std::isnan(netEnergyKwh) ? NAN : fabsf(netEnergyKwh), deltaValueColor(netEnergyKwh));
+   drawLiveDynamic();
+   drawTodayFields();
 }
 
 ///
 /// <summary>
 /// Positions three inline "Label Value" fields across a single horizontal row starting at
-/// leftX: the first field left-aligned at leftX, the second field horizontally centered
-/// between leftX and displayWidth, and the third field right-aligned against displayWidth.
+/// leftX: the first field left-aligned at leftX, the third field right-aligned against
+/// displayWidth, and the second field centered evenly in the space between them.
 /// </summary>
-/// <param name="leftField">Leftmost field (Solar).</param>
-/// <param name="centerField">Center field (Usage).</param>
-/// <param name="rightField">Rightmost field (Net).</param>
-/// <param name="leftX">Left X coordinate of the row region (to the right of the rotated heading).</param>
+/// <param name="leftField">Leftmost field.</param>
+/// <param name="centerField">Center field.</param>
+/// <param name="rightField">Rightmost field.</param>
+/// <param name="leftX">Left X coordinate of the row region.</param>
 /// <param name="y">Top Y coordinate of the row.</param>
 /// <param name="displayWidth">Total display width in pixels.</param>
 /// <param name="charWidth">Character width in pixels at TABLE_TEXT_SIZE.</param>
@@ -316,13 +507,16 @@ void positionOneRowFields(
    ASSERT(centerField != nullptr);
    ASSERT(rightField != nullptr);
 
-   int16_t availableWidth = displayWidth - leftX;
+   int16_t leftFieldWidth = static_cast<int16_t>((strlen(leftField->label()) + 1) * charWidth) + leftField->valueWidth();
    int16_t centerFieldWidth = static_cast<int16_t>((strlen(centerField->label()) + 1) * charWidth) + centerField->valueWidth();
    int16_t rightFieldWidth = static_cast<int16_t>((strlen(rightField->label()) + 1) * charWidth) + rightField->valueWidth();
 
+   int16_t leftEnd = leftX + leftFieldWidth;
+   int16_t rightStart = displayWidth - rightFieldWidth;
+
    leftField->setPosition(leftX, y);
-   centerField->setPosition(leftX + (availableWidth - centerFieldWidth) / 2, y);
-   rightField->setPosition(displayWidth - rightFieldWidth, y);
+   centerField->setPosition(leftEnd + ((rightStart - leftEnd) - centerFieldWidth) / 2, y);
+   rightField->setPosition(rightStart, y);
 }
 
 ///
@@ -356,9 +550,8 @@ void drawRotatedSectionHeading(const char* text, const Rect16& chartRect)
 
 ///
 /// <summary>
-/// Computes the responsive display layout for the "Live" section (rotated left heading,
-/// 10-minute rolling chart, and 1-row Solar/Usage/Net table) and the "Today" section
-/// (rotated left heading, 24-hour midnight-anchored chart, and 1-row Solar/Usage/Net table).
+/// Computes the responsive display layout for both modes of the "Live" section and both
+/// modes of the "Today" section, along with touch hit-test rectangles.
 /// </summary>
 ///
 void initLayout()
@@ -379,7 +572,7 @@ void initLayout()
 
    // Place content (Y-axis labels + chart, and the one-row value tables) to the right of
    // the rotated section heading column.
-   int16_t contentLeftX = headingColWidth + HEADING_GAP_PX;
+   contentLeftX = headingColWidth + HEADING_GAP_PX;
    chartLabelRightX = contentLeftX + charWidth * TODAY_LABEL_CHARS;
    int16_t chartX = chartLabelRightX + CHART_LABEL_GAP_PX;
    int16_t chartWidth = max(static_cast<int16_t>(16), static_cast<int16_t>(displayWidth - chartX));
@@ -395,15 +588,53 @@ void initLayout()
 
    int16_t rollingChartY = titleHeight + topGap;
    int16_t nowRowY = rollingChartY + nowChartHeight + itemGap;
+   int16_t liveBottomY = nowRowY + rowHeight;
 
-   int16_t todayChartY = nowRowY + rowHeight + sectionGap;
+   int16_t todayChartY = liveBottomY + sectionGap;
    int16_t todayRowY = todayChartY + todayChartHeight + itemGap;
+   int16_t todayBottomY = todayRowY + rowHeight;
 
    rollingChartRect = Rect16(chartX, rollingChartY, chartWidth, nowChartHeight);
    todayChartRect = Rect16(chartX, todayChartY, chartWidth, todayChartHeight);
 
+   liveSectionRect = Rect16(contentLeftX, rollingChartY, displayWidth - contentLeftX, liveBottomY - rollingChartY);
+   todaySectionRect = Rect16(contentLeftX, todayChartY, displayWidth - contentLeftX, todayBottomY - todayChartY);
+
+   int16_t splitY = (liveBottomY + todayChartY) / 2;
+   liveTouchRect = Rect16(0, rollingChartY, displayWidth, splitY - rollingChartY);
+   todayTouchRect = Rect16(0, splitY, displayWidth, displayHeight - splitY);
+
    positionOneRowFields(&nowSolarField, &nowUsageField, &nowNetField, chartX, nowRowY, displayWidth, charWidth);
    positionOneRowFields(&todaySolarField, &todayUsageField, &todayNetField, chartX, todayRowY, displayWidth, charWidth);
+   positionOneRowFields(&todayHouseField, &todayGarageField, &todayBarnField, contentLeftX, todayRowY, displayWidth, charWidth);
+
+   // Layout for the Live Breakdown 4-row horizontal bar view (Label + 0-20 kW Bar + kW value)
+   int16_t barGap = isLargeDisplay ? BAR_ROW_GAP_LARGE_PX : BAR_ROW_GAP_SMALL_PX;
+   int16_t bandHeight = max<int16_t>(rowHeight, (liveSectionRect.height - (NUM_LIVE_BARS - 1) * barGap) / NUM_LIVE_BARS);
+   int16_t barHeight = min<int16_t>(bandHeight, isLargeDisplay ? BAR_MAX_HEIGHT_LARGE_PX : rowHeight);
+   int16_t totalRowsHeight = NUM_LIVE_BARS * bandHeight + (NUM_LIVE_BARS - 1) * barGap;
+   int16_t firstBandY = liveSectionRect.y + max<int16_t>(0, (liveSectionRect.height - totalRowsHeight) / 2);
+
+   int16_t barLeftX = contentLeftX + LIVE_BAR_LABEL_CHARS * charWidth + CHART_LABEL_GAP_PX;
+   int16_t barRightX = displayWidth - liveBarValues[0].width() - CHART_LABEL_GAP_PX;
+   int16_t barWidth = max<int16_t>(16, barRightX - barLeftX);
+
+   RangeF barPowerRange(0.0f, MAX_POWER_KW);
+
+   for (uint8_t i = 0; i < NUM_LIVE_BARS; i++)
+   {
+      int16_t bandY = firstBandY + i * (bandHeight + barGap);
+      int16_t barY = bandY + (bandHeight - barHeight) / 2;
+      int16_t textY = bandY + (bandHeight - rowHeight) / 2;
+
+      liveBarTextY[i] = textY;
+      liveBarValues[i].setPosition(displayWidth, textY);
+      liveBars[i] = new HorizontalBar(
+         Rect16(barLeftX, barY, barWidth, barHeight),
+         barPowerRange,
+         LIVE_BAR_COLORS[i],
+         BAR_TRACK_COLOR);
+   }
 
    RangeF powerRange(-MAX_POWER_KW, MAX_POWER_KW);
    RangeF energyRange(-MAX_ENERGY_KWH, MAX_ENERGY_KWH);
@@ -427,20 +658,36 @@ void initLayout()
       Color::BLACK,
       Color::GRAY);
    todayChart->setSecondaryColors(PRODUCTION_COLOR, CONSUMPTION_COLOR);
+
+   todayBreakdownBuffer.bind(
+      &sketch.arduino,
+      todayChartRect.x,
+      todayChartRect.y,
+      todayChartRect.width,
+      todayChartRect.height,
+      PLOT_MAX_LAYER);
+   todayBreakdownBuffer.setBackgroundColor(Color::BLACK);
+   todayBreakdownBuffer.setPaletteColor(PLOT_LAYER_AXIS, Color::GRAY);
+   todayBreakdownBuffer.setPaletteColor(PLOT_LAYER_GRID, TODAY_GRID_COLOR);
+   todayBreakdownBuffer.setPaletteColor(PLOT_LAYER_HOUSE, HOUSE_COLOR);
+   todayBreakdownBuffer.setPaletteColor(PLOT_LAYER_GARAGE, GARAGE_COLOR);
+   todayBreakdownBuffer.setPaletteColor(PLOT_LAYER_BARN, BARN_COLOR);
 }
 
 ///
 /// <summary>
-/// Draws the right-aligned Y-axis labels (top, "0", and bottom) in gray to the left of a
-/// center-zero chart.
+/// Draws the right-aligned Y-axis labels (top, middle, and bottom) in gray to the left of
+/// a chart.
 /// </summary>
 /// <param name="chartRect">Bounding rectangle of the chart.</param>
-/// <param name="topLabel">Top positive full-scale label text.</param>
-/// <param name="bottomLabel">Bottom negative full-scale label text.</param>
+/// <param name="topLabel">Top full-scale label text.</param>
+/// <param name="middleLabel">Midpoint label text.</param>
+/// <param name="bottomLabel">Bottom label text.</param>
 ///
 void drawChartLabels(
    const Rect16& chartRect,
    const char* topLabel,
+   const char* middleLabel,
    const char* bottomLabel)
 {
    int16_t charWidth = sketch.arduino.charW(TABLE_TEXT_SIZE);
@@ -456,8 +703,9 @@ void drawChartLabels(
    sketch.arduino.setCursor(chartLabelRightX - topChars * charWidth, topY);
    sketch.arduino.print(topLabel, Color::GRAY);
 
-   sketch.arduino.setCursor(chartLabelRightX - charWidth, centerY);
-   sketch.arduino.print("0", Color::GRAY);
+   int16_t middleChars = static_cast<int16_t>(strlen(middleLabel));
+   sketch.arduino.setCursor(chartLabelRightX - middleChars * charWidth, centerY);
+   sketch.arduino.print(middleLabel, Color::GRAY);
 
    int16_t bottomChars = static_cast<int16_t>(strlen(bottomLabel));
    sketch.arduino.setCursor(chartLabelRightX - bottomChars * charWidth, bottomY);
@@ -482,6 +730,107 @@ void drawTodayGridLines()
 
 ///
 /// <summary>
+/// Maps a 0-200 kWh daily energy reading to a buffer-relative Y coordinate within
+/// todayBreakdownBuffer.
+/// </summary>
+/// <param name="kwh">Cumulative daily energy in kWh.</param>
+/// <returns>Buffer-relative Y pixel row.</returns>
+///
+int16_t breakdownKwhToPlotY(float kwh)
+{
+   float clamped = std::clamp(kwh, 0.0f, MAX_ENERGY_KWH);
+   int16_t bottomRow = max<int16_t>(0, todayChartRect.height - 2);
+   int16_t spanRows = max<int16_t>(1, bottomRow);
+   int16_t offset = static_cast<int16_t>(std::lround((clamped / MAX_ENERGY_KWH) * spanRows));
+   return bottomRow - offset;
+}
+
+///
+/// <summary>
+/// Stamps a single building's cumulative daily kWh X-Y trace into todayBreakdownBuffer.
+/// </summary>
+/// <param name="layer">DisplayBuffer palette layer index for the series.</param>
+/// <param name="member">Pointer-to-member selecting House, Garage, or Barn tenths of kWh.</param>
+///
+void stampBreakdownSeries(uint8_t layer, uint16_t TodayBreakdownSample::* member)
+{
+   int16_t plotRight = max<int16_t>(1, todayChartRect.width - 1);
+   int16_t xSpan = max<int16_t>(1, plotRight - 1);
+
+   int16_t prevX = -1;
+   int16_t prevY = -1;
+
+   for (uint16_t b = 0; b < NUM_TODAY_BREAKDOWN_BINS; b++)
+   {
+      uint16_t tenths = todayBreakdownSamples[b].*member;
+      if (tenths == EMPTY_TENTHS_KWH)
+      {
+         continue;
+      }
+
+      int16_t x = 1 + static_cast<int16_t>((static_cast<int32_t>(b) * xSpan) / (NUM_TODAY_BREAKDOWN_BINS - 1));
+      int16_t y = breakdownKwhToPlotY(tenths * 0.1f);
+
+      if (prevX >= 0)
+      {
+         todayBreakdownBuffer.drawLine(prevX, prevY, x, y, layer);
+         if (isLargeDisplay)
+         {
+            todayBreakdownBuffer.drawLine(prevX, max<int16_t>(0, prevY - 1), x, max<int16_t>(0, y - 1), layer);
+         }
+      }
+
+      prevX = x;
+      prevY = y;
+   }
+
+   if (prevX >= 0)
+   {
+      todayBreakdownBuffer.drawPoint(prevX, prevY, isLargeDisplay ? 2 : 1, layer);
+   }
+}
+
+///
+/// <summary>
+/// Renders the 24-hour 0-200 kWh X-Y plot of House, Garage, and Barn daily energy into
+/// todayChartRect using todayBreakdownBuffer.
+/// </summary>
+/// <param name="mode">DisplayBuffer redraw mode (FULL after clearing the area, DIFF for live updates).</param>
+///
+void drawTodayBreakdownPlot(DisplayBuffer::RedrawMode mode)
+{
+   int16_t w = todayChartRect.width;
+   int16_t h = todayChartRect.height;
+   if (w <= 2 || h <= 2)
+   {
+      return;
+   }
+
+   todayBreakdownBuffer.clear(mode == DisplayBuffer::RedrawMode::FULL);
+
+   // Reference grid: 06:00, 12:00, 18:00 vertical lines + 100 kWh and 200 kWh horizontal lines
+   for (uint8_t quarter = 1; quarter <= 3; quarter++)
+   {
+      int16_t gridX = (w * quarter) / 4;
+      todayBreakdownBuffer.drawLine(gridX, 0, gridX, h - 1, PLOT_LAYER_GRID);
+   }
+   todayBreakdownBuffer.drawLine(1, 0, w - 1, 0, PLOT_LAYER_GRID);
+   todayBreakdownBuffer.drawLine(1, (h - 1) / 2, w - 1, (h - 1) / 2, PLOT_LAYER_GRID);
+
+   // Left Y-axis (00:00) and bottom X-axis (0 kWh)
+   todayBreakdownBuffer.drawLine(0, 0, 0, h - 1, PLOT_LAYER_AXIS);
+   todayBreakdownBuffer.drawLine(0, h - 1, w - 1, h - 1, PLOT_LAYER_AXIS);
+
+   // Series X-Y curves
+   stampBreakdownSeries(PLOT_LAYER_HOUSE, &TodayBreakdownSample::houseTenthsKwh);
+   stampBreakdownSeries(PLOT_LAYER_GARAGE, &TodayBreakdownSample::garageTenthsKwh);
+   stampBreakdownSeries(PLOT_LAYER_BARN, &TodayBreakdownSample::barnTenthsKwh);
+
+   todayBreakdownBuffer.draw(mode);
+}
+
+///
+/// <summary>
 /// Returns the current local calendar day encoded as (year * 1000 + yday), or -1 if the
 /// system clock has not yet been synchronized via NTP.
 /// </summary>
@@ -502,17 +851,18 @@ int32_t currentLocalDayId()
 
 ///
 /// <summary>
-/// Clears all in-memory Today chart column samples to their unrecorded state.
+/// Clears all in-memory Today Summary and Breakdown chart samples to their unrecorded state.
 /// </summary>
 ///
 void clearTodayChartSamples()
 {
    todayChartSamples.fill({ EMPTY_TENTHS_KWH, EMPTY_TENTHS_KWH });
+   todayBreakdownSamples.fill({ EMPTY_TENTHS_KWH, EMPTY_TENTHS_KWH, EMPTY_TENTHS_KWH });
 }
 
 ///
 /// <summary>
-/// Applies any persisted Today chart column samples for the current day into todayChart.
+/// Applies any persisted Today Summary chart column samples for the current day into todayChart.
 /// </summary>
 ///
 void populateTodayChartFromSamples()
@@ -545,13 +895,49 @@ void resetTodayChartHistory(int32_t dayId)
    sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
    sketch.arduino.preferences.putInt(TODAY_CHART_DAY_PREF_KEY, todayChartDayId);
    sketch.arduino.preferences.remove(TODAY_CHART_BINS_PREF_KEY);
+   sketch.arduino.preferences.remove(TODAY_BREAKDOWN_BINS_PREF_KEY);
    sketch.arduino.preferences.end();
 }
 
 ///
 /// <summary>
-/// Loads the persisted Today chart column samples from Preferences if they match today's
-/// local calendar day; otherwise resets the stored samples for the new day.
+/// Loads the persisted Live and Today view mode selections from Preferences.
+/// </summary>
+///
+void loadViewPreferences()
+{
+   if (sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true))
+   {
+      uint8_t savedLive = sketch.arduino.preferences.getUChar(LIVE_VIEW_PREF_KEY, 0);
+      uint8_t savedToday = sketch.arduino.preferences.getUChar(TODAY_VIEW_PREF_KEY, 0);
+      sketch.arduino.preferences.end();
+
+      liveViewMode = (savedLive == static_cast<uint8_t>(LiveViewMode::BREAKDOWN))
+         ? LiveViewMode::BREAKDOWN
+         : LiveViewMode::SUMMARY;
+      todayViewMode = (savedToday == static_cast<uint8_t>(TodayViewMode::BREAKDOWN))
+         ? TodayViewMode::BREAKDOWN
+         : TodayViewMode::SUMMARY;
+   }
+}
+
+///
+/// <summary>
+/// Persists the current Live and Today view mode selections to Preferences.
+/// </summary>
+///
+void saveViewPreferences()
+{
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+   sketch.arduino.preferences.putUChar(LIVE_VIEW_PREF_KEY, static_cast<uint8_t>(liveViewMode));
+   sketch.arduino.preferences.putUChar(TODAY_VIEW_PREF_KEY, static_cast<uint8_t>(todayViewMode));
+   sketch.arduino.preferences.end();
+}
+
+///
+/// <summary>
+/// Loads the persisted Today Summary and Breakdown chart samples from Preferences if they
+/// match today's local calendar day; otherwise resets the stored samples for the new day.
 /// </summary>
 ///
 void loadTodayChartHistory()
@@ -561,19 +947,35 @@ void loadTodayChartHistory()
    int32_t todayId = currentLocalDayId();
    uint16_t numCols = min(todayChart->getNumBars(), MAX_TODAY_CHART_COLS);
    size_t expectedBytes = static_cast<size_t>(numCols) * sizeof(TodayChartSample);
+   size_t expectedBreakdownBytes = todayBreakdownSamples.size() * sizeof(TodayBreakdownSample);
 
    if (sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true))
    {
       int32_t savedDayId = sketch.arduino.preferences.getInt(TODAY_CHART_DAY_PREF_KEY, -1);
-      size_t savedBytes = sketch.arduino.preferences.getBytesLength(TODAY_CHART_BINS_PREF_KEY);
-      if (todayId >= 0 && savedDayId == todayId && savedBytes == expectedBytes)
+      if (todayId >= 0 && savedDayId == todayId)
       {
-         sketch.arduino.preferences.getBytes(TODAY_CHART_BINS_PREF_KEY, todayChartSamples.data(), expectedBytes);
+         bool loadedAny = false;
+         if (sketch.arduino.preferences.getBytesLength(TODAY_CHART_BINS_PREF_KEY) == expectedBytes)
+         {
+            sketch.arduino.preferences.getBytes(TODAY_CHART_BINS_PREF_KEY, todayChartSamples.data(), expectedBytes);
+            loadedAny = true;
+         }
+         if (sketch.arduino.preferences.getBytesLength(TODAY_BREAKDOWN_BINS_PREF_KEY) == expectedBreakdownBytes)
+         {
+            sketch.arduino.preferences.getBytes(TODAY_BREAKDOWN_BINS_PREF_KEY, todayBreakdownSamples.data(), expectedBreakdownBytes);
+            loadedAny = true;
+         }
          sketch.arduino.preferences.end();
-         todayChartDayId = todayId;
-         return;
+         if (loadedAny)
+         {
+            todayChartDayId = todayId;
+            return;
+         }
       }
-      sketch.arduino.preferences.end();
+      else
+      {
+         sketch.arduino.preferences.end();
+      }
    }
 
    Preferences legacyPrefs;
@@ -604,7 +1006,7 @@ void loadTodayChartHistory()
 
 ///
 /// <summary>
-/// Records a Today chart column sample in memory and persists the updated array to
+/// Records a Today Summary chart column sample in memory and persists the updated array to
 /// Preferences whenever the column's 0.1 kWh rounded values change.
 /// </summary>
 /// <param name="colIndex">Zero-based column index in todayChart.</param>
@@ -642,8 +1044,81 @@ bool recordTodayChartSample(uint16_t colIndex, float prodKwh, float consKwh)
 
 ///
 /// <summary>
-/// Updates the 24-hour midnight-anchored Today chart for the current local time of day
-/// and handles local midnight rollover.
+/// Converts a floating-point kWh reading to integer tenths of a kWh, or EMPTY_TENTHS_KWH
+/// when the reading is NaN.
+/// </summary>
+/// <param name="kwh">Daily energy in kWh, or NAN if not yet received.</param>
+/// <returns>Encoded tenths of a kWh, or EMPTY_TENTHS_KWH.</returns>
+///
+uint16_t encodeTenthsKwh(float kwh)
+{
+   if (std::isnan(kwh))
+   {
+      return EMPTY_TENTHS_KWH;
+   }
+
+   return static_cast<uint16_t>(std::clamp(std::lround(kwh * 10.0f), 0L, 65534L));
+}
+
+///
+/// <summary>
+/// Records a Today Breakdown time-bin sample for House, Garage, and Barn in memory and
+/// persists the updated array to Preferences whenever any building's 0.1 kWh value changes.
+/// </summary>
+/// <param name="binIndex">Zero-based time bin index in todayBreakdownSamples.</param>
+/// <param name="houseKwh">Cumulative daily House energy in kWh, or NAN.</param>
+/// <param name="garageKwh">Cumulative daily Garage energy in kWh, or NAN.</param>
+/// <param name="barnKwh">Cumulative daily Barn energy in kWh, or NAN.</param>
+/// <returns>True if any recorded tenths-of-kWh value changed; otherwise false.</returns>
+///
+bool recordTodayBreakdownSample(uint16_t binIndex, float houseKwh, float garageKwh, float barnKwh)
+{
+   if (binIndex >= NUM_TODAY_BREAKDOWN_BINS)
+   {
+      return false;
+   }
+
+   uint16_t houseTenths = encodeTenthsKwh(houseKwh);
+   uint16_t garageTenths = encodeTenthsKwh(garageKwh);
+   uint16_t barnTenths = encodeTenthsKwh(barnKwh);
+
+   TodayBreakdownSample& existing = todayBreakdownSamples[binIndex];
+   bool changed = false;
+
+   if (houseTenths != EMPTY_TENTHS_KWH && existing.houseTenthsKwh != houseTenths)
+   {
+      existing.houseTenthsKwh = houseTenths;
+      changed = true;
+   }
+   if (garageTenths != EMPTY_TENTHS_KWH && existing.garageTenthsKwh != garageTenths)
+   {
+      existing.garageTenthsKwh = garageTenths;
+      changed = true;
+   }
+   if (barnTenths != EMPTY_TENTHS_KWH && existing.barnTenthsKwh != barnTenths)
+   {
+      existing.barnTenthsKwh = barnTenths;
+      changed = true;
+   }
+
+   if (!changed)
+   {
+      return false;
+   }
+
+   size_t numBytes = todayBreakdownSamples.size() * sizeof(TodayBreakdownSample);
+   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+   sketch.arduino.preferences.putInt(TODAY_CHART_DAY_PREF_KEY, todayChartDayId);
+   sketch.arduino.preferences.putBytes(TODAY_BREAKDOWN_BINS_PREF_KEY, todayBreakdownSamples.data(), numBytes);
+   sketch.arduino.preferences.end();
+   return true;
+}
+
+///
+/// <summary>
+/// Updates both the Summary and Breakdown 24-hour midnight-anchored Today datasets for the
+/// current local time of day, handles local midnight rollover, and redraws whichever Today
+/// chart mode is active when its plotted values change.
 /// </summary>
 ///
 void updateTodayChart()
@@ -658,13 +1133,16 @@ void updateTodayChart()
    {
       todayChart->clear();
       resetTodayChartHistory(dayId);
-      todayChart->draw(&sketch.arduino.display);
-      drawTodayGridLines();
-   }
-
-   if (std::isnan(latestReadings.productionTodayKwh) || std::isnan(latestReadings.consumptionTodayKwh))
-   {
-      return;
+      if (todayViewMode == TodayViewMode::SUMMARY)
+      {
+         todayChart->reset();
+         todayChart->draw(&sketch.arduino.display);
+         drawTodayGridLines();
+      }
+      else
+      {
+         drawTodayBreakdownPlot(DisplayBuffer::RedrawMode::DIFF);
+      }
    }
 
    time_t now = time(nullptr);
@@ -675,38 +1153,68 @@ void updateTodayChart()
       static_cast<uint32_t>(timeInfo.tm_min) * 60UL +
       static_cast<uint32_t>(timeInfo.tm_sec);
 
-   // Guard against brief clock skew at local midnight so yesterday's final daily totals
-   // are not recorded into column 0 before Power Hub publishes its midnight reset.
-   if (secondsSinceMidnight < 60 &&
-       (latestReadings.productionTodayKwh > 0.5f || latestReadings.consumptionTodayKwh > 1.0f))
-   {
-      return;
-   }
-
+   // Summary 24-hour center-zero chart
    uint16_t numCols = todayChart->getNumBars();
-   if (numCols == 0)
+   if (numCols > 0 &&
+       !std::isnan(latestReadings.productionTodayKwh) &&
+       !std::isnan(latestReadings.consumptionTodayKwh))
    {
-      return;
+      // Guard against brief clock skew at local midnight so yesterday's final daily totals
+      // are not recorded into column 0 before Power Hub publishes its midnight reset.
+      bool midnightSkew = secondsSinceMidnight < 60 &&
+         (latestReadings.productionTodayKwh > 0.5f || latestReadings.consumptionTodayKwh > 1.0f);
+      if (!midnightSkew)
+      {
+         uint16_t colIndex = static_cast<uint16_t>(
+            min(static_cast<uint32_t>(numCols - 1), (secondsSinceMidnight * numCols) / SECONDS_PER_DAY));
+         todayChart->setAt(
+            colIndex,
+            netEnergyKwh,
+            latestReadings.productionTodayKwh,
+            latestReadings.consumptionTodayKwh);
+         if (recordTodayChartSample(colIndex, latestReadings.productionTodayKwh, latestReadings.consumptionTodayKwh) &&
+             todayViewMode == TodayViewMode::SUMMARY)
+         {
+            todayChart->draw(&sketch.arduino.display);
+            drawTodayGridLines();
+         }
+      }
    }
 
-   uint16_t colIndex = static_cast<uint16_t>(
-      min(static_cast<uint32_t>(numCols - 1), (secondsSinceMidnight * numCols) / SECONDS_PER_DAY));
-   todayChart->setAt(
-      colIndex,
-      netEnergyKwh,
-      latestReadings.productionTodayKwh,
-      latestReadings.consumptionTodayKwh);
-   if (recordTodayChartSample(colIndex, latestReadings.productionTodayKwh, latestReadings.consumptionTodayKwh))
+   // Breakdown 24-hour House / Garage / Barn X-Y plot
+   bool hasAnyBreakdownDaily =
+      !std::isnan(latestReadings.houseTodayKwh) ||
+      !std::isnan(latestReadings.garageTodayKwh) ||
+      !std::isnan(latestReadings.barnTodayKwh);
+   if (hasAnyBreakdownDaily)
    {
-      todayChart->draw(&sketch.arduino.display);
-      drawTodayGridLines();
+      bool midnightBreakdownSkew = secondsSinceMidnight < 60 &&
+         ((!std::isnan(latestReadings.houseTodayKwh) && latestReadings.houseTodayKwh > 1.0f) ||
+          (!std::isnan(latestReadings.garageTodayKwh) && latestReadings.garageTodayKwh > 1.0f) ||
+          (!std::isnan(latestReadings.barnTodayKwh) && latestReadings.barnTodayKwh > 1.0f));
+      if (!midnightBreakdownSkew)
+      {
+         uint16_t binIndex = static_cast<uint16_t>(
+            min(static_cast<uint32_t>(NUM_TODAY_BREAKDOWN_BINS - 1),
+                (secondsSinceMidnight * NUM_TODAY_BREAKDOWN_BINS) / SECONDS_PER_DAY));
+         if (recordTodayBreakdownSample(
+                binIndex,
+                latestReadings.houseTodayKwh,
+                latestReadings.garageTodayKwh,
+                latestReadings.barnTodayKwh) &&
+             todayViewMode == TodayViewMode::BREAKDOWN)
+         {
+            drawTodayBreakdownPlot(DisplayBuffer::RedrawMode::DIFF);
+         }
+      }
    }
 }
 
 ///
 /// <summary>
 /// Samples the current live solar production and home consumption and advances the
-/// 10-minute rolling power chart whenever a column interval completes.
+/// 10-minute rolling power chart whenever a column interval completes (continuing in the
+/// background even while the Live Breakdown bar view is active).
 /// </summary>
 ///
 void sampleRollingChart()
@@ -728,7 +1236,10 @@ void sampleRollingChart()
          rollingColumnSum * invSamples,
          rollingProdSum * invSamples,
          rollingConsSum * invSamples);
-      rollingChart->draw(&sketch.arduino.display);
+      if (liveViewMode == LiveViewMode::SUMMARY)
+      {
+         rollingChart->draw(&sketch.arduino.display);
+      }
       rollingColumnSum = 0.0f;
       rollingProdSum = 0.0f;
       rollingConsSum = 0.0f;
@@ -738,12 +1249,101 @@ void sampleRollingChart()
 
 ///
 /// <summary>
-/// Draws the static screen elements (title, section headings, and chart labels) and
-/// resets the dynamic fields and charts for a full redraw.
+/// Draws the static and initial dynamic content of the "Live" section content area for the
+/// current liveViewMode.
+/// </summary>
+/// <param name="clearArea">True to clear liveSectionRect before drawing.</param>
+///
+void renderLiveSection(bool clearArea)
+{
+   if (clearArea)
+   {
+      sketch.arduino.display.fillRect(
+         liveSectionRect.x,
+         liveSectionRect.y,
+         liveSectionRect.width,
+         liveSectionRect.height,
+         static_cast<uint16_t>(Color::BLACK));
+   }
+
+   if (liveViewMode == LiveViewMode::SUMMARY)
+   {
+      drawChartLabels(rollingChartRect, "20", "0", "-20");
+      rollingChart->reset();
+      rollingChart->draw(&sketch.arduino.display);
+
+      nowSolarField.invalidate();
+      nowUsageField.invalidate();
+      nowNetField.invalidate();
+   }
+   else
+   {
+      sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+      for (uint8_t i = 0; i < NUM_LIVE_BARS; i++)
+      {
+         sketch.arduino.setCursor(contentLeftX, liveBarTextY[i]);
+         sketch.arduino.print(LIVE_BAR_LABELS[i], Color::GRAY);
+         liveBars[i]->reset();
+         liveBarValues[i].invalidate();
+      }
+   }
+
+   drawLiveDynamic();
+}
+
+///
+/// <summary>
+/// Draws the static and initial dynamic content of the "Today" section content area for
+/// the current todayViewMode.
+/// </summary>
+/// <param name="clearArea">True to clear todaySectionRect before drawing.</param>
+///
+void renderTodaySection(bool clearArea)
+{
+   if (clearArea)
+   {
+      sketch.arduino.display.fillRect(
+         todaySectionRect.x,
+         todaySectionRect.y,
+         todaySectionRect.width,
+         todaySectionRect.height,
+         static_cast<uint16_t>(Color::BLACK));
+   }
+
+   if (todayViewMode == TodayViewMode::SUMMARY)
+   {
+      drawChartLabels(todayChartRect, "200", "0", "-200");
+      todayChart->reset();
+      todayChart->draw(&sketch.arduino.display);
+      drawTodayGridLines();
+
+      todaySolarField.invalidate();
+      todayUsageField.invalidate();
+      todayNetField.invalidate();
+   }
+   else
+   {
+      drawChartLabels(todayChartRect, "200", "100", "0");
+      drawTodayBreakdownPlot(DisplayBuffer::RedrawMode::FULL);
+
+      todayHouseField.invalidate();
+      todayGarageField.invalidate();
+      todayBarnField.invalidate();
+   }
+
+   drawTodayFields();
+}
+
+///
+/// <summary>
+/// Draws the static screen elements (title, section headings, and active section views)
+/// and refreshes all dynamic fields and charts for a full redraw.
 /// </summary>
 ///
 void drawStatic()
 {
+   static bool firstDraw = true;
+
    telemetryHandler.needsFullRedraw = false;
    sketch.arduino.clearDisplay();
 
@@ -756,43 +1356,92 @@ void drawStatic()
    drawRotatedSectionHeading(LIVE_SECTION_TEXT, rollingChartRect);
    drawRotatedSectionHeading(TODAY_SECTION_TEXT, todayChartRect);
 
-   // Chart Y-axis labels
-   drawChartLabels(rollingChartRect, "20", "-20");
-   drawChartLabels(todayChartRect, "200", "-200");
+   if (firstDraw)
+   {
+      firstDraw = false;
+      rollingChart->clear();
+      todayChart->clear();
+      populateTodayChartFromSamples();
+      rollingColumnSum = 0.0f;
+      rollingProdSum = 0.0f;
+      rollingConsSum = 0.0f;
+      rollingColumnSamples = 0;
+      rollingColumnTimer.reset();
+      chartSampleTimer.reset();
+   }
 
-   rollingChart->clear();
-   todayChart->clear();
-   populateTodayChartFromSamples();
-   rollingColumnSum = 0.0f;
-   rollingProdSum = 0.0f;
-   rollingConsSum = 0.0f;
-   rollingColumnSamples = 0;
-   rollingColumnTimer.reset();
-   chartSampleTimer.reset();
-
-   rollingChart->draw(&sketch.arduino.display);
-   todayChart->draw(&sketch.arduino.display);
-   drawTodayGridLines();
-
-   nowSolarField.invalidate();
-   nowUsageField.invalidate();
-   nowNetField.invalidate();
-   todaySolarField.invalidate();
-   todayUsageField.invalidate();
-   todayNetField.invalidate();
-
-   drawFields();
+   renderLiveSection(false);
+   renderTodaySection(false);
    updateTodayChart();
+}
+
+#ifdef ARDUINO_TOUCH_SUPPORTED
+///
+/// <summary>
+/// Returns whether the touch coordinate (x, y) lies inside rect.
+/// </summary>
+/// <param name="rect">Target rectangle.</param>
+/// <param name="x">Touch X coordinate in pixels.</param>
+/// <param name="y">Touch Y coordinate in pixels.</param>
+/// <returns>True if (x, y) falls within rect; otherwise false.</returns>
+///
+bool inRect(const Rect16& rect, int16_t x, int16_t y)
+{
+   return x >= rect.x && x < (rect.x + rect.width) &&
+          y >= rect.y && y < (rect.y + rect.height);
 }
 
 ///
 /// <summary>
-/// Receives incoming telemetry samples for Power/Solar, Power/SolarDaily, Power/Total,
-/// and Power/TotalDaily, converting live Watts topics to kW and keeping daily kWh topics
-/// in kWh.
+/// Polls the touch panel for debounced taps in the top ("Live") or bottom ("Today")
+/// sections, requiring a clean finger release before accepting another tap, then
+/// toggles the tapped section's view mode, persists the updated selection, and redraws
+/// only that section.
+/// </summary>
+///
+void handleTouch()
+{
+   lgfx::touch_point_t tp;
+   bool touched = sketch.arduino.display.getTouch(&tp) > 0;
+   bool tapped = touched && !wasTouching && touchDebounceTimer.remaining() == 0;
+   if (touched)
+   {
+      touchDebounceTimer.reset();
+   }
+   wasTouching = touched;
+
+   if (!tapped)
+   {
+      return;
+   }
+
+   if (inRect(liveTouchRect, tp.x, tp.y))
+   {
+      liveViewMode = (liveViewMode == LiveViewMode::SUMMARY)
+         ? LiveViewMode::BREAKDOWN
+         : LiveViewMode::SUMMARY;
+      saveViewPreferences();
+      renderLiveSection(true);
+   }
+   else if (inRect(todayTouchRect, tp.x, tp.y))
+   {
+      todayViewMode = (todayViewMode == TodayViewMode::SUMMARY)
+         ? TodayViewMode::BREAKDOWN
+         : TodayViewMode::SUMMARY;
+      saveViewPreferences();
+      renderTodaySection(true);
+   }
+}
+#endif
+
+///
+/// <summary>
+/// Receives incoming telemetry samples for solar, whole-home, and per-building (House,
+/// Garage, and Barn) power and daily energy topics, converting live Watts topics to kW
+/// and keeping daily kWh topics in kWh.
 /// </summary>
 /// <param name="topic">Telemetry topic name.</param>
-/// <param name="value">Sample value (Watts for Power/Solar and Power/Total, kWh for *Daily).</param>
+/// <param name="value">Sample value (Watts for live power topics, kWh for *Daily topics).</param>
 /// <param name="dtMicros">Elapsed microseconds since the publisher's previous sample on this topic.</param>
 ///
 void onTelemetrySample(const std::string& topic, double value, int64_t dtMicros)
@@ -819,6 +1468,30 @@ void onTelemetrySample(const std::string& topic, double value, int64_t dtMicros)
    else if (topic == POWER_DAILY_TOPIC)
    {
       latestReadings.consumptionTodayKwh = max(0.0f, static_cast<float>(value));
+   }
+   else if (topic == POWER_HOUSE_TOPIC)
+   {
+      latestReadings.houseKw = max(0.0f, static_cast<float>(value) / WATTS_PER_KW);
+   }
+   else if (topic == POWER_HOUSE_DAILY_TOPIC)
+   {
+      latestReadings.houseTodayKwh = max(0.0f, static_cast<float>(value));
+   }
+   else if (topic == POWER_GARAGE_TOPIC)
+   {
+      latestReadings.garageKw = max(0.0f, static_cast<float>(value) / WATTS_PER_KW);
+   }
+   else if (topic == POWER_GARAGE_DAILY_TOPIC)
+   {
+      latestReadings.garageTodayKwh = max(0.0f, static_cast<float>(value));
+   }
+   else if (topic == POWER_BARN_TOPIC)
+   {
+      latestReadings.barnKw = max(0.0f, static_cast<float>(value) / WATTS_PER_KW);
+   }
+   else if (topic == POWER_BARN_DAILY_TOPIC)
+   {
+      latestReadings.barnTodayKwh = max(0.0f, static_cast<float>(value));
    }
    else
    {
@@ -847,7 +1520,7 @@ void onTelemetrySample(const std::string& topic, double value, int64_t dtMicros)
 /// Formats the latest solar and power telemetry readings as a human-readable string for
 /// the DeviceServer "GetReadings" command.
 /// </summary>
-/// <returns>Formatted summary of live solar production, home consumption, and daily energy.</returns>
+/// <returns>Formatted summary of live solar production, home consumption, per-building usage, and daily energy.</returns>
 ///
 std::string formatReadings()
 {
@@ -876,7 +1549,13 @@ std::string formatReadings()
           << "Usage: " << formatMetric(latestReadings.consumptionKw, "kW")
           << " (" << formatMetric(latestReadings.consumptionTodayKwh, "kWh today") << "), "
           << "Net: " << formatMetric(netPowerKw, "kW")
-          << " (" << formatMetric(netEnergyKwh, "kWh today") << ")";
+          << " (" << formatMetric(netEnergyKwh, "kWh today") << "), "
+          << "House: " << formatMetric(latestReadings.houseKw, "kW")
+          << " (" << formatMetric(latestReadings.houseTodayKwh, "kWh today") << "), "
+          << "Garage: " << formatMetric(latestReadings.garageKw, "kW")
+          << " (" << formatMetric(latestReadings.garageTodayKwh, "kWh today") << "), "
+          << "Barn: " << formatMetric(latestReadings.barnKw, "kW")
+          << " (" << formatMetric(latestReadings.barnTodayKwh, "kWh today") << ")";
    return stream.str();
 }
 
@@ -888,6 +1567,7 @@ void setup()
    sketch.begin();
 
    initLayout();
+   loadViewPreferences();
    loadTodayChartHistory();
 
    TelemetrySubscriber* client = sketch.beginTelemetry(POWER_SOLAR_TOPIC, &telemetryHandler);
@@ -900,6 +1580,13 @@ void setup()
 void loop()
 {
    sketch.loop();
+
+#ifdef ARDUINO_TOUCH_SUPPORTED
+   if (!telemetryHandler.needsFullRedraw)
+   {
+      handleTouch();
+   }
+#endif
 
    TelemetrySubscriber* client = sketch.getClient();
    if (!client->isStarted())

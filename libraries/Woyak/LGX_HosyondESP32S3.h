@@ -1,7 +1,9 @@
 #pragma once
 
+#include <array>
 #include <SPI.h>
 #include <Wire.h>
+
 #include <LovyanGFX.hpp>
 
 #include "I2CMutex.h"
@@ -11,7 +13,8 @@
 /// LovyanGFX touch driver for the FocalTech FT6336U capacitive touch controller used on
 /// the Hosyond ESP32-S3 4.0" board (I2C address 0x38). Uses Arduino's TwoWire so it shares
 /// the I2C bus cleanly with ESP-IDF 5.x's I2C master driver and external I2C sensors (like ADS1115),
-/// and checks the hardware INT pin (active-low) before initiating I2C transactions.
+/// checks the hardware INT pin (active-low) when idle before initiating I2C transactions,
+/// and debounces touch release so held touches do not drop out between scan pulses.
 /// </summary>
 ///
 class Touch_FT6336U_Wire : public lgfx::ITouch
@@ -19,6 +22,15 @@ class Touch_FT6336U_Wire : public lgfx::ITouch
 private:
    static constexpr uint8_t MAX_TOUCH_POINTS = 2;
    static constexpr uint8_t REG_TD_STATUS = 0x02;
+   static constexpr uint8_t REG_G_MODE = 0xA4;
+   static constexpr uint8_t G_MODE_POLLING = 0x00;
+   static constexpr uint32_t ACTIVE_POLL_INTERVAL_MS = 15;
+   static constexpr uint32_t RELEASE_DEBOUNCE_MS = 50;
+
+   uint32_t _lastTouchMs = 0;
+   uint32_t _lastPollMs = 0;
+   uint8_t _lastPointCount = 0;
+   std::array<lgfx::touch_point_t, MAX_TOUCH_POINTS> _lastPoints{};
 
    ///
    /// <summary>
@@ -64,6 +76,24 @@ private:
       return true;
    }
 
+   ///
+   /// <summary>
+   /// Writes a single byte to an 8-bit register address.
+   /// </summary>
+   /// <param name="reg">8-bit register address.</param>
+   /// <param name="value">Byte value to write.</param>
+   /// <returns>True if the I2C transaction succeeded.</returns>
+   ///
+   bool _writeReg(uint8_t reg, uint8_t value)
+   {
+      I2CScopedLock lock;
+      TwoWire* w = _wire();
+      w->beginTransmission(_cfg.i2c_addr);
+      w->write(reg);
+      w->write(value);
+      return w->endTransmission(true) == 0;
+   }
+
 public:
    ///
    /// <summary>
@@ -105,8 +135,18 @@ public:
          delay(50);
       }
 
-      _wire()->beginTransmission(_cfg.i2c_addr);
-      _inited = _wire()->endTransmission(true) == 0;
+      {
+         I2CScopedLock lock;
+         _wire()->beginTransmission(_cfg.i2c_addr);
+         _inited = _wire()->endTransmission(true) == 0;
+      }
+
+      if (_inited)
+      {
+         // Request continuous active-low INT while touched instead of FT6336U's default ~60 Hz pulse trigger mode.
+         _writeReg(REG_G_MODE, G_MODE_POLLING);
+      }
+
       return _inited;
    }
 
@@ -144,45 +184,69 @@ public:
          return 0;
       }
 
-      // Skip I2C bus traffic entirely when the active-low touch interrupt pin is idle (HIGH).
-      if (_cfg.pin_int >= 0 && digitalRead(_cfg.pin_int) != LOW)
+      // Skip I2C bus traffic entirely when no touch is active and the active-low INT pin is idle (HIGH).
+      if (_lastPointCount == 0 && _cfg.pin_int >= 0 && digitalRead(_cfg.pin_int) != LOW)
       {
          return 0;
       }
 
+      uint32_t now = millis();
+      auto copyCachedPoints = [&]() -> uint_fast8_t
+      {
+         uint_fast8_t n = (_lastPointCount < count) ? _lastPointCount : count;
+         for (uint_fast8_t i = 0; i < n; i++)
+         {
+            tp[i] = _lastPoints[i];
+         }
+         return n;
+      };
+
+      if (_lastPointCount > 0 && (now - _lastPollMs) < ACTIVE_POLL_INTERVAL_MS)
+      {
+         return copyCachedPoints();
+      }
+      _lastPollMs = now;
+
+      auto noNewTouch = [&]() -> uint_fast8_t
+      {
+         if (_lastPointCount > 0 && (now - _lastTouchMs) < RELEASE_DEBOUNCE_MS)
+         {
+            return copyCachedPoints();
+         }
+         _lastPointCount = 0;
+         return 0;
+      };
+
       uint8_t status = 0;
       if (!_readReg(REG_TD_STATUS, &status, 1))
       {
-         return 0;
+         return noNewTouch();
       }
 
       uint8_t points = status & 0x0F;
       if (points == 0 || points > MAX_TOUCH_POINTS)
       {
-         return 0;
+         return noNewTouch();
       }
 
-      uint8_t buf[MAX_TOUCH_POINTS * 6] = { 0 };
-      if (!_readReg(REG_TD_STATUS + 1, buf, points * 6))
+      std::array<uint8_t, MAX_TOUCH_POINTS * 6> buf{};
+      if (!_readReg(REG_TD_STATUS + 1, buf.data(), points * 6))
       {
-         return 0;
-      }
-
-      if (points > count)
-      {
-         points = count;
+         return noNewTouch();
       }
 
       for (uint_fast8_t i = 0; i < points; i++)
       {
          uint8_t idx = i * 6;
-         tp[i].x = ((buf[idx] & 0x0F) << 8) | buf[idx + 1];
-         tp[i].y = ((buf[idx + 2] & 0x0F) << 8) | buf[idx + 3];
-         tp[i].id = buf[idx + 2] >> 4;
-         tp[i].size = 1;
+         _lastPoints[i].x = ((buf[idx] & 0x0F) << 8) | buf[idx + 1];
+         _lastPoints[i].y = ((buf[idx + 2] & 0x0F) << 8) | buf[idx + 3];
+         _lastPoints[i].id = buf[idx + 2] >> 4;
+         _lastPoints[i].size = 1;
       }
 
-      return points;
+      _lastPointCount = points;
+      _lastTouchMs = now;
+      return copyCachedPoints();
    }
 };
 
