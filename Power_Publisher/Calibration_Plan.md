@@ -2,13 +2,15 @@
 
 ## Overview & Goal
 
-Provide self-contained, Enphase-free calibration of all three real-power parameters ($P = V \cdot I \cdot \cos\theta$) across `libraries/Woyak` and `Power_Publisher`:
+Provide self-contained, Enphase-free calibration of CT current gain and phase offset from the Power_Publisher Settings screen. Calibration results are measurements for a CT type, not automatic per-channel settings: the user copies them into the sketch-local `CT_TYPE_TABLE`, then flashes the publisher sketch to make that type available.
+
+AC line voltage remains calibrated per meter with `SetConfig vcal=<volts>`. CT gain and phase use a stable resistive load and known current through the CT (including turns through a line splitter):
 
 1. **AC Line Voltage (`vScale`)** — calibrated per meter board with a True-RMS multimeter (`SetConfig vcal=<volts>`, already implemented).
 2. **CT Current Gain (`ampsPerVolt`)** — calibrated per CT model (and optionally trimmed per channel) using a pure resistive test load on a **10× AC line splitter** + True-RMS multimeter/clamp meter.
 3. **Voltage-to-CT Phase Shift (`phaseDeg`)** — decomposed into an additive **board phase** + **CT-model phase offset**:
 	$$\phi_{\text{channel}} = \phi_{\text{board (9V AC wall-wart + ZMPT101B)}} + \Delta\phi_{\text{CT model}}$$
-	calibrated using a pure tungsten resistive load (`300 W` heat lamp, or `2 × 100 W` heat lamps; $\text{PF} = 1.000$, true $Q = 0.0\text{ VAR}$) through a **10× AC line splitter**, so calibrated CT-type constants can be baked directly into the shared library and reused across sketches and meter boards.
+	calibrated using a pure tungsten resistive load (`300 W` heat lamp, or `2 × 100 W` heat lamps; $\text{PF} = 1.000$, true $Q = 0.0\text{ VAR}$) through a **10× AC line splitter**, so measured CT-type constants can be copied into each publisher sketch's preset table.
 
 ---
 
@@ -31,47 +33,13 @@ Provide self-contained, Enphase-free calibration of all three real-power paramet
 
 ## Detailed Design
 
-### 1. CT Model Preset Table (`PowerSensorBase.h`)
+### 1. Sketch-local CT type table (`Power_Publisher.ino`)
 
-Define a first-class CT model enum and preset table in `PowerSensorBase` so every sketch shares both calibrated `ampsPerVolt` and `phaseOffsetDeg` per physical CT type:
+Keep the CT type presets together in one clearly marked `CT_TYPE_TABLE` in each publisher sketch. Each row contains the token, display label, nominal rating, measured Amps-per-Volt scale, and phase offset from the reference CT. The Settings preset buttons and per-channel NVS identity are driven by this table.
 
-```cpp
-enum class CtModel : uint8_t
-{
-	CT_20A = 0,        // YHDC SCT006 20A:25mA + 20 ohm burden
-	CT_30A = 1,        // YHDC SCT-013-030 (30A / 1V)
-	CT_100A = 2,       // YHDC SCT-013-100 square (100A / 1V) — 0.00 deg reference CT
-	CT_100A_ROUND = 3, // Large round 100A split-core CT
-	CT_500A = 4,       // 500A:50mA + 47 ohm burden
-	CUSTOM = 255       // Custom per-channel ampsPerVolt scale
-};
+The current rows are initial values, not bench-certified constants. In particular, replace the provisional `100R` phase offset after measurement. When adding a type, append one row and increase `NUM_AMP_OPTIONS`; its button then appears in Settings. Preserve existing row order because each channel stores the selected table index in NVS. Copy the same table row into any other power-publisher sketch that should offer that type.
 
-struct CtModelSpec
-{
-	CtModel model;
-	const char* token;       // CLI / GetConfig token: "20", "30", "100", "100R", "500"
-	const char* displayName; // Touch UI button label: "20A", "30A", "100A", "100R", "500A"
-	float ampsPerVolt;       // Calibrated Amps per 1.000V RMS
-	float phaseOffsetDeg;    // Phase offset in deg relative to reference CT_100A (0.00 deg for CT_100A)
-};
-```
-
-* Seed initial table values (to be updated with exact bench measurements once `Calibrate` is run on the 10× splitter):
-  * `CT_20A`: `"20"`, `"20A"`, `CORE_40A` (`40.0f`), `0.0f`
-  * `CT_30A`: `"30"`, `"30A"`, `CORE_30A` (`30.0f`), `0.0f`
-  * `CT_100A`: `"100"`, `"100A"`, `CORE_100A` (`100.0f`), `0.0f` *(reference CT)*
-  * `CT_100A_ROUND`: `"100R"`, `"100R"`, `CORE_100A` (`100.0f`), `+9.5f` *(initial estimate until bench-measured)*
-  * `CT_500A`: `"500"`, `"500A"`, `CORE_213A` (`10000.0f / 47.0f`), `0.0f`
-* Add helper lookup functions on `PowerSensorBase`:
-  * `static const CtModelSpec* findCtModelByToken(const char* token)` (case-insensitive; also accept `"100S"`/`"100A"` as aliases for `"100"`, `"20A"` for `"20"`, `"30A"` for `"30"`, `"500A"` for `"500"`).
-  * `static const CtModelSpec* findCtModel(CtModel model)`.
-* Extend `PowerSensorBase::ChannelConfig` and `PowerSensorBase::ChannelState`:
-  * Add `float phaseOffsetDeg = 0.0f;` to `ChannelConfig` and `ChannelState`.
-  * Add `void setChannelPhaseOffsetDeg(size_t channel, float offsetDeg)` and `float channelPhaseOffsetDeg(size_t channel) const`.
-* Update `PowerSensorBase::formatReadings()` (around lines 1710–1730):
-  * Print `phaseShift=<deg> deg (<mode>)` for **all** connected channels whenever `hasPhaseCompensation()` is true (not only `ch.isSolar`).
-  * Print `coreScale=<ampsPerVolt> A/V` (formatted to 2 decimal places, or integer when exact) instead of rounding `ampsPerVolt` to integer `coreRating`.
-  * Note: `_deriveMissingHotLeg` already operates on phase-compensated `(avgPH, avgQH)` and `(avgPW, avgQW)` phasors, so derived channels (`Panel1Black` from `Panel1Red + Panel1White`) automatically benefit with no changes to KCL math.
+`PowerSensorBase` stores the selected per-channel `phaseOffsetDeg`, and `MuxAdcPowerSensor` adds that offset to the board phase for the channel's power calculation. Keep CT offsets relative to the reference CT's measured total phase, not relative to a different CT model.
 
 ---
 
@@ -122,7 +90,7 @@ Do **not** average `GetReadings` values from `loop()`, which would re-read the s
 	* `size_t _calTargetChannel = 0;`
 	* `uint16_t _calTargetSlices = 20;` *(20 × 50 ms = 60 full 60 Hz cycles, ~1.1 s when parked on target channel)*
 	* `uint16_t _calCollectedSlices = 0;`
-	* Accumulators (`double`): `sumIRmsV`, `sumLineV`, `sumUnitRawP`, `sumUnitRawQ`, plus `minIRmsV`, `maxIRmsV`, and failure reason enum (`NONE`, `NO_VOLTAGE`, `UNPLUGGED`, `SIGNAL_TOO_LOW`, `UNSTEADY_LOAD`).
+	* Accumulators (`double`): `sumIRmsV`, `sumLineV`, `sumUnitRawP`, `sumUnitRawQ`, plus `minIRmsV`, `maxIRmsV`, and failure reasons for missing reference, invalid input, and capture-start errors.
 2. **Mux pinning during active capture (fast ~1.1 s capture)**:
 	* While `_calCaptureActive` is true, `_advanceChannel()` keeps selecting `_calTargetChannel` (after normal slice latch) so all 20 slices complete in ~`1.1 seconds` even if 8 other CTs are plugged into the meter, then resumes normal round-robin immediately when `_calCollectedSlices == _calTargetSlices`.
 3. **Per-slice accumulation & validation**:
@@ -138,108 +106,43 @@ Do **not** average `GetReadings` values from `loop()`, which would re-read the s
 	  $$\phi_{\text{total,rad}} = \operatorname{atan}\!\left(\frac{\text{sumUnitRawQ}}{\text{sumUnitRawP}}\right)$$
 	  *(Important: use `std::atan(sumUnitRawQ / sumUnitRawP)`, NOT `atan2`, so the result is in $(-90^\circ, +90^\circ)$. Flipping a CT clamp or clamping onto the opposite $180^\circ$ split-phase leg negates **both** `sumUnitRawP` and `sumUnitRawQ`, leaving their ratio identical—making calibration 100% invariant to CT orientation and L1/L2 leg.)*
 	* `totalPhaseDeg = totalPhaseRad * RAD_TO_DEG_F`
-	* `boardPhaseDeg = phaseShiftDeg()`
-	* `ctPhaseOffsetDeg = totalPhaseDeg - boardPhaseDeg`
+	* For the first/reference CT, save `totalPhaseDeg` as the reference board angle and use a `0.0f` CT offset.
+	* For each subsequent CT type, compute `ctPhaseOffsetDeg = totalPhaseDeg - savedReferencePhaseDeg`.
 	* If `knownTrueAmps > 0.0f`:
 	  `calibratedAmpsPerVolt = knownTrueAmps / meanIRmsV`
-	* Expose `startCalibrationCapture(size_t channel, uint16_t numSlices = 20)`, `isCalibrationCaptureActive() const`, `isCalibrationCaptureComplete() const`, and `consumeCalibrationResult(CalibrationResult* outResult)`.
+	* Expose `startCalibrationCapture(size_t channel, float knownTrueAmps, uint16_t numSlices = 20)`, `isCalibrationCaptureActive() const`, `isCalibrationCaptureComplete() const`, and `consumeCalibrationResult(CalibrationResult* outResult)`.
 
 ---
 
-### 3. Commands, Persistence & Touch UI (`Power_Publisher.ino`)
+### 3. CT Type Calibration Wizard (`Power_Publisher.ino`)
 
-#### A. NVS Persistence & Migration
-* Add per-channel CT model array & NVS keys:
-  ```cpp
-  constexpr std::array<const char*, NUM_CT_INPUTS> PREF_KEY_CT_MODEL = {
-	  "ctMod1", "ctMod2",  "ctMod3",  "ctMod4",  "ctMod5",  "ctMod6",  "ctMod7",  "ctMod8",
-	  "ctMod9", "ctMod10", "ctMod11", "ctMod12", "ctMod13", "ctMod14", "ctMod15", "ctMod16",
-  };
-  ```
-* **Non-destructive first-boot migration in `loadChannelConfig()`**:
-  * If `ctMod<i>` exists in `Preferences`, load `CtModel` from `ctMod<i>`. If it is a standard preset (`!= CtModel::CUSTOM`), apply that preset's `ampsPerVolt` and `phaseOffsetDeg` (still honoring `amps<i>` when `ctMod<i> == CtModel::CUSTOM`).
-  * If `ctMod<i>` does **not** exist yet (existing `Home` and `Garage` devices), infer `CtModel` from saved `amps<i>` (`~40.0 -> CT_20A`, `~30.0 -> CT_30A`, `~100.0 -> CT_100A`, `~212.8 -> CT_500A`, otherwise `CtModel::CUSTOM`).
-* **Manual phase persistence**:
-  * In `loadChannelConfig()` and `saveAutoCalibration()`, support `PhaseCalMode::MANUAL` (`2`) for `phMode` (`phBoard`) and for **all** 16 channels `phMod1..16` / `phDeg1..16` (currently non-solar channels have `phDeg<i>` / `phMod<i>` deleted in `saveAutoCalibration()`—preserve them whenever channel mode is `MANUAL`).
+#### Settings workflow
+* Add a `Calibrate CT Type` button to Settings. It calibrates one representative CT on the selected input; it does not change that channel's saved preset or automatically install a new type.
+* Prompt for a simple type token, nominal rated amps, known RMS current through the conductor inside the CT, and whether this CT is the reference.
+* The first calibration should use a known reference CT, preferably the square `SCT-013-100`. Capture and persist its measured total phase as the reference angle. Later type offsets are reported as `totalPhaseDeg - referencePhaseDeg`.
+* Show preparation guidance before capture, then asynchronously capture 20 completed 50 ms slices while pinning the mux to the selected channel. Require valid line voltage, a connected CT, sufficient signal, and a steady load.
+* Show sensor RMS volts, line voltage, calibrated `ampsPerVolt`, total phase, CT phase offset, and the sample spread. Provide a copyable initializer row for `CT_TYPE_TABLE`. For the reference CT, also show the measured `DEFAULT_PHASE_SHIFT_DEG` value and use a `0.0f` model offset.
 
-#### B. Custom `Calibrate` Command (`sketch.setCommandHandler`)
-Register a sketch command `Calibrate` (alias `cal`) via `sketch.setCommandHandler(...)` in `setup()` alongside `sketch.onReadings(...)`:
+#### Installing a calibrated CT type
+1. Copy the reported row into the sketch-local `CT_TYPE_TABLE` in `Power_Publisher.ino`.
+2. Increase `NUM_AMP_OPTIONS` so the Settings UI renders the new type button.
+3. For the reference CT, update `MuxAdcPowerSensor::DEFAULT_PHASE_SHIFT_DEG` to the measured reference phase. The type table's phase values are offsets relative to that reference.
+4. Reflash each Power_Publisher sketch that should offer the new preset. Then select the new type for each channel in Settings; the selected type identity, gain, and phase offset are stored per channel in NVS.
 
-* **Syntax**:
-  `Calibrate <ch> [true_amps] [apply|board]`
-  * `<ch>`: channel `1..16`.
-  * `[true_amps]` *(optional)*: known effective primary current in Amps (e.g. `24.60` when `2.46 A` passes through a `10×` line splitter, or `2.46` on the `1×` window).
-  * Mode flags *(optional)*:
-	 * *(omitted — read-only report mode)*: runs a 20-slice capture (~1.1 s) withoutblocking `loop()` and replies via `DeviceServerClient::respond(...)` with the full measurement report so values can be copied into `CtModelSpec`:
-		```text
-		Calibrate ch16 (20 slices, V=121.8 V):
-		  sensorRms     = 0.2451 V (spread 0.4%)
-		  ampsPerVolt   = 100.37 A/V (at 24.60 A)
-		  totalPhase    = 41.62 deg
-		  boardPhase    = 32.85 deg (manual)
-		  ctPhaseOffset = +8.77 deg
-		  check @ cal   = 24.60 A, 2996.3 W, 0.0 VAR, PF=1.000
-		```
-	 * `board`: saves `boardPhase = totalPhase - channelCtPhaseOffset` (`PhaseCalMode::MANUAL`) to NVS (`phBoard`/`phMode`)—used with a reference `CT_100A` (`0.00°` offset) on the 10× splitter to lock the board's exact wall-wart + ZMPT101B phase. Also saves custom `ampsPerVolt` if `true_amps` was NOT passed? **No**—`board` only updates `boardPhase` so the channel stays on its `CT_100A` preset!
-	 * `apply`: saves custom per-channel `MANUAL` phase (`totalPhase`) on `<ch>`, and if `true_amps` was supplied, also saves custom `ampsPerVolt` (`CtModel::CUSTOM`) on `<ch>`.
-* **Async completion in `loop()`**:
-  * Do not block `loop()` with `delay()`. Start capture in the command handler; in `loop()`, poll `powerSensor.isCalibrationCaptureComplete()`, format the output/apply NVS updates if requested, and call `DeviceServerClient::respond(...)`. Guard against concurrent `Calibrate` invocations while a capture is already running.
-
-#### C. `SetConfig` & `GetConfig` Extensions (`trySetExtraConfig` / `getExtraConfigText`)
-1. **`a1..a16` (`amps1..amps16`)**:
-	* Accept preset tokens `"20"`, `"30"`, `"100"`, `"100R"`, `"500"` (case-insensitive) **or** any custom positive float `ampsPerVolt` (e.g. `SetConfig a4=100R` or `SetConfig a4=100.37`).
-	* Selecting a standard preset sets `ctModels[i]`, updates `ctAmps[i]` and `phaseOffsetDeg`, and clears any per-channel `MANUAL` phase override on channel `i`.
-	* Update interactive shell prompt `sendSingleChannelAmpsPrompt()` / `sendNextAmpsPrompt()` to accept `"20"`, `"30"`, `"100"`, `"100R"`, `"500"`, or a positive float.
-2. **Direct phase & current calibration keys in `SetConfig`**:
-	* `SetConfig phase=<deg>` — sets manual board phase in degrees (`PhaseCalMode::MANUAL`) and persists to NVS.
-	* `SetConfig phase=auto` or `reset` — clears manual/auto board & channel phase overrides and returns to automatic/nominal mode (existing behavior).
-	* `SetConfig phase=nominal` — resets board phase to `DEFAULT_PHASE_SHIFT_DEG` (`NOMINAL`).
-	* `SetConfig ph<1..16>=<deg>|auto` — sets or clears a manual per-channel total phase override on channel `1..16`.
-	* `SetConfig acal<1..16>=<measured_amps>` — immediately scales channel `<N>`'s `ampsPerVolt` from its live smoothed `sensorRmsVolts` (`measured_amps / sensorRmsVolts`, mirroring `vcal`) for quick in-panel clamp-meter trim.
-3. **`GetConfig` output**:
-	* For `a<N>`, output the preset token (`20`, `30`, `100`, `100R`, `500`) when `ctModels[i] != CtModel::CUSTOM`, or the custom `ampsPerVolt` to 2 decimals when `CUSTOM`.
-	* Output `vScale=<val>` and `phase=<deg> deg (<mode>)`.
-	* For any channel with `PhaseCalMode::MANUAL`, also output `ph<N>=<deg>`.
-
-#### D. Touch Settings UI (`drawSettingsView` & `handleTouch`)
-* Replace `NUM_AMP_OPTIONS = 4` / `AMP_GRID_COLS = 4` with the **5** standard `CtModelSpec` presets (`AMP_GRID_COLS = 5`, `AMP_GRID_ROWS = 1`):
-  `20A` | `30A` | `100A` | `100R` | `500A`
-* On the 480 px portrait screen (`contentW = 464 px`, `4 × 8 px` gaps), each of the 5 boxes is `86 px` wide—plenty of room for `"100R"` at `TABLE_TEXT_SIZE`.
-* Highlight the active box by matching `ctModels[selectedSettingsChannel] == preset.model` (instead of comparing `ampsPerVolt`, since `100A` and `100R` both have ~`100 A/V`!).
-* Tapping a preset box saves both `ctModels[selectedSettingsChannel]` and its `ampsPerVolt` + `phaseOffsetDeg`.
+#### Runtime capture requirements
+* Capture directly in the sampler at the end of complete trapezoidal slices; do not average repeatedly-read latched values from `loop()`.
+* Keep `loop()` responsive: the Settings page polls completion and presents the result. A failed capture reports the reason and does not change NVS channel presets.
+* Do not use the test CT's existing preset gain to calculate the result. Compute gain from known primary current divided by measured CT RMS volts, and derive phase from raw quadrature/in-phase covariance ratio.
 
 ---
 
-## Step-by-Step Hardware Calibration Procedure (Once Flashed)
+## Step-by-Step Hardware Calibration Procedure
 
-1. **Set up the resistive test load**:
-	* Plug a **300W incandescent/infrared tungsten heat bulb** (in a 300W-rated ceramic socket—or two 100W heat bulbs) into the **10× AC line splitter** with no other loads attached.
-	* Turn the bulb ON and wait ~10–15 seconds for the tungsten filament resistance to stabilize.
-2. **Calibrate AC voltage (`vScale`)**:
-	* Measure AC voltage at the splitter's test jacks with a True-RMS multimeter (e.g., `121.8 V`) and run:
-	  ```
-	  SetConfig vcal=121.8
-	  ```
-3. **Measure true `1×` lamp current**:
-	* Measure actual lamp current (`I_1x`) with a multimeter in series or a True-RMS clamp meter on the `1×` window (e.g., `2.46 A`, making the `10×` window **`24.60 A`**).
-4. **Calibrate board reference phase using the square `100A` CT (`SCT-013-100`)**:
-	* Set an open test channel (e.g., channel `16`) to `100`: `SetConfig a16=100`.
-	* Clamp a square `SCT-013-100` around the **`10×` window** and plug it into channel `16`.
-	* Lock the board's reference phase to `SCT-013-100` (`0.00°` offset):
-	  ```
-	  Calibrate 16 24.60 board
-	  ```
-	* Run `Calibrate 16 24.60` once more to confirm `ctPhaseOffset ≈ 0.00 deg`, `PF = 1.00`, `VAR ≈ 0.0`, and record `boardPhase` + `SCT-013-100`'s exact `ampsPerVolt`.
-5. **Characterize each remaining CT model on channel `16`**:
-	* **Large round `100A` CT (`100R`)** on the **`10×` window**:
-	  `Calibrate 16 24.60` $\rightarrow$ record `ampsPerVolt` and `ctPhaseOffset` (expected ~`+8°` to `+11°`).
-	* **`30A` CT (`SCT-013-030`)** on the **`10×` window**:
-	  `Calibrate 16 24.60` $\rightarrow$ record `ampsPerVolt` and `ctPhaseOffset`.
-	* **`500A` CT** *(if applicable)* on the **`10×` window**:
-	  `Calibrate 16 24.60` $\rightarrow$ record `ampsPerVolt` and `ctPhaseOffset`.
-	* **`20A` CT (`SCT006`)** on the **`1×` window** *(use `1×` = `2.46 A` so `25 A` does not saturate the `20A` core)*:
-	  `Calibrate 16 2.46` $\rightarrow$ record `ampsPerVolt` and `ctPhaseOffset`.
-6. **Commit constants & configure `Home`**:
-	* Update `DEFAULT_PHASE_SHIFT_DEG` in `MuxAdcPowerSensor.h` and the 5 `CtModelSpec` `{ ampsPerVolt, phaseOffsetDeg }` entries in `PowerSensorBase.h` with the measured values.
-	* Re-flash `Power_Publisher` onto `Home` (and `Garage` when desired).
-	* On `Home`, set the two Panel 2 main CTs to `100R` (`SetConfig a4=100R`, `SetConfig a8=100R`) and calibrate `Home`'s AC voltage with a multimeter (`SetConfig vcal=<volts>`).
+1. **Prepare the load and test channel.** Use an enclosed, properly rated tungsten resistive load (for example a 300 W heat lamp) on a properly rated 10× AC line splitter. Keep exposed energized conductors inaccessible. Select an open input channel in Settings and plug in the CT under test.
+2. **Calibrate line voltage.** Measure AC voltage with a True-RMS meter and apply `SetConfig vcal=<measured volts>` before using the wizard.
+3. **Measure current.** Use a True-RMS clamp meter or a safe series measurement to determine current through the conductor inside the CT. On a 10× splitter, enter the current seen by the CT, which is 10 times the lamp's 1× current (for example, 2.46 A at 1× becomes 24.60 A through the CT).
+4. **Calibrate the reference CT first.** Turn on the load and wait 10–15 seconds for it to stabilize. In Settings, tap `Calibrate CT Type`, enter a token/rating/current, and answer yes to the reference question. Tap `Start capture` and record the displayed gain and total phase. Copy its table row with a `0.0f` phase offset and update `DEFAULT_PHASE_SHIFT_DEG` to the measured total phase.
+5. **Calibrate every other CT type.** Keep the same board, load, and current measurement setup. Repeat the Settings wizard for each representative CT, answering no to the reference question. Record its reported `ampsPerVolt` and offset relative to the stored reference CT phase. The wizard rejects unplugged, low-signal, missing-voltage, or unsteady-load captures.
+6. **Install and use the types.** Add each copied initializer to `CT_TYPE_TABLE`, increase `NUM_AMP_OPTIONS`, and flash each publisher sketch that should offer those types. In Settings, select the newly available CT button for each matching channel.
+
+The `20A` CT may require a lower splitter multiplier/current to avoid core saturation. Use equipment and loads only within their ratings; do not handle energized wiring.

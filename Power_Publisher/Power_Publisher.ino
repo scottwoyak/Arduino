@@ -38,6 +38,7 @@
 #include <array>
 #include <cmath>
 #include <cstdlib>
+#include <iomanip>
 #include <sstream>
 #include <string>
 
@@ -79,22 +80,27 @@ constexpr uint8_t PIN_AC_VOLTAGE = 21;
 
 ///
 /// <summary>
-/// Maps a CT's nominal current label (in Amps) to its calibration scale (Amps per 1.0V RMS).
+/// Editable CT type presets. Append calibrated CTs here to preserve saved NVS type indices.
 /// </summary>
 ///
-struct CtRatingOption
+struct CtTypePreset
 {
+   const char* token;
+   const char* displayName;
    uint16_t ratedAmps;
    float ampsPerVolt;
+   float phaseOffsetDeg;
 };
 
-constexpr size_t NUM_AMP_OPTIONS = 4;
-constexpr std::array<CtRatingOption, NUM_AMP_OPTIONS> AMP_RATING_OPTIONS = { {
-   { 20,  PowerSensorBase::CORE_40A  }, // YHDC SCT006 20A:25mA + 20 ohm burden (40.0 A/V)
-   { 30,  PowerSensorBase::CORE_30A  }, // SCT-013-030 30A/1V (30.0 A/V)
-   { 100, PowerSensorBase::CORE_100A }, // SCT-013-100 100A/1V (100.0 A/V)
-   { 500, PowerSensorBase::CORE_213A }, // 500A:50mA + 47 ohm burden (~212.8 A/V)
+constexpr size_t NUM_AMP_OPTIONS = 5;
+constexpr std::array<CtTypePreset, NUM_AMP_OPTIONS> CT_TYPE_TABLE = { {
+   { "20",   "20A",  20,  PowerSensorBase::CORE_40A,  0.0f },  // YHDC SCT006 20A:25mA + 20 ohm burden
+   { "30",   "30A",  30,  PowerSensorBase::CORE_30A,  0.0f },  // YHDC SCT-013-030
+   { "100",  "100A", 100, PowerSensorBase::CORE_100A, 0.0f },  // Square SCT-013-100 reference
+   { "100R", "100R", 100, PowerSensorBase::CORE_100A, 9.5f },  // Large round 100A CT; replace with measured values
+   { "500",  "500A", 500, PowerSensorBase::CORE_213A, 0.0f },  // 500A:50mA + 47 ohm burden
 } };
+constexpr uint8_t CUSTOM_CT_TYPE_INDEX = 0xFF;
 
 constexpr std::array<const char*, NUM_CT_INPUTS> DEFAULT_CT_LOCATIONS = {
    "1", "", "", "", "", "", "", "",
@@ -117,6 +123,10 @@ constexpr std::array<const char*, NUM_CT_INPUTS> PREF_KEY_CT_AMPS = {
    "amps1", "amps2",  "amps3",  "amps4",  "amps5",  "amps6",  "amps7",  "amps8",
    "amps9", "amps10", "amps11", "amps12", "amps13", "amps14", "amps15", "amps16",
 };
+constexpr std::array<const char*, NUM_CT_INPUTS> PREF_KEY_CT_TYPE = {
+   "ctType1", "ctType2",  "ctType3",  "ctType4",  "ctType5",  "ctType6",  "ctType7",  "ctType8",
+   "ctType9", "ctType10", "ctType11", "ctType12", "ctType13", "ctType14", "ctType15", "ctType16",
+};
 constexpr std::array<const char*, NUM_CT_INPUTS> PREF_KEY_CH_PHASE_DEG = {
    "phDeg1", "phDeg2",  "phDeg3",  "phDeg4",  "phDeg5",  "phDeg6",  "phDeg7",  "phDeg8",
    "phDeg9", "phDeg10", "phDeg11", "phDeg12", "phDeg13", "phDeg14", "phDeg15", "phDeg16",
@@ -132,6 +142,7 @@ constexpr std::array<const char*, NUM_CT_INPUTS> PREF_KEY_CH_POLARITY = {
 constexpr auto PREF_KEY_VOLTAGE_SCALE = "vScale";
 constexpr auto PREF_KEY_BOARD_PHASE_DEG = "phBoard";
 constexpr auto PREF_KEY_BOARD_PHASE_MODE = "phMode";
+constexpr auto PREF_KEY_CT_REFERENCE_PHASE_DEG = "ctRefDeg";
 
 constexpr uint16_t DISPLAY_UPDATE_INTERVAL_MS = 200; // 5 updates per second
 constexpr uint16_t AUTO_CAL_SAVE_INTERVAL_M = 30;    // Throttle gradual phase-drift NVS saves to 30 minutes
@@ -156,6 +167,9 @@ std::array<char[8], NUM_CT_INPUTS> defaultChannelNames = {
    "9", "10", "11", "12", "13", "14", "15", "16",
 };
 std::array<float, NUM_CT_INPUTS> ctAmps = {};
+std::array<uint8_t, NUM_CT_INPUTS> ctTypeIndices = {};
+float ctReferencePhaseDeg = 0.0f;
+bool ctReferencePhaseAvailable = false;
 std::array<char[MAX_TOPIC_LENGTH], NUM_CT_INPUTS> channelTopics = {};
 std::array<char[MAX_TOPIC_LENGTH], NUM_CT_INPUTS> currentTopics = {};
 std::array<char[MAX_TOPIC_LENGTH], PowerSensorBase::MAX_DERIVED_CHANNELS> derivedPowerTopics = {};
@@ -315,6 +329,7 @@ void applyChannelConfigToSensor()
       const char* name = ctLocations[i][0] != '\0' ? ctLocations[i] : defaultChannelNames[i];
       powerSensor.setChannelName(i, name);
       powerSensor.setCoreRating(ctAmps[i], i);
+      powerSensor.setChannelPhaseOffsetDeg(i, ctTypeIndices[i] < NUM_AMP_OPTIONS ? CT_TYPE_TABLE[ctTypeIndices[i]].phaseOffsetDeg : 0.0f);
    }
 
    refreshTelemetryTopics();
@@ -389,7 +404,8 @@ void migrateLegacyPreferencesIfNeeded()
    if (currentPrefs.begin(PREF_NAMESPACE, true))
    {
       bool hasSaved = currentPrefs.isKey(PREF_KEY_VOLTAGE_SCALE) ||
-                      currentPrefs.isKey(PREF_KEY_BOARD_PHASE_MODE);
+                      currentPrefs.isKey(PREF_KEY_BOARD_PHASE_MODE) ||
+                      currentPrefs.isKey(PREF_KEY_CT_REFERENCE_PHASE_DEG);
       for (size_t i = 0; i < NUM_CT_INPUTS && !hasSaved; i++)
       {
          hasSaved = currentPrefs.isKey(PREF_KEY_CT_LOCATION[i]) ||
@@ -478,6 +494,33 @@ void loadChannelConfig()
          ? prefs.getFloat(PREF_KEY_CT_AMPS[i], DEFAULT_CT_AMPS[i])
          : DEFAULT_CT_AMPS[i];
       ctAmps[i] = savedAmps > 0.0f ? savedAmps : DEFAULT_CT_AMPS[i];
+      ctTypeIndices[i] = CUSTOM_CT_TYPE_INDEX;
+      if (hasPrefs && prefs.isKey(PREF_KEY_CT_TYPE[i]))
+      {
+         uint8_t savedType = prefs.getUChar(PREF_KEY_CT_TYPE[i], CUSTOM_CT_TYPE_INDEX);
+         if (savedType < NUM_AMP_OPTIONS)
+         {
+            ctTypeIndices[i] = savedType;
+            ctAmps[i] = CT_TYPE_TABLE[savedType].ampsPerVolt;
+         }
+      }
+      if (ctTypeIndices[i] == CUSTOM_CT_TYPE_INDEX)
+      {
+         for (size_t type = 0; type < NUM_AMP_OPTIONS; type++)
+         {
+            if (std::fabs(CT_TYPE_TABLE[type].ampsPerVolt - ctAmps[i]) < 0.01f)
+            {
+               ctTypeIndices[i] = static_cast<uint8_t>(type);
+               break;
+            }
+         }
+      }
+   }
+
+   if (hasPrefs && prefs.isKey(PREF_KEY_CT_REFERENCE_PHASE_DEG))
+   {
+      ctReferencePhaseDeg = prefs.getFloat(PREF_KEY_CT_REFERENCE_PHASE_DEG, MuxAdcPowerSensor::DEFAULT_PHASE_SHIFT_DEG);
+      ctReferencePhaseAvailable = true;
    }
 
    if (hasPrefs && prefs.isKey(PREF_KEY_VOLTAGE_SCALE))
@@ -562,7 +605,7 @@ void saveCtLocation(size_t inputIndex, const char* loc)
 
 ///
 /// <summary>
-/// Converts a user-entered nominal CT amp rating (20, 30, 100, 500) into its hardware
+/// Converts a user-entered nominal CT amp rating (20, 30, 100, 100R, 500) into its hardware
 /// Amps-per-Volt scale, or passes custom calibration values through unchanged.
 /// </summary>
 /// <param name="enteredAmps">Nominal CT rating or custom Amps-per-Volt value.</param>
@@ -570,7 +613,7 @@ void saveCtLocation(size_t inputIndex, const char* loc)
 ///
 float resolveCtAmpsPerVolt(float enteredAmps)
 {
-   for (const auto& option : AMP_RATING_OPTIONS)
+   for (const auto& option : CT_TYPE_TABLE)
    {
       if (std::fabs(enteredAmps - option.ratedAmps) < 0.05f)
       {
@@ -583,7 +626,7 @@ float resolveCtAmpsPerVolt(float enteredAmps)
 
 ///
 /// <summary>
-/// Converts a stored Amps-per-Volt scale back to its nominal CT amp label (20, 30, 100, 500)
+/// Converts a stored Amps-per-Volt scale back to its nominal CT amp label (20, 30, 100, 100R, 500)
 /// for GetConfig and shell prompts, or rounds custom calibration values to the nearest integer.
 /// </summary>
 /// <param name="ampsPerVolt">Stored Amps-per-Volt scale.</param>
@@ -591,7 +634,7 @@ float resolveCtAmpsPerVolt(float enteredAmps)
 ///
 int displayAmpsForScale(float ampsPerVolt)
 {
-   for (const auto& option : AMP_RATING_OPTIONS)
+   for (const auto& option : CT_TYPE_TABLE)
    {
       if (std::fabs(ampsPerVolt - option.ampsPerVolt) < 0.5f)
       {
@@ -616,9 +659,48 @@ void saveCtAmps(size_t inputIndex, float amps)
    Preferences prefs;
    prefs.begin(PREF_NAMESPACE, false);
    prefs.putFloat(PREF_KEY_CT_AMPS[inputIndex], amps);
+   uint8_t matchedType = CUSTOM_CT_TYPE_INDEX;
+   for (size_t type = 0; type < NUM_AMP_OPTIONS; type++)
+   {
+      if (std::fabs(CT_TYPE_TABLE[type].ampsPerVolt - amps) < 0.01f)
+      {
+         matchedType = static_cast<uint8_t>(type);
+         break;
+      }
+   }
+   prefs.putUChar(PREF_KEY_CT_TYPE[inputIndex], matchedType);
    prefs.end();
 
    ctAmps[inputIndex] = amps;
+   ctTypeIndices[inputIndex] = matchedType;
+   applyChannelConfigToSensor();
+
+   if (changed)
+   {
+      powerSensor.resetChannelAutoCalibration(inputIndex);
+      saveAutoCalibration();
+   }
+}
+
+///
+/// <summary>
+/// Persists and applies one CT type table entry to a channel.
+/// </summary>
+/// <param name="inputIndex">Channel index (0 to 15).</param>
+/// <param name="typeIndex">Index in CT_TYPE_TABLE.</param>
+///
+void saveCtPreset(size_t inputIndex, size_t typeIndex)
+{
+   bool changed = ctTypeIndices[inputIndex] != typeIndex;
+
+   Preferences prefs;
+   prefs.begin(PREF_NAMESPACE, false);
+   prefs.putFloat(PREF_KEY_CT_AMPS[inputIndex], CT_TYPE_TABLE[typeIndex].ampsPerVolt);
+   prefs.putUChar(PREF_KEY_CT_TYPE[inputIndex], static_cast<uint8_t>(typeIndex));
+   prefs.end();
+
+   ctAmps[inputIndex] = CT_TYPE_TABLE[typeIndex].ampsPerVolt;
+   ctTypeIndices[inputIndex] = static_cast<uint8_t>(typeIndex);
    applyChannelConfigToSensor();
 
    if (changed)
@@ -1079,7 +1161,7 @@ bool trySetExtraConfig(const std::string& key, const std::string& value, std::st
          float entered = std::strtof(value.c_str(), nullptr);
          if (entered <= 0.0f)
          {
-            result = "Error: " + shortAmpsKey + " must be a positive current rating (e.g. 20, 30, 100, 500)";
+            result = "Error: " + shortAmpsKey + " must be a positive CT rating (e.g. 20, 30, 100, 100R, 500)";
             return true;
          }
 
@@ -1156,8 +1238,16 @@ constexpr int16_t SETTINGS_CORNER_RADIUS = 8;
 constexpr int16_t SETTINGS_CH_BOX_HEIGHT = 68;
 constexpr size_t CHANNEL_GRID_COLS = 4;
 constexpr size_t CHANNEL_GRID_ROWS = NUM_CT_INPUTS / CHANNEL_GRID_COLS;
-constexpr size_t AMP_GRID_COLS = 4;
+constexpr size_t AMP_GRID_COLS = 5;
 constexpr size_t AMP_GRID_ROWS = 1;
+
+enum class CtCalibrationView : uint8_t
+{
+   CLOSED,
+   READY,
+   CAPTURING,
+   RESULT
+};
 
 Timer displayDimTimer(DISPLAY_DIM_TIMEOUT_S * 1000UL);
 bool displayDimmed = false;
@@ -1168,8 +1258,18 @@ std::array<Rect16, NUM_CT_INPUTS> channelBoxRects = {};
 std::array<bool, NUM_CT_INPUTS> settingsChannelConnected = {};
 Rect16 labelBoxRect;
 std::array<Rect16, NUM_AMP_OPTIONS> ampBoxRects = {};
+Rect16 calibrationButtonRect;
+Rect16 calibrationStartRect;
+Rect16 calibrationCancelRect;
+Rect16 calibrationCloseRect;
 Rect16 deviceLocationBoxRect;
 Rect16 okBoxRect;
+CtCalibrationView ctCalibrationView = CtCalibrationView::CLOSED;
+MuxAdcPowerSensor::CalibrationResult ctCalibrationResult;
+std::string ctCalibrationName;
+uint16_t ctCalibrationRatedAmps = 0;
+float ctCalibrationKnownAmps = 0.0f;
+bool ctCalibrationIsReference = false;
 
 ///
 /// <summary>
@@ -1307,8 +1407,8 @@ void drawSettingsChannelBox(size_t index)
 /// Draws the touch configuration view:
 /// - Upper portion: 16 channel squares (4x4 grid) with plugged-in CTs shown in white and
 ///   the selected channel highlighted.
-/// - Middle portion: the selected channel's editable location label box (with edit icon)
-///   and a row of 4 CT amp rating boxes (20A, 30A, 100A, 500A) with the active rating highlighted.
+/// - Middle portion: the selected channel's editable location label and a row of five CT type presets.
+/// - Lower portion: the CT calibration wizard button and device location controls.
 /// - Lower right: an "OK" button to return to the main power view.
 /// </summary>
 ///
@@ -1401,10 +1501,10 @@ void drawSettingsView()
    sketch.arduino.display.print(deviceLocText);
    drawEditIcon(deviceLocationBoxRect.right() - 24, deviceLocationBoxRect.top() + deviceLocationBoxRect.height / 2, Color::LIGHTGRAY);
 
-   // Selected channel's amp rating section (4 boxes: 20A, 30A, 100A, 500A)
+   // Selected channel's CT type section
    sketch.arduino.setTextSize(FOOTER_SIZE);
    sketch.arduino.setCursor(SETTINGS_MARGIN_X, y);
-   sketch.arduino.println("Amp Rating", Color::SUB_LABEL);
+   sketch.arduino.println("CT Type", Color::SUB_LABEL);
    y = sketch.arduino.getCursorY() + 4;
 
    const int16_t availAmpH = deviceLocLabelY - y - 2 * SETTINGS_GAP;
@@ -1417,7 +1517,6 @@ void drawSettingsView()
 
    sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
    const int16_t ampTextH = sketch.arduino.charH(TABLE_TEXT_SIZE);
-   const float currentAmps = ctAmps[selectedSettingsChannel];
 
    for (size_t i = 0; i < NUM_AMP_OPTIONS; i++)
    {
@@ -1427,7 +1526,7 @@ void drawSettingsView()
       const int16_t by = y + static_cast<int16_t>(row) * (ampBoxH + SETTINGS_GAP);
       ampBoxRects[i] = Rect16(bx, by, ampBoxW, ampBoxH);
 
-      const bool selected = (std::fabs(currentAmps - AMP_RATING_OPTIONS[i].ampsPerVolt) < 0.5f);
+      const bool selected = (ctTypeIndices[selectedSettingsChannel] == i);
       const Color bg = selected ? Color::DARKGREEN : Color::BLUE;
       const Color border = selected ? Color::WHITE : Color::GRAY;
 
@@ -1438,17 +1537,263 @@ void drawSettingsView()
          sketch.arduino.display.drawRoundRect(bx + 1, by + 1, ampBoxW - 2, ampBoxH - 2, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(border));
       }
 
-      String ampStr = String(AMP_RATING_OPTIONS[i].ratedAmps) + " A";
+      String ampStr = String(CT_TYPE_TABLE[i].displayName);
       sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(bg));
       const int16_t tw = sketch.arduino.display.textWidth(ampStr.c_str());
       sketch.arduino.display.setCursor(bx + (ampBoxW - tw) / 2, by + (ampBoxH - ampTextH) / 2);
       sketch.arduino.display.print(ampStr.c_str());
    }
 
+   calibrationButtonRect = Rect16(SETTINGS_MARGIN_X, y + ampBoxH + SETTINGS_GAP, contentW, 52);
+   sketch.arduino.display.fillRoundRect(calibrationButtonRect.left(), calibrationButtonRect.top(), calibrationButtonRect.width, calibrationButtonRect.height, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(Color::DARKBLUE));
+   sketch.arduino.display.drawRoundRect(calibrationButtonRect.left(), calibrationButtonRect.top(), calibrationButtonRect.width, calibrationButtonRect.height, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(Color::WHITE));
+   sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(Color::DARKBLUE));
+   const int16_t calibrationTextWidth = sketch.arduino.display.textWidth("Calibrate CT Type");
+   sketch.arduino.display.setCursor(calibrationButtonRect.left() + (calibrationButtonRect.width - calibrationTextWidth) / 2, calibrationButtonRect.top() + (calibrationButtonRect.height - ampTextH) / 2);
+   sketch.arduino.display.print("Calibrate CT Type");
+
    sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(Color::DARKGREEN));
    const int16_t okTw = sketch.arduino.display.textWidth("OK");
    sketch.arduino.display.setCursor(okBoxRect.left() + (okBoxRect.width - okTw) / 2, okBoxRect.top() + (okBoxRect.height - ampTextH) / 2);
    sketch.arduino.display.print("OK");
+}
+
+///
+/// <summary>
+/// Draws the preparation, capture, or result page for the CT type calibration wizard.
+/// </summary>
+///
+void drawCtCalibrationView()
+{
+   sketch.arduino.clearDisplay();
+   sketch.arduino.setTextSize(HEADER_SIZE);
+   sketch.arduino.setCursor(SETTINGS_MARGIN_X, SETTINGS_MARGIN_X);
+   sketch.arduino.println("Calibrate CT Type", Color::HEADING);
+   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+   sketch.arduino.setCursor(SETTINGS_MARGIN_X, sketch.arduino.getCursorY() + SETTINGS_GAP);
+
+   if (ctCalibrationView == CtCalibrationView::READY)
+   {
+      sketch.arduino.println(("Type: " + ctCalibrationName).c_str(), Color::VALUE);
+      sketch.arduino.println(("Test channel: " + std::to_string(selectedSettingsChannel + 1)).c_str());
+      sketch.arduino.println(("Known current: " + std::to_string(ctCalibrationKnownAmps) + " A").c_str());
+      sketch.arduino.println((ctCalibrationIsReference ? "This is the reference CT." : "Using saved reference CT phase."), Color::VALUE);
+      sketch.arduino.println("Calibrate line voltage first.");
+      sketch.arduino.println("Use an enclosed, rated resistive load.");
+      sketch.arduino.println("Wait for it to warm up; clamp one wire only.");
+      sketch.arduino.println("Keep hands off energized wiring.");
+      sketch.arduino.println("Start capture when stable (about 1.1 s).");
+   }
+   else if (ctCalibrationView == CtCalibrationView::CAPTURING)
+   {
+      sketch.arduino.println("Sampling completed 50 ms slices...", Color::VALUE);
+      sketch.arduino.println(("Channel " + std::to_string(selectedSettingsChannel + 1)).c_str());
+      sketch.arduino.println("Keep the resistive load steady.");
+   }
+   else
+   {
+      if (ctCalibrationResult.failure != MuxAdcPowerSensor::CalibrationFailure::NONE)
+      {
+         const char* reason = "Calibration failed";
+         switch (ctCalibrationResult.failure)
+         {
+            case MuxAdcPowerSensor::CalibrationFailure::NO_VOLTAGE: reason = "No valid AC line voltage"; break;
+            case MuxAdcPowerSensor::CalibrationFailure::UNPLUGGED: reason = "CT not connected"; break;
+            case MuxAdcPowerSensor::CalibrationFailure::SIGNAL_TOO_LOW: reason = "CT signal too low"; break;
+            case MuxAdcPowerSensor::CalibrationFailure::UNSTEADY_LOAD: reason = "Load was not steady"; break;
+            case MuxAdcPowerSensor::CalibrationFailure::INVALID_POWER: reason = "Power signal invalid"; break;
+            case MuxAdcPowerSensor::CalibrationFailure::NO_REFERENCE: reason = "Calibrate reference CT first"; break;
+            case MuxAdcPowerSensor::CalibrationFailure::INPUT_INVALID: reason = "Invalid calibration input"; break;
+            case MuxAdcPowerSensor::CalibrationFailure::CAPTURE_UNAVAILABLE: reason = "Capture could not start"; break;
+            case MuxAdcPowerSensor::CalibrationFailure::NONE: break;
+         }
+         sketch.arduino.println(reason, Color::VALUE2);
+         sketch.arduino.println("Check wiring/load and try again.");
+      }
+      else
+      {
+         std::ostringstream values;
+         values.precision(3);
+         values << std::fixed << "Current sensor: " << ctCalibrationResult.sensorRmsVolts << " V RMS";
+         sketch.arduino.println(values.str().c_str());
+         values.str("");
+         values.clear();
+         values << std::fixed << "Line voltage: " << std::setprecision(1) << ctCalibrationResult.lineVoltageV << " V";
+         sketch.arduino.println(values.str().c_str());
+         values.str("");
+         values.clear();
+         values << std::fixed << "Scale: " << std::setprecision(2) << ctCalibrationResult.ampsPerVolt << " A/V";
+         sketch.arduino.println(values.str().c_str(), Color::VALUE);
+         values.str("");
+         values.clear();
+         values << std::fixed << "Total phase: " << std::setprecision(2) << ctCalibrationResult.totalPhaseDeg << " deg";
+         sketch.arduino.println(values.str().c_str());
+         values.str("");
+         values.clear();
+         values << std::fixed << "CT offset: " << std::showpos << std::setprecision(2) << ctCalibrationResult.ctPhaseOffsetDeg << " deg";
+         sketch.arduino.println(values.str().c_str(), Color::VALUE);
+         values.str("");
+         values.clear();
+         values << std::fixed << "Current spread: " << std::setprecision(1) << ctCalibrationResult.currentSpreadRatio * 100.0f << "%";
+         sketch.arduino.println(values.str().c_str());
+         values.str("");
+         values.clear();
+         std::ostringstream tableEntry;
+         tableEntry << "{ \"" << ctCalibrationName << "\", \"" << ctCalibrationName << "\", " << ctCalibrationRatedAmps << ",";
+         std::ostringstream tableValues;
+         tableValues << std::fixed << std::setprecision(2) << "  " << ctCalibrationResult.ampsPerVolt << "f, "
+                     << std::showpos << ctCalibrationResult.ctPhaseOffsetDeg << "f },";
+         if (ctCalibrationIsReference)
+         {
+            values.str("");
+            values.clear();
+            values << std::fixed << "Set DEFAULT_PHASE_SHIFT_DEG to " << std::setprecision(2) << ctCalibrationResult.totalPhaseDeg << "f";
+            sketch.arduino.println(values.str().c_str(), Color::VALUE);
+         }
+         sketch.arduino.println("Update the sketch CT_TYPE_TABLE:", Color::SUB_LABEL);
+         sketch.arduino.println(tableEntry.str().c_str(), Color::VALUE2);
+         sketch.arduino.println(tableValues.str().c_str(), Color::VALUE2);
+         sketch.arduino.println("Then flash each publisher sketch.");
+      }
+   }
+
+   const int16_t buttonY = sketch.arduino.height() - SETTINGS_MARGIN_X - 58;
+   if (ctCalibrationView == CtCalibrationView::READY)
+   {
+      calibrationCancelRect = Rect16(SETTINGS_MARGIN_X, buttonY, 150, 58);
+      calibrationStartRect = Rect16(sketch.arduino.width() - SETTINGS_MARGIN_X - 210, buttonY, 210, 58);
+      sketch.arduino.display.fillRoundRect(calibrationCancelRect.left(), calibrationCancelRect.top(), calibrationCancelRect.width, calibrationCancelRect.height, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(Color::GRAY));
+      sketch.arduino.display.fillRoundRect(calibrationStartRect.left(), calibrationStartRect.top(), calibrationStartRect.width, calibrationStartRect.height, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(Color::DARKGREEN));
+      sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+      sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::WHITE));
+      sketch.arduino.display.setCursor(calibrationCancelRect.left() + 38, calibrationCancelRect.top() + 20);
+      sketch.arduino.display.print("Cancel");
+      sketch.arduino.display.setCursor(calibrationStartRect.left() + 26, calibrationStartRect.top() + 20);
+      sketch.arduino.display.print("Start capture");
+   }
+   else if (ctCalibrationView == CtCalibrationView::RESULT)
+   {
+      calibrationCloseRect = Rect16(SETTINGS_MARGIN_X, buttonY, sketch.arduino.width() - 2 * SETTINGS_MARGIN_X, 58);
+      sketch.arduino.display.fillRoundRect(calibrationCloseRect.left(), calibrationCloseRect.top(), calibrationCloseRect.width, calibrationCloseRect.height, SETTINGS_CORNER_RADIUS, static_cast<uint16_t>(Color::DARKGREEN));
+      sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+      sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::WHITE));
+      sketch.arduino.display.setCursor(calibrationCloseRect.left() + (calibrationCloseRect.width - sketch.arduino.display.textWidth("Back to Settings")) / 2, calibrationCloseRect.top() + 20);
+      sketch.arduino.display.print("Back to Settings");
+   }
+}
+
+///
+/// <summary>
+/// Checks that a CT type token can be safely copied into a C++ preset initializer.
+/// </summary>
+/// <param name="token">User-entered CT type token.</param>
+/// <returns>True when the token contains only letters, digits, underscores, and hyphens.</returns>
+///
+bool isCalibrationToken(const String& token)
+{
+   if (token.length() == 0)
+   {
+      return false;
+   }
+
+   for (size_t i = 0; i < token.length(); i++)
+   {
+      char c = token[i];
+      if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-'))
+      {
+         return false;
+      }
+   }
+   return true;
+}
+
+///
+/// <summary>
+/// Shows an input-validation failure in the calibration result view.
+/// </summary>
+///
+void showCtCalibrationInputError()
+{
+   ctCalibrationResult = MuxAdcPowerSensor::CalibrationResult();
+   ctCalibrationResult.failure = MuxAdcPowerSensor::CalibrationFailure::INPUT_INVALID;
+   ctCalibrationView = CtCalibrationView::RESULT;
+   drawCtCalibrationView();
+}
+
+///
+/// <summary>
+/// Collects CT type details and opens the guided calibration preparation page.
+/// </summary>
+///
+void beginCtCalibrationWizard()
+{
+   String typeName = sketch.arduino.promptTouchText("CT type label", "");
+   typeName.trim();
+   if (typeName.length() == 0)
+   {
+      return;
+   }
+   if (!isCalibrationToken(typeName))
+   {
+      showCtCalibrationInputError();
+      return;
+   }
+
+   String ratedText = sketch.arduino.promptTouchText("Rated CT amps", "100");
+   ratedText.trim();
+   if (ratedText.length() == 0)
+   {
+      return;
+   }
+   char* endPtr = nullptr;
+   long ratedAmps = std::strtol(ratedText.c_str(), &endPtr, 10);
+   if (endPtr == ratedText.c_str() || *endPtr != '\0' || ratedAmps <= 0 || ratedAmps > 65535)
+   {
+      showCtCalibrationInputError();
+      return;
+   }
+
+   String knownCurrentText = sketch.arduino.promptTouchText("Known CT current incl. turns (A)", "24.60");
+   knownCurrentText.trim();
+   if (knownCurrentText.length() == 0)
+   {
+      return;
+   }
+   float knownCurrent = std::strtof(knownCurrentText.c_str(), &endPtr);
+   if (endPtr == knownCurrentText.c_str() || *endPtr != '\0' || !std::isfinite(knownCurrent) || knownCurrent <= 0.0f)
+   {
+      showCtCalibrationInputError();
+      return;
+   }
+
+   String referenceText = sketch.arduino.promptTouchText("Reference CT? yes/no", ctReferencePhaseAvailable ? "no" : "yes");
+   referenceText.trim();
+   if (referenceText.length() == 0)
+   {
+      return;
+   }
+   bool isReference = strcasecmp(referenceText.c_str(), "yes") == 0 || strcasecmp(referenceText.c_str(), "y") == 0;
+   bool isNotReference = strcasecmp(referenceText.c_str(), "no") == 0 || strcasecmp(referenceText.c_str(), "n") == 0;
+   if (!isReference && !isNotReference)
+   {
+      showCtCalibrationInputError();
+      return;
+   }
+   if (!isReference && !ctReferencePhaseAvailable)
+   {
+      ctCalibrationResult = MuxAdcPowerSensor::CalibrationResult();
+      ctCalibrationResult.failure = MuxAdcPowerSensor::CalibrationFailure::NO_REFERENCE;
+      ctCalibrationView = CtCalibrationView::RESULT;
+      drawCtCalibrationView();
+      return;
+   }
+
+   ctCalibrationName = typeName.c_str();
+   ctCalibrationRatedAmps = static_cast<uint16_t>(ratedAmps);
+   ctCalibrationKnownAmps = knownCurrent;
+   ctCalibrationIsReference = isReference;
+   ctCalibrationView = CtCalibrationView::READY;
+   drawCtCalibrationView();
 }
 
 ///
@@ -1509,6 +1854,11 @@ void editChannelLocationTouch(size_t ch)
 void updateDisplay()
 {
    if (!displayReady)
+   {
+      return;
+   }
+
+   if (ctCalibrationView != CtCalibrationView::CLOSED)
    {
       return;
    }
@@ -1636,6 +1986,35 @@ void handleTouch()
       return;
    }
 
+   if (ctCalibrationView != CtCalibrationView::CLOSED)
+   {
+      if (ctCalibrationView == CtCalibrationView::READY && inRect(calibrationStartRect, tp.x, tp.y))
+      {
+         if (powerSensor.startCalibrationCapture(selectedSettingsChannel, ctCalibrationKnownAmps))
+         {
+            ctCalibrationView = CtCalibrationView::CAPTURING;
+         }
+         else
+         {
+            ctCalibrationResult = MuxAdcPowerSensor::CalibrationResult();
+            ctCalibrationResult.failure = MuxAdcPowerSensor::CalibrationFailure::CAPTURE_UNAVAILABLE;
+            ctCalibrationView = CtCalibrationView::RESULT;
+         }
+         drawCtCalibrationView();
+      }
+      else if (ctCalibrationView == CtCalibrationView::READY && inRect(calibrationCancelRect, tp.x, tp.y))
+      {
+         ctCalibrationView = CtCalibrationView::CLOSED;
+         drawSettingsView();
+      }
+      else if (ctCalibrationView == CtCalibrationView::RESULT && inRect(calibrationCloseRect, tp.x, tp.y))
+      {
+         ctCalibrationView = CtCalibrationView::CLOSED;
+         drawSettingsView();
+      }
+      return;
+   }
+
    if (!showingSettings)
    {
       if (onGear(tp.x, tp.y))
@@ -1643,6 +2022,17 @@ void handleTouch()
          showingSettings = true;
          drawSettingsView();
       }
+      return;
+   }
+
+   if (inRect(calibrationButtonRect, tp.x, tp.y))
+   {
+      beginCtCalibrationWizard();
+      if (ctCalibrationView == CtCalibrationView::CLOSED)
+      {
+         drawSettingsView();
+      }
+      wasTouching = false;
       return;
    }
 
@@ -1697,9 +2087,9 @@ void handleTouch()
    {
       if (inRect(ampBoxRects[i], tp.x, tp.y))
       {
-         if (std::fabs(ctAmps[selectedSettingsChannel] - AMP_RATING_OPTIONS[i].ampsPerVolt) >= 0.5f)
+         if (ctTypeIndices[selectedSettingsChannel] != i)
          {
-            saveCtAmps(selectedSettingsChannel, AMP_RATING_OPTIONS[i].ampsPerVolt);
+            saveCtPreset(selectedSettingsChannel, i);
             drawSettingsView();
          }
          return;
@@ -1748,6 +2138,30 @@ void setup()
 void loop()
 {
    handleTouch();
+
+   if (ctCalibrationView == CtCalibrationView::CAPTURING && powerSensor.isCalibrationCaptureComplete())
+   {
+      powerSensor.consumeCalibrationResult(&ctCalibrationResult);
+      if (ctCalibrationResult.failure == MuxAdcPowerSensor::CalibrationFailure::NONE)
+      {
+         if (ctCalibrationIsReference)
+         {
+            ctReferencePhaseDeg = ctCalibrationResult.totalPhaseDeg;
+            ctReferencePhaseAvailable = true;
+            ctCalibrationResult.ctPhaseOffsetDeg = 0.0f;
+            Preferences prefs;
+            prefs.begin(PREF_NAMESPACE, false);
+            prefs.putFloat(PREF_KEY_CT_REFERENCE_PHASE_DEG, ctReferencePhaseDeg);
+            prefs.end();
+         }
+         else
+         {
+            ctCalibrationResult.ctPhaseOffsetDeg = ctCalibrationResult.totalPhaseDeg - ctReferencePhaseDeg;
+         }
+      }
+      ctCalibrationView = CtCalibrationView::RESULT;
+      drawCtCalibrationView();
+   }
 
    if (updateTimer.ready())
    {

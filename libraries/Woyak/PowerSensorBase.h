@@ -217,6 +217,7 @@ protected:
    {
       const char* name = "";
       float ampsPerVolt = CORE_100A;
+      float phaseOffsetDeg = 0.0f;
       double sumV = 0.0;
       double sumV2 = 0.0;
       std::array<float, NUM_TRACE_SLICES> traceAmps = {};
@@ -1250,6 +1251,34 @@ public:
       ASSERT(channel < MAX_CHANNELS);
 
       return _channels[channel].ampsPerVolt;
+   }
+
+   ///
+   /// <summary>
+   /// Sets the phase offset for the physical CT model connected to a channel.
+   /// </summary>
+   /// <param name="channel">Channel index.</param>
+   /// <param name="phaseOffsetDeg">CT-specific phase offset in degrees.</param>
+   ///
+   void setChannelPhaseOffsetDeg(size_t channel, float phaseOffsetDeg)
+   {
+      ASSERT(channel < MAX_CHANNELS);
+
+      _channels[channel].phaseOffsetDeg = phaseOffsetDeg;
+   }
+
+   ///
+   /// <summary>
+   /// Gets the phase offset for the physical CT model connected to a channel.
+   /// </summary>
+   /// <param name="channel">Channel index.</param>
+   /// <returns>CT-specific phase offset in degrees.</returns>
+   ///
+   float channelPhaseOffsetDeg(size_t channel) const
+   {
+      ASSERT(channel < MAX_CHANNELS);
+
+      return _channels[channel].phaseOffsetDeg;
    }
 
    ///

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <esp_adc/adc_cali.h>
@@ -41,6 +42,32 @@ public:
    {
       NOMINAL = 0,
       NIGHT_AUTO = 1
+   };
+
+   enum class CalibrationFailure : uint8_t
+   {
+      NONE,
+      NO_VOLTAGE,
+      UNPLUGGED,
+      SIGNAL_TOO_LOW,
+      UNSTEADY_LOAD,
+      INVALID_POWER,
+      NO_REFERENCE,
+      INPUT_INVALID,
+      CAPTURE_UNAVAILABLE
+   };
+
+   struct CalibrationResult
+   {
+      CalibrationFailure failure = CalibrationFailure::NONE;
+      uint16_t slices = 0;
+      float sensorRmsVolts = 0.0f;
+      float lineVoltageV = 0.0f;
+      float currentSpreadRatio = 0.0f;
+      float knownTrueAmps = 0.0f;
+      float ampsPerVolt = 0.0f;
+      float totalPhaseDeg = 0.0f;
+      float ctPhaseOffsetDeg = 0.0f;
    };
 
    static constexpr float DEFAULT_VOLTAGE_SCALE = 120.0f / 0.100f; // 120.0V line per 0.100V RMS at ZMPT101B OUT
@@ -91,6 +118,22 @@ private:
       int8_t dayCandidatePolarity = 0;
       uint8_t dayPolarityCount = 0;
    };
+
+   volatile bool _calCaptureActive = false;
+   volatile bool _calCaptureDone = false;
+   volatile bool _calCaptureWarmup = false;
+   size_t _calTargetChannel = 0;
+   uint16_t _calTargetSlices = 20;
+   uint16_t _calCollectedSlices = 0;
+   float _calKnownTrueAmps = 0.0f;
+   float _calBoardPhaseDeg = DEFAULT_PHASE_SHIFT_DEG;
+   double _calSumIRmsV = 0.0;
+   double _calSumLineV = 0.0;
+   double _calSumRawP = 0.0;
+   double _calSumRawQ = 0.0;
+   double _calMinIRmsV = 0.0;
+   double _calMaxIRmsV = 0.0;
+   CalibrationResult _calibrationResult = {};
 
    static constexpr uint32_t SAMPLE_INTERVAL_MICROS = 1000; // 1,000 Hz (50 sample pairs per 50 ms = 16.7 per 60 Hz cycle)
    static constexpr double RMS_SLICE_SPAN_MICROS = 50000.0; // Exact 50.000 ms (3.0000 cycles at 60 Hz)
@@ -315,7 +358,7 @@ private:
       {
          if (_channels[i].isSolar && _solarCal[i].calMode == PhaseCalMode::NIGHT_AUTO)
          {
-            sumRad += _solarCal[i].phaseRad;
+            sumRad += _solarCal[i].phaseRad - (_channels[i].phaseOffsetDeg * DEG_TO_RAD_F);
             count++;
          }
       }
@@ -502,6 +545,12 @@ private:
    ///
    void _advanceChannel()
    {
+      if (_calCaptureActive && _calTargetChannel < _numChannels)
+      {
+         _selectChannel(_calTargetChannel, false);
+         return;
+      }
+
       if (_numChannels <= 1)
       {
          _latchPassSnapshot();
@@ -741,6 +790,89 @@ private:
       vTaskDelete(nullptr);
    }
 
+   void _finishCalibrationCapture(CalibrationFailure failure)
+   {
+      _calibrationResult.failure = failure;
+      _calibrationResult.slices = _calCollectedSlices;
+      _calCaptureActive = false;
+      _calCaptureDone = true;
+   }
+
+   void _collectCalibrationSlice(bool connected, float iRmsVolts, double covVI, double covVQI)
+   {
+      if (!_calCaptureActive || _activeChannel != _calTargetChannel)
+      {
+         return;
+      }
+
+      if (_calCaptureWarmup)
+      {
+         _calCaptureWarmup = false;
+         return;
+      }
+
+      if (!_voltageConnected || _lineVoltageV < 80.0f)
+      {
+         _finishCalibrationCapture(CalibrationFailure::NO_VOLTAGE);
+         return;
+      }
+      if (!connected)
+      {
+         _finishCalibrationCapture(CalibrationFailure::UNPLUGGED);
+         return;
+      }
+
+      if (_calCollectedSlices == 0)
+      {
+         _calMinIRmsV = iRmsVolts;
+         _calMaxIRmsV = iRmsVolts;
+      }
+      else
+      {
+         _calMinIRmsV = std::min(_calMinIRmsV, static_cast<double>(iRmsVolts));
+         _calMaxIRmsV = std::max(_calMaxIRmsV, static_cast<double>(iRmsVolts));
+      }
+
+      _calSumIRmsV += iRmsVolts;
+      _calSumLineV += _lineVoltageV;
+      _calSumRawP += covVI * _voltageScale;
+      _calSumRawQ += covVQI * _voltageScale;
+      _calCollectedSlices++;
+      if (_calCollectedSlices < _calTargetSlices)
+      {
+         return;
+      }
+
+      double meanIRmsV = _calSumIRmsV / _calCollectedSlices;
+      double spreadRatio = meanIRmsV > 0.0 ? (_calMaxIRmsV - _calMinIRmsV) / meanIRmsV : 0.0;
+      if (meanIRmsV < 0.015)
+      {
+         _finishCalibrationCapture(CalibrationFailure::SIGNAL_TOO_LOW);
+         return;
+      }
+      if (spreadRatio > 0.06)
+      {
+         _finishCalibrationCapture(CalibrationFailure::UNSTEADY_LOAD);
+         return;
+      }
+      if (std::fabs(_calSumRawP) < 1e-9)
+      {
+         _finishCalibrationCapture(CalibrationFailure::INVALID_POWER);
+         return;
+      }
+
+      _calibrationResult.failure = CalibrationFailure::NONE;
+      _calibrationResult.slices = _calCollectedSlices;
+      _calibrationResult.sensorRmsVolts = static_cast<float>(meanIRmsV);
+      _calibrationResult.lineVoltageV = static_cast<float>(_calSumLineV / _calCollectedSlices);
+      _calibrationResult.currentSpreadRatio = static_cast<float>(spreadRatio);
+      _calibrationResult.knownTrueAmps = _calKnownTrueAmps;
+      _calibrationResult.ampsPerVolt = _calKnownTrueAmps / static_cast<float>(meanIRmsV);
+      _calibrationResult.totalPhaseDeg = static_cast<float>(std::atan(_calSumRawQ / _calSumRawP)) * RAD_TO_DEG_F;
+      _calibrationResult.ctPhaseOffsetDeg = _calibrationResult.totalPhaseDeg - _calBoardPhaseDeg;
+      _finishCalibrationCapture(CalibrationFailure::NONE);
+   }
+
    ///
    /// <summary>
    /// Reads one time-aligned (V, I) sample pair, updates the continuous AC voltage window, and
@@ -900,7 +1032,7 @@ private:
          float rawQ = static_cast<float>(covVQI) * _voltageScale * ampsPerVolt;
          float phi = (activeCh.isSolar && _solarCal[_activeChannel].calMode != PhaseCalMode::NOMINAL)
             ? _solarCal[_activeChannel].phaseRad
-            : static_cast<float>(_boardPhaseShiftRad);
+            : static_cast<float>(_boardPhaseShiftRad) + (activeCh.phaseOffsetDeg * DEG_TO_RAD_F);
          float cosPhi = std::cos(phi);
          float sinPhi = std::sin(phi);
          signedWatts = (rawP * cosPhi) + (rawQ * sinPhi);
@@ -912,6 +1044,7 @@ private:
          }
       }
 
+      _collectCalibrationSlice(connected, iRmsVolts, covVI, covVQI);
       _recordSlice(_activeChannel, iDcVolts, iRmsVolts, connected, false, hasRealPower, signedWatts, signedVars);
       _advanceChannel();
       if (_settleSamplesRemaining == 0)
@@ -1294,6 +1427,83 @@ public:
 
    ///
    /// <summary>
+   /// Starts a nonblocking calibration capture using completed 50 ms slices from one CT channel.
+   /// </summary>
+   /// <param name="channel">Channel index to sample.</param>
+   /// <param name="knownTrueAmps">Known RMS current through the conductor inside the CT.</param>
+   /// <param name="numSlices">Number of complete slices to average.</param>
+   /// <returns>True when the capture was started.</returns>
+   ///
+   bool startCalibrationCapture(size_t channel, float knownTrueAmps, uint16_t numSlices = 20)
+   {
+      if (channel >= _numChannels || numSlices == 0 || !std::isfinite(knownTrueAmps) || knownTrueAmps <= 0.0f || _calCaptureActive)
+      {
+         return false;
+      }
+
+      _calTargetChannel = channel;
+      _calTargetSlices = numSlices;
+      _calCollectedSlices = 0;
+      _calKnownTrueAmps = knownTrueAmps;
+      _calBoardPhaseDeg = phaseShiftDeg();
+      _calSumIRmsV = 0.0;
+      _calSumLineV = 0.0;
+      _calSumRawP = 0.0;
+      _calSumRawQ = 0.0;
+      _calMinIRmsV = 0.0;
+      _calMaxIRmsV = 0.0;
+      _calibrationResult = CalibrationResult();
+      _calCaptureWarmup = true;
+      _calCaptureDone = false;
+      _calCaptureActive = true;
+      return true;
+   }
+
+   ///
+   /// <summary>
+   /// Returns whether calibration slices are currently being captured.
+   /// </summary>
+   /// <returns>True while a capture is active.</returns>
+   ///
+   bool isCalibrationCaptureActive() const
+   {
+      return _calCaptureActive;
+   }
+
+   ///
+   /// <summary>
+   /// Returns whether a calibration capture has completed and can be consumed.
+   /// </summary>
+   /// <returns>True when a result is ready.</returns>
+   ///
+   bool isCalibrationCaptureComplete() const
+   {
+      return _calCaptureDone;
+   }
+
+   ///
+   /// <summary>
+   /// Copies and clears a completed calibration result.
+   /// </summary>
+   /// <param name="outResult">Receives the calibration result.</param>
+   /// <returns>True when a completed result was available.</returns>
+   ///
+   bool consumeCalibrationResult(CalibrationResult* outResult)
+   {
+      ASSERT(outResult != nullptr);
+
+      if (!_calCaptureDone)
+      {
+         return false;
+      }
+
+      *outResult = _calibrationResult;
+      _calCaptureDone = false;
+      return true;
+   }
+
+   ///
+   /// <summary>
    /// Gets the active board-level phase calibration mode label ("nominal" or "auto").
    /// </summary>
    /// <returns>Board phase calibration mode string.</returns>
@@ -1318,7 +1528,7 @@ public:
       {
          return _solarCal[channel].phaseRad * RAD_TO_DEG_F;
       }
-      return phaseShiftDeg();
+      return phaseShiftDeg() + _channels[channel].phaseOffsetDeg;
    }
 
    ///
