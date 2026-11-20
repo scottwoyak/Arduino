@@ -52,6 +52,7 @@
 #include "WrongBoard.h"
 #endif
 
+#include "CT_Calibration.h"
 #include "DisplayValue.h"
 #include "Format.h"
 #include "LibraryVersion.h"
@@ -76,27 +77,8 @@ constexpr uint8_t PIN_MUX_S3 = 28;
 constexpr uint8_t PIN_MUX_SIG = 22;
 constexpr uint8_t PIN_AC_VOLTAGE = 21;
 
-///
-/// <summary>
-/// Editable CT type presets. Append calibrated CTs here to preserve saved NVS type indices.
-/// </summary>
-///
-struct CtTypePreset
-{
-   const char* displayName;
-   uint16_t ratedAmps;
-   float ampsPerVolt;
-   float phaseOffsetDeg;
-};
-
-constexpr size_t NUM_AMP_OPTIONS = 5;
-constexpr std::array<CtTypePreset, NUM_AMP_OPTIONS> CT_TYPE_TABLE = { {
-   { "20A",   20,  PowerSensorBase::CORE_40A,  0.0f },  // YHDC SCT006 20A:25mA + 20 ohm burden
-   { "30A",   30,  PowerSensorBase::CORE_30A,  0.0f },  // YHDC SCT-013-030
-   { "100SC", 100, 110.03f, -15.47f },  // Square SCT-013-100 reference
-   { "100R",  100, 99.8f, 0.00f },  // Large round 100A CT; replace with measured values
-   { "500A",  500, PowerSensorBase::CORE_213A, 0.0f },  // 500A:50mA + 47 ohm burden
-} };
+using CTCalibration::CT_TYPE_TABLE;
+constexpr size_t NUM_AMP_OPTIONS = CTCalibration::NUM_CT_TYPES;
 constexpr uint8_t CUSTOM_CT_TYPE_INDEX = 0xFF;
 
 constexpr std::array<const char*, NUM_CT_INPUTS> DEFAULT_CT_LOCATIONS = {

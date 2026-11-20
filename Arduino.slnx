@@ -30,6 +30,7 @@
     <File Path="libraries/Woyak/Counter.h" />
     <File Path="libraries/Woyak/CPUTemp.h" />
     <File Path="libraries/Woyak/CTPowerSensor.h" />
+    <File Path="libraries/Woyak/CT_Calibration.h" />
     <File Path="libraries/Woyak/DailyTimer.h" />
     <File Path="libraries/Woyak/DallasTemperatureEx.h" />
     <File Path="libraries/Woyak/DepthSensorBase.h" />

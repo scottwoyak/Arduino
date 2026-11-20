@@ -9,21 +9,25 @@
 // - Tap "Line V" to calibrate AC line voltage (persisted directly to Power_Publisher's NVS
 //   vScale key so the production sketch inherits it automatically).
 // - Tap "Load A" to set the known RMS current seen by the CTs (including any splitter turns).
-// - Tap any connected row to designate it as the Reference CT (*); all other rows immediately
-//   show their phase offset relative to that reference.
+// - Tap a row's left CT label cell to name that CT (persisted across reboots and used in
+//   the Serial CT_TYPE_TABLE snippet); tap the right values cell to select Reference CT (*).
 // - Tap "Capture All" to run a 20-slice (~1.1 s per CT) high-precision capture across every
-//   connected CT, freeze the results on screen, and print a summary table plus ready-to-paste
-//   CT_TYPE_TABLE and DEFAULT_PHASE_SHIFT_DEG entries to Serial.
+//   connected CT, freeze the results on screen, and log a summary table plus a ready-to-paste
+//   CT_Calibration.h block (DEFAULT_PHASE_SHIFT_DEG and merged CT_TYPE_TABLE) to the Device
+//   Hub logs and Serial.
 //
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #define SOUNDS_CUSTOM
 #define TEXT_SIZE_2
@@ -37,14 +41,15 @@
 #include "WrongBoard.h"
 #endif
 
+#include "CT_Calibration.h"
+#include "DeviceSketch.h"
 #include "LibraryVersion.h"
+#include "Logger.h"
 #include "MuxAdcPowerSensor.h"
 #include "SerialTable.h"
 #include "SerialX.h"
 #include "Timer.h"
 #include "WiFiSettings.h"
-
-#include "DeviceSketch.h"
 
 const auto VERSION = MakeVersion("1.0");
 constexpr auto SKETCH_NAME = "CT_Calibration";
@@ -60,6 +65,14 @@ constexpr uint8_t PIN_AC_VOLTAGE = 21;
 
 constexpr auto PREF_NAMESPACE = "Power_Publisher";
 constexpr auto PREF_KEY_VOLTAGE_SCALE = "vScale";
+constexpr auto CAL_PREF_NAMESPACE = SKETCH_NAME;
+constexpr size_t MAX_CT_NAME_LENGTH = 16;
+constexpr size_t NAME_COL_CHARS = 10;
+
+constexpr std::array<const char*, NUM_CT_INPUTS> PREF_KEY_CT_NAME = {
+   "name1", "name2",  "name3",  "name4",  "name5",  "name6",  "name7",  "name8",
+   "name9", "name10", "name11", "name12", "name13", "name14", "name15", "name16",
+};
 
 // ----------- Timing & Measurement Constants
 constexpr uint16_t UI_UPDATE_INTERVAL_MS = 250;
@@ -163,6 +176,7 @@ struct TableRowSlot
 {
    size_t channel = 0;
    Rect16 rect;
+   int16_t nameSplitX = 0;
 };
 
 // ----------- Runtime State
@@ -173,6 +187,8 @@ float knownCurrentAmps = 0.0f;
 int8_t referenceChannel = -1;
 std::string statusMessage = "Plug in CTs, set Load A, then Capture All";
 
+std::array<char[MAX_CT_NAME_LENGTH], NUM_CT_INPUTS> channelNames = {};
+std::array<bool, NUM_CT_INPUTS> channelCalibrated = {};
 std::array<LiveChannelState, NUM_CT_INPUTS> liveChannels = {};
 std::array<MuxAdcPowerSensor::CalibrationResult, NUM_CT_INPUTS> capturedResults = {};
 std::array<bool, NUM_CT_INPUTS> capturedPresent = {};
@@ -187,15 +203,80 @@ size_t lastDrawnRowCount = 0;
 int8_t lastDrawnRefChannel = -2;
 std::array<size_t, NUM_CT_INPUTS> lastDrawnChannels = {};
 std::array<std::string, NUM_CT_INPUTS> lastDrawnRowTexts = {};
+std::array<Color, NUM_CT_INPUTS> lastDrawnRowColors = {};
 std::string lastLineVText;
+Color lastLineVColor = Color::BLACK;
 std::string lastLoadAText;
+Color lastLoadAColor = Color::BLACK;
+bool lastLoadASet = false;
 std::string lastFooterLine1;
+Color lastFooterLine1Color = Color::BLACK;
 std::string lastFooterLine2;
+
+LGFX_Sprite paramValueSprite(&sketch.arduino.display);
+bool paramValueSpriteCreated = false;
+LGFX_Sprite tableRowSprite(&sketch.arduino.display);
+bool tableRowSpriteCreated = false;
+LGFX_Sprite compactRowSprite(&sketch.arduino.display);
+bool compactRowSpriteCreated = false;
+LGFX_Sprite footerLineSprite(&sketch.arduino.display);
+bool footerLineSpriteCreated = false;
 
 Rect16 voltageBoxRect;
 Rect16 currentBoxRect;
 Rect16 resumeButtonRect;
 Rect16 captureButtonRect;
+
+///
+/// <summary>
+/// Renders a single line of text into an off-screen sprite and pushes it atomically
+/// to the display to eliminate clear-then-draw flicker on live updates.
+/// </summary>
+/// <param name="sprite">Reusable sprite buffer for this text region.</param>
+/// <param name="created">Tracks whether the sprite has already been allocated.</param>
+/// <param name="x">Left screen coordinate.</param>
+/// <param name="y">Top screen coordinate.</param>
+/// <param name="width">Sprite width in pixels.</param>
+/// <param name="textSize">Font size index.</param>
+/// <param name="text">Text string to render.</param>
+/// <param name="fg">Foreground text color.</param>
+/// <param name="bg">Background fill color.</param>
+/// <param name="dividerX">Optional sprite-relative X coordinate for a 1-px vertical divider, or -1 for none.</param>
+/// <param name="dividerColor">Color of the optional vertical divider.</param>
+///
+void drawSpriteText(
+   LGFX_Sprite* sprite,
+   bool* created,
+   int16_t x,
+   int16_t y,
+   int16_t width,
+   uint8_t textSize,
+   const char* text,
+   Color fg,
+   Color bg,
+   int16_t dividerX = -1,
+   Color dividerColor = Color::GRAY)
+{
+   ASSERT(sprite != nullptr);
+   ASSERT(created != nullptr);
+   ASSERT(text != nullptr);
+
+   if (!*created)
+   {
+      sketch.arduino.createSprite(*sprite, width, sketch.arduino.charH(textSize), textSize);
+      *created = true;
+   }
+
+   sprite->fillScreen(static_cast<uint16_t>(bg));
+   sprite->setTextColor(static_cast<uint16_t>(fg), static_cast<uint16_t>(bg));
+   sprite->setCursor(0, 0);
+   sprite->print(text);
+   if (dividerX >= 0 && dividerX < width)
+   {
+      sprite->drawFastVLine(dividerX, 0, sprite->height(), static_cast<uint16_t>(dividerColor));
+   }
+   sprite->pushSprite(x, y);
+}
 
 ///
 /// <summary>
@@ -252,6 +333,160 @@ void saveVoltageScale(float scale)
 
 ///
 /// <summary>
+/// Loads saved per-channel CT names from CT_Calibration's Preferences namespace.
+/// </summary>
+///
+void loadChannelNames()
+{
+   Preferences prefs;
+   if (prefs.begin(CAL_PREF_NAMESPACE, true))
+   {
+      for (size_t i = 0; i < NUM_CT_INPUTS; i++)
+      {
+         if (prefs.isKey(PREF_KEY_CT_NAME[i]))
+         {
+            String saved = prefs.getString(PREF_KEY_CT_NAME[i], "");
+            saved.trim();
+            strlcpy(channelNames[i], saved.c_str(), sizeof(channelNames[i]));
+         }
+         else
+         {
+            channelNames[i][0] = '\0';
+         }
+      }
+      prefs.end();
+   }
+}
+
+///
+/// <summary>
+/// Saves or clears a custom CT name for a channel in Preferences.
+/// </summary>
+/// <param name="ch">Zero-based channel index.</param>
+/// <param name="name">New name string, or empty to clear.</param>
+///
+void saveChannelName(size_t ch, const char* name)
+{
+   ASSERT(ch < NUM_CT_INPUTS);
+   ASSERT(name != nullptr);
+
+   strlcpy(channelNames[ch], name, sizeof(channelNames[ch]));
+
+   Preferences prefs;
+   prefs.begin(CAL_PREF_NAMESPACE, false);
+   if (channelNames[ch][0] != '\0')
+   {
+      prefs.putString(PREF_KEY_CT_NAME[ch], channelNames[ch]);
+   }
+   else
+   {
+      prefs.remove(PREF_KEY_CT_NAME[ch]);
+   }
+   prefs.end();
+}
+
+///
+/// <summary>
+/// Compares two C strings case-insensitively.
+/// </summary>
+/// <param name="a">First string.</param>
+/// <param name="b">Second string.</param>
+/// <returns>True if both strings match ignoring ASCII letter case.</returns>
+///
+bool equalsIgnoreCase(const char* a, const char* b)
+{
+   ASSERT(a != nullptr);
+   ASSERT(b != nullptr);
+
+   while (*a != '\0' && *b != '\0')
+   {
+      if (std::tolower(static_cast<unsigned char>(*a)) != std::tolower(static_cast<unsigned char>(*b)))
+      {
+         return false;
+      }
+      a++;
+      b++;
+   }
+   return *a == '\0' && *b == '\0';
+}
+
+///
+/// <summary>
+/// Applies the latest available calibration values for a channel (current-session capture if
+/// available, otherwise matching CT_Calibration.h preset by channel name) to powerSensor so
+/// live Amps and Watts readings reflect the CT's calibration.
+/// </summary>
+/// <param name="ch">Zero-based channel index.</param>
+///
+void applyChannelCalibration(size_t ch)
+{
+   ASSERT(ch < NUM_CT_INPUTS);
+
+   if (capturedPresent[ch] && capturedResults[ch].failure == MuxAdcPowerSensor::CalibrationFailure::NONE)
+   {
+      powerSensor.setCoreRating(capturedResults[ch].ampsPerVolt, ch);
+      powerSensor.setChannelPhaseOffsetDeg(ch, capturedResults[ch].totalPhaseDeg - powerSensor.phaseShiftDeg());
+      channelCalibrated[ch] = true;
+      return;
+   }
+
+   if (channelNames[ch][0] != '\0')
+   {
+      for (const CTCalibration::CtTypePreset& preset : CTCalibration::CT_TYPE_TABLE)
+      {
+         if (equalsIgnoreCase(preset.displayName, channelNames[ch]))
+         {
+            powerSensor.setCoreRating(preset.ampsPerVolt, ch);
+            powerSensor.setChannelPhaseOffsetDeg(ch, preset.phaseOffsetDeg);
+            channelCalibrated[ch] = true;
+            return;
+         }
+      }
+   }
+
+   powerSensor.setChannelPhaseOffsetDeg(ch, 0.0f);
+   channelCalibrated[ch] = false;
+}
+
+///
+/// <summary>
+/// Applies the latest calibration values to all 16 CT channels.
+/// </summary>
+///
+void applyAllChannelCalibrations()
+{
+   for (size_t i = 0; i < NUM_CT_INPUTS; i++)
+   {
+      applyChannelCalibration(i);
+   }
+}
+
+///
+/// <summary>
+/// Extracts a leading positive amp rating from a CT name (e.g. "100SC" -> 100, "20A" -> 20),
+/// falling back to 100 when the name does not start with a positive integer.
+/// </summary>
+/// <param name="name">Optional custom CT name.</param>
+/// <returns>Estimated rated amp value for the CT_TYPE_TABLE snippet.</returns>
+///
+uint16_t parseRatedAmpsFromName(const char* name)
+{
+   if (name == nullptr || name[0] == '\0')
+   {
+      return 100;
+   }
+
+   char* endPtr = nullptr;
+   unsigned long parsed = std::strtoul(name, &endPtr, 10);
+   if (endPtr != name && parsed > 0 && parsed <= 65535)
+   {
+      return static_cast<uint16_t>(parsed);
+   }
+   return 100;
+}
+
+///
+/// <summary>
 /// Returns a short display label for a calibration failure code.
 /// </summary>
 /// <param name="failure">Failure code reported by MuxAdcPowerSensor.</param>
@@ -281,7 +516,6 @@ const char* failureShortText(MuxAdcPowerSensor::CalibrationFailure failure)
 ///
 void updateLiveChannelSamples()
 {
-   const float boardPhaseDeg = powerSensor.phaseShiftDeg();
    const bool hasVoltage = powerSensor.voltageConnected();
 
    for (size_t i = 0; i < NUM_CT_INPUTS; i++)
@@ -317,7 +551,7 @@ void updateLiveChannelSamples()
       float q = powerSensor.reactivePower(i);
       if (std::fabs(p) >= 0.05f)
       {
-         float sliceTotalPhaseDeg = boardPhaseDeg + (std::atan(q / p) * RAD_TO_DEG_F);
+         float sliceTotalPhaseDeg = powerSensor.channelPhaseShiftDeg(i) + (std::atan(q / p) * RAD_TO_DEG_F);
          if (!st.hasPhase)
          {
             st.emaTotalPhaseDeg = sliceTotalPhaseDeg;
@@ -404,7 +638,7 @@ void drawHeader()
 
    sketch.arduino.setTextSize(HEADER_SIZE);
    sketch.arduino.setCursor(MARGIN_X, 6);
-   sketch.arduino.println("CT Cal", Color::HEADING);
+   sketch.arduino.println("CT Calibration", Color::HEADING);
 
    const char* badgeText = "LIVE";
    Color badgeColor = Color::DARKGREEN;
@@ -443,6 +677,7 @@ void drawParameterBoxes(bool force = false)
 
    voltageBoxRect = Rect16(MARGIN_X, PARAM_BOX_Y, halfW, PARAM_BOX_H);
    currentBoxRect = Rect16(MARGIN_X + halfW + GAP, PARAM_BOX_Y, contentW - halfW - GAP, PARAM_BOX_H);
+   const int16_t valueSpriteW = std::min(voltageBoxRect.width, currentBoxRect.width) - 20;
 
    std::ostringstream vStream;
    Color vColor = Color::VALUE2;
@@ -457,24 +692,36 @@ void drawParameterBoxes(bool force = false)
    }
    std::string vText = vStream.str();
 
-   if (force || vText != lastLineVText)
+   if (force)
    {
-      lastLineVText = vText;
       sketch.arduino.display.fillRoundRect(voltageBoxRect.left(), voltageBoxRect.top(), voltageBoxRect.width, voltageBoxRect.height, CORNER_R, static_cast<uint16_t>(Color::DARKBLUE));
       sketch.arduino.display.drawRoundRect(voltageBoxRect.left(), voltageBoxRect.top(), voltageBoxRect.width, voltageBoxRect.height, CORNER_R, static_cast<uint16_t>(Color::WHITE));
       sketch.arduino.setTextSize(FOOTER_SIZE);
       sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::SUB_LABEL), static_cast<uint16_t>(Color::DARKBLUE));
       sketch.arduino.display.setCursor(voltageBoxRect.left() + 10, voltageBoxRect.top() + 8);
       sketch.arduino.display.print("Line V (tap)");
-      sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
-      sketch.arduino.display.setTextColor(static_cast<uint16_t>(vColor), static_cast<uint16_t>(Color::DARKBLUE));
-      sketch.arduino.display.setCursor(voltageBoxRect.left() + 10, voltageBoxRect.top() + 34);
-      sketch.arduino.display.print(vText.c_str());
    }
 
+   if (force || vText != lastLineVText || vColor != lastLineVColor)
+   {
+      lastLineVText = vText;
+      lastLineVColor = vColor;
+      drawSpriteText(
+         &paramValueSprite,
+         &paramValueSpriteCreated,
+         voltageBoxRect.left() + 10,
+         voltageBoxRect.top() + 34,
+         valueSpriteW,
+         TABLE_TEXT_SIZE,
+         vText.c_str(),
+         vColor,
+         Color::DARKBLUE);
+   }
+
+   const bool loadASet = knownCurrentAmps > 0.0f;
    std::ostringstream aStream;
    Color aColor = Color::VALUE2;
-   if (knownCurrentAmps > 0.0f)
+   if (loadASet)
    {
       aStream << std::fixed << std::setprecision(2) << knownCurrentAmps << " A";
       aColor = Color::VALUE;
@@ -485,26 +732,39 @@ void drawParameterBoxes(bool force = false)
    }
    std::string aText = aStream.str();
 
-   if (force || aText != lastLoadAText)
+   const bool loadAChromeChanged = force || (loadASet != lastLoadASet);
+   if (loadAChromeChanged)
    {
-      lastLoadAText = aText;
-      const Color curBorder = knownCurrentAmps > 0.0f ? Color::WHITE : Color::VALUE2;
+      lastLoadASet = loadASet;
+      const Color curBorder = loadASet ? Color::WHITE : Color::VALUE2;
       sketch.arduino.display.fillRoundRect(currentBoxRect.left(), currentBoxRect.top(), currentBoxRect.width, currentBoxRect.height, CORNER_R, static_cast<uint16_t>(Color::DARKBLUE));
       sketch.arduino.display.drawRoundRect(currentBoxRect.left(), currentBoxRect.top(), currentBoxRect.width, currentBoxRect.height, CORNER_R, static_cast<uint16_t>(curBorder));
       sketch.arduino.setTextSize(FOOTER_SIZE);
       sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::SUB_LABEL), static_cast<uint16_t>(Color::DARKBLUE));
       sketch.arduino.display.setCursor(currentBoxRect.left() + 10, currentBoxRect.top() + 8);
       sketch.arduino.display.print("Load A (tap)");
-      sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
-      sketch.arduino.display.setTextColor(static_cast<uint16_t>(aColor), static_cast<uint16_t>(Color::DARKBLUE));
-      sketch.arduino.display.setCursor(currentBoxRect.left() + 10, currentBoxRect.top() + 34);
-      sketch.arduino.display.print(aText.c_str());
+   }
+
+   if (loadAChromeChanged || aText != lastLoadAText || aColor != lastLoadAColor)
+   {
+      lastLoadAText = aText;
+      lastLoadAColor = aColor;
+      drawSpriteText(
+         &paramValueSprite,
+         &paramValueSpriteCreated,
+         currentBoxRect.left() + 10,
+         currentBoxRect.top() + 34,
+         valueSpriteW,
+         TABLE_TEXT_SIZE,
+         aText.c_str(),
+         aColor,
+         Color::DARKBLUE);
    }
 }
 
 ///
 /// <summary>
-/// Draws the static hint, table column header, and divider line.
+/// Draws the static hint, mode-appropriate table column header, and divider line.
 /// </summary>
 ///
 void drawTableHeader()
@@ -512,48 +772,47 @@ void drawTableHeader()
    const int16_t contentW = sketch.arduino.width() - 2 * MARGIN_X;
    sketch.arduino.setTextSize(FOOTER_SIZE);
    sketch.arduino.setCursor(MARGIN_X, HINT_Y);
-   sketch.arduino.println("Tap a row to select Reference CT (*)", Color::SUB_LABEL);
+   sketch.arduino.println("Tap CT name to rename | Tap values for Ref (*)", Color::SUB_LABEL);
 
    sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
    sketch.arduino.setCursor(MARGIN_X + 7, TABLE_HEADER_Y);
-   sketch.arduino.println("Ch     A/V  Phase  Offset", Color::SUB_LABEL);
+   const char* headerText = (mode == CalibrationMode::FROZEN)
+      ? "CT              A/V       Offset"
+      : "CT             Amps        Watts";
+   sketch.arduino.println(headerText, Color::SUB_LABEL);
    sketch.arduino.display.drawFastHLine(MARGIN_X, TABLE_DIVIDER_Y, contentW, static_cast<uint16_t>(Color::GRAY));
 }
 
 ///
 /// <summary>
-/// Formats one 25-character fixed-width row string for the CT table.
+/// Formats one 32-character fixed-width row string for the CT table.
 /// </summary>
 /// <param name="ch">Zero-based channel index.</param>
 /// <param name="isRef">True if this channel is the selected reference CT.</param>
-/// <param name="colAv">Right-aligned 7-char A/V or status text.</param>
-/// <param name="colPhase">Right-aligned 7-char total phase text.</param>
-/// <param name="colOffset">Right-aligned 8-char phase offset text.</param>
-/// <returns>Formatted 25-character row string.</returns>
+/// <param name="col1">Right-aligned 11-char first value column text.</param>
+/// <param name="col2">Right-aligned 11-char second value column text.</param>
+/// <returns>Formatted 32-character row string.</returns>
 ///
-std::string formatTableRowText(size_t ch, bool isRef, const std::string& colAv, const std::string& colPhase, const std::string& colOffset)
+std::string formatTableRowText(size_t ch, bool isRef, const std::string& col1, const std::string& col2)
 {
-   std::ostringstream row;
-   if (isRef)
+   std::string label;
+   label += isRef ? '*' : ' ';
+   label += std::to_string(ch + 1);
+   if (channelNames[ch][0] != '\0')
    {
-      row << '*';
-      if (ch + 1 < 10)
-      {
-         row << (ch + 1) << ' ';
-      }
-      else
-      {
-         row << (ch + 1);
-      }
+      label += ':';
+      label += channelNames[ch];
    }
-   else
+   if (label.length() > NAME_COL_CHARS - 1)
    {
-      row << std::setw(2) << (ch + 1) << ' ';
+      label.resize(NAME_COL_CHARS - 1);
    }
+   label.append(NAME_COL_CHARS - label.length(), ' ');
 
-   row << std::setw(7) << colAv
-       << std::setw(7) << colPhase
-       << std::setw(8) << colOffset;
+   std::ostringstream row;
+   row << label
+       << std::setw(11) << col1
+       << std::setw(11) << col2;
    return row.str();
 }
 
@@ -594,14 +853,16 @@ void drawTableRows(bool force = false)
 
    ensureValidReferenceChannel(activeChannels, count);
 
-   bool structureChanged = force || (count != lastDrawnRowCount) || (referenceChannel != lastDrawnRefChannel);
-   if (!structureChanged)
+   const int8_t prevRefChannel = lastDrawnRefChannel;
+   const bool refChanged = (referenceChannel != prevRefChannel);
+   bool layoutChanged = force || (count != lastDrawnRowCount);
+   if (!layoutChanged)
    {
       for (size_t i = 0; i < count; i++)
       {
          if (activeChannels[i] != lastDrawnChannels[i])
          {
-            structureChanged = true;
+            layoutChanged = true;
             break;
          }
       }
@@ -618,7 +879,7 @@ void drawTableRows(bool force = false)
 
    if (count == 0)
    {
-      if (structureChanged)
+      if (layoutChanged)
       {
          sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
          sketch.arduino.setCursor(MARGIN_X, TABLE_ROWS_TOP_Y + 40);
@@ -638,8 +899,13 @@ void drawTableRows(bool force = false)
       rowStep = MAX_ROW_STEP;
    }
    const int16_t rowH = rowStep - ROW_GAP;
-   const uint8_t rowTextSize = rowH >= 32 ? TABLE_TEXT_SIZE : FOOTER_SIZE;
+   const bool useCompactFont = rowH < 32;
+   const uint8_t rowTextSize = useCompactFont ? FOOTER_SIZE : TABLE_TEXT_SIZE;
    const int16_t textH = sketch.arduino.charH(rowTextSize);
+   LGFX_Sprite* rowSprite = useCompactFont ? &compactRowSprite : &tableRowSprite;
+   bool* rowSpriteCreated = useCompactFont ? &compactRowSpriteCreated : &tableRowSpriteCreated;
+   const int16_t rowTextWidth = contentW - 14;
+   const int16_t dividerOffsetX = static_cast<int16_t>(NAME_COL_CHARS) * sketch.arduino.charW(rowTextSize) - 4;
 
    for (size_t idx = 0; idx < count; idx++)
    {
@@ -647,83 +913,71 @@ void drawTableRows(bool force = false)
       lastDrawnChannels[idx] = ch;
       const int16_t rowY = TABLE_ROWS_TOP_Y + static_cast<int16_t>(idx) * rowStep;
       const Rect16 rect(MARGIN_X, rowY, contentW, rowH);
-      visibleRows[idx] = TableRowSlot{ ch, rect };
+      const int16_t dividerScreenX = rect.left() + 7 + dividerOffsetX;
+      visibleRows[idx] = TableRowSlot{ ch, rect, dividerScreenX };
 
       const bool isRef = (static_cast<int8_t>(ch) == referenceChannel);
       const Color bg = isRef ? Color::DARKGREEN : Color::DARKBLUE;
       const Color border = isRef ? Color::WHITE : Color::GRAY;
       Color textColor = Color::WHITE;
 
-      std::string colAv = "---";
-      std::string colPhase = "---";
-      std::string colOffset = "---";
+      std::string col1 = "---";
+      std::string col2 = "---";
 
       if (mode == CalibrationMode::FROZEN)
       {
          const MuxAdcPowerSensor::CalibrationResult& res = capturedResults[ch];
          if (res.failure != MuxAdcPowerSensor::CalibrationFailure::NONE)
          {
-            colAv = failureShortText(res.failure);
+            col1 = failureShortText(res.failure);
             textColor = Color::VALUE2;
          }
          else
          {
             std::ostringstream avS;
             avS << std::fixed << std::setprecision(2) << res.ampsPerVolt;
-            colAv = avS.str();
-
-            std::ostringstream phS;
-            phS << std::fixed << std::setprecision(2) << res.totalPhaseDeg;
-            colPhase = phS.str();
+            col1 = avS.str();
 
             if (hasRefPhase)
             {
                float offsetDeg = isRef ? 0.0f : (res.totalPhaseDeg - refPhaseDeg);
                std::ostringstream offS;
                offS << std::fixed << std::showpos << std::setprecision(2) << offsetDeg;
-               colOffset = offS.str();
+               col2 = offS.str();
             }
          }
       }
       else
       {
-         const LiveChannelState& st = liveChannels[ch];
-         if (!st.hasSignal)
+         if (!channelCalibrated[ch])
          {
-            colAv = "low";
-            textColor = Color::LIGHTGRAY;
+            col1 = "uncal";
+            textColor = Color::VALUE2;
          }
          else
          {
-            if (knownCurrentAmps > 0.0f)
+            float liveAmps = powerSensor.amps(ch);
+            std::ostringstream ampsS;
+            ampsS << std::fixed << std::setprecision(2) << liveAmps << " A";
+            col1 = ampsS.str();
+
+            if (powerSensor.voltageConnected())
             {
-               std::ostringstream avS;
-               avS << std::fixed << std::setprecision(2) << (knownCurrentAmps / st.emaRmsVolts);
-               colAv = avS.str();
-            }
-            else
-            {
-               colAv = "set A";
+               std::ostringstream wattsS;
+               wattsS << std::fixed << std::setprecision(1) << powerSensor.watts(ch) << " W";
+               col2 = wattsS.str();
             }
 
-            if (st.hasPhase)
+            if (liveAmps < 0.01f)
             {
-               std::ostringstream phS;
-               phS << std::fixed << std::setprecision(2) << st.emaTotalPhaseDeg;
-               colPhase = phS.str();
-
-               if (hasRefPhase)
-               {
-                  float offsetDeg = isRef ? 0.0f : (st.emaTotalPhaseDeg - refPhaseDeg);
-                  std::ostringstream offS;
-                  offS << std::fixed << std::showpos << std::setprecision(2) << offsetDeg;
-                  colOffset = offS.str();
-               }
+               textColor = Color::LIGHTGRAY;
             }
          }
       }
 
-      if (structureChanged)
+      const bool rowChromeChanged = layoutChanged ||
+         (refChanged && (static_cast<int8_t>(ch) == prevRefChannel || isRef));
+      if (rowChromeChanged)
       {
          sketch.arduino.display.fillRoundRect(rect.left(), rect.top(), rect.width, rect.height, CORNER_R, static_cast<uint16_t>(bg));
          sketch.arduino.display.drawRoundRect(rect.left(), rect.top(), rect.width, rect.height, CORNER_R, static_cast<uint16_t>(border));
@@ -731,16 +985,26 @@ void drawTableRows(bool force = false)
          {
             sketch.arduino.display.drawRoundRect(rect.left() + 1, rect.top() + 1, rect.width - 2, rect.height - 2, CORNER_R, static_cast<uint16_t>(border));
          }
+         sketch.arduino.display.drawFastVLine(dividerScreenX, rect.top() + 3, rect.height - 6, static_cast<uint16_t>(Color::GRAY));
       }
 
-      std::string rowText = formatTableRowText(ch, isRef, colAv, colPhase, colOffset);
-      if (structureChanged || rowText != lastDrawnRowTexts[idx])
+      std::string rowText = formatTableRowText(ch, isRef, col1, col2);
+      if (rowChromeChanged || rowText != lastDrawnRowTexts[idx] || textColor != lastDrawnRowColors[idx])
       {
          lastDrawnRowTexts[idx] = rowText;
-         sketch.arduino.setTextSize(rowTextSize);
-         sketch.arduino.display.setTextColor(static_cast<uint16_t>(textColor), static_cast<uint16_t>(bg));
-         sketch.arduino.display.setCursor(rect.left() + 7, rect.top() + (rect.height - textH) / 2);
-         sketch.arduino.display.print(rowText.c_str());
+         lastDrawnRowColors[idx] = textColor;
+         drawSpriteText(
+            rowSprite,
+            rowSpriteCreated,
+            rect.left() + 7,
+            rect.top() + (rect.height - textH) / 2,
+            rowTextWidth,
+            rowTextSize,
+            rowText.c_str(),
+            textColor,
+            bg,
+            dividerOffsetX,
+            Color::GRAY);
       }
    }
 }
@@ -768,22 +1032,37 @@ void drawStatusFooter(bool force = false)
       line1 = "DEFAULT_PHASE_SHIFT_DEG = ---";
    }
 
-   if (force || line1 != lastFooterLine1)
+   const int16_t footerWidth = sketch.arduino.width() - 2 * MARGIN_X;
+
+   if (force || line1 != lastFooterLine1 || line1Color != lastFooterLine1Color)
    {
       lastFooterLine1 = line1;
-      sketch.arduino.display.fillRect(0, FOOTER_LINE1_Y, sketch.arduino.width(), FOOTER_LINE2_Y - FOOTER_LINE1_Y, static_cast<uint16_t>(Color::BLACK));
-      sketch.arduino.setTextSize(FOOTER_SIZE);
-      sketch.arduino.setCursor(MARGIN_X, FOOTER_LINE1_Y);
-      sketch.arduino.println(line1.c_str(), line1Color);
+      lastFooterLine1Color = line1Color;
+      drawSpriteText(
+         &footerLineSprite,
+         &footerLineSpriteCreated,
+         MARGIN_X,
+         FOOTER_LINE1_Y,
+         footerWidth,
+         FOOTER_SIZE,
+         line1.c_str(),
+         line1Color,
+         Color::BLACK);
    }
 
    if (force || statusMessage != lastFooterLine2)
    {
       lastFooterLine2 = statusMessage;
-      sketch.arduino.display.fillRect(0, FOOTER_LINE2_Y, sketch.arduino.width(), FOOTER_BOTTOM_Y - FOOTER_LINE2_Y, static_cast<uint16_t>(Color::BLACK));
-      sketch.arduino.setTextSize(FOOTER_SIZE);
-      sketch.arduino.setCursor(MARGIN_X, FOOTER_LINE2_Y);
-      sketch.arduino.println(statusMessage.c_str(), Color::SUB_LABEL);
+      drawSpriteText(
+         &footerLineSprite,
+         &footerLineSpriteCreated,
+         MARGIN_X,
+         FOOTER_LINE2_Y,
+         footerWidth,
+         FOOTER_SIZE,
+         statusMessage.c_str(),
+         Color::SUB_LABEL,
+         Color::BLACK);
    }
 }
 
@@ -857,13 +1136,17 @@ void drawFullScreen()
    lastDrawnRowCount = 0;
    lastDrawnRefChannel = -2;
    lastLineVText.clear();
+   lastLineVColor = Color::BLACK;
    lastLoadAText.clear();
+   lastLoadAColor = Color::BLACK;
    lastFooterLine1.clear();
+   lastFooterLine1Color = Color::BLACK;
    lastFooterLine2.clear();
    for (std::string& s : lastDrawnRowTexts)
    {
       s.clear();
    }
+   lastDrawnRowColors.fill(Color::BLACK);
    drawHeader();
    drawParameterBoxes(true);
    drawTableHeader();
@@ -874,16 +1157,17 @@ void drawFullScreen()
 
 ///
 /// <summary>
-/// Prints the captured multi-CT calibration table and copyable CT_TYPE_TABLE snippet to Serial.
+/// Logs the captured multi-CT calibration table and a ready-to-paste CT_Calibration.h block
+/// to the Device Hub log (which also echoes to Serial).
 /// </summary>
 ///
-void printCapturedResultsToSerial()
+void logCapturedResults()
 {
    float refPhaseDeg = 0.0f;
    bool hasRefPhase = getReferencePhaseDeg(&refPhaseDeg);
 
    static constexpr std::array<SerialTable::Column, 6> SERIAL_COLUMNS = { {
-      { "Ch", 6 },
+      { "CT", 14 },
       { "mV RMS", 9 },
       { "A/V", 9 },
       { "Phase", 9 },
@@ -891,8 +1175,14 @@ void printCapturedResultsToSerial()
       { "Spread", 9 },
    } };
 
-   SerialTable table("CT Calibration Results", SERIAL_COLUMNS);
-   table.printHeader(false);
+   std::ostringstream title;
+   title << std::fixed << std::setprecision(1)
+         << "CT Calibration Results (Line V: " << powerSensor.lineVoltage() << " V, Load A: "
+         << std::setprecision(2) << knownCurrentAmps << " A)";
+   std::string titleText = title.str();
+
+   SerialTable table(titleText.c_str(), SERIAL_COLUMNS);
+   String tableOutput = table.formatHeader();
 
    for (size_t i = 0; i < NUM_CT_INPUTS; i++)
    {
@@ -903,11 +1193,16 @@ void printCapturedResultsToSerial()
 
       const bool isRef = (static_cast<int8_t>(i) == referenceChannel);
       std::string chLabel = (isRef ? "*" : " ") + std::to_string(i + 1);
+      if (channelNames[i][0] != '\0')
+      {
+         chLabel += ":";
+         chLabel += channelNames[i];
+      }
       const MuxAdcPowerSensor::CalibrationResult& res = capturedResults[i];
 
       if (res.failure != MuxAdcPowerSensor::CalibrationFailure::NONE)
       {
-         table.printRow(false, chLabel.c_str(), failureShortText(res.failure), "---", "---", "---", "---");
+         tableOutput += table.formatRow(chLabel.c_str(), failureShortText(res.failure), "---", "---", "---", "---");
          continue;
       }
 
@@ -925,8 +1220,7 @@ void printCapturedResultsToSerial()
       std::ostringstream spreadStr;
       spreadStr << std::fixed << std::setprecision(1) << (res.currentSpreadRatio * 100.0f) << "%";
 
-      table.printRow(
-         false,
+      tableOutput += table.formatRow(
          chLabel.c_str(),
          SerialTable::fixed(res.sensorRmsVolts * 1000.0f, 2),
          SerialTable::fixed(res.ampsPerVolt, 2),
@@ -935,16 +1229,29 @@ void printCapturedResultsToSerial()
          spreadStr.str().c_str());
    }
 
-   SerialX::println();
-   if (hasRefPhase)
+   while (tableOutput.endsWith("\n"))
    {
-      std::ostringstream refLine;
-      refLine << std::fixed << std::setprecision(2)
-              << "DEFAULT_PHASE_SHIFT_DEG = " << refPhaseDeg << "f;  // Ch " << (referenceChannel + 1);
-      SerialX::println(refLine.str().c_str());
+      tableOutput.remove(tableOutput.length() - 1);
+   }
+   Logger.log(tableOutput, LogSeverity::INFO, "Calibration");
+
+   struct MergedCtEntry
+   {
+      std::string displayName;
+      uint16_t ratedAmps;
+      float ampsPerVolt;
+      float phaseOffsetDeg;
+      bool updated = false;
+      bool isNew = false;
+   };
+
+   std::vector<MergedCtEntry> mergedTable;
+   mergedTable.reserve(CTCalibration::NUM_CT_TYPES + NUM_CT_INPUTS);
+   for (const CTCalibration::CtTypePreset& preset : CTCalibration::CT_TYPE_TABLE)
+   {
+      mergedTable.push_back({ preset.displayName, preset.ratedAmps, preset.ampsPerVolt, preset.phaseOffsetDeg, false, false });
    }
 
-   SerialX::println("// Copy into Power_Publisher CT_TYPE_TABLE:");
    for (size_t i = 0; i < NUM_CT_INPUTS; i++)
    {
       if (!capturedPresent[i] || capturedResults[i].failure != MuxAdcPowerSensor::CalibrationFailure::NONE)
@@ -954,15 +1261,77 @@ void printCapturedResultsToSerial()
 
       const bool isRef = (static_cast<int8_t>(i) == referenceChannel);
       float offsetDeg = hasRefPhase ? (isRef ? 0.0f : (capturedResults[i].totalPhaseDeg - refPhaseDeg)) : 0.0f;
+      std::string presetName = channelNames[i][0] != '\0' ? std::string(channelNames[i]) : ("Ch" + std::to_string(i + 1));
 
-      std::ostringstream entry;
-      entry << std::fixed << std::setprecision(2)
-            << "   { \"Ch" << (i + 1) << "\", 100, "
-            << capturedResults[i].ampsPerVolt << "f, "
-            << std::showpos << offsetDeg << "f },";
-      SerialX::println(entry.str().c_str());
+      bool matchedExisting = false;
+      for (MergedCtEntry& existing : mergedTable)
+      {
+         if (equalsIgnoreCase(existing.displayName.c_str(), presetName.c_str()))
+         {
+            existing.displayName = presetName;
+            existing.ampsPerVolt = capturedResults[i].ampsPerVolt;
+            existing.phaseOffsetDeg = offsetDeg;
+            existing.updated = true;
+            matchedExisting = true;
+            break;
+         }
+      }
+
+      if (!matchedExisting)
+      {
+         mergedTable.push_back({
+            presetName,
+            parseRatedAmpsFromName(channelNames[i]),
+            capturedResults[i].ampsPerVolt,
+            offsetDeg,
+            true,
+            true
+         });
+      }
    }
-   SerialX::println();
+
+   std::ostringstream snippet;
+   snippet << "// Copy into libraries/Woyak/CT_Calibration.h (namespace CTCalibration):\n";
+   if (hasRefPhase)
+   {
+      snippet << std::fixed << std::setprecision(2)
+              << "inline constexpr float DEFAULT_PHASE_SHIFT_DEG = " << refPhaseDeg << "f;  // Ch " << (referenceChannel + 1);
+      if (referenceChannel >= 0 && channelNames[static_cast<size_t>(referenceChannel)][0] != '\0')
+      {
+         snippet << " (" << channelNames[static_cast<size_t>(referenceChannel)] << ")";
+      }
+      snippet << "\n";
+   }
+
+   snippet << "inline constexpr size_t NUM_CT_TYPES = " << mergedTable.size() << ";\n";
+   snippet << "inline constexpr std::array<CtTypePreset, NUM_CT_TYPES> CT_TYPE_TABLE = { {\n";
+   for (const MergedCtEntry& entry : mergedTable)
+   {
+      std::string quotedName = "\"" + entry.displayName + "\",";
+      std::ostringstream ampsCol;
+      ampsCol << entry.ratedAmps << ",";
+      std::ostringstream avCol;
+      avCol << std::fixed << std::setprecision(2) << entry.ampsPerVolt << "f,";
+      std::ostringstream offCol;
+      offCol << std::fixed << std::showpos << std::setprecision(2) << entry.phaseOffsetDeg << "f";
+
+      snippet << "   { " << std::left << std::setw(8) << quotedName
+              << " " << std::setw(4) << ampsCol.str()
+              << " " << std::right << std::setw(8) << avCol.str()
+              << " " << std::setw(7) << offCol.str() << " },";
+      if (entry.isNew)
+      {
+         snippet << "  // new";
+      }
+      else if (!entry.updated)
+      {
+         snippet << "  // unchanged (not captured)";
+      }
+      snippet << "\n";
+   }
+   snippet << "} };";
+
+   Logger.log(snippet.str(), LogSeverity::INFO, "Calibration");
 }
 
 ///
@@ -1038,8 +1407,9 @@ bool promptKnownCurrent()
                   capturedResults[i].ampsPerVolt = knownCurrentAmps / capturedResults[i].sensorRmsVolts;
                }
             }
-            printCapturedResultsToSerial();
-            statusMessage = "Updated A/V from new Load A (see Serial)";
+            applyAllChannelCalibrations();
+            logCapturedResults();
+            statusMessage = "Updated A/V from new Load A (logged)";
          }
          else
          {
@@ -1058,6 +1428,51 @@ bool promptKnownCurrent()
 
 ///
 /// <summary>
+/// Opens the on-screen touch keyboard to assign or clear a custom name for a CT channel.
+/// </summary>
+/// <param name="ch">Zero-based channel index.</param>
+///
+void promptChannelName(size_t ch)
+{
+   ASSERT(ch < NUM_CT_INPUTS);
+
+   std::ostringstream title;
+   title << "Name for Ch " << (ch + 1) << " (empty clears)";
+
+   bool cancelled = false;
+   String entered = sketch.arduino.promptTouchText(
+      title.str().c_str(),
+      String(channelNames[ch]),
+      PROMPT_TIMEOUT_M * 60UL * 1000UL,
+      true,
+      true,
+      &cancelled);
+   entered.trim();
+
+   if (!cancelled)
+   {
+      saveChannelName(ch, entered.c_str());
+      applyChannelCalibration(ch);
+      if (channelNames[ch][0] != '\0')
+      {
+         statusMessage = "Named Ch " + std::to_string(ch + 1) + " \"" + channelNames[ch] + "\"";
+      }
+      else
+      {
+         statusMessage = "Cleared name for Ch " + std::to_string(ch + 1);
+      }
+
+      if (mode == CalibrationMode::FROZEN)
+      {
+         logCapturedResults();
+      }
+   }
+
+   drawFullScreen();
+}
+
+///
+/// <summary>
 /// Starts the next queued channel capture, or finalizes the batch when all channels finish.
 /// </summary>
 ///
@@ -1067,7 +1482,12 @@ void startNextQueuedCapture()
    {
       size_t ch = captureQueue[captureQueueIndex];
       std::ostringstream msg;
-      msg << "Capturing Ch " << (ch + 1) << " (" << (captureQueueIndex + 1) << "/" << captureQueueCount << ")...";
+      msg << "Capturing Ch " << (ch + 1);
+      if (channelNames[ch][0] != '\0')
+      {
+         msg << " (" << channelNames[ch] << ")";
+      }
+      msg << " (" << (captureQueueIndex + 1) << "/" << captureQueueCount << ")...";
       statusMessage = msg.str();
       drawStatusFooter();
 
@@ -1083,9 +1503,10 @@ void startNextQueuedCapture()
    }
 
    mode = CalibrationMode::FROZEN;
-   statusMessage = "Captured! Results printed to Serial";
+   applyAllChannelCalibrations();
+   statusMessage = "Captured! Results logged to Hub & Serial";
    drawFullScreen();
-   printCapturedResultsToSerial();
+   logCapturedResults();
 }
 
 ///
@@ -1190,6 +1611,17 @@ void handleTouch()
    {
       if (inRect(visibleRows[i].rect, tp.x, tp.y))
       {
+         if (tp.x < visibleRows[i].nameSplitX)
+         {
+            promptChannelName(visibleRows[i].channel);
+            while (sketch.arduino.display.getTouch(&tp) > 0)
+            {
+               delay(10);
+            }
+            wasTouching = false;
+            return;
+         }
+
          if (referenceChannel != static_cast<int8_t>(visibleRows[i].channel))
          {
             referenceChannel = static_cast<int8_t>(visibleRows[i].channel);
@@ -1197,7 +1629,7 @@ void handleTouch()
             drawStatusFooter();
             if (mode == CalibrationMode::FROZEN)
             {
-               printCapturedResultsToSerial();
+               logCapturedResults();
             }
          }
          return;
@@ -1208,6 +1640,8 @@ void handleTouch()
 void setup()
 {
    loadVoltageScale();
+   loadChannelNames();
+   applyAllChannelCalibrations();
 
    sketch.addSensor("PowerSensor", []() { return powerSensor.begin(); });
    sketch.arduino.setRotation(DisplayRotation::PORTRAIT_FLIP);

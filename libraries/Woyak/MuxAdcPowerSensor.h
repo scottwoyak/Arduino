@@ -11,6 +11,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include "CT_Calibration.h"
 #include "PowerSensorBase.h"
 #include "Util.h"
 
@@ -71,7 +72,7 @@ public:
    };
 
    static constexpr float DEFAULT_VOLTAGE_SCALE = 120.0f / 0.100f; // 120.0V line per 0.100V RMS at ZMPT101B OUT
-   static constexpr float DEFAULT_PHASE_SHIFT_DEG = 31.0f;         // Nominal 9V AC wall-wart + ZMPT101B phase lead at 60 Hz
+   static constexpr float DEFAULT_PHASE_SHIFT_DEG = CTCalibration::DEFAULT_PHASE_SHIFT_DEG;
    static constexpr float MIN_CONNECTED_BIAS_V = 0.85f;
    static constexpr float MAX_CONNECTED_BIAS_V = 2.45f;
    static constexpr float MIN_VALID_VOLTAGE_BIAS_V = 0.50f;
