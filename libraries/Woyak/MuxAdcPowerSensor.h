@@ -91,13 +91,12 @@ private:
    static constexpr float NIGHT_TARE_LOSS_RAD = 0.0052f;      // ~0.30 deg microinverter RC bleed-to-EMI-cap loss ratio
    static constexpr float NIGHT_MIN_CAPACITIVE_VA = 50.0f;
    static constexpr float NIGHT_INITIAL_MAX_PF = 0.18f;
-   static constexpr float NIGHT_TRACKING_MAX_PF = 0.04f;
-   static constexpr float NIGHT_MIN_REACTIVE_RATIO = 0.90f;
-   static constexpr float NIGHT_INITIAL_SUSCEPTANCE_TOL = 0.025f;
-   static constexpr float NIGHT_TRACKING_SUSCEPTANCE_TOL = 0.015f;
+   static constexpr float NIGHT_TRACKING_MAX_PF = 0.10f;
+   static constexpr float NIGHT_MIN_REACTIVE_RATIO = 0.85f;
+   static constexpr float NIGHT_SUSCEPTANCE_TOL = 0.08f;
    static constexpr uint8_t NIGHT_INITIAL_STEADY_SLICES = 16;
    static constexpr uint8_t NIGHT_TRACKING_STEADY_SLICES = 32;
-   static constexpr float NIGHT_PHASE_EMA_ALPHA = 0.05f;
+   static constexpr float NIGHT_PHASE_EMA_ALPHA = 0.20f;
    static constexpr float PHASE_DRIFT_SAVE_RAD = 0.05f * DEG_TO_RAD_F;
    static constexpr float DAY_POLARITY_MIN_WATTS = 200.0f;
    static constexpr float DAY_POLARITY_MIN_PF = 0.30f;
@@ -115,6 +114,8 @@ private:
       float savedPhaseRad = DEFAULT_PHASE_SHIFT_RAD;
       PhaseCalMode calMode = PhaseCalMode::NOMINAL;
       float nightMeanSusceptance = 0.0f;
+      double nightSumRawP = 0.0;
+      double nightSumRawQ = 0.0;
       uint8_t nightSteadyCount = 0;
       int8_t dayCandidatePolarity = 0;
       uint8_t dayPolarityCount = 0;
@@ -438,7 +439,6 @@ private:
       // 2. Nighttime sleeping-microinverter check: pure passive EMI capacitance + bleed loss.
       bool isInitialCal = (st.calMode == PhaseCalMode::NOMINAL);
       float maxPfGate = isInitialCal ? NIGHT_INITIAL_MAX_PF : NIGHT_TRACKING_MAX_PF;
-      float susceptanceTol = isInitialCal ? NIGHT_INITIAL_SUSCEPTANCE_TOL : NIGHT_TRACKING_SUSCEPTANCE_TOL;
       uint8_t requiredSlices = isInitialCal ? NIGHT_INITIAL_STEADY_SLICES : NIGHT_TRACKING_STEADY_SLICES;
 
       if (va >= NIGHT_MIN_CAPACITIVE_VA &&
@@ -450,30 +450,44 @@ private:
          if (st.nightSteadyCount == 0)
          {
             st.nightMeanSusceptance = susceptance;
+            st.nightSumRawP = rawP;
+            st.nightSumRawQ = rawQ;
             st.nightSteadyCount = 1;
             return;
          }
 
          float relDiff = std::fabs(susceptance - st.nightMeanSusceptance) / st.nightMeanSusceptance;
-         if (relDiff > susceptanceTol)
+         if (relDiff > NIGHT_SUSCEPTANCE_TOL)
          {
             st.nightMeanSusceptance = susceptance;
+            st.nightSumRawP = rawP;
+            st.nightSumRawQ = rawQ;
             st.nightSteadyCount = 1;
             return;
          }
 
          st.nightMeanSusceptance += 0.15f * (susceptance - st.nightMeanSusceptance);
-         if (st.nightSteadyCount < requiredSlices)
-         {
-            st.nightSteadyCount++;
-         }
+         st.nightSumRawP += rawP;
+         st.nightSumRawQ += rawQ;
+         st.nightSteadyCount++;
 
          if (st.nightSteadyCount < requiredSlices)
          {
             return;
          }
 
-         float measuredPhi = std::atan(-rawP / rawQ) - NIGHT_TARE_LOSS_RAD;
+         double sumRawP = st.nightSumRawP;
+         double sumRawQ = st.nightSumRawQ;
+         st.nightSumRawP = 0.0;
+         st.nightSumRawQ = 0.0;
+         st.nightSteadyCount = 0;
+
+         if (std::fabs(sumRawQ) <= 1.0)
+         {
+            return;
+         }
+
+         float measuredPhi = static_cast<float>(std::atan(-sumRawP / sumRawQ)) - NIGHT_TARE_LOSS_RAD;
          if (measuredPhi >= MIN_AUTO_PHASE_RAD && measuredPhi <= MAX_AUTO_PHASE_RAD)
          {
             if (isInitialCal)
@@ -502,7 +516,8 @@ private:
             *ioCorrQ = corrQ;
          }
 
-         int8_t nightPolarity = corrQ >= 0.0f ? 1 : -1;
+         double avgCorrQ = (sumRawQ * std::cos(st.phaseRad)) - (sumRawP * std::sin(st.phaseRad));
+         int8_t nightPolarity = avgCorrQ >= 0.0 ? 1 : -1;
          if (ch.polaritySign != nightPolarity)
          {
             ch.polaritySign = nightPolarity;
@@ -511,6 +526,8 @@ private:
       }
       else
       {
+         st.nightSumRawP = 0.0;
+         st.nightSumRawQ = 0.0;
          st.nightSteadyCount = 0;
       }
    }
