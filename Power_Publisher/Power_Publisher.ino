@@ -11,8 +11,7 @@
 // from WebSocket telemetry. Displays live line voltage (V), per-channel RMS current (A),
 // and real power (W) on the touch display (dimming to 10% brightness when idle and
 // restoring full brightness on touch) and publishes per-channel power readings over
-// WebSocket telemetry to Power/<location>/<circuit> and per-channel RMS current readings
-// to Current/<location>/<circuit>.
+// WebSocket telemetry to Power/<location>/<circuit>.
 //
 // Mux + ESP32-P4 ADC1 + ZMPT101B wiring (Waveshare ESP32-P4 4.3" Touch LCD, 40-pin header):
 //     P4 Pin / GPIO   Wire color   PCB connection
@@ -151,10 +150,8 @@ constexpr uint16_t AUTO_CAL_SAVE_INTERVAL_M = 30;    // Throttle gradual phase-d
 
 // ----------- Telemetry Configuration
 constexpr auto POWER_TOPIC_PREFIX = "Power";
-constexpr auto CURRENT_TOPIC_PREFIX = "Current";
 constexpr size_t MAX_TOPIC_LENGTH = 64;
 constexpr uint8_t POWER_DECIMALS = 0;
-constexpr uint8_t CURRENT_DECIMALS = 2;
 constexpr uint16_t TELEMETRY_PUBLISH_INTERVAL_MS = DISPLAY_UPDATE_INTERVAL_MS;
 
 // ----------- Display Layout
@@ -172,9 +169,7 @@ std::array<float, NUM_CT_INPUTS> ctAmps = {};
 std::array<uint8_t, NUM_CT_INPUTS> ctTypeIndices = {};
 std::array<bool, NUM_CT_INPUTS> ct240V = {};
 std::array<char[MAX_TOPIC_LENGTH], NUM_CT_INPUTS> channelTopics = {};
-std::array<char[MAX_TOPIC_LENGTH], NUM_CT_INPUTS> currentTopics = {};
 std::array<char[MAX_TOPIC_LENGTH], PowerSensorBase::MAX_DERIVED_CHANNELS> derivedPowerTopics = {};
-std::array<char[MAX_TOPIC_LENGTH], PowerSensorBase::MAX_DERIVED_CHANNELS> derivedCurrentTopics = {};
 char primaryTelemetryTopic[MAX_TOPIC_LENGTH] = "Power/1";
 size_t primaryTelemetryChannel = 0;
 bool telemetryTopicsResolved = false;
@@ -233,22 +228,20 @@ PublisherSketch sketch(PUBLISHER_CONFIG, TELEMETRY_CONFIG);
 
 ///
 /// <summary>
-/// Rebuilds the per-channel telemetry topics as "Power/<location>/<circuit>" and
-/// "Current/<location>/<circuit>" for each configured non-neutral CT (excluding "*White"
-/// neutral channels), registers any auto-synthesized split-phase derived channels (such as
-/// "<Prefix>Black" from "<Prefix>Red" + "<Prefix>White"), and updates the active
-/// TelemetryPublisher topic immediately if running.
+/// Rebuilds the per-channel telemetry topics as "Power/<location>/<circuit>" for each
+/// configured non-neutral CT (excluding "*White" neutral channels), registers any
+/// auto-synthesized split-phase derived channels (such as "<Prefix>Black" from
+/// "<Prefix>Red" + "<Prefix>White"), and updates the active TelemetryPublisher topic
+/// immediately if running.
 /// </summary>
 ///
 void refreshTelemetryTopics()
 {
    std::string deviceLocation = sketch.location().c_str();
    std::string topicPrefix = std::string(POWER_TOPIC_PREFIX) + "/";
-   std::string currentTopicPrefix = std::string(CURRENT_TOPIC_PREFIX) + "/";
    if (!deviceLocation.empty())
    {
       topicPrefix += deviceLocation + "/";
-      currentTopicPrefix += deviceLocation + "/";
    }
 
    bool foundPrimary = false;
@@ -258,12 +251,9 @@ void refreshTelemetryTopics()
       {
          std::string fullTopic = topicPrefix + ctLocations[i];
          strlcpy(channelTopics[i], fullTopic.c_str(), sizeof(channelTopics[i]));
-         std::string fullCurrentTopic = currentTopicPrefix + ctLocations[i];
-         strlcpy(currentTopics[i], fullCurrentTopic.c_str(), sizeof(currentTopics[i]));
          if (telemetryTopicsResolved && telemetryEnabled)
          {
             sketch.createTopic(channelTopics[i], TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
-            sketch.createTopic(currentTopics[i], TelemetryTopicMetadata{ .unit = TelemetryUnits::AMPS, .description = "RMS current for this circuit", .decimals = CURRENT_DECIMALS });
          }
          if (!foundPrimary)
          {
@@ -275,7 +265,6 @@ void refreshTelemetryTopics()
       else
       {
          channelTopics[i][0] = '\0';
-         currentTopics[i][0] = '\0';
       }
    }
 
@@ -286,18 +275,14 @@ void refreshTelemetryTopics()
       {
          std::string fullTopic = topicPrefix + powerSensor.derivedChannelName(d);
          strlcpy(derivedPowerTopics[d], fullTopic.c_str(), sizeof(derivedPowerTopics[d]));
-         std::string fullCurrentTopic = currentTopicPrefix + powerSensor.derivedChannelName(d);
-         strlcpy(derivedCurrentTopics[d], fullCurrentTopic.c_str(), sizeof(derivedCurrentTopics[d]));
          if (telemetryTopicsResolved && telemetryEnabled)
          {
             sketch.createTopic(derivedPowerTopics[d], TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
-            sketch.createTopic(derivedCurrentTopics[d], TelemetryTopicMetadata{ .unit = TelemetryUnits::AMPS, .description = "RMS current for this circuit", .decimals = CURRENT_DECIMALS });
          }
       }
       else
       {
          derivedPowerTopics[d][0] = '\0';
-         derivedCurrentTopics[d][0] = '\0';
       }
    }
 
@@ -2190,10 +2175,6 @@ void loop()
             {
                sketch.submit(channelTopics[i], powerSensor.watts(i));
             }
-            if (currentTopics[i][0] != '\0')
-            {
-               sketch.submit(currentTopics[i], powerSensor.amps(i));
-            }
          }
 
          size_t numDerived = powerSensor.derivedChannelCount();
@@ -2202,10 +2183,6 @@ void loop()
             if (derivedPowerTopics[d][0] != '\0')
             {
                sketch.submit(derivedPowerTopics[d], powerSensor.derivedWatts(d));
-            }
-            if (derivedCurrentTopics[d][0] != '\0')
-            {
-               sketch.submit(derivedCurrentTopics[d], powerSensor.derivedAmps(d));
             }
          }
       }
