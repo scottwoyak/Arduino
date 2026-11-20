@@ -2,7 +2,6 @@
 
 #include <InfluxDbClient.h>
 #include <InfluxDbCloud.h>
-#include <algorithm>
 #include <cmath>
 #include "ArduinoBase.h"
 #include "DeviceHealth.h"
@@ -25,18 +24,34 @@
 
 ///
 /// <summary>
-/// InfluxDB integration service that validates the connection, retries failed startup
-/// checks, and manages data writes. WiFi connectivity is owned by ArduinoBase.
+/// InfluxDB integration service that configures the client with bounded HTTP timeouts and
+/// manages data writes. WiFi connectivity is owned by ArduinoBase.
 /// </summary>
 ///
 class Influx
 {
 private:
-	static constexpr uint16_t INITIAL_RETRY_INTERVAL_S = 10;
-	static constexpr uint16_t MAX_RETRY_INTERVAL_S = 120;
+	static constexpr int HTTP_TIMEOUT_MS = 5000;
 
-	/// <summary>InfluxDB client used for connection validation and data writes.</summary>
-	InfluxDBClient _client;
+	///
+	/// <summary>
+	/// Thin subclass exposing InfluxDBClient::init() so HTTPService can be created before
+	/// applying HTTPOptions (HTTPService's constructor does not apply httpReadTimeout).
+	/// </summary>
+	///
+	class _InfluxClient : public InfluxDBClient
+	{
+	public:
+		using InfluxDBClient::InfluxDBClient;
+
+		bool ensureInitialized()
+		{
+			return _service != nullptr || init();
+		}
+	};
+
+	/// <summary>InfluxDB client used for data writes.</summary>
+	_InfluxClient _client;
 
 	/// <summary>Optional status LED indicator; nullptr if not used.</summary>
 	IStatus* _status;
@@ -44,22 +59,7 @@ private:
 	/// <summary>Timer controlling how often uploads should occur, per ready().</summary>
 	Timer _uploadTimer;
 
-	bool _connectionValidated = false;
-	TimerSecs _retryTimer{INITIAL_RETRY_INTERVAL_S};
-	uint16_t _retryIntervalS = INITIAL_RETRY_INTERVAL_S;
-
-	///
-	/// <summary>Schedules the next connection check and reports why uploads are paused.</summary>
-	/// <param name="error">The failed check's diagnostic text.</param>
-	///
-	void _scheduleRetry(const char* error)
-	{
-		_retryTimer.setDurationMs(_retryIntervalS * 1000UL);
-		DeviceHealth::influxFailures++;
-		Logger.log(std::string("InfluxDB uploads paused: ") + error + "; retry in " +
-			std::to_string(_retryIntervalS) + " s when WiFi is connected", LogSeverity::ERROR, "Influx");
-		_retryIntervalS = std::min<uint16_t>(_retryIntervalS * 2, MAX_RETRY_INTERVAL_S);
-	}
+	bool _initialized = false;
 
 public:
 	/// <summary>
@@ -104,49 +104,30 @@ public:
 		return _uploadTimer.ready();
 	}
 
+	///
 	/// <summary>
-	/// Initializes time/Influx connection, printing progress through the given ArduinoBase
-	/// (which prints to Serial and, on display-capable boards, the display as well). Assumes
-	/// WiFi has already been initialized on the given board (e.g. via arduino.initWifi(...)).
+	/// Initializes the InfluxDB client and applies short HTTP connect/read timeouts without
+	/// performing blocking network I/O during setup(). Actual connectivity is exercised on
+	/// the normal periodic uploads once WiFi and TimeSync are ready.
 	/// </summary>
-	/// <param name="arduino">ArduinoBase instance that receives progress text</param>
-	/// <returns>True when initialization succeeds; otherwise, call retryConnection() from loop().</returns>
+	/// <param name="arduino">ArduinoBase instance that receives configuration error text</param>
+	/// <returns>True when the client configuration is valid; false on configuration error.</returns>
+	///
 	bool begin(ArduinoBase& arduino)
 	{
-		_connectionValidated = false;
-		_retryIntervalS = INITIAL_RETRY_INTERVAL_S;
-		if (WiFi.status() != WL_CONNECTED)
+		_initialized = false;
+
+		if (!_client.ensureInitialized())
 		{
-			std::string message = std::string("WiFi connect failed: ") + WiFiX::statusString();
-			arduino.println(message.c_str(), Color::RED);
-			_scheduleRetry(message.c_str());
+			String error = _client.getLastErrorMessage();
+			arduino.println(error.c_str(), Color::RED);
+			Logger.log(std::string("InfluxDB initialization failed: ") + error.c_str(), LogSeverity::ERROR, "Influx");
 			return false;
 		}
 
-		if (_status)
-		{
-			_status->setStatus(Status::SERVICES_CONNECTING);
-		}
-
-		if (!TimeSync::isSynced())
-		{
-			TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nis.gov");
-		}
-
-		_connectionValidated = _client.validateConnection();
-		if (_connectionValidated)
-		{
-			if (_status)
-			{
-				_status->setStatus(Status::RUNNING);
-			}
-			return true;
-		}
-
-		String error = _client.getLastErrorMessage();
-		arduino.println(error.c_str(), Color::RED);
-		_scheduleRetry(error.c_str());
-		return false;
+		_client.setHTTPOptions(HTTPOptions().httpReadTimeout(HTTP_TIMEOUT_MS));
+		_initialized = true;
+		return true;
 	}
 
 	/// <summary>
@@ -161,33 +142,12 @@ public:
 	}
 
 	///
-	/// <summary>Returns whether the startup connection check has passed and uploads may begin.</summary>
-	/// <returns>True after validation succeeds.</returns>
+	/// <summary>Returns whether the client is initialized and WiFi/time are ready for uploads.</summary>
+	/// <returns>True when uploads may be attempted.</returns>
 	///
 	bool isReadyToUpload() const
 	{
-		return _connectionValidated;
-	}
-
-	///
-	/// <summary>Retries failed startup validation when WiFi is up and the backoff has elapsed.</summary>
-	///
-	void retryConnection()
-	{
-		if (_connectionValidated || WiFi.status() != WL_CONNECTED || !_retryTimer.ready())
-		{
-			return;
-		}
-
-		_connectionValidated = _client.validateConnection();
-		if (_connectionValidated)
-		{
-			Logger.log("InfluxDB connection restored; uploads will resume", LogSeverity::INFO, "Influx");
-		}
-		else
-		{
-			_scheduleRetry(_client.getLastErrorMessage().c_str());
-		}
+		return _initialized && WiFi.status() == WL_CONNECTED && TimeSync::isSynced();
 	}
 
 	/// <summary>

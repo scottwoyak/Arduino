@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <WiFiMulti.h>
 
+#include "Util.h"
+
 ///
 /// <summary>
 /// WiFi utility for connecting and reconnecting to a single access point using WiFiMulti.
@@ -14,7 +16,7 @@ public:
    /// <summary>
    /// Default WiFi connection timeout in milliseconds.
    /// </summary>
-   static constexpr uint32_t DEFAULT_TIMEOUT_MS = 10000;
+   static constexpr uint32_t DEFAULT_TIMEOUT_MS = 30000;
 
 private:
    /// <summary>
@@ -96,8 +98,10 @@ public:
       }
 
       const uint32_t start = millis();
+      Util::feedSetupWatchdog();
       while (_wifiMulti.run() != WL_CONNECTED && (millis() - start) < timeoutMs)
       {
+         Util::feedSetupWatchdog();
          Serial.print(".");
          delay(CHECK_INTERVAL_MS);
       }
@@ -142,8 +146,10 @@ public:
       WiFi.disconnect();
 
       const uint32_t start = millis();
+      Util::feedSetupWatchdog();
       while (_wifiMulti.run() != WL_CONNECTED && (millis() - start) < timeoutMs)
       {
+         Util::feedSetupWatchdog();
          Serial.print(".");
          delay(CHECK_INTERVAL_MS);
       }

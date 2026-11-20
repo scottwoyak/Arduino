@@ -1071,7 +1071,6 @@ void loop()
    }
 
    // ------------------------------------------- send to INFLUX
-   influx.retryConnection();
    if (influx.ready())
    {
       if (arduino.ensureWiFiConnected(&status) && influx.isReadyToUpload())

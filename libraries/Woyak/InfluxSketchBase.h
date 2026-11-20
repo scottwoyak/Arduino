@@ -607,8 +607,8 @@ public:
          }
          else
          {
-            _arduino->printInitValue("RETRYING");
-            _status->setStatus(Status::RUNNING);
+            _arduino->printInitValue("FAILED", Color::RED);
+            Logger.log("Influx... FAILED", LogSeverity::ERROR);
          }
 
          std::string intervalMessage = std::string("Standard values (CPU, enclosure, WiFi) measured every ") + std::to_string(STANDARD_SAMPLE_INTERVAL_S) +
@@ -653,11 +653,6 @@ public:
       _beforeOTACheck();
 
       _loopStep();
-
-      if (_usesInflux)
-      {
-         _influx->retryConnection();
-      }
 
       if (_usesInflux && _sensorTimer.ready())
       {
