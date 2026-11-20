@@ -2,9 +2,11 @@
 
 #include <InfluxDbClient.h>
 #include <InfluxDbCloud.h>
+#include <algorithm>
 #include <cmath>
 #include "ArduinoBase.h"
 #include "DeviceHealth.h"
+#include "Logger.h"
 #include "RollingAverage.h"
 #include "RollingStats.h"
 #include "Status.h"
@@ -23,14 +25,17 @@
 
 ///
 /// <summary>
-/// InfluxDB integration service that manages Influx initialization. WiFi connectivity is
-/// owned by the ArduinoBase instance passed in to the begin(...)/connectWiFi() methods.
+/// InfluxDB integration service that validates the connection, retries failed startup
+/// checks, and manages data writes. WiFi connectivity is owned by ArduinoBase.
 /// </summary>
 ///
 class Influx
 {
 private:
-	/// <summary>InfluxDB client used for time sync validation and data writes.</summary>
+	static constexpr uint16_t INITIAL_RETRY_INTERVAL_S = 10;
+	static constexpr uint16_t MAX_RETRY_INTERVAL_S = 120;
+
+	/// <summary>InfluxDB client used for connection validation and data writes.</summary>
 	InfluxDBClient _client;
 
 	/// <summary>Optional status LED indicator; nullptr if not used.</summary>
@@ -38,6 +43,23 @@ private:
 
 	/// <summary>Timer controlling how often uploads should occur, per ready().</summary>
 	Timer _uploadTimer;
+
+	bool _connectionValidated = false;
+	TimerSecs _retryTimer{INITIAL_RETRY_INTERVAL_S};
+	uint16_t _retryIntervalS = INITIAL_RETRY_INTERVAL_S;
+
+	///
+	/// <summary>Schedules the next connection check and reports why uploads are paused.</summary>
+	/// <param name="error">The failed check's diagnostic text.</param>
+	///
+	void _scheduleRetry(const char* error)
+	{
+		_retryTimer.setDurationMs(_retryIntervalS * 1000UL);
+		DeviceHealth::influxFailures++;
+		Logger.log(std::string("InfluxDB uploads paused: ") + error + "; retry in " +
+			std::to_string(_retryIntervalS) + " s when WiFi is connected", LogSeverity::ERROR, "Influx");
+		_retryIntervalS = std::min<uint16_t>(_retryIntervalS * 2, MAX_RETRY_INTERVAL_S);
+	}
 
 public:
 	/// <summary>
@@ -88,13 +110,16 @@ public:
 	/// WiFi has already been initialized on the given board (e.g. via arduino.initWifi(...)).
 	/// </summary>
 	/// <param name="arduino">ArduinoBase instance that receives progress text</param>
-	/// <returns>True when initialization succeeds</returns>
+	/// <returns>True when initialization succeeds; otherwise, call retryConnection() from loop().</returns>
 	bool begin(ArduinoBase& arduino)
 	{
+		_connectionValidated = false;
+		_retryIntervalS = INITIAL_RETRY_INTERVAL_S;
 		if (WiFi.status() != WL_CONNECTED)
 		{
 			std::string message = std::string("WiFi connect failed: ") + WiFiX::statusString();
 			arduino.println(message.c_str(), Color::RED);
+			_scheduleRetry(message.c_str());
 			return false;
 		}
 
@@ -108,8 +133,8 @@ public:
 			TimeSync::syncWithAutoTimezone("pool.ntp.org", "time.nis.gov");
 		}
 
-		bool success = _client.validateConnection();
-		if (success)
+		_connectionValidated = _client.validateConnection();
+		if (_connectionValidated)
 		{
 			if (_status)
 			{
@@ -118,7 +143,9 @@ public:
 			return true;
 		}
 
-		arduino.println(_client.getLastErrorMessage().c_str(), Color::RED);
+		String error = _client.getLastErrorMessage();
+		arduino.println(error.c_str(), Color::RED);
+		_scheduleRetry(error.c_str());
 		return false;
 	}
 
@@ -131,6 +158,36 @@ public:
 	bool begin(ArduinoBase* arduino)
 	{
 		return begin(*arduino);
+	}
+
+	///
+	/// <summary>Returns whether the startup connection check has passed and uploads may begin.</summary>
+	/// <returns>True after validation succeeds.</returns>
+	///
+	bool isReadyToUpload() const
+	{
+		return _connectionValidated;
+	}
+
+	///
+	/// <summary>Retries failed startup validation when WiFi is up and the backoff has elapsed.</summary>
+	///
+	void retryConnection()
+	{
+		if (_connectionValidated || WiFi.status() != WL_CONNECTED || !_retryTimer.ready())
+		{
+			return;
+		}
+
+		_connectionValidated = _client.validateConnection();
+		if (_connectionValidated)
+		{
+			Logger.log("InfluxDB connection restored; uploads will resume", LogSeverity::INFO, "Influx");
+		}
+		else
+		{
+			_scheduleRetry(_client.getLastErrorMessage().c_str());
+		}
 	}
 
 	/// <summary>

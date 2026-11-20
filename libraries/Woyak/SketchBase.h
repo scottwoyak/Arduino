@@ -574,10 +574,9 @@ protected:
    /// <summary>
    /// Checks whether the previous boot crashed (panic/watchdog), halted for a safe-mode
    /// reason (failed ASSERT or unanswered required configuration prompt - see
-   /// Util::isSafeModeHaltReason()), or called Util::reset() during setup (e.g. sensor or
-   /// Influx initialization failure) before it ran long enough to be considered stable
-   /// (Util::wasPastSafeModeGracePeriod()), and if so enters _runSafeMode() instead of
-   /// continuing normal initialization.
+   /// Util::isSafeModeHaltReason()), or reset due to a setup failure (e.g. sensor init)
+   /// before it ran long enough to be considered stable (Util::wasPastSafeModeGracePeriod()).
+   /// If so, enters _runSafeMode() instead of continuing normal initialization.
    /// </summary>
    ///
    void _checkSafeMode()

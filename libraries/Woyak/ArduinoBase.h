@@ -432,6 +432,7 @@ public:
       printInitLabel("WiFi... ");
       Logger.logPartial("WiFi... ");
 
+      _retryTimeSync = syncTime;
       if (_wifiX == nullptr)
       {
          _wifiX = new WiFiX(ssid, password);
@@ -455,8 +456,6 @@ public:
       {
          status->setStatus(Status::SERVICES_CONNECTING);
       }
-
-      _retryTimeSync = syncTime;
 
       if (syncTime)
       {
@@ -532,7 +531,7 @@ public:
    {
       ASSERT(_wifiX != nullptr);
 
-      if (_retryTimeSync && !TimeSync::isSynced() && _timeSyncRetryTimer.ready())
+      if (_retryTimeSync && !TimeSync::isSynced() && _wifiX->isConnected() && _timeSyncRetryTimer.ready())
       {
          TimeSync::startSyncWithAutoTimezone("pool.ntp.org", "time.nist.gov");
          Logger.log("Retrying time sync", LogSeverity::INFO, "Time");

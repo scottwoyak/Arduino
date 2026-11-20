@@ -29,7 +29,7 @@
 // Failure handling:
 // - Sensor initialization falls back to the internal ESP32 CPU temperature sensor if no
 //   external sensor is detected.
-// - Influx initialization failure (handled by InfluxSketchBase::begin()) triggers a device reset.
+// - If InfluxDB is unavailable at startup, sampling and display continue; uploads resume after a successful retry.
 // - Runtime InfluxDB post/flush failures are logged to Serial and retried the following cycle.
 //
 // Outputs:

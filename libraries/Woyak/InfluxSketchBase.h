@@ -204,7 +204,7 @@ protected:
    ///
    void _postAndFlush(const std::vector<InfluxPoint*>& points)
    {
-      if (points.empty())
+      if (points.empty() || !_influx->isReadyToUpload())
       {
          return;
       }
@@ -599,16 +599,17 @@ public:
       {
          Util::setSetupStep("Influx");
          _influx = new Influx(STANDARD_UPLOAD_INTERVAL_S, _status, INFLUXDB_URL, INFLUXDB_ORG, _site.bucket);
-         _logStatusStart("Influx... ");
-         if (!_influx->begin(_arduino))
+         _arduino->printInitLabel("Influx... ");
+         if (_influx->begin(_arduino))
          {
-            _logStatusEnd("FAILED");
-            _status->setStatus(Status::FAILED);
-            delay(1000); // time for LED to show
-            Util::reset(0.0f, "Influx failed to begin");
+            _arduino->printInitValue("OK");
+            Logger.log("Influx... OK");
          }
-
-         _logStatusEnd("OK");
+         else
+         {
+            _arduino->printInitValue("RETRYING");
+            _status->setStatus(Status::RUNNING);
+         }
 
          std::string intervalMessage = std::string("Standard values (CPU, enclosure, WiFi) measured every ") + std::to_string(STANDARD_SAMPLE_INTERVAL_S) +
             " s with an average uploaded every " + std::to_string(STANDARD_UPLOAD_INTERVAL_S) + " seconds";
@@ -652,6 +653,11 @@ public:
       _beforeOTACheck();
 
       _loopStep();
+
+      if (_usesInflux)
+      {
+         _influx->retryConnection();
+      }
 
       if (_usesInflux && _sensorTimer.ready())
       {

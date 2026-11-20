@@ -64,7 +64,6 @@ constexpr uint8_t SHORT_AVERAGE_NUM_SAMPLES = 10;  // # samples in the short rol
 constexpr uint16_t LONG_AVERAGE_DURATION_S = 5 * 60;  // long timed-average window (5 minutes)
 constexpr uint16_t INFLUX_INTERVAL_S = 10;
 constexpr uint16_t PREFS_INTERVAL_S = 60;
-constexpr uint16_t WIFI_RESET_DELAY_S = 10;
 constexpr uint16_t INFLUX_INIT_DELAY_MS = 1000;  // pause after InfluxDB init to show "Init" screen
 
 constexpr const char* CALIBRATOR_PREFS_NAMESPACE = "Calibrator";
@@ -877,8 +876,7 @@ void setup()
    arduino.initWifi(WIFI_SSID, WIFI_PASSWORD, &status);
    if (!influx.begin(arduino))
    {
-      status.setStatus(Status::FAILED);
-      Util::reset(WIFI_RESET_DELAY_S, "Influx failed to begin");
+      status.setStatus(Status::RUNNING);
    }
 
    delay(INFLUX_INIT_DELAY_MS);
@@ -1073,9 +1071,10 @@ void loop()
    }
 
    // ------------------------------------------- send to INFLUX
+   influx.retryConnection();
    if (influx.ready())
    {
-      if (arduino.ensureWiFiConnected(&status))
+      if (arduino.ensureWiFiConnected(&status) && influx.isReadyToUpload())
       {
          arduino.led.turnOn();
 
