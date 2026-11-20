@@ -39,6 +39,9 @@ protected:
    /// <summary>Accumulated "key=value" lines for values persisted during the in-progress interactive SetConfig prompt, printed together once the flow completes (see _finishInteractiveConfig()).</summary>
    std::string _pendingInteractiveSummary;
 
+   /// <summary>True if a boot-only setting (site, location, or bucket) changed during the in-progress interactive SetConfig flow.</summary>
+   bool _interactiveRestartRequired = false;
+
    /// <summary>The single instance, used by the static _onConfigCommand() bridge function (DeviceServerClient::onCommand() only accepts a captureless function pointer).</summary>
    inline static ConfigCommandHandler* _configInstance = nullptr;
 
@@ -155,6 +158,11 @@ protected:
             return "Error: unknown site \"" + value + "\"";
          }
 
+         if (strcasecmp(_siteName.c_str(), value.c_str()) == 0)
+         {
+            return "site is unchanged (\"" + value + "\").";
+         }
+
          _persistString(SITE_KEY, value.c_str());
          return "Saved site=\"" + value + "\"." + (includeRestartNote ? " Restart required to apply." : "");
       }
@@ -169,6 +177,12 @@ protected:
          {
             return "Error: use location1, location2, or location3 on this device";
          }
+
+         if (strcmp(_locationName.c_str(), value.c_str()) == 0)
+         {
+            return "location is unchanged (\"" + value + "\").";
+         }
+
          _persistString(LOCATION_KEY, value.c_str());
          return "Saved location=\"" + value + "\"." + (includeRestartNote ? " Restart required to apply." : "");
       }
@@ -230,6 +244,9 @@ protected:
          {
             if (DeviceServerClient::isShellCommand())
             {
+               _configInstance->_pendingInteractiveSummary.clear();
+               _configInstance->_pendingSiteSelection = "";
+               _configInstance->_interactiveRestartRequired = false;
                _configInstance->_sendSitePrompt();
             }
             else
@@ -264,11 +281,16 @@ protected:
    ///
    void _applyInteractiveConfig(const std::string& key, const std::string& value)
    {
-      std::string result = _setConfig(key, value, false);
+      std::string result = _setConfig(key, value, true);
       if (result.rfind("Error:", 0) == 0)
       {
          DeviceServerClient::shell().println(result.c_str());
          return;
+      }
+
+      if (result.find("Restart required") != std::string::npos)
+      {
+         _interactiveRestartRequired = true;
       }
 
       if (!_pendingInteractiveSummary.empty())
@@ -281,14 +303,21 @@ protected:
    ///
    /// <summary>
    /// Completes the interactive SetConfig flow: prints the accumulated "key=value"
-   /// summary (see _applyInteractiveConfig()) and responds that a restart is required.
+   /// summary (see _applyInteractiveConfig()) and responds with whether a restart is
+   /// required to apply changed boot-only settings.
    /// </summary>
    ///
    void _finishInteractiveConfig()
    {
-      DeviceServerClient::shell().println(_pendingInteractiveSummary.c_str());
-      _pendingInteractiveSummary.clear();
-      DeviceServerClient::respond("Restart required to apply.");
+      if (!_pendingInteractiveSummary.empty())
+      {
+         DeviceServerClient::shell().println(_pendingInteractiveSummary.c_str());
+         _pendingInteractiveSummary.clear();
+      }
+
+      bool restartRequired = _interactiveRestartRequired;
+      _interactiveRestartRequired = false;
+      DeviceServerClient::respond(restartRequired ? "Restart required to apply." : "Done.");
    }
 
    ///
@@ -546,7 +575,7 @@ public:
    ///
    /// <summary>
    /// Completes the interactive SetConfig flow: prints the accumulated "key=value"
-   /// summary and responds that a restart is required.
+   /// summary and responds with whether a restart is required to apply changes.
    /// </summary>
    ///
    void finishInteractiveConfig()

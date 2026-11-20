@@ -1599,6 +1599,53 @@ private:
 
    ///
    /// <summary>
+   /// Returns true if a shell input line represents a Ctrl+C (ASCII 0x03 / "^C") or
+   /// standalone Esc (ASCII 0x1B) cancel request.
+   /// </summary>
+   /// <param name="line">Raw line received over the shell channel.</param>
+   /// <returns>True if the input requests cancelling an active prompt.</returns>
+   ///
+   static bool _isShellCancelInput(const char* line)
+   {
+      if (line == nullptr)
+      {
+         return false;
+      }
+
+      const char* start = line;
+      while (*start != '\0' && isspace(static_cast<unsigned char>(*start)))
+      {
+         start++;
+      }
+
+      const char* end = start;
+      for (const char* p = line; *p != '\0'; p++)
+      {
+         if (*p == '\x03')
+         {
+            return true;
+         }
+         if (!isspace(static_cast<unsigned char>(*p)))
+         {
+            end = p + 1;
+         }
+      }
+
+      size_t trimmedLen = static_cast<size_t>(end - start);
+      if (trimmedLen == 1 && start[0] == '\x1b')
+      {
+         return true;
+      }
+      if (trimmedLen == 2 && start[0] == '^' && (start[1] == 'c' || start[1] == 'C'))
+      {
+         return true;
+      }
+
+      return false;
+   }
+
+   ///
+   /// <summary>
    /// Handles a line of raw text received from the DeviceServer over the separate shell
    /// channel (see onShellLine()/shell()). By default, the line is dispatched through the
    /// same built-in/sketch-registered command table as the "command"/"response" channel
@@ -1610,38 +1657,50 @@ private:
    /// for additional/custom raw handling. Empty or whitespace-only lines are ignored
    /// entirely (not dispatched as a command, not appended to the shell stream) unless a
    /// prompt is pending (see promptShellLine()), since a blank answer is meaningful there
-   /// (e.g. accepting a default value) and must still reach the callback.
+   /// (e.g. accepting a default value) and must still reach the callback. Ctrl+C (0x03),
+   /// standalone Esc (0x1B), or "^C" cancels any pending interactive prompt.
    /// </summary>
    /// <param name="line">Line of text received from the DeviceServer's shell channel.</param>
    ///
    static void _handleShellInput(const char* line)
    {
+      bool isCancel = _isShellCancelInput(line);
       bool isBlank = true;
       for (const char* p = line; *p != '\0'; p++)
       {
-         if (!isspace((unsigned char)*p))
+         if (!isspace(static_cast<unsigned char>(*p)))
          {
             isBlank = false;
             break;
          }
       }
-      if (isBlank && _pendingPromptCallback == nullptr)
+      if ((isBlank || isCancel) && _pendingPromptCallback == nullptr)
       {
          return;
       }
-
-      _shell._onInput(line);
 
       if (_pendingPromptCallback != nullptr)
       {
          void (*callback)(const char* line) = _pendingPromptCallback;
          _pendingPromptCallback = nullptr;
 
+         if (isCancel)
+         {
+            _inShellCommand = true;
+            respond("Cancelled.");
+            _inShellCommand = false;
+            return;
+         }
+
+         _shell._onInput(line);
+
          _inShellCommand = true;
          callback(line);
          _inShellCommand = false;
          return;
       }
+
+      _shell._onInput(line);
 
       _inShellCommand = true;
       _handleCommand(line);

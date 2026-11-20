@@ -239,6 +239,7 @@ protected:
       int8_t polarityCandidateSign = 0;
       uint8_t polarityCandidateCount = 0;
       bool isSolar = false;
+      bool is240V = false;
       bool isDerived = false;
       bool hasRealPower = false;
       bool connected = false;
@@ -502,28 +503,43 @@ protected:
 
    ///
    /// <summary>
+   /// Returns the voltage multiplier for a channel: 2.0 for a single-CT 240V line-to-line
+   /// circuit (phase-to-phase voltage = 2 x line-to-neutral), or 1.0 for standard 120V circuits.
+   /// </summary>
+   /// <param name="ch">Channel state.</param>
+   /// <returns>2.0f if 240V single-CT mode is active on a physical channel; otherwise 1.0f.</returns>
+   ///
+   static float _channelVoltageMultiplier(const ChannelState& ch)
+   {
+      return (ch.is240V && !ch.isDerived) ? 2.0f : 1.0f;
+   }
+
+   ///
+   /// <summary>
    /// Converts a channel's smoothed signed real power into its output watt reading: solar
    /// channels apply their learned polarity sign (daytime production positive, nighttime draw
    /// negative), while standard load circuits report unsigned consumption (>= 0 W).
+   /// Single-CT 240V channels multiply the per-leg power by 2.
    /// </summary>
    /// <param name="ch">Channel state.</param>
    /// <param name="avgAmps">Smoothed RMS current in Amps.</param>
-   /// <param name="avgSignedWatts">Smoothed raw signed real power in Watts.</param>
+   /// <param name="avgSignedWatts">Smoothed raw signed real power in Watts (120V per-leg basis).</param>
    /// <returns>Output power in Watts.</returns>
    ///
    float _resolveLatchedWatts(const ChannelState& ch, float avgAmps, float avgSignedWatts) const
    {
+      float mult = _channelVoltageMultiplier(ch);
       if (!ch.hasRealPower)
       {
-         return avgAmps * _lineVoltageV;
+         return avgAmps * _lineVoltageV * mult;
       }
 
       if (ch.isSolar)
       {
-         return ch.polaritySign != 0 ? (avgSignedWatts * ch.polaritySign) : std::fabs(avgSignedWatts);
+         return (ch.polaritySign != 0 ? (avgSignedWatts * ch.polaritySign) : std::fabs(avgSignedWatts)) * mult;
       }
 
-      return std::fabs(avgSignedWatts);
+      return std::fabs(avgSignedWatts) * mult;
    }
 
    ///
@@ -1143,6 +1159,44 @@ public:
 
    ///
    /// <summary>
+   /// Configures whether a channel monitors a pure 240V circuit using a single CT on one hot
+   /// conductor (doubling reported power relative to the 120V line-to-neutral reference while
+   /// keeping reported current in Amps unchanged).
+   /// </summary>
+   /// <param name="channel">Channel index.</param>
+   /// <param name="is240V">True for a single-CT 240V circuit; false for a standard 120V circuit.</param>
+   ///
+   void setChannel240V(size_t channel, bool is240V)
+   {
+      ASSERT(channel < MAX_CHANNELS);
+
+      ChannelState& ch = _channels[channel];
+      if (ch.is240V != is240V)
+      {
+         ch.is240V = is240V;
+         if (!ch.isDerived)
+         {
+            ch.latchedWatts *= is240V ? 2.0f : 0.5f;
+         }
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Returns true if the specified channel is configured as a single-CT 240V circuit.
+   /// </summary>
+   /// <param name="channel">Channel index (default 0).</param>
+   /// <returns>True if 240V single-CT scaling is enabled for the channel.</returns>
+   ///
+   bool isChannel240V(size_t channel = 0) const
+   {
+      ASSERT(channel < MAX_CHANNELS);
+
+      return _channels[channel].is240V;
+   }
+
+   ///
+   /// <summary>
    /// Returns true if the specified channel's name ends with "White" (case-insensitive),
    /// identifying a split-phase neutral return conductor.
    /// </summary>
@@ -1331,14 +1385,17 @@ public:
 
    ///
    /// <summary>
-   /// Computes apparent power (VA) using RMS current and the active line voltage.
+   /// Computes apparent power (VA) using RMS current and the active line voltage
+   /// (doubled for single-CT 240V channels).
    /// </summary>
    /// <param name="channel">Channel index (default 0).</param>
    /// <returns>Apparent power in VA.</returns>
    ///
    float apparentPower(size_t channel = 0) const
    {
-      return amps(channel) * _lineVoltageV;
+      ASSERT(channel < MAX_CHANNELS);
+
+      return amps(channel) * _lineVoltageV * _channelVoltageMultiplier(_channels[channel]);
    }
 
    ///
@@ -1372,7 +1429,7 @@ public:
    ///
    /// <summary>
    /// Gets the most recent slice's signed real power in Watts (preserving CT orientation /
-   /// split-phase L1 vs L2 sign relative to the AC voltage reference).
+   /// split-phase L1 vs L2 sign relative to the AC voltage reference, scaled 2x for 240V channels).
    /// </summary>
    /// <param name="channel">Channel index (default 0).</param>
    /// <returns>Signed real power in Watts.</returns>
@@ -1381,12 +1438,13 @@ public:
    {
       ASSERT(channel < MAX_CHANNELS);
 
-      return _channels[channel].rawSignedWatts;
+      return _channels[channel].rawSignedWatts * _channelVoltageMultiplier(_channels[channel]);
    }
 
    ///
    /// <summary>
-   /// Gets the most recent slice's signed reactive power in VAR when quadrature V*I sensing is active.
+   /// Gets the most recent slice's signed reactive power in VAR when quadrature V*I sensing is active
+   /// (scaled 2x for 240V channels).
    /// </summary>
    /// <param name="channel">Channel index (default 0).</param>
    /// <returns>Signed reactive power in VAR.</returns>
@@ -1395,7 +1453,7 @@ public:
    {
       ASSERT(channel < MAX_CHANNELS);
 
-      return _channels[channel].rawReactiveVars;
+      return _channels[channel].rawReactiveVars * _channelVoltageMultiplier(_channels[channel]);
    }
 
    ///
@@ -1555,13 +1613,26 @@ public:
 
    ///
    /// <summary>
-   /// Sums apparent power across all enabled non-neutral channels.
+   /// Sums apparent power across all enabled non-neutral channels (including auto-synthesized
+   /// virtual split-phase channels and 240V single-CT channels).
    /// </summary>
    /// <returns>Total apparent power in VA.</returns>
    ///
    float totalApparentPower() const
    {
-      return totalAmps() * _lineVoltageV;
+      float total = 0.0f;
+      for (size_t i = 0; i < _numChannels; i++)
+      {
+         if (_channels[i].splitRole != SplitPhaseRole::WHITE)
+         {
+            total += apparentPower(i);
+         }
+      }
+      for (size_t d = 0; d < _numDerivedChannels; d++)
+      {
+         total += derivedApparentPower(d);
+      }
+      return total;
    }
 
    ///
@@ -1727,11 +1798,15 @@ public:
          text.precision(1);
          text << prefix << "connected=" << (ch.latchedConnected ? "true" : "false")
               << (ch.isDerived ? " (derived)" : "") << "\n";
+         if (ch.is240V && !ch.isDerived)
+         {
+            text << prefix << "voltage=240V\n";
+         }
          if (hasVoltageSensor())
          {
             text << prefix << "power=" << realPower(chIdx) << " W\n"
-                 << prefix << "signedPower=" << ch.rawSignedWatts << " W\n"
-                 << prefix << "reactivePower=" << ch.rawReactiveVars << " VAR\n";
+                 << prefix << "signedPower=" << signedWatts(chIdx) << " W\n"
+                 << prefix << "reactivePower=" << reactivePower(chIdx) << " VAR\n";
             if (ch.isSolar || ch.splitRole == SplitPhaseRole::WHITE)
             {
                text << prefix << "polarity=" << (ch.polaritySign == 0 ? "auto" : (ch.polaritySign > 0 ? "+1" : "-1")) << "\n";

@@ -419,6 +419,7 @@ private:
    float _value = NAN;
    RollingRate _rate;
    std::vector<TopicDefinition> _topicDefinitions;
+   bool _publishingEnabled = true;
 
    static constexpr float CONNECTION_WARNING_INTERVAL_M = 1.0f;
    TimerSecs _connectionWarningTimer{ CONNECTION_WARNING_INTERVAL_M * 60.0f };
@@ -469,6 +470,7 @@ private:
          std::string result = std::string("topic=\"") + _activeClient->getTopic() + "\"\n" +
             "connected=" + (_activeClient->isConnected() ? "true" : "false") + "\n" +
             "ready=" + (_activeClient->isReady() ? "true" : "false") + "\n" +
+            "publishing=" + (_activeClient->isPublishingEnabled() ? "true" : "false") + "\n" +
             "rate=" + std::to_string(_activeClient->getRate()) + " samples/s";
          DeviceServerClient::respond(result.c_str());
          return true;
@@ -550,7 +552,7 @@ protected:
    void _onLoop() override
    {
       WebSocketJsonClient::_onLoop();
-      if (!isReady() || _role != Role::DEVICE)
+      if (!isReady() || _role != Role::DEVICE || !_publishingEnabled)
       {
          return;
       }
@@ -1078,17 +1080,82 @@ public:
 
    ///
    /// <summary>
+   /// Enables or disables sending topic creations and samples to the telemetry server while
+   /// keeping the WebSocket connection alive. Re-enabling resets per-topic submission state
+   /// so fresh samples publish immediately.
+   /// </summary>
+   /// <param name="enabled">True to send telemetry; false to suppress all outbound telemetry traffic.</param>
+   ///
+   virtual void setPublishingEnabled(bool enabled)
+   {
+      if (_publishingEnabled == enabled)
+      {
+         return;
+      }
+
+      _publishingEnabled = enabled;
+      if (_publishingEnabled)
+      {
+         for (TopicDefinition& definition : _topicDefinitions)
+         {
+            definition.hasSubmitted = false;
+            definition.lastValue.clear();
+         }
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Reports whether publishing to the telemetry server is currently enabled.
+   /// </summary>
+   /// <returns>True if publishing is enabled; false if paused/disabled.</returns>
+   ///
+   bool isPublishingEnabled() const
+   {
+      return _publishingEnabled;
+   }
+
+   ///
+   /// <summary>
+   /// Removes any queued topic definitions that have not yet been sent to the server.
+   /// Useful before re-registering current topics when re-enabling publishing after edits.
+   /// </summary>
+   ///
+   void clearUnsentTopics()
+   {
+      ASSERT(_role == Role::DEVICE);
+
+      for (auto it = _topicDefinitions.begin(); it != _topicDefinitions.end(); )
+      {
+         if (it->state == TopicState::UNSENT)
+         {
+            it = _topicDefinitions.erase(it);
+         }
+         else
+         {
+            it++;
+         }
+      }
+   }
+
+   ///
+   /// <summary>
    /// Submits an unrounded numeric sample after topic approval. Insignificant changes
    /// are suppressed using metadata precision until republishIntervalS elapses.
    /// </summary>
    /// <param name="topic">Previously created topic name.</param>
    /// <param name="value">Sample value; NAN indicates an unavailable reading.</param>
-   /// <returns>True if sent; false if unavailable, unchanged, disconnected, or unapproved.</returns>
+   /// <returns>True if sent; false if disabled, unavailable, unchanged, disconnected, or unapproved.</returns>
    ///
    bool submit(const char* topic, double value)
    {
       ASSERT(_role == Role::DEVICE);
       ASSERT(topic != nullptr && topic[0] != '\0');
+
+      if (!_publishingEnabled)
+      {
+         return false;
+      }
 
       TopicDefinition* definition = _findTopic(topic);
       ASSERT(definition != nullptr);
@@ -1178,6 +1245,60 @@ public:
 
    ///
    /// <summary>
+   /// Gets all topics registered on this client (published topic definitions for devices,
+   /// or subscribed topics for viewers/clients).
+   /// </summary>
+   /// <returns>Vector of topic names, or empty if none are registered.</returns>
+   ///
+   std::vector<std::string> getTopics() const
+   {
+      if (_role == Role::DEVICE && !_topicDefinitions.empty())
+      {
+         std::vector<std::string> topics;
+         topics.reserve(_topicDefinitions.size());
+         for (const TopicDefinition& definition : _topicDefinitions)
+         {
+            topics.push_back(definition.topic);
+         }
+         return topics;
+      }
+
+      if (!_topics.empty())
+      {
+         return _topics;
+      }
+
+      if (!_topic.empty())
+      {
+         return { _topic };
+      }
+
+      return {};
+   }
+
+   ///
+   /// <summary>
+   /// Formats all registered/subscribed topics as a newline-separated string for GetTopic.
+   /// </summary>
+   /// <returns>Newline-separated list of topic names, or empty if none are registered.</returns>
+   ///
+   std::string formatTopics() const
+   {
+      std::vector<std::string> topics = getTopics();
+      std::string result;
+      for (size_t i = 0; i < topics.size(); i++)
+      {
+         if (i > 0)
+         {
+            result += "\n";
+         }
+         result += topics[i];
+      }
+      return result;
+   }
+
+   ///
+   /// <summary>
    /// Gets the most recently received value (subscribers only).
    /// </summary>
    /// <returns>The latest value, or NAN if none has been received yet.</returns>
@@ -1235,7 +1356,7 @@ private:
    {
       TelemetryClient::_onLoop();
 
-      if (!isTopicReady(getTopic().c_str()) || !_pendingNew || isnan(_pendingValue))
+      if (!isPublishingEnabled() || !isTopicReady(getTopic().c_str()) || !_pendingNew || isnan(_pendingValue))
       {
          return;
       }
@@ -1313,6 +1434,20 @@ public:
 
    ///
    /// <summary>
+   /// Enables or disables publishing on this publisher, discarding any pending primary
+   /// sample so stale values are never sent when re-enabled.
+   /// </summary>
+   /// <param name="enabled">True to send telemetry; false to suppress all outbound telemetry traffic.</param>
+   ///
+   void setPublishingEnabled(bool enabled) override
+   {
+      TelemetryClient::setPublishingEnabled(enabled);
+      _pendingNew = false;
+      _hasPublished = false;
+   }
+
+   ///
+   /// <summary>
    /// Queues the latest primary value until its topic is approved and the rate cap allows
    /// submission. Unchanged values are suppressed until republishIntervalS elapses.
    /// </summary>
@@ -1320,6 +1455,11 @@ public:
    ///
    void setValue(float value)
    {
+      if (!isPublishingEnabled())
+      {
+         return;
+      }
+
       _pendingValue = value;
       _pendingNew = true;
    }

@@ -50,12 +50,12 @@ protected:
    /// <summary>The single instance, used by the static _onViewerCommand() bridge function (DeviceServerClient::onConfigCommand() only accepts a captureless function pointer).</summary>
    inline static ViewerSketch* _viewerInstance = nullptr;
 
-   /// <summary>Commands handled directly by ViewerSketch, listed by "Help" alongside the built-ins.</summary>
+   /// <summary>Commands handled directly by ViewerSketch, listed by "Help" alongside the built-ins (SetTopic is only registered when _topicResolver.hasPrompts() is true).</summary>
    static constexpr DeviceServerClient::CommandInfo VIEWER_COMMANDS[] = {
-      { "GetTopic", "Reports the current telemetry topic", { "gt" }, {}, false, { "Telemetry" } },
+      { "GetTopic", "Reports the current telemetry topic(s)", { "gt" }, {}, false, { "Telemetry" } },
       {
          "SetTopic",
-         "Persists a new telemetry topic (only if the sketch offers a topic table); requires Restart to take effect",
+         "Persists a new telemetry topic; requires Restart to take effect",
          { "st" },
          {
             { "topic", "Telemetry topic name", true },
@@ -82,12 +82,18 @@ protected:
 
       if (strcasecmp(verb.c_str(), "GetTopic") == 0)
       {
-         const char* resolved = _viewerInstance->_topicResolver.topic();
-         std::string topic = resolved != nullptr ? resolved : (_viewerInstance->_client != nullptr ? _viewerInstance->_client->getTopic() : "");
-         DeviceServerClient::respond(topic.c_str());
+         std::string topics = _viewerInstance->_client != nullptr
+            ? _viewerInstance->_client->formatTopics()
+            : "";
+         if (topics.empty())
+         {
+            const char* resolved = _viewerInstance->_topicResolver.topic();
+            topics = resolved != nullptr ? resolved : "";
+         }
+         DeviceServerClient::respond(topics.c_str());
          return true;
       }
-      if (strcasecmp(verb.c_str(), "SetTopic") == 0)
+      if (_viewerInstance->_topicResolver.hasPrompts() && strcasecmp(verb.c_str(), "SetTopic") == 0)
       {
          std::string value;
          std::getline(stream >> std::ws, value);
@@ -273,7 +279,8 @@ public:
       _client->connect(_arduino, _status);
 
       _viewerInstance = this;
-      DeviceServerClient::onConfigCommand(_onViewerCommand, VIEWER_COMMANDS, std::size(VIEWER_COMMANDS));
+      size_t commandCount = _topicResolver.hasPrompts() ? std::size(VIEWER_COMMANDS) : 1;
+      DeviceServerClient::onConfigCommand(_onViewerCommand, VIEWER_COMMANDS, commandCount);
       return _client;
    }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <string>
 
 #ifndef ARDUINO_DISPLAY_SUPPORTED
@@ -90,6 +91,88 @@ private:
       ArduinoBase::println(str, textColor, backgroundColor);
       display.setTextColor((uint16_t)textColor, (uint16_t)backgroundColor);
       display.println(str);
+   }
+
+   void _printlnWrapped(const char* text, int16_t x, int16_t maxWidth, Color textColor, Color backgroundColor)
+   {
+      if (text == nullptr)
+      {
+         return;
+      }
+
+      ArduinoBase::println(text, textColor, backgroundColor);
+      display.setTextColor(static_cast<uint16_t>(textColor), static_cast<uint16_t>(backgroundColor));
+
+      if (text[0] == '\0' || maxWidth <= 0)
+      {
+         setCursor(x, getCursorY());
+         display.println(text);
+         return;
+      }
+
+      const char* p = text;
+      while (*p != '\0')
+      {
+         std::string line;
+         while (*p != '\0' && *p != '\n')
+         {
+            while (*p == ' ' && line.empty())
+            {
+               p++;
+            }
+            if (*p == '\0' || *p == '\n')
+            {
+               break;
+            }
+
+            const char* tokenStart = p;
+            while (*p != '\0' && *p != ' ' && *p != '\n')
+            {
+               p++;
+            }
+
+            std::string token(tokenStart, static_cast<size_t>(p - tokenStart));
+            std::string candidate = line.empty() ? token : (line + " " + token);
+
+            if (display.textWidth(candidate.c_str()) <= maxWidth)
+            {
+               line = candidate;
+               while (*p == ' ')
+               {
+                  p++;
+               }
+            }
+            else if (!line.empty())
+            {
+               p = tokenStart;
+               break;
+            }
+            else
+            {
+               size_t fitLen = 1;
+               while (fitLen < token.length())
+               {
+                  std::string sub = token.substr(0, fitLen + 1);
+                  if (display.textWidth(sub.c_str()) > maxWidth)
+                  {
+                     break;
+                  }
+                  fitLen++;
+               }
+               line = token.substr(0, fitLen);
+               p = tokenStart + fitLen;
+               break;
+            }
+         }
+
+         if (*p == '\n')
+         {
+            p++;
+         }
+
+         setCursor(x, getCursorY());
+         display.println(line.c_str());
+      }
    }
 
    void _normalizeCoords(int16_t& x, int16_t& y)
@@ -962,6 +1045,26 @@ public:
       ArduinoBase::println("");
       display.println();
    }
+
+   ///
+   /// <summary>
+   /// Prints text wrapped on word boundaries within the specified left margin and max width.
+   /// </summary>
+   /// <param name="text">Text to print</param>
+   /// <param name="x">Left X coordinate for each wrapped line</param>
+   /// <param name="maxWidth">Maximum pixel width per line</param>
+   /// <param name="textColor">Text foreground color</param>
+   /// <param name="backgroundColor">Text background color</param>
+   ///
+   void printlnWrapped(
+      const char* text,
+      int16_t x,
+      int16_t maxWidth,
+      Color textColor = Color::WHITE,
+      Color backgroundColor = Color::BLACK)
+   {
+      _printlnWrapped(text, x, maxWidth, textColor, backgroundColor);
+   }
    void print(const char* str, const Format& format, Color textColor = Color::WHITE, Color backgroundColor = Color::BLACK)
    {
       std::string s = format.toString(str);
@@ -1006,7 +1109,25 @@ public:
       uint32_t timeoutMs = 0);
    String promptTouchText(
       const char* title,
-      const String& initialValue = "");
+      const String& initialValue = "",
+      uint32_t timeoutMs = 0,
+      bool allowCancel = false,
+      bool allowEmpty = false,
+      bool* outCancelled = nullptr);
+   String promptTouchNumber(
+      const char* title,
+      const String& initialValue = "",
+      bool allowDecimal = true,
+      uint32_t timeoutMs = 0,
+      bool allowCancel = false,
+      bool allowEmpty = false,
+      bool* outCancelled = nullptr);
+   bool promptTouchYesNo(
+      const char* title,
+      bool defaultYes = true,
+      uint32_t timeoutMs = 0,
+      bool allowCancel = false,
+      bool* outCancelled = nullptr);
 #endif
 
 protected:
@@ -2192,18 +2313,19 @@ inline size_t ArduinoWithDisplay::promptTouchOption(
 {
    ASSERT(!options.empty());
 
+   constexpr int16_t MARGIN_X = 8;
+   constexpr int16_t GAP_Y = 6;
+
    clearDisplay();
    uint8_t titleSize = headerTextSize();
    setTextSize(titleSize);
-   setCursor(0, 0);
-   _println(title, Color::HEADING, Color::BLACK);
+   setCursor(MARGIN_X, 0);
+   _printlnWrapped(title, MARGIN_X, width() - 2 * MARGIN_X, Color::HEADING, Color::BLACK);
 
    int16_t topY = getCursorY() + 4;
    int16_t availH = height() - topY - 4;
    size_t count = options.size();
 
-   constexpr int16_t MARGIN_X = 8;
-   constexpr int16_t GAP_Y = 6;
    int16_t buttonW = width() - 2 * MARGIN_X;
    int16_t maxButtonH = height() >= LARGE_DISPLAY_MIN_HEIGHT ? 52 : 36;
    int16_t totalGaps = (int16_t)(count > 1 ? (count - 1) * GAP_Y : 0);
@@ -2376,27 +2498,42 @@ inline size_t ArduinoWithDisplay::promptTouchOption(
 
 ///
 /// <summary>
-/// Prompts the user to enter a non-empty text string via an on-screen touch QWERTY
-/// keyboard (or over Serial if connected). Supports Shift/Caps toggle, 123/ABC mode
-/// toggle for numbers and symbols, Space, Backspace, and OK, and optionally
-/// pre-populates the input box with an initial value. Restores the initialization
-/// display before returning.
+/// Prompts the user to enter a text string via an on-screen touch QWERTY keyboard
+/// (or over Serial if connected). Supports Shift/Caps toggle, 123/ABC mode toggle
+/// for numbers and symbols, Space, Backspace, Clear, OK, and optional Cancel, and
+/// optionally pre-populates the input box with an initial value. Restores the
+/// initialization display before returning.
 /// </summary>
 /// <param name="title">Heading text drawn at the top of the screen.</param>
 /// <param name="initialValue">Optional initial text pre-populated into the input box.</param>
-/// <returns>The trimmed non-empty string entered by the user.</returns>
+/// <param name="timeoutMs">Inactivity timeout in milliseconds (0 uses Util::REQUIRED_PROMPT_TIMEOUT_S).</param>
+/// <param name="allowCancel">If true, shows a Cancel key and returns an empty string on cancel or timeout; if false, resets into safe mode on timeout.</param>
+/// <param name="allowEmpty">If true, OK is enabled even when the input box is empty and returns an empty string.</param>
+/// <param name="outCancelled">Optional pointer set to true if cancelled or timed out, false if submitted.</param>
+/// <returns>The trimmed text entered by the user, or an empty string if empty, cancelled, or timed out.</returns>
 ///
 inline String ArduinoWithDisplay::promptTouchText(
    const char* title,
-   const String& initialValue)
+   const String& initialValue,
+   uint32_t timeoutMs,
+   bool allowCancel,
+   bool allowEmpty,
+   bool* outCancelled)
 {
+   if (outCancelled != nullptr)
+   {
+      *outCancelled = false;
+   }
+
    enum class KeyAction : uint8_t
    {
       CHAR,
       SHIFT,
       MODE,
       BACKSPACE,
+      CLEAR,
       SPACE,
+      CANCEL,
       OK,
    };
 
@@ -2418,21 +2555,29 @@ inline String ArduinoWithDisplay::promptTouchText(
    bool capsLock = false;
    bool numberMode = false;
 
-   clearDisplay();
-   uint8_t titleSize = headerTextSize();
-   setTextSize(titleSize);
-   setCursor(0, 0);
-   _println(title, Color::HEADING, Color::BLACK);
-
    constexpr int16_t MARGIN_X = 6;
    constexpr int16_t GAP_X = 4;
    constexpr int16_t GAP_Y = 4;
-   constexpr size_t MAX_KEYS = 32;
+   constexpr size_t MAX_KEYS = 34;
+
+   clearDisplay();
+   uint8_t titleSize = headerTextSize();
+   setTextSize(titleSize);
+   setCursor(MARGIN_X, 0);
+   _printlnWrapped(title, MARGIN_X, width() - 2 * MARGIN_X, Color::HEADING, Color::BLACK);
 
    uint8_t keyTextSize = (height() >= LARGE_DISPLAY_MIN_HEIGHT) ? 3 : 2;
    int16_t boxY = getCursorY() + 2;
-   int16_t boxW = width() - 2 * MARGIN_X;
-   int16_t boxH = charH(keyTextSize) + 10;
+   setTextSize(keyTextSize);
+   int16_t clearKeyW = display.textWidth("Clear") + 16;
+   if (clearKeyW > width() / 3)
+   {
+      setTextSize(2);
+      clearKeyW = display.textWidth("Clear") + 12;
+   }
+   int16_t boxW = width() - 2 * MARGIN_X - clearKeyW - GAP_X;
+   int16_t clearKeyX = MARGIN_X + boxW + GAP_X;
+   int16_t boxH = (height() >= LARGE_DISPLAY_MIN_HEIGHT) ? (charH(keyTextSize) + 18) : (charH(keyTextSize) + 10);
 
    int16_t kbTopY = boxY + boxH + 6;
    int16_t availH = height() - kbTopY - 4;
@@ -2465,10 +2610,15 @@ inline String ArduinoWithDisplay::promptTouchText(
 
    int16_t modeKeyW = sideKeyW;
    int16_t okKeyW = (row0W - 5 * stdKeyW - GAP_X) / 2;
-   int16_t spaceKeyW = row0W - modeKeyW - okKeyW - 2 * GAP_X;
+   int16_t cancelKeyW = allowCancel ? okKeyW : 0;
+   int16_t spaceKeyW = allowCancel
+      ? (row0W - cancelKeyW - modeKeyW - okKeyW - 3 * GAP_X)
+      : (row0W - modeKeyW - okKeyW - 2 * GAP_X);
 
    KeyDef keys[MAX_KEYS];
    size_t keyCount = 0;
+   size_t clearKeyIdx = 0;
+   size_t okKeyIdx = 0;
 
    static constexpr const char* ALPHA_ROW0 = "QWERTYUIOP";
    static constexpr const char* ALPHA_ROW1 = "ASDFGHJKL";
@@ -2489,6 +2639,9 @@ inline String ArduinoWithDisplay::promptTouchText(
       const char* r0 = numberMode ? NUM_ROW0 : ALPHA_ROW0;
       const char* r1 = numberMode ? NUM_ROW1 : ALPHA_ROW1;
       const char* r2 = numberMode ? NUM_ROW2 : ALPHA_ROW2;
+
+      clearKeyIdx = keyCount;
+      keys[keyCount++] = { clearKeyX, boxY, clearKeyW, boxH, KeyAction::CLEAR, 0 };
 
       for (size_t i = 0; i < 10; i++)
       {
@@ -2518,10 +2671,17 @@ inline String ArduinoWithDisplay::promptTouchText(
       int16_t backW = row0StartX + row0W - backX;
       keys[keyCount++] = { backX, y2, backW, keyH, KeyAction::BACKSPACE, 0 };
 
-      keys[keyCount++] = { row0StartX, y3, modeKeyW, keyH, KeyAction::MODE, 0 };
-      int16_t spaceX = row0StartX + modeKeyW + GAP_X;
+      int16_t row3X = row0StartX;
+      if (allowCancel)
+      {
+         keys[keyCount++] = { row3X, y3, cancelKeyW, keyH, KeyAction::CANCEL, 0 };
+         row3X += cancelKeyW + GAP_X;
+      }
+      keys[keyCount++] = { row3X, y3, modeKeyW, keyH, KeyAction::MODE, 0 };
+      int16_t spaceX = row3X + modeKeyW + GAP_X;
       keys[keyCount++] = { spaceX, y3, spaceKeyW, keyH, KeyAction::SPACE, ' ' };
       int16_t okX = spaceX + spaceKeyW + GAP_X;
+      okKeyIdx = keyCount;
       keys[keyCount++] = { okX, y3, okKeyW, keyH, KeyAction::OK, 0 };
    };
 
@@ -2537,6 +2697,11 @@ inline String ArduinoWithDisplay::promptTouchText(
          }
       }
       return false;
+   };
+
+   auto canSubmit = [&]() -> bool
+   {
+      return allowEmpty || hasNonSpace();
    };
 
    auto drawTextBox = [&]()
@@ -2571,8 +2736,12 @@ inline String ArduinoWithDisplay::promptTouchText(
       }
       else if (k.action == KeyAction::OK)
       {
-         bg = hasNonSpace() ? Color::DARKGREEN : Color::DARKSLATEGRAY;
-         fg = hasNonSpace() ? Color::WHITE : Color::GRAY;
+         bg = canSubmit() ? Color::DARKGREEN : Color::DARKSLATEGRAY;
+         fg = canSubmit() ? Color::WHITE : Color::GRAY;
+      }
+      else if (k.action == KeyAction::CANCEL)
+      {
+         bg = Color::DARKRED;
       }
       else if (k.action == KeyAction::SHIFT)
       {
@@ -2585,6 +2754,11 @@ inline String ArduinoWithDisplay::promptTouchText(
       else if (k.action == KeyAction::BACKSPACE)
       {
          bg = Color::DARKSLATEGRAY;
+      }
+      else if (k.action == KeyAction::CLEAR)
+      {
+         bg = Color::DARKSLATEGRAY;
+         fg = (value.length() > 0) ? Color::WHITE : Color::GRAY;
       }
 
       display.fillRoundRect(k.x, k.y, k.w, k.h, 5, static_cast<uint16_t>(bg));
@@ -2616,9 +2790,18 @@ inline String ArduinoWithDisplay::promptTouchText(
       {
          strcpy(labelBuf, "<-");
       }
+      else if (k.action == KeyAction::CLEAR)
+      {
+         strcpy(labelBuf, "Clear");
+      }
       else if (k.action == KeyAction::SPACE)
       {
          strcpy(labelBuf, "Space");
+      }
+      else if (k.action == KeyAction::CANCEL)
+      {
+         setTextSize(2);
+         strcpy(labelBuf, display.textWidth("Cancel") <= k.w - 4 ? "Cancel" : "Back");
       }
       else if (k.action == KeyAction::OK)
       {
@@ -2680,15 +2863,28 @@ inline String ArduinoWithDisplay::promptTouchText(
 
    size_t pressedIdx = SIZE_MAX;
    uint32_t start = millis();
-   constexpr uint32_t TIMEOUT_MS = Util::REQUIRED_PROMPT_TIMEOUT_S * 1000UL;
-   Util::setSetupStep(title);
+   uint32_t effectiveTimeoutMs = timeoutMs > 0 ? timeoutMs : (Util::REQUIRED_PROMPT_TIMEOUT_S * 1000UL);
+   if (!allowCancel)
+   {
+      Util::setSetupStep(title);
+   }
 
    while (true)
    {
       Util::feedSetupWatchdog();
 
-      if (millis() - start >= TIMEOUT_MS)
+      if (millis() - start >= effectiveTimeoutMs)
       {
+         if (allowCancel)
+         {
+            if (outCancelled != nullptr)
+            {
+               *outCancelled = true;
+            }
+            Serial.println("Prompt timed out.");
+            return "";
+         }
+
          Serial.println("No input - entering safe mode.");
          Util::reset(0.0f, Util::PROMPT_TIMEOUT_HALT_REASON);
       }
@@ -2727,7 +2923,8 @@ inline String ArduinoWithDisplay::promptTouchText(
          size_t idx = pressedIdx;
          pressedIdx = SIZE_MAX;
          const KeyDef& k = keys[idx];
-         bool prevValid = hasNonSpace();
+         bool prevValid = canSubmit();
+         bool prevHadValue = (value.length() > 0);
 
          if (k.action == KeyAction::CHAR)
          {
@@ -2748,9 +2945,13 @@ inline String ArduinoWithDisplay::promptTouchText(
             else
             {
                drawKey(idx, false);
-               if (hasNonSpace() != prevValid)
+               if ((value.length() > 0) != prevHadValue)
                {
-                  drawKey(keyCount - 1, false);
+                  drawKey(clearKeyIdx, false);
+               }
+               if (canSubmit() != prevValid)
+               {
+                  drawKey(okKeyIdx, false);
                }
             }
          }
@@ -2789,18 +2990,51 @@ inline String ArduinoWithDisplay::promptTouchText(
                else
                {
                   drawKey(idx, false);
-                  if (hasNonSpace() != prevValid)
+                  if ((value.length() > 0) != prevHadValue)
                   {
-                     drawKey(keyCount - 1, false);
+                     drawKey(clearKeyIdx, false);
+                  }
+                  if (canSubmit() != prevValid)
+                  {
+                     drawKey(okKeyIdx, false);
                   }
                }
             }
             else
             {
                drawKey(idx, false);
-               if (hasNonSpace() != prevValid)
+               if ((value.length() > 0) != prevHadValue)
                {
-                  drawKey(keyCount - 1, false);
+                  drawKey(clearKeyIdx, false);
+               }
+               if (canSubmit() != prevValid)
+               {
+                  drawKey(okKeyIdx, false);
+               }
+            }
+         }
+         else if (k.action == KeyAction::CLEAR)
+         {
+            if (value.length() > 0)
+            {
+               value = "";
+               drawTextBox();
+            }
+            bool shiftChanged = (!capsLock && !shifted);
+            if (shiftChanged)
+            {
+               shifted = true;
+            }
+            if (shiftChanged && !numberMode)
+            {
+               drawAllKeys();
+            }
+            else
+            {
+               drawKey(idx, false);
+               if (canSubmit() != prevValid)
+               {
+                  drawKey(okKeyIdx, false);
                }
             }
          }
@@ -2828,11 +3062,20 @@ inline String ArduinoWithDisplay::promptTouchText(
             buildKeys();
             drawAllKeys();
          }
+         else if (k.action == KeyAction::CANCEL)
+         {
+            if (outCancelled != nullptr)
+            {
+               *outCancelled = true;
+            }
+            Serial.println("Cancelled.");
+            return "";
+         }
          else if (k.action == KeyAction::OK)
          {
             String trimmed = value;
             trimmed.trim();
-            if (trimmed.length() > 0)
+            if (allowEmpty || trimmed.length() > 0)
             {
                Serial.println(trimmed);
                restoreInitDisplay();
@@ -2860,6 +3103,11 @@ inline String ArduinoWithDisplay::promptTouchText(
                return trimmed;
             }
          }
+         else if (input.length() == 0 && allowEmpty)
+         {
+            restoreInitDisplay();
+            return "";
+         }
          else if (input.length() > 0)
          {
             restoreInitDisplay();
@@ -2869,6 +3117,718 @@ inline String ArduinoWithDisplay::promptTouchText(
          Serial.print("Enter ");
          Serial.print(title);
          Serial.print(": ");
+      }
+
+      delay(10);
+   }
+}
+
+///
+/// <summary>
+/// Prompts the user to enter a number using a large-key on-screen numeric keypad (0-9, optional
+/// decimal point, backspace, clear, OK, and optional Cancel), with Serial fallback.
+/// </summary>
+/// <param name="title">Heading text displayed at the top of the screen</param>
+/// <param name="initialValue">Optional initial numeric text pre-populated into the input box</param>
+/// <param name="allowDecimal">When true, includes a '.' key; when false, allows digits only</param>
+/// <param name="timeoutMs">Inactivity timeout in milliseconds (0 uses Util::REQUIRED_PROMPT_TIMEOUT_S)</param>
+/// <param name="allowCancel">When true, shows a Cancel key and returns "" on cancel or timeout instead of resetting</param>
+/// <param name="allowEmpty">When true, OK is enabled even when the input box is empty and returns ""</param>
+/// <param name="outCancelled">Optional pointer set to true if cancelled/timed out, false if submitted</param>
+/// <returns>The trimmed numeric string entered by the user, or "" if empty/cancelled/timed out</returns>
+///
+inline String ArduinoWithDisplay::promptTouchNumber(
+   const char* title,
+   const String& initialValue,
+   bool allowDecimal,
+   uint32_t timeoutMs,
+   bool allowCancel,
+   bool allowEmpty,
+   bool* outCancelled)
+{
+   if (outCancelled != nullptr)
+   {
+      *outCancelled = false;
+   }
+
+   enum class KeyAction : uint8_t
+   {
+      DIGIT,
+      DECIMAL,
+      BACKSPACE,
+      CLEAR,
+      CANCEL,
+      OK,
+   };
+
+   struct KeyDef
+   {
+      int16_t x;
+      int16_t y;
+      int16_t w;
+      int16_t h;
+      KeyAction action;
+      char ch;
+   };
+
+   String value = initialValue;
+   value.trim();
+
+   constexpr int16_t MARGIN_X = 8;
+   constexpr int16_t GAP_X = 8;
+   constexpr int16_t GAP_Y = 8;
+   constexpr size_t MAX_KEYS = 15;
+
+   clearDisplay();
+   uint8_t titleSize = headerTextSize();
+   setTextSize(titleSize);
+   setCursor(MARGIN_X, 0);
+   _printlnWrapped(title, MARGIN_X, width() - 2 * MARGIN_X, Color::HEADING, Color::BLACK);
+
+   uint8_t boxTextSize = (height() >= LARGE_DISPLAY_MIN_HEIGHT) ? 4 : 3;
+   int16_t boxY = getCursorY() + 4;
+   int16_t boxW = width() - 2 * MARGIN_X;
+   int16_t boxH = charH(boxTextSize) + 12;
+
+   int16_t kbTopY = boxY + boxH + 8;
+   int16_t availH = height() - kbTopY - 6;
+   int16_t keyH = (availH - 4 * GAP_Y) / 5;
+   int16_t maxKeyH = (height() >= LARGE_DISPLAY_MIN_HEIGHT) ? 96 : 52;
+   if (keyH > maxKeyH)
+   {
+      keyH = maxKeyH;
+   }
+   if (keyH < charH(2) + 4)
+   {
+      keyH = charH(2) + 4;
+   }
+
+   uint8_t keyTextSize = (height() >= LARGE_DISPLAY_MIN_HEIGHT) ? 4 : 3;
+   while (keyTextSize > 2 && keyH < charH(keyTextSize) + 8)
+   {
+      keyTextSize--;
+   }
+
+   int16_t availW = width() - 2 * MARGIN_X;
+   int16_t colW = (availW - 2 * GAP_X) / 3;
+   int16_t gridW = 3 * colW + 2 * GAP_X;
+   int16_t startX = (width() - gridW) / 2;
+
+   std::array<KeyDef, MAX_KEYS> keys{};
+   size_t keyCount = 0;
+
+   static constexpr std::array<const char*, 3> DIGIT_ROWS = { "123", "456", "789" };
+   for (int16_t row = 0; row < 3; row++)
+   {
+      int16_t ry = kbTopY + row * (keyH + GAP_Y);
+      for (int16_t col = 0; col < 3; col++)
+      {
+         int16_t kx = startX + col * (colW + GAP_X);
+         keys[keyCount++] = { kx, ry, colW, keyH, KeyAction::DIGIT, DIGIT_ROWS[row][col] };
+      }
+   }
+
+   int16_t y3 = kbTopY + 3 * (keyH + GAP_Y);
+   int16_t y4 = kbTopY + 4 * (keyH + GAP_Y);
+
+   if (allowDecimal)
+   {
+      keys[keyCount++] = { startX, y3, colW, keyH, KeyAction::DECIMAL, '.' };
+   }
+   else
+   {
+      keys[keyCount++] = { startX, y3, colW, keyH, KeyAction::CLEAR, 0 };
+   }
+   keys[keyCount++] = { static_cast<int16_t>(startX + colW + GAP_X), y3, colW, keyH, KeyAction::DIGIT, '0' };
+   keys[keyCount++] = { static_cast<int16_t>(startX + 2 * (colW + GAP_X)), y3, colW, keyH, KeyAction::BACKSPACE, 0 };
+
+   if (allowDecimal && allowCancel)
+   {
+      keys[keyCount++] = { startX, y4, colW, keyH, KeyAction::CANCEL, 0 };
+      keys[keyCount++] = { static_cast<int16_t>(startX + colW + GAP_X), y4, colW, keyH, KeyAction::CLEAR, 0 };
+      keys[keyCount++] = { static_cast<int16_t>(startX + 2 * (colW + GAP_X)), y4, colW, keyH, KeyAction::OK, 0 };
+   }
+   else if (!allowDecimal && allowCancel)
+   {
+      int16_t halfW = (gridW - GAP_X) / 2;
+      int16_t okW = gridW - halfW - GAP_X;
+      keys[keyCount++] = { startX, y4, halfW, keyH, KeyAction::CANCEL, 0 };
+      keys[keyCount++] = { static_cast<int16_t>(startX + halfW + GAP_X), y4, okW, keyH, KeyAction::OK, 0 };
+   }
+   else if (allowDecimal && !allowCancel)
+   {
+      int16_t okW = gridW - colW - GAP_X;
+      keys[keyCount++] = { startX, y4, colW, keyH, KeyAction::CLEAR, 0 };
+      keys[keyCount++] = { static_cast<int16_t>(startX + colW + GAP_X), y4, okW, keyH, KeyAction::OK, 0 };
+   }
+   else
+   {
+      keys[keyCount++] = { startX, y4, gridW, keyH, KeyAction::OK, 0 };
+   }
+
+   auto hasDigit = [&]() -> bool
+   {
+      for (size_t i = 0; i < value.length(); i++)
+      {
+         if (value[i] >= '0' && value[i] <= '9')
+         {
+            return true;
+         }
+      }
+      return false;
+   };
+
+   auto canSubmit = [&]() -> bool
+   {
+      return hasDigit() || (allowEmpty && value.length() == 0);
+   };
+
+   auto drawTextBox = [&]()
+   {
+      display.fillRoundRect(MARGIN_X, boxY, boxW, boxH, 6, static_cast<uint16_t>(Color::BLACK));
+      display.drawRoundRect(MARGIN_X, boxY, boxW, boxH, 6, static_cast<uint16_t>(Color::WHITE));
+
+      setTextSize(boxTextSize);
+      display.setTextColor(static_cast<uint16_t>(Color::VALUE), static_cast<uint16_t>(Color::BLACK));
+
+      String displayStr = value + "_";
+      int16_t maxTextW = boxW - 16;
+      while (displayStr.length() > 1 && display.textWidth(displayStr.c_str()) > maxTextW)
+      {
+         displayStr.remove(0, 1);
+      }
+
+      int16_t ty = boxY + (boxH - charH(boxTextSize)) / 2;
+      display.setCursor(MARGIN_X + 8, ty);
+      display.print(displayStr.c_str());
+   };
+
+   auto drawKey = [&](size_t idx, bool pressed)
+   {
+      const KeyDef& k = keys[idx];
+      Color bg = Color::BLUE;
+      Color fg = Color::WHITE;
+
+      if (pressed)
+      {
+         bg = Color::LIGHTBLUE;
+      }
+      else if (k.action == KeyAction::OK)
+      {
+         bg = canSubmit() ? Color::DARKGREEN : Color::DARKSLATEGRAY;
+         fg = canSubmit() ? Color::WHITE : Color::GRAY;
+      }
+      else if (k.action == KeyAction::CANCEL)
+      {
+         bg = Color::DARKRED;
+      }
+      else if (k.action == KeyAction::BACKSPACE || k.action == KeyAction::CLEAR)
+      {
+         bg = Color::DARKSLATEGRAY;
+      }
+
+      display.fillRoundRect(k.x, k.y, k.w, k.h, 8, static_cast<uint16_t>(bg));
+      display.drawRoundRect(k.x, k.y, k.w, k.h, 8, static_cast<uint16_t>(Color::WHITE));
+
+      char labelBuf[8] = {};
+      if (k.action == KeyAction::DIGIT || k.action == KeyAction::DECIMAL)
+      {
+         labelBuf[0] = k.ch;
+         labelBuf[1] = '\0';
+      }
+      else if (k.action == KeyAction::BACKSPACE)
+      {
+         strcpy(labelBuf, "<-");
+      }
+      else if (k.action == KeyAction::CLEAR)
+      {
+         strcpy(labelBuf, "Clr");
+      }
+      else if (k.action == KeyAction::CANCEL)
+      {
+         setTextSize(2);
+         strcpy(labelBuf, display.textWidth("Cancel") <= k.w - 8 ? "Cancel" : "Back");
+      }
+      else if (k.action == KeyAction::OK)
+      {
+         strcpy(labelBuf, "OK");
+      }
+
+      uint8_t labelSize = keyTextSize;
+      setTextSize(labelSize);
+      while (labelSize > 2 && display.textWidth(labelBuf) > k.w - 8)
+      {
+         labelSize--;
+         setTextSize(labelSize);
+      }
+
+      display.setTextColor(static_cast<uint16_t>(fg), static_cast<uint16_t>(bg));
+      int16_t tw = display.textWidth(labelBuf);
+      int16_t tx = k.x + (k.w - tw) / 2;
+      int16_t ty = k.y + (k.h - charH(labelSize)) / 2;
+      display.setCursor(tx, ty);
+      display.print(labelBuf);
+   };
+
+   drawTextBox();
+   for (size_t i = 0; i < keyCount; i++)
+   {
+      drawKey(i, false);
+   }
+
+   lgfx::touch_point_t tp;
+   while (display.getTouch(&tp) > 0)
+   {
+      delay(10);
+   }
+
+   while (Serial.available())
+   {
+      Serial.read();
+   }
+
+   if (value.length() > 0)
+   {
+      Serial.print("Enter ");
+      Serial.print(title);
+      Serial.print(" (blank to keep \"");
+      Serial.print(value);
+      Serial.print("\") or use touch keypad: ");
+   }
+   else
+   {
+      Serial.print("Enter ");
+      Serial.print(title);
+      Serial.print(" or use touch keypad: ");
+   }
+
+   size_t pressedIdx = SIZE_MAX;
+   uint32_t start = millis();
+   uint32_t effectiveTimeoutMs = timeoutMs > 0 ? timeoutMs : (Util::REQUIRED_PROMPT_TIMEOUT_S * 1000UL);
+   if (!allowCancel)
+   {
+      Util::setSetupStep(title);
+   }
+
+   while (true)
+   {
+      Util::feedSetupWatchdog();
+
+      if (millis() - start >= effectiveTimeoutMs)
+      {
+         if (allowCancel)
+         {
+            if (outCancelled != nullptr)
+            {
+               *outCancelled = true;
+            }
+            Serial.println("Prompt timed out.");
+            return "";
+         }
+
+         Serial.println("No input - entering safe mode.");
+         Util::reset(0.0f, Util::PROMPT_TIMEOUT_HALT_REASON);
+      }
+
+      bool touched = display.getTouch(&tp) > 0;
+      if (touched)
+      {
+         start = millis();
+         Util::feedSetupWatchdog();
+         size_t hitIdx = SIZE_MAX;
+         for (size_t i = 0; i < keyCount; i++)
+         {
+            const KeyDef& k = keys[i];
+            if (tp.x >= k.x && tp.x < k.x + k.w && tp.y >= k.y && tp.y < k.y + k.h)
+            {
+               hitIdx = i;
+               break;
+            }
+         }
+
+         if (hitIdx != pressedIdx)
+         {
+            if (pressedIdx != SIZE_MAX)
+            {
+               drawKey(pressedIdx, false);
+            }
+            pressedIdx = hitIdx;
+            if (pressedIdx != SIZE_MAX)
+            {
+               drawKey(pressedIdx, true);
+            }
+         }
+      }
+      else if (pressedIdx != SIZE_MAX)
+      {
+         size_t idx = pressedIdx;
+         pressedIdx = SIZE_MAX;
+         const KeyDef& k = keys[idx];
+         bool prevValid = canSubmit();
+
+         if (k.action == KeyAction::DIGIT)
+         {
+            value += k.ch;
+            drawTextBox();
+            drawKey(idx, false);
+            if (canSubmit() != prevValid)
+            {
+               drawKey(keyCount - 1, false);
+            }
+         }
+         else if (k.action == KeyAction::DECIMAL)
+         {
+            if (value.indexOf('.') < 0)
+            {
+               value += (value.length() == 0) ? "0." : ".";
+               drawTextBox();
+            }
+            drawKey(idx, false);
+            if (canSubmit() != prevValid)
+            {
+               drawKey(keyCount - 1, false);
+            }
+         }
+         else if (k.action == KeyAction::BACKSPACE)
+         {
+            if (value.length() > 0)
+            {
+               value.remove(value.length() - 1);
+               drawTextBox();
+            }
+            drawKey(idx, false);
+            if (canSubmit() != prevValid)
+            {
+               drawKey(keyCount - 1, false);
+            }
+         }
+         else if (k.action == KeyAction::CLEAR)
+         {
+            if (value.length() > 0)
+            {
+               value = "";
+               drawTextBox();
+            }
+            drawKey(idx, false);
+            if (canSubmit() != prevValid)
+            {
+               drawKey(keyCount - 1, false);
+            }
+         }
+         else if (k.action == KeyAction::CANCEL)
+         {
+            if (outCancelled != nullptr)
+            {
+               *outCancelled = true;
+            }
+            Serial.println("Cancelled.");
+            return "";
+         }
+         else if (k.action == KeyAction::OK)
+         {
+            if (canSubmit())
+            {
+               Serial.println(value.length() > 0 ? value : String("(keep)"));
+               restoreInitDisplay();
+               return value;
+            }
+            drawKey(idx, false);
+         }
+      }
+
+      if (Serial.available())
+      {
+         start = millis();
+         Util::feedSetupWatchdog();
+         String input = Serial.readStringUntil('\n');
+         input.trim();
+         Serial.println(input);
+
+         if (input.length() == 0 && canSubmit())
+         {
+            restoreInitDisplay();
+            return value;
+         }
+         else if (input.length() > 0)
+         {
+            restoreInitDisplay();
+            return input;
+         }
+
+         Serial.print("Enter ");
+         Serial.print(title);
+         Serial.print(": ");
+      }
+
+      delay(10);
+   }
+}
+
+///
+/// <summary>
+/// Prompts the user to answer a yes/no question using two mutually exclusive on-screen checkboxes
+/// with OK and optional Cancel buttons, with Serial fallback.
+/// </summary>
+/// <param name="title">Heading text displayed at the top of the screen</param>
+/// <param name="defaultYes">When true, "Yes" starts checked; when false, "No" starts checked</param>
+/// <param name="timeoutMs">Inactivity timeout in milliseconds (0 uses Util::REQUIRED_PROMPT_TIMEOUT_S)</param>
+/// <param name="allowCancel">When true, shows a Cancel button and sets *outCancelled on cancel or timeout</param>
+/// <param name="outCancelled">Optional pointer set to true if cancelled/timed out, false if confirmed</param>
+/// <returns>True if "Yes" was confirmed, false if "No" was confirmed or if cancelled</returns>
+///
+inline bool ArduinoWithDisplay::promptTouchYesNo(
+   const char* title,
+   bool defaultYes,
+   uint32_t timeoutMs,
+   bool allowCancel,
+   bool* outCancelled)
+{
+   if (outCancelled != nullptr)
+   {
+      *outCancelled = false;
+   }
+
+   enum class HitTarget : uint8_t
+   {
+      NONE,
+      YES_BOX,
+      NO_BOX,
+      CANCEL,
+      OK,
+   };
+
+   bool selectedYes = defaultYes;
+
+   constexpr int16_t MARGIN_X = 12;
+   constexpr int16_t GAP_Y = 16;
+
+   clearDisplay();
+   uint8_t titleSize = headerTextSize();
+   setTextSize(titleSize);
+   setCursor(MARGIN_X, 8);
+   _printlnWrapped(title, MARGIN_X, width() - 2 * MARGIN_X, Color::HEADING, Color::BLACK);
+
+   const bool isLarge = height() >= LARGE_DISPLAY_MIN_HEIGHT;
+   const int16_t cardW = width() - 2 * MARGIN_X;
+   const int16_t cardH = isLarge ? 84 : 52;
+   const int16_t checkSize = isLarge ? 44 : 28;
+   const uint8_t labelSize = isLarge ? 4 : 3;
+   const int16_t btnH = isLarge ? 72 : 44;
+   const int16_t btnY = height() - MARGIN_X - btnH;
+
+   const int16_t yesY = getCursorY() + GAP_Y;
+   const int16_t noY = yesY + cardH + GAP_Y;
+
+   const int16_t gapX = 12;
+   const int16_t cancelW = allowCancel ? (cardW - gapX) / 2 : 0;
+   const int16_t okX = allowCancel ? (MARGIN_X + cancelW + gapX) : MARGIN_X;
+   const int16_t okW = allowCancel ? (cardW - cancelW - gapX) : cardW;
+
+   auto drawCheckmark = [&](int16_t cx, int16_t cy, int16_t size)
+   {
+      int16_t x1 = cx + size / 5;
+      int16_t y1 = cy + size / 2;
+      int16_t x2 = cx + (size * 44) / 100;
+      int16_t y2 = cy + (size * 76) / 100;
+      int16_t x3 = cx + (size * 82) / 100;
+      int16_t y3 = cy + (size * 24) / 100;
+      int16_t thickness = isLarge ? 4 : 3;
+      for (int16_t t = 0; t < thickness; t++)
+      {
+         display.drawLine(x1, y1 + t, x2, y2 + t, static_cast<uint16_t>(Color::WHITE));
+         display.drawLine(x2, y2 + t, x3, y3 + t, static_cast<uint16_t>(Color::WHITE));
+      }
+   };
+
+   auto drawCheckboxRow = [&](int16_t y, const char* label, bool checked, bool pressed)
+   {
+      Color cardBg = pressed ? Color::LIGHTBLUE : (checked ? Color::DARKBLUE : Color::BLACK);
+      Color cardBorder = checked ? Color::WHITE : Color::GRAY;
+      display.fillRoundRect(MARGIN_X, y, cardW, cardH, 8, static_cast<uint16_t>(cardBg));
+      display.drawRoundRect(MARGIN_X, y, cardW, cardH, 8, static_cast<uint16_t>(cardBorder));
+
+      int16_t boxX = MARGIN_X + 18;
+      int16_t boxY = y + (cardH - checkSize) / 2;
+      Color boxBg = checked ? Color::DARKGREEN : Color::BLACK;
+      display.fillRoundRect(boxX, boxY, checkSize, checkSize, 6, static_cast<uint16_t>(boxBg));
+      display.drawRoundRect(boxX, boxY, checkSize, checkSize, 6, static_cast<uint16_t>(Color::WHITE));
+      if (checked)
+      {
+         drawCheckmark(boxX, boxY, checkSize);
+      }
+
+      setTextSize(labelSize);
+      display.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(cardBg));
+      int16_t textX = boxX + checkSize + 20;
+      int16_t textY = y + (cardH - charH(labelSize)) / 2;
+      display.setCursor(textX, textY);
+      display.print(label);
+   };
+
+   auto drawActionButton = [&](int16_t x, int16_t w, const char* label, Color baseBg, bool pressed)
+   {
+      Color bg = pressed ? Color::LIGHTBLUE : baseBg;
+      display.fillRoundRect(x, btnY, w, btnH, 8, static_cast<uint16_t>(bg));
+      display.drawRoundRect(x, btnY, w, btnH, 8, static_cast<uint16_t>(Color::WHITE));
+
+      uint8_t sz = labelSize;
+      setTextSize(sz);
+      while (sz > 2 && display.textWidth(label) > w - 12)
+      {
+         sz--;
+         setTextSize(sz);
+      }
+      display.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(bg));
+      int16_t tx = x + (w - display.textWidth(label)) / 2;
+      int16_t ty = btnY + (btnH - charH(sz)) / 2;
+      display.setCursor(tx, ty);
+      display.print(label);
+   };
+
+   auto drawAll = [&](HitTarget pressed)
+   {
+      drawCheckboxRow(yesY, "Yes", selectedYes, pressed == HitTarget::YES_BOX);
+      drawCheckboxRow(noY, "No", !selectedYes, pressed == HitTarget::NO_BOX);
+      if (allowCancel)
+      {
+         drawActionButton(MARGIN_X, cancelW, "Cancel", Color::DARKRED, pressed == HitTarget::CANCEL);
+      }
+      drawActionButton(okX, okW, "OK", Color::DARKGREEN, pressed == HitTarget::OK);
+   };
+
+   drawAll(HitTarget::NONE);
+
+   lgfx::touch_point_t tp;
+   while (display.getTouch(&tp) > 0)
+   {
+      delay(10);
+   }
+
+   while (Serial.available())
+   {
+      Serial.read();
+   }
+
+   Serial.print(title);
+   Serial.print(" (yes/no, blank for ");
+   Serial.print(selectedYes ? "yes" : "no");
+   Serial.print(") or use touch: ");
+
+   HitTarget pressed = HitTarget::NONE;
+   uint32_t start = millis();
+   uint32_t effectiveTimeoutMs = timeoutMs > 0 ? timeoutMs : (Util::REQUIRED_PROMPT_TIMEOUT_S * 1000UL);
+   if (!allowCancel)
+   {
+      Util::setSetupStep(title);
+   }
+
+   while (true)
+   {
+      Util::feedSetupWatchdog();
+
+      if (millis() - start >= effectiveTimeoutMs)
+      {
+         if (allowCancel)
+         {
+            if (outCancelled != nullptr)
+            {
+               *outCancelled = true;
+            }
+            Serial.println("Prompt timed out.");
+            return false;
+         }
+
+         Serial.println("No input - entering safe mode.");
+         Util::reset(0.0f, Util::PROMPT_TIMEOUT_HALT_REASON);
+      }
+
+      bool touched = display.getTouch(&tp) > 0;
+      if (touched)
+      {
+         start = millis();
+         Util::feedSetupWatchdog();
+
+         HitTarget hit = HitTarget::NONE;
+         if (tp.x >= MARGIN_X && tp.x < MARGIN_X + cardW && tp.y >= yesY && tp.y < yesY + cardH)
+         {
+            hit = HitTarget::YES_BOX;
+         }
+         else if (tp.x >= MARGIN_X && tp.x < MARGIN_X + cardW && tp.y >= noY && tp.y < noY + cardH)
+         {
+            hit = HitTarget::NO_BOX;
+         }
+         else if (allowCancel && tp.x >= MARGIN_X && tp.x < MARGIN_X + cancelW && tp.y >= btnY && tp.y < btnY + btnH)
+         {
+            hit = HitTarget::CANCEL;
+         }
+         else if (tp.x >= okX && tp.x < okX + okW && tp.y >= btnY && tp.y < btnY + btnH)
+         {
+            hit = HitTarget::OK;
+         }
+
+         if (hit != pressed)
+         {
+            pressed = hit;
+            drawAll(pressed);
+         }
+      }
+      else if (pressed != HitTarget::NONE)
+      {
+         HitTarget released = pressed;
+         pressed = HitTarget::NONE;
+
+         if (released == HitTarget::YES_BOX)
+         {
+            selectedYes = true;
+            drawAll(HitTarget::NONE);
+         }
+         else if (released == HitTarget::NO_BOX)
+         {
+            selectedYes = false;
+            drawAll(HitTarget::NONE);
+         }
+         else if (released == HitTarget::CANCEL)
+         {
+            if (outCancelled != nullptr)
+            {
+               *outCancelled = true;
+            }
+            Serial.println("Cancelled.");
+            return false;
+         }
+         else if (released == HitTarget::OK)
+         {
+            Serial.println(selectedYes ? "yes" : "no");
+            restoreInitDisplay();
+            return selectedYes;
+         }
+      }
+
+      if (Serial.available())
+      {
+         start = millis();
+         Util::feedSetupWatchdog();
+         String input = Serial.readStringUntil('\n');
+         input.trim();
+         Serial.println(input);
+
+         if (input.length() == 0)
+         {
+            restoreInitDisplay();
+            return selectedYes;
+         }
+         if (strcasecmp(input.c_str(), "yes") == 0 || strcasecmp(input.c_str(), "y") == 0)
+         {
+            restoreInitDisplay();
+            return true;
+         }
+         if (strcasecmp(input.c_str(), "no") == 0 || strcasecmp(input.c_str(), "n") == 0)
+         {
+            restoreInitDisplay();
+            return false;
+         }
+
+         Serial.print("Enter yes or no: ");
       }
 
       delay(10);

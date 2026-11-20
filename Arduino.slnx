@@ -430,6 +430,10 @@
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />
   </Project>
+  <Project Path="CT_Calibration/CT_Calibration.vcxproj">
+    <Platform Solution="*|Any CPU" Project="ARM" />
+    <Deploy />
+  </Project>
   <Project Path="DallasTemperature_Display/DallasTemperature_Display.vcxproj" Id="00000000-0000-0000-0000-000000000027">
     <Platform Solution="*|Any CPU" Project="ARM" />
     <Deploy />

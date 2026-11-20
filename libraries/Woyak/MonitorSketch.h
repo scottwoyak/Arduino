@@ -118,6 +118,12 @@ private:
          return true;
       }
 
+      if (strcasecmp(_bucketName.c_str(), value.c_str()) == 0)
+      {
+         result = "bucket is unchanged (\"" + value + "\").";
+         return true;
+      }
+
       _persistString(BUCKET_KEY, value.c_str());
       result = "Saved bucket=\"" + value + "\". Restart required to apply.";
       return true;

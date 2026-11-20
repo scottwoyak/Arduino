@@ -120,17 +120,19 @@ private:
        /// <summary>Constructed by begin(), once the telemetry topic has been resolved.</summary>
        TelemetryPublisher* _client = nullptr;
 
+       bool _telemetryEnabled = true;
+
        Timer _publishTimer;
 
        /// <summary>The single instance, used by the static _onPublisherCommand() bridge function (DeviceServerClient::onConfigCommand() only accepts a captureless function pointer).</summary>
        inline static PublisherSketch* _publisherInstance = nullptr;
 
-       /// <summary>Commands handled directly by PublisherSketch, listed by "Help" alongside the built-ins.</summary>
+       /// <summary>Commands handled directly by PublisherSketch, listed by "Help" alongside the built-ins (SetTopic is only registered when _topicResolver.hasPrompts() is true).</summary>
        static constexpr DeviceServerClient::CommandInfo PUBLISHER_COMMANDS[] = {
-          { "GetTopic", "Reports the current telemetry topic", { "gt" }, {}, false, { "Telemetry" } },
+          { "GetTopic", "Reports the current telemetry topic(s)", { "gt" }, {}, false, { "Telemetry" } },
           {
              "SetTopic",
-             "Persists a new telemetry topic (only if the sketch offers a topic table); requires Restart to take effect",
+             "Persists a new telemetry topic; requires Restart to take effect",
              { "st" },
              {
                 { "topic", "Telemetry topic name", true },
@@ -157,10 +159,18 @@ private:
 
           if (strcasecmp(verb.c_str(), "GetTopic") == 0)
           {
-             DeviceServerClient::respond(_publisherInstance->_topicResolver.topic());
+             std::string topics = _publisherInstance->_client != nullptr
+                ? _publisherInstance->_client->formatTopics()
+                : "";
+             if (topics.empty())
+             {
+                const char* resolved = _publisherInstance->_topicResolver.topic();
+                topics = resolved != nullptr ? resolved : "";
+             }
+             DeviceServerClient::respond(topics.c_str());
              return true;
           }
-          if (strcasecmp(verb.c_str(), "SetTopic") == 0)
+          if (_publisherInstance->_topicResolver.hasPrompts() && strcasecmp(verb.c_str(), "SetTopic") == 0)
           {
              std::string value;
              std::getline(stream >> std::ws, value);
@@ -394,6 +404,7 @@ private:
    void _afterOTASetup() override
    {
       _client = new TelemetryPublisher(_topicResolver.topic(), _telemetryConfig, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
+      _client->setPublishingEnabled(_telemetryEnabled);
       for (const TopicDefinition& definition : _pendingTopics)
       {
          _client->createTopic(definition.topic.c_str(), definition.metadata);
@@ -402,7 +413,8 @@ private:
       _client->connect(_arduino, _status);
 
       _publisherInstance = this;
-      DeviceServerClient::onConfigCommand(_onPublisherCommand, PUBLISHER_COMMANDS, std::size(PUBLISHER_COMMANDS));
+      size_t commandCount = _topicResolver.hasPrompts() ? std::size(PUBLISHER_COMMANDS) : 1;
+      DeviceServerClient::onConfigCommand(_onPublisherCommand, PUBLISHER_COMMANDS, commandCount);
    }
 
    ///
@@ -417,7 +429,7 @@ private:
          delay(1);
 #endif
 
-         if (_publishTimer.ready() && _valueSource != nullptr)
+         if (_telemetryEnabled && _publishTimer.ready() && _valueSource != nullptr)
          {
             _client->setValue(_valueSource());
          }
@@ -603,6 +615,33 @@ public:
       ASSERT(_client != nullptr);
 
       return _client->submit(topic, value);
+   }
+
+   ///
+   /// <summary>
+   /// Enables or disables publishing to the telemetry server. May be called before begin()
+   /// or at runtime; when disabled, no topic creations or samples are sent.
+   /// </summary>
+   /// <param name="enabled">True to send telemetry; false to pause all telemetry publishing.</param>
+   ///
+   void setTelemetryEnabled(bool enabled)
+   {
+      _telemetryEnabled = enabled;
+      if (_client != nullptr)
+      {
+         _client->setPublishingEnabled(enabled);
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Reports whether telemetry publishing is currently enabled.
+   /// </summary>
+   /// <returns>True if telemetry publishing is enabled; otherwise false.</returns>
+   ///
+   bool isTelemetryEnabled() const
+   {
+      return _telemetryEnabled;
    }
 
    ///
