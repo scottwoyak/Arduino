@@ -34,17 +34,14 @@ namespace CTCalibration
    };
 
 
-
-   // Nominal 9V AC wall-wart + ZMPT101B + reference CT phase lead at 60 Hz (degrees).
-   inline constexpr float DEFAULT_PHASE_SHIFT_DEG = 31.0f;
-
-   // Editable CT type presets. Append new calibrated CTs at the end to preserve saved NVS indices.
+   // Generated from CT_Calibration Sketch
+   inline constexpr float DEFAULT_PHASE_SHIFT_DEG = 33.37f;  // Ch 9 (100R)
    inline constexpr size_t NUM_CT_TYPES = 5;
    inline constexpr std::array<CtTypePreset, NUM_CT_TYPES> CT_TYPE_TABLE = { {
-      { "20SC",   20, 40.01,  0.0f },  // 20A SCT with 20 ohm burden
-      { "30SC",   30,  PowerSensorBase::CORE_30A,  0.0f },  // 30A SCT
-      { "100R",  100,  99.8f,    0.00f },                   // 100A Round CT with 20 ohm burden
-      { "100SC", 100,  99.8f,    0.00f },                   // 100A SCT with 30 ohm burden
-      { "500R",  500, PowerSensorBase::CORE_213A, 0.0f },  // 500A:50mA + 47 ohm burden
+      { "20SC",  20,   40.06f,  -2.15f },
+      { "30SC",  30,   29.91f,  -1.66f },
+      { "100R",  100,  99.92f,  +0.00f },
+      { "100SC", 100,  98.91f,  -0.80f },
+      { "100NH", 100, 102.88f,  +0.72f },
    } };
 }

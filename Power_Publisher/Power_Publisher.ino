@@ -28,12 +28,12 @@
 //                                  leg + 10uF (-) cap of 1.65V bias, pull-down resistor(s)
 //   On PCB: 9V AC wall-wart feeds LM2596HV AC input and ZMPT101B AC terminals in parallel.
 //   CT S2 returns tie to the 1.65V bias node; CT S1 signals go to 74HC4067 C0..C15 (20A
-//   option uses CORE_40A for 20A:25mA SCT006 + 20 ohm burden; 500A option uses CORE_213A
-//   for 500A:50mA + 47 ohm burden).
+//   option uses CORE_40A for 20A:25mA SCT006 + 20 ohm burden).
 //
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -578,7 +578,7 @@ void saveCtLocation(size_t inputIndex, const char* loc)
 
 ///
 /// <summary>
-/// Converts a user-entered nominal CT amp rating (20, 30, 100, 100R, 500) into its hardware
+/// Converts a user-entered nominal CT amp rating (20, 30, 100, 100R, 150) into its hardware
 /// Amps-per-Volt scale, or passes custom calibration values through unchanged.
 /// </summary>
 /// <param name="enteredAmps">Nominal CT rating or custom Amps-per-Volt value.</param>
@@ -599,7 +599,7 @@ float resolveCtAmpsPerVolt(float enteredAmps)
 
 ///
 /// <summary>
-/// Converts a stored Amps-per-Volt scale back to its nominal CT amp label (20, 30, 100, 100R, 500)
+/// Converts a stored Amps-per-Volt scale back to its nominal CT amp label (20, 30, 100, 100R, 150)
 /// for GetConfig and shell prompts, or rounds custom calibration values to the nearest integer.
 /// </summary>
 /// <param name="ampsPerVolt">Stored Amps-per-Volt scale.</param>
@@ -1283,7 +1283,7 @@ bool trySetExtraConfig(const std::string& key, const std::string& value, std::st
          float entered = std::strtof(value.c_str(), nullptr);
          if (entered <= 0.0f)
          {
-            result = "Error: " + shortAmpsKey + " must be a positive CT rating (e.g. 20, 30, 100, 100R, 500)";
+            result = "Error: " + shortAmpsKey + " must be a positive CT rating (e.g. 20, 30, 100, 100R, 150)";
             return true;
          }
 
@@ -1451,6 +1451,9 @@ std::array<bool, NUM_CT_INPUTS> settingsChannelConnected = {};
 Rect16 labelBoxRect;
 std::array<Rect16, NUM_AMP_OPTIONS> ampBoxRects = {};
 std::array<Rect16, NUM_VOLTAGE_OPTIONS> voltageBoxRects = {};
+Rect16 lineVoltageBoxRect;
+bool settingsVoltageConnected = false;
+float settingsLineVoltage = NAN;
 Rect16 deviceLocationBoxRect;
 Rect16 okBoxRect;
 
@@ -1602,7 +1605,87 @@ void drawSettingsChannelBox(size_t index)
 
 ///
 /// <summary>
+/// Draws the tappable AC line voltage box in the top-right corner of the Configure view.
+/// Displays the live voltage with an edit icon when an AC voltage signal is present, or a
+/// muted "No V" badge when disconnected.
+/// </summary>
+///
+void drawSettingsLineVoltageBox()
+{
+   const bool connected = powerSensor.voltageConnected();
+   settingsVoltageConnected = connected;
+
+   if (connected)
+   {
+      float liveVolts = powerSensor.lineVoltage();
+      if (std::isnan(settingsLineVoltage) ||
+          std::fabs(liveVolts - settingsLineVoltage) >= LINE_VOLTAGE_DISPLAY_HYSTERESIS_V)
+      {
+         settingsLineVoltage = liveVolts;
+      }
+   }
+   else
+   {
+      settingsLineVoltage = NAN;
+   }
+
+   const Color bg = connected ? Color::DARKBLUE : Color::BLACK;
+   const Color border = connected ? Color::WHITE : Color::GRAY;
+   const Color fg = connected ? Color::WHITE : Color::GRAY;
+
+   sketch.arduino.display.fillRoundRect(
+      lineVoltageBoxRect.left(),
+      lineVoltageBoxRect.top(),
+      lineVoltageBoxRect.width,
+      lineVoltageBoxRect.height,
+      SETTINGS_CORNER_RADIUS,
+      static_cast<uint16_t>(bg));
+   sketch.arduino.display.drawRoundRect(
+      lineVoltageBoxRect.left(),
+      lineVoltageBoxRect.top(),
+      lineVoltageBoxRect.width,
+      lineVoltageBoxRect.height,
+      SETTINGS_CORNER_RADIUS,
+      static_cast<uint16_t>(border));
+
+   std::string voltText;
+   if (connected)
+   {
+      std::ostringstream oss;
+      oss << std::fixed;
+      oss.precision(1);
+      oss << settingsLineVoltage << " V";
+      voltText = oss.str();
+   }
+   else
+   {
+      voltText = "No V";
+   }
+
+   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+   const int16_t tw = sketch.arduino.display.textWidth(voltText.c_str());
+   const int16_t th = sketch.arduino.charH(TABLE_TEXT_SIZE);
+   const int16_t textAreaW = connected ? (lineVoltageBoxRect.width - 34) : lineVoltageBoxRect.width;
+   int16_t tx = lineVoltageBoxRect.left() + (textAreaW - tw) / 2;
+   if (tx < lineVoltageBoxRect.left() + 8)
+   {
+      tx = lineVoltageBoxRect.left() + 8;
+   }
+
+   sketch.arduino.display.setTextColor(static_cast<uint16_t>(fg), static_cast<uint16_t>(bg));
+   sketch.arduino.display.setCursor(tx, lineVoltageBoxRect.top() + (lineVoltageBoxRect.height - th) / 2);
+   sketch.arduino.display.print(voltText.c_str());
+
+   if (connected)
+   {
+      drawEditIcon(lineVoltageBoxRect.right() - 20, lineVoltageBoxRect.top() + lineVoltageBoxRect.height / 2, Color::LIGHTGRAY);
+   }
+}
+
+///
+/// <summary>
 /// Draws the touch configuration view:
+/// - Top row: "Configure" heading and tappable AC line voltage calibration box.
 /// - Upper portion: 16 channel squares (4x4 grid) with plugged-in CTs shown in white and
 ///   the selected channel highlighted.
 /// - Middle portion: the selected channel's editable location label, CT type preset buttons,
@@ -1614,6 +1697,8 @@ void drawSettingsView()
 {
    sketch.arduino.clearDisplay();
    sketch.arduino.setTextSize(HEADER_SIZE);
+   const int16_t headingH = sketch.arduino.charH(HEADER_SIZE);
+   const int16_t headingW = sketch.arduino.display.textWidth("Configure");
    sketch.arduino.setCursor(0, 0);
    sketch.arduino.println("Configure", Color::HEADING);
 
@@ -1621,6 +1706,14 @@ void drawSettingsView()
    const int16_t screenH = sketch.arduino.height();
    const int16_t contentW = screenW - 2 * SETTINGS_MARGIN_X;
    int16_t y = sketch.arduino.getCursorY() + SETTINGS_GAP;
+
+   const int16_t lineVoltBoxH = std::max<int16_t>(headingH - 4, sketch.arduino.charH(TABLE_TEXT_SIZE) + 16);
+   const int16_t maxLineVoltBoxW = screenW - SETTINGS_MARGIN_X - headingW - 2 * SETTINGS_GAP;
+   const int16_t lineVoltBoxW = std::min<int16_t>(192, maxLineVoltBoxW);
+   const int16_t lineVoltBoxY = std::max<int16_t>(0, (headingH - lineVoltBoxH) / 2);
+   lineVoltageBoxRect = Rect16(screenW - SETTINGS_MARGIN_X - lineVoltBoxW, lineVoltBoxY, lineVoltBoxW, lineVoltBoxH);
+   settingsLineVoltage = NAN;
+   drawSettingsLineVoltageBox();
 
    // Upper portion: 16 channel boxes (4 columns x 4 rows) for channels 1-16
    sketch.arduino.setTextSize(FOOTER_SIZE);
@@ -1842,6 +1935,54 @@ void editDeviceLocationTouch()
 
 ///
 /// <summary>
+/// Opens the on-screen touch numeric keypad to calibrate AC line voltage (vScale)
+/// directly on the device, persisting the new calibration scale to NVS immediately.
+/// </summary>
+///
+void editLineVoltageTouch()
+{
+   std::ostringstream title;
+   title << std::fixed;
+   title.precision(1);
+   title << "Line Voltage (" << powerSensor.lineVoltage() << "V)";
+   std::string promptTitle = title.str();
+
+   while (true)
+   {
+      bool cancelled = false;
+      String entered = sketch.arduino.promptTouchNumber(
+         promptTitle.c_str(),
+         "",
+         true,
+         SETTINGS_PROMPT_TIMEOUT_M * 60UL * 1000UL,
+         true,
+         false,
+         &cancelled);
+      if (cancelled)
+      {
+         return;
+      }
+
+      entered.trim();
+      char* endPtr = nullptr;
+      float actualVolts = std::strtof(entered.c_str(), &endPtr);
+      if (endPtr != entered.c_str() && *endPtr == '\0' && std::isfinite(actualVolts) && actualVolts > 0.0f)
+      {
+         if (powerSensor.voltageConnected() && powerSensor.voltageSensorRmsVolts() > 0.0f)
+         {
+            saveVoltageScale(actualVolts / powerSensor.voltageSensorRmsVolts());
+            displayedLineVoltage = NAN;
+            settingsLineVoltage = NAN;
+         }
+         return;
+      }
+
+      promptTitle = "Invalid - Line Voltage (V)";
+   }
+}
+
+///
+/// <summary>
 /// Opens the on-screen touch keyboard directly to edit the location for a channel.
 /// </summary>
 /// <param name="ch">Channel index (0 to 15).</param>
@@ -1898,6 +2039,15 @@ void updateDisplay()
          {
             drawSettingsChannelBox(i);
          }
+      }
+
+      bool voltageNowConnected = powerSensor.voltageConnected();
+      if (voltageNowConnected != settingsVoltageConnected ||
+          (voltageNowConnected &&
+           (std::isnan(settingsLineVoltage) ||
+            std::fabs(powerSensor.lineVoltage() - settingsLineVoltage) >= LINE_VOLTAGE_DISPLAY_HYSTERESIS_V)))
+      {
+         drawSettingsLineVoltageBox();
       }
       return;
    }
@@ -2032,6 +2182,19 @@ void handleTouch()
       showingSettings = false;
       drawMainFrame();
       updateDisplay();
+      return;
+   }
+
+   if (inRect(lineVoltageBoxRect, tp.x, tp.y) && powerSensor.voltageConnected())
+   {
+      editLineVoltageTouch();
+      while (sketch.arduino.display.getTouch(&tp) > 0)
+      {
+         delay(10);
+      }
+      wasTouching = false;
+      displayDimTimer.reset();
+      drawSettingsView();
       return;
    }
 

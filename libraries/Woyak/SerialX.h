@@ -85,10 +85,41 @@ namespace SerialX
 			}
 		}
 
+		// Capture any previous boot log before clearing RTC setup flags or logging
+		// new lines for this boot. Emit post-mortem lines while recording is still
+		// paused so they don't get copied back into the current boot's log.
+		bool previousBootPastGrace = !Util::isPowerLossResetReason() && Util::wasPastSafeModeGracePeriod();
+		bool wasStartupFailure = _wasInSetupOnLastReset ||
+			(!previousBootPastGrace && (Util::isCrashResetReason() || Util::isAbnormalHaltReason(_lastShutdownReason)));
+		Util::initBootLog(wasStartupFailure);
+
 		// Clear the previous boot's RTC setup flag now that it has been captured above;
 		// SketchBase arms the setup watchdog for the current boot during _checkSafeMode().
 		Util::completeSetupWatchdog();
 		DeviceServerClient::setLastShutdownReason(_lastShutdownReason.c_str());
+
+		if (Util::hasPostMortemBootLog())
+		{
+			Logger.log("--- Previous failed boot log ---", LogSeverity::WARN, "PostMortem");
+			const std::string& prevLog = Util::previousBootLog();
+			size_t pos = 0;
+			while (pos < prevLog.size())
+			{
+				size_t end = prevLog.find('\n', pos);
+				if (end == std::string::npos)
+				{
+					end = prevLog.size();
+				}
+				if (end > pos)
+				{
+					Logger.log(prevLog.substr(pos, end - pos), LogSeverity::WARN, "PostMortem");
+				}
+				pos = end + 1;
+			}
+			Logger.log("--- End previous failed boot log ---", LogSeverity::WARN, "PostMortem");
+		}
+
+		Util::setBootLogRecording(true);
 
 		// Report the recorded failure reason (e.g. "Influx failed to begin") instead of
 		// the generic hardware reset reason (e.g. "Woke from deep sleep") whenever one was

@@ -47,8 +47,6 @@ public:
    static constexpr float CORE_100A = CTPowerSensor::CORE_100A;
    static constexpr float CORE_150A = CTPowerSensor::CORE_150A;
    static constexpr float CORE_200A = CTPowerSensor::CORE_200A;
-   static constexpr float CORE_213A = CTPowerSensor::CORE_213A;
-   static constexpr float CORE_500A = CTPowerSensor::CORE_500A;
 
    static constexpr float DEFAULT_LINE_VOLTAGE_V = 120.0f;
    static constexpr float DEFAULT_NOISE_FLOOR_AMPS = 0.05f;

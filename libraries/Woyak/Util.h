@@ -69,6 +69,24 @@ RTC_NOINIT_ATTR static bool _util_inSetup;
 /// <summary>Name of the most recent initialization step started before a setup watchdog reset.</summary>
 RTC_NOINIT_ATTR static char _util_setupStep[64];
 
+/// <summary>Magic value confirming that the RTC boot log buffer was initialized prior to reset.</summary>
+static constexpr uint32_t _UTIL_BOOT_LOG_MAGIC = 0x574F5943UL;
+
+/// <summary>Capacity in bytes of the RTC post-mortem boot log ring buffer.</summary>
+static constexpr size_t _UTIL_BOOT_LOG_CAPACITY = 1536;
+
+/// <summary>Guards the RTC boot log metadata against uninitialized memory after power-on/brownout resets.</summary>
+RTC_NOINIT_ATTR static uint32_t _util_bootLogMagic;
+
+/// <summary>Next write index into _util_bootLogBuffer (circular).</summary>
+RTC_NOINIT_ATTR static uint16_t _util_bootLogWritePos;
+
+/// <summary>Number of valid bytes currently stored in _util_bootLogBuffer (up to _UTIL_BOOT_LOG_CAPACITY).</summary>
+RTC_NOINIT_ATTR static uint16_t _util_bootLogLength;
+
+/// <summary>Circular buffer holding recent startup log lines across watchdog/panic/deep-sleep resets.</summary>
+RTC_NOINIT_ATTR static char _util_bootLogBuffer[_UTIL_BOOT_LOG_CAPACITY];
+
 /// <summary>
 /// Utility functions for common operations.
 /// </summary>
@@ -80,6 +98,133 @@ private:
 
    /// <summary>True if the previous boot was still in setup when it reset, captured the first time armSetupWatchdog() is called on this boot before _util_inSetup is overwritten.</summary>
    static inline bool _wasInSetupOnBoot = false;
+
+   /// <summary>True while startup log lines should be appended to the RTC boot log ring buffer.</summary>
+   static inline bool _bootLogRecording = false;
+
+   /// <summary>True if a partial line is currently open in the RTC boot log (suppresses timestamp prefix until newline).</summary>
+   static inline bool _bootLogLineOpen = false;
+
+   /// <summary>Snapshot of the previous boot's startup log (from NVS if saved from a prior failure, otherwise from RTC if valid).</summary>
+   static inline std::string _previousBootLog;
+
+   /// <summary>True if _previousBootLog represents a failed/abnormal boot that should be reported at startup.</summary>
+   static inline bool _hasPostMortemBootLog = false;
+
+   /// <summary>True if NVS currently holds a persisted post-mortem boot log waiting to be cleared after Hub upload.</summary>
+   static inline bool _hasNvsBootLog = false;
+
+   /// <summary>NVS key used in the "Device" namespace to persist a failed boot log across power loss.</summary>
+   static constexpr const char* BOOT_LOG_NVS_KEY = "bootLog";
+
+   ///
+   /// <summary>
+   /// Appends raw bytes into the circular RTC boot log ring buffer.
+   /// </summary>
+   /// <param name="data">Pointer to bytes to append.</param>
+   /// <param name="len">Number of bytes to append.</param>
+   ///
+   static void _writeBootLogBytes(const char* data, size_t len)
+   {
+      if (data == nullptr || len == 0 || _util_bootLogMagic != _UTIL_BOOT_LOG_MAGIC)
+      {
+         return;
+      }
+
+      if (_util_bootLogWritePos >= _UTIL_BOOT_LOG_CAPACITY || _util_bootLogLength > _UTIL_BOOT_LOG_CAPACITY)
+      {
+         _util_bootLogWritePos = 0;
+         _util_bootLogLength = 0;
+      }
+
+      for (size_t i = 0; i < len; i++)
+      {
+         _util_bootLogBuffer[_util_bootLogWritePos] = data[i];
+         _util_bootLogWritePos = static_cast<uint16_t>((_util_bootLogWritePos + 1) % _UTIL_BOOT_LOG_CAPACITY);
+         if (_util_bootLogLength < _UTIL_BOOT_LOG_CAPACITY)
+         {
+            _util_bootLogLength++;
+         }
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Reads the RTC boot log ring buffer in chronological order if its magic and bounds
+   /// are valid. When the buffer has wrapped, drops the leading partial line up to the
+   /// first newline so output starts cleanly on a line boundary.
+   /// </summary>
+   /// <param name="checkPowerLoss">If true, treats power-on/brownout resets as having invalid RTC RAM.</param>
+   /// <returns>The chronological boot log text, or an empty string if none is valid.</returns>
+   ///
+   static std::string _readRtcBootLog(bool checkPowerLoss)
+   {
+      if (checkPowerLoss && isPowerLossResetReason())
+      {
+         return "";
+      }
+
+      if (_util_bootLogMagic != _UTIL_BOOT_LOG_MAGIC ||
+          _util_bootLogLength == 0 ||
+          _util_bootLogLength > _UTIL_BOOT_LOG_CAPACITY ||
+          _util_bootLogWritePos >= _UTIL_BOOT_LOG_CAPACITY)
+      {
+         return "";
+      }
+
+      bool wrapped = (_util_bootLogLength == _UTIL_BOOT_LOG_CAPACITY);
+      size_t startPos = wrapped
+         ? _util_bootLogWritePos
+         : (_util_bootLogWritePos + _UTIL_BOOT_LOG_CAPACITY - _util_bootLogLength) % _UTIL_BOOT_LOG_CAPACITY;
+
+      std::string result;
+      result.reserve(_util_bootLogLength);
+      for (size_t i = 0; i < _util_bootLogLength; i++)
+      {
+         char c = _util_bootLogBuffer[(startPos + i) % _UTIL_BOOT_LOG_CAPACITY];
+         if (c != '\0')
+         {
+            result.push_back(c);
+         }
+      }
+
+      if (wrapped)
+      {
+         size_t firstNewline = result.find('\n');
+         if (firstNewline != std::string::npos && firstNewline + 1 < result.size())
+         {
+            result = std::string("[truncated]\n") + result.substr(firstNewline + 1);
+         }
+      }
+
+      return result;
+   }
+
+   ///
+   /// <summary>
+   /// Persists a failed boot log to NVS ("Device" / "bootLog") only if no saved boot log
+   /// is already stored, avoiding repeated flash writes if the device is in a reboot loop.
+   /// </summary>
+   /// <param name="logText">Boot log text to persist.</param>
+   ///
+   static void _saveBootLogToNvsIfEmpty(const std::string& logText)
+   {
+      if (logText.empty())
+      {
+         return;
+      }
+
+      Preferences preferences;
+      if (preferences.begin("Device", false))
+      {
+         if (!preferences.isKey(BOOT_LOG_NVS_KEY))
+         {
+            preferences.putString(BOOT_LOG_NVS_KEY, logText.c_str());
+            _hasNvsBootLog = true;
+         }
+         preferences.end();
+      }
+   }
 
 public:
    ///
@@ -292,9 +437,200 @@ public:
       if (!_util_pastSafeModeGracePeriod && millis() >= static_cast<unsigned long>(SAFE_MODE_GRACE_PERIOD_S * 1000.0f))
       {
          _util_pastSafeModeGracePeriod = true;
+         _bootLogRecording = false;
       }
 
       return _util_pastSafeModeGracePeriod;
+   }
+
+   ///
+   /// <summary>
+   /// Returns whether the chip reset was caused by power loss (power-on or brownout),
+   /// in which case RTC_NOINIT_ATTR memory contents are uninitialized.
+   /// </summary>
+   /// <returns>True for ESP_RST_POWERON or ESP_RST_BROWNOUT; otherwise false.</returns>
+   ///
+   static bool isPowerLossResetReason()
+   {
+      esp_reset_reason_t reason = esp_reset_reason();
+      return reason == ESP_RST_POWERON || reason == ESP_RST_BROWNOUT;
+   }
+
+   ///
+   /// <summary>
+   /// Returns whether a recorded halt reason represents an abnormal/failure reset rather
+   /// than an intentional restart (such as a firmware update, scheduled daily reboot, or
+   /// remotely requested safe mode).
+   /// </summary>
+   /// <param name="haltReason">Halt reason recorded for the previous boot.</param>
+   /// <returns>True if haltReason is non-empty and indicates a failure/abnormal reset.</returns>
+   ///
+   static bool isAbnormalHaltReason(const String& haltReason)
+   {
+      return haltReason.length() > 0 &&
+         haltReason != "Firmware Update" &&
+         haltReason != "Scheduled daily reboot" &&
+         haltReason != SAFE_MODE_REQUESTED_HALT_REASON;
+   }
+
+   ///
+   /// <summary>
+   /// Captures the previous boot's startup log (preferring any persisted NVS post-mortem
+   /// log from a prior failure, or the RTC ring buffer if valid) and reinitializes the RTC
+   /// ring buffer for the current boot. Recording remains disabled until
+   /// setBootLogRecording(true) is called so the caller can emit post-mortem lines without
+   /// copying them back into the new boot's log.
+   /// </summary>
+   /// <param name="wasStartupFailure">True if the previous boot failed during startup/grace period.</param>
+   ///
+   static void initBootLog(bool wasStartupFailure)
+   {
+      std::string rtcLog = _readRtcBootLog(true);
+
+      _previousBootLog.clear();
+      _hasPostMortemBootLog = false;
+      _hasNvsBootLog = false;
+
+      Preferences preferences;
+      if (preferences.begin("Device", true))
+      {
+         if (preferences.isKey(BOOT_LOG_NVS_KEY))
+         {
+            String saved = preferences.getString(BOOT_LOG_NVS_KEY, "");
+            if (saved.length() > 0)
+            {
+               _previousBootLog = saved.c_str();
+               _hasPostMortemBootLog = true;
+               _hasNvsBootLog = true;
+            }
+         }
+         preferences.end();
+      }
+
+      if (!_hasPostMortemBootLog)
+      {
+         if (wasStartupFailure && !rtcLog.empty())
+         {
+            _previousBootLog = rtcLog;
+            _hasPostMortemBootLog = true;
+            _saveBootLogToNvsIfEmpty(rtcLog);
+         }
+         else if (!rtcLog.empty())
+         {
+            _previousBootLog = rtcLog;
+         }
+      }
+
+      _util_bootLogMagic = _UTIL_BOOT_LOG_MAGIC;
+      _util_bootLogWritePos = 0;
+      _util_bootLogLength = 0;
+      _bootLogLineOpen = false;
+      _bootLogRecording = false;
+   }
+
+   ///
+   /// <summary>
+   /// Enables or disables recording of startup log lines into the RTC boot log ring buffer.
+   /// </summary>
+   /// <param name="enabled">True to record subsequent appendBootLog() calls; false to pause.</param>
+   ///
+   static void setBootLogRecording(bool enabled)
+   {
+      _bootLogRecording = enabled;
+   }
+
+   ///
+   /// <summary>
+   /// Appends a startup log message or fragment to the RTC boot log ring buffer when
+   /// recording is active. Prefixes each new line with the elapsed time since boot in
+   /// milliseconds (e.g. "[1234ms] ").
+   /// </summary>
+   /// <param name="text">Log message text or fragment to append.</param>
+   /// <param name="completeLine">True to terminate the line with a newline; false for partial fragments.</param>
+   ///
+   static void appendBootLog(const char* text, bool completeLine)
+   {
+      if (!_bootLogRecording || text == nullptr)
+      {
+         return;
+      }
+
+      if (!_bootLogLineOpen)
+      {
+         std::string prefix = std::string("[") + std::to_string(millis()) + "ms] ";
+         _writeBootLogBytes(prefix.c_str(), prefix.size());
+      }
+
+      _writeBootLogBytes(text, strlen(text));
+
+      if (completeLine)
+      {
+         _writeBootLogBytes("\n", 1);
+         _bootLogLineOpen = false;
+      }
+      else
+      {
+         _bootLogLineOpen = true;
+      }
+   }
+
+   ///
+   /// <summary>
+   /// Returns whether a failed/abnormal previous boot log is available for automatic
+   /// post-mortem reporting on this boot.
+   /// </summary>
+   /// <returns>True if a post-mortem boot log was captured from RTC or NVS.</returns>
+   ///
+   static bool hasPostMortemBootLog()
+   {
+      return _hasPostMortemBootLog;
+   }
+
+   ///
+   /// <summary>
+   /// Returns the previous boot's captured startup log (if available), or an empty string.
+   /// </summary>
+   /// <returns>Previous boot's startup log text.</returns>
+   ///
+   static const std::string& previousBootLog()
+   {
+      return _previousBootLog;
+   }
+
+   ///
+   /// <summary>
+   /// Returns a chronological snapshot of the current boot's recorded startup log.
+   /// </summary>
+   /// <returns>Current boot's recorded startup log text.</returns>
+   ///
+   static std::string currentBootLog()
+   {
+      return _readRtcBootLog(false);
+   }
+
+   ///
+   /// <summary>
+   /// Removes any persisted post-mortem boot log from NVS once it has been uploaded to
+   /// Device Hub. Safe and cheap to call on every boot (does not open NVS if no log was saved).
+   /// </summary>
+   ///
+   static void clearSavedBootLog()
+   {
+      if (!_hasNvsBootLog)
+      {
+         return;
+      }
+
+      Preferences preferences;
+      if (preferences.begin("Device", false))
+      {
+         if (preferences.isKey(BOOT_LOG_NVS_KEY))
+         {
+            preferences.remove(BOOT_LOG_NVS_KEY);
+         }
+         preferences.end();
+      }
+      _hasNvsBootLog = false;
    }
 
    /// <summary>
@@ -509,6 +845,22 @@ public:
    /// </remarks>
    static void reset(float delaySecs, const String& reason)
    {
+      if (_bootLogRecording)
+      {
+         if (_bootLogLineOpen)
+         {
+            _writeBootLogBytes("\n", 1);
+            _bootLogLineOpen = false;
+         }
+         std::string resetLine = std::string("RESET: ") + reason.c_str();
+         appendBootLog(resetLine.c_str(), true);
+
+         if (isAbnormalHaltReason(reason))
+         {
+            _saveBootLogToNvsIfEmpty(_readRtcBootLog(false));
+         }
+      }
+
       setHaltReason(reason);
 
       if (onResetting != nullptr)

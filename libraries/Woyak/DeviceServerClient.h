@@ -192,6 +192,7 @@ class DeviceServerClient
             if (!DeviceServerClient::_everConnected)
             {
                DeviceServerClient::_everConnected = true;
+               Util::clearSavedBootLog();
                // "Direct" vs "OK" lets you tell at a glance (via serial/display) whether the
                // connection went straight to the local/LAN server or had to fall back to the
                // public (e.g. Cloudflare) endpoint - see isDirectConnection(). Reported here,
@@ -328,7 +329,7 @@ class DeviceServerClient
    };
 
    /// <summary>Maximum number of log messages retained in _pendingMessages while the hub is disconnected, preventing unbounded heap growth during prolonged outages.</summary>
-   static constexpr size_t MAX_PENDING_MESSAGES = 100;
+   static constexpr size_t MAX_PENDING_MESSAGES = 150;
 
    /// <summary>Messages logged before the connection was up, sent once it completes. Each entry's json is a fully-formed JSON log message.</summary>
    static inline std::vector<_PendingMessage> _pendingMessages;
@@ -482,6 +483,16 @@ private:
       { "GetInfo", "Reports the sketch name, version, board type, build time, uptime, IP address, and site/location", { "gi" }, {}, false, { "Diagnostics" } },
       { "GetWifiInfo", "Reports the current WiFi SSID, signal strength, IP address, and MAC address", { "gwi" }, {}, false, { "Diagnostics" } },
       { "GetResetReason", "Reports the reason the device last reset/rebooted", { "grr" }, {}, false, { "Diagnostics" } },
+      {
+         "GetBootLog",
+         "Reports the captured startup log from the previous boot (or pass 'current' for this boot)",
+         { "gbl" },
+         {
+            { "which", "Optional: 'current' (or 'c') for this boot's startup log; omit for previous boot", false },
+         },
+         false,
+         { "Diagnostics" },
+      },
       { "GetMemory", "Reports free heap and largest allocatable block", { "gm" }, {}, false, { "Diagnostics" } },
       { "GetCpuInfo", "Reports chip model/revision/cores, CPU frequency, flash size, and internal temperature", { "gci" }, {}, false, { "Diagnostics" } },
       { "GetVersion", "Reports the sketch's firmware version", { "gv" }, {}, false, { "Diagnostics" } },
@@ -1168,6 +1179,33 @@ private:
 
    ///
    /// <summary>
+   /// Reports the captured startup log from the previous boot, or the current boot's
+   /// recorded startup log when "current" (or "c") is passed.
+   /// </summary>
+   /// <param name="args">Optional arguments; pass "current" or "c" for the current boot.</param>
+   /// <returns>The timestamped startup log text, or a notice if none is available.</returns>
+   ///
+   static std::string _getBootLog(const std::vector<std::string>& args)
+   {
+      bool current = !args.empty() &&
+         (strcasecmp(args[0].c_str(), "current") == 0 || strcasecmp(args[0].c_str(), "c") == 0);
+
+      std::string logText = current ? Util::currentBootLog() : Util::previousBootLog();
+      while (!logText.empty() && (logText.back() == '\n' || logText.back() == '\r'))
+      {
+         logText.pop_back();
+      }
+
+      if (logText.empty())
+      {
+         return current ? "No current boot log recorded" : "No previous boot log available";
+      }
+
+      return logText;
+   }
+
+   ///
+   /// <summary>
    /// Reports heap, PSRAM (if present), and flash usage diagnostics.
    /// </summary>
    /// <returns>A description of the device's current memory usage.</returns>
@@ -1549,6 +1587,10 @@ private:
       else if (strcasecmp(verb.c_str(), "GetResetReason") == 0)
       {
          respond(_getResetReason().c_str());
+      }
+      else if (strcasecmp(verb.c_str(), "GetBootLog") == 0)
+      {
+         respond(_getBootLog(args).c_str());
       }
       else if (strcasecmp(verb.c_str(), "GetMemory") == 0)
       {
@@ -2147,6 +2189,7 @@ public:
    ///
    static void log(const char* message, LogSeverity severity = LogSeverity::INFO, const std::vector<std::string>& tags = {})
    {
+      Util::appendBootLog(message, true);
       _sendOrQueueLog(message, severity, !tags.empty() ? tags : _tags, true);
 
       if (!_linePending)
@@ -2237,6 +2280,7 @@ public:
    ///
    static void logPartial(const char* message, const std::vector<std::string>& tags = {})
    {
+      Util::appendBootLog(message, false);
       _sendOrQueueLog(message, LogSeverity::INFO, !tags.empty() ? tags : _tags, false);
 
       if (!_linePending)
