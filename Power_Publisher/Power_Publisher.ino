@@ -8,10 +8,13 @@
 // "<Prefix>Red" / "<Prefix>Black" / "<Prefix>White" panel triplets: when one hot leg and
 // White neutral are clamped, the missing hot leg's current and power are synthesized and
 // derived automatically; "*White" neutral channels are shown on the display but excluded
-// from WebSocket telemetry. Displays live line voltage (V), per-channel RMS current (A),
-// and real power (W) on the touch display (dimming to 10% brightness when idle and
-// restoring full brightness on touch) and publishes per-channel power readings over
-// WebSocket telemetry to Power/<location>/<circuit>.
+// from WebSocket telemetry. Displays live line voltage (V) and per-channel real power (W)
+// or RMS current (A) on the touch display (tapping the display swaps between W and A;
+// dimming to 10% brightness when idle and restoring full brightness on touch) and publishes
+// per-channel power readings over WebSocket telemetry to Power/<location>/<circuit>.
+//
+// DeviceServer GetConfig reports each CT preset as ct1..ct16 (or custom for a custom
+// calibration). SetConfig ct1 100SC selects a preset by name and applies it immediately.
 //
 // Mux + ESP32-P4 ADC1 + ZMPT101B wiring (Waveshare ESP32-P4 4.3" Touch LCD, 40-pin header):
 //     P4 Pin / GPIO   Wire color   PCB connection
@@ -58,6 +61,7 @@
 #include "LibraryVersion.h"
 #include "MuxAdcPowerSensor.h"
 #include "PublisherSketch.h"
+#include "SerialTable.h"
 #include "Timer.h"
 #include "WiFiSettings.h"
 
@@ -140,7 +144,7 @@ constexpr uint16_t TELEMETRY_PUBLISH_INTERVAL_MS = DISPLAY_UPDATE_INTERVAL_MS;
 constexpr uint8_t HEADER_SIZE = DEFAULT_HEADING_SIZE;
 constexpr uint8_t TABLE_TEXT_SIZE = DEFAULT_TEXT_SIZE;
 constexpr uint8_t FOOTER_SIZE = DEFAULT_FOOTER_SIZE;
-constexpr size_t LOCATION_COL_WIDTH = 12;
+constexpr size_t LOCATION_COL_WIDTH = 23;
 
 std::array<char[MAX_LOCATION_LENGTH], NUM_CT_INPUTS> ctLocations = {};
 std::array<char[8], NUM_CT_INPUTS> defaultChannelNames = {
@@ -1047,35 +1051,67 @@ void startInteractiveChannelPrompts()
 
 ///
 /// <summary>
-/// Returns extra "key=value" configuration lines for the GetConfig command reporting
-/// the 16 CT locations (l1..l16), 16 CT amp ratings (a1..a16), 16 circuit voltages
-/// (v1..v16), vScale, phase calibration, and telemetry state.
+/// Returns extra configuration text for the GetConfig command reporting vScale, phase
+/// calibration, telemetry state, and an ASCII table of the 16 CT channels (location l#,
+/// preset ct#, amp rating a#, and circuit voltage v#).
 /// </summary>
-/// <returns>Multi-line key=value string for GetConfig.</returns>
+/// <returns>Formatted configuration text for GetConfig.</returns>
 ///
 std::string getExtraConfigText()
 {
    std::ostringstream out;
-   for (size_t i = 0; i < NUM_CT_INPUTS; i++)
-   {
-      if (i > 0)
-      {
-         out << "\n";
-      }
-      out << "l" << (i + 1) << "=" << ctLocations[i]
-          << "\na" << (i + 1) << "=" << displayAmpsForScale(ctAmps[i])
-          << "\nv" << (i + 1) << "=" << (ct240V[i] ? "240V" : "120V");
-   }
    out << std::fixed;
    out.precision(1);
-   out << "\nvScale=" << powerSensor.voltageScale();
+   out << "vScale=" << powerSensor.voltageScale();
    out.precision(2);
    out << "\nphase=" << powerSensor.phaseShiftDeg() << " deg (" << powerSensor.phaseCalibrationMode() << ")";
    out << "\ntelemetry=" << (telemetryEnabled ? "on" : "off");
+
+   constexpr const char* LOC_HEADER = "Location (l#)";
+   constexpr const char* CT_HEADER = "CT (ct#)";
+   constexpr const char* AMPS_HEADER = "Amps (a#)";
+   constexpr const char* VOLTS_HEADER = "Volts (v#)";
+
+   size_t maxLocLen = strlen(LOC_HEADER);
+   for (size_t i = 0; i < NUM_CT_INPUTS; i++)
+   {
+      maxLocLen = std::max(maxLocLen, strlen(ctLocations[i]));
+   }
+
+   std::array<SerialTable::Column, 5> columns = { {
+      { "Ch", 4 },
+      { LOC_HEADER, maxLocLen + 2 },
+      { CT_HEADER, strlen(CT_HEADER) + 2 },
+      { AMPS_HEADER, strlen(AMPS_HEADER) + 2 },
+      { VOLTS_HEADER, strlen(VOLTS_HEADER) },
+   } };
+
+   SerialTable table(nullptr, columns);
+   String tableOutput = table.formatHeader();
+   for (size_t i = 0; i < NUM_CT_INPUTS; i++)
+   {
+      const char* ctName = ctTypeIndices[i] < NUM_AMP_OPTIONS
+         ? CT_TYPE_TABLE[ctTypeIndices[i]].displayName
+         : "custom";
+      tableOutput += table.formatRow(
+         static_cast<uint16_t>(i + 1),
+         ctLocations[i],
+         ctName,
+         displayAmpsForScale(ctAmps[i]),
+         ct240V[i] ? "240V" : "120V");
+   }
+
+   while (tableOutput.endsWith("\n"))
+   {
+      tableOutput.remove(tableOutput.length() - 1);
+   }
+
+   out << "\n\n" << tableOutput.c_str();
    return out.str();
 }
 
 void refreshTelemetryButtonDisplay();
+void refreshCtSettingsDisplay(size_t inputIndex);
 
 ///
 /// <summary>
@@ -1132,6 +1168,7 @@ void saveVoltageScale(float scale)
 /// - Channel number "1".."16" with no value: interactively prompts for that channel's location, amps, and voltage
 /// - Direct keys "l1".."l16" (or "location1".."location16"; use "-", "none", or "off" to clear)
 /// - Direct keys "a1".."a16" (or "amps1".."amps16")
+/// - Direct keys "ct1".."ct16" select a CT preset by name (e.g. "100SC")
 /// - Direct keys "v1".."v16" (or "volts1".."volts16"; "120" or "240" for single-CT 240V circuits)
 /// - "vcal" with actual AC line voltage (e.g. "vcal=120.1") or "vscale" with raw V/V scale
 /// - "phase=auto" to clear saved phase/polarity learning and immediately re-learn automatically
@@ -1293,6 +1330,35 @@ bool trySetExtraConfig(const std::string& key, const std::string& value, std::st
          return true;
       }
 
+      std::string ctKey = "ct" + std::to_string(i + 1);
+      if (strcasecmp(key.c_str(), ctKey.c_str()) == 0)
+      {
+         for (size_t type = 0; type < NUM_AMP_OPTIONS; type++)
+         {
+            if (strcasecmp(value.c_str(), CT_TYPE_TABLE[type].displayName) == 0)
+            {
+               if (ctTypeIndices[i] != type)
+               {
+                  saveCtPreset(i, type);
+                  refreshCtSettingsDisplay(i);
+               }
+               result = ctKey + "=" + CT_TYPE_TABLE[type].displayName;
+               return true;
+            }
+         }
+
+         result = "Error: " + ctKey + " must be a CT preset: ";
+         for (size_t type = 0; type < NUM_AMP_OPTIONS; type++)
+         {
+            if (type > 0)
+            {
+               result += ", ";
+            }
+            result += CT_TYPE_TABLE[type].displayName;
+         }
+         return true;
+      }
+
       std::string shortVoltsKey = "v" + std::to_string(i + 1);
       std::string longVoltsKey = "volts" + std::to_string(i + 1);
       if (strcasecmp(key.c_str(), shortVoltsKey.c_str()) == 0 || strcasecmp(key.c_str(), longVoltsKey.c_str()) == 0)
@@ -1335,6 +1401,7 @@ Timer updateTimer(DISPLAY_UPDATE_INTERVAL_MS);
 int16_t valueStartY = 0;
 size_t displayedDerivedCount = 0;
 bool displayReady = false;
+bool showAmps = false;
 Rect16 telemetryButtonRect;
 
 ///
@@ -2017,11 +2084,61 @@ void editChannelLocationTouch(size_t ch)
 
 ///
 /// <summary>
-/// Renders live AC voltage in the header and a 4-column table of all 16 CT inputs on the display:
+/// Redraws the settings view when its selected channel's CT preset changes remotely.
+/// </summary>
+/// <param name="inputIndex">Channel index (0 to 15).</param>
+///
+void refreshCtSettingsDisplay(size_t inputIndex)
+{
+   if (displayReady && showingSettings && selectedSettingsChannel == inputIndex)
+   {
+      drawSettingsView();
+   }
+}
+
+///
+/// <summary>
+/// Prints a single channel row's label and active value column (Watts or Amps) on the main display.
+/// Labels longer than LOCATION_COL_WIDTH are truncated to avoid Format overflow.
+/// </summary>
+/// <param name="label">Channel location label.</param>
+/// <param name="connected">True if the channel has a live reading; false to draw dashes.</param>
+/// <param name="amps">RMS current in Amps.</param>
+/// <param name="watts">Real power in Watts.</param>
+///
+void drawChannelValueRow(const char* label, bool connected, float amps, float watts)
+{
+   std::string displayLabel(label);
+   if (displayLabel.length() > LOCATION_COL_WIDTH)
+   {
+      displayLabel.resize(LOCATION_COL_WIDTH);
+   }
+   sketch.arduino.print(displayLabel, rowLocationFormat, Color::LABEL);
+
+   if (connected)
+   {
+      if (showAmps)
+      {
+         sketch.arduino.printlnR(amps, rowAmpsFormat, Color::VALUE2);
+      }
+      else
+      {
+         sketch.arduino.printlnR(watts, rowWattsFormat, Color::VALUE);
+      }
+   }
+   else
+   {
+      const Format& valueFormat = showAmps ? rowAmpsFormat : rowWattsFormat;
+      sketch.arduino.printlnR(valueFormat.toNoValueString(), Color::GRAY);
+   }
+}
+
+///
+/// <summary>
+/// Renders live AC voltage in the header and a 3-column table of all 16 CT inputs on the display:
 /// Column 1: Channel number (1-16)
 /// Column 2: Configured location name
-/// Column 3: RMS current in Amps (or gray dashes if unplugged)
-/// Column 4: Real power in Watts (or gray dashes if unplugged)
+/// Column 3: Real power in Watts or RMS current in Amps (toggled by tapping the display, or gray dashes if unplugged)
 /// </summary>
 ///
 void updateDisplay()
@@ -2087,46 +2204,27 @@ void updateDisplay()
 
    for (size_t i = 0; i < NUM_CT_INPUTS; i++)
    {
-      bool connected = powerSensor.isConnected(i);
-
       sketch.arduino.print(static_cast<int>(i + 1), rowIndexFormat, Color::SUB_LABEL);
-      sketch.arduino.print(ctLocations[i], rowLocationFormat, Color::LABEL);
-
-      if (connected)
-      {
-         sketch.arduino.print(powerSensor.amps(i), rowAmpsFormat, Color::VALUE2);
-         sketch.arduino.printlnR(powerSensor.watts(i), rowWattsFormat, Color::VALUE);
-      }
-      else
-      {
-         sketch.arduino.print(rowAmpsFormat.toNoValueString().c_str(), Color::GRAY);
-         sketch.arduino.printlnR(rowWattsFormat.toNoValueString().c_str(), Color::GRAY);
-      }
+      drawChannelValueRow(ctLocations[i], powerSensor.isConnected(i), powerSensor.amps(i), powerSensor.watts(i));
    }
 
    size_t numDerived = powerSensor.derivedChannelCount();
    for (size_t d = 0; d < numDerived; d++)
    {
       sketch.arduino.print(" + ", Color::SUB_LABEL);
-      sketch.arduino.print(powerSensor.derivedChannelName(d), rowLocationFormat, Color::LABEL);
-
-      if (powerSensor.isDerivedConnected(d))
-      {
-         sketch.arduino.print(powerSensor.derivedAmps(d), rowAmpsFormat, Color::VALUE2);
-         sketch.arduino.printlnR(powerSensor.derivedWatts(d), rowWattsFormat, Color::VALUE);
-      }
-      else
-      {
-         sketch.arduino.print(rowAmpsFormat.toNoValueString().c_str(), Color::GRAY);
-         sketch.arduino.printlnR(rowWattsFormat.toNoValueString().c_str(), Color::GRAY);
-      }
+      drawChannelValueRow(
+         powerSensor.derivedChannelName(d),
+         powerSensor.isDerivedConnected(d),
+         powerSensor.derivedAmps(d),
+         powerSensor.derivedWatts(d));
    }
 }
 
 ///
 /// <summary>
 /// Polls capacitive touch input to dim the backlight after inactivity, wake to full
-/// brightness on touch, and open/close the gear settings view to edit channel settings.
+/// brightness on touch, swap between Watts and Amps on the main view, and open/close
+/// the gear settings view to edit channel settings.
 /// </summary>
 ///
 void handleTouch()
@@ -2173,6 +2271,11 @@ void handleTouch()
       else if (inRect(telemetryButtonRect, tp.x, tp.y))
       {
          saveTelemetryEnabled(!telemetryEnabled);
+      }
+      else
+      {
+         showAmps = !showAmps;
+         updateDisplay();
       }
       return;
    }
