@@ -8,20 +8,23 @@
 //
 // The screen is divided vertically into two independently tappable sections under the
 // "Power" title, with the selected mode for each section persisted in Preferences:
-// - "Now" (tap top section to toggle):
-//   1. Summary: Four 0-20 kW horizontal bars showing live power for Solar, House, Garage,
-//      and Barn, followed by a center-zero (-20 to +20 kW) horizontal Net bar (orange left,
-//      yellow right) with right-aligned kW readouts.
-//   2. Breakdown: A single center-zero (-20 to +20 kW) horizontal stacked bar with stacked
-//      House/Garage/Barn extending left, Solar extending right, and a vertical white Net
-//      marker line, followed by a Barn, Garage, House, Solar, and Net kW table.
-// - "Today" (tap bottom section to toggle):
-//   1. Summary: A 24-hour center-zero chart anchored at local midnight showing per-column
-//      average power (Solar green on top, Consumption blue on bottom, 20 kW full scale),
-//      followed by Today's Usage, Solar, and Net kWh totals.
-//   2. Breakdown: A single center-zero (-200 to +200 kWh) horizontal stacked bar with stacked
-//      House/Garage/Barn extending left, Solar extending right, and a vertical white Net
-//      marker line, followed by a Barn, Garage, House, Solar, and Net kWh table.
+// - Top (kW, tap to cycle through 3 views):
+//   1. Now (kW) Bars: Four 0-20 kW horizontal bars showing live power for Solar, House,
+//      Garage, and Barn, followed by a center-zero (-20 to +20 kW) horizontal Net bar
+//      (orange left, yellow right, white zero line) with right-aligned kW readouts.
+//   2. Now (kW) Breakdown: A single center-zero (-20 to +20 kW) horizontal stacked bar
+//      with stacked House/Garage/Barn extending left, Solar extending right, and a vertical
+//      white Net marker line, followed by a Barn, Garage, House, Solar, and Net kW table.
+//   3. Today (kW) History: A 24-hour center-zero chart anchored at local midnight showing
+//      per-column average power (Solar green on top, Consumption blue on bottom, 20 kW full
+//      scale), followed by live Usage, Solar, and Net kW totals.
+// - Bottom (kWh, tap to toggle between 2 views):
+//   1. Today (kWh) Bars: Four 0-200 kWh horizontal bars showing daily energy for Solar,
+//      House, Garage, and Barn, followed by a center-zero (-200 to +200 kWh) horizontal Net
+//      bar (orange left, yellow right, white zero line) with right-aligned kWh readouts.
+//   2. Today (kWh) Breakdown: A single center-zero (-200 to +200 kWh) horizontal stacked bar
+//      with stacked House/Garage/Barn extending left, Solar extending right, and a vertical
+//      white Net marker line, followed by a Barn, Garage, House, Solar, and Net kWh table.
 //
 // The layout adapts at runtime to the display's dimensions, supporting both large
 // displays (e.g. the 480x320 Hosyond ESP32-S3 Viewer board) and compact displays
@@ -83,7 +86,7 @@ constexpr auto NOW_VIEW_PREF_KEY = "nowView";
 constexpr auto TODAY_VIEW_PREF_KEY = "todayView";
 constexpr uint16_t EMPTY_HUNDREDTHS_KW = 0xFFFF;
 constexpr uint16_t MAX_TODAY_CHART_COLS = 480;
-constexpr uint8_t NUM_NOW_BARS = 4;
+constexpr uint8_t NUM_MULTI_BARS = 4;
 constexpr uint8_t NUM_BREAKDOWN_COLS = 5;
 
 // Full-scale power (in kW) and daily energy (in kWh) for the charts and bar gauges.
@@ -92,9 +95,9 @@ constexpr float MAX_ENERGY_KWH = 200.0f;
 constexpr float WATTS_PER_KW = 1000.0f;
 
 // ----------- Display Configuration
-constexpr auto NOW_SECTION_TEXT = "Now (kW)";
-constexpr auto TODAY_SUMMARY_SECTION_TEXT = "Today (kW)";
-constexpr auto TODAY_BREAKDOWN_SECTION_TEXT = "Today (kWh)";
+constexpr auto NOW_POWER_SECTION_TEXT = "Now (kW)";
+constexpr auto TODAY_POWER_SECTION_TEXT = "Today (kW)";
+constexpr auto TODAY_ENERGY_SECTION_TEXT = "Today (kWh)";
 constexpr uint8_t HEADING_TEXT_SIZE = DEFAULT_HEADING_SIZE;
 constexpr uint8_t TABLE_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
 constexpr int16_t OUTER_MARGIN_PX = 4;
@@ -103,14 +106,14 @@ constexpr int16_t SECTION_GAP_LARGE_PX = 20;
 constexpr int16_t SECTION_GAP_SMALL_PX = 6;
 constexpr int16_t HEADING_GAP_PX = 4;
 constexpr int16_t CHART_LABEL_GAP_PX = 4;
-constexpr int16_t NOW_BAR_ROW_GAP_LARGE_PX = 6;
-constexpr int16_t NOW_BAR_ROW_GAP_SMALL_PX = 3;
-constexpr int16_t NOW_BAR_MAX_HEIGHT_LARGE_PX = 22;
+constexpr int16_t MULTI_BAR_ROW_GAP_LARGE_PX = 6;
+constexpr int16_t MULTI_BAR_ROW_GAP_SMALL_PX = 3;
+constexpr int16_t MULTI_BAR_MAX_HEIGHT_LARGE_PX = 22;
 constexpr int16_t BREAKDOWN_BAR_MAX_HEIGHT_PX = 60;
 constexpr int16_t BREAKDOWN_TABLE_GAP_LARGE_PX = 10;
 constexpr int16_t BREAKDOWN_TABLE_GAP_SMALL_PX = 2;
 constexpr int16_t BREAKDOWN_HEADER_GAP_PX = 2;
-constexpr uint8_t NOW_BAR_LABEL_CHARS = 6;
+constexpr uint8_t MULTI_BAR_LABEL_CHARS = 6;
 constexpr uint8_t CHART_LABEL_CHARS = 3;
 constexpr float ROTATED_HEADING_ANGLE_DEG = 270.0f;
 constexpr uint32_t SECONDS_PER_DAY = 24UL * 60UL * 60UL;
@@ -142,23 +145,26 @@ Timer chartSampleTimer(CHART_SAMPLE_MS);
 
 ///
 /// <summary>
-/// Display modes for the top ("Now") section.
+/// Display modes for the top (kW) section.
 /// </summary>
 ///
-enum class NowViewMode : uint8_t
+enum class TopViewMode : uint8_t
 {
-   SUMMARY = 0,
+   BARS = 0,
    BREAKDOWN = 1,
+   TODAY_HISTORY = 2,
 };
+
+constexpr uint8_t NUM_TOP_VIEW_MODES = 3;
 
 ///
 /// <summary>
-/// Display modes for the bottom ("Today") section.
+/// Display modes for the bottom (kWh) section.
 /// </summary>
 ///
-enum class TodayViewMode : uint8_t
+enum class BottomViewMode : uint8_t
 {
-   SUMMARY = 0,
+   BARS = 0,
    BREAKDOWN = 1,
 };
 
@@ -206,8 +212,8 @@ SolarReadings latestReadings;
 float netPowerKw = NAN;
 float netEnergyKwh = NAN;
 bool readingsDirty = false;
-NowViewMode nowViewMode = NowViewMode::SUMMARY;
-TodayViewMode todayViewMode = TodayViewMode::SUMMARY;
+TopViewMode topViewMode = TopViewMode::BARS;
+BottomViewMode bottomViewMode = BottomViewMode::BARS;
 
 void onTelemetrySample(const std::string& topic, double value, int64_t dtMicros);
 
@@ -279,7 +285,7 @@ public:
 
 SolarTelemetryHandler telemetryHandler(sketch.getStatus());
 
-std::array<DisplayValue, NUM_NOW_BARS> nowBarValues = {
+std::array<DisplayValue, NUM_MULTI_BARS> nowBarValues = {
    DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
    DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
    DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
@@ -287,8 +293,21 @@ std::array<DisplayValue, NUM_NOW_BARS> nowBarValues = {
 };
 DisplayValue nowNetBarValue(&sketch.arduino, Format("+##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT);
 
-constexpr std::array<const char*, NUM_NOW_BARS> NOW_BAR_LABELS = { "Solar", "House", "Garage", "Barn" };
-constexpr std::array<Color, NUM_NOW_BARS> NOW_BAR_COLORS = { SOLAR_COLOR, HOUSE_COLOR, GARAGE_COLOR, BARN_COLOR };
+std::array<DisplayValue, NUM_MULTI_BARS> todayBarValues = {
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+};
+DisplayValue todayNetBarValue(&sketch.arduino, Format("+###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT);
+
+constexpr std::array<const char*, NUM_MULTI_BARS> MULTI_BAR_LABELS = { "Solar", "House", "Garage", "Barn" };
+constexpr std::array<Color, NUM_MULTI_BARS> MULTI_BAR_COLORS = { SOLAR_COLOR, HOUSE_COLOR, GARAGE_COLOR, BARN_COLOR };
+
+Field nowUsageField(&sketch.arduino, "Usage", "##.# kW", TABLE_TEXT_SIZE);
+Field nowSolarField(&sketch.arduino, "Solar", "##.# kW", TABLE_TEXT_SIZE);
+Field nowNetField(&sketch.arduino, "Net", "+##.# kW", TABLE_TEXT_SIZE);
+FieldRow nowSummaryRow(&nowUsageField, &nowSolarField, &nowNetField, Color::GRAY);
 
 std::array<DisplayValue, NUM_BREAKDOWN_COLS> nowBreakdownValues = {
    DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
@@ -297,11 +316,6 @@ std::array<DisplayValue, NUM_BREAKDOWN_COLS> nowBreakdownValues = {
    DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
    DisplayValue(&sketch.arduino, Format("+##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
 };
-
-Field todayUsageField(&sketch.arduino, "Usage", "###.# kWh", TABLE_TEXT_SIZE);
-Field todaySolarField(&sketch.arduino, "Solar", "###.# kWh", TABLE_TEXT_SIZE);
-Field todayNetField(&sketch.arduino, "Net", "+###.# kWh", TABLE_TEXT_SIZE);
-FieldRow todaySummaryRow(&todayUsageField, &todaySolarField, &todayNetField, Color::GRAY);
 
 std::array<DisplayValue, NUM_BREAKDOWN_COLS> todayBreakdownValues = {
    DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
@@ -313,6 +327,21 @@ std::array<DisplayValue, NUM_BREAKDOWN_COLS> todayBreakdownValues = {
 
 constexpr std::array<const char*, NUM_BREAKDOWN_COLS> BREAKDOWN_COL_LABELS = { "Barn", "Garage", "House", "Solar", "Net" };
 constexpr std::array<Color, NUM_BREAKDOWN_COLS> BREAKDOWN_COL_COLORS = { BARN_COLOR, GARAGE_COLOR, HOUSE_COLOR, SOLAR_COLOR, NET_MARKER_COLOR };
+
+///
+/// <summary>
+/// Holds the laid-out bar widgets and row Y coordinates for a 5-row horizontal bar
+/// section (four component bars for Solar, House, Garage, and Barn plus a center-zero
+/// Net bar).
+/// </summary>
+///
+struct MultiBarLayout
+{
+   std::array<HorizontalBar*, NUM_MULTI_BARS> bars = { nullptr, nullptr, nullptr, nullptr };
+   std::array<int16_t, NUM_MULTI_BARS> barTextY = {};
+   CenterZeroHorizontalBar* netBar = nullptr;
+   int16_t netBarTextY = 0;
+};
 
 ///
 /// <summary>
@@ -333,9 +362,8 @@ struct BreakdownLayout
 
 ///
 /// <summary>
-/// Stores a single column of the 24-hour Summary Today chart as average power in
-/// hundredths of a kW (or EMPTY_HUNDREDTHS_KW when the column has not yet been recorded
-/// today).
+/// Stores a single column of the 24-hour Today (kW) chart as average power in hundredths
+/// of a kW (or EMPTY_HUNDREDTHS_KW when the column has not yet been recorded today).
 /// </summary>
 ///
 struct TodayChartSample
@@ -344,10 +372,8 @@ struct TodayChartSample
    uint16_t consHundredthsKw = EMPTY_HUNDREDTHS_KW;
 };
 
-std::array<HorizontalBar*, NUM_NOW_BARS> nowBars = { nullptr, nullptr, nullptr, nullptr };
-std::array<int16_t, NUM_NOW_BARS> nowBarTextY = {};
-CenterZeroHorizontalBar* nowNetBar = nullptr;
-int16_t nowNetBarTextY = 0;
+MultiBarLayout nowMultiBar;
+MultiBarLayout todayMultiBar;
 MovingBarChart* todayChart = nullptr;
 BreakdownLayout nowBreakdown;
 BreakdownLayout todayBreakdown;
@@ -432,32 +458,73 @@ void drawBreakdownDynamic(
 
 ///
 /// <summary>
-/// Updates and renders the dynamic widgets for the active "Now" section mode.
+/// Updates and renders a 5-row horizontal bar section (Solar, House, Garage, and Barn
+/// component bars plus a center-zero Net bar) and its right-aligned numeric readouts.
+/// </summary>
+/// <param name="layout">Laid-out multi-bar widgets and row coordinates.</param>
+/// <param name="values">Four right-aligned DisplayValue widgets for Solar, House, Garage, and Barn.</param>
+/// <param name="netValueWidget">Right-aligned DisplayValue widget for the signed Net readout.</param>
+/// <param name="netValue">Signed net value (positive when Solar exceeds Usage).</param>
+/// <param name="solarValue">Solar production magnitude.</param>
+/// <param name="houseValue">House consumption magnitude.</param>
+/// <param name="garageValue">Garage consumption magnitude.</param>
+/// <param name="barnValue">Barn consumption magnitude.</param>
+///
+void drawMultiBarDynamic(
+   const MultiBarLayout& layout,
+   std::array<DisplayValue, NUM_MULTI_BARS>* values,
+   DisplayValue* netValueWidget,
+   float netValue,
+   float solarValue,
+   float houseValue,
+   float garageValue,
+   float barnValue)
+{
+   ASSERT(values != nullptr);
+   ASSERT(netValueWidget != nullptr);
+   ASSERT(layout.netBar != nullptr);
+
+   const std::array<float, NUM_MULTI_BARS> barValues = {
+      solarValue,
+      houseValue,
+      garageValue,
+      barnValue,
+   };
+   for (uint8_t i = 0; i < NUM_MULTI_BARS; i++)
+   {
+      ASSERT(layout.bars[i] != nullptr);
+
+      float v = barValues[i];
+      layout.bars[i]->set(std::isnan(v) ? 0.0f : v);
+      layout.bars[i]->draw(&sketch.arduino.display);
+      (*values)[i].draw(v, MULTI_BAR_COLORS[i]);
+   }
+
+   layout.netBar->set(std::isnan(netValue) ? 0.0f : netValue);
+   layout.netBar->draw(&sketch.arduino.display);
+   netValueWidget->draw(netValue, NET_MARKER_COLOR);
+}
+
+///
+/// <summary>
+/// Updates and renders the dynamic widgets for the active top (kW) section mode.
 /// </summary>
 ///
 void drawNowDynamic()
 {
-   if (nowViewMode == NowViewMode::SUMMARY)
+   if (topViewMode == TopViewMode::BARS)
    {
-      const std::array<float, NUM_NOW_BARS> barValues = {
+      drawMultiBarDynamic(
+         nowMultiBar,
+         &nowBarValues,
+         &nowNetBarValue,
+         netPowerKw,
          latestReadings.productionKw,
          latestReadings.houseKw,
          latestReadings.garageKw,
-         latestReadings.barnKw,
-      };
-      for (uint8_t i = 0; i < NUM_NOW_BARS; i++)
-      {
-         float kw = barValues[i];
-         nowBars[i]->set(std::isnan(kw) ? 0.0f : kw);
-         nowBars[i]->draw(&sketch.arduino.display);
-         nowBarValues[i].draw(kw, NOW_BAR_COLORS[i]);
-      }
-
-      nowNetBar->set(std::isnan(netPowerKw) ? 0.0f : netPowerKw);
-      nowNetBar->draw(&sketch.arduino.display);
-      nowNetBarValue.draw(netPowerKw, NET_MARKER_COLOR);
+         latestReadings.barnKw);
    }
-   else
+   else if (topViewMode == TopViewMode::BREAKDOWN)
    {
       drawBreakdownDynamic(
          nowBreakdown,
@@ -468,24 +535,36 @@ void drawNowDynamic()
          latestReadings.garageKw,
          latestReadings.barnKw);
    }
+   else
+   {
+      nowSummaryRow.draw(
+         latestReadings.consumptionKw,
+         DELTA_NEGATIVE_COLOR,
+         latestReadings.productionKw,
+         DELTA_POSITIVE_COLOR,
+         netPowerKw,
+         NET_MARKER_COLOR);
+   }
 }
 
 ///
 /// <summary>
-/// Updates and renders the dynamic widgets for the active "Today" section mode.
+/// Updates and renders the dynamic widgets for the active bottom (kWh) section mode.
 /// </summary>
 ///
 void drawTodayDynamic()
 {
-   if (todayViewMode == TodayViewMode::SUMMARY)
+   if (bottomViewMode == BottomViewMode::BARS)
    {
-      todaySummaryRow.draw(
-         latestReadings.consumptionTodayKwh,
-         DELTA_NEGATIVE_COLOR,
-         latestReadings.productionTodayKwh,
-         DELTA_POSITIVE_COLOR,
+      drawMultiBarDynamic(
+         todayMultiBar,
+         &todayBarValues,
+         &todayNetBarValue,
          netEnergyKwh,
-         NET_MARKER_COLOR);
+         latestReadings.productionTodayKwh,
+         latestReadings.houseTodayKwh,
+         latestReadings.garageTodayKwh,
+         latestReadings.barnTodayKwh);
    }
    else
    {
@@ -596,8 +675,76 @@ void initBreakdownLayout(
 
 ///
 /// <summary>
-/// Computes the responsive display layout for both modes of the "Now" section and both
-/// modes of the "Today" section, along with touch hit-test rectangles.
+/// Computes the layout and constructs the 5 horizontal bars (Solar, House, Garage, Barn,
+/// and center-zero Net) for a MultiBar section.
+/// </summary>
+/// <param name="layout">Target MultiBarLayout structure to populate.</param>
+/// <param name="sectionRect">Bounding rectangle of the section's content area.</param>
+/// <param name="maxScale">Full-scale positive magnitude (0..maxScale for components, -maxScale..+maxScale for Net).</param>
+/// <param name="values">Four right-aligned DisplayValue widgets for Solar, House, Garage, and Barn.</param>
+/// <param name="netValueWidget">Right-aligned DisplayValue widget for the signed Net readout.</param>
+/// <param name="barLeftX">Shared left X pixel coordinate for all bars.</param>
+/// <param name="barWidth">Shared pixel width for all bars.</param>
+/// <param name="displayWidth">Display pixel width used to right-align numeric readouts.</param>
+/// <param name="rowHeight">Character pixel height at TABLE_TEXT_SIZE.</param>
+///
+void initMultiBarLayout(
+   MultiBarLayout* layout,
+   const Rect16& sectionRect,
+   float maxScale,
+   std::array<DisplayValue, NUM_MULTI_BARS>* values,
+   DisplayValue* netValueWidget,
+   int16_t barLeftX,
+   int16_t barWidth,
+   int16_t displayWidth,
+   int16_t rowHeight)
+{
+   ASSERT(layout != nullptr);
+   ASSERT(values != nullptr);
+   ASSERT(netValueWidget != nullptr);
+
+   constexpr uint8_t NUM_MULTI_BAR_ROWS = NUM_MULTI_BARS + 1;
+   int16_t barGap = isLargeDisplay ? MULTI_BAR_ROW_GAP_LARGE_PX : MULTI_BAR_ROW_GAP_SMALL_PX;
+   int16_t totalGapHeight = NUM_MULTI_BARS * barGap;
+   int16_t bandHeight = max<int16_t>(rowHeight, (sectionRect.height - totalGapHeight) / NUM_MULTI_BAR_ROWS);
+   int16_t barHeight = min<int16_t>(bandHeight, isLargeDisplay ? MULTI_BAR_MAX_HEIGHT_LARGE_PX : rowHeight);
+   int16_t totalRowsHeight = NUM_MULTI_BAR_ROWS * bandHeight + totalGapHeight;
+   int16_t firstBandY = sectionRect.y + max<int16_t>(0, (sectionRect.height - totalRowsHeight) / 2);
+
+   RangeF componentRange(0.0f, maxScale);
+   RangeF netRange(-maxScale, maxScale);
+
+   for (uint8_t i = 0; i < NUM_MULTI_BARS; i++)
+   {
+      int16_t bandY = firstBandY + i * (bandHeight + barGap);
+      int16_t barY = bandY + (bandHeight - barHeight) / 2;
+      int16_t textY = bandY + (bandHeight - rowHeight) / 2;
+
+      layout->barTextY[i] = textY;
+      (*values)[i].setPosition(displayWidth, textY);
+      layout->bars[i] = new HorizontalBar(
+         Rect16(barLeftX, barY, barWidth, barHeight),
+         componentRange,
+         MULTI_BAR_COLORS[i],
+         BAR_TRACK_COLOR);
+   }
+
+   int16_t netBandY = firstBandY + NUM_MULTI_BARS * (bandHeight + barGap);
+   int16_t netBarY = netBandY + (bandHeight - barHeight) / 2;
+   layout->netBarTextY = netBandY + (bandHeight - rowHeight) / 2;
+   netValueWidget->setPosition(displayWidth, layout->netBarTextY);
+   layout->netBar = new CenterZeroHorizontalBar(
+      Rect16(barLeftX, netBarY, barWidth, barHeight),
+      netRange,
+      NET_POSITIVE_COLOR,
+      NET_NEGATIVE_COLOR,
+      BAR_TRACK_COLOR);
+}
+
+///
+/// <summary>
+/// Computes the responsive display layout for all three top (kW) views and both bottom
+/// (kWh) views, along with touch hit-test rectangles.
 /// </summary>
 ///
 void initLayout()
@@ -615,7 +762,7 @@ void initLayout()
    int16_t sectionGap = isLargeDisplay ? SECTION_GAP_LARGE_PX : SECTION_GAP_SMALL_PX;
 
    // With the headings rotated on the left, all remaining vertical space goes to the two
-   // charts and two single-row tables.
+   // sections and their optional single-row tables.
    int16_t fixedHeight = titleHeight + topGap +
       itemGap + rowHeight + sectionGap +
       itemGap + rowHeight;
@@ -634,7 +781,7 @@ void initLayout()
    int16_t minSectionHeight = min(
       static_cast<int16_t>(nowBottomY - nowChartY),
       static_cast<int16_t>(todayBottomY - todayChartY));
-   int16_t maxSectionLabelChars = static_cast<int16_t>(strlen(TODAY_BREAKDOWN_SECTION_TEXT));
+   int16_t maxSectionLabelChars = static_cast<int16_t>(strlen(TODAY_ENERGY_SECTION_TEXT));
    sectionTextSize = (isLargeDisplay &&
       maxSectionLabelChars * sketch.arduino.charW(TABLE_TEXT_SIZE + 1) <= minSectionHeight)
       ? static_cast<uint8_t>(TABLE_TEXT_SIZE + 1)
@@ -648,7 +795,7 @@ void initLayout()
    int16_t chartX = chartLabelRightX + CHART_LABEL_GAP_PX;
    int16_t chartWidth = max(static_cast<int16_t>(16), static_cast<int16_t>(displayWidth - chartX));
 
-   todayChartRect = Rect16(chartX, todayChartY, chartWidth, todayChartHeight);
+   todayChartRect = Rect16(chartX, nowChartY, chartWidth, nowChartHeight);
 
    nowSectionRect = Rect16(contentLeftX, nowChartY, displayWidth - contentLeftX, nowBottomY - nowChartY);
    todaySectionRect = Rect16(contentLeftX, todayChartY, displayWidth - contentLeftX, todayBottomY - todayChartY);
@@ -657,7 +804,7 @@ void initLayout()
    nowTouchRect = Rect16(0, nowChartY, displayWidth, splitY - nowChartY);
    todayTouchRect = Rect16(0, splitY, displayWidth, displayHeight - splitY);
 
-   todaySummaryRow.setBounds(chartX, todayRowY, chartWidth);
+   nowSummaryRow.setBounds(chartX, nowRowY, chartWidth);
 
    RangeF powerRange(-MAX_POWER_KW, MAX_POWER_KW);
    RangeF energyRange(-MAX_ENERGY_KWH, MAX_ENERGY_KWH);
@@ -665,45 +812,14 @@ void initLayout()
    initBreakdownLayout(&nowBreakdown, nowSectionRect, powerRange, &nowBreakdownValues, rowHeight, itemGap);
    initBreakdownLayout(&todayBreakdown, todaySectionRect, energyRange, &todayBreakdownValues, rowHeight, itemGap);
 
-   // Layout for the Now Summary 5-row horizontal bar chart (4 component bars + center-zero Net bar)
-   constexpr uint8_t NUM_NOW_SUMMARY_ROWS = NUM_NOW_BARS + 1;
-   int16_t barGap = isLargeDisplay ? NOW_BAR_ROW_GAP_LARGE_PX : NOW_BAR_ROW_GAP_SMALL_PX;
-   int16_t totalGapHeight = NUM_NOW_BARS * barGap;
-   int16_t bandHeight = max<int16_t>(rowHeight, (nowSectionRect.height - totalGapHeight) / NUM_NOW_SUMMARY_ROWS);
-   int16_t barHeight = min<int16_t>(bandHeight, isLargeDisplay ? NOW_BAR_MAX_HEIGHT_LARGE_PX : rowHeight);
-   int16_t totalRowsHeight = NUM_NOW_SUMMARY_ROWS * bandHeight + totalGapHeight;
-   int16_t firstBandY = nowSectionRect.y + max<int16_t>(0, (nowSectionRect.height - totalRowsHeight) / 2);
-
-   int16_t barLeftX = contentLeftX + NOW_BAR_LABEL_CHARS * charWidth + CHART_LABEL_GAP_PX;
-   int16_t barRightX = displayWidth - nowNetBarValue.width() - CHART_LABEL_GAP_PX;
+   // Align left/right bar edges and center-zero lines across both the top (kW) and bottom (kWh) multi-bar views.
+   int16_t maxNetValueWidth = max(nowNetBarValue.width(), todayNetBarValue.width());
+   int16_t barLeftX = contentLeftX + MULTI_BAR_LABEL_CHARS * charWidth + CHART_LABEL_GAP_PX;
+   int16_t barRightX = displayWidth - maxNetValueWidth - CHART_LABEL_GAP_PX;
    int16_t barWidth = max<int16_t>(16, barRightX - barLeftX);
-   RangeF barPowerRange(0.0f, MAX_POWER_KW);
 
-   for (uint8_t i = 0; i < NUM_NOW_BARS; i++)
-   {
-      int16_t bandY = firstBandY + i * (bandHeight + barGap);
-      int16_t barY = bandY + (bandHeight - barHeight) / 2;
-      int16_t textY = bandY + (bandHeight - rowHeight) / 2;
-
-      nowBarTextY[i] = textY;
-      nowBarValues[i].setPosition(displayWidth, textY);
-      nowBars[i] = new HorizontalBar(
-         Rect16(barLeftX, barY, barWidth, barHeight),
-         barPowerRange,
-         NOW_BAR_COLORS[i],
-         BAR_TRACK_COLOR);
-   }
-
-   int16_t netBandY = firstBandY + NUM_NOW_BARS * (bandHeight + barGap);
-   int16_t netBarY = netBandY + (bandHeight - barHeight) / 2;
-   nowNetBarTextY = netBandY + (bandHeight - rowHeight) / 2;
-   nowNetBarValue.setPosition(displayWidth, nowNetBarTextY);
-   nowNetBar = new CenterZeroHorizontalBar(
-      Rect16(barLeftX, netBarY, barWidth, barHeight),
-      powerRange,
-      NET_POSITIVE_COLOR,
-      NET_NEGATIVE_COLOR,
-      BAR_TRACK_COLOR);
+   initMultiBarLayout(&nowMultiBar, nowSectionRect, MAX_POWER_KW, &nowBarValues, &nowNetBarValue, barLeftX, barWidth, displayWidth, rowHeight);
+   initMultiBarLayout(&todayMultiBar, todaySectionRect, MAX_ENERGY_KWH, &todayBarValues, &todayNetBarValue, barLeftX, barWidth, displayWidth, rowHeight);
 
    todayChart = new MovingBarChart(
       todayChartRect,
@@ -902,29 +1018,29 @@ void loadViewPreferences()
 {
    if (sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true))
    {
-      uint8_t savedNow = sketch.arduino.preferences.getUChar(NOW_VIEW_PREF_KEY, 0);
-      uint8_t savedToday = sketch.arduino.preferences.getUChar(TODAY_VIEW_PREF_KEY, 0);
+      uint8_t savedTop = sketch.arduino.preferences.getUChar(NOW_VIEW_PREF_KEY, 0);
+      uint8_t savedBottom = sketch.arduino.preferences.getUChar(TODAY_VIEW_PREF_KEY, 0);
       sketch.arduino.preferences.end();
 
-      nowViewMode = (savedNow == static_cast<uint8_t>(NowViewMode::BREAKDOWN))
-         ? NowViewMode::BREAKDOWN
-         : NowViewMode::SUMMARY;
-      todayViewMode = (savedToday == static_cast<uint8_t>(TodayViewMode::BREAKDOWN))
-         ? TodayViewMode::BREAKDOWN
-         : TodayViewMode::SUMMARY;
+      topViewMode = (savedTop < NUM_TOP_VIEW_MODES)
+         ? static_cast<TopViewMode>(savedTop)
+         : TopViewMode::BARS;
+      bottomViewMode = (savedBottom == static_cast<uint8_t>(BottomViewMode::BREAKDOWN))
+         ? BottomViewMode::BREAKDOWN
+         : BottomViewMode::BARS;
    }
 }
 
 ///
 /// <summary>
-/// Persists the current Now and Today view mode selections to Preferences.
+/// Persists the current top and bottom view mode selections to Preferences.
 /// </summary>
 ///
 void saveViewPreferences()
 {
    sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
-   sketch.arduino.preferences.putUChar(NOW_VIEW_PREF_KEY, static_cast<uint8_t>(nowViewMode));
-   sketch.arduino.preferences.putUChar(TODAY_VIEW_PREF_KEY, static_cast<uint8_t>(todayViewMode));
+   sketch.arduino.preferences.putUChar(NOW_VIEW_PREF_KEY, static_cast<uint8_t>(topViewMode));
+   sketch.arduino.preferences.putUChar(TODAY_VIEW_PREF_KEY, static_cast<uint8_t>(bottomViewMode));
    sketch.arduino.preferences.end();
 }
 
@@ -1045,7 +1161,7 @@ void sampleTodayChart()
       todayChart->clear();
       populateTodayChartFromSamples();
       todayPersistTimer.reset();
-      if (todayViewMode == TodayViewMode::SUMMARY)
+      if (topViewMode == TopViewMode::TODAY_HISTORY)
       {
          todayChart->reset();
          todayChart->draw(&sketch.arduino.display);
@@ -1057,15 +1173,11 @@ void sampleTodayChart()
       todayChart->clear();
       resetTodayChartHistory(dayId);
       todayPersistTimer.reset();
-      if (todayViewMode == TodayViewMode::SUMMARY)
+      if (topViewMode == TopViewMode::TODAY_HISTORY)
       {
          todayChart->reset();
          todayChart->draw(&sketch.arduino.display);
          drawTodayGridLines();
-      }
-      else
-      {
-         drawTodayDynamic();
       }
    }
 
@@ -1119,7 +1231,7 @@ void sampleTodayChart()
          0.0f,
          sample.prodHundredthsKw * 0.01f,
          sample.consHundredthsKw * 0.01f);
-      if (todayViewMode == TodayViewMode::SUMMARY)
+      if (topViewMode == TopViewMode::TODAY_HISTORY)
       {
          todayChart->draw(&sketch.arduino.display);
          drawTodayGridLines();
@@ -1183,47 +1295,89 @@ void renderBreakdownStatic(
 
 ///
 /// <summary>
-/// Draws the static and initial dynamic content of the "Now" section content area for the
-/// current nowViewMode.
+/// Draws the right-aligned left-side labels (Solar, House, Garage, Barn, and Net) and
+/// resets the bar and value widgets for a 5-row MultiBar section.
 /// </summary>
-/// <param name="clearArea">True to clear nowSectionRect before drawing.</param>
+/// <param name="layout">Laid-out multi-bar widgets and row coordinates.</param>
+/// <param name="values">Four right-aligned DisplayValue widgets for Solar, House, Garage, and Barn.</param>
+/// <param name="netValueWidget">Right-aligned DisplayValue widget for the signed Net readout.</param>
+///
+void renderMultiBarStatic(
+   const MultiBarLayout& layout,
+   std::array<DisplayValue, NUM_MULTI_BARS>* values,
+   DisplayValue* netValueWidget)
+{
+   ASSERT(values != nullptr);
+   ASSERT(netValueWidget != nullptr);
+   ASSERT(layout.netBar != nullptr);
+
+   int16_t charWidth = sketch.arduino.charW(TABLE_TEXT_SIZE);
+   int16_t labelRightX = contentLeftX + MULTI_BAR_LABEL_CHARS * charWidth;
+
+   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+   for (uint8_t i = 0; i < NUM_MULTI_BARS; i++)
+   {
+      ASSERT(layout.bars[i] != nullptr);
+
+      int16_t labelX = labelRightX - static_cast<int16_t>(strlen(MULTI_BAR_LABELS[i])) * charWidth;
+      sketch.arduino.setCursor(labelX, layout.barTextY[i]);
+      sketch.arduino.print(MULTI_BAR_LABELS[i], Color::GRAY);
+      layout.bars[i]->reset();
+      (*values)[i].invalidate();
+   }
+
+   int16_t netLabelX = labelRightX - static_cast<int16_t>(strlen("Net")) * charWidth;
+   sketch.arduino.setCursor(netLabelX, layout.netBarTextY);
+   sketch.arduino.print("Net", Color::GRAY);
+   layout.netBar->reset();
+   netValueWidget->invalidate();
+}
+
+///
+/// <summary>
+/// Draws the static and initial dynamic content of the top (kW) section (including its
+/// mode-specific rotated heading) for the current topViewMode.
+/// </summary>
+/// <param name="clearArea">True to clear the top section and its rotated heading before drawing.</param>
 ///
 void renderNowSection(bool clearArea)
 {
    if (clearArea)
    {
       sketch.arduino.display.fillRect(
-         nowSectionRect.x,
+         0,
          nowSectionRect.y,
-         nowSectionRect.width,
+         sketch.arduino.width(),
          nowSectionRect.height,
          static_cast<uint16_t>(Color::BLACK));
    }
 
-   if (nowViewMode == NowViewMode::SUMMARY)
+   const char* topHeading = (topViewMode == TopViewMode::TODAY_HISTORY)
+      ? TODAY_POWER_SECTION_TEXT
+      : NOW_POWER_SECTION_TEXT;
+   sketch.arduino.drawRotatedText(
+      topHeading,
+      headingColWidth / 2.0f,
+      nowSectionRect.y + nowSectionRect.height / 2.0f,
+      ROTATED_HEADING_ANGLE_DEG,
+      sectionTextSize);
+
+   if (topViewMode == TopViewMode::BARS)
    {
-      int16_t charWidth = sketch.arduino.charW(TABLE_TEXT_SIZE);
-      int16_t labelRightX = contentLeftX + NOW_BAR_LABEL_CHARS * charWidth;
-
-      sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
-      for (uint8_t i = 0; i < NUM_NOW_BARS; i++)
-      {
-         int16_t labelX = labelRightX - static_cast<int16_t>(strlen(NOW_BAR_LABELS[i])) * charWidth;
-         sketch.arduino.setCursor(labelX, nowBarTextY[i]);
-         sketch.arduino.print(NOW_BAR_LABELS[i], Color::GRAY);
-         nowBars[i]->reset();
-         nowBarValues[i].invalidate();
-      }
-
-      int16_t netLabelX = labelRightX - static_cast<int16_t>(strlen("Net")) * charWidth;
-      sketch.arduino.setCursor(netLabelX, nowNetBarTextY);
-      sketch.arduino.print("Net", Color::GRAY);
-      nowNetBar->reset();
-      nowNetBarValue.invalidate();
+      renderMultiBarStatic(nowMultiBar, &nowBarValues, &nowNetBarValue);
+   }
+   else if (topViewMode == TopViewMode::BREAKDOWN)
+   {
+      renderBreakdownStatic(nowBreakdown, &nowBreakdownValues, "20");
    }
    else
    {
-      renderBreakdownStatic(nowBreakdown, &nowBreakdownValues, "20");
+      drawChartLabels(todayChartRect, "20", "0", "20");
+      todayChart->reset();
+      todayChart->draw(&sketch.arduino.display);
+      drawTodayGridLines();
+
+      nowSummaryRow.invalidate();
    }
 
    drawNowDynamic();
@@ -1231,41 +1385,26 @@ void renderNowSection(bool clearArea)
 
 ///
 /// <summary>
-/// Draws the static and initial dynamic content of the "Today" section (including its
-/// mode-specific rotated heading) for the current todayViewMode.
+/// Draws the static and initial dynamic content of the bottom (kWh) section content area
+/// for the current bottomViewMode.
 /// </summary>
-/// <param name="clearArea">True to clear the Today section and its rotated heading before drawing.</param>
+/// <param name="clearArea">True to clear todaySectionRect before drawing.</param>
 ///
 void renderTodaySection(bool clearArea)
 {
    if (clearArea)
    {
       sketch.arduino.display.fillRect(
-         0,
+         todaySectionRect.x,
          todaySectionRect.y,
-         sketch.arduino.width(),
+         todaySectionRect.width,
          todaySectionRect.height,
          static_cast<uint16_t>(Color::BLACK));
    }
 
-   const char* todayHeading = (todayViewMode == TodayViewMode::SUMMARY)
-      ? TODAY_SUMMARY_SECTION_TEXT
-      : TODAY_BREAKDOWN_SECTION_TEXT;
-   sketch.arduino.drawRotatedText(
-      todayHeading,
-      headingColWidth / 2.0f,
-      todaySectionRect.y + todaySectionRect.height / 2.0f,
-      ROTATED_HEADING_ANGLE_DEG,
-      sectionTextSize);
-
-   if (todayViewMode == TodayViewMode::SUMMARY)
+   if (bottomViewMode == BottomViewMode::BARS)
    {
-      drawChartLabels(todayChartRect, "20", "0", "20");
-      todayChart->reset();
-      todayChart->draw(&sketch.arduino.display);
-      drawTodayGridLines();
-
-      todaySummaryRow.invalidate();
+      renderMultiBarStatic(todayMultiBar, &todayBarValues, &todayNetBarValue);
    }
    else
    {
@@ -1293,11 +1432,11 @@ void drawStatic()
    sketch.arduino.setCursor(0, 0);
    sketch.arduino.println("Power", Color::HEADING);
 
-   // Rotated "Now" section heading on the left ("Today" heading is drawn by renderTodaySection)
+   // Rotated "Today (kWh)" heading on the left (top kW heading is drawn by renderNowSection)
    sketch.arduino.drawRotatedText(
-      NOW_SECTION_TEXT,
+      TODAY_ENERGY_SECTION_TEXT,
       headingColWidth / 2.0f,
-      nowSectionRect.y + nowSectionRect.height / 2.0f,
+      todaySectionRect.y + todaySectionRect.height / 2.0f,
       ROTATED_HEADING_ANGLE_DEG,
       sectionTextSize);
 
@@ -1316,9 +1455,9 @@ void drawStatic()
 
 ///
 /// <summary>
-/// Polls the touch panel for debounced taps in the top ("Now") or bottom ("Today")
-/// sections, toggling the tapped section's view mode, persisting the updated selection,
-/// and redrawing only that section.
+/// Polls the touch panel for debounced taps in the top (kW) or bottom (kWh) sections,
+/// cycling the tapped section's view mode, persisting the updated selection, and redrawing
+/// only that section.
 /// </summary>
 ///
 void handleTouch()
@@ -1331,17 +1470,15 @@ void handleTouch()
 
    if (nowTouchRect.contains(tap))
    {
-      nowViewMode = (nowViewMode == NowViewMode::SUMMARY)
-         ? NowViewMode::BREAKDOWN
-         : NowViewMode::SUMMARY;
+      topViewMode = static_cast<TopViewMode>((static_cast<uint8_t>(topViewMode) + 1) % NUM_TOP_VIEW_MODES);
       saveViewPreferences();
       renderNowSection(true);
    }
    else if (todayTouchRect.contains(tap))
    {
-      todayViewMode = (todayViewMode == TodayViewMode::SUMMARY)
-         ? TodayViewMode::BREAKDOWN
-         : TodayViewMode::SUMMARY;
+      bottomViewMode = (bottomViewMode == BottomViewMode::BARS)
+         ? BottomViewMode::BREAKDOWN
+         : BottomViewMode::BARS;
       saveViewPreferences();
       renderTodaySection(true);
    }
