@@ -6,6 +6,7 @@
 #include <time.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include <WiFi.h>
 
 #include "Logger.h"
@@ -119,6 +120,48 @@ public:
    }
 
 private:
+   static constexpr const char* PREFERENCES_NAMESPACE = "Device";
+   static constexpr const char* UTC_OFFSET_PREF_KEY = "utcOffset";
+
+   ///
+   /// <summary>
+   /// Loads the last successfully fetched UTC offset (in seconds) from NVS, or 0 (UTC)
+   /// if no offset has been cached yet.
+   /// </summary>
+   /// <returns>Cached UTC offset in seconds, or 0 if unavailable.</returns>
+   ///
+   static long _loadCachedUtcOffsetSecs()
+   {
+      Preferences preferences;
+      if (preferences.begin(PREFERENCES_NAMESPACE, true))
+      {
+         long cached = preferences.getLong(UTC_OFFSET_PREF_KEY, 0L);
+         preferences.end();
+         return cached;
+      }
+      return 0L;
+   }
+
+   ///
+   /// <summary>
+   /// Persists the UTC offset (in seconds) in NVS when it differs from the cached value.
+   /// </summary>
+   /// <param name="utcOffsetSecs">UTC offset in seconds to cache.</param>
+   ///
+   static void _saveCachedUtcOffsetSecs(long utcOffsetSecs)
+   {
+      Preferences preferences;
+      if (preferences.begin(PREFERENCES_NAMESPACE, false))
+      {
+         if (!preferences.isKey(UTC_OFFSET_PREF_KEY) ||
+             preferences.getLong(UTC_OFFSET_PREF_KEY, 0L) != utcOffsetSecs)
+         {
+            preferences.putLong(UTC_OFFSET_PREF_KEY, utcOffsetSecs);
+         }
+         preferences.end();
+      }
+   }
+
    ///
    /// <summary>
    /// Waits for the system clock to become synchronized, optionally printing progress and
@@ -158,10 +201,12 @@ private:
    ///
    /// <summary>
    /// Looks up the local UTC offset (including any DST adjustment) for the device's current
-   /// public IP address via ip-api.com. Requires WiFi to already be connected.
+   /// public IP address via ip-api.com. Requires WiFi to already be connected. Caches
+   /// successful offsets in NVS and falls back to the cached offset (or 0/UTC if none is
+   /// cached) on lookup failure.
    /// </summary>
    /// <param name="print">True to print lookup progress/result to Serial</param>
-   /// <returns>The local UTC offset in seconds, or 0 (UTC) if the lookup fails.</returns>
+   /// <returns>The local UTC offset in seconds, or the cached offset / 0 if the lookup fails.</returns>
    ///
    static long _fetchUtcOffsetSecs(bool print)
    {
@@ -171,7 +216,7 @@ private:
          {
             Serial.println("TimeSync: timezone lookup skipped, WiFi not connected");
          }
-         return 0;
+         return _loadCachedUtcOffsetSecs();
       }
 
       HTTPClient http;
@@ -182,12 +227,13 @@ private:
 
       if (httpCode != HTTP_CODE_OK)
       {
-         if (print)
-         {
-            Logger.log("TimeSync: timezone lookup failed, code: " + String(httpCode), LogSeverity::ERROR, "Time");
-         }
          http.end();
-         return 0;
+         long cached = _loadCachedUtcOffsetSecs();
+         Logger.log(
+            "TimeSync: timezone lookup failed (HTTP " + String(httpCode) + "), using cached offset " + String(cached),
+            LogSeverity::WARN,
+            "Time");
+         return cached;
       }
 
       String payload = http.getString();
@@ -197,24 +243,28 @@ private:
       DeserializationError error = deserializeJson(doc, payload);
       if (error)
       {
-         if (print)
-         {
-            Logger.log("TimeSync: timezone lookup parse failed: " + String(error.c_str()), LogSeverity::ERROR, "Time");
-         }
-         return 0;
+         long cached = _loadCachedUtcOffsetSecs();
+         Logger.log(
+            "TimeSync: timezone lookup parse failed (" + String(error.c_str()) + "), using cached offset " + String(cached),
+            LogSeverity::WARN,
+            "Time");
+         return cached;
       }
 
       const char* status = doc["status"] | "";
       if (strcmp(status, "success") != 0)
       {
-         if (print)
-         {
-            Logger.log("TimeSync: timezone lookup failed: " + String(doc["message"].as<const char*>()), LogSeverity::ERROR, "Time");
-         }
-         return 0;
+         long cached = _loadCachedUtcOffsetSecs();
+         const char* message = doc["message"] | "unknown";
+         Logger.log(
+            "TimeSync: timezone lookup failed (" + String(message) + "), using cached offset " + String(cached),
+            LogSeverity::WARN,
+            "Time");
+         return cached;
       }
 
       long utcOffsetSecs = doc["offset"] | 0L;
+      _saveCachedUtcOffsetSecs(utcOffsetSecs);
 
       if (print)
       {

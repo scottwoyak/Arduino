@@ -843,10 +843,11 @@ public:
 ///
 /// <summary>
 /// Horizontal bar with zero at its horizontal midpoint that renders stacked colored
-/// segments extending leftward and/or rightward from the center line, with an optional
-/// vertical signed marker line and inward-pointing triangles above and below the bar at
-/// the target value's position. Positive marker values appear rightward of the center
-/// line; negative marker values appear leftward of the center line; NAN hides the marker.
+/// segments extending leftward and/or rightward from the center line, with optional
+/// inward-pointing triangles above and below the bar at both the zero line and the
+/// vertical signed marker's position (marker triangles drawn on top of zero triangles).
+/// Positive marker values appear rightward of the center line; negative marker values
+/// appear leftward of the center line; NAN hides the marker.
 /// </summary>
 ///
 class StackedCenterZeroHorizontalBar : public Bar
@@ -874,11 +875,13 @@ protected:
    static constexpr int16_t MIN_BAR_BODY_HEIGHT_PX = 8;
 
    Color _centerLineColor;
+   Color _centerPointerColor = Color::GRAY;
    Color _pointerBackgroundColor = Color::BLACK;
    int16_t _markerWidth = DEFAULT_MARKER_WIDTH_PX;
    int16_t _centerLineWidth = DEFAULT_CENTER_LINE_WIDTH_PX;
    int16_t _pointerSize = DEFAULT_POINTER_SIZE_PX;
    bool _showCenterLine = true;
+   bool _showCenterPointers = true;
    bool _hasDrawn = false;
    std::vector<Segment> _leftSegments;
    std::vector<Segment> _rightSegments;
@@ -912,6 +915,8 @@ protected:
       int16_t barStartX,
       int16_t barEndX,
       bool pointingDown,
+      bool hasZeroPointer,
+      int16_t zeroCenterX,
       bool hasMarker,
       int16_t markerCenterX)
    {
@@ -924,13 +929,14 @@ protected:
       int16_t stripWidth = barEndX - barStartX;
       uint16_t bg = static_cast<uint16_t>(_pointerBackgroundColor);
 
-      if (!hasMarker)
+      if (!hasZeroPointer && !hasMarker)
       {
          display->fillRect(barStartX, stripY, stripWidth, stripHeight, bg);
          return;
       }
 
-      uint16_t fg = static_cast<uint16_t>(_barColor);
+      uint16_t zeroFg = static_cast<uint16_t>(_centerPointerColor);
+      uint16_t markerFg = static_cast<uint16_t>(_barColor);
       int16_t triStartY = pointingDown ? stripY : (stripY + POINTER_GAP_PX);
       int16_t gapY = pointingDown ? (stripY + pointerHeight) : stripY;
 
@@ -941,22 +947,49 @@ protected:
          int16_t y = triStartY + r;
          int16_t distFromTip = pointingDown ? (pointerHeight - 1 - r) : r;
          int16_t halfW = (distFromTip * POINTER_WIDTH_NUM + POINTER_WIDTH_DEN / 2) / POINTER_WIDTH_DEN;
-         int16_t triLeft = max(barStartX, static_cast<int16_t>(markerCenterX - halfW));
-         int16_t triRight = min(barEndX, static_cast<int16_t>(markerCenterX + halfW + 1));
 
-         if (triLeft > barStartX)
+         int16_t zeroLeft = hasZeroPointer ? max(barStartX, static_cast<int16_t>(zeroCenterX - halfW)) : barStartX;
+         int16_t zeroRight = hasZeroPointer ? min(barEndX, static_cast<int16_t>(zeroCenterX + halfW + 1)) : barStartX;
+         int16_t markerLeft = hasMarker ? max(barStartX, static_cast<int16_t>(markerCenterX - halfW)) : barStartX;
+         int16_t markerRight = hasMarker ? min(barEndX, static_cast<int16_t>(markerCenterX + halfW + 1)) : barStartX;
+
+         auto drawBgWithZero = [&](int16_t segStart, int16_t segEnd)
          {
-            display->drawFastHLine(barStartX, y, triLeft - barStartX, bg);
+            if (segEnd <= segStart)
+            {
+               return;
+            }
+
+            int16_t zStart = max(segStart, zeroLeft);
+            int16_t zEnd = min(segEnd, zeroRight);
+            if (zEnd <= zStart)
+            {
+               display->drawFastHLine(segStart, y, segEnd - segStart, bg);
+               return;
+            }
+
+            if (zStart > segStart)
+            {
+               display->drawFastHLine(segStart, y, zStart - segStart, bg);
+            }
+
+            display->drawFastHLine(zStart, y, zEnd - zStart, zeroFg);
+
+            if (segEnd > zEnd)
+            {
+               display->drawFastHLine(zEnd, y, segEnd - zEnd, bg);
+            }
+         };
+
+         if (markerRight > markerLeft)
+         {
+            drawBgWithZero(barStartX, markerLeft);
+            display->drawFastHLine(markerLeft, y, markerRight - markerLeft, markerFg);
+            drawBgWithZero(markerRight, barEndX);
          }
-
-         if (triRight > triLeft)
+         else
          {
-            display->drawFastHLine(triLeft, y, triRight - triLeft, fg);
-         }
-
-         if (barEndX > triRight)
-         {
-            display->drawFastHLine(triRight, y, barEndX - triRight, bg);
+            drawBgWithZero(barStartX, barEndX);
          }
       }
    }
@@ -1045,7 +1078,8 @@ protected:
       int16_t barStartX = _rect.x;
       int16_t barEndX = _rect.x + _rect.width;
       int16_t centerX = barStartX + _rect.width / 2;
-      int16_t centerLineWidth = _showCenterLine ? min(_centerLineWidth, _rect.width) : 0;
+      int16_t rectWidth = _rect.width;
+      int16_t centerLineWidth = _showCenterLine ? min(_centerLineWidth, rectWidth) : 0;
       int16_t centerStartX = max(barStartX, static_cast<int16_t>(centerX - centerLineWidth / 2));
       int16_t centerEndX = min(barEndX, static_cast<int16_t>(centerStartX + centerLineWidth));
       int16_t leftOriginX = centerStartX;
@@ -1095,7 +1129,9 @@ protected:
          }
       }
 
-      _drawPointerStrip(display, _rect.y, pointerHeight, barStartX, barEndX, true, hasMarker, markerCenterX);
+      bool hasZeroPointer = _showCenterPointers && (centerEndX > centerStartX);
+
+      _drawPointerStrip(display, _rect.y, pointerHeight, barStartX, barEndX, true, hasZeroPointer, centerX, hasMarker, markerCenterX);
       _drawHalf(display, barY, barHeight, leftOriginX, leftHalfWidth, -1, _leftSegments, hasMarker, markerStartX, markerEndX, maxAbsValue);
       _drawHalf(display, barY, barHeight, rightStartX, rightHalfWidth, 1, _rightSegments, hasMarker, markerStartX, markerEndX, maxAbsValue);
 
@@ -1125,7 +1161,7 @@ protected:
          display->fillRect(markerStartX, barY, markerEndX - markerStartX, barHeight, static_cast<uint16_t>(_barColor));
       }
 
-      _drawPointerStrip(display, barY + barHeight, pointerHeight, barStartX, barEndX, false, hasMarker, markerCenterX);
+      _drawPointerStrip(display, barY + barHeight, pointerHeight, barStartX, barEndX, false, hasZeroPointer, centerX, hasMarker, markerCenterX);
    }
 
 public:
@@ -1178,6 +1214,30 @@ public:
    void setCenterLineWidth(int16_t centerLineWidth)
    {
       _centerLineWidth = max(static_cast<int16_t>(0), centerLineWidth);
+      reset();
+   }
+
+   ///
+   /// <summary>
+   /// Sets whether inward-pointing triangles are drawn above and below the zero line.
+   /// </summary>
+   /// <param name="showCenterPointers">True to draw zero-line triangles, false to omit them.</param>
+   ///
+   void setShowCenterPointers(bool showCenterPointers)
+   {
+      _showCenterPointers = showCenterPointers;
+      reset();
+   }
+
+   ///
+   /// <summary>
+   /// Sets the color used for the inward-pointing triangles above and below the zero line.
+   /// </summary>
+   /// <param name="centerPointerColor">Fill color for the zero-line triangles.</param>
+   ///
+   void setCenterPointerColor(Color centerPointerColor)
+   {
+      _centerPointerColor = centerPointerColor;
       reset();
    }
 

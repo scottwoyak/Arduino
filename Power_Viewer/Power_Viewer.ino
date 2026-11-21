@@ -9,19 +9,19 @@
 // The screen is divided vertically into two independently tappable sections under the
 // "Power" title, with the selected mode for each section persisted in Preferences:
 // - "Now" (tap top section to toggle):
-//   1. Summary: A 10-minute center-zero rolling bar chart of recent power (production,
-//      usage, and signed net delta in kW), followed by a single-row table of live Solar,
-//      Usage, and Net kW readings.
+//   1. Summary: Four 0-20 kW horizontal bars showing live power for Solar, House, Garage,
+//      and Barn, followed by a center-zero (-20 to +20 kW) horizontal Net bar (orange left,
+//      yellow right) with right-aligned kW readouts.
 //   2. Breakdown: A single center-zero (-20 to +20 kW) horizontal stacked bar with stacked
 //      House/Garage/Barn extending left, Solar extending right, and a vertical white Net
-//      marker line, followed by a Net, Solar, House, Garage, and Barn kW table.
+//      marker line, followed by a Barn, Garage, House, Solar, and Net kW table.
 // - "Today" (tap bottom section to toggle):
 //   1. Summary: A 24-hour center-zero chart anchored at local midnight showing per-column
 //      average power (Solar green on top, Consumption blue on bottom, 20 kW full scale),
-//      followed by Today's Solar, Usage, and Net kWh totals.
+//      followed by Today's Usage, Solar, and Net kWh totals.
 //   2. Breakdown: A single center-zero (-200 to +200 kWh) horizontal stacked bar with stacked
 //      House/Garage/Barn extending left, Solar extending right, and a vertical white Net
-//      marker line, followed by a Net, Solar, House, Garage, and Barn kWh table.
+//      marker line, followed by a Barn, Garage, House, Solar, and Net kWh table.
 //
 // The layout adapts at runtime to the display's dimensions, supporting both large
 // displays (e.g. the 480x320 Hosyond ESP32-S3 Viewer board) and compact displays
@@ -57,7 +57,7 @@
 #include "WiFiSettings.h"
 #include "ViewerSketch.h"
 
-const auto VERSION = MakeVersion("1.05");
+const auto VERSION = MakeVersion("1.06");
 constexpr auto SKETCH_NAME = "Power_Viewer";
 constexpr auto PREFERENCES_NAMESPACE = SKETCH_NAME;
 
@@ -78,10 +78,12 @@ constexpr uint16_t CHART_SAMPLE_MS = 200;
 constexpr uint16_t TODAY_CHART_PERSIST_S = 60;
 constexpr auto TODAY_CHART_DAY_PREF_KEY = "todayDay";
 constexpr auto TODAY_CHART_BINS_PREF_KEY = "todayKwBins";
+constexpr auto LEGACY_TODAY_CHART_BINS_PREF_KEY = "todayBins";
 constexpr auto NOW_VIEW_PREF_KEY = "nowView";
 constexpr auto TODAY_VIEW_PREF_KEY = "todayView";
 constexpr uint16_t EMPTY_HUNDREDTHS_KW = 0xFFFF;
 constexpr uint16_t MAX_TODAY_CHART_COLS = 480;
+constexpr uint8_t NUM_NOW_BARS = 4;
 constexpr uint8_t NUM_BREAKDOWN_COLS = 5;
 
 // Full-scale power (in kW) and daily energy (in kWh) for the charts and bar gauges.
@@ -101,26 +103,29 @@ constexpr int16_t SECTION_GAP_LARGE_PX = 20;
 constexpr int16_t SECTION_GAP_SMALL_PX = 6;
 constexpr int16_t HEADING_GAP_PX = 4;
 constexpr int16_t CHART_LABEL_GAP_PX = 4;
+constexpr int16_t NOW_BAR_ROW_GAP_LARGE_PX = 6;
+constexpr int16_t NOW_BAR_ROW_GAP_SMALL_PX = 3;
+constexpr int16_t NOW_BAR_MAX_HEIGHT_LARGE_PX = 22;
 constexpr int16_t BREAKDOWN_BAR_MAX_HEIGHT_PX = 60;
 constexpr int16_t BREAKDOWN_TABLE_GAP_LARGE_PX = 10;
 constexpr int16_t BREAKDOWN_TABLE_GAP_SMALL_PX = 2;
 constexpr int16_t BREAKDOWN_HEADER_GAP_PX = 2;
+constexpr uint8_t NOW_BAR_LABEL_CHARS = 6;
 constexpr uint8_t CHART_LABEL_CHARS = 3;
 constexpr float ROTATED_HEADING_ANGLE_DEG = 270.0f;
-constexpr uint16_t ROLLING_CHART_SPAN_M = 10;
 constexpr uint32_t SECONDS_PER_DAY = 24UL * 60UL * 60UL;
 
-constexpr Color PRODUCTION_COLOR = Color565::fromRGB(0, 72, 0);
-constexpr Color CONSUMPTION_COLOR = Color565::fromRGB(0, 48, 128);
 constexpr Color TODAY_GRID_COLOR = Color565::fromRGB(48, 48, 48);
 constexpr Color BAR_TRACK_COLOR = Color565::fromRGB(32, 32, 32);
 constexpr Color DELTA_POSITIVE_COLOR = Color::LIME;
 constexpr Color DELTA_NEGATIVE_COLOR = Color::DODGERBLUE;
+constexpr Color NET_POSITIVE_COLOR = Color::YELLOW;
+constexpr Color NET_NEGATIVE_COLOR = Color::ORANGE;
 constexpr Color NET_MARKER_COLOR = Color::WHITE;
 constexpr Color SOLAR_COLOR = Color::LIME;
-constexpr Color HOUSE_COLOR = Color::DODGERBLUE;
-constexpr Color GARAGE_COLOR = Color::ORANGE;
-constexpr Color BARN_COLOR = Color::VIOLET;
+constexpr Color HOUSE_COLOR = Color::ROYALBLUE;
+constexpr Color GARAGE_COLOR = Color::DEEPSKYBLUE;
+constexpr Color BARN_COLOR = Color::LIGHTSKYBLUE;
 
 // ----------- Sketch & State
 SketchConfig SKETCH_CONFIG = {
@@ -274,34 +279,40 @@ public:
 
 SolarTelemetryHandler telemetryHandler(sketch.getStatus());
 
-Field nowSolarField(&sketch.arduino, "Solar", "##.# kW", TABLE_TEXT_SIZE);
-Field nowUsageField(&sketch.arduino, "Usage", "##.# kW", TABLE_TEXT_SIZE);
-Field nowNetField(&sketch.arduino, "Net", "##.# kW", TABLE_TEXT_SIZE);
-FieldRow nowSummaryRow(&nowSolarField, &nowUsageField, &nowNetField, Color::GRAY);
+std::array<DisplayValue, NUM_NOW_BARS> nowBarValues = {
+   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+};
+DisplayValue nowNetBarValue(&sketch.arduino, Format("+##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT);
+
+constexpr std::array<const char*, NUM_NOW_BARS> NOW_BAR_LABELS = { "Solar", "House", "Garage", "Barn" };
+constexpr std::array<Color, NUM_NOW_BARS> NOW_BAR_COLORS = { SOLAR_COLOR, HOUSE_COLOR, GARAGE_COLOR, BARN_COLOR };
 
 std::array<DisplayValue, NUM_BREAKDOWN_COLS> nowBreakdownValues = {
+   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
+   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
+   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
+   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
    DisplayValue(&sketch.arduino, Format("+##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
-   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
-   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
-   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
-   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
 };
 
-Field todaySolarField(&sketch.arduino, "Solar", "###.# kWh", TABLE_TEXT_SIZE);
 Field todayUsageField(&sketch.arduino, "Usage", "###.# kWh", TABLE_TEXT_SIZE);
-Field todayNetField(&sketch.arduino, "Net", "###.# kWh", TABLE_TEXT_SIZE);
-FieldRow todaySummaryRow(&todaySolarField, &todayUsageField, &todayNetField, Color::GRAY);
+Field todaySolarField(&sketch.arduino, "Solar", "###.# kWh", TABLE_TEXT_SIZE);
+Field todayNetField(&sketch.arduino, "Net", "+###.# kWh", TABLE_TEXT_SIZE);
+FieldRow todaySummaryRow(&todayUsageField, &todaySolarField, &todayNetField, Color::GRAY);
 
 std::array<DisplayValue, NUM_BREAKDOWN_COLS> todayBreakdownValues = {
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
    DisplayValue(&sketch.arduino, Format("+###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
-   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
-   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
-   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
-   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::CENTER),
 };
 
-constexpr std::array<const char*, NUM_BREAKDOWN_COLS> BREAKDOWN_COL_LABELS = { "Net", "Solar", "House", "Garage", "Barn" };
-constexpr std::array<Color, NUM_BREAKDOWN_COLS> BREAKDOWN_COL_COLORS = { NET_MARKER_COLOR, SOLAR_COLOR, HOUSE_COLOR, GARAGE_COLOR, BARN_COLOR };
+constexpr std::array<const char*, NUM_BREAKDOWN_COLS> BREAKDOWN_COL_LABELS = { "Barn", "Garage", "House", "Solar", "Net" };
+constexpr std::array<Color, NUM_BREAKDOWN_COLS> BREAKDOWN_COL_COLORS = { BARN_COLOR, GARAGE_COLOR, HOUSE_COLOR, SOLAR_COLOR, NET_MARKER_COLOR };
 
 ///
 /// <summary>
@@ -333,13 +344,15 @@ struct TodayChartSample
    uint16_t consHundredthsKw = EMPTY_HUNDREDTHS_KW;
 };
 
-MovingBarChart* rollingChart = nullptr;
+std::array<HorizontalBar*, NUM_NOW_BARS> nowBars = { nullptr, nullptr, nullptr, nullptr };
+std::array<int16_t, NUM_NOW_BARS> nowBarTextY = {};
+CenterZeroHorizontalBar* nowNetBar = nullptr;
+int16_t nowNetBarTextY = 0;
 MovingBarChart* todayChart = nullptr;
 BreakdownLayout nowBreakdown;
 BreakdownLayout todayBreakdown;
 std::array<TodayChartSample, MAX_TODAY_CHART_COLS> todayChartSamples;
 
-Rect16 rollingChartRect;
 Rect16 todayChartRect;
 Rect16 nowSectionRect;
 Rect16 todaySectionRect;
@@ -351,11 +364,6 @@ uint8_t sectionTextSize = TABLE_TEXT_SIZE;
 int16_t chartLabelRightX = 0;
 int32_t todayChartDayId = -1;
 bool isLargeDisplay = false;
-Timer rollingColumnTimer(CHART_SAMPLE_MS);
-float rollingColumnSum = 0.0f;
-float rollingProdSum = 0.0f;
-float rollingConsSum = 0.0f;
-uint16_t rollingColumnSamples = 0;
 Timer todayPersistTimer(TODAY_CHART_PERSIST_S * 1000UL);
 int32_t todayActiveCol = -1;
 float todayColProdSum = 0.0f;
@@ -365,24 +373,12 @@ bool todayChartPrefsDirty = false;
 
 ///
 /// <summary>
-/// Returns the display color for signed net delta values.
-/// </summary>
-/// <param name="value">The signed net delta value.</param>
-/// <returns>DELTA_POSITIVE_COLOR when non-negative, DELTA_NEGATIVE_COLOR when negative.</returns>
-///
-Color deltaValueColor(float value)
-{
-   return value >= 0.0f ? DELTA_POSITIVE_COLOR : DELTA_NEGATIVE_COLOR;
-}
-
-///
-/// <summary>
 /// Updates and renders a Breakdown section's center-zero stacked horizontal bar (stacked
 /// House/Garage/Barn on the left, Solar on the right, and a vertical white Net marker line)
-/// and its 5-column Net/Solar/House/Garage/Barn value table.
+/// and its 5-column Barn/Garage/House/Solar/Net value table.
 /// </summary>
 /// <param name="layout">Laid-out breakdown section geometry and bar widget.</param>
-/// <param name="values">Five centered DisplayValue widgets for Net, Solar, House, Garage, and Barn.</param>
+/// <param name="values">Five centered DisplayValue widgets for Barn, Garage, House, Solar, and Net.</param>
 /// <param name="netValue">Signed net value (positive when Solar exceeds Usage).</param>
 /// <param name="solarValue">Solar production magnitude.</param>
 /// <param name="houseValue">House consumption magnitude.</param>
@@ -422,11 +418,11 @@ void drawBreakdownDynamic(
    layout.bar->draw(&sketch.arduino.display);
 
    const std::array<float, NUM_BREAKDOWN_COLS> colValues = {
-      breakdownNet,
-      solarValue,
-      houseValue,
-      garageValue,
       barnValue,
+      garageValue,
+      houseValue,
+      solarValue,
+      breakdownNet,
    };
    for (uint8_t i = 0; i < NUM_BREAKDOWN_COLS; i++)
    {
@@ -443,13 +439,23 @@ void drawNowDynamic()
 {
    if (nowViewMode == NowViewMode::SUMMARY)
    {
-      nowSummaryRow.draw(
+      const std::array<float, NUM_NOW_BARS> barValues = {
          latestReadings.productionKw,
-         DELTA_POSITIVE_COLOR,
-         latestReadings.consumptionKw,
-         DELTA_NEGATIVE_COLOR,
-         std::isnan(netPowerKw) ? NAN : fabsf(netPowerKw),
-         deltaValueColor(netPowerKw));
+         latestReadings.houseKw,
+         latestReadings.garageKw,
+         latestReadings.barnKw,
+      };
+      for (uint8_t i = 0; i < NUM_NOW_BARS; i++)
+      {
+         float kw = barValues[i];
+         nowBars[i]->set(std::isnan(kw) ? 0.0f : kw);
+         nowBars[i]->draw(&sketch.arduino.display);
+         nowBarValues[i].draw(kw, NOW_BAR_COLORS[i]);
+      }
+
+      nowNetBar->set(std::isnan(netPowerKw) ? 0.0f : netPowerKw);
+      nowNetBar->draw(&sketch.arduino.display);
+      nowNetBarValue.draw(netPowerKw, NET_MARKER_COLOR);
    }
    else
    {
@@ -474,12 +480,12 @@ void drawTodayDynamic()
    if (todayViewMode == TodayViewMode::SUMMARY)
    {
       todaySummaryRow.draw(
-         latestReadings.productionTodayKwh,
-         DELTA_POSITIVE_COLOR,
          latestReadings.consumptionTodayKwh,
          DELTA_NEGATIVE_COLOR,
-         std::isnan(netEnergyKwh) ? NAN : fabsf(netEnergyKwh),
-         deltaValueColor(netEnergyKwh));
+         latestReadings.productionTodayKwh,
+         DELTA_POSITIVE_COLOR,
+         netEnergyKwh,
+         NET_MARKER_COLOR);
    }
    else
    {
@@ -513,7 +519,7 @@ void drawFields()
 /// <param name="layout">Target BreakdownLayout structure to populate.</param>
 /// <param name="sectionRect">Bounding rectangle of the section's content area.</param>
 /// <param name="range">Symmetric value range mapped across each half of the horizontal bar.</param>
-/// <param name="values">Five centered DisplayValue widgets for Net, Solar, House, Garage, and Barn.</param>
+/// <param name="values">Five centered DisplayValue widgets for Barn, Garage, House, Solar, and Net.</param>
 /// <param name="rowHeight">Character pixel height at TABLE_TEXT_SIZE.</param>
 /// <param name="itemGap">Vertical gap in pixels between the axis labels and the bar.</param>
 ///
@@ -617,8 +623,8 @@ void initLayout()
    int16_t nowChartHeight = totalChartHeight / 2;
    int16_t todayChartHeight = totalChartHeight - nowChartHeight;
 
-   int16_t rollingChartY = titleHeight + topGap;
-   int16_t nowRowY = rollingChartY + nowChartHeight + itemGap;
+   int16_t nowChartY = titleHeight + topGap;
+   int16_t nowRowY = nowChartY + nowChartHeight + itemGap;
    int16_t nowBottomY = nowRowY + rowHeight;
 
    int16_t todayChartY = nowBottomY + sectionGap;
@@ -626,7 +632,7 @@ void initLayout()
    int16_t todayBottomY = todayRowY + rowHeight;
 
    int16_t minSectionHeight = min(
-      static_cast<int16_t>(nowBottomY - rollingChartY),
+      static_cast<int16_t>(nowBottomY - nowChartY),
       static_cast<int16_t>(todayBottomY - todayChartY));
    int16_t maxSectionLabelChars = static_cast<int16_t>(strlen(TODAY_BREAKDOWN_SECTION_TEXT));
    sectionTextSize = (isLargeDisplay &&
@@ -642,17 +648,15 @@ void initLayout()
    int16_t chartX = chartLabelRightX + CHART_LABEL_GAP_PX;
    int16_t chartWidth = max(static_cast<int16_t>(16), static_cast<int16_t>(displayWidth - chartX));
 
-   rollingChartRect = Rect16(chartX, rollingChartY, chartWidth, nowChartHeight);
    todayChartRect = Rect16(chartX, todayChartY, chartWidth, todayChartHeight);
 
-   nowSectionRect = Rect16(contentLeftX, rollingChartY, displayWidth - contentLeftX, nowBottomY - rollingChartY);
+   nowSectionRect = Rect16(contentLeftX, nowChartY, displayWidth - contentLeftX, nowBottomY - nowChartY);
    todaySectionRect = Rect16(contentLeftX, todayChartY, displayWidth - contentLeftX, todayBottomY - todayChartY);
 
    int16_t splitY = (nowBottomY + todayChartY) / 2;
-   nowTouchRect = Rect16(0, rollingChartY, displayWidth, splitY - rollingChartY);
+   nowTouchRect = Rect16(0, nowChartY, displayWidth, splitY - nowChartY);
    todayTouchRect = Rect16(0, splitY, displayWidth, displayHeight - splitY);
 
-   nowSummaryRow.setBounds(chartX, nowRowY, chartWidth);
    todaySummaryRow.setBounds(chartX, todayRowY, chartWidth);
 
    RangeF powerRange(-MAX_POWER_KW, MAX_POWER_KW);
@@ -661,16 +665,45 @@ void initLayout()
    initBreakdownLayout(&nowBreakdown, nowSectionRect, powerRange, &nowBreakdownValues, rowHeight, itemGap);
    initBreakdownLayout(&todayBreakdown, todaySectionRect, energyRange, &todayBreakdownValues, rowHeight, itemGap);
 
-   uint32_t columnPeriodMs = (ROLLING_CHART_SPAN_M * 60UL * 1000UL) / static_cast<uint32_t>(chartWidth);
-   rollingColumnTimer.setDurationMs(max(static_cast<uint32_t>(CHART_SAMPLE_MS), columnPeriodMs));
-   rollingChart = new MovingBarChart(
-      rollingChartRect,
+   // Layout for the Now Summary 5-row horizontal bar chart (4 component bars + center-zero Net bar)
+   constexpr uint8_t NUM_NOW_SUMMARY_ROWS = NUM_NOW_BARS + 1;
+   int16_t barGap = isLargeDisplay ? NOW_BAR_ROW_GAP_LARGE_PX : NOW_BAR_ROW_GAP_SMALL_PX;
+   int16_t totalGapHeight = NUM_NOW_BARS * barGap;
+   int16_t bandHeight = max<int16_t>(rowHeight, (nowSectionRect.height - totalGapHeight) / NUM_NOW_SUMMARY_ROWS);
+   int16_t barHeight = min<int16_t>(bandHeight, isLargeDisplay ? NOW_BAR_MAX_HEIGHT_LARGE_PX : rowHeight);
+   int16_t totalRowsHeight = NUM_NOW_SUMMARY_ROWS * bandHeight + totalGapHeight;
+   int16_t firstBandY = nowSectionRect.y + max<int16_t>(0, (nowSectionRect.height - totalRowsHeight) / 2);
+
+   int16_t barLeftX = contentLeftX + NOW_BAR_LABEL_CHARS * charWidth + CHART_LABEL_GAP_PX;
+   int16_t barRightX = displayWidth - nowNetBarValue.width() - CHART_LABEL_GAP_PX;
+   int16_t barWidth = max<int16_t>(16, barRightX - barLeftX);
+   RangeF barPowerRange(0.0f, MAX_POWER_KW);
+
+   for (uint8_t i = 0; i < NUM_NOW_BARS; i++)
+   {
+      int16_t bandY = firstBandY + i * (bandHeight + barGap);
+      int16_t barY = bandY + (bandHeight - barHeight) / 2;
+      int16_t textY = bandY + (bandHeight - rowHeight) / 2;
+
+      nowBarTextY[i] = textY;
+      nowBarValues[i].setPosition(displayWidth, textY);
+      nowBars[i] = new HorizontalBar(
+         Rect16(barLeftX, barY, barWidth, barHeight),
+         barPowerRange,
+         NOW_BAR_COLORS[i],
+         BAR_TRACK_COLOR);
+   }
+
+   int16_t netBandY = firstBandY + NUM_NOW_BARS * (bandHeight + barGap);
+   int16_t netBarY = netBandY + (bandHeight - barHeight) / 2;
+   nowNetBarTextY = netBandY + (bandHeight - rowHeight) / 2;
+   nowNetBarValue.setPosition(displayWidth, nowNetBarTextY);
+   nowNetBar = new CenterZeroHorizontalBar(
+      Rect16(barLeftX, netBarY, barWidth, barHeight),
       powerRange,
-      DELTA_POSITIVE_COLOR,
-      DELTA_NEGATIVE_COLOR,
-      Color::BLACK,
-      Color::GRAY);
-   rollingChart->setSecondaryColors(PRODUCTION_COLOR, CONSUMPTION_COLOR);
+      NET_POSITIVE_COLOR,
+      NET_NEGATIVE_COLOR,
+      BAR_TRACK_COLOR);
 
    todayChart = new MovingBarChart(
       todayChartRect,
@@ -809,11 +842,36 @@ void saveTodayChartHistory()
 {
    uint16_t numCols = min(todayChart->getNumBars(), MAX_TODAY_CHART_COLS);
    size_t numBytes = static_cast<size_t>(numCols) * sizeof(TodayChartSample);
-   sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
+
+   if (!sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false))
+   {
+      Logger.log("Today chart save failed: preferences.begin() failed", LogSeverity::ERROR);
+      return;
+   }
+
    sketch.arduino.preferences.putInt(TODAY_CHART_DAY_PREF_KEY, todayChartDayId);
-   sketch.arduino.preferences.putBytes(TODAY_CHART_BINS_PREF_KEY, todayChartSamples.data(), numBytes);
+   size_t written = sketch.arduino.preferences.putBytes(TODAY_CHART_BINS_PREF_KEY, todayChartSamples.data(), numBytes);
+   if (written != numBytes)
+   {
+      // NVS overwrites blobs by writing a new copy before erasing the old one; if free
+      // space is tight, remove the old blob first and retry once.
+      sketch.arduino.preferences.remove(TODAY_CHART_BINS_PREF_KEY);
+      written = sketch.arduino.preferences.putBytes(TODAY_CHART_BINS_PREF_KEY, todayChartSamples.data(), numBytes);
+   }
+   size_t freeEntries = sketch.arduino.preferences.freeEntries();
    sketch.arduino.preferences.end();
-   todayChartPrefsDirty = false;
+
+   if (written == numBytes)
+   {
+      todayChartPrefsDirty = false;
+   }
+   else
+   {
+      std::ostringstream msg;
+      msg << "Today chart save failed: wrote " << written << "/" << numBytes
+          << " bytes (free NVS entries: " << freeEntries << ")";
+      Logger.log(msg.str(), LogSeverity::ERROR);
+   }
 }
 
 ///
@@ -885,20 +943,47 @@ void loadTodayChartHistory()
    int32_t todayId = currentLocalDayId();
    uint16_t numCols = min(todayChart->getNumBars(), MAX_TODAY_CHART_COLS);
    size_t expectedBytes = static_cast<size_t>(numCols) * sizeof(TodayChartSample);
+   int32_t savedDayId = -1;
+   size_t savedBytes = 0;
 
-   if (sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, true))
+   if (sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false))
    {
-      int32_t savedDayId = sketch.arduino.preferences.getInt(TODAY_CHART_DAY_PREF_KEY, -1);
-      if (todayId >= 0 && savedDayId == todayId &&
-          sketch.arduino.preferences.getBytesLength(TODAY_CHART_BINS_PREF_KEY) == expectedBytes)
+      if (sketch.arduino.preferences.isKey(LEGACY_TODAY_CHART_BINS_PREF_KEY))
+      {
+         sketch.arduino.preferences.remove(LEGACY_TODAY_CHART_BINS_PREF_KEY);
+      }
+
+      savedDayId = sketch.arduino.preferences.getInt(TODAY_CHART_DAY_PREF_KEY, -1);
+      savedBytes = sketch.arduino.preferences.getBytesLength(TODAY_CHART_BINS_PREF_KEY);
+      if (todayId >= 0 && savedDayId == todayId && savedBytes == expectedBytes)
       {
          sketch.arduino.preferences.getBytes(TODAY_CHART_BINS_PREF_KEY, todayChartSamples.data(), expectedBytes);
          sketch.arduino.preferences.end();
          todayChartDayId = todayId;
+
+         uint16_t populatedCols = 0;
+         for (uint16_t i = 0; i < numCols; i++)
+         {
+            if (todayChartSamples[i].prodHundredthsKw != EMPTY_HUNDREDTHS_KW &&
+                todayChartSamples[i].consHundredthsKw != EMPTY_HUNDREDTHS_KW)
+            {
+               populatedCols++;
+            }
+         }
+         std::ostringstream msg;
+         msg << "Loaded Today chart: " << populatedCols << "/" << numCols << " cols (day " << todayId << ")";
+         Logger.log(msg.str());
          return;
       }
       sketch.arduino.preferences.end();
    }
+
+   std::ostringstream msg;
+   msg << "Today chart not loaded (todayId=" << todayId
+       << ", savedDayId=" << savedDayId
+       << ", savedBytes=" << savedBytes
+       << ", expectedBytes=" << expectedBytes << ")";
+   Logger.log(msg.str());
 
    if (todayId >= 0)
    {
@@ -954,7 +1039,20 @@ void sampleTodayChart()
    }
 
    int32_t dayId = currentLocalDayId();
-   if (todayChartDayId != dayId)
+   if (todayChartDayId < 0)
+   {
+      loadTodayChartHistory();
+      todayChart->clear();
+      populateTodayChartFromSamples();
+      todayPersistTimer.reset();
+      if (todayViewMode == TodayViewMode::SUMMARY)
+      {
+         todayChart->reset();
+         todayChart->draw(&sketch.arduino.display);
+         drawTodayGridLines();
+      }
+   }
+   else if (todayChartDayId != dayId)
    {
       todayChart->clear();
       resetTodayChartHistory(dayId);
@@ -1036,48 +1134,11 @@ void sampleTodayChart()
 
 ///
 /// <summary>
-/// Samples the current live solar production and home consumption and advances the
-/// 10-minute rolling power chart whenever a column interval completes (continuing in the
-/// background even while the Now Breakdown bar view is active).
-/// </summary>
-///
-void sampleRollingChart()
-{
-   if (std::isnan(latestReadings.productionKw) || std::isnan(latestReadings.consumptionKw))
-   {
-      return;
-   }
-
-   rollingColumnSum += netPowerKw;
-   rollingProdSum += latestReadings.productionKw;
-   rollingConsSum += latestReadings.consumptionKw;
-   rollingColumnSamples++;
-
-   if (rollingColumnTimer.ready())
-   {
-      float invSamples = 1.0f / static_cast<float>(rollingColumnSamples);
-      rollingChart->set(
-         rollingColumnSum * invSamples,
-         rollingProdSum * invSamples,
-         rollingConsSum * invSamples);
-      if (nowViewMode == NowViewMode::SUMMARY)
-      {
-         rollingChart->draw(&sketch.arduino.display);
-      }
-      rollingColumnSum = 0.0f;
-      rollingProdSum = 0.0f;
-      rollingConsSum = 0.0f;
-      rollingColumnSamples = 0;
-   }
-}
-
-///
-/// <summary>
 /// Draws the static axis scale labels (max left, 0 center, max right) and optional table
 /// column headers for a Breakdown section, and resets its bar and value widgets.
 /// </summary>
 /// <param name="layout">Laid-out breakdown section geometry and bar widget.</param>
-/// <param name="values">Five centered DisplayValue widgets for Net, Solar, House, Garage, and Barn.</param>
+/// <param name="values">Five centered DisplayValue widgets for Barn, Garage, House, Solar, and Net.</param>
 /// <param name="maxLabel">Full-scale axis label text displayed at both left and right ends.</param>
 ///
 void renderBreakdownStatic(
@@ -1141,11 +1202,24 @@ void renderNowSection(bool clearArea)
 
    if (nowViewMode == NowViewMode::SUMMARY)
    {
-      drawChartLabels(rollingChartRect, "20", "0", "-20");
-      rollingChart->reset();
-      rollingChart->draw(&sketch.arduino.display);
+      int16_t charWidth = sketch.arduino.charW(TABLE_TEXT_SIZE);
+      int16_t labelRightX = contentLeftX + NOW_BAR_LABEL_CHARS * charWidth;
 
-      nowSummaryRow.invalidate();
+      sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+      for (uint8_t i = 0; i < NUM_NOW_BARS; i++)
+      {
+         int16_t labelX = labelRightX - static_cast<int16_t>(strlen(NOW_BAR_LABELS[i])) * charWidth;
+         sketch.arduino.setCursor(labelX, nowBarTextY[i]);
+         sketch.arduino.print(NOW_BAR_LABELS[i], Color::GRAY);
+         nowBars[i]->reset();
+         nowBarValues[i].invalidate();
+      }
+
+      int16_t netLabelX = labelRightX - static_cast<int16_t>(strlen("Net")) * charWidth;
+      sketch.arduino.setCursor(netLabelX, nowNetBarTextY);
+      sketch.arduino.print("Net", Color::GRAY);
+      nowNetBar->reset();
+      nowNetBarValue.invalidate();
    }
    else
    {
@@ -1230,14 +1304,8 @@ void drawStatic()
    if (firstDraw)
    {
       firstDraw = false;
-      rollingChart->clear();
       todayChart->clear();
       populateTodayChartFromSamples();
-      rollingColumnSum = 0.0f;
-      rollingProdSum = 0.0f;
-      rollingConsSum = 0.0f;
-      rollingColumnSamples = 0;
-      rollingColumnTimer.reset();
       chartSampleTimer.reset();
       todayPersistTimer.reset();
    }
@@ -1450,7 +1518,6 @@ void loop()
 
    if (chartSampleTimer.ready())
    {
-      sampleRollingChart();
       sampleTodayChart();
    }
 }
