@@ -705,8 +705,8 @@ protected:
       {
          ChannelState& ch = _channels[i];
          ch.isDerived = false;
-         ch.latchedConnected = ch.connected;
-         if (!ch.connected || ch.traceCount == 0)
+         ch.latchedConnected = ch.connected && (ch.traceCount > 0);
+         if (!ch.latchedConnected)
          {
             ch.hotLegSign = 0;
             ch.latchedAmps = 0.0f;

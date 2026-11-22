@@ -11,7 +11,7 @@
 // - Top (kW, tap to cycle through 3 views):
 //   1. Now (kW) Bars: Four 0-20 kW horizontal bars showing live power for Solar, House,
 //      Garage, and Barn, followed by a center-zero (-20 to +20 kW) horizontal Net bar
-//      (orange left, yellow right, white zero line) with right-aligned kW readouts.
+//      (orange left, green right, white zero line) with right-aligned kW readouts.
 //   2. Now (kW) Breakdown: A single center-zero (-20 to +20 kW) horizontal stacked bar
 //      with stacked House/Garage/Barn extending left, Solar extending right, and a vertical
 //      white Net marker line, followed by a Barn, Garage, House, Solar, and Net kW table.
@@ -21,7 +21,7 @@
 // - Bottom (kWh, tap to toggle between 2 views):
 //   1. Today (kWh) Bars: Four 0-200 kWh horizontal bars showing daily energy for Solar,
 //      House, Garage, and Barn, followed by a center-zero (-200 to +200 kWh) horizontal Net
-//      bar (orange left, yellow right, white zero line) with right-aligned kWh readouts.
+//      bar (orange left, green right, white zero line) with right-aligned kWh readouts.
 //   2. Today (kWh) Breakdown: A single center-zero (-200 to +200 kWh) horizontal stacked bar
 //      with stacked House/Garage/Barn extending left, Solar extending right, and a vertical
 //      white Net marker line, followed by a Barn, Garage, House, Solar, and Net kWh table.
@@ -122,7 +122,7 @@ constexpr Color TODAY_GRID_COLOR = Color565::fromRGB(48, 48, 48);
 constexpr Color BAR_TRACK_COLOR = Color565::fromRGB(32, 32, 32);
 constexpr Color DELTA_POSITIVE_COLOR = Color::LIME;
 constexpr Color DELTA_NEGATIVE_COLOR = Color::DODGERBLUE;
-constexpr Color NET_POSITIVE_COLOR = Color::YELLOW;
+constexpr Color NET_POSITIVE_COLOR = Color::LIME;
 constexpr Color NET_NEGATIVE_COLOR = Color::ORANGE;
 constexpr Color NET_MARKER_COLOR = Color::WHITE;
 constexpr Color SOLAR_COLOR = Color::LIME;

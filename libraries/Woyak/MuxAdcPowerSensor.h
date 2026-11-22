@@ -142,7 +142,6 @@ private:
    static constexpr double PROBE_SPAN_MICROS = 3000.0;      // 3.0 ms settled window to check DC bias on unplugged channels
    static constexpr double MAX_VALID_DT_MICROS = 20000.0;   // Reset slice integration if paused > 20 ms
    static constexpr uint8_t MUX_SETTLE_SAMPLES = 3;         // Discard 3 ticks (3.0 ms) after switching the external mux
-   static constexpr uint8_t PROBE_PASS_INTERVAL = 4;        // Probe one unconnected channel every 4th pass (~200 ms)
    static constexpr size_t VOLTAGE_TRACE_SLICES = 24;       // 24 x 50 ms = 1.2 s (72 AC cycles) rolling voltage average
    static constexpr uint32_t SAMPLER_TASK_STACK_BYTES = 4096;
    static constexpr UBaseType_t SAMPLER_TASK_PRIORITY = 2;
@@ -169,8 +168,6 @@ private:
    volatile bool _stopSampler = false;
    int64_t _lastSampleMicros = 0;
    size_t _activeChannel = 0;
-   size_t _probeCursor = 0;
-   uint8_t _passesSinceProbe = 0;
    bool _probingUnconnected = false;
    uint8_t _settleSamplesRemaining = 0;
 
@@ -557,8 +554,8 @@ private:
    /// <summary>
    /// Advances to the next CT channel to sample. Connected channels are sampled in a round-robin
    /// loop with full 50 ms 3-cycle slices; after a complete pass of connected channels, all
-   /// channels are latched together. Every PROBE_PASS_INTERVAL passes (or immediately if no
-   /// channels are connected), one unconnected channel is probed to detect newly plugged-in CTs.
+   /// channels are latched together and all unconnected channels are quickly probed (6 ms each)
+   /// so newly plugged-in CTs are detected promptly before the next measurement pass.
    /// </summary>
    ///
    void _advanceChannel()
@@ -589,46 +586,40 @@ private:
          }
 
          _latchPassSnapshot();
-         _passesSinceProbe++;
 
-         if (_passesSinceProbe < PROBE_PASS_INTERVAL)
-         {
-            for (size_t i = 0; i < _numChannels; i++)
-            {
-               if (_channels[i].connected)
-               {
-                  _selectChannel(i, false);
-                  return;
-               }
-            }
-         }
-         _passesSinceProbe = 0;
-      }
-      else
-      {
-         _latchPassSnapshot();
          for (size_t i = 0; i < _numChannels; i++)
          {
-            if (_channels[i].connected)
+            if (!_channels[i].connected)
             {
-               _selectChannel(i, false);
+               _selectChannel(i, true);
                return;
             }
          }
+
+         _selectChannel(0, false);
+         return;
       }
 
-      for (size_t step = 0; step < _numChannels; step++)
+      for (size_t next = _activeChannel + 1; next < _numChannels; next++)
       {
-         size_t candidate = (_probeCursor + step) % _numChannels;
-         if (!_channels[candidate].connected)
+         if (!_channels[next].connected)
          {
-            _probeCursor = (candidate + 1) % _numChannels;
-            _selectChannel(candidate, true);
+            _selectChannel(next, true);
             return;
          }
       }
 
-      _selectChannel(0, false);
+      for (size_t i = 0; i < _numChannels; i++)
+      {
+         if (_channels[i].connected)
+         {
+            _selectChannel(i, false);
+            return;
+         }
+      }
+
+      _latchPassSnapshot();
+      _selectChannel(0, true);
    }
 
    ///
@@ -957,20 +948,17 @@ private:
          if (_chElapsedMicros >= PROBE_SPAN_MICROS)
          {
             float dcVolts = static_cast<float>(NOMINAL_MIDRAIL_V + (_chSumDI / _chElapsedMicros));
+            _resetChannelAccumulators();
             if (_isCtBiasConnected(dcVolts))
             {
                _channels[_activeChannel].connected = true;
-               _probingUnconnected = false;
-               _resetChannelAccumulators();
-               _chPrevDV = dv;
-               _chPrevDVQ = dvQuarter;
-               _chPrevDI = di;
-               _chHasPrev = true;
-               return;
+               _channels[_activeChannel].dcVolts = dcVolts;
+            }
+            else
+            {
+               _recordSlice(_activeChannel, dcVolts, 0.0f, false, false, _voltageConnected, 0.0f, 0.0f);
             }
 
-            _resetChannelAccumulators();
-            _recordSlice(_activeChannel, dcVolts, 0.0f, false, false, _voltageConnected, 0.0f, 0.0f);
             _advanceChannel();
             if (_settleSamplesRemaining == 0)
             {
@@ -1188,7 +1176,7 @@ public:
       }
       _applyMuxChannel(0);
       _activeChannel = 0;
-      _probingUnconnected = false;
+      _probingUnconnected = (_numChannels > 1);
       _settleSamplesRemaining = MUX_SETTLE_SAMPLES;
       _lastSampleMicros = 0;
       _resetChannelAccumulators();

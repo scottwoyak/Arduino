@@ -2099,14 +2099,17 @@ void refreshCtSettingsDisplay(size_t inputIndex)
 ///
 /// <summary>
 /// Prints a single channel row's label and active value column (Watts or Amps) on the main display.
-/// Labels longer than LOCATION_COL_WIDTH are truncated to avoid Format overflow.
+/// Labels longer than LOCATION_COL_WIDTH are truncated to avoid Format overflow. When a CT is
+/// physically plugged in before its first full measurement completes, placeholder dashes render in
+/// white instead of gray so plug-in feedback is immediate.
 /// </summary>
 /// <param name="label">Channel location label.</param>
-/// <param name="connected">True if the channel has a live reading; false to draw dashes.</param>
+/// <param name="hasReading">True if the channel has a latched live reading.</param>
+/// <param name="physicallyConnected">True if a CT jack is physically detected on the channel.</param>
 /// <param name="amps">RMS current in Amps.</param>
 /// <param name="watts">Real power in Watts.</param>
 ///
-void drawChannelValueRow(const char* label, bool connected, float amps, float watts)
+void drawChannelValueRow(const char* label, bool hasReading, bool physicallyConnected, float amps, float watts)
 {
    std::string displayLabel(label);
    if (displayLabel.length() > LOCATION_COL_WIDTH)
@@ -2115,7 +2118,7 @@ void drawChannelValueRow(const char* label, bool connected, float amps, float wa
    }
    sketch.arduino.print(displayLabel, rowLocationFormat, Color::LABEL);
 
-   if (connected)
+   if (hasReading)
    {
       if (showAmps)
       {
@@ -2129,7 +2132,8 @@ void drawChannelValueRow(const char* label, bool connected, float amps, float wa
    else
    {
       const Format& valueFormat = showAmps ? rowAmpsFormat : rowWattsFormat;
-      sketch.arduino.printlnR(valueFormat.toNoValueString(), Color::GRAY);
+      Color placeholderColor = physicallyConnected ? Color::WHITE : Color::GRAY;
+      sketch.arduino.printlnR(valueFormat.toNoValueString(), placeholderColor);
    }
 }
 
@@ -2205,7 +2209,12 @@ void updateDisplay()
    for (size_t i = 0; i < NUM_CT_INPUTS; i++)
    {
       sketch.arduino.print(static_cast<int>(i + 1), rowIndexFormat, Color::SUB_LABEL);
-      drawChannelValueRow(ctLocations[i], powerSensor.isConnected(i), powerSensor.amps(i), powerSensor.watts(i));
+      drawChannelValueRow(
+         ctLocations[i],
+         powerSensor.isConnected(i),
+         powerSensor.isPhysicallyConnected(i),
+         powerSensor.amps(i),
+         powerSensor.watts(i));
    }
 
    size_t numDerived = powerSensor.derivedChannelCount();
@@ -2215,6 +2224,7 @@ void updateDisplay()
       drawChannelValueRow(
          powerSensor.derivedChannelName(d),
          powerSensor.isDerivedConnected(d),
+         false,
          powerSensor.derivedAmps(d),
          powerSensor.derivedWatts(d));
    }
