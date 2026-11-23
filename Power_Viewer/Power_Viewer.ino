@@ -9,9 +9,9 @@
 // The screen is divided vertically into two independently tappable sections under the
 // "Power" title, with the selected mode for each section persisted in Preferences:
 // - Top (kW, tap to cycle through 3 views):
-//   1. Now (kW) Bars: Four 0-20 kW horizontal bars showing live power for Solar, House,
-//      Garage, and Barn, followed by a center-zero (-20 to +20 kW) horizontal Net bar
-//      (orange left, green right, white zero line) with right-aligned kW readouts.
+//   1. Now (kW) Bars: Five 0-20 kW horizontal bars showing live power for Solar, Total,
+//      House, Garage, and Barn, followed by a center-zero (-20 to +20 kW) horizontal Net
+//      bar (orange left, green right, white zero line) with right-aligned kW readouts.
 //   2. Now (kW) Breakdown: A single center-zero (-20 to +20 kW) horizontal stacked bar
 //      with stacked House/Garage/Barn extending left, Solar extending right, and a vertical
 //      white Net marker line, followed by a Barn, Garage, House, Solar, and Net kW table.
@@ -19,9 +19,10 @@
 //      per-column average power (Solar green on top, Consumption blue on bottom, 20 kW full
 //      scale), followed by live Usage, Solar, and Net kW totals.
 // - Bottom (kWh, tap to toggle between 2 views):
-//   1. Today (kWh) Bars: Four 0-200 kWh horizontal bars showing daily energy for Solar,
-//      House, Garage, and Barn, followed by a center-zero (-200 to +200 kWh) horizontal Net
-//      bar (orange left, green right, white zero line) with right-aligned kWh readouts.
+//   1. Today (kWh) Bars: Five 0-200 kWh horizontal bars showing daily energy for Solar,
+//      Total, House, Garage, and Barn, followed by a center-zero (-200 to +200 kWh)
+//      horizontal Net bar (orange left, green right, white zero line) with right-aligned
+//      kWh readouts.
 //   2. Today (kWh) Breakdown: A single center-zero (-200 to +200 kWh) horizontal stacked bar
 //      with stacked House/Garage/Barn extending left, Solar extending right, and a vertical
 //      white Net marker line, followed by a Barn, Garage, House, Solar, and Net kWh table.
@@ -86,7 +87,7 @@ constexpr auto NOW_VIEW_PREF_KEY = "nowView";
 constexpr auto TODAY_VIEW_PREF_KEY = "todayView";
 constexpr uint16_t EMPTY_HUNDREDTHS_KW = 0xFFFF;
 constexpr uint16_t MAX_TODAY_CHART_COLS = 480;
-constexpr uint8_t NUM_MULTI_BARS = 4;
+constexpr uint8_t NUM_MULTI_BARS = 5;
 constexpr uint8_t NUM_BREAKDOWN_COLS = 5;
 
 // Full-scale power (in kW) and daily energy (in kWh) for the charts and bar gauges.
@@ -126,6 +127,7 @@ constexpr Color NET_POSITIVE_COLOR = Color::LIME;
 constexpr Color NET_NEGATIVE_COLOR = Color::ORANGE;
 constexpr Color NET_MARKER_COLOR = Color::WHITE;
 constexpr Color SOLAR_COLOR = Color::LIME;
+constexpr Color TOTAL_COLOR = Color::ORANGE;
 constexpr Color HOUSE_COLOR = Color::ROYALBLUE;
 constexpr Color GARAGE_COLOR = Color::DEEPSKYBLUE;
 constexpr Color BARN_COLOR = Color::LIGHTSKYBLUE;
@@ -290,6 +292,7 @@ std::array<DisplayValue, NUM_MULTI_BARS> nowBarValues = {
    DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
    DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
    DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
 };
 DisplayValue nowNetBarValue(&sketch.arduino, Format("+##.# kW"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT);
 
@@ -298,11 +301,12 @@ std::array<DisplayValue, NUM_MULTI_BARS> todayBarValues = {
    DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
    DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
    DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
 };
 DisplayValue todayNetBarValue(&sketch.arduino, Format("+###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT);
 
-constexpr std::array<const char*, NUM_MULTI_BARS> MULTI_BAR_LABELS = { "Solar", "House", "Garage", "Barn" };
-constexpr std::array<Color, NUM_MULTI_BARS> MULTI_BAR_COLORS = { SOLAR_COLOR, HOUSE_COLOR, GARAGE_COLOR, BARN_COLOR };
+constexpr std::array<const char*, NUM_MULTI_BARS> MULTI_BAR_LABELS = { "Solar", "Total", "House", "Garage", "Barn" };
+constexpr std::array<Color, NUM_MULTI_BARS> MULTI_BAR_COLORS = { SOLAR_COLOR, TOTAL_COLOR, HOUSE_COLOR, GARAGE_COLOR, BARN_COLOR };
 
 Field nowUsageField(&sketch.arduino, "Usage", "##.# kW", TABLE_TEXT_SIZE);
 Field nowSolarField(&sketch.arduino, "Solar", "##.# kW", TABLE_TEXT_SIZE);
@@ -330,14 +334,14 @@ constexpr std::array<Color, NUM_BREAKDOWN_COLS> BREAKDOWN_COL_COLORS = { BARN_CO
 
 ///
 /// <summary>
-/// Holds the laid-out bar widgets and row Y coordinates for a 5-row horizontal bar
-/// section (four component bars for Solar, House, Garage, and Barn plus a center-zero
-/// Net bar).
+/// Holds the laid-out bar widgets and row Y coordinates for a 6-row horizontal bar
+/// section (five component bars for Solar, Total, House, Garage, and Barn plus a
+/// center-zero Net bar).
 /// </summary>
 ///
 struct MultiBarLayout
 {
-   std::array<HorizontalBar*, NUM_MULTI_BARS> bars = { nullptr, nullptr, nullptr, nullptr };
+   std::array<HorizontalBar*, NUM_MULTI_BARS> bars = {};
    std::array<int16_t, NUM_MULTI_BARS> barTextY = {};
    CenterZeroHorizontalBar* netBar = nullptr;
    int16_t netBarTextY = 0;
@@ -458,14 +462,15 @@ void drawBreakdownDynamic(
 
 ///
 /// <summary>
-/// Updates and renders a 5-row horizontal bar section (Solar, House, Garage, and Barn
-/// component bars plus a center-zero Net bar) and its right-aligned numeric readouts.
+/// Updates and renders a 6-row horizontal bar section (Solar, Total, House, Garage, and
+/// Barn component bars plus a center-zero Net bar) and its right-aligned numeric readouts.
 /// </summary>
 /// <param name="layout">Laid-out multi-bar widgets and row coordinates.</param>
-/// <param name="values">Four right-aligned DisplayValue widgets for Solar, House, Garage, and Barn.</param>
+/// <param name="values">Five right-aligned DisplayValue widgets for Solar, Total, House, Garage, and Barn.</param>
 /// <param name="netValueWidget">Right-aligned DisplayValue widget for the signed Net readout.</param>
 /// <param name="netValue">Signed net value (positive when Solar exceeds Usage).</param>
 /// <param name="solarValue">Solar production magnitude.</param>
+/// <param name="totalValue">Total consumption magnitude.</param>
 /// <param name="houseValue">House consumption magnitude.</param>
 /// <param name="garageValue">Garage consumption magnitude.</param>
 /// <param name="barnValue">Barn consumption magnitude.</param>
@@ -476,6 +481,7 @@ void drawMultiBarDynamic(
    DisplayValue* netValueWidget,
    float netValue,
    float solarValue,
+   float totalValue,
    float houseValue,
    float garageValue,
    float barnValue)
@@ -486,6 +492,7 @@ void drawMultiBarDynamic(
 
    const std::array<float, NUM_MULTI_BARS> barValues = {
       solarValue,
+      totalValue,
       houseValue,
       garageValue,
       barnValue,
@@ -520,6 +527,7 @@ void drawNowDynamic()
          &nowNetBarValue,
          netPowerKw,
          latestReadings.productionKw,
+         latestReadings.consumptionKw,
          latestReadings.houseKw,
          latestReadings.garageKw,
          latestReadings.barnKw);
@@ -562,6 +570,7 @@ void drawTodayDynamic()
          &todayNetBarValue,
          netEnergyKwh,
          latestReadings.productionTodayKwh,
+         latestReadings.consumptionTodayKwh,
          latestReadings.houseTodayKwh,
          latestReadings.garageTodayKwh,
          latestReadings.barnTodayKwh);
@@ -675,13 +684,13 @@ void initBreakdownLayout(
 
 ///
 /// <summary>
-/// Computes the layout and constructs the 5 horizontal bars (Solar, House, Garage, Barn,
-/// and center-zero Net) for a MultiBar section.
+/// Computes the layout and constructs the 6 horizontal bars (Solar, Total, House, Garage,
+/// Barn, and center-zero Net) for a MultiBar section.
 /// </summary>
 /// <param name="layout">Target MultiBarLayout structure to populate.</param>
 /// <param name="sectionRect">Bounding rectangle of the section's content area.</param>
 /// <param name="maxScale">Full-scale positive magnitude (0..maxScale for components, -maxScale..+maxScale for Net).</param>
-/// <param name="values">Four right-aligned DisplayValue widgets for Solar, House, Garage, and Barn.</param>
+/// <param name="values">Five right-aligned DisplayValue widgets for Solar, Total, House, Garage, and Barn.</param>
 /// <param name="netValueWidget">Right-aligned DisplayValue widget for the signed Net readout.</param>
 /// <param name="barLeftX">Shared left X pixel coordinate for all bars.</param>
 /// <param name="barWidth">Shared pixel width for all bars.</param>
@@ -704,7 +713,8 @@ void initMultiBarLayout(
    ASSERT(netValueWidget != nullptr);
 
    constexpr uint8_t NUM_MULTI_BAR_ROWS = NUM_MULTI_BARS + 1;
-   int16_t barGap = isLargeDisplay ? MULTI_BAR_ROW_GAP_LARGE_PX : MULTI_BAR_ROW_GAP_SMALL_PX;
+   int16_t maxBarGap = isLargeDisplay ? MULTI_BAR_ROW_GAP_LARGE_PX : MULTI_BAR_ROW_GAP_SMALL_PX;
+   int16_t barGap = max<int16_t>(1, min<int16_t>(maxBarGap, static_cast<int16_t>((sectionRect.height - NUM_MULTI_BAR_ROWS * rowHeight) / NUM_MULTI_BARS)));
    int16_t totalGapHeight = NUM_MULTI_BARS * barGap;
    int16_t bandHeight = max<int16_t>(rowHeight, (sectionRect.height - totalGapHeight) / NUM_MULTI_BAR_ROWS);
    int16_t barHeight = min<int16_t>(bandHeight, isLargeDisplay ? MULTI_BAR_MAX_HEIGHT_LARGE_PX : rowHeight);
@@ -1295,11 +1305,11 @@ void renderBreakdownStatic(
 
 ///
 /// <summary>
-/// Draws the right-aligned left-side labels (Solar, House, Garage, Barn, and Net) and
-/// resets the bar and value widgets for a 5-row MultiBar section.
+/// Draws the right-aligned left-side labels (Solar, Total, House, Garage, Barn, and Net)
+/// and resets the bar and value widgets for a 6-row MultiBar section.
 /// </summary>
 /// <param name="layout">Laid-out multi-bar widgets and row coordinates.</param>
-/// <param name="values">Four right-aligned DisplayValue widgets for Solar, House, Garage, and Barn.</param>
+/// <param name="values">Five right-aligned DisplayValue widgets for Solar, Total, House, Garage, and Barn.</param>
 /// <param name="netValueWidget">Right-aligned DisplayValue widget for the signed Net readout.</param>
 ///
 void renderMultiBarStatic(
