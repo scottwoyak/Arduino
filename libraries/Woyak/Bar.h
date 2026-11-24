@@ -843,11 +843,11 @@ public:
 ///
 /// <summary>
 /// Horizontal bar with zero at its horizontal midpoint that renders stacked colored
-/// segments extending leftward and/or rightward from the center line, with optional
-/// inward-pointing triangles above and below the bar at both the zero line and the
-/// vertical signed marker's position (marker triangles drawn on top of zero triangles).
-/// Positive marker values appear rightward of the center line; negative marker values
-/// appear leftward of the center line; NAN hides the marker.
+/// segments extending leftward and/or rightward from the center line, with small tick
+/// marks above and below the zero line and optional inward-pointing triangles above and
+/// below the vertical signed marker's position (marker triangles drawn on top of zero
+/// tick marks). Positive marker values appear rightward of the center line; negative
+/// marker values appear leftward of the center line; NAN hides the marker.
 /// </summary>
 ///
 class StackedCenterZeroHorizontalBar : public Bar
@@ -855,6 +855,7 @@ class StackedCenterZeroHorizontalBar : public Bar
 public:
    static constexpr int16_t DEFAULT_MARKER_WIDTH_PX = 1;
    static constexpr int16_t DEFAULT_CENTER_LINE_WIDTH_PX = 1;
+   static constexpr int16_t DEFAULT_CENTER_TICK_HEIGHT_PX = 4;
    static constexpr int16_t DEFAULT_POINTER_SIZE_PX = 5;
 
    ///
@@ -875,13 +876,14 @@ protected:
    static constexpr int16_t MIN_BAR_BODY_HEIGHT_PX = 8;
 
    Color _centerLineColor;
-   Color _centerPointerColor = Color::GRAY;
+   Color _centerTickColor = Color::GRAY;
    Color _pointerBackgroundColor = Color::BLACK;
    int16_t _markerWidth = DEFAULT_MARKER_WIDTH_PX;
    int16_t _centerLineWidth = DEFAULT_CENTER_LINE_WIDTH_PX;
+   int16_t _centerTickHeight = DEFAULT_CENTER_TICK_HEIGHT_PX;
    int16_t _pointerSize = DEFAULT_POINTER_SIZE_PX;
    bool _showCenterLine = true;
-   bool _showCenterPointers = true;
+   bool _showCenterTicks = true;
    bool _hasDrawn = false;
    std::vector<Segment> _leftSegments;
    std::vector<Segment> _rightSegments;
@@ -911,47 +913,54 @@ protected:
    void _drawPointerStrip(
       LGFX* display,
       int16_t stripY,
+      int16_t stripHeight,
       int16_t pointerHeight,
+      int16_t tickHeight,
       int16_t barStartX,
       int16_t barEndX,
       bool pointingDown,
-      bool hasZeroPointer,
-      int16_t zeroCenterX,
+      int16_t zeroStartX,
+      int16_t zeroEndX,
       bool hasMarker,
       int16_t markerCenterX)
    {
-      if (pointerHeight <= 0 || barEndX <= barStartX)
+      if (stripHeight <= 0 || barEndX <= barStartX)
       {
          return;
       }
 
-      int16_t stripHeight = pointerHeight + POINTER_GAP_PX;
       int16_t stripWidth = barEndX - barStartX;
       uint16_t bg = static_cast<uint16_t>(_pointerBackgroundColor);
+      bool hasZeroTick = (tickHeight > 0) && (zeroEndX > zeroStartX);
+      bool hasMarkerTriangle = hasMarker && (pointerHeight > 0);
 
-      if (!hasZeroPointer && !hasMarker)
+      if (!hasZeroTick && !hasMarkerTriangle)
       {
          display->fillRect(barStartX, stripY, stripWidth, stripHeight, bg);
          return;
       }
 
-      uint16_t zeroFg = static_cast<uint16_t>(_centerPointerColor);
+      uint16_t zeroFg = static_cast<uint16_t>(_centerTickColor);
       uint16_t markerFg = static_cast<uint16_t>(_barColor);
-      int16_t triStartY = pointingDown ? stripY : (stripY + POINTER_GAP_PX);
-      int16_t gapY = pointingDown ? (stripY + pointerHeight) : stripY;
 
-      display->drawFastHLine(barStartX, gapY, stripWidth, bg);
-
-      for (int16_t r = 0; r < pointerHeight; r++)
+      for (int16_t r = 0; r < stripHeight; r++)
       {
-         int16_t y = triStartY + r;
-         int16_t distFromTip = pointingDown ? (pointerHeight - 1 - r) : r;
-         int16_t halfW = (distFromTip * POINTER_WIDTH_NUM + POINTER_WIDTH_DEN / 2) / POINTER_WIDTH_DEN;
+         int16_t y = stripY + r;
+         int16_t distFromBar = pointingDown ? (stripHeight - 1 - r) : r;
 
-         int16_t zeroLeft = hasZeroPointer ? max(barStartX, static_cast<int16_t>(zeroCenterX - halfW)) : barStartX;
-         int16_t zeroRight = hasZeroPointer ? min(barEndX, static_cast<int16_t>(zeroCenterX + halfW + 1)) : barStartX;
-         int16_t markerLeft = hasMarker ? max(barStartX, static_cast<int16_t>(markerCenterX - halfW)) : barStartX;
-         int16_t markerRight = hasMarker ? min(barEndX, static_cast<int16_t>(markerCenterX + halfW + 1)) : barStartX;
+         bool rowHasZero = hasZeroTick && (distFromBar < tickHeight);
+         int16_t zeroLeft = rowHasZero ? zeroStartX : barStartX;
+         int16_t zeroRight = rowHasZero ? zeroEndX : barStartX;
+
+         int16_t markerLeft = barStartX;
+         int16_t markerRight = barStartX;
+         if (hasMarkerTriangle && distFromBar >= POINTER_GAP_PX && distFromBar < (POINTER_GAP_PX + pointerHeight))
+         {
+            int16_t distFromTip = distFromBar - POINTER_GAP_PX;
+            int16_t halfW = (distFromTip * POINTER_WIDTH_NUM + POINTER_WIDTH_DEN / 2) / POINTER_WIDTH_DEN;
+            markerLeft = max(barStartX, static_cast<int16_t>(markerCenterX - halfW));
+            markerRight = min(barEndX, static_cast<int16_t>(markerCenterX + halfW + 1));
+         }
 
          auto drawBgWithZero = [&](int16_t segStart, int16_t segEnd)
          {
@@ -1088,9 +1097,13 @@ protected:
       int16_t rightHalfWidth = barEndX - rightStartX;
 
       int16_t rectHeight = _rect.height;
-      int16_t maxPointerHeight = max(static_cast<int16_t>(0), static_cast<int16_t>((rectHeight - MIN_BAR_BODY_HEIGHT_PX) / 2 - POINTER_GAP_PX));
+      int16_t maxStripHeight = max(static_cast<int16_t>(0), static_cast<int16_t>((rectHeight - MIN_BAR_BODY_HEIGHT_PX) / 2));
+      int16_t maxPointerHeight = max(static_cast<int16_t>(0), static_cast<int16_t>(maxStripHeight - POINTER_GAP_PX));
       int16_t pointerHeight = min(_pointerSize, maxPointerHeight);
-      int16_t stripHeight = (pointerHeight > 0) ? static_cast<int16_t>(pointerHeight + POINTER_GAP_PX) : 0;
+      int16_t pointerStripHeight = (pointerHeight > 0) ? static_cast<int16_t>(pointerHeight + POINTER_GAP_PX) : 0;
+      bool hasZeroTick = _showCenterTicks && (_centerTickHeight > 0) && (centerEndX > centerStartX);
+      int16_t tickHeight = hasZeroTick ? min(_centerTickHeight, maxStripHeight) : 0;
+      int16_t stripHeight = max(pointerStripHeight, tickHeight);
       int16_t barY = static_cast<int16_t>(_rect.y) + stripHeight;
       int16_t barHeight = rectHeight - 2 * stripHeight;
 
@@ -1129,9 +1142,7 @@ protected:
          }
       }
 
-      bool hasZeroPointer = _showCenterPointers && (centerEndX > centerStartX);
-
-      _drawPointerStrip(display, _rect.y, pointerHeight, barStartX, barEndX, true, hasZeroPointer, centerX, hasMarker, markerCenterX);
+      _drawPointerStrip(display, _rect.y, stripHeight, pointerHeight, tickHeight, barStartX, barEndX, true, centerStartX, centerEndX, hasMarker, markerCenterX);
       _drawHalf(display, barY, barHeight, leftOriginX, leftHalfWidth, -1, _leftSegments, hasMarker, markerStartX, markerEndX, maxAbsValue);
       _drawHalf(display, barY, barHeight, rightStartX, rightHalfWidth, 1, _rightSegments, hasMarker, markerStartX, markerEndX, maxAbsValue);
 
@@ -1161,7 +1172,7 @@ protected:
          display->fillRect(markerStartX, barY, markerEndX - markerStartX, barHeight, static_cast<uint16_t>(_barColor));
       }
 
-      _drawPointerStrip(display, barY + barHeight, pointerHeight, barStartX, barEndX, false, hasZeroPointer, centerX, hasMarker, markerCenterX);
+      _drawPointerStrip(display, barY + barHeight, stripHeight, pointerHeight, tickHeight, barStartX, barEndX, false, centerStartX, centerEndX, hasMarker, markerCenterX);
    }
 
 public:
@@ -1219,25 +1230,37 @@ public:
 
    ///
    /// <summary>
-   /// Sets whether inward-pointing triangles are drawn above and below the zero line.
+   /// Sets whether small tick marks are drawn above and below the zero line.
    /// </summary>
-   /// <param name="showCenterPointers">True to draw zero-line triangles, false to omit them.</param>
+   /// <param name="showCenterTicks">True to draw zero-line tick marks, false to omit them.</param>
    ///
-   void setShowCenterPointers(bool showCenterPointers)
+   void setShowCenterTicks(bool showCenterTicks)
    {
-      _showCenterPointers = showCenterPointers;
+      _showCenterTicks = showCenterTicks;
       reset();
    }
 
    ///
    /// <summary>
-   /// Sets the color used for the inward-pointing triangles above and below the zero line.
+   /// Sets the color used for the tick marks above and below the zero line.
    /// </summary>
-   /// <param name="centerPointerColor">Fill color for the zero-line triangles.</param>
+   /// <param name="centerTickColor">Fill color for the zero-line tick marks.</param>
    ///
-   void setCenterPointerColor(Color centerPointerColor)
+   void setCenterTickColor(Color centerTickColor)
    {
-      _centerPointerColor = centerPointerColor;
+      _centerTickColor = centerTickColor;
+      reset();
+   }
+
+   ///
+   /// <summary>
+   /// Sets the pixel height of the tick marks extending above and below the zero line.
+   /// </summary>
+   /// <param name="centerTickHeight">Tick mark height in pixels (0 hides the tick marks).</param>
+   ///
+   void setCenterTickHeight(int16_t centerTickHeight)
+   {
+      _centerTickHeight = max(static_cast<int16_t>(0), centerTickHeight);
       reset();
    }
 

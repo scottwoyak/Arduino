@@ -644,7 +644,6 @@ void initBreakdownLayout(
       range,
       NET_MARKER_COLOR,
       BAR_TRACK_COLOR);
-   layout->bar->setCenterLineWidth(StackedCenterZeroHorizontalBar::DEFAULT_MARKER_WIDTH_PX * 2);
 
    int32_t totalColWidth = 0;
    for (uint8_t i = 0; i < NUM_BREAKDOWN_COLS; i++)
