@@ -213,15 +213,19 @@ private:
 
    ///
    /// <summary>
-   /// Drives the 74HC4067 address select lines for the given channel.
+   /// Drives the 74HC4067 address select lines for the given logical channel, mapping
+   /// channels 0..15 (circuits 1..16) in reverse to mux pins C15..C0.
    /// </summary>
-   /// <param name="channel">Mux channel (0 to 15).</param>
+   /// <param name="channel">Logical channel index (0 to 15).</param>
    ///
    void _applyMuxChannel(size_t channel) const
    {
+      ASSERT(channel < MAX_CHANNELS);
+
+      size_t muxPin = (MAX_CHANNELS - 1) - channel;
       for (size_t bit = 0; bit < _pinSelect.size(); bit++)
       {
-         digitalWrite(_pinSelect[bit], (channel >> bit) & 1);
+         digitalWrite(_pinSelect[bit], (muxPin >> bit) & 1);
       }
    }
 
@@ -1097,7 +1101,7 @@ public:
    /// <param name="pinS3">GPIO connected to 74HC4067 S3.</param>
    /// <param name="pinMuxSig">ADC1 GPIO connected to 74HC4067 SIG (e.g. GPIO22).</param>
    /// <param name="pinAcVoltage">ADC1 GPIO connected to ZMPT101B OUT (e.g. GPIO21).</param>
-   /// <param name="channelConfigs">Array of per-channel CT configurations (mux C0..C15).</param>
+   /// <param name="channelConfigs">Array of per-channel CT configurations (circuit 1 = mux C15 down to circuit 16 = mux C0).</param>
    /// <param name="numChannels">Number of active channels (1 to 16).</param>
    /// <param name="nominalLineVoltageV">Fallback AC line voltage when ZMPT101B is unplugged.</param>
    /// <param name="voltageScale">Line volts per 1.0V RMS at ZMPT101B OUT (default 1200.0).</param>

@@ -10,8 +10,9 @@
 // derived automatically; "*White" neutral channels are shown on the display but excluded
 // from WebSocket telemetry. Displays live line voltage (V) and per-channel real power (W)
 // or RMS current (A) on the touch display (tapping the display swaps between W and A;
-// dimming to 10% brightness when idle and restoring full brightness on touch) and publishes
-// per-channel power readings over WebSocket telemetry to Power/<location>/<circuit>.
+// dimming to 10% brightness when idle and restoring full brightness on touch or sensor
+// plug/unplug) and publishes per-channel power readings over WebSocket telemetry to
+// Power/<location>/<circuit>.
 //
 // DeviceServer GetConfig reports each CT preset as ct1..ct16 (or custom for a custom
 // calibration). SetConfig ct1 100SC selects a preset by name and applies it immediately.
@@ -30,8 +31,9 @@
 //     GND             black        LM2596HV OUT-, 74HC4067 GND & EN, ZMPT101B GND, bottom 10k
 //                                  leg + 10uF (-) cap of 1.65V bias, pull-down resistor(s)
 //   On PCB: 9V AC wall-wart feeds LM2596HV AC input and ZMPT101B AC terminals in parallel.
-//   CT S2 returns tie to the 1.65V bias node; CT S1 signals go to 74HC4067 C0..C15 (20A
-//   option uses CORE_40A for 20A:25mA SCT006 + 20 ohm burden).
+//   CT S2 returns tie to the 1.65V bias node; CT S1 signals go to 74HC4067 C15..C0
+//   (circuit 1 = C15 down to circuit 16 = C0; 20A option uses CORE_40A for 20A:25mA SCT006
+//   + 20 ohm burden).
 //
 
 #include <Arduino.h>
@@ -84,18 +86,8 @@ constexpr uint8_t PIN_AC_VOLTAGE = 21;
 using CTCalibration::CT_TYPE_TABLE;
 constexpr size_t NUM_AMP_OPTIONS = CTCalibration::NUM_CT_TYPES;
 constexpr uint8_t CUSTOM_CT_TYPE_INDEX = 0xFF;
-
-constexpr std::array<const char*, NUM_CT_INPUTS> DEFAULT_CT_LOCATIONS = {
-   "1", "", "", "", "", "", "", "",
-   "",  "", "", "", "", "", "", "",
-};
-
-constexpr std::array<float, NUM_CT_INPUTS> DEFAULT_CT_AMPS = {
-   PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_100A, PowerSensorBase::CORE_100A,
-   PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,
-   PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,
-   PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,  PowerSensorBase::CORE_30A,
-};
+constexpr uint8_t DEFAULT_CT_TYPE_INDEX = 3; // 100SC
+constexpr float DEFAULT_CT_AMPS = CT_TYPE_TABLE[DEFAULT_CT_TYPE_INDEX].ampsPerVolt;
 
 constexpr std::array<const char*, NUM_CT_INPUTS> PREF_KEY_CT_LOCATION = {
    "loc1", "loc2",  "loc3",  "loc4",  "loc5",  "loc6",  "loc7",  "loc8",
@@ -156,27 +148,28 @@ std::array<uint8_t, NUM_CT_INPUTS> ctTypeIndices = {};
 std::array<bool, NUM_CT_INPUTS> ct240V = {};
 std::array<char[MAX_TOPIC_LENGTH], NUM_CT_INPUTS> channelTopics = {};
 std::array<char[MAX_TOPIC_LENGTH], PowerSensorBase::MAX_DERIVED_CHANNELS> derivedPowerTopics = {};
-char primaryTelemetryTopic[MAX_TOPIC_LENGTH] = "Power/1";
+char primaryTelemetryTopic[MAX_TOPIC_LENGTH] = "";
+bool hasPrimaryTelemetryChannel = false;
 size_t primaryTelemetryChannel = 0;
 bool telemetryTopicsResolved = false;
 bool telemetryEnabled = true;
 std::array<PowerSensorBase::ChannelConfig, NUM_CT_INPUTS> initialChannelConfig = {
-   PowerSensorBase::ChannelConfig{ "1",  PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "2",  PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "3",  PowerSensorBase::CORE_100A },
-   PowerSensorBase::ChannelConfig{ "4",  PowerSensorBase::CORE_100A },
-   PowerSensorBase::ChannelConfig{ "5",  PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "6",  PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "7",  PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "8",  PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "9",  PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "10", PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "11", PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "12", PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "13", PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "14", PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "15", PowerSensorBase::CORE_30A },
-   PowerSensorBase::ChannelConfig{ "16", PowerSensorBase::CORE_30A },
+   PowerSensorBase::ChannelConfig{ "1",  DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "2",  DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "3",  DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "4",  DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "5",  DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "6",  DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "7",  DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "8",  DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "9",  DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "10", DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "11", DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "12", DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "13", DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "14", DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "15", DEFAULT_CT_AMPS },
+   PowerSensorBase::ChannelConfig{ "16", DEFAULT_CT_AMPS },
 };
 MuxAdcPowerSensor powerSensor(
    PIN_MUX_S0,
@@ -272,15 +265,11 @@ void refreshTelemetryTopics()
       }
    }
 
+   hasPrimaryTelemetryChannel = foundPrimary;
    if (!foundPrimary)
    {
       primaryTelemetryChannel = 0;
-      std::string fallbackTopic = topicPrefix + "1";
-      strlcpy(primaryTelemetryTopic, fallbackTopic.c_str(), sizeof(primaryTelemetryTopic));
-      if (telemetryTopicsResolved && telemetryEnabled)
-      {
-         sketch.createTopic(primaryTelemetryTopic, TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
-      }
+      primaryTelemetryTopic[0] = '\0';
    }
 
    if (sketch.client() != nullptr && telemetryEnabled)
@@ -460,14 +449,14 @@ void loadChannelConfig()
    for (size_t i = 0; i < NUM_CT_INPUTS; i++)
    {
       String savedLoc = (hasPrefs && prefs.isKey(PREF_KEY_CT_LOCATION[i]))
-         ? prefs.getString(PREF_KEY_CT_LOCATION[i], DEFAULT_CT_LOCATIONS[i])
-         : String(DEFAULT_CT_LOCATIONS[i]);
+         ? prefs.getString(PREF_KEY_CT_LOCATION[i], "")
+         : String("");
       strlcpy(ctLocations[i], savedLoc.c_str(), sizeof(ctLocations[i]));
 
       float savedAmps = (hasPrefs && prefs.isKey(PREF_KEY_CT_AMPS[i]))
-         ? prefs.getFloat(PREF_KEY_CT_AMPS[i], DEFAULT_CT_AMPS[i])
-         : DEFAULT_CT_AMPS[i];
-      ctAmps[i] = savedAmps > 0.0f ? savedAmps : DEFAULT_CT_AMPS[i];
+         ? prefs.getFloat(PREF_KEY_CT_AMPS[i], DEFAULT_CT_AMPS)
+         : DEFAULT_CT_AMPS;
+      ctAmps[i] = savedAmps > 0.0f ? savedAmps : DEFAULT_CT_AMPS;
       ctTypeIndices[i] = CUSTOM_CT_TYPE_INDEX;
       if (hasPrefs && prefs.isKey(PREF_KEY_CT_TYPE[i]))
       {
@@ -1490,7 +1479,7 @@ void drawFooter()
 }
 
 // ----------- Gear icon & Touch Settings UI
-constexpr uint16_t DISPLAY_DIM_TIMEOUT_S = 60;
+constexpr uint16_t DISPLAY_DIM_TIMEOUT_M = 5;
 constexpr float DISPLAY_DIM_LEVEL = 0.10f;
 constexpr uint16_t SETTINGS_PROMPT_TIMEOUT_M = 10;
 
@@ -1508,8 +1497,10 @@ constexpr size_t AMP_GRID_COLS = 3;
 constexpr size_t AMP_GRID_ROWS = (NUM_AMP_OPTIONS + AMP_GRID_COLS - 1) / AMP_GRID_COLS;
 constexpr size_t NUM_VOLTAGE_OPTIONS = 2;
 
-Timer displayDimTimer(DISPLAY_DIM_TIMEOUT_S * 1000UL);
+Timer displayDimTimer(DISPLAY_DIM_TIMEOUT_M * 60UL * 1000UL);
 bool displayDimmed = false;
+std::array<bool, NUM_CT_INPUTS> lastPhysicalConnected = {};
+bool lastVoltageConnected = false;
 bool showingSettings = false;
 bool wasTouching = false;
 size_t selectedSettingsChannel = 0;
@@ -2140,7 +2131,7 @@ void drawChannelValueRow(const char* label, bool hasReading, bool physicallyConn
 ///
 /// <summary>
 /// Renders live AC voltage in the header and a 3-column table of all 16 CT inputs on the display:
-/// Column 1: Channel number (1-16)
+/// Column 1: Channel number (1-16, white when physically plugged in, gray when unplugged)
 /// Column 2: Configured location name
 /// Column 3: Real power in Watts or RMS current in Amps (toggled by tapping the display, or gray dashes if unplugged)
 /// </summary>
@@ -2208,11 +2199,13 @@ void updateDisplay()
 
    for (size_t i = 0; i < NUM_CT_INPUTS; i++)
    {
-      sketch.arduino.print(static_cast<int>(i + 1), rowIndexFormat, Color::SUB_LABEL);
+      bool physicallyConnected = powerSensor.isPhysicallyConnected(i);
+      Color indexColor = physicallyConnected ? Color::WHITE : Color::SUB_LABEL;
+      sketch.arduino.print(static_cast<int>(i + 1), rowIndexFormat, indexColor);
       drawChannelValueRow(
          ctLocations[i],
          powerSensor.isConnected(i),
-         powerSensor.isPhysicallyConnected(i),
+         physicallyConnected,
          powerSensor.amps(i),
          powerSensor.watts(i));
    }
@@ -2232,9 +2225,10 @@ void updateDisplay()
 
 ///
 /// <summary>
-/// Polls capacitive touch input to dim the backlight after inactivity, wake to full
-/// brightness on touch, swap between Watts and Amps on the main view, and open/close
-/// the gear settings view to edit channel settings.
+/// Polls capacitive touch input and sensor plug/unplug state to dim the backlight after
+/// inactivity, wake to full brightness on touch or plug/unplug activity, swap between
+/// Watts and Amps on the main view, and open/close the gear settings view to edit channel
+/// settings.
 /// </summary>
 ///
 void handleTouch()
@@ -2242,6 +2236,34 @@ void handleTouch()
    if (!displayReady)
    {
       return;
+   }
+
+   bool plugStateChanged = false;
+   for (size_t i = 0; i < NUM_CT_INPUTS; i++)
+   {
+      bool connected = powerSensor.isPhysicallyConnected(i);
+      if (connected != lastPhysicalConnected[i])
+      {
+         lastPhysicalConnected[i] = connected;
+         plugStateChanged = true;
+      }
+   }
+
+   bool voltageNowConnected = powerSensor.voltageConnected();
+   if (voltageNowConnected != lastVoltageConnected)
+   {
+      lastVoltageConnected = voltageNowConnected;
+      plugStateChanged = true;
+   }
+
+   if (plugStateChanged)
+   {
+      displayDimTimer.reset();
+      if (displayDimmed)
+      {
+         sketch.arduino.displayOn();
+         displayDimmed = false;
+      }
    }
 
    lgfx::touch_point_t tp;
@@ -2383,7 +2405,7 @@ void setup()
    loadChannelConfig();
 
    sketch.addSensor("PowerSensor", []() { return powerSensor.begin(); });
-   sketch.setValueSource([]() { return powerSensor.watts(primaryTelemetryChannel); });
+   sketch.setValueSource([]() { return hasPrimaryTelemetryChannel ? powerSensor.watts(primaryTelemetryChannel) : NAN; });
    sketch.onSiteResolved([]() {
       telemetryTopicsResolved = true;
       refreshTelemetryTopics();
@@ -2414,6 +2436,11 @@ void setup()
 
    displayReady = true;
    updateDisplay();
+   for (size_t i = 0; i < NUM_CT_INPUTS; i++)
+   {
+      lastPhysicalConnected[i] = powerSensor.isPhysicallyConnected(i);
+   }
+   lastVoltageConnected = powerSensor.voltageConnected();
    displayDimTimer.reset();
 }
 
@@ -2429,7 +2456,7 @@ void loop()
       {
          for (size_t i = 0; i < NUM_CT_INPUTS; i++)
          {
-            if (i != primaryTelemetryChannel && channelTopics[i][0] != '\0')
+            if ((!hasPrimaryTelemetryChannel || i != primaryTelemetryChannel) && channelTopics[i][0] != '\0')
             {
                sketch.submit(channelTopics[i], powerSensor.watts(i));
             }

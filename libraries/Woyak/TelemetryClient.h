@@ -797,15 +797,19 @@ protected:
    /// Sets the role and topic used in the handshake.
    /// </summary>
    /// <param name="role">DEVICE to publish, CLIENT to subscribe</param>
-   /// <param name="topic">Topic name</param>
+   /// <param name="topic">Topic name (may be empty for Role::DEVICE until topics are registered)</param>
    ///
    void _setRole(Role role, const std::string& topic)
    {
-      ASSERT(!topic.empty());
+      ASSERT(role == Role::DEVICE || !topic.empty());
 
       _role = role;
       _topic = topic;
-      _topics = { topic };
+      _topics.clear();
+      if (!topic.empty())
+      {
+         _topics.push_back(topic);
+      }
    }
 
 public:
@@ -1219,17 +1223,22 @@ public:
 
    ///
    /// <summary>
-   /// Selects the primary topic locally. Publishers also declare the selected topic.
-   /// Subscribers use setTopics() to change their server-side subscription.
+   /// Selects the primary topic locally. Publishers also declare the selected topic (or clear
+   /// it when passed an empty string). Subscribers use setTopics() to change their server-side
+   /// subscription.
    /// </summary>
-   /// <param name="topic">Nonempty primary topic name.</param>
+   /// <param name="topic">Primary topic name (may be empty for Role::DEVICE).</param>
    ///
    virtual void setTopic(const std::string& topic)
    {
-      ASSERT(!topic.empty());
+      ASSERT(_role == Role::DEVICE || !topic.empty());
 
       _topic = topic;
-      _topics = { topic };
+      _topics.clear();
+      if (!topic.empty())
+      {
+         _topics.push_back(topic);
+      }
    }
 
    ///
@@ -1356,7 +1365,7 @@ private:
    {
       TelemetryClient::_onLoop();
 
-      if (!isPublishingEnabled() || !isTopicReady(getTopic().c_str()) || !_pendingNew || isnan(_pendingValue))
+      if (!isPublishingEnabled() || getTopic().empty() || !isTopicReady(getTopic().c_str()) || !_pendingNew || isnan(_pendingValue))
       {
          return;
       }
@@ -1380,7 +1389,7 @@ public:
    /// <summary>
    /// Initializes a new instance of the TelemetryPublisher class.
    /// </summary>
-   /// <param name="topic">The primary telemetry topic to create and submit values to.</param>
+   /// <param name="topic">The primary telemetry topic to create and submit values to (may be empty if topics are added later).</param>
    /// <param name="config">Connection, metadata, change-suppression precision, and cadence settings.</param>
    /// <param name="status">Status indicator used by the default event handler, if no handler is supplied.</param>
    /// <param name="handler">Event handler for connection lifecycle events, or nullptr to use a default handler.</param>
@@ -1395,7 +1404,10 @@ public:
       _primaryMetadata = { config.unit, config.description, static_cast<int8_t>(config.decimals) };
       _minIntervalMicros = config.maxPublishRatePerSec == 0 ? 0 : 1000000UL / config.maxPublishRatePerSec;
       _setRole(Role::DEVICE, topic);
-      createTopic(topic.c_str(), _primaryMetadata);
+      if (!topic.empty())
+      {
+         createTopic(topic.c_str(), _primaryMetadata);
+      }
    }
 
    ///
@@ -1413,15 +1425,13 @@ public:
 
    ///
    /// <summary>
-   /// Selects and creates the primary topic using the configured attributes.
-   /// Discards any queued value belonging to the previous primary topic.
+   /// Selects and creates the primary topic using the configured attributes (or clears the
+   /// primary topic when empty). Discards any queued value belonging to the previous primary topic.
    /// </summary>
-   /// <param name="topic">Nonempty primary topic name.</param>
+   /// <param name="topic">Primary topic name, or empty to clear the primary topic.</param>
    ///
    void setTopic(const std::string& topic) override
    {
-      ASSERT(!topic.empty());
-
       if (getTopic() == topic)
       {
          return;
@@ -1429,7 +1439,10 @@ public:
       TelemetryClient::setTopic(topic);
       _pendingNew = false;
       _hasPublished = false;
-      createTopic(topic.c_str(), _primaryMetadata);
+      if (!topic.empty())
+      {
+         createTopic(topic.c_str(), _primaryMetadata);
+      }
    }
 
    ///
@@ -1455,7 +1468,7 @@ public:
    ///
    void setValue(float value)
    {
-      if (!isPublishingEnabled())
+      if (!isPublishingEnabled() || getTopic().empty())
       {
          return;
       }
