@@ -318,6 +318,30 @@ public:
 
    ///
    /// <summary>
+   /// Replaces the Format object used by this field's value and marks the label dirty so
+   /// the next draw() repositions the value sprite cleanly.
+   /// </summary>
+   /// <param name="format">The new formatter applied to future draw() calls.</param>
+   ///
+   void setFormat(const Format& format)
+   {
+      _value.setFormat(format);
+      _labelDirty = true;
+   }
+
+   ///
+   /// <summary>
+   /// Replaces the format pattern used by this field's value and marks the label dirty.
+   /// </summary>
+   /// <param name="formatStr">The new format pattern string.</param>
+   ///
+   void setFormat(const char* formatStr)
+   {
+      setFormat(Format(formatStr));
+   }
+
+   ///
+   /// <summary>
    /// Returns the pixel width of the value's fixed-width sprite, e.g. so a caller (such
    /// as FieldTable) can lay out other content relative to the field's overall width.
    /// </summary>

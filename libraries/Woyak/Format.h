@@ -38,6 +38,7 @@ private:
    uint8_t _precision = 2;
    char _errChar = '#';
    bool _includePlus = false;
+   bool _signBeforePrefix = false;
 
 public:
    ///
@@ -76,6 +77,23 @@ public:
       // extract the length
       _length = str.length();
 
+      // A leading '+' or '-' before a non-'#' prefix (e.g. "+$##.##/hr") places the sign
+      // before the prefix rather than between the prefix and digits.
+      bool hadLeadingSign = false;
+      if (!str.empty() && str[0] == '+')
+      {
+         _includePlus = true;
+         hadLeadingSign = true;
+         str.erase(0, 1);
+      }
+      else if (!str.empty() && str[0] == '-')
+      {
+         // Reserves a width column for a possible sign without forcing one to display;
+         // negative values already contribute their own '-' via to_string()/String().
+         hadLeadingSign = true;
+         str.erase(0, 1);
+      }
+
       // extract the prefix
       while (str.length() > 0)
       {
@@ -90,16 +108,23 @@ public:
          }
       }
 
-      if (!str.empty() && str[0] == '+')
+      if (hadLeadingSign && !_prefix.empty())
       {
-         _includePlus = true;
-         str.erase(0, 1);
+         _signBeforePrefix = true;
       }
-      else if (!str.empty() && str[0] == '-')
+      else if (!hadLeadingSign)
       {
-         // Reserves a width column for a possible sign without forcing one to display;
-         // negative values already contribute their own '-' via to_string()/String().
-         str.erase(0, 1);
+         if (!str.empty() && str[0] == '+')
+         {
+            _includePlus = true;
+            str.erase(0, 1);
+         }
+         else if (!str.empty() && str[0] == '-')
+         {
+            // Reserves a width column for a possible sign without forcing one to display;
+            // negative values already contribute their own '-' via to_string()/String().
+            str.erase(0, 1);
+         }
       }
 
       // extract the postfix
@@ -301,7 +326,9 @@ public:
          digits.append(numericLen, noValueChar);
       }
 
-      std::string str = _prefix + std::string(signLen, noValueChar) + digits + _postfix;
+      std::string str = _signBeforePrefix
+         ? (std::string(signLen, noValueChar) + _prefix + digits + _postfix)
+         : (_prefix + std::string(signLen, noValueChar) + digits + _postfix);
       return str;
    }
 
@@ -338,10 +365,13 @@ public:
       // plain text instead.
       if (!std::isfinite(value))
       {
-         std::string str = _prefix + (value > 0 ? "inf" : "-inf") + _postfix;
+         std::string str = (_signBeforePrefix && value < 0)
+            ? ("-" + _prefix + "inf" + _postfix)
+            : (_prefix + (value > 0 ? "inf" : "-inf") + _postfix);
          return toString(str);
       }
 
+      std::string signStr;
       std::string valueStr;
 
       // avoid the -0.00 result, but only when the value would round to zero
@@ -350,14 +380,21 @@ public:
       {
          if (_includePlus)
          {
-            valueStr.append(1, ' ');
+            signStr.append(1, ' ');
          }
          value = 0;
       }
-
-      if (_includePlus && value > 0)
+      else if (value < 0)
       {
-         valueStr.append(1, '+');
+         if (_signBeforePrefix)
+         {
+            signStr.append(1, '-');
+            value = -value;
+         }
+      }
+      else if (_includePlus && value > 0)
+      {
+         signStr.append(1, '+');
       }
 
       if (_precision == 0)
@@ -371,7 +408,9 @@ public:
       }
 
       // build the desired full string
-      std::string str = _prefix + valueStr + _postfix;
+      std::string str = _signBeforePrefix
+         ? (signStr + _prefix + valueStr + _postfix)
+         : (_prefix + signStr + valueStr + _postfix);
 
       return toString(str);
    }

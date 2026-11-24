@@ -315,6 +315,28 @@ public:
 
    ///
    /// <summary>
+   /// Replaces the Format object used by this DisplayValue, releasing any previously
+   /// created sprite so the next draw() allocates one sized for the new format width.
+   /// Callers using Alignment::RIGHT or Alignment::CENTER should also re-call setPosition()
+   /// if the format width changed.
+   /// </summary>
+   /// <param name="format">The new formatter applied to future draw() calls.</param>
+   ///
+   void setFormat(const Format& format)
+   {
+      if (_spriteCreated)
+      {
+         _sprite.deleteSprite();
+         _spriteCreated = false;
+      }
+      _format = format;
+      _lastPushX = INT16_MIN;
+      _lastPushWidth = 0;
+      _hasDrawn = false;
+   }
+
+   ///
+   /// <summary>
    /// Gets the alignment used by this DisplayValue.
    /// </summary>
    /// <returns>The value's Alignment.</returns>

@@ -7,25 +7,27 @@
 // connection and renders a dual-section live and daily view.
 //
 // The screen is divided vertically into two independently tappable sections under the
-// "Power" title, with the selected mode for each section persisted in Preferences:
-// - Top (kW, tap to cycle through 3 views):
-//   1. Now (kW) Bars: Five 0-20 kW horizontal bars showing live power for Solar, Total,
+// "Power" title (plus an upper-right Settings gear icon on touch displays to switch
+// display units between kW/kWh and $/hr/$ and configure the $/kWh electricity rate),
+// with the selected mode, units, and rate persisted in Preferences:
+// - Top (kW or $/hr, tap to cycle through 3 views):
+//   1. Now Bars: Five 0-20 kW horizontal bars showing live power for Solar, Total,
 //      House, Garage, and Barn, followed by a center-zero (-20 to +20 kW) horizontal Net
-//      bar (orange left, green right, white zero line) with right-aligned kW readouts.
-//   2. Now (kW) Breakdown: A single center-zero (-20 to +20 kW) horizontal stacked bar
+//      bar (orange left, green right, white zero line) with right-aligned readouts.
+//   2. Now Breakdown: A single center-zero (-20 to +20 kW) horizontal stacked bar
 //      with stacked House/Garage/Barn extending left, Solar extending right, and a vertical
-//      white Net marker line, followed by a Barn, Garage, House, Solar, and Net kW table.
-//   3. Today (kW) History: A 24-hour center-zero chart anchored at local midnight showing
+//      white Net marker line, followed by a Barn, Garage, House, Solar, and Net table.
+//   3. Today History: A 24-hour center-zero chart anchored at local midnight showing
 //      per-column average power (Solar green on top, Consumption blue on bottom, 20 kW full
-//      scale), followed by live Usage, Solar, and Net kW totals.
-// - Bottom (kWh, tap to toggle between 2 views):
-//   1. Today (kWh) Bars: Five 0-200 kWh horizontal bars showing daily energy for Solar,
+//      scale), followed by live Usage, Solar, and Net totals.
+// - Bottom (kWh or $, tap to toggle between 2 views):
+//   1. Today Bars: Five 0-200 kWh horizontal bars showing daily energy for Solar,
 //      Total, House, Garage, and Barn, followed by a center-zero (-200 to +200 kWh)
 //      horizontal Net bar (orange left, green right, white zero line) with right-aligned
-//      kWh readouts.
-//   2. Today (kWh) Breakdown: A single center-zero (-200 to +200 kWh) horizontal stacked bar
+//      readouts.
+//   2. Today Breakdown: A single center-zero (-200 to +200 kWh) horizontal stacked bar
 //      with stacked House/Garage/Barn extending left, Solar extending right, and a vertical
-//      white Net marker line, followed by a Barn, Garage, House, Solar, and Net kWh table.
+//      white Net marker line, followed by a Barn, Garage, House, Solar, and Net table.
 //
 // The layout adapts at runtime to the display's dimensions, supporting both large
 // displays (e.g. the 480x320 Hosyond ESP32-S3 Viewer board) and compact displays
@@ -36,6 +38,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <ctime>
 #include <sstream>
 #include <string>
@@ -85,20 +88,27 @@ constexpr auto TODAY_CHART_BINS_PREF_KEY = "todayKwBins";
 constexpr auto LEGACY_TODAY_CHART_BINS_PREF_KEY = "todayBins";
 constexpr auto NOW_VIEW_PREF_KEY = "nowView";
 constexpr auto TODAY_VIEW_PREF_KEY = "todayView";
+constexpr auto UNIT_PREF_KEY = "unit";
+constexpr auto RATE_PREF_KEY = "rate";
 constexpr uint16_t EMPTY_HUNDREDTHS_KW = 0xFFFF;
 constexpr uint16_t MAX_TODAY_CHART_COLS = 480;
 constexpr uint8_t NUM_MULTI_BARS = 5;
 constexpr uint8_t NUM_BREAKDOWN_COLS = 5;
 
-// Full-scale power (in kW) and daily energy (in kWh) for the charts and bar gauges.
+// Full-scale power (in kW), daily energy (in kWh), and electricity rate ($/kWh).
 constexpr float MAX_POWER_KW = 20.0f;
 constexpr float MAX_ENERGY_KWH = 200.0f;
 constexpr float WATTS_PER_KW = 1000.0f;
+constexpr float DEFAULT_RATE_PER_KWH = 0.24f;
+constexpr float MAX_RATE_PER_KWH = 99.99f;
 
 // ----------- Display Configuration
 constexpr auto NOW_POWER_SECTION_TEXT = "Now (kW)";
 constexpr auto TODAY_POWER_SECTION_TEXT = "Today (kW)";
 constexpr auto TODAY_ENERGY_SECTION_TEXT = "Today (kWh)";
+constexpr auto NOW_COST_SECTION_TEXT = "Now ($/hr)";
+constexpr auto TODAY_COST_RATE_SECTION_TEXT = "Today ($/hr)";
+constexpr auto TODAY_COST_SECTION_TEXT = "Today ($)";
 constexpr uint8_t HEADING_TEXT_SIZE = DEFAULT_HEADING_SIZE;
 constexpr uint8_t TABLE_TEXT_SIZE = DEFAULT_FOOTER_SIZE;
 constexpr int16_t OUTER_MARGIN_PX = 4;
@@ -118,6 +128,16 @@ constexpr uint8_t MULTI_BAR_LABEL_CHARS = 6;
 constexpr uint8_t CHART_LABEL_CHARS = 3;
 constexpr float ROTATED_HEADING_ANGLE_DEG = 270.0f;
 constexpr uint32_t SECONDS_PER_DAY = 24UL * 60UL * 60UL;
+#ifdef ARDUINO_TOUCH_SUPPORTED
+constexpr int16_t GEAR_MARGIN_PX = 4;
+constexpr int16_t GEAR_TAP_WIDTH_PX = 56;
+constexpr int16_t SETTINGS_MARGIN_X = 16;
+constexpr int16_t SETTINGS_GAP_PX = 10;
+constexpr int16_t SETTINGS_SECTION_GAP_PX = 16;
+constexpr int16_t SETTINGS_CORNER_RADIUS_PX = 8;
+constexpr uint8_t SETTINGS_PROMPT_TIMEOUT_M = 5;
+constexpr uint8_t NUM_UNIT_OPTIONS = 2;
+#endif
 
 constexpr Color TODAY_GRID_COLOR = Color565::fromRGB(48, 48, 48);
 constexpr Color BAR_TRACK_COLOR = Color565::fromRGB(32, 32, 32);
@@ -172,6 +192,17 @@ enum class BottomViewMode : uint8_t
 
 ///
 /// <summary>
+/// Display unit modes for power and daily energy readouts.
+/// </summary>
+///
+enum class DisplayUnit : uint8_t
+{
+   KW = 0,
+   COST = 1,
+};
+
+///
+/// <summary>
 /// Holds the latest solar production, whole-home consumption, and per-building (House,
 /// Garage, and Barn) power and daily energy readings received from telemetry.
 /// </summary>
@@ -216,6 +247,9 @@ float netEnergyKwh = NAN;
 bool readingsDirty = false;
 TopViewMode topViewMode = TopViewMode::BARS;
 BottomViewMode bottomViewMode = BottomViewMode::BARS;
+DisplayUnit displayUnit = DisplayUnit::KW;
+float ratePerKwh = DEFAULT_RATE_PER_KWH;
+bool showingSettings = false;
 
 void onTelemetrySample(const std::string& topic, double value, int64_t dtMicros);
 
@@ -388,12 +422,23 @@ Rect16 nowSectionRect;
 Rect16 todaySectionRect;
 Rect16 nowTouchRect;
 Rect16 todayTouchRect;
+int16_t nowSummaryRowY = 0;
 int16_t headingColWidth = 0;
 int16_t contentLeftX = 0;
 uint8_t sectionTextSize = TABLE_TEXT_SIZE;
 int16_t chartLabelRightX = 0;
 int32_t todayChartDayId = -1;
 bool isLargeDisplay = false;
+#ifdef ARDUINO_TOUCH_SUPPORTED
+Rect16 gearTouchRect;
+int16_t gearCenterX = 0;
+int16_t gearCenterY = 0;
+int16_t gearRadius = 12;
+std::array<Rect16, NUM_UNIT_OPTIONS> unitBoxRects = {};
+Rect16 rateBoxRect;
+Rect16 okBoxRect;
+uint8_t settingsButtonTextSize = TABLE_TEXT_SIZE;
+#endif
 Timer todayPersistTimer(TODAY_CHART_PERSIST_S * 1000UL);
 int32_t todayActiveCol = -1;
 float todayColProdSum = 0.0f;
@@ -403,17 +448,111 @@ bool todayChartPrefsDirty = false;
 
 ///
 /// <summary>
+/// Converts a kW or kWh value into the currently selected display unit ($/hr or $ when
+/// DisplayUnit::COST is active, or unchanged when DisplayUnit::KW is active).
+/// </summary>
+/// <param name="value">Input power in kW or energy in kWh (or NAN).</param>
+/// <returns>Scaled display value in the active unit (preserving NAN).</returns>
+///
+float toDisplayValue(float value)
+{
+   return (displayUnit == DisplayUnit::COST) ? (value * ratePerKwh) : value;
+}
+
+///
+/// <summary>
+/// Computes the signed Net display value from solar production and consumption so that
+/// displayed Solar minus displayed Total matches displayed Net without rounding drift.
+/// </summary>
+/// <param name="prodRaw">Solar production in kW or kWh.</param>
+/// <param name="consRaw">Total consumption in kW or kWh.</param>
+/// <param name="fallbackNetRaw">Fallback signed net value in kW or kWh if either input is NAN.</param>
+/// <returns>Signed net value in the active display unit.</returns>
+///
+float computeDisplayNet(float prodRaw, float consRaw, float fallbackNetRaw)
+{
+   if (!std::isnan(prodRaw) && !std::isnan(consRaw))
+   {
+      if (displayUnit == DisplayUnit::COST)
+      {
+         float roundedProd = std::round(prodRaw * ratePerKwh * 100.0f) / 100.0f;
+         float roundedCons = std::round(consRaw * ratePerKwh * 100.0f) / 100.0f;
+         return roundedProd - roundedCons;
+      }
+
+      float roundedProd = std::round(prodRaw * 10.0f) / 10.0f;
+      float roundedCons = std::round(consRaw * 10.0f) / 10.0f;
+      return roundedProd - roundedCons;
+   }
+
+   return toDisplayValue(fallbackNetRaw);
+}
+
+///
+/// <summary>
+/// Formats a full-scale chart or breakdown axis maximum concisely (integer when >= 10 or
+/// effectively whole, otherwise one decimal place) so labels stay within 3 characters.
+/// </summary>
+/// <param name="maxValue">Full-scale magnitude in the active display unit.</param>
+/// <returns>Formatted axis label string.</returns>
+///
+std::string formatAxisMaxLabel(float maxValue)
+{
+   std::ostringstream out;
+   out << std::fixed;
+   float roundedInt = std::round(maxValue);
+   if (roundedInt >= 10.0f || std::fabs(maxValue - roundedInt) < 0.05f)
+   {
+      out.precision(0);
+      out << roundedInt;
+   }
+   else
+   {
+      out.precision(1);
+      out << maxValue;
+   }
+   return out.str();
+}
+
+///
+/// <summary>
+/// Formats an electricity rate in $/kWh with at least 2 decimal places while preserving up
+/// to 4 decimal places for sub-cent tariffs (e.g. 0.24 -> "0.24", 0.245 -> "0.245").
+/// </summary>
+/// <param name="rate">Electricity rate in dollars per kWh.</param>
+/// <returns>Formatted numeric rate string without currency symbol or unit suffix.</returns>
+///
+std::string formatRateValue(float rate)
+{
+   std::ostringstream out;
+   out << std::fixed;
+   out.precision(4);
+   out << rate;
+   std::string s = out.str();
+   size_t dotPos = s.find('.');
+   if (dotPos != std::string::npos)
+   {
+      while (s.length() > dotPos + 3 && s.back() == '0')
+      {
+         s.pop_back();
+      }
+   }
+   return s;
+}
+
+///
+/// <summary>
 /// Updates and renders a Breakdown section's center-zero stacked horizontal bar (stacked
 /// House/Garage/Barn on the left, Solar on the right, and a vertical white Net marker line)
 /// and its 5-column Barn/Garage/House/Solar/Net value table.
 /// </summary>
 /// <param name="layout">Laid-out breakdown section geometry and bar widget.</param>
 /// <param name="values">Five centered DisplayValue widgets for Barn, Garage, House, Solar, and Net.</param>
-/// <param name="netValue">Signed net value (positive when Solar exceeds Usage).</param>
-/// <param name="solarValue">Solar production magnitude.</param>
-/// <param name="houseValue">House consumption magnitude.</param>
-/// <param name="garageValue">Garage consumption magnitude.</param>
-/// <param name="barnValue">Barn consumption magnitude.</param>
+/// <param name="netValue">Signed net value in kW or kWh (positive when Solar exceeds Usage).</param>
+/// <param name="solarValue">Solar production magnitude in kW or kWh.</param>
+/// <param name="houseValue">House consumption magnitude in kW or kWh.</param>
+/// <param name="garageValue">Garage consumption magnitude in kW or kWh.</param>
+/// <param name="barnValue">Barn consumption magnitude in kW or kWh.</param>
 ///
 void drawBreakdownDynamic(
    const BreakdownLayout& layout,
@@ -448,11 +587,11 @@ void drawBreakdownDynamic(
    layout.bar->draw(&sketch.arduino.display);
 
    const std::array<float, NUM_BREAKDOWN_COLS> colValues = {
-      barnValue,
-      garageValue,
-      houseValue,
-      solarValue,
-      breakdownNet,
+      toDisplayValue(barnValue),
+      toDisplayValue(garageValue),
+      toDisplayValue(houseValue),
+      toDisplayValue(solarValue),
+      toDisplayValue(breakdownNet),
    };
    for (uint8_t i = 0; i < NUM_BREAKDOWN_COLS; i++)
    {
@@ -468,12 +607,12 @@ void drawBreakdownDynamic(
 /// <param name="layout">Laid-out multi-bar widgets and row coordinates.</param>
 /// <param name="values">Five right-aligned DisplayValue widgets for Solar, Total, House, Garage, and Barn.</param>
 /// <param name="netValueWidget">Right-aligned DisplayValue widget for the signed Net readout.</param>
-/// <param name="netValue">Signed net value (positive when Solar exceeds Usage).</param>
-/// <param name="solarValue">Solar production magnitude.</param>
-/// <param name="totalValue">Total consumption magnitude.</param>
-/// <param name="houseValue">House consumption magnitude.</param>
-/// <param name="garageValue">Garage consumption magnitude.</param>
-/// <param name="barnValue">Barn consumption magnitude.</param>
+/// <param name="netValue">Signed net value in kW or kWh (positive when Solar exceeds Usage).</param>
+/// <param name="solarValue">Solar production magnitude in kW or kWh.</param>
+/// <param name="totalValue">Total consumption magnitude in kW or kWh.</param>
+/// <param name="houseValue">House consumption magnitude in kW or kWh.</param>
+/// <param name="garageValue">Garage consumption magnitude in kW or kWh.</param>
+/// <param name="barnValue">Barn consumption magnitude in kW or kWh.</param>
 ///
 void drawMultiBarDynamic(
    const MultiBarLayout& layout,
@@ -504,17 +643,17 @@ void drawMultiBarDynamic(
       float v = barValues[i];
       layout.bars[i]->set(std::isnan(v) ? 0.0f : v);
       layout.bars[i]->draw(&sketch.arduino.display);
-      (*values)[i].draw(v, MULTI_BAR_COLORS[i]);
+      (*values)[i].draw(toDisplayValue(v), MULTI_BAR_COLORS[i]);
    }
 
    layout.netBar->set(std::isnan(netValue) ? 0.0f : netValue);
    layout.netBar->draw(&sketch.arduino.display);
-   netValueWidget->draw(netValue, NET_MARKER_COLOR);
+   netValueWidget->draw(computeDisplayNet(solarValue, totalValue, netValue), NET_MARKER_COLOR);
 }
 
 ///
 /// <summary>
-/// Updates and renders the dynamic widgets for the active top (kW) section mode.
+/// Updates and renders the dynamic widgets for the active top (kW or $/hr) section mode.
 /// </summary>
 ///
 void drawNowDynamic()
@@ -546,11 +685,11 @@ void drawNowDynamic()
    else
    {
       nowSummaryRow.draw(
-         latestReadings.consumptionKw,
+         toDisplayValue(latestReadings.consumptionKw),
          DELTA_NEGATIVE_COLOR,
-         latestReadings.productionKw,
+         toDisplayValue(latestReadings.productionKw),
          DELTA_POSITIVE_COLOR,
-         netPowerKw,
+         computeDisplayNet(latestReadings.productionKw, latestReadings.consumptionKw, netPowerKw),
          NET_MARKER_COLOR);
    }
 }
@@ -601,6 +740,59 @@ void drawFields()
 
 ///
 /// <summary>
+/// Computes column center X coordinates and positions the 5 Breakdown DisplayValue widgets
+/// across sectionRect for their current format widths.
+/// </summary>
+/// <param name="layout">Target BreakdownLayout whose colCenterX array is updated.</param>
+/// <param name="sectionRect">Bounding rectangle of the section's content area.</param>
+/// <param name="values">Five centered DisplayValue widgets for Barn, Garage, House, Solar, and Net.</param>
+///
+void layoutBreakdownColumns(
+   BreakdownLayout* layout,
+   const Rect16& sectionRect,
+   std::array<DisplayValue, NUM_BREAKDOWN_COLS>* values)
+{
+   ASSERT(layout != nullptr);
+   ASSERT(values != nullptr);
+
+   int32_t totalColWidth = 0;
+   for (uint8_t i = 0; i < NUM_BREAKDOWN_COLS; i++)
+   {
+      totalColWidth += (*values)[i].width();
+   }
+
+   int32_t totalGap = static_cast<int32_t>(sectionRect.width) - totalColWidth;
+   if (totalGap >= 0)
+   {
+      int32_t cursorX = sectionRect.x;
+      constexpr int32_t numGaps = static_cast<int32_t>(NUM_BREAKDOWN_COLS - 1);
+      for (uint8_t i = 0; i < NUM_BREAKDOWN_COLS; i++)
+      {
+         int16_t colWidth = (*values)[i].width();
+         layout->colCenterX[i] = static_cast<int16_t>(cursorX + colWidth / 2);
+         (*values)[i].setPosition(layout->colCenterX[i], layout->tableValueY);
+         if (i + 1 < NUM_BREAKDOWN_COLS)
+         {
+            int32_t gap = (totalGap * static_cast<int32_t>(i + 1)) / numGaps -
+                          (totalGap * static_cast<int32_t>(i)) / numGaps;
+            cursorX += colWidth + gap;
+         }
+      }
+   }
+   else
+   {
+      for (uint8_t i = 0; i < NUM_BREAKDOWN_COLS; i++)
+      {
+         int16_t slotLeft = sectionRect.x + (sectionRect.width * i) / NUM_BREAKDOWN_COLS;
+         int16_t slotRight = sectionRect.x + (sectionRect.width * (i + 1)) / NUM_BREAKDOWN_COLS;
+         layout->colCenterX[i] = (slotLeft + slotRight) / 2;
+         (*values)[i].setPosition(layout->colCenterX[i], layout->tableValueY);
+      }
+   }
+}
+
+///
+/// <summary>
 /// Computes the layout and constructs the center-zero stacked horizontal bar and 5-column
 /// value table for a Breakdown section.
 /// </summary>
@@ -645,40 +837,7 @@ void initBreakdownLayout(
       NET_MARKER_COLOR,
       BAR_TRACK_COLOR);
 
-   int32_t totalColWidth = 0;
-   for (uint8_t i = 0; i < NUM_BREAKDOWN_COLS; i++)
-   {
-      totalColWidth += (*values)[i].width();
-   }
-
-   int32_t totalGap = static_cast<int32_t>(sectionRect.width) - totalColWidth;
-   if (totalGap >= 0)
-   {
-      int32_t cursorX = sectionRect.x;
-      constexpr int32_t numGaps = static_cast<int32_t>(NUM_BREAKDOWN_COLS - 1);
-      for (uint8_t i = 0; i < NUM_BREAKDOWN_COLS; i++)
-      {
-         int16_t colWidth = (*values)[i].width();
-         layout->colCenterX[i] = static_cast<int16_t>(cursorX + colWidth / 2);
-         (*values)[i].setPosition(layout->colCenterX[i], layout->tableValueY);
-         if (i + 1 < NUM_BREAKDOWN_COLS)
-         {
-            int32_t gap = (totalGap * static_cast<int32_t>(i + 1)) / numGaps -
-                          (totalGap * static_cast<int32_t>(i)) / numGaps;
-            cursorX += colWidth + gap;
-         }
-      }
-   }
-   else
-   {
-      for (uint8_t i = 0; i < NUM_BREAKDOWN_COLS; i++)
-      {
-         int16_t slotLeft = sectionRect.x + (sectionRect.width * i) / NUM_BREAKDOWN_COLS;
-         int16_t slotRight = sectionRect.x + (sectionRect.width * (i + 1)) / NUM_BREAKDOWN_COLS;
-         layout->colCenterX[i] = (slotLeft + slotRight) / 2;
-         (*values)[i].setPosition(layout->colCenterX[i], layout->tableValueY);
-      }
-   }
+   layoutBreakdownColumns(layout, sectionRect, values);
 }
 
 ///
@@ -790,7 +949,9 @@ void initLayout()
    int16_t minSectionHeight = min(
       static_cast<int16_t>(nowBottomY - nowChartY),
       static_cast<int16_t>(todayBottomY - todayChartY));
-   int16_t maxSectionLabelChars = static_cast<int16_t>(strlen(TODAY_ENERGY_SECTION_TEXT));
+   int16_t maxSectionLabelChars = static_cast<int16_t>(max(
+      strlen(TODAY_ENERGY_SECTION_TEXT),
+      strlen(TODAY_COST_RATE_SECTION_TEXT)));
    sectionTextSize = (isLargeDisplay &&
       maxSectionLabelChars * sketch.arduino.charW(TABLE_TEXT_SIZE + 1) <= minSectionHeight)
       ? static_cast<uint8_t>(TABLE_TEXT_SIZE + 1)
@@ -805,6 +966,7 @@ void initLayout()
    int16_t chartWidth = max(static_cast<int16_t>(16), static_cast<int16_t>(displayWidth - chartX));
 
    todayChartRect = Rect16(chartX, nowChartY, chartWidth, nowChartHeight);
+   nowSummaryRowY = nowRowY;
 
    nowSectionRect = Rect16(contentLeftX, nowChartY, displayWidth - contentLeftX, nowBottomY - nowChartY);
    todaySectionRect = Rect16(contentLeftX, todayChartY, displayWidth - contentLeftX, todayBottomY - todayChartY);
@@ -812,6 +974,13 @@ void initLayout()
    int16_t splitY = (nowBottomY + todayChartY) / 2;
    nowTouchRect = Rect16(0, nowChartY, displayWidth, splitY - nowChartY);
    todayTouchRect = Rect16(0, splitY, displayWidth, displayHeight - splitY);
+
+#ifdef ARDUINO_TOUCH_SUPPORTED
+   gearRadius = min<int16_t>(14, max<int16_t>(10, static_cast<int16_t>((titleHeight - 2 * GEAR_MARGIN_PX) / 2)));
+   gearCenterX = displayWidth - GEAR_MARGIN_PX - gearRadius;
+   gearCenterY = titleHeight / 2;
+   gearTouchRect = Rect16(displayWidth - GEAR_TAP_WIDTH_PX, 0, GEAR_TAP_WIDTH_PX, titleHeight + topGap);
+#endif
 
    nowSummaryRow.setBounds(chartX, nowRowY, chartWidth);
 
@@ -821,8 +990,10 @@ void initLayout()
    initBreakdownLayout(&nowBreakdown, nowSectionRect, powerRange, &nowBreakdownValues, rowHeight, itemGap);
    initBreakdownLayout(&todayBreakdown, todaySectionRect, energyRange, &todayBreakdownValues, rowHeight, itemGap);
 
-   // Align left/right bar edges and center-zero lines across both the top (kW) and bottom (kWh) multi-bar views.
-   int16_t maxNetValueWidth = max(nowNetBarValue.width(), todayNetBarValue.width());
+   // Reserve enough right-side value width for both kW/kWh and $/hr/$ formats so bar edges
+   // and center-zero lines stay aligned across sections and across unit mode switches.
+   size_t maxNetFormatChars = max(Format("+###.# kWh").length(), Format("+$##.##/hr").length());
+   int16_t maxNetValueWidth = static_cast<int16_t>(maxNetFormatChars) * charWidth;
    int16_t barLeftX = contentLeftX + MULTI_BAR_LABEL_CHARS * charWidth + CHART_LABEL_GAP_PX;
    int16_t barRightX = displayWidth - maxNetValueWidth - CHART_LABEL_GAP_PX;
    int16_t barWidth = max<int16_t>(16, barRightX - barLeftX);
@@ -838,6 +1009,49 @@ void initLayout()
       Color::BLACK,
       Color::GRAY);
    todayChart->setSecondaryColors(SOLAR_COLOR, DELTA_NEGATIVE_COLOR);
+}
+
+///
+/// <summary>
+/// Updates every DisplayValue and Field format and re-computes alignment positions to match
+/// the currently selected displayUnit (kW/kWh or $/hr/$).
+/// </summary>
+///
+void applyUnitFormats()
+{
+   const bool useCost = (displayUnit == DisplayUnit::COST);
+   const Format nowFormat = useCost ? Format("$##.##/hr") : Format("##.# kW");
+   const Format nowNetFormat = useCost ? Format("+$##.##/hr") : Format("+##.# kW");
+   const Format todayFormat = useCost ? Format("$###.##") : Format("###.# kWh");
+   const Format todayNetFormat = useCost ? Format("+$###.##") : Format("+###.# kWh");
+
+   int16_t displayWidth = sketch.arduino.width();
+
+   for (uint8_t i = 0; i < NUM_MULTI_BARS; i++)
+   {
+      nowBarValues[i].setFormat(nowFormat);
+      nowBarValues[i].setPosition(displayWidth, nowMultiBar.barTextY[i]);
+      todayBarValues[i].setFormat(todayFormat);
+      todayBarValues[i].setPosition(displayWidth, todayMultiBar.barTextY[i]);
+   }
+   nowNetBarValue.setFormat(nowNetFormat);
+   nowNetBarValue.setPosition(displayWidth, nowMultiBar.netBarTextY);
+   todayNetBarValue.setFormat(todayNetFormat);
+   todayNetBarValue.setPosition(displayWidth, todayMultiBar.netBarTextY);
+
+   nowUsageField.setFormat(nowFormat);
+   nowSolarField.setFormat(nowFormat);
+   nowNetField.setFormat(nowNetFormat);
+   nowSummaryRow.setBounds(todayChartRect.x, nowSummaryRowY, todayChartRect.width);
+
+   for (uint8_t i = 0; i < NUM_BREAKDOWN_COLS; i++)
+   {
+      bool isNet = (i == NUM_BREAKDOWN_COLS - 1);
+      nowBreakdownValues[i].setFormat(isNet ? nowNetFormat : nowFormat);
+      todayBreakdownValues[i].setFormat(isNet ? todayNetFormat : todayFormat);
+   }
+   layoutBreakdownColumns(&nowBreakdown, nowSectionRect, &nowBreakdownValues);
+   layoutBreakdownColumns(&todayBreakdown, todaySectionRect, &todayBreakdownValues);
 }
 
 ///
@@ -1020,7 +1234,7 @@ void resetTodayChartHistory(int32_t dayId)
 
 ///
 /// <summary>
-/// Loads the persisted Now and Today view mode selections from Preferences.
+/// Loads the persisted Now/Today view modes, display units, and electricity rate from Preferences.
 /// </summary>
 ///
 void loadViewPreferences()
@@ -1029,6 +1243,8 @@ void loadViewPreferences()
    {
       uint8_t savedTop = sketch.arduino.preferences.getUChar(NOW_VIEW_PREF_KEY, 0);
       uint8_t savedBottom = sketch.arduino.preferences.getUChar(TODAY_VIEW_PREF_KEY, 0);
+      uint8_t savedUnit = sketch.arduino.preferences.getUChar(UNIT_PREF_KEY, static_cast<uint8_t>(DisplayUnit::KW));
+      float savedRate = sketch.arduino.preferences.getFloat(RATE_PREF_KEY, DEFAULT_RATE_PER_KWH);
       sketch.arduino.preferences.end();
 
       topViewMode = (savedTop < NUM_TOP_VIEW_MODES)
@@ -1037,12 +1253,18 @@ void loadViewPreferences()
       bottomViewMode = (savedBottom == static_cast<uint8_t>(BottomViewMode::BREAKDOWN))
          ? BottomViewMode::BREAKDOWN
          : BottomViewMode::BARS;
+      displayUnit = (savedUnit == static_cast<uint8_t>(DisplayUnit::COST))
+         ? DisplayUnit::COST
+         : DisplayUnit::KW;
+      ratePerKwh = (std::isfinite(savedRate) && savedRate > 0.0f && savedRate <= MAX_RATE_PER_KWH)
+         ? savedRate
+         : DEFAULT_RATE_PER_KWH;
    }
 }
 
 ///
 /// <summary>
-/// Persists the current top and bottom view mode selections to Preferences.
+/// Persists the current top/bottom view modes, display units, and electricity rate to Preferences.
 /// </summary>
 ///
 void saveViewPreferences()
@@ -1050,6 +1272,8 @@ void saveViewPreferences()
    sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
    sketch.arduino.preferences.putUChar(NOW_VIEW_PREF_KEY, static_cast<uint8_t>(topViewMode));
    sketch.arduino.preferences.putUChar(TODAY_VIEW_PREF_KEY, static_cast<uint8_t>(bottomViewMode));
+   sketch.arduino.preferences.putUChar(UNIT_PREF_KEY, static_cast<uint8_t>(displayUnit));
+   sketch.arduino.preferences.putFloat(RATE_PREF_KEY, ratePerKwh);
    sketch.arduino.preferences.end();
 }
 
@@ -1170,7 +1394,7 @@ void sampleTodayChart()
       todayChart->clear();
       populateTodayChartFromSamples();
       todayPersistTimer.reset();
-      if (topViewMode == TopViewMode::TODAY_HISTORY)
+      if (!showingSettings && topViewMode == TopViewMode::TODAY_HISTORY)
       {
          todayChart->reset();
          todayChart->draw(&sketch.arduino.display);
@@ -1182,7 +1406,7 @@ void sampleTodayChart()
       todayChart->clear();
       resetTodayChartHistory(dayId);
       todayPersistTimer.reset();
-      if (topViewMode == TopViewMode::TODAY_HISTORY)
+      if (!showingSettings && topViewMode == TopViewMode::TODAY_HISTORY)
       {
          todayChart->reset();
          todayChart->draw(&sketch.arduino.display);
@@ -1240,7 +1464,7 @@ void sampleTodayChart()
          0.0f,
          sample.prodHundredthsKw * 0.01f,
          sample.consHundredthsKw * 0.01f);
-      if (topViewMode == TopViewMode::TODAY_HISTORY)
+      if (!showingSettings && topViewMode == TopViewMode::TODAY_HISTORY)
       {
          todayChart->draw(&sketch.arduino.display);
          drawTodayGridLines();
@@ -1342,10 +1566,245 @@ void renderMultiBarStatic(
    netValueWidget->invalidate();
 }
 
+#ifdef ARDUINO_TOUCH_SUPPORTED
 ///
 /// <summary>
-/// Draws the static and initial dynamic content of the top (kW) section (including its
-/// mode-specific rotated heading) for the current topViewMode.
+/// Draws the settings gear icon in the upper-right corner of the main display.
+/// </summary>
+///
+void drawGear()
+{
+   const uint16_t color = static_cast<uint16_t>(Color::GRAY);
+
+   constexpr uint8_t NUM_TEETH = 8;
+   for (uint8_t i = 0; i < NUM_TEETH; i++)
+   {
+      const float angle = i * 2.0f * static_cast<float>(M_PI) / NUM_TEETH;
+      sketch.arduino.display.fillCircle(
+         gearCenterX + static_cast<int16_t>(std::lround(gearRadius * 0.8f * std::cos(angle))),
+         gearCenterY + static_cast<int16_t>(std::lround(gearRadius * 0.8f * std::sin(angle))),
+         max<int16_t>(2, gearRadius / 5),
+         color);
+   }
+
+   sketch.arduino.display.fillCircle(gearCenterX, gearCenterY, gearRadius * 7 / 10, color);
+   sketch.arduino.display.fillCircle(gearCenterX, gearCenterY, gearRadius * 3 / 10, static_cast<uint16_t>(Color::BLACK));
+}
+
+///
+/// <summary>
+/// Draws a pencil edit icon centered at (cx, cy).
+/// </summary>
+/// <param name="cx">Center X coordinate.</param>
+/// <param name="cy">Center Y coordinate.</param>
+/// <param name="color">Icon stroke color.</param>
+///
+void drawEditIcon(int16_t cx, int16_t cy, Color color)
+{
+   const uint16_t c = static_cast<uint16_t>(color);
+   const int16_t x0 = cx - 9;
+   const int16_t y0 = cy + 9;
+
+   // Pencil shaft (diagonal body from bottom-left to top-right)
+   sketch.arduino.display.drawLine(x0 + 3, y0 - 7, x0 + 13, y0 - 17, c);
+   sketch.arduino.display.drawLine(x0 + 7, y0 - 3, x0 + 17, y0 - 13, c);
+   sketch.arduino.display.drawLine(x0 + 13, y0 - 17, x0 + 17, y0 - 13, c);
+   sketch.arduino.display.drawLine(x0 + 11, y0 - 15, x0 + 15, y0 - 11, c);
+   sketch.arduino.display.drawLine(x0 + 3, y0 - 7, x0 + 7, y0 - 3, c);
+
+   // Pencil tip (pointing to bottom-left)
+   sketch.arduino.display.drawLine(x0 + 3, y0 - 7, x0, y0, c);
+   sketch.arduino.display.drawLine(x0 + 7, y0 - 3, x0, y0, c);
+}
+
+///
+/// <summary>
+/// Draws the kW and $/hr unit selection buttons on the Settings screen.
+/// </summary>
+///
+void drawSettingsUnitButtons()
+{
+   constexpr std::array<const char*, NUM_UNIT_OPTIONS> UNIT_LABELS = { "kW", "$/hr" };
+   sketch.arduino.setTextSize(settingsButtonTextSize);
+   const int16_t textH = sketch.arduino.charH(settingsButtonTextSize);
+
+   for (uint8_t i = 0; i < NUM_UNIT_OPTIONS; i++)
+   {
+      const Rect16& rect = unitBoxRects[i];
+      const bool selected = (static_cast<uint8_t>(displayUnit) == i);
+      const Color bg = selected ? Color::DARKGREEN : Color::BLUE;
+      const Color border = selected ? Color::WHITE : Color::GRAY;
+
+      sketch.arduino.display.fillRoundRect(rect.x, rect.y, rect.width, rect.height, SETTINGS_CORNER_RADIUS_PX, static_cast<uint16_t>(bg));
+      sketch.arduino.display.drawRoundRect(rect.x, rect.y, rect.width, rect.height, SETTINGS_CORNER_RADIUS_PX, static_cast<uint16_t>(border));
+      if (selected)
+      {
+         sketch.arduino.display.drawRoundRect(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2, SETTINGS_CORNER_RADIUS_PX, static_cast<uint16_t>(border));
+      }
+
+      const char* label = UNIT_LABELS[i];
+      const int16_t tw = sketch.arduino.display.textWidth(label);
+      sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(bg));
+      sketch.arduino.display.setCursor(rect.x + (rect.width - tw) / 2, rect.y + (rect.height - textH) / 2);
+      sketch.arduino.display.print(label);
+   }
+}
+
+///
+/// <summary>
+/// Draws the editable electricity rate box on the Settings screen.
+/// </summary>
+///
+void drawSettingsRateBox()
+{
+   sketch.arduino.display.fillRoundRect(
+      rateBoxRect.x,
+      rateBoxRect.y,
+      rateBoxRect.width,
+      rateBoxRect.height,
+      SETTINGS_CORNER_RADIUS_PX,
+      static_cast<uint16_t>(Color::DARKBLUE));
+   sketch.arduino.display.drawRoundRect(
+      rateBoxRect.x,
+      rateBoxRect.y,
+      rateBoxRect.width,
+      rateBoxRect.height,
+      SETTINGS_CORNER_RADIUS_PX,
+      static_cast<uint16_t>(Color::WHITE));
+
+   std::string rateText = "$" + formatRateValue(ratePerKwh) + "/kWh";
+   sketch.arduino.setTextSize(settingsButtonTextSize);
+   const int16_t textH = sketch.arduino.charH(settingsButtonTextSize);
+   const int16_t tw = sketch.arduino.display.textWidth(rateText.c_str());
+   sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(Color::DARKBLUE));
+   sketch.arduino.display.setCursor(
+      rateBoxRect.x + (rateBoxRect.width - tw) / 2,
+      rateBoxRect.y + (rateBoxRect.height - textH) / 2);
+   sketch.arduino.display.print(rateText.c_str());
+
+   drawEditIcon(rateBoxRect.right() - 28, rateBoxRect.y + rateBoxRect.height / 2, Color::LIGHTGRAY);
+}
+
+///
+/// <summary>
+/// Renders the full touch Settings screen for selecting display units (kW or $/hr) and
+/// editing the electricity rate ($/kWh).
+/// </summary>
+///
+void drawSettingsScreen()
+{
+   const int16_t displayWidth = sketch.arduino.width();
+   const int16_t displayHeight = sketch.arduino.height();
+   const int16_t contentW = displayWidth - 2 * SETTINGS_MARGIN_X;
+
+   sketch.arduino.clearDisplay();
+
+   // Screen heading
+   sketch.arduino.setTextSize(HEADING_TEXT_SIZE);
+   sketch.arduino.setCursor(SETTINGS_MARGIN_X, 8);
+   sketch.arduino.println("Settings", Color::HEADING);
+
+   const int16_t titleH = sketch.arduino.charH(HEADING_TEXT_SIZE);
+   const int16_t labelH = sketch.arduino.charH(TABLE_TEXT_SIZE);
+   int16_t y = 8 + titleH + SETTINGS_GAP_PX;
+
+   const int16_t bottomMargin = 12;
+   const int16_t overhead = 2 * (labelH + 4) + 2 * SETTINGS_SECTION_GAP_PX + bottomMargin;
+   const int16_t availH = displayHeight - y - overhead;
+   const int16_t boxH = constrain(static_cast<int16_t>(availH / 3), static_cast<int16_t>(labelH + 14), static_cast<int16_t>(56));
+
+   settingsButtonTextSize = (sketch.arduino.charH(DEFAULT_TEXT_SIZE) + 12 <= boxH)
+      ? DEFAULT_TEXT_SIZE
+      : TABLE_TEXT_SIZE;
+
+   // Display units selector
+   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+   sketch.arduino.setCursor(SETTINGS_MARGIN_X, y);
+   sketch.arduino.println("Units", Color::SUB_LABEL);
+   y += labelH + 4;
+
+   const int16_t unitBoxW = (contentW - SETTINGS_GAP_PX) / NUM_UNIT_OPTIONS;
+   for (uint8_t i = 0; i < NUM_UNIT_OPTIONS; i++)
+   {
+      int16_t bx = SETTINGS_MARGIN_X + i * (unitBoxW + SETTINGS_GAP_PX);
+      int16_t bw = (i + 1 == NUM_UNIT_OPTIONS) ? (SETTINGS_MARGIN_X + contentW - bx) : unitBoxW;
+      unitBoxRects[i] = Rect16(bx, y, bw, boxH);
+   }
+   drawSettingsUnitButtons();
+   y += boxH + SETTINGS_SECTION_GAP_PX;
+
+   // Electricity rate editor box
+   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+   sketch.arduino.setCursor(SETTINGS_MARGIN_X, y);
+   sketch.arduino.println("Rate", Color::SUB_LABEL);
+   y += labelH + 4;
+
+   rateBoxRect = Rect16(SETTINGS_MARGIN_X, y, contentW, boxH);
+   drawSettingsRateBox();
+
+   // OK button anchored near the bottom
+   const int16_t okY = max<int16_t>(rateBoxRect.bottom() + SETTINGS_SECTION_GAP_PX, displayHeight - bottomMargin - boxH);
+   okBoxRect = Rect16(SETTINGS_MARGIN_X, okY, contentW, boxH);
+
+   sketch.arduino.display.fillRoundRect(okBoxRect.x, okBoxRect.y, okBoxRect.width, okBoxRect.height, SETTINGS_CORNER_RADIUS_PX, static_cast<uint16_t>(Color::DARKGREEN));
+   sketch.arduino.display.drawRoundRect(okBoxRect.x, okBoxRect.y, okBoxRect.width, okBoxRect.height, SETTINGS_CORNER_RADIUS_PX, static_cast<uint16_t>(Color::WHITE));
+
+   sketch.arduino.setTextSize(settingsButtonTextSize);
+   const int16_t okTextH = sketch.arduino.charH(settingsButtonTextSize);
+   const int16_t okTw = sketch.arduino.display.textWidth("OK");
+   sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(Color::DARKGREEN));
+   sketch.arduino.display.setCursor(okBoxRect.x + (okBoxRect.width - okTw) / 2, okBoxRect.y + (okBoxRect.height - okTextH) / 2);
+   sketch.arduino.display.print("OK");
+}
+
+///
+/// <summary>
+/// Opens the on-screen touch numeric keypad to edit the electricity rate ($/kWh) and
+/// persists any valid positive rate to Preferences immediately.
+/// </summary>
+///
+void editRateTouch()
+{
+   std::string promptTitle = "Rate ($/kWh)";
+   String initialText = formatRateValue(ratePerKwh).c_str();
+
+   while (true)
+   {
+      bool cancelled = false;
+      String entered = sketch.arduino.promptTouchNumber(
+         promptTitle.c_str(),
+         initialText,
+         true,
+         SETTINGS_PROMPT_TIMEOUT_M * 60UL * 1000UL,
+         true,
+         false,
+         &cancelled);
+      if (cancelled)
+      {
+         return;
+      }
+
+      entered.trim();
+      char* endPtr = nullptr;
+      float parsedRate = std::strtof(entered.c_str(), &endPtr);
+      if (endPtr != entered.c_str() && *endPtr == '\0' &&
+          std::isfinite(parsedRate) && parsedRate > 0.0f && parsedRate <= MAX_RATE_PER_KWH)
+      {
+         ratePerKwh = parsedRate;
+         saveViewPreferences();
+         return;
+      }
+
+      promptTitle = "Invalid - Rate ($/kWh)";
+      initialText = entered;
+   }
+}
+#endif
+
+///
+/// <summary>
+/// Draws the static and initial dynamic content of the top (kW or $/hr) section (including
+/// its mode-specific rotated heading) for the current topViewMode.
 /// </summary>
 /// <param name="clearArea">True to clear the top section and its rotated heading before drawing.</param>
 ///
@@ -1361,9 +1820,10 @@ void renderNowSection(bool clearArea)
          static_cast<uint16_t>(Color::BLACK));
    }
 
+   const bool useCost = (displayUnit == DisplayUnit::COST);
    const char* topHeading = (topViewMode == TopViewMode::TODAY_HISTORY)
-      ? TODAY_POWER_SECTION_TEXT
-      : NOW_POWER_SECTION_TEXT;
+      ? (useCost ? TODAY_COST_RATE_SECTION_TEXT : TODAY_POWER_SECTION_TEXT)
+      : (useCost ? NOW_COST_SECTION_TEXT : NOW_POWER_SECTION_TEXT);
    sketch.arduino.drawRotatedText(
       topHeading,
       headingColWidth / 2.0f,
@@ -1371,17 +1831,19 @@ void renderNowSection(bool clearArea)
       ROTATED_HEADING_ANGLE_DEG,
       sectionTextSize);
 
+   std::string maxLabel = formatAxisMaxLabel(useCost ? (MAX_POWER_KW * ratePerKwh) : MAX_POWER_KW);
+
    if (topViewMode == TopViewMode::BARS)
    {
       renderMultiBarStatic(nowMultiBar, &nowBarValues, &nowNetBarValue);
    }
    else if (topViewMode == TopViewMode::BREAKDOWN)
    {
-      renderBreakdownStatic(nowBreakdown, &nowBreakdownValues, "20");
+      renderBreakdownStatic(nowBreakdown, &nowBreakdownValues, maxLabel.c_str());
    }
    else
    {
-      drawChartLabels(todayChartRect, "20", "0", "20");
+      drawChartLabels(todayChartRect, maxLabel.c_str(), "0", maxLabel.c_str());
       todayChart->reset();
       todayChart->draw(&sketch.arduino.display);
       drawTodayGridLines();
@@ -1394,8 +1856,8 @@ void renderNowSection(bool clearArea)
 
 ///
 /// <summary>
-/// Draws the static and initial dynamic content of the bottom (kWh) section content area
-/// for the current bottomViewMode.
+/// Draws the static and initial dynamic content of the bottom (kWh or $) section content
+/// area for the current bottomViewMode.
 /// </summary>
 /// <param name="clearArea">True to clear todaySectionRect before drawing.</param>
 ///
@@ -1417,7 +1879,9 @@ void renderTodaySection(bool clearArea)
    }
    else
    {
-      renderBreakdownStatic(todayBreakdown, &todayBreakdownValues, "200");
+      const bool useCost = (displayUnit == DisplayUnit::COST);
+      std::string maxLabel = formatAxisMaxLabel(useCost ? (MAX_ENERGY_KWH * ratePerKwh) : MAX_ENERGY_KWH);
+      renderBreakdownStatic(todayBreakdown, &todayBreakdownValues, maxLabel.c_str());
    }
 
    drawTodayDynamic();
@@ -1425,8 +1889,8 @@ void renderTodaySection(bool clearArea)
 
 ///
 /// <summary>
-/// Draws the static screen elements (title, section headings, and active section views)
-/// and refreshes all dynamic fields and charts for a full redraw.
+/// Draws the static screen elements (title, settings gear icon, section headings, and active
+/// section views) and refreshes all dynamic fields and charts for a full redraw.
 /// </summary>
 ///
 void drawStatic()
@@ -1441,9 +1905,16 @@ void drawStatic()
    sketch.arduino.setCursor(0, 0);
    sketch.arduino.println("Power", Color::HEADING);
 
-   // Rotated "Today (kWh)" heading on the left (top kW heading is drawn by renderNowSection)
+#ifdef ARDUINO_TOUCH_SUPPORTED
+   drawGear();
+#endif
+
+   // Rotated bottom section heading on the left (top heading is drawn by renderNowSection)
+   const char* bottomHeading = (displayUnit == DisplayUnit::COST)
+      ? TODAY_COST_SECTION_TEXT
+      : TODAY_ENERGY_SECTION_TEXT;
    sketch.arduino.drawRotatedText(
-      TODAY_ENERGY_SECTION_TEXT,
+      bottomHeading,
       headingColWidth / 2.0f,
       todaySectionRect.y + todaySectionRect.height / 2.0f,
       ROTATED_HEADING_ANGLE_DEG,
@@ -1464,9 +1935,8 @@ void drawStatic()
 
 ///
 /// <summary>
-/// Polls the touch panel for debounced taps in the top (kW) or bottom (kWh) sections,
-/// cycling the tapped section's view mode, persisting the updated selection, and redrawing
-/// only that section.
+/// Polls the touch panel for debounced taps on the upper-right settings gear, the Settings
+/// screen controls, or the top/bottom view sections.
 /// </summary>
 ///
 void handleTouch()
@@ -1476,6 +1946,43 @@ void handleTouch()
    {
       return;
    }
+
+#ifdef ARDUINO_TOUCH_SUPPORTED
+   if (showingSettings)
+   {
+      if (unitBoxRects[0].contains(tap) && displayUnit != DisplayUnit::KW)
+      {
+         displayUnit = DisplayUnit::KW;
+         saveViewPreferences();
+         drawSettingsUnitButtons();
+      }
+      else if (unitBoxRects[1].contains(tap) && displayUnit != DisplayUnit::COST)
+      {
+         displayUnit = DisplayUnit::COST;
+         saveViewPreferences();
+         drawSettingsUnitButtons();
+      }
+      else if (rateBoxRect.contains(tap))
+      {
+         editRateTouch();
+         drawSettingsScreen();
+      }
+      else if (okBoxRect.contains(tap))
+      {
+         showingSettings = false;
+         applyUnitFormats();
+         drawStatic();
+      }
+      return;
+   }
+
+   if (gearTouchRect.contains(tap))
+   {
+      showingSettings = true;
+      drawSettingsScreen();
+      return;
+   }
+#endif
 
    if (nowTouchRect.contains(tap))
    {
@@ -1627,6 +2134,7 @@ void setup()
 
    initLayout();
    loadViewPreferences();
+   applyUnitFormats();
    loadTodayChartHistory();
 
    TelemetrySubscriber* client = sketch.beginTelemetry(POWER_SOLAR_TOPIC, &telemetryHandler);
@@ -1640,7 +2148,7 @@ void loop()
 {
    sketch.loop();
 
-   if (!telemetryHandler.needsFullRedraw)
+   if (!telemetryHandler.needsFullRedraw || showingSettings)
    {
       handleTouch();
    }
@@ -1651,15 +2159,18 @@ void loop()
       return;
    }
 
-   if (telemetryHandler.needsFullRedraw)
+   if (!showingSettings)
    {
-      drawStatic();
-   }
+      if (telemetryHandler.needsFullRedraw)
+      {
+         drawStatic();
+      }
 
-   if (readingsDirty && displayTimer.ready())
-   {
-      readingsDirty = false;
-      drawFields();
+      if (readingsDirty && displayTimer.ready())
+      {
+         readingsDirty = false;
+         drawFields();
+      }
    }
 
    if (chartSampleTimer.ready())
