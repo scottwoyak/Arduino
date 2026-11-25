@@ -195,11 +195,17 @@ TelemetryConfig TELEMETRY_CONFIG = {
    .publishIntervalMs = TELEMETRY_PUBLISH_INTERVAL_MS,
 };
 
+#ifdef CONFIG_ESP32P4_SELECTS_REV_LESS_V3
+constexpr uint16_t CPU_FREQUENCY_MHZ = 90;
+#else
+constexpr uint16_t CPU_FREQUENCY_MHZ = 100;
+#endif
+
 SketchConfig PUBLISHER_CONFIG = {
    .sketchName = SKETCH_NAME,
    .version = VERSION,
    .preferencesNamespace = PREF_NAMESPACE,
-   .cpuFrequencyMhz = 80,
+   .cpuFrequencyMhz = CPU_FREQUENCY_MHZ,
    .enableOTA = true,
 };
 

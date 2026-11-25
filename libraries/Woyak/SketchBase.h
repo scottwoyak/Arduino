@@ -41,8 +41,8 @@ struct SketchConfig
    /// <summary>Preferences (NVS) namespace used to persist prompted selections (Influx site, telemetry topic). Only needed if a derived class prompts.</summary>
    const char* preferencesNamespace = nullptr;
 
-   /// <summary>CPU clock speed (in MHz) set once begin() completes. Field-deployed sketches should set a lower value (e.g. 80) to reduce power draw/heat.</summary>
-   uint8_t cpuFrequencyMhz = 240;
+   /// <summary>CPU clock speed (in MHz) set once begin() completes. Field-deployed sketches should set a lower value (e.g. 80 on ESP32/S3 or 90/100 on ESP32-P4) to reduce power draw/heat.</summary>
+   uint16_t cpuFrequencyMhz = 240;
 
    /// <summary>If true, enable OTA firmware updates via arduino.enableOTA(). Sketches that need OTA (e.g. remotely deployed ones) must set this to true.</summary>
    bool enableOTA = false;
@@ -742,7 +742,14 @@ protected:
    ///
    void _finishLoggerSetup()
    {
-      setCpuFrequencyMhz(_config.cpuFrequencyMhz);
+      if (!setCpuFrequencyMhz(_config.cpuFrequencyMhz))
+      {
+         Logger.log(
+            "Failed to set CPU frequency to " + std::to_string(_config.cpuFrequencyMhz) +
+               " MHz (running at " + std::to_string(getCpuFrequencyMhz()) +
+               " MHz; supported: " + getSupportedCpuFrequencyMhz() + ")",
+            LogSeverity::WARN);
+      }
 
       esp_task_wdt_config_t twdtConfig = {
          .timeout_ms = WATCHDOG_INTERVAL_S * 1000U,
