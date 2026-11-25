@@ -161,6 +161,8 @@ static std::string getReadings()
 
 void setup()
 {
+   sketch.setTopicRequiresRestart(true);
+
    // The telemetry topic (and thus the sensor type) is resolved by sketch.begin()
    // before this lambda runs, so only the sensor that's actually wired is constructed.
    sketch.addSensor("Depth Sensor", []() {

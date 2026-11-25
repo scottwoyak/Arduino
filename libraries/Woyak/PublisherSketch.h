@@ -121,6 +121,7 @@ private:
        TelemetryPublisher* _client = nullptr;
 
        bool _telemetryEnabled = true;
+       bool _topicRequiresRestart = false;
 
        Timer _publishTimer;
 
@@ -132,7 +133,7 @@ private:
           { "GetTopic", "Reports the current telemetry topic(s)", { "gt" }, {}, false, { "Telemetry" } },
           {
              "SetTopic",
-             "Persists a new telemetry topic; requires Restart to take effect",
+             "Persists a new telemetry topic (some devices require Restart)",
              { "st" },
              {
                 { "topic", "Telemetry topic name", true },
@@ -162,7 +163,7 @@ private:
              std::string topics = _publisherInstance->_client != nullptr
                 ? _publisherInstance->_client->formatTopics()
                 : "";
-             if (topics.empty())
+             if (_publisherInstance->_client == nullptr)
              {
                 const char* resolved = _publisherInstance->_topicResolver.topic();
                 topics = resolved != nullptr ? resolved : "";
@@ -172,9 +173,22 @@ private:
           }
           if (_publisherInstance->_topicResolver.hasPrompts() && strcasecmp(verb.c_str(), "SetTopic") == 0)
           {
+             ASSERT(_publisherInstance->_client != nullptr);
+
              std::string value;
              std::getline(stream >> std::ws, value);
-             DeviceServerClient::respond(_publisherInstance->_topicResolver.trySetTopic(value).c_str());
+             bool requiresRestart = _publisherInstance->_topicRequiresRestart;
+             std::string result = _publisherInstance->_topicResolver.trySetTopic(value, !requiresRestart, requiresRestart);
+             if (!requiresRestart && result.rfind("Error:", 0) != 0 && _publisherInstance->_client->getTopic() != value)
+             {
+                std::string oldTopic = _publisherInstance->_client->getTopic();
+                if (!oldTopic.empty())
+                {
+                   _publisherInstance->_client->removeTopic(oldTopic.c_str());
+                }
+                _publisherInstance->_client->setTopic(value);
+             }
+             DeviceServerClient::respond(result.c_str());
              return true;
           }
           return false;
@@ -405,6 +419,22 @@ private:
    {
       _client = new TelemetryPublisher(_topicResolver.topic(), _telemetryConfig, _status, _customTelemetryHandler != nullptr ? _customTelemetryHandler : &_telemetryHandler);
       _client->setPublishingEnabled(_telemetryEnabled);
+      if (_topicRequiresRestart)
+      {
+         std::string oldTopic = _topicResolver.pendingRemoval();
+         if (!oldTopic.empty())
+         {
+            if (oldTopic == _client->getTopic())
+            {
+               _topicResolver.clearPendingRemoval(oldTopic);
+            }
+            else
+            {
+               _client->onTopicRemoval([this](const std::string& topic) { _topicResolver.clearPendingRemoval(topic); });
+               _client->removeTopic(oldTopic.c_str());
+            }
+         }
+      }
       for (const TopicDefinition& definition : _pendingTopics)
       {
          _client->createTopic(definition.topic.c_str(), definition.metadata);
@@ -505,6 +535,18 @@ public:
    void setValueSource(float (*valueFunc)())
    {
       _valueSource = valueFunc;
+   }
+
+   ///
+   /// <summary>
+   /// Requires a restart to apply SetTopic when the topic determines boot-time hardware.
+   /// Call before begin().
+   /// </summary>
+   /// <param name="required">True to defer topic changes until restart.</param>
+   ///
+   void setTopicRequiresRestart(bool required)
+   {
+      _topicRequiresRestart = required;
    }
 
    ///

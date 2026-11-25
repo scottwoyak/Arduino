@@ -16,6 +16,8 @@
 //
 // DeviceServer GetConfig reports each CT preset as ct1..ct16 (or custom for a custom
 // calibration). SetConfig ct1 100SC selects a preset by name and applies it immediately.
+// Changing a circuit or device location removes obsolete telemetry topics and registers
+// the current names. Telemetry publishing is always enabled.
 //
 // Mux + ESP32-P4 ADC1 + ZMPT101B wiring (Waveshare ESP32-P4 4.3" Touch LCD, 40-pin header):
 //     P4 Pin / GPIO   Wire color   PCB connection
@@ -44,6 +46,7 @@
 #include <cstdlib>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #define SOUNDS_CUSTOM
 #define TEXT_SIZE_2
@@ -121,7 +124,6 @@ constexpr std::array<const char*, NUM_CT_INPUTS> PREF_KEY_CH_POLARITY = {
 constexpr auto PREF_KEY_VOLTAGE_SCALE = "vScale";
 constexpr auto PREF_KEY_BOARD_PHASE_DEG = "phBoard";
 constexpr auto PREF_KEY_BOARD_PHASE_MODE = "phMode";
-constexpr auto PREF_KEY_TELEMETRY_ENABLED = "telEn";
 
 constexpr uint16_t DISPLAY_UPDATE_INTERVAL_MS = 200; // 5 updates per second
 constexpr uint16_t AUTO_CAL_SAVE_INTERVAL_M = 30;    // Throttle gradual phase-drift NVS saves to 30 minutes
@@ -152,7 +154,6 @@ char primaryTelemetryTopic[MAX_TOPIC_LENGTH] = "";
 bool hasPrimaryTelemetryChannel = false;
 size_t primaryTelemetryChannel = 0;
 bool telemetryTopicsResolved = false;
-bool telemetryEnabled = true;
 std::array<PowerSensorBase::ChannelConfig, NUM_CT_INPUTS> initialChannelConfig = {
    PowerSensorBase::ChannelConfig{ "1",  DEFAULT_CT_AMPS },
    PowerSensorBase::ChannelConfig{ "2",  DEFAULT_CT_AMPS },
@@ -216,12 +217,18 @@ PublisherSketch sketch(PUBLISHER_CONFIG, TELEMETRY_CONFIG);
 /// Rebuilds the per-channel telemetry topics as "Power/<location>/<circuit>" for each
 /// configured non-neutral CT (excluding "*White" neutral channels), registers any
 /// auto-synthesized split-phase derived channels (such as "<Prefix>Black" from
-/// "<Prefix>Red" + "<Prefix>White"), and updates the active TelemetryPublisher topic
-/// immediately if running.
+/// "<Prefix>Red" + "<Prefix>White"), removes obsolete topics, and updates the active
+/// TelemetryPublisher topic immediately if running.
 /// </summary>
 ///
 void refreshTelemetryTopics()
 {
+   std::vector<std::string> oldTopics;
+   if (sketch.client() != nullptr)
+   {
+      oldTopics = sketch.client()->getTopics();
+   }
+   std::vector<std::string> newTopics;
    std::string deviceLocation = sketch.location().c_str();
    std::string topicPrefix = std::string(POWER_TOPIC_PREFIX) + "/";
    if (!deviceLocation.empty())
@@ -236,10 +243,7 @@ void refreshTelemetryTopics()
       {
          std::string fullTopic = topicPrefix + ctLocations[i];
          strlcpy(channelTopics[i], fullTopic.c_str(), sizeof(channelTopics[i]));
-         if (telemetryTopicsResolved && telemetryEnabled)
-         {
-            sketch.createTopic(channelTopics[i], TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
-         }
+         newTopics.push_back(channelTopics[i]);
          if (!foundPrimary)
          {
             primaryTelemetryChannel = i;
@@ -260,10 +264,7 @@ void refreshTelemetryTopics()
       {
          std::string fullTopic = topicPrefix + powerSensor.derivedChannelName(d);
          strlcpy(derivedPowerTopics[d], fullTopic.c_str(), sizeof(derivedPowerTopics[d]));
-         if (telemetryTopicsResolved && telemetryEnabled)
-         {
-            sketch.createTopic(derivedPowerTopics[d], TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
-         }
+         newTopics.push_back(derivedPowerTopics[d]);
       }
       else
       {
@@ -278,7 +279,24 @@ void refreshTelemetryTopics()
       primaryTelemetryTopic[0] = '\0';
    }
 
-   if (sketch.client() != nullptr && telemetryEnabled)
+   if (sketch.client() != nullptr)
+   {
+      for (const std::string& topic : oldTopics)
+      {
+         if (std::find(newTopics.begin(), newTopics.end(), topic) == newTopics.end())
+         {
+            sketch.client()->removeTopic(topic.c_str());
+         }
+      }
+   }
+   if (telemetryTopicsResolved)
+   {
+      for (const std::string& topic : newTopics)
+      {
+         sketch.createTopic(topic.c_str(), TelemetryTopicMetadata{ .unit = TelemetryUnits::WATTS, .description = "Electrical power for this circuit", .decimals = POWER_DECIMALS });
+      }
+   }
+   if (sketch.client() != nullptr)
    {
       sketch.client()->setTopic(primaryTelemetryTopic);
    }
@@ -498,11 +516,6 @@ void loadChannelConfig()
          powerSensor.setVoltageScale(savedVScale);
       }
    }
-
-   telemetryEnabled = (hasPrefs && prefs.isKey(PREF_KEY_TELEMETRY_ENABLED))
-      ? prefs.getBool(PREF_KEY_TELEMETRY_ENABLED, true)
-      : true;
-   sketch.setTelemetryEnabled(telemetryEnabled);
 
    applyChannelConfigToSensor();
 
@@ -1047,7 +1060,7 @@ void startInteractiveChannelPrompts()
 ///
 /// <summary>
 /// Returns extra configuration text for the GetConfig command reporting vScale, phase
-/// calibration, telemetry state, and an ASCII table of the 16 CT channels (location l#,
+/// calibration, and an ASCII table of the 16 CT channels (location l#,
 /// preset ct#, amp rating a#, and circuit voltage v#).
 /// </summary>
 /// <returns>Formatted configuration text for GetConfig.</returns>
@@ -1060,7 +1073,6 @@ std::string getExtraConfigText()
    out << "vScale=" << powerSensor.voltageScale();
    out.precision(2);
    out << "\nphase=" << powerSensor.phaseShiftDeg() << " deg (" << powerSensor.phaseCalibrationMode() << ")";
-   out << "\ntelemetry=" << (telemetryEnabled ? "on" : "off");
 
    constexpr const char* LOC_HEADER = "Location (l#)";
    constexpr const char* CT_HEADER = "CT (ct#)";
@@ -1105,41 +1117,7 @@ std::string getExtraConfigText()
    return out.str();
 }
 
-void refreshTelemetryButtonDisplay();
 void refreshCtSettingsDisplay(size_t inputIndex);
-
-///
-/// <summary>
-/// Persists the telemetry enabled/disabled state in Preferences and applies it immediately.
-/// When disabled, no topic creations or samples are sent to the telemetry server; when
-/// re-enabled, unsent stale topics are cleared and the current channel topics are registered.
-/// </summary>
-/// <param name="enabled">True to enable telemetry publishing; false to suppress it.</param>
-///
-void saveTelemetryEnabled(bool enabled)
-{
-   Preferences prefs;
-   prefs.begin(PREF_NAMESPACE, false);
-   prefs.putBool(PREF_KEY_TELEMETRY_ENABLED, enabled);
-   prefs.end();
-
-   telemetryEnabled = enabled;
-   if (enabled)
-   {
-      if (sketch.client() != nullptr)
-      {
-         sketch.client()->clearUnsentTopics();
-      }
-      refreshTelemetryTopics();
-      sketch.setTelemetryEnabled(true);
-   }
-   else
-   {
-      sketch.setTelemetryEnabled(false);
-   }
-
-   refreshTelemetryButtonDisplay();
-}
 
 ///
 /// <summary>
@@ -1167,7 +1145,6 @@ void saveVoltageScale(float scale)
 /// - Direct keys "v1".."v16" (or "volts1".."volts16"; "120" or "240" for single-CT 240V circuits)
 /// - "vcal" with actual AC line voltage (e.g. "vcal=120.1") or "vscale" with raw V/V scale
 /// - "phase=auto" to clear saved phase/polarity learning and immediately re-learn automatically
-/// - "telemetry=on|off" to enable or disable telemetry publishing
 /// </summary>
 /// <param name="key">Config key passed to SetConfig.</param>
 /// <param name="value">New value string.</param>
@@ -1176,25 +1153,6 @@ void saveVoltageScale(float scale)
 ///
 bool trySetExtraConfig(const std::string& key, const std::string& value, std::string& result)
 {
-   if (strcasecmp(key.c_str(), "telemetry") == 0)
-   {
-      if (strcasecmp(value.c_str(), "on") == 0 || strcasecmp(value.c_str(), "true") == 0 || value == "1")
-      {
-         saveTelemetryEnabled(true);
-         result = "telemetry=on";
-         return true;
-      }
-      if (strcasecmp(value.c_str(), "off") == 0 || strcasecmp(value.c_str(), "false") == 0 || value == "0")
-      {
-         saveTelemetryEnabled(false);
-         result = "telemetry=off";
-         return true;
-      }
-
-      result = "Error: telemetry must be on or off";
-      return true;
-   }
-
    if (strcasecmp(key.c_str(), "phase") == 0)
    {
       if (strcasecmp(value.c_str(), "auto") != 0 && strcasecmp(value.c_str(), "reset") != 0)
@@ -1387,83 +1345,23 @@ DisplayValue lineVoltageField(
    DisplayValue::Alignment::RIGHT);
 float displayedLineVoltage = NAN;
 
-constexpr int16_t TELEMETRY_BUTTON_HEIGHT = 52;
-constexpr int16_t TELEMETRY_BUTTON_GAP = 10;
-constexpr int16_t TELEMETRY_BUTTON_MARGIN_X = 8;
-constexpr int16_t TELEMETRY_BUTTON_CORNER_RADIUS = 8;
-
 Timer updateTimer(DISPLAY_UPDATE_INTERVAL_MS);
 int16_t valueStartY = 0;
 size_t displayedDerivedCount = 0;
 bool displayReady = false;
 bool showAmps = false;
-Rect16 telemetryButtonRect;
-
-///
-/// <summary>
-/// Computes the rectangle for the telemetry enable/disable toggle button sitting
-/// directly above the bottom location/version footer.
-/// </summary>
-/// <returns>Bounding rectangle of the telemetry toggle button.</returns>
-///
-Rect16 computeTelemetryButtonRect()
-{
-   int16_t footerHeight = sketch.arduino.charH(FOOTER_SIZE);
-   int16_t top = sketch.arduino.height() - footerHeight - TELEMETRY_BUTTON_GAP - TELEMETRY_BUTTON_HEIGHT;
-   return Rect16(
-      TELEMETRY_BUTTON_MARGIN_X,
-      top,
-      sketch.arduino.width() - 2 * TELEMETRY_BUTTON_MARGIN_X,
-      TELEMETRY_BUTTON_HEIGHT);
-}
-
-///
-/// <summary>
-/// Draws the telemetry enable/disable toggle button at the bottom of the main display.
-/// </summary>
-///
-void drawTelemetryButton()
-{
-   telemetryButtonRect = computeTelemetryButtonRect();
-   const Color bg = telemetryEnabled ? Color::DARKGREEN : Color::DARKRED;
-   const char* label = telemetryEnabled ? "Telemetry: ON" : "Telemetry: OFF";
-
-   sketch.arduino.display.fillRoundRect(
-      telemetryButtonRect.left(),
-      telemetryButtonRect.top(),
-      telemetryButtonRect.width,
-      telemetryButtonRect.height,
-      TELEMETRY_BUTTON_CORNER_RADIUS,
-      static_cast<uint16_t>(bg));
-   sketch.arduino.display.drawRoundRect(
-      telemetryButtonRect.left(),
-      telemetryButtonRect.top(),
-      telemetryButtonRect.width,
-      telemetryButtonRect.height,
-      TELEMETRY_BUTTON_CORNER_RADIUS,
-      static_cast<uint16_t>(Color::WHITE));
-
-   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
-   const int16_t tw = sketch.arduino.display.textWidth(label);
-   const int16_t th = sketch.arduino.charH(TABLE_TEXT_SIZE);
-   sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(bg));
-   sketch.arduino.display.setCursor(
-      telemetryButtonRect.left() + (telemetryButtonRect.width - tw) / 2,
-      telemetryButtonRect.top() + (telemetryButtonRect.height - th) / 2);
-   sketch.arduino.display.print(label);
-}
 
 ///
 /// <summary>
 /// Computes the vertical start coordinate to center the physical + derived channel rows
-/// between the top heading and the bottom telemetry toggle button.
+/// between the top heading and the bottom footer.
 /// </summary>
 /// <returns>Top Y pixel coordinate for the first table row.</returns>
 ///
 int16_t computeTableStartY()
 {
    int16_t headingHeight = sketch.arduino.charH(HEADER_SIZE);
-   int16_t bottomLimit = computeTelemetryButtonRect().top() - TELEMETRY_BUTTON_GAP;
+   int16_t bottomLimit = sketch.arduino.height() - sketch.arduino.charH(FOOTER_SIZE);
    size_t totalRows = NUM_CT_INPUTS + powerSensor.derivedChannelCount();
    int16_t valuesHeight = static_cast<int16_t>(totalRows) * sketch.arduino.charH(TABLE_TEXT_SIZE);
    int16_t availableHeight = bottomLimit - headingHeight;
@@ -1576,20 +1474,7 @@ bool inRect(const Rect16& rect, int16_t x, int16_t y)
 
 ///
 /// <summary>
-/// Redraws the telemetry toggle button if the main display is currently visible.
-/// </summary>
-///
-void refreshTelemetryButtonDisplay()
-{
-   if (displayReady && !showingSettings)
-   {
-      drawTelemetryButton();
-   }
-}
-
-///
-/// <summary>
-/// Draws the static frame (heading, gear icon, telemetry toggle button, and location/version footer)
+/// Draws the static frame (heading, gear icon, and location/version footer)
 /// for the main power view.
 /// </summary>
 ///
@@ -1600,7 +1485,6 @@ void drawMainFrame()
    sketch.arduino.setCursor(0, 0);
    sketch.arduino.println("Power", Color::HEADING);
    drawGear();
-   drawTelemetryButton();
    drawFooter();
    displayedLineVoltage = NAN;
    displayedDerivedCount = powerSensor.derivedChannelCount();
@@ -2173,7 +2057,7 @@ void updateDisplay()
    if (powerSensor.derivedChannelCount() != displayedDerivedCount)
    {
       int16_t headingHeight = sketch.arduino.charH(HEADER_SIZE);
-      int16_t clearBottom = computeTelemetryButtonRect().top();
+      int16_t clearBottom = sketch.arduino.height() - sketch.arduino.charH(FOOTER_SIZE);
       sketch.arduino.display.fillRect(
          0,
          headingHeight,
@@ -2306,10 +2190,6 @@ void handleTouch()
          showingSettings = true;
          drawSettingsView();
       }
-      else if (inRect(telemetryButtonRect, tp.x, tp.y))
-      {
-         saveTelemetryEnabled(!telemetryEnabled);
-      }
       else
       {
          showAmps = !showAmps;
@@ -2437,7 +2317,6 @@ void setup()
    displayedDerivedCount = powerSensor.derivedChannelCount();
    valueStartY = computeTableStartY();
 
-   drawTelemetryButton();
    drawFooter();
 
    displayReady = true;
@@ -2458,23 +2337,20 @@ void loop()
    {
       updateDisplay();
 
-      if (telemetryEnabled)
+      for (size_t i = 0; i < NUM_CT_INPUTS; i++)
       {
-         for (size_t i = 0; i < NUM_CT_INPUTS; i++)
+         if ((!hasPrimaryTelemetryChannel || i != primaryTelemetryChannel) && channelTopics[i][0] != '\0')
          {
-            if ((!hasPrimaryTelemetryChannel || i != primaryTelemetryChannel) && channelTopics[i][0] != '\0')
-            {
-               sketch.submit(channelTopics[i], powerSensor.watts(i));
-            }
+            sketch.submit(channelTopics[i], powerSensor.watts(i));
          }
+      }
 
-         size_t numDerived = powerSensor.derivedChannelCount();
-         for (size_t d = 0; d < numDerived; d++)
+      size_t numDerived = powerSensor.derivedChannelCount();
+      for (size_t d = 0; d < numDerived; d++)
+      {
+         if (derivedPowerTopics[d][0] != '\0')
          {
-            if (derivedPowerTopics[d][0] != '\0')
-            {
-               sketch.submit(derivedPowerTopics[d], powerSensor.derivedWatts(d));
-            }
+            sketch.submit(derivedPowerTopics[d], powerSensor.derivedWatts(d));
          }
       }
    }

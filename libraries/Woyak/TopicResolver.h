@@ -3,6 +3,8 @@
 // Requires the sketch to have already included ArduinoBoard.h (so the Arduino class is
 // defined).
 
+#include <string>
+
 #include "Logger.h"
 #include "PreferencesResolver.h"
 #include "Status.h"
@@ -22,6 +24,7 @@ class TopicResolver
 {
 private:
    static constexpr const char* TOPIC_KEYS[] = { "topic" };
+   static constexpr const char* PENDING_REMOVAL_KEY = "topicRemove";
    static constexpr SerialTable::Column TOPIC_COLUMNS[] = {
       { "Topic", 24 },
    };
@@ -29,7 +32,8 @@ private:
    const char* _preferencesNamespace;
    const TelemetryConfig* _config;
    PreferencesResolver _resolver;
-   const char* _topic = nullptr;
+   std::string _topic;
+   bool _resolved = false;
 
 public:
    ///
@@ -106,7 +110,8 @@ public:
          _topic = _config->topic;
       }
 
-      return _topic;
+      _resolved = true;
+      return _topic.c_str();
    }
 
    ///
@@ -117,20 +122,21 @@ public:
    ///
    const char* topic() const
    {
-      return _topic;
+      return _resolved ? _topic.c_str() : nullptr;
    }
 
    ///
    /// <summary>
    /// Persists a new telemetry topic to Preferences, validated against config.prompts.
-   /// Does not take effect until the device is restarted, since the topic is only
-   /// resolved at boot. Only valid when hasPrompts() is true, since a fixed topic
-   /// (config.topic) isn't remotely changeable.
+   /// By default the selection takes effect after restart; publishers may apply it immediately.
+   /// Only valid when hasPrompts() is true.
    /// </summary>
    /// <param name="newTopic">The new topic to select, matched case-sensitively against config.prompts.</param>
+   /// <param name="applyImmediately">Update the resolved topic immediately if true.</param>
+   /// <param name="retireOnRestart">Persist the active topic for removal after restart.</param>
    /// <returns>A response message describing the result.</returns>
    ///
-   std::string trySetTopic(const std::string& newTopic)
+   std::string trySetTopic(const std::string& newTopic, bool applyImmediately = false, bool retireOnRestart = false)
    {
       if (!hasPrompts())
       {
@@ -157,10 +163,76 @@ public:
       }
 
       Preferences preferences;
-      preferences.begin(_preferencesNamespace, false);
-      preferences.putString(TOPIC_KEYS[0], newTopic.c_str());
+      if (!preferences.begin(_preferencesNamespace, false))
+      {
+         return "Error: could not open topic preferences";
+      }
+      if (retireOnRestart && _resolved && _topic != newTopic && preferences.putString(PENDING_REMOVAL_KEY, _topic.c_str()) == 0)
+      {
+         preferences.end();
+         return "Error: could not save topic removal";
+      }
+      size_t written = preferences.putString(TOPIC_KEYS[0], newTopic.c_str());
+      if (written != 0 && retireOnRestart && _resolved && _topic == newTopic && preferences.isKey(PENDING_REMOVAL_KEY))
+      {
+         if (!preferences.remove(PENDING_REMOVAL_KEY))
+         {
+            preferences.end();
+            return "Error: could not clear pending topic removal";
+         }
+      }
       preferences.end();
+      if (written == 0)
+      {
+         return "Error: could not save topic";
+      }
 
+      if (applyImmediately)
+      {
+         _topic = newTopic;
+         _resolved = true;
+         return "Saved topic=\"" + newTopic + "\". Telemetry change queued.";
+      }
       return "Saved topic=\"" + newTopic + "\". Restart required to apply.";
+   }
+
+   ///
+   /// <summary>
+   /// Reads a topic whose removal was deferred until restart.
+   /// </summary>
+   /// <returns>The pending topic, or an empty string if none is recorded.</returns>
+   ///
+   std::string pendingRemoval() const
+   {
+      Preferences preferences;
+      if (!preferences.begin(_preferencesNamespace, true))
+      {
+         Logger.log("Could not read pending telemetry topic removal", LogSeverity::ERROR, "Telemetry");
+         return "";
+      }
+      std::string topic = preferences.getString(PENDING_REMOVAL_KEY, "").c_str();
+      preferences.end();
+      return topic;
+   }
+
+   ///
+   /// <summary>
+   /// Clears a recorded removal only if it still refers to the given topic.
+   /// </summary>
+   /// <param name="topic">Topic whose removal has completed or is no longer needed.</param>
+   ///
+   void clearPendingRemoval(const std::string& topic)
+   {
+      Preferences preferences;
+      if (!preferences.begin(_preferencesNamespace, false))
+      {
+         Logger.log("Could not open pending telemetry topic removal", LogSeverity::ERROR, "Telemetry");
+         return;
+      }
+      if (preferences.getString(PENDING_REMOVAL_KEY, "") == topic.c_str() && !preferences.remove(PENDING_REMOVAL_KEY))
+      {
+         Logger.log("Could not clear pending telemetry topic removal: " + topic, LogSeverity::ERROR, "Telemetry");
+      }
+      preferences.end();
    }
 };

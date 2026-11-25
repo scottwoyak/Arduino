@@ -366,6 +366,8 @@ public:
 ///   Subscribe (client to server): {"type":"subscribe","topics":["A","B"]}
 ///   Create (device to server): {"type":"createTopic","topic":"Test","metadata":{"unit":"W","decimals":2}}
 ///   Topic approval: {"type":"topicAck","topic":"Test","status":"created"} (or "updated"/"unchanged")
+///   Remove (device to server): {"type":"removeTopic","topic":"Test"}
+///   Removal acknowledgment: {"type":"topicAck","topic":"Test","status":"removed"} (or "not_found")
 ///   Topic rejection: {"type":"topicError","requestType":"createTopic","topic":"Test","code":"forbidden","message":"..."}
 ///   Sample (either direction): {"type":"sample","topic":"Test","value":1.23,"dt":100}
 ///   Metadata (server to client): {"type":"topic","topic":"Test","metadata":{"unit":"W","decimals":2}}
@@ -386,6 +388,7 @@ public:
 
    typedef std::function<void(const std::string& topic, double value, int64_t dtMicros)> SampleHandler;
    typedef std::function<void(const std::string& topic, const TelemetryTopicMetadata& metadata)> TopicHandler;
+   typedef std::function<void(const std::string& topic)> TopicRemovalHandler;
 
 private:
    enum class TopicState
@@ -395,6 +398,9 @@ private:
       TIMED_OUT,
       APPROVED,
       REJECTED,
+      REMOVE_UNSENT,
+      REMOVE_PENDING,
+      REMOVE_TIMED_OUT,
    };
 
    struct TopicDefinition
@@ -403,6 +409,7 @@ private:
       TelemetryTopicMetadata metadata;
       TopicState state = TopicState::UNSENT;
       bool metadataChanged = false;
+      bool wanted = true;
       bool hasSubmitted = false;
       int64_t micros = 0;
       double lastSample = 0.0;
@@ -416,6 +423,7 @@ private:
    std::vector<std::string> _topics;
    SampleHandler _sampleHandler = nullptr;
    TopicHandler _topicHandler = nullptr;
+   TopicRemovalHandler _topicRemovalHandler = nullptr;
    float _value = NAN;
    RollingRate _rate;
    std::vector<TopicDefinition> _topicDefinitions;
@@ -530,7 +538,8 @@ private:
    {
       for (TopicDefinition& definition : _topicDefinitions)
       {
-         definition.state = TopicState::UNSENT;
+         bool removing = definition.state == TopicState::REMOVE_UNSENT || definition.state == TopicState::REMOVE_PENDING || definition.state == TopicState::REMOVE_TIMED_OUT;
+         definition.state = removing || !definition.wanted ? TopicState::REMOVE_UNSENT : TopicState::UNSENT;
          definition.hasSubmitted = false;
          definition.metadataChanged = false;
       }
@@ -557,6 +566,40 @@ protected:
          return;
       }
 
+      bool removalOutstanding = false;
+      for (TopicDefinition& definition : _topicDefinitions)
+      {
+         if (!definition.wanted && (definition.state == TopicState::PENDING || definition.state == TopicState::TIMED_OUT || definition.state == TopicState::REJECTED))
+         {
+            removalOutstanding = true;
+         }
+         if (definition.state == TopicState::REMOVE_PENDING && definition.ackTimer.ready())
+         {
+            definition.state = TopicState::REMOVE_TIMED_OUT;
+            Logger.log("Topic removal acknowledgment timed out; still waiting: " + definition.topic, LogSeverity::WARN, "Telemetry");
+         }
+         if (definition.state == TopicState::REMOVE_UNSENT)
+         {
+            JsonDocument doc;
+            doc["type"] = "removeTopic";
+            doc["topic"] = definition.topic;
+            std::string json;
+            serializeJson(doc, json);
+            definition.state = TopicState::REMOVE_PENDING;
+            definition.ackTimer.reset();
+            if (!_webSocket.sendTXT(json.c_str()))
+            {
+               definition.state = TopicState::REMOVE_TIMED_OUT;
+               _reportTopicError("Could not send topic removal; will retry after reconnect: " + definition.topic);
+               return;
+            }
+         }
+         if (definition.state == TopicState::REMOVE_PENDING || definition.state == TopicState::REMOVE_TIMED_OUT)
+         {
+            removalOutstanding = true;
+         }
+      }
+
       for (TopicDefinition& definition : _topicDefinitions)
       {
          if (definition.state == TopicState::PENDING && definition.ackTimer.ready())
@@ -564,7 +607,7 @@ protected:
             definition.state = TopicState::TIMED_OUT;
             Logger.log("Topic creation acknowledgment timed out; still waiting: " + definition.topic, LogSeverity::WARN, "Telemetry");
          }
-         if (definition.state != TopicState::UNSENT)
+         if (removalOutstanding || !definition.wanted || definition.state != TopicState::UNSENT)
          {
             continue;
          }
@@ -654,6 +697,34 @@ protected:
             const char* topic = doc["topic"];
             const char* status = doc["status"];
             TopicDefinition* definition = topic != nullptr ? _findTopic(topic) : nullptr;
+            if (definition != nullptr && status != nullptr &&
+               (definition->state == TopicState::REMOVE_PENDING || definition->state == TopicState::REMOVE_TIMED_OUT) &&
+               (strcmp(status, "removed") == 0 || strcmp(status, "not_found") == 0))
+            {
+               std::string removedTopic = topic;
+               if (definition->wanted)
+               {
+                  definition->state = TopicState::UNSENT;
+                  definition->hasSubmitted = false;
+                  definition->lastValue.clear();
+               }
+               else
+               {
+                  for (auto it = _topicDefinitions.begin(); it != _topicDefinitions.end(); it++)
+                  {
+                     if (it->topic == topic)
+                     {
+                        _topicDefinitions.erase(it);
+                        break;
+                     }
+                  }
+               }
+               if (_topicRemovalHandler != nullptr)
+               {
+                  _topicRemovalHandler(removedTopic);
+               }
+               return;
+            }
             if (definition == nullptr ||
                (definition->state != TopicState::PENDING && definition->state != TopicState::TIMED_OUT) || status == nullptr ||
                (strcmp(status, "created") != 0 && strcmp(status, "updated") != 0 && strcmp(status, "unchanged") != 0))
@@ -665,7 +736,8 @@ protected:
             {
                Logger.log("Delayed topic creation acknowledgment received: " + definition->topic, LogSeverity::INFO, "Telemetry");
             }
-            definition->state = definition->metadataChanged ? TopicState::UNSENT : TopicState::APPROVED;
+            definition->state = !definition->wanted ? TopicState::REMOVE_UNSENT :
+               definition->metadataChanged ? TopicState::UNSENT : TopicState::APPROVED;
             return;
          }
          if (strcmp(type, "topicError") == 0)
@@ -679,9 +751,14 @@ protected:
             {
                if (strcmp(requestType, "createTopic") == 0)
                {
-                  definition->state = definition->metadataChanged ? TopicState::UNSENT : TopicState::REJECTED;
+                  definition->state = !definition->wanted ? TopicState::REMOVE_UNSENT :
+                     definition->metadataChanged ? TopicState::UNSENT : TopicState::REJECTED;
                }
-               else if (strcmp(code, "invalid_sample") != 0)
+               else if (strcmp(requestType, "removeTopic") == 0)
+               {
+                  definition->state = definition->wanted ? TopicState::UNSENT : TopicState::REJECTED;
+               }
+               else if (definition->wanted && definition->state == TopicState::APPROVED && strcmp(code, "invalid_sample") != 0)
                {
                   definition->state = TopicState::REJECTED;
                }
@@ -1010,6 +1087,17 @@ public:
 
    ///
    /// <summary>
+   /// Registers a callback for successful publisher topic removal acknowledgments.
+   /// </summary>
+   /// <param name="handler">Handler receiving the removed topic name.</param>
+   ///
+   void onTopicRemoval(TopicRemovalHandler handler)
+   {
+      _topicRemovalHandler = handler;
+   }
+
+   ///
+   /// <summary>
    /// Changes the subscribed topics on an existing subscriber connection.
    /// </summary>
    /// <param name="topics">New topics. Empty subscribes to all topics.</param>
@@ -1045,6 +1133,12 @@ public:
          _topicDefinitions.push_back({ topic, metadata });
          return;
       }
+      definition->wanted = true;
+      if (definition->state == TopicState::REMOVE_UNSENT || definition->state == TopicState::REMOVE_PENDING || definition->state == TopicState::REMOVE_TIMED_OUT)
+      {
+         definition->metadata = metadata;
+         return;
+      }
       if (definition->metadata.unit == metadata.unit && definition->metadata.description == metadata.description &&
          definition->metadata.decimals == metadata.decimals)
       {
@@ -1069,6 +1163,31 @@ public:
 
    ///
    /// <summary>
+   /// Retires a topic and queues its removal from the server. Removal is retried after reconnect.
+   /// </summary>
+   /// <param name="topic">Nonempty topic name to remove.</param>
+   ///
+   void removeTopic(const char* topic)
+   {
+      ASSERT(_role == Role::DEVICE);
+      ASSERT(topic != nullptr && topic[0] != '\0');
+
+      TopicDefinition* definition = _findTopic(topic);
+      if (definition == nullptr)
+      {
+         _topicDefinitions.push_back({ topic, {} });
+         definition = &_topicDefinitions.back();
+      }
+      definition->wanted = false;
+      if (definition->state != TopicState::PENDING && definition->state != TopicState::TIMED_OUT &&
+         definition->state != TopicState::REMOVE_PENDING && definition->state != TopicState::REMOVE_TIMED_OUT)
+      {
+         definition->state = TopicState::REMOVE_UNSENT;
+      }
+   }
+
+   ///
+   /// <summary>
    /// Reports whether a topic's current definition is approved on this connection.
    /// </summary>
    /// <param name="topic">Nonempty topic name.</param>
@@ -1079,7 +1198,7 @@ public:
       ASSERT(topic != nullptr && topic[0] != '\0');
 
       TopicDefinition* definition = _findTopic(topic);
-      return isReady() && definition != nullptr && definition->state == TopicState::APPROVED;
+      return isReady() && definition != nullptr && definition->wanted && definition->state == TopicState::APPROVED;
    }
 
    ///
@@ -1164,7 +1283,7 @@ public:
       TopicDefinition* definition = _findTopic(topic);
       ASSERT(definition != nullptr);
 
-      if (!isReady() || definition->state != TopicState::APPROVED || std::isnan(value))
+      if (!isReady() || !definition->wanted || definition->state != TopicState::APPROVED || std::isnan(value))
       {
          return false;
       }
@@ -1267,7 +1386,10 @@ public:
          topics.reserve(_topicDefinitions.size());
          for (const TopicDefinition& definition : _topicDefinitions)
          {
-            topics.push_back(definition.topic);
+            if (definition.wanted)
+            {
+               topics.push_back(definition.topic);
+            }
          }
          return topics;
       }
