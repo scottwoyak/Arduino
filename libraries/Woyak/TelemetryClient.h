@@ -667,7 +667,10 @@ protected:
       {
          _connectionWarningLogged = true;
          _connectionWarningTimer.reset();
-         Logger.log(std::string(wasConnected ? "Telemetry connection lost (" : "Could not connect to telemetry server (") + reason + "); will keep retrying for up to " + std::to_string((int)TELEMETRY_OUTAGE_RESET_M) + " minutes", LogSeverity::WARN, "Telemetry");
+         std::string message = wasConnected
+            ? ("Telemetry connection to " + getUrl() + " lost (" + reason + ")")
+            : ("Could not connect to telemetry server " + getUrl() + " (" + reason + ")");
+         Logger.log(message + "; will keep retrying for up to " + std::to_string((int)TELEMETRY_OUTAGE_RESET_M) + " minutes", LogSeverity::WARN, "Telemetry");
       }
    }
 
@@ -683,7 +686,7 @@ protected:
             _connectionWarningLogged = false;
             if (_outageActive)
             {
-               Logger.log("Telemetry reconnected", LogSeverity::INFO, "Telemetry");
+               Logger.log("Telemetry reconnected (" + getUrl() + ")", LogSeverity::INFO, "Telemetry");
             }
             _clearOutage();
             if (_handler != nullptr)

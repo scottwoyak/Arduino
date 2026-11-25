@@ -1092,6 +1092,7 @@ public:
       setTextSize(headerTextSize());
       ArduinoBase::printInitHeader(str, textColor);
       moveCursorY(charH() / 4);
+      _initDisplayActive = true;
       _initDisplayPending = true;
    }
 
@@ -1100,6 +1101,14 @@ public:
    void printDisplayInitLabel(const char* label, Color color = Color::LABEL) override;
    void printDisplayInitValue(const char* value, Color color = Color::VALUE) override;
    void restoreInitDisplay(const char* header = "Initializing");
+
+   ///
+   /// <summary>
+   /// Marks the initialization screen finished and frees its saved lines so subsequent
+   /// runtime touch prompts do not redraw the "Initializing" screen on submit.
+   /// </summary>
+   ///
+   void endInitDisplay();
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
    size_t promptTouchOption(
@@ -1133,6 +1142,7 @@ public:
 protected:
    InitializingDisplay* _initDisplay = nullptr;
    uint32_t _clearCount = 0;
+   bool _initDisplayActive = false;
    bool _initDisplayPending = false;
 
    void _printlnInitStatusDisplay(const char* str, Color textColor) override
@@ -2258,6 +2268,7 @@ inline void ArduinoWithDisplay::printInitLabel(const char* label, Color color)
 {
    Util::setSetupStep(label);
 
+   _initDisplayActive = true;
    if (_initDisplay == nullptr)
    {
       _initDisplay = new InitializingDisplay(this);
@@ -2293,6 +2304,11 @@ inline void ArduinoWithDisplay::printDisplayInitValue(const char* value, Color c
 
 inline void ArduinoWithDisplay::restoreInitDisplay(const char* header)
 {
+   if (!_initDisplayActive)
+   {
+      return;
+   }
+
    clearDisplay();
    setTextSize(headerTextSize());
    ArduinoBase::printInitHeader(header, Color::HEADING);
@@ -2302,6 +2318,14 @@ inline void ArduinoWithDisplay::restoreInitDisplay(const char* header)
    {
       _initDisplay->redraw();
    }
+}
+
+inline void ArduinoWithDisplay::endInitDisplay()
+{
+   _initDisplayActive = false;
+   _initDisplayPending = false;
+   delete _initDisplay;
+   _initDisplay = nullptr;
 }
 
 #ifdef ARDUINO_TOUCH_SUPPORTED

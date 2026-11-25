@@ -196,10 +196,12 @@ TelemetryConfig TELEMETRY_CONFIG = {
    .publishIntervalMs = TELEMETRY_PUBLISH_INTERVAL_MS,
 };
 
+// Half-speed CPU (180/200 MHz) reduces heat while keeping MEM_CLK and SYS_CLK at full speed
+// for MIPI-DSI PSRAM refresh, 1 kHz ADC sampling, and SDIO WiFi (90/100 MHz halves the bus clocks).
 #ifdef CONFIG_ESP32P4_SELECTS_REV_LESS_V3
-constexpr uint16_t CPU_FREQUENCY_MHZ = 90;
+constexpr uint16_t CPU_FREQUENCY_MHZ = 180;
 #else
-constexpr uint16_t CPU_FREQUENCY_MHZ = 100;
+constexpr uint16_t CPU_FREQUENCY_MHZ = 200;
 #endif
 
 SketchConfig PUBLISHER_CONFIG = {

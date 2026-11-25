@@ -1085,6 +1085,7 @@ public:
          Util::feedSetupWatchdog();
 #ifdef ARDUINO_DISPLAY_SUPPORTED
          delay(STARTUP_DELAY_S * 1000UL);
+         _arduino->endInitDisplay();
          _arduino->clearDisplay();
 #endif
          Logger.logInitializationComplete();
