@@ -8,7 +8,8 @@
 //
 // The screen is divided vertically into two independently tappable sections under the
 // "Power" title (plus an upper-right Settings gear icon on touch displays to switch
-// display units between kW/kWh and $/hr/$ and configure the $/kWh electricity rate),
+// display units between kW/kWh and $/hr/$ and configure the $/kWh electricity rate;
+// tapping the values column of either bar chart also toggles units directly),
 // with the selected mode, units, and rate persisted in Preferences:
 // - Top (kW or $/hr, tap to cycle through 3 views):
 //   1. Now Bars: Five 0-20 kW horizontal bars showing live power for Solar, Total,
@@ -422,6 +423,7 @@ Rect16 nowSectionRect;
 Rect16 todaySectionRect;
 Rect16 nowTouchRect;
 Rect16 todayTouchRect;
+int16_t multiBarValuesLeftX = 0;
 int16_t nowSummaryRowY = 0;
 int16_t headingColWidth = 0;
 int16_t contentLeftX = 0;
@@ -976,7 +978,8 @@ void initLayout()
    todayTouchRect = Rect16(0, splitY, displayWidth, displayHeight - splitY);
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
-   gearRadius = min<int16_t>(14, max<int16_t>(10, static_cast<int16_t>((titleHeight - 2 * GEAR_MARGIN_PX) / 2)));
+   int16_t baseGearRadius = min<int16_t>(14, max<int16_t>(10, static_cast<int16_t>((titleHeight - 2 * GEAR_MARGIN_PX) / 2)));
+   gearRadius = max<int16_t>(9, static_cast<int16_t>(std::lround(baseGearRadius * 0.9f)));
    gearCenterX = displayWidth - GEAR_MARGIN_PX - gearRadius;
    gearCenterY = titleHeight / 2;
    gearTouchRect = Rect16(displayWidth - GEAR_TAP_WIDTH_PX, 0, GEAR_TAP_WIDTH_PX, titleHeight + topGap);
@@ -997,6 +1000,7 @@ void initLayout()
    int16_t barLeftX = contentLeftX + MULTI_BAR_LABEL_CHARS * charWidth + CHART_LABEL_GAP_PX;
    int16_t barRightX = displayWidth - maxNetValueWidth - CHART_LABEL_GAP_PX;
    int16_t barWidth = max<int16_t>(16, barRightX - barLeftX);
+   multiBarValuesLeftX = barRightX;
 
    initMultiBarLayout(&nowMultiBar, nowSectionRect, MAX_POWER_KW, &nowBarValues, &nowNetBarValue, barLeftX, barWidth, displayWidth, rowHeight);
    initMultiBarLayout(&todayMultiBar, todaySectionRect, MAX_ENERGY_KWH, &todayBarValues, &todayNetBarValue, barLeftX, barWidth, displayWidth, rowHeight);
@@ -1479,20 +1483,16 @@ void sampleTodayChart()
 
 ///
 /// <summary>
-/// Draws the static axis scale labels (max left, 0 center, max right) and optional table
-/// column headers for a Breakdown section, and resets its bar and value widgets.
+/// Draws the axis scale labels (max left, 0 center, max right) and optional table column
+/// headers for a Breakdown section.
 /// </summary>
-/// <param name="layout">Laid-out breakdown section geometry and bar widget.</param>
-/// <param name="values">Five centered DisplayValue widgets for Barn, Garage, House, Solar, and Net.</param>
+/// <param name="layout">Laid-out breakdown section geometry.</param>
 /// <param name="maxLabel">Full-scale axis label text displayed at both left and right ends.</param>
 ///
-void renderBreakdownStatic(
+void drawBreakdownLabels(
    const BreakdownLayout& layout,
-   std::array<DisplayValue, NUM_BREAKDOWN_COLS>* values,
    const char* maxLabel)
 {
-   ASSERT(layout.bar != nullptr);
-   ASSERT(values != nullptr);
    ASSERT(maxLabel != nullptr);
 
    int16_t charWidth = sketch.arduino.charW(TABLE_TEXT_SIZE);
@@ -1511,15 +1511,39 @@ void renderBreakdownStatic(
    sketch.arduino.setCursor(layout.barRect.x + layout.barRect.width - maxLabelWidth, layout.axisLabelY);
    sketch.arduino.print(maxLabel, Color::GRAY);
 
-   for (uint8_t i = 0; i < NUM_BREAKDOWN_COLS; i++)
+   if (layout.showTableHeaders)
    {
-      if (layout.showTableHeaders)
+      for (uint8_t i = 0; i < NUM_BREAKDOWN_COLS; i++)
       {
          int16_t labelWidth = static_cast<int16_t>(strlen(BREAKDOWN_COL_LABELS[i])) * charWidth;
          sketch.arduino.setCursor(layout.colCenterX[i] - labelWidth / 2, layout.tableHeaderY);
          sketch.arduino.print(BREAKDOWN_COL_LABELS[i], Color::GRAY);
       }
+   }
+}
 
+///
+/// <summary>
+/// Draws the static axis scale labels (max left, 0 center, max right) and optional table
+/// column headers for a Breakdown section, and resets its bar and value widgets.
+/// </summary>
+/// <param name="layout">Laid-out breakdown section geometry and bar widget.</param>
+/// <param name="values">Five centered DisplayValue widgets for Barn, Garage, House, Solar, and Net.</param>
+/// <param name="maxLabel">Full-scale axis label text displayed at both left and right ends.</param>
+///
+void renderBreakdownStatic(
+   const BreakdownLayout& layout,
+   std::array<DisplayValue, NUM_BREAKDOWN_COLS>* values,
+   const char* maxLabel)
+{
+   ASSERT(layout.bar != nullptr);
+   ASSERT(values != nullptr);
+   ASSERT(maxLabel != nullptr);
+
+   drawBreakdownLabels(layout, maxLabel);
+
+   for (uint8_t i = 0; i < NUM_BREAKDOWN_COLS; i++)
+   {
       (*values)[i].invalidate();
    }
 
@@ -1856,22 +1880,31 @@ void renderNowSection(bool clearArea)
 
 ///
 /// <summary>
-/// Draws the static and initial dynamic content of the bottom (kWh or $) section content
-/// area for the current bottomViewMode.
+/// Draws the static and initial dynamic content of the bottom (kWh or $) section (including
+/// its rotated heading) for the current bottomViewMode.
 /// </summary>
-/// <param name="clearArea">True to clear todaySectionRect before drawing.</param>
+/// <param name="clearArea">True to clear the bottom section and its rotated heading before drawing.</param>
 ///
 void renderTodaySection(bool clearArea)
 {
    if (clearArea)
    {
       sketch.arduino.display.fillRect(
-         todaySectionRect.x,
+         0,
          todaySectionRect.y,
-         todaySectionRect.width,
+         sketch.arduino.width(),
          todaySectionRect.height,
          static_cast<uint16_t>(Color::BLACK));
    }
+
+   const bool useCost = (displayUnit == DisplayUnit::COST);
+   const char* bottomHeading = useCost ? TODAY_COST_SECTION_TEXT : TODAY_ENERGY_SECTION_TEXT;
+   sketch.arduino.drawRotatedText(
+      bottomHeading,
+      headingColWidth / 2.0f,
+      todaySectionRect.y + todaySectionRect.height / 2.0f,
+      ROTATED_HEADING_ANGLE_DEG,
+      sectionTextSize);
 
    if (bottomViewMode == BottomViewMode::BARS)
    {
@@ -1879,9 +1912,188 @@ void renderTodaySection(bool clearArea)
    }
    else
    {
-      const bool useCost = (displayUnit == DisplayUnit::COST);
       std::string maxLabel = formatAxisMaxLabel(useCost ? (MAX_ENERGY_KWH * ratePerKwh) : MAX_ENERGY_KWH);
       renderBreakdownStatic(todayBreakdown, &todayBreakdownValues, maxLabel.c_str());
+   }
+
+   drawTodayDynamic();
+}
+
+///
+/// <summary>
+/// Clears any leftover pixels to the left of narrower right-aligned MultiBar values when
+/// switching between unit formats of different widths, without touching the bars or blanking
+/// the pixels that the new value sprites are about to overwrite.
+/// </summary>
+/// <param name="layout">MultiBar layout providing row Y positions.</param>
+/// <param name="values">Five right-aligned component DisplayValue widgets.</param>
+/// <param name="netValueWidget">Right-aligned Net DisplayValue widget.</param>
+/// <param name="displayWidth">Full display width in pixels.</param>
+/// <param name="rowHeight">Character height for TABLE_TEXT_SIZE.</param>
+///
+void clearMultiBarValueOverhang(
+   const MultiBarLayout& layout,
+   const std::array<DisplayValue, NUM_MULTI_BARS>& values,
+   const DisplayValue& netValueWidget,
+   int16_t displayWidth,
+   int16_t rowHeight)
+{
+   for (uint8_t i = 0; i < NUM_MULTI_BARS; i++)
+   {
+      int16_t clearWidth = (displayWidth - values[i].width()) - multiBarValuesLeftX;
+      if (clearWidth > 0)
+      {
+         sketch.arduino.display.fillRect(
+            multiBarValuesLeftX,
+            layout.barTextY[i],
+            clearWidth,
+            rowHeight,
+            static_cast<uint16_t>(Color::BLACK));
+      }
+   }
+
+   int16_t netClearWidth = (displayWidth - netValueWidget.width()) - multiBarValuesLeftX;
+   if (netClearWidth > 0)
+   {
+      sketch.arduino.display.fillRect(
+         multiBarValuesLeftX,
+         layout.netBarTextY,
+         netClearWidth,
+         rowHeight,
+         static_cast<uint16_t>(Color::BLACK));
+   }
+}
+
+///
+/// <summary>
+/// Clears and redraws only the axis scale labels and table area of a Breakdown section when
+/// switching display units, leaving the stacked horizontal bar untouched.
+/// </summary>
+/// <param name="layout">Breakdown section layout.</param>
+/// <param name="sectionRect">Bounding rectangle of the section content area.</param>
+/// <param name="maxLabel">Full-scale axis label text displayed at both left and right ends.</param>
+/// <param name="rowHeight">Character height for TABLE_TEXT_SIZE.</param>
+///
+void refreshBreakdownText(
+   const BreakdownLayout& layout,
+   const Rect16& sectionRect,
+   const char* maxLabel,
+   int16_t rowHeight)
+{
+   ASSERT(maxLabel != nullptr);
+
+   sketch.arduino.display.fillRect(
+      layout.barRect.x,
+      layout.axisLabelY,
+      layout.barRect.width,
+      rowHeight,
+      static_cast<uint16_t>(Color::BLACK));
+
+   int16_t tableTopY = layout.showTableHeaders ? layout.tableHeaderY : layout.tableValueY;
+   int16_t tableHeight = (sectionRect.y + sectionRect.height) - tableTopY;
+   if (tableHeight > 0)
+   {
+      sketch.arduino.display.fillRect(
+         sectionRect.x,
+         tableTopY,
+         sectionRect.width,
+         tableHeight,
+         static_cast<uint16_t>(Color::BLACK));
+   }
+
+   drawBreakdownLabels(layout, maxLabel);
+}
+
+///
+/// <summary>
+/// Toggles the active display units between kW/kWh and $/hr/$, saves the preference,
+/// updates all value formats, and refreshes only the changed headings, numeric readouts,
+/// and axis scale labels without clearing the bars or 24-hour chart.
+/// </summary>
+///
+void toggleDisplayUnit()
+{
+   displayUnit = (displayUnit == DisplayUnit::KW) ? DisplayUnit::COST : DisplayUnit::KW;
+   saveViewPreferences();
+   applyUnitFormats();
+
+   const bool useCost = (displayUnit == DisplayUnit::COST);
+   int16_t displayWidth = sketch.arduino.width();
+   int16_t rowHeight = sketch.arduino.charH(TABLE_TEXT_SIZE);
+
+   // Top section rotated heading
+   sketch.arduino.display.fillRect(
+      0,
+      nowSectionRect.y,
+      headingColWidth,
+      nowSectionRect.height,
+      static_cast<uint16_t>(Color::BLACK));
+   const char* topHeading = (topViewMode == TopViewMode::TODAY_HISTORY)
+      ? (useCost ? TODAY_COST_RATE_SECTION_TEXT : TODAY_POWER_SECTION_TEXT)
+      : (useCost ? NOW_COST_SECTION_TEXT : NOW_POWER_SECTION_TEXT);
+   sketch.arduino.drawRotatedText(
+      topHeading,
+      headingColWidth / 2.0f,
+      nowSectionRect.y + nowSectionRect.height / 2.0f,
+      ROTATED_HEADING_ANGLE_DEG,
+      sectionTextSize);
+
+   // Top section numbers and scale labels (bars/chart left untouched)
+   if (topViewMode == TopViewMode::BARS)
+   {
+      clearMultiBarValueOverhang(nowMultiBar, nowBarValues, nowNetBarValue, displayWidth, rowHeight);
+   }
+   else if (topViewMode == TopViewMode::BREAKDOWN)
+   {
+      std::string maxLabel = formatAxisMaxLabel(useCost ? (MAX_POWER_KW * ratePerKwh) : MAX_POWER_KW);
+      refreshBreakdownText(nowBreakdown, nowSectionRect, maxLabel.c_str(), rowHeight);
+   }
+   else
+   {
+      std::string maxLabel = formatAxisMaxLabel(useCost ? (MAX_POWER_KW * ratePerKwh) : MAX_POWER_KW);
+      sketch.arduino.display.fillRect(
+         contentLeftX,
+         todayChartRect.y,
+         chartLabelRightX - contentLeftX,
+         todayChartRect.height,
+         static_cast<uint16_t>(Color::BLACK));
+      drawChartLabels(todayChartRect, maxLabel.c_str(), "0", maxLabel.c_str());
+
+      sketch.arduino.display.fillRect(
+         todayChartRect.x,
+         nowSummaryRowY,
+         todayChartRect.width,
+         rowHeight,
+         static_cast<uint16_t>(Color::BLACK));
+      nowSummaryRow.invalidate();
+   }
+
+   drawNowDynamic();
+
+   // Bottom section rotated heading
+   sketch.arduino.display.fillRect(
+      0,
+      todaySectionRect.y,
+      headingColWidth,
+      todaySectionRect.height,
+      static_cast<uint16_t>(Color::BLACK));
+   const char* bottomHeading = useCost ? TODAY_COST_SECTION_TEXT : TODAY_ENERGY_SECTION_TEXT;
+   sketch.arduino.drawRotatedText(
+      bottomHeading,
+      headingColWidth / 2.0f,
+      todaySectionRect.y + todaySectionRect.height / 2.0f,
+      ROTATED_HEADING_ANGLE_DEG,
+      sectionTextSize);
+
+   // Bottom section numbers and scale labels (bars left untouched)
+   if (bottomViewMode == BottomViewMode::BARS)
+   {
+      clearMultiBarValueOverhang(todayMultiBar, todayBarValues, todayNetBarValue, displayWidth, rowHeight);
+   }
+   else
+   {
+      std::string maxLabel = formatAxisMaxLabel(useCost ? (MAX_ENERGY_KWH * ratePerKwh) : MAX_ENERGY_KWH);
+      refreshBreakdownText(todayBreakdown, todaySectionRect, maxLabel.c_str(), rowHeight);
    }
 
    drawTodayDynamic();
@@ -1909,17 +2121,6 @@ void drawStatic()
    drawGear();
 #endif
 
-   // Rotated bottom section heading on the left (top heading is drawn by renderNowSection)
-   const char* bottomHeading = (displayUnit == DisplayUnit::COST)
-      ? TODAY_COST_SECTION_TEXT
-      : TODAY_ENERGY_SECTION_TEXT;
-   sketch.arduino.drawRotatedText(
-      bottomHeading,
-      headingColWidth / 2.0f,
-      todaySectionRect.y + todaySectionRect.height / 2.0f,
-      ROTATED_HEADING_ANGLE_DEG,
-      sectionTextSize);
-
    if (firstDraw)
    {
       firstDraw = false;
@@ -1936,7 +2137,8 @@ void drawStatic()
 ///
 /// <summary>
 /// Polls the touch panel for debounced taps on the upper-right settings gear, the Settings
-/// screen controls, or the top/bottom view sections.
+/// screen controls, the bar-chart values column (to toggle units), or the top/bottom view
+/// sections.
 /// </summary>
 ///
 void handleTouch()
@@ -1986,17 +2188,31 @@ void handleTouch()
 
    if (nowTouchRect.contains(tap))
    {
-      topViewMode = static_cast<TopViewMode>((static_cast<uint8_t>(topViewMode) + 1) % NUM_TOP_VIEW_MODES);
-      saveViewPreferences();
-      renderNowSection(true);
+      if (topViewMode == TopViewMode::BARS && tap.x >= multiBarValuesLeftX)
+      {
+         toggleDisplayUnit();
+      }
+      else
+      {
+         topViewMode = static_cast<TopViewMode>((static_cast<uint8_t>(topViewMode) + 1) % NUM_TOP_VIEW_MODES);
+         saveViewPreferences();
+         renderNowSection(true);
+      }
    }
    else if (todayTouchRect.contains(tap))
    {
-      bottomViewMode = (bottomViewMode == BottomViewMode::BARS)
-         ? BottomViewMode::BREAKDOWN
-         : BottomViewMode::BARS;
-      saveViewPreferences();
-      renderTodaySection(true);
+      if (bottomViewMode == BottomViewMode::BARS && tap.x >= multiBarValuesLeftX)
+      {
+         toggleDisplayUnit();
+      }
+      else
+      {
+         bottomViewMode = (bottomViewMode == BottomViewMode::BARS)
+            ? BottomViewMode::BREAKDOWN
+            : BottomViewMode::BARS;
+         saveViewPreferences();
+         renderTodaySection(true);
+      }
    }
 }
 
