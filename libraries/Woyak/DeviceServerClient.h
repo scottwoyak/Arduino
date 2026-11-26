@@ -1797,6 +1797,7 @@ public:
       DeviceHealth::begin();
 
       Util::onResetting = []() { reportRestarting(); };
+      Util::onModalIdle = []() { loop(); };
       OTAUpdater::onState = [](const char* state) { setState(state); };
 
       logPartial("Hub... ");

@@ -544,54 +544,52 @@ public:
 
       ASSERT((mono ? RobotoMonoBold[size] : PROPORTIONAL_FONT(size)) != nullptr);
 
-      if (mono)
-      {
-         display.loadFont(RobotoMonoBold[size]);
-         //display.loadFont(Roboto[size]); // uncomment this to see if we can force a proportional font to be monospace
-      }
-      else
-      {
-         display.loadFont(PROPORTIONAL_FONT(size));
-      }
+      bool fontLoaded = mono
+         ? display.loadFont(RobotoMonoBold[size])
+         : display.loadFont(PROPORTIONAL_FONT(size));
+      //display.loadFont(Roboto[size]); // uncomment this to see if we can force a proportional font to be monospace
 
       //printFontMetrics();
 
       // if we're making this a monospaced font, adjust each characters dimensions
-      if (mono)
+      if (mono && fontLoaded)
       {
          // this is unsafe code - we are accessing an internal LGFX data structure
          // and modifying it
          lgfx::v1::VLWfont* font = (lgfx::v1::VLWfont*)(display.getFont());
-
-         // get the max char width and make them all the same
-         uint8_t maxAdvance = 0;
-         for (uint16_t i = 0; i < font->gCount; i++)
+         if (font != nullptr && font->gxAdvance != nullptr)
          {
-            maxAdvance = std::max(maxAdvance, font->gxAdvance[i]);
-         }
+            // get the max char width and make them all the same
+            uint8_t maxAdvance = 0;
+            for (uint16_t i = 0; i < font->gCount; i++)
+            {
+               maxAdvance = std::max(maxAdvance, font->gxAdvance[i]);
+            }
 
-         // TODO LGFX doesn't actually use any of these values. I think it gets the values
-         // from the data structure each time. We need to implement our own IFont class
-         // that derives from VLWfont and overrides updateFontMetric(), I think
-         /*
-         for (uint16_t i = 0; i < font->gCount; i++)
-         {
-            font->gxAdvance[i] = maxAdvance;
-            font->gdX[i] = (maxAdvance - font->gWidth[i]) / 2;
-            font->gWidth[i] = maxAdvance;
-         }
-         */
+            // TODO LGFX doesn't actually use any of these values. I think it gets the values
+            // from the data structure each time. We need to implement our own IFont class
+            // that derives from VLWfont and overrides updateFontMetric(), I think
+            /*
+            for (uint16_t i = 0; i < font->gCount; i++)
+            {
+               font->gxAdvance[i] = maxAdvance;
+               font->gdX[i] = (maxAdvance - font->gWidth[i]) / 2;
+               font->gWidth[i] = maxAdvance;
+            }
+            */
 
-         // TFT_eSPI & LGFX guess at the space width. Make it the monospace value
-         font->spaceWidth = maxAdvance;
+            // TFT_eSPI & LGFX guess at the space width. Make it the monospace value
+            font->spaceWidth = maxAdvance;
+         }
       }
    }
 
    ///
    /// <summary>
-   /// Creates and sizes an off-screen sprite with its own copy of the given font size,
-   /// applying the same monospace space-width fix as setTextSize() so that space-padded
-   /// alignment renders correctly within the sprite.
+   /// Creates and sizes an off-screen sprite (in PSRAM when available, falling back to DMA
+   /// internal RAM) with its own copy of the given font size, applying the same monospace
+   /// space-width fix as setTextSize() so that space-padded alignment renders correctly
+   /// within the sprite.
    /// </summary>
    /// <param name="sprite">The sprite to initialize; must not have already had createSprite() called on it.</param>
    /// <param name="width">The sprite's width, in pixels.</param>
@@ -602,7 +600,9 @@ public:
    void createSprite(LGFX_Sprite& sprite, int16_t width, int16_t height, uint8_t size, bool mono = true)
    {
       sprite.setColorDepth(16);
-      sprite.createSprite(width, height);
+      sprite.setPsram(true);
+      void* buffer = sprite.createSprite(width, height);
+      ASSERT(buffer != nullptr);
 
       size = constrain(size, 0, 7);
 
@@ -617,30 +617,28 @@ public:
       // load our own copy of the font rather than sharing the display's runtime font
       // pointer, which can be freed out from under us if the display later loads a
       // different font
-      if (mono)
-      {
-         sprite.loadFont(RobotoMonoBold[size]);
-      }
-      else
-      {
-         sprite.loadFont(PROPORTIONAL_FONT(size));
-      }
+      bool fontLoaded = mono
+         ? sprite.loadFont(RobotoMonoBold[size])
+         : sprite.loadFont(PROPORTIONAL_FONT(size));
+      ASSERT(fontLoaded);
 
-      if (mono)
+      if (mono && fontLoaded)
       {
          // this is unsafe code - we are accessing an internal LGFX data structure
          // and modifying it
          lgfx::v1::VLWfont* font = (lgfx::v1::VLWfont*)(sprite.getFont());
-
-         // get the max char width and make them all the same
-         uint8_t maxAdvance = 0;
-         for (uint16_t i = 0; i < font->gCount; i++)
+         if (font != nullptr && font->gxAdvance != nullptr)
          {
-            maxAdvance = std::max(maxAdvance, font->gxAdvance[i]);
-         }
+            // get the max char width and make them all the same
+            uint8_t maxAdvance = 0;
+            for (uint16_t i = 0; i < font->gCount; i++)
+            {
+               maxAdvance = std::max(maxAdvance, font->gxAdvance[i]);
+            }
 
-         // TFT_eSPI & LGFX guess at the space width. Make it the monospace value
-         font->spaceWidth = maxAdvance;
+            // TFT_eSPI & LGFX guess at the space width. Make it the monospace value
+            font->spaceWidth = maxAdvance;
+         }
       }
    }
 
@@ -685,6 +683,7 @@ public:
       sprite.print(text);
       sprite.setPivot(spriteW / 2.0f, spriteH / 2.0f);
       sprite.pushRotateZoom(centerX, centerY, angleDeg, 1.0f, 1.0f);
+      sprite.unloadFont();
       sprite.deleteSprite();
    }
 
@@ -2426,6 +2425,10 @@ inline size_t ArduinoWithDisplay::promptTouchOption(
    while (true)
    {
       Util::feedSetupWatchdog();
+      if (Util::onModalIdle != nullptr)
+      {
+         Util::onModalIdle();
+      }
 
       if (millis() - start >= effectiveTimeoutMs)
       {
@@ -2896,6 +2899,10 @@ inline String ArduinoWithDisplay::promptTouchText(
    while (true)
    {
       Util::feedSetupWatchdog();
+      if (Util::onModalIdle != nullptr)
+      {
+         Util::onModalIdle();
+      }
 
       if (millis() - start >= effectiveTimeoutMs)
       {
@@ -3437,6 +3444,10 @@ inline String ArduinoWithDisplay::promptTouchNumber(
    while (true)
    {
       Util::feedSetupWatchdog();
+      if (Util::onModalIdle != nullptr)
+      {
+         Util::onModalIdle();
+      }
 
       if (millis() - start >= effectiveTimeoutMs)
       {
@@ -3749,6 +3760,10 @@ inline bool ArduinoWithDisplay::promptTouchYesNo(
    while (true)
    {
       Util::feedSetupWatchdog();
+      if (Util::onModalIdle != nullptr)
+      {
+         Util::onModalIdle();
+      }
 
       if (millis() - start >= effectiveTimeoutMs)
       {

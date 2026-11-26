@@ -795,6 +795,15 @@ protected:
             }
             return;
          }
+         if (strcmp(type, "topicRemoved") == 0)
+         {
+            const char* topic = doc["topic"];
+            if (topic != nullptr && _topicRemovalHandler != nullptr)
+            {
+               _topicRemovalHandler(topic);
+            }
+            return;
+         }
          if (strcmp(type, "error") == 0)
          {
             const char* message = doc["message"] | "unknown error";
@@ -1090,7 +1099,8 @@ public:
 
    ///
    /// <summary>
-   /// Registers a callback for successful publisher topic removal acknowledgments.
+   /// Registers a callback for topic removals (publisher removal acknowledgments and
+   /// subscriber topicRemoved notifications).
    /// </summary>
    /// <param name="handler">Handler receiving the removed topic name.</param>
    ///

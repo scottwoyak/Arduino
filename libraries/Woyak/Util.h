@@ -701,6 +701,16 @@ public:
          return "Brownout reset (voltage dropout)";
       case ESP_RST_SDIO:
          return "SDIO reset";
+      case ESP_RST_USB:
+         return "USB reset";
+      case ESP_RST_JTAG:
+         return "JTAG reset";
+      case ESP_RST_EFUSE:
+         return "eFuse error reset";
+      case ESP_RST_PWR_GLITCH:
+         return "Power glitch reset";
+      case ESP_RST_CPU_LOCKUP:
+         return "CPU lockup reset";
       default:
          return "Unknown reset reason";
       }
@@ -776,6 +786,15 @@ public:
    /// </summary>
    static inline void (*onResetting)() = nullptr;
 
+   ///
+   /// <summary>
+   /// Optional callback invoked periodically while a blocking modal prompt (e.g. touch
+   /// keypad) is waiting for user input, so background networking such as DeviceServer
+   /// WebSocket heartbeats stays responsive. Set by DeviceServerClient::begin().
+   /// </summary>
+   ///
+   static inline void (*onModalIdle)() = nullptr;
+
    /// <summary>
    /// Returns true if the given reset reason indicates the previous boot crashed (panic or
    /// watchdog timeout) rather than an intentional restart. Util::reset() always restarts via
@@ -784,7 +803,7 @@ public:
    /// risky sketch-specific initialization and connects only to WiFi/the Device Server.
    /// </summary>
    /// <param name="reason">Reset reason to classify; defaults to the current boot's reason</param>
-   /// <returns>True if the reason is ESP_RST_PANIC, ESP_RST_TASK_WDT, ESP_RST_INT_WDT, or ESP_RST_WDT</returns>
+   /// <returns>True if the reason is ESP_RST_PANIC, ESP_RST_TASK_WDT, ESP_RST_INT_WDT, ESP_RST_WDT, or ESP_RST_CPU_LOCKUP</returns>
    static bool isCrashResetReason(esp_reset_reason_t reason = esp_reset_reason())
    {
       switch (reason)
@@ -793,6 +812,7 @@ public:
       case ESP_RST_TASK_WDT:
       case ESP_RST_INT_WDT:
       case ESP_RST_WDT:
+      case ESP_RST_CPU_LOCKUP:
          return true;
       default:
          return false;

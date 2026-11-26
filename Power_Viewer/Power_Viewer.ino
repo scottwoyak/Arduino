@@ -7,10 +7,12 @@
 // connection and renders a dual-section live and daily view.
 //
 // The screen is divided vertically into two independently tappable sections under the
-// "Power" title (plus an upper-right Settings gear icon on touch displays to switch
-// display units between kW/kWh and $/hr/$ and configure the $/kWh electricity rate;
-// tapping the values column of either bar chart also toggles units directly),
-// with the selected mode, units, and rate persisted in Preferences:
+// "Power" title (tapping the heading toggles between this dual-section view and a
+// full-screen "Power - Details" expanded Today bar view showing Solar, Total, House + top 8
+// House circuits, Garage + top 3 Garage circuits, and Barn; the upper-right Settings gear
+// icon on touch displays configures the $/kWh electricity rate; tapping the values column
+// of any bar chart switches units, cycling kWh -> $ -> % of Total (with Total in $) in the
+// Details view), with the selected mode, units, and rate persisted in Preferences:
 // - Top (kW or $/hr, tap to cycle through 3 views):
 //   1. Now Bars: Five 0-20 kW horizontal bars showing live power for Solar, Total,
 //      House, Garage, and Barn, followed by a center-zero (-20 to +20 kW) horizontal Net
@@ -38,11 +40,14 @@
 #include <Arduino.h>
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
+#include <map>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "ArduinoBoard.h"
 
@@ -65,7 +70,7 @@
 #include "WiFiSettings.h"
 #include "ViewerSketch.h"
 
-const auto VERSION = MakeVersion("1.06");
+const auto VERSION = MakeVersion("1.07");
 constexpr auto SKETCH_NAME = "Power_Viewer";
 constexpr auto PREFERENCES_NAMESPACE = SKETCH_NAME;
 
@@ -80,6 +85,11 @@ constexpr auto POWER_GARAGE_TOPIC = "Power/Garage";
 constexpr auto POWER_GARAGE_DAILY_TOPIC = "Power/GarageDaily";
 constexpr auto POWER_BARN_TOPIC = "Power/Barn";
 constexpr auto POWER_BARN_DAILY_TOPIC = "Power/BarnDaily";
+constexpr auto POWER_HOUSE_SUB_TOPIC_PATTERN = "Power/House/*";
+constexpr auto POWER_GARAGE_SUB_TOPIC_PATTERN = "Power/Garage/*";
+constexpr auto POWER_HOUSE_PREFIX = "Power/House/";
+constexpr auto POWER_GARAGE_PREFIX = "Power/Garage/";
+constexpr auto DAILY_TOPIC_SUFFIX = "Daily";
 
 constexpr uint16_t DISPLAY_UPDATE_MS = 200;
 constexpr uint16_t CHART_SAMPLE_MS = 200;
@@ -89,12 +99,24 @@ constexpr auto TODAY_CHART_BINS_PREF_KEY = "todayKwBins";
 constexpr auto LEGACY_TODAY_CHART_BINS_PREF_KEY = "todayBins";
 constexpr auto NOW_VIEW_PREF_KEY = "nowView";
 constexpr auto TODAY_VIEW_PREF_KEY = "todayView";
+constexpr auto EXPANDED_VIEW_PREF_KEY = "expandedView";
 constexpr auto UNIT_PREF_KEY = "unit";
+constexpr auto EXPANDED_UNIT_PREF_KEY = "expUnit";
 constexpr auto RATE_PREF_KEY = "rate";
 constexpr uint16_t EMPTY_HUNDREDTHS_KW = 0xFFFF;
 constexpr uint16_t MAX_TODAY_CHART_COLS = 480;
 constexpr uint8_t NUM_MULTI_BARS = 5;
 constexpr uint8_t NUM_BREAKDOWN_COLS = 5;
+constexpr uint8_t NUM_TOP_HOUSE_CIRCUITS = 8;
+constexpr uint8_t NUM_TOP_GARAGE_CIRCUITS = 3;
+constexpr uint8_t NUM_EXPANDED_BARS = NUM_MULTI_BARS + NUM_TOP_HOUSE_CIRCUITS + NUM_TOP_GARAGE_CIRCUITS;
+constexpr uint8_t EXPANDED_SOLAR_ROW = 0;
+constexpr uint8_t EXPANDED_TOTAL_ROW = 1;
+constexpr uint8_t EXPANDED_HOUSE_ROW = 2;
+constexpr uint8_t EXPANDED_HOUSE_SUB_START = EXPANDED_HOUSE_ROW + 1;
+constexpr uint8_t EXPANDED_GARAGE_ROW = EXPANDED_HOUSE_SUB_START + NUM_TOP_HOUSE_CIRCUITS;
+constexpr uint8_t EXPANDED_GARAGE_SUB_START = EXPANDED_GARAGE_ROW + 1;
+constexpr uint8_t EXPANDED_BARN_ROW = EXPANDED_GARAGE_SUB_START + NUM_TOP_GARAGE_CIRCUITS;
 
 // Full-scale power (in kW), daily energy (in kWh), and electricity rate ($/kWh).
 constexpr float MAX_POWER_KW = 20.0f;
@@ -104,6 +126,8 @@ constexpr float DEFAULT_RATE_PER_KWH = 0.24f;
 constexpr float MAX_RATE_PER_KWH = 99.99f;
 
 // ----------- Display Configuration
+constexpr auto MAIN_TITLE_TEXT = "Power";
+constexpr auto DETAILS_TITLE_TEXT = "Power - Details";
 constexpr auto NOW_POWER_SECTION_TEXT = "Rate (kW)";
 constexpr auto TODAY_POWER_SECTION_TEXT = "Today (kW)";
 constexpr auto TODAY_ENERGY_SECTION_TEXT = "Today (kWh)";
@@ -126,6 +150,10 @@ constexpr int16_t BREAKDOWN_TABLE_GAP_LARGE_PX = 10;
 constexpr int16_t BREAKDOWN_TABLE_GAP_SMALL_PX = 2;
 constexpr int16_t BREAKDOWN_HEADER_GAP_PX = 2;
 constexpr uint8_t MULTI_BAR_LABEL_CHARS = 6;
+constexpr uint8_t EXPANDED_LABEL_CHARS_LARGE = 16;
+constexpr uint8_t EXPANDED_LABEL_CHARS_SMALL = 8;
+constexpr int16_t EXPANDED_GROUP_GAP_LARGE_PX = 4;
+constexpr float EXPANDED_SUB_HEIGHT_RATIO = 0.8f;
 constexpr uint8_t CHART_LABEL_CHARS = 3;
 constexpr float ROTATED_HEADING_ANGLE_DEG = 270.0f;
 constexpr uint32_t SECONDS_PER_DAY = 24UL * 60UL * 60UL;
@@ -137,7 +165,6 @@ constexpr int16_t SETTINGS_GAP_PX = 10;
 constexpr int16_t SETTINGS_SECTION_GAP_PX = 16;
 constexpr int16_t SETTINGS_CORNER_RADIUS_PX = 8;
 constexpr uint8_t SETTINGS_PROMPT_TIMEOUT_M = 5;
-constexpr uint8_t NUM_UNIT_OPTIONS = 2;
 #endif
 
 constexpr Color TODAY_GRID_COLOR = Color565::fromRGB(48, 48, 48);
@@ -152,6 +179,8 @@ constexpr Color TOTAL_COLOR = Color::ORANGE;
 constexpr Color HOUSE_COLOR = Color::ROYALBLUE;
 constexpr Color GARAGE_COLOR = Color::DEEPSKYBLUE;
 constexpr Color BARN_COLOR = Color::LIGHTSKYBLUE;
+constexpr Color EXPANDED_BUILDING_COLOR = Color::ROYALBLUE;
+constexpr Color EXPANDED_SUB_COLOR = Color::LIGHTSKYBLUE;
 
 // ----------- Sketch & State
 SketchConfig SKETCH_CONFIG = {
@@ -204,6 +233,20 @@ enum class DisplayUnit : uint8_t
 
 ///
 /// <summary>
+/// Display unit modes for the expanded Today ("Power - Details") bar view.
+/// </summary>
+///
+enum class ExpandedUnit : uint8_t
+{
+   KWH = 0,
+   COST = 1,
+   PERCENT = 2,
+};
+
+constexpr uint8_t NUM_EXPANDED_UNITS = 3;
+
+///
+/// <summary>
 /// Holds the latest solar production, whole-home consumption, and per-building (House,
 /// Garage, and Barn) power and daily energy readings received from telemetry.
 /// </summary>
@@ -242,23 +285,44 @@ struct SolarReadings
    }
 };
 
+///
+/// <summary>
+/// Represents a single ranked daily circuit reading for the expanded Today bar chart.
+/// </summary>
+///
+struct CircuitDailyEntry
+{
+   std::string name;
+   float kwh = NAN;
+};
+
 SolarReadings latestReadings;
 float netPowerKw = NAN;
 float netEnergyKwh = NAN;
+std::map<std::string, float> houseDailyCircuits;
+std::map<std::string, float> garageDailyCircuits;
 bool readingsDirty = false;
 TopViewMode topViewMode = TopViewMode::BARS;
 BottomViewMode bottomViewMode = BottomViewMode::BARS;
+bool showingExpandedToday = false;
 DisplayUnit displayUnit = DisplayUnit::KW;
+ExpandedUnit expandedUnit = ExpandedUnit::KWH;
+DisplayUnit appliedMainUnit = DisplayUnit::KW;
+bool mainFormatsApplied = false;
+ExpandedUnit appliedExpandedUnit = ExpandedUnit::KWH;
+bool expandedFormatsApplied = false;
 float ratePerKwh = DEFAULT_RATE_PER_KWH;
 bool showingSettings = false;
 
 void onTelemetrySample(const std::string& topic, double value, int64_t dtMicros);
+void onTelemetryTopicRemoved(const std::string& topic);
 
 ///
 /// <summary>
 /// Handles telemetry WebSocket lifecycle events: configures the sample callback and
-/// subscribes to all solar, total, and per-building power topics on the connection, and
-/// flags a full screen redraw if an error message overwrote the display.
+/// subscribes to solar, total, and per-building power topics (plus House/Garage sub-circuit
+/// wildcards only while the expanded Details view is active), and flags a full screen
+/// redraw if an error message overwrote the display.
 /// </summary>
 ///
 class SolarTelemetryHandler : public TelemetryViewerEventHandler
@@ -277,8 +341,39 @@ public:
 
    ///
    /// <summary>
-   /// Registers the sample handler and subscribes the client to all solar, total, and
-   /// per-building power telemetry topics once.
+   /// Updates the client's subscribed topics to match the active view, adding the House and
+   /// Garage sub-circuit wildcards only while the expanded Details view is displayed.
+   /// </summary>
+   /// <param name="client">Active telemetry subscriber client.</param>
+   ///
+   void syncTopics(TelemetrySubscriber* client)
+   {
+      ASSERT(client != nullptr);
+
+      std::vector<std::string> topics = {
+         POWER_SOLAR_TOPIC,
+         POWER_SOLAR_DAILY_TOPIC,
+         POWER_TOTAL_TOPIC,
+         POWER_DAILY_TOPIC,
+         POWER_HOUSE_TOPIC,
+         POWER_HOUSE_DAILY_TOPIC,
+         POWER_GARAGE_TOPIC,
+         POWER_GARAGE_DAILY_TOPIC,
+         POWER_BARN_TOPIC,
+         POWER_BARN_DAILY_TOPIC,
+      };
+      if (showingExpandedToday)
+      {
+         topics.push_back(POWER_HOUSE_SUB_TOPIC_PATTERN);
+         topics.push_back(POWER_GARAGE_SUB_TOPIC_PATTERN);
+      }
+      client->setTopics(topics);
+   }
+
+   ///
+   /// <summary>
+   /// Registers the sample and topic-removal callbacks and sets the initial topic
+   /// subscription once.
    /// </summary>
    /// <param name="client">Active telemetry subscriber client.</param>
    ///
@@ -293,18 +388,8 @@ public:
 
       _configured = true;
       client->onSample(onTelemetrySample);
-      client->setTopics({
-         POWER_SOLAR_TOPIC,
-         POWER_SOLAR_DAILY_TOPIC,
-         POWER_TOTAL_TOPIC,
-         POWER_DAILY_TOPIC,
-         POWER_HOUSE_TOPIC,
-         POWER_HOUSE_DAILY_TOPIC,
-         POWER_GARAGE_TOPIC,
-         POWER_GARAGE_DAILY_TOPIC,
-         POWER_BARN_TOPIC,
-         POWER_BARN_DAILY_TOPIC,
-      });
+      client->onTopicRemoval(onTelemetryTopicRemoved);
+      syncTopics(client);
    }
 
    void onConnected() override
@@ -342,6 +427,44 @@ DisplayValue todayNetBarValue(&sketch.arduino, Format("+###.# kWh"), TABLE_TEXT_
 
 constexpr std::array<const char*, NUM_MULTI_BARS> MULTI_BAR_LABELS = { "Solar", "Total", "House", "Garage", "Barn" };
 constexpr std::array<Color, NUM_MULTI_BARS> MULTI_BAR_COLORS = { SOLAR_COLOR, TOTAL_COLOR, HOUSE_COLOR, GARAGE_COLOR, BARN_COLOR };
+
+std::array<DisplayValue, NUM_EXPANDED_BARS> expandedBarValues = {
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+   DisplayValue(&sketch.arduino, Format("###.# kWh"), TABLE_TEXT_SIZE, DisplayValue::Alignment::RIGHT),
+};
+
+constexpr std::array<Color, NUM_EXPANDED_BARS> EXPANDED_BAR_COLORS = {
+   SOLAR_COLOR,
+   TOTAL_COLOR,
+   EXPANDED_BUILDING_COLOR,
+   EXPANDED_SUB_COLOR,
+   EXPANDED_SUB_COLOR,
+   EXPANDED_SUB_COLOR,
+   EXPANDED_SUB_COLOR,
+   EXPANDED_SUB_COLOR,
+   EXPANDED_SUB_COLOR,
+   EXPANDED_SUB_COLOR,
+   EXPANDED_SUB_COLOR,
+   EXPANDED_BUILDING_COLOR,
+   EXPANDED_SUB_COLOR,
+   EXPANDED_SUB_COLOR,
+   EXPANDED_SUB_COLOR,
+   EXPANDED_BUILDING_COLOR,
+};
 
 Field nowUsageField(&sketch.arduino, "Usage", "##.# kW", TABLE_TEXT_SIZE);
 Field nowSolarField(&sketch.arduino, "Solar", "##.# kW", TABLE_TEXT_SIZE);
@@ -384,6 +507,23 @@ struct MultiBarLayout
 
 ///
 /// <summary>
+/// Holds the laid-out bar widgets, row coordinates, and cached dynamic sub-circuit labels
+/// for the full-screen 16-row Expanded Today bar chart.
+/// </summary>
+///
+struct ExpandedBarLayout
+{
+   std::array<HorizontalBar*, NUM_EXPANDED_BARS> bars = {};
+   std::array<int16_t, NUM_EXPANDED_BARS> barTextY = {};
+   std::array<std::string, NUM_EXPANDED_BARS> drawnLabels = {};
+   int16_t labelLeftX = 0;
+   int16_t labelWidth = 0;
+   uint8_t maxLabelChars = EXPANDED_LABEL_CHARS_LARGE;
+   int16_t valuesLeftX = 0;
+};
+
+///
+/// <summary>
 /// Holds the laid-out widget and coordinates for a Breakdown section's center-zero
 /// stacked horizontal bar and 5-column value table.
 /// </summary>
@@ -413,6 +553,7 @@ struct TodayChartSample
 
 MultiBarLayout nowMultiBar;
 MultiBarLayout todayMultiBar;
+ExpandedBarLayout expandedBarLayout;
 MovingBarChart* todayChart = nullptr;
 BreakdownLayout nowBreakdown;
 BreakdownLayout todayBreakdown;
@@ -421,6 +562,8 @@ std::array<TodayChartSample, MAX_TODAY_CHART_COLS> todayChartSamples;
 Rect16 todayChartRect;
 Rect16 nowSectionRect;
 Rect16 todaySectionRect;
+Rect16 expandedSectionRect;
+Rect16 titleTouchRect;
 Rect16 nowTouchRect;
 Rect16 todayTouchRect;
 int16_t multiBarValuesLeftX = 0;
@@ -436,7 +579,6 @@ Rect16 gearTouchRect;
 int16_t gearCenterX = 0;
 int16_t gearCenterY = 0;
 int16_t gearRadius = 12;
-std::array<Rect16, NUM_UNIT_OPTIONS> unitBoxRects = {};
 Rect16 rateBoxRect;
 Rect16 okBoxRect;
 uint8_t settingsButtonTextSize = TABLE_TEXT_SIZE;
@@ -731,13 +873,313 @@ void drawTodayDynamic()
 
 ///
 /// <summary>
-/// Updates and renders the dynamic value widgets for both the Now and Today sections.
+/// Returns whether haystack contains needle using an ASCII case-insensitive comparison.
+/// </summary>
+/// <param name="haystack">String to search.</param>
+/// <param name="needle">Lowercase substring to match.</param>
+/// <returns>True if needle appears anywhere in haystack; otherwise false.</returns>
+///
+bool containsIgnoreCase(const std::string& haystack, const char* needle)
+{
+   ASSERT(needle != nullptr);
+
+   size_t needleLen = strlen(needle);
+   if (needleLen == 0 || haystack.size() < needleLen)
+   {
+      return false;
+   }
+
+   for (size_t i = 0; i <= haystack.size() - needleLen; i++)
+   {
+      bool match = true;
+      for (size_t j = 0; j < needleLen; j++)
+      {
+         unsigned char hc = static_cast<unsigned char>(haystack[i + j]);
+         unsigned char nc = static_cast<unsigned char>(needle[j]);
+         if (std::tolower(hc) != std::tolower(nc))
+         {
+            match = false;
+            break;
+         }
+      }
+      if (match)
+      {
+         return true;
+      }
+   }
+   return false;
+}
+
+///
+/// <summary>
+/// Returns whether a equals b using an ASCII case-insensitive comparison.
+/// </summary>
+/// <param name="a">First string to compare.</param>
+/// <param name="b">Null-terminated string to compare against.</param>
+/// <returns>True if the two strings match ignoring ASCII case; otherwise false.</returns>
+///
+bool equalsIgnoreCase(const std::string& a, const char* b)
+{
+   ASSERT(b != nullptr);
+
+   size_t bLen = strlen(b);
+   if (a.size() != bLen)
+   {
+      return false;
+   }
+
+   for (size_t i = 0; i < bLen; i++)
+   {
+      unsigned char ac = static_cast<unsigned char>(a[i]);
+      unsigned char bc = static_cast<unsigned char>(b[i]);
+      if (std::tolower(ac) != std::tolower(bc))
+      {
+         return false;
+      }
+   }
+   return true;
+}
+
+///
+/// <summary>
+/// Extracts the circuit name from a per-building daily telemetry topic of the form
+/// "&lt;prefix&gt;&lt;Circuit&gt;Daily", excluding mains legs containing "red" or "black",
+/// individual numbered circuits ending in a digit (rolled up into separate totals),
+/// "StudioEast" / "StudioWest", and the special-case "AC" circuit under Garage.
+/// </summary>
+/// <param name="topic">Full telemetry topic name.</param>
+/// <param name="prefix">Expected building prefix (e.g. "Power/House/").</param>
+/// <param name="outName">Receives the extracted circuit name on success.</param>
+/// <returns>True if the topic is a qualifying daily sub-circuit topic; otherwise false.</returns>
+///
+bool tryExtractSubCircuitName(const std::string& topic, const char* prefix, std::string* outName)
+{
+   ASSERT(prefix != nullptr);
+   ASSERT(outName != nullptr);
+
+   size_t prefixLen = strlen(prefix);
+   size_t suffixLen = strlen(DAILY_TOPIC_SUFFIX);
+   if (topic.size() <= prefixLen + suffixLen)
+   {
+      return false;
+   }
+   if (topic.compare(0, prefixLen, prefix) != 0)
+   {
+      return false;
+   }
+   if (topic.compare(topic.size() - suffixLen, suffixLen, DAILY_TOPIC_SUFFIX) != 0)
+   {
+      return false;
+   }
+
+   std::string name = topic.substr(prefixLen, topic.size() - prefixLen - suffixLen);
+   if (name.empty() ||
+       containsIgnoreCase(name, "red") ||
+       containsIgnoreCase(name, "black") ||
+       std::isdigit(static_cast<unsigned char>(name.back())) != 0 ||
+       equalsIgnoreCase(name, "StudioEast") ||
+       equalsIgnoreCase(name, "StudioWest"))
+   {
+      return false;
+   }
+
+   if (strcmp(prefix, POWER_GARAGE_PREFIX) == 0 && equalsIgnoreCase(name, "AC"))
+   {
+      return false;
+   }
+
+   *outName = name;
+   return true;
+}
+
+///
+/// <summary>
+/// Populates outTop with up to maxCount highest daily kWh entries from the given circuit
+/// map, sorted descending by daily energy with alphabetical tie-breaking. Unused slots
+/// are cleared to empty name and NAN kwh.
+/// </summary>
+/// <param name="circuits">Map of circuit name to latest daily kWh reading.</param>
+/// <param name="outTop">Output buffer receiving the ranked top circuit entries.</param>
+/// <param name="maxCount">Maximum number of entries to populate in outTop.</param>
+///
+void getTopDailyCircuits(
+   const std::map<std::string, float>& circuits,
+   CircuitDailyEntry* outTop,
+   size_t maxCount)
+{
+   ASSERT(outTop != nullptr);
+
+   for (size_t i = 0; i < maxCount; i++)
+   {
+      outTop[i] = {};
+   }
+
+   std::vector<CircuitDailyEntry> ranked;
+   ranked.reserve(circuits.size());
+   for (const auto& kv : circuits)
+   {
+      if (std::isfinite(kv.second))
+      {
+         ranked.push_back({ kv.first, kv.second });
+      }
+   }
+
+   std::sort(
+      ranked.begin(),
+      ranked.end(),
+      [](const CircuitDailyEntry& a, const CircuitDailyEntry& b)
+      {
+         if (a.kwh != b.kwh)
+         {
+            return a.kwh > b.kwh;
+         }
+         return a.name < b.name;
+      });
+
+   size_t count = min(ranked.size(), maxCount);
+   for (size_t i = 0; i < count; i++)
+   {
+      outTop[i] = ranked[i];
+   }
+}
+
+///
+/// <summary>
+/// Truncates a circuit label so it fits within maxChars characters in the expanded bar
+/// chart's left label column without overflowing into the bars.
+/// </summary>
+/// <param name="label">Original circuit label.</param>
+/// <param name="maxChars">Maximum visible characters.</param>
+/// <returns>Truncated label string.</returns>
+///
+std::string truncateExpandedLabel(const std::string& label, uint8_t maxChars)
+{
+   if (label.size() <= maxChars)
+   {
+      return label;
+   }
+   return label.substr(0, maxChars);
+}
+
+///
+/// <summary>
+/// Updates the indented label text for a single dynamic sub-circuit row in the expanded
+/// Today bar chart if it changed since the last draw.
+/// </summary>
+/// <param name="rowIndex">Expanded bar row index (House or Garage sub-circuit slot).</param>
+/// <param name="rawLabel">Current circuit name for this rank slot (empty if none).</param>
+///
+void updateExpandedSubLabel(uint8_t rowIndex, const std::string& rawLabel)
+{
+   uint8_t maxSubChars = expandedBarLayout.maxLabelChars > 1 ? static_cast<uint8_t>(expandedBarLayout.maxLabelChars - 1) : 1;
+   std::string displayLabel = truncateExpandedLabel(rawLabel, maxSubChars);
+   if (expandedBarLayout.drawnLabels[rowIndex] == displayLabel)
+   {
+      return;
+   }
+
+   expandedBarLayout.drawnLabels[rowIndex] = displayLabel;
+   int16_t charWidth = sketch.arduino.charW(TABLE_TEXT_SIZE);
+   int16_t rowHeight = sketch.arduino.charH(TABLE_TEXT_SIZE);
+
+   sketch.arduino.display.fillRect(
+      expandedBarLayout.labelLeftX,
+      expandedBarLayout.barTextY[rowIndex],
+      expandedBarLayout.labelWidth,
+      rowHeight,
+      static_cast<uint16_t>(Color::BLACK));
+
+   if (!displayLabel.empty())
+   {
+      sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+      sketch.arduino.setCursor(expandedBarLayout.labelLeftX + charWidth, expandedBarLayout.barTextY[rowIndex]);
+      sketch.arduino.print(displayLabel.c_str(), Color::GRAY);
+   }
+}
+
+///
+/// <summary>
+/// Updates and renders all 16 rows of the full-screen expanded Today bar chart: Solar,
+/// Total, House plus its top 8 daily circuits, Garage plus its top 3 daily circuits, and Barn.
+/// </summary>
+///
+void drawExpandedTodayDynamic()
+{
+   std::array<CircuitDailyEntry, NUM_TOP_HOUSE_CIRCUITS> topHouse;
+   std::array<CircuitDailyEntry, NUM_TOP_GARAGE_CIRCUITS> topGarage;
+   getTopDailyCircuits(houseDailyCircuits, topHouse.data(), topHouse.size());
+   getTopDailyCircuits(garageDailyCircuits, topGarage.data(), topGarage.size());
+
+   const std::array<float, NUM_EXPANDED_BARS> rowValues = {
+      latestReadings.productionTodayKwh,
+      latestReadings.consumptionTodayKwh,
+      latestReadings.houseTodayKwh,
+      topHouse[0].kwh,
+      topHouse[1].kwh,
+      topHouse[2].kwh,
+      topHouse[3].kwh,
+      topHouse[4].kwh,
+      topHouse[5].kwh,
+      topHouse[6].kwh,
+      topHouse[7].kwh,
+      latestReadings.garageTodayKwh,
+      topGarage[0].kwh,
+      topGarage[1].kwh,
+      topGarage[2].kwh,
+      latestReadings.barnTodayKwh,
+   };
+
+   for (uint8_t i = 0; i < NUM_TOP_HOUSE_CIRCUITS; i++)
+   {
+      updateExpandedSubLabel(static_cast<uint8_t>(EXPANDED_HOUSE_SUB_START + i), topHouse[i].name);
+   }
+   for (uint8_t i = 0; i < NUM_TOP_GARAGE_CIRCUITS; i++)
+   {
+      updateExpandedSubLabel(static_cast<uint8_t>(EXPANDED_GARAGE_SUB_START + i), topGarage[i].name);
+   }
+
+   float totalTodayKwh = latestReadings.consumptionTodayKwh;
+   for (uint8_t i = 0; i < NUM_EXPANDED_BARS; i++)
+   {
+      ASSERT(expandedBarLayout.bars[i] != nullptr);
+
+      float v = rowValues[i];
+      expandedBarLayout.bars[i]->set(std::isnan(v) ? 0.0f : v);
+      expandedBarLayout.bars[i]->draw(&sketch.arduino.display);
+
+      float displayVal = v;
+      if (expandedUnit == ExpandedUnit::COST ||
+          (expandedUnit == ExpandedUnit::PERCENT && i == EXPANDED_TOTAL_ROW))
+      {
+         displayVal = std::isnan(v) ? NAN : (v * ratePerKwh);
+      }
+      else if (expandedUnit == ExpandedUnit::PERCENT)
+      {
+         displayVal = (!std::isnan(v) && !std::isnan(totalTodayKwh) && totalTodayKwh > 0.0f)
+            ? (v / totalTodayKwh * 100.0f)
+            : NAN;
+      }
+
+      expandedBarValues[i].draw(displayVal, EXPANDED_BAR_COLORS[i]);
+   }
+}
+
+///
+/// <summary>
+/// Updates and renders the dynamic value widgets for the active screen view.
 /// </summary>
 ///
 void drawFields()
 {
-   drawNowDynamic();
-   drawTodayDynamic();
+   if (showingExpandedToday)
+   {
+      drawExpandedTodayDynamic();
+   }
+   else
+   {
+      drawNowDynamic();
+      drawTodayDynamic();
+   }
 }
 
 ///
@@ -913,6 +1355,112 @@ void initMultiBarLayout(
 
 ///
 /// <summary>
+/// Returns true if the given expanded bar row index corresponds to a sub-circuit row
+/// (House top-8 or Garage top-3) rather than a main building/total row.
+/// </summary>
+/// <param name="rowIndex">Zero-based expanded bar row index.</param>
+/// <returns>True for House/Garage sub-circuit rows; false for main rows.</returns>
+///
+bool isExpandedSubRow(uint8_t rowIndex)
+{
+   return (rowIndex >= EXPANDED_HOUSE_SUB_START && rowIndex < EXPANDED_HOUSE_SUB_START + NUM_TOP_HOUSE_CIRCUITS) ||
+      (rowIndex >= EXPANDED_GARAGE_SUB_START && rowIndex < EXPANDED_GARAGE_SUB_START + NUM_TOP_GARAGE_CIRCUITS);
+}
+
+///
+/// <summary>
+/// Computes the layout and constructs the 16 horizontal bars for the full-screen expanded
+/// Today bar view (Solar, Total, House + 8 top circuits, Garage + 3 top circuits, Barn).
+/// </summary>
+/// <param name="layout">Target ExpandedBarLayout structure to populate.</param>
+/// <param name="sectionRect">Full-screen content bounding rectangle below the main title.</param>
+/// <param name="values">Sixteen right-aligned DisplayValue widgets for the expanded rows.</param>
+/// <param name="displayWidth">Display pixel width used to right-align numeric readouts.</param>
+/// <param name="charWidth">Character pixel width at TABLE_TEXT_SIZE.</param>
+/// <param name="rowHeight">Character pixel height at TABLE_TEXT_SIZE.</param>
+///
+void initExpandedBarLayout(
+   ExpandedBarLayout* layout,
+   const Rect16& sectionRect,
+   std::array<DisplayValue, NUM_EXPANDED_BARS>* values,
+   int16_t displayWidth,
+   int16_t charWidth,
+   int16_t rowHeight)
+{
+   ASSERT(layout != nullptr);
+   ASSERT(values != nullptr);
+
+   layout->maxLabelChars = isLargeDisplay ? EXPANDED_LABEL_CHARS_LARGE : EXPANDED_LABEL_CHARS_SMALL;
+   layout->labelLeftX = sectionRect.x;
+   layout->labelWidth = static_cast<int16_t>(layout->maxLabelChars) * charWidth;
+
+   size_t maxTodayFormatChars = max(
+      max(Format("###.# kWh").length(), Format("$###.##").length()),
+      Format("###.#%").length());
+   int16_t maxValueWidth = static_cast<int16_t>(maxTodayFormatChars) * charWidth;
+   int16_t barLeftX = layout->labelLeftX + layout->labelWidth + CHART_LABEL_GAP_PX;
+   int16_t barRightX = displayWidth - maxValueWidth - CHART_LABEL_GAP_PX;
+   int16_t barWidth = max<int16_t>(16, barRightX - barLeftX);
+   layout->valuesLeftX = barRightX;
+
+   constexpr uint8_t NUM_MAIN_ROWS = NUM_MULTI_BARS;
+   constexpr uint8_t NUM_SUB_ROWS = NUM_EXPANDED_BARS - NUM_MAIN_ROWS;
+   constexpr uint8_t NUM_GROUP_BREAKS = 3;
+   constexpr float WEIGHTED_ROW_UNITS = NUM_MAIN_ROWS + NUM_SUB_ROWS * EXPANDED_SUB_HEIGHT_RATIO;
+
+   int16_t minRowSum = static_cast<int16_t>(NUM_EXPANDED_BARS) * rowHeight;
+   int16_t minMainBand = static_cast<int16_t>(std::ceil(rowHeight / EXPANDED_SUB_HEIGHT_RATIO));
+   int16_t targetMinRowSum = static_cast<int16_t>(NUM_MAIN_ROWS * minMainBand + NUM_SUB_ROWS * rowHeight);
+   int16_t extraGroupGap = (isLargeDisplay &&
+      sectionRect.height >= static_cast<int16_t>(targetMinRowSum + (NUM_EXPANDED_BARS - 1) * 2 + NUM_GROUP_BREAKS * EXPANDED_GROUP_GAP_LARGE_PX))
+      ? EXPANDED_GROUP_GAP_LARGE_PX
+      : 0;
+   int16_t availHeight = sectionRect.height - NUM_GROUP_BREAKS * extraGroupGap;
+   int16_t maxBarGap = isLargeDisplay ? MULTI_BAR_ROW_GAP_LARGE_PX : MULTI_BAR_ROW_GAP_SMALL_PX;
+   int16_t barGap = max<int16_t>(1, min<int16_t>(maxBarGap, static_cast<int16_t>((availHeight - targetMinRowSum) / (NUM_EXPANDED_BARS - 1))));
+   int16_t totalGapHeight = (NUM_EXPANDED_BARS - 1) * barGap + NUM_GROUP_BREAKS * extraGroupGap;
+
+   int16_t rowsAvailHeight = max<int16_t>(minRowSum, static_cast<int16_t>(sectionRect.height - totalGapHeight));
+   int16_t mainBandHeight = max<int16_t>(rowHeight, static_cast<int16_t>(rowsAvailHeight / WEIGHTED_ROW_UNITS));
+   int16_t subBandHeight = max<int16_t>(rowHeight, static_cast<int16_t>(std::lround(mainBandHeight * EXPANDED_SUB_HEIGHT_RATIO)));
+   if (NUM_MAIN_ROWS * mainBandHeight + NUM_SUB_ROWS * subBandHeight > rowsAvailHeight)
+   {
+      mainBandHeight = max<int16_t>(rowHeight, static_cast<int16_t>((rowsAvailHeight - NUM_SUB_ROWS * subBandHeight) / NUM_MAIN_ROWS));
+   }
+
+   int16_t mainBarHeight = min<int16_t>(mainBandHeight, isLargeDisplay ? MULTI_BAR_MAX_HEIGHT_LARGE_PX : rowHeight);
+   int16_t subBarHeight = max<int16_t>(4, static_cast<int16_t>(std::lround(mainBarHeight * EXPANDED_SUB_HEIGHT_RATIO)));
+   int16_t totalRowsHeight = NUM_MAIN_ROWS * mainBandHeight + NUM_SUB_ROWS * subBandHeight + totalGapHeight;
+   int16_t bandY = sectionRect.y + max<int16_t>(0, (sectionRect.height - totalRowsHeight) / 2);
+
+   RangeF energyRange(0.0f, MAX_ENERGY_KWH);
+   for (uint8_t i = 0; i < NUM_EXPANDED_BARS; i++)
+   {
+      if (i == EXPANDED_HOUSE_ROW || i == EXPANDED_GARAGE_ROW || i == EXPANDED_BARN_ROW)
+      {
+         bandY += extraGroupGap;
+      }
+
+      bool subRow = isExpandedSubRow(i);
+      int16_t rowBandHeight = subRow ? subBandHeight : mainBandHeight;
+      int16_t rowBarHeight = subRow ? subBarHeight : mainBarHeight;
+      int16_t barY = bandY + (rowBandHeight - rowBarHeight) / 2;
+      int16_t textY = bandY + (rowBandHeight - rowHeight) / 2;
+
+      layout->barTextY[i] = textY;
+      (*values)[i].setPosition(displayWidth, textY);
+      layout->bars[i] = new HorizontalBar(
+         Rect16(barLeftX, barY, barWidth, rowBarHeight),
+         energyRange,
+         EXPANDED_BAR_COLORS[i],
+         BAR_TRACK_COLOR);
+
+      bandY += rowBandHeight + barGap;
+   }
+}
+
+///
+/// <summary>
 /// Computes the responsive display layout for all three top (kW) views and both bottom
 /// (kWh) views, along with touch hit-test rectangles.
 /// </summary>
@@ -972,6 +1520,8 @@ void initLayout()
 
    nowSectionRect = Rect16(contentLeftX, nowChartY, displayWidth - contentLeftX, nowBottomY - nowChartY);
    todaySectionRect = Rect16(contentLeftX, todayChartY, displayWidth - contentLeftX, todayBottomY - todayChartY);
+   int16_t expandedLeftX = isLargeDisplay ? OUTER_MARGIN_PX : 0;
+   expandedSectionRect = Rect16(expandedLeftX, nowChartY, displayWidth - expandedLeftX, displayHeight - nowChartY);
 
    int16_t splitY = (nowBottomY + todayChartY) / 2;
    nowTouchRect = Rect16(0, nowChartY, displayWidth, splitY - nowChartY);
@@ -983,6 +1533,9 @@ void initLayout()
    gearCenterX = displayWidth - GEAR_MARGIN_PX - gearRadius;
    gearCenterY = titleHeight / 2;
    gearTouchRect = Rect16(displayWidth - GEAR_TAP_WIDTH_PX, 0, GEAR_TAP_WIDTH_PX, titleHeight + topGap);
+   titleTouchRect = Rect16(0, 0, displayWidth - GEAR_TAP_WIDTH_PX, titleHeight + topGap);
+#else
+   titleTouchRect = Rect16(0, 0, displayWidth, titleHeight + topGap);
 #endif
 
    nowSummaryRow.setBounds(chartX, nowRowY, chartWidth);
@@ -1004,6 +1557,7 @@ void initLayout()
 
    initMultiBarLayout(&nowMultiBar, nowSectionRect, MAX_POWER_KW, &nowBarValues, &nowNetBarValue, barLeftX, barWidth, displayWidth, rowHeight);
    initMultiBarLayout(&todayMultiBar, todaySectionRect, MAX_ENERGY_KWH, &todayBarValues, &todayNetBarValue, barLeftX, barWidth, displayWidth, rowHeight);
+   initExpandedBarLayout(&expandedBarLayout, expandedSectionRect, &expandedBarValues, displayWidth, charWidth, rowHeight);
 
    todayChart = new MovingBarChart(
       todayChartRect,
@@ -1017,11 +1571,11 @@ void initLayout()
 
 ///
 /// <summary>
-/// Updates every DisplayValue and Field format and re-computes alignment positions to match
-/// the currently selected displayUnit (kW/kWh or $/hr/$).
+/// Updates the dual-section (main view) DisplayValue and Field formats and alignment
+/// positions to match the currently selected displayUnit (kW/kWh or $/hr/$).
 /// </summary>
 ///
-void applyUnitFormats()
+void applyMainUnitFormats()
 {
    const bool useCost = (displayUnit == DisplayUnit::COST);
    const Format nowFormat = useCost ? Format("$##.##/hr") : Format("##.# kW");
@@ -1056,6 +1610,53 @@ void applyUnitFormats()
    }
    layoutBreakdownColumns(&nowBreakdown, nowSectionRect, &nowBreakdownValues);
    layoutBreakdownColumns(&todayBreakdown, todaySectionRect, &todayBreakdownValues);
+
+   appliedMainUnit = displayUnit;
+   mainFormatsApplied = true;
+}
+
+///
+/// <summary>
+/// Updates only the expanded Details view DisplayValue formats and alignment positions to
+/// match the currently selected expandedUnit (kWh, $, or % of Total).
+/// </summary>
+///
+void applyExpandedUnitFormats()
+{
+   int16_t displayWidth = sketch.arduino.width();
+   const Format expandedEnergyFormat("###.# kWh");
+   const Format expandedCostFormat("$###.##");
+   const Format expandedPercentFormat("###.#%");
+   for (uint8_t i = 0; i < NUM_EXPANDED_BARS; i++)
+   {
+      const Format* rowFormat = &expandedEnergyFormat;
+      if (expandedUnit == ExpandedUnit::COST ||
+          (expandedUnit == ExpandedUnit::PERCENT && i == EXPANDED_TOTAL_ROW))
+      {
+         rowFormat = &expandedCostFormat;
+      }
+      else if (expandedUnit == ExpandedUnit::PERCENT)
+      {
+         rowFormat = &expandedPercentFormat;
+      }
+      expandedBarValues[i].setFormat(*rowFormat);
+      expandedBarValues[i].setPosition(displayWidth, expandedBarLayout.barTextY[i]);
+   }
+
+   appliedExpandedUnit = expandedUnit;
+   expandedFormatsApplied = true;
+}
+
+///
+/// <summary>
+/// Updates every DisplayValue and Field format across both the main and expanded Details
+/// views.
+/// </summary>
+///
+void applyUnitFormats()
+{
+   applyMainUnitFormats();
+   applyExpandedUnitFormats();
 }
 
 ///
@@ -1247,7 +1848,12 @@ void loadViewPreferences()
    {
       uint8_t savedTop = sketch.arduino.preferences.getUChar(NOW_VIEW_PREF_KEY, 0);
       uint8_t savedBottom = sketch.arduino.preferences.getUChar(TODAY_VIEW_PREF_KEY, 0);
+      bool savedExpanded = sketch.arduino.preferences.getBool(EXPANDED_VIEW_PREF_KEY, false);
       uint8_t savedUnit = sketch.arduino.preferences.getUChar(UNIT_PREF_KEY, static_cast<uint8_t>(DisplayUnit::KW));
+      uint8_t defaultExpUnit = (savedUnit == static_cast<uint8_t>(DisplayUnit::COST))
+         ? static_cast<uint8_t>(ExpandedUnit::COST)
+         : static_cast<uint8_t>(ExpandedUnit::KWH);
+      uint8_t savedExpUnit = sketch.arduino.preferences.getUChar(EXPANDED_UNIT_PREF_KEY, defaultExpUnit);
       float savedRate = sketch.arduino.preferences.getFloat(RATE_PREF_KEY, DEFAULT_RATE_PER_KWH);
       sketch.arduino.preferences.end();
 
@@ -1257,9 +1863,13 @@ void loadViewPreferences()
       bottomViewMode = (savedBottom == static_cast<uint8_t>(BottomViewMode::BREAKDOWN))
          ? BottomViewMode::BREAKDOWN
          : BottomViewMode::BARS;
+      showingExpandedToday = savedExpanded;
       displayUnit = (savedUnit == static_cast<uint8_t>(DisplayUnit::COST))
          ? DisplayUnit::COST
          : DisplayUnit::KW;
+      expandedUnit = (savedExpUnit < NUM_EXPANDED_UNITS)
+         ? static_cast<ExpandedUnit>(savedExpUnit)
+         : ((displayUnit == DisplayUnit::COST) ? ExpandedUnit::COST : ExpandedUnit::KWH);
       ratePerKwh = (std::isfinite(savedRate) && savedRate > 0.0f && savedRate <= MAX_RATE_PER_KWH)
          ? savedRate
          : DEFAULT_RATE_PER_KWH;
@@ -1268,7 +1878,7 @@ void loadViewPreferences()
 
 ///
 /// <summary>
-/// Persists the current top/bottom view modes, display units, and electricity rate to Preferences.
+/// Persists the current top/bottom view modes, expanded view toggle, display units, and electricity rate to Preferences.
 /// </summary>
 ///
 void saveViewPreferences()
@@ -1276,7 +1886,9 @@ void saveViewPreferences()
    sketch.arduino.preferences.begin(PREFERENCES_NAMESPACE, false);
    sketch.arduino.preferences.putUChar(NOW_VIEW_PREF_KEY, static_cast<uint8_t>(topViewMode));
    sketch.arduino.preferences.putUChar(TODAY_VIEW_PREF_KEY, static_cast<uint8_t>(bottomViewMode));
+   sketch.arduino.preferences.putBool(EXPANDED_VIEW_PREF_KEY, showingExpandedToday);
    sketch.arduino.preferences.putUChar(UNIT_PREF_KEY, static_cast<uint8_t>(displayUnit));
+   sketch.arduino.preferences.putUChar(EXPANDED_UNIT_PREF_KEY, static_cast<uint8_t>(expandedUnit));
    sketch.arduino.preferences.putFloat(RATE_PREF_KEY, ratePerKwh);
    sketch.arduino.preferences.end();
 }
@@ -1398,7 +2010,7 @@ void sampleTodayChart()
       todayChart->clear();
       populateTodayChartFromSamples();
       todayPersistTimer.reset();
-      if (!showingSettings && topViewMode == TopViewMode::TODAY_HISTORY)
+      if (!showingSettings && !showingExpandedToday && topViewMode == TopViewMode::TODAY_HISTORY)
       {
          todayChart->reset();
          todayChart->draw(&sketch.arduino.display);
@@ -1410,7 +2022,7 @@ void sampleTodayChart()
       todayChart->clear();
       resetTodayChartHistory(dayId);
       todayPersistTimer.reset();
-      if (!showingSettings && topViewMode == TopViewMode::TODAY_HISTORY)
+      if (!showingSettings && !showingExpandedToday && topViewMode == TopViewMode::TODAY_HISTORY)
       {
          todayChart->reset();
          todayChart->draw(&sketch.arduino.display);
@@ -1468,7 +2080,7 @@ void sampleTodayChart()
          0.0f,
          sample.prodHundredthsKw * 0.01f,
          sample.consHundredthsKw * 0.01f);
-      if (!showingSettings && topViewMode == TopViewMode::TODAY_HISTORY)
+      if (!showingSettings && !showingExpandedToday && topViewMode == TopViewMode::TODAY_HISTORY)
       {
          todayChart->draw(&sketch.arduino.display);
          drawTodayGridLines();
@@ -1643,39 +2255,6 @@ void drawEditIcon(int16_t cx, int16_t cy, Color color)
 
 ///
 /// <summary>
-/// Draws the kW and $/hr unit selection buttons on the Settings screen.
-/// </summary>
-///
-void drawSettingsUnitButtons()
-{
-   constexpr std::array<const char*, NUM_UNIT_OPTIONS> UNIT_LABELS = { "kW", "$/hr" };
-   sketch.arduino.setTextSize(settingsButtonTextSize);
-   const int16_t textH = sketch.arduino.charH(settingsButtonTextSize);
-
-   for (uint8_t i = 0; i < NUM_UNIT_OPTIONS; i++)
-   {
-      const Rect16& rect = unitBoxRects[i];
-      const bool selected = (static_cast<uint8_t>(displayUnit) == i);
-      const Color bg = selected ? Color::DARKGREEN : Color::BLUE;
-      const Color border = selected ? Color::WHITE : Color::GRAY;
-
-      sketch.arduino.display.fillRoundRect(rect.x, rect.y, rect.width, rect.height, SETTINGS_CORNER_RADIUS_PX, static_cast<uint16_t>(bg));
-      sketch.arduino.display.drawRoundRect(rect.x, rect.y, rect.width, rect.height, SETTINGS_CORNER_RADIUS_PX, static_cast<uint16_t>(border));
-      if (selected)
-      {
-         sketch.arduino.display.drawRoundRect(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2, SETTINGS_CORNER_RADIUS_PX, static_cast<uint16_t>(border));
-      }
-
-      const char* label = UNIT_LABELS[i];
-      const int16_t tw = sketch.arduino.display.textWidth(label);
-      sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::WHITE), static_cast<uint16_t>(bg));
-      sketch.arduino.display.setCursor(rect.x + (rect.width - tw) / 2, rect.y + (rect.height - textH) / 2);
-      sketch.arduino.display.print(label);
-   }
-}
-
-///
-/// <summary>
 /// Draws the editable electricity rate box on the Settings screen.
 /// </summary>
 ///
@@ -1711,8 +2290,7 @@ void drawSettingsRateBox()
 
 ///
 /// <summary>
-/// Renders the full touch Settings screen for selecting display units (kW or $/hr) and
-/// editing the electricity rate ($/kWh).
+/// Renders the full touch Settings screen for editing the electricity rate ($/kWh).
 /// </summary>
 ///
 void drawSettingsScreen()
@@ -1733,29 +2311,13 @@ void drawSettingsScreen()
    int16_t y = 8 + titleH + SETTINGS_GAP_PX;
 
    const int16_t bottomMargin = 12;
-   const int16_t overhead = 2 * (labelH + 4) + 2 * SETTINGS_SECTION_GAP_PX + bottomMargin;
+   const int16_t overhead = (labelH + 4) + SETTINGS_SECTION_GAP_PX + bottomMargin;
    const int16_t availH = displayHeight - y - overhead;
-   const int16_t boxH = constrain(static_cast<int16_t>(availH / 3), static_cast<int16_t>(labelH + 14), static_cast<int16_t>(56));
+   const int16_t boxH = constrain(static_cast<int16_t>(availH / 2), static_cast<int16_t>(labelH + 14), static_cast<int16_t>(56));
 
    settingsButtonTextSize = (sketch.arduino.charH(DEFAULT_TEXT_SIZE) + 12 <= boxH)
       ? DEFAULT_TEXT_SIZE
       : TABLE_TEXT_SIZE;
-
-   // Display units selector
-   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
-   sketch.arduino.setCursor(SETTINGS_MARGIN_X, y);
-   sketch.arduino.println("Units", Color::SUB_LABEL);
-   y += labelH + 4;
-
-   const int16_t unitBoxW = (contentW - SETTINGS_GAP_PX) / NUM_UNIT_OPTIONS;
-   for (uint8_t i = 0; i < NUM_UNIT_OPTIONS; i++)
-   {
-      int16_t bx = SETTINGS_MARGIN_X + i * (unitBoxW + SETTINGS_GAP_PX);
-      int16_t bw = (i + 1 == NUM_UNIT_OPTIONS) ? (SETTINGS_MARGIN_X + contentW - bx) : unitBoxW;
-      unitBoxRects[i] = Rect16(bx, y, bw, boxH);
-   }
-   drawSettingsUnitButtons();
-   y += boxH + SETTINGS_SECTION_GAP_PX;
 
    // Electricity rate editor box
    sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
@@ -1921,6 +2483,90 @@ void renderTodaySection(bool clearArea)
 
 ///
 /// <summary>
+/// Draws the static left-side parent labels (Solar, Total, House, Garage, and Barn),
+/// clears cached dynamic sub-circuit labels, and resets all 16 bar and value widgets
+/// for the full-screen expanded Today bar view.
+/// </summary>
+///
+void renderExpandedTodayStatic()
+{
+   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+
+   constexpr std::array<uint8_t, NUM_MULTI_BARS> PARENT_ROWS = {
+      EXPANDED_SOLAR_ROW,
+      EXPANDED_TOTAL_ROW,
+      EXPANDED_HOUSE_ROW,
+      EXPANDED_GARAGE_ROW,
+      EXPANDED_BARN_ROW,
+   };
+
+   for (uint8_t i = 0; i < NUM_MULTI_BARS; i++)
+   {
+      uint8_t row = PARENT_ROWS[i];
+      sketch.arduino.setCursor(expandedBarLayout.labelLeftX, expandedBarLayout.barTextY[row]);
+      sketch.arduino.print(MULTI_BAR_LABELS[i], Color::LIGHTGRAY);
+   }
+
+   for (uint8_t i = 0; i < NUM_EXPANDED_BARS; i++)
+   {
+      ASSERT(expandedBarLayout.bars[i] != nullptr);
+
+      expandedBarLayout.drawnLabels[i] = "\x01";
+      expandedBarLayout.bars[i]->reset();
+      expandedBarValues[i].invalidate();
+   }
+}
+
+///
+/// <summary>
+/// Draws the full-screen expanded Today bar chart view (parent labels, top-8 House and
+/// top-3 Garage daily circuits, bars, and right-aligned values).
+/// </summary>
+/// <param name="clearArea">True to clear the full expanded content area before drawing.</param>
+///
+void renderExpandedTodayView(bool clearArea)
+{
+   if (clearArea)
+   {
+      sketch.arduino.display.fillRect(
+         0,
+         expandedSectionRect.y,
+         sketch.arduino.width(),
+         sketch.arduino.height() - expandedSectionRect.y,
+         static_cast<uint16_t>(Color::BLACK));
+   }
+
+   renderExpandedTodayStatic();
+   drawExpandedTodayDynamic();
+}
+
+///
+/// <summary>
+/// Clears any leftover pixels to the left of narrower right-aligned expanded bar values
+/// when switching between kWh and $ unit formats, without touching the bars.
+/// </summary>
+/// <param name="displayWidth">Full display width in pixels.</param>
+/// <param name="rowHeight">Character height for TABLE_TEXT_SIZE.</param>
+///
+void clearExpandedBarValueOverhang(int16_t displayWidth, int16_t rowHeight)
+{
+   for (uint8_t i = 0; i < NUM_EXPANDED_BARS; i++)
+   {
+      int16_t clearWidth = (displayWidth - expandedBarValues[i].width()) - expandedBarLayout.valuesLeftX;
+      if (clearWidth > 0)
+      {
+         sketch.arduino.display.fillRect(
+            expandedBarLayout.valuesLeftX,
+            expandedBarLayout.barTextY[i],
+            clearWidth,
+            rowHeight,
+            static_cast<uint16_t>(Color::BLACK));
+      }
+   }
+}
+
+///
+/// <summary>
 /// Clears any leftover pixels to the left of narrower right-aligned MultiBar values when
 /// switching between unit formats of different widths, without touching the bars or blanking
 /// the pixels that the new value sprites are about to overwrite.
@@ -2006,20 +2652,34 @@ void refreshBreakdownText(
 
 ///
 /// <summary>
-/// Toggles the active display units between kW/kWh and $/hr/$, saves the preference,
-/// updates all value formats, and refreshes only the changed headings, numeric readouts,
-/// and axis scale labels without clearing the bars or 24-hour chart.
+/// Cycles the active display units (kWh -> $ -> % of Total in the expanded Details view,
+/// or kW/kWh <-> $/hr/$ in the dual-section view), saves the preference, updates all value
+/// formats, and refreshes only the changed headings, numeric readouts, and axis scale
+/// labels without clearing the bars or 24-hour chart.
 /// </summary>
 ///
 void toggleDisplayUnit()
 {
-   displayUnit = (displayUnit == DisplayUnit::KW) ? DisplayUnit::COST : DisplayUnit::KW;
-   saveViewPreferences();
-   applyUnitFormats();
-
-   const bool useCost = (displayUnit == DisplayUnit::COST);
    int16_t displayWidth = sketch.arduino.width();
    int16_t rowHeight = sketch.arduino.charH(TABLE_TEXT_SIZE);
+
+   if (showingExpandedToday)
+   {
+      expandedUnit = static_cast<ExpandedUnit>((static_cast<uint8_t>(expandedUnit) + 1) % NUM_EXPANDED_UNITS);
+      displayUnit = (expandedUnit == ExpandedUnit::KWH) ? DisplayUnit::KW : DisplayUnit::COST;
+      saveViewPreferences();
+      applyExpandedUnitFormats();
+      clearExpandedBarValueOverhang(displayWidth, rowHeight);
+      drawExpandedTodayDynamic();
+      return;
+   }
+
+   displayUnit = (displayUnit == DisplayUnit::KW) ? DisplayUnit::COST : DisplayUnit::KW;
+   expandedUnit = (displayUnit == DisplayUnit::COST) ? ExpandedUnit::COST : ExpandedUnit::KWH;
+   saveViewPreferences();
+   applyMainUnitFormats();
+
+   const bool useCost = (displayUnit == DisplayUnit::COST);
 
    // Top section rotated heading
    sketch.arduino.display.fillRect(
@@ -2101,6 +2761,31 @@ void toggleDisplayUnit()
 
 ///
 /// <summary>
+/// Draws the top-left screen heading ("Power" for the dual-section view, or
+/// "Power - Details" for the expanded Today bar view), optionally clearing the title area
+/// first so the heading can switch without flickering the settings gear icon.
+/// </summary>
+/// <param name="clearArea">True to clear titleTouchRect before printing the heading.</param>
+///
+void drawTitle(bool clearArea)
+{
+   if (clearArea)
+   {
+      sketch.arduino.display.fillRect(
+         titleTouchRect.x,
+         titleTouchRect.y,
+         titleTouchRect.width,
+         titleTouchRect.height,
+         static_cast<uint16_t>(Color::BLACK));
+   }
+
+   sketch.arduino.setTextSize(HEADING_TEXT_SIZE);
+   sketch.arduino.setCursor(0, 0);
+   sketch.arduino.println(showingExpandedToday ? DETAILS_TITLE_TEXT : MAIN_TITLE_TEXT, Color::HEADING);
+}
+
+///
+/// <summary>
 /// Draws the static screen elements (title, settings gear icon, section headings, and active
 /// section views) and refreshes all dynamic fields and charts for a full redraw.
 /// </summary>
@@ -2113,9 +2798,7 @@ void drawStatic()
    sketch.arduino.clearDisplay();
 
    // Top screen title
-   sketch.arduino.setTextSize(HEADING_TEXT_SIZE);
-   sketch.arduino.setCursor(0, 0);
-   sketch.arduino.println("Power", Color::HEADING);
+   drawTitle(false);
 
 #ifdef ARDUINO_TOUCH_SUPPORTED
    drawGear();
@@ -2130,15 +2813,22 @@ void drawStatic()
       todayPersistTimer.reset();
    }
 
-   renderNowSection(false);
-   renderTodaySection(false);
+   if (showingExpandedToday)
+   {
+      renderExpandedTodayView(false);
+   }
+   else
+   {
+      renderNowSection(false);
+      renderTodaySection(false);
+   }
 }
 
 ///
 /// <summary>
 /// Polls the touch panel for debounced taps on the upper-right settings gear, the Settings
-/// screen controls, the bar-chart values column (to toggle units), or the top/bottom view
-/// sections.
+/// screen controls, the top heading (to toggle between the main view and "Power - Details"),
+/// the bar-chart values column (to cycle units), or the top/bottom view sections.
 /// </summary>
 ///
 void handleTouch()
@@ -2152,19 +2842,7 @@ void handleTouch()
 #ifdef ARDUINO_TOUCH_SUPPORTED
    if (showingSettings)
    {
-      if (unitBoxRects[0].contains(tap) && displayUnit != DisplayUnit::KW)
-      {
-         displayUnit = DisplayUnit::KW;
-         saveViewPreferences();
-         drawSettingsUnitButtons();
-      }
-      else if (unitBoxRects[1].contains(tap) && displayUnit != DisplayUnit::COST)
-      {
-         displayUnit = DisplayUnit::COST;
-         saveViewPreferences();
-         drawSettingsUnitButtons();
-      }
-      else if (rateBoxRect.contains(tap))
+      if (rateBoxRect.contains(tap))
       {
          editRateTouch();
          drawSettingsScreen();
@@ -2172,7 +2850,6 @@ void handleTouch()
       else if (okBoxRect.contains(tap))
       {
          showingSettings = false;
-         applyUnitFormats();
          drawStatic();
       }
       return;
@@ -2185,6 +2862,52 @@ void handleTouch()
       return;
    }
 #endif
+
+   if (titleTouchRect.contains(tap))
+   {
+      showingExpandedToday = !showingExpandedToday;
+      saveViewPreferences();
+      if (showingExpandedToday)
+      {
+         houseDailyCircuits.clear();
+         garageDailyCircuits.clear();
+         if (!expandedFormatsApplied || appliedExpandedUnit != expandedUnit)
+         {
+            applyExpandedUnitFormats();
+         }
+      }
+      else if (!mainFormatsApplied || appliedMainUnit != displayUnit)
+      {
+         applyMainUnitFormats();
+      }
+      telemetryHandler.syncTopics(sketch.getClient());
+      drawTitle(true);
+      sketch.arduino.display.fillRect(
+         0,
+         expandedSectionRect.y,
+         sketch.arduino.width(),
+         sketch.arduino.height() - expandedSectionRect.y,
+         static_cast<uint16_t>(Color::BLACK));
+      if (showingExpandedToday)
+      {
+         renderExpandedTodayView(false);
+      }
+      else
+      {
+         renderNowSection(false);
+         renderTodaySection(false);
+      }
+      return;
+   }
+
+   if (showingExpandedToday)
+   {
+      if (tap.y >= expandedSectionRect.y && tap.x >= expandedBarLayout.valuesLeftX)
+      {
+         toggleDisplayUnit();
+      }
+      return;
+   }
 
    if (nowTouchRect.contains(tap))
    {
@@ -2277,7 +3000,19 @@ void onTelemetrySample(const std::string& topic, double value, int64_t dtMicros)
    }
    else
    {
-      return;
+      std::string circuitName;
+      if (tryExtractSubCircuitName(topic, POWER_HOUSE_PREFIX, &circuitName))
+      {
+         houseDailyCircuits[circuitName] = max(0.0f, static_cast<float>(value));
+      }
+      else if (tryExtractSubCircuitName(topic, POWER_GARAGE_PREFIX, &circuitName))
+      {
+         garageDailyCircuits[circuitName] = max(0.0f, static_cast<float>(value));
+      }
+      else
+      {
+         return;
+      }
    }
 
    if (!std::isnan(latestReadings.productionKw) && !std::isnan(latestReadings.consumptionKw))
@@ -2295,6 +3030,32 @@ void onTelemetrySample(const std::string& topic, double value, int64_t dtMicros)
    }
 
    readingsDirty = true;
+}
+
+///
+/// <summary>
+/// Removes a retired or expired House or Garage daily sub-circuit topic from the ranked
+/// top-circuit maps so deleted circuits no longer appear in the expanded Today view.
+/// </summary>
+/// <param name="topic">Removed telemetry topic name.</param>
+///
+void onTelemetryTopicRemoved(const std::string& topic)
+{
+   std::string circuitName;
+   if (tryExtractSubCircuitName(topic, POWER_HOUSE_PREFIX, &circuitName))
+   {
+      if (houseDailyCircuits.erase(circuitName) > 0)
+      {
+         readingsDirty = true;
+      }
+   }
+   else if (tryExtractSubCircuitName(topic, POWER_GARAGE_PREFIX, &circuitName))
+   {
+      if (garageDailyCircuits.erase(circuitName) > 0)
+      {
+         readingsDirty = true;
+      }
+   }
 }
 
 ///

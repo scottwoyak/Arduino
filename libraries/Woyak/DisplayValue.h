@@ -315,8 +315,9 @@ public:
 
    ///
    /// <summary>
-   /// Replaces the Format object used by this DisplayValue, releasing any previously
-   /// created sprite so the next draw() allocates one sized for the new format width.
+   /// Replaces the Format object used by this DisplayValue, reusing the existing sprite
+   /// when the new format has the same character length, or unloading its font and
+   /// releasing the sprite so the next draw() allocates one sized for the new width.
    /// Callers using Alignment::RIGHT or Alignment::CENTER should also re-call setPosition()
    /// if the format width changed.
    /// </summary>
@@ -324,8 +325,9 @@ public:
    ///
    void setFormat(const Format& format)
    {
-      if (_spriteCreated)
+      if (_spriteCreated && _format.length() != format.length())
       {
+         _sprite.unloadFont();
          _sprite.deleteSprite();
          _spriteCreated = false;
       }
