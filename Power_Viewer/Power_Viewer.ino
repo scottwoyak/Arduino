@@ -104,10 +104,10 @@ constexpr float DEFAULT_RATE_PER_KWH = 0.24f;
 constexpr float MAX_RATE_PER_KWH = 99.99f;
 
 // ----------- Display Configuration
-constexpr auto NOW_POWER_SECTION_TEXT = "Now (kW)";
+constexpr auto NOW_POWER_SECTION_TEXT = "Rate (kW)";
 constexpr auto TODAY_POWER_SECTION_TEXT = "Today (kW)";
 constexpr auto TODAY_ENERGY_SECTION_TEXT = "Today (kWh)";
-constexpr auto NOW_COST_SECTION_TEXT = "Now ($/hr)";
+constexpr auto NOW_COST_SECTION_TEXT = "Rate ($/hr)";
 constexpr auto TODAY_COST_RATE_SECTION_TEXT = "Today ($/hr)";
 constexpr auto TODAY_COST_SECTION_TEXT = "Today ($)";
 constexpr uint8_t HEADING_TEXT_SIZE = DEFAULT_HEADING_SIZE;
