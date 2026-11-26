@@ -1418,6 +1418,11 @@ std::array<Rect16, NUM_VOLTAGE_OPTIONS> voltageBoxRects = {};
 Rect16 lineVoltageBoxRect;
 bool settingsVoltageConnected = false;
 float settingsLineVoltage = NAN;
+DisplayValue settingsLineVoltageField(
+   &sketch.arduino,
+   lineVoltageFormat,
+   TABLE_TEXT_SIZE,
+   DisplayValue::Alignment::CENTER);
 Rect16 deviceLocationBoxRect;
 Rect16 okBoxRect;
 
@@ -1555,14 +1560,18 @@ void drawSettingsChannelBox(size_t index)
 
 ///
 /// <summary>
-/// Draws the tappable AC line voltage box in the top-right corner of the Configure view.
+/// Draws or updates the tappable AC line voltage box in the top-right corner of the Configure view.
 /// Displays the live voltage with an edit icon when an AC voltage signal is present, or a
-/// muted "No V" badge when disconnected.
+/// muted "No V" badge when disconnected. Only redraws the box frame and icon when forced or when
+/// the voltage connection state changes; value-only updates push through a sprite-backed
+/// DisplayValue to avoid flicker.
 /// </summary>
+/// <param name="redrawFrame">True to redraw the box background, border, and edit icon.</param>
 ///
-void drawSettingsLineVoltageBox()
+void drawSettingsLineVoltageBox(bool redrawFrame = false)
 {
    const bool connected = powerSensor.voltageConnected();
+   const bool frameChanged = redrawFrame || (connected != settingsVoltageConnected);
    settingsVoltageConnected = connected;
 
    if (connected)
@@ -1579,56 +1588,62 @@ void drawSettingsLineVoltageBox()
       settingsLineVoltage = NAN;
    }
 
-   const Color bg = connected ? Color::DARKBLUE : Color::BLACK;
-   const Color border = connected ? Color::WHITE : Color::GRAY;
-   const Color fg = connected ? Color::WHITE : Color::GRAY;
+   if (frameChanged)
+   {
+      const Color bg = connected ? Color::DARKBLUE : Color::BLACK;
+      const Color border = connected ? Color::WHITE : Color::GRAY;
 
-   sketch.arduino.display.fillRoundRect(
-      lineVoltageBoxRect.left(),
-      lineVoltageBoxRect.top(),
-      lineVoltageBoxRect.width,
-      lineVoltageBoxRect.height,
-      SETTINGS_CORNER_RADIUS,
-      static_cast<uint16_t>(bg));
-   sketch.arduino.display.drawRoundRect(
-      lineVoltageBoxRect.left(),
-      lineVoltageBoxRect.top(),
-      lineVoltageBoxRect.width,
-      lineVoltageBoxRect.height,
-      SETTINGS_CORNER_RADIUS,
-      static_cast<uint16_t>(border));
+      sketch.arduino.display.fillRoundRect(
+         lineVoltageBoxRect.left(),
+         lineVoltageBoxRect.top(),
+         lineVoltageBoxRect.width,
+         lineVoltageBoxRect.height,
+         SETTINGS_CORNER_RADIUS,
+         static_cast<uint16_t>(bg));
+      sketch.arduino.display.drawRoundRect(
+         lineVoltageBoxRect.left(),
+         lineVoltageBoxRect.top(),
+         lineVoltageBoxRect.width,
+         lineVoltageBoxRect.height,
+         SETTINGS_CORNER_RADIUS,
+         static_cast<uint16_t>(border));
 
-   std::string voltText;
+      if (connected)
+      {
+         const int16_t textAreaW = lineVoltageBoxRect.width - 34;
+         int16_t textCenterX = lineVoltageBoxRect.left() + textAreaW / 2;
+         const int16_t minCenterX = lineVoltageBoxRect.left() + 4 + settingsLineVoltageField.width() / 2;
+         if (textCenterX < minCenterX)
+         {
+            textCenterX = minCenterX;
+         }
+         settingsLineVoltageField.setPosition(
+            textCenterX,
+            lineVoltageBoxRect.top() + lineVoltageBoxRect.height / 2,
+            VerticalAnchor::MIDDLE);
+         drawEditIcon(
+            lineVoltageBoxRect.right() - 20,
+            lineVoltageBoxRect.top() + lineVoltageBoxRect.height / 2,
+            Color::LIGHTGRAY);
+      }
+      else
+      {
+         settingsLineVoltageField.invalidate();
+         constexpr const char* NO_VOLT_TEXT = "No V";
+         sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
+         const int16_t tw = sketch.arduino.display.textWidth(NO_VOLT_TEXT);
+         const int16_t th = sketch.arduino.charH(TABLE_TEXT_SIZE);
+         sketch.arduino.display.setTextColor(static_cast<uint16_t>(Color::GRAY), static_cast<uint16_t>(Color::BLACK));
+         sketch.arduino.display.setCursor(
+            lineVoltageBoxRect.left() + (lineVoltageBoxRect.width - tw) / 2,
+            lineVoltageBoxRect.top() + (lineVoltageBoxRect.height - th) / 2);
+         sketch.arduino.display.print(NO_VOLT_TEXT);
+      }
+   }
+
    if (connected)
    {
-      std::ostringstream oss;
-      oss << std::fixed;
-      oss.precision(1);
-      oss << settingsLineVoltage << " V";
-      voltText = oss.str();
-   }
-   else
-   {
-      voltText = "No V";
-   }
-
-   sketch.arduino.setTextSize(TABLE_TEXT_SIZE);
-   const int16_t tw = sketch.arduino.display.textWidth(voltText.c_str());
-   const int16_t th = sketch.arduino.charH(TABLE_TEXT_SIZE);
-   const int16_t textAreaW = connected ? (lineVoltageBoxRect.width - 34) : lineVoltageBoxRect.width;
-   int16_t tx = lineVoltageBoxRect.left() + (textAreaW - tw) / 2;
-   if (tx < lineVoltageBoxRect.left() + 8)
-   {
-      tx = lineVoltageBoxRect.left() + 8;
-   }
-
-   sketch.arduino.display.setTextColor(static_cast<uint16_t>(fg), static_cast<uint16_t>(bg));
-   sketch.arduino.display.setCursor(tx, lineVoltageBoxRect.top() + (lineVoltageBoxRect.height - th) / 2);
-   sketch.arduino.display.print(voltText.c_str());
-
-   if (connected)
-   {
-      drawEditIcon(lineVoltageBoxRect.right() - 20, lineVoltageBoxRect.top() + lineVoltageBoxRect.height / 2, Color::LIGHTGRAY);
+      settingsLineVoltageField.draw(settingsLineVoltage, Color::WHITE, Color::DARKBLUE);
    }
 }
 
@@ -1663,7 +1678,7 @@ void drawSettingsView()
    const int16_t lineVoltBoxY = std::max<int16_t>(0, (headingH - lineVoltBoxH) / 2);
    lineVoltageBoxRect = Rect16(screenW - SETTINGS_MARGIN_X - lineVoltBoxW, lineVoltBoxY, lineVoltBoxW, lineVoltBoxH);
    settingsLineVoltage = NAN;
-   drawSettingsLineVoltageBox();
+   drawSettingsLineVoltageBox(true);
 
    // Upper portion: 16 channel boxes (4 columns x 4 rows) for channels 1-16
    sketch.arduino.setTextSize(FOOTER_SIZE);
