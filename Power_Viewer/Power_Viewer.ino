@@ -11,8 +11,8 @@
 // full-screen "Power - Details" expanded Today bar view showing Solar, Total, House + top 8
 // House circuits, Garage + top 3 Garage circuits, and Barn; the upper-right Settings gear
 // icon on touch displays configures the $/kWh electricity rate; tapping the values column
-// of any bar chart switches units, cycling kWh -> $ -> % of Total (with Total in $) in the
-// Details view), with the selected mode, units, and rate persisted in Preferences:
+// of any bar chart switches units, cycling kWh -> $ -> % of Total in the Details view),
+// with the selected mode, units, and rate persisted in Preferences:
 // - Top (kW or $/hr, tap to cycle through 3 views):
 //   1. Now Bars: Five 0-20 kW horizontal bars showing live power for Solar, Total,
 //      House, Garage, and Barn, followed by a center-zero (-20 to +20 kW) horizontal Net
@@ -1148,8 +1148,7 @@ void drawExpandedTodayDynamic()
       expandedBarLayout.bars[i]->draw(&sketch.arduino.display);
 
       float displayVal = v;
-      if (expandedUnit == ExpandedUnit::COST ||
-          (expandedUnit == ExpandedUnit::PERCENT && i == EXPANDED_TOTAL_ROW))
+      if (expandedUnit == ExpandedUnit::COST)
       {
          displayVal = std::isnan(v) ? NAN : (v * ratePerKwh);
       }
@@ -1624,22 +1623,12 @@ void applyMainUnitFormats()
 void applyExpandedUnitFormats()
 {
    int16_t displayWidth = sketch.arduino.width();
-   const Format expandedEnergyFormat("###.# kWh");
-   const Format expandedCostFormat("$###.##");
-   const Format expandedPercentFormat("###.#%");
+   const Format expandedFormat = (expandedUnit == ExpandedUnit::COST)
+      ? Format("$###.##")
+      : (expandedUnit == ExpandedUnit::PERCENT ? Format("###.#%") : Format("###.# kWh"));
    for (uint8_t i = 0; i < NUM_EXPANDED_BARS; i++)
    {
-      const Format* rowFormat = &expandedEnergyFormat;
-      if (expandedUnit == ExpandedUnit::COST ||
-          (expandedUnit == ExpandedUnit::PERCENT && i == EXPANDED_TOTAL_ROW))
-      {
-         rowFormat = &expandedCostFormat;
-      }
-      else if (expandedUnit == ExpandedUnit::PERCENT)
-      {
-         rowFormat = &expandedPercentFormat;
-      }
-      expandedBarValues[i].setFormat(*rowFormat);
+      expandedBarValues[i].setFormat(expandedFormat);
       expandedBarValues[i].setPosition(displayWidth, expandedBarLayout.barTextY[i]);
    }
 
