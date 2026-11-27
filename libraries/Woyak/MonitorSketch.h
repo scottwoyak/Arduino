@@ -586,6 +586,22 @@ public:
 
    ///
    /// <summary>
+   /// Initializes the monitor and marks it running once its startup sequence finishes.
+   /// Influx and Hub failures are nonfatal and are reported separately.
+   /// </summary>
+   ///
+   void begin()
+   {
+      InfluxSketchBase::begin();
+
+      if (_status->currentStatus() == Status::SERVICES_CONNECTING)
+      {
+         _status->setStatus(Status::RUNNING);
+      }
+   }
+
+   ///
+   /// <summary>
    /// Formats this device's site and location as "Site/Location". Only valid once
    /// begin() has resolved the site (i.e. influxConfig.promptForContext was set).
    /// </summary>
