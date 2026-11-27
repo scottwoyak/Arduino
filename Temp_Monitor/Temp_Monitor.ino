@@ -70,7 +70,7 @@
 // This sketch's own version (e.g. "2.0"); MakeVersion() appends the shared
 // LIBRARY_VERSION build number so shared library changes bump every sketch's
 // compiled VERSION without manually editing each sketch.
-const auto VERSION = MakeVersion("2.3");
+const auto VERSION = MakeVersion("2.5");
 constexpr auto SKETCH_NAME = "Temp_Monitor";
 constexpr auto PREFERENCES_NAMESPACE = "TempMonitor";
 
